@@ -2698,11 +2698,14 @@ export default class ExocortexPlugin extends Plugin {
 
     const pushMgr = await this.buildAssetSpacePusher();
 
-    const profileLister: () => Promise<FocusProfileChoice[]> = async () => {
-      // Item #3 — device-local store (no Sync replication).
-      const activeUid = localDataStore.getActiveProfileUid();
+    // Shared choice-builder for the per-class palette pickers (RFC 13da049f
+    // AC17). `activeUid` drives the `isActive` flag the picker surfaces.
+    const buildProfileChoices = (
+      files: TFile[],
+      activeUid: string | null,
+    ): FocusProfileChoice[] => {
       const choices: FocusProfileChoice[] = [];
-      for (const file of resolver.listFocusProfileFiles()) {
+      for (const file of files) {
         const cache = this.app.metadataCache.getFileCache(file);
         const fm = cache?.frontmatter as Record<string, unknown> | undefined;
         if (!fm) continue;
@@ -2724,6 +2727,24 @@ export default class ExocortexPlugin extends Plugin {
       return choices;
     };
 
+    const profileLister: () => Promise<FocusProfileChoice[]> = async () =>
+      // Item #3 — device-local store (no Sync replication). Legacy
+      // `activeProfileUid` mirrors the active Focus selection (soft switch).
+      buildProfileChoices(
+        resolver.listFocusProfileFiles(),
+        localDataStore.getActiveProfileUid(),
+      );
+
+    // AC17 — KnowledgeProfile picker source. Dual-class assets surface in both
+    // listers because the discrimination is by `exo__Instance_class` membership.
+    const knowledgeProfileLister: () => Promise<
+      FocusProfileChoice[]
+    > = async () =>
+      buildProfileChoices(
+        resolver.listKnowledgeProfileFiles(),
+        localDataStore.getActiveKnowledgeProfileUid(),
+      );
+
     // Issue #3320 — share the same lister с Settings UI so its dropdown
     // matches the Cmd+P fuzzy-pick ordering exactly.
     this.listFocusProfileChoices = profileLister;
@@ -2742,9 +2763,13 @@ export default class ExocortexPlugin extends Plugin {
       switchMgr,
       pushMgr,
       profileLister,
+      knowledgeProfileLister,
       fuzzyPick,
       getActiveFilePath: () =>
         this.app.workspace.getActiveFile()?.path ?? null,
+      getActiveKnowledgeProfileUid: () =>
+        localDataStore.getActiveKnowledgeProfileUid(),
+      getActiveFocusProfileUid: () => localDataStore.getActiveFocusProfileUid(),
       notify: (message) => this.notifier.info(message),
     });
 
@@ -2764,13 +2789,25 @@ export default class ExocortexPlugin extends Plugin {
       },
     });
 
-    // RFC 22b50a17 Phase 3 — hard switch palette command.
+    // RFC 13da049f Phase 6.5b AC17 — «Show current state» (active Knowledge +
+    // Focus). Available regardless of platform / hard-switch wiring.
+    this.addCommand({
+      id: "show-profile-state",
+      name: "Show current state",
+      callback: () => {
+        void commandsHandler.invokeShowCurrentState();
+      },
+    });
+
+    // RFC 13da049f Phase 6.5b AC17 — «Switch knowledge profile» (hard switch;
+    // supersedes the RFC 22b50a17 «Hard switch focus profile» command). Needs
+    // desktop hard-switch deps wired (filesystem materialisation).
     if (hardSwitchDeps !== null) {
       this.addCommand({
-        id: "hard-switch-focus-profile",
-        name: "Hard switch focus profile (filesystem destroy + materialize)",
+        id: "switch-knowledge-profile",
+        name: "Switch knowledge profile (filesystem destroy + materialize)",
         callback: () => {
-          void commandsHandler.invokeHardSwitchProfile();
+          void commandsHandler.invokeSwitchKnowledgeProfile();
         },
       });
     }

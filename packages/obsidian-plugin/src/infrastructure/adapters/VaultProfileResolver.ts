@@ -4,7 +4,10 @@ import type {
   IProfileResolver,
   ProfileResolution,
 } from "./FocusProfileSwitchManager";
-import { FOCUS_PROFILE_CLASS_UID } from "./FocusProfileSwitchManager";
+import {
+  FOCUS_PROFILE_CLASS_UID,
+  KNOWLEDGE_PROFILE_CLASS_UID,
+} from "./FocusProfileSwitchManager";
 
 /**
  * Vault-backed implementation of {@link IProfileResolver}. Reads
@@ -57,6 +60,13 @@ export class VaultProfileResolver implements IProfileResolver {
       typeof extendsRaw === "string" && extendsRaw.length > 0
         ? this.resolveExtendsToUid(extendsRaw)
         : null;
+    // AC13 (RFC 13da049f Phase 6.5b) — consume `exo__FocusProfile_appliesTo`,
+    // the Knowledge profile UID this Focus profile is scoped to (compat
+    // constraint anchor for the AC16 runtime check). Stored as a wikilink to
+    // the Knowledge profile's UID-named file; normalised to the bare UID.
+    const appliesTo = this.extractFirstWikilink(
+      fm["exo__FocusProfile_appliesTo"],
+    );
     const label =
       typeof fm["exo__Asset_label"] === "string"
         ? (fm["exo__Asset_label"] as string)
@@ -67,6 +77,7 @@ export class VaultProfileResolver implements IProfileResolver {
       includes,
       extends: extendsUid,
       alwaysOnOverlay,
+      appliesTo,
       label,
     };
   }
@@ -101,21 +112,45 @@ export class VaultProfileResolver implements IProfileResolver {
    * fuzzy picker.
    */
   public listFocusProfileFiles(): TFile[] {
+    return this.listProfileFilesByClass(FOCUS_PROFILE_CLASS_UID);
+  }
+
+  /**
+   * Walks the vault returning every KnowledgeProfile asset (RFC 13da049f
+   * Phase 6.5b AC17). Used by the «Switch knowledge profile» palette picker.
+   * Dual-class assets (declaring both Focus + Knowledge) appear in BOTH
+   * `listFocusProfileFiles()` and this list because the discrimination is by
+   * `exo__Instance_class` membership, not exclusivity.
+   */
+  public listKnowledgeProfileFiles(): TFile[] {
+    return this.listProfileFilesByClass(KNOWLEDGE_PROFILE_CLASS_UID);
+  }
+
+  /**
+   * Walks the vault returning assets whose `exo__Instance_class` contains the
+   * given class UID. Shared by {@link listFocusProfileFiles} and
+   * {@link listKnowledgeProfileFiles} so the per-class fuzzy pickers (AC17)
+   * and the dual-class membership rule stay in one place.
+   */
+  public listProfileFilesByClass(classUid: string): TFile[] {
     const out: TFile[] = [];
     for (const file of this.app.vault.getMarkdownFiles()) {
       const fm = this.readFrontmatter(file);
       if (fm === null) continue;
-      if (this.isFocusProfileFrontmatter(fm)) out.push(file);
+      if (this.instanceClassContains(fm, classUid)) out.push(file);
     }
     return out;
   }
 
-  private isFocusProfileFrontmatter(fm: Record<string, unknown>): boolean {
+  private instanceClassContains(
+    fm: Record<string, unknown>,
+    classUid: string,
+  ): boolean {
     const raw = fm["exo__Instance_class"];
     const classes: unknown[] = Array.isArray(raw) ? raw : raw ? [raw] : [];
     for (const c of classes) {
       if (typeof c !== "string") continue;
-      if (c.includes(FOCUS_PROFILE_CLASS_UID)) return true;
+      if (c.includes(classUid)) return true;
     }
     return false;
   }
@@ -145,6 +180,24 @@ export class VaultProfileResolver implements IProfileResolver {
       if (cleaned.length > 0) out.push(cleaned);
     }
     return out;
+  }
+
+  /**
+   * Extract a single wikilink target as a bare UID. Accepts a string
+   * (`[[<uid>]]` / `[[<uid>|alias]]`) or a single-element array (frontmatter
+   * may serialise a 0..1 wikilink either way). Returns null when absent/empty.
+   * Used for `exo__FocusProfile_appliesTo` (AC13, cardinality 0..1).
+   */
+  private extractFirstWikilink(value: unknown): string | null {
+    const first = Array.isArray(value) ? value[0] : value;
+    if (typeof first !== "string") return null;
+    const cleaned = first
+      .trim()
+      .replace(/^\[\[/, "")
+      .replace(/\]\]$/, "")
+      .split("|")[0]
+      .trim();
+    return cleaned.length === 0 ? null : cleaned;
   }
 
   /**

@@ -1,20 +1,31 @@
 /**
- * FocusProfileCommands — command-palette logic handler для RFC 0a0791c1 §B.7.
+ * FocusProfileCommands — command-palette logic handler для RFC 0a0791c1 §B.7
+ * + RFC 13da049f Phase 6.5b AC17 (dual Knowledge/Focus palette commands).
  *
- * Two commands provided:
+ * Commands provided:
  *   1. `Exocortex: Switch focus profile` — fuzzy-picks a FocusProfile asset,
- *      invokes B.4 `FocusProfileSwitchManager.softSwitchFocusProfile`
- *   2. `Exocortex: Push current assetspace` — identifies AssetSpace from
+ *      invokes B.4 `FocusProfileSwitchManager.softSwitchFocusProfile` (soft —
+ *      RDF query-time filter only).
+ *   2. `Exocortex: Switch knowledge profile` — fuzzy-picks a KnowledgeProfile
+ *      asset, invokes `FocusProfileSwitchManager.hardSwitchKnowledgeProfile`
+ *      (hard — filesystem destroy + materialise).
+ *   3. `Exocortex: Show current state` — Notice with the active Knowledge +
+ *      Focus profile labels.
+ *   4. `Exocortex: Push current assetspace` — identifies AssetSpace from
  *      active file path (B.3 `lookupAssetSpaceForPath`), invokes
- *      B.3 `AssetSpaceManager.pushAssetSpace`
+ *      B.3 `AssetSpaceManager.pushAssetSpace`.
  *
  * Pure logic — does NOT depend on Obsidian Plugin / FuzzySuggestModal /
  * App.workspace runtime. Dependencies passed via constructor:
  *   - `switchMgr` (B.4)
  *   - `pushMgr` (B.3 — interface `IAssetSpacePusher`)
- *   - `profileLister` — returns available FocusProfile assets
+ *   - `profileLister` — returns available FocusProfile assets (soft picker)
+ *   - `knowledgeProfileLister` — returns available KnowledgeProfile assets
+ *     (hard picker, AC17). Dual-class assets appear in both lists.
  *   - `fuzzyPick` — opens picker UI, returns chosen profile or null on cancel
  *   - `getActiveFilePath` — returns active file path или null
+ *   - `getActiveKnowledgeProfileUid` / `getActiveFocusProfileUid` — current
+ *     active selections for the «Show current state» command (AC17)
  *   - `notify` — user-facing Notice
  *
  * Real Obsidian wiring (plugin.addCommand + FuzzySuggestModal + Notice)
@@ -49,8 +60,14 @@ export interface FocusProfileChoice {
 export interface FocusProfileCommandsDeps {
   switchMgr: FocusProfileSwitchManager;
   pushMgr: IAssetSpacePusher;
-  /** Returns available FocusProfile assets (label + uid pairs). */
+  /** Returns available FocusProfile assets (label + uid pairs) — soft picker. */
   profileLister: () => Promise<FocusProfileChoice[]>;
+  /**
+   * Returns available KnowledgeProfile assets — hard picker (AC17). Dual-class
+   * assets (declaring both Focus + Knowledge) appear in both this list and
+   * {@link profileLister}.
+   */
+  knowledgeProfileLister: () => Promise<FocusProfileChoice[]>;
   /**
    * Open a fuzzy picker UI. Returns the user's choice, or null if the
    * picker was cancelled. Real implementation wraps Obsidian
@@ -62,6 +79,16 @@ export interface FocusProfileCommandsDeps {
   ) => Promise<FocusProfileChoice | null>;
   /** Returns the currently-active file path, or null if no file is open. */
   getActiveFilePath: () => string | null;
+  /**
+   * Returns the active Knowledge profile UID (hard switch slot), or null.
+   * Used by «Show current state» (AC17).
+   */
+  getActiveKnowledgeProfileUid: () => string | null;
+  /**
+   * Returns the active Focus profile UID (soft switch slot), or null.
+   * Used by «Show current state» (AC17).
+   */
+  getActiveFocusProfileUid: () => string | null;
   /** Show a user-facing Notice. */
   notify: (message: string) => void;
 }
@@ -70,16 +97,22 @@ export class FocusProfileCommands {
   private readonly switchMgr: FocusProfileSwitchManager;
   private readonly pushMgr: IAssetSpacePusher;
   private readonly profileLister: () => Promise<FocusProfileChoice[]>;
+  private readonly knowledgeProfileLister: () => Promise<FocusProfileChoice[]>;
   private readonly fuzzyPick: FocusProfileCommandsDeps["fuzzyPick"];
   private readonly getActiveFilePath: () => string | null;
+  private readonly getActiveKnowledgeProfileUid: () => string | null;
+  private readonly getActiveFocusProfileUid: () => string | null;
   private readonly notify: (message: string) => void;
 
   constructor(deps: FocusProfileCommandsDeps) {
     this.switchMgr = deps.switchMgr;
     this.pushMgr = deps.pushMgr;
     this.profileLister = deps.profileLister;
+    this.knowledgeProfileLister = deps.knowledgeProfileLister;
     this.fuzzyPick = deps.fuzzyPick;
     this.getActiveFilePath = deps.getActiveFilePath;
+    this.getActiveKnowledgeProfileUid = deps.getActiveKnowledgeProfileUid;
+    this.getActiveFocusProfileUid = deps.getActiveFocusProfileUid;
     this.notify = deps.notify;
   }
 
@@ -116,9 +149,10 @@ export class FocusProfileCommands {
   }
 
   /**
-   * Command 3 — `Exocortex: Hard switch focus profile` (RFC 22b50a17 Phase 3).
+   * Command 2 — `Exocortex: Switch knowledge profile` (RFC 13da049f Phase 6.5b
+   * AC17; supersedes the RFC 22b50a17 «Hard switch focus profile» command).
    *
-   * Same fuzzy pick UX as soft switch, then invokes
+   * Fuzzy-picks a **KnowledgeProfile** asset (per-class picker), then invokes
    * `FocusProfileSwitchManager.hardSwitchKnowledgeProfile` which:
    *   1. R24 TS-floor assert (refuses targets that brick the plugin)
    *   2. Vision Lock #5 uncommitted abort (with file list)
@@ -128,47 +162,81 @@ export class FocusProfileCommands {
    * User-facing error mapping: TsFloorViolationError, UncommittedChangesAbortError,
    * and HardSwitchAbortedByUser get clear notices distinct from generic «Switch failed».
    */
-  async invokeHardSwitchProfile(): Promise<void> {
+  async invokeSwitchKnowledgeProfile(): Promise<void> {
     let profiles: FocusProfileChoice[];
     try {
-      profiles = await this.profileLister();
+      profiles = await this.knowledgeProfileLister();
     } catch (e) {
       this.notify(`Could not list profiles: ${this.safeMessage(e)}`);
       return;
     }
 
     if (profiles.length === 0) {
-      this.notify("No FocusProfile assets found in vault");
+      this.notify("No KnowledgeProfile assets found in vault");
       return;
     }
 
     const chosen = await this.fuzzyPick(
       profiles,
-      "Hard switch focus profile (filesystem destroy + materialize)",
+      "Switch knowledge profile (filesystem destroy + materialize)",
     );
     if (chosen === null) return; // user cancelled
 
-    this.notify(`Hard switching to ${chosen.label}…`);
+    this.notify(`Switching knowledge profile to ${chosen.label}…`);
     try {
       await this.switchMgr.hardSwitchKnowledgeProfile(chosen.uid);
     } catch (e) {
       if (e instanceof HardSwitchAbortedByUser) {
-        this.notify("Hard switch cancelled.");
+        this.notify("Knowledge profile switch cancelled.");
         return;
       }
       if (e instanceof TsFloorViolationError) {
-        this.notify(`Hard switch refused — ${e.message}`);
+        this.notify(`Knowledge profile switch refused — ${e.message}`);
         return;
       }
       if (e instanceof UncommittedChangesAbortError) {
         const total = e.affectedFiles.reduce((s, a) => s + a.files.length, 0);
         this.notify(
-          `Hard switch aborted — ${total} uncommitted file(s) в ${e.affectedFiles.length} AssetSpace(s). Commit or stash first.`,
+          `Knowledge profile switch aborted — ${total} uncommitted file(s) в ${e.affectedFiles.length} AssetSpace(s). Commit or stash first.`,
         );
         return;
       }
-      this.notify(`Hard switch failed: ${this.safeMessage(e)}`);
+      this.notify(`Knowledge profile switch failed: ${this.safeMessage(e)}`);
     }
+  }
+
+  /**
+   * @deprecated Use {@link invokeSwitchKnowledgeProfile}. Retained for backward
+   * compatibility (RFC 13da049f Phase 6.5b AC17 — Knowledge/Focus palette split).
+   * Hard switch is now surfaced as «Switch knowledge profile» and picks from
+   * KnowledgeProfile assets rather than FocusProfile assets.
+   */
+  async invokeHardSwitchProfile(): Promise<void> {
+    return this.invokeSwitchKnowledgeProfile();
+  }
+
+  /**
+   * Command 3 — `Exocortex: Show current state` (RFC 13da049f Phase 6.5b AC17).
+   *
+   * Surfaces a Notice reporting the currently-active Knowledge profile (hard
+   * switch slot) and Focus profile (soft switch slot). Labels are resolved
+   * best-effort from the per-class listers; an unresolved UID falls back to the
+   * raw UID, and an unset slot shows «(none)». Never throws — lister failures
+   * degrade to the UID / «(unknown)».
+   */
+  async invokeShowCurrentState(): Promise<void> {
+    const knowledgeUid = this.getActiveKnowledgeProfileUid();
+    const focusUid = this.getActiveFocusProfileUid();
+
+    const knowledgeLabel = await this.resolveLabel(
+      knowledgeUid,
+      this.knowledgeProfileLister,
+    );
+    const focusLabel = await this.resolveLabel(focusUid, this.profileLister);
+
+    this.notify(
+      `Active profiles — Knowledge: ${knowledgeLabel} · Focus: ${focusLabel}`,
+    );
   }
 
   /**
@@ -237,5 +305,24 @@ export class FocusProfileCommands {
   private safeMessage(e: unknown): string {
     if (e instanceof Error) return e.message;
     return String(e);
+  }
+
+  /**
+   * Best-effort UID → label resolution for «Show current state». Returns
+   * «(none)» when the slot is unset, the matched label when the lister has it,
+   * the raw UID when unmatched, and «(unknown)» when the lister throws.
+   */
+  private async resolveLabel(
+    uid: string | null,
+    lister: () => Promise<FocusProfileChoice[]>,
+  ): Promise<string> {
+    if (uid === null || uid.length === 0) return "(none)";
+    try {
+      const choices = await lister();
+      const match = choices.find((c) => c.uid === uid);
+      return match !== undefined ? match.label : uid;
+    } catch {
+      return `${uid} (unknown)`;
+    }
   }
 }
