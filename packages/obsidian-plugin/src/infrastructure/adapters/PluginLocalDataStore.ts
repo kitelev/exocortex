@@ -67,6 +67,7 @@ const KEY_ACTIVE_KNOWLEDGE_PROFILE_UID = "activeKnowledgeProfileUid";
 const KEY_ACTIVE_FOCUS_PROFILE_UID = "activeFocusProfileUid";
 const KEY_SWITCH_IN_PROGRESS = "_switchInProgress";
 const KEY_ACTIVE_STAGING_DIRS = "_activeStagingDirs";
+const KEY_FILE_ONLY_ASSET_SPACES = "_fileOnlyAssetSpaces";
 
 export interface PluginLocalDataStoreOptions {
   app: App;
@@ -118,6 +119,24 @@ export interface StagingDirEntry {
   asUid: string;
   path: string;
   allocatedAt: string;
+}
+
+/**
+ * File-only AssetSpace registry entry — recorded when a vault is bootstrapped
+ * WITHOUT a `.git` directory (RFC 13da049f Phase 6.2 AC10 / M19). Such vaults
+ * cannot track AssetSpaces via `.gitmodules`, so the materialised folder + its
+ * source URL are persisted device-locally instead. This lets the EC2
+ * «clone-from-another-machine» recovery and future re-fetch surfaces know
+ * which AssetSpaces exist even though git is unavailable.
+ */
+export interface FileOnlyAssetSpaceEntry {
+  /** Vault-relative folder where the AssetSpace was materialised. */
+  folderName: string;
+  /** GitHub repo URL the tarball was pulled from. */
+  url: string;
+  /** 7-char tarball SHA recorded at pull time (provenance). */
+  sha: string;
+  addedAt: string;
 }
 
 const EMPTY_STATE: LocalSwitchState = {
@@ -380,6 +399,58 @@ export class PluginLocalDataStore {
       asUid: e.asUid,
       path: e.path,
       allocatedAt: e.allocatedAt,
+    }));
+    await this.persist(all);
+  }
+
+  /**
+   * Read the file-only AssetSpace registry (RFC 13da049f AC10 / M19). Returns
+   * a fresh array — callers can mutate without affecting future reads. Reads
+   * from disk on each call (write-rare, lives outside `LocalSwitchState`).
+   */
+  async readFileOnlyAssetSpaces(): Promise<FileOnlyAssetSpaceEntry[]> {
+    const all = await this.readAllRaw();
+    const raw = all[KEY_FILE_ONLY_ASSET_SPACES];
+    if (!Array.isArray(raw)) return [];
+    const out: FileOnlyAssetSpaceEntry[] = [];
+    for (const item of raw) {
+      if (
+        item &&
+        typeof item === "object" &&
+        typeof (item as Record<string, unknown>).folderName === "string" &&
+        typeof (item as Record<string, unknown>).url === "string" &&
+        typeof (item as Record<string, unknown>).sha === "string" &&
+        typeof (item as Record<string, unknown>).addedAt === "string"
+      ) {
+        const e = item as Record<string, unknown>;
+        out.push({
+          folderName: e.folderName as string,
+          url: e.url as string,
+          sha: e.sha as string,
+          addedAt: e.addedAt as string,
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Upsert a file-only AssetSpace entry (keyed by `folderName`). Preserves
+   * unknown sibling keys via RMW. Idempotent: re-recording the same folder
+   * replaces its prior entry rather than duplicating it.
+   */
+  async upsertFileOnlyAssetSpace(
+    entry: FileOnlyAssetSpaceEntry,
+  ): Promise<void> {
+    const existing = await this.readFileOnlyAssetSpaces();
+    const next = existing.filter((e) => e.folderName !== entry.folderName);
+    next.push(entry);
+    const all = await this.readAllRaw();
+    all[KEY_FILE_ONLY_ASSET_SPACES] = next.map((e) => ({
+      folderName: e.folderName,
+      url: e.url,
+      sha: e.sha,
+      addedAt: e.addedAt,
     }));
     await this.persist(all);
   }

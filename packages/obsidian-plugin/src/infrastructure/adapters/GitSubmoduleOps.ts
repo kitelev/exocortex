@@ -383,6 +383,73 @@ export class GitSubmoduleOps {
     return parseGitmodulesPaths(raw);
   }
 
+  /**
+   * Read `.gitmodules` and parse the `(path, url)` pairs of all
+   * `[submodule "<path>"]` stanzas. Missing `.gitmodules` returns `[]`.
+   *
+   * Used by the Phase 6.2 bootstrap «clone-from-another-machine» (EC2) flow:
+   * a vault cloned without `--recurse-submodules` has a populated `.gitmodules`
+   * but empty `assetspaces/*` folders — the bootstrap command reads these
+   * preserved URLs to re-materialise each tracked AssetSpace.
+   */
+  async readGitmodulesEntries(): Promise<GitmodulesEntry[]> {
+    const gitmodulesPath = path.resolve(this.vaultRootPath, ".gitmodules");
+    let raw: string;
+    try {
+      raw = await fs.readFile(gitmodulesPath, "utf8");
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException;
+      if (e?.code === "ENOENT") return [];
+      throw err;
+    }
+    return parseGitmodulesEntries(raw);
+  }
+
+  /**
+   * Idempotent `.gitmodules` entry insertion via text manipulation — the
+   * plugin-side counterpart of CLI `BootstrapAssetSpaceService.ensureGitmodulesEntry`.
+   * Adds a standard `[submodule "<path>"]` stanza (with `path` + `url`) without
+   * invoking the `git` binary, so it works in non-`submodule add` flows (cold
+   * bootstrap / add-by-URL where the content was already materialised via
+   * `renameIntoVault`).
+   *
+   * If a stanza for `submodulePath` already exists, this is a no-op
+   * (`{ added: false }`). Both args are validated (path-traversal / shell
+   * metacharacters / URL allowlist) before any filesystem mutation.
+   */
+  async appendGitmodulesEntry(
+    submodulePath: string,
+    url: string,
+  ): Promise<{ added: boolean }> {
+    this.assertDesktop("appendGitmodulesEntry");
+    const safePath = validateVaultPathArg(submodulePath);
+    const safeUrl = validateGitUrl(url);
+    const gitmodulesPath = path.resolve(this.vaultRootPath, ".gitmodules");
+
+    let existing = "";
+    try {
+      existing = await fs.readFile(gitmodulesPath, "utf8");
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException;
+      if (e?.code !== "ENOENT") throw err;
+    }
+
+    // Anchor on a real `[submodule "<path>"]` header (line start) so a
+    // commented-out / quoted occurrence does not yield a false-positive.
+    const headerRegex = new RegExp(
+      `^\\s*\\[submodule\\s+"${escapeRegex(safePath)}"\\]`,
+      "m",
+    );
+    if (existing.length > 0 && headerRegex.test(existing)) {
+      return { added: false };
+    }
+
+    const sep = existing.length === 0 || existing.endsWith("\n") ? "" : "\n";
+    const newEntry = `[submodule "${safePath}"]\n\tpath = ${safePath}\n\turl = ${safeUrl}\n`;
+    await fs.appendFile(gitmodulesPath, sep + newEntry, { encoding: "utf8" });
+    return { added: true };
+  }
+
   private assertDesktop(op: string): void {
     if (isPlatformMobile()) {
       throw new Error(`GitSubmoduleOps.${op}: mobile not supported (RFC 22b50a17 desktop-only)`);
@@ -472,6 +539,57 @@ export function stripGitmodulesEntry(content: string, submodulePath: string): st
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * A parsed `.gitmodules` stanza — the `path` + `url` of one submodule entry.
+ */
+export interface GitmodulesEntry {
+  submodulePath: string;
+  url: string;
+}
+
+/**
+ * Parse `.gitmodules` content into `(path, url)` pairs. Each
+ * `[submodule "<name>"]` header opens a stanza; the stanza's `path` and `url`
+ * key=value lines are collected until the next `[...]` header or EOF. A stanza
+ * missing either key is skipped (incomplete — cannot be materialised).
+ *
+ * Exported for unit testing.
+ */
+export function parseGitmodulesEntries(content: string): GitmodulesEntry[] {
+  const out: GitmodulesEntry[] = [];
+  const lines = content.split(/\r?\n/);
+  let inSubmodule = false;
+  let curPath: string | null = null;
+  let curUrl: string | null = null;
+  const flush = (): void => {
+    if (curPath !== null && curUrl !== null) {
+      out.push({ submodulePath: curPath, url: curUrl });
+    }
+    curPath = null;
+    curUrl = null;
+  };
+  for (const line of lines) {
+    if (/^\[.+\]\s*$/.test(line)) {
+      // New header of any kind — flush the previous stanza first.
+      flush();
+      inSubmodule = /^\[submodule\s+"[^"]+"\]\s*$/.test(line);
+      continue;
+    }
+    if (!inSubmodule) continue;
+    const pathMatch = line.match(/^\s*path\s*=\s*(.+?)\s*$/);
+    if (pathMatch !== null) {
+      curPath = pathMatch[1];
+      continue;
+    }
+    const urlMatch = line.match(/^\s*url\s*=\s*(.+?)\s*$/);
+    if (urlMatch !== null) {
+      curUrl = urlMatch[1];
+    }
+  }
+  flush();
+  return out;
 }
 
 /**
