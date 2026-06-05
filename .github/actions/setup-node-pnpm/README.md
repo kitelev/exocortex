@@ -73,14 +73,13 @@ As of this PR (Phase 3 task `44b3219a`):
 | `build`                   | none                | `"true"`  |                      |
 | `typecheck`               | none                |           |                      |
 | `lint`                    | none                |           |                      |
-| `test-unit`               | `recursive`         |           | `"playwright-jammy"` |
+| `test-ui`                 | `recursive`         |           | `"playwright-jammy"` |
 | `test-coverage-shard`     | `recursive`         |           |                      |
 | `test-coverage-cli`       | `recursive`         |           |                      |
 | `test-coverage-exocortex` | `recursive`         |           |                      |
 | `test-coverage`           | none                |           |                      |
 | `test-bdd`                | none                |           |                      |
 | `test-component`          | none                | `"true"`  | `"playwright-jammy"` |
-| `test-pyramid`            | none                |           |                      |
 | `performance-tests`       | none                | `"true"`  | `"playwright-jammy"` |
 
 Jobs that deliberately do **not** use the composite:

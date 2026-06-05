@@ -40,8 +40,6 @@
     "bdd:coverage": "node scripts/bdd-coverage.js",
     "bdd:report": "node scripts/generate-bdd-report.js",
     "bdd:check": "node scripts/bdd-coverage.js --fail-on-uncovered",
-    "test:pyramid": "node scripts/check-test-pyramid.js",
-    "test:pyramid:strict": "node scripts/check-test-pyramid.js --strict",
     "test:perf": "jest --config packages/obsidian-plugin/jest.config.js --testPathPatterns='performance.*\\.test\\.ts$'",
     "test:perf:component": "cd packages/obsidian-plugin && npx playwright test -c playwright-ct.config.ts RenderingPerformance && cd ../..",
     "docs:validate": "node scripts/validate-docs-properties.js"

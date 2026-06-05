@@ -37,7 +37,7 @@ npm run test:e2e:docker # E2E tests in Docker
 npm run test:coverage
 
 # BDD coverage check
-npm run bdd:check       # Enforced in CI (≥80%)
+npm run bdd:check       # BDD coverage report (advisory, not a CI gate)
 ```
 
 ### Writing Your First Test
@@ -382,7 +382,7 @@ Feature: Daily Tasks Table in Layout
 
 ### Test Pyramid Policy
 
-The project enforces a **test pyramid architecture** to ensure fast feedback, maintainable tests, and optimal resource usage. This policy is validated automatically in CI.
+The project follows a **test pyramid architecture** to ensure fast feedback, maintainable tests, and optimal resource usage. This is advisory guidance maintained by review judgment; the automated `test-pyramid` CI gate was removed (see "Pyramid Health (advisory)" below). Line/branch coverage thresholds remain enforced by the required `test-coverage` job.
 
 #### Pyramid Structure
 
@@ -401,12 +401,12 @@ The project enforces a **test pyramid architecture** to ensure fast feedback, ma
 
 #### Ratios and Enforcement
 
-| Layer           | Target Ratio  | CI Gate                       | Framework      |
-| --------------- | ------------- | ----------------------------- | -------------- |
-| Unit Tests      | ≥70%          | `npm run test:pyramid:strict` | Jest           |
-| Component Tests | 10-25%        | All must pass                 | Playwright CT  |
-| E2E Tests       | ≤10%          | All must pass                 | Playwright E2E |
-| BDD Scenarios   | 100% coverage | `npm run bdd:check`           | Cucumber       |
+| Layer           | Target Ratio  | CI Gate           | Framework      |
+| --------------- | ------------- | ----------------- | -------------- |
+| Unit Tests      | ≥70%          | Advisory (review) | Jest           |
+| Component Tests | 10-25%        | All must pass     | Playwright CT  |
+| E2E Tests       | ≤10%          | All must pass     | Playwright E2E |
+| BDD Scenarios   | 100% coverage | Advisory (review) | Cucumber       |
 
 #### Why This Structure?
 
@@ -415,45 +415,14 @@ The project enforces a **test pyramid architecture** to ensure fast feedback, ma
 3. **Reliability**: Fewer flaky tests (E2E tests are most flaky)
 4. **Comprehensive Coverage**: Each layer tests different aspects
 
-#### Pyramid Health Check
+#### Pyramid Health (advisory)
 
-Run the health check locally:
-
-```bash
-# Visual report
-npm run test:pyramid
-
-# Strict validation (fails if ratios violated)
-npm run test:pyramid:strict
-
-# JSON output for CI/automation
-npm run test:pyramid -- --json
-```
-
-Example output:
-
-```
-🔺 Test Pyramid Health Check
-════════════════════════════════════════════════════════════
-
-📊 Test Distribution:
-
-   Unit Tests:      244 files, 5116 cases (84%)
-   Component Tests: 33 files, 530 cases (11%)
-   E2E Tests:       14 files, 67 cases (5%)
-   ─────────────────────────────────────
-   Total:           291 files, 5713 cases
-
-📐 Test Pyramid:
-
-   E2E        [█                   ] 5%
-   Component  [██                  ] 11%
-   Unit       [████████████████    ] 84%
-
-🏥 Pyramid Health:
-
-   ✅ Pyramid structure is healthy
-```
+The distribution above is **advisory guidance**, not an automated CI gate. The
+`test:pyramid` health-check script (and its `test-pyramid` CI job) were removed
+in audit epic #3384: the strict check could not structurally fail — a ~91% unit
+share against a 90% cap produced a warning, never a non-zero exit — so it gave
+no real signal. Layer ratios are now maintained by review judgment; line/branch
+coverage thresholds remain enforced by the required `test-coverage` job.
 
 #### When to Add Each Test Type
 
@@ -1127,16 +1096,14 @@ await page.evaluate(() => console.log("Debug from browser"));
 
 ### Commands
 
-| Command                       | Purpose                            | Speed |
-| ----------------------------- | ---------------------------------- | ----- |
-| `npm test`                    | Unit + UI + Component tests        | ~30s  |
-| `npm run test:all`            | All tests including E2E            | ~5min |
-| `npm run test:unit`           | Unit tests only                    | ~8s   |
-| `npm run test:component`      | Component tests                    | ~30s  |
-| `npm run test:e2e:docker`     | E2E in Docker                      | ~3min |
-| `npm run bdd:check`           | BDD coverage check                 | ~5s   |
-| `npm run test:pyramid`        | Test pyramid health check          | ~2s   |
-| `npm run test:pyramid:strict` | Pyramid check (fails on violation) | ~2s   |
+| Command                   | Purpose                       | Speed |
+| ------------------------- | ----------------------------- | ----- |
+| `npm test`                | Unit + UI + Component tests   | ~30s  |
+| `npm run test:all`        | All tests including E2E       | ~5min |
+| `npm run test:unit`       | Unit tests only               | ~8s   |
+| `npm run test:component`  | Component tests               | ~30s  |
+| `npm run test:e2e:docker` | E2E in Docker                 | ~3min |
+| `npm run bdd:check`       | BDD coverage check (advisory) | ~5s   |
 
 ### Coverage Targets
 
