@@ -157,6 +157,63 @@ function fakeFetchError(status: number, statusText: string): typeof fetch {
   }) as typeof fetch;
 }
 
+/**
+ * Fetch fake that records the RequestInit it was called with (so tests can
+ * assert on the Authorization / GitHub headers the service attaches), then
+ * returns `response` as a 200.
+ */
+function fakeFetchCapturing(response: Uint8Array, sink: { init?: RequestInit }): typeof fetch {
+  return (async (_url: string | URL | Request, init?: RequestInit) => {
+    sink.init = init;
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      arrayBuffer: async () =>
+        response.buffer.slice(response.byteOffset, response.byteOffset + response.byteLength),
+    } as unknown as Response;
+  }) as typeof fetch;
+}
+
+/**
+ * Fetch fake mimicking a PRIVATE GitHub repo: requires a `Bearer` Authorization
+ * header. Without it → 404 (GitHub hides private-repo existence rather than 403).
+ * With it → returns the tarball. Models the real auth gate end-to-end.
+ */
+function fakeFetchRequiringAuth(response: Uint8Array): typeof fetch {
+  return (async (_url: string | URL | Request, init?: RequestInit) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    const auth = headers.Authorization ?? headers.authorization;
+    if (!auth || !auth.startsWith("Bearer ")) {
+      return {
+        ok: false,
+        status: 404,
+        statusText: "Not Found",
+        arrayBuffer: async () => new ArrayBuffer(0),
+      } as unknown as Response;
+    }
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      arrayBuffer: async () =>
+        response.buffer.slice(response.byteOffset, response.byteOffset + response.byteLength),
+    } as unknown as Response;
+  }) as typeof fetch;
+}
+
+/**
+ * Fetch fake that throws an error embedding the request headers (incl. the
+ * Authorization PAT) — models a third-party fetch impl that echoes the request
+ * on network failure. Used to verify the service redacts leaked PATs.
+ */
+function fakeFetchThrowingWithAuth(): typeof fetch {
+  return (async (_url: string | URL | Request, init?: RequestInit) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    throw new Error(`network down; request headers: ${JSON.stringify(headers)}`);
+  }) as typeof fetch;
+}
+
 describe("BootstrapAssetSpaceService", () => {
   let tempBase: string;
 
@@ -338,6 +395,128 @@ describe("BootstrapAssetSpaceService", () => {
       await expect(
         svc.pullAssetSpace("not-a-github-url", "main", path.join(tempBase, "t")),
       ).rejects.toThrow(/invalid URL shape/);
+    });
+  });
+
+  describe("token auth (private-repo support)", () => {
+    // Classic PAT shape: ghp_ + 36 urlsafe chars → matches the service's
+    // redaction PAT_REGEX (gh[pousr]_[A-Za-z0-9_]{36,}).
+    const TOKEN = "ghp_0123456789abcdefghijklmnopqrstuvwxyz";
+
+    it("attaches Authorization: Bearer + GitHub headers when token provided", async () => {
+      const tarball = buildFakeGitHubTarball("kitelev", "exoas-priv", "abc1234", [
+        { path: "README.md", content: "# priv" },
+      ]);
+      const sink: { init?: RequestInit } = {};
+      const svc = new BootstrapAssetSpaceService({
+        fetchImpl: fakeFetchCapturing(tarball, sink),
+        token: TOKEN,
+      });
+      await svc.pullAssetSpace(
+        "https://github.com/kitelev/exoas-priv",
+        "main",
+        path.join(tempBase, "priv"),
+      );
+      const headers = (sink.init?.headers ?? {}) as Record<string, string>;
+      expect(headers.Authorization).toBe(`Bearer ${TOKEN}`);
+      expect(headers["User-Agent"]).toBe("exocortex-cli");
+      expect(headers["X-GitHub-Api-Version"]).toBe("2022-11-28");
+    });
+
+    it("omits Authorization header when no token (anonymous path unchanged)", async () => {
+      const tarball = buildFakeGitHubTarball("kitelev", "exoas-pub", "def5678", [
+        { path: "README.md", content: "# pub" },
+      ]);
+      const sink: { init?: RequestInit } = {};
+      const svc = new BootstrapAssetSpaceService({
+        fetchImpl: fakeFetchCapturing(tarball, sink),
+      });
+      await svc.pullAssetSpace(
+        "https://github.com/kitelev/exoas-pub",
+        "main",
+        path.join(tempBase, "pub"),
+      );
+      // No headers attached at all — request shape byte-identical to pre-token.
+      expect(sink.init?.headers).toBeUndefined();
+    });
+
+    it("treats empty-string token as anonymous (no Authorization header)", async () => {
+      const tarball = buildFakeGitHubTarball("kitelev", "exoas-pub", "aaa1111", [
+        { path: "README.md", content: "# pub" },
+      ]);
+      const sink: { init?: RequestInit } = {};
+      const svc = new BootstrapAssetSpaceService({
+        fetchImpl: fakeFetchCapturing(tarball, sink),
+        token: "",
+      });
+      await svc.pullAssetSpace(
+        "https://github.com/kitelev/exoas-pub",
+        "main",
+        path.join(tempBase, "pub-empty"),
+      );
+      expect(sink.init?.headers).toBeUndefined();
+    });
+
+    // Integration: private-shape AUTHENTICATED tarball (full-40-char-SHA wrapper
+    // + ustar prefix-split UUID asset, the #3390 shape) behind an auth gate.
+    it("materializes a private-shape tarball WITH token (40-char SHA wrapper)", async () => {
+      const SHA40 = "306f656e6159944a4ae18beeb618d13611826b9b";
+      const UUID = "b2c3d4e5-f6a7-8901-bcde-f01234567890";
+      const tarball = buildAuthGitHubTarball("kitelev", "exoas-priv", SHA40, UUID, "private asset body");
+      const svc = new BootstrapAssetSpaceService({
+        fetchImpl: fakeFetchRequiringAuth(tarball),
+        token: TOKEN,
+      });
+      const target = path.join(tempBase, "assetspaces", "priv");
+
+      const result = await svc.pullAssetSpace(
+        "https://github.com/kitelev/exoas-priv",
+        "main",
+        target,
+      );
+
+      expect(result.sha).toBe(SHA40);
+      expect(result.fileCount).toBe(2);
+      expect(existsSync(path.join(target, `${UUID}.md`))).toBe(true);
+      expect(readFileSync(path.join(target, `${UUID}.md`), "utf8")).toBe("private asset body");
+    });
+
+    // revert-verify anchor: removing the header-injection block in the service
+    // makes THIS test fail (no auth → 404). Verified empirically pre-merge.
+    it("fails gracefully on private repo WITHOUT token — 404, no partial state", async () => {
+      const SHA40 = "306f656e6159944a4ae18beeb618d13611826b9b";
+      const UUID = "c3d4e5f6-a7b8-9012-cdef-012345678901";
+      const tarball = buildAuthGitHubTarball("kitelev", "exoas-priv", SHA40, UUID, "private asset body");
+      const svc = new BootstrapAssetSpaceService({
+        fetchImpl: fakeFetchRequiringAuth(tarball),
+      }); // no token → anonymous → 404
+      const target = path.join(tempBase, "assetspaces", "priv-noauth");
+
+      await expect(
+        svc.pullAssetSpace("https://github.com/kitelev/exoas-priv", "main", target),
+      ).rejects.toThrow(/fetch failed \(404 Not Found\).*--token/);
+      // No partial state: target dir never created (fetch fails before staging).
+      expect(existsSync(target)).toBe(false);
+    });
+
+    it("redacts a leaked PAT from fetch-error messages (security)", async () => {
+      const svc = new BootstrapAssetSpaceService({
+        fetchImpl: fakeFetchThrowingWithAuth(),
+        token: TOKEN,
+      });
+      let caught: Error | undefined;
+      try {
+        await svc.pullAssetSpace(
+          "https://github.com/kitelev/exoas-priv",
+          "main",
+          path.join(tempBase, "redact"),
+        );
+      } catch (e) {
+        caught = e as Error;
+      }
+      expect(caught).toBeDefined();
+      expect(caught!.message).not.toContain(TOKEN);
+      expect(caught!.message).toContain("***REDACTED***");
     });
   });
 
