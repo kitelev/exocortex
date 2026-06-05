@@ -37,7 +37,7 @@ npm run test:e2e:docker # E2E tests in Docker
 npm run test:coverage
 
 # BDD coverage check
-npm run bdd:check       # Enforced in CI (≥80%)
+npm run bdd:check       # BDD coverage report (advisory, not a CI gate)
 ```
 
 ### Writing Your First Test
@@ -382,7 +382,7 @@ Feature: Daily Tasks Table in Layout
 
 ### Test Pyramid Policy
 
-The project enforces a **test pyramid architecture** to ensure fast feedback, maintainable tests, and optimal resource usage. This policy is validated automatically in CI.
+The project follows a **test pyramid architecture** to ensure fast feedback, maintainable tests, and optimal resource usage. This is advisory guidance maintained by review judgment; the automated `test-pyramid` CI gate was removed (see "Pyramid Health (advisory)" below). Line/branch coverage thresholds remain enforced by the required `test-coverage` job.
 
 #### Pyramid Structure
 
