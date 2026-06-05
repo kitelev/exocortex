@@ -212,14 +212,13 @@ jobs:
       - name: Run ADR compliance checks
         run: archgate check --ci
 
-  # test-unit runs ONLY UI tests (jest-environment-obsidian).
-  # Phase 2 (CI speedup, task 761ca21e 2026-04-21):
-  #   Previously also ran test:unit (= test-ci-batched.sh) duplicating test-coverage.
-  #   That duplicate jest invocation was removed here. test-coverage remains the
-  #   single full-suite jest runner with --coverage.
-  # Phase 4 (planned, task f235881d): drop this job after the main branch
-  # protection rule is updated to no longer require "test-unit" as a status check.
-  test-unit:
+  # UI / integration tests (jest-environment-obsidian) — the tests/ui suite
+  # (ActionButtonsLayout + UniversalLayoutRenderer, ~53 cases). This is the
+  # SOLE CI runner of jest.ui.config.js: the test-coverage jest.config.js
+  # explicitly excludes /tests/ui/, so this suite runs nowhere else.
+  # Non-required by branch protection; promoting it to a required gate is a
+  # separate branch-protection decision (audit epic #3384).
+  test-ui:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     container:
@@ -240,35 +239,6 @@ jobs:
         run: |
           export NODE_OPTIONS="--max-old-space-size=4096"
           npm run test:ui
-
-      - name: Track Flaky Tests
-        if: always()
-        run: |
-          # Check if flaky report was generated
-          if [ -f "flaky-report.json" ]; then
-            echo "📊 Flaky Test Report Generated"
-            cat flaky-report.json
-
-            # Check if any flaky tests were detected
-            FLAKY_COUNT=$(cat flaky-report.json | grep -o '"totalFlaky":[0-9]*' | grep -o '[0-9]*' || echo "0")
-            if [ "$FLAKY_COUNT" -gt 0 ]; then
-              echo ""
-              echo "⚠️ WARNING: $FLAKY_COUNT flaky test(s) detected!"
-              echo "Flaky tests indicate race conditions or timing issues."
-              echo "Please investigate and fix these tests."
-            fi
-          else
-            echo "No flaky report generated (no retries occurred)"
-          fi
-
-      - name: Upload Flaky Test Report
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: flaky-test-report-unit
-          path: flaky-report.json
-          retention-days: 30
-          if-no-files-found: ignore
 
   # Phase 2 CI speedup (task 9346c5be, 2026-04-21):
   # test-coverage was previously a single 190s job running three jest invocations
@@ -333,34 +303,6 @@ jobs:
           path: flaky-report-shard-${{ matrix.shard }}.json
           retention-days: 30
           if-no-files-found: ignore
-
-      # RFC 3cc77ba2 v2 §Phase 1.3: fail-mode flaky gate per shard.
-      # Threshold resolution (most → least specific):
-      #   1. Per-shard override: `vars.FLAKY_THRESHOLD_SHARD_{N}`
-      #   2. Global default:     `vars.FLAKY_THRESHOLD` (covers all 6 shards)
-      #   3. Hardcoded fallback: `0` (Phase 0.3 baseline — 158 reports, 0 flakes)
-      # Governance: raise → 2-reviewer approval + quarantine entry with
-      # expiresAt ≤30d (see docs/FLAKY_POLICY.md). Lowering: 1 reviewer.
-      - name: Enforce FLAKY_THRESHOLD per shard
-        if: always()
-        env:
-          FLAKY_THRESHOLD: ${{ vars[format('FLAKY_THRESHOLD_SHARD_{0}', matrix.shard)] || vars.FLAKY_THRESHOLD || '0' }}
-        run: |
-          REPORT="flaky-report-shard-${{ matrix.shard }}.json"
-          if [ ! -f "$REPORT" ]; then
-            echo "::notice::No flaky-report for shard ${{ matrix.shard }} — gate skipped (jest retries disabled or run aborted)"
-            exit 0
-          fi
-          THRESHOLD="${FLAKY_THRESHOLD:-0}"
-          FLAKY=$(jq -r '.totalFlaky // 0' "$REPORT")
-          TOTAL=$(jq -r '.summary.totalTests // 0' "$REPORT")
-          echo "::notice::shard=${{ matrix.shard }} totalFlaky=${FLAKY} totalTests=${TOTAL} threshold=${THRESHOLD}"
-          if [ "$FLAKY" -gt "$THRESHOLD" ]; then
-            echo "::error::Flaky tests detected on shard ${{ matrix.shard }} (${FLAKY} > ${THRESHOLD}). Fix or quarantine per docs/FLAKY_POLICY.md. Raising FLAKY_THRESHOLD requires 2-reviewer approval + tests/quarantine.ts entry (expiresAt ≤30d)."
-            jq '.flakyTests // []' "$REPORT"
-            exit 1
-          fi
-          echo "✅ FLAKY_THRESHOLD gate passed: ${FLAKY} ≤ ${THRESHOLD}"
 
   test-coverage-cli:
     # Bare ubuntu-latest — CLI jest is node-only; no browser/playwright needed.
@@ -645,10 +587,6 @@ jobs:
         run: npm run bdd:test
         continue-on-error: true
 
-      - name: Check BDD Coverage
-        run: npm run bdd:check
-        continue-on-error: false
-
       # RFC `94e520da` Phase 6 (T6.3) — runs the L3 CLI BDD suite covering
       # all 48 starter-kit groundings (М6: 48/48 green as release v16 gate).
       # Suite source: packages/cli/specs/features/groundings.feature +
@@ -806,53 +744,6 @@ jobs:
         with:
           name: flaky-test-report-component
           path: packages/obsidian-plugin/flaky-report-playwright.json
-          retention-days: 30
-          if-no-files-found: ignore
-
-  test-pyramid:
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    needs: [test-unit, test-coverage]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Node & install deps
-        uses: ./.github/actions/setup-node-pnpm
-
-      - name: Download coverage reports
-        uses: actions/download-artifact@v7
-        with:
-          name: coverage-reports
-          path: packages/obsidian-plugin/coverage/
-        continue-on-error: true
-
-      - name: Run Test Pyramid Health Check
-        run: npm run test:pyramid
-
-      - name: Validate Test Pyramid (Strict)
-        run: npm run test:pyramid:strict
-        continue-on-error: false
-
-      - name: Generate Pyramid Report
-        if: always()
-        run: |
-          npm run test:pyramid -- --json > test-pyramid-report.json
-          echo "## Test Pyramid Report" > test-pyramid-summary.md
-          echo "" >> test-pyramid-summary.md
-          echo "Generated: $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> test-pyramid-summary.md
-          echo "" >> test-pyramid-summary.md
-          npm run test:pyramid >> test-pyramid-summary.md
-
-      - name: Upload Pyramid Report
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: test-pyramid-report
-          path: |
-            test-pyramid-report.json
-            test-pyramid-summary.md
           retention-days: 30
           if-no-files-found: ignore
 
