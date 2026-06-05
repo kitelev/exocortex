@@ -382,6 +382,19 @@ export class AssetSpaceManager {
     }
   }
 
+  /**
+   * Release a staging dir previously returned by {@link pullAssetSpace}. The
+   * pull KEEPS the dir on success (caller owns its lifetime — see that method's
+   * docstring), so the Bootstrap / Add-AssetSpace orchestrator calls this after
+   * moving the dir into the vault (Issue #3391) so the tracker entry does not
+   * leak. Delegates to {@link StagingDirTracker.release}, which tolerates an
+   * already-removed dir. No-op when no tracker is wired (the pull path requires
+   * one, so a release without a tracker is a benign mismatch, not an error).
+   */
+  public async releaseStaging(stagingPath: string): Promise<void> {
+    await this.stagingTracker?.release(stagingPath);
+  }
+
   // ─────────────────────────── public — stubs (Phase 2+3) ─────────────────────
 
   /** STUB — destroy deferred to Phase 2 SwitchCacheLayer / Phase 3 hardSwitchProfile. */
