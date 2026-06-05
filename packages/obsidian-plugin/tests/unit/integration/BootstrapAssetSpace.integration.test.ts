@@ -111,8 +111,9 @@ describe("Bootstrap integration — real GitSubmoduleOps + tmpdir vault (git mod
     const { store } = makeFakeLocalStore();
     const notices: string[] = [];
 
+    const fakePuller = makeFakePuller();
     const cmds = new BootstrapAssetSpaceCommands({
-      puller: makeFakePuller(),
+      getPuller: async () => fakePuller,
       gitOps,
       localStore: store,
       vaultExists: probes.vaultExists,

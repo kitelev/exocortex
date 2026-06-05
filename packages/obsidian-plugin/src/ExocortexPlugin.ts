@@ -109,10 +109,7 @@ import { createAssetSpacePusher } from "./infrastructure/adapters/AssetSpacePush
 import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
 import { SwitchCacheLayer } from "./infrastructure/adapters/SwitchCacheLayer";
 import { ClearSwitchCacheConfirmModal } from "./infrastructure/adapters/ClearSwitchCacheConfirmModal";
-import {
-  AssetSpaceManager,
-  parseGitHubURL,
-} from "./infrastructure/adapters/AssetSpaceManager";
+import { parseGitHubURL } from "./infrastructure/adapters/AssetSpaceManager";
 import { BootstrapAssetSpaceCommands } from "./infrastructure/adapters/BootstrapAssetSpaceCommands";
 import { BootstrapVaultModal } from "./presentation/modals/BootstrapVaultModal";
 import { AddAssetSpaceModal } from "./presentation/modals/AddAssetSpaceModal";
@@ -124,6 +121,7 @@ import { GitHubRestClient } from "./infrastructure/adapters/GitHubRestClient";
 import { GitSubmoduleOps } from "./infrastructure/adapters/GitSubmoduleOps";
 import {
   buildHardSwitchDeps,
+  buildAssetSpacePuller,
   type HardSwitchDeps,
 } from "./infrastructure/adapters/HardSwitchDepsFactory";
 import {
@@ -2885,7 +2883,6 @@ export default class ExocortexPlugin extends Plugin {
    */
   private registerBootstrapCommands(
     hardSwitchDeps: {
-      assetSpaceManager: AssetSpaceManager;
       gitOps: GitSubmoduleOps;
     },
     localDataStore: PluginLocalDataStore,
@@ -2896,7 +2893,17 @@ export default class ExocortexPlugin extends Plugin {
     };
 
     const bootstrapCommands = new BootstrapAssetSpaceCommands({
-      puller: hardSwitchDeps.assetSpaceManager,
+      // Issue #3382 — rebuild the AssetSpaceManager per invocation from the
+      // CURRENT stored PAT instead of reusing the onload-captured
+      // `hardSwitchDeps.assetSpaceManager` (which froze an empty-PAT client
+      // when the vault had no PAT at load time). A PAT configured after onload
+      // now authenticates Bootstrap / Add-AssetSpace pulls without a reload.
+      getPuller: () =>
+        buildAssetSpacePuller({
+          app: this.app,
+          localDataStore,
+          notifier: this.notifier,
+        }),
       gitOps: hardSwitchDeps.gitOps,
       localStore: localDataStore,
       vaultExists: (p) => this.app.vault.adapter.exists(p),

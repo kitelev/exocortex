@@ -37,6 +37,44 @@ export interface BuildHardSwitchDepsOptions {
   logger: ILogger;
 }
 
+export interface BuildAssetSpacePullerOptions {
+  app: App;
+  localDataStore: PluginLocalDataStore;
+  notifier: INotificationService;
+}
+
+/**
+ * Build a fresh {@link AssetSpaceManager} (the REST tarball puller used by the
+ * Bootstrap / Add-AssetSpace commands and the hard-switch materialize path)
+ * from the CURRENTLY stored GitHub PAT.
+ *
+ * Reads `LocalSecretsStore.getSecret("pat")` at call time. Invoking this
+ * per command-execution — rather than caching the value captured at plugin
+ * onload — picks up a PAT the user configured AFTER load without a reload.
+ * This is the fix for Issue #3382: the onload-captured manager held a stale
+ * empty-PAT (unauthenticated) client, so a Bootstrap / Add-AssetSpace pull of
+ * a PRIVATE repo failed with 401/404 even though the user had since entered a
+ * valid PAT in Settings.
+ *
+ * An absent PAT (`getSecret` → null) yields an unauthenticated client (empty
+ * string) — `GitHubRestClient` accepts that for public-repo reads.
+ */
+export async function buildAssetSpacePuller(
+  opts: BuildAssetSpacePullerOptions,
+): Promise<AssetSpaceManager> {
+  const { app, localDataStore, notifier } = opts;
+  const secretsStore = new LocalSecretsStore({ app });
+  const pat = await secretsStore.getSecret("pat");
+  const githubClient = new GitHubRestClient({ app, pat: pat ?? "" });
+  const stagingTracker = new StagingDirTracker({ localDataStore });
+  return new AssetSpaceManager({
+    app,
+    client: githubClient,
+    notifications: notifier,
+    stagingTracker,
+  });
+}
+
 /**
  * Wire the desktop hard-switch dependencies. Extracted from
  * `ExocortexPlugin.onload` for testability (mirrors the
@@ -62,15 +100,16 @@ export async function buildHardSwitchDeps(
 ): Promise<HardSwitchDeps | null> {
   const { app, localDataStore, notifier, logger } = opts;
   try {
-    const secretsStore = new LocalSecretsStore({ app });
-    const pat = await secretsStore.getSecret("pat");
-    const githubClient = new GitHubRestClient({ app, pat: pat ?? "" });
-    const stagingTracker = new StagingDirTracker({ localDataStore });
-    const assetSpaceManager = new AssetSpaceManager({
+    // NOTE: this AssetSpaceManager is captured for the lifetime of the plugin
+    // (used by the hard-switch materialize + push paths). The Bootstrap /
+    // Add-AssetSpace commands deliberately do NOT reuse it — they rebuild a
+    // fresh one per invocation via {@link buildAssetSpacePuller} so a PAT set
+    // after onload is honoured (Issue #3382). Hard-switch / push keep onload
+    // capture (they surface a «Reload to activate» hint instead).
+    const assetSpaceManager = await buildAssetSpacePuller({
       app,
-      client: githubClient,
-      notifications: notifier,
-      stagingTracker,
+      localDataStore,
+      notifier,
     });
     const vaultRootPath =
       (app.vault.adapter as unknown as { basePath?: string }).basePath ?? "";

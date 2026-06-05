@@ -72,7 +72,15 @@ export interface MaterializeResult {
 }
 
 export interface BootstrapAssetSpaceCommandsDeps {
-  puller: IAssetSpacePuller;
+  /**
+   * Lazily resolve the REST tarball puller. Invoked once per materialise (i.e.
+   * at command-execution time, NOT at construction), so the puller is built
+   * from the CURRENT GitHub PAT. Issue #3382: the previous fixed `puller`
+   * captured an onload-time client, ignoring a PAT the user entered after the
+   * plugin loaded → 401/404 on private-repo pulls. Production wiring resolves
+   * this to {@link HardSwitchDepsFactory.buildAssetSpacePuller}.
+   */
+  getPuller: () => Promise<IAssetSpacePuller>;
   gitOps: IGitSubmoduleOps;
   localStore: IFileOnlyAssetSpaceStore;
   /** `vault.adapter.exists(path)` wrapper. */
@@ -326,7 +334,10 @@ export class BootstrapAssetSpaceCommands {
     submodulePath: string,
     isGit: boolean,
   ): Promise<MaterializeResult> {
-    const result = await this.d.puller.pullAssetSpace(
+    // Resolve the puller lazily so the pull uses the PAT current at
+    // command-execution time, not the one captured at plugin onload (#3382).
+    const puller = await this.d.getPuller();
+    const result = await puller.pullAssetSpace(
       `bootstrap-${basename(submodulePath)}`,
       url,
       this.ref,

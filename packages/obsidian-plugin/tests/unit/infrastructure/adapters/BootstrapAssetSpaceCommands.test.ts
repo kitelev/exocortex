@@ -79,7 +79,7 @@ function makeHarness(opts: {
   };
 
   const deps: BootstrapAssetSpaceCommandsDeps = {
-    puller,
+    getPuller: async () => puller,
     gitOps,
     localStore,
     vaultExists,
@@ -346,5 +346,85 @@ describe("BootstrapAssetSpaceCommands.invokeAddAssetSpace", () => {
     await h.cmds.invokeAddAssetSpace();
     expect(h.puller.pullAssetSpace).not.toHaveBeenCalled();
     expect(h.notices.some((n) => /invalid URL/i.test(n))).toBe(true);
+  });
+});
+
+describe("BootstrapAssetSpaceCommands — lazy per-invocation puller (Issue #3382)", () => {
+  /**
+   * The provider mirrors production wiring: it reads `currentPat` at the
+   * moment it is invoked and bakes that value into the puller it returns. A
+   * fixed-`puller` (pre-fix) design would have frozen the empty onload PAT;
+   * the fix calls `getPuller()` at command-execution time, so the PAT the user
+   * set AFTER construction is the one the pull observes.
+   *
+   * Revert-verify: pointing `materialize` at a puller captured in the deps
+   * (the old `puller` field, resolved once at construction with `currentPat`
+   * still "") makes both assertions below FAIL — the recorded PAT stays "".
+   */
+  function makeLazyHarness() {
+    const pullCalls: Array<{ patAtBuild: string; url: string }> = [];
+    let currentPat = ""; // empty at "onload"
+    const getPuller = jest.fn(async (): Promise<IAssetSpacePuller> => {
+      const patAtBuild = currentPat;
+      return {
+        pullAssetSpace: jest.fn(
+          async (asUid: string, url: string, _ref?: string) => {
+            pullCalls.push({ patAtBuild, url });
+            return { asUid, stagingPath: `/tmp/staging-${asUid}`, sha: "abc1234" };
+          },
+        ),
+      };
+    });
+
+    const deps: BootstrapAssetSpaceCommandsDeps = {
+      getPuller,
+      gitOps: {
+        renameIntoVault: jest.fn(async () => undefined),
+        readGitmodulesEntries: jest.fn(async () => []),
+        appendGitmodulesEntry: jest.fn(async () => ({ added: true })),
+      },
+      localStore: { upsertFileOnlyAssetSpace: jest.fn(async () => undefined) },
+      vaultExists: jest.fn(async (p: string) => p === ".git"),
+      listFolder: jest.fn(async () => ({ files: [], folders: [] })),
+      isGitVault: async () => true,
+      validateUrl: () => undefined,
+      deriveFolderName: () => "pmbok-ontology",
+      promptBootstrapUrls: jest.fn(async () => null),
+      promptAddAssetSpaceUrl: jest.fn(async () => ({
+        url: "https://github.com/kitelev/exoas-pmbok-ontology",
+      })),
+      confirm: jest.fn(async () => true),
+      notify: jest.fn(),
+    };
+
+    return {
+      cmds: new BootstrapAssetSpaceCommands(deps),
+      getPuller,
+      pullCalls,
+      setPat: (pat: string) => {
+        currentPat = pat;
+      },
+    };
+  }
+
+  it("resolves the puller at invocation, using a PAT set AFTER construction", async () => {
+    const h = makeLazyHarness();
+    // Plugin onload already happened (cmds constructed) with NO PAT.
+    // User configures the PAT afterwards, without reloading:
+    h.setPat("github_pat_AFTERONLOAD");
+
+    await h.cmds.invokeAddAssetSpace();
+
+    // Provider was invoked at command time (not frozen at construction)…
+    expect(h.getPuller).toHaveBeenCalledTimes(1);
+    // …and the pull observed the CURRENT PAT, not the empty onload value.
+    expect(h.pullCalls).toHaveLength(1);
+    expect(h.pullCalls[0].patAtBuild).toBe("github_pat_AFTERONLOAD");
+  });
+
+  it("does NOT resolve the puller until a command runs (no eager onload build)", () => {
+    const h = makeLazyHarness();
+    // Merely constructing the commands must not read the PAT / build a client.
+    expect(h.getPuller).not.toHaveBeenCalled();
   });
 });
