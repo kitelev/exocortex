@@ -1,7 +1,12 @@
 import path from "path";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { PathResolver } from "../utils/PathResolver.js";
-import { FrontmatterService, DateFormatter } from "exocortex";
+import {
+  FrontmatterService,
+  DateFormatter,
+  extractAssetReference,
+} from "exocortex";
+import { findReferencedFile, normalizePath } from "./folderRepairHelpers.js";
 import { TransactionManager } from "../utils/TransactionManager.js";
 import { InvalidArgumentsError } from "../utils/errors/index.js";
 
@@ -673,7 +678,7 @@ export class BatchExecutor {
     }
 
     // Extract reference from various formats
-    const reference = this.extractReference(isDefinedBy);
+    const reference = extractAssetReference(isDefinedBy);
     if (!reference) {
       return {
         success: false,
@@ -684,7 +689,11 @@ export class BatchExecutor {
     }
 
     // Find the referenced file
-    const referencedFilePath = await this.findReferencedFile(reference, relativePath);
+    const referencedFilePath = await findReferencedFile(
+      this.fsAdapter,
+      reference,
+      relativePath,
+    );
     if (!referencedFilePath) {
       return {
         success: false,
@@ -701,7 +710,7 @@ export class BatchExecutor {
     const currentFolder = rawCurrentFolder === "." ? "" : rawCurrentFolder;
 
     // Check if already in correct folder
-    if (this.normalizePath(currentFolder) === this.normalizePath(expectedFolder)) {
+    if (normalizePath(currentFolder) === normalizePath(expectedFolder)) {
       return {
         success: true,
         command: operation.command,
@@ -743,85 +752,4 @@ export class BatchExecutor {
     };
   }
 
-  /**
-   * Extract reference from various formats:
-   * - [[Reference]] -> Reference
-   * - [[uid|alias]] -> uid (alias suffix stripped — getFirstLinkpathDest rejects pipe-aliased linkpath)
-   * - "[[Reference]]" -> Reference
-   * - Reference -> Reference
-   */
-  private extractReference(value: unknown): string | null {
-    if (typeof value !== "string") {
-      return null;
-    }
-
-    // Remove quotes if present
-    let cleaned = value.trim().replace(/^["']|["']$/g, "");
-
-    // Remove wiki-link brackets if present
-    cleaned = cleaned.replace(/^\[\[|\]\]$/g, "");
-
-    // Strip alias suffix (everything after first `|`) — getFirstLinkpathDest
-    // returns null for pipe-aliased linkpaths, breaking alias-form refs.
-    const pipeIdx = cleaned.indexOf("|");
-    if (pipeIdx !== -1) {
-      cleaned = cleaned.slice(0, pipeIdx).trim();
-    }
-
-    return cleaned || null;
-  }
-
-  /**
-   * Find the referenced file by resolving the reference
-   */
-  private async findReferencedFile(
-    reference: string,
-    sourceFilePath: string,
-  ): Promise<string | null> {
-    // Normalize reference (add .md extension if not present)
-    const normalizedRef = reference.endsWith(".md")
-      ? reference
-      : `${reference}.md`;
-
-    // Try 1: Direct path (if reference looks like a path)
-    if (reference.includes("/")) {
-      const exists = await this.fsAdapter.fileExists(normalizedRef);
-      if (exists) {
-        return normalizedRef;
-      }
-    }
-
-    // Try 2: Same folder as source file
-    const sourceDir = path.dirname(sourceFilePath);
-    const sameFolderPath = sourceDir !== "."
-      ? `${sourceDir}/${normalizedRef}`
-      : normalizedRef;
-    const sameFolderExists = await this.fsAdapter.fileExists(sameFolderPath);
-    if (sameFolderExists) {
-      return sameFolderPath;
-    }
-
-    // Try 3: Search by UID
-    const uidPath = await this.fsAdapter.findFileByUID(reference);
-    if (uidPath) {
-      return uidPath;
-    }
-
-    // Try 4: Search by filename across vault
-    const allFiles = await this.fsAdapter.getMarkdownFiles();
-    const matchingFile = allFiles.find((file) => {
-      const baseName = path.basename(file, ".md");
-      const refBaseName = path.basename(normalizedRef, ".md");
-      return baseName === refBaseName;
-    });
-
-    return matchingFile || null;
-  }
-
-  /**
-   * Normalize path for comparison
-   */
-  private normalizePath(filePath: string): string {
-    return filePath.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/$/, "");
-  }
 }

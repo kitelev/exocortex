@@ -92,6 +92,16 @@ jest.unstable_mockModule("exocortex", () => ({
   FrontmatterService: jest.fn(() => mockFrontmatterService),
   DateFormatter: mockDateFormatter,
   MetadataHelpers: mockMetadataHelpers,
+  // Faithful pure stub mirroring exocortex's extractAssetReference (the
+  // canonical shared helper consumed by FolderRepairExecutor — audit #3384).
+  extractAssetReference: (value: unknown): string | null => {
+    if (typeof value !== "string") return null;
+    let cleaned = value.trim().replace(/^["']|["']$/g, "");
+    cleaned = cleaned.replace(/^\[\[|\]\]$/g, "");
+    const pipeIdx = cleaned.indexOf("|");
+    if (pipeIdx !== -1) cleaned = cleaned.slice(0, pipeIdx).trim();
+    return cleaned || null;
+  },
   FileNotFoundError: class FileNotFoundError extends Error {},
   FileAlreadyExistsError: class FileAlreadyExistsError extends Error {
     constructor(msg: string) {
