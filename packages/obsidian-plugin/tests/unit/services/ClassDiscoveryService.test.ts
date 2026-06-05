@@ -1,5 +1,6 @@
 import { SPARQLQueryService } from "../../../src/application/services/SPARQLQueryService";
 import { ClassDiscoveryService } from "../../../src/application/services/ClassDiscoveryService";
+import { DomainLiteral as Literal } from "exocortex";
 
 jest.mock("../../../src/application/services/SPARQLQueryService");
 
@@ -37,13 +38,35 @@ describe("ClassDiscoveryService", () => {
         mockSparqlService.query,
         // classQuery results
         [
-          new Map([["class", "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md"]]),
-          new Map([["class", "obsidian://vault/ems/7138261c-f964-4f10-a44e-cb153f14c217.md"]]),
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md",
+            ],
+          ]),
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/7138261c-f964-4f10-a44e-cb153f14c217.md",
+            ],
+          ]),
         ],
         // labelQuery results
         [
-          new Map([["class", "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md"], ["label", "ems__Task"]]),
-          new Map([["class", "obsidian://vault/ems/7138261c-f964-4f10-a44e-cb153f14c217.md"], ["label", "ems__Area"]]),
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md",
+            ],
+            ["label", "ems__Task"],
+          ]),
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/7138261c-f964-4f10-a44e-cb153f14c217.md",
+            ],
+            ["label", "ems__Area"],
+          ]),
         ],
       );
 
@@ -66,22 +89,61 @@ describe("ClassDiscoveryService", () => {
       mockDiscoveryQueries(
         mockSparqlService.query,
         [
-          new Map([["class", "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md"]]),
-          new Map([["class", "obsidian://vault/ems/7138261c-f964-4f10-a44e-cb153f14c217.md"]]),
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md",
+            ],
+          ]),
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/7138261c-f964-4f10-a44e-cb153f14c217.md",
+            ],
+          ]),
         ],
         [
-          new Map([["class", "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md"], ["label", "ems__Task"]]),
-          new Map([["class", "obsidian://vault/ems/7138261c-f964-4f10-a44e-cb153f14c217.md"], ["label", "ems__Area"]]),
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md",
+            ],
+            ["label", "ems__Task"],
+          ]),
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/7138261c-f964-4f10-a44e-cb153f14c217.md",
+            ],
+            ["label", "ems__Area"],
+          ]),
         ],
-        // uidQuery results
+        // uidQuery results — the uid binding is a production-shaped RDF Literal,
+        // NOT a bare string. Literal.toString() serializes to the quoted
+        // N-Triples form (`"<uid>"`), so this fixture is what guards against the
+        // class ref being corrupted to `[[\"<uid>\"]]` — discoverClasses must
+        // read the lexical `.value`, not `.toString()`.
         [
-          new Map([["class", "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md"], ["uid", "1b20a8f0-d745-4e93-91db-4531b3df120e"]]),
-          new Map([["class", "obsidian://vault/ems/7138261c-f964-4f10-a44e-cb153f14c217.md"], ["uid", "7138261c-f964-4f10-a44e-cb153f14c217"]]),
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md",
+            ],
+            ["uid", new Literal("1b20a8f0-d745-4e93-91db-4531b3df120e")],
+          ]),
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/7138261c-f964-4f10-a44e-cb153f14c217.md",
+            ],
+            ["uid", new Literal("7138261c-f964-4f10-a44e-cb153f14c217")],
+          ]),
         ],
       );
 
       const classes = await service.discoverClasses();
 
+      // Must be the bare uuid (no surrounding quotes from Literal.toString()).
       expect(classes.find((c) => c.className === "ems__Task")!.classUid).toBe(
         "1b20a8f0-d745-4e93-91db-4531b3df120e",
       );
@@ -93,8 +155,23 @@ describe("ClassDiscoveryService", () => {
     it("should leave classUid undefined when the uid query has no matching binding", async () => {
       mockDiscoveryQueries(
         mockSparqlService.query,
-        [new Map([["class", "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md"]])],
-        [new Map([["class", "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md"], ["label", "ems__Task"]])],
+        [
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md",
+            ],
+          ]),
+        ],
+        [
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md",
+            ],
+            ["label", "ems__Task"],
+          ]),
+        ],
         [], // no uid bindings → fall back to label form downstream
       );
 
@@ -113,9 +190,18 @@ describe("ClassDiscoveryService", () => {
           new Map([["class", "obsidian://vault/ems/uuid-project.md"]]),
         ],
         [
-          new Map([["class", "obsidian://vault/ems/uuid-task.md"], ["label", "ems__Task"]]),
-          new Map([["class", "obsidian://vault/ems/uuid-area.md"], ["label", "ems__Area"]]),
-          new Map([["class", "obsidian://vault/ems/uuid-project.md"], ["label", "ems__Project"]]),
+          new Map([
+            ["class", "obsidian://vault/ems/uuid-task.md"],
+            ["label", "ems__Task"],
+          ]),
+          new Map([
+            ["class", "obsidian://vault/ems/uuid-area.md"],
+            ["label", "ems__Area"],
+          ]),
+          new Map([
+            ["class", "obsidian://vault/ems/uuid-project.md"],
+            ["label", "ems__Project"],
+          ]),
         ],
       );
 
@@ -129,12 +215,34 @@ describe("ClassDiscoveryService", () => {
       mockDiscoveryQueries(
         mockSparqlService.query,
         [
-          new Map([["class", "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md"]]),
-          new Map([["class", "obsidian://vault/ems/82c74542-1b14-4217-b852-d84730484b25.md"]]),
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md",
+            ],
+          ]),
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/82c74542-1b14-4217-b852-d84730484b25.md",
+            ],
+          ]),
         ],
         [
-          new Map([["class", "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md"], ["label", "https://exocortex.my/ontology/ems#Task"]]),
-          new Map([["class", "obsidian://vault/ems/82c74542-1b14-4217-b852-d84730484b25.md"], ["label", "https://exocortex.my/ontology/ems#Area"]]),
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md",
+            ],
+            ["label", "https://exocortex.my/ontology/ems#Task"],
+          ]),
+          new Map([
+            [
+              "class",
+              "obsidian://vault/ems/82c74542-1b14-4217-b852-d84730484b25.md",
+            ],
+            ["label", "https://exocortex.my/ontology/ems#Area"],
+          ]),
         ],
       );
 
@@ -167,7 +275,12 @@ describe("ClassDiscoveryService", () => {
       mockDiscoveryQueries(
         mockSparqlService.query,
         [new Map([["class", "https://exocortex.my/ontology/ems#Task"]])],
-        [new Map([["class", "https://exocortex.my/ontology/ems#Task"], ["label", "My Task Type"]])],
+        [
+          new Map([
+            ["class", "https://exocortex.my/ontology/ems#Task"],
+            ["label", "My Task Type"],
+          ]),
+        ],
       );
 
       const classes = await service.discoverClasses();
@@ -183,7 +296,12 @@ describe("ClassDiscoveryService", () => {
           new Map([["class", "obsidian://vault/ems/uuid-task.md"]]),
           new Map([["class", "obsidian://vault/ems/uuid-task.md"]]),
         ],
-        [new Map([["class", "obsidian://vault/ems/uuid-task.md"], ["label", "ems__Task"]])],
+        [
+          new Map([
+            ["class", "obsidian://vault/ems/uuid-task.md"],
+            ["label", "ems__Task"],
+          ]),
+        ],
       );
 
       const classes = await service.discoverClasses();
@@ -210,8 +328,14 @@ describe("ClassDiscoveryService", () => {
           new Map([["class", "obsidian://vault/exo/uuid-class.md"]]),
         ],
         [
-          new Map([["class", "obsidian://vault/ems/uuid-task.md"], ["label", "ems__Task"]]),
-          new Map([["class", "obsidian://vault/exo/uuid-class.md"], ["label", "exo__Class"]]),
+          new Map([
+            ["class", "obsidian://vault/ems/uuid-task.md"],
+            ["label", "ems__Task"],
+          ]),
+          new Map([
+            ["class", "obsidian://vault/exo/uuid-class.md"],
+            ["label", "exo__Class"],
+          ]),
         ],
       );
 
