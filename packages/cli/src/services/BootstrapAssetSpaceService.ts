@@ -31,7 +31,7 @@ const REPO_URL_REGEX = /^https:\/\/github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-
 const MAX_TARBALL_BYTES = 50 * 1024 * 1024; // 50 MB cap (matches plugin)
 
 export interface PullResult {
-  /** Wrapper dir SHA from GitHub tarball (7-char hex). */
+  /** Wrapper dir SHA from GitHub tarball — abbreviated (anonymous, 7-char) or full (authenticated, 40-char) hex. */
   sha: string;
   /** Number of files extracted (excludes directories). */
   fileCount: number;
@@ -40,13 +40,40 @@ export interface PullResult {
 export interface BootstrapServiceOptions {
   /** Override fetch implementation for tests. Defaults to global fetch. */
   fetchImpl?: typeof fetch;
+  /**
+   * GitHub PAT for authenticated tarball pulls (private repos). When empty /
+   * undefined the service stays in anonymous mode (public repos only) — the
+   * exact behaviour shipped before token support. Resolved by the commands
+   * from `--token` flag OR `GITHUB_TOKEN`/`GH_TOKEN` env (option > env).
+   */
+  token?: string;
 }
 
 export class BootstrapAssetSpaceService {
   private readonly fetchImpl: typeof fetch;
+  private readonly token: string;
+
+  // PAT redaction (mirrors plugin GitHubRestClient.PAT_REGEX) — replaces any
+  // PAT-shaped substring that may leak into an error message / underlying
+  // fetch error before it reaches stderr / --json. Covers classic family
+  // (ghp_/gho_/ghu_/ghs_/ghr_, 36+ urlsafe chars) + fine-grained
+  // github_pat_<22+ id>_<59+ secret> tokens.
+  private static readonly PAT_REGEX =
+    /(?:gh[pousr]_[A-Za-z0-9_]{36,}|github_pat_[A-Za-z0-9_]{22,}_[A-Za-z0-9_]{59,})/g;
 
   constructor(opts: BootstrapServiceOptions = {}) {
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+    this.token = opts.token ?? "";
+  }
+
+  /**
+   * Replace any PAT-shaped substring with ***REDACTED***. Idempotent. Defends
+   * against a token leaking via a third-party fetch-error formatter that
+   * echoes request headers. Non-string inputs coerced via String().
+   */
+  private redact(message: unknown): string {
+    const s = typeof message === "string" ? message : String(message);
+    return s.replace(BootstrapAssetSpaceService.PAT_REGEX, "***REDACTED***");
   }
 
   /**
@@ -99,11 +126,33 @@ export class BootstrapAssetSpaceService {
     // plugin's AssetSpaceManager.pullAssetSpace contract). Codeload tarball
     // uses `<repo>-<branch>` wrapper which loses SHA — use API endpoint.
     const tarballUrl = `https://api.github.com/repos/${owner}/${repo}/tarball/${ref}`;
+    // Authenticated mode: attach Authorization + GitHub-required headers ONLY
+    // when a token is present. Empty token → anonymous request shape is left
+    // byte-identical to the pre-token behaviour (public repos, no headers).
+    // The authenticated endpoint returns a full-40-char-SHA wrapper which the
+    // SHA matcher (7..40 hex) and #3390 ustar-prefix parser already handle.
+    const init: RequestInit = { signal: AbortSignal.timeout(60_000) };
+    if (this.token.length > 0) {
+      init.headers = {
+        Authorization: `Bearer ${this.token}`,
+        "User-Agent": "exocortex-cli",
+        "X-GitHub-Api-Version": "2022-11-28",
+      };
+    }
     // Code-reviewer MEDIUM: fetch timeout (60s) prevents indefinite hang
     // on slow/stalled GitHub response. Cap matches typical CI test timeouts.
-    const response = await this.fetchImpl(tarballUrl, {
-      signal: AbortSignal.timeout(60_000),
-    });
+    let response: Awaited<ReturnType<typeof fetch>>;
+    try {
+      response = await this.fetchImpl(tarballUrl, init);
+    } catch (err) {
+      // Redact before re-throw: some fetch implementations embed the request
+      // (incl. Authorization header) in the thrown error.
+      throw new Error(
+        this.redact(
+          `pullAssetSpace: fetch error for ${tarballUrl}: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
+    }
     if (!response.ok) {
       // Code-reviewer MEDIUM: surface GitHub anonymous rate-limit (60 req/hour)
       // с actionable message instead of generic "fetch failed".
@@ -119,8 +168,24 @@ export class BootstrapAssetSpaceService {
           );
         }
       }
+      // GitHub returns 404 (not 403) for private repos the caller can't see —
+      // it deliberately hides existence. If we pulled anonymously, hint that a
+      // token may be required. With a token, 404 means genuinely-missing repo
+      // OR the token lacks access — surface both possibilities.
+      if (response.status === 404) {
+        const hint = this.token.length > 0
+          ? "repo not found, or the provided token lacks access to it"
+          : "if this is a private repo, pass --token <pat> (or set GITHUB_TOKEN / GH_TOKEN)";
+        throw new Error(
+          this.redact(
+            `pullAssetSpace: fetch failed (404 Not Found) for ${tarballUrl} — ${hint}`,
+          ),
+        );
+      }
       throw new Error(
-        `pullAssetSpace: fetch failed (${response.status} ${response.statusText}) for ${tarballUrl}`,
+        this.redact(
+          `pullAssetSpace: fetch failed (${response.status} ${response.statusText}) for ${tarballUrl}`,
+        ),
       );
     }
     const arrayBuf = await response.arrayBuffer();

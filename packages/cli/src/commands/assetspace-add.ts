@@ -11,6 +11,7 @@ interface AssetSpaceAddOptions {
   folder?: string;
   ref?: string;
   json?: boolean;
+  token?: string;
 }
 
 /**
@@ -40,6 +41,10 @@ export function assetSpaceAddCommand(): Command {
       "Local folder name под assetspaces/. Defaults к URL-derived (strips exoas- prefix)",
     )
     .option("--ref <branch>", "Branch ref к pull from", "main")
+    .option(
+      "--token <pat>",
+      "GitHub PAT for private repos (or env GITHUB_TOKEN / GH_TOKEN). Optional — anonymous for public repos.",
+    )
     .option("--json", "Emit result as JSON", false)
     .action(async (options: AssetSpaceAddOptions) => {
       try {
@@ -54,7 +59,12 @@ export function assetSpaceAddCommand(): Command {
           throw new VaultNotFoundError(vaultPath);
         }
 
-        const svc = new BootstrapAssetSpaceService();
+        // Token precedence: --token flag > GITHUB_TOKEN env > GH_TOKEN env.
+        // `||` (not `??`) so an empty-string env var (`GITHUB_TOKEN=""`) falls
+        // through to the next source instead of pinning anonymous mode.
+        // All-empty → undefined → anonymous mode (public repos), unchanged.
+        const token = options.token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || undefined;
+        const svc = new BootstrapAssetSpaceService({ token });
         const ref = options.ref ?? "main";
         const folder = options.folder ?? BootstrapAssetSpaceService.deriveFolderName(options.url);
         const targetDir = join(vaultPath, "assetspaces", folder);
