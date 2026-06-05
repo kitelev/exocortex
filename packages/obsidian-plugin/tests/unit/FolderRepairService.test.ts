@@ -228,7 +228,7 @@ describe("FolderRepairService", () => {
     });
   });
 
-  describe("extractReference", () => {
+  describe("getExpectedFolder reference extraction", () => {
     test("should extract reference from [[Name]]", async () => {
       const file = { path: "file.md" } as IFile;
       const metadata = { exo__Asset_isDefinedBy: "[[TestAsset]]" };
