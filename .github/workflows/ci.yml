@@ -271,7 +271,6 @@ jobs:
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
           CI: "true"
-          FLAKY_REPORT_FILE: "flaky-report-shard-${{ matrix.shard }}.json"
         run: |
           # Empty --coverageThreshold overrides jest.config.js thresholds so a
           # partial shard doesn't falsely fail the gate; aggregator applies
@@ -294,15 +293,6 @@ jobs:
           path: packages/obsidian-plugin/coverage/coverage-final.json
           retention-days: 1
           if-no-files-found: error
-
-      - name: Upload shard flaky report
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: flaky-report-shard-${{ matrix.shard }}
-          path: flaky-report-shard-${{ matrix.shard }}.json
-          retention-days: 30
-          if-no-files-found: ignore
 
   test-coverage-cli:
     # Bare ubuntu-latest — CLI jest is node-only; no browser/playwright needed.
