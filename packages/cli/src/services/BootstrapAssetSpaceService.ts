@@ -24,7 +24,7 @@ import { mkdirSync, writeFileSync, existsSync, renameSync, rmSync, readFileSync,
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve, sep } from "node:path";
-import { parseTarGzip } from "nanotar";
+import { parseTarballGzip } from "exocortex";
 
 const REPO_URL_REGEX = /^https:\/\/github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?$/;
 
@@ -130,7 +130,7 @@ export class BootstrapAssetSpaceService {
       );
     }
     const buffer = new Uint8Array(arrayBuf);
-    const entries = await parseTarGzip(buffer);
+    const entries = await parseTarballGzip(buffer);
     if (entries.length === 0) {
       throw new Error(`pullAssetSpace: empty tarball for ${owner}/${repo}@${ref}`);
     }
@@ -161,14 +161,16 @@ export class BootstrapAssetSpaceService {
       }
     }
 
-    // Extract SHA from wrapper.
-    const shaMatch = wrapper.match(/-([0-9a-f]{7})$/);
+    // Extract SHA from wrapper. Length is auth-dependent: anonymous tarballs
+    // carry a 7-char abbreviated SHA, authenticated ones the full 40-char SHA
+    // (matching only 7 broke private-repo pulls). Accept 7..40 hex.
+    const shaMatch = wrapper.match(/-([0-9a-fA-F]{7,40})$/);
     if (shaMatch === null) {
       throw new Error(
         `pullAssetSpace: cannot extract SHA from wrapper "${wrapper}"`,
       );
     }
-    const sha = shaMatch[1];
+    const sha = shaMatch[1].toLowerCase(); // parity with plugin extractShaFromWrapper
 
     // Stage к temp dir, then atomic rename.
     const stagingDir = await mkdtemp(join(tmpdir(), `exo-bootstrap-${owner}-${repo}-`));

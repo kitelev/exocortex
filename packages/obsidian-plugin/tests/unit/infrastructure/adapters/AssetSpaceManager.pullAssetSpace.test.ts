@@ -580,4 +580,13 @@ describe("extractShaFromWrapper", () => {
       /does not match/,
     );
   });
+
+  it("accepts the full 40-char SHA of an authenticated tarball wrapper (#3382)", () => {
+    // Authenticated GitHub tarballs carry the FULL commit SHA (anonymous ones
+    // are abbreviated to 7). Rejecting it broke private-repo pulls.
+    const sha40 = "306f656e6159944a4ae18beeb618d13611826b9b";
+    expect(extractShaFromWrapper(`kitelev-exoas-honesttest-${sha40}`)).toBe(
+      sha40,
+    );
+  });
 });
