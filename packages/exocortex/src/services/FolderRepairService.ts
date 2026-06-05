@@ -1,6 +1,7 @@
 import { injectable, inject } from "tsyringe";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import { DI_TOKENS } from "../interfaces/tokens";
+import { extractAssetReference } from "../utilities/extractAssetReference";
 
 /**
  * Service for repairing asset folder locations based on exo__Asset_isDefinedBy references
@@ -38,7 +39,7 @@ export class FolderRepairService {
       return null;
     }
 
-    const reference = this.extractReference(isDefinedBy);
+    const reference = extractAssetReference(isDefinedBy);
     if (!reference) {
       return null;
     }
@@ -81,34 +82,6 @@ export class FolderRepairService {
   private getFileFolder(file: IFile): string {
     const folderPath = file.parent?.path || "";
     return folderPath;
-  }
-
-  /**
-   * Extract reference from various formats:
-   * - [[Reference]] -> Reference
-   * - [[uid|alias]] -> uid (alias suffix stripped — getFirstLinkpathDest rejects pipe-aliased linkpath)
-   * - "[[Reference]]" -> Reference
-   * - Reference -> Reference
-   */
-  private extractReference(value: unknown): string | null {
-    if (typeof value !== "string") {
-      return null;
-    }
-
-    // Remove quotes if present
-    let cleaned = value.trim().replace(/^["']|["']$/g, "");
-
-    // Remove wiki-link brackets if present
-    cleaned = cleaned.replace(/^\[\[|\]\]$/g, "");
-
-    // Strip alias suffix (everything after first `|`) — getFirstLinkpathDest
-    // returns null for pipe-aliased linkpaths, breaking alias-form refs.
-    const pipeIdx = cleaned.indexOf("|");
-    if (pipeIdx !== -1) {
-      cleaned = cleaned.slice(0, pipeIdx).trim();
-    }
-
-    return cleaned || null;
   }
 
   /**

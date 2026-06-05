@@ -68,6 +68,16 @@ jest.unstable_mockModule("../../../src/adapters/NodeFsAdapter.js", () => ({
 jest.unstable_mockModule("exocortex", () => ({
   FrontmatterService: jest.fn(() => mockFrontmatterService),
   DateFormatter: mockDateFormatter,
+  // Faithful pure stub mirroring exocortex's extractAssetReference (the
+  // canonical shared helper consumed by BatchExecutor — audit #3384).
+  extractAssetReference: (value: unknown): string | null => {
+    if (typeof value !== "string") return null;
+    let cleaned = value.trim().replace(/^["']|["']$/g, "");
+    cleaned = cleaned.replace(/^\[\[|\]\]$/g, "");
+    const pipeIdx = cleaned.indexOf("|");
+    if (pipeIdx !== -1) cleaned = cleaned.slice(0, pipeIdx).trim();
+    return cleaned || null;
+  },
 }));
 
 jest.unstable_mockModule("../../../src/utils/TransactionManager.js", () => ({
