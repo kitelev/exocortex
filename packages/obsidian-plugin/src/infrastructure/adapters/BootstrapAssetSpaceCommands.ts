@@ -359,8 +359,12 @@ export class BootstrapAssetSpaceCommands {
     // `data.local.json` until the next reload. `release()` tolerates a missing
     // dir, so calling it after the move is safe; covers both this single-pull
     // path and the EC2 `fetchTrackedAssetSpaces` loop (which routes through
-    // `materialize` too).
-    await puller.releaseStaging(result.stagingPath);
+    // `materialize` too). Best-effort (`.catch`) — a release failure (e.g. a
+    // `data.local.json` write error) must not skip the `.gitmodules` /
+    // file-only registration below; a leaked tracker entry is benign and
+    // self-heals via `sweepOrphans` on reload. Mirrors `pullAssetSpace`'s own
+    // cleanup convention (`stagingTracker.release(...).catch(() => undefined)`).
+    await puller.releaseStaging(result.stagingPath).catch(() => undefined);
     if (isGit) {
       await this.d.gitOps.appendGitmodulesEntry(submodulePath, url);
     } else {
