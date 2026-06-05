@@ -18,6 +18,13 @@ interface Harness {
   notices: string[];
   vaultFiles: Set<string>;
   vaultFolders: Map<string, { files: string[]; folders: string[] }>;
+  /**
+   * Mirrors `data.local.json._activeStagingDirs`: `pullAssetSpace` pushes a
+   * staging path (like `StagingDirTracker.allocate`) and `releaseStaging`
+   * removes it (like `StagingDirTracker.release`). Issue #3391 asserts this is
+   * empty after a successful materialise WITHOUT a reload.
+   */
+  activeStagingDirs: string[];
   deps: BootstrapAssetSpaceCommandsDeps;
 }
 
@@ -33,14 +40,22 @@ function makeHarness(opts: {
   const gitmodulesEntries = opts.gitmodulesEntries ?? [];
   const materialized = opts.materializedFolders ?? {};
 
+  // Mirror the real StagingDirTracker contract: allocate registers a staging
+  // path, release removes it. The fake puller wires `pullAssetSpace` →
+  // allocate and `releaseStaging` → release so we can assert no leak (#3391).
+  const activeStagingDirs: string[] = [];
   const puller = {
     pullAssetSpace: jest.fn(
-      async (asUid: string, _url: string, _ref?: string) => ({
-        asUid,
-        stagingPath: `/tmp/staging-${asUid}`,
-        sha: "abc1234",
-      }),
+      async (asUid: string, _url: string, _ref?: string) => {
+        const stagingPath = `/tmp/staging-${asUid}`;
+        activeStagingDirs.push(stagingPath);
+        return { asUid, stagingPath, sha: "abc1234" };
+      },
     ),
+    releaseStaging: jest.fn(async (stagingPath: string) => {
+      const i = activeStagingDirs.indexOf(stagingPath);
+      if (i !== -1) activeStagingDirs.splice(i, 1);
+    }),
   } as jest.Mocked<IAssetSpacePuller>;
 
   const gitOps = {
@@ -115,6 +130,7 @@ function makeHarness(opts: {
     notices,
     vaultFiles: new Set<string>(),
     vaultFolders,
+    activeStagingDirs,
     deps,
   };
 }
@@ -373,6 +389,7 @@ describe("BootstrapAssetSpaceCommands — lazy per-invocation puller (Issue #338
             return { asUid, stagingPath: `/tmp/staging-${asUid}`, sha: "abc1234" };
           },
         ),
+        releaseStaging: jest.fn(async () => undefined),
       };
     });
 
@@ -426,5 +443,73 @@ describe("BootstrapAssetSpaceCommands — lazy per-invocation puller (Issue #338
     const h = makeLazyHarness();
     // Merely constructing the commands must not read the PAT / build a client.
     expect(h.getPuller).not.toHaveBeenCalled();
+  });
+});
+
+describe("BootstrapAssetSpaceCommands — staging-dir release (Issue #3391)", () => {
+  /**
+   * `pullAssetSpace` registers the staging dir (mirrors
+   * `StagingDirTracker.allocate` → `_activeStagingDirs`); `materialize` must
+   * call `releaseStaging` after the move so the entry does not linger until the
+   * next plugin reload.
+   *
+   * Revert-verify: deleting the `await puller.releaseStaging(...)` line in
+   * `BootstrapAssetSpaceCommands.materialize` makes every assertion below FAIL
+   * (`activeStagingDirs` keeps the 1–2 entries the pulls registered);
+   * restoring it makes them PASS.
+   */
+  it("bootstrap (git) — releases both staging dirs, no leftover entry", async () => {
+    const h = makeHarness({ isGitVault: true });
+    await h.cmds.invokeBootstrap();
+
+    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(2);
+    // Released for each pulled staging path, after the move into the vault.
+    expect(h.puller.releaseStaging).toHaveBeenCalledTimes(2);
+    expect(h.puller.releaseStaging).toHaveBeenCalledWith(
+      "/tmp/staging-bootstrap-exo",
+    );
+    expect(h.puller.releaseStaging).toHaveBeenCalledWith(
+      "/tmp/staging-bootstrap-exocmd",
+    );
+    // The tracker registry is empty post-success — no reload needed.
+    expect(h.activeStagingDirs).toEqual([]);
+  });
+
+  it("bootstrap (file-only / non-git) — releases staging dirs too", async () => {
+    const h = makeHarness({ isGitVault: false });
+    await h.cmds.invokeBootstrap();
+
+    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(2);
+    expect(h.puller.releaseStaging).toHaveBeenCalledTimes(2);
+    expect(h.activeStagingDirs).toEqual([]);
+  });
+
+  it("addAssetSpace — releases the single staging dir, no leftover entry", async () => {
+    const h = makeHarness({ isGitVault: true });
+    await h.cmds.invokeAddAssetSpace();
+
+    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(1);
+    expect(h.puller.releaseStaging).toHaveBeenCalledTimes(1);
+    expect(h.puller.releaseStaging).toHaveBeenCalledWith(
+      "/tmp/staging-bootstrap-pmbok-ontology",
+    );
+    expect(h.activeStagingDirs).toEqual([]);
+  });
+
+  it("EC2 fetchTrackedAssetSpaces — releases each re-materialised staging dir", async () => {
+    const h = makeHarness({
+      gitmodulesEntries: [
+        { submodulePath: "assetspaces/exo", url: EXO_URL },
+        { submodulePath: "assetspaces/exocmd", url: EXOCMD_URL },
+      ],
+      materializedFolders: {},
+      confirm: true,
+    });
+    await h.cmds.invokeBootstrap();
+
+    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(2);
+    expect(h.puller.releaseStaging).toHaveBeenCalledTimes(2);
+    expect(h.activeStagingDirs).toEqual([]);
+    expect(h.notices.some((n) => /Fetched 2\/2/.test(n))).toBe(true);
   });
 });

@@ -41,6 +41,15 @@ export interface IAssetSpacePuller {
     asGitUrl: string,
     ref?: string,
   ): Promise<{ asUid: string; stagingPath: string; sha: string }>;
+  /**
+   * Release the staging dir returned by a prior {@link pullAssetSpace}. The
+   * pull deliberately KEEPS the dir on success (caller owns its lifetime — see
+   * `AssetSpaceManager.pullAssetSpace` docstring), so the caller MUST call this
+   * once it has consumed the dir (moved it into the vault). Issue #3391:
+   * without this the StagingDirTracker entry leaks into `data.local.json` until
+   * the next plugin reload. Idempotent / tolerant of an already-moved dir.
+   */
+  releaseStaging(stagingPath: string): Promise<void>;
 }
 
 /** Subset of {@link GitSubmoduleOps} used here (staging move + `.gitmodules`). */
@@ -343,6 +352,19 @@ export class BootstrapAssetSpaceCommands {
       this.ref,
     );
     await this.d.gitOps.renameIntoVault(result.stagingPath, submodulePath);
+    // Issue #3391: `renameIntoVault` MOVED the staging dir into the vault, so
+    // its StagingDirTracker entry now points at a path that no longer exists.
+    // `pullAssetSpace` keeps the dir alive on success by design (caller owns
+    // its lifetime) — release it here so the tracker entry does not linger in
+    // `data.local.json` until the next reload. `release()` tolerates a missing
+    // dir, so calling it after the move is safe; covers both this single-pull
+    // path and the EC2 `fetchTrackedAssetSpaces` loop (which routes through
+    // `materialize` too). Best-effort (`.catch`) — a release failure (e.g. a
+    // `data.local.json` write error) must not skip the `.gitmodules` /
+    // file-only registration below; a leaked tracker entry is benign and
+    // self-heals via `sweepOrphans` on reload. Mirrors `pullAssetSpace`'s own
+    // cleanup convention (`stagingTracker.release(...).catch(() => undefined)`).
+    await puller.releaseStaging(result.stagingPath).catch(() => undefined);
     if (isGit) {
       await this.d.gitOps.appendGitmodulesEntry(submodulePath, url);
     } else {
