@@ -19,8 +19,8 @@ import type {
 
 /**
  * Shared, storage-agnostic grounding-service factories used by both the CLI
- * (`packages/cli/src/services/CliServiceRegistryPopulator.ts`) and — once T1.3
- * lands — the plugin (`packages/obsidian-plugin/src/infrastructure/services/`).
+ * (`packages/cli/src/services/CliServiceRegistryPopulator.ts`) and the plugin
+ * (`packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`).
  *
  * Each factory returns an `IGroundingService` that adapts a domain service
  * (already lives in the shared `exocortex` package) to the runtime-agnostic
@@ -32,9 +32,9 @@ import type {
  * `ITargetResolver` parameter. The CLI default path-based resolver strips
  * the `obsidian://vault/<encoded-path>` URI scheme via the canonical
  * `iriToVaultPath` helper (Issue #3301) and appends `.md` only when not
- * already present; the Obsidian plugin (T1.3) injects an Obsidian-aware
- * resolver that additionally scans `metadataCache` for `exo__Asset_uid` /
- * `@id` matches.
+ * already present; the Obsidian plugin injects an Obsidian-aware resolver
+ * that additionally scans `metadataCache` for `exo__Asset_uid` / `@id`
+ * matches.
  *
  * RFC 94e520da Phase 1, T1.2 (factories) + T1.3 (plugin migration).
  */
