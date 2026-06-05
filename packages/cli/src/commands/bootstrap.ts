@@ -73,8 +73,10 @@ export function bootstrapCommand(): Command {
         }
 
         // Token precedence: --token flag > GITHUB_TOKEN env > GH_TOKEN env.
-        // Undefined → anonymous mode (public repos only), unchanged behaviour.
-        const token = options.token ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+        // `||` (not `??`) so an empty-string env var (`GITHUB_TOKEN=""`) falls
+        // through to the next source instead of pinning anonymous mode.
+        // All-empty → undefined → anonymous mode (public repos), unchanged.
+        const token = options.token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || undefined;
         const svc = new BootstrapAssetSpaceService({ token });
         const ref = options.ref ?? "main";
 

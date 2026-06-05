@@ -31,7 +31,7 @@ const REPO_URL_REGEX = /^https:\/\/github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-
 const MAX_TARBALL_BYTES = 50 * 1024 * 1024; // 50 MB cap (matches plugin)
 
 export interface PullResult {
-  /** Wrapper dir SHA from GitHub tarball (7-char hex). */
+  /** Wrapper dir SHA from GitHub tarball — abbreviated (anonymous, 7-char) or full (authenticated, 40-char) hex. */
   sha: string;
   /** Number of files extracted (excludes directories). */
   fileCount: number;
