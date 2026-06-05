@@ -543,3 +543,14 @@ export {
   parseTarballGzip,
   type TarballEntry,
 } from "./infrastructure/tarball/parseTarball";
+
+// Transport-agnostic GitHub "create commit" core (Git Data API, 4-call chain).
+// Shared by the Obsidian plugin (requestUrl transport) and the CLI (fetch
+// transport) — the single iOS-portable commit+push implementation.
+export {
+  restCreateCommit,
+  type RestCommitRequest,
+  type RestCommitResponse,
+  type RestCommitTransport,
+  type RestCreateCommitParams,
+} from "./infrastructure/github/restCommit";
