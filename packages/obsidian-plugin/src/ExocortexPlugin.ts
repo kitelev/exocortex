@@ -976,6 +976,34 @@ export default class ExocortexPlugin extends Plugin {
           // "resolved" event fires post-dispose.
           this.exoLayoutRepository?.rebuildNow();
 
+          // Issue #3372 — DO NOT REMOVE this line without re-running the
+          // relation-column-set-smoke e2e spec end-to-end on warm Obsidian
+          // boots (full shard-3 sequence in Docker). Unit tests in
+          // `RelationColumnSetRepository.test.ts` exercise `rebuildNow()`
+          // semantics in isolation but do NOT guard this integration call
+          // site.
+          //
+          // Sibling cold-start race in
+          // `RelationColumnSetRepository`. Same shape as #3368: the repo
+          // calls synchronous `rebuildSync()` in `initialize()` BEFORE
+          // metadataCache has parsed `ui__RelationColumnSet` fixtures, then
+          // subscribes to `metadataCache.on("changed" / "deleted" /
+          // "renamed")` (NOT `on("resolved")`). On warm Obsidian boots
+          // metadataCache can finish parsing RelationColumnSet assets
+          // BEFORE that listener is wired ⇒ empty snapshot ⇒
+          // `RelationColumnSetResolver` silently falls back to defaults
+          // (custom RCS column overrides never apply). Mirror the
+          // ExoLayoutRepository fix above: invoke `rebuildNow()` from this
+          // authoritative "metadata fully parsed" handler. Same rationale
+          // re: idempotency, cheapness, optional chaining (nulled in
+          // `onunload()`), and placement outside `postResolveReindexDone`
+          // (re-emissions on large vault reindexes refresh the snapshot
+          // too). Unit tests in `RelationColumnSetRepository.test.ts`
+          // exercise `rebuildNow()` semantics; this integration call site
+          // is guarded by this comment + JSDoc on `rebuildNow()`, not by
+          // an automated test (mirrors #3368 verification scope).
+          this.relationColumnSetRepository?.rebuildNow();
+
           if (postResolveReindexDone) return;
           postResolveReindexDone = true;
 

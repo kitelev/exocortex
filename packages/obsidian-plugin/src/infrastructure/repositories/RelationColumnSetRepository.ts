@@ -147,9 +147,19 @@ export class RelationColumnSetRepository {
   }
 
   /**
-   * Test hook: force a synchronous rebuild, bypassing the debounce.  Used by
-   * Phase 2 resolver-priming smoke tests and by component-tests that need
-   * deterministic state between operations.
+   * Force a synchronous rebuild, bypassing the internal 150 ms debounce.
+   *
+   * Public API. In addition to test fixtures, this is called from
+   * `ExocortexPlugin` on `metadataCache.on("resolved")` to close the
+   * cold-start race where Obsidian parses `ui__RelationColumnSet` files
+   * BEFORE this repository's `on("changed" / "deleted" / "renamed")`
+   * subscriptions are wired — `initialize()`'s synchronous initial scan
+   * sees an empty cache and no later event ever fires, leaving the
+   * snapshot empty and `RelationColumnSetResolver` silently falling back
+   * to default columns. Issue #3372 (mirrors the #3368 fix for
+   * `ExoLayoutRepository`).
+   *
+   * Idempotent and safe to call from any path.
    */
   rebuildNow(): void {
     if (this.disposed) return;
