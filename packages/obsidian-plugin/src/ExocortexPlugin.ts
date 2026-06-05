@@ -976,7 +976,14 @@ export default class ExocortexPlugin extends Plugin {
           // "resolved" event fires post-dispose.
           this.exoLayoutRepository?.rebuildNow();
 
-          // Issue #3372 — sibling cold-start race in
+          // Issue #3372 — DO NOT REMOVE this line without re-running the
+          // relation-column-set-smoke e2e spec end-to-end on warm Obsidian
+          // boots (full shard-3 sequence in Docker). Unit tests in
+          // `RelationColumnSetRepository.test.ts` exercise `rebuildNow()`
+          // semantics in isolation but do NOT guard this integration call
+          // site.
+          //
+          // Sibling cold-start race in
           // `RelationColumnSetRepository`. Same shape as #3368: the repo
           // calls synchronous `rebuildSync()` in `initialize()` BEFORE
           // metadataCache has parsed `ui__RelationColumnSet` fixtures, then
