@@ -236,8 +236,12 @@ export function restPushCommand(): Command {
         process.exit(0);
       } catch (e) {
         // Redact any PAT that slipped into the error before ErrorHandler prints.
+        // Both message AND stack: ErrorHandler prints err.stack in debug mode,
+        // and a frozen stack can retain the original unredacted message.
         const err = e instanceof Error ? e : new Error(String(e));
-        err.message = new RestPushService().redact(err.message);
+        const redactor = new RestPushService();
+        err.message = redactor.redact(err.message);
+        if (err.stack) err.stack = redactor.redact(err.stack);
         ErrorHandler.handle(err);
       }
     });
