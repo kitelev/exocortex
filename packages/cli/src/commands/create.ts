@@ -4,8 +4,8 @@ import { existsSync } from "fs";
 import { readFileSync } from "fs";
 import {
   ShapeLoader,
+  ShapeRegistry,
   GenericAssetCreationService,
-  type ShapeRegistry,
   type GenericAssetCreationConfig,
 } from "exocortex";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
@@ -236,13 +236,15 @@ export function createCommand(): Command {
 
         // Load SHACL-lite shape registry from vault for cardinality-aware
         // property serialization (issues #3099, #3179). Failure here is
-        // non-fatal — proceed with default scalar emission if shapes cannot
-        // be loaded (vault convention default per #3179).
-        let shapeRegistry: ShapeRegistry | undefined;
+        // non-fatal — fall back to an EMPTY registry (not undefined) so the
+        // core still takes the cardinality-aware formatter and `cli create`
+        // stays byte-identical to its prior behaviour (scalar default per
+        // #3179) even when shapes cannot be loaded.
+        let shapeRegistry: ShapeRegistry;
         try {
           shapeRegistry = await ShapeLoader.loadFromVaultFS(vaultPath);
         } catch {
-          shapeRegistry = undefined;
+          shapeRegistry = new ShapeRegistry();
         }
 
         // Delegate the domain logic (frontmatter assembly, UID-canon class
