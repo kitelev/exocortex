@@ -2,6 +2,7 @@ import type { App, RequestUrlParam, RequestUrlResponse } from "obsidian";
 import { requestUrl } from "obsidian";
 import { parseTarGzip } from "nanotar";
 import type { TarFileItem } from "nanotar";
+import { restCreateCommit, type RestCommitTransport } from "exocortex";
 
 export interface GitHubRestClientOptions {
   pat: string;
@@ -232,6 +233,13 @@ export class GitHubRestClient {
    * days. Callers MAY safely retry: a subsequent successful call creates a
    * new commit and leaves the orphan to expire. Do NOT use this method for
    * branches with concurrent writers without coordinated retry/locking.
+   *
+   * Implementation note: the 4-call orchestration + payload shapes + ref
+   * fast-forward + structural validation live in the transport-agnostic
+   * `restCreateCommit` core (`exocortex` package) so the CLI reuses the exact
+   * same logic over a `fetch` transport. This method only supplies the
+   * `requestUrl`-backed transport + PAT redactor; the contract above
+   * (validation order, error strings, partial-failure SHA) is unchanged.
    */
   public async createCommit(
     owner: string,
@@ -241,85 +249,21 @@ export class GitHubRestClient {
     message: string,
   ): Promise<string> {
     this.requireOwnerRepo(owner, repo);
-    if (typeof branch !== "string" || branch.length === 0) {
-      throw new Error("GitHub createCommit: branch is required");
-    }
-    if (!(files instanceof Map) || files.size === 0) {
-      throw new Error("GitHub createCommit: files map must be non-empty");
-    }
-    if (typeof message !== "string" || message.length === 0) {
-      throw new Error("GitHub createCommit: message is required");
-    }
-
-    const o = encodeURIComponent(owner);
-    const r = encodeURIComponent(repo);
-    const b = encodeURIComponent(branch);
-
-    // Step 1 — get current ref SHA.
-    const refResp = await this.request({
-      method: "GET",
-      url: `${this.#baseURL}/repos/${o}/${r}/git/refs/heads/${b}`,
+    // Adapter: the core's transport returns `{ status?, json?, text? }`; the
+    // `requestUrl`-backed `request()` already throws on non-2xx (the core's
+    // transport contract) and returns a RequestUrlResponse that satisfies that
+    // shape. Caller-owned Authorization header + HTTP-error-body redaction stay
+    // inside `request()`; the core's own structural errors get `this.redact`.
+    const transport: RestCommitTransport = (req) => this.request(req);
+    return restCreateCommit(transport, {
+      owner,
+      repo,
+      branch,
+      files,
+      message,
+      baseURL: this.#baseURL,
+      redact: (m) => this.redact(m),
     });
-    const baseSha = refResp?.json?.object?.sha;
-    if (typeof baseSha !== "string" || baseSha.length === 0) {
-      throw new Error(
-        this.redact(`GitHub createCommit: missing object.sha for ref heads/${branch}`),
-      );
-    }
-
-    // Step 2 — create tree (recursive).
-    const tree = Array.from(files.entries()).map(([path, content]) => ({
-      path,
-      mode: "100644",
-      type: "blob",
-      content,
-    }));
-    const treeResp = await this.request({
-      method: "POST",
-      url: `${this.#baseURL}/repos/${o}/${r}/git/trees`,
-      contentType: "application/json",
-      body: JSON.stringify({ base_tree: baseSha, tree }),
-    });
-    const treeSha = treeResp?.json?.sha;
-    if (typeof treeSha !== "string" || treeSha.length === 0) {
-      throw new Error(
-        this.redact(`GitHub createCommit: tree create returned no sha`),
-      );
-    }
-
-    // Step 3 — create commit.
-    const commitResp = await this.request({
-      method: "POST",
-      url: `${this.#baseURL}/repos/${o}/${r}/git/commits`,
-      contentType: "application/json",
-      body: JSON.stringify({
-        message,
-        tree: treeSha,
-        parents: [baseSha],
-      }),
-    });
-    const commitSha = commitResp?.json?.sha;
-    if (typeof commitSha !== "string" || commitSha.length === 0) {
-      throw new Error(
-        this.redact(`GitHub createCommit: commit create returned no sha`),
-      );
-    }
-
-    // Step 4 — update ref.
-    const patchResp = await this.request({
-      method: "PATCH",
-      url: `${this.#baseURL}/repos/${o}/${r}/git/refs/heads/${b}`,
-      contentType: "application/json",
-      body: JSON.stringify({ sha: commitSha, force: false }),
-    });
-    const patchedSha = patchResp?.json?.object?.sha;
-    if (patchedSha !== commitSha) {
-      throw new Error(
-        this.redact(`GitHub createCommit: ref update mismatch (expected ${commitSha}, got ${patchedSha})`),
-      );
-    }
-
-    return commitSha;
   }
 
   /**
