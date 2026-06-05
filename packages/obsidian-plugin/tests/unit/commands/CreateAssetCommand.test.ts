@@ -244,4 +244,26 @@ describe("CreateAssetCommand — H3 PR2 plugin opt-in (#3384)", () => {
     // getTripleStore must NOT be touched when the store is not ready.
     expect(sparql.getTripleStore as jest.Mock).not.toHaveBeenCalled();
   });
+
+  it("swallows a shape-loader throw (non-fatal) — asset still created, scalar fallback", async () => {
+    // isReady() true but the store's match() rejects → ShapeLoader.loadFromRDFGraph
+    // throws → loadShapeRegistry's catch returns undefined → scalar emission, no crash.
+    const explodingStore = {
+      match: jest.fn().mockRejectedValue(new Error("graph walk failed")),
+    };
+    const sparql = {
+      isReady: () => true,
+      getTripleStore: () => explodingStore,
+    } as unknown as SPARQLQueryService;
+
+    command = buildCommand(sparql);
+    await run({ selectedClass: selectedTask(TASK_UID), sparql });
+
+    expect(created).toHaveLength(1);
+    const content = created[0].content;
+    // classUid still applies; property stays scalar (no array) after the fallback.
+    expect(content).toContain(`"[[${TASK_UID}]]"`);
+    expect(content).not.toMatch(/ems__Effort_relatesTo:\n\s+-/);
+    expect(content).toContain(`ems__Effort_relatesTo: "[[${RELATES_UID}]]"`);
+  });
 });
