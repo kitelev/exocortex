@@ -170,7 +170,7 @@ export class BootstrapAssetSpaceService {
         `pullAssetSpace: cannot extract SHA from wrapper "${wrapper}"`,
       );
     }
-    const sha = shaMatch[1];
+    const sha = shaMatch[1].toLowerCase(); // parity with plugin extractShaFromWrapper
 
     // Stage к temp dir, then atomic rename.
     const stagingDir = await mkdtemp(join(tmpdir(), `exo-bootstrap-${owner}-${repo}-`));
