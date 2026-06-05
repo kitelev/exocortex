@@ -1,12 +1,10 @@
 /**
  * Command Visibility Facade
  *
- * Re-exports all visibility functions for backward compatibility.
- * Allows existing code to import from single location.
- *
- * Usage:
- *   import { canCreateTask } from "domain/commands/visibility";
- *   import { canCreateTask } from "domain/commands/visibility/TaskVisibilityRules";
+ * Re-exports the CommandVisibilityContext type and shared visibility helper
+ * utilities. The per-class canX predicate rules were removed together with the
+ * pre-homoiconic command layer (see #3384); visibility is now driven by
+ * vault-declared exocmd__Command preconditions.
  */
 
 // Types
@@ -29,54 +27,3 @@ export {
   inheritsFromPrototype,
   isPrototypeClass,
 } from "./helpers";
-
-// Task visibility rules
-export {
-  canCreateTask,
-  canCreateRelatedTask,
-  canConvertTaskToProject,
-  canSetCriticalityZone,
-} from "./TaskVisibilityRules";
-
-// Project visibility rules
-export {
-  canCreateProject,
-  canMoveToAnalysis,
-  canMoveToToDo,
-  canConvertProjectToTask,
-} from "./ProjectVisibilityRules";
-
-// Area visibility rules
-export {
-  canCreateChildArea,
-  canSetActiveFocus,
-} from "./AreaVisibilityRules";
-
-// Effort visibility rules
-export {
-  canPlanOnToday,
-  canPlanForEvening,
-  canShiftDayBackward,
-  canShiftDayForward,
-  canSetDraftStatus,
-  canMoveToBacklog,
-  canStartEffort,
-  canMarkDone,
-  canTrashEffort,
-  canVoteOnEffort,
-  canArchiveTask,
-  canMarkReviewed,
-} from "./EffortVisibilityRules";
-
-// Asset visibility rules
-export {
-  canCreateEvent,
-  canCreateInstance,
-  canCleanProperties,
-  canRepairFolder,
-  canCopyLabelToAliases,
-  canCreateNarrowerConcept,
-  canCreateSubclass,
-  canCreateTaskForDailyNote,
-  canCopyFleetingNoteLabel,
-} from "./AssetVisibilityRules";
