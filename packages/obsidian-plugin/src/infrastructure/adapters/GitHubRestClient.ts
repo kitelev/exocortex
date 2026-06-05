@@ -228,11 +228,14 @@ export class GitHubRestClient {
    *
    * Partial-failure contract: if steps 1–3 succeed but step 4 (PATCH ref)
    * fails (network glitch, 422 non-fast-forward, concurrent push race), the
-   * remote will have an **orphan commit** reachable only by the SHA embedded
-   * in the thrown error message. Git GC reaps unreachable commits after ~30
-   * days. Callers MAY safely retry: a subsequent successful call creates a
-   * new commit and leaves the orphan to expire. Do NOT use this method for
-   * branches with concurrent writers without coordinated retry/locking.
+   * remote will have an **orphan commit**. On the ref-mismatch path the new SHA
+   * is embedded in the thrown error message and the orphan is recoverable by
+   * it; on an HTTP-error PATCH failure (e.g. 422) the thrown error does NOT
+   * surface the new commit SHA. Either way git GC reaps unreachable commits
+   * after ~30 days. Callers MAY safely retry: a subsequent successful call
+   * creates a new commit and leaves the orphan to expire. Do NOT use this
+   * method for branches with concurrent writers without coordinated
+   * retry/locking. (See the `restCreateCommit` core docstring — same contract.)
    *
    * Implementation note: the 4-call orchestration + payload shapes + ref
    * fast-forward + structural validation live in the transport-agnostic
