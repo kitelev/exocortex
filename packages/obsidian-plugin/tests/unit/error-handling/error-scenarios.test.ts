@@ -5,7 +5,6 @@
  * across various components of the Exocortex plugin.
  *
  * Test categories:
- * 1. CreateInstanceCommand - modal failures, file conversion errors
  * 2. SPARQLCodeBlockProcessor - invalid queries, triple store failures
  * 3. ObsidianVaultAdapter - missing metadata cache, file operation failures
  * 4. SPARQLApi - query service errors, refresh failures
@@ -15,21 +14,12 @@
  * 8. Resource exhaustion simulation
  */
 
-import { flushPromises } from "../helpers/testHelpers";
-import { CreateInstanceCommand } from "../../../src/application/commands/CreateInstanceCommand";
 import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter";
 import { SPARQLApi } from "../../../src/application/api/SPARQLApi";
 import { SPARQLQueryService } from "../../../src/application/services/SPARQLQueryService";
 import { SPARQLCodeBlockProcessor } from "../../../src/application/processors/SPARQLCodeBlockProcessor";
-import { App, TFile, Notice, WorkspaceLeaf, Vault, MetadataCache, FileManager } from "obsidian";
-import {
-  GenericAssetCreationService,
-  CommandVisibilityContext,
-  LoggingService,
-  IFile,
-  type InstantiationRuleResolver,
-} from "exocortex";
-import { showLabelInputModal } from "../../../src/presentation/modals/modalSchemas";
+import { App, TFile, Vault, MetadataCache, FileManager } from "obsidian";
+import { IFile } from "exocortex";
 import type ExocortexPlugin from "../../../src/ExocortexPlugin";
 
 // Mocks
@@ -37,9 +27,6 @@ jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("../../../src/presentation/modals/modalSchemas");
-
-const mockShowLabelInputModal = showLabelInputModal as jest.MockedFunction<typeof showLabelInputModal>;
 jest.mock("exocortex", () => ({
   ...jest.requireActual("exocortex"),
   canCreateInstance: jest.fn(),
@@ -52,177 +39,6 @@ jest.mock("exocortex", () => ({
 }));
 jest.mock("../../../src/application/services/SPARQLQueryService");
 
-/**
- * 1. CreateInstanceCommand Error Scenarios
- */
-describe("CreateInstanceCommand Error Handling", () => {
-  let command: CreateInstanceCommand;
-  let mockNotifier: any;
-  let mockApp: jest.Mocked<App>;
-  let mockRuleResolver: jest.Mocked<InstantiationRuleResolver>;
-  let mockGenericAssetCreationService: jest.Mocked<GenericAssetCreationService>;
-  let mockVaultAdapter: jest.Mocked<ObsidianVaultAdapter>;
-  let mockFile: jest.Mocked<TFile>;
-  let mockContext: CommandVisibilityContext;
-  let mockLeaf: jest.Mocked<WorkspaceLeaf>;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-
-    const { canCreateInstance } = require("exocortex");
-    canCreateInstance.mockReturnValue(true);
-
-    mockLeaf = {
-      openFile: jest.fn(),
-    } as unknown as jest.Mocked<WorkspaceLeaf>;
-
-    mockApp = {
-      workspace: {
-        getLeaf: jest.fn().mockReturnValue(mockLeaf),
-        setActiveLeaf: jest.fn(),
-        getActiveFile: jest.fn().mockReturnValue(null),
-      },
-      metadataCache: {
-        getFileCache: jest.fn().mockReturnValue({
-          frontmatter: { key: "value" },
-        }),
-      },
-    } as unknown as jest.Mocked<App>;
-
-    mockRuleResolver = {
-      getRule: jest.fn().mockResolvedValue(null),
-      invalidateCache: jest.fn(),
-    } as unknown as jest.Mocked<InstantiationRuleResolver>;
-
-    mockGenericAssetCreationService = {
-      createAsset: jest.fn(),
-    } as unknown as jest.Mocked<GenericAssetCreationService>;
-
-    mockVaultAdapter = {
-      toTFile: jest.fn(),
-    } as unknown as jest.Mocked<ObsidianVaultAdapter>;
-
-    mockFile = {
-      path: "test-file.md",
-      basename: "test-file",
-      name: "test-file.md",
-      parent: { path: "parent-folder", name: "parent-folder" },
-    } as unknown as jest.Mocked<TFile>;
-
-    mockContext = {
-      instanceClass: "Task",
-      status: "Active",
-      archived: false,
-      isDraft: false,
-    };
-
-    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
-      command = new CreateInstanceCommand(mockApp, mockRuleResolver, mockGenericAssetCreationService, mockVaultAdapter, mockNotifier);
-  });
-
-  describe("Scenario 1: toTFile returns null (file conversion failure)", () => {
-    it("should throw error when toTFile returns null after asset creation", async () => {
-      const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
-
-      // toTFile returns null - simulating file conversion failure
-      mockVaultAdapter.toTFile.mockReturnValue(null as any);
-
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test Instance", taskSize: null, openInNewTab: false });
-
-      const result = command.checkCallback(false, mockFile, mockContext);
-      expect(result).toBe(true);
-
-      await flushPromises();
-
-      expect(LoggingService.error).toHaveBeenCalledWith(
-        "Create instance error",
-        expect.any(Error)
-      );
-      expect(mockNotifier.error).toHaveBeenCalledWith(
-        expect.stringContaining("Failed to create instance:")
-      );
-    });
-
-    it("should include file path in error message when toTFile fails", async () => {
-      const createdFile = { basename: "new-instance", path: "path/to/new-instance.md" };
-      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
-      mockVaultAdapter.toTFile.mockReturnValue(null as any);
-
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
-
-      command.checkCallback(false, mockFile, mockContext);
-      await flushPromises();
-
-      expect(mockNotifier.error).toHaveBeenCalledWith(
-        expect.stringContaining("path/to/new-instance.md")
-      );
-    });
-  });
-
-  describe("Scenario 2: GenericAssetCreationService throws various errors", () => {
-    it("should handle permission denied error from asset creation", async () => {
-      const permissionError = new Error("Permission denied: Cannot write to directory");
-      mockGenericAssetCreationService.createAsset.mockRejectedValue(permissionError);
-
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
-
-      command.checkCallback(false, mockFile, mockContext);
-      await flushPromises();
-
-      expect(LoggingService.error).toHaveBeenCalledWith("Create instance error", permissionError);
-      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to create instance: Permission denied: Cannot write to directory");
-    });
-
-    it("should handle file already exists error", async () => {
-      const existsError = new Error("File already exists: task-name.md");
-      mockGenericAssetCreationService.createAsset.mockRejectedValue(existsError);
-
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
-
-      command.checkCallback(false, mockFile, mockContext);
-      await flushPromises();
-
-      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to create instance: File already exists: task-name.md");
-    });
-
-    it("should handle non-Error thrown values", async () => {
-      mockGenericAssetCreationService.createAsset.mockRejectedValue("String error message");
-
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
-
-      command.checkCallback(false, mockFile, mockContext);
-      await flushPromises();
-
-      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to create instance: String error message");
-    });
-  });
-
-  describe("Scenario 3: Workspace operation failures", () => {
-    it("should handle leaf.openFile throwing error", async () => {
-      const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      const mockTFile = { path: "new-instance.md", basename: "new-instance" } as TFile;
-
-      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
-      mockVaultAdapter.toTFile.mockReturnValue(mockTFile);
-      mockLeaf.openFile.mockRejectedValue(new Error("Failed to open file"));
-
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
-
-      command.checkCallback(false, mockFile, mockContext);
-      await flushPromises();
-
-      expect(LoggingService.error).toHaveBeenCalledWith(
-        "Create instance error",
-        expect.any(Error)
-      );
-    });
-  });
-});
-
-/**
- * 2. SPARQLCodeBlockProcessor Error Scenarios
- */
 describe("SPARQLCodeBlockProcessor Error Handling", () => {
   let processor: SPARQLCodeBlockProcessor;
   let mockPlugin: ExocortexPlugin;

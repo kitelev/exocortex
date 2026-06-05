@@ -1,15 +1,10 @@
 /**
  * Command Visibility
  *
- * @deprecated Use domain/commands/visibility/* instead
- * This file re-exports for backward compatibility.
- *
- * Prefer direct imports from domain-specific files:
- *   import { canCreateTask } from "domain/commands/visibility/TaskVisibilityRules";
- *   import { canCreateProject } from "domain/commands/visibility/ProjectVisibilityRules";
- *   import { canCreateChildArea } from "domain/commands/visibility/AreaVisibilityRules";
- *   import { canStartEffort } from "domain/commands/visibility/EffortVisibilityRules";
- *   import { canCleanProperties } from "domain/commands/visibility/AssetVisibilityRules";
+ * @deprecated Import directly from domain/commands/visibility instead.
+ * Re-exports the CommandVisibilityContext type and shared visibility helpers.
+ * (The per-class canX predicate rules were removed with the pre-homoiconic
+ * command layer — see #3384.)
  */
 
 export * from "./visibility";

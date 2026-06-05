@@ -2,7 +2,6 @@
  * Error Handling Negative Tests
  *
  * Tests for error scenarios across the codebase:
- * 1. CreateInstanceCommand - toTFile conversion failure
  * 2. SPARQLCodeBlockProcessor - error handling in process method
  * 3. ObsidianVaultAdapter - file not found scenarios
  * 4. SingleVaultManager - vault switching errors
@@ -16,18 +15,11 @@
  * 12. Additional invalid input handling
  */
 
-import { flushPromises } from "./helpers/testHelpers";
-import { CreateInstanceCommand } from "../../src/application/commands/CreateInstanceCommand";
-import { App, TFile, Notice, WorkspaceLeaf, TFolder, Vault, MetadataCache, FileManager, Plugin } from "obsidian";
+import { App, TFolder, Vault, MetadataCache, FileManager, Plugin } from "obsidian";
 import {
-  GenericAssetCreationService,
-  CommandVisibilityContext,
-  LoggingService,
   IFile,
   IVaultContext,
-  type InstantiationRuleResolver,
 } from "exocortex";
-import { showLabelInputModal } from "../../src/presentation/modals/modalSchemas";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { ExocortexPluginInterface } from "../../src/types";
 import { SingleVaultManager } from "../../src/infrastructure/vault/SingleVaultManager";
@@ -43,9 +35,6 @@ jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("../../src/presentation/modals/modalSchemas");
-
-const mockShowLabelInputModal = showLabelInputModal as jest.MockedFunction<typeof showLabelInputModal>;
 jest.mock("../../src/application/services/SPARQLQueryService");
 jest.mock("exocortex", () => ({
   ...jest.requireActual("exocortex"),
@@ -62,93 +51,6 @@ jest.mock("exocortex", () => ({
 }));
 
 describe("Error Handling - Negative Tests", () => {
-  describe("1. CreateInstanceCommand - toTFile conversion failure", () => {
-  let mockNotifier: any;
-    let command: CreateInstanceCommand;
-    let mockApp: jest.Mocked<App>;
-    let mockRuleResolver: jest.Mocked<InstantiationRuleResolver>;
-    let mockGenericAssetCreationService: jest.Mocked<GenericAssetCreationService>;
-    let mockVaultAdapter: jest.Mocked<ObsidianVaultAdapter>;
-    let mockFile: jest.Mocked<TFile>;
-    let mockContext: CommandVisibilityContext;
-    let mockLeaf: jest.Mocked<WorkspaceLeaf>;
-
-    beforeEach(() => {
-      jest.clearAllMocks();
-
-      const { WikiLinkHelpers } = require("exocortex");
-      WikiLinkHelpers.normalize.mockImplementation((str: string) => str);
-
-      mockLeaf = {
-        openFile: jest.fn(),
-      } as unknown as jest.Mocked<WorkspaceLeaf>;
-
-      mockApp = {
-        workspace: {
-          getLeaf: jest.fn().mockReturnValue(mockLeaf),
-          setActiveLeaf: jest.fn(),
-          getActiveFile: jest.fn(),
-        },
-        metadataCache: {
-          getFileCache: jest.fn().mockReturnValue({
-            frontmatter: { key: "value" },
-          }),
-        },
-      } as unknown as jest.Mocked<App>;
-
-      mockRuleResolver = {
-        getRule: jest.fn().mockResolvedValue(null),
-        invalidateCache: jest.fn(),
-      } as unknown as jest.Mocked<InstantiationRuleResolver>;
-
-      mockGenericAssetCreationService = {
-        createAsset: jest.fn(),
-      } as unknown as jest.Mocked<GenericAssetCreationService>;
-
-      // Return null from toTFile to trigger error
-      mockVaultAdapter = {
-        toTFile: jest.fn().mockReturnValue(null),
-      } as unknown as jest.Mocked<ObsidianVaultAdapter>;
-
-      mockFile = {
-        path: "test-file.md",
-        basename: "test-file",
-        name: "test-file.md",
-        parent: { path: "parent-folder", name: "parent-folder" },
-      } as unknown as jest.Mocked<TFile>;
-
-      mockContext = {
-        instanceClass: "Task",
-        status: "Active",
-        archived: false,
-        isDraft: false,
-      };
-
-      mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
-      command = new CreateInstanceCommand(mockApp, mockRuleResolver, mockGenericAssetCreationService, mockVaultAdapter, mockNotifier);
-    });
-
-    it("should show error notice when toTFile returns null", async () => {
-      const mockCanCreateInstance = require("exocortex").canCreateInstance;
-      mockCanCreateInstance.mockReturnValue(true);
-
-      const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
-
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
-
-      command.checkCallback(false, mockFile, mockContext);
-
-      await flushPromises();
-
-      expect(mockVaultAdapter.toTFile).toHaveBeenCalledWith(createdFile);
-      expect(LoggingService.error).toHaveBeenCalledWith("Create instance error", expect.any(Error));
-      expect(mockNotifier.error).toHaveBeenCalledWith(
-        expect.stringContaining("Failed to create instance")
-      );
-    });
-  });
-
   describe("2. SPARQLCodeBlockProcessor - error handling", () => {
     // The processor handles invalid queries by rendering an error view
     // This is tested in the integration tests, but we verify the error path exists
