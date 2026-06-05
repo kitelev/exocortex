@@ -2,9 +2,11 @@ import { injectable, inject } from "tsyringe";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { MetadataHelpers } from "../utilities/MetadataHelpers";
 import { WikiLinkHelpers } from "../utilities/WikiLinkHelpers";
+import { Namespace } from "../domain/models/rdf/Namespace";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import { DI_TOKENS } from "../interfaces/tokens";
 import { PropertyFieldType } from "../domain/types/PropertyFieldType";
+import type { ShapeRegistry } from "./ShapeRegistry";
 import type { IClock } from "./IClock";
 import { liveClock } from "./IClock";
 import type { IUidGenerator } from "./IUidGenerator";
@@ -43,6 +45,67 @@ export interface GenericAssetCreationConfig {
    * detection still works for symbolic and alias-wikilink forms.
    */
   classResolver?: ClassRefResolver;
+
+  // --- Optional domain fields (H3 PR1 consolidation, #3384). ---
+  // Every field below is opt-in: existing callers (plugin
+  // ServiceRegistryPopulator, cli apply, grounding factories) omit them and
+  // therefore observe byte-identical behaviour. Only `cli create` opts in.
+
+  /**
+   * Emission form for `exo__Instance_class`:
+   *  - `'label'` (default): `[[<className>]]` — the historical plugin/apply
+   *    behaviour. Display label resolves at render time.
+   *  - `'uuid'`: `[[<classUid>]]` strip-canon (no alias). Requires
+   *    {@link classUid}; falls back to the label form when `classUid` is
+   *    absent.
+   *
+   * `cli create` passes `'uuid'` (UID-canon convention). The plugin flip to
+   * `'uuid'` is deferred to PR2 (real-vault UI smoke).
+   */
+  classRefForm?: "label" | "uuid";
+
+  /**
+   * Resolved class UUID, used when {@link classRefForm} is `'uuid'`. The
+   * caller (`cli create`) resolves the class short name → UUID before
+   * invoking the service.
+   */
+  classUid?: string;
+
+  /**
+   * Creator UUID. When provided (and non-blank) the service emits
+   * `exo__Asset_createdBy: "[[<createdBy>]]"`. There is NO default — when
+   * omitted the property is not emitted (an empty creator means "the user").
+   */
+  createdBy?: string;
+
+  /**
+   * Extra aliases appended (deduplicated) after the `[label]` entry. Plugin
+   * and apply omit this → aliases stay `[label]`.
+   */
+  aliases?: string[];
+
+  /**
+   * IANA timezone for the `exo__Asset_createdAt` timestamp. When provided the
+   * timestamp is rendered for that timezone; when omitted the live clock's
+   * local timestamp is used (unchanged plugin/apply behaviour).
+   */
+  timezone?: string;
+
+  /**
+   * Markdown body content. When omitted, {@link MetadataHelpers.buildFileContent}
+   * applies its default (`# <label>` heading, or empty) — the unchanged
+   * plugin/apply behaviour.
+   */
+  body?: string;
+
+  /**
+   * SHACL-lite shape registry. When present, wikilink property values are
+   * serialized with cardinality awareness (Issue #3179): scalar by default,
+   * YAML array only for properties whose shape declares `Multiple`. When
+   * absent, property values use the {@link PropertyFieldType}-driven
+   * formatter (unchanged plugin/apply behaviour).
+   */
+  shapeRegistry?: ShapeRegistry;
 }
 
 /**
@@ -53,6 +116,25 @@ export interface AssetPropertyDefinition {
   name: string;
   /** Field type for formatting */
   fieldType: PropertyFieldType;
+}
+
+/**
+ * Pure (no-write) result of assembling an asset. Returned by
+ * {@link GenericAssetCreationService.buildAsset}; used by `cli create`
+ * `--dry-run` so the preview matches the exact bytes the real write would
+ * produce (canonical property ordering via {@link MetadataHelpers.buildFileContent}).
+ */
+export interface AssetBuildResult {
+  /** Generated asset UUID (filename stem). */
+  uid: string;
+  /** Resolved target folder (config.folderPath or class-based default). */
+  folderPath: string;
+  /** Full vault-relative path (`<folderPath>/<uid>.md`). */
+  path: string;
+  /** Assembled frontmatter (pre-ordering). */
+  frontmatter: Record<string, unknown>;
+  /** Full file content (ordered frontmatter + body) — identical to the write. */
+  content: string;
 }
 
 /**
@@ -113,19 +195,10 @@ export class GenericAssetCreationService {
     config: GenericAssetCreationConfig,
     propertyDefinitions?: AssetPropertyDefinition[],
   ): Promise<IFile> {
-    const uid = this.uidGen.next();
-    const fileName = `${uid}.md`;
-
-    const frontmatter = this.generateFrontmatter(
+    const { folderPath, path, content } = this.buildAsset(
       config,
-      propertyDefinitions || [],
-      uid,
+      propertyDefinitions,
     );
-
-    const fileContent = MetadataHelpers.buildFileContent(frontmatter);
-
-    // Determine folder path
-    const folderPath = config.folderPath || this.getDefaultFolderPath(config);
 
     // Ensure folder exists
     const folder = this.vault.getAbstractFileByPath(folderPath);
@@ -133,21 +206,54 @@ export class GenericAssetCreationService {
       await this.vault.createFolder(folderPath);
     }
 
-    const filePath = folderPath ? `${folderPath}/${fileName}` : fileName;
-    const createdFile = await this.vault.create(filePath, fileContent);
+    const createdFile = await this.vault.create(path, content);
 
     return createdFile;
   }
 
   /**
-   * Generate frontmatter for the asset.
+   * Assemble an asset's frontmatter, folder, path and full file content
+   * WITHOUT writing anything to the vault.
+   *
+   * This is the pure core of {@link createAsset}; `cli create --dry-run`
+   * calls it so its preview is byte-for-byte what the real write would emit
+   * (frontmatter canonicalized via {@link MetadataHelpers.buildFileContent}).
+   *
+   * @param config - Configuration for the asset to build
+   * @param propertyDefinitions - Optional property type definitions
+   * @returns The assembled {@link AssetBuildResult} (uid, folderPath, path,
+   *          frontmatter, content)
    */
-  private generateFrontmatter(
+  buildAsset(
     config: GenericAssetCreationConfig,
-    propertyDefinitions: AssetPropertyDefinition[],
-    uid: string,
+    propertyDefinitions?: AssetPropertyDefinition[],
+  ): AssetBuildResult {
+    const uid = this.uidGen.next();
+    const frontmatter = this.generateFrontmatter(
+      config,
+      propertyDefinitions || [],
+      uid,
+    );
+    const content = MetadataHelpers.buildFileContent(frontmatter, config.body);
+
+    const folderPath = config.folderPath || this.getDefaultFolderPath(config);
+    const fileName = `${uid}.md`;
+    const path = folderPath ? `${folderPath}/${fileName}` : fileName;
+
+    return { uid, folderPath, path, frontmatter, content };
+  }
+
+  /**
+   * Generate frontmatter for the asset.
+   *
+   * Public so `cli create` can obtain frontmatter without a write. When
+   * `uid` is omitted a fresh one is generated.
+   */
+  generateFrontmatter(
+    config: GenericAssetCreationConfig,
+    propertyDefinitions: AssetPropertyDefinition[] = [],
+    uid: string = this.uidGen.next(),
   ): Record<string, unknown> {
-    const now = this.clock.now();
     const frontmatter: Record<string, unknown> = {};
 
     // Build property type map for quick lookup
@@ -158,15 +264,40 @@ export class GenericAssetCreationService {
 
     // Set required system properties
     frontmatter["exo__Asset_uid"] = uid;
-     
-    frontmatter["exo__Asset_createdAt"] = DateFormatter.toLocalTimestamp(now);
-    frontmatter["exo__Instance_class"] = [this.formatWikilink(config.className)];
 
-    // Set label if provided
+    frontmatter["exo__Asset_createdAt"] = config.timezone
+      ? this.generateTimestampInTimezone(config.timezone)
+      : DateFormatter.toLocalTimestamp(this.clock.now());
+
+    // exo__Instance_class: opt-in UID-canon strip form (`[[<uuid>]]`) when the
+    // caller resolves a class UUID and requests it; otherwise the historical
+    // label form (`[[<className>]]`). Default preserves plugin/apply output.
+    const classRef =
+      config.classRefForm === "uuid" && config.classUid
+        ? config.classUid
+        : config.className;
+    frontmatter["exo__Instance_class"] = [this.formatWikilink(classRef)];
+
+    // Creator — emitted only when explicitly supplied (no implicit default).
+    if (config.createdBy && config.createdBy.trim() !== "") {
+      frontmatter["exo__Asset_createdBy"] = this.formatWikilink(
+        config.createdBy.trim(),
+      );
+    }
+
+    // Set label if provided (+ optional extra aliases appended after [label]).
     if (config.label && config.label.trim() !== "") {
       const trimmedLabel = config.label.trim();
       frontmatter["exo__Asset_label"] = trimmedLabel;
-      frontmatter["aliases"] = [trimmedLabel];
+      const aliases = [trimmedLabel];
+      if (config.aliases) {
+        for (const alias of config.aliases) {
+          if (!aliases.includes(alias)) {
+            aliases.push(alias);
+          }
+        }
+      }
+      frontmatter["aliases"] = aliases;
     }
 
     // Inherit parent context if provided
@@ -181,6 +312,7 @@ export class GenericAssetCreationService {
         if (
           propertyName === "exo__Asset_uid" ||
           propertyName === "exo__Asset_createdAt" ||
+          propertyName === "exo__Asset_createdBy" ||
           propertyName === "exo__Instance_class" ||
           propertyName === "exo__Asset_label" ||
           propertyName === "aliases"
@@ -193,8 +325,20 @@ export class GenericAssetCreationService {
           continue;
         }
 
-        const fieldType = propertyTypeMap.get(propertyName);
-        frontmatter[propertyName] = this.formatValue(value, fieldType);
+        // When a shape registry is supplied (cli create path), wikilink
+        // values are serialized with cardinality awareness (Issue #3179):
+        // scalar by default, array only for Multiple-cardinality properties.
+        // Otherwise the PropertyFieldType formatter applies (plugin/apply).
+        if (config.shapeRegistry !== undefined) {
+          frontmatter[propertyName] = this.formatPropertyValueWithCardinality(
+            propertyName,
+            String(value),
+            config.shapeRegistry,
+          );
+        } else {
+          const fieldType = propertyTypeMap.get(propertyName);
+          frontmatter[propertyName] = this.formatValue(value, fieldType);
+        }
       }
     }
 
@@ -441,11 +585,82 @@ export class GenericAssetCreationService {
     if (typeof value === "number") {
       const date = new Date(value);
       if (!isNaN(date.getTime())) {
-         
+
         return DateFormatter.toLocalTimestamp(date);
       }
     }
 
     return String(value);
+  }
+
+  /**
+   * Format a property value with SHACL-lite cardinality awareness (Issue
+   * #3179). Plain (non-wikilink) values pass through as scalars. Wikilink
+   * values are quoted and emitted as a scalar by default; only properties
+   * whose shape declares cardinality `Multiple` are wrapped in a YAML array.
+   *
+   * Ported from the former CLI `AssetCreationService` so `cli create` keeps
+   * its vault-convention emission while the logic lives in core.
+   */
+  private formatPropertyValueWithCardinality(
+    key: string,
+    value: string,
+    shapeRegistry?: ShapeRegistry,
+  ): string | string[] {
+    if (!value.includes("[[")) {
+      return value;
+    }
+
+    // Quote the wikilink if not already quoted
+    const quoted =
+      value.startsWith('"') && value.endsWith('"') ? value : `"${value}"`;
+
+    if (this.shouldEmitAsArray(key, shapeRegistry)) {
+      return [quoted];
+    }
+
+    return quoted;
+  }
+
+  /**
+   * Decide whether a property should be wrapped in a YAML array. Returns
+   * `true` only when a shape registry is supplied, the property has a declared
+   * shape, and its cardinality is explicitly `Multiple` (Issue #3179).
+   */
+  private shouldEmitAsArray(
+    key: string,
+    shapeRegistry?: ShapeRegistry,
+  ): boolean {
+    if (!shapeRegistry) return false;
+    const parsed = Namespace.fromPropertyKey(key);
+    if (!parsed) return false;
+    const propertyIRI = parsed.namespace.term(parsed.localName).value;
+    const shape = shapeRegistry.get(propertyIRI);
+    return shape?.cardinality === "Multiple";
+  }
+
+  /**
+   * Render the live clock's instant as a `YYYY-MM-DDTHH:MM:SS` timestamp for
+   * the given IANA timezone. Mirrors the former CLI `AssetCreationService`
+   * timestamp generation so `cli create --timezone` output is unchanged.
+   */
+  private generateTimestampInTimezone(timezone: string): string {
+    const now = this.clock.now();
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+
+    const parts = formatter.formatToParts(now);
+    const get = (type: string): string =>
+      parts.find((p) => p.type === type)?.value || "00";
+
+    return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}`;
   }
 }

@@ -157,6 +157,7 @@ export {
   GenericAssetCreationService,
   type GenericAssetCreationConfig,
   type AssetPropertyDefinition,
+  type AssetBuildResult,
   type ClassRefResolver,
 } from "./services/GenericAssetCreationService";
 export { ArchiveAssetService } from "./services/ArchiveAssetService";

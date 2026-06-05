@@ -1,15 +1,19 @@
 import { jest } from "@jest/globals";
 import { Command } from "commander";
 
-// Mock uuid (AssetCreationService dependency)
+// Mock uuid (transitively a GenericAssetCreationService dependency)
 jest.unstable_mockModule("uuid", () => ({
   v4: jest.fn(() => "mock-uuid"),
 }));
 
-// Mock exocortex (NodeFsAdapter + AssetCreationService dependencies)
+// Mock exocortex (NodeFsAdapter + GenericAssetCreationService dependencies).
+// The create command's action is not exercised here (only option registration),
+// so a stub service class is enough to satisfy the ESM named-import binding.
 jest.unstable_mockModule("exocortex", () => ({
   DateFormatter: { toLocalTimestamp: jest.fn(() => "2026-03-23T12:00:00") },
   MetadataHelpers: { buildFileContent: jest.fn(() => "---\n---\n") },
+  GenericAssetCreationService: class GenericAssetCreationService {},
+  ShapeRegistry: class ShapeRegistry {},
   IFileSystemAdapter: {},
   FileNotFoundError: class FileNotFoundError extends Error {},
   FileAlreadyExistsError: class FileAlreadyExistsError extends Error {},
