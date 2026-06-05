@@ -70,8 +70,17 @@ export class GitHubRestClient {
   readonly #maxTarballBytes: number;
 
   constructor(opts: GitHubRestClientOptions) {
-    if (!opts.pat || typeof opts.pat !== "string") {
-      throw new Error("GitHubRestClient: PAT is required");
+    // An EMPTY PAT is allowed and puts the client in unauthenticated mode
+    // (no Authorization header → public-repo reads only, lower rate limit).
+    // This is deliberate: plugin onload wires the hard-switch dependencies
+    // BEFORE the user has configured a PAT, so the ctor must not throw on an
+    // empty string. Authenticated operations (createCommit, private pulls)
+    // then surface a clear HTTP 401 instead of the whole hard-switch command
+    // palette silently disappearing. The previous «PAT is required» throw on
+    // an empty string broke that wiring (gated Bootstrap/knowledge-switch
+    // commands never registered on vaults without a stored PAT).
+    if (typeof opts.pat !== "string") {
+      throw new Error("GitHubRestClient: PAT must be a string");
     }
     if (!opts.app) {
       throw new Error("GitHubRestClient: Obsidian App is required");
@@ -387,16 +396,23 @@ export class GitHubRestClient {
   // ───────────────────────────── internals ─────────────────────────────
 
   private async request(param: RequestUrlParam): Promise<RequestUrlResponse> {
-    // Caller-provided headers spread FIRST so configured Authorization
-    // always wins — prevents a callsite from accidentally (or maliciously)
-    // overriding the PAT via headers passed in `param`.
-    const headers = {
+    // Caller-provided headers spread FIRST so the client always owns the
+    // Authorization header — prevents a callsite from accidentally (or
+    // maliciously) overriding the PAT via headers passed in `param`.
+    const headers: Record<string, string> = {
       ...(param.headers ?? {}),
-      Authorization: `Bearer ${this.#pat}`,
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
       "User-Agent": "exocortex-plugin",
     };
+    if (this.#pat.length > 0) {
+      headers.Authorization = `Bearer ${this.#pat}`;
+    } else {
+      // Unauthenticated mode (empty PAT): omit Authorization entirely. Sending
+      // `Bearer ` with an empty token makes GitHub reject even public reads
+      // with 401, and a caller-provided Authorization must not leak through.
+      delete headers.Authorization;
+    }
     let resp: RequestUrlResponse;
     try {
       resp = await requestUrl({

@@ -122,8 +122,10 @@ import { injectAssetSpaceMaterializationTriples } from "./infrastructure/adapter
 import { AssetSpaceStatusIconPatch } from "./presentation/asset-space/AssetSpaceStatusIconPatch";
 import { GitHubRestClient } from "./infrastructure/adapters/GitHubRestClient";
 import { GitSubmoduleOps } from "./infrastructure/adapters/GitSubmoduleOps";
-import { UncommittedChangesGuard } from "./infrastructure/adapters/UncommittedChangesGuard";
-import { ModalConfirmGate } from "./infrastructure/adapters/ModalConfirmGate";
+import {
+  buildHardSwitchDeps,
+  type HardSwitchDeps,
+} from "./infrastructure/adapters/HardSwitchDepsFactory";
 import {
   CommandExecutionFlow,
   DI_TOKENS,
@@ -2586,59 +2588,18 @@ export default class ExocortexPlugin extends Plugin {
     const settingsStore = new PluginSettingsStoreAdapter(localDataStore);
 
     // Phase 5 P3 — hard switch dependencies (desktop-only). On mobile, the
-    // palette command throws via the AssetSpaceManager pull guard; here we
-    // just leave the dependencies wired but inert.
-    let hardSwitchDeps: {
-      assetSpaceManager: AssetSpaceManager;
-      gitOps: GitSubmoduleOps;
-      uncommittedGuard: UncommittedChangesGuard;
-      confirmGate: ModalConfirmGate;
-      cacheLayer: SwitchCacheLayer;
-      vaultRootPath: string;
-    } | null = null;
-    if (!Platform.isMobile) {
-      try {
-        const secretsStore = new LocalSecretsStore({ app: this.app });
-        const pat = await secretsStore.getSecret("pat");
-        const githubClient = new GitHubRestClient({
+    // palette command throws via the AssetSpaceManager pull guard, so we skip
+    // wiring entirely. Extracted to `buildHardSwitchDeps` for testability —
+    // an empty-PAT GitHubRestClient ctor throw previously left this `null` and
+    // silently hid the gated Bootstrap / knowledge-switch palette commands.
+    const hardSwitchDeps: HardSwitchDeps | null = Platform.isMobile
+      ? null
+      : await buildHardSwitchDeps({
           app: this.app,
-          pat: pat ?? "",
+          localDataStore,
+          notifier: this.notifier,
+          logger: this.logger,
         });
-        const stagingTrackerHs = new StagingDirTracker({ localDataStore });
-        const assetSpaceManager = new AssetSpaceManager({
-          app: this.app,
-          client: githubClient,
-          notifications: this.notifier,
-          stagingTracker: stagingTrackerHs,
-        });
-        const vaultRootPath = (
-          this.app.vault.adapter as unknown as { basePath?: string }
-        ).basePath ?? "";
-        if (vaultRootPath.length > 0) {
-          const gitOps = new GitSubmoduleOps({ vaultRootPath });
-          const uncommittedGuard = new UncommittedChangesGuard({ gitOps });
-          const confirmGate = new ModalConfirmGate(this.app);
-          const cacheLayer = new SwitchCacheLayer();
-          hardSwitchDeps = {
-            assetSpaceManager,
-            gitOps,
-            uncommittedGuard,
-            confirmGate,
-            cacheLayer,
-            vaultRootPath,
-          };
-        } else {
-          this.logger.warn(
-            "[ExocortexPlugin] vault.adapter.basePath unavailable — hard switch palette will be hidden",
-          );
-        }
-      } catch (err) {
-        this.logger.warn(
-          "[ExocortexPlugin] failed to wire hard-switch deps; soft switch only",
-          err instanceof Error ? err : new Error(String(err)),
-        );
-      }
-    }
 
     const switchMgr = new FocusProfileSwitchManager({
       app: this.app,
