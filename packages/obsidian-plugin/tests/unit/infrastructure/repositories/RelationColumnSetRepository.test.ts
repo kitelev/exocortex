@@ -401,6 +401,57 @@ describe("RelationColumnSetRepository — unsubscribe error tolerance", () => {
   });
 });
 
+describe("RelationColumnSetRepository — Issue #3372 cold-start race", () => {
+  // Models the warm-boot regression: metadataCache parses
+  // `ui__RelationColumnSet` fixtures BEFORE the repository's
+  // `on("changed" / "deleted" / "renamed")` listeners are wired, so
+  // `initialize()`'s initial `rebuildSync()` sees an empty frontmatter
+  // map and no later event fires for those files. The plugin closes
+  // the race by calling `rebuildNow()` from the
+  // `metadataCache.on("resolved")` handler — this test asserts that
+  // contract on the repository side. Mirrors #3368 for ExoLayoutRepository.
+  test("rebuildNow() picks up files that became available after initialize()", () => {
+    const adapter = makeAdapter(); // starts empty — mirrors metadataCache pre-parse
+    const repo = new RelationColumnSetRepository(adapter, makeTimer().options);
+
+    repo.initialize();
+    expect(repo.getSnapshot().all).toHaveLength(0);
+
+    // Frontmatter becomes available later (metadataCache finishes parsing)
+    // WITHOUT firing a "changed" event — exactly the warm-boot race.
+    adapter.setFrontmatter({
+      "rcs-late.md": validConfig("late-uid"),
+    });
+    // Snapshot still stale — no event fired, no debounced rebuild scheduled.
+    expect(repo.getSnapshot().all).toHaveLength(0);
+
+    // The fix path: plugin invokes rebuildNow() from "resolved" handler.
+    repo.rebuildNow();
+
+    const snap = repo.getSnapshot();
+    expect(snap.all.map((c) => c.uid)).toEqual(["late-uid"]);
+    expect(snap.byUid.has("late-uid")).toBe(true);
+  });
+
+  test("rebuildNow() is idempotent — repeated calls produce stable snapshot", () => {
+    const adapter = makeAdapter({ "a.md": validConfig("a") });
+    const repo = new RelationColumnSetRepository(adapter, makeTimer().options);
+
+    repo.initialize();
+    const first = repo.getSnapshot();
+    repo.rebuildNow();
+    const second = repo.getSnapshot();
+    repo.rebuildNow();
+    const third = repo.getSnapshot();
+
+    // Each rebuild publishes a fresh frozen snapshot, but contents
+    // are equivalent — caller can call rebuildNow() defensively.
+    expect(first.all.map((c) => c.uid)).toEqual(["a"]);
+    expect(second.all.map((c) => c.uid)).toEqual(["a"]);
+    expect(third.all.map((c) => c.uid)).toEqual(["a"]);
+  });
+});
+
 describe("RelationColumnSetRepository — Phase 1 invariants", () => {
   test("empty vault (AC 7: UniversalLayout must not break) — snapshot arrays are safe defaults", () => {
     const adapter = makeAdapter();
