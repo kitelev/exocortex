@@ -533,3 +533,11 @@ export type {
   HardSwitchPlan,
 } from "./services/focus-profile";
 export { ClassHierarchy as TripleClassHierarchy } from "./services/ClassHierarchy";
+
+// USTAR-aware tarball parser (honours the ustar `prefix` field that nanotar
+// 0.3.0 drops — fixes private-repo AssetSpace pulls with full-SHA wrappers).
+export {
+  parseTarball,
+  parseTarballGzip,
+  type TarballEntry,
+} from "./infrastructure/tarball/parseTarball";

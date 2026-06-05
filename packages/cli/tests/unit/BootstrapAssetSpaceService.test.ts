@@ -69,6 +69,72 @@ function buildLinkTarball(wrapper: string, typeflag: "1" | "2"): Uint8Array {
   return gzipSync(Buffer.concat([header, trailer]));
 }
 
+/**
+ * Hand-craft a USTAR regular-file block whose full path is split across the
+ * `prefix` (offset 345) and `name` (offset 0) fields — the POSIX layout GitHub
+ * uses for paths > 100 bytes. Authenticated tarballs carry the FULL 40-char
+ * commit SHA in the wrapper, pushing a UUID-named file past 100 chars → ustar
+ * split. nanotar 0.3.0 dropped the prefix (Issue #3382); the fix restores it.
+ * `createTar` can't emit prefix-split entries, so we build the raw bytes.
+ */
+function tarFileWithPrefix(prefix: string, name: string, content: string): Buffer {
+  const data = Buffer.from(content, "utf8");
+  const block = Buffer.alloc(512, 0);
+  block.write(name, 0, "utf8"); // name field (≤100)
+  block.write("0000644\0", 100, "ascii"); // mode
+  block.write("0000000\0", 108, "ascii"); // uid
+  block.write("0000000\0", 116, "ascii"); // gid
+  block.write(data.length.toString(8).padStart(11, "0") + "\0", 124, "ascii"); // size
+  block.write("00000000000\0", 136, "ascii"); // mtime
+  block.write("        ", 148, "ascii"); // checksum placeholder
+  block.write("0", 156, "ascii"); // typeflag = regular file
+  block.write("ustar\0", 257, "ascii"); // magic
+  block.write("00", 263, "ascii"); // version
+  if (prefix) block.write(prefix, 345, "utf8"); // ustar prefix field (≤155)
+  let sum = 0;
+  for (let i = 0; i < 512; i++) sum += block[i];
+  block.write(sum.toString(8).padStart(6, "0") + "\0 ", 148, "ascii");
+  const padded = Buffer.alloc(Math.ceil(data.length / 512) * 512, 0);
+  data.copy(padded);
+  return Buffer.concat([block, padded]);
+}
+
+function tarDir(name: string): Buffer {
+  const block = Buffer.alloc(512, 0);
+  block.write(name, 0, "utf8");
+  block.write("0000755\0", 100, "ascii");
+  block.write("00000000000\0", 124, "ascii"); // size = 0
+  block.write("00000000000\0", 136, "ascii");
+  block.write("        ", 148, "ascii");
+  block.write("5", 156, "ascii"); // typeflag = directory
+  block.write("ustar\0", 257, "ascii");
+  block.write("00", 263, "ascii");
+  let sum = 0;
+  for (let i = 0; i < 512; i++) sum += block[i];
+  block.write(sum.toString(8).padStart(6, "0") + "\0 ", 148, "ascii");
+  return block;
+}
+
+/**
+ * Build a gzipped tarball mimicking GitHub's AUTHENTICATED REST tarball: a
+ * full-40-char-SHA wrapper dir + a UUID-named asset whose 100+ char path is
+ * ustar prefix-split. Reproduces the exact Issue #3382 failure shape.
+ */
+function buildAuthGitHubTarball(
+  owner: string,
+  repo: string,
+  sha40: string,
+  uuid: string,
+  content: string,
+): Uint8Array {
+  const wrapper = `${owner}-${repo}-${sha40}`;
+  const dir = tarDir(`${wrapper}/`);
+  const readme = tarFileWithPrefix("", `${wrapper}/README.md`, "# readme"); // 75c → name field
+  const asset = tarFileWithPrefix(wrapper, `${uuid}.md`, content); // prefix=wrapper, name=uuid → split
+  const trailer = Buffer.alloc(1024, 0);
+  return gzipSync(Buffer.concat([dir, readme, asset, trailer]));
+}
+
 function fakeFetch(response: Uint8Array): typeof fetch {
   return (async (_url: string | URL | Request) => {
     return {
@@ -158,6 +224,41 @@ describe("BootstrapAssetSpaceService", () => {
       expect(existsSync(path.join(target, "README.md"))).toBe(true);
       expect(readFileSync(path.join(target, "README.md"), "utf8")).toBe("# exo TBox");
       expect(existsSync(path.join(target, "schema/Asset.md"))).toBe(true);
+    });
+
+    // Issue #3382 e2e: end-to-end CLI pull of an AUTHENTICATED-shape tarball.
+    // The wrapper carries the full 40-char SHA, so the UUID asset's path
+    // exceeds 100 bytes and is ustar prefix-split. Before the fix the parser
+    // dropped the wrapper prefix → "not under wrapper" throw; and the 40-char
+    // SHA failed the 7-char wrapper match. This exercises both fixes through
+    // the real `pullAssetSpace` extract+materialise path.
+    it("materializes a prefix-split UUID asset from a full-40-char-SHA wrapper (#3382)", async () => {
+      const SHA40 = "306f656e6159944a4ae18beeb618d13611826b9b"; // full commit SHA
+      const UUID = "a1b2c3d4-e5f6-7890-abcd-ef0123456789";
+      const tarball = buildAuthGitHubTarball(
+        "kitelev",
+        "exoas-honesttest",
+        SHA40,
+        UUID,
+        "asset body",
+      );
+      const svc = new BootstrapAssetSpaceService({ fetchImpl: fakeFetch(tarball) });
+      const target = path.join(tempBase, "assetspaces", "honesttest");
+
+      const result = await svc.pullAssetSpace(
+        "https://github.com/kitelev/exoas-honesttest",
+        "main",
+        target,
+      );
+
+      // SHA extraction accepts the full 40-char authenticated wrapper.
+      expect(result.sha).toBe(SHA40);
+      expect(result.fileCount).toBe(2);
+      // The prefix-split UUID asset is materialised under the wrapper-stripped
+      // path (its full tarball path was 105 bytes → ustar prefix + name split).
+      expect(existsSync(path.join(target, `${UUID}.md`))).toBe(true);
+      expect(readFileSync(path.join(target, `${UUID}.md`), "utf8")).toBe("asset body");
+      expect(existsSync(path.join(target, "README.md"))).toBe(true);
     });
 
     it("refuses к overwrite non-empty target", async () => {

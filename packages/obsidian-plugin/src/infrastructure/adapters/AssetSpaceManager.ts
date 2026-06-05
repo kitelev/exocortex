@@ -607,23 +607,26 @@ export function discoverWrapperDir(entries: ExtractedTarFile[]): string {
 }
 
 /**
- * Extract the 7-character SHA from a GitHub REST tarball wrapper name.
+ * Extract the commit SHA from a GitHub REST tarball wrapper name.
  *
- * GitHub-emitted wrapper names follow the pattern `<owner>-<repo>-<sha7>`
- * where `<sha7>` is the last `-`-delimited segment (always 7 lowercase
- * hex characters). Repo names CAN contain hyphens, so we anchor on the
- * trailing 7-hex-char segment to avoid `<owner>-<repo-with-dash>-<sha7>`
- * ambiguity.
+ * GitHub-emitted wrapper names follow the pattern `<owner>-<repo>-<sha>`
+ * where `<sha>` is the last `-`-delimited segment. **The SHA length depends on
+ * authentication:** ANONYMOUS tarball requests get a 7-char abbreviated SHA,
+ * but AUTHENTICATED requests (private repos, PAT supplied) get the FULL 40-char
+ * SHA. Accepting only 7 chars broke private-repo pulls — the full-SHA wrapper
+ * failed this match and the whole pull threw. Repo names CAN contain hyphens,
+ * so we anchor on the trailing hex segment (7..40 chars) to avoid
+ * `<owner>-<repo-with-dash>-<sha>` ambiguity.
  *
  * Exported for unit testing.
  */
 export function extractShaFromWrapper(wrapper: string): string {
-  // Match the trailing `-<7-hex>` suffix. Hex is case-insensitive in
-  // principle but GitHub emits lowercase; accept both для robustness.
-  const m = wrapper.match(/-([0-9a-fA-F]{7})$/);
+  // Trailing `-<hex>` suffix, 7 (abbreviated) to 40 (full) hex chars. Hex is
+  // case-insensitive in principle but GitHub emits lowercase.
+  const m = wrapper.match(/-([0-9a-fA-F]{7,40})$/);
   if (!m) {
     throw new Error(
-      `extractShaFromWrapper: wrapper "${wrapper}" does not match expected GitHub pattern <owner>-<repo>-<sha7>`,
+      `extractShaFromWrapper: wrapper "${wrapper}" does not match expected GitHub pattern <owner>-<repo>-<sha>`,
     );
   }
   return m[1].toLowerCase();

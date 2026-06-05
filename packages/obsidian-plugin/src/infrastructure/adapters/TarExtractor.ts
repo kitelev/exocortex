@@ -1,5 +1,5 @@
-import { parseTarGzip } from "nanotar";
-import type { ParsedTarFileItem } from "nanotar";
+import { parseTarballGzip } from "exocortex";
+import type { TarballEntry } from "exocortex";
 
 export interface ExtractedTarFile {
   path: string;
@@ -142,7 +142,7 @@ export class TarExtractor {
     return {
       [Symbol.asyncIterator]:
         async function* (): AsyncIterableIterator<ExtractedTarFile> {
-          const parsed: ParsedTarFileItem[] = await parseTarGzip(blob);
+          const parsed: TarballEntry[] = await parseTarballGzip(blob);
           try {
             for (let i = 0; i < parsed.length; i++) {
               const entry = parsed[i];
@@ -150,7 +150,7 @@ export class TarExtractor {
               validateEntry(entry, prefix);
               // Skip directories — callers materialise dirs via file paths.
               if (entry.type === "directory") {
-                parsed[i] = undefined as unknown as ParsedTarFileItem;
+                parsed[i] = undefined as unknown as TarballEntry;
                 continue;
               }
               const content = entry.data ?? new Uint8Array(0);
@@ -159,7 +159,7 @@ export class TarExtractor {
               // Release the entry reference so the caller-processed Uint8Array
               // becomes GC-eligible (the parsed[] array would otherwise pin it
               // for the lifetime of the iteration).
-              parsed[i] = undefined as unknown as ParsedTarFileItem;
+              parsed[i] = undefined as unknown as TarballEntry;
             }
           } finally {
             // Final cleanup runs even on early-abort (caller breaks out of
