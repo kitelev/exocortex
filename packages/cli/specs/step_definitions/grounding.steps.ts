@@ -17,7 +17,7 @@ import {
   GroundingExecutor,
   ServiceRegistry,
   GroundingType,
-  resolveGroundingTypeFromWikilinkLiteral,
+  parseGroundingDefinitionFromFrontmatter,
   type GroundingDefinition,
   ArchiveAssetService,
   FixMissingLabelService,
@@ -107,13 +107,14 @@ function parseFrontmatter(text: string): Record<string, unknown> {
   }
 }
 
-function normalizeWikilink(value: unknown): string {
-  if (typeof value !== "string") return "";
-  const stripped = value.replace(/["'[\]]/g, "").trim();
-  const pipe = stripped.indexOf("|");
-  return pipe >= 0 ? stripped.slice(0, pipe).trim() : stripped;
-}
-
+// Thin fs-wrapper: index lookup + read + frontmatter parse + recursion-depth
+// guard. The pure `Record → GroundingDefinition` field-mapping (type resolve,
+// service_call serviceId fallback, incrementBy parse, targetValueRef unwrap,
+// full key mapping) lives in core `parseGroundingDefinitionFromFrontmatter`
+// (audit epic #3384 H5) — single source of the raw-frontmatter contract,
+// removing the previously-duplicated per-key mapping that had to be manually
+// re-synced on every RFC migration. Composite sub-steps recurse back through
+// this wrapper so fs / depth-guard stay here.
 function readGroundingDef(uid: string, depth = 0): GroundingDefinition {
   if (depth > 20) {
     throw new Error(`Composite recursion depth exceeded resolving ${uid}`);
@@ -121,66 +122,9 @@ function readGroundingDef(uid: string, depth = 0): GroundingDefinition {
   const path = UID_INDEX.get(uid);
   if (!path) throw new Error(`Grounding ${uid} not found in fixture vault`);
   const fm = parseFrontmatter(readFileSync(path, "utf8"));
-  // RFC 9d20c91f Phase 4+1: wikilink-only. The env-flag escape hatch was
-  // removed (Phase 4 introduced; Phase 4+1 retires). Legacy literal-form
-  // throws — fixtures surface as test failure rather than silent acceptance.
-  const rawType = fm["exocmd__Grounding_type"];
-  const type = (() => {
-    if (typeof rawType !== "string") return rawType as GroundingType;
-    const resolved = resolveGroundingTypeFromWikilinkLiteral(rawType);
-    if (resolved !== null) return resolved;
-    throw new Error(
-      `[exocmd-grounding-type-literal-form] legacy literal-string '${rawType}' for exocmd__Grounding_type in fixture ${uid}. Migrate to wikilink form per RFC 9d20c91f Phase 3.`,
-    );
-  })();
-  const targetProperty =
-    type === "service_call"
-      ? (fm["exocmd__Grounding_serviceId"] as string | undefined) ??
-        (fm["exocmd__Grounding_targetProperty"] as string | undefined)
-      : (fm["exocmd__Grounding_targetProperty"] as string | undefined);
-  let steps: GroundingDefinition[] | undefined;
-  if (type === "composite") {
-    const rawSteps = fm["exocmd__Grounding_steps"];
-    if (Array.isArray(rawSteps)) {
-      steps = rawSteps.map((ref) => readGroundingDef(normalizeWikilink(ref), depth + 1));
-    }
-  }
-  const incrementByRaw = fm["exocmd__Grounding_incrementBy"];
-  let incrementBy: number | undefined;
-  if (incrementByRaw !== undefined && incrementByRaw !== null && incrementByRaw !== "") {
-    const parsed = Number.parseInt(String(incrementByRaw), 10);
-    if (Number.isFinite(parsed)) incrementBy = parsed;
-  }
-  // RFC v2 Phase 5 (#3167): legacy JSON-literal `exocmd__Grounding_propertyDefaults`
-  // (plural) parser removed. Ref-form `_propertyDefault` is read by the real
-  // CommandResolver at runtime; CLI BDD fixtures only need the parser-stripped
-  // GroundingDefinition shape.
-  // RFC 31c1a0be Phase 5a — typed predicates required for property_set.
-  // targetValueRef stored as wikilink-form `"[[uuid]]"` in frontmatter;
-  // unwrap to bare UID so executor re-wraps for emission.
-  const rawTargetValueRef = fm["exocmd__Grounding_targetValueRef"] as string | undefined;
-  const targetValueRef = rawTargetValueRef ? normalizeWikilink(rawTargetValueRef) : undefined;
-  return {
-    id: uid,
-    label: (fm["exo__Asset_label"] as string) ?? "",
-    type,
-    targetProperty,
-    // RFC 918a2b65 Phase 4 (#3243): legacy `Grounding_targetValue` removed from
-    // GroundingDefinition. Replaced by `serviceCallPayload` for service_call +
-    // `appendExpression` for property_append.
-    targetValueRef,
-    targetValueLiteral: fm["exocmd__Grounding_targetValueLiteral"] as string | undefined,
-    targetValueSubstitution: fm["exocmd__Grounding_targetValueSubstitution"] as string | undefined,
-    serviceCallPayload: fm["exocmd__Grounding_serviceCallPayload"] as string | undefined,
-    appendExpression: fm["exocmd__Grounding_appendExpression"] as string | undefined,
-    targetClass: fm["exocmd__Grounding_targetClass"] as string | undefined,
-    targetPrototype: fm["exocmd__Grounding_targetPrototype"] as string | undefined,
-    targetFolder: fm["exocmd__Grounding_targetFolder"] as string | undefined,
-    shiftDelta: fm["exocmd__Grounding_shiftDelta"] as string | undefined,
-    incrementBy,
-    linkBackProperty: fm["exocmd__Grounding_linkBackProperty"] as string | undefined,
-    steps,
-  };
+  return parseGroundingDefinitionFromFrontmatter(uid, fm, (stepUid) =>
+    readGroundingDef(stepUid, depth + 1),
+  );
 }
 
 interface ExpectedFixture {
