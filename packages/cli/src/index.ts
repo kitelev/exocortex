@@ -21,7 +21,6 @@ import { findCommand } from "./commands/find.js";
 import { applyCommand } from "./commands/apply.js";
 import { auditCommand } from "./commands/audit.js";
 import { hardSwitchCommand } from "./commands/hard-switch.js";
-import { migrateSharedIdentitiesProfilesCommand } from "./commands/migrate-shared-identities-profiles.js";
 import { bootstrapCommand } from "./commands/bootstrap.js";
 import { assetSpaceAddCommand } from "./commands/assetspace-add.js";
 
@@ -70,9 +69,6 @@ export function createProgram(version?: string): Command {
 
   // RFC 22b50a17 Phase 1b — hard switch CLI scaffold (Phase 3 wires orchestrator)
   program.addCommand(hardSwitchCommand());
-
-  // RFC 13da049f Phase 6.5 — shared-identities → profiles AS migration tool
-  program.addCommand(migrateSharedIdentitiesProfilesCommand());
 
   // RFC 13da049f Phase 6.2 + 6.3 — Bootstrap + Add AssetSpace CLI
   program.addCommand(bootstrapCommand());
