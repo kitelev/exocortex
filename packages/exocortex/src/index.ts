@@ -42,6 +42,7 @@ export {
   isGroundingFrontmatter,
   isCommandBindingFrontmatter,
 } from "./domain/models/CommandDefinition";
+export { parseGroundingDefinitionFromFrontmatter } from "./domain/models/GroundingFrontmatterParser";
 export * from "./domain/models/GraphNode";
 export * from "./domain/models/GraphData";
 export * from "./domain/models/GraphEdge";
