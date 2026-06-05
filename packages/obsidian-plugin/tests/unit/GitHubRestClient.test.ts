@@ -42,10 +42,23 @@ describe("GitHubRestClient", () => {
 
   // ─── constructor ──────────────────────────────────────────────────
   describe("constructor", () => {
-    it("requires PAT", () => {
+    it("accepts an empty PAT (unauthenticated mode) without throwing", () => {
+      // Regression: the empty-PAT ctor throw silently hid the hard-switch
+      // palette commands on every vault without a stored PAT. An empty PAT is
+      // a valid unauthenticated client (public reads only).
       expect(
         () => new GitHubRestClient({ pat: "", app: fakeApp }),
-      ).toThrow(/PAT is required/);
+      ).not.toThrow();
+    });
+
+    it("rejects a non-string PAT", () => {
+      expect(
+        () =>
+          new GitHubRestClient({
+            pat: undefined as unknown as string,
+            app: fakeApp,
+          }),
+      ).toThrow(/PAT must be a string/);
     });
 
     it("requires App", () => {
@@ -398,6 +411,18 @@ describe("GitHubRestClient", () => {
       await c.getRepoHead("o", "r");
       const call = requestUrlMock.mock.calls[0][0];
       expect(call.headers.Authorization).toBe(`Bearer ${FAKE_PAT}`);
+      expect(call.headers.Accept).toBe("application/vnd.github+json");
+    });
+
+    it("omits Authorization header in unauthenticated mode (empty PAT)", async () => {
+      // Empty PAT → unauthenticated. Sending `Bearer ` with an empty token
+      // makes GitHub 401 even public reads, so the header must be absent.
+      requestUrlMock.mockResolvedValue(ok({ json: { commit: { sha: "x" } } }));
+      const c = new GitHubRestClient({ pat: "", app: fakeApp });
+      await c.getRepoHead("o", "r");
+      const call = requestUrlMock.mock.calls[0][0];
+      expect(call.headers.Authorization).toBeUndefined();
+      // Non-auth headers still present.
       expect(call.headers.Accept).toBe("application/vnd.github+json");
     });
 
