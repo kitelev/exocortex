@@ -70,7 +70,7 @@ export class CommandManager {
       new ToggleArchivedAssetsCommand(plugin, notifier),
       new OpenQueryBuilderCommand(this.app, plugin, notifier),
       new EditPropertiesCommand(this.app, plugin, notifier),
-      new CreateAssetCommand(this.app, genericAssetCreationService, this.vaultAdapter, classDiscoveryService, notifier, ontologySchemaService),
+      new CreateAssetCommand(this.app, genericAssetCreationService, this.vaultAdapter, classDiscoveryService, notifier, ontologySchemaService, sparqlQueryService),
     ];
 
     this.commandRegistry = new CommandRegistry(globalCommands);

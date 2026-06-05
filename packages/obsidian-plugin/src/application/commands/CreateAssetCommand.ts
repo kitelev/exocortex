@@ -3,9 +3,12 @@ import { ICommand } from "./ICommand";
 import {
   GenericAssetCreationService,
   LoggingService,
+  ShapeLoader,
   type AssetPropertyDefinition,
   type INotificationService,
+  type ShapeRegistry,
 } from "exocortex";
+import type { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';
 import {
   showClassSelectionModal,
   type ClassSelectionModalResult,
@@ -57,6 +60,7 @@ export class CreateAssetCommand implements ICommand {
     private classDiscoveryService: ClassDiscoveryService,
     private notifier: INotificationService,
     private schemaService?: OntologySchemaService,
+    private sparqlQueryService?: SPARQLQueryService,
   ) {}
 
   /**
@@ -85,12 +89,26 @@ export class CreateAssetCommand implements ICommand {
       // Step 3: Get property definitions for formatting
       const propertyDefinitions = await this.getPropertyDefinitions(selectedClass.className);
 
-      // Step 4: Create the asset
+      // Step 3.5: Lazily load SHACL-lite shapes (#3384 H3 PR2). Built ONLY here,
+      // on the Create command — never on plugin onload (the onload path is
+      // fragile; see FocusProfile bootstrap). The plugin already has the
+      // in-memory triple store populated by the class-discovery query above, so
+      // this is a cheap read of the existing graph. Failure is non-fatal: the
+      // core service falls back to scalar (label-form / scalar) emission.
+      const shapeRegistry = await this.loadShapeRegistry();
+
+      // Step 4: Create the asset. Opt in (#3384 H3 PR2) to UID-canon class refs
+      // (`exo__Instance_class: [[<uuid>]]`) and cardinality-aware property
+      // emission. `classUid` is resolved during class discovery; when absent
+      // the core service falls back to the legacy `[[<className>]]` label form.
       const createdFile = await this.genericAssetCreationService.createAsset(
         {
           className: selectedClass.className,
+          classRefForm: "uuid",
+          classUid: selectedClass.classUid,
           label: assetResult.label || undefined,
           propertyValues: assetResult.propertyValues,
+          shapeRegistry,
         },
         propertyDefinitions,
       );
@@ -164,6 +182,32 @@ export class CreateAssetCommand implements ICommand {
     } catch (error) {
       this.logger.warn(`Failed to get property definitions for ${className}`, error);
       return [];
+    }
+  }
+
+  /**
+   * Lazily build a SHACL-lite {@link ShapeRegistry} from the plugin's in-memory
+   * RDF triple store for cardinality-aware property emission (#3179, #3384 H3
+   * PR2).
+   *
+   * STRICT laziness: this runs only when the user executes the Create command,
+   * never on plugin onload. It reads the already-populated triple store (the
+   * class-discovery query ran first in the same flow), so no vault walk is
+   * triggered here. Any failure — store unavailable, not yet initialised, or a
+   * graph-walk error — is swallowed and `undefined` is returned, which makes
+   * the core service fall back to scalar property emission.
+   */
+  private async loadShapeRegistry(): Promise<ShapeRegistry | undefined> {
+    if (!this.sparqlQueryService || !this.sparqlQueryService.isReady()) {
+      return undefined;
+    }
+    try {
+      return await ShapeLoader.loadFromRDFGraph(
+        this.sparqlQueryService.getTripleStore(),
+      );
+    } catch (error) {
+      this.logger.warn("Failed to load shapes; falling back to scalar emission", error);
+      return undefined;
     }
   }
 
