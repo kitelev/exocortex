@@ -17,6 +17,33 @@ export interface DiscoveredClass {
   deprecated: boolean;
   /** Whether instances of this class can be created (not abstract) */
   canCreateInstance: boolean;
+  /**
+   * The class definition's `exo__Asset_uid` (its UUID-canon filename stem).
+   * Populated from the ontology when discovered; absent for the hardcoded
+   * fallback classes. Consumed by the Create-asset flow (H3 PR2, #3384) to
+   * emit `exo__Instance_class: [[<uuid>]]` strip-canon instead of the legacy
+   * `[[<className>]]` label form. When absent the create path falls back to
+   * the label form.
+   */
+  classUid?: string;
+}
+
+/**
+ * Read the lexical value of a SPARQL binding term.
+ *
+ * RDF Literal `.toString()` serializes to the quoted N-Triples form
+ * (`"<value>"^^<datatype>`), so reading a Literal binding (e.g. an
+ * `exo__Asset_uid`) via `.toString()` yields a quote-wrapped string. RDF terms
+ * expose the bare lexical form via `.value`; fall back to `String(term)` for
+ * any term shape that lacks it.
+ */
+function literalValue(term: unknown): string | undefined {
+  if (term === null || term === undefined) return undefined;
+  if (typeof term === "object" && "value" in term) {
+    const value = (term as { value: unknown }).value;
+    return typeof value === "string" ? value : String(value);
+  }
+  return String(term);
 }
 
 /**
@@ -72,10 +99,24 @@ export class ClassDiscoveryService {
       }
     `;
 
+    // Issue #3384 (H3 PR2): a separate mandatory-join query for the class
+    // definition's UUID-canon stem (`exo__Asset_uid`). Kept distinct from the
+    // label query for the same robustness reason as #2810 — the engine's
+    // OPTIONAL does not reliably bind multiple properties alongside rdf:type in
+    // the in-memory store, so a single-pattern query + JS join is the safe path.
+    const uidQuery = `
+      PREFIX exo: <https://exocortex.my/ontology/exo#>
+
+      SELECT ?class ?uid WHERE {
+        ?class exo:Asset_uid ?uid .
+      }
+    `;
+
     try {
-      const [classResults, labelResults] = await Promise.all([
+      const [classResults, labelResults, uidResults] = await Promise.all([
         this.sparqlService.query(classQuery),
         this.sparqlService.query(labelQuery),
+        this.sparqlService.query(uidQuery),
       ]);
 
       // Build a label lookup: file IRI → exo__Asset_label value
@@ -85,6 +126,21 @@ export class ClassDiscoveryService {
         const label = binding.get("label")?.toString();
         if (iri && label) {
           labelByIRI.set(iri, label);
+        }
+      }
+
+      // Build a UID lookup: file IRI → exo__Asset_uid value (UID-canon stem).
+      // The uid binding is an RDF Literal; its `.toString()` wraps the lexical
+      // value in quotes (`"<uid>"`) which would corrupt the downstream
+      // `[[<uid>]]` wikilink. Read the LEXICAL value (`.value`) instead. The
+      // class binding is an IRI, whose `.toString()` is already the bare IRI,
+      // and must stay `.toString()` to match the join key built elsewhere.
+      const uidByIRI = new Map<string, string>();
+      for (const binding of uidResults) {
+        const iri = binding.get("class")?.toString();
+        const uid = literalValue(binding.get("uid"));
+        if (iri && uid) {
+          uidByIRI.set(iri, uid);
         }
       }
 
@@ -126,6 +182,7 @@ export class ClassDiscoveryService {
           label,
           deprecated: false,
           canCreateInstance: this.canCreateInstance(className),
+          classUid: uidByIRI.get(classIRI),
         });
       }
 
