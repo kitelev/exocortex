@@ -11,8 +11,8 @@ import type { ClassLabelToUidResolver } from "exocortex";
  * (`"ems__Task"`) rather than UUID-canon (`"1b20a8f0-..."`) because the command
  * was resolved against a store lacking the class TBox file:
  *
- *   - `ExocmdFastResolver` (#3171) mini-store = open asset + `assetspaces/exocmd`
- *     only; the class TBox lives in `assetspaces/ems`.
+ *   - `ExocmdFastResolver` (#3171, removed in Phase 3c) mini-store = open asset
+ *     + `assetspaces/exocmd` only; the class TBox lives in `assetspaces/ems`.
  *   - the persisted binding cache (#3183) bakes the label and survives restart.
  *
  * `CommandResolver.findUidByLabel` (#3212) returns null in that path; #3220's

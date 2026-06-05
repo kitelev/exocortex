@@ -67,15 +67,20 @@ Starter-kit dynamic commands (`exocmd__Command`) are covered in three layers. Ne
 
 ```
 packages/
-  core/               — @exocortex/core (storage-agnostic domain logic)
+  exocortex/          — exocortex (storage-agnostic core: domain logic, RDF, SPARQL)
     src/domain/        — Entities, value objects, repositories
     src/application/   — Use cases, services
     src/infrastructure — File system adapters
-  obsidian-plugin/     — @exocortex/obsidian-plugin (Obsidian UI)
+  obsidian-plugin/    — @exocortex/obsidian-plugin (Obsidian UI — consumer)
     src/presentation/  — UI components, modals, renderers
     src/infrastructure — Obsidian API integration
-  cli/                 — @kitelev/exocortex-cli (CLI tooling)
+  cli/                — @kitelev/exocortex-cli (CLI tooling — consumer)
+  services/           — @kitelev/exocortex-services (shared grounding-service factories)
+  test-utils/         — @exocortex/test-utils (shared test infrastructure)
 ```
+
+> `packages/exoas-exo` and `packages/exoas-exocmd` are data submodules (ontology
+> assets), explicitly excluded from npm workspaces — not code packages.
 
 **Stack:** TypeScript strict, React 19, Obsidian API, ESBuild, Jest, Playwright CT/E2E.
 

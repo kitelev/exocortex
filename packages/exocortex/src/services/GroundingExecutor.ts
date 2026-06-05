@@ -147,9 +147,9 @@ export type UserInput = Record<string, unknown>;
  * a store that does NOT contain the class TBox file — which is exactly what
  * the cold-start resolution paths use:
  *
- *   - `ExocmdFastResolver` (#3171) builds a mini-store from the open asset
- *     plus `assetspaces/exocmd/*.md` only — never `assetspaces/ems` where the
- *     UUID-named class TBox files live.
+ *   - `ExocmdFastResolver` (#3171, removed in Phase 3c) built a mini-store from
+ *     the open asset plus `assetspaces/exocmd/*.md` only — never `assetspaces/ems`
+ *     where the UUID-named class TBox files live.
  *   - the persisted binding cache (#3183) yields `ResolvedCommand`s whose
  *     `grounding.targetClass` was baked at write time and survives an Obsidian
  *     restart on disk.

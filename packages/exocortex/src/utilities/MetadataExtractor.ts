@@ -1,4 +1,4 @@
-import { CommandVisibilityContext } from "../domain/commands/CommandVisibility";
+import { CommandVisibilityContext } from "../domain/commands/visibility";
 import { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import { MetadataHelpers } from "./MetadataHelpers";
 

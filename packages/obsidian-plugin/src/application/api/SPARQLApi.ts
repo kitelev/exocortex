@@ -268,9 +268,10 @@ export class SPARQLApi {
    * Returns true once the underlying triple store is fully populated and
    * ready to serve SPARQL queries.
    *
-   * Used by `DynamicCommandButtonGroupBuilder` (Issue #3171) to choose
-   * between the cold-start `ExocmdFastResolver` fast path and the full
-   * production resolver — the latter requires a populated store.
+   * Historically (Issue #3171) this gated `DynamicCommandButtonGroupBuilder`'s
+   * choice between the cold-start `ExocmdFastResolver` fast path and the full
+   * production resolver; both that fast path and the selecting fields were
+   * removed in Phase 3c (PR #3257), so the flag now only reports readiness.
    */
   isReady(): boolean {
     return this.queryService.isReady();

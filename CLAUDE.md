@@ -21,10 +21,15 @@
 
 ```
 packages/
-├── exocortex/          # @exocortex/core — domain models, RDF, SPARQL, services
-├── obsidian-plugin/    # Obsidian plugin — UI, renderers, commands
-└── cli/                # @kitelev/exocortex-cli — CLI tooling
+├── exocortex/          # exocortex — core: domain models, RDF, SPARQL, services
+├── obsidian-plugin/    # @exocortex/obsidian-plugin — UI, renderers, commands (consumer)
+├── cli/                # @kitelev/exocortex-cli — CLI tooling (consumer)
+├── services/           # @kitelev/exocortex-services — shared grounding-service factories
+└── test-utils/         # @exocortex/test-utils — shared test infrastructure
 ```
+
+> `packages/exoas-exo` and `packages/exoas-exocmd` are data submodules
+> (ontology assets), explicitly excluded from npm workspaces — not code packages.
 
 ## Architecture (Clean Architecture)
 

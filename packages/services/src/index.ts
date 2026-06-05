@@ -8,17 +8,16 @@
  * Both runtimes consume the same factories:
  * - CLI (`@kitelev/exocortex-cli`) — wired via `CliServiceRegistryPopulator`,
  *   adapter is `NodeVaultAdapter` over fs/promises.
- * - Plugin (`@exocortex/obsidian-plugin`) — to be migrated in T1.3, adapter
- *   will be `ObsidianVaultAdapter` over Obsidian's `app.vault` API.
+ * - Plugin (`@exocortex/obsidian-plugin`) — wired via `ServiceRegistryPopulator`,
+ *   adapter is `ObsidianVaultAdapter` over Obsidian's `app.vault` API.
  *
  * Domain services themselves continue to live in the shared `exocortex`
  * package; this package only provides the thin `IVaultAdapter`-aware
  * grounding-handler shells that bridge them to the registry contract.
  *
- * Scope of T1.2 (this PR): the 8 storage-agnostic CLI-side factories are
- * moved here. Plugin-side migration of the remaining handlers (UI tab open,
- * SPARQL invocation, status workflow, voting, etc.) is tracked under T1.3 +
- * follow-up tickets per RFC § Phase 1 plan.
+ * Both the CLI- and plugin-side migrations are complete: the storage-agnostic
+ * factories live here and are consumed by both runtimes (RFC 94e520da Phase 1
+ * T1.2 + T1.3; legacy plugin TS handlers removed in Phase 4b, issue #3166).
  */
 
 export {
