@@ -1,5 +1,8 @@
 import { GenericAssetCreationService } from "../../../src/services/GenericAssetCreationService";
 import { PropertyFieldType } from "../../../src/domain/types/PropertyFieldType";
+import { frozenClock } from "../../../src/services/IClock";
+import { seededUidGenerator } from "../../../src/services/IUidGenerator";
+import type { ShapeRegistry } from "../../../src/services/ShapeRegistry";
 import type { IVaultAdapter, IFile, IFolder } from "../../../src/interfaces/IVaultAdapter";
 
 describe("GenericAssetCreationService", () => {
@@ -1188,6 +1191,251 @@ describe("GenericAssetCreationService", () => {
         const content = mockVault.create.mock.calls[0][1];
         // Without parentMetadata, inheritParentContext should not be called
         expect(content).not.toContain("ems__Effort_parent");
+      });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // H3 PR1 — opt-in domain fields consolidated from the former CLI fork
+  // (`AssetCreationService`). Epic #3384. Each field is gated: existing
+  // callers (plugin ServiceRegistryPopulator, cli apply, grounding factories)
+  // omit them and observe byte-identical output; only `cli create` opts in.
+  // -------------------------------------------------------------------------
+  describe("H3 PR1 gated domain fields (#3384)", () => {
+    const lastContent = (): string =>
+      mockVault.create.mock.calls[0][1] as string;
+
+    const propertyIRI = (prefix: string, local: string): string =>
+      `https://exocortex.my/ontology/${prefix}#${local}`;
+
+    const buildRegistry = (
+      entries: Array<{ key: string; cardinality: "Single" | "Multiple" }>,
+    ): ShapeRegistry => {
+      const map = new Map<string, { cardinality: "Single" | "Multiple" }>();
+      for (const { key, cardinality } of entries) {
+        const m = /^([a-z][a-zA-Z0-9]*)__(.+)$/.exec(key);
+        if (m) map.set(propertyIRI(m[1], m[2]), { cardinality });
+      }
+      return { get: (iri: string) => map.get(iri) } as unknown as ShapeRegistry;
+    };
+
+    describe("createdBy (field 1 — no implicit default)", () => {
+      it("omits exo__Asset_createdBy when not provided (plugin/apply unchanged)", async () => {
+        await service.createAsset({ className: "ems__Task", label: "T" });
+        expect(lastContent()).not.toContain("exo__Asset_createdBy");
+      });
+
+      it("emits createdBy as quoted wikilink when provided", async () => {
+        await service.createAsset({
+          className: "ems__Task",
+          label: "T",
+          createdBy: "creator-uuid",
+        });
+        expect(lastContent()).toContain(
+          'exo__Asset_createdBy: "[[creator-uuid]]"',
+        );
+      });
+
+      it("omits createdBy when blank/whitespace-only", async () => {
+        await service.createAsset({
+          className: "ems__Task",
+          label: "T",
+          createdBy: "   ",
+        });
+        expect(lastContent()).not.toContain("exo__Asset_createdBy");
+      });
+    });
+
+    describe("classRefForm (field 2 — instance_class emission form)", () => {
+      it("defaults to label form [[className]] (plugin/apply unchanged)", async () => {
+        await service.createAsset({ className: "ems__Task", label: "T" });
+        expect(lastContent()).toContain('"[[ems__Task]]"');
+      });
+
+      it("emits UID strip-canon [[uuid]] when classRefForm='uuid' + classUid", async () => {
+        await service.createAsset({
+          className: "ems__Task",
+          label: "T",
+          classRefForm: "uuid",
+          classUid: "1b20a8f0-d745-4e93-91db-4531b3df120e",
+        });
+        const c = lastContent();
+        expect(c).toContain('"[[1b20a8f0-d745-4e93-91db-4531b3df120e]]"');
+        // strip-canon → no alias pipe form for the class ref
+        expect(c).not.toContain("1b20a8f0-d745-4e93-91db-4531b3df120e|");
+      });
+
+      it("falls back to label form when classRefForm='uuid' but classUid is absent", async () => {
+        await service.createAsset({
+          className: "ems__Task",
+          label: "T",
+          classRefForm: "uuid",
+        });
+        expect(lastContent()).toContain('"[[ems__Task]]"');
+      });
+    });
+
+    describe("aliases (field 4 — extra appended after [label])", () => {
+      it("aliases is [label] when no extra provided (plugin/apply unchanged)", async () => {
+        await service.createAsset({ className: "ems__Task", label: "Solo" });
+        expect(lastContent()).toMatch(/aliases:\n\s+- Solo\n/);
+      });
+
+      it("appends extra aliases, deduplicating the label", async () => {
+        await service.createAsset({
+          className: "ems__Task",
+          label: "T",
+          aliases: ["A1", "T", "A2"],
+        });
+        expect(lastContent()).toMatch(/aliases:\n\s+- T\n\s+- A1\n\s+- A2/);
+      });
+    });
+
+    describe("timezone (field 5)", () => {
+      it("uses local clock timestamp when timezone omitted (unchanged)", async () => {
+        await service.createAsset({ className: "ems__Task" });
+        expect(lastContent()).toMatch(
+          /exo__Asset_createdAt: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\b/,
+        );
+      });
+
+      it("renders timestamp in the given timezone (same format)", async () => {
+        const det = new GenericAssetCreationService(mockVault).withDeterminism({
+          clock: frozenClock("2026-01-02T20:30:40Z"),
+        });
+        await det.createAsset({ className: "ems__Task", timezone: "Asia/Almaty" });
+        // 20:30:40Z in Asia/Almaty (UTC+5) → 01:30:40 next day
+        expect(lastContent()).toContain(
+          "exo__Asset_createdAt: 2026-01-03T01:30:40",
+        );
+      });
+    });
+
+    describe("body (field 6)", () => {
+      it("uses provided body verbatim", async () => {
+        await service.createAsset({
+          className: "ems__Task",
+          label: "T",
+          body: "# Custom heading\n\nbody text",
+        });
+        expect(lastContent()).toContain("# Custom heading\n\nbody text");
+      });
+
+      it("defaults to '# <label>' heading when body omitted (unchanged)", async () => {
+        await service.createAsset({ className: "ems__Task", label: "Heading Me" });
+        expect(lastContent()).toContain("# Heading Me");
+      });
+    });
+
+    describe("cardinality (field 6 — gated ShapeRegistry, #3179)", () => {
+      it("emits scalar for Single-cardinality wikilink", async () => {
+        await service.createAsset({
+          className: "ems__Task",
+          label: "T",
+          shapeRegistry: buildRegistry([
+            { key: "ems__Effort_status", cardinality: "Single" },
+          ]),
+          propertyValues: {
+            ems__Effort_status: "[[ems__EffortStatusBacklog]]",
+          },
+        });
+        expect(lastContent()).toContain(
+          'ems__Effort_status: "[[ems__EffortStatusBacklog]]"',
+        );
+      });
+
+      it("emits YAML array for Multiple-cardinality wikilink", async () => {
+        await service.createAsset({
+          className: "ems__Task",
+          label: "T",
+          shapeRegistry: buildRegistry([
+            { key: "ems__Effort_relatesTo", cardinality: "Multiple" },
+          ]),
+          propertyValues: {
+            ems__Effort_relatesTo: "[[some-uuid|Other]]",
+          },
+        });
+        expect(lastContent()).toMatch(
+          /ems__Effort_relatesTo:\n\s+- "\[\[some-uuid\|Other\]\]"/,
+        );
+      });
+
+      it("scalar default when registry present but property has no shape", async () => {
+        await service.createAsset({
+          className: "ems__Task",
+          label: "T",
+          shapeRegistry: buildRegistry([]),
+          propertyValues: { ems__Unknown_field: "[[u]]" },
+        });
+        expect(lastContent()).toContain('ems__Unknown_field: "[[u]]"');
+      });
+
+      it("leaves plain (non-wikilink) values as scalars in cardinality path", async () => {
+        await service.createAsset({
+          className: "ems__Task",
+          label: "T",
+          shapeRegistry: buildRegistry([
+            { key: "custom_prop", cardinality: "Single" },
+          ]),
+          propertyValues: { custom_prop: "plain value" },
+        });
+        expect(lastContent()).toContain("custom_prop: plain value");
+      });
+    });
+
+    describe("buildAsset (field 7 — pure, no write)", () => {
+      it("returns uid/path/frontmatter/content without writing to the vault", () => {
+        const built = service.buildAsset({
+          className: "ems__Task",
+          label: "Pure",
+          folderPath: "01 Inbox",
+        });
+        expect(mockVault.create).not.toHaveBeenCalled();
+        expect(built.uid).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+        );
+        expect(built.path).toBe(`01 Inbox/${built.uid}.md`);
+        expect(built.frontmatter["exo__Asset_label"]).toBe("Pure");
+        expect(built.content).toContain("exo__Asset_label: Pure");
+      });
+
+      it("buildAsset content matches createAsset's written bytes (determinism)", async () => {
+        const cfg = {
+          className: "ems__Task",
+          label: "Eq",
+          folderPath: "01 Inbox",
+        };
+        const det = () =>
+          new GenericAssetCreationService(mockVault).withDeterminism({
+            clock: frozenClock("2026-01-02T03:04:05Z"),
+            uidGenerator: seededUidGenerator("h3-pr1-eq"),
+          });
+
+        const built = det().buildAsset(cfg);
+        await det().createAsset(cfg);
+        const writtenPath = mockVault.create.mock.calls[0][0];
+        const writtenContent = mockVault.create.mock.calls[0][1];
+
+        expect(writtenPath).toBe(built.path);
+        expect(writtenContent).toBe(built.content);
+      });
+    });
+
+    // Revert-verify anchor (integration-test-revert-verify): the
+    // classRefForm='uuid' mapping is the key new branch. Reverting it in
+    // generateFrontmatter (forcing `config.className`) makes this FAIL;
+    // restoring the mapping makes it PASS. Documented in the PR body.
+    describe("[revert-verify] classRefForm='uuid' mapping", () => {
+      it("emits classUid (not className) under classRefForm='uuid'", async () => {
+        await service.createAsset({
+          className: "ems__Task",
+          label: "RV",
+          classRefForm: "uuid",
+          classUid: "deadbeef-0000-4000-8000-000000000000",
+        });
+        const c = lastContent();
+        expect(c).toContain('"[[deadbeef-0000-4000-8000-000000000000]]"');
+        expect(c).not.toContain('"[[ems__Task]]"');
       });
     });
   });

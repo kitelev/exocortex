@@ -2,14 +2,26 @@ import { Command } from "commander";
 import { resolve } from "path";
 import { existsSync } from "fs";
 import { readFileSync } from "fs";
-import { ShapeLoader, type ShapeRegistry } from "exocortex";
+import {
+  ShapeLoader,
+  GenericAssetCreationService,
+  type ShapeRegistry,
+  type GenericAssetCreationConfig,
+} from "exocortex";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
+import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { ClassResolverService } from "../services/ClassResolverService.js";
 import { WikilinkValidator } from "../services/WikilinkValidator.js";
-import { AssetCreationService } from "../services/AssetCreationService.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
+
+/**
+ * Default timezone for `cli create` timestamps. The core service stays
+ * timezone-agnostic; `cli create` opts into Asia/Almaty unless `--timezone`
+ * overrides it (preserves the historical CLI default).
+ */
+const DEFAULT_TIMEZONE = "Asia/Almaty";
 
 /**
  * Options parsed from CLI flags for the create command.
@@ -191,8 +203,17 @@ export function createCommand(): Command {
         }
         registerOrderSpecFromVault(vaultPath);
 
+        // Label validation (core is intentionally lenient — it simply omits
+        // the label when blank; `cli create` requires a non-empty label).
+        if (!options.label || options.label.trim().length === 0) {
+          throw new Error("Label cannot be empty");
+        }
+        const trimmedLabel = options.label.trim();
+
         // Parse properties from --property flags
         const properties = parseProperties(options.property);
+        const propertyValues =
+          Object.keys(properties).length > 0 ? properties : undefined;
 
         // Resolve body content and parse escape sequences
         let body = await resolveBody(options);
@@ -200,10 +221,18 @@ export function createCommand(): Command {
           body = body.replace(/\\n/g, "\n");
         }
 
-        // Create services
+        // CLI-side resolution + validation services (Node filesystem).
         const fsAdapter = new NodeFsAdapter(vaultPath);
         const classResolver = new ClassResolverService(fsAdapter);
         const wikilinkValidator = new WikilinkValidator(fsAdapter);
+
+        // Resolve class short name → UUID (UID pass-through if already a UUID).
+        const classUid = await classResolver.resolve(vaultPath, options.class);
+
+        // Validate property wikilinks (unless skipped).
+        if (propertyValues && !options.skipWikilinkValidation) {
+          await wikilinkValidator.validatePropertyValues(propertyValues);
+        }
 
         // Load SHACL-lite shape registry from vault for cardinality-aware
         // property serialization (issues #3099, #3179). Failure here is
@@ -216,39 +245,50 @@ export function createCommand(): Command {
           shapeRegistry = undefined;
         }
 
-        const creationService = new AssetCreationService(
-          fsAdapter,
-          classResolver,
-          wikilinkValidator,
-          shapeRegistry,
-        );
+        // Delegate the domain logic (frontmatter assembly, UID-canon class
+        // ref, cardinality, timestamp, body) to the shared core service.
+        // `cli create` opts into the domain fields the plugin/apply omit:
+        //  - classRefForm 'uuid' → `[[<uuid>]]` strip-canon
+        //  - createdBy passed through verbatim (no implicit default)
+        //  - folder `01 Inbox`, aliases, timezone (Asia/Almaty default), body
+        //  - shapeRegistry → cardinality-aware property emission
+        const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
+        const creationService = new GenericAssetCreationService(vaultAdapter);
 
-        // Execute creation
-        const result = await creationService.create({
-          classShortName: options.class,
-          label: options.label,
+        const config: GenericAssetCreationConfig = {
+          className: options.class,
+          classRefForm: "uuid",
+          classUid,
+          label: trimmedLabel,
           aliases: options.aliases,
-          properties: Object.keys(properties).length > 0 ? properties : undefined,
-          body,
-          vault: vaultPath,
-          dryRun: options.dryRun,
+          folderPath: "01 Inbox",
           createdBy: options.createdBy,
-          timezone: options.timezone,
-          skipWikilinkValidation: options.skipWikilinkValidation,
-        });
+          timezone: options.timezone || DEFAULT_TIMEZONE,
+          body,
+          propertyValues,
+          shapeRegistry,
+        };
 
+        let uuid: string;
+        let path: string;
         if (options.dryRun) {
-          // In dry-run mode, output frontmatter preview to stderr and JSON to stdout
-          const preview = formatFrontmatterPreview(result.frontmatter, body);
-          process.stderr.write(preview + "\n");
+          // Pure build → preview the exact bytes a real write would produce
+          // (canonical property ordering), fixing the prior preview/real-write
+          // divergence (dry-run-preview-not-real-output).
+          const built = creationService.buildAsset(config);
+          uuid = built.uid;
+          path = built.path;
+          process.stderr.write(
+            `--- DRY RUN PREVIEW ---\n${built.content}--- END PREVIEW ---\n`,
+          );
+        } else {
+          const file = await creationService.createAsset(config);
+          uuid = file.basename;
+          path = file.path;
         }
 
         // Always output JSON to stdout on success
-        const output = {
-          uuid: result.uuid,
-          path: result.path,
-          label: result.label,
-        };
+        const output = { uuid, path, label: trimmedLabel };
         process.stdout.write(JSON.stringify(output) + "\n");
 
         process.exit(0);
@@ -264,35 +304,4 @@ export function createCommand(): Command {
  */
 function collect(value: string, previous: string[]): string[] {
   return previous.concat([value]);
-}
-
-/**
- * Format frontmatter as a human-readable preview for dry-run mode.
- */
-function formatFrontmatterPreview(
-  frontmatter: Record<string, unknown>,
-  body?: string,
-): string {
-  const lines = ["--- DRY RUN PREVIEW ---", "---"];
-
-  for (const [key, value] of Object.entries(frontmatter)) {
-    if (Array.isArray(value)) {
-      lines.push(`${key}:`);
-      for (const item of value) {
-        lines.push(`  - ${item}`);
-      }
-    } else {
-      lines.push(`${key}: ${value}`);
-    }
-  }
-
-  lines.push("---");
-
-  if (body) {
-    lines.push("");
-    lines.push(body);
-  }
-
-  lines.push("--- END PREVIEW ---");
-  return lines.join("\n");
 }

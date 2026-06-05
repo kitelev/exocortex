@@ -1,5 +1,6 @@
 /**
- * Issue #3179 — integration test for `create` command cardinality emission.
+ * Issue #3179 — integration test for `create` cardinality emission, exercised
+ * through the consolidated core `GenericAssetCreationService` (H3 PR1, #3384).
  *
  * Builds a fixture vault with:
  *   - cardinality enum assets (Single, Multiple) at their canonical UIDs
@@ -9,35 +10,26 @@
  *     Multiple enum via pure-UID wikilink
  *   - a property with NO cardinality declared (`ems__Effort_unknown`)
  *
- * Then invokes the real `AssetCreationService` wired with a real
- * `ShapeLoader.loadFromVaultFS` registry, and asserts the produced
- * frontmatter emission matches acceptance criteria #1, #2 and #3 of the
- * issue:
+ * Then drives the core service wired with a real `FileSystemVaultAdapter` +
+ * `ShapeLoader.loadFromVaultFS` registry (the exact path `cli create` now
+ * takes after the fork was removed), and asserts the produced frontmatter
+ * emission matches acceptance criteria #1, #2 and #3:
  *   - Single → scalar
  *   - No cardinality declared → scalar (vault convention default)
  *   - Multiple → array
  *
- * Mirrors real production code path; verifies that the fix in `ShapeLoader`
- * (UID-form parsing) and `AssetCreationService` (default flip) work
- * together — neither alone is sufficient.
+ * Mirrors the real production code path; verifies that the fix in `ShapeLoader`
+ * (UID-form parsing) and the core cardinality formatter work together —
+ * neither alone is sufficient.
  */
 import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
-const { ShapeLoader } = await import("exocortex");
-const { AssetCreationService } = await import(
-  "../../src/services/AssetCreationService.js"
-);
-const { NodeFsAdapter } = await import(
-  "../../src/adapters/NodeFsAdapter.js"
-);
-const { ClassResolverService } = await import(
-  "../../src/services/ClassResolverService.js"
-);
-const { WikilinkValidator } = await import(
-  "../../src/services/WikilinkValidator.js"
+const { ShapeLoader, GenericAssetCreationService } = await import("exocortex");
+const { FileSystemVaultAdapter } = await import(
+  "../../src/adapters/FileSystemVaultAdapter.js"
 );
 
 const CARDINALITY_SINGLE_UID = "c93c4b2f-b43d-4cc9-8dd0-31514d608da2";
@@ -62,7 +54,7 @@ function md(frontmatter: Record<string, string | string[]>): string {
   return lines.join("\n");
 }
 
-describe("Issue #3179: create command respects exo__Property_cardinality (integration)", () => {
+describe("Issue #3179: create cardinality emission via core service (integration)", () => {
   let vault: string;
 
   beforeEach(() => {
@@ -124,7 +116,7 @@ describe("Issue #3179: create command respects exo__Property_cardinality (integr
       }),
     );
 
-    // Backlog status target (for property value wikilink validation)
+    // Backlog status target (for property value wikilink resolution)
     fs.writeFileSync(
       path.join(emsDir, `${STATUS_BACKLOG_UID}.md`),
       md({
@@ -138,17 +130,35 @@ describe("Issue #3179: create command respects exo__Property_cardinality (integr
     fs.rmSync(vault, { recursive: true, force: true });
   });
 
-  const buildService = async () => {
-    const fsAdapter = new NodeFsAdapter(vault);
-    const classResolver = new ClassResolverService(fsAdapter);
-    const wikilinkValidator = new WikilinkValidator(fsAdapter);
+  /**
+   * Build the gated config `cli create` produces, then return both the pure
+   * frontmatter (via buildAsset) and the on-disk content (via createAsset).
+   */
+  const run = async (
+    properties: Record<string, string> | undefined,
+    label: string,
+    extra: { aliases?: string[] } = {},
+  ) => {
+    const adapter = new FileSystemVaultAdapter(vault);
     const shapeRegistry = await ShapeLoader.loadFromVaultFS(vault);
-    return new AssetCreationService(
-      fsAdapter,
-      classResolver,
-      wikilinkValidator,
+    const service = new GenericAssetCreationService(adapter);
+
+    const config = {
+      className: TASK_CLASS_UID,
+      classRefForm: "uuid" as const,
+      classUid: TASK_CLASS_UID,
+      label,
+      folderPath: "01 Inbox",
+      timezone: "Asia/Almaty",
       shapeRegistry,
-    );
+      propertyValues: properties,
+      aliases: extra.aliases,
+    };
+
+    const built = service.buildAsset(config);
+    const file = await service.createAsset(config);
+    const content = fs.readFileSync(path.join(vault, file.path), "utf-8");
+    return { frontmatter: built.frontmatter, content };
   };
 
   it("ShapeLoader resolves Single cardinality from UID-form wikilink", async () => {
@@ -164,88 +174,58 @@ describe("Issue #3179: create command respects exo__Property_cardinality (integr
   });
 
   it("AC#1: ems__Effort_status (Single cardinality) → scalar form", async () => {
-    const service = await buildService();
-    const result = await service.create({
-      classShortName: TASK_CLASS_UID,
-      label: "TEST-3179-single",
-      vault,
-      properties: {
-        ems__Effort_status: `[[${STATUS_BACKLOG_UID}]]`,
-      },
-      skipWikilinkValidation: true,
-    });
-
-    expect(result.frontmatter["ems__Effort_status"]).toBe(
-      `"[[${STATUS_BACKLOG_UID}]]"`,
+    const { frontmatter, content } = await run(
+      { ems__Effort_status: `[[${STATUS_BACKLOG_UID}]]` },
+      "TEST-3179-single",
     );
 
-    const content = fs.readFileSync(
-      path.join(vault, result.path),
-      "utf-8",
+    expect(frontmatter["ems__Effort_status"]).toBe(
+      `"[[${STATUS_BACKLOG_UID}]]"`,
     );
     expect(content).toContain(
       `ems__Effort_status: "[[${STATUS_BACKLOG_UID}]]"`,
     );
-    expect(content).not.toMatch(
-      /ems__Effort_status:\s*\n\s*-\s+"\[\[/,
-    );
+    expect(content).not.toMatch(/ems__Effort_status:\s*\n\s*-\s+"\[\[/);
   });
 
   it("AC#2: undeclared property → scalar (vault convention default)", async () => {
-    const service = await buildService();
-    const result = await service.create({
-      classShortName: TASK_CLASS_UID,
-      label: "TEST-3179-default",
-      vault,
-      properties: {
-        ems__Effort_unknown: `[[${STATUS_BACKLOG_UID}]]`,
-      },
-      skipWikilinkValidation: true,
-    });
+    const { frontmatter } = await run(
+      { ems__Effort_unknown: `[[${STATUS_BACKLOG_UID}]]` },
+      "TEST-3179-default",
+    );
 
-    expect(result.frontmatter["ems__Effort_unknown"]).toBe(
+    expect(frontmatter["ems__Effort_unknown"]).toBe(
       `"[[${STATUS_BACKLOG_UID}]]"`,
     );
   });
 
   it("AC#1: ems__Effort_relatesTo (Multiple cardinality) → array form", async () => {
-    const service = await buildService();
-    const result = await service.create({
-      classShortName: TASK_CLASS_UID,
-      label: "TEST-3179-multi",
-      vault,
-      properties: {
-        ems__Effort_relatesTo: `[[${STATUS_BACKLOG_UID}]]`,
-      },
-      skipWikilinkValidation: true,
-    });
+    const { frontmatter, content } = await run(
+      { ems__Effort_relatesTo: `[[${STATUS_BACKLOG_UID}]]` },
+      "TEST-3179-multi",
+    );
 
-    expect(result.frontmatter["ems__Effort_relatesTo"]).toEqual([
+    expect(frontmatter["ems__Effort_relatesTo"]).toEqual([
       `"[[${STATUS_BACKLOG_UID}]]"`,
     ]);
-
-    const content = fs.readFileSync(
-      path.join(vault, result.path),
-      "utf-8",
-    );
     expect(content).toMatch(
       /ems__Effort_relatesTo:\s*\n\s*-\s+"\[\[753a44d5/,
     );
   });
 
   it("AC#3 regression: exo__Instance_class + aliases stay as arrays", async () => {
-    const service = await buildService();
-    const result = await service.create({
-      classShortName: TASK_CLASS_UID,
-      label: "TEST-3179-regression",
-      vault,
+    const { frontmatter } = await run(undefined, "TEST-3179-regression", {
       aliases: ["alt-label"],
-      skipWikilinkValidation: true,
     });
 
-    expect(Array.isArray(result.frontmatter["exo__Instance_class"])).toBe(
-      true,
-    );
-    expect(Array.isArray(result.frontmatter["aliases"])).toBe(true);
+    expect(Array.isArray(frontmatter["exo__Instance_class"])).toBe(true);
+    expect(Array.isArray(frontmatter["aliases"])).toBe(true);
+  });
+
+  it("emits exo__Instance_class as UID strip-canon [[uuid]] (no alias)", async () => {
+    const { frontmatter } = await run(undefined, "TEST-3179-classref");
+    expect(frontmatter["exo__Instance_class"]).toEqual([
+      `"[[${TASK_CLASS_UID}]]"`,
+    ]);
   });
 });
