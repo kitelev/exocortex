@@ -10,6 +10,7 @@ import * as path from "node:path";
 import type { App, TFile } from "obsidian";
 import { Platform } from "obsidian";
 import type { INotificationService } from "exocortex";
+import { derivePath } from "exocortex";
 import { GitHubRestClient } from "./GitHubRestClient";
 import { TarExtractor, type ExtractedTarFile } from "./TarExtractor";
 import { StagingDirTracker } from "./StagingDirTracker";
@@ -491,7 +492,11 @@ export class AssetSpaceManager {
         ? (fm["exo__AssetSpace_namespace"] as string)
         : "";
       if (!git || !namespace) return null;
-      const folderName = parentFolder(file.path);
+      // RFC 01a83de8 Phase 1b T3 — folder = AssetSpace mount path derived from
+      // `_source` (`assetspaces/<owner>/<repo>`), not the descriptor file's
+      // parent folder (post-migration the descriptor lives in the registry).
+      // parentFolder remains a defensive fallback for unresolvable sources.
+      const folderName = derivePath(git) ?? parentFolder(file.path);
       const lastPulledSha = typeof fm["exo__AssetSpace_lastPulledSha"] === "string"
         ? (fm["exo__AssetSpace_lastPulledSha"] as string)
         : undefined;

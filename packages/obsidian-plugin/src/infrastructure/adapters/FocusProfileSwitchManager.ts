@@ -1,5 +1,6 @@
 import type { App } from "obsidian";
 import type { HardSwitchPlan, IConfirmGate } from "exocortex";
+import { derivePath } from "exocortex";
 
 import { PluginLockManager } from "./PluginLockManager";
 import type { AssetSpaceManager, AssetSpaceInfo } from "./AssetSpaceManager";
@@ -1308,7 +1309,11 @@ export class FocusProfileSwitchManager {
       const lastPulledSha = typeof fm["exo__AssetSpace_lastPulledSha"] === "string"
         ? (fm["exo__AssetSpace_lastPulledSha"] as string)
         : undefined;
-      const folderName = parentFolderOf(file.path);
+      // RFC 01a83de8 Phase 1b T3 — folder = derived mount path
+      // (`assetspaces/<owner>/<repo>`), not the descriptor's parent folder
+      // (post-migration the descriptor lives in the registry). parentFolderOf
+      // is a defensive fallback for unresolvable sources.
+      const folderName = derivePath(git) ?? parentFolderOf(file.path);
       seen.add(uid);
       out.push({ uid, git, namespace, folderName, lastPulledSha });
     }

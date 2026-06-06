@@ -137,21 +137,35 @@ export function shouldSkipFileForEffectiveSet(
   if (!normalised.startsWith(ASSET_SPACES_PATH_PREFIX)) {
     return false;
   }
-  // Extract `assetspaces/<folder>` — everything up to (but not including) the
-  // second slash. A file directly under `assetspaces/` (no nested folder) has
-  // no AssetSpace owner and is not filtered.
-  const rest = normalised.slice(ASSET_SPACES_PATH_PREFIX.length);
-  const slashIdx = rest.indexOf("/");
-  if (slashIdx < 0) {
+  // RFC 01a83de8 Phase 1b T3 — match the file against AssetSpace folder keys by
+  // longest path-prefix. This supports BOTH the legacy single-segment layout
+  // (`assetspaces/<ns>/…`) AND the Phase-1b derived two-segment layout
+  // (`assetspaces/<owner>/<repo>/…`, where `folderMap` keys come from
+  // `derivePath(_source)`). The previous fixed single-segment slice silently
+  // no-op'd the filter after the fleet migration moved content to two-segment
+  // paths (folderMap key `assetspaces/kitelev/exoas-exo` never matched the
+  // extracted `assetspaces/kitelev`). Longest-prefix keeps the floor/profile
+  // filter functional on the migrated layout (EV4: soft-filter keeps working).
+  //
+  // Unrecognised folders (no folderMap key is a path-prefix) → include
+  // (defensive — caller's map may be out of date). folderMap is small (~10-20
+  // AssetSpaces) so the per-file scan is negligible vs the metadataCache lookup.
+  let matchedUid: string | undefined;
+  let matchedLen = -1;
+  for (const [folder, uid] of assetSpaceFolderToUid) {
+    if (
+      (normalised === folder || normalised.startsWith(`${folder}/`)) &&
+      folder.length > matchedLen
+    ) {
+      matchedLen = folder.length;
+      matchedUid = uid;
+    }
+  }
+  if (matchedUid === undefined) {
+    // File not under any known AssetSpace folder — emit (defensive).
     return false;
   }
-  const folder = `${ASSET_SPACES_PATH_PREFIX}${rest.slice(0, slashIdx)}`;
-  const asUid = assetSpaceFolderToUid.get(folder);
-  if (asUid === undefined) {
-    // Folder not recognised as AssetSpace — emit (defensive).
-    return false;
-  }
-  return !effective.has(asUid);
+  return !effective.has(matchedUid);
 }
 
 /**

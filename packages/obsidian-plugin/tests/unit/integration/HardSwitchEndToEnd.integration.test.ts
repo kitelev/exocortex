@@ -137,28 +137,28 @@ async function initVaultWithAS(materialized: string[]): Promise<VaultSetup> {
   ]) {
     execFileSync(
       "git",
-      ["-C", vaultPath, "submodule", "add", `file://${folder.url}`, `assetspaces/${folder.name}`],
+      ["-C", vaultPath, "submodule", "add", `file://${folder.url}`, `assetspaces/kitelev/exoas-${folder.name}`],
       GIT_OPTS,
     );
   }
   if (materialized.includes("as1")) {
     execFileSync(
       "git",
-      ["-C", vaultPath, "submodule", "add", `file://${remoteAS1}`, "assetspaces/as1"],
+      ["-C", vaultPath, "submodule", "add", `file://${remoteAS1}`, "assetspaces/kitelev/exoas-as1"],
       GIT_OPTS,
     );
   }
   if (materialized.includes("as2")) {
     execFileSync(
       "git",
-      ["-C", vaultPath, "submodule", "add", `file://${remoteAS2}`, "assetspaces/as2"],
+      ["-C", vaultPath, "submodule", "add", `file://${remoteAS2}`, "assetspaces/kitelev/exoas-as2"],
       GIT_OPTS,
     );
   }
   if (materialized.includes("as3")) {
     execFileSync(
       "git",
-      ["-C", vaultPath, "submodule", "add", `file://${remoteAS3}`, "assetspaces/as3"],
+      ["-C", vaultPath, "submodule", "add", `file://${remoteAS3}`, "assetspaces/kitelev/exoas-as3"],
       GIT_OPTS,
     );
   }
@@ -196,12 +196,12 @@ function buildVaultFiles(setup: VaultSetup): FakeFile[] {
     },
   ];
   const allAs: Array<{ uid: string; folder: string; git: string }> = [
-    { uid: TS_FLOOR_AS_UID_EXO, folder: "assetspaces/exo", git: `file://${setup.remoteFloors[TS_FLOOR_AS_UID_EXO]}` },
-    { uid: TS_FLOOR_AS_UID_EXOCMD, folder: "assetspaces/exocmd", git: `file://${setup.remoteFloors[TS_FLOOR_AS_UID_EXOCMD]}` },
-    { uid: TS_FLOOR_AS_UID_SHARED_IDENTITIES, folder: "assetspaces/shared-identities", git: `file://${setup.remoteFloors[TS_FLOOR_AS_UID_SHARED_IDENTITIES]}` },
-    { uid: "as1", folder: "assetspaces/as1", git: `file://${setup.remoteAS1}` },
-    { uid: "as2", folder: "assetspaces/as2", git: `file://${setup.remoteAS2}` },
-    { uid: "as3", folder: "assetspaces/as3", git: `file://${setup.remoteAS3}` },
+    { uid: TS_FLOOR_AS_UID_EXO, folder: "assetspaces/kitelev/exoas-exo", git: `file://${setup.remoteFloors[TS_FLOOR_AS_UID_EXO]}` },
+    { uid: TS_FLOOR_AS_UID_EXOCMD, folder: "assetspaces/kitelev/exoas-exocmd", git: `file://${setup.remoteFloors[TS_FLOOR_AS_UID_EXOCMD]}` },
+    { uid: TS_FLOOR_AS_UID_SHARED_IDENTITIES, folder: "assetspaces/kitelev/exoas-shared-identities", git: `file://${setup.remoteFloors[TS_FLOOR_AS_UID_SHARED_IDENTITIES]}` },
+    { uid: "as1", folder: "assetspaces/kitelev/exoas-as1", git: `file://${setup.remoteAS1}` },
+    { uid: "as2", folder: "assetspaces/kitelev/exoas-as2", git: `file://${setup.remoteAS2}` },
+    { uid: "as3", folder: "assetspaces/kitelev/exoas-as3", git: `file://${setup.remoteAS3}` },
   ];
   for (const as of allAs) {
     files.push({
@@ -211,6 +211,11 @@ function buildVaultFiles(setup: VaultSetup): FakeFile[] {
         "exo__Asset_uid": as.uid,
         "exo__Asset_label": as.folder.split("/").pop(),
         "exo__Instance_class": ["[[exo__AssetSpace]]"],
+        // RFC 01a83de8 Phase 1b T3 — the test clone source is a `file://` local
+        // repo, for which `derivePath` returns null (no hosted owner/repo). So
+        // folderName falls back to the descriptor's parent folder, which IS the
+        // derived mount path here (descriptor co-located at `${as.folder}`). The
+        // real `git submodule add` clones from this `file://` _git.
         "exo__AssetSpace_git": as.git,
         "exo__AssetSpace_namespace": as.folder.split("/").pop(),
         // Production-shape: AS ABox declares the Ontology UID it contains
@@ -461,18 +466,18 @@ describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
     await mgr.hardSwitchProfile("profile-b");
 
     // ---- ASSERT vault state ----
-    expect(existsSync(path.join(setup.vaultPath, "assetspaces/as1"))).toBe(false);
-    expect(existsSync(path.join(setup.vaultPath, "assetspaces/as2"))).toBe(true);
-    expect(existsSync(path.join(setup.vaultPath, "assetspaces/as3"))).toBe(true);
+    expect(existsSync(path.join(setup.vaultPath, "assetspaces/kitelev/exoas-as1"))).toBe(false);
+    expect(existsSync(path.join(setup.vaultPath, "assetspaces/kitelev/exoas-as2"))).toBe(true);
+    expect(existsSync(path.join(setup.vaultPath, "assetspaces/kitelev/exoas-as3"))).toBe(true);
 
     // ---- ASSERT .gitmodules ----
     // Phase 6 Vision Lock #9 amendment (RFC 13da049f v1.3):
     // .gitmodules entry для destroyed AS preserved (per-vault URL registry для switch-back).
     // Working tree destroyed (line 450 verified), but .gitmodules entry persists.
     const gitmodules = await fs.readFile(path.join(setup.vaultPath, ".gitmodules"), "utf8");
-    expect(gitmodules).toContain('"assetspaces/as2"');
-    expect(gitmodules).toContain('"assetspaces/as3"');
-    expect(gitmodules).toContain('"assetspaces/as1"'); // Phase 6: entry preserved post-destroy
+    expect(gitmodules).toContain('"assetspaces/kitelev/exoas-as2"');
+    expect(gitmodules).toContain('"assetspaces/kitelev/exoas-as3"');
+    expect(gitmodules).toContain('"assetspaces/kitelev/exoas-as1"'); // Phase 6: entry preserved post-destroy
 
     // ---- ASSERT cache contains as1 ----
     const cacheHas = await cacheLayer.has("as1");
@@ -490,15 +495,15 @@ describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
     await mgr.hardSwitchProfile("profile-a");
 
     // After switch-back: as1 working tree restored, as3 destroyed.
-    expect(existsSync(path.join(setup.vaultPath, "assetspaces/as1"))).toBe(true);
-    expect(existsSync(path.join(setup.vaultPath, "assetspaces/as2"))).toBe(true);
-    expect(existsSync(path.join(setup.vaultPath, "assetspaces/as3"))).toBe(false);
+    expect(existsSync(path.join(setup.vaultPath, "assetspaces/kitelev/exoas-as1"))).toBe(true);
+    expect(existsSync(path.join(setup.vaultPath, "assetspaces/kitelev/exoas-as2"))).toBe(true);
+    expect(existsSync(path.join(setup.vaultPath, "assetspaces/kitelev/exoas-as3"))).toBe(false);
 
     // `.gitmodules` still contains all three entries (URL registry).
     const gitmodulesAfter = await fs.readFile(path.join(setup.vaultPath, ".gitmodules"), "utf8");
-    expect(gitmodulesAfter).toContain('"assetspaces/as1"');
-    expect(gitmodulesAfter).toContain('"assetspaces/as2"');
-    expect(gitmodulesAfter).toContain('"assetspaces/as3"');
+    expect(gitmodulesAfter).toContain('"assetspaces/kitelev/exoas-as1"');
+    expect(gitmodulesAfter).toContain('"assetspaces/kitelev/exoas-as2"');
+    expect(gitmodulesAfter).toContain('"assetspaces/kitelev/exoas-as3"');
 
     // Active profile flipped back.
     expect(localData.getActiveProfileUid()).toBe("profile-a");

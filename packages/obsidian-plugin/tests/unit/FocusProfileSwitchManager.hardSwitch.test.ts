@@ -318,15 +318,15 @@ interface SetupOptions {
 function setup(opts: SetupOptions) {
   // Vault contains AssetSpace ABox assets for each TS-floor + extras.
   const tsFloorFolders: Array<{ uid: string; folder: string }> = [
-    { uid: TS_FLOOR_AS_UID_EXO, folder: "assetspaces/exo" },
-    { uid: TS_FLOOR_AS_UID_EXOCMD, folder: "assetspaces/exocmd" },
-    { uid: TS_FLOOR_AS_UID_SHARED_IDENTITIES, folder: "assetspaces/shared-identities" },
+    { uid: TS_FLOOR_AS_UID_EXO, folder: "assetspaces/kitelev/exoas-exo" },
+    { uid: TS_FLOOR_AS_UID_EXOCMD, folder: "assetspaces/kitelev/exoas-exocmd" },
+    { uid: TS_FLOOR_AS_UID_SHARED_IDENTITIES, folder: "assetspaces/kitelev/exoas-shared-identities" },
   ];
 
   const extraAs: Array<{ uid: string; folder: string }> = [
-    { uid: "ems-uid", folder: "assetspaces/ems" },
-    { uid: "kpc-uid", folder: "assetspaces/kpc" },
-    { uid: "ims-uid", folder: "assetspaces/ims" },
+    { uid: "ems-uid", folder: "assetspaces/kitelev/exoas-ems" },
+    { uid: "kpc-uid", folder: "assetspaces/kitelev/exoas-kpc" },
+    { uid: "ims-uid", folder: "assetspaces/kitelev/exoas-ims" },
   ];
 
   const allAs = [...tsFloorFolders, ...extraAs];
@@ -358,7 +358,11 @@ function setup(opts: SetupOptions) {
           "exo__Asset_uid": as.uid,
           "exo__Asset_label": ns,
           "exo__Instance_class": ["[[exo__AssetSpace]]"],
-          "exo__AssetSpace_git": `https://github.com/test/${ns}-ontology`,
+          // RFC 01a83de8 Phase 1b T3 — folder is derived from the source URL,
+          // so the source MUST derive back to `as.folder` for the switch plan's
+          // submodulePath to match (`derivePath("https://github.com/<owner>/<repo>")`
+          // === `assetspaces/<owner>/<repo>` === as.folder).
+          "exo__AssetSpace_source": `https://github.com/${as.folder.replace("assetspaces/", "")}`,
           "exo__AssetSpace_namespace": ns,
           "exo__AssetSpace_containsOntology": [`[[ontology-${as.uid}]]`],
         },
@@ -585,7 +589,7 @@ describe("FocusProfileSwitchManager.hardSwitchProfile", () => {
       uncommittedGuard.check.mockResolvedValueOnce({
         clean: false,
         affectedFiles: [
-          { asUid: "ems-uid", submodulePath: "assetspaces/ems", files: ["a.md", "b.md"] },
+          { asUid: "ems-uid", submodulePath: "assetspaces/kitelev/exoas-ems", files: ["a.md", "b.md"] },
         ],
       });
       await expect(mgr.hardSwitchProfile("target")).rejects.toThrow(UncommittedChangesAbortError);
@@ -616,7 +620,7 @@ describe("FocusProfileSwitchManager.hardSwitchProfile", () => {
       const checkCall = uncommittedGuard.check.mock.calls[0][0];
       // Only kpc passed — not ems.
       expect(checkCall).toEqual([
-        { asUid: "kpc-uid", submodulePath: "assetspaces/kpc" },
+        { asUid: "kpc-uid", submodulePath: "assetspaces/kitelev/exoas-kpc" },
       ]);
     });
   });

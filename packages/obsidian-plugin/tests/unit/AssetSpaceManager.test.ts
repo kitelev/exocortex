@@ -186,7 +186,7 @@ function seedSingleAssetSpace(
 ): SeedFile[] {
   return [
     {
-      path: "assetspaces/ems/f0f674da.md",
+      path: "assetspaces/kitelev/exoas-kitelev-registry/core/f0f674da.md",
       frontmatter: assetSpaceFrontmatter({
         uid: EMS_UID,
         git: "https://github.com/kitelev/exoas-ems",
@@ -241,12 +241,12 @@ describe("AssetSpaceManager", () => {
       const h = makeHarness([
         ...seedSingleAssetSpace(),
         {
-          path: "assetspaces/ems/changed.md",
+          path: "assetspaces/kitelev/exoas-ems/changed.md",
           frontmatter: {},
           content: "x",
         },
       ]);
-      h.mgr.markDirty("assetspaces/ems/changed.md");
+      h.mgr.markDirty("assetspaces/kitelev/exoas-ems/changed.md");
       await h.mgr.pushAssetSpace(EMS_UID);
       expect(h.client.createCommit).toHaveBeenCalledWith(
         "kitelev",
@@ -262,14 +262,14 @@ describe("AssetSpaceManager", () => {
         [
           ...seedSingleAssetSpace(),
           {
-            path: "assetspaces/ems/changed.md",
+            path: "assetspaces/kitelev/exoas-ems/changed.md",
             frontmatter: {},
             content: "x",
           },
         ],
         { branch: "develop" },
       );
-      h.mgr.markDirty("assetspaces/ems/changed.md");
+      h.mgr.markDirty("assetspaces/kitelev/exoas-ems/changed.md");
       await h.mgr.pushAssetSpace(EMS_UID);
       expect(h.client.createCommit).toHaveBeenCalledWith(
         expect.any(String),
@@ -309,12 +309,12 @@ describe("AssetSpaceManager", () => {
   describe("lookupAssetSpaceForPath", () => {
     it("returns AssetSpace UID for owned folder", () => {
       const h = makeHarness(seedSingleAssetSpace());
-      expect(h.mgr.lookupAssetSpaceForPath("assetspaces/ems")).toBe(EMS_UID);
+      expect(h.mgr.lookupAssetSpaceForPath("assetspaces/kitelev/exoas-ems")).toBe(EMS_UID);
     });
 
     it("handles trailing slash", () => {
       const h = makeHarness(seedSingleAssetSpace());
-      expect(h.mgr.lookupAssetSpaceForPath("assetspaces/ems/")).toBe(EMS_UID);
+      expect(h.mgr.lookupAssetSpaceForPath("assetspaces/kitelev/exoas-ems/")).toBe(EMS_UID);
     });
 
     it("returns null for unknown folder", () => {
@@ -331,7 +331,7 @@ describe("AssetSpaceManager", () => {
     it("ignores non-AssetSpace assets at sibling paths", () => {
       const h = makeHarness([
         {
-          path: "assetspaces/ems/f0f674da-a31b-47e1-b0e8-f984b018bf75.md",
+          path: "assetspaces/kitelev/exoas-kitelev-registry/core/f0f674da-a31b-47e1-b0e8-f984b018bf75.md",
           frontmatter: assetSpaceFrontmatter({
             uid: EMS_UID,
             git: "https://github.com/kitelev/exoas-ems",
@@ -339,7 +339,7 @@ describe("AssetSpaceManager", () => {
           }),
         },
         {
-          path: "assetspaces/ems/some-other-asset.md",
+          path: "assetspaces/kitelev/exoas-ems/some-other-asset.md",
           // not an AssetSpace — different class
           frontmatter: {
             "exo__Asset_uid": "other-uid",
@@ -347,7 +347,7 @@ describe("AssetSpaceManager", () => {
           },
         },
       ]);
-      expect(h.mgr.lookupAssetSpaceForPath("assetspaces/ems")).toBe(EMS_UID);
+      expect(h.mgr.lookupAssetSpaceForPath("assetspaces/kitelev/exoas-ems")).toBe(EMS_UID);
     });
   });
 
@@ -360,7 +360,7 @@ describe("AssetSpaceManager", () => {
         uid: EMS_UID,
         git: "https://github.com/kitelev/exoas-ems",
         namespace: "ems",
-        folderName: "assetspaces/ems",
+        folderName: "assetspaces/kitelev/exoas-ems",
         lastPulledSha: "deadbeef",
       });
     });
@@ -373,7 +373,7 @@ describe("AssetSpaceManager", () => {
     it("returns null when frontmatter missing git URL", () => {
       const h = makeHarness([
         {
-          path: "assetspaces/ems/f0f674da.md",
+          path: "assetspaces/kitelev/exoas-kitelev-registry/core/f0f674da.md",
           frontmatter: {
             "exo__Asset_uid": EMS_UID,
             "exo__Instance_class": [`[[${ASSET_SPACE_CLASS_UID}]]`],
@@ -388,7 +388,7 @@ describe("AssetSpaceManager", () => {
     it("returns null when frontmatter missing namespace", () => {
       const h = makeHarness([
         {
-          path: "assetspaces/ems/f0f674da.md",
+          path: "assetspaces/kitelev/exoas-kitelev-registry/core/f0f674da.md",
           frontmatter: {
             "exo__Asset_uid": EMS_UID,
             "exo__Instance_class": [`[[${ASSET_SPACE_CLASS_UID}]]`],
@@ -409,7 +409,7 @@ describe("AssetSpaceManager", () => {
     it("reads `exo__AssetSpace_source` when present (new property)", () => {
       const h = makeHarness([
         {
-          path: "assetspaces/ems/f0f674da.md",
+          path: "assetspaces/kitelev/exoas-kitelev-registry/core/f0f674da.md",
           frontmatter: {
             "exo__Asset_uid": EMS_UID,
             "exo__Instance_class": [`[[${ASSET_SPACE_CLASS_UID}]]`],
@@ -425,7 +425,7 @@ describe("AssetSpaceManager", () => {
     it("`_source` takes precedence over legacy `_git`", () => {
       const h = makeHarness([
         {
-          path: "assetspaces/ems/f0f674da.md",
+          path: "assetspaces/kitelev/exoas-kitelev-registry/core/f0f674da.md",
           frontmatter: {
             "exo__Asset_uid": EMS_UID,
             "exo__Instance_class": [`[[${ASSET_SPACE_CLASS_UID}]]`],
@@ -452,7 +452,7 @@ describe("AssetSpaceManager", () => {
       const h = makeHarness(
         [
           {
-            path: "assetspaces/ems/f0f674da.md",
+            path: "assetspaces/kitelev/exoas-kitelev-registry/core/f0f674da.md",
             frontmatter: assetSpaceFrontmatter({
               uid: EMS_UID,
               git: "https://github.com/kitelev/exoas-ems",
@@ -460,12 +460,12 @@ describe("AssetSpaceManager", () => {
             }),
           },
           {
-            path: "assetspaces/ems/instance-1.md",
+            path: "assetspaces/kitelev/exoas-ems/instance-1.md",
             frontmatter: { "exo__Asset_uid": "inst-1" },
             content: "# Instance 1\n",
           },
           {
-            path: "assetspaces/ems/nested/instance-2.md",
+            path: "assetspaces/kitelev/exoas-ems/nested/instance-2.md",
             frontmatter: { "exo__Asset_uid": "inst-2" },
             content: "# Instance 2\n",
           },
@@ -478,8 +478,8 @@ describe("AssetSpaceManager", () => {
           },
         },
       );
-      h.mgr.markDirty("assetspaces/ems/instance-1.md");
-      h.mgr.markDirty("assetspaces/ems/nested/instance-2.md");
+      h.mgr.markDirty("assetspaces/kitelev/exoas-ems/instance-1.md");
+      h.mgr.markDirty("assetspaces/kitelev/exoas-ems/nested/instance-2.md");
       // Plus a dirty file outside the AS — must NOT be pushed.
       h.mgr.markDirty("other/area/unrelated.md");
 
@@ -501,12 +501,12 @@ describe("AssetSpaceManager", () => {
       expect(message).toMatch(/push 2 dirty file/);
 
       // Pushed paths cleared from dirty set; unrelated path remains
-      expect(h.mgr.getDirtySnapshot().has("assetspaces/ems/instance-1.md")).toBe(false);
-      expect(h.mgr.getDirtySnapshot().has("assetspaces/ems/nested/instance-2.md")).toBe(false);
+      expect(h.mgr.getDirtySnapshot().has("assetspaces/kitelev/exoas-ems/instance-1.md")).toBe(false);
+      expect(h.mgr.getDirtySnapshot().has("assetspaces/kitelev/exoas-ems/nested/instance-2.md")).toBe(false);
       expect(h.mgr.getDirtySnapshot().has("other/area/unrelated.md")).toBe(true);
 
       // lastPulledSha written via processFrontMatter
-      const updated = h.fake.processedFrontmatter.get("assetspaces/ems/f0f674da.md");
+      const updated = h.fake.processedFrontmatter.get("assetspaces/kitelev/exoas-kitelev-registry/core/f0f674da.md");
       expect(updated).toBeDefined();
       expect(updated!["exo__AssetSpace_lastPulledSha"]).toBe(
         "abc1234567890" + "0".repeat(27),
@@ -533,7 +533,7 @@ describe("AssetSpaceManager", () => {
 
     it("throws when AssetSpace UID not found in vault", async () => {
       const h = makeHarness([]);
-      h.mgr.markDirty("assetspaces/ems/foo.md");
+      h.mgr.markDirty("assetspaces/kitelev/exoas-ems/foo.md");
       await expect(h.mgr.pushAssetSpace("nonexistent-uid")).rejects.toThrow(
         /not found in vault/,
       );
@@ -562,7 +562,7 @@ describe("AssetSpaceManager", () => {
             .mockRejectedValue(new Error("Rate limit guard: 3 remaining < 14 needed")),
         },
       });
-      h.mgr.markDirty("assetspaces/ems/foo.md");
+      h.mgr.markDirty("assetspaces/kitelev/exoas-ems/foo.md");
       await expect(h.mgr.pushAssetSpace(EMS_UID)).rejects.toThrow(/Rate limit guard/);
       expect(h.client.createCommit).not.toHaveBeenCalled();
     });
@@ -576,7 +576,7 @@ describe("AssetSpaceManager", () => {
         [
           ...seedSingleAssetSpace(),
           {
-            path: "assetspaces/ems/dirty.md",
+            path: "assetspaces/kitelev/exoas-ems/dirty.md",
             frontmatter: { "exo__Asset_uid": "x" },
             content: "x",
           },
@@ -587,7 +587,7 @@ describe("AssetSpaceManager", () => {
           },
         },
       );
-      h.mgr.markDirty("assetspaces/ems/dirty.md");
+      h.mgr.markDirty("assetspaces/kitelev/exoas-ems/dirty.md");
       const p1 = h.mgr.pushAssetSpace(EMS_UID);
       const p2 = h.mgr.pushAssetSpace(EMS_UID);
       // Both should be the SAME promise (in-flight dedup)
@@ -602,16 +602,16 @@ describe("AssetSpaceManager", () => {
       const h = makeHarness([
         ...seedSingleAssetSpace(),
         {
-          path: "assetspaces/ems/dirty.md",
+          path: "assetspaces/kitelev/exoas-ems/dirty.md",
           frontmatter: { "exo__Asset_uid": "x" },
           content: "x",
         },
       ]);
-      h.mgr.markDirty("assetspaces/ems/dirty.md");
+      h.mgr.markDirty("assetspaces/kitelev/exoas-ems/dirty.md");
       await h.mgr.pushAssetSpace(EMS_UID);
 
       // Second push — must NOT be deduped (in-flight cleared post-resolve)
-      h.mgr.markDirty("assetspaces/ems/dirty.md");
+      h.mgr.markDirty("assetspaces/kitelev/exoas-ems/dirty.md");
       await h.mgr.pushAssetSpace(EMS_UID);
       expect(h.client.createCommit).toHaveBeenCalledTimes(2);
     });

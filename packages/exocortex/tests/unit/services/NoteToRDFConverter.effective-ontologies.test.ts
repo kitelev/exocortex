@@ -179,6 +179,116 @@ describe("NoteToRDFConverter — effectiveOntologies (Issue #3321)", () => {
     });
   });
 
+  // RFC 01a83de8 Phase 1b T3 — after the fleet migration, AssetSpace content
+  // lives at the DERIVED two-segment layout `assetspaces/<owner>/<repo>/…` and
+  // folderMap keys (from `derivePath(_source)`) are two-segment. The filter must
+  // match these via longest path-prefix, NOT a fixed single-segment slice (which
+  // silently no-op'd the soft-filter post-migration — advisor catch on PR #3406).
+  describe("shouldSkipFileForEffectiveSet — derived two-segment layout (Phase 1b)", () => {
+    // Production-shape folderMap: keys are derivePath(_source) results.
+    const derivedMap = new Map<string, string>([
+      ["assetspaces/kitelev/exoas-exo", EXO_AS_UID],
+      ["assetspaces/kitelev/exoas-exocmd", EXOCMD_AS_UID],
+      ["assetspaces/kitelev/exoas-ems", EMS_AS_UID],
+      ["assetspaces/kitelev/exoas-shared-identities", SHARED_AS_UID],
+    ]);
+
+    it("INCLUDES a two-segment content file whose AS is in the effective set", () => {
+      const eff = new Set([EXO_AS_UID, EXOCMD_AS_UID, SHARED_AS_UID]);
+      expect(
+        shouldSkipFileForEffectiveSet(
+          "assetspaces/kitelev/exoas-exo/Class.md",
+          eff,
+          derivedMap,
+        ),
+      ).toBe(false);
+    });
+
+    it("SKIPS a two-segment content file whose AS is NOT in the effective set", () => {
+      // Revert-strong: with the old single-segment slice this file's folder
+      // would resolve to `assetspaces/kitelev` (absent from derivedMap) →
+      // undefined → emit (false). The longest-prefix match resolves it to
+      // `assetspaces/kitelev/exoas-ems` → ems not active → skip (true).
+      const eff = new Set([EXO_AS_UID, EXOCMD_AS_UID, SHARED_AS_UID]);
+      expect(
+        shouldSkipFileForEffectiveSet(
+          "assetspaces/kitelev/exoas-ems/Task.md",
+          eff,
+          derivedMap,
+        ),
+      ).toBe(true);
+    });
+
+    it("does NOT false-match a sibling whose key is a string-prefix (the `/` boundary)", () => {
+      // `exoas-exocmd` shares the `exoas-exo` string prefix. A file under
+      // exocmd must resolve to EXOCMD (and skip, since only exo is active) —
+      // NOT be misattributed to the exo sibling. Guards the `${folder}/`
+      // boundary in startsWith (a regression dropping the `/` would pass the
+      // other tests but fail this one).
+      const eff = new Set([EXO_AS_UID]); // exocmd NOT active
+      expect(
+        shouldSkipFileForEffectiveSet(
+          "assetspaces/kitelev/exoas-exocmd/Cmd.md",
+          eff,
+          derivedMap,
+        ),
+      ).toBe(true);
+    });
+
+    it("matches nested files under the derived folder (deep path)", () => {
+      const eff = new Set([EXO_AS_UID]);
+      expect(
+        shouldSkipFileForEffectiveSet(
+          "assetspaces/kitelev/exoas-ems/sub/dir/Deep.md",
+          eff,
+          derivedMap,
+        ),
+      ).toBe(true);
+    });
+
+    it("emits a two-segment file under an unknown owner/repo (defensive)", () => {
+      const eff = new Set([EXO_AS_UID]);
+      expect(
+        shouldSkipFileForEffectiveSet(
+          "assetspaces/kitelev/exoas-unmapped/x.md",
+          eff,
+          derivedMap,
+        ),
+      ).toBe(false);
+    });
+
+    it("longest-prefix wins when one key is a prefix of another", () => {
+      // Defensive: a nested AssetSpace folder must win over its parent.
+      const nestedMap = new Map<string, string>([
+        ["assetspaces/kitelev", "parent-uid"],
+        ["assetspaces/kitelev/exoas-ems", EMS_AS_UID],
+      ]);
+      const eff = new Set(["parent-uid"]); // ems NOT active
+      // File belongs to the deeper ems AS (not the parent) → ems inactive → skip.
+      expect(
+        shouldSkipFileForEffectiveSet(
+          "assetspaces/kitelev/exoas-ems/Task.md",
+          eff,
+          nestedMap,
+        ),
+      ).toBe(true);
+    });
+
+    it("still supports the legacy single-segment layout (backward-compat)", () => {
+      const legacyMap = new Map<string, string>([
+        ["assetspaces/ems", EMS_AS_UID],
+      ]);
+      const eff = new Set([EXO_AS_UID]); // ems NOT active
+      expect(
+        shouldSkipFileForEffectiveSet(
+          "assetspaces/ems/Task.md",
+          eff,
+          legacyMap,
+        ),
+      ).toBe(true);
+    });
+  });
+
   describe("convertVault — filter engagement contract", () => {
     it("indexes the full vault when `effectiveOntologies` is undefined (backward-compat)", async () => {
       const exoFile = file("assetspaces/exo/Class.md");
