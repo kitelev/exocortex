@@ -342,12 +342,12 @@ describe("FocusProfileCommands.invokeSwitchKnowledgeProfile", () => {
     expect(h.switchMgr.switchCalls).toHaveLength(0); // soft NOT invoked
   });
 
-  it("shows Notice when no KnowledgeProfile assets in vault", async () => {
+  it("shows Notice when no profiles in vault", async () => {
     const h = makeHarness({ profiles: [], knowledgeProfiles: [] });
     await h.cmd.invokeSwitchKnowledgeProfile();
 
     expect(h.pickCalls).toHaveLength(0);
-    expect(h.notices.some((n) => /No KnowledgeProfile/.test(n))).toBe(true);
+    expect(h.notices.some((n) => /No profiles found/.test(n))).toBe(true);
   });
 
   it("does nothing when user cancels picker", async () => {
