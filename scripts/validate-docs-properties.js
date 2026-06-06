@@ -40,7 +40,6 @@ const KNOWN_EXCEPTIONS = new Set([
   "exo__KnowledgeProfile_includes", // docs/profiles.md — documented exo__KnowledgeProfile (hard-switch) property; its sole literal-string reference in packages/ was the migrate-shared-identities-profiles migration service, removed in PR #3394 (YAGNI). No literal-token code ref remains by design.
   "exo__KnowledgeProfile_extends", // docs/profiles.md — see exo__KnowledgeProfile_includes (same PR #3394 removal)
   "exo__KnowledgeProfile_alwaysOnOverlay", // docs/profiles.md — see exo__KnowledgeProfile_includes (same PR #3394 removal)
-  "exo__FocusProfile_includes", // docs/profiles.md — pre-Phase-2 FocusProfile name (RFC 01a83de8 Phase 2 renamed FocusProfile→Profile; code uses exo__Profile_includes). Its sole literal-string reference in packages/ was a test comment in FocusProfileWiring.integration.test.ts, removed in the Phase 3 T3b soft-filter PR. Historical migration-narrative reference; no literal-token code ref remains by design.
 ]);
 
 function extractPropertiesFromDocs() {
