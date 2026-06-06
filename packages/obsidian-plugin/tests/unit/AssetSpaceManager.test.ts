@@ -404,6 +404,46 @@ describe("AssetSpaceManager", () => {
       const h = makeHarness(seedSingleAssetSpace());
       expect(h.mgr.lookupAssetSpaceInfo("")).toBeNull();
     });
+
+    // RFC 01a83de8 v10 T3 — dual-read `_source ?? _git`.
+    it("reads `exo__AssetSpace_source` when present (new property)", () => {
+      const h = makeHarness([
+        {
+          path: "assetspaces/ems/f0f674da.md",
+          frontmatter: {
+            "exo__Asset_uid": EMS_UID,
+            "exo__Instance_class": [`[[${ASSET_SPACE_CLASS_UID}]]`],
+            "exo__AssetSpace_source": "https://github.com/kitelev/exoas-ems",
+            "exo__AssetSpace_namespace": "ems",
+          },
+        },
+      ]);
+      const info = h.mgr.lookupAssetSpaceInfo(EMS_UID);
+      expect(info?.git).toBe("https://github.com/kitelev/exoas-ems");
+    });
+
+    it("`_source` takes precedence over legacy `_git`", () => {
+      const h = makeHarness([
+        {
+          path: "assetspaces/ems/f0f674da.md",
+          frontmatter: {
+            "exo__Asset_uid": EMS_UID,
+            "exo__Instance_class": [`[[${ASSET_SPACE_CLASS_UID}]]`],
+            "exo__AssetSpace_source": "https://github.com/kitelev/exoas-ems",
+            "exo__AssetSpace_git": "https://github.com/kitelev/stale-legacy",
+            "exo__AssetSpace_namespace": "ems",
+          },
+        },
+      ]);
+      const info = h.mgr.lookupAssetSpaceInfo(EMS_UID);
+      expect(info?.git).toBe("https://github.com/kitelev/exoas-ems");
+    });
+
+    it("falls back to legacy `_git` when `_source` absent (no regression)", () => {
+      const h = makeHarness(seedSingleAssetSpace());
+      const info = h.mgr.lookupAssetSpaceInfo(EMS_UID);
+      expect(info?.git).toBe("https://github.com/kitelev/exoas-ems");
+    });
   });
 
   // --- pushAssetSpace --------------------------------------------------

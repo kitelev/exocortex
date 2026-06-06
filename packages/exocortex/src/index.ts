@@ -241,6 +241,7 @@ export {
   IRICanonicalizer,
   type CanonicalizationResult,
 } from "./services/IRICanonicalizer";
+export { derivePath } from "./services/AssetSpacePathDeriver";
 export {
   LazyAssetGraphLoader,
   MAX_LAZY_DEPTH,
