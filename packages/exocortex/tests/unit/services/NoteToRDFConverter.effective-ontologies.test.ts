@@ -219,6 +219,22 @@ describe("NoteToRDFConverter — effectiveOntologies (Issue #3321)", () => {
       ).toBe(true);
     });
 
+    it("does NOT false-match a sibling whose key is a string-prefix (the `/` boundary)", () => {
+      // `exoas-exocmd` shares the `exoas-exo` string prefix. A file under
+      // exocmd must resolve to EXOCMD (and skip, since only exo is active) —
+      // NOT be misattributed to the exo sibling. Guards the `${folder}/`
+      // boundary in startsWith (a regression dropping the `/` would pass the
+      // other tests but fail this one).
+      const eff = new Set([EXO_AS_UID]); // exocmd NOT active
+      expect(
+        shouldSkipFileForEffectiveSet(
+          "assetspaces/kitelev/exoas-exocmd/Cmd.md",
+          eff,
+          derivedMap,
+        ),
+      ).toBe(true);
+    });
+
     it("matches nested files under the derived folder (deep path)", () => {
       const eff = new Set([EXO_AS_UID]);
       expect(

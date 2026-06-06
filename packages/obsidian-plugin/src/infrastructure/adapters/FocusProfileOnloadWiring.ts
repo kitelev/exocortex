@@ -218,7 +218,8 @@ export async function applyActiveProfileFilter(
 
 /**
  * Single vault walk producing both data products the wiring needs.
- * - `folderMap`: `assetspaces/<ns>` → AS UID, used by `shouldSkipFileForEffectiveSet`.
+ * - `folderMap`: `derivePath(_source)` = `assetspaces/<owner>/<repo>` → AS UID,
+ *   used by `shouldSkipFileForEffectiveSet` (longest path-prefix match).
  * - `ontologyToAs`: each declared `exo__AssetSpace_containsOntology` Ontology
  *   UID → owning AS UID, used to translate profile-declared Ontology
  *   references to AS UIDs the filter understands.
