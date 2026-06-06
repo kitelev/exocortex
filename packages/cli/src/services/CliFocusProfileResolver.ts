@@ -5,17 +5,16 @@
  *
  * Walks the vault filesystem to:
  *   1. Build folderMap: `assetspaces/<folder>` → AssetSpace UID
- *   2. Build ontologyToAs: Ontology UID → owning AssetSpace UID (via
- *      `exo__AssetSpace_containsOntology` declarations)
- *   3. Resolve Profile chain (`_imports*` + `_includes`) to a declared UID set
- *      (`_includes` now AssetSpace UIDs per RFC 01a83de8 Phase 2; `_alwaysOnOverlay`
+ *   2. Resolve Profile chain (`_imports*` + `_includes`) to a declared UID set
+ *      (`_includes` are AssetSpace UIDs per RFC 01a83de8 Phase 2; `_alwaysOnOverlay`
  *      removed — folds into TS-floor)
- *   4. Translate declared Ontology UIDs → AssetSpace UIDs through ontologyToAs
- *      (AS UIDs pass through unchanged; covers TS-floor ontology URIs)
- *   5. Apply TS-floor AssetSpace UIDs (Vision Lock #17): $exo, $exocmd,
+ *   3. Resolve declared AssetSpace UIDs against folderMap (the former
+ *      Ontology→AS translation via `exo__AssetSpace_containsOntology` was removed
+ *      in Phase 3 T3b-cleanup — profiles declare AS UIDs directly)
+ *   4. Apply TS-floor AssetSpace UIDs (Vision Lock #17): $exo, $exocmd,
  *      $shared-identities — guarantees plugin/CLI keeps functioning regardless
  *      of profile config
- *   6. Safe-degrade: if effective set has zero AS-folder overlap, return null
+ *   5. Safe-degrade: if effective set has zero AS-folder overlap, return null
  *      (caller falls back to no-filter / full vault) to prevent self-brick
  *
  * **Phase 6 follow-up** (deferred): extract the shared resolver / translation
@@ -65,9 +64,9 @@ export interface ResolveFilterResult {
   effective: ReadonlySet<string>;
   /** `assetspaces/<folder>` → AS UID map the converter uses to look up file owners. */
   folderMap: ReadonlyMap<string, string>;
-  /** Diagnostic — declared Ontology UIDs the profile chain produced (pre-translation). */
+  /** Diagnostic — declared UIDs the profile chain produced (`_includes` ∪ floor). */
   declaredOntologies: ReadonlySet<string>;
-  /** Diagnostic — Ontology UIDs that had no AS owner in `containsOntology` (translation miss). */
+  /** Diagnostic — declared UIDs that matched no known AssetSpace folder. */
   untranslated: ReadonlyArray<string>;
 }
 
@@ -121,11 +120,11 @@ export class CliFocusProfileResolver {
   }
 
   /**
-   * Resolve `--profile <uid>` to the converter filter pair.
+   * Resolve a profile UID to its effective AssetSpace set.
    *
    * Outcomes:
-   * - `engaged` — filter computed; pass `result.effective` + `result.folderMap`
-   *   to `NoteToRDFConverter.convertVault({ effectiveOntologies, assetSpaceFolderToUid })`
+   * - `engaged` — effective set computed; `result.effective` is the AS-UID set
+   *   the CLI hard switch materialises (+ `result.folderMap` for diagnostics)
    * - `no-profile` — `profileUid` was null/undefined; caller indexes full vault
    * - `missing-profile` — UID provided but no asset with that UID found; caller
    *   indexes full vault (defensive; surface warn)
@@ -142,7 +141,6 @@ export class CliFocusProfileResolver {
 
     let scan: {
       folderMap: Map<string, string>;
-      ontologyToAs: Map<string, string>;
       profiles: Map<string, ProfileFrontmatter>;
     };
     try {
@@ -171,18 +169,18 @@ export class CliFocusProfileResolver {
       return { outcome: "error", reason };
     }
 
-    // Translate Ontology UIDs → AS UIDs
+    // Resolve declared UIDs against the AssetSpace folder map. RFC 01a83de8
+    // Phase 2 retargeted `_includes` to AssetSpace UIDs, so they match the
+    // folder map directly; the former Ontology→AS translation (via
+    // `exo__AssetSpace_containsOntology`) is dead and was removed in Phase 3
+    // T3b-cleanup. UIDs that don't resolve to a known AS folder are surfaced as
+    // `untranslated` for diagnostics.
     const folderMapValues = new Set(scan.folderMap.values());
     const effectiveAs = new Set<string>();
     const untranslated: string[] = [];
     for (const uid of declared) {
       if (folderMapValues.has(uid)) {
         effectiveAs.add(uid);
-        continue;
-      }
-      const translated = scan.ontologyToAs.get(uid);
-      if (translated !== undefined) {
-        effectiveAs.add(translated);
         continue;
       }
       untranslated.push(uid);
@@ -200,8 +198,8 @@ export class CliFocusProfileResolver {
     if (!hasOverlap) {
       const reason =
         `[CliFocusProfileResolver] profileUid=${profileUid} produced effective set with zero AssetSpace folder overlap ` +
-        `(${effectiveAs.size} AS UIDs after translation+floor; ${scan.folderMap.size} folders known). ` +
-        `Likely cause: profile declares Ontology UIDs not covered by containsOntology, or vault has no scanned AssetSpaces. ` +
+        `(${effectiveAs.size} AS UIDs incl. floor; ${scan.folderMap.size} folders known). ` +
+        `Likely cause: profile declares AssetSpace UIDs not present as descriptors, or vault has no scanned AssetSpaces. ` +
         `Falling back to no-filter (full vault indexed).`;
       this.warn(reason);
       return { outcome: "degraded", reason };
@@ -252,11 +250,9 @@ export class CliFocusProfileResolver {
 
   private async scanAllVaults(): Promise<{
     folderMap: Map<string, string>;
-    ontologyToAs: Map<string, string>;
     profiles: Map<string, ProfileFrontmatter>;
   }> {
     const folderMap = new Map<string, string>();
-    const ontologyToAs = new Map<string, string>();
     const profiles = new Map<string, ProfileFrontmatter>();
 
     for (const vaultRoot of this.vaultPaths) {
@@ -273,16 +269,12 @@ export class CliFocusProfileResolver {
         );
 
         if (classes.some((c) => c === ASSET_SPACE_CLASS_UID)) {
-          // AssetSpace asset — register folderMap + containsOntology
+          // AssetSpace asset — register folderMap. The former Ontology→AS
+          // translation map (built from `exo__AssetSpace_containsOntology`) was
+          // removed in Phase 3 T3b-cleanup — profiles declare AS UIDs directly.
           const folder = parentFolderRelative(asset.filePath, asset.vaultRoot);
           if (folder.length > 0) {
             folderMap.set(folder, asset.uid);
-          }
-          const declared = parseWikilinkArray(
-            asset.frontmatter["exo__AssetSpace_containsOntology"],
-          );
-          for (const ont of declared) {
-            ontologyToAs.set(ont, asset.uid);
           }
         }
 
@@ -307,7 +299,7 @@ export class CliFocusProfileResolver {
       }
     }
 
-    return { folderMap, ontologyToAs, profiles };
+    return { folderMap, profiles };
   }
 
   private async walkVault(vaultRoot: string): Promise<AssetMeta[]> {
