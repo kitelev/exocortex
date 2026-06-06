@@ -467,6 +467,18 @@ describe("NoteToRDFConverter", () => {
         expect(aliasTriples).toHaveLength(1);
         expect((aliasTriples[0].object as Literal).value).toBe("Valid");
       });
+
+      it("emits a numeric alias as a sane literal without throwing", async () => {
+        // aliases are normally strings; a stray number must not crash the
+        // converter (it falls through the null/blank guard to valueToRDFObject).
+        mockVault.getFrontmatter.mockReturnValue({ aliases: [42] });
+
+        const triples = await converter.convertNote(aliasFile);
+
+        const aliasTriples = aliasTriplesOf(triples);
+        expect(aliasTriples).toHaveLength(1);
+        expect((aliasTriples[0].object as Literal).value).toBe("42");
+      });
     });
 
     // Issue #666: Add Asset_filename predicate for all assets
