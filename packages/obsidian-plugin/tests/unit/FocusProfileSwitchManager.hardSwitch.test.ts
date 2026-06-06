@@ -108,9 +108,9 @@ class FakeResolver implements IProfileResolver {
 }
 
 class FakeIndexer implements IRdfIndexer {
-  refreshCalls: ReadonlySet<string>[] = [];
-  async refresh(effective: ReadonlySet<string>): Promise<void> {
-    this.refreshCalls.push(new Set(effective));
+  refreshCalls = 0;
+  async refresh(): Promise<void> {
+    this.refreshCalls++;
   }
 }
 
@@ -889,7 +889,7 @@ describe("FocusProfileSwitchManager.hardSwitchProfile", () => {
       expect(localDataStore.getActiveFocusProfileUid()).toBe("f-keep");
     });
 
-    it("rdfIndexer.refresh called with effective AS UID set", async () => {
+    it("rdfIndexer.refresh fired once after the hard switch (RFC 01a83de8 — soft-filter removed)", async () => {
       const { mgr, indexer } = setup({
         targetUid: "target",
         sourceUid: null,
@@ -906,12 +906,11 @@ describe("FocusProfileSwitchManager.hardSwitchProfile", () => {
         ],
       });
       await mgr.hardSwitchProfile("target");
-      expect(indexer.refreshCalls.length).toBe(1);
-      const eff = indexer.refreshCalls[0];
-      expect(eff.has(TS_FLOOR_AS_UID_EXO)).toBe(true);
-      expect(eff.has(TS_FLOOR_AS_UID_EXOCMD)).toBe(true);
-      expect(eff.has(TS_FLOOR_AS_UID_SHARED_IDENTITIES)).toBe(true);
-      expect(eff.has("ems-uid")).toBe(false);
+      // The hard switch still derives effectiveAsUids for the destroy/materialize
+      // diff (asserted elsewhere), but the query-time soft-filter was removed:
+      // refresh() no longer receives an effective set — it just re-indexes the
+      // now-materialised vault once.
+      expect(indexer.refreshCalls).toBe(1);
     });
 
     it("git commit called once at end", async () => {

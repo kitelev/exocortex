@@ -2,20 +2,14 @@ import type { IRdfIndexer } from "./FocusProfileSwitchManager";
 import type { IRdfIndexerHandle } from "@plugin/application/api/SPARQLApi";
 
 /**
- * `IRdfIndexer` adapter wrapping the plugin's live `VaultRDFIndexer`
- * (Issue #3321 wiring). The B.4 `FocusProfileSwitchManager` calls
- * `refresh(effectiveOntologies)` after persisting `activeProfileUid`;
- * this adapter threads the set into the indexer и forwards к the
- * indexer's no-arg `refresh()` path so the existing cold-start
- * pipeline runs identically.
+ * `IRdfIndexer` adapter wrapping the plugin's live `VaultRDFIndexer`.
+ * The B.4 `FocusProfileSwitchManager` calls `refresh()` after persisting
+ * `activeProfileUid`; this adapter forwards to the indexer's `refresh()`
+ * path so the existing cold-start pipeline runs identically.
  *
- * Folder-map ownership: per VaultRDFIndexer line 111, the effective-
- * ontology filter engages only when BOTH the set is non-empty AND
- * `setAssetSpaceFolderToUid` has been called с a non-null map. This
- * adapter is agnostic — the plugin's onload is responsible для wiring
- * the folder map при construction (AssetSpaceManager scan, or vault-
- * scan fallback). Passing through here would couple the SwitchManager
- * к AssetSpace topology, which it deliberately stays out of.
+ * RFC 01a83de8 Phase 3 — the query-time soft-filter was removed; profile
+ * switching is mount-state based, so `refresh()` rebuilds from whatever
+ * AssetSpace folders are currently materialised on disk.
  */
 export class PluginRdfIndexerAdapter implements IRdfIndexer {
   /**
@@ -47,13 +41,8 @@ export class PluginRdfIndexerAdapter implements IRdfIndexer {
     }
   }
 
-  async refresh(effectiveOntologies: ReadonlySet<string>): Promise<void> {
-    // `VaultRDFIndexer.refresh` accepts the set as its single argument
-    // and persists it via `setEffectiveOntologies` before reindexing.
-    // R15 fall-back (empty set / missing folder map) is handled inside
-    // the converter — surfacing it through this adapter would risk
-    // double-warn, so we let the indexer log once.
-    await this.indexer.refresh(effectiveOntologies);
+  async refresh(): Promise<void> {
+    await this.indexer.refresh();
     if (this.onAfterRefresh !== undefined) {
       try {
         await this.onAfterRefresh();

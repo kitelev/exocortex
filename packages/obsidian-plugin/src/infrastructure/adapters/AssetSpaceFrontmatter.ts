@@ -31,10 +31,9 @@ const WIKILINK_UID_RE =
  * wikilink regex (not loose substring), so adjacent UUID-like noise in the
  * value does not falsely match.
  *
- * Shared by `AssetSpaceManager`, `AssetSpaceLookupHelper`, and
- * `FocusProfileOnloadWiring.scanAssetSpaces`; centralising here makes one
- * predicate the source of truth and breaks the `AssetSpaceManager` ↔
- * `AssetSpaceLookupHelper` circular import.
+ * Shared by `AssetSpaceManager` and `AssetSpaceLookupHelper`; centralising
+ * here makes one predicate the source of truth and breaks the
+ * `AssetSpaceManager` ↔ `AssetSpaceLookupHelper` circular import.
  * See Issue #3312.
  */
 export function isAssetSpaceFrontmatter(fm: Record<string, unknown>): boolean {

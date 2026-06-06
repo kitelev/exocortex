@@ -61,11 +61,11 @@ class FakeProfileResolver implements IProfileResolver {
 // ─── Fake IRdfIndexer ────────────────────────────────────────────────────
 
 class FakeRdfIndexer implements IRdfIndexer {
-  refreshCalls: ReadonlySet<string>[] = [];
+  refreshCalls = 0;
   failOnce = false;
 
-  async refresh(effectiveOntologies: ReadonlySet<string>): Promise<void> {
-    this.refreshCalls.push(new Set(effectiveOntologies));
+  async refresh(): Promise<void> {
+    this.refreshCalls++;
     if (this.failOnce) {
       this.failOnce = false;
       throw new Error("Simulated re-index failure");
@@ -315,9 +315,9 @@ describe("FocusProfileSwitchManager.switchProfile — happy path", () => {
       await origSave(s);
     };
     const origRefresh = h.rdf.refresh.bind(h.rdf);
-    h.rdf.refresh = async (set) => {
+    h.rdf.refresh = async () => {
       events.push("refresh");
-      await origRefresh(set);
+      await origRefresh();
     };
 
     await h.mgr.switchProfile(UID_BASE);
@@ -358,18 +358,17 @@ describe("FocusProfileSwitchManager.switchProfile — happy path", () => {
     expect(h.notifyCalls[0]).toMatch(/\d+ms/);
   });
 
-  it("invokes rdf.refresh with effective set including TS-floor", async () => {
+  it("invokes rdf.refresh once on soft switch (RFC 01a83de8 — soft-filter removed)", async () => {
     const h = makeHarness({
       profiles: [
         [UID_BASE, { uid: UID_BASE, includes: [ONTO_TBANK], extends: null }],
       ],
     });
     await h.mgr.switchProfile(UID_BASE);
-    expect(h.rdf.refreshCalls.length).toBe(1);
-    const set = h.rdf.refreshCalls[0];
-    expect(set.has(ONTO_TBANK)).toBe(true);
-    expect(set.has(ONTO_EXO)).toBe(true); // TS-floor
-    expect(set.has(ONTO_EXOCMD)).toBe(true); // TS-floor
+    // The query-time soft-filter was removed (RFC 01a83de8 Phase 3 T3b); the
+    // soft switch persists the active profile and triggers a single full-vault
+    // reindex — no effective set is threaded through refresh anymore.
+    expect(h.rdf.refreshCalls).toBe(1);
   });
 });
 
@@ -501,7 +500,7 @@ describe("FocusProfileSwitchManager.recoverIfNeeded", () => {
     const res = await h.mgr.recoverIfNeeded();
     expect(res.recovered).toBe(true);
     expect(res.targetUid).toBe(UID_BASE);
-    expect(h.rdf.refreshCalls.length).toBe(1);
+    expect(h.rdf.refreshCalls).toBe(1);
     expect(h.settings.state._switchInProgress).toBe(false);
   });
 

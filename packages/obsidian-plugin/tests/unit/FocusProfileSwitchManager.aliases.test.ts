@@ -69,9 +69,9 @@ class FakeProfileResolver implements IProfileResolver {
 }
 
 class FakeRdfIndexer implements IRdfIndexer {
-  refreshCalls: ReadonlySet<string>[] = [];
-  async refresh(effectiveOntologies: ReadonlySet<string>): Promise<void> {
-    this.refreshCalls.push(new Set(effectiveOntologies));
+  refreshCalls = 0;
+  async refresh(): Promise<void> {
+    this.refreshCalls++;
   }
 }
 
@@ -93,8 +93,6 @@ interface Harness {
 }
 
 const UID_BASE = "ae00f219-base";
-const ONTO_EXO = "https://exocortex.my/ontology/exo";
-const ONTO_EXOCMD = "https://exocortex.my/ontology/exocmd";
 const ONTO_KITELEV = "https://exocortex.my/ontology/kitelev";
 
 function makeHarness(): Harness {
@@ -138,13 +136,9 @@ describe("FocusProfileSwitchManager.softSwitchFocusProfile (canonical)", () => {
 
     expect(h.settings.state.activeProfileUid).toBe(UID_BASE);
     expect(h.settings.state._switchInProgress).toBe(false);
-    expect(h.rdf.refreshCalls).toHaveLength(1);
-
-    const refreshed = h.rdf.refreshCalls[0];
-    expect(refreshed.has(ONTO_KITELEV)).toBe(true);
-    // TS-floor URIs always present
-    expect(refreshed.has(ONTO_EXO)).toBe(true);
-    expect(refreshed.has(ONTO_EXOCMD)).toBe(true);
+    // RFC 01a83de8 Phase 3 T3b — soft-filter removed; the soft switch triggers
+    // a single full-vault reindex (no effective set threaded through refresh).
+    expect(h.rdf.refreshCalls).toBe(1);
   });
 
   it("emits a user-facing notice on success", async () => {
@@ -182,7 +176,7 @@ describe("FocusProfileSwitchManager — deprecated aliases delegate to canonical
     expect(spy).toHaveBeenCalledWith(UID_BASE);
     // And observable side-effect: same as canonical
     expect(h.settings.state.activeProfileUid).toBe(UID_BASE);
-    expect(h.rdf.refreshCalls).toHaveLength(1);
+    expect(h.rdf.refreshCalls).toBe(1);
   });
 
   it("softSwitchProfile delegates to softSwitchFocusProfile", async () => {
@@ -192,7 +186,7 @@ describe("FocusProfileSwitchManager — deprecated aliases delegate to canonical
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledWith(UID_BASE);
     expect(h.settings.state.activeProfileUid).toBe(UID_BASE);
-    expect(h.rdf.refreshCalls).toHaveLength(1);
+    expect(h.rdf.refreshCalls).toBe(1);
   });
 
   it("hardSwitchProfile delegates to hardSwitchKnowledgeProfile", async () => {

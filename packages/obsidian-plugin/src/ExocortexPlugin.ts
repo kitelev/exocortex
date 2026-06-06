@@ -103,7 +103,6 @@ import { PluginSettingsStoreAdapter } from "./infrastructure/adapters/PluginSett
 import { PluginLocalDataStore } from "./infrastructure/adapters/PluginLocalDataStore";
 import { StagingDirTracker } from "./infrastructure/adapters/StagingDirTracker";
 import { ProfileFuzzyModal } from "./infrastructure/adapters/ProfileFuzzyModal";
-import { applyActiveProfileFilter } from "./infrastructure/adapters/FocusProfileOnloadWiring";
 import { lookupAssetSpaceUidByFolder } from "./infrastructure/adapters/AssetSpaceLookupHelper";
 import { createAssetSpacePusher } from "./infrastructure/adapters/AssetSpacePusherFactory";
 import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
@@ -790,14 +789,8 @@ export default class ExocortexPlugin extends Plugin {
       // real adapters. Wrapped в try/catch: any failure here должен NOT
       // abort the rest of onload — commands simply won't appear in
       // Cmd+P, but plugin remains usable.
-      //
-      // RFC 0a0791c1 #3324 — returns `reapplyActiveProfileFilter` so the
-      // post-`metadataCache.on("resolved")` chain can re-run the wiring
-      // against a fully-parsed cache. The initial invocation at line ~713
-      // may scan a partial cache; the re-run closes the race.
-      let reapplyActiveProfileFilter: (() => Promise<void>) | null = null;
       try {
-        reapplyActiveProfileFilter = await this.registerFocusProfileCommands();
+        await this.registerFocusProfileCommands();
       } catch (error) {
         this.logger.error(
           "[ExocortexPlugin] FocusProfile commands registration failed",
@@ -1022,48 +1015,6 @@ export default class ExocortexPlugin extends Plugin {
           void initPromise
             .then(() => this.sparql.refresh())
             .then(() => this.refreshAndInjectAssetSpaceMaterialization())
-            .then(async () => {
-              // RFC 0a0791c1 #3324 — re-apply the active FocusProfile
-              // filter now that metadataCache has fully resolved. The
-              // first invocation at registerFocusProfileCommands time
-              // may have scanned a partial cache (AS files not yet
-              // parsed → empty containsOntology map → R15 degradation
-              // to no-filter). Re-running here closes the race; the
-              // helper is idempotent and recomputes from current vault
-              // state. Then a single follow-up sparql.refresh() walks
-              // the vault with the now-correct effective set.
-              //
-              // Gated on the active Focus profile (AC14) being non-null to
-              // avoid an extra refresh in the default null-profile path
-              // (which is the case covered by the post-resolve one-shot
-              // regression tests). When the Focus slot is null the helper
-              // would no-op and the second refresh would only re-walk the
-              // same data.
-              //
-              // Item #3 — device-local store (no Sync replication). Null
-              // before `registerFocusProfileCommands` resolves; treat as
-              // no-active-profile (matches current behaviour). Loose
-              // truthiness check handles unit-test mocks where the field
-              // may be undefined rather than initialised to null.
-              const hasActiveProfile =
-                !!this.localDataStore &&
-                this.localDataStore.getActiveFocusProfileUid() !== null;
-              if (reapplyActiveProfileFilter !== null && hasActiveProfile) {
-                try {
-                  await reapplyActiveProfileFilter();
-                  await this.sparql.refresh();
-                  // RFC 22b50a17 Phase 4 (H1 fix) — re-inject after the
-                  // active-profile sparql.refresh() that just wiped the
-                  // store.
-                  await this.refreshAndInjectAssetSpaceMaterialization();
-                } catch (err) {
-                  this.logger.warn(
-                    "[ExocortexPlugin] active FocusProfile filter re-apply failed — indexer keeps prior wiring",
-                    err instanceof Error ? err : new Error(String(err)),
-                  );
-                }
-              }
-            })
             .then(() => {
               // RFC c7da0bca Phase 3b-main — drop the lazy loader's
               // monotonic load-mark now that the store has been
@@ -2490,7 +2441,7 @@ export default class ExocortexPlugin extends Plugin {
     }
   }
 
-  private async registerFocusProfileCommands(): Promise<() => Promise<void>> {
+  private async registerFocusProfileCommands(): Promise<void> {
     const lockMgr = new PluginLockManager({ app: this.app });
     const resolver = new VaultProfileResolver(this.app);
     // RFC 22b50a17 Phase 4 (H1 cascade catch — advisor round-2) — wire
@@ -2646,47 +2597,6 @@ export default class ExocortexPlugin extends Plugin {
     // UI dropdown can dispatch switchProfile() directly. Re-constructing a
     // second manager would race the original on the same lock file.
     this.focusProfileSwitchManager = switchMgr;
-
-    // Issue #3324 — apply the persisted `activeProfileUid` to the indexer's
-    // filter setters BEFORE the eager-init / metadataCache-resolved chain
-    // first calls `convertVault`. The helper is no-op when the field is
-    // null (default), translates Ontology UIDs declared in the profile to
-    // AS UIDs via `exo__AssetSpace_containsOntology`, and degrades to no-
-    // filter when the translation produces zero folder overlap (R15 self-
-    // brick mitigation surfaced one layer earlier than the converter).
-    //
-    // Wrapped in try/catch so a scan failure here cannot abort the rest
-    // of `registerFocusProfileCommands` — the indexer falls back to full
-    // vault, matching the no-profile default.
-    //
-    // Re-runnable closure: the resolved-handler chain in `onload` calls
-    // `reapplyActiveProfileFilter()` again after `sparql.refresh()` to
-    // close the cold-start race where `metadataCache.getFileCache` may
-    // still return null for AS files at this earlier timing.
-    const reapplyActiveProfileFilter = async (): Promise<void> => {
-      // Item #3 — read from device-local store (no Sync replication).
-      // AC14 — the RDF query-time filter tracks the Focus profile (soft
-      // switch). Null Focus = no filter active (full vault). After the
-      // legacy→dual migration the Focus slot stays null (R38), so a
-      // pre-AC14 user's cold start indexes the full vault until they pick
-      // a Focus profile explicitly.
-      const persistedProfileUid = localDataStore.getActiveFocusProfileUid();
-      await applyActiveProfileFilter({
-        app: this.app,
-        switchMgr,
-        indexer: this.sparql.getRdfIndexer(),
-        activeProfileUid: persistedProfileUid,
-        logger: this.logger,
-      });
-    };
-    try {
-      await reapplyActiveProfileFilter();
-    } catch (error) {
-      this.logger.warn(
-        "[ExocortexPlugin] applyActiveProfileFilter failed — indexer falls back to full vault",
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
 
     // Crash-recovery: если previous session left `_switchInProgress=true`
     // в settings (FocusProfileSwitchManager docstring line 18), re-trigger
@@ -2904,8 +2814,6 @@ export default class ExocortexPlugin extends Plugin {
     this.logger.info(
       "[ExocortexPlugin] FocusProfile palette commands registered",
     );
-
-    return reapplyActiveProfileFilter;
   }
 
   /**
