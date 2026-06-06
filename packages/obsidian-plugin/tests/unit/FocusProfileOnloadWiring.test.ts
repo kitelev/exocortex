@@ -453,3 +453,164 @@ describe("applyActiveProfileFilter", () => {
     expect(logger.infos[0]).toContain(unknownOntology);
   });
 });
+
+// ─── RFC 01a83de8 v10 T3 — derive-path discovery union ──────────────────────
+
+/**
+ * AssetSpace frontmatter that declares a clone URL. `source` populates the new
+ * `exo__AssetSpace_source`; `git` populates the legacy `exo__AssetSpace_git`.
+ * Pass either or both to exercise the dual-read precedence.
+ */
+function asFrontmatterWithSource(
+  uid: string,
+  opts: { source?: string; git?: string; containsOntology?: string[] },
+): Record<string, unknown> {
+  const fm: Record<string, unknown> = {
+    exo__Asset_uid: uid,
+    exo__Instance_class: [`[[${ASSET_SPACE_CLASS_UID}|exo__AssetSpace]]`],
+  };
+  if (opts.source !== undefined) fm["exo__AssetSpace_source"] = opts.source;
+  if (opts.git !== undefined) fm["exo__AssetSpace_git"] = opts.git;
+  if (opts.containsOntology !== undefined) {
+    fm["exo__AssetSpace_containsOntology"] = opts.containsOntology.map(
+      (o) => `[[${o}]]`,
+    );
+  }
+  return fm;
+}
+
+describe("applyActiveProfileFilter — derive-path discovery union (RFC v10 T3)", () => {
+  // Registry-model descriptor: the descriptor FILE lives in the registry
+  // (`assetspaces/kitelev/exoas-kitelev-registry/core/`) but the AssetSpace it
+  // describes mounts at `derivePath(_source)` = `assetspaces/kitelev/exoas-testlib`.
+  const TESTLIB_AS_UID = "11111111-2222-3333-4444-555555555555";
+  const TESTLIB_SOURCE = "https://github.com/kitelev/exoas-testlib";
+  const TESTLIB_DERIVED = "assetspaces/kitelev/exoas-testlib";
+  const REGISTRY_FOLDER =
+    "assetspaces/kitelev/exoas-kitelev-registry/core";
+
+  it("maps the DERIVED mount path (not the descriptor's own folder) to the AS UID", async () => {
+    const app = makeApp([
+      {
+        file: {
+          path: `${REGISTRY_FOLDER}/desc.md`,
+          basename: "desc",
+        },
+        fm: asFrontmatterWithSource(TESTLIB_AS_UID, {
+          source: TESTLIB_SOURCE,
+        }),
+      },
+    ]);
+    const indexer = makeIndexerStub();
+    const logger = makeLogger();
+    // Profile declares the test AssetSpace UID directly (pass-through). The
+    // derived-path mapping is the ONLY thing that puts this UID into folderMap
+    // values, so engagement (hasFolderMatch) proves the derive-path branch ran.
+    const switchMgr = makeSwitchMgrStub(new Set([TESTLIB_AS_UID]));
+
+    const result = await applyActiveProfileFilter({
+      app,
+      switchMgr,
+      indexer,
+      activeProfileUid: "profile-test",
+      logger,
+    });
+
+    expect(result.outcome).toBe("engaged");
+    // Derived mount path → AS UID (the registry model).
+    expect(indexer.folderMap!.get(TESTLIB_DERIVED)).toBe(TESTLIB_AS_UID);
+    // Path-prefix mapping preserved alongside (UNION — never removed in 1a).
+    expect(indexer.folderMap!.get(REGISTRY_FOLDER)).toBe(TESTLIB_AS_UID);
+  });
+
+  it("dual-read: `_source` takes precedence over legacy `_git`", async () => {
+    const app = makeApp([
+      {
+        file: { path: `${REGISTRY_FOLDER}/desc.md`, basename: "desc" },
+        fm: asFrontmatterWithSource(TESTLIB_AS_UID, {
+          source: TESTLIB_SOURCE,
+          // A stale legacy value that MUST be ignored when _source is present.
+          git: "https://github.com/kitelev/legacy-stale-repo",
+        }),
+      },
+    ]);
+    const indexer = makeIndexerStub();
+    const logger = makeLogger();
+    const switchMgr = makeSwitchMgrStub(new Set([TESTLIB_AS_UID]));
+
+    await applyActiveProfileFilter({
+      app,
+      switchMgr,
+      indexer,
+      activeProfileUid: "profile-test",
+      logger,
+    });
+
+    // _source wins → testlib derived path present.
+    expect(indexer.folderMap!.get(TESTLIB_DERIVED)).toBe(TESTLIB_AS_UID);
+    // _git fallback NOT used → legacy-stale derived path absent.
+    expect(
+      indexer.folderMap!.get("assetspaces/kitelev/legacy-stale-repo"),
+    ).toBeUndefined();
+  });
+
+  it("dual-read fallback: legacy `_git`-only descriptor still derives a mapping", async () => {
+    const LEGACY_AS_UID = "99999999-8888-7777-6666-555555555555";
+    const app = makeApp([
+      {
+        // Legacy live descriptor: file lives inside the AssetSpace it
+        // describes; only `_git` declared (no `_source` yet — pre-1b).
+        file: { path: "assetspaces/exo/49fd2e56.md", basename: "exo" },
+        fm: asFrontmatterWithSource(LEGACY_AS_UID, {
+          git: "https://github.com/kitelev/exocortex-exo-ontology",
+        }),
+      },
+    ]);
+    const indexer = makeIndexerStub();
+    const logger = makeLogger();
+    const switchMgr = makeSwitchMgrStub(new Set([LEGACY_AS_UID]));
+
+    const result = await applyActiveProfileFilter({
+      app,
+      switchMgr,
+      indexer,
+      activeProfileUid: "profile-test",
+      logger,
+    });
+
+    expect(result.outcome).toBe("engaged");
+    // Path-prefix mapping intact — NO regression for the live 18 descriptors.
+    expect(indexer.folderMap!.get("assetspaces/exo")).toBe(LEGACY_AS_UID);
+    // Derived-from-_git phantom entry also present (harmless; no files live
+    // there until the 1b fleet migration).
+    expect(
+      indexer.folderMap!.get("assetspaces/kitelev/exocortex-exo-ontology"),
+    ).toBe(LEGACY_AS_UID);
+  });
+
+  it("no source/git → only path-prefix mapping (derive branch is a no-op)", async () => {
+    const PLAIN_AS_UID = "abcdabcd-1234-5678-9abc-def012345678";
+    const app = makeApp([
+      {
+        file: { path: "assetspaces/ems/plain.md", basename: "plain" },
+        fm: asFrontmatterWithSource(PLAIN_AS_UID, {}),
+      },
+    ]);
+    const indexer = makeIndexerStub();
+    const logger = makeLogger();
+    const switchMgr = makeSwitchMgrStub(new Set([PLAIN_AS_UID]));
+
+    const result = await applyActiveProfileFilter({
+      app,
+      switchMgr,
+      indexer,
+      activeProfileUid: "profile-test",
+      logger,
+    });
+
+    expect(result.outcome).toBe("engaged");
+    expect(indexer.folderMap!.get("assetspaces/ems")).toBe(PLAIN_AS_UID);
+    // Exactly one entry — no spurious derived key.
+    expect(indexer.folderMap!.size).toBe(1);
+  });
+});

@@ -1,5 +1,5 @@
 import type { App, TFile } from "obsidian";
-import type { ILogger } from "exocortex";
+import { derivePath, type ILogger } from "exocortex";
 
 import { isAssetSpaceFrontmatter } from "./AssetSpaceFrontmatter";
 import type { FocusProfileSwitchManager } from "./FocusProfileSwitchManager";
@@ -243,9 +243,29 @@ function scanAssetSpaces(app: App): {
     const uid = fm["exo__Asset_uid"];
     if (typeof uid !== "string" || uid.length === 0) continue;
 
+    // Path-prefix source (legacy, preserved for all 18 live descriptors whose
+    // file lives inside the AssetSpace it describes). RFC 01a83de8 v10 T3 —
+    // discovery is a UNION; the path-prefix branch is never removed in 1a.
     const folder = parentFolder(file.path);
     if (folder.length > 0) {
       folderMap.set(folder, uid);
+    }
+
+    // Derived-path source (registry model, RFC v10 UD1). When a descriptor
+    // declares `_source` (or legacy `_git`), the AssetSpace it describes mounts
+    // at `derivePath(source)` = `assetspaces/<owner>/<repo>` — which may differ
+    // from where the descriptor file itself lives (e.g. a registry descriptor
+    // pointing at a separate test-library mount). Add that mapping alongside the
+    // path-prefix one. For legacy descriptors whose `_git` host/repo differs
+    // from their on-disk folder this yields a phantom entry (no files live under
+    // the derived path → harmless; never matched by the consumer filter). The
+    // 1b fleet migration flips the live folders onto the derived layout.
+    const source = readAssetSpaceSource(fm);
+    if (source !== null) {
+      const derived = derivePath(source);
+      if (derived !== null) {
+        folderMap.set(derived, uid);
+      }
     }
 
     const rawContains = fm["exo__AssetSpace_containsOntology"];
@@ -280,6 +300,20 @@ function readFrontmatter(
 function parentFolder(filePath: string): string {
   const idx = filePath.lastIndexOf("/");
   return idx < 0 ? "" : filePath.slice(0, idx);
+}
+
+/**
+ * Read an AssetSpace's clone URL with the RFC 01a83de8 v10 dual-read contract:
+ * the new `exo__AssetSpace_source` takes precedence, falling back to the legacy
+ * `exo__AssetSpace_git` during the transition. Returns null when neither is a
+ * non-empty string.
+ */
+function readAssetSpaceSource(fm: Record<string, unknown>): string | null {
+  const source = fm["exo__AssetSpace_source"];
+  if (typeof source === "string" && source.length > 0) return source;
+  const git = fm["exo__AssetSpace_git"];
+  if (typeof git === "string" && git.length > 0) return git;
+  return null;
 }
 
 function extractUidFromWikilink(raw: string): string | null {

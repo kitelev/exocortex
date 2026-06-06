@@ -29,7 +29,7 @@ export { ASSET_SPACE_CLASS_UID, isAssetSpaceFrontmatter };
  */
 export interface AssetSpaceInfo {
   uid: string;
-  /** Repo URL — value of `exo__AssetSpace_git`. */
+  /** Repo URL — value of `exo__AssetSpace_source` (RFC v10) ?? legacy `exo__AssetSpace_git`. */
   git: string;
   /** Short name — value of `exo__AssetSpace_namespace`. */
   namespace: string;
@@ -478,9 +478,15 @@ export class AssetSpaceManager {
       if (!fm) continue;
       if (fm["exo__Asset_uid"] !== asUid) continue;
       if (!isAssetSpaceFrontmatter(fm)) continue;
-      const git = typeof fm["exo__AssetSpace_git"] === "string"
-        ? (fm["exo__AssetSpace_git"] as string)
+      // Dual-read `_source ?? _git` (RFC 01a83de8 v10 T3). The new
+      // `exo__AssetSpace_source` supersedes legacy `_git`; both feed the same
+      // `info.git` slot during the transition (Phase 1b retires `_git`).
+      const source = typeof fm["exo__AssetSpace_source"] === "string"
+        ? (fm["exo__AssetSpace_source"] as string)
         : "";
+      const git = source || (typeof fm["exo__AssetSpace_git"] === "string"
+        ? (fm["exo__AssetSpace_git"] as string)
+        : "");
       const namespace = typeof fm["exo__AssetSpace_namespace"] === "string"
         ? (fm["exo__AssetSpace_namespace"] as string)
         : "";

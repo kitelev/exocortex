@@ -1293,9 +1293,14 @@ export class FocusProfileSwitchManager {
         (c) => c.includes("AssetSpace") && !c.includes("AssetSpaceManager"),
       );
       if (!isAssetSpace) continue;
-      const git = typeof fm["exo__AssetSpace_git"] === "string"
-        ? (fm["exo__AssetSpace_git"] as string)
+      // Dual-read `_source ?? _git` (RFC 01a83de8 v10 T3) — new
+      // `exo__AssetSpace_source` supersedes legacy `_git` during the transition.
+      const source = typeof fm["exo__AssetSpace_source"] === "string"
+        ? (fm["exo__AssetSpace_source"] as string)
         : "";
+      const git = source || (typeof fm["exo__AssetSpace_git"] === "string"
+        ? (fm["exo__AssetSpace_git"] as string)
+        : "");
       const namespace = typeof fm["exo__AssetSpace_namespace"] === "string"
         ? (fm["exo__AssetSpace_namespace"] as string)
         : "";
