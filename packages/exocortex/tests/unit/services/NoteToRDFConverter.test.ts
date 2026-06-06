@@ -4,6 +4,7 @@ import { IVaultAdapter, IFile, IFrontmatter } from "../../../src/interfaces/IVau
 import type { ILogger } from "../../../src/interfaces/ILogger";
 import { IRI } from "../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../src/domain/models/rdf/Literal";
+import { Triple } from "../../../src/domain/models/rdf/Triple";
 import { BlankNode } from "../../../src/domain/models/rdf/BlankNode";
 import { Namespace } from "../../../src/domain/models/rdf/Namespace";
 import { Exo003MetadataType } from "../../../src/domain/models/exo003";
@@ -400,6 +401,83 @@ describe("NoteToRDFConverter", () => {
           return p.includes("Asset_color") || p.includes("Asset_priority");
         });
         expect(leaked).toBeUndefined();
+      });
+
+      // RFC 1b1c21b2: aliases emitted as exo:Asset_aliases so SPARQL can query
+      // them (e.g. the homoiconic Copy-Label precondition: label ∉ aliases).
+      const aliasFile: IFile = {
+        path: "test.md",
+        basename: "test",
+        name: "test.md",
+        parent: null,
+      };
+      const aliasTriplesOf = (triples: Triple[]): Triple[] =>
+        triples.filter((t) =>
+          (t.predicate as IRI).value.endsWith("exo#Asset_aliases"),
+        );
+
+      it("emits exo:Asset_aliases triples for each alias (multi-value, verbatim)", async () => {
+        mockVault.getFrontmatter.mockReturnValue({
+          aliases: ["First Alias", "Second Alias"],
+        });
+
+        const triples = await converter.convertNote(aliasFile);
+
+        const aliasTriples = aliasTriplesOf(triples);
+        expect(aliasTriples).toHaveLength(2);
+        expect(
+          aliasTriples.map((t) => (t.object as Literal).value).sort(),
+        ).toEqual(["First Alias", "Second Alias"]);
+      });
+
+      it("emits an alias byte-identical to the label (Copy-Label precondition round-trip)", async () => {
+        mockVault.getFrontmatter.mockReturnValue({
+          exo__Asset_label: "My Label",
+          aliases: ["My Label"],
+        });
+
+        const triples = await converter.convertNote(aliasFile);
+
+        const labelTriple = triples.find((t) =>
+          (t.predicate as IRI).value.endsWith("exo#Asset_label"),
+        );
+        const aliasTriple = aliasTriplesOf(triples)[0];
+        expect((labelTriple!.object as Literal).value).toBe("My Label");
+        expect((aliasTriple!.object as Literal).value).toBe("My Label");
+      });
+
+      it("skips empty-string aliases without throwing (new Literal('') guard)", async () => {
+        mockVault.getFrontmatter.mockReturnValue({ aliases: ["", "   ", "Valid"] });
+
+        const triples = await converter.convertNote(aliasFile);
+
+        const aliasTriples = aliasTriplesOf(triples);
+        expect(aliasTriples).toHaveLength(1);
+        expect((aliasTriples[0].object as Literal).value).toBe("Valid");
+      });
+
+      it("skips null/undefined aliases without emitting a 'null' literal", async () => {
+        mockVault.getFrontmatter.mockReturnValue({
+          aliases: [null, "Valid", undefined],
+        });
+
+        const triples = await converter.convertNote(aliasFile);
+
+        const aliasTriples = aliasTriplesOf(triples);
+        expect(aliasTriples).toHaveLength(1);
+        expect((aliasTriples[0].object as Literal).value).toBe("Valid");
+      });
+
+      it("emits a numeric alias as a sane literal without throwing", async () => {
+        // aliases are normally strings; a stray number must not crash the
+        // converter (it falls through the null/blank guard to valueToRDFObject).
+        mockVault.getFrontmatter.mockReturnValue({ aliases: [42] });
+
+        const triples = await converter.convertNote(aliasFile);
+
+        const aliasTriples = aliasTriplesOf(triples);
+        expect(aliasTriples).toHaveLength(1);
+        expect((aliasTriples[0].object as Literal).value).toBe("42");
       });
     });
 
