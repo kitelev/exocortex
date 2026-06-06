@@ -47,13 +47,15 @@ export class CachingNodeFsAdapter extends NodeFsAdapter {
       } catch {
         metadata = {};
       }
-      const uid = metadata?.["exo__Asset_uid"];
-      if (
-        typeof uid === "string" &&
-        uid.length > 0 &&
-        !this.uidToPath.has(uid)
-      ) {
-        this.uidToPath.set(uid, rel);
+      // Mirror base NodeFsAdapter.findFileByUID semantics (normalizeValue +
+      // array support) so the cache resolves UIDs identically to migration.
+      const rawUid = metadata?.["exo__Asset_uid"];
+      const uidValues = Array.isArray(rawUid) ? rawUid : [rawUid];
+      for (const v of uidValues) {
+        const key = CachingNodeFsAdapter.normalizeUid(v);
+        if (key.length > 0 && !this.uidToPath.has(key)) {
+          this.uidToPath.set(key, rel);
+        }
       }
       this.assets.push({ path: rel, metadata });
     }
@@ -76,7 +78,15 @@ export class CachingNodeFsAdapter extends NodeFsAdapter {
 
   override async findFileByUID(uid: string): Promise<string | null> {
     await this.buildIndex();
-    return this.uidToPath.get(uid) ?? null;
+    return this.uidToPath.get(CachingNodeFsAdapter.normalizeUid(uid)) ?? null;
+  }
+
+  /** Match base NodeFsAdapter.normalizeValue: strip quotes/brackets + trim. */
+  private static normalizeUid(value: unknown): string {
+    if (value === null || value === undefined) return "";
+    return String(value)
+      .replace(/["'[\]]/g, "")
+      .trim();
   }
 
   override async fileExists(filePath: string): Promise<boolean> {
