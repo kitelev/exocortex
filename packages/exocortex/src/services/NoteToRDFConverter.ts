@@ -47,6 +47,7 @@ const UNPREFIXED_ASSET_FIELDS: ReadonlySet<string> = new Set([
   "archived",
   "draft",
   "pinned",
+  "aliases",
 ]);
 
 /**
@@ -301,12 +302,15 @@ export class NoteToRDFConverter {
       const values = Array.isArray(value) ? value : [value];
 
       for (const val of values) {
-        // Skip empty-string exo__Asset_label values — Literal() rejects empty
-        // strings. Basename fallback below will synthesise the label triple.
+        // Skip empty-string / null values for exo__Asset_label and whitelisted
+        // unprefixed fields. `new Literal("")` throws (Literal.ts) and null
+        // would emit a junk "null" literal; a single bad alias must not discard
+        // the whole asset's triples. Boolean flags (archived/draft/pinned:false)
+        // are NOT skipped — only null/undefined/blank-string. For exo__Asset_label
+        // the basename fallback below still synthesises the label triple.
         if (
-          key === "exo__Asset_label" &&
-          typeof val === "string" &&
-          val.trim() === ""
+          (key === "exo__Asset_label" || UNPREFIXED_ASSET_FIELDS.has(key)) &&
+          (val == null || (typeof val === "string" && val.trim() === ""))
         ) {
           continue;
         }

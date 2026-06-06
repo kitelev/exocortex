@@ -82,8 +82,10 @@ describe("NoteToRDFConverter — namespace whitelist relaxation", () => {
   });
 
   it("ignores keys without the <prefix>__<local> shape", async () => {
+    // `aliases` moved to the UNPREFIXED_ASSET_FIELDS whitelist (RFC 1b1c21b2) —
+    // it is now emitted as exo:Asset_aliases and covered in NoteToRDFConverter.test.ts.
+    // `tags` / `cssclasses` remain non-whitelisted and must stay ignored.
     const frontmatter: IFrontmatter = {
-      aliases: ["foo", "bar"],
       tags: ["x"],
       cssclasses: "muted",
     };
