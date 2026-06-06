@@ -14,9 +14,9 @@ This PR bundles the three Phase 3.3 deliverables into a single landing on `main`
 
 | Sub-task | Deliverable | Source commit |
 |---|---|---|
-| T3.1 | Per-spec decision matrix → [`T3_1_QUARANTINE_DECISION_MATRIX.md`](./T3_1_QUARANTINE_DECISION_MATRIX.md) | `8486faf5` (cherry-picked as `3f18a2fb`) |
+| T3.1 | Per-spec decision matrix → [`T3_1_QUARANTINE_DECISION_MATRIX.md`](../../packages/obsidian-plugin/docs/phase3/T3_1_QUARANTINE_DECISION_MATRIX.md) | `8486faf5` (cherry-picked as `3f18a2fb`) |
 | T3.2 | Quarantine list scaffold → [`tests/quarantine.ts`](../../tests/quarantine.ts) (empty `QUARANTINED_TESTS`, ready for Phase 3.4 evidence) | `ae08eb98` (cherry-picked as `a6512cdb`) |
-| T3.3 | Tracking issues index → [`T3_3_TRACKING_ISSUES.md`](./T3_3_TRACKING_ISSUES.md) (5 issues: #2985, #2986, #2987, #2988, #2989) | `62c7661e` (cherry-picked as `fc7e64ac`) |
+| T3.3 | Tracking issues index → [`T3_3_TRACKING_ISSUES.md`](../../packages/obsidian-plugin/docs/phase3/T3_3_TRACKING_ISSUES.md) (5 issues: #2985, #2986, #2987, #2988, #2989) | `62c7661e` (cherry-picked as `fc7e64ac`) |
 
 ---
 

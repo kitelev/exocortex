@@ -7,7 +7,7 @@ gates on flaky tests. It is the operational realisation of RFC
 > **Continuous measurement** of the policy outcomes (rerun rate, top
 > offenders, per-shard breakdown) is provided by the Phase 3.4 flaky
 > dashboard — see
-> [`packages/obsidian-plugin/docs/phase3/PHASE3_DASHBOARD_README.md`](../packages/obsidian-plugin/docs/phase3/PHASE3_DASHBOARD_README.md)
+> [`docs/history/PHASE3_DASHBOARD_README.md`](./history/PHASE3_DASHBOARD_README.md)
 > for architecture, data flow, and operating runbook.
 
 ## Definitions

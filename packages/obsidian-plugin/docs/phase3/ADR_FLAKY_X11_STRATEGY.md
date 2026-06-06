@@ -244,7 +244,7 @@ DBUS warnings filtered, not failing — they don't cause Cat I errors. Process t
 **Scope:**
 1. Edit `packages/obsidian-plugin/docker-entrypoint-e2e.sh`: introduce `XVFB_VARIANT` env-var with default `v1+v2`. Implement `case` switch с branches `baseline | v1+v2 | per-spec | xpra | weston`. Active branches: `baseline` and `v1+v2`. Rung-1/2/3 branches may be **placeholder stubs** (echo «not yet implemented» + exit 1) at T5.5 time, активируются in subsequent escalation tasks if needed.
 2. Commit ADR (this file) into branch.
-3. Add `docs/ROLLBACK_X11_STABILIZATION.md` micro-doc: «to revert, set `XVFB_VARIANT=baseline` in `.github/workflows/e2e.yml` env block».
+3. Add `docs/history/ROLLBACK_X11_STABILIZATION.md` micro-doc: «to revert, set `XVFB_VARIANT=baseline` in `.github/workflows/e2e.yml` env block».
 4. Update `packages/obsidian-plugin/CLAUDE.md` (or AGENTS.md) — note new env-var contract.
 5. PR title: `chore(e2e): T5.5 — adopt T5.1 V1+V2 Xvfb config (RFC Phase 3.5)` + reference ADR commit.
 
