@@ -553,12 +553,10 @@ export class FocusProfileSwitchManager {
       : "<unknown>";
 
     // R24 — assert TS-floor BEFORE any mutation. Use computeDerivedSet (NOT
-    // resolveEffectiveSet) because the latter silently injects TS_FLOOR_ONTOLOGY_URIS
-    // before returning — feeding that injected set into our translation step
-    // would auto-rescue the floor through containsOntology mapping and
-    // defeat the guard's purpose. Soft-switch (Phase 1 onload wiring) silently
-    // injects floor for UX; hard-switch is destructive so we require explicit
-    // intent in the user's profile declaration.
+    // resolveEffectiveSet) so the floor URIs that resolveEffectiveSet injects
+    // don't mask a profile that legitimately omits a floor AS — R24 must see
+    // the user's explicit `_includes`. Hard-switch is destructive, so we
+    // require explicit intent rather than the soft-path's UX-convenience floor.
     const declaredOntologySet = await this.computeDerivedSet(targetProfileUid);
     const folderToAsUid = await this.scanFolderToAsUid();
     const declaredAsUids = new Set<string>();
