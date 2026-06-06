@@ -69,6 +69,34 @@ describe("derivePath (RFC 01a83de8 v10 UD1)", () => {
     });
   });
 
+  describe("path-traversal / out-of-charset segments rejected (no escape primitive)", () => {
+    it.each([
+      ["bare ../.. traversal", "../../etc/passwd"],
+      ["repo segment is ..", "https://github.com/owner/.."],
+      ["owner segment is ..", "https://github.com/../repo"],
+      ["repo segment is .", "https://github.com/owner/."],
+      ["whitespace in repo", "https://github.com/owner/repo with space"],
+      ["slash-encoded escape attempt", "https://github.com/owner/%2e%2e"],
+      ["control char in owner", "https://github.com/ow\tner/repo"],
+    ])("%s → null", (_label, input) => {
+      expect(derivePath(input)).toBeNull();
+    });
+
+    it("derived path never contains a `..` component", () => {
+      const inputs = [
+        "../../etc/passwd",
+        "https://github.com/owner/..",
+        "git@github.com:../escape.git",
+      ];
+      for (const input of inputs) {
+        const out = derivePath(input);
+        if (out !== null) {
+          expect(out.split("/")).not.toContain("..");
+        }
+      }
+    });
+  });
+
   describe("idempotency — re-deriving an already-canonical input is stable", () => {
     it("HTTPS and SSH forms of the same repo are interchangeable", () => {
       const https = derivePath("https://github.com/kitelev/exoas-ems.git");

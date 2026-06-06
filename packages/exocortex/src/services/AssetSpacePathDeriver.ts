@@ -29,6 +29,16 @@
 const ASSET_SPACES_PREFIX = "assetspaces";
 
 /**
+ * Allowed characters in an `<owner>` / `<repo>` segment — a superset of
+ * GitHub's own rules (`[A-Za-z0-9._-]`). Anything outside (path separators
+ * already split away, whitespace, control chars, URL-encoded bytes) is
+ * rejected so the derived path can never carry a traversal/escape primitive
+ * out of frontmatter into a folder key that Phase 1b will treat as a real
+ * on-disk mount path. Mirrors the validation done by `parseGitHubURL`.
+ */
+const SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
+
+/**
  * Derive `assetspaces/<owner>/<repo>` from a git source URL.
  *
  * @param source A git clone URL in HTTPS, SSH (URL or scp-like), or git://
@@ -72,7 +82,13 @@ export function derivePath(source: unknown): string | null {
 
   const owner = segments[0];
   const repo = segments[1];
-  if (owner.length === 0 || repo.length === 0) return null;
+  // Reject traversal / out-of-charset segments. `.`/`..` would let a malicious
+  // `_source` escape the `assetspaces/` root; any other disallowed character
+  // (whitespace, control chars, encoded bytes) is treated as malformed input.
+  if (owner === "." || owner === ".." || repo === "." || repo === "..") {
+    return null;
+  }
+  if (!SEGMENT_RE.test(owner) || !SEGMENT_RE.test(repo)) return null;
 
   return `${ASSET_SPACES_PREFIX}/${owner}/${repo}`;
 }
