@@ -11,14 +11,15 @@ import {
 import { PluginLockManager } from "../../src/infrastructure/adapters/PluginLockManager";
 
 /**
- * AC16 (RFC 13da049f Phase 6.5b) — soft-switch compatibility check.
+ * Soft-switch filter application after RFC 01a83de8 Phase 3 T4.
  *
- * On incompatibility the switch must perform 4 measurable actions WITHOUT
- * throwing:
- *   1. console.warn with the violation message
- *   2. user-facing Notice
- *   3. RDF re-index with the no-filter set (empty)
- *   4. resolve successfully (no throw); the Focus selection is still persisted
+ * The former AC16 Focus↔Knowledge compatibility check (RFC 13da049f Phase 6.5b)
+ * was REMOVED: Phase 2 collapsed the two profile classes into one `exo__Profile`,
+ * so there is no separate Knowledge profile to be (in)compatible with. The soft
+ * switch now ALWAYS applies the target profile's narrowed effective set — no
+ * compat downgrade to a no-filter (full-vault) view, no compatibility warning.
+ * These tests pin that universal behaviour, including scenarios that previously
+ * triggered the (now-deleted) no-filter fallback.
  */
 
 // ─── Fakes ───────────────────────────────────────────────────────────────
@@ -85,7 +86,6 @@ class FakeSettingsStore implements ISettingsStore {
 }
 
 const ONTO_EXO = "https://exocortex.my/ontology/exo";
-const ONTO_EXOCMD = "https://exocortex.my/ontology/exocmd";
 const ONTO_KITELEV = "https://exocortex.my/ontology/kitelev";
 const ONTO_TBANK = "https://exocortex.my/ontology/tbank";
 const ONTO_PERSONAL = "https://exocortex.my/ontology/personal";
@@ -143,7 +143,7 @@ function profile(
   ];
 }
 
-describe("FocusProfileSwitchManager.softSwitchFocusProfile — AC16 compat", () => {
+describe("FocusProfileSwitchManager.softSwitchFocusProfile — filter application (T4: no compat downgrade)", () => {
   let warnSpy: jest.SpyInstance;
   beforeEach(() => {
     warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -152,10 +152,9 @@ describe("FocusProfileSwitchManager.softSwitchFocusProfile — AC16 compat", () 
     warnSpy.mockRestore();
   });
 
-  it("backward-compat: no active Knowledge + no _appliesTo → applies the Focus filter (no warn)", async () => {
+  it("applies the target's narrowed filter (+ TS-floor) and emits the success Notice", async () => {
     const { mgr, rdf, notifyCalls } = makeMgr({
       profiles: [profile(FOCUS_F1, { includes: [ONTO_TBANK] })],
-      // no activeKnowledgeProfileUid set
     });
     await expect(mgr.softSwitchFocusProfile(FOCUS_F1)).resolves.toBeUndefined();
 
@@ -167,117 +166,59 @@ describe("FocusProfileSwitchManager.softSwitchFocusProfile — AC16 compat", () 
     expect(notifyCalls.some((n) => /Switched to/.test(n))).toBe(true);
   });
 
-  it("violation — _appliesTo mismatch → 4 actions (warn, Notice, no-filter, no throw)", async () => {
+  it("STILL applies the filter when a prior active profile would have triggered the old no-filter fallback (compat removed)", async () => {
+    // Pre-T4 this scenario (target _includes ⊄ active Knowledge set, plus an
+    // _appliesTo mismatch + an active Knowledge slot) downgraded to a no-filter
+    // (size 0) full-vault view with a warning. T4 removed that — the target's
+    // filter is always applied, no warn, no "full vault" Notice.
     const { mgr, rdf, settings, notifyCalls } = makeMgr({
       profiles: [
         profile(FOCUS_F1, {
-          includes: [ONTO_KITELEV],
+          includes: [ONTO_PERSONAL],
           appliesTo: KNOWLEDGE_K1,
         }),
         profile(KNOWLEDGE_K2, { includes: [ONTO_KITELEV] }),
       ],
       settings: { activeKnowledgeProfileUid: KNOWLEDGE_K2 },
     });
-
-    // Action #4 — resolves successfully (no throw).
     await expect(mgr.softSwitchFocusProfile(FOCUS_F1)).resolves.toBeUndefined();
-
-    // Action #1 — console.warn with compatibility message.
-    expect(warnSpy).toHaveBeenCalled();
-    expect(String(warnSpy.mock.calls[0][0])).toMatch(
-      /applies-to mismatch|_appliesTo/,
-    );
-    // Action #2 — user-facing Notice.
-    expect(notifyCalls.some((n) => /full vault/i.test(n))).toBe(true);
-    // Action #3 — RDF re-index with empty (no-filter) set.
-    expect(rdf.refreshCalls).toHaveLength(1);
-    expect(rdf.refreshCalls[0].size).toBe(0);
-    // Selection still persisted (Focus slot).
-    expect(settings.state.activeFocusProfileUid).toBe(FOCUS_F1);
-    expect(settings.state._switchInProgress).toBe(false);
-    // No misleading «Switched to» success Notice.
-    expect(notifyCalls.some((n) => /Switched to/.test(n))).toBe(false);
-  });
-
-  it("compatible — _appliesTo matches active Knowledge AND includes ⊆ effective → narrowed filter", async () => {
-    const { mgr, rdf } = makeMgr({
-      profiles: [
-        profile(FOCUS_F1, {
-          includes: [ONTO_KITELEV],
-          appliesTo: KNOWLEDGE_K1,
-        }),
-        profile(KNOWLEDGE_K1, { includes: [ONTO_KITELEV, ONTO_TBANK] }),
-      ],
-      settings: { activeKnowledgeProfileUid: KNOWLEDGE_K1 },
-    });
-    await mgr.softSwitchFocusProfile(FOCUS_F1);
 
     expect(rdf.refreshCalls).toHaveLength(1);
     const set = rdf.refreshCalls[0];
-    expect(set.has(ONTO_KITELEV)).toBe(true); // narrowed filter, not empty
+    expect(set.has(ONTO_PERSONAL)).toBe(true); // narrowed filter applied, NOT empty
     expect(set.size).toBeGreaterThan(0);
-    expect(warnSpy).not.toHaveBeenCalled();
+    expect(warnSpy).not.toHaveBeenCalled(); // no compat warning
+    expect(notifyCalls.some((n) => /full vault/i.test(n))).toBe(false);
+    expect(notifyCalls.some((n) => /Switched to/.test(n))).toBe(true);
+    // Focus selection persisted, flag cleared.
+    expect(settings.state.activeFocusProfileUid).toBe(FOCUS_F1);
+    expect(settings.state._switchInProgress).toBe(false);
   });
 
-  it("violation — includes ⊄ active Knowledge effective set → no-filter", async () => {
-    const { mgr, rdf, notifyCalls } = makeMgr({
-      profiles: [
-        // F1 references ONTO_PERSONAL which K1 does not provide.
-        profile(FOCUS_F1, { includes: [ONTO_PERSONAL] }),
-        profile(KNOWLEDGE_K1, { includes: [ONTO_KITELEV, ONTO_TBANK] }),
-      ],
-      settings: { activeKnowledgeProfileUid: KNOWLEDGE_K1 },
-    });
-    await mgr.softSwitchFocusProfile(FOCUS_F1);
-
-    expect(rdf.refreshCalls[0].size).toBe(0); // no-filter
-    expect(warnSpy).toHaveBeenCalled();
-    expect(String(warnSpy.mock.calls[0][0])).toMatch(
-      /subset violation|outside the active/,
-    );
-    expect(notifyCalls.some((n) => /full vault/i.test(n))).toBe(true);
-  });
-
-  it("compatible — includes references a TS-floor ontology even if Knowledge omits it", async () => {
-    const { mgr, rdf } = makeMgr({
-      profiles: [
-        // F1 includes $exocmd (a TS-floor ontology) — always in effective set.
-        profile(FOCUS_F1, { includes: [ONTO_EXOCMD] }),
-        profile(KNOWLEDGE_K1, { includes: [ONTO_KITELEV] }),
-      ],
-      settings: { activeKnowledgeProfileUid: KNOWLEDGE_K1 },
-    });
-    await mgr.softSwitchFocusProfile(FOCUS_F1);
-
-    expect(rdf.refreshCalls[0].size).toBeGreaterThan(0); // applied, not no-filter
-  });
-
-  it("EC3 — active Knowledge has empty effective set (not materialized) → no-filter", async () => {
+  it("applies the filter even when an EMPTY prior active profile is set (old EC3 no-filter removed)", async () => {
     const { mgr, rdf, notifyCalls } = makeMgr({
       profiles: [
         profile(FOCUS_F1, { includes: [ONTO_KITELEV] }),
-        // Empty Knowledge profile — derived set is empty.
         profile(KNOWLEDGE_EMPTY, { includes: [] }),
       ],
       settings: { activeKnowledgeProfileUid: KNOWLEDGE_EMPTY },
     });
     await mgr.softSwitchFocusProfile(FOCUS_F1);
 
-    expect(rdf.refreshCalls[0].size).toBe(0); // no-filter
-    expect(warnSpy).toHaveBeenCalled();
-    expect(String(warnSpy.mock.calls[0][0])).toMatch(
-      /EC3|empty effective set|not materialised/,
-    );
-    expect(notifyCalls.some((n) => /full vault/i.test(n))).toBe(true);
+    expect(rdf.refreshCalls[0].has(ONTO_KITELEV)).toBe(true);
+    expect(rdf.refreshCalls[0].size).toBeGreaterThan(0); // applied, not no-filter
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(notifyCalls.some((n) => /full vault/i.test(n))).toBe(false);
   });
 
-  it("never throws — compat evaluation error proceeds with the declared filter", async () => {
+  it("never resolves the active-profile slot, so a resolver that throws on it is irrelevant", async () => {
+    // The compat check used to resolve the active Knowledge profile (could
+    // throw). That path is gone — the target's filter applies regardless.
     const { mgr, rdf } = makeMgr({
       profiles: [profile(FOCUS_F1, { includes: [ONTO_TBANK] })],
       settings: { activeKnowledgeProfileUid: KNOWLEDGE_THROW },
-      throwForUids: [KNOWLEDGE_THROW], // resolving the active Knowledge throws
+      throwForUids: [KNOWLEDGE_THROW],
     });
-    // Must resolve (no throw) AND apply the declared filter (not no-filter).
     await expect(mgr.softSwitchFocusProfile(FOCUS_F1)).resolves.toBeUndefined();
     expect(rdf.refreshCalls).toHaveLength(1);
     expect(rdf.refreshCalls[0].has(ONTO_TBANK)).toBe(true);

@@ -1,8 +1,5 @@
 import { VaultProfileResolver } from "../../src/infrastructure/adapters/VaultProfileResolver";
-import {
-  FOCUS_PROFILE_CLASS_UID,
-  KNOWLEDGE_PROFILE_CLASS_UID,
-} from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
+import { FOCUS_PROFILE_CLASS_UID } from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
 
 interface FakeFile {
   path: string;
@@ -224,55 +221,9 @@ describe("VaultProfileResolver.resolve — appliesTo deprecated (RFC 01a83de8 Ph
   });
 });
 
-describe("VaultProfileResolver.listKnowledgeProfileFiles (RFC 13da049f AC17)", () => {
-  it("returns files whose Instance_class contains the KnowledgeProfile UID", () => {
-    const app = makeApp([
-      {
-        file: { path: "k.md", basename: "k" },
-        fm: {
-          exo__Instance_class: `[[${KNOWLEDGE_PROFILE_CLASS_UID}|exo__KnowledgeProfile]]`,
-          exo__Asset_uid: "k1",
-        },
-      },
-      {
-        file: { path: "f.md", basename: "f" },
-        fm: {
-          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
-          exo__Asset_uid: "f1",
-        },
-      },
-    ]);
-    const resolver = new VaultProfileResolver(app);
-    expect(resolver.listKnowledgeProfileFiles().map((f) => f.path)).toEqual([
-      "k.md",
-    ]);
-    expect(resolver.listFocusProfileFiles().map((f) => f.path)).toEqual([
-      "f.md",
-    ]);
-  });
-
-  it("dual-class asset appears in BOTH Focus and Knowledge lists", () => {
-    const app = makeApp([
-      {
-        file: { path: "dual.md", basename: "dual" },
-        fm: {
-          exo__Instance_class: [
-            `[[${FOCUS_PROFILE_CLASS_UID}|exo__FocusProfile]]`,
-            `[[${KNOWLEDGE_PROFILE_CLASS_UID}|exo__KnowledgeProfile]]`,
-          ],
-          exo__Asset_uid: "dual-1",
-        },
-      },
-    ]);
-    const resolver = new VaultProfileResolver(app);
-    expect(resolver.listFocusProfileFiles().map((f) => f.path)).toEqual([
-      "dual.md",
-    ]);
-    expect(resolver.listKnowledgeProfileFiles().map((f) => f.path)).toEqual([
-      "dual.md",
-    ]);
-  });
-});
+// RFC 01a83de8 Phase 3 T4 — listKnowledgeProfileFiles removed (the former
+// per-class KnowledgeProfile picker collapsed into the single exo__Profile
+// class; the mount-state picker now uses listFocusProfileFiles).
 
 describe("VaultProfileResolver.discoverSharedOntologies", () => {
   it("returns empty array (v3 backward-compat — TS-floor pattern handles shared- prefix)", async () => {

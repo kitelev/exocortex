@@ -4,10 +4,7 @@ import type {
   IProfileResolver,
   ProfileResolution,
 } from "./FocusProfileSwitchManager";
-import {
-  FOCUS_PROFILE_CLASS_UID,
-  KNOWLEDGE_PROFILE_CLASS_UID,
-} from "./FocusProfileSwitchManager";
+import { FOCUS_PROFILE_CLASS_UID } from "./FocusProfileSwitchManager";
 
 /**
  * Vault-backed implementation of {@link IProfileResolver}. Reads
@@ -117,21 +114,10 @@ export class VaultProfileResolver implements IProfileResolver {
   }
 
   /**
-   * Walks the vault returning every KnowledgeProfile asset (RFC 13da049f
-   * Phase 6.5b AC17). Used by the «Switch knowledge profile» palette picker.
-   * Dual-class assets (declaring both Focus + Knowledge) appear in BOTH
-   * `listFocusProfileFiles()` and this list because the discrimination is by
-   * `exo__Instance_class` membership, not exclusivity.
-   */
-  public listKnowledgeProfileFiles(): TFile[] {
-    return this.listProfileFilesByClass(KNOWLEDGE_PROFILE_CLASS_UID);
-  }
-
-  /**
    * Walks the vault returning assets whose `exo__Instance_class` contains the
-   * given class UID. Shared by {@link listFocusProfileFiles} and
-   * {@link listKnowledgeProfileFiles} so the per-class fuzzy pickers (AC17)
-   * and the dual-class membership rule stay in one place.
+   * given class UID. Used by {@link listFocusProfileFiles}. (RFC 01a83de8
+   * Phase 3 T4 collapsed the former per-class Knowledge picker into the single
+   * `exo__Profile` class, so there is now one profile list.)
    */
   public listProfileFilesByClass(classUid: string): TFile[] {
     const out: TFile[] = [];

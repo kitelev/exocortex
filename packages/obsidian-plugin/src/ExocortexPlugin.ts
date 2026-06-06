@@ -2795,13 +2795,16 @@ export default class ExocortexPlugin extends Plugin {
         localDataStore.getActiveProfileUid(),
       );
 
-    // AC17 — KnowledgeProfile picker source. Dual-class assets surface in both
-    // listers because the discrimination is by `exo__Instance_class` membership.
+    // RFC 01a83de8 Phase 3 T4 — the former per-class KnowledgeProfile picker
+    // collapsed into the single `exo__Profile` class (Phase 2). The mount-state
+    // ("Switch knowledge profile") picker now lists the same profiles as the
+    // soft picker. This also fixes the empty-picker on vaults that never had a
+    // separate KnowledgeProfile-class instance (e.g. iPhone vault-2025).
     const knowledgeProfileLister: () => Promise<
       FocusProfileChoice[]
     > = async () =>
       buildProfileChoices(
-        resolver.listKnowledgeProfileFiles(),
+        resolver.listFocusProfileFiles(),
         localDataStore.getActiveKnowledgeProfileUid(),
       );
 

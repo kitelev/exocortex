@@ -152,7 +152,9 @@ export class FocusProfileCommands {
    * Command 2 — `Exocortex: Switch knowledge profile` (RFC 13da049f Phase 6.5b
    * AC17; supersedes the RFC 22b50a17 «Hard switch focus profile» command).
    *
-   * Fuzzy-picks a **KnowledgeProfile** asset (per-class picker), then invokes
+   * Fuzzy-picks an `exo__Profile` asset (the mount-state picker — RFC 01a83de8
+   * Phase 3 T4 collapsed the former per-class KnowledgeProfile list into the
+   * single profile class), then invokes
    * `FocusProfileSwitchManager.hardSwitchKnowledgeProfile` which:
    *   1. R24 TS-floor assert (refuses targets that brick the plugin)
    *   2. Vision Lock #5 uncommitted abort (with file list)
@@ -172,7 +174,7 @@ export class FocusProfileCommands {
     }
 
     if (profiles.length === 0) {
-      this.notify("No KnowledgeProfile assets found in vault");
+      this.notify("No profiles found in vault");
       return;
     }
 
