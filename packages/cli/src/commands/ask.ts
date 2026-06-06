@@ -18,7 +18,6 @@ import { JsonFormatter } from "../formatters/JsonFormatter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder } from "../responses/index.js";
-import { resolveProfileFilter } from "../utils/resolveProfileFilter.js";
 
 export interface AskOptions {
   vault: string;
@@ -26,11 +25,6 @@ export interface AskOptions {
   output?: OutputFormat;
   showQuery?: boolean;
   explain?: boolean;
-  /**
-   * FocusProfile UID — restricts the RDF graph to the effective AssetSpace
-   * set declared by the profile chain (RFC 0a0791c1 Issue #3323).
-   */
-  profile?: string;
 }
 
 /**
@@ -78,10 +72,6 @@ export function askCommand(): Command {
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
     .option("--show-query", "Show the generated SPARQL query")
     .option("--explain", "Show explanation of the query conversion")
-    .option(
-      "--profile <uid>",
-      "FocusProfile UID — restrict graph to effective AssetSpace set (RFC 0a0791c1)",
-    )
     .action(async (question: string, options: AskOptions) => {
       const outputFormat = (options.output || "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
@@ -132,22 +122,9 @@ export function askCommand(): Command {
         }
         const loadStartTime = Date.now();
 
-        const profileFilter = await resolveProfileFilter({
-          profileUid: options.profile,
-          primaryVaultPath: vaultPath,
-          outputFormat,
-        });
-
         const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
         const converter = new NoteToRDFConverter(vaultAdapter);
-        const triples = await converter.convertVault(
-          profileFilter !== null
-            ? {
-                effectiveOntologies: profileFilter.effective,
-                assetSpaceFolderToUid: profileFilter.folderMap,
-              }
-            : {},
-        );
+        const triples = await converter.convertVault();
 
         const tripleStore = new InMemoryTripleStore();
         await tripleStore.addAll(triples);
