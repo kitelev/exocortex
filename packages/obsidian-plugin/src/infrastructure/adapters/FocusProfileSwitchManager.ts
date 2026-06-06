@@ -75,18 +75,25 @@ export const TS_FLOOR_SHARED_PATTERN = /(?:^|\/)shared-/;
 export interface ProfileResolution {
   /** Profile UID. */
   uid: string;
-  /** Directly declared `_includes` (ontology URIs). */
-  includes: string[];
-  /** Parent profile UID (resolves transitive). May be null/undefined. */
-  extends?: string | null;
-  /** Directly declared `_alwaysOnOverlay` (ontology URIs). */
-  alwaysOnOverlay: string[];
   /**
-   * Optional `exo__FocusProfile_appliesTo` (RFC 13da049f Phase 6.5b AC13) —
-   * the Knowledge profile UID this Focus profile is scoped to. When declared,
-   * the AC16 compatibility check (see {@link FocusProfileSwitchManager.softSwitchFocusProfile})
-   * WARN+fallbacks to no-filter if the active Knowledge profile differs.
-   * Empty / null means «applies to any active Knowledge — subset check only».
+   * Directly declared `exo__Profile_includes` — AssetSpace UIDs (RFC 01a83de8
+   * Phase 2 retarget Ontology→AssetSpace). `applyActiveProfileFilter` accepts
+   * these directly (pass-through) and the legacy Ontology→AS translation still
+   * covers the TS-floor ontology URIs.
+   */
+  includes: string[];
+  /**
+   * Parent profile UID (`exo__Profile_imports`, single-parent MVP 0..1; resolves
+   * transitive). Field name `extends` retained internally to bound the rename
+   * cascade. May be null/undefined.
+   */
+  extends?: string | null;
+  /**
+   * Optional `_appliesTo` (RFC 13da049f Phase 6.5b AC13) — DEPRECATED by RFC
+   * 01a83de8 Phase 2 (Knowledge/Focus split superseded → unified Profile). The
+   * resolver no longer reads the frontmatter key (always null); the field +
+   * AC16 compatibility layer are retained as dead pass-throughs pending a
+   * cascade-capped removal follow-up.
    */
   appliesTo?: string | null;
   /** Display label (used in user-facing Notice). */
@@ -463,11 +470,15 @@ export class FocusProfileSwitchManager {
   }
 
   /**
-   * Compute the effective ontology URI set for a given profile.
+   * Compute the effective set for a given profile.
    *
    * = derived(profile) ∪ TS_FLOOR ∪ discoveredSharedOntologies
    *
-   * Where derived = includes ∪ extends*[alwaysOnOverlay] ∪ includes (transitive).
+   * Where derived = union of `_includes` along the `_imports*` single-parent
+   * chain (RFC 01a83de8 Phase 2 — `_includes` are AssetSpace UIDs; the legacy
+   * `_alwaysOnOverlay` term was removed, folding into the TS-floor). The
+   * downstream `applyActiveProfileFilter` accepts AssetSpace UIDs directly and
+   * still translates the TS-floor ontology URIs added below.
    *
    * TS-floor (Vision Lock #17) — hardcoded `[$exo, $exocmd]` + pattern match
    * для shared-identities — guarantees the plugin keeps functioning regardless
@@ -1485,7 +1496,9 @@ export class FocusProfileSwitchManager {
     if (profile === null) return; // tolerate missing parent — leaf
 
     for (const u of profile.includes) result.add(u);
-    for (const u of profile.alwaysOnOverlay) result.add(u);
+    // `_alwaysOnOverlay` removed (RFC 01a83de8 Phase 2 D3 — "always-on" folds
+    // into the TS-floor, enforced at AS-UID level in applyActiveProfileFilter /
+    // CliFocusProfileResolver). No per-profile overlay set anymore.
 
     if (typeof profile.extends === "string" && profile.extends.length > 0) {
       await this.walkProfileChain(profile.extends, visited, result, depth + 1);

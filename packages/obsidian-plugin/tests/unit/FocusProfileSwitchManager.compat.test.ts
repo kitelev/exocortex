@@ -137,7 +137,6 @@ function profile(
     {
       uid,
       includes: [],
-      alwaysOnOverlay: [],
       extends: null,
       ...fields,
     },
@@ -258,7 +257,7 @@ describe("FocusProfileSwitchManager.softSwitchFocusProfile — AC16 compat", () 
       profiles: [
         profile(FOCUS_F1, { includes: [ONTO_KITELEV] }),
         // Empty Knowledge profile — derived set is empty.
-        profile(KNOWLEDGE_EMPTY, { includes: [], alwaysOnOverlay: [] }),
+        profile(KNOWLEDGE_EMPTY, { includes: [] }),
       ],
       settings: { activeKnowledgeProfileUid: KNOWLEDGE_EMPTY },
     });

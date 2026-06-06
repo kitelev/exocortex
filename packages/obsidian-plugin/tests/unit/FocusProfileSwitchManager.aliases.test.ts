@@ -105,7 +105,6 @@ function makeHarness(): Harness {
       {
         uid: UID_BASE,
         includes: [ONTO_KITELEV],
-        alwaysOnOverlay: [],
         extends: null,
         label: "profile-base",
       },

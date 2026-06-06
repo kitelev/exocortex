@@ -143,14 +143,12 @@ describe("B.10 Scenario 1 — Filtered set with AS folder present", () => {
       [UID_BASE, {
         uid: UID_BASE,
         includes: [],
-        alwaysOnOverlay: [ONTO_EXO, ONTO_EXOCMD],
         extends: null,
         label: "profile-base",
       }],
       [UID_PERSONAL, {
         uid: UID_PERSONAL,
         includes: [ONTO_KITELEV],
-        alwaysOnOverlay: [],
         extends: UID_BASE,
         label: "profile-personal",
       }],
@@ -176,7 +174,6 @@ describe("B.10 Scenario 2 — Missing parent profile graceful fallback", () => {
       [UID_BROKEN, {
         uid: UID_BROKEN,
         includes: [ONTO_TBANK],
-        alwaysOnOverlay: [],
         extends: "no-such-profile-uid",
         label: "broken-profile",
       }],
@@ -200,7 +197,6 @@ describe("B.10 Scenario 3 — Empty effective_set survives via TS-floor", () => 
       [UID_BASE, {
         uid: UID_BASE,
         includes: [],
-        alwaysOnOverlay: [],
         extends: null,
         label: "empty-profile",
       }],
@@ -217,9 +213,9 @@ describe("B.10 Scenario 3 — Empty effective_set survives via TS-floor", () => 
   it("plugin can NEVER self-brick — \\$exo + \\$exocmd always in set", async () => {
     // Multiple pathological profiles
     const profiles: Array<[string, ProfileResolution]> = [
-      ["empty", { uid: "empty", includes: [], alwaysOnOverlay: [], extends: null }],
-      ["only-unknown", { uid: "only-unknown", includes: ["https://unknown.example/onto"], alwaysOnOverlay: [], extends: null }],
-      ["broken-parent", { uid: "broken-parent", includes: [], alwaysOnOverlay: [], extends: "non-existent" }],
+      ["empty", { uid: "empty", includes: [], extends: null }],
+      ["only-unknown", { uid: "only-unknown", includes: ["https://unknown.example/onto"], extends: null }],
+      ["broken-parent", { uid: "broken-parent", includes: [], extends: "non-existent" }],
     ];
 
     for (const [uid] of profiles) {
@@ -239,7 +235,7 @@ describe("B.10 Scenario 3 — Empty effective_set survives via TS-floor", () => 
 describe("B.10 Scenario 4 — Concurrent switch protected by lock", () => {
   it("second switchProfile rejects while first holds lock", async () => {
     const profiles: Array<[string, ProfileResolution]> = [
-      [UID_BASE, { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null }],
+      [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
     ];
     const h = makeHarness(profiles);
 
@@ -259,7 +255,7 @@ describe("B.10 Scenario 4 — Concurrent switch protected by lock", () => {
 
   it("after foreign lock released, switch can proceed", async () => {
     const h = makeHarness([
-      [UID_BASE, { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null }],
+      [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
     ]);
 
     const foreignLock = new PluginLockManager({
@@ -299,20 +295,16 @@ describe("B.10 Scenario 5 — TS-floor empirical revert/restore", () => {
     const profile: ProfileResolution = {
       uid: "empty",
       includes: [],
-      alwaysOnOverlay: [],
       extends: null,
     };
-    const derivedOnly = new Set<string>([
-      ...profile.includes,
-      ...profile.alwaysOnOverlay,
-    ]);
+    const derivedOnly = new Set<string>([...profile.includes]);
     expect(derivedOnly.has(ONTO_EXO)).toBe(false); // self-brick reproduced
     expect(derivedOnly.size).toBe(0);
   });
 
   it("WITH TS-floor (production code): same empty profile yields survival set — plugin lives", async () => {
     const h = makeHarness([
-      [UID_BASE, { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null }],
+      [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
     ]);
     await h.mgr.switchProfile(UID_BASE);
     const eff = h.rdf.refreshes[0];
@@ -333,7 +325,7 @@ describe("B.10 Scenario 5 — TS-floor empirical revert/restore", () => {
 
   it("shared ontologies surface via discoverSharedOntologies + pattern filter", async () => {
     const h = makeHarness(
-      [[UID_BASE, { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null }]],
+      [[UID_BASE, { uid: UID_BASE, includes: [], extends: null }]],
       [
         "https://exocortex.my/ontology/shared-identities",
         "https://exocortex.my/ontology/shared-concepts",
@@ -355,7 +347,7 @@ describe("B.10 Scenario 5 — TS-floor empirical revert/restore", () => {
 describe("B.10 Scenario 6 — Crash recovery preserves switch intent", () => {
   it("recoverIfNeeded re-completes interrupted switch idempotently", async () => {
     const h = makeHarness([
-      [UID_BASE, { uid: UID_BASE, includes: [ONTO_KITELEV], alwaysOnOverlay: [], extends: null, label: "profile" }],
+      [UID_BASE, { uid: UID_BASE, includes: [ONTO_KITELEV], extends: null, label: "profile" }],
     ]);
 
     // Simulate crash: starting entry exists, _switchInProgress=true, no completed

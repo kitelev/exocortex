@@ -73,7 +73,7 @@ async function makeMinimalVault(root: string, withProfile: boolean): Promise<voi
     await write(`profiles/${PROFILE_UID}.md`, {
       "exo__Asset_uid": PROFILE_UID,
       "exo__Instance_class": [`[[${FOCUS_PROFILE_CLASS_UID}]]`],
-      "exo__FocusProfile_includes": [`[[${AS_EMS_UID}]]`],
+      "exo__Profile_includes": [`[[${AS_EMS_UID}]]`],
     });
   }
 }

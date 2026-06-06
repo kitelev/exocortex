@@ -21,13 +21,12 @@ import {
  *   - `exo__Asset_uid` (string) — profile UID
  *   - `exo__Asset_label` (string, optional) — display label; falls back to
  *     `file.basename` when missing
- *   - `exo__FocusProfile_includes` (string | string[]) — declared ontology
- *     wikilinks; normalised to bare ontology URIs (без leading `[[` /
- *     trailing `]]` / alias suffix `|...`)
- *   - `exo__FocusProfile_extends` (string, optional) — parent profile
- *     wikilink → UID
- *   - `exo__FocusProfile_alwaysOnOverlay` (string | string[], optional) —
- *     overlay ontology wikilinks; normalised identically
+ *   - `exo__Profile_includes` (string | string[]) — declared AssetSpace
+ *     wikilinks (RFC 01a83de8 Phase 2 retarget Ontology→AssetSpace);
+ *     normalised to bare UIDs (без leading `[[` / trailing `]]` / alias `|...`)
+ *   - `exo__Profile_imports` (string, optional) — parent profile wikilink → UID
+ *     (renamed from `_extends`; single-parent composition MVP)
+ *   - `_alwaysOnOverlay` removed (Phase 2 D3 — folds into TS-floor)
  *
  * Shared-ontology discovery: production scans the converter's RDF graph
  * для ontology IRIs matching the `shared-` prefix pattern. v3 backward-
@@ -51,22 +50,21 @@ export class VaultProfileResolver implements IProfileResolver {
     const fm = this.readFrontmatter(file);
     if (fm === null) return null;
 
-    const includes = this.extractWikilinkList(fm["exo__FocusProfile_includes"]);
-    const alwaysOnOverlay = this.extractWikilinkList(
-      fm["exo__FocusProfile_alwaysOnOverlay"],
-    );
-    const extendsRaw = fm["exo__FocusProfile_extends"];
-    const extendsUid =
+    // RFC 01a83de8 Phase 2 — `_includes` now references AssetSpace UIDs (range
+    // retarget Ontology→AssetSpace). Value-shape is identical (UUID wikilinks),
+    // so extraction is unchanged; the downstream filter (applyActiveProfileFilter)
+    // already accepts AS UIDs directly via its pass-through branch.
+    const includes = this.extractWikilinkList(fm["exo__Profile_includes"]);
+    // `_extends` renamed → `_imports` (single-parent composition, MVP 0..1).
+    // Internal field name `extends` retained to bound the rename cascade
+    // (walkProfileChain keys by it); cosmetic field rename deferred per D2.
+    const extendsRaw = fm["exo__Profile_imports"];
+    const importsUid =
       typeof extendsRaw === "string" && extendsRaw.length > 0
         ? this.resolveExtendsToUid(extendsRaw)
-        : null;
-    // AC13 (RFC 13da049f Phase 6.5b) — consume `exo__FocusProfile_appliesTo`,
-    // the Knowledge profile UID this Focus profile is scoped to (compat
-    // constraint anchor for the AC16 runtime check). Stored as a wikilink to
-    // the Knowledge profile's UID-named file; normalised to the bare UID.
-    const appliesTo = this.extractFirstWikilink(
-      fm["exo__FocusProfile_appliesTo"],
-    );
+        : Array.isArray(extendsRaw) && typeof extendsRaw[0] === "string"
+          ? this.resolveExtendsToUid(extendsRaw[0])
+          : null;
     const label =
       typeof fm["exo__Asset_label"] === "string"
         ? (fm["exo__Asset_label"] as string)
@@ -75,9 +73,12 @@ export class VaultProfileResolver implements IProfileResolver {
     return {
       uid: profileUid,
       includes,
-      extends: extendsUid,
-      alwaysOnOverlay,
-      appliesTo,
+      extends: importsUid,
+      // `_appliesTo` read removed (RFC 01a83de8 Phase 2 — Knowledge/Focus split
+      // superseded; unified single Profile). Field kept null for backward-compat
+      // with checkCompatibility's pass-through layer (full dual-class machinery
+      // removal deferred — cascade-capped follow-up).
+      appliesTo: null,
       label,
     };
   }
@@ -180,24 +181,6 @@ export class VaultProfileResolver implements IProfileResolver {
       if (cleaned.length > 0) out.push(cleaned);
     }
     return out;
-  }
-
-  /**
-   * Extract a single wikilink target as a bare UID. Accepts a string
-   * (`[[<uid>]]` / `[[<uid>|alias]]`) or a single-element array (frontmatter
-   * may serialise a 0..1 wikilink either way). Returns null when absent/empty.
-   * Used for `exo__FocusProfile_appliesTo` (AC13, cardinality 0..1).
-   */
-  private extractFirstWikilink(value: unknown): string | null {
-    const first = Array.isArray(value) ? value[0] : value;
-    if (typeof first !== "string") return null;
-    const cleaned = first
-      .trim()
-      .replace(/^\[\[/, "")
-      .replace(/\]\]$/, "")
-      .split("|")[0]
-      .trim();
-    return cleaned.length === 0 ? null : cleaned;
   }
 
   /**

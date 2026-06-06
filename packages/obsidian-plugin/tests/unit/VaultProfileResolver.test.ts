@@ -118,7 +118,7 @@ describe("VaultProfileResolver.resolve", () => {
     expect(await resolver.resolve("missing")).toBeNull();
   });
 
-  it("normalises wikilink list fields, strips aliases, drops empties", async () => {
+  it("normalises Profile_includes (AssetSpace UIDs), strips aliases, drops empties; reads _imports", async () => {
     const app = makeApp([
       {
         file: { path: "p.md", basename: "p" },
@@ -126,14 +126,14 @@ describe("VaultProfileResolver.resolve", () => {
           exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
           exo__Asset_uid: "p1",
           exo__Asset_label: "Personal",
-          exo__FocusProfile_includes: [
-            "[[https://exocortex.my/ontology/ems|ems]]",
-            "[[https://exocortex.my/ontology/ims]]",
+          // RFC 01a83de8 Phase 2 — _includes now AssetSpace UID wikilinks
+          exo__Profile_includes: [
+            "[[as-ems-uid|kitelev/exoas-ems]]",
+            "[[as-ims-uid]]",
             "",
           ],
-          exo__FocusProfile_alwaysOnOverlay:
-            "[[https://exocortex.my/ontology/exocmd]]",
-          exo__FocusProfile_extends: "[[parent-uid|profile-base]]",
+          // _extends renamed → _imports (single-parent MVP)
+          exo__Profile_imports: "[[parent-uid|profile-base]]",
         },
       },
     ]);
@@ -142,14 +142,23 @@ describe("VaultProfileResolver.resolve", () => {
     expect(r).not.toBeNull();
     expect(r!.uid).toBe("p1");
     expect(r!.label).toBe("Personal");
-    expect(r!.includes).toEqual([
-      "https://exocortex.my/ontology/ems",
-      "https://exocortex.my/ontology/ims",
-    ]);
-    expect(r!.alwaysOnOverlay).toEqual([
-      "https://exocortex.my/ontology/exocmd",
-    ]);
+    expect(r!.includes).toEqual(["as-ems-uid", "as-ims-uid"]);
     expect(r!.extends).toBe("parent-uid");
+  });
+
+  it("reads _imports from a single-element array form", async () => {
+    const app = makeApp([
+      {
+        file: { path: "p.md", basename: "p" },
+        fm: {
+          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
+          exo__Asset_uid: "p1",
+          exo__Profile_imports: ["[[parent-uid]]"],
+        },
+      },
+    ]);
+    const r = await new VaultProfileResolver(app).resolve("p1");
+    expect(r?.extends).toBe("parent-uid");
   });
 
   it("falls back к file basename when label is absent", async () => {
@@ -181,8 +190,11 @@ describe("VaultProfileResolver.resolve", () => {
   });
 });
 
-describe("VaultProfileResolver.resolve — appliesTo (RFC 13da049f AC13)", () => {
-  it("reads exo__FocusProfile_appliesTo as a bare Knowledge UID", async () => {
+describe("VaultProfileResolver.resolve — appliesTo deprecated (RFC 01a83de8 Phase 2)", () => {
+  // The Knowledge/Focus split (RFC 13da049f AC13) was superseded by the unified
+  // single Profile. The resolver no longer reads `exo__FocusProfile_appliesTo`;
+  // the field is always null (dead pass-through pending cascade-capped removal).
+  it("returns appliesTo=null even when the legacy key is present (read removed)", async () => {
     const app = makeApp([
       {
         file: { path: "p.md", basename: "p" },
@@ -194,22 +206,7 @@ describe("VaultProfileResolver.resolve — appliesTo (RFC 13da049f AC13)", () =>
       },
     ]);
     const r = await new VaultProfileResolver(app).resolve("focus-1");
-    expect(r?.appliesTo).toBe("knowledge-9");
-  });
-
-  it("accepts a single-element array form for appliesTo", async () => {
-    const app = makeApp([
-      {
-        file: { path: "p.md", basename: "p" },
-        fm: {
-          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
-          exo__Asset_uid: "focus-1",
-          exo__FocusProfile_appliesTo: ["[[knowledge-9]]"],
-        },
-      },
-    ]);
-    const r = await new VaultProfileResolver(app).resolve("focus-1");
-    expect(r?.appliesTo).toBe("knowledge-9");
+    expect(r?.appliesTo).toBeNull();
   });
 
   it("returns appliesTo=null when the field is absent", async () => {

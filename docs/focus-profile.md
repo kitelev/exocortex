@@ -5,24 +5,25 @@
 > **Audience:** Engineers and technical Obsidian users.
 > **Position:** Architectural cornerstone — the feature that makes Exocortex genuinely multi-context.
 
-> ⚠️ **Terminology update (v16.59, RFC 13da049f).** This page predates the
-> **Knowledge profile vs Focus profile** split. Since then the two switch modes
-> are first-class, separately-named profile types: the **hard switch** described
-> below is now the **Knowledge profile** (`exo__KnowledgeProfile`), and the
-> **soft switch** is the **Focus profile** (`exo__FocusProfile`). For the
-> distinction, examples, and which one to edit, start with
-> **[profiles.md](./profiles.md)**; read the "hard switch" sections here as the
-> Knowledge-profile machinery.
+> ⚠️ **Unified-Profile update (RFC 01a83de8 Phase 2).** The earlier
+> **Knowledge profile vs Focus profile** split (RFC 13da049f) was **superseded**:
+> there is now a **single** `exo__Profile` class (renamed from `exo__FocusProfile`,
+> same UID `3de846cd`). Soft-filter visibility and hard-switch/mount are two
+> mechanisms over that one profile type — not two profile classes. `exo__KnowledgeProfile`
+> was never shipped (its orphan TBox was removed in Phase 2 T1). Read the
+> "hard switch" sections here as the mount/materialization machinery of the
+> unified profile.
 
 ---
 
-## What FocusProfile is
+## What a Profile is
 
-A **FocusProfile** is a vault-declared subset of ontologies that the Exocortex plugin activates at runtime. It is a regular Markdown asset with class `exo__FocusProfile` and three declarative properties:
+A **Profile** (`exo__Profile`) is a vault-declared subset (BOM) of AssetSpaces that the Exocortex plugin activates at runtime. It is a regular Markdown asset with class `exo__Profile` and two declarative properties:
 
-- `exo__FocusProfile_includes` — list of AssetSpace (ontology submodule package) wikilinks that this profile activates.
-- `exo__FocusProfile_extends` — optional parent profile to inherit from (chain depth ≤ 5, cycle-free).
-- `exo__FocusProfile_alwaysOnOverlay` — AssetSpaces that always materialize regardless of which profile is active (the **TS-floor**: `shared-identities`, `exo`, `exocmd`).
+- `exo__Profile_includes` — list of **AssetSpace** UID wikilinks (library packages) that this profile activates (RFC 01a83de8 Phase 2 retarget: range Ontology→AssetSpace).
+- `exo__Profile_imports` — optional parent profile to compose (single-parent MVP, 0..1; renamed from `_extends`; transitive 0..N + cycle-guard → Phase 4).
+
+The former always-on-overlay property (`_alwaysOnOverlay`) is **removed** — "always-on" is now the **TS-floor** (`exo`, `exocmd`, `shared-identities`), enforced at AssetSpace-UID level regardless of profile config.
 
 Concrete profiles already shipping in production vaults:
 
