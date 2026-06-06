@@ -302,8 +302,7 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 
 **CLI:**
 
-- **[CLI Command Reference](./docs/cli/Command-Reference.md)** — Complete syntax
-- **[Scripting Patterns](./docs/cli/Scripting-Patterns.md)** — Automation examples
+- Run `exocortex --help` for the full list of commands and options (`find`, `apply`, `query`, `index`, `validate`, and more)
 
 **Core Library:**
 

@@ -293,5 +293,4 @@ Create an HTTP webhook that:
 ## Related Documentation
 
 - [SPARQL User Guide](./sparql/User-Guide.md) - Full SPARQL reference
-- [CLI Command Reference](./cli/Command-Reference.md) - CLI command reference
 - [SPARQL Query Examples](./sparql/Query-Examples.md) - Query examples
