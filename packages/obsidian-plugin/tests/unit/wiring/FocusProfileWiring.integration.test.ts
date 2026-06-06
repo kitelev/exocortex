@@ -24,7 +24,18 @@ import {
 } from "../../../src/infrastructure/adapters/AssetSpacePusherFactory";
 import { lookupAssetSpaceUidByFolder } from "../../../src/infrastructure/adapters/AssetSpaceLookupHelper";
 import { ASSET_SPACE_CLASS_UID } from "../../../src/infrastructure/adapters/AssetSpaceManager";
-import { FocusProfileSwitchManager } from "../../../src/infrastructure/adapters/FocusProfileSwitchManager";
+import {
+  FocusProfileSwitchManager,
+  FOCUS_PROFILE_CLASS_UID,
+} from "../../../src/infrastructure/adapters/FocusProfileSwitchManager";
+import {
+  applyActiveProfileFilter,
+  TS_FLOOR_AS_UID_EXO,
+  TS_FLOOR_AS_UID_EXOCMD,
+  TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+  type IEffectiveOntologyAwareIndexer,
+} from "../../../src/infrastructure/adapters/FocusProfileOnloadWiring";
+import { VaultProfileResolver } from "../../../src/infrastructure/adapters/VaultProfileResolver";
 import { PluginLockManager } from "../../../src/infrastructure/adapters/PluginLockManager";
 import type {
   IProfileResolver,
@@ -318,7 +329,6 @@ describe("FocusProfileSwitchManager.recoverIfNeeded — branch (e) onload trigge
     const profile: ProfileResolution = {
       uid: "uid-base",
       includes: [],
-      alwaysOnOverlay: [],
       extends: null,
     };
     const resolver = new FakeProfileResolver(
@@ -390,5 +400,108 @@ describe("FocusProfileSwitchManager.recoverIfNeeded — branch (e) onload trigge
 
     expect(result.recovered).toBe(false);
     expect(rdf.refreshCalls.length).toBe(0);
+  });
+});
+
+// ─── (f) RFC 01a83de8 Phase 2 — migrated Profile (AssetSpace-range) end-to-end ──
+//
+// Exercises the migration: a profile declaring `exo__Profile_includes` with an
+// **AssetSpace UID** flows through VaultProfileResolver → resolveEffectiveSet →
+// applyActiveProfileFilter and lands the AssetSpace UID in the indexer's
+// effective set (pass-through branch, no Ontology→AS translation needed).
+//
+// Revert-verify (per ~/dotfiles/.claude/rules/integration-test-revert-verify.md):
+// temporarily revert VaultProfileResolver.resolve to read the OLD key
+// `exo__FocusProfile_includes` → `includes` is empty → `effective` lacks
+// AS_EMS_UID (assertion below FAILS). Restoring the `exo__Profile_includes`
+// read makes it PASS. Empirically verified during T3 implementation.
+
+describe("Phase 2 migrated Profile — AssetSpace-range _includes flows to effective set", () => {
+  const AS_EMS_UID = "as-ems-uid-0001";
+  const PROFILE_UID = "prof-migrated-1";
+
+  function asDescriptor(uid: string, repo: string): SeedFile {
+    return {
+      path: `assetspaces/kitelev/exoas-${repo}/${uid}.md`,
+      frontmatter: {
+        "exo__Asset_uid": uid,
+        "exo__Instance_class": [`[[${ASSET_SPACE_CLASS_UID}]]`],
+        "exo__AssetSpace_source": `https://github.com/kitelev/exoas-${repo}`,
+        "exo__AssetSpace_namespace": repo,
+      },
+    };
+  }
+
+  function makeIndexerStub(): {
+    indexer: IEffectiveOntologyAwareIndexer;
+    captured: { effective: ReadonlySet<string> | null };
+  } {
+    const captured: { effective: ReadonlySet<string> | null } = {
+      effective: null,
+    };
+    const indexer: IEffectiveOntologyAwareIndexer = {
+      setEffectiveOntologies: (set) => {
+        captured.effective = set;
+      },
+      setAssetSpaceFolderToUid: () => undefined,
+    };
+    return { indexer, captured };
+  }
+
+  function makeSwitchMgr(app: App): FocusProfileSwitchManager {
+    const lockMgr = new PluginLockManager({
+      app,
+      pid: "test-pid",
+      now: () => new Date("2026-06-06T00:00:00.000Z"),
+    });
+    return new FocusProfileSwitchManager({
+      app,
+      lockMgr,
+      resolver: new VaultProfileResolver(app),
+      rdfIndexer: { refresh: async () => undefined },
+      settingsStore: {
+        load: async () => ({
+          activeProfileUid: PROFILE_UID,
+          _switchInProgress: false,
+        }),
+        save: async () => undefined,
+      },
+      notify: () => undefined,
+    });
+  }
+
+  it("lands the declared AssetSpace UID in the effective set (engaged)", async () => {
+    const { app } = makeFakeApp([
+      asDescriptor(AS_EMS_UID, "ems"),
+      asDescriptor(TS_FLOOR_AS_UID_EXO, "exo"),
+      asDescriptor(TS_FLOOR_AS_UID_EXOCMD, "exocmd"),
+      asDescriptor(TS_FLOOR_AS_UID_SHARED_IDENTITIES, "shared-identities"),
+      {
+        path: "assetspaces/kitelev/exoas-shared-identities/prof.md",
+        frontmatter: {
+          "exo__Asset_uid": PROFILE_UID,
+          "exo__Instance_class": [`[[${FOCUS_PROFILE_CLASS_UID}]]`],
+          // Phase 2 — AssetSpace-UID wikilink (range retarget Ontology→AssetSpace)
+          "exo__Profile_includes": [`[[${AS_EMS_UID}]]`],
+        },
+      },
+    ]);
+    const { logger } = makeFakeLogger();
+    const { indexer, captured } = makeIndexerStub();
+
+    const result = await applyActiveProfileFilter({
+      app,
+      switchMgr: makeSwitchMgr(app),
+      indexer,
+      activeProfileUid: PROFILE_UID,
+      logger,
+    });
+
+    expect(result.outcome).toBe("engaged");
+    // The AssetSpace UID declared in `_includes` reached the effective set
+    // via the pass-through branch (no Ontology→AS translation).
+    expect(captured.effective?.has(AS_EMS_UID)).toBe(true);
+    // TS-floor AssetSpaces are always laid in (Vision Lock #17).
+    expect(captured.effective?.has(TS_FLOOR_AS_UID_EXO)).toBe(true);
   });
 });

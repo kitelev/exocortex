@@ -398,7 +398,6 @@ function setup(opts: SetupOptions) {
         {
           uid: opts.targetUid,
           includes: includesAsOntology,
-          alwaysOnOverlay: [],
           label: "Target Profile",
         },
       ],
@@ -410,7 +409,6 @@ function setup(opts: SetupOptions) {
       {
         uid: opts.sourceUid,
         includes: [],
-        alwaysOnOverlay: [],
         label: opts.sourceLabel ?? "Source Profile",
       },
     );
@@ -541,7 +539,6 @@ describe("FocusProfileSwitchManager.hardSwitchProfile", () => {
           TS_FLOOR_AS_UID_EXOCMD,
           TS_FLOOR_AS_UID_SHARED_IDENTITIES,
         ],
-        alwaysOnOverlay: [],
         label: "Target Profile",
       });
       await expect(ctx.mgr.hardSwitchProfile("target")).resolves.toBeUndefined();

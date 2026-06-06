@@ -154,7 +154,6 @@ describe("FocusProfileSwitchManager.resolveEffectiveSet — TS-floor (Vision Loc
           {
             uid: UID_BASE,
             includes: [],
-            alwaysOnOverlay: [],
             extends: null,
             label: "profile-empty",
           },
@@ -174,7 +173,6 @@ describe("FocusProfileSwitchManager.resolveEffectiveSet — TS-floor (Vision Loc
           {
             uid: UID_BASE,
             includes: [],
-            alwaysOnOverlay: [],
             extends: null,
             label: "profile-empty",
           },
@@ -196,7 +194,7 @@ describe("FocusProfileSwitchManager.resolveEffectiveSet — TS-floor (Vision Loc
       profiles: [
         [
           UID_BASE,
-          { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null },
+          { uid: UID_BASE, includes: [], extends: null },
         ],
       ],
     });
@@ -210,20 +208,21 @@ describe("FocusProfileSwitchManager.resolveEffectiveSet — TS-floor (Vision Loc
 // ─── computeDerivedSet — inheritance ─────────────────────────────────────
 
 describe("FocusProfileSwitchManager.computeDerivedSet — _extends chain", () => {
-  it("walks _extends transitively and accumulates _alwaysOnOverlay", async () => {
+  it("walks _imports transitively and accumulates parent _includes", async () => {
+    // RFC 01a83de8 Phase 2 — _alwaysOnOverlay removed; the derived set is the
+    // union of _includes along the single-parent _imports chain (base's library
+    // AssetSpaces are inherited by the child profile).
     const { mgr } = makeHarness({
       profiles: [
         [UID_BASE, {
           uid: UID_BASE,
-          includes: [],
-          alwaysOnOverlay: [ONTO_EXO, ONTO_EXOCMD],
+          includes: [ONTO_EXO, ONTO_EXOCMD],
           extends: null,
           label: "profile-base",
         }],
         [UID_PERSONAL, {
           uid: UID_PERSONAL,
           includes: [ONTO_KITELEV],
-          alwaysOnOverlay: [],
           extends: UID_BASE,
           label: "profile-personal",
         }],
@@ -241,7 +240,6 @@ describe("FocusProfileSwitchManager.computeDerivedSet — _extends chain", () =>
         [UID_BASE, {
           uid: UID_BASE,
           includes: [ONTO_KITELEV],
-          alwaysOnOverlay: [],
           extends: null,
         }],
       ],
@@ -257,7 +255,6 @@ describe("FocusProfileSwitchManager.computeDerivedSet — _extends chain", () =>
         [UID_PERSONAL, {
           uid: UID_PERSONAL,
           includes: [ONTO_KITELEV],
-          alwaysOnOverlay: [],
           extends: "no-such-uid",
         }],
       ],
@@ -273,14 +270,12 @@ describe("FocusProfileSwitchManager.computeDerivedSet — _extends chain", () =>
       profiles.push([`p${i}`, {
         uid: `p${i}`,
         includes: [],
-        alwaysOnOverlay: [],
         extends: `p${i + 1}`,
       }]);
     }
     profiles.push([`p8`, {
       uid: "p8",
       includes: [],
-      alwaysOnOverlay: [],
       extends: "p0", // cycle back
     }]);
     const { mgr } = makeHarness({ profiles });
@@ -293,7 +288,6 @@ describe("FocusProfileSwitchManager.computeDerivedSet — _extends chain", () =>
         [UID_BASE, {
           uid: UID_BASE,
           includes: [ONTO_KITELEV],
-          alwaysOnOverlay: [],
           extends: UID_BASE, // self
         }],
       ],
@@ -309,7 +303,7 @@ describe("FocusProfileSwitchManager.switchProfile — happy path", () => {
   it("persists settings BEFORE re-index (Architect #2 atomicity)", async () => {
     const h = makeHarness({
       profiles: [
-        [UID_BASE, { uid: UID_BASE, includes: [ONTO_KITELEV], alwaysOnOverlay: [], extends: null, label: "profile-base" }],
+        [UID_BASE, { uid: UID_BASE, includes: [ONTO_KITELEV], extends: null, label: "profile-base" }],
       ],
     });
 
@@ -337,7 +331,7 @@ describe("FocusProfileSwitchManager.switchProfile — happy path", () => {
   it("writes starting + completed journal entries", async () => {
     const h = makeHarness({
       profiles: [
-        [UID_BASE, { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null, label: "profile-base" }],
+        [UID_BASE, { uid: UID_BASE, includes: [], extends: null, label: "profile-base" }],
       ],
     });
     h.clock.advance(1000); // shift base
@@ -355,7 +349,7 @@ describe("FocusProfileSwitchManager.switchProfile — happy path", () => {
   it("notifies user with profile label + elapsed ms", async () => {
     const h = makeHarness({
       profiles: [
-        [UID_BASE, { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null, label: "my-cool-profile" }],
+        [UID_BASE, { uid: UID_BASE, includes: [], extends: null, label: "my-cool-profile" }],
       ],
     });
     await h.mgr.switchProfile(UID_BASE);
@@ -367,7 +361,7 @@ describe("FocusProfileSwitchManager.switchProfile — happy path", () => {
   it("invokes rdf.refresh with effective set including TS-floor", async () => {
     const h = makeHarness({
       profiles: [
-        [UID_BASE, { uid: UID_BASE, includes: [ONTO_TBANK], alwaysOnOverlay: [], extends: null }],
+        [UID_BASE, { uid: UID_BASE, includes: [ONTO_TBANK], extends: null }],
       ],
     });
     await h.mgr.switchProfile(UID_BASE);
@@ -385,7 +379,7 @@ describe("FocusProfileSwitchManager.switchProfile — lock contention", () => {
   it("throws when lock already held by foreign holder", async () => {
     const h = makeHarness({
       profiles: [
-        [UID_BASE, { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null }],
+        [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
       ],
     });
     // Acquire lock under a different pid
@@ -398,7 +392,7 @@ describe("FocusProfileSwitchManager.switchProfile — lock contention", () => {
   it("releases lock on success", async () => {
     const h = makeHarness({
       profiles: [
-        [UID_BASE, { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null }],
+        [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
       ],
     });
     await h.mgr.switchProfile(UID_BASE);
@@ -409,7 +403,7 @@ describe("FocusProfileSwitchManager.switchProfile — lock contention", () => {
   it("releases lock on failure (re-index throws)", async () => {
     const h = makeHarness({
       profiles: [
-        [UID_BASE, { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null }],
+        [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
       ],
     });
     h.rdf.failOnce = true;
@@ -424,7 +418,7 @@ describe("FocusProfileSwitchManager.switchProfile — failure path", () => {
   it("writes failed journal entry when re-index throws", async () => {
     const h = makeHarness({
       profiles: [
-        [UID_BASE, { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null }],
+        [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
       ],
     });
     h.rdf.failOnce = true;
@@ -439,7 +433,7 @@ describe("FocusProfileSwitchManager.switchProfile — failure path", () => {
   it("leaves _switchInProgress=true when re-index throws (recoverable)", async () => {
     const h = makeHarness({
       profiles: [
-        [UID_BASE, { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null }],
+        [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
       ],
     });
     h.rdf.failOnce = true;
@@ -450,7 +444,7 @@ describe("FocusProfileSwitchManager.switchProfile — failure path", () => {
   it("redacts PAT-shaped tokens from error messages in journal", async () => {
     const h = makeHarness({
       profiles: [
-        [UID_BASE, { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null }],
+        [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
       ],
     });
     h.rdf.refresh = async () => {
@@ -479,7 +473,7 @@ describe("FocusProfileSwitchManager.recoverIfNeeded", () => {
   it("returns {recovered:false} when last journal entry is completed", async () => {
     const h = makeHarness({
       profiles: [
-        [UID_BASE, { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null }],
+        [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
       ],
     });
     await h.mgr.switchProfile(UID_BASE);
@@ -490,7 +484,7 @@ describe("FocusProfileSwitchManager.recoverIfNeeded", () => {
   it("re-triggers switchProfile when last entry incomplete + _switchInProgress=true", async () => {
     const h = makeHarness({
       profiles: [
-        [UID_BASE, { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null }],
+        [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
       ],
     });
     // Simulate crashed mid-switch: write only «starting» entry + set in-progress flag
@@ -514,7 +508,7 @@ describe("FocusProfileSwitchManager.recoverIfNeeded", () => {
   it("does NOT recover when _switchInProgress=false even with incomplete journal", async () => {
     const h = makeHarness({
       profiles: [
-        [UID_BASE, { uid: UID_BASE, includes: [], alwaysOnOverlay: [], extends: null }],
+        [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
       ],
     });
     await h.app.vault.adapter.write(

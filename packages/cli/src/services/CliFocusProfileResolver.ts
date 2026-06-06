@@ -7,9 +7,11 @@
  *   1. Build folderMap: `assetspaces/<folder>` → AssetSpace UID
  *   2. Build ontologyToAs: Ontology UID → owning AssetSpace UID (via
  *      `exo__AssetSpace_containsOntology` declarations)
- *   3. Resolve FocusProfile chain (`_extends*` + `_includes` + `_alwaysOnOverlay`)
- *      to a declared Ontology UID set
+ *   3. Resolve Profile chain (`_imports*` + `_includes`) to a declared UID set
+ *      (`_includes` now AssetSpace UIDs per RFC 01a83de8 Phase 2; `_alwaysOnOverlay`
+ *      removed — folds into TS-floor)
  *   4. Translate declared Ontology UIDs → AssetSpace UIDs through ontologyToAs
+ *      (AS UIDs pass through unchanged; covers TS-floor ontology URIs)
  *   5. Apply TS-floor AssetSpace UIDs (Vision Lock #17): $exo, $exocmd,
  *      $shared-identities — guarantees plugin/CLI keeps functioning regardless
  *      of profile config
@@ -99,7 +101,6 @@ interface ProfileFrontmatter {
   label?: string;
   includes: string[];
   extends: string | null;
-  alwaysOnOverlay: string[];
 }
 
 /**
@@ -238,7 +239,8 @@ export class CliFocusProfileResolver {
     if (profile === undefined) return; // tolerate missing parent — leaf
 
     for (const ont of profile.includes) out.add(ont);
-    for (const ont of profile.alwaysOnOverlay) out.add(ont);
+    // `_alwaysOnOverlay` removed (RFC 01a83de8 Phase 2 D3 — folds into TS-floor,
+    // enforced via TS_FLOOR_ASSETSPACE_UIDS below).
 
     if (
       typeof profile.extends === "string" &&
@@ -290,16 +292,15 @@ export class CliFocusProfileResolver {
             label: typeof asset.frontmatter["exo__Asset_label"] === "string"
               ? (asset.frontmatter["exo__Asset_label"] as string)
               : undefined,
+            // RFC 01a83de8 Phase 2 — `_includes` now AssetSpace UIDs (range
+            // retarget); `_extends` renamed → `_imports` (single-parent MVP).
             includes: parseWikilinkArray(
-              asset.frontmatter["exo__FocusProfile_includes"],
+              asset.frontmatter["exo__Profile_includes"],
             ),
             extends:
               parseWikilinkArray(
-                asset.frontmatter["exo__FocusProfile_extends"],
+                asset.frontmatter["exo__Profile_imports"],
               )[0] ?? null,
-            alwaysOnOverlay: parseWikilinkArray(
-              asset.frontmatter["exo__FocusProfile_alwaysOnOverlay"],
-            ),
           };
           profiles.set(asset.uid, profile);
         }

@@ -88,7 +88,6 @@ function asProfile(
     label?: string;
     includes?: string[];
     extends_?: string;
-    overlay?: string[];
   } = {},
 ): AssetSpec {
   const fm: Record<string, unknown> = {
@@ -96,14 +95,12 @@ function asProfile(
     "exo__Instance_class": [`[[${FOCUS_PROFILE_CLASS_UID}|exo__FocusProfile]]`],
   };
   if (opts.label !== undefined) fm["exo__Asset_label"] = opts.label;
+  // RFC 01a83de8 Phase 2 — _includes now AssetSpace UIDs; _extends → _imports.
   if (opts.includes !== undefined) {
-    fm["exo__FocusProfile_includes"] = opts.includes.map((u) => `[[${u}]]`);
+    fm["exo__Profile_includes"] = opts.includes.map((u) => `[[${u}]]`);
   }
   if (opts.extends_ !== undefined) {
-    fm["exo__FocusProfile_extends"] = [`[[${opts.extends_}]]`];
-  }
-  if (opts.overlay !== undefined) {
-    fm["exo__FocusProfile_alwaysOnOverlay"] = opts.overlay.map((u) => `[[${u}]]`);
+    fm["exo__Profile_imports"] = [`[[${opts.extends_}]]`];
   }
   return {
     relPath: `profiles/${uid}.md`,
@@ -243,7 +240,9 @@ describe("CliFocusProfileResolver", () => {
       }
     });
 
-    it("walks _extends chain recursively, merging includes and overlays", async () => {
+    it("walks _imports chain recursively, merging parent + child includes", async () => {
+      // RFC 01a83de8 Phase 2 — base provides kitelev via _includes (was overlay);
+      // child inherits it through the _imports chain.
       await makeVault(tmpRoot, [
         asAssetSpace(AS_EXO_UID, "exo"),
         asAssetSpace(AS_EXOCMD_UID, "exocmd"),
@@ -251,7 +250,7 @@ describe("CliFocusProfileResolver", () => {
         asAssetSpace(AS_EMS_UID, "ems"),
         asAssetSpace(AS_KITELEV_UID, "kitelev"),
         asProfile(PROFILE_BASE_UID, {
-          overlay: [AS_KITELEV_UID], // base provides kitelev via overlay
+          includes: [AS_KITELEV_UID], // base library AssetSpace
         }),
         asProfile(PROFILE_PERSONAL_UID, {
           includes: [AS_EMS_UID],
@@ -262,20 +261,20 @@ describe("CliFocusProfileResolver", () => {
       const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
       expect(out.outcome).toBe("engaged");
       if (out.outcome === "engaged") {
-        expect(out.result.effective.has(AS_EMS_UID)).toBe(true); // from includes
-        expect(out.result.effective.has(AS_KITELEV_UID)).toBe(true); // from parent overlay
+        expect(out.result.effective.has(AS_EMS_UID)).toBe(true); // child includes
+        expect(out.result.effective.has(AS_KITELEV_UID)).toBe(true); // parent includes
         expect(out.result.declaredOntologies.has(AS_KITELEV_UID)).toBe(true);
       }
     });
 
-    it("merges _alwaysOnOverlay into effective set even on the leaf profile", async () => {
+    it("includes leaf-profile _includes directly in the effective set", async () => {
       await makeVault(tmpRoot, [
         asAssetSpace(AS_EXO_UID, "exo"),
         asAssetSpace(AS_EXOCMD_UID, "exocmd"),
         asAssetSpace(AS_SHARED_UID, "shared-identities"),
         asAssetSpace(AS_KITELEV_UID, "kitelev"),
         asProfile(PROFILE_PERSONAL_UID, {
-          overlay: [AS_KITELEV_UID],
+          includes: [AS_KITELEV_UID],
         }),
       ]);
       const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
