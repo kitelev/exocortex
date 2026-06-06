@@ -1,3 +1,4 @@
+import { Platform } from "obsidian";
 import type { App } from "obsidian";
 import type { HardSwitchPlan, IConfirmGate } from "exocortex";
 import { derivePath } from "exocortex";
@@ -6,6 +7,7 @@ import { PluginLockManager } from "./PluginLockManager";
 import type { AssetSpaceManager, AssetSpaceInfo } from "./AssetSpaceManager";
 import type { ICacheLayer } from "./SwitchCacheLayer";
 import type { GitSubmoduleOps } from "./GitSubmoduleOps";
+import type { RestAssetSpaceMount } from "./RestAssetSpaceMount";
 import type { UncommittedChangesGuard } from "./UncommittedChangesGuard";
 import type { PluginLocalDataStore } from "./PluginLocalDataStore";
 import { TS_FLOOR_ASSETSPACE_UIDS } from "./FocusProfileOnloadWiring";
@@ -198,6 +200,24 @@ export interface FocusProfileSwitchManagerOptions {
   cacheLayer?: ICacheLayer;
   /** Git submodule operations wrapper. */
   gitOps?: GitSubmoduleOps;
+  /**
+   * REST/tarball AssetSpace mount/unmount (RFC 01a83de8 Phase 3 T1). The
+   * cross-platform (incl. iOS) materialisation path. When wired and running on
+   * mobile, `hardSwitchKnowledgeProfile` delegates to {@link restSwitchProfile}
+   * (no git binary / staging / cache). Desktop keeps the git-binary path.
+   *
+   * Captured at onload — used to gate command registration + as a fallback.
+   * Prefer {@link restMountFactory} for a fresh-PAT mount at switch time.
+   */
+  restMount?: RestAssetSpaceMount;
+  /**
+   * Factory building a {@link RestAssetSpaceMount} with the CURRENTLY stored
+   * PAT. Preferred over {@link restMount} inside {@link restSwitchProfile} so a
+   * PAT configured AFTER onload is honoured without a reload (matches the
+   * Issue #3382 fix for the Bootstrap/Add-AssetSpace puller). Falls back to the
+   * captured {@link restMount} when absent.
+   */
+  restMountFactory?: () => Promise<RestAssetSpaceMount>;
   /** Uncommitted-changes guard (Vision Lock #5). */
   uncommittedGuard?: UncommittedChangesGuard;
   /** Confirmation gate — ModalConfirmGate в plugin runtime. */
@@ -270,6 +290,8 @@ export class FocusProfileSwitchManager {
   private readonly assetSpaceManager?: AssetSpaceManager;
   private readonly cacheLayer?: ICacheLayer;
   private readonly gitOps?: GitSubmoduleOps;
+  private readonly restMount?: RestAssetSpaceMount;
+  private readonly restMountFactory?: () => Promise<RestAssetSpaceMount>;
   private readonly uncommittedGuard?: UncommittedChangesGuard;
   private readonly confirmGate?: IConfirmGate;
   private readonly localDataStore?: PluginLocalDataStore;
@@ -289,6 +311,8 @@ export class FocusProfileSwitchManager {
     this.assetSpaceManager = options.assetSpaceManager;
     this.cacheLayer = options.cacheLayer;
     this.gitOps = options.gitOps;
+    this.restMount = options.restMount;
+    this.restMountFactory = options.restMountFactory;
     this.uncommittedGuard = options.uncommittedGuard;
     this.confirmGate = options.confirmGate;
     this.localDataStore = options.localDataStore;
@@ -669,6 +693,15 @@ export class FocusProfileSwitchManager {
     if (typeof targetProfileUid !== "string" || targetProfileUid.length === 0) {
       throw new Error("hardSwitchKnowledgeProfile: targetProfileUid is required");
     }
+    // RFC 01a83de8 Phase 3 T2 — on mobile the git binary is unavailable, so
+    // delegate to the REST/tarball mount/unmount path (no staging / cache /
+    // git commit). Desktop keeps the git-binary path below unchanged.
+    if (
+      Platform.isMobile &&
+      (this.restMount !== undefined || this.restMountFactory !== undefined)
+    ) {
+      return this.restSwitchProfile(targetProfileUid);
+    }
     const deps = this.assertHardSwitchWired();
 
     const startedAt = this.now().getTime();
@@ -1042,6 +1075,245 @@ export class FocusProfileSwitchManager {
       await this.releaseStagingPaths(stagingPaths);
       await this.lockMgr.releaseLock();
     }
+  }
+
+  /**
+   * Mobile-capable profile switch (RFC 01a83de8 Phase 3 T2). Materialises the
+   * target profile's effective AssetSpace set via REST/tarball mount/unmount
+   * (no git binary, staging dir, cache layer, or git commit). Delegated to by
+   * {@link hardSwitchKnowledgeProfile} when running on mobile with `restMount`
+   * wired; desktop keeps the git-binary path.
+   *
+   * Visibility is **mount-state**: an AssetSpace is "active" iff its derived
+   * folder (`derivePath(_source)`) exists on disk. The soft RDF-filter remains
+   * coexisting (RFC v9 EV4) — removed only after the iPhone verify gate (T3).
+   *
+   * Algorithm:
+   *   1. Resolve declared ontology set → AssetSpace UIDs; assert TS-floor.
+   *   2. Diff effective set vs currently-materialised (folder exists).
+   *   3. ConfirmGate (destructive — unmount removes folders).
+   *   4. Lock + journal; unmount toDestroy, mount toMaterialize via restMount.
+   *   5. Persist active profile (+ Knowledge mirror) + RDF re-index.
+   *
+   * **Partial-failure / recovery**: like T1's primitive, this does
+   * unmount-then-mount with NO rollback. On a mid-switch crash the catch block
+   * clears `_switchInProgress` and leaves `activeProfileUid` at the pre-switch
+   * value (the success-path save never ran). The desktop cache-restore worker
+   * (`recoverIncompleteSwitch`) is desktop-only (cache/gitOps-gated), so mobile
+   * has no auto cache-restore — but the state self-heals: mount-state is
+   * self-describing (folder exists = active), T1 mount/unmount are per-op
+   * idempotent, and re-running the switch reconciles to the target.
+   *
+   * @throws TsFloorViolationError if target excludes any TS-floor AS.
+   * @throws HardSwitchAbortedByUser if confirmGate declines.
+   */
+  async restSwitchProfile(targetProfileUid: string): Promise<void> {
+    if (typeof targetProfileUid !== "string" || targetProfileUid.length === 0) {
+      throw new Error("restSwitchProfile: targetProfileUid is required");
+    }
+    const { confirmGate, localDataStore } = this.assertRestSwitchWired();
+    // Prefer the fresh-PAT factory (Issue #3382 pattern) over the onload-captured
+    // mount, so a PAT set after onload is honoured without a reload.
+    const restMount = this.restMountFactory
+      ? await this.restMountFactory()
+      : (this.restMount as RestAssetSpaceMount);
+    const startedAt = this.now().getTime();
+    const prevActiveProfileUid = localDataStore.getActiveProfileUid();
+    const targetProfileLabel = await this.profileLabel(targetProfileUid);
+    const sourceProfileLabel =
+      prevActiveProfileUid !== null
+        ? await this.profileLabel(prevActiveProfileUid)
+        : "<unknown>";
+
+    // 1. Effective AssetSpace set (declared ontologies → AS UIDs + TS-floor).
+    // Mirrors hardSwitchKnowledgeProfile's R24 derivation (computeDerivedSet,
+    // NOT resolveEffectiveSet — the latter silently injects floor ontologies).
+    const declaredOntologySet = await this.computeDerivedSet(targetProfileUid);
+    const folderToAsUid = await this.scanFolderToAsUid();
+    const ontologyToAs = await this.scanOntologyToAsUid();
+    const declaredAsUids = new Set<string>();
+    const folderMapValues = new Set(folderToAsUid.values());
+    for (const uid of declaredOntologySet) {
+      if (folderMapValues.has(uid)) {
+        declaredAsUids.add(uid);
+        continue;
+      }
+      const translated = ontologyToAs.get(uid);
+      if (translated !== undefined) declaredAsUids.add(translated);
+    }
+    this.assertTsFloor(declaredAsUids);
+    const effectiveAsUids = new Set(declaredAsUids);
+    for (const floor of TS_FLOOR_ASSETSPACE_UIDS) effectiveAsUids.add(floor);
+
+    // 2. Diff: materialised == folder exists on disk (mount-state, derivePath).
+    const allInfos = this.listAllAssetSpaceInfos();
+    const infoBySubmodulePath = new Map<string, AssetSpaceInfo>();
+    for (const info of allInfos) infoBySubmodulePath.set(info.folderName, info);
+    const currentAsUids = await this.derivePhysicallyMaterializedAsUids(
+      allInfos.map((i) => i.folderName),
+      infoBySubmodulePath,
+    );
+    const toDestroy: Array<{ asUid: string; submodulePath: string; label: string }> = [];
+    const toMaterialize: Array<{
+      asUid: string;
+      submodulePath: string;
+      gitUrl: string;
+      label: string;
+      ref: string;
+    }> = [];
+    // Iterate ALL declared AS (vs the desktop path's `currentAsUids` for the
+    // destroy loop) — equivalent because `materialised` implies presence in
+    // `currentAsUids`; this single loop also covers the materialise side.
+    for (const info of allInfos) {
+      const materialised = currentAsUids.has(info.uid);
+      const inEffective = effectiveAsUids.has(info.uid);
+      const label = info.namespace || info.uid.slice(0, 8);
+      if (materialised && !inEffective) {
+        toDestroy.push({ asUid: info.uid, submodulePath: info.folderName, label });
+      } else if (!materialised && inEffective) {
+        toMaterialize.push({
+          asUid: info.uid,
+          submodulePath: info.folderName,
+          gitUrl: info.git,
+          label,
+          ref: "main",
+        });
+      }
+    }
+
+    // 3. Build plan + ConfirmGate (destructive — unmount removes folders).
+    const filesToDestroyMap = new Map<string, string[]>();
+    for (const target of toDestroy) {
+      filesToDestroyMap.set(
+        target.asUid,
+        await this.enumerateFilesUnder(target.submodulePath),
+      );
+    }
+    const plan: HardSwitchPlan = {
+      targetProfileUid,
+      targetProfileLabel,
+      sourceProfileUid: prevActiveProfileUid,
+      sourceProfileLabel,
+      filesToDestroy: filesToDestroyMap,
+      assetSpacesBeingTornDown: toDestroy.map((t) => ({
+        asUid: t.asUid,
+        asLabel: t.label,
+        fileCount: filesToDestroyMap.get(t.asUid)?.length ?? 0,
+      })),
+      assetSpacesBeingMaterialized: toMaterialize.map((t) => ({
+        asUid: t.asUid,
+        asLabel: t.label,
+      })),
+    };
+    const approved = await confirmGate.confirmHardSwitch(plan);
+    if (!approved) throw new HardSwitchAbortedByUser();
+
+    // No-op early exit — no mount-state change ⇒ soft switch (RDF filter) only.
+    if (toDestroy.length === 0 && toMaterialize.length === 0) {
+      await this.softSwitchFocusProfile(targetProfileUid);
+      return;
+    }
+
+    const acquired = await this.lockMgr.acquireLock(`rest-switch-${targetProfileUid}`);
+    if (!acquired) {
+      throw new Error("Another profile switch is in progress (lock held). Try again shortly.");
+    }
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+    try {
+      await this.appendJournal({
+        phase: "hard-switch-starting",
+        targetUid: targetProfileUid,
+        ts: new Date(startedAt).toISOString(),
+      });
+      const localState = localDataStore.snapshot();
+      await localDataStore.save({
+        activeProfileUid: localState.activeProfileUid,
+        _switchInProgress: true,
+      });
+      heartbeatTimer = setInterval(() => {
+        void this.lockMgr.heartbeat();
+      }, 30_000);
+
+      // Unmount removed AssetSpaces (rm folder + strip .gitmodules stanza).
+      for (const target of toDestroy) {
+        await restMount.unmount(target.submodulePath);
+        await this.appendJournal({
+          phase: "phase2-destroyed",
+          targetUid: targetProfileUid,
+          as: target.asUid,
+          ts: this.now().toISOString(),
+        });
+      }
+      // Mount new AssetSpaces (REST tarball → vault folder + .gitmodules entry).
+      for (const target of toMaterialize) {
+        await restMount.mount(target.gitUrl, target.submodulePath, target.ref);
+        await this.appendJournal({
+          phase: "phase2-materialized",
+          targetUid: targetProfileUid,
+          as: target.asUid,
+          ts: this.now().toISOString(),
+        });
+      }
+
+      // Persist new active profile (+ Knowledge mirror) + clear in-progress.
+      const persistState = localDataStore.snapshot();
+      await localDataStore.save({
+        ...persistState,
+        activeProfileUid: targetProfileUid,
+        activeKnowledgeProfileUid: targetProfileUid,
+        _switchInProgress: false,
+      });
+      await this.rdfIndexer.refresh(effectiveAsUids);
+
+      const elapsedMs = this.now().getTime() - startedAt;
+      await this.appendJournal({
+        phase: "hard-switch-completed",
+        targetUid: targetProfileUid,
+        ts: this.now().toISOString(),
+        elapsedMs,
+      });
+      this.notify(`Switched to ${targetProfileLabel} (${elapsedMs}ms, REST mount)`);
+    } catch (e) {
+      await this.appendJournal({
+        phase: "hard-switch-failed",
+        targetUid: targetProfileUid,
+        ts: this.now().toISOString(),
+        error: this.redactError(String(e)),
+      });
+      // Clear in-progress so subsequent operations don't see stuck state.
+      try {
+        const s = localDataStore.snapshot();
+        await localDataStore.save({
+          activeProfileUid: s.activeProfileUid,
+          _switchInProgress: false,
+        });
+      } catch {
+        // Swallow — original error takes precedence.
+      }
+      throw e;
+    } finally {
+      if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
+      await this.lockMgr.releaseLock();
+    }
+  }
+
+  private assertRestSwitchWired(): {
+    confirmGate: IConfirmGate;
+    localDataStore: PluginLocalDataStore;
+  } {
+    if (
+      (this.restMount === undefined && this.restMountFactory === undefined) ||
+      this.confirmGate === undefined ||
+      this.localDataStore === undefined
+    ) {
+      throw new Error(
+        "restSwitchProfile: dependencies not wired (restMount|restMountFactory, confirmGate, localDataStore required)",
+      );
+    }
+    return {
+      confirmGate: this.confirmGate,
+      localDataStore: this.localDataStore,
+    };
   }
 
   /**
