@@ -21,7 +21,6 @@ playwright-report-ct/
 playwright-report-ct*/
 test-results/
 playwright/.cache/
-bdd-coverage-report.md
 build-meta.json
 
 # Debug files

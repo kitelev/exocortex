@@ -13,10 +13,6 @@ fi
 echo "🚀 Running lint-staged (affected files only)..."
 npx lint-staged || exit 1
 
-# Check BDD coverage (fast static check)
-echo "📊 Checking BDD coverage..."
-npm run bdd:check || exit 1
-
 # Run Archgate ADR compliance checks on staged files
 if command -v archgate &> /dev/null; then
   echo "🏛️  Running Archgate ADR compliance checks..."

@@ -468,7 +468,6 @@ git commit --no-verify -m "feat: your change"
 - All component tests pass
 - All UI tests pass
 - `npm run lint` shows only warnings (no errors)
-- `npm run bdd:check` shows 100% coverage
 - But hook still returns exit code 1
 
 **Root Cause**: Unknown intermittent issue with husky pre-commit hook execution.
@@ -479,7 +478,6 @@ git commit --no-verify -m "feat: your change"
 # 1. Verify ALL checks pass locally
 npm run test:all       # Must pass
 npm run lint           # No errors (warnings OK)
-npm run bdd:check      # Must show 100%
 npm run check:types    # Must pass
 
 # 2. If all pass, use --no-verify
@@ -490,7 +488,6 @@ git commit --no-verify -m "feat: your change"
 
 - ✅ All tests pass locally (`npm run test:all`)
 - ✅ Lint has no errors (`npm run lint`)
-- ✅ BDD coverage 100% (`npm run bdd:check`)
 - ✅ TypeScript compiles (`npm run check:types`)
 - ✅ CI will catch any issues (safety net)
 

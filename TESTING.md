@@ -36,8 +36,8 @@ npm run test:e2e:docker # E2E tests in Docker
 # Run with coverage
 npm run test:coverage
 
-# BDD coverage check
-npm run bdd:check       # BDD coverage report (advisory, not a CI gate)
+# BDD suite (CLI groundings)
+npm run bdd:test:cli    # CLI BDD suite (required test-bdd gate)
 ```
 
 ### Writing Your First Test
@@ -78,7 +78,7 @@ describe("FrontmatterService", () => {
 | `*.test.ts`  | `packages/*/tests/ui/`                      | Jest (jsdom)  |
 | `*.spec.tsx` | `packages/obsidian-plugin/tests/component/` | Playwright CT |
 | `*.spec.ts`  | `packages/obsidian-plugin/tests/e2e/specs/` | Playwright    |
-| `*.feature`  | `packages/obsidian-plugin/specs/features/`  | Cucumber      |
+| `*.feature`  | `packages/cli/specs/features/`              | Cucumber      |
 
 ---
 
@@ -315,66 +315,41 @@ test.describe("Daily Tasks", () => {
 
 ---
 
-### BDD Tests
+### BDD Tests (CLI groundings)
 
-**Purpose**: Document and test behavior using Gherkin syntax.
+**Purpose**: Document and test grounding behavior end-to-end using Gherkin syntax.
 
-**Framework**: Cucumber with jest-cucumber
+**Framework**: Cucumber
 
-**Location**: `packages/obsidian-plugin/specs/features/`
+**Location**: `packages/cli/specs/features/`
 
-**Configuration**: `cucumber.js` (in package root)
+**Configuration**: `packages/cli/cucumber.json`
+
+**Scope**: The CLI BDD suite exercises the 48 starter-kit groundings through
+`CommandResolver` / `PreconditionEvaluator` / `GroundingExecutor` against
+`packages/exoas-exocmd` fixtures. It is the suite gated by the required
+`test-bdd` check.
+
+> The legacy plugin-BDD layer under `packages/obsidian-plugin/specs/` was
+> removed (audit epic #3384) — its scenarios were self-asserting (no
+> production renderer / CommandManager / DOM invoked) and the same behavior
+> is covered by the component and E2E layers.
 
 **Commands**:
 
 ```bash
-# Run BDD tests
-npm run bdd:test
+# Run CLI BDD suite
+npm run bdd:test:cli
 
 # Dry run (validate syntax)
-npm run bdd:test:dry
-
-# Coverage report
-npm run bdd:coverage
-
-# Check coverage threshold (≥80%)
-npm run bdd:check
-```
-
-**Example Feature File** (`daily-tasks.feature`):
-
-```gherkin
-Feature: Daily Tasks Table in Layout
-  As a user viewing a pn__DailyNote
-  I want to see all tasks scheduled for that day
-  So that I can manage my daily tasks efficiently
-
-  Background:
-    Given Dataview plugin is installed and active
-    And I am viewing a note with UniversalLayout
-
-  Scenario: Display tasks for DailyNote with tasks
-    Given I have a pn__DailyNote for "2025-10-16"
-    And the note has "pn__DailyNote_day" property set to "[[2025-10-16]]"
-    And there are 3 tasks with "ems__Effort_day" property set to "[[2025-10-16]]"
-    When I view the daily note
-    Then I should see a "Tasks" section
-    And I should see 3 tasks in the table
-
-  Scenario: Tasks sorted by votes within same status
-    Given I have a pn__DailyNote for "2025-10-16"
-    And task "High Priority" has status "[[ems__EffortStatusDoing]]" and "ems__Effort_votes" set to 5
-    And task "Low Priority" has status "[[ems__EffortStatusDoing]]" and "ems__Effort_votes" set to 1
-    When I view the daily note
-    Then tasks should be sorted in order: "High Priority", "Low Priority"
+npm run bdd:test:cli:dry
 ```
 
 **When to use BDD tests**:
 
-- Documenting user-facing behavior
-- Acceptance criteria for features
-- Communication between developers and stakeholders
-- High-level integration scenarios
+- Documenting grounding state-change behavior
+- Acceptance criteria for dynamic commands
+- High-level integration scenarios across resolver + executor
 
 ---
 
@@ -401,12 +376,12 @@ The project follows a **test pyramid architecture** to ensure fast feedback, mai
 
 #### Ratios and Enforcement
 
-| Layer           | Target Ratio  | CI Gate           | Framework      |
-| --------------- | ------------- | ----------------- | -------------- |
-| Unit Tests      | ≥70%          | Advisory (review) | Jest           |
-| Component Tests | 10-25%        | All must pass     | Playwright CT  |
-| E2E Tests       | ≤10%          | All must pass     | Playwright E2E |
-| BDD Scenarios   | 100% coverage | Advisory (review) | Cucumber       |
+| Layer           | Target Ratio  | CI Gate                    | Framework      |
+| --------------- | ------------- | -------------------------- | -------------- |
+| Unit Tests      | ≥70%          | Advisory (review)          | Jest           |
+| Component Tests | 10-25%        | All must pass              | Playwright CT  |
+| E2E Tests       | ≤10%          | All must pass              | Playwright E2E |
+| BDD (CLI)       | 48 groundings | All must pass (`test-bdd`) | Cucumber       |
 
 #### Why This Structure?
 
@@ -819,16 +794,14 @@ it("should provide helpful error message", async () => {
 - Lines: 79%
 - Statements: 78%
 
-### BDD Coverage
+### BDD (CLI groundings)
 
-**Minimum**: 80% of feature scenarios must have step definitions.
+The CLI BDD suite covers all 48 starter-kit groundings and is gated by the
+required `test-bdd` check.
 
 ```bash
-# Check BDD coverage
-npm run bdd:check
-
-# Generate BDD report
-npm run bdd:report
+# Run CLI BDD suite
+npm run bdd:test:cli
 ```
 
 ### Test Jobs in CI
@@ -1088,7 +1061,7 @@ await page.evaluate(() => console.log("Debug from browser"));
 - `packages/exocortex/tests/` - Core package test examples
 - `packages/obsidian-plugin/tests/unit/` - Unit test patterns
 - `packages/obsidian-plugin/tests/component/` - Component test patterns
-- `packages/obsidian-plugin/specs/features/` - BDD feature files
+- `packages/cli/specs/features/` - BDD feature files (CLI groundings)
 
 ---
 
@@ -1096,14 +1069,14 @@ await page.evaluate(() => console.log("Debug from browser"));
 
 ### Commands
 
-| Command                   | Purpose                       | Speed |
-| ------------------------- | ----------------------------- | ----- |
-| `npm test`                | Unit + UI + Component tests   | ~30s  |
-| `npm run test:all`        | All tests including E2E       | ~5min |
-| `npm run test:unit`       | Unit tests only               | ~8s   |
-| `npm run test:component`  | Component tests               | ~30s  |
-| `npm run test:e2e:docker` | E2E in Docker                 | ~3min |
-| `npm run bdd:check`       | BDD coverage check (advisory) | ~5s   |
+| Command                   | Purpose                     | Speed |
+| ------------------------- | --------------------------- | ----- |
+| `npm test`                | Unit + UI + Component tests | ~30s  |
+| `npm run test:all`        | All tests including E2E     | ~5min |
+| `npm run test:unit`       | Unit tests only             | ~8s   |
+| `npm run test:component`  | Component tests             | ~30s  |
+| `npm run test:e2e:docker` | E2E in Docker               | ~3min |
+| `npm run bdd:test:cli`    | CLI BDD suite (groundings)  | ~30s  |
 
 ### Coverage Targets
 

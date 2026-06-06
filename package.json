@@ -33,13 +33,8 @@
     "test:e2e:local": "./scripts/test-e2e-local.sh",
     "test:e2e:docker": "docker build --platform linux/amd64 -f packages/obsidian-plugin/Dockerfile.e2e -t exocortex-e2e . && docker run --rm exocortex-e2e",
     "test:all": "npm test && npm run test:e2e:docker",
-    "bdd:test": "cd packages/obsidian-plugin && npx tsx ../../node_modules/@cucumber/cucumber/bin/cucumber.js && cd ../..",
-    "bdd:test:dry": "cd packages/obsidian-plugin && npx tsx ../../node_modules/@cucumber/cucumber/bin/cucumber.js --dry-run && cd ../..",
     "bdd:test:cli": "cd packages/cli && npx tsx ../../node_modules/@cucumber/cucumber/bin/cucumber.js && cd ../..",
     "bdd:test:cli:dry": "cd packages/cli && npx tsx ../../node_modules/@cucumber/cucumber/bin/cucumber.js --dry-run && cd ../..",
-    "bdd:coverage": "node scripts/bdd-coverage.js",
-    "bdd:report": "node scripts/generate-bdd-report.js",
-    "bdd:check": "node scripts/bdd-coverage.js --fail-on-uncovered",
     "test:perf": "jest --config packages/obsidian-plugin/jest.config.js --testPathPatterns='performance.*\\.test\\.ts$'",
     "test:perf:component": "cd packages/obsidian-plugin && npx playwright test -c playwright-ct.config.ts RenderingPerformance && cd ../..",
     "docs:validate": "node scripts/validate-docs-properties.js"

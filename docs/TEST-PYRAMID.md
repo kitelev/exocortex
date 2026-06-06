@@ -9,6 +9,7 @@
 ## Overview
 
 The Exocortex project follows the **Test Pyramid** architecture pattern, which prioritizes:
+
 1. Many fast, isolated **unit tests** at the base
 2. Fewer **component/integration tests** in the middle
 3. Minimal **end-to-end tests** at the top
@@ -35,6 +36,7 @@ The Exocortex project follows the **Test Pyramid** architecture pattern, which p
 **Purpose**: Test business logic, services, and utilities in isolation.
 
 **Characteristics**:
+
 - Fast execution (<100ms per test)
 - No external dependencies (mocked)
 - Deterministic (no flakiness)
@@ -43,17 +45,18 @@ The Exocortex project follows the **Test Pyramid** architecture pattern, which p
 **Framework**: Jest + ts-jest
 
 **Locations**:
+
 - `packages/exocortex/tests/unit/` - Core business logic
 - `packages/obsidian-plugin/tests/unit/` - Plugin-specific logic
 - `packages/cli/tests/unit/` - CLI commands and utilities
 
 **Coverage Targets** (enforced in CI):
 
-| Package | Statements | Branches | Functions | Lines |
-|---------|------------|----------|-----------|-------|
-| obsidian-plugin | 80% | 70% | 73% | 80% |
-| core | 95% | 95% | 95% | 95% |
-| cli | 65% | 60% | 70% | 65% |
+| Package         | Statements | Branches | Functions | Lines |
+| --------------- | ---------- | -------- | --------- | ----- |
+| obsidian-plugin | 80%        | 70%      | 73%       | 80%   |
+| core            | 95%        | 95%      | 95%       | 95%   |
+| cli             | 65%        | 60%      | 70%       | 65%   |
 
 ---
 
@@ -62,6 +65,7 @@ The Exocortex project follows the **Test Pyramid** architecture pattern, which p
 **Purpose**: Test React components in isolation with real browser rendering.
 
 **Characteristics**:
+
 - Medium execution speed (~1-5s per test)
 - Real browser environment (Chromium)
 - Visual regression testing
@@ -72,6 +76,7 @@ The Exocortex project follows the **Test Pyramid** architecture pattern, which p
 **Location**: `packages/obsidian-plugin/tests/component/`
 
 **Scope**:
+
 - All major UI components
 - User interaction flows
 - Visual regression snapshots
@@ -86,6 +91,7 @@ The Exocortex project follows the **Test Pyramid** architecture pattern, which p
 **Purpose**: Test critical user journeys in real Obsidian instance.
 
 **Characteristics**:
+
 - Slow execution (~30-60s per test)
 - Real Obsidian environment (via Docker)
 - Tests full integration
@@ -96,6 +102,7 @@ The Exocortex project follows the **Test Pyramid** architecture pattern, which p
 **Location**: `packages/obsidian-plugin/tests/e2e/`
 
 **Critical Paths Covered**:
+
 1. Plugin activation and initialization
 2. Daily note rendering with tasks
 3. Task status transitions
@@ -111,6 +118,7 @@ The Exocortex project follows the **Test Pyramid** architecture pattern, which p
 **Purpose**: Document and validate business requirements in Gherkin syntax.
 
 **Characteristics**:
+
 - Human-readable scenarios
 - Living documentation
 - Acceptance criteria validation
@@ -118,9 +126,9 @@ The Exocortex project follows the **Test Pyramid** architecture pattern, which p
 
 **Framework**: Cucumber
 
-**Location**: `packages/obsidian-plugin/specs/features/`
+**Location**: `packages/cli/specs/features/`
 
-**CI Gate**: `bdd:check` must pass with ≥80% scenario coverage
+**CI Gate**: `bdd:test:cli` (CLI groundings) must pass under the required `test-bdd` check
 
 ---
 
@@ -144,30 +152,30 @@ test-coverage:
 
 #### obsidian-plugin Package
 
-| Metric | Required | Current | Status |
-|--------|----------|---------|--------|
-| Statements | 80% | 82.64% | ✅ |
-| Branches | 70% | 72.32% | ✅ |
-| Functions | 73% | 75.76% | ✅ |
-| Lines | 80% | 82.91% | ✅ |
+| Metric     | Required | Current | Status |
+| ---------- | -------- | ------- | ------ |
+| Statements | 80%      | 82.64%  | ✅     |
+| Branches   | 70%      | 72.32%  | ✅     |
+| Functions  | 73%      | 75.76%  | ✅     |
+| Lines      | 80%      | 82.91%  | ✅     |
 
 #### core Package
 
-| Metric | Required | Current | Status |
-|--------|----------|---------|--------|
-| Statements | 95% | TBD | 🎯 |
-| Branches | 95% | TBD | 🎯 |
-| Functions | 95% | TBD | 🎯 |
-| Lines | 95% | TBD | 🎯 |
+| Metric     | Required | Current | Status |
+| ---------- | -------- | ------- | ------ |
+| Statements | 95%      | TBD     | 🎯     |
+| Branches   | 95%      | TBD     | 🎯     |
+| Functions  | 95%      | TBD     | 🎯     |
+| Lines      | 95%      | TBD     | 🎯     |
 
 #### cli Package
 
-| Metric | Required | Current | Status |
-|--------|----------|---------|--------|
-| Statements | 65% | 69.29% | ✅ |
-| Branches | 60% | 62.97% | ✅ |
-| Functions | 70% | 77.43% | ✅ |
-| Lines | 65% | 68.99% | ✅ |
+| Metric     | Required | Current | Status |
+| ---------- | -------- | ------- | ------ |
+| Statements | 65%      | 69.29%  | ✅     |
+| Branches   | 60%      | 62.97%  | ✅     |
+| Functions  | 70%      | 77.43%  | ✅     |
+| Lines      | 65%      | 68.99%  | ✅     |
 
 ---
 
@@ -215,11 +223,11 @@ Test Files by Type:
 
 ### Test Count by Package
 
-| Package | Unit | Component | E2E | Total |
-|---------|------|-----------|-----|-------|
-| obsidian-plugin | 2535 | N/A | N/A | 2535 |
-| core | 1672+ | N/A | N/A | 1672+ |
-| cli | 520 | N/A | N/A | 520 |
+| Package         | Unit  | Component | E2E | Total |
+| --------------- | ----- | --------- | --- | ----- |
+| obsidian-plugin | 2535  | N/A       | N/A | 2535  |
+| core            | 1672+ | N/A       | N/A | 1672+ |
+| cli             | 520   | N/A       | N/A | 520   |
 
 ---
 
@@ -230,6 +238,7 @@ Test Files by Type:
 #### Unit Tests (Bottom of Pyramid)
 
 **DO test**:
+
 - Pure functions and transformations
 - Business logic and domain rules
 - Service methods with mocked dependencies
@@ -237,6 +246,7 @@ Test Files by Type:
 - Algorithm correctness
 
 **DON'T test**:
+
 - Private implementation details
 - Simple getters/setters
 - Framework code (React, Obsidian)
@@ -245,6 +255,7 @@ Test Files by Type:
 #### Component Tests (Middle of Pyramid)
 
 **DO test**:
+
 - Component rendering and props
 - User interactions (click, type, focus)
 - Visual regression (screenshots)
@@ -252,6 +263,7 @@ Test Files by Type:
 - Accessibility attributes
 
 **DON'T test**:
+
 - Business logic (use unit tests)
 - API calls (mock them)
 - Full user workflows (use E2E)
@@ -259,12 +271,14 @@ Test Files by Type:
 #### E2E Tests (Top of Pyramid)
 
 **DO test**:
+
 - Critical user journeys
 - Full integration flows
 - Real file operations
 - Cross-component interactions
 
 **DON'T test**:
+
 - Every feature variation
 - Edge cases (use unit tests)
 - Styling details (use component tests)

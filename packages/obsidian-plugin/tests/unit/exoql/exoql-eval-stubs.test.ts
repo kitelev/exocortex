@@ -1,13 +1,10 @@
 /**
- * BDD anchors for `packages/obsidian-plugin/specs/features/exoql/exoql-eval.feature`.
+ * Unit tests for the `exoql__Query` + `exo:eval` evaluation path.
  *
  * RFC c78cc5c8 Phase 1a. Originally PR1 TDD red-anchors expressed via
  * `it.failing(...)`; PR3 (T4–T6) flips them to real `it(...)` cases now
- * that the implementation exists. Each test maps 1:1 onto a Gherkin
- * scenario and invokes the public `evaluateWithExoEval` entry-point
- * exported from `@exocortex`.
- *
- * Coverage attribution: `packages/obsidian-plugin/coverage-mapping.json`.
+ * that the implementation exists. Each test invokes the public
+ * `evaluateWithExoEval` entry-point exported from `@exocortex`.
  */
 
 import { evaluateWithExoEval } from "../../../../exocortex/src/exoql";
