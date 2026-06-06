@@ -101,9 +101,9 @@ class FakeResolver implements IProfileResolver {
 }
 
 class FakeIndexer implements IRdfIndexer {
-  refreshCalls: ReadonlySet<string>[] = [];
-  async refresh(effective: ReadonlySet<string>): Promise<void> {
-    this.refreshCalls.push(new Set(effective));
+  refreshCalls = 0;
+  async refresh(): Promise<void> {
+    this.refreshCalls++;
   }
 }
 
@@ -348,12 +348,12 @@ describe("FocusProfileSwitchManager.restSwitchProfile", () => {
     expect(localDataStore.getActiveKnowledgeProfileUid()).toBe("target");
     expect(localDataStore.isSwitchInProgress()).toBe(false);
 
-    // RDF re-index with the effective set (floors + ems, NOT kpc).
-    expect(indexer.refreshCalls.length).toBe(1);
-    const eff = indexer.refreshCalls[0];
-    expect(eff.has("ems-uid")).toBe(true);
-    expect(eff.has("kpc-uid")).toBe(false);
-    for (const f of ALL_FLOOR_UIDS) expect(eff.has(f)).toBe(true);
+    // RDF re-index fired once. RFC 01a83de8 Phase 3 T3b — the query-time
+    // soft-filter was removed, so the effective set is no longer threaded
+    // through refresh(); the materialised mount-state (asserted above via
+    // restMount.mounted/unmounted: ems mounted, kpc not) is the visibility
+    // source.
+    expect(indexer.refreshCalls).toBe(1);
   });
 
   it("no-ops to a soft switch when mount-state already matches (control)", async () => {
@@ -368,9 +368,9 @@ describe("FocusProfileSwitchManager.restSwitchProfile", () => {
 
     expect(restMount.mounted).toEqual([]);
     expect(restMount.unmounted).toEqual([]);
-    // No mount-state mutation, but the soft-switch still refreshes the RDF
-    // filter once (the coexisting visibility source, RFC v9 EV4).
-    expect(indexer.refreshCalls.length).toBe(1);
+    // No mount-state mutation, but the soft-switch fall-through still triggers
+    // a single full-vault reindex.
+    expect(indexer.refreshCalls).toBe(1);
   });
 
   it("throws TsFloorViolationError before any mount/unmount when target excludes a floor AS", async () => {

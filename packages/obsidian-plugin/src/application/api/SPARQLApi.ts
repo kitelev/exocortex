@@ -6,32 +6,21 @@ import type ExocortexPlugin from '@plugin/ExocortexPlugin';
 /**
  * Application-layer handle to the underlying RDF indexer.
  *
- * Exposes only the operations FocusProfile wiring needs (refresh,
- * filter mutators) so callers in `presentation/` or other plugin
- * surfaces cannot accidentally reach into the infrastructure-layer
- * `VaultRDFIndexer` lifecycle (init, dispose, internal store handles).
+ * Exposes only the operations FocusProfile wiring needs (refresh) so
+ * callers in `presentation/` or other plugin surfaces cannot accidentally
+ * reach into the infrastructure-layer `VaultRDFIndexer` lifecycle (init,
+ * dispose, internal store handles).
  *
  * Closes the abstraction-leak deferred in `getRdfIndexer()` JSDoc
  * (Issue #3327, code-reviewer MEDIUM from PR #3326).
  */
 export interface IRdfIndexerHandle {
   /**
-   * Reindex the vault. With an explicit `effectiveOntologies` arg the
-   * indexer first persists it via `setEffectiveOntologies` before
-   * reindexing. Without an arg, reuses the previously stored set.
+   * Reindex the vault from the current materialised state. RFC 01a83de8
+   * Phase 3 — the query-time soft-filter was removed; profile switching is
+   * mount-state based.
    */
-  refresh(effectiveOntologies?: ReadonlySet<string>): Promise<void>;
-  /**
-   * Replace the stored effective AssetSpace UID set. Pass `null` to
-   * clear (disengages the filter on next refresh).
-   */
-  setEffectiveOntologies(set: ReadonlySet<string> | null): void;
-  /**
-   * Replace the folder→AS-UID map used by the converter to decide
-   * which `assetspaces/<folder>/` files belong to which AS. Pass
-   * `null` to clear (filter disengages — see VaultRDFIndexer:111).
-   */
-  setAssetSpaceFolderToUid(map: ReadonlyMap<string, string> | null): void;
+  refresh(): Promise<void>;
 }
 
 /**
@@ -345,14 +334,14 @@ export class SPARQLApi {
 
   /**
    * Returns an application-layer handle to the underlying RDF indexer.
-   * Exposed для RFC 0a0791c1 B.4 wiring — `PluginRdfIndexerAdapter`
+   * Exposed for RFC 0a0791c1 B.4 wiring — `PluginRdfIndexerAdapter`
    * (Issue #3322) constructs an `IRdfIndexer` over this handle so
-   * `FocusProfileSwitchManager.switchProfile` can thread the effective
-   * ontology set через `refresh(set)`. `applyActiveProfileFilter`
-   * (Issue #3324) uses it to set the folder map and effective set
-   * during cold-start.
+   * `FocusProfileSwitchManager` can trigger a profile-switch reindex via
+   * `refresh()`. RFC 01a83de8 Phase 3 removed the query-time soft-filter;
+   * profile switching is mount-state based, so the handle exposes only
+   * `refresh()`.
    *
-   * The return type is narrowed к {@link IRdfIndexerHandle} so callers
+   * The return type is narrowed to {@link IRdfIndexerHandle} so callers
    * cannot reach into `VaultRDFIndexer` lifecycle (init/dispose/store)
    * — closes the abstraction-leak deferred in PR #3326 (Issue #3327).
    *

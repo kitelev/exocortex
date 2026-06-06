@@ -69,9 +69,14 @@ class FakeResolver implements IProfileResolver {
 }
 
 class CapturingRdfIndexer implements IRdfIndexer {
-  refreshes: ReadonlySet<string>[] = [];
-  async refresh(set: ReadonlySet<string>): Promise<void> {
-    this.refreshes.push(new Set(set));
+  // RFC 01a83de8 Phase 3 T3b — the query-time soft-filter was removed, so the
+  // switch no longer threads an effective set into refresh(); it just triggers
+  // a full-vault reindex. These tests verify the still-live effective-set
+  // computation (TS-floor + extends walk + shared discovery) by calling
+  // `resolveEffectiveSet` directly; the fake only counts refresh invocations.
+  refreshCount = 0;
+  async refresh(): Promise<void> {
+    this.refreshCount++;
   }
 }
 
@@ -154,13 +159,14 @@ describe("B.10 Scenario 1 — Filtered set with AS folder present", () => {
       }],
     ]);
 
-    await h.mgr.switchProfile(UID_PERSONAL);
-
-    expect(h.rdf.refreshes).toHaveLength(1);
-    const eff = h.rdf.refreshes[0];
+    const eff = await h.mgr.resolveEffectiveSet(UID_PERSONAL);
     expect(eff.has(ONTO_KITELEV)).toBe(true);
     expect(eff.has(ONTO_EXO)).toBe(true);   // overlay via extends
     expect(eff.has(ONTO_EXOCMD)).toBe(true); // overlay via extends + TS-floor
+
+    // The soft switch still fires exactly one (full-vault) reindex.
+    await h.mgr.switchProfile(UID_PERSONAL);
+    expect(h.rdf.refreshCount).toBe(1);
   });
 });
 
@@ -181,7 +187,7 @@ describe("B.10 Scenario 2 — Missing parent profile graceful fallback", () => {
 
     // Should not throw; effective set still has TBANK + TS-floor
     await expect(h.mgr.switchProfile(UID_BROKEN)).resolves.not.toThrow();
-    const eff = h.rdf.refreshes[0];
+    const eff = await h.mgr.resolveEffectiveSet(UID_BROKEN);
     expect(eff.has(ONTO_TBANK)).toBe(true);
     expect(eff.has(ONTO_EXO)).toBe(true); // TS-floor preserved
   });
@@ -202,8 +208,7 @@ describe("B.10 Scenario 3 — Empty effective_set survives via TS-floor", () => 
       }],
     ]);
 
-    await h.mgr.switchProfile(UID_BASE);
-    const eff = h.rdf.refreshes[0];
+    const eff = await h.mgr.resolveEffectiveSet(UID_BASE);
     expect(eff.size).toBeGreaterThan(0);
     for (const floorUri of TS_FLOOR_ONTOLOGY_URIS) {
       expect(eff.has(floorUri)).toBe(true);
@@ -220,8 +225,7 @@ describe("B.10 Scenario 3 — Empty effective_set survives via TS-floor", () => 
 
     for (const [uid] of profiles) {
       const h = makeHarness(profiles);
-      await h.mgr.switchProfile(uid);
-      const eff = h.rdf.refreshes[0];
+      const eff = await h.mgr.resolveEffectiveSet(uid);
       expect(eff.has(ONTO_EXO)).toBe(true);
       expect(eff.has(ONTO_EXOCMD)).toBe(true);
     }
@@ -250,7 +254,7 @@ describe("B.10 Scenario 4 — Concurrent switch protected by lock", () => {
     await expect(h.mgr.switchProfile(UID_BASE)).rejects.toThrow(/lock held/);
 
     // No refresh fired — switch did not proceed
-    expect(h.rdf.refreshes).toHaveLength(0);
+    expect(h.rdf.refreshCount).toBe(0);
   });
 
   it("after foreign lock released, switch can proceed", async () => {
@@ -267,7 +271,7 @@ describe("B.10 Scenario 4 — Concurrent switch protected by lock", () => {
     await foreignLock.releaseLock();
 
     await h.mgr.switchProfile(UID_BASE);
-    expect(h.rdf.refreshes).toHaveLength(1);
+    expect(h.rdf.refreshCount).toBe(1);
   });
 });
 
@@ -306,8 +310,7 @@ describe("B.10 Scenario 5 — TS-floor empirical revert/restore", () => {
     const h = makeHarness([
       [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
     ]);
-    await h.mgr.switchProfile(UID_BASE);
-    const eff = h.rdf.refreshes[0];
+    const eff = await h.mgr.resolveEffectiveSet(UID_BASE);
 
     // The exact production behavior includes the TS-floor; \$exo is present
     expect(eff.has(ONTO_EXO)).toBe(true);
@@ -332,8 +335,7 @@ describe("B.10 Scenario 5 — TS-floor empirical revert/restore", () => {
         "https://exocortex.my/ontology/private-data", // should NOT be included
       ],
     );
-    await h.mgr.switchProfile(UID_BASE);
-    const eff = h.rdf.refreshes[0];
+    const eff = await h.mgr.resolveEffectiveSet(UID_BASE);
     expect(eff.has("https://exocortex.my/ontology/shared-identities")).toBe(true);
     expect(eff.has("https://exocortex.my/ontology/shared-concepts")).toBe(true);
     expect(eff.has("https://exocortex.my/ontology/private-data")).toBe(false);
@@ -364,8 +366,7 @@ describe("B.10 Scenario 6 — Crash recovery preserves switch intent", () => {
     const result = await h.mgr.recoverIfNeeded();
     expect(result.recovered).toBe(true);
     expect(result.targetUid).toBe(UID_BASE);
-    expect(h.rdf.refreshes).toHaveLength(1);
-    expect(h.rdf.refreshes[0].has(ONTO_KITELEV)).toBe(true);
+    expect(h.rdf.refreshCount).toBe(1);
     expect(h.settings.state._switchInProgress).toBe(false);
   });
 });

@@ -7,17 +7,13 @@ describe("PluginRdfIndexerAdapter", () => {
     ).toThrow(/indexer is required/);
   });
 
-  it("delegates refresh(effectiveOntologies) to indexer.refresh(set)", async () => {
+  it("delegates refresh() to indexer.refresh()", async () => {
     const refresh = jest.fn().mockResolvedValue(undefined);
     const indexer = { refresh } as any;
     const adapter = new PluginRdfIndexerAdapter(indexer);
-    const set = new Set([
-      "https://exocortex.my/ontology/exo",
-      "https://exocortex.my/ontology/ems",
-    ]);
-    await adapter.refresh(set);
+    await adapter.refresh();
     expect(refresh).toHaveBeenCalledTimes(1);
-    expect(refresh).toHaveBeenCalledWith(set);
+    expect(refresh).toHaveBeenCalledWith();
   });
 
   it("propagates errors from indexer.refresh", async () => {
@@ -25,7 +21,7 @@ describe("PluginRdfIndexerAdapter", () => {
       refresh: jest.fn().mockRejectedValue(new Error("boom")),
     } as any;
     const adapter = new PluginRdfIndexerAdapter(indexer);
-    await expect(adapter.refresh(new Set())).rejects.toThrow(/boom/);
+    await expect(adapter.refresh()).rejects.toThrow(/boom/);
   });
 
   it("fires onAfterRefresh hook after each successful refresh (H1 cascade)", async () => {
@@ -36,11 +32,11 @@ describe("PluginRdfIndexerAdapter", () => {
       onAfterRefresh,
     );
 
-    await adapter.refresh(new Set(["a"]));
+    await adapter.refresh();
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(onAfterRefresh).toHaveBeenCalledTimes(1);
 
-    await adapter.refresh(new Set(["b"]));
+    await adapter.refresh();
     expect(refresh).toHaveBeenCalledTimes(2);
     expect(onAfterRefresh).toHaveBeenCalledTimes(2);
   });
@@ -58,7 +54,7 @@ describe("PluginRdfIndexerAdapter", () => {
       onAfterRefresh,
     );
 
-    await adapter.refresh(new Set());
+    await adapter.refresh();
     expect(callOrder).toEqual(["indexer.refresh", "onAfterRefresh"]);
   });
 
@@ -75,14 +71,14 @@ describe("PluginRdfIndexerAdapter", () => {
     // Must not reject even though the hook rejected — the refresh
     // itself succeeded, and a hook regression must not invalidate
     // already-mutated state.
-    await expect(adapter.refresh(new Set())).resolves.toBeUndefined();
+    await expect(adapter.refresh()).resolves.toBeUndefined();
     expect(onAfterRefresh).toHaveBeenCalledTimes(1);
   });
 
   it("hook is optional — adapter works without one (backwards compat)", async () => {
     const refresh = jest.fn().mockResolvedValue(undefined);
     const adapter = new PluginRdfIndexerAdapter({ refresh } as any);
-    await expect(adapter.refresh(new Set())).resolves.toBeUndefined();
+    await expect(adapter.refresh()).resolves.toBeUndefined();
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 });

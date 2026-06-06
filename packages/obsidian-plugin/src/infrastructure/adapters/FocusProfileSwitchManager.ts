@@ -66,9 +66,9 @@ export interface ProfileResolution {
   uid: string;
   /**
    * Directly declared `exo__Profile_includes` — AssetSpace UIDs (RFC 01a83de8
-   * Phase 2 retarget Ontology→AssetSpace). `applyActiveProfileFilter` accepts
-   * these directly (pass-through) and the legacy Ontology→AS translation still
-   * covers the TS-floor ontology URIs.
+   * Phase 2 retarget Ontology→AssetSpace). Consumed by the mount-state
+   * hard/REST switch effective-set derivation (the query-time soft-filter that
+   * also read these was removed in RFC 01a83de8 Phase 3 T3b).
    */
   includes: string[];
   /**
@@ -104,11 +104,12 @@ export interface IProfileResolver {
 
 export interface IRdfIndexer {
   /**
-   * Re-index the RDF graph filtering by the given effective ontology set.
-   * Implementations (NoteToRDFConverter) skip files whose AssetSpace's
-   * ontology is not in `effectiveOntologies`.
+   * Re-index the RDF graph from the current vault state. Profile switching is
+   * mount-state based (RFC 01a83de8 Phase 3 — the query-time soft-filter was
+   * removed); the refresh re-indexes whatever AssetSpace folders are currently
+   * materialised on disk.
    */
-  refresh(effectiveOntologies: ReadonlySet<string>): Promise<void>;
+  refresh(): Promise<void>;
 }
 
 export interface SwitchSettings {
@@ -358,18 +359,8 @@ export class FocusProfileSwitchManager {
         void this.lockMgr.heartbeat();
       }, 30_000);
 
-      // Resolve effective set ONCE before any settings mutation
-      const effective = await this.resolveEffectiveSet(targetProfileUid);
-
       // Persist BEFORE filesystem changes (Architect #2 — atomicity invariant)
       const settings = await this.settingsStore.load();
-
-      // RFC 01a83de8 Phase 3 T4 — the AC16 Focus↔Knowledge compatibility check
-      // is removed: Phase 2 collapsed the two profile classes into one
-      // `exo__Profile`, so there is no separate Knowledge profile to be
-      // (in)compatible with. The soft switch always applies the target's
-      // narrowed effective set.
-      const filterSet: ReadonlySet<string> = effective;
 
       settings.activeProfileUid = targetProfileUid;
       // AC14 — soft switch owns the Focus slot. The legacy `activeProfileUid`
@@ -378,8 +369,10 @@ export class FocusProfileSwitchManager {
       settings._switchInProgress = true;
       await this.settingsStore.save(settings);
 
-      // AC16 action #3 — Trigger RDF re-index (no-filter set on violation).
-      await this.rdfIndexer.refresh(filterSet);
+      // Trigger RDF re-index. RFC 01a83de8 Phase 3 — the query-time soft-filter
+      // was removed; the reindex rebuilds from the currently-materialised vault
+      // state (mount-state is the active mechanism).
+      await this.rdfIndexer.refresh();
 
       // Clear in-progress flag
       settings._switchInProgress = false;
@@ -393,8 +386,6 @@ export class FocusProfileSwitchManager {
         elapsedMs,
       });
 
-      // The narrowed view is always applied now (no Focus↔Knowledge compat
-      // downgrade — RFC 01a83de8 Phase 3 T4), so always emit the success Notice.
       const profileLabel = await this.profileLabel(targetProfileUid);
       this.notify(`Switched to ${profileLabel} (${elapsedMs}ms)`);
     } catch (e) {
@@ -470,8 +461,8 @@ export class FocusProfileSwitchManager {
    * Where derived = union of `_includes` along the `_imports*` single-parent
    * chain (RFC 01a83de8 Phase 2 — `_includes` are AssetSpace UIDs; the legacy
    * `_alwaysOnOverlay` term was removed, folding into the TS-floor). The
-   * downstream `applyActiveProfileFilter` accepts AssetSpace UIDs directly and
-   * still translates the TS-floor ontology URIs added below.
+   * mount-state hard/REST switch consumes these AssetSpace UIDs directly (the
+   * query-time soft-filter consumer was removed in RFC 01a83de8 Phase 3 T3b).
    *
    * TS-floor (Vision Lock #17) — hardcoded `[$exo, $exocmd]` + pattern match
    * для shared-identities — guarantees the plugin keeps functioning regardless
@@ -879,7 +870,7 @@ export class FocusProfileSwitchManager {
         activeKnowledgeProfileUid: targetProfileUid,
         _switchInProgress: false,
       });
-      await this.rdfIndexer.refresh(effectiveAsUids);
+      await this.rdfIndexer.refresh();
 
       const elapsedMs = this.now().getTime() - startedAt;
       await this.appendJournal({
@@ -1113,7 +1104,7 @@ export class FocusProfileSwitchManager {
         activeKnowledgeProfileUid: targetProfileUid,
         _switchInProgress: false,
       });
-      await this.rdfIndexer.refresh(effectiveAsUids);
+      await this.rdfIndexer.refresh();
 
       const elapsedMs = this.now().getTime() - startedAt;
       await this.appendJournal({
@@ -1619,8 +1610,8 @@ export class FocusProfileSwitchManager {
 
     for (const u of profile.includes) result.add(u);
     // `_alwaysOnOverlay` removed (RFC 01a83de8 Phase 2 D3 — "always-on" folds
-    // into the TS-floor, enforced at AS-UID level in applyActiveProfileFilter /
-    // CliFocusProfileResolver). No per-profile overlay set anymore.
+    // into the TS-floor, enforced at AS-UID level by the mount-state hard/REST
+    // switch + CliFocusProfileResolver). No per-profile overlay set anymore.
 
     if (typeof profile.extends === "string" && profile.extends.length > 0) {
       await this.walkProfileChain(profile.extends, visited, result, depth + 1);
