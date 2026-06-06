@@ -321,13 +321,11 @@ export function formatValue(value: unknown): string { ... }
 - Global: >= 49%
 - Domain layer: >= 78-80%
 - Functions: >= 75%
-- BDD scenarios: >= 80%
 
 Run coverage check:
 
 ```bash
 npm run test:coverage
-npm run bdd:check
 ```
 
 ## Label Parity E2E

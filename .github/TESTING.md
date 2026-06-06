@@ -14,6 +14,7 @@ The Exocortex plugin uses a comprehensive testing strategy with multiple layers:
 ### Unit Tests
 
 **Location**:
+
 - Core: `packages/exocortex/tests/`
 - Plugin: `packages/obsidian-plugin/tests/unit/`
 - CLI: `packages/cli/tests/`
@@ -95,10 +96,10 @@ packages/obsidian-plugin/tests/e2e/
 #### Writing E2E Tests
 
 ```typescript
-import { test, expect } from '@playwright/test';
-import { ObsidianLauncher } from '../utils/obsidian-launcher';
+import { test, expect } from "@playwright/test";
+import { ObsidianLauncher } from "../utils/obsidian-launcher";
 
-test.describe('My Feature', () => {
+test.describe("My Feature", () => {
   let launcher: ObsidianLauncher;
 
   test.beforeEach(async () => {
@@ -110,13 +111,13 @@ test.describe('My Feature', () => {
     await launcher.close();
   });
 
-  test('should display my feature', async () => {
-    await launcher.openFile('Daily Notes/2025-10-16.md');
+  test("should display my feature", async () => {
+    await launcher.openFile("Daily Notes/2025-10-16.md");
     const window = await launcher.getWindow();
 
-    await launcher.waitForElement('.my-feature', 30000);
+    await launcher.waitForElement(".my-feature", 30000);
 
-    const element = window.locator('.my-feature');
+    const element = window.locator(".my-feature");
     await expect(element).toBeVisible();
   });
 });
@@ -142,24 +143,21 @@ GitHub Actions runs all tests automatically on every push:
 4. Unit tests
 5. UI integration tests
 6. Component tests
-7. BDD coverage check
+7. CLI BDD suite (starter-kit groundings)
 8. E2E tests (in Docker)
 
 **Release is blocked if ANY test fails**.
 
-## BDD Coverage
+## BDD (CLI groundings)
 
-The project uses BDD (Behavior-Driven Development) with feature files:
+BDD coverage is provided by the CLI suite, which exercises the 48 starter-kit
+groundings end-to-end through `CommandResolver` / `PreconditionEvaluator` /
+`GroundingExecutor` against `packages/exoas-exocmd` fixtures. This is the
+suite gated by the required `test-bdd` check.
 
 ```bash
-npm run bdd:coverage
-
-npm run bdd:report
-
-npm run bdd:check
+npm run bdd:test:cli
 ```
-
-Minimum BDD coverage: **80%**
 
 ## Test Fixtures
 
@@ -268,7 +266,7 @@ Before committing:
 
 ```bash
 npm test                # All tests except E2E
-npm run bdd:check       # BDD coverage ≥80%
+npm run bdd:test:cli    # CLI BDD suite (starter-kit groundings)
 npm run build           # Build succeeds
 ```
 

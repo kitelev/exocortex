@@ -4,10 +4,8 @@
  * RFC c78cc5c8 Phase 1a — exoql__Query + exo:eval MVP.
  *
  * The default config keeps `enabled: false` (B2 lock — PR2 ships inert; PR3
- * flips the flag in user-facing settings). Budget defaults are the values
- * declared in the BDD scenarios (`packages/obsidian-plugin/specs/features/
- * exoql/exoql-eval.feature`): ≤100 nested invocations, ≤10 000 ms aggregate
- * wall-clock per top-level query.
+ * flips the flag in user-facing settings). Budget defaults: ≤100 nested
+ * invocations, ≤10 000 ms aggregate wall-clock per top-level query.
  */
 export interface ExoQLEvalConfig {
   /**

@@ -7,8 +7,8 @@
  * Why BDD-style here, not Cucumber: `packages/exocortex` has no
  * `@cucumber/cucumber` / `jest-cucumber` dependency. The package's `tests/`
  * tree is jest-only. Existing BDD feature files live under
- * `packages/cli/specs/features/` and `packages/obsidian-plugin/specs/features/`,
- * each driven by package-local step definitions whose imports cannot reach
+ * `packages/cli/specs/features/`, driven by package-local step definitions
+ * whose imports cannot reach
  * the exocortex package internals (CommandResolver) without significant
  * wiring. To keep the BDD-style verification close to the unit being tested
  * — and to land within scope — these 4 scenarios are expressed as
