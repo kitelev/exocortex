@@ -182,18 +182,24 @@ The profiles that existed before the split — `profile-base`,
 **dual-class**: each carries _both_ `exo__KnowledgeProfile` and
 `exo__FocusProfile` in its `exo__Instance_class`.
 
+> **Note (RFC 01a83de8 Phase 2):** the `exo__FocusProfile` / `exo__KnowledgeProfile`
+> split below was superseded by the unified `exo__Profile` class. The legacy
+> per-class include predicate was renamed to `exo__Profile_includes` and its range
+> retargeted Ontology → AssetSpace. The migration example is kept for historical
+> context; current profiles use `exo__Profile_includes: [AssetSpace UIDs]`.
+
 ```yaml
 # Before the split — a single FocusProfile
 exo__Instance_class:
   - "[[<exo__FocusProfile-class-uid>]]"
-exo__FocusProfile_includes: [Ontology UIDs]
+exo__Profile_includes: [AssetSpace UIDs]
 
 # After migration — dual-class (appears in BOTH palettes)
 exo__Instance_class:
   - "[[<exo__KnowledgeProfile-class-uid>]]"   # NEW
   - "[[<exo__FocusProfile-class-uid>]]"        # preserved
-exo__KnowledgeProfile_includes: [Ontology UIDs]   # copied from FocusProfile_includes
-exo__FocusProfile_includes: [Ontology UIDs]       # preserved (same list)
+exo__KnowledgeProfile_includes: [Ontology UIDs]   # copied from Profile_includes
+exo__Profile_includes: [AssetSpace UIDs]          # preserved (same list)
 ```
 
 The same `_includes` list serves both roles initially, which preserves exactly
