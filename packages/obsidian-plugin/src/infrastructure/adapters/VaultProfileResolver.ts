@@ -49,8 +49,8 @@ export class VaultProfileResolver implements IProfileResolver {
 
     // RFC 01a83de8 Phase 2 — `_includes` now references AssetSpace UIDs (range
     // retarget Ontology→AssetSpace). Value-shape is identical (UUID wikilinks),
-    // so extraction is unchanged; the downstream filter (applyActiveProfileFilter)
-    // already accepts AS UIDs directly via its pass-through branch.
+    // so extraction is unchanged; the mount-state hard/REST switch consumes these
+    // AS UIDs directly (the query-time soft-filter consumer was removed in T3b).
     const includes = this.extractWikilinkList(fm["exo__Profile_includes"]);
     // `_extends` renamed → `_imports` (single-parent composition, MVP 0..1).
     // Internal field name `extends` retained to bound the rename cascade

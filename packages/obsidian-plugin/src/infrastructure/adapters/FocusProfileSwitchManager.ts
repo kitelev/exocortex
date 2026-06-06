@@ -520,7 +520,7 @@ export class FocusProfileSwitchManager {
    *      mv staging/X -> <vault>/X, journal materialized(X).
    *   9. git add .gitmodules, git add assetspaces/, git commit.
    *  10. Clear _switchInProgress, persist new activeProfileUid.
-   *  11. rdfIndexer.refresh(effective) for new RDF view.
+   *  11. rdfIndexer.refresh() to re-index the newly-materialised vault.
    *  12. Release lock + clear staging.
    *
    * On catch: attempt cache.restore(prevActiveProfileUid) для best-effort
