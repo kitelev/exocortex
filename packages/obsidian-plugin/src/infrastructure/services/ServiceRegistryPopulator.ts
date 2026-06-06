@@ -211,11 +211,11 @@ export function populateServiceRegistry(
     // `VoteOnEffortCommand` instantiates EffortVotingService directly via DI,
     // not through this registry.
     //
-    // LabelToAliasService is no longer constructed here — Issue #3132 migrated
-    // the only `service_call` consumer (grounding a85668fa-…) to the
-    // declarative `property_append` grounding type. The palette command
-    // `CopyLabelToAliasesCommand` instantiates LabelToAliasService directly
-    // via DI, not through this registry.
+    // LabelToAliasService was removed entirely — Issue #3132 migrated the only
+    // `service_call` consumer (grounding a85668fa-…) to the declarative
+    // `property_append` grounding type, and the legacy palette command
+    // `CopyLabelToAliasesCommand` was subsequently deleted. No service or
+    // command path remains.
     const genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
     const archiveAssetService = new ArchiveAssetService(vaultAdapter);
     const propertyCleanupService = new PropertyCleanupService(vaultAdapter);
@@ -262,8 +262,8 @@ export function populateServiceRegistry(
     // `copyLabelToAliases` service registration removed in Issue #3132 —
     // the sole grounding consumer (a85668fa-17b7-45d0-aa7f-935e2502dff0) was
     // migrated to declarative `property_append` + `$target.exo__Asset_label`
-    // (Homoiconicity Invariant Q1 remediation). Palette command path remains
-    // via direct LabelToAliasService usage in CopyLabelToAliasesCommand.
+    // (Homoiconicity Invariant Q1 remediation). The legacy LabelToAliasService
+    // + CopyLabelToAliasesCommand were subsequently deleted (dead code).
 
     // Phase 4b (#3166) — thin wrappers delegate the createAsset family to the
     // storage-agnostic shared factories from `@kitelev/exocortex-services`

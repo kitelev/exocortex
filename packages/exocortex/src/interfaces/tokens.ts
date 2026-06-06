@@ -45,7 +45,6 @@ export const DI_TOKENS = {
   // Utility services
   PropertyCleanupService: Symbol.for("PropertyCleanupService"),
   FolderRepairService: Symbol.for("FolderRepairService"),
-  LabelToAliasService: Symbol.for("LabelToAliasService"),
   RenameToUidService: Symbol.for("RenameToUidService"),
   PlanningService: Symbol.for("PlanningService"),
   EffortVotingService: Symbol.for("EffortVotingService"),
