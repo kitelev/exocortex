@@ -175,16 +175,22 @@ export class RestAssetSpaceMount {
   }
 
   /**
-   * Unmount an AssetSpace: remove its vault folder recursively and strip its
-   * `.gitmodules` entry. Idempotent — a missing folder or absent
+   * Unmount an AssetSpace: strip its `.gitmodules` entry, then remove its
+   * vault folder recursively. Idempotent — a missing folder or absent
    * `.gitmodules` stanza is a no-op.
+   *
+   * Ordering rationale (stanza-first): if a step fails mid-unmount, a leftover
+   * empty folder (manifest already says "not mounted") is more benign than a
+   * dangling `[submodule …]` stanza pointing at a folder that no longer exists.
+   * A subsequent {@link mount} of the same path self-heals either way (the
+   * `.gitmodules` append is idempotent on the path key).
    */
   public async unmount(submodulePath: string): Promise<void> {
     const safePath = validateVaultPathArg(submodulePath);
+    await this.removeGitmodulesEntry(safePath);
     if (await this.adapter.exists(safePath)) {
       await this.adapter.rmdir(safePath, true);
     }
-    await this.removeGitmodulesEntry(safePath);
   }
 
   // ───────────────────────────── internals ─────────────────────────────

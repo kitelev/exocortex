@@ -251,10 +251,13 @@ describe("RestAssetSpaceMount.mount", () => {
     await expect(mount.mount(URL_OK, PATH_OK)).rejects.toThrow(/empty/);
   });
 
-  it("rejects a zip-slip (absolute-path) tarball entry — no escape write", async () => {
+  it("rejects an entry that resolves outside the wrapper — no escape write", async () => {
     const adapter = new InMemoryAdapter();
-    // Absolute path escapes the wrapper after nanotar strips the leading slash
-    // → fails the "not under wrapper" guard. Either way nothing escapes.
+    // nanotar's parser RESOLVES `..` (parseTarball sanitizePath pops segments),
+    // so `wrapper/../../../etc/passwd` collapses to `etc/passwd`, which then
+    // fails the "not under wrapper" guard (RestAssetSpaceMount.ts:152). The
+    // TarExtractor absolute/`..` checks are pure defense-in-depth (unreachable
+    // for sanitized input — exercised directly in TarExtractor's own suite).
     const tarball = await makeTarball("kitelev-exoas-ems-abc1234", [
       { name: "../../../etc/passwd", data: new Uint8Array([0]) },
     ]);
@@ -265,6 +268,13 @@ describe("RestAssetSpaceMount.mount", () => {
       expect(k.startsWith(`${PATH_OK}/`)).toBe(true);
     }
   });
+
+  // Note: symbolicLink / hardLink entry rejection (TarExtractor.validateEntry
+  // link guard) is covered directly in TarExtractor's own suite — nanotar's
+  // `createTar` does not emit a link-typed entry from the input `type` field,
+  // so it cannot be exercised through a realistic fixture here without
+  // hand-crafting a raw tar header. The link guard is upstream of any write,
+  // so mount inherits that protection.
 
   it("fails on rate-limit before fetching the tarball", async () => {
     const adapter = new InMemoryAdapter();
