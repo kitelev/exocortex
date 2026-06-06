@@ -6,7 +6,6 @@
 [![CI](https://github.com/kitelev/exocortex/actions/workflows/ci.yml/badge.svg)](https://github.com/kitelev/exocortex/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/tests-11400%2B-success)](https://github.com/kitelev/exocortex/actions)
 [![Coverage](https://img.shields.io/badge/coverage-core%2095%25%20%7C%20plugin%2075.5%25%20%7C%20cli%2065%25-brightgreen)](https://github.com/kitelev/exocortex/actions/workflows/ci.yml)
-[![SPARQL 1.2](https://img.shields.io/badge/SPARQL-1.2-blue)](./docs/sparql/SPARQL-1.2-Features.md)
 
 ---
 
@@ -284,8 +283,6 @@ flowchart TB
 | **DateTime Arithmetic**       | Native date/time subtraction and duration operations |
 | **NORMALIZE/FOLD**            | Unicode normalization and case folding               |
 
-See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete documentation.
-
 ---
 
 ## Documentation
@@ -296,10 +293,6 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 
 ### By Interface
 
-**Obsidian Plugin:**
-
-- **[Plugin Commands](./docs/Plugin-Commands.md)** — All 33+ commands documented
-
 **CLI:**
 
 - Run `exocortex --help` for the full list of commands and options (`find`, `apply`, `query`, `index`, `validate`, and more)
@@ -308,14 +301,6 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 
 - **[Core API Reference](./docs/api/Core-API.md)** — TypeScript API
 - **[Architecture Guide](./ARCHITECTURE.md)** — Clean Architecture patterns
-
-### SPARQL & Semantic Queries
-
-- **[SPARQL User Guide](./docs/sparql/User-Guide.md)** — Tutorial from basics to advanced
-- **[Query Examples](./docs/sparql/Query-Examples.md)** — 30+ ready-to-use patterns
-- **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** — LATERAL, PREFIX\*, directionality, and more
-- **[SPARQL 1.2 Migration](./docs/sparql/SPARQL-1.2-Migration.md)** — Upgrading from SPARQL 1.1
-- **[ExoQL Specification](./docs/ExoQL-Specification.md)** — Full query language specification
 
 ---
 
@@ -341,7 +326,6 @@ This project is developed primarily by AI agents (Claude Code, GitHub Copilot) f
 | **[CLAUDE.md](./CLAUDE.md)**                                     | AI agent guidelines, worktree rules |
 | **[AI Development Patterns](./docs/AI-DEVELOPMENT-PATTERNS.md)** | Lessons from 1500+ completed issues |
 | **[Architecture Guide](./ARCHITECTURE.md)**                      | Clean Architecture patterns         |
-| **[Architecture Decision Records](./docs/adr/)**                 | Key architectural decisions (ADRs)  |
 
 ---
 

@@ -377,6 +377,5 @@ ORDER BY ?label
 
 ## Related Documentation
 
-- [SPARQL User Guide](./sparql/User-Guide.md) - Query your ontology
 - [Property Schema Reference](./PROPERTY_SCHEMA.md) - Standard properties
 - [ExoRDF Mapping](./rdf/ExoRDF-Mapping.md) - RDF/RDFS mapping details

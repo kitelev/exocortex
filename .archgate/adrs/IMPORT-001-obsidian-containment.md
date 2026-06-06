@@ -30,5 +30,4 @@ This complements ARCH-008 (which protects packages/exocortex) by protecting laye
 
 ## References
 
-- [ADR-0008: Clean Architecture](../../docs/adr/0008-clean-architecture-adoption.md)
 - ARCH-008 Archgate rules (core package protection)

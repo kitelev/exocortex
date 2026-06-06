@@ -289,8 +289,3 @@ Create an HTTP webhook that:
 2. Uses NLToSPARQLService to generate SPARQL
 3. Executes via exocortex-cli
 4. Returns formatted results
-
-## Related Documentation
-
-- [SPARQL User Guide](./sparql/User-Guide.md) - Full SPARQL reference
-- [SPARQL Query Examples](./sparql/Query-Examples.md) - Query examples

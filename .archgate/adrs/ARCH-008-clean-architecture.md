@@ -48,5 +48,4 @@ The Dependency Rule states: **inner layers NEVER depend on outer layers**.
 
 ## References
 
-- [ADR-0008: Clean Architecture Adoption](../../docs/adr/0008-clean-architecture-adoption.md)
 - [ARCHITECTURE.md](../../ARCHITECTURE.md)
