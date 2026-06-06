@@ -205,8 +205,19 @@ export interface FocusProfileSwitchManagerOptions {
    * cross-platform (incl. iOS) materialisation path. When wired and running on
    * mobile, `hardSwitchKnowledgeProfile` delegates to {@link restSwitchProfile}
    * (no git binary / staging / cache). Desktop keeps the git-binary path.
+   *
+   * Captured at onload — used to gate command registration + as a fallback.
+   * Prefer {@link restMountFactory} for a fresh-PAT mount at switch time.
    */
   restMount?: RestAssetSpaceMount;
+  /**
+   * Factory building a {@link RestAssetSpaceMount} with the CURRENTLY stored
+   * PAT. Preferred over {@link restMount} inside {@link restSwitchProfile} so a
+   * PAT configured AFTER onload is honoured without a reload (matches the
+   * Issue #3382 fix for the Bootstrap/Add-AssetSpace puller). Falls back to the
+   * captured {@link restMount} when absent.
+   */
+  restMountFactory?: () => Promise<RestAssetSpaceMount>;
   /** Uncommitted-changes guard (Vision Lock #5). */
   uncommittedGuard?: UncommittedChangesGuard;
   /** Confirmation gate — ModalConfirmGate в plugin runtime. */
@@ -280,6 +291,7 @@ export class FocusProfileSwitchManager {
   private readonly cacheLayer?: ICacheLayer;
   private readonly gitOps?: GitSubmoduleOps;
   private readonly restMount?: RestAssetSpaceMount;
+  private readonly restMountFactory?: () => Promise<RestAssetSpaceMount>;
   private readonly uncommittedGuard?: UncommittedChangesGuard;
   private readonly confirmGate?: IConfirmGate;
   private readonly localDataStore?: PluginLocalDataStore;
@@ -300,6 +312,7 @@ export class FocusProfileSwitchManager {
     this.cacheLayer = options.cacheLayer;
     this.gitOps = options.gitOps;
     this.restMount = options.restMount;
+    this.restMountFactory = options.restMountFactory;
     this.uncommittedGuard = options.uncommittedGuard;
     this.confirmGate = options.confirmGate;
     this.localDataStore = options.localDataStore;
@@ -683,7 +696,10 @@ export class FocusProfileSwitchManager {
     // RFC 01a83de8 Phase 3 T2 — on mobile the git binary is unavailable, so
     // delegate to the REST/tarball mount/unmount path (no staging / cache /
     // git commit). Desktop keeps the git-binary path below unchanged.
-    if (Platform.isMobile && this.restMount !== undefined) {
+    if (
+      Platform.isMobile &&
+      (this.restMount !== undefined || this.restMountFactory !== undefined)
+    ) {
       return this.restSwitchProfile(targetProfileUid);
     }
     const deps = this.assertHardSwitchWired();
@@ -1079,6 +1095,15 @@ export class FocusProfileSwitchManager {
    *   4. Lock + journal; unmount toDestroy, mount toMaterialize via restMount.
    *   5. Persist active profile (+ Knowledge mirror) + RDF re-index.
    *
+   * **Partial-failure / recovery**: like T1's primitive, this does
+   * unmount-then-mount with NO rollback. On a mid-switch crash the catch block
+   * clears `_switchInProgress` and leaves `activeProfileUid` at the pre-switch
+   * value (the success-path save never ran). The desktop cache-restore worker
+   * (`recoverIncompleteSwitch`) is desktop-only (cache/gitOps-gated), so mobile
+   * has no auto cache-restore — but the state self-heals: mount-state is
+   * self-describing (folder exists = active), T1 mount/unmount are per-op
+   * idempotent, and re-running the switch reconciles to the target.
+   *
    * @throws TsFloorViolationError if target excludes any TS-floor AS.
    * @throws HardSwitchAbortedByUser if confirmGate declines.
    */
@@ -1086,7 +1111,12 @@ export class FocusProfileSwitchManager {
     if (typeof targetProfileUid !== "string" || targetProfileUid.length === 0) {
       throw new Error("restSwitchProfile: targetProfileUid is required");
     }
-    const { restMount, confirmGate, localDataStore } = this.assertRestSwitchWired();
+    const { confirmGate, localDataStore } = this.assertRestSwitchWired();
+    // Prefer the fresh-PAT factory (Issue #3382 pattern) over the onload-captured
+    // mount, so a PAT set after onload is honoured without a reload.
+    const restMount = this.restMountFactory
+      ? await this.restMountFactory()
+      : (this.restMount as RestAssetSpaceMount);
     const startedAt = this.now().getTime();
     const prevActiveProfileUid = localDataStore.getActiveProfileUid();
     const targetProfileLabel = await this.profileLabel(targetProfileUid);
@@ -1131,6 +1161,9 @@ export class FocusProfileSwitchManager {
       label: string;
       ref: string;
     }> = [];
+    // Iterate ALL declared AS (vs the desktop path's `currentAsUids` for the
+    // destroy loop) — equivalent because `materialised` implies presence in
+    // `currentAsUids`; this single loop also covers the materialise side.
     for (const info of allInfos) {
       const materialised = currentAsUids.has(info.uid);
       const inEffective = effectiveAsUids.has(info.uid);
@@ -1265,21 +1298,19 @@ export class FocusProfileSwitchManager {
   }
 
   private assertRestSwitchWired(): {
-    restMount: RestAssetSpaceMount;
     confirmGate: IConfirmGate;
     localDataStore: PluginLocalDataStore;
   } {
     if (
-      this.restMount === undefined ||
+      (this.restMount === undefined && this.restMountFactory === undefined) ||
       this.confirmGate === undefined ||
       this.localDataStore === undefined
     ) {
       throw new Error(
-        "restSwitchProfile: dependencies not wired (restMount, confirmGate, localDataStore required)",
+        "restSwitchProfile: dependencies not wired (restMount|restMountFactory, confirmGate, localDataStore required)",
       );
     }
     return {
-      restMount: this.restMount,
       confirmGate: this.confirmGate,
       localDataStore: this.localDataStore,
     };

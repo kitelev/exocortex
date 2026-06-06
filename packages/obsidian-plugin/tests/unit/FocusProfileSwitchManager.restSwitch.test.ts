@@ -227,6 +227,8 @@ interface SetupOpts {
   wireRestMount?: boolean;
   /** Whether to also wire gitOps (to assert it is NOT used). */
   wireGitOps?: boolean;
+  /** Wire a fresh-PAT factory (returns `factoryMount`) preferred over capture. */
+  wireRestMountFactory?: boolean;
 }
 
 function setup(opts: SetupOpts) {
@@ -287,6 +289,7 @@ function setup(opts: SetupOpts) {
   const localDataStore = new FakeLocalDataStore();
   const confirmGate = new FakeConfirmGate();
   const restMount = new FakeRestMount();
+  const factoryMount = new FakeRestMount();
   const gitOps = new FakeGitOps();
 
   const mgr = new FocusProfileSwitchManager({
@@ -299,10 +302,21 @@ function setup(opts: SetupOpts) {
     confirmGate,
     localDataStore: localDataStore as any,
     restMount: (opts.wireRestMount === false ? undefined : restMount) as any,
+    restMountFactory: opts.wireRestMountFactory
+      ? async () => factoryMount as any
+      : undefined,
     gitOps: (opts.wireGitOps ? gitOps : undefined) as any,
     /* eslint-enable @typescript-eslint/no-explicit-any */
   });
-  return { mgr, indexer, localDataStore, confirmGate, restMount, gitOps };
+  return {
+    mgr,
+    indexer,
+    localDataStore,
+    confirmGate,
+    restMount,
+    factoryMount,
+    gitOps,
+  };
 }
 
 const ALL_FLOOR_UIDS = TS_FLOOR.map((f) => f.uid);
@@ -384,7 +398,7 @@ describe("FocusProfileSwitchManager.restSwitchProfile", () => {
     expect(restMount.unmounted).toEqual([]);
   });
 
-  it("throws a clear error when restMount is not wired", async () => {
+  it("throws a clear error when neither restMount nor factory is wired", async () => {
     const { mgr } = setup({
       targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
       materialized: ALL_FLOOR_UIDS,
@@ -393,6 +407,25 @@ describe("FocusProfileSwitchManager.restSwitchProfile", () => {
     await expect(mgr.restSwitchProfile("target")).rejects.toThrow(
       /dependencies not wired/,
     );
+  });
+
+  it("prefers the fresh-PAT factory mount over the onload-captured one (Issue #3382)", async () => {
+    const { mgr, restMount, factoryMount } = setup({
+      targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
+      materialized: [...ALL_FLOOR_UIDS, "kpc-uid"],
+      wireRestMountFactory: true,
+    });
+
+    await mgr.restSwitchProfile("target");
+
+    // Factory mount did the work…
+    expect(factoryMount.mounted.map((m) => m.submodulePath)).toEqual([
+      "assetspaces/kitelev/exoas-ems",
+    ]);
+    expect(factoryMount.unmounted).toEqual(["assetspaces/kitelev/exoas-kpc"]);
+    // …and the onload-captured mount was NOT used.
+    expect(restMount.mounted).toEqual([]);
+    expect(restMount.unmounted).toEqual([]);
   });
 });
 

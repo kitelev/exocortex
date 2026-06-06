@@ -2632,6 +2632,9 @@ export default class ExocortexPlugin extends Plugin {
       assetSpaceManager: hardSwitchDeps?.assetSpaceManager,
       gitOps: hardSwitchDeps?.gitOps,
       restMount: restMount ?? undefined,
+      // Fresh-PAT rebuild at switch time (Issue #3382 pattern) so a PAT set
+      // after onload is honoured without a reload — the primary mobile flow.
+      restMountFactory: () => buildRestAssetSpaceMount({ app: this.app }),
       uncommittedGuard: hardSwitchDeps?.uncommittedGuard,
       confirmGate,
       cacheLayer: hardSwitchDeps?.cacheLayer,
