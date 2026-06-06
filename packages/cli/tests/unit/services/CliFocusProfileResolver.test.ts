@@ -37,7 +37,8 @@ const AS_SHARED_UID = TS_FLOOR_AS_UID_SHARED_IDENTITIES;
 const AS_EMS_UID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const AS_KITELEV_UID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 
-const ONTOLOGY_EMS_UID = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+// A UID that matches no AssetSpace folder — used to exercise the `untranslated`
+// diagnostic path.
 const ONTOLOGY_KITELEV_UID = "dddddddd-dddd-dddd-dddd-dddddddddddd";
 
 interface AssetSpec {
@@ -65,19 +66,12 @@ async function makeVault(vaultRoot: string, assets: AssetSpec[]): Promise<void> 
   }
 }
 
-function asAssetSpace(uid: string, folder: string, containsOntologies: string[] = []): AssetSpec {
+function asAssetSpace(uid: string, folder: string): AssetSpec {
   return {
     relPath: `assetspaces/${folder}/${uid}.md`,
     frontmatter: {
       "exo__Asset_uid": uid,
       "exo__Instance_class": [`[[${ASSET_SPACE_CLASS_UID}|exo__AssetSpace]]`],
-      ...(containsOntologies.length > 0
-        ? {
-            "exo__AssetSpace_containsOntology": containsOntologies.map(
-              (o) => `[[${o}]]`,
-            ),
-          }
-        : {}),
     },
   };
 }
@@ -174,28 +168,31 @@ describe("CliFocusProfileResolver", () => {
       }
     });
 
-    it("translates declared Ontology UIDs to AS UIDs via containsOntology", async () => {
+    it("resolves declared AS UIDs against the folder map (RFC 01a83de8 Phase 2)", async () => {
       await makeVault(tmpRoot, [
         asAssetSpace(AS_EXO_UID, "exo"),
         asAssetSpace(AS_EXOCMD_UID, "exocmd"),
         asAssetSpace(AS_SHARED_UID, "shared-identities"),
-        asAssetSpace(AS_EMS_UID, "ems", [ONTOLOGY_EMS_UID]),
+        asAssetSpace(AS_EMS_UID, "ems"),
         asProfile(PROFILE_PERSONAL_UID, {
-          includes: [ONTOLOGY_EMS_UID],
+          // `_includes` declares the AssetSpace UID directly. The former
+          // Ontology→AS translation (via containsOntology) was removed in
+          // Phase 3 T3b-cleanup.
+          includes: [AS_EMS_UID],
         }),
       ]);
       const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
       expect(out.outcome).toBe("engaged");
       if (out.outcome === "engaged") {
-        // Ontology UID got translated to its owning AS UID
+        // Declared AS UID resolved directly against the folder map.
         expect(out.result.effective.has(AS_EMS_UID)).toBe(true);
         // TS-floor present
         expect(out.result.effective.has(AS_EXO_UID)).toBe(true);
         expect(out.result.effective.has(AS_EXOCMD_UID)).toBe(true);
         expect(out.result.effective.has(AS_SHARED_UID)).toBe(true);
         // declared set surfaced for diagnostics
-        expect(out.result.declaredOntologies.has(ONTOLOGY_EMS_UID)).toBe(true);
+        expect(out.result.declaredOntologies.has(AS_EMS_UID)).toBe(true);
         // No untranslated entries
         expect(out.result.untranslated.length).toBe(0);
       }
@@ -219,15 +216,15 @@ describe("CliFocusProfileResolver", () => {
       }
     });
 
-    it("records untranslated UIDs when Ontology has no AssetSpace owner", async () => {
+    it("records untranslated UIDs when a declared UID matches no AssetSpace folder", async () => {
       await makeVault(tmpRoot, [
         asAssetSpace(AS_EXO_UID, "exo"),
         asAssetSpace(AS_EXOCMD_UID, "exocmd"),
         asAssetSpace(AS_SHARED_UID, "shared-identities"),
-        asAssetSpace(AS_EMS_UID, "ems", [ONTOLOGY_EMS_UID]),
+        asAssetSpace(AS_EMS_UID, "ems"),
         asProfile(PROFILE_PERSONAL_UID, {
-          // ONTOLOGY_EMS resolves; ONTOLOGY_KITELEV has no AS owner
-          includes: [ONTOLOGY_EMS_UID, ONTOLOGY_KITELEV_UID],
+          // AS_EMS resolves to a folder; ONTOLOGY_KITELEV matches no AssetSpace.
+          includes: [AS_EMS_UID, ONTOLOGY_KITELEV_UID],
         }),
       ]);
       const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
@@ -235,7 +232,7 @@ describe("CliFocusProfileResolver", () => {
       expect(out.outcome).toBe("engaged");
       if (out.outcome === "engaged") {
         expect(out.result.untranslated).toContain(ONTOLOGY_KITELEV_UID);
-        expect(out.result.untranslated).not.toContain(ONTOLOGY_EMS_UID);
+        expect(out.result.untranslated).not.toContain(AS_EMS_UID);
         expect(out.result.effective.has(AS_EMS_UID)).toBe(true);
       }
     });

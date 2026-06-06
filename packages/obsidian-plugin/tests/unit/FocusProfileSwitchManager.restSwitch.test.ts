@@ -253,7 +253,6 @@ function setup(opts: SetupOpts) {
           exo__Instance_class: ["[[exo__AssetSpace]]"],
           exo__AssetSpace_source: `https://github.com/${as.folder.replace("assetspaces/", "")}`,
           exo__AssetSpace_namespace: ns,
-          exo__AssetSpace_containsOntology: [`[[ontology-${as.uid}]]`],
         },
       };
     }),
@@ -277,7 +276,9 @@ function setup(opts: SetupOpts) {
         "target",
         {
           uid: "target",
-          includes: opts.targetIncludes.map((u) => `ontology-${u}`),
+          // RFC 01a83de8 Phase 2 — `_includes` declares AssetSpace UIDs directly
+          // (Ontology→AS translation removed in Phase 3 T3b-cleanup).
+          includes: opts.targetIncludes,
           label: "Target Profile",
         },
       ],

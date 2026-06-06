@@ -561,16 +561,17 @@ export class FocusProfileSwitchManager {
     // intent in the user's profile declaration.
     const declaredOntologySet = await this.computeDerivedSet(targetProfileUid);
     const folderToAsUid = await this.scanFolderToAsUid();
-    const ontologyToAs = await this.scanOntologyToAsUid();
     const declaredAsUids = new Set<string>();
     const folderMapValues = new Set(folderToAsUid.values());
+    // RFC 01a83de8 Phase 2 retargeted `_includes` to AssetSpace UIDs, so the
+    // derived set already contains AS UIDs that resolve directly against the
+    // folder map. The former Ontology→AS translation (via the
+    // `exo__AssetSpace_containsOntology` predicate) is dead and was removed in
+    // Phase 3 T3b-cleanup.
     for (const uid of declaredOntologySet) {
       if (folderMapValues.has(uid)) {
         declaredAsUids.add(uid);
-        continue;
       }
-      const translated = ontologyToAs.get(uid);
-      if (translated !== undefined) declaredAsUids.add(translated);
     }
     this.assertTsFloor(declaredAsUids);
 
@@ -971,16 +972,17 @@ export class FocusProfileSwitchManager {
     // NOT resolveEffectiveSet — the latter silently injects floor ontologies).
     const declaredOntologySet = await this.computeDerivedSet(targetProfileUid);
     const folderToAsUid = await this.scanFolderToAsUid();
-    const ontologyToAs = await this.scanOntologyToAsUid();
     const declaredAsUids = new Set<string>();
     const folderMapValues = new Set(folderToAsUid.values());
+    // RFC 01a83de8 Phase 2 retargeted `_includes` to AssetSpace UIDs, so the
+    // derived set already contains AS UIDs that resolve directly against the
+    // folder map. The former Ontology→AS translation (via the
+    // `exo__AssetSpace_containsOntology` predicate) is dead and was removed in
+    // Phase 3 T3b-cleanup.
     for (const uid of declaredOntologySet) {
       if (folderMapValues.has(uid)) {
         declaredAsUids.add(uid);
-        continue;
       }
-      const translated = ontologyToAs.get(uid);
-      if (translated !== undefined) declaredAsUids.add(translated);
     }
     this.assertTsFloor(declaredAsUids);
     const effectiveAsUids = new Set(declaredAsUids);
@@ -1260,16 +1262,17 @@ export class FocusProfileSwitchManager {
     // Compute expected AS set for activeProfileUid.
     const declared = await this.resolveEffectiveSet(activeProfileUid);
     const folderToAsUid = await this.scanFolderToAsUid();
-    const ontologyToAs = await this.scanOntologyToAsUid();
     const expectedAsUids = new Set<string>();
     const folderMapValues = new Set(folderToAsUid.values());
+    // `_includes` are AssetSpace UIDs (RFC 01a83de8 Phase 2) → resolve directly
+    // against the folder map. The TS-floor ontology URIs added by
+    // resolveEffectiveSet are not AS UIDs and are re-injected at AS level just
+    // below. The former Ontology→AS translation (containsOntology) is dead —
+    // removed in Phase 3 T3b-cleanup.
     for (const uid of declared) {
       if (folderMapValues.has(uid)) {
         expectedAsUids.add(uid);
-        continue;
       }
-      const t = ontologyToAs.get(uid);
-      if (t !== undefined) expectedAsUids.add(t);
     }
     for (const floor of TS_FLOOR_ASSETSPACE_UIDS) expectedAsUids.add(floor);
 
@@ -1448,29 +1451,6 @@ export class FocusProfileSwitchManager {
     const out = new Map<string, string>();
     for (const info of this.listAllAssetSpaceInfos()) {
       out.set(info.folderName, info.uid);
-    }
-    return out;
-  }
-
-  private async scanOntologyToAsUid(): Promise<Map<string, string>> {
-    const out = new Map<string, string>();
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      const cache = this.app.metadataCache.getFileCache(file);
-      const fm = cache?.frontmatter as Record<string, unknown> | undefined;
-      if (!fm) continue;
-      const uid = typeof fm["exo__Asset_uid"] === "string" ? (fm["exo__Asset_uid"] as string) : null;
-      if (uid === null) continue;
-      const rawContains = fm["exo__AssetSpace_containsOntology"];
-      const declared: unknown[] = Array.isArray(rawContains)
-        ? rawContains
-        : rawContains !== undefined && rawContains !== null
-          ? [rawContains]
-          : [];
-      for (const raw of declared) {
-        if (typeof raw !== "string") continue;
-        const cleaned = raw.trim().replace(/^\[\[/, "").replace(/\]\]$/, "").split("|")[0].trim();
-        if (cleaned.length > 0) out.set(cleaned, uid);
-      }
     }
     return out;
   }

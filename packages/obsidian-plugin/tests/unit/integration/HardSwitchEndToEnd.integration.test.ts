@@ -218,11 +218,9 @@ function buildVaultFiles(setup: VaultSetup): FakeFile[] {
         // real `git submodule add` clones from this `file://` _git.
         "exo__AssetSpace_git": as.git,
         "exo__AssetSpace_namespace": as.folder.split("/").pop(),
-        // Production-shape: AS ABox declares the Ontology UID it contains
-        // (per RFC 22b50a17 + FocusProfileOnloadWiring scan). The R24 guard
-        // depends on this declaration to translate profile-declared Ontology
-        // URIs → AS UIDs.
-        "exo__AssetSpace_containsOntology": [`[[ontology-${as.uid}]]`],
+        // Production-shape (RFC 01a83de8 Phase 2): profiles `_includes`
+        // reference this AS UID directly, so the R24 guard resolves it against
+        // the folder map — no Ontology→AS translation (removed in T3b-cleanup).
       },
     });
   }
@@ -401,20 +399,20 @@ describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
     const files = buildVaultFiles(setup);
     const { app } = makeFakeApp(files, setup.vaultPath);
 
-    // Profiles declare Ontology URIs (production shape per RFC b6ba5595);
-    // each AS ABox declares containsOntology, so R24 translation resolves
-    // them back to AS UIDs.
+    // Profiles declare AssetSpace UIDs directly (production shape per RFC
+    // 01a83de8 Phase 2); the R24 guard resolves them against the folder map —
+    // the former Ontology→AS translation was removed in Phase 3 T3b-cleanup.
     const profiles = new Map<string, ProfileResolution>([
       [
         "profile-a",
         {
           uid: "profile-a",
           includes: [
-            "ontology-as1",
-            "ontology-as2",
-            `ontology-${TS_FLOOR_AS_UID_EXO}`,
-            `ontology-${TS_FLOOR_AS_UID_EXOCMD}`,
-            `ontology-${TS_FLOOR_AS_UID_SHARED_IDENTITIES}`,
+            "as1",
+            "as2",
+            TS_FLOOR_AS_UID_EXO,
+            TS_FLOOR_AS_UID_EXOCMD,
+            TS_FLOOR_AS_UID_SHARED_IDENTITIES,
           ],
           label: "Profile A",
         },
@@ -424,11 +422,11 @@ describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
         {
           uid: "profile-b",
           includes: [
-            "ontology-as2",
-            "ontology-as3",
-            `ontology-${TS_FLOOR_AS_UID_EXO}`,
-            `ontology-${TS_FLOOR_AS_UID_EXOCMD}`,
-            `ontology-${TS_FLOOR_AS_UID_SHARED_IDENTITIES}`,
+            "as2",
+            "as3",
+            TS_FLOOR_AS_UID_EXO,
+            TS_FLOOR_AS_UID_EXOCMD,
+            TS_FLOOR_AS_UID_SHARED_IDENTITIES,
           ],
           label: "Profile B",
         },
