@@ -118,7 +118,6 @@ export type {
 export { EffortVotingService } from "./services/EffortVotingService";
 export { FolderRepairService } from "./services/FolderRepairService";
 export { extractAssetReference } from "./utilities/extractAssetReference";
-export { LabelToAliasService } from "./services/LabelToAliasService";
 export { LoggingService } from "./services/LoggingService";
 export { PropertyCleanupService } from "./services/PropertyCleanupService";
 export { RenameToUidService } from "./services/RenameToUidService";

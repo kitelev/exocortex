@@ -11,7 +11,6 @@ import { TaskStatusService } from "../services/TaskStatusService";
 import { EffortStatusWorkflow } from "../services/EffortStatusWorkflow";
 import { StatusTimestampService } from "../services/StatusTimestampService";
 import { FolderRepairService } from "../services/FolderRepairService";
-import { LabelToAliasService } from "../services/LabelToAliasService";
 import { RenameToUidService } from "../services/RenameToUidService";
 import { EffortVotingService } from "../services/EffortVotingService";
 import { PlanningService } from "../services/PlanningService";
@@ -102,10 +101,6 @@ export function registerCoreServices(
   targetContainer.registerSingleton(
     DI_TOKENS.FolderRepairService,
     FolderRepairService,
-  );
-  targetContainer.registerSingleton(
-    DI_TOKENS.LabelToAliasService,
-    LabelToAliasService,
   );
   targetContainer.registerSingleton(
     DI_TOKENS.RenameToUidService,
