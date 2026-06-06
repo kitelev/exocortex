@@ -383,5 +383,4 @@ Validation checks:
 ## Related Documentation
 
 - [Property Schema Reference](./PROPERTY_SCHEMA.md) -- All frontmatter properties
-- [Plugin Commands](./Plugin-Commands.md) -- Obsidian plugin commands
 - [Architecture Guide](../ARCHITECTURE.md) -- System architecture

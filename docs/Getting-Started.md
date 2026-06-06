@@ -505,42 +505,6 @@ This is usually enough to identify the root cause on the first pass.
 
 ---
 
-## Next Steps
-
-Now that you have the basics, explore advanced features:
-
-### 1. Workflow Management
-
-Learn the complete effort lifecycle:
-
-- [Task Workflows](workflows/Task-Workflow.md)
-- [Project Workflows](workflows/Project-Workflow.md)
-
-### 2. Daily Planning
-
-Master daily note organization:
-
-- [Daily Planning Guide](workflows/Daily-Planning.md)
-
-### 3. Area Hierarchies
-
-Build knowledge domains:
-
-- [Area Organization Guide](workflows/Area-Organization.md)
-
-### 4. Command Reference
-
-Discover all commands:
-
-- [Plugin Commands](Plugin-Commands.md)
-
-### 5. Advanced Features
-
-- [SPARQL Queries](sparql/User-Guide.md)
-- [Effort Voting System](workflows/Effort-Voting.md)
-
----
-
 ## Quick Reference Card
 
 ### Essential Frontmatter Properties
@@ -586,7 +550,3 @@ For the full diagnostic walkthrough see [Troubleshooting](#troubleshooting) abov
 - **Documentation**: See [full documentation index](../README.md#documentation)
 - **Report a bug or request a feature**: [GitHub Issues](https://github.com/kitelev/exocortex/issues) — see [Feedback](#feedback) for what to include
 - **Starter Kit releases**: [github.com/kitelev/exocortex-starter-kit/releases](https://github.com/kitelev/exocortex-starter-kit/releases)
-
----
-
-**Next**: [Task Workflows →](workflows/Task-Workflow.md)

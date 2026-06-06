@@ -1184,9 +1184,8 @@ Exocortex enforces its architectural decisions automatically via [Archgate](http
 
 ### How It Works
 
-1. **ADR Markdown** files in `docs/adr/` document each architectural decision (context, decision, consequences).
-2. **Archgate rule specs** in `.archgate/adrs/` mirror those ADRs and optionally pair a `.rules.ts` file containing automated checks.
-3. The **`archgate check --ci`** command runs in the CI pipeline (`archgate` job in `.github/workflows/ci.yml`) and fails the build on any violation.
+1. **Archgate rule specs** in `.archgate/adrs/` document each architectural decision (context, decision, consequences) and optionally pair a `.rules.ts` file containing automated checks.
+2. The **`archgate check --ci`** command runs in the CI pipeline (`archgate` job in `.github/workflows/ci.yml`) and fails the build on any violation.
 
 ### Rule Tiers
 
@@ -1236,16 +1235,14 @@ archgate:
 
 ### Adding a New Rule
 
-1. **Write (or update) an ADR** in `docs/adr/` following the existing template.
-2. **Create the Archgate spec** in `.archgate/adrs/<ID>-<slug>.md` with frontmatter (`id`, `title`, `domain`, `rules`, `files`).
-3. **If automatable**, add a sibling `.rules.ts` that exports a `rules` object with `check(ctx)` functions. Archgate passes a context with `glob()`, `grep()`, and `report.violation()` helpers.
-4. **Verify locally**: `npx archgate check` (or `archgate check` if installed globally).
-5. **Push** — the CI `archgate` job validates the new rule automatically.
+1. **Create the Archgate spec** in `.archgate/adrs/<ID>-<slug>.md` with frontmatter (`id`, `title`, `domain`, `rules`, `files`) documenting the decision (context, decision, consequences).
+2. **If automatable**, add a sibling `.rules.ts` that exports a `rules` object with `check(ctx)` functions. Archgate passes a context with `glob()`, `grep()`, and `report.violation()` helpers.
+3. **Verify locally**: `npx archgate check` (or `archgate check` if installed globally).
+4. **Push** — the CI `archgate` job validates the new rule automatically.
 
 ### Related Directories
 
-- **Full ADR documents**: [`docs/adr/`](docs/adr/) (10 ADRs, from UUID filenames to testing strategy)
-- **Archgate rule specs + scripts**: [`.archgate/adrs/`](.archgate/adrs/)
+- **Archgate rule specs + ADR records**: [`.archgate/adrs/`](.archgate/adrs/)
 - **Linter plugin conventions**: [`.archgate/lint/`](.archgate/lint/)
 
 ---
@@ -1610,7 +1607,7 @@ graph TB
 
 - [PROPERTY_SCHEMA.md](docs/PROPERTY_SCHEMA.md) - Complete property reference
 - [Diagrams](docs/diagrams/) - Architecture and flow diagrams
-- [ADRs](docs/adr/) - Architecture decision records
+- [ADRs](.archgate/adrs/) - Architecture decision records
 - [CLAUDE.md](CLAUDE.md) - Development guidelines
 - [README.md](README.md) - User documentation
 

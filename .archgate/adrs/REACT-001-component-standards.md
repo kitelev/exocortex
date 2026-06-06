@@ -28,7 +28,3 @@ Exocortex uses React 19 for interactive UI. With multiple AI agents generating c
 
 - Create class components (use functional + hooks instead)
 - Use class-based lifecycle methods
-
-## References
-
-- [ADR-0004: React for Interactive Tables](../../docs/adr/0004-react-for-interactive-tables.md)

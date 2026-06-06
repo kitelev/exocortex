@@ -435,15 +435,6 @@ rdf:type
 rdfs:subPropertyOf
 ```
 
-### Additional Query Examples
-
-For more RDF/RDFS query patterns and examples, see:
-
-- **[SPARQL User Guide](../sparql/User-Guide.md)** - Section "Using Standard RDF/RDFS Vocabulary"
-- **[SPARQL Query Examples](../sparql/Query-Examples.md)** - Section "RDF/RDFS Standard Queries" (10+ examples)
-- **[SPARQL Developer Guide](../sparql/Developer-Guide.md)** - Section "ExoRDF to RDF/RDFS Mapping Architecture"
-- **[SPARQL Performance Tips](../sparql/Performance-Tips.md)** - Section "RDF/RDFS Inference Performance"
-
 ---
 
 ## 🧠 Inference and Reasoning
@@ -551,8 +542,6 @@ Expected memory increase: **~15-20%** (dual triples for mapped properties).
 ### Exocortex Documentation
 
 - [Property Schema Reference](../PROPERTY_SCHEMA.md) - Complete frontmatter property definitions
-- [SPARQL User Guide](../sparql/User-Guide.md) - Query syntax and examples
-- [SPARQL Developer Guide](../sparql/Developer-Guide.md) - API and architecture
 
 ### Related Issues
 
