@@ -122,8 +122,11 @@ import { GitSubmoduleOps } from "./infrastructure/adapters/GitSubmoduleOps";
 import {
   buildHardSwitchDeps,
   buildAssetSpacePuller,
+  buildRestAssetSpaceMount,
   type HardSwitchDeps,
 } from "./infrastructure/adapters/HardSwitchDepsFactory";
+import { ModalConfirmGate } from "./infrastructure/adapters/ModalConfirmGate";
+import type { RestAssetSpaceMount } from "./infrastructure/adapters/RestAssetSpaceMount";
 import {
   CommandExecutionFlow,
   DI_TOKENS,
@@ -2599,6 +2602,26 @@ export default class ExocortexPlugin extends Plugin {
           logger: this.logger,
         });
 
+    // RFC 01a83de8 Phase 3 T2 — cross-platform (incl. iOS) REST/tarball mount.
+    // Built on BOTH platforms: the mobile profile-switch path consumes it
+    // (`FocusProfileSwitchManager.restSwitchProfile`), and it's harmless on
+    // desktop (the desktop hard switch keeps the git-binary path). Best-effort
+    // — a wiring failure logs + leaves restMount null (mobile switch then
+    // surfaces a clear "not wired" error instead of crashing onload).
+    let restMount: RestAssetSpaceMount | null = null;
+    try {
+      restMount = await buildRestAssetSpaceMount({ app: this.app });
+    } catch (err) {
+      this.logger.warn(
+        "[ExocortexPlugin] buildRestAssetSpaceMount failed — mobile profile switch unavailable",
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    }
+    // The mobile REST switch needs a ConfirmGate; on desktop it comes from
+    // hardSwitchDeps. ModalConfirmGate only needs `app` (mobile-safe).
+    const confirmGate =
+      hardSwitchDeps?.confirmGate ?? new ModalConfirmGate(this.app);
+
     const switchMgr = new FocusProfileSwitchManager({
       app: this.app,
       lockMgr,
@@ -2608,8 +2631,9 @@ export default class ExocortexPlugin extends Plugin {
       notify: (message) => this.notifier.info(message),
       assetSpaceManager: hardSwitchDeps?.assetSpaceManager,
       gitOps: hardSwitchDeps?.gitOps,
+      restMount: restMount ?? undefined,
       uncommittedGuard: hardSwitchDeps?.uncommittedGuard,
-      confirmGate: hardSwitchDeps?.confirmGate,
+      confirmGate,
       cacheLayer: hardSwitchDeps?.cacheLayer,
       vaultRootPath: hardSwitchDeps?.vaultRootPath,
       localDataStore,
@@ -2840,7 +2864,11 @@ export default class ExocortexPlugin extends Plugin {
     // so any hotkey a user already bound to the hard-switch command survives the
     // Knowledge/Focus split (Obsidian persists hotkeys by command id). Only the
     // user-facing name + picker source change.
-    if (hardSwitchDeps !== null) {
+    // RFC 01a83de8 Phase 3 T2 — register on desktop (git-binary hard switch)
+    // OR mobile when the REST mount is wired (FocusProfileSwitchManager
+    // dispatches to restSwitchProfile on mobile). Without either, the
+    // filesystem materialisation can't run, so the command stays hidden.
+    if (hardSwitchDeps !== null || (Platform.isMobile && restMount !== null)) {
       this.addCommand({
         id: "hard-switch-focus-profile",
         name: "Switch knowledge profile (filesystem destroy + materialize)",

@@ -8,6 +8,7 @@ import { GitHubRestClient } from "./GitHubRestClient";
 import { StagingDirTracker } from "./StagingDirTracker";
 import { AssetSpaceManager } from "./AssetSpaceManager";
 import { GitSubmoduleOps } from "./GitSubmoduleOps";
+import { RestAssetSpaceMount } from "./RestAssetSpaceMount";
 import { UncommittedChangesGuard } from "./UncommittedChangesGuard";
 import { ModalConfirmGate } from "./ModalConfirmGate";
 import { SwitchCacheLayer } from "./SwitchCacheLayer";
@@ -73,6 +74,27 @@ export async function buildAssetSpacePuller(
     notifications: notifier,
     stagingTracker,
   });
+}
+
+/**
+ * Build a {@link RestAssetSpaceMount} (RFC 01a83de8 Phase 3 T1) from the
+ * currently-stored GitHub PAT. Cross-platform — uses `requestUrl` + tarball +
+ * `vault.adapter`, so it works on mobile (unlike {@link GitSubmoduleOps}).
+ *
+ * The PAT is captured at call time. The plugin wires this once at onload (the
+ * mobile profile-switch path consumes it); a PAT configured AFTER onload needs
+ * a reload to take effect — the same onload-capture tradeoff as the hard-switch
+ * `assetSpaceManager`. An absent PAT yields an unauthenticated client
+ * (public-repo reads only).
+ */
+export async function buildRestAssetSpaceMount(opts: {
+  app: App;
+}): Promise<RestAssetSpaceMount> {
+  const { app } = opts;
+  const secretsStore = new LocalSecretsStore({ app });
+  const pat = await secretsStore.getSecret("pat");
+  const client = new GitHubRestClient({ app, pat: pat ?? "" });
+  return new RestAssetSpaceMount({ app, client });
 }
 
 /**
