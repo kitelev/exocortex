@@ -203,7 +203,6 @@ But [[uuid-here]] in text shows label correctly ✅
 
 1. **Check Syntax**: Use Query Builder to validate
 2. **Check Triple Store**: Reload layout to refresh data
-3. **See**: [SPARQL Troubleshooting](sparql/User-Guide.md#troubleshooting)
 
 ---
 
@@ -242,5 +241,3 @@ But [[uuid-here]] in text shows label correctly ✅
 **See also:**
 
 - [Getting Started Guide](Getting-Started.md)
-- [Plugin Commands](Plugin-Commands.md)
-- [SPARQL Troubleshooting](sparql/User-Guide.md#troubleshooting)

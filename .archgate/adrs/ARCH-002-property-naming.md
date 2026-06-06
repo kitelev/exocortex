@@ -44,5 +44,4 @@ Properties follow the format: `namespace__Class_property`
 
 ## References
 
-- [ADR-0002: Property Naming Convention](../../docs/adr/0002-property-naming-convention.md)
 - [PROPERTY_SCHEMA.md](../../docs/PROPERTY_SCHEMA.md)
