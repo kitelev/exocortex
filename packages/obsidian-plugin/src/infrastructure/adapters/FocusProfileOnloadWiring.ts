@@ -243,23 +243,16 @@ function scanAssetSpaces(app: App): {
     const uid = fm["exo__Asset_uid"];
     if (typeof uid !== "string" || uid.length === 0) continue;
 
-    // Path-prefix source (legacy, preserved for all 18 live descriptors whose
-    // file lives inside the AssetSpace it describes). RFC 01a83de8 v10 T3 —
-    // discovery is a UNION; the path-prefix branch is never removed in 1a.
-    const folder = parentFolder(file.path);
-    if (folder.length > 0) {
-      folderMap.set(folder, uid);
-    }
-
-    // Derived-path source (registry model, RFC v10 UD1). When a descriptor
-    // declares `_source` (or legacy `_git`), the AssetSpace it describes mounts
-    // at `derivePath(source)` = `assetspaces/<owner>/<repo>` — which may differ
-    // from where the descriptor file itself lives (e.g. a registry descriptor
-    // pointing at a separate test-library mount). Add that mapping alongside the
-    // path-prefix one. For legacy descriptors whose `_git` host/repo differs
-    // from their on-disk folder this yields a phantom entry (no files live under
-    // the derived path → harmless; never matched by the consumer filter). The
-    // 1b fleet migration flips the live folders onto the derived layout.
+    // Derived-path source (registry model, RFC 01a83de8 v10 UD1 + Phase 1b T3
+    // discovery flip). The AssetSpace mounts at `derivePath(source)` =
+    // `assetspaces/<owner>/<repo>`, which is now the authoritative folder for
+    // all descriptors (the 1b fleet migration moved every live folder onto the
+    // derived layout and the descriptor bodies into the registry). The legacy
+    // path-prefix branch (`parentFolder(file.path)`) was removed in T3 — after
+    // migration the descriptor lives in the registry, so its parent folder is
+    // the registry path, not the AssetSpace it describes (a phantom entry).
+    // `_source` is now SHACL-required (1..1, Phase 1b T4) so derivePath always
+    // resolves for a well-formed descriptor.
     const source = readAssetSpaceSource(fm);
     if (source !== null) {
       const derived = derivePath(source);
@@ -295,11 +288,6 @@ function readFrontmatter(
   const cache = app.metadataCache.getFileCache(file);
   if (!cache || !cache.frontmatter) return null;
   return cache.frontmatter as Record<string, unknown>;
-}
-
-function parentFolder(filePath: string): string {
-  const idx = filePath.lastIndexOf("/");
-  return idx < 0 ? "" : filePath.slice(0, idx);
 }
 
 /**

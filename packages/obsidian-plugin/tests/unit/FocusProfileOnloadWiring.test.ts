@@ -94,13 +94,28 @@ function makeSwitchMgrStub(
   } as unknown as FocusProfileSwitchManager;
 }
 
-// Helper: standard AssetSpace frontmatter shape — uid + containsOntology[]
-function asFrontmatter(uid: string, containsOntology: string[]): Record<string, unknown> {
+// Helper: standard AssetSpace frontmatter shape — uid + containsOntology[].
+// RFC 01a83de8 Phase 1b T3 — discovery is class-based + `derivePath(_source)`,
+// the path-prefix branch is gone. So every AssetSpace fixture MUST declare a
+// `_source` (now SHACL-required) for the discovery scan to map it. `repo`
+// defaults to `uid` (any unique URL yields a derived folder entry); pass an
+// explicit repo when the test asserts a specific `folderMap` key.
+function asFrontmatter(
+  uid: string,
+  containsOntology: string[],
+  repo: string = uid,
+): Record<string, unknown> {
   return {
     exo__Asset_uid: uid,
     exo__Instance_class: [`[[${ASSET_SPACE_CLASS_UID}|exo__AssetSpace]]`],
+    exo__AssetSpace_source: `https://github.com/kitelev/exoas-${repo}`,
     exo__AssetSpace_containsOntology: containsOntology.map((o) => `[[${o}]]`),
   };
+}
+
+/** Derived mount folder for a given repo — `derivePath` of the helper's source. */
+function derivedFolder(repo: string): string {
+  return `assetspaces/kitelev/exoas-${repo}`;
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────
@@ -138,11 +153,11 @@ describe("applyActiveProfileFilter", () => {
     const app = makeApp([
       {
         file: { path: "assetspaces/exo/49fd2e56.md", basename: "exo" },
-        fm: asFrontmatter(asExo, [ontologyExo]),
+        fm: asFrontmatter(asExo, [ontologyExo], "exo"),
       },
       {
         file: { path: "assetspaces/ems/f0f674da.md", basename: "ems" },
-        fm: asFrontmatter(asEms, [ontologyEms]),
+        fm: asFrontmatter(asEms, [ontologyEms], "ems"),
       },
     ]);
     const indexer = makeIndexerStub();
@@ -163,8 +178,8 @@ describe("applyActiveProfileFilter", () => {
     expect(indexer.effective!.has(asEms)).toBe(true);
     // Ontology UIDs themselves should NOT leak into the effective set.
     expect(indexer.effective!.has(ontologyExo)).toBe(false);
-    expect(indexer.folderMap!.get("assetspaces/exo")).toBe(asExo);
-    expect(indexer.folderMap!.get("assetspaces/ems")).toBe(asEms);
+    expect(indexer.folderMap!.get(derivedFolder("exo"))).toBe(asExo);
+    expect(indexer.folderMap!.get(derivedFolder("ems"))).toBe(asEms);
   });
 
   it("layers TS-floor AS UIDs into the effective set on engagement", async () => {
@@ -309,7 +324,7 @@ describe("applyActiveProfileFilter", () => {
       // Genuine AssetSpace declaration.
       {
         file: { path: "assetspaces/exo/exo.md", basename: "exo" },
-        fm: asFrontmatter(asExo, [ontologyExo]),
+        fm: asFrontmatter(asExo, [ontologyExo], "exo"),
       },
       // Unrelated asset in the same folder (e.g. an ABox node) — should NOT
       // overwrite the folder map entry from the AssetSpace declaration.
@@ -340,7 +355,7 @@ describe("applyActiveProfileFilter", () => {
 
     expect(result.outcome).toBe("engaged");
     expect(indexer.folderMap!.size).toBe(1);
-    expect(indexer.folderMap!.get("assetspaces/exo")).toBe(asExo);
+    expect(indexer.folderMap!.get(derivedFolder("exo"))).toBe(asExo);
   });
 
   it("handles single-string containsOntology (not just array form)", async () => {
@@ -356,6 +371,7 @@ describe("applyActiveProfileFilter", () => {
         fm: {
           exo__Asset_uid: asEms,
           exo__Instance_class: [`[[${ASSET_SPACE_CLASS_UID}]]`],
+          exo__AssetSpace_source: "https://github.com/kitelev/exoas-ems",
           // String, not array — Obsidian parser may produce either shape.
           exo__AssetSpace_containsOntology: `[[${ontologyEms}]]`,
         },
@@ -519,8 +535,11 @@ describe("applyActiveProfileFilter — derive-path discovery union (RFC v10 T3)"
     expect(result.outcome).toBe("engaged");
     // Derived mount path → AS UID (the registry model).
     expect(indexer.folderMap!.get(TESTLIB_DERIVED)).toBe(TESTLIB_AS_UID);
-    // Path-prefix mapping preserved alongside (UNION — never removed in 1a).
-    expect(indexer.folderMap!.get(REGISTRY_FOLDER)).toBe(TESTLIB_AS_UID);
+    // RFC 01a83de8 Phase 1b T3 — path-prefix branch REMOVED. The descriptor's
+    // own folder (the registry) is NO LONGER mapped: discovery is class-based +
+    // derivePath-only. Only the derived mount path is in folderMap.
+    expect(indexer.folderMap!.get(REGISTRY_FOLDER)).toBeUndefined();
+    expect(indexer.folderMap!.size).toBe(1);
   });
 
   it("dual-read: `_source` takes precedence over legacy `_git`", async () => {
@@ -579,16 +598,22 @@ describe("applyActiveProfileFilter — derive-path discovery union (RFC v10 T3)"
     });
 
     expect(result.outcome).toBe("engaged");
-    // Path-prefix mapping intact — NO regression for the live 18 descriptors.
-    expect(indexer.folderMap!.get("assetspaces/exo")).toBe(LEGACY_AS_UID);
-    // Derived-from-_git phantom entry also present (harmless; no files live
-    // there until the 1b fleet migration).
+    // RFC 01a83de8 Phase 1b T3 — path-prefix branch REMOVED. The descriptor's
+    // own folder is no longer mapped; discovery resolves the AS folder purely
+    // from `derivePath(_source ?? _git)`. Dual-read fallback: a `_git`-only
+    // descriptor still derives its mount mapping.
+    expect(indexer.folderMap!.get("assetspaces/exo")).toBeUndefined();
     expect(
       indexer.folderMap!.get("assetspaces/kitelev/exocortex-exo-ontology"),
     ).toBe(LEGACY_AS_UID);
   });
 
-  it("no source/git → only path-prefix mapping (derive branch is a no-op)", async () => {
+  it("no source/git → NO folder mapping (path-prefix branch removed in T3)", async () => {
+    // RFC 01a83de8 Phase 1b T3 — discovery is derivePath-only. A descriptor with
+    // neither `_source` nor `_git` cannot resolve a mount folder, so it produces
+    // NO folderMap entry (previously the path-prefix branch would map its own
+    // folder). With zero folder overlap the filter degrades to no-filter rather
+    // than self-bricking. `_source` is SHACL-required (T4) so this is defensive.
     const PLAIN_AS_UID = "abcdabcd-1234-5678-9abc-def012345678";
     const app = makeApp([
       {
@@ -608,9 +633,8 @@ describe("applyActiveProfileFilter — derive-path discovery union (RFC v10 T3)"
       logger,
     });
 
-    expect(result.outcome).toBe("engaged");
-    expect(indexer.folderMap!.get("assetspaces/ems")).toBe(PLAIN_AS_UID);
-    // Exactly one entry — no spurious derived key.
-    expect(indexer.folderMap!.size).toBe(1);
+    // No derived entry → zero folder overlap → safe-degrade to no-filter.
+    expect(result.outcome).toBe("degraded");
+    expect(indexer.folderMap).toBeNull();
   });
 });

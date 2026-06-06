@@ -119,12 +119,15 @@ function makeFakeNotifier(): INotificationService {
   };
 }
 
-function asFrontmatter(uid: string): Record<string, unknown> {
+// RFC 01a83de8 Phase 1b T3 — discovery resolves the AssetSpace folder from
+// `derivePath(source)`, so `repo` must match the queried folder's <repo>
+// segment. Defaults to "test" for the createAssetSpacePusher branches.
+function asFrontmatter(uid: string, repo: string = "test"): Record<string, unknown> {
   return {
     "exo__Asset_uid": uid,
     "exo__Instance_class": [`[[${ASSET_SPACE_CLASS_UID}]]`],
-    "exo__AssetSpace_git": "https://github.com/kitelev/exoas-test",
-    "exo__AssetSpace_namespace": "test",
+    "exo__AssetSpace_source": `https://github.com/kitelev/exoas-${repo}`,
+    "exo__AssetSpace_namespace": repo,
   };
 }
 
@@ -147,7 +150,7 @@ describe("createAssetSpacePusher — branch (a) empty PAT → lookup-only stub",
       lookupOnly: (folder) => lookupAssetSpaceUidByFolder(app, folder),
     });
 
-    expect(pusher.lookupAssetSpaceForPath("assetspaces/test")).toBe("uid-test");
+    expect(pusher.lookupAssetSpaceForPath("assetspaces/kitelev/exoas-test")).toBe("uid-test");
     await expect(pusher.pushAssetSpace("uid-test")).rejects.toThrow(
       /GitHub PAT not configured/,
     );
@@ -205,7 +208,7 @@ describe("createAssetSpacePusher — branch (b) valid PAT → AssetSpaceManager"
     expect(constructionCalls[0].pat).toBe("ghp_validpat");
     // Lookup goes through AssetSpaceManager.lookupAssetSpaceForPath, which
     // calls into the shared helper — same result as branch (a).
-    expect(pusher.lookupAssetSpaceForPath("assetspaces/test")).toBe("uid-test");
+    expect(pusher.lookupAssetSpaceForPath("assetspaces/kitelev/exoas-test")).toBe("uid-test");
   });
 });
 
@@ -234,7 +237,7 @@ describe("createAssetSpacePusher — branch (c) ctor throws → fallback stub", 
     });
 
     // Lookup still works (fallback path uses lookupOnly).
-    expect(pusher.lookupAssetSpaceForPath("assetspaces/test")).toBe("uid-test");
+    expect(pusher.lookupAssetSpaceForPath("assetspaces/kitelev/exoas-test")).toBe("uid-test");
 
     // Push rejects с the wrapped original error message.
     await expect(pusher.pushAssetSpace("uid-test")).rejects.toThrow(
@@ -254,22 +257,22 @@ describe("lookupAssetSpaceUidByFolder — branch (d) integration", () => {
     const { app } = makeFakeApp([
       {
         path: "assetspaces/ems/uid-ems.md",
-        frontmatter: asFrontmatter("uid-ems"),
+        frontmatter: asFrontmatter("uid-ems", "ems"),
       },
       {
         path: "assetspaces/exo/uid-exo.md",
-        frontmatter: asFrontmatter("uid-exo"),
+        frontmatter: asFrontmatter("uid-exo", "exo"),
       },
     ]);
-    expect(lookupAssetSpaceUidByFolder(app, "assetspaces/ems")).toBe("uid-ems");
-    expect(lookupAssetSpaceUidByFolder(app, "assetspaces/exo")).toBe("uid-exo");
+    expect(lookupAssetSpaceUidByFolder(app, "assetspaces/kitelev/exoas-ems")).toBe("uid-ems");
+    expect(lookupAssetSpaceUidByFolder(app, "assetspaces/kitelev/exoas-exo")).toBe("uid-exo");
   });
 
   it("returns null when folder has no AS asset", () => {
     const { app } = makeFakeApp([
       {
         path: "assetspaces/ems/uid-ems.md",
-        frontmatter: asFrontmatter("uid-ems"),
+        frontmatter: asFrontmatter("uid-ems", "ems"),
       },
     ]);
     expect(lookupAssetSpaceUidByFolder(app, "assetspaces/missing")).toBeNull();

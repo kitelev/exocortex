@@ -52,6 +52,12 @@ export function derivePath(source: unknown): string | null {
   let s = source.trim();
   if (s.length === 0) return null;
 
+  // `file://` is a local-filesystem clone source with no hosted `<owner>/<repo>`
+  // identity, so a canonical Maven-style mount path cannot be derived. Return
+  // null → callers fall back to the path-prefix strategy. Hosted schemes
+  // (https/http/ssh/git + scp-like) proceed below. (RFC 01a83de8 Phase 1b T3.)
+  if (/^file:\/\//i.test(s)) return null;
+
   // Strip trailing slashes first so a `.git/` tail still loses its suffix.
   s = s.replace(/\/+$/, "");
   // Strip a single `.git` suffix (case-insensitive).

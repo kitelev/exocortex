@@ -64,6 +64,12 @@ describe("derivePath (RFC 01a83de8 v10 UD1)", () => {
       ["host + trailing slash, no repo", "https://github.com/"],
       ["owner only, no repo", "https://github.com/kitelev"],
       ["scp host only", "git@github.com:"],
+      // RFC 01a83de8 Phase 1b T3 — `file://` is a local clone source with no
+      // hosted owner/repo; derivePath returns null so callers fall back to the
+      // path-prefix strategy (used by the hard-switch E2E with file:// remotes).
+      ["file:// triple-slash absolute", "file:///tmp/abc/remote-as1"],
+      ["file:// with host segment", "file://localhost/tmp/remote-as1"],
+      ["FILE:// uppercase scheme", "FILE:///tmp/abc/remote-as1"],
     ])("%s → null", (_label, input) => {
       expect(derivePath(input)).toBeNull();
     });

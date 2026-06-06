@@ -126,7 +126,7 @@ describe("AssetSpaceManager — push race regression (Issue #3312 HIGH)", () => 
       [
         assetSpaceSeed(),
         {
-          path: "assetspaces/ems/dirty.md",
+          path: "assetspaces/kitelev/exoas-ems/dirty.md",
           frontmatter: { "exo__Asset_uid": "x" },
           content: "x",
         },
@@ -146,7 +146,7 @@ describe("AssetSpaceManager — push race regression (Issue #3312 HIGH)", () => 
       notifications: makeFakeNotifier(),
     });
 
-    mgr.markDirty("assetspaces/ems/dirty.md");
+    mgr.markDirty("assetspaces/kitelev/exoas-ems/dirty.md");
 
     // Act
     await expect(mgr.pushAssetSpace(EMS_UID)).rejects.toThrow(
@@ -156,7 +156,7 @@ describe("AssetSpaceManager — push race regression (Issue #3312 HIGH)", () => 
     // Assert — dirty entry preserved so the next pushAssetSpace retry will
     // reattempt the publish + sha persist; without this guarantee, the
     // user's vault state silently desyncs from the remote.
-    expect(mgr.getDirtySnapshot().has("assetspaces/ems/dirty.md")).toBe(true);
+    expect(mgr.getDirtySnapshot().has("assetspaces/kitelev/exoas-ems/dirty.md")).toBe(true);
 
     // createCommit still ran exactly once — the regression is purely the
     // cleanup-order discipline, not double-publish.
@@ -174,7 +174,7 @@ describe("AssetSpaceManager — strict wikilink class membership (Issue #3312 ME
       client: makeFakeClient() as never,
       notifications: makeFakeNotifier(),
     });
-    expect(mgr.lookupAssetSpaceForPath("assetspaces/ems")).toBe(EMS_UID);
+    expect(mgr.lookupAssetSpaceForPath("assetspaces/kitelev/exoas-ems")).toBe(EMS_UID);
   });
 
   it("matches `[[<uuid>|<label>]]` aliased form", () => {
@@ -188,7 +188,7 @@ describe("AssetSpaceManager — strict wikilink class membership (Issue #3312 ME
       client: makeFakeClient() as never,
       notifications: makeFakeNotifier(),
     });
-    expect(mgr.lookupAssetSpaceForPath("assetspaces/ems")).toBe(EMS_UID);
+    expect(mgr.lookupAssetSpaceForPath("assetspaces/kitelev/exoas-ems")).toBe(EMS_UID);
   });
 
   it("matches case-insensitively in the UUID hex", () => {
@@ -202,7 +202,7 @@ describe("AssetSpaceManager — strict wikilink class membership (Issue #3312 ME
       client: makeFakeClient() as never,
       notifications: makeFakeNotifier(),
     });
-    expect(mgr.lookupAssetSpaceForPath("assetspaces/ems")).toBe(EMS_UID);
+    expect(mgr.lookupAssetSpaceForPath("assetspaces/kitelev/exoas-ems")).toBe(EMS_UID);
   });
 
   it("does NOT match bare-substring AssetSpace UID inside other content", () => {
@@ -220,7 +220,7 @@ describe("AssetSpaceManager — strict wikilink class membership (Issue #3312 ME
       client: makeFakeClient() as never,
       notifications: makeFakeNotifier(),
     });
-    expect(mgr.lookupAssetSpaceForPath("assetspaces/ems")).toBeNull();
+    expect(mgr.lookupAssetSpaceForPath("assetspaces/kitelev/exoas-ems")).toBeNull();
   });
 
   it("matches one wikilink inside a multi-class value", () => {
@@ -234,7 +234,7 @@ describe("AssetSpaceManager — strict wikilink class membership (Issue #3312 ME
       client: makeFakeClient() as never,
       notifications: makeFakeNotifier(),
     });
-    expect(mgr.lookupAssetSpaceForPath("assetspaces/ems")).toBe(EMS_UID);
+    expect(mgr.lookupAssetSpaceForPath("assetspaces/kitelev/exoas-ems")).toBe(EMS_UID);
   });
 });
 
@@ -245,7 +245,7 @@ describe("AssetSpaceManager — nowIsoSeconds Z suffix (Issue #3312 MEDIUM #2)",
     const fake = makeFakeApp([
       assetSpaceSeed(),
       {
-        path: "assetspaces/ems/dirty.md",
+        path: "assetspaces/kitelev/exoas-ems/dirty.md",
         frontmatter: { "exo__Asset_uid": "x" },
         content: "x",
       },
@@ -258,7 +258,7 @@ describe("AssetSpaceManager — nowIsoSeconds Z suffix (Issue #3312 MEDIUM #2)",
       client: client as never,
       notifications: makeFakeNotifier(),
     });
-    mgr.markDirty("assetspaces/ems/dirty.md");
+    mgr.markDirty("assetspaces/kitelev/exoas-ems/dirty.md");
     await mgr.pushAssetSpace(EMS_UID);
 
     const updated = fake.files.get("assetspaces/ems/f0f674da.md")!.frontmatter;

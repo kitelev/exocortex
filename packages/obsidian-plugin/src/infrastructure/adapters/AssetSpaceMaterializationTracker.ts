@@ -1,4 +1,5 @@
 import type { App } from "obsidian";
+import { derivePath } from "exocortex";
 
 import { isAssetSpaceFrontmatter } from "./AssetSpaceFrontmatter";
 
@@ -78,12 +79,20 @@ export class AssetSpaceMaterializationTracker {
       const namespace = typeof fm["exo__AssetSpace_namespace"] === "string"
         ? (fm["exo__AssetSpace_namespace"] as string).trim()
         : "";
-      if (namespace.length === 0) {
-        // No namespace declared — can't compute folder path. Skip.
+
+      // RFC 01a83de8 Phase 1b T3 — materialization folder is the derived mount
+      // path (`assetspaces/<owner>/<repo>` from `_source`), not the legacy
+      // `assetspaces/<namespace>` (the 1b fleet migration moved every folder
+      // onto the derived layout). Legacy namespace path is a defensive fallback.
+      const source = readSource(fm);
+      const derived = source !== null ? derivePath(source) : null;
+      const folderPath =
+        derived ?? (namespace.length > 0 ? `assetspaces/${namespace}` : null);
+      if (folderPath === null) {
+        // Neither a resolvable `_source` nor a namespace — can't compute folder.
         continue;
       }
 
-      const folderPath = `assetspaces/${namespace}`;
       let materialized = false;
       try {
         materialized = await this.app.vault.adapter.exists(folderPath);
@@ -120,4 +129,13 @@ export class AssetSpaceMaterializationTracker {
   getStatuses(): ReadonlyArray<AssetSpaceMaterializationStatus> {
     return this.statuses;
   }
+}
+
+/** Dual-read `_source ?? _git` (RFC 01a83de8 v10). */
+function readSource(fm: Record<string, unknown>): string | null {
+  const source = fm["exo__AssetSpace_source"];
+  if (typeof source === "string" && source.length > 0) return source;
+  const git = fm["exo__AssetSpace_git"];
+  if (typeof git === "string" && git.length > 0) return git;
+  return null;
 }
