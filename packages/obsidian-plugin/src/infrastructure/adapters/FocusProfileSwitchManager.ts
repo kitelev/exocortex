@@ -470,11 +470,15 @@ export class FocusProfileSwitchManager {
   }
 
   /**
-   * Compute the effective ontology URI set for a given profile.
+   * Compute the effective set for a given profile.
    *
    * = derived(profile) ∪ TS_FLOOR ∪ discoveredSharedOntologies
    *
-   * Where derived = includes ∪ extends*[alwaysOnOverlay] ∪ includes (transitive).
+   * Where derived = union of `_includes` along the `_imports*` single-parent
+   * chain (RFC 01a83de8 Phase 2 — `_includes` are AssetSpace UIDs; the legacy
+   * `_alwaysOnOverlay` term was removed, folding into the TS-floor). The
+   * downstream `applyActiveProfileFilter` accepts AssetSpace UIDs directly and
+   * still translates the TS-floor ontology URIs added below.
    *
    * TS-floor (Vision Lock #17) — hardcoded `[$exo, $exocmd]` + pattern match
    * для shared-identities — guarantees the plugin keeps functioning regardless
