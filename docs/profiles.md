@@ -1,5 +1,15 @@
 # Knowledge Profiles vs Focus Profiles
 
+> ⛔ **SUPERSEDED (RFC 01a83de8 Phase 2).** The two-class Knowledge/Focus split
+> described below was **superseded** by a **single unified `exo__Profile`** class
+> (renamed from `exo__FocusProfile`, same UID `3de846cd`). `exo__KnowledgeProfile`
+> was never shipped — its orphan TBox was removed in Phase 2 T1. Soft-filter
+> visibility and hard-switch/mount are now two mechanisms over ONE profile type.
+> Properties: `exo__Profile_includes` (AssetSpace UIDs) + `exo__Profile_imports`
+> (single-parent composition). This page is kept for historical context; treat
+> the "Knowledge profile" sections as the mount/materialization machinery of the
+> unified profile.
+
 > **Status:** Production since v16.59 (Knowledge/Focus split, RFC 13da049f Phase 6.5b).
 > **RFC:** [13da049f](https://github.com/kitelev/exocortex) — Knowledge/Focus profile split (AC13–AC17).
 > **Class declaration:** [52f2acdd](https://github.com/kitelev/exocortex) — `exo__KnowledgeProfile` TBox class + properties (sibling onto-RFC).
@@ -98,9 +108,9 @@ a query-time RDF filter. Nothing on disk changes.
 - **Persistence:** ephemeral, per-device session state. Switching focus on the laptop does not drag the phone along.
 - **User intent:** _"Show only the ems\_\_Task instances of this sprint."_
 - **Properties:**
-  - `exo__FocusProfile_includes` — Ontology / AssetSpace UIDs to filter to. Must be a subset of the active Knowledge profile's effective set (you can only focus on things that are actually on disk).
-  - `exo__FocusProfile_extends` — another FocusProfile to inherit from.
-  - `exo__FocusProfile_appliesTo` — the KnowledgeProfile this focus is designed for (a compatibility hint; see "Compatibility" below).
+  - `exo__Profile_includes` — AssetSpace UIDs to filter to (RFC 01a83de8 Phase 2: range Ontology→AssetSpace).
+  - `exo__Profile_imports` — another Profile to compose (single-parent MVP; renamed from `_extends`).
+  - `exo__FocusProfile_appliesTo` — **deprecated** (Knowledge/Focus split superseded by RFC 01a83de8 Phase 2; no longer read by the resolver).
 
 **When to reach for it:** narrowing the noise during work hours without losing
 the option to switch back instantly. It is the daily driver; the Knowledge
