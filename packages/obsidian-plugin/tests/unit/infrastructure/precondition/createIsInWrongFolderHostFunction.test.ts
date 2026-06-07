@@ -116,6 +116,25 @@ describe("createIsInWrongFolderHostFunction", () => {
     expect(fn(baseCtx({ currentFolder: undefined }))).toBe(false);
   });
 
+  it("returns false for '09 Templates/' files even when otherwise misplaced — revert→fail proof", () => {
+    // Templater template carries isDefinedBy by inheritance; resolver says
+    // misplaced (expected≠current) but it must never get the Repair Folder
+    // button. WITHOUT the 09 Templates skip → true; WITH it → false (RFC 0b7a2fad CR-1).
+    const file = buildFile("09 Templates/ts/tmpl.md");
+    const fn = createIsInWrongFolderHostFunction(
+      buildApp({ file, metadata: { exo__Asset_isDefinedBy: "[[Class]]" } }),
+      buildService("expected/folder"),
+    );
+    expect(
+      fn(
+        baseCtx({
+          filePath: "09 Templates/ts/tmpl.md",
+          currentFolder: "09 Templates/ts",
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it("passes file + metadata to FolderRepairService.getExpectedFolderSync", () => {
     const file = buildFile("current/folder/asset.md");
     const metadata = {
