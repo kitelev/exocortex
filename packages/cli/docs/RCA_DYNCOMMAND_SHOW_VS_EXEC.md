@@ -105,7 +105,7 @@ condition itself is anomalous (and warned on by both
 `CommandResolver` neither warns nor rejects.
 
 **Likelihood assessment:** **moderate-high**. UUID-form filenames have
-become the starter-kit default since 2026-04 (RFC #2863), and bulk
+become the default since 2026-04 (RFC #2863), and bulk
 imports / archive operations occasionally produce duplicates. Without a
 detector, users have no way to notice.
 

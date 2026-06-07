@@ -19,7 +19,7 @@ before they ship.
 - [ ] Test vault available on device (Obsidian Sync or AirDrop/Files copy)
 - [ ] Plugin under test is present in `<vault>/.obsidian/plugins/exocortex/`
       and enabled in **Settings → Community plugins**
-- [ ] Starter Kit installed (Areas/Projects/Tasks ontology available)
+- [ ] AssetSpaces bootstrapped (Areas/Projects/Tasks ontology available)
 - [ ] Dataview plugin installed and enabled (required for the Daily Tasks
       widget on daily notes)
 - [ ] At least one `ems__Area` asset exists (e.g. `Life`)

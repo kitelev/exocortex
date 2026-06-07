@@ -130,7 +130,7 @@ forms below are equivalent:
 - `[[exo__BacklinksTableBlock|Backlinks table]]` (non-UUID target ⇒
   target wins, alias display-only)
 - `[[2e868956-d81e-43fd-9817-1addde9cb311|exo__BacklinksTableBlock]]`
-  (starter-kit convention — UUID target ⇒ alias wins)
+  (convention — UUID target ⇒ alias wins)
 
 Row-side `exo__Instance_class` values are normalised under the same
 rules, so a block parsed in any form matches a row in any form — no
@@ -233,9 +233,9 @@ The 18 `exo__Layout` ontology assets (4 classes + 14 properties) are **not
 auto-installed** by the plugin (see #3125 — TBox distribution is user
 responsibility). Install them yourself via one of:
 
-- Copy the `exo/` ontology folder from
-  [`kitelev/exocortex-starter-kit`](https://github.com/kitelev/exocortex-starter-kit)
-  into your vault (any folder — plugin reads by UUID, not by path).
+- Run **Cmd/Ctrl+P → "Exocortex: Add assetspace by URL"** with
+  `https://github.com/kitelev/exoas-exo` to clone the `exo/` ontology into
+  your vault (any folder — plugin reads by UUID, not by path).
 - Or wire the `kitelev/exocortex-exo-ontology` repo under
   `assetspaces/exo/` per RFC-D vault layout.
 

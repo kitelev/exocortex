@@ -70,7 +70,7 @@ Best for: Visual knowledge management, daily planning, interactive exploration.
 
 BRAT will automatically keep the plugin updated with new releases.
 
-> **Next:** Follow the **[Getting Started Guide](./docs/Getting-Started.md)** to install the Starter Kit and create your first Area, Project, and Task.
+> **Next:** Follow the **[Getting Started Guide](./docs/Getting-Started.md)** to bootstrap your vault and create your first Area, Project, and Task.
 >
 > **Note:** Layouts appear in **Reading Mode** (Ctrl/Cmd + E).
 
