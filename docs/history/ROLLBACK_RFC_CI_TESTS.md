@@ -184,7 +184,7 @@ Reserved for **Phase 4 cutover-day blockers** — cases where enforcing the new 
 
 1. **Remove the failing RFC-CI-Tests check(s) from required-checks list** — do **not** delete the jobs from `ci.yml`. Settings → Branches → Branch protection rule for `main` → Require status checks → uncheck the specific checks (e.g., `test-unit / test-coverage`, `e2e-shard / smoke-starter-kit`, contract-test job if split).
 2. The unchecked jobs keep running on PRs but become **advisory** (green box, not a gate).
-3. Commit an admin note to `docs/ROLLBACK_RFC_CI_TESTS.md` Log (below) with: incident ID, which checks were downgraded, unblocked PR URL, restoration ETA.
+3. Commit an admin note to `docs/history/ROLLBACK_RFC_CI_TESTS.md` Log (below) with: incident ID, which checks were downgraded, unblocked PR URL, restoration ETA.
 4. **Do not** merge the unblocked PR and forget — schedule the required-checks restoration within 48h of the incident.
 
 ### Restoration criteria
@@ -209,7 +209,7 @@ Append one-line entries per rollback event. Format: `YYYY-MM-DD · <trigger> · 
 
 ## References
 
-- RFC: `docs/rfc/rfc-ci-button-testing-2026-04-20.md` (§3.1 options, §3.4 decision rule, §7.2 E2E budget, §8 Phase 4 handoff + rollback plan, §9 success metrics).
+- RFC: `docs/history/rfc-ci-button-testing-2026-04-20.md` (§3.1 options, §3.4 decision rule, §7.2 E2E budget, §8 Phase 4 handoff + rollback plan, §9 success metrics).
 - CI workflow: `.github/workflows/ci.yml` (`test-unit`, `test-coverage`, `e2e-shard` jobs; flaky-report infra lines 163–187 / 487–505).
 - Submodule: `.gitmodules` → `packages/starter-kit-fixtures` → `https://github.com/kitelev/exocortex-starter-kit`.
 - Phase 4 tasks: `f5cc7758` (pre-cutover ≥5-green monitoring), `d79c774e` (this document), `70b28b93` (admin branch-protection PR — references this doc).
