@@ -47,7 +47,7 @@ import {
   ExoQLQueryExecutor,
   InMemoryTripleStore,
   NoteToRDFConverter,
-  type Triple,
+  type DomainTriple as Triple,
 } from "exocortex";
 import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
 
@@ -62,6 +62,10 @@ const PROFILE_CLASS_UID = "3de846cd-1f0e-4f98-8613-b8587aa15174";
 const AS_A_UID = "11111111-1111-4111-8111-111111111111";
 const AS_B_UID = "22222222-2222-4222-8222-222222222222";
 const AS_C_UID = "33333333-3333-4333-8333-333333333333";
+/** A non-AssetSpace asset ALSO declared in P-parent `_includes` — makes the
+ *  CQ2 `exo:Instance_class exo:AssetSpace` type-guard load-bearing (it must be
+ *  filtered out of the closure, so the count distinguishes 3 from 4). */
+const NOTE_X_UID = "44444444-4444-4444-8444-444444444444";
 const P_PARENT_UID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const P_ROOT_UID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
@@ -81,6 +85,17 @@ SELECT DISTINCT ?as WHERE {
   <${P_ROOT_IRI}> exo:Profile_imports* ?p .
   ?p exo:Profile_includes ?as .
   ?as exo:Instance_class exo:AssetSpace .
+}
+`;
+
+/** CQ2 minus the `exo:Instance_class exo:AssetSpace` type-guard — control
+ *  query proving the guard is load-bearing (includes the non-AssetSpace
+ *  NOTE-X target, so this returns one MORE row than CQ2). */
+const CQ2_NO_TYPE_GUARD = `
+PREFIX exo: <${EXO}>
+SELECT DISTINCT ?as WHERE {
+  <${P_ROOT_IRI}> exo:Profile_imports* ?p .
+  ?p exo:Profile_includes ?as .
 }
 `;
 
@@ -149,7 +164,19 @@ function buildFixtureVault(importsForm: ImportsForm): string {
   write("assetspaces/as-b", AS_B_UID, assetSpace(AS_B_UID, "AS B"));
   write("assetspaces/as-c", AS_C_UID, assetSpace(AS_C_UID, "AS C"));
 
-  // Parent profile: includes AS-B + AS-C.
+  // A NON-AssetSpace asset (instance_class = ems__Task) — declared in the
+  // parent profile's `_includes` so the CQ2 type-guard must filter it out.
+  write(
+    "assetspaces/notes",
+    NOTE_X_UID,
+    `---\n` +
+      `exo__Asset_uid: ${NOTE_X_UID}\n` +
+      `exo__Asset_label: Not An AssetSpace\n` +
+      `exo__Instance_class: ems__Task\n` +
+      `---\n`,
+  );
+
+  // Parent profile: includes AS-B + AS-C + a non-AssetSpace note (NOTE-X).
   write(
     "assetspaces/shared-identities",
     P_PARENT_UID,
@@ -160,6 +187,7 @@ function buildFixtureVault(importsForm: ImportsForm): string {
       `exo__Profile_includes:\n` +
       `  - "[[${AS_B_UID}]]"\n` +
       `  - "[[${AS_C_UID}]]"\n` +
+      `  - "[[${NOTE_X_UID}]]"\n` +
       `---\n`,
   );
 
@@ -262,6 +290,14 @@ describe("RFC 01a83de8 §5 CQ gate — STRICT-mode profile-imports closure (Issu
       expect(rows).toHaveLength(3);
     });
 
+    it("the `exo:Instance_class exo:AssetSpace` type-guard is load-bearing", async () => {
+      // The parent profile `_includes` a non-AssetSpace note (NOTE-X). The
+      // type-guard must exclude it: CQ2 = 3, the un-guarded control = 4.
+      const root = fixture("uuid");
+      expect(await runQuery(root, CQ2)).toHaveLength(3);
+      expect(await runQuery(root, CQ2_NO_TYPE_GUARD)).toHaveLength(4);
+    });
+
     it("CQ3 finds the single BOM consumer that imports the parent profile", async () => {
       const rows = await runQuery(fixture("uuid"), CQ3);
       expect(rows).toHaveLength(1);
@@ -272,7 +308,7 @@ describe("RFC 01a83de8 §5 CQ gate — STRICT-mode profile-imports closure (Issu
     it("STRICT mode THROWS instead of silently collapsing the closure", async () => {
       process.env.EXOCORTEX_SPARQL_STRICT = "1";
       await expect(runQuery(fixture("label"), CQ2)).rejects.toThrow(
-        /[Ll]iteral/,
+        /Literal in subject position/,
       );
     });
 
