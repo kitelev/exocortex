@@ -8,12 +8,12 @@
 > AssetSpaces**, and there is a **single** operation over it —
 > **`Exocortex: Apply profile`** (mount-state strict replace: materialize the
 > profile's effective AssetSpaces, unmount the rest; the TS-floor is never
-> unmounted). Earlier iterations split this into a "soft" query-time RDF filter
-> and a separate "hard" filesystem mutation, and earlier still into two profile
-> classes (`exo__FocusProfile` / `exo__KnowledgeProfile`). Both splits were
-> superseded: there is now one `exo__Profile` class (same UID `3de846cd`) and one
-> apply operation. The query-time filter was removed (it was a no-op reindex);
-> profile switching is mount-state only. Historical naming lives in `CHANGELOG.md`.
+> unmounted). Earlier iterations split profile activation into two mechanisms
+> and, earlier still, into two separate profile classes; both splits were
+> superseded. There is now one `exo__Profile` class (same UID `3de846cd`) and one
+> apply operation — the former query-time RDF filter was removed (it was a no-op
+> reindex), so profile activation is mount-state only. The historical class names
+> and the prior two-mechanism design live in `CHANGELOG.md`.
 
 ---
 
