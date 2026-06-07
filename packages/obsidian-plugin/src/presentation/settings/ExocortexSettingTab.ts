@@ -619,7 +619,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
       text:
         "Adding an ontology to a profile is NOT transitive — listing pmbok " +
         "does not auto-add ems. Add each AssetSpace the profile needs " +
-        "explicitly. See docs/profiles.md for the full distinction, " +
+        "explicitly. See docs/profile.md for the full distinction, " +
         "examples, and composition rules.",
     });
 
