@@ -91,13 +91,13 @@ test.describe("Focus profile picker — render smoke", () => {
   });
 
   test("switch-focus-profile opens picker rendering fixture profiles", async () => {
-    // The in-test waits stack four 30s ceilings (plugin-wait,
-    // command-registration poll, discoverability poll) plus a 15s modal wait.
-    // Each resolves in <1s normally, but shard-4 has documented slow
-    // plugin-load incidents (Issue #3216) and the e2e config runs with
-    // retries: 0, so raise the per-test ceiling above the 60s default to keep
-    // a slow plugin-load from tripping a compounding-timeout flake
-    // (code-reviewer LOW).
+    // The in-test waits stack three 30s ceilings (plugin-wait,
+    // command-registration poll, discoverability poll) plus a 10s modal-drain
+    // and a 15s modal-visible wait (~115s worst case). Each resolves in <1s
+    // normally, but shard-4 has documented slow plugin-load incidents
+    // (Issue #3216) and the e2e config runs with retries: 0, so raise the
+    // per-test ceiling above the 60s default to keep a slow plugin-load from
+    // tripping a compounding-timeout flake (code-reviewer LOW).
     test.setTimeout(120000);
 
     const window = await launcher.getWindow();
