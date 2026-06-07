@@ -209,9 +209,9 @@ describe("FocusProfileSwitchManager.resolveEffectiveSet — TS-floor (Vision Loc
 
 describe("FocusProfileSwitchManager.computeDerivedSet — _extends chain", () => {
   it("walks _imports transitively and accumulates parent _includes", async () => {
-    // RFC 01a83de8 Phase 2 — _alwaysOnOverlay removed; the derived set is the
-    // union of _includes along the single-parent _imports chain (base's library
-    // AssetSpaces are inherited by the child profile).
+    // RFC 01a83de8 Phase 2 — the derived set is the union of _includes along
+    // the single-parent _imports chain (base's library AssetSpaces are
+    // inherited by the child profile).
     const { mgr } = makeHarness({
       profiles: [
         [UID_BASE, {

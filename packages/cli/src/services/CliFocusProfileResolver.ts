@@ -6,8 +6,7 @@
  * Walks the vault filesystem to:
  *   1. Build folderMap: `assetspaces/<folder>` → AssetSpace UID
  *   2. Resolve Profile chain (`_imports*` + `_includes`) to a declared UID set
- *      (`_includes` are AssetSpace UIDs per RFC 01a83de8 Phase 2; `_alwaysOnOverlay`
- *      removed — folds into TS-floor)
+ *      (`_includes` are AssetSpace UIDs per RFC 01a83de8 Phase 2)
  *   3. Resolve declared AssetSpace UIDs against folderMap (the former
  *      Ontology→AS translation via `exo__AssetSpace_containsOntology` was removed
  *      in Phase 3 T3b-cleanup — profiles declare AS UIDs directly)
@@ -234,8 +233,6 @@ export class CliFocusProfileResolver {
     if (profile === undefined) return; // tolerate missing parent — leaf
 
     for (const ont of profile.includes) out.add(ont);
-    // `_alwaysOnOverlay` removed (RFC 01a83de8 Phase 2 D3 — folds into TS-floor,
-    // enforced via TS_FLOOR_ASSETSPACE_UIDS below).
 
     if (
       typeof profile.extends === "string" &&
