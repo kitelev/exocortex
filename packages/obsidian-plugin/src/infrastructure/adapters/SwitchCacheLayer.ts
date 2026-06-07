@@ -16,7 +16,7 @@ import { createTarGzip, parseTarGzip, type TarFileInput } from "nanotar";
 
 /**
  * SwitchCacheLayer — filesystem-backed AssetSpace snapshot cache for
- * FocusProfile hard switch (RFC 22b50a17 §Key sub-systems B.5).
+ * Profile hard switch (RFC 22b50a17 §Key sub-systems B.5).
  *
  * Layout (Decision #6 — wipe-all retention model):
  *   <cacheDir>/<asUid>/<sha>.tar.gz   — gzip tarball (F1 content-root convention)
@@ -40,7 +40,7 @@ import { createTarGzip, parseTarGzip, type TarFileInput } from "nanotar";
  * hard switch is desktop-only (depends on git submodule ops + Node fs).
  *
  * Sync `getCacheStats()` is preserved for the v3 Settings UI render-path
- * (`ExocortexSettingTab.renderFocusProfileSections`). Reads cache dir
+ * (`ExocortexSettingTab.renderProfileSections`). Reads cache dir
  * synchronously — fast enough for the small entry counts expected.
  */
 
@@ -482,7 +482,7 @@ export class SwitchCacheLayer implements ICacheLayer {
 
   /**
    * Synchronous stats snapshot for the v3 Settings UI display path
-   * (`ExocortexSettingTab.renderFocusProfileSections` builds its widget
+   * (`ExocortexSettingTab.renderProfileSections` builds its widget
    * synchronously per Obsidian's `PluginSettingTab` contract).
    *
    * On mobile: returns zeros without touching Node fs. The Settings UI

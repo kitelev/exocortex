@@ -7,7 +7,7 @@ import * as path from "path";
 /**
  * E2E render smoke for the «Exocortex: Apply profile» command
  * (`hard-switch-focus-profile`, wired in
- * `ExocortexPlugin.registerFocusProfileCommands`).
+ * `ExocortexPlugin.registerProfileCommands`).
  *
  * RFC 0a0791c1 Phase 5 T2 consolidated the former soft «Switch focus profile»
  * (`switch-focus-profile`) + mount-state «Switch knowledge profile» commands
@@ -36,7 +36,7 @@ import * as path from "path";
  *   SPARQL, which expects the expanded `exocmd:Command` IRI while the test
  *   vault uses symbolic `[[exocmd__Command]]` class wikilinks — a
  *   fixture-resolution gap. The profile picker has NO such gap:
- *   `VaultProfileResolver.listFocusProfileFiles` discovers profiles by a plain
+ *   `VaultProfileResolver.listProfileFiles` discovers profiles by a plain
  *   substring match on the raw `exo__Instance_class` frontmatter string
  *   (`instanceClassContains` → `c.includes(PROFILE_CLASS_UID)`), reading
  *   straight from `metadataCache` — no triple-store IRI expansion. The
@@ -50,7 +50,7 @@ import * as path from "path";
  *
  * Revert-verify (documented in the PR body): removing the fixtures (or
  * downgrading their class wikilink to symbolic form) makes `profileLister`
- * return `[]`, so `invokeSwitchKnowledgeProfile` early-returns with the
+ * return `[]`, so `invokeApplyProfile` early-returns with the
  * «No profiles found in vault» Notice and NEVER opens the modal — the
  * `.suggestion-item` assertion then times out and this spec FAILS.
  */
@@ -115,7 +115,7 @@ test.describe("Focus profile picker — render smoke", () => {
       specName: "focus-profile-picker",
     });
 
-    // The command is registered only after `registerFocusProfileCommands()`
+    // The command is registered only after `registerProfileCommands()`
     // runs during onload. Poll for it so the spec does not race the boot
     // pipeline. A missing command id here means a load-time regression.
     await expect
@@ -134,7 +134,7 @@ test.describe("Focus profile picker — render smoke", () => {
       )
       .toBe(true);
 
-    // Poll until metadataCache has the FocusProfile fixtures indexed the same
+    // Poll until metadataCache has the Profile fixtures indexed the same
     // way `VaultProfileResolver.instanceClassContains` discovers them — a
     // substring match on the raw `exo__Instance_class` string. This makes the
     // command trigger deterministic (Docker Obsidian populates the cache
@@ -166,7 +166,7 @@ test.describe("Focus profile picker — render smoke", () => {
           }, PROFILE_CLASS_UID),
         {
           timeout: 30000,
-          message: "FocusProfile fixtures not discoverable in metadataCache",
+          message: "Profile fixtures not discoverable in metadataCache",
         },
       )
       .toBeGreaterThanOrEqual(2);
@@ -177,7 +177,7 @@ test.describe("Focus profile picker — render smoke", () => {
     const loadPhaseConsoleErrors = consoleErrors.length;
 
     // Trigger the command. The callback is fire-and-forget (`void
-    // invokeSwitchKnowledgeProfile()`): it lists profiles then opens ProfileFuzzyModal.
+    // invokeApplyProfile()`): it lists profiles then opens ProfileFuzzyModal.
     await window.evaluate((id) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const app = (window as any).app;

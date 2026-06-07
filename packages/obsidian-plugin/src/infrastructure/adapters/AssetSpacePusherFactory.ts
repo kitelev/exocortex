@@ -6,7 +6,7 @@ import {
   GitHubRestClient,
   type GitHubRestClientOptions,
 } from "./GitHubRestClient";
-import type { IAssetSpacePusher } from "./FocusProfileCommands";
+import type { IAssetSpacePusher } from "./ProfileCommands";
 
 /**
  * Lookup-only helper from {@link AssetSpaceLookupHelper.lookupAssetSpaceUidByFolder}.
