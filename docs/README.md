@@ -59,3 +59,31 @@ active guidance:
 
 - `examples/rfc-009/` — dynamic-command pipeline fixtures (referenced by `packages/cli/README.md` and unit tests)
 - `rfc-94e520da/starter-kit-grounding-status.json` — grounding-audit data (read by `scripts/audit-starter-kit-groundings.mjs`)
+
+## Package documentation
+
+Some docs live alongside their package rather than in this top-level tree. They
+are listed here for discoverability. The process/historical ones below are kept
+in place (not archived) because CI workflows, scripts, and tests reference them
+by path.
+
+### CLI — `packages/cli/docs/`
+
+- [CLI_API_REFERENCE.md](../packages/cli/docs/CLI_API_REFERENCE.md) — full command/flag reference
+- [ONTOLOGY_REFERENCE.md](../packages/cli/docs/ONTOLOGY_REFERENCE.md) — ontology reference for CLI users
+- [SPARQL_GUIDE.md](../packages/cli/docs/SPARQL_GUIDE.md), [SPARQL_COOKBOOK.md](../packages/cli/docs/SPARQL_COOKBOOK.md) — querying from the CLI
+- [RCA_DYNCOMMAND_SHOW_VS_EXEC.md](../packages/cli/docs/RCA_DYNCOMMAND_SHOW_VS_EXEC.md) — _(process)_ root-cause analysis, referenced by the CLI README
+- [SUNSET_LEGACY_COMMAND_START.md](../packages/cli/docs/SUNSET_LEGACY_COMMAND_START.md) — _(process)_ sunset checklist for legacy `command start`
+
+### Obsidian plugin — `packages/obsidian-plugin/docs/`
+
+- [EXO_LAYOUT.md](../packages/obsidian-plugin/docs/EXO_LAYOUT.md) — layout engine
+- [RELATION_COLUMN_SET.md](../packages/obsidian-plugin/docs/RELATION_COLUMN_SET.md) — relation column sets
+- [TESTING.md](../packages/obsidian-plugin/docs/TESTING.md) — plugin testing guide
+- [release-checklist-mobile.md](../packages/obsidian-plugin/docs/release-checklist-mobile.md) — mobile release checklist
+- [FLAKY_DASHBOARD.md](../packages/obsidian-plugin/docs/FLAKY_DASHBOARD.md) — flaky-test dashboard (drives `flaky-aggregate`/`flaky-render-markdown` scripts)
+- `phase3/` — _(historical)_ Phase-3 CI/X11 stabilization ADR + spikes. Completed program; the [ADR](../packages/obsidian-plugin/docs/phase3/ADR_FLAKY_X11_STRATEGY.md) is referenced by `docker-entrypoint-e2e.sh` and `ci.yml`, so the folder is kept in place.
+
+### Core engine — `packages/exocortex/docs/`
+
+- [NL-TO-SPARQL.md](../packages/exocortex/docs/NL-TO-SPARQL.md) — engine internals for NL→SPARQL (distinct from the user-facing [NL-TO-SPARQL.md](NL-TO-SPARQL.md) above)
