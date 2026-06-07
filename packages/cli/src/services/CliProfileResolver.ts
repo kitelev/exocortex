@@ -120,7 +120,7 @@ export class CliProfileResolver {
    *
    * Outcomes:
    * - `engaged` — effective set computed; `result.effective` is the AS-UID set
-   *   the CLI hard switch materialises (+ `result.folderMap` for diagnostics)
+   *   the CLI apply materialises (+ `result.folderMap` for diagnostics)
    * - `no-profile` — `profileUid` was null/undefined; caller indexes full vault
    * - `missing-profile` — UID provided but no asset with that UID found; caller
    *   indexes full vault (defensive; surface warn)

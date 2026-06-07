@@ -1,10 +1,10 @@
 /**
- * Integration tests for `exocortex hard-switch <profile-uid>` — the REAL
+ * Integration tests for `exocortex apply-profile <profile-uid>` — the REAL
  * mount-state switch (Issue #3416, UI↔CLI parity).
  *
  * Uses a real on-disk fixture vault (matches `CliProfileResolver`
- * unit-test style) + the pure-logic seam `runHardSwitch` (returns a
- * `HardSwitchResult` rather than calling `process.exit`). Tear-down scenarios
+ * unit-test style) + the pure-logic seam `runApplyProfile` (returns a
+ * `ApplyProfileResult` rather than calling `process.exit`). Tear-down scenarios
  * need NO network (unmount is pure `fs`); the materialise scenario injects a
  * fake mount (`pullAssetSpace` stubbed) so no GitHub tarball is fetched.
  *
@@ -17,7 +17,7 @@
  * Revert-verify: the `[revert-verify] tear-down` scenario FAILS against the
  * pre-fix scaffold (which performed zero filesystem ops — the testlib folder
  * + `.gitmodules` entry would survive) and PASSES post-fix. Empirically
- * verified by stubbing `CliHardSwitchService.execute` to a no-op (mirrors the
+ * verified by stubbing `CliApplyProfileService.execute` to a no-op (mirrors the
  * scaffold): the assertion `existsSync(testlibMount) === false` fails.
  */
 import { describe, it, expect, beforeEach, afterEach, jest } from "@jest/globals";
@@ -27,7 +27,7 @@ import path from "path";
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 
 import type { HardSwitchPlan, IConfirmGate } from "exocortex";
-import { runHardSwitch, hardSwitchCommand } from "../../../src/commands/hard-switch.js";
+import { runApplyProfile, applyProfileCommand } from "../../../src/commands/apply-profile.js";
 import {
   ASSET_SPACE_CLASS_UID,
   PROFILE_CLASS_UID,
@@ -35,7 +35,7 @@ import {
   TS_FLOOR_AS_UID_EXOCMD,
   TS_FLOOR_AS_UID_SHARED_IDENTITIES,
 } from "../../../src/services/CliProfileResolver.js";
-import { CliHardSwitchService } from "../../../src/services/CliHardSwitchService.js";
+import { CliApplyProfileService } from "../../../src/services/CliApplyProfileService.js";
 import { BootstrapAssetSpaceService } from "../../../src/services/BootstrapAssetSpaceService.js";
 import { InvalidArgumentsError, VaultNotFoundError } from "../../../src/utils/errors/index.js";
 import { ExitCodes } from "../../../src/utils/ExitCodes.js";
@@ -194,7 +194,7 @@ async function makeFixtureVault(
 
 const approvingGate: IConfirmGate = { confirmHardSwitch: async () => true };
 
-describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
+describe("CLI — apply-profile real mount-state switch (Issue #3416)", () => {
   let vaultRoot: string;
 
   afterEach(async () => {
@@ -202,7 +202,7 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
   });
 
   async function setup(testlibMaterialised: boolean): Promise<void> {
-    vaultRoot = await fs.mkdtemp(path.join(os.tmpdir(), "exocortex-cli-hardswitch-"));
+    vaultRoot = await fs.mkdtemp(path.join(os.tmpdir(), "exocortex-cli-apply-"));
     await makeFixtureVault(vaultRoot, testlibMaterialised);
   }
 
@@ -211,7 +211,7 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
     const testlibMount = path.join(vaultRoot, MOUNT_TESTLIB);
     expect(existsSync(testlibMount)).toBe(true); // precondition
 
-    const result = await runHardSwitch(
+    const result = await runApplyProfile(
       PROFILE_MINIMAL,
       { vault: vaultRoot, yes: true, verbose: false },
       { confirmGate: approvingGate, out: () => {}, err: () => {} },
@@ -239,21 +239,21 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
     const noopFactory = (
       _opts: unknown,
       vp: string,
-    ): CliHardSwitchService => {
-      const svc = new CliHardSwitchService({ vaultPath: vp });
+    ): CliApplyProfileService => {
+      const svc = new CliApplyProfileService({ vaultPath: vp });
       // Simulate the pre-fix scaffold: build a real plan but execute nothing.
       jest
         .spyOn(svc, "execute")
         .mockResolvedValue({ destroyed: [], materialized: [] });
       return svc;
     };
-    const result = await runHardSwitch(
+    const result = await runApplyProfile(
       PROFILE_MINIMAL,
       { vault: vaultRoot, yes: true, verbose: false },
       {
         confirmGate: approvingGate,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        hardSwitchServiceFactory: noopFactory as any,
+        applyServiceFactory: noopFactory as any,
         out: () => {},
         err: () => {},
       },
@@ -279,16 +279,16 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
         return { sha: "deadbeef", fileCount: 1 };
       });
 
-    const factory = (_opts: unknown, vp: string): CliHardSwitchService =>
-      new CliHardSwitchService({ vaultPath: vp, mount: realMount });
+    const factory = (_opts: unknown, vp: string): CliApplyProfileService =>
+      new CliApplyProfileService({ vaultPath: vp, mount: realMount });
 
-    const result = await runHardSwitch(
+    const result = await runApplyProfile(
       PROFILE_FULL,
       { vault: vaultRoot, yes: true, verbose: false },
       {
         confirmGate: approvingGate,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        hardSwitchServiceFactory: factory as any,
+        applyServiceFactory: factory as any,
         out: () => {},
         err: () => {},
       },
@@ -305,7 +305,7 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
 
   it("idempotent no-op: switching to a profile already in mount-state mutates nothing", async () => {
     await setup(/* testlibMaterialised */ true);
-    const result = await runHardSwitch(
+    const result = await runApplyProfile(
       PROFILE_FULL, // floor + testlib == current disk state
       { vault: vaultRoot, yes: true, verbose: false },
       { confirmGate: approvingGate, out: () => {}, err: () => {} },
@@ -321,7 +321,7 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
   it("R24 TS-floor guard: excluding an SDK-floor AS refuses with OPERATION_FAILED + no mutation", async () => {
     await setup(/* testlibMaterialised */ true);
     const testlibMount = path.join(vaultRoot, MOUNT_TESTLIB);
-    const result = await runHardSwitch(
+    const result = await runApplyProfile(
       PROFILE_MISSING_FLOOR, // omits $shared-identities (SDK floor)
       { vault: vaultRoot, yes: true, verbose: false },
       { confirmGate: approvingGate, out: () => {}, err: () => {} },
@@ -335,7 +335,7 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
 
   it("[#3426] CLI accepts a profile that omits exocmd — no R24 refusal (exocmd is NOT the SDK floor)", async () => {
     await setup(/* testlibMaterialised */ true);
-    const result = await runHardSwitch(
+    const result = await runApplyProfile(
       PROFILE_NO_EXOCMD, // declares the full SDK floor, omits exocmd
       { vault: vaultRoot, yes: true, verbose: false },
       { confirmGate: approvingGate, out: () => {}, err: () => {} },
@@ -353,7 +353,7 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
   it("refuse without --yes: gate declines, exit 0, no mutation", async () => {
     await setup(/* testlibMaterialised */ true);
     const testlibMount = path.join(vaultRoot, MOUNT_TESTLIB);
-    const result = await runHardSwitch(
+    const result = await runApplyProfile(
       PROFILE_MINIMAL,
       { vault: vaultRoot, yes: false, verbose: false },
       { out: () => {}, err: () => {} }, // real HeadlessConfirmGate (refuses)
@@ -371,7 +371,7 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
         return false; // decline so nothing mutates
       },
     };
-    await runHardSwitch(
+    await runApplyProfile(
       PROFILE_MINIMAL,
       { vault: vaultRoot, yes: false, verbose: true },
       { confirmGate: recordingGate, out: () => {}, err: () => {} },
@@ -386,7 +386,7 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
   it("--vault <invalid-path> → throws VaultNotFoundError", async () => {
     await setup(true);
     await expect(
-      runHardSwitch(
+      runApplyProfile(
         PROFILE_MINIMAL,
         { vault: "/does/not/exist-xyz-123", yes: true, verbose: false },
         { confirmGate: approvingGate, out: () => {}, err: () => {} },
@@ -397,7 +397,7 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
   it("unknown profile UID → throws InvalidArgumentsError", async () => {
     await setup(true);
     await expect(
-      runHardSwitch(
+      runApplyProfile(
         MISSING_UID,
         { vault: vaultRoot, yes: true, verbose: false },
         { confirmGate: approvingGate, out: () => {}, err: () => {} },
@@ -414,7 +414,7 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
       }),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;
-    const result = await runHardSwitch(
+    const result = await runApplyProfile(
       PROFILE_MINIMAL,
       { vault: vaultRoot, yes: true, verbose: false },
       {
@@ -429,13 +429,13 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
   });
 
   it("command surface registers --vault/--yes/--verbose/--ref/--token flags", () => {
-    const cmd = hardSwitchCommand();
+    const cmd = applyProfileCommand();
     const optionNames = cmd.options.map((o) => o.long);
     expect(optionNames).toContain("--vault");
     expect(optionNames).toContain("--yes");
     expect(optionNames).toContain("--verbose");
     expect(optionNames).toContain("--ref");
     expect(optionNames).toContain("--token");
-    expect(cmd.description()).toContain("Hard switch");
+    expect(cmd.description()).toContain("Apply");
   });
 });

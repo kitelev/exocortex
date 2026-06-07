@@ -14,7 +14,7 @@
  *     that the plugin renders; tearing it down would self-brick the UI.
  *
  * EV8 mandate: this is the ONE named guard all profile-switch sites (plugin
- * {@link ProfileApplyManager}, CLI {@link CliHardSwitchService} +
+ * {@link ProfileApplyManager}, CLI {@link CliApplyProfileService} +
  * {@link CliProfileResolver}) delegate to. The previous copy-pasted inline
  * guards drifted independently; consolidating here removes that drift surface.
  */
@@ -58,7 +58,7 @@ export const PLUGIN_UI_FLOOR_ASSETSPACE_UIDS: ReadonlySet<string> = new Set([
 /**
  * Thrown by {@link assertTsFloor} when a target profile's declared AssetSpace
  * set omits a floor AssetSpace. Distinguishable by `name` so callers (palette
- * command, CLI hard-switch command) can surface a clear refusal without any
+ * command, CLI apply-profile command) can surface a clear refusal without any
  * filesystem mutation having occurred.
  *
  * NOTE: there is exactly ONE such class (this one). Plugin and CLI re-export it

@@ -1,7 +1,7 @@
 /**
- * CLI-side hard-switch orchestrator (Issue #3416 — UI↔CLI parity).
+ * CLI-side apply-profile orchestrator (Issue #3416 — UI↔CLI parity).
  *
- * Turns the `hard-switch` scaffold into a real mount-state switch: tears down
+ * Turns the `apply-profile` scaffold into a real mount-state switch: tears down
  * AssetSpaces NOT in the target profile's effective set and materialises those
  * that ARE, via the GitHub REST tarball path (no `git` binary). Mirrors the
  * plugin's mount-state model (the profile-apply manager REST switch):
@@ -47,7 +47,7 @@ import { BootstrapAssetSpaceService } from "./BootstrapAssetSpaceService.js";
  * ({@link exocortex/src/domain/profile/TsFloorGuard}) so the single class
  * identity is shared across plugin + CLI — `e instanceof TsFloorViolationError`
  * works regardless of import path. Retained as a named export here for
- * backward-compat with the `hard-switch` command.
+ * backward-compat with the `apply-profile` command.
  */
 export { TsFloorViolationError };
 
@@ -86,20 +86,20 @@ export interface MaterializeTarget {
   label: string;
 }
 
-/** Result of {@link CliHardSwitchService.buildDiff}. */
-export interface HardSwitchDiff {
+/** Result of {@link CliApplyProfileService.buildDiff}. */
+export interface ApplyProfileDiff {
   toDestroy: TearDownTarget[];
   toMaterialize: MaterializeTarget[];
   plan: HardSwitchPlan;
 }
 
-/** Result of {@link CliHardSwitchService.execute}. */
-export interface HardSwitchExecResult {
+/** Result of {@link CliApplyProfileService.execute}. */
+export interface ApplyProfileExecResult {
   destroyed: string[];
   materialized: string[];
 }
 
-export interface CliHardSwitchServiceOptions {
+export interface CliApplyProfileServiceOptions {
   /** Absolute vault root. */
   vaultPath: string;
   /**
@@ -132,12 +132,12 @@ const SKIP_DIRS = new Set([
   ".git",
 ]);
 
-export class CliHardSwitchService {
+export class CliApplyProfileService {
   private readonly vaultPath: string;
   private readonly mount: BootstrapAssetSpaceService;
   private readonly ref: string;
 
-  constructor(opts: CliHardSwitchServiceOptions) {
+  constructor(opts: CliApplyProfileServiceOptions) {
     this.vaultPath = opts.vaultPath;
     this.mount = opts.mount ?? new BootstrapAssetSpaceService();
     this.ref = opts.ref ?? "main";
@@ -233,7 +233,7 @@ export class CliHardSwitchService {
   /**
    * R24 TS-floor guard. The profile's *declared* AssetSpace set (pre-floor —
    * `result.declaredOntologies` intersected with known AssetSpace UIDs) must
-   * contain every floor AssetSpace, otherwise the hard switch would tear one
+   * contain every floor AssetSpace, otherwise the apply would tear one
    * down and brick the engine.
    *
    * EV8 — delegates to the single named guard in `exocortex`. The CLI/headless
@@ -258,7 +258,7 @@ export class CliHardSwitchService {
     sourceProfileLabel: string;
     result: ResolveFilterResult;
     infos: AssetSpaceInfo[];
-  }): HardSwitchDiff {
+  }): ApplyProfileDiff {
     const { targetProfileUid, targetProfileLabel, sourceProfileUid, sourceProfileLabel, result, infos } =
       params;
 
@@ -352,7 +352,7 @@ export class CliHardSwitchService {
    * target). Idempotent at the per-AS level: a target already in the desired
    * state would not appear in the diff.
    */
-  async execute(diff: HardSwitchDiff): Promise<HardSwitchExecResult> {
+  async execute(diff: ApplyProfileDiff): Promise<ApplyProfileExecResult> {
     const destroyed: string[] = [];
     const materialized: string[] = [];
 

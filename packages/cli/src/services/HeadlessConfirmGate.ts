@@ -17,7 +17,7 @@
 import type { IConfirmGate, HardSwitchPlan } from "exocortex";
 
 export interface HeadlessConfirmGateOptions {
-  /** Confirm hard switch (safety override). False by default. */
+  /** Confirm apply (safety override). False by default. */
   yes: boolean;
   /** Echo the plan summary to stderr before deciding. False by default. */
   verbose?: boolean;
@@ -48,17 +48,17 @@ export class HeadlessConfirmGate implements IConfirmGate {
         0,
       );
       this.log(
-        `[hard-switch] Target: ${plan.targetProfileLabel} (${plan.targetProfileUid})`,
+        `[apply-profile] Target: ${plan.targetProfileLabel} (${plan.targetProfileUid})`,
       );
-      this.log(`[hard-switch] Source: ${plan.sourceProfileLabel}`);
+      this.log(`[apply-profile] Source: ${plan.sourceProfileLabel}`);
       this.log(
-        `[hard-switch] ${totalFiles} files to remove, ${plan.assetSpacesBeingTornDown.length} AS to tear down, ${plan.assetSpacesBeingMaterialized.length} AS to materialize`,
+        `[apply-profile] ${totalFiles} files to remove, ${plan.assetSpacesBeingTornDown.length} AS to tear down, ${plan.assetSpacesBeingMaterialized.length} AS to materialize`,
       );
     }
 
     if (!this.yes) {
       this.log(
-        "[hard-switch] Refused: --yes flag required for headless mode (Decision #2 safety).",
+        "[apply-profile] Refused: --yes flag required for headless mode (Decision #2 safety).",
       );
       return false;
     }
