@@ -1,13 +1,13 @@
 import type { App } from "obsidian";
 
-import type { SwitchJournalEntry } from "./FocusProfileSwitchManager";
+import type { SwitchJournalEntry } from "./ProfileApplyManager";
 
 /**
  * OperationsLogReader — formats the B.4 switch journal для UI display
  * (RFC 0a0791c1 §B.8 Section 4 «Operations log»).
  *
  * Source data: \`.exocortex/switch-journal.jsonl\` (one JSON entry per line)
- * written by \`FocusProfileSwitchManager\` (B.4).
+ * written by \`ProfileApplyManager\` (B.4).
  *
  * UI requirement (Architect #11 / RFC §B.8 Section 4):
  *   «Last 10 switches displayed as `<timestamp> | <profile-label> | <elapsedMs>ms | <status>`»

@@ -1,5 +1,5 @@
 /**
- * FocusProfileSwitchManager.hardSwitchProfile() — unit tests covering RFC
+ * ProfileApplyManager.hardSwitchProfile() — unit tests covering RFC
  * 22b50a17 Phase 3 algorithm + Phase 0 findings (F2/F3/F5/R24/R26).
  *
  * Tests:
@@ -22,7 +22,7 @@ import type { App, TFile } from "obsidian";
 import type { HardSwitchPlan, IConfirmGate } from "exocortex";
 
 import {
-  FocusProfileSwitchManager,
+  ProfileApplyManager,
   HardSwitchAbortedByUser,
   TsFloorViolationError,
   UncommittedChangesAbortError,
@@ -32,7 +32,7 @@ import {
   type ProfileResolution,
   type SwitchJournalEntry,
   type SwitchSettings,
-} from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
+} from "../../src/infrastructure/adapters/ProfileApplyManager";
 import { PluginLockManager } from "../../src/infrastructure/adapters/PluginLockManager";
 import {
   TS_FLOOR_AS_UID_EXO,
@@ -409,7 +409,7 @@ function setup(opts: SetupOptions) {
   const assetSpaceManager = new FakeAssetSpaceManager();
   const confirmGate = new FakeConfirmGate();
 
-  const mgr = new FocusProfileSwitchManager({
+  const mgr = new ProfileApplyManager({
     app,
     lockMgr,
     resolver,
@@ -442,7 +442,7 @@ function setup(opts: SetupOptions) {
 }
 
 // Patch FakeResolver to support adding more profiles after construction.
-declare module "../../src/infrastructure/adapters/FocusProfileSwitchManager" {
+declare module "../../src/infrastructure/adapters/ProfileApplyManager" {
   // (no-op — keeps TS happy)
 }
 interface FakeResolverExt extends FakeResolver {
@@ -471,7 +471,7 @@ async function readJournalEntries(app: App): Promise<SwitchJournalEntry[]> {
 
 // === Tests ===
 
-describe("FocusProfileSwitchManager.hardSwitchProfile", () => {
+describe("ProfileApplyManager.hardSwitchProfile", () => {
   describe("R24 — TS-floor guard", () => {
     it("throws TsFloorViolationError when target excludes any floor AS UID before any mutation", async () => {
       // Target profile includes ONLY ems — missing all 3 TS-floor AS.
@@ -903,7 +903,7 @@ describe("FocusProfileSwitchManager.hardSwitchProfile", () => {
   });
 });
 
-describe("FocusProfileSwitchManager.recoverIncompleteSwitch", () => {
+describe("ProfileApplyManager.recoverIncompleteSwitch", () => {
   it("restores destroyed-but-not-materialized AS from cache", async () => {
     const { mgr, cacheLayer, app } = setup({
       targetUid: "target",
@@ -987,7 +987,7 @@ describe("FocusProfileSwitchManager.recoverIncompleteSwitch", () => {
   });
 });
 
-describe("FocusProfileSwitchManager.reconcileToLocal", () => {
+describe("ProfileApplyManager.reconcileToLocal", () => {
   it("no-divergence when .gitmodules matches activeProfileUid effective set", async () => {
     const { mgr, localDataStore } = setup({
       targetUid: "target",

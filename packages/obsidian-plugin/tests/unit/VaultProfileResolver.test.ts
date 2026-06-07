@@ -1,5 +1,5 @@
 import { VaultProfileResolver } from "../../src/infrastructure/adapters/VaultProfileResolver";
-import { FOCUS_PROFILE_CLASS_UID } from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
+import { PROFILE_CLASS_UID } from "../../src/infrastructure/adapters/ProfileApplyManager";
 
 interface FakeFile {
   path: string;
@@ -28,7 +28,7 @@ describe("VaultProfileResolver.listFocusProfileFiles", () => {
       {
         file: { path: "a.md", basename: "a" },
         fm: {
-          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}|exo__FocusProfile]]`,
+          exo__Instance_class: `[[${PROFILE_CLASS_UID}|exo__FocusProfile]]`,
           exo__Asset_uid: "p1",
           exo__Asset_label: "Profile One",
         },
@@ -45,7 +45,7 @@ describe("VaultProfileResolver.listFocusProfileFiles", () => {
         fm: {
           exo__Instance_class: [
             "[[ems__Project]]",
-            `[[${FOCUS_PROFILE_CLASS_UID}|exo__FocusProfile]]`,
+            `[[${PROFILE_CLASS_UID}|exo__FocusProfile]]`,
           ],
           exo__Asset_uid: "p2",
         },
@@ -61,7 +61,7 @@ describe("VaultProfileResolver.listFocusProfileFiles", () => {
       {
         file: { path: "a.md", basename: "a" },
         fm: {
-          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
+          exo__Instance_class: `[[${PROFILE_CLASS_UID}]]`,
           exo__Asset_uid: "p1",
         },
       },
@@ -89,14 +89,14 @@ describe("VaultProfileResolver.listFocusProfileFiles", () => {
       {
         file: { path: "a.md", basename: "a" },
         fm: {
-          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
+          exo__Instance_class: `[[${PROFILE_CLASS_UID}]]`,
           exo__Asset_uid: "p1",
         },
       },
       {
         file: { path: "b.md", basename: "b" },
         fm: {
-          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
+          exo__Instance_class: `[[${PROFILE_CLASS_UID}]]`,
           exo__Asset_uid: "p2",
         },
       },
@@ -120,7 +120,7 @@ describe("VaultProfileResolver.resolve", () => {
       {
         file: { path: "p.md", basename: "p" },
         fm: {
-          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
+          exo__Instance_class: `[[${PROFILE_CLASS_UID}]]`,
           exo__Asset_uid: "p1",
           exo__Asset_label: "Personal",
           // RFC 01a83de8 Phase 2 — _includes now AssetSpace UID wikilinks
@@ -148,7 +148,7 @@ describe("VaultProfileResolver.resolve", () => {
       {
         file: { path: "p.md", basename: "p" },
         fm: {
-          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
+          exo__Instance_class: `[[${PROFILE_CLASS_UID}]]`,
           exo__Asset_uid: "p1",
           exo__Profile_imports: ["[[parent-uid]]"],
         },
@@ -163,7 +163,7 @@ describe("VaultProfileResolver.resolve", () => {
       {
         file: { path: "fallback.md", basename: "fallback" },
         fm: {
-          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
+          exo__Instance_class: `[[${PROFILE_CLASS_UID}]]`,
           exo__Asset_uid: "p1",
         },
       },
@@ -177,7 +177,7 @@ describe("VaultProfileResolver.resolve", () => {
       {
         file: { path: "p.md", basename: "p" },
         fm: {
-          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
+          exo__Instance_class: `[[${PROFILE_CLASS_UID}]]`,
           exo__Asset_uid: "p1",
         },
       },

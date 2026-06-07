@@ -11,7 +11,7 @@ const execFile = promisify(execFileCb);
 
 /**
  * GitSubmoduleOps — security-hardened wrapper for the git subprocess calls
- * needed by `FocusProfileSwitchManager.hardSwitchProfile` per RFC 22b50a17
+ * needed by `ProfileApplyManager.hardSwitchProfile` per RFC 22b50a17
  * §Solution Architecture lines 127-137.
  *
  * Operations covered:

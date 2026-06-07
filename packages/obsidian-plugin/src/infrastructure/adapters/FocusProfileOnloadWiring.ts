@@ -1,7 +1,7 @@
 /**
  * TS-floor AssetSpace UIDs (Vision Lock #17) — the AssetSpaces that are ALWAYS
  * part of any profile's effective set, regardless of profile config. The
- * mount-state hard/REST switch (`FocusProfileSwitchManager`) injects these so
+ * mount-state hard/REST switch (`ProfileApplyManager`) injects these so
  * the plugin's own TBox foundations can never be torn down by a profile that
  * omits them.
  *

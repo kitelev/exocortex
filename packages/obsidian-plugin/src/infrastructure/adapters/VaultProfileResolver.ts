@@ -3,8 +3,8 @@ import type { App, TFile } from "obsidian";
 import type {
   IProfileResolver,
   ProfileResolution,
-} from "./FocusProfileSwitchManager";
-import { FOCUS_PROFILE_CLASS_UID } from "./FocusProfileSwitchManager";
+} from "./ProfileApplyManager";
+import { PROFILE_CLASS_UID } from "./ProfileApplyManager";
 
 /**
  * Vault-backed implementation of {@link IProfileResolver}. Reads
@@ -27,7 +27,7 @@ import { FOCUS_PROFILE_CLASS_UID } from "./FocusProfileSwitchManager";
  * Shared-ontology discovery: production scans the converter's RDF graph
  * для ontology IRIs matching the `shared-` prefix pattern. v3 backward-
  * compat scope omits the discovery hook — returns empty array so the
- * `FocusProfileSwitchManager`'s TS-floor pattern match falls through
+ * `ProfileApplyManager`'s TS-floor pattern match falls through
  * to the hardcoded floor.
  */
 export class VaultProfileResolver implements IProfileResolver {
@@ -104,7 +104,7 @@ export class VaultProfileResolver implements IProfileResolver {
    * fuzzy picker.
    */
   public listFocusProfileFiles(): TFile[] {
-    return this.listProfileFilesByClass(FOCUS_PROFILE_CLASS_UID);
+    return this.listProfileFilesByClass(PROFILE_CLASS_UID);
   }
 
   /**

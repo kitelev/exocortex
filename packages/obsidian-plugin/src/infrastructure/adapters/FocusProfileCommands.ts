@@ -7,7 +7,7 @@
  *
  * Commands provided:
  *   1. `Exocortex: Apply profile` — fuzzy-picks an `exo__Profile` asset,
- *      invokes `FocusProfileSwitchManager.hardSwitchKnowledgeProfile` (the
+ *      invokes `ProfileApplyManager.applyProfile` (the
  *      mount-state strict-replace: materialise the profile's effective
  *      AssetSpace set, unmount the rest — TS-floor never unmounted).
  *   2. `Exocortex: Show current state` — Notice with the active profile label.
@@ -29,12 +29,12 @@
  * happens в B.11 plugin entry-point integration.
  */
 
-import type { FocusProfileSwitchManager } from "./FocusProfileSwitchManager";
+import type { ProfileApplyManager } from "./ProfileApplyManager";
 import {
   HardSwitchAbortedByUser,
   TsFloorViolationError,
   UncommittedChangesAbortError,
-} from "./FocusProfileSwitchManager";
+} from "./ProfileApplyManager";
 
 /** Minimal interface — full implementation in B.3 AssetSpaceManager. */
 export interface IAssetSpacePusher {
@@ -55,7 +55,7 @@ export interface FocusProfileChoice {
 }
 
 export interface FocusProfileCommandsDeps {
-  switchMgr: FocusProfileSwitchManager;
+  switchMgr: ProfileApplyManager;
   pushMgr: IAssetSpacePusher;
   /** Returns available `exo__Profile` assets (label + uid pairs) — the picker. */
   profileLister: () => Promise<FocusProfileChoice[]>;
@@ -80,7 +80,7 @@ export interface FocusProfileCommandsDeps {
 }
 
 export class FocusProfileCommands {
-  private readonly switchMgr: FocusProfileSwitchManager;
+  private readonly switchMgr: ProfileApplyManager;
   private readonly pushMgr: IAssetSpacePusher;
   private readonly profileLister: () => Promise<FocusProfileChoice[]>;
   private readonly fuzzyPick: FocusProfileCommandsDeps["fuzzyPick"];
@@ -104,7 +104,7 @@ export class FocusProfileCommands {
    * profile» (mount) commands into a single mount-state operation).
    *
    * Fuzzy-picks an `exo__Profile` asset, then invokes
-   * `FocusProfileSwitchManager.hardSwitchKnowledgeProfile` which:
+   * `ProfileApplyManager.applyProfile` which:
    *   1. R24 TS-floor assert (refuses targets that brick the plugin)
    *   2. Vision Lock #5 uncommitted abort (with file list)
    *   3. ModalConfirmGate (DI via switchMgr constructor)
@@ -133,7 +133,7 @@ export class FocusProfileCommands {
 
     this.notify(`Applying ${chosen.label}…`);
     try {
-      await this.switchMgr.hardSwitchKnowledgeProfile(chosen.uid);
+      await this.switchMgr.applyProfile(chosen.uid);
     } catch (e) {
       if (e instanceof HardSwitchAbortedByUser) {
         this.notify("Apply profile cancelled.");

@@ -12,7 +12,7 @@
  * The integration shape (real PAT persistence round-trip, real GitHub call,
  * real apply dispatch) is intentionally out of scope here — those are covered
  * by `LocalSecretsStore.test.ts`, `GitHubRestClient.test.ts`,
- * `FocusProfileSwitchManager.test.ts`. These tests only assert the UI
+ * `ProfileApplyManager.test.ts`. These tests only assert the UI
  * renders the expected scaffold so a future regression that drops one of
  * the sections fails CI loudly.
  */

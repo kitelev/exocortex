@@ -5,19 +5,19 @@ import {
   type IAssetSpacePusher,
 } from "../../src/infrastructure/adapters/FocusProfileCommands";
 import {
-  type FocusProfileSwitchManager,
+  type ProfileApplyManager,
   HardSwitchAbortedByUser,
   TsFloorViolationError,
   UncommittedChangesAbortError,
-} from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
+} from "../../src/infrastructure/adapters/ProfileApplyManager";
 
 // ─── Test doubles ────────────────────────────────────────────────────────
 
 class FakeSwitchMgr {
   hardSwitchCalls: string[] = [];
-  /** Error to throw from the next hardSwitchKnowledgeProfile call (then cleared). */
+  /** Error to throw from the next applyProfile call (then cleared). */
   hardSwitchThrows: Error | null = null;
-  async hardSwitchKnowledgeProfile(uid: string): Promise<void> {
+  async applyProfile(uid: string): Promise<void> {
     this.hardSwitchCalls.push(uid);
     if (this.hardSwitchThrows) {
       const e = this.hardSwitchThrows;
@@ -70,7 +70,7 @@ function makeHarness(opts: {
   const notices: string[] = [];
   const pickCalls: { options: FocusProfileChoice[]; title: string }[] = [];
   const deps: FocusProfileCommandsDeps = {
-    switchMgr: switchMgr as unknown as FocusProfileSwitchManager,
+    switchMgr: switchMgr as unknown as ProfileApplyManager,
     pushMgr,
     profileLister: async () => {
       if (opts.listError) throw opts.listError;
@@ -237,7 +237,7 @@ describe("FocusProfileCommands.invokeSwitchKnowledgeProfile (Apply profile)", ()
     expect(h.pickCalls[0].title).toBe("Apply profile");
   });
 
-  it("invokes hardSwitchKnowledgeProfile with the chosen uid", async () => {
+  it("invokes applyProfile with the chosen uid", async () => {
     const profiles = [{ uid: "k1", label: "knowledge-one" }];
     const h = makeHarness({ profiles, pickResult: profiles[0] });
     await h.cmd.invokeSwitchKnowledgeProfile();

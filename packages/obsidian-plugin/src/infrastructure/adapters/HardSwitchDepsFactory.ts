@@ -16,7 +16,7 @@ import type { PluginLocalDataStore } from "./PluginLocalDataStore";
 
 /**
  * Desktop-only hard-switch dependency bundle consumed by
- * `FocusProfileSwitchManager` + the gated palette commands (hard
+ * `ProfileApplyManager` + the gated palette commands (hard
  * «Switch knowledge profile», «Bootstrap vault», «Add AssetSpace by URL»).
  *
  * When this is `null` the gated commands are NOT registered — so a wiring

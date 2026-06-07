@@ -18,7 +18,7 @@ import type { PluginLocalDataStore } from "./PluginLocalDataStore";
 import { TS_FLOOR_ASSETSPACE_UIDS } from "./FocusProfileOnloadWiring";
 
 /**
- * FocusProfileSwitchManager — coordinates profile switching:
+ * ProfileApplyManager — coordinates profile switching:
  *   1. acquire persistent lock (B.6)
  *   2. write journal entry «starting»
  *   3. compute effective ontology set (с TS-floor per Vision Lock #17)
@@ -38,16 +38,13 @@ import { TS_FLOOR_ASSETSPACE_UIDS } from "./FocusProfileOnloadWiring";
  */
 
 /**
- * `exo__FocusProfile` class UID (frozen by RFC b6ba5595).
+ * `exo__Profile` class UID (frozen by RFC b6ba5595).
  *
- * RFC 13da049f Phase 6.5b (AC13) — **filter-only narrowing**: a profile's soft
- * switch is a query-time RDF-graph filter; physical AssetSpace materialisation
- * is the hard / mount-state switch ({@link hardSwitchKnowledgeProfile}). Phase 2
- * (RFC 01a83de8) collapsed the former `exo__KnowledgeProfile` class into this
- * single `exo__Profile` (was `exo__FocusProfile`); both the soft and the
- * mount-state switch now operate on the same class.
+ * RFC 01a83de8 Phase 2 unified the profile model onto this single `exo__Profile`
+ * class; the mount-state switch ({@link applyProfile}) and effective-set
+ * resolution both operate on it.
  */
-export const FOCUS_PROFILE_CLASS_UID = "3de846cd-1f0e-4f98-8613-b8587aa15174";
+export const PROFILE_CLASS_UID = "3de846cd-1f0e-4f98-8613-b8587aa15174";
 
 /**
  * TS-floor (Vision Lock #17): ontology URIs that are ALWAYS in the effective
@@ -87,7 +84,7 @@ export interface ProfileResolution {
 }
 
 /**
- * Resolves a FocusProfile asset by UID. Production implementation reads via
+ * Resolves a Profile asset by UID. Production implementation reads via
  * Obsidian metadataCache + vault.adapter; tests provide an in-memory map.
  */
 export interface IProfileResolver {
@@ -159,7 +156,7 @@ export interface SwitchJournalEntry {
   error?: string;
 }
 
-export interface FocusProfileSwitchManagerOptions {
+export interface ProfileApplyManagerOptions {
   app: App;
   lockMgr: PluginLockManager;
   resolver: IProfileResolver;
@@ -184,7 +181,7 @@ export interface FocusProfileSwitchManagerOptions {
   /**
    * REST/tarball AssetSpace mount/unmount (RFC 01a83de8 Phase 3 T1). The
    * cross-platform (incl. iOS) materialisation path. When wired and running on
-   * mobile, `hardSwitchKnowledgeProfile` delegates to {@link restSwitchProfile}
+   * mobile, `applyProfile` delegates to {@link restSwitchProfile}
    * (no git binary / staging / cache). Desktop keeps the git-binary path.
    *
    * Captured at onload — used to gate command registration + as a fallback.
@@ -217,7 +214,7 @@ const DEFAULT_MAX_EXTENDS_DEPTH = 5;
  * ({@link ../../../../../exocortex/src/domain/profile/TsFloorGuard}) so the
  * single class identity is shared across plugin + CLI — `e instanceof
  * TsFloorViolationError` works regardless of import path. Retained as a named
- * export here for backward-compat with `FocusProfileCommands` et al.
+ * export here for backward-compat with the profile command palette et al.
  */
 export { TsFloorViolationError };
 
@@ -254,7 +251,7 @@ export class HardSwitchAbortedByUser extends Error {
   }
 }
 
-export class FocusProfileSwitchManager {
+export class ProfileApplyManager {
   private readonly app: App;
   private readonly lockMgr: PluginLockManager;
   private readonly resolver: IProfileResolver;
@@ -276,7 +273,7 @@ export class FocusProfileSwitchManager {
   private readonly localDataStore?: PluginLocalDataStore;
   private readonly vaultRootPath?: string;
 
-  constructor(options: FocusProfileSwitchManagerOptions) {
+  constructor(options: ProfileApplyManagerOptions) {
     this.app = options.app;
     this.lockMgr = options.lockMgr;
     this.resolver = options.resolver;
@@ -300,7 +297,7 @@ export class FocusProfileSwitchManager {
 
   /**
    * Reindex-only apply path (RFC 0a0791c1 Phase 5 T2 — replaces the retired
-   * public `softSwitchFocusProfile`). Records the target as the last-applied
+   * public soft-switch method). Records the target as the last-applied
    * profile cache (`activeProfileUid`) and rebuilds the RDF graph from the
    * currently-materialised mount-state. Does NOT mutate the filesystem.
    *
@@ -373,13 +370,13 @@ export class FocusProfileSwitchManager {
   }
 
   /**
-   * @deprecated Use {@link hardSwitchKnowledgeProfile}. Retained for backward
+   * @deprecated Use {@link applyProfile}. Retained for backward
    * compatibility (RFC 13da049f Phase 6.5b AC15 — Knowledge/Focus split).
    * Hard switch materialises filesystem state, so it is semantically a
    * Knowledge-profile operation.
    */
   async hardSwitchProfile(targetProfileUid: string): Promise<void> {
-    return this.hardSwitchKnowledgeProfile(targetProfileUid);
+    return this.applyProfile(targetProfileUid);
   }
 
   /**
@@ -481,9 +478,9 @@ export class FocusProfileSwitchManager {
    * @throws UncommittedChangesAbortError if dirty files in any to-destroy AS.
    * @throws HardSwitchAbortedByUser if confirmGate declines.
    */
-  async hardSwitchKnowledgeProfile(targetProfileUid: string): Promise<void> {
+  async applyProfile(targetProfileUid: string): Promise<void> {
     if (typeof targetProfileUid !== "string" || targetProfileUid.length === 0) {
-      throw new Error("hardSwitchKnowledgeProfile: targetProfileUid is required");
+      throw new Error("applyProfile: targetProfileUid is required");
     }
     // RFC 01a83de8 Phase 3 T2 — on mobile the git binary is unavailable, so
     // delegate to the REST/tarball mount/unmount path (no staging / cache /
@@ -870,7 +867,7 @@ export class FocusProfileSwitchManager {
    * Mobile-capable profile switch (RFC 01a83de8 Phase 3 T2). Materialises the
    * target profile's effective AssetSpace set via REST/tarball mount/unmount
    * (no git binary, staging dir, cache layer, or git commit). Delegated to by
-   * {@link hardSwitchKnowledgeProfile} when running on mobile with `restMount`
+   * {@link applyProfile} when running on mobile with `restMount`
    * wired; desktop keeps the git-binary path.
    *
    * Visibility is **mount-state**: an AssetSpace is "active" iff its derived
@@ -915,7 +912,7 @@ export class FocusProfileSwitchManager {
         : "<unknown>";
 
     // 1. Effective AssetSpace set (declared ontologies → AS UIDs + TS-floor).
-    // Mirrors hardSwitchKnowledgeProfile's R24 derivation (computeDerivedSet,
+    // Mirrors applyProfile's R24 derivation (computeDerivedSet,
     // NOT resolveEffectiveSet — the latter silently injects floor ontologies).
     const declaredOntologySet = await this.computeDerivedSet(targetProfileUid);
     const folderToAsUid = await this.scanFolderToAsUid();
@@ -1189,7 +1186,7 @@ export class FocusProfileSwitchManager {
    * Detection: parse `.gitmodules` to get currently-materialized AS folders,
    * compare to effective set derived from local `activeProfileUid`. Mismatch
    * → call confirmGate (reusing IConfirmGate plan shape) to get user OK
-   * before reconciling via hardSwitchKnowledgeProfile.
+   * before reconciling via applyProfile.
    *
    * Returns `null` if no divergence detected. Otherwise returns the action
    * taken: `"reconciled"` if user approved, `"declined"` if user declined.
@@ -1252,7 +1249,7 @@ export class FocusProfileSwitchManager {
       ? await this.confirmGate.confirmHardSwitch(reconcilePlan)
       : true; // No gate wired (tests / headless) — proceed.
     if (!approved) return { outcome: "declined" };
-    await this.hardSwitchKnowledgeProfile(activeProfileUid);
+    await this.applyProfile(activeProfileUid);
     return { outcome: "reconciled" };
   }
 
@@ -1319,7 +1316,7 @@ export class FocusProfileSwitchManager {
       this.vaultRootPath === undefined
     ) {
       throw new Error(
-        "hardSwitchKnowledgeProfile: dependencies not wired (assetSpaceManager, cacheLayer, gitOps, uncommittedGuard, confirmGate, localDataStore, vaultRootPath required)",
+        "applyProfile: dependencies not wired (assetSpaceManager, cacheLayer, gitOps, uncommittedGuard, confirmGate, localDataStore, vaultRootPath required)",
       );
     }
     return {
@@ -1521,7 +1518,7 @@ export class FocusProfileSwitchManager {
   ): Promise<void> {
     if (depth > this.maxExtendsDepth) {
       throw new Error(
-        `FocusProfile chain exceeds max depth ${this.maxExtendsDepth} at ${uid} — possible cycle`,
+        `Profile chain exceeds max depth ${this.maxExtendsDepth} at ${uid} — possible cycle`,
       );
     }
     if (visited.has(uid)) return; // cycle guard

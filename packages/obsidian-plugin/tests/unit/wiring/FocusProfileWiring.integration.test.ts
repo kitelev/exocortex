@@ -6,7 +6,7 @@
  *   (b) `createAssetSpacePusher` with valid PAT → real AssetSpaceManager
  *   (c) `createAssetSpacePusher` when GitHub client ctor throws → fallback stub
  *   (d) `lookupAssetSpaceUidByFolder` finds matching folder / returns null
- *   (e) `FocusProfileSwitchManager.recoverIfNeeded` fires when
+ *   (e) `ProfileApplyManager.recoverIfNeeded` fires when
  *       `_switchInProgress=true` and last journal entry is incomplete
  *
  * Per `~/dotfiles/.claude/rules/test-fixture-realism.md` — fakes mirror
@@ -25,8 +25,8 @@ import {
 import { lookupAssetSpaceUidByFolder } from "../../../src/infrastructure/adapters/AssetSpaceLookupHelper";
 import { ASSET_SPACE_CLASS_UID } from "../../../src/infrastructure/adapters/AssetSpaceManager";
 import {
-  FocusProfileSwitchManager,
-} from "../../../src/infrastructure/adapters/FocusProfileSwitchManager";
+  ProfileApplyManager,
+} from "../../../src/infrastructure/adapters/ProfileApplyManager";
 import { PluginLockManager } from "../../../src/infrastructure/adapters/PluginLockManager";
 import type {
   IProfileResolver,
@@ -34,7 +34,7 @@ import type {
   IRdfIndexer,
   ProfileResolution,
   SwitchSettings,
-} from "../../../src/infrastructure/adapters/FocusProfileSwitchManager";
+} from "../../../src/infrastructure/adapters/ProfileApplyManager";
 
 // ─── Real-shape fake App / vault / metadataCache ─────────────────────────
 
@@ -283,9 +283,9 @@ describe("lookupAssetSpaceUidByFolder — branch (d) integration", () => {
 
 // ─── (e) recoverIfNeeded triggered when _switchInProgress=true ────────────
 
-describe("FocusProfileSwitchManager.recoverIfNeeded — branch (e) onload trigger", () => {
+describe("ProfileApplyManager.recoverIfNeeded — branch (e) onload trigger", () => {
   // Minimal fakes mirroring the existing harness in
-  // tests/unit/FocusProfileSwitchManager.test.ts but focused on the
+  // tests/unit/ProfileApplyManager.test.ts but focused on the
   // onload recovery scenario.
 
   class FakeProfileResolver implements IProfileResolver {
@@ -334,7 +334,7 @@ describe("FocusProfileSwitchManager.recoverIfNeeded — branch (e) onload trigge
       now: () => new Date("2026-06-02T00:00:00.000Z"),
     });
     const notifyCalls: string[] = [];
-    const mgr = new FocusProfileSwitchManager({
+    const mgr = new ProfileApplyManager({
       app,
       lockMgr,
       resolver,

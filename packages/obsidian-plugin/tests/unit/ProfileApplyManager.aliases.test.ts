@@ -1,22 +1,22 @@
 import type { App } from "obsidian";
 
 import {
-  FocusProfileSwitchManager,
-  type FocusProfileSwitchManagerOptions,
+  ProfileApplyManager,
+  type ProfileApplyManagerOptions,
   type IProfileResolver,
   type IRdfIndexer,
   type ISettingsStore,
   type ProfileResolution,
   type SwitchSettings,
-} from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
+} from "../../src/infrastructure/adapters/ProfileApplyManager";
 import { PluginLockManager } from "../../src/infrastructure/adapters/PluginLockManager";
 
 /**
  * RFC 0a0791c1 Phase 5 T2 — the soft RDF-filter path (`softSwitchFocusProfile`
  * + `switchProfile` / `softSwitchProfile` aliases) was removed. The mount-state
  * apply path remains:
- *   - hardSwitchKnowledgeProfile  (destructive filesystem materialize)
- *   - hardSwitchProfile → hardSwitchKnowledgeProfile (deprecated alias, kept)
+ *   - applyProfile  (destructive filesystem materialize)
+ *   - hardSwitchProfile → applyProfile (deprecated alias, kept)
  *
  * These tests verify:
  *   1. the canonical mount path throws when its deps are not wired
@@ -81,7 +81,7 @@ class FakeSettingsStore implements ISettingsStore {
 }
 
 interface Harness {
-  mgr: FocusProfileSwitchManager;
+  mgr: ProfileApplyManager;
   rdf: FakeRdfIndexer;
   settings: FakeSettingsStore;
   notifyCalls: string[];
@@ -109,7 +109,7 @@ function makeHarness(): Harness {
   const current = new Date("2026-06-04T00:00:00.000Z");
   const lockMgr = new PluginLockManager({ app, pid: "fixed-pid", now: () => current });
   const notifyCalls: string[] = [];
-  const opts: FocusProfileSwitchManagerOptions = {
+  const opts: ProfileApplyManagerOptions = {
     app,
     lockMgr,
     resolver,
@@ -118,20 +118,20 @@ function makeHarness(): Harness {
     now: () => current,
     notify: (m) => notifyCalls.push(m),
   };
-  const mgr = new FocusProfileSwitchManager(opts);
+  const mgr = new ProfileApplyManager(opts);
   return { mgr, rdf, settings, notifyCalls };
 }
 
 // ─── Deprecated alias delegation ─────────────────────────────────────────
 
-describe("FocusProfileSwitchManager — deprecated hard alias delegates to canonical", () => {
-  it("hardSwitchProfile delegates to hardSwitchKnowledgeProfile", async () => {
+describe("ProfileApplyManager — deprecated hard alias delegates to canonical", () => {
+  it("hardSwitchProfile delegates to applyProfile", async () => {
     const h = makeHarness();
     // Hard switch requires extra deps wired; without them, the canonical method
     // throws via assertHardSwitchWired(). What we verify here is that the alias
     // routes into the canonical method (not into soft-switch), so the very same
     // wiring error surfaces. Delegation proven by spy + identical throw signature.
-    const spy = jest.spyOn(h.mgr, "hardSwitchKnowledgeProfile");
+    const spy = jest.spyOn(h.mgr, "applyProfile");
     await expect(h.mgr.hardSwitchProfile(UID_BASE)).rejects.toThrow(
       /dependencies not wired/,
     );
@@ -140,13 +140,13 @@ describe("FocusProfileSwitchManager — deprecated hard alias delegates to canon
   });
 });
 
-// ─── Canonical hardSwitchKnowledgeProfile (wiring assertion) ─────────────
+// ─── Canonical applyProfile (wiring assertion) ─────────────
 
-describe("FocusProfileSwitchManager.hardSwitchKnowledgeProfile (canonical)", () => {
+describe("ProfileApplyManager.applyProfile (canonical)", () => {
   it("throws when hard-switch dependencies are not wired (assertHardSwitchWired)", async () => {
     const h = makeHarness();
-    await expect(h.mgr.hardSwitchKnowledgeProfile(UID_BASE)).rejects.toThrow(
-      /hardSwitchKnowledgeProfile: dependencies not wired/,
+    await expect(h.mgr.applyProfile(UID_BASE)).rejects.toThrow(
+      /applyProfile: dependencies not wired/,
     );
   });
 });
