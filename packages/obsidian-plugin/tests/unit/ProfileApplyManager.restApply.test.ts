@@ -272,6 +272,7 @@ function setup(opts: SetupOpts) {
   const restMount = new FakeRestMount();
   const factoryMount = new FakeRestMount();
   const gitOps = new FakeGitOps();
+  const notifyCalls: string[] = [];
 
   const mgr = new ProfileApplyManager({
     app,
@@ -279,6 +280,7 @@ function setup(opts: SetupOpts) {
     resolver,
     rdfIndexer: indexer,
     settingsStore,
+    notify: (m) => notifyCalls.push(m),
     /* eslint-disable @typescript-eslint/no-explicit-any */
     confirmGate,
     localDataStore: localDataStore as any,
@@ -297,6 +299,7 @@ function setup(opts: SetupOpts) {
     restMount,
     factoryMount,
     gitOps,
+    notifyCalls,
   };
 }
 
@@ -351,6 +354,34 @@ describe("ProfileApplyManager.applyProfileViaRest", () => {
     // No mount-state mutation, but the reindex-only fall-through still triggers
     // a single full-vault reindex.
     expect(indexer.refreshCalls).toBe(1);
+  });
+
+  it("notifies reconciliation counts on a real apply (#3448)", async () => {
+    // ems mounted (1), kpc unmounted (1).
+    const { mgr, notifyCalls } = setup({
+      targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
+      materialized: [...ALL_FLOOR_UIDS, "kpc-uid"],
+    });
+
+    await mgr.applyProfileViaRest("target");
+
+    expect(notifyCalls.length).toBe(1);
+    expect(notifyCalls[0]).toContain("1 mounted");
+    expect(notifyCalls[0]).toContain("1 unmounted");
+    expect(notifyCalls[0]).toContain("REST");
+  });
+
+  it("notifies a distinct no-change message on the no-op path (#3448)", async () => {
+    const { mgr, notifyCalls } = setup({
+      targetIncludes: ALL_FLOOR_UIDS,
+      materialized: ALL_FLOOR_UIDS,
+    });
+
+    await mgr.applyProfileViaRest("target");
+
+    expect(notifyCalls.length).toBe(1);
+    expect(notifyCalls[0]).toContain("no changes");
+    expect(notifyCalls[0]).toMatch(/\d+ AssetSpace\(s\) already match/);
   });
 
   it("throws TsFloorViolationError before any mount/unmount when target excludes a floor AS", async () => {

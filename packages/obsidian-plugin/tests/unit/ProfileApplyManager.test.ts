@@ -366,6 +366,22 @@ describe("ProfileApplyManager.reindexMountState — happy path (apply reindex)",
     expect(h.notifyCalls[0]).toMatch(/\d+ms/);
   });
 
+  it("uses noticeOverride verbatim when provided (no-op apply branch — #3448)", async () => {
+    const h = makeHarness({
+      profiles: [
+        [UID_BASE, { uid: UID_BASE, includes: [], extends: null, label: "profile-base" }],
+      ],
+    });
+    const override = 'Applied "profile-base": no changes (3 AssetSpace(s) already match).';
+    await (
+      h.mgr as unknown as {
+        reindexMountState(uid: string, noticeOverride?: string): Promise<void>;
+      }
+    ).reindexMountState(UID_BASE, override);
+    expect(h.notifyCalls.length).toBe(1);
+    expect(h.notifyCalls[0]).toBe(override);
+  });
+
   it("invokes rdf.refresh once on reindex (RFC 01a83de8 — soft-filter removed)", async () => {
     const h = makeHarness({
       profiles: [
