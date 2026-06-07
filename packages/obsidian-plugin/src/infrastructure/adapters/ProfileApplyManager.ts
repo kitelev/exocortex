@@ -310,7 +310,10 @@ export class ProfileApplyManager {
    * soft RDF filter was removed); this method indexes whatever AssetSpace
    * folders are currently on disk.
    */
-  private async reindexMountState(targetProfileUid: string): Promise<void> {
+  private async reindexMountState(
+    targetProfileUid: string,
+    noticeOverride?: string,
+  ): Promise<void> {
     const acquired = await this.lockMgr.acquireLock(`switch-profile-${targetProfileUid}`);
     if (!acquired) {
       throw new Error(`Another switch is in progress (lock held). Try again shortly.`);
@@ -353,8 +356,12 @@ export class ProfileApplyManager {
         elapsedMs,
       });
 
-      const profileLabel = await this.profileLabel(targetProfileUid);
-      this.notify(`Applied ${profileLabel} (${elapsedMs}ms)`);
+      if (noticeOverride !== undefined) {
+        this.notify(noticeOverride);
+      } else {
+        const profileLabel = await this.profileLabel(targetProfileUid);
+        this.notify(`Applied ${profileLabel} (${elapsedMs}ms)`);
+      }
     } catch (e) {
       await this.appendJournal({
         phase: "failed",
@@ -367,6 +374,18 @@ export class ProfileApplyManager {
       if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
       await this.lockMgr.releaseLock();
     }
+  }
+
+  /**
+   * Builds the user-facing notice for the no-op (empty-diff) apply branch.
+   * Distinguishes a genuine «already matches» no-op from the case where the
+   * vault layout yields 0 recognized mounted AssetSpaces (a likely
+   * derivePath/layout mismatch where the strict-replace had nothing to act on).
+   */
+  private noChangeNotice(profileLabel: string, recognizedCount: number): string {
+    return recognizedCount === 0
+      ? `Apply "${profileLabel}": no changes — 0 AssetSpaces recognized as mounted (check vault layout).`
+      : `Applied "${profileLabel}": no changes (${recognizedCount} AssetSpace(s) already match).`;
   }
 
   /**
@@ -616,7 +635,10 @@ export class ProfileApplyManager {
         targetUid: targetProfileUid,
         ts: new Date(startedAt).toISOString(),
       });
-      await this.reindexMountState(targetProfileUid);
+      await this.reindexMountState(
+        targetProfileUid,
+        this.noChangeNotice(targetProfileLabel, currentAsUids.size),
+      );
       await this.appendJournal({
         phase: "apply-completed",
         targetUid: targetProfileUid,
@@ -814,7 +836,9 @@ export class ProfileApplyManager {
         ts: this.now().toISOString(),
         elapsedMs,
       });
-      this.notify(`Applied к ${targetProfileLabel} (${elapsedMs}ms)`);
+      this.notify(
+        `Applied "${targetProfileLabel}": ${toMaterialize.length} mounted, ${toDestroy.length} unmounted (${elapsedMs}ms).`,
+      );
     } catch (e) {
       // Rollback attempt: best-effort cache restore previously-destroyed AS.
       // This is partial — anything that was already added via `submodule add`
@@ -988,7 +1012,10 @@ export class ProfileApplyManager {
     // No-op early exit — mount-state already matches the target. Re-index +
     // record the selection (reindex-only path).
     if (toDestroy.length === 0 && toMaterialize.length === 0) {
-      await this.reindexMountState(targetProfileUid);
+      await this.reindexMountState(
+        targetProfileUid,
+        this.noChangeNotice(targetProfileLabel, currentAsUids.size),
+      );
       return;
     }
 
@@ -1049,7 +1076,9 @@ export class ProfileApplyManager {
         ts: this.now().toISOString(),
         elapsedMs,
       });
-      this.notify(`Switched to ${targetProfileLabel} (${elapsedMs}ms, REST mount)`);
+      this.notify(
+        `Applied "${targetProfileLabel}": ${toMaterialize.length} mounted, ${toDestroy.length} unmounted (${elapsedMs}ms, REST).`,
+      );
     } catch (e) {
       await this.appendJournal({
         phase: "apply-failed",
