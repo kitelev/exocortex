@@ -118,7 +118,12 @@ echo "📦 Running exocortex grounding + RFC regression tests..."
 # Audit epic #3384 H5 (2026-06-05): domain/models/GroundingFrontmatterParser.test
 # — gates the extracted pure raw-frontmatter→GroundingDefinition mapping (the
 # field-mapping the CLI BDD parser delegates to).
-EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathPatterns=(services/(GroundingExecutor(\.[a-zA-Z0-9_-]+)?|AssetConversionService|NoteToRDFConverter\.(issue-2959|rfc-31c1a0be-grounding-ref|asset-filename|issue-3242-labelless-class)|ShapeRegistry|ShapeLoader)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/BGPExecutor\.issue-2997\.test|integration/dynamic-commands/(grounding-resolve-execute|grounding-phase3b-pipeline|grounding-type-vault-fixture-parity)\.test|domain/models/GroundingFrontmatterParser\.test)\.ts --forceExit"
+# Issue #3423 (2026-06-07): services/assetspace/AssetSpaceMount.test — gates the
+# shared mount/unmount core (fetch→wrapper→SHA→zip-slip→materialize + .gitmodules
+# transforms) that the plugin RestAssetSpaceMount + CLI BootstrapAssetSpaceService
+# both delegate to. Without it the core would rot silently (jest roots vs CI
+# allowlist gotcha — see packages/obsidian-plugin/CLAUDE.md "Test Suite Awareness").
+EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathPatterns=(services/(GroundingExecutor(\.[a-zA-Z0-9_-]+)?|AssetConversionService|NoteToRDFConverter\.(issue-2959|rfc-31c1a0be-grounding-ref|asset-filename|issue-3242-labelless-class)|ShapeRegistry|ShapeLoader)\.test|services/assetspace/AssetSpaceMount\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/BGPExecutor\.issue-2997\.test|integration/dynamic-commands/(grounding-resolve-execute|grounding-phase3b-pipeline|grounding-type-vault-fixture-parity)\.test|domain/models/GroundingFrontmatterParser\.test)\.ts --forceExit"
 if [ "$CI" = "true" ]; then
     if timeout 60 node ./node_modules/jest/bin/jest.js $EXOCORTEX_JEST_ARGS; then
         echo "✅ Exocortex grounding regression tests passed!"

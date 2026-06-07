@@ -1,38 +1,36 @@
 import type { App, DataAdapter } from "obsidian";
 import { GitHubRestClient } from "./GitHubRestClient";
-import { TarExtractor, type ExtractedTarFile } from "./TarExtractor";
+import { parseGitHubURL } from "./AssetSpaceManager";
+import { validateVaultPathArg } from "./GitSubmoduleOps";
 import {
-  parseGitHubURL,
-  discoverWrapperDir,
-  extractShaFromWrapper,
-} from "./AssetSpaceManager";
-import {
-  validateVaultPathArg,
+  mountAssetSpaceFiles,
+  appendGitmodulesEntry,
   stripGitmodulesEntry,
-  escapeRegex,
-} from "./GitSubmoduleOps";
+  type FileSystemPort,
+  type AssetSpaceHttpClient,
+  type MountFile,
+  type MountResult,
+} from "exocortex";
 
 /**
  * RestAssetSpaceMount — cross-platform (incl. iOS) AssetSpace mount/unmount
  * via the GitHub REST tarball API, RFC 01a83de8 Phase 3 (T1).
  *
- * ## Why this exists
+ * ## Thin adapter over the shared mount core (Issue #3423)
  *
- * The desktop hard-switch path materialises AssetSpaces through the `git`
- * binary (`git submodule add` / `deinit` — see {@link GitSubmoduleOps}). That
- * binary is unavailable on mobile Obsidian, so the whole hard-switch /
- * mount-state visibility model could not reach iOS. This adapter replaces the
- * single `execFile("git")` mount/unmount mechanics with a pure
- * `requestUrl` + tarball + `vault.adapter` pipeline that runs identically on
- * desktop and mobile:
+ * The mount/unmount pipeline (fetch tarball → discover `<owner>-<repo>-<sha>/`
+ * wrapper → extract SHA → zip-slip validate → materialise files → `.gitmodules`
+ * mutation) lives ONCE in `exocortex`'s {@link mountAssetSpaceFiles} +
+ * `.gitmodules` text transforms. This adapter supplies the two Obsidian-coupled
+ * ports:
  *
- *   - **mount**: `GitHubRestClient.fetchTarballBuffer` → `TarExtractor`
- *     (zip-slip safe) → write each file into `<submodulePath>/...` via
- *     `vault.adapter.writeBinary` → append a plain-text `[submodule …]` entry
- *     to `.gitmodules`. No `.git/modules` / `.git/config` state is created —
- *     mount-state visibility is "folder exists", not "git knows about it".
- *   - **unmount**: `vault.adapter.rmdir(path, recursive)` → strip the
- *     `.gitmodules` entry. No `git submodule deinit` needed.
+ *   - **{@link FileSystemPort}** over `vault.adapter` — `materialize()` writes
+ *     files **additively** (overwrite collisions, leave files absent from the
+ *     tarball; callers needing a pristine tree {@link unmount} first), the same
+ *     direct-write strategy this adapter has always used. No `.git/modules` /
+ *     `.git/config` state — mount-state visibility is "folder exists".
+ *   - **{@link AssetSpaceHttpClient}** over {@link GitHubRestClient} — a
+ *     rate-limit-gated `requestUrl` tarball fetch.
  *
  * Desktop keeps the git-binary path as a gated fallback (RFC v9 EV4); this
  * adapter is the mobile-capable path that Phase 3 T2 wires into the profile
@@ -40,39 +38,28 @@ import {
  *
  * ## Security shape (inherited + local)
  *
- *   - Repo URL allowlist via {@link GitHubRestClient.validateRepoURL}
- *     (rejects non-github hosts, path traversal, scheme injection).
- *   - Submodule path validated via {@link validateVaultPathArg}
- *     (`..` / absolute / shell-meta / leading-dash rejected).
+ *   - Repo URL allowlist via {@link GitHubRestClient.validateRepoURL}.
+ *   - Submodule path validated via {@link validateVaultPathArg}.
  *   - PAT redaction + rate-limit gate handled inside `GitHubRestClient`.
- *   - Tarball entries pass `TarExtractor`'s 4 zip-slip checks; a second
- *     defense-in-depth check confirms each resolved write target stays under
- *     the mount folder before any `writeBinary`.
+ *   - The core rejects sym/hard links + `..` traversal + non-wrapper entries;
+ *     `materialize()` adds a defense-in-depth check that each resolved target
+ *     stays under the mount folder before any `writeBinary`.
  *   - `.gitmodules` written as plain text (no shell) — the `[submodule "…"]`
- *     header path is constrained to the already-validated, metacharacter-free
- *     `submodulePath`.
+ *     header path is the already-validated, metacharacter-free `submodulePath`.
  */
 export interface RestAssetSpaceMountOptions {
   app: App;
   client: GitHubRestClient;
-  /** Optional injection — defaults to a fresh `new TarExtractor()`. */
-  tarExtractor?: TarExtractor;
 }
 
 /** Outcome of a successful {@link RestAssetSpaceMount.mount}. */
-export interface RestMountResult {
-  /** Commit SHA discovered from the GitHub tarball wrapper dir. */
-  sha: string;
-  /** Number of files written into the vault under the mount folder. */
-  fileCount: number;
-}
+export type RestMountResult = MountResult;
 
 const GITMODULES = ".gitmodules";
 
 export class RestAssetSpaceMount {
   private readonly app: App;
   private readonly client: GitHubRestClient;
-  private readonly tarExtractor: TarExtractor;
 
   constructor(opts: RestAssetSpaceMountOptions) {
     if (!opts || !opts.app) {
@@ -83,7 +70,6 @@ export class RestAssetSpaceMount {
     }
     this.app = opts.app;
     this.client = opts.client;
-    this.tarExtractor = opts.tarExtractor ?? new TarExtractor();
   }
 
   private get adapter(): DataAdapter {
@@ -97,9 +83,8 @@ export class RestAssetSpaceMount {
    *
    * The mount is **additive** at the file level — colliding paths are
    * overwritten, but files present locally yet absent from the tarball are
-   * left untouched. Callers that need a pristine tree should
-   * {@link unmount} first (the profile-switch orchestrator does
-   * destroy-then-materialise).
+   * left untouched. Callers that need a pristine tree should {@link unmount}
+   * first (the profile-switch orchestrator does destroy-then-materialise).
    *
    * @throws on invalid URL / path, rate-limit exhaustion, network/HTTP
    *   failure, empty or malformed tarball, or zip-slip violation. Partial
@@ -115,63 +100,17 @@ export class RestAssetSpaceMount {
     GitHubRestClient.validateRepoURL(gitUrl);
     const { owner, repo } = parseGitHubURL(gitUrl);
 
-    // Pre-flight rate-limit gate — fetchTarballBuffer is one REST call. The
-    // PAT (D3 REST-push reuse) lives inside `client`; an insufficient scope
-    // surfaces as a redacted HTTP 401/404 from fetchTarballBuffer below.
-    await this.client.ensureRateLimit(1);
-
-    const blob = await this.client.fetchTarballBuffer(owner, repo, ref);
-
-    // Collect entries so we can do the two-pass discover-wrapper-then-strip
-    // pattern (same shape as AssetSpaceManager.pullAssetSpace). Memory is
-    // already O(tarball.size) — nanotar buffers internally.
-    const entries: ExtractedTarFile[] = [];
-    for await (const entry of this.tarExtractor.extract(blob, {
-      // Wrapper prefix unknown until the first entry is read — let the prefix
-      // gate accept any path. Zip-slip protections 1-3 (absolute, `..`,
-      // sym/hard links) stay active.
-      stagingDirPrefix: "",
-    })) {
-      entries.push(entry);
-    }
-    if (entries.length === 0) {
-      throw new Error(
-        `RestAssetSpaceMount.mount: tarball empty for ${owner}/${repo}@${ref}`,
-      );
-    }
-
-    const wrapper = discoverWrapperDir(entries);
-    const sha = extractShaFromWrapper(wrapper);
-    const wrapperPrefix = wrapper + "/";
-
-    await this.ensureDir(safePath);
-    const createdDirs = new Set<string>([safePath]);
-    let fileCount = 0;
-
-    for (const entry of entries) {
-      if (!entry.path.startsWith(wrapperPrefix)) {
-        throw new Error(
-          `RestAssetSpaceMount.mount: tarball entry "${entry.path}" not under wrapper "${wrapper}"`,
-        );
-      }
-      const rel = entry.path.slice(wrapperPrefix.length);
-      if (rel.length === 0) continue;
-      const target = `${safePath}/${rel}`;
-      // Defense-in-depth — TarExtractor already rejected `..` / absolute, but
-      // confirm the joined target stays under the mount folder regardless.
-      if (target !== safePath && !target.startsWith(safePath + "/")) {
-        throw new Error(
-          `RestAssetSpaceMount.mount: entry "${rel}" escapes mount folder "${safePath}"`,
-        );
-      }
-      const parent = parentDir(target);
-      if (parent.length > 0) await this.ensureDirChain(parent, createdDirs);
-      await this.adapter.writeBinary(target, toArrayBuffer(entry.content));
-      fileCount++;
-    }
+    const result = await mountAssetSpaceFiles({
+      http: this.httpPort(),
+      fs: this.fsPort(),
+      owner,
+      repo,
+      ref,
+      targetPath: safePath,
+    });
 
     await this.appendGitmodulesEntry(safePath, gitUrl);
-    return { sha, fileCount };
+    return result;
   }
 
   /**
@@ -193,39 +132,79 @@ export class RestAssetSpaceMount {
     }
   }
 
-  // ───────────────────────────── internals ─────────────────────────────
-
-  /** Create one directory level if it does not already exist. */
-  private async ensureDir(dir: string): Promise<void> {
-    if (dir.length === 0) return;
-    if (!(await this.adapter.exists(dir))) {
-      await this.adapter.mkdir(dir);
-    }
-  }
+  // ───────────────────────────── ports ─────────────────────────────
 
   /**
-   * Create a directory and all its missing parents (Obsidian's
-   * `DataAdapter.mkdir` is NOT guaranteed recursive on every platform).
-   * `created` memoises already-ensured dirs to avoid redundant
-   * `exists`/`mkdir` round-trips during a multi-file mount.
+   * Rate-limit-gated `requestUrl` tarball fetch. The PAT (D3 REST-push reuse)
+   * lives inside `client`; an insufficient scope surfaces as a redacted HTTP
+   * 401/404 from `fetchTarballBuffer`.
    */
-  private async ensureDirChain(
-    dir: string,
-    created: Set<string>,
-  ): Promise<void> {
-    if (dir.length === 0 || created.has(dir)) return;
-    const parent = parentDir(dir);
-    if (parent.length > 0) await this.ensureDirChain(parent, created);
-    if (!created.has(dir)) {
-      await this.ensureDir(dir);
-      created.add(dir);
-    }
+  private httpPort(): AssetSpaceHttpClient {
+    const client = this.client;
+    return {
+      async fetchTarball(owner, repo, ref): Promise<Uint8Array> {
+        // Pre-flight rate-limit gate — fetchTarballBuffer is one REST call.
+        await client.ensureRateLimit(1);
+        const blob = await client.fetchTarballBuffer(owner, repo, ref);
+        return new Uint8Array(blob);
+      },
+    };
   }
 
   /**
-   * Idempotent `.gitmodules` stanza insertion over `vault.adapter` — the
-   * mobile-capable counterpart of {@link GitSubmoduleOps.appendGitmodulesEntry}
-   * (which uses `node:fs`). Re-mounting an already-registered path is a no-op.
+   * `vault.adapter`-backed file-system port. `materialize()` keeps this
+   * adapter's historic **additive direct-write** strategy verbatim (ensure the
+   * mount folder + each parent chain, then `writeBinary` each file).
+   */
+  private fsPort(): FileSystemPort {
+    const adapter = this.adapter;
+    return {
+      exists: (p) => adapter.exists(p),
+      read: (p) => adapter.read(p),
+      write: (p, c) => adapter.write(p, c),
+      removeDir: (p) => adapter.rmdir(p, true),
+      async materialize(targetPath: string, files: MountFile[]): Promise<number> {
+        const ensureDir = async (dir: string): Promise<void> => {
+          if (dir.length === 0) return;
+          if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
+        };
+        const created = new Set<string>([targetPath]);
+        const ensureDirChain = async (dir: string): Promise<void> => {
+          if (dir.length === 0 || created.has(dir)) return;
+          const parent = parentDir(dir);
+          if (parent.length > 0) await ensureDirChain(parent);
+          if (!created.has(dir)) {
+            await ensureDir(dir);
+            created.add(dir);
+          }
+        };
+
+        await ensureDir(targetPath);
+        let count = 0;
+        for (const file of files) {
+          const target = `${targetPath}/${file.relPath}`;
+          // Defense-in-depth — the core already rejected `..` / non-wrapper
+          // entries; confirm the joined target stays under the mount folder.
+          if (target !== targetPath && !target.startsWith(targetPath + "/")) {
+            throw new Error(
+              `RestAssetSpaceMount.materialize: entry "${file.relPath}" escapes mount folder "${targetPath}"`,
+            );
+          }
+          const parent = parentDir(target);
+          if (parent.length > 0) await ensureDirChain(parent);
+          await adapter.writeBinary(target, toArrayBuffer(file.content));
+          count++;
+        }
+        return count;
+      },
+    };
+  }
+
+  // ───────────────────────────── .gitmodules I/O ─────────────────────────────
+
+  /**
+   * Idempotent `.gitmodules` stanza insertion over `vault.adapter` using the
+   * shared {@link appendGitmodulesEntry} text transform.
    */
   private async appendGitmodulesEntry(
     submodulePath: string,
@@ -235,20 +214,14 @@ export class RestAssetSpaceMount {
     if (await this.adapter.exists(GITMODULES)) {
       existing = await this.adapter.read(GITMODULES);
     }
-    const headerRegex = new RegExp(
-      `^\\s*\\[submodule\\s+"${escapeRegex(submodulePath)}"\\]`,
-      "m",
-    );
-    if (existing.length > 0 && headerRegex.test(existing)) return;
-    const sep = existing.length === 0 || existing.endsWith("\n") ? "" : "\n";
-    const newEntry = `[submodule "${submodulePath}"]\n\tpath = ${submodulePath}\n\turl = ${url}\n`;
-    await this.adapter.write(GITMODULES, existing + sep + newEntry);
+    const { content, added } = appendGitmodulesEntry(existing, submodulePath, url);
+    if (added) await this.adapter.write(GITMODULES, content);
   }
 
   /**
-   * Strip a `.gitmodules` stanza over `vault.adapter`, reusing the pure
-   * {@link stripGitmodulesEntry} text transform. No-op when `.gitmodules`
-   * is absent or has no matching stanza.
+   * Strip a `.gitmodules` stanza over `vault.adapter`, reusing the shared
+   * {@link stripGitmodulesEntry} text transform. No-op when `.gitmodules` is
+   * absent or has no matching stanza.
    */
   private async removeGitmodulesEntry(submodulePath: string): Promise<void> {
     if (!(await this.adapter.exists(GITMODULES))) return;
@@ -266,8 +239,8 @@ function parentDir(p: string): string {
 }
 
 /**
- * Convert a `Uint8Array` (possibly a view over a larger buffer, as nanotar
- * may emit) into a standalone `ArrayBuffer` for `DataAdapter.writeBinary`.
+ * Convert a `Uint8Array` (possibly a view over a larger buffer, as the tarball
+ * parser may emit) into a standalone `ArrayBuffer` for `DataAdapter.writeBinary`.
  */
 function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
   return u8.buffer.slice(

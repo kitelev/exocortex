@@ -4,27 +4,46 @@
  *
  * Per RFC 13da049f Phase 6.2 (Bootstrap UX) + Phase 6.3 (Add AssetSpace UX).
  *
+ * ## Thin adapter over the shared mount core (Issue #3423)
+ *
+ * The mount pipeline (fetch tarball → discover `<owner>-<repo>-<sha>/` wrapper
+ * → extract SHA → zip-slip validate → materialise → `.gitmodules` mutation)
+ * lives ONCE in `exocortex`'s {@link mountAssetSpaceFiles} + `.gitmodules` text
+ * transforms. This service supplies the two Node-coupled ports:
+ *
+ *   - **{@link FileSystemPort}** over Node `fs` — `materialize()` keeps the CLI's
+ *     historic **atomic stage-then-rename** strategy (temp dir → `renameSync`,
+ *     EXDEV copy fallback), refusing a non-empty target. No partial state on
+ *     failure.
+ *   - **{@link AssetSpaceHttpClient}** over Node `fetch` — anonymous or
+ *     PAT-authenticated tarball pull with 403 rate-limit / 404 hint handling
+ *     and a 50 MB size cap.
+ *
  * Scope (CLI-only, desktop-only):
  *  - Uses Node 18+ native `fetch` (no Obsidian deps)
- *  - Anonymous GitHub access (public repos only)
- *  - Tarball pull via `https://codeload.github.com/<owner>/<repo>/tar.gz/refs/heads/<ref>`
+ *  - Tarball pull via `https://api.github.com/repos/<owner>/<repo>/tarball/<ref>`
  *  - Atomic extraction: temp dir → rename к target (no partial state)
- *  - Idempotent `.gitmodules` mutation (text manipulation, no `git` binary needed)
+ *  - Idempotent `.gitmodules` mutation (text manipulation, no `git` binary)
  *
  * Security:
  *  - URL allowlist: strict `https://github.com/<owner>/<repo>` shape only
- *  - Zip-slip protection: all extracted paths verified к stay under target dir
- *  - Per-entry filesystem path validation
- *
- * Plugin-equivalent: AssetSpaceManager.pullAssetSpace (different runtime
- * constraints — plugin uses Obsidian's `requestUrl`, CLI uses native `fetch`).
+ *  - Zip-slip protection: core rejects sym/hard links + `..` + non-wrapper
+ *    entries; `materialize()` keeps a defense-in-depth resolve check
+ *  - PAT redaction on every error path
  */
 
 import { mkdirSync, writeFileSync, existsSync, renameSync, rmSync, readFileSync, readdirSync, appendFileSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, dirname, resolve, sep } from "node:path";
-import { parseTarballGzip } from "exocortex";
+import { join, dirname, basename, resolve, sep } from "node:path";
+import {
+  mountAssetSpaceFiles,
+  appendGitmodulesEntry,
+  stripGitmodulesEntry as coreStripGitmodulesEntry,
+  type FileSystemPort,
+  type AssetSpaceHttpClient,
+  type MountFile,
+} from "exocortex";
 
 const REPO_URL_REGEX = /^https:\/\/github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?$/;
 
@@ -101,7 +120,8 @@ export class BootstrapAssetSpaceService {
   }
 
   /**
-   * Pull tarball from public GitHub repo and extract к target dir.
+   * Pull tarball from a GitHub repo and extract к target dir, delegating the
+   * fetch → wrapper → SHA → zip-slip → materialise pipeline to the shared core.
    * Atomic: extracts к temp dir first, then renames к target.
    * Idempotent: if target dir already exists с non-empty content, throws
    * (caller should pass --force OR pick fresh target).
@@ -113,6 +133,8 @@ export class BootstrapAssetSpaceService {
   ): Promise<PullResult> {
     const { owner, repo } = BootstrapAssetSpaceService.parseGitHubURL(repoUrl);
 
+    // Refuse-non-empty BEFORE the network fetch (preserves original ordering —
+    // no wasted tarball download when the target is already populated).
     if (existsSync(targetDir)) {
       const contents = readdirSync(targetDir);
       if (contents.length > 0) {
@@ -122,187 +144,168 @@ export class BootstrapAssetSpaceService {
       }
     }
 
-    // GitHub API tarball — wrapper format `<owner>-<repo>-<sha7>` (matches
-    // plugin's AssetSpaceManager.pullAssetSpace contract). Codeload tarball
-    // uses `<repo>-<branch>` wrapper which loses SHA — use API endpoint.
-    const tarballUrl = `https://api.github.com/repos/${owner}/${repo}/tarball/${ref}`;
-    // Authenticated mode: attach Authorization + GitHub-required headers ONLY
-    // when a token is present. Empty token → anonymous request shape is left
-    // byte-identical to the pre-token behaviour (public repos, no headers).
-    // The authenticated endpoint returns a full-40-char-SHA wrapper which the
-    // SHA matcher (7..40 hex) and #3390 ustar-prefix parser already handle.
-    const init: RequestInit = { signal: AbortSignal.timeout(60_000) };
-    if (this.token.length > 0) {
-      init.headers = {
-        Authorization: `Bearer ${this.token}`,
-        "User-Agent": "exocortex-cli",
-        "X-GitHub-Api-Version": "2022-11-28",
-      };
-    }
-    // Code-reviewer MEDIUM: fetch timeout (60s) prevents indefinite hang
-    // on slow/stalled GitHub response. Cap matches typical CI test timeouts.
-    let response: Awaited<ReturnType<typeof fetch>>;
-    try {
-      response = await this.fetchImpl(tarballUrl, init);
-    } catch (err) {
-      // Redact before re-throw: some fetch implementations embed the request
-      // (incl. Authorization header) in the thrown error.
-      throw new Error(
-        this.redact(
-          `pullAssetSpace: fetch error for ${tarballUrl}: ${err instanceof Error ? err.message : String(err)}`,
-        ),
-      );
-    }
-    if (!response.ok) {
-      // Code-reviewer MEDIUM: surface GitHub anonymous rate-limit (60 req/hour)
-      // с actionable message instead of generic "fetch failed".
-      if (response.status === 403) {
-        const remaining = response.headers?.get?.("x-ratelimit-remaining");
-        const resetEpoch = response.headers?.get?.("x-ratelimit-reset");
-        if (remaining === "0" || (resetEpoch !== null && resetEpoch !== undefined)) {
-          const resetAt = resetEpoch !== null && resetEpoch !== undefined
-            ? new Date(Number(resetEpoch) * 1000).toISOString()
-            : "unknown";
-          throw new Error(
-            `pullAssetSpace: GitHub anonymous API rate-limit exceeded (60 req/hour). Reset at ${resetAt}. Wait or use authenticated CLI.`,
-          );
-        }
-      }
-      // GitHub returns 404 (not 403) for private repos the caller can't see —
-      // it deliberately hides existence. If we pulled anonymously, hint that a
-      // token may be required. With a token, 404 means genuinely-missing repo
-      // OR the token lacks access — surface both possibilities.
-      if (response.status === 404) {
-        const hint = this.token.length > 0
-          ? "repo not found, or the provided token lacks access to it"
-          : "if this is a private repo, pass --token <pat> (or set GITHUB_TOKEN / GH_TOKEN)";
-        throw new Error(
-          this.redact(
-            `pullAssetSpace: fetch failed (404 Not Found) for ${tarballUrl} — ${hint}`,
-          ),
-        );
-      }
-      throw new Error(
-        this.redact(
-          `pullAssetSpace: fetch failed (${response.status} ${response.statusText}) for ${tarballUrl}`,
-        ),
-      );
-    }
-    const arrayBuf = await response.arrayBuffer();
-    if (arrayBuf.byteLength > MAX_TARBALL_BYTES) {
-      throw new Error(
-        `pullAssetSpace: tarball too large (${arrayBuf.byteLength} bytes > ${MAX_TARBALL_BYTES})`,
-      );
-    }
-    const buffer = new Uint8Array(arrayBuf);
-    const entries = await parseTarballGzip(buffer);
-    if (entries.length === 0) {
-      throw new Error(`pullAssetSpace: empty tarball for ${owner}/${repo}@${ref}`);
-    }
-
-    // Discover wrapper dir (GitHub tarballs wrap all entries в <owner>-<repo>-<sha7>/).
-    // Code-reviewer HIGH: skip pax_global_header / extended-header entries when
-    // picking first wrapper-bearing entry — those don't share the wrapper prefix.
-    const isHeaderType = (t: string | undefined): boolean =>
-      t === "globalExtendedHeader" || t === "extendedHeader";
-    const firstContentEntry = entries.find(
-      (e) => !isHeaderType(e.type) && e.name.includes("/"),
-    );
-    if (firstContentEntry === undefined) {
-      throw new Error(`pullAssetSpace: no wrapper-bearing entry in tarball`);
-    }
-    const slashIdx = firstContentEntry.name.indexOf("/");
-    const wrapper = firstContentEntry.name.slice(0, slashIdx);
-    const wrapperPrefix = wrapper + "/";
-
-    // Verify all non-header entries share the wrapper.
-    for (const entry of entries) {
-      if (isHeaderType(entry.type)) continue;
-      if (entry.name === wrapper || entry.name === wrapperPrefix) continue;
-      if (!entry.name.startsWith(wrapperPrefix)) {
-        throw new Error(
-          `pullAssetSpace: entry "${entry.name}" not under wrapper "${wrapper}"`,
-        );
-      }
-    }
-
-    // Extract SHA from wrapper. Length is auth-dependent: anonymous tarballs
-    // carry a 7-char abbreviated SHA, authenticated ones the full 40-char SHA
-    // (matching only 7 broke private-repo pulls). Accept 7..40 hex.
-    const shaMatch = wrapper.match(/-([0-9a-fA-F]{7,40})$/);
-    if (shaMatch === null) {
-      throw new Error(
-        `pullAssetSpace: cannot extract SHA from wrapper "${wrapper}"`,
-      );
-    }
-    const sha = shaMatch[1].toLowerCase(); // parity with plugin extractShaFromWrapper
-
-    // Stage к temp dir, then atomic rename.
-    const stagingDir = await mkdtemp(join(tmpdir(), `exo-bootstrap-${owner}-${repo}-`));
-    let fileCount = 0;
-    try {
-      for (const entry of entries) {
-        // Code-reviewer HIGH: explicit symlink/hardlink rejection (parity с
-        // plugin TarExtractor.validateEntry). Tarballs from compromised
-        // upstream could embed symlinks pointing outside vault — security risk.
-        if (entry.type === "symbolicLink" || entry.type === "hardLink") {
-          throw new Error(
-            `pullAssetSpace: ${entry.type} entry "${entry.name}" rejected for security`,
-          );
-        }
-        // Skip extended headers (no payload to extract).
-        if (isHeaderType(entry.type)) continue;
-        const rel = entry.name.slice(wrapperPrefix.length);
-        if (rel.length === 0) continue;
-        // Skip directory-type entries; they'll be created on-demand.
-        if (entry.type === "directory") continue;
-        if (entry.data === undefined) continue;
-
-        // Code-reviewer MEDIUM: segment-based `..` check (substring rejects
-        // legitimate names like `foo..bar.md`).
-        if (rel.split("/").some((s) => s === "..")) {
-          throw new Error(`pullAssetSpace: path traversal detected for entry "${entry.name}"`);
-        }
-        // Zip-slip defense: resolve target, verify it stays under stagingDir.
-        const target = resolve(stagingDir, rel);
-        if (target !== stagingDir && !target.startsWith(stagingDir + sep)) {
-          throw new Error(`pullAssetSpace: zip-slip detected for entry "${entry.name}"`);
-        }
-        mkdirSync(dirname(target), { recursive: true });
-        writeFileSync(target, entry.data);
-        fileCount++;
-      }
-
-      // Atomic move к target.
-      mkdirSync(dirname(targetDir), { recursive: true });
-      try {
-        renameSync(stagingDir, targetDir);
-      } catch (err) {
-        // Code-reviewer LOW: EXDEV fallback. mkdtemp may put staging on different
-        // filesystem than vault (macOS /private/var/folders/ vs ~). Copy + rm.
-        if ((err as NodeJS.ErrnoException).code === "EXDEV") {
-          const { cpSync } = await import("node:fs");
-          cpSync(stagingDir, targetDir, { recursive: true });
-          rmSync(stagingDir, { recursive: true, force: true });
-        } else {
-          throw err;
-        }
-      }
-    } catch (err) {
-      // Cleanup staging on any failure.
-      rmSync(stagingDir, { recursive: true, force: true });
-      throw err;
-    }
-
-    return { sha, fileCount };
+    return mountAssetSpaceFiles({
+      http: this.httpPort(),
+      fs: this.fsPort(),
+      owner,
+      repo,
+      ref,
+      targetPath: targetDir,
+    });
   }
 
   /**
-   * Idempotent `.gitmodules` entry insertion via text manipulation.
-   * Uses standard git-submodule.git format (one `[submodule "..."]` stanza
-   * per entry с `path` + `url`).
-   *
-   * If entry already present (by `submodulePath` key), no change made.
+   * Node `fetch`-backed tarball port. Anonymous by default; attaches the PAT +
+   * GitHub-required headers ONLY when a token is present (anonymous request
+   * shape stays byte-identical to the pre-token behaviour). Surfaces actionable
+   * 403 rate-limit / 404 hint messages, redacts PATs, and enforces the 50 MB
+   * size cap.
+   */
+  private httpPort(): AssetSpaceHttpClient {
+    const fetchImpl = this.fetchImpl;
+    const token = this.token;
+    const redact = (m: unknown): string => this.redact(m);
+    return {
+      async fetchTarball(owner, repo, ref): Promise<Uint8Array> {
+        // GitHub API tarball — wrapper format `<owner>-<repo>-<sha>` (codeload
+        // tarball uses `<repo>-<branch>` which loses SHA — use API endpoint).
+        const tarballUrl = `https://api.github.com/repos/${owner}/${repo}/tarball/${ref}`;
+        const init: RequestInit = { signal: AbortSignal.timeout(60_000) };
+        if (token.length > 0) {
+          init.headers = {
+            Authorization: `Bearer ${token}`,
+            "User-Agent": "exocortex-cli",
+            "X-GitHub-Api-Version": "2022-11-28",
+          };
+        }
+        let response: Awaited<ReturnType<typeof fetch>>;
+        try {
+          response = await fetchImpl(tarballUrl, init);
+        } catch (err) {
+          // Redact before re-throw: some fetch implementations embed the request
+          // (incl. Authorization header) in the thrown error.
+          throw new Error(
+            redact(
+              `pullAssetSpace: fetch error for ${tarballUrl}: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          );
+        }
+        if (!response.ok) {
+          // Surface GitHub anonymous rate-limit (60 req/hour) with actionable
+          // message instead of generic "fetch failed".
+          if (response.status === 403) {
+            const remaining = response.headers?.get?.("x-ratelimit-remaining");
+            const resetEpoch = response.headers?.get?.("x-ratelimit-reset");
+            if (remaining === "0" || (resetEpoch !== null && resetEpoch !== undefined)) {
+              const resetAt = resetEpoch !== null && resetEpoch !== undefined
+                ? new Date(Number(resetEpoch) * 1000).toISOString()
+                : "unknown";
+              throw new Error(
+                `pullAssetSpace: GitHub anonymous API rate-limit exceeded (60 req/hour). Reset at ${resetAt}. Wait or use authenticated CLI.`,
+              );
+            }
+          }
+          // GitHub returns 404 (not 403) for private repos the caller can't see.
+          if (response.status === 404) {
+            const hint = token.length > 0
+              ? "repo not found, or the provided token lacks access to it"
+              : "if this is a private repo, pass --token <pat> (or set GITHUB_TOKEN / GH_TOKEN)";
+            throw new Error(
+              redact(
+                `pullAssetSpace: fetch failed (404 Not Found) for ${tarballUrl} — ${hint}`,
+              ),
+            );
+          }
+          throw new Error(
+            redact(
+              `pullAssetSpace: fetch failed (${response.status} ${response.statusText}) for ${tarballUrl}`,
+            ),
+          );
+        }
+        const arrayBuf = await response.arrayBuffer();
+        if (arrayBuf.byteLength > MAX_TARBALL_BYTES) {
+          throw new Error(
+            `pullAssetSpace: tarball too large (${arrayBuf.byteLength} bytes > ${MAX_TARBALL_BYTES})`,
+          );
+        }
+        return new Uint8Array(arrayBuf);
+      },
+    };
+  }
+
+  /**
+   * Node `fs`-backed file-system port. `materialize()` keeps the CLI's
+   * historic **atomic stage-then-rename** strategy: write every file under a
+   * fresh temp dir, then `renameSync` (EXDEV copy fallback) onto the target so
+   * a mid-write failure never leaves a partial tree. The core already rejected
+   * `..` / non-wrapper / link entries; the per-entry resolve check below is
+   * defense-in-depth against a regression in the core validation.
+   */
+  private fsPort(): FileSystemPort {
+    return {
+      async exists(p: string): Promise<boolean> {
+        return existsSync(p);
+      },
+      async read(p: string): Promise<string> {
+        return readFileSync(p, "utf8");
+      },
+      async write(p: string, content: string): Promise<void> {
+        writeFileSync(p, content, { encoding: "utf8" });
+      },
+      async removeDir(p: string): Promise<void> {
+        rmSync(p, { recursive: true, force: true });
+      },
+      async materialize(targetDir: string, files: MountFile[]): Promise<number> {
+        const stagingDir = await mkdtemp(join(tmpdir(), `exo-bootstrap-${basename(targetDir)}-`));
+        let fileCount = 0;
+        try {
+          for (const file of files) {
+            const rel = file.relPath;
+            // Segment-based `..` check (substring would reject legitimate names
+            // like `foo..bar.md`) — defense-in-depth over the core's check.
+            if (rel.split("/").some((s) => s === "..")) {
+              throw new Error(`pullAssetSpace: path traversal detected for entry "${rel}"`);
+            }
+            // Zip-slip defense: resolve target, verify it stays under stagingDir.
+            const target = resolve(stagingDir, rel);
+            if (target !== stagingDir && !target.startsWith(stagingDir + sep)) {
+              throw new Error(`pullAssetSpace: zip-slip detected for entry "${rel}"`);
+            }
+            mkdirSync(dirname(target), { recursive: true });
+            writeFileSync(target, file.content);
+            fileCount++;
+          }
+
+          // Atomic move к target.
+          mkdirSync(dirname(targetDir), { recursive: true });
+          try {
+            renameSync(stagingDir, targetDir);
+          } catch (err) {
+            // EXDEV fallback. mkdtemp may put staging on a different filesystem
+            // than the vault (macOS /private/var/folders/ vs ~). Copy + rm.
+            if ((err as NodeJS.ErrnoException).code === "EXDEV") {
+              const { cpSync } = await import("node:fs");
+              cpSync(stagingDir, targetDir, { recursive: true });
+              rmSync(stagingDir, { recursive: true, force: true });
+            } else {
+              throw err;
+            }
+          }
+        } catch (err) {
+          // Cleanup staging on any failure.
+          rmSync(stagingDir, { recursive: true, force: true });
+          throw err;
+        }
+        return fileCount;
+      },
+    };
+  }
+
+  /**
+   * Idempotent `.gitmodules` entry insertion via the shared
+   * {@link appendGitmodulesEntry} text transform. Appends only the new stanza
+   * (flag `a`, TOCTOU-safe single syscall chain) when absent; no-op when the
+   * `submodulePath` key is already present.
    */
   ensureGitmodulesEntry(
     vaultPath: string,
@@ -310,46 +313,26 @@ export class BootstrapAssetSpaceService {
     repoUrl: string,
   ): { added: boolean } {
     const gitmodulesPath = join(vaultPath, ".gitmodules");
-    const entryHeader = `[submodule "${submodulePath}"]`;
-    const newEntry = `${entryHeader}\n\tpath = ${submodulePath}\n\turl = ${repoUrl}\n`;
-    // Code-reviewer LOW: anchor regex avoids false-positive on commented-out
-    // headers (e.g. `# [submodule "..."]`).
-    const escaped = submodulePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const headerRegex = new RegExp(`^\\s*\\[submodule "${escaped}"\\]`, "m");
-
-    // CodeQL HIGH: avoid TOCTOU race between existsSync→writeFileSync.
-    // Open с flag `a` (append, creates if missing) gives single atomic call.
-    // Then re-read to check idempotency. If header already present, no-op;
-    // otherwise append the new entry. Using `a` instead of `w` preserves
-    // existing content if file appeared between calls.
     let existing = "";
     try {
       existing = readFileSync(gitmodulesPath, "utf8");
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
     }
-    if (existing.length > 0 && headerRegex.test(existing)) {
-      return { added: false };
-    }
-    const sep = existing.length === 0 || existing.endsWith("\n") ? "" : "\n";
-    // appendFileSync = open(flag='a') + write + close — single syscall chain,
-    // no separate exists check needed. Created с 0o644 by default.
-    appendFileSync(gitmodulesPath, sep + newEntry, { encoding: "utf8" });
+    const { content, added } = appendGitmodulesEntry(existing, submodulePath, repoUrl);
+    if (!added) return { added: false };
+    // `content` is `existing + sep + newEntry`; append only the delta so the
+    // write stays an `appendFileSync` (open flag `a`) rather than a read-modify-
+    // write rewrite (CodeQL HIGH TOCTOU on the prior existsSync→writeFileSync).
+    appendFileSync(gitmodulesPath, content.slice(existing.length), { encoding: "utf8" });
     return { added: true };
   }
 
   /**
-   * Idempotent `.gitmodules` entry removal via text manipulation — the
-   * unmount counterpart of {@link ensureGitmodulesEntry}. Strips the
-   * `[submodule "<submodulePath>"]` stanza (header + all following lines until
-   * the next `[` header or EOF) and collapses the double-blank line the strip
-   * may leave behind.
-   *
-   * Mirrors the plugin's pure `stripGitmodulesEntry` text transform
-   * (`GitSubmoduleOps.ts`) so the CLI hard-switch produces byte-equivalent
-   * `.gitmodules` output to the Obsidian REST unmount path. No-op (returns
-   * `{ removed: false }`) when `.gitmodules` is absent or has no matching
-   * stanza.
+   * Idempotent `.gitmodules` entry removal via the shared
+   * {@link coreStripGitmodulesEntry} text transform — the unmount counterpart
+   * of {@link ensureGitmodulesEntry}. No-op (returns `{ removed: false }`) when
+   * `.gitmodules` is absent or has no matching stanza.
    */
   removeGitmodulesEntry(
     vaultPath: string,
@@ -365,52 +348,18 @@ export class BootstrapAssetSpaceService {
       }
       throw err;
     }
-    const rewritten = BootstrapAssetSpaceService.stripGitmodulesEntry(
-      original,
-      submodulePath,
-    );
+    const rewritten = coreStripGitmodulesEntry(original, submodulePath);
     if (rewritten === original) return { removed: false };
     writeFileSync(gitmodulesPath, rewritten, { encoding: "utf8" });
     return { removed: true };
   }
 
   /**
-   * Pure `.gitmodules` stanza strip — header + body lines up to the next
-   * `[…]` header or EOF, then double-blank collapse. Static + side-effect free
-   * for unit testing. Byte-parity with plugin `GitSubmoduleOps.stripGitmodulesEntry`.
+   * Pure `.gitmodules` stanza strip — delegates to the shared core transform.
+   * Static + side-effect free, retained for backward-compatible callers.
    */
   static stripGitmodulesEntry(content: string, submodulePath: string): string {
-    const escaped = submodulePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const lines = content.split(/\r?\n/);
-    const out: string[] = [];
-    let skipping = false;
-    const headerPattern = new RegExp(`^\\[submodule\\s+"${escaped}"\\]\\s*$`);
-    for (const line of lines) {
-      if (skipping) {
-        // Next stanza starts — stop skipping (do NOT consume the new header).
-        if (/^\[.+\]\s*$/.test(line)) {
-          skipping = false;
-          out.push(line);
-          continue;
-        }
-        continue;
-      }
-      if (headerPattern.test(line)) {
-        skipping = true;
-        continue;
-      }
-      out.push(line);
-    }
-    // Collapse double-blank lines created by the strip.
-    const collapsed: string[] = [];
-    let prevBlank = false;
-    for (const line of out) {
-      const blank = line.trim().length === 0;
-      if (blank && prevBlank) continue;
-      collapsed.push(line);
-      prevBlank = blank;
-    }
-    return collapsed.join("\n");
+    return coreStripGitmodulesEntry(content, submodulePath);
   }
 
   /**
@@ -418,10 +367,7 @@ export class BootstrapAssetSpaceService {
    * remove its vault folder. Idempotent — a missing folder or absent
    * `.gitmodules` stanza is a no-op.
    *
-   * Ordering (stanza-first) mirrors the plugin's `RestAssetSpaceMount.unmount`:
-   * if a step fails mid-unmount, a leftover empty folder (manifest already says
-   * "not mounted") is more benign than a dangling `[submodule …]` stanza
-   * pointing at a folder that no longer exists.
+   * Ordering (stanza-first) mirrors the plugin's `RestAssetSpaceMount.unmount`.
    *
    * Safety (defense-in-depth): the `rmSync` is recursive+force, so a bad
    * `submodulePath` (empty, traversal, or non-`assetspaces/`) could escape to
@@ -458,4 +404,3 @@ export class BootstrapAssetSpaceService {
     }
   }
 }
-

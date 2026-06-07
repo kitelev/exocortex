@@ -553,3 +553,23 @@ export {
   type RestCommitTransport,
   type RestCreateCommitParams,
 } from "./infrastructure/github/restCommit";
+
+// Platform-agnostic AssetSpace mount/unmount core (Issue #3423 — Option A
+// hexagonal consolidation). The single mount pipeline (fetch → wrapper → SHA →
+// zip-slip → materialize) + `.gitmodules` text transforms, shared by the plugin
+// (RestAssetSpaceMount: DataAdapter + requestUrl) and the CLI
+// (BootstrapAssetSpaceService: Node fs + fetch) via injected ports.
+export {
+  mountAssetSpaceFiles,
+  discoverWrapperDir as discoverAssetSpaceWrapperDir,
+  extractShaFromWrapper as extractAssetSpaceSha,
+  appendGitmodulesEntry,
+  stripGitmodulesEntry,
+  escapeGitmodulesRegex,
+  type FileSystemPort,
+  type HttpClient as AssetSpaceHttpClient,
+  type MountFile,
+  type MountResult,
+  type MountAssetSpaceParams,
+  type GitmodulesAppendResult,
+} from "./services/assetspace/AssetSpaceMount";
