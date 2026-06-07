@@ -337,5 +337,125 @@ export class BootstrapAssetSpaceService {
     appendFileSync(gitmodulesPath, sep + newEntry, { encoding: "utf8" });
     return { added: true };
   }
+
+  /**
+   * Idempotent `.gitmodules` entry removal via text manipulation — the
+   * unmount counterpart of {@link ensureGitmodulesEntry}. Strips the
+   * `[submodule "<submodulePath>"]` stanza (header + all following lines until
+   * the next `[` header or EOF) and collapses the double-blank line the strip
+   * may leave behind.
+   *
+   * Mirrors the plugin's pure `stripGitmodulesEntry` text transform
+   * (`GitSubmoduleOps.ts`) so the CLI hard-switch produces byte-equivalent
+   * `.gitmodules` output to the Obsidian REST unmount path. No-op (returns
+   * `{ removed: false }`) when `.gitmodules` is absent or has no matching
+   * stanza.
+   */
+  removeGitmodulesEntry(
+    vaultPath: string,
+    submodulePath: string,
+  ): { removed: boolean } {
+    const gitmodulesPath = join(vaultPath, ".gitmodules");
+    let original: string;
+    try {
+      original = readFileSync(gitmodulesPath, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return { removed: false };
+      }
+      throw err;
+    }
+    const rewritten = BootstrapAssetSpaceService.stripGitmodulesEntry(
+      original,
+      submodulePath,
+    );
+    if (rewritten === original) return { removed: false };
+    writeFileSync(gitmodulesPath, rewritten, { encoding: "utf8" });
+    return { removed: true };
+  }
+
+  /**
+   * Pure `.gitmodules` stanza strip — header + body lines up to the next
+   * `[…]` header or EOF, then double-blank collapse. Static + side-effect free
+   * for unit testing. Byte-parity with plugin `GitSubmoduleOps.stripGitmodulesEntry`.
+   */
+  static stripGitmodulesEntry(content: string, submodulePath: string): string {
+    const escaped = submodulePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const lines = content.split(/\r?\n/);
+    const out: string[] = [];
+    let skipping = false;
+    const headerPattern = new RegExp(`^\\[submodule\\s+"${escaped}"\\]\\s*$`);
+    for (const line of lines) {
+      if (skipping) {
+        // Next stanza starts — stop skipping (do NOT consume the new header).
+        if (/^\[.+\]\s*$/.test(line)) {
+          skipping = false;
+          out.push(line);
+          continue;
+        }
+        continue;
+      }
+      if (headerPattern.test(line)) {
+        skipping = true;
+        continue;
+      }
+      out.push(line);
+    }
+    // Collapse double-blank lines created by the strip.
+    const collapsed: string[] = [];
+    let prevBlank = false;
+    for (const line of out) {
+      const blank = line.trim().length === 0;
+      if (blank && prevBlank) continue;
+      collapsed.push(line);
+      prevBlank = blank;
+    }
+    return collapsed.join("\n");
+  }
+
+  /**
+   * Unmount an AssetSpace: strip its `.gitmodules` stanza, then recursively
+   * remove its vault folder. Idempotent — a missing folder or absent
+   * `.gitmodules` stanza is a no-op.
+   *
+   * Ordering (stanza-first) mirrors the plugin's `RestAssetSpaceMount.unmount`:
+   * if a step fails mid-unmount, a leftover empty folder (manifest already says
+   * "not mounted") is more benign than a dangling `[submodule …]` stanza
+   * pointing at a folder that no longer exists.
+   *
+   * Safety (defense-in-depth): the `rmSync` is recursive+force, so a bad
+   * `submodulePath` (empty, traversal, or non-`assetspaces/`) could escape to
+   * the vault root or an unrelated directory. The path is validated — and the
+   * resolved target confirmed strictly under the vault root — BEFORE any
+   * mutation (including the `.gitmodules` edit).
+   *
+   * @param vaultPath absolute vault root.
+   * @param submodulePath vault-relative mount folder (e.g. `assetspaces/kitelev/exoas-testlib`).
+   * @throws if `submodulePath` is empty, contains a `..`/`.` segment, is not
+   *   under `assetspaces/`, or resolves outside the vault root.
+   */
+  unmountAssetSpace(vaultPath: string, submodulePath: string): void {
+    const segments = submodulePath.split("/");
+    if (
+      submodulePath.length === 0 ||
+      !submodulePath.startsWith("assetspaces/") ||
+      segments.some((s) => s.length === 0 || s === "." || s === "..")
+    ) {
+      throw new Error(
+        `unmountAssetSpace: refusing unsafe submodulePath "${submodulePath}"`,
+      );
+    }
+    const root = resolve(vaultPath);
+    const target = resolve(root, submodulePath);
+    if (target === root || !target.startsWith(root + sep)) {
+      throw new Error(
+        `unmountAssetSpace: target "${target}" escapes vault root "${root}"`,
+      );
+    }
+    this.removeGitmodulesEntry(vaultPath, submodulePath);
+    if (existsSync(target)) {
+      rmSync(target, { recursive: true, force: true });
+    }
+  }
 }
 
