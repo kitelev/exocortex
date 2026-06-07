@@ -87,6 +87,12 @@ export async function scanVaultForCoLocation(
     // .git/.obsidian, but not node_modules). Never audit/report those.
     if (relPath.split("/").includes("node_modules")) continue;
 
+    // "09 Templates/" holds Templater templates (intentional <%* %> / {{…}}
+    // placeholder syntax), not real assets — they carry exo__Asset_isDefinedBy
+    // by pattern inheritance but must never move. Excluded from co-location the
+    // same way the pre-commit hook skips them (RFC 0b7a2fad CR-1).
+    if (relPath.split("/").includes("09 Templates")) continue;
+
     const rawIsDefinedBy = metadata["exo__Asset_isDefinedBy"];
     const ref = extractAssetReference(rawIsDefinedBy);
 
