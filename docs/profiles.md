@@ -1,5 +1,18 @@
 # Knowledge Profiles vs Focus Profiles
 
+> ⛔ **SUPERSEDED — read this first (RFC 0a0791c1 Phase 5 T2).** The two palette
+> commands and the soft RDF query-time filter described below were **removed**.
+> There is now a **single `Exocortex: Apply profile` command** (mount-state strict
+> replace: materialize the profile's effective AssetSpaces, unmount the rest; the
+> TS-floor is never unmounted). The former soft "Switch focus profile" command +
+> the Settings dropdown were retired (the soft filter had already been removed in
+> Phase 3 T3b — it was a no-op reindex). The dual `activeKnowledgeProfileUid` /
+> `activeFocusProfileUid` slots collapsed to a single `activeProfileUid`
+> last-applied cache, and the deprecated `appliesTo` compatibility property was
+> deleted. The dual
+> tables/sections below are **historical** — read them as the mount machinery of
+> the single profile type.
+>
 > ⛔ **SUPERSEDED (RFC 01a83de8 Phase 2).** The two-class Knowledge/Focus split
 > described below was **superseded** by a **single unified `exo__Profile`** class
 > (renamed from `exo__FocusProfile`, same UID `3de846cd`). `exo__KnowledgeProfile`
@@ -110,14 +123,14 @@ a query-time RDF filter. Nothing on disk changes.
 - **Properties:**
   - `exo__Profile_includes` — AssetSpace UIDs to filter to (RFC 01a83de8 Phase 2: range Ontology→AssetSpace).
   - `exo__Profile_imports` — another Profile to compose (single-parent MVP; renamed from `_extends`).
-  - `exo__FocusProfile_appliesTo` — **deprecated** (Knowledge/Focus split superseded by RFC 01a83de8 Phase 2; no longer read by the resolver).
 
 **When to reach for it:** narrowing the noise during work hours without losing
 the option to switch back instantly. It is the daily driver; the Knowledge
 profile is the occasional escalation.
 
-You can drive the Focus slot from the **Settings → "Active focus profile"
-dropdown** as well as the palette command.
+> **Phase 5 T2:** the soft Focus slot + its Settings dropdown were removed.
+> Profile switching is now the single `Exocortex: Apply profile` command;
+> Settings → "Active profile" shows the last-applied profile (read-only).
 
 ---
 
@@ -218,17 +231,20 @@ profile's effective set, the soft switch **does not throw and does not
 silently drop your filter**. It logs a WARN and applies no filter for the
 out-of-set AssetSpaces, matching the "graceful degradation" pattern that
 browser extensions (disable cleanly) and music apps (grey-out missing tracks)
-use. The `exo__FocusProfile_appliesTo` property documents the intended
-Knowledge profile so you can see the mismatch coming.
+use.
 
 ---
 
 ## Quick decision guide
 
-- "I want a whole ontology to **exist** / stop existing on disk" → **Knowledge profile** (`Switch knowledge profile`).
-- "I want to **see less** without changing what's installed" → **Focus profile** (`Switch focus profile`, or the Settings dropdown).
-- "My switch did nothing visible" → you probably edited the wrong slot, or hit the no-transitive gap. Run `Show current state` and re-check `_includes`.
-- "Which slot is active?" → `Exocortex: Show current state`, or Settings → Active focus profile (the status line shows both slots).
+> **Phase 5 T2:** there is now ONE command — `Exocortex: Apply profile` — for
+> changing which AssetSpaces are materialized on disk (mount-state strict
+> replace). The historical soft "Focus filter" guidance below is retained for
+> context only; the soft path was removed.
+
+- "I want a whole ontology to **exist** / stop existing on disk" → `Exocortex: Apply profile`.
+- "My switch did nothing visible" → you probably hit the no-transitive gap. Run `Show current state` and re-check `_includes`.
+- "Which profile is active?" → `Exocortex: Show current state`, or Settings → Active profile (shows the last-applied profile).
 
 ---
 
