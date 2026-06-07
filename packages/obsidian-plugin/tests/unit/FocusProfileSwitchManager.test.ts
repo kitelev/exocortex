@@ -12,6 +12,14 @@ import {
 } from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
 import { PluginLockManager } from "../../src/infrastructure/adapters/PluginLockManager";
 
+// RFC 0a0791c1 Phase 5 T2 — the public soft `switchProfile` was removed. Its
+// lock/journal/persist/reindex behavior lives on in the private
+// `reindexMountState` helper (reached via the «Apply profile» no-op exit and
+// `recoverIfNeeded`). These tests drive that helper directly via a typed cast.
+type Reindexable = { reindexMountState(uid: string): Promise<void> };
+const reindex = (mgr: FocusProfileSwitchManager, uid: string): Promise<void> =>
+  (mgr as unknown as Reindexable).reindexMountState(uid);
+
 // ─── Fake App / vault.adapter ────────────────────────────────────────────
 
 interface FakeStore {
@@ -297,9 +305,9 @@ describe("FocusProfileSwitchManager.computeDerivedSet — _extends chain", () =>
   });
 });
 
-// ─── switchProfile happy path ────────────────────────────────────────────
+// ─── reindexMountState happy path ────────────────────────────────────────────
 
-describe("FocusProfileSwitchManager.switchProfile — happy path", () => {
+describe("FocusProfileSwitchManager.reindexMountState — happy path (apply reindex)", () => {
   it("persists settings BEFORE re-index (Architect #2 atomicity)", async () => {
     const h = makeHarness({
       profiles: [
@@ -320,7 +328,7 @@ describe("FocusProfileSwitchManager.switchProfile — happy path", () => {
       await origRefresh();
     };
 
-    await h.mgr.switchProfile(UID_BASE);
+    await reindex(h.mgr, UID_BASE);
 
     // Expect: save (activeProfileUid + _switchInProgress=true), refresh, save (_switchInProgress=false)
     expect(events).toEqual(["save", "refresh", "save"]);
@@ -335,7 +343,7 @@ describe("FocusProfileSwitchManager.switchProfile — happy path", () => {
       ],
     });
     h.clock.advance(1000); // shift base
-    await h.mgr.switchProfile(UID_BASE);
+    await reindex(h.mgr, UID_BASE);
 
     const journalText = h.store.files.get(".exocortex/switch-journal.jsonl");
     expect(journalText).toBeDefined();
@@ -352,7 +360,7 @@ describe("FocusProfileSwitchManager.switchProfile — happy path", () => {
         [UID_BASE, { uid: UID_BASE, includes: [], extends: null, label: "my-cool-profile" }],
       ],
     });
-    await h.mgr.switchProfile(UID_BASE);
+    await reindex(h.mgr, UID_BASE);
     expect(h.notifyCalls.length).toBe(1);
     expect(h.notifyCalls[0]).toContain("my-cool-profile");
     expect(h.notifyCalls[0]).toMatch(/\d+ms/);
@@ -364,7 +372,7 @@ describe("FocusProfileSwitchManager.switchProfile — happy path", () => {
         [UID_BASE, { uid: UID_BASE, includes: [ONTO_TBANK], extends: null }],
       ],
     });
-    await h.mgr.switchProfile(UID_BASE);
+    await reindex(h.mgr, UID_BASE);
     // The query-time soft-filter was removed (RFC 01a83de8 Phase 3 T3b); the
     // soft switch persists the active profile and triggers a single full-vault
     // reindex — no effective set is threaded through refresh anymore.
@@ -372,9 +380,9 @@ describe("FocusProfileSwitchManager.switchProfile — happy path", () => {
   });
 });
 
-// ─── switchProfile lock concurrency ──────────────────────────────────────
+// ─── reindexMountState lock concurrency ──────────────────────────────────────
 
-describe("FocusProfileSwitchManager.switchProfile — lock contention", () => {
+describe("FocusProfileSwitchManager.reindexMountState — lock contention", () => {
   it("throws when lock already held by foreign holder", async () => {
     const h = makeHarness({
       profiles: [
@@ -385,7 +393,7 @@ describe("FocusProfileSwitchManager.switchProfile — lock contention", () => {
     const foreignLock = new PluginLockManager({ app: h.app, pid: "foreign-pid", now: () => h.clock.current });
     expect(await foreignLock.acquireLock("foreign-op")).toBe(true);
 
-    await expect(h.mgr.switchProfile(UID_BASE)).rejects.toThrow(/lock held/);
+    await expect(reindex(h.mgr, UID_BASE)).rejects.toThrow(/lock held/);
   });
 
   it("releases lock on success", async () => {
@@ -394,7 +402,7 @@ describe("FocusProfileSwitchManager.switchProfile — lock contention", () => {
         [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
       ],
     });
-    await h.mgr.switchProfile(UID_BASE);
+    await reindex(h.mgr, UID_BASE);
     // Lock file should be removed
     expect(h.store.files.has(".exocortex/switch-lock.json")).toBe(false);
   });
@@ -406,14 +414,14 @@ describe("FocusProfileSwitchManager.switchProfile — lock contention", () => {
       ],
     });
     h.rdf.failOnce = true;
-    await expect(h.mgr.switchProfile(UID_BASE)).rejects.toThrow(/Simulated/);
+    await expect(reindex(h.mgr, UID_BASE)).rejects.toThrow(/Simulated/);
     expect(h.store.files.has(".exocortex/switch-lock.json")).toBe(false);
   });
 });
 
-// ─── switchProfile failure journal ────────────────────────────────────────
+// ─── reindexMountState failure journal ────────────────────────────────────────
 
-describe("FocusProfileSwitchManager.switchProfile — failure path", () => {
+describe("FocusProfileSwitchManager.reindexMountState — failure path", () => {
   it("writes failed journal entry when re-index throws", async () => {
     const h = makeHarness({
       profiles: [
@@ -421,7 +429,7 @@ describe("FocusProfileSwitchManager.switchProfile — failure path", () => {
       ],
     });
     h.rdf.failOnce = true;
-    await expect(h.mgr.switchProfile(UID_BASE)).rejects.toThrow();
+    await expect(reindex(h.mgr, UID_BASE)).rejects.toThrow();
 
     const journalText = h.store.files.get(".exocortex/switch-journal.jsonl");
     const lines = journalText!.trim().split("\n").map((l) => JSON.parse(l) as SwitchJournalEntry);
@@ -436,7 +444,7 @@ describe("FocusProfileSwitchManager.switchProfile — failure path", () => {
       ],
     });
     h.rdf.failOnce = true;
-    await expect(h.mgr.switchProfile(UID_BASE)).rejects.toThrow();
+    await expect(reindex(h.mgr, UID_BASE)).rejects.toThrow();
     expect(h.settings.state._switchInProgress).toBe(true);
   });
 
@@ -449,7 +457,7 @@ describe("FocusProfileSwitchManager.switchProfile — failure path", () => {
     h.rdf.refresh = async () => {
       throw new Error(`Auth failed: ghp_${"A".repeat(40)}`);
     };
-    await expect(h.mgr.switchProfile(UID_BASE)).rejects.toThrow();
+    await expect(reindex(h.mgr, UID_BASE)).rejects.toThrow();
 
     const journalText = h.store.files.get(".exocortex/switch-journal.jsonl");
     const lines = journalText!.trim().split("\n").map((l) => JSON.parse(l) as SwitchJournalEntry);
@@ -475,12 +483,12 @@ describe("FocusProfileSwitchManager.recoverIfNeeded", () => {
         [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
       ],
     });
-    await h.mgr.switchProfile(UID_BASE);
+    await reindex(h.mgr, UID_BASE);
     const res = await h.mgr.recoverIfNeeded();
     expect(res.recovered).toBe(false);
   });
 
-  it("re-triggers switchProfile when last entry incomplete + _switchInProgress=true", async () => {
+  it("re-triggers reindex when last entry incomplete + _switchInProgress=true", async () => {
     const h = makeHarness({
       profiles: [
         [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],

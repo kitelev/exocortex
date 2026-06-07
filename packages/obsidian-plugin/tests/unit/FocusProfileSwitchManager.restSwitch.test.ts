@@ -119,26 +119,16 @@ class FakeSettingsStore implements ISettingsStore {
 
 interface FakeLocalState {
   activeProfileUid: string | null;
-  activeKnowledgeProfileUid: string | null;
-  activeFocusProfileUid: string | null;
   _switchInProgress: boolean;
 }
 
 class FakeLocalDataStore {
   private state: FakeLocalState = {
     activeProfileUid: null,
-    activeKnowledgeProfileUid: null,
-    activeFocusProfileUid: null,
     _switchInProgress: false,
   };
   getActiveProfileUid(): string | null {
     return this.state.activeProfileUid;
-  }
-  getActiveKnowledgeProfileUid(): string | null {
-    return this.state.activeKnowledgeProfileUid;
-  }
-  getActiveFocusProfileUid(): string | null {
-    return this.state.activeFocusProfileUid;
   }
   isSwitchInProgress(): boolean {
     return this.state._switchInProgress;
@@ -148,20 +138,10 @@ class FakeLocalDataStore {
   }
   async save(s: {
     activeProfileUid: string | null;
-    activeKnowledgeProfileUid?: string | null;
-    activeFocusProfileUid?: string | null;
     _switchInProgress: boolean;
   }): Promise<void> {
     this.state = {
       activeProfileUid: s.activeProfileUid,
-      activeKnowledgeProfileUid:
-        s.activeKnowledgeProfileUid !== undefined
-          ? s.activeKnowledgeProfileUid
-          : this.state.activeKnowledgeProfileUid,
-      activeFocusProfileUid:
-        s.activeFocusProfileUid !== undefined
-          ? s.activeFocusProfileUid
-          : this.state.activeFocusProfileUid,
       _switchInProgress: s._switchInProgress,
     };
   }
@@ -344,9 +324,8 @@ describe("FocusProfileSwitchManager.restSwitchProfile", () => {
       "https://github.com/kitelev/exoas-ems",
     );
 
-    // Active profile persisted (+ Knowledge mirror).
+    // Active profile persisted as the last-applied cache (single slot).
     expect(localDataStore.getActiveProfileUid()).toBe("target");
-    expect(localDataStore.getActiveKnowledgeProfileUid()).toBe("target");
     expect(localDataStore.isSwitchInProgress()).toBe(false);
 
     // RDF re-index fired once. RFC 01a83de8 Phase 3 T3b — the query-time
@@ -357,9 +336,9 @@ describe("FocusProfileSwitchManager.restSwitchProfile", () => {
     expect(indexer.refreshCalls).toBe(1);
   });
 
-  it("no-ops to a soft switch when mount-state already matches (control)", async () => {
+  it("no-ops to a reindex-only path when mount-state already matches (control)", async () => {
     // Target == currently materialised (floors only) ⇒ no mount/unmount;
-    // restSwitchProfile falls through to the soft-switch (RDF filter) path.
+    // restSwitchProfile falls through to the reindex-only path.
     const { mgr, restMount, indexer } = setup({
       targetIncludes: ALL_FLOOR_UIDS,
       materialized: ALL_FLOOR_UIDS,
@@ -369,7 +348,7 @@ describe("FocusProfileSwitchManager.restSwitchProfile", () => {
 
     expect(restMount.mounted).toEqual([]);
     expect(restMount.unmounted).toEqual([]);
-    // No mount-state mutation, but the soft-switch fall-through still triggers
+    // No mount-state mutation, but the reindex-only fall-through still triggers
     // a single full-vault reindex.
     expect(indexer.refreshCalls).toBe(1);
   });

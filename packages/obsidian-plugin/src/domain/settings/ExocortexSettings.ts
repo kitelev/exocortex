@@ -224,7 +224,7 @@ export interface ExocortexSettings {
    * `VaultRDFIndexer` so cold-start `convertVault()` skips files outside the
    * effective set.
    *
-   * Persisted by `FocusProfileSwitchManager.switchProfile` BEFORE the RDF
+   * Persisted by the «Apply profile» mount-state switch BEFORE the RDF
    * re-index runs (Architect #2 atomicity invariant) — the field formalises
    * what `PluginSettingsStoreAdapter` already round-tripped via the loose
    * `[key: string]: unknown` index signature, so existing user data.json

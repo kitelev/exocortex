@@ -3,11 +3,15 @@
  *
  * Verifies that `display()` calls `renderFocusProfileSections` and that
  * each section's Setting builder is invoked с the expected name / heading
- * sequence: PAT → Active focus profile → Switch cache → Operations log.
+ * sequence: PAT → Active profile → Switch cache → Operations log.
+ *
+ * RFC 0a0791c1 Phase 5 T2 — the soft-switch dropdown was removed; profile
+ * switching is the «Exocortex: Apply profile» Cmd+P command. Section 2 now
+ * surfaces the single last-applied profile (read-only status + hint).
  *
  * The integration shape (real PAT persistence round-trip, real GitHub call,
- * real softSwitchFocusProfile dispatch) is intentionally out of scope here — those
- * are covered by `LocalSecretsStore.test.ts`, `GitHubRestClient.test.ts`,
+ * real apply dispatch) is intentionally out of scope here — those are covered
+ * by `LocalSecretsStore.test.ts`, `GitHubRestClient.test.ts`,
  * `FocusProfileSwitchManager.test.ts`. These tests only assert the UI
  * renders the expected scaffold so a future regression that drops one of
  * the sections fails CI loudly.
@@ -159,9 +163,6 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
       toggleTabTitleLabels: jest.fn(),
       applyDisplayNameTemplate: jest.fn(),
       configureLogChannels: jest.fn(),
-      focusProfileSwitchManager: {
-        softSwitchFocusProfile: jest.fn().mockResolvedValue(undefined),
-      },
       listFocusProfileChoices: jest.fn().mockResolvedValue([
         { uid: "uid-a", label: "Personal", isActive: false },
         { uid: "uid-b", label: "Work", isActive: true },
@@ -244,7 +245,7 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
     // что 4 expected headings appear в the correct relative order.
     const expected = [
       "FocusProfile: GitHub PAT",
-      "Active focus profile",
+      "Active profile",
       "Switch cache",
       "Operations log",
     ];
@@ -262,9 +263,9 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
     expect(patRow).toBeDefined();
   });
 
-  it("renders the Active focus profile row with dropdown", () => {
+  it("renders the Apply profile hint row (RFC 0a0791c1 Phase 5 T2 — no soft dropdown)", () => {
     settingTab.display();
-    const profileRow = settingCalls.find((c) => c.name === "Switch profile");
+    const profileRow = settingCalls.find((c) => c.name === "Apply profile");
     expect(profileRow).toBeDefined();
   });
 
@@ -276,26 +277,17 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
     expect(overview).toBeDefined();
   });
 
-  it("reads both Knowledge and Focus active slots for the dual-state status (AC14)", () => {
-    // Provide a device-local store exposing both AC14 getters so the
-    // status line can surface the dual slot state. The legacy
-    // getActiveProfileUid() must NOT be consulted for the status anymore.
-    const getActiveKnowledgeProfileUid = jest
-      .fn()
-      .mockReturnValue("knowledge-uid");
-    const getActiveFocusProfileUid = jest.fn().mockReturnValue("focus-uid");
-    const getActiveProfileUid = jest.fn().mockReturnValue("legacy-uid");
+  it("reads the single last-applied profile slot for the status line (RFC 0a0791c1 Phase 5 T2)", () => {
+    // The status line surfaces the single `activeProfileUid` slot — the dual
+    // Knowledge/Focus getters were retired.
+    const getActiveProfileUid = jest.fn().mockReturnValue("applied-uid");
     mockPlugin.localDataStore = {
-      getActiveKnowledgeProfileUid,
-      getActiveFocusProfileUid,
       getActiveProfileUid,
     };
 
     settingTab.display();
 
-    expect(getActiveKnowledgeProfileUid).toHaveBeenCalled();
-    expect(getActiveFocusProfileUid).toHaveBeenCalled();
-    expect(getActiveProfileUid).not.toHaveBeenCalled();
+    expect(getActiveProfileUid).toHaveBeenCalled();
   });
 
   it("renders the Switch cache stats row with Clear button", () => {
@@ -314,217 +306,5 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
       (args: any[]) => args[0] === "pre",
     );
     expect(preCalls.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("invokes plugin.focusProfileSwitchManager.softSwitchFocusProfile when dropdown changes", async () => {
-    let capturedOnChange: ((uid: string) => Promise<void>) | null = null;
-    // Override addDropdown to capture the onChange callback registered by
-    // the production code, then trigger it manually.
-    MockSetting.mockImplementation((containerEl: any) => {
-      const record: { name?: string; heading: boolean } = { heading: false };
-      settingCalls.push(record);
-      const setting: any = {
-        containerEl,
-        setName: jest.fn((n: string) => {
-          record.name = n;
-          return setting;
-        }),
-        setDesc: jest.fn().mockReturnThis(),
-        setHeading: jest.fn(() => {
-          record.heading = true;
-          return setting;
-        }),
-        addDropdown: jest.fn().mockImplementation((cb: any) => {
-          const dropdown = {
-            addOption: jest.fn().mockReturnThis(),
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockImplementation((fn: any) => {
-              capturedOnChange = fn;
-              return dropdown;
-            }),
-          };
-          cb(dropdown);
-          return setting;
-        }),
-        addToggle: jest.fn().mockImplementation((cb: any) => {
-          cb({
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockReturnThis(),
-          });
-          return setting;
-        }),
-        addText: jest.fn().mockImplementation((cb: any) => {
-          cb({
-            setPlaceholder: jest.fn().mockReturnThis(),
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockReturnThis(),
-            inputEl: { type: "" },
-          });
-          return setting;
-        }),
-        addTextArea: jest.fn().mockImplementation((cb: any) => {
-          cb({
-            setPlaceholder: jest.fn().mockReturnThis(),
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockReturnThis(),
-            inputEl: { rows: 0, cols: 0 },
-          });
-          return setting;
-        }),
-        addButton: jest.fn().mockImplementation((cb: any) => {
-          cb({
-            setButtonText: jest.fn().mockReturnThis(),
-            onClick: jest.fn().mockReturnThis(),
-            setCta: jest.fn().mockReturnThis(),
-          });
-          return setting;
-        }),
-      };
-      return setting;
-    });
-
-    settingTab.display();
-    expect(capturedOnChange).not.toBeNull();
-    await capturedOnChange!("uid-a");
-    expect(
-      mockPlugin.focusProfileSwitchManager.softSwitchFocusProfile,
-    ).toHaveBeenCalledWith("uid-a");
-  });
-
-  it("ignores empty dropdown selection without dispatching softSwitchFocusProfile", async () => {
-    let capturedOnChange: ((uid: string) => Promise<void>) | null = null;
-    MockSetting.mockImplementation((containerEl: any) => {
-      const setting: any = {
-        containerEl,
-        setName: jest.fn().mockReturnThis(),
-        setDesc: jest.fn().mockReturnThis(),
-        setHeading: jest.fn().mockReturnThis(),
-        addDropdown: jest.fn().mockImplementation((cb: any) => {
-          const dropdown = {
-            addOption: jest.fn().mockReturnThis(),
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockImplementation((fn: any) => {
-              capturedOnChange = fn;
-              return dropdown;
-            }),
-          };
-          cb(dropdown);
-          return setting;
-        }),
-        addToggle: jest.fn().mockImplementation((cb: any) => {
-          cb({
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockReturnThis(),
-          });
-          return setting;
-        }),
-        addText: jest.fn().mockImplementation((cb: any) => {
-          cb({
-            setPlaceholder: jest.fn().mockReturnThis(),
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockReturnThis(),
-            inputEl: { type: "" },
-          });
-          return setting;
-        }),
-        addTextArea: jest.fn().mockImplementation((cb: any) => {
-          cb({
-            setPlaceholder: jest.fn().mockReturnThis(),
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockReturnThis(),
-            inputEl: { rows: 0, cols: 0 },
-          });
-          return setting;
-        }),
-        addButton: jest.fn().mockImplementation((cb: any) => {
-          cb({
-            setButtonText: jest.fn().mockReturnThis(),
-            onClick: jest.fn().mockReturnThis(),
-            setCta: jest.fn().mockReturnThis(),
-          });
-          return setting;
-        }),
-      };
-      return setting;
-    });
-
-    settingTab.display();
-    if (capturedOnChange) await (capturedOnChange as (uid: string) => Promise<void>)("");
-    expect(
-      mockPlugin.focusProfileSwitchManager.softSwitchFocusProfile,
-    ).not.toHaveBeenCalled();
-  });
-
-  it("surfaces switch failure as a Notice without throwing", async () => {
-    let capturedOnChange: ((uid: string) => Promise<void>) | null = null;
-    mockPlugin.focusProfileSwitchManager.softSwitchFocusProfile = jest.fn(
-      async () => {
-        throw new Error("lock held");
-      },
-    );
-
-    MockSetting.mockImplementation((containerEl: any) => {
-      const setting: any = {
-        containerEl,
-        setName: jest.fn().mockReturnThis(),
-        setDesc: jest.fn().mockReturnThis(),
-        setHeading: jest.fn().mockReturnThis(),
-        addDropdown: jest.fn().mockImplementation((cb: any) => {
-          const dropdown = {
-            addOption: jest.fn().mockReturnThis(),
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockImplementation((fn: any) => {
-              capturedOnChange = fn;
-              return dropdown;
-            }),
-          };
-          cb(dropdown);
-          return setting;
-        }),
-        addToggle: jest.fn().mockImplementation((cb: any) => {
-          cb({
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockReturnThis(),
-          });
-          return setting;
-        }),
-        addText: jest.fn().mockImplementation((cb: any) => {
-          cb({
-            setPlaceholder: jest.fn().mockReturnThis(),
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockReturnThis(),
-            inputEl: { type: "" },
-          });
-          return setting;
-        }),
-        addTextArea: jest.fn().mockImplementation((cb: any) => {
-          cb({
-            setPlaceholder: jest.fn().mockReturnThis(),
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockReturnThis(),
-            inputEl: { rows: 0, cols: 0 },
-          });
-          return setting;
-        }),
-        addButton: jest.fn().mockImplementation((cb: any) => {
-          cb({
-            setButtonText: jest.fn().mockReturnThis(),
-            onClick: jest.fn().mockReturnThis(),
-            setCta: jest.fn().mockReturnThis(),
-          });
-          return setting;
-        }),
-      };
-      return setting;
-    });
-
-    settingTab.display();
-    expect(capturedOnChange).not.toBeNull();
-    await expect(
-      capturedOnChange!("uid-a"),
-    ).resolves.toBeUndefined();
-    expect(mockNotifier.error).toHaveBeenCalledWith(
-      expect.stringContaining("Switch failed"),
-    );
   });
 });

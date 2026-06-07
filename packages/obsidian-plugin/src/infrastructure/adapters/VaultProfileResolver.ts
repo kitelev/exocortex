@@ -70,11 +70,6 @@ export class VaultProfileResolver implements IProfileResolver {
       uid: profileUid,
       includes,
       extends: importsUid,
-      // `_appliesTo` read removed (RFC 01a83de8 Phase 2 — Knowledge/Focus split
-      // superseded; unified single Profile). Field kept null for backward-compat
-      // with checkCompatibility's pass-through layer (full dual-class machinery
-      // removal deferred — cascade-capped follow-up).
-      appliesTo: null,
       label,
     };
   }

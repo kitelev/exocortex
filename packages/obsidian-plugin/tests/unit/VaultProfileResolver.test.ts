@@ -187,39 +187,6 @@ describe("VaultProfileResolver.resolve", () => {
   });
 });
 
-describe("VaultProfileResolver.resolve — appliesTo deprecated (RFC 01a83de8 Phase 2)", () => {
-  // The Knowledge/Focus split (RFC 13da049f AC13) was superseded by the unified
-  // single Profile. The resolver no longer reads `exo__FocusProfile_appliesTo`;
-  // the field is always null (dead pass-through pending cascade-capped removal).
-  it("returns appliesTo=null even when the legacy key is present (read removed)", async () => {
-    const app = makeApp([
-      {
-        file: { path: "p.md", basename: "p" },
-        fm: {
-          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
-          exo__Asset_uid: "focus-1",
-          exo__FocusProfile_appliesTo: "[[knowledge-9|exo__KnowledgeProfile]]",
-        },
-      },
-    ]);
-    const r = await new VaultProfileResolver(app).resolve("focus-1");
-    expect(r?.appliesTo).toBeNull();
-  });
-
-  it("returns appliesTo=null when the field is absent", async () => {
-    const app = makeApp([
-      {
-        file: { path: "p.md", basename: "p" },
-        fm: {
-          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
-          exo__Asset_uid: "focus-1",
-        },
-      },
-    ]);
-    const r = await new VaultProfileResolver(app).resolve("focus-1");
-    expect(r?.appliesTo).toBeNull();
-  });
-});
 
 // RFC 01a83de8 Phase 3 T4 — listKnowledgeProfileFiles removed (the former
 // per-class KnowledgeProfile picker collapsed into the single exo__Profile

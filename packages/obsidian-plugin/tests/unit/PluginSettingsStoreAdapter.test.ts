@@ -79,63 +79,29 @@ describe("PluginSettingsStoreAdapter (Issue #3327 Item #3 — device-local backi
     expect(localStore.isSwitchInProgress()).toBe(true);
   });
 
-  // ─── AC14 — dual Knowledge/Focus slots through the adapter ──────────────
-
-  it("load surfaces the dual Knowledge/Focus slots", async () => {
-    const { app } = makeFakeApp();
+  // RFC 0a0791c1 Phase 5 T2 — leftover dual Knowledge/Focus keys on disk are
+  // ignored by the adapter (single `activeProfileUid` slot).
+  it("ignores retired dual slots left on disk by an older plugin version", async () => {
+    const { app, files } = makeFakeApp();
+    const path = ".obsidian/plugins/exocortex/data.local.json";
+    files.set(
+      path,
+      JSON.stringify({
+        activeProfileUid: "p1",
+        activeKnowledgeProfileUid: "k1",
+        activeFocusProfileUid: "f1",
+        _switchInProgress: false,
+      }),
+    );
     const localStore = await makeInitializedStore(app);
-    await localStore.save({
-      activeProfileUid: "k1",
-      activeKnowledgeProfileUid: "k1",
-      activeFocusProfileUid: "f1",
-      _switchInProgress: false,
-    });
     const adapter = new PluginSettingsStoreAdapter(localStore);
     const s = await adapter.load();
-    expect(s.activeKnowledgeProfileUid).toBe("k1");
-    expect(s.activeFocusProfileUid).toBe("f1");
-  });
+    expect(s.activeProfileUid).toBe("p1");
+    expect(s._switchInProgress).toBe(false);
 
-  it("save maps the Focus slot through to data.local.json", async () => {
-    const { app, files } = makeFakeApp();
-    const localStore = await makeInitializedStore(app);
-    const adapter = new PluginSettingsStoreAdapter(localStore);
-
-    await adapter.save({
-      activeProfileUid: "f7",
-      activeFocusProfileUid: "f7",
-      _switchInProgress: false,
-    });
-
-    const parsed = JSON.parse(
-      files.get(".obsidian/plugins/exocortex/data.local.json") ?? "{}",
-    );
-    expect(parsed.activeFocusProfileUid).toBe("f7");
-    expect(localStore.getActiveFocusProfileUid()).toBe("f7");
-  });
-
-  it("save with the Focus slot preserves the Knowledge slot (soft switch must not wipe Knowledge)", async () => {
-    const { app, files } = makeFakeApp();
-    const localStore = await makeInitializedStore(app);
-    // Knowledge was set earlier (e.g. by a prior hard switch).
-    await localStore.save({
-      activeProfileUid: "k1",
-      activeKnowledgeProfileUid: "k1",
-      activeFocusProfileUid: null,
-      _switchInProgress: false,
-    });
-    const adapter = new PluginSettingsStoreAdapter(localStore);
-
-    // A soft switch loads → sets Focus → saves. The adapter must preserve the
-    // Knowledge slot it didn't touch.
-    const settings = await adapter.load();
-    settings.activeFocusProfileUid = "f2";
-    await adapter.save(settings);
-
-    const parsed = JSON.parse(
-      files.get(".obsidian/plugins/exocortex/data.local.json") ?? "{}",
-    );
-    expect(parsed.activeKnowledgeProfileUid).toBe("k1"); // preserved
-    expect(parsed.activeFocusProfileUid).toBe("f2");
+    // A subsequent save does not re-derive or clobber the legacy keys (RMW
+    // preserves them harmlessly) but only the single slot is authoritative.
+    await adapter.save({ activeProfileUid: "p2", _switchInProgress: false });
+    expect(localStore.getActiveProfileUid()).toBe("p2");
   });
 });

@@ -22,7 +22,6 @@ import type { App } from "obsidian";
  * use disjoint key namespaces:
  *   - `LocalSecretsStore` writes keys: `pat` (currently the only one)
  *   - `PluginLocalDataStore` writes keys: `activeProfileUid`,
- *     `activeKnowledgeProfileUid`, `activeFocusProfileUid`,
  *     `_switchInProgress`
  *
  * Cross-store coexistence relies on **lossless read-modify-write** in
@@ -44,27 +43,21 @@ import type { App } from "obsidian";
  * ## In-memory cache contract
  *
  * `init()` loads the file once into `this.cache`. Synchronous accessors
- * (`getActiveProfileUid()`, `getActiveKnowledgeProfileUid()`,
- * `getActiveFocusProfileUid()`, `isSwitchInProgress()`) read from the
+ * (`getActiveProfileUid()`, `isSwitchInProgress()`) read from the
  * cache — they MUST be called only after `init()` resolves. `save()`
  * writes the cache back to disk и keeps the cache up to date.
  *
- * ## Dual active-state slots (RFC 13da049f Phase 6.5b AC14)
+ * ## Single active-state slot (RFC 0a0791c1 Phase 5 T2)
  *
- * The Knowledge/Focus profile split gives each switch flavour its own
- * persisted slot:
- *   - `activeKnowledgeProfileUid` — set by `hardSwitchKnowledgeProfile`
- *     (materialised filesystem state).
- *   - `activeFocusProfileUid` — set by `softSwitchFocusProfile` (RDF
- *     query-time filter only).
- * The legacy `activeProfileUid` key is retained for backward read /
- * downgrade safety; `migrateToDualActiveState()` seeds the Knowledge
- * slot from it on first AC14 load (R38 — never copies to Focus).
+ * `activeProfileUid` is the single last-applied cache slot — the profile
+ * the «Apply profile» mount-state switch most recently materialised. The
+ * former dual Knowledge/Focus slots (`activeKnowledgeProfileUid` /
+ * `activeFocusProfileUid`, RFC 13da049f AC14) were retired together with
+ * the soft RDF query-time filter in Phase 5 T2; any leftover keys on disk
+ * are ignored (RMW preserves them harmlessly).
  */
 
 const KEY_ACTIVE_PROFILE_UID = "activeProfileUid";
-const KEY_ACTIVE_KNOWLEDGE_PROFILE_UID = "activeKnowledgeProfileUid";
-const KEY_ACTIVE_FOCUS_PROFILE_UID = "activeFocusProfileUid";
 const KEY_SWITCH_IN_PROGRESS = "_switchInProgress";
 const KEY_ACTIVE_STAGING_DIRS = "_activeStagingDirs";
 const KEY_FILE_ONLY_ASSET_SPACES = "_fileOnlyAssetSpaces";
@@ -82,32 +75,22 @@ export interface PluginLocalDataStoreOptions {
 
 export interface LocalSwitchState {
   /**
-   * Legacy single-slot active profile. Retained for backward read /
-   * downgrade safety. Both switch flavours keep mirroring their target
-   * here (pre-AC14 conflated semantics) so a downgraded plugin still
-   * finds a selection.
+   * Last-applied profile cache (RFC 0a0791c1 Phase 5 T2). Set by the
+   * «Apply profile» mount-state switch to the profile it most recently
+   * materialised. Single source of truth — the former dual Knowledge/Focus
+   * slots were retired with the soft RDF filter in Phase 5 T2.
    */
   activeProfileUid: string | null;
-  /** Active Knowledge profile (hard switch — materialised state). AC14. */
-  activeKnowledgeProfileUid: string | null;
-  /** Active Focus profile (soft switch — RDF query-time filter). AC14. */
-  activeFocusProfileUid: string | null;
   _switchInProgress: boolean;
 }
 
 /**
- * Input shape for {@link PluginLocalDataStore.save}. The dual AC14 slots
- * are optional: pre-AC14 callers (and the migration helper) can omit them,
- * in which case `save` leaves the on-disk value untouched (read-modify-
- * write preserve) rather than clobbering it to null.
+ * Input shape for {@link PluginLocalDataStore.save}.
  */
 export type LocalSwitchStateInput = Pick<
   LocalSwitchState,
   "activeProfileUid" | "_switchInProgress"
-> &
-  Partial<
-    Pick<LocalSwitchState, "activeKnowledgeProfileUid" | "activeFocusProfileUid">
-  >;
+>;
 
 /**
  * Tracked staging dir entry — registered by {@link StagingDirTracker.allocate}
@@ -141,8 +124,6 @@ export interface FileOnlyAssetSpaceEntry {
 
 const EMPTY_STATE: LocalSwitchState = {
   activeProfileUid: null,
-  activeKnowledgeProfileUid: null,
-  activeFocusProfileUid: null,
   _switchInProgress: false,
 };
 
@@ -173,28 +154,10 @@ export class PluginLocalDataStore {
     this.initialized = true;
   }
 
-  /** Returns the cached (legacy) active profile UID. Requires `init()` first. */
+  /** Returns the cached last-applied active profile UID. Requires `init()` first. */
   getActiveProfileUid(): string | null {
     this.assertInitialized();
     return this.cache.activeProfileUid;
-  }
-
-  /**
-   * Returns the cached active Knowledge profile UID (hard switch slot).
-   * Requires `init()` first. AC14.
-   */
-  getActiveKnowledgeProfileUid(): string | null {
-    this.assertInitialized();
-    return this.cache.activeKnowledgeProfileUid;
-  }
-
-  /**
-   * Returns the cached active Focus profile UID (soft switch slot).
-   * Requires `init()` first. AC14.
-   */
-  getActiveFocusProfileUid(): string | null {
-    this.assertInitialized();
-    return this.cache.activeFocusProfileUid;
   }
 
   /** Returns the cached switch-in-progress flag. Requires `init()` first. */
@@ -214,22 +177,14 @@ export class PluginLocalDataStore {
    * write semantics preserve unknown keys (e.g. `pat` written by
    * LocalSecretsStore).
    *
-   * The dual AC14 slots are written only when present on `state`; when a
-   * caller omits them (pre-AC14 shape), the on-disk value is preserved via
-   * RMW rather than clobbered to null. The cache is re-derived from the
-   * just-persisted bytes so it always mirrors disk (including preserved
-   * sibling slots).
+   * The cache is re-derived from the just-persisted bytes so it always
+   * mirrors disk. Read-modify-write preserves unknown keys, including any
+   * retired Knowledge/Focus slots left behind by an older plugin version.
    */
   async save(state: LocalSwitchStateInput): Promise<void> {
     const all = await this.readAllRaw();
     all[KEY_ACTIVE_PROFILE_UID] =
       state.activeProfileUid === null ? null : state.activeProfileUid;
-    if (state.activeKnowledgeProfileUid !== undefined) {
-      all[KEY_ACTIVE_KNOWLEDGE_PROFILE_UID] = state.activeKnowledgeProfileUid;
-    }
-    if (state.activeFocusProfileUid !== undefined) {
-      all[KEY_ACTIVE_FOCUS_PROFILE_UID] = state.activeFocusProfileUid;
-    }
     all[KEY_SWITCH_IN_PROGRESS] = state._switchInProgress;
     await this.persist(all);
     this.cache = this.deriveStateFromRaw(all);
@@ -289,71 +244,6 @@ export class PluginLocalDataStore {
       _switchInProgress: legacyFlag,
     });
     return "legacy";
-  }
-
-  /**
-   * Migration helper (RFC 13da049f Phase 6.5b AC14) — seed the dual
-   * Knowledge/Focus active-state slots from the legacy single
-   * `activeProfileUid` key. Run at plugin onload AFTER
-   * {@link migrateFromLegacyIfNeeded} (which moves state из `plugin.settings`
-   * into `data.local.json`).
-   *
-   * R38 (Mac/iPhone divergence): the legacy single slot is interpreted as a
-   * **Knowledge** profile — `activeKnowledgeProfileUid = activeProfileUid`,
-   * `activeFocusProfileUid = null`. The Focus slot is NEVER seeded from the
-   * legacy value: copying it to Focus on every device would silently re-apply
-   * an RDF filter the user never chose as a Focus selection, and could diverge
-   * per-device. Users re-select a Focus profile explicitly.
-   *
-   * Idempotent: presence of the `activeKnowledgeProfileUid` (or
-   * `activeFocusProfileUid`) key on disk marks the dual shape as already
-   * established — a second call is a no-op. This makes the migration safe to
-   * resume after a crash between the legacy and dual migration steps (EC1).
-   *
-   * Returns:
-   *   - `"already-dual"`: dual keys already present; no mutation.
-   *   - `"migrated"`: legacy value seeded into the Knowledge slot.
-   *   - `"none"`: no legacy value to seed; both slots stay null (no write).
-   */
-  async migrateToDualActiveState(): Promise<
-    "already-dual" | "migrated" | "none"
-  > {
-    const all = await this.readAllRaw();
-    const hasDualKey =
-      Object.prototype.hasOwnProperty.call(
-        all,
-        KEY_ACTIVE_KNOWLEDGE_PROFILE_UID,
-      ) ||
-      Object.prototype.hasOwnProperty.call(all, KEY_ACTIVE_FOCUS_PROFILE_UID);
-
-    if (hasDualKey) {
-      // Already established the dual shape — idempotent no-op.
-      this.cache = this.deriveStateFromRaw(all);
-      this.initialized = true;
-      return "already-dual";
-    }
-
-    const legacy =
-      typeof all[KEY_ACTIVE_PROFILE_UID] === "string"
-        ? (all[KEY_ACTIVE_PROFILE_UID] as string)
-        : null;
-
-    if (legacy === null) {
-      // Nothing to seed — keep cache derived (both slots null). Do NOT write
-      // so a fresh install stays file-less until a real selection is made.
-      this.cache = this.deriveStateFromRaw(all);
-      this.initialized = true;
-      return "none";
-    }
-
-    // R38 — seed Knowledge only; Focus stays null.
-    await this.save({
-      activeProfileUid: legacy,
-      activeKnowledgeProfileUid: legacy,
-      activeFocusProfileUid: null,
-      _switchInProgress: all[KEY_SWITCH_IN_PROGRESS] === true,
-    });
-    return "migrated";
   }
 
   /**
@@ -485,8 +375,6 @@ export class PluginLocalDataStore {
       typeof v === "string" ? v : null;
     return {
       activeProfileUid: asStr(all[KEY_ACTIVE_PROFILE_UID]),
-      activeKnowledgeProfileUid: asStr(all[KEY_ACTIVE_KNOWLEDGE_PROFILE_UID]),
-      activeFocusProfileUid: asStr(all[KEY_ACTIVE_FOCUS_PROFILE_UID]),
       _switchInProgress: all[KEY_SWITCH_IN_PROGRESS] === true,
     };
   }
