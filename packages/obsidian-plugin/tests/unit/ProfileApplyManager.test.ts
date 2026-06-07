@@ -366,7 +366,7 @@ describe("ProfileApplyManager.reindexMountState — happy path (apply reindex)",
     expect(h.notifyCalls[0]).toMatch(/\d+ms/);
   });
 
-  it("invokes rdf.refresh once on soft switch (RFC 01a83de8 — soft-filter removed)", async () => {
+  it("invokes rdf.refresh once on reindex (RFC 01a83de8 — soft-filter removed)", async () => {
     const h = makeHarness({
       profiles: [
         [UID_BASE, { uid: UID_BASE, includes: [ONTO_TBANK], extends: null }],
@@ -374,7 +374,7 @@ describe("ProfileApplyManager.reindexMountState — happy path (apply reindex)",
     });
     await reindex(h.mgr, UID_BASE);
     // The query-time soft-filter was removed (RFC 01a83de8 Phase 3 T3b); the
-    // soft switch persists the active profile and triggers a single full-vault
+    // reindex persists the active profile and triggers a single full-vault
     // reindex — no effective set is threaded through refresh anymore.
     expect(h.rdf.refreshCalls).toBe(1);
   });

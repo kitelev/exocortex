@@ -236,7 +236,7 @@ describe("AssetSpaceMaterializationTracker", () => {
     expect(tracker.isMaterialized("uid-ems")).toBe(true);
     expect(tracker.isMaterialized("uid-exo")).toBe(true);
 
-    // Simulate hard switch: exo folder destroyed.
+    // Simulate apply: exo folder destroyed.
     existingFolders.delete("assetspaces/exo");
     await tracker.refresh();
     expect(tracker.isMaterialized("uid-ems")).toBe(true);

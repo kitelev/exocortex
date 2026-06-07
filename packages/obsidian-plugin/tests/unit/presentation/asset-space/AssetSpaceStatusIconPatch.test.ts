@@ -179,7 +179,7 @@ describe("AssetSpaceStatusIconPatch (RFC 22b50a17 Phase 4)", () => {
       true,
     );
 
-    // Hard-switch destroys this AS — flip flag.
+    // Apply destroys this AS — flip flag.
     mockTracker.isMaterialized.mockReturnValue(false);
     patch.onTrackerRefreshed();
 

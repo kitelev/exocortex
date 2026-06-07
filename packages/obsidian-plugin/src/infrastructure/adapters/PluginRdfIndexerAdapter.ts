@@ -24,7 +24,7 @@ export class PluginRdfIndexerAdapter implements IRdfIndexer {
    * empty until the next `metadataCache.resolved` event.
    *
    * The plugin wires this to a closure that re-runs the AssetSpace
-   * materialization injection. Soft+hard switch paths via
+   * materialization injection. Apply paths via
    * `ProfileApplyManager` use this adapter, so the hook fires
    * automatically without each switch callsite knowing about the
    * derived-triple discipline.

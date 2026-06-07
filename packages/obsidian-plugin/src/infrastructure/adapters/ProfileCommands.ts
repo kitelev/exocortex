@@ -31,7 +31,7 @@
 
 import type { ProfileApplyManager } from "./ProfileApplyManager";
 import {
-  HardSwitchAbortedByUser,
+  ApplyAbortedByUser,
   TsFloorViolationError,
   UncommittedChangesAbortError,
 } from "./ProfileApplyManager";
@@ -112,7 +112,7 @@ export class ProfileCommands {
    *      REST mount/unmount (mobile)
    *
    * User-facing error mapping: TsFloorViolationError, UncommittedChangesAbortError,
-   * and HardSwitchAbortedByUser get clear notices distinct from generic «Apply failed».
+   * and ApplyAbortedByUser get clear notices distinct from generic «Apply failed».
    */
   async invokeApplyProfile(): Promise<void> {
     let profiles: ProfileChoice[];
@@ -135,7 +135,7 @@ export class ProfileCommands {
     try {
       await this.switchMgr.applyProfile(chosen.uid);
     } catch (e) {
-      if (e instanceof HardSwitchAbortedByUser) {
+      if (e instanceof ApplyAbortedByUser) {
         this.notify("Apply profile cancelled.");
         return;
       }

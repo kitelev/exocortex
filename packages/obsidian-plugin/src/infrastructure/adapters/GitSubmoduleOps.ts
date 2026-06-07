@@ -11,7 +11,7 @@ const execFile = promisify(execFileCb);
 
 /**
  * GitSubmoduleOps — security-hardened wrapper for the git subprocess calls
- * needed by `ProfileApplyManager.hardSwitchProfile` per RFC 22b50a17
+ * needed by `ProfileApplyManager.applyProfile` per RFC 22b50a17
  * §Solution Architecture lines 127-137.
  *
  * Operations covered:
@@ -33,7 +33,7 @@ const execFile = promisify(execFileCb);
  *   tarball / clone; short enough to surface hangs).
  * - Captures stderr for diagnostic propagation through thrown errors.
  *
- * Mobile guard: every public method throws — Phase 5 hard switch is
+ * Mobile guard: every public method throws — Phase 5 apply is
  * desktop-only (RFC R24 scope).
  */
 export interface GitSubmoduleOpsOptions {
@@ -106,7 +106,7 @@ export function validateVaultPathArg(arg: string): string {
  * `file://` URLs allowed ONLY in test mode (`NODE_ENV === "test"`). In
  * production они bypass the GitHub allowlist and would permit malicious
  * `exo__AssetSpace_git: file:///some/attacker/repo` declarations to
- * materialize local content into the vault on hard switch. Test code that
+ * materialize local content into the vault on apply. Test code that
  * legitimately needs file:// (offline integration smoke) gets it via the
  * automatic NODE_ENV that jest sets; production never sees it.
  */

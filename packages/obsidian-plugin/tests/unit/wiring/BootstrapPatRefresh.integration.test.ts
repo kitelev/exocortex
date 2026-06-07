@@ -29,7 +29,7 @@ import * as obsidian from "obsidian";
 import type { App } from "obsidian";
 import type { INotificationService } from "exocortex";
 
-import { buildAssetSpacePuller } from "../../../src/infrastructure/adapters/HardSwitchDepsFactory";
+import { buildAssetSpacePuller } from "../../../src/infrastructure/adapters/ApplyDepsFactory";
 import { LocalSecretsStore } from "../../../src/infrastructure/adapters/LocalSecretsStore";
 import { PluginLocalDataStore } from "../../../src/infrastructure/adapters/PluginLocalDataStore";
 import { GitHubRestClient } from "../../../src/infrastructure/adapters/GitHubRestClient";
@@ -201,7 +201,7 @@ describe("Bootstrap/Add-AssetSpace PAT freshness (Issue #3382) — production-sh
     const notices: string[] = [];
 
     // Pre-fix behaviour: build the puller NOW, while the vault has no PAT
-    // (mirrors capturing `hardSwitchDeps.assetSpaceManager` at plugin onload).
+    // (mirrors capturing `applyDeps.assetSpaceManager` at plugin onload).
     const eagerPuller = await buildAssetSpacePuller({
       app,
       localDataStore: store,

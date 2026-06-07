@@ -15,7 +15,7 @@ import type { AssetSpaceMaterializationTracker } from "@plugin/infrastructure/ad
  *
  * Detects AssetSpace assets by frontmatter (`isAssetSpaceFrontmatter`) and
  * queries the runtime-derived `AssetSpaceMaterializationTracker` for status.
- * Re-applied on workspace events so the icon stays in sync with hard-switch
+ * Re-applied on workspace events so the icon stays in sync with apply
  * mutations: `active-leaf-change`, `layout-change`, `metadataCache.changed`.
  *
  * Idempotent — never adds a second icon to the same title element; updates
@@ -137,7 +137,7 @@ export class AssetSpaceStatusIconPatch {
     badge.textContent = materialized ? "✅" : "⏸";
     badge.title = materialized
       ? "AssetSpace materialized on disk (assetspaces/<namespace>/ exists)"
-      : "AssetSpace available but not materialized — run Hard Switch to populate";
+      : "AssetSpace available but not materialized — run Apply to populate";
     badge.setAttribute("aria-label", badge.title);
   }
 
