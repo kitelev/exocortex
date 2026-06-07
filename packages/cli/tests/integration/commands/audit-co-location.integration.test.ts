@@ -103,4 +103,23 @@ describe("audit co-location — revert→fail / restore→pass (integration)", (
     // empty: the standalone empty asset + the ontology file
     expect(r.skips["empty-isDefinedBy"]).toBe(2);
   });
+
+  it("excludes '09 Templates/' (Templater templates are not assets) — revert→fail proof", async () => {
+    // A Templater template carries exo__Asset_isDefinedBy by pattern inheritance
+    // but physically lives in 09 Templates/ and must never move. WITHOUT the
+    // exclusion in scanVaultForCoLocation this resolvable-but-misplaced file
+    // would be reported as 1 violation (expected=assetspaces/concepts,
+    // actual=09 Templates/concepts). WITH the exclusion it is dropped entirely.
+    const tmplDir = join(vault, "09 Templates", "concepts");
+    writeAsset(
+      tmplDir,
+      "dddddddd-0000-0000-0000-000000000000",
+      `"[[${ONTO_UID}]]"`,
+    );
+    const r = await scanVaultForCoLocation(vault);
+    // Revert-verify: remove the `09 Templates` skip → this assertion flips to 1.
+    expect(r.violations).toHaveLength(0);
+    // Template is excluded before counting: not checked, not a skip-reason either.
+    expect(r.checked).toBe(0);
+  });
 });
