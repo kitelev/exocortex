@@ -30,6 +30,13 @@ import {
 } from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
 import { PluginLockManager } from "../../src/infrastructure/adapters/PluginLockManager";
 
+// RFC 0a0791c1 Phase 5 T2 — the public soft `switchProfile` was removed; its
+// lock/journal/persist/reindex behavior lives on in the private
+// `reindexMountState` helper. These tests drive it directly via a typed cast.
+type Reindexable = { reindexMountState(uid: string): Promise<void> };
+const reindex = (mgr: FocusProfileSwitchManager, uid: string): Promise<void> =>
+  (mgr as unknown as Reindexable).reindexMountState(uid);
+
 // ─── Shared fakes — mirror real Obsidian API per test-fixture-realism ────
 
 function makeFakeApp(): { app: App; files: Map<string, string> } {
@@ -164,8 +171,8 @@ describe("B.10 Scenario 1 — Filtered set with AS folder present", () => {
     expect(eff.has(ONTO_EXO)).toBe(true);   // overlay via extends
     expect(eff.has(ONTO_EXOCMD)).toBe(true); // overlay via extends + TS-floor
 
-    // The soft switch still fires exactly one (full-vault) reindex.
-    await h.mgr.switchProfile(UID_PERSONAL);
+    // The apply reindex path still fires exactly one (full-vault) reindex.
+    await reindex(h.mgr, UID_PERSONAL);
     expect(h.rdf.refreshCount).toBe(1);
   });
 });
@@ -186,7 +193,7 @@ describe("B.10 Scenario 2 — Missing parent profile graceful fallback", () => {
     ]);
 
     // Should not throw; effective set still has TBANK + TS-floor
-    await expect(h.mgr.switchProfile(UID_BROKEN)).resolves.not.toThrow();
+    await expect(reindex(h.mgr, UID_BROKEN)).resolves.not.toThrow();
     const eff = await h.mgr.resolveEffectiveSet(UID_BROKEN);
     expect(eff.has(ONTO_TBANK)).toBe(true);
     expect(eff.has(ONTO_EXO)).toBe(true); // TS-floor preserved
@@ -237,7 +244,7 @@ describe("B.10 Scenario 3 — Empty effective_set survives via TS-floor", () => 
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("B.10 Scenario 4 — Concurrent switch protected by lock", () => {
-  it("second switchProfile rejects while first holds lock", async () => {
+  it("second apply-reindex rejects while first holds lock", async () => {
     const profiles: Array<[string, ProfileResolution]> = [
       [UID_BASE, { uid: UID_BASE, includes: [], extends: null }],
     ];
@@ -251,7 +258,7 @@ describe("B.10 Scenario 4 — Concurrent switch protected by lock", () => {
     });
     expect(await foreignLock.acquireLock("concurrent-op")).toBe(true);
 
-    await expect(h.mgr.switchProfile(UID_BASE)).rejects.toThrow(/lock held/);
+    await expect(reindex(h.mgr, UID_BASE)).rejects.toThrow(/lock held/);
 
     // No refresh fired — switch did not proceed
     expect(h.rdf.refreshCount).toBe(0);
@@ -270,7 +277,7 @@ describe("B.10 Scenario 4 — Concurrent switch protected by lock", () => {
     await foreignLock.acquireLock("op");
     await foreignLock.releaseLock();
 
-    await h.mgr.switchProfile(UID_BASE);
+    await reindex(h.mgr, UID_BASE);
     expect(h.rdf.refreshCount).toBe(1);
   });
 });

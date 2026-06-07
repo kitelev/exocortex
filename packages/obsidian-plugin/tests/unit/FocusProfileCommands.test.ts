@@ -14,18 +14,9 @@ import {
 // ─── Test doubles ────────────────────────────────────────────────────────
 
 class FakeSwitchMgr {
-  switchCalls: string[] = [];
   hardSwitchCalls: string[] = [];
-  failOnce = false;
   /** Error to throw from the next hardSwitchKnowledgeProfile call (then cleared). */
   hardSwitchThrows: Error | null = null;
-  async softSwitchFocusProfile(uid: string): Promise<void> {
-    this.switchCalls.push(uid);
-    if (this.failOnce) {
-      this.failOnce = false;
-      throw new Error("simulated switch failure");
-    }
-  }
   async hardSwitchKnowledgeProfile(uid: string): Promise<void> {
     this.hardSwitchCalls.push(uid);
     if (this.hardSwitchThrows) {
@@ -64,14 +55,11 @@ interface Harness {
 
 function makeHarness(opts: {
   profiles: FocusProfileChoice[];
-  knowledgeProfiles?: FocusProfileChoice[];
   pickResult?: FocusProfileChoice | null;
   activeFilePath?: string | null;
   asLookups?: Array<[string, string]>;
   listError?: Error;
-  knowledgeListError?: Error;
-  activeKnowledgeUid?: string | null;
-  activeFocusUid?: string | null;
+  activeProfileUid?: string | null;
 }): Harness {
   const switchMgr = new FakeSwitchMgr();
   const pushMgr = new FakePushMgr();
@@ -88,17 +76,12 @@ function makeHarness(opts: {
       if (opts.listError) throw opts.listError;
       return opts.profiles;
     },
-    knowledgeProfileLister: async () => {
-      if (opts.knowledgeListError) throw opts.knowledgeListError;
-      return opts.knowledgeProfiles ?? [];
-    },
     fuzzyPick: async (options, title) => {
       pickCalls.push({ options, title });
       return opts.pickResult === undefined ? null : opts.pickResult;
     },
     getActiveFilePath: () => opts.activeFilePath ?? null,
-    getActiveKnowledgeProfileUid: () => opts.activeKnowledgeUid ?? null,
-    getActiveFocusProfileUid: () => opts.activeFocusUid ?? null,
+    getActiveProfileUid: () => opts.activeProfileUid ?? null,
     notify: (m) => notices.push(m),
   };
   return {
@@ -111,76 +94,6 @@ function makeHarness(opts: {
     cmd: new FocusProfileCommands(deps),
   };
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// invokeSwitchProfile
-// ═══════════════════════════════════════════════════════════════════════════
-
-describe("FocusProfileCommands.invokeSwitchProfile", () => {
-  it("opens fuzzy picker с listed profiles", async () => {
-    const profiles = [
-      { uid: "u1", label: "profile-base" },
-      { uid: "u2", label: "profile-personal" },
-    ];
-    const h = makeHarness({ profiles, pickResult: profiles[1] });
-    await h.cmd.invokeSwitchProfile();
-
-    expect(h.pickCalls).toHaveLength(1);
-    expect(h.pickCalls[0].options).toEqual(profiles);
-    expect(h.pickCalls[0].title).toBe("Switch focus profile");
-  });
-
-  it("invokes switchMgr.softSwitchFocusProfile with chosen uid", async () => {
-    const profiles = [{ uid: "u2", label: "profile-personal" }];
-    const h = makeHarness({ profiles, pickResult: profiles[0] });
-    await h.cmd.invokeSwitchProfile();
-
-    expect(h.switchMgr.switchCalls).toEqual(["u2"]);
-    expect(h.notices.some((n) => n.includes("profile-personal"))).toBe(true);
-  });
-
-  it("does nothing when user cancels picker (null)", async () => {
-    const profiles = [{ uid: "u1", label: "p1" }];
-    const h = makeHarness({ profiles, pickResult: null });
-    await h.cmd.invokeSwitchProfile();
-
-    expect(h.switchMgr.switchCalls).toHaveLength(0);
-  });
-
-  it("shows Notice when no FocusProfile assets in vault", async () => {
-    const h = makeHarness({ profiles: [] });
-    await h.cmd.invokeSwitchProfile();
-
-    expect(h.pickCalls).toHaveLength(0);
-    expect(h.notices.some((n) => /No FocusProfile/.test(n))).toBe(true);
-  });
-
-  it("surfaces lister error as Notice без crash", async () => {
-    const h = makeHarness({
-      profiles: [],
-      listError: new Error("vault read failed"),
-    });
-    await h.cmd.invokeSwitchProfile();
-
-    expect(h.pickCalls).toHaveLength(0);
-    expect(
-      h.notices.some((n) =>
-        /Could not list profiles.*vault read failed/.test(n),
-      ),
-    ).toBe(true);
-  });
-
-  it("surfaces softSwitchFocusProfile failure as Notice без re-throw", async () => {
-    const profiles = [{ uid: "u1", label: "p1" }];
-    const h = makeHarness({ profiles, pickResult: profiles[0] });
-    h.switchMgr.failOnce = true;
-
-    await expect(h.cmd.invokeSwitchProfile()).resolves.not.toThrow();
-    expect(h.notices.some((n) => /Switch failed.*simulated/.test(n))).toBe(
-      true,
-    );
-  });
-});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // invokePushCurrentAssetSpace
@@ -310,40 +223,30 @@ describe("FocusProfileCommands.extractAssetSpaceFolder", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// invokeSwitchKnowledgeProfile (RFC 13da049f Phase 6.5b AC17)
+// invokeSwitchKnowledgeProfile — «Apply profile» (RFC 0a0791c1 Phase 5 T2)
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("FocusProfileCommands.invokeSwitchKnowledgeProfile", () => {
-  it("opens picker from the KnowledgeProfile lister (per-class), not the Focus lister", async () => {
-    const focusProfiles = [{ uid: "f1", label: "focus-only" }];
-    const knowledgeProfiles = [{ uid: "k1", label: "knowledge-one" }];
-    const h = makeHarness({
-      profiles: focusProfiles,
-      knowledgeProfiles,
-      pickResult: knowledgeProfiles[0],
-    });
+describe("FocusProfileCommands.invokeSwitchKnowledgeProfile (Apply profile)", () => {
+  it("opens the picker from the single profile lister with the «Apply profile» title", async () => {
+    const profiles = [{ uid: "k1", label: "knowledge-one" }];
+    const h = makeHarness({ profiles, pickResult: profiles[0] });
     await h.cmd.invokeSwitchKnowledgeProfile();
 
     expect(h.pickCalls).toHaveLength(1);
-    expect(h.pickCalls[0].options).toEqual(knowledgeProfiles);
-    expect(h.pickCalls[0].title).toMatch(/Switch knowledge profile/);
+    expect(h.pickCalls[0].options).toEqual(profiles);
+    expect(h.pickCalls[0].title).toBe("Apply profile");
   });
 
   it("invokes hardSwitchKnowledgeProfile with the chosen uid", async () => {
-    const knowledgeProfiles = [{ uid: "k1", label: "knowledge-one" }];
-    const h = makeHarness({
-      profiles: [],
-      knowledgeProfiles,
-      pickResult: knowledgeProfiles[0],
-    });
+    const profiles = [{ uid: "k1", label: "knowledge-one" }];
+    const h = makeHarness({ profiles, pickResult: profiles[0] });
     await h.cmd.invokeSwitchKnowledgeProfile();
 
     expect(h.switchMgr.hardSwitchCalls).toEqual(["k1"]);
-    expect(h.switchMgr.switchCalls).toHaveLength(0); // soft NOT invoked
   });
 
   it("shows Notice when no profiles in vault", async () => {
-    const h = makeHarness({ profiles: [], knowledgeProfiles: [] });
+    const h = makeHarness({ profiles: [] });
     await h.cmd.invokeSwitchKnowledgeProfile();
 
     expect(h.pickCalls).toHaveLength(0);
@@ -351,24 +254,16 @@ describe("FocusProfileCommands.invokeSwitchKnowledgeProfile", () => {
   });
 
   it("does nothing when user cancels picker", async () => {
-    const knowledgeProfiles = [{ uid: "k1", label: "k1" }];
-    const h = makeHarness({
-      profiles: [],
-      knowledgeProfiles,
-      pickResult: null,
-    });
+    const profiles = [{ uid: "k1", label: "k1" }];
+    const h = makeHarness({ profiles, pickResult: null });
     await h.cmd.invokeSwitchKnowledgeProfile();
 
     expect(h.switchMgr.hardSwitchCalls).toHaveLength(0);
   });
 
   it("maps HardSwitchAbortedByUser to a cancelled Notice (no re-throw)", async () => {
-    const knowledgeProfiles = [{ uid: "k1", label: "k1" }];
-    const h = makeHarness({
-      profiles: [],
-      knowledgeProfiles,
-      pickResult: knowledgeProfiles[0],
-    });
+    const profiles = [{ uid: "k1", label: "k1" }];
+    const h = makeHarness({ profiles, pickResult: profiles[0] });
     h.switchMgr.hardSwitchThrows = new HardSwitchAbortedByUser();
 
     await expect(h.cmd.invokeSwitchKnowledgeProfile()).resolves.not.toThrow();
@@ -376,12 +271,8 @@ describe("FocusProfileCommands.invokeSwitchKnowledgeProfile", () => {
   });
 
   it("maps TsFloorViolationError to a refused Notice", async () => {
-    const knowledgeProfiles = [{ uid: "k1", label: "k1" }];
-    const h = makeHarness({
-      profiles: [],
-      knowledgeProfiles,
-      pickResult: knowledgeProfiles[0],
-    });
+    const profiles = [{ uid: "k1", label: "k1" }];
+    const h = makeHarness({ profiles, pickResult: profiles[0] });
     h.switchMgr.hardSwitchThrows = new TsFloorViolationError(
       "missing $exo floor",
     );
@@ -393,12 +284,8 @@ describe("FocusProfileCommands.invokeSwitchKnowledgeProfile", () => {
   });
 
   it("maps UncommittedChangesAbortError to an aborted Notice with file count", async () => {
-    const knowledgeProfiles = [{ uid: "k1", label: "k1" }];
-    const h = makeHarness({
-      profiles: [],
-      knowledgeProfiles,
-      pickResult: knowledgeProfiles[0],
-    });
+    const profiles = [{ uid: "k1", label: "k1" }];
+    const h = makeHarness({ profiles, pickResult: profiles[0] });
     h.switchMgr.hardSwitchThrows = new UncommittedChangesAbortError("dirty", [
       { asUid: "as1", submodulePath: "assetspaces/x", files: ["a.md", "b.md"] },
     ]);
@@ -409,86 +296,56 @@ describe("FocusProfileCommands.invokeSwitchKnowledgeProfile", () => {
     );
   });
 
-  it("surfaces generic switch failure as a Notice без re-throw", async () => {
-    const knowledgeProfiles = [{ uid: "k1", label: "k1" }];
-    const h = makeHarness({
-      profiles: [],
-      knowledgeProfiles,
-      pickResult: knowledgeProfiles[0],
-    });
+  it("surfaces generic apply failure as a Notice без re-throw", async () => {
+    const profiles = [{ uid: "k1", label: "k1" }];
+    const h = makeHarness({ profiles, pickResult: profiles[0] });
     h.switchMgr.hardSwitchThrows = new Error("boom");
 
     await expect(h.cmd.invokeSwitchKnowledgeProfile()).resolves.not.toThrow();
     expect(h.notices.some((n) => /failed.*boom/.test(n))).toBe(true);
   });
-
-  it("deprecated invokeHardSwitchProfile delegates to the Knowledge picker", async () => {
-    const knowledgeProfiles = [{ uid: "k1", label: "knowledge-one" }];
-    const h = makeHarness({
-      profiles: [{ uid: "f1", label: "focus-only" }],
-      knowledgeProfiles,
-      pickResult: knowledgeProfiles[0],
-    });
-    await h.cmd.invokeHardSwitchProfile();
-
-    expect(h.pickCalls[0].options).toEqual(knowledgeProfiles);
-    expect(h.switchMgr.hardSwitchCalls).toEqual(["k1"]);
-  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// invokeShowCurrentState (RFC 13da049f Phase 6.5b AC17)
+// invokeShowCurrentState (RFC 0a0791c1 Phase 5 T2 — single slot)
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("FocusProfileCommands.invokeShowCurrentState", () => {
-  it("reports both active Knowledge and Focus labels", async () => {
+  it("reports the active profile label", async () => {
     const h = makeHarness({
-      profiles: [{ uid: "f1", label: "focus-work" }],
-      knowledgeProfiles: [{ uid: "k1", label: "knowledge-main" }],
-      activeKnowledgeUid: "k1",
-      activeFocusUid: "f1",
+      profiles: [{ uid: "k1", label: "knowledge-main" }],
+      activeProfileUid: "k1",
     });
     await h.cmd.invokeShowCurrentState();
 
     expect(h.notices).toHaveLength(1);
-    expect(h.notices[0]).toMatch(/Knowledge: knowledge-main/);
-    expect(h.notices[0]).toMatch(/Focus: focus-work/);
+    expect(h.notices[0]).toMatch(/Active profile: knowledge-main/);
   });
 
-  it("shows (none) for unset slots", async () => {
-    const h = makeHarness({
-      profiles: [],
-      knowledgeProfiles: [],
-      activeKnowledgeUid: null,
-      activeFocusUid: null,
-    });
+  it("shows (none) when no profile is applied", async () => {
+    const h = makeHarness({ profiles: [], activeProfileUid: null });
     await h.cmd.invokeShowCurrentState();
 
-    expect(h.notices[0]).toMatch(/Knowledge: \(none\)/);
-    expect(h.notices[0]).toMatch(/Focus: \(none\)/);
+    expect(h.notices[0]).toMatch(/Active profile: \(none\)/);
   });
 
   it("falls back to the raw UID when the label is not in the lister", async () => {
     const h = makeHarness({
-      profiles: [],
-      knowledgeProfiles: [{ uid: "other", label: "other" }],
-      activeKnowledgeUid: "k-missing",
-      activeFocusUid: null,
+      profiles: [{ uid: "other", label: "other" }],
+      activeProfileUid: "k-missing",
     });
     await h.cmd.invokeShowCurrentState();
 
-    expect(h.notices[0]).toMatch(/Knowledge: k-missing/);
+    expect(h.notices[0]).toMatch(/Active profile: k-missing/);
   });
 
-  it("degrades to «(unknown)» when a lister throws (never crashes)", async () => {
+  it("degrades to «(unknown)» when the lister throws (never crashes)", async () => {
     const h = makeHarness({
       profiles: [],
-      knowledgeProfiles: [],
-      knowledgeListError: new Error("vault read failed"),
-      activeKnowledgeUid: "k1",
-      activeFocusUid: null,
+      listError: new Error("vault read failed"),
+      activeProfileUid: "k1",
     });
     await expect(h.cmd.invokeShowCurrentState()).resolves.not.toThrow();
-    expect(h.notices[0]).toMatch(/Knowledge: k1 \(unknown\)/);
+    expect(h.notices[0]).toMatch(/Active profile: k1 \(unknown\)/);
   });
 });

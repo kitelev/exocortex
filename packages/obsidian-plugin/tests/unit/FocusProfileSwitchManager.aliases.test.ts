@@ -12,21 +12,16 @@ import {
 import { PluginLockManager } from "../../src/infrastructure/adapters/PluginLockManager";
 
 /**
- * AC15 (RFC 13da049f Phase 6.5b) — Knowledge/Focus method split.
- *
- * Canonical names:
- *   - softSwitchFocusProfile  (RDF query-time filter only)
+ * RFC 0a0791c1 Phase 5 T2 — the soft RDF-filter path (`softSwitchFocusProfile`
+ * + `switchProfile` / `softSwitchProfile` aliases) was removed. The mount-state
+ * apply path remains:
  *   - hardSwitchKnowledgeProfile  (destructive filesystem materialize)
- *
- * Deprecated aliases (retained for backward compatibility):
- *   - switchProfile          → softSwitchFocusProfile
- *   - softSwitchProfile      → softSwitchFocusProfile
- *   - hardSwitchProfile      → hardSwitchKnowledgeProfile
+ *   - hardSwitchProfile → hardSwitchKnowledgeProfile (deprecated alias, kept)
  *
  * These tests verify:
- *   1. canonical methods perform the correct path
- *   2. each deprecated alias delegates to its canonical counterpart
- *      (proven via spyOn — alias body MUST call canonical method)
+ *   1. the canonical mount path throws when its deps are not wired
+ *   2. the deprecated `hardSwitchProfile` alias delegates to the canonical
+ *      method (proven via spyOn — alias body MUST call canonical method)
  */
 
 // ─── Fakes ───────────────────────────────────────────────────────────────
@@ -127,68 +122,9 @@ function makeHarness(): Harness {
   return { mgr, rdf, settings, notifyCalls };
 }
 
-// ─── Canonical softSwitchFocusProfile ────────────────────────────────────
-
-describe("FocusProfileSwitchManager.softSwitchFocusProfile (canonical)", () => {
-  it("performs the soft-switch path: persists activeProfileUid + triggers RDF refresh", async () => {
-    const h = makeHarness();
-    await h.mgr.softSwitchFocusProfile(UID_BASE);
-
-    expect(h.settings.state.activeProfileUid).toBe(UID_BASE);
-    expect(h.settings.state._switchInProgress).toBe(false);
-    // RFC 01a83de8 Phase 3 T3b — soft-filter removed; the soft switch triggers
-    // a single full-vault reindex (no effective set threaded through refresh).
-    expect(h.rdf.refreshCalls).toBe(1);
-  });
-
-  it("emits a user-facing notice on success", async () => {
-    const h = makeHarness();
-    await h.mgr.softSwitchFocusProfile(UID_BASE);
-    expect(h.notifyCalls).toHaveLength(1);
-    expect(h.notifyCalls[0]).toContain("profile-base");
-  });
-
-  it("AC14 — persists the Focus slot (not the Knowledge slot)", async () => {
-    const h = makeHarness();
-    // Pretend a prior hard switch left a Knowledge selection in place.
-    h.settings.state = {
-      activeProfileUid: "k-prev",
-      activeKnowledgeProfileUid: "k-prev",
-      activeFocusProfileUid: null,
-      _switchInProgress: false,
-    };
-    await h.mgr.softSwitchFocusProfile(UID_BASE);
-    // Soft switch writes the Focus slot…
-    expect(h.settings.state.activeFocusProfileUid).toBe(UID_BASE);
-    // …and must NOT disturb the Knowledge slot.
-    expect(h.settings.state.activeKnowledgeProfileUid).toBe("k-prev");
-  });
-});
-
 // ─── Deprecated alias delegation ─────────────────────────────────────────
 
-describe("FocusProfileSwitchManager — deprecated aliases delegate to canonical", () => {
-  it("switchProfile delegates to softSwitchFocusProfile", async () => {
-    const h = makeHarness();
-    const spy = jest.spyOn(h.mgr, "softSwitchFocusProfile");
-    await h.mgr.switchProfile(UID_BASE);
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy).toHaveBeenCalledWith(UID_BASE);
-    // And observable side-effect: same as canonical
-    expect(h.settings.state.activeProfileUid).toBe(UID_BASE);
-    expect(h.rdf.refreshCalls).toBe(1);
-  });
-
-  it("softSwitchProfile delegates to softSwitchFocusProfile", async () => {
-    const h = makeHarness();
-    const spy = jest.spyOn(h.mgr, "softSwitchFocusProfile");
-    await h.mgr.softSwitchProfile(UID_BASE);
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy).toHaveBeenCalledWith(UID_BASE);
-    expect(h.settings.state.activeProfileUid).toBe(UID_BASE);
-    expect(h.rdf.refreshCalls).toBe(1);
-  });
-
+describe("FocusProfileSwitchManager — deprecated hard alias delegates to canonical", () => {
   it("hardSwitchProfile delegates to hardSwitchKnowledgeProfile", async () => {
     const h = makeHarness();
     // Hard switch requires extra deps wired; without them, the canonical method

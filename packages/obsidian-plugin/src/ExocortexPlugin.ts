@@ -236,10 +236,10 @@ export default class ExocortexPlugin extends Plugin {
 
   /**
    * Issue #3320 — FocusProfileSwitchManager hoisted onto the plugin instance
-   * so the Settings UI dropdown can dispatch switchProfile() directly
-   * без re-constructing a second manager (which would race the original on
-   * the same persisted lock file). Initialized in
-   * `registerFocusProfileCommands()`; null until that call succeeds.
+   * so onload recovery / reconcile reuse the single manager без re-constructing
+   * a second one (which would race the original on the same persisted lock
+   * file). Initialized in `registerFocusProfileCommands()`; null until that
+   * call succeeds.
    */
   public focusProfileSwitchManager: FocusProfileSwitchManager | null = null;
 
@@ -2491,29 +2491,10 @@ export default class ExocortexPlugin extends Plugin {
       await this.saveSettings();
     }
 
-    // RFC 13da049f Phase 6.5b AC14 — seed the dual Knowledge/Focus active
-    // slots from the legacy single `activeProfileUid` (R38: Knowledge only,
-    // Focus stays null). Idempotent; safe to resume after a crash between the
-    // legacy and dual migration steps. Runs AFTER the settings→local migration
-    // so the legacy value is already in data.local.json.
-    const dualMigration = await localDataStore.migrateToDualActiveState();
-    if (dualMigration === "migrated") {
-      this.logger.info(
-        "[ExocortexPlugin] seeded activeKnowledgeProfileUid from legacy " +
-          "activeProfileUid (RFC 13da049f AC14 — Focus left null per R38)",
-      );
-      // One-time, on-upgrade only: the Focus (RDF-filter) slot is left null
-      // per R38 — so a user whose pre-AC14 selection was a soft switch finds
-      // their query-time filter disengaged (full vault indexed) until they
-      // re-select. Surface that explicitly so the change is not silent (the
-      // filter being off is exactly what drives the mobile reindex cost the
-      // FocusProfile feature exists to avoid). Idempotent: `migrated` fires
-      // only on the first post-upgrade load.
-      this.notifier.info(
-        "Focus profile filter was reset after upgrade — re-select your " +
-          "Focus profile via «Exocortex: Switch focus profile» to re-enable it.",
-      );
-    }
+    // RFC 0a0791c1 Phase 5 T2 — the dual Knowledge/Focus active-state slots
+    // were retired together with the soft RDF filter. `activeProfileUid` is
+    // now the single last-applied cache; any leftover dual keys on disk are
+    // ignored (read-modify-write preserves them harmlessly).
     this.localDataStore = localDataStore;
 
     // RFC 22b50a17 R26 — sweep staging-dir orphans left over from a crash
@@ -2593,9 +2574,9 @@ export default class ExocortexPlugin extends Plugin {
       localDataStore,
     });
 
-    // Issue #3320 — expose the manager на plugin instance so the Settings
-    // UI dropdown can dispatch switchProfile() directly. Re-constructing a
-    // second manager would race the original on the same lock file.
+    // Issue #3320 — expose the manager на plugin instance so onload recovery /
+    // reconcile reuse it. Re-constructing a second manager would race the
+    // original on the same lock file.
     this.focusProfileSwitchManager = switchMgr;
 
     // Crash-recovery: если previous session left `_switchInProgress=true`
@@ -2697,25 +2678,13 @@ export default class ExocortexPlugin extends Plugin {
       return choices;
     };
 
+    // RFC 0a0791c1 Phase 5 T2 — single `exo__Profile` picker (the former dual
+    // soft/Knowledge listers collapsed into one). `activeProfileUid` is the
+    // last-applied selection; Item #3 — device-local store (no Sync replication).
     const profileLister: () => Promise<FocusProfileChoice[]> = async () =>
-      // Item #3 — device-local store (no Sync replication). Legacy
-      // `activeProfileUid` mirrors the active Focus selection (soft switch).
       buildProfileChoices(
         resolver.listFocusProfileFiles(),
         localDataStore.getActiveProfileUid(),
-      );
-
-    // RFC 01a83de8 Phase 3 T4 — the former per-class KnowledgeProfile picker
-    // collapsed into the single `exo__Profile` class (Phase 2). The mount-state
-    // ("Switch knowledge profile") picker now lists the same profiles as the
-    // soft picker. This also fixes the empty-picker on vaults that never had a
-    // separate KnowledgeProfile-class instance (e.g. iPhone vault-2025).
-    const knowledgeProfileLister: () => Promise<
-      FocusProfileChoice[]
-    > = async () =>
-      buildProfileChoices(
-        resolver.listFocusProfileFiles(),
-        localDataStore.getActiveKnowledgeProfileUid(),
       );
 
     // Issue #3320 — share the same lister с Settings UI so its dropdown
@@ -2736,22 +2705,11 @@ export default class ExocortexPlugin extends Plugin {
       switchMgr,
       pushMgr,
       profileLister,
-      knowledgeProfileLister,
       fuzzyPick,
       getActiveFilePath: () =>
         this.app.workspace.getActiveFile()?.path ?? null,
-      getActiveKnowledgeProfileUid: () =>
-        localDataStore.getActiveKnowledgeProfileUid(),
-      getActiveFocusProfileUid: () => localDataStore.getActiveFocusProfileUid(),
+      getActiveProfileUid: () => localDataStore.getActiveProfileUid(),
       notify: (message) => this.notifier.info(message),
-    });
-
-    this.addCommand({
-      id: "switch-focus-profile",
-      name: "Switch focus profile",
-      callback: () => {
-        void commandsHandler.invokeSwitchProfile();
-      },
     });
 
     this.addCommand({
@@ -2762,8 +2720,8 @@ export default class ExocortexPlugin extends Plugin {
       },
     });
 
-    // RFC 13da049f Phase 6.5b AC17 — «Show current state» (active Knowledge +
-    // Focus). Available regardless of platform / hard-switch wiring.
+    // «Show current state» — reports the last-applied profile (RFC 0a0791c1
+    // Phase 5 T2 — single slot). Available regardless of platform / wiring.
     this.addCommand({
       id: "show-profile-state",
       name: "Show current state",
@@ -2772,22 +2730,22 @@ export default class ExocortexPlugin extends Plugin {
       },
     });
 
-    // RFC 13da049f Phase 6.5b AC17 — «Switch knowledge profile» (hard switch;
-    // supersedes the RFC 22b50a17 «Hard switch focus profile» command). Needs
-    // desktop hard-switch deps wired (filesystem materialisation).
+    // RFC 0a0791c1 Phase 5 T2 — «Apply profile» (the single consolidated
+    // profile command; the former soft «Switch focus profile» was removed and
+    // the mount-state «Switch knowledge profile» was renamed here). Needs the
+    // hard-switch deps wired (filesystem materialisation).
     //
     // Command id is intentionally kept as the legacy `hard-switch-focus-profile`
-    // so any hotkey a user already bound to the hard-switch command survives the
-    // Knowledge/Focus split (Obsidian persists hotkeys by command id). Only the
-    // user-facing name + picker source change.
-    // RFC 01a83de8 Phase 3 T2 — register on desktop (git-binary hard switch)
-    // OR mobile when the REST mount is wired (FocusProfileSwitchManager
-    // dispatches to restSwitchProfile on mobile). Without either, the
-    // filesystem materialisation can't run, so the command stays hidden.
+    // so any hotkey a user already bound survives the rename (Obsidian persists
+    // hotkeys by command id). Only the user-facing name changes.
+    // Register on desktop (git-binary hard switch) OR mobile when the REST
+    // mount is wired (FocusProfileSwitchManager dispatches to restSwitchProfile
+    // on mobile). Without either, the filesystem materialisation can't run, so
+    // the command stays hidden.
     if (hardSwitchDeps !== null || (Platform.isMobile && restMount !== null)) {
       this.addCommand({
         id: "hard-switch-focus-profile",
-        name: "Switch knowledge profile (filesystem destroy + materialize)",
+        name: "Apply profile",
         callback: () => {
           void commandsHandler.invokeSwitchKnowledgeProfile();
         },

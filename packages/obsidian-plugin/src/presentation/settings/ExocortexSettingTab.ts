@@ -632,8 +632,8 @@ export class ExocortexSettingTab extends PluginSettingTab {
       "Fine-grained Personal Access Token used to push AssetSpace " +
         "submodules to GitHub. Stored в data.local.json (NOT data.json) so " +
         "Obsidian Sync excludes it from network replication (Vision Lock #1, " +
-        "Security #1). Required for the «Push current assetspace» command; " +
-        "the «Switch focus profile» command works without a PAT.",
+        "Security #1). Required for the «Push current assetspace» and " +
+        "«Apply profile» commands.",
     );
 
     let patInputValue = "";
@@ -706,8 +706,8 @@ export class ExocortexSettingTab extends PluginSettingTab {
         }),
       );
 
-    // ─────── Section 2 — Active focus profile ───────
-    new Setting(containerEl).setName("Active focus profile").setHeading();
+    // ─────── Section 2 — Active profile ───────
+    new Setting(containerEl).setName("Active profile").setHeading();
 
     // Issue #3327 Item #3 — read switch state from device-local store
     // (data.local.json). `plugin.localDataStore` is null until
@@ -715,90 +715,29 @@ export class ExocortexSettingTab extends PluginSettingTab {
     // tests с partial plugin mocks); treat as no-active-profile before
     // then, matching the previous fallback behaviour.
     //
-    // RFC 13da049f AC14 — the two slots are independent. The dropdown below
-    // drives the FOCUS slot (soft switch); the KNOWLEDGE slot is set by the
-    // «Switch knowledge profile» palette command. Surface both so the user
-    // sees the full state, not just the slot this section edits.
-    const activeKnowledgeProfileUid = this.plugin.localDataStore
-      ? this.plugin.localDataStore.getActiveKnowledgeProfileUid()
-      : null;
-    const activeFocusProfileUid = this.plugin.localDataStore
-      ? this.plugin.localDataStore.getActiveFocusProfileUid()
+    // RFC 0a0791c1 Phase 5 T2 — single last-applied slot. Switching is the
+    // «Exocortex: Apply profile» Cmd+P command (mount-state strict replace,
+    // gated behind a confirmation prompt because it mutates the filesystem);
+    // the former soft-switch dropdown was removed with the soft RDF filter.
+    const activeProfileUid = this.plugin.localDataStore
+      ? this.plugin.localDataStore.getActiveProfileUid()
       : null;
 
     const profileStatusEl = containerEl.createDiv({
       cls: "setting-item-description",
     });
     profileStatusEl.appendText(
-      `Active — Knowledge (storage): ${activeKnowledgeProfileUid ?? "(none — full vault on disk)"}` +
-        ` · Focus (filter): ${activeFocusProfileUid ?? "(none — no query filter)"}`,
+      `Last applied: ${activeProfileUid ?? "(none — full vault on disk)"}`,
     );
 
-    const profileSetting = new Setting(containerEl)
-      .setName("Switch profile")
+    new Setting(containerEl)
+      .setName("Apply profile")
       .setDesc(
-        "Soft switch (FOCUS slot) — applies a query-time RDF filter; nothing " +
-          "changes on disk. Same code path as the Cmd+P «Switch focus " +
-          "profile» command. Triggers an RDF re-index. To change which " +
-          "ontologies are materialized on disk (the KNOWLEDGE slot, a hard " +
-          "switch), use the «Switch knowledge profile» palette command " +
-          "instead — it is gated behind a confirmation prompt because it " +
-          "mutates the filesystem. No «none» option here: clear the focus " +
-          "filter via plugin reload.",
+        "To switch profiles, run the «Exocortex: Apply profile» command " +
+          "(Cmd+P). It materialises the selected profile's AssetSpaces and " +
+          "unmounts the rest (the TS-floor is never unmounted). A " +
+          "confirmation prompt guards it because it mutates the filesystem.",
       );
-
-    profileSetting.addDropdown((dropdown) => {
-      dropdown.addOption("", "— select profile —");
-      dropdown.setValue("");
-
-      // Populate asynchronously: dropdown options can be added after the
-      // initial render; the dropdown re-renders on each addOption().
-      void (async () => {
-        const lister = this.plugin.listFocusProfileChoices;
-        if (lister === null) {
-          // Plugin's FocusProfile commands failed to wire — surface as
-          // disabled-with-explanation rather than empty silent dropdown.
-          dropdown.addOption(
-            "__unwired__",
-            // eslint-disable-next-line obsidianmd/ui/sentence-case -- "FocusProfile" is a product class name preserved verbatim from RFC nomenclature
-            "(FocusProfile commands not wired — see plugin logs)",
-          );
-          return;
-        }
-        let choices;
-        try {
-          choices = await lister();
-        } catch {
-          dropdown.addOption("__error__", "(listing profiles failed)");
-          return;
-        }
-        for (const choice of choices) {
-          const label = choice.isActive
-            ? `${choice.label} (active)`
-            : choice.label;
-          dropdown.addOption(choice.uid, label);
-        }
-        if (activeFocusProfileUid !== null) {
-          dropdown.setValue(activeFocusProfileUid);
-        }
-      })();
-
-      dropdown.onChange(async (uid) => {
-        if (uid === "" || uid === "__unwired__" || uid === "__error__") return;
-        const switchMgr = this.plugin.focusProfileSwitchManager;
-        if (switchMgr === null) {
-          notifier.warn(
-            "FocusProfile switch manager not initialised — reload plugin.",
-          );
-          return;
-        }
-        try {
-          await switchMgr.softSwitchFocusProfile(uid);
-        } catch (error) {
-          notifier.error(`Switch failed: ${errorMessage(error)}`);
-        }
-      });
-    });
 
     // ─────── Section 3 — Switch cache ───────
     new Setting(containerEl).setName("Switch cache").setHeading();
@@ -837,9 +776,9 @@ export class ExocortexSettingTab extends PluginSettingTab {
 
     void (async () => {
       try {
-        // UID → label lookup uses the same profile lister как dropdown,
-        // so labels match Cmd+P / Section 2 exactly. Fall back to UID[:8]
-        // when an entry references a since-deleted profile.
+        // UID → label lookup uses the same profile lister как the Cmd+P
+        // picker, so labels match exactly. Fall back to UID[:8] when an
+        // entry references a since-deleted profile.
         const lister = this.plugin.listFocusProfileChoices;
         const labelByUid: Map<string, string> = new Map();
         if (lister !== null) {

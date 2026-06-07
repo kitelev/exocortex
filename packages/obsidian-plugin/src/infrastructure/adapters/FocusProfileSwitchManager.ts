@@ -82,14 +82,6 @@ export interface ProfileResolution {
    * cascade. May be null/undefined.
    */
   extends?: string | null;
-  /**
-   * Optional `_appliesTo` (RFC 13da049f Phase 6.5b AC13) — DEPRECATED by RFC
-   * 01a83de8 Phase 2 (Knowledge/Focus split superseded → unified Profile). The
-   * resolver no longer reads the frontmatter key (always null); the field +
-   * AC16 compatibility layer are retained as dead pass-throughs pending a
-   * cascade-capped removal follow-up.
-   */
-  appliesTo?: string | null;
   /** Display label (used in user-facing Notice). */
   label?: string;
 }
@@ -118,15 +110,11 @@ export interface IRdfIndexer {
 }
 
 export interface SwitchSettings {
-  activeProfileUid: string | null;
   /**
-   * Active Knowledge profile slot (RFC 13da049f Phase 6.5b AC14). Optional —
-   * pre-AC14 stores omit it; the backing adapter preserves the on-disk value
-   * via read-modify-write when undefined.
+   * Last-applied profile cache (RFC 0a0791c1 Phase 5 T2). The former dual
+   * Knowledge/Focus slots were retired together with the soft RDF filter.
    */
-  activeKnowledgeProfileUid?: string | null;
-  /** Active Focus profile slot (RFC 13da049f Phase 6.5b AC14). Optional — see above. */
-  activeFocusProfileUid?: string | null;
+  activeProfileUid: string | null;
   _switchInProgress: boolean;
 }
 
@@ -311,37 +299,21 @@ export class FocusProfileSwitchManager {
   }
 
   /**
-   * Soft switch — set the active FocusProfile (RDF query-time filter only).
-   * Lock-guarded, journaled. Idempotent re-index on failure (no destructive
-   * rollback in v3). Does NOT mutate the filesystem — that is hard switch
-   * (see {@link hardSwitchKnowledgeProfile}).
+   * Reindex-only apply path (RFC 0a0791c1 Phase 5 T2 — replaces the retired
+   * public `softSwitchFocusProfile`). Records the target as the last-applied
+   * profile cache (`activeProfileUid`) and rebuilds the RDF graph from the
+   * currently-materialised mount-state. Does NOT mutate the filesystem.
    *
-   * RFC 13da049f Phase 6.5b (AC13) — **filter-only narrowing**: the Focus
-   * filter narrows the *view* within the materialised Knowledge set; it never
-   * materialises ontologies the active Knowledge profile does not provide.
+   * Used internally by the «Apply profile» mount path when the effective set
+   * matches the current mount-state (no AssetSpace to add/remove — a no-op
+   * mount diff still re-indexes + records the selection), and by
+   * {@link recoverIfNeeded} crash recovery. Lock-guarded, journaled.
    *
-   * AC16 — **compatibility check (WARN + fallback, NEVER throw)**: before
-   * applying the target profile's filter, validate it against the active
-   * Knowledge profile (`activeKnowledgeProfileUid`, surfaced by
-   * `PluginSettingsStoreAdapter` from `localDataStore.getActiveKnowledgeProfileUid()`):
-   *   - If the target declares `_appliesTo` and it differs from the active
-   *     Knowledge profile → incompatible.
-   *   - If the active Knowledge profile's effective set is empty / not
-   *     materialised (EC3) → incompatible.
-   *   - If the target's `_includes ⊄ active Knowledge effective set` →
-   *     incompatible.
-   * On incompatibility the switch still **resolves successfully** (no throw):
-   * it logs a `console.warn`, surfaces a `Notice`, and sets the RDF filter to
-   * **no-filter** (empty set → full vault) instead of the target's narrowed
-   * set. When no Knowledge profile is active and the target declares no
-   * `_appliesTo`, the check is a backward-compatible pass-through (pre-AC16
-   * behaviour — the declared filter is applied).
-   *
-   * RFC 13da049f Phase 6.5b (AC15): canonical name for the soft-switch path.
-   * Legacy callers reach this via the deprecated {@link switchProfile} /
-   * {@link softSwitchProfile} aliases.
+   * Visibility is mount-state based (RFC 01a83de8 Phase 3 — the query-time
+   * soft RDF filter was removed); this method indexes whatever AssetSpace
+   * folders are currently on disk.
    */
-  async softSwitchFocusProfile(targetProfileUid: string): Promise<void> {
+  private async reindexMountState(targetProfileUid: string): Promise<void> {
     const acquired = await this.lockMgr.acquireLock(`switch-profile-${targetProfileUid}`);
     if (!acquired) {
       throw new Error(`Another switch is in progress (lock held). Try again shortly.`);
@@ -362,19 +334,14 @@ export class FocusProfileSwitchManager {
         void this.lockMgr.heartbeat();
       }, 30_000);
 
-      // Persist BEFORE filesystem changes (Architect #2 — atomicity invariant)
+      // Persist the last-applied profile cache BEFORE the re-index
+      // (Architect #2 — atomicity invariant).
       const settings = await this.settingsStore.load();
-
       settings.activeProfileUid = targetProfileUid;
-      // AC14 — soft switch owns the Focus slot. The legacy `activeProfileUid`
-      // mirror is retained above for backward read / downgrade safety.
-      settings.activeFocusProfileUid = targetProfileUid;
       settings._switchInProgress = true;
       await this.settingsStore.save(settings);
 
-      // Trigger RDF re-index. RFC 01a83de8 Phase 3 — the query-time soft-filter
-      // was removed; the reindex rebuilds from the currently-materialised vault
-      // state (mount-state is the active mechanism).
+      // Rebuild the RDF graph from the currently-materialised mount-state.
       await this.rdfIndexer.refresh();
 
       // Clear in-progress flag
@@ -390,7 +357,7 @@ export class FocusProfileSwitchManager {
       });
 
       const profileLabel = await this.profileLabel(targetProfileUid);
-      this.notify(`Switched to ${profileLabel} (${elapsedMs}ms)`);
+      this.notify(`Applied ${profileLabel} (${elapsedMs}ms)`);
     } catch (e) {
       await this.appendJournal({
         phase: "failed",
@@ -403,23 +370,6 @@ export class FocusProfileSwitchManager {
       if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
       await this.lockMgr.releaseLock();
     }
-  }
-
-  /**
-   * @deprecated Use {@link softSwitchFocusProfile}. Retained for backward
-   * compatibility (RFC 13da049f Phase 6.5b AC15 — Knowledge/Focus split).
-   * This was the original method name before the soft/hard semantic split.
-   */
-  async switchProfile(targetProfileUid: string): Promise<void> {
-    return this.softSwitchFocusProfile(targetProfileUid);
-  }
-
-  /**
-   * @deprecated Use {@link softSwitchFocusProfile}. Alias matching the RFC
-   * 13da049f naming convention (`softSwitchProfile` → `softSwitchFocusProfile`).
-   */
-  async softSwitchProfile(targetProfileUid: string): Promise<void> {
-    return this.softSwitchFocusProfile(targetProfileUid);
   }
 
   /**
@@ -436,11 +386,10 @@ export class FocusProfileSwitchManager {
    * Plugin-load recovery: if last journal entry shows an incomplete switch
    * AND settings._switchInProgress=true, re-trigger the re-index идempotently.
    *
-   * In v3 backward-compat mode: re-index is pure (no filesystem state to roll
-   * back), so we simply call switchProfile again — it's safe.
-   *
-   * In Phase C+D future: this would need full two-phase rollback (restore
-   * staging dir, undo destroy). Deferred.
+   * Re-index is pure (no filesystem state to roll back), so we simply
+   * re-run {@link reindexMountState} — it's safe and idempotent. Genuine
+   * filesystem-partial recovery (destroyed-not-materialized AssetSpaces)
+   * is handled separately by {@link recoverIncompleteSwitch}.
    */
   async recoverIfNeeded(): Promise<{ recovered: boolean; targetUid: string | null }> {
     const lastEntry = await this.readLastJournalEntry();
@@ -452,7 +401,7 @@ export class FocusProfileSwitchManager {
 
     // Incomplete: re-trigger
     this.notify(`Recovering incomplete switch to ${lastEntry.targetUid}...`);
-    await this.softSwitchFocusProfile(lastEntry.targetUid);
+    await this.reindexMountState(lastEntry.targetUid);
     return { recovered: true, targetUid: lastEntry.targetUid };
   }
 
@@ -670,7 +619,8 @@ export class FocusProfileSwitchManager {
     const approved = await deps.confirmGate.confirmHardSwitch(plan);
     if (!approved) throw new HardSwitchAbortedByUser();
 
-    // No-op early exit: no destroy + no materialize == effectively soft path.
+    // No-op early exit: no destroy + no materialize == mount-state already
+    // matches the target. Re-index + record the selection (reindex-only path).
     // Still emit hard-switch-completed so recoverIncompleteSwitch's tail-scan
     // has a clean cutoff for any prior aborted run (HIGH catch from review).
     if (toDestroy.length === 0 && toMaterialize.length === 0) {
@@ -679,7 +629,7 @@ export class FocusProfileSwitchManager {
         targetUid: targetProfileUid,
         ts: new Date(startedAt).toISOString(),
       });
-      await this.softSwitchFocusProfile(targetProfileUid);
+      await this.reindexMountState(targetProfileUid);
       await this.appendJournal({
         phase: "hard-switch-completed",
         targetUid: targetProfileUid,
@@ -861,14 +811,11 @@ export class FocusProfileSwitchManager {
       });
 
       // ---- Persist new state + trigger RDF re-index ----
-      // AC14 — hard switch owns the Knowledge slot. Spread the current
-      // snapshot so the sibling Focus slot is preserved; the legacy
-      // `activeProfileUid` mirror is updated for backward read / downgrade.
+      // Record the applied profile as the last-applied cache.
       const persistState = deps.localDataStore.snapshot();
       await deps.localDataStore.save({
         ...persistState,
         activeProfileUid: targetProfileUid,
-        activeKnowledgeProfileUid: targetProfileUid,
         _switchInProgress: false,
       });
       await this.rdfIndexer.refresh();
@@ -1051,9 +998,10 @@ export class FocusProfileSwitchManager {
     const approved = await confirmGate.confirmHardSwitch(plan);
     if (!approved) throw new HardSwitchAbortedByUser();
 
-    // No-op early exit — no mount-state change ⇒ soft switch (RDF filter) only.
+    // No-op early exit — mount-state already matches the target. Re-index +
+    // record the selection (reindex-only path).
     if (toDestroy.length === 0 && toMaterialize.length === 0) {
-      await this.softSwitchFocusProfile(targetProfileUid);
+      await this.reindexMountState(targetProfileUid);
       return;
     }
 
@@ -1098,12 +1046,11 @@ export class FocusProfileSwitchManager {
         });
       }
 
-      // Persist new active profile (+ Knowledge mirror) + clear in-progress.
+      // Persist the applied profile as last-applied cache + clear in-progress.
       const persistState = localDataStore.snapshot();
       await localDataStore.save({
         ...persistState,
         activeProfileUid: targetProfileUid,
-        activeKnowledgeProfileUid: targetProfileUid,
         _switchInProgress: false,
       });
       await this.rdfIndexer.refresh();
