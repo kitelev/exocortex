@@ -19,9 +19,14 @@ import * as path from "path";
  *      (`FuzzySuggestModal`) and renders the **fixture FocusProfile assets by
  *      label** — i.e. NOT the «No FocusProfile assets found in vault» empty
  *      state.
- *   3. No `console.error` and no `pageerror` (uncaught exception) fire across
- *      load + picker open (empirically clean — local Docker run reports
- *      `loadPhaseConsoleErrors=0`).
+ *   3. No `pageerror` (uncaught exception) fires across load + picker open, and
+ *      no `console.error` fires during the trigger → modal-open window (the
+ *      focus-profile surface this spec owns). The load-phase `console.error`
+ *      count is logged as a diagnostic (observed 0 in local Docker) but NOT
+ *      hard-asserted — it would otherwise couple this spec to unrelated
+ *      load-path catch branches (e.g. hard-switch / SHACL wiring), per
+ *      code-reviewer MEDIUM. `create-fleeting-note-palette.spec.ts` omits the
+ *      console check entirely for the same reason; here it is kept but scoped.
  *
  * Why this is NOT vacuous (contrast with `create-fleeting-note-palette.spec.ts`):
  *   That sibling spec is intentionally lenient («plugin loads without
@@ -86,13 +91,24 @@ test.describe("Focus profile picker — render smoke", () => {
   });
 
   test("switch-focus-profile opens picker rendering fixture profiles", async () => {
+    // The in-test waits stack four 30s ceilings (plugin-wait,
+    // command-registration poll, discoverability poll) plus a 15s modal wait.
+    // Each resolves in <1s normally, but shard-4 has documented slow
+    // plugin-load incidents (Issue #3216) and the e2e config runs with
+    // retries: 0, so raise the per-test ceiling above the 60s default to keep
+    // a slow plugin-load from tripping a compounding-timeout flake
+    // (code-reviewer LOW).
+    test.setTimeout(120000);
+
     const window = await launcher.getWindow();
 
     // Drain any leftover startup notices before probing (mirrors the sibling
     // flake-mitigation in vault-commands-smoke / create-fleeting-note-palette).
     await launcher.waitForModalsToClose(10000);
 
-    // Plugin must be loaded before its commands are registered.
+    // Plugin must be loaded before its commands are registered. Uses the
+    // shared 30s default (PLUGIN_WAIT_TIMEOUT_MS_DEFAULT) — same budget all
+    // sibling e2e specs rely on; CI P99 plugin-load is ~11s.
     await waitForExocortexPluginViaPlaywright(window, {
       specName: "focus-profile-picker",
     });
@@ -194,18 +210,23 @@ test.describe("Focus profile picker — render smoke", () => {
       .getAttribute("placeholder");
     expect(placeholder).toBe("Switch focus profile");
 
-    // Zero console errors AND zero uncaught exceptions across load + open.
+    // Zero console errors during the picker surface (trigger → modal open) —
+    // scoped so unrelated load-path catch branches (hard-switch / SHACL wiring)
+    // cannot red this spec (code-reviewer MEDIUM).
+    const pickerConsoleErrors = consoleErrors.slice(loadPhaseConsoleErrors);
     expect(
-      consoleErrors,
-      `console errors during load + picker open: ${JSON.stringify(consoleErrors)}`,
+      pickerConsoleErrors,
+      `console errors during picker open: ${JSON.stringify(pickerConsoleErrors)}`,
     ).toEqual([]);
+    // Zero uncaught exceptions across the WHOLE session (load + open) — a
+    // pageerror is unambiguous and owned by no other subsystem.
     expect(
       pageErrors,
       `pageerrors during load + picker open: ${JSON.stringify(pageErrors)}`,
     ).toEqual([]);
 
-    // Diagnostic: surface the load-phase console-error count (subset of the
-    // assertion above) so the CI/revert-verify run shows the split.
+    // Diagnostic: surface the load-phase console-error count (not hard-asserted
+    // — see the file docstring). Observed 0 in local Docker.
     // eslint-disable-next-line no-console
     console.log(
       `[focus-profile-picker smoke] loadPhaseConsoleErrors=${loadPhaseConsoleErrors} items=${JSON.stringify(itemTexts)}`,
