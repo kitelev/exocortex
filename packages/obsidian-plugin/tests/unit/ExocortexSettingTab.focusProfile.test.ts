@@ -5,7 +5,7 @@
  * each section's Setting builder is invoked с the expected name / heading
  * sequence: PAT → Active profile → Switch cache → Operations log.
  *
- * RFC 0a0791c1 Phase 5 T2 — the soft-switch dropdown was removed; profile
+ * RFC 0a0791c1 Phase 5 T2 — the soft-filter dropdown was removed; profile
  * switching is the «Exocortex: Apply profile» Cmd+P command. Section 2 now
  * surfaces the single last-applied profile (read-only status + hint).
  *
@@ -269,10 +269,10 @@ describe("ExocortexSettingTab — Issue #3320 Profile sections", () => {
     expect(profileRow).toBeDefined();
   });
 
-  it("renders the Knowledge and focus profiles overview heading (RFC 13da049f R35)", () => {
+  it("renders the Profiles overview heading (RFC 13da049f R35)", () => {
     settingTab.display();
     const overview = settingCalls.find(
-      (c) => c.name === "Knowledge and focus profiles" && c.heading,
+      (c) => c.name === "Profiles" && c.heading,
     );
     expect(overview).toBeDefined();
   });

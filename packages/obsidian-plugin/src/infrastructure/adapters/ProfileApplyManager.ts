@@ -1,6 +1,6 @@
 import { Platform } from "obsidian";
 import type { App } from "obsidian";
-import type { HardSwitchPlan, IConfirmGate } from "exocortex";
+import type { ApplyPlan, IConfirmGate } from "exocortex";
 import {
   derivePath,
   assertTsFloor as assertTsFloorGuard,
@@ -443,7 +443,7 @@ export class ProfileApplyManager {
    *   2. R24 TS-floor assert (refuse if target excludes any floor AS).
    *   3. Compute toDestroy / toMaterialize via .gitmodules diff.
    *   4. Vision Lock #5 — abort if uncommitted changes in any to-destroy AS.
-   *   5. Build HardSwitchPlan + confirmGate.confirmHardSwitch(plan) — abort
+   *   5. Build ApplyPlan + confirmGate.confirmApply(plan) — abort
    *      on user-decline.
    *   6. lockMgr.acquireLock + localDataStore.save({_switchInProgress: true}).
    *   7. Phase 1 — for each toMaterialize, pull tarball (or cache restore)
@@ -581,13 +581,13 @@ export class ProfileApplyManager {
       }
     }
 
-    // Build HardSwitchPlan + ConfirmGate.
+    // Build ApplyPlan + ConfirmGate.
     const filesToDestroyMap = new Map<string, string[]>();
     for (const target of toDestroy) {
       const files = await this.enumerateFilesUnder(target.submodulePath);
       filesToDestroyMap.set(target.asUid, files);
     }
-    const plan: HardSwitchPlan = {
+    const plan: ApplyPlan = {
       targetProfileUid,
       targetProfileLabel,
       sourceProfileUid: prevActiveProfileUid,
@@ -603,7 +603,7 @@ export class ProfileApplyManager {
         asLabel: t.label,
       })),
     };
-    const approved = await deps.confirmGate.confirmHardSwitch(plan);
+    const approved = await deps.confirmGate.confirmApply(plan);
     if (!approved) throw new ApplyAbortedByUser();
 
     // No-op early exit: no destroy + no materialize == mount-state already
@@ -966,7 +966,7 @@ export class ProfileApplyManager {
         await this.enumerateFilesUnder(target.submodulePath),
       );
     }
-    const plan: HardSwitchPlan = {
+    const plan: ApplyPlan = {
       targetProfileUid,
       targetProfileLabel,
       sourceProfileUid: prevActiveProfileUid,
@@ -982,7 +982,7 @@ export class ProfileApplyManager {
         asLabel: t.label,
       })),
     };
-    const approved = await confirmGate.confirmHardSwitch(plan);
+    const approved = await confirmGate.confirmApply(plan);
     if (!approved) throw new ApplyAbortedByUser();
 
     // No-op early exit — mount-state already matches the target. Re-index +
@@ -1228,7 +1228,7 @@ export class ProfileApplyManager {
       return { outcome: "no-divergence" };
     }
 
-    // Surface modal — reuse HardSwitchPlan shape so ModalConfirmGate renders.
+    // Surface modal — reuse ApplyPlan shape so ModalConfirmGate renders.
     const reconcilePlan = await this.buildReconcilePlan(
       activeProfileUid,
       missing,
@@ -1236,7 +1236,7 @@ export class ProfileApplyManager {
       allInfos,
     );
     const approved = this.confirmGate !== undefined
-      ? await this.confirmGate.confirmHardSwitch(reconcilePlan)
+      ? await this.confirmGate.confirmApply(reconcilePlan)
       : true; // No gate wired (tests / headless) — proceed.
     if (!approved) return { outcome: "declined" };
     await this.applyProfile(activeProfileUid);
@@ -1244,7 +1244,7 @@ export class ProfileApplyManager {
   }
 
   /**
-   * Build a HardSwitchPlan describing the reconcile operation — vault has
+   * Build a ApplyPlan describing the reconcile operation — vault has
    * extra AS that local profile doesn't include OR missing AS that local
    * profile expects. Used for the confirm modal in `reconcileToLocal`.
    */
@@ -1253,7 +1253,7 @@ export class ProfileApplyManager {
     missing: ReadonlyArray<string>,
     extra: ReadonlyArray<string>,
     allInfos: ReadonlyArray<AssetSpaceInfo>,
-  ): Promise<HardSwitchPlan> {
+  ): Promise<ApplyPlan> {
     const targetLabel = await this.profileLabel(activeProfileUid);
     const infoByUid = new Map<string, AssetSpaceInfo>();
     for (const i of allInfos) infoByUid.set(i.uid, i);

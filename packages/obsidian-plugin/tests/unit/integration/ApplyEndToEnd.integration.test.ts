@@ -31,7 +31,7 @@ import * as os from "node:os";
 /* eslint-enable no-restricted-imports, import/no-nodejs-modules */
 
 import type { App, TFile } from "obsidian";
-import type { HardSwitchPlan, IConfirmGate } from "exocortex";
+import type { ApplyPlan, IConfirmGate } from "exocortex";
 
 import {
   ProfileApplyManager,
@@ -330,7 +330,7 @@ class FakeLocalDataStore {
 }
 
 class AlwaysApproveGate implements IConfirmGate {
-  async confirmHardSwitch(_plan: HardSwitchPlan): Promise<boolean> {
+  async confirmApply(_plan: ApplyPlan): Promise<boolean> {
     return true;
   }
 }

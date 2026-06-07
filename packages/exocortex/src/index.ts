@@ -537,11 +537,11 @@ export {
   type DaemonResponse,
 } from "./services/ValidatorDaemon";
 
-// Profile hard switch confirmation contract (RFC 22b50a17 Phase 1b)
+// Profile apply confirmation contract (RFC 22b50a17 Phase 1b)
 export type {
   IConfirmGate,
-  HardSwitchPlan,
-} from "./services/focus-profile";
+  ApplyPlan,
+} from "./services/profile";
 export { ClassHierarchy as TripleClassHierarchy } from "./services/ClassHierarchy";
 
 // USTAR-aware tarball parser (honours the ustar `prefix` field that nanotar

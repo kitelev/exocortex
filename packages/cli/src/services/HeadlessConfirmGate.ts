@@ -14,7 +14,7 @@
  * machine-readable output the Phase 3 orchestrator may emit.
  */
 
-import type { IConfirmGate, HardSwitchPlan } from "exocortex";
+import type { IConfirmGate, ApplyPlan } from "exocortex";
 
 export interface HeadlessConfirmGateOptions {
   /** Confirm apply (safety override). False by default. */
@@ -41,7 +41,7 @@ export class HeadlessConfirmGate implements IConfirmGate {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  async confirmHardSwitch(plan: HardSwitchPlan): Promise<boolean> {
+  async confirmApply(plan: ApplyPlan): Promise<boolean> {
     if (this.verbose) {
       const totalFiles = Array.from(plan.filesToDestroy.values()).reduce(
         (sum, files) => sum + files.length,

@@ -2,10 +2,10 @@
  * Unit tests for HeadlessConfirmGate (RFC 22b50a17 Phase 1b).
  */
 import { describe, it, expect, jest } from "@jest/globals";
-import type { HardSwitchPlan } from "exocortex";
+import type { ApplyPlan } from "exocortex";
 import { HeadlessConfirmGate } from "../../../src/services/HeadlessConfirmGate.js";
 
-function makePlan(overrides: Partial<HardSwitchPlan> = {}): HardSwitchPlan {
+function makePlan(overrides: Partial<ApplyPlan> = {}): ApplyPlan {
   return {
     targetProfileUid: "target-uid",
     targetProfileLabel: "Work",
@@ -28,7 +28,7 @@ describe("HeadlessConfirmGate", () => {
   it("returns true when --yes is passed", async () => {
     const log = jest.fn<(m: string) => void>();
     const gate = new HeadlessConfirmGate({ yes: true, log });
-    const ok = await gate.confirmHardSwitch(makePlan());
+    const ok = await gate.confirmApply(makePlan());
     expect(ok).toBe(true);
     expect(log).not.toHaveBeenCalled();
   });
@@ -36,7 +36,7 @@ describe("HeadlessConfirmGate", () => {
   it("returns false (refuses) by default without --yes", async () => {
     const log = jest.fn<(m: string) => void>();
     const gate = new HeadlessConfirmGate({ yes: false, log });
-    const ok = await gate.confirmHardSwitch(makePlan());
+    const ok = await gate.confirmApply(makePlan());
     expect(ok).toBe(false);
     const lines = log.mock.calls.map((args) => args[0]);
     expect(lines.some((line) => line.includes("Refused"))).toBe(true);
@@ -46,7 +46,7 @@ describe("HeadlessConfirmGate", () => {
   it("emits verbose plan summary to log when verbose=true (regardless of yes)", async () => {
     const log = jest.fn<(m: string) => void>();
     const gate = new HeadlessConfirmGate({ yes: true, verbose: true, log });
-    await gate.confirmHardSwitch(makePlan());
+    await gate.confirmApply(makePlan());
     const joined = log.mock.calls.map((args) => args[0]).join("\n");
     expect(joined).toContain("Target: Work (target-uid)");
     expect(joined).toContain("Source: Personal");
@@ -58,7 +58,7 @@ describe("HeadlessConfirmGate", () => {
   it("verbose mode still refuses without --yes", async () => {
     const log = jest.fn<(m: string) => void>();
     const gate = new HeadlessConfirmGate({ yes: false, verbose: true, log });
-    const ok = await gate.confirmHardSwitch(makePlan());
+    const ok = await gate.confirmApply(makePlan());
     expect(ok).toBe(false);
     const lines = log.mock.calls.map((args) => args[0]);
     expect(lines.some((line) => line.includes("Refused"))).toBe(true);
@@ -68,7 +68,7 @@ describe("HeadlessConfirmGate", () => {
   it("counts files across multiple assetspaces correctly", async () => {
     const log = jest.fn<(m: string) => void>();
     const gate = new HeadlessConfirmGate({ yes: true, verbose: true, log });
-    await gate.confirmHardSwitch(
+    await gate.confirmApply(
       makePlan({
         filesToDestroy: new Map([
           ["as-a", ["a/1.md", "a/2.md", "a/3.md"]],
@@ -83,7 +83,7 @@ describe("HeadlessConfirmGate", () => {
   it("defaults verbose to false (no plan output)", async () => {
     const log = jest.fn<(m: string) => void>();
     const gate = new HeadlessConfirmGate({ yes: true, log });
-    await gate.confirmHardSwitch(makePlan());
+    await gate.confirmApply(makePlan());
     expect(log).not.toHaveBeenCalled();
   });
 });

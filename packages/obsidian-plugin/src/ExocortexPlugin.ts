@@ -2735,16 +2735,16 @@ export default class ExocortexPlugin extends Plugin {
     // the mount-state «Switch knowledge profile» was renamed here). Needs the
     // apply deps wired (filesystem materialisation).
     //
-    // Command id is intentionally kept as the legacy `hard-switch-focus-profile`
-    // so any hotkey a user already bound survives the rename (Obsidian persists
-    // hotkeys by command id). Only the user-facing name changes.
+    // Command id `apply-profile` matches the apply-model (Phase 5 T6). The
+    // previous command id is dropped, so any hotkey bound to
+    // the old id must be re-bound (Obsidian persists hotkeys by command id).
     // Register on desktop (git-binary apply) OR mobile when the REST
     // mount is wired (ProfileApplyManager dispatches to applyProfileViaRest
     // on mobile). Without either, the filesystem materialisation can't run, so
     // the command stays hidden.
     if (applyDeps !== null || (Platform.isMobile && restMount !== null)) {
       this.addCommand({
-        id: "hard-switch-focus-profile",
+        id: "apply-profile",
         name: "Apply profile",
         callback: () => {
           void commandsHandler.invokeApplyProfile();

@@ -199,7 +199,7 @@ export async function runApplyProfile(
       verbose: opts.verbose ?? false,
       log: (msg) => err(msg),
     });
-  const approved = await gate.confirmHardSwitch(diff.plan);
+  const approved = await gate.confirmApply(diff.plan);
   if (!approved) {
     // Gate already logged "Refused: --yes required". Exit 0 — explicit decline.
     return { exitCode: ExitCodes.SUCCESS, stdout, stderr };
