@@ -57,10 +57,11 @@ export interface AssetSpaceInfo {
   /** Repo URL — `exo__AssetSpace_source` ?? legacy `exo__AssetSpace_git`. */
   git: string;
   /**
-   * Derived vault-relative mount folder — `derivePath(git)` (Maven-style
-   * `assetspaces/<owner>/<repo>`) with a fallback to the descriptor's own
-   * parent folder for unparseable sources. Matches the plugin's
-   * `listAllAssetSpaceInfos` derivation.
+   * Derived vault-relative mount folder — `derivePath(git)` (Maven-style,
+   * traversal-safe `assetspaces/<owner>/<repo>`). Descriptors whose source is
+   * un-derivable (`derivePath` → null) are skipped by `scanVault` rather than
+   * falling back to a guessed folder, because this folder feeds a destructive
+   * `rmSync` on tear-down (see scanVault safety note).
    */
   folderName: string;
   /** Display label — `exo__AssetSpace_namespace` ?? derived ?? uid prefix. */
