@@ -17,7 +17,8 @@
       "brat-installation-compatibility.spec.ts",
       "exo-layout-smoke.spec.ts",
       "featured-binding-promotion.spec.ts",
-      "create-fleeting-note-palette.spec.ts"
+      "create-fleeting-note-palette.spec.ts",
+      "focus-profile-picker.spec.ts"
     ],
     [
       "area-tree-collapsible.spec.ts",
@@ -36,9 +37,9 @@
     "shard_1": 10432,
     "shard_2": 6922,
     "shard_3": 6894,
-    "shard_4": 5397,
+    "shard_4": 5745,
     "shard_5": 6341,
     "shard_6": 6113,
-    "max_minus_min_ms": 5035
+    "max_minus_min_ms": 4687
   }
 }
