@@ -27,28 +27,29 @@ import { join } from "node:path";
 import yaml from "js-yaml";
 
 import type { HardSwitchPlan } from "exocortex";
-import { derivePath } from "exocortex";
+import {
+  derivePath,
+  assertTsFloor as assertTsFloorGuard,
+  SDK_FLOOR_ASSETSPACE_UIDS,
+  TsFloorViolationError,
+} from "exocortex";
 
 import {
   ASSET_SPACE_CLASS_UID,
   FOCUS_PROFILE_CLASS_UID,
-  TS_FLOOR_ASSETSPACE_UIDS,
   parseWikilinkArray,
   type ResolveFilterResult,
 } from "./CliFocusProfileResolver.js";
 import { BootstrapAssetSpaceService } from "./BootstrapAssetSpaceService.js";
 
 /**
- * Thrown by the R24 TS-floor guard when the target profile's declared set omits
- * a floor AssetSpace. Distinguishable by name so the command can surface a
- * clear refusal without any filesystem mutation having occurred.
+ * R24 TS-floor guard error. Re-exported from the `exocortex` core
+ * ({@link exocortex/src/domain/profile/TsFloorGuard}) so the single class
+ * identity is shared across plugin + CLI — `e instanceof TsFloorViolationError`
+ * works regardless of import path. Retained as a named export here for
+ * backward-compat with the `hard-switch` command.
  */
-export class TsFloorViolationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "TsFloorViolationError";
-  }
-}
+export { TsFloorViolationError };
 
 /** AssetSpace descriptor metadata needed for the mount-state diff. */
 export interface AssetSpaceInfo {
@@ -233,23 +234,17 @@ export class CliHardSwitchService {
    * R24 TS-floor guard. The profile's *declared* AssetSpace set (pre-floor —
    * `result.declaredOntologies` intersected with known AssetSpace UIDs) must
    * contain every floor AssetSpace, otherwise the hard switch would tear one
-   * down and brick the plugin. Mirrors the plugin's `assertTsFloor` on
-   * `computeDerivedSet` (NOT the floor-injected effective set).
+   * down and brick the engine.
    *
-   * @throws {TsFloorViolationError} if any floor AssetSpace is absent.
+   * EV8 — delegates to the single named guard in `exocortex`. The CLI/headless
+   * engine enforces the **SDK floor** (`$exo` + `$shared-identities`), NOT the
+   * plugin-UI floor: a bare SDK vault legitimately omits `$exocmd` (issue
+   * #3426). Tests live in `packages/exocortex/tests/domain/profile/`.
+   *
+   * @throws {TsFloorViolationError} if any SDK-floor AssetSpace is absent.
    */
   assertTsFloor(declaredAsUids: ReadonlySet<string>): void {
-    const missing: string[] = [];
-    for (const floor of TS_FLOOR_ASSETSPACE_UIDS) {
-      if (!declaredAsUids.has(floor)) missing.push(floor);
-    }
-    if (missing.length > 0) {
-      throw new TsFloorViolationError(
-        `Target profile's declared set excludes TS-floor AssetSpace UID(s): ${missing.join(
-          ", ",
-        )}. Hard switch aborted to prevent plugin self-brick (R24).`,
-      );
-    }
+    assertTsFloorGuard(declaredAsUids, SDK_FLOOR_ASSETSPACE_UIDS);
   }
 
   /**
@@ -278,7 +273,17 @@ export class CliHardSwitchService {
     }
     this.assertTsFloor(declaredAsUids);
 
-    const effective = result.effective; // already includes the floor
+    // Effective set for the mount-state diff. `result.effective` derives folder
+    // membership from the resolver's own (1-level `parentFolderRelative`)
+    // folderMap, which can drop a declared AssetSpace whose descriptor lives
+    // under a Maven 2-level mount (`assetspaces/<owner>/<repo>`). scanVault's
+    // `knownAsUids` use derivePath (the canonical mount-folder deriver), so we
+    // union the user's DECLARED-and-known AS in to honour explicit intent.
+    // Necessary after issue #3426: with exocmd removed from the SDK floor it is
+    // no longer auto-injected, so a profile that explicitly includes exocmd
+    // must still retain it here (SDK-floor members survive via result.effective
+    // regardless).
+    const effective = new Set<string>([...result.effective, ...declaredAsUids]);
 
     // Mount-state: an AssetSpace is materialised iff its derived folder exists.
     const materializedUids = new Set<string>();

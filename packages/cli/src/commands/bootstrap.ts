@@ -19,9 +19,14 @@ interface BootstrapOptions {
  *
  * Phase 6.2 CLI Bootstrap per RFC 13da049f.
  *
- * Initializes an empty vault с TS-floor AssetSpaces (`exo` + `exocmd`) via
- * GitHub REST tarball pull. Writes `.gitmodules` entries so future `git
- * submodule update` calls work cleanly.
+ * Initializes a vault with the SDK/engine floor AssetSpace (`exo`) via GitHub
+ * REST tarball pull. Writes `.gitmodules` entries so future `git submodule
+ * update` calls work cleanly.
+ *
+ * RFC 01a83de8 §3.4 / alt-G rejection (issue #3426): `exocmd` is an OPTIONAL
+ * UI-command library, NOT part of the SDK floor. Only `--exo` is required; a
+ * bare-bones SDK/headless vault (no exocmd) is a first-class configuration.
+ * `--exocmd` is opt-in here, or add it later via `exocortex assetspace add`.
  *
  * Refuses к overwrite vaults that already have TS-floor materialized — this
  * is intentional safety. Existing vaults use `exocortex assetspace add`.
@@ -33,16 +38,16 @@ interface BootstrapOptions {
 export function bootstrapCommand(): Command {
   return new Command("bootstrap")
     .description(
-      "Phase 6.2: bootstrap empty vault с TS-floor AssetSpaces (exo + exocmd). Pulls tarballs from public GitHub repos, extracts к assetspaces/, writes .gitmodules. Example URLs: https://github.com/kitelev/exoas-exo, https://github.com/kitelev/exoas-exocmd.",
+      "Bootstrap a vault with the SDK floor AssetSpace (exo). Pulls tarballs from public GitHub repos, extracts к assetspaces/, writes .gitmodules. Only --exo is required; --exocmd (the optional UI-command library) is opt-in. Example URLs: https://github.com/kitelev/exoas-exo, https://github.com/kitelev/exoas-exocmd.",
     )
     .requiredOption("--vault <path>", "Path к target vault")
     .requiredOption(
       "--exo <url>",
       "Public GitHub URL для exo TBox AssetSpace (e.g. https://github.com/kitelev/exoas-exo)",
     )
-    .requiredOption(
+    .option(
       "--exocmd <url>",
-      "Public GitHub URL для exocmd TBox AssetSpace (e.g. https://github.com/kitelev/exoas-exocmd)",
+      "Optional: Public GitHub URL для exocmd UI-command AssetSpace (e.g. https://github.com/kitelev/exoas-exocmd). Opt-in — omit for a bare SDK/headless vault; add later via `assetspace add`.",
     )
     .option("--ref <branch>", "Branch ref к pull from", "main")
     .option(
@@ -95,18 +100,21 @@ export function bootstrapCommand(): Command {
           fileCount: exoResult.fileCount,
         });
 
-        // Pull exocmd → assetspaces/exocmd
-        const exocmdFolder = "exocmd";
-        const exocmdTarget = join(vaultPath, "assetspaces", exocmdFolder);
-        process.stderr.write(`[bootstrap] Pulling ${options.exocmd}@${ref} → assetspaces/${exocmdFolder}/...\n`);
-        const exocmdResult = await svc.pullAssetSpace(options.exocmd!, ref, exocmdTarget);
-        svc.ensureGitmodulesEntry(vaultPath, `assetspaces/${exocmdFolder}`, options.exocmd!);
-        results.push({
-          folder: `assetspaces/${exocmdFolder}`,
-          url: options.exocmd!,
-          sha: exocmdResult.sha,
-          fileCount: exocmdResult.fileCount,
-        });
+        // Pull exocmd → assetspaces/exocmd — OPTIONAL (RFC 01a83de8 alt-G
+        // rejection, issue #3426). Omit `--exocmd` for a bare SDK/headless vault.
+        if (options.exocmd) {
+          const exocmdFolder = "exocmd";
+          const exocmdTarget = join(vaultPath, "assetspaces", exocmdFolder);
+          process.stderr.write(`[bootstrap] Pulling ${options.exocmd}@${ref} → assetspaces/${exocmdFolder}/...\n`);
+          const exocmdResult = await svc.pullAssetSpace(options.exocmd, ref, exocmdTarget);
+          svc.ensureGitmodulesEntry(vaultPath, `assetspaces/${exocmdFolder}`, options.exocmd);
+          results.push({
+            folder: `assetspaces/${exocmdFolder}`,
+            url: options.exocmd,
+            sha: exocmdResult.sha,
+            fileCount: exocmdResult.fileCount,
+          });
+        }
 
         if (options.json) {
           process.stdout.write(JSON.stringify({ vault: vaultPath, materialized: results }, null, 2) + "\n");
@@ -119,7 +127,12 @@ export function bootstrapCommand(): Command {
           process.stdout.write(`\nNext steps:\n`);
           process.stdout.write(`  1. cd ${vaultPath} && git init (if not initialized)\n`);
           process.stdout.write(`  2. git add . && git commit -m "feat: bootstrap vault"\n`);
-          process.stdout.write(`  3. Add additional AssetSpaces via \`exocortex assetspace add --vault ${vaultPath} --url <github-url>\`\n`);
+          if (!options.exocmd) {
+            process.stdout.write(`  3. (optional) Add the exocmd UI-command library: \`exocortex assetspace add --vault ${vaultPath} --url https://github.com/kitelev/exoas-exocmd\`\n`);
+            process.stdout.write(`  4. Add additional AssetSpaces via \`exocortex assetspace add --vault ${vaultPath} --url <github-url>\`\n`);
+          } else {
+            process.stdout.write(`  3. Add additional AssetSpaces via \`exocortex assetspace add --vault ${vaultPath} --url <github-url>\`\n`);
+          }
         }
         process.exit(0);
       } catch (e) {

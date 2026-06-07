@@ -41,9 +41,14 @@ import { InvalidArgumentsError, VaultNotFoundError } from "../../../src/utils/er
 import { ExitCodes } from "../../../src/utils/ExitCodes.js";
 
 const TESTLIB_UID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
-const PROFILE_MINIMAL = "11111111-1111-1111-1111-111111111111"; // floor only
+const PROFILE_MINIMAL = "11111111-1111-1111-1111-111111111111"; // SDK floor + exocmd
 const PROFILE_FULL = "22222222-2222-2222-2222-222222222222"; // floor + testlib
-const PROFILE_MISSING_FLOOR = "33333333-3333-3333-3333-333333333333"; // omits exocmd floor
+// Omits an SDK-floor AS ($shared-identities) — R24 must still refuse (issue #3426
+// only relaxed exocmd, NOT the SDK floor).
+const PROFILE_MISSING_FLOOR = "33333333-3333-3333-3333-333333333333";
+// Omits ONLY exocmd (declares the full SDK floor) — issue #3426: the CLI must
+// NOT refuse this; exocmd is the optional plugin-UI library, not the SDK floor.
+const PROFILE_NO_EXOCMD = "66666666-6666-6666-6666-666666666666";
 const MISSING_UID = "99999999-9999-9999-9999-999999999999";
 
 // AssetSpace _source URLs whose `derivePath(_source)` == the mount folder.
@@ -151,7 +156,16 @@ async function makeFixtureVault(
     },
     {
       relPath: `profiles/${PROFILE_MISSING_FLOOR}.md`,
-      frontmatter: profile(PROFILE_MISSING_FLOOR, "Missing floor (no exocmd)", [
+      // Omits $shared-identities (an SDK-floor AS) → R24 must refuse.
+      frontmatter: profile(PROFILE_MISSING_FLOOR, "Missing floor (no shared-identities)", [
+        TS_FLOOR_AS_UID_EXO,
+        TESTLIB_UID,
+      ]),
+    },
+    {
+      relPath: `profiles/${PROFILE_NO_EXOCMD}.md`,
+      // Declares the full SDK floor but omits exocmd → must be ACCEPTED (#3426).
+      frontmatter: profile(PROFILE_NO_EXOCMD, "SDK floor (no exocmd)", [
         TS_FLOOR_AS_UID_EXO,
         TS_FLOOR_AS_UID_SHARED_IDENTITIES,
         TESTLIB_UID,
@@ -304,11 +318,11 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
     expect(gm).toContain(`"${MOUNT_TESTLIB}"`);
   });
 
-  it("R24 TS-floor guard: excluding a floor AS refuses with OPERATION_FAILED + no mutation", async () => {
+  it("R24 TS-floor guard: excluding an SDK-floor AS refuses with OPERATION_FAILED + no mutation", async () => {
     await setup(/* testlibMaterialised */ true);
     const testlibMount = path.join(vaultRoot, MOUNT_TESTLIB);
     const result = await runHardSwitch(
-      PROFILE_MISSING_FLOOR, // omits exocmd floor
+      PROFILE_MISSING_FLOOR, // omits $shared-identities (SDK floor)
       { vault: vaultRoot, yes: true, verbose: false },
       { confirmGate: approvingGate, out: () => {}, err: () => {} },
     );
@@ -316,7 +330,24 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
     expect(result.stderr.join("\n")).toContain("TS-floor");
     // No mutation occurred (refused before execute).
     expect(existsSync(testlibMount)).toBe(true);
-    expect(existsSync(path.join(vaultRoot, MOUNT_EXOCMD))).toBe(true);
+    expect(existsSync(path.join(vaultRoot, MOUNT_SHARED))).toBe(true);
+  });
+
+  it("[#3426] CLI accepts a profile that omits exocmd — no R24 refusal (exocmd is NOT the SDK floor)", async () => {
+    await setup(/* testlibMaterialised */ true);
+    const result = await runHardSwitch(
+      PROFILE_NO_EXOCMD, // declares the full SDK floor, omits exocmd
+      { vault: vaultRoot, yes: true, verbose: false },
+      { confirmGate: approvingGate, out: () => {}, err: () => {} },
+    );
+    // Pre-#3426 this refused with OPERATION_FAILED + "TS-floor". Now accepted.
+    expect(result.exitCode).toBe(ExitCodes.SUCCESS);
+    expect(result.stderr.join("\n")).not.toContain("TS-floor");
+    // SDK-floor mounts remain; exocmd (no longer floor-protected, not declared)
+    // is treated as an ordinary AssetSpace and torn down.
+    expect(existsSync(path.join(vaultRoot, MOUNT_EXO))).toBe(true);
+    expect(existsSync(path.join(vaultRoot, MOUNT_SHARED))).toBe(true);
+    expect(existsSync(path.join(vaultRoot, MOUNT_EXOCMD))).toBe(false);
   });
 
   it("refuse without --yes: gate declines, exit 0, no mutation", async () => {

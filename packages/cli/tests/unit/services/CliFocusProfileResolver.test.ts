@@ -150,7 +150,7 @@ describe("CliFocusProfileResolver", () => {
   });
 
   describe("resolveFilter — engaged paths", () => {
-    it("engages with TS-floor only when profile has empty includes (and at least one folder overlaps via floor)", async () => {
+    it("engages with the SDK-floor only when profile has empty includes (exo + shared-identities, NO exocmd — issue #3426)", async () => {
       await makeVault(tmpRoot, [
         asAssetSpace(AS_EXO_UID, "exo"),
         asAssetSpace(AS_EXOCMD_UID, "exocmd"),
@@ -162,9 +162,11 @@ describe("CliFocusProfileResolver", () => {
       expect(out.outcome).toBe("engaged");
       if (out.outcome === "engaged") {
         expect(out.result.effective.has(AS_EXO_UID)).toBe(true);
-        expect(out.result.effective.has(AS_EXOCMD_UID)).toBe(true);
         expect(out.result.effective.has(AS_SHARED_UID)).toBe(true);
-        expect(out.result.effective.size).toBe(3); // floor only
+        // RFC 01a83de8 alt-G rejection: exocmd is NOT in the CLI/SDK floor.
+        // It is present as a vault folder but not force-injected into the set.
+        expect(out.result.effective.has(AS_EXOCMD_UID)).toBe(false);
+        expect(out.result.effective.size).toBe(2); // SDK floor only
       }
     });
 
@@ -187,10 +189,11 @@ describe("CliFocusProfileResolver", () => {
       if (out.outcome === "engaged") {
         // Declared AS UID resolved directly against the folder map.
         expect(out.result.effective.has(AS_EMS_UID)).toBe(true);
-        // TS-floor present
+        // SDK-floor present (exo + shared-identities); exocmd NOT auto-injected
+        // (issue #3426 — it is only in the plugin-UI floor).
         expect(out.result.effective.has(AS_EXO_UID)).toBe(true);
-        expect(out.result.effective.has(AS_EXOCMD_UID)).toBe(true);
         expect(out.result.effective.has(AS_SHARED_UID)).toBe(true);
+        expect(out.result.effective.has(AS_EXOCMD_UID)).toBe(false);
         // declared set surfaced for diagnostics
         expect(out.result.declaredOntologies.has(AS_EMS_UID)).toBe(true);
         // No untranslated entries
