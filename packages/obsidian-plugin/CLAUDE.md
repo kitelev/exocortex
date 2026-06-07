@@ -57,7 +57,7 @@ Starter-kit dynamic commands (`exocmd__Command`) are covered in three layers. Ne
 
 **Required CI checks (branch-protected):** `test-unit`, `test-coverage`, `e2e-shard-1..4`, `archgate`, `test-component`, `typecheck`, `lint` (RFC v5 §8 Phase 4 amendment, 2026-04-21).
 
-**Rollback:** if a layer becomes destabilising (flaky >5%, budget overage, submodule friction), follow the per-trigger mitigation in `docs/ROLLBACK_RFC_CI_TESTS.md` before disabling a check.
+**Rollback:** if a layer becomes destabilising (flaky >5%, budget overage, submodule friction), follow the per-trigger mitigation in `docs/history/ROLLBACK_RFC_CI_TESTS.md` before disabling a check.
 
 **Cross-project note (2026-04-21):** Phase 4 stability was established on top of Phase 3 EXIT (PR #2895) and benefited from the CI Speedup project (PR #2900 — `test-unit` ↔ `test-coverage` jest dedupe); both were counted toward the 5/5 pre-cutover green window.
 
@@ -139,5 +139,5 @@ See ../../PATTERNS.md for Docker E2E setup, debugging, and critical lessons.
 - `../../TROUBLESHOOTING.md` — Common issues and fixes
 - `ARCHITECTURE.md` — Detailed architecture docs
 - `docs/PROPERTY_SCHEMA.md` — Frontmatter vocabulary
-- `../../docs/ROLLBACK_RFC_CI_TESTS.md` — Per-trigger mitigation paths for RFC-CI-Tests suite
+- `../../docs/history/ROLLBACK_RFC_CI_TESTS.md` — Per-trigger mitigation paths for RFC-CI-Tests suite
 - `/Users/kitelev/Developer/rfc-ci-button-testing-2026-04-20.md` — RFC v5 source of truth (starter-kit L1/L2/L3 coverage)

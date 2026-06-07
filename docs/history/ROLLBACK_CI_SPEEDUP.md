@@ -82,7 +82,7 @@ cd ../worktrees/revert-phase1a-fixtures
 git revert 2330091a
 git push origin ci/revert-phase1a-fixtures
 gh pr create --title "Revert: fixture consolidation beforeEach→beforeAll (Phase 1a)" \
-  --body "Reverts #2902 — see docs/ROLLBACK_CI_SPEEDUP.md Phase 1a. Reason: <regression-ID>"
+  --body "Reverts #2902 — see docs/history/ROLLBACK_CI_SPEEDUP.md Phase 1a. Reason: <regression-ID>"
 ```
 
 ### Expected side-effects (wall-clock regression)
@@ -120,7 +120,7 @@ cd ../worktrees/revert-phase1b-waits
 git revert 5ded7f30
 git push origin ci/revert-phase1b-waits
 gh pr create --title "Revert: event-based waits (Phase 1b)" \
-  --body "Reverts #2904 — see docs/ROLLBACK_CI_SPEEDUP.md Phase 1b. Reason: <regression-ID>"
+  --body "Reverts #2904 — see docs/history/ROLLBACK_CI_SPEEDUP.md Phase 1b. Reason: <regression-ID>"
 ```
 
 ### Expected side-effects
@@ -168,7 +168,7 @@ cd ../worktrees/revert-phase2a-testunit
 git revert 366d90a0
 git push origin ci/revert-phase2a-testunit
 gh pr create --title "Revert: test-unit stub (Phase 2a)" \
-  --body "Reverts #2900 — see docs/ROLLBACK_CI_SPEEDUP.md Phase 2a. Reason: <regression-ID>"
+  --body "Reverts #2900 — see docs/history/ROLLBACK_CI_SPEEDUP.md Phase 2a. Reason: <regression-ID>"
 ```
 
 ### Expected side-effects
@@ -210,7 +210,7 @@ cd ../worktrees/revert-phase2b-shard
 git revert 4f010e78
 git push origin ci/revert-phase2b-shard
 gh pr create --title "Revert: test-coverage jest --shard matrix (Phase 2b)" \
-  --body "Reverts #2903 — see docs/ROLLBACK_CI_SPEEDUP.md Phase 2b. Reason: <regression-ID>"
+  --body "Reverts #2903 — see docs/history/ROLLBACK_CI_SPEEDUP.md Phase 2b. Reason: <regression-ID>"
 ```
 
 ### Expected side-effects
@@ -251,7 +251,7 @@ cd ../worktrees/revert-phase2c-ctworkers
 git revert 2ba9ceb0
 git push origin ci/revert-phase2c-ctworkers
 gh pr create --title "Revert: Playwright CT workers 1→2 (Phase 2c)" \
-  --body "Reverts #2906 — see docs/ROLLBACK_CI_SPEEDUP.md Phase 2c. Reason: <regression-ID>"
+  --body "Reverts #2906 — see docs/history/ROLLBACK_CI_SPEEDUP.md Phase 2c. Reason: <regression-ID>"
 ```
 
 ### Expected side-effects
@@ -282,7 +282,7 @@ cd ../worktrees/revert-phase3a-composite
 git revert ca5d7746
 git push origin ci/revert-phase3a-composite
 gh pr create --title "Revert: composite action setup-node-pnpm (Phase 3a)" \
-  --body "Reverts #2907 — see docs/ROLLBACK_CI_SPEEDUP.md Phase 3a. Reason: <regression-ID>"
+  --body "Reverts #2907 — see docs/history/ROLLBACK_CI_SPEEDUP.md Phase 3a. Reason: <regression-ID>"
 ```
 
 **Pre-revert check:** any PR merged after #2907 that introduced a 13th call-site (`uses: ./.github/actions/setup-node-pnpm`) that is **not** covered by the revert diff will break:
@@ -327,7 +327,7 @@ git revert 6db64d79
 git revert 1223b0e4
 git push origin ci/revert-phase3b-pathfilter
 gh pr create --title "Revert: paths-filter docs-only skip + hotfix (Phase 3b)" \
-  --body "Reverts #2913 + #2908 — see docs/ROLLBACK_CI_SPEEDUP.md Phase 3b. Reason: <regression-ID>"
+  --body "Reverts #2913 + #2908 — see docs/history/ROLLBACK_CI_SPEEDUP.md Phase 3b. Reason: <regression-ID>"
 ```
 
 ### ⚠ Matrix-skip gotcha (do not "simplify")
@@ -404,7 +404,7 @@ Append one-line entries per rollback event. Format: `YYYY-MM-DD · <phase> · <s
 
 - RFC: `/Users/kitelev/Developer/rfc-ci-speedup-2026-04-21.md` §11.2 (rollback plan entry).
 - Orchestrator project: `e5939fb2-0e1f-418c-93a1-619faaf9f6b3` (`Exocortex CI Pipeline Speedup ≤2min`).
-- Sibling rollback doc: `docs/ROLLBACK_RFC_CI_TESTS.md` (RFC-CI-Tests suite — separate project, distinct scope).
+- Sibling rollback doc: `docs/history/ROLLBACK_RFC_CI_TESTS.md` (RFC-CI-Tests suite — separate project, distinct scope).
 - CI workflow: `.github/workflows/ci.yml`.
 - Composite action: `.github/actions/setup-node-pnpm/action.yml`.
 - Coverage merge helper: `scripts/merge-coverage.js`.

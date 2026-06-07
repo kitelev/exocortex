@@ -654,7 +654,7 @@ Starter-kit dynamic commands (`exocmd__Command`) are covered in three test layer
 `archgate`, `detect-changes`, `e2e-shard (1)`, `e2e-shard (2)`, `e2e-shard (3)`, `e2e-shard (4)`, `e2e-shard (5)`, `e2e-shard (6)`, `lint`, `parity-gate`, `test-bdd`, `test-component`, `test-coverage`, `typecheck`.
 Matrix contexts use the parenthesised form `<job> (<shard>)` — hyphenated names like `e2e-shard-1` silently resolve to no required check. `test-unit` was dropped from required contexts in f235881d (Phase 4 cutover) now that it is a deduplicated stub; `detect-changes` was added so path-filter infrastructure always runs.
 
-**Rollback playbook:** `docs/ROLLBACK_RFC_CI_TESTS.md` — per-trigger mitigation (flaky quarantine / smoke budget trim / submodule → npm migration / admin nuclear rollback).
+**Rollback playbook:** `docs/history/ROLLBACK_RFC_CI_TESTS.md` — per-trigger mitigation (flaky quarantine / smoke budget trim / submodule → npm migration / admin nuclear rollback).
 
 **Cross-project narrative (2026-04-21):** Phase 4 stability rests on Phase 3 EXIT (PR #2895) and was measurably helped by the parallel CI Speedup project (PR #2900 — `test-unit` ↔ `test-coverage` jest dedupe); both contributed to the 5/5 consecutive green main-PR counter required before branch-protection amendment.
 
@@ -820,7 +820,7 @@ refactor: simplify RDF store queries
 - ✅ Auto-release workflow creates GitHub release
 - ✅ Worktree cleaned up
 
-**Rollback reference:** `docs/ROLLBACK_CI_SPEEDUP.md` documents per-phase revert procedure for any of the Phase 1–3 speedup changes if a regression is detected post-merge.
+**Rollback reference:** `docs/history/ROLLBACK_CI_SPEEDUP.md` documents per-phase revert procedure for any of the Phase 1–3 speedup changes if a regression is detected post-merge.
 
 ---
 

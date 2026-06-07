@@ -2,7 +2,7 @@
 
 **Status:** Reference  
 **RFC source:** vault `82a72aca-d974-44a4-92b4-55be932c6ed1` (RFC: SHACL-lite v3)  
-**Related:** `docs/rfc/shacl-cli-design.md`, `docs/rdf/ExoRDF-Mapping.md`
+**Related:** `docs/history/shacl-cli-design.md`, `docs/rdf/ExoRDF-Mapping.md`
 
 This document records the alignment between `exo__Property_*` vocabulary and W3C SHACL (`sh:*`) terms used in the SHACL-lite validation engine (`ShaclLiteValidator`).
 
