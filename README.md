@@ -46,6 +46,7 @@ Compared to existing tools:
 - **Everything as Knowledge** — commands, workflows, property schemas, and layouts defined as vault assets, not hardcoded
 - **Ontology plugins** — extend the system with installable ontology packages (e.g. [GTD + Jedi Techniques](https://github.com/kitelev/gtd-jedi))
 - **FocusProfile** (production-ready, v16.51+) — vault-declared homoiconic profiles that drive **both** runtime filtering of the RDF graph (soft switch) and on-disk submodule materialization (hard switch). One vault, multiple contexts, selective sync. See [docs/focus-profile.md](./docs/focus-profile.md).
+- **UI/CLI Parity** — every capability is reachable from the Obsidian plugin and the CLI; neither client holds exclusive features. The complement of homoiconicity: it keeps the *invocation* layer open just as homoiconicity keeps the *data* layer open. See [VISION.md](./VISION.md#uicli-parity-invariant).
 - **Local-first** — all data stays on your device, no cloud required
 
 ---

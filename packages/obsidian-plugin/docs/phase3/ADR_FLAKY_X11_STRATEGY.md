@@ -329,7 +329,7 @@ Mac/local devs running `npm run test:e2e` outside Docker do NOT hit the Xvfb bra
 - Charter: `/Users/kitelev/vault-2025/03 Knowledge/inbox/4cd6f7bd-73e4-47f3-b0f2-c1f2438ed619.md`
 - Source GitHub Issue: kitelev/exocortex#2974
 - CI Path 2 D0 cutover (2026-04-22): 13 required checks; Decision B relax ≤220s gate
-- Rollback procedure (broader CI): `exocortex/docs/ROLLBACK_CI_SPEEDUP.md`
+- Rollback procedure (broader CI): `exocortex/docs/history/ROLLBACK_CI_SPEEDUP.md`
 
 ### 10.3 External evidence base
 
