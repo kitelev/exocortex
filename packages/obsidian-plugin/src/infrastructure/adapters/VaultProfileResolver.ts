@@ -23,7 +23,6 @@ import { FOCUS_PROFILE_CLASS_UID } from "./FocusProfileSwitchManager";
  *     normalised to bare UIDs (без leading `[[` / trailing `]]` / alias `|...`)
  *   - `exo__Profile_imports` (string, optional) — parent profile wikilink → UID
  *     (renamed from `_extends`; single-parent composition MVP)
- *   - `_alwaysOnOverlay` removed (Phase 2 D3 — folds into TS-floor)
  *
  * Shared-ontology discovery: production scans the converter's RDF graph
  * для ontology IRIs matching the `shared-` prefix pattern. v3 backward-

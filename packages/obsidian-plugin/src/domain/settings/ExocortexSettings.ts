@@ -217,8 +217,8 @@ export interface ExocortexSettings {
   /**
    * RFC 0a0791c1 — UID of the active `exo__FocusProfile` (or `null` for the
    * full-vault default). When non-null the plugin at onload computes the
-   * effective AssetSpace set declared by the profile (transitive `_extends` +
-   * `_alwaysOnOverlay`), translates Ontology references to the AssetSpaces
+   * effective AssetSpace set declared by the profile (transitive `_extends`),
+   * translates Ontology references to the AssetSpaces
    * containing them, layers in the TS-floor (Vision Lock #17 — `$exo`,
    * `$exocmd`, `$shared-identities` AS UIDs), and wires the result into the
    * `VaultRDFIndexer` so cold-start `convertVault()` skips files outside the

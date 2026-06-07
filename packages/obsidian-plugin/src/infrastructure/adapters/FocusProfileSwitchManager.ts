@@ -462,8 +462,7 @@ export class FocusProfileSwitchManager {
    * = derived(profile) ∪ TS_FLOOR ∪ discoveredSharedOntologies
    *
    * Where derived = union of `_includes` along the `_imports*` single-parent
-   * chain (RFC 01a83de8 Phase 2 — `_includes` are AssetSpace UIDs; the legacy
-   * `_alwaysOnOverlay` term was removed, folding into the TS-floor). The
+   * chain (RFC 01a83de8 Phase 2 — `_includes` are AssetSpace UIDs). The
    * mount-state hard/REST switch consumes these AssetSpace UIDs directly (the
    * query-time soft-filter consumer was removed in RFC 01a83de8 Phase 3 T3b).
    *
@@ -1585,9 +1584,6 @@ export class FocusProfileSwitchManager {
     if (profile === null) return; // tolerate missing parent — leaf
 
     for (const u of profile.includes) result.add(u);
-    // `_alwaysOnOverlay` removed (RFC 01a83de8 Phase 2 D3 — "always-on" folds
-    // into the TS-floor, enforced at AS-UID level by the mount-state hard/REST
-    // switch + CliFocusProfileResolver). No per-profile overlay set anymore.
 
     if (typeof profile.extends === "string" && profile.extends.length > 0) {
       await this.walkProfileChain(profile.extends, visited, result, depth + 1);
