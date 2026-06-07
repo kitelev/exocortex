@@ -1,8 +1,13 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
 import { resolve } from "path";
-import type { HardSwitchPlan, IConfirmGate } from "exocortex";
+import type { IConfirmGate } from "exocortex";
 import { CliFocusProfileResolver } from "../services/CliFocusProfileResolver.js";
+import {
+  CliHardSwitchService,
+  TsFloorViolationError,
+} from "../services/CliHardSwitchService.js";
+import { BootstrapAssetSpaceService } from "../services/BootstrapAssetSpaceService.js";
 import { HeadlessConfirmGate } from "../services/HeadlessConfirmGate.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import {
@@ -18,39 +23,10 @@ export interface HardSwitchCommandOptions {
   vault: string;
   yes?: boolean;
   verbose?: boolean;
-}
-
-/**
- * Phase 1b SCAFFOLD message — surfaced when the CLI is invoked before the
- * Phase 3 orchestrator lands. Tests assert on this string, so changing it
- * also touches `hard-switch.integration.test.ts`.
- */
-export const HARD_SWITCH_PHASE3_PENDING_NOTICE =
-  "[hard-switch] CLI command scaffolded. hardSwitchProfile() implementation pending Phase 3.";
-
-/**
- * Build a minimal stub plan the gate can render.
- *
- * Phase 1b limitation (review MED-3): the second positional is currently
- * also the UID — the resolver's `ResolveFilterResult` does not yet surface
- * `targetProfileLabel`. Verbose log lines therefore show
- * `Target: <uid> (<uid>)`. Phase 3 will extend the resolver to thread the
- * profile's `exo__Asset_label` through; once it does, the call-site at the
- * bottom of `runHardSwitch` should pass the resolved label here.
- */
-function buildScaffoldPlan(
-  targetProfileUid: string,
-  targetProfileLabel: string,
-): HardSwitchPlan {
-  return {
-    targetProfileUid,
-    targetProfileLabel,
-    sourceProfileUid: null,
-    sourceProfileLabel: "<unknown>",
-    filesToDestroy: new Map(),
-    assetSpacesBeingTornDown: [],
-    assetSpacesBeingMaterialized: [],
-  };
+  /** Git ref to pull when materialising AssetSpaces. Default `main`. */
+  ref?: string;
+  /** GitHub PAT for private-repo materialisation (or env GITHUB_TOKEN/GH_TOKEN). */
+  token?: string;
 }
 
 /**
@@ -67,10 +43,19 @@ export interface HardSwitchActionDeps {
    */
   resolverFactory?: (opts: HardSwitchCommandOptions) => CliFocusProfileResolver;
   /**
+   * Override the hard-switch service factory (test seam). Production omits and
+   * the action constructs a `CliHardSwitchService` backed by a
+   * `BootstrapAssetSpaceService` (Node `fetch` mount mechanics). Tests inject a
+   * service with a fake `fetchImpl` so materialisation needs no network.
+   */
+  hardSwitchServiceFactory?: (
+    opts: HardSwitchCommandOptions,
+    vaultPath: string,
+  ) => CliHardSwitchService;
+  /**
    * Override stdout sink. The default writes to `process.stdout`; tests
    * inject `() => {}` to silence. Either way, lines are also captured
-   * exactly once into the returned `HardSwitchResult.stdout` (see review
-   * MED-1 fix).
+   * exactly once into the returned `HardSwitchResult.stdout`.
    */
   out?: (msg: string) => void;
   /** Override stderr sink — same capture-once contract as `out`. */
@@ -81,8 +66,7 @@ export interface HardSwitchActionDeps {
  * Run the hard-switch flow. Throws typed `CLIError` subclasses on
  * validation failure; the caller (commander action handler OR test) is
  * responsible for routing those through `ErrorHandler.handle` or capturing
- * them. Keeping the throw-path lean lets tests inject seams without
- * fighting the global `process.exit` instrumentation Jest installs.
+ * them.
  *
  * @returns A struct with the exit code and informational messages so
  *   tests can assert on outcomes without spying on process streams.
@@ -100,11 +84,6 @@ export async function runHardSwitch(
 ): Promise<HardSwitchResult> {
   const stdout: string[] = [];
   const stderr: string[] = [];
-  // MED-1 fix: capture is now the sole writer; the sink (deps.out or
-  // process.stdout) is invoked once, and the result struct is populated
-  // exactly once. Previous design double-pushed when deps.out was
-  // omitted (production path) because both the default `out` AND the
-  // wrapper `captureOut` pushed.
   const stdoutSink =
     deps.out ?? ((msg: string) => process.stdout.write(`${msg}\n`));
   const stderrSink =
@@ -133,9 +112,9 @@ export async function runHardSwitch(
     );
   }
 
-  // Validate profile exists via existing resolver. The resolver scans
-  // vault filesystem once; the same scan is reused in Phase 3 by the
-  // orchestrator.
+  // Validate + resolve the profile's effective AssetSpace set. The resolver
+  // scans the vault filesystem once; the hard-switch service does a second scan
+  // for AssetSpace descriptor metadata (git URL + derived mount folder).
   const resolver =
     deps.resolverFactory?.(opts) ??
     new CliFocusProfileResolver({
@@ -154,24 +133,65 @@ export async function runHardSwitch(
     err(`[hard-switch] Resolver error: ${outcome.reason}`);
     return { exitCode: ExitCodes.OPERATION_FAILED, stdout, stderr };
   }
-  // MED-2 fix: `degraded` means the resolved effective set is empty (or
-  // overlaps nothing in the vault — R15 self-brick mitigation). Hard
-  // switch with a degraded outcome would destroy assetspaces against a
-  // profile that resolves to nothing useful — refuse outright before
-  // touching the confirmation gate.
+  // `degraded` means the resolved effective set is empty (or overlaps nothing
+  // in the vault — R15 self-brick mitigation). Hard switch with a degraded
+  // outcome would destroy assetspaces against a profile that resolves to
+  // nothing useful — refuse outright before touching the gate.
   if (outcome.outcome === "degraded") {
     err(
       `[hard-switch] Refused: profile resolution degraded — ${outcome.reason}. Hard switch aborted to prevent vault corruption.`,
     );
     return { exitCode: ExitCodes.OPERATION_FAILED, stdout, stderr };
   }
-  // `no-profile` is unreachable because `profileUid` was validated
-  // non-empty above; `engaged` is the only remaining outcome and falls
-  // through to the gate flow below.
+  if (outcome.outcome !== "engaged") {
+    // `no-profile` is unreachable (profileUid validated non-empty above);
+    // guard defensively so TS narrows `outcome` to the engaged variant.
+    err(`[hard-switch] Unexpected resolver outcome: ${outcome.outcome}`);
+    return { exitCode: ExitCodes.OPERATION_FAILED, stdout, stderr };
+  }
+  const engaged = outcome.result;
 
-  // Build a confirm-gate (test seam allows override) and synth a stub
-  // plan. Phase 3 replaces the stub with a real plan computed from the
-  // resolver's effective set + the SwitchCacheLayer's destroy targets.
+  // Build the hard-switch service. Token precedence: --token > GITHUB_TOKEN env
+  // > GH_TOKEN env (mirrors the `bootstrap` command). `||` not `??` so an empty
+  // env var falls through.
+  const token =
+    opts.token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || undefined;
+  const service =
+    deps.hardSwitchServiceFactory?.(opts, vaultPath) ??
+    new CliHardSwitchService({
+      vaultPath,
+      ref: opts.ref ?? "main",
+      mount: new BootstrapAssetSpaceService({ token }),
+    });
+
+  const { infos, profileLabels } = service.scanVault();
+  // The resolver does NOT surface the profile label (Issue #3416 keeps it
+  // unchanged); read it from the descriptor scan, falling back to the UID.
+  const targetProfileLabel = profileLabels.get(profileUid) ?? profileUid;
+
+  // Compute the real mount-state diff + plan. R24 TS-floor guard throws here,
+  // BEFORE any mutation OR the confirmation gate (anti-self-brick).
+  let diff;
+  try {
+    diff = service.buildDiff({
+      targetProfileUid: profileUid,
+      targetProfileLabel,
+      // The CLI is stateless — it diffs against on-disk mount state, not a
+      // persisted active profile — so the source is unknown.
+      sourceProfileUid: null,
+      sourceProfileLabel: "<unknown>",
+      result: engaged,
+      infos,
+    });
+  } catch (e) {
+    if (e instanceof TsFloorViolationError) {
+      err(`[hard-switch] Refused: ${e.message}`);
+      return { exitCode: ExitCodes.OPERATION_FAILED, stdout, stderr };
+    }
+    throw e;
+  }
+
+  // Confirmation gate — renders the REAL plan (verbose) + enforces `--yes`.
   const gate =
     deps.confirmGate ??
     new HeadlessConfirmGate({
@@ -179,28 +199,42 @@ export async function runHardSwitch(
       verbose: opts.verbose ?? false,
       log: (msg) => err(msg),
     });
-
-  // MED-3: until the resolver surfaces a label, the UID stands in. Phase 3
-  // should swap `profileUid` for `outcome.result.targetProfileLabel` once
-  // `ResolveFilterResult` carries it.
-  const plan = buildScaffoldPlan(profileUid, profileUid);
-  const approved = await gate.confirmHardSwitch(plan);
-
+  const approved = await gate.confirmHardSwitch(diff.plan);
   if (!approved) {
-    // Refusal — exit 0 (the gate already logged "Refused: --yes
-    // required"). Phase 3 may upgrade this to a non-zero refusal code
-    // depending on the orchestrator's automation contract.
+    // Gate already logged "Refused: --yes required". Exit 0 — explicit decline.
     return { exitCode: ExitCodes.SUCCESS, stdout, stderr };
   }
 
-  out(HARD_SWITCH_PHASE3_PENDING_NOTICE);
+  // Idempotent no-op: target already in mount-state ⇒ nothing to mutate.
+  if (diff.toDestroy.length === 0 && diff.toMaterialize.length === 0) {
+    out(
+      `[hard-switch] Already in target mount-state for ${targetProfileLabel} — no-op.`,
+    );
+    return { exitCode: ExitCodes.SUCCESS, stdout, stderr };
+  }
+
+  let execResult;
+  try {
+    execResult = await service.execute(diff);
+  } catch (e) {
+    err(
+      `[hard-switch] Execution failed: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
+    return { exitCode: ExitCodes.OPERATION_FAILED, stdout, stderr };
+  }
+
+  out(
+    `[hard-switch] Switched to ${targetProfileLabel}: ${execResult.destroyed.length} AssetSpace(s) torn down, ${execResult.materialized.length} materialized.`,
+  );
   return { exitCode: ExitCodes.SUCCESS, stdout, stderr };
 }
 
 export function hardSwitchCommand(): Command {
   const cmd = new Command("hard-switch")
     .description(
-      "Hard switch to specified FocusProfile (filesystem mutation, Phase 3+). Requires --yes for headless mode.",
+      "Hard switch to specified FocusProfile (mount-state filesystem mutation). Requires --yes for headless mode.",
     )
     .argument("<profile-uid>", "Target FocusProfile UID")
     .requiredOption("--vault <path>", "Path to Obsidian vault")
@@ -209,10 +243,11 @@ export function hardSwitchCommand(): Command {
       "Confirm hard switch (headless mode safety override per RFC 22b50a17 Decision #2)",
       false,
     )
+    .option("--verbose", "Print plan summary to stderr before deciding", false)
+    .option("--ref <branch>", "Git ref to pull when materialising AssetSpaces", "main")
     .option(
-      "--verbose",
-      "Print plan summary to stderr before deciding",
-      false,
+      "--token <pat>",
+      "GitHub PAT for private-repo materialisation (or env GITHUB_TOKEN / GH_TOKEN)",
     )
     .action(async (profileUid: string, opts: HardSwitchCommandOptions) => {
       try {

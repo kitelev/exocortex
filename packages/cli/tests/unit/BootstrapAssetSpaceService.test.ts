@@ -550,6 +550,74 @@ describe("BootstrapAssetSpaceService", () => {
     });
   });
 
+  describe("stripGitmodulesEntry (pure, Issue #3416 unmount)", () => {
+    it("strips the matching stanza + collapses the double-blank", () => {
+      const content =
+        `[submodule "assetspaces/exo"]\n\tpath = assetspaces/exo\n\turl = https://github.com/kitelev/exoas-exo\n` +
+        `[submodule "assetspaces/testlib"]\n\tpath = assetspaces/testlib\n\turl = https://github.com/kitelev/exoas-testlib\n`;
+      const out = BootstrapAssetSpaceService.stripGitmodulesEntry(
+        content,
+        "assetspaces/testlib",
+      );
+      expect(out).toContain(`[submodule "assetspaces/exo"]`);
+      expect(out).not.toContain(`assetspaces/testlib`);
+    });
+
+    it("no-op (returns identical content) for an absent stanza", () => {
+      const content = `[submodule "assetspaces/exo"]\n\tpath = assetspaces/exo\n\turl = u\n`;
+      expect(
+        BootstrapAssetSpaceService.stripGitmodulesEntry(content, "assetspaces/missing"),
+      ).toBe(content);
+    });
+  });
+
+  describe("removeGitmodulesEntry (Issue #3416 unmount)", () => {
+    it("removes the stanza + reports removed=true", () => {
+      const svc = new BootstrapAssetSpaceService();
+      svc.ensureGitmodulesEntry(tempBase, "assetspaces/exo", "https://github.com/kitelev/exoas-exo");
+      svc.ensureGitmodulesEntry(tempBase, "assetspaces/testlib", "https://github.com/kitelev/exoas-testlib");
+      const res = svc.removeGitmodulesEntry(tempBase, "assetspaces/testlib");
+      expect(res.removed).toBe(true);
+      const content = readFileSync(path.join(tempBase, ".gitmodules"), "utf8");
+      expect(content).toContain(`[submodule "assetspaces/exo"]`);
+      expect(content).not.toContain(`assetspaces/testlib`);
+    });
+
+    it("no-op (removed=false) when .gitmodules is absent", () => {
+      const svc = new BootstrapAssetSpaceService();
+      expect(svc.removeGitmodulesEntry(tempBase, "assetspaces/exo").removed).toBe(false);
+    });
+
+    it("no-op (removed=false) when stanza is absent", () => {
+      const svc = new BootstrapAssetSpaceService();
+      svc.ensureGitmodulesEntry(tempBase, "assetspaces/exo", "https://github.com/kitelev/exoas-exo");
+      expect(svc.removeGitmodulesEntry(tempBase, "assetspaces/missing").removed).toBe(false);
+    });
+  });
+
+  describe("unmountAssetSpace (Issue #3416)", () => {
+    it("strips the .gitmodules stanza AND removes the folder", () => {
+      const svc = new BootstrapAssetSpaceService();
+      const mount = "assetspaces/kitelev/exoas-testlib";
+      mkdirSync(path.join(tempBase, mount), { recursive: true });
+      writeFileSync(path.join(tempBase, mount, "note.md"), "x");
+      svc.ensureGitmodulesEntry(tempBase, mount, "https://github.com/kitelev/exoas-testlib");
+
+      svc.unmountAssetSpace(tempBase, mount);
+
+      expect(existsSync(path.join(tempBase, mount))).toBe(false);
+      const content = readFileSync(path.join(tempBase, ".gitmodules"), "utf8");
+      expect(content).not.toContain("exoas-testlib");
+    });
+
+    it("idempotent — unmounting an already-absent AS is a no-op (no throw)", () => {
+      const svc = new BootstrapAssetSpaceService();
+      expect(() =>
+        svc.unmountAssetSpace(tempBase, "assetspaces/kitelev/nope"),
+      ).not.toThrow();
+    });
+  });
+
   describe("integration: bootstrap full flow (mocked fetch, real fs)", () => {
     it("pulls 2 AS + writes .gitmodules", async () => {
       const exoTarball = buildFakeGitHubTarball("kitelev", "exoas-exo", "111aaaa", [
