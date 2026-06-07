@@ -20,7 +20,7 @@ import { recoverCommand } from "./commands/recover.js";
 import { findCommand } from "./commands/find.js";
 import { applyCommand } from "./commands/apply.js";
 import { auditCommand } from "./commands/audit.js";
-import { hardSwitchCommand } from "./commands/hard-switch.js";
+import { applyProfileCommand } from "./commands/apply-profile.js";
 import { bootstrapCommand } from "./commands/bootstrap.js";
 import { assetSpaceAddCommand } from "./commands/assetspace-add.js";
 import { experimentalCommand } from "./commands/experimental.js";
@@ -68,8 +68,8 @@ export function createProgram(version?: string): Command {
   // RFC 9d20c91f Phase 4+1 — regression-detection audits
   program.addCommand(auditCommand());
 
-  // RFC 22b50a17 Phase 1b — hard switch CLI scaffold (Phase 3 wires orchestrator)
-  program.addCommand(hardSwitchCommand());
+  // RFC 22b50a17 Phase 1b — apply CLI scaffold (Phase 3 wires orchestrator)
+  program.addCommand(applyProfileCommand());
 
   // RFC 13da049f Phase 6.2 + 6.3 — Bootstrap + Add AssetSpace CLI
   program.addCommand(bootstrapCommand());

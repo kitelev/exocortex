@@ -4,9 +4,9 @@ import { resolve } from "path";
 import type { IConfirmGate } from "exocortex";
 import { CliProfileResolver } from "../services/CliProfileResolver.js";
 import {
-  CliHardSwitchService,
+  CliApplyProfileService,
   TsFloorViolationError,
-} from "../services/CliHardSwitchService.js";
+} from "../services/CliApplyProfileService.js";
 import { BootstrapAssetSpaceService } from "../services/BootstrapAssetSpaceService.js";
 import { HeadlessConfirmGate } from "../services/HeadlessConfirmGate.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
@@ -17,9 +17,9 @@ import {
 import { ExitCodes } from "../utils/ExitCodes.js";
 
 /**
- * Options surface for `exocortex hard-switch <profile-uid>`.
+ * Options surface for `exocortex apply-profile <profile-uid>`.
  */
-export interface HardSwitchCommandOptions {
+export interface ApplyProfileCommandOptions {
   vault: string;
   yes?: boolean;
   verbose?: boolean;
@@ -34,28 +34,28 @@ export interface HardSwitchCommandOptions {
  * a fake `IConfirmGate` to verify the wiring without spinning a real CLI
  * subprocess.
  */
-export interface HardSwitchActionDeps {
+export interface ApplyProfileActionDeps {
   /** Override the confirm gate (test seam). */
   confirmGate?: IConfirmGate;
   /**
    * Override the resolver factory (test seam). Production omits and the
    * action constructs `CliProfileResolver` from CLI options.
    */
-  resolverFactory?: (opts: HardSwitchCommandOptions) => CliProfileResolver;
+  resolverFactory?: (opts: ApplyProfileCommandOptions) => CliProfileResolver;
   /**
-   * Override the hard-switch service factory (test seam). Production omits and
-   * the action constructs a `CliHardSwitchService` backed by a
+   * Override the apply-profile service factory (test seam). Production omits and
+   * the action constructs a `CliApplyProfileService` backed by a
    * `BootstrapAssetSpaceService` (Node `fetch` mount mechanics). Tests inject a
    * service with a fake `fetchImpl` so materialisation needs no network.
    */
-  hardSwitchServiceFactory?: (
-    opts: HardSwitchCommandOptions,
+  applyServiceFactory?: (
+    opts: ApplyProfileCommandOptions,
     vaultPath: string,
-  ) => CliHardSwitchService;
+  ) => CliApplyProfileService;
   /**
    * Override stdout sink. The default writes to `process.stdout`; tests
    * inject `() => {}` to silence. Either way, lines are also captured
-   * exactly once into the returned `HardSwitchResult.stdout`.
+   * exactly once into the returned `ApplyProfileResult.stdout`.
    */
   out?: (msg: string) => void;
   /** Override stderr sink — same capture-once contract as `out`. */
@@ -63,7 +63,7 @@ export interface HardSwitchActionDeps {
 }
 
 /**
- * Run the hard-switch flow. Throws typed `CLIError` subclasses on
+ * Run the apply-profile flow. Throws typed `CLIError` subclasses on
  * validation failure; the caller (commander action handler OR test) is
  * responsible for routing those through `ErrorHandler.handle` or capturing
  * them.
@@ -71,17 +71,17 @@ export interface HardSwitchActionDeps {
  * @returns A struct with the exit code and informational messages so
  *   tests can assert on outcomes without spying on process streams.
  */
-export interface HardSwitchResult {
+export interface ApplyProfileResult {
   exitCode: number;
   stdout: string[];
   stderr: string[];
 }
 
-export async function runHardSwitch(
+export async function runApplyProfile(
   profileUid: string,
-  opts: HardSwitchCommandOptions,
-  deps: HardSwitchActionDeps = {},
-): Promise<HardSwitchResult> {
+  opts: ApplyProfileCommandOptions,
+  deps: ApplyProfileActionDeps = {},
+): Promise<ApplyProfileResult> {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const stdoutSink =
@@ -108,12 +108,12 @@ export async function runHardSwitch(
   if (!profileUid || profileUid.length === 0) {
     throw new InvalidArgumentsError(
       "profile-uid argument is required",
-      "exocortex hard-switch <profile-uid> --vault <path>",
+      "exocortex apply-profile <profile-uid> --vault <path>",
     );
   }
 
   // Validate + resolve the profile's effective AssetSpace set. The resolver
-  // scans the vault filesystem once; the hard-switch service does a second scan
+  // scans the vault filesystem once; the apply-profile service does a second scan
   // for AssetSpace descriptor metadata (git URL + derived mount folder).
   const resolver =
     deps.resolverFactory?.(opts) ??
@@ -130,35 +130,35 @@ export async function runHardSwitch(
     );
   }
   if (outcome.outcome === "error") {
-    err(`[hard-switch] Resolver error: ${outcome.reason}`);
+    err(`[apply-profile] Resolver error: ${outcome.reason}`);
     return { exitCode: ExitCodes.OPERATION_FAILED, stdout, stderr };
   }
   // `degraded` means the resolved effective set is empty (or overlaps nothing
-  // in the vault — R15 self-brick mitigation). Hard switch with a degraded
+  // in the vault — R15 self-brick mitigation). Apply with a degraded
   // outcome would destroy assetspaces against a profile that resolves to
   // nothing useful — refuse outright before touching the gate.
   if (outcome.outcome === "degraded") {
     err(
-      `[hard-switch] Refused: profile resolution degraded — ${outcome.reason}. Hard switch aborted to prevent vault corruption.`,
+      `[apply-profile] Refused: profile resolution degraded — ${outcome.reason}. Apply aborted to prevent vault corruption.`,
     );
     return { exitCode: ExitCodes.OPERATION_FAILED, stdout, stderr };
   }
   if (outcome.outcome !== "engaged") {
     // `no-profile` is unreachable (profileUid validated non-empty above);
     // guard defensively so TS narrows `outcome` to the engaged variant.
-    err(`[hard-switch] Unexpected resolver outcome: ${outcome.outcome}`);
+    err(`[apply-profile] Unexpected resolver outcome: ${outcome.outcome}`);
     return { exitCode: ExitCodes.OPERATION_FAILED, stdout, stderr };
   }
   const engaged = outcome.result;
 
-  // Build the hard-switch service. Token precedence: --token > GITHUB_TOKEN env
+  // Build the apply-profile service. Token precedence: --token > GITHUB_TOKEN env
   // > GH_TOKEN env (mirrors the `bootstrap` command). `||` not `??` so an empty
   // env var falls through.
   const token =
     opts.token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || undefined;
   const service =
-    deps.hardSwitchServiceFactory?.(opts, vaultPath) ??
-    new CliHardSwitchService({
+    deps.applyServiceFactory?.(opts, vaultPath) ??
+    new CliApplyProfileService({
       vaultPath,
       ref: opts.ref ?? "main",
       mount: new BootstrapAssetSpaceService({ token }),
@@ -185,7 +185,7 @@ export async function runHardSwitch(
     });
   } catch (e) {
     if (e instanceof TsFloorViolationError) {
-      err(`[hard-switch] Refused: ${e.message}`);
+      err(`[apply-profile] Refused: ${e.message}`);
       return { exitCode: ExitCodes.OPERATION_FAILED, stdout, stderr };
     }
     throw e;
@@ -208,7 +208,7 @@ export async function runHardSwitch(
   // Idempotent no-op: target already in mount-state ⇒ nothing to mutate.
   if (diff.toDestroy.length === 0 && diff.toMaterialize.length === 0) {
     out(
-      `[hard-switch] Already in target mount-state for ${targetProfileLabel} — no-op.`,
+      `[apply-profile] Already in target mount-state for ${targetProfileLabel} — no-op.`,
     );
     return { exitCode: ExitCodes.SUCCESS, stdout, stderr };
   }
@@ -218,7 +218,7 @@ export async function runHardSwitch(
     execResult = await service.execute(diff);
   } catch (e) {
     err(
-      `[hard-switch] Execution failed: ${
+      `[apply-profile] Execution failed: ${
         e instanceof Error ? e.message : String(e)
       }`,
     );
@@ -226,21 +226,21 @@ export async function runHardSwitch(
   }
 
   out(
-    `[hard-switch] Switched to ${targetProfileLabel}: ${execResult.destroyed.length} AssetSpace(s) torn down, ${execResult.materialized.length} materialized.`,
+    `[apply-profile] Switched to ${targetProfileLabel}: ${execResult.destroyed.length} AssetSpace(s) torn down, ${execResult.materialized.length} materialized.`,
   );
   return { exitCode: ExitCodes.SUCCESS, stdout, stderr };
 }
 
-export function hardSwitchCommand(): Command {
-  const cmd = new Command("hard-switch")
+export function applyProfileCommand(): Command {
+  const cmd = new Command("apply-profile")
     .description(
-      "Hard switch to specified Profile (mount-state filesystem mutation). Requires --yes for headless mode.",
+      "Apply the specified Profile (mount-state filesystem mutation). Requires --yes for headless mode.",
     )
     .argument("<profile-uid>", "Target Profile UID")
     .requiredOption("--vault <path>", "Path to Obsidian vault")
     .option(
       "--yes",
-      "Confirm hard switch (headless mode safety override per RFC 22b50a17 Decision #2)",
+      "Confirm apply (headless mode safety override per RFC 22b50a17 Decision #2)",
       false,
     )
     .option("--verbose", "Print plan summary to stderr before deciding", false)
@@ -249,9 +249,9 @@ export function hardSwitchCommand(): Command {
       "--token <pat>",
       "GitHub PAT for private-repo materialisation (or env GITHUB_TOKEN / GH_TOKEN)",
     )
-    .action(async (profileUid: string, opts: HardSwitchCommandOptions) => {
+    .action(async (profileUid: string, opts: ApplyProfileCommandOptions) => {
       try {
-        const result = await runHardSwitch(profileUid, opts);
+        const result = await runApplyProfile(profileUid, opts);
         process.exit(result.exitCode);
       } catch (e) {
         ErrorHandler.handle(e as Error);
