@@ -1,7 +1,7 @@
 import type {
   ISettingsStore,
   SwitchSettings,
-} from "./FocusProfileSwitchManager";
+} from "./ProfileApplyManager";
 import type { PluginLocalDataStore } from "./PluginLocalDataStore";
 
 /**
@@ -21,7 +21,7 @@ import type { PluginLocalDataStore } from "./PluginLocalDataStore";
  * one-time legacy-keys migration BEFORE constructing this adapter.
  *
  * The `ISettingsStore` interface contract is unchanged — `load()` /
- * `save()` shape matches what `FocusProfileSwitchManager` and tests
+ * `save()` shape matches what `ProfileApplyManager` and tests
  * already use.
  */
 export class PluginSettingsStoreAdapter implements ISettingsStore {

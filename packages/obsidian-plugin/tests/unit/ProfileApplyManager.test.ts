@@ -1,7 +1,7 @@
 import type { App } from "obsidian";
 
 import {
-  FocusProfileSwitchManager,
+  ProfileApplyManager,
   TS_FLOOR_ONTOLOGY_URIS,
   type IProfileResolver,
   type IRdfIndexer,
@@ -9,7 +9,7 @@ import {
   type ProfileResolution,
   type SwitchJournalEntry,
   type SwitchSettings,
-} from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
+} from "../../src/infrastructure/adapters/ProfileApplyManager";
 import { PluginLockManager } from "../../src/infrastructure/adapters/PluginLockManager";
 
 // RFC 0a0791c1 Phase 5 T2 — the public soft `switchProfile` was removed. Its
@@ -17,7 +17,7 @@ import { PluginLockManager } from "../../src/infrastructure/adapters/PluginLockM
 // `reindexMountState` helper (reached via the «Apply profile» no-op exit and
 // `recoverIfNeeded`). These tests drive that helper directly via a typed cast.
 type Reindexable = { reindexMountState(uid: string): Promise<void> };
-const reindex = (mgr: FocusProfileSwitchManager, uid: string): Promise<void> =>
+const reindex = (mgr: ProfileApplyManager, uid: string): Promise<void> =>
   (mgr as unknown as Reindexable).reindexMountState(uid);
 
 // ─── Fake App / vault.adapter ────────────────────────────────────────────
@@ -105,7 +105,7 @@ interface Harness {
   rdf: FakeRdfIndexer;
   settings: FakeSettingsStore;
   lockMgr: PluginLockManager;
-  mgr: FocusProfileSwitchManager;
+  mgr: ProfileApplyManager;
   notifyCalls: string[];
   clock: { current: Date; advance: (ms: number) => void };
 }
@@ -130,7 +130,7 @@ function makeHarness(opts: {
   };
   const lockMgr = new PluginLockManager({ app, pid: "fixed-pid", now: () => current });
   const notifyCalls: string[] = [];
-  const mgr = new FocusProfileSwitchManager({
+  const mgr = new ProfileApplyManager({
     app,
     lockMgr,
     resolver,
@@ -153,7 +153,7 @@ const ONTO_TBANK = "https://exocortex.my/ontology/tbank";
 
 // ─── resolveEffectiveSet + TS-floor ──────────────────────────────────────
 
-describe("FocusProfileSwitchManager.resolveEffectiveSet — TS-floor (Vision Lock #17)", () => {
+describe("ProfileApplyManager.resolveEffectiveSet — TS-floor (Vision Lock #17)", () => {
   it("includes TS-floor URIs even when profile has empty includes/overlay", async () => {
     const { mgr } = makeHarness({
       profiles: [
@@ -215,7 +215,7 @@ describe("FocusProfileSwitchManager.resolveEffectiveSet — TS-floor (Vision Loc
 
 // ─── computeDerivedSet — inheritance ─────────────────────────────────────
 
-describe("FocusProfileSwitchManager.computeDerivedSet — _extends chain", () => {
+describe("ProfileApplyManager.computeDerivedSet — _extends chain", () => {
   it("walks _imports transitively and accumulates parent _includes", async () => {
     // RFC 01a83de8 Phase 2 — the derived set is the union of _includes along
     // the single-parent _imports chain (base's library AssetSpaces are
@@ -307,7 +307,7 @@ describe("FocusProfileSwitchManager.computeDerivedSet — _extends chain", () =>
 
 // ─── reindexMountState happy path ────────────────────────────────────────────
 
-describe("FocusProfileSwitchManager.reindexMountState — happy path (apply reindex)", () => {
+describe("ProfileApplyManager.reindexMountState — happy path (apply reindex)", () => {
   it("persists settings BEFORE re-index (Architect #2 atomicity)", async () => {
     const h = makeHarness({
       profiles: [
@@ -382,7 +382,7 @@ describe("FocusProfileSwitchManager.reindexMountState — happy path (apply rein
 
 // ─── reindexMountState lock concurrency ──────────────────────────────────────
 
-describe("FocusProfileSwitchManager.reindexMountState — lock contention", () => {
+describe("ProfileApplyManager.reindexMountState — lock contention", () => {
   it("throws when lock already held by foreign holder", async () => {
     const h = makeHarness({
       profiles: [
@@ -421,7 +421,7 @@ describe("FocusProfileSwitchManager.reindexMountState — lock contention", () =
 
 // ─── reindexMountState failure journal ────────────────────────────────────────
 
-describe("FocusProfileSwitchManager.reindexMountState — failure path", () => {
+describe("ProfileApplyManager.reindexMountState — failure path", () => {
   it("writes failed journal entry when re-index throws", async () => {
     const h = makeHarness({
       profiles: [
@@ -469,7 +469,7 @@ describe("FocusProfileSwitchManager.reindexMountState — failure path", () => {
 
 // ─── recoverIfNeeded ──────────────────────────────────────────────────────
 
-describe("FocusProfileSwitchManager.recoverIfNeeded", () => {
+describe("ProfileApplyManager.recoverIfNeeded", () => {
   it("returns {recovered:false} when no journal exists", async () => {
     const h = makeHarness({ profiles: [] });
     const res = await h.mgr.recoverIfNeeded();

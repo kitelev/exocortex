@@ -95,7 +95,7 @@ import {
   type FocusProfileChoice,
   type IAssetSpacePusher,
 } from "./infrastructure/adapters/FocusProfileCommands";
-import { FocusProfileSwitchManager } from "./infrastructure/adapters/FocusProfileSwitchManager";
+import { ProfileApplyManager } from "./infrastructure/adapters/ProfileApplyManager";
 import { PluginLockManager } from "./infrastructure/adapters/PluginLockManager";
 import { VaultProfileResolver } from "./infrastructure/adapters/VaultProfileResolver";
 import { PluginRdfIndexerAdapter } from "./infrastructure/adapters/PluginRdfIndexerAdapter";
@@ -235,13 +235,13 @@ export default class ExocortexPlugin extends Plugin {
   private eagerInitPromise: Promise<void> | null = null;
 
   /**
-   * Issue #3320 — FocusProfileSwitchManager hoisted onto the plugin instance
+   * Issue #3320 — ProfileApplyManager hoisted onto the plugin instance
    * so onload recovery / reconcile reuse the single manager без re-constructing
    * a second one (which would race the original on the same persisted lock
    * file). Initialized in `registerFocusProfileCommands()`; null until that
    * call succeeds.
    */
-  public focusProfileSwitchManager: FocusProfileSwitchManager | null = null;
+  public profileApplyManager: ProfileApplyManager | null = null;
 
   /**
    * Issue #3320 — profile choice lister hoisted alongside the switch
@@ -1008,7 +1008,7 @@ export default class ExocortexPlugin extends Plugin {
           // clears+rebuilds the store from frontmatter), re-inject the
           // runtime-derived `exo:AssetSpace_materialized` triples via
           // `refreshAndInjectAssetSpaceMaterialization`. Soft- and hard-
-          // switch paths via `FocusProfileSwitchManager` are covered by
+          // switch paths via `ProfileApplyManager` are covered by
           // `PluginRdfIndexerAdapter.onAfterRefresh`; these onload chain
           // callsites use `sparql.refresh()` directly which bypasses the
           // adapter, so they call the helper explicitly.
@@ -2389,7 +2389,7 @@ export default class ExocortexPlugin extends Plugin {
    * («Switch focus profile», «Push current assetspace»). Wires the B.7
    * `FocusProfileCommands` handler with real adapters:
    *
-   *   - B.4 `FocusProfileSwitchManager`: persisted lock + journal + RDF
+   *   - B.4 `ProfileApplyManager`: persisted lock + journal + RDF
    *     re-index с effective ontology filter.
    *   - B.3 `AssetSpaceManager`: GitHub PAT-backed AssetSpace push (only
    *     constructed when PAT is configured in `data.local.json`; absent
@@ -2413,7 +2413,7 @@ export default class ExocortexPlugin extends Plugin {
    *  - `metadataCache.resolved` chain (initial cold-start + active-
    *    FocusProfile re-apply path),
    *  - `PluginRdfIndexerAdapter.onAfterRefresh` so soft- and hard-
-   *    switch paths via `FocusProfileSwitchManager` re-inject
+   *    switch paths via `ProfileApplyManager` re-inject
    *    automatically.
    *
    * Best-effort: tracker / injection failures are logged warn but do
@@ -2446,7 +2446,7 @@ export default class ExocortexPlugin extends Plugin {
     const resolver = new VaultProfileResolver(this.app);
     // RFC 22b50a17 Phase 4 (H1 cascade catch — advisor round-2) — wire
     // `refreshAndInjectAssetSpaceMaterialization` as the post-refresh
-    // hook so soft- + hard-switch paths via `FocusProfileSwitchManager`
+    // hook so soft- + hard-switch paths via `ProfileApplyManager`
     // re-inject `exo:AssetSpace_materialized` triples automatically after
     // every `rdfIndexer.refresh()`. Without this, profile switching
     // would silently drop the runtime-derived materialization triples
@@ -2536,7 +2536,7 @@ export default class ExocortexPlugin extends Plugin {
 
     // RFC 01a83de8 Phase 3 T2 — cross-platform (incl. iOS) REST/tarball mount.
     // Built on BOTH platforms: the mobile profile-switch path consumes it
-    // (`FocusProfileSwitchManager.restSwitchProfile`), and it's harmless on
+    // (`ProfileApplyManager.restSwitchProfile`), and it's harmless on
     // desktop (the desktop hard switch keeps the git-binary path). Best-effort
     // — a wiring failure logs + leaves restMount null (mobile switch then
     // surfaces a clear "not wired" error instead of crashing onload).
@@ -2554,7 +2554,7 @@ export default class ExocortexPlugin extends Plugin {
     const confirmGate =
       hardSwitchDeps?.confirmGate ?? new ModalConfirmGate(this.app);
 
-    const switchMgr = new FocusProfileSwitchManager({
+    const switchMgr = new ProfileApplyManager({
       app: this.app,
       lockMgr,
       resolver,
@@ -2577,10 +2577,10 @@ export default class ExocortexPlugin extends Plugin {
     // Issue #3320 — expose the manager на plugin instance so onload recovery /
     // reconcile reuse it. Re-constructing a second manager would race the
     // original on the same lock file.
-    this.focusProfileSwitchManager = switchMgr;
+    this.profileApplyManager = switchMgr;
 
     // Crash-recovery: если previous session left `_switchInProgress=true`
-    // в settings (FocusProfileSwitchManager docstring line 18), re-trigger
+    // в settings (ProfileApplyManager docstring line 18), re-trigger
     // the idempotent re-index so the flag self-clears. Failure swallowed —
     // user-facing recovery is а Phase D follow-up; the only side-effect
     // of skipping this is the «stuck switch in progress» footgun (code-
@@ -2739,7 +2739,7 @@ export default class ExocortexPlugin extends Plugin {
     // so any hotkey a user already bound survives the rename (Obsidian persists
     // hotkeys by command id). Only the user-facing name changes.
     // Register on desktop (git-binary hard switch) OR mobile when the REST
-    // mount is wired (FocusProfileSwitchManager dispatches to restSwitchProfile
+    // mount is wired (ProfileApplyManager dispatches to restSwitchProfile
     // on mobile). Without either, the filesystem materialisation can't run, so
     // the command stays hidden.
     if (hardSwitchDeps !== null || (Platform.isMobile && restMount !== null)) {

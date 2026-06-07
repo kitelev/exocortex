@@ -1,5 +1,5 @@
 /**
- * FocusProfileSwitchManager.restSwitchProfile() — RFC 01a83de8 Phase 3 T2.
+ * ProfileApplyManager.restSwitchProfile() — RFC 01a83de8 Phase 3 T2.
  *
  * Mobile-capable profile switch via REST/tarball mount/unmount (no git binary,
  * staging, cache, or git commit). Visibility is mount-state: an AssetSpace is
@@ -14,7 +14,7 @@
  *   3. R24 TS-floor — target excluding a floor AS throws before any mutation.
  *   4. ConfirmGate decline → HardSwitchAbortedByUser, no mount/unmount.
  *   5. Not wired — missing restMount throws a clear error.
- *   6. Dispatch — hardSwitchKnowledgeProfile on mobile delegates to
+ *   6. Dispatch — applyProfile on mobile delegates to
  *      restSwitchProfile (REST path; gitOps never touched).
  *
  * Fakes mirror the desktop hardSwitch harness: in-memory vault.adapter
@@ -27,7 +27,7 @@ import type { App, TFile } from "obsidian";
 import type { HardSwitchPlan, IConfirmGate } from "exocortex";
 
 import {
-  FocusProfileSwitchManager,
+  ProfileApplyManager,
   HardSwitchAbortedByUser,
   TsFloorViolationError,
   type IProfileResolver,
@@ -35,7 +35,7 @@ import {
   type ISettingsStore,
   type ProfileResolution,
   type SwitchSettings,
-} from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
+} from "../../src/infrastructure/adapters/ProfileApplyManager";
 import { PluginLockManager } from "../../src/infrastructure/adapters/PluginLockManager";
 import {
   TS_FLOOR_AS_UID_EXO,
@@ -273,7 +273,7 @@ function setup(opts: SetupOpts) {
   const factoryMount = new FakeRestMount();
   const gitOps = new FakeGitOps();
 
-  const mgr = new FocusProfileSwitchManager({
+  const mgr = new ProfileApplyManager({
     app,
     lockMgr,
     resolver,
@@ -304,7 +304,7 @@ const ALL_FLOOR_UIDS = TS_FLOOR.map((f) => f.uid);
 
 // ─── Tests ────────────────────────────────────────────────────────────────
 
-describe("FocusProfileSwitchManager.restSwitchProfile", () => {
+describe("ProfileApplyManager.restSwitchProfile", () => {
   it("unmounts to-destroy + mounts to-materialize, persists profile + re-indexes", async () => {
     // Currently materialised: floors + kpc. Target: floors + ems (NOT kpc).
     const { mgr, indexer, localDataStore, restMount } = setup({
@@ -409,7 +409,7 @@ describe("FocusProfileSwitchManager.restSwitchProfile", () => {
   });
 });
 
-describe("hardSwitchKnowledgeProfile dispatch (mobile → REST)", () => {
+describe("applyProfile dispatch (mobile → REST)", () => {
   const original = Platform.isMobile;
   afterEach(() => {
     (Platform as unknown as { isMobile: boolean }).isMobile = original;
@@ -423,7 +423,7 @@ describe("hardSwitchKnowledgeProfile dispatch (mobile → REST)", () => {
       wireGitOps: true,
     });
 
-    await mgr.hardSwitchKnowledgeProfile("target");
+    await mgr.applyProfile("target");
 
     // REST path exercised…
     expect(restMount.mounted.map((m) => m.submodulePath)).toEqual([

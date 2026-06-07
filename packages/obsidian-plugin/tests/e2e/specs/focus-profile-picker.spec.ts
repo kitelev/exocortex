@@ -38,7 +38,7 @@ import * as path from "path";
  *   fixture-resolution gap. The profile picker has NO such gap:
  *   `VaultProfileResolver.listFocusProfileFiles` discovers profiles by a plain
  *   substring match on the raw `exo__Instance_class` frontmatter string
- *   (`instanceClassContains` → `c.includes(FOCUS_PROFILE_CLASS_UID)`), reading
+ *   (`instanceClassContains` → `c.includes(PROFILE_CLASS_UID)`), reading
  *   straight from `metadataCache` — no triple-store IRI expansion. The
  *   fixtures therefore carry the class in UUID form
  *   (`[[3de846cd-1f0e-4f98-8613-b8587aa15174]]`) and the picker list is
@@ -55,7 +55,7 @@ import * as path from "path";
  * `.suggestion-item` assertion then times out and this spec FAILS.
  */
 
-const FOCUS_PROFILE_CLASS_UID = "3de846cd-1f0e-4f98-8613-b8587aa15174";
+const PROFILE_CLASS_UID = "3de846cd-1f0e-4f98-8613-b8587aa15174";
 const APPLY_PROFILE_COMMAND_ID = "exocortex:hard-switch-focus-profile";
 const FIXTURE_LABELS = [
   "E2E Focus Profile Base",
@@ -163,7 +163,7 @@ test.describe("Focus profile picker — render smoke", () => {
               }
             }
             return count;
-          }, FOCUS_PROFILE_CLASS_UID),
+          }, PROFILE_CLASS_UID),
         {
           timeout: 30000,
           message: "FocusProfile fixtures not discoverable in metadataCache",

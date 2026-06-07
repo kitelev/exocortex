@@ -549,10 +549,10 @@ export class ExocortexSettingTab extends PluginSettingTab {
    *     empty in v3 — its docstring explicitly says «Settings UI wires
    *     getCacheStats() and shows zeros — acceptable»).
    *
-   *   - FocusProfileSwitchManager is NOT constructed here — it would race
+   *   - ProfileApplyManager is NOT constructed here — it would race
    *     the manager from registerFocusProfileCommands on the persisted
    *     lock file. Plugin exposes a hoisted instance via
-   *     `plugin.focusProfileSwitchManager`.
+   *     `plugin.profileApplyManager`.
    *
    *   - GitHubRestClient requires the PAT, so it cannot be a stable field;
    *     constructed inside the Test-connection callback against the freshly

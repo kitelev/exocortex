@@ -34,13 +34,13 @@ import type { App, TFile } from "obsidian";
 import type { HardSwitchPlan, IConfirmGate } from "exocortex";
 
 import {
-  FocusProfileSwitchManager,
+  ProfileApplyManager,
   type IProfileResolver,
   type IRdfIndexer,
   type ISettingsStore,
   type ProfileResolution,
   type SwitchSettings,
-} from "../../../src/infrastructure/adapters/FocusProfileSwitchManager";
+} from "../../../src/infrastructure/adapters/ProfileApplyManager";
 import { PluginLockManager } from "../../../src/infrastructure/adapters/PluginLockManager";
 import {
   TS_FLOOR_AS_UID_EXO,
@@ -441,7 +441,7 @@ describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
     const assetSpaceManager = new FakePullingAssetSpaceManager();
     const cacheLayer = new SwitchCacheLayer({ cacheDir: setup.cacheDir });
 
-    const mgr = new FocusProfileSwitchManager({
+    const mgr = new ProfileApplyManager({
       app,
       lockMgr,
       resolver: new FakeResolver(profiles),
