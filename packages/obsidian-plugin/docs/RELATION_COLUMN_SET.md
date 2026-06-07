@@ -30,10 +30,10 @@ The 7 required ontology assets (`!ui` ontology root, `ui__RelationColumnSet`
 class, and 5 `ui__RelationColumnSet_*` properties) are not auto-installed by
 the plugin (see #3125). Install them yourself via one of:
 
-- Copy the `ui/` ontology folder from
-  [`kitelev/exocortex-starter-kit`](https://github.com/kitelev/exocortex-starter-kit)
-  into your vault (any folder — plugin reads by UUID, not by path).
-- Or add the starter-kit as a git submodule under `assetspaces/ui/` per
+- Add the `ui/` ontology AssetSpace via **Cmd/Ctrl+P → "Exocortex: Add
+  assetspace by URL"**, pointing it at the repo that hosts the
+  `ui__RelationColumnSet` ontology (any folder — plugin reads by UUID, not by path).
+- Or wire that ontology repo as a git submodule under `assetspaces/ui/` per
   RFC-D vault layout.
 
 If the ontology is absent the plugin loads without error; `RelationColumnSet`
@@ -83,8 +83,8 @@ frontmatter forms below are therefore equivalent:
   copy-pasteable example above)
 - `[[ems__WeeklyObjective|Weekly Objective]]` (non-UUID target ⇒ target
   wins, alias is display-only)
-- `[[97fc9862-c886-4d86-9a60-e0cf9d778575|ems__WeeklyObjective]]` (starter-kit
-  convention — UUID target ⇒ alias wins, starter-kit assets use this form)
+- `[[97fc9862-c886-4d86-9a60-e0cf9d778575|ems__WeeklyObjective]]` (convention
+  — UUID target ⇒ alias wins, AssetSpace assets use this form)
 
 Row-side `exo__Instance_class` values from the vault are normalized under
 the same rules, so a `ui__RelationColumnSet` config parsed in any form

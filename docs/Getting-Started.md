@@ -1,6 +1,6 @@
 # Getting Started with Exocortex
 
-**Set up Exocortex — an ontology-driven knowledge management plugin for Obsidian. Requires: Obsidian desktop, basic terminal knowledge.**
+**Set up Exocortex — an ontology-driven knowledge management plugin for Obsidian. Requires: Obsidian desktop, git installed, basic terminal knowledge.**
 
 ---
 
@@ -12,14 +12,14 @@ Exocortex has been verified to work with the following minimum versions. Older v
 | ------------------------- | --------------- | -------------- | ----------------------------------------------------- |
 | **Obsidian**              | 1.5.0           | 1.7.0 or newer | Plugin uses APIs available since 1.5.                 |
 | **Exocortex plugin**      | v15.90.9        | Latest release | Fixes for createAsset, IRI resolution, targetValue.   |
-| **Exocortex Starter Kit** | v1.3.4          | Latest release | $input → service_call conversions for Set/Shift/Plan. |
+| **git** (CLI)             | 2.x             | Latest         | The «Bootstrap vault» command clones ontology AssetSpaces via git. |
 | **BRAT**                  | Latest          | Latest         | Delivers plugin updates automatically.                |
 
 ### How to check your versions
 
 - **Obsidian**: Settings → About → "Current version".
 - **Exocortex plugin**: Settings → Community plugins → Exocortex → "Installed" line. You can also open `.obsidian/plugins/exocortex/manifest.json` in your vault — the `version` field is authoritative.
-- **Starter Kit**: the starter kit does not ship a version file; verify you downloaded `exocortex-starter-kit.zip` from the **latest** release at `https://github.com/kitelev/exocortex-starter-kit/releases/latest`. If action buttons do not appear or dialogs write literal `$input`, re-download the latest zip.
+- **git**: run `git --version` in a terminal. If it is missing, install it (macOS: `xcode-select --install` or `brew install git`; Windows: [git-scm.com](https://git-scm.com/download/win)) before bootstrapping — the «Bootstrap vault» command shells out to `git` to clone the ontology AssetSpaces.
 
 If any component is below the minimum, update it before continuing.
 
@@ -81,17 +81,22 @@ You describe your entities (tasks, projects, areas, or any custom type) in YAML 
 
 BRAT will automatically keep the plugin updated with new releases.
 
-### Step 2: Install Starter Kit
+### Step 2: Bootstrap your vault
 
-The plugin needs ontology files in your vault to enable action buttons and commands. Download and extract the Starter Kit:
+The plugin needs ontology files in your vault to enable action buttons and commands. Rather than downloading anything by hand, the plugin pulls them straight from public GitHub repositories using its built-in **Bootstrap vault** command.
 
-1. Go to the [Starter Kit Release](https://github.com/kitelev/exocortex-starter-kit/releases/latest)
-2. Download `exocortex-starter-kit.zip`
-3. Extract the ZIP into your vault (any folder works — the plugin scans the entire vault)
-   - Recommended: extract into a folder like `Knowledge/` or at the vault root
-   - The ZIP contains several folders: `exocmd/` (command definitions), `pn/` (DailyNote properties), `exo/` (core ontology), `ems/` (effort classes and statuses), `ims/` (information-management concepts), `period/` (time periods), `ztlk/` (Zettelkasten notes), `uj/` (user journeys), `01 Inbox/` (sample inbox), `docs/` (additional guides), and utility folders (`assets/`, `invariants/`, `layouts/`, `scripts/`).
+1. Open the command palette: **Cmd/Ctrl + P**
+2. Run **"Exocortex: Bootstrap vault"**
+3. In the dialog, fill the two foundational AssetSpace fields:
+   - **exo ontology URL**: `https://github.com/kitelev/exoas-exo` — core ontology (classes, properties, IRI resolution)
+   - **exocmd ontology URL**: `https://github.com/kitelev/exoas-exocmd` — command definitions that generate the action buttons
+4. Click **Bootstrap**. The plugin clones both repositories into your vault via `git` and indexes them automatically — no restart needed.
 
-The plugin detects new files automatically — no restart needed.
+> **Notes**
+>
+> - Both repositories are **public**, so no GitHub token is required.
+> - The URLs above are the official starter AssetSpaces. You can point the fields at your own forks instead — they are placeholders, not hard-coded.
+> - Need more ontologies later (e.g. `ims`, `pn`, `period`, `ztlk`)? Add each one via **Cmd/Ctrl + P → "Exocortex: Add assetspace by URL"**. Dependencies are **not** pulled automatically.
 
 ### Step 3: Verify Installation
 
@@ -118,9 +123,9 @@ exo__Asset_label: Test Area
 
 **If action buttons are missing but the layout appears:**
 
-> **What are "action buttons"?** They are clickable controls — Create Task, Set Status Doing, Plan on Today, etc. — that the plugin generates from the Starter Kit's `exocmd/` folder. They are different from the small **filter/toggle buttons** at the top of widgets (Show Effort Area, Show Votes, Hide Empty Slots), which are built into the plugin and work without the Starter Kit.
+> **What are "action buttons"?** They are clickable controls — Create Task, Set Status Doing, Plan on Today, etc. — that the plugin generates from the **exocmd AssetSpace** you bootstrapped. They are different from the small **filter/toggle buttons** at the top of widgets (Show Effort Area, Show Votes, Hide Empty Slots), which are built into the plugin and work without any AssetSpace.
 
-- Verify the Starter Kit files are in your vault (look for an `exocmd/` folder)
+- Verify the AssetSpaces were mounted (look for an `exocmd/` folder in your vault — created by **Bootstrap vault** in Step 2)
 - If the `exocmd/` folder is present and the plugin loads cleanly, fully **quit and reopen Obsidian** (cold restart) to force re-indexing
 - Try Cmd/Ctrl+P → "Reload Layout"
 
@@ -364,14 +369,14 @@ These are the most common problems encountered by first-time users. Start here b
 
 **Symptom**: The note opens but there is no properties table, no action buttons, nothing below the frontmatter.
 
-> **Action buttons vs. filter buttons**: "Action buttons" means **Create Task / Set Status Doing / Plan on Today** and similar — generated by the plugin from the Starter Kit's `exocmd/` folder. They are different from the **filter/toggle buttons** (Show Effort Area, Show Votes, Hide Empty Slots) that sit at the top of widgets and work without the Starter Kit. If your filter buttons are present but action buttons are missing, you have a Starter Kit problem, not a plugin problem.
+> **Action buttons vs. filter buttons**: "Action buttons" means **Create Task / Set Status Doing / Plan on Today** and similar — generated by the plugin from the exocmd AssetSpace's `exocmd/` folder. They are different from the **filter/toggle buttons** (Show Effort Area, Show Votes, Hide Empty Slots) that sit at the top of widgets and work without the exocmd AssetSpace. If your filter buttons are present but action buttons are missing, you have an AssetSpace problem, not a plugin problem.
 
 **Cause**: Exocortex only renders in **Reading Mode**. In Edit Mode (Live Preview or Source), the layout does not appear.
 
 **Fix**:
 
 1. Press **Ctrl/Cmd + E** to switch to Reading Mode.
-2. If still empty, verify the note's `exo__Instance_class` resolves to a known class (`ems__Area`, `ems__Project`, `ems__Task`, `pn__DailyNote`, etc.) and that the target class file exists in the vault (it comes from the Starter Kit).
+2. If still empty, verify the note's `exo__Instance_class` resolves to a known class (`ems__Area`, `ems__Project`, `ems__Task`, `pn__DailyNote`, etc.) and that the target class file exists in the vault (it comes from the bootstrapped AssetSpaces).
 3. Try **Cmd/Ctrl + P → "Reload Layout"**.
 
 ### "Wiki-links to classes are grey (broken)"
@@ -380,15 +385,15 @@ These are the most common problems encountered by first-time users. Start here b
 
 **Causes** (in order of likelihood):
 
-1. The Starter Kit is not installed — the referenced class files do not exist in the vault.
-2. The Starter Kit is installed but Obsidian has not indexed the new files yet.
+1. The AssetSpaces have not been bootstrapped — the referenced class files do not exist in the vault.
+2. The AssetSpaces have been bootstrapped but Obsidian has not indexed the new files yet.
 3. You dragged files into the vault outside Obsidian and the cache is stale.
 
 **Fix**:
 
 1. Confirm the `exocmd/`, `ems/`, `exo/`, `pn/`, and `period/` folders exist somewhere in your vault (any location works).
 2. Reload the vault: **Cmd/Ctrl + P → "Reload app without saving"**.
-3. If the folders are missing, re-download `exocortex-starter-kit.zip` from the latest release and extract into your vault.
+3. If the folders are missing, re-run **Cmd/Ctrl+P → "Exocortex: Bootstrap vault"** (or **"Exocortex: Add assetspace by URL"** for a single space) to re-clone the AssetSpace.
 
 ### "The Exocortex plugin is not loading"
 
@@ -399,7 +404,7 @@ These are the most common problems encountered by first-time users. Start here b
 1. Open Settings → Community plugins and confirm Exocortex is **toggled on** (not just installed).
 2. Open `exocortex-logs.txt` in your **vault root**. This file is written by the plugin and captures startup errors. Search for lines starting with `[ERROR]` or `Failed` to see why initialization failed.
 3. Open Obsidian's developer console: **Ctrl/Cmd + Shift + I → Console**. Exocortex logs initialization there as well.
-4. If the log mentions schema or RDF errors, a Starter Kit file may be corrupted — re-download the zip.
+4. If the log mentions schema or RDF errors, a bootstrapped AssetSpace file may be corrupted — re-run **Cmd/Ctrl+P → "Exocortex: Bootstrap vault"** (or **"Exocortex: Add assetspace by URL"** for a single space) to re-clone the AssetSpace.
 5. As a last resort, disable the plugin, restart Obsidian, re-enable it.
 
 ### "BRAT URL `obsidian://brat?plugin=...` does nothing (Windows)"
@@ -429,9 +434,9 @@ These are the most common problems encountered by first-time users. Start here b
 
 **Symptom**: You click Set Result, Set Planned Start, or similar; the dialog accepts your input; but the property is stored as the literal string `$input` instead of your value.
 
-**Cause**: You are running a Starter Kit older than **v1.3.4**. Earlier versions used `property_set` grounding which does not substitute `$input`.
+**Cause**: Your exocmd AssetSpace is out of date. Older command definitions used `property_set` grounding which does not substitute `$input`.
 
-**Fix**: Update the Starter Kit to v1.3.4 or newer. Download the latest `exocortex-starter-kit.zip` and extract into your vault, overwriting the old `exocmd/` folder.
+**Fix**: Re-run **Cmd/Ctrl+P → "Exocortex: Bootstrap vault"** to pull the latest `exoas-exocmd`. Bootstrap always clones the latest `main` of the exocmd repo, so there is no zip version to pin — re-cloning overwrites the old `exocmd/` folder with the current command definitions.
 
 ### General diagnostic: `exocortex-logs.txt`
 
@@ -464,7 +469,7 @@ These are design decisions or rough edges that are **expected** in the current r
 
 ### `Create Area` requires an `01 Areas/` folder
 
-- The Starter Kit's **Create Area** grounding is configured with `targetFolder: 01 Areas`, meaning Obsidian creates a `01 Areas/` folder at the vault root on the first run.
+- The exocmd AssetSpace's **Create Area** grounding is configured with `targetFolder: 01 Areas`, meaning Obsidian creates a `01 Areas/` folder at the vault root on the first run.
 - If you prefer a different layout, you can edit the grounding file at `exocmd/creation/e72a5fa1-a902-4508-b671-bde8a1461a02.md` and change `exocmd__Grounding_targetFolder`.
 - A configuration UI for this is on the roadmap.
 
@@ -476,13 +481,13 @@ These are design decisions or rough edges that are **expected** in the current r
 
 ### First-run indexing takes a moment
 
-- When you install the Starter Kit for the first time, the plugin needs a few seconds to index 150+ ontology files.
+- When you bootstrap the AssetSpaces for the first time, the plugin needs a few seconds to index 150+ ontology files.
 - If buttons or class links look stale on the first opening of a note, switch tabs or run **Reload Layout** once.
 
 ### `property_set` grounding does not substitute user input
 
 - If you author custom grounding files, be aware that `property_set` only substitutes `$target`, `$now`, and `$today`. It does **not** substitute `$input` or `$value`.
-- For any user-input property update, use a `service_call` grounding with `updateProperty` — see the Starter Kit's `Set Planned Start` grounding as a reference template.
+- For any user-input property update, use a `service_call` grounding with `updateProperty` — see the exocmd AssetSpace's `Set Planned Start` grounding as a reference template.
 
 ---
 
@@ -496,7 +501,7 @@ Exocortex is in active development and feedback from early users is highly valua
 
 When reporting a broken button or grounding, the most useful data is:
 
-1. Plugin version (`manifest.json`) and Starter Kit zip date.
+1. Plugin version (`manifest.json`) and the date you last ran **Bootstrap vault** (or the cloned `exocmd/` commit).
 2. The exact button label you clicked.
 3. The target note's full frontmatter.
 4. The last 30 lines of `exocortex-logs.txt` around the click.
@@ -537,11 +542,11 @@ For the full diagnostic walkthrough see [Troubleshooting](#troubleshooting) abov
 | Problem                   | First thing to try                                                                                                                                               |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Layout doesn't appear     | Switch to Reading Mode (Ctrl/Cmd + E)                                                                                                                            |
-| No action buttons visible | Verify Starter Kit is installed (`exocmd/` folder exists in vault); if the folder is present, fully quit and reopen Obsidian (cold restart) to force re-indexing |
+| No action buttons visible | Verify the AssetSpaces are bootstrapped (`exocmd/` folder exists in vault); if the folder is present, fully quit and reopen Obsidian (cold restart) to force re-indexing |
 | Action buttons don't work | Read `exocortex-logs.txt` in vault root; check console (Ctrl/Cmd + Shift + I)                                                                                    |
-| Wiki-links grey           | Reload app without saving (Cmd/Ctrl + P); re-extract Starter Kit zip if folders missing                                                                          |
+| Wiki-links grey           | Reload app without saving (Cmd/Ctrl + P); re-run **Exocortex: Bootstrap vault** if folders missing                                                               |
 | Daily tasks not showing   | Check task has `ems__Effort_plannedStartTimestamp` matching daily note's `pn__DailyNote_day`                                                                     |
-| Literal `$input` written  | Update Starter Kit to v1.3.4 or newer                                                                                                                            |
+| Literal `$input` written  | Re-run **Exocortex: Bootstrap vault** to pull the latest `exoas-exocmd`                                                                                           |
 
 ---
 
@@ -549,4 +554,4 @@ For the full diagnostic walkthrough see [Troubleshooting](#troubleshooting) abov
 
 - **Documentation**: See [full documentation index](../README.md#documentation)
 - **Report a bug or request a feature**: [GitHub Issues](https://github.com/kitelev/exocortex/issues) — see [Feedback](#feedback) for what to include
-- **Starter Kit releases**: [github.com/kitelev/exocortex-starter-kit/releases](https://github.com/kitelev/exocortex-starter-kit/releases)
+- **AssetSpace repositories**: [github.com/kitelev/exoas-exo](https://github.com/kitelev/exoas-exo) (core ontology) and [github.com/kitelev/exoas-exocmd](https://github.com/kitelev/exoas-exocmd) (command definitions)
