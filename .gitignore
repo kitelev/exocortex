@@ -22,6 +22,8 @@ playwright-report-ct*/
 test-results/
 playwright/.cache/
 build-meta.json
+flaky-report.json
+flaky-report-playwright.json
 
 # Debug files
 debug-main.js
