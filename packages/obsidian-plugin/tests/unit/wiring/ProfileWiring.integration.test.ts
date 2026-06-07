@@ -1,5 +1,5 @@
 /**
- * Integration tests для RFC 0a0791c1 FocusProfile wiring (Issue #3327 Item #1).
+ * Integration tests для RFC 0a0791c1 Profile wiring (Issue #3327 Item #1).
  *
  * Covers the wiring surfaces extracted from `ExocortexPlugin`:
  *   (a) `createAssetSpacePusher` with empty PAT → lookup-only stub

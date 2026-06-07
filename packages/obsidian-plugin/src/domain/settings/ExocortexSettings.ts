@@ -215,7 +215,7 @@ export interface ExocortexSettings {
    */
   lazyBootstrapFolders: string[];
   /**
-   * RFC 0a0791c1 — UID of the active `exo__FocusProfile` (or `null` for the
+   * RFC 0a0791c1 — UID of the active `exo__Profile` (or `null` for the
    * full-vault default). When non-null the plugin at onload computes the
    * effective AssetSpace set declared by the profile (transitive `_extends`),
    * translates Ontology references to the AssetSpaces

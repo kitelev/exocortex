@@ -41,7 +41,7 @@ import {
   TS_FLOOR_AS_UID_EXO,
   TS_FLOOR_AS_UID_EXOCMD,
   TS_FLOOR_AS_UID_SHARED_IDENTITIES,
-} from "../../src/infrastructure/adapters/FocusProfileOnloadWiring";
+} from "../../src/infrastructure/adapters/ProfileOnloadWiring";
 
 // ─── Fakes ────────────────────────────────────────────────────────────────
 
@@ -219,7 +219,7 @@ function setup(opts: SetupOpts) {
       frontmatter: {
         exo__Asset_uid: "target",
         exo__Asset_label: "Target Profile",
-        exo__Instance_class: ["[[exo__FocusProfile]]"],
+        exo__Instance_class: ["[[exo__Profile]]"],
       },
     },
     ...ALL_AS.map((as) => {

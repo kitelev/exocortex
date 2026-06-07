@@ -12,7 +12,7 @@ import {
 import { PluginLockManager } from "../../src/infrastructure/adapters/PluginLockManager";
 
 /**
- * RFC 0a0791c1 Phase 5 T2 — the soft RDF-filter path (`softSwitchFocusProfile`
+ * RFC 0a0791c1 Phase 5 T2 — the soft RDF-filter path (`softSwitchProfile`
  * + `switchProfile` / `softSwitchProfile` aliases) was removed. The mount-state
  * apply path remains:
  *   - applyProfile  (destructive filesystem materialize)

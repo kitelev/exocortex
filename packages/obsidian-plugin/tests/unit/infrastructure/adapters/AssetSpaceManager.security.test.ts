@@ -271,7 +271,7 @@ describe("AssetSpaceManager — nowIsoSeconds Z suffix (Issue #3312 MEDIUM #2)",
 
 // ─── MEDIUM #1 cross-file propagation — exported predicate contract ─────
 // The predicate is re-used by `ExocortexPlugin.lookupAssetSpaceUidByFolder`
-// and `FocusProfileOnloadWiring.scanAssetSpaces`; locking its behaviour at
+// and `ProfileOnloadWiring.scanAssetSpaces`; locking its behaviour at
 // the export boundary protects all three call sites with a single suite.
 // Mirrors PR #3296 follow-up commit 14a6abe0 discipline.
 

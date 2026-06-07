@@ -46,7 +46,7 @@ import {
   TS_FLOOR_AS_UID_EXO,
   TS_FLOOR_AS_UID_EXOCMD,
   TS_FLOOR_AS_UID_SHARED_IDENTITIES,
-} from "../../../src/infrastructure/adapters/FocusProfileOnloadWiring";
+} from "../../../src/infrastructure/adapters/ProfileOnloadWiring";
 import { GitSubmoduleOps } from "../../../src/infrastructure/adapters/GitSubmoduleOps";
 import { SwitchCacheLayer } from "../../../src/infrastructure/adapters/SwitchCacheLayer";
 import { UncommittedChangesGuard } from "../../../src/infrastructure/adapters/UncommittedChangesGuard";
@@ -182,7 +182,7 @@ function buildVaultFiles(setup: VaultSetup): FakeFile[] {
       frontmatter: {
         "exo__Asset_uid": "profile-a",
         "exo__Asset_label": "Profile A",
-        "exo__Instance_class": ["[[exo__FocusProfile]]"],
+        "exo__Instance_class": ["[[exo__Profile]]"],
       },
     },
     {
@@ -191,7 +191,7 @@ function buildVaultFiles(setup: VaultSetup): FakeFile[] {
       frontmatter: {
         "exo__Asset_uid": "profile-b",
         "exo__Asset_label": "Profile B",
-        "exo__Instance_class": ["[[exo__FocusProfile]]"],
+        "exo__Instance_class": ["[[exo__Profile]]"],
       },
     },
   ];
