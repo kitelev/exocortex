@@ -81,4 +81,17 @@ describe("CliHardSwitchService.scanVault", () => {
     const svc = new CliHardSwitchService({ vaultPath: root });
     expect(svc.scanVault().infos).toHaveLength(0);
   });
+
+  it("[security] skips a descriptor whose source is un-derivable (file://) — no rmSync-at-root candidate", () => {
+    // A root-level descriptor with an unparseable source must NOT be scanned:
+    // derivePath(file://) is null, and a parent-folder fallback would yield ""
+    // → a destructive rmSync of the vault root. Skipping it is the safe default.
+    const uid = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+    writeFileSync(
+      path.join(root, `${uid}.md`),
+      `---\nexo__Asset_uid: ${uid}\nexo__Instance_class:\n  - "[[${ASSET_SPACE_CLASS_UID}]]"\nexo__AssetSpace_source: "file:///tmp/local-clone"\n---\n`,
+    );
+    const svc = new CliHardSwitchService({ vaultPath: root });
+    expect(svc.scanVault().infos).toHaveLength(0);
+  });
 });

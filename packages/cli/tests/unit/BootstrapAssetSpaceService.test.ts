@@ -616,6 +616,23 @@ describe("BootstrapAssetSpaceService", () => {
         svc.unmountAssetSpace(tempBase, "assetspaces/kitelev/nope"),
       ).not.toThrow();
     });
+
+    it("[security] refuses unsafe submodulePath (empty / traversal / non-assetspaces) WITHOUT mutating", () => {
+      const svc = new BootstrapAssetSpaceService();
+      // Pre-seed a .gitmodules + a sentinel dir at the vault root to prove
+      // nothing is mutated/deleted when the guard fires.
+      svc.ensureGitmodulesEntry(tempBase, "assetspaces/kitelev/exoas-exo", "https://github.com/kitelev/exoas-exo");
+      mkdirSync(path.join(tempBase, "sentinel"), { recursive: true });
+      const gmBefore = readFileSync(path.join(tempBase, ".gitmodules"), "utf8");
+
+      for (const bad of ["", "..", "../escape", "assetspaces/../escape", "notassetspaces/x", "assetspaces"]) {
+        expect(() => svc.unmountAssetSpace(tempBase, bad)).toThrow();
+      }
+      // Vault root + sentinel + .gitmodules all intact.
+      expect(existsSync(tempBase)).toBe(true);
+      expect(existsSync(path.join(tempBase, "sentinel"))).toBe(true);
+      expect(readFileSync(path.join(tempBase, ".gitmodules"), "utf8")).toBe(gmBefore);
+    });
   });
 
   describe("integration: bootstrap full flow (mocked fetch, real fs)", () => {

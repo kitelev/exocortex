@@ -423,12 +423,36 @@ export class BootstrapAssetSpaceService {
    * "not mounted") is more benign than a dangling `[submodule …]` stanza
    * pointing at a folder that no longer exists.
    *
+   * Safety (defense-in-depth): the `rmSync` is recursive+force, so a bad
+   * `submodulePath` (empty, traversal, or non-`assetspaces/`) could escape to
+   * the vault root or an unrelated directory. The path is validated — and the
+   * resolved target confirmed strictly under the vault root — BEFORE any
+   * mutation (including the `.gitmodules` edit).
+   *
    * @param vaultPath absolute vault root.
    * @param submodulePath vault-relative mount folder (e.g. `assetspaces/kitelev/exoas-testlib`).
+   * @throws if `submodulePath` is empty, contains a `..`/`.` segment, is not
+   *   under `assetspaces/`, or resolves outside the vault root.
    */
   unmountAssetSpace(vaultPath: string, submodulePath: string): void {
+    const segments = submodulePath.split("/");
+    if (
+      submodulePath.length === 0 ||
+      !submodulePath.startsWith("assetspaces/") ||
+      segments.some((s) => s.length === 0 || s === "." || s === "..")
+    ) {
+      throw new Error(
+        `unmountAssetSpace: refusing unsafe submodulePath "${submodulePath}"`,
+      );
+    }
+    const root = resolve(vaultPath);
+    const target = resolve(root, submodulePath);
+    if (target === root || !target.startsWith(root + sep)) {
+      throw new Error(
+        `unmountAssetSpace: target "${target}" escapes vault root "${root}"`,
+      );
+    }
     this.removeGitmodulesEntry(vaultPath, submodulePath);
-    const target = join(vaultPath, submodulePath);
     if (existsSync(target)) {
       rmSync(target, { recursive: true, force: true });
     }

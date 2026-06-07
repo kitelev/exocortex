@@ -198,12 +198,19 @@ export class CliHardSwitchService {
           // style, e.g. testlib) legitimately omit it — gating on it would
           // silently drop them from the switch. Label falls back gracefully.
           if (git.length === 0) continue;
+          // Destructive-op safety: the mount folder MUST be DERIVABLE from the
+          // source URL (`assetspaces/<owner>/<repo>` — always traversal-safe,
+          // see AssetSpacePathDeriver). The plugin falls back to the
+          // descriptor's own parent folder when `derivePath` fails, but for the
+          // CLI's destructive `rmSync` that fallback would tear down the
+          // descriptor's registry/location — or the VAULT ROOT for a root-level
+          // descriptor (empty folder). Skip undeterminable descriptors entirely.
+          const folderName = derivePath(git);
+          if (folderName === null) continue;
           const namespace =
             typeof fm["exo__AssetSpace_namespace"] === "string"
               ? (fm["exo__AssetSpace_namespace"] as string)
               : "";
-          const folderName =
-            derivePath(git) ?? parentFolderRelative(full, this.vaultPath);
           const label =
             namespace || lastSegment(folderName) || uid.slice(0, 8);
           seen.add(uid);
@@ -411,13 +418,6 @@ export class CliHardSwitchService {
       return null;
     }
   }
-}
-
-/** Vault-relative `assetspaces/<folder>` of a descriptor's parent directory. */
-function parentFolderRelative(absPath: string, vaultRoot: string): string {
-  const rel = relativeVaultPath(absPath, vaultRoot);
-  const idx = rel.lastIndexOf("/");
-  return idx < 0 ? "" : rel.slice(0, idx);
 }
 
 /** Normalise an absolute path to a forward-slash vault-relative path. */
