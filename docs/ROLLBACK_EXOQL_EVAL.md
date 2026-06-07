@@ -15,7 +15,7 @@ from inline `exocmd__Precondition_sparqlAsk` to a UID reference via
   `evaluateWithExoEval`).
 - Buttons that were previously visible disappear permanently because
   `evaluateQueryRef` returns `false` (resolver returns `null` — asset
-  missing or starter-kit asset not synced into the user's vault).
+  missing or an ontology asset not synced into the user's vault).
 - E2E suite reports systematic 4xx/5xx-equivalent failures on the
   Always-true precondition path.
 
@@ -49,7 +49,7 @@ on the affected binding. Restore the inline body in
 ```yaml
 exocmd__Precondition_sparqlAsk: "ASK { }"
 # Remove this line:
-# exocmd__Precondition_query: "[[<starter-kit-Always-true-UID>]]"
+# exocmd__Precondition_query: "[[<Always-true-precondition-UID>]]"
 ```
 
 Bump `exo__Asset_updatedAt` in the same edit (validate-updatedAt hook).
