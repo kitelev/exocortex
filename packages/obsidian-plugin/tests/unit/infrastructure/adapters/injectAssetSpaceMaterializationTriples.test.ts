@@ -205,7 +205,7 @@ describe("injectAssetSpaceMaterializationTriples", () => {
     ).toBe(0);
 
     // The plugin must re-inject after refresh. This regression test
-    // memorialises the H1 catch (active-FocusProfile path issues a second
+    // memorialises the H1 catch (active-Profile path issues a second
     // refresh after the initial inject; helper must be called again).
     await injectAssetSpaceMaterializationTriples(store, statuses);
     expect(

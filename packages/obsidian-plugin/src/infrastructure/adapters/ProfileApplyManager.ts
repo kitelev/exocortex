@@ -15,7 +15,7 @@ import type { GitSubmoduleOps } from "./GitSubmoduleOps";
 import type { RestAssetSpaceMount } from "./RestAssetSpaceMount";
 import type { UncommittedChangesGuard } from "./UncommittedChangesGuard";
 import type { PluginLocalDataStore } from "./PluginLocalDataStore";
-import { TS_FLOOR_ASSETSPACE_UIDS } from "./FocusProfileOnloadWiring";
+import { TS_FLOOR_ASSETSPACE_UIDS } from "./ProfileOnloadWiring";
 
 /**
  * ProfileApplyManager — coordinates profile switching:

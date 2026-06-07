@@ -6,7 +6,7 @@ import type ExocortexPlugin from '@plugin/ExocortexPlugin';
 /**
  * Application-layer handle to the underlying RDF indexer.
  *
- * Exposes only the operations FocusProfile wiring needs (refresh) so
+ * Exposes only the operations Profile wiring needs (refresh) so
  * callers in `presentation/` or other plugin surfaces cannot accidentally
  * reach into the infrastructure-layer `VaultRDFIndexer` lifecycle (init,
  * dispose, internal store handles).

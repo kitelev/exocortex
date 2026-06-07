@@ -1,5 +1,5 @@
 /**
- * B.10 — Downstream regression tests for FocusProfile switch flow
+ * B.10 — Downstream regression tests for Profile switch flow
  * (RFC 0a0791c1 §B.10 + Architect #5).
  *
  * Coverage scope:

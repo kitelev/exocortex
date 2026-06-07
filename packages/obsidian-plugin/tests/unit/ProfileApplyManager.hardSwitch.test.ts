@@ -38,7 +38,7 @@ import {
   TS_FLOOR_AS_UID_EXO,
   TS_FLOOR_AS_UID_EXOCMD,
   TS_FLOOR_AS_UID_SHARED_IDENTITIES,
-} from "../../src/infrastructure/adapters/FocusProfileOnloadWiring";
+} from "../../src/infrastructure/adapters/ProfileOnloadWiring";
 
 // === Fakes ===
 
@@ -318,7 +318,7 @@ function setup(opts: SetupOptions) {
       frontmatter: {
         "exo__Asset_uid": opts.targetUid,
         "exo__Asset_label": "Target Profile",
-        "exo__Instance_class": ["[[exo__FocusProfile]]"],
+        "exo__Instance_class": ["[[exo__Profile]]"],
       },
     },
     // AssetSpace ABox assets — each has folder + source + namespace + class.
@@ -351,7 +351,7 @@ function setup(opts: SetupOptions) {
       frontmatter: {
         "exo__Asset_uid": opts.sourceUid,
         "exo__Asset_label": opts.sourceLabel ?? "Source Profile",
-        "exo__Instance_class": ["[[exo__FocusProfile]]"],
+        "exo__Instance_class": ["[[exo__Profile]]"],
       },
     });
   }
