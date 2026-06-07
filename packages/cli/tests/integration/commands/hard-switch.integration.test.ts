@@ -43,11 +43,9 @@ import { ExitCodes } from "../../../src/utils/ExitCodes.js";
 const TESTLIB_UID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const PROFILE_MINIMAL = "11111111-1111-1111-1111-111111111111"; // SDK floor + exocmd
 const PROFILE_FULL = "22222222-2222-2222-2222-222222222222"; // floor + testlib
-// Omits an SDK-floor AS ($shared-identities) — R24 must still refuse (issue #3426
-// only relaxed exocmd, NOT the SDK floor).
+// Omits $exo (the only SDK-floor AS under floor={exo}) — R24 must refuse.
 const PROFILE_MISSING_FLOOR = "33333333-3333-3333-3333-333333333333";
-// Omits ONLY exocmd (declares the full SDK floor) — issue #3426: the CLI must
-// NOT refuse this; exocmd is the optional plugin-UI library, not the SDK floor.
+// Omits exocmd (declares $exo) — must NOT refuse: exocmd is optional, not floor.
 const PROFILE_NO_EXOCMD = "66666666-6666-6666-6666-666666666666";
 const MISSING_UID = "99999999-9999-9999-9999-999999999999";
 
@@ -156,9 +154,8 @@ async function makeFixtureVault(
     },
     {
       relPath: `profiles/${PROFILE_MISSING_FLOOR}.md`,
-      // Omits $shared-identities (an SDK-floor AS) → R24 must refuse.
-      frontmatter: profile(PROFILE_MISSING_FLOOR, "Missing floor (no shared-identities)", [
-        TS_FLOOR_AS_UID_EXO,
+      // Omits $exo (the only SDK-floor AS under floor={exo}) → R24 must refuse.
+      frontmatter: profile(PROFILE_MISSING_FLOOR, "Missing floor (no exo)", [
         TESTLIB_UID,
       ]),
     },
@@ -318,11 +315,11 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
     expect(gm).toContain(`"${MOUNT_TESTLIB}"`);
   });
 
-  it("R24 TS-floor guard: excluding an SDK-floor AS refuses with OPERATION_FAILED + no mutation", async () => {
+  it("R24 TS-floor guard: excluding $exo (the SDK floor) refuses with OPERATION_FAILED + no mutation", async () => {
     await setup(/* testlibMaterialised */ true);
     const testlibMount = path.join(vaultRoot, MOUNT_TESTLIB);
     const result = await runHardSwitch(
-      PROFILE_MISSING_FLOOR, // omits $shared-identities (SDK floor)
+      PROFILE_MISSING_FLOOR, // omits $exo (the only SDK-floor AS, floor={exo})
       { vault: vaultRoot, yes: true, verbose: false },
       { confirmGate: approvingGate, out: () => {}, err: () => {} },
     );
@@ -330,7 +327,7 @@ describe("CLI — hard-switch real mount-state switch (Issue #3416)", () => {
     expect(result.stderr.join("\n")).toContain("TS-floor");
     // No mutation occurred (refused before execute).
     expect(existsSync(testlibMount)).toBe(true);
-    expect(existsSync(path.join(vaultRoot, MOUNT_SHARED))).toBe(true);
+    expect(existsSync(path.join(vaultRoot, MOUNT_EXO))).toBe(true);
   });
 
   it("[#3426] CLI accepts a profile that omits exocmd — no R24 refusal (exocmd is NOT the SDK floor)", async () => {
