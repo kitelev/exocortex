@@ -43,8 +43,8 @@ infrastructure/  → Obsidian API adapters, file system
 ## Quality Metrics
 
 - **Tests:** 619 test files (run `find packages -name '*.test.ts' | wc -l` for live count; 642 including `.test.tsx`), ~11K+ individual test cases (parametrized). Run `npm run test:all` for exact count.
-- **Coverage thresholds**: statements 75.5%, branches 63%, BDD ≥80%
-- **Required CI checks (14, parity-gate added post 2026-04-22)**: archgate · detect-changes · e2e-shard (1..6) · lint · parity-gate · test-bdd · test-component · test-coverage · typecheck. Source of truth: `gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks`.
+- **Coverage thresholds**: statements 75.5%, branches 63%
+- **Required CI checks (13, parity-gate added post 2026-04-22)**: archgate · detect-changes · e2e-shard (1..6) · lint · parity-gate · test-component · test-coverage · typecheck. Source of truth: `gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks`.
 - **CI pipeline target**: post-Phase 3 baseline is ~236s avg ±50s (N=3 on main). Gate relaxed to **≤220s** per Decision B (RFC v2 relax, 2026-04-22); original ≤135s target was infeasible given setup-floor dominance. See `docs/history/ROLLBACK_CI_SPEEDUP.md` for per-phase revert procedure.
 
 ## Test Suite Awareness
@@ -80,7 +80,7 @@ npm run test:all                                    # Test first
 git commit -am "feat: user-facing description"
 git push origin feature/my-feature
 gh pr create --title "feat: description" --body "..."
-gh pr merge --auto --squash                         # Wait for 14 required CI checks
+gh pr merge --auto --squash                         # Wait for 13 required CI checks
 ```
 
 **Task is NOT complete until**: CI green + PR merged + Auto Release succeeds + post-mortem written.
@@ -127,7 +127,8 @@ done
 If any repo has matches → its migration is in scope. **Don't assume
 «pilot/sample/getting-started repo isn't real production data»** — empirical
 signal: RFC 31c1a0be Phase 2 missed starter-kit; surface bug appeared during
-Phase 5a BC removal as CI red (`test-bdd` 19 fail + `test-coverage-cli`),
+Phase 5a BC removal as CI red (the since-removed CLI BDD gate 19 fail +
+`test-coverage-cli`),
 required fix-forward cascade (PR #98 starter-kit Phase 2 + PR #99 dangling
 binding + CLI helpers + 5 e2e fixture migrations + 2 submodule bumps).
 

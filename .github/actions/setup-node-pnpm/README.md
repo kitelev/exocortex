@@ -78,7 +78,6 @@ As of this PR (Phase 3 task `44b3219a`):
 | `test-coverage-cli`       | `recursive`         |           |                      |
 | `test-coverage-exocortex` | `recursive`         |           |                      |
 | `test-coverage`           | none                |           |                      |
-| `test-bdd`                | none                |           |                      |
 | `test-component`          | none                | `"true"`  | `"playwright-jammy"` |
 | `performance-tests`       | none                | `"true"`  | `"playwright-jammy"` |
 

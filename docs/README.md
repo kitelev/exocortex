@@ -33,7 +33,6 @@ Index of the `docs/` tree. Top-level project docs live in the repo root
 - [TEST-PYRAMID.md](TEST-PYRAMID.md) — test strategy and layers
 - [FLAKY_POLICY.md](FLAKY_POLICY.md) — flaky-test handling policy
 - [e2e-desktop.md](e2e-desktop.md) — desktop E2E setup
-- [fixture-access.md](fixture-access.md) — test fixture access patterns
 - [Performance-Guide.md](Performance-Guide.md) — performance guidance
 
 ## Contributing
@@ -58,7 +57,6 @@ active guidance:
 ## Fixtures & data (consumed by code/tests — not human docs)
 
 - `examples/rfc-009/` — dynamic-command pipeline fixtures (referenced by `packages/cli/README.md` and unit tests)
-- `rfc-94e520da/starter-kit-grounding-status.json` — grounding-audit data (read by `scripts/audit-starter-kit-groundings.mjs`)
 
 ## Package documentation
 

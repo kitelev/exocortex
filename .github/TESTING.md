@@ -143,21 +143,9 @@ GitHub Actions runs all tests automatically on every push:
 4. Unit tests
 5. UI integration tests
 6. Component tests
-7. CLI BDD suite (starter-kit groundings)
-8. E2E tests (in Docker)
+7. E2E tests (in Docker)
 
 **Release is blocked if ANY test fails**.
-
-## BDD (CLI groundings)
-
-BDD coverage is provided by the CLI suite, which exercises the 48 starter-kit
-groundings end-to-end through `CommandResolver` / `PreconditionEvaluator` /
-`GroundingExecutor` against `packages/exoas-exocmd` fixtures. This is the
-suite gated by the required `test-bdd` check.
-
-```bash
-npm run bdd:test:cli
-```
 
 ## Test Fixtures
 
@@ -266,7 +254,6 @@ Before committing:
 
 ```bash
 npm test                # All tests except E2E
-npm run bdd:test:cli    # CLI BDD suite (starter-kit groundings)
 npm run build           # Build succeeds
 ```
 

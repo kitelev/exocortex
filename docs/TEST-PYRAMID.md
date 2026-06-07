@@ -113,25 +113,6 @@ The Exocortex project follows the **Test Pyramid** architecture pattern, which p
 
 ---
 
-### Layer 4: BDD/Acceptance Tests (Documentation layer)
-
-**Purpose**: Document and validate business requirements in Gherkin syntax.
-
-**Characteristics**:
-
-- Human-readable scenarios
-- Living documentation
-- Acceptance criteria validation
-- Stakeholder communication
-
-**Framework**: Cucumber
-
-**Location**: `packages/cli/specs/features/`
-
-**CI Gate**: `bdd:test:cli` (CLI groundings) must pass under the required `test-bdd` check
-
----
-
 ## Coverage Gates
 
 ### CI Pipeline Enforcement
@@ -292,11 +273,11 @@ Test Files by Type:
 │                    CI Pipeline                          │
 ├─────────────────────────────────────────────────────────┤
 │                                                         │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐   │
-│  │  Build  │  │TypeCheck│  │   Lint  │  │   BDD   │   │
-│  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘   │
-│       │            │            │            │         │
-│       └────────────┴────────────┴────────────┘         │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐                │
+│  │  Build  │  │TypeCheck│  │   Lint  │                │
+│  └────┬────┘  └────┬────┘  └────┬────┘                │
+│       │            │            │                      │
+│       └────────────┴────────────┘                      │
 │                         │                              │
 │  ┌──────────────────────┴──────────────────────┐      │
 │  │                                              │      │
