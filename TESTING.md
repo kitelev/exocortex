@@ -35,9 +35,6 @@ npm run test:e2e:docker # E2E tests in Docker
 
 # Run with coverage
 npm run test:coverage
-
-# BDD suite (CLI groundings)
-npm run bdd:test:cli    # CLI BDD suite (required test-bdd gate)
 ```
 
 ### Writing Your First Test
@@ -78,7 +75,6 @@ describe("FrontmatterService", () => {
 | `*.test.ts`  | `packages/*/tests/ui/`                      | Jest (jsdom)  |
 | `*.spec.tsx` | `packages/obsidian-plugin/tests/component/` | Playwright CT |
 | `*.spec.ts`  | `packages/obsidian-plugin/tests/e2e/specs/` | Playwright    |
-| `*.feature`  | `packages/cli/specs/features/`              | Cucumber      |
 
 ---
 
@@ -315,44 +311,6 @@ test.describe("Daily Tasks", () => {
 
 ---
 
-### BDD Tests (CLI groundings)
-
-**Purpose**: Document and test grounding behavior end-to-end using Gherkin syntax.
-
-**Framework**: Cucumber
-
-**Location**: `packages/cli/specs/features/`
-
-**Configuration**: `packages/cli/cucumber.json`
-
-**Scope**: The CLI BDD suite exercises the 48 starter-kit groundings through
-`CommandResolver` / `PreconditionEvaluator` / `GroundingExecutor` against
-`packages/exoas-exocmd` fixtures. It is the suite gated by the required
-`test-bdd` check.
-
-> The legacy plugin-BDD layer under `packages/obsidian-plugin/specs/` was
-> removed (audit epic #3384) — its scenarios were self-asserting (no
-> production renderer / CommandManager / DOM invoked) and the same behavior
-> is covered by the component and E2E layers.
-
-**Commands**:
-
-```bash
-# Run CLI BDD suite
-npm run bdd:test:cli
-
-# Dry run (validate syntax)
-npm run bdd:test:cli:dry
-```
-
-**When to use BDD tests**:
-
-- Documenting grounding state-change behavior
-- Acceptance criteria for dynamic commands
-- High-level integration scenarios across resolver + executor
-
----
-
 ## Test Architecture
 
 ### Test Pyramid Policy
@@ -381,7 +339,6 @@ The project follows a **test pyramid architecture** to ensure fast feedback, mai
 | Unit Tests      | ≥70%          | Advisory (review)          | Jest           |
 | Component Tests | 10-25%        | All must pass              | Playwright CT  |
 | E2E Tests       | ≤10%          | All must pass              | Playwright E2E |
-| BDD (CLI)       | 48 groundings | All must pass (`test-bdd`) | Cucumber       |
 
 #### Why This Structure?
 
@@ -794,16 +751,6 @@ it("should provide helpful error message", async () => {
 - Lines: 79%
 - Statements: 78%
 
-### BDD (CLI groundings)
-
-The CLI BDD suite covers all 48 starter-kit groundings and is gated by the
-required `test-bdd` check.
-
-```bash
-# Run CLI BDD suite
-npm run bdd:test:cli
-```
-
 ### Test Jobs in CI
 
 The CI pipeline runs tests in this order:
@@ -814,8 +761,7 @@ The CI pipeline runs tests in this order:
 4. **Unit tests** - Jest with coverage (batched for stability)
 5. **UI tests** - Jest with jsdom environment
 6. **Component tests** - Playwright CT (Chromium)
-7. **BDD coverage check** - Cucumber scenario coverage
-8. **E2E tests** - Playwright in Docker with Obsidian
+7. **E2E tests** - Playwright in Docker with Obsidian
 
 **Release is blocked if ANY test fails.**
 
@@ -1049,7 +995,6 @@ await page.evaluate(() => console.log("Debug from browser"));
 - [Jest](https://jestjs.io/docs/getting-started) - Unit testing framework
 - [Playwright](https://playwright.dev/docs/intro) - E2E and component testing
 - [Playwright Component Testing](https://playwright.dev/docs/test-components)
-- [Cucumber](https://cucumber.io/docs/guides/) - BDD framework
 
 ### Internal References
 
@@ -1061,7 +1006,6 @@ await page.evaluate(() => console.log("Debug from browser"));
 - `packages/exocortex/tests/` - Core package test examples
 - `packages/obsidian-plugin/tests/unit/` - Unit test patterns
 - `packages/obsidian-plugin/tests/component/` - Component test patterns
-- `packages/cli/specs/features/` - BDD feature files (CLI groundings)
 
 ---
 
@@ -1076,7 +1020,6 @@ await page.evaluate(() => console.log("Debug from browser"));
 | `npm run test:unit`       | Unit tests only             | ~8s   |
 | `npm run test:component`  | Component tests             | ~30s  |
 | `npm run test:e2e:docker` | E2E in Docker               | ~3min |
-| `npm run bdd:test:cli`    | CLI BDD suite (groundings)  | ~30s  |
 
 ### Coverage Targets
 
@@ -1086,7 +1029,6 @@ await page.evaluate(() => console.log("Debug from browser"));
 | Global (branches)   | 67%    | ✅ 71%  |
 | Global (functions)  | 70%    | ✅ 73%  |
 | Global (lines)      | 75%    | ✅ 81%  |
-| BDD scenarios       | 100%   | ✅      |
 | Domain layer        | 78%    | 🎯      |
 
 ### Test Pyramid Targets
@@ -1104,7 +1046,6 @@ await page.evaluate(() => console.log("Debug from browser"));
 | Unit tests      | ~244  | ~5116      |
 | Component tests | ~33   | ~530       |
 | E2E tests       | ~14   | ~67        |
-| BDD scenarios   | 14    | ~50        |
 
 ---
 

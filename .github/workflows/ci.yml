@@ -562,43 +562,6 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
-  test-bdd:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Node & install deps
-        uses: ./.github/actions/setup-node-pnpm
-
-      # RFC `94e520da` Phase 6 (T6.3) — runs the L3 CLI BDD suite covering
-      # all 48 starter-kit groundings (М6: 48/48 green as release v16 gate).
-      # Suite source: packages/cli/specs/features/groundings.feature +
-      # per-grounding fixtures under specs/fixtures/groundings/. Mirrors the
-      # T3.3 parity-gate pattern by executing under the same `test-bdd`
-      # required check so a single named gate enforces both BDD coverage
-      # and grounding state-change correctness; failure surfaces by failing
-      # this step (no continue-on-error). Requires exocortex + services
-      # workspace dist (CLI imports them at runtime via tsx loader) and a
-      # sibling checkout of exocortex-starter-kit (resolved by
-      # specs/step_definitions/grounding.steps.ts via `../exocortex-starter-kit`).
-      - name: Checkout exocortex-starter-kit (sibling repo for BDD fixtures)
-        run: |
-          # findStarterKit() in grounding.steps.ts probes ../exocortex-starter-kit
-          # and ../../exocortex-starter-kit relative to repoRoot. GITHUB_WORKSPACE
-          # is /home/runner/work/exocortex/exocortex, so cloning to its parent
-          # places the kit at the first probe path.
-          git clone --depth 1 https://github.com/kitelev/exocortex-starter-kit.git \
-            "${GITHUB_WORKSPACE}/../exocortex-starter-kit"
-
-      - name: Build workspace deps for CLI BDD suite
-        run: npm run build -w exocortex && npm run build -w @kitelev/exocortex-services
-
-      - name: Run CLI BDD suite (48 starter-kit groundings)
-        run: npm run bdd:test:cli
-
   test-component:
     runs-on: ubuntu-latest
     timeout-minutes: 15

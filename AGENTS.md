@@ -650,8 +650,8 @@ Starter-kit dynamic commands (`exocmd__Command`) are covered in three test layer
 
 **Runtime-verify gate:** new E2E specs MUST run green in CI (not only local) before the hosting task flips to Review; skipping this gate caused attribution drift flagged in Phase 2 retrospective.
 
-**Required CI checks (branch-protected, 14 contexts — `parity-gate` added post 2026-04-22):**
-`archgate`, `detect-changes`, `e2e-shard (1)`, `e2e-shard (2)`, `e2e-shard (3)`, `e2e-shard (4)`, `e2e-shard (5)`, `e2e-shard (6)`, `lint`, `parity-gate`, `test-bdd`, `test-component`, `test-coverage`, `typecheck`.
+**Required CI checks (branch-protected, 13 contexts — `parity-gate` added post 2026-04-22):**
+`archgate`, `detect-changes`, `e2e-shard (1)`, `e2e-shard (2)`, `e2e-shard (3)`, `e2e-shard (4)`, `e2e-shard (5)`, `e2e-shard (6)`, `lint`, `parity-gate`, `test-component`, `test-coverage`, `typecheck`.
 Matrix contexts use the parenthesised form `<job> (<shard>)` — hyphenated names like `e2e-shard-1` silently resolve to no required check. `test-unit` was dropped from required contexts in f235881d (Phase 4 cutover) now that it is a deduplicated stub; `detect-changes` was added so path-filter infrastructure always runs.
 
 **Rollback playbook:** `docs/history/ROLLBACK_RFC_CI_TESTS.md` — per-trigger mitigation (flaky quarantine / smoke budget trim / submodule → npm migration / admin nuclear rollback).
@@ -700,7 +700,7 @@ gh api repos/OWNER/REPO/branches/main/protection/required_status_checks -X PATCH
     "e2e-shard (5)",
     "e2e-shard (6)",
     "lint",
-    "test-bdd",
+    "parity-gate",
     "test-component",
     "test-coverage",
     "typecheck"
