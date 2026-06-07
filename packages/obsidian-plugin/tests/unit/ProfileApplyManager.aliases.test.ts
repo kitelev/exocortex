@@ -12,16 +12,12 @@ import {
 import { PluginLockManager } from "../../src/infrastructure/adapters/PluginLockManager";
 
 /**
- * RFC 0a0791c1 Phase 5 T2 — the soft RDF-filter path (the former public soft method
- * + its aliases) was removed. The mount-state
- * apply path remains:
+ * RFC 0a0791c1 Phase 5 T2 — the soft RDF-filter path (the former public soft
+ * method + its aliases) was removed; the deprecated `hardSwitchProfile` alias
+ * was removed in Phase 5 T6. The mount-state apply path remains:
  *   - applyProfile  (destructive filesystem materialize)
- *   - applyProfile → applyProfile (deprecated alias, kept)
  *
- * These tests verify:
- *   1. the canonical mount path throws when its deps are not wired
- *   2. the deprecated `applyProfile` alias delegates to the canonical
- *      method (proven via spyOn — alias body MUST call canonical method)
+ * These tests verify the canonical mount path throws when its deps are not wired.
  */
 
 // ─── Fakes ───────────────────────────────────────────────────────────────
@@ -121,24 +117,6 @@ function makeHarness(): Harness {
   const mgr = new ProfileApplyManager(opts);
   return { mgr, rdf, settings, notifyCalls };
 }
-
-// ─── Deprecated alias delegation ─────────────────────────────────────────
-
-describe("ProfileApplyManager — deprecated hard alias delegates to canonical", () => {
-  it("applyProfile delegates to applyProfile", async () => {
-    const h = makeHarness();
-    // Apply requires extra deps wired; without them, the canonical method
-    // throws via assertApplyDepsWired(). What we verify here is that the alias
-    // routes into the canonical method (not into reindex), so the very same
-    // wiring error surfaces. Delegation proven by spy + identical throw signature.
-    const spy = jest.spyOn(h.mgr, "applyProfile");
-    await expect(h.mgr.applyProfile(UID_BASE)).rejects.toThrow(
-      /dependencies not wired/,
-    );
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy).toHaveBeenCalledWith(UID_BASE);
-  });
-});
 
 // ─── Canonical applyProfile (wiring assertion) ─────────────
 

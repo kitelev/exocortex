@@ -992,7 +992,7 @@ export class ProfileApplyManager {
       return;
     }
 
-    const acquired = await this.lockMgr.acquireLock(`rest-switch-${targetProfileUid}`);
+    const acquired = await this.lockMgr.acquireLock(`apply-rest-${targetProfileUid}`);
     if (!acquired) {
       throw new Error("Another profile switch is in progress (lock held). Try again shortly.");
     }
