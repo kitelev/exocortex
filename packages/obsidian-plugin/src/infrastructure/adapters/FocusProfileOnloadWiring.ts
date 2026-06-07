@@ -16,15 +16,14 @@
  * re-export the core guard so existing plugin imports keep working.
  */
 
+import { PLUGIN_UI_FLOOR_ASSETSPACE_UIDS } from "exocortex";
+
 export {
   TS_FLOOR_AS_UID_EXO,
   TS_FLOOR_AS_UID_EXOCMD,
   TS_FLOOR_AS_UID_SHARED_IDENTITIES,
   PLUGIN_UI_FLOOR_ASSETSPACE_UIDS,
-  SDK_FLOOR_ASSETSPACE_UIDS,
 } from "exocortex";
-
-import { PLUGIN_UI_FLOOR_ASSETSPACE_UIDS } from "exocortex";
 
 /**
  * TS-floor AssetSpace UIDs the plugin enforces (Vision Lock #17, AS-UID level).
