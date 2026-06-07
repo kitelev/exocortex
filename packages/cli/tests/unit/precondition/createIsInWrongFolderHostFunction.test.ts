@@ -186,6 +186,29 @@ describe("createIsInWrongFolderHostFunction (CLI parity)", () => {
     expect(service.getExpectedFolderSync).toHaveBeenCalledWith(file, metadata);
   });
 
+  it("returns false for '09 Templates/' files even when otherwise misplaced — revert→fail proof", () => {
+    // A Templater template carries isDefinedBy by pattern inheritance and the
+    // resolver reports it as misplaced (expected≠current), but it must never be
+    // flagged for repair. WITHOUT the 09 Templates skip this returns true;
+    // WITH it, false (RFC 0b7a2fad CR-1).
+    const file = buildFile("09 Templates/ts/tmpl.md", "tmpl", "09 Templates/ts");
+    const fn = createIsInWrongFolderHostFunction(
+      buildAdapter({
+        node: file,
+        frontmatter: { exo__Asset_isDefinedBy: "[[Class]]" },
+      }),
+      buildService("expected/folder"),
+    );
+    expect(
+      fn(
+        baseCtx({
+          filePath: "09 Templates/ts/tmpl.md",
+          currentFolder: "09 Templates/ts",
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it("treats null frontmatter as empty metadata object", () => {
     const file = buildFile(
       "current/folder/asset.md",
