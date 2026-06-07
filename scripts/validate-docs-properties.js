@@ -36,10 +36,7 @@ const KNOWN_EXCEPTIONS = new Set([
   "ems__Effort_status_changes", // workflows status history YAML example
   "exo__Property_minCount", // SHACL_LITE_MAPPING.md Phase 3+ planned property (YAGNI Drop #3 in RFC 82a72aca v3)
   "exo__Property_severity", // SHACL_LITE_MAPPING.md sh:severity alignment — docs-only mapping reference (aa6615f0)
-  "exo__AssetSpace_materialized", // RFC 22b50a17 Phase 4 — runtime-derived property; code constructs via Namespace.EXO.term("AssetSpace_materialized") rather than literal string (docs/focus-profile.md)
-  "exo__KnowledgeProfile_includes", // docs/profiles.md — documented exo__KnowledgeProfile (hard-switch) property; its sole literal-string reference in packages/ was the migrate-shared-identities-profiles migration service, removed in PR #3394 (YAGNI). No literal-token code ref remains by design.
-  "exo__KnowledgeProfile_extends", // docs/profiles.md — see exo__KnowledgeProfile_includes (same PR #3394 removal)
-  "exo__KnowledgeProfile_alwaysOnOverlay", // docs/profiles.md — see exo__KnowledgeProfile_includes (same PR #3394 removal)
+  "exo__AssetSpace_materialized", // runtime-derived property; code constructs via Namespace.EXO.term("AssetSpace_materialized") rather than literal string (docs/profile.md)
 ]);
 
 function extractPropertiesFromDocs() {

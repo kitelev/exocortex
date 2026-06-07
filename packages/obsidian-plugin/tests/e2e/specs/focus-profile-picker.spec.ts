@@ -6,18 +6,18 @@ import * as path from "path";
 
 /**
  * E2E render smoke for the «Exocortex: Apply profile» command
- * (`hard-switch-focus-profile`, wired in
- * `ExocortexPlugin.registerFocusProfileCommands`).
+ * (`apply-profile`, wired in
+ * `ExocortexPlugin.registerProfileCommands`).
  *
  * RFC 0a0791c1 Phase 5 T2 consolidated the former soft «Switch focus profile»
  * (`switch-focus-profile`) + mount-state «Switch knowledge profile» commands
  * into the single «Apply profile» command. The command id is kept as the legacy
- * `hard-switch-focus-profile` (Obsidian persists hotkeys by id). This spec
+ * `apply-profile` (Obsidian persists hotkeys by id). This spec
  * exercises the picker render only (Escape without selecting), so the
  * destructive mount path never runs. Tracking issue #3434.
  *
  * What this asserts (deliberately NON-vacuous — see below):
- *   1. The plugin loads and the `hard-switch-focus-profile` command is registered.
+ *   1. The plugin loads and the `apply-profile` command is registered.
  *   2. Executing the command opens the `ProfileFuzzyModal`
  *      (`FuzzySuggestModal`) and renders the **fixture profile assets by
  *      label** — i.e. NOT the «No profiles found in vault» empty state.
@@ -26,7 +26,7 @@ import * as path from "path";
  *      focus-profile surface this spec owns). The load-phase `console.error`
  *      count is logged as a diagnostic (observed 0 in local Docker) but NOT
  *      hard-asserted — it would otherwise couple this spec to unrelated
- *      load-path catch branches (e.g. hard-switch / SHACL wiring), per
+ *      load-path catch branches (e.g. apply / SHACL wiring), per
  *      code-reviewer MEDIUM. `create-fleeting-note-palette.spec.ts` omits the
  *      console check entirely for the same reason; here it is kept but scoped.
  *
@@ -36,9 +36,9 @@ import * as path from "path";
  *   SPARQL, which expects the expanded `exocmd:Command` IRI while the test
  *   vault uses symbolic `[[exocmd__Command]]` class wikilinks — a
  *   fixture-resolution gap. The profile picker has NO such gap:
- *   `VaultProfileResolver.listFocusProfileFiles` discovers profiles by a plain
+ *   `VaultProfileResolver.listProfileFiles` discovers profiles by a plain
  *   substring match on the raw `exo__Instance_class` frontmatter string
- *   (`instanceClassContains` → `c.includes(FOCUS_PROFILE_CLASS_UID)`), reading
+ *   (`instanceClassContains` → `c.includes(PROFILE_CLASS_UID)`), reading
  *   straight from `metadataCache` — no triple-store IRI expansion. The
  *   fixtures therefore carry the class in UUID form
  *   (`[[3de846cd-1f0e-4f98-8613-b8587aa15174]]`) and the picker list is
@@ -50,13 +50,13 @@ import * as path from "path";
  *
  * Revert-verify (documented in the PR body): removing the fixtures (or
  * downgrading their class wikilink to symbolic form) makes `profileLister`
- * return `[]`, so `invokeSwitchKnowledgeProfile` early-returns with the
+ * return `[]`, so `invokeApplyProfile` early-returns with the
  * «No profiles found in vault» Notice and NEVER opens the modal — the
  * `.suggestion-item` assertion then times out and this spec FAILS.
  */
 
-const FOCUS_PROFILE_CLASS_UID = "3de846cd-1f0e-4f98-8613-b8587aa15174";
-const APPLY_PROFILE_COMMAND_ID = "exocortex:hard-switch-focus-profile";
+const PROFILE_CLASS_UID = "3de846cd-1f0e-4f98-8613-b8587aa15174";
+const APPLY_PROFILE_COMMAND_ID = "exocortex:apply-profile";
 const FIXTURE_LABELS = [
   "E2E Focus Profile Base",
   "E2E Focus Profile Work",
@@ -115,7 +115,7 @@ test.describe("Focus profile picker — render smoke", () => {
       specName: "focus-profile-picker",
     });
 
-    // The command is registered only after `registerFocusProfileCommands()`
+    // The command is registered only after `registerProfileCommands()`
     // runs during onload. Poll for it so the spec does not race the boot
     // pipeline. A missing command id here means a load-time regression.
     await expect
@@ -134,7 +134,7 @@ test.describe("Focus profile picker — render smoke", () => {
       )
       .toBe(true);
 
-    // Poll until metadataCache has the FocusProfile fixtures indexed the same
+    // Poll until metadataCache has the Profile fixtures indexed the same
     // way `VaultProfileResolver.instanceClassContains` discovers them — a
     // substring match on the raw `exo__Instance_class` string. This makes the
     // command trigger deterministic (Docker Obsidian populates the cache
@@ -163,10 +163,10 @@ test.describe("Focus profile picker — render smoke", () => {
               }
             }
             return count;
-          }, FOCUS_PROFILE_CLASS_UID),
+          }, PROFILE_CLASS_UID),
         {
           timeout: 30000,
-          message: "FocusProfile fixtures not discoverable in metadataCache",
+          message: "Profile fixtures not discoverable in metadataCache",
         },
       )
       .toBeGreaterThanOrEqual(2);
@@ -177,7 +177,7 @@ test.describe("Focus profile picker — render smoke", () => {
     const loadPhaseConsoleErrors = consoleErrors.length;
 
     // Trigger the command. The callback is fire-and-forget (`void
-    // invokeSwitchKnowledgeProfile()`): it lists profiles then opens ProfileFuzzyModal.
+    // invokeApplyProfile()`): it lists profiles then opens ProfileFuzzyModal.
     await window.evaluate((id) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const app = (window as any).app;
@@ -213,7 +213,7 @@ test.describe("Focus profile picker — render smoke", () => {
     expect(placeholder).toBe("Apply profile");
 
     // Zero console errors during the picker surface (trigger → modal open) —
-    // scoped so unrelated load-path catch branches (hard-switch / SHACL wiring)
+    // scoped so unrelated load-path catch branches (apply / SHACL wiring)
     // cannot red this spec (code-reviewer MEDIUM).
     const pickerConsoleErrors = consoleErrors.slice(loadPhaseConsoleErrors);
     expect(
@@ -234,7 +234,7 @@ test.describe("Focus profile picker — render smoke", () => {
       `[focus-profile-picker smoke] loadPhaseConsoleErrors=${loadPhaseConsoleErrors} items=${JSON.stringify(itemTexts)}`,
     );
 
-    // Render-only smoke — dismiss without selecting (no soft switch → no
+    // Render-only smoke — dismiss without selecting (no soft-filter → no
     // test-vault mutation, keeps the fixture-drift reporter quiet).
     await window.keyboard.press("Escape");
     await window

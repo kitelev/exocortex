@@ -43,7 +43,7 @@ describe("GitHubRestClient", () => {
   // ─── constructor ──────────────────────────────────────────────────
   describe("constructor", () => {
     it("accepts an empty PAT (unauthenticated mode) without throwing", () => {
-      // Regression: the empty-PAT ctor throw silently hid the hard-switch
+      // Regression: the empty-PAT ctor throw silently hid the apply
       // palette commands on every vault without a stored PAT. An empty PAT is
       // a valid unauthenticated client (public reads only).
       expect(

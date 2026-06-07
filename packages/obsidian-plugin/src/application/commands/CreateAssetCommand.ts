@@ -91,7 +91,7 @@ export class CreateAssetCommand implements ICommand {
 
       // Step 3.5: Lazily load SHACL-lite shapes (#3384 H3 PR2). Built ONLY here,
       // on the Create command — never on plugin onload (the onload path is
-      // fragile; see FocusProfile bootstrap). The plugin already has the
+      // fragile; see Profile bootstrap). The plugin already has the
       // in-memory triple store populated by the class-discovery query above, so
       // this is a cheap read of the existing graph. Failure is non-fatal: the
       // core service falls back to scalar (label-form / scalar) emission.

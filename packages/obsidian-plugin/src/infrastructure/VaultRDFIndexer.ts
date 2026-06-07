@@ -246,7 +246,7 @@ export class VaultRDFIndexer {
    * Clear the triple store and rebuild from the current vault state.
    *
    * Signature matches {@link IRdfIndexer.refresh} so a
-   * `FocusProfileSwitchManager` instance can drive a profile-switch reindex
+   * `ProfileApplyManager` instance can drive a profile-switch reindex
    * by calling `await rdfIndexer.refresh()` directly. Profile switching is
    * now mount-state based (RFC 01a83de8 Phase 3 — the query-time soft-filter
    * was removed); the refresh re-indexes whatever AssetSpace folders are

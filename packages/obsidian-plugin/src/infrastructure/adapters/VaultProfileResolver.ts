@@ -3,16 +3,16 @@ import type { App, TFile } from "obsidian";
 import type {
   IProfileResolver,
   ProfileResolution,
-} from "./FocusProfileSwitchManager";
-import { FOCUS_PROFILE_CLASS_UID } from "./FocusProfileSwitchManager";
+} from "./ProfileApplyManager";
+import { PROFILE_CLASS_UID } from "./ProfileApplyManager";
 
 /**
  * Vault-backed implementation of {@link IProfileResolver}. Reads
- * `exo__FocusProfile` ABox assets через Obsidian metadataCache.
+ * `exo__Profile` ABox assets через Obsidian metadataCache.
  *
- * Profile identification: an asset is a FocusProfile when its
+ * Profile identification: an asset is a Profile when its
  * `exo__Instance_class` (string or array) contains a wikilink to the
- * FocusProfile class UID `3de846cd-...` (frozen by RFC b6ba5595).
+ * Profile class UID `3de846cd-...` (frozen by RFC b6ba5595).
  *
  * Frontmatter fields consumed:
  *   - `exo__Asset_uid` (string) — profile UID
@@ -27,7 +27,7 @@ import { FOCUS_PROFILE_CLASS_UID } from "./FocusProfileSwitchManager";
  * Shared-ontology discovery: production scans the converter's RDF graph
  * для ontology IRIs matching the `shared-` prefix pattern. v3 backward-
  * compat scope omits the discovery hook — returns empty array so the
- * `FocusProfileSwitchManager`'s TS-floor pattern match falls through
+ * `ProfileApplyManager`'s TS-floor pattern match falls through
  * to the hardcoded floor.
  */
 export class VaultProfileResolver implements IProfileResolver {
@@ -40,7 +40,7 @@ export class VaultProfileResolver implements IProfileResolver {
 
   async resolve(profileUid: string): Promise<ProfileResolution | null> {
     if (typeof profileUid !== "string" || profileUid.length === 0) return null;
-    const file = this.findFocusProfileFileByUid(profileUid);
+    const file = this.findProfileFileByUid(profileUid);
     if (file === null) return null;
 
     const fm = this.readFrontmatter(file);
@@ -82,15 +82,15 @@ export class VaultProfileResolver implements IProfileResolver {
   }
 
   /**
-   * Walks the vault searching for the FocusProfile asset whose
+   * Walks the vault searching for the Profile asset whose
    * `exo__Asset_uid` matches. Returns `null` if absent.
    *
    * Exposed for `profileLister` reuse — the plugin's command-palette
-   * handler scans the vault для all FocusProfile assets, so the same
+   * handler scans the vault для all Profile assets, so the same
    * frontmatter discrimination logic lives here.
    */
-  public findFocusProfileFileByUid(uid: string): TFile | null {
-    for (const file of this.listFocusProfileFiles()) {
+  public findProfileFileByUid(uid: string): TFile | null {
+    for (const file of this.listProfileFiles()) {
       const fm = this.readFrontmatter(file);
       if (fm === null) continue;
       if (fm["exo__Asset_uid"] === uid) return file;
@@ -99,17 +99,17 @@ export class VaultProfileResolver implements IProfileResolver {
   }
 
   /**
-   * Walks the vault returning every FocusProfile asset. Caller filters
+   * Walks the vault returning every Profile asset. Caller filters
    * по UID / label as needed. Used by `profileLister` to populate the
    * fuzzy picker.
    */
-  public listFocusProfileFiles(): TFile[] {
-    return this.listProfileFilesByClass(FOCUS_PROFILE_CLASS_UID);
+  public listProfileFiles(): TFile[] {
+    return this.listProfileFilesByClass(PROFILE_CLASS_UID);
   }
 
   /**
    * Walks the vault returning assets whose `exo__Instance_class` contains the
-   * given class UID. Used by {@link listFocusProfileFiles}. (RFC 01a83de8
+   * given class UID. Used by {@link listProfileFiles}. (RFC 01a83de8
    * Phase 3 T4 collapsed the former per-class Knowledge picker into the single
    * `exo__Profile` class, so there is now one profile list.)
    */

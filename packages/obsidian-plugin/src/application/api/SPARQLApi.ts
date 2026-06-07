@@ -6,7 +6,7 @@ import type ExocortexPlugin from '@plugin/ExocortexPlugin';
 /**
  * Application-layer handle to the underlying RDF indexer.
  *
- * Exposes only the operations FocusProfile wiring needs (refresh) so
+ * Exposes only the operations Profile wiring needs (refresh) so
  * callers in `presentation/` or other plugin surfaces cannot accidentally
  * reach into the infrastructure-layer `VaultRDFIndexer` lifecycle (init,
  * dispose, internal store handles).
@@ -336,7 +336,7 @@ export class SPARQLApi {
    * Returns an application-layer handle to the underlying RDF indexer.
    * Exposed for RFC 0a0791c1 B.4 wiring — `PluginRdfIndexerAdapter`
    * (Issue #3322) constructs an `IRdfIndexer` over this handle so
-   * `FocusProfileSwitchManager` can trigger a profile-switch reindex via
+   * `ProfileApplyManager` can trigger a profile-switch reindex via
    * `refresh()`. RFC 01a83de8 Phase 3 removed the query-time soft-filter;
    * profile switching is mount-state based, so the handle exposes only
    * `refresh()`.

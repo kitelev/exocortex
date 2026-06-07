@@ -1,4 +1,4 @@
-// Node.js builtins required for Phase 5 hard-switch staging dirs (RFC
+// Node.js builtins required for Phase 5 apply staging dirs (RFC
 // 22b50a17) — staging dirs live in `os.tmpdir()` OUTSIDE the vault so
 // Obsidian's vault.adapter API cannot reach them. The `pullAssetSpace`
 // entry point is guarded by `Platform.isMobile` throw — on mobile the
@@ -73,7 +73,7 @@ export interface AssetSpaceManagerOptions {
 /**
  * Outcome of a successful {@link AssetSpaceManager.pullAssetSpace} call —
  * tells the orchestrator (Phase 2 SwitchCacheLayer / Phase 3
- * `hardSwitchProfile`) where the freshly-materialised AssetSpace lives
+ * `applyProfile`) where the freshly-materialised AssetSpace lives
  * on disk plus the SHA the GitHub REST tarball claimed.
  */
 export interface PullAssetSpaceResult {
@@ -142,7 +142,7 @@ export class AssetSpaceManager {
   private readonly branch: string;
   private readonly tarExtractor: TarExtractor;
   /**
-   * Public read-only accessor — `FocusProfileSwitchManager.hardSwitchProfile`
+   * Public read-only accessor — `ProfileApplyManager.applyProfile`
    * (RFC 22b50a17 Phase 3) needs to release staging dirs on partial-fail
    * cleanup (R26). Stays nullable to preserve `pullAssetSpace`'s explicit
    * throw on `null` from Phase 1.
@@ -398,7 +398,7 @@ export class AssetSpaceManager {
 
   // ─────────────────────────── public — stubs (Phase 2+3) ─────────────────────
 
-  /** STUB — destroy deferred to Phase 2 SwitchCacheLayer / Phase 3 hardSwitchProfile. */
+  /** STUB — destroy deferred to Phase 2 SwitchCacheLayer / Phase 3 applyProfile. */
   public async destroyAssetSpace(_asUid: string): Promise<void> {
     throw new Error(
       "AssetSpaceManager.destroyAssetSpace: deferred to Phase 2/3 (RFC 22b50a17)",

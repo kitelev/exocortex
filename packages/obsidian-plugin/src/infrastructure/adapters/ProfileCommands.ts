@@ -1,5 +1,5 @@
 /**
- * FocusProfileCommands — command-palette logic handler для RFC 0a0791c1.
+ * ProfileCommands — command-palette logic handler для RFC 0a0791c1.
  *
  * RFC 0a0791c1 Phase 5 T2 consolidated the former dual «Switch focus profile»
  * (soft RDF filter) + «Switch knowledge profile» (mount-state) commands into a
@@ -7,7 +7,7 @@
  *
  * Commands provided:
  *   1. `Exocortex: Apply profile` — fuzzy-picks an `exo__Profile` asset,
- *      invokes `FocusProfileSwitchManager.hardSwitchKnowledgeProfile` (the
+ *      invokes `ProfileApplyManager.applyProfile` (the
  *      mount-state strict-replace: materialise the profile's effective
  *      AssetSpace set, unmount the rest — TS-floor never unmounted).
  *   2. `Exocortex: Show current state` — Notice with the active profile label.
@@ -29,12 +29,12 @@
  * happens в B.11 plugin entry-point integration.
  */
 
-import type { FocusProfileSwitchManager } from "./FocusProfileSwitchManager";
+import type { ProfileApplyManager } from "./ProfileApplyManager";
 import {
-  HardSwitchAbortedByUser,
+  ApplyAbortedByUser,
   TsFloorViolationError,
   UncommittedChangesAbortError,
-} from "./FocusProfileSwitchManager";
+} from "./ProfileApplyManager";
 
 /** Minimal interface — full implementation in B.3 AssetSpaceManager. */
 export interface IAssetSpacePusher {
@@ -42,7 +42,7 @@ export interface IAssetSpacePusher {
   pushAssetSpace(asUid: string): Promise<string>;
 }
 
-export interface FocusProfileChoice {
+export interface ProfileChoice {
   uid: string;
   label: string;
   /**
@@ -54,20 +54,20 @@ export interface FocusProfileChoice {
   isActive?: boolean;
 }
 
-export interface FocusProfileCommandsDeps {
-  switchMgr: FocusProfileSwitchManager;
+export interface ProfileCommandsDeps {
+  switchMgr: ProfileApplyManager;
   pushMgr: IAssetSpacePusher;
   /** Returns available `exo__Profile` assets (label + uid pairs) — the picker. */
-  profileLister: () => Promise<FocusProfileChoice[]>;
+  profileLister: () => Promise<ProfileChoice[]>;
   /**
    * Open a fuzzy picker UI. Returns the user's choice, or null if the
    * picker was cancelled. Real implementation wraps Obsidian
    * `FuzzySuggestModal`; tests provide a programmatic stub.
    */
   fuzzyPick: (
-    options: FocusProfileChoice[],
+    options: ProfileChoice[],
     title: string,
-  ) => Promise<FocusProfileChoice | null>;
+  ) => Promise<ProfileChoice | null>;
   /** Returns the currently-active file path, or null if no file is open. */
   getActiveFilePath: () => string | null;
   /**
@@ -79,16 +79,16 @@ export interface FocusProfileCommandsDeps {
   notify: (message: string) => void;
 }
 
-export class FocusProfileCommands {
-  private readonly switchMgr: FocusProfileSwitchManager;
+export class ProfileCommands {
+  private readonly switchMgr: ProfileApplyManager;
   private readonly pushMgr: IAssetSpacePusher;
-  private readonly profileLister: () => Promise<FocusProfileChoice[]>;
-  private readonly fuzzyPick: FocusProfileCommandsDeps["fuzzyPick"];
+  private readonly profileLister: () => Promise<ProfileChoice[]>;
+  private readonly fuzzyPick: ProfileCommandsDeps["fuzzyPick"];
   private readonly getActiveFilePath: () => string | null;
   private readonly getActiveProfileUid: () => string | null;
   private readonly notify: (message: string) => void;
 
-  constructor(deps: FocusProfileCommandsDeps) {
+  constructor(deps: ProfileCommandsDeps) {
     this.switchMgr = deps.switchMgr;
     this.pushMgr = deps.pushMgr;
     this.profileLister = deps.profileLister;
@@ -104,7 +104,7 @@ export class FocusProfileCommands {
    * profile» (mount) commands into a single mount-state operation).
    *
    * Fuzzy-picks an `exo__Profile` asset, then invokes
-   * `FocusProfileSwitchManager.hardSwitchKnowledgeProfile` which:
+   * `ProfileApplyManager.applyProfile` which:
    *   1. R24 TS-floor assert (refuses targets that brick the plugin)
    *   2. Vision Lock #5 uncommitted abort (with file list)
    *   3. ModalConfirmGate (DI via switchMgr constructor)
@@ -112,10 +112,10 @@ export class FocusProfileCommands {
    *      REST mount/unmount (mobile)
    *
    * User-facing error mapping: TsFloorViolationError, UncommittedChangesAbortError,
-   * and HardSwitchAbortedByUser get clear notices distinct from generic «Apply failed».
+   * and ApplyAbortedByUser get clear notices distinct from generic «Apply failed».
    */
-  async invokeSwitchKnowledgeProfile(): Promise<void> {
-    let profiles: FocusProfileChoice[];
+  async invokeApplyProfile(): Promise<void> {
+    let profiles: ProfileChoice[];
     try {
       profiles = await this.profileLister();
     } catch (e) {
@@ -133,9 +133,9 @@ export class FocusProfileCommands {
 
     this.notify(`Applying ${chosen.label}…`);
     try {
-      await this.switchMgr.hardSwitchKnowledgeProfile(chosen.uid);
+      await this.switchMgr.applyProfile(chosen.uid);
     } catch (e) {
-      if (e instanceof HardSwitchAbortedByUser) {
+      if (e instanceof ApplyAbortedByUser) {
         this.notify("Apply profile cancelled.");
         return;
       }
@@ -182,7 +182,7 @@ export class FocusProfileCommands {
       return;
     }
 
-    const folderName = FocusProfileCommands.extractAssetSpaceFolder(activePath);
+    const folderName = ProfileCommands.extractAssetSpaceFolder(activePath);
     if (folderName === null) {
       this.notify(
         "Not in an assetspace folder (expected path under `assetspaces/<as>/`)",
@@ -243,7 +243,7 @@ export class FocusProfileCommands {
    */
   private async resolveLabel(
     uid: string | null,
-    lister: () => Promise<FocusProfileChoice[]>,
+    lister: () => Promise<ProfileChoice[]>,
   ): Promise<string> {
     if (uid === null || uid.length === 0) return "(none)";
     try {

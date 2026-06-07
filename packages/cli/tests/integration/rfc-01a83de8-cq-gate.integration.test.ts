@@ -1,7 +1,7 @@
 /**
  * RFC `01a83de8` §5 (Competency Questions) + EV7 — STRICT-mode CQ gate.
  *
- * RFC 01a83de8 turns FocusProfile into a Maven-style Profile: `_includes` →
+ * RFC 01a83de8 makes the profile class Maven-style: `_includes` →
  * AssetSpace (direct lib) and `_imports` → Profile (BOM composition). The
  * effective classpath (CQ2) is the closure
  *   `_includes ∪ transitive(_imports*)`
@@ -56,7 +56,7 @@ import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapte
 const AS_CLASS_UID = "73bd00e4-ccc0-4f3f-b20d-c4388c4588fb";
 /** Real TBox UID of `exo__Class` (metaclass — `exo__Instance_class` of the class defs). */
 const EXO_CLASS_METACLASS_UID = "8619c4fc-64f1-4869-b17e-e34186cacca9";
-/** Real TBox UID of `exo__Profile` (formerly `exo__FocusProfile`). */
+/** Real TBox UID of `exo__Profile`. */
 const PROFILE_CLASS_UID = "3de846cd-1f0e-4f98-8613-b8587aa15174";
 
 const AS_A_UID = "11111111-1111-4111-8111-111111111111";

@@ -1,10 +1,10 @@
 import { App, FuzzySuggestModal } from "obsidian";
 
-import type { FocusProfileChoice } from "./FocusProfileCommands";
+import type { ProfileChoice } from "./ProfileCommands";
 
 /**
  * ProfileFuzzyModal — thin Obsidian `FuzzySuggestModal` wrapper used by
- * `FocusProfileCommands.fuzzyPick` (RFC 0a0791c1 §B.11). Resolves the
+ * `ProfileCommands.fuzzyPick` (RFC 0a0791c1 §B.11). Resolves the
  * caller's Promise with the chosen profile, or `null` when the user
  * dismisses the picker without selecting anything.
  *
@@ -18,30 +18,30 @@ import type { FocusProfileChoice } from "./FocusProfileCommands";
  * Active profile is decorated с trailing «✓ (active)» so users can see
  * the current selection без duplicating the picker state.
  */
-export class ProfileFuzzyModal extends FuzzySuggestModal<FocusProfileChoice> {
+export class ProfileFuzzyModal extends FuzzySuggestModal<ProfileChoice> {
   private resolved = false;
-  private readonly resolve: (value: FocusProfileChoice | null) => void;
+  private readonly resolve: (value: ProfileChoice | null) => void;
 
   constructor(
     app: App,
-    private readonly options: FocusProfileChoice[],
+    private readonly options: ProfileChoice[],
     title: string,
-    resolve: (value: FocusProfileChoice | null) => void,
+    resolve: (value: ProfileChoice | null) => void,
   ) {
     super(app);
     this.resolve = resolve;
     this.setPlaceholder(title);
   }
 
-  getItems(): FocusProfileChoice[] {
+  getItems(): ProfileChoice[] {
     return this.options;
   }
 
-  getItemText(item: FocusProfileChoice): string {
+  getItemText(item: ProfileChoice): string {
     return item.isActive ? `${item.label} ✓ (active)` : item.label;
   }
 
-  onChooseItem(item: FocusProfileChoice): void {
+  onChooseItem(item: ProfileChoice): void {
     if (this.resolved) return;
     this.resolved = true;
     this.resolve(item);

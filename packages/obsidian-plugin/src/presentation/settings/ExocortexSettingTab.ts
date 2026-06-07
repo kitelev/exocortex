@@ -388,10 +388,10 @@ export class ExocortexSettingTab extends PluginSettingTab {
         }),
       );
 
-    // Issue #3320 — RFC 0a0791c1 §B.8 — 4 FocusProfile-related sections
+    // Issue #3320 — RFC 0a0791c1 §B.8 — 4 Profile-related sections
     // (PAT, Active profile, Switch cache, Operations log). Rendered after
     // the existing sections so the diff stays additive.
-    this.renderFocusProfileSections(containerEl);
+    this.renderProfileSections(containerEl);
 
     // Template syntax help
     const helpEl = containerEl.createDiv({
@@ -538,7 +538,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
   }
 
   /**
-   * Issue #3320 — render the 4 FocusProfile sections (PAT, Active profile,
+   * Issue #3320 — render the 4 Profile sections (PAT, Active profile,
    * Switch cache, Operations log) per RFC 0a0791c1 §B.8.
    *
    * Architectural notes:
@@ -549,10 +549,10 @@ export class ExocortexSettingTab extends PluginSettingTab {
    *     empty in v3 — its docstring explicitly says «Settings UI wires
    *     getCacheStats() and shows zeros — acceptable»).
    *
-   *   - FocusProfileSwitchManager is NOT constructed here — it would race
-   *     the manager from registerFocusProfileCommands on the persisted
+   *   - ProfileApplyManager is NOT constructed here — it would race
+   *     the manager from registerProfileCommands on the persisted
    *     lock file. Plugin exposes a hoisted instance via
-   *     `plugin.focusProfileSwitchManager`.
+   *     `plugin.profileApplyManager`.
    *
    *   - GitHubRestClient requires the PAT, so it cannot be a stable field;
    *     constructed inside the Test-connection callback against the freshly
@@ -571,61 +571,53 @@ export class ExocortexSettingTab extends PluginSettingTab {
    *     created synchronously and populated via an IIFE so display() stays
    *     synchronous per Obsidian's PluginSettingTab contract.
    */
-  private renderFocusProfileSections(containerEl: HTMLElement): void {
+  private renderProfileSections(containerEl: HTMLElement): void {
     const app = this.plugin.app;
     const notifier = this.plugin.notifier;
     const secretsStore = new LocalSecretsStore({ app });
     const switchCache = new SwitchCacheLayer();
     const operationsLog = new OperationsLogReader({ app });
 
-    // ─────── Section 0 — Knowledge vs Focus overview (RFC 13da049f R35) ───────
-    // R35: users were confused about «which profile do I edit?». The two
-    // profile types are independent slots with different mechanisms; this
-    // overview block names them up-front so the sections below read clearly.
-    new Setting(containerEl).setName("Knowledge and focus profiles").setHeading();
+    // ─────── Section 0 — Profile overview (Phase 5 apply-model) ───────
+    // A profile is a named group of AssetSpaces. Applying it makes the vault's
+    // on-disk mount-state match the profile (materialize what it includes,
+    // tear down the rest), so users edit ONE thing — the profile's AssetSpace
+    // list — and run ONE operation, «Apply profile».
+    new Setting(containerEl).setName("Profiles").setHeading();
 
     const profilesOverviewEl = containerEl.createDiv({
       cls: "setting-item-description",
     });
     profilesOverviewEl.createEl("p", {
       text:
-        "Two independent profile types control what you see. They are " +
-        "separate slots — a Knowledge profile and a Focus profile can be " +
-        "active at the same time, and switching one never touches the other.",
+        "A profile (an exo__Profile asset) is a named group of AssetSpaces. " +
+        "Applying a profile makes the vault's on-disk mount-state match it: " +
+        "the AssetSpaces it includes are materialized, everything else " +
+        "(except the always-on floor) is torn down — a strict replace.",
     });
-    const profilesOverviewList = profilesOverviewEl.createEl("ul");
-    const knowledgeLi = profilesOverviewList.createEl("li");
-    knowledgeLi.createEl("strong", { text: "Knowledge profile — storage." });
-    knowledgeLi.appendText(
-      " A hard switch that physically materializes or tears down AssetSpace " +
-        "submodules on disk (and rewrites .gitmodules). Heavyweight: a " +
-        "confirmation gate, an uncommitted-changes guard, and ~30 s per " +
-        "freshly-pulled AssetSpace. Pick a KnowledgeProfile asset via the " +
-        "«Exocortex: Switch knowledge profile (filesystem destroy + " +
-        "materialize)» command (Cmd+P). Use it to " +
+    const applyLi = profilesOverviewEl.createEl("ul").createEl("li");
+    applyLi.createEl("strong", { text: "Apply profile." });
+    applyLi.appendText(
+      " Pick a Profile asset via the «Exocortex: Apply profile» command " +
+        "(Cmd+P). It physically materializes or tears down AssetSpace " +
+        "submodules on disk (and rewrites .gitmodules), so it is gated by a " +
+        "confirmation prompt and an uncommitted-changes guard, and costs " +
+        "~30 s per freshly-pulled AssetSpace. The floor AssetSpaces " +
+        "(exo, exocmd, shared-identities) are never torn down. Use it to " +
         "install or remove whole ontology bundles and to keep " +
         "privacy-sensitive content physically off the device.",
-    );
-    const focusLi = profilesOverviewList.createEl("li");
-    focusLi.createEl("strong", { text: "Focus profile — filter." });
-    focusLi.appendText(
-      " A soft switch that applies a query-time RDF filter; nothing changes " +
-        "on disk. Lightweight: ~1–2 s reindex, instantly reversible. Pick a " +
-        "FocusProfile asset via the dropdown below or the «Exocortex: Switch " +
-        "focus profile» command. Use it to narrow search / SPARQL / graph " +
-        "view to the slice you are working in right now.",
     );
     profilesOverviewEl.createEl("p", {
       text:
         "Adding an ontology to a profile is NOT transitive — listing pmbok " +
         "does not auto-add ems. Add each AssetSpace the profile needs " +
-        "explicitly. See docs/profiles.md for the full distinction, " +
-        "examples, and composition rules.",
+        "explicitly. See docs/profile.md for the full model, examples, and " +
+        "composition rules.",
     });
 
     // ─────── Section 1 — PAT (GitHub Personal Access Token) ───────
     // eslint-disable-next-line obsidianmd/ui/sentence-case -- "GitHub" + "PAT" are proper noun + established acronym
-    new Setting(containerEl).setName("FocusProfile: GitHub PAT").setHeading();
+    new Setting(containerEl).setName("Profile: GitHub PAT").setHeading();
 
     const patDesc = containerEl.createDiv({ cls: "setting-item-description" });
     patDesc.appendText(
@@ -711,14 +703,14 @@ export class ExocortexSettingTab extends PluginSettingTab {
 
     // Issue #3327 Item #3 — read switch state from device-local store
     // (data.local.json). `plugin.localDataStore` is null until
-    // `registerFocusProfileCommands` resolves (and undefined in unit
+    // `registerProfileCommands` resolves (and undefined in unit
     // tests с partial plugin mocks); treat as no-active-profile before
     // then, matching the previous fallback behaviour.
     //
     // RFC 0a0791c1 Phase 5 T2 — single last-applied slot. Switching is the
     // «Exocortex: Apply profile» Cmd+P command (mount-state strict replace,
     // gated behind a confirmation prompt because it mutates the filesystem);
-    // the former soft-switch dropdown was removed with the soft RDF filter.
+    // the former soft-filter dropdown was removed with the query-time RDF filter.
     const activeProfileUid = this.plugin.localDataStore
       ? this.plugin.localDataStore.getActiveProfileUid()
       : null;
@@ -779,7 +771,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
         // UID → label lookup uses the same profile lister как the Cmd+P
         // picker, so labels match exactly. Fall back to UID[:8] when an
         // entry references a since-deleted profile.
-        const lister = this.plugin.listFocusProfileChoices;
+        const lister = this.plugin.listProfileChoices;
         const labelByUid: Map<string, string> = new Map();
         if (lister !== null) {
           try {

@@ -195,7 +195,7 @@ export class SPARQLQueryService {
 
   /**
    * Returns the underlying `VaultRDFIndexer`. Exposed to support B.4
-   * `FocusProfileSwitchManager` wiring (RFC 0a0791c1 #3322) — the
+   * `ProfileApplyManager` wiring (RFC 0a0791c1 #3322) — the
    * SwitchManager's `IRdfIndexer.refresh()` contract triggers a profile-switch
    * reindex via `VaultRDFIndexer.refresh()`. RFC 01a83de8 Phase 3 removed the
    * query-time soft-filter; profile switching is mount-state based. The adapter

@@ -45,8 +45,8 @@ Compared to existing tools:
 - **Modular ontologies** — IMS (concepts, notes, people), EMS (tasks, projects, meetings), ZTLK (zettelkasten)
 - **Everything as Knowledge** — commands, workflows, property schemas, and layouts defined as vault assets, not hardcoded
 - **Ontology plugins** — extend the system with installable ontology packages (e.g. [GTD + Jedi Techniques](https://github.com/kitelev/gtd-jedi))
-- **FocusProfile** (production-ready, v16.51+) — vault-declared homoiconic profiles that drive **both** runtime filtering of the RDF graph (soft switch) and on-disk submodule materialization (hard switch). One vault, multiple contexts, selective sync. See [docs/focus-profile.md](./docs/focus-profile.md).
-- **UI/CLI Parity** — every capability is reachable from the Obsidian plugin and the CLI; neither client holds exclusive features. The complement of homoiconicity: it keeps the *invocation* layer open just as homoiconicity keeps the *data* layer open. See [VISION.md](./VISION.md#uicli-parity-invariant).
+- **Profile** (production-ready) — vault-declared homoiconic profiles that drive on-disk AssetSpace materialization via a single **Apply profile** operation (mount-state strict replace). One vault, multiple contexts, selective sync. See [docs/profile.md](./docs/profile.md).
+- **UI/CLI Parity** — every capability is reachable from the Obsidian plugin and the CLI; neither client holds exclusive features. The complement of homoiconicity: it keeps the _invocation_ layer open just as homoiconicity keeps the _data_ layer open. See [VISION.md](./VISION.md#uicli-parity-invariant).
 - **Local-first** — all data stays on your device, no cloud required
 
 ---
@@ -195,18 +195,17 @@ Install community ontology packages to extend your knowledge graph.
 
 > **Note:** The `assetspace` CLI subcommand is on the roadmap and not yet available. Follow [kitelev/exocortex](https://github.com/kitelev/exocortex) for updates.
 
-### FocusProfile — Vault-Declared Context Switching
+### Profile — Vault-Declared Context
 
-**Production-ready since v16.51.** FocusProfile is the architectural cornerstone that makes Exocortex genuinely multi-context: one vault, many roles, full privacy/perf isolation per role.
+**Production-ready.** Profile is the architectural cornerstone that makes Exocortex genuinely multi-context: one vault, many roles, full privacy/perf isolation per role.
 
-A profile is a regular vault asset (`exo__FocusProfile`) that declares which AssetSpaces (ontology submodule packages) are active. The plugin exposes two switching modes:
+A profile is a regular vault asset (`exo__Profile`) that declares which AssetSpaces (ontology submodule packages) are active. There is a single operation over it:
 
-- **Soft switch** (instant) — runtime filter on the RDF graph and SPARQL/UI queries. Folders stay on disk; profile boundary is enforced in-memory.
-- **Hard switch** (2-phase commit) — destroys non-active submodule folders, restores from cache or re-pulls from GitHub. Eliminates the iPhone Obsidian Sync reindex storm; physical privacy boundary between work / personal / reading contexts.
+- **Apply profile** (`Exocortex: Apply profile`) — a 2-phase-commit, mount-state strict replace. Materializes the profile's effective AssetSpaces (restore from cache or re-pull from GitHub), unmounts the rest; the TS-floor (`exo`, `exocmd`, `shared-identities`) is never unmounted. Eliminates the iPhone Obsidian Sync reindex storm; gives a physical privacy boundary between work / personal / reading contexts.
 
-`exo__AssetSpace_materialized` is a runtime-derived property (RFC 22b50a17 Phase 4) that reflects current on-disk state in SPARQL and the inline ✅/⏸ badge on AssetSpace pages.
+`exo__AssetSpace_materialized` is a runtime-derived property that reflects current on-disk state in SPARQL and the inline ✅/⏸ badge on AssetSpace pages.
 
-See [docs/focus-profile.md](./docs/focus-profile.md) for the full architectural pitch, including the UID-canon privacy model.
+See [docs/profile.md](./docs/profile.md) for the full architectural pitch, including the UID-canon privacy model.
 
 ---
 

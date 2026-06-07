@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  *
- * Focused unit tests for CliHardSwitchService helpers not exercised by the
+ * Focused unit tests for CliApplyProfileService helpers not exercised by the
  * integration suite (SSH→HTTPS URL normalisation; namespace-less descriptor
  * scan).
  */
@@ -10,10 +10,10 @@ import * as path from "node:path";
 import * as os from "node:os";
 
 import {
-  CliHardSwitchService,
+  CliApplyProfileService,
   toHttpsGitHubUrl,
-} from "../../src/services/CliHardSwitchService";
-import { ASSET_SPACE_CLASS_UID } from "../../src/services/CliFocusProfileResolver";
+} from "../../src/services/CliApplyProfileService";
+import { ASSET_SPACE_CLASS_UID } from "../../src/services/CliProfileResolver";
 
 describe("toHttpsGitHubUrl", () => {
   it("passes through canonical HTTPS form", () => {
@@ -39,7 +39,7 @@ describe("toHttpsGitHubUrl", () => {
   });
 });
 
-describe("CliHardSwitchService.scanVault", () => {
+describe("CliApplyProfileService.scanVault", () => {
   let root: string;
   beforeEach(() => {
     root = mkdtempSync(path.join(os.tmpdir(), "exo-cli-hs-scan-"));
@@ -60,7 +60,7 @@ describe("CliHardSwitchService.scanVault", () => {
         `exo__AssetSpace_source: "https://github.com/kitelev/exoas-testlib"\n` +
         `---\n`,
     );
-    const svc = new CliHardSwitchService({ vaultPath: root });
+    const svc = new CliApplyProfileService({ vaultPath: root });
     const { infos } = svc.scanVault();
     expect(infos).toHaveLength(1);
     expect(infos[0].uid).toBe(uid);
@@ -78,7 +78,7 @@ describe("CliHardSwitchService.scanVault", () => {
       path.join(dir, `${uid}.md`),
       `---\nexo__Asset_uid: ${uid}\nexo__Instance_class:\n  - "[[${ASSET_SPACE_CLASS_UID}]]"\n---\n`,
     );
-    const svc = new CliHardSwitchService({ vaultPath: root });
+    const svc = new CliApplyProfileService({ vaultPath: root });
     expect(svc.scanVault().infos).toHaveLength(0);
   });
 
@@ -91,7 +91,7 @@ describe("CliHardSwitchService.scanVault", () => {
       path.join(root, `${uid}.md`),
       `---\nexo__Asset_uid: ${uid}\nexo__Instance_class:\n  - "[[${ASSET_SPACE_CLASS_UID}]]"\nexo__AssetSpace_source: "file:///tmp/local-clone"\n---\n`,
     );
-    const svc = new CliHardSwitchService({ vaultPath: root });
+    const svc = new CliApplyProfileService({ vaultPath: root });
     expect(svc.scanVault().infos).toHaveLength(0);
   });
 });

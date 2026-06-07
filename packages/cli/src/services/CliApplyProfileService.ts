@@ -1,10 +1,10 @@
 /**
- * CLI-side hard-switch orchestrator (Issue #3416 — UI↔CLI parity).
+ * CLI-side apply-profile orchestrator (Issue #3416 — UI↔CLI parity).
  *
- * Turns the `hard-switch` scaffold into a real mount-state switch: tears down
+ * Turns the `apply-profile` scaffold into a real mount-state switch: tears down
  * AssetSpaces NOT in the target profile's effective set and materialises those
  * that ARE, via the GitHub REST tarball path (no `git` binary). Mirrors the
- * plugin's mount-state model (`FocusProfileSwitchManager.restSwitchProfile`):
+ * plugin's mount-state model (the profile-apply manager REST switch):
  *
  *   - "an AssetSpace is materialised iff its derived folder exists on disk"
  *     (`derivePath(_source)` → `assetspaces/<owner>/<repo>`)
@@ -26,7 +26,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import yaml from "js-yaml";
 
-import type { HardSwitchPlan } from "exocortex";
+import type { ApplyPlan } from "exocortex";
 import {
   derivePath,
   assertTsFloor as assertTsFloorGuard,
@@ -36,10 +36,10 @@ import {
 
 import {
   ASSET_SPACE_CLASS_UID,
-  FOCUS_PROFILE_CLASS_UID,
+  PROFILE_CLASS_UID,
   parseWikilinkArray,
   type ResolveFilterResult,
-} from "./CliFocusProfileResolver.js";
+} from "./CliProfileResolver.js";
 import { BootstrapAssetSpaceService } from "./BootstrapAssetSpaceService.js";
 
 /**
@@ -47,7 +47,7 @@ import { BootstrapAssetSpaceService } from "./BootstrapAssetSpaceService.js";
  * ({@link exocortex/src/domain/profile/TsFloorGuard}) so the single class
  * identity is shared across plugin + CLI — `e instanceof TsFloorViolationError`
  * works regardless of import path. Retained as a named export here for
- * backward-compat with the `hard-switch` command.
+ * backward-compat with the `apply-profile` command.
  */
 export { TsFloorViolationError };
 
@@ -86,20 +86,20 @@ export interface MaterializeTarget {
   label: string;
 }
 
-/** Result of {@link CliHardSwitchService.buildDiff}. */
-export interface HardSwitchDiff {
+/** Result of {@link CliApplyProfileService.buildDiff}. */
+export interface ApplyProfileDiff {
   toDestroy: TearDownTarget[];
   toMaterialize: MaterializeTarget[];
-  plan: HardSwitchPlan;
+  plan: ApplyPlan;
 }
 
-/** Result of {@link CliHardSwitchService.execute}. */
-export interface HardSwitchExecResult {
+/** Result of {@link CliApplyProfileService.execute}. */
+export interface ApplyProfileExecResult {
   destroyed: string[];
   materialized: string[];
 }
 
-export interface CliHardSwitchServiceOptions {
+export interface CliApplyProfileServiceOptions {
   /** Absolute vault root. */
   vaultPath: string;
   /**
@@ -132,12 +132,12 @@ const SKIP_DIRS = new Set([
   ".git",
 ]);
 
-export class CliHardSwitchService {
+export class CliApplyProfileService {
   private readonly vaultPath: string;
   private readonly mount: BootstrapAssetSpaceService;
   private readonly ref: string;
 
-  constructor(opts: CliHardSwitchServiceOptions) {
+  constructor(opts: CliApplyProfileServiceOptions) {
     this.vaultPath = opts.vaultPath;
     this.mount = opts.mount ?? new BootstrapAssetSpaceService();
     this.ref = opts.ref ?? "main";
@@ -145,7 +145,7 @@ export class CliHardSwitchService {
 
   /**
    * Single vault walk collecting AssetSpace descriptors (class match by UID,
-   * consistent with `CliFocusProfileResolver`) and FocusProfile labels. The
+   * consistent with `CliProfileResolver`) and Profile labels. The
    * descriptor's *location* is irrelevant to the mount folder — a registry-
    * hosted descriptor (e.g. `exoas-kitelev-registry`) still describes an
    * AssetSpace that mounts at `derivePath(_source)`, so the descriptor survives
@@ -219,7 +219,7 @@ export class CliHardSwitchService {
           infos.push({ uid, git, folderName, label });
         }
 
-        if (classes.includes(FOCUS_PROFILE_CLASS_UID)) {
+        if (classes.includes(PROFILE_CLASS_UID)) {
           const label = fm["exo__Asset_label"];
           if (typeof label === "string" && label.length > 0) {
             profileLabels.set(uid, label);
@@ -233,7 +233,7 @@ export class CliHardSwitchService {
   /**
    * R24 TS-floor guard. The profile's *declared* AssetSpace set (pre-floor —
    * `result.declaredOntologies` intersected with known AssetSpace UIDs) must
-   * contain every floor AssetSpace, otherwise the hard switch would tear one
+   * contain every floor AssetSpace, otherwise the apply would tear one
    * down and brick the engine.
    *
    * EV8 — delegates to the single named guard in `exocortex`. The CLI/headless
@@ -248,7 +248,7 @@ export class CliHardSwitchService {
   }
 
   /**
-   * Compute the mount-state diff + the `HardSwitchPlan` from the resolver's
+   * Compute the mount-state diff + the `ApplyPlan` from the resolver's
    * engaged result. Pure (no filesystem mutation) — `existsSync` reads only.
    */
   buildDiff(params: {
@@ -258,7 +258,7 @@ export class CliHardSwitchService {
     sourceProfileLabel: string;
     result: ResolveFilterResult;
     infos: AssetSpaceInfo[];
-  }): HardSwitchDiff {
+  }): ApplyProfileDiff {
     const { targetProfileUid, targetProfileLabel, sourceProfileUid, sourceProfileLabel, result, infos } =
       params;
 
@@ -323,7 +323,7 @@ export class CliHardSwitchService {
     const filesToDestroy = new Map<string, string[]>();
     for (const t of toDestroy) filesToDestroy.set(t.asUid, t.files);
 
-    const plan: HardSwitchPlan = {
+    const plan: ApplyPlan = {
       targetProfileUid,
       targetProfileLabel,
       sourceProfileUid,
@@ -352,7 +352,7 @@ export class CliHardSwitchService {
    * target). Idempotent at the per-AS level: a target already in the desired
    * state would not appear in the diff.
    */
-  async execute(diff: HardSwitchDiff): Promise<HardSwitchExecResult> {
+  async execute(diff: ApplyProfileDiff): Promise<ApplyProfileExecResult> {
     const destroyed: string[] = [];
     const materialized: string[] = [];
 

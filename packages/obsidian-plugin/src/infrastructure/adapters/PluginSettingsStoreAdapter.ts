@@ -1,7 +1,7 @@
 import type {
   ISettingsStore,
   SwitchSettings,
-} from "./FocusProfileSwitchManager";
+} from "./ProfileApplyManager";
 import type { PluginLocalDataStore } from "./PluginLocalDataStore";
 
 /**
@@ -11,7 +11,7 @@ import type { PluginLocalDataStore } from "./PluginLocalDataStore";
  * Prior to Item #3, switch state lived в `plugin.data.json` (synced
  * across devices via Obsidian Sync). That caused two UX bugs:
  *   1. Profile selection replicated cross-device against user intent
- *      (per CLAUDE.md FocusProfile section «per-device» contract).
+ *      (per CLAUDE.md Profile section «per-device» contract).
  *   2. `_switchInProgress=true` left on a crashed device surfaced on
  *      sibling devices as spurious `recoverIfNeeded` fires.
  *
@@ -21,7 +21,7 @@ import type { PluginLocalDataStore } from "./PluginLocalDataStore";
  * one-time legacy-keys migration BEFORE constructing this adapter.
  *
  * The `ISettingsStore` interface contract is unchanged — `load()` /
- * `save()` shape matches what `FocusProfileSwitchManager` and tests
+ * `save()` shape matches what `ProfileApplyManager` and tests
  * already use.
  */
 export class PluginSettingsStoreAdapter implements ISettingsStore {

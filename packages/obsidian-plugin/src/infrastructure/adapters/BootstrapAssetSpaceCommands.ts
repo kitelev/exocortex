@@ -87,7 +87,7 @@ export interface BootstrapAssetSpaceCommandsDeps {
    * from the CURRENT GitHub PAT. Issue #3382: the previous fixed `puller`
    * captured an onload-time client, ignoring a PAT the user entered after the
    * plugin loaded → 401/404 on private-repo pulls. Production wiring resolves
-   * this to {@link HardSwitchDepsFactory.buildAssetSpacePuller}.
+   * this to {@link ApplyDepsFactory.buildAssetSpacePuller}.
    */
   getPuller: () => Promise<IAssetSpacePuller>;
   gitOps: IGitSubmoduleOps;

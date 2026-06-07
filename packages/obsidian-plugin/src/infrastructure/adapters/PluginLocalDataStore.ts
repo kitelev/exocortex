@@ -4,7 +4,7 @@ import type { App } from "obsidian";
  * PluginLocalDataStore — device-local persistence для switch state
  * (`activeProfileUid`, `_switchInProgress`).
  *
- * Per Issue #3327 Item #3 + CLAUDE.md FocusProfile section refinement:
+ * Per Issue #3327 Item #3 + CLAUDE.md Profile section refinement:
  * the active profile selection и mid-switch flag are per-device state,
  * NOT cross-device sync state. Storing них в `plugin.data.json` causes
  * Obsidian Sync to replicate the selection: device A choosing profile
@@ -51,8 +51,8 @@ import type { App } from "obsidian";
  *
  * `activeProfileUid` is the single last-applied cache slot — the profile
  * the «Apply profile» mount-state switch most recently materialised. The
- * former dual Knowledge/Focus slots (`activeKnowledgeProfileUid` /
- * `activeFocusProfileUid`, RFC 13da049f AC14) were retired together with
+ * former dual Knowledge/Focus profile slots (RFC 13da049f AC14) were
+ * retired together with
  * the soft RDF query-time filter in Phase 5 T2; any leftover keys on disk
  * are ignored (RMW preserves them harmlessly).
  */

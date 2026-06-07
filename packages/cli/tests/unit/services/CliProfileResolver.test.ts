@@ -1,5 +1,5 @@
 /**
- * Unit tests for `CliFocusProfileResolver` (RFC 0a0791c1 Issue #3323).
+ * Unit tests for `CliProfileResolver` (RFC 0a0791c1 Issue #3323).
  *
  * Uses an on-disk temp vault for each test — exercises the real file walk,
  * yaml parse, and translation chain that production CLI hits. Faster and
@@ -14,15 +14,15 @@ import os from "os";
 import path from "path";
 
 import {
-  CliFocusProfileResolver,
+  CliProfileResolver,
   TS_FLOOR_AS_UID_EXO,
   TS_FLOOR_AS_UID_EXOCMD,
   TS_FLOOR_AS_UID_SHARED_IDENTITIES,
   ASSET_SPACE_CLASS_UID,
-  FOCUS_PROFILE_CLASS_UID,
+  PROFILE_CLASS_UID,
   parseWikilinkArray,
   extractUidFromWikilink,
-} from "../../../src/services/CliFocusProfileResolver.js";
+} from "../../../src/services/CliProfileResolver.js";
 
 /** Fixed UIDs the fixtures reuse — readable in test names. */
 const PROFILE_PERSONAL_UID = "11111111-1111-1111-1111-111111111111";
@@ -86,7 +86,7 @@ function asProfile(
 ): AssetSpec {
   const fm: Record<string, unknown> = {
     "exo__Asset_uid": uid,
-    "exo__Instance_class": [`[[${FOCUS_PROFILE_CLASS_UID}|exo__FocusProfile]]`],
+    "exo__Instance_class": [`[[${PROFILE_CLASS_UID}|exo__Profile]]`],
   };
   if (opts.label !== undefined) fm["exo__Asset_label"] = opts.label;
   // RFC 01a83de8 Phase 2 — _includes now AssetSpace UIDs; _extends → _imports.
@@ -102,7 +102,7 @@ function asProfile(
   };
 }
 
-describe("CliFocusProfileResolver", () => {
+describe("CliProfileResolver", () => {
   let tmpRoot: string;
 
   beforeEach(async () => {
@@ -119,19 +119,19 @@ describe("CliFocusProfileResolver", () => {
 
   describe("resolveFilter — outcome shapes", () => {
     it("returns no-profile when profileUid is null", async () => {
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter(null);
       expect(out.outcome).toBe("no-profile");
     });
 
     it("returns no-profile when profileUid is undefined", async () => {
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter(undefined);
       expect(out.outcome).toBe("no-profile");
     });
 
     it("returns no-profile when profileUid is empty string", async () => {
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter("");
       expect(out.outcome).toBe("no-profile");
     });
@@ -140,7 +140,7 @@ describe("CliFocusProfileResolver", () => {
       await makeVault(tmpRoot, [
         asAssetSpace(AS_EXO_UID, "exo"),
       ]);
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter("nonexistent-uid");
       expect(out.outcome).toBe("missing-profile");
       if (out.outcome === "missing-profile") {
@@ -157,7 +157,7 @@ describe("CliFocusProfileResolver", () => {
         asAssetSpace(AS_SHARED_UID, "shared-identities"),
         asProfile(PROFILE_BASE_UID, { label: "base" }),
       ]);
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter(PROFILE_BASE_UID);
       expect(out.outcome).toBe("engaged");
       if (out.outcome === "engaged") {
@@ -183,7 +183,7 @@ describe("CliFocusProfileResolver", () => {
           includes: [AS_EMS_UID],
         }),
       ]);
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
       expect(out.outcome).toBe("engaged");
       if (out.outcome === "engaged") {
@@ -211,7 +211,7 @@ describe("CliFocusProfileResolver", () => {
           includes: [AS_EMS_UID], // Profile points directly at AS UID
         }),
       ]);
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
       expect(out.outcome).toBe("engaged");
       if (out.outcome === "engaged") {
@@ -230,7 +230,7 @@ describe("CliFocusProfileResolver", () => {
           includes: [AS_EMS_UID, ONTOLOGY_KITELEV_UID],
         }),
       ]);
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
       expect(out.outcome).toBe("engaged");
       if (out.outcome === "engaged") {
@@ -257,7 +257,7 @@ describe("CliFocusProfileResolver", () => {
           extends_: PROFILE_BASE_UID,
         }),
       ]);
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
       expect(out.outcome).toBe("engaged");
       if (out.outcome === "engaged") {
@@ -277,7 +277,7 @@ describe("CliFocusProfileResolver", () => {
           includes: [AS_KITELEV_UID],
         }),
       ]);
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
       expect(out.outcome).toBe("engaged");
       if (out.outcome === "engaged") {
@@ -300,7 +300,7 @@ describe("CliFocusProfileResolver", () => {
           extends_: PROFILE_CYCLE_A_UID,
         }),
       ]);
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter(PROFILE_CYCLE_A_UID);
       // Either engaged with TS-floor only, or degraded — but must NOT hang and
       // must NOT throw.
@@ -326,7 +326,7 @@ describe("CliFocusProfileResolver", () => {
         );
       }
       await makeVault(tmpRoot, assets);
-      const resolver = new CliFocusProfileResolver({
+      const resolver = new CliProfileResolver({
         vaultPath: tmpRoot,
         maxExtendsDepth: 5,
       });
@@ -346,7 +346,7 @@ describe("CliFocusProfileResolver", () => {
           includes: ["some-random-ontology-uid"],
         }),
       ]);
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
       expect(out.outcome).toBe("degraded");
       if (out.outcome === "degraded") {
@@ -366,7 +366,7 @@ describe("CliFocusProfileResolver", () => {
           includes: [AS_EMS_UID],
         }),
       ]);
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
       expect(out.outcome).toBe("engaged");
       if (out.outcome === "engaged") {
@@ -399,7 +399,7 @@ describe("CliFocusProfileResolver", () => {
             includes: [AS_EMS_UID],
           }),
         ]);
-        const resolver = new CliFocusProfileResolver({
+        const resolver = new CliProfileResolver({
           vaultPath: tmpRoot,
           alsoVaultPaths: [secondaryRoot],
         });
@@ -422,7 +422,7 @@ describe("CliFocusProfileResolver", () => {
         asProfile(PROFILE_BASE_UID),
       ]);
       const warnings: string[] = [];
-      const resolver = new CliFocusProfileResolver({
+      const resolver = new CliProfileResolver({
         vaultPath: tmpRoot,
         alsoVaultPaths: ["/tmp/this-path-definitely-does-not-exist-test"],
         warn: (m) => warnings.push(m),
@@ -448,7 +448,7 @@ describe("CliFocusProfileResolver", () => {
         "# scratch\n\nnothing structured here\n",
         "utf-8",
       );
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter(PROFILE_BASE_UID);
       expect(out.outcome).toBe("engaged");
     });
@@ -467,7 +467,7 @@ describe("CliFocusProfileResolver", () => {
         "---\nthis is: \"not: valid:\n  yaml here\n---\n",
         "utf-8",
       );
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter(PROFILE_BASE_UID);
       expect(out.outcome).toBe("engaged");
     });
@@ -484,10 +484,10 @@ describe("CliFocusProfileResolver", () => {
       await fs.ensureDir(path.join(tmpRoot, ".obsidian"));
       await fs.writeFile(
         path.join(tmpRoot, ".obsidian", `${stowawayUid}.md`),
-        `---\nexo__Asset_uid: "${stowawayUid}"\nexo__Instance_class:\n  - "[[${FOCUS_PROFILE_CLASS_UID}|exo__FocusProfile]]"\n---\n`,
+        `---\nexo__Asset_uid: "${stowawayUid}"\nexo__Instance_class:\n  - "[[${PROFILE_CLASS_UID}|exo__Profile]]"\n---\n`,
         "utf-8",
       );
-      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
       const out = await resolver.resolveFilter(stowawayUid);
       expect(out.outcome).toBe("missing-profile");
     });

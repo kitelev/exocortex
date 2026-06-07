@@ -48,7 +48,7 @@ jest.mock("obsidian", () => {
 });
 
 import type { App } from "obsidian";
-import type { HardSwitchPlan } from "exocortex";
+import type { ApplyPlan } from "exocortex";
 import {
   ModalConfirmGate,
   MODAL_FILE_LIST_CAP,
@@ -56,7 +56,7 @@ import {
 
 const fakeApp = {} as unknown as App;
 
-function makePlan(overrides: Partial<HardSwitchPlan> = {}): HardSwitchPlan {
+function makePlan(overrides: Partial<ApplyPlan> = {}): ApplyPlan {
   return {
     targetProfileUid: "target-uid",
     targetProfileLabel: "Work",
@@ -86,11 +86,11 @@ describe("ModalConfirmGate", () => {
     document.body.innerHTML = "";
   });
 
-  it("resolves true when «Hard switch» button is clicked", async () => {
+  it("resolves true when «Apply» button is clicked", async () => {
     const gate = new ModalConfirmGate(fakeApp);
-    const promise = gate.confirmHardSwitch(makePlan());
+    const promise = gate.confirmApply(makePlan());
 
-    const confirmBtn = findButton("Hard switch");
+    const confirmBtn = findButton("Apply");
     expect(confirmBtn).toBeDefined();
     expect(confirmBtn!.classList.contains("mod-warning")).toBe(true);
     confirmBtn!.click();
@@ -100,7 +100,7 @@ describe("ModalConfirmGate", () => {
 
   it("resolves false when «Cancel» button is clicked", async () => {
     const gate = new ModalConfirmGate(fakeApp);
-    const promise = gate.confirmHardSwitch(makePlan());
+    const promise = gate.confirmApply(makePlan());
 
     const cancelBtn = findButton("Cancel");
     expect(cancelBtn).toBeDefined();
@@ -111,9 +111,9 @@ describe("ModalConfirmGate", () => {
 
   it("renders torn-down AS list with file counts", async () => {
     const gate = new ModalConfirmGate(fakeApp);
-    const promise = gate.confirmHardSwitch(makePlan());
+    const promise = gate.confirmApply(makePlan());
 
-    const tearSection = document.querySelector(".hard-switch-tear-section");
+    const tearSection = document.querySelector(".apply-confirm-tear-section");
     expect(tearSection).not.toBeNull();
     expect(tearSection?.textContent).toContain("personal (2 files)");
 
@@ -124,9 +124,9 @@ describe("ModalConfirmGate", () => {
 
   it("renders materialize AS list", async () => {
     const gate = new ModalConfirmGate(fakeApp);
-    const promise = gate.confirmHardSwitch(makePlan());
+    const promise = gate.confirmApply(makePlan());
 
-    const matSection = document.querySelector(".hard-switch-mat-section");
+    const matSection = document.querySelector(".apply-confirm-mat-section");
     expect(matSection).not.toBeNull();
     expect(matSection?.textContent).toContain("work");
 
@@ -136,9 +136,9 @@ describe("ModalConfirmGate", () => {
 
   it("renders title with target profile label", async () => {
     const gate = new ModalConfirmGate(fakeApp);
-    const promise = gate.confirmHardSwitch(makePlan());
+    const promise = gate.confirmApply(makePlan());
 
-    const title = document.querySelector(".hard-switch-title");
+    const title = document.querySelector(".apply-confirm-title");
     expect(title).not.toBeNull();
     expect(title?.textContent).toContain("Work");
 
@@ -152,11 +152,11 @@ describe("ModalConfirmGate", () => {
       huge.push(`assetspaces/big/file-${i}.md`);
     }
     const gate = new ModalConfirmGate(fakeApp);
-    const promise = gate.confirmHardSwitch(
+    const promise = gate.confirmApply(
       makePlan({ filesToDestroy: new Map([["as-big", huge]]) }),
     );
 
-    const filesSection = document.querySelector(".hard-switch-files-section");
+    const filesSection = document.querySelector(".apply-confirm-files-section");
     expect(filesSection).not.toBeNull();
     const items = filesSection!.querySelectorAll("li");
     expect(items.length).toBe(MODAL_FILE_LIST_CAP);
@@ -169,7 +169,7 @@ describe("ModalConfirmGate", () => {
 
   it("renders «(none)» placeholders when sections are empty", async () => {
     const gate = new ModalConfirmGate(fakeApp);
-    const promise = gate.confirmHardSwitch(
+    const promise = gate.confirmApply(
       makePlan({
         filesToDestroy: new Map(),
         assetSpacesBeingTornDown: [],
@@ -177,9 +177,9 @@ describe("ModalConfirmGate", () => {
       }),
     );
 
-    expect(document.querySelector(".hard-switch-tear-section")?.textContent).toContain("(none)");
-    expect(document.querySelector(".hard-switch-files-section")?.textContent).toContain("(none)");
-    expect(document.querySelector(".hard-switch-mat-section")?.textContent).toContain("(none)");
+    expect(document.querySelector(".apply-confirm-tear-section")?.textContent).toContain("(none)");
+    expect(document.querySelector(".apply-confirm-files-section")?.textContent).toContain("(none)");
+    expect(document.querySelector(".apply-confirm-mat-section")?.textContent).toContain("(none)");
 
     findButton("Cancel")?.click();
     await promise;
@@ -187,9 +187,9 @@ describe("ModalConfirmGate", () => {
 
   it("settles exactly once when confirm is clicked twice", async () => {
     const gate = new ModalConfirmGate(fakeApp);
-    const promise = gate.confirmHardSwitch(makePlan());
+    const promise = gate.confirmApply(makePlan());
 
-    const confirmBtn = findButton("Hard switch")!;
+    const confirmBtn = findButton("Apply")!;
     confirmBtn.click();
     // Second click on a now-detached button must not throw and must not
     // resolve the (already-settled) promise differently.
@@ -202,7 +202,7 @@ describe("ModalConfirmGate", () => {
     const gate = new ModalConfirmGate(fakeApp);
     // Capture promise but force close before any button click. The Modal
     // mock's close() calls onClose() which our impl uses to settle(false).
-    const promise = gate.confirmHardSwitch(makePlan());
+    const promise = gate.confirmApply(makePlan());
     // We can't access the modal instance directly; simulate Esc by
     // dispatching a synthetic close — finding the modal via DOM:
     const contentEl = document.body.firstElementChild as HTMLElement | null;

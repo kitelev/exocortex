@@ -1,5 +1,5 @@
 /**
- * FocusProfileSwitchManager.restSwitchProfile() — RFC 01a83de8 Phase 3 T2.
+ * ProfileApplyManager.applyProfileViaRest() — RFC 01a83de8 Phase 3 T2.
  *
  * Mobile-capable profile switch via REST/tarball mount/unmount (no git binary,
  * staging, cache, or git commit). Visibility is mount-state: an AssetSpace is
@@ -12,36 +12,36 @@
  *   2. Revert-verify control — a target already in mount-state ⇒ no-op (soft
  *      switch only, no mount/unmount).
  *   3. R24 TS-floor — target excluding a floor AS throws before any mutation.
- *   4. ConfirmGate decline → HardSwitchAbortedByUser, no mount/unmount.
+ *   4. ConfirmGate decline → ApplyAbortedByUser, no mount/unmount.
  *   5. Not wired — missing restMount throws a clear error.
- *   6. Dispatch — hardSwitchKnowledgeProfile on mobile delegates to
- *      restSwitchProfile (REST path; gitOps never touched).
+ *   6. Dispatch — applyProfile on mobile delegates to
+ *      applyProfileViaRest (REST path; gitOps never touched).
  *
- * Fakes mirror the desktop hardSwitch harness: in-memory vault.adapter
+ * Fakes mirror the desktop apply harness: in-memory vault.adapter
  * (`exists` true for known files/folders), production-shape AssetSpace ABox
  * frontmatter (`_source` derives back to the folder via derivePath), and a
  * FakeLocalDataStore preserving the dual AC14 slots on partial save.
  */
 import { Platform } from "obsidian";
 import type { App, TFile } from "obsidian";
-import type { HardSwitchPlan, IConfirmGate } from "exocortex";
+import type { ApplyPlan, IConfirmGate } from "exocortex";
 
 import {
-  FocusProfileSwitchManager,
-  HardSwitchAbortedByUser,
+  ProfileApplyManager,
+  ApplyAbortedByUser,
   TsFloorViolationError,
   type IProfileResolver,
   type IRdfIndexer,
   type ISettingsStore,
   type ProfileResolution,
   type SwitchSettings,
-} from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
+} from "../../src/infrastructure/adapters/ProfileApplyManager";
 import { PluginLockManager } from "../../src/infrastructure/adapters/PluginLockManager";
 import {
   TS_FLOOR_AS_UID_EXO,
   TS_FLOOR_AS_UID_EXOCMD,
   TS_FLOOR_AS_UID_SHARED_IDENTITIES,
-} from "../../src/infrastructure/adapters/FocusProfileOnloadWiring";
+} from "../../src/infrastructure/adapters/ProfileOnloadWiring";
 
 // ─── Fakes ────────────────────────────────────────────────────────────────
 
@@ -149,8 +149,8 @@ class FakeLocalDataStore {
 
 class FakeConfirmGate implements IConfirmGate {
   approve = true;
-  lastPlan: HardSwitchPlan | null = null;
-  async confirmHardSwitch(plan: HardSwitchPlan): Promise<boolean> {
+  lastPlan: ApplyPlan | null = null;
+  async confirmApply(plan: ApplyPlan): Promise<boolean> {
     this.lastPlan = plan;
     return this.approve;
   }
@@ -219,7 +219,7 @@ function setup(opts: SetupOpts) {
       frontmatter: {
         exo__Asset_uid: "target",
         exo__Asset_label: "Target Profile",
-        exo__Instance_class: ["[[exo__FocusProfile]]"],
+        exo__Instance_class: ["[[exo__Profile]]"],
       },
     },
     ...ALL_AS.map((as) => {
@@ -272,13 +272,15 @@ function setup(opts: SetupOpts) {
   const restMount = new FakeRestMount();
   const factoryMount = new FakeRestMount();
   const gitOps = new FakeGitOps();
+  const notifyCalls: string[] = [];
 
-  const mgr = new FocusProfileSwitchManager({
+  const mgr = new ProfileApplyManager({
     app,
     lockMgr,
     resolver,
     rdfIndexer: indexer,
     settingsStore,
+    notify: (m) => notifyCalls.push(m),
     /* eslint-disable @typescript-eslint/no-explicit-any */
     confirmGate,
     localDataStore: localDataStore as any,
@@ -297,6 +299,7 @@ function setup(opts: SetupOpts) {
     restMount,
     factoryMount,
     gitOps,
+    notifyCalls,
   };
 }
 
@@ -304,7 +307,7 @@ const ALL_FLOOR_UIDS = TS_FLOOR.map((f) => f.uid);
 
 // ─── Tests ────────────────────────────────────────────────────────────────
 
-describe("FocusProfileSwitchManager.restSwitchProfile", () => {
+describe("ProfileApplyManager.applyProfileViaRest", () => {
   it("unmounts to-destroy + mounts to-materialize, persists profile + re-indexes", async () => {
     // Currently materialised: floors + kpc. Target: floors + ems (NOT kpc).
     const { mgr, indexer, localDataStore, restMount } = setup({
@@ -312,7 +315,7 @@ describe("FocusProfileSwitchManager.restSwitchProfile", () => {
       materialized: [...ALL_FLOOR_UIDS, "kpc-uid"],
     });
 
-    await mgr.restSwitchProfile("target");
+    await mgr.applyProfileViaRest("target");
 
     // kpc unmounted (was materialised, not in target).
     expect(restMount.unmounted).toEqual(["assetspaces/kitelev/exoas-kpc"]);
@@ -338,13 +341,13 @@ describe("FocusProfileSwitchManager.restSwitchProfile", () => {
 
   it("no-ops to a reindex-only path when mount-state already matches (control)", async () => {
     // Target == currently materialised (floors only) ⇒ no mount/unmount;
-    // restSwitchProfile falls through to the reindex-only path.
+    // applyProfileViaRest falls through to the reindex-only path.
     const { mgr, restMount, indexer } = setup({
       targetIncludes: ALL_FLOOR_UIDS,
       materialized: ALL_FLOOR_UIDS,
     });
 
-    await expect(mgr.restSwitchProfile("target")).resolves.toBeUndefined();
+    await expect(mgr.applyProfileViaRest("target")).resolves.toBeUndefined();
 
     expect(restMount.mounted).toEqual([]);
     expect(restMount.unmounted).toEqual([]);
@@ -353,26 +356,54 @@ describe("FocusProfileSwitchManager.restSwitchProfile", () => {
     expect(indexer.refreshCalls).toBe(1);
   });
 
+  it("notifies reconciliation counts on a real apply (#3448)", async () => {
+    // ems mounted (1), kpc unmounted (1).
+    const { mgr, notifyCalls } = setup({
+      targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
+      materialized: [...ALL_FLOOR_UIDS, "kpc-uid"],
+    });
+
+    await mgr.applyProfileViaRest("target");
+
+    expect(notifyCalls.length).toBe(1);
+    expect(notifyCalls[0]).toContain("1 mounted");
+    expect(notifyCalls[0]).toContain("1 unmounted");
+    expect(notifyCalls[0]).toContain("REST");
+  });
+
+  it("notifies a distinct no-change message on the no-op path (#3448)", async () => {
+    const { mgr, notifyCalls } = setup({
+      targetIncludes: ALL_FLOOR_UIDS,
+      materialized: ALL_FLOOR_UIDS,
+    });
+
+    await mgr.applyProfileViaRest("target");
+
+    expect(notifyCalls.length).toBe(1);
+    expect(notifyCalls[0]).toContain("no changes");
+    expect(notifyCalls[0]).toMatch(/\d+ AssetSpace\(s\) already match/);
+  });
+
   it("throws TsFloorViolationError before any mount/unmount when target excludes a floor AS", async () => {
     const { mgr, restMount } = setup({
       targetIncludes: ["ems-uid"], // excludes all floor AS
       materialized: [...ALL_FLOOR_UIDS, "ems-uid"],
     });
-    await expect(mgr.restSwitchProfile("target")).rejects.toThrow(
+    await expect(mgr.applyProfileViaRest("target")).rejects.toThrow(
       TsFloorViolationError,
     );
     expect(restMount.mounted).toEqual([]);
     expect(restMount.unmounted).toEqual([]);
   });
 
-  it("aborts with HardSwitchAbortedByUser when confirmGate declines — no mutation", async () => {
+  it("aborts with ApplyAbortedByUser when confirmGate declines — no mutation", async () => {
     const { mgr, confirmGate, restMount } = setup({
       targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
       materialized: [...ALL_FLOOR_UIDS, "kpc-uid"],
     });
     confirmGate.approve = false;
-    await expect(mgr.restSwitchProfile("target")).rejects.toThrow(
-      HardSwitchAbortedByUser,
+    await expect(mgr.applyProfileViaRest("target")).rejects.toThrow(
+      ApplyAbortedByUser,
     );
     expect(restMount.mounted).toEqual([]);
     expect(restMount.unmounted).toEqual([]);
@@ -384,7 +415,7 @@ describe("FocusProfileSwitchManager.restSwitchProfile", () => {
       materialized: ALL_FLOOR_UIDS,
       wireRestMount: false,
     });
-    await expect(mgr.restSwitchProfile("target")).rejects.toThrow(
+    await expect(mgr.applyProfileViaRest("target")).rejects.toThrow(
       /dependencies not wired/,
     );
   });
@@ -396,7 +427,7 @@ describe("FocusProfileSwitchManager.restSwitchProfile", () => {
       wireRestMountFactory: true,
     });
 
-    await mgr.restSwitchProfile("target");
+    await mgr.applyProfileViaRest("target");
 
     // Factory mount did the work…
     expect(factoryMount.mounted.map((m) => m.submodulePath)).toEqual([
@@ -409,13 +440,13 @@ describe("FocusProfileSwitchManager.restSwitchProfile", () => {
   });
 });
 
-describe("hardSwitchKnowledgeProfile dispatch (mobile → REST)", () => {
+describe("applyProfile dispatch (mobile → REST)", () => {
   const original = Platform.isMobile;
   afterEach(() => {
     (Platform as unknown as { isMobile: boolean }).isMobile = original;
   });
 
-  it("delegates to restSwitchProfile on mobile (gitOps never touched)", async () => {
+  it("delegates to applyProfileViaRest on mobile (gitOps never touched)", async () => {
     (Platform as unknown as { isMobile: boolean }).isMobile = true;
     const { mgr, restMount, gitOps } = setup({
       targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
@@ -423,7 +454,7 @@ describe("hardSwitchKnowledgeProfile dispatch (mobile → REST)", () => {
       wireGitOps: true,
     });
 
-    await mgr.hardSwitchKnowledgeProfile("target");
+    await mgr.applyProfile("target");
 
     // REST path exercised…
     expect(restMount.mounted.map((m) => m.submodulePath)).toEqual([

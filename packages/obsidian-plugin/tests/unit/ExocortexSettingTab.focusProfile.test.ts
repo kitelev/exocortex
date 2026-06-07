@@ -1,18 +1,18 @@
 /**
  * Issue #3320 — Settings UI 4-section rendering tests.
  *
- * Verifies that `display()` calls `renderFocusProfileSections` and that
+ * Verifies that `display()` calls `renderProfileSections` and that
  * each section's Setting builder is invoked с the expected name / heading
  * sequence: PAT → Active profile → Switch cache → Operations log.
  *
- * RFC 0a0791c1 Phase 5 T2 — the soft-switch dropdown was removed; profile
+ * RFC 0a0791c1 Phase 5 T2 — the soft-filter dropdown was removed; profile
  * switching is the «Exocortex: Apply profile» Cmd+P command. Section 2 now
  * surfaces the single last-applied profile (read-only status + hint).
  *
  * The integration shape (real PAT persistence round-trip, real GitHub call,
  * real apply dispatch) is intentionally out of scope here — those are covered
  * by `LocalSecretsStore.test.ts`, `GitHubRestClient.test.ts`,
- * `FocusProfileSwitchManager.test.ts`. These tests only assert the UI
+ * `ProfileApplyManager.test.ts`. These tests only assert the UI
  * renders the expected scaffold so a future regression that drops one of
  * the sections fails CI loudly.
  */
@@ -106,7 +106,7 @@ jest.mock("@plugin/infrastructure/adapters/SwitchCacheLayer", () => ({
   },
 }));
 
-describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
+describe("ExocortexSettingTab — Issue #3320 Profile sections", () => {
   let settingTab: ExocortexSettingTab;
   let mockApp: any;
   let mockPlugin: any;
@@ -163,7 +163,7 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
       toggleTabTitleLabels: jest.fn(),
       applyDisplayNameTemplate: jest.fn(),
       configureLogChannels: jest.fn(),
-      listFocusProfileChoices: jest.fn().mockResolvedValue([
+      listProfileChoices: jest.fn().mockResolvedValue([
         { uid: "uid-a", label: "Personal", isActive: false },
         { uid: "uid-b", label: "Work", isActive: true },
       ]),
@@ -238,13 +238,13 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
     settingTab.containerEl = mockContainerEl;
   });
 
-  it("renders all 4 FocusProfile section headings in expected order", () => {
+  it("renders all 4 Profile section headings in expected order", () => {
     settingTab.display();
     const headings = settingCalls.filter((c) => c.heading).map((c) => c.name);
     // The Display-Name section also contributes headings. We just assert
     // что 4 expected headings appear в the correct relative order.
     const expected = [
-      "FocusProfile: GitHub PAT",
+      "Profile: GitHub PAT",
       "Active profile",
       "Switch cache",
       "Operations log",
@@ -269,10 +269,10 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
     expect(profileRow).toBeDefined();
   });
 
-  it("renders the Knowledge and focus profiles overview heading (RFC 13da049f R35)", () => {
+  it("renders the Profiles overview heading (RFC 13da049f R35)", () => {
     settingTab.display();
     const overview = settingCalls.find(
-      (c) => c.name === "Knowledge and focus profiles" && c.heading,
+      (c) => c.name === "Profiles" && c.heading,
     );
     expect(overview).toBeDefined();
   });

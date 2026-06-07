@@ -3,7 +3,7 @@
 // is `~/Library/Caches/exocortex/switch-cache/` (macOS desktop). Obsidian's
 // `vault.adapter` API only addresses vault-relative paths, so OS-level
 // caches must use Node directly. Mobile is guarded by `Platform.isMobile`
-// throw at every public entry point — Phase 5 hard switch is desktop-only.
+// throw at every public entry point — Phase 5 apply is desktop-only.
 /* eslint-disable no-restricted-imports, import/no-nodejs-modules */
 import { promises as fsPromises } from "node:fs";
 import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
@@ -16,7 +16,7 @@ import { createTarGzip, parseTarGzip, type TarFileInput } from "nanotar";
 
 /**
  * SwitchCacheLayer — filesystem-backed AssetSpace snapshot cache for
- * FocusProfile hard switch (RFC 22b50a17 §Key sub-systems B.5).
+ * Profile apply (RFC 22b50a17 §Key sub-systems B.5).
  *
  * Layout (Decision #6 — wipe-all retention model):
  *   <cacheDir>/<asUid>/<sha>.tar.gz   — gzip tarball (F1 content-root convention)
@@ -37,10 +37,10 @@ import { createTarGzip, parseTarGzip, type TarFileInput } from "nanotar";
  *         upstream HEAD moved.
  *
  * Mobile: every public entry point throws via `Platform.isMobile` — Phase 5
- * hard switch is desktop-only (depends on git submodule ops + Node fs).
+ * apply is desktop-only (depends on git submodule ops + Node fs).
  *
  * Sync `getCacheStats()` is preserved for the v3 Settings UI render-path
- * (`ExocortexSettingTab.renderFocusProfileSections`). Reads cache dir
+ * (`ExocortexSettingTab.renderProfileSections`). Reads cache dir
  * synchronously — fast enough for the small entry counts expected.
  */
 
@@ -482,7 +482,7 @@ export class SwitchCacheLayer implements ICacheLayer {
 
   /**
    * Synchronous stats snapshot for the v3 Settings UI display path
-   * (`ExocortexSettingTab.renderFocusProfileSections` builds its widget
+   * (`ExocortexSettingTab.renderProfileSections` builds its widget
    * synchronously per Obsidian's `PluginSettingTab` contract).
    *
    * On mobile: returns zeros without touching Node fs. The Settings UI

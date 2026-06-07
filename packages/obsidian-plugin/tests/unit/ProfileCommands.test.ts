@@ -1,27 +1,27 @@
 import {
-  FocusProfileCommands,
-  type FocusProfileChoice,
-  type FocusProfileCommandsDeps,
+  ProfileCommands,
+  type ProfileChoice,
+  type ProfileCommandsDeps,
   type IAssetSpacePusher,
-} from "../../src/infrastructure/adapters/FocusProfileCommands";
+} from "../../src/infrastructure/adapters/ProfileCommands";
 import {
-  type FocusProfileSwitchManager,
-  HardSwitchAbortedByUser,
+  type ProfileApplyManager,
+  ApplyAbortedByUser,
   TsFloorViolationError,
   UncommittedChangesAbortError,
-} from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
+} from "../../src/infrastructure/adapters/ProfileApplyManager";
 
 // ─── Test doubles ────────────────────────────────────────────────────────
 
 class FakeSwitchMgr {
-  hardSwitchCalls: string[] = [];
-  /** Error to throw from the next hardSwitchKnowledgeProfile call (then cleared). */
-  hardSwitchThrows: Error | null = null;
-  async hardSwitchKnowledgeProfile(uid: string): Promise<void> {
-    this.hardSwitchCalls.push(uid);
-    if (this.hardSwitchThrows) {
-      const e = this.hardSwitchThrows;
-      this.hardSwitchThrows = null;
+  applyCalls: string[] = [];
+  /** Error to throw from the next applyProfile call (then cleared). */
+  applyThrows: Error | null = null;
+  async applyProfile(uid: string): Promise<void> {
+    this.applyCalls.push(uid);
+    if (this.applyThrows) {
+      const e = this.applyThrows;
+      this.applyThrows = null;
       throw e;
     }
   }
@@ -47,15 +47,15 @@ interface Harness {
   switchMgr: FakeSwitchMgr;
   pushMgr: FakePushMgr;
   notices: string[];
-  pickCalls: { options: FocusProfileChoice[]; title: string }[];
-  fuzzyResult: FocusProfileChoice | null;
+  pickCalls: { options: ProfileChoice[]; title: string }[];
+  fuzzyResult: ProfileChoice | null;
   activeFilePath: string | null;
-  cmd: FocusProfileCommands;
+  cmd: ProfileCommands;
 }
 
 function makeHarness(opts: {
-  profiles: FocusProfileChoice[];
-  pickResult?: FocusProfileChoice | null;
+  profiles: ProfileChoice[];
+  pickResult?: ProfileChoice | null;
   activeFilePath?: string | null;
   asLookups?: Array<[string, string]>;
   listError?: Error;
@@ -68,9 +68,9 @@ function makeHarness(opts: {
       pushMgr.lookups.set(folder, uid);
   }
   const notices: string[] = [];
-  const pickCalls: { options: FocusProfileChoice[]; title: string }[] = [];
-  const deps: FocusProfileCommandsDeps = {
-    switchMgr: switchMgr as unknown as FocusProfileSwitchManager,
+  const pickCalls: { options: ProfileChoice[]; title: string }[] = [];
+  const deps: ProfileCommandsDeps = {
+    switchMgr: switchMgr as unknown as ProfileApplyManager,
     pushMgr,
     profileLister: async () => {
       if (opts.listError) throw opts.listError;
@@ -91,7 +91,7 @@ function makeHarness(opts: {
     pickCalls,
     fuzzyResult: opts.pickResult ?? null,
     activeFilePath: opts.activeFilePath ?? null,
-    cmd: new FocusProfileCommands(deps),
+    cmd: new ProfileCommands(deps),
   };
 }
 
@@ -99,7 +99,7 @@ function makeHarness(opts: {
 // invokePushCurrentAssetSpace
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("FocusProfileCommands.invokePushCurrentAssetSpace", () => {
+describe("ProfileCommands.invokePushCurrentAssetSpace", () => {
   it("Notice when no active file", async () => {
     const h = makeHarness({ profiles: [], activeFilePath: null });
     await h.cmd.invokePushCurrentAssetSpace();
@@ -180,16 +180,16 @@ describe("FocusProfileCommands.invokePushCurrentAssetSpace", () => {
 // extractAssetSpaceFolder helper
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("FocusProfileCommands.extractAssetSpaceFolder", () => {
+describe("ProfileCommands.extractAssetSpaceFolder", () => {
   it("extracts folder from typical path", () => {
     expect(
-      FocusProfileCommands.extractAssetSpaceFolder("assetspaces/exo/foo.md"),
+      ProfileCommands.extractAssetSpaceFolder("assetspaces/exo/foo.md"),
     ).toBe("assetspaces/exo");
   });
 
   it("extracts folder from deeply nested path", () => {
     expect(
-      FocusProfileCommands.extractAssetSpaceFolder(
+      ProfileCommands.extractAssetSpaceFolder(
         "assetspaces/ems/sub/dir/bar.md",
       ),
     ).toBe("assetspaces/ems");
@@ -198,7 +198,7 @@ describe("FocusProfileCommands.extractAssetSpaceFolder", () => {
   it("normalizes Windows backslash separators", () => {
     // Source `\\` = single backslash in actual string → regex /\\/ matches
     expect(
-      FocusProfileCommands.extractAssetSpaceFolder(
+      ProfileCommands.extractAssetSpaceFolder(
         "assetspaces\\shared-identities\\file.md",
       ),
     ).toBe("assetspaces/shared-identities");
@@ -206,48 +206,48 @@ describe("FocusProfileCommands.extractAssetSpaceFolder", () => {
 
   it("returns null for path outside assetspaces", () => {
     expect(
-      FocusProfileCommands.extractAssetSpaceFolder(
+      ProfileCommands.extractAssetSpaceFolder(
         "03 Knowledge/inbox/note.md",
       ),
     ).toBeNull();
     expect(
-      FocusProfileCommands.extractAssetSpaceFolder("inbox/note.md"),
+      ProfileCommands.extractAssetSpaceFolder("inbox/note.md"),
     ).toBeNull();
   });
 
   it("returns null when assetspaces/ has no sub-folder", () => {
     expect(
-      FocusProfileCommands.extractAssetSpaceFolder("assetspaces/loose.md"),
+      ProfileCommands.extractAssetSpaceFolder("assetspaces/loose.md"),
     ).toBeNull();
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// invokeSwitchKnowledgeProfile — «Apply profile» (RFC 0a0791c1 Phase 5 T2)
+// invokeApplyProfile — «Apply profile» (RFC 0a0791c1 Phase 5 T2)
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("FocusProfileCommands.invokeSwitchKnowledgeProfile (Apply profile)", () => {
+describe("ProfileCommands.invokeApplyProfile (Apply profile)", () => {
   it("opens the picker from the single profile lister with the «Apply profile» title", async () => {
     const profiles = [{ uid: "k1", label: "knowledge-one" }];
     const h = makeHarness({ profiles, pickResult: profiles[0] });
-    await h.cmd.invokeSwitchKnowledgeProfile();
+    await h.cmd.invokeApplyProfile();
 
     expect(h.pickCalls).toHaveLength(1);
     expect(h.pickCalls[0].options).toEqual(profiles);
     expect(h.pickCalls[0].title).toBe("Apply profile");
   });
 
-  it("invokes hardSwitchKnowledgeProfile with the chosen uid", async () => {
+  it("invokes applyProfile with the chosen uid", async () => {
     const profiles = [{ uid: "k1", label: "knowledge-one" }];
     const h = makeHarness({ profiles, pickResult: profiles[0] });
-    await h.cmd.invokeSwitchKnowledgeProfile();
+    await h.cmd.invokeApplyProfile();
 
-    expect(h.switchMgr.hardSwitchCalls).toEqual(["k1"]);
+    expect(h.switchMgr.applyCalls).toEqual(["k1"]);
   });
 
   it("shows Notice when no profiles in vault", async () => {
     const h = makeHarness({ profiles: [] });
-    await h.cmd.invokeSwitchKnowledgeProfile();
+    await h.cmd.invokeApplyProfile();
 
     expect(h.pickCalls).toHaveLength(0);
     expect(h.notices.some((n) => /No profiles found/.test(n))).toBe(true);
@@ -256,28 +256,28 @@ describe("FocusProfileCommands.invokeSwitchKnowledgeProfile (Apply profile)", ()
   it("does nothing when user cancels picker", async () => {
     const profiles = [{ uid: "k1", label: "k1" }];
     const h = makeHarness({ profiles, pickResult: null });
-    await h.cmd.invokeSwitchKnowledgeProfile();
+    await h.cmd.invokeApplyProfile();
 
-    expect(h.switchMgr.hardSwitchCalls).toHaveLength(0);
+    expect(h.switchMgr.applyCalls).toHaveLength(0);
   });
 
-  it("maps HardSwitchAbortedByUser to a cancelled Notice (no re-throw)", async () => {
+  it("maps ApplyAbortedByUser to a cancelled Notice (no re-throw)", async () => {
     const profiles = [{ uid: "k1", label: "k1" }];
     const h = makeHarness({ profiles, pickResult: profiles[0] });
-    h.switchMgr.hardSwitchThrows = new HardSwitchAbortedByUser();
+    h.switchMgr.applyThrows = new ApplyAbortedByUser();
 
-    await expect(h.cmd.invokeSwitchKnowledgeProfile()).resolves.not.toThrow();
+    await expect(h.cmd.invokeApplyProfile()).resolves.not.toThrow();
     expect(h.notices.some((n) => /cancelled/i.test(n))).toBe(true);
   });
 
   it("maps TsFloorViolationError to a refused Notice", async () => {
     const profiles = [{ uid: "k1", label: "k1" }];
     const h = makeHarness({ profiles, pickResult: profiles[0] });
-    h.switchMgr.hardSwitchThrows = new TsFloorViolationError(
+    h.switchMgr.applyThrows = new TsFloorViolationError(
       "missing $exo floor",
     );
 
-    await h.cmd.invokeSwitchKnowledgeProfile();
+    await h.cmd.invokeApplyProfile();
     expect(h.notices.some((n) => /refused.*missing \$exo floor/.test(n))).toBe(
       true,
     );
@@ -286,11 +286,11 @@ describe("FocusProfileCommands.invokeSwitchKnowledgeProfile (Apply profile)", ()
   it("maps UncommittedChangesAbortError to an aborted Notice with file count", async () => {
     const profiles = [{ uid: "k1", label: "k1" }];
     const h = makeHarness({ profiles, pickResult: profiles[0] });
-    h.switchMgr.hardSwitchThrows = new UncommittedChangesAbortError("dirty", [
+    h.switchMgr.applyThrows = new UncommittedChangesAbortError("dirty", [
       { asUid: "as1", submodulePath: "assetspaces/x", files: ["a.md", "b.md"] },
     ]);
 
-    await h.cmd.invokeSwitchKnowledgeProfile();
+    await h.cmd.invokeApplyProfile();
     expect(h.notices.some((n) => /aborted.*2 uncommitted file/.test(n))).toBe(
       true,
     );
@@ -299,9 +299,9 @@ describe("FocusProfileCommands.invokeSwitchKnowledgeProfile (Apply profile)", ()
   it("surfaces generic apply failure as a Notice без re-throw", async () => {
     const profiles = [{ uid: "k1", label: "k1" }];
     const h = makeHarness({ profiles, pickResult: profiles[0] });
-    h.switchMgr.hardSwitchThrows = new Error("boom");
+    h.switchMgr.applyThrows = new Error("boom");
 
-    await expect(h.cmd.invokeSwitchKnowledgeProfile()).resolves.not.toThrow();
+    await expect(h.cmd.invokeApplyProfile()).resolves.not.toThrow();
     expect(h.notices.some((n) => /failed.*boom/.test(n))).toBe(true);
   });
 });
@@ -310,7 +310,7 @@ describe("FocusProfileCommands.invokeSwitchKnowledgeProfile (Apply profile)", ()
 // invokeShowCurrentState (RFC 0a0791c1 Phase 5 T2 — single slot)
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("FocusProfileCommands.invokeShowCurrentState", () => {
+describe("ProfileCommands.invokeShowCurrentState", () => {
   it("reports the active profile label", async () => {
     const h = makeHarness({
       profiles: [{ uid: "k1", label: "knowledge-main" }],

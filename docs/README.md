@@ -21,8 +21,7 @@ Index of the `docs/` tree. Top-level project docs live in the repo root
 
 ## Architecture & design
 
-- [focus-profile.md](focus-profile.md) — FocusProfile pitch + 2-phase commit safety model
-- [profiles.md](profiles.md) — KnowledgeProfile / hard-switch design
+- [profile.md](profile.md) — Profile pitch + Apply-profile (mount-state) model + 2-phase commit safety
 - [rdf/ExoRDF-Mapping.md](rdf/ExoRDF-Mapping.md) — vault ↔ RDF triple mapping
 - [CROSS_RUNTIME_PARITY.md](CROSS_RUNTIME_PARITY.md) — validator-specific instance of the UI/CLI Parity Invariant (see [VISION.md](../VISION.md#uicli-parity-invariant))
 - [SHACL_LITE_MAPPING.md](SHACL_LITE_MAPPING.md) — SHACL-lite shape mapping

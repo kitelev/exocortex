@@ -15,14 +15,14 @@ import { SwitchCacheLayer } from "./SwitchCacheLayer";
 import type { PluginLocalDataStore } from "./PluginLocalDataStore";
 
 /**
- * Desktop-only hard-switch dependency bundle consumed by
- * `FocusProfileSwitchManager` + the gated palette commands (hard
+ * Desktop-only apply dependency bundle consumed by
+ * `ProfileApplyManager` + the gated palette commands (hard
  * «Switch knowledge profile», «Bootstrap vault», «Add AssetSpace by URL»).
  *
  * When this is `null` the gated commands are NOT registered — so a wiring
  * exception here silently removes user-facing commands from the palette.
  */
-export interface HardSwitchDeps {
+export interface ApplyDeps {
   assetSpaceManager: AssetSpaceManager;
   gitOps: GitSubmoduleOps;
   uncommittedGuard: UncommittedChangesGuard;
@@ -31,7 +31,7 @@ export interface HardSwitchDeps {
   vaultRootPath: string;
 }
 
-export interface BuildHardSwitchDepsOptions {
+export interface BuildApplyDepsOptions {
   app: App;
   localDataStore: PluginLocalDataStore;
   notifier: INotificationService;
@@ -46,7 +46,7 @@ export interface BuildAssetSpacePullerOptions {
 
 /**
  * Build a fresh {@link AssetSpaceManager} (the REST tarball puller used by the
- * Bootstrap / Add-AssetSpace commands and the hard-switch materialize path)
+ * Bootstrap / Add-AssetSpace commands and the apply materialize path)
  * from the CURRENTLY stored GitHub PAT.
  *
  * Reads `LocalSecretsStore.getSecret("pat")` at call time. Invoking this
@@ -83,7 +83,7 @@ export async function buildAssetSpacePuller(
  *
  * The PAT is captured at call time. The plugin wires this once at onload (the
  * mobile profile-switch path consumes it); a PAT configured AFTER onload needs
- * a reload to take effect — the same onload-capture tradeoff as the hard-switch
+ * a reload to take effect — the same onload-capture tradeoff as the apply
  * `assetSpaceManager`. An absent PAT yields an unauthenticated client
  * (public-repo reads only).
  */
@@ -98,7 +98,7 @@ export async function buildRestAssetSpaceMount(opts: {
 }
 
 /**
- * Wire the desktop hard-switch dependencies. Extracted from
+ * Wire the desktop apply dependencies. Extracted from
  * `ExocortexPlugin.onload` for testability (mirrors the
  * {@link ./AssetSpacePusherFactory.createAssetSpacePusher} extraction).
  *
@@ -115,18 +115,18 @@ export async function buildRestAssetSpaceMount(opts: {
  * `null` on a vault that has never configured one (the common case), and
  * `GitHubRestClient` now accepts an empty PAT (unauthenticated mode) so the
  * deps still wire. Before that fix, the empty-PAT ctor throw left
- * `hardSwitchDeps === null` and the gated commands silently vanished.
+ * `applyDeps === null` and the gated commands silently vanished.
  */
-export async function buildHardSwitchDeps(
-  opts: BuildHardSwitchDepsOptions,
-): Promise<HardSwitchDeps | null> {
+export async function buildApplyDeps(
+  opts: BuildApplyDepsOptions,
+): Promise<ApplyDeps | null> {
   const { app, localDataStore, notifier, logger } = opts;
   try {
     // NOTE: this AssetSpaceManager is captured for the lifetime of the plugin
-    // (used by the hard-switch materialize + push paths). The Bootstrap /
+    // (used by the apply materialize + push paths). The Bootstrap /
     // Add-AssetSpace commands deliberately do NOT reuse it — they rebuild a
     // fresh one per invocation via {@link buildAssetSpacePuller} so a PAT set
-    // after onload is honoured (Issue #3382). Hard-switch / push keep onload
+    // after onload is honoured (Issue #3382). Apply / push keep onload
     // capture (they surface a «Reload to activate» hint instead).
     const assetSpaceManager = await buildAssetSpacePuller({
       app,
@@ -137,7 +137,7 @@ export async function buildHardSwitchDeps(
       (app.vault.adapter as unknown as { basePath?: string }).basePath ?? "";
     if (vaultRootPath.length === 0) {
       logger.warn(
-        "[buildHardSwitchDeps] vault.adapter.basePath unavailable — hard switch palette will be hidden",
+        "[buildApplyDeps] vault.adapter.basePath unavailable — apply palette will be hidden",
       );
       return null;
     }
@@ -157,9 +157,9 @@ export async function buildHardSwitchDeps(
     // Visible diagnostics — `logger.warn` routes through a custom logger that
     // is NOT printed to the DevTools console, so this exception was invisible
     // in production for months. `console.error` makes it observable.
-    console.error("[Exocortex] hard-switch wiring failed:", err);
+    console.error("[Exocortex] apply wiring failed:", err);
     logger.warn(
-      "[buildHardSwitchDeps] failed to wire hard-switch deps; soft switch only",
+      "[buildApplyDeps] failed to wire apply deps; reindex only",
       err instanceof Error ? err : new Error(String(err)),
     );
     return null;

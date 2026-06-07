@@ -1,9 +1,9 @@
-import type { IRdfIndexer } from "./FocusProfileSwitchManager";
+import type { IRdfIndexer } from "./ProfileApplyManager";
 import type { IRdfIndexerHandle } from "@plugin/application/api/SPARQLApi";
 
 /**
  * `IRdfIndexer` adapter wrapping the plugin's live `VaultRDFIndexer`.
- * The B.4 `FocusProfileSwitchManager` calls `refresh()` after persisting
+ * The B.4 `ProfileApplyManager` calls `refresh()` after persisting
  * `activeProfileUid`; this adapter forwards to the indexer's `refresh()`
  * path so the existing cold-start pipeline runs identically.
  *
@@ -24,8 +24,8 @@ export class PluginRdfIndexerAdapter implements IRdfIndexer {
    * empty until the next `metadataCache.resolved` event.
    *
    * The plugin wires this to a closure that re-runs the AssetSpace
-   * materialization injection. Soft+hard switch paths via
-   * `FocusProfileSwitchManager` use this adapter, so the hook fires
+   * materialization injection. Apply paths via
+   * `ProfileApplyManager` use this adapter, so the hook fires
    * automatically without each switch callsite knowing about the
    * derived-triple discipline.
    *

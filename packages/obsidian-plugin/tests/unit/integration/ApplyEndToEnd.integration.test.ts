@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  *
- * End-to-end integration test for `hardSwitchProfile()` algorithm against
+ * End-to-end integration test for `applyProfile()` algorithm against
  * a real disposable git vault on the local filesystem.
  *
  * Scope:
@@ -17,7 +17,7 @@
  *   1. Init test vault with 3 AS submodules (file:// URLs)
  *   2. Two profiles — profile-A {AS1, AS2}, profile-B {AS2, AS3}
  *   3. Active = profile-A → vault has AS1 + AS2
- *   4. hardSwitchProfile(profile-B)
+ *   4. applyProfile(profile-B)
  *   5. Verify vault now has AS2 + AS3
  *   6. Verify .gitmodules correctly reflects new state
  *   7. Verify cache contains AS1 tarball
@@ -31,22 +31,22 @@ import * as os from "node:os";
 /* eslint-enable no-restricted-imports, import/no-nodejs-modules */
 
 import type { App, TFile } from "obsidian";
-import type { HardSwitchPlan, IConfirmGate } from "exocortex";
+import type { ApplyPlan, IConfirmGate } from "exocortex";
 
 import {
-  FocusProfileSwitchManager,
+  ProfileApplyManager,
   type IProfileResolver,
   type IRdfIndexer,
   type ISettingsStore,
   type ProfileResolution,
   type SwitchSettings,
-} from "../../../src/infrastructure/adapters/FocusProfileSwitchManager";
+} from "../../../src/infrastructure/adapters/ProfileApplyManager";
 import { PluginLockManager } from "../../../src/infrastructure/adapters/PluginLockManager";
 import {
   TS_FLOOR_AS_UID_EXO,
   TS_FLOOR_AS_UID_EXOCMD,
   TS_FLOOR_AS_UID_SHARED_IDENTITIES,
-} from "../../../src/infrastructure/adapters/FocusProfileOnloadWiring";
+} from "../../../src/infrastructure/adapters/ProfileOnloadWiring";
 import { GitSubmoduleOps } from "../../../src/infrastructure/adapters/GitSubmoduleOps";
 import { SwitchCacheLayer } from "../../../src/infrastructure/adapters/SwitchCacheLayer";
 import { UncommittedChangesGuard } from "../../../src/infrastructure/adapters/UncommittedChangesGuard";
@@ -182,7 +182,7 @@ function buildVaultFiles(setup: VaultSetup): FakeFile[] {
       frontmatter: {
         "exo__Asset_uid": "profile-a",
         "exo__Asset_label": "Profile A",
-        "exo__Instance_class": ["[[exo__FocusProfile]]"],
+        "exo__Instance_class": ["[[exo__Profile]]"],
       },
     },
     {
@@ -191,7 +191,7 @@ function buildVaultFiles(setup: VaultSetup): FakeFile[] {
       frontmatter: {
         "exo__Asset_uid": "profile-b",
         "exo__Asset_label": "Profile B",
-        "exo__Instance_class": ["[[exo__FocusProfile]]"],
+        "exo__Instance_class": ["[[exo__Profile]]"],
       },
     },
   ];
@@ -330,7 +330,7 @@ class FakeLocalDataStore {
 }
 
 class AlwaysApproveGate implements IConfirmGate {
-  async confirmHardSwitch(_plan: HardSwitchPlan): Promise<boolean> {
+  async confirmApply(_plan: ApplyPlan): Promise<boolean> {
     return true;
   }
 }
@@ -375,7 +375,7 @@ async function copyTree(src: string, dest: string): Promise<void> {
   }
 }
 
-describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
+describe("applyProfile E2E (real fs, mocked pull)", () => {
   let setup: VaultSetup;
 
   afterEach(async () => {
@@ -441,7 +441,7 @@ describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
     const assetSpaceManager = new FakePullingAssetSpaceManager();
     const cacheLayer = new SwitchCacheLayer({ cacheDir: setup.cacheDir });
 
-    const mgr = new FocusProfileSwitchManager({
+    const mgr = new ProfileApplyManager({
       app,
       lockMgr,
       resolver: new FakeResolver(profiles),
@@ -459,7 +459,7 @@ describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
     });
 
     // ---- ACT ----
-    await mgr.hardSwitchProfile("profile-b");
+    await mgr.applyProfile("profile-b");
 
     // ---- ASSERT vault state ----
     expect(existsSync(path.join(setup.vaultPath, "assetspaces/kitelev/exoas-as1"))).toBe(false);
@@ -488,7 +488,7 @@ describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
     // re-uses URL from `.gitmodules`». Switch profile-b → profile-a; as1 was
     // destroyed in profile-a→b transition but `.gitmodules` entry preserved.
     // Switch back must re-add as1 (URL recovered from `.gitmodules`).
-    await mgr.hardSwitchProfile("profile-a");
+    await mgr.applyProfile("profile-a");
 
     // After switch-back: as1 working tree restored, as3 destroyed.
     expect(existsSync(path.join(setup.vaultPath, "assetspaces/kitelev/exoas-as1"))).toBe(true);

@@ -1,4 +1,4 @@
-// Node.js builtins required for Phase 5 hard-switch staging dirs (RFC
+// Node.js builtins required for Phase 5 apply staging dirs (RFC
 // 22b50a17) — staging dirs live в `os.tmpdir()` OUTSIDE the vault so
 // Obsidian's vault.adapter API cannot reach them. This file is only
 // instantiated on desktop — callers (AssetSpaceManager.pullAssetSpace +
@@ -27,7 +27,7 @@ export interface StagingDirTrackerOptions {
  * StagingDirTracker — manage Phase 5 tarball-materialization staging dirs
  * (RFC 22b50a17 R26 mitigation).
  *
- * The Phase 5 hard-switch algorithm pulls one or more AssetSpace tarballs
+ * The Phase 5 apply algorithm pulls one or more AssetSpace tarballs
  * to a staging directory before atomically moving them into the vault.
  * If the plugin crashes (or Obsidian quits) mid-pull, the staging dir
  * lives under `os.tmpdir()` and would survive forever — OS-level temp

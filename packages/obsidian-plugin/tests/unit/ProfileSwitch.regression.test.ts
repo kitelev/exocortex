@@ -1,5 +1,5 @@
 /**
- * B.10 — Downstream regression tests for FocusProfile switch flow
+ * B.10 — Downstream regression tests for Profile switch flow
  * (RFC 0a0791c1 §B.10 + Architect #5).
  *
  * Coverage scope:
@@ -19,7 +19,7 @@
 import type { App } from "obsidian";
 
 import {
-  FocusProfileSwitchManager,
+  ProfileApplyManager,
   TS_FLOOR_ONTOLOGY_URIS,
   TS_FLOOR_SHARED_PATTERN,
   type IProfileResolver,
@@ -27,14 +27,14 @@ import {
   type ISettingsStore,
   type ProfileResolution,
   type SwitchSettings,
-} from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
+} from "../../src/infrastructure/adapters/ProfileApplyManager";
 import { PluginLockManager } from "../../src/infrastructure/adapters/PluginLockManager";
 
 // RFC 0a0791c1 Phase 5 T2 — the public soft `switchProfile` was removed; its
 // lock/journal/persist/reindex behavior lives on in the private
 // `reindexMountState` helper. These tests drive it directly via a typed cast.
 type Reindexable = { reindexMountState(uid: string): Promise<void> };
-const reindex = (mgr: FocusProfileSwitchManager, uid: string): Promise<void> =>
+const reindex = (mgr: ProfileApplyManager, uid: string): Promise<void> =>
   (mgr as unknown as Reindexable).reindexMountState(uid);
 
 // ─── Shared fakes — mirror real Obsidian API per test-fixture-realism ────
@@ -104,7 +104,7 @@ interface Harness {
   rdf: CapturingRdfIndexer;
   settings: FakeSettingsStore;
   lockMgr: PluginLockManager;
-  mgr: FocusProfileSwitchManager;
+  mgr: ProfileApplyManager;
   clock: { current: Date; advance: (ms: number) => void };
 }
 
@@ -126,7 +126,7 @@ function makeHarness(
   const rdf = new CapturingRdfIndexer();
   const settings = new FakeSettingsStore();
   const lockMgr = new PluginLockManager({ app, pid: "test-pid", now: () => current });
-  const mgr = new FocusProfileSwitchManager({
+  const mgr = new ProfileApplyManager({
     app,
     lockMgr,
     resolver,

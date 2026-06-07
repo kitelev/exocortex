@@ -1,6 +1,6 @@
 /**
- * CLI-side FocusProfile resolver — parity with plugin's
- * `FocusProfileSwitchManager.resolveEffectiveSet` + `FocusProfileOnloadWiring`
+ * CLI-side Profile resolver — parity with the plugin's profile-apply manager
+ * (effective-set resolution) + onload wiring
  * (Issue #3323, RFC 0a0791c1 Variant A MVP).
  *
  * Walks the vault filesystem to:
@@ -49,8 +49,8 @@ export const TS_FLOOR_ASSETSPACE_UIDS: ReadonlySet<string> =
 
 /** Class UID of `exo__AssetSpace` (TBox). Mirrors plugin's `AssetSpaceManager.ASSET_SPACE_CLASS_UID`. */
 export const ASSET_SPACE_CLASS_UID = "73bd00e4-ccc0-4f3f-b20d-c4388c4588fb";
-/** Class UID of `exo__FocusProfile` (TBox). Mirrors plugin's `FocusProfileSwitchManager.FOCUS_PROFILE_CLASS_UID`. */
-export const FOCUS_PROFILE_CLASS_UID = "3de846cd-1f0e-4f98-8613-b8587aa15174";
+/** Class UID of `exo__Profile` (TBox). Mirrors the plugin profile-apply manager PROFILE_CLASS_UID. */
+export const PROFILE_CLASS_UID = "3de846cd-1f0e-4f98-8613-b8587aa15174";
 
 /** Max `_extends` chain depth (matches plugin default). */
 const DEFAULT_MAX_EXTENDS_DEPTH = 5;
@@ -73,7 +73,7 @@ export type ResolveFilterOutcome =
   | { outcome: "degraded"; reason: string }
   | { outcome: "error"; reason: string };
 
-export interface CliFocusProfileResolverOptions {
+export interface CliProfileResolverOptions {
   /** Primary vault path. */
   vaultPath: string;
   /** Additional vault paths (mirrors CLI `--also`). */
@@ -99,16 +99,16 @@ interface ProfileFrontmatter {
 }
 
 /**
- * CLI-side FocusProfile resolver. Single-shot — instantiate, call
+ * CLI-side Profile resolver. Single-shot — instantiate, call
  * `resolveFilter(profileUid)`, discard. No internal mutable state to keep
  * concurrent CLI invocations safe.
  */
-export class CliFocusProfileResolver {
+export class CliProfileResolver {
   private readonly vaultPaths: ReadonlyArray<string>;
   private readonly maxExtendsDepth: number;
   private readonly warn: (msg: string) => void;
 
-  constructor(options: CliFocusProfileResolverOptions) {
+  constructor(options: CliProfileResolverOptions) {
     const also = options.alsoVaultPaths ?? [];
     this.vaultPaths = [options.vaultPath, ...also].map((p) => path.resolve(p));
     this.maxExtendsDepth = options.maxExtendsDepth ?? DEFAULT_MAX_EXTENDS_DEPTH;
@@ -120,7 +120,7 @@ export class CliFocusProfileResolver {
    *
    * Outcomes:
    * - `engaged` — effective set computed; `result.effective` is the AS-UID set
-   *   the CLI hard switch materialises (+ `result.folderMap` for diagnostics)
+   *   the CLI apply materialises (+ `result.folderMap` for diagnostics)
    * - `no-profile` — `profileUid` was null/undefined; caller indexes full vault
    * - `missing-profile` — UID provided but no asset with that UID found; caller
    *   indexes full vault (defensive; surface warn)
@@ -142,7 +142,7 @@ export class CliFocusProfileResolver {
     try {
       scan = await this.scanAllVaults();
     } catch (e) {
-      const reason = `[CliFocusProfileResolver] vault scan threw — ${String(e)}`;
+      const reason = `[CliProfileResolver] vault scan threw — ${String(e)}`;
       this.warn(reason);
       return { outcome: "error", reason };
     }
@@ -150,7 +150,7 @@ export class CliFocusProfileResolver {
     const profile = scan.profiles.get(profileUid);
     if (profile === undefined) {
       this.warn(
-        `[CliFocusProfileResolver] profileUid=${profileUid} not found in any scanned vault — falling back to no-filter (full vault).`,
+        `[CliProfileResolver] profileUid=${profileUid} not found in any scanned vault — falling back to no-filter (full vault).`,
       );
       return { outcome: "missing-profile", profileUid };
     }
@@ -160,7 +160,7 @@ export class CliFocusProfileResolver {
     try {
       this.walkProfileChain(profileUid, scan.profiles, declared, new Set(), 0);
     } catch (e) {
-      const reason = `[CliFocusProfileResolver] profile chain walk threw — ${String(e)}`;
+      const reason = `[CliProfileResolver] profile chain walk threw — ${String(e)}`;
       this.warn(reason);
       return { outcome: "error", reason };
     }
@@ -193,7 +193,7 @@ export class CliFocusProfileResolver {
     );
     if (!hasOverlap) {
       const reason =
-        `[CliFocusProfileResolver] profileUid=${profileUid} produced effective set with zero AssetSpace folder overlap ` +
+        `[CliProfileResolver] profileUid=${profileUid} produced effective set with zero AssetSpace folder overlap ` +
         `(${effectiveAs.size} AS UIDs incl. floor; ${scan.folderMap.size} folders known). ` +
         `Likely cause: profile declares AssetSpace UIDs not present as descriptors, or vault has no scanned AssetSpaces. ` +
         `Falling back to no-filter (full vault indexed).`;
@@ -223,7 +223,7 @@ export class CliFocusProfileResolver {
   ): void {
     if (depth > this.maxExtendsDepth) {
       throw new Error(
-        `FocusProfile chain exceeds max depth ${this.maxExtendsDepth} at ${uid} — possible cycle`,
+        `Profile chain exceeds max depth ${this.maxExtendsDepth} at ${uid} — possible cycle`,
       );
     }
     if (visited.has(uid)) return; // cycle guard
@@ -252,7 +252,7 @@ export class CliFocusProfileResolver {
     for (const vaultRoot of this.vaultPaths) {
       if (!(await fs.pathExists(vaultRoot))) {
         this.warn(
-          `[CliFocusProfileResolver] vault path does not exist: ${vaultRoot} — skipping.`,
+          `[CliProfileResolver] vault path does not exist: ${vaultRoot} — skipping.`,
         );
         continue;
       }
@@ -272,7 +272,7 @@ export class CliFocusProfileResolver {
           }
         }
 
-        if (classes.some((c) => c === FOCUS_PROFILE_CLASS_UID)) {
+        if (classes.some((c) => c === PROFILE_CLASS_UID)) {
           const profile: ProfileFrontmatter = {
             uid: asset.uid,
             label: typeof asset.frontmatter["exo__Asset_label"] === "string"
