@@ -121,9 +121,9 @@ export interface ISettingsStore {
 }
 
 /**
- * Journal entry shape — widened для hard-switch phase events per RFC
- * 22b50a17 F2 (per-AS recovery granularity). Soft-switch continues using
- * the three base phases (`starting`/`completed`/`failed`); hard-switch
+ * Journal entry shape — widened для apply phase events per RFC
+ * 22b50a17 F2 (per-AS recovery granularity). Reindex-only path continues using
+ * the three base phases (`starting`/`completed`/`failed`); apply
  * emits the extended phase set with `as` field for per-AS events.
  */
 export interface SwitchJournalEntry {
@@ -131,8 +131,8 @@ export interface SwitchJournalEntry {
     | "starting"
     | "completed"
     | "failed"
-    // Hard-switch extended phases (RFC 22b50a17 §Solution Architecture):
-    | "hard-switch-starting"
+    // Apply extended phases (RFC 22b50a17 §Solution Architecture):
+    | "apply-starting"
     | "phase1-pulling"
     | "phase1-pulled"
     | "phase1-done"
@@ -144,8 +144,8 @@ export interface SwitchJournalEntry {
     | "phase2-materialized"
     | "phase2-done"
     | "git-commit-done"
-    | "hard-switch-completed"
-    | "hard-switch-failed"
+    | "apply-completed"
+    | "apply-failed"
     | "recovery-restoring"
     | "recovery-completed";
   targetUid: string;
@@ -171,7 +171,7 @@ export interface ProfileApplyManagerOptions {
   /** User-facing notifier (typically `new Notice()`). */
   notify?: (message: string) => void;
 
-  // --- Hard-switch dependencies (RFC 22b50a17 Phase 3) ---
+  // --- Apply dependencies (RFC 22b50a17 Phase 3) ---
   /** AssetSpaceManager — provides pullAssetSpace + lookupAssetSpaceInfo. */
   assetSpaceManager?: AssetSpaceManager;
   /** Filesystem cache layer — destroy/restore tarballs (RFC §B.5). */
@@ -181,7 +181,7 @@ export interface ProfileApplyManagerOptions {
   /**
    * REST/tarball AssetSpace mount/unmount (RFC 01a83de8 Phase 3 T1). The
    * cross-platform (incl. iOS) materialisation path. When wired and running on
-   * mobile, `applyProfile` delegates to {@link restSwitchProfile}
+   * mobile, `applyProfile` delegates to {@link applyProfileViaRest}
    * (no git binary / staging / cache). Desktop keeps the git-binary path.
    *
    * Captured at onload — used to gate command registration + as a fallback.
@@ -190,7 +190,7 @@ export interface ProfileApplyManagerOptions {
   restMount?: RestAssetSpaceMount;
   /**
    * Factory building a {@link RestAssetSpaceMount} with the CURRENTLY stored
-   * PAT. Preferred over {@link restMount} inside {@link restSwitchProfile} so a
+   * PAT. Preferred over {@link restMount} inside {@link applyProfileViaRest} so a
    * PAT configured AFTER onload is honoured without a reload (matches the
    * Issue #3382 fix for the Bootstrap/Add-AssetSpace puller). Falls back to the
    * captured {@link restMount} when absent.
@@ -242,12 +242,12 @@ export class UncommittedChangesAbortError extends Error {
 }
 
 /**
- * Custom error thrown when the user declines the hard-switch ConfirmGate.
+ * Custom error thrown when the user declines the apply ConfirmGate.
  */
-export class HardSwitchAbortedByUser extends Error {
-  constructor(message = "Hard switch aborted by user") {
+export class ApplyAbortedByUser extends Error {
+  constructor(message = "Apply aborted by user") {
     super(message);
-    this.name = "HardSwitchAbortedByUser";
+    this.name = "ApplyAbortedByUser";
   }
 }
 
@@ -262,7 +262,7 @@ export class ProfileApplyManager {
   private readonly now: () => Date;
   private readonly notify: (message: string) => void;
 
-  // Hard-switch dependencies (may be undefined when only soft switch wired).
+  // Apply dependencies (may be undefined when only reindex wired).
   private readonly assetSpaceManager?: AssetSpaceManager;
   private readonly cacheLayer?: ICacheLayer;
   private readonly gitOps?: GitSubmoduleOps;
@@ -297,7 +297,7 @@ export class ProfileApplyManager {
 
   /**
    * Reindex-only apply path (RFC 0a0791c1 Phase 5 T2 — replaces the retired
-   * public soft-switch method). Records the target as the last-applied
+   * public query-time RDF-filter method). Records the target as the last-applied
    * profile cache (`activeProfileUid`) and rebuilds the RDF graph from the
    * currently-materialised mount-state. Does NOT mutate the filesystem.
    *
@@ -370,16 +370,6 @@ export class ProfileApplyManager {
   }
 
   /**
-   * @deprecated Use {@link applyProfile}. Retained for backward
-   * compatibility (RFC 13da049f Phase 6.5b AC15 — Knowledge/Focus split).
-   * Hard switch materialises filesystem state, so it is semantically a
-   * Knowledge-profile operation.
-   */
-  async hardSwitchProfile(targetProfileUid: string): Promise<void> {
-    return this.applyProfile(targetProfileUid);
-  }
-
-  /**
    * Plugin-load recovery: if last journal entry shows an incomplete switch
    * AND settings._switchInProgress=true, re-trigger the re-index идempotently.
    *
@@ -439,10 +429,10 @@ export class ProfileApplyManager {
     return result;
   }
 
-  // === Hard switch orchestration (RFC 22b50a17 Phase 3) ===
+  // === Apply orchestration (RFC 22b50a17 Phase 3) ===
 
   /**
-   * Hard switch — destructive filesystem mutation of `assetspaces/<as>/`
+   * Apply — destructive filesystem mutation of `assetspaces/<as>/`
    * directories. Tears down AssetSpaces NOT in the target profile's effective
    * set, materialises new ones from cache or fresh GitHub pull, commits
    * the resulting `.gitmodules`/`assetspaces/` changes.
@@ -476,7 +466,7 @@ export class ProfileApplyManager {
    *
    * @throws TsFloorViolationError if target excludes any TS-floor AS.
    * @throws UncommittedChangesAbortError if dirty files in any to-destroy AS.
-   * @throws HardSwitchAbortedByUser if confirmGate declines.
+   * @throws ApplyAbortedByUser if confirmGate declines.
    */
   async applyProfile(targetProfileUid: string): Promise<void> {
     if (typeof targetProfileUid !== "string" || targetProfileUid.length === 0) {
@@ -489,9 +479,9 @@ export class ProfileApplyManager {
       Platform.isMobile &&
       (this.restMount !== undefined || this.restMountFactory !== undefined)
     ) {
-      return this.restSwitchProfile(targetProfileUid);
+      return this.applyProfileViaRest(targetProfileUid);
     }
-    const deps = this.assertHardSwitchWired();
+    const deps = this.assertApplyDepsWired();
 
     const startedAt = this.now().getTime();
     const prevActiveProfileUid = deps.localDataStore.getActiveProfileUid();
@@ -503,7 +493,7 @@ export class ProfileApplyManager {
     // R24 — assert TS-floor BEFORE any mutation. Use computeDerivedSet (NOT
     // resolveEffectiveSet) so the floor URIs that resolveEffectiveSet injects
     // don't mask a profile that legitimately omits a floor AS — R24 must see
-    // the user's explicit `_includes`. Hard-switch is destructive, so we
+    // the user's explicit `_includes`. Apply is destructive, so we
     // require explicit intent rather than the soft-path's UX-convenience floor.
     const declaredOntologySet = await this.computeDerivedSet(targetProfileUid);
     const folderToAsUid = await this.scanFolderToAsUid();
@@ -585,7 +575,7 @@ export class ProfileApplyManager {
       if (!uncommitted.clean) {
         const total = uncommitted.affectedFiles.reduce((s, a) => s + a.files.length, 0);
         throw new UncommittedChangesAbortError(
-          `Hard switch aborted — ${total} uncommitted file(s) in ${uncommitted.affectedFiles.length} to-destroy AssetSpace(s). Commit or stash first.`,
+          `Apply aborted — ${total} uncommitted file(s) in ${uncommitted.affectedFiles.length} to-destroy AssetSpace(s). Commit or stash first.`,
           uncommitted.affectedFiles,
         );
       }
@@ -614,21 +604,21 @@ export class ProfileApplyManager {
       })),
     };
     const approved = await deps.confirmGate.confirmHardSwitch(plan);
-    if (!approved) throw new HardSwitchAbortedByUser();
+    if (!approved) throw new ApplyAbortedByUser();
 
     // No-op early exit: no destroy + no materialize == mount-state already
     // matches the target. Re-index + record the selection (reindex-only path).
-    // Still emit hard-switch-completed so recoverIncompleteSwitch's tail-scan
+    // Still emit apply-completed so recoverIncompleteSwitch's tail-scan
     // has a clean cutoff for any prior aborted run (HIGH catch from review).
     if (toDestroy.length === 0 && toMaterialize.length === 0) {
       await this.appendJournal({
-        phase: "hard-switch-starting",
+        phase: "apply-starting",
         targetUid: targetProfileUid,
         ts: new Date(startedAt).toISOString(),
       });
       await this.reindexMountState(targetProfileUid);
       await this.appendJournal({
-        phase: "hard-switch-completed",
+        phase: "apply-completed",
         targetUid: targetProfileUid,
         ts: this.now().toISOString(),
         elapsedMs: this.now().getTime() - startedAt,
@@ -637,9 +627,9 @@ export class ProfileApplyManager {
     }
 
     // Acquire lock, set _switchInProgress.
-    const acquired = await this.lockMgr.acquireLock(`hard-switch-${targetProfileUid}`);
+    const acquired = await this.lockMgr.acquireLock(`apply-${targetProfileUid}`);
     if (!acquired) {
-      throw new Error("Another hard switch is in progress (lock held). Try again shortly.");
+      throw new Error("Another apply is in progress (lock held). Try again shortly.");
     }
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
     const stagingPaths: Array<{ asUid: string; stagingPath: string }> = [];
@@ -651,7 +641,7 @@ export class ProfileApplyManager {
 
     try {
       await this.appendJournal({
-        phase: "hard-switch-starting",
+        phase: "apply-starting",
         targetUid: targetProfileUid,
         ts: new Date(startedAt).toISOString(),
       });
@@ -799,7 +789,7 @@ export class ProfileApplyManager {
       await deps.gitOps.add(".gitmodules");
       await deps.gitOps.add("assetspaces/");
       await deps.gitOps.commit(
-        `chore(profile): hard switch к ${targetProfileLabel}`,
+        `chore(profile): apply к ${targetProfileLabel}`,
       );
       await this.appendJournal({
         phase: "git-commit-done",
@@ -819,19 +809,19 @@ export class ProfileApplyManager {
 
       const elapsedMs = this.now().getTime() - startedAt;
       await this.appendJournal({
-        phase: "hard-switch-completed",
+        phase: "apply-completed",
         targetUid: targetProfileUid,
         ts: this.now().toISOString(),
         elapsedMs,
       });
-      this.notify(`Hard switched к ${targetProfileLabel} (${elapsedMs}ms)`);
+      this.notify(`Applied к ${targetProfileLabel} (${elapsedMs}ms)`);
     } catch (e) {
       // Rollback attempt: best-effort cache restore previously-destroyed AS.
       // This is partial — anything that was already added via `submodule add`
       // before commit will be untracked git state until the user manually
       // resets. We log + notify but rethrow.
       await this.appendJournal({
-        phase: "hard-switch-failed",
+        phase: "apply-failed",
         targetUid: targetProfileUid,
         ts: this.now().toISOString(),
         error: this.redactError(String(e)),
@@ -891,13 +881,13 @@ export class ProfileApplyManager {
    * idempotent, and re-running the switch reconciles to the target.
    *
    * @throws TsFloorViolationError if target excludes any TS-floor AS.
-   * @throws HardSwitchAbortedByUser if confirmGate declines.
+   * @throws ApplyAbortedByUser if confirmGate declines.
    */
-  async restSwitchProfile(targetProfileUid: string): Promise<void> {
+  async applyProfileViaRest(targetProfileUid: string): Promise<void> {
     if (typeof targetProfileUid !== "string" || targetProfileUid.length === 0) {
-      throw new Error("restSwitchProfile: targetProfileUid is required");
+      throw new Error("applyProfileViaRest: targetProfileUid is required");
     }
-    const { confirmGate, localDataStore } = this.assertRestSwitchWired();
+    const { confirmGate, localDataStore } = this.assertRestApplyWired();
     // Prefer the fresh-PAT factory (Issue #3382 pattern) over the onload-captured
     // mount, so a PAT set after onload is honoured without a reload.
     const restMount = this.restMountFactory
@@ -993,7 +983,7 @@ export class ProfileApplyManager {
       })),
     };
     const approved = await confirmGate.confirmHardSwitch(plan);
-    if (!approved) throw new HardSwitchAbortedByUser();
+    if (!approved) throw new ApplyAbortedByUser();
 
     // No-op early exit — mount-state already matches the target. Re-index +
     // record the selection (reindex-only path).
@@ -1009,7 +999,7 @@ export class ProfileApplyManager {
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
     try {
       await this.appendJournal({
-        phase: "hard-switch-starting",
+        phase: "apply-starting",
         targetUid: targetProfileUid,
         ts: new Date(startedAt).toISOString(),
       });
@@ -1054,7 +1044,7 @@ export class ProfileApplyManager {
 
       const elapsedMs = this.now().getTime() - startedAt;
       await this.appendJournal({
-        phase: "hard-switch-completed",
+        phase: "apply-completed",
         targetUid: targetProfileUid,
         ts: this.now().toISOString(),
         elapsedMs,
@@ -1062,7 +1052,7 @@ export class ProfileApplyManager {
       this.notify(`Switched to ${targetProfileLabel} (${elapsedMs}ms, REST mount)`);
     } catch (e) {
       await this.appendJournal({
-        phase: "hard-switch-failed",
+        phase: "apply-failed",
         targetUid: targetProfileUid,
         ts: this.now().toISOString(),
         error: this.redactError(String(e)),
@@ -1084,7 +1074,7 @@ export class ProfileApplyManager {
     }
   }
 
-  private assertRestSwitchWired(): {
+  private assertRestApplyWired(): {
     confirmGate: IConfirmGate;
     localDataStore: PluginLocalDataStore;
   } {
@@ -1094,7 +1084,7 @@ export class ProfileApplyManager {
       this.localDataStore === undefined
     ) {
       throw new Error(
-        "restSwitchProfile: dependencies not wired (restMount|restMountFactory, confirmGate, localDataStore required)",
+        "applyProfileViaRest: dependencies not wired (restMount|restMountFactory, confirmGate, localDataStore required)",
       );
     }
     return {
@@ -1115,7 +1105,7 @@ export class ProfileApplyManager {
     const localDataStore = this.localDataStore;
     const vaultRootPath = this.vaultRootPath;
     if (cacheLayer === undefined || localDataStore === undefined || vaultRootPath === undefined) {
-      throw new Error("recoverIncompleteSwitch: hard switch dependencies not wired");
+      throw new Error("recoverIncompleteSwitch: apply dependencies not wired");
     }
     const events = await this.readJournalTail(200);
     const destroyedAsUids = new Set<string>();
@@ -1125,7 +1115,7 @@ export class ProfileApplyManager {
         destroyedAsUids.add(e.as);
       } else if (e.phase === "phase2-materialized" && typeof e.as === "string") {
         materializedAsUids.add(e.as);
-      } else if (e.phase === "hard-switch-completed") {
+      } else if (e.phase === "apply-completed") {
         // Anything before a completed event was a finished switch — clear set.
         destroyedAsUids.clear();
         materializedAsUids.clear();
@@ -1197,7 +1187,7 @@ export class ProfileApplyManager {
     const localDataStore = this.localDataStore;
     const gitOps = this.gitOps;
     if (localDataStore === undefined || gitOps === undefined) {
-      throw new Error("reconcileToLocal: hard switch dependencies not wired");
+      throw new Error("reconcileToLocal: apply dependencies not wired");
     }
     const activeProfileUid = localDataStore.getActiveProfileUid();
     if (activeProfileUid === null) {
@@ -1295,9 +1285,9 @@ export class ProfileApplyManager {
     };
   }
 
-  // === Hard-switch helpers ===
+  // === Apply helpers ===
 
-  private assertHardSwitchWired(): {
+  private assertApplyDepsWired(): {
     assetSpaceManager: AssetSpaceManager;
     cacheLayer: ICacheLayer;
     gitOps: GitSubmoduleOps;
@@ -1339,7 +1329,7 @@ export class ProfileApplyManager {
 
   private listAllAssetSpaceInfos(): AssetSpaceInfo[] {
     // Single vault scan — extracts AssetSpace ABox metadata directly from
-    // frontmatter. Independent of AssetSpaceManager (так hard switch tests
+    // frontmatter. Independent of AssetSpaceManager (так apply tests
     // and recovery-only flows can call this without a wired manager).
     const out: AssetSpaceInfo[] = [];
     const seen = new Set<string>();
@@ -1424,7 +1414,7 @@ export class ProfileApplyManager {
 
   private async enumerateFilesUnder(submodulePath: string): Promise<string[]> {
     // Recursive walk via Obsidian vault.adapter.list. Returns vault-relative
-    // paths. Hard switch needs total file counts up-front for the modal; can't
+    // paths. Apply needs total file counts up-front for the modal; can't
     // lazy-stream.
     const out: string[] = [];
     await this.walkVaultDir(submodulePath, out);

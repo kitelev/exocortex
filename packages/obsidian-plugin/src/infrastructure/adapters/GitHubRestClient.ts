@@ -73,10 +73,10 @@ export class GitHubRestClient {
   constructor(opts: GitHubRestClientOptions) {
     // An EMPTY PAT is allowed and puts the client in unauthenticated mode
     // (no Authorization header → public-repo reads only, lower rate limit).
-    // This is deliberate: plugin onload wires the hard-switch dependencies
+    // This is deliberate: plugin onload wires the apply dependencies
     // BEFORE the user has configured a PAT, so the ctor must not throw on an
     // empty string. Authenticated operations (createCommit, private pulls)
-    // then surface a clear HTTP 401 instead of the whole hard-switch command
+    // then surface a clear HTTP 401 instead of the whole apply command
     // palette silently disappearing. The previous «PAT is required» throw on
     // an empty string broke that wiring (gated Bootstrap/knowledge-switch
     // commands never registered on vaults without a stored PAT).

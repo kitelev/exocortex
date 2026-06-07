@@ -1,5 +1,5 @@
 /**
- * ProfileApplyManager.hardSwitchProfile() — unit tests covering RFC
+ * ProfileApplyManager.applyProfile() — unit tests covering RFC
  * 22b50a17 Phase 3 algorithm + Phase 0 findings (F2/F3/F5/R24/R26).
  *
  * Tests:
@@ -7,7 +7,7 @@
  *   - Vision Lock #5 — uncommitted abort with file list
  *   - F2 — journal events emitted in correct order (write-BEFORE-destroy)
  *   - F3 — 4 cardinal crash injection points
- *   - HardSwitchAbortedByUser when confirmGate returns false
+ *   - ApplyAbortedByUser when confirmGate returns false
  *   - Cache restore on Phase 2 catch (best-effort rollback)
  *   - recoverIncompleteSwitch identifies destroyed-not-materialized AS
  *   - reconcileToLocal detects .gitmodules vs activeProfileUid divergence
@@ -23,7 +23,7 @@ import type { HardSwitchPlan, IConfirmGate } from "exocortex";
 
 import {
   ProfileApplyManager,
-  HardSwitchAbortedByUser,
+  ApplyAbortedByUser,
   TsFloorViolationError,
   UncommittedChangesAbortError,
   type IProfileResolver,
@@ -124,7 +124,7 @@ class FakeSettingsStore implements ISettingsStore {
   }
 }
 
-// Minimal fakes for hard-switch dependencies.
+// Minimal fakes for apply dependencies.
 
 // Production-shape fake mirroring PluginLocalDataStore's single last-applied
 // slot (RFC 0a0791c1 Phase 5 T2 — the dual AC14 slots were retired).
@@ -471,7 +471,7 @@ async function readJournalEntries(app: App): Promise<SwitchJournalEntry[]> {
 
 // === Tests ===
 
-describe("ProfileApplyManager.hardSwitchProfile", () => {
+describe("ProfileApplyManager.applyProfile", () => {
   describe("R24 — TS-floor guard", () => {
     it("throws TsFloorViolationError when target excludes any floor AS UID before any mutation", async () => {
       // Target profile includes ONLY ems — missing all 3 TS-floor AS.
@@ -481,7 +481,7 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
         targetIncludes: ["ems-uid"], // Excludes exo / exocmd / shared-identities.
         materialized: ["ems-uid", TS_FLOOR_AS_UID_EXO],
       });
-      await expect(mgr.hardSwitchProfile("target")).rejects.toThrow(TsFloorViolationError);
+      await expect(mgr.applyProfile("target")).rejects.toThrow(TsFloorViolationError);
       // No mutation should have happened.
       expect(gitOps.calls.filter((c) => c.op === "submoduleDeinit").length).toBe(0);
       expect(cacheLayer.cachedCalls.length).toBe(0);
@@ -516,13 +516,13 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
         ],
         label: "Target Profile",
       });
-      await expect(ctx.mgr.hardSwitchProfile("target")).resolves.toBeUndefined();
+      await expect(ctx.mgr.applyProfile("target")).resolves.toBeUndefined();
     });
 
     it("passes guard when target profile explicitly includes all 3 floor AS UIDs", async () => {
       // Target explicitly declares the 3 floor AS — R24 guard passes;
-      // algorithm proceeds. Hard switch refuses to silently auto-rescue
-      // missing floor (vs Phase 1 soft-switch onload wiring which does).
+      // algorithm proceeds. Apply refuses to silently auto-rescue
+      // missing floor (vs Phase 1 reindex onload wiring which does).
       const { mgr } = setup({
         targetUid: "target",
         sourceUid: null,
@@ -537,7 +537,7 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
           TS_FLOOR_AS_UID_SHARED_IDENTITIES,
         ],
       });
-      await expect(mgr.hardSwitchProfile("target")).resolves.toBeUndefined();
+      await expect(mgr.applyProfile("target")).resolves.toBeUndefined();
     });
   });
 
@@ -564,7 +564,7 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
           { asUid: "ems-uid", submodulePath: "assetspaces/kitelev/exoas-ems", files: ["a.md", "b.md"] },
         ],
       });
-      await expect(mgr.hardSwitchProfile("target")).rejects.toThrow(UncommittedChangesAbortError);
+      await expect(mgr.applyProfile("target")).rejects.toThrow(UncommittedChangesAbortError);
       // No filesystem mutation.
       expect(gitOps.calls.filter((c) => c.op === "submoduleDeinit").length).toBe(0);
     });
@@ -588,7 +588,7 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
           TS_FLOOR_AS_UID_SHARED_IDENTITIES,
         ],
       });
-      await mgr.hardSwitchProfile("target");
+      await mgr.applyProfile("target");
       const checkCall = uncommittedGuard.check.mock.calls[0][0];
       // Only kpc passed — not ems.
       expect(checkCall).toEqual([
@@ -597,7 +597,7 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
     });
   });
 
-  describe("HardSwitchAbortedByUser", () => {
+  describe("ApplyAbortedByUser", () => {
     it("throws and writes no filesystem mutation if confirmGate declines", async () => {
       const { mgr, confirmGate, gitOps, cacheLayer } = setup({
         targetUid: "target",
@@ -615,7 +615,7 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
         ],
       });
       confirmGate.approve = false;
-      await expect(mgr.hardSwitchProfile("target")).rejects.toThrow(HardSwitchAbortedByUser);
+      await expect(mgr.applyProfile("target")).rejects.toThrow(ApplyAbortedByUser);
       expect(gitOps.calls.length).toBe(0);
       expect(cacheLayer.cachedCalls.length).toBe(0);
     });
@@ -638,7 +638,7 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
           TS_FLOOR_AS_UID_SHARED_IDENTITIES,
         ],
       });
-      await mgr.hardSwitchProfile("target");
+      await mgr.applyProfile("target");
       const entries = await readJournalEntries(app);
       const destroyCachedIdx = entries.findIndex(
         (e) => e.phase === "phase2-destroy-cached" && e.as === "ems-uid",
@@ -675,7 +675,7 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
           TS_FLOOR_AS_UID_SHARED_IDENTITIES,
         ],
       });
-      await mgr.hardSwitchProfile("target");
+      await mgr.applyProfile("target");
       // ems-uid was destroyed (deinit + remove gitmodules dir + remove working tree)
       const deinitCalls = gitOps.calls.filter(
         (c) => c.op === "submoduleDeinit" && (c.args[0] as string).includes("ems"),
@@ -697,7 +697,7 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
       expect(stripCalls.length).toBe(0);
     });
 
-    it("emits hard-switch-completed on successful switch", async () => {
+    it("emits apply-completed on successful switch", async () => {
       const { mgr, app } = setup({
         targetUid: "target",
         sourceUid: null,
@@ -713,9 +713,9 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
           TS_FLOOR_AS_UID_SHARED_IDENTITIES,
         ],
       });
-      await mgr.hardSwitchProfile("target");
+      await mgr.applyProfile("target");
       const entries = await readJournalEntries(app);
-      expect(entries.some((e) => e.phase === "hard-switch-completed")).toBe(true);
+      expect(entries.some((e) => e.phase === "apply-completed")).toBe(true);
     });
   });
 
@@ -737,7 +737,7 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
         ],
       });
       gitOps.failAt = "submoduleDeinit";
-      await expect(mgr.hardSwitchProfile("target")).rejects.toThrow();
+      await expect(mgr.applyProfile("target")).rejects.toThrow();
       // ems-uid was cached but never destroyed.
       expect(cacheLayer.cachedCalls.some((c) => c.asUid === "ems-uid")).toBe(true);
     });
@@ -760,7 +760,7 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
         ],
       });
       assetSpaceManager.failOnPull = "ims-uid"; // 2nd pull fails
-      await expect(mgr.hardSwitchProfile("target")).rejects.toThrow();
+      await expect(mgr.applyProfile("target")).rejects.toThrow();
       // Allocated staging for kpc should be released.
       expect(assetSpaceManager.stagingTracker.released).toContain("/tmp/staging/kpc-uid");
     });
@@ -786,7 +786,7 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
       });
       // Fail at commit — both AS destroyed but commit unable.
       gitOps.failAt = "commit";
-      await expect(mgr.hardSwitchProfile("target")).rejects.toThrow();
+      await expect(mgr.applyProfile("target")).rejects.toThrow();
       // restore() called for both destroyed AS.
       expect(cacheLayer.restoreCalls.length).toBeGreaterThanOrEqual(2);
     });
@@ -808,7 +808,7 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
         ],
       });
       gitOps.failAt = "commit";
-      await expect(mgr.hardSwitchProfile("target")).rejects.toThrow();
+      await expect(mgr.applyProfile("target")).rejects.toThrow();
       expect(localDataStore.isSwitchInProgress()).toBe(false);
     });
   });
@@ -830,7 +830,7 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
           TS_FLOOR_AS_UID_SHARED_IDENTITIES,
         ],
       });
-      await mgr.hardSwitchProfile("target");
+      await mgr.applyProfile("target");
       expect(localDataStore.getActiveProfileUid()).toBe("target");
       expect(localDataStore.isSwitchInProgress()).toBe(false);
     });
@@ -851,11 +851,11 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
           TS_FLOOR_AS_UID_SHARED_IDENTITIES,
         ],
       });
-      await mgr.hardSwitchProfile("target");
+      await mgr.applyProfile("target");
       expect(localDataStore.getActiveProfileUid()).toBe("target");
     });
 
-    it("rdfIndexer.refresh fired once after the hard switch (RFC 01a83de8 — soft-filter removed)", async () => {
+    it("rdfIndexer.refresh fired once after the apply (RFC 01a83de8 — soft-filter removed)", async () => {
       const { mgr, indexer } = setup({
         targetUid: "target",
         sourceUid: null,
@@ -871,8 +871,8 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
           TS_FLOOR_AS_UID_SHARED_IDENTITIES,
         ],
       });
-      await mgr.hardSwitchProfile("target");
-      // The hard switch still derives effectiveAsUids for the destroy/materialize
+      await mgr.applyProfile("target");
+      // The apply still derives effectiveAsUids for the destroy/materialize
       // diff (asserted elsewhere), but the query-time soft-filter was removed:
       // refresh() no longer receives an effective set — it just re-indexes the
       // now-materialised vault once.
@@ -895,10 +895,10 @@ describe("ProfileApplyManager.hardSwitchProfile", () => {
           TS_FLOOR_AS_UID_SHARED_IDENTITIES,
         ],
       });
-      await mgr.hardSwitchProfile("target");
+      await mgr.applyProfile("target");
       const commits = gitOps.calls.filter((c) => c.op === "commit");
       expect(commits.length).toBe(1);
-      expect((commits[0].args[0] as string)).toContain("hard switch");
+      expect((commits[0].args[0] as string)).toContain("apply");
     });
   });
 });

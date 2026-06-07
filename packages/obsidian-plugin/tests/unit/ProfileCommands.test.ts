@@ -6,7 +6,7 @@ import {
 } from "../../src/infrastructure/adapters/ProfileCommands";
 import {
   type ProfileApplyManager,
-  HardSwitchAbortedByUser,
+  ApplyAbortedByUser,
   TsFloorViolationError,
   UncommittedChangesAbortError,
 } from "../../src/infrastructure/adapters/ProfileApplyManager";
@@ -14,14 +14,14 @@ import {
 // ─── Test doubles ────────────────────────────────────────────────────────
 
 class FakeSwitchMgr {
-  hardSwitchCalls: string[] = [];
+  applyCalls: string[] = [];
   /** Error to throw from the next applyProfile call (then cleared). */
-  hardSwitchThrows: Error | null = null;
+  applyThrows: Error | null = null;
   async applyProfile(uid: string): Promise<void> {
-    this.hardSwitchCalls.push(uid);
-    if (this.hardSwitchThrows) {
-      const e = this.hardSwitchThrows;
-      this.hardSwitchThrows = null;
+    this.applyCalls.push(uid);
+    if (this.applyThrows) {
+      const e = this.applyThrows;
+      this.applyThrows = null;
       throw e;
     }
   }
@@ -242,7 +242,7 @@ describe("ProfileCommands.invokeApplyProfile (Apply profile)", () => {
     const h = makeHarness({ profiles, pickResult: profiles[0] });
     await h.cmd.invokeApplyProfile();
 
-    expect(h.switchMgr.hardSwitchCalls).toEqual(["k1"]);
+    expect(h.switchMgr.applyCalls).toEqual(["k1"]);
   });
 
   it("shows Notice when no profiles in vault", async () => {
@@ -258,13 +258,13 @@ describe("ProfileCommands.invokeApplyProfile (Apply profile)", () => {
     const h = makeHarness({ profiles, pickResult: null });
     await h.cmd.invokeApplyProfile();
 
-    expect(h.switchMgr.hardSwitchCalls).toHaveLength(0);
+    expect(h.switchMgr.applyCalls).toHaveLength(0);
   });
 
-  it("maps HardSwitchAbortedByUser to a cancelled Notice (no re-throw)", async () => {
+  it("maps ApplyAbortedByUser to a cancelled Notice (no re-throw)", async () => {
     const profiles = [{ uid: "k1", label: "k1" }];
     const h = makeHarness({ profiles, pickResult: profiles[0] });
-    h.switchMgr.hardSwitchThrows = new HardSwitchAbortedByUser();
+    h.switchMgr.applyThrows = new ApplyAbortedByUser();
 
     await expect(h.cmd.invokeApplyProfile()).resolves.not.toThrow();
     expect(h.notices.some((n) => /cancelled/i.test(n))).toBe(true);
@@ -273,7 +273,7 @@ describe("ProfileCommands.invokeApplyProfile (Apply profile)", () => {
   it("maps TsFloorViolationError to a refused Notice", async () => {
     const profiles = [{ uid: "k1", label: "k1" }];
     const h = makeHarness({ profiles, pickResult: profiles[0] });
-    h.switchMgr.hardSwitchThrows = new TsFloorViolationError(
+    h.switchMgr.applyThrows = new TsFloorViolationError(
       "missing $exo floor",
     );
 
@@ -286,7 +286,7 @@ describe("ProfileCommands.invokeApplyProfile (Apply profile)", () => {
   it("maps UncommittedChangesAbortError to an aborted Notice with file count", async () => {
     const profiles = [{ uid: "k1", label: "k1" }];
     const h = makeHarness({ profiles, pickResult: profiles[0] });
-    h.switchMgr.hardSwitchThrows = new UncommittedChangesAbortError("dirty", [
+    h.switchMgr.applyThrows = new UncommittedChangesAbortError("dirty", [
       { asUid: "as1", submodulePath: "assetspaces/x", files: ["a.md", "b.md"] },
     ]);
 
@@ -299,7 +299,7 @@ describe("ProfileCommands.invokeApplyProfile (Apply profile)", () => {
   it("surfaces generic apply failure as a Notice без re-throw", async () => {
     const profiles = [{ uid: "k1", label: "k1" }];
     const h = makeHarness({ profiles, pickResult: profiles[0] });
-    h.switchMgr.hardSwitchThrows = new Error("boom");
+    h.switchMgr.applyThrows = new Error("boom");
 
     await expect(h.cmd.invokeApplyProfile()).resolves.not.toThrow();
     expect(h.notices.some((n) => /failed.*boom/.test(n))).toBe(true);

@@ -86,11 +86,11 @@ describe("ModalConfirmGate", () => {
     document.body.innerHTML = "";
   });
 
-  it("resolves true when «Hard switch» button is clicked", async () => {
+  it("resolves true when «Apply» button is clicked", async () => {
     const gate = new ModalConfirmGate(fakeApp);
     const promise = gate.confirmHardSwitch(makePlan());
 
-    const confirmBtn = findButton("Hard switch");
+    const confirmBtn = findButton("Apply");
     expect(confirmBtn).toBeDefined();
     expect(confirmBtn!.classList.contains("mod-warning")).toBe(true);
     confirmBtn!.click();
@@ -113,7 +113,7 @@ describe("ModalConfirmGate", () => {
     const gate = new ModalConfirmGate(fakeApp);
     const promise = gate.confirmHardSwitch(makePlan());
 
-    const tearSection = document.querySelector(".hard-switch-tear-section");
+    const tearSection = document.querySelector(".apply-confirm-tear-section");
     expect(tearSection).not.toBeNull();
     expect(tearSection?.textContent).toContain("personal (2 files)");
 
@@ -126,7 +126,7 @@ describe("ModalConfirmGate", () => {
     const gate = new ModalConfirmGate(fakeApp);
     const promise = gate.confirmHardSwitch(makePlan());
 
-    const matSection = document.querySelector(".hard-switch-mat-section");
+    const matSection = document.querySelector(".apply-confirm-mat-section");
     expect(matSection).not.toBeNull();
     expect(matSection?.textContent).toContain("work");
 
@@ -138,7 +138,7 @@ describe("ModalConfirmGate", () => {
     const gate = new ModalConfirmGate(fakeApp);
     const promise = gate.confirmHardSwitch(makePlan());
 
-    const title = document.querySelector(".hard-switch-title");
+    const title = document.querySelector(".apply-confirm-title");
     expect(title).not.toBeNull();
     expect(title?.textContent).toContain("Work");
 
@@ -156,7 +156,7 @@ describe("ModalConfirmGate", () => {
       makePlan({ filesToDestroy: new Map([["as-big", huge]]) }),
     );
 
-    const filesSection = document.querySelector(".hard-switch-files-section");
+    const filesSection = document.querySelector(".apply-confirm-files-section");
     expect(filesSection).not.toBeNull();
     const items = filesSection!.querySelectorAll("li");
     expect(items.length).toBe(MODAL_FILE_LIST_CAP);
@@ -177,9 +177,9 @@ describe("ModalConfirmGate", () => {
       }),
     );
 
-    expect(document.querySelector(".hard-switch-tear-section")?.textContent).toContain("(none)");
-    expect(document.querySelector(".hard-switch-files-section")?.textContent).toContain("(none)");
-    expect(document.querySelector(".hard-switch-mat-section")?.textContent).toContain("(none)");
+    expect(document.querySelector(".apply-confirm-tear-section")?.textContent).toContain("(none)");
+    expect(document.querySelector(".apply-confirm-files-section")?.textContent).toContain("(none)");
+    expect(document.querySelector(".apply-confirm-mat-section")?.textContent).toContain("(none)");
 
     findButton("Cancel")?.click();
     await promise;
@@ -189,7 +189,7 @@ describe("ModalConfirmGate", () => {
     const gate = new ModalConfirmGate(fakeApp);
     const promise = gate.confirmHardSwitch(makePlan());
 
-    const confirmBtn = findButton("Hard switch")!;
+    const confirmBtn = findButton("Apply")!;
     confirmBtn.click();
     // Second click on a now-detached button must not throw and must not
     // resolve the (already-settled) promise differently.

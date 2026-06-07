@@ -119,11 +119,11 @@ import { AssetSpaceStatusIconPatch } from "./presentation/asset-space/AssetSpace
 import { GitHubRestClient } from "./infrastructure/adapters/GitHubRestClient";
 import { GitSubmoduleOps } from "./infrastructure/adapters/GitSubmoduleOps";
 import {
-  buildHardSwitchDeps,
+  buildApplyDeps,
   buildAssetSpacePuller,
   buildRestAssetSpaceMount,
-  type HardSwitchDeps,
-} from "./infrastructure/adapters/HardSwitchDepsFactory";
+  type ApplyDeps,
+} from "./infrastructure/adapters/ApplyDepsFactory";
 import { ModalConfirmGate } from "./infrastructure/adapters/ModalConfirmGate";
 import type { RestAssetSpaceMount } from "./infrastructure/adapters/RestAssetSpaceMount";
 import {
@@ -2446,7 +2446,7 @@ export default class ExocortexPlugin extends Plugin {
     const resolver = new VaultProfileResolver(this.app);
     // RFC 22b50a17 Phase 4 (H1 cascade catch — advisor round-2) — wire
     // `refreshAndInjectAssetSpaceMaterialization` as the post-refresh
-    // hook so soft- + hard-switch paths via `ProfileApplyManager`
+    // hook so apply paths via `ProfileApplyManager`
     // re-inject `exo:AssetSpace_materialized` triples automatically after
     // every `rdfIndexer.refresh()`. Without this, profile switching
     // would silently drop the runtime-derived materialization triples
@@ -2520,14 +2520,14 @@ export default class ExocortexPlugin extends Plugin {
 
     const settingsStore = new PluginSettingsStoreAdapter(localDataStore);
 
-    // Phase 5 P3 — hard switch dependencies (desktop-only). On mobile, the
+    // Phase 5 P3 — apply dependencies (desktop-only). On mobile, the
     // palette command throws via the AssetSpaceManager pull guard, so we skip
-    // wiring entirely. Extracted to `buildHardSwitchDeps` for testability —
+    // wiring entirely. Extracted to `buildApplyDeps` for testability —
     // an empty-PAT GitHubRestClient ctor throw previously left this `null` and
     // silently hid the gated Bootstrap / knowledge-switch palette commands.
-    const hardSwitchDeps: HardSwitchDeps | null = Platform.isMobile
+    const applyDeps: ApplyDeps | null = Platform.isMobile
       ? null
-      : await buildHardSwitchDeps({
+      : await buildApplyDeps({
           app: this.app,
           localDataStore,
           notifier: this.notifier,
@@ -2536,8 +2536,8 @@ export default class ExocortexPlugin extends Plugin {
 
     // RFC 01a83de8 Phase 3 T2 — cross-platform (incl. iOS) REST/tarball mount.
     // Built on BOTH platforms: the mobile profile-switch path consumes it
-    // (`ProfileApplyManager.restSwitchProfile`), and it's harmless on
-    // desktop (the desktop hard switch keeps the git-binary path). Best-effort
+    // (`ProfileApplyManager.applyProfileViaRest`), and it's harmless on
+    // desktop (the desktop apply keeps the git-binary path). Best-effort
     // — a wiring failure logs + leaves restMount null (mobile switch then
     // surfaces a clear "not wired" error instead of crashing onload).
     let restMount: RestAssetSpaceMount | null = null;
@@ -2550,9 +2550,9 @@ export default class ExocortexPlugin extends Plugin {
       );
     }
     // The mobile REST switch needs a ConfirmGate; on desktop it comes from
-    // hardSwitchDeps. ModalConfirmGate only needs `app` (mobile-safe).
+    // applyDeps. ModalConfirmGate only needs `app` (mobile-safe).
     const confirmGate =
-      hardSwitchDeps?.confirmGate ?? new ModalConfirmGate(this.app);
+      applyDeps?.confirmGate ?? new ModalConfirmGate(this.app);
 
     const switchMgr = new ProfileApplyManager({
       app: this.app,
@@ -2561,16 +2561,16 @@ export default class ExocortexPlugin extends Plugin {
       rdfIndexer,
       settingsStore,
       notify: (message) => this.notifier.info(message),
-      assetSpaceManager: hardSwitchDeps?.assetSpaceManager,
-      gitOps: hardSwitchDeps?.gitOps,
+      assetSpaceManager: applyDeps?.assetSpaceManager,
+      gitOps: applyDeps?.gitOps,
       restMount: restMount ?? undefined,
       // Fresh-PAT rebuild at switch time (Issue #3382 pattern) so a PAT set
       // after onload is honoured without a reload — the primary mobile flow.
       restMountFactory: () => buildRestAssetSpaceMount({ app: this.app }),
-      uncommittedGuard: hardSwitchDeps?.uncommittedGuard,
+      uncommittedGuard: applyDeps?.uncommittedGuard,
       confirmGate,
-      cacheLayer: hardSwitchDeps?.cacheLayer,
-      vaultRootPath: hardSwitchDeps?.vaultRootPath,
+      cacheLayer: applyDeps?.cacheLayer,
+      vaultRootPath: applyDeps?.vaultRootPath,
       localDataStore,
     });
 
@@ -2605,22 +2605,22 @@ export default class ExocortexPlugin extends Plugin {
       );
     }
 
-    // RFC 22b50a17 Phase 3 — hard-switch recovery worker. Only fires when
-    // hard-switch deps are wired AND the journal tail shows destroyed-not-
+    // RFC 22b50a17 Phase 3 — apply recovery worker. Only fires when
+    // apply deps are wired AND the journal tail shows destroyed-not-
     // materialized AS — covers the «plugin crashed mid-Phase 2» case where
     // soft recoverIfNeeded() would re-trigger a no-op refresh but leave
     // vault filesystem partial-destroyed.
-    if (hardSwitchDeps !== null) {
+    if (applyDeps !== null) {
       try {
         const result = await switchMgr.recoverIncompleteSwitch();
         if (result.restored.length > 0) {
           this.logger.info(
-            `[ExocortexPlugin] hard-switch recovery restored ${result.restored.length} AssetSpace(s): ${result.restored.join(", ")}`,
+            `[ExocortexPlugin] apply recovery restored ${result.restored.length} AssetSpace(s): ${result.restored.join(", ")}`,
           );
         }
       } catch (error) {
         this.logger.warn(
-          "[ExocortexPlugin] hard-switch recovery failed",
+          "[ExocortexPlugin] apply recovery failed",
           error instanceof Error ? error : new Error(String(error)),
         );
       }
@@ -2733,16 +2733,16 @@ export default class ExocortexPlugin extends Plugin {
     // RFC 0a0791c1 Phase 5 T2 — «Apply profile» (the single consolidated
     // profile command; the former soft «Switch focus profile» was removed and
     // the mount-state «Switch knowledge profile» was renamed here). Needs the
-    // hard-switch deps wired (filesystem materialisation).
+    // apply deps wired (filesystem materialisation).
     //
     // Command id is intentionally kept as the legacy `hard-switch-focus-profile`
     // so any hotkey a user already bound survives the rename (Obsidian persists
     // hotkeys by command id). Only the user-facing name changes.
-    // Register on desktop (git-binary hard switch) OR mobile when the REST
-    // mount is wired (ProfileApplyManager dispatches to restSwitchProfile
+    // Register on desktop (git-binary apply) OR mobile when the REST
+    // mount is wired (ProfileApplyManager dispatches to applyProfileViaRest
     // on mobile). Without either, the filesystem materialisation can't run, so
     // the command stays hidden.
-    if (hardSwitchDeps !== null || (Platform.isMobile && restMount !== null)) {
+    if (applyDeps !== null || (Platform.isMobile && restMount !== null)) {
       this.addCommand({
         id: "hard-switch-focus-profile",
         name: "Apply profile",
@@ -2762,11 +2762,11 @@ export default class ExocortexPlugin extends Plugin {
     });
 
     // RFC 13da049f Phase 6.2/6.3 — Bootstrap vault + Add AssetSpace by URL.
-    // Desktop-only: both reuse the Phase 5 hard-switch deps (AssetSpaceManager
+    // Desktop-only: both reuse the Phase 5 apply deps (AssetSpaceManager
     // REST pull + GitSubmoduleOps staging move / .gitmodules). Registered only
     // when those deps are wired (desktop + vault.adapter.basePath available).
-    if (hardSwitchDeps !== null) {
-      this.registerBootstrapCommands(hardSwitchDeps, localDataStore);
+    if (applyDeps !== null) {
+      this.registerBootstrapCommands(applyDeps, localDataStore);
     }
 
     this.logger.info(
@@ -2779,10 +2779,10 @@ export default class ExocortexPlugin extends Plugin {
    * («Bootstrap vault» + «Add AssetSpace by URL»). Reuses the Phase 5
    * `AssetSpaceManager` (REST tarball pull) and `GitSubmoduleOps` (staging
    * move + `.gitmodules` text manipulation) — no REST/security logic is
-   * duplicated. Desktop-only; the caller gates on `hardSwitchDeps !== null`.
+   * duplicated. Desktop-only; the caller gates on `applyDeps !== null`.
    */
   private registerBootstrapCommands(
-    hardSwitchDeps: {
+    applyDeps: {
       gitOps: GitSubmoduleOps;
     },
     localDataStore: PluginLocalDataStore,
@@ -2795,7 +2795,7 @@ export default class ExocortexPlugin extends Plugin {
     const bootstrapCommands = new BootstrapAssetSpaceCommands({
       // Issue #3382 — rebuild the AssetSpaceManager per invocation from the
       // CURRENT stored PAT instead of reusing the onload-captured
-      // `hardSwitchDeps.assetSpaceManager` (which froze an empty-PAT client
+      // `applyDeps.assetSpaceManager` (which froze an empty-PAT client
       // when the vault had no PAT at load time). A PAT configured after onload
       // now authenticates Bootstrap / Add-AssetSpace pulls without a reload.
       getPuller: () =>
@@ -2804,7 +2804,7 @@ export default class ExocortexPlugin extends Plugin {
           localDataStore,
           notifier: this.notifier,
         }),
-      gitOps: hardSwitchDeps.gitOps,
+      gitOps: applyDeps.gitOps,
       localStore: localDataStore,
       vaultExists: (p) => this.app.vault.adapter.exists(p),
       listFolder: (dir) => this.app.vault.adapter.list(dir),

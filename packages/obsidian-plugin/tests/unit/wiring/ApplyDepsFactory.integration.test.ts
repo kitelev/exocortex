@@ -1,6 +1,6 @@
 /**
- * Production-shape regression test for `buildHardSwitchDeps`
- * (Issue: hard-switch deps wiring exception hides Bootstrap/knowledge palette commands).
+ * Production-shape regression test for `buildApplyDeps`
+ * (Issue: apply deps wiring exception hides Bootstrap/knowledge palette commands).
  *
  * This exercises the REAL constructor chain — LocalSecretsStore → getSecret →
  * GitHubRestClient → StagingDirTracker → AssetSpaceManager → GitSubmoduleOps →
@@ -22,9 +22,9 @@ import type { INotificationService } from "exocortex";
 import type { ILogger } from "../../../src/adapters/logging/ILogger";
 
 import {
-  buildHardSwitchDeps,
-  type BuildHardSwitchDepsOptions,
-} from "../../../src/infrastructure/adapters/HardSwitchDepsFactory";
+  buildApplyDeps,
+  type BuildApplyDepsOptions,
+} from "../../../src/infrastructure/adapters/ApplyDepsFactory";
 import { PluginLocalDataStore } from "../../../src/infrastructure/adapters/PluginLocalDataStore";
 
 // ─── Real-shape fake App / vault.adapter ─────────────────────────────────
@@ -87,8 +87,8 @@ function makeFakeNotifier(): INotificationService {
 
 function makeOptions(
   app: App,
-  overrides: Partial<BuildHardSwitchDepsOptions> = {},
-): BuildHardSwitchDepsOptions {
+  overrides: Partial<BuildApplyDepsOptions> = {},
+): BuildApplyDepsOptions {
   return {
     app,
     localDataStore: new PluginLocalDataStore({ app }),
@@ -100,12 +100,12 @@ function makeOptions(
 
 const DATA_LOCAL_PATH = ".obsidian/plugins/exocortex/data.local.json";
 
-describe("buildHardSwitchDeps — production-shape wiring", () => {
+describe("buildApplyDeps — production-shape wiring", () => {
   it("wires all deps on a valid desktop vault WITHOUT a stored PAT (regression)", async () => {
     // No data.local.json → getSecret('pat') === null → ctor receives "".
     // Pre-fix this threw «PAT is required» → deps null → palette commands hidden.
     const app = makeFakeApp({ basePath: "/Users/test/vault-2025" });
-    const deps = await buildHardSwitchDeps(makeOptions(app));
+    const deps = await buildApplyDeps(makeOptions(app));
 
     expect(deps).not.toBeNull();
     expect(deps?.vaultRootPath).toBe("/Users/test/vault-2025");
@@ -126,7 +126,7 @@ describe("buildHardSwitchDeps — production-shape wiring", () => {
         }),
       },
     });
-    const deps = await buildHardSwitchDeps(makeOptions(app));
+    const deps = await buildApplyDeps(makeOptions(app));
 
     expect(deps).not.toBeNull();
     expect(deps?.vaultRootPath).toBe("/Users/test/vault-2025");
@@ -138,7 +138,7 @@ describe("buildHardSwitchDeps — production-shape wiring", () => {
     // impossible → wiring intentionally returns null.
     const app = makeFakeApp({ basePath: "" });
     const { logger, warns } = makeFakeLogger();
-    const deps = await buildHardSwitchDeps(makeOptions(app, { logger }));
+    const deps = await buildApplyDeps(makeOptions(app, { logger }));
 
     expect(deps).toBeNull();
     expect(warns.some((w) => w.includes("basePath unavailable"))).toBe(true);
@@ -154,7 +154,7 @@ describe("buildHardSwitchDeps — production-shape wiring", () => {
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
     try {
-      const deps = await buildHardSwitchDeps(
+      const deps = await buildApplyDeps(
         makeOptions(app, {
           logger,
           localDataStore: null as unknown as PluginLocalDataStore,
@@ -163,10 +163,10 @@ describe("buildHardSwitchDeps — production-shape wiring", () => {
 
       expect(deps).toBeNull();
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "[Exocortex] hard-switch wiring failed:",
+        "[Exocortex] apply wiring failed:",
         expect.any(Error),
       );
-      expect(warns.some((w) => w.includes("failed to wire hard-switch deps"))).toBe(
+      expect(warns.some((w) => w.includes("failed to wire apply deps"))).toBe(
         true,
       );
     } finally {

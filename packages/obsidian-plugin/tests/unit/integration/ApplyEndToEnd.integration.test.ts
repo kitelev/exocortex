@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  *
- * End-to-end integration test for `hardSwitchProfile()` algorithm against
+ * End-to-end integration test for `applyProfile()` algorithm against
  * a real disposable git vault on the local filesystem.
  *
  * Scope:
@@ -17,7 +17,7 @@
  *   1. Init test vault with 3 AS submodules (file:// URLs)
  *   2. Two profiles — profile-A {AS1, AS2}, profile-B {AS2, AS3}
  *   3. Active = profile-A → vault has AS1 + AS2
- *   4. hardSwitchProfile(profile-B)
+ *   4. applyProfile(profile-B)
  *   5. Verify vault now has AS2 + AS3
  *   6. Verify .gitmodules correctly reflects new state
  *   7. Verify cache contains AS1 tarball
@@ -375,7 +375,7 @@ async function copyTree(src: string, dest: string): Promise<void> {
   }
 }
 
-describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
+describe("applyProfile E2E (real fs, mocked pull)", () => {
   let setup: VaultSetup;
 
   afterEach(async () => {
@@ -459,7 +459,7 @@ describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
     });
 
     // ---- ACT ----
-    await mgr.hardSwitchProfile("profile-b");
+    await mgr.applyProfile("profile-b");
 
     // ---- ASSERT vault state ----
     expect(existsSync(path.join(setup.vaultPath, "assetspaces/kitelev/exoas-as1"))).toBe(false);
@@ -488,7 +488,7 @@ describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
     // re-uses URL from `.gitmodules`». Switch profile-b → profile-a; as1 was
     // destroyed in profile-a→b transition but `.gitmodules` entry preserved.
     // Switch back must re-add as1 (URL recovered from `.gitmodules`).
-    await mgr.hardSwitchProfile("profile-a");
+    await mgr.applyProfile("profile-a");
 
     // After switch-back: as1 working tree restored, as3 destroyed.
     expect(existsSync(path.join(setup.vaultPath, "assetspaces/kitelev/exoas-as1"))).toBe(true);

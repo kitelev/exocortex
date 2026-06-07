@@ -12,7 +12,7 @@ import type { IConfirmGate, HardSwitchPlan } from "exocortex";
  *      summary suffix).
  *   3. Assetspaces being materialized (newly added).
  *
- * Resolves `true` only when the user clicks the explicit «Hard switch»
+ * Resolves `true` only when the user clicks the explicit «Apply»
  * button (`mod-warning` class — red destructive variant). Esc / Cancel /
  * any close path resolves `false` to abort. Promise is guaranteed to
  * resolve exactly once, even if the user clicks before Obsidian's
@@ -23,7 +23,7 @@ export class ModalConfirmGate implements IConfirmGate {
 
   confirmHardSwitch(plan: HardSwitchPlan): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
-      const modal = new HardSwitchConfirmModal(this.app, plan, resolve);
+      const modal = new ApplyConfirmModal(this.app, plan, resolve);
       modal.open();
     });
   }
@@ -35,7 +35,7 @@ export class ModalConfirmGate implements IConfirmGate {
  */
 export const MODAL_FILE_LIST_CAP = 100;
 
-class HardSwitchConfirmModal extends Modal {
+class ApplyConfirmModal extends Modal {
   private resolved = false;
   private readonly plan: HardSwitchPlan;
   private readonly resolve: (approved: boolean) => void;
@@ -61,8 +61,8 @@ class HardSwitchConfirmModal extends Modal {
     // Render title inside contentEl rather than relying on Modal.titleEl
     // — keeps the adapter testable without a custom Modal mock.
     contentEl.createEl("h2", {
-      cls: "hard-switch-title",
-      text: `Hard switch к profile: ${this.plan.targetProfileLabel}`,
+      cls: "apply-confirm-title",
+      text: `Apply к profile: ${this.plan.targetProfileLabel}`,
     });
 
     contentEl.createEl("p", {
@@ -71,7 +71,7 @@ class HardSwitchConfirmModal extends Modal {
 
     // Section 1 — Assetspaces about to be removed
     const tearSection = contentEl.createEl("div", {
-      cls: "hard-switch-tear-section",
+      cls: "apply-confirm-tear-section",
     });
     tearSection.createEl("h3", { text: "Assetspaces to remove" });
     if (this.plan.assetSpacesBeingTornDown.length === 0) {
@@ -91,7 +91,7 @@ class HardSwitchConfirmModal extends Modal {
       0,
     );
     const filesSection = contentEl.createEl("div", {
-      cls: "hard-switch-files-section",
+      cls: "apply-confirm-files-section",
     });
     filesSection.createEl("h3", {
       text: `Files to be removed (${totalFiles} total)`,
@@ -117,7 +117,7 @@ class HardSwitchConfirmModal extends Modal {
 
     // Section 3 — Assetspaces being materialized
     const matSection = contentEl.createEl("div", {
-      cls: "hard-switch-mat-section",
+      cls: "apply-confirm-mat-section",
     });
     matSection.createEl("h3", { text: "Assetspaces to materialize" });
     if (this.plan.assetSpacesBeingMaterialized.length === 0) {
@@ -131,10 +131,10 @@ class HardSwitchConfirmModal extends Modal {
 
     // Confirm / Cancel buttons
     const buttonRow = contentEl.createEl("div", {
-      cls: "hard-switch-buttons",
+      cls: "apply-confirm-buttons",
     });
     const confirmBtn = buttonRow.createEl("button", {
-      text: "Hard switch",
+      text: "Apply",
       cls: "mod-warning",
     });
     confirmBtn.addEventListener("click", () => {

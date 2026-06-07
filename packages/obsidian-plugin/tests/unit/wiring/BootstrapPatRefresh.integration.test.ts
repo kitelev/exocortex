@@ -29,7 +29,7 @@ import * as obsidian from "obsidian";
 import type { App } from "obsidian";
 import type { INotificationService } from "exocortex";
 
-import { buildAssetSpacePuller } from "../../../src/infrastructure/adapters/HardSwitchDepsFactory";
+import { buildAssetSpacePuller } from "../../../src/infrastructure/adapters/ApplyDepsFactory";
 import { LocalSecretsStore } from "../../../src/infrastructure/adapters/LocalSecretsStore";
 import { PluginLocalDataStore } from "../../../src/infrastructure/adapters/PluginLocalDataStore";
 import { GitHubRestClient } from "../../../src/infrastructure/adapters/GitHubRestClient";
