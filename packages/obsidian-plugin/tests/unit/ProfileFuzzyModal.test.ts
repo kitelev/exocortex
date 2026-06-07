@@ -1,9 +1,9 @@
 import { ProfileFuzzyModal } from "../../src/infrastructure/adapters/ProfileFuzzyModal";
-import type { FocusProfileChoice } from "../../src/infrastructure/adapters/FocusProfileCommands";
+import type { ProfileChoice } from "../../src/infrastructure/adapters/ProfileCommands";
 
 const fakeApp = {} as any;
 
-const profiles: FocusProfileChoice[] = [
+const profiles: ProfileChoice[] = [
   { uid: "uid-personal", label: "Personal" },
   { uid: "uid-work", label: "Work", isActive: true },
   { uid: "uid-reading", label: "Reading" },

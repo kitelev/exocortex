@@ -388,10 +388,10 @@ export class ExocortexSettingTab extends PluginSettingTab {
         }),
       );
 
-    // Issue #3320 — RFC 0a0791c1 §B.8 — 4 FocusProfile-related sections
+    // Issue #3320 — RFC 0a0791c1 §B.8 — 4 Profile-related sections
     // (PAT, Active profile, Switch cache, Operations log). Rendered after
     // the existing sections so the diff stays additive.
-    this.renderFocusProfileSections(containerEl);
+    this.renderProfileSections(containerEl);
 
     // Template syntax help
     const helpEl = containerEl.createDiv({
@@ -538,7 +538,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
   }
 
   /**
-   * Issue #3320 — render the 4 FocusProfile sections (PAT, Active profile,
+   * Issue #3320 — render the 4 Profile sections (PAT, Active profile,
    * Switch cache, Operations log) per RFC 0a0791c1 §B.8.
    *
    * Architectural notes:
@@ -550,7 +550,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
    *     getCacheStats() and shows zeros — acceptable»).
    *
    *   - ProfileApplyManager is NOT constructed here — it would race
-   *     the manager from registerFocusProfileCommands on the persisted
+   *     the manager from registerProfileCommands on the persisted
    *     lock file. Plugin exposes a hoisted instance via
    *     `plugin.profileApplyManager`.
    *
@@ -571,7 +571,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
    *     created synchronously and populated via an IIFE so display() stays
    *     synchronous per Obsidian's PluginSettingTab contract.
    */
-  private renderFocusProfileSections(containerEl: HTMLElement): void {
+  private renderProfileSections(containerEl: HTMLElement): void {
     const app = this.plugin.app;
     const notifier = this.plugin.notifier;
     const secretsStore = new LocalSecretsStore({ app });
@@ -600,7 +600,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
       " A hard switch that physically materializes or tears down AssetSpace " +
         "submodules on disk (and rewrites .gitmodules). Heavyweight: a " +
         "confirmation gate, an uncommitted-changes guard, and ~30 s per " +
-        "freshly-pulled AssetSpace. Pick a KnowledgeProfile asset via the " +
+        "freshly-pulled AssetSpace. Pick a Profile asset via the " +
         "«Exocortex: Switch knowledge profile (filesystem destroy + " +
         "materialize)» command (Cmd+P). Use it to " +
         "install or remove whole ontology bundles and to keep " +
@@ -611,7 +611,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
     focusLi.appendText(
       " A soft switch that applies a query-time RDF filter; nothing changes " +
         "on disk. Lightweight: ~1–2 s reindex, instantly reversible. Pick a " +
-        "FocusProfile asset via the dropdown below or the «Exocortex: Switch " +
+        "Profile asset via the dropdown below or the «Exocortex: Switch " +
         "focus profile» command. Use it to narrow search / SPARQL / graph " +
         "view to the slice you are working in right now.",
     );
@@ -625,7 +625,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
 
     // ─────── Section 1 — PAT (GitHub Personal Access Token) ───────
     // eslint-disable-next-line obsidianmd/ui/sentence-case -- "GitHub" + "PAT" are proper noun + established acronym
-    new Setting(containerEl).setName("FocusProfile: GitHub PAT").setHeading();
+    new Setting(containerEl).setName("Profile: GitHub PAT").setHeading();
 
     const patDesc = containerEl.createDiv({ cls: "setting-item-description" });
     patDesc.appendText(
@@ -711,7 +711,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
 
     // Issue #3327 Item #3 — read switch state from device-local store
     // (data.local.json). `plugin.localDataStore` is null until
-    // `registerFocusProfileCommands` resolves (and undefined in unit
+    // `registerProfileCommands` resolves (and undefined in unit
     // tests с partial plugin mocks); treat as no-active-profile before
     // then, matching the previous fallback behaviour.
     //
@@ -779,7 +779,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
         // UID → label lookup uses the same profile lister как the Cmd+P
         // picker, so labels match exactly. Fall back to UID[:8] when an
         // entry references a since-deleted profile.
-        const lister = this.plugin.listFocusProfileChoices;
+        const lister = this.plugin.listProfileChoices;
         const labelByUid: Map<string, string> = new Map();
         if (lister !== null) {
           try {

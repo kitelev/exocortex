@@ -91,10 +91,10 @@ import { createObsidianClassLabelResolver } from "./infrastructure/services/Obsi
 import { ExocmdCommandPaletteRegistrar } from "./application/services/ExocmdCommandPaletteRegistrar";
 import { ObsidianCommandPromptAdapter } from "./infrastructure/adapters/ObsidianCommandPromptAdapter";
 import {
-  FocusProfileCommands,
-  type FocusProfileChoice,
+  ProfileCommands,
+  type ProfileChoice,
   type IAssetSpacePusher,
-} from "./infrastructure/adapters/FocusProfileCommands";
+} from "./infrastructure/adapters/ProfileCommands";
 import { ProfileApplyManager } from "./infrastructure/adapters/ProfileApplyManager";
 import { PluginLockManager } from "./infrastructure/adapters/PluginLockManager";
 import { VaultProfileResolver } from "./infrastructure/adapters/VaultProfileResolver";
@@ -238,7 +238,7 @@ export default class ExocortexPlugin extends Plugin {
    * Issue #3320 — ProfileApplyManager hoisted onto the plugin instance
    * so onload recovery / reconcile reuse the single manager без re-constructing
    * a second one (which would race the original on the same persisted lock
-   * file). Initialized in `registerFocusProfileCommands()`; null until that
+   * file). Initialized in `registerProfileCommands()`; null until that
    * call succeeds.
    */
   public profileApplyManager: ProfileApplyManager | null = null;
@@ -247,16 +247,16 @@ export default class ExocortexPlugin extends Plugin {
    * Issue #3320 — profile choice lister hoisted alongside the switch
    * manager. Returns the same FuzzySuggestModal-shaped choices the palette
    * command uses, so the Settings dropdown matches Cmd+P ordering.
-   * Initialized in `registerFocusProfileCommands()`; null until that
+   * Initialized in `registerProfileCommands()`; null until that
    * call succeeds.
    */
-  public listFocusProfileChoices: (() => Promise<FocusProfileChoice[]>) | null = null;
+  public listProfileChoices: (() => Promise<ProfileChoice[]>) | null = null;
 
   /**
    * Issue #3327 Item #3 — device-local switch state store (Sync-excluded).
    * Holds `activeProfileUid` + `_switchInProgress` per-device so profile
    * selection does not replicate cross-device. Initialized в
-   * `registerFocusProfileCommands` after one-time legacy-keys migration;
+   * `registerProfileCommands` after one-time legacy-keys migration;
    * remains null before that point.
    *
    * Readers treat the null state as «no active profile» (matches the
@@ -784,16 +784,16 @@ export default class ExocortexPlugin extends Plugin {
         this.autoRenderLayout(),
       );
 
-      // RFC 0a0791c1 #3322 — register FocusProfile palette commands
+      // RFC 0a0791c1 #3322 — register Profile palette commands
       // (Switch / Push current assetspace). Wraps the B.7 handler with
       // real adapters. Wrapped в try/catch: any failure here должен NOT
       // abort the rest of onload — commands simply won't appear in
       // Cmd+P, but plugin remains usable.
       try {
-        await this.registerFocusProfileCommands();
+        await this.registerProfileCommands();
       } catch (error) {
         this.logger.error(
-          "[ExocortexPlugin] FocusProfile commands registration failed",
+          "[ExocortexPlugin] Profile commands registration failed",
           error instanceof Error ? error : new Error(String(error)),
         );
       }
@@ -2385,9 +2385,9 @@ export default class ExocortexPlugin extends Plugin {
   }
 
   /**
-   * RFC 0a0791c1 #3322 — register the two FocusProfile palette commands
+   * RFC 0a0791c1 #3322 — register the two Profile palette commands
    * («Switch focus profile», «Push current assetspace»). Wires the B.7
-   * `FocusProfileCommands` handler with real adapters:
+   * `ProfileCommands` handler with real adapters:
    *
    *   - B.4 `ProfileApplyManager`: persisted lock + journal + RDF
    *     re-index с effective ontology filter.
@@ -2411,7 +2411,7 @@ export default class ExocortexPlugin extends Plugin {
    *
    * Wired into:
    *  - `metadataCache.resolved` chain (initial cold-start + active-
-   *    FocusProfile re-apply path),
+   *    Profile re-apply path),
    *  - `PluginRdfIndexerAdapter.onAfterRefresh` so soft- and hard-
    *    switch paths via `ProfileApplyManager` re-inject
    *    automatically.
@@ -2441,7 +2441,7 @@ export default class ExocortexPlugin extends Plugin {
     }
   }
 
-  private async registerFocusProfileCommands(): Promise<void> {
+  private async registerProfileCommands(): Promise<void> {
     const lockMgr = new PluginLockManager({ app: this.app });
     const resolver = new VaultProfileResolver(this.app);
     // RFC 22b50a17 Phase 4 (H1 cascade catch — advisor round-2) — wire
@@ -2595,12 +2595,12 @@ export default class ExocortexPlugin extends Plugin {
       const recovery = await switchMgr.recoverIfNeeded();
       if (recovery.recovered) {
         this.logger.info(
-          `[ExocortexPlugin] FocusProfile switch recovery completed for ${recovery.targetUid}`,
+          `[ExocortexPlugin] Profile switch recovery completed for ${recovery.targetUid}`,
         );
       }
     } catch (error) {
       this.logger.warn(
-        "[ExocortexPlugin] FocusProfile switch recovery failed",
+        "[ExocortexPlugin] Profile switch recovery failed",
         error instanceof Error ? error : new Error(String(error)),
       );
     }
@@ -2654,8 +2654,8 @@ export default class ExocortexPlugin extends Plugin {
     const buildProfileChoices = (
       files: TFile[],
       activeUid: string | null,
-    ): FocusProfileChoice[] => {
-      const choices: FocusProfileChoice[] = [];
+    ): ProfileChoice[] => {
+      const choices: ProfileChoice[] = [];
       for (const file of files) {
         const cache = this.app.metadataCache.getFileCache(file);
         const fm = cache?.frontmatter as Record<string, unknown> | undefined;
@@ -2681,27 +2681,27 @@ export default class ExocortexPlugin extends Plugin {
     // RFC 0a0791c1 Phase 5 T2 — single `exo__Profile` picker (the former dual
     // soft/Knowledge listers collapsed into one). `activeProfileUid` is the
     // last-applied selection; Item #3 — device-local store (no Sync replication).
-    const profileLister: () => Promise<FocusProfileChoice[]> = async () =>
+    const profileLister: () => Promise<ProfileChoice[]> = async () =>
       buildProfileChoices(
-        resolver.listFocusProfileFiles(),
+        resolver.listProfileFiles(),
         localDataStore.getActiveProfileUid(),
       );
 
     // Issue #3320 — share the same lister с Settings UI so its dropdown
     // matches the Cmd+P fuzzy-pick ordering exactly.
-    this.listFocusProfileChoices = profileLister;
+    this.listProfileChoices = profileLister;
 
     const fuzzyPick = (
-      options: FocusProfileChoice[],
+      options: ProfileChoice[],
       title: string,
-    ): Promise<FocusProfileChoice | null> => {
-      return new Promise<FocusProfileChoice | null>((resolve) => {
+    ): Promise<ProfileChoice | null> => {
+      return new Promise<ProfileChoice | null>((resolve) => {
         const modal = new ProfileFuzzyModal(this.app, options, title, resolve);
         modal.open();
       });
     };
 
-    const commandsHandler = new FocusProfileCommands({
+    const commandsHandler = new ProfileCommands({
       switchMgr,
       pushMgr,
       profileLister,
@@ -2747,7 +2747,7 @@ export default class ExocortexPlugin extends Plugin {
         id: "hard-switch-focus-profile",
         name: "Apply profile",
         callback: () => {
-          void commandsHandler.invokeSwitchKnowledgeProfile();
+          void commandsHandler.invokeApplyProfile();
         },
       });
     }
@@ -2770,7 +2770,7 @@ export default class ExocortexPlugin extends Plugin {
     }
 
     this.logger.info(
-      "[ExocortexPlugin] FocusProfile palette commands registered",
+      "[ExocortexPlugin] Profile palette commands registered",
     );
   }
 
@@ -2897,7 +2897,7 @@ export default class ExocortexPlugin extends Plugin {
   }
 
   /**
-   * Constructs an `IAssetSpacePusher` for {@link registerFocusProfileCommands}.
+   * Constructs an `IAssetSpacePusher` for {@link registerProfileCommands}.
    *
    * When a GitHub PAT is configured в `data.local.json` (per RFC 0a0791c1
    * Vision Lock #1), returns a real `AssetSpaceManager` — push works

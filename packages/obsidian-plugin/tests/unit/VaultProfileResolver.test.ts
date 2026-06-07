@@ -22,13 +22,13 @@ function makeApp(files: { file: FakeFile; fm: Record<string, unknown> }[]) {
   } as any;
 }
 
-describe("VaultProfileResolver.listFocusProfileFiles", () => {
-  it("returns files whose Instance_class wikilink contains the FocusProfile UID", () => {
+describe("VaultProfileResolver.listProfileFiles", () => {
+  it("returns files whose Instance_class wikilink contains the Profile UID", () => {
     const app = makeApp([
       {
         file: { path: "a.md", basename: "a" },
         fm: {
-          exo__Instance_class: `[[${PROFILE_CLASS_UID}|exo__FocusProfile]]`,
+          exo__Instance_class: `[[${PROFILE_CLASS_UID}|exo__Profile]]`,
           exo__Asset_uid: "p1",
           exo__Asset_label: "Profile One",
         },
@@ -45,14 +45,14 @@ describe("VaultProfileResolver.listFocusProfileFiles", () => {
         fm: {
           exo__Instance_class: [
             "[[ems__Project]]",
-            `[[${PROFILE_CLASS_UID}|exo__FocusProfile]]`,
+            `[[${PROFILE_CLASS_UID}|exo__Profile]]`,
           ],
           exo__Asset_uid: "p2",
         },
       },
     ]);
     const resolver = new VaultProfileResolver(app);
-    const found = resolver.listFocusProfileFiles().map((f) => f.path);
+    const found = resolver.listProfileFiles().map((f) => f.path);
     expect(found.sort()).toEqual(["a.md", "c.md"]);
   });
 
@@ -72,19 +72,19 @@ describe("VaultProfileResolver.listFocusProfileFiles", () => {
       { path: "b.md", basename: "b" },
     ];
     const resolver = new VaultProfileResolver(app);
-    expect(resolver.listFocusProfileFiles().map((f) => f.path)).toEqual([
+    expect(resolver.listProfileFiles().map((f) => f.path)).toEqual([
       "a.md",
     ]);
   });
 
-  it("findFocusProfileFileByUid returns null when UID is empty", () => {
+  it("findProfileFileByUid returns null when UID is empty", () => {
     const app = makeApp([]);
     expect(
-      new VaultProfileResolver(app).findFocusProfileFileByUid(""),
+      new VaultProfileResolver(app).findProfileFileByUid(""),
     ).toBeNull();
   });
 
-  it("findFocusProfileFileByUid matches by exo__Asset_uid", () => {
+  it("findProfileFileByUid matches by exo__Asset_uid", () => {
     const app = makeApp([
       {
         file: { path: "a.md", basename: "a" },
@@ -102,7 +102,7 @@ describe("VaultProfileResolver.listFocusProfileFiles", () => {
       },
     ]);
     const resolver = new VaultProfileResolver(app);
-    const file = resolver.findFocusProfileFileByUid("p2");
+    const file = resolver.findProfileFileByUid("p2");
     expect(file?.path).toBe("b.md");
   });
 });
@@ -188,9 +188,9 @@ describe("VaultProfileResolver.resolve", () => {
 });
 
 
-// RFC 01a83de8 Phase 3 T4 — listKnowledgeProfileFiles removed (the former
-// per-class KnowledgeProfile picker collapsed into the single exo__Profile
-// class; the mount-state picker now uses listFocusProfileFiles).
+// RFC 01a83de8 Phase 3 T4 — the former per-class profile picker collapsed into
+// the single exo__Profile class; the mount-state picker now uses
+// listProfileFiles).
 
 describe("VaultProfileResolver.discoverSharedOntologies", () => {
   it("returns empty array (v3 backward-compat — TS-floor pattern handles shared- prefix)", async () => {
