@@ -15,7 +15,7 @@
  *
  * EV8 mandate: this is the ONE named guard all profile-switch sites (plugin
  * {@link FocusProfileSwitchManager}, CLI {@link CliHardSwitchService} +
- * {@link CliFocusProfileResolver}) delegate to. The previous copy-pasted inline
+ * {@link CliProfileResolver}) delegate to. The previous copy-pasted inline
  * guards drifted independently; consolidating here removes that drift surface.
  */
 

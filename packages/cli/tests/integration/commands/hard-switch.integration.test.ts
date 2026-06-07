@@ -2,7 +2,7 @@
  * Integration tests for `exocortex hard-switch <profile-uid>` — the REAL
  * mount-state switch (Issue #3416, UI↔CLI parity).
  *
- * Uses a real on-disk fixture vault (matches `CliFocusProfileResolver`
+ * Uses a real on-disk fixture vault (matches `CliProfileResolver`
  * unit-test style) + the pure-logic seam `runHardSwitch` (returns a
  * `HardSwitchResult` rather than calling `process.exit`). Tear-down scenarios
  * need NO network (unmount is pure `fs`); the materialise scenario injects a
@@ -30,11 +30,11 @@ import type { HardSwitchPlan, IConfirmGate } from "exocortex";
 import { runHardSwitch, hardSwitchCommand } from "../../../src/commands/hard-switch.js";
 import {
   ASSET_SPACE_CLASS_UID,
-  FOCUS_PROFILE_CLASS_UID,
+  PROFILE_CLASS_UID,
   TS_FLOOR_AS_UID_EXO,
   TS_FLOOR_AS_UID_EXOCMD,
   TS_FLOOR_AS_UID_SHARED_IDENTITIES,
-} from "../../../src/services/CliFocusProfileResolver.js";
+} from "../../../src/services/CliProfileResolver.js";
 import { CliHardSwitchService } from "../../../src/services/CliHardSwitchService.js";
 import { BootstrapAssetSpaceService } from "../../../src/services/BootstrapAssetSpaceService.js";
 import { InvalidArgumentsError, VaultNotFoundError } from "../../../src/utils/errors/index.js";
@@ -99,7 +99,7 @@ function profile(
   return {
     exo__Asset_uid: uid,
     exo__Asset_label: label,
-    exo__Instance_class: [`[[${FOCUS_PROFILE_CLASS_UID}|exo__FocusProfile]]`],
+    exo__Instance_class: [`[[${PROFILE_CLASS_UID}|exo__Profile]]`],
     exo__Profile_includes: includes.map((u) => `[[${u}]]`),
   };
 }
