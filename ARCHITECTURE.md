@@ -43,6 +43,12 @@ Exocortex is a **knowledge management technology** that provides:
 
 **Key Insight**: All business logic (frontmatter generation, status transitions, property validation) should be storage-agnostic. The plugin currently mixes business logic with Obsidian-specific UI code, which will be refactored in Issue #122.
 
+### UI/CLI Parity Invariant (enforced)
+
+> The shared `exocortex` package contains all domain/engine logic behind platform-agnostic ports (`IFileSystemAdapter`, `IVaultAdapter`, `HttpClient`, etc.). The Obsidian plugin and CLI are **thin adapters** that inject platform-specific I/O (Obsidian Vault API vs Node `fs`/`fetch`). New user-facing capabilities must be implemented in the core first, then bound in **both** clients. Plugin-only or CLI-only implementations are invariant violations.
+
+This is the architectural enforcement of Exocortex's no-lock-in north star: the product is the vault (data) plus the SDK (engine), and every client must be able to drive the full system. See [VISION.md](./VISION.md) for the full rationale and its complementary pairing with the Homoiconicity Invariant, and [docs/CROSS_RUNTIME_PARITY.md](./docs/CROSS_RUNTIME_PARITY.md) for a validator-specific enforcement example (a byte-identical-report parity test between the CLI and plugin runtimes).
+
 ---
 
 ## 🛠️ Technology Stack
