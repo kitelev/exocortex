@@ -158,7 +158,7 @@ describe("ExocortexSettingTab", () => {
       // Log channels section: 1 heading + 4 log level rows = 5
       // Excluded folders section (#3278): 1 heading + 1 textarea row = +2 → 32
       // Issue #3320 — Profile sections: 4 section headings + PAT row + Switch profile row + Cache stats row + (Operations log has no Setting row, body уходит в createDiv/createEl) = +7 → 39
-      // RFC 13da049f R35 — added "Knowledge and focus profiles" overview heading (+1) → 40
+      // RFC 13da049f R35 — added "Profiles" overview heading (+1) → 40
       expect(MockSetting).toHaveBeenCalledTimes(40);
     });
 

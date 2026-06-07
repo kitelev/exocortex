@@ -1,7 +1,7 @@
 /**
- * Confirmation gate for hard switch operations (RFC 22b50a17 Phase 1b).
+ * Confirmation gate for apply operations (RFC 22b50a17 Phase 1b).
  *
- * The hard switch path mutates the vault filesystem (destroys assetspace
+ * The apply path mutates the vault filesystem (destroys assetspace
  * directories not in the target profile's effective set, materializes new
  * ones). Both runtimes must DI a confirmation gate before executing such a
  * destructive operation:
@@ -13,18 +13,18 @@
  *     scripted scenarios (Decision #2 in the source RFC).
  *
  * Phase 1b ships the interface + adapters + a CLI command scaffold; the
- * actual `hardSwitchProfile()` orchestration lands in Phase 3 and consumes
+ * actual `applyProfile()` orchestration lands in Phase 3 and consumes
  * the gate via DI from both runtimes — no further interface change required.
  */
 
 /**
- * Hard switch plan — payload passed to the confirmation gate.
+ * Apply plan — payload passed to the confirmation gate.
  *
  * Aggregates everything a UI surface (modal or stderr summary) needs to
  * describe the impending mutation without re-querying the vault. Maps are
  * `ReadonlyMap` / `ReadonlyArray` so adapters cannot mutate them.
  */
-export interface HardSwitchPlan {
+export interface ApplyPlan {
   /** Target profile UID — the profile the user wants to switch INTO. */
   targetProfileUid: string;
   /** Target profile human label (used in modal title / verbose log). */
@@ -60,7 +60,7 @@ export interface HardSwitchPlan {
 }
 
 /**
- * Contract: caller awaits `confirmHardSwitch(plan)`; the gate either
+ * Contract: caller awaits `confirmApply(plan)`; the gate either
  * resolves `true` (user approved → orchestrator proceeds) or `false` (user
  * declined / Esc / CLI without `--yes` → orchestrator aborts before any
  * filesystem mutation).
@@ -70,5 +70,5 @@ export interface HardSwitchPlan {
  */
 export interface IConfirmGate {
   /** Render plan to the user and await approve/decline. */
-  confirmHardSwitch(plan: HardSwitchPlan): Promise<boolean>;
+  confirmApply(plan: ApplyPlan): Promise<boolean>;
 }

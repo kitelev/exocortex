@@ -1,5 +1,5 @@
 import { App, Modal } from "obsidian";
-import type { IConfirmGate, HardSwitchPlan } from "exocortex";
+import type { IConfirmGate, ApplyPlan } from "exocortex";
 
 /**
  * ModalConfirmGate — plugin-side implementation of `IConfirmGate`
@@ -21,7 +21,7 @@ import type { IConfirmGate, HardSwitchPlan } from "exocortex";
 export class ModalConfirmGate implements IConfirmGate {
   constructor(private readonly app: App) {}
 
-  confirmHardSwitch(plan: HardSwitchPlan): Promise<boolean> {
+  confirmApply(plan: ApplyPlan): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
       const modal = new ApplyConfirmModal(this.app, plan, resolve);
       modal.open();
@@ -37,12 +37,12 @@ export const MODAL_FILE_LIST_CAP = 100;
 
 class ApplyConfirmModal extends Modal {
   private resolved = false;
-  private readonly plan: HardSwitchPlan;
+  private readonly plan: ApplyPlan;
   private readonly resolve: (approved: boolean) => void;
 
   constructor(
     app: App,
-    plan: HardSwitchPlan,
+    plan: ApplyPlan,
     resolve: (approved: boolean) => void,
   ) {
     super(app);

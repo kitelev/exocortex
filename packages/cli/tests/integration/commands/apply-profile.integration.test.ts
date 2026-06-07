@@ -26,7 +26,7 @@ import os from "os";
 import path from "path";
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 
-import type { HardSwitchPlan, IConfirmGate } from "exocortex";
+import type { ApplyPlan, IConfirmGate } from "exocortex";
 import { runApplyProfile, applyProfileCommand } from "../../../src/commands/apply-profile.js";
 import {
   ASSET_SPACE_CLASS_UID,
@@ -192,7 +192,7 @@ async function makeFixtureVault(
   await fs.writeFile(path.join(root, ".gitmodules"), gm, "utf-8");
 }
 
-const approvingGate: IConfirmGate = { confirmHardSwitch: async () => true };
+const approvingGate: IConfirmGate = { confirmApply: async () => true };
 
 describe("CLI — apply-profile real mount-state switch (Issue #3416)", () => {
   let vaultRoot: string;
@@ -364,9 +364,9 @@ describe("CLI — apply-profile real mount-state switch (Issue #3416)", () => {
 
   it("--verbose surfaces the real plan to the gate (tear-down count visible)", async () => {
     await setup(/* testlibMaterialised */ true);
-    const seen: { plan?: HardSwitchPlan } = {};
+    const seen: { plan?: ApplyPlan } = {};
     const recordingGate: IConfirmGate = {
-      confirmHardSwitch: async (plan) => {
+      confirmApply: async (plan) => {
         seen.plan = plan;
         return false; // decline so nothing mutates
       },

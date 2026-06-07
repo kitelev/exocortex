@@ -24,7 +24,7 @@
  */
 import { Platform } from "obsidian";
 import type { App, TFile } from "obsidian";
-import type { HardSwitchPlan, IConfirmGate } from "exocortex";
+import type { ApplyPlan, IConfirmGate } from "exocortex";
 
 import {
   ProfileApplyManager,
@@ -149,8 +149,8 @@ class FakeLocalDataStore {
 
 class FakeConfirmGate implements IConfirmGate {
   approve = true;
-  lastPlan: HardSwitchPlan | null = null;
-  async confirmHardSwitch(plan: HardSwitchPlan): Promise<boolean> {
+  lastPlan: ApplyPlan | null = null;
+  async confirmApply(plan: ApplyPlan): Promise<boolean> {
     this.lastPlan = plan;
     return this.approve;
   }

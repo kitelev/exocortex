@@ -26,7 +26,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import yaml from "js-yaml";
 
-import type { HardSwitchPlan } from "exocortex";
+import type { ApplyPlan } from "exocortex";
 import {
   derivePath,
   assertTsFloor as assertTsFloorGuard,
@@ -90,7 +90,7 @@ export interface MaterializeTarget {
 export interface ApplyProfileDiff {
   toDestroy: TearDownTarget[];
   toMaterialize: MaterializeTarget[];
-  plan: HardSwitchPlan;
+  plan: ApplyPlan;
 }
 
 /** Result of {@link CliApplyProfileService.execute}. */
@@ -248,7 +248,7 @@ export class CliApplyProfileService {
   }
 
   /**
-   * Compute the mount-state diff + the `HardSwitchPlan` from the resolver's
+   * Compute the mount-state diff + the `ApplyPlan` from the resolver's
    * engaged result. Pure (no filesystem mutation) — `existsSync` reads only.
    */
   buildDiff(params: {
@@ -323,7 +323,7 @@ export class CliApplyProfileService {
     const filesToDestroy = new Map<string, string[]>();
     for (const t of toDestroy) filesToDestroy.set(t.asUid, t.files);
 
-    const plan: HardSwitchPlan = {
+    const plan: ApplyPlan = {
       targetProfileUid,
       targetProfileLabel,
       sourceProfileUid,

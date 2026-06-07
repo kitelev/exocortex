@@ -578,49 +578,41 @@ export class ExocortexSettingTab extends PluginSettingTab {
     const switchCache = new SwitchCacheLayer();
     const operationsLog = new OperationsLogReader({ app });
 
-    // ─────── Section 0 — Knowledge vs Focus overview (RFC 13da049f R35) ───────
-    // R35: users were confused about «which profile do I edit?». The two
-    // profile types are independent slots with different mechanisms; this
-    // overview block names them up-front so the sections below read clearly.
-    new Setting(containerEl).setName("Knowledge and focus profiles").setHeading();
+    // ─────── Section 0 — Profile overview (Phase 5 apply-model) ───────
+    // A profile is a named group of AssetSpaces. Applying it makes the vault's
+    // on-disk mount-state match the profile (materialize what it includes,
+    // tear down the rest), so users edit ONE thing — the profile's AssetSpace
+    // list — and run ONE operation, «Apply profile».
+    new Setting(containerEl).setName("Profiles").setHeading();
 
     const profilesOverviewEl = containerEl.createDiv({
       cls: "setting-item-description",
     });
     profilesOverviewEl.createEl("p", {
       text:
-        "Two independent profile types control what you see. They are " +
-        "separate slots — a Knowledge profile and a Focus profile can be " +
-        "active at the same time, and switching one never touches the other.",
+        "A profile (an exo__Profile asset) is a named group of AssetSpaces. " +
+        "Applying a profile makes the vault's on-disk mount-state match it: " +
+        "the AssetSpaces it includes are materialized, everything else " +
+        "(except the always-on floor) is torn down — a strict replace.",
     });
-    const profilesOverviewList = profilesOverviewEl.createEl("ul");
-    const knowledgeLi = profilesOverviewList.createEl("li");
-    knowledgeLi.createEl("strong", { text: "Knowledge profile — storage." });
-    knowledgeLi.appendText(
-      " A hard switch that physically materializes or tears down AssetSpace " +
-        "submodules on disk (and rewrites .gitmodules). Heavyweight: a " +
-        "confirmation gate, an uncommitted-changes guard, and ~30 s per " +
-        "freshly-pulled AssetSpace. Pick a Profile asset via the " +
-        "«Exocortex: Switch knowledge profile (filesystem destroy + " +
-        "materialize)» command (Cmd+P). Use it to " +
+    const applyLi = profilesOverviewEl.createEl("ul").createEl("li");
+    applyLi.createEl("strong", { text: "Apply profile." });
+    applyLi.appendText(
+      " Pick a Profile asset via the «Exocortex: Apply profile» command " +
+        "(Cmd+P). It physically materializes or tears down AssetSpace " +
+        "submodules on disk (and rewrites .gitmodules), so it is gated by a " +
+        "confirmation prompt and an uncommitted-changes guard, and costs " +
+        "~30 s per freshly-pulled AssetSpace. The floor AssetSpaces " +
+        "(exo, exocmd, shared-identities) are never torn down. Use it to " +
         "install or remove whole ontology bundles and to keep " +
         "privacy-sensitive content physically off the device.",
-    );
-    const focusLi = profilesOverviewList.createEl("li");
-    focusLi.createEl("strong", { text: "Focus profile — filter." });
-    focusLi.appendText(
-      " A soft switch that applies a query-time RDF filter; nothing changes " +
-        "on disk. Lightweight: ~1–2 s reindex, instantly reversible. Pick a " +
-        "Profile asset via the dropdown below or the «Exocortex: Switch " +
-        "focus profile» command. Use it to narrow search / SPARQL / graph " +
-        "view to the slice you are working in right now.",
     );
     profilesOverviewEl.createEl("p", {
       text:
         "Adding an ontology to a profile is NOT transitive — listing pmbok " +
         "does not auto-add ems. Add each AssetSpace the profile needs " +
-        "explicitly. See docs/profile.md for the full distinction, " +
-        "examples, and composition rules.",
+        "explicitly. See docs/profile.md for the full model, examples, and " +
+        "composition rules.",
     });
 
     // ─────── Section 1 — PAT (GitHub Personal Access Token) ───────
@@ -718,7 +710,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
     // RFC 0a0791c1 Phase 5 T2 — single last-applied slot. Switching is the
     // «Exocortex: Apply profile» Cmd+P command (mount-state strict replace,
     // gated behind a confirmation prompt because it mutates the filesystem);
-    // the former soft-switch dropdown was removed with the soft RDF filter.
+    // the former soft-filter dropdown was removed with the query-time RDF filter.
     const activeProfileUid = this.plugin.localDataStore
       ? this.plugin.localDataStore.getActiveProfileUid()
       : null;
