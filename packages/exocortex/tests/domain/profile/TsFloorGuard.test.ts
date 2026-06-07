@@ -8,93 +8,80 @@ import {
   assertTsFloor,
 } from "../../../src/domain/profile/TsFloorGuard";
 
-describe("TsFloorGuard — floor tiers (RFC 01a83de8 §3.4 / EV8)", () => {
+// floor={exo} (RFC 5aa2a73a): shared-identities + exocmd removed from the floor.
+// exocmd is an OPTIONAL UI-command library (read-only/SPARQL-only vault works
+// without it); cross-cutting TBox relocated to home ontologies, so
+// shared-identities is no longer load-bearing for the floor.
+const EMS = "f0f674da-a31b-47e1-b0e8-f984b018bf75"; // any non-floor AssetSpace
+
+describe("TsFloorGuard — floor = {exo}", () => {
   describe("floor membership", () => {
-    it("SDK floor = exo + shared-identities, NO exocmd", () => {
+    it("SDK floor = {exo} only (no shared-identities, no exocmd)", () => {
       expect(SDK_FLOOR_ASSETSPACE_UIDS.has(TS_FLOOR_AS_UID_EXO)).toBe(true);
       expect(
         SDK_FLOOR_ASSETSPACE_UIDS.has(TS_FLOOR_AS_UID_SHARED_IDENTITIES),
-      ).toBe(true);
-      // The core of issue #3426 — exocmd is NOT in the SDK floor.
+      ).toBe(false);
       expect(SDK_FLOOR_ASSETSPACE_UIDS.has(TS_FLOOR_AS_UID_EXOCMD)).toBe(false);
-      expect(SDK_FLOOR_ASSETSPACE_UIDS.size).toBe(2);
+      expect(SDK_FLOOR_ASSETSPACE_UIDS.size).toBe(1);
     });
 
-    it("plugin-UI floor = SDK floor + exocmd", () => {
+    it("plugin-UI floor = {exo} only (exocmd is optional)", () => {
       expect(PLUGIN_UI_FLOOR_ASSETSPACE_UIDS.has(TS_FLOOR_AS_UID_EXO)).toBe(true);
       expect(
         PLUGIN_UI_FLOOR_ASSETSPACE_UIDS.has(TS_FLOOR_AS_UID_SHARED_IDENTITIES),
-      ).toBe(true);
+      ).toBe(false);
       expect(PLUGIN_UI_FLOOR_ASSETSPACE_UIDS.has(TS_FLOOR_AS_UID_EXOCMD)).toBe(
-        true,
+        false,
       );
-      expect(PLUGIN_UI_FLOOR_ASSETSPACE_UIDS.size).toBe(3);
+      expect(PLUGIN_UI_FLOOR_ASSETSPACE_UIDS.size).toBe(1);
     });
 
-    it("plugin-UI floor is a strict superset of the SDK floor", () => {
+    it("plugin-UI floor equals the SDK floor (both = {exo})", () => {
+      expect(PLUGIN_UI_FLOOR_ASSETSPACE_UIDS.size).toBe(
+        SDK_FLOOR_ASSETSPACE_UIDS.size,
+      );
       for (const uid of SDK_FLOOR_ASSETSPACE_UIDS) {
         expect(PLUGIN_UI_FLOOR_ASSETSPACE_UIDS.has(uid)).toBe(true);
       }
-      expect(PLUGIN_UI_FLOOR_ASSETSPACE_UIDS.size).toBeGreaterThan(
-        SDK_FLOOR_ASSETSPACE_UIDS.size,
-      );
     });
   });
 
   describe("assertTsFloor — R24 guard", () => {
-    it("passes when the declared set contains every SDK-floor UID", () => {
-      const declared = new Set([
-        TS_FLOOR_AS_UID_EXO,
-        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
-      ]);
+    it("minimal starter profile [exo, ems] passes both floors (no shared-identities, no exocmd)", () => {
+      const declared = new Set([TS_FLOOR_AS_UID_EXO, EMS]);
       expect(() =>
         assertTsFloor(declared, SDK_FLOOR_ASSETSPACE_UIDS),
       ).not.toThrow();
-    });
-
-    it("CLI/headless: a vault WITHOUT exocmd passes the SDK floor (issue #3426)", () => {
-      // The exact regression the issue targets — a profile omitting exocmd must
-      // NOT be refused at the CLI/SDK level.
-      const declaredNoExocmd = new Set([
-        TS_FLOOR_AS_UID_EXO,
-        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
-      ]);
       expect(() =>
-        assertTsFloor(declaredNoExocmd, SDK_FLOOR_ASSETSPACE_UIDS),
+        assertTsFloor(declared, PLUGIN_UI_FLOOR_ASSETSPACE_UIDS),
       ).not.toThrow();
     });
 
-    it("plugin-UI: the same exocmd-less set is REFUSED against the plugin floor", () => {
-      const declaredNoExocmd = new Set([
-        TS_FLOOR_AS_UID_EXO,
-        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
-      ]);
+    it("read-only profile [exo] alone passes (SPARQL-only vault, no UI commands)", () => {
+      const declared = new Set([TS_FLOOR_AS_UID_EXO]);
       expect(() =>
-        assertTsFloor(declaredNoExocmd, PLUGIN_UI_FLOOR_ASSETSPACE_UIDS),
-      ).toThrow(TsFloorViolationError);
+        assertTsFloor(declared, PLUGIN_UI_FLOOR_ASSETSPACE_UIDS),
+      ).not.toThrow();
     });
 
-    it("throws TsFloorViolationError naming the missing floor UID", () => {
-      const declaredMissingExo = new Set([TS_FLOOR_AS_UID_SHARED_IDENTITIES]);
+    it("a vault WITHOUT exocmd is NOT refused (exocmd is optional)", () => {
+      const declaredNoExocmd = new Set([TS_FLOOR_AS_UID_EXO, EMS]);
+      expect(() =>
+        assertTsFloor(declaredNoExocmd, PLUGIN_UI_FLOOR_ASSETSPACE_UIDS),
+      ).not.toThrow();
+    });
+
+    it("exo is still mandatory — a profile omitting exo is refused, naming the exo UID", () => {
+      const declaredMissingExo = new Set([EMS]);
       expect(() =>
         assertTsFloor(declaredMissingExo, SDK_FLOOR_ASSETSPACE_UIDS),
       ).toThrow(/49fd2e56/);
       try {
-        assertTsFloor(declaredMissingExo, SDK_FLOOR_ASSETSPACE_UIDS);
+        assertTsFloor(declaredMissingExo, PLUGIN_UI_FLOOR_ASSETSPACE_UIDS);
       } catch (e) {
         expect(e).toBeInstanceOf(TsFloorViolationError);
         expect((e as Error).name).toBe("TsFloorViolationError");
       }
-    });
-
-    it("plugin floor refuses a set missing exocmd, naming exocmd UID", () => {
-      const declared = new Set([
-        TS_FLOOR_AS_UID_EXO,
-        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
-      ]);
-      expect(() =>
-        assertTsFloor(declared, PLUGIN_UI_FLOOR_ASSETSPACE_UIDS),
-      ).toThrow(/c9c65b0f/);
     });
   });
 });

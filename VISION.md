@@ -106,11 +106,11 @@ The architectural cornerstone of Exocortex is the **unification of three princip
 
 #### Comparison: where Profile fits
 
-| Mechanism                          | Granularity                                  | Where state lives                            | Use case                                           |
-| ---------------------------------- | -------------------------------------------- | -------------------------------------------- | -------------------------------------------------- |
-| Obsidian Sync (at-rest encryption) | File-level                                   | End-to-end encrypted blobs in Obsidian cloud | Securing replicated bytes                          |
-| Obsidian Git                       | Repo-level                                   | Single git remote, full vault history        | Versioning + manual selective clone                |
-| Profile (Apply profile)            | Filesystem-level (submodule mount/unmount)   | `assetspaces/` + `.gitmodules` + cache       | Perf gain, privacy boundary, mobile reindex relief |
+| Mechanism                          | Granularity                                | Where state lives                            | Use case                                           |
+| ---------------------------------- | ------------------------------------------ | -------------------------------------------- | -------------------------------------------------- |
+| Obsidian Sync (at-rest encryption) | File-level                                 | End-to-end encrypted blobs in Obsidian cloud | Securing replicated bytes                          |
+| Obsidian Git                       | Repo-level                                 | Single git remote, full vault history        | Versioning + manual selective clone                |
+| Profile (Apply profile)            | Filesystem-level (submodule mount/unmount) | `assetspaces/` + `.gitmodules` + cache       | Perf gain, privacy boundary, mobile reindex relief |
 
 Profile **inhabits the same git substrate** as Obsidian Git but manages submodule lifecycle declaratively from vault profiles: one Apply-profile operation reconciles the on-disk AssetSpace set to exactly the target profile's effective set. The combination — one vault, many declared profiles, one mount-state apply operation — is what no competitor in the table at the top of [README.md](./README.md) offers: Notion has shared workspaces but no semantic graph; Protégé has ontologies but no usable daily-driver UI; Semantic MediaWiki has both but no vault portability and no profile-level scoping.
 
@@ -120,20 +120,20 @@ The deep architectural pitch and the 2-phase commit safety model live in **[docs
 
 > **UI/CLI Parity Invariant:** Every user-facing Exocortex capability MUST be invokable through BOTH clients — the Obsidian plugin (UI) and the CLI (`@kitelev/exocortex-cli`). Neither client is privileged; neither holds exclusive features. Enforced architecturally: all domain/engine logic lives in the platform-agnostic shared core (`exocortex` package) behind ports (FileSystem, Http, etc.); the plugin and CLI are thin adapters that inject platform-specific I/O (Obsidian `DataAdapter`/`requestUrl` vs Node `fs`/`fetch`). New features land in the core first, then get thin bindings in BOTH clients.
 
-**Why it is a killer feature — the no-lock-in north star.** The user's knowledge system is not locked to one application. The *product* is the vault (data) plus the SDK (engine) — the Obsidian plugin is just one frontend. Any client — the current plugin, the CLI, a future mobile/web/agent — can drive the full system. This is what makes Exocortex an **SDK / platform, not merely a plugin**. Parallel reimplementations *without* this principle have already caused real regressions (`extractReference` triplication; mount/unmount logic split between plugin and a CLI scaffold — see [#3416](https://github.com/kitelev/exocortex/issues/3416)). The invariant names the force that prevents these.
+**Why it is a killer feature — the no-lock-in north star.** The user's knowledge system is not locked to one application. The _product_ is the vault (data) plus the SDK (engine) — the Obsidian plugin is just one frontend. Any client — the current plugin, the CLI, a future mobile/web/agent — can drive the full system. This is what makes Exocortex an **SDK / platform, not merely a plugin**. Parallel reimplementations _without_ this principle have already caused real regressions (`extractReference` triplication; mount/unmount logic split between plugin and a CLI scaffold — see [#3416](https://github.com/kitelev/exocortex/issues/3416)). The invariant names the force that prevents these.
 
 #### Complementary pair with Homoiconicity
 
-Exocortex removes lock-in at **two** layers, governed by two distinct, complementary invariants. **Homoiconicity** (RFC `c78cc5c8`, also codified in `CLAUDE.md`) keeps the *data layer* open; **UI/CLI Parity** keeps the *invocation layer* open. Document and reason about them as a pair:
+Exocortex removes lock-in at **two** layers, governed by two distinct, complementary invariants. **Homoiconicity** (RFC `c78cc5c8`, also codified in `CLAUDE.md`) keeps the _data layer_ open; **UI/CLI Parity** keeps the _invocation layer_ open. Document and reason about them as a pair:
 
-| Invariant          | What it governs                                                                                      | One-line framing                                  |
-| ------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| **Homoiconicity**  | User-configurable *semantics* are vault data (RDF), readable/writable by any RDF-capable client      | *What* the system does is data, not code          |
-| **UI/CLI Parity**  | The *engine behaviour* that processes that data is reachable from any client via shared core + ports | *How* you invoke it is client-agnostic            |
+| Invariant         | What it governs                                                                                      | One-line framing                         |
+| ----------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| **Homoiconicity** | User-configurable _semantics_ are vault data (RDF), readable/writable by any RDF-capable client      | _What_ the system does is data, not code |
+| **UI/CLI Parity** | The _engine behaviour_ that processes that data is reachable from any client via shared core + ports | _How_ you invoke it is client-agnostic   |
 
 Together they guarantee neither the meaning of your knowledge nor the ability to act on it is captive to a single application.
 
-**See also:** the enforced ports/adapters statement in [ARCHITECTURE.md](./ARCHITECTURE.md); the validator-specific enforcement instance in [docs/CROSS_RUNTIME_PARITY.md](./docs/CROSS_RUNTIME_PARITY.md); the SDK-platform program *"AssetSpace + Profile platform — exo as SDK"* (vault UID `ea93b829`, RFC `01a83de8`) that this invariant formalizes. A full capability-by-capability parity audit across all features is future work, tracked under that program.
+**See also:** the enforced ports/adapters statement in [ARCHITECTURE.md](./ARCHITECTURE.md); the validator-specific enforcement instance in [docs/CROSS_RUNTIME_PARITY.md](./docs/CROSS_RUNTIME_PARITY.md); the SDK-platform program _"AssetSpace + Profile platform — exo as SDK"_ (vault UID `ea93b829`, RFC `01a83de8`) that this invariant formalizes. A full capability-by-capability parity audit across all features is future work, tracked under that program.
 
 ---
 

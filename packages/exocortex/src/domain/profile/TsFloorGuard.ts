@@ -2,16 +2,20 @@
  * TS-floor guard (Vision Lock #17, RFC 01a83de8 §3.4 / EV8) — the single named
  * home for the always-mounted AssetSpace floor and its R24 self-brick guard.
  *
- * RFC 01a83de8 v10 rejects Alternative G ("exocmd in the SDK floor") and draws a
- * Maven-style distinction: `exo` is the SDK; `exocmd` is an OPTIONAL UI-command
- * library. The floor therefore splits into two tiers:
+ * **floor = {exo}** (RFC 5aa2a73a): the Exocortex core is a knowledge engine
+ * (`exo` ontology + SPARQL); reading knowledge needs nothing else. Both tiers
+ * collapse to `{exo}`:
  *
- *   - {@link SDK_FLOOR_ASSETSPACE_UIDS} — `exo` + `shared-identities`. Mounted by
- *     the headless engine + CLI, and (as a subset) by the Obsidian plugin. A
- *     bare-bones SDK vault is a first-class configuration with NO exocmd.
- *   - {@link PLUGIN_UI_FLOOR_ASSETSPACE_UIDS} — SDK floor + `exocmd`. Mounted ONLY
- *     by the Obsidian plugin, because exocmd provides the vault-side UI commands
- *     that the plugin renders; tearing it down would self-brick the UI.
+ *   - {@link SDK_FLOOR_ASSETSPACE_UIDS} — `{exo}`. The minimal always-mounted set
+ *     for any vault (engine / CLI / plugin).
+ *   - {@link PLUGIN_UI_FLOOR_ASSETSPACE_UIDS} — also `{exo}`. `exocmd` (UI
+ *     commands) and `shared-identities` (cross-cutting anchors) are OPTIONAL,
+ *     not floor: a read-only/SPARQL-only vault works without them (no buttons,
+ *     no crash). Cross-cutting TBox is relocated to home ontologies, so
+ *     shared-identities is no longer load-bearing for the floor.
+ *
+ * The exocmd / shared-identities AssetSpace UID constants remain exported
+ * (declarations, tests, relocation logic) but are no longer floor members.
  *
  * EV8 mandate: this is the ONE named guard all profile-switch sites (plugin
  * {@link ProfileApplyManager}, CLI {@link CliApplyProfileService} +
@@ -35,24 +39,23 @@ export const TS_FLOOR_AS_UID_SHARED_IDENTITIES =
   "0cde1557-6320-4bd0-a7c4-8b72afc38720";
 
 /**
- * SDK/engine floor — `$exo` + `$shared-identities`. The minimal always-mounted
- * set for a headless engine / CLI vault. Does NOT include exocmd (RFC 01a83de8
- * alt-G rejection): a bare SDK vault operates without the UI-command library.
+ * SDK/engine floor — `{$exo}`. The minimal always-mounted set for any vault
+ * (headless engine / CLI / plugin). shared-identities + exocmd are NOT floor
+ * members (RFC 5aa2a73a floor={exo}) — both are optional AssetSpaces.
  */
 export const SDK_FLOOR_ASSETSPACE_UIDS: ReadonlySet<string> = new Set([
   TS_FLOOR_AS_UID_EXO,
-  TS_FLOOR_AS_UID_SHARED_IDENTITIES,
 ]);
 
 /**
- * Plugin-UI floor — SDK floor + `$exocmd`. The Obsidian plugin always mounts
- * exocmd because it provides the vault-side UI commands the plugin renders;
- * excluding it would self-brick the UI (R24).
+ * Plugin-UI floor — just `$exo`. SPIKE (floor={exo}): shared-identities and
+ * exocmd removed from the floor. exocmd is an OPTIONAL UI-command library — a
+ * read-only/SPARQL-only vault works without it (no buttons, no crash);
+ * cross-cutting TBox is relocated to home ontologies, so shared-identities is
+ * no longer load-bearing for the floor.
  */
 export const PLUGIN_UI_FLOOR_ASSETSPACE_UIDS: ReadonlySet<string> = new Set([
   TS_FLOOR_AS_UID_EXO,
-  TS_FLOOR_AS_UID_SHARED_IDENTITIES,
-  TS_FLOOR_AS_UID_EXOCMD,
 ]);
 
 /**
