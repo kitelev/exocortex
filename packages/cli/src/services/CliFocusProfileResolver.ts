@@ -11,9 +11,10 @@
  *   3. Resolve declared AssetSpace UIDs against folderMap (the former
  *      Ontology→AS translation via `exo__AssetSpace_containsOntology` was removed
  *      in Phase 3 T3b-cleanup — profiles declare AS UIDs directly)
- *   4. Apply TS-floor AssetSpace UIDs (Vision Lock #17): $exo, $exocmd,
- *      $shared-identities — guarantees plugin/CLI keeps functioning regardless
- *      of profile config
+ *   4. Apply the SDK-floor AssetSpace UIDs (Vision Lock #17 / RFC 01a83de8 §3.4):
+ *      $exo + $shared-identities — guarantees the CLI/headless engine keeps
+ *      functioning regardless of profile config. `$exocmd` is NOT in the SDK
+ *      floor (issue #3426 — it is the plugin-UI floor's concern only)
  *   5. Safe-degrade: if effective set has zero AS-folder overlap, return null
  *      (caller falls back to no-filter / full vault) to prevent self-brick
  *
@@ -27,29 +28,25 @@ import fs from "fs-extra";
 import path from "path";
 import yaml from "js-yaml";
 
-/**
- * AssetSpace UID of `$exo` — TS-floor anchor (Vision Lock #17).
- * Mirrors `packages/obsidian-plugin/src/infrastructure/adapters/FocusProfileOnloadWiring.ts:45`.
- */
-export const TS_FLOOR_AS_UID_EXO = "49fd2e56-4656-4ca7-a789-f472b16ea260";
-/**
- * AssetSpace UID of `$exocmd` — TS-floor anchor (Vision Lock #17).
- * Mirrors plugin constant.
- */
-export const TS_FLOOR_AS_UID_EXOCMD = "c9c65b0f-1e01-47c1-a1f9-1bf70b11df6a";
-/**
- * AssetSpace UID of `$shared-identities` — TS-floor anchor (Vision Lock #17).
- * Mirrors plugin constant.
- */
-export const TS_FLOOR_AS_UID_SHARED_IDENTITIES =
-  "0cde1557-6320-4bd0-a7c4-8b72afc38720";
+import { SDK_FLOOR_ASSETSPACE_UIDS } from "exocortex";
 
-/** TS-floor AssetSpace UIDs — always added to the effective set. */
-export const TS_FLOOR_ASSETSPACE_UIDS: ReadonlySet<string> = new Set([
+// TS-floor anchors (Vision Lock #17) — re-exported from the `exocortex` core
+// guard (RFC 01a83de8 §3.4 / EV8, issue #3426). Single source of truth.
+export {
   TS_FLOOR_AS_UID_EXO,
   TS_FLOOR_AS_UID_EXOCMD,
   TS_FLOOR_AS_UID_SHARED_IDENTITIES,
-]);
+  SDK_FLOOR_ASSETSPACE_UIDS,
+} from "exocortex";
+
+/**
+ * TS-floor AssetSpace UIDs the CLI/headless engine enforces — the **SDK floor**
+ * (`$exo` + `$shared-identities`), WITHOUT `$exocmd`. RFC 01a83de8 alt-G
+ * rejection: a bare SDK vault is a first-class config and never forces the
+ * UI-command library. (The plugin uses the wider plugin-UI floor.)
+ */
+export const TS_FLOOR_ASSETSPACE_UIDS: ReadonlySet<string> =
+  SDK_FLOOR_ASSETSPACE_UIDS;
 
 /** Class UID of `exo__AssetSpace` (TBox). Mirrors plugin's `AssetSpaceManager.ASSET_SPACE_CLASS_UID`. */
 export const ASSET_SPACE_CLASS_UID = "73bd00e4-ccc0-4f3f-b20d-c4388c4588fb";

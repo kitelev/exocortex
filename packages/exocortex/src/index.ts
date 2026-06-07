@@ -51,6 +51,15 @@ export * from "./domain/models/AreaNode";
 export * from "./domain/models/rdf";
 export * from "./domain/models/exo003";
 export * from "./domain/commands/visibility";
+export {
+  TS_FLOOR_AS_UID_EXO,
+  TS_FLOOR_AS_UID_EXOCMD,
+  TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+  SDK_FLOOR_ASSETSPACE_UIDS,
+  PLUGIN_UI_FLOOR_ASSETSPACE_UIDS,
+  TsFloorViolationError,
+  assertTsFloor,
+} from "./domain/profile/TsFloorGuard";
 export type { IPropertyValidationService, ValidationResult } from "./domain/services/IPropertyValidationService";
 
 // Property definition types

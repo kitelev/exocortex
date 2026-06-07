@@ -1,7 +1,12 @@
 import { Platform } from "obsidian";
 import type { App } from "obsidian";
 import type { HardSwitchPlan, IConfirmGate } from "exocortex";
-import { derivePath } from "exocortex";
+import {
+  derivePath,
+  assertTsFloor as assertTsFloorGuard,
+  PLUGIN_UI_FLOOR_ASSETSPACE_UIDS,
+  TsFloorViolationError,
+} from "exocortex";
 
 import { PluginLockManager } from "./PluginLockManager";
 import type { AssetSpaceManager, AssetSpaceInfo } from "./AssetSpaceManager";
@@ -220,15 +225,13 @@ const DEFAULT_JOURNAL_PATH = ".exocortex/switch-journal.jsonl";
 const DEFAULT_MAX_EXTENDS_DEPTH = 5;
 
 /**
- * Custom error thrown by R24 TS-floor guard. Distinguishable by name so
- * callers (palette command, recoverIncompleteSwitch) can surface clear UX.
+ * R24 TS-floor guard error. Re-exported from the `exocortex` core
+ * ({@link ../../../../../exocortex/src/domain/profile/TsFloorGuard}) so the
+ * single class identity is shared across plugin + CLI — `e instanceof
+ * TsFloorViolationError` works regardless of import path. Retained as a named
+ * export here for backward-compat with `FocusProfileCommands` et al.
  */
-export class TsFloorViolationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "TsFloorViolationError";
-  }
-}
+export { TsFloorViolationError };
 
 /**
  * Custom error thrown by Vision Lock #5 uncommitted abort.
@@ -1385,15 +1388,10 @@ export class FocusProfileSwitchManager {
   }
 
   private assertTsFloor(effective: ReadonlySet<string>): void {
-    const missing: string[] = [];
-    for (const floor of TS_FLOOR_ASSETSPACE_UIDS) {
-      if (!effective.has(floor)) missing.push(floor);
-    }
-    if (missing.length > 0) {
-      throw new TsFloorViolationError(
-        `Effective set missing TS-floor AssetSpace UID(s): ${missing.join(", ")}. Aborting hard switch — would brick plugin (R24 mitigation).`,
-      );
-    }
+    // EV8 — delegate to the single named guard in `exocortex`. The plugin
+    // enforces the **plugin-UI floor** (SDK floor + `$exocmd`) so UI commands
+    // never self-brick.
+    assertTsFloorGuard(effective, PLUGIN_UI_FLOOR_ASSETSPACE_UIDS);
   }
 
   private listAllAssetSpaceInfos(): AssetSpaceInfo[] {
