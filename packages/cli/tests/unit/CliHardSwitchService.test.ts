@@ -13,7 +13,7 @@ import {
   CliHardSwitchService,
   toHttpsGitHubUrl,
 } from "../../src/services/CliHardSwitchService";
-import { ASSET_SPACE_CLASS_UID } from "../../src/services/CliFocusProfileResolver";
+import { ASSET_SPACE_CLASS_UID } from "../../src/services/CliProfileResolver";
 
 describe("toHttpsGitHubUrl", () => {
   it("passes through canonical HTTPS form", () => {

@@ -4,7 +4,7 @@
  * Turns the `hard-switch` scaffold into a real mount-state switch: tears down
  * AssetSpaces NOT in the target profile's effective set and materialises those
  * that ARE, via the GitHub REST tarball path (no `git` binary). Mirrors the
- * plugin's mount-state model (`FocusProfileSwitchManager.restSwitchProfile`):
+ * plugin's mount-state model (the profile-apply manager REST switch):
  *
  *   - "an AssetSpace is materialised iff its derived folder exists on disk"
  *     (`derivePath(_source)` → `assetspaces/<owner>/<repo>`)
@@ -36,10 +36,10 @@ import {
 
 import {
   ASSET_SPACE_CLASS_UID,
-  FOCUS_PROFILE_CLASS_UID,
+  PROFILE_CLASS_UID,
   parseWikilinkArray,
   type ResolveFilterResult,
-} from "./CliFocusProfileResolver.js";
+} from "./CliProfileResolver.js";
 import { BootstrapAssetSpaceService } from "./BootstrapAssetSpaceService.js";
 
 /**
@@ -145,7 +145,7 @@ export class CliHardSwitchService {
 
   /**
    * Single vault walk collecting AssetSpace descriptors (class match by UID,
-   * consistent with `CliFocusProfileResolver`) and FocusProfile labels. The
+   * consistent with `CliProfileResolver`) and Profile labels. The
    * descriptor's *location* is irrelevant to the mount folder — a registry-
    * hosted descriptor (e.g. `exoas-kitelev-registry`) still describes an
    * AssetSpace that mounts at `derivePath(_source)`, so the descriptor survives
@@ -219,7 +219,7 @@ export class CliHardSwitchService {
           infos.push({ uid, git, folderName, label });
         }
 
-        if (classes.includes(FOCUS_PROFILE_CLASS_UID)) {
+        if (classes.includes(PROFILE_CLASS_UID)) {
           const label = fm["exo__Asset_label"];
           if (typeof label === "string" && label.length > 0) {
             profileLabels.set(uid, label);

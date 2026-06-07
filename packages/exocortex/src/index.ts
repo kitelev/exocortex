@@ -537,7 +537,7 @@ export {
   type DaemonResponse,
 } from "./services/ValidatorDaemon";
 
-// FocusProfile hard switch confirmation contract (RFC 22b50a17 Phase 1b)
+// Profile hard switch confirmation contract (RFC 22b50a17 Phase 1b)
 export type {
   IConfirmGate,
   HardSwitchPlan,

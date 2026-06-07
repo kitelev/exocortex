@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { existsSync } from "fs";
 import { resolve } from "path";
 import type { IConfirmGate } from "exocortex";
-import { CliFocusProfileResolver } from "../services/CliFocusProfileResolver.js";
+import { CliProfileResolver } from "../services/CliProfileResolver.js";
 import {
   CliHardSwitchService,
   TsFloorViolationError,
@@ -39,9 +39,9 @@ export interface HardSwitchActionDeps {
   confirmGate?: IConfirmGate;
   /**
    * Override the resolver factory (test seam). Production omits and the
-   * action constructs `CliFocusProfileResolver` from CLI options.
+   * action constructs `CliProfileResolver` from CLI options.
    */
-  resolverFactory?: (opts: HardSwitchCommandOptions) => CliFocusProfileResolver;
+  resolverFactory?: (opts: HardSwitchCommandOptions) => CliProfileResolver;
   /**
    * Override the hard-switch service factory (test seam). Production omits and
    * the action constructs a `CliHardSwitchService` backed by a
@@ -117,7 +117,7 @@ export async function runHardSwitch(
   // for AssetSpace descriptor metadata (git URL + derived mount folder).
   const resolver =
     deps.resolverFactory?.(opts) ??
-    new CliFocusProfileResolver({
+    new CliProfileResolver({
       vaultPath,
       warn: (msg) => err(msg),
     });
@@ -126,7 +126,7 @@ export async function runHardSwitch(
   if (outcome.outcome === "missing-profile") {
     throw new InvalidArgumentsError(
       `Profile not found: ${profileUid}`,
-      "Run `exocortex find --class exo__FocusProfile` to list available profiles",
+      "Run `exocortex find --class exo__Profile` to list available profiles",
     );
   }
   if (outcome.outcome === "error") {
@@ -234,9 +234,9 @@ export async function runHardSwitch(
 export function hardSwitchCommand(): Command {
   const cmd = new Command("hard-switch")
     .description(
-      "Hard switch to specified FocusProfile (mount-state filesystem mutation). Requires --yes for headless mode.",
+      "Hard switch to specified Profile (mount-state filesystem mutation). Requires --yes for headless mode.",
     )
-    .argument("<profile-uid>", "Target FocusProfile UID")
+    .argument("<profile-uid>", "Target Profile UID")
     .requiredOption("--vault <path>", "Path to Obsidian vault")
     .option(
       "--yes",
