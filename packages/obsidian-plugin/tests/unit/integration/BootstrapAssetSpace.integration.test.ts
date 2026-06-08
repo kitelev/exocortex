@@ -204,6 +204,50 @@ describe("Bootstrap integration — real GitSubmoduleOps + tmpdir vault (git mod
     await cmds.invokeBootstrap();
     expect(pullSpy).not.toHaveBeenCalled();
   });
+
+  it("re-running bootstrap on a Maven-layout vault is a no-op (B4 deep-scan)", async () => {
+    vaultRoot = await makeTmpVault();
+    // Seed the Maven layout `assetspaces/<owner>/<repo>/*.md` (one level deeper
+    // than flat) so detectVaultState → bootstrapped only if hasMaterialized-
+    // AssetSpaces scans deep. Reverting the B4 deep-scan makes this re-bootstrap.
+    await fs.mkdir(path.join(vaultRoot, "assetspaces/kitelev/exoas-exo"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(vaultRoot, "assetspaces/kitelev/exoas-exo/seed.md"),
+      "x",
+      "utf8",
+    );
+    const gitOps = new GitSubmoduleOps({ vaultRootPath: vaultRoot });
+    const probes = makeVaultProbes(vaultRoot);
+    const { store } = makeFakeLocalStore();
+    const fakePuller = makeFakePuller();
+    const pullSpy = jest.spyOn(fakePuller, "pullAssetSpace");
+
+    const cmds = new BootstrapAssetSpaceCommands({
+      getPuller: async () => fakePuller,
+      gitOps,
+      localStore: store,
+      vaultExists: probes.vaultExists,
+      listFolder: probes.listFolder,
+      isGitVault: async () => true,
+      validateUrl: () => undefined,
+      deriveFolderName: (u) => u.split("/").pop() ?? "x",
+      promptBootstrapUrls: async () => ({
+        exoUrl: EXO_URL,
+        exocmdUrl: EXOCMD_URL,
+      }),
+      promptAddAssetSpaceUrl: async () => null,
+      confirm: async () => true,
+      notify: () => undefined,
+    });
+
+    // No-op via the B4 deep-scan: the seeded Maven layout must be detected as
+    // already-bootstrapped, so NO pull happens. Reverting the deep-scan makes
+    // detectVaultState → "empty" → bootstrap pulls → this assertion fails.
+    await cmds.invokeBootstrap();
+    expect(pullSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe("GitSubmoduleOps.appendGitmodulesEntry — real fs", () => {
