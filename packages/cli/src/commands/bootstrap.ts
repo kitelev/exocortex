@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { resolve, join } from "node:path";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { derivePath } from "exocortex";
 import { BootstrapAssetSpaceService } from "../services/BootstrapAssetSpaceService.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { InvalidArgumentsError } from "../utils/errors/index.js";
@@ -87,29 +88,33 @@ export function bootstrapCommand(): Command {
 
         const results: Array<{ folder: string; url: string; sha: string; fileCount: number }> = [];
 
-        // Pull exo → assetspaces/exo
-        const exoFolder = "exo";
-        const exoTarget = join(vaultPath, "assetspaces", exoFolder);
-        process.stderr.write(`[bootstrap] Pulling ${options.exo}@${ref} → assetspaces/${exoFolder}/...\n`);
+        // Pull exo → Maven mount path `assetspaces/<owner>/<repo>` (RFC 5aa2a73a
+        // B4). MUST match `derivePath`, which is what `apply-profile` derives —
+        // otherwise a later `apply-profile` re-materializes exo at the Maven path
+        // alongside the flat one (double mount of the same AssetSpace UID).
+        // Fallback to flat `assetspaces/exo` only if the URL is un-derivable.
+        const exoRel = derivePath(options.exo!) ?? "assetspaces/exo";
+        const exoTarget = join(vaultPath, exoRel);
+        process.stderr.write(`[bootstrap] Pulling ${options.exo}@${ref} → ${exoRel}/...\n`);
         const exoResult = await svc.pullAssetSpace(options.exo!, ref, exoTarget);
-        svc.ensureGitmodulesEntry(vaultPath, `assetspaces/${exoFolder}`, options.exo!);
+        svc.ensureGitmodulesEntry(vaultPath, exoRel, options.exo!);
         results.push({
-          folder: `assetspaces/${exoFolder}`,
+          folder: exoRel,
           url: options.exo!,
           sha: exoResult.sha,
           fileCount: exoResult.fileCount,
         });
 
-        // Pull exocmd → assetspaces/exocmd — OPTIONAL (RFC 01a83de8 alt-G
+        // Pull exocmd → Maven mount path — OPTIONAL (RFC 01a83de8 alt-G
         // rejection, issue #3426). Omit `--exocmd` for a bare SDK/headless vault.
         if (options.exocmd) {
-          const exocmdFolder = "exocmd";
-          const exocmdTarget = join(vaultPath, "assetspaces", exocmdFolder);
-          process.stderr.write(`[bootstrap] Pulling ${options.exocmd}@${ref} → assetspaces/${exocmdFolder}/...\n`);
+          const exocmdRel = derivePath(options.exocmd) ?? "assetspaces/exocmd";
+          const exocmdTarget = join(vaultPath, exocmdRel);
+          process.stderr.write(`[bootstrap] Pulling ${options.exocmd}@${ref} → ${exocmdRel}/...\n`);
           const exocmdResult = await svc.pullAssetSpace(options.exocmd, ref, exocmdTarget);
-          svc.ensureGitmodulesEntry(vaultPath, `assetspaces/${exocmdFolder}`, options.exocmd);
+          svc.ensureGitmodulesEntry(vaultPath, exocmdRel, options.exocmd);
           results.push({
-            folder: `assetspaces/${exocmdFolder}`,
+            folder: exocmdRel,
             url: options.exocmd,
             sha: exocmdResult.sha,
             fileCount: exocmdResult.fileCount,

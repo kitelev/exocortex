@@ -143,23 +143,24 @@ describe("Bootstrap integration — real GitSubmoduleOps + tmpdir vault (git mod
 
     await cmds.invokeBootstrap();
 
-    // Both folders materialised with the fake AssetSpace file.
+    // Both folders materialised with the fake AssetSpace file — at the Maven
+    // mount path `assetspaces/<owner>/<repo>` (RFC 5aa2a73a B4).
     const exoFile = path.join(
       vaultRoot,
-      "assetspaces/exo/73bd00e4-ccc0-4f3f-b20d-c4388c4588fb.md",
+      "assetspaces/kitelev/exoas-exo/73bd00e4-ccc0-4f3f-b20d-c4388c4588fb.md",
     );
     const exocmdFile = path.join(
       vaultRoot,
-      "assetspaces/exocmd/73bd00e4-ccc0-4f3f-b20d-c4388c4588fb.md",
+      "assetspaces/kitelev/exoas-exocmd/73bd00e4-ccc0-4f3f-b20d-c4388c4588fb.md",
     );
     await expect(fs.access(exoFile)).resolves.toBeUndefined();
     await expect(fs.access(exocmdFile)).resolves.toBeUndefined();
 
-    // `.gitmodules` has exactly the two TS-floor entries.
+    // `.gitmodules` has exactly the two TS-floor entries (Maven paths).
     const entries = await gitOps.readGitmodulesEntries();
     expect(entries).toEqual([
-      { submodulePath: "assetspaces/exo", url: EXO_URL },
-      { submodulePath: "assetspaces/exocmd", url: EXOCMD_URL },
+      { submodulePath: "assetspaces/kitelev/exoas-exo", url: EXO_URL },
+      { submodulePath: "assetspaces/kitelev/exoas-exocmd", url: EXOCMD_URL },
     ]);
 
     expect(notices.some((n) => /Bootstrap complete/.test(n))).toBe(true);
@@ -200,6 +201,50 @@ describe("Bootstrap integration — real GitSubmoduleOps + tmpdir vault (git mod
       notify: () => undefined,
     });
 
+    await cmds.invokeBootstrap();
+    expect(pullSpy).not.toHaveBeenCalled();
+  });
+
+  it("re-running bootstrap on a Maven-layout vault is a no-op (B4 deep-scan)", async () => {
+    vaultRoot = await makeTmpVault();
+    // Seed the Maven layout `assetspaces/<owner>/<repo>/*.md` (one level deeper
+    // than flat) so detectVaultState → bootstrapped only if hasMaterialized-
+    // AssetSpaces scans deep. Reverting the B4 deep-scan makes this re-bootstrap.
+    await fs.mkdir(path.join(vaultRoot, "assetspaces/kitelev/exoas-exo"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(vaultRoot, "assetspaces/kitelev/exoas-exo/seed.md"),
+      "x",
+      "utf8",
+    );
+    const gitOps = new GitSubmoduleOps({ vaultRootPath: vaultRoot });
+    const probes = makeVaultProbes(vaultRoot);
+    const { store } = makeFakeLocalStore();
+    const fakePuller = makeFakePuller();
+    const pullSpy = jest.spyOn(fakePuller, "pullAssetSpace");
+
+    const cmds = new BootstrapAssetSpaceCommands({
+      getPuller: async () => fakePuller,
+      gitOps,
+      localStore: store,
+      vaultExists: probes.vaultExists,
+      listFolder: probes.listFolder,
+      isGitVault: async () => true,
+      validateUrl: () => undefined,
+      deriveFolderName: (u) => u.split("/").pop() ?? "x",
+      promptBootstrapUrls: async () => ({
+        exoUrl: EXO_URL,
+        exocmdUrl: EXOCMD_URL,
+      }),
+      promptAddAssetSpaceUrl: async () => null,
+      confirm: async () => true,
+      notify: () => undefined,
+    });
+
+    // No-op via the B4 deep-scan: the seeded Maven layout must be detected as
+    // already-bootstrapped, so NO pull happens. Reverting the deep-scan makes
+    // detectVaultState → "empty" → bootstrap pulls → this assertion fails.
     await cmds.invokeBootstrap();
     expect(pullSpy).not.toHaveBeenCalled();
   });
@@ -378,7 +423,7 @@ describe("Bootstrap integration — staging-dir release (Issue #3391, real track
     // Both pulled, both moved into the vault, both staging entries released.
     expect((mgr.pullAssetSpace as jest.Mock).mock.calls).toHaveLength(2);
     await expect(fs.access(
-      path.join(vaultRoot, "assetspaces/exo/73bd00e4-ccc0-4f3f-b20d-c4388c4588fb.md"),
+      path.join(vaultRoot, "assetspaces/kitelev/exoas-exo/73bd00e4-ccc0-4f3f-b20d-c4388c4588fb.md"),
     )).resolves.toBeUndefined();
     // The crux of #3391: registry empty WITHOUT a reload / sweepOrphans.
     expect(await store.readActiveStagingDirs()).toEqual([]);
