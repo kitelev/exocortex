@@ -9,8 +9,10 @@ export interface BootstrapVaultUrls {
  * BootstrapVaultModal — input gate for the `Exocortex: Bootstrap vault` palette
  * command (RFC 13da049f Phase 6.2).
  *
- * Collects the two TS-floor AssetSpace URLs (exo + exocmd) needed to cold-start
- * an empty vault.
+ * Collects the exo TS-floor AssetSpace URL (required) and, optionally, the
+ * exocmd UI-command library URL needed to cold-start an empty vault. exocmd is
+ * optional (RFC 5aa2a73a B3 / alt-G #3426): leaving it blank yields a
+ * knowledge-only / SPARQL-only vault.
  *
  * ## UX decisions
  *
@@ -21,9 +23,10 @@ export interface BootstrapVaultUrls {
  *   further required AssetSpaces manually; dependencies are not resolved
  *   automatically.
  *
- * Resolves `{ exoUrl, exocmdUrl }` only when the user clicks «Bootstrap» with
- * both fields populated with a plausible GitHub URL. Esc / Cancel / any close
- * path resolves `null`. The promise resolves exactly once.
+ * Resolves `{ exoUrl, exocmdUrl }` when the user clicks «Bootstrap» with a
+ * plausible exo URL (exocmd may be left blank → resolves `exocmdUrl: ""`).
+ * Esc / Cancel / any close path resolves `null`. The promise resolves exactly
+ * once.
  *
  * Authoritative URL validation (allowlist, traversal) happens downstream in
  * `BootstrapAssetSpaceCommands` / `GitHubRestClient.validateRepoURL`; this modal
