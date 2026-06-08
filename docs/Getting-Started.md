@@ -8,12 +8,12 @@
 
 Exocortex has been verified to work with the following minimum versions. Older versions are known to miss critical fixes for grounding, createAsset, and IRI resolution.
 
-| Component                 | Minimum version | Recommended    | Why                                                   |
-| ------------------------- | --------------- | -------------- | ----------------------------------------------------- |
-| **Obsidian**              | 1.5.0           | 1.7.0 or newer | Plugin uses APIs available since 1.5.                 |
-| **Exocortex plugin**      | v15.90.9        | Latest release | Fixes for createAsset, IRI resolution, targetValue.   |
-| **git** (CLI)             | 2.x             | Latest         | The «Bootstrap vault» command clones ontology AssetSpaces via git. |
-| **BRAT**                  | Latest          | Latest         | Delivers plugin updates automatically.                |
+| Component            | Minimum version | Recommended    | Why                                                                |
+| -------------------- | --------------- | -------------- | ------------------------------------------------------------------ |
+| **Obsidian**         | 1.5.0           | 1.7.0 or newer | Plugin uses APIs available since 1.5.                              |
+| **Exocortex plugin** | v15.90.9        | Latest release | Fixes for createAsset, IRI resolution, targetValue.                |
+| **git** (CLI)        | 2.x             | Latest         | The «Bootstrap vault» command clones ontology AssetSpaces via git. |
+| **BRAT**             | Latest          | Latest         | Delivers plugin updates automatically.                             |
 
 ### How to check your versions
 
@@ -81,22 +81,33 @@ You describe your entities (tasks, projects, areas, or any custom type) in YAML 
 
 BRAT will automatically keep the plugin updated with new releases.
 
-### Step 2: Bootstrap your vault
+### Step 2: Bootstrap your vault (the engine floor)
 
-The plugin needs ontology files in your vault to enable action buttons and commands. Rather than downloading anything by hand, the plugin pulls them straight from public GitHub repositories using its built-in **Bootstrap vault** command.
+The plugin needs ontology files in your vault to enable layouts, action buttons, and commands. Rather than downloading anything by hand, the plugin pulls them straight from public GitHub repositories using its built-in **Bootstrap vault** command.
 
 1. Open the command palette: **Cmd/Ctrl + P**
 2. Run **"Exocortex: Bootstrap vault"**
-3. In the dialog, fill the two foundational AssetSpace fields:
-   - **exo ontology URL**: `https://github.com/kitelev/exoas-exo` — core ontology (classes, properties, IRI resolution)
-   - **exocmd ontology URL**: `https://github.com/kitelev/exoas-exocmd` — command definitions that generate the action buttons
-4. Click **Bootstrap**. The plugin clones both repositories into your vault via `git` and indexes them automatically — no restart needed.
+3. In the dialog:
+   - **exo ontology URL** (required): `https://github.com/kitelev/exoas-exo` — the core engine floor (classes, properties, IRI resolution).
+   - **exocmd ontology URL** (optional): `https://github.com/kitelev/exoas-exocmd` — the UI command library that generates the action buttons. **Leave it blank** for a knowledge-only / SPARQL-only vault, or fill it for the full button experience.
+4. Click **Bootstrap**. The plugin clones the repositories into your vault via `git` and indexes them automatically — no restart needed.
 
 > **Notes**
 >
-> - Both repositories are **public**, so no GitHub token is required.
-> - The URLs above are the official starter AssetSpaces. You can point the fields at your own forks instead — they are placeholders, not hard-coded.
-> - Need more ontologies later (e.g. `ims`, `pn`, `period`, `ztlk`)? Add each one via **Cmd/Ctrl + P → "Exocortex: Add assetspace by URL"**. Dependencies are **not** pulled automatically.
+> - The repositories are **public**, so no GitHub token is required.
+> - Since plugin **v16.74.0**, only the **exo** URL is required — `exocmd` is an optional UI-command library (floor = `{exo}`). A bare engine vault is a first-class configuration; add `exocmd` later if you want the action buttons.
+> - The URLs above are placeholders — you can point the fields at your own forks.
+
+### Step 2b: Add the starter registry, then apply the starter profile (recommended)
+
+The fastest way to get a complete, working Areas → Projects → Tasks + Daily vault — **without** loading anyone's personal notes — is the **3-step onboarding** built on the **starter registry**:
+
+1. **Bootstrap vault** → `exoas-exo` (Step 2 above; `exocmd` optional, since the profile pulls it).
+2. **Add the registry**: **Cmd/Ctrl + P → "Exocortex: Add assetspace by URL"** → enter
+   `https://github.com/kitelev/exoas-starter-registry`. This is a small public registry — it declares the starter AssetSpaces and a `starter` knowledge profile; it does **not** pull them yet.
+3. **Apply the profile**: **Cmd/Ctrl + P → "Exocortex: Apply profile"** → choose **`starter`**. The plugin materializes exactly the starter set — `exo`, `exocmd`, `ems`, `ems-commands`, `period`, `person` — and nothing else (no `shared-identities`, no personal data).
+
+> **Why this path**: the `starter` profile mounts only what a fresh vault needs (floor = `{exo}`), so first-run indexing is fast and your vault stays free of unrelated assets. You can still add more AssetSpaces later via **"Add assetspace by URL"** — dependencies are **not** pulled automatically.
 
 ### Step 3: Verify Installation
 
@@ -539,14 +550,14 @@ This is usually enough to identify the root cause on the first pass.
 
 For the full diagnostic walkthrough see [Troubleshooting](#troubleshooting) above.
 
-| Problem                   | First thing to try                                                                                                                                               |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Layout doesn't appear     | Switch to Reading Mode (Ctrl/Cmd + E)                                                                                                                            |
+| Problem                   | First thing to try                                                                                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Layout doesn't appear     | Switch to Reading Mode (Ctrl/Cmd + E)                                                                                                                                    |
 | No action buttons visible | Verify the AssetSpaces are bootstrapped (`exocmd/` folder exists in vault); if the folder is present, fully quit and reopen Obsidian (cold restart) to force re-indexing |
-| Action buttons don't work | Read `exocortex-logs.txt` in vault root; check console (Ctrl/Cmd + Shift + I)                                                                                    |
-| Wiki-links grey           | Reload app without saving (Cmd/Ctrl + P); re-run **Exocortex: Bootstrap vault** if folders missing                                                               |
-| Daily tasks not showing   | Check task has `ems__Effort_plannedStartTimestamp` matching daily note's `pn__DailyNote_day`                                                                     |
-| Literal `$input` written  | Re-run **Exocortex: Bootstrap vault** to pull the latest `exoas-exocmd`                                                                                           |
+| Action buttons don't work | Read `exocortex-logs.txt` in vault root; check console (Ctrl/Cmd + Shift + I)                                                                                            |
+| Wiki-links grey           | Reload app without saving (Cmd/Ctrl + P); re-run **Exocortex: Bootstrap vault** if folders missing                                                                       |
+| Daily tasks not showing   | Check task has `ems__Effort_plannedStartTimestamp` matching daily note's `pn__DailyNote_day`                                                                             |
+| Literal `$input` written  | Re-run **Exocortex: Bootstrap vault** to pull the latest `exoas-exocmd`                                                                                                  |
 
 ---
 
