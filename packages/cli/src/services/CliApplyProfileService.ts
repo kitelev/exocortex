@@ -237,9 +237,9 @@ export class CliApplyProfileService {
    * down and brick the engine.
    *
    * EV8 — delegates to the single named guard in `exocortex`. The CLI/headless
-   * engine enforces the **SDK floor** (`$exo` + `$shared-identities`), NOT the
-   * plugin-UI floor: a bare SDK vault legitimately omits `$exocmd` (issue
-   * #3426). Tests live in `packages/exocortex/tests/domain/profile/`.
+   * engine enforces the **SDK floor** = `{exo}` (RFC 5aa2a73a / #3440):
+   * `$shared-identities` and `$exocmd` are optional, so a bare SDK vault
+   * legitimately omits them. Tests live in `packages/exocortex/tests/domain/profile/`.
    *
    * @throws {TsFloorViolationError} if any SDK-floor AssetSpace is absent.
    */
