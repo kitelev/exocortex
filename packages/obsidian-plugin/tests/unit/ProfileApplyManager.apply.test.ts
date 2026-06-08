@@ -519,23 +519,17 @@ describe("ProfileApplyManager.applyProfile", () => {
       await expect(ctx.mgr.applyProfile("target")).resolves.toBeUndefined();
     });
 
-    it("passes guard when target profile explicitly includes all 3 floor AS UIDs", async () => {
-      // Target explicitly declares the 3 floor AS — R24 guard passes;
-      // algorithm proceeds. Apply refuses to silently auto-rescue
-      // missing floor (vs Phase 1 reindex onload wiring which does).
+    it("floor={exo}: accepts a profile that omits $exocmd and $shared-identities", async () => {
+      // floor={exo} (RFC 5aa2a73a / #3440): exocmd and shared-identities are
+      // OPTIONAL AssetSpaces. A profile declaring ONLY $exo passes the R24
+      // apply-layer guard — parity with the TsFloorGuard / CLI floor tests.
+      // Non-vacuous: pre-#3440 (floor = all 3) this would have thrown
+      // TsFloorViolationError; it now resolves because $exo is the whole floor.
       const { mgr } = setup({
         targetUid: "target",
         sourceUid: null,
-        targetIncludes: [
-          TS_FLOOR_AS_UID_EXO,
-          TS_FLOOR_AS_UID_EXOCMD,
-          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
-        ],
-        materialized: [
-          TS_FLOOR_AS_UID_EXO,
-          TS_FLOOR_AS_UID_EXOCMD,
-          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
-        ],
+        targetIncludes: [TS_FLOOR_AS_UID_EXO], // omits exocmd + shared-identities
+        materialized: [TS_FLOOR_AS_UID_EXO],
       });
       await expect(mgr.applyProfile("target")).resolves.toBeUndefined();
     });
