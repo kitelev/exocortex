@@ -198,9 +198,13 @@ export class BootstrapAssetSpaceCommands {
     const urls = await this.d.promptBootstrapUrls();
     if (urls === null) return; // user cancelled
 
+    // Core-only (RFC 5aa2a73a B3 / alt-G #3426): exo is the SDK floor; exocmd is
+    // an OPTIONAL UI-command library. An empty exocmd URL yields a knowledge-only
+    // vault and must be accepted as a first-class configuration.
+    const wantExocmd = urls.exocmdUrl.trim().length > 0;
     try {
       this.d.validateUrl(urls.exoUrl);
-      this.d.validateUrl(urls.exocmdUrl);
+      if (wantExocmd) this.d.validateUrl(urls.exocmdUrl);
     } catch (e) {
       this.d.notify(`Bootstrap: invalid URL — ${this.msg(e)}`);
       return;
@@ -221,15 +225,22 @@ export class BootstrapAssetSpaceCommands {
     let exo: MaterializeResult | null = null;
     try {
       exo = await this.materialize(urls.exoUrl, TS_FLOOR_EXO_PATH, isGit);
-      const exocmd = await this.materialize(
-        urls.exocmdUrl,
-        TS_FLOOR_EXOCMD_PATH,
-        isGit,
-      );
-      this.d.notify(
-        `Bootstrap complete — ${exo.folderName}@${exo.sha} + ${exocmd.folderName}@${exocmd.sha}. ` +
-          "Reload Obsidian if the new assets do not appear. Add any further AssetSpaces manually — dependencies are not auto-resolved.",
-      );
+      if (wantExocmd) {
+        const exocmd = await this.materialize(
+          urls.exocmdUrl,
+          TS_FLOOR_EXOCMD_PATH,
+          isGit,
+        );
+        this.d.notify(
+          `Bootstrap complete — ${exo.folderName}@${exo.sha} + ${exocmd.folderName}@${exocmd.sha}. ` +
+            "Reload Obsidian if the new assets do not appear. Add any further AssetSpaces manually — dependencies are not auto-resolved.",
+        );
+      } else {
+        this.d.notify(
+          `Bootstrap complete — ${exo.folderName}@${exo.sha} (knowledge-only, no exocmd). ` +
+            "Reload Obsidian if the new assets do not appear. Add exocmd or any further AssetSpaces later via «Add assetspace by URL».",
+        );
+      }
     } catch (e) {
       if (exo !== null) {
         this.d.notify(

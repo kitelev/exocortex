@@ -159,6 +159,45 @@ describe("BootstrapVaultModal", () => {
     });
   });
 
+  it("B3 core-only — exo filled, exocmd blank → resolves knowledge-only (empty exocmdUrl)", () => {
+    let result: { exoUrl: string; exocmdUrl: string } | null | undefined;
+    new BootstrapVaultModal(fakeApp, (r) => {
+      result = r;
+    }).open();
+    const inputs = document.querySelectorAll("input");
+    (inputs[0] as HTMLInputElement).value = "https://github.com/me/exo";
+    (inputs[1] as HTMLInputElement).value = ""; // knowledge-only
+    findButton("Bootstrap")!.click();
+    expect(result).toEqual({
+      exoUrl: "https://github.com/me/exo",
+      exocmdUrl: "",
+    });
+  });
+
+  it("B3 core-only — exo blank → still errors (exo required even when exocmd given)", () => {
+    let result: unknown = "sentinel";
+    new BootstrapVaultModal(fakeApp, (r) => {
+      result = r;
+    }).open();
+    const inputs = document.querySelectorAll("input");
+    (inputs[1] as HTMLInputElement).value = "https://github.com/me/exocmd";
+    findButton("Bootstrap")!.click();
+    expect(result).toBe("sentinel");
+    expect(document.body.textContent).toMatch(/exo URL is required/i);
+  });
+
+  it("B3 core-only — exocmd present but malformed → errors", () => {
+    let result: unknown = "sentinel";
+    new BootstrapVaultModal(fakeApp, (r) => {
+      result = r;
+    }).open();
+    const inputs = document.querySelectorAll("input");
+    (inputs[0] as HTMLInputElement).value = "https://github.com/me/exo";
+    (inputs[1] as HTMLInputElement).value = "not-a-url";
+    findButton("Bootstrap")!.click();
+    expect(result).toBe("sentinel");
+  });
+
   it("Cancel → resolves null", () => {
     let result: unknown = "sentinel";
     new BootstrapVaultModal(fakeApp, (r) => {
