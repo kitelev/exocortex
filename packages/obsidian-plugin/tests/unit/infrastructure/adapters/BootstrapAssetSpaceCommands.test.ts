@@ -208,6 +208,34 @@ describe("BootstrapAssetSpaceCommands.invokeBootstrap — empty vault (git)", ()
     expect(h.localStore.upsertFileOnlyAssetSpace).not.toHaveBeenCalled();
     expect(h.notices.some((n) => /Bootstrap complete/.test(n))).toBe(true);
   });
+
+  it("B3 core-only — empty exocmd URL → pulls exo only, no exocmd pull/.gitmodules", async () => {
+    const h = makeHarness({
+      isGitVault: true,
+      bootstrapUrls: { exoUrl: EXO_URL, exocmdUrl: "" },
+    });
+    await h.cmds.invokeBootstrap();
+
+    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(1);
+    expect(h.puller.pullAssetSpace).toHaveBeenNthCalledWith(
+      1,
+      "bootstrap-exo",
+      EXO_URL,
+      "main",
+    );
+    expect(h.gitOps.renameIntoVault).toHaveBeenCalledTimes(1);
+    expect(h.gitOps.renameIntoVault).toHaveBeenNthCalledWith(
+      1,
+      "/tmp/staging-bootstrap-exo",
+      "assetspaces/exo",
+    );
+    expect(h.gitOps.appendGitmodulesEntry).toHaveBeenCalledTimes(1);
+    expect(h.gitOps.appendGitmodulesEntry).toHaveBeenCalledWith(
+      "assetspaces/exo",
+      EXO_URL,
+    );
+    expect(h.notices.some((n) => /knowledge-only/.test(n))).toBe(true);
+  });
 });
 
 describe("BootstrapAssetSpaceCommands.invokeBootstrap — empty vault (file-only / non-git, AC10)", () => {
