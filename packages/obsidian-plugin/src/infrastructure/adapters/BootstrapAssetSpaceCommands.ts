@@ -34,6 +34,8 @@
  *      URL-derived folder, append the `.gitmodules` entry (idempotent).
  */
 
+import { derivePath } from "exocortex";
+
 /** Subset of {@link AssetSpaceManager} used here (REST tarball pull). */
 export interface IAssetSpacePuller {
   pullAssetSpace(
@@ -222,13 +224,22 @@ export class BootstrapAssetSpaceCommands {
     // classify it as `bootstrapped` and refuse, so the recovery path (use
     // «Add assetspace by URL» for the missing floor) must be surfaced
     // explicitly here. Re-index either way so the part that landed is picked up.
+    // RFC 5aa2a73a B4: mount the TS-floor at the Maven path
+    // `assetspaces/<owner>/<repo>` — the SAME path `apply-profile` derives via
+    // `derivePath`. Flat paths (`assetspaces/exo`) caused a later `apply-profile`
+    // to re-materialize the same AssetSpace UID at the Maven path → double mount.
+    // Fallback to the flat constant only when the URL is un-derivable.
+    const exoPath = derivePath(urls.exoUrl) ?? TS_FLOOR_EXO_PATH;
+    const exocmdPath = wantExocmd
+      ? (derivePath(urls.exocmdUrl) ?? TS_FLOOR_EXOCMD_PATH)
+      : TS_FLOOR_EXOCMD_PATH;
     let exo: MaterializeResult | null = null;
     try {
-      exo = await this.materialize(urls.exoUrl, TS_FLOOR_EXO_PATH, isGit);
+      exo = await this.materialize(urls.exoUrl, exoPath, isGit);
       if (wantExocmd) {
         const exocmd = await this.materialize(
           urls.exocmdUrl,
-          TS_FLOOR_EXOCMD_PATH,
+          exocmdPath,
           isGit,
         );
         this.d.notify(
@@ -244,7 +255,7 @@ export class BootstrapAssetSpaceCommands {
     } catch (e) {
       if (exo !== null) {
         this.d.notify(
-          `Bootstrap partially completed — ${TS_FLOOR_EXO_PATH} materialised, but ${TS_FLOOR_EXOCMD_PATH} failed: ${this.msg(e)}. ` +
+          `Bootstrap partially completed — ${exoPath} materialised, but ${exocmdPath} failed: ${this.msg(e)}. ` +
             "Use «Add assetspace by URL» to add the missing exocmd assetspace.",
         );
       } else {
@@ -390,8 +401,9 @@ export class BootstrapAssetSpaceCommands {
   }
 
   /**
-   * True when at least one `assetspaces/<ns>/` subfolder contains a `.md` file
-   * (a proxy for «a materialised AssetSpace exists»). Missing `assetspaces/`
+   * True when a materialised AssetSpace exists — at least one `.md` under either
+   * the flat layout (`assetspaces/<ns>/*.md`) or the Maven layout
+   * (`assetspaces/<owner>/<repo>/*.md`, RFC 5aa2a73a B4). Missing `assetspaces/`
    * dir → false.
    */
   private async hasMaterializedAssetSpaces(): Promise<boolean> {
@@ -406,7 +418,18 @@ export class BootstrapAssetSpaceCommands {
     for (const folder of top.folders) {
       try {
         const inner = await this.d.listFolder(folder);
+        // Flat layout: `assetspaces/<ns>/*.md`.
         if (inner.files.some((f) => f.endsWith(".md"))) return true;
+        // Maven layout (B4): the `.md` live one level deeper, under
+        // `assetspaces/<owner>/<repo>/` — scan the owner folder's children too.
+        for (const sub of inner.folders) {
+          try {
+            const deep = await this.d.listFolder(sub);
+            if (deep.files.some((f) => f.endsWith(".md"))) return true;
+          } catch {
+            // Unreadable nested subfolder — ignore, keep scanning.
+          }
+        }
       } catch {
         // Unreadable subfolder — ignore, keep scanning.
       }

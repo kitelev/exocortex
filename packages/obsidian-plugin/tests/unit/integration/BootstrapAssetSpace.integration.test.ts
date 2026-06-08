@@ -143,23 +143,24 @@ describe("Bootstrap integration — real GitSubmoduleOps + tmpdir vault (git mod
 
     await cmds.invokeBootstrap();
 
-    // Both folders materialised with the fake AssetSpace file.
+    // Both folders materialised with the fake AssetSpace file — at the Maven
+    // mount path `assetspaces/<owner>/<repo>` (RFC 5aa2a73a B4).
     const exoFile = path.join(
       vaultRoot,
-      "assetspaces/exo/73bd00e4-ccc0-4f3f-b20d-c4388c4588fb.md",
+      "assetspaces/kitelev/exoas-exo/73bd00e4-ccc0-4f3f-b20d-c4388c4588fb.md",
     );
     const exocmdFile = path.join(
       vaultRoot,
-      "assetspaces/exocmd/73bd00e4-ccc0-4f3f-b20d-c4388c4588fb.md",
+      "assetspaces/kitelev/exoas-exocmd/73bd00e4-ccc0-4f3f-b20d-c4388c4588fb.md",
     );
     await expect(fs.access(exoFile)).resolves.toBeUndefined();
     await expect(fs.access(exocmdFile)).resolves.toBeUndefined();
 
-    // `.gitmodules` has exactly the two TS-floor entries.
+    // `.gitmodules` has exactly the two TS-floor entries (Maven paths).
     const entries = await gitOps.readGitmodulesEntries();
     expect(entries).toEqual([
-      { submodulePath: "assetspaces/exo", url: EXO_URL },
-      { submodulePath: "assetspaces/exocmd", url: EXOCMD_URL },
+      { submodulePath: "assetspaces/kitelev/exoas-exo", url: EXO_URL },
+      { submodulePath: "assetspaces/kitelev/exoas-exocmd", url: EXOCMD_URL },
     ]);
 
     expect(notices.some((n) => /Bootstrap complete/.test(n))).toBe(true);
@@ -378,7 +379,7 @@ describe("Bootstrap integration — staging-dir release (Issue #3391, real track
     // Both pulled, both moved into the vault, both staging entries released.
     expect((mgr.pullAssetSpace as jest.Mock).mock.calls).toHaveLength(2);
     await expect(fs.access(
-      path.join(vaultRoot, "assetspaces/exo/73bd00e4-ccc0-4f3f-b20d-c4388c4588fb.md"),
+      path.join(vaultRoot, "assetspaces/kitelev/exoas-exo/73bd00e4-ccc0-4f3f-b20d-c4388c4588fb.md"),
     )).resolves.toBeUndefined();
     // The crux of #3391: registry empty WITHOUT a reload / sweepOrphans.
     expect(await store.readActiveStagingDirs()).toEqual([]);

@@ -177,32 +177,33 @@ describe("BootstrapAssetSpaceCommands.invokeBootstrap — empty vault (git)", ()
     expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(2);
     expect(h.puller.pullAssetSpace).toHaveBeenNthCalledWith(
       1,
-      "bootstrap-exo",
+      "bootstrap-exoas-exo",
       EXO_URL,
       "main",
     );
     expect(h.puller.pullAssetSpace).toHaveBeenNthCalledWith(
       2,
-      "bootstrap-exocmd",
+      "bootstrap-exoas-exocmd",
       EXOCMD_URL,
       "main",
     );
+    // RFC 5aa2a73a B4: floor mounts at the Maven path `assetspaces/<owner>/<repo>`.
     expect(h.gitOps.renameIntoVault).toHaveBeenNthCalledWith(
       1,
-      "/tmp/staging-bootstrap-exo",
-      "assetspaces/exo",
+      "/tmp/staging-bootstrap-exoas-exo",
+      "assetspaces/kitelev/exoas-exo",
     );
     expect(h.gitOps.renameIntoVault).toHaveBeenNthCalledWith(
       2,
-      "/tmp/staging-bootstrap-exocmd",
-      "assetspaces/exocmd",
+      "/tmp/staging-bootstrap-exoas-exocmd",
+      "assetspaces/kitelev/exoas-exocmd",
     );
     expect(h.gitOps.appendGitmodulesEntry).toHaveBeenCalledWith(
-      "assetspaces/exo",
+      "assetspaces/kitelev/exoas-exo",
       EXO_URL,
     );
     expect(h.gitOps.appendGitmodulesEntry).toHaveBeenCalledWith(
-      "assetspaces/exocmd",
+      "assetspaces/kitelev/exoas-exocmd",
       EXOCMD_URL,
     );
     expect(h.localStore.upsertFileOnlyAssetSpace).not.toHaveBeenCalled();
@@ -219,19 +220,19 @@ describe("BootstrapAssetSpaceCommands.invokeBootstrap — empty vault (git)", ()
     expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(1);
     expect(h.puller.pullAssetSpace).toHaveBeenNthCalledWith(
       1,
-      "bootstrap-exo",
+      "bootstrap-exoas-exo",
       EXO_URL,
       "main",
     );
     expect(h.gitOps.renameIntoVault).toHaveBeenCalledTimes(1);
     expect(h.gitOps.renameIntoVault).toHaveBeenNthCalledWith(
       1,
-      "/tmp/staging-bootstrap-exo",
-      "assetspaces/exo",
+      "/tmp/staging-bootstrap-exoas-exo",
+      "assetspaces/kitelev/exoas-exo",
     );
     expect(h.gitOps.appendGitmodulesEntry).toHaveBeenCalledTimes(1);
     expect(h.gitOps.appendGitmodulesEntry).toHaveBeenCalledWith(
-      "assetspaces/exo",
+      "assetspaces/kitelev/exoas-exo",
       EXO_URL,
     );
     expect(h.notices.some((n) => /knowledge-only/.test(n))).toBe(true);
@@ -248,7 +249,10 @@ describe("BootstrapAssetSpaceCommands.invokeBootstrap — empty vault (file-only
     expect(h.gitOps.appendGitmodulesEntry).not.toHaveBeenCalled();
     expect(h.localStore.upsertFileOnlyAssetSpace).toHaveBeenCalledTimes(2);
     expect(h.localStore.upsertFileOnlyAssetSpace).toHaveBeenCalledWith(
-      expect.objectContaining({ folderName: "assetspaces/exo", url: EXO_URL }),
+      expect.objectContaining({
+        folderName: "assetspaces/kitelev/exoas-exo",
+        url: EXO_URL,
+      }),
     );
     expect(h.notices.some((n) => /file-only mode/.test(n))).toBe(true);
   });
@@ -494,10 +498,10 @@ describe("BootstrapAssetSpaceCommands — staging-dir release (Issue #3391)", ()
     // Released for each pulled staging path, after the move into the vault.
     expect(h.puller.releaseStaging).toHaveBeenCalledTimes(2);
     expect(h.puller.releaseStaging).toHaveBeenCalledWith(
-      "/tmp/staging-bootstrap-exo",
+      "/tmp/staging-bootstrap-exoas-exo",
     );
     expect(h.puller.releaseStaging).toHaveBeenCalledWith(
-      "/tmp/staging-bootstrap-exocmd",
+      "/tmp/staging-bootstrap-exoas-exocmd",
     );
     // The tracker registry is empty post-success — no reload needed.
     expect(h.activeStagingDirs).toEqual([]);
