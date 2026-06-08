@@ -10,10 +10,10 @@
  *   3. Resolve declared AssetSpace UIDs against folderMap (the former
  *      Ontology→AS translation via `exo__AssetSpace_containsOntology` was removed
  *      in Phase 3 T3b-cleanup — profiles declare AS UIDs directly)
- *   4. Apply the SDK-floor AssetSpace UIDs (Vision Lock #17 / RFC 01a83de8 §3.4):
- *      $exo + $shared-identities — guarantees the CLI/headless engine keeps
- *      functioning regardless of profile config. `$exocmd` is NOT in the SDK
- *      floor (issue #3426 — it is the plugin-UI floor's concern only)
+ *   4. Apply the SDK-floor AssetSpace UIDs (Vision Lock #17 / floor={exo},
+ *      RFC 5aa2a73a / #3440): `$exo` only — guarantees the CLI/headless engine
+ *      keeps functioning regardless of profile config. `$shared-identities`
+ *      and `$exocmd` are OPTIONAL (not in any floor tier post-#3440)
  *   5. Safe-degrade: if effective set has zero AS-folder overlap, return null
  *      (caller falls back to no-filter / full vault) to prevent self-brick
  *
@@ -40,9 +40,10 @@ export {
 
 /**
  * TS-floor AssetSpace UIDs the CLI/headless engine enforces — the **SDK floor**
- * (`$exo` + `$shared-identities`), WITHOUT `$exocmd`. RFC 01a83de8 alt-G
- * rejection: a bare SDK vault is a first-class config and never forces the
- * UI-command library. (The plugin uses the wider plugin-UI floor.)
+ * = `{exo}` (RFC 5aa2a73a / #3440). `$shared-identities` and `$exocmd` are
+ * OPTIONAL. A bare SDK vault is a first-class config and never forces the
+ * UI-command library. (The plugin uses the same `{exo}` floor — both tiers
+ * collapsed to `{exo}` in #3440.)
  */
 export const TS_FLOOR_ASSETSPACE_UIDS: ReadonlySet<string> =
   SDK_FLOOR_ASSETSPACE_UIDS;

@@ -168,8 +168,10 @@ describe("B.10 Scenario 1 — Filtered set with AS folder present", () => {
 
     const eff = await h.mgr.resolveEffectiveSet(UID_PERSONAL);
     expect(eff.has(ONTO_KITELEV)).toBe(true);
-    expect(eff.has(ONTO_EXO)).toBe(true);   // overlay via extends
-    expect(eff.has(ONTO_EXOCMD)).toBe(true); // overlay via extends + TS-floor
+    expect(eff.has(ONTO_EXO)).toBe(true);   // TS-floor ($exo)
+    // floor={exo} (#3450): no profile in the extends chain includes exocmd, and
+    // exocmd is no longer in the floor → it is NOT in the effective set.
+    expect(eff.has(ONTO_EXOCMD)).toBe(false);
 
     // The apply reindex path still fires exactly one (full-vault) reindex.
     await reindex(h.mgr, UID_PERSONAL);
@@ -222,7 +224,7 @@ describe("B.10 Scenario 3 — Empty effective_set survives via TS-floor", () => 
     }
   });
 
-  it("plugin can NEVER self-brick — \\$exo + \\$exocmd always in set", async () => {
+  it("plugin can NEVER self-brick — \\$exo always in set (floor={exo})", async () => {
     // Multiple pathological profiles
     const profiles: Array<[string, ProfileResolution]> = [
       ["empty", { uid: "empty", includes: [], extends: null }],
@@ -233,8 +235,10 @@ describe("B.10 Scenario 3 — Empty effective_set survives via TS-floor", () => 
     for (const [uid] of profiles) {
       const h = makeHarness(profiles);
       const eff = await h.mgr.resolveEffectiveSet(uid);
+      // floor={exo} (RFC 5aa2a73a / #3440): only $exo is always present.
       expect(eff.has(ONTO_EXO)).toBe(true);
-      expect(eff.has(ONTO_EXOCMD)).toBe(true);
+      // exocmd is OPTIONAL — none of these profiles include it, so it's absent.
+      expect(eff.has(ONTO_EXOCMD)).toBe(false);
     }
   });
 });
@@ -319,9 +323,11 @@ describe("B.10 Scenario 5 — TS-floor empirical revert/restore", () => {
     ]);
     const eff = await h.mgr.resolveEffectiveSet(UID_BASE);
 
-    // The exact production behavior includes the TS-floor; \$exo is present
+    // The exact production behavior includes the TS-floor; \$exo is present.
     expect(eff.has(ONTO_EXO)).toBe(true);
-    expect(eff.has(ONTO_EXOCMD)).toBe(true);
+    // floor={exo} (RFC 5aa2a73a / #3440): exocmd is OPTIONAL — not in the floor,
+    // so an empty profile does NOT auto-include it.
+    expect(eff.has(ONTO_EXOCMD)).toBe(false);
   });
 
   it("TS_FLOOR_SHARED_PATTERN matches shared-* ontology URIs", () => {

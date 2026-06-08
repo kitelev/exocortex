@@ -154,7 +154,7 @@ const ONTO_TBANK = "https://exocortex.my/ontology/tbank";
 // ─── resolveEffectiveSet + TS-floor ──────────────────────────────────────
 
 describe("ProfileApplyManager.resolveEffectiveSet — TS-floor (Vision Lock #17)", () => {
-  it("includes TS-floor URIs even when profile has empty includes/overlay", async () => {
+  it("floor={exo}: includes $exo but NOT $exocmd when profile has empty includes", async () => {
     const { mgr } = makeHarness({
       profiles: [
         [
@@ -170,7 +170,9 @@ describe("ProfileApplyManager.resolveEffectiveSet — TS-floor (Vision Lock #17)
     });
     const effective = await mgr.resolveEffectiveSet(UID_BASE);
     expect(effective.has(ONTO_EXO)).toBe(true);
-    expect(effective.has(ONTO_EXOCMD)).toBe(true);
+    // floor={exo} (RFC 5aa2a73a / #3440): exocmd is OPTIONAL — never auto-injected
+    // into the floor. A profile that omits exocmd gets no exocmd in its effective set.
+    expect(effective.has(ONTO_EXOCMD)).toBe(false);
   });
 
   it("includes shared-identities pattern matches via discoverSharedOntologies", async () => {
@@ -210,6 +212,10 @@ describe("ProfileApplyManager.resolveEffectiveSet — TS-floor (Vision Lock #17)
     for (const floorUri of TS_FLOOR_ONTOLOGY_URIS) {
       expect(effective.has(floorUri)).toBe(true);
     }
+    // Lock the floor boundary (#3450): the floor is exactly {exo} — exocmd is
+    // OPTIONAL and must NOT be silently injected.
+    expect(TS_FLOOR_ONTOLOGY_URIS.has(ONTO_EXOCMD)).toBe(false);
+    expect(effective.has(ONTO_EXOCMD)).toBe(false);
   });
 });
 

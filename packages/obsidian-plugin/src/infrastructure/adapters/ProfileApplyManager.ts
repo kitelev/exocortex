@@ -49,11 +49,14 @@ export const PROFILE_CLASS_UID = "3de846cd-1f0e-4f98-8613-b8587aa15174";
 /**
  * TS-floor (Vision Lock #17): ontology URIs that are ALWAYS in the effective
  * set, regardless of profile config. Hardcoded — never destroyable.
- * Prevents plugin self-brick если user accidentally removes $exo from a profile.
+ *
+ * floor = `{exo}` only (RFC 5aa2a73a / #3440 collapsed the floor to the SDK
+ * core). `exocmd` and `shared-identities` are OPTIONAL — a profile may omit
+ * them. Kept in sync with the AS-UID floor `TS_FLOOR_ASSETSPACE_UIDS={exo}`.
+ * Prevents plugin self-brick if a user accidentally removes $exo from a profile.
  */
 export const TS_FLOOR_ONTOLOGY_URIS: ReadonlySet<string> = new Set([
   "https://exocortex.my/ontology/exo",
-  "https://exocortex.my/ontology/exocmd",
 ]);
 
 /**
@@ -421,9 +424,9 @@ export class ProfileApplyManager {
    * mount-state hard/REST switch consumes these AssetSpace UIDs directly (the
    * query-time soft-filter consumer was removed in RFC 01a83de8 Phase 3 T3b).
    *
-   * TS-floor (Vision Lock #17) — hardcoded `[$exo, $exocmd]` + pattern match
-   * для shared-identities — guarantees the plugin keeps functioning regardless
-   * of profile config.
+   * TS-floor (Vision Lock #17) — hardcoded `[$exo]` (floor={exo}, #3440) +
+   * pattern match для shared-identities — guarantees the plugin keeps
+   * functioning regardless of profile config.
    */
   async resolveEffectiveSet(profileUid: string): Promise<Set<string>> {
     const derived = await this.computeDerivedSet(profileUid);
@@ -1351,8 +1354,8 @@ export class ProfileApplyManager {
 
   private assertTsFloor(effective: ReadonlySet<string>): void {
     // EV8 — delegate to the single named guard in `exocortex`. The plugin
-    // enforces the **plugin-UI floor** (SDK floor + `$exocmd`) so UI commands
-    // never self-brick.
+    // enforces the **plugin-UI floor** (= the SDK floor `{exo}`, #3440) so UI
+    // commands never self-brick.
     assertTsFloorGuard(effective, PLUGIN_UI_FLOOR_ASSETSPACE_UIDS);
   }
 
