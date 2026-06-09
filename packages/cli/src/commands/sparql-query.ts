@@ -161,7 +161,7 @@ export function parseCacheTtl(ttlStr: string | undefined): number {
   if (isNaN(value) || value <= 0) {
     throw new InvalidArgumentsError(
       `Invalid cache TTL: "${ttlStr}". Must be a positive number (seconds).`,
-      'exocortex sparql query --cache-ttl 600 "SELECT * WHERE { ?s ?p ?o }"'
+      'exocortex query --cache-ttl 600 "SELECT * WHERE { ?s ?p ?o }"'
     );
   }
   return value;
@@ -180,7 +180,7 @@ export function parseTimeout(timeoutStr: string): number {
     if (isNaN(value) || value <= 0) {
       throw new InvalidArgumentsError(
         `Invalid timeout format: "${timeoutStr}". Value must be a positive number.`,
-        'exocortex sparql query --timeout "30s" or --timeout "5000ms"'
+        'exocortex query --timeout "30s" or --timeout "5000ms"'
       );
     }
     return value;
@@ -192,7 +192,7 @@ export function parseTimeout(timeoutStr: string): number {
     if (isNaN(value) || value <= 0) {
       throw new InvalidArgumentsError(
         `Invalid timeout format: "${timeoutStr}". Value must be a positive number.`,
-        'exocortex sparql query --timeout "30s" or --timeout "5000ms"'
+        'exocortex query --timeout "30s" or --timeout "5000ms"'
       );
     }
     return value * 1000;
@@ -203,7 +203,7 @@ export function parseTimeout(timeoutStr: string): number {
   if (isNaN(value) || value <= 0) {
     throw new InvalidArgumentsError(
       `Invalid timeout format: "${timeoutStr}". Use formats like "30s", "5000ms", or just a number (seconds).`,
-      'exocortex sparql query --timeout "30s" or --timeout "5000ms"'
+      'exocortex query --timeout "30s" or --timeout "5000ms"'
     );
   }
   return value * 1000;
@@ -319,7 +319,7 @@ export function sparqlQueryCommand(): Command {
         } else {
           throw new InvalidArgumentsError(
             "Either a query argument or --template flag is required.",
-            'exocortex sparql query "SELECT * WHERE { ?s ?p ?o }" or exocortex sparql query --template tasks-by-date --param date=2024-01-15'
+            'exocortex query "SELECT * WHERE { ?s ?p ?o }" or exocortex query --template tasks-by-date --param date=2024-01-15'
           );
         }
 
@@ -405,7 +405,7 @@ export function sparqlQueryCommand(): Command {
           } else {
             if (outputFormat === "text") {
               console.log(
-                `ℹ️  Combined cache miss (or invalid). Falling back to per-vault load. Run \`exocortex sparql index --vault <primary> --also <...>\` to build the cross-vault index.`,
+                `ℹ️  Combined cache miss (or invalid). Falling back to per-vault load. Run \`exocortex index --vault <primary> --also <...>\` to build the cross-vault index.`,
               );
             }
           }
@@ -442,7 +442,7 @@ export function sparqlQueryCommand(): Command {
             // Note (#3352): siblingAdapters cannot retro-fix wikilinks that
             // were already serialised as bare Literals at cache build time.
             // Users who need cross-vault label-form resolution on the cached
-            // path should rebuild the index via `sparql index --also` (which
+            // path should rebuild the index via `index --also` (which
             // routes through `buildCombinedTriples`).
             const cacheManager = new CacheManager(vaultPath);
             const cacheResult = await cacheManager.loadOrBuild();

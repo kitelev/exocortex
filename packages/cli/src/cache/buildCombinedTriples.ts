@@ -51,7 +51,7 @@ export interface BuildCombinedTriplesResult {
  * applies cross-vault wikilink resolution, and runs RDFS + prototype-chain
  * materialization on the combined triple store.
  *
- * This is the orchestration shared by `sparql index --also` (Issue #3281)
+ * This is the orchestration shared by `index --also` (Issue #3281)
  * and any future caller that needs a cross-vault materialized triple set.
  *
  * Behaviour:
@@ -99,7 +99,7 @@ export async function buildCombinedTriples(
   // primary adapter is then configured with these siblings so its
   // `getFirstLinkpathDest` (Step 5) resolves label-form wikilinks whose
   // target lives in an `--also` vault. Keeps the combined-cache path
-  // symmetric with the non-cached `sparql query --also` path.
+  // symmetric with the non-cached `query --also` path.
   const alsoAdapters: FileSystemVaultAdapter[] = [];
   const alsoPrefixes: string[] = [];
   for (const alsoPath of resolvedAlsos) {

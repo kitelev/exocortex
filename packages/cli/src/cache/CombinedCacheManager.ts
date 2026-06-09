@@ -68,7 +68,7 @@ export interface CombinedCacheStats {
 /**
  * Manages a persistent triple cache that spans multiple vaults.
  *
- * Issue #3281: cross-vault SPARQL recall was ~19% because (a) `sparql index`
+ * Issue #3281: cross-vault SPARQL recall was ~19% because (a) `index`
  * had no `--also` flag and (b) `query --use-cache --also` could only load
  * per-vault caches that materialize inferences within each vault individually,
  * missing cross-vault RDFS subClass chains and prototype inheritance.

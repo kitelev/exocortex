@@ -1,6 +1,6 @@
 /**
  * Issue #3219 — when a user invokes
- *   `exocortex sparql query --vault <primary> --also <root>/assetspaces/<sub>`
+ *   `exocortex query --vault <primary> --also <root>/assetspaces/<sub>`
  * the `--also` path is rooted at an AssetSpace subdirectory. Without a mount
  * prefix the synthesised subject IRIs lose the `assetspaces/<sub>/` segment
  * (file.path is relative to the adapter root → bare `<file>.md`) and cannot
