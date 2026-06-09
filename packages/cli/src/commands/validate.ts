@@ -64,7 +64,7 @@ function validateIriCommand(): Command {
             console.log("   - Rename files to remove spaces and special characters");
             console.log("   - Use dashes (-) or underscores (_) instead of spaces");
             console.log("   - Avoid angle brackets (<>) and other special characters");
-            console.log("\n💡 Run 'exocortex sparql index --strict' to fail on first issue");
+            console.log("\n💡 Run 'exocortex index --strict' to fail on first issue");
           }
         }
 

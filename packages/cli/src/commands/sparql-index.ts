@@ -28,7 +28,7 @@ function collectAlso(value: string, previous: string[]): string[] {
 }
 
 /**
- * Creates the 'sparql index' subcommand for building/managing the triple cache.
+ * Creates the 'index' command for building/managing the triple cache.
  *
  * The index command creates a persistent cache of RDF triples from the vault,
  * enabling fast subsequent SPARQL queries without re-parsing all files.
@@ -37,16 +37,16 @@ function collectAlso(value: string, previous: string[]): string[] {
  * cross-vault cache materialized over the union of the primary and `--also`
  * vaults (Issue #3281). The combined cache lives at
  * `<primary>/.exocortex/cache/combined-<hash>.json` and is consumed by
- * `sparql query --use-cache --also` when the same set of vaults is queried.
+ * `query --use-cache --also` when the same set of vaults is queried.
  *
  * @returns Commander Command instance configured for cache management
  *
  * @example
- * exocortex sparql index --vault /path/to/vault
- * exocortex sparql index --vault /path/to/vault --stats
- * exocortex sparql index --vault /path/to/vault --force
- * exocortex sparql index --vault /path/to/vault --strict
- * exocortex sparql index --vault /path/to/primary --also /path/to/other
+ * exocortex index --vault /path/to/vault
+ * exocortex index --vault /path/to/vault --stats
+ * exocortex index --vault /path/to/vault --force
+ * exocortex index --vault /path/to/vault --strict
+ * exocortex index --vault /path/to/primary --also /path/to/other
  */
 export function sparqlIndexCommand(): Command {
   return new Command("index")
@@ -208,7 +208,7 @@ export function sparqlIndexCommand(): Command {
  * from `primary` and every `alsoVaults` path. The resulting triple set is
  * persisted under `<primary>/.exocortex/cache/combined-<hash>.json` where
  * `<hash>` is a stable hash of the sorted vault-path set, so subsequent
- * `sparql query --use-cache --also` calls with the same vault set hit the
+ * `query --use-cache --also` calls with the same vault set hit the
  * combined cache directly.
  */
 async function runCombinedIndex(

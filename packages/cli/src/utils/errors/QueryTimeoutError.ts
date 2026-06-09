@@ -41,7 +41,7 @@ export class QueryTimeoutError extends CLIError {
       },
       {
         message: `Increase timeout with --timeout <duration> (e.g., --timeout 60s)`,
-        suggestion: `exocortex sparql query --timeout ${timeoutSec * 2}s "..."`,
+        suggestion: `exocortex query --timeout ${timeoutSec * 2}s "..."`,
       },
     );
 
