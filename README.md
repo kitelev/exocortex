@@ -43,9 +43,10 @@ Compared to existing tools:
 - **Semantic knowledge graph** — every piece of knowledge is an Asset with UUID, class, properties, and relationships stored as RDF triples
 - **SPARQL queries** — ask complex questions across your entire knowledge base
 - **Modular ontologies** — IMS (concepts, notes, people), EMS (tasks, projects, meetings), ZTLK (zettelkasten)
-- **Everything as Knowledge** — commands, workflows, property schemas, and layouts defined as vault assets, not hardcoded
+- **Everything as Knowledge** — commands, workflows, property schemas, layouts, and even plugin settings (`exo__Setting` assets — see [docs/settings-homoiconization.md](./docs/settings-homoiconization.md)) defined as vault assets, not hardcoded
 - **Ontology plugins** — extend the system with installable ontology packages (e.g. [GTD + Jedi Techniques](https://github.com/kitelev/gtd-jedi))
 - **Profile** (production-ready) — vault-declared homoiconic profiles that drive on-disk AssetSpace materialization via a single **Apply profile** operation (mount-state strict replace). One vault, multiple contexts, selective sync. See [docs/profile.md](./docs/profile.md).
+- **ExoSync** — GitHub-backed vault sync via the **Exocortex: Sync** command: pull → merge → push over the GitHub REST API, with a SHACL merge-gate validating merged assets before they ship. Works on mobile (no git binary required). See [docs/exosync.md](./docs/exosync.md).
 - **UI/CLI Parity** — every capability is reachable from the Obsidian plugin and the CLI; neither client holds exclusive features. The complement of homoiconicity: it keeps the _invocation_ layer open just as homoiconicity keeps the _data_ layer open. See [VISION.md](./VISION.md#uicli-parity-invariant).
 - **Local-first** — all data stays on your device, no cloud required
 
@@ -78,11 +79,13 @@ BRAT will automatically keep the plugin updated with new releases.
 
 Best for: Automation, AI agents, batch operations.
 
+The CLI exposes five core verbs — `find`, `apply`, `query`, `index`, `validate` — plus auxiliary commands (`ask`, `classes`, `create`, `archive`, `workflow`, and more).
+
 ```bash
-npm install -g @kitelev/exocortex-cli
+# Run via npx (or npm install -g @kitelev/exocortex-cli)
 
 # Query your knowledge graph
-exocortex-cli sparql query "
+npx @kitelev/exocortex-cli query "
 PREFIX exo: <https://exocortex.my/ontology/exo#>
 PREFIX ems: <https://exocortex.my/ontology/ems#>
 SELECT ?task ?label WHERE {
@@ -90,8 +93,10 @@ SELECT ?task ?label WHERE {
   ?task exo:Asset_label ?label
 }" --vault ~/vault
 
-# Complete a task
-exocortex-cli command complete "tasks/my-task.md" --vault ~/vault
+# Apply a vault-defined command (exocmd__Command) to an asset —
+# e.g. a status-transition command that completes a task.
+# <cmd> is the command's UUID or its exocmd__Command_cliName slug.
+npx @kitelev/exocortex-cli apply <cmd> "tasks/my-task.md" --vault ~/vault --dry-run
 ```
 
 ### Option 3: Core Library
@@ -99,19 +104,27 @@ exocortex-cli command complete "tasks/my-task.md" --vault ~/vault
 Best for: Building custom applications.
 
 ```typescript
-import { SparqlService, NodeFsAdapter } from "exocortex";
+import { InMemoryTripleStore, Triple, IRI, Literal } from "exocortex";
 
-const sparql = new SparqlService(new NodeFsAdapter("/path/to/vault"));
-const results = await sparql.query(`
-  PREFIX exo: <https://exocortex.my/ontology/exo#>
-  PREFIX ims: <https://exocortex.my/ontology/ims#>
-  SELECT ?concept ?definition
-  WHERE {
-    ?concept exo:Instance_class ims:Concept .
-    ?concept ims:Concept_definition ?definition .
-  }
-`);
+const store = new InMemoryTripleStore();
+await store.add(
+  new Triple(
+    new IRI("obsidian://vault/tasks/my-task.md"),
+    new IRI("https://exocortex.my/ontology/exo#Asset_label"),
+    new Literal("My first task"),
+  ),
+);
+
+// match(subject?, predicate?, object?) — undefined acts as a wildcard
+const labels = await store.match(
+  undefined,
+  new IRI("https://exocortex.my/ontology/exo#Asset_label"),
+  undefined,
+);
+console.log(labels.map((t) => t.object.toString()));
 ```
+
+See the **[Core API Reference](./docs/api/Core-API.md)** for the full TypeScript API, including the SPARQL engine and vault-to-RDF conversion services.
 
 ---
 
@@ -191,9 +204,10 @@ Features: wikilink syntax, loading state, error handling, auto-refresh, interact
 
 ### Ontology Plugins
 
-Install community ontology packages to extend your knowledge graph.
+Install community ontology packages (AssetSpaces) to extend your knowledge graph:
 
-> **Note:** The `assetspace` CLI subcommand is on the roadmap and not yet available. Follow [kitelev/exocortex](https://github.com/kitelev/exocortex) for updates.
+- **CLI:** `npx @kitelev/exocortex-cli assetspace-add --vault ~/vault --url https://github.com/kitelev/exoas-pmbok-ontology` adds a single AssetSpace from a public GitHub URL; `bootstrap` sets up a fresh vault with the SDK floor.
+- **Plugin:** the **Add assetspace by URL** and **Bootstrap vault** palette commands do the same from Obsidian.
 
 ### Profile — Vault-Declared Context
 
@@ -201,11 +215,33 @@ Install community ontology packages to extend your knowledge graph.
 
 A profile is a regular vault asset (`exo__Profile`) that declares which AssetSpaces (ontology submodule packages) are active. There is a single operation over it:
 
-- **Apply profile** (`Exocortex: Apply profile`) — a 2-phase-commit, mount-state strict replace. Materializes the profile's effective AssetSpaces (restore from cache or re-pull from GitHub), unmounts the rest; the TS-floor (`exo`, `exocmd`, `shared-identities`) is never unmounted. Eliminates the iPhone Obsidian Sync reindex storm; gives a physical privacy boundary between work / personal / reading contexts.
+- **Apply profile** (`Exocortex: Apply profile`) — a 2-phase-commit, mount-state strict replace. Materializes the profile's effective AssetSpaces (restore from cache or re-pull from GitHub), unmounts the rest; the TS-floor (`exo`) is never unmounted, while `exocmd` and `shared-identities` are optional AssetSpaces. Eliminates the iPhone Obsidian Sync reindex storm; gives a physical privacy boundary between work / personal / reading contexts.
 
 `exo__AssetSpace_materialized` is a runtime-derived property that reflects current on-disk state in SPARQL and the inline ✅/⏸ badge on AssetSpace pages.
 
 See [docs/profile.md](./docs/profile.md) for the full architectural pitch, including the UID-canon privacy model.
+
+### Command Palette
+
+Statically registered plugin commands (all prefixed `Exocortex:` in the palette):
+
+| Command                            | Description                                                                                                                                |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Create asset**                   | Create a new asset via an ontology-driven form                                                                                              |
+| **edit properties**                | Edit the active asset's frontmatter properties                                                                                              |
+| **Reload layout**                  | Re-render the layout on the active asset                                                                                                    |
+| **Toggle layout visibility**       | Show or hide layouts in Reading Mode                                                                                                        |
+| **Toggle archived assets visibility** | Show or hide archived assets in layout tables                                                                                            |
+| **open sparql query builder**      | Open the interactive SPARQL query builder                                                                                                   |
+| **Apply profile**                  | Apply a vault-declared profile — mount-state strict replace of the AssetSpace set (available when filesystem materialization is wired: desktop git, or mobile REST) |
+| **Sync**                           | ExoSync: pull → merge → push the materialized AssetSpace set over the GitHub REST API                                                       |
+| **Bootstrap vault**                | Fetch tracked AssetSpaces into a vault (desktop)                                                                                            |
+| **Add assetspace by URL**          | Add an AssetSpace from a public GitHub repository (desktop)                                                                                 |
+| **Push current assetspace**        | Push the AssetSpace containing the active file to its remote                                                                                |
+| **Show current state**             | Report the last-applied profile                                                                                                             |
+| **Clear switch cache (wipe-all)**  | Clear the profile-switch tarball cache                                                                                                      |
+
+In addition, vault-defined `exocmd__Command` assets are registered **dynamically** as palette commands (the homoiconic command layer) — their set depends on the commands declared in your vault, with visibility gated by their preconditions.
 
 ---
 
@@ -228,7 +264,7 @@ flowchart TB
 
     subgraph Adapters["Runtime adapters (implement ports)"]
         ObsAdapter["ObsidianVaultAdapter<br/>ObsidianFileSystemAdapter<br/>(app.vault API)"]
-        NodeAdapter["NodeVaultAdapter<br/>NodeFileSystemAdapter<br/>(fs/promises)"]
+        NodeAdapter["NodeFsAdapter<br/>CachingNodeFsAdapter<br/>(fs/promises)"]
     end
 
     Plugin --> Core
@@ -259,7 +295,7 @@ flowchart TB
 | Package                         | npm                      | Purpose                                                                     |
 | ------------------------------- | ------------------------ | --------------------------------------------------------------------------- |
 | **exocortex**                   | Private                  | Core business logic, domain models, SPARQL engine, 35+ services             |
-| **@exocortex/obsidian-plugin**  | Private                  | Interactive UI: 24+ components, 3 renderers, 33+ commands, 6 modals         |
+| **@exocortex/obsidian-plugin**  | Private                  | Interactive UI: React components, layout renderers, palette commands, modals |
 | **@kitelev/exocortex-cli**      | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
 | **@kitelev/exocortex-services** | Private                  | Shared runtime-agnostic grounding-service factories (RFC 94e520da Phase 1)  |
 | **@exocortex/test-utils**       | Private                  | Shared test utilities, mock factories, flaky test reporter                  |
@@ -295,7 +331,7 @@ flowchart TB
 
 **CLI:**
 
-- Run `exocortex --help` for the full list of commands and options (`find`, `apply`, `query`, `index`, `validate`, and more)
+- Run `npx @kitelev/exocortex-cli --help` for the full list of commands and options (`find`, `apply`, `query`, `index`, `validate`, and more)
 
 **Core Library:**
 
@@ -315,7 +351,7 @@ npm run build
 npm run test:all
 ```
 
-The `git submodule update --init --recursive` step hydrates `packages/exoas-exo` and `packages/exoas-exocmd` — the TBox ontology + `exocmd__Command` fixture submodules consumed by CLI helpers. If you forget it, tests that read fixture Commands via `loadCommandCatalog()` default path will fail with ENOENT. Both submodules are public; no auth token required.
+The `git submodule update --init --recursive` step hydrates `packages/exoas-exo` and `packages/exoas-exocmd` — the TBox ontology + `exocmd__Command` fixture submodules. Tests that read fixture assets from these submodules on disk fail with an explicit error if they are missing (e.g. `grounding-type-vault-fixture-parity.test.ts` walks `packages/exoas-exocmd/`; `VaultSettingsRegistry.test.ts` reads `packages/exoas-exo/exo/`). Both submodules are public; no auth token required.
 
 This project is developed primarily by AI agents (Claude Code, GitHub Copilot) following documented patterns. Human contributions welcome!
 

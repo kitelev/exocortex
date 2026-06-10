@@ -20,7 +20,7 @@ Exocortex follows the principle of **"Everything as Knowledge"** — an evolutio
 | ---------- | -------------------------------- | ------------------------------------------------------------------------- |
 | Schema     | Hardcoded in app or config files | OWL classes and properties as Markdown files in your vault                |
 | Workflows  | Code (event handlers, scripts)   | RDF data: `ems__WorkflowTransition` with states, preconditions, grounding |
-| UI Layouts | JSON/CSS configuration           | `pn__Layout` — columns, filters, sorting as semantic data                 |
+| UI Layouts | JSON/CSS configuration           | `exo__Layout` — columns, filters, sorting as semantic data                |
 | Commands   | Compiled into the plugin         | `exocmd__Command` + SPARQL-based preconditions + declarative grounding    |
 | Content    | Markdown files                   | Same Markdown files — content and metadata in one place                   |
 
