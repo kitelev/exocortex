@@ -698,6 +698,42 @@ export class ExocortexSettingTab extends PluginSettingTab {
         }),
       );
 
+    // ─────── ExoSync (RFC 4e4dc453 Phase B) ───────
+    // eslint-disable-next-line obsidianmd/ui/sentence-case -- "ExoSync" is the feature's proper name
+    new Setting(containerEl).setName("ExoSync").setHeading();
+
+    new Setting(containerEl)
+      .setName("Quarantine repo URL")
+      .setDesc(
+        "Optional dedicated GitHub repo (https://github.com/<owner>/<repo>) " +
+          "where unresolvable sync conflicts are preserved as both-versions " +
+          "entries (D17). Leave empty to skip the durable quarantine sink — " +
+          "conflicts still re-derive on every sync until resolved.",
+      )
+      .addText((text) => {
+        text.setPlaceholder("https://github.com/owner/exosync-quarantine");
+        text.setValue(this.plugin.settings.exosyncQuarantineRepoUrl ?? "");
+        text.onChange(async (value) => {
+          const trimmed = value.trim();
+          let valid = true;
+          if (trimmed.length > 0) {
+            try {
+              GitHubRestClient.validateRepoURL(trimmed);
+            } catch {
+              valid = false;
+            }
+          }
+          // Visual cue instead of a silent no-persist (code-reviewer LOW,
+          // PR #3461): the field keeps the draft text, the red border tells
+          // the user the stored value did NOT change.
+          text.inputEl.toggleClass("exocortex-invalid-input", !valid);
+          text.inputEl.setAttribute("aria-invalid", valid ? "false" : "true");
+          if (!valid) return;
+          this.plugin.settings.exosyncQuarantineRepoUrl = trimmed;
+          await this.plugin.saveSettings();
+        });
+      });
+
     // ─────── Section 2 — Active profile ───────
     new Setting(containerEl).setName("Active profile").setHeading();
 
