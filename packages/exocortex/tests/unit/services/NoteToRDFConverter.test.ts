@@ -1775,9 +1775,15 @@ describe("NoteToRDFConverter", () => {
         // Should return empty array (file was skipped)
         expect(triples).toEqual([]);
 
-        // Should have called logger.warn with skip message
-        expect(mockLogger.warn).toHaveBeenCalledWith(
+        // Issue #3468: per-file skip detail goes to info (console channel);
+        // the Notice-routed warn is a single end-of-walk summary with the count.
+        expect(mockLogger.info).toHaveBeenCalledWith(
           expect.stringContaining("Skipping file with invalid IRI"),
+          expect.anything()
+        );
+        expect(mockLogger.warn).toHaveBeenCalledTimes(1);
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining("Skipped 1 file with invalid IRI"),
           expect.anything()
         );
       });
@@ -1828,9 +1834,14 @@ describe("NoteToRDFConverter", () => {
         expect(labels).toContain("Note 1");
         expect(labels).toContain("Note 2");
 
-        // Should have warned about problematic file
-        expect(mockLogger.warn).toHaveBeenCalledWith(
+        // Issue #3468: the per-file path is logged at info level; the warn
+        // channel carries only the aggregated summary (no paths).
+        expect(mockLogger.info).toHaveBeenCalledWith(
           expect.stringContaining("problematic.md"),
+          expect.anything()
+        );
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining("Skipped 1 file with invalid IRI"),
           expect.anything()
         );
       });
@@ -1862,9 +1873,19 @@ describe("NoteToRDFConverter", () => {
         const triples = await converterWithLogger.convertVault();
 
         expect(triples).toEqual([]);
-        expect(mockLogger.warn).toHaveBeenCalledTimes(2); // 2 files × 1 warn each
+        // Issue #3468: 2 files × 1 info each + a single aggregated warn
+        expect(mockLogger.info).toHaveBeenCalledTimes(2);
+        expect(mockLogger.warn).toHaveBeenCalledTimes(1);
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining("Skipped 2 files with invalid IRI"),
+          expect.anything()
+        );
       });
     });
+
+    // Issue #3468: the aggregated skip-summary contract (N skipped → 1 warn
+    // per category, 0 → no warn, per-file details on info) is pinned in the
+    // CI-gated suite NoteToRDFConverter.issue-3468-skip-summary.test.ts.
   });
 
   // Issue #871: Generate RDFS vocabulary triples for mapped properties
