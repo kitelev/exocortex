@@ -1,13 +1,41 @@
-/* eslint-disable no-restricted-imports, import/no-nodejs-modules */
-import { execFile as execFileCb } from "node:child_process";
-import { promisify } from "node:util";
-import { promises as fs } from "node:fs";
-import * as path from "node:path";
-import { randomBytes } from "node:crypto";
-/* eslint-enable no-restricted-imports, import/no-nodejs-modules */
 import { Platform } from "obsidian";
+import {
+  nodeChildProcess,
+  nodeCrypto,
+  nodeFsPromises,
+  nodePath,
+  nodeUtil,
+} from "./lazyNodeModules";
 
-const execFile = promisify(execFileCb);
+/**
+ * Minimal shape of `promisify(child_process.execFile)` that this class
+ * consumes. Declared explicitly (instead of `typeof promisify(execFile)`)
+ * because the promisified default is now constructed LAZILY — a module-eval
+ * `promisify(execFileCb)` would require `node:*` at bundle load and crash
+ * Obsidian mobile (Issue #3464).
+ */
+export type ExecFileFn = (
+  file: string,
+  args: string[],
+  options: {
+    cwd?: string;
+    timeout?: number;
+    maxBuffer?: number;
+    env?: NodeJS.ProcessEnv;
+  },
+) => Promise<{ stdout: string | Buffer; stderr: string | Buffer }>;
+
+let defaultExecFile: ExecFileFn | null = null;
+
+/** Lazily build (and cache) the promisified `execFile` — desktop-only path. */
+function getDefaultExecFile(): ExecFileFn {
+  if (defaultExecFile === null) {
+    const { execFile } = nodeChildProcess();
+    const { promisify } = nodeUtil();
+    defaultExecFile = promisify(execFile) as unknown as ExecFileFn;
+  }
+  return defaultExecFile;
+}
 
 /**
  * GitSubmoduleOps — security-hardened wrapper for the git subprocess calls
@@ -52,7 +80,7 @@ export interface GitSubmoduleOpsOptions {
    */
   networkTimeoutMs?: number;
   /** Test injection: override the underlying `execFile`. */
-  execFileFn?: typeof execFile;
+  execFileFn?: ExecFileFn;
 }
 
 /**
@@ -77,7 +105,9 @@ export function validateVaultPathArg(arg: string): string {
     throw new Error(`GitSubmoduleOps: absolute path rejected: ${arg}`);
   }
   if (arg.startsWith("-")) {
-    throw new Error(`GitSubmoduleOps: leading-dash arg rejected (looks like flag): ${arg}`);
+    throw new Error(
+      `GitSubmoduleOps: leading-dash arg rejected (looks like flag): ${arg}`,
+    );
   }
   const normalized = arg.replace(/\\/g, "/").replace(/\/+$/, "");
   const segments = normalized.split("/");
@@ -117,11 +147,16 @@ export function validateGitUrl(url: string): string {
   if (url.startsWith("-")) {
     throw new Error(`GitSubmoduleOps: leading-dash URL rejected: ${url}`);
   }
-  const githubOk = /^https:\/\/github\.com\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+?(?:\.git)?$/.test(url);
+  const githubOk =
+    /^https:\/\/github\.com\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+?(?:\.git)?$/.test(
+      url,
+    );
   const isTestEnv = process.env.NODE_ENV === "test";
   const fileOk = isTestEnv && /^file:\/\/\/[a-zA-Z0-9_./-]+$/.test(url);
   if (!githubOk && !fileOk) {
-    throw new Error(`GitSubmoduleOps: invalid git URL shape (must be https://github.com/...): ${url}`);
+    throw new Error(
+      `GitSubmoduleOps: invalid git URL shape (must be https://github.com/...): ${url}`,
+    );
   }
   if (/[;|&$`()<>\n\r]/.test(url)) {
     throw new Error(`GitSubmoduleOps: shell metacharacter in URL: ${url}`);
@@ -133,16 +168,29 @@ export class GitSubmoduleOps {
   private readonly vaultRootPath: string;
   private readonly timeoutMs: number;
   private readonly networkTimeoutMs: number;
-  private readonly execFileFn: typeof execFile;
+  /**
+   * `null` = use the lazily-built promisified `execFile` (resolved on first
+   * {@link run} call, NOT at construction — keeps the ctor free of
+   * `node:child_process` so merely constructing on mobile can't crash).
+   */
+  private readonly execFileFn: ExecFileFn | null;
 
   constructor(options: GitSubmoduleOpsOptions) {
-    if (!options || typeof options.vaultRootPath !== "string" || options.vaultRootPath.length === 0) {
+    if (
+      !options ||
+      typeof options.vaultRootPath !== "string" ||
+      options.vaultRootPath.length === 0
+    ) {
       throw new Error("GitSubmoduleOps: vaultRootPath is required");
     }
-    this.vaultRootPath = path.resolve(options.vaultRootPath);
+    // NOTE: `nodePath()` performs a lazy `require("node:path")` — the ctor is
+    // only reached on desktop (all construction sites are gated by
+    // `Platform.isMobile`; see buildApplyDeps). Methods are additionally
+    // guarded via assertDesktop.
+    this.vaultRootPath = nodePath().resolve(options.vaultRootPath);
     this.timeoutMs = options.timeoutMs ?? 60_000;
     this.networkTimeoutMs = options.networkTimeoutMs ?? 300_000;
-    this.execFileFn = options.execFileFn ?? execFile;
+    this.execFileFn = options.execFileFn ?? null;
   }
 
   /**
@@ -179,12 +227,15 @@ export class GitSubmoduleOps {
         throw new Error(`GitSubmoduleOps.run: non-string arg`);
       }
       if (arg.startsWith("-") && !ALLOWED_FLAGS.has(arg)) {
-        throw new Error(`GitSubmoduleOps.run: disallowed flag argument: ${arg}`);
+        throw new Error(
+          `GitSubmoduleOps.run: disallowed flag argument: ${arg}`,
+        );
       }
     }
     const effectiveTimeout = opts.timeoutMs ?? this.timeoutMs;
+    const execFileFn = this.execFileFn ?? getDefaultExecFile();
     try {
-      const { stdout, stderr } = await this.execFileFn("git", Array.from(args), {
+      const { stdout, stderr } = await execFileFn("git", Array.from(args), {
         cwd: this.vaultRootPath,
         timeout: effectiveTimeout,
         maxBuffer: 16 * 1024 * 1024,
@@ -196,18 +247,30 @@ export class GitSubmoduleOps {
         env: stripGitEnv(),
       });
       return {
-        stdout: typeof stdout === "string" ? stdout : (stdout as Buffer).toString("utf8"),
-        stderr: typeof stderr === "string" ? stderr : (stderr as Buffer).toString("utf8"),
+        stdout:
+          typeof stdout === "string"
+            ? stdout
+            : (stdout as Buffer).toString("utf8"),
+        stderr:
+          typeof stderr === "string"
+            ? stderr
+            : (stderr as Buffer).toString("utf8"),
       };
     } catch (err) {
-      const e = err as { stderr?: string | Buffer; stdout?: string | Buffer; message?: string };
+      const e = err as {
+        stderr?: string | Buffer;
+        stdout?: string | Buffer;
+        message?: string;
+      };
       const stderr = e?.stderr
         ? typeof e.stderr === "string"
           ? e.stderr
           : e.stderr.toString("utf8")
         : "";
       const msg = e?.message ?? String(err);
-      throw new Error(`git ${args.join(" ")} failed: ${msg}${stderr ? ` — stderr: ${stderr}` : ""}`);
+      throw new Error(
+        `git ${args.join(" ")} failed: ${msg}${stderr ? ` — stderr: ${stderr}` : ""}`,
+      );
     }
   }
 
@@ -262,7 +325,9 @@ export class GitSubmoduleOps {
       throw new Error("GitSubmoduleOps.commit: message required");
     }
     if (/[\n\r]/.test(message)) {
-      throw new Error("GitSubmoduleOps.commit: newline in commit message rejected (use repeated -m args if needed)");
+      throw new Error(
+        "GitSubmoduleOps.commit: newline in commit message rejected (use repeated -m args if needed)",
+      );
     }
     await this.run(["commit", "-m", message]);
   }
@@ -280,12 +345,17 @@ export class GitSubmoduleOps {
    */
   async removeGitModulesDir(submodulePath: string): Promise<void> {
     this.assertDesktop("removeGitModulesDir");
+    const fs = nodeFsPromises();
+    const path = nodePath();
     const safe = validateVaultPathArg(submodulePath);
     // Resolve and verify the target is inside `<vault>/.git/modules/`.
     const target = path.resolve(this.vaultRootPath, ".git", "modules", safe);
-    const expectedPrefix = path.resolve(this.vaultRootPath, ".git", "modules") + path.sep;
+    const expectedPrefix =
+      path.resolve(this.vaultRootPath, ".git", "modules") + path.sep;
     if (!target.startsWith(expectedPrefix)) {
-      throw new Error(`GitSubmoduleOps.removeGitModulesDir: escape attempt: ${target}`);
+      throw new Error(
+        `GitSubmoduleOps.removeGitModulesDir: escape attempt: ${target}`,
+      );
     }
     await fs.rm(target, { recursive: true, force: true });
   }
@@ -296,11 +366,15 @@ export class GitSubmoduleOps {
    */
   async removeWorkingTree(submodulePath: string): Promise<void> {
     this.assertDesktop("removeWorkingTree");
+    const fs = nodeFsPromises();
+    const path = nodePath();
     const safe = validateVaultPathArg(submodulePath);
     const target = path.resolve(this.vaultRootPath, safe);
     const expectedPrefix = this.vaultRootPath + path.sep;
     if (!target.startsWith(expectedPrefix)) {
-      throw new Error(`GitSubmoduleOps.removeWorkingTree: escape attempt: ${target}`);
+      throw new Error(
+        `GitSubmoduleOps.removeWorkingTree: escape attempt: ${target}`,
+      );
     }
     await fs.rm(target, { recursive: true, force: true });
   }
@@ -309,8 +383,13 @@ export class GitSubmoduleOps {
    * `mv <stagingPath> <vault>/<submodulePath>` — materialize tarball
    * contents into vault location. Both args validated.
    */
-  async renameIntoVault(stagingPath: string, submodulePath: string): Promise<void> {
+  async renameIntoVault(
+    stagingPath: string,
+    submodulePath: string,
+  ): Promise<void> {
     this.assertDesktop("renameIntoVault");
+    const fs = nodeFsPromises();
+    const path = nodePath();
     if (typeof stagingPath !== "string" || stagingPath.length === 0) {
       throw new Error(`GitSubmoduleOps.renameIntoVault: stagingPath required`);
     }
@@ -319,7 +398,9 @@ export class GitSubmoduleOps {
     const target = path.resolve(this.vaultRootPath, safeSub);
     const expectedPrefix = this.vaultRootPath + path.sep;
     if (!target.startsWith(expectedPrefix)) {
-      throw new Error(`GitSubmoduleOps.renameIntoVault: escape attempt: ${target}`);
+      throw new Error(
+        `GitSubmoduleOps.renameIntoVault: escape attempt: ${target}`,
+      );
     }
     // fs.rename fails across devices (EXDEV). Detect-and-fallback:
     try {
@@ -347,6 +428,9 @@ export class GitSubmoduleOps {
    */
   async atomicGitmodulesEntryRemove(submodulePath: string): Promise<void> {
     this.assertDesktop("atomicGitmodulesEntryRemove");
+    const fs = nodeFsPromises();
+    const path = nodePath();
+    const { randomBytes } = nodeCrypto();
     const safe = validateVaultPathArg(submodulePath);
     const gitmodulesPath = path.resolve(this.vaultRootPath, ".gitmodules");
     let original: string;
@@ -375,6 +459,8 @@ export class GitSubmoduleOps {
    * `.gitmodules` returns empty set.
    */
   async readGitmodulesPaths(): Promise<Set<string>> {
+    const fs = nodeFsPromises();
+    const path = nodePath();
     const gitmodulesPath = path.resolve(this.vaultRootPath, ".gitmodules");
     let raw: string;
     try {
@@ -397,6 +483,8 @@ export class GitSubmoduleOps {
    * preserved URLs to re-materialise each tracked AssetSpace.
    */
   async readGitmodulesEntries(): Promise<GitmodulesEntry[]> {
+    const fs = nodeFsPromises();
+    const path = nodePath();
     const gitmodulesPath = path.resolve(this.vaultRootPath, ".gitmodules");
     let raw: string;
     try {
@@ -426,6 +514,8 @@ export class GitSubmoduleOps {
     url: string,
   ): Promise<{ added: boolean }> {
     this.assertDesktop("appendGitmodulesEntry");
+    const fs = nodeFsPromises();
+    const path = nodePath();
     const safePath = validateVaultPathArg(submodulePath);
     const safeUrl = validateGitUrl(url);
     const gitmodulesPath = path.resolve(this.vaultRootPath, ".gitmodules");
@@ -456,7 +546,9 @@ export class GitSubmoduleOps {
 
   private assertDesktop(op: string): void {
     if (isPlatformMobile()) {
-      throw new Error(`GitSubmoduleOps.${op}: mobile not supported (RFC 22b50a17 desktop-only)`);
+      throw new Error(
+        `GitSubmoduleOps.${op}: mobile not supported (RFC 22b50a17 desktop-only)`,
+      );
     }
   }
 }
@@ -507,11 +599,16 @@ export function stripGitEnv(): NodeJS.ProcessEnv {
  *
  * Exported for unit testing.
  */
-export function stripGitmodulesEntry(content: string, submodulePath: string): string {
+export function stripGitmodulesEntry(
+  content: string,
+  submodulePath: string,
+): string {
   const lines = content.split(/\r?\n/);
   const out: string[] = [];
   let skipping = false;
-  const headerPattern = new RegExp(`^\\[submodule\\s+"${escapeRegex(submodulePath)}"\\]\\s*$`);
+  const headerPattern = new RegExp(
+    `^\\[submodule\\s+"${escapeRegex(submodulePath)}"\\]\\s*$`,
+  );
   for (const line of lines) {
     if (skipping) {
       // Next stanza starts — stop skipping (do NOT consume the new header).
@@ -628,6 +725,8 @@ export function parseGitmodulesPaths(content: string): Set<string> {
 }
 
 async function copyDirRecursive(src: string, dest: string): Promise<void> {
+  const fs = nodeFsPromises();
+  const path = nodePath();
   await fs.mkdir(dest, { recursive: true });
   const entries = await fs.readdir(src, { withFileTypes: true });
   for (const entry of entries) {
