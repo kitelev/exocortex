@@ -112,11 +112,16 @@ export async function collectSyncRepoSpecs(
     const source = readSource(fm);
     if (source === null) continue;
 
+    // Normalize ONCE and feed the SAME string everywhere — parseGitHubURL
+    // strips `.git` case-sensitively while derivePath strips it
+    // case-insensitively, so an unnormalized `.GIT` source would diverge
+    // repo vs mount path (code-reviewer LOW, PR #3461).
+    const normalized = source.replace(/\.git$/i, "");
     let owner: string;
     let repo: string;
     try {
-      GitHubRestClient.validateRepoURL(source.replace(/\.git$/i, ""));
-      ({ owner, repo } = parseGitHubURL(source));
+      GitHubRestClient.validateRepoURL(normalized);
+      ({ owner, repo } = parseGitHubURL(normalized));
     } catch {
       warnings.push(
         `skipped AssetSpace at ${file.path}: source is not a plain https://github.com/<owner>/<repo> URL`,
@@ -124,7 +129,7 @@ export async function collectSyncRepoSpecs(
       continue;
     }
 
-    const localPath = derivePath(source);
+    const localPath = derivePath(normalized);
     if (localPath === null) {
       warnings.push(
         `skipped AssetSpace at ${file.path}: cannot derive mount path from source`,
@@ -178,11 +183,17 @@ export const webCryptoSha1: Sha1Fn = async (
 };
 
 /**
- * Atomic write over `vault.adapter`: write to a `.local.`-infixed temp path
- * (Sync-excluded, non-`.md` so `isSyncablePath` refuses it symmetrically),
- * remove the target if present, then rename. Target-removal-first mirrors
+ * Atomic write over `vault.adapter`: write to a temp path, remove the
+ * target if present, then rename. Target-removal-first mirrors
  * `FileLogChannel.rotateIfNeeded` — `DataAdapter.rename` onto an existing
  * path fails on mobile.
+ *
+ * The `.local.tmp` suffix keeps a crash-leftover temp file out of the SYNC
+ * ENGINE via `isSyncablePath` (non-`.md` suffix AND `.local.` infix — both
+ * refused symmetrically). Obsidian Sync's own `.local.` exclusion applies
+ * to plugin-dir artifacts (data.local.json convention); inside the vault
+ * proper a leftover could replicate depending on the user's file-type sync
+ * settings — harmless, since it can never enter the sync cycle.
  */
 async function writeAtomic(
   adapter: DataAdapter,

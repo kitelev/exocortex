@@ -18,6 +18,7 @@
 import type { RepoSyncResult, SyncRepoSpec } from "exocortex";
 import { orderChildrenFirst } from "exocortex";
 
+import { GitHubRestClient } from "./GitHubRestClient";
 import type { SyncSpecCollection, BuiltSyncEngine } from "./SyncDepsFactory";
 
 export interface SyncCommandsDeps {
@@ -58,8 +59,12 @@ export class SyncCommands {
       await this.runSync();
     } catch (err) {
       // The palette callback fire-and-forgets this promise — surface the
-      // failure instead of leaking an unhandled rejection.
-      const msg = err instanceof Error ? err.message : String(err);
+      // failure instead of leaking an unhandled rejection. Redacted as
+      // defence-in-depth: a credential-embedded URL error must not reach a
+      // Notice (code-reviewer LOW, PR #3461).
+      const msg = GitHubRestClient.redactTokens(
+        err instanceof Error ? err.message : String(err),
+      );
       this.deps.notify(`Sync failed: ${msg}`);
       (this.deps.log ?? ((m: string): void => console.warn(m)))(
         `[ExoSync] sync run threw: ${msg}`,

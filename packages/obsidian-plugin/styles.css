@@ -6138,3 +6138,8 @@
 .bootstrap-modal-error.is-visible {
   display: block;
 }
+
+/* ExoSync (RFC 4e4dc453 Phase B) — invalid quarantine repo URL cue */
+.exocortex-invalid-input {
+  border-color: var(--text-error) !important;
+}

@@ -715,15 +715,20 @@ export class ExocortexSettingTab extends PluginSettingTab {
         text.setValue(this.plugin.settings.exosyncQuarantineRepoUrl ?? "");
         text.onChange(async (value) => {
           const trimmed = value.trim();
+          let valid = true;
           if (trimmed.length > 0) {
             try {
               GitHubRestClient.validateRepoURL(trimmed);
             } catch {
-              // Invalid shape — don't persist; the Sync command would throw
-              // on it anyway. The field keeps the user's draft text.
-              return;
+              valid = false;
             }
           }
+          // Visual cue instead of a silent no-persist (code-reviewer LOW,
+          // PR #3461): the field keeps the draft text, the red border tells
+          // the user the stored value did NOT change.
+          text.inputEl.toggleClass("exocortex-invalid-input", !valid);
+          text.inputEl.setAttribute("aria-invalid", valid ? "false" : "true");
+          if (!valid) return;
           this.plugin.settings.exosyncQuarantineRepoUrl = trimmed;
           await this.plugin.saveSettings();
         });
