@@ -211,6 +211,9 @@ export class FakeGitHubRepo {
               type: "blob",
               mode: "100644",
               sha: s,
+              // Real GitHub trees API reports blob size — the engine's
+              // remote-side size cap keys off it (test-fixture-realism).
+              size: this.blobs.get(s)?.byteLength ?? 0,
             })),
           },
         };

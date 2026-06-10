@@ -7,6 +7,8 @@
  * Pure functions only — no Obsidian API, no I/O. Suitable for use anywhere.
  */
 
+import { FILE_SPACE_CLASS_UID } from "exocortex";
+
 /**
  * Class UID of `exo__AssetSpace` (TBox root). Used to discriminate AssetSpace
  * ABox instances from other assets when scanning the vault. Hardcoded by RFC
@@ -42,13 +44,12 @@ export function isAssetSpaceFrontmatter(fm: Record<string, unknown>): boolean {
 
 /**
  * Class UID of `exo__FileSpace` (TBox: exoas-exo, onto-RFC 18808c73 —
- * frozen, same precedent as {@link ASSET_SPACE_CLASS_UID}). A FileSpace is
- * a git-backed space of opaque blobs: the sync layer treats its content
- * byte-exact with remote-wins conflicts (D18, ExoSync Phase C); the RDF
- * indexer skips it. Kept equal to `FILE_SPACE_CLASS_UID` in the exocortex
- * package's FileSpaceDiscovery.
+ * frozen). Re-exported from the exocortex package's FileSpaceDiscovery —
+ * single source of truth shared with the RDF-indexer skip; a FileSpace is
+ * a git-backed space of opaque blobs synced byte-exact with remote-wins
+ * conflicts (D18, ExoSync Phase C).
  */
-export const FILE_SPACE_CLASS_UID = "aad8913e-5e9f-4047-879d-93cc46befd52";
+export { FILE_SPACE_CLASS_UID } from "exocortex";
 
 /** Predicate — `exo__Instance_class` references `exo__FileSpace`? */
 export function isFileSpaceFrontmatter(fm: Record<string, unknown>): boolean {

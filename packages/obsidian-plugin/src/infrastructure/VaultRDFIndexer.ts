@@ -49,6 +49,15 @@ export class VaultRDFIndexer {
   private fileSpacePrefixes: string[] = [];
   /** Vault paths of the FileSpace declaration assets themselves. */
   private fileSpaceDeclarations = new Set<string>();
+  /**
+   * In-flight full-reindex latch. Event handlers are fire-and-forget; a
+   * declaration-triggered `refresh()` clears and rebuilds the whole store,
+   * so concurrent per-file updates during that window would race
+   * clear()/addAll() (duplicate or lost triples). Handlers await the
+   * latch and RETURN — the refresh re-reads the current vault state, so
+   * their work is already covered.
+   */
+  private refreshInFlight: Promise<void> | null = null;
 
   constructor(
     private app: App,
@@ -198,6 +207,14 @@ export class VaultRDFIndexer {
       return;
     }
 
+    // A full reindex is rebuilding the store right now — adding this
+    // file's triples concurrently would race clear()/addAll(); the
+    // refresh re-reads the current vault state, so just wait it out.
+    if (this.refreshInFlight !== null) {
+      await this.refreshInFlight;
+      return;
+    }
+
     // A FileSpace declaration changed or appeared — recompute the exclusion
     // set. A changed mount set requires a full reindex: newly-excluded
     // content must be purged AND previously-excluded files may need
@@ -256,6 +273,10 @@ export class VaultRDFIndexer {
   }
 
   async removeFile(file: TFile): Promise<void> {
+    if (this.refreshInFlight !== null) {
+      await this.refreshInFlight;
+      return; // the refresh saw the current (post-delete) vault state
+    }
     // Deleting a FileSpace declaration un-excludes its mount — previously
     // skipped files must be indexed, which only a full reindex can do.
     if (this.fileSpaceDeclarations.has(file.path)) {
@@ -271,6 +292,10 @@ export class VaultRDFIndexer {
   }
 
   async renameFile(file: TFile, oldPath: string): Promise<void> {
+    if (this.refreshInFlight !== null) {
+      await this.refreshInFlight;
+      return; // the refresh saw the current (post-rename) vault state
+    }
     // A renamed declaration changes the declaration set (and possibly the
     // exclusion set, e.g. moved into its own mount) — recompute first.
     if (this.fileSpaceDeclarations.has(oldPath)) {
@@ -337,18 +362,32 @@ export class VaultRDFIndexer {
    * currently materialised on disk.
    */
   async refresh(): Promise<void> {
-    await this.errorHandler.executeWithRetry(
-      async () => {
-        await this.tripleStore.clear();
-        const result = await this.converter.convertVaultWithValidation({
-          excludedFolders: this.excludedFolders,
-        });
-        this.applyFileSpaceDiscovery(result.fileSpaces);
-        await this.tripleStore.addAll(result.triples);
-        await this.runInference();
-      },
-      { context: "VaultRDFIndexer.refresh", operation: "refresh" }
+    // Coalesce concurrent refreshes (latch) — two rapid declaration edits
+    // must not interleave two clear()/addAll() rebuilds.
+    if (this.refreshInFlight !== null) {
+      return this.refreshInFlight;
+    }
+    const run = this.errorHandler
+      .executeWithRetry(
+        async () => {
+          await this.tripleStore.clear();
+          const result = await this.converter.convertVaultWithValidation({
+            excludedFolders: this.excludedFolders,
+          });
+          this.applyFileSpaceDiscovery(result.fileSpaces);
+          await this.tripleStore.addAll(result.triples);
+          await this.runInference();
+        },
+        { context: "VaultRDFIndexer.refresh", operation: "refresh" }
+      )
+      .finally(() => {
+        this.refreshInFlight = null;
+      });
+    this.refreshInFlight = run.then(
+      () => undefined,
+      () => undefined,
     );
+    return run;
   }
 
   private async runInference(): Promise<void> {

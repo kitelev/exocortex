@@ -139,10 +139,18 @@ export function discoverFileSpaceExclusions(
   const declarationPaths: string[] = [];
   const warnings: string[] = [];
 
+  // Memoised per walk (reviewer MEDIUM): legacy label-form class links
+  // repeat across thousands of files, and the CLI adapter re-parses the
+  // destination file on every `getFrontmatter` — one verdict per unique
+  // target string caps the resolve cost at the number of distinct classes.
+  const refVerdicts = new Map<string, boolean>();
+
   const isFileSpaceClassRef = (target: string, sourcePath: string): boolean => {
     if (UUID_RE.test(target)) {
       return target.toLowerCase() === FILE_SPACE_CLASS_UID;
     }
+    const memo = refVerdicts.get(target);
+    if (memo !== undefined) return memo;
     // Label-form link — resolve and check the destination's asset uid.
     // NOTE platform asymmetry: the plugin's metadataCache resolver does NOT
     // resolve aliases, the CLI adapter does — UUID-form links are the
@@ -151,11 +159,22 @@ export function discoverFileSpaceExclusions(
     // and loose adapters legitimately return `undefined` — treat both as
     // "unresolved".
     const dest = vault.getFirstLinkpathDest(target, sourcePath);
-    if (dest == null) return false;
-    const destFm = readFrontmatterSafe(vault, dest);
-    const uid = destFm?.["exo__Asset_uid"];
-    return typeof uid === "string" && uid.toLowerCase() === FILE_SPACE_CLASS_UID;
+    let verdict = false;
+    if (dest != null) {
+      const destFm = readFrontmatterSafe(vault, dest);
+      const uid = destFm?.["exo__Asset_uid"];
+      verdict =
+        typeof uid === "string" && uid.toLowerCase() === FILE_SPACE_CLASS_UID;
+    }
+    refVerdicts.set(target, verdict);
+    return verdict;
   };
+
+  /** UUID-form membership only — the sync layer's detection shape. */
+  const hasUuidFormRef = (targets: string[]): boolean =>
+    targets.some(
+      (t) => UUID_RE.test(t) && t.toLowerCase() === FILE_SPACE_CLASS_UID,
+    );
 
   for (const file of vault.getAllFiles()) {
     const fm = readFrontmatterSafe(vault, file);
@@ -164,6 +183,15 @@ export function discoverFileSpaceExclusions(
     if (!targets.some((t) => isFileSpaceClassRef(t, file.path))) continue;
 
     declarationPaths.push(file.path);
+    if (!hasUuidFormRef(targets)) {
+      // The sync layer's spec collector matches UUID-form links ONLY — a
+      // label-form-only declaration is indexed-skipped here but will NOT
+      // become a sync unit: surface the parity gap instead of leaving the
+      // space silently "not indexed AND not synced" (reviewer LOW).
+      warnings.push(
+        `FileSpace declaration ${file.path} references the class via a label-form link only — the sync layer will not pick it up; use the UUID-form wikilink [[${FILE_SPACE_CLASS_UID}]] (UID-canon)`,
+      );
+    }
 
     const source = readSource(fm);
     if (source === null) {

@@ -129,6 +129,8 @@ export interface OpenQuarantineEntry {
   uid?: string;
   reason: string;
   quarantinedAt: string;
+  /** Binary entries: repo-relative path of the `.conflict.<ext>` payload. */
+  conflictCopyPath?: string;
 }
 
 export class SyncedQuarantineStore implements QuarantinePort {
@@ -283,6 +285,9 @@ export class SyncedQuarantineStore implements QuarantinePort {
         ...(record.uid !== undefined ? { uid: record.uid } : {}),
         reason: record.reason,
         quarantinedAt: record.quarantinedAt,
+        ...(record.conflictCopyPath !== undefined
+          ? { conflictCopyPath: record.conflictCopyPath }
+          : {}),
       });
     }
     return out;

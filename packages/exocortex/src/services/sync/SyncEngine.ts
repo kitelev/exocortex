@@ -537,13 +537,31 @@ export class SyncEngine {
             "file-mode repo requires a LocalFilesPort with readBinary/writeBinary — refusing to sync through the text-only port (binary would corrupt)",
         });
       }
+      if (mode.fileMode && this.deps.quarantine === undefined) {
+        // D18 remote-wins DESTROYS the local version on disk; the losing
+        // bytes exist nowhere else, so a durable quarantine sink is a hard
+        // prerequisite for file mode — unlike asset mode, where "no sink"
+        // degrades safely (nothing is overwritten, pins re-derive).
+        // Reviewer CRITICAL (AC2 zero-data-loss).
+        return result("error", {
+          detail:
+            "file-mode repo requires a quarantine sink (D18 remote-wins preserves losing local bytes there) — configure the quarantine repo before syncing FileSpaces",
+        });
+      }
 
       const maxBytes = this.deps.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
       const disk = new Map<string, SyncContent>();
+      // Paths excluded by the size cap on the LOCAL side. The exclusion
+      // must hold across every representation (disk snapshot, diff base,
+      // remote diff, watermark) — a path visible on one side only would
+      // read as a phantom add/delete (reviewer HIGH: cap-boundary
+      // crossing).
+      const sizeExcluded = new Set<string>();
       for (const path of (await localFiles.list()).filter(mode.syncable)) {
         if (mode.fileMode) {
           const bytes = await readBinaryStrict(localFiles, path);
           if (bytes.byteLength > maxBytes) {
+            sizeExcluded.add(path);
             warnings.push(
               `skipped oversized file ${path} (${bytes.byteLength} bytes > ${maxBytes} cap) — excluded from sync symmetrically (Phase C size cap)`,
             );
@@ -556,6 +574,16 @@ export class SyncEngine {
       }
 
       let watermark = await this.deps.watermarkStore.get(spec.repoKey);
+      // Kind-flip guard (reviewer MEDIUM — makes the documented downgrade
+      // marker operational): a file-mode watermark read by an asset-mode
+      // sync would md-filter the head tree and infer phantom deletes for
+      // every binary entry.
+      if (watermark?.spaceKind === "file" && !mode.fileMode) {
+        return result("error", {
+          detail:
+            "watermark was written by a FILE-mode sync but the spec now resolves to asset mode — refusing (fix the conflicting Space declarations, or clear the watermark to restart)",
+        });
+      }
       let syntheticFirstSyncBase = false;
       if (watermark === null) {
         if (!mode.fileMode) {
@@ -576,6 +604,18 @@ export class SyncEngine {
           mode,
           warnings,
         );
+      }
+
+      // A size-excluded LOCAL path must also vanish from the diff base —
+      // its watermark entry would otherwise read as a local delete (and a
+      // remote edit on it would silently overwrite the oversized local
+      // file via the conflict path). The exclusion re-derives every sync,
+      // so a file shrinking back under the cap simply reappears as an add.
+      if (mode.fileMode && sizeExcluded.size > 0) {
+        watermark = {
+          ...watermark,
+          files: watermark.files.filter((f) => !sizeExcluded.has(f.path)),
+        };
       }
 
       const detection = await detectChanges({
@@ -606,6 +646,7 @@ export class SyncEngine {
         warnings,
         mode,
         syntheticFirstSyncBase,
+        sizeExcluded,
       );
       if (loop.kind === "conflict") {
         return result("conflict", { detail: loop.detail });
@@ -647,10 +688,25 @@ export class SyncEngine {
       // re-derives next sync; remote-wins RESOLVED entries (file mode) are
       // flushed for durability but never pinned (advisor C2 — a pin would
       // auto-markResolved the record on the next convergent sync).
-      await this.flushQuarantine(
+      const flushed = await this.flushQuarantine(
         [...merge.quarantineEntries, ...merge.resolvedQuarantineEntries],
         warnings,
       );
+
+      // Reviewer CRITICAL (AC2): the remote-wins apply DESTROYS the local
+      // version, whose only surviving copy is the quarantine entry — when
+      // the flush did not durably persist, the destructive applies for
+      // those paths are withheld (disk untouched) and the paths are pinned
+      // so the conflict re-derives next sync, flush retried.
+      const withheldPaths = new Set<string>();
+      if (!flushed && merge.resolvedQuarantineEntries.length > 0) {
+        for (const entry of merge.resolvedQuarantineEntries) {
+          withheldPaths.add(entry.path);
+        }
+        warnings.push(
+          `quarantine flush failed — remote-wins apply withheld for ${withheldPaths.size} path(s); local files untouched, conflict re-derives next sync (D18 durability gate)`,
+        );
+      }
 
       // No-op fast path: nothing pushed, head unmoved, nothing to apply —
       // the watermark is already exact; skip the head-tree fetch and the
@@ -718,8 +774,10 @@ export class SyncEngine {
       const { pulledCount, pinnedPaths } = await this.applyRemoteChanges(
         localFiles,
         disk,
-        [...applyWrites, ...merge.mergedWrites],
-        applyDeletes,
+        [...applyWrites, ...merge.mergedWrites].filter(
+          (w) => !withheldPaths.has(w.path),
+        ),
+        applyDeletes.filter((d) => !withheldPaths.has(d.path)),
         warnings,
       );
 
@@ -727,6 +785,10 @@ export class SyncEngine {
       // TOCTOU pins): the conflict re-derives every sync until resolved.
       for (const entry of merge.quarantineEntries) {
         pinnedPaths.add(entry.path);
+      }
+      // Withheld remote-wins paths (flush failure) re-derive the same way.
+      for (const path of withheldPaths) {
+        pinnedPaths.add(path);
       }
 
       await this.advanceWatermark(
@@ -741,6 +803,7 @@ export class SyncEngine {
         pinnedPaths,
         detection.diskBlobShas,
         mode,
+        sizeExcluded,
       );
 
       // A pin that existed on the PREVIOUS watermark and cleared in this
@@ -772,27 +835,28 @@ export class SyncEngine {
   }
 
   /**
-   * Flush quarantine entries to the sink (D17), preferring the batched
+   * Flush quarantine entries to the sink (D17/D18), preferring the batched
    * `quarantineAll` (one commit per flush — a terminal flush can carry
-   * dozens of files). A sink failure degrades to a WARNING, never an error
-   * status: the file stays untouched on disk and the pin / non-advanced
-   * watermark re-derives the conflict next sync.
+   * dozens of files).
+   *
+   * Returns whether the entries are DURABLY persisted. For D17 unresolved
+   * entries a failure safely degrades to a warning (the file stays
+   * untouched on disk and the pin / non-advanced watermark re-derives the
+   * conflict next sync). For D18 file-mode RESOLVED entries the caller
+   * MUST gate the destructive remote-wins apply on this result — the
+   * losing local bytes exist nowhere else (reviewer CRITICAL, AC2).
    */
   private async flushQuarantine(
     entries: QuarantineEntry[],
     warnings: string[],
-  ): Promise<void> {
-    if (entries.length === 0) return;
+  ): Promise<boolean> {
+    if (entries.length === 0) return true;
     const redact = this.deps.redact ?? ((m: string): string => m);
     for (const entry of entries) {
-      warnings.push(
-        redact(
-          `quarantined ${entry.path}: ${entry.reason} — both versions preserved; conflict re-derives until resolved (D17)`,
-        ),
-      );
+      warnings.push(redact(`quarantined ${entry.path}: ${entry.reason}`));
     }
     const sink = this.deps.quarantine;
-    if (sink === undefined) return;
+    if (sink === undefined) return false;
     try {
       if (sink.quarantineAll !== undefined) {
         await sink.quarantineAll(entries);
@@ -801,11 +865,13 @@ export class SyncEngine {
           await sink.quarantine(entry);
         }
       }
+      return true;
     } catch (err) {
       const redact = this.deps.redact ?? ((m: string): string => m);
       warnings.push(
         `quarantine sink failed: ${redact(errMsg(err))} — files untouched on disk; the conflict re-derives next sync (D17 degradation)`,
       );
+      return false;
     }
   }
 
@@ -1011,6 +1077,7 @@ export class SyncEngine {
     warnings: string[],
     mode: ModeOps,
     forceRemoteDiff = false,
+    sizeExcluded: ReadonlySet<string> = new Set(),
   ): Promise<PushLoopOutcome> {
     const { localChanges, localDeletedPaths, pushFilesAll } = pinned;
     const maxRetries = this.deps.maxPushRetries ?? DEFAULT_MAX_PUSH_RETRIES;
@@ -1053,6 +1120,8 @@ export class SyncEngine {
           watermark,
           examinedHead,
           mode,
+          sizeExcluded,
+          warnings,
         );
         const verdict = this.matchLocalVsRemote(
           localChanges,
@@ -1480,6 +1549,7 @@ export class SyncEngine {
     pinnedPaths: ReadonlySet<string>,
     diskBlobShas: ReadonlyMap<string, string>,
     mode: ModeOps,
+    sizeExcluded: ReadonlySet<string> = new Set(),
   ): Promise<void> {
     const newTree = (
       await getTree(
@@ -1489,7 +1559,7 @@ export class SyncEngine {
         newTreeSha,
         this.deps.baseURL,
       )
-    ).filter(mode.treeFilter);
+    ).filter((e) => mode.treeFilter(e) && !sizeExcluded.has(e.path));
     const files = applyWatermarkPins(
       await this.buildWatermarkFiles(
         spec,
@@ -1595,6 +1665,8 @@ export class SyncEngine {
     watermark: WatermarkRecord,
     head: string,
     mode: ModeOps,
+    sizeExcluded: ReadonlySet<string> = new Set(),
+    warnings: string[] = [],
   ): Promise<RemoteChange[]> {
     const headCommit = await getCommitInfo(
       this.transport,
@@ -1603,16 +1675,36 @@ export class SyncEngine {
       head,
       this.deps.baseURL,
     );
-    const headTree = (
-      await getTree(
-        this.transport,
-        spec.owner,
-        spec.repo,
-        headCommit.treeSha,
-        this.deps.baseURL,
-      )
-    ).filter(mode.treeFilter);
-    const { changed, deleted } = diffTrees(watermark.files, headTree);
+    const rawTree = await getTree(
+      this.transport,
+      spec.owner,
+      spec.repo,
+      headCommit.treeSha,
+      this.deps.baseURL,
+    );
+    // A REMOTE blob over the size cap (file mode) is excluded from the
+    // diff symmetrically: dropping it from the head tree alone would make
+    // its base entry read as a remote DELETE and destroy the local ≤cap
+    // copy (reviewer HIGH). Locally size-excluded paths are equally
+    // invisible on the remote side.
+    const remoteOversized = new Set<string>();
+    if (mode.fileMode) {
+      for (const e of rawTree) {
+        if (mode.syncable(e.path) && !mode.treeFilter(e)) {
+          remoteOversized.add(e.path);
+          warnings.push(
+            `skipped oversized REMOTE file ${e.path} (${e.size ?? "?"} bytes over cap) — excluded from sync symmetrically (Phase C size cap)`,
+          );
+        }
+      }
+    }
+    const headTree = rawTree.filter(
+      (e) => mode.treeFilter(e) && !sizeExcluded.has(e.path),
+    );
+    const baseFiles = watermark.files.filter(
+      (f) => !remoteOversized.has(f.path) && !sizeExcluded.has(f.path),
+    );
+    const { changed, deleted } = diffTrees(baseFiles, headTree);
 
     const changes: RemoteChange[] = [];
     for (const c of changed) {

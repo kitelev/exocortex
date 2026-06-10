@@ -244,6 +244,93 @@ describe("SyncEngine file-mode — guards", () => {
     expect(result.detail).toMatch(/readBinary\/writeBinary/);
   });
 
+  it("refuses LOUDLY to sync a file-mode repo without a quarantine sink (reviewer CRITICAL, AC2)", async () => {
+    const gh = new FakeGitHubRepo({ [IMG]: PNG_V1 });
+    const local = new FakeLocalFiles({ [IMG]: PNG_V2 });
+    const { engine } = makeEngine(gh, local, { quarantine: undefined });
+
+    const result = await engine.sync(gh.spec("file"));
+
+    expect(result.status).toBe("error");
+    expect(result.detail).toMatch(/quarantine sink/);
+    expect(local.files.get(IMG)).toEqual(PNG_V2); // disk untouched
+  });
+
+  it("withholds the destructive remote-wins apply when the quarantine flush FAILS (reviewer CRITICAL, AC2)", async () => {
+    const gh = new FakeGitHubRepo({ [IMG]: PNG_V1 });
+    const local = new FakeLocalFiles({ [IMG]: PNG_V1 });
+    const { engine, watermarks, quarantine } = makeEngine(gh, local);
+    await engine.sync(gh.spec("file")); // bootstrap
+
+    gh.commitDirect("main", { [IMG]: PNG_V2 }, "device B");
+    local.files.set(IMG, PNG_V3);
+    quarantine.quarantineAll = async () => {
+      throw new Error("quarantine repo unreachable");
+    };
+
+    const result = await engine.sync(gh.spec("file"));
+
+    expect(result.status).toBe("synced");
+    // The losing local bytes were NOT durably preserved → the remote
+    // version must NOT land on disk; the path pins and re-derives.
+    expect(local.files.get(IMG)).toEqual(PNG_V3);
+    expect(result.warnings.join(" ")).toMatch(/remote-wins apply withheld/);
+    const record = watermarks.records.get(gh.spec().repoKey)!;
+    expect(record.pinnedPaths).toContain(IMG);
+
+    // Sink recovers → next sync resolves remote-wins normally.
+    quarantine.quarantineAll = async (entries) => {
+      quarantine.entries.push(...entries);
+    };
+    const second = await engine.sync(gh.spec("file"));
+    expect(second.status).toBe("synced");
+    expect(local.files.get(IMG)).toEqual(PNG_V2);
+    expect(quarantine.entries.some((e) => e.path === IMG)).toBe(true);
+  });
+
+  it("oversized REMOTE blob is excluded symmetrically — local copy is NOT phantom-deleted (reviewer HIGH)", async () => {
+    const gh = new FakeGitHubRepo({ [IMG]: PNG_V1 });
+    const local = new FakeLocalFiles({ [IMG]: PNG_V1 });
+    const { engine } = makeEngine(gh, local, { maxFileBytes: 16 });
+    await engine.sync(gh.spec("file")); // bootstrap (PNG_V1 is 9 bytes)
+
+    // Device B (out-of-band) pushes a version OVER the cap.
+    gh.commitDirect(
+      "main",
+      { [IMG]: new Uint8Array(64).fill(0xcd) },
+      "oversized re-encode",
+    );
+    const result = await engine.sync(gh.spec("file"));
+
+    expect(result.status).toBe("synced");
+    // The local ≤cap copy must survive — dropping the oversized entry from
+    // the head tree alone would have read as a remote DELETE.
+    expect(local.files.get(IMG)).toEqual(PNG_V1);
+    expect(result.warnings.join(" ")).toMatch(/oversized REMOTE file/);
+  });
+
+  it("local file growing over the cap does NOT read as a local delete nor get silently overwritten (reviewer HIGH)", async () => {
+    const gh = new FakeGitHubRepo({ [IMG]: PNG_V1 });
+    const local = new FakeLocalFiles({ [IMG]: PNG_V1 });
+    const { engine, quarantine } = makeEngine(gh, local, { maxFileBytes: 16 });
+    await engine.sync(gh.spec("file")); // bootstrap
+
+    // The local file grows over the cap; device B edits the same path.
+    const oversizedLocal = new Uint8Array(64).fill(0xee);
+    local.files.set(IMG, oversizedLocal);
+    gh.commitDirect("main", { [IMG]: PNG_V2 }, "device B");
+
+    const result = await engine.sync(gh.spec("file"));
+
+    expect(result.status).toBe("synced");
+    // The oversized local file is fully out of sync scope: not deleted,
+    // not overwritten by the remote edit, nothing quarantined for it.
+    expect(local.files.get(IMG)).toEqual(oversizedLocal);
+    expect(result.deferredDeletes).toEqual([]);
+    expect(quarantine.entries).toEqual([]);
+    expect(result.warnings.join(" ")).toMatch(/oversized file/);
+  });
+
   it("skips oversized local files symmetrically with a warning (size cap)", async () => {
     const big = new Uint8Array(64).fill(0xab);
     const gh = new FakeGitHubRepo({ [NOTE]: NOTE_BODY });
