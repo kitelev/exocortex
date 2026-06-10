@@ -7,6 +7,8 @@
  * Pure functions only — no Obsidian API, no I/O. Suitable for use anywhere.
  */
 
+import { FILE_SPACE_CLASS_UID } from "exocortex";
+
 /**
  * Class UID of `exo__AssetSpace` (TBox root). Used to discriminate AssetSpace
  * ABox instances from other assets when scanning the vault. Hardcoded by RFC
@@ -37,6 +39,28 @@ const WIKILINK_UID_RE =
  * See Issue #3312.
  */
 export function isAssetSpaceFrontmatter(fm: Record<string, unknown>): boolean {
+  return instanceClassHasUid(fm, ASSET_SPACE_CLASS_UID);
+}
+
+/**
+ * Class UID of `exo__FileSpace` (TBox: exoas-exo, onto-RFC 18808c73 —
+ * frozen). Re-exported from the exocortex package's FileSpaceDiscovery —
+ * single source of truth shared with the RDF-indexer skip; a FileSpace is
+ * a git-backed space of opaque blobs synced byte-exact with remote-wins
+ * conflicts (D18, ExoSync Phase C).
+ */
+export { FILE_SPACE_CLASS_UID } from "exocortex";
+
+/** Predicate — `exo__Instance_class` references `exo__FileSpace`? */
+export function isFileSpaceFrontmatter(fm: Record<string, unknown>): boolean {
+  return instanceClassHasUid(fm, FILE_SPACE_CLASS_UID);
+}
+
+/** Shared strict-wikilink membership test over `exo__Instance_class`. */
+function instanceClassHasUid(
+  fm: Record<string, unknown>,
+  classUid: string,
+): boolean {
   const classes = fm["exo__Instance_class"];
   const candidates: unknown[] = Array.isArray(classes) ? classes : [classes];
   for (const c of candidates) {
@@ -44,7 +68,7 @@ export function isAssetSpaceFrontmatter(fm: Record<string, unknown>): boolean {
     WIKILINK_UID_RE.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = WIKILINK_UID_RE.exec(c)) !== null) {
-      if (m[1].toLowerCase() === ASSET_SPACE_CLASS_UID) return true;
+      if (m[1].toLowerCase() === classUid) return true;
     }
   }
   return false;

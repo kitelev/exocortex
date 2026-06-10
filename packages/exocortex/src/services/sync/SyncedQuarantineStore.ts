@@ -35,6 +35,7 @@
 
 import {
   restCreateCommit,
+  type CommitFileContent,
   type RestCommitTransport,
 } from "../../infrastructure/github/restCommit";
 import {
@@ -60,6 +61,17 @@ export interface QuarantineEntryRecord {
   baseContent?: string;
   localContent?: string;
   remoteContent?: string;
+  /**
+   * Phase C binary entries (D18): the losing local bytes live in a SIBLING
+   * payload file (this repo-relative path, `…-<hash>.conflict.<ext>`), NOT
+   * base64 inside this record — a single byte source, openable by the user
+   * (M4: no double-storage bloat in a repo whose write primitive cannot
+   * delete). `localContentSha` is the payload's git blob SHA — it keys the
+   * idempotency check (re-quarantining identical bytes pushes nothing).
+   * NOTE: secret redaction does NOT apply to binary payloads (R5 residual).
+   */
+  conflictCopyPath?: string;
+  localContentSha?: string;
 }
 
 export interface SyncedQuarantineStoreDeps {
@@ -117,6 +129,8 @@ export interface OpenQuarantineEntry {
   uid?: string;
   reason: string;
   quarantinedAt: string;
+  /** Binary entries: repo-relative path of the `.conflict.<ext>` payload. */
+  conflictCopyPath?: string;
 }
 
 export class SyncedQuarantineStore implements QuarantinePort {
@@ -142,7 +156,8 @@ export class SyncedQuarantineStore implements QuarantinePort {
     );
     const existing = await this.readEntries(entryPaths);
 
-    const files = new Map<string, string>();
+    const files = new Map<string, CommitFileContent>();
+    let recordCount = 0;
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
       const entryPath = entryPaths[i];
@@ -153,6 +168,25 @@ export class SyncedQuarantineStore implements QuarantinePort {
         prior !== null && prior.status === "open"
           ? prior.quarantinedAt
           : (this.deps.now ?? (() => new Date().toISOString()))();
+
+      // Phase C binary entry (D18): bytes go into a sibling
+      // `.conflict.<ext>` payload (single byte source, user-openable);
+      // the record carries the payload path + its git blob SHA so the
+      // idempotency check below still detects changed bytes. The
+      // `.conflict.` infix keeps the payload out of any sync cycle.
+      let conflictCopyPath: string | undefined;
+      let localContentSha: string | undefined;
+      if (entry.localContentBytes !== undefined) {
+        const base = entryPath.replace(/\.json$/, "");
+        const dot = entry.path.lastIndexOf(".");
+        const ext =
+          dot > 0 && dot < entry.path.length - 1
+            ? entry.path.slice(dot + 1)
+            : "bin";
+        conflictCopyPath = `${base}.conflict.${slug(ext)}`;
+        localContentSha = await this.gitBlobShaOf(entry.localContentBytes);
+      }
+
       const record: QuarantineEntryRecord = {
         version: 1,
         repoKey: entry.repoKey,
@@ -172,19 +206,36 @@ export class SyncedQuarantineStore implements QuarantinePort {
         ...(entry.remoteContent !== undefined
           ? { remoteContent: redactSecrets(entry.remoteContent) }
           : {}),
+        ...(conflictCopyPath !== undefined ? { conflictCopyPath } : {}),
+        ...(localContentSha !== undefined ? { localContentSha } : {}),
       };
       const serialized = JSON.stringify(record, null, 2);
       if (prior !== null && JSON.stringify(prior, null, 2) === serialized) {
         continue; // semantically identical — zero commit churn
       }
       files.set(entryPath, serialized);
+      recordCount++;
+      if (conflictCopyPath !== undefined && entry.localContentBytes !== undefined) {
+        files.set(conflictCopyPath, {
+          base64: Buffer.from(entry.localContentBytes).toString("base64"),
+        });
+      }
     }
     if (files.size === 0) return;
 
     await this.push(
       files,
-      `chore(exosync): quarantine ${files.size} conflict entr${files.size === 1 ? "y" : "ies"} (D17)`,
+      `chore(exosync): quarantine ${recordCount} conflict entr${recordCount === 1 ? "y" : "ies"} (D17)`,
     );
+  }
+
+  /** Git blob SHA over raw bytes (idempotency key for binary payloads). */
+  private async gitBlobShaOf(bytes: Uint8Array): Promise<string> {
+    const header = new TextEncoder().encode(`blob ${bytes.byteLength}\0`);
+    const framed = new Uint8Array(header.byteLength + bytes.byteLength);
+    framed.set(header, 0);
+    framed.set(bytes, header.byteLength);
+    return this.deps.sha1(framed);
   }
 
   /**
@@ -234,6 +285,9 @@ export class SyncedQuarantineStore implements QuarantinePort {
         ...(record.uid !== undefined ? { uid: record.uid } : {}),
         reason: record.reason,
         quarantinedAt: record.quarantinedAt,
+        ...(record.conflictCopyPath !== undefined
+          ? { conflictCopyPath: record.conflictCopyPath }
+          : {}),
       });
     }
     return out;
@@ -315,7 +369,10 @@ export class SyncedQuarantineStore implements QuarantinePort {
   }
 
   /** Push with direct 422 retries (fresh GET-ref per attempt — no CAS). */
-  private async push(files: Map<string, string>, message: string): Promise<void> {
+  private async push(
+    files: Map<string, CommitFileContent>,
+    message: string,
+  ): Promise<void> {
     const maxRetries = this.deps.maxPushRetries ?? 3;
     let attempt = 0;
     for (;;) {

@@ -43,6 +43,11 @@ jest.mock("exocortex", () => {
     },
     isPathExcluded: actual.isPathExcluded,
     normaliseExcludedFolders: actual.normaliseExcludedFolders,
+    // FileSpace discovery (onto-RFC 18808c73 Phase 5) — production
+    // implementations for the same drift-avoidance reason as above.
+    discoverFileSpaceExclusions: actual.discoverFileSpaceExclusions,
+    frontmatterDeclaresFileSpace: actual.frontmatterDeclaresFileSpace,
+    FILE_SPACE_CLASS_UID: actual.FILE_SPACE_CLASS_UID,
   };
 });
 jest.mock("../../../src/adapters/ObsidianVaultAdapter");
@@ -81,6 +86,7 @@ describe("VaultRDFIndexer — excludedFolders plumbing", () => {
       metadataCache: {
         on: jest.fn(),
         off: jest.fn(),
+        getFileCache: jest.fn().mockReturnValue(null),
       },
     } as unknown as App;
 
@@ -94,6 +100,12 @@ describe("VaultRDFIndexer — excludedFolders plumbing", () => {
 
     mockConverter = {
       convertVault: jest.fn().mockResolvedValue([]),
+      convertVaultWithValidation: jest.fn().mockResolvedValue({
+        triples: [],
+        skippedFiles: [],
+        summary: { total: 0, indexed: 0, skipped: 0 },
+        fileSpaces: { prefixes: [], declarationPaths: [], warnings: [] },
+      }),
       convertNote: jest.fn().mockResolvedValue([]),
     } as any;
 
@@ -151,7 +163,7 @@ describe("VaultRDFIndexer — excludedFolders plumbing", () => {
 
       await indexer.initialize();
 
-      expect(mockConverter.convertVault).toHaveBeenCalledWith({
+      expect(mockConverter.convertVaultWithValidation).toHaveBeenCalledWith({
         excludedFolders: ["09 Templates/", "10 Drafts/"],
       });
     });
@@ -161,7 +173,7 @@ describe("VaultRDFIndexer — excludedFolders plumbing", () => {
 
       await indexer.initialize();
 
-      expect(mockConverter.convertVault).toHaveBeenCalledWith({
+      expect(mockConverter.convertVaultWithValidation).toHaveBeenCalledWith({
         excludedFolders: [],
       });
     });
@@ -176,7 +188,7 @@ describe("VaultRDFIndexer — excludedFolders plumbing", () => {
 
       await indexer.initialize();
 
-      expect(mockConverter.convertVault).toHaveBeenCalledWith({
+      expect(mockConverter.convertVaultWithValidation).toHaveBeenCalledWith({
         excludedFolders: ["09 Templates/", "10 Drafts/"],
       });
     });
@@ -194,7 +206,7 @@ describe("VaultRDFIndexer — excludedFolders plumbing", () => {
 
       await indexer.initialize();
 
-      expect(mockConverter.convertVault).toHaveBeenCalledWith({
+      expect(mockConverter.convertVaultWithValidation).toHaveBeenCalledWith({
         excludedFolders: ["09 Templates/", "10 Drafts/"],
       });
     });
@@ -208,7 +220,7 @@ describe("VaultRDFIndexer — excludedFolders plumbing", () => {
 
       await indexer.refresh();
 
-      expect(mockConverter.convertVault).toHaveBeenCalledWith({
+      expect(mockConverter.convertVaultWithValidation).toHaveBeenCalledWith({
         excludedFolders: ["09 Templates/"],
       });
     });

@@ -41,7 +41,7 @@ interface FakeRequestUrlParam {
  * module docstring). Paths are vault-relative forward-slash, no leading `/`.
  */
 export class InMemoryAdapter {
-  readonly files = new Map<string, string>();
+  readonly files = new Map<string, string | Uint8Array>();
   readonly dirs = new Set<string>([""]);
 
   private parent(p: string): string {
@@ -56,7 +56,10 @@ export class InMemoryAdapter {
   async read(path: string): Promise<string> {
     const content = this.files.get(path);
     if (content === undefined) throw new Error(`ENOENT: ${path}`);
-    return content;
+    // Real DataAdapter.read decodes bytes as UTF-8 (lossy for binary).
+    return typeof content === "string"
+      ? content
+      : Buffer.from(content).toString("utf-8");
   }
 
   async write(path: string, content: string): Promise<void> {
@@ -64,6 +67,28 @@ export class InMemoryAdapter {
       throw new Error(`ENOENT: parent folder of ${path} does not exist`);
     }
     this.files.set(path, content);
+  }
+
+  /** Real `DataAdapter.readBinary` shape — ArrayBuffer, byte-exact. */
+  async readBinary(path: string): Promise<ArrayBuffer> {
+    const content = this.files.get(path);
+    if (content === undefined) throw new Error(`ENOENT: ${path}`);
+    const bytes =
+      typeof content === "string"
+        ? new Uint8Array(Buffer.from(content, "utf-8"))
+        : content;
+    return bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength,
+    ) as ArrayBuffer;
+  }
+
+  /** Real `DataAdapter.writeBinary` shape — same parent strictness. */
+  async writeBinary(path: string, data: ArrayBuffer): Promise<void> {
+    if (!this.dirs.has(this.parent(path))) {
+      throw new Error(`ENOENT: parent folder of ${path} does not exist`);
+    }
+    this.files.set(path, new Uint8Array(data));
   }
 
   async remove(path: string): Promise<void> {

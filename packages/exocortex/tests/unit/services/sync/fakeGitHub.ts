@@ -28,15 +28,17 @@ import type {
 export const sha1Hex = async (bytes: Uint8Array): Promise<string> =>
   createHash("sha1").update(bytes).digest("hex");
 
-function gitBlobShaSync(content: string): string {
-  const body = Buffer.from(content, "utf-8");
+/** Accepts text or raw bytes — real git blob SHA over the byte stream. */
+function gitBlobShaSync(content: string | Uint8Array): string {
+  const body =
+    typeof content === "string" ? Buffer.from(content, "utf-8") : Buffer.from(content);
   return createHash("sha1")
     .update(Buffer.concat([Buffer.from(`blob ${body.byteLength}\0`), body]))
     .digest("hex");
 }
 
-function chunkBase64(content: string): string {
-  const b64 = Buffer.from(content, "utf-8").toString("base64");
+function chunkBase64(content: Buffer): string {
+  const b64 = content.toString("base64");
   return b64.replace(/(.{60})/g, "$1\n");
 }
 
@@ -51,13 +53,16 @@ function httpError(method: string, url: string, status: number, body: string): E
   return new Error(`GitHub request ${method} ${url} → HTTP ${status}: ${body}`);
 }
 
+/** Test-side file content: text or raw bytes (binary attachments, Phase C). */
+export type FakeFileContent = string | Uint8Array;
+
 export class FakeGitHubRepo {
   readonly owner = "test-owner";
   readonly repo = "test-repo";
   readonly branch = "main";
 
-  /** blobSha → content */
-  readonly blobs = new Map<string, string>();
+  /** blobSha → raw content bytes (text stored as its UTF-8 encoding). */
+  readonly blobs = new Map<string, Buffer>();
   /** treeSha → (path → blobSha) */
   readonly trees = new Map<string, Map<string, string>>();
   readonly commits = new Map<string, FakeCommit>();
@@ -73,17 +78,18 @@ export class FakeGitHubRepo {
   private getRefCount = 0;
   private commitCounter = 0;
 
-  constructor(initialFiles: Record<string, string> = {}) {
+  constructor(initialFiles: Record<string, FakeFileContent> = {}) {
     this.commitDirect(this.branch, initialFiles, "init");
   }
 
-  spec(): SyncRepoSpec {
+  spec(spaceKind?: "asset" | "file"): SyncRepoSpec {
     return {
       owner: this.owner,
       repo: this.repo,
       branch: this.branch,
       repoKey: `${this.owner}/${this.repo}#${this.branch}`,
       localPath: "assetspaces/test",
+      ...(spaceKind === "file" ? { spaceKind } : {}),
     };
   }
 
@@ -94,8 +100,17 @@ export class FakeGitHubRepo {
   headFiles(): Map<string, string> {
     const tree = this.trees.get(this.commits.get(this.headSha())!.treeSha)!;
     const out = new Map<string, string>();
-    for (const [path, blobSha] of tree) out.set(path, this.blobs.get(blobSha)!);
+    for (const [path, blobSha] of tree) {
+      out.set(path, this.blobs.get(blobSha)!.toString("utf-8"));
+    }
     return out;
+  }
+
+  /** Raw bytes of one head-tree file (binary assertions), or undefined. */
+  headBlob(path: string): Buffer | undefined {
+    const tree = this.trees.get(this.commits.get(this.headSha())!.treeSha)!;
+    const blobSha = tree.get(path);
+    return blobSha === undefined ? undefined : this.blobs.get(blobSha);
   }
 
   /**
@@ -104,7 +119,7 @@ export class FakeGitHubRepo {
    */
   commitDirect(
     branch: string,
-    files: Record<string, string>,
+    files: Record<string, FakeFileContent>,
     message: string,
     deletes: string[] = [],
   ): string {
@@ -115,7 +130,12 @@ export class FakeGitHubRepo {
         : new Map<string, string>();
     for (const [path, content] of Object.entries(files)) {
       const blobSha = gitBlobShaSync(content);
-      this.blobs.set(blobSha, content);
+      this.blobs.set(
+        blobSha,
+        typeof content === "string"
+          ? Buffer.from(content, "utf-8")
+          : Buffer.from(content),
+      );
       baseTree.set(path, blobSha);
     }
     for (const path of deletes) baseTree.delete(path);
@@ -191,6 +211,9 @@ export class FakeGitHubRepo {
               type: "blob",
               mode: "100644",
               sha: s,
+              // Real GitHub trees API reports blob size — the engine's
+              // remote-side size cap keys off it (test-fixture-realism).
+              size: this.blobs.get(s)?.byteLength ?? 0,
             })),
           },
         };
@@ -205,10 +228,26 @@ export class FakeGitHubRepo {
         };
       }
 
+      if (method === "POST" && m(/^\/repos\/[^/]+\/[^/]+\/git\/blobs$/)) {
+        // Binary upload path (Phase C): base64 in, REAL git blob SHA out —
+        // computed over the decoded bytes, exactly as GitHub does.
+        const body = JSON.parse(req.body ?? "{}") as {
+          content?: string;
+          encoding?: string;
+        };
+        if (typeof body.content !== "string" || body.encoding !== "base64") {
+          throw httpError(method, url, 422, "expected base64 blob payload");
+        }
+        const bytes = Buffer.from(body.content.replace(/\s/g, ""), "base64");
+        const blobSha = gitBlobShaSync(new Uint8Array(bytes));
+        this.blobs.set(blobSha, bytes);
+        return { status: 201, json: { sha: blobSha } };
+      }
+
       if (method === "POST" && m(/^\/repos\/[^/]+\/[^/]+\/git\/trees$/)) {
         const body = JSON.parse(req.body ?? "{}") as {
           base_tree?: string;
-          tree?: Array<{ path: string; content: string }>;
+          tree?: Array<{ path: string; content?: string; sha?: string }>;
         };
         // GitHub accepts a commitish base_tree (peels commit → tree).
         let base = new Map<string, string>();
@@ -221,11 +260,20 @@ export class FakeGitHubRepo {
           base = new Map(baseTree);
         }
         for (const entry of body.tree ?? []) {
+          // Two production shapes: inline `content` (UTF-8 text) or a `sha`
+          // reference to a previously-uploaded blob (binary, Phase C).
+          if (typeof entry.sha === "string") {
+            if (!this.blobs.has(entry.sha)) {
+              throw httpError(method, url, 404, `blob ${entry.sha} not found`);
+            }
+            base.set(entry.path, entry.sha);
+            continue;
+          }
           if (typeof entry.content !== "string") {
             throw httpError(method, url, 422, "tree entry without content");
           }
           const blobSha = gitBlobShaSync(entry.content);
-          this.blobs.set(blobSha, entry.content);
+          this.blobs.set(blobSha, Buffer.from(entry.content, "utf-8"));
           base.set(entry.path, blobSha);
         }
         return { status: 201, json: { sha: this.storeTree(base) } };
@@ -270,10 +318,14 @@ export class FakeGitHubRepo {
   }
 }
 
-/** In-memory LocalFilesPort. */
+/**
+ * In-memory LocalFilesPort. Mirrors the production adapter contract:
+ * `read` is a text decode (corrupts binary — exactly like the real
+ * DataAdapter.read), `readBinary`/`writeBinary` are byte-exact.
+ */
 export class FakeLocalFiles implements LocalFilesPort {
-  readonly files: Map<string, string>;
-  constructor(initial: Record<string, string> = {}) {
+  readonly files: Map<string, FakeFileContent>;
+  constructor(initial: Record<string, FakeFileContent> = {}) {
     this.files = new Map(Object.entries(initial));
   }
   async list(): Promise<string[]> {
@@ -282,13 +334,45 @@ export class FakeLocalFiles implements LocalFilesPort {
   async read(path: string): Promise<string> {
     const content = this.files.get(path);
     if (content === undefined) throw new Error(`ENOENT: ${path}`);
-    return content;
+    return typeof content === "string"
+      ? content
+      : Buffer.from(content).toString("utf-8"); // lossy — like prod read()
   }
   async write(path: string, content: string): Promise<void> {
     this.files.set(path, content);
   }
   async delete(path: string): Promise<void> {
     this.files.delete(path); // no-op when absent, per port contract
+  }
+  async readBinary(path: string): Promise<Uint8Array> {
+    const content = this.files.get(path);
+    if (content === undefined) throw new Error(`ENOENT: ${path}`);
+    return typeof content === "string"
+      ? new Uint8Array(Buffer.from(content, "utf-8"))
+      : content;
+  }
+  async writeBinary(path: string, bytes: Uint8Array): Promise<void> {
+    this.files.set(path, bytes);
+  }
+}
+
+/** Text-only port (no readBinary/writeBinary) — Phase B-era adapters. */
+export class FakeTextOnlyLocalFiles implements LocalFilesPort {
+  private readonly inner: FakeLocalFiles;
+  constructor(initial: Record<string, string> = {}) {
+    this.inner = new FakeLocalFiles(initial);
+  }
+  list(): Promise<string[]> {
+    return this.inner.list();
+  }
+  read(path: string): Promise<string> {
+    return this.inner.read(path);
+  }
+  write(path: string, content: string): Promise<void> {
+    return this.inner.write(path, content);
+  }
+  delete(path: string): Promise<void> {
+    return this.inner.delete(path);
   }
 }
 

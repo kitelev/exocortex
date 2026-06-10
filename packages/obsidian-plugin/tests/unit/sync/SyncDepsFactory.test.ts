@@ -101,6 +101,112 @@ describe("collectSyncRepoSpecs", () => {
 
     expect(result.specs).toHaveLength(1);
   });
+
+  // ---- Phase C: FileSpace declarations (onto-RFC 18808c73, D18) ----
+
+  const fileSpaceFm = (
+    asUid: string,
+    source: string,
+  ): Record<string, unknown> => ({
+    exo__Instance_class: [
+      "[[aad8913e-5e9f-4047-879d-93cc46befd52|exo__FileSpace]]",
+    ],
+    exo__Asset_uid: asUid,
+    exo__AssetSpace_source: source,
+  });
+
+  it("collects a FileSpace declaration as a file-mode spec", async () => {
+    const adapter = new InMemoryAdapter();
+    adapter.mkdirAll("assetspaces/o/files");
+    const app = makeApp({
+      adapter,
+      mdFiles: [{ path: "fs.md" }],
+      frontmatters: new Map([
+        ["fs.md", fileSpaceFm("uid-fs", "https://github.com/o/files")],
+      ]),
+    });
+
+    const result = await collectSyncRepoSpecs(app as unknown as App);
+
+    expect(result.specs).toEqual([
+      spec({
+        repo: "files",
+        repoKey: `o/files#${SYNC_BRANCH}`,
+        localPath: "assetspaces/o/files",
+        spaceKind: "file",
+      }),
+    ]);
+  });
+
+  it("warns on a FileSpace without a source (mount underivable)", async () => {
+    const adapter = new InMemoryAdapter();
+    const fm = fileSpaceFm("uid-fs", "");
+    delete fm.exo__AssetSpace_source;
+    const app = makeApp({
+      adapter,
+      mdFiles: [{ path: "fs.md" }],
+      frontmatters: new Map([["fs.md", fm]]),
+    });
+
+    const result = await collectSyncRepoSpecs(app as unknown as App);
+
+    expect(result.specs).toEqual([]);
+    expect(result.warnings.join(" ")).toMatch(/skipped FileSpace at fs\.md/);
+  });
+
+  it("dual-declared repo (AssetSpace AND FileSpace) deterministically resolves to asset, loudly", async () => {
+    const adapter = new InMemoryAdapter();
+    adapter.mkdirAll("assetspaces/o/r");
+    // Both orders must converge on `asset` (vault iteration order is
+    // non-deterministic — advisor H6).
+    for (const order of [
+      ["as.md", "fs.md"],
+      ["fs.md", "as.md"],
+    ]) {
+      const app = makeApp({
+        adapter,
+        mdFiles: order.map((path) => ({ path })),
+        frontmatters: new Map([
+          ["as.md", assetSpaceFm("uid-a", "https://github.com/o/r")],
+          ["fs.md", fileSpaceFm("uid-f", "https://github.com/o/r")],
+        ]),
+      });
+
+      const result = await collectSyncRepoSpecs(app as unknown as App);
+
+      expect(result.specs).toHaveLength(1);
+      expect(result.specs[0].spaceKind).toBeUndefined(); // asset wins
+      expect(result.warnings.join(" ")).toMatch(/BOTH AssetSpace and FileSpace/);
+    }
+  });
+
+  it("a single declaration carrying both class UIDs resolves to asset with a warning", async () => {
+    const adapter = new InMemoryAdapter();
+    adapter.mkdirAll("assetspaces/o/r");
+    const app = makeApp({
+      adapter,
+      mdFiles: [{ path: "both.md" }],
+      frontmatters: new Map([
+        [
+          "both.md",
+          {
+            exo__Instance_class: [
+              "[[73bd00e4-ccc0-4f3f-b20d-c4388c4588fb|exo__AssetSpace]]",
+              "[[aad8913e-5e9f-4047-879d-93cc46befd52|exo__FileSpace]]",
+            ],
+            exo__Asset_uid: "uid-both",
+            exo__AssetSpace_source: "https://github.com/o/r",
+          },
+        ],
+      ]),
+    });
+
+    const result = await collectSyncRepoSpecs(app as unknown as App);
+
+    expect(result.specs).toHaveLength(1);
+    expect(result.specs[0].spaceKind).toBeUndefined();
+    expect(result.warnings.join(" ")).toMatch(/BOTH exo__AssetSpace and exo__FileSpace/);
+  });
 });
 
 describe("vaultLocalFilesPort", () => {
@@ -157,6 +263,32 @@ describe("vaultLocalFilesPort", () => {
     const port = vaultLocalFilesPort(adapter as never, "assetspaces/o/r");
 
     await expect(port.delete("ghost.md")).resolves.toBeUndefined();
+  });
+
+  it("readBinary/writeBinary round-trip byte-exact and atomically (Phase C)", async () => {
+    const adapter = new InMemoryAdapter();
+    adapter.mkdirAll("assetspaces/o/files");
+    const port = vaultLocalFilesPort(adapter as never, "assetspaces/o/files");
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe]);
+
+    await port.writeBinary!("img/pic.png", png);
+
+    expect(await port.readBinary!("img/pic.png")).toEqual(png);
+    const residue = [...adapter.files.keys()].filter((f) =>
+      f.includes(".local.tmp"),
+    );
+    expect(residue).toEqual([]);
+  });
+
+  it("writeBinary overwrites an existing file despite mobile rename-onto-existing failing", async () => {
+    const adapter = new InMemoryAdapter();
+    adapter.mkdirAll("assetspaces/o/files");
+    const port = vaultLocalFilesPort(adapter as never, "assetspaces/o/files");
+    await port.writeBinary!("a.png", new Uint8Array([1]));
+
+    await port.writeBinary!("a.png", new Uint8Array([2]));
+
+    expect(await port.readBinary!("a.png")).toEqual(new Uint8Array([2]));
   });
 });
 
@@ -225,5 +357,18 @@ describe("vaultMaterializationCheck", () => {
     const check = vaultMaterializationCheck(base(adapter));
 
     expect((await check.check(spec())).fullyMaterialized).toBe(true);
+  });
+
+  it("passes an EMPTY mount folder for a file-mode spec (Phase C first-sync, advisor C1)", async () => {
+    const adapter = new InMemoryAdapter();
+    adapter.mkdirAll("assetspaces/o/r");
+    const check = vaultMaterializationCheck(base(adapter));
+
+    // Asset mode still vetoes empties (mid-mount ambiguity)…
+    expect((await check.check(spec())).fullyMaterialized).toBe(false);
+    // …file mode does not: empty folder = legitimate fresh-mount state.
+    expect(
+      (await check.check(spec({ spaceKind: "file" }))).fullyMaterialized,
+    ).toBe(true);
   });
 });

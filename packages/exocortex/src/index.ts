@@ -251,6 +251,13 @@ export {
 } from "./services/IRICanonicalizer";
 export { derivePath } from "./services/AssetSpacePathDeriver";
 export {
+  discoverFileSpaceExclusions,
+  frontmatterDeclaresFileSpace,
+  FILE_SPACE_CLASS_UID,
+  type FileSpaceDiscoveryResult,
+  type FileSpaceDiscoveryVault,
+} from "./services/FileSpaceDiscovery";
+export {
   LazyAssetGraphLoader,
   MAX_LAZY_DEPTH,
   type INoteConverter,
@@ -557,6 +564,9 @@ export {
 // transport) — the single iOS-portable commit+push implementation.
 export {
   restCreateCommit,
+  isBinaryPayload,
+  type BinaryFilePayload,
+  type CommitFileContent,
   type RestCommitRequest,
   type RestCommitResponse,
   type RestCommitTransport,
@@ -595,6 +605,7 @@ export {
 } from "./services/sync/ChangeDetector";
 export { gitBlobSha } from "./services/sync/gitBlobSha";
 export {
+  getBlobBytes,
   getBlobText,
   getCommitInfo,
   getHeadSha,
@@ -610,7 +621,10 @@ export {
   type SyncEngineDeps,
 } from "./services/sync/SyncEngine";
 export {
+  DEFAULT_MAX_FILE_BYTES,
   InMemoryQuarantineStore,
+  contentEquals,
+  isFileSpaceSyncablePath,
   isSyncablePath,
   type AssetChange,
   type ChangeDetectionResult,
@@ -624,6 +638,8 @@ export {
   type QuarantinePort,
   type RepoSyncResult,
   type Sha1Fn,
+  type SpaceKind,
+  type SyncContent,
   type SyncRepoSpec,
   type WatermarkFileEntry,
   type WatermarkRecord,

@@ -20,7 +20,10 @@ import {
 
 import { GitHubRestClient } from "./GitHubRestClient";
 import { LocalSecretsStore } from "./LocalSecretsStore";
-import { isAssetSpaceFrontmatter } from "./AssetSpaceFrontmatter";
+import {
+  isAssetSpaceFrontmatter,
+  isFileSpaceFrontmatter,
+} from "./AssetSpaceFrontmatter";
 import { parseGitHubURL } from "./AssetSpaceManager";
 import type { PluginLocalDataStore } from "./PluginLocalDataStore";
 
@@ -104,13 +107,34 @@ export async function collectSyncRepoSpecs(
   const warnings: string[] = [];
   const seen = new Set<string>();
 
+  const kindByRepoKey = new Map<string, "asset" | "file">();
   for (const file of app.vault.getMarkdownFiles()) {
     const cache = app.metadataCache.getFileCache(file);
     const fm = cache?.frontmatter as Record<string, unknown> | undefined;
-    if (!fm || !isAssetSpaceFrontmatter(fm)) continue;
+    if (!fm) continue;
+    // Phase C: both Space subtypes are sync units. A declaration carrying
+    // BOTH class UIDs is contradictory (disjoint in the TBox, R5
+    // declarative-only) — the conservative `asset` wins (its md-only
+    // allowlist can never corrupt attachments) with a warning.
+    const isAsset = isAssetSpaceFrontmatter(fm);
+    const isFile = isFileSpaceFrontmatter(fm);
+    if (!isAsset && !isFile) continue;
+    if (isAsset && isFile) {
+      warnings.push(
+        `declaration at ${file.path} carries BOTH exo__AssetSpace and exo__FileSpace classes (disjoint) — treating as AssetSpace (conservative)`,
+      );
+    }
+    const spaceKind: "asset" | "file" = isAsset ? "asset" : "file";
 
     const source = readSource(fm);
-    if (source === null) continue;
+    if (source === null) {
+      if (spaceKind === "file") {
+        warnings.push(
+          `skipped FileSpace at ${file.path}: no exo__AssetSpace_source/_git — mount path underivable`,
+        );
+      }
+      continue;
+    }
 
     // Normalize ONCE and feed the SAME string everywhere — parseGitHubURL
     // strips `.git` case-sensitively while derivePath strips it
@@ -138,8 +162,27 @@ export async function collectSyncRepoSpecs(
     }
 
     const repoKey = `${owner}/${repo}#${SYNC_BRANCH}`;
-    if (seen.has(repoKey)) continue;
+    if (seen.has(repoKey)) {
+      // Same repo declared twice with CONFLICTING kinds (vault iteration
+      // order is non-deterministic — advisor H6): the resolution must be
+      // deterministic regardless of which declaration was seen first —
+      // `asset` always wins (its md-only allowlist can never corrupt
+      // attachments; the inverse could push text-decoded binary).
+      const priorKind = kindByRepoKey.get(repoKey);
+      if (priorKind !== undefined && priorKind !== spaceKind) {
+        warnings.push(
+          `repo ${repoKey} is declared as BOTH AssetSpace and FileSpace by different assets — treating as AssetSpace (deterministic, conservative); fix the vault (disjoint subtypes)`,
+        );
+        if (priorKind === "file") {
+          kindByRepoKey.set(repoKey, "asset");
+          const spec = specs.find((s) => s.repoKey === repoKey);
+          if (spec !== undefined) delete spec.spaceKind;
+        }
+      }
+      continue;
+    }
     seen.add(repoKey);
+    kindByRepoKey.set(repoKey, spaceKind);
 
     let exists = false;
     try {
@@ -155,6 +198,7 @@ export async function collectSyncRepoSpecs(
       branch: SYNC_BRANCH,
       repoKey,
       localPath,
+      ...(spaceKind === "file" ? { spaceKind } : {}),
     });
     const asUid =
       typeof fm["exo__Asset_uid"] === "string"
@@ -268,6 +312,28 @@ export function vaultLocalFilesPort(
         await adapter.remove(target);
       }
     },
+    // Phase C byte-exact pair (file-mode repos). `DataAdapter.readBinary/
+    // writeBinary` speak ArrayBuffer; the engine speaks Uint8Array.
+    async readBinary(path: string): Promise<Uint8Array> {
+      return new Uint8Array(await adapter.readBinary(abs(path)));
+    },
+    async writeBinary(path: string, bytes: Uint8Array): Promise<void> {
+      const target = abs(path);
+      const parent = parentDir(target);
+      if (parent.length > 0) await ensureDirChain(adapter, parent);
+      // Same atomic shape as writeAtomic: tmp (.local. infix — refused by
+      // both syncable predicates) → remove target → rename.
+      const tmp = `${target}.local.tmp`;
+      const buf = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+      ) as ArrayBuffer;
+      await adapter.writeBinary(tmp, buf);
+      if (await adapter.exists(target)) {
+        await adapter.remove(target);
+      }
+      await adapter.rename(tmp, target);
+    },
   };
 }
 
@@ -346,12 +412,16 @@ export function vaultMaterializationCheck(
           reason: `mount folder ${spec.localPath} is not readable`,
         };
       }
-      if (entries === 0) {
+      if (entries === 0 && spec.spaceKind !== "file") {
         return {
           fullyMaterialized: false,
           reason: `mount folder ${spec.localPath} is empty (mid-mount?)`,
         };
       }
+      // File-mode exception (Phase C, advisor C1): an empty FileSpace
+      // folder is a legitimate first-sync state — the remote-wins
+      // first-sync layer pulls everything; no delete inference can fire
+      // (the synthetic base is empty, so nothing reads as locally deleted).
       return { fullyMaterialized: true };
     },
   };

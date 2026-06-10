@@ -198,6 +198,28 @@ describe("detectChanges — uid-keyed diff (D18)", () => {
     }
   });
 
+  it("byte content is OPAQUE (Phase C, D18): no uid extraction even when the bytes contain frontmatter — path identity, out of uid merge-scope", async () => {
+    // The same markdown asset passed as BYTES (a FileSpace snapshot) must
+    // not gain uid identity — file-mode treats everything as opaque blobs,
+    // which is also what keeps label-named pre-migration ABox (no uid)
+    // outside the uid merge-scope (AC3).
+    const text = mdAsset("u1", "old");
+    const wm = await watermarkFor({ "a.md": text });
+    const editedBytes = new TextEncoder().encode(mdAsset("u1", "NEW"));
+    const result = await detectChanges({
+      localFiles: new Map([["a.md", editedBytes]]),
+      watermark: wm,
+      actualBaseTreeSha: valid(wm),
+      sha1: sha1Hex,
+    });
+    expect(result.kind).toBe("changes");
+    if (result.kind === "changes") {
+      expect(result.modified).toHaveLength(1);
+      expect(result.modified[0].path).toBe("a.md");
+      expect(result.modified[0].uid).toBeUndefined(); // opaque — no uid
+    }
+  });
+
   it("in-place uid edit (same path, different uid) → modified via path pass, not delete+add", async () => {
     const wm = await watermarkFor({ "a.md": mdAsset("u1") });
     const result = await detectChanges({

@@ -65,12 +65,35 @@ export type RestCommitTransport = (
   req: RestCommitRequest,
 ) => Promise<RestCommitResponse>;
 
+/**
+ * Binary file payload (ExoSync Phase C, VL#11 — attachments as plain git
+ * content, no LFS). Inline tree `content` is UTF-8-only, so binary blobs go
+ * through a per-file `POST git/blobs {content: base64, encoding: "base64"}`
+ * and enter the tree by `sha` reference instead.
+ */
+export interface BinaryFilePayload {
+  base64: string;
+}
+
+/** One file's content: UTF-8 text inline, or a base64 binary payload. */
+export type CommitFileContent = string | BinaryFilePayload;
+
+export function isBinaryPayload(
+  content: CommitFileContent,
+): content is BinaryFilePayload {
+  return typeof content !== "string";
+}
+
 export interface RestCreateCommitParams {
   owner: string;
   repo: string;
   branch: string;
-  /** Map of repo-relative path → file content. Non-empty. */
-  files: Map<string, string>;
+  /**
+   * Map of repo-relative path → file content. Non-empty. String values are
+   * committed inline (UTF-8); {@link BinaryFilePayload} values are uploaded
+   * as base64 blobs first (one extra API call per binary file).
+   */
+  files: Map<string, CommitFileContent>;
   message: string;
   /** Defaults to `https://api.github.com`. Trailing slash stripped. */
   baseURL?: string;
@@ -149,13 +172,43 @@ export async function restCreateCommit(
     );
   }
 
+  // Step 1.5 — upload binary blobs (Phase C). Inline tree `content` is
+  // UTF-8-only; binary payloads become blobs by sha. Uploaded sequentially
+  // through the same transport (rate-limit backoff applies when wrapped).
+  const blobShaByPath = new Map<string, string>();
+  for (const [path, content] of files) {
+    if (!isBinaryPayload(content)) continue;
+    const blobResp = await transport({
+      method: "POST",
+      url: `${baseURL}/repos/${o}/${r}/git/blobs`,
+      contentType: "application/json",
+      body: JSON.stringify({ content: content.base64, encoding: "base64" }),
+    });
+    const blobSha = readSha(blobResp?.json);
+    if (typeof blobSha !== "string" || blobSha.length === 0) {
+      throw new Error(
+        redact(`GitHub createCommit: blob create returned no sha for ${path}`),
+      );
+    }
+    blobShaByPath.set(path, blobSha);
+  }
+
   // Step 2 — create tree (recursive, multi-file atomic).
-  const tree = Array.from(files.entries()).map(([path, content]) => ({
-    path,
-    mode: "100644",
-    type: "blob",
-    content,
-  }));
+  const tree = Array.from(files.entries()).map(([path, content]) =>
+    isBinaryPayload(content)
+      ? {
+          path,
+          mode: "100644",
+          type: "blob",
+          sha: blobShaByPath.get(path),
+        }
+      : {
+          path,
+          mode: "100644",
+          type: "blob",
+          content,
+        },
+  );
   const treeResp = await transport({
     method: "POST",
     url: `${baseURL}/repos/${o}/${r}/git/trees`,

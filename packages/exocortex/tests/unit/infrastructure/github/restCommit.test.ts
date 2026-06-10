@@ -1,6 +1,7 @@
 import { describe, it, expect } from "@jest/globals";
 import {
   restCreateCommit,
+  type CommitFileContent,
   type RestCommitRequest,
   type RestCommitResponse,
   type RestCommitTransport,
@@ -398,5 +399,78 @@ describe("restCreateCommit (transport-agnostic core)", () => {
         message: "m",
       }),
     ).rejects.toThrow(/HTTP 404/);
+  });
+
+  // ---- Phase C (ExoSync C2, VL#11): binary payloads as plain git blobs ----
+
+  const BLOB_SHA = "1122334455667788990011223344556677889900";
+
+  function blobResponse(sha: string): RestCommitResponse {
+    return {
+      status: 201,
+      json: { sha, url: "https://api.github.com/repos/o/r/git/blobs/..." },
+    };
+  }
+
+  it("uploads binary payloads via POST git/blobs and references them by sha in the tree", async () => {
+    const { transport, calls } = sequencedTransport([
+      refResponse(BASE_SHA),
+      blobResponse(BLOB_SHA), // step 1.5 — binary blob upload
+      treeResponse(TREE_SHA),
+      commitResponse(COMMIT_SHA),
+      refResponse(COMMIT_SHA),
+    ]);
+    const pngBase64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]).toString(
+      "base64",
+    );
+
+    const sha = await restCreateCommit(transport, {
+      owner: "o",
+      repo: "r",
+      branch: "main",
+      files: new Map<string, CommitFileContent>([
+        ["docs/a.md", "hello"],
+        ["img/pic.png", { base64: pngBase64 }],
+      ]),
+      message: "binary commit",
+    });
+
+    expect(sha).toBe(COMMIT_SHA);
+    expect(calls).toHaveLength(5);
+
+    // Step 1.5 — POST git/blobs with the base64 payload.
+    expect(calls[1]).toMatchObject({
+      method: "POST",
+      url: "https://api.github.com/repos/o/r/git/blobs",
+      contentType: "application/json",
+    });
+    expect(JSON.parse(calls[1].body as string)).toEqual({
+      content: pngBase64,
+      encoding: "base64",
+    });
+
+    // Step 2 — tree mixes inline text content with the blob-sha reference;
+    // the binary entry must NOT carry inline `content` (UTF-8-only field).
+    const treeBody = JSON.parse(calls[2].body as string);
+    expect(treeBody.tree).toEqual([
+      { path: "docs/a.md", mode: "100644", type: "blob", content: "hello" },
+      { path: "img/pic.png", mode: "100644", type: "blob", sha: BLOB_SHA },
+    ]);
+  });
+
+  it("fails loud when the blob upload returns no sha", async () => {
+    const { transport } = sequencedTransport([
+      refResponse(BASE_SHA),
+      { status: 201, json: {} }, // malformed blob response
+    ]);
+    await expect(
+      restCreateCommit(transport, {
+        owner: "o",
+        repo: "r",
+        branch: "main",
+        files: new Map([["img/pic.png", { base64: "AAAA" }]]),
+        message: "m",
+      }),
+    ).rejects.toThrow(/blob create returned no sha for img\/pic\.png/);
   });
 });
