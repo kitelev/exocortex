@@ -425,7 +425,8 @@ export class ExocortexSettingTab extends PluginSettingTab {
    * Each non-empty line in the textarea is treated as a vault-relative
    * path-prefix. Files whose path starts with any of these prefixes are
    * excluded from RDF indexing AND SHACL-lite validation, so they never
-   * produce the "Skipping file with invariant violation" Notice.
+   * contribute to the aggregated "Skipped N files" indexing Notice
+   * (Issue #3468) or its per-file console log entries.
    *
    * The default `"09 Templates/"` matches Obsidian's conventional templates
    * folder, whose contents typically violate Exocortex invariants by design.
@@ -445,8 +446,8 @@ export class ExocortexSettingTab extends PluginSettingTab {
     desc.appendText(
       "Vault-relative folder prefixes whose files are excluded from the " +
         "cold-start RDF indexing walk and live-edit indexing. Files inside " +
-        "these folders do NOT trigger the \"Skipping file with invariant " +
-        "violation\" Notice, even when their frontmatter is incomplete by " +
+        "these folders do NOT count toward the \"Skipped N files\" " +
+        "indexing Notice, even when their frontmatter is incomplete by " +
         "design (for example, Obsidian template files). One prefix per " +
         "line; case-sensitive path-prefix match. A trailing slash is " +
         "auto-appended on save so a sibling folder sharing a name prefix " +

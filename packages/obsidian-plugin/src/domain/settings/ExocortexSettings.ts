@@ -154,8 +154,9 @@ export interface ExocortexSettings {
    * slash so a user-typed `"09 Templates"` cannot silently exclude
    * sibling folders like `"09 Templates Archive/"`. Excluded files never
    * enter `NoteToRDFConverter.convertVaultWithValidation`, so they
-   * produce no "Skipping file with invariant violation" Notices and no
-   * warn-log entries.
+   * produce no per-file "Skipping file with invariant violation" log
+   * entries and do not count toward the aggregated "Skipped N files"
+   * indexing Notice (Issue #3468).
    *
    * Default: `["09 Templates/"]` — Obsidian's conventional templates
    * folder, whose files are known to violate Exocortex invariants by
@@ -171,8 +172,8 @@ export interface ExocortexSettings {
    *   - `LazyAssetGraphLoader` (the per-render lazy walker) is NOT gated
    *     on this list. Opening an excluded-folder file directly may push
    *     its triples into the in-memory store, but `convertNote` does not
-   *     emit the "invariant violation" warn-log, so the user-facing
-   *     Notice stays silenced.
+   *     emit the "invariant violation" skip log, so the user-facing
+   *     indexing Notice stays silenced.
    */
   excludedFolders: string[];
   // RFC c7da0bca Phase 3c-3 — dropped `exocmdBindingsCacheEnabledOnMobile`
