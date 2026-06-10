@@ -598,6 +598,17 @@ jobs:
           # Visual tests run separately with --update-snapshots for CI
           npx playwright test -c packages/obsidian-plugin/playwright-ct.config.ts --grep-invert visual
 
+      # Issue #3464 — iPhone mobile-load E2E smoke. Module-evals the BUILT
+      # plugin bundle (produced by setup-node-pnpm run-build above) inside a
+      # real WebKit engine with iPhone emulation and a require-shim that
+      # throws on Node builtins — the closest CI-feasible reproduction of the
+      # Obsidian iOS load path (the closed-source iOS app cannot run in CI).
+      # Catches the v16.51.0 regression class: top-level `import ... from
+      # "node:*"` in plugin src → module-eval require → plugin fails to load
+      # on iOS. Empirically verified revert→fail / restore→pass.
+      - name: iPhone mobile-load smoke (WebKit, Issue #3464)
+        run: npx playwright test -c packages/obsidian-plugin/playwright-mobile-smoke.config.ts
+
       - name: Run visual regression tests (update snapshots if missing)
         run: |
           export NODE_OPTIONS="--max-old-space-size=4096"

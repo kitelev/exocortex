@@ -1,12 +1,10 @@
 // Node.js builtins required for Phase 5 apply staging dirs (RFC
 // 22b50a17) — staging dirs live in `os.tmpdir()` OUTSIDE the vault so
-// Obsidian's vault.adapter API cannot reach them. The `pullAssetSpace`
-// entry point is guarded by `Platform.isMobile` throw — on mobile the
-// code never executes (Phase 5 is desktop-only per RFC scope).
-/* eslint-disable no-restricted-imports, import/no-nodejs-modules */
-import { promises as fs } from "node:fs";
-import * as path from "node:path";
-/* eslint-enable no-restricted-imports, import/no-nodejs-modules */
+// Obsidian's vault.adapter API cannot reach them. Accessed LAZILY inside
+// `pullAssetSpace` (which is guarded by `Platform.isMobile` throw) — a
+// top-level node:* import would crash the whole bundle on mobile load
+// (Issue #3464).
+import { nodeFsPromises, nodePath } from "./lazyNodeModules";
 import type { App, TFile } from "obsidian";
 import { Platform } from "obsidian";
 import type { INotificationService } from "exocortex";
@@ -304,6 +302,10 @@ export class AssetSpaceManager {
       throw new Error("pullAssetSpace: asGitUrl is required");
     }
 
+    // Lazy node:* access — only reached on desktop (mobile threw above).
+    const fs = nodeFsPromises();
+    const path = nodePath();
+
     // Validate URL shape + extract owner/repo. validateRepoURL throws on
     // path traversal / scheme injection / non-github hosts.
     GitHubRestClient.validateRepoURL(asGitUrl);
@@ -376,9 +378,7 @@ export class AssetSpaceManager {
       return { asUid, stagingPath, sha };
     } catch (err) {
       // Best-effort cleanup of the partially-populated staging dir.
-      await this.stagingTracker
-        .release(stagingPath)
-        .catch(() => undefined);
+      await this.stagingTracker.release(stagingPath).catch(() => undefined);
       throw err;
     }
   }
@@ -482,24 +482,29 @@ export class AssetSpaceManager {
       // Dual-read `_source ?? _git` (RFC 01a83de8 v10 T3). The new
       // `exo__AssetSpace_source` supersedes legacy `_git`; both feed the same
       // `info.git` slot during the transition (Phase 1b retires `_git`).
-      const source = typeof fm["exo__AssetSpace_source"] === "string"
-        ? (fm["exo__AssetSpace_source"] as string)
-        : "";
-      const git = source || (typeof fm["exo__AssetSpace_git"] === "string"
-        ? (fm["exo__AssetSpace_git"] as string)
-        : "");
-      const namespace = typeof fm["exo__AssetSpace_namespace"] === "string"
-        ? (fm["exo__AssetSpace_namespace"] as string)
-        : "";
+      const source =
+        typeof fm["exo__AssetSpace_source"] === "string"
+          ? (fm["exo__AssetSpace_source"] as string)
+          : "";
+      const git =
+        source ||
+        (typeof fm["exo__AssetSpace_git"] === "string"
+          ? (fm["exo__AssetSpace_git"] as string)
+          : "");
+      const namespace =
+        typeof fm["exo__AssetSpace_namespace"] === "string"
+          ? (fm["exo__AssetSpace_namespace"] as string)
+          : "";
       if (!git || !namespace) return null;
       // RFC 01a83de8 Phase 1b T3 — folder = AssetSpace mount path derived from
       // `_source` (`assetspaces/<owner>/<repo>`), not the descriptor file's
       // parent folder (post-migration the descriptor lives in the registry).
       // parentFolder remains a defensive fallback for unresolvable sources.
       const folderName = derivePath(git) ?? parentFolder(file.path);
-      const lastPulledSha = typeof fm["exo__AssetSpace_lastPulledSha"] === "string"
-        ? (fm["exo__AssetSpace_lastPulledSha"] as string)
-        : undefined;
+      const lastPulledSha =
+        typeof fm["exo__AssetSpace_lastPulledSha"] === "string"
+          ? (fm["exo__AssetSpace_lastPulledSha"] as string)
+          : undefined;
       return { uid: asUid, git, namespace, folderName, lastPulledSha };
     }
     return null;
@@ -600,7 +605,9 @@ export function parseGitHubURL(url: string): { owner: string; repo: string } {
  */
 export function discoverWrapperDir(entries: ExtractedTarFile[]): string {
   if (entries.length === 0) {
-    throw new Error("discoverWrapperDir: cannot discover wrapper of empty entry list");
+    throw new Error(
+      "discoverWrapperDir: cannot discover wrapper of empty entry list",
+    );
   }
   const first = entries[0].path;
   const slashIdx = first.indexOf("/");
