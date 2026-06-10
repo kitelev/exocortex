@@ -35,9 +35,11 @@
 
 import {
   restCreateCommit,
+  type CommitFileContent,
   type RestCommitTransport,
 } from "../../infrastructure/github/restCommit";
 import {
+  getBlobBytes,
   getBlobText,
   getCommitInfo,
   getHeadSha,
@@ -50,6 +52,9 @@ import { isAuthError } from "./CredentialStore";
 import { scanForSecrets } from "./secretScan";
 import { withRateLimitBackoff, type BackoffOptions } from "./transportBackoff";
 import {
+  DEFAULT_MAX_FILE_BYTES,
+  contentEquals,
+  isFileSpaceSyncablePath,
   isSyncablePath,
   type AssetChange,
   type ChangeDetectionResult,
@@ -60,6 +65,7 @@ import {
   type QuarantinePort,
   type RepoSyncResult,
   type Sha1Fn,
+  type SyncContent,
   type SyncRepoSpec,
   type WatermarkFileEntry,
   type WatermarkRecord,
@@ -106,6 +112,73 @@ export interface SyncEngineDeps {
    * with `withRateLimitBackoff`; inject `sleep`/`random` in tests.
    */
   backoff?: BackoffOptions;
+  /**
+   * Per-file size cap for file-mode repos (Phase C). Oversized files are
+   * excluded symmetrically with a warning. Default
+   * {@link DEFAULT_MAX_FILE_BYTES}.
+   */
+  maxFileBytes?: number;
+}
+
+/**
+ * Mode-scoped helpers (Phase C). Computed ONCE per repo in `syncLocked`
+ * and threaded through — the syncable predicate MUST be applied
+ * identically at every tree/snapshot site (disk snapshot, remote diff,
+ * bootstrap, watermark build, race-window check); an asymmetric filter
+ * would invert exclusions into phantom adds/deletes.
+ */
+interface ModeOps {
+  fileMode: boolean;
+  syncable: (path: string) => boolean;
+  /** Remote tree entry filter: syncable path AND under the size cap. */
+  treeFilter: (e: RemoteTreeEntry) => boolean;
+}
+
+/** UTF-8 strict decode — `null` for content that is not valid UTF-8. */
+function decodeUtf8Strict(bytes: Uint8Array): string | null {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/** Engine content → write-primitive content (bytes go base64). */
+function toCommitContent(content: SyncContent): CommitFileContent {
+  return typeof content === "string"
+    ? content
+    : { base64: Buffer.from(content).toString("base64") };
+}
+
+/**
+ * Byte-exact port access with a LOUD failure (Phase C port contract). The
+ * engine pre-flights the methods' presence before any mutation; these
+ * guards are the type-safe second line — a throw here surfaces as the
+ * repo's `error` result, never silent corruption.
+ */
+async function readBinaryStrict(
+  port: LocalFilesPort,
+  path: string,
+): Promise<Uint8Array> {
+  if (port.readBinary === undefined) {
+    throw new Error(
+      "LocalFilesPort.readBinary is required for file-mode sync (Phase C)",
+    );
+  }
+  return port.readBinary(path);
+}
+
+async function writeBinaryStrict(
+  port: LocalFilesPort,
+  path: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  if (port.writeBinary === undefined) {
+    throw new Error(
+      "LocalFilesPort.writeBinary is required for file-mode sync (Phase C)",
+    );
+  }
+  return port.writeBinary(path, bytes);
 }
 
 /** Reject absolute, backslash, empty-segment, `.`/`..` paths (zip-slip guard). */
@@ -147,7 +220,8 @@ interface RemoteChange {
   kind: "change" | "delete";
   /** For `change`: blob SHA + fetched content + parsed uid. */
   blobSha?: string;
-  content?: string;
+  /** Text in asset mode; raw bytes in file mode (Phase C). */
+  content?: SyncContent;
   uid?: string;
 }
 
@@ -210,7 +284,7 @@ function applyWatermarkPins(
 interface PinnedLocalChanges {
   localChanges: AssetChange[];
   localDeletedPaths: Set<string>;
-  pushFilesAll: Map<string, string>;
+  pushFilesAll: Map<string, SyncContent>;
 }
 
 /** One local change overlapping one-or-more remote changes (merge input). */
@@ -227,7 +301,20 @@ interface MergeResolution {
   mergedFiles: Map<string, string>;
   /** Merged contents to write to DISK (differ from the local copy). */
   mergedWrites: RemoteChange[];
+  /**
+   * Unresolved conflicts (D17): flushed to the sink AND pinned in the
+   * watermark so they re-derive every sync until the user resolves them.
+   */
   quarantineEntries: QuarantineEntry[];
+  /**
+   * Phase C file-mode remote-wins copies (D18): the conflict is ALREADY
+   * resolved on disk (remote version applied; losing local version inside
+   * the entry). Flushed to the sink for durability but NOT pinned —
+   * pinning would re-derive a settled conflict and the next sync's
+   * convergence would auto-`markResolved` the record before the user saw
+   * it (advisor C2).
+   */
+  resolvedQuarantineEntries: QuarantineEntry[];
   mergedCount: number;
   warnings: string[];
 }
@@ -239,7 +326,7 @@ type PushLoopOutcome =
       kind: "retry-exhausted";
       detail: string;
       /** The contended payload of the LAST attempt — terminal-quarantine input (D16→D17). */
-      pushFiles: Map<string, string>;
+      pushFiles: Map<string, SyncContent>;
       /** Last iteration's merge resolution — its quarantine entries must not be lost. */
       merge: MergeResolution;
     }
@@ -250,7 +337,7 @@ type PushLoopOutcome =
       pushedSha: string | undefined;
       applyWrites: RemoteChange[];
       applyDeletes: RemoteChange[];
-      pushFiles: Map<string, string>;
+      pushFiles: Map<string, SyncContent>;
       merge: MergeResolution;
     };
 
@@ -258,6 +345,7 @@ const EMPTY_MERGE: MergeResolution = {
   mergedFiles: new Map(),
   mergedWrites: [],
   quarantineEntries: [],
+  resolvedQuarantineEntries: [],
   mergedCount: 0,
   warnings: [],
 };
@@ -293,6 +381,83 @@ export class SyncEngine {
       deferredDeletes: [],
       detail:
         "another sync operation is in progress (D11 guard) — retry after it finishes",
+    };
+  }
+
+  /**
+   * Mode-scoped predicate set, computed ONCE per repo (advisor H2: the
+   * SAME predicate must gate all six tree/snapshot sites symmetrically).
+   */
+  private modeOps(spec: SyncRepoSpec): ModeOps {
+    const fileMode = spec.spaceKind === "file";
+    const syncable = fileMode ? isFileSpaceSyncablePath : isSyncablePath;
+    const maxBytes = this.deps.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
+    return {
+      fileMode,
+      syncable,
+      treeFilter: (e: RemoteTreeEntry): boolean =>
+        syncable(e.path) &&
+        // Size cap applies in file mode only; entries without a reported
+        // size pass (their blob fetch is the authority).
+        (!fileMode || e.size === undefined || e.size <= maxBytes),
+    };
+  }
+
+  /**
+   * Phase C file-mode first-sync base (advisor C1): a synthetic watermark
+   * whose file set is the disk∩head intersection of ALREADY-IDENTICAL
+   * blobs. Fed into the normal cycle, this makes every divergence derive
+   * naturally: local-only files → adds (pushed), remote-only/differing
+   * files → remote changes (pulled, or remote-wins + quarantine on
+   * overlap). NOT persisted — the real watermark is written by
+   * `advanceWatermark` at the end of the successful cycle.
+   */
+  private async buildFileModeFirstSyncBase(
+    spec: SyncRepoSpec,
+    disk: ReadonlyMap<string, SyncContent>,
+    mode: ModeOps,
+    warnings: string[],
+  ): Promise<WatermarkRecord> {
+    const head = await getHeadSha(
+      this.transport,
+      spec.owner,
+      spec.repo,
+      spec.branch,
+      this.deps.baseURL,
+    );
+    const headCommit = await getCommitInfo(
+      this.transport,
+      spec.owner,
+      spec.repo,
+      head,
+      this.deps.baseURL,
+    );
+    const headTree = (
+      await getTree(
+        this.transport,
+        spec.owner,
+        spec.repo,
+        headCommit.treeSha,
+        this.deps.baseURL,
+      )
+    ).filter(mode.treeFilter);
+
+    const files: WatermarkFileEntry[] = [];
+    for (const entry of headTree) {
+      const content = disk.get(entry.path);
+      if (content === undefined) continue;
+      if ((await gitBlobSha(content, this.deps.sha1)) === entry.blobSha) {
+        files.push({ path: entry.path, blobSha: entry.blobSha });
+      }
+    }
+    warnings.push(
+      `first-sync (file mode): synthetic base from ${files.length} already-identical file(s) at head ${head} — divergence resolves through the remote-wins layer (D22)`,
+    );
+    return {
+      lastSyncedSha: head,
+      rootTreeSha: headCommit.treeSha,
+      files,
+      spaceKind: "file",
     };
   }
 
@@ -357,15 +522,60 @@ export class SyncEngine {
         return result("skipped-not-materialized");
       }
 
+      const mode = this.modeOps(spec);
       const localFiles = this.deps.localFilesFor(spec);
-      const disk = new Map<string, string>();
-      for (const path of (await localFiles.list()).filter(isSyncablePath)) {
-        disk.set(path, await localFiles.read(path));
+      if (
+        mode.fileMode &&
+        (localFiles.readBinary === undefined ||
+          localFiles.writeBinary === undefined)
+      ) {
+        // Loud, not silent: a string round-trip would corrupt binary
+        // content, so a file-mode repo without byte-exact port methods
+        // must never sync (Phase C port contract).
+        return result("error", {
+          detail:
+            "file-mode repo requires a LocalFilesPort with readBinary/writeBinary — refusing to sync through the text-only port (binary would corrupt)",
+        });
       }
 
-      const watermark = await this.deps.watermarkStore.get(spec.repoKey);
+      const maxBytes = this.deps.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
+      const disk = new Map<string, SyncContent>();
+      for (const path of (await localFiles.list()).filter(mode.syncable)) {
+        if (mode.fileMode) {
+          const bytes = await readBinaryStrict(localFiles, path);
+          if (bytes.byteLength > maxBytes) {
+            warnings.push(
+              `skipped oversized file ${path} (${bytes.byteLength} bytes > ${maxBytes} cap) — excluded from sync symmetrically (Phase C size cap)`,
+            );
+            continue;
+          }
+          disk.set(path, bytes);
+        } else {
+          disk.set(path, await localFiles.read(path));
+        }
+      }
+
+      let watermark = await this.deps.watermarkStore.get(spec.repoKey);
+      let syntheticFirstSyncBase = false;
       if (watermark === null) {
-        return await this.bootstrapWatermark(spec, disk, warnings, result);
+        if (!mode.fileMode) {
+          return await this.bootstrapWatermark(spec, disk, warnings, result);
+        }
+        syntheticFirstSyncBase = true;
+        // Phase C file-mode first-sync (advisor C1): there is no exact-match
+        // requirement — divergence resolves through the remote-wins layer,
+        // which IS the file-mode merge/quarantine layer (D22-compatible).
+        // The synthetic base = the intersection of disk and remote head
+        // where blobs already match; everything else derives as local adds
+        // (pushed — may re-create files another device deleted; data
+        // resurrection is the accepted first-sync trade-off, M1 zero-loss
+        // wins) or remote changes (pulled / conflicting → remote-wins).
+        watermark = await this.buildFileModeFirstSyncBase(
+          spec,
+          disk,
+          mode,
+          warnings,
+        );
       }
 
       const detection = await detectChanges({
@@ -394,6 +604,8 @@ export class SyncEngine {
         pinned,
         disk,
         warnings,
+        mode,
+        syntheticFirstSyncBase,
       );
       if (loop.kind === "conflict") {
         return result("conflict", { detail: loop.detail });
@@ -414,7 +626,11 @@ export class SyncEngine {
           loop.merge.quarantineEntries,
           disk,
         );
-        const entries = [...loop.merge.quarantineEntries, ...terminal];
+        const entries = [
+          ...loop.merge.quarantineEntries,
+          ...loop.merge.resolvedQuarantineEntries,
+          ...terminal,
+        ];
         await this.flushQuarantine(entries, warnings);
         return result("retry-exhausted", {
           detail: loop.detail,
@@ -427,8 +643,14 @@ export class SyncEngine {
       warnings.push(...merge.warnings);
 
       // Quarantine sink fires ONCE, after the retry loop settled (D17). The
-      // entries' paths are pinned below so the conflict re-derives next sync.
-      await this.flushQuarantine(merge.quarantineEntries, warnings);
+      // UNRESOLVED entries' paths are pinned below so the conflict
+      // re-derives next sync; remote-wins RESOLVED entries (file mode) are
+      // flushed for durability but never pinned (advisor C2 — a pin would
+      // auto-markResolved the record on the next convergent sync).
+      await this.flushQuarantine(
+        [...merge.quarantineEntries, ...merge.resolvedQuarantineEntries],
+        warnings,
+      );
 
       // No-op fast path: nothing pushed, head unmoved, nothing to apply —
       // the watermark is already exact; skip the head-tree fetch and the
@@ -442,7 +664,12 @@ export class SyncEngine {
         applyDeletes.length === 0 &&
         merge.mergedWrites.length === 0 &&
         merge.quarantineEntries.length === 0 &&
-        (watermark.pinnedPaths?.length ?? 0) === 0
+        merge.resolvedQuarantineEntries.length === 0 &&
+        (watermark.pinnedPaths?.length ?? 0) === 0 &&
+        // First-sync synthetic base (file mode) must still PERSIST the
+        // watermark even when nothing changed — otherwise every sync
+        // re-runs first-sync discovery.
+        !syntheticFirstSyncBase
       ) {
         return result("synced");
       }
@@ -464,6 +691,7 @@ export class SyncEngine {
           newCommit.parents[0],
           pushFiles,
           warnings,
+          mode,
         );
         // Do NOT absorb the concurrent commit into the watermark: its changes
         // were never examined nor written to disk, and a watermark built from
@@ -479,7 +707,9 @@ export class SyncEngine {
           pushedSha,
           pushedCount: pushFiles.size,
           mergedCount: merge.mergedCount,
-          quarantinedCount: merge.quarantineEntries.length,
+          quarantinedCount:
+            merge.quarantineEntries.length +
+            merge.resolvedQuarantineEntries.length,
         });
       }
 
@@ -510,6 +740,7 @@ export class SyncEngine {
         watermark,
         pinnedPaths,
         detection.diskBlobShas,
+        mode,
       );
 
       // A pin that existed on the PREVIOUS watermark and cleared in this
@@ -522,7 +753,9 @@ export class SyncEngine {
         pulledCount,
         pushedCount: pushFiles.size,
         mergedCount: merge.mergedCount,
-        quarantinedCount: merge.quarantineEntries.length,
+        quarantinedCount:
+          merge.quarantineEntries.length +
+          merge.resolvedQuarantineEntries.length,
       });
     } catch (err) {
       const redact = this.deps.redact ?? ((m: string): string => m);
@@ -591,9 +824,9 @@ export class SyncEngine {
   private async buildTerminalQuarantineEntries(
     spec: SyncRepoSpec,
     watermark: WatermarkRecord,
-    pushFiles: Map<string, string>,
+    pushFiles: Map<string, SyncContent>,
     alreadyQuarantined: QuarantineEntry[],
-    disk: ReadonlyMap<string, string>,
+    disk: ReadonlyMap<string, SyncContent>,
   ): Promise<QuarantineEntry[]> {
     const covered = new Set(alreadyQuarantined.map((e) => e.path));
     const remoteByPath = new Map<string, string>();
@@ -644,15 +877,20 @@ export class SyncEngine {
       const diskContent = disk.get(path);
       const localContent = diskContent ?? content;
       const wasMergedProposal =
-        diskContent !== undefined && diskContent !== content;
-      const uid = extractAssetUid(localContent);
+        diskContent !== undefined && !contentEquals(diskContent, content);
+      const uid =
+        typeof localContent === "string"
+          ? extractAssetUid(localContent)
+          : undefined;
       const remoteContent = remoteByPath.get(path);
       entries.push({
         repoKey: spec.repoKey,
         path,
         ...(uid !== undefined ? { uid } : {}),
         reason: `non-fast-forward push failed after ${this.deps.maxPushRetries ?? DEFAULT_MAX_PUSH_RETRIES} retries (D16) — a concurrent writer keeps moving ${spec.branch}; base recoverable from git history at ${watermark.lastSyncedSha}${wasMergedProposal ? "; the contended push payload was a merged proposal (never applied to disk) — the merge re-derives next sync" : ""}`,
-        localContent,
+        ...(typeof localContent === "string"
+          ? { localContent }
+          : { localContentBytes: localContent }),
         ...(remoteContent !== undefined ? { remoteContent } : {}),
       });
     }
@@ -718,7 +956,7 @@ export class SyncEngine {
    */
   private pinLocalChanges(
     detection: Extract<ChangeDetectionResult, { kind: "changes" }>,
-    disk: ReadonlyMap<string, string>,
+    disk: ReadonlyMap<string, SyncContent>,
     warnings: string[],
     deferredDeletes: string[],
   ): PinnedLocalChanges {
@@ -752,7 +990,7 @@ export class SyncEngine {
       ...detection.deleted.map((d) => ({ ...d })),
     ];
     const localDeletedPaths = new Set(detection.deleted.map((d) => d.path));
-    const pushFilesAll = new Map<string, string>();
+    const pushFilesAll = new Map<string, SyncContent>();
     for (const c of pushable) {
       const content = disk.get(c.path);
       if (content !== undefined) pushFilesAll.set(c.path, content);
@@ -769,8 +1007,10 @@ export class SyncEngine {
     spec: SyncRepoSpec,
     watermark: WatermarkRecord,
     pinned: PinnedLocalChanges,
-    disk: ReadonlyMap<string, string>,
+    disk: ReadonlyMap<string, SyncContent>,
     warnings: string[],
+    mode: ModeOps,
+    forceRemoteDiff = false,
   ): Promise<PushLoopOutcome> {
     const { localChanges, localDeletedPaths, pushFilesAll } = pinned;
     const maxRetries = this.deps.maxPushRetries ?? DEFAULT_MAX_PUSH_RETRIES;
@@ -779,7 +1019,7 @@ export class SyncEngine {
     let pushedSha: string | undefined;
     let applyWrites: RemoteChange[] = [];
     let applyDeletes: RemoteChange[] = [];
-    let pushFiles = new Map<string, string>();
+    let pushFiles = new Map<string, SyncContent>();
     let merge: MergeResolution = EMPTY_MERGE;
 
     for (;;) {
@@ -799,13 +1039,20 @@ export class SyncEngine {
 
       // Pinned paths diverge from the lastSyncedSha tree by construction —
       // their never-applied remote change must re-derive even when the head
-      // SHA has not moved since the pinning sync.
+      // SHA has not moved since the pinning sync. A synthetic first-sync
+      // base (file mode) is ALSO a deliberate subset of the head tree —
+      // its remote-only/differing files must derive as remote changes.
       const hasPins = (watermark.pinnedPaths?.length ?? 0) > 0;
-      if (examinedHead !== watermark.lastSyncedSha || hasPins) {
+      if (
+        examinedHead !== watermark.lastSyncedSha ||
+        hasPins ||
+        forceRemoteDiff
+      ) {
         const remote = await this.collectRemoteChanges(
           spec,
           watermark,
           examinedHead,
+          mode,
         );
         const verdict = this.matchLocalVsRemote(
           localChanges,
@@ -815,32 +1062,58 @@ export class SyncEngine {
           convergedPushPaths,
         );
         if (verdict.conflicts.length > 0) {
-          if (this.deps.mergeLayer === undefined) {
+          if (mode.fileMode) {
+            // Phase C file mode (D18): opaque blobs never merge — every
+            // conflict resolves remote-wins deterministically, with the
+            // losing LOCAL version preserved in quarantine. Resolved
+            // in-place: remote side flows into applyWrites/applyDeletes,
+            // nothing reaches the A2 merge layer.
+            merge = this.resolveFileModeConflicts(
+              spec,
+              verdict.conflicts,
+              disk,
+              verdict.applyWrites,
+              verdict.applyDeletes,
+            );
+          } else if (this.deps.mergeLayer === undefined) {
             return {
               kind: "conflict",
               detail: `overlapping change on ${verdict.conflicts[0].desc} — merge layer (A2/A3) required; nothing pushed, nothing written`,
             };
+          } else {
+            merge = await this.resolveMergeConflicts(
+              spec,
+              watermark,
+              verdict.conflicts,
+              disk,
+            );
           }
-          merge = await this.resolveMergeConflicts(
-            spec,
-            watermark,
-            verdict.conflicts,
-            disk,
-          );
         }
         applyWrites = verdict.applyWrites;
         applyDeletes = verdict.applyDeletes;
       }
 
-      pushFiles = new Map([
+      pushFiles = new Map<string, SyncContent>([
         ...[...pushFilesAll].filter(([p]) => !convergedPushPaths.has(p)),
         ...merge.mergedFiles,
       ]);
       if (pushFiles.size === 0) break;
 
       // R5 secret-scan — refuse the WHOLE push (a partial set could ship an
-      // inconsistent asset graph). Findings carry path+kind, never the secret.
-      const findings = scanForSecrets(pushFiles);
+      // inconsistent asset graph). Findings carry path+kind, never the
+      // secret. File mode: UTF-8-decodable contents (plain notes inside a
+      // FileSpace) still scan; true binary (non-UTF-8) is skipped — secret
+      // patterns are text-shaped (R5 residual, documented).
+      const scannable = new Map<string, string>();
+      for (const [p, c] of pushFiles) {
+        if (typeof c === "string") {
+          scannable.set(p, c);
+        } else {
+          const text = decodeUtf8Strict(c);
+          if (text !== null) scannable.set(p, text);
+        }
+      }
+      const findings = scanForSecrets(scannable);
       if (findings.length > 0) {
         return {
           kind: "secret-detected",
@@ -855,7 +1128,9 @@ export class SyncEngine {
           owner: spec.owner,
           repo: spec.repo,
           branch: spec.branch,
-          files: pushFiles,
+          files: new Map(
+            [...pushFiles].map(([p, c]) => [p, toCommitContent(c)]),
+          ),
           message:
             this.deps.commitMessage?.(spec, pushFiles.size) ??
             `chore(exosync): sync ${pushFiles.size} file(s)`,
@@ -904,7 +1179,7 @@ export class SyncEngine {
     spec: SyncRepoSpec,
     watermark: WatermarkRecord,
     conflicts: ConflictGroup[],
-    disk: ReadonlyMap<string, string>,
+    disk: ReadonlyMap<string, SyncContent>,
   ): Promise<MergeResolution> {
     const mergeLayer = this.deps.mergeLayer;
     if (mergeLayer === undefined) return EMPTY_MERGE;
@@ -915,23 +1190,29 @@ export class SyncEngine {
     const warnings: string[] = [];
     let mergedCount = 0;
 
+    // Asset-mode invariant: every disk/remote content here is text — the
+    // merge layer never sees file-mode repos (their conflicts resolve in
+    // `resolveFileModeConflicts`). The guard narrows the type.
+    const asText = (c: SyncContent | undefined): string | undefined =>
+      typeof c === "string" ? c : undefined;
+
     const entry = (
       group: ConflictGroup,
       reason: string,
       base?: string,
-    ): QuarantineEntry => ({
-      repoKey: spec.repoKey,
-      path: group.local.path,
-      ...(group.local.uid !== undefined ? { uid: group.local.uid } : {}),
-      reason,
-      ...(base !== undefined ? { baseContent: base } : {}),
-      ...(disk.has(group.local.path)
-        ? { localContent: disk.get(group.local.path) }
-        : {}),
-      ...(group.remotes[0]?.content !== undefined
-        ? { remoteContent: group.remotes[0].content }
-        : {}),
-    });
+    ): QuarantineEntry => {
+      const localText = asText(disk.get(group.local.path));
+      const remoteText = asText(group.remotes[0]?.content);
+      return {
+        repoKey: spec.repoKey,
+        path: group.local.path,
+        ...(group.local.uid !== undefined ? { uid: group.local.uid } : {}),
+        reason,
+        ...(base !== undefined ? { baseContent: base } : {}),
+        ...(localText !== undefined ? { localContent: localText } : {}),
+        ...(remoteText !== undefined ? { remoteContent: remoteText } : {}),
+      };
+    };
 
     for (const group of conflicts) {
       const baseEntry =
@@ -962,14 +1243,13 @@ export class SyncEngine {
       }
       const remote = group.remotes[0];
 
+      const localText = asText(disk.get(group.local.path));
       const decision = await mergeLayer.resolve({
         path: group.local.path,
         ...(group.local.uid !== undefined ? { uid: group.local.uid } : {}),
         ...(base !== undefined ? { base } : {}),
-        ...(disk.has(group.local.path)
-          ? { local: disk.get(group.local.path) }
-          : {}),
-        ...(remote.kind === "change" && remote.content !== undefined
+        ...(localText !== undefined ? { local: localText } : {}),
+        ...(remote.kind === "change" && typeof remote.content === "string"
           ? { remote: remote.content }
           : {}),
       });
@@ -1002,7 +1282,92 @@ export class SyncEngine {
       }
     }
 
-    return { mergedFiles, mergedWrites, quarantineEntries, mergedCount, warnings };
+    return {
+      mergedFiles,
+      mergedWrites,
+      quarantineEntries,
+      resolvedQuarantineEntries: [],
+      mergedCount,
+      warnings,
+    };
+  }
+
+  /**
+   * Phase C file-mode conflict policy (D18): deterministic REMOTE-WINS.
+   * Opaque blobs cannot merge; timestamps are unavailable (no mtime in the
+   * port, no per-path commit dates without extra API calls), so "last
+   * write" is defined by the shared git timeline — the version that
+   * reached the remote won. Crucially, the losing side is the LOCAL
+   * version, which exists nowhere else — it is preserved as a quarantine
+   * entry with byte-exact content (AC2: nothing is lost), while the remote
+   * version is already durable in git history.
+   *
+   * Matrix:
+   *  - local change vs remote change → remote lands on disk, local copy →
+   *    quarantine.
+   *  - local change vs remote delete → file deleted locally, local copy →
+   *    quarantine.
+   *  - local delete  vs remote change → remote restored on disk; nothing
+   *    to quarantine (the local side has no content to lose).
+   *
+   * Entries are RESOLVED (`resolvedQuarantineEntries`): flushed for
+   * durability, never pinned (advisor C2 — a pin would re-derive a settled
+   * conflict and auto-`markResolved` the record on the next sync).
+   *
+   * Convergence: every device accepts the remote side, so all replicas
+   * settle on the same bytes without ping-ponging pushes.
+   */
+  private resolveFileModeConflicts(
+    spec: SyncRepoSpec,
+    conflicts: ConflictGroup[],
+    disk: ReadonlyMap<string, SyncContent>,
+    applyWrites: RemoteChange[],
+    applyDeletes: RemoteChange[],
+  ): MergeResolution {
+    const resolvedQuarantineEntries: QuarantineEntry[] = [];
+    const warnings: string[] = [];
+
+    for (const group of conflicts) {
+      if (group.remotes.length > 1) {
+        // Unreachable by construction: file-mode entries carry no uid and
+        // no rename basePath, so remote candidates match by path only
+        // (≤ 1). Defensive: take the first, surface the anomaly.
+        warnings.push(
+          `file-mode conflict on ${group.local.path} unexpectedly overlaps ${group.remotes.length} remote changes — resolving against the first`,
+        );
+      }
+      const remote = group.remotes[0];
+      const localContent = disk.get(group.local.path);
+
+      if (remote.kind === "change") {
+        applyWrites.push(remote);
+      } else {
+        applyDeletes.push(remote);
+      }
+
+      if (group.localIsDelete || localContent === undefined) {
+        // Local delete vs remote change: restoring the remote loses
+        // nothing — no quarantine entry.
+        continue;
+      }
+      resolvedQuarantineEntries.push({
+        repoKey: spec.repoKey,
+        path: group.local.path,
+        reason: `file-mode remote-wins (D18): remote ${remote.kind === "change" ? `version ${remote.blobSha}` : "delete"} applied; this is the losing LOCAL version, preserved byte-exact`,
+        ...(typeof localContent === "string"
+          ? { localContent }
+          : { localContentBytes: localContent }),
+      });
+    }
+
+    return {
+      mergedFiles: new Map(),
+      mergedWrites: [],
+      quarantineEntries: [],
+      resolvedQuarantineEntries,
+      mergedCount: 0,
+      warnings,
+    };
   }
 
   /**
@@ -1020,18 +1385,36 @@ export class SyncEngine {
    */
   private async applyRemoteChanges(
     localFiles: LocalFilesPort,
-    disk: ReadonlyMap<string, string>,
+    disk: ReadonlyMap<string, SyncContent>,
     applyWrites: RemoteChange[],
     applyDeletes: RemoteChange[],
     warnings: string[],
   ): Promise<{ pulledCount: number; pinnedPaths: Set<string> }> {
     let pulledCount = 0;
     const pinnedPaths = new Set<string>();
-    const tryRead = async (path: string): Promise<string | undefined> => {
+    // TOCTOU re-read matches the snapshot's representation: a byte snapshot
+    // re-reads bytes, a text snapshot re-reads text — `contentEquals`
+    // compares within the representation.
+    const tryRead = async (
+      path: string,
+      asBytes: boolean,
+    ): Promise<SyncContent | undefined> => {
       try {
-        return await localFiles.read(path);
+        return asBytes
+          ? await readBinaryStrict(localFiles, path)
+          : await localFiles.read(path);
       } catch {
         return undefined;
+      }
+    };
+    const writeContent = async (
+      path: string,
+      content: SyncContent,
+    ): Promise<void> => {
+      if (typeof content === "string") {
+        await localFiles.write(path, content);
+      } else {
+        await writeBinaryStrict(localFiles, path, content);
       }
     };
     for (const w of applyWrites) {
@@ -1041,15 +1424,19 @@ export class SyncEngine {
         pinnedPaths.add(w.path);
         continue;
       }
-      const current = await tryRead(w.path);
-      if (current !== disk.get(w.path)) {
+      const snapshot = disk.get(w.path);
+      const current = await tryRead(
+        w.path,
+        typeof (snapshot ?? w.content) !== "string",
+      );
+      if (!contentEquals(current, snapshot)) {
         warnings.push(
           `pull-apply skipped: ${w.path} changed on disk mid-sync (TOCTOU) — remote change re-derives next sync`,
         );
         pinnedPaths.add(w.path);
         continue;
       }
-      await localFiles.write(w.path, w.content);
+      await writeContent(w.path, w.content);
       pulledCount++;
     }
     for (const d of applyDeletes) {
@@ -1058,9 +1445,10 @@ export class SyncEngine {
         pinnedPaths.add(d.path);
         continue;
       }
-      if (disk.has(d.path)) {
-        const current = await tryRead(d.path);
-        if (current !== undefined && current !== disk.get(d.path)) {
+      const snapshot = disk.get(d.path);
+      if (snapshot !== undefined) {
+        const current = await tryRead(d.path, typeof snapshot !== "string");
+        if (current !== undefined && !contentEquals(current, snapshot)) {
           warnings.push(
             `pull-delete skipped: ${d.path} changed on disk mid-sync (TOCTOU) — delete-vs-modify re-derives next sync`,
           );
@@ -1086,11 +1474,12 @@ export class SyncEngine {
     spec: SyncRepoSpec,
     newHead: string,
     newTreeSha: string,
-    disk: ReadonlyMap<string, string>,
+    disk: ReadonlyMap<string, SyncContent>,
     applyWrites: RemoteChange[],
     previous: WatermarkRecord,
     pinnedPaths: ReadonlySet<string>,
     diskBlobShas: ReadonlyMap<string, string>,
+    mode: ModeOps,
   ): Promise<void> {
     const newTree = (
       await getTree(
@@ -1100,7 +1489,7 @@ export class SyncEngine {
         newTreeSha,
         this.deps.baseURL,
       )
-    ).filter((e) => isSyncablePath(e.path));
+    ).filter(mode.treeFilter);
     const files = applyWatermarkPins(
       await this.buildWatermarkFiles(
         spec,
@@ -1109,6 +1498,7 @@ export class SyncEngine {
         applyWrites,
         previous,
         diskBlobShas,
+        mode,
       ),
       previous,
       pinnedPaths,
@@ -1118,6 +1508,9 @@ export class SyncEngine {
       rootTreeSha: newTreeSha,
       files,
       ...(pinnedPaths.size > 0 ? { pinnedPaths: [...pinnedPaths] } : {}),
+      // Downgrade marker (Phase C): an older engine md-filters the head
+      // tree and would infer phantom deletes from a file-mode watermark.
+      ...(mode.fileMode ? { spaceKind: "file" as const } : {}),
     });
   }
 
@@ -1129,7 +1522,7 @@ export class SyncEngine {
    */
   private async bootstrapWatermark(
     spec: SyncRepoSpec,
-    disk: ReadonlyMap<string, string>,
+    disk: ReadonlyMap<string, SyncContent>,
     warnings: string[],
     result: (
       status: RepoSyncResult["status"],
@@ -1179,7 +1572,10 @@ export class SyncEngine {
 
     const files: WatermarkFileEntry[] = headTree.map((e) => {
       const content = disk.get(e.path);
-      const uid = content !== undefined ? extractAssetUid(content) : undefined;
+      // Asset-mode-only path (file-mode first-sync goes through the
+      // remote-wins layer): contents are text by construction.
+      const uid =
+        typeof content === "string" ? extractAssetUid(content) : undefined;
       return { path: e.path, blobSha: e.blobSha, ...(uid ? { uid } : {}) };
     });
     await this.deps.watermarkStore.set(spec.repoKey, {
@@ -1198,6 +1594,7 @@ export class SyncEngine {
     spec: SyncRepoSpec,
     watermark: WatermarkRecord,
     head: string,
+    mode: ModeOps,
   ): Promise<RemoteChange[]> {
     const headCommit = await getCommitInfo(
       this.transport,
@@ -1214,11 +1611,28 @@ export class SyncEngine {
         headCommit.treeSha,
         this.deps.baseURL,
       )
-    ).filter((e) => isSyncablePath(e.path));
+    ).filter(mode.treeFilter);
     const { changed, deleted } = diffTrees(watermark.files, headTree);
 
     const changes: RemoteChange[] = [];
     for (const c of changed) {
+      if (mode.fileMode) {
+        // Opaque blobs: byte-exact fetch, no uid identity (D18).
+        const bytes = await getBlobBytes(
+          this.transport,
+          spec.owner,
+          spec.repo,
+          c.blobSha,
+          this.deps.baseURL,
+        );
+        changes.push({
+          path: c.path,
+          kind: "change",
+          blobSha: c.blobSha,
+          content: bytes,
+        });
+        continue;
+      }
       const content = await getBlobText(
         this.transport,
         spec.owner,
@@ -1252,7 +1666,7 @@ export class SyncEngine {
   private matchLocalVsRemote(
     localChanges: AssetChange[],
     localDeletedPaths: Set<string>,
-    disk: ReadonlyMap<string, string>,
+    disk: ReadonlyMap<string, SyncContent>,
     remote: RemoteChange[],
     convergedPushPaths: Set<string>,
   ): {
@@ -1364,8 +1778,9 @@ export class SyncEngine {
     watermark: WatermarkRecord,
     examinedHead: string,
     actualParent: string,
-    pushFiles: Map<string, string>,
+    pushFiles: Map<string, SyncContent>,
     warnings: string[],
+    mode: ModeOps,
   ): Promise<void> {
     try {
       const parentCommit = await getCommitInfo(
@@ -1383,7 +1798,7 @@ export class SyncEngine {
           parentCommit.treeSha,
           this.deps.baseURL,
         )
-      ).filter((e) => isSyncablePath(e.path));
+      ).filter(mode.treeFilter);
       const examinedFiles: WatermarkFileEntry[] =
         examinedHead === watermark.lastSyncedSha
           ? watermark.files
@@ -1403,7 +1818,7 @@ export class SyncEngine {
                 ).treeSha,
                 this.deps.baseURL,
               )
-            ).filter((e) => isSyncablePath(e.path));
+            ).filter(mode.treeFilter);
       const { changed, deleted } = diffTrees(examinedFiles, parentTree);
       for (const c of changed) {
         if (pushFiles.has(c.path)) {
@@ -1433,11 +1848,21 @@ export class SyncEngine {
   private async buildWatermarkFiles(
     spec: SyncRepoSpec,
     newTree: RemoteTreeEntry[],
-    disk: ReadonlyMap<string, string>,
+    disk: ReadonlyMap<string, SyncContent>,
     applied: RemoteChange[],
     previous: WatermarkRecord,
-    diskBlobShas?: ReadonlyMap<string, string>,
+    diskBlobShas: ReadonlyMap<string, string> | undefined,
+    mode: ModeOps,
   ): Promise<WatermarkFileEntry[]> {
+    if (mode.fileMode) {
+      // Opaque blobs carry no uid identity (D18) — no content resolution,
+      // no per-blob fetch (advisor H3: the uid fallback would burn one API
+      // call per binary blob on every rebuild for nothing).
+      return newTree.map((entry) => ({
+        path: entry.path,
+        blobSha: entry.blobSha,
+      }));
+    }
     const uidByBlobSha = new Map<string, string | undefined>();
     for (const r of applied) {
       if (r.kind === "change" && r.blobSha !== undefined) {
@@ -1449,7 +1874,10 @@ export class SyncEngine {
       // finding: no-op syncs double-hashed the whole working tree).
       const sha =
         diskBlobShas?.get(path) ?? (await gitBlobSha(content, this.deps.sha1));
-      uidByBlobSha.set(sha, extractAssetUid(content));
+      uidByBlobSha.set(
+        sha,
+        typeof content === "string" ? extractAssetUid(content) : undefined,
+      );
     }
     for (const prev of previous.files) {
       if (!uidByBlobSha.has(prev.blobSha)) {

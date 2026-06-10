@@ -9,6 +9,18 @@
  * (iOS-portable, same as the write primitive it reuses).
  */
 
+/**
+ * Which `exo__Space` subtype a sync unit declares (Phase C, onto-RFC
+ * 18808c73). `"asset"` (default) — UID-bearing markdown assets, text-only
+ * allowlist, structured merge. `"file"` — opaque blobs (attachments): every
+ * file syncs byte-exact, no uid identity, no structured merge — conflicts
+ * resolve remote-wins with the losing LOCAL version preserved in quarantine
+ * (D18). The kind comes from the vault's RDF declaration
+ * (`exo__Instance_class` → `exo__FileSpace`), read by the spec collector —
+ * never from hardcoded paths.
+ */
+export type SpaceKind = "asset" | "file";
+
 /** One repo of the active profile's materialized set (sync unit, D7/VL#4). */
 export interface SyncRepoSpec {
   owner: string;
@@ -21,6 +33,30 @@ export interface SyncRepoSpec {
    * children-before-parent ordering (D12) — deeper paths sync first.
    */
   localPath: string;
+  /** Space subtype (Phase C). Absent ⇒ `"asset"` (backward compatible). */
+  spaceKind?: SpaceKind;
+}
+
+/**
+ * File content traveling through the engine: UTF-8 text (asset mode) or
+ * raw bytes (file mode, Phase C). Binary never round-trips through string
+ * decode — that would corrupt it.
+ */
+export type SyncContent = string | Uint8Array;
+
+/** Byte/string equality across the two content representations. */
+export function contentEquals(
+  a: SyncContent | undefined,
+  b: SyncContent | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  if (typeof a === "string" && typeof b === "string") return a === b;
+  if (typeof a === "string" || typeof b === "string") return false;
+  if (a.byteLength !== b.byteLength) return false;
+  for (let i = 0; i < a.byteLength; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
 
 /** One file of the watermark snapshot (remote tree at lastSyncedSha). */
@@ -56,6 +92,14 @@ export interface WatermarkRecord {
    * `lastSyncedSha`.
    */
   pinnedPaths?: string[];
+  /**
+   * Set to `"file"` for watermarks written by a file-mode sync (Phase C).
+   * Purely diagnostic / downgrade guard: an older engine reading a
+   * file-mode watermark would md-filter the head tree and infer phantom
+   * deletes for binary entries — the marker lets future versions detect
+   * and refuse that. Additive; absent for asset-mode records.
+   */
+  spaceKind?: SpaceKind;
 }
 
 /** Per-device watermark persistence port (D8; production impl is A3 scope). */
@@ -83,6 +127,15 @@ export interface LocalFilesPort {
   write(path: string, content: string): Promise<void>;
   /** Remove a file. MUST be a no-op if the path does not exist. */
   delete(path: string): Promise<void>;
+  /**
+   * Byte-exact read (Phase C, file-mode repos). REQUIRED for
+   * `spaceKind: "file"` specs — the engine refuses to sync a file-mode
+   * repo through a port without it (a string round-trip would corrupt
+   * binary content), surfacing a loud `error` result instead.
+   */
+  readBinary?(path: string): Promise<Uint8Array>;
+  /** Byte-exact atomic write (same atomicity contract as {@link write}). */
+  writeBinary?(path: string, bytes: Uint8Array): Promise<void>;
 }
 
 /** Result of the full-materialization gate check (D19). */
@@ -230,6 +283,13 @@ export interface QuarantineEntry {
   baseContent?: string;
   localContent?: string;
   remoteContent?: string;
+  /**
+   * Losing LOCAL version of a binary remote-wins resolution (Phase C,
+   * D18). Synced stores persist these as a `.conflict.<ext>` payload file
+   * next to the entry record — openable by the user, byte-exact. NOTE:
+   * secret redaction does not apply to bytes (R5 residual, documented).
+   */
+  localContentBytes?: Uint8Array;
 }
 
 /**
@@ -289,3 +349,28 @@ export function isSyncablePath(path: string): boolean {
     !path.includes(".conflict.")
   );
 }
+
+/**
+ * Phase C file-mode allowlist: in an `exo__FileSpace` repo EVERY file is
+ * opaque sync content (attachments, binaries, plain notes) — no `.md`
+ * restriction. The A3 defence infixes still apply symmetrically: `.local.`
+ * (device-local artifacts) and `.conflict.` (quarantine conflict copies)
+ * must never enter the sync cycle in either mode.
+ *
+ * AssetSpace semantics are UNTOUCHED — `spaceKind: "asset"` specs keep
+ * {@link isSyncablePath}; this predicate applies ONLY to declared
+ * FileSpace repos.
+ */
+export function isFileSpaceSyncablePath(path: string): boolean {
+  return !path.includes(".local.") && !path.includes(".conflict.");
+}
+
+/**
+ * Per-file size cap for file-mode sync (Phase C). GitHub's blob API tops
+ * out around 100 MB with a 4/3 base64 inflation, and mobile transports
+ * hold the whole request body in memory — oversized files are excluded
+ * SYMMETRICALLY (local snapshot, remote diff, watermark, delete inference)
+ * with a warning, exactly like non-allowlisted paths. Override via
+ * `SyncEngineDeps.maxFileBytes`.
+ */
+export const DEFAULT_MAX_FILE_BYTES = 30 * 1024 * 1024;

@@ -12,6 +12,8 @@ import type { RestCommitTransport } from "../../infrastructure/github/restCommit
 export interface RemoteTreeEntry {
   path: string;
   blobSha: string;
+  /** Blob size in bytes, when GitHub reports it (file-mode size cap). */
+  size?: number;
 }
 
 export interface RemoteCommitInfo {
@@ -118,7 +120,10 @@ export async function getTree(
     if (rec?.type !== "blob") continue;
     const path = readString(rec, "path");
     const blobSha = readString(rec, "sha");
-    if (path && blobSha) entries.push({ path, blobSha });
+    const size = typeof rec.size === "number" ? rec.size : undefined;
+    if (path && blobSha) {
+      entries.push({ path, blobSha, ...(size !== undefined ? { size } : {}) });
+    }
   }
   return entries;
 }

@@ -621,7 +621,10 @@ export {
   type SyncEngineDeps,
 } from "./services/sync/SyncEngine";
 export {
+  DEFAULT_MAX_FILE_BYTES,
   InMemoryQuarantineStore,
+  contentEquals,
+  isFileSpaceSyncablePath,
   isSyncablePath,
   type AssetChange,
   type ChangeDetectionResult,
@@ -635,6 +638,8 @@ export {
   type QuarantinePort,
   type RepoSyncResult,
   type Sha1Fn,
+  type SpaceKind,
+  type SyncContent,
   type SyncRepoSpec,
   type WatermarkFileEntry,
   type WatermarkRecord,

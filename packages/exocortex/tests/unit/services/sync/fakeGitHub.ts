@@ -82,13 +82,14 @@ export class FakeGitHubRepo {
     this.commitDirect(this.branch, initialFiles, "init");
   }
 
-  spec(): SyncRepoSpec {
+  spec(spaceKind?: "asset" | "file"): SyncRepoSpec {
     return {
       owner: this.owner,
       repo: this.repo,
       branch: this.branch,
       repoKey: `${this.owner}/${this.repo}#${this.branch}`,
       localPath: "assetspaces/test",
+      ...(spaceKind === "file" ? { spaceKind } : {}),
     };
   }
 
@@ -314,10 +315,14 @@ export class FakeGitHubRepo {
   }
 }
 
-/** In-memory LocalFilesPort. */
+/**
+ * In-memory LocalFilesPort. Mirrors the production adapter contract:
+ * `read` is a text decode (corrupts binary — exactly like the real
+ * DataAdapter.read), `readBinary`/`writeBinary` are byte-exact.
+ */
 export class FakeLocalFiles implements LocalFilesPort {
-  readonly files: Map<string, string>;
-  constructor(initial: Record<string, string> = {}) {
+  readonly files: Map<string, FakeFileContent>;
+  constructor(initial: Record<string, FakeFileContent> = {}) {
     this.files = new Map(Object.entries(initial));
   }
   async list(): Promise<string[]> {
@@ -326,13 +331,45 @@ export class FakeLocalFiles implements LocalFilesPort {
   async read(path: string): Promise<string> {
     const content = this.files.get(path);
     if (content === undefined) throw new Error(`ENOENT: ${path}`);
-    return content;
+    return typeof content === "string"
+      ? content
+      : Buffer.from(content).toString("utf-8"); // lossy — like prod read()
   }
   async write(path: string, content: string): Promise<void> {
     this.files.set(path, content);
   }
   async delete(path: string): Promise<void> {
     this.files.delete(path); // no-op when absent, per port contract
+  }
+  async readBinary(path: string): Promise<Uint8Array> {
+    const content = this.files.get(path);
+    if (content === undefined) throw new Error(`ENOENT: ${path}`);
+    return typeof content === "string"
+      ? new Uint8Array(Buffer.from(content, "utf-8"))
+      : content;
+  }
+  async writeBinary(path: string, bytes: Uint8Array): Promise<void> {
+    this.files.set(path, bytes);
+  }
+}
+
+/** Text-only port (no readBinary/writeBinary) — Phase B-era adapters. */
+export class FakeTextOnlyLocalFiles implements LocalFilesPort {
+  private readonly inner: FakeLocalFiles;
+  constructor(initial: Record<string, string> = {}) {
+    this.inner = new FakeLocalFiles(initial);
+  }
+  list(): Promise<string[]> {
+    return this.inner.list();
+  }
+  read(path: string): Promise<string> {
+    return this.inner.read(path);
+  }
+  write(path: string, content: string): Promise<void> {
+    return this.inner.write(path, content);
+  }
+  delete(path: string): Promise<void> {
+    return this.inner.delete(path);
   }
 }
 

@@ -18,6 +18,7 @@ import type {
   AssetChange,
   ChangeDetectionResult,
   Sha1Fn,
+  SyncContent,
   WatermarkFileEntry,
   WatermarkRecord,
 } from "./syncTypes";
@@ -40,8 +41,12 @@ export function extractAssetUid(content: string): string | undefined {
 }
 
 export interface DetectChangesParams {
-  /** Allowlist-scoped disk snapshot: repo-relative path → content. */
-  localFiles: ReadonlyMap<string, string>;
+  /**
+   * Allowlist-scoped disk snapshot: repo-relative path → content. Phase C
+   * file-mode passes raw bytes — uid identity never applies to bytes
+   * (opaque blobs match by path), text identity is unchanged.
+   */
+  localFiles: ReadonlyMap<string, SyncContent>;
   watermark: WatermarkRecord | null;
   /**
    * Actual root tree SHA of the `watermark.lastSyncedSha` commit on the
@@ -90,7 +95,8 @@ export async function detectChanges(
     disk.push({
       path,
       blobSha,
-      uid: extractAssetUid(content),
+      // Bytes are opaque (file-mode, D18): no uid identity — path matches.
+      uid: typeof content === "string" ? extractAssetUid(content) : undefined,
     });
   }
 

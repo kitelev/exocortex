@@ -73,6 +73,57 @@ describe("SyncedQuarantineStore — D17 durable synced entries", () => {
     expect(gh.headFiles().get("README.md")).toBe("init"); // neighbours intact
   });
 
+  it("binary entry (Phase C, D18): bytes land in a sibling .conflict.<ext> payload, record carries path+sha", async () => {
+    const gh = new FakeGitHubRepo({ "README.md": "init" });
+    const { store } = makeStore(gh);
+    const losingPng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x7f]);
+
+    await store.quarantine({
+      repoKey: "o/files#main",
+      path: "attachments/image.png",
+      reason: "file-mode remote-wins (D18): losing LOCAL version",
+      localContentBytes: losingPng,
+    });
+
+    const entries = entryFiles(gh);
+    expect(entries.size).toBe(1);
+    const [, record] = [...entries.entries()][0];
+    // Single byte source (M4): no base64 inside the JSON record…
+    expect(record.localContent).toBeUndefined();
+    expect(record.conflictCopyPath).toMatch(
+      /^entries\/o_files_main\/attachments_image\.png-[0-9a-f]{8}\.conflict\.png$/,
+    );
+    expect(typeof record.localContentSha).toBe("string");
+    // …the payload file holds the loser byte-exact (user-openable).
+    expect(gh.headBlob(record.conflictCopyPath!)).toEqual(
+      Buffer.from(losingPng),
+    );
+
+    // Idempotency keys off the payload sha — identical bytes, zero churn.
+    const before = gh.headSha();
+    await store.quarantine({
+      repoKey: "o/files#main",
+      path: "attachments/image.png",
+      reason: "file-mode remote-wins (D18): losing LOCAL version",
+      localContentBytes: losingPng,
+    });
+    expect(gh.headSha()).toBe(before);
+
+    // Changed bytes → record sha changes → payload re-pushed.
+    const newerPng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x80]);
+    await store.quarantine({
+      repoKey: "o/files#main",
+      path: "attachments/image.png",
+      reason: "file-mode remote-wins (D18): losing LOCAL version",
+      localContentBytes: newerPng,
+    });
+    expect(gh.headSha()).not.toBe(before);
+    const updated = [...entryFiles(gh).values()][0];
+    expect(gh.headBlob(updated.conflictCopyPath!)).toEqual(
+      Buffer.from(newerPng),
+    );
+  });
+
   it("is idempotent — re-quarantining an identical conflict produces ZERO new commits", async () => {
     const gh = new FakeGitHubRepo({ "README.md": "init" });
     const { store } = makeStore(gh);

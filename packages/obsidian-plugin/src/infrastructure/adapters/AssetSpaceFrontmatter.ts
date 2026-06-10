@@ -37,6 +37,29 @@ const WIKILINK_UID_RE =
  * See Issue #3312.
  */
 export function isAssetSpaceFrontmatter(fm: Record<string, unknown>): boolean {
+  return instanceClassHasUid(fm, ASSET_SPACE_CLASS_UID);
+}
+
+/**
+ * Class UID of `exo__FileSpace` (TBox: exoas-exo, onto-RFC 18808c73 —
+ * frozen, same precedent as {@link ASSET_SPACE_CLASS_UID}). A FileSpace is
+ * a git-backed space of opaque blobs: the sync layer treats its content
+ * byte-exact with remote-wins conflicts (D18, ExoSync Phase C); the RDF
+ * indexer skips it. Kept equal to `FILE_SPACE_CLASS_UID` in the exocortex
+ * package's FileSpaceDiscovery.
+ */
+export const FILE_SPACE_CLASS_UID = "aad8913e-5e9f-4047-879d-93cc46befd52";
+
+/** Predicate — `exo__Instance_class` references `exo__FileSpace`? */
+export function isFileSpaceFrontmatter(fm: Record<string, unknown>): boolean {
+  return instanceClassHasUid(fm, FILE_SPACE_CLASS_UID);
+}
+
+/** Shared strict-wikilink membership test over `exo__Instance_class`. */
+function instanceClassHasUid(
+  fm: Record<string, unknown>,
+  classUid: string,
+): boolean {
   const classes = fm["exo__Instance_class"];
   const candidates: unknown[] = Array.isArray(classes) ? classes : [classes];
   for (const c of candidates) {
@@ -44,7 +67,7 @@ export function isAssetSpaceFrontmatter(fm: Record<string, unknown>): boolean {
     WIKILINK_UID_RE.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = WIKILINK_UID_RE.exec(c)) !== null) {
-      if (m[1].toLowerCase() === ASSET_SPACE_CLASS_UID) return true;
+      if (m[1].toLowerCase() === classUid) return true;
     }
   }
   return false;
