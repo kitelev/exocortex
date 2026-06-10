@@ -6,27 +6,33 @@
 
 ## Query Performance
 
-### IndexedGraph
+### Indexed triple store
 
-**10x faster queries** through SPO/POS/OSP indexing:
-
-```typescript
-// O(1) lookup instead of O(n) scan
-const tasks = store.query({
-  predicate: 'rdf:type',
-  object: 'ems:Task'
-});
-```
-
-### LRU Cache
-
-**90% hit rate** for repeated queries:
+`InMemoryTripleStore` (`packages/exocortex/src/infrastructure/rdf/InMemoryTripleStore.ts`) maintains six permutation indexes (SPO, SOP, PSO, POS, OSP, OPS), so any combination of bound subject / predicate / object is answered by index lookup instead of a full scan:
 
 ```typescript
-// Cached for subsequent calls
-store.query(pattern);  // 100ms first call
-store.query(pattern);  // <1ms cached
+import { Namespace } from 'exocortex';
+
+// Bound predicate + object → served by the POS index
+const taskTriples = await store.match(
+  undefined,                   // any subject
+  Namespace.RDF.term('type'),  // rdf:type
+  Namespace.EMS.term('Task'),  // ems:Task
+);
 ```
+
+A dedicated UUID index additionally accelerates `FILTER(CONTAINS(STR(?s), "<uuid>"))` patterns, which are common in vault queries.
+
+### LRU cache
+
+The triple store keeps an LRU cache (1000 entries) of `match()` results, invalidated on every write:
+
+```typescript
+await store.match(s, p, o);  // computed, then cached
+await store.match(s, p, o);  // served from cache until the next add/remove
+```
+
+The `exocortex` package also exports `QueryPlanCache` and `SPARQLResultCache` (`src/infrastructure/sparql/cache/`) as building blocks for embedders that want plan/result caching on top of the engine.
 
 ---
 
@@ -62,10 +68,13 @@ Large lists use virtual scrolling:
 
 ### Memoization
 
-React components memoized:
+React components use `useMemo` hooks to avoid recomputing derived data (sorting, grouping, filtering) on every render:
 
 ```typescript
-const MemoizedComponent = React.memo(MyComponent);
+const sortedRows = useMemo(
+  () => sortRows(rows, sortColumn, sortDirection),
+  [rows, sortColumn, sortDirection],
+);
 ```
 
 ---

@@ -22,7 +22,7 @@
      - "[[ems__Task]]"
    ```
 
-4. **Reload Layout**: Cmd/Ctrl + P → "Reload Layout"
+4. **Reload layout**: Cmd/Ctrl + P → "Reload layout"
 
 5. **Check Console**: Ctrl/Cmd + Shift + I → Console tab for errors
 
@@ -35,7 +35,7 @@
 **Solutions**:
 
 1. **Check Command Visibility**: Button may not apply to current note type
-2. **Reload Layout**: Force refresh with "Reload Layout" command
+2. **Reload layout**: Force refresh with "Reload layout" command
 3. **Check Console Errors**: Look for JavaScript errors
 4. **Restart Obsidian**: Sometimes required after plugin updates
 
@@ -49,8 +49,8 @@
 
 1. **Check Target Exists**: Verify linked note exists
 2. **Check Target Label**: Target must have `exo__Asset_label` property
-3. **Add `.md` Extension**: See [Obsidian File Lookup Pattern](../CLAUDE.md#obsidian-file-lookup-pattern)
-4. **Reload Layout**: Refresh after creating target note
+3. **Add `.md` Extension**: See [Obsidian File Lookup Pattern](../PATTERNS.md#obsidian-file-lookup-pattern)
+4. **Reload layout**: Refresh after creating target note
 
 ---
 
@@ -189,7 +189,7 @@ But [[uuid-here]] in text shows label correctly ✅
 2. **Switch View Mode**: Toggle between Reading/Live Preview and back
    - Press Cmd/Ctrl + E twice
 
-3. **Reload Layout**: Cmd/Ctrl + P → "Reload Layout"
+3. **Reload layout**: Cmd/Ctrl + P → "Reload layout"
 
 **Note**: This was fixed in version 14.81.0. Update plugin if experiencing this issue.
 

@@ -12,16 +12,16 @@ The NL to SPARQL system converts natural language questions into SPARQL queries 
 
 ```bash
 # Basic question
-exocortex ask "среднее время утреннего душа" --vault /path/to/vault
+npx @kitelev/exocortex-cli ask "среднее время утреннего душа" --vault /path/to/vault
 
 # Show the generated SPARQL query
-exocortex ask "активные проекты" --show-query
+npx @kitelev/exocortex-cli ask "активные проекты" --show-query
 
 # Get explanation of conversion
-exocortex ask "статистика сна за декабрь" --explain
+npx @kitelev/exocortex-cli ask "статистика сна за декабрь" --explain
 
 # JSON output for automation
-exocortex ask "последние 10 активностей" --output json
+npx @kitelev/exocortex-cli ask "последние 10 активностей" --output json
 ```
 
 ### Using the Service Programmatically

@@ -8,79 +8,81 @@
 
 ### Project Setup
 
+Exocortex is developed in a monorepo (npm workspaces) — not inside a vault's `.obsidian/plugins/` folder:
+
 ```bash
-cd /your/vault/.obsidian/plugins/exocortex
+git clone git@github.com:kitelev/exocortex.git
+cd exocortex
 npm install
-npm run dev  # Watch mode
+npm run dev  # Watch mode for @exocortex/obsidian-plugin (root script: npm run dev -w @exocortex/obsidian-plugin)
 ```
 
 ### Package Structure
 
 ```
 packages/
-├── core/                    # Business logic (storage-agnostic)
-├── obsidian-plugin/         # Obsidian UI integration
-└── cli/                     # Command-line tools
+├── exocortex/          # Core: domain models, RDF, SPARQL, services (storage-agnostic)
+├── obsidian-plugin/    # @exocortex/obsidian-plugin — Obsidian UI integration
+├── cli/                # @kitelev/exocortex-cli — command-line tools
+├── services/           # @kitelev/exocortex-services — shared grounding-service factories
+└── test-utils/         # @exocortex/test-utils — shared test infrastructure
 ```
+
+> `packages/exoas-exo` and `packages/exoas-exocmd` are data submodules (ontology assets), not code packages.
 
 ---
 
 ## Adding a New Command
 
-### 1. Create Command Class
+There are two paths, depending on what the command does:
 
-`src/application/commands/MyCustomCommand.ts`:
+| Path | Use for |
+| --- | --- |
+| **(a) Global UI command** — TypeScript `ICommand` | Plugin-level UI actions that need app/plugin dependencies (reload layout, open a modal, toggle a view) |
+| **(b) Homoiconic exocmd command** — vault asset | Domain commands that operate on assets (status transitions, creation, planning). **Preferred path** — no plugin code change required |
+
+### (a) Global UI command
+
+#### 1. Create the command class
+
+`packages/obsidian-plugin/src/application/commands/MyCustomCommand.ts`:
 
 ```typescript
-import { ICommand } from '../interfaces/ICommand';
-import type ExocortexPlugin from '../../main';
+import { ICommand } from './ICommand';
 
 export class MyCustomCommand implements ICommand {
   id = 'my-custom-command';
   name = 'My Custom Command';
 
-  constructor(private plugin: ExocortexPlugin) {}
-
   callback = async (): Promise<void> => {
-    const { workspace } = this.plugin.app;
-    const activeFile = workspace.getActiveFile();
-
-    if (!activeFile) {
-      return;
-    }
-
     // Your logic here
   };
 }
 ```
 
-### 2. Register Command
+`ICommand` (`src/application/commands/ICommand.ts`) accepts either a plain `callback` or a `checkCallback(checking, file, context)` for commands that should only be offered on certain notes.
 
-`src/application/commands/CommandRegistry.ts`:
+#### 2. Register it
 
-```typescript
-import { MyCustomCommand } from './MyCustomCommand';
-
-export class CommandRegistry {
-  constructor(private plugin: ExocortexPlugin) {
-    // Add to commands array
-    this.commands = [
-      // ... existing commands
-      new MyCustomCommand(plugin),
-    ];
-  }
-}
-```
-
-### 3. Add Visibility Rules
-
-`packages/exocortex/src/domain/commands/CommandVisibility.ts`:
+`CommandRegistry` receives the global commands through its constructor (`CommandRegistry.ts`); the array is assembled in `CommandManager.registerAllCommands` (`src/application/services/CommandManager.ts`):
 
 ```typescript
-export function canExecuteMyCustomCommand(metadata: Record<string, any>): boolean {
-  return metadata.exo__Instance_class === 'ems__Task';
-}
+const globalCommands = [
+  new ReloadLayoutCommand(reloadLayoutCallback, notifier),
+  // ... existing commands
+  new MyCustomCommand(),
+];
+
+this.commandRegistry = new CommandRegistry(globalCommands);
 ```
+
+`CommandManager` then registers each entry with Obsidian (`plugin.addCommand`), wiring `checkCallback` to the active file's context automatically.
+
+### (b) Homoiconic exocmd command (preferred for domain commands)
+
+Per-asset commands are **not** defined in TypeScript. They are declared as `exocmd__Command` assets in the vault (the exocmd AssetSpace) and resolved at runtime by `CommandResolver` via SPARQL. Per-asset visibility is controlled by vault-declared preconditions (`exocmd__Command_precondition` — SPARQL ASK or registered host function); the former `CommandVisibility.ts` module has been removed.
+
+To add a domain command, create a command asset plus a grounding asset in your exocmd AssetSpace — use the existing assets in [exoas-exocmd](https://github.com/kitelev/exoas-exocmd) as templates. No plugin rebuild is needed: the plugin picks the new command up from the vault.
 
 ---
 
@@ -117,7 +119,7 @@ export class MyCustomRenderer {
 
 ### 2. Register Renderer
 
-`src/presentation/renderers/layout/UniversalLayoutRenderer.ts`:
+`src/presentation/renderers/UniversalLayoutRenderer.ts`:
 
 ```typescript
 private async renderCustomSection(container: HTMLElement): Promise<void> {
@@ -190,13 +192,9 @@ import { MyCustomCommand } from '../../src/application/commands/MyCustomCommand'
 
 describe('MyCustomCommand', () => {
   let command: MyCustomCommand;
-  let mockPlugin: any;
 
   beforeEach(() => {
-    mockPlugin = {
-      app: { workspace: { getActiveFile: jest.fn() } }
-    };
-    command = new MyCustomCommand(mockPlugin);
+    command = new MyCustomCommand();
   });
 
   it('should execute successfully', async () => {
