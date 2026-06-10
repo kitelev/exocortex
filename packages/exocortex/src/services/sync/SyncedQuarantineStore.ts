@@ -137,13 +137,15 @@ export class SyncedQuarantineStore implements QuarantinePort {
    */
   async quarantineAll(entries: QuarantineEntry[]): Promise<void> {
     if (entries.length === 0) return;
-    const existing = await this.readEntries(
-      await Promise.all(entries.map((e) => this.entryPath(e.repoKey, e.path))),
+    const entryPaths = await Promise.all(
+      entries.map((e) => this.entryPath(e.repoKey, e.path)),
     );
+    const existing = await this.readEntries(entryPaths);
 
     const files = new Map<string, string>();
-    for (const entry of entries) {
-      const entryPath = await this.entryPath(entry.repoKey, entry.path);
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const entryPath = entryPaths[i];
       const prior = existing.get(entryPath) ?? null;
       // Reopening a resolved entry is a NEW conflict event → fresh
       // timestamp; an entry that is already open keeps its original one.
@@ -156,7 +158,9 @@ export class SyncedQuarantineStore implements QuarantinePort {
         repoKey: entry.repoKey,
         path: entry.path,
         ...(entry.uid !== undefined ? { uid: entry.uid } : {}),
-        reason: entry.reason,
+        // Redacted like the contents: SHACL-gate reasons can quote
+        // frontmatter values (defence-in-depth symmetry).
+        reason: redactSecrets(entry.reason),
         status: "open",
         quarantinedAt,
         ...(entry.baseContent !== undefined

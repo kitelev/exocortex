@@ -274,7 +274,13 @@ export class SyncEngine {
     this.transport = withRateLimitBackoff(deps.transport, deps.backoff);
   }
 
-  /** D11 busy verdict — the caller retries after the running op finishes. */
+  /**
+   * D11 busy verdict — the caller retries after the running op finishes.
+   * Scope note: the guard currently covers SYNC operations of this engine
+   * instance only; wiring the profile-APPLY side into the same exclusion
+   * is Phase B composition scope (the apply path has its own
+   * `_switchInProgress` journal today).
+   */
   private busyResult(spec: SyncRepoSpec): RepoSyncResult {
     return {
       repoKey: spec.repoKey,
@@ -286,7 +292,7 @@ export class SyncEngine {
       warnings: [],
       deferredDeletes: [],
       detail:
-        "another sync/apply operation is in progress (D11 guard) — retry after it finishes",
+        "another sync operation is in progress (D11 guard) — retry after it finishes",
     };
   }
 
@@ -400,11 +406,13 @@ export class SyncEngine {
         // PLUS any pending merge-quarantine entries (they would otherwise be
         // lost — the loop recomputes the merge per iteration). The watermark
         // is NOT advanced, so everything re-derives next sync regardless.
+        warnings.push(...loop.merge.warnings);
         const terminal = await this.buildTerminalQuarantineEntries(
           spec,
           watermark,
           loop.pushFiles,
           loop.merge.quarantineEntries,
+          disk,
         );
         const entries = [...loop.merge.quarantineEntries, ...terminal];
         await this.flushQuarantine(entries, warnings);
@@ -542,9 +550,12 @@ export class SyncEngine {
     warnings: string[],
   ): Promise<void> {
     if (entries.length === 0) return;
+    const redact = this.deps.redact ?? ((m: string): string => m);
     for (const entry of entries) {
       warnings.push(
-        `quarantined ${entry.path}: ${entry.reason} — both versions preserved; conflict re-derives until resolved (D17)`,
+        redact(
+          `quarantined ${entry.path}: ${entry.reason} — both versions preserved; conflict re-derives until resolved (D17)`,
+        ),
       );
     }
     const sink = this.deps.quarantine;
@@ -571,12 +582,18 @@ export class SyncEngine {
    * recoverable from git history via the watermark SHA — not fetched, to
    * keep the flush cheap). Paths already covered by merge-quarantine
    * entries are skipped (disjoint by construction; defensive anyway).
+   *
+   * `localContent` is the ON-DISK version (the durable record must show
+   * what the user actually has) — for a merge-resolved-but-contended path
+   * the push payload is a merged PROPOSAL that was never applied to disk;
+   * it is dropped (the merge re-derives next sync) and the reason notes it.
    */
   private async buildTerminalQuarantineEntries(
     spec: SyncRepoSpec,
     watermark: WatermarkRecord,
     pushFiles: Map<string, string>,
     alreadyQuarantined: QuarantineEntry[],
+    disk: ReadonlyMap<string, string>,
   ): Promise<QuarantineEntry[]> {
     const covered = new Set(alreadyQuarantined.map((e) => e.path));
     const remoteByPath = new Map<string, string>();
@@ -624,14 +641,18 @@ export class SyncEngine {
     const entries: QuarantineEntry[] = [];
     for (const [path, content] of pushFiles) {
       if (covered.has(path)) continue;
-      const uid = extractAssetUid(content);
+      const diskContent = disk.get(path);
+      const localContent = diskContent ?? content;
+      const wasMergedProposal =
+        diskContent !== undefined && diskContent !== content;
+      const uid = extractAssetUid(localContent);
       const remoteContent = remoteByPath.get(path);
       entries.push({
         repoKey: spec.repoKey,
         path,
         ...(uid !== undefined ? { uid } : {}),
-        reason: `non-fast-forward push failed after ${this.deps.maxPushRetries ?? DEFAULT_MAX_PUSH_RETRIES} retries (D16) — a concurrent writer keeps moving ${spec.branch}; base recoverable from git history at ${watermark.lastSyncedSha}`,
-        localContent: content,
+        reason: `non-fast-forward push failed after ${this.deps.maxPushRetries ?? DEFAULT_MAX_PUSH_RETRIES} retries (D16) — a concurrent writer keeps moving ${spec.branch}; base recoverable from git history at ${watermark.lastSyncedSha}${wasMergedProposal ? "; the contended push payload was a merged proposal (never applied to disk) — the merge re-derives next sync" : ""}`,
+        localContent,
         ...(remoteContent !== undefined ? { remoteContent } : {}),
       });
     }

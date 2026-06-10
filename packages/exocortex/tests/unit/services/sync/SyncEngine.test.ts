@@ -906,6 +906,38 @@ describe("SyncEngine — A3: D16 terminal-quarantine", () => {
     expect(gh.headFiles().get(FILE_B)).toBe(mdAsset("u2"));
   });
 
+  it("terminal entry for a merge-resolved-but-contended path records the DISK version, not the merged proposal", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const store = new InMemoryQuarantineStore();
+    const merged = mdAsset("u1", "merged proposal");
+    const { engine } = makeEngine(gh, local, {
+      maxPushRetries: 1,
+      quarantine: store,
+      mergeLayer: {
+        resolve: async () => ({ action: "use-merged", content: merged }),
+      },
+    });
+    await bootstrap(engine, gh.spec());
+
+    gh.commitDirect("main", { [FILE_A]: mdAsset("u1", "remote edit") }, "B");
+    local.files.set(FILE_A, mdAsset("u1", "local edit"));
+    let n = 0;
+    gh.onBeforePatch = (): void => {
+      n++;
+      gh.commitDirect("main", { [`assets/race-${n}.md`]: mdAsset(`r${n}`) }, "race");
+    };
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("retry-exhausted");
+    expect(store.entries).toHaveLength(1);
+    // The durable record shows what the user actually has on disk; the
+    // merged proposal was never applied and re-derives next sync.
+    expect(store.entries[0].localContent).toBe(mdAsset("u1", "local edit"));
+    expect(store.entries[0].reason).toMatch(/merged proposal/);
+    expect(local.files.get(FILE_A)).toBe(mdAsset("u1", "local edit"));
+  });
+
   it("a failing quarantine sink degrades to a warning, never an error status", async () => {
     const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
     const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
