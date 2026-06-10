@@ -1775,9 +1775,15 @@ describe("NoteToRDFConverter", () => {
         // Should return empty array (file was skipped)
         expect(triples).toEqual([]);
 
-        // Should have called logger.warn with skip message
-        expect(mockLogger.warn).toHaveBeenCalledWith(
+        // Issue #3468: per-file skip detail goes to info (console channel);
+        // the Notice-routed warn is a single end-of-walk summary with the count.
+        expect(mockLogger.info).toHaveBeenCalledWith(
           expect.stringContaining("Skipping file with invalid IRI"),
+          expect.anything()
+        );
+        expect(mockLogger.warn).toHaveBeenCalledTimes(1);
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining("Skipped 1 file with invalid IRI"),
           expect.anything()
         );
       });
@@ -1828,9 +1834,14 @@ describe("NoteToRDFConverter", () => {
         expect(labels).toContain("Note 1");
         expect(labels).toContain("Note 2");
 
-        // Should have warned about problematic file
-        expect(mockLogger.warn).toHaveBeenCalledWith(
+        // Issue #3468: the per-file path is logged at info level; the warn
+        // channel carries only the aggregated summary (no paths).
+        expect(mockLogger.info).toHaveBeenCalledWith(
           expect.stringContaining("problematic.md"),
+          expect.anything()
+        );
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining("Skipped 1 file with invalid IRI"),
           expect.anything()
         );
       });
@@ -1862,7 +1873,118 @@ describe("NoteToRDFConverter", () => {
         const triples = await converterWithLogger.convertVault();
 
         expect(triples).toEqual([]);
-        expect(mockLogger.warn).toHaveBeenCalledTimes(2); // 2 files × 1 warn each
+        // Issue #3468: 2 files × 1 info each + a single aggregated warn
+        expect(mockLogger.info).toHaveBeenCalledTimes(2);
+        expect(mockLogger.warn).toHaveBeenCalledTimes(1);
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining("Skipped 2 files with invalid IRI"),
+          expect.anything()
+        );
+      });
+    });
+
+    // Issue #3468: bulk indexing must not produce one Notice-routed warn per
+    // skipped file. Per-file detail goes to info (console channel); the warn
+    // channel gets at most ONE aggregated summary per skip category.
+    describe("aggregated skip summary (Issue #3468)", () => {
+      const mkFile = (path: string): IFile => ({
+        path,
+        basename: path.replace(/\.md$/, "").split("/").pop()!,
+        name: path.split("/").pop()!,
+        parent: null,
+      });
+
+      // Empty exo__Instance_class → EMPTY_PROPERTY invariant violation.
+      const invariantViolatingFrontmatter = {
+        exo__Asset_uid: "11111111-2222-3333-4444-555555555555",
+        exo__Asset_label: "Broken",
+        exo__Instance_class: "",
+      };
+
+      it("emits exactly one summary warn for N invalid-IRI files, with per-file details on info", async () => {
+        const files = [mkFile("a.md"), mkFile("b.md"), mkFile("c.md")];
+        mockVault.getAllFiles.mockReturnValue(files);
+        mockVault.getFrontmatter.mockImplementation(() => {
+          throw new Error("Simulated IRI error");
+        });
+
+        const mockLogger = createMockLogger();
+        const converterWithLogger = new NoteToRDFConverter(mockVault, mockLogger);
+
+        const result = await converterWithLogger.convertVaultWithValidation();
+
+        expect(result.summary.skipped).toBe(3);
+        // Per-file details: one info per file, each carrying the path
+        expect(mockLogger.info).toHaveBeenCalledTimes(3);
+        for (const f of files) {
+          expect(mockLogger.info).toHaveBeenCalledWith(
+            expect.stringContaining(f.path),
+            expect.anything()
+          );
+        }
+        // Exactly ONE warn for the whole walk, count in the message string
+        expect(mockLogger.warn).toHaveBeenCalledTimes(1);
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining("Skipped 3 files with invalid IRI"),
+          expect.anything()
+        );
+      });
+
+      it("emits no warn at all when nothing is skipped", async () => {
+        mockVault.getAllFiles.mockReturnValue([mkFile("ok.md")]);
+        mockVault.getFrontmatter.mockReturnValue({ exo__Asset_label: "OK" });
+
+        const mockLogger = createMockLogger();
+        const converterWithLogger = new NoteToRDFConverter(mockVault, mockLogger);
+
+        const result = await converterWithLogger.convertVaultWithValidation();
+
+        expect(result.summary.skipped).toBe(0);
+        expect(mockLogger.warn).not.toHaveBeenCalled();
+      });
+
+      it("emits one summary warn per category (invariant violation + invalid IRI)", async () => {
+        const invariantFile = mkFile("invariant.md");
+        const iriFile1 = mkFile("iri1.md");
+        const iriFile2 = mkFile("iri2.md");
+        mockVault.getAllFiles.mockReturnValue([invariantFile, iriFile1, iriFile2]);
+        mockVault.getFrontmatter.mockImplementation((f) => {
+          if (f.path === invariantFile.path) return invariantViolatingFrontmatter;
+          throw new Error("Simulated IRI error");
+        });
+
+        const mockLogger = createMockLogger();
+        const converterWithLogger = new NoteToRDFConverter(mockVault, mockLogger);
+
+        const result = await converterWithLogger.convertVaultWithValidation();
+
+        expect(result.summary.skipped).toBe(3);
+        expect(mockLogger.warn).toHaveBeenCalledTimes(2);
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining("Skipped 1 file with invariant violations"),
+          expect.anything()
+        );
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining("Skipped 2 files with invalid IRI"),
+          expect.anything()
+        );
+      });
+
+      it("uses singular wording for a single skipped file", async () => {
+        mockVault.getAllFiles.mockReturnValue([mkFile("only.md")]);
+        mockVault.getFrontmatter.mockImplementation(() => {
+          throw new Error("Simulated IRI error");
+        });
+
+        const mockLogger = createMockLogger();
+        const converterWithLogger = new NoteToRDFConverter(mockVault, mockLogger);
+
+        await converterWithLogger.convertVaultWithValidation();
+
+        expect(mockLogger.warn).toHaveBeenCalledTimes(1);
+        const message = mockLogger.warn.mock.calls[0][0] as string;
+        expect(message).toContain("Skipped 1 file with invalid IRI");
+        expect(message).not.toContain("1 files");
       });
     });
   });

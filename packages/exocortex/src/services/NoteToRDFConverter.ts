@@ -701,6 +701,12 @@ export class NoteToRDFConverter {
     const allTriples: Triple[] = [];
     const skippedFiles: Array<{ path: string; reason: string }> = [];
     const strict = options.strict ?? false;
+    // Issue #3468: per-file skip logs go to `info` (console-only by default);
+    // the loop counts each category and emits ONE summary `warn` per category
+    // after the walk, so bulk indexing of a dirty vault produces at most two
+    // Notice toasts instead of one per skipped file.
+    let invariantViolationCount = 0;
+    let invalidIriCount = 0;
 
     // FileSpace skip (onto-RFC 18808c73 Phase 5, ExoSync Phase C): spaces
     // declared `exo__FileSpace` in the vault have their mount folders
@@ -769,7 +775,10 @@ export class NoteToRDFConverter {
             path: file.path,
             reason: `Invariant violation: ${violation.message}`,
           });
-          this.logger.warn(
+          invariantViolationCount++;
+          // Issue #3468: info, not warn — per-file detail stays on the
+          // console channel without producing one Notice toast per file.
+          this.logger.info(
             `Skipping file with invariant violation: ${file.path}`,
             { code: violation.code, property: violation.property, reason: violation.message },
           );
@@ -792,10 +801,30 @@ export class NoteToRDFConverter {
           path: file.path,
           reason: `Invalid IRI: ${reason}`,
         });
+        invalidIriCount++;
 
-        // Issue #684: Skip files with invalid IRIs instead of crashing
-        this.logger.warn(`Skipping file with invalid IRI: ${file.path}`, { reason });
+        // Issue #684: Skip files with invalid IRIs instead of crashing.
+        // Issue #3468: info, not warn — see the summary warns below.
+        this.logger.info(`Skipping file with invalid IRI: ${file.path}`, { reason });
       }
+    }
+
+    // Issue #3468: one summary warn per category. The default plugin routing
+    // sends `warn` to the Notice channel, so a dirty vault yields at most two
+    // toasts per walk instead of one per file. The count must live in the
+    // message string itself — Notice/file channels only receive the
+    // top-level message, context objects go to the console channel.
+    if (invariantViolationCount > 0) {
+      this.logger.warn(
+        `Skipped ${invariantViolationCount} file${invariantViolationCount === 1 ? "" : "s"} with invariant violations during indexing (paths in developer console)`,
+        { count: invariantViolationCount },
+      );
+    }
+    if (invalidIriCount > 0) {
+      this.logger.warn(
+        `Skipped ${invalidIriCount} file${invalidIriCount === 1 ? "" : "s"} with invalid IRI during indexing (paths in developer console)`,
+        { count: invalidIriCount },
+      );
     }
 
     return {

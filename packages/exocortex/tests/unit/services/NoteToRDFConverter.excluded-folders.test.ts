@@ -39,7 +39,8 @@ describe("NoteToRDFConverter — excludedFolders", () => {
   // A frontmatter shape that would normally trigger an invariant violation:
   // exo__Instance_class is present but empty. The converter's
   // `validateExocortexAsset` flags this as `EMPTY_PROPERTY` and emits a
-  // "Skipping file with invariant violation" warn-log entry.
+  // "Skipping file with invariant violation" info-log entry plus an
+  // aggregated end-of-walk summary warn (Issue #3468).
   const invariantViolatingFrontmatter: IFrontmatter = {
     exo__Asset_uid: "11111111-2222-3333-4444-555555555555",
     exo__Asset_label: "Template",
@@ -208,16 +209,23 @@ describe("NoteToRDFConverter — excludedFolders", () => {
       ).toBeUndefined();
 
       // 3. Most importantly: no "Skipping file with invariant violation"
-      //    warn-log entry — that warn drives the user-visible Notice the
-      //    feature is supposed to silence.
-      const warnCalls = logger.warn.mock.calls;
-      const invariantWarn = warnCalls.find(
+      //    info-log entry (Issue #3468 moved the per-file detail to info),
+      //    and no aggregated summary warn — that warn drives the
+      //    user-visible Notice the feature is supposed to silence.
+      const infoCalls = logger.info.mock.calls;
+      const invariantInfo = infoCalls.find(
         (call) =>
           typeof call[0] === "string" &&
           call[0].includes("Skipping file with invariant violation") &&
           call[0].includes(templatesFile.path),
       );
-      expect(invariantWarn).toBeUndefined();
+      expect(invariantInfo).toBeUndefined();
+      const summaryWarn = logger.warn.mock.calls.find(
+        (call) =>
+          typeof call[0] === "string" &&
+          call[0].includes("invariant violation"),
+      );
+      expect(summaryWarn).toBeUndefined();
     });
 
     it("keeps validating files OUTSIDE excluded folders (no false-positive suppression)", async () => {
@@ -243,14 +251,22 @@ describe("NoteToRDFConverter — excludedFolders", () => {
       expect(result.summary.skipped).toBe(1);
       expect(result.skippedFiles[0].path).toBe(brokenRealFile.path);
 
-      const warnCalls = logger.warn.mock.calls;
-      const invariantWarn = warnCalls.find(
+      // Issue #3468: per-file detail is on the info channel; the warn
+      // channel carries the aggregated end-of-walk summary (with count).
+      const infoCalls = logger.info.mock.calls;
+      const invariantInfo = infoCalls.find(
         (call) =>
           typeof call[0] === "string" &&
           call[0].includes("Skipping file with invariant violation") &&
           call[0].includes(brokenRealFile.path),
       );
-      expect(invariantWarn).toBeDefined();
+      expect(invariantInfo).toBeDefined();
+      const summaryWarn = logger.warn.mock.calls.find(
+        (call) =>
+          typeof call[0] === "string" &&
+          call[0].includes("Skipped 1 file with invariant violations"),
+      );
+      expect(summaryWarn).toBeDefined();
     });
 
     it("treats an empty excludedFolders list as a no-op (legacy behaviour preserved)", async () => {
