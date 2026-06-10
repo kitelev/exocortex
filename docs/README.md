@@ -22,6 +22,8 @@ Index of the `docs/` tree. Top-level project docs live in the repo root
 ## Architecture & design
 
 - [profile.md](profile.md) — Profile pitch + Apply-profile (mount-state) model + 2-phase commit safety
+- [exosync.md](exosync.md) — ExoSync: GitHub-backed sync of the materialized AssetSpace/FileSpace set (`Exocortex: Sync` command, structured merge, conflict quarantine)
+- [settings-homoiconization.md](settings-homoiconization.md) — plugin settings as `exo__Setting` vault assets (data.json as write-through mirror)
 - [rdf/ExoRDF-Mapping.md](rdf/ExoRDF-Mapping.md) — vault ↔ RDF triple mapping
 - [CROSS_RUNTIME_PARITY.md](CROSS_RUNTIME_PARITY.md) — validator-specific instance of the UI/CLI Parity Invariant (see [VISION.md](../VISION.md#uicli-parity-invariant))
 - [SHACL_LITE_MAPPING.md](SHACL_LITE_MAPPING.md) — SHACL-lite shape mapping
