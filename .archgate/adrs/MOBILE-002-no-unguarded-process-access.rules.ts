@@ -29,7 +29,11 @@
 // Live member access: `process.<ident>` or `process[`, where `process` is
 // not itself a property access (`vault.process(...)` stays allowed; spread
 // `...process.env` is stripped to a plain access before matching).
-const ACCESS_RE = /(?<![.\w$])process\s*(?:\.\s*[A-Za-z_$]|\[)/;
+// `process?.env` / `process!.env` are matched too: optional chaining guards
+// `.env`, NOT the unresolved bare identifier — it throws the exact same
+// ReferenceError on iOS, and it is the nearest-neighbour mutation a
+// developer reaches for when this rule flags their line.
+const ACCESS_RE = /(?<![.\w$])process\s*[?!]?\s*(?:\.\s*[A-Za-z_$]|\[)/;
 
 function hasUnguardedAccess(rawLine: string): boolean {
   // Drop trailing line comments so prose like `// reads process.env` cannot
@@ -39,8 +43,10 @@ function hasUnguardedAccess(rawLine: string): boolean {
   if (/typeof\s+process\b/.test(code)) return false;
   // Spread punctuation would hide the access from the lookbehind — flatten.
   const flattened = code.replace(/\.\.\./g, " ");
-  // esbuild-defined NODE_ENV accesses never reach the real global.
-  const stripped = flattened.replace(/process\.env\??\.NODE_ENV/g, "");
+  // esbuild-defined NODE_ENV accesses never reach the real global. The \b
+  // keeps longer identifiers (NODE_ENVIRONMENT) flagged — esbuild's define
+  // substitutes the exact `process.env.NODE_ENV` form only.
+  const stripped = flattened.replace(/process\.env\??\.NODE_ENV\b/g, "");
   return ACCESS_RE.test(stripped);
 }
 
@@ -51,12 +57,16 @@ export default {
         "Unguarded `process.*` access in core/plugin src throws ReferenceError on Obsidian mobile (Issue #3469)",
       severity: "error",
       async check(ctx) {
+        // packages/services is bundled into the plugin transitively
+        // (obsidian-plugin depends on @kitelev/exocortex-services), so its
+        // src is mobile-reachable and scanned too.
         const files = [
           ...(await ctx.glob("packages/exocortex/src/**/*.{ts,tsx}")),
           ...(await ctx.glob("packages/obsidian-plugin/src/**/*.{ts,tsx}")),
+          ...(await ctx.glob("packages/services/src/**/*.{ts,tsx}")),
         ];
         for (const file of files) {
-          const hits = await ctx.grep(file, /\bprocess\s*[.[]/);
+          const hits = await ctx.grep(file, /\bprocess\s*[?!]?\s*[.[]/);
           if (hits.length === 0) continue;
           const content = await ctx.readFile(file);
           const lines = content.split("\n");

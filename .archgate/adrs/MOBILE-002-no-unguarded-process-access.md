@@ -9,6 +9,8 @@ files:
     "packages/exocortex/src/**/*.tsx",
     "packages/obsidian-plugin/src/**/*.ts",
     "packages/obsidian-plugin/src/**/*.tsx",
+    "packages/services/src/**/*.ts",
+    "packages/services/src/**/*.tsx",
   ]
 ---
 
@@ -36,9 +38,12 @@ rule).
 ## Decision
 
 - Live member access to the `process` global (`process.env`, `process.exit`,
-  `process.once`, ...) is FORBIDDEN in `packages/exocortex/src/**` and
-  `packages/obsidian-plugin/src/**` unless the SAME line contains a
-  `typeof process` guard. The sanctioned idiom is the one-line alias:
+  `process.once`, ... — including the `process?.env` / `process!.env` forms,
+  which throw the same ReferenceError) is FORBIDDEN in
+  `packages/exocortex/src/**`, `packages/obsidian-plugin/src/**` and
+  `packages/services/src/**` (bundled into the plugin transitively) unless
+  the SAME line contains a `typeof process` guard. The sanctioned idiom is
+  the one-line alias:
 
   ```ts
   const env = typeof process !== "undefined" ? process.env : undefined;
