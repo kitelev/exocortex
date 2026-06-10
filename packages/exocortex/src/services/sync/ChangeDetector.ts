@@ -83,10 +83,13 @@ export async function detectChanges(
   }
 
   const disk: DiskEntry[] = [];
+  const diskBlobShas = new Map<string, string>();
   for (const [path, content] of localFiles) {
+    const blobSha = await gitBlobSha(content, sha1);
+    diskBlobShas.set(path, blobSha);
     disk.push({
       path,
-      blobSha: await gitBlobSha(content, sha1),
+      blobSha,
       uid: extractAssetUid(content),
     });
   }
@@ -94,6 +97,7 @@ export async function detectChanges(
   const added: AssetChange[] = [];
   const modified: AssetChange[] = [];
   const deleted: AssetChange[] = [];
+  const warnings: string[] = [];
 
   const baseByUid = new Map<string, WatermarkFileEntry>();
   const baseNoUid: WatermarkFileEntry[] = [];
@@ -102,12 +106,25 @@ export async function detectChanges(
     else baseNoUid.push(entry);
   }
 
-  // Pass 1 — uid identity (D18).
+  // Pass 1 — uid identity (D18). A uid claims its base entry ONCE: a second
+  // disk file with the same uid is a vault anomaly (duplicate uid), not a
+  // rename — it falls through to path identity with an explicit warning
+  // instead of producing a misleading rename classification.
   const diskLeftover: DiskEntry[] = [];
   const baseMatchedUids = new Set<string>();
+  const uidClaimedBy = new Map<string, string>();
   for (const d of disk) {
     const base = d.uid !== undefined ? baseByUid.get(d.uid) : undefined;
     if (d.uid !== undefined && base !== undefined) {
+      const claimant = uidClaimedBy.get(d.uid);
+      if (claimant !== undefined) {
+        warnings.push(
+          `duplicate uid ${d.uid} on disk (${claimant}, ${d.path}) — ${d.path} matched by path identity instead`,
+        );
+        diskLeftover.push(d);
+        continue;
+      }
+      uidClaimedBy.set(d.uid, d.path);
       baseMatchedUids.add(d.uid);
       if (base.blobSha !== d.blobSha || base.path !== d.path) {
         modified.push({
@@ -145,5 +162,5 @@ export async function detectChanges(
     deleted.push({ path: base.path, uid: base.uid, blobSha: base.blobSha });
   }
 
-  return { kind: "changes", added, modified, deleted };
+  return { kind: "changes", added, modified, deleted, warnings, diskBlobShas };
 }

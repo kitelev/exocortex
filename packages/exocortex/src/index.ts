@@ -610,12 +610,18 @@ export {
   type SyncEngineDeps,
 } from "./services/sync/SyncEngine";
 export {
+  InMemoryQuarantineStore,
   isSyncablePath,
   type AssetChange,
   type ChangeDetectionResult,
   type LocalFilesPort,
   type MaterializationCheck,
   type MaterializationCheckPort,
+  type MergeConflictInput,
+  type MergeDecision,
+  type MergeLayerPort,
+  type QuarantineEntry,
+  type QuarantinePort,
   type RepoSyncResult,
   type Sha1Fn,
   type SyncRepoSpec,
@@ -623,3 +629,24 @@ export {
   type WatermarkRecord,
   type WatermarkStorePort,
 } from "./services/sync/syncTypes";
+// ExoSync A2 — StructuredMerger (3-way frontmatter per-key + D20 set-union
+// tombstones + D21 structured body merge) over the generic diff3 helper.
+export { diff3, type Diff3Result } from "./services/sync/diff3";
+export {
+  StructuredMerger,
+  splitSections,
+  type AssetMergeInput,
+  type AssetMergeOutcome,
+  type YamlCodec,
+} from "./services/sync/StructuredMerger";
+// ExoSync A2 — open-world mounted-scope SHACL merge-gate over the existing
+// ShaclLiteValidator (no new validator; refs into unmounted spaces pass).
+export {
+  MergeShaclGate,
+  type MergeGateVerdict,
+  type MergeShaclGateDeps,
+  type TriplesForContentFn,
+} from "./services/sync/MergeShaclGate";
+// ExoSync A2 — production MergeLayerPort composition: StructuredMerger +
+// optional SHACL gate; unresolvable/invalid merges quarantine (D17).
+export { GatedStructuredMerger } from "./services/sync/GatedStructuredMerger";
