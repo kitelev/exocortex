@@ -650,3 +650,32 @@ export {
 // ExoSync A2 — production MergeLayerPort composition: StructuredMerger +
 // optional SHACL gate; unresolvable/invalid merges quarantine (D17).
 export { GatedStructuredMerger } from "./services/sync/GatedStructuredMerger";
+// ExoSync A3 — durable stores + engineering baseline (RFC 4e4dc453):
+// synced quarantine repo (D17), durable watermark (D8/D22), credential
+// contract + auth detection (VL#10/R8), rate-limit backoff (R6),
+// secret-scan (R5).
+export {
+  FileWatermarkStore,
+  WATERMARK_STORE_FILENAME,
+  type WatermarkFileIO,
+} from "./services/sync/FileWatermarkStore";
+export {
+  isAuthError,
+  type CredentialStorePort,
+} from "./services/sync/CredentialStore";
+export {
+  isRateLimitError,
+  withRateLimitBackoff,
+  type BackoffOptions,
+} from "./services/sync/transportBackoff";
+export {
+  redactSecrets,
+  scanForSecrets,
+  type SecretFinding,
+} from "./services/sync/secretScan";
+export {
+  SyncedQuarantineStore,
+  type OpenQuarantineEntry,
+  type QuarantineEntryRecord,
+  type SyncedQuarantineStoreDeps,
+} from "./services/sync/SyncedQuarantineStore";
