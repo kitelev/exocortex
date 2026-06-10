@@ -13,6 +13,7 @@
 
 import {
   SyncEngine,
+  contentEquals,
   type QuarantineEntry,
   type QuarantinePort,
   type SyncEngineDeps,
@@ -286,6 +287,74 @@ describe("SyncEngine file-mode — guards", () => {
     expect(second.status).toBe("synced");
     expect(local.files.get(IMG)).toEqual(PNG_V2);
     expect(quarantine.entries.some((e) => e.path === IMG)).toBe(true);
+    // Advisor round-2 must-fix: the pin that cleared THIS cycle belongs to
+    // the entry created THIS cycle — auto-markResolved would tombstone the
+    // record before the user ever saw it (CQ4).
+    expect(quarantine.resolved).toEqual([]);
+  });
+
+  it("kind flip file→asset: refuses LOUDLY instead of inferring phantom deletes", async () => {
+    const gh = new FakeGitHubRepo({ [IMG]: PNG_V1, [NOTE]: NOTE_BODY });
+    const local = new FakeLocalFiles({ [IMG]: PNG_V1, [NOTE]: NOTE_BODY });
+    const { engine } = makeEngine(gh, local);
+    await engine.sync(gh.spec("file")); // file-mode watermark written
+
+    const result = await engine.sync(gh.spec()); // now resolves to asset
+
+    expect(result.status).toBe("error");
+    expect(result.detail).toMatch(/FILE-mode sync/);
+    expect(local.files.get(IMG)).toEqual(PNG_V1); // nothing touched
+  });
+
+  it("kind flip asset→file: rebuilds through the first-sync layer (no ADD-push over remote)", async () => {
+    const gh = new FakeGitHubRepo({ [NOTE]: NOTE_BODY });
+    const local = new FakeLocalFiles({ [NOTE]: NOTE_BODY });
+    const { engine, quarantine } = makeEngine(gh, local);
+    await engine.sync(gh.spec()); // asset-mode watermark (md-only)
+
+    // Device B updates a binary the asset-mode base never saw; the local
+    // copy diverges too — a naive ADD-push would overwrite device B.
+    gh.commitDirect("main", { [IMG]: PNG_V2 }, "device B adds binary");
+    local.files.set(IMG, PNG_V3);
+
+    const result = await engine.sync(gh.spec("file"));
+
+    expect(result.status).toBe("synced");
+    expect(result.warnings.join(" ")).toMatch(/kind flip/);
+    // Divergence went through remote-wins, not a blind push.
+    expect(local.files.get(IMG)).toEqual(PNG_V2);
+    expect(gh.headBlob(IMG)).toEqual(Buffer.from(PNG_V2));
+    expect(
+      quarantine.entries.some(
+        (e) => e.path === IMG && contentEquals(e.localContentBytes, PNG_V3),
+      ),
+    ).toBe(true);
+  });
+
+  it("file shrinking back under the cap derives as a CONFLICT, not a silent ADD-push (advisor round-2)", async () => {
+    const gh = new FakeGitHubRepo({ [IMG]: PNG_V1 });
+    const local = new FakeLocalFiles({ [IMG]: PNG_V1 });
+    const { engine, quarantine } = makeEngine(gh, local, { maxFileBytes: 16 });
+    await engine.sync(gh.spec("file")); // bootstrap
+
+    // Local grows over the cap (drops out of scope) while device B edits.
+    local.files.set(IMG, new Uint8Array(64).fill(0xee));
+    gh.commitDirect("main", { [IMG]: PNG_V2 }, "device B");
+    await engine.sync(gh.spec("file")); // excluded cycle (pinned)
+
+    // The local file shrinks back under the cap, still diverging from the
+    // remote — this must resolve remote-wins, NOT push over device B.
+    local.files.set(IMG, PNG_V3);
+    const result = await engine.sync(gh.spec("file"));
+
+    expect(result.status).toBe("synced");
+    expect(gh.headBlob(IMG)).toEqual(Buffer.from(PNG_V2)); // remote intact
+    expect(local.files.get(IMG)).toEqual(PNG_V2); // remote wins on disk
+    expect(
+      quarantine.entries.some(
+        (e) => e.path === IMG && contentEquals(e.localContentBytes, PNG_V3),
+      ),
+    ).toBe(true); // losing local bytes preserved
   });
 
   it("oversized REMOTE blob is excluded symmetrically — local copy is NOT phantom-deleted (reviewer HIGH)", async () => {

@@ -141,16 +141,18 @@ export function discoverFileSpaceExclusions(
 
   // Memoised per walk (reviewer MEDIUM): legacy label-form class links
   // repeat across thousands of files, and the CLI adapter re-parses the
-  // destination file on every `getFrontmatter` — one verdict per unique
-  // target string caps the resolve cost at the number of distinct classes.
-  const refVerdicts = new Map<string, boolean>();
+  // destination file on every `getFrontmatter`. The memo key is the
+  // RESOLVED destination path, not the link target — link resolution can
+  // be relative to the source file (the CLI adapter falls back to
+  // source-dir-relative lookup), so the same target string may legally
+  // resolve to different files (advisor round-2: false-sharing). The
+  // expensive part (frontmatter re-parse) is what gets cached.
+  const destVerdicts = new Map<string, boolean>();
 
   const isFileSpaceClassRef = (target: string, sourcePath: string): boolean => {
     if (UUID_RE.test(target)) {
       return target.toLowerCase() === FILE_SPACE_CLASS_UID;
     }
-    const memo = refVerdicts.get(target);
-    if (memo !== undefined) return memo;
     // Label-form link — resolve and check the destination's asset uid.
     // NOTE platform asymmetry: the plugin's metadataCache resolver does NOT
     // resolve aliases, the CLI adapter does — UUID-form links are the
@@ -159,14 +161,14 @@ export function discoverFileSpaceExclusions(
     // and loose adapters legitimately return `undefined` — treat both as
     // "unresolved".
     const dest = vault.getFirstLinkpathDest(target, sourcePath);
-    let verdict = false;
-    if (dest != null) {
-      const destFm = readFrontmatterSafe(vault, dest);
-      const uid = destFm?.["exo__Asset_uid"];
-      verdict =
-        typeof uid === "string" && uid.toLowerCase() === FILE_SPACE_CLASS_UID;
-    }
-    refVerdicts.set(target, verdict);
+    if (dest == null) return false;
+    const memo = destVerdicts.get(dest.path);
+    if (memo !== undefined) return memo;
+    const destFm = readFrontmatterSafe(vault, dest);
+    const uid = destFm?.["exo__Asset_uid"];
+    const verdict =
+      typeof uid === "string" && uid.toLowerCase() === FILE_SPACE_CLASS_UID;
+    destVerdicts.set(dest.path, verdict);
     return verdict;
   };
 

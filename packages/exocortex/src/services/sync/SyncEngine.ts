@@ -339,6 +339,8 @@ type PushLoopOutcome =
       applyDeletes: RemoteChange[];
       pushFiles: Map<string, SyncContent>;
       merge: MergeResolution;
+      /** REMOTE paths excluded by the size cap (file mode) — pinned by the caller. */
+      remoteOversized: Set<string>;
     };
 
 const EMPTY_MERGE: MergeResolution = {
@@ -584,6 +586,21 @@ export class SyncEngine {
             "watermark was written by a FILE-mode sync but the spec now resolves to asset mode — refusing (fix the conflicting Space declarations, or clear the watermark to restart)",
         });
       }
+      // Reverse flip (asset watermark + file-mode spec): the md-only base
+      // would make every local binary read as an ADD and push over
+      // unexamined remote versions. Rebuild through the file-mode
+      // first-sync layer instead — divergence goes through remote-wins
+      // (advisor round-2).
+      if (
+        watermark !== null &&
+        mode.fileMode &&
+        watermark.spaceKind !== "file"
+      ) {
+        warnings.push(
+          "watermark was written by an ASSET-mode sync — rebuilding the base through the file-mode first-sync layer (kind flip)",
+        );
+        watermark = null;
+      }
       let syntheticFirstSyncBase = false;
       if (watermark === null) {
         if (!mode.fileMode) {
@@ -609,8 +626,12 @@ export class SyncEngine {
       // A size-excluded LOCAL path must also vanish from the diff base —
       // its watermark entry would otherwise read as a local delete (and a
       // remote edit on it would silently overwrite the oversized local
-      // file via the conflict path). The exclusion re-derives every sync,
-      // so a file shrinking back under the cap simply reappears as an add.
+      // file via the conflict path). The UNFILTERED record survives as
+      // `persistedWatermark`: the watermark advance pins excluded paths
+      // and carries their previous entries forward, so a file crossing
+      // back under the cap derives as a modify/conflict — never as a
+      // fresh ADD that could push over an unexamined remote version.
+      const persistedWatermark = watermark;
       if (mode.fileMode && sizeExcluded.size > 0) {
         watermark = {
           ...watermark,
@@ -790,6 +811,15 @@ export class SyncEngine {
       for (const path of withheldPaths) {
         pinnedPaths.add(path);
       }
+      // Size-excluded paths (either side) pin too: the carry-forward keeps
+      // their PREVIOUS watermark entry, so a file crossing back under the
+      // cap derives as a modify/conflict — without the pin it would re-read
+      // as a fresh local ADD and silently push over an unexamined remote
+      // version (advisor round-2, cap-crossing ADD-bypass).
+      if (mode.fileMode) {
+        for (const path of sizeExcluded) pinnedPaths.add(path);
+        for (const path of loop.remoteOversized) pinnedPaths.add(path);
+      }
 
       await this.advanceWatermark(
         spec,
@@ -799,7 +829,9 @@ export class SyncEngine {
         // Merged writes carry their precomputed blob SHA (A2 deferred LOW) —
         // the watermark rebuild must not re-fetch blobs it already knows.
         [...applyWrites, ...merge.mergedWrites],
-        watermark,
+        // The UNFILTERED record — applyWatermarkPins must find the
+        // previous entries of size-excluded paths to carry them forward.
+        persistedWatermark,
         pinnedPaths,
         detection.diskBlobShas,
         mode,
@@ -809,7 +841,17 @@ export class SyncEngine {
       // A pin that existed on the PREVIOUS watermark and cleared in this
       // cycle means its conflict resolved convergently — best-effort close
       // the matching quarantine entry (CQ4 unresolved-count accuracy).
-      await this.resolveClearedPins(spec, watermark, pinnedPaths, warnings);
+      // Paths whose entry was CREATED this very cycle (file-mode resolved
+      // remote-wins copies) are skipped — their pin cleared because the
+      // conflict settled NOW, and auto-resolving would tombstone the
+      // record before the user ever saw it (advisor round-2 must-fix).
+      await this.resolveClearedPins(
+        spec,
+        persistedWatermark,
+        pinnedPaths,
+        warnings,
+        new Set(merge.resolvedQuarantineEntries.map((e) => e.path)),
+      );
 
       return result("synced", {
         pushedSha,
@@ -974,11 +1016,12 @@ export class SyncEngine {
     previous: WatermarkRecord,
     newPins: ReadonlySet<string>,
     warnings: string[],
+    skipPaths: ReadonlySet<string> = new Set(),
   ): Promise<void> {
     const sink = this.deps.quarantine;
     if (sink === undefined || sink.markResolved === undefined) return;
     const cleared = (previous.pinnedPaths ?? []).filter(
-      (p) => !newPins.has(p),
+      (p) => !newPins.has(p) && !skipPaths.has(p),
     );
     for (const path of cleared) {
       try {
@@ -1088,6 +1131,7 @@ export class SyncEngine {
     let applyDeletes: RemoteChange[] = [];
     let pushFiles = new Map<string, SyncContent>();
     let merge: MergeResolution = EMPTY_MERGE;
+    const remoteOversized = new Set<string>();
 
     for (;;) {
       examinedHead = await getHeadSha(
@@ -1122,6 +1166,7 @@ export class SyncEngine {
           mode,
           sizeExcluded,
           warnings,
+          remoteOversized,
         );
         const verdict = this.matchLocalVsRemote(
           localChanges,
@@ -1232,6 +1277,7 @@ export class SyncEngine {
       applyDeletes,
       pushFiles,
       merge,
+      remoteOversized,
     };
   }
 
@@ -1422,7 +1468,9 @@ export class SyncEngine {
       resolvedQuarantineEntries.push({
         repoKey: spec.repoKey,
         path: group.local.path,
-        reason: `file-mode remote-wins (D18): remote ${remote.kind === "change" ? `version ${remote.blobSha}` : "delete"} applied; this is the losing LOCAL version, preserved byte-exact`,
+        // "wins", not "applied" — the apply can still be withheld (flush
+        // failure) or TOCTOU-skipped after this entry is built.
+        reason: `file-mode remote-wins (D18): remote ${remote.kind === "change" ? `version ${remote.blobSha}` : "delete"} wins; this is the losing LOCAL version, preserved byte-exact`,
         ...(typeof localContent === "string"
           ? { localContent }
           : { localContentBytes: localContent }),
@@ -1667,6 +1715,7 @@ export class SyncEngine {
     mode: ModeOps,
     sizeExcluded: ReadonlySet<string> = new Set(),
     warnings: string[] = [],
+    remoteOversized: Set<string> = new Set(),
   ): Promise<RemoteChange[]> {
     const headCommit = await getCommitInfo(
       this.transport,
@@ -1686,11 +1735,15 @@ export class SyncEngine {
     // diff symmetrically: dropping it from the head tree alone would make
     // its base entry read as a remote DELETE and destroy the local ≤cap
     // copy (reviewer HIGH). Locally size-excluded paths are equally
-    // invisible on the remote side.
-    const remoteOversized = new Set<string>();
+    // invisible on the remote side. The accumulator is caller-owned — the
+    // paths get PINNED so re-entry under the cap derives as a conflict.
     if (mode.fileMode) {
       for (const e of rawTree) {
-        if (mode.syncable(e.path) && !mode.treeFilter(e)) {
+        if (
+          mode.syncable(e.path) &&
+          !mode.treeFilter(e) &&
+          !remoteOversized.has(e.path)
+        ) {
           remoteOversized.add(e.path);
           warnings.push(
             `skipped oversized REMOTE file ${e.path} (${e.size ?? "?"} bytes over cap) — excluded from sync symmetrically (Phase C size cap)`,
