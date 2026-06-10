@@ -54,7 +54,7 @@ infrastructure/  → Obsidian API adapters, file system
 
 ## Test Suite Awareness
 
-The exocortex-package jest config has `roots: ['<rootDir>/tests']`, but CI's `test-coverage` step uses an allowlist regex in `scripts/test-ci-batched.sh` (see `EXOCORTEX_JEST_ARGS`). New integration suites under `packages/exocortex/tests/integration/**` are NOT picked up automatically — either add them to the allowlist or accept they can rot silently.
+The exocortex-package jest config has `roots: ['<rootDir>/tests']`, but exocortex suites run in CI only if matched by the inline `--testPathPatterns` allowlist of the `test-coverage-exocortex` job in `.github/workflows/ci.yml` (that inline list is the actual CI gate — `scripts/test-ci-batched.sh` is only the local `npm run test:unit` mirror, no workflow invokes it). New integration suites under `packages/exocortex/tests/integration/**` are NOT picked up automatically — either add them to the CI allowlist (and mirror in the script) or accept they can rot silently.
 
 When fixing a bug, run the directly-affected suite locally even if it isn't gated by CI:
 

@@ -2728,7 +2728,7 @@ function shouldShowButton(asset: Asset): boolean {
 
 **When to use**: Transforming rendered markdown content (links, text, formatting)
 
-> **Current state (2026-06)**: the plugin does **NOT** register a generic markdown post-processor. The only registered processors are the `sparql` / `exoql` **codeblock** processors (`registerMarkdownCodeBlockProcessor` in `ExocortexPlugin.ts`). Body-link label replacement is implemented via the MutationObserver-based `BodyLinkPatch` (`packages/obsidian-plugin/src/presentation/body/BodyLinkPatch.ts`) — see «MutationObserver DOM Coverage Pattern» in this document. The code below is a generic Obsidian API illustration, not current plugin code.
+> **Current state (2026-06)**: the plugin does **NOT** register a generic markdown post-processor. The only registered processors are the `sparql` / `exoql` / `exo-layout` **codeblock** processors (`registerMarkdownCodeBlockProcessor` in `ExocortexPlugin.ts`). Body-link label replacement is implemented via the MutationObserver-based `BodyLinkPatch` (`packages/obsidian-plugin/src/presentation/body/BodyLinkPatch.ts`) — see «MutationObserver DOM Coverage Pattern» in this document. The code below is a generic Obsidian API illustration, not current plugin code.
 
 ### Pattern Description
 

@@ -46,7 +46,7 @@ Compared to existing tools:
 - **Everything as Knowledge** — commands, workflows, property schemas, layouts, and even plugin settings (`exo__Setting` assets — see [docs/settings-homoiconization.md](./docs/settings-homoiconization.md)) defined as vault assets, not hardcoded
 - **Ontology plugins** — extend the system with installable ontology packages (e.g. [GTD + Jedi Techniques](https://github.com/kitelev/gtd-jedi))
 - **Profile** (production-ready) — vault-declared homoiconic profiles that drive on-disk AssetSpace materialization via a single **Apply profile** operation (mount-state strict replace). One vault, multiple contexts, selective sync. See [docs/profile.md](./docs/profile.md).
-- **ExoSync** — GitHub-backed vault sync via the **Exocortex: Sync** command: pull → merge → push over the GitHub REST API, with a SHACL merge-gate validating merged assets before they ship. Works on mobile (no git binary required). See [docs/exosync.md](./docs/exosync.md).
+- **ExoSync** — GitHub-backed vault sync via the **Exocortex: Sync** command: pull → merge → push over the GitHub REST API, with structured 3-way merge and quarantine for unresolvable conflicts (a SHACL merge-gate ships in core but is not yet wired into the plugin). Works on mobile (no git binary required). See [docs/exosync.md](./docs/exosync.md).
 - **UI/CLI Parity** — every capability is reachable from the Obsidian plugin and the CLI; neither client holds exclusive features. The complement of homoiconicity: it keeps the _invocation_ layer open just as homoiconicity keeps the _data_ layer open. See [VISION.md](./VISION.md#uicli-parity-invariant).
 - **Local-first** — all data stays on your device, no cloud required
 

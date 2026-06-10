@@ -187,7 +187,7 @@ exo__Asset_createdAt: 2025-10-26T14:30:45
 **Example**:
 
 ```yaml
-exo__Asset_isDefinedBy: "[[0c2f48d6-6f8e-4a9b-9c3d-5e7f1a2b3c4d]]" # → the $ems ontology asset
+exo__Asset_isDefinedBy: "[[f6e01f7a-d727-494a-82a3-815597d33e86]]" # → the $ems ontology asset
 ```
 
 Path-form values (`"[[Ontology/EMS]]"`) are a legacy encoding — new assets
@@ -211,7 +211,7 @@ should reference the ontology asset by its UID wikilink (UID-canon).
 | **Required**       | ✅ Yes (ALL assets)                                                      |
 | **Canonical form** | **Form C — bare UUID** `"[[<class-uuid>]]"` (see _Canonical form_ below) |
 | **Purpose**        | Determine asset type for UI rendering and commands                       |
-| **Generated**      | Based on creation context (see `INSTANCE_CLASS_MAP`)                     |
+| **Generated**      | Based on creation context (see _Default instantiation rules_ below)      |
 | **Mutable**        | Rarely (type usually fixed at creation)                                  |
 | **Valid Values**   | See `AssetClass` enum                                                    |
 
@@ -1191,10 +1191,10 @@ archived: true
 
 ```yaml
 # Parent Area
-exo__Asset_isDefinedBy: "[[0c2f48d6-6f8e-4a9b-9c3d-5e7f1a2b3c4d]]" # $ems ontology asset
+exo__Asset_isDefinedBy: "[[f6e01f7a-d727-494a-82a3-815597d33e86]]" # $ems ontology asset
 
 # Child Task (inherits)
-exo__Asset_isDefinedBy: "[[0c2f48d6-6f8e-4a9b-9c3d-5e7f1a2b3c4d]]" # $ems ontology asset
+exo__Asset_isDefinedBy: "[[f6e01f7a-d727-494a-82a3-815597d33e86]]" # $ems ontology asset
 ```
 
 #### Rule 2: Never Inherited
@@ -1219,7 +1219,7 @@ exo__Asset_isDefinedBy: "[[0c2f48d6-6f8e-4a9b-9c3d-5e7f1a2b3c4d]]" # $ems ontolo
 | `ems__MeetingPrototype` | `exo__Asset_prototype` | `"[[{prototype-name}]]"`  |
 | `ems__Initiative`       | `ems__Effort_parent`   | `"[[{initiative-name}]]"` |
 
-**INSTANCE_CLASS_MAP** (determines child type):
+**Default instantiation rules** (determine child type; resolved at runtime by `InstantiationRuleResolver` from vault-declared rules — the hardcoded `INSTANCE_CLASS_MAP` was retired in Issue #2534, these tables document the default rule content):
 
 | Source Class            | Child Instance Class |
 | ----------------------- | -------------------- |
@@ -1235,8 +1235,8 @@ exo__Asset_isDefinedBy: "[[0c2f48d6-6f8e-4a9b-9c3d-5e7f1a2b3c4d]]" # $ems ontolo
 # Input: sourceClass = "ems__Area", sourceName = "Work"
 # Output frontmatter:
 exo__Instance_class:
-  - "[[1b20a8f0-d745-4e93-91db-4531b3df120e]]" # ems__Task, from INSTANCE_CLASS_MAP
-ems__Effort_area: "[[Work]]" # From EFFORT_PROPERTY_MAP
+  - "[[1b20a8f0-d745-4e93-91db-4531b3df120e]]" # ems__Task, per default instantiation rule
+ems__Effort_area: "[[Work]]" # per default link-back rule
 ```
 
 ---
@@ -1361,7 +1361,7 @@ ems__Effort_votes >= 0;
 exo__Asset_uid: 550e8400-e29b-41d4-a716-446655440000
 exo__Asset_label: Review PR #123
 exo__Asset_createdAt: 2025-10-26T14:30:45
-exo__Asset_isDefinedBy: "[[0c2f48d6-6f8e-4a9b-9c3d-5e7f1a2b3c4d]]" # $ems ontology asset
+exo__Asset_isDefinedBy: "[[f6e01f7a-d727-494a-82a3-815597d33e86]]" # $ems ontology asset
 exo__Instance_class:
   - "[[1b20a8f0-d745-4e93-91db-4531b3df120e]]" # ems__Task
 ems__Effort_status: "[[ems__EffortStatusDoing]]"
@@ -1383,7 +1383,7 @@ Task content goes here...
 exo__Asset_uid: 7c9e6679-7425-40de-944b-e07fc1f90ae7
 exo__Asset_label: Website Redesign
 exo__Asset_createdAt: 2025-10-20T10:00:00
-exo__Asset_isDefinedBy: "[[0c2f48d6-6f8e-4a9b-9c3d-5e7f1a2b3c4d]]" # $ems ontology asset
+exo__Asset_isDefinedBy: "[[f6e01f7a-d727-494a-82a3-815597d33e86]]" # $ems ontology asset
 exo__Instance_class:
   - "[[7db5eeff-718a-49b0-8d2b-39b084a356e3]]" # ems__Project
 ems__Effort_status: "[[ems__EffortStatusToDo]]"
@@ -1421,7 +1421,7 @@ Additional notes about TypeScript...
 exo__Asset_uid: 8f7d3c5a-1b2e-4f6a-9d8c-7e6f5a4b3c2d
 exo__Asset_label: 2025-10-26 Breakfast
 exo__Asset_createdAt: 2025-10-26T07:00:00
-exo__Asset_isDefinedBy: "[[0c2f48d6-6f8e-4a9b-9c3d-5e7f1a2b3c4d]]" # $ems ontology asset
+exo__Asset_isDefinedBy: "[[f6e01f7a-d727-494a-82a3-815597d33e86]]" # $ems ontology asset
 exo__Instance_class:
   - "[[1b20a8f0-d745-4e93-91db-4531b3df120e]]" # ems__Task
 ems__Effort_status: "[[ems__EffortStatusDraft]]"
