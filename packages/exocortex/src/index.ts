@@ -610,12 +610,18 @@ export {
   type SyncEngineDeps,
 } from "./services/sync/SyncEngine";
 export {
+  InMemoryQuarantineStore,
   isSyncablePath,
   type AssetChange,
   type ChangeDetectionResult,
   type LocalFilesPort,
   type MaterializationCheck,
   type MaterializationCheckPort,
+  type MergeConflictInput,
+  type MergeDecision,
+  type MergeLayerPort,
+  type QuarantineEntry,
+  type QuarantinePort,
   type RepoSyncResult,
   type Sha1Fn,
   type SyncRepoSpec,
@@ -641,3 +647,6 @@ export {
   type MergeShaclGateDeps,
   type TriplesForContentFn,
 } from "./services/sync/MergeShaclGate";
+// ExoSync A2 — production MergeLayerPort composition: StructuredMerger +
+// optional SHACL gate; unresolvable/invalid merges quarantine (D17).
+export { GatedStructuredMerger } from "./services/sync/GatedStructuredMerger";

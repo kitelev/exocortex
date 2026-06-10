@@ -6,12 +6,20 @@
  * fakeGitHub.ts module docstring.
  */
 
+import * as yaml from "js-yaml";
 import {
+  GatedStructuredMerger,
+  InMemoryQuarantineStore,
+  StructuredMerger,
   SyncEngine,
   orderChildrenFirst,
   isNonFastForwardError,
+  type MergeConflictInput,
+  type MergeDecision,
+  type MergeLayerPort,
   type SyncEngineDeps,
   type SyncRepoSpec,
+  type YamlCodec,
 } from "../../../../src";
 import {
   FakeGitHubRepo,
@@ -601,5 +609,158 @@ describe("SyncEngine — no-op fast path (A1 review MEDIUM perf)", () => {
     expect(result.pushedCount).toBe(0);
     expect(result.pulledCount).toBe(0);
     expect(setSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("SyncEngine — A2 merge layer integration", () => {
+  const stubMergeLayer = (
+    fn: (input: MergeConflictInput) => MergeDecision,
+  ): MergeLayerPort => ({ resolve: async (i) => fn(i) });
+
+  it("use-merged: pushes the merged content AND writes it to disk", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const merged = mdAsset("u1", "merged by layer");
+    const seen: MergeConflictInput[] = [];
+    const { engine } = makeEngine(gh, local, {
+      mergeLayer: stubMergeLayer((i) => {
+        seen.push(i);
+        return { action: "use-merged", content: merged, warnings: ["w1"] };
+      }),
+    });
+    await bootstrap(engine, gh.spec());
+
+    gh.commitDirect("main", { [FILE_A]: mdAsset("u1", "remote edit") }, "B");
+    local.files.set(FILE_A, mdAsset("u1", "local edit"));
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.mergedCount).toBe(1);
+    expect(result.quarantinedCount).toBe(0);
+    expect(result.warnings.join(" ")).toMatch(/merge\(assets\/a\.md\): w1/);
+    expect(gh.headFiles().get(FILE_A)).toBe(merged); // pushed
+    expect(local.files.get(FILE_A)).toBe(merged); // written to disk
+    // The merge layer received the full 3-way input.
+    expect(seen[0]).toMatchObject({
+      path: FILE_A,
+      uid: "u1",
+      base: mdAsset("u1"),
+      local: mdAsset("u1", "local edit"),
+      remote: mdAsset("u1", "remote edit"),
+    });
+
+    // Convergent next sync: no conflict left, nothing to do.
+    const second = await engine.sync(gh.spec());
+    expect(second.status).toBe("synced");
+    expect(second.mergedCount).toBe(0);
+    expect(second.pushedCount).toBe(0);
+  });
+
+  it("merged == remote: nothing pushed, merged applied to disk only", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const remoteContent = mdAsset("u1", "remote wins");
+    const { engine } = makeEngine(gh, local, {
+      mergeLayer: stubMergeLayer(() => ({
+        action: "use-merged",
+        content: remoteContent,
+      })),
+    });
+    await bootstrap(engine, gh.spec());
+    const headBefore = gh.refs.get("main");
+
+    gh.commitDirect("main", { [FILE_A]: remoteContent }, "B");
+    local.files.set(FILE_A, mdAsset("u1", "local edit"));
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.mergedCount).toBe(1);
+    expect(result.pushedSha).toBeUndefined(); // no push commit created
+    expect(gh.refs.get("main")).not.toBe(headBefore); // only device B's commit
+    expect(local.files.get(FILE_A)).toBe(remoteContent); // disk converged
+  });
+
+  it("quarantine: both versions preserved, nothing touched, conflict re-derives", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const store = new InMemoryQuarantineStore();
+    const { engine, watermarks } = makeEngine(gh, local, {
+      mergeLayer: stubMergeLayer(() => ({
+        action: "quarantine",
+        reason: "unresolvable overlap",
+      })),
+      quarantine: store,
+    });
+    await bootstrap(engine, gh.spec());
+
+    gh.commitDirect("main", { [FILE_A]: mdAsset("u1", "remote edit") }, "B");
+    local.files.set(FILE_A, mdAsset("u1", "local edit"));
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.quarantinedCount).toBe(1);
+    expect(result.mergedCount).toBe(0);
+    expect(result.warnings.join(" ")).toMatch(/quarantined assets\/a\.md/);
+    // Both versions captured (D17), nothing shipped anywhere.
+    expect(store.entries).toHaveLength(1);
+    expect(store.entries[0]).toMatchObject({
+      path: FILE_A,
+      uid: "u1",
+      reason: "unresolvable overlap",
+      baseContent: mdAsset("u1"),
+      localContent: mdAsset("u1", "local edit"),
+      remoteContent: mdAsset("u1", "remote edit"),
+    });
+    expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1", "remote edit"));
+    expect(local.files.get(FILE_A)).toBe(mdAsset("u1", "local edit"));
+    // Watermark pinned → the same conflict re-derives on the next sync.
+    expect(
+      watermarks.records.get(gh.spec().repoKey)!.pinnedPaths,
+    ).toContain(FILE_A);
+    const second = await engine.sync(gh.spec());
+    expect(second.quarantinedCount).toBe(1);
+    expect(store.entries).toHaveLength(2);
+  });
+
+  it("end-to-end with the real GatedStructuredMerger: non-overlapping edits merge", async () => {
+    const codec: YamlCodec = {
+      parse: (text) => yaml.load(text, { schema: yaml.CORE_SCHEMA }),
+      stringify: (value) =>
+        yaml.dump(value, { schema: yaml.CORE_SCHEMA, lineWidth: -1 }),
+    };
+    const yamlAsset = (label: string, extra?: string): string =>
+      `---\nexo__Asset_uid: u1\nexo__Asset_label: ${label}\n${extra !== undefined ? `extra: ${extra}\n` : ""}---\n\nbody\n`;
+    const gh = new FakeGitHubRepo({ [FILE_A]: yamlAsset("Base") });
+    const local = new FakeLocalFiles({ [FILE_A]: yamlAsset("Base") });
+    const { engine } = makeEngine(gh, local, {
+      mergeLayer: new GatedStructuredMerger(new StructuredMerger(codec)),
+    });
+    await bootstrap(engine, gh.spec());
+
+    gh.commitDirect("main", { [FILE_A]: yamlAsset("Base", "remote-value") }, "B");
+    local.files.set(FILE_A, yamlAsset("Local"));
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.mergedCount).toBe(1);
+    const mergedOnRemote = gh.headFiles().get(FILE_A)!;
+    expect(mergedOnRemote).toContain("exo__Asset_label: Local");
+    expect(mergedOnRemote).toContain("extra: remote-value");
+    expect(local.files.get(FILE_A)).toBe(mergedOnRemote);
+  });
+
+  it("without a merge layer the A1 conflict contract is unchanged", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const { engine } = makeEngine(gh, local); // no mergeLayer
+    await bootstrap(engine, gh.spec());
+
+    gh.commitDirect("main", { [FILE_A]: mdAsset("u1", "remote edit") }, "B");
+    local.files.set(FILE_A, mdAsset("u1", "local edit"));
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("conflict");
+    expect(result.mergedCount).toBe(0);
+    expect(result.quarantinedCount).toBe(0);
   });
 });

@@ -159,6 +159,16 @@ export interface RepoSyncResult {
   pulledCount: number;
   /** Files pushed to remote. */
   pushedCount: number;
+  /** Conflicting assets resolved by the merge layer (A2). */
+  mergedCount: number;
+  /**
+   * Conflicting assets the merge layer could NOT resolve (or whose merged
+   * result failed the SHACL gate). Each is routed to the QuarantinePort
+   * (when wired), left untouched on disk AND pinned in the watermark so the
+   * conflict re-derives every sync until resolved (D17; synced quarantine
+   * store is A3 scope).
+   */
+  quarantinedCount: number;
   warnings: string[];
   /**
    * Local deletes/renames detected but NOT pushed in A1 (the write primitive
@@ -167,6 +177,64 @@ export interface RepoSyncResult {
    */
   deferredDeletes: string[];
   detail?: string;
+}
+
+/** One conflicting asset handed to the merge layer (D1). */
+export interface MergeConflictInput {
+  /** Canonical (local) repo-relative path. */
+  path: string;
+  uid?: string;
+  /** 3-way base content; `undefined` = did not exist at the base. */
+  base?: string;
+  /** Local content; `undefined` = deleted locally. */
+  local?: string;
+  /** Remote content; `undefined` = deleted remotely. */
+  remote?: string;
+}
+
+/** Merge-layer verdict for one conflicting asset. */
+export type MergeDecision =
+  | { action: "use-merged"; content: string; warnings?: string[] }
+  | { action: "quarantine"; reason: string };
+
+/**
+ * The A2 merge layer port. Production composition is
+ * `GatedStructuredMerger` (StructuredMerger + open-world SHACL gate); the
+ * engine stays agnostic. Absent ⇒ A1 behavior (any overlap = `conflict`
+ * status, nothing touched).
+ */
+export interface MergeLayerPort {
+  resolve(input: MergeConflictInput): Promise<MergeDecision>;
+}
+
+/** Both versions of an unresolvable conflict, for quarantine (D17). */
+export interface QuarantineEntry {
+  repoKey: string;
+  path: string;
+  uid?: string;
+  reason: string;
+  baseContent?: string;
+  localContent?: string;
+  remoteContent?: string;
+}
+
+/**
+ * Quarantine persistence port (D17). A2 ships {@link InMemoryQuarantineStore}
+ * only — the durable SYNCED quarantine repo is A3 scope. Skipping the port
+ * loses no data: the conflicting file stays untouched on disk, the remote
+ * version stays in git history, and the watermark pin re-derives the
+ * conflict on every subsequent sync.
+ */
+export interface QuarantinePort {
+  quarantine(entry: QuarantineEntry): Promise<void>;
+}
+
+/** In-memory QuarantinePort stub (A2) — durable synced store lands in A3. */
+export class InMemoryQuarantineStore implements QuarantinePort {
+  readonly entries: QuarantineEntry[] = [];
+  async quarantine(entry: QuarantineEntry): Promise<void> {
+    this.entries.push(entry);
+  }
 }
 
 /**

@@ -1,16 +1,21 @@
 /**
- * ExoSync SyncEngine — push-only happy-path orchestrator (RFC 4e4dc453, A1).
+ * ExoSync SyncEngine — pull→merge→push orchestrator (RFC 4e4dc453, A1+A2).
  *
- * Per-repo cycle (VL#7): pull → no-conflict check → push, orchestrating the
- * EXISTING write primitive `restCreateCommit` (D3 — no new write path, no
- * modification of the primitive). What A1 deliberately does NOT do:
+ * Per-repo cycle (VL#7): pull → conflict check → merge layer → push,
+ * orchestrating the EXISTING write primitive `restCreateCommit` (D3 — no new
+ * write path, no modification of the primitive). Conflicting assets go
+ * through the optional {@link SyncEngineDeps.mergeLayer} (A2): `use-merged`
+ * content is pushed and/or written to disk; `quarantine` routes both
+ * versions to the {@link SyncEngineDeps.quarantine} sink (D17) and pins the
+ * path in the watermark so the conflict re-derives until resolved. Without a
+ * merge layer the engine keeps the A1 contract: any overlap (same uid or
+ * same path, including delete-vs-modify) returns `conflict`, touches nothing.
  *
- *  - NO merge. Any overlap between local and remote changes (same uid or same
- *    path, including delete-vs-modify) returns `conflict` and touches nothing
- *    — the StructuredMerger (A2) and quarantine (A3) own that territory.
+ * What this engine still does NOT do:
+ *
  *  - NO pushed deletions/renames. The write primitive's `files` map cannot
  *    express deletions; local deletes and renames are reported as
- *    `deferredDeletes` warnings and re-surface every sync until A2/A3 land.
+ *    `deferredDeletes` warnings and re-surface every sync until A3 lands.
  *  - NO binary content. Only {@link isSyncablePath} files participate,
  *    symmetrically (local snapshot, remote diff, pull-apply, delete
  *    inference) — attachments are Phase C (D4/VL#3).
@@ -47,6 +52,9 @@ import {
   type ChangeDetectionResult,
   type LocalFilesPort,
   type MaterializationCheckPort,
+  type MergeLayerPort,
+  type QuarantineEntry,
+  type QuarantinePort,
   type RepoSyncResult,
   type Sha1Fn,
   type SyncRepoSpec,
@@ -76,6 +84,19 @@ export interface SyncEngineDeps {
    * strings; defaults to identity.
    */
   redact?: (message: string) => string;
+  /**
+   * A2 merge layer (production composition: `GatedStructuredMerger`). Absent
+   * ⇒ A1 behavior: any local/remote overlap returns `conflict`, nothing
+   * pushed, nothing written.
+   */
+  mergeLayer?: MergeLayerPort;
+  /**
+   * Quarantine sink for unresolvable / SHACL-invalid merges (D17). Optional —
+   * skipping it loses no data: the file stays untouched on disk and the
+   * watermark pin re-derives the conflict every sync (durable synced store is
+   * A3 scope).
+   */
+  quarantine?: QuarantinePort;
 }
 
 /** Reject absolute, backslash, empty-segment, `.`/`..` paths (zip-slip guard). */
@@ -183,6 +204,25 @@ interface PinnedLocalChanges {
   pushFilesAll: Map<string, string>;
 }
 
+/** One local change overlapping one-or-more remote changes (merge input). */
+interface ConflictGroup {
+  local: AssetChange;
+  localIsDelete: boolean;
+  remotes: RemoteChange[];
+  desc: string;
+}
+
+/** Per-iteration verdict of the A2 merge layer over all conflict groups. */
+interface MergeResolution {
+  /** path → merged content to PUSH (differs from what the remote has). */
+  mergedFiles: Map<string, string>;
+  /** Merged contents to write to DISK (differ from the local copy). */
+  mergedWrites: RemoteChange[];
+  quarantineEntries: QuarantineEntry[];
+  mergedCount: number;
+  warnings: string[];
+}
+
 /** Outcome of the pull→check→push retry loop. */
 type PushLoopOutcome =
   | { kind: "conflict"; detail: string }
@@ -194,7 +234,16 @@ type PushLoopOutcome =
       applyWrites: RemoteChange[];
       applyDeletes: RemoteChange[];
       pushFiles: Map<string, string>;
+      merge: MergeResolution;
     };
+
+const EMPTY_MERGE: MergeResolution = {
+  mergedFiles: new Map(),
+  mergedWrites: [],
+  quarantineEntries: [],
+  mergedCount: 0,
+  warnings: [],
+};
 
 export class SyncEngine {
   private readonly deps: SyncEngineDeps;
@@ -229,6 +278,8 @@ export class SyncEngine {
       status,
       pulledCount: 0,
       pushedCount: 0,
+      mergedCount: 0,
+      quarantinedCount: 0,
       warnings,
       deferredDeletes,
       ...extra,
@@ -291,6 +342,17 @@ export class SyncEngine {
       }
       const { examinedHead, pushedSha, applyWrites, applyDeletes, pushFiles } =
         loop;
+      const merge = loop.merge;
+      warnings.push(...merge.warnings);
+
+      // Quarantine sink fires ONCE, after the retry loop settled (D17). The
+      // entries' paths are pinned below so the conflict re-derives next sync.
+      for (const entry of merge.quarantineEntries) {
+        await this.deps.quarantine?.quarantine(entry);
+        warnings.push(
+          `quarantined ${entry.path}: ${entry.reason} — both versions preserved; conflict re-derives until resolved (D17)`,
+        );
+      }
 
       // No-op fast path: nothing pushed, head unmoved, nothing to apply —
       // the watermark is already exact; skip the head-tree fetch and the
@@ -302,6 +364,8 @@ export class SyncEngine {
         examinedHead === watermark.lastSyncedSha &&
         applyWrites.length === 0 &&
         applyDeletes.length === 0 &&
+        merge.mergedWrites.length === 0 &&
+        merge.quarantineEntries.length === 0 &&
         (watermark.pinnedPaths?.length ?? 0) === 0
       ) {
         return result("synced");
@@ -338,16 +402,26 @@ export class SyncEngine {
         return result("synced", {
           pushedSha,
           pushedCount: pushFiles.size,
+          mergedCount: merge.mergedCount,
+          quarantinedCount: merge.quarantineEntries.length,
         });
       }
 
+      // Merged contents that differ from the local copy land on disk through
+      // the same TOCTOU-guarded apply as remote pulls.
       const { pulledCount, pinnedPaths } = await this.applyRemoteChanges(
         localFiles,
         disk,
-        applyWrites,
+        [...applyWrites, ...merge.mergedWrites],
         applyDeletes,
         warnings,
       );
+
+      // Quarantined paths keep their OLD watermark entry (same mechanism as
+      // TOCTOU pins): the conflict re-derives every sync until resolved.
+      for (const entry of merge.quarantineEntries) {
+        pinnedPaths.add(entry.path);
+      }
 
       await this.advanceWatermark(
         spec,
@@ -364,6 +438,8 @@ export class SyncEngine {
         pushedSha,
         pulledCount,
         pushedCount: pushFiles.size,
+        mergedCount: merge.mergedCount,
+        quarantinedCount: merge.quarantineEntries.length,
       });
     } catch (err) {
       const redact = this.deps.redact ?? ((m: string): string => m);
@@ -464,6 +540,7 @@ export class SyncEngine {
     let applyWrites: RemoteChange[] = [];
     let applyDeletes: RemoteChange[] = [];
     let pushFiles = new Map<string, string>();
+    let merge: MergeResolution = EMPTY_MERGE;
 
     for (;;) {
       examinedHead = await getHeadSha(
@@ -475,6 +552,9 @@ export class SyncEngine {
       );
       applyWrites = [];
       applyDeletes = [];
+      // Merge resolution is recomputed per iteration — a re-pull changes the
+      // remote side, so a previous iteration's verdicts are stale.
+      merge = EMPTY_MERGE;
       const convergedPushPaths = new Set<string>();
 
       // Pinned paths diverge from the lastSyncedSha tree by construction —
@@ -494,19 +574,28 @@ export class SyncEngine {
           remote,
           convergedPushPaths,
         );
-        if (verdict.conflict !== undefined) {
-          return {
-            kind: "conflict",
-            detail: `overlapping change on ${verdict.conflict} — merge layer (A2/A3) required; nothing pushed, nothing written`,
-          };
+        if (verdict.conflicts.length > 0) {
+          if (this.deps.mergeLayer === undefined) {
+            return {
+              kind: "conflict",
+              detail: `overlapping change on ${verdict.conflicts[0].desc} — merge layer (A2/A3) required; nothing pushed, nothing written`,
+            };
+          }
+          merge = await this.resolveMergeConflicts(
+            spec,
+            watermark,
+            verdict.conflicts,
+            disk,
+          );
         }
         applyWrites = verdict.applyWrites;
         applyDeletes = verdict.applyDeletes;
       }
 
-      pushFiles = new Map(
-        [...pushFilesAll].filter(([p]) => !convergedPushPaths.has(p)),
-      );
+      pushFiles = new Map([
+        ...[...pushFilesAll].filter(([p]) => !convergedPushPaths.has(p)),
+        ...merge.mergedFiles,
+      ]);
       if (pushFiles.size === 0) break;
 
       try {
@@ -544,7 +633,118 @@ export class SyncEngine {
       applyWrites,
       applyDeletes,
       pushFiles,
+      merge,
     };
+  }
+
+  /**
+   * Run every conflict group through the A2 merge layer (D1). `use-merged`
+   * splits the merged content into what must be PUSHED (≠ remote copy) and
+   * what must be WRITTEN to disk (≠ local copy); `quarantine` collects a
+   * both-versions entry (D17) — the engine never writes a quarantined path.
+   * The 3-way base is the BASE-tree blob recorded in the watermark, fetched
+   * on demand; a path absent from the base (both sides added) merges with
+   * `base: undefined`.
+   */
+  private async resolveMergeConflicts(
+    spec: SyncRepoSpec,
+    watermark: WatermarkRecord,
+    conflicts: ConflictGroup[],
+    disk: ReadonlyMap<string, string>,
+  ): Promise<MergeResolution> {
+    const mergeLayer = this.deps.mergeLayer;
+    if (mergeLayer === undefined) return EMPTY_MERGE;
+    const baseByPath = new Map(watermark.files.map((f) => [f.path, f]));
+    const mergedFiles = new Map<string, string>();
+    const mergedWrites: RemoteChange[] = [];
+    const quarantineEntries: QuarantineEntry[] = [];
+    const warnings: string[] = [];
+    let mergedCount = 0;
+
+    const entry = (
+      group: ConflictGroup,
+      reason: string,
+      base?: string,
+    ): QuarantineEntry => ({
+      repoKey: spec.repoKey,
+      path: group.local.path,
+      ...(group.local.uid !== undefined ? { uid: group.local.uid } : {}),
+      reason,
+      ...(base !== undefined ? { baseContent: base } : {}),
+      ...(disk.has(group.local.path)
+        ? { localContent: disk.get(group.local.path) }
+        : {}),
+      ...(group.remotes[0]?.content !== undefined
+        ? { remoteContent: group.remotes[0].content }
+        : {}),
+    });
+
+    for (const group of conflicts) {
+      const baseEntry =
+        baseByPath.get(group.local.basePath ?? group.local.path) ??
+        baseByPath.get(group.remotes[0]?.path ?? "");
+      let base: string | undefined;
+      if (baseEntry !== undefined) {
+        base = await getBlobText(
+          this.deps.transport,
+          spec.owner,
+          spec.repo,
+          baseEntry.blobSha,
+          this.deps.baseURL,
+        );
+      }
+
+      if (group.remotes.length > 1) {
+        // One local change overlapping SEVERAL remote changes (remote rename
+        // + edit, duplicate uid) — ambiguous 3-way input, never auto-merge.
+        quarantineEntries.push(
+          entry(
+            group,
+            `ambiguous conflict: local change overlaps ${group.remotes.length} remote changes (${group.remotes.map((r) => r.path).join(", ")})`,
+            base,
+          ),
+        );
+        continue;
+      }
+      const remote = group.remotes[0];
+
+      const decision = await mergeLayer.resolve({
+        path: group.local.path,
+        ...(group.local.uid !== undefined ? { uid: group.local.uid } : {}),
+        ...(base !== undefined ? { base } : {}),
+        ...(disk.has(group.local.path)
+          ? { local: disk.get(group.local.path) }
+          : {}),
+        ...(remote.kind === "change" && remote.content !== undefined
+          ? { remote: remote.content }
+          : {}),
+      });
+
+      if (decision.action === "quarantine") {
+        quarantineEntries.push(entry(group, decision.reason, base));
+        continue;
+      }
+
+      mergedCount++;
+      for (const w of decision.warnings ?? []) {
+        warnings.push(`merge(${group.local.path}): ${w}`);
+      }
+      const remoteContent =
+        remote.kind === "change" ? remote.content : undefined;
+      if (decision.content !== remoteContent) {
+        mergedFiles.set(group.local.path, decision.content);
+      }
+      if (decision.content !== disk.get(group.local.path)) {
+        mergedWrites.push({
+          path: group.local.path,
+          kind: "change",
+          content: decision.content,
+          ...(group.local.uid !== undefined ? { uid: group.local.uid } : {}),
+        });
+      }
+    }
+
+    return { mergedFiles, mergedWrites, quarantineEntries, mergedCount, warnings };
   }
 
   /**
@@ -783,10 +983,13 @@ export class SyncEngine {
   }
 
   /**
-   * No-conflict check (push-only happy path): any shared identity — same uid,
-   * or same path — between pinned local changes and remote changes is a
-   * conflict, EXCEPT convergent edits (identical blob both sides) and
-   * convergent deletes, which are dropped from the push/apply sets.
+   * Conflict detection: any shared identity — same uid, or same path —
+   * between pinned local changes and remote changes is a conflict group,
+   * EXCEPT convergent edits (identical blob both sides) and convergent
+   * deletes, which are dropped from the push/apply sets. Conflicting remote
+   * changes are consumed (never pull-applied as-is); the caller routes the
+   * groups through the A2 merge layer — or, without one, maps the first
+   * group to the A1 `conflict` status (nothing pushed, nothing written).
    */
   private matchLocalVsRemote(
     localChanges: AssetChange[],
@@ -795,11 +998,12 @@ export class SyncEngine {
     remote: RemoteChange[],
     convergedPushPaths: Set<string>,
   ): {
-    conflict?: string;
+    conflicts: ConflictGroup[];
     applyWrites: RemoteChange[];
     applyDeletes: RemoteChange[];
   } {
     const consumed = new Set<RemoteChange>();
+    const conflicts: ConflictGroup[] = [];
     const remoteByUid = new Map<string, RemoteChange[]>();
     const remoteByPath = new Map<string, RemoteChange>();
     for (const r of remote) {
@@ -823,8 +1027,11 @@ export class SyncEngine {
         if (byBasePath !== undefined) candidates.add(byBasePath);
       }
 
+      const conflicting: RemoteChange[] = [];
+      let localIsDelete = false;
       for (const r of candidates) {
-        const localIsDelete = localDeletedPaths.has(local.path) && !disk.has(local.path);
+        localIsDelete =
+          localDeletedPaths.has(local.path) && !disk.has(local.path);
         if (localIsDelete && r.kind === "delete") {
           consumed.add(r); // convergent delete — already gone on both sides
           continue;
@@ -841,16 +1048,25 @@ export class SyncEngine {
           convergedPushPaths.add(local.path);
           continue;
         }
-        return {
-          conflict: `${local.uid ?? local.path} (local ${localIsDelete ? "delete" : "change"} vs remote ${r.kind} at ${r.path})`,
-          applyWrites: [],
-          applyDeletes: [],
-        };
+        conflicting.push(r);
+        consumed.add(r); // conflicting remote is owned by the merge layer
+      }
+      if (conflicting.length > 0) {
+        conflicts.push({
+          local,
+          localIsDelete,
+          remotes: conflicting,
+          desc: `${local.uid ?? local.path} (local ${localIsDelete ? "delete" : "change"} vs remote ${conflicting[0].kind} at ${conflicting[0].path})`,
+        });
+        // A conflicting local change must not also be pushed as-is — its
+        // outcome (merged content or quarantine) replaces the raw push.
+        convergedPushPaths.add(local.path);
       }
     }
 
     const remaining = remote.filter((r) => !consumed.has(r));
     return {
+      conflicts,
       applyWrites: remaining.filter((r) => r.kind === "change"),
       applyDeletes: remaining.filter((r) => r.kind === "delete"),
     };
