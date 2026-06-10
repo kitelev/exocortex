@@ -564,6 +564,9 @@ export {
 // transport) — the single iOS-portable commit+push implementation.
 export {
   restCreateCommit,
+  isBinaryPayload,
+  type BinaryFilePayload,
+  type CommitFileContent,
   type RestCommitRequest,
   type RestCommitResponse,
   type RestCommitTransport,
@@ -602,6 +605,7 @@ export {
 } from "./services/sync/ChangeDetector";
 export { gitBlobSha } from "./services/sync/gitBlobSha";
 export {
+  getBlobBytes,
   getBlobText,
   getCommitInfo,
   getHeadSha,

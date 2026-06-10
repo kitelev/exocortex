@@ -146,3 +146,32 @@ export async function getBlobText(
   // base64 path in this package (see GroundingExecutor.decodeBase64Param).
   return Buffer.from(content.replace(/\s/g, ""), "base64").toString("utf-8");
 }
+
+/**
+ * GET git/blobs/{sha} → raw bytes (Phase C, binary attachments). The
+ * UTF-8 decode in {@link getBlobText} silently corrupts binary content
+ * (replacement characters) — opaque FileSpace blobs go through this
+ * byte-exact path instead.
+ */
+export async function getBlobBytes(
+  transport: RestCommitTransport,
+  owner: string,
+  repo: string,
+  blobSha: string,
+  baseURL?: string,
+): Promise<Uint8Array> {
+  const resp = await transport({
+    method: "GET",
+    url: `${api(baseURL)}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/blobs/${encodeURIComponent(blobSha)}`,
+  });
+  const json = asRecord(resp?.json);
+  const content = readString(json, "content");
+  if (typeof content !== "string") {
+    throw new Error(`ExoSync: malformed blob response for ${blobSha}`);
+  }
+  const encoding = readString(json, "encoding");
+  if (encoding === "utf-8") {
+    return new TextEncoder().encode(content);
+  }
+  return new Uint8Array(Buffer.from(content.replace(/\s/g, ""), "base64"));
+}

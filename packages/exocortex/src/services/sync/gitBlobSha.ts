@@ -9,12 +9,16 @@
 
 import type { Sha1Fn } from "./syncTypes";
 
+/**
+ * @param content UTF-8 text or raw bytes (Phase C binary attachments) —
+ *   git addresses both identically: the hash is over the raw byte stream.
+ */
 export async function gitBlobSha(
-  content: string,
+  content: string | Uint8Array,
   sha1: Sha1Fn,
 ): Promise<string> {
   const encoder = new TextEncoder();
-  const body = encoder.encode(content);
+  const body = typeof content === "string" ? encoder.encode(content) : content;
   const header = encoder.encode(`blob ${body.byteLength}\0`);
   const framed = new Uint8Array(header.byteLength + body.byteLength);
   framed.set(header, 0);
