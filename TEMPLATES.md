@@ -92,7 +92,7 @@ Only workflow issue:
 
 **Why zero errors happened:**
 - **Warm context**: Sequential related tasks (PR #432-434 before #435) = 2-2.5x productivity
-- **Pattern research**: Read @exocortex/core creation services before implementing
+- **Pattern research**: Read `exocortex` package creation services (`packages/exocortex/src/services/*CreationService.ts`) before implementing
 - **Ontology verification**: Checked which asset classes have which properties
 - **Comprehensive tests**: 25 unit tests caught potential issues early
 
@@ -104,7 +104,7 @@ Only workflow issue:
 **Best practices:**
 - Research > implementation: 15 min reading code saved 2+ hours debugging
 - Sequential related tasks leverage warm context for faster development
-- Copy proven patterns from @exocortex/core instead of reinventing
+- Copy proven patterns from the `exocortex` package (`packages/exocortex`) instead of reinventing
 
 ### Documentation Improvements Proposed
 
@@ -131,7 +131,7 @@ Quick audit commands to check if feature already exists before implementing...
 ### Future Agent Guidance
 
 **For next CLI command implementation:**
-1. Read packages/core/src/services/*CreationService.ts for patterns
+1. Read packages/exocortex/src/services/*CreationService.ts for patterns
 2. Check ontology to determine which properties apply to which classes
 3. Use MetadataHelpers.buildFileContent() for file assembly
 4. Follow test pattern: mock process.exit() and expect throw
