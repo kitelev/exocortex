@@ -201,6 +201,32 @@ describe("StructuredMerger — multi-valued set-union with tombstones (D20)", ()
       expect(r.content).toMatch(/2026-06-09T15:46:48/);
     }
   });
+
+  it("non-plain values (Date from a DEFAULT_SCHEMA codec) conflict fail-loud, never merge silently", () => {
+    // A consumer codec violating the CORE_SCHEMA contract turns date-like
+    // scalars into Date objects. deepEqual must NOT treat two DIFFERENT
+    // Dates as equal (both have zero enumerable keys) — that would silently
+    // collapse divergent timestamps into one side.
+    const defaultSchemaMerger = new StructuredMerger({
+      parse: (text) => yaml.load(text), // DEFAULT_SCHEMA → Date objects
+      stringify: (value) => yaml.dump(value, { lineWidth: -1 }),
+    });
+    const doc = (ts: string): string =>
+      `---\nexo__Asset_uid: u1\nexo__Asset_createdAt: ${ts}\n---\nbody\n`;
+
+    const r = defaultSchemaMerger.mergeAsset({
+      path: "a.md",
+      base: doc("2026-06-09T15:46:48"),
+      local: doc("2026-06-10T11:00:00"),
+      remote: doc("2026-06-10T22:00:00"),
+    });
+
+    expect(r.status).toBe("conflict");
+    if (r.status === "conflict") {
+      expect(r.reason).toMatch(/non-plain value/);
+      expect(r.reason).toMatch(/exo__Asset_createdAt/);
+    }
+  });
 });
 
 describe("StructuredMerger — body section merge (D21, not LWW)", () => {
