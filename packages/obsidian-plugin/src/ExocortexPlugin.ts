@@ -20,6 +20,11 @@ import {
 } from "./domain/settings/ExocortexSettings";
 import { ExocortexSettingTab } from "./presentation/settings/ExocortexSettingTab";
 import {
+  DEFAULT_SETTINGS_FOLDER,
+  VAULT_SETTINGS_REGISTRY,
+} from "./domain/settings/VaultSettingsRegistry";
+import { VaultSettingsStore } from "./infrastructure/adapters/VaultSettingsStore";
+import {
   TaskStatusService,
   CommandResolver,
   PreconditionEvaluator,
@@ -271,6 +276,23 @@ export default class ExocortexPlugin extends Plugin {
    * store, and any legacy keys are cleared in the same migration pass.
    */
   public localDataStore: PluginLocalDataStore | null = null;
+
+  /**
+   * onto-RFC 981b6070 Phase 5 (ExoSync Phase D / D2) — vault-asset
+   * settings store. Constructed lazily in the `metadataCache.resolved`
+   * one-shot init (scan before resolve misreads unparsed files as
+   * missing). Null until then; `saveSettings()` no-ops the vault push
+   * while null and the data.json mirror keeps working as before.
+   */
+  public vaultSettingsStore: VaultSettingsStore | null = null;
+
+  /**
+   * Registry-field snapshot taken at the end of `loadSettings()` —
+   * cold-start dirty-field detection input for the vault-settings
+   * overlay (user toggles between onload and the first scan win over
+   * stale asset values).
+   */
+  private settingsBaseline: Record<string, unknown> = {};
 
   /**
    * RFC 22b50a17 Phase 5 Phase 4 — runtime-derived AssetSpace materialization
@@ -1008,6 +1030,24 @@ export default class ExocortexPlugin extends Plugin {
           if (postResolveReindexDone) return;
           postResolveReindexDone = true;
 
+          // onto-RFC 981b6070 Phase 5 (D2) — vault-asset settings init,
+          // one-shot on the same authoritative "metadata fully parsed"
+          // signal (shares the postResolveReindexDone gate). Scanning
+          // earlier (e.g. onLayoutReady) reads null frontmatter for
+          // unparsed files, misclassifies existing Setting assets as
+          // missing, and the migration would create duplicates on every
+          // cold start (advisor F5). Because data.json is a
+          // write-through mirror, the late overlay produces a non-empty
+          // diff ONLY on real cross-device drift — the common boot path
+          // is a no-op. Fire-and-forget: settings init must not delay
+          // (or be delayed by) the reindex chain below.
+          void this.initVaultSettings().catch((err) => {
+            this.logger.error(
+              "Failed to initialize vault-asset settings (D2)",
+              err,
+            );
+          });
+
           const initPromise = this.eagerInitPromise ?? Promise.resolve();
           // RFC 22b50a17 Phase 4 — after each `sparql.refresh()` (which
           // clears+rebuilds the store from frontmatter), re-inject the
@@ -1719,6 +1759,17 @@ export default class ExocortexPlugin extends Plugin {
         ...savedLazyBootstrap,
       ]),
     );
+
+    // onto-RFC 981b6070 (D2) — snapshot registry fields for cold-start
+    // dirty detection: the vault-settings overlay (metadataCache
+    // resolved, possibly tens of seconds later) must not roll back
+    // toggles the user made in the meantime (advisor F12).
+    const baseline: Record<string, unknown> = {};
+    for (const d of VAULT_SETTINGS_REGISTRY) {
+      const v = (this.settings as Record<string, unknown>)[d.field];
+      baseline[d.field] = Array.isArray(v) ? [...v] : v;
+    }
+    this.settingsBaseline = baseline;
   }
 
   /**
@@ -1738,6 +1789,152 @@ export default class ExocortexPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
+    // onto-RFC 981b6070 (D2) — write-through to vault assets for
+    // homoiconizable fields. Every UI surface funnels through this
+    // method (SettingTab × 32 controls, palette commands,
+    // DailyTasksRenderer), so intercepting here covers them all without
+    // touching call sites. Diff-based + debounced inside the store;
+    // remote applies go through `saveData` directly, so this cannot
+    // loop.
+    this.vaultSettingsStore?.pushChangedFields();
+  }
+
+  /**
+   * One-shot init of the vault-asset settings layer (D2). Runs on the
+   * first `metadataCache.resolved`:
+   *  1. class-based scan of `exo__Setting` assets (location-independent
+   *     — assets moved into an AssetSpace mount keep working and get
+   *     ExoSync coverage for free);
+   *  2. overlay: vault values → live settings (+ side-effect hooks +
+   *     data.json mirror); dirty fields (user toggles since onload) are
+   *     pushed to the vault instead;
+   *  3. one-shot idempotent migration: data.json values → assets for
+   *     registry keys that have none (skipped mid profile-switch);
+   *  4. live watchers for cross-device changes arriving via sync.
+   */
+  private async initVaultSettings(): Promise<void> {
+    const store = new VaultSettingsStore({
+      app: this.app,
+      logger: this.logger,
+      getSettings: () => this.settings as Record<string, unknown>,
+      baseline: this.settingsBaseline,
+      applyRemote: async (field, value) => {
+        (this.settings as Record<string, unknown>)[field] = value;
+        this.applySettingSideEffect(field, value);
+        await this.saveData(this.settings);
+      },
+    });
+
+    const scan = store.scanAll();
+    const overlaid = await store.applyScan(scan);
+    if (overlaid.length > 0) {
+      this.logger.info(
+        `[D2] applied ${overlaid.length} vault setting(s) over data.json: ` +
+          overlaid.join(", "),
+      );
+    }
+
+    // Publish only after scan+overlay so saveSettings() cannot race a
+    // half-initialized store.
+    this.vaultSettingsStore = store;
+
+    // Migration is skipped while a profile switch is in flight —
+    // AssetSpace mounts (a legal home for relocated Setting assets) are
+    // being torn down/rebuilt and "missing" is not trustworthy (F2).
+    if (this.localDataStore?.isSwitchInProgress() !== true) {
+      const created = await store.migrateMissing();
+      if (created.length > 0) {
+        this.notifier.info(
+          `Exocortex: migrated ${created.length} setting(s) to vault assets in "${DEFAULT_SETTINGS_FOLDER}/"`,
+        );
+        this.logger.info(
+          `[D2] one-shot settings migration created ${created.length} asset(s): ` +
+            created.join(", "),
+        );
+      }
+    } else {
+      this.logger.info(
+        "[D2] settings migration deferred — profile switch in progress",
+      );
+    }
+
+    this.registerEvent(
+      this.app.metadataCache.on("changed", (file) => {
+        void store.onMetadataChanged(file).catch((err) => {
+          this.logger.warn(
+            `[D2] settings watcher failed for ${file.path}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        });
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        store.onFileDeleted(file.path);
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        if (file instanceof TFile) {
+          store.onFileRenamed(file, oldPath);
+        }
+      }),
+    );
+  }
+
+  /**
+   * Side-effect hooks for settings applied from the vault (overlay /
+   * watcher) — mirrors what the SettingTab onChange handlers do after
+   * mutating the same field. Fields not listed are read-on-use
+   * (no immediate hook needed); `excludedFolders` /
+   * `lazyBootstrapFolders` are snapshotted by indexer components at
+   * startup — same reload-required semantics as editing them in the
+   * SettingTab (documented in ExocortexSettings.ts).
+   */
+  private applySettingSideEffect(field: string, value: unknown): void {
+    try {
+      switch (field) {
+        case "layoutVisible":
+        case "showArchivedAssets":
+        case "showEffortArea":
+        case "showEffortVotes":
+        case "showFullDateInEffortTimes":
+        case "showTimeEstimate":
+        case "enableExoLayoutRenderer":
+          this.refreshLayout();
+          break;
+        case "showLabelsInTabTitles":
+          this.toggleTabTitleLabels(value === true);
+          break;
+        case "showLabelsInProperties":
+          this.togglePropertiesLabels(value === true);
+          break;
+        case "enablePropertiesLabelPatch":
+          this.togglePropertiesLabelPatch(value === true);
+          break;
+        case "showIconsInFileExplorer":
+          this.toggleFileExplorerIcons(value === true);
+          break;
+        case "showLabelsInBody":
+          this.toggleBodyLabels(value === true);
+          break;
+        case "showLabelsInGraphView":
+          this.toggleGraphViewLabels(value === true);
+          break;
+        case "displayNameTemplate":
+          this.applyDisplayNameTemplate();
+          break;
+        default:
+          break;
+      }
+    } catch (err) {
+      this.logger.warn(
+        `[D2] side-effect for setting "${field}" failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   refreshLayout(): void {
