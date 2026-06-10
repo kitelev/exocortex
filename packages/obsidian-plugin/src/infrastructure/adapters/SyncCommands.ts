@@ -56,6 +56,14 @@ export class SyncCommands {
     this.running = true;
     try {
       await this.runSync();
+    } catch (err) {
+      // The palette callback fire-and-forgets this promise — surface the
+      // failure instead of leaking an unhandled rejection.
+      const msg = err instanceof Error ? err.message : String(err);
+      this.deps.notify(`Sync failed: ${msg}`);
+      (this.deps.log ?? ((m: string): void => console.warn(m)))(
+        `[ExoSync] sync run threw: ${msg}`,
+      );
     } finally {
       this.running = false;
     }
