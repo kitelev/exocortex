@@ -75,6 +75,52 @@ test.describe("iPhone mobile-load smoke (@mobile-load)", () => {
           });
         }
 
+        // Bare Node builtin names (the `node:` prefix is matched separately)
+        // — mirrors scripts/assert-mobile-loadable.mjs `builtinModules`
+        // classification so a try/catch-swallowed bare require is flagged
+        // here too, not only by the release-build gate.
+        const NODE_BUILTINS = new Set([
+          "assert",
+          "async_hooks",
+          "buffer",
+          "child_process",
+          "cluster",
+          "console",
+          "constants",
+          "crypto",
+          "dgram",
+          "dns",
+          "domain",
+          "electron",
+          "events",
+          "fs",
+          "http",
+          "http2",
+          "https",
+          "inspector",
+          "module",
+          "net",
+          "os",
+          "path",
+          "perf_hooks",
+          "process",
+          "punycode",
+          "querystring",
+          "readline",
+          "repl",
+          "stream",
+          "string_decoder",
+          "timers",
+          "tls",
+          "tty",
+          "url",
+          "util",
+          "v8",
+          "vm",
+          "worker_threads",
+          "zlib",
+        ]);
+
         // Mirrors Obsidian mobile's module surface: obsidian + CodeMirror
         // packages resolve; EVERYTHING else (node:*, bare builtins,
         // electron) is absent → throw, like the iOS WKWebView would.
@@ -87,7 +133,9 @@ test.describe("iPhone mobile-load smoke (@mobile-load)", () => {
           ) {
             return makeStub(id);
           }
-          if (id.startsWith("node:")) nodeRequireAttempts.push(id);
+          if (id.startsWith("node:") || NODE_BUILTINS.has(id.split("/")[0])) {
+            nodeRequireAttempts.push(id);
+          }
           throw new Error(
             `[iphone-sim] Cannot find module '${id}' (no Node runtime on Obsidian mobile)`,
           );

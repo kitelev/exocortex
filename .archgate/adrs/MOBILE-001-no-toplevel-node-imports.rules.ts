@@ -137,5 +137,49 @@ export default {
         }
       },
     },
+
+    "no-node-requires-outside-lazy-module": {
+      description:
+        "require()/import() of Node builtins in plugin src is allowed ONLY in lazyNodeModules.ts (Issue #3464)",
+      severity: "error",
+      async check(ctx) {
+        const files = await ctx.glob(
+          "packages/obsidian-plugin/src/**/*.{ts,tsx}",
+        );
+        for (const file of files) {
+          // The single sanctioned location for lazy node:* requires.
+          if (file.endsWith("/lazyNodeModules.ts")) continue;
+          const hits = await ctx.grep(
+            file,
+            /\b(?:require|import)\s*\(\s*["'][^"']+["']\s*\)/,
+          );
+          if (hits.length === 0) continue;
+          const content = await ctx.readFile(file);
+          const lines = content.split("\n");
+          for (const hit of hits) {
+            const line = lines[hit.line - 1] || "";
+            const trimmed = line.trimStart();
+            if (
+              trimmed.startsWith("*") ||
+              trimmed.startsWith("//") ||
+              trimmed.startsWith("/*")
+            ) {
+              continue;
+            }
+            const callMatch = line.match(
+              /\b(?:require|import)\s*\(\s*["']([^"']+)["']\s*\)/,
+            );
+            if (callMatch === null || !isNodeBuiltin(callMatch[1])) continue;
+
+            ctx.report.violation({
+              message: `Direct require()/import() of Node builtin ("${callMatch[1]}") outside lazyNodeModules.ts — concentrate Node access in the sanctioned lazy module so mobile-load safety stays auditable (Issue #3464).`,
+              file: hit.file,
+              line: hit.line,
+              fix: "Import the matching accessor from src/infrastructure/adapters/lazyNodeModules.ts and call it inside a mobile-guarded method.",
+            });
+          }
+        }
+      },
+    },
   },
 } satisfies RuleSet;

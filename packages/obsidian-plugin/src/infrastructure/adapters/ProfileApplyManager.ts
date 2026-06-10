@@ -9,6 +9,7 @@ import {
 } from "exocortex";
 
 import { PluginLockManager } from "./PluginLockManager";
+import { nodeFsPromises } from "./lazyNodeModules";
 import type { AssetSpaceManager, AssetSpaceInfo } from "./AssetSpaceManager";
 import type { ICacheLayer } from "./SwitchCacheLayer";
 import type { GitSubmoduleOps } from "./GitSubmoduleOps";
@@ -1518,9 +1519,10 @@ export class ProfileApplyManager {
         await tracker.release(stagingPath).catch(() => undefined);
       } else {
         try {
-          /* eslint-disable-next-line import/no-nodejs-modules */
-          const fs = await import("node:fs");
-          await fs.promises.rm(stagingPath, { recursive: true, force: true });
+          // Lazy accessor (Issue #3464) — this branch is desktop-only
+          // (staging paths only exist after a desktop pull).
+          const fs = nodeFsPromises();
+          await fs.rm(stagingPath, { recursive: true, force: true });
         } catch {
           // best-effort
         }
