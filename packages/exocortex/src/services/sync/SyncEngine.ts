@@ -44,6 +44,7 @@ import { gitBlobSha } from "./gitBlobSha";
 import {
   isSyncablePath,
   type AssetChange,
+  type ChangeDetectionResult,
   type LocalFilesPort,
   type MaterializationCheckPort,
   type RepoSyncResult,
@@ -140,6 +141,26 @@ function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** Local change-set pinned for the whole D16 retry loop. */
+interface PinnedLocalChanges {
+  localChanges: AssetChange[];
+  localDeletedPaths: Set<string>;
+  pushFilesAll: Map<string, string>;
+}
+
+/** Outcome of the pull→check→push retry loop. */
+type PushLoopOutcome =
+  | { kind: "conflict"; detail: string }
+  | { kind: "retry-exhausted"; detail: string }
+  | {
+      kind: "done";
+      examinedHead: string;
+      pushedSha: string | undefined;
+      applyWrites: RemoteChange[];
+      applyDeletes: RemoteChange[];
+      pushFiles: Map<string, string>;
+    };
+
 export class SyncEngine {
   private readonly deps: SyncEngineDeps;
 
@@ -200,27 +221,10 @@ export class SyncEngine {
         return await this.bootstrapWatermark(spec, disk, warnings, result);
       }
 
-      // D22 — resolve the ACTUAL base tree on the remote; never trust the
-      // stored watermark blindly (R10).
-      let actualBaseTreeSha: string | null;
-      try {
-        actualBaseTreeSha = (
-          await getCommitInfo(
-            this.deps.transport,
-            spec.owner,
-            spec.repo,
-            watermark.lastSyncedSha,
-            this.deps.baseURL,
-          )
-        ).treeSha;
-      } catch {
-        actualBaseTreeSha = null;
-      }
-
       const detection = await detectChanges({
         localFiles: disk,
         watermark,
-        actualBaseTreeSha,
+        actualBaseTreeSha: await this.resolveBaseTreeSha(spec, watermark),
         sha1: this.deps.sha1,
       });
       if (detection.kind === "full-conflict") {
@@ -229,121 +233,28 @@ export class SyncEngine {
         });
       }
 
-      // Pin the local change-set for the whole retry loop (recomputing
-      // mid-retry would misclassify just-applied remote files as local edits).
-      const renames = detection.modified.filter(
-        (c) => c.basePath !== undefined,
+      const pinned = this.pinLocalChanges(
+        detection,
+        disk,
+        warnings,
+        deferredDeletes,
       );
-      const pushable = [
-        ...detection.added,
-        ...detection.modified.filter((c) => c.basePath === undefined),
-      ];
-      for (const r of renames) {
-        // Pushing the new path while the primitive cannot delete the old one
-        // would leave two files with the same uid on the remote — defer the
-        // whole rename pair to the merge layer.
-        if (r.basePath !== undefined) deferredDeletes.push(r.basePath);
-        warnings.push(
-          `deferred rename (uid ${r.uid ?? "?"}): ${r.basePath} → ${r.path} not pushed (write primitive cannot delete; merge layer A2/A3)`,
-        );
+
+      const loop = await this.runPushLoop(
+        spec,
+        watermark,
+        pinned,
+        disk,
+        warnings,
+      );
+      if (loop.kind === "conflict") {
+        return result("conflict", { detail: loop.detail });
       }
-      for (const d of detection.deleted) {
-        // Known cosmetic: a CONVERGENT delete (remote deleted it too) is
-        // consumed later in matchLocalVsRemote but still reported here as
-        // deferred for this cycle; the watermark drops it, so it self-heals
-        // on the next sync.
-        deferredDeletes.push(d.path);
-        warnings.push(
-          `deferred delete: ${d.path} not pushed (write primitive cannot delete; merge layer A2/A3)`,
-        );
+      if (loop.kind === "retry-exhausted") {
+        return result("retry-exhausted", { detail: loop.detail });
       }
-      const localChanges: AssetChange[] = [
-        ...pushable,
-        ...renames,
-        ...detection.deleted.map((d) => ({ ...d })),
-      ];
-      const localDeletedPaths = new Set(detection.deleted.map((d) => d.path));
-      const pushFilesAll = new Map<string, string>();
-      for (const c of pushable) {
-        const content = disk.get(c.path);
-        if (content !== undefined) pushFilesAll.set(c.path, content);
-      }
-
-      // Pull → no-conflict check → push, with the D16 422 retry loop.
-      const maxRetries =
-        this.deps.maxPushRetries ?? DEFAULT_MAX_PUSH_RETRIES;
-      let attempt = 0;
-      let examinedHead = "";
-      let pushedSha: string | undefined;
-      let applyWrites: RemoteChange[] = [];
-      let applyDeletes: RemoteChange[] = [];
-      let pushFiles = new Map<string, string>();
-
-      for (;;) {
-        examinedHead = await getHeadSha(
-          this.deps.transport,
-          spec.owner,
-          spec.repo,
-          spec.branch,
-          this.deps.baseURL,
-        );
-        applyWrites = [];
-        applyDeletes = [];
-        const convergedPushPaths = new Set<string>();
-
-        if (examinedHead !== watermark.lastSyncedSha) {
-          const remote = await this.collectRemoteChanges(
-            spec,
-            watermark,
-            examinedHead,
-          );
-          const verdict = this.matchLocalVsRemote(
-            localChanges,
-            localDeletedPaths,
-            disk,
-            remote,
-            convergedPushPaths,
-          );
-          if (verdict.conflict !== undefined) {
-            return result("conflict", {
-              detail: `overlapping change on ${verdict.conflict} — merge layer (A2/A3) required; nothing pushed, nothing written`,
-            });
-          }
-          applyWrites = verdict.applyWrites;
-          applyDeletes = verdict.applyDeletes;
-        }
-
-        pushFiles = new Map(
-          [...pushFilesAll].filter(([p]) => !convergedPushPaths.has(p)),
-        );
-        if (pushFiles.size === 0) break;
-
-        try {
-          pushedSha = await restCreateCommit(this.deps.transport, {
-            owner: spec.owner,
-            repo: spec.repo,
-            branch: spec.branch,
-            files: pushFiles,
-            message:
-              this.deps.commitMessage?.(spec, pushFiles.size) ??
-              `chore(exosync): sync ${pushFiles.size} file(s)`,
-            baseURL: this.deps.baseURL,
-            redact: this.deps.redact,
-          });
-          break;
-        } catch (err) {
-          if (!isNonFastForwardError(err)) throw err;
-          attempt++;
-          if (attempt > maxRetries) {
-            return result("retry-exhausted", {
-              detail: `non-fast-forward push failed after ${maxRetries} retries (D16 cap) — quarantine convergence is A3 scope`,
-            });
-          }
-          warnings.push(
-            `non-fast-forward push (attempt ${attempt}/${maxRetries}) — re-pulling and retrying (D16)`,
-          );
-        }
-      }
+      const { examinedHead, pushedSha, applyWrites, applyDeletes, pushFiles } =
+        loop;
 
       const newHead = pushedSha ?? examinedHead;
       const newCommit = await getCommitInfo(
@@ -379,51 +290,22 @@ export class SyncEngine {
         });
       }
 
-      // Apply remote changes to disk AFTER the push succeeded — a failed push
-      // must leave the working tree pristine, or the next run misclassifies
-      // remote content as local edits.
-      let pulledCount = 0;
-      for (const w of applyWrites) {
-        if (w.content === undefined) continue; // change entries always carry content
-        if (!isSafeRepoRelativePath(w.path)) {
-          warnings.push(`unsafe remote path skipped on pull-apply: ${w.path}`);
-          continue;
-        }
-        await localFiles.write(w.path, w.content);
-        pulledCount++;
-      }
-      for (const d of applyDeletes) {
-        if (!isSafeRepoRelativePath(d.path)) {
-          warnings.push(`unsafe remote path skipped on pull-delete: ${d.path}`);
-          continue;
-        }
-        if (disk.has(d.path)) {
-          await localFiles.delete(d.path);
-          pulledCount++;
-        }
-      }
+      const pulledCount = await this.applyRemoteChanges(
+        localFiles,
+        disk,
+        applyWrites,
+        applyDeletes,
+        warnings,
+      );
 
-      const newTree = (
-        await getTree(
-          this.deps.transport,
-          spec.owner,
-          spec.repo,
-          newCommit.treeSha,
-          this.deps.baseURL,
-        )
-      ).filter((e) => isSyncablePath(e.path));
-      const newRecord: WatermarkRecord = {
-        lastSyncedSha: newHead,
-        rootTreeSha: newCommit.treeSha,
-        files: await this.buildWatermarkFiles(
-          spec,
-          newTree,
-          disk,
-          applyWrites,
-          watermark,
-        ),
-      };
-      await this.deps.watermarkStore.set(spec.repoKey, newRecord);
+      await this.advanceWatermark(
+        spec,
+        newHead,
+        newCommit.treeSha,
+        disk,
+        applyWrites,
+        watermark,
+      );
 
       return result("synced", {
         pushedSha,
@@ -438,6 +320,244 @@ export class SyncEngine {
   }
 
   /**
+   * D22 — resolve the ACTUAL base tree on the remote; never trust the stored
+   * watermark blindly (R10). `null` = commit not resolvable (GC'd, rewritten).
+   */
+  private async resolveBaseTreeSha(
+    spec: SyncRepoSpec,
+    watermark: WatermarkRecord,
+  ): Promise<string | null> {
+    try {
+      return (
+        await getCommitInfo(
+          this.deps.transport,
+          spec.owner,
+          spec.repo,
+          watermark.lastSyncedSha,
+          this.deps.baseURL,
+        )
+      ).treeSha;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Pin the local change-set for the whole retry loop (recomputing mid-retry
+   * would misclassify just-applied remote files as local edits). Renames and
+   * deletes are deferred — the write primitive cannot express deletions.
+   */
+  private pinLocalChanges(
+    detection: Extract<ChangeDetectionResult, { kind: "changes" }>,
+    disk: ReadonlyMap<string, string>,
+    warnings: string[],
+    deferredDeletes: string[],
+  ): PinnedLocalChanges {
+    const renames = detection.modified.filter((c) => c.basePath !== undefined);
+    const pushable = [
+      ...detection.added,
+      ...detection.modified.filter((c) => c.basePath === undefined),
+    ];
+    for (const r of renames) {
+      // Pushing the new path while the primitive cannot delete the old one
+      // would leave two files with the same uid on the remote — defer the
+      // whole rename pair to the merge layer.
+      if (r.basePath !== undefined) deferredDeletes.push(r.basePath);
+      warnings.push(
+        `deferred rename (uid ${r.uid ?? "?"}): ${r.basePath} → ${r.path} not pushed (write primitive cannot delete; merge layer A2/A3)`,
+      );
+    }
+    for (const d of detection.deleted) {
+      // Known cosmetic: a CONVERGENT delete (remote deleted it too) is
+      // consumed later in matchLocalVsRemote but still reported here as
+      // deferred for this cycle; the watermark drops it, so it self-heals
+      // on the next sync.
+      deferredDeletes.push(d.path);
+      warnings.push(
+        `deferred delete: ${d.path} not pushed (write primitive cannot delete; merge layer A2/A3)`,
+      );
+    }
+    const localChanges: AssetChange[] = [
+      ...pushable,
+      ...renames,
+      ...detection.deleted.map((d) => ({ ...d })),
+    ];
+    const localDeletedPaths = new Set(detection.deleted.map((d) => d.path));
+    const pushFilesAll = new Map<string, string>();
+    for (const c of pushable) {
+      const content = disk.get(c.path);
+      if (content !== undefined) pushFilesAll.set(c.path, content);
+    }
+    return { localChanges, localDeletedPaths, pushFilesAll };
+  }
+
+  /**
+   * Pull → no-conflict check → push, with the D16 422 retry loop. Returns a
+   * discriminated outcome; `done` carries everything the caller needs to
+   * finish the cycle (race-window check, pull-apply, watermark advance).
+   */
+  private async runPushLoop(
+    spec: SyncRepoSpec,
+    watermark: WatermarkRecord,
+    pinned: PinnedLocalChanges,
+    disk: ReadonlyMap<string, string>,
+    warnings: string[],
+  ): Promise<PushLoopOutcome> {
+    const { localChanges, localDeletedPaths, pushFilesAll } = pinned;
+    const maxRetries = this.deps.maxPushRetries ?? DEFAULT_MAX_PUSH_RETRIES;
+    let attempt = 0;
+    let examinedHead = "";
+    let pushedSha: string | undefined;
+    let applyWrites: RemoteChange[] = [];
+    let applyDeletes: RemoteChange[] = [];
+    let pushFiles = new Map<string, string>();
+
+    for (;;) {
+      examinedHead = await getHeadSha(
+        this.deps.transport,
+        spec.owner,
+        spec.repo,
+        spec.branch,
+        this.deps.baseURL,
+      );
+      applyWrites = [];
+      applyDeletes = [];
+      const convergedPushPaths = new Set<string>();
+
+      if (examinedHead !== watermark.lastSyncedSha) {
+        const remote = await this.collectRemoteChanges(
+          spec,
+          watermark,
+          examinedHead,
+        );
+        const verdict = this.matchLocalVsRemote(
+          localChanges,
+          localDeletedPaths,
+          disk,
+          remote,
+          convergedPushPaths,
+        );
+        if (verdict.conflict !== undefined) {
+          return {
+            kind: "conflict",
+            detail: `overlapping change on ${verdict.conflict} — merge layer (A2/A3) required; nothing pushed, nothing written`,
+          };
+        }
+        applyWrites = verdict.applyWrites;
+        applyDeletes = verdict.applyDeletes;
+      }
+
+      pushFiles = new Map(
+        [...pushFilesAll].filter(([p]) => !convergedPushPaths.has(p)),
+      );
+      if (pushFiles.size === 0) break;
+
+      try {
+        pushedSha = await restCreateCommit(this.deps.transport, {
+          owner: spec.owner,
+          repo: spec.repo,
+          branch: spec.branch,
+          files: pushFiles,
+          message:
+            this.deps.commitMessage?.(spec, pushFiles.size) ??
+            `chore(exosync): sync ${pushFiles.size} file(s)`,
+          baseURL: this.deps.baseURL,
+          redact: this.deps.redact,
+        });
+        break;
+      } catch (err) {
+        if (!isNonFastForwardError(err)) throw err;
+        attempt++;
+        if (attempt > maxRetries) {
+          return {
+            kind: "retry-exhausted",
+            detail: `non-fast-forward push failed after ${maxRetries} retries (D16 cap) — quarantine convergence is A3 scope`,
+          };
+        }
+        warnings.push(
+          `non-fast-forward push (attempt ${attempt}/${maxRetries}) — re-pulling and retrying (D16)`,
+        );
+      }
+    }
+
+    return {
+      kind: "done",
+      examinedHead,
+      pushedSha,
+      applyWrites,
+      applyDeletes,
+      pushFiles,
+    };
+  }
+
+  /**
+   * Apply remote changes to disk AFTER the push succeeded — a failed push
+   * must leave the working tree pristine, or the next run misclassifies
+   * remote content as local edits.
+   */
+  private async applyRemoteChanges(
+    localFiles: LocalFilesPort,
+    disk: ReadonlyMap<string, string>,
+    applyWrites: RemoteChange[],
+    applyDeletes: RemoteChange[],
+    warnings: string[],
+  ): Promise<number> {
+    let pulledCount = 0;
+    for (const w of applyWrites) {
+      if (w.content === undefined) continue; // change entries always carry content
+      if (!isSafeRepoRelativePath(w.path)) {
+        warnings.push(`unsafe remote path skipped on pull-apply: ${w.path}`);
+        continue;
+      }
+      await localFiles.write(w.path, w.content);
+      pulledCount++;
+    }
+    for (const d of applyDeletes) {
+      if (!isSafeRepoRelativePath(d.path)) {
+        warnings.push(`unsafe remote path skipped on pull-delete: ${d.path}`);
+        continue;
+      }
+      if (disk.has(d.path)) {
+        await localFiles.delete(d.path);
+        pulledCount++;
+      }
+    }
+    return pulledCount;
+  }
+
+  /** Build and persist the watermark for the new head (D8). */
+  private async advanceWatermark(
+    spec: SyncRepoSpec,
+    newHead: string,
+    newTreeSha: string,
+    disk: ReadonlyMap<string, string>,
+    applyWrites: RemoteChange[],
+    previous: WatermarkRecord,
+  ): Promise<void> {
+    const newTree = (
+      await getTree(
+        this.deps.transport,
+        spec.owner,
+        spec.repo,
+        newTreeSha,
+        this.deps.baseURL,
+      )
+    ).filter((e) => isSyncablePath(e.path));
+    const newRecord: WatermarkRecord = {
+      lastSyncedSha: newHead,
+      rootTreeSha: newTreeSha,
+      files: await this.buildWatermarkFiles(
+        spec,
+        newTree,
+        disk,
+        applyWrites,
+        previous,
+      ),
+    };
+    await this.deps.watermarkStore.set(spec.repoKey, newRecord);
+  }
+
+  /**
    * First-sync bootstrap (safe subset): when no watermark exists but the
    * local working tree EXACTLY equals the remote head tree (fresh mount), the
    * watermark is seeded and the sync is a no-op. Any difference is a genuine
@@ -445,7 +565,7 @@ export class SyncEngine {
    */
   private async bootstrapWatermark(
     spec: SyncRepoSpec,
-    disk: Map<string, string>,
+    disk: ReadonlyMap<string, string>,
     warnings: string[],
     result: (
       status: RepoSyncResult["status"],
@@ -565,7 +685,7 @@ export class SyncEngine {
   private matchLocalVsRemote(
     localChanges: AssetChange[],
     localDeletedPaths: Set<string>,
-    disk: Map<string, string>,
+    disk: ReadonlyMap<string, string>,
     remote: RemoteChange[],
     convergedPushPaths: Set<string>,
   ): {
@@ -711,7 +831,7 @@ export class SyncEngine {
   private async buildWatermarkFiles(
     spec: SyncRepoSpec,
     newTree: RemoteTreeEntry[],
-    disk: Map<string, string>,
+    disk: ReadonlyMap<string, string>,
     applied: RemoteChange[],
     previous: WatermarkRecord,
   ): Promise<WatermarkFileEntry[]> {
