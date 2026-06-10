@@ -270,6 +270,34 @@ export class GitHubRestClient {
   }
 
   /**
+   * Expose this client's `requestUrl`-backed HTTP layer as a
+   * {@link RestCommitTransport} (ExoSync Phase B wiring, RFC 4e4dc453).
+   *
+   * The returned closure is byte-identical to the one `createCommit` builds
+   * internally: it throws on non-2xx with the message shape
+   * `GitHub request {METHOD} {url} → HTTP {status}: {body}` (the informal
+   * contract `isNonFastForwardError` / `isRateLimitError` / `isAuthError`
+   * depend on), owns the Authorization header, and redacts PATs in error
+   * bodies.
+   *
+   * Transport-only by intent: consumers (SyncEngine, githubRepoReader,
+   * SyncedQuarantineStore) issue Git Data API calls through it. Do not use
+   * it as a general-purpose authenticated HTTP client.
+   */
+  public restTransport(): RestCommitTransport {
+    return (req) => this.request(req);
+  }
+
+  /**
+   * Static PAT redaction over the same token-shape regex the instance
+   * `redact()` uses — for consumers that need a redactor WITHOUT holding a
+   * client instance (e.g. `SyncEngineDeps.redact`). Idempotent.
+   */
+  public static redactTokens(message: string): string {
+    return message.replace(GitHubRestClient.PAT_REGEX, "***REDACTED***");
+  }
+
+  /**
    * GET /rate_limit → core resource remaining + reset.
    */
   public async checkRateLimit(): Promise<GitHubRateLimit> {
