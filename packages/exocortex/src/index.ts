@@ -633,3 +633,11 @@ export {
   type AssetMergeOutcome,
   type YamlCodec,
 } from "./services/sync/StructuredMerger";
+// ExoSync A2 — open-world mounted-scope SHACL merge-gate over the existing
+// ShaclLiteValidator (no new validator; refs into unmounted spaces pass).
+export {
+  MergeShaclGate,
+  type MergeGateVerdict,
+  type MergeShaclGateDeps,
+  type TriplesForContentFn,
+} from "./services/sync/MergeShaclGate";

@@ -12,11 +12,20 @@ export interface Shape {
   message?: string;
 }
 
+/** Which SHACL constraint produced a violation — enables precise post-filtering (e.g. the ExoSync open-world merge-gate skips `class` violations for unmounted refs). */
+export type ViolationConstraint =
+  | 'minCount'
+  | 'maxCount'
+  | 'class'
+  | 'datatype'
+  | 'unknown-property';
+
 export interface Violation {
   focusNode: string;
   propertyPath: string;
   severity: Severity;
   message: string;
+  constraint: ViolationConstraint;
   actualValue?: string;
   expectedRange?: string;
 }
@@ -150,7 +159,7 @@ function isXSDDatatypeIRI(iri: string): boolean {
 const UID_SUFFIX_RE =
   /\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md$/i;
 
-function extractUid(iri: string): string | null {
+export function extractUidFromIRI(iri: string): string | null {
   const m = UID_SUFFIX_RE.exec(iri);
   return m ? m[1].toLowerCase() : null;
 }
@@ -187,7 +196,7 @@ export function validate(
         // (synthesized as `obsidian://vault/<uid>.md` without directory)
         // resolve to the class set indexed by the full-path subject IRI
         // produced by the owning vault's converter.
-        const uid = extractUid(subjectIRI);
+        const uid = extractUidFromIRI(subjectIRI);
         if (uid) {
           const uidKey = `uid:${uid}`;
           const uidClasses = subjectClasses.get(uidKey) ?? [];
@@ -232,6 +241,7 @@ export function validate(
           focusNode: subjectIRI,
           propertyPath: shape.propertyIRI,
           severity: shape.severity,
+          constraint: 'minCount',
           message:
             shape.message ??
             `sh:minCount violation: expected at least ${shape.minCount} value(s) for <${shape.propertyIRI}>`,
@@ -247,6 +257,7 @@ export function validate(
           focusNode: subjectIRI,
           propertyPath: shape.propertyIRI,
           severity: shape.severity,
+          constraint: 'maxCount',
           message:
             shape.message ??
             `sh:maxCount violation: expected at most 1 value for <${shape.propertyIRI}>, got ${values.length}`,
@@ -270,7 +281,7 @@ export function validate(
             // converter for the same underlying asset.
             let valueClasses = subjectClasses.get(obj.value) ?? [];
             if (valueClasses.length === 0) {
-              const uid = extractUid(obj.value);
+              const uid = extractUidFromIRI(obj.value);
               if (uid) {
                 valueClasses = subjectClasses.get(`uid:${uid}`) ?? [];
               }
@@ -286,6 +297,7 @@ export function validate(
                 focusNode: subjectIRI,
                 propertyPath: shape.propertyIRI,
                 severity: shape.severity,
+                constraint: 'class',
                 message:
                   shape.message ??
                   `sh:class violation: <${obj.value}> does not conform to expected class ${shape.range.join(' | ')}`,
@@ -313,6 +325,7 @@ export function validate(
                 focusNode: subjectIRI,
                 propertyPath: shape.propertyIRI,
                 severity: shape.severity,
+                constraint: 'datatype',
                 message:
                   shape.message ??
                   `sh:datatype violation: literal "${obj.value}" has datatype <${literalDatatype}>, expected ${datatypeRanges.join(' | ')}`,
@@ -335,6 +348,7 @@ export function validate(
             focusNode: subjectIRI,
             propertyPath: predicateIRI,
             severity: 'sh:Warning',
+            constraint: 'unknown-property',
             message: `Unknown property: <${predicateIRI}> has no registered shape`,
           });
         }
