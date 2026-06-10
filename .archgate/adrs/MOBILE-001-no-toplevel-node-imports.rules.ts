@@ -170,6 +170,18 @@ export default {
               /\b(?:require|import)\s*\(\s*["']([^"']+)["']\s*\)/,
             );
             if (callMatch === null || !isNodeBuiltin(callMatch[1])) continue;
+            // `typeof import("node:x")` is a TYPE position — erased at
+            // compile time, explicitly allowed everywhere (see the
+            // lazyNodeModules.ts doc). The startsWith("import") guard is
+            // load-bearing: `typeof require("node:x")` EXECUTES the require
+            // at runtime and must stay flagged; only `typeof import(...)`
+            // is the TS type operator.
+            if (
+              callMatch[0].startsWith("import") &&
+              /\btypeof\s*$/.test(line.slice(0, callMatch.index))
+            ) {
+              continue;
+            }
 
             ctx.report.violation({
               message: `Direct require()/import() of Node builtin ("${callMatch[1]}") outside lazyNodeModules.ts — concentrate Node access in the sanctioned lazy module so mobile-load safety stays auditable (Issue #3464).`,
