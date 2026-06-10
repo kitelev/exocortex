@@ -174,21 +174,24 @@ exo__Asset_createdAt: 2025-10-26T14:30:45
 
 **Ontology reference (which system defines this asset)**
 
-| Attribute         | Value                                   |
-| ----------------- | --------------------------------------- |
-| **Type**          | String (WikiLink)                       |
-| **Required**      | ✅ Yes (ALL assets)                     |
-| **Format**        | Quoted WikiLink: `"[[Path/FileName]]"`  |
-| **Purpose**       | Link asset to defining ontology         |
-| **Generated**     | Inherited from parent or set explicitly |
-| **Mutable**       | Rarely (usually stays constant)         |
-| **Common Values** | `"[[Ontology/EMS]]"`, `"[[!concepts]]"` |
+| Attribute         | Value                                                       |
+| ----------------- | ----------------------------------------------------------- |
+| **Type**          | String (WikiLink)                                           |
+| **Required**      | ✅ Yes (ALL assets)                                         |
+| **Format**        | Quoted UID wikilink: `"[[<ontology-asset-uid>]]"`           |
+| **Purpose**       | Link asset to defining ontology                             |
+| **Generated**     | Inherited from parent or set explicitly                     |
+| **Mutable**       | Rarely (usually stays constant)                             |
+| **Common Values** | `"[[<ontology-asset-uid>]]"`; legacy `!`-prefix anchors (`"[[!ems]]"`, `"[[!concepts]]"`) |
 
 **Example**:
 
 ```yaml
-exo__Asset_isDefinedBy: "[[Ontology/EMS]]"
+exo__Asset_isDefinedBy: "[[0c2f48d6-6f8e-4a9b-9c3d-5e7f1a2b3c4d]]" # → the $ems ontology asset
 ```
+
+Path-form values (`"[[Ontology/EMS]]"`) are a legacy encoding — new assets
+should reference the ontology asset by its UID wikilink (UID-canon).
 
 **Inheritance Rules**:
 
@@ -344,9 +347,14 @@ ems__Effort_status: "[[ems__EffortStatusDraft]]"
 
 **Workflow Rules**:
 
-- **Tasks**: Can skip Analysis and go Backlog → Doing
-- **Projects**: Must go through ToDo before Doing
-- **Trashed**: Can transition from any state
+Transitions are **workflow-driven**, not hardcoded — see
+[Business Rules → Status Transitions](#status-transitions). With the default
+workflows:
+
+- **Tasks**: Draft → Backlog → Doing → Done (no Analysis/ToDo states)
+- **Projects**: Draft → Backlog → Analysis → ToDo → Doing → Done, where
+  **Analysis and ToDo are optional** states
+- **Trashed**: terminal state alongside Done
 
 ---
 
@@ -471,7 +479,7 @@ ems__Effort_day: "[[2025-10-26]]"
 
 - Plugin daily-note aggregation filters tasks by `ems__Effort_startTimestamp`, `ems__Effort_endTimestamp`, `ems__Effort_plannedStartTimestamp`, and `ems__Effort_plannedEndTimestamp` — NOT by `ems__Effort_day`.
 - Planning commands (`Plan on Today`, `Plan for Evening`, `Shift Day Forward/Backward`) update `ems__Effort_plannedStartTimestamp`, not `ems__Effort_day`.
-- This property remains part of the public `ems:` SPARQL vocabulary (see `cli/docs/ONTOLOGY_REFERENCE.md`) — set it manually if you need day-tagging for custom queries.
+- This property remains part of the public `ems:` SPARQL vocabulary (see `packages/cli/docs/ONTOLOGY_REFERENCE.md`) — set it manually if you need day-tagging for custom queries.
 
 ---
 
@@ -609,27 +617,6 @@ ems__Task_size: M
 
 ```yaml
 ems__Area_parent: "[[Work]]"
-```
-
----
-
-### ems\_\_Effort_archived_date
-
-**When effort was archived**
-
-| Attribute     | Value                       |
-| ------------- | --------------------------- |
-| **Type**      | String (ISO 8601 timestamp) |
-| **Required**  | No                          |
-| **Format**    | `YYYY-MM-DDTHH:mm:ss`       |
-| **Purpose**   | Track archive date          |
-| **Generated** | When archiving asset        |
-| **Mutable**   | Yes                         |
-
-**Example**:
-
-```yaml
-ems__Effort_archived_date: 2025-10-15T10:00:00
 ```
 
 ---
@@ -1081,6 +1068,41 @@ some__Multi_field:
 
 > **Behavior change (issue #3179, June 2026)**: prior to this fix, undeclared cardinality silently fell back to single-entry array form, contradicting the vault convention and forcing post-processing (e.g., the `week-planner` skill's `flatten_singles_in_file()` helper). Existing vault content using array form for single-cardinality predicates continues to be read correctly by Obsidian — only newly-created assets follow the new default.
 
+### exo\_\_Property_displayName
+
+**Human-readable display name for a property (RFC-030)**
+
+| Attribute    | Value                                                                       |
+| ------------ | --------------------------------------------------------------------------- |
+| **Type**     | String                                                                       |
+| **Required** | No                                                                           |
+| **Domain**   | Property-definition assets (class descends from `exo__Property`)             |
+| **Purpose**  | Display text for the predicate key in Obsidian's Properties block            |
+| **Mutable**  | ✅ Yes                                                                       |
+
+When set on a property-definition asset, `PropertiesLabelPatch`
+(`packages/obsidian-plugin/src/presentation/properties/PropertiesLabelPatch.ts`)
+replaces the raw predicate key (e.g. `ems__Effort_area`) in the Properties
+block (Reading Mode) with a clickable span showing `exo__Property_displayName`;
+clicking opens the property-definition asset. Resolution details:
+
+- Only assets whose `exo__Instance_class` transitively descends from the
+  `exo__Property` root class (subClass closure via `exo__Class_superClass`)
+  are indexed.
+- The matching key is the asset's `exo__Asset_label` (TBox convention: label
+  equals the raw predicate name).
+- Fallback when `exo__Property_displayName` is absent: `exo__Asset_label`
+  (visually a no-op until a display name is authored).
+- Controlled by the `enablePropertiesLabelPatch` plugin setting (default
+  `true`, hot-toggleable).
+
+**Example**:
+
+```yaml
+exo__Asset_label: ems__Effort_area
+exo__Property_displayName: "Area"
+```
+
 ---
 
 ## 📝 Personal Notes Properties (pn\_\_ prefix)
@@ -1169,10 +1191,10 @@ archived: true
 
 ```yaml
 # Parent Area
-exo__Asset_isDefinedBy: "[[Ontology/EMS]]"
+exo__Asset_isDefinedBy: "[[0c2f48d6-6f8e-4a9b-9c3d-5e7f1a2b3c4d]]" # $ems ontology asset
 
 # Child Task (inherits)
-exo__Asset_isDefinedBy: "[[Ontology/EMS]]"
+exo__Asset_isDefinedBy: "[[0c2f48d6-6f8e-4a9b-9c3d-5e7f1a2b3c4d]]" # $ems ontology asset
 ```
 
 #### Rule 2: Never Inherited
@@ -1213,7 +1235,7 @@ exo__Asset_isDefinedBy: "[[Ontology/EMS]]"
 # Input: sourceClass = "ems__Area", sourceName = "Work"
 # Output frontmatter:
 exo__Instance_class:
-  - "[[ems__Task]]" # From INSTANCE_CLASS_MAP
+  - "[[1b20a8f0-d745-4e93-91db-4531b3df120e]]" # ems__Task, from INSTANCE_CLASS_MAP
 ems__Effort_area: "[[Work]]" # From EFFORT_PROPERTY_MAP
 ```
 
@@ -1285,18 +1307,34 @@ ems__Effort_status: [[ems__EffortStatusDraft]]
 
 #### Status Transitions
 
-```typescript
-// Valid transitions (enforced by TaskStatusService)
-const VALID_TRANSITIONS: Record<string, string[]> = {
-  Draft: ["Backlog", "Trashed"],
-  Backlog: ["Draft", "Analysis", "Doing", "Trashed"],
-  Analysis: ["Backlog", "ToDo", "Trashed"],
-  ToDo: ["Analysis", "Doing", "Trashed"],
-  Doing: ["Backlog", "ToDo", "Done", "Trashed"],
-  Done: ["Doing", "Trashed"],
-  Trashed: [], // Terminal state
-};
-```
+Status transitions are **workflow-driven**, not enforced by a hardcoded
+transition table. `WorkflowResolver`
+(`packages/exocortex/src/services/WorkflowResolver.ts`) resolves the
+applicable workflow with this priority:
+
+1. **Asset-specific workflow** — the asset's `ems__Effort_workflow` property.
+2. **Class default workflow** — vault-declared `ems__Workflow` /
+   `ems__WorkflowState` / `ems__WorkflowTransition` assets with
+   `ems__Workflow_isDefault: true` for the asset's class.
+3. **Hardcoded fallback** — `PROJECT_DEFAULT_WORKFLOW` /
+   `TASK_DEFAULT_WORKFLOW`
+   (`packages/exocortex/src/domain/defaults/DefaultWorkflows.ts`), for
+   backward compatibility.
+
+The fallback defaults are:
+
+- **Task**: Draft → Backlog → Doing → Done | Trashed, with rollback
+  transitions (Backlog → Draft, Doing → Backlog, Done → Doing).
+- **Project**: Draft → Backlog → Analysis → ToDo → Doing → Done | Trashed,
+  with rollback transitions one step back; **Analysis and ToDo are optional**
+  states.
+- Entering Doing stamps `ems__Effort_startTimestamp`; entering Done stamps
+  `ems__Effort_endTimestamp` + `ems__Effort_resolutionTimestamp`; entering
+  Trashed stamps `ems__Effort_resolutionTimestamp`.
+
+To customize transitions, declare workflow assets in the vault (see
+[WORKFLOW_CUSTOMIZATION.md](./WORKFLOW_CUSTOMIZATION.md)) — no code change is
+required.
 
 #### Vote Constraints
 
@@ -1323,9 +1361,9 @@ ems__Effort_votes >= 0;
 exo__Asset_uid: 550e8400-e29b-41d4-a716-446655440000
 exo__Asset_label: Review PR #123
 exo__Asset_createdAt: 2025-10-26T14:30:45
-exo__Asset_isDefinedBy: "[[Ontology/EMS]]"
+exo__Asset_isDefinedBy: "[[0c2f48d6-6f8e-4a9b-9c3d-5e7f1a2b3c4d]]" # $ems ontology asset
 exo__Instance_class:
-  - "[[ems__Task]]"
+  - "[[1b20a8f0-d745-4e93-91db-4531b3df120e]]" # ems__Task
 ems__Effort_status: "[[ems__EffortStatusDoing]]"
 ems__Effort_area: "[[Work]]"
 ems__Effort_votes: 3
@@ -1345,9 +1383,9 @@ Task content goes here...
 exo__Asset_uid: 7c9e6679-7425-40de-944b-e07fc1f90ae7
 exo__Asset_label: Website Redesign
 exo__Asset_createdAt: 2025-10-20T10:00:00
-exo__Asset_isDefinedBy: "[[Ontology/EMS]]"
+exo__Asset_isDefinedBy: "[[0c2f48d6-6f8e-4a9b-9c3d-5e7f1a2b3c4d]]" # $ems ontology asset
 exo__Instance_class:
-  - "[[ems__Project]]"
+  - "[[7db5eeff-718a-49b0-8d2b-39b084a356e3]]" # ems__Project
 ems__Effort_status: "[[ems__EffortStatusToDo]]"
 ems__Effort_area: "[[Work]]"
 ems__Effort_votes: 8
@@ -1366,7 +1404,7 @@ exo__Asset_label: TypeScript
 exo__Asset_createdAt: 2025-10-26T15:00:00
 exo__Asset_isDefinedBy: "[[!concepts]]"
 exo__Instance_class:
-  - "[[ims__Concept]]"
+  - "[[08691c91-3d64-4f6c-a475-ec46daa1c1fb]]" # ims__Concept
 ims__Concept_broader: "[[Programming]]"
 ims__Concept_definition: A typed superset of JavaScript that compiles to plain JavaScript
 aliases:
@@ -1383,9 +1421,9 @@ Additional notes about TypeScript...
 exo__Asset_uid: 8f7d3c5a-1b2e-4f6a-9d8c-7e6f5a4b3c2d
 exo__Asset_label: 2025-10-26 Breakfast
 exo__Asset_createdAt: 2025-10-26T07:00:00
-exo__Asset_isDefinedBy: "[[Ontology/EMS]]"
+exo__Asset_isDefinedBy: "[[0c2f48d6-6f8e-4a9b-9c3d-5e7f1a2b3c4d]]" # $ems ontology asset
 exo__Instance_class:
-  - "[[ems__Task]]"
+  - "[[1b20a8f0-d745-4e93-91db-4531b3df120e]]" # ems__Task
 ems__Effort_status: "[[ems__EffortStatusDraft]]"
 exo__Asset_prototype: "[[Breakfast]]"
 ems__Task_size: S
@@ -1406,7 +1444,7 @@ aliases:
 ## 🔗 Related Documentation
 
 - [ARCHITECTURE.md](../ARCHITECTURE.md) - System architecture overview
-- [CommandVisibility.ts](../src/domain/commands/CommandVisibility.ts) - Visibility rules source
+- [PreconditionEvaluator.ts](../packages/exocortex/src/services/PreconditionEvaluator.ts) - Command visibility (vault-declared `exocmd__Precondition` evaluation; the former hardcoded `CommandVisibility` layer was removed in #3384)
 
 ---
 

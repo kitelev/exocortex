@@ -18,7 +18,7 @@ W3C SHACL namespace: `http://www.w3.org/ns/shacl#`
 |---|---|---|---|---|
 | `exo__Property_range` | `sh:class` | Equivalent in engine subset | Phase 1 — Active | Value must be an instance of the declared class (sub-class allowed via `rdfs:subClassOf*`). Vault asset UID: `a12b38a7-8c1f-4f93-872d-afd99803cac6`. superProperty = `rdfs:range`. |
 | `exo__Property_cardinality` (enum `Single`) | `sh:maxCount 1` | Derived | Phase 1 — Active | `exo__PropertyCardinalitySingle` → engine emits `sh:maxCount=1`. No direct `sh:minCount` in Phase 1 for this enum. |
-| `exo__Property_minCount` | `sh:minCount` | 1:1 name mapping (planned) | Phase 3+ — Not yet defined | YAGNI Drop #3 in RFC v3. Will carry `xsd:integer` range when added. `exo__Property_cardinality` enum is sufficient for Phase 1–2. |
+| `exo__Property_minCount` | `sh:minCount` | 1:1 name mapping | Active | `xsd:integer` range. Loaded by `ShapeLoader` (`exo__Property_minCount` → shape `minCount`) and enforced by `ShaclLiteValidator` (fewer than `minCount` values → violation). Originally deferred as YAGNI Drop #3 in RFC v3; since implemented. |
 | `exo__Property_severity` | `sh:severity` | 1:1 name mapping | Phase 1 — Active | Range = W3C sh:Severity IRIs directly (see §Severity IRIs below). Vault asset UID: `5ec51a6a-45d3-4eaa-9b4b-85137d26d067`. superProperty = `sh:severity` (not yet a vault wikilink — `sh__severity.md` does not exist; add alignment edge once SHACL namespace is bootstrapped). |
 
 ### Additional engine-level mappings (Phase 1)

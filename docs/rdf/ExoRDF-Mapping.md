@@ -186,76 +186,82 @@ exo__Instance_class:
 
 ## 🆔 URI Construction Strategy
 
-### Pattern
+Production uses a **dual IRI scheme** (emitted by `NoteToRDFConverter`,
+`packages/exocortex/src/services/NoteToRDFConverter.ts`):
 
-**Format**: `http://${ontology_url}/${asset_uid}`
+### Subject IRIs — file IRIs
 
-**Components**:
-- `${ontology_url}`: From asset's `exo__Asset_isDefinedBy` ontology file
-- `${asset_uid}`: Asset's `exo__Asset_uid` (UUID v4)
+Every note's subject IRI is derived from its **vault path**, not from
+`exo__Asset_uid` or an ontology URL:
 
-### Why UID-Based, Not Filename-Based?
+**Format**: `obsidian://vault/<URL-encoded note path>.md`
 
-| Approach | Stability | Uniqueness | Semantic Web Compatibility |
-|----------|-----------|------------|----------------------------|
-| **Filename-based** | ❌ Breaks on rename | ⚠️ Path collisions | ❌ Non-standard |
-| **UID-based** | ✅ Stable across renames | ✅ Globally unique | ✅ Standard practice |
-
-**Rationale**:
-- **Stability**: UIDs never change, filenames can be renamed
-- **Uniqueness**: UUID v4 provides global uniqueness (2^122 possible values)
-- **Semantic Web**: Standard practice in RDF systems (DBpedia, Wikidata, etc.)
-
-### URI Construction Algorithm
+`NoteToRDFConverter.notePathToIRI()` applies `encodeURI` (preserving forward
+slashes, encoding spaces etc.), so:
 
 ```typescript
-function constructAssetURI(asset: AssetMetadata): string {
-  // 1. Extract UID
-  const uid = asset.frontmatter?.exo__Asset_uid;
-  if (!uid) {
-    throw new Error("Missing exo__Asset_uid");
-  }
-
-  // 2. Resolve ontology URL
-  const ontologyRef = asset.frontmatter?.exo__Asset_isDefinedBy; // "[[Ontology/EMS]]"
-  const ontologyFile = vault.getFileByPath(extractWikiLink(ontologyRef));
-  const ontologyMetadata = readFrontmatter(ontologyFile);
-  const ontologyURL = ontologyMetadata?.exo__Ontology_url || "https://exocortex.my/default/";
-
-  // 3. Construct URI
-  const baseURL = ontologyURL.endsWith("/") ? ontologyURL : `${ontologyURL}/`;
-  return `${baseURL}${uid}`;
-}
+converter.notePathToIRI("My Folder/My Note.md");
+// → obsidian://vault/My%20Folder/My%20Note.md
 ```
 
-### Example
+With UID-canon (every asset filename = `<uuid>.md`), subject IRIs are
+effectively UID-stable in practice:
+`obsidian://vault/assetspaces/ems/550e8400-e29b-41d4-a716-446655440000.md`.
 
-**Asset frontmatter**:
-```yaml
-exo__Asset_uid: 550e8400-e29b-41d4-a716-446655440000
-exo__Asset_isDefinedBy: "[[Ontology/EMS]]"
-exo__Instance_class:
-  - "[[ems__Task]]"
-```
+> ℹ️ A `URIConstructionService` implementing an ontology-URL-based scheme
+> (`${exo__Ontology_url}/${uid}`) exists in the codebase and is registered in
+> the DI container, but it is **not wired into the converter** — it does not
+> describe production subject IRIs.
 
-**Ontology frontmatter** (`Ontology/EMS.md`):
-```yaml
-exo__Ontology_url: https://exocortex.my/ontology/ems/
-```
+### Object IRIs — symbolic namespace IRIs for class-like wikilink targets
 
-**Result**:
-```
-URI: https://exocortex.my/ontology/ems/550e8400-e29b-41d4-a716-446655440000
-```
+When a frontmatter value is a wikilink, the emitted object depends on the
+target:
 
-### Edge Cases
+| Wikilink target | Emitted object | Example |
+|---|---|---|
+| Target whose basename/label parses as `<prefix>__<LocalName>` (class-like: classes, enum members such as statuses) | Symbolic namespace IRI `https://exocortex.my/ontology/<prefix>#<LocalName>` | `"[[ems__EffortStatusDoing]]"` → `ems:EffortStatusDoing` |
+| Any other resolvable target file | File IRI `obsidian://vault/<path>.md` | `"[[Implement SPARQL Engine]]"` → `<obsidian://vault/Implement%20SPARQL%20Engine.md>` |
+| Unresolvable UUID-form wikilink | Synthesized file IRI `obsidian://vault/<uuid>.md` (see IRI canonicalization below) | — |
 
-| Scenario | Handling |
-|----------|----------|
-| Missing `exo__Asset_uid` | **Throw error** (strict mode) or use fallback (filename) with warning |
-| Missing `exo__Asset_isDefinedBy` | Use default ontology URL: `https://exocortex.my/default/` |
-| Invalid ontology URL | Validate HTTP(S) protocol, throw error if invalid |
-| Ontology file not found | Use default ontology URL with warning |
+`exo__Instance_class` values always resolve to symbolic class IRIs
+(`valueToClassURI`), enabling canonical SPARQL JOINs against class
+definitions. UUID-form wikilinks under `exo__Asset_prototype` additionally
+get dual storage (file IRI + bare-UUID literal).
+
+### Why two schemes?
+
+- **File IRIs (subjects)** mirror the vault's actual file layer — stable
+  navigation anchor, no dependency on frontmatter correctness.
+- **Symbolic IRIs (class-like objects)** are label-derived and joinable with
+  TBox class definitions and with SPARQL `ASK` preconditions
+  (`?s ems:Effort_status ems:EffortStatusDone`).
+
+The two schemes coexist; queries must use the form the store actually emits
+for the position being matched (see the examples below).
+
+### File-level predicates and cross-vault IRI canonicalization
+
+- **`exo:Asset_filename`** (RFC `1ce2a226` Phase 3a, #3229) — emitted for
+  **every** parsed file: `<file-iri> exo:Asset_filename "<basename>"` (disk
+  basename without `.md`). Overwrite-on-reindex semantics are provided by
+  `VaultRDFIndexer.updateFile` / `renameFile`.
+- **`exo:Asset_aliases`** — the unprefixed Obsidian `aliases` frontmatter key
+  belongs to the whitelisted unprefixed-key set (`archived`, `draft`,
+  `pinned`, `aliases` — Issue #3043 / RFC `871c1e56`); each whitelisted key is
+  indexed under the `exo:Asset_<key>` predicate, so
+  `?s exo:Asset_aliases "TS"` matches in SPARQL.
+- **IRI canonicalization for cross-vault loads** (`IRICanonicalizer`,
+  Issue #3286) — in a multi-vault load (`--also` federation) the same logical
+  UID can surface as a full-path IRI
+  (`obsidian://vault/assetspaces/<sub>/<uuid>.md`, emitted by the owning
+  vault) and as a "synth-A" IRI (`obsidian://vault/<uuid>.md`, synthesized by
+  a sibling vault when the wikilink target is not resolvable locally). JOINs
+  across the two forms silently miss; the canonicalizer remaps every synth-A
+  occurrence to the canonical full-path IRI when the UID is present in the
+  file index. It runs in the CLI combined-store pipeline
+  (`buildCombinedTriples` / `sparql-query`); only `IRI` nodes are remapped —
+  literals, blank nodes, and predicates pass through untouched.
 
 ---
 
@@ -271,7 +277,7 @@ exo__Instance_class:
   - "[[ems__Task]]"
 exo__Asset_label: Review PR #365
 exo__Asset_isDefinedBy: "[[Ontology/EMS]]"
-ems__Effort_status: "[[ems__EffortStatusInProgress]]"
+ems__Effort_status: "[[ems__EffortStatusDoing]]"
 ems__Task_size: M
 ---
 ```
@@ -284,18 +290,18 @@ ems__Task_size: M
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-<https://exocortex.my/ontology/ems/550e8400-e29b-41d4-a716-446655440000>
+<obsidian://vault/Review%20PR%20%23365.md>
     # ExoRDF triples
     exo:Instance_class ems:Task ;
     exo:Asset_label "Review PR #365" ;
-    exo:Asset_isDefinedBy <https://exocortex.my/ontology/ems/ontology-uid> ;
-    ems:Effort_status ems:EffortStatusInProgress ;
+    exo:Asset_isDefinedBy <obsidian://vault/Ontology/EMS.md> ;
+    ems:Effort_status ems:EffortStatusDoing ;
     ems:Task_size "M" ;
 
     # RDF/RDFS triples (additional, for interoperability)
     rdf:type ems:Task ;
     rdfs:label "Review PR #365" ;
-    rdfs:isDefinedBy <https://exocortex.my/ontology/ems/ontology-uid> .
+    rdfs:isDefinedBy <obsidian://vault/Ontology/EMS.md> .
 ```
 
 ### Example 2: Project with Tasks
@@ -324,16 +330,16 @@ ems__Effort_parent: "[[Implement SPARQL Engine]]"
 **Generated RDF Triples**:
 ```turtle
 # Project
-<https://exocortex.my/ontology/ems/7c9e6679-7425-40de-944b-e07fc1f90ae7>
+<obsidian://vault/Implement%20SPARQL%20Engine.md>
     rdf:type ems:Project ;
     exo:Instance_class ems:Project ;
     rdfs:label "Implement SPARQL Engine" .
 
 # Task
-<https://exocortex.my/ontology/ems/3b241101-e2bb-4255-8caf-4136c566a964>
+<obsidian://vault/Fix%20SPARQL%20Parser.md>
     rdf:type ems:Task ;
     exo:Instance_class ems:Task ;
-    ems:Effort_parent <https://exocortex.my/ontology/ems/7c9e6679-7425-40de-944b-e07fc1f90ae7> .
+    ems:Effort_parent <obsidian://vault/Implement%20SPARQL%20Engine.md> .
 ```
 
 ---
@@ -387,9 +393,9 @@ WHERE {
 ```
 asset                                                              type        label
 ===================================================================================================
-https://exocortex.my/ontology/ems/550e8400-e29b-41d4...           ems:Task    "Review PR #365"
-https://exocortex.my/ontology/ems/7c9e6679-7425-40de...           ems:Project "Implement SPARQL"
-https://exocortex.my/ontology/ems/a1b2c3d4-e5f6-7890...           ems:Area    "Development"
+obsidian://vault/Review%20PR%20%23365.md                           ems:Task    "Review PR #365"
+obsidian://vault/Implement%20SPARQL%20Engine.md                    ems:Project "Implement SPARQL"
+obsidian://vault/Development.md                                    ems:Area    "Development"
 ```
 
 ### Example 3: Class Hierarchy Query
