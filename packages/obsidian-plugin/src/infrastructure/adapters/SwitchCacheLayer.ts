@@ -2,15 +2,19 @@
 // Obsidian vault — RFC 22b50a17 §Key sub-systems B.5. Default cache root
 // is `~/Library/Caches/exocortex/switch-cache/` (macOS desktop). Obsidian's
 // `vault.adapter` API only addresses vault-relative paths, so OS-level
-// caches must use Node directly. Mobile is guarded by `Platform.isMobile`
-// throw at every public entry point — Phase 5 apply is desktop-only.
-/* eslint-disable no-restricted-imports, import/no-nodejs-modules */
-import { promises as fsPromises } from "node:fs";
-import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
-import { randomBytes } from "node:crypto";
-/* eslint-enable no-restricted-imports, import/no-nodejs-modules */
+// caches must use Node directly. Accessed LAZILY inside methods — a
+// top-level node:* import would crash the whole bundle on mobile load
+// (Issue #3464). Mobile is guarded by `Platform.isMobile` throw at every
+// public entry point (getCacheStats returns zeros) — Phase 5 apply is
+// desktop-only, but the CLASS is constructed on mobile too (Settings tab
+// render + clear-switch-cache command), so the ctor must not touch Node.
+import {
+  nodeCrypto,
+  nodeFs,
+  nodeFsPromises,
+  nodeOs,
+  nodePath,
+} from "./lazyNodeModules";
 import { Platform } from "obsidian";
 import { createTarGzip, parseTarGzip, type TarFileInput } from "nanotar";
 
@@ -91,16 +95,38 @@ export class CacheMissError extends Error {
 }
 
 export class SwitchCacheLayer implements ICacheLayer {
-  private readonly cacheDir: string;
+  /** `null` = derive the default from `os.homedir()` lazily on first use. */
+  private readonly cacheDirOverride: string | null;
+  private cacheDirResolved: string | null = null;
 
   constructor(options: SwitchCacheLayerOptions = {}) {
-    this.cacheDir =
-      options.cacheDir ??
-      path.join(os.homedir(), "Library", "Caches", "exocortex", "switch-cache");
+    // No Node access here — the class is constructed on mobile too
+    // (ExocortexSettingTab.renderProfileSections + invokeClearSwitchCache),
+    // where only the mobile-safe getCacheStats() zeros-path runs.
+    this.cacheDirOverride = options.cacheDir ?? null;
   }
 
   getCacheDir(): string {
-    return this.cacheDir;
+    return this.resolveCacheDir();
+  }
+
+  /**
+   * Resolve (and memoize) the cache root. Requires Node (`os.homedir()`)
+   * when no override was injected — callers are desktop-only paths.
+   */
+  private resolveCacheDir(): string {
+    if (this.cacheDirResolved === null) {
+      this.cacheDirResolved =
+        this.cacheDirOverride ??
+        nodePath().join(
+          nodeOs().homedir(),
+          "Library",
+          "Caches",
+          "exocortex",
+          "switch-cache",
+        );
+    }
+    return this.cacheDirResolved;
   }
 
   /**
@@ -116,8 +142,14 @@ export class SwitchCacheLayer implements ICacheLayer {
     sha: string,
   ): Promise<CacheEntry> {
     this.assertDesktop("cache");
+    const { existsSync } = nodeFs();
+    const fsPromises = nodeFsPromises();
+    const path = nodePath();
+    const { randomBytes } = nodeCrypto();
     if (!existsSync(sourceDir)) {
-      throw new CacheWriteError(`Source directory does not exist: ${sourceDir}`);
+      throw new CacheWriteError(
+        `Source directory does not exist: ${sourceDir}`,
+      );
     }
     const cachePath = this.getCachePath(asUid, sha);
     const metaPath = this.getMetaPath(asUid, sha);
@@ -184,7 +216,9 @@ export class SwitchCacheLayer implements ICacheLayer {
     try {
       const parsed = await parseTarGzip(buf);
       if (!Array.isArray(parsed) || parsed.length === 0) {
-        await fsPromises.rm(cacheTmpPath, { force: true }).catch(() => undefined);
+        await fsPromises
+          .rm(cacheTmpPath, { force: true })
+          .catch(() => undefined);
         throw new CacheWriteError(
           `Cache archive has no entries: ${cacheTmpPath}`,
         );
@@ -257,13 +291,16 @@ export class SwitchCacheLayer implements ICacheLayer {
    */
   async has(asUid: string, expectedSha?: string): Promise<boolean> {
     this.assertDesktop("has");
+    const { existsSync } = nodeFs();
+    const fsPromises = nodeFsPromises();
+    const path = nodePath();
     if (expectedSha !== undefined) {
       return (
         existsSync(this.getCachePath(asUid, expectedSha)) &&
         existsSync(this.getMetaPath(asUid, expectedSha))
       );
     }
-    const dir = path.join(this.cacheDir, asUid);
+    const dir = path.join(this.resolveCacheDir(), asUid);
     if (!existsSync(dir)) return false;
     try {
       const entries = await fsPromises.readdir(dir);
@@ -272,7 +309,8 @@ export class SwitchCacheLayer implements ICacheLayer {
       const tarballShas = new Set<string>();
       const metaShas = new Set<string>();
       for (const e of entries) {
-        if (e.endsWith(".tar.gz")) tarballShas.add(e.slice(0, -".tar.gz".length));
+        if (e.endsWith(".tar.gz"))
+          tarballShas.add(e.slice(0, -".tar.gz".length));
         else if (e.endsWith(".meta.json"))
           metaShas.add(e.slice(0, -".meta.json".length));
       }
@@ -292,12 +330,12 @@ export class SwitchCacheLayer implements ICacheLayer {
    *
    * @throws CacheMissError if no cached entries exist.
    */
-  async restore(
-    asUid: string,
-    targetDir: string,
-  ): Promise<{ sha: string }> {
+  async restore(asUid: string, targetDir: string): Promise<{ sha: string }> {
     this.assertDesktop("restore");
-    const dir = path.join(this.cacheDir, asUid);
+    const { existsSync } = nodeFs();
+    const fsPromises = nodeFsPromises();
+    const path = nodePath();
+    const dir = path.join(this.resolveCacheDir(), asUid);
     if (!existsSync(dir)) {
       throw new CacheMissError(`No cache entries для ${asUid}`);
     }
@@ -373,7 +411,10 @@ export class SwitchCacheLayer implements ICacheLayer {
       const destPath = path.join(targetDir, item.name);
       const normalisedDest = path.resolve(destPath);
       const normalisedTarget = path.resolve(targetDir);
-      if (!normalisedDest.startsWith(normalisedTarget + path.sep) && normalisedDest !== normalisedTarget) {
+      if (
+        !normalisedDest.startsWith(normalisedTarget + path.sep) &&
+        normalisedDest !== normalisedTarget
+      ) {
         throw new CacheMissError(
           `Cache restore would escape target dir: ${item.name}`,
         );
@@ -399,16 +440,20 @@ export class SwitchCacheLayer implements ICacheLayer {
    */
   async clear(): Promise<{ entriesRemoved: number }> {
     this.assertDesktop("clear");
-    if (!existsSync(this.cacheDir)) return { entriesRemoved: 0 };
+    const { existsSync } = nodeFs();
+    const fsPromises = nodeFsPromises();
+    const path = nodePath();
+    const cacheDir = this.resolveCacheDir();
+    if (!existsSync(cacheDir)) return { entriesRemoved: 0 };
     let removed = 0;
     let asUidDirs: string[];
     try {
-      asUidDirs = await fsPromises.readdir(this.cacheDir);
+      asUidDirs = await fsPromises.readdir(cacheDir);
     } catch {
       return { entriesRemoved: 0 };
     }
     for (const name of asUidDirs) {
-      const fullDir = path.join(this.cacheDir, name);
+      const fullDir = path.join(cacheDir, name);
       let isDir: boolean;
       try {
         const stat = await fsPromises.stat(fullDir);
@@ -435,16 +480,20 @@ export class SwitchCacheLayer implements ICacheLayer {
    */
   async listEntries(): Promise<ReadonlyArray<CacheEntry>> {
     this.assertDesktop("listEntries");
-    if (!existsSync(this.cacheDir)) return [];
+    const { existsSync } = nodeFs();
+    const fsPromises = nodeFsPromises();
+    const path = nodePath();
+    const cacheDir = this.resolveCacheDir();
+    if (!existsSync(cacheDir)) return [];
     let asUidDirs: string[];
     try {
-      asUidDirs = await fsPromises.readdir(this.cacheDir);
+      asUidDirs = await fsPromises.readdir(cacheDir);
     } catch {
       return [];
     }
     const all: CacheEntry[] = [];
     for (const name of asUidDirs) {
-      const fullDir = path.join(this.cacheDir, name);
+      const fullDir = path.join(cacheDir, name);
       let isDir: boolean;
       try {
         const stat = await fsPromises.stat(fullDir);
@@ -500,12 +549,15 @@ export class SwitchCacheLayer implements ICacheLayer {
     if (isPlatformMobile()) {
       return { count: 0, totalSize: 0, oldestEntry: null };
     }
-    if (!existsSync(this.cacheDir)) {
+    const { existsSync, readdirSync, statSync, readFileSync } = nodeFs();
+    const path = nodePath();
+    const cacheDir = this.resolveCacheDir();
+    if (!existsSync(cacheDir)) {
       return { count: 0, totalSize: 0, oldestEntry: null };
     }
     let asUidDirs: string[];
     try {
-      asUidDirs = readdirSync(this.cacheDir);
+      asUidDirs = readdirSync(cacheDir);
     } catch {
       return { count: 0, totalSize: 0, oldestEntry: null };
     }
@@ -513,7 +565,7 @@ export class SwitchCacheLayer implements ICacheLayer {
     let totalSize = 0;
     let oldest: string | null = null;
     for (const name of asUidDirs) {
-      const fullDir = path.join(this.cacheDir, name);
+      const fullDir = path.join(cacheDir, name);
       let isDir: boolean;
       try {
         isDir = statSync(fullDir).isDirectory();
@@ -553,11 +605,11 @@ export class SwitchCacheLayer implements ICacheLayer {
   // ─────────────────────────── internals ──────────────────────────────────
 
   private getCachePath(asUid: string, sha: string): string {
-    return path.join(this.cacheDir, asUid, `${sha}.tar.gz`);
+    return nodePath().join(this.resolveCacheDir(), asUid, `${sha}.tar.gz`);
   }
 
   private getMetaPath(asUid: string, sha: string): string {
-    return path.join(this.cacheDir, asUid, `${sha}.meta.json`);
+    return nodePath().join(this.resolveCacheDir(), asUid, `${sha}.meta.json`);
   }
 
   private assertDesktop(op: string): void {
@@ -574,6 +626,8 @@ export class SwitchCacheLayer implements ICacheLayer {
    * directories so empty subdirs are preserved on restore.
    */
   private async collectTarInputs(sourceDir: string): Promise<TarFileInput[]> {
+    const fsPromises = nodeFsPromises();
+    const path = nodePath();
     const out: TarFileInput[] = [];
     const stack: Array<{ abs: string; rel: string }> = [
       { abs: sourceDir, rel: "" },

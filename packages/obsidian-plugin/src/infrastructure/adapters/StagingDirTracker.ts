@@ -1,13 +1,10 @@
 // Node.js builtins required for Phase 5 apply staging dirs (RFC
 // 22b50a17) — staging dirs live в `os.tmpdir()` OUTSIDE the vault so
-// Obsidian's vault.adapter API cannot reach them. This file is only
-// instantiated on desktop — callers (AssetSpaceManager.pullAssetSpace +
-// ExocortexPlugin.onload sweepOrphans) guard via Platform.isMobile.
-/* eslint-disable no-restricted-imports, import/no-nodejs-modules */
-import { promises as fs } from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
-/* eslint-enable no-restricted-imports, import/no-nodejs-modules */
+// Obsidian's vault.adapter API cannot reach them. Accessed LAZILY inside
+// methods — a top-level node:* import would crash the whole bundle on
+// mobile load (Issue #3464). Method callers (AssetSpaceManager.pullAssetSpace
+// + ExocortexPlugin.onload sweepOrphans) guard via Platform.isMobile.
+import { nodeFsPromises, nodeOs, nodePath } from "./lazyNodeModules";
 import type {
   PluginLocalDataStore,
   StagingDirEntry,
@@ -45,7 +42,14 @@ export interface StagingDirTrackerOptions {
  */
 export class StagingDirTracker {
   private readonly localDataStore: PluginLocalDataStore;
-  private readonly tmpdirBase: string;
+  /**
+   * `null` = resolve `os.tmpdir()` lazily on first {@link allocate} call.
+   * Deferred (NOT resolved in the ctor) so constructing the tracker never
+   * touches Node builtins — `buildAssetSpacePuller` constructs one on every
+   * Bootstrap / Add-AssetSpace invocation, and the ctor must stay safe even
+   * if a future caller reaches it on mobile (Issue #3464).
+   */
+  private readonly tmpdirBaseOverride: string | null;
 
   /**
    * Promise chain serializing `read-modify-write` of the registry. The
@@ -65,7 +69,7 @@ export class StagingDirTracker {
       throw new Error("StagingDirTracker: localDataStore is required");
     }
     this.localDataStore = opts.localDataStore;
-    this.tmpdirBase = opts.tmpdirBase ?? os.tmpdir();
+    this.tmpdirBaseOverride = opts.tmpdirBase ?? null;
   }
 
   /**
@@ -81,8 +85,11 @@ export class StagingDirTracker {
       throw new Error("StagingDirTracker.allocate: asUid is required");
     }
     return this.runSerial(async () => {
+      const fs = nodeFsPromises();
+      const path = nodePath();
+      const tmpdirBase = this.tmpdirBaseOverride ?? nodeOs().tmpdir();
       const sanitized = asUid.replace(/[^a-zA-Z0-9-]/g, "_");
-      const prefix = path.join(this.tmpdirBase, `exo-staging-${sanitized}-`);
+      const prefix = path.join(tmpdirBase, `exo-staging-${sanitized}-`);
       const dir = await fs.mkdtemp(prefix);
       try {
         const tracked = await this.localDataStore.readActiveStagingDirs();
@@ -126,6 +133,7 @@ export class StagingDirTracker {
   async release(stagingPath: string): Promise<void> {
     if (typeof stagingPath !== "string" || stagingPath.length === 0) return;
     return this.runSerial(async () => {
+      const fs = nodeFsPromises();
       await fs
         .rm(stagingPath, { recursive: true, force: true })
         .catch(() => undefined);
@@ -146,6 +154,7 @@ export class StagingDirTracker {
    */
   async sweepOrphans(): Promise<{ swept: number; tracked: number }> {
     return this.runSerial(async () => {
+      const fs = nodeFsPromises();
       const tracked = await this.localDataStore.readActiveStagingDirs();
       if (tracked.length === 0) return { swept: 0, tracked: 0 };
       let swept = 0;
