@@ -292,6 +292,8 @@ interface SetupOptions {
   sourceLabel?: string;
   /** AS UIDs currently materialized (subset of vault scan). */
   materialized: string[];
+  /** ExoSync D11 exclusion input (RFC 4e4dc453 Phase B). */
+  isSyncBusy?: () => boolean;
 }
 
 function setup(opts: SetupOptions) {
@@ -424,6 +426,7 @@ function setup(opts: SetupOptions) {
     localDataStore: localDataStore as any,
     /* eslint-enable @typescript-eslint/no-explicit-any */
     vaultRootPath: "/fake/vault",
+    ...(opts.isSyncBusy !== undefined ? { isSyncBusy: opts.isSyncBusy } : {}),
   });
   return {
     mgr,
@@ -612,6 +615,61 @@ describe("ProfileApplyManager.applyProfile", () => {
       await expect(mgr.applyProfile("target")).rejects.toThrow(ApplyAbortedByUser);
       expect(gitOps.calls.length).toBe(0);
       expect(cacheLayer.cachedCalls.length).toBe(0);
+    });
+  });
+
+  describe("ExoSync D11 exclusion (RFC 4e4dc453 Phase B)", () => {
+    const D11_SETUP = {
+      targetUid: "target",
+      sourceUid: null,
+      targetIncludes: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+      ],
+      materialized: [
+        "ems-uid",
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+      ],
+    };
+
+    it("entry guard: refuses to start while a sync is running, touching nothing", async () => {
+      const { mgr, gitOps, cacheLayer, app, localDataStore } = setup({
+        ...D11_SETUP,
+        isSyncBusy: () => true,
+      });
+
+      await expect(mgr.applyProfile("target")).rejects.toThrow(/D11/);
+
+      expect(gitOps.calls.length).toBe(0);
+      expect(cacheLayer.cachedCalls.length).toBe(0);
+      expect((await readJournalEntries(app)).length).toBe(0);
+      expect(localDataStore.snapshot()._switchInProgress).toBe(false);
+    });
+
+    it("pre-flag re-check: a sync starting during the confirm gate aborts before _switchInProgress is raised", async () => {
+      let busy = false;
+      const { mgr, gitOps, cacheLayer, app, localDataStore, confirmGate } =
+        setup({ ...D11_SETUP, isSyncBusy: () => busy });
+      // The user keeps the confirm modal open while a sync kicks off — the
+      // window the entry guard cannot see (code-reviewer MEDIUM, PR #3461).
+      const originalConfirm = confirmGate.confirmApply.bind(confirmGate);
+      confirmGate.confirmApply = async (plan) => {
+        busy = true;
+        return originalConfirm(plan);
+      };
+
+      await expect(mgr.applyProfile("target")).rejects.toThrow(/D11/);
+
+      // No mutation phase ran and the flag was never raised.
+      expect(gitOps.calls.length).toBe(0);
+      expect(cacheLayer.cachedCalls.length).toBe(0);
+      const phases = (await readJournalEntries(app)).map((e) => e.phase);
+      expect(phases).not.toContain("apply-starting");
+      expect(phases.filter((p) => p.startsWith("phase2"))).toEqual([]);
+      expect(localDataStore.snapshot()._switchInProgress).toBe(false);
     });
   });
 
