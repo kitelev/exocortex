@@ -54,6 +54,22 @@ const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
 const INSTANCE_CLASS_KEY = "exo__Instance_class";
 
+/**
+ * Plain-data guard (A2 deferred finding): the YAML codec contract requires
+ * scalars to round-trip as strings (CORE_SCHEMA), but a consumer codec
+ * violating it produces Date instances — and two DIFFERENT Dates have zero
+ * enumerable keys each, so a structural deepEqual silently treats them as
+ * equal, collapsing divergent timestamps. Non-plain values are therefore
+ * rejected fail-loud (conflict) before any per-key merge logic runs.
+ */
+function isPlainValue(v: unknown): boolean {
+  if (v === null || typeof v !== "object") return true;
+  if (Array.isArray(v)) return v.every(isPlainValue);
+  const proto: unknown = Object.getPrototypeOf(v);
+  if (proto !== Object.prototype && proto !== null) return false;
+  return Object.values(v as Record<string, unknown>).every(isPlainValue);
+}
+
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (
@@ -148,6 +164,13 @@ function mergeFrontmatter(
     const b = base[key];
     const l = local[key];
     const r = remote[key];
+
+    if (!isPlainValue(b) || !isPlainValue(l) || !isPlainValue(r)) {
+      return {
+        ok: false,
+        reason: `frontmatter key "${key}" contains a non-plain value (Date?) — the codec must round-trip scalars as strings (CORE_SCHEMA contract)`,
+      };
+    }
 
     if (Array.isArray(b) || Array.isArray(l) || Array.isArray(r)) {
       if (!(key in local) && !(key in remote)) continue; // deleted both sides

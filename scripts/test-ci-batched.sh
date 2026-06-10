@@ -123,12 +123,14 @@ echo "📦 Running exocortex grounding + RFC regression tests..."
 # transforms) that the plugin RestAssetSpaceMount + CLI BootstrapAssetSpaceService
 # both delegate to. Without it the core would rot silently (jest roots vs CI
 # allowlist gotcha — see packages/obsidian-plugin/CLAUDE.md "Test Suite Awareness").
-# RFC 4e4dc453 A1+A2 (ExoSync, 2026-06-10): services/sync/*.test (ChangeDetector,
-# SyncEngine, StructuredMerger, MergeShaclGate, diff3)
+# RFC 4e4dc453 A1+A2+A3 (ExoSync, 2026-06-10): services/sync/*.test (ChangeDetector,
+# SyncEngine, StructuredMerger, MergeShaclGate, diff3, SyncedQuarantineStore,
+# FileWatermarkStore, transportBackoff, secretScan)
 # — gates the platform-free sync core (uid-keyed change detection D18/D22 +
-# pull→no-conflict→push orchestration over restCreateCommit, D16 422-retry,
-# D19 materialization gate).
-EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathPatterns=(services/(GroundingExecutor(\.[a-zA-Z0-9_-]+)?|AssetConversionService|NoteToRDFConverter\.(issue-2959|rfc-31c1a0be-grounding-ref|asset-filename|issue-3242-labelless-class)|ShapeRegistry|ShapeLoader)\.test|services/assetspace/AssetSpaceMount\.test|services/sync/(ChangeDetector|SyncEngine|StructuredMerger|GatedStructuredMerger|MergeShaclGate|diff3)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/BGPExecutor\.issue-2997\.test|integration/dynamic-commands/(grounding-resolve-execute|grounding-phase3b-pipeline|grounding-type-vault-fixture-parity)\.test|domain/models/GroundingFrontmatterParser\.test|domain/profile/TsFloorGuard\.test)\.ts --forceExit"
+# pull→merge→push orchestration over restCreateCommit, D16 422-retry +
+# terminal-quarantine, D19 materialization gate, D17 synced quarantine,
+# D8/D22 durable watermark, R5 secret-scan, R6 backoff).
+EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathPatterns=(services/(GroundingExecutor(\.[a-zA-Z0-9_-]+)?|AssetConversionService|NoteToRDFConverter\.(issue-2959|rfc-31c1a0be-grounding-ref|asset-filename|issue-3242-labelless-class)|ShapeRegistry|ShapeLoader)\.test|services/assetspace/AssetSpaceMount\.test|services/sync/(ChangeDetector|SyncEngine|StructuredMerger|GatedStructuredMerger|MergeShaclGate|diff3|SyncedQuarantineStore|FileWatermarkStore|transportBackoff|secretScan)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/BGPExecutor\.issue-2997\.test|integration/dynamic-commands/(grounding-resolve-execute|grounding-phase3b-pipeline|grounding-type-vault-fixture-parity)\.test|domain/models/GroundingFrontmatterParser\.test|domain/profile/TsFloorGuard\.test)\.ts --forceExit"
 if [ "$CI" = "true" ]; then
     if timeout 60 node ./node_modules/jest/bin/jest.js $EXOCORTEX_JEST_ARGS; then
         echo "✅ Exocortex grounding regression tests passed!"

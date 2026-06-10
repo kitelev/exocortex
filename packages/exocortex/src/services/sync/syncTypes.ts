@@ -74,6 +74,12 @@ export interface LocalFilesPort {
   /** List repo-relative paths of all currently materialized files. */
   list(): Promise<string[]>;
   read(path: string): Promise<string>;
+  /**
+   * Write a file. Implementations MUST write atomically (temp file +
+   * rename) — a crash mid-write must never leave a torn file on disk
+   * (engineering baseline, RFC 4e4dc453 A3). The engine routes merged
+   * contents and pulled remote changes through this method.
+   */
   write(path: string, content: string): Promise<void>;
   /** Remove a file. MUST be a no-op if the path does not exist. */
   delete(path: string): Promise<void>;
@@ -152,6 +158,14 @@ export interface RepoSyncResult {
     | "full-conflict"
     | "conflict"
     | "retry-exhausted"
+    /** Another sync/apply operation is already running (D11 guard). */
+    | "busy"
+    /**
+     * Push/pull failed with HTTP 401/403 (NOT rate-limit) — the PAT is
+     * expired, revoked or under-scoped. Consumers must surface an explicit
+     * "update your PAT" prompt (R8) and never treat this as success.
+     */
+    | "auth-required"
     | "error";
   /** New commit SHA when a push happened. */
   pushedSha?: string;
@@ -219,14 +233,31 @@ export interface QuarantineEntry {
 }
 
 /**
- * Quarantine persistence port (D17). A2 ships {@link InMemoryQuarantineStore}
- * only — the durable SYNCED quarantine repo is A3 scope. Skipping the port
- * loses no data: the conflicting file stays untouched on disk, the remote
- * version stays in git history, and the watermark pin re-derives the
- * conflict on every subsequent sync.
+ * Quarantine persistence port (D17). The durable SYNCED store is
+ * {@link SyncedQuarantineStore} (A3); {@link InMemoryQuarantineStore} remains
+ * for tests/compositions without a quarantine repo. Skipping the port loses
+ * no data: the conflicting file stays untouched on disk, the remote version
+ * stays in git history, and the watermark pin re-derives the conflict on
+ * every subsequent sync.
  */
 export interface QuarantinePort {
   quarantine(entry: QuarantineEntry): Promise<void>;
+  /**
+   * Persist MANY entries in one operation. Synced implementations SHOULD
+   * batch this into a single commit — a terminal-quarantine flush (D16) can
+   * carry dozens of contended files, and one commit per entry would burn
+   * 4 API calls each. The engine prefers this method when present.
+   */
+  quarantineAll?(entries: QuarantineEntry[]): Promise<void>;
+  /**
+   * Mark an entry resolved (best-effort; MUST be a no-op when the entry
+   * does not exist). The engine calls this when a previously pinned path
+   * clears — the conflict resolved convergently, so the quarantine record
+   * no longer counts as open (CQ4). Terminal-quarantine entries (D16) have
+   * no pin and are NOT auto-resolved — reconciling them is the resolver
+   * UI's job (Phase B).
+   */
+  markResolved?(repoKey: string, path: string): Promise<void>;
 }
 
 /** In-memory QuarantinePort stub (A2) — durable synced store lands in A3. */
@@ -240,11 +271,21 @@ export class InMemoryQuarantineStore implements QuarantinePort {
 /**
  * A1 sync text allowlist: only UID-bearing markdown assets participate in
  * sync. Binary/non-UTF8 content (attachments) is Phase C scope (D4/VL#3) —
- * reading a binary as a string and pushing/writing it back would silently
- * corrupt it, so non-allowlisted paths are excluded SYMMETRICALLY: from the
- * local snapshot, from the remote diff, from pull-apply, and from
- * delete-inference.
+ * reading a binary as a string and pushing it back would silently corrupt
+ * it, so non-allowlisted paths are excluded SYMMETRICALLY: from the local
+ * snapshot, from the remote diff, from pull-apply, and from delete-inference.
+ *
+ * A3 gitignore-allowlist defence: paths containing the `.local.` infix
+ * (watermark/journal device-local artifacts) or `.conflict.` (quarantine
+ * conflict copies) are excluded even when they end in `.md` — they must
+ * never be pushed nor pulled. NOTE the substring match also silently
+ * excludes legitimately-named user notes like `server.local.setup.md`;
+ * symmetric exclusion means no corruption, just non-sync of such paths.
  */
 export function isSyncablePath(path: string): boolean {
-  return path.endsWith(".md");
+  return (
+    path.endsWith(".md") &&
+    !path.includes(".local.") &&
+    !path.includes(".conflict.")
+  );
 }
