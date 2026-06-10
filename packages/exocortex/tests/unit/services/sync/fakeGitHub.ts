@@ -1,0 +1,316 @@
+/**
+ * In-memory GitHub Git Data API fake for ExoSync tests.
+ *
+ * Production-shape by design (test-fixture-realism): it implements the SAME
+ * transport contract as the real adapters (throws on non-2xx with the message
+ * shape `GitHub request {METHOD} {url} → HTTP {status}: {body}`), computes
+ * REAL git blob SHAs (so disk-side `gitBlobSha` comparisons behave exactly as
+ * against GitHub), returns base64 blob content with embedded newlines (as
+ * GitHub does), and enforces `force:false` fast-forward semantics on PATCH —
+ * a non-fast-forward ref update throws HTTP 422, which is the production race
+ * signal the engine's D16 retry loop consumes.
+ */
+
+import { createHash } from "node:crypto";
+import type {
+  RestCommitRequest,
+  RestCommitResponse,
+  RestCommitTransport,
+} from "../../../../src";
+import type {
+  LocalFilesPort,
+  MaterializationCheckPort,
+  SyncRepoSpec,
+  WatermarkRecord,
+  WatermarkStorePort,
+} from "../../../../src";
+
+export const sha1Hex = async (bytes: Uint8Array): Promise<string> =>
+  createHash("sha1").update(bytes).digest("hex");
+
+function gitBlobShaSync(content: string): string {
+  const body = Buffer.from(content, "utf-8");
+  return createHash("sha1")
+    .update(Buffer.concat([Buffer.from(`blob ${body.byteLength}\0`), body]))
+    .digest("hex");
+}
+
+function chunkBase64(content: string): string {
+  const b64 = Buffer.from(content, "utf-8").toString("base64");
+  return b64.replace(/(.{60})/g, "$1\n");
+}
+
+interface FakeCommit {
+  sha: string;
+  treeSha: string;
+  parents: string[];
+  message: string;
+}
+
+function httpError(method: string, url: string, status: number, body: string): Error {
+  return new Error(`GitHub request ${method} ${url} → HTTP ${status}: ${body}`);
+}
+
+export class FakeGitHubRepo {
+  readonly owner = "test-owner";
+  readonly repo = "test-repo";
+  readonly branch = "main";
+
+  /** blobSha → content */
+  readonly blobs = new Map<string, string>();
+  /** treeSha → (path → blobSha) */
+  readonly trees = new Map<string, Map<string, string>>();
+  readonly commits = new Map<string, FakeCommit>();
+  /** branch → head commit sha */
+  readonly refs = new Map<string, string>();
+
+  /** When true, recursive tree GETs report `truncated: true`. */
+  truncatedTrees = false;
+  /** Race-injection hook — fires before every PATCH refs validation. */
+  onBeforePatch?: () => void;
+  /** Race-injection hook — fires on every GET refs (1-based call count). */
+  onGetRef?: (count: number) => void;
+  private getRefCount = 0;
+  private commitCounter = 0;
+
+  constructor(initialFiles: Record<string, string> = {}) {
+    this.commitDirect(this.branch, initialFiles, "init");
+  }
+
+  spec(): SyncRepoSpec {
+    return {
+      owner: this.owner,
+      repo: this.repo,
+      branch: this.branch,
+      repoKey: `${this.owner}/${this.repo}#${this.branch}`,
+      localPath: "assetspaces/test",
+    };
+  }
+
+  headSha(): string {
+    return this.refs.get(this.branch)!;
+  }
+
+  headFiles(): Map<string, string> {
+    const tree = this.trees.get(this.commits.get(this.headSha())!.treeSha)!;
+    const out = new Map<string, string>();
+    for (const [path, blobSha] of tree) out.set(path, this.blobs.get(blobSha)!);
+    return out;
+  }
+
+  /**
+   * Test-side direct commit ("device B"): applies `files` (and `deletes`) on
+   * top of the current head and moves the ref. Bypasses the transport.
+   */
+  commitDirect(
+    branch: string,
+    files: Record<string, string>,
+    message: string,
+    deletes: string[] = [],
+  ): string {
+    const parent = this.refs.get(branch);
+    const baseTree =
+      parent !== undefined
+        ? new Map(this.trees.get(this.commits.get(parent)!.treeSha)!)
+        : new Map<string, string>();
+    for (const [path, content] of Object.entries(files)) {
+      const blobSha = gitBlobShaSync(content);
+      this.blobs.set(blobSha, content);
+      baseTree.set(path, blobSha);
+    }
+    for (const path of deletes) baseTree.delete(path);
+    const treeSha = this.storeTree(baseTree);
+    const sha = this.newCommitSha(treeSha, parent ? [parent] : [], message);
+    this.commits.set(sha, {
+      sha,
+      treeSha,
+      parents: parent ? [parent] : [],
+      message,
+    });
+    this.refs.set(branch, sha);
+    return sha;
+  }
+
+  private storeTree(entries: Map<string, string>): string {
+    const serialized = [...entries.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([p, s]) => `${p}:${s}`)
+      .join("\n");
+    const treeSha = createHash("sha1").update(`tree:${serialized}`).digest("hex");
+    this.trees.set(treeSha, new Map(entries));
+    return treeSha;
+  }
+
+  private newCommitSha(treeSha: string, parents: string[], message: string): string {
+    return createHash("sha1")
+      .update(`commit:${treeSha}:${parents.join(",")}:${message}:${this.commitCounter++}`)
+      .digest("hex");
+  }
+
+  transport(): RestCommitTransport {
+    return async (req: RestCommitRequest): Promise<RestCommitResponse> => {
+      const { method, url } = req;
+      const path = url.replace(/^https?:\/\/[^/]+/, "");
+      const m = (re: RegExp): RegExpExecArray | null => re.exec(path);
+
+      let match: RegExpExecArray | null;
+
+      if (method === "GET" && (match = m(/^\/repos\/[^/]+\/[^/]+\/git\/refs\/heads\/(.+)$/))) {
+        this.getRefCount++;
+        this.onGetRef?.(this.getRefCount);
+        const sha = this.refs.get(decodeURIComponent(match[1]));
+        if (sha === undefined) throw httpError(method, url, 404, "Not Found");
+        return { status: 200, json: { ref: `refs/heads/${match[1]}`, object: { sha } } };
+      }
+
+      if (method === "GET" && (match = m(/^\/repos\/[^/]+\/[^/]+\/git\/commits\/([^/?]+)$/))) {
+        const commit = this.commits.get(decodeURIComponent(match[1]));
+        if (commit === undefined) throw httpError(method, url, 404, "Not Found");
+        return {
+          status: 200,
+          json: {
+            sha: commit.sha,
+            tree: { sha: commit.treeSha },
+            parents: commit.parents.map((sha) => ({ sha })),
+            message: commit.message,
+          },
+        };
+      }
+
+      if (method === "GET" && (match = m(/^\/repos\/[^/]+\/[^/]+\/git\/trees\/([^/?]+)(\?.*)?$/))) {
+        const treeSha = decodeURIComponent(match[1]);
+        const tree = this.trees.get(treeSha);
+        if (tree === undefined) throw httpError(method, url, 404, "Not Found");
+        return {
+          status: 200,
+          json: {
+            sha: treeSha,
+            truncated: this.truncatedTrees,
+            tree: [...tree.entries()].map(([p, s]) => ({
+              path: p,
+              type: "blob",
+              mode: "100644",
+              sha: s,
+            })),
+          },
+        };
+      }
+
+      if (method === "GET" && (match = m(/^\/repos\/[^/]+\/[^/]+\/git\/blobs\/([^/?]+)$/))) {
+        const content = this.blobs.get(decodeURIComponent(match[1]));
+        if (content === undefined) throw httpError(method, url, 404, "Not Found");
+        return {
+          status: 200,
+          json: { sha: match[1], content: chunkBase64(content), encoding: "base64" },
+        };
+      }
+
+      if (method === "POST" && m(/^\/repos\/[^/]+\/[^/]+\/git\/trees$/)) {
+        const body = JSON.parse(req.body ?? "{}") as {
+          base_tree?: string;
+          tree?: Array<{ path: string; content: string }>;
+        };
+        // GitHub accepts a commitish base_tree (peels commit → tree).
+        let base = new Map<string, string>();
+        if (body.base_tree !== undefined) {
+          const viaCommit = this.commits.get(body.base_tree);
+          const baseTree = this.trees.get(viaCommit?.treeSha ?? body.base_tree);
+          if (baseTree === undefined) {
+            throw httpError(method, url, 404, "base_tree not found");
+          }
+          base = new Map(baseTree);
+        }
+        for (const entry of body.tree ?? []) {
+          if (typeof entry.content !== "string") {
+            throw httpError(method, url, 422, "tree entry without content");
+          }
+          const blobSha = gitBlobShaSync(entry.content);
+          this.blobs.set(blobSha, entry.content);
+          base.set(entry.path, blobSha);
+        }
+        return { status: 201, json: { sha: this.storeTree(base) } };
+      }
+
+      if (method === "POST" && m(/^\/repos\/[^/]+\/[^/]+\/git\/commits$/)) {
+        const body = JSON.parse(req.body ?? "{}") as {
+          message: string;
+          tree: string;
+          parents: string[];
+        };
+        if (!this.trees.has(body.tree)) {
+          throw httpError(method, url, 422, "tree not found");
+        }
+        const sha = this.newCommitSha(body.tree, body.parents, body.message);
+        this.commits.set(sha, {
+          sha,
+          treeSha: body.tree,
+          parents: body.parents,
+          message: body.message,
+        });
+        return { status: 201, json: { sha } };
+      }
+
+      if (method === "PATCH" && (match = m(/^\/repos\/[^/]+\/[^/]+\/git\/refs\/heads\/(.+)$/))) {
+        this.onBeforePatch?.();
+        const branch = decodeURIComponent(match[1]);
+        const body = JSON.parse(req.body ?? "{}") as { sha: string; force?: boolean };
+        const commit = this.commits.get(body.sha);
+        if (commit === undefined) throw httpError(method, url, 422, "object does not exist");
+        const current = this.refs.get(branch);
+        if (body.force !== true && commit.parents[0] !== current) {
+          // force:false fast-forward enforcement — the production 422 signal.
+          throw httpError(method, url, 422, "Update is not a fast forward");
+        }
+        this.refs.set(branch, body.sha);
+        return { status: 200, json: { object: { sha: body.sha } } };
+      }
+
+      throw httpError(method, url, 404, `unhandled fake route`);
+    };
+  }
+}
+
+/** In-memory LocalFilesPort. */
+export class FakeLocalFiles implements LocalFilesPort {
+  readonly files: Map<string, string>;
+  constructor(initial: Record<string, string> = {}) {
+    this.files = new Map(Object.entries(initial));
+  }
+  async list(): Promise<string[]> {
+    return [...this.files.keys()];
+  }
+  async read(path: string): Promise<string> {
+    const content = this.files.get(path);
+    if (content === undefined) throw new Error(`ENOENT: ${path}`);
+    return content;
+  }
+  async write(path: string, content: string): Promise<void> {
+    this.files.set(path, content);
+  }
+  async delete(path: string): Promise<void> {
+    this.files.delete(path); // no-op when absent, per port contract
+  }
+}
+
+/** In-memory WatermarkStorePort. */
+export class FakeWatermarkStore implements WatermarkStorePort {
+  readonly records = new Map<string, WatermarkRecord>();
+  async get(repoKey: string): Promise<WatermarkRecord | null> {
+    return this.records.get(repoKey) ?? null;
+  }
+  async set(repoKey: string, record: WatermarkRecord): Promise<void> {
+    this.records.set(repoKey, record);
+  }
+}
+
+export function alwaysMaterialized(): MaterializationCheckPort {
+  return { check: async () => ({ fullyMaterialized: true }) };
+}
+
+export function neverMaterialized(reason: string): MaterializationCheckPort {
+  return { check: async () => ({ fullyMaterialized: false, reason }) };
+}
+
+export function mdAsset(uid: string, body = "body"): string {
+  return `---\nexo__Asset_uid: ${uid}\nexo__Asset_label: "Asset ${uid}"\n---\n\n${body}\n`;
+}

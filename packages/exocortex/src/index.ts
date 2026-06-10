@@ -582,3 +582,44 @@ export {
   type MountAssetSpaceParams,
   type GitmodulesAppendResult,
 } from "./services/assetspace/AssetSpaceMount";
+
+// ExoSync A1 — platform-free sync core (RFC 4e4dc453): ChangeDetector
+// (uid-keyed diff vs per-device watermark, D8/D18/D22) + SyncEngine
+// (pull→no-conflict→push orchestration over the existing restCreateCommit
+// primitive, D3/D12/D16/D19). Consumed via injected ports (transport,
+// local files, watermark store, materialization gate, sha1).
+export {
+  detectChanges,
+  extractAssetUid,
+  type DetectChangesParams,
+} from "./services/sync/ChangeDetector";
+export { gitBlobSha } from "./services/sync/gitBlobSha";
+export {
+  getBlobText,
+  getCommitInfo,
+  getHeadSha,
+  getTree,
+  type RemoteCommitInfo,
+  type RemoteTreeEntry,
+} from "./services/sync/githubRepoReader";
+export {
+  DEFAULT_MAX_PUSH_RETRIES,
+  SyncEngine,
+  isNonFastForwardError,
+  orderChildrenFirst,
+  type SyncEngineDeps,
+} from "./services/sync/SyncEngine";
+export {
+  isSyncablePath,
+  type AssetChange,
+  type ChangeDetectionResult,
+  type LocalFilesPort,
+  type MaterializationCheck,
+  type MaterializationCheckPort,
+  type RepoSyncResult,
+  type Sha1Fn,
+  type SyncRepoSpec,
+  type WatermarkFileEntry,
+  type WatermarkRecord,
+  type WatermarkStorePort,
+} from "./services/sync/syncTypes";
