@@ -173,10 +173,10 @@ P3 (Low - Batch Processing)
 grep -r "unused" packages/*/src/ | wc -l  # Count scope
 
 # 2. Fix by package (maintain focus)
-# packages/core → packages/obsidian-plugin → packages/cli
+# packages/exocortex → packages/obsidian-plugin → packages/cli
 
 # 3. Run targeted tests after each fix
-npm test -- --testPathPattern="packages/core"
+npm test -- --testPathPatterns="packages/exocortex"
 
 # 4. Commit by severity level
 git commit -m "fix(security): address ReDoS vulnerabilities (P0)"
@@ -208,7 +208,15 @@ Agent A: Implement feature, create PR
 Agent B: Implement same feature, create PR (DUPLICATE!)
 ```
 
-**Solution**: Issue Lock mechanism (see CLAUDE.md § Issue Lock)
+**Solution**: pre-start coordination check (the former `scripts/issue-lock.sh` was removed):
+
+```bash
+git worktree list                                              # active local work
+gh pr list                                                     # open PRs + assignees
+tmux list-sessions 2>/dev/null | grep -iE 'claude-(child|issue|phase|loop)'  # active agent sessions
+```
+
+If an issue already has a worktree / open PR / active session — coordinate with the user instead of duplicating work.
 
 ### Safe Parallelism Pattern
 
@@ -222,7 +230,7 @@ Agent C: Issue #983 (SPARQL function)      ← Different subsystem
 1. Different subsystems (presentation vs infrastructure vs core)
 2. No shared dependencies between issues
 3. Clear ownership through issue assignment
-4. Lock acquired before starting work
+4. Coordination check done before starting work (`git worktree list` + `gh pr list` + tmux session discovery)
 
 ---
 
@@ -288,7 +296,7 @@ Based on 96 completed issues (December 15-16, 2025):
 1. Warm context from sequential related tasks
 2. Clear specification (SPARQL W3C, Layout DSL)
 3. Established test patterns
-4. Issue lock preventing duplicate work
+4. Coordination checks (worktree list + open PRs + session discovery) preventing duplicate work
 
 ---
 
@@ -297,5 +305,5 @@ Based on 96 completed issues (December 15-16, 2025):
 - Issue #967: TableLayoutRenderer (complex component case study)
 - Issues #956-989: SPARQL feature sprint
 - Issues #896-905: Code quality sprint
-- CLAUDE.md § Sequential Related Tasks Pattern
+- PATTERNS.md § Sequential Related Tasks Pattern
 - PATTERNS.md § SPARQL Test Coverage Pattern

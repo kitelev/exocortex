@@ -264,7 +264,7 @@ if (file instanceof TFile) {
 ### When to Use
 
 - Looking up parent/child relationships (e.g., `ems__Effort_parent`)
-- Resolving prototype references (e.g., `ems__Effort_prototype`)
+- Resolving prototype references (e.g., `exo__Asset_prototype`)
 - Following any property that contains wiki-links to other notes
 - Any file lookup based on frontmatter property values
 
@@ -321,7 +321,7 @@ it("should not duplicate .md extension if already present", () => {
 
 **Impact**: Inconsistent formatting breaks Obsidian's wikilink detection and property display.
 
-**Solution**: Normalize all wikilink property values before setting them in frontmatter.
+**Solution**: Normalize all wikilink property values before setting them in frontmatter. (The helper below is illustrative — there is no `ensureQuotedWikilink` in the codebase today; the live quoting logic sits inside `GenericAssetCreationService.formatPropertyValueWithCardinality`, see the next pattern.)
 
 ```typescript
 private ensureQuotedWikilink(
@@ -421,7 +421,7 @@ it("should preserve already quoted wikilinks", async () => {
 
 **Where to apply:**
 
-- All service classes that create frontmatter (TaskCreationService, ProjectCreationService, ClassCreationService, ConceptCreationService)
+- All service classes that create frontmatter (`GenericAssetCreationService`, `ClassCreationService`, `ConceptCreationService` — the former `TaskCreationService`/`ProjectCreationService` were replaced by `GenericAssetCreationService`)
 - Any code that modifies wikilink properties
 - Import/migration scripts
 
@@ -469,9 +469,10 @@ function formatPropertyValue(
 ### Properties that must be present on the property asset
 
 ```yaml
-# 03 Knowledge/ems/ems__Effort_status.md
+# assetspaces/ems/<property-uid>.md  (UUID-canon: filename = exo__Asset_uid)
+exo__Asset_label: ems__Effort_status
 exo__Instance_class:
-  - "[[exo__ObjectProperty]]"
+  - "[[9a1cf31c-9d41-4ef3-9023-584a8d087d16]]" # exo__ObjectProperty (strip-canon UID wikilink)
 exo__Property_domain: "[[ems__Effort]]"
 exo__Property_range: "[[ems__EffortStatus]]"
 exo__Property_cardinality: "[[exo__PropertyCardinalitySingle]]"
@@ -489,7 +490,7 @@ These invariants protect existing callers and avoid mass vault rewrites when new
 
 **Reference Implementations**:
 
-- `AssetCreationService.formatPropertyValue()` — cardinality lookup against optional `ShapeRegistry`.
+- `GenericAssetCreationService.formatPropertyValueWithCardinality()` (`packages/exocortex/src/services/GenericAssetCreationService.ts`, ~line 605) — cardinality lookup against optional `ShapeRegistry`; ported from the former CLI `AssetCreationService`.
 - `ShapeLoader.processFile()` — filename-basename fallback for property assets that omit `exo__Asset_label`.
 
 **Reference**: Issue #3099 — `cli create` ignored cardinality declarations and emitted YAML arrays unconditionally.
@@ -718,8 +719,8 @@ grep -r "MAX_DEPTH\|LIMIT\|SIZE" packages/exocortex/src/infrastructure/sparql/
 # 2. Check existing edge case coverage
 grep -r "Edge Case\|should handle\|should respect" packages/exocortex/tests/unit/infrastructure/sparql/
 
-# 3. Identify untested scenarios
-npm run test:coverage -- --collectCoverageFrom="packages/exocortex/src/infrastructure/sparql/**"
+# 3. Identify untested scenarios (script lives in the exocortex workspace, not repo root)
+npm run test:coverage -w exocortex -- --collectCoverageFrom="src/infrastructure/sparql/**"
 ```
 
 ### Reference
@@ -1654,29 +1655,34 @@ function isTaskNode(node: GraphNode): boolean {
 
 #### Layer 3: State Management (#1153)
 
+> The original graph stores (`useGraphStore`, `graphConfigStore`) were removed with the graph-visualization feature (#2083), and the `immer` middleware is no longer a dependency. The **live** Zustand stores following this layer pattern are `useTableSortStore` and `useUIStore` (`packages/obsidian-plugin/src/presentation/stores/`):
+
 ```typescript
-// Zustand store with middleware
-const useGraphStore = create<GraphStore>()(
+// tableSortStore.ts (live code, abridged) — plain zustand + devtools + persist
+export const useTableSortStore = create<TableSortStore>()(
   devtools(
     persist(
-      immer((set, get) => ({
-        nodes: new Map(),
-        edges: new Map(),
-        selectedIds: new Set(),
-        viewport: { x: 0, y: 0, zoom: 1 },
+      (set) => ({
+        ...DEFAULT_TABLE_SORT_STATE,
 
-        // Actions
-        addNode: (node) =>
-          set((state) => {
-            state.nodes.set(node.id, node);
-          }),
+        setSort: (table, column, order) =>
+          set(() => ({ [table]: { column, order } }), false, `setSort:${table}`),
 
-        selectNode: (id, additive) =>
-          set((state) => {
-            if (!additive) state.selectedIds.clear();
-            state.selectedIds.add(id);
-          }),
-      })),
+        toggleSort: (table, column) =>
+          set(
+            (state) => {
+              const currentSort = state[table];
+              const newOrder =
+                currentSort.column === column && currentSort.order === "asc"
+                  ? "desc"
+                  : "asc";
+              return { [table]: { column, order: newOrder } };
+            },
+            false,
+            `toggleSort:${table}:${column}`,
+          ),
+      }),
+      { name: "exocortex-table-sort-v1" },
     ),
   ),
 );
@@ -1720,8 +1726,8 @@ Obsidian's plugin API doesn't expose all UI customization points. For deep integ
 ### Implementation Structure
 
 ```typescript
-// FileExplorerPatch.ts
-export class FileExplorerPatch {
+// FileExplorerLabelPatch.ts (packages/obsidian-plugin/src/presentation/fileexplorer/)
+export class FileExplorerLabelPatch {
   private plugin: ExocortexPlugin;
   private originalMethod: Function | null = null;
   private isPatched = false;
@@ -1798,9 +1804,9 @@ export class FileExplorerPatch {
 ### Testing Monkey-Patches
 
 ```typescript
-describe("FileExplorerPatch", () => {
+describe("FileExplorerLabelPatch", () => {
   it("should restore original method on disable", () => {
-    const patch = new FileExplorerPatch(mockPlugin);
+    const patch = new FileExplorerLabelPatch(mockPlugin);
     const originalFn = mockFileExplorer.updateTitle;
 
     patch.enable();
@@ -2055,233 +2061,29 @@ function filterArchivedAreas(
 
 ## Web Worker Security Pattern
 
-**When to use**: Handling `postMessage` events in Web Workers
+**When to use**: Handling `postMessage` events and dynamic property keys in any future Worker / message-handler code
 
-### Problem: Missing Origin Verification (CodeQL: js/missing-origin-check)
-
-Web Workers receiving messages via `postMessage` must verify the message origin to prevent cross-origin attacks.
+> **Historical note**: the original examples lived in `physics.worker.ts` (graph-visualization physics worker, removed with #2083). No Web Workers exist in `packages/*/src` today — the rules below are kept as compact generic guidance for CodeQL alerts `js/missing-origin-check` and `js/remote-property-injection`.
 
 ```typescript
-// ❌ VULNERABLE: No origin verification
+// 1. Origin check (js/missing-origin-check): verify AND act on it — early return.
+//    Same-origin workers receive '' (empty string) as origin.
 self.onmessage = (event: MessageEvent) => {
-  const { type, data } = event.data;
-  processCommand(type, data);
-};
-
-// ❌ STILL VULNERABLE: Checking origin but not acting on it
-self.onmessage = (event: MessageEvent) => {
-  console.log("Origin:", event.origin); // Just logging, not blocking
-  const { type, data } = event.data;
-  processCommand(type, data);
-};
-```
-
-### Solution: Validate Origin Before Processing
-
-```typescript
-// ✅ SECURE: Explicit origin check with early return
-self.onmessage = (event: MessageEvent) => {
-  // Workers loaded from same origin receive empty string as origin
-  // Trust only same-origin or explicitly allowed origins
-  if (event.origin !== "" && event.origin !== self.location.origin) {
-    console.warn(`Rejected message from untrusted origin: ${event.origin}`);
-    return; // Early return - don't process message
-  }
-
-  const { type, data } = event.data;
-  processCommand(type, data);
-};
-
-// ✅ ALTERNATIVE: Whitelist approach for specific origins
-const TRUSTED_ORIGINS = new Set([
-  "", // Same-origin workers
-  "https://trusted-domain.com",
-]);
-
-self.onmessage = (event: MessageEvent) => {
-  if (!TRUSTED_ORIGINS.has(event.origin)) {
-    return; // Silently reject untrusted origins
-  }
+  if (event.origin !== "" && event.origin !== self.location.origin) return;
   processCommand(event.data);
 };
-```
 
-### Key Insights
-
-1. **Web Workers from same origin**: `event.origin` is empty string `''`, not `null` or `undefined`
-2. **Must act on the check**: CodeQL flags code that reads `origin` but doesn't conditionally block
-3. **Early return pattern**: Return immediately if origin check fails
-4. **Logging optional**: Can log rejected origins for debugging, but must still block processing
-
-### Real-World Example (Issues #1211, #1248)
-
-```typescript
-// physics.worker.ts - Before fix
-self.onmessage = (event: MessageEvent) => {
-  const { type, nodes, edges } = event.data;
-  switch (type) {
-    case "init":
-      initPhysics(nodes, edges);
-      break;
-    case "tick":
-      runSimulationTick();
-      break;
-  }
-};
-
-// physics.worker.ts - After fix (PR #1211)
-self.onmessage = (event: MessageEvent) => {
-  if (event.origin !== "" && event.origin !== self.location.origin) {
-    console.warn(`Untrusted origin rejected: ${event.origin}`);
-    return;
-  }
-
-  const { type, nodes, edges } = event.data;
-  switch (type) {
-    case "init":
-      initPhysics(nodes, edges);
-      break;
-    case "tick":
-      runSimulationTick();
-      break;
-  }
-};
-```
-
-### Reference
-
-- Issues #1211, #1248: P1 Missing origin verification in physics.worker.ts
-- CodeQL alert: `js/missing-origin-check`
-
----
-
-## Remote Property Injection Prevention Pattern
-
-**When to use**: Accessing object properties with dynamic/external keys
-
-### Problem: Remote Property Injection (CodeQL: js/remote-property-injection)
-
-Using external input as object property keys can lead to prototype pollution or unauthorized property access.
-
-```typescript
-// ❌ VULNERABLE: Direct use of external key
-function getNodeProperty(node: GraphNode, propertyKey: string): unknown {
-  return node[propertyKey]; // Attacker could use '__proto__', 'constructor', etc.
-}
-
-// ❌ VULNERABLE: No validation of message property access
-function handleMessage(event: MessageEvent) {
-  const { action, propertyName, value } = event.data;
-  if (action === "update") {
-    state[propertyName] = value; // Prototype pollution possible
-  }
+// 2. Dynamic property keys (js/remote-property-injection): allowlist, never raw.
+const ALLOWED = new Set(["x", "y", "vx", "vy"]);
+function setNodeProperty(node: object, key: string, value: number): void {
+  if (!ALLOWED.has(key)) throw new Error(`Invalid property: ${key}`);
+  (node as Record<string, number>)[key] = value;
 }
 ```
 
-### Solution: Validate Property Keys with Allowlist
+Key insights: CodeQL flags code that *reads* `event.origin` but doesn't conditionally block; prefer discriminated-union message types so TypeScript enforces the allowed property set at compile time. See also «Prototype-Pollution Prevention Pattern» in this document.
 
-```typescript
-// ✅ SECURE: Whitelist of allowed properties
-const ALLOWED_NODE_PROPERTIES = new Set([
-  "x",
-  "y",
-  "vx",
-  "vy",
-  "fx",
-  "fy",
-  "radius",
-  "mass",
-  "charge",
-]);
-
-function getNodeProperty(node: GraphNode, propertyKey: string): unknown {
-  if (!ALLOWED_NODE_PROPERTIES.has(propertyKey)) {
-    throw new Error(`Invalid property: ${propertyKey}`);
-  }
-  return node[propertyKey];
-}
-
-// ✅ SECURE: Object.hasOwn() check + blocklist
-const BLOCKED_PROPERTIES = new Set([
-  "__proto__",
-  "constructor",
-  "prototype",
-  "__defineGetter__",
-  "__defineSetter__",
-  "__lookupGetter__",
-  "__lookupSetter__",
-]);
-
-function safePropertyAccess(obj: object, key: string): unknown {
-  if (BLOCKED_PROPERTIES.has(key)) {
-    return undefined;
-  }
-  if (!Object.hasOwn(obj, key)) {
-    return undefined;
-  }
-  return obj[key as keyof typeof obj];
-}
-```
-
-### Message Handler Pattern with Type Safety
-
-```typescript
-// ✅ SECURE: Type-safe message handling with discriminated unions
-interface PhysicsMessage {
-  type: "init" | "tick" | "update" | "reset";
-  payload?: unknown;
-}
-
-interface UpdatePayload {
-  nodeId: string;
-  property: "x" | "y" | "vx" | "vy"; // Only allowed properties
-  value: number;
-}
-
-function handleMessage(event: MessageEvent<PhysicsMessage>) {
-  // Origin check first (see Web Worker Security Pattern)
-  if (event.origin !== "") return;
-
-  const { type, payload } = event.data;
-
-  switch (type) {
-    case "update": {
-      const { nodeId, property, value } = payload as UpdatePayload;
-      // TypeScript ensures property is one of allowed values
-      updateNode(nodeId, property, value);
-      break;
-    }
-    // ... other cases
-  }
-}
-```
-
-### Real-World Example (Issues #1212, #1244)
-
-```typescript
-// physics.worker.ts - Before fix
-function applyForce(nodeId: string, forceType: string, value: number) {
-  const node = nodes.get(nodeId);
-  if (node) {
-    node[forceType] = value; // Could write to any property
-  }
-}
-
-// physics.worker.ts - After fix (PR #1212)
-type ForceProperty = "fx" | "fy"; // Only allowed force properties
-
-function applyForce(nodeId: string, forceType: ForceProperty, value: number) {
-  const node = nodes.get(nodeId);
-  if (node && (forceType === "fx" || forceType === "fy")) {
-    node[forceType] = value;
-  }
-}
-```
-
-### Reference
-
-- Issues #1212, #1244: P0 Remote property injection in physics.worker.ts
-- CodeQL alert: `js/remote-property-injection`
+**Reference**: Issues #1211/#1248 (origin check), #1212/#1244 (property injection) — historical fixes in the removed `physics.worker.ts`
 
 ---
 
@@ -2426,121 +2228,6 @@ gh api repos/OWNER/REPO/code-scanning/alerts --jq '
 
 ---
 
-## Semantic Multi-Hop Query Pattern
-
-**When to use**: Implementing graph exploration with configurable hop depth
-
-### Pattern Description
-
-Allow users to explore neighborhood of a node with configurable depth (1-hop, 2-hop, n-hop).
-
-### Implementation
-
-```typescript
-interface ExplorationOptions {
-  startNode: string;
-  maxHops: number;
-  direction: 'outgoing' | 'incoming' | 'both';
-  predicateFilter?: string[];  // Only follow these predicates
-  maxNodes?: number;           // Limit total results
-}
-
-async function exploreNeighborhood(
-  store: TripleStore,
-  options: ExplorationOptions
-): Promise<GraphNode[]> {
-  const visited = new Set<string>();
-  const toVisit: Array<{nodeId: string, depth: number}> = [
-    { nodeId: options.startNode, depth: 0 }
-  ];
-  const results: GraphNode[] = [];
-
-  while (toVisit.length > 0) {
-    const { nodeId, depth } = toVisit.shift()!;
-
-    if (visited.has(nodeId) || depth > options.maxHops) continue;
-    if (options.maxNodes && results.length >= options.maxNodes) break;
-
-    visited.add(nodeId);
-    const node = await store.getNode(nodeId);
-    if (node) results.push(node);
-
-    if (depth < options.maxHops) {
-      const neighbors = await getNeighbors(store, nodeId, options);
-      for (const neighbor of neighbors) {
-        if (!visited.has(neighbor)) {
-          toVisit.push({ nodeId: neighbor, depth: depth + 1 });
-        }
-      }
-    }
-  }
-
-  return results;
-}
-
-async function getNeighbors(
-  store: TripleStore,
-  nodeId: string,
-  options: ExplorationOptions
-): Promise<string[]> {
-  const neighbors: string[] = [];
-
-  if (options.direction !== 'incoming') {
-    const outgoing = await store.query(
-      `SELECT ?o WHERE { <${nodeId}> ?p ?o . FILTER(isIRI(?o)) }`
-    );
-    neighbors.push(...outgoing.map(r => r.o));
-  }
-
-  if (options.direction !== 'outgoing') {
-    const incoming = await store.query(
-      `SELECT ?s WHERE { ?s ?p <${nodeId}> . FILTER(isIRI(?s)) }`
-    );
-    neighbors.push(...incoming.map(r => r.s));
-  }
-
-  if (options.predicateFilter?.length) {
-    // Additional filtering by predicate type
-    return neighbors.filter(n => /* check predicate */);
-  }
-
-  return neighbors;
-}
-```
-
-### UI Integration
-
-```typescript
-// React component for hop selector
-const HopSelector: React.FC<{
-  value: number;
-  onChange: (hops: number) => void;
-}> = ({ value, onChange }) => (
-  <div className="hop-selector">
-    <label>Exploration Depth:</label>
-    <select value={value} onChange={e => onChange(parseInt(e.target.value))}>
-      <option value={1}>1 hop (direct connections)</option>
-      <option value={2}>2 hops (friends of friends)</option>
-      <option value={3}>3 hops</option>
-      <option value={5}>5 hops (warning: may be slow)</option>
-    </select>
-  </div>
-);
-```
-
-### Performance Considerations
-
-- **Exponential growth**: Each hop can multiply node count by average degree
-- **Limit results**: Always set `maxNodes` to prevent memory issues
-- **Progressive loading**: Stream results as they're discovered
-- **Cache visited**: Use Set for O(1) visited lookup
-
-### Reference
-
-- Issue #1183: Neighborhood exploration multi-hop (120 steps)
-
----
-
 ## Jest Hanging in CI Pattern
 
 **When to use**: Debugging tests that pass but cause Jest to hang in CI
@@ -2676,409 +2363,14 @@ set((state) => ({
 }));
 ```
 
-### Locations Fixed
+### Locations Fixed (historical)
 
-- `graphConfigStore/store.ts:60` - Layout config update
-- `graphConfigStore/store.ts:87` - Theme config update
+- `graphConfigStore/store.ts` — layout/theme config updates (store removed together with the graph visualization feature, #2083). Surviving Zustand stores to apply this pattern to: `tableSortStore`, `uiStore` (`packages/obsidian-plugin/src/`).
 
 ### Reference
 
 - Issues #1206, #1261: P1 prototype-pollution fixes
 - CodeQL rule: `js/prototype-pollution-utility`
-
----
-
-## 3D Visualization Integration Pattern
-
-**When to use**: Adding 3D modes to existing 2D visualization systems
-
-### Phase 1: Infrastructure (#1190)
-
-Create standalone 3D components:
-
-- Scene3DManager (Three.js setup)
-- ForceSimulation3D (physics)
-- Node3D/Edge3D renderers
-
-### Phase 2: ViewMode Extension (#1264)
-
-1. **Extend type**:
-
-   ```typescript
-   type ViewMode = "table" | "list" | "graph" | "graph3d";
-   ```
-
-2. **Add UI option**:
-
-   ```typescript
-   const modes = [
-     { value: "graph", label: "2D Graph", icon: "git-branch-plus" },
-     { value: "graph3d", label: "3D Graph", icon: "box" },
-   ];
-   ```
-
-3. **Create stub component first**:
-   ```typescript
-   export const SPARQLGraph3DViewStub: React.FC = () => (
-     <div>3D Graph View (Coming Soon)</div>
-   );
-   ```
-
-### Phase 3: Full Integration (#1265)
-
-1. **Create wrapper component**:
-
-   ```typescript
-   export const SPARQLGraph3DView: React.FC<Props> = ({ triples, onAssetClick }) => {
-     const containerRef = useRef<HTMLDivElement>(null);
-     const sceneRef = useRef<Scene3DManager | null>(null);
-
-     useEffect(() => {
-       if (!containerRef.current) return;
-
-       const manager = new Scene3DManager(containerRef.current, options);
-       sceneRef.current = manager;
-
-       // Convert data
-       const { nodes, edges } = tripleToGraph3D(triples);
-       manager.setData(nodes, edges);
-
-       return () => manager.dispose();
-     }, [triples]);
-
-     return <div ref={containerRef} className="graph3d-container" />;
-   };
-   ```
-
-2. **Handle data conversion**:
-
-   ```typescript
-   function tripleToGraph3D(triples: Triple[]): {
-     nodes: Node3D[];
-     edges: Edge3D[];
-   } {
-     const nodeMap = new Map<string, Node3D>();
-     const edges: Edge3D[] = [];
-
-     triples.forEach((triple, i) => {
-       // Add subject/object as nodes (deduplicated via Map)
-       // Add predicate as edge
-     });
-
-     return { nodes: Array.from(nodeMap.values()), edges };
-   }
-   ```
-
-3. **WebGL cleanup on unmount** - Critical for memory management
-
-### Gotchas
-
-- **React StrictMode**: Scene3DManager must be idempotent (double-render safe)
-- **Container ref null**: Guard with `if (!containerRef.current) return`
-- **WebGL context loss**: Handle `webglcontextlost` event
-- **Large graphs**: Defer to LOD/culling in performance issue
-
-### Reference
-
-- Issue #1190: 3D infrastructure (126 steps)
-- Issue #1264: ViewMode extension (77 steps)
-- Issue #1265: Full integration (82 steps)
-
----
-
-## Animation System Architecture Pattern
-
-**When to use**: Implementing smooth transitions in visualization components
-
-### Core Components (Issue #1192)
-
-1. **Animation primitive**:
-
-   ```typescript
-   class Animation {
-     private config: AnimationConfig;
-     private progress: number = 0;
-
-     update(currentTime: number): boolean {
-       const elapsed = currentTime - this.startTime;
-       this.progress = this.config.easing(
-         Math.min(1, elapsed / this.config.duration),
-       );
-       this.config.onUpdate(this.progress);
-
-       if (this.progress >= 1) {
-         this.config.onComplete();
-         return false; // Animation done
-       }
-       return true; // Continue
-     }
-   }
-   ```
-
-2. **Scheduler**:
-
-   ```typescript
-   class AnimationScheduler {
-     private animations = new Set<Animation>();
-
-     add(animation: Animation) {
-       animation.start();
-       this.animations.add(animation);
-       this.ensureRunning();
-     }
-
-     private tick = () => {
-       const now = performance.now();
-       for (const anim of this.animations) {
-         if (!anim.update(now)) {
-           this.animations.delete(anim);
-         }
-       }
-       if (this.animations.size > 0) {
-         requestAnimationFrame(this.tick);
-       }
-     };
-   }
-   ```
-
-3. **Easing functions**:
-   ```typescript
-   const Easing = {
-     linear: (t) => t,
-     easeOutCubic: (t) => --t * t * t + 1,
-     easeOutBack: (t) =>
-       1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2),
-     spring: (t) => 1 - Math.cos(t * 4.5 * Math.PI) * Math.exp(-t * 6),
-   };
-   ```
-
-### Layout Transition Pattern
-
-```typescript
-async transition(
-  nodes: Node[],
-  targetPositions: Map<string, {x: number, y: number}>,
-  onUpdate: (nodeId: string, x: number, y: number) => void
-): Promise<void> {
-  // Partition & Animate
-  const transitions = nodes
-    .filter(n => targetPositions.has(n.id))
-    .map(n => ({
-      nodeId: n.id,
-      from: { x: n.x, y: n.y },
-      to: targetPositions.get(n.id)!
-    }));
-
-  // Staggered start for visual appeal
-  transitions.forEach((t, i) => {
-    const anim = new Animation({
-      duration: 500,
-      delay: i * 10, // 10ms stagger
-      easing: Easing.easeOutCubic,
-      onUpdate: (progress) => {
-        const x = t.from.x + (t.to.x - t.from.x) * progress;
-        const y = t.from.y + (t.to.y - t.from.y) * progress;
-        onUpdate(t.nodeId, x, y);
-      }
-    });
-    scheduler.add(anim);
-  });
-}
-```
-
-### Performance Requirements
-
-- Animation overhead: < 1ms per frame
-- Support 1000+ concurrent node animations
-- No allocations during tick (pre-allocate)
-- Cancel latency: < 16ms
-
-### Reference
-
-- Issue #1192: Smooth layout transitions and animations (249 steps)
-
----
-
-## Object Pooling Pattern for Visualization
-
-**When to use**: Reducing GC pressure in high-frequency rendering
-
-### Poolable Interface (Issue #1189)
-
-```typescript
-interface Poolable {
-  reset(): void;
-  isInUse(): boolean;
-  setInUse(inUse: boolean): void;
-}
-
-class ObjectPool<T extends Poolable> {
-  private pool: T[] = [];
-  private inUse = new Set<T>();
-
-  acquire(): T {
-    if (this.pool.length > 0) {
-      const item = this.pool.pop()!;
-      item.setInUse(true);
-      this.inUse.add(item);
-      return item;
-    }
-    // Create new if pool exhausted (up to maxSize)
-    const item = this.factory();
-    item.setInUse(true);
-    this.inUse.add(item);
-    return item;
-  }
-
-  release(item: T): void {
-    item.reset();
-    item.setInUse(false);
-    this.inUse.delete(item);
-    this.pool.push(item);
-  }
-}
-```
-
-### Common Poolables
-
-1. **Vector2/Vector3**: Temporary calculation results
-2. **RenderBatch**: Vertex/index buffers for batched rendering
-3. **Event objects**: Pooled interaction events
-
-### Arena Allocator for Frame-Scope Data
-
-```typescript
-class ArenaAllocator {
-  private buffer: ArrayBuffer;
-  private offset = 0;
-
-  allocFloat32(count: number): Float32Array {
-    const byteOffset = this.alignOffset(4);
-    this.offset = byteOffset + count * 4;
-    return new Float32Array(this.buffer, byteOffset, count);
-  }
-
-  reset(): void {
-    this.offset = 0; // Instant "deallocation"
-  }
-}
-```
-
-### Performance Targets
-
-- Pool acquisition: < 100ns average
-- Pool release: < 50ns average
-- Zero GC during normal interaction
-
-### Reference
-
-- Issue #1189: Memory optimization and object pooling (76 steps)
-
----
-
-## WCAG Accessibility Implementation Pattern
-
-**When to use**: Adding screen reader and keyboard support to visualization
-
-### Core Components (Issue #1194)
-
-1. **Live Region for Announcements**:
-
-   ```typescript
-   class AccessibilityManager {
-     private liveRegion: HTMLElement;
-
-     constructor() {
-       this.liveRegion = document.createElement("div");
-       this.liveRegion.setAttribute("role", "log");
-       this.liveRegion.setAttribute("aria-live", "polite");
-       this.liveRegion.className = "sr-only"; // Visually hidden
-       document.body.appendChild(this.liveRegion);
-     }
-
-     announce(message: string): void {
-       this.liveRegion.textContent = "";
-       requestAnimationFrame(() => {
-         this.liveRegion.textContent = message;
-       });
-     }
-   }
-   ```
-
-2. **Virtual Cursor for Navigation**:
-
-   ```typescript
-   class VirtualCursor {
-     private nodes: A11yNode[] = [];
-     private currentIndex = -1;
-
-     moveNext(): A11yNode | null {
-       this.currentIndex = (this.currentIndex + 1) % this.nodes.length;
-       const node = this.nodes[this.currentIndex];
-       this.a11y.announce(
-         `${node.label}. ${node.type}. ${node.connectionCount} connections.`,
-       );
-       return node;
-     }
-   }
-   ```
-
-3. **Keyboard Navigation**:
-
-   ```typescript
-   handleKeyDown(e: KeyboardEvent) {
-     switch (e.key) {
-       case 'ArrowRight':
-       case 'ArrowDown':
-         e.preventDefault();
-         this.virtualCursor.moveNext();
-         break;
-       case 'Enter':
-         e.preventDefault();
-         this.onNodeSelect?.(this.virtualCursor.getCurrentNode()?.id);
-         break;
-     }
-   }
-   ```
-
-4. **Reduced Motion Support**:
-
-   ```typescript
-   shouldReduceMotion(): boolean {
-     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-   }
-
-   getAnimationDuration(normal: number): number {
-     return this.shouldReduceMotion() ? 0 : normal;
-   }
-   ```
-
-### Focus Indicator
-
-```typescript
-class FocusIndicator {
-  private graphics: PIXI.Graphics;
-
-  show(x: number, y: number, radius: number): void {
-    this.graphics.clear();
-    this.graphics.circle(x, y, radius + 8);
-    this.graphics.stroke({ width: 3, color: 0xffff00 }); // High contrast yellow
-  }
-}
-```
-
-### Checklist
-
-- [ ] WCAG 2.1 AA compliance
-- [ ] Screen reader support (VoiceOver, NVDA, JAWS)
-- [ ] Full keyboard navigation
-- [ ] High contrast mode
-- [ ] Reduced motion support
-- [ ] Focus indicators on interactive elements
-
-### Reference
-
-- Issue #1194: Accessibility (WCAG compliance, screen readers) (456 steps - most complex)
 
 ---
 
@@ -3250,43 +2542,34 @@ Phase 4: Polish & Edge Cases
 
 Index wikilinks from markdown body content to enable complete graph analysis.
 
-### Implementation
+### Implementation (actual: `NoteToRDFConverter.convertBodyWikilinks`)
+
+Body links are emitted by `NoteToRDFConverter.convertBodyWikilinks(file, subject)` (`packages/exocortex/src/services/NoteToRDFConverter.ts`, ~line 1541), called from the main conversion path:
 
 ```typescript
-class NoteToRDFConverter {
-  async convert(note: Note): Promise<Triple[]> {
-    const triples: Triple[] = [];
+// NoteToRDFConverter.convertBodyWikilinks (abridged)
+async convertBodyWikilinks(file: IFile, subject: IRI): Promise<Triple[]> {
+  const triples: Triple[] = [];
+  const content = await this.vault.read(file);
+  const bodyContent = this.extractBodyContent(content); // strips frontmatter
+  const wikilinks = this.extractBodyWikilinks(bodyContent); // dedupe + alias handling
 
-    // Existing: frontmatter properties
-    triples.push(...this.convertFrontmatter(note));
+  const bodyLinkPredicate = Namespace.EXO.term("Asset_bodyLink");
 
-    // NEW: body links
-    triples.push(...this.extractBodyLinks(note));
-
-    return triples;
-  }
-
-  private extractBodyLinks(note: Note): Triple[] {
-    // Remove frontmatter
-    const bodyContent = note.content.replace(/^---[\s\S]*?---/, "");
-
-    // Extract wikilinks, handle aliases [[Target|Alias]]
-    const wikilinks = bodyContent.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g);
-
-    const triples: Triple[] = [];
-    for (const match of wikilinks) {
-      const targetPath = this.resolveWikilink(match[1], note.path);
-      if (targetPath) {
-        triples.push({
-          subject: note.uri,
-          predicate: "exo:Asset_relates",
-          object: this.pathToUri(targetPath),
-        });
-      }
+  for (const linkTarget of wikilinks) {
+    const targetFile = this.vault.getFirstLinkpathDest(linkTarget, file.path);
+    if (targetFile) {
+      // Resolves to a file → file IRI object
+      triples.push(new Triple(subject, bodyLinkPredicate, this.notePathToIRI(targetFile.path)));
+    } else if (this.isClassReference(linkTarget)) {
+      // ems__/exo__ class reference → symbolic class IRI (literal fallback)
+      // ...
+    } else {
+      // Unresolved → stored as Literal for discoverability
+      triples.push(new Triple(subject, bodyLinkPredicate, new Literal(linkTarget)));
     }
-
-    return triples;
   }
+  return triples;
 }
 ```
 
@@ -3295,12 +2578,12 @@ class NoteToRDFConverter {
 1. **Alias syntax**: `[[Target|Display Text]]` → extract "Target" only
 2. **Code blocks**: Exclude wikilinks inside ``` or inline code
 3. **Duplicate links**: Same link appears multiple times → deduplicate triples
-4. **Invalid targets**: `[[Non-existent]]` → skip with warning
+4. **Unresolved targets**: `[[Non-existent]]` → stored as **Literal** object (discoverability), not skipped
 
 ### Predicate Choice
 
-- **`exo:Asset_relates`**: Simple, unified relationship queries
-- **Alternative `exo:Asset_bodyLink`**: Distinguishes explicit (frontmatter) vs implicit (body) links
+- **`exo:Asset_bodyLink`** is the **canonical predicate** for body links — it distinguishes implicit (body) links from explicit frontmatter relations
+- `exo:Asset_relates` is NOT used for body links (it is a frontmatter-declared relation); querying for "all relations" must UNION both predicates
 
 ### Reference
 
@@ -3444,6 +2727,8 @@ function shouldShowButton(asset: Asset): boolean {
 ## Markdown Post-Processor Pattern
 
 **When to use**: Transforming rendered markdown content (links, text, formatting)
+
+> **Current state (2026-06)**: the plugin does **NOT** register a generic markdown post-processor. The only registered processors are the `sparql` / `exoql` / `exo-layout` **codeblock** processors (`registerMarkdownCodeBlockProcessor` in `ExocortexPlugin.ts`). Body-link label replacement is implemented via the MutationObserver-based `BodyLinkPatch` (`packages/obsidian-plugin/src/presentation/body/BodyLinkPatch.ts`) — see «MutationObserver DOM Coverage Pattern» in this document. The code below is a generic Obsidian API illustration, not current plugin code.
 
 ### Pattern Description
 
@@ -3988,6 +3273,8 @@ Research tasks should produce:
 
 ### Real-World Example: Embedding Model Selection (Issue #1354)
 
+> **Historical example**: the `docs/semantic-search/` deliverable shown below no longer exists in the repo (semantic-search feature was removed). The deliverable structure remains the template to follow for future research tasks.
+
 **Task**: Select embedding model for semantic search
 
 **Output Structure**:
@@ -4049,125 +3336,6 @@ docs/{feature-name}/
 | Implementation | 50%    | Depends on research quality     |
 
 **Reference**: Issue #1354 - Embedding model research (January 2026, 59 steps)
-
----
-
-## Semantic Physics Integration Pattern
-
-**When to use**: Implementing physics-based layout algorithms that respond to semantic relationships
-
-### Pattern Description
-
-Force-directed layouts can be enhanced with "semantic physics" where RDF/OWL relationships influence force calculations.
-
-### Core Interface
-
-```typescript
-interface SemanticForceConfig {
-  predicate: string;
-  attractionMultiplier: number; // 1.0 = default
-  repulsionMultiplier: number; // 1.0 = default
-}
-
-const SEMANTIC_FORCES: SemanticForceConfig[] = [
-  // Hierarchy: children cluster under parents
-  {
-    predicate: "rdfs:subClassOf",
-    attractionMultiplier: 2.0,
-    repulsionMultiplier: 0.5,
-  },
-
-  // Prototypes: instances near their templates
-  {
-    predicate: "exo:Asset_prototype",
-    attractionMultiplier: 1.8,
-    repulsionMultiplier: 0.6,
-  },
-
-  // Parts: components stay near containers
-  {
-    predicate: "dcterms:isPartOf",
-    attractionMultiplier: 1.5,
-    repulsionMultiplier: 0.8,
-  },
-
-  // Disjoint: incompatible concepts separate
-  {
-    predicate: "owl:disjointWith",
-    attractionMultiplier: 0.3,
-    repulsionMultiplier: 3.0,
-  },
-];
-```
-
-### Implementation
-
-```typescript
-class SemanticPhysicsEngine {
-  constructor(private config: SemanticForceConfig[]) {}
-
-  getForceModifier(edge: GraphEdge): { attraction: number; repulsion: number } {
-    const config = this.config.find((c) => c.predicate === edge.predicate);
-
-    return config
-      ? {
-          attraction: config.attractionMultiplier,
-          repulsion: config.repulsionMultiplier,
-        }
-      : { attraction: 1.0, repulsion: 1.0 }; // Default: no modification
-  }
-
-  applyToForceLayout(layout: ForceDirectedLayout, edges: GraphEdge[]): void {
-    for (const edge of edges) {
-      const modifier = this.getForceModifier(edge);
-      layout.setEdgeAttraction(edge.id, modifier.attraction);
-      layout.setNodeRepulsion(edge.source, edge.target, modifier.repulsion);
-    }
-  }
-}
-```
-
-### Edge Cases
-
-1. **Circular hierarchies**: `rdfs:subClassOf` loops → cap recursion depth
-2. **Conflicting forces**: Same edge has multiple predicates → use highest priority
-3. **Performance**: Cache force modifiers per edge, don't recalculate each frame
-4. **Extreme values**: Validate multipliers in range [0.1, 5.0] to prevent overlaps
-
-### Testing
-
-```typescript
-describe("SemanticPhysicsEngine", () => {
-  it("should cluster children under parents", () => {
-    const engine = new SemanticPhysicsEngine(SEMANTIC_FORCES);
-    const edge = {
-      predicate: "rdfs:subClassOf",
-      source: "child",
-      target: "parent",
-    };
-
-    const modifier = engine.getForceModifier(edge);
-
-    expect(modifier.attraction).toBe(2.0);
-    expect(modifier.repulsion).toBe(0.5);
-  });
-
-  it("should separate disjoint classes", () => {
-    const engine = new SemanticPhysicsEngine(SEMANTIC_FORCES);
-    const edge = {
-      predicate: "owl:disjointWith",
-      source: "classA",
-      target: "classB",
-    };
-
-    const modifier = engine.getForceModifier(edge);
-
-    expect(modifier.repulsion).toBe(3.0);
-  });
-});
-```
-
-**Reference**: Issue #1345 - Semantic Physics implementation (January 2026, 292 steps)
 
 ---
 
@@ -5115,83 +4283,40 @@ grep -r "package-name" packages/*/tests/ --include="*.ts"
 
 When renaming asset files from human-readable names to UID-based names (for consistency and uniqueness), the code must recognize both identifier formats to avoid breaking existing vaults.
 
+> **Note 2026-06**: the original implementation steps from Issue #2110 referenced code that has since been removed (`AssetClass.TASK_PROTOTYPE_UID`, `AssetVisibilityRules.canCreateInstance`, `CreationButtonGroupBuilder` — all gone with the pre-homoiconic command layer). The pattern itself remains valid; the **surviving in-repo example** is the dual `classTemplates` entry in `ExocortexSettings.ts` shown below.
+
 ### Implementation Structure
 
 ```
-1. Add UID constant alongside existing string constant
+1. Find every map/rule keyed by the string identifier
    ↓
-2. Update all visibility/detection rules to check BOTH identifiers
+2. Add a parallel entry/check for the UID identifier (same behavior)
    ↓
-3. Update settings/templates for UID-based display
-   ↓
-4. Write tests for BOTH identifiers
+3. Write parameterized tests covering BOTH identifiers
 ```
 
-### Code Example (Issue #2110, PR #2111)
-
-**Step 1: Add constant to AssetClass.ts**
+### Surviving Code Example (Issue #2110)
 
 ```typescript
-// packages/exocortex/src/domain/constants/AssetClass.ts
-export enum AssetClass {
-  // Existing string-based identifier
-  TASK_PROTOTYPE = "ems__TaskPrototype",
-
-  // NEW: UID-based identifier (same class, different file naming)
-  TASK_PROTOTYPE_UID = "75302770-279e-4a59-ba85-09df29725713",
-}
-```
-
-**Step 2: Update visibility rules**
-
-```typescript
-// packages/exocortex/src/domain/commands/visibility/AssetVisibilityRules.ts
-export function canCreateInstance(context: CommandVisibilityContext): boolean {
-  if (
-    hasClass(context.instanceClass, AssetClass.TASK_PROTOTYPE) ||
-    hasClass(context.instanceClass, AssetClass.TASK_PROTOTYPE_UID) ||  // NEW
-    // ... other prototypes
-  ) {
-    return true;
-  }
-  return isPrototypeClass(context.instanceClass, context.metadata);
-}
-```
-
-**Step 3: Update display settings**
-
-```typescript
-// packages/obsidian-plugin/src/domain/settings/ExocortexSettings.ts
+// packages/obsidian-plugin/src/domain/settings/ExocortexSettings.ts (DEFAULT_DISPLAY_NAME_SETTINGS)
 classTemplates: {
-  "ems__TaskPrototype": "{{exo__Asset_label}} (TaskPrototype)",
-  // NEW: Same template for UID-based identifier
-  "75302770-279e-4a59-ba85-09df29725713": "{{exo__Asset_label}} (TaskPrototype)",
+  ems__TaskPrototype: "{{exo__Asset_label}} (TaskPrototype)",
+  // UID-based identifier for ems__TaskPrototype (Issue #2110)
+  "75302770-279e-4a59-ba85-09df29725713":
+    "{{exo__Asset_label}} (TaskPrototype)",
 }
 ```
 
-**Step 4: Update button builders**
-
-```typescript
-// packages/obsidian-plugin/src/presentation/builders/button-groups/CreationButtonGroupBuilder.ts
-const defaultValue =
-  isMeeting ||
-  sourceClass === AssetClass.TASK_PROTOTYPE ||
-  sourceClass === AssetClass.TASK_PROTOTYPE_UID // NEW
-    ? this.generateDefaultLabel(metadata, file.basename)
-    : "";
-```
+String-form class constants still live in `packages/exocortex/src/domain/constants/AssetClass.ts` (`AssetClass.TASK_PROTOTYPE = "ems__TaskPrototype"`); when a consumer must accept both forms, add the UID alongside the label at the **consumer's keying site** (as above), not as a parallel enum member.
 
 ### Test Pattern
 
 ```typescript
-describe("canCreateInstance", () => {
-  it.each([
-    ["string-based", AssetClass.TASK_PROTOTYPE],
-    ["UID-based", AssetClass.TASK_PROTOTYPE_UID],
-  ])("should return true for %s TaskPrototype", (_, classValue) => {
-    const context = createContext({ instanceClass: classValue });
-    expect(canCreateInstance(context)).toBe(true);
-  });
+it.each([
+  ["string-based", "ems__TaskPrototype"],
+  ["UID-based", "75302770-279e-4a59-ba85-09df29725713"],
+])("resolves display template for %s identifier", (_, classKey) => {
+  expect(resolveTemplate(classKey)).toBe("{{exo__Asset_label}} (TaskPrototype)");
 });
 ```
 
@@ -5253,45 +4378,34 @@ When Obsidian indexes a vault (first launch or after cache invalidation), `metad
 
 ### Solution Pattern
 
-Use direct YAML parsing as fallback when metadata cache is unavailable:
+Use direct YAML parsing as fallback when metadata cache is unavailable (generic technique — there is no dedicated class for this in the codebase; inline it where needed):
 
 ```typescript
-// FrontmatterFallback.ts
 import { App, TFile } from "obsidian";
 import yaml from "js-yaml";
 
-export class FrontmatterFallback {
-  constructor(private app: App) {}
-
-  async getFrontmatter(file: TFile): Promise<Record<string, any> | null> {
-    // Primary path: Use cache (fast, normal operation)
-    const cache = this.app.metadataCache.getFileCache(file);
-    if (cache?.frontmatter) {
-      return cache.frontmatter;
-    }
-
-    // Fallback path: Direct YAML parsing (during indexing)
-    try {
-      const content = await this.app.vault.read(file);
-      return this.extractFrontmatter(content);
-    } catch (error) {
-      console.error("Frontmatter fallback failed:", error);
-      return null;
-    }
+async function getFrontmatterWithFallback(
+  app: App,
+  file: TFile,
+): Promise<Record<string, any> | null> {
+  // Primary path: Use cache (fast, normal operation)
+  const cache = app.metadataCache.getFileCache(file);
+  if (cache?.frontmatter) {
+    return cache.frontmatter;
   }
 
-  private extractFrontmatter(content: string): Record<string, any> | null {
-    const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
-    const match = content.match(frontmatterRegex);
-
+  // Fallback path: Direct YAML parsing (during indexing)
+  try {
+    const content = await app.vault.read(file);
+    const match = content.match(/^---\n([\s\S]*?)\n---/);
     if (!match) return null;
-
-    try {
-      const parsed = yaml.load(match[1]);
-      return typeof parsed === "object" && parsed !== null ? parsed : null;
-    } catch (error) {
-      return null;
-    }
+    const parsed = yaml.load(match[1]);
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, any>)
+      : null;
+  } catch (error) {
+    console.error("Frontmatter fallback failed:", error);
+    return null;
   }
 }
 ```
@@ -5740,129 +4854,67 @@ it("should detect overlaps between regular tasks", () => {
 
 ## Command Implementation Pattern with Timestamp Service
 
-**When to use**: Adding new Obsidian commands that update frontmatter timestamps
+**When to use**: Adding new asset-level commands that update frontmatter timestamps
 
-### Architecture
+> **Rewritten 2026-06**: the per-command class layer (`MarkReviewedCommand`, `EffortVisibilityRules`, etc.) was **removed** (#3201/#3386/#3262). Per-asset commands are now **vault-declared** (`exocmd__Command` + grounding + precondition, RFC-009). `CommandRegistry` survives only as a thin registry: global UI-only commands + delegation to `CommandResolver.resolveForAsset` (see its JSDoc, RFC-009 §5.3). `StatusTimestampService` survives as the shared timestamp service.
+
+### Architecture (current)
 
 ```
-┌─────────────────────────┐
-│   CommandRegistry.ts    │ ← Registration + DI wiring
-├─────────────────────────┤
-│  MarkReviewedCommand.ts │ ← Command class (ICommand interface)
-├─────────────────────────┤
-│ EffortVisibilityRules.ts│ ← Visibility logic (canMarkReviewed)
-├─────────────────────────┤
-│ StatusTimestampService.ts│ ← Shared timestamp service
-├─────────────────────────┤
-│  FrontmatterService.ts  │ ← Low-level frontmatter ops
-└─────────────────────────┘
+Vault assets:
+  exocmd__Command + exocmd__Grounding   ← what the command does
+  exocmd__Precondition                  ← when it is visible (SPARQL ASK / host fn)
+  exocmd__CommandBinding                ← which class shows it
+        ↓
+Code:
+  CommandRegistry.ts                    ← thin: global UI commands + CommandResolver delegation
+  GroundingExecutor                     ← executes grounding (property_set / service_call / …)
+  StatusTimestampService.ts             ← shared timestamp service (service_call target,
+                                          registered in ServiceRegistryPopulator.ts)
+  FrontmatterService.ts                 ← low-level frontmatter ops
 ```
 
 ### Step-by-Step Implementation
 
-#### 1. Add Visibility Rule (EffortVisibilityRules.ts)
+#### 1. Timestamp logic — service method (`packages/exocortex/src/services/StatusTimestampService.ts`)
+
+Surviving example — `addReviewTimestamp` (StatusTimestampService.ts:57):
 
 ```typescript
-export function canMarkReviewed(context: CommandVisibilityContext): boolean {
-  return (
-    (isTask(context.instanceClass) || isProject(context.instanceClass)) &&
-    !context.isArchived
-  );
+async addReviewTimestamp(taskFile: IFile): Promise<void> {
+  // reads file, writes ems__Effort_lastReviewTimestamp via FrontmatterService
 }
 ```
 
-#### 2. Add Service Method (StatusTimestampService.ts)
+For a **simple property write** prefer a declarative grounding (`property_set` with timestamp expression) over a new service method — Issues #3132/#3134 migrated former `service_call` consumers to declarative `property_append` / `property_increment` grounding types precisely to avoid code growth.
 
-```typescript
-async addReviewTimestamp(file: IFile): Promise<void> {
-  const content = await this.vault.read(file);
-  const timestamp = DateFormatter.toLocalTimestamp(new Date());
+#### 2. Visibility — vault `exocmd__Precondition`
 
-  const updated = this.frontmatterService.updateProperty(
-    content,
-    "ems__Effort_lastReviewTimestamp",
-    timestamp
-  );
+Class/archive gating that used to live in `*VisibilityRules.ts` is now a SPARQL ASK (and/or host function) on the precondition asset. Verify the stored IRI forms empirically before writing literal IRIs into the ASK.
 
-  await this.vault.modify(file, updated);
-}
-```
+#### 3. Command — vault `exocmd__Command` + `exocmd__CommandBinding`
 
-#### 3. Create Command Class (MarkReviewedCommand.ts)
+Declare the command asset (label, grounding wikilink, precondition wikilink) and bind it to the target class. No plugin code, no registration call.
 
-```typescript
-export class MarkReviewedCommand implements ICommand {
-  id = "mark-reviewed";
-  name = "Mark as reviewed";
+#### 4. Only if a new service primitive is required
 
-  constructor(private statusTimestampService: StatusTimestampService) {}
-
-  checkCallback = (
-    checking: boolean,
-    file: TFile,
-    context: CommandVisibilityContext | null,
-  ): boolean => {
-    if (!context || !canMarkReviewed(context)) return false;
-
-    if (!checking) {
-      void (async () => {
-        try {
-          await this.execute(file);
-        } catch (error) {
-          new Notice(`Failed to mark as reviewed: ${error}`);
-          LoggingService.error("Mark reviewed error", error);
-        }
-      })();
-    }
-
-    return true;
-  };
-
-  private async execute(file: TFile): Promise<void> {
-    await this.statusTimestampService.addReviewTimestamp(file);
-    new Notice(`Marked as reviewed: ${file.basename}`);
-  }
-}
-```
-
-#### 4. Register Command (CommandRegistry.ts)
-
-```typescript
-// In registerAllCommands()
-this.registerCommand(new MarkReviewedCommand(this.statusTimestampService));
-```
+Register the service instance in `ServiceRegistryPopulator.ts` so a `service_call` grounding can reach it by serviceId.
 
 ### Key Pattern Elements
 
-1. **Visibility First**: Define when command is visible (`canMarkReviewed`)
-2. **Reuse Services**: Use existing `StatusTimestampService` for consistency
-3. **Error Handling**: Wrap async in try-catch with user notice
-4. **Single Responsibility**: Command only orchestrates, service does the work
-5. **Reference Implementation**: Copy from `MarkDoneCommand.ts`
+1. **Declarative first**: prefer `property_set`/`property_append`/`property_increment` groundings over new service methods
+2. **Reuse Services**: use existing `StatusTimestampService` for timestamp consistency when a service is genuinely needed
+3. **Single Responsibility**: grounding orchestrates, service does the work
+4. **Vault↔code parity**: a `service_call` serviceId or host-function name declared in vault MUST be registered in code — otherwise silent failure (fail-open for host functions)
 
 ### Test Checklist
 
-- [ ] Visibility rule returns true for Task
-- [ ] Visibility rule returns true for Project
-- [ ] Visibility rule returns false for archived Task
-- [ ] Visibility rule returns false for Area
 - [ ] Service method creates timestamp property
 - [ ] Service method updates existing timestamp
-- [ ] Command executes successfully
-- [ ] Command shows error notice on failure
+- [ ] Grounding executes via integration test (real `GroundingExecutor` against fixtures, `packages/cli/tests/integration/**`)
+- [ ] Precondition ASK verified against actual stored IRI forms
 
-### Metrics (Issue #2124, PR #2124)
-
-| Metric             | Value                |
-| ------------------ | -------------------- |
-| Steps              | 41                   |
-| Files modified     | 10                   |
-| Test cases added   | ~15                  |
-| Time               | ~35 minutes          |
-| Errors encountered | 0                    |
-| CI status          | ✅ All checks passed |
-
-**Reference**: Issue #2124, PR #2124 - Add 'Reviewed' command (41 steps, February 2026)
+**Reference**: Issue #2124 (historical ICommand-based 'Reviewed' command, since migrated); RFC-009 vault-declared commands; Issues #3132/#3134 — service_call → declarative grounding migrations
 
 ---
 
@@ -6994,23 +6046,27 @@ For EACH setting, follow this exact order:
    - [ ] Remove interface field: `settingName: Type;`
    - [ ] Remove from `DEFAULT_SETTINGS`
 
-2. **Presentation Layer** (`ExocortexSettingTab.ts`)
+2. **Homoiconic Settings Registry** (`VaultSettingsRegistry.ts`, since PR #3463)
+   - [ ] Remove the setting's `VaultSettingDescriptor` entry from `packages/obsidian-plugin/src/domain/settings/VaultSettingsRegistry.ts` (allowlist binding data.json field ↔ `exo__SettingKey` TBox individual)
+   - [ ] Update the corresponding `exo__SettingKey` individual in the `packages/exoas-exo` submodule TBox if it is being retired — otherwise the registry↔graph parity unit test (`VaultSettingsRegistry.test.ts`) fails
+
+3. **Presentation Layer** (`ExocortexSettingTab.ts`)
    - [ ] Remove helper methods (e.g., `getXxxOptions()`)
    - [ ] Remove `new Setting()` block
    - [ ] Remove imports if no longer needed
 
-3. **Application Layer** (Commands, Services)
+4. **Application Layer** (Commands, Services)
    - [ ] Remove all call sites reading the setting
    - [ ] Remove related service methods if orphaned
    - [ ] Clean up constructor parameters
 
-4. **Test Files**
+5. **Test Files**
    - [ ] Remove describe blocks testing the setting
    - [ ] Remove/update fixture objects containing the field
    - [ ] Update mock indices (Setting blocks shift when one removed)
    - [ ] Remove spy calls for deleted helper methods
 
-5. **Verification**
+6. **Verification**
 
    ```bash
    # Must return zero matches
@@ -7470,176 +6526,6 @@ interface UIState {
 
 ---
 
-## EditorSuggest Label Resolution Pattern
-
-**When to use**: Extending Obsidian's autocomplete (like `[[` wikilink suggest) to show asset labels
-
-### Problem: Default Suggest Shows UUIDs
-
-```typescript
-// Obsidian's default behavior shows file basenames
-// For UUID-named files, users see: abc123-def4-5678...
-```
-
-### Solution: Custom EditorSuggest with Label Resolution
-
-```typescript
-// WikilinkLabelSuggest.ts
-export class WikilinkLabelSuggest extends EditorSuggest<TFile> {
-  constructor(
-    app: App,
-    private resolver: WikilinkLabelResolver,
-  ) {
-    super(app);
-  }
-
-  // Trigger on [[ pattern
-  onTrigger(
-    cursor: EditorPosition,
-    editor: Editor,
-  ): EditorSuggestTriggerInfo | null {
-    const line = editor.getLine(cursor.line).substring(0, cursor.ch);
-    const match = line.match(/\[\[([^\]|]*)$/);
-
-    if (!match) return null;
-
-    return {
-      start: { line: cursor.line, ch: cursor.ch - match[1].length },
-      end: cursor,
-      query: match[1],
-    };
-  }
-
-  // Search by BOTH label and basename
-  getSuggestions(context: EditorSuggestContext): TFile[] {
-    const query = context.query.toLowerCase();
-
-    return this.app.vault
-      .getMarkdownFiles()
-      .filter((file) => {
-        const label = this.resolver.getAssetLabel(file.path);
-        const basename = file.basename;
-
-        // Match against label OR basename
-        return (
-          label?.toLowerCase().includes(query) ||
-          basename.toLowerCase().includes(query)
-        );
-      })
-      .sort((a, b) => {
-        // Prioritize label matches
-        const labelA = this.resolver.getAssetLabel(a.path) || a.basename;
-        const labelB = this.resolver.getAssetLabel(b.path) || b.basename;
-        return labelA.localeCompare(labelB);
-      })
-      .slice(0, 20); // Limit results
-  }
-
-  // Display label in suggestion list
-  renderSuggestion(file: TFile, el: HTMLElement): void {
-    const label = this.resolver.getAssetLabel(file.path);
-    const basename = file.basename;
-
-    if (label && label !== basename) {
-      el.createEl("div", { text: label, cls: "suggestion-label" });
-      el.createEl("div", { text: basename, cls: "suggestion-basename" });
-    } else {
-      el.setText(basename);
-    }
-  }
-
-  // Insert with alias if label exists
-  selectSuggestion(file: TFile, evt: MouseEvent | KeyboardEvent): void {
-    const label = this.resolver.getAssetLabel(file.path);
-    const basename = file.basename;
-
-    // Insert [[uuid|label]] or [[uuid]]
-    const insertText =
-      label && label !== basename
-        ? `[[${basename}|${label}]]`
-        : `[[${basename}]]`;
-
-    this.context?.editor.replaceRange(
-      insertText,
-      this.context.start,
-      this.context.end,
-    );
-  }
-}
-```
-
-### Registration in Plugin
-
-```typescript
-// ExocortexPlugin.ts
-onload() {
-  // Register custom suggest
-  this.registerEditorSuggest(
-    new WikilinkLabelSuggest(this.app, this.wikilinkLabelResolver)
-  );
-}
-```
-
-### CSS for Suggestion Display
-
-```css
-.suggestion-label {
-  font-weight: 500;
-  color: var(--text-normal);
-}
-
-.suggestion-basename {
-  font-size: 0.85em;
-  color: var(--text-muted);
-  font-family: var(--font-monospace);
-}
-```
-
-### Testing
-
-```typescript
-describe("WikilinkLabelSuggest", () => {
-  it("should trigger on [[", () => {
-    const trigger = suggest.onTrigger(
-      { line: 0, ch: 5 },
-      mockEditor("test [[qu"),
-    );
-
-    expect(trigger).not.toBeNull();
-    expect(trigger?.query).toBe("qu");
-  });
-
-  it("should find files by label", () => {
-    resolver.getAssetLabel.mockImplementation((path) => {
-      if (path === "abc123.md") return "My Project";
-      return null;
-    });
-
-    const results = suggest.getSuggestions({ query: "proj" });
-
-    expect(results).toContainEqual(
-      expect.objectContaining({ basename: "abc123" }),
-    );
-  });
-
-  it("should insert [[uuid|label]] format", () => {
-    resolver.getAssetLabel.mockReturnValue("My Project");
-
-    suggest.selectSuggestion(mockFile("abc123.md"), mockEvent);
-
-    expect(mockEditor.replaceRange).toHaveBeenCalledWith(
-      "[[abc123|My Project]]",
-      expect.any(Object),
-      expect.any(Object),
-    );
-  });
-});
-```
-
-**Reference**: Issue #2166 - Show asset labels in Quick Switcher and [[ autocomplete (126 steps, February 2026)
-
----
-
 ## SPARQL Feature Sprint Pattern
 
 **When to use**: Implementing multiple related SPARQL features in sequence
@@ -7860,8 +6746,8 @@ Achieve significant coverage increases by targeting critical user paths first, t
 ### Critical Path Identification
 
 ```bash
-# Generate coverage report
-npm run test:coverage
+# Generate coverage report (script lives in the exocortex workspace, not repo root)
+npm run test:coverage -w exocortex
 
 # Find least-covered critical files
 cat coverage/lcov-report/index.html | grep -A2 "src/domain" | sort
@@ -7921,56 +6807,21 @@ describe("Task Creation Flow (Critical Path)", () => {
 
 ## Copy Command Pattern
 
-**When to use**: Implementing clipboard copy commands for asset properties
+**When to use**: Implementing clipboard copy affordances for asset properties
 
-### Pattern Description
+> **Rewritten 2026-06**: the original `CopyLabelCommand` (ICommand-based palette command) was removed with the pre-homoiconic command layer. The surviving clipboard-copy implementation is `PropertiesUidCopyPatch` (`packages/obsidian-plugin/src/presentation/properties/PropertiesUidCopyPatch.ts`) — a MutationObserver-based patch that injects a copy button next to `exo__Asset_uid` in Obsidian's native Properties block (Issue #2320, Option C).
 
-Implement "Copy X" commands that extract specific properties from assets and copy to clipboard.
+### Key Implementation Details (PropertiesUidCopyPatch)
 
-### Implementation (Issue #2200, #2202)
-
-```typescript
-// CopyLabelCommand.ts
-export class CopyLabelCommand implements ICommand {
-  id = "copy-label";
-  name = "Copy Label";
-
-  checkCallback(checking: boolean, file: TFile): boolean {
-    // Visibility check
-    const frontmatter = app.metadataCache.getFileCache(file)?.frontmatter;
-    const label = frontmatter?.exo__Asset_label;
-
-    if (!label) return false;
-
-    if (!checking) {
-      this.execute(file, label);
-    }
-    return true;
-  }
-
-  private execute(file: TFile, label: string): void {
-    navigator.clipboard.writeText(label);
-    new Notice(`Copied: ${label}`);
-  }
-}
-```
-
-### Key Implementation Details
-
-1. **Visibility**: Command only shows when asset has the property
-2. **Feedback**: Use Notice to confirm action
-3. **Error handling**: Handle clipboard permission denied
+1. **Surface**: button injected into `metadata-property[data-property-key="exo__Asset_uid"]` value container — works in both Reading view and Live Preview
+2. **Detection**: MutationObserver + `layout-change` event re-patch (see «MutationObserver DOM Coverage Pattern» in this document)
+3. **Feedback**: optimistic icon swap to checkmark for 1.5s + notification via `INotificationService`
 
 ### Common Gotcha: Incomplete Implementation
 
-Issue #2202 was created because #2200 didn't fully implement the feature. Lesson: Always verify command works in:
+Lesson from the historical Issues #2200/#2202 pair (#2202 existed because #2200 shipped half-done): always verify a copy affordance works in **every surface** it is expected on — Reading view, Live Preview, all relevant asset types — before declaring done.
 
-- Command palette
-- Right-click context menu
-- Hotkey assignment
-- All relevant asset types
-
-**Reference**: Issues #2200, #2202 - Copy Label Command (February 2026)
+**Reference**: Issue #2320 — UID copy button (`PropertiesUidCopyPatch`); Issues #2200/#2202 — historical `CopyLabelCommand` (removed)
 
 ---
 
@@ -8046,70 +6897,6 @@ function processTriples(triples: Triple[]): Triple[] {
 
 ---
 
-## Quick Switcher Enhancement Pattern
-
-**When to use**: Enhancing Obsidian's Quick Switcher with additional search fields
-
-### Pattern Description
-
-Extend Quick Switcher to search by asset labels, aliases, and UIDs in addition to filenames.
-
-### Implementation (Issue #2198)
-
-```typescript
-// QuickSwitcherEnhancement.ts
-export class QuickSwitcherEnhancement {
-  private resolver: WikilinkLabelResolver;
-
-  enhanceSuggestions(suggestions: TFile[]): EnhancedSuggestion[] {
-    return suggestions.map((file) => {
-      const frontmatter =
-        this.app.metadataCache.getFileCache(file)?.frontmatter;
-
-      return {
-        file,
-        displayText: this.getDisplayText(file, frontmatter),
-        searchText: this.buildSearchText(file, frontmatter),
-        subtitle: this.getSubtitle(file, frontmatter),
-      };
-    });
-  }
-
-  private buildSearchText(file: TFile, fm: FrontMatter | undefined): string {
-    const parts = [file.basename];
-
-    if (fm?.exo__Asset_label) parts.push(fm.exo__Asset_label);
-    if (fm?.aliases) parts.push(...fm.aliases);
-    // UID is already in basename for UUID-named files
-
-    return parts.join(" ").toLowerCase();
-  }
-
-  private getDisplayText(file: TFile, fm: FrontMatter | undefined): string {
-    return fm?.exo__Asset_label || file.basename;
-  }
-
-  private getSubtitle(file: TFile, fm: FrontMatter | undefined): string {
-    // Show classes instead of path
-    const classes = fm?.exo__Instance_class;
-    if (Array.isArray(classes) && classes.length > 0) {
-      return classes.map((c) => c.replace(/[\[\]]/g, "")).join(", ");
-    }
-    return file.parent?.path || "";
-  }
-}
-```
-
-### UI Considerations
-
-- **Display**: Show label as primary text, classes as subtitle
-- **Search**: Match against label, aliases, UID, and basename
-- **Performance**: Cache search text computation
-
-**Reference**: Issue #2198 - Enhanced Quick Switcher (50 steps, February 2026)
-
----
-
 ## Security Fix Sprint Pattern
 
 **When to use**: Addressing code scanning security alerts systematically
@@ -8155,149 +6942,42 @@ const result = template.split("{{value}}").join(userInput);
 
 ---
 
-## Documentation Sprint Pattern
-
-**When to use**: Creating ADRs and technical documentation
-
-### Pattern Description
-
-Document architecture decisions using Architecture Decision Records (ADR) format.
-
-### Implementation (Issue #2188)
-
-**Structure**:
-
-```
-docs/
-├── adr/
-│   ├── 0001-use-clean-architecture.md
-│   ├── 0002-sparql-v2-implementation.md
-│   ├── 0003-tsyringe-dependency-injection.md
-│   └── README.md (ADR index)
-```
-
-**ADR Template**:
-
-```markdown
-# ADR-NNNN: Title
-
-## Status
-
-Accepted | Proposed | Deprecated | Superseded by ADR-XXXX
-
-## Context
-
-What is the issue that we're seeing that is motivating this decision?
-
-## Decision
-
-What is the change that we're proposing and/or doing?
-
-## Consequences
-
-What becomes easier or more difficult because of this change?
-
-## References
-
-- Issue #XXX
-- PR #YYY
-```
-
-### When to Create ADR
-
-- New architectural patterns (DI, SPARQL engine, caching)
-- Technology choices (TSyringe vs InversifyJS)
-- Breaking changes to existing patterns
-- Performance-critical decisions
-
-**Reference**: Issue #2188 - ADR Documentation (47 steps, February 2026)
-
----
-
 ## Button Group Implementation Pattern
 
 **When to use**: Adding new button groups to asset layouts (e.g., Criticality Zone, Quick Actions)
 
-### Pattern Description
+> **Rewritten 2026-06**: the original per-feature static builders (`CriticalityZoneButtonGroupBuilder`, `TaskVisibilityRules`, etc.) were **removed**. Since RFC-009 all button groups are **vault-declared** and served by a single universal builder — `DynamicCommandButtonGroupBuilder` (`packages/obsidian-plugin/src/presentation/builders/button-groups/DynamicCommandButtonGroupBuilder.ts`), the only builder registered in `ButtonGroupsBuilder.ts`.
 
-Implement new button groups using the ButtonGroupBuilder architecture with dedicated services and visibility rules.
-
-### Implementation Layers (Issue #2231 Example)
+### Architecture (homoiconic, RFC-009)
 
 ```
-1. Domain Service (CriticalityZoneService.ts)
-   └── Business logic for zone assignment
-   └── UUID mapping for zone values
-   ↓
-2. Visibility Rules (TaskVisibilityRules.ts)
-   └── Determine when buttons are shown
-   └── Class-specific conditions
-   ↓
-3. Button Group Builder (CriticalityZoneButtonGroupBuilder.ts)
-   └── Create ButtonGroup with actions
-   └── Connect to service methods
-   ↓
-4. Registration (ButtonGroupsBuilder.ts)
-   └── Add builder to registry
-   └── Integrate with UniversalLayoutRenderer
-   ↓
-5. DI Container (container.ts)
-   └── Register service
-   └── Bind interface to implementation
+Vault assets (declarations):
+  exocmd__Command        — button label + grounding/precondition wikilinks
+  exocmd__CommandBinding — binds a command to a target class (where the button shows)
+  exocmd__Precondition   — visibility gate (SPARQL ASK and/or host function)
+  exocmd__Grounding      — what the click does (property_set, service_call, composite, …)
+        ↓ (indexed at runtime)
+Code (generic, no per-button classes):
+  CommandResolver.findBindings(class)      — discovers commands for the asset's class
+  PreconditionEvaluator.evaluate(...)      — per-button visibility evaluation
+  DynamicCommandButtonGroupBuilder         — renders the group
+  CommandExecutionFlow → GroundingExecutor — executes the click
 ```
 
-### Real-World Example: Criticality Zone Buttons (Issue #2231)
+Domain services that groundings call via `service_call` (e.g. `CriticalityZoneService`, which writes `ems__Task_zone`) still live in `packages/exocortex/src/services/` and are registered in `container.ts` / `tokens.ts`.
 
-**Files Modified (10 files, 101 steps)**:
+### Implementation Checklist (new button = vault assets, usually zero plugin code)
 
-- `packages/exocortex/src/services/CriticalityZoneService.ts` (NEW)
-- `packages/exocortex/src/domain/commands/visibility/TaskVisibilityRules.ts`
-- `packages/exocortex/src/domain/commands/visibility/index.ts`
-- `packages/exocortex/src/interfaces/tokens.ts`
-- `packages/exocortex/src/infrastructure/container.ts`
-- `packages/obsidian-plugin/src/presentation/builders/button-groups/CriticalityZoneButtonGroupBuilder.ts` (NEW)
-- `packages/obsidian-plugin/src/presentation/builders/ButtonGroupsBuilder.ts`
-- `packages/obsidian-plugin/src/presentation/renderers/UniversalLayoutRenderer.ts`
-- Tests: `CriticalityZoneButtonGroupBuilder.test.ts`, fixtures
+- [ ] Create `exocmd__Command` asset (UUID-named) with label + grounding wikilink
+- [ ] Create `exocmd__Grounding` asset describing the mutation
+- [ ] (Optional) `exocmd__Precondition` with `sparqlAsk` / `hostFunction` for visibility — verify the stored IRI form empirically via `npx @kitelev/exocortex-cli query` before writing literal IRIs into the ASK
+- [ ] Create `exocmd__CommandBinding` targeting the class whose pages show the button
+- [ ] If the precondition references a host function — verify it is registered in code (`preconditionHostFunctions.ts` / plugin wiring); an unregistered name fails **open** on the inline-button surface (button visible everywhere)
+- [ ] Reload plugin, verify the button on a target-class asset page
 
-**UUID Wikilink Format for Button Actions**:
+Plugin code changes are needed only when a grounding requires a **new service primitive** (new `service_call` serviceId) or a **new host function**.
 
-```typescript
-// CriticalityZoneService.ts
-const ZONE_UUIDS = {
-  today: "e266a2e9-9eb0-431d-b1fe-b95b9d3e9a3f",
-  thisWeek: "c7f1a968-0959-4ac7-ac82-31b0cdc2aba7",
-  someday: "6968a0fc-7a41-4393-82b1-17d767c7ad7c",
-};
-
-// Button click handler sets frontmatter:
-// ems__Task_zone: "[[e266a2e9-9eb0-431d-b1fe-b95b9d3e9a3f]]"
-```
-
-### Implementation Checklist
-
-- [ ] Create domain service with business logic
-- [ ] Add service interface to tokens.ts
-- [ ] Register service in container.ts
-- [ ] Define visibility rules in appropriate \*VisibilityRules.ts
-- [ ] Create ButtonGroupBuilder with actions
-- [ ] Register builder in ButtonGroupsBuilder.ts
-- [ ] Add builder call in UniversalLayoutRenderer
-- [ ] Write unit tests for builder
-- [ ] Add test fixtures
-
-### Expected Timeline
-
-| Phase                  | Time        |
-| ---------------------- | ----------- |
-| Service implementation | 15-20 min   |
-| Visibility rules       | 10-15 min   |
-| ButtonGroupBuilder     | 20-30 min   |
-| Integration            | 10-15 min   |
-| Testing                | 20-30 min   |
-| **Total**              | ~90-120 min |
-
-**Reference**: Issue #2231 - Criticality Zone Buttons (101 steps, merged February 2026)
+**Reference**: RFC-009 dynamic command buttons (`DynamicCommandButtonGroupBuilder`); Issue #2231 — Criticality Zone Buttons (historical: originally implemented via static builders, since migrated to vault-declared commands)
 
 ---
 
@@ -8337,7 +7017,7 @@ export class QueryTimeoutError extends Error {
   constructor(timeoutMs: number) {
     super(
       `Query timed out after ${timeoutMs / 1000} seconds. ` +
-        `Try: EXOCORTEX_SPARQL_TIMEOUT=60 npx @kitelev/exocortex-cli sparql query "..."`,
+        `Try: EXOCORTEX_SPARQL_TIMEOUT=60 npx @kitelev/exocortex-cli query "..."`,
     );
     this.name = "QueryTimeoutError";
   }
@@ -8348,13 +7028,13 @@ export class QueryTimeoutError extends Error {
 
 ```bash
 # Default timeout (30s)
-npx @kitelev/exocortex-cli sparql query "SELECT ?s WHERE { ?s ?p ?o }"
+npx @kitelev/exocortex-cli query "SELECT ?s WHERE { ?s ?p ?o }"
 
 # Extended timeout (60s)
-EXOCORTEX_SPARQL_TIMEOUT=60 npx @kitelev/exocortex-cli sparql query "SELECT ..."
+EXOCORTEX_SPARQL_TIMEOUT=60 npx @kitelev/exocortex-cli query "SELECT ..."
 
 # Very long timeout for analytical queries (5 min)
-EXOCORTEX_SPARQL_TIMEOUT=300 npx @kitelev/exocortex-cli sparql query "SELECT (COUNT(*) AS ?count) WHERE { ... }"
+EXOCORTEX_SPARQL_TIMEOUT=300 npx @kitelev/exocortex-cli query "SELECT (COUNT(*) AS ?count) WHERE { ... }"
 ```
 
 ### Investigation Pattern for Timeout Issues
@@ -8365,13 +7045,13 @@ When facing SPARQL timeout issues:
 
    ```bash
    # Check estimated result size
-   npx @kitelev/exocortex-cli sparql query "SELECT (COUNT(*) AS ?n) WHERE { ... }"
+   npx @kitelev/exocortex-cli query "SELECT (COUNT(*) AS ?n) WHERE { ... }"
    ```
 
 2. **Profile with extended timeout**:
 
    ```bash
-   EXOCORTEX_SPARQL_TIMEOUT=120 time npx @kitelev/exocortex-cli sparql query "..."
+   EXOCORTEX_SPARQL_TIMEOUT=120 time npx @kitelev/exocortex-cli query "..."
    ```
 
 3. **Optimize query if needed**:
@@ -8557,22 +7237,22 @@ Command (archive.ts / unarchive.ts)
 
 ```bash
 # Basic archive: move Done assets to archive vault
-exocortex archive --vault /active --archive-vault /archive --class ems__Task --year 2025
+npx @kitelev/exocortex-cli archive --vault /active --archive-vault /archive --class ems__Task --year 2025
 
 # Cascade: resolve archived-to-archived reference chains
-exocortex archive --cascade --vault /active --archive-vault /archive
+npx @kitelev/exocortex-cli archive --cascade --vault /active --archive-vault /archive
 
 # Verify: check cross-vault integrity (no broken links)
-exocortex archive --verify --vault /active --archive-vault /archive
+npx @kitelev/exocortex-cli archive --verify --vault /active --archive-vault /archive
 
 # Stats: show asset counts and class distribution
-exocortex archive --stats --vault /active --archive-vault /archive
+npx @kitelev/exocortex-cli archive --stats --vault /active --archive-vault /archive
 
 # Skip referenced: archive even if referenced by active assets
-exocortex archive --no-referenced --vault /active --archive-vault /archive
+npx @kitelev/exocortex-cli archive --no-referenced --vault /active --archive-vault /archive
 
 # Unarchive: restore single asset by UUID
-exocortex unarchive --uuid <UUID> --vault /active --archive-vault /archive
+npx @kitelev/exocortex-cli unarchive --uuid <UUID> --vault /active --archive-vault /archive
 
 # All flags support --dry-run for preview without changes
 ```
@@ -8650,16 +7330,16 @@ if (rule) {
 
 ```bash
 # Query active vault only (default)
-exocortex-cli sparql query --vault /path/to/active "SELECT ?s WHERE { ?s a ems:Task }"
+npx @kitelev/exocortex-cli query --vault /path/to/active "SELECT ?s WHERE { ?s a ems:Task }"
 
 # Query active + archive vault together
-exocortex-cli sparql query \
+npx @kitelev/exocortex-cli query \
   --vault /path/to/active \
   --also /path/to/archive \
   "SELECT ?s ?label WHERE { ?s exo:Asset_label ?label }"
 
 # Multiple --also flags for 3+ vaults
-exocortex-cli sparql query \
+npx @kitelev/exocortex-cli query \
   --vault /main \
   --also /archive-2024 \
   --also /archive-2025 \
@@ -8780,6 +7460,8 @@ Then extract property names from:
 
 ## First-Launch Modal Pattern (E2E-safe)
 
+> **Historical note**: the original consumer of this pattern (`ChangelogModal` + `shouldShowChangelog`) was **removed** in #2993 — no startup modal exists in the plugin today. The gate technique below remains valid generic advice for any future startup-triggered UI.
+
 **When to use**: Adding any startup-triggered modal, toast, or notice that appears conditionally based on stored plugin state (e.g. "what's new in vX.Y.Z", onboarding prompts, feature-announcement dialogs).
 
 **Problem**: Naïve implementation shows the modal on fresh installs too — which breaks E2E runs. The test vault at `packages/obsidian-plugin/tests/e2e/test-vault/.obsidian/plugins/exocortex/` ships only `main.js` + `manifest.json`, no `data.json`. On boot, `plugin.loadData()` returns `null` → any "show if stored version ≠ current" gate evaluates `undefined !== "15.x.y"` → `true` → modal opens → intercepts first UI click → first Playwright retry → `NoFlakyReporter` (`packages/obsidian-plugin/playwright-no-flaky-reporter.ts`) fails CI on flaky detection.
@@ -8788,11 +7470,7 @@ Then extract property names from:
 
 ```typescript
 export default class MyPlugin extends Plugin {
-  /**
-   * True when the plugin data file did not exist at startup — i.e. this is a
-   * brand-new install with no prior user state. Used to suppress first-launch
-   * modals for users who never had prior behaviour (nothing to inform them about).
-   */
+  /** True when data.json did not exist at startup — brand-new install. */
   private isFreshInstall = false;
 
   async loadSettings(): Promise<void> {
@@ -8803,28 +7481,13 @@ export default class MyPlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
-    // ... other init ...
-
     const currentVersion = this.manifest.version;
     if (this.isFreshInstall) {
       // Silent seed — fresh install has no prior state to contrast against
-      this.settings.lastShownChangelogVersion = currentVersion;
+      this.settings.lastShownVersion = currentVersion;
       void this.saveSettings();
-    } else if (
-      shouldShowChangelog(
-        this.settings.lastShownChangelogVersion,
-        currentVersion,
-      )
-    ) {
-      this.timerManager.setTimeout(
-        "changelog-modal",
-        () =>
-          new ChangelogModal(this.app, currentVersion, (v) => {
-            this.settings.lastShownChangelogVersion = v;
-            void this.saveSettings();
-          }).open(),
-        500,
-      );
+    } else if (this.settings.lastShownVersion !== currentVersion) {
+      // ...show the startup UI (debounced), then persist currentVersion...
     }
   }
 }
@@ -8836,12 +7499,9 @@ export default class MyPlugin extends Plugin {
 - After the first `saveSettings()`, it returns the stored object (possibly empty)
 - Gating on a missing setting _field_ is unreliable (merge with defaults hides the distinction)
 
-**Validation**:
+**Validation**: run `npm run test:e2e` locally before push when modifying plugin startup sequence — the in-repo `npm run test:all` does NOT include Docker E2E, so flaky-modal races only surface in CI.
 
-- Unit tests should cover `shouldShowChangelog(undefined, version) → false-or-true` explicitly (spec-dependent)
-- Run `npm run test:e2e` locally before push when modifying plugin startup sequence — the in-repo `npm run test:all` does NOT include Docker E2E, so flaky-modal races only surface in CI
-
-**Reference**: RFC-024 Phase 0 (#2833) / PR #2838 — E2E flaky `daily-archive-filter.spec.ts` was caused by `ChangelogModal` intercepting archive-toggle clicks on fresh test vault; fixed by `isFreshInstall` gate.
+**Reference**: RFC-024 Phase 0 (#2833) / PR #2838 — E2E flaky `daily-archive-filter.spec.ts` was caused by the (since-removed) `ChangelogModal` intercepting archive-toggle clicks on fresh test vault; fixed by `isFreshInstall` gate.
 
 ## BFS subClass Closure via metadataCache
 

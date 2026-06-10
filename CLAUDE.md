@@ -1,6 +1,6 @@
 # Exocortex — In-Repo Development Guide
 
-> **Coordination rules, worktree management, and CI/CD**: See `../CLAUDE.md` (parent directory).
+> **Coordination rules, worktree management, and CI/CD**: See the hub `CLAUDE.md` at `/Users/kitelev/Developer/exocortex-development/CLAUDE.md` (from a worktree: `../../CLAUDE.md`; from the main `exocortex/` checkout: `../CLAUDE.md`).
 > **Universal AI agent instructions**: See `AGENTS.md`.
 > **Coding patterns**: See `PATTERNS.md`.
 > **Troubleshooting**: See `TROUBLESHOOTING.md`.
@@ -31,6 +31,11 @@ packages/
 > `packages/exoas-exo` and `packages/exoas-exocmd` are data submodules
 > (ontology assets), explicitly excluded from npm workspaces — not code packages.
 
+Notable subsystems with elevated regression risk (see «Auto-merge discipline» below):
+
+- `packages/exocortex/src/services/sync/` — ExoSync engine: change detection, diff3/structured merge, SHACL merge gate, quarantine + watermark stores.
+- `packages/obsidian-plugin/src/domain/settings/VaultSettingsRegistry.ts` + `packages/obsidian-plugin/src/infrastructure/adapters/VaultSettingsStore.ts` — homoiconic plugin settings: settings are loaded from vault `exo__Setting` assets (with one-shot migration from `data.json`), so parsing/migration bugs here corrupt user settings.
+
 ## Architecture (Clean Architecture)
 
 ```
@@ -42,14 +47,14 @@ infrastructure/  → Obsidian API adapters, file system
 
 ## Quality Metrics
 
-- **Tests:** 619 test files (run `find packages -name '*.test.ts' | wc -l` for live count; 642 including `.test.tsx`), ~11K+ individual test cases (parametrized). Run `npm run test:all` for exact count.
+- **Tests:** 691 `*.test.ts` files (run `find packages -name '*.test.ts' | wc -l` for live count; 711 including 20 `.test.tsx`), ~11K+ individual test cases (parametrized). Run `npm run test:all` for exact count.
 - **Coverage thresholds**: statements 75.5%, branches 63%
 - **Required CI checks (13, parity-gate added post 2026-04-22)**: archgate · detect-changes · e2e-shard (1..6) · lint · parity-gate · test-component · test-coverage · typecheck. Source of truth: `gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks`.
 - **CI pipeline target**: post-Phase 3 baseline is ~236s avg ±50s (N=3 on main). Gate relaxed to **≤220s** per Decision B (RFC v2 relax, 2026-04-22); original ≤135s target was infeasible given setup-floor dominance. See `docs/history/ROLLBACK_CI_SPEEDUP.md` for per-phase revert procedure.
 
 ## Test Suite Awareness
 
-The exocortex-package jest config has `roots: ['<rootDir>/tests']`, but CI's `test-coverage` step uses an allowlist regex in `scripts/test-ci-batched.sh` (see `EXOCORTEX_JEST_ARGS`). New integration suites under `packages/exocortex/tests/integration/**` are NOT picked up automatically — either add them to the allowlist or accept they can rot silently.
+The exocortex-package jest config has `roots: ['<rootDir>/tests']`, but exocortex suites run in CI only if matched by the inline `--testPathPatterns` allowlist of the `test-coverage-exocortex` job in `.github/workflows/ci.yml` (that inline list is the actual CI gate — `scripts/test-ci-batched.sh` is only the local `npm run test:unit` mirror, no workflow invokes it). New integration suites under `packages/exocortex/tests/integration/**` are NOT picked up automatically — either add them to the CI allowlist (and mirror in the script) or accept they can rot silently.
 
 When fixing a bug, run the directly-affected suite locally even if it isn't gated by CI:
 
@@ -89,6 +94,8 @@ gh pr merge --auto --squash                         # Wait for 13 required CI ch
 
 For PRs touching parser / TBox / schema / migration paths
 (`packages/exocortex/src/services/{CommandResolver,GroundingExecutor,NoteToRDFConverter}.ts`,
+`packages/exocortex/src/services/sync/` — ExoSync merge/sync engine (SyncEngine, StructuredMerger, GatedStructuredMerger, MergeShaclGate, diff3),
+`packages/obsidian-plugin/src/**/VaultSettings*` — homoiconic settings loader (VaultSettingsRegistry, VaultSettingsStore: vault `exo__Setting` parsing + one-shot migration),
 `assetspaces/*/*.md` in any cloned ontology repo):
 
 ⛔ **Do NOT use `gh pr merge --auto`.**

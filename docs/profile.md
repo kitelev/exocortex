@@ -29,9 +29,12 @@ with class `exo__Profile` and two declarative properties:
   MVP, 0..1; transitive 0..N + cycle-guard is a future phase).
 
 There is no "always-on overlay" property — "always-on" is the **TS-floor**
-(`exo`, `exocmd`, `shared-identities`), enforced at AssetSpace-UID level
-regardless of profile config. The TS-floor holds the class definitions and
-commands the plugin needs to function, so it is never unmounted.
+(`exo` only — RFC `5aa2a73a`), enforced at AssetSpace-UID level regardless of
+profile config. The TS-floor holds the core class definitions the knowledge
+engine needs to function, so it is never unmounted. `exocmd` (UI commands) and
+`shared-identities` (cross-cutting anchors) are **optional** AssetSpaces, not
+floor members — a read-only/SPARQL-only vault works without them (no buttons,
+no crash).
 
 Concrete profiles already shipping in production vaults:
 
@@ -120,7 +123,7 @@ target profile's effective set.
 ```
 effective(P) = P._includes
              ∪ transitive(P._imports*)      (parent-profile composition)
-             ∪ TS-floor                       (exo, exocmd, shared-identities)
+             ∪ TS-floor                       (exo only)
 ```
 
 Apply then computes a diff against what is currently materialized on disk and:
@@ -142,8 +145,8 @@ Apply is destructive, so it requires **explicit intent**. Before any mutation, a
 TS-floor assertion checks the profile's **declared** `_includes` (not the
 floor-injected effective set). If the target profile would omit a TS-floor
 AssetSpace, apply **refuses** (`TsFloorViolationError`) rather than silently
-re-adding the floor — stripping the floor would self-brick the plugin (no class
-definitions, no commands). The floor is still injected into the actual mutation
+re-adding the floor — stripping the floor would self-brick the plugin (no core
+class definitions). The floor is still injected into the actual mutation
 diff for completeness, but only after the guard has approved the user's intent.
 
 ---
@@ -354,9 +357,10 @@ implementation. Key ones:
   state in SPARQL or UI.
 - **Active profile is per-device, not synced.** The `.local.` infix convention is
   the boundary.
-- **TS-floor preservation.** `shared-identities`, `exo`, `exocmd` always
-  materialize regardless of profile. Stripping the floor would self-brick the
-  plugin.
+- **TS-floor preservation.** `exo` always materializes regardless of profile
+  (floor = `{exo}`, RFC `5aa2a73a`). Stripping the floor would self-brick the
+  plugin. `exocmd` and `shared-identities` are optional AssetSpaces, not floor
+  members.
 - **No transitive AssetSpace expansion (yet).** Listing `pmbok` in a profile's
   `_includes` does **not** auto-add `ems`, even though `pmbok` references `ems`.
   List every AssetSpace the profile needs explicitly. `.gitmodules` is a flat

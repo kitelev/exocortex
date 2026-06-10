@@ -33,8 +33,8 @@ npm run test:ui         # UI integration tests
 npm run test:component  # Playwright component tests
 npm run test:e2e:docker # E2E tests in Docker
 
-# Run with coverage
-npm run test:coverage
+# Run with coverage (core package only — the root package.json has no test:coverage script)
+npm run test:coverage -w exocortex
 ```
 
 ### Writing Your First Test
@@ -72,7 +72,7 @@ describe("FrontmatterService", () => {
 | Pattern      | Location                                    | Runner        |
 | ------------ | ------------------------------------------- | ------------- |
 | `*.test.ts`  | `packages/*/tests/unit/`                    | Jest          |
-| `*.test.ts`  | `packages/*/tests/ui/`                      | Jest (jsdom)  |
+| `*.test.ts`  | `packages/*/tests/ui/`                      | Jest (jest-environment-obsidian) |
 | `*.spec.tsx` | `packages/obsidian-plugin/tests/component/` | Playwright CT |
 | `*.spec.ts`  | `packages/obsidian-plugin/tests/e2e/specs/` | Playwright    |
 
@@ -110,30 +110,33 @@ npx jest --watch packages/exocortex/tests/utilities/FrontmatterService.test.ts
 
 ```typescript
 import { StatusTimestampService } from "../../src/services/StatusTimestampService";
-import { createMockVault, createMockFile } from "../helpers/mockFactory";
+import type { IVaultAdapter, IFile } from "../../src/interfaces/IVaultAdapter";
 
 describe("StatusTimestampService", () => {
   let service: StatusTimestampService;
   let mockVault: jest.Mocked<IVaultAdapter>;
 
   beforeEach(() => {
-    mockVault = createMockVault();
+    mockVault = {
+      read: jest.fn(),
+      modify: jest.fn(),
+    } as unknown as jest.Mocked<IVaultAdapter>;
     service = new StatusTimestampService(mockVault);
   });
 
-  describe("recordStatusChange", () => {
-    it("should add timestamp for new status", async () => {
+  describe("addStartTimestamp", () => {
+    it("should write ems__Effort_startTimestamp into frontmatter", async () => {
       // Arrange
-      const file = createMockFile("task.md");
+      const file = { path: "task.md" } as IFile;
       mockVault.read.mockResolvedValue("---\nstatus: draft\n---\n# Task");
 
       // Act
-      await service.recordStatusChange(file, "draft", "doing");
+      await service.addStartTimestamp(file);
 
       // Assert
       expect(mockVault.modify).toHaveBeenCalledWith(
         file,
-        expect.stringContaining("ems__doing_timestamp"),
+        expect.stringContaining("ems__Effort_startTimestamp"),
       );
     });
   });
@@ -389,16 +392,16 @@ coverage thresholds remain enforced by the required `test-coverage` job.
 
 ### Current Test Distribution
 
-As of December 2025:
+As of June 2026 (file counts; re-derive with the commands below rather than trusting this table):
 
-| Type      | Files   | Test Cases | Percentage |
-| --------- | ------- | ---------- | ---------- |
-| Unit      | ~244    | ~5116      | 84%        |
-| Component | ~33     | ~530       | 11%        |
-| E2E       | ~14     | ~67        | 5%         |
-| **Total** | **291** | **5713**   | **100%**   |
+| Type                 | Files | How to count                                                              |
+| -------------------- | ----- | ------------------------------------------------------------------------- |
+| Jest (`*.test.ts`)   | 691   | `find packages -name '*.test.ts' -not -path '*/node_modules/*' \| wc -l`  |
+| Jest (`*.test.tsx`)  | 20    | `find packages -name '*.test.tsx' -not -path '*/node_modules/*' \| wc -l` |
+| Component (CT)       | 34    | `find packages/obsidian-plugin/tests/component -name '*.spec.tsx' \| wc -l` |
+| E2E specs            | 20    | `find packages/obsidian-plugin/tests/e2e/specs -name '*.spec.ts' \| wc -l` |
 
-This distribution is **healthy** and follows the test pyramid principles.
+Jest files span unit, UI, integration, and performance suites across all packages. The distribution remains strongly unit-heavy, in line with the pyramid guidance above.
 
 ### Package-Specific Testing
 
@@ -415,11 +418,14 @@ Pure business logic, storage-agnostic utilities.
 
 **Configuration**: `packages/exocortex/jest.config.js`
 
-**Coverage Threshold**: statements 75.5%, branches 63% (enforced by CI)
+**Coverage Threshold**: 95% statements / branches / functions / lines — **local-only** (`packages/exocortex/jest.config.js`). CI does **not** collect coverage for this package: the `test-coverage-exocortex` job runs an allowlist of regression suites *without* `--coverage` (see `.github/workflows/ci.yml`). Core sources do, however, count toward the obsidian-plugin merged coverage gate (the plugin jest config collects coverage from `packages/exocortex/src/**` too).
 
 ```bash
 # Run core tests
 npx jest --config packages/exocortex/jest.config.js
+
+# Run core tests with the local 95% coverage gate
+npm run test:coverage -w exocortex
 ```
 
 #### @exocortex/obsidian-plugin
@@ -435,12 +441,12 @@ Obsidian UI integration layer.
 
 **Configuration**: `packages/obsidian-plugin/jest.config.js`
 
-**Coverage Thresholds**:
+**Coverage Thresholds** (enforced both locally in `jest.config.js` and in CI on coverage merged across shards):
 
-- Branches: 67%
-- Functions: 71%
-- Lines: 78%
-- Statements: 79%
+- Statements: 75.5%
+- Branches: 63%
+- Functions: 69%
+- Lines: 76%
 
 ```bash
 # Run plugin tests
@@ -735,35 +741,48 @@ it("should provide helpful error message", async () => {
 
 ### Coverage Gates
 
-**Global Thresholds** (enforced in CI):
+This is the **single source of truth** for coverage thresholds in this guide. Values below mirror `.github/workflows/ci.yml` and the per-package jest configs — if they disagree, the configs win.
 
-| Metric     | Threshold | Current |
-| ---------- | --------- | ------- |
-| Branches   | 67%       | ~68%    |
-| Functions  | 71%       | ~72%    |
-| Lines      | 78%       | ~79%    |
-| Statements | 79%       | ~79%    |
+| Package                    | Statements | Branches | Functions | Lines | Enforced where                                                                 |
+| -------------------------- | ---------- | -------- | --------- | ----- | ------------------------------------------------------------------------------ |
+| obsidian-plugin (merged)   | 75.5%      | 63%      | 69%       | 76%   | `test-coverage` CI job (merges shard coverage) + `packages/obsidian-plugin/jest.config.js` |
+| cli                        | 65%        | 60%      | 70%       | 65%   | `test-coverage-cli` CI job                                                      |
+| exocortex (core)           | 95%        | 95%      | 95%       | 95%   | **Local-only** (`packages/exocortex/jest.config.js`, via `npm run test:coverage -w exocortex`) |
 
-**Domain Layer Targets** (aspirational):
+Notes:
 
-- Branches: 78%
-- Functions: 80%
-- Lines: 79%
-- Statements: 78%
+- The obsidian-plugin merged coverage also includes `packages/exocortex/src/**` sources (see `collectCoverageFrom` in the plugin jest config), so core code is indirectly gated in CI through the plugin thresholds.
+- CI does **not** collect coverage for the exocortex package itself: the `test-coverage-exocortex` job runs an allowlist of regression suites without `--coverage`. The 95% gate fires only on local `npm run test:coverage -w exocortex` runs.
 
 ### Test Jobs in CI
 
-The CI pipeline runs tests in this order:
+Required status checks on `main` (13 total): `archgate`, `detect-changes`, `e2e-shard (1..6)`, `lint`, `parity-gate`, `test-component`, `test-coverage`, `typecheck`. Source of truth: `gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks`. (`test-bdd` was removed in #3433; the old `test-unit` job was repurposed to `test-ui` in #3396.)
 
-1. **Type checking** - `tsc --noEmit`
-2. **Linting** - ESLint with TypeScript rules
-3. **Build** - Full production build
-4. **Unit tests** - Jest with coverage (batched for stability)
-5. **UI tests** - Jest with jsdom environment
-6. **Component tests** - Playwright CT (Chromium)
-7. **E2E tests** - Playwright in Docker with Obsidian
+Test-related jobs in the pipeline:
 
-**Release is blocked if ANY test fails.**
+1. **typecheck / lint / archgate** - static gates
+2. **test-coverage-shard** - Jest unit tests with coverage, sharded; merged and threshold-checked by **test-coverage**
+3. **test-coverage-cli** - CLI Jest tests with coverage (65/60/70/65 gate)
+4. **test-coverage-exocortex** - allowlisted core regression suites (no coverage collection)
+5. **test-ui** - Jest with **jest-environment-obsidian** (`jest.ui.config.js`)
+6. **test-component** - Playwright CT (Chromium, `retries: 2` in CI)
+7. **e2e-shard (1..6)** - Playwright E2E in Docker with Obsidian, sharded per `playwright-shard-assignments.json`
+8. **parity-gate** - CLI ↔ plugin triple-parity integration test
+
+**Release is blocked if ANY required check fails.**
+
+### Flaky Policy & Sharding
+
+See [docs/FLAKY_POLICY.md](./docs/FLAKY_POLICY.md) for the full policy. Summary of the current (post-#3396) mechanics:
+
+- **Zero-retry default**: E2E specs run with `retries: 0` — a flake fails the run immediately instead of being masked.
+- **`@flaky-track` tag opt-in**: `playwright-e2e.config.ts` defines two projects — `e2e` (untagged specs, `grepInvert: /@flaky-track/`, retries 0) and `e2e-flaky-track` (`grep: /@flaky-track/`, `retries: 1`). Tagging a spec `@flaky-track` is the documented, reviewable way to tolerate a known flake while its root cause is being fixed (Issue #3350 / PR #3355). Removing the tag restores strict discipline automatically.
+- **NoFlakyReporter**: `packages/obsidian-plugin/playwright-no-flaky-reporter.ts` fails CI on any test that passed only after a retry — but is tag-aware and skips `@flaky-track` tests so the project-level `retries: 1` is not neutralized.
+- **Sharding**: E2E specs are distributed across 6 shards via `packages/obsidian-plugin/playwright-shard-assignments.json` (weighted LPT bin-packing). `playwright-shard-config-factory.ts` mirrors the two-project `@flaky-track` routing inside every shard. When adding a new spec, extend exactly one shard array (validator: `scripts/validate-shard-assignments.mjs`).
+- **Retry observability**: a `playwright-retry-summary-reporter.ts` writes per-shard `retry-summary.json`; CI aggregates them into the GitHub Actions job summary ("E2E retry summary"). Pure observability, never fails the run.
+- **Component tests**: CT runs with `retries: 2` in CI (`playwright-ct.config.ts`); a warn-only "Track Flaky Tests (Component)" CI step surfaces flaky CT counts without failing the job.
+- **Quarantine**: `tests/quarantine.ts` lists deliberately skipped/tolerated tests (`QuarantinedTest`: `file`, `name`, plus optional `issue`, `reason`, `quarantinedAt`, `expiresAt`, `owner`). Currently empty by design.
+- **Desktop smoke**: a separate `E2E Desktop Smoke` workflow (`.github/workflows/e2e-desktop.yml`) runs a plugin-load smoke spec on real macOS/Windows runners — on the `e2e-desktop` PR label, nightly cron, or manual dispatch. It never blocks regular PRs.
 
 ### Coverage Reports
 
@@ -839,10 +858,19 @@ Reports are available as CI artifacts on every run.
    }
    ```
 
-4. Add retries for E2E tests:
+4. For a known-flaky E2E spec whose root cause is still being fixed, do **not** raise `retries` in the config — tag the spec `@flaky-track` instead (it then runs in the `e2e-flaky-track` project with `retries: 1`, and `NoFlakyReporter` skips it):
+
    ```typescript
-   retries: process.env.CI ? 2 : 0;
+   test(
+     "should eventually render layout",
+     { tag: "@flaky-track" }, // tracked in a GitHub issue; remove tag once fixed
+     async () => {
+       // ...
+     },
+   );
    ```
+
+   See [docs/FLAKY_POLICY.md](./docs/FLAKY_POLICY.md) for the tagging rules.
 
 #### Mock Leaks
 
@@ -998,7 +1026,8 @@ await page.evaluate(() => console.log("Debug from browser"));
 
 ### Internal References
 
-- [TEST_TEMPLATES.md](./TEST_TEMPLATES.md) - Ready-to-use test code templates
+- [docs/TEST-PYRAMID.md](./docs/TEST-PYRAMID.md) - Test pyramid concepts and layer guidance
+- [docs/FLAKY_POLICY.md](./docs/FLAKY_POLICY.md) - Flaky test policy (@flaky-track, quarantine)
 - [packages/obsidian-plugin/docs/TESTING.md](./packages/obsidian-plugin/docs/TESTING.md) - Plugin-specific testing patterns
 
 ### Code Examples
@@ -1021,31 +1050,31 @@ await page.evaluate(() => console.log("Debug from browser"));
 | `npm run test:component`  | Component tests             | ~30s  |
 | `npm run test:e2e:docker` | E2E in Docker               | ~3min |
 
-### Coverage Targets
+### Coverage Targets (CI gates)
 
-| Layer               | Target | Current |
-| ------------------- | ------ | ------- |
-| Global (statements) | 75%    | ✅ 80%  |
-| Global (branches)   | 67%    | ✅ 71%  |
-| Global (functions)  | 70%    | ✅ 73%  |
-| Global (lines)      | 75%    | ✅ 81%  |
-| Domain layer        | 78%    | 🎯      |
+See [Coverage Gates](#coverage-gates) above for the authoritative table. Summary:
 
-### Test Pyramid Targets
+| Package                  | Statements | Branches | Functions | Lines |
+| ------------------------ | ---------- | -------- | --------- | ----- |
+| obsidian-plugin (merged) | 75.5%      | 63%      | 69%       | 76%   |
+| cli                      | 65%        | 60%      | 70%       | 65%   |
+| exocortex (local-only)   | 95%        | 95%      | 95%       | 95%   |
 
-| Layer           | Target Ratio | Current |
-| --------------- | ------------ | ------- |
-| Unit Tests      | ≥70%         | ✅ 84%  |
-| Component Tests | 10-25%       | ✅ 11%  |
-| E2E Tests       | ≤10%         | ✅ 5%   |
+### Test Pyramid Targets (advisory)
 
-### Test Count
+| Layer           | Target Ratio |
+| --------------- | ------------ |
+| Unit Tests      | ≥70%         |
+| Component Tests | 10-25%       |
+| E2E Tests       | ≤10%         |
 
-| Type            | Files | Test Cases |
-| --------------- | ----- | ---------- |
-| Unit tests      | ~244  | ~5116      |
-| Component tests | ~33   | ~530       |
-| E2E tests       | ~14   | ~67        |
+### Test Count (June 2026)
+
+| Type                       | Files |
+| -------------------------- | ----- |
+| Jest (`*.test.ts/.tsx`)    | 711   |
+| Component tests (CT specs) | 34    |
+| E2E specs                  | 20    |
 
 ---
 
@@ -1080,4 +1109,4 @@ await page.evaluate(() => console.log("Debug from browser"));
 
 ---
 
-**Last updated**: 2026-05-03
+**Last updated**: 2026-06-10

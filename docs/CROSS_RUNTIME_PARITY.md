@@ -11,7 +11,7 @@ The Exocortex SHACL-lite validator runs in two runtimes:
 | **CLI** (`npx @kitelev/exocortex-cli validate schema --shapes-mode`) | `packages/cli/src/commands/validate-schema.ts`    | `ShapeLoader.loadFromVaultFS`  | `TripleClassHierarchy` (rdfs:subClassOf BFS)        | `domainToAlgebraTriples()` helper |
 | **Plugin** (`ExocortexPlugin.scheduleValidation`)                    | `packages/obsidian-plugin/src/ExocortexPlugin.ts` | `ShapeLoader.loadFromRDFGraph` | `{ isSubClassOf: (c, p) => c === p }` (exact match) | Inline loop                       |
 
-Both paths call the **same** shared engine function `shaclValidate` from `@exocortex/core`, which guarantees a common foundation.
+Both paths call the **same** shared engine function `shaclValidate` from the `exocortex` core package (`packages/exocortex`), which guarantees a common foundation.
 
 ## Parity Contract
 
@@ -65,6 +65,8 @@ NODE_OPTIONS="--experimental-vm-modules" \
 ## CI Integration
 
 The parity test runs as part of the standard `test-coverage` CI check (all `packages/cli/tests/**/*.test.ts` are included automatically via `jest.config.js`). No additional CI configuration is required.
+
+An adjacent parity contract is enforced by the dedicated **`parity-gate`** required CI check (`.github/workflows/ci.yml`, RFC `94e520da` Phase 3): it runs the CLI ↔ plugin **triple-parity** integration test in isolation (diff = 0 across 5 reference vaults), so a triple-conversion divergence surfaces as a named check instead of being absorbed into the broader CLI coverage job.
 
 ## Regenerating the Golden File
 

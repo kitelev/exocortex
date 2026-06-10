@@ -1,8 +1,13 @@
 # Test Pyramid Policy
 
-> **Formal test architecture strategy and coverage gates for the Exocortex project.**
+> **Conceptual test architecture strategy for the Exocortex project.**
 >
-> This document establishes the test pyramid structure, coverage requirements, and CI enforcement mechanisms.
+> This document explains the pyramid structure and what belongs at each layer.
+> For **numbers** — coverage thresholds, CI gates, current test counts — the
+> single source of truth is **[TESTING.md](../TESTING.md)** (sections
+> "Coverage Gates" and "Current Test Distribution"), which mirrors
+> `.github/workflows/ci.yml` and the per-package jest configs. Numbers are
+> intentionally not duplicated here.
 
 ---
 
@@ -16,22 +21,37 @@ The Exocortex project follows the **Test Pyramid** architecture pattern, which p
 
 ```
            /\
-          /  \      E2E Tests (5%)
-         /----\     ~20 specs, critical paths only
+          /  \      E2E Tests (≤10%)
+         /----\     Critical user journeys only
         /      \
-       /--------\   Component Tests (15%)
-      /          \  ~30 specs, UI behavior
+       /--------\   Component Tests (10-25%)
+      /          \  Isolated React component testing
      /------------\
-    /              \ Unit Tests (80%)
-   /                \ 2500+ tests, business logic
+    /              \ Unit Tests (≥70%)
+   /                \ Fast, isolated business logic
   /__________________\
 ```
+
+### Enforcement status
+
+The layer-ratio distribution is **advisory guidance**, maintained by review
+judgment — the automated `test-pyramid` CI gate (and its
+`scripts/check-test-pyramid.js` health-check) were removed in audit epic
+#3384 (PR #3396): the strict check could not structurally fail, so it gave no
+real signal. What **is** enforced in CI:
+
+- Per-package coverage thresholds in the required `test-coverage` check
+  (values in [TESTING.md → Coverage Gates](../TESTING.md#coverage-gates)).
+- 100% pass rate for component tests (`test-component`) and E2E shards
+  (`e2e-shard (1..6)`).
+- Zero tolerated flakes for untagged E2E specs — see
+  [FLAKY_POLICY.md](./FLAKY_POLICY.md).
 
 ---
 
 ## Test Layers
 
-### Layer 1: Unit Tests (80% of test effort)
+### Layer 1: Unit Tests (base of the pyramid)
 
 **Purpose**: Test business logic, services, and utilities in isolation.
 
@@ -46,21 +66,18 @@ The Exocortex project follows the **Test Pyramid** architecture pattern, which p
 
 **Locations**:
 
-- `packages/exocortex/tests/unit/` - Core business logic
+- `packages/exocortex/tests/` - Core business logic
 - `packages/obsidian-plugin/tests/unit/` - Plugin-specific logic
 - `packages/cli/tests/unit/` - CLI commands and utilities
 
-**Coverage Targets** (enforced in CI):
-
-| Package         | Statements | Branches | Functions | Lines |
-| --------------- | ---------- | -------- | --------- | ----- |
-| obsidian-plugin | 80%        | 70%      | 73%       | 80%   |
-| core            | 95%        | 95%      | 95%       | 95%   |
-| cli             | 65%        | 60%      | 70%       | 65%   |
+**CI Gate**: coverage thresholds per package — see
+[TESTING.md → Coverage Gates](../TESTING.md#coverage-gates). Note that the
+core (`exocortex`) package's 95% threshold is local-only; CI gates core
+sources indirectly through the obsidian-plugin merged coverage.
 
 ---
 
-### Layer 2: Component Tests (15% of test effort)
+### Layer 2: Component Tests (middle of the pyramid)
 
 **Purpose**: Test React components in isolation with real browser rendering.
 
@@ -71,7 +88,7 @@ The Exocortex project follows the **Test Pyramid** architecture pattern, which p
 - Visual regression testing
 - Component isolation (no full app)
 
-**Framework**: Playwright Component Testing
+**Framework**: Playwright Component Testing (`.spec.tsx` files)
 
 **Location**: `packages/obsidian-plugin/tests/component/`
 
@@ -82,13 +99,15 @@ The Exocortex project follows the **Test Pyramid** architecture pattern, which p
 - Visual regression snapshots
 - State management within components
 
-**CI Gate**: All component tests must pass (no coverage threshold, but 100% test pass rate required)
+**CI Gate**: All component tests must pass (no coverage threshold, 100% pass
+rate required). CT runs with `retries: 2` in CI plus a warn-only flaky-count
+check.
 
 ---
 
-### Layer 3: E2E Tests (5% of test effort)
+### Layer 3: E2E Tests (top of the pyramid)
 
-**Purpose**: Test critical user journeys in real Obsidian instance.
+**Purpose**: Test critical user journeys in a real Obsidian instance.
 
 **Characteristics**:
 
@@ -97,118 +116,14 @@ The Exocortex project follows the **Test Pyramid** architecture pattern, which p
 - Tests full integration
 - Limited to critical paths only
 
-**Framework**: Playwright E2E
+**Framework**: Playwright E2E, sharded across 6 CI shards
+(`playwright-shard-assignments.json`)
 
-**Location**: `packages/obsidian-plugin/tests/e2e/`
+**Location**: `packages/obsidian-plugin/tests/e2e/specs/`
 
-**Critical Paths Covered**:
-
-1. Plugin activation and initialization
-2. Daily note rendering with tasks
-3. Task status transitions
-4. Layout switching
-5. SPARQL query execution
-
-**CI Gate**: All E2E tests must pass (100% pass rate required)
-
----
-
-## Coverage Gates
-
-### CI Pipeline Enforcement
-
-The CI pipeline enforces coverage thresholds at multiple levels:
-
-```yaml
-# Coverage verification in test-coverage job
-test-coverage:
-  steps:
-    - Run unit tests with coverage
-    - Check per-package thresholds
-    - Generate coverage artifacts
-    - Fail if below thresholds
-```
-
-### Current Thresholds (December 2025)
-
-#### obsidian-plugin Package
-
-| Metric     | Required | Current | Status |
-| ---------- | -------- | ------- | ------ |
-| Statements | 80%      | 82.64%  | ✅     |
-| Branches   | 70%      | 72.32%  | ✅     |
-| Functions  | 73%      | 75.76%  | ✅     |
-| Lines      | 80%      | 82.91%  | ✅     |
-
-#### core Package
-
-| Metric     | Required | Current | Status |
-| ---------- | -------- | ------- | ------ |
-| Statements | 95%      | TBD     | 🎯     |
-| Branches   | 95%      | TBD     | 🎯     |
-| Functions  | 95%      | TBD     | 🎯     |
-| Lines      | 95%      | TBD     | 🎯     |
-
-#### cli Package
-
-| Metric     | Required | Current | Status |
-| ---------- | -------- | ------- | ------ |
-| Statements | 65%      | 69.29%  | ✅     |
-| Branches   | 60%      | 62.97%  | ✅     |
-| Functions  | 70%      | 77.43%  | ✅     |
-| Lines      | 65%      | 68.99%  | ✅     |
-
----
-
-## Coverage Progression Goals
-
-### Completed (December 2025)
-
-- [x] obsidian-plugin: 80% statements, 70% branches (Issue #786)
-- [x] Restored coverage thresholds from temporary reduction
-
-### Short-term (Q1 2026)
-
-- [ ] obsidian-plugin: 85% statements, 75% branches
-- [ ] cli: 75% statements, 70% branches
-- [ ] Core package coverage collection working in CI
-
-### Medium-term (Q2-Q3 2026)
-
-- [ ] obsidian-plugin: 85% statements, 80% branches
-- [ ] cli: 80% statements, 75% branches
-- [ ] All packages integrated in coverage report
-
-### Long-term (2026+)
-
-- [ ] Global minimum: 85% statements across all packages
-- [ ] Domain layer: 90%+ coverage
-- [ ] All critical paths covered by E2E tests
-
----
-
-## Test Distribution Analysis
-
-### Current Distribution (December 2025)
-
-```
-Test Files by Type:
-├── Unit Tests:      221 files (80.1%)
-├── Component Tests:   0 files (Playwright CT specs in .spec.tsx)
-├── E2E Tests:        19 files (6.9%)
-├── UI Tests:          2 files (0.7%)
-└── Infrastructure:   34 files (12.3%)
-                     ─────────────────
-                     276 total files
-```
-
-### Test Count by Package
-
-| Package         | Unit  | Component | E2E | Total |
-| --------------- | ----- | --------- | --- | ----- |
-| obsidian-plugin | 2535  | N/A       | N/A | 2535  |
-| core            | 1672+ | N/A       | N/A | 1672+ |
-| cli             | 520   | N/A       | N/A | 520   |
+**CI Gate**: All E2E tests must pass (100% pass rate required). Untagged specs
+run with `retries: 0`; known flakes are opted into `retries: 1` via the
+`@flaky-track` tag — see [FLAKY_POLICY.md](./FLAKY_POLICY.md).
 
 ---
 
@@ -266,50 +181,15 @@ Test Files by Type:
 
 ---
 
-## CI Pipeline Structure
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    CI Pipeline                          │
-├─────────────────────────────────────────────────────────┤
-│                                                         │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐                │
-│  │  Build  │  │TypeCheck│  │   Lint  │                │
-│  └────┬────┘  └────┬────┘  └────┬────┘                │
-│       │            │            │                      │
-│       └────────────┴────────────┘                      │
-│                         │                              │
-│  ┌──────────────────────┴──────────────────────┐      │
-│  │                                              │      │
-│  │  ┌───────────────┐  ┌───────────────┐       │      │
-│  │  │  Unit Tests   │  │   Coverage    │       │      │
-│  │  │  + UI Tests   │  │   Analysis    │       │      │
-│  │  └───────────────┘  └───────────────┘       │      │
-│  │                                              │      │
-│  │  ┌───────────────┐  ┌───────────────┐       │      │
-│  │  │   Component   │  │     E2E       │       │      │
-│  │  │     Tests     │  │    Tests      │       │      │
-│  │  └───────────────┘  └───────────────┘       │      │
-│  │                                              │      │
-│  └──────────────────────────────────────────────┘      │
-│                         │                              │
-│                    ┌────┴────┐                         │
-│                    │ Release │                         │
-│                    └─────────┘                         │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
-```
-
----
-
 ## Preventing Coverage Regression
 
 ### Rules for New Code
 
-1. **New features** must include unit tests with ≥80% coverage
-2. **Bug fixes** must include regression test
+1. **New features** must include unit tests
+2. **Bug fixes** must include a regression test
 3. **Refactoring** must maintain or improve coverage
-4. **CI blocks merge** if coverage drops below thresholds
+4. **CI blocks merge** if coverage drops below the thresholds in
+   [TESTING.md → Coverage Gates](../TESTING.md#coverage-gates)
 
 ### Coverage Review Checklist
 
@@ -323,11 +203,11 @@ Test Files by Type:
 
 ## References
 
-- [TESTING.md](../TESTING.md) - Comprehensive testing guide
-- [TESTING.md](../TESTING.md) - Comprehensive test guide
+- [TESTING.md](../TESTING.md) - Comprehensive testing guide (source of truth for thresholds and counts)
+- [FLAKY_POLICY.md](./FLAKY_POLICY.md) - Flaky test policy
 - [.github/workflows/ci.yml](../.github/workflows/ci.yml) - CI configuration
 - [packages/obsidian-plugin/jest.config.js](../packages/obsidian-plugin/jest.config.js) - Jest configuration
 
 ---
 
-**Last Updated**: December 2025
+**Last Updated**: 2026-06-10

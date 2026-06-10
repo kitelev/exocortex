@@ -17,7 +17,6 @@ This guide shows you how to:
 
 - Basic understanding of RDF/RDFS concepts
 - Exocortex plugin installed and configured
-- Default ontology asset set in plugin settings
 
 ## Understanding the Ontology Structure
 
@@ -82,37 +81,39 @@ Decide which class(es) should have your new property:
 
 ### Step 2: Define the Property
 
-Add the property definition to your ontology file. The property must include:
+A property is authored as a regular Markdown asset whose frontmatter uses the
+**`exo__` vocabulary**. The converter (`NoteToRDFConverter` +
+`RDFVocabularyMapper`) maps these keys to the standard RDFS triples that modal
+discovery queries:
 
-1. **URI**: Unique identifier following naming conventions
-2. **rdfs:domain**: Which class(es) have this property
-3. **rdfs:range**: What type of value it holds
-4. **rdfs:label**: Human-readable name (shown in modal)
-5. **rdfs:comment** (optional): Description (shown as tooltip)
+| Frontmatter key                             | Emitted W3C triple                          | Purpose                                  |
+| ------------------------------------------- | ------------------------------------------- | ---------------------------------------- |
+| `exo__Instance_class: "[[exo__Property]]"`  | `rdf:type`                                  | Marks the asset as a property definition |
+| `exo__Property_domain: "[[<class>]]"`       | `rdfs:domain`                               | Which class(es) have this property       |
+| `exo__Property_range`                       | `rdfs:range` (for class/wikilink ranges)    | What type of value it holds              |
+| `exo__Asset_label`                          | `rdfs:label`                                | Human-readable name (shown in modal)     |
+| `exo__Property_superProperty` (optional)    | `rdfs:subPropertyOf`                        | Parent property                          |
+
+For datatype ranges, `exo__Property_range` takes a literal `xsd:` string
+(`xsd:string`, `xsd:integer`, `xsd:dateTime`, `xsd:boolean`); for object
+ranges it takes a wikilink to the range class.
+
+> ⚠️ **Do not use `rdf__*` / `rdfs__*` frontmatter keys** (e.g.
+> `rdf__Property_domain`, `rdfs__label`). `rdf` and `rdfs` are not registered
+> namespace prefixes in the converter, so such keys resolve to ad-hoc
+> `https://exocortex.my/ontology/rdf#...` IRIs — **not** the W3C vocabulary —
+> and the discovery query (which matches W3C `rdfs:domain`) will never see the
+> property.
 
 #### Example: Add Priority Property to Tasks
-
-```turtle
-# In your ontology file body:
-
-ems:Task_priority a rdf:Property ;
-    rdfs:domain ems:Task ;
-    rdfs:range xsd:integer ;
-    rdfs:label "Priority" ;
-    rdfs:comment "Task priority (1-5, where 1 is highest)" .
-```
-
-In markdown frontmatter format:
 
 ```yaml
 ---
 exo__Instance_class:
-  - "[[rdf__Property]]"
+  - "[[exo__Property]]"
 exo__Asset_label: "Task Priority"
-rdf__Property_domain: "[[ems__Task]]"
-rdf__Property_range: xsd:integer
-rdfs__label: "Priority"
-rdfs__comment: "Task priority (1-5, where 1 is highest)"
+exo__Property_domain: "[[ems__Task]]"
+exo__Property_range: xsd:integer
 ---
 
 # Task Priority Property
@@ -218,6 +219,34 @@ myns__Sprint_goal: "Complete user authentication"
 ---
 ```
 
+## RDF-Driven Asset Creation
+
+Asset creation itself is ontology-driven — the defaults and the one-click flow
+are declared as vault assets, not hardcoded:
+
+- **Universal Default Template (RFC `727572d2`).** A singleton
+  `exocmd__UniversalDefaultTemplate` ABox asset declares vault-wide
+  `PropertyDefault` and `InheritanceRule` entries. The engine
+  (`UniversalDefaultTemplateResolver` + `CommandResolver`) merges these into
+  every Grounding's `propertyDefault` / `inheritanceRule` lists at parse time;
+  Grounding-local entries override Universal entries by `propertyName` /
+  `targetPropertyName`. If the singleton is absent, the executor falls back to
+  legacy TypeScript primitives with a warning.
+- **One-click creation (RFC `ce27e55d`).** Two declarative properties remove
+  the remaining manual steps:
+  - `exocmd__Grounding_labelTemplate` — a template for the created asset's
+    label, used when the user supplies none (before the `"Untitled"`
+    fallback). Supports `$target.<prop>` (frontmatter of the current asset)
+    and `$nowCompact` (filename-safe local timestamp with minute precision,
+    `YYYY-MM-DD-HH-mm`) tokens.
+  - `exocmd__Command_openInSameTab` — boolean; when `true`, the platform
+    opener navigates the **current** tab to the newly created file instead of
+    opening a new one.
+- **Dynamic command labels.** `exocmd__Command_labelTemplate` resolves each
+  `{...}` placeholder as a SPARQL SELECT query (with `$target` bound to the
+  current asset's IRI), so button/command captions can be computed from the
+  graph.
+
 ## Deprecating Properties
 
 When a property is no longer recommended for use, mark it as deprecated:
@@ -276,10 +305,9 @@ myns__Task_customField: "value"
 ```yaml
 ---
 exo__Instance_class:
-  - "[[rdfs__Class]]"
-exo__Asset_label: "Team"
-rdfs__subClassOf: "[[exo__Asset]]"
-rdfs__comment: "A group of people working together"
+  - "[[exo__Class]]"
+exo__Asset_label: "myns__Team"
+exo__Class_superClass: "[[exo__Asset]]"
 ---
 
 # Team Class
@@ -287,17 +315,18 @@ rdfs__comment: "A group of people working together"
 Represents a team that can be assigned to projects and tasks.
 ```
 
+`exo__Class_superClass` is mapped to `rdfs:subClassOf` by the converter, so
+the new class participates in domain inheritance.
+
 ### 2. Add Team Property to Efforts
 
 ```yaml
 ---
 exo__Instance_class:
-  - "[[rdf__Property]]"
+  - "[[exo__Property]]"
 exo__Asset_label: "Team"
-rdf__Property_domain: "[[ems__Effort]]"
-rdf__Property_range: "[[myns__Team]]"
-rdfs__label: "Team"
-rdfs__comment: "The team responsible for this effort"
+exo__Property_domain: "[[ems__Effort]]"
+exo__Property_range: "[[myns__Team]]"
 ---
 
 # Team Property
@@ -336,12 +365,11 @@ ems__Effort_status: "[[ems__EffortStatusToDo]]"
 
 Before expecting your property to appear in modals:
 
-- [ ] Property has `rdfs:domain` matching target class (or parent class)
-- [ ] Property has `rdfs:range` with recognized type
-- [ ] Property has `rdfs:label` for display name
+- [ ] Property asset has `exo__Property_domain` matching target class (or parent class)
+- [ ] Property asset has `exo__Property_range` with recognized type
+- [ ] Property asset has `exo__Asset_label` for display name
 - [ ] Property is NOT marked `owl:deprecated true`
-- [ ] Ontology file has `exo__Instance_class` with `"[[exo__Ontology]]"`
-- [ ] Default ontology is set in plugin settings
+- [ ] No `rdf__*` / `rdfs__*` frontmatter keys used (they do not map to W3C vocabulary)
 
 ## Troubleshooting
 

@@ -25,10 +25,10 @@ Exocortex is a **knowledge management system** that gives users convenient contr
 
 **Architecture**: Clean Architecture with strict layering
 
-- `src/presentation` - UI components and renderers
-- `src/application` - Use cases and orchestration
-- `src/domain` - Pure business logic (framework-independent)
-- `src/infrastructure` - I/O, external dependencies, Obsidian API
+- `packages/obsidian-plugin/src/presentation` - UI components and renderers
+- `packages/obsidian-plugin/src/application` - Use cases and orchestration
+- `packages/obsidian-plugin/src/domain` - Pure business logic (framework-independent)
+- `packages/obsidian-plugin/src/infrastructure` - I/O, external dependencies, Obsidian API
 - `packages/exocortex` - Shared utilities across all packages
 - `packages/cli` - Command-line interface tools
 
@@ -222,7 +222,7 @@ Should update docs to mention TypeScript issues.
 - **Pattern discovered**: All \*Renderer classes follow same lifecycle (mount → render → unmount)
 - **Gotcha identified**: Cytoscape.js requires container to be visible in DOM before init
 - **Best practice**: Define TypeScript interfaces in types/ directory BEFORE writing implementation
-- **Tool insight**: Use `npm run typecheck -- --watch` during development for instant feedback
+- **Tool insight**: Use `npm run check:types -- --watch` during development for instant feedback
 
 ### Documentation Improvements Proposed
 
@@ -239,7 +239,7 @@ Should update docs to mention TypeScript issues.
 
 1. Check types/[domain].ts for interface definition
 2. Add missing property with correct type: `propertyName: PropertyType`
-3. Run `npm run typecheck` to verify fix
+3. Run `npm run check:types` to verify fix
 
 **Prevention**: Always define complete interfaces BEFORE writing implementation code
 ```
@@ -333,17 +333,17 @@ When working on visualization components:
 
 ```
 /Users/kitelev/Developer/exocortex-development/
-├── exocortex/   # Main repository (READ-ONLY for AI agents)
-│   ├── CLAUDE.md                # Complete development guidelines
-│   ├── AGENTS.md                # AI agent instructions (links here)
-│   └── .github/
-│       └── copilot-instructions.md  # GitHub Copilot config
+├── exocortex/                   # Main repository (READ-ONLY for AI agents)
+│   ├── AGENTS.md                # This file — universal agent instructions
+│   ├── CLAUDE.md                # In-repo development guide
+│   ├── PATTERNS.md              # Coding patterns catalog
+│   ├── TROUBLESHOOTING.md       # Troubleshooting scenarios
+│   └── TEMPLATES.md             # Post-mortem & report templates
 ├── worktrees/                   # All worktrees live here (flat structure)
 │   ├── exocortex-agent1-feat-graph-viz/
 │   ├── exocortex-agent2-fix-mobile-ui/
 │   └── exocortex-agent3-refactor-rdf/
-├── AGENTS.md                    # This file - universal agent instructions
-├── CLAUDE.md                    # Claude Code specific instructions
+├── CLAUDE.md                    # Coordination hub rules (worktrees, sync, CI)
 ├── .cursorrules                 # Cursor IDE (legacy support)
 └── .cursor/
     └── rules/
@@ -502,7 +502,7 @@ npm run test:all
 npm run build
 
 # Run type checker
-npm run typecheck
+npm run check:types
 
 # Lint code
 npm run lint
@@ -546,8 +546,15 @@ git rebase origin/main  # Resolve conflicts if any
 1. Read conflict carefully
 2. Resolve in favor of latest main (others' work takes priority)
 3. If incompatible, discuss with user
-4. Complete rebase: `git rebase --continue`
-5. Force push: `git push --force-with-lease origin [branch]`
+4. **Fresh branch (never pushed)**: complete the rebase (`git rebase --continue`), then `git push origin [branch]`
+5. **Already-pushed branch**: do NOT rebase — sync via merge instead:
+
+   ```bash
+   git merge origin/main --no-edit
+   git push origin [branch]
+   ```
+
+   ⛔ Force-push (`git push --force` / `--force-with-lease`) is blocked by a PreToolUse hook and forbidden by policy. Since PRs are squash-merged, the intermediate merge commit disappears from `main` history.
 
 ---
 
@@ -561,7 +568,7 @@ npm run test:all
 
 This runs:
 
-- Unit tests (11,400+ tests across all packages: 5,777 core + 4,566 plugin + 1,146 CLI)
+- Unit tests across all packages (see `npm run test:all` for the live count)
 - E2E tests
 - Type checking
 - Linting
@@ -634,19 +641,19 @@ jest.mock("../../src/presentation/modals/AreaSelectionModal", () => ({
 
 ### RFC-CI-Tests L1/L2/L3 Testing Convention (Phase 4, 2026-04-21)
 
-Starter-kit dynamic commands (`exocmd__Command`) are covered in three test layers. New commands MUST be added to every applicable layer before merge. Source of truth: RFC v5 at `/Users/kitelev/Developer/rfc-ci-button-testing-2026-04-20.md`.
+Dynamic commands (`exocmd__Command`) are covered in three test layers. New commands MUST be added to every applicable layer before merge. Historical source of truth: RFC v5 at `docs/history/rfc-ci-button-testing-2026-04-20.md` (in-repo); the locations below reflect the current tree.
 
 | Layer                | Runner                          | Location                                      | Scope                                                                                                                                                                                                                                                           |
 | -------------------- | ------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **L1 — Unit**        | Jest (ts-jest)                  | `packages/cli/tests/unit/**`                  | Helpers (`command-catalog`, `extract-target-class`, `predict-mutation`, `fixture-factory`, `user-input-factory`, `execute-command`) + per-command outcome assertions with mocked boundaries.                                                                    |
-| **L2 — Integration** | Jest + real `GroundingExecutor` | `packages/cli/tests/integration/commands/**`  | Dynamic commands through `CommandResolver` / `PreconditionEvaluator` / `GroundingExecutor` against `packages/exoas-exocmd` fixtures. Legacy parametrized-catalogue + YAML contract gate retired 2026-05-23 — replaced by RFC v2 byte-diff testing (`aaaa2dea`). |
-| **L3 — E2E**         | Playwright + Docker Obsidian    | `packages/obsidian-plugin/tests/e2e/specs/**` | Smoke subset (RFC §7.4.3) exercising the real plugin UI, sharded across `e2e-shard-1..6`.                                                                                                                                                                       |
+| **L1 — Unit**        | Jest (ts-jest)                  | `packages/cli/tests/unit/**` (subdirs mirror `src/`: `services/`, `executors/`, `commands/`, `precondition/`, …) | CLI services, executors, command wiring, and precondition logic with mocked boundaries.                                                                    |
+| **L2 — Integration** | Jest + real `GroundingExecutor` | Dynamic-command suites: `packages/exocortex/tests/integration/dynamic-commands/**`. CLI command integration: `packages/cli/tests/integration/commands/**` (currently `apply-profile` + `audit-co-location`). | Dynamic commands through `CommandResolver` / `PreconditionEvaluator` / `GroundingExecutor`. ⚠️ Dynamic-command suites run in CI only if matched by the inline `--testPathPatterns` allowlist of the `test-coverage-exocortex` job in `.github/workflows/ci.yml` (that inline list — NOT `scripts/test-ci-batched.sh`, which no workflow invokes — is the actual CI gate; the script is only the local `npm run test:unit` mirror and must be kept in sync). Legacy parametrized-catalogue + YAML contract gate retired 2026-05-23 — replaced by RFC v2 byte-diff testing (`aaaa2dea`). |
+| **L3 — E2E**         | Playwright + Docker Obsidian    | `packages/obsidian-plugin/tests/e2e/specs/**` | Smoke subset (RFC §7.4.3) exercising the real plugin UI, sharded across `e2e-shard (1..6)`.                                                                                                                                                                       |
 
 **Layer authoring rules:**
 
-- New helper → L1 unit test under `packages/cli/tests/unit/test-helpers/` (threshold-neutrality — RFC v5 §9.1).
-- New `exocmd__Command` or grounding change → L2 parametrized entry + L1 unit cases for any new dispatch branches.
-- New user-visible button flow → L3 smoke spec (or extend existing spec) covering golden path with `expandGroupIfCollapsed("Maintenance")` helper where applicable.
+- New CLI helper/service → L1 unit test under `packages/cli/tests/unit/`, mirroring the `src/` path of the code under test.
+- New `exocmd__Command` or grounding change → L2 suite in `packages/exocortex/tests/integration/dynamic-commands/` **plus** an entry in the inline `--testPathPatterns` allowlist of the `test-coverage-exocortex` job in `.github/workflows/ci.yml` (and mirror it in `scripts/test-ci-batched.sh` for local `npm run test:unit`) — suites missing from the CI allowlist do NOT run in CI and rot silently (see «Test Suite Awareness» in `CLAUDE.md`).
+- New user-visible button flow → L3 smoke spec under `packages/obsidian-plugin/tests/e2e/specs/` (or extend an existing spec, e.g. `dynamic-commands.spec.ts`) covering the golden path.
 
 **Runtime-verify gate:** new E2E specs MUST run green in CI (not only local) before the hosting task flips to Review; skipping this gate caused attribution drift flagged in Phase 2 retrospective.
 
@@ -815,7 +822,7 @@ refactor: simplify RDF store queries
 
 ### Task NOT Complete Until:
 
-- ✅ All 14 required CI checks pass (see "GitHub Branch Protection Best Practices" above for the current list). Critical-path target after Phase 3: **~236s avg ±50s**, gate relaxed to **≤220s** per Decision B (RFC v2 relax, 2026-04-22). Original ≤135s target was infeasible given setup-floor dominance.
+- ✅ All 13 required CI checks pass (see "GitHub Branch Protection Best Practices" above for the current list). Critical-path target after Phase 3: **~236s avg ±50s**, gate relaxed to **≤220s** per Decision B (RFC v2 relax, 2026-04-22). Original ≤135s target was infeasible given setup-floor dominance.
 - ✅ PR merged to main
 - ✅ Auto-release workflow creates GitHub release
 - ✅ Worktree cleaned up
@@ -855,8 +862,8 @@ Examples are more valuable than explanatory text:
    ```sparql
    SELECT ?task ?label
    WHERE {
-     ?task <http://exocortex.ai/ontology#Instance_class> "ems__Task" .
-     ?task <http://exocortex.ai/ontology#Asset_label> ?label .
+     ?task <https://exocortex.my/ontology/exo#Instance_class> "ems__Task" .
+     ?task <https://exocortex.my/ontology/exo#Asset_label> ?label .
    }
    LIMIT 10
    ```
@@ -1429,7 +1436,7 @@ static readonly EMS = new Namespace("ems", "https://exocortex.my/ontology/ems#")
 
 ```bash
 # Test CLI execution returns results
-node packages/cli/dist/index.js sparql query test.sparql --vault /path/to/vault
+node packages/cli/dist/index.js query test.sparql --vault /path/to/vault
 # Should return > 0 results if query is correct
 ```
 
@@ -1443,8 +1450,10 @@ If SPARQL query executes without errors but returns 0 results:
    # Compare code URIs
    grep -A2 "static readonly EXO" packages/exocortex/src/domain/models/rdf/Namespace.ts
 
-   # Compare vault URIs
-   grep "exo__Ontology_url" /path/to/vault/03\ Knowledge/exo/!exo.md
+   # Compare canonical ontology URIs in the in-repo data submodule
+   # (packages/exoas-exo; empty dir in a fresh worktree means the submodule
+   # is uninitialized — run `git submodule update --init` first)
+   grep -r "exo__Ontology_url" packages/exoas-exo/
    ```
 
 2. **Run diagnostic query** to see actual triple store URIs:
@@ -1596,7 +1605,7 @@ git rebase --continue
 
 ```bash
 npm test -- --verbose  # See detailed error
-npm run typecheck  # Check type errors
+npm run check:types  # Check type errors
 npm run lint  # Check linting errors
 ```
 
@@ -1731,4 +1740,4 @@ git branch -d feature/[task]
 
 **Remember**: This directory enables safe parallel development by multiple AI agents. When in doubt, sync early, sync often, and validate your location with `pwd`.
 
-**Tool-specific instructions**: See `CLAUDE.md` (Claude Code), `.github/copilot-instructions.md` (GitHub Copilot), `.cursor/rules/` (Cursor IDE).
+**Tool-specific instructions**: See the coordination hub `CLAUDE.md` at `/Users/kitelev/Developer/exocortex-development/CLAUDE.md` (Claude Code) and the hub-level `.cursorrules` / `.cursor/rules/` (Cursor IDE).
