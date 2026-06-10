@@ -46,6 +46,9 @@ import {
 } from "./githubRepoReader";
 import { detectChanges, extractAssetUid } from "./ChangeDetector";
 import { gitBlobSha } from "./gitBlobSha";
+import { isAuthError } from "./CredentialStore";
+import { scanForSecrets } from "./secretScan";
+import { withRateLimitBackoff, type BackoffOptions } from "./transportBackoff";
 import {
   isSyncablePath,
   type AssetChange,
@@ -91,12 +94,18 @@ export interface SyncEngineDeps {
    */
   mergeLayer?: MergeLayerPort;
   /**
-   * Quarantine sink for unresolvable / SHACL-invalid merges (D17). Optional —
-   * skipping it loses no data: the file stays untouched on disk and the
-   * watermark pin re-derives the conflict every sync (durable synced store is
-   * A3 scope).
+   * Quarantine sink for unresolvable / SHACL-invalid merges (D17) and for
+   * D16 terminal-quarantine (contended files after retry exhaustion).
+   * Production: `SyncedQuarantineStore`. Optional — skipping it loses no
+   * data: the file stays untouched on disk and the watermark pin (or the
+   * non-advanced watermark) re-derives the conflict every sync.
    */
   quarantine?: QuarantinePort;
+  /**
+   * Rate-limit backoff tuning (R6). The engine always wraps the transport
+   * with `withRateLimitBackoff`; inject `sleep`/`random` in tests.
+   */
+  backoff?: BackoffOptions;
 }
 
 /** Reject absolute, backslash, empty-segment, `.`/`..` paths (zip-slip guard). */
@@ -226,7 +235,15 @@ interface MergeResolution {
 /** Outcome of the pull→check→push retry loop. */
 type PushLoopOutcome =
   | { kind: "conflict"; detail: string }
-  | { kind: "retry-exhausted"; detail: string }
+  | {
+      kind: "retry-exhausted";
+      detail: string;
+      /** The contended payload of the LAST attempt — terminal-quarantine input (D16→D17). */
+      pushFiles: Map<string, string>;
+      /** Last iteration's merge resolution — its quarantine entries must not be lost. */
+      merge: MergeResolution;
+    }
+  | { kind: "secret-detected"; detail: string }
   | {
       kind: "done";
       examinedHead: string;
@@ -247,27 +264,65 @@ const EMPTY_MERGE: MergeResolution = {
 
 export class SyncEngine {
   private readonly deps: SyncEngineDeps;
+  /** Backoff-wrapped transport (R6) — ALL remote calls go through it. */
+  private readonly transport: RestCommitTransport;
+  /** D11 — one sync/apply operation at a time. */
+  private opInProgress = false;
 
   constructor(deps: SyncEngineDeps) {
     this.deps = deps;
+    this.transport = withRateLimitBackoff(deps.transport, deps.backoff);
+  }
+
+  /** D11 busy verdict — the caller retries after the running op finishes. */
+  private busyResult(spec: SyncRepoSpec): RepoSyncResult {
+    return {
+      repoKey: spec.repoKey,
+      status: "busy",
+      pulledCount: 0,
+      pushedCount: 0,
+      mergedCount: 0,
+      quarantinedCount: 0,
+      warnings: [],
+      deferredDeletes: [],
+      detail:
+        "another sync/apply operation is in progress (D11 guard) — retry after it finishes",
+    };
   }
 
   /**
    * Sync every repo of the materialized set, best-effort (D12): a per-repo
    * failure becomes that repo's `error` result, never an exception. Specs are
    * processed in the given order — pass children before parents (use
-   * {@link orderChildrenFirst}).
+   * {@link orderChildrenFirst}). Acquires the D11 guard ONCE for the whole
+   * run — per-repo cycles inside never see their own guard.
    */
   async syncAll(specs: SyncRepoSpec[]): Promise<RepoSyncResult[]> {
-    const results: RepoSyncResult[] = [];
-    for (const spec of specs) {
-      results.push(await this.sync(spec));
+    if (this.opInProgress) return specs.map((spec) => this.busyResult(spec));
+    this.opInProgress = true;
+    try {
+      const results: RepoSyncResult[] = [];
+      for (const spec of specs) {
+        results.push(await this.syncLocked(spec));
+      }
+      return results;
+    } finally {
+      this.opInProgress = false;
     }
-    return results;
   }
 
   /** Sync one repo. Never throws — failures map to a result status (CQ5). */
   async sync(spec: SyncRepoSpec): Promise<RepoSyncResult> {
+    if (this.opInProgress) return this.busyResult(spec);
+    this.opInProgress = true;
+    try {
+      return await this.syncLocked(spec);
+    } finally {
+      this.opInProgress = false;
+    }
+  }
+
+  private async syncLocked(spec: SyncRepoSpec): Promise<RepoSyncResult> {
     const warnings: string[] = [];
     const deferredDeletes: string[] = [];
     const result = (
@@ -337,8 +392,26 @@ export class SyncEngine {
       if (loop.kind === "conflict") {
         return result("conflict", { detail: loop.detail });
       }
+      if (loop.kind === "secret-detected") {
+        return result("error", { detail: loop.detail });
+      }
       if (loop.kind === "retry-exhausted") {
-        return result("retry-exhausted", { detail: loop.detail });
+        // D16 terminal-quarantine: the contended files of the last attempt
+        // PLUS any pending merge-quarantine entries (they would otherwise be
+        // lost — the loop recomputes the merge per iteration). The watermark
+        // is NOT advanced, so everything re-derives next sync regardless.
+        const terminal = await this.buildTerminalQuarantineEntries(
+          spec,
+          watermark,
+          loop.pushFiles,
+          loop.merge.quarantineEntries,
+        );
+        const entries = [...loop.merge.quarantineEntries, ...terminal];
+        await this.flushQuarantine(entries, warnings);
+        return result("retry-exhausted", {
+          detail: loop.detail,
+          quarantinedCount: entries.length,
+        });
       }
       const { examinedHead, pushedSha, applyWrites, applyDeletes, pushFiles } =
         loop;
@@ -347,12 +420,7 @@ export class SyncEngine {
 
       // Quarantine sink fires ONCE, after the retry loop settled (D17). The
       // entries' paths are pinned below so the conflict re-derives next sync.
-      for (const entry of merge.quarantineEntries) {
-        await this.deps.quarantine?.quarantine(entry);
-        warnings.push(
-          `quarantined ${entry.path}: ${entry.reason} — both versions preserved; conflict re-derives until resolved (D17)`,
-        );
-      }
+      await this.flushQuarantine(merge.quarantineEntries, warnings);
 
       // No-op fast path: nothing pushed, head unmoved, nothing to apply —
       // the watermark is already exact; skip the head-tree fetch and the
@@ -373,7 +441,7 @@ export class SyncEngine {
 
       const newHead = pushedSha ?? examinedHead;
       const newCommit = await getCommitInfo(
-        this.deps.transport,
+        this.transport,
         spec.owner,
         spec.repo,
         newHead,
@@ -428,11 +496,18 @@ export class SyncEngine {
         newHead,
         newCommit.treeSha,
         disk,
-        applyWrites,
+        // Merged writes carry their precomputed blob SHA (A2 deferred LOW) —
+        // the watermark rebuild must not re-fetch blobs it already knows.
+        [...applyWrites, ...merge.mergedWrites],
         watermark,
         pinnedPaths,
         detection.diskBlobShas,
       );
+
+      // A pin that existed on the PREVIOUS watermark and cleared in this
+      // cycle means its conflict resolved convergently — best-effort close
+      // the matching quarantine entry (CQ4 unresolved-count accuracy).
+      await this.resolveClearedPins(spec, watermark, pinnedPaths, warnings);
 
       return result("synced", {
         pushedSha,
@@ -443,8 +518,152 @@ export class SyncEngine {
       });
     } catch (err) {
       const redact = this.deps.redact ?? ((m: string): string => m);
+      if (isAuthError(err)) {
+        return result("auth-required", {
+          detail: redact(
+            `authentication failed: ${errMsg(err)} — the PAT is expired, revoked or under-scoped; update it in the per-device secure storage (R8). Never treated as success.`,
+          ),
+        });
+      }
       warnings.push(`sync failed: ${redact(errMsg(err))}`);
       return result("error", { detail: redact(errMsg(err)) });
+    }
+  }
+
+  /**
+   * Flush quarantine entries to the sink (D17), preferring the batched
+   * `quarantineAll` (one commit per flush — a terminal flush can carry
+   * dozens of files). A sink failure degrades to a WARNING, never an error
+   * status: the file stays untouched on disk and the pin / non-advanced
+   * watermark re-derives the conflict next sync.
+   */
+  private async flushQuarantine(
+    entries: QuarantineEntry[],
+    warnings: string[],
+  ): Promise<void> {
+    if (entries.length === 0) return;
+    for (const entry of entries) {
+      warnings.push(
+        `quarantined ${entry.path}: ${entry.reason} — both versions preserved; conflict re-derives until resolved (D17)`,
+      );
+    }
+    const sink = this.deps.quarantine;
+    if (sink === undefined) return;
+    try {
+      if (sink.quarantineAll !== undefined) {
+        await sink.quarantineAll(entries);
+      } else {
+        for (const entry of entries) {
+          await sink.quarantine(entry);
+        }
+      }
+    } catch (err) {
+      const redact = this.deps.redact ?? ((m: string): string => m);
+      warnings.push(
+        `quarantine sink failed: ${redact(errMsg(err))} — files untouched on disk; the conflict re-derives next sync (D17 degradation)`,
+      );
+    }
+  }
+
+  /**
+   * Terminal-quarantine input (D16): one entry per contended push file,
+   * with the current remote head version attached best-effort (the base is
+   * recoverable from git history via the watermark SHA — not fetched, to
+   * keep the flush cheap). Paths already covered by merge-quarantine
+   * entries are skipped (disjoint by construction; defensive anyway).
+   */
+  private async buildTerminalQuarantineEntries(
+    spec: SyncRepoSpec,
+    watermark: WatermarkRecord,
+    pushFiles: Map<string, string>,
+    alreadyQuarantined: QuarantineEntry[],
+  ): Promise<QuarantineEntry[]> {
+    const covered = new Set(alreadyQuarantined.map((e) => e.path));
+    const remoteByPath = new Map<string, string>();
+    try {
+      const head = await getHeadSha(
+        this.transport,
+        spec.owner,
+        spec.repo,
+        spec.branch,
+        this.deps.baseURL,
+      );
+      const headTree = (
+        await getTree(
+          this.transport,
+          spec.owner,
+          spec.repo,
+          (
+            await getCommitInfo(
+              this.transport,
+              spec.owner,
+              spec.repo,
+              head,
+              this.deps.baseURL,
+            )
+          ).treeSha,
+          this.deps.baseURL,
+        )
+      ).filter((e) => pushFiles.has(e.path));
+      for (const e of headTree) {
+        remoteByPath.set(
+          e.path,
+          await getBlobText(
+            this.transport,
+            spec.owner,
+            spec.repo,
+            e.blobSha,
+            this.deps.baseURL,
+          ),
+        );
+      }
+    } catch {
+      // best-effort — entries still carry the local version
+    }
+
+    const entries: QuarantineEntry[] = [];
+    for (const [path, content] of pushFiles) {
+      if (covered.has(path)) continue;
+      const uid = extractAssetUid(content);
+      const remoteContent = remoteByPath.get(path);
+      entries.push({
+        repoKey: spec.repoKey,
+        path,
+        ...(uid !== undefined ? { uid } : {}),
+        reason: `non-fast-forward push failed after ${this.deps.maxPushRetries ?? DEFAULT_MAX_PUSH_RETRIES} retries (D16) — a concurrent writer keeps moving ${spec.branch}; base recoverable from git history at ${watermark.lastSyncedSha}`,
+        localContent: content,
+        ...(remoteContent !== undefined ? { remoteContent } : {}),
+      });
+    }
+    return entries;
+  }
+
+  /**
+   * Best-effort `markResolved` for pins that cleared in this cycle (the
+   * conflict converged) — keeps the cross-device unresolved-count honest
+   * (CQ4). No-ops when the port lacks `markResolved` or the pin came from
+   * a TOCTOU skip (no entry exists — the store treats that as a no-op).
+   */
+  private async resolveClearedPins(
+    spec: SyncRepoSpec,
+    previous: WatermarkRecord,
+    newPins: ReadonlySet<string>,
+    warnings: string[],
+  ): Promise<void> {
+    const sink = this.deps.quarantine;
+    if (sink === undefined || sink.markResolved === undefined) return;
+    const cleared = (previous.pinnedPaths ?? []).filter(
+      (p) => !newPins.has(p),
+    );
+    for (const path of cleared) {
+      try {
+        await sink.markResolved?.(spec.repoKey, path);
+      } catch (err) {
+        const redact = this.deps.redact ?? ((m: string): string => m);
+        warnings.push(
+          `quarantine markResolved failed for ${path}: ${redact(errMsg(err))} — unresolved-count may overcount until the resolver UI reconciles (CQ4)`,
+        );
+      }
     }
   }
 
@@ -459,7 +678,7 @@ export class SyncEngine {
     try {
       return (
         await getCommitInfo(
-          this.deps.transport,
+          this.transport,
           spec.owner,
           spec.repo,
           watermark.lastSyncedSha,
@@ -544,7 +763,7 @@ export class SyncEngine {
 
     for (;;) {
       examinedHead = await getHeadSha(
-        this.deps.transport,
+        this.transport,
         spec.owner,
         spec.repo,
         spec.branch,
@@ -598,8 +817,20 @@ export class SyncEngine {
       ]);
       if (pushFiles.size === 0) break;
 
+      // R5 secret-scan — refuse the WHOLE push (a partial set could ship an
+      // inconsistent asset graph). Findings carry path+kind, never the secret.
+      const findings = scanForSecrets(pushFiles);
+      if (findings.length > 0) {
+        return {
+          kind: "secret-detected",
+          detail: `secret-scan: refusing to push — ${findings
+            .map((f) => `${f.path} (${f.kind})`)
+            .join(", ")} (R5); remove the secret and re-sync`,
+        };
+      }
+
       try {
-        pushedSha = await restCreateCommit(this.deps.transport, {
+        pushedSha = await restCreateCommit(this.transport, {
           owner: spec.owner,
           repo: spec.repo,
           branch: spec.branch,
@@ -617,7 +848,9 @@ export class SyncEngine {
         if (attempt > maxRetries) {
           return {
             kind: "retry-exhausted",
-            detail: `non-fast-forward push failed after ${maxRetries} retries (D16 cap) — quarantine convergence is A3 scope`,
+            detail: `non-fast-forward push failed after ${maxRetries} retries (D16 cap) — contended files routed to quarantine (D17)`,
+            pushFiles,
+            merge,
           };
         }
         warnings.push(
@@ -686,7 +919,7 @@ export class SyncEngine {
       let base: string | undefined;
       if (baseEntry !== undefined) {
         base = await getBlobText(
-          this.deps.transport,
+          this.transport,
           spec.owner,
           spec.repo,
           baseEntry.blobSha,
@@ -735,11 +968,15 @@ export class SyncEngine {
         mergedFiles.set(group.local.path, decision.content);
       }
       if (decision.content !== disk.get(group.local.path)) {
+        const uid = extractAssetUid(decision.content) ?? group.local.uid;
         mergedWrites.push({
           path: group.local.path,
           kind: "change",
           content: decision.content,
-          ...(group.local.uid !== undefined ? { uid: group.local.uid } : {}),
+          // Precomputed so the watermark rebuild reuses it instead of
+          // re-fetching the merged blob (A2 deferred LOW).
+          blobSha: await gitBlobSha(decision.content, this.deps.sha1),
+          ...(uid !== undefined ? { uid } : {}),
         });
       }
     }
@@ -836,7 +1073,7 @@ export class SyncEngine {
   ): Promise<void> {
     const newTree = (
       await getTree(
-        this.deps.transport,
+        this.transport,
         spec.owner,
         spec.repo,
         newTreeSha,
@@ -879,14 +1116,14 @@ export class SyncEngine {
     ) => RepoSyncResult,
   ): Promise<RepoSyncResult> {
     const head = await getHeadSha(
-      this.deps.transport,
+      this.transport,
       spec.owner,
       spec.repo,
       spec.branch,
       this.deps.baseURL,
     );
     const headCommit = await getCommitInfo(
-      this.deps.transport,
+      this.transport,
       spec.owner,
       spec.repo,
       head,
@@ -894,7 +1131,7 @@ export class SyncEngine {
     );
     const headTree = (
       await getTree(
-        this.deps.transport,
+        this.transport,
         spec.owner,
         spec.repo,
         headCommit.treeSha,
@@ -942,7 +1179,7 @@ export class SyncEngine {
     head: string,
   ): Promise<RemoteChange[]> {
     const headCommit = await getCommitInfo(
-      this.deps.transport,
+      this.transport,
       spec.owner,
       spec.repo,
       head,
@@ -950,7 +1187,7 @@ export class SyncEngine {
     );
     const headTree = (
       await getTree(
-        this.deps.transport,
+        this.transport,
         spec.owner,
         spec.repo,
         headCommit.treeSha,
@@ -962,7 +1199,7 @@ export class SyncEngine {
     const changes: RemoteChange[] = [];
     for (const c of changed) {
       const content = await getBlobText(
-        this.deps.transport,
+        this.transport,
         spec.owner,
         spec.repo,
         c.blobSha,
@@ -1048,6 +1285,28 @@ export class SyncEngine {
           convergedPushPaths.add(local.path);
           continue;
         }
+        if (
+          r.kind === "delete" &&
+          local.basePath !== undefined &&
+          r.path === local.basePath
+        ) {
+          // Convergent rename (A2 deferred MEDIUM): both sides renamed
+          // basePath → path. The remote delete of the OLD path is only
+          // convergent when the remote also carries the SAME content at the
+          // NEW path — anything weaker (a genuine remote delete, or a rename
+          // with an edit) must keep conflicting: silently consuming it would
+          // let the next sync push the renamed copy and resurrect a
+          // remotely-deleted asset.
+          const remoteAtNewPath = remoteByPath.get(local.path);
+          if (
+            remoteAtNewPath !== undefined &&
+            remoteAtNewPath.kind === "change" &&
+            remoteAtNewPath.blobSha === local.blobSha
+          ) {
+            consumed.add(r); // old path gone on both sides
+            continue;
+          }
+        }
         conflicting.push(r);
         consumed.add(r); // conflicting remote is owned by the merge layer
       }
@@ -1089,7 +1348,7 @@ export class SyncEngine {
   ): Promise<void> {
     try {
       const parentCommit = await getCommitInfo(
-        this.deps.transport,
+        this.transport,
         spec.owner,
         spec.repo,
         actualParent,
@@ -1097,7 +1356,7 @@ export class SyncEngine {
       );
       const parentTree = (
         await getTree(
-          this.deps.transport,
+          this.transport,
           spec.owner,
           spec.repo,
           parentCommit.treeSha,
@@ -1109,12 +1368,12 @@ export class SyncEngine {
           ? watermark.files
           : (
               await getTree(
-                this.deps.transport,
+                this.transport,
                 spec.owner,
                 spec.repo,
                 (
                   await getCommitInfo(
-                    this.deps.transport,
+                    this.transport,
                     spec.owner,
                     spec.repo,
                     examinedHead,
@@ -1184,7 +1443,7 @@ export class SyncEngine {
         uid = uidByBlobSha.get(entry.blobSha);
       } else {
         const content = await getBlobText(
-          this.deps.transport,
+          this.transport,
           spec.owner,
           spec.repo,
           entry.blobSha,

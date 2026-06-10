@@ -12,11 +12,13 @@ import {
   InMemoryQuarantineStore,
   StructuredMerger,
   SyncEngine,
+  gitBlobSha,
   orderChildrenFirst,
   isNonFastForwardError,
   type MergeConflictInput,
   type MergeDecision,
   type MergeLayerPort,
+  type RestCommitTransport,
   type SyncEngineDeps,
   type SyncRepoSpec,
   type YamlCodec,
@@ -762,5 +764,280 @@ describe("SyncEngine — A2 merge layer integration", () => {
     expect(result.status).toBe("conflict");
     expect(result.mergedCount).toBe(0);
     expect(result.quarantinedCount).toBe(0);
+  });
+});
+
+describe("SyncEngine — A3: convergent rename (A2 deferred MEDIUM)", () => {
+  const stubMergeLayer = (
+    fn: (input: MergeConflictInput) => MergeDecision,
+  ): MergeLayerPort => ({ resolve: async (i) => fn(i) });
+  const RENAMED = "assets/renamed.md";
+
+  it("identical rename a→b on both sides is consumed — no false delete-vs-modify quarantine", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const store = new InMemoryQuarantineStore();
+    const { engine } = makeEngine(gh, local, {
+      mergeLayer: stubMergeLayer(() => ({
+        action: "quarantine",
+        reason: "merge layer must not be consulted for a convergent rename",
+      })),
+      quarantine: store,
+    });
+    await bootstrap(engine, gh.spec());
+
+    // Both devices ran the SAME rename (rename-to-uid / co-location case).
+    gh.commitDirect("main", { [RENAMED]: mdAsset("u1") }, "remote rename", [FILE_A]);
+    local.files.delete(FILE_A);
+    local.files.set(RENAMED, mdAsset("u1"));
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.quarantinedCount).toBe(0);
+    expect(store.entries).toHaveLength(0);
+    expect(gh.headFiles().has(FILE_A)).toBe(false);
+    expect(gh.headFiles().get(RENAMED)).toBe(mdAsset("u1"));
+    expect(local.files.get(RENAMED)).toBe(mdAsset("u1"));
+  });
+
+  it("GENUINE remote delete vs local rename still quarantines (never silently resurrects)", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const store = new InMemoryQuarantineStore();
+    const { engine } = makeEngine(gh, local, {
+      mergeLayer: stubMergeLayer(() => ({
+        action: "quarantine",
+        reason: "delete-vs-rename needs a human",
+      })),
+      quarantine: store,
+    });
+    await bootstrap(engine, gh.spec());
+
+    gh.commitDirect("main", {}, "remote genuine delete", [FILE_A]);
+    local.files.delete(FILE_A);
+    local.files.set(RENAMED, mdAsset("u1"));
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.quarantinedCount).toBe(1);
+    expect(store.entries).toHaveLength(1);
+    expect(gh.headFiles().has(RENAMED)).toBe(false); // renamed copy NOT pushed
+  });
+});
+
+describe("SyncEngine — A3: merged blob not re-fetched (A2 deferred LOW)", () => {
+  it("passes mergedWrites' blob SHA into the watermark rebuild", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const inner = gh.transport();
+    const blobGets: string[] = [];
+    const transport: RestCommitTransport = async (req) => {
+      const m = /git\/blobs\/([0-9a-f]+)/.exec(req.url);
+      if (m !== null && req.method === "GET") blobGets.push(m[1]);
+      return inner(req);
+    };
+    const merged = mdAsset("u1", "merged by layer");
+    const { engine } = makeEngine(gh, local, {
+      transport,
+      mergeLayer: {
+        resolve: async () => ({ action: "use-merged", content: merged }),
+      },
+    });
+    await bootstrap(engine, gh.spec());
+
+    gh.commitDirect("main", { [FILE_A]: mdAsset("u1", "remote edit") }, "B");
+    local.files.set(FILE_A, mdAsset("u1", "local edit"));
+    blobGets.length = 0;
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.mergedCount).toBe(1);
+    const mergedBlobSha = await gitBlobSha(merged, sha1Hex);
+    expect(gh.headFiles().get(FILE_A)).toBe(merged);
+    expect(blobGets).not.toContain(mergedBlobSha); // watermark rebuild reuses the known SHA
+  });
+});
+
+describe("SyncEngine — A3: D16 terminal-quarantine", () => {
+  it("retry exhaustion routes contended files AND pending merge entries to quarantine", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const store = new InMemoryQuarantineStore();
+    const { engine } = makeEngine(gh, local, {
+      maxPushRetries: 1,
+      quarantine: store,
+      // FILE_A conflicts and the layer says quarantine; FILE_B is a plain
+      // local edit that keeps losing the push race.
+      mergeLayer: {
+        resolve: async () => ({
+          action: "quarantine",
+          reason: "unresolvable overlap",
+        }),
+      },
+    });
+    await bootstrap(engine, gh.spec());
+
+    gh.commitDirect("main", { [FILE_A]: mdAsset("u1", "remote edit") }, "B");
+    local.files.set(FILE_A, mdAsset("u1", "local edit"));
+    local.files.set(FILE_B, mdAsset("u2", "contended edit"));
+    let n = 0;
+    gh.onBeforePatch = (): void => {
+      n++;
+      gh.commitDirect("main", { [`assets/race-${n}.md`]: mdAsset(`r${n}`) }, "race");
+    };
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("retry-exhausted");
+    expect(result.quarantinedCount).toBe(2);
+    const byPath = new Map(store.entries.map((e) => [e.path, e]));
+    expect(byPath.get(FILE_A)).toMatchObject({
+      reason: "unresolvable overlap",
+      localContent: mdAsset("u1", "local edit"),
+      remoteContent: mdAsset("u1", "remote edit"),
+    });
+    expect(byPath.get(FILE_B)).toMatchObject({
+      uid: "u2",
+      reason: expect.stringMatching(/non-fast-forward push failed after 1 retr/),
+      localContent: mdAsset("u2", "contended edit"),
+      remoteContent: mdAsset("u2"), // best-effort current head version
+    });
+    // M1: canonical files untouched anywhere.
+    expect(local.files.get(FILE_B)).toBe(mdAsset("u2", "contended edit"));
+    expect(gh.headFiles().get(FILE_B)).toBe(mdAsset("u2"));
+  });
+
+  it("a failing quarantine sink degrades to a warning, never an error status", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const { engine } = makeEngine(gh, local, {
+      mergeLayer: {
+        resolve: async () => ({ action: "quarantine", reason: "overlap" }),
+      },
+      quarantine: {
+        quarantine: async () => {
+          throw new Error("quarantine repo unreachable");
+        },
+      },
+    });
+    await bootstrap(engine, gh.spec());
+
+    gh.commitDirect("main", { [FILE_A]: mdAsset("u1", "remote edit") }, "B");
+    local.files.set(FILE_A, mdAsset("u1", "local edit"));
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced"); // pin still re-derives — D17 degradation
+    expect(result.quarantinedCount).toBe(1);
+    expect(result.warnings.join(" ")).toMatch(/quarantine sink failed/);
+    expect(local.files.get(FILE_A)).toBe(mdAsset("u1", "local edit"));
+  });
+
+  it("a cleared pin auto-resolves its quarantine entry (markResolved)", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const resolved: string[] = [];
+    let verdict: MergeDecision = { action: "quarantine", reason: "overlap" };
+    const { engine } = makeEngine(gh, local, {
+      mergeLayer: { resolve: async () => verdict },
+      quarantine: {
+        quarantine: async () => {},
+        markResolved: async (repoKey, path) => {
+          resolved.push(`${repoKey}:${path}`);
+        },
+      },
+    });
+    await bootstrap(engine, gh.spec());
+
+    gh.commitDirect("main", { [FILE_A]: mdAsset("u1", "remote edit") }, "B");
+    local.files.set(FILE_A, mdAsset("u1", "local edit"));
+    expect((await engine.sync(gh.spec())).quarantinedCount).toBe(1); // pinned
+
+    // User resolves: merge layer now converges the conflict.
+    verdict = { action: "use-merged", content: mdAsset("u1", "resolved") };
+    const second = await engine.sync(gh.spec());
+
+    expect(second.status).toBe("synced");
+    expect(resolved).toEqual([`${gh.spec().repoKey}:${FILE_A}`]);
+  });
+});
+
+describe("SyncEngine — A3: D11 one-operation guard, R8 auth, R5 secret-scan", () => {
+  it("a second concurrent operation returns `busy` (D11), syncAll has no self-deadlock", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const inner = gh.transport();
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const transport: RestCommitTransport = async (req) => {
+      await gate;
+      return inner(req);
+    };
+    const { engine } = makeEngine(gh, local, { transport });
+
+    const first = engine.sync(gh.spec());
+    const second = await engine.sync(gh.spec()); // while first is in flight
+    expect(second.status).toBe("busy");
+
+    release!();
+    expect((await first).status).toBe("synced");
+
+    // syncAll acquires ONCE — inner repos never see their own guard.
+    const all = await engine.syncAll([gh.spec(), gh.spec()]);
+    expect(all.map((r) => r.status)).toEqual(["synced", "synced"]);
+  });
+
+  it("HTTP 401 → `auth-required` with an update-PAT hint, never treated as success (R8)", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const transport: RestCommitTransport = async (req) => {
+      throw new Error(`GitHub request ${req.method} ${req.url} → HTTP 401: Bad credentials`);
+    };
+    const { engine } = makeEngine(gh, local, { transport });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("auth-required");
+    expect(result.detail).toMatch(/PAT/);
+  });
+
+  it("rate-limited requests are retried transparently via the wrapped transport (R6)", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const inner = gh.transport();
+    let failures = 2;
+    const transport: RestCommitTransport = async (req) => {
+      if (failures > 0) {
+        failures--;
+        throw new Error(`GitHub request ${req.method} ${req.url} → HTTP 403: API rate limit exceeded`);
+      }
+      return inner(req);
+    };
+    const { engine } = makeEngine(gh, local, {
+      transport,
+      backoff: { sleep: async () => {} },
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced"); // bootstrap survived the throttle
+  });
+
+  it("a push payload containing a PAT is refused outright (R5) — secret never leaves the device", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const { engine } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+    const headBefore = gh.headSha();
+
+    const pat = `ghp_${"a1B2".repeat(10)}`;
+    local.files.set(FILE_A, mdAsset("u1", `oops, pasted a token: ${pat}`));
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("error");
+    expect(result.detail).toMatch(/secret-scan/);
+    expect(result.detail).toMatch(/github-token/);
+    expect(result.detail).not.toContain(pat); // path+kind only, never the secret
+    expect(gh.headSha()).toBe(headBefore); // nothing pushed
   });
 });
