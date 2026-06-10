@@ -440,13 +440,15 @@ jobs:
         #   tests (issue-2997-repro / issue-2997-loader-2pc) run via test-coverage-cli;
         #   BGP unit suite needs explicit allow-list entry here because exocortex
         #   jest.config.js is otherwise unreachable from CI (see scripts/test-ci-batched.sh).
-        # - RFC 4e4dc453 A1+A2 (ExoSync): services/sync/*.test incl. StructuredMerger/MergeShaclGate/diff3
-        #   — platform-free sync core; this inline list (NOT test-ci-batched.sh,
-        #   which no workflow invokes) is the actual CI gate for exocortex suites.
+        # - RFC 4e4dc453 A1+A2+A3 (ExoSync): services/sync/*.test incl. StructuredMerger/
+        #   MergeShaclGate/diff3 + A3 SyncedQuarantineStore/FileWatermarkStore/
+        #   transportBackoff/secretScan — platform-free sync core; this inline list
+        #   (NOT test-ci-batched.sh, which no workflow invokes) is the actual CI gate
+        #   for exocortex suites.
         run: |
           node ./node_modules/jest/bin/jest.js \
             --config packages/exocortex/jest.config.js \
-            --testPathPatterns='(services/(GroundingExecutor(\.[a-zA-Z0-9_-]+)?|AssetConversionService|NoteToRDFConverter\.issue-2959)\.test|services/sync/(ChangeDetector|SyncEngine|StructuredMerger|GatedStructuredMerger|MergeShaclGate|diff3)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/BGPExecutor\.issue-2997\.test|integration/dynamic-commands/grounding-phase3b-pipeline\.test)\.ts' \
+            --testPathPatterns='(services/(GroundingExecutor(\.[a-zA-Z0-9_-]+)?|AssetConversionService|NoteToRDFConverter\.issue-2959)\.test|services/sync/(ChangeDetector|SyncEngine|StructuredMerger|GatedStructuredMerger|MergeShaclGate|diff3|SyncedQuarantineStore|FileWatermarkStore|transportBackoff|secretScan)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/BGPExecutor\.issue-2997\.test|integration/dynamic-commands/grounding-phase3b-pipeline\.test)\.ts' \
             --forceExit
 
   test-coverage:
