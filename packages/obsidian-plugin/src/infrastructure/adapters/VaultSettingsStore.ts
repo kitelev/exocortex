@@ -396,6 +396,10 @@ export class VaultSettingsStore {
     }
     const descriptor = VAULT_SETTINGS_REGISTRY.find((d) => d.field === field);
     if (!descriptor) return;
+    // The local value is about to land — any earlier deferral is moot
+    // (advisor round-2 #1: a stale deferred flag could otherwise clobber
+    // a later genuine remote change once).
+    this.deferredPushFields.delete(field);
     const assetValue = this.toAssetValue(descriptor, value);
     this.pendingWrites.set(field, {
       canonical: this.canonicalOf(field, assetValue),
