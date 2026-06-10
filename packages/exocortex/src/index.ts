@@ -251,6 +251,13 @@ export {
 } from "./services/IRICanonicalizer";
 export { derivePath } from "./services/AssetSpacePathDeriver";
 export {
+  discoverFileSpaceExclusions,
+  frontmatterDeclaresFileSpace,
+  FILE_SPACE_CLASS_UID,
+  type FileSpaceDiscoveryResult,
+  type FileSpaceDiscoveryVault,
+} from "./services/FileSpaceDiscovery";
+export {
   LazyAssetGraphLoader,
   MAX_LAZY_DEPTH,
   type INoteConverter,

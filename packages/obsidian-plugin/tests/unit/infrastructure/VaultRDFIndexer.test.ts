@@ -40,6 +40,7 @@ describe("VaultRDFIndexer", () => {
       metadataCache: {
         on: jest.fn(),
         off: jest.fn(),
+        getFileCache: jest.fn().mockReturnValue(null),
       },
     } as unknown as App;
 
@@ -53,6 +54,12 @@ describe("VaultRDFIndexer", () => {
 
     mockConverter = {
       convertVault: jest.fn().mockResolvedValue([]),
+      convertVaultWithValidation: jest.fn().mockResolvedValue({
+        triples: [],
+        skippedFiles: [],
+        summary: { total: 0, indexed: 0, skipped: 0 },
+        fileSpaces: { prefixes: [], declarationPaths: [], warnings: [] },
+      }),
       convertNote: jest.fn().mockResolvedValue([]),
     } as any;
 
@@ -89,14 +96,14 @@ describe("VaultRDFIndexer", () => {
     it("should convert vault on initialize", async () => {
       await indexer.initialize();
 
-      expect(mockConverter.convertVault).toHaveBeenCalled();
+      expect(mockConverter.convertVaultWithValidation).toHaveBeenCalled();
     });
 
     it("should not reinitialize if already initialized", async () => {
       await indexer.initialize();
       await indexer.initialize();
 
-      expect(mockConverter.convertVault).toHaveBeenCalledTimes(1);
+      expect(mockConverter.convertVaultWithValidation).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -179,7 +186,7 @@ describe("VaultRDFIndexer", () => {
       await indexer.refresh();
 
       expect(mockTripleStore.clear).toHaveBeenCalled();
-      expect(mockConverter.convertVault).toHaveBeenCalled();
+      expect(mockConverter.convertVaultWithValidation).toHaveBeenCalled();
     });
 
     it("should return triple store instance", () => {

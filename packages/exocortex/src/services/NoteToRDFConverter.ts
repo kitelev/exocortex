@@ -18,6 +18,10 @@ import {
   type Exo003StatementMetadata,
   type Exo003BodyMetadata,
 } from "../domain/models/exo003";
+import {
+  discoverFileSpaceExclusions,
+  type FileSpaceDiscoveryResult,
+} from "./FileSpaceDiscovery";
 
 /**
  * File-level invariant codes detected by `validateExocortexAsset`.
@@ -691,12 +695,30 @@ export class NoteToRDFConverter {
     triples: Triple[];
     skippedFiles: Array<{ path: string; reason: string }>;
     summary: { total: number; indexed: number; skipped: number };
+    fileSpaces: FileSpaceDiscoveryResult;
   }> {
     const allFiles = this.vault.getAllFiles();
     const allTriples: Triple[] = [];
     const skippedFiles: Array<{ path: string; reason: string }> = [];
     const strict = options.strict ?? false;
-    const excludedPrefixes = normaliseExcludedFolders(options.excludedFolders);
+
+    // FileSpace skip (onto-RFC 18808c73 Phase 5, ExoSync Phase C): spaces
+    // declared `exo__FileSpace` in the vault have their mount folders
+    // excluded from the index — opaque blobs: no parsing, no triple store,
+    // no SHACL. Derived from the RDF declaration (rdf:type), never from
+    // hardcoded paths; reuses the same prefix mechanism as the
+    // user-configured `excludedFolders` below. The declarations themselves
+    // are ordinary assets and keep indexing (convention: they live OUTSIDE
+    // their mount folder — discovery warns otherwise).
+    const fileSpaces = discoverFileSpaceExclusions(this.vault);
+    for (const warning of fileSpaces.warnings) {
+      this.logger.warn(`FileSpace discovery: ${warning}`);
+    }
+
+    const excludedPrefixes = [
+      ...normaliseExcludedFolders(options.excludedFolders),
+      ...fileSpaces.prefixes,
+    ];
 
     // Folder-level exclusion: drop files whose vault path starts with any
     // configured prefix BEFORE validation. Excluded files are intentionally
@@ -784,6 +806,7 @@ export class NoteToRDFConverter {
         indexed: files.length - skippedFiles.length,
         skipped: skippedFiles.length,
       },
+      fileSpaces,
     };
   }
 
