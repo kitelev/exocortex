@@ -258,14 +258,14 @@ cp worktrees/your-worktree/path/to/file.ts /tmp/file-backup.ts
 ```bash
 # 1. Copy modified files to temp directory
 mkdir -p /tmp/my-changes
-cp -r packages/core/src /tmp/my-changes/
+cp -r packages/exocortex/src /tmp/my-changes/
 cp -r packages/obsidian-plugin/src /tmp/my-changes/
 # Add other modified paths as needed
 
 # 2. Fresh clone and recreate worktree (see Quick Recovery above)
 
 # 3. Restore backup after worktree creation
-cp -r /tmp/my-changes/src/* packages/core/src/
+cp -r /tmp/my-changes/src/* packages/exocortex/src/
 # Restore other files as needed
 
 # 4. Install deps and build
@@ -376,12 +376,18 @@ git rebase --continue
    gh pr view <PR-NUMBER> --json mergeStateStatus
    ```
 
-   If `mergeStateStatus: BEHIND`:
+   If `mergeStateStatus: BEHIND`, sync the branch **without force-push** (force-push is blocked by the `git-force-push-blocker.sh` hook; PRs are squash-merged, so the merge commit disappears from main's history):
 
    ```bash
    git fetch origin main
-   git rebase origin/main
-   git push --force-with-lease origin <branch-name>
+   git merge origin/main --no-edit
+   git push origin <branch-name>
+   ```
+
+   Or update the branch server-side without a local checkout:
+
+   ```bash
+   gh api repos/kitelev/exocortex/pulls/<PR-NUMBER>/update-branch -X PUT
    ```
 
 2. **Auto-merge workflow timing**:
@@ -849,13 +855,19 @@ gh pr checks <PR-NUMBER>
    });
    ```
 
-2. **Add retries**:
+2. **For a known-flaky E2E spec, tag it `@flaky-track`** instead of raising config-level `retries` (untagged specs intentionally run with `retries: 0`; the tag routes the spec into the `e2e-flaky-track` Playwright project with `retries: 1`, and `playwright-no-flaky-reporter.ts` skips tagged specs):
 
    ```typescript
-   export default defineConfig({
-     retries: process.env.CI ? 3 : 0, // Retry in CI only
-   });
+   test.describe(
+     "my flaky scenario",
+     { tag: ["@flaky-track", "@issue-NNNN"] }, // link a tracking issue
+     () => {
+       // ...
+     },
+   );
    ```
+
+   See `docs/FLAKY_POLICY.md` for the tagging governance.
 
 3. **Run locally in Docker** (reproduce CI environment):
 
@@ -882,12 +894,12 @@ gh pr checks <PR-NUMBER>
 - ❌ NEVER skip if your code changed UI components
 - ✅ MAY skip with documentation if:
   - All tests pass locally (verified multiple runs)
-  - All other CI checks pass (7/8 GREEN)
+  - All other required CI checks pass (12/13 GREEN — current required set: `archgate`, `detect-changes`, `e2e-shard (1..6)`, `lint`, `parity-gate`, `test-component`, `test-coverage`, `typecheck`)
   - Code changes don't touch failing component area
   - Failure pattern is systematic across multiple runs
   - Document in PR with full evidence
 
-**Example Documentation for PR**:
+**Example Documentation for PR** (historical example from Issue #436 — check names predate the current 13-check required set, but the evidence structure is the template to follow):
 
 ```markdown
 ## CI Status
@@ -1305,14 +1317,9 @@ test("graph view", { timeout: 60000 }, async () => {
 - No clear error message
 - Happens intermittently
 
-**Solution**: Increase retry count in CI:
+**Solution**: First look for the real cause (resource exhaustion, Electron crash — check the shard's video/trace artifacts). If the spec is genuinely flaky and the root cause needs time, tag it `@flaky-track` (runs with `retries: 1` in the `e2e-flaky-track` project) and file a tracking issue — do **not** raise `retries` in the config; untagged specs deliberately run with `retries: 0`. See `docs/FLAKY_POLICY.md`.
 
-```typescript
-// playwright.config.ts
-retries: process.env.CI ? 3 : 0,
-```
-
-**Reference**: Issue #1384 - E2E tests flaky (January 2026)
+**Reference**: Issue #1384 - E2E tests flaky (January 2026); Issue #3350 - `@flaky-track` routing
 
 ### NoFlakyReporter fails on first-launch modal race
 
@@ -1333,8 +1340,8 @@ retries: process.env.CI ? 3 : 0,
 
 **Prevention**:
 
-- Run `npm run test:e2e` locally before pushing any plugin-startup-sequence change — the default `npm run test:all` does NOT include Docker E2E, so this race only surfaces in CI
-- Check `playwright-no-flaky-reporter.ts` behaviour: it fails CI on **any** passing-after-retry result, no quarantine mechanism
+- Run E2E locally before pushing any plugin-startup-sequence change — `npm run test:e2e:docker` directly, or `npm run test:all` (which runs `npm test && npm run test:e2e:docker`, i.e. Docker E2E **included**)
+- Check `playwright-no-flaky-reporter.ts` behaviour: it fails CI on any passing-after-retry result **unless** the spec is tagged `@flaky-track` (tag-aware skip; tagged specs run with `retries: 1`). A quarantine list also exists at `tests/quarantine.ts` (currently empty). See `docs/FLAKY_POLICY.md`
 
 **Reference**: RFC-024 Phase 0 (#2833) / PR #2838 — `ChangelogModal` first-launch race
 
@@ -1798,7 +1805,7 @@ observer.observe(container, {
 
 ### Non-required check failure blocks Auto Release
 
-**Symptom**: All 8 required CI checks pass, PR merges via auto-merge, but Auto Release workflow shows "skipped".
+**Symptom**: All 13 required CI checks pass, PR merges via auto-merge, but Auto Release workflow shows "skipped".
 
 **Root cause**: Auto Release triggers on `workflow_run` with `conclusion == 'success'`. A **non-required** check failure (e.g., `docs-link-check`) causes the overall CI run conclusion to be `failure`, which blocks Auto Release even though the PR was mergeable.
 
