@@ -68,6 +68,23 @@ export interface SyncEngineDeps {
   /** Cap on 422 re-pull→retry cycles (D16). Default {@link DEFAULT_MAX_PUSH_RETRIES}. */
   maxPushRetries?: number;
   commitMessage?: (spec: SyncRepoSpec, fileCount: number) => string;
+  /**
+   * Defence-in-depth PAT redactor applied to error details/warnings and
+   * forwarded to `restCreateCommit` (parity with the plugin's createCommit
+   * path). Both production transports already redact their own error
+   * strings; defaults to identity.
+   */
+  redact?: (message: string) => string;
+}
+
+/** Reject absolute, backslash, empty-segment, `.`/`..` paths (zip-slip guard). */
+function isSafeRepoRelativePath(path: string): boolean {
+  if (path.length === 0 || path.startsWith("/") || path.includes("\\")) {
+    return false;
+  }
+  return path
+    .split("/")
+    .every((s) => s.length > 0 && s !== "." && s !== "..");
 }
 
 /**
@@ -231,6 +248,10 @@ export class SyncEngine {
         );
       }
       for (const d of detection.deleted) {
+        // Known cosmetic: a CONVERGENT delete (remote deleted it too) is
+        // consumed later in matchLocalVsRemote but still reported here as
+        // deferred for this cycle; the watermark drops it, so it self-heals
+        // on the next sync.
         deferredDeletes.push(d.path);
         warnings.push(
           `deferred delete: ${d.path} not pushed (write primitive cannot delete; merge layer A2/A3)`,
@@ -307,6 +328,7 @@ export class SyncEngine {
               this.deps.commitMessage?.(spec, pushFiles.size) ??
               `chore(exosync): sync ${pushFiles.size} file(s)`,
             baseURL: this.deps.baseURL,
+            redact: this.deps.redact,
           });
           break;
         } catch (err) {
@@ -341,6 +363,20 @@ export class SyncEngine {
           pushFiles,
           warnings,
         );
+        // Do NOT absorb the concurrent commit into the watermark: its changes
+        // were never examined nor written to disk, and a watermark built from
+        // the new head tree would make the stale local copies look like local
+        // edits on the NEXT sync — a silent revert of the concurrent change.
+        // Keeping the old watermark is safe: the next sync re-pulls the
+        // concurrent change and drops our own pushed files as convergent
+        // edits.
+        warnings.push(
+          `race-window: watermark NOT advanced (pushed commit's parent ${newCommit.parents[0]} != examined head ${examinedHead}) — next sync reconciles the concurrent change`,
+        );
+        return result("synced", {
+          pushedSha,
+          pushedCount: pushFiles.size,
+        });
       }
 
       // Apply remote changes to disk AFTER the push succeeded — a failed push
@@ -349,10 +385,18 @@ export class SyncEngine {
       let pulledCount = 0;
       for (const w of applyWrites) {
         if (w.content === undefined) continue; // change entries always carry content
+        if (!isSafeRepoRelativePath(w.path)) {
+          warnings.push(`unsafe remote path skipped on pull-apply: ${w.path}`);
+          continue;
+        }
         await localFiles.write(w.path, w.content);
         pulledCount++;
       }
       for (const d of applyDeletes) {
+        if (!isSafeRepoRelativePath(d.path)) {
+          warnings.push(`unsafe remote path skipped on pull-delete: ${d.path}`);
+          continue;
+        }
         if (disk.has(d.path)) {
           await localFiles.delete(d.path);
           pulledCount++;
@@ -387,8 +431,9 @@ export class SyncEngine {
         pushedCount: pushFiles.size,
       });
     } catch (err) {
-      warnings.push(`sync failed: ${errMsg(err)}`);
-      return result("error", { detail: errMsg(err) });
+      const redact = this.deps.redact ?? ((m: string): string => m);
+      warnings.push(`sync failed: ${redact(errMsg(err))}`);
+      return result("error", { detail: redact(errMsg(err)) });
     }
   }
 
@@ -653,7 +698,8 @@ export class SyncEngine {
         }
       }
     } catch (err) {
-      warnings.push(`race-window check failed: ${errMsg(err)}`);
+      const redact = this.deps.redact ?? ((m: string): string => m);
+      warnings.push(`race-window check failed: ${redact(errMsg(err))}`);
     }
   }
 

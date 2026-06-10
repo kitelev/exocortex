@@ -31,7 +31,9 @@ import { gitBlobSha } from "./gitBlobSha";
  * scalar by vault convention — UID-canon, CLAUDE.md).
  */
 export function extractAssetUid(content: string): string | undefined {
-  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content);
+  // Close delimiter anchored to line end — a frontmatter line merely
+  // STARTING with `---` (e.g. `----` scalar) must not end the block early.
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---(?=\r?\n|$)/.exec(content);
   if (!fm) return undefined;
   const m = /^exo__Asset_uid:[ \t]*["']?([^\s"']+)["']?[ \t]*$/m.exec(fm[1]);
   return m ? m[1] : undefined;

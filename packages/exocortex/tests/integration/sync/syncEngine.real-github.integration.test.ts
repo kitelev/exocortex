@@ -4,14 +4,16 @@
  *
  * Talks to the dedicated sandbox repo `kitelev/exosync-test-sandbox` on a
  * disposable per-run branch (created in beforeAll, deleted in afterAll —
- * `main` is never touched). Auth: `EXOSYNC_TEST_TOKEN` env var or
- * `gh auth token`; when neither resolves the suite self-skips so CI and
- * unauthenticated environments stay green.
+ * `main` is never touched). Auth is OPT-IN: `EXOSYNC_TEST_TOKEN` env var, or
+ * `EXOSYNC_IT=1` to allow the `gh auth token` fallback. Without either the
+ * suite self-skips — so CI, unauthenticated environments AND routine local
+ * `npm run test:all` runs stay green and network-free.
  *
- * NOT in the CI allowlist (scripts/test-ci-batched.sh) by design: it needs
- * network + a PAT with write access to the sandbox. Run manually:
+ * NOT in any CI allowlist by design: it needs network + a PAT with write
+ * access to the sandbox. Run manually:
  *
- *   node ./node_modules/jest/bin/jest.js --config packages/exocortex/jest.config.js \
+ *   EXOSYNC_IT=1 node ./node_modules/jest/bin/jest.js \
+ *     --config packages/exocortex/jest.config.js \
  *     --testPathPatterns="integration/sync/" --forceExit
  */
 
@@ -40,6 +42,10 @@ const SOURCE_BRANCH = "main";
 
 function resolveToken(): string | null {
   if (process.env.EXOSYNC_TEST_TOKEN) return process.env.EXOSYNC_TEST_TOKEN;
+  // The `gh auth token` fallback is OPT-IN (EXOSYNC_IT=1): a routine
+  // `npm run test:all` on a gh-authenticated dev machine must NOT silently
+  // mutate the real sandbox repo / inherit network flakiness.
+  if (process.env.EXOSYNC_IT !== "1") return null;
   try {
     const token = execFileSync("gh", ["auth", "token"], {
       encoding: "utf8",
@@ -308,7 +314,7 @@ describeIfToken("SyncEngine — real GitHub integration (sandbox)", () => {
 });
 
 if (token === null) {
-  it("integration suite skipped — no GitHub token (EXOSYNC_TEST_TOKEN / gh auth token)", () => {
+  it("integration suite skipped — no token (set EXOSYNC_TEST_TOKEN, or EXOSYNC_IT=1 for gh auth token)", () => {
     expect(token).toBeNull();
   });
 }

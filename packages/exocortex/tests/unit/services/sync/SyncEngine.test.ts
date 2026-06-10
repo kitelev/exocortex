@@ -351,6 +351,43 @@ describe("SyncEngine — D16 non-fast-forward retry loop", () => {
     expect(local.files.get(FILE_A)).toBe(mdAsset("u1", "local edit")); // disk pristine
   });
 
+  it("race on a NON-pushed path: watermark is not advanced and the next sync does NOT revert the concurrent change", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const { engine, watermarks } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+    const baseSha = watermarks.records.get(gh.spec().repoKey)!.lastSyncedSha;
+
+    // Concurrent commit touching FILE_B (NOT pushed by us) lands inside the
+    // unguarded window: after the engine's head check, on the primitive's
+    // internal GET-ref. Absorbing its blob into the watermark without writing
+    // it to disk would make the stale local FILE_B look like a local edit on
+    // the NEXT sync — a silent revert of the concurrent change.
+    const concurrent = mdAsset("u2", "concurrent non-overlapping edit");
+    let refCalls = 0;
+    gh.onGetRef = (): void => {
+      refCalls++;
+      if (refCalls === 2) {
+        gh.commitDirect("main", { [FILE_B]: concurrent }, "race non-overlap");
+      }
+    };
+    local.files.set(FILE_A, mdAsset("u1", "local edit"));
+    const first = await engine.sync(gh.spec());
+
+    expect(first.status).toBe("synced");
+    expect(first.warnings.join(" ")).toMatch(/watermark NOT advanced/);
+    expect(watermarks.records.get(gh.spec().repoKey)!.lastSyncedSha).toBe(baseSha);
+
+    gh.onGetRef = undefined;
+    const second = await engine.sync(gh.spec());
+
+    expect(second.status).toBe("synced");
+    expect(second.pushedCount).toBe(0); // own pushed edit converges, nothing re-pushed
+    expect(gh.headFiles().get(FILE_B)).toBe(concurrent); // concurrent change NOT reverted
+    expect(local.files.get(FILE_B)).toBe(concurrent); // pulled to disk
+    expect(watermarks.records.get(gh.spec().repoKey)!.lastSyncedSha).toBe(gh.headSha());
+  });
+
   it("warns on the residual race window (concurrent commit between conflict check and the primitive's GET-ref)", async () => {
     const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
     const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
