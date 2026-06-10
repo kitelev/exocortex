@@ -448,7 +448,7 @@ jobs:
         run: |
           node ./node_modules/jest/bin/jest.js \
             --config packages/exocortex/jest.config.js \
-            --testPathPatterns='(services/(GroundingExecutor(\.[a-zA-Z0-9_-]+)?|AssetConversionService|NoteToRDFConverter\.(issue-2959|filespace-skip|excluded-folders|issue-3468-skip-summary)|FileSpaceDiscovery)\.test|services/sync/(ChangeDetector|SyncEngine(\.filespace)?|StructuredMerger|GatedStructuredMerger|MergeShaclGate|diff3|SyncedQuarantineStore|FileWatermarkStore|transportBackoff|secretScan)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/BGPExecutor\.issue-2997\.test|infrastructure/github/restCommit\.test|integration/dynamic-commands/grounding-phase3b-pipeline\.test)\.ts' \
+            --testPathPatterns='(services/(GroundingExecutor(\.[a-zA-Z0-9_-]+)?|AssetConversionService|NoteToRDFConverter\.(issue-2959|filespace-skip|excluded-folders|issue-3468-skip-summary|no-process-env|dual-storage-flag)|FileSpaceDiscovery)\.test|services/sync/(ChangeDetector|SyncEngine(\.filespace)?|StructuredMerger|GatedStructuredMerger|MergeShaclGate|diff3|SyncedQuarantineStore|FileWatermarkStore|transportBackoff|secretScan)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/(BGPExecutor\.issue-2997|PropertyPathExecutor\.no-process-env)\.test|infrastructure/github/restCommit\.test|integration/dynamic-commands/grounding-phase3b-pipeline\.test)\.ts' \
             --forceExit
 
   test-coverage:

@@ -586,7 +586,10 @@ export function stripGitEnv(): NodeJS.ProcessEnv {
     "GIT_PREFIX",
     "GIT_TEMPLATE_DIR",
   ]);
-  const env: NodeJS.ProcessEnv = { ...process.env };
+  // MOBILE-002: same-line typeof alias — git ops are desktop-only, but an
+  // unguarded `process` read would ReferenceError if ever reached on iOS.
+  const baseEnv = typeof process !== "undefined" ? process.env : {};
+  const env: NodeJS.ProcessEnv = { ...baseEnv };
   for (const k of Object.keys(env)) {
     if (STRIP.has(k)) delete env[k];
   }

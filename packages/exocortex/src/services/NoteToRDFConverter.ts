@@ -1242,8 +1242,13 @@ export class NoteToRDFConverter {
             const isProtoPredicate =
               predicate?.value.endsWith("#Asset_prototype") ||
               predicate?.value.endsWith("/Asset_prototype");
+            // Issue #3469: iOS WebKit has no Node `process` global — alias
+            // it behind a typeof guard (MOBILE-002) so mobile behaves as
+            // "env unset" instead of throwing ReferenceError mid-convert.
+            const dualStorageEnv =
+              typeof process !== "undefined" ? process.env : undefined;
             const dualPredicates = (
-              process.env.EXOCORTEX_DUAL_STORAGE_PREDICATES ?? ""
+              dualStorageEnv?.EXOCORTEX_DUAL_STORAGE_PREDICATES ?? ""
             )
               .split(",")
               .map((p) => p.trim())

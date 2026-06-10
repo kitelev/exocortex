@@ -527,7 +527,11 @@ export class PropertyPathExecutor {
    * directly. Truthy values: "1", "true", "yes" (case-insensitive).
    */
   static isStrictModeEnabled(): boolean {
-    const raw = process.env?.EXOCORTEX_SPARQL_STRICT;
+    // Issue #3469: iOS WebKit has no Node `process` global — optional
+    // chaining guards `.env` being undefined, NOT the bare `process`
+    // identifier itself (MOBILE-002).
+    const env = typeof process !== "undefined" ? process.env : undefined;
+    const raw = env?.EXOCORTEX_SPARQL_STRICT;
     if (!raw) return false;
     const normalized = raw.trim().toLowerCase();
     return normalized === "1" || normalized === "true" || normalized === "yes";
