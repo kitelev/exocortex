@@ -47,6 +47,15 @@ export interface WatermarkRecord {
   rootTreeSha: string;
   /** Allowlist-scoped snapshot of the remote tree at `lastSyncedSha`. */
   files: WatermarkFileEntry[];
+  /**
+   * Paths whose remote change was NOT applied in the sync that produced this
+   * record (TOCTOU skip, unsafe path, quarantined conflict). Their `files`
+   * entries are the PREVIOUS base, intentionally diverging from the
+   * `lastSyncedSha` tree so the divergence re-derives next sync. Non-empty ⇒
+   * the engine must diff against the head tree even when the head SHA equals
+   * `lastSyncedSha`.
+   */
+  pinnedPaths?: string[];
 }
 
 /** Per-device watermark persistence port (D8; production impl is A3 scope). */
@@ -125,6 +134,13 @@ export type ChangeDetectionResult =
       added: AssetChange[];
       modified: AssetChange[];
       deleted: AssetChange[];
+      /** Non-fatal anomalies (e.g. duplicate uid on disk). */
+      warnings: string[];
+      /**
+       * Git blob SHA per disk path, computed during detection — callers reuse
+       * it (watermark build) instead of re-hashing the whole working tree.
+       */
+      diskBlobShas: Map<string, string>;
     };
 
 /** Per-repo sync outcome (CQ5). `syncAll` never throws — D12 warn-not-block. */

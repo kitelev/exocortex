@@ -141,6 +141,41 @@ function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * Replace pinned paths' new-tree entries with their PREVIOUS watermark entry.
+ * A pinned path's remote change was never applied to disk (TOCTOU skip,
+ * unsafe path, quarantined conflict) — keeping the old base entry makes the
+ * divergence re-derive on the next sync instead of silently inverting into a
+ * phantom local edit. Pinned paths with no previous entry are dropped
+ * entirely (a never-seen remote add re-surfaces as a remote add); pinned
+ * paths missing from the new tree (skipped remote delete) keep their old
+ * entry appended so the delete re-derives too.
+ */
+function applyWatermarkPins(
+  files: WatermarkFileEntry[],
+  previous: WatermarkRecord,
+  pinnedPaths: ReadonlySet<string>,
+): WatermarkFileEntry[] {
+  if (pinnedPaths.size === 0) return files;
+  const prevByPath = new Map(previous.files.map((e) => [e.path, e]));
+  const newPaths = new Set(files.map((e) => e.path));
+  const out: WatermarkFileEntry[] = [];
+  for (const f of files) {
+    if (!pinnedPaths.has(f.path)) {
+      out.push(f);
+      continue;
+    }
+    const prev = prevByPath.get(f.path);
+    if (prev !== undefined) out.push(prev);
+  }
+  for (const p of pinnedPaths) {
+    if (newPaths.has(p)) continue;
+    const prev = prevByPath.get(p);
+    if (prev !== undefined) out.push(prev);
+  }
+  return out;
+}
+
 /** Local change-set pinned for the whole D16 retry loop. */
 interface PinnedLocalChanges {
   localChanges: AssetChange[];
@@ -232,6 +267,7 @@ export class SyncEngine {
           detail: `${detection.reason}${detection.detail ? `: ${detection.detail}` : ""} — divergence must go through merge/quarantine (A2/A3), not overwrite`,
         });
       }
+      warnings.push(...detection.warnings);
 
       const pinned = this.pinLocalChanges(
         detection,
@@ -255,6 +291,21 @@ export class SyncEngine {
       }
       const { examinedHead, pushedSha, applyWrites, applyDeletes, pushFiles } =
         loop;
+
+      // No-op fast path: nothing pushed, head unmoved, nothing to apply —
+      // the watermark is already exact; skip the head-tree fetch and the
+      // full watermark rebuild (A1 perf finding: double hashing on no-op).
+      // A pinned watermark is NOT exact by construction — fall through so a
+      // convergently-resolved pin gets cleared by the full rebuild.
+      if (
+        pushedSha === undefined &&
+        examinedHead === watermark.lastSyncedSha &&
+        applyWrites.length === 0 &&
+        applyDeletes.length === 0 &&
+        (watermark.pinnedPaths?.length ?? 0) === 0
+      ) {
+        return result("synced");
+      }
 
       const newHead = pushedSha ?? examinedHead;
       const newCommit = await getCommitInfo(
@@ -290,7 +341,7 @@ export class SyncEngine {
         });
       }
 
-      const pulledCount = await this.applyRemoteChanges(
+      const { pulledCount, pinnedPaths } = await this.applyRemoteChanges(
         localFiles,
         disk,
         applyWrites,
@@ -305,6 +356,8 @@ export class SyncEngine {
         disk,
         applyWrites,
         watermark,
+        pinnedPaths,
+        detection.diskBlobShas,
       );
 
       return result("synced", {
@@ -424,7 +477,11 @@ export class SyncEngine {
       applyDeletes = [];
       const convergedPushPaths = new Set<string>();
 
-      if (examinedHead !== watermark.lastSyncedSha) {
+      // Pinned paths diverge from the lastSyncedSha tree by construction —
+      // their never-applied remote change must re-derive even when the head
+      // SHA has not moved since the pinning sync.
+      const hasPins = (watermark.pinnedPaths?.length ?? 0) > 0;
+      if (examinedHead !== watermark.lastSyncedSha || hasPins) {
         const remote = await this.collectRemoteChanges(
           spec,
           watermark,
@@ -494,6 +551,14 @@ export class SyncEngine {
    * Apply remote changes to disk AFTER the push succeeded — a failed push
    * must leave the working tree pristine, or the next run misclassifies
    * remote content as local edits.
+   *
+   * TOCTOU guard (A1 review): each path is re-read immediately before the
+   * mutation and compared to the sync-start snapshot. A mismatch means the
+   * user edited/created/removed the file mid-sync — the apply is SKIPPED and
+   * the path is pinned so the watermark keeps its OLD base entry for it
+   * (advancing it would make the next sync push the user's edit over the
+   * never-applied remote change: a silent revert). The pinned path re-derives
+   * as a remote change (or a proper conflict) on the next sync.
    */
   private async applyRemoteChanges(
     localFiles: LocalFilesPort,
@@ -501,12 +566,29 @@ export class SyncEngine {
     applyWrites: RemoteChange[],
     applyDeletes: RemoteChange[],
     warnings: string[],
-  ): Promise<number> {
+  ): Promise<{ pulledCount: number; pinnedPaths: Set<string> }> {
     let pulledCount = 0;
+    const pinnedPaths = new Set<string>();
+    const tryRead = async (path: string): Promise<string | undefined> => {
+      try {
+        return await localFiles.read(path);
+      } catch {
+        return undefined;
+      }
+    };
     for (const w of applyWrites) {
       if (w.content === undefined) continue; // change entries always carry content
       if (!isSafeRepoRelativePath(w.path)) {
         warnings.push(`unsafe remote path skipped on pull-apply: ${w.path}`);
+        pinnedPaths.add(w.path);
+        continue;
+      }
+      const current = await tryRead(w.path);
+      if (current !== disk.get(w.path)) {
+        warnings.push(
+          `pull-apply skipped: ${w.path} changed on disk mid-sync (TOCTOU) — remote change re-derives next sync`,
+        );
+        pinnedPaths.add(w.path);
         continue;
       }
       await localFiles.write(w.path, w.content);
@@ -515,17 +597,33 @@ export class SyncEngine {
     for (const d of applyDeletes) {
       if (!isSafeRepoRelativePath(d.path)) {
         warnings.push(`unsafe remote path skipped on pull-delete: ${d.path}`);
+        pinnedPaths.add(d.path);
         continue;
       }
       if (disk.has(d.path)) {
+        const current = await tryRead(d.path);
+        if (current !== undefined && current !== disk.get(d.path)) {
+          warnings.push(
+            `pull-delete skipped: ${d.path} changed on disk mid-sync (TOCTOU) — delete-vs-modify re-derives next sync`,
+          );
+          pinnedPaths.add(d.path);
+          continue;
+        }
         await localFiles.delete(d.path);
         pulledCount++;
       }
     }
-    return pulledCount;
+    return { pulledCount, pinnedPaths };
   }
 
-  /** Build and persist the watermark for the new head (D8). */
+  /**
+   * Build and persist the watermark for the new head (D8). Pinned paths keep
+   * their PREVIOUS base entry (or stay absent): their remote change was never
+   * applied to disk, so absorbing the new-head blob would turn the untouched
+   * local copy into a phantom "local edit" next sync — a silent revert of the
+   * remote change. D22 is unaffected: it validates `rootTreeSha` integrity,
+   * not the per-file snapshot.
+   */
   private async advanceWatermark(
     spec: SyncRepoSpec,
     newHead: string,
@@ -533,6 +631,8 @@ export class SyncEngine {
     disk: ReadonlyMap<string, string>,
     applyWrites: RemoteChange[],
     previous: WatermarkRecord,
+    pinnedPaths: ReadonlySet<string>,
+    diskBlobShas: ReadonlyMap<string, string>,
   ): Promise<void> {
     const newTree = (
       await getTree(
@@ -543,18 +643,24 @@ export class SyncEngine {
         this.deps.baseURL,
       )
     ).filter((e) => isSyncablePath(e.path));
-    const newRecord: WatermarkRecord = {
-      lastSyncedSha: newHead,
-      rootTreeSha: newTreeSha,
-      files: await this.buildWatermarkFiles(
+    const files = applyWatermarkPins(
+      await this.buildWatermarkFiles(
         spec,
         newTree,
         disk,
         applyWrites,
         previous,
+        diskBlobShas,
       ),
-    };
-    await this.deps.watermarkStore.set(spec.repoKey, newRecord);
+      previous,
+      pinnedPaths,
+    );
+    await this.deps.watermarkStore.set(spec.repoKey, {
+      lastSyncedSha: newHead,
+      rootTreeSha: newTreeSha,
+      files,
+      ...(pinnedPaths.size > 0 ? { pinnedPaths: [...pinnedPaths] } : {}),
+    });
   }
 
   /**
@@ -834,6 +940,7 @@ export class SyncEngine {
     disk: ReadonlyMap<string, string>,
     applied: RemoteChange[],
     previous: WatermarkRecord,
+    diskBlobShas?: ReadonlyMap<string, string>,
   ): Promise<WatermarkFileEntry[]> {
     const uidByBlobSha = new Map<string, string | undefined>();
     for (const r of applied) {
@@ -841,11 +948,12 @@ export class SyncEngine {
         uidByBlobSha.set(r.blobSha, r.uid);
       }
     }
-    for (const content of disk.values()) {
-      uidByBlobSha.set(
-        await gitBlobSha(content, this.deps.sha1),
-        extractAssetUid(content),
-      );
+    for (const [path, content] of disk) {
+      // Reuse the blob SHA computed during change detection (A1 perf
+      // finding: no-op syncs double-hashed the whole working tree).
+      const sha =
+        diskBlobShas?.get(path) ?? (await gitBlobSha(content, this.deps.sha1));
+      uidByBlobSha.set(sha, extractAssetUid(content));
     }
     for (const prev of previous.files) {
       if (!uidByBlobSha.has(prev.blobSha)) {

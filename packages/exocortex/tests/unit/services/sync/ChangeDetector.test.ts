@@ -118,7 +118,15 @@ describe("detectChanges — uid-keyed diff (D18)", () => {
       actualBaseTreeSha: valid(wm),
       sha1: sha1Hex,
     });
-    expect(result).toEqual({ kind: "changes", added: [], modified: [], deleted: [] });
+    expect(result).toEqual(
+      expect.objectContaining({
+        kind: "changes",
+        added: [],
+        modified: [],
+        deleted: [],
+        warnings: [],
+      }),
+    );
   });
 
   it("content edit → modified, matched by uid", async () => {
@@ -205,6 +213,33 @@ describe("detectChanges — uid-keyed diff (D18)", () => {
       ]);
       expect(result.added).toHaveLength(0);
       expect(result.deleted).toHaveLength(0);
+    }
+  });
+});
+
+describe("detectChanges — duplicate uid on disk (A1 review LOW)", () => {
+  const valid = (wm: WatermarkRecord): string => wm.rootTreeSha;
+
+  it("warns and matches the second file by path identity, not as a rename", async () => {
+    const wm = await watermarkFor({ "a.md": mdAsset("u1") });
+    const result = await detectChanges({
+      localFiles: new Map([
+        ["a.md", mdAsset("u1")],
+        ["copy.md", mdAsset("u1")], // duplicated uid — vault anomaly
+      ]),
+      watermark: wm,
+      actualBaseTreeSha: valid(wm),
+      sha1: sha1Hex,
+    });
+    expect(result.kind).toBe("changes");
+    if (result.kind === "changes") {
+      expect(result.warnings.join(" ")).toMatch(/duplicate uid u1/);
+      // NOT a rename of a.md — the copy classifies as an added path.
+      expect(result.modified).toEqual([]);
+      expect(result.added).toEqual([
+        expect.objectContaining({ path: "copy.md", uid: "u1" }),
+      ]);
+      expect(result.deleted).toEqual([]);
     }
   });
 });

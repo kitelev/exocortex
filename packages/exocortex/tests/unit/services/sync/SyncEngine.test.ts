@@ -502,3 +502,104 @@ describe("orderChildrenFirst (D12 children-before-parent)", () => {
     ]);
   });
 });
+
+describe("SyncEngine — TOCTOU guard on pull-apply (A1 review MEDIUM)", () => {
+  /** read() returns mutated content from the 2nd read after arming. */
+  class ToctouLocalFiles extends FakeLocalFiles {
+    armed = false;
+    private reads = 0;
+    constructor(
+      initial: Record<string, string>,
+      private readonly target: string,
+      private readonly mutated: string,
+    ) {
+      super(initial);
+    }
+    override async read(path: string): Promise<string> {
+      if (this.armed && path === this.target && ++this.reads > 1) {
+        return this.mutated;
+      }
+      return super.read(path);
+    }
+  }
+
+  it("skips the apply, pins the watermark entry, and re-derives next sync", async () => {
+    const local = new ToctouLocalFiles(
+      { [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") },
+      FILE_B,
+      mdAsset("u2", "user edit mid-sync"),
+    );
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const { engine, watermarks } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+    const oldEntry = watermarks.records
+      .get(gh.spec().repoKey)!
+      .files.find((f) => f.path === FILE_B)!;
+
+    gh.commitDirect("main", { [FILE_B]: mdAsset("u2", "remote edit") }, "device B");
+    local.armed = true;
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.warnings.join(" ")).toMatch(/TOCTOU/);
+    expect(result.pulledCount).toBe(0);
+    // Write skipped — disk still holds the snapshot content.
+    expect(local.files.get(FILE_B)).toBe(mdAsset("u2"));
+    // Watermark advanced for the repo but PINNED the old entry for FILE_B —
+    // the never-applied remote change must re-derive, not become a phantom
+    // local edit (silent revert).
+    const record = watermarks.records.get(gh.spec().repoKey)!;
+    expect(record.lastSyncedSha).toBe(gh.headSha());
+    expect(record.files.find((f) => f.path === FILE_B)).toEqual(oldEntry);
+
+    // Next sync (no mid-sync mutation): the remote change applies cleanly.
+    local.armed = false;
+    const second = await engine.sync(gh.spec());
+    expect(second.status).toBe("synced");
+    expect(second.pulledCount).toBe(1);
+    expect(local.files.get(FILE_B)).toBe(mdAsset("u2", "remote edit"));
+  });
+
+  it("skips a remote delete when the local file changed mid-sync", async () => {
+    const local = new ToctouLocalFiles(
+      { [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") },
+      FILE_B,
+      mdAsset("u2", "user edit mid-sync"),
+    );
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const { engine, watermarks } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+    const oldEntry = watermarks.records
+      .get(gh.spec().repoKey)!
+      .files.find((f) => f.path === FILE_B)!;
+
+    gh.commitDirect("main", {}, "device B deletes", [FILE_B]);
+    local.armed = true;
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.warnings.join(" ")).toMatch(/TOCTOU/);
+    expect(local.files.has(FILE_B)).toBe(true); // delete skipped
+    // Old entry appended even though the path left the head tree — the
+    // delete (now delete-vs-modify) must re-derive next sync.
+    const record = watermarks.records.get(gh.spec().repoKey)!;
+    expect(record.files.find((f) => f.path === FILE_B)).toEqual(oldEntry);
+  });
+});
+
+describe("SyncEngine — no-op fast path (A1 review MEDIUM perf)", () => {
+  it("does not rebuild the watermark when nothing changed anywhere", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const { engine, watermarks } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+
+    const setSpy = jest.spyOn(watermarks, "set");
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.pushedCount).toBe(0);
+    expect(result.pulledCount).toBe(0);
+    expect(setSpy).not.toHaveBeenCalled();
+  });
+});
