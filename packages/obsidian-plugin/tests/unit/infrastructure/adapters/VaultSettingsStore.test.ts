@@ -654,6 +654,81 @@ describe("VaultSettingsStore", () => {
       );
     });
 
+    it("evicts the loser file when a lexicographically-smaller asset is adopted mid-session (MEDIUM-1)", async () => {
+      const { fake, settings, store, applyRemote } = await setupMigrated();
+      const d = descriptorByField("showArchivedAssets")!;
+      const migratedPath = `${DEFAULT_SETTINGS_FOLDER}/${d.settingUid}.md`;
+      // Deliver a duplicate at a smaller path — it wins adoption.
+      const winnerPath = fake.seedSettingAsset("showArchivedAssets", true, {
+        path: "assetspaces/kitelev/exoas-kitelev/dup.md",
+      });
+      await store.onMetadataChanged(tfileOf(winnerPath));
+      expect(settings.showArchivedAssets).toBe(true);
+      applyRemote.mockClear();
+
+      // The loser (old migrated path) keeps emitting changed events with
+      // a different value — it must be ignored, not applied.
+      fake.files.get(migratedPath)!.frontmatter!.exo__Setting_value = false;
+      await store.onMetadataChanged(tfileOf(migratedPath));
+
+      expect(applyRemote).not.toHaveBeenCalled();
+      expect(settings.showArchivedAssets).toBe(true);
+
+      // And UI pushes go to the winner, not the loser.
+      settings.showArchivedAssets = false;
+      store.pushChangedFields();
+      await store.flushWrites();
+      expect(
+        fake.files.get(winnerPath)!.frontmatter!.exo__Setting_value,
+      ).toBe(false);
+    });
+
+    it("re-pushes the local value when the asset resurfaces after a skipped write (MEDIUM-2)", async () => {
+      const { fake, settings, store, applyRemote } = await setupMigrated();
+      const d = descriptorByField("enableShaclValidation")!;
+      const path = `${DEFAULT_SETTINGS_FOLDER}/${d.settingUid}.md`;
+
+      // Asset disappears (profile unmount / sync lag)…
+      fake.files.delete(path);
+      store.onFileDeleted(path);
+      // …user toggles meanwhile — write is skipped (no asset).
+      settings.enableShaclValidation = true;
+      store.pushChangedFields();
+      await store.flushWrites();
+      applyRemote.mockClear();
+
+      // Asset resurfaces with the STALE value (false).
+      const resurfaced = fake.seedSettingAsset("enableShaclValidation", false);
+      await store.onMetadataChanged(tfileOf(resurfaced));
+      await store.flushWrites();
+
+      // The user's newer intent wins: no rollback, asset got the local value.
+      expect(applyRemote).not.toHaveBeenCalled();
+      expect(settings.enableShaclValidation).toBe(true);
+      expect(
+        fake.files.get(resurfaced)!.frontmatter!.exo__Setting_value,
+      ).toBe(true);
+    });
+
+    it("strips embedded credentials from exosyncQuarantineRepoUrl before persisting (LOW-2)", async () => {
+      const fake = new FakeApp();
+      const settings = freshSettings();
+      settings.exosyncQuarantineRepoUrl =
+        "https://user:ghp_SECRETTOKEN@github.com/owner/repo";
+      const { store } = makeStore(fake, settings);
+      store.scanAll();
+      await store.migrateMissing();
+
+      const d = descriptorByField("exosyncQuarantineRepoUrl")!;
+      const file = fake.files.get(
+        `${DEFAULT_SETTINGS_FOLDER}/${d.settingUid}.md`,
+      )!;
+      expect(file.body).not.toContain("ghp_SECRETTOKEN");
+      expect(file.frontmatter!.exo__Setting_value).toBe(
+        "https://github.com/owner/repo",
+      );
+    });
+
     it("a broken-YAML change event does not unregister or reset the setting (F11)", async () => {
       const { fake, settings, store, applyRemote } = await setupMigrated();
       const d = descriptorByField("showArchivedAssets")!;

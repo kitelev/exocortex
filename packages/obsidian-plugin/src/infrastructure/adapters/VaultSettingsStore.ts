@@ -127,6 +127,14 @@ export class VaultSettingsStore {
   >();
   private readonly latestDesired = new Map<string, unknown>();
   private readonly warnedUnknownKeys = new Set<string>();
+  /**
+   * Fields whose vault write was skipped because the asset was missing
+   * (deleted / unmounted during a profile switch). When the asset
+   * resurfaces, the LOCAL value is re-pushed instead of applying the
+   * asset's stale value — the user's newer intent must not be silently
+   * rolled back (reviewer MEDIUM-2).
+   */
+  private readonly deferredPushFields = new Set<string>();
   private writeChain: Promise<void> = Promise.resolve();
   private scanned = false;
 
@@ -357,7 +365,12 @@ export class VaultSettingsStore {
       this.latestDesired.delete(field);
       this.writeChain = this.writeChain
         .then(() => this.writeValue(field, desired))
-        .catch(() => {
+        .catch((err) => {
+          this.logger.warn(
+            `[VaultSettingsStore] vault write for "${field}" failed during flush: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
           this.pendingWrites.delete(field);
         });
     }
@@ -369,12 +382,16 @@ export class VaultSettingsStore {
     if (!path) {
       // No asset (not yet migrated / unmounted / deleted): data.json
       // mirror already holds the value — never auto-create here (F2).
+      // Remember the field so the local value wins when the asset
+      // resurfaces (MEDIUM-2).
+      this.deferredPushFields.add(field);
       return;
     }
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!file || !this.isTFile(file)) {
       // Transient disappearance (ExoSync atomic-write window, profile
       // apply, Sync lag) — mirror-only, asset will resurface (F2).
+      this.deferredPushFields.add(field);
       return;
     }
     const descriptor = VAULT_SETTINGS_REGISTRY.find((d) => d.field === field);
@@ -415,6 +432,11 @@ export class VaultSettingsStore {
       if (existingPath && existingPath !== file.path) {
         const winner = existingPath <= file.path ? existingPath : file.path;
         if (winner === existingPath) return; // incoming file loses dedup
+        // Incoming file wins — evict the loser from the reverse index
+        // so its future changed-events cannot keep feeding the field
+        // (reviewer MEDIUM-1: two live sources → cross-device
+        // ping-pong).
+        this.knownPaths.delete(existingPath);
       }
       this.register(field, file.path);
     } else {
@@ -429,6 +451,12 @@ export class VaultSettingsStore {
         this.unregisterPath(file.path);
         this.register(entry.descriptor.field, file.path);
         field = entry.descriptor.field;
+      }
+      if (this.knownFiles.get(field) !== file.path) {
+        // Stale reverse-index entry (this path lost a dedup since) —
+        // never apply a non-winner file (reviewer MEDIUM-1 guard).
+        this.knownPaths.delete(file.path);
+        return;
       }
     }
 
@@ -457,6 +485,25 @@ export class VaultSettingsStore {
 
     const settings = this.getSettings();
     const currentCanonical = this.canonicalOf(field, settings[field]);
+
+    if (this.deferredPushFields.has(field)) {
+      // The asset resurfaced after a write was skipped while it was
+      // missing — the LOCAL value is newer than whatever the asset
+      // carries; re-push it instead of rolling the user back
+      // (MEDIUM-2).
+      this.deferredPushFields.delete(field);
+      if (effectiveCanonical !== currentCanonical) {
+        this.logger.info(
+          `[VaultSettingsStore] re-pushing local value for "${field}" — ` +
+            "its asset resurfaced with a stale value",
+        );
+        this.lastApplied.set(field, currentCanonical);
+        this.queueWrite(field, settings[field]);
+        return;
+      }
+      // Values agree — fall through to the normal bookkeeping below.
+    }
+
     if (effectiveCanonical === currentCanonical) {
       this.lastApplied.set(field, effectiveCanonical);
       return;
@@ -577,6 +624,31 @@ export class VaultSettingsStore {
   private toAssetValue(d: VaultSettingDescriptor, value: unknown): unknown {
     if (d.field === "excludedFolders") {
       return normaliseExcludedFolders(value as string[]);
+    }
+    if (
+      d.field === "exosyncQuarantineRepoUrl" &&
+      typeof value === "string" &&
+      value.length > 0
+    ) {
+      // The vault asset syncs further than data.json — never let a URL
+      // with embedded credentials (https://user:token@github.com/...)
+      // materialise into it (reviewer LOW-2). The PAT channel proper is
+      // LocalSecretsStore; this guards user misuse.
+      try {
+        const u = new URL(value);
+        if (u.username || u.password) {
+          u.username = "";
+          u.password = "";
+          this.logger.warn(
+            "[VaultSettingsStore] stripped embedded credentials from " +
+              "exosyncQuarantineRepoUrl before writing the vault asset",
+          );
+          return u.toString();
+        }
+      } catch {
+        // Not a parseable URL — persist as-is; the sync engine validates
+        // the URL shape on use.
+      }
     }
     return value;
   }
