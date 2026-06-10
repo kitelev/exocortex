@@ -247,7 +247,8 @@ describe("VaultRDFIndexer — excludedFolders plumbing", () => {
 
       // The whole point of the feature: a per-file event for an excluded
       // folder must NOT push the file through the converter (which is what
-      // emits the "Skipping file with invariant violation" warn-log).
+      // emits the "Skipping file with invariant violation" skip log and
+      // feeds the aggregated "Skipped N files" summary, see Issue #3468).
       expect(mockConverter.convertNote).not.toHaveBeenCalled();
     });
 
