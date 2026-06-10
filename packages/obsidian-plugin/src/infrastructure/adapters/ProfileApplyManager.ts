@@ -207,6 +207,13 @@ export interface ProfileApplyManagerOptions {
   localDataStore?: PluginLocalDataStore;
   /** Absolute path к vault root — required for git operations. */
   vaultRootPath?: string;
+  /**
+   * ExoSync mutual exclusion (RFC 4e4dc453 D11, Phase B composition): a
+   * running sync vetoes apply — apply destroys/materialises the same folders
+   * the sync engine is reading/writing. The sync side already vetoes on
+   * `_switchInProgress`; this closes the opposite direction.
+   */
+  isSyncBusy?: () => boolean;
 }
 
 const DEFAULT_JOURNAL_PATH = ".exocortex/switch-journal.jsonl";
@@ -275,6 +282,7 @@ export class ProfileApplyManager {
   private readonly confirmGate?: IConfirmGate;
   private readonly localDataStore?: PluginLocalDataStore;
   private readonly vaultRootPath?: string;
+  private readonly isSyncBusy?: () => boolean;
 
   constructor(options: ProfileApplyManagerOptions) {
     this.app = options.app;
@@ -296,6 +304,7 @@ export class ProfileApplyManager {
     this.confirmGate = options.confirmGate;
     this.localDataStore = options.localDataStore;
     this.vaultRootPath = options.vaultRootPath;
+    this.isSyncBusy = options.isSyncBusy;
   }
 
   /**
@@ -493,6 +502,17 @@ export class ProfileApplyManager {
   async applyProfile(targetProfileUid: string): Promise<void> {
     if (typeof targetProfileUid !== "string" || targetProfileUid.length === 0) {
       throw new Error("applyProfile: targetProfileUid is required");
+    }
+    // ExoSync D11 composition (RFC 4e4dc453 Phase B): refuse to start a
+    // destructive mount-state switch while a sync run is reading/writing the
+    // same folders. The sync side vetoes on `_switchInProgress` symmetrically.
+    if (this.isSyncBusy?.() === true) {
+      this.notify(
+        "A sync is in progress — apply profile after it finishes (D11)",
+      );
+      throw new Error(
+        "applyProfile: ExoSync run in progress (D11 guard) — retry after it finishes",
+      );
     }
     // RFC 01a83de8 Phase 3 T2 — on mobile the git binary is unavailable, so
     // delegate to the REST/tarball mount/unmount path (no staging / cache /

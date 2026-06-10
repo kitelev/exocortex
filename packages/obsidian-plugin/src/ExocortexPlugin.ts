@@ -126,6 +126,11 @@ import {
 } from "./infrastructure/adapters/ApplyDepsFactory";
 import { ModalConfirmGate } from "./infrastructure/adapters/ModalConfirmGate";
 import type { RestAssetSpaceMount } from "./infrastructure/adapters/RestAssetSpaceMount";
+import { SyncCommands } from "./infrastructure/adapters/SyncCommands";
+import {
+  buildSyncEngine,
+  collectSyncRepoSpecs,
+} from "./infrastructure/adapters/SyncDepsFactory";
 import {
   CommandExecutionFlow,
   DI_TOKENS,
@@ -2554,6 +2559,24 @@ export default class ExocortexPlugin extends Plugin {
     const confirmGate =
       applyDeps?.confirmGate ?? new ModalConfirmGate(this.app);
 
+    // ExoSync Phase B (RFC 4e4dc453) — manual «Sync» over the requestUrl
+    // transport (iOS-capable, no git binary). Built BEFORE the apply manager
+    // so its busy flag feeds the D11 apply→sync exclusion below. The engine
+    // is composed fresh per invocation (fresh-PAT pattern, Issue #3382).
+    const syncCommands = new SyncCommands({
+      collectSpecs: () => collectSyncRepoSpecs(this.app),
+      buildEngine: (asUidByRepoKey) =>
+        buildSyncEngine({
+          app: this.app,
+          localDataStore,
+          asUidByRepoKey,
+          quarantineRepoUrl: this.settings.exosyncQuarantineRepoUrl,
+        }),
+      isSwitchInProgress: () => localDataStore.isSwitchInProgress(),
+      notify: (message) => this.notifier.info(message),
+      log: (message) => this.logger.warn(message),
+    });
+
     const switchMgr = new ProfileApplyManager({
       app: this.app,
       lockMgr,
@@ -2572,6 +2595,8 @@ export default class ExocortexPlugin extends Plugin {
       cacheLayer: applyDeps?.cacheLayer,
       vaultRootPath: applyDeps?.vaultRootPath,
       localDataStore,
+      // ExoSync D11 composition — apply refuses to start mid-sync.
+      isSyncBusy: () => syncCommands.isBusy(),
     });
 
     // Issue #3320 — expose the manager на plugin instance so onload recovery /
@@ -2751,6 +2776,19 @@ export default class ExocortexPlugin extends Plugin {
         },
       });
     }
+
+    // ExoSync Phase B (RFC 4e4dc453) — manual sync of the materialized
+    // AssetSpace set over requestUrl (works on BOTH platforms; the point is
+    // iOS, where no git binary exists). Registered unconditionally: with no
+    // PAT the handler surfaces the R8 "configure PAT" prompt instead of
+    // hiding the command.
+    this.addCommand({
+      id: "exosync-sync",
+      name: "Sync",
+      callback: () => {
+        void syncCommands.invokeSync();
+      },
+    });
 
     // RFC 22b50a17 Decision #6 — wipe-all switch cache clearing.
     this.addCommand({

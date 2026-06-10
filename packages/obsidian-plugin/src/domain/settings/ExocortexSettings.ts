@@ -233,6 +233,15 @@ export interface ExocortexSettings {
    * Issue #3324 — onload wiring.
    */
   activeProfileUid: string | null;
+  /**
+   * ExoSync (RFC 4e4dc453 Phase B) — dedicated quarantine repo URL
+   * (`https://github.com/<owner>/<repo>`). Unresolvable merge conflicts are
+   * committed there as both-versions JSON entries (D17, durable cross-device).
+   * Empty string (default) ⇒ no durable quarantine sink; the engine still
+   * preserves data via watermark pins (conflicts re-derive every sync).
+   * Shared config, not a secret — synced data.json is the right home.
+   */
+  exosyncQuarantineRepoUrl: string;
   [key: string]: unknown;
 }
 
@@ -268,4 +277,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
     "assetspaces/exocmd/",
   ],
   activeProfileUid: null,
+  exosyncQuarantineRepoUrl: "",
 };
