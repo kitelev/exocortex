@@ -20,10 +20,10 @@ export interface DaemonResponse {
 // gets bundled into a non-Node runtime (e.g. Obsidian on iOS). The Daemon
 // itself is server-side only and never instantiated on mobile, but the
 // module's top-level evaluation must not throw when imported transitively.
-export const DEFAULT_SOCKET_PATH =
-  typeof process !== 'undefined' && process.env
-    ? `${process.env.HOME ?? process.env.USERPROFILE ?? '/tmp'}/.cache/exocortex/validator.sock`
-    : '/tmp/.cache/exocortex/validator.sock';
+const daemonEnv = typeof process !== 'undefined' ? process.env : undefined;
+export const DEFAULT_SOCKET_PATH = daemonEnv
+  ? `${daemonEnv.HOME ?? daemonEnv.USERPROFILE ?? '/tmp'}/.cache/exocortex/validator.sock`
+  : '/tmp/.cache/exocortex/validator.sock';
 
 export const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -68,8 +68,11 @@ export class ValidatorDaemon {
     this.resetIdleTimer();
 
     const handleSignal = (): void => { void this.stop(); };
-    process.once('SIGTERM', handleSignal);
-    process.once('SIGINT', handleSignal);
+    // MOBILE-002: same-line typeof alias — the daemon only ever runs on
+    // Node, but the module is bundled transitively into the plugin.
+    const proc = typeof process !== 'undefined' ? process : undefined;
+    proc?.once('SIGTERM', handleSignal);
+    proc?.once('SIGINT', handleSignal);
   }
 
   async stop(): Promise<void> {
@@ -85,7 +88,9 @@ export class ValidatorDaemon {
 
   private resetIdleTimer(): void {
     if (this.idleTimer !== null) clearTimeout(this.idleTimer);
-    this.idleTimer = setTimeout(() => { process.exit(0); }, this.idleTimeoutMs);
+    this.idleTimer = setTimeout(() => {
+      if (typeof process !== 'undefined') process.exit(0);
+    }, this.idleTimeoutMs);
   }
 
   private handleConnection(socket: import('net').Socket): void {
