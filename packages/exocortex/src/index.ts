@@ -623,3 +623,13 @@ export {
   type WatermarkRecord,
   type WatermarkStorePort,
 } from "./services/sync/syncTypes";
+// ExoSync A2 — StructuredMerger (3-way frontmatter per-key + D20 set-union
+// tombstones + D21 structured body merge) over the generic diff3 helper.
+export { diff3, type Diff3Result } from "./services/sync/diff3";
+export {
+  StructuredMerger,
+  splitSections,
+  type AssetMergeInput,
+  type AssetMergeOutcome,
+  type YamlCodec,
+} from "./services/sync/StructuredMerger";
