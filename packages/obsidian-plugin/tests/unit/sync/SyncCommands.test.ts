@@ -213,7 +213,7 @@ describe("SyncCommands — E1 parity harness integration", () => {
     const parity: ParityCheck = {
       captureSnapshot: async () => {
         calls.push("snapshot");
-        return { dirtyByRepo: new Map() };
+        return { dirtyByRepo: new Map(), warnings: [] };
       },
       runAfterSync: async (specs, results, snapshot) => {
         calls.push(

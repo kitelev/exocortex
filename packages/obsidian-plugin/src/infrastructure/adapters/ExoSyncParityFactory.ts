@@ -259,7 +259,9 @@ export function buildParityCheck(opts: BuildParityCheckOptions): ParityCheck {
     async captureSnapshot(specs) {
       try {
         const validator = await buildValidator();
-        return await validator.captureSnapshot(specs);
+        const snapshot = await validator.captureSnapshot(specs);
+        for (const w of snapshot.warnings) log(`[ExoSync parity] ${w}`);
+        return snapshot;
       } catch (err) {
         log(
           `[ExoSync parity] pre-sync snapshot failed (conservation coverage lost this round): ${err instanceof Error ? err.message : String(err)}`,

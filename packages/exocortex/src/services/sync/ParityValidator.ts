@@ -176,6 +176,12 @@ export interface ParityRoundRecord {
 export interface ConservationSnapshot {
   /** repoKey → (path → pre-sync local blob SHA) of base-divergent paths. */
   dirtyByRepo: Map<string, Map<string, string>>;
+  /**
+   * Per-repo snapshot failures (advisor round-2 NEW-3): a repo that could
+   * not snapshot has NO conservation coverage this round — silently eaten
+   * reasons would make the coverage gap undiagnosable. Callers log these.
+   */
+  warnings: string[];
 }
 
 export interface ParityValidatorDeps {
@@ -210,9 +216,19 @@ export interface ParityRunOptions {
 const DEFAULT_SEMANTIC_FETCHES_PER_REPO = 50;
 const DEFAULT_SEMANTIC_FETCHES_PER_RUN = 200;
 
-/** Pending classes that escalate when they survive a sync unchanged. */
+/**
+ * Pending classes that escalate when they survive a sync unchanged.
+ *
+ * `pending-local-add` is deliberately ABSENT (advisor round-2 NEW-1, PR
+ * #3474): a uid-rename is deferred by design even in a "synced" cycle (the
+ * engine pushes neither the delete nor the re-add — A1 gap), so the new
+ * path legitimately persists as an un-pushed add across successful syncs;
+ * escalating it would flag an M1 violation on every round after any
+ * routine note rename. Detection loss is ~nil: a VANISHED add is the
+ * conservation detector's job (add paths are base-divergent ⇒ in the
+ * dirty snapshot), and a stuck-but-present add is plainly visible in M2.
+ */
 const ESCALATABLE: ReadonlySet<ParityDiscrepancyClass> = new Set([
-  "pending-local-add",
   "pending-local-edit",
   "pending-remote-add",
   "pending-remote-edit",
@@ -262,6 +278,8 @@ export class ParityValidator {
    */
   async captureSnapshot(specs: SyncRepoSpec[]): Promise<ConservationSnapshot> {
     const dirtyByRepo = new Map<string, Map<string, string>>();
+    const warnings: string[] = [];
+    const redact = this.deps.redact ?? ((m: string): string => m);
     for (const spec of specs) {
       try {
         const watermark = await this.deps.watermarks.get(spec.repoKey);
@@ -282,12 +300,16 @@ export class ParityValidator {
           if (base.get(path) !== sha) dirty.set(path, sha);
         }
         if (dirty.size > 0) dirtyByRepo.set(spec.repoKey, dirty);
-      } catch {
+      } catch (err) {
         // Best-effort by contract: a repo that cannot snapshot simply has
-        // no conservation coverage this round (never blocks the sync).
+        // no conservation coverage this round (never blocks the sync) —
+        // but the REASON must surface (advisor round-2 NEW-3).
+        warnings.push(
+          `${spec.repoKey}: conservation snapshot failed (${redact(errMsg(err))}) — no coverage this round`,
+        );
       }
     }
-    return { dirtyByRepo };
+    return { dirtyByRepo, warnings };
   }
 
   /** Run one validation round over the materialized set. Never throws. */

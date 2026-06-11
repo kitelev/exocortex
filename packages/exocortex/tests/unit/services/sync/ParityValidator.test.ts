@@ -386,6 +386,71 @@ describe("ParityValidator — M1 detector 1: edit conservation", () => {
     expect(passing.m1Total).toBe(0);
   });
 
+  it("an identical blob at ANOTHER path does not mask a wrongful overwrite (per-path)", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    await bootstrap(h);
+
+    // Pre-sync dirty: FILE_A edited to content X.
+    const contentX = mdAsset("u1", "precious X");
+    h.local.files.set(FILE_A, contentX);
+    const snapshot = await h.validator.captureSnapshot([h.spec]);
+
+    // Wrongful overwrite of FILE_A — while the head happens to contain the
+    // SAME bytes at a DIFFERENT path (duplicate content is realistic).
+    // A whole-tree blob-set membership would find X via FILE_B and hide
+    // the loss (code-reviewer MEDIUM, PR #3474 — regression pin).
+    h.gh.commitDirect("main", { [FILE_B]: contentX }, "device B");
+    h.local.files.set(FILE_A, mdAsset("u1"));
+    h.local.files.set(FILE_B, contentX);
+
+    const round = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      snapshot,
+      syncResults: [
+        {
+          repoKey: h.spec.repoKey,
+          status: "synced",
+          pulledCount: 1,
+          pushedCount: 0,
+          mergedCount: 0,
+          quarantinedCount: 0,
+          warnings: [],
+          deferredDeletes: [],
+        },
+      ],
+    });
+
+    expect(round.repos[0].m1Violations).toMatchObject([
+      { path: FILE_A, kind: "conservation" },
+    ]);
+  });
+
+  it("file-mode snapshot walks byte-exact — non-UTF8 content is not phantom-dirty", async () => {
+    const binary = new Uint8Array([0x89, 0x50, 0xc3, 0x28, 0x00, 0xff]); // invalid UTF-8
+    const h = makeHarness({}, "file");
+    h.gh.commitDirect("main", { "img/raw.bin": binary }, "init");
+    h.local.files.set("img/raw.bin", binary);
+    h.watermarks.records.set(h.spec.repoKey, {
+      lastSyncedSha: h.gh.headSha(),
+      rootTreeSha: h.gh.commits.get(h.gh.headSha())!.treeSha,
+      files: [
+        {
+          path: "img/raw.bin",
+          blobSha: [
+            ...h.gh.trees.get(h.gh.commits.get(h.gh.headSha())!.treeSha)!.values(),
+          ][0],
+        },
+      ],
+      spaceKind: "file",
+    });
+
+    // A text walk would lossy-decode the bytes → different SHA → phantom
+    // dirty (code-reviewer MEDIUM, PR #3474 — regression pin).
+    const snapshot = await h.validator.captureSnapshot([h.spec]);
+    expect(snapshot.dirtyByRepo.size).toBe(0);
+    expect(snapshot.warnings).toEqual([]);
+  });
+
   it("conserves an edit that was pushed into the head as-is", async () => {
     const h = makeHarness({ [FILE_A]: mdAsset("u1") });
     await bootstrap(h);
@@ -461,6 +526,33 @@ describe("ParityValidator — M1 detector 2: persistent divergence", () => {
       syncResults: [{ ...failed, status: "synced", detail: undefined }],
     });
     expect(converged.m1Total).toBe(1);
+  });
+
+  it("does NOT escalate a deferred rename across synced rounds (A1 gap is not data loss)", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1") });
+    await bootstrap(h);
+    // Routine note rename: same content, new path. The engine defers BOTH
+    // halves by design (no delete push, no re-add push) even in a cycle
+    // that reports "synced" — neither half may ever reach M1 (advisor
+    // round-2 NEW-1: pending-local-add escalation flagged every rename).
+    const content = h.local.files.get(FILE_A) as string;
+    h.local.files.delete(FILE_A);
+    h.local.files.set("assets/renamed.md", content);
+
+    const round1 = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      syncResults: [await h.engine.sync(h.spec)],
+    });
+    const round2 = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      previousRound: round1,
+      syncResults: [await h.engine.sync(h.spec)],
+    });
+
+    const classes = round2.repos[0].discrepancies.map((d) => d.cls).sort();
+    expect(classes).toEqual(["deferred-local-delete", "pending-local-add"]);
+    expect(round1.m1Total).toBe(0);
+    expect(round2.m1Total).toBe(0);
   });
 
   it("does NOT escalate when the divergence changed or on standalone rounds", async () => {
