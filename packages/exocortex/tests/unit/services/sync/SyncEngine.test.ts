@@ -260,8 +260,8 @@ describe("SyncEngine — conflicts (A2/A3 deferral, never overwrite)", () => {
   });
 });
 
-describe("SyncEngine — deferred deletes & renames (A1: primitive cannot delete)", () => {
-  it("local delete is deferred with a warning; remote keeps the file", async () => {
+describe("SyncEngine — deletes & renames propagate (#3476; full coverage in SyncEngine.delete-propagation.test.ts)", () => {
+  it("local delete is pushed; nothing deferred, remote drops the file", async () => {
     const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
     const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
     const { engine } = makeEngine(gh, local);
@@ -271,12 +271,12 @@ describe("SyncEngine — deferred deletes & renames (A1: primitive cannot delete
     const result = await engine.sync(gh.spec());
 
     expect(result.status).toBe("synced");
-    expect(result.deferredDeletes).toContain(FILE_B);
-    expect(result.warnings.join(" ")).toMatch(/deferred delete/);
-    expect(gh.headFiles().has(FILE_B)).toBe(true); // never deleted remotely in A1
+    expect(result.pushedDeletes).toEqual([FILE_B]);
+    expect(result.deferredDeletes).toEqual([]);
+    expect(gh.headFiles().has(FILE_B)).toBe(false); // deletion landed remotely
   });
 
-  it("rename is deferred whole (no uid duplicate on remote)", async () => {
+  it("rename pushes both halves in one commit (no uid duplicate on remote)", async () => {
     const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
     const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
     const { engine } = makeEngine(gh, local);
@@ -287,11 +287,11 @@ describe("SyncEngine — deferred deletes & renames (A1: primitive cannot delete
     const result = await engine.sync(gh.spec());
 
     expect(result.status).toBe("synced");
-    expect(result.pushedCount).toBe(0); // new path NOT pushed — would duplicate uid u1
-    expect(result.deferredDeletes).toContain(FILE_A);
-    expect(result.warnings.join(" ")).toMatch(/deferred rename/);
-    expect(gh.headFiles().has("assets/renamed.md")).toBe(false);
-    expect(gh.headFiles().has(FILE_A)).toBe(true);
+    expect(result.pushedCount).toBe(1);
+    expect(result.pushedDeletes).toEqual([FILE_A]);
+    expect(result.deferredDeletes).toEqual([]);
+    expect(gh.headFiles().get("assets/renamed.md")).toBe(mdAsset("u1"));
+    expect(gh.headFiles().has(FILE_A)).toBe(false);
   });
 });
 

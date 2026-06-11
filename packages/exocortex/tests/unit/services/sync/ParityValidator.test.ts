@@ -132,20 +132,10 @@ describe("ParityValidator — clean state and pending classifications", () => {
     expect(round.m2Total).toBe(3);
   });
 
-  it("accounts a deferred local delete (A1 gap) — M2 stays clean", async () => {
-    const h = makeHarness({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
-    await bootstrap(h);
-    h.local.files.delete(FILE_B);
-
-    const round = await h.validator.runRound([h.spec], { trigger: "standalone" });
-
-    expect(round.repos[0].discrepancies).toMatchObject([
-      { path: FILE_B, presence: "remote-only", cls: "deferred-local-delete" },
-    ]);
-    expect(round.m2Total).toBe(0);
-    expect(round.repos[0].accountedCount).toBe(1);
-    expect(round.ok).toBe(true);
-  });
+  // The pre-#3476 "accounts a deferred local delete (A1 gap) — M2 stays
+  // clean" contract is inverted: deletes now PUSH, so a not-yet-pushed
+  // delete is an honest pending divergence. See the dedicated
+  // "delete propagation accounting (#3476)" describe below.
 
   it("accounts watermark-pinned paths as quarantine-pinned", async () => {
     const h = makeHarness({ [FILE_A]: mdAsset("u1") });
@@ -528,32 +518,11 @@ describe("ParityValidator — M1 detector 2: persistent divergence", () => {
     expect(converged.m1Total).toBe(1);
   });
 
-  it("does NOT escalate a deferred rename across synced rounds (A1 gap is not data loss)", async () => {
-    const h = makeHarness({ [FILE_A]: mdAsset("u1") });
-    await bootstrap(h);
-    // Routine note rename: same content, new path. The engine defers BOTH
-    // halves by design (no delete push, no re-add push) even in a cycle
-    // that reports "synced" — neither half may ever reach M1 (advisor
-    // round-2 NEW-1: pending-local-add escalation flagged every rename).
-    const content = h.local.files.get(FILE_A) as string;
-    h.local.files.delete(FILE_A);
-    h.local.files.set("assets/renamed.md", content);
-
-    const round1 = await h.validator.runRound([h.spec], {
-      trigger: "post-sync",
-      syncResults: [await h.engine.sync(h.spec)],
-    });
-    const round2 = await h.validator.runRound([h.spec], {
-      trigger: "post-sync",
-      previousRound: round1,
-      syncResults: [await h.engine.sync(h.spec)],
-    });
-
-    const classes = round2.repos[0].discrepancies.map((d) => d.cls).sort();
-    expect(classes).toEqual(["deferred-local-delete", "pending-local-add"]);
-    expect(round1.m1Total).toBe(0);
-    expect(round2.m1Total).toBe(0);
-  });
+  // The pre-#3476 "does NOT escalate a deferred rename across synced
+  // rounds" test asserted the A1 gap (neither rename half pushed). Renames
+  // now propagate in ONE cycle — see "a rename converges in ONE cycle" in
+  // the "delete propagation accounting (#3476)" describe below; M1 stays 0
+  // because nothing survives to escalate.
 
   it("does NOT escalate when the divergence changed or on standalone rounds", async () => {
     const h = makeHarness({ [FILE_A]: mdAsset("u1") });
