@@ -4,72 +4,30 @@
  * `AssetSpaceManager` and `AssetSpaceLookupHelper` without forming a
  * circular dependency (Issue #3327 code-reviewer MEDIUM-2).
  *
+ * As of ExoSync E1 (RFC 4e4dc453 Phase E) the implementations live in the
+ * exocortex core (`services/sync/spaceSpecCore`) so the CLI's
+ * `exosync-parity` collector shares the IDENTICAL predicates — this module
+ * is a re-export façade preserving the historical plugin import path.
  * Pure functions only — no Obsidian API, no I/O. Suitable for use anywhere.
  */
 
-import { FILE_SPACE_CLASS_UID } from "exocortex";
-
-/**
- * Class UID of `exo__AssetSpace` (TBox root). Used to discriminate AssetSpace
- * ABox instances from other assets when scanning the vault. Hardcoded by RFC
- * 0a0791c1 (UID frozen by RFC v2 `2a98f345`, implemented 2026-05-17).
- */
-export const ASSET_SPACE_CLASS_UID = "73bd00e4-ccc0-4f3f-b20d-c4388c4588fb";
-
-/**
- * Strict wikilink regex — matches `[[<uuid>]]` or `[[<uuid>|<label>]]`,
- * capturing the canonical UUIDv4 form (8-4-4-4-12 hex, case-insensitive).
- * Anchored to the wikilink brackets so substring matches like
- * `notavalid-73bd00e4-...` do not falsely register as the AssetSpace class.
- * See Issue #3312 MEDIUM #1.
- */
-const WIKILINK_UID_RE =
-  /\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|[^\]]*)?\]\]/gi;
-
-/**
- * Predicate — does this frontmatter declare `exo__Instance_class` containing
- * the AssetSpace class UID? Handles both wikilink-string and array-of-string
- * shapes that Obsidian's parser may produce. Membership is decided by strict
- * wikilink regex (not loose substring), so adjacent UUID-like noise in the
- * value does not falsely match.
- *
- * Shared by `AssetSpaceManager` and `AssetSpaceLookupHelper`; centralising
- * here makes one predicate the source of truth and breaks the
- * `AssetSpaceManager` ↔ `AssetSpaceLookupHelper` circular import.
- * See Issue #3312.
- */
-export function isAssetSpaceFrontmatter(fm: Record<string, unknown>): boolean {
-  return instanceClassHasUid(fm, ASSET_SPACE_CLASS_UID);
-}
-
-/**
- * Class UID of `exo__FileSpace` (TBox: exoas-exo, onto-RFC 18808c73 —
- * frozen). Re-exported from the exocortex package's FileSpaceDiscovery —
- * single source of truth shared with the RDF-indexer skip; a FileSpace is
- * a git-backed space of opaque blobs synced byte-exact with remote-wins
- * conflicts (D18, ExoSync Phase C).
- */
-export { FILE_SPACE_CLASS_UID } from "exocortex";
-
-/** Predicate — `exo__Instance_class` references `exo__FileSpace`? */
-export function isFileSpaceFrontmatter(fm: Record<string, unknown>): boolean {
-  return instanceClassHasUid(fm, FILE_SPACE_CLASS_UID);
-}
-
-/** Shared strict-wikilink membership test over `exo__Instance_class`. */
-function instanceClassHasUid(
-  fm: Record<string, unknown>,
-  classUid: string,
-): boolean {
-  const classes = fm["exo__Instance_class"];
-  const candidates: unknown[] = Array.isArray(classes) ? classes : [classes];
-  for (const c of candidates) {
-    if (typeof c !== "string") continue;
-    WIKILINK_UID_RE.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = WIKILINK_UID_RE.exec(c)) !== null) {
-      if (m[1].toLowerCase() === classUid) return true;
-    }
-  }
-  return false;
-}
+export {
+  /**
+   * Class UID of `exo__AssetSpace` (TBox root). Hardcoded by RFC 0a0791c1
+   * (UID frozen by RFC v2 `2a98f345`, implemented 2026-05-17).
+   */
+  ASSET_SPACE_CLASS_UID,
+  /**
+   * Predicate — does this frontmatter declare `exo__Instance_class`
+   * containing the AssetSpace class UID? Strict wikilink-regex membership
+   * (Issue #3312 MEDIUM #1).
+   */
+  isAssetSpaceFrontmatter,
+  /** Predicate — `exo__Instance_class` references `exo__FileSpace`? */
+  isFileSpaceFrontmatter,
+  /**
+   * Class UID of `exo__FileSpace` (TBox: exoas-exo, onto-RFC 18808c73 —
+   * frozen). Single source of truth shared with the RDF-indexer skip.
+   */
+  FILE_SPACE_CLASS_UID,
+} from "exocortex";
