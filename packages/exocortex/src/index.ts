@@ -695,3 +695,38 @@ export {
   type QuarantineEntryRecord,
   type SyncedQuarantineStoreDeps,
 } from "./services/sync/SyncedQuarantineStore";
+// ExoSync E1 — platform-free space-declaration classification core shared by
+// the plugin's collectSyncRepoSpecs and the CLI's exosync-parity collector
+// (one parser, no drift), plus the M1/M2 parity validation harness
+// (RFC 4e4dc453 Phase E — parallel-run validation).
+export {
+  ASSET_SPACE_CLASS_UID,
+  SYNC_BRANCH,
+  SpaceSpecAccumulator,
+  classifySpaceDeclaration,
+  isAssetSpaceFrontmatter,
+  isFileSpaceFrontmatter,
+  parseStrictGitHubRepoURL,
+  readSpaceSource,
+  type SpaceClassification,
+  type SpaceSpecCandidate,
+} from "./services/sync/spaceSpecCore";
+export {
+  ParityValidator,
+  summarizeParityRound,
+  type ConservationSnapshot,
+  type ParityDiscrepancy,
+  type ParityDiscrepancyClass,
+  type ParityM1Violation,
+  type ParityRoundRecord,
+  type ParityRunOptions,
+  type ParityValidatorDeps,
+  type ReadonlyWatermarkSource,
+  type RepoParityReport,
+  type RepoParityStatus,
+} from "./services/sync/ParityValidator";
+export {
+  compareAssetSemantics,
+  isFormatOnlyDrift,
+  type SemanticComparison,
+} from "./services/sync/assetSemanticCompare";

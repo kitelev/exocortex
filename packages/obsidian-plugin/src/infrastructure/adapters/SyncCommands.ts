@@ -20,6 +20,7 @@ import { orderChildrenFirst } from "exocortex";
 
 import { GitHubRestClient } from "./GitHubRestClient";
 import type { SyncSpecCollection, BuiltSyncEngine } from "./SyncDepsFactory";
+import type { ParityCheck } from "./ExoSyncParityFactory";
 
 export interface SyncCommandsDeps {
   /** Enumerate the materialized sync unit (collectSyncRepoSpecs). */
@@ -34,6 +35,14 @@ export interface SyncCommandsDeps {
   notify: (message: string) => void;
   /** Diagnostic sink for per-repo warnings/details (default console). */
   log?: (message: string) => void;
+  /**
+   * E1 parity harness (RFC 4e4dc453 Phase E). When wired, every sync round
+   * is followed by an automatic M1/M2 validation pass (best-effort — a
+   * parity failure NEVER affects the sync result), and the standalone
+   * palette report becomes available. Optional so engine-only compositions
+   * and existing tests stay valid.
+   */
+  parity?: ParityCheck;
 }
 
 export class SyncCommands {
@@ -47,6 +56,57 @@ export class SyncCommands {
   /** Apply→sync exclusion input for `ProfileApplyManager.isSyncBusy`. */
   isBusy(): boolean {
     return this.running;
+  }
+
+  /**
+   * Standalone «ExoSync parity report» palette command (E1). Read-only,
+   * but still takes the `running` flag: a sync mutating disk mid-walk
+   * would only yield inconclusive noise, and the flag also keeps a
+   * profile apply from starting underneath the walk (D11 composition).
+   */
+  async invokeParityReport(): Promise<void> {
+    if (this.deps.parity === undefined) {
+      this.deps.notify("ExoSync parity harness is not wired");
+      return;
+    }
+    if (this.running) {
+      this.deps.notify("Sync already in progress (D11) — wait for it to finish");
+      return;
+    }
+    this.running = true;
+    try {
+      if (this.deps.isSwitchInProgress()) {
+        this.deps.notify(
+          "A profile apply is in progress — run the parity report after it finishes (D11)",
+        );
+        return;
+      }
+      const log = this.deps.log ?? ((m: string): void => console.warn(m));
+      const collection = await this.deps.collectSpecs();
+      // Skipped-declaration diagnostics matter MOST in the on-demand
+      // report — it is the command users debug "why is repo X missing"
+      // with (code-reviewer LOW, PR #3474).
+      for (const w of collection.warnings) log(`[ExoSync parity] ${w}`);
+      if (collection.specs.length === 0) {
+        this.deps.notify(
+          "Nothing to check — no materialized AssetSpaces with a GitHub source found",
+        );
+        return;
+      }
+      this.deps.notify(
+        `ExoSync parity check started (${collection.specs.length} repo(s))…`,
+      );
+      this.deps.notify(
+        await this.deps.parity.runStandalone(collection.specs),
+      );
+    } catch (err) {
+      const msg = GitHubRestClient.redactTokens(
+        err instanceof Error ? err.message : String(err),
+      );
+      this.deps.notify(`ExoSync parity check failed: ${msg}`);
+    } finally {
+      this.running = false;
+    }
   }
 
   async invokeSync(): Promise<void> {
@@ -104,11 +164,38 @@ export class SyncCommands {
       return;
     }
 
+    // E1 conservation snapshot — MUST precede the sync mutation (best-effort
+    // by contract: captureSnapshot never throws; undefined just means no
+    // conservation coverage this round).
+    const snapshot = await this.deps.parity?.captureSnapshot(
+      collection.specs as SyncRepoSpec[],
+    );
+
     this.deps.notify(`Sync started (${collection.specs.length} repo(s))…`);
     const results = await engine.syncAll(
       orderChildrenFirst(collection.specs as SyncRepoSpec[]),
     );
     this.report(results, log);
+
+    // E1 post-sync parity round (M1/M2). Best-effort: a parity failure is
+    // logged + surfaced as its own Notice, never mutates the sync outcome.
+    if (this.deps.parity !== undefined) {
+      try {
+        this.deps.notify(
+          await this.deps.parity.runAfterSync(
+            collection.specs as SyncRepoSpec[],
+            results,
+            snapshot,
+          ),
+        );
+      } catch (err) {
+        const msg = GitHubRestClient.redactTokens(
+          err instanceof Error ? err.message : String(err),
+        );
+        log(`[ExoSync] parity round failed: ${msg}`);
+        this.deps.notify(`ExoSync parity check failed: ${msg}`);
+      }
+    }
   }
 
   private report(

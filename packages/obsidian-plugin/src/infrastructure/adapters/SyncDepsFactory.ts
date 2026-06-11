@@ -3,12 +3,14 @@ import yaml from "js-yaml";
 import {
   FileWatermarkStore,
   GatedStructuredMerger,
+  SYNC_BRANCH,
+  SpaceSpecAccumulator,
   StructuredMerger,
   SyncEngine,
   SyncedQuarantineStore,
   WATERMARK_STORE_FILENAME,
+  classifySpaceDeclaration,
   withRateLimitBackoff,
-  derivePath,
   type LocalFilesPort,
   type MaterializationCheckPort,
   type QuarantinePort,
@@ -20,10 +22,6 @@ import {
 
 import { GitHubRestClient } from "./GitHubRestClient";
 import { LocalSecretsStore } from "./LocalSecretsStore";
-import {
-  isAssetSpaceFrontmatter,
-  isFileSpaceFrontmatter,
-} from "./AssetSpaceFrontmatter";
 import { parseGitHubURL } from "./AssetSpaceManager";
 import type { PluginLocalDataStore } from "./PluginLocalDataStore";
 
@@ -64,11 +62,10 @@ import type { PluginLocalDataStore } from "./PluginLocalDataStore";
  *    pins re-derive conflicts, no data loss).
  */
 
-/** Per-repo sync branch. AssetSpace ABox declares no branch property and the
- * REST mount layer pulls `ref="main"` — same constant here. NOTE: changing
- * this later (e.g. API-resolved default branch) changes `repoKey` and resets
- * watermarks → one-time first-sync full-conflict per repo. */
-export const SYNC_BRANCH = "main";
+/** Per-repo sync branch — re-exported from the core (ExoSync E1: the
+ * constant moved to `spaceSpecCore` so the CLI shares it; see its docstring
+ * for the repoKey/watermark-reset caveat). */
+export { SYNC_BRANCH } from "exocortex";
 
 /** Result of {@link collectSyncRepoSpecs}. */
 export interface SyncSpecCollection {
@@ -77,15 +74,6 @@ export interface SyncSpecCollection {
   asUidByRepoKey: Map<string, string>;
   /** Skipped AssetSpaces (unparseable / non-GitHub source). */
   warnings: string[];
-}
-
-/** Dual-read `exo__AssetSpace_source ?? _git` (RFC 01a83de8 v10). */
-function readSource(fm: Record<string, unknown>): string | null {
-  const source = fm["exo__AssetSpace_source"];
-  if (typeof source === "string" && source.length > 0) return source;
-  const git = fm["exo__AssetSpace_git"];
-  if (typeof git === "string" && git.length > 0) return git;
-  return null;
 }
 
 /**
@@ -98,116 +86,46 @@ function readSource(fm: Record<string, unknown>): string | null {
  * Only `https://github.com/<owner>/<repo>` sources participate (the same
  * allowlist as the REST mount path); other source forms are skipped with a
  * warning.
+ *
+ * Per-declaration classification + dedupe live in the platform-free core
+ * (`classifySpaceDeclaration` / `SpaceSpecAccumulator`, ExoSync E1) shared
+ * with the CLI's `exosync-parity` collector — this function only supplies
+ * the Obsidian walk (metadataCache frontmatter) and the existence check.
  */
 export async function collectSyncRepoSpecs(
   app: App,
 ): Promise<SyncSpecCollection> {
-  const specs: SyncRepoSpec[] = [];
-  const asUidByRepoKey = new Map<string, string>();
-  const warnings: string[] = [];
-  const seen = new Set<string>();
+  const acc = new SpaceSpecAccumulator();
 
-  const kindByRepoKey = new Map<string, "asset" | "file">();
   for (const file of app.vault.getMarkdownFiles()) {
     const cache = app.metadataCache.getFileCache(file);
     const fm = cache?.frontmatter as Record<string, unknown> | undefined;
     if (!fm) continue;
-    // Phase C: both Space subtypes are sync units. A declaration carrying
-    // BOTH class UIDs is contradictory (disjoint in the TBox, R5
-    // declarative-only) — the conservative `asset` wins (its md-only
-    // allowlist can never corrupt attachments) with a warning.
-    const isAsset = isAssetSpaceFrontmatter(fm);
-    const isFile = isFileSpaceFrontmatter(fm);
-    if (!isAsset && !isFile) continue;
-    if (isAsset && isFile) {
-      warnings.push(
-        `declaration at ${file.path} carries BOTH exo__AssetSpace and exo__FileSpace classes (disjoint) — treating as AssetSpace (conservative)`,
-      );
-    }
-    const spaceKind: "asset" | "file" = isAsset ? "asset" : "file";
 
-    const source = readSource(fm);
-    if (source === null) {
-      if (spaceKind === "file") {
-        warnings.push(
-          `skipped FileSpace at ${file.path}: no exo__AssetSpace_source/_git — mount path underivable`,
-        );
-      }
-      continue;
-    }
+    const verdict = classifySpaceDeclaration(fm, file.path);
+    if (verdict.kind === "not-space") continue;
+    if (verdict.warning !== undefined) acc.warnings.push(verdict.warning);
+    if (verdict.kind === "skip") continue;
 
-    // Normalize ONCE and feed the SAME string everywhere — parseGitHubURL
-    // strips `.git` case-sensitively while derivePath strips it
-    // case-insensitively, so an unnormalized `.GIT` source would diverge
-    // repo vs mount path (code-reviewer LOW, PR #3461).
-    const normalized = source.replace(/\.git$/i, "");
-    let owner: string;
-    let repo: string;
-    try {
-      GitHubRestClient.validateRepoURL(normalized);
-      ({ owner, repo } = parseGitHubURL(normalized));
-    } catch {
-      warnings.push(
-        `skipped AssetSpace at ${file.path}: source is not a plain https://github.com/<owner>/<repo> URL`,
-      );
-      continue;
-    }
-
-    const localPath = derivePath(normalized);
-    if (localPath === null) {
-      warnings.push(
-        `skipped AssetSpace at ${file.path}: cannot derive mount path from source`,
-      );
-      continue;
-    }
-
-    const repoKey = `${owner}/${repo}#${SYNC_BRANCH}`;
-    if (seen.has(repoKey)) {
-      // Same repo declared twice with CONFLICTING kinds (vault iteration
-      // order is non-deterministic — advisor H6): the resolution must be
-      // deterministic regardless of which declaration was seen first —
-      // `asset` always wins (its md-only allowlist can never corrupt
-      // attachments; the inverse could push text-decoded binary).
-      const priorKind = kindByRepoKey.get(repoKey);
-      if (priorKind !== undefined && priorKind !== spaceKind) {
-        warnings.push(
-          `repo ${repoKey} is declared as BOTH AssetSpace and FileSpace by different assets — treating as AssetSpace (deterministic, conservative); fix the vault (disjoint subtypes)`,
-        );
-        if (priorKind === "file") {
-          kindByRepoKey.set(repoKey, "asset");
-          const spec = specs.find((s) => s.repoKey === repoKey);
-          if (spec !== undefined) delete spec.spaceKind;
-        }
-      }
-      continue;
-    }
-    seen.add(repoKey);
-    kindByRepoKey.set(repoKey, spaceKind);
+    const spec = acc.offer(verdict.candidate);
+    if (spec === null) continue;
 
     let exists = false;
     try {
-      exists = await app.vault.adapter.exists(localPath);
+      exists = await app.vault.adapter.exists(spec.localPath);
     } catch {
       // adapter error → treat as not materialized (fail-closed, D19 spirit)
     }
     if (!exists) continue;
 
-    specs.push({
-      owner,
-      repo,
-      branch: SYNC_BRANCH,
-      repoKey,
-      localPath,
-      ...(spaceKind === "file" ? { spaceKind } : {}),
-    });
-    const asUid =
-      typeof fm["exo__Asset_uid"] === "string"
-        ? (fm["exo__Asset_uid"] as string).trim()
-        : "";
-    if (asUid.length > 0) asUidByRepoKey.set(repoKey, asUid);
+    acc.commit(verdict.candidate);
   }
 
-  return { specs, asUidByRepoKey, warnings };
+  return {
+    specs: acc.specs,
+    asUidByRepoKey: acc.asUidByRepoKey,
+    warnings: acc.warnings,
+  };
 }
 
 /** Default `Sha1Fn` over WebCrypto (renderer-safe on desktop AND iOS). */

@@ -132,6 +132,7 @@ import {
 import { ModalConfirmGate } from "./infrastructure/adapters/ModalConfirmGate";
 import type { RestAssetSpaceMount } from "./infrastructure/adapters/RestAssetSpaceMount";
 import { SyncCommands } from "./infrastructure/adapters/SyncCommands";
+import { buildParityCheck } from "./infrastructure/adapters/ExoSyncParityFactory";
 import {
   buildSyncEngine,
   collectSyncRepoSpecs,
@@ -2772,6 +2773,12 @@ export default class ExocortexPlugin extends Plugin {
       isSwitchInProgress: () => localDataStore.isSwitchInProgress(),
       notify: (message) => this.notifier.info(message),
       log: (message) => this.logger.warn(message),
+      // ExoSync Phase E (E1) — automatic M1/M2 parity round after every
+      // sync + the standalone palette report (parallel-run validation).
+      parity: buildParityCheck({
+        app: this.app,
+        log: (message) => this.logger.warn(message),
+      }),
     });
 
     const switchMgr = new ProfileApplyManager({
@@ -2984,6 +2991,17 @@ export default class ExocortexPlugin extends Plugin {
       name: "Sync",
       callback: () => {
         void syncCommands.invokeSync();
+      },
+    });
+
+    // ExoSync Phase E (RFC 4e4dc453, E1) — standalone M1/M2 parity report
+    // over the same materialized set (the post-sync round runs
+    // automatically; this command is the on-demand probe).
+    this.addCommand({
+      id: "exosync-parity-report",
+      name: "Sync parity report",
+      callback: () => {
+        void syncCommands.invokeParityReport();
       },
     });
 

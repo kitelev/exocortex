@@ -14,7 +14,7 @@ injected ports composed by the plugin in
 
 ## How to use
 
-1. **Configure a PAT.** Settings → Exocortex → *Profile: GitHub PAT*. The
+1. **Configure a PAT.** Settings → Exocortex → _Profile: GitHub PAT_. The
    token is stored under the key `pat` in
    `.obsidian/plugins/exocortex/data.local.json` (`LocalSecretsStore`) — the
    `.local.` infix keeps it out of Obsidian Sync replication, and it is never
@@ -22,8 +22,8 @@ injected ports composed by the plugin in
    your space repos is recommended. The sync engine is rebuilt from the
    currently stored PAT on every invocation, so a newly saved PAT is honoured
    without a reload.
-2. *(Optional but recommended)* **Configure a quarantine repo.** Settings →
-   Exocortex → *ExoSync* → *Quarantine repo URL*
+2. _(Optional but recommended)_ **Configure a quarantine repo.** Settings →
+   Exocortex → _ExoSync_ → _Quarantine repo URL_
    (`https://github.com/<owner>/<repo>`). Unresolvable conflicts are
    preserved there as both-versions entries. Leaving it empty is safe for
    AssetSpaces (conflicts simply re-derive on every sync); **FileSpaces
@@ -84,7 +84,7 @@ git content, no LFS.
   uid-less files match by path; duplicate uids on disk degrade to path
   identity with a warning.
 - **First sync.** Asset mode: the watermark bootstraps only when the local
-  tree is *exactly* identical to the remote head (fresh mount); any
+  tree is _exactly_ identical to the remote head (fresh mount); any
   divergence is a `full-conflict` — nothing is overwritten. File mode builds
   a synthetic base from already-identical blobs and lets every divergence
   resolve through the remote-wins layer.
@@ -98,7 +98,7 @@ git content, no LFS.
   warning — the previous version stays recoverable from git history.
 - **Pull-apply safety.** Remote changes land on disk only after the push
   succeeded, through atomic writes (temp file + rename), with a TOCTOU
-  guard: a file the user edited mid-sync is skipped and *pinned* in the
+  guard: a file the user edited mid-sync is skipped and _pinned_ in the
   watermark so the divergence re-derives next sync instead of being
   silently reverted. Unsafe remote paths (`..`, absolute, backslash) are
   refused.
@@ -119,7 +119,7 @@ consumed silently. Real conflicts go through `GatedStructuredMerger`:
   set-union with base-tombstones: a value removed on one side stays removed,
   values added on either side survive. Scalar keys follow the classic 3-way
   rule; a key changed differently on both sides is a conflict. A merge that
-  would strip *all* `exo__Instance_class` values via crossed tombstones is
+  would strip _all_ `exo__Instance_class` values via crossed tombstones is
   refused.
 - **Body** — structured section merge, explicitly not last-write-wins. The
   body splits at ATX headings (code-fence-aware); per-section 3-way; a
@@ -131,10 +131,10 @@ consumed silently. Real conflicts go through `GatedStructuredMerger`:
   violations (minCount/maxCount/datatype) always gate; `sh:class` range
   checks gate only for references resolvable inside the mounted scope
   (open-world: a ref into an unmounted space is not a violation). A gated
-  merge quarantines both versions instead of shipping. *Note: the gate
+  merge quarantines both versions instead of shipping. _Note: the gate
   module ships in the core package, but the plugin's Phase B composition
   does not wire it yet (`SyncDepsFactory` marks it a follow-up) —
-  unresolvable merges still quarantine.*
+  unresolvable merges still quarantine._
 
 Anything the merger cannot resolve — delete-vs-modify, ambiguous multi-remote
 overlap, unparseable frontmatter, conflicting scalar edits — is never
@@ -150,7 +150,7 @@ onto-RFC `18808c73`) is a git-backed space of opaque blobs:
   mount is never parsed, never enters the triple store, never SHACL-checked.
   The skip is derived from the `rdf:type` declaration, not hardcoded paths,
   and reacts live to declaration create/edit/delete/rename. The declaration
-  asset itself must live *outside* its mount folder.
+  asset itself must live _outside_ its mount folder.
 - **Sync.** Every file syncs byte-exact (no `.md` restriction; the
   `.local.`/`.conflict.` infix exclusions still apply). No uid identity —
   blobs match by path. Pushes go through base64 blob upload; binary content
@@ -199,7 +199,7 @@ loss and are visible cross-device. Design points:
   push path resolves its token from `gh auth token` (OS keychain).
 - **Secret scan** (`secretScan.ts`) — every push payload is scanned for
   GitHub classic tokens (`ghp_/gho_/ghu_/ghs_/ghr_…`), fine-grained tokens
-  (`github_pat_…`) and private-key blocks. Any finding refuses the *whole*
+  (`github_pat_…`) and private-key blocks. Any finding refuses the _whole_
   push (a partial set could ship an inconsistent asset graph); the report
   names the path and pattern kind, never the secret. In file mode,
   UTF-8-decodable contents still scan; true binary is skipped (secret
@@ -213,10 +213,10 @@ loss and are visible cross-device. Design points:
 - **Local deletes and renames are not pushed.** The write primitive cannot
   express deletions, so local deletions/renames are reported as
   `deferredDeletes` warnings and re-surface on every sync. Remote deletes
-  *are* applied locally.
+  _are_ applied locally.
 - **`auth-required`** — HTTP 401, or 403 without rate-limit markers: the
   PAT is expired, revoked or under-scoped; never treated as success. Known
-  blind spot: an under-scoped *fine-grained* PAT gets **404** from GitHub
+  blind spot: an under-scoped _fine-grained_ PAT gets **404** from GitHub
   on private-repo refs (existence-hiding), which surfaces as a generic
   error, not as `auth-required` — if a private repo "does not exist",
   check the PAT's repository allowlist first.
@@ -239,19 +239,21 @@ loss and are visible cross-device. Design points:
 
 ## Source map
 
-| Module (`packages/exocortex/src/`) | Role |
-| --- | --- |
-| `services/sync/SyncEngine.ts` | pull→merge→push orchestrator, retry loop, watermark advance |
-| `services/sync/ChangeDetector.ts` | uid/path 3-way change detection vs the watermark base |
-| `services/sync/StructuredMerger.ts` + `diff3.ts` | frontmatter + section/paragraph 3-way merge |
-| `services/sync/GatedStructuredMerger.ts` + `MergeShaclGate.ts` | merge layer composition + SHACL gate |
-| `services/sync/SyncedQuarantineStore.ts` | durable cross-device conflict store |
-| `services/sync/FileWatermarkStore.ts` | per-device watermark persistence |
-| `services/sync/CredentialStore.ts` | PAT port contract + auth-failure detection |
-| `services/sync/secretScan.ts` / `transportBackoff.ts` | push refusal on secrets / rate-limit backoff |
-| `services/sync/githubRepoReader.ts` | Git Data API read helpers |
-| `services/FileSpaceDiscovery.ts` | FileSpace → indexer-exclusion prefixes |
-| `infrastructure/github/restCommit.ts` | the 4-call commit+push write primitive |
+| Module (`packages/exocortex/src/`)                             | Role                                                                       |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `services/sync/SyncEngine.ts`                                  | pull→merge→push orchestrator, retry loop, watermark advance                |
+| `services/sync/ChangeDetector.ts`                              | uid/path 3-way change detection vs the watermark base                      |
+| `services/sync/StructuredMerger.ts` + `diff3.ts`               | frontmatter + section/paragraph 3-way merge                                |
+| `services/sync/GatedStructuredMerger.ts` + `MergeShaclGate.ts` | merge layer composition + SHACL gate                                       |
+| `services/sync/SyncedQuarantineStore.ts`                       | durable cross-device conflict store                                        |
+| `services/sync/FileWatermarkStore.ts`                          | per-device watermark persistence                                           |
+| `services/sync/CredentialStore.ts`                             | PAT port contract + auth-failure detection                                 |
+| `services/sync/secretScan.ts` / `transportBackoff.ts`          | push refusal on secrets / rate-limit backoff                               |
+| `services/sync/githubRepoReader.ts`                            | Git Data API read helpers                                                  |
+| `services/sync/spaceSpecCore.ts`                               | shared sync-unit classification (plugin + CLI, one parser)                 |
+| `services/sync/ParityValidator.ts` + `assetSemanticCompare.ts` | Phase E M1/M2 parity harness ([parallel-run doc](exosync-parallel-run.md)) |
+| `services/FileSpaceDiscovery.ts`                               | FileSpace → indexer-exclusion prefixes                                     |
+| `infrastructure/github/restCommit.ts`                          | the 4-call commit+push write primitive                                     |
 
 Plugin wiring: `packages/obsidian-plugin/src/infrastructure/adapters/SyncCommands.ts`
 (palette handler) and `SyncDepsFactory.ts` (engine composition over
@@ -271,4 +273,6 @@ Plugin wiring: `packages/obsidian-plugin/src/infrastructure/adapters/SyncCommand
 - Related docs: [profile.md](profile.md) (mount-state apply — the
   materialized set ExoSync syncs),
   [settings-homoiconization.md](settings-homoiconization.md) (ExoSync Phase
-  D: settings as vault assets)
+  D: settings as vault assets),
+  [exosync-parallel-run.md](exosync-parallel-run.md) (Phase E: parallel-run
+  mode + M1/M2 validation harness)

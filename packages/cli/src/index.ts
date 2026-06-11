@@ -24,6 +24,7 @@ import { applyProfileCommand } from "./commands/apply-profile.js";
 import { bootstrapCommand } from "./commands/bootstrap.js";
 import { assetSpaceAddCommand } from "./commands/assetspace-add.js";
 import { experimentalCommand } from "./commands/experimental.js";
+import { exosyncParityCommand } from "./commands/exosync-parity.js";
 
 // Version injected at build time by esbuild (see esbuild.config.mjs)
 declare const __CLI_VERSION__: string;
@@ -77,6 +78,9 @@ export function createProgram(version?: string): Command {
 
   // RFC 01a83de8 Phase 0 — experimental REST commit+push PoC (opt-in, no git binary)
   program.addCommand(experimentalCommand());
+
+  // RFC 4e4dc453 Phase E (E1) — ExoSync M1/M2 parity report (read-only)
+  program.addCommand(exosyncParityCommand());
 
   return program;
 }

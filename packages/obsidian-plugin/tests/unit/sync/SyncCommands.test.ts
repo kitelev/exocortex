@@ -13,6 +13,7 @@ import type {
   BuiltSyncEngine,
   SyncSpecCollection,
 } from "../../../src/infrastructure/adapters/SyncDepsFactory";
+import type { ParityCheck } from "../../../src/infrastructure/adapters/ExoSyncParityFactory";
 import type { RepoSyncResult, SyncEngine, SyncRepoSpec } from "exocortex";
 
 const spec = (key: string): SyncRepoSpec => {
@@ -49,6 +50,8 @@ interface HarnessOptions {
   isSwitchInProgress?: boolean;
   /** Resolves to release a hanging syncAll (double-invoke test). */
   syncAllGate?: Promise<void>;
+  /** E1 parity harness seam. */
+  parity?: ParityCheck;
 }
 
 function makeHarness(opts: HarnessOptions = {}) {
@@ -77,6 +80,7 @@ function makeHarness(opts: HarnessOptions = {}) {
     isSwitchInProgress: () => opts.isSwitchInProgress ?? false,
     notify: (m) => notices.push(m),
     log: (m) => logs.push(m),
+    ...(opts.parity !== undefined ? { parity: opts.parity } : {}),
   });
   return { commands, notices, logs, syncAll };
 }
@@ -197,5 +201,103 @@ describe("SyncCommands", () => {
     await expect(commands.invokeSync()).resolves.toBeUndefined();
     expect(notices.some((n) => n.includes("collect blew up"))).toBe(true);
     expect(commands.isBusy()).toBe(false);
+  });
+});
+
+describe("SyncCommands — E1 parity harness integration", () => {
+  function makeParity(overrides: Partial<ParityCheck> = {}): {
+    parity: ParityCheck;
+    calls: string[];
+  } {
+    const calls: string[] = [];
+    const parity: ParityCheck = {
+      captureSnapshot: async () => {
+        calls.push("snapshot");
+        return { dirtyByRepo: new Map(), warnings: [] };
+      },
+      runAfterSync: async (specs, results, snapshot) => {
+        calls.push(
+          `after-sync:${specs.length}:${results.length}:${snapshot !== undefined ? "with-snapshot" : "no-snapshot"}`,
+        );
+        return "ExoSync parity: M1=0, M2=∅ (1 repo(s) checked)";
+      },
+      runStandalone: async (specs) => {
+        calls.push(`standalone:${specs.length}`);
+        return "ExoSync parity: M1=0, M2=∅ (1 repo(s) checked)";
+      },
+      ...overrides,
+    };
+    return { parity, calls };
+  }
+
+  it("captures the snapshot BEFORE syncAll and runs the round after, notifying the summary", async () => {
+    const { parity, calls } = makeParity();
+    const { commands, notices, syncAll } = makeHarness({ parity });
+
+    await commands.invokeSync();
+
+    expect(calls).toEqual(["snapshot", "after-sync:1:1:with-snapshot"]);
+    // Ordering: the snapshot call happened before the engine ran.
+    expect(syncAll).toHaveBeenCalledTimes(1);
+    expect(
+      notices.some((n) => n.includes("parity: M1=0, M2=∅")),
+    ).toBe(true);
+  });
+
+  it("a parity failure never affects the sync outcome (best-effort)", async () => {
+    const { parity } = makeParity({
+      runAfterSync: async () => {
+        throw new Error("parity blew up");
+      },
+    });
+    const { commands, notices, logs } = makeHarness({ parity });
+
+    await commands.invokeSync();
+
+    expect(notices.some((n) => n.startsWith("Sync done"))).toBe(true);
+    expect(notices.some((n) => n.includes("parity check failed"))).toBe(true);
+    expect(logs.some((l) => l.includes("parity round failed"))).toBe(true);
+    expect(commands.isBusy()).toBe(false);
+  });
+
+  it("invokeParityReport runs a standalone round under the running flag", async () => {
+    const { parity, calls } = makeParity();
+    const { commands, notices } = makeHarness({ parity });
+
+    await commands.invokeParityReport();
+
+    expect(calls).toEqual(["standalone:1"]);
+    expect(notices.some((n) => n.includes("parity check started"))).toBe(true);
+    expect(notices.some((n) => n.includes("M1=0"))).toBe(true);
+    expect(commands.isBusy()).toBe(false);
+  });
+
+  it("invokeParityReport refuses while a sync is running / apply in flight / not wired", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { parity, calls } = makeParity();
+    const busy = makeHarness({ parity, syncAllGate: gate });
+    const running = busy.commands.invokeSync();
+    await busy.commands.invokeParityReport();
+    expect(calls.filter((c) => c.startsWith("standalone"))).toHaveLength(0);
+    expect(
+      busy.notices.some((n) => n.includes("already in progress")),
+    ).toBe(true);
+    release();
+    await running;
+
+    const applying = makeHarness({ parity, isSwitchInProgress: true });
+    await applying.commands.invokeParityReport();
+    expect(
+      applying.notices.some((n) => n.includes("profile apply is in progress")),
+    ).toBe(true);
+
+    const unwired = makeHarness();
+    await unwired.commands.invokeParityReport();
+    expect(
+      unwired.notices.some((n) => n.includes("not wired")),
+    ).toBe(true);
   });
 });
