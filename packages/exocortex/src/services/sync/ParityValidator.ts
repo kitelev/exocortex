@@ -32,9 +32,10 @@
  *
  * ## Classification is path-keyed by design
  *
- * No uid matching, no rename detection: a local rename classifies as
- * `pending-local-add` + `deferred-local-delete`, which is exactly what the
- * remote will observe. Duplicate-uid vault anomalies therefore cannot
+ * No uid matching, no rename detection: a not-yet-pushed local rename
+ * classifies as `pending-local-add` + `deferred-local-delete`, which is
+ * exactly what the remote will observe (post-#3476 both halves propagate
+ * on the next sync). Duplicate-uid vault anomalies therefore cannot
  * affect the harness at all (by construction).
  *
  * ## Read-only contract
@@ -90,9 +91,12 @@ export type ParityDiscrepancyClass =
   /** Remote deleted it, local copy unchanged — delete not yet pulled. */
   | "pending-remote-delete"
   /**
-   * Locally deleted, remote still carries the base version — the engine
-   * defers delete propagation (documented A1 gap), re-surfaces every sync.
-   * Accounted: nothing is lost. Tracked as its own bucket for E2.
+   * Locally deleted, remote still carries the base version — the delete
+   * has not been pushed YET. Post-#3476 the engine propagates deletes, so
+   * this is a transient pending divergence (counts into M2 like a
+   * pending-local-edit) and ESCALATES when it survives a converged sync
+   * round unchanged. The historical class name is kept for journal
+   * continuity (pre-#3476 entries used it for the accounted A1 gap).
    */
   | "deferred-local-delete"
   /**
@@ -145,7 +149,7 @@ export interface RepoParityReport {
   discrepancies: ParityDiscrepancy[];
   /** Semantic divergences counted into M2 (excludes accounted categories). */
   m2SemanticDiffs: number;
-  /** quarantine-pinned + format-only-drift + deferred-local-delete. */
+  /** quarantine-pinned + format-only-drift (accounted, never in M2). */
   accountedCount: number;
   m1Violations: ParityM1Violation[];
   /** File-mode repos: multiset equality of blob SHAs (attachment sub-check). */
@@ -233,6 +237,9 @@ const ESCALATABLE: ReadonlySet<ParityDiscrepancyClass> = new Set([
   "pending-remote-add",
   "pending-remote-edit",
   "pending-remote-delete",
+  // Post-#3476 the engine pushes deletes — one that survives a CONVERGED
+  // sync round unchanged is an engine failure, no longer an accounted gap.
+  "deferred-local-delete",
   "pending-conflict",
   "unverified-divergence",
 ]);
@@ -241,7 +248,6 @@ const ESCALATABLE: ReadonlySet<ParityDiscrepancyClass> = new Set([
 const ACCOUNTED: ReadonlySet<ParityDiscrepancyClass> = new Set([
   "quarantine-pinned",
   "format-only-drift",
-  "deferred-local-delete",
 ]);
 
 function errMsg(err: unknown): string {
@@ -402,6 +408,16 @@ export class ParityValidator {
       return report("inconclusive", {
         detail:
           "sync hit its race window (watermark not advanced) — parity deferred to the next round",
+      });
+    }
+    // D19 × #3476: under partial materialization local absence is NOT
+    // divergence — comparing would mass-classify every missing file as a
+    // deferred-local-delete (now an M2-counting pending class) and flood
+    // the journal with false positives.
+    if (syncResult?.status === "skipped-not-materialized") {
+      return report("inconclusive", {
+        detail:
+          "repo not fully materialized (D19) — local absence is not divergence; parity deferred to the next round",
       });
     }
 
@@ -693,7 +709,7 @@ export class ParityValidator {
             cls: "deferred-local-delete",
             remoteSha,
             detail:
-              "locally deleted; the engine defers delete propagation (A1 gap) — re-surfaces every sync",
+              "locally deleted; the delete propagates on the next sync (#3476) — escalates if it survives a converged round",
           };
         } else {
           d = {
@@ -848,6 +864,12 @@ export class ParityValidator {
       // historical behaviour: the post-sync trigger itself is the signal.
       const syncResult = syncResults?.find((r) => r.repoKey === repo.repoKey);
       if (syncResult !== undefined && syncResult.status !== "synced") continue;
+      // Deletions the engine DELIBERATELY withheld this cycle (#3476:
+      // empty-tree refusal — conflict-withheld ones are pinned and classify
+      // as quarantine-pinned instead) are not convergence failures; without
+      // the exemption every such path would escalate to a false M1 on the
+      // second round and stay there until the repo regains a survivor file.
+      const deliberatelyDeferred = new Set(syncResult?.deferredDeletes ?? []);
       const prevRepo = previous.repos.find(
         (r) => r.repoKey === repo.repoKey && r.status === "checked",
       );
@@ -859,6 +881,16 @@ export class ParityValidator {
       );
       for (const d of repo.discrepancies) {
         if (!ESCALATABLE.has(d.cls)) continue;
+        // Class-scoped (advisor round-2): only the deferred-local-delete
+        // shape is a deliberate defer. A pending-conflict on the SAME path
+        // (delete-vs-modify whose pin/quarantine silently broke) is exactly
+        // the engine bug this detector exists to catch — never exempt it.
+        if (
+          d.cls === "deferred-local-delete" &&
+          deliberatelyDeferred.has(d.path)
+        ) {
+          continue;
+        }
         const prev = prevByPath.get(d.path);
         if (
           prev !== undefined &&

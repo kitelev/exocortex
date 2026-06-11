@@ -265,9 +265,16 @@ export interface RepoSyncResult {
   quarantinedPaths?: string[];
   warnings: string[];
   /**
-   * Local deletes/renames detected but NOT pushed in A1 (the write primitive
-   * cannot express deletions; propagating them is merge-layer scope, A2/A3).
-   * They re-surface on every sync until that layer lands.
+   * Paths whose DELETION was propagated to the remote in the pushed commit
+   * (#3476): plain local deletes and the old half of renames. Absent/empty
+   * ⇒ no deletions pushed this round.
+   */
+  pushedDeletes?: string[];
+  /**
+   * Local deletes/renames detected but NOT pushed THIS cycle: pull-only
+   * runs (the push set is empty by construction, #3473) and deletions
+   * withheld by the conflict path (delete-vs-modify → merge/quarantine).
+   * They re-derive on the next sync — never silently dropped.
    */
   deferredDeletes: string[];
   /**

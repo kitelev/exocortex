@@ -258,6 +258,7 @@ export class SyncCommands {
     label = "Sync",
   ): void {
     let pushed = 0;
+    let deleted = 0;
     let pulled = 0;
     let merged = 0;
     let quarantined = 0;
@@ -272,6 +273,7 @@ export class SyncCommands {
         log(`[ExoSync] ${r.repoKey}: ${r.status} — ${r.detail}`);
       }
       pushed += r.pushedCount;
+      deleted += r.pushedDeletes?.length ?? 0;
       pulled += r.pulledCount;
       merged += r.mergedCount;
       quarantined += r.quarantinedCount;
@@ -302,9 +304,11 @@ export class SyncCommands {
     }
 
     // Split-run deferrals (#3473) are surfaced in the Notice — without this
-    // the user only sees them in the console log.
+    // the user only sees them in the console log. Pushed deletions (#3476)
+    // surface as their own count: a real propagation, not a deferral.
     const counts =
       `pushed ${pushed}, pulled ${pulled}, merged ${merged}, quarantined ${quarantined}` +
+      (deleted > 0 ? `, deleted ${deleted}` : "") +
       (deferred > 0 ? `, deferred ${deferred} (a full Sync resolves them)` : "");
     if (problems.length === 0) {
       this.deps.notify(

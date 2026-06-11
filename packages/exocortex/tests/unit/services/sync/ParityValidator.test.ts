@@ -132,20 +132,10 @@ describe("ParityValidator — clean state and pending classifications", () => {
     expect(round.m2Total).toBe(3);
   });
 
-  it("accounts a deferred local delete (A1 gap) — M2 stays clean", async () => {
-    const h = makeHarness({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
-    await bootstrap(h);
-    h.local.files.delete(FILE_B);
-
-    const round = await h.validator.runRound([h.spec], { trigger: "standalone" });
-
-    expect(round.repos[0].discrepancies).toMatchObject([
-      { path: FILE_B, presence: "remote-only", cls: "deferred-local-delete" },
-    ]);
-    expect(round.m2Total).toBe(0);
-    expect(round.repos[0].accountedCount).toBe(1);
-    expect(round.ok).toBe(true);
-  });
+  // The pre-#3476 "accounts a deferred local delete (A1 gap) — M2 stays
+  // clean" contract is inverted: deletes now PUSH, so a not-yet-pushed
+  // delete is an honest pending divergence. See the dedicated
+  // "delete propagation accounting (#3476)" describe below.
 
   it("accounts watermark-pinned paths as quarantine-pinned", async () => {
     const h = makeHarness({ [FILE_A]: mdAsset("u1") });
@@ -528,32 +518,11 @@ describe("ParityValidator — M1 detector 2: persistent divergence", () => {
     expect(converged.m1Total).toBe(1);
   });
 
-  it("does NOT escalate a deferred rename across synced rounds (A1 gap is not data loss)", async () => {
-    const h = makeHarness({ [FILE_A]: mdAsset("u1") });
-    await bootstrap(h);
-    // Routine note rename: same content, new path. The engine defers BOTH
-    // halves by design (no delete push, no re-add push) even in a cycle
-    // that reports "synced" — neither half may ever reach M1 (advisor
-    // round-2 NEW-1: pending-local-add escalation flagged every rename).
-    const content = h.local.files.get(FILE_A) as string;
-    h.local.files.delete(FILE_A);
-    h.local.files.set("assets/renamed.md", content);
-
-    const round1 = await h.validator.runRound([h.spec], {
-      trigger: "post-sync",
-      syncResults: [await h.engine.sync(h.spec)],
-    });
-    const round2 = await h.validator.runRound([h.spec], {
-      trigger: "post-sync",
-      previousRound: round1,
-      syncResults: [await h.engine.sync(h.spec)],
-    });
-
-    const classes = round2.repos[0].discrepancies.map((d) => d.cls).sort();
-    expect(classes).toEqual(["deferred-local-delete", "pending-local-add"]);
-    expect(round1.m1Total).toBe(0);
-    expect(round2.m1Total).toBe(0);
-  });
+  // The pre-#3476 "does NOT escalate a deferred rename across synced
+  // rounds" test asserted the A1 gap (neither rename half pushed). Renames
+  // now propagate in ONE cycle — see "a rename converges in ONE cycle" in
+  // the "delete propagation accounting (#3476)" describe below; M1 stays 0
+  // because nothing survives to escalate.
 
   it("does NOT escalate when the divergence changed or on standalone rounds", async () => {
     const h = makeHarness({ [FILE_A]: mdAsset("u1") });
@@ -575,6 +544,149 @@ describe("ParityValidator — M1 detector 2: persistent divergence", () => {
       previousRound: prev,
     });
     expect(progressed.m1Total).toBe(0);
+  });
+});
+
+describe("ParityValidator — delete propagation accounting (#3476)", () => {
+  it("counts a not-yet-pushed local delete into M2 (pending divergence, no longer accounted)", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    await bootstrap(h);
+    h.local.files.delete(FILE_B);
+
+    // Standalone round BEFORE any sync had a chance to push the delete:
+    // an honest pending divergence, exactly like a pending-local-edit.
+    const round = await h.validator.runRound([h.spec], { trigger: "standalone" });
+
+    expect(round.repos[0].discrepancies).toMatchObject([
+      { path: FILE_B, presence: "remote-only", cls: "deferred-local-delete" },
+    ]);
+    expect(round.m2Total).toBe(1);
+    expect(round.repos[0].accountedCount).toBe(0);
+    expect(round.ok).toBe(false);
+  });
+
+  it("escalates a local delete that survived a CONVERGED sync round unchanged (M1)", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    await bootstrap(h);
+    h.local.files.delete(FILE_B);
+    const prev = await h.validator.runRound([h.spec], { trigger: "post-sync" });
+
+    // A sync reported "synced" yet the delete still was not propagated —
+    // post-#3476 that is an engine failure, not an accounted gap.
+    const synced: RepoSyncResult = {
+      repoKey: h.spec.repoKey,
+      status: "synced",
+      pulledCount: 0,
+      pushedCount: 0,
+      mergedCount: 0,
+      quarantinedCount: 0,
+      warnings: [],
+      deferredDeletes: [],
+    };
+    const next = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      previousRound: prev,
+      syncResults: [synced],
+    });
+
+    expect(next.m1Total).toBe(1);
+    expect(next.repos[0].m1Violations).toMatchObject([
+      { path: FILE_B, kind: "persistent-divergence" },
+    ]);
+  });
+
+  it("after a real sync the delete converges in ONE cycle — no journal entry survives", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    await bootstrap(h);
+    h.local.files.delete(FILE_B);
+
+    const syncResults = [await h.engine.sync(h.spec)];
+    const round = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      syncResults,
+    });
+
+    expect(round.repos[0].discrepancies).toEqual([]);
+    expect(round.m1Total).toBe(0);
+    expect(round.m2Total).toBe(0);
+    expect(round.ok).toBe(true);
+  });
+
+  it("a rename converges in ONE cycle — neither half persists in the journal", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1") });
+    await bootstrap(h);
+    const content = h.local.files.get(FILE_A) as string;
+    h.local.files.delete(FILE_A);
+    h.local.files.set("assets/renamed.md", content);
+
+    const syncResults = [await h.engine.sync(h.spec)];
+    const round = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      syncResults,
+    });
+
+    expect(round.repos[0].discrepancies).toEqual([]);
+    expect(round.m1Total).toBe(0);
+    expect(round.m2Total).toBe(0);
+  });
+
+  it("does NOT escalate deletions the engine deliberately deferred (empty-tree refusal)", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    await bootstrap(h);
+    // Deleting EVERY file → the engine defers the whole set (GitHub cannot
+    // create an empty tree) with status "synced" + deferredDeletes — a
+    // deliberate defer, not a convergence failure. Without the exemption
+    // round 2 would flag a false persistent-divergence M1 per file.
+    h.local.files.delete(FILE_A);
+    h.local.files.delete(FILE_B);
+
+    const sync1 = await h.engine.sync(h.spec);
+    expect(sync1.status).toBe("synced");
+    expect(sync1.deferredDeletes.sort()).toEqual([FILE_A, FILE_B]);
+    const round1 = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      syncResults: [sync1],
+    });
+    expect(round1.m2Total).toBe(2); // honest pending divergence
+    expect(round1.m1Total).toBe(0);
+
+    const sync2 = await h.engine.sync(h.spec);
+    const round2 = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      previousRound: round1,
+      syncResults: [sync2],
+    });
+    expect(round2.m1Total).toBe(0); // deliberate defer never escalates
+    expect(
+      round2.repos[0].discrepancies.map((d) => d.cls),
+    ).toEqual(["deferred-local-delete", "deferred-local-delete"]);
+  });
+
+  it("defers parity on a D19-skipped repo — local absence under partial materialization is not divergence", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    await bootstrap(h);
+    // Simulate a partially-materialized working tree: files missing locally.
+    h.local.files.delete(FILE_A);
+    h.local.files.delete(FILE_B);
+
+    const skipped: RepoSyncResult = {
+      repoKey: h.spec.repoKey,
+      status: "skipped-not-materialized",
+      pulledCount: 0,
+      pushedCount: 0,
+      mergedCount: 0,
+      quarantinedCount: 0,
+      warnings: [],
+      deferredDeletes: [],
+    };
+    const round = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      syncResults: [skipped],
+    });
+
+    expect(round.repos[0].status).toBe("inconclusive");
+    expect(round.m1Total).toBe(0);
+    expect(round.m2Total).toBe(0);
   });
 });
 

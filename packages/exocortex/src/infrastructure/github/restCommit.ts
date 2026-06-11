@@ -10,7 +10,8 @@
  *
  * The 4 calls (GitHub Git Data API):
  *   1. GET  git/refs/heads/{branch}  → base ref SHA
- *   2. POST git/trees (recursive)    → new tree SHA (multi-file, atomic)
+ *   2. POST git/trees (recursive)    → new tree SHA (multi-file, atomic;
+ *      deletions ride the same tree as `sha: null` entries, #3476)
  *   3. POST git/commits              → new commit SHA
  *   4. PATCH git/refs/heads/{branch} → fast-forward ref to the new commit
  *
@@ -89,11 +90,28 @@ export interface RestCreateCommitParams {
   repo: string;
   branch: string;
   /**
-   * Map of repo-relative path → file content. Non-empty. String values are
-   * committed inline (UTF-8); {@link BinaryFilePayload} values are uploaded
-   * as base64 blobs first (one extra API call per binary file).
+   * Map of repo-relative path → file content. String values are committed
+   * inline (UTF-8); {@link BinaryFilePayload} values are uploaded as base64
+   * blobs first (one extra API call per binary file). May be empty ONLY
+   * when {@link deletions} is non-empty (deletion-only commit, #3476).
    */
   files: Map<string, CommitFileContent>;
+  /**
+   * Repo-relative paths to DELETE in the same commit (#3476) — emitted as
+   * tree entries with `sha: null` on top of `base_tree` (Git Data API).
+   * Contract extension is ADDITIVE: omitting it keeps the historical
+   * add/modify-only behaviour byte-for-byte.
+   *
+   * Caller responsibilities (empirically verified against api.github.com,
+   * 2026-06-12):
+   *  - every path MUST exist in the base tree — GitHub rejects a sha:null
+   *    entry for an absent path with HTTP 422 `GitRPC::BadObjectState`;
+   *  - the resulting tree MUST NOT become empty — GitHub cannot create an
+   *    empty tree and fails the POST with HTTP 404;
+   *  - a path may not appear in both `files` and `deletions` (this core
+   *    rejects the ambiguity loudly).
+   */
+  deletions?: readonly string[];
   message: string;
   /** Defaults to `https://api.github.com`. Trailing slash stripped. */
   baseURL?: string;
@@ -137,6 +155,7 @@ export async function restCreateCommit(
   params: RestCreateCommitParams,
 ): Promise<string> {
   const { owner, repo, branch, files, message } = params;
+  const deletions = params.deletions ?? [];
   const baseURL = (params.baseURL ?? DEFAULT_BASE_URL).replace(/\/$/, "");
   const redact = params.redact ?? ((m: string): string => m);
 
@@ -149,8 +168,30 @@ export async function restCreateCommit(
   if (typeof branch !== "string" || branch.length === 0) {
     throw new Error("GitHub createCommit: branch is required");
   }
-  if (!(files instanceof Map) || files.size === 0) {
-    throw new Error("GitHub createCommit: files map must be non-empty");
+  if (!(files instanceof Map) || (files.size === 0 && deletions.length === 0)) {
+    throw new Error(
+      "GitHub createCommit: files map must be non-empty (unless deletions are provided)",
+    );
+  }
+  // Deduplicate: a repeated deletion path would emit two identical
+  // sha:null entries with undefined GitHub-side behaviour (public
+  // contract — engine callers already pass a Set, external callers may
+  // not).
+  const deletionSet = new Set<string>();
+  for (const path of deletions) {
+    if (typeof path !== "string" || path.length === 0) {
+      throw new Error(
+        "GitHub createCommit: deletion path must be a non-empty string",
+      );
+    }
+    if (files.has(path)) {
+      throw new Error(
+        redact(
+          `GitHub createCommit: path ${path} is both written and deleted — ambiguous`,
+        ),
+      );
+    }
+    deletionSet.add(path);
   }
   if (typeof message !== "string" || message.length === 0) {
     throw new Error("GitHub createCommit: message is required");
@@ -193,8 +234,16 @@ export async function restCreateCommit(
     blobShaByPath.set(path, blobSha);
   }
 
-  // Step 2 — create tree (recursive, multi-file atomic).
-  const tree = Array.from(files.entries()).map(([path, content]) =>
+  // Step 2 — create tree (recursive, multi-file atomic). Deletions (#3476)
+  // ride the SAME tree as `sha: null` entries — adds/modifies/deletes land
+  // in one commit (rename = add new path + delete old path, atomic).
+  const tree: Array<{
+    path: string;
+    mode: string;
+    type: string;
+    sha?: string | null;
+    content?: CommitFileContent;
+  }> = Array.from(files.entries()).map(([path, content]) =>
     isBinaryPayload(content)
       ? {
           path,
@@ -209,6 +258,9 @@ export async function restCreateCommit(
           content,
         },
   );
+  for (const path of deletionSet) {
+    tree.push({ path, mode: "100644", type: "blob", sha: null });
+  }
   const treeResp = await transport({
     method: "POST",
     url: `${baseURL}/repos/${o}/${r}/git/trees`,

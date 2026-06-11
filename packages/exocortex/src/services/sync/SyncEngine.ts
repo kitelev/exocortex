@@ -11,11 +11,18 @@
  * merge layer the engine keeps the A1 contract: any overlap (same uid or
  * same path, including delete-vs-modify) returns `conflict`, touches nothing.
  *
+ * Deletes and renames PUSH (#3476): a local delete becomes a `sha: null`
+ * tree entry in the same `restCreateCommit` chain (additive D3 contract
+ * extension); a rename pushes the new path AND deletes the old path in ONE
+ * commit. Safety rails: deletes only in fully-materialized repos (D19);
+ * delete-vs-remote-modify routes through the merge layer / quarantine with
+ * the deletion WITHHELD; a deletion already absent from the examined head
+ * (convergent delete) is dropped — never sent (GitHub rejects sha:null for
+ * absent paths); a deletion set that would empty the whole remote tree is
+ * deferred (GitHub cannot create an empty tree).
+ *
  * What this engine still does NOT do:
  *
- *  - NO pushed deletions/renames. The write primitive's `files` map cannot
- *    express deletions; local deletes and renames are reported as
- *    `deferredDeletes` warnings and re-surface every sync until A3 lands.
  *  - NO binary content. Only {@link isSyncablePath} files participate,
  *    symmetrically (local snapshot, remote diff, pull-apply, delete
  *    inference) — attachments are Phase C (D4/VL#3).
@@ -99,7 +106,12 @@ export interface SyncEngineDeps {
   baseURL?: string;
   /** Cap on 422 re-pull→retry cycles (D16). Default {@link DEFAULT_MAX_PUSH_RETRIES}. */
   maxPushRetries?: number;
-  commitMessage?: (spec: SyncRepoSpec, fileCount: number) => string;
+  commitMessage?: (
+    spec: SyncRepoSpec,
+    fileCount: number,
+    /** Deletions in the same commit (#3476). Older callbacks may ignore it. */
+    deleteCount?: number,
+  ) => string;
   /**
    * Defence-in-depth PAT redactor applied to error details/warnings and
    * forwarded to `restCreateCommit` (parity with the plugin's createCommit
@@ -217,7 +229,15 @@ export function isNonFastForwardError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return (
     (/HTTP 422/.test(msg) && /git\/refs/.test(msg)) ||
-    /ref update mismatch/.test(msg)
+    /ref update mismatch/.test(msg) ||
+    // #3476 deletion race: a concurrent commit removed/renamed a deletion
+    // target between this engine's absence guard and the tree POST —
+    // GitHub rejects the sha:null entry with 422 GitRPC::BadObjectState.
+    // Retryable like a ref race: the D16 re-pull recomputes the deletion
+    // set and the absence guard drops the vanished path.
+    (/HTTP 422/.test(msg) &&
+      /git\/trees/.test(msg) &&
+      /BadObjectState/.test(msg))
   );
 }
 
@@ -299,6 +319,14 @@ interface PinnedLocalChanges {
   localChanges: AssetChange[];
   localDeletedPaths: Set<string>;
   pushFilesAll: Map<string, SyncContent>;
+  /**
+   * Deletions to PUSH (#3476): deletePath → owner local path. The owner is
+   * the local change the deletion belongs to — the deleted path itself for
+   * a plain delete, the NEW path for a rename — so the push loop can
+   * withhold a deletion whenever its owner conflicted/converged (the
+   * conflict outcome replaces the raw push, deletion included).
+   */
+  pushDeletionsAll: Map<string, string>;
 }
 
 /** One local change overlapping one-or-more remote changes (merge input). */
@@ -354,6 +382,15 @@ type PushLoopOutcome =
       applyWrites: RemoteChange[];
       applyDeletes: RemoteChange[];
       pushFiles: Map<string, SyncContent>;
+      /** Deletions propagated in the pushed commit (#3476). */
+      pushedDeletions: string[];
+      /**
+       * Deletions detected but WITHHELD this cycle (#3476): the owner local
+       * change conflicted/converged (its outcome replaces the raw push) or
+       * the deletion set would have emptied the whole remote tree. They
+       * re-derive next sync — surfaced as `deferredDeletes`.
+       */
+      withheldDeletions: string[];
       merge: MergeResolution;
       /** REMOTE paths excluded by the size cap (file mode) — pinned by the caller. */
       remoteOversized: Set<string>;
@@ -562,6 +599,11 @@ export class SyncEngine {
   ): Promise<RepoSyncResult> {
     const warnings: string[] = [];
     const deferredDeletes: string[] = [];
+    // Deletions detected this cycle whose push loop is still IN FLIGHT —
+    // a non-retryable throw mid-loop lands in the catch below, which must
+    // still report them as deferred (contract: never silently dropped).
+    // Cleared once the loop returns (its outcome handling owns reporting).
+    let inFlightDeletionPaths: string[] = [];
     const result = (
       status: RepoSyncResult["status"],
       extra: Partial<RepoSyncResult> = {},
@@ -721,7 +763,9 @@ export class SyncEngine {
         disk,
         warnings,
         deferredDeletes,
+        direction,
       );
+      inFlightDeletionPaths = [...pinned.pushDeletionsAll.keys()];
 
       const loop = await this.runPushLoop(
         spec,
@@ -734,6 +778,12 @@ export class SyncEngine {
         sizeExcluded,
         direction,
       );
+      inFlightDeletionPaths = [];
+      if (loop.kind !== "done" && pinned.pushDeletionsAll.size > 0) {
+        // Nothing was pushed on these outcomes — every detected deletion is
+        // honestly deferred (re-derives next sync).
+        deferredDeletes.push(...pinned.pushDeletionsAll.keys());
+      }
       if (loop.kind === "conflict") {
         return result("conflict", { detail: loop.detail });
       }
@@ -772,9 +822,16 @@ export class SyncEngine {
       const merge = loop.merge;
       warnings.push(...merge.warnings);
       warnings.push(...loop.deferredWarnings);
+      // Withheld deletions (#3476: conflicted owner / empty-tree refusal)
+      // re-derive next sync — reported, never silently dropped.
+      deferredDeletes.push(...loop.withheldDeletions);
       const deferredExtra: Partial<RepoSyncResult> =
         loop.deferredPaths.size > 0
           ? { deferredPaths: [...loop.deferredPaths] }
+          : {};
+      const pushedDeletesExtra: Partial<RepoSyncResult> =
+        loop.pushedDeletions.length > 0
+          ? { pushedDeletes: loop.pushedDeletions }
           : {};
 
       // Quarantine sink fires ONCE, after the retry loop settled (D17). The
@@ -849,6 +906,7 @@ export class SyncEngine {
           examinedHead,
           newCommit.parents[0],
           pushFiles,
+          new Set(loop.pushedDeletions),
           warnings,
           mode,
         );
@@ -881,6 +939,7 @@ export class SyncEngine {
             ? { quarantinedPaths: quarantinedPathsOf(merge) }
             : {}),
           ...deferredExtra,
+          ...pushedDeletesExtra,
         });
       }
 
@@ -972,9 +1031,13 @@ export class SyncEngine {
           ? { quarantinedPaths: quarantinedPathsOf(merge) }
           : {}),
         ...deferredExtra,
+        ...pushedDeletesExtra,
       });
     } catch (err) {
       const redact = this.deps.redact ?? ((m: string): string => m);
+      if (inFlightDeletionPaths.length > 0) {
+        deferredDeletes.push(...inFlightDeletionPaths);
+      }
       if (isAuthError(err)) {
         return result("auth-required", {
           detail: redact(
@@ -1171,38 +1234,47 @@ export class SyncEngine {
 
   /**
    * Pin the local change-set for the whole retry loop (recomputing mid-retry
-   * would misclassify just-applied remote files as local edits). Renames and
-   * deletes are deferred — the write primitive cannot express deletions.
+   * would misclassify just-applied remote files as local edits).
+   *
+   * Deletes and renames PUSH (#3476): a plain delete becomes a `sha: null`
+   * tree entry; a rename pushes the new path AND deletes the old path in
+   * the SAME commit (no uid-duplicate window on the remote). Pull-only runs
+   * (#3473) keep the defer — their push set is empty by construction, so
+   * the delete re-derives and propagates on the next push/Sync.
    */
   private pinLocalChanges(
     detection: Extract<ChangeDetectionResult, { kind: "changes" }>,
     disk: ReadonlyMap<string, SyncContent>,
     warnings: string[],
     deferredDeletes: string[],
+    direction: SyncDirection,
   ): PinnedLocalChanges {
     const renames = detection.modified.filter((c) => c.basePath !== undefined);
     const pushable = [
       ...detection.added,
       ...detection.modified.filter((c) => c.basePath === undefined),
     ];
-    for (const r of renames) {
-      // Pushing the new path while the primitive cannot delete the old one
-      // would leave two files with the same uid on the remote — defer the
-      // whole rename pair to the merge layer.
-      if (r.basePath !== undefined) deferredDeletes.push(r.basePath);
-      warnings.push(
-        `deferred rename (uid ${r.uid ?? "?"}): ${r.basePath} → ${r.path} not pushed (write primitive cannot delete; merge layer A2/A3)`,
-      );
-    }
-    for (const d of detection.deleted) {
-      // Known cosmetic: a CONVERGENT delete (remote deleted it too) is
-      // consumed later in matchLocalVsRemote but still reported here as
-      // deferred for this cycle; the watermark drops it, so it self-heals
-      // on the next sync.
-      deferredDeletes.push(d.path);
-      warnings.push(
-        `deferred delete: ${d.path} not pushed (write primitive cannot delete; merge layer A2/A3)`,
-      );
+    const pushDeletionsAll = new Map<string, string>();
+    if (direction === "pull") {
+      for (const r of renames) {
+        if (r.basePath !== undefined) deferredDeletes.push(r.basePath);
+        warnings.push(
+          `pull-only: rename (uid ${r.uid ?? "?"}) ${r.basePath} → ${r.path} not pushed — propagates on the next push/Sync (#3473)`,
+        );
+      }
+      for (const d of detection.deleted) {
+        deferredDeletes.push(d.path);
+        warnings.push(
+          `pull-only: delete of ${d.path} not pushed — propagates on the next push/Sync (#3473)`,
+        );
+      }
+    } else {
+      for (const r of renames) {
+        if (r.basePath !== undefined) pushDeletionsAll.set(r.basePath, r.path);
+      }
+      for (const d of detection.deleted) {
+        pushDeletionsAll.set(d.path, d.path);
+      }
     }
     const localChanges: AssetChange[] = [
       ...pushable,
@@ -1211,11 +1283,13 @@ export class SyncEngine {
     ];
     const localDeletedPaths = new Set(detection.deleted.map((d) => d.path));
     const pushFilesAll = new Map<string, SyncContent>();
-    for (const c of pushable) {
+    // Renames' NEW-path content joins the push set (#3476) — paired with
+    // the old-path deletion above, both halves land in one commit.
+    for (const c of [...pushable, ...(direction === "pull" ? [] : renames)]) {
       const content = disk.get(c.path);
       if (content !== undefined) pushFilesAll.set(c.path, content);
     }
-    return { localChanges, localDeletedPaths, pushFilesAll };
+    return { localChanges, localDeletedPaths, pushFilesAll, pushDeletionsAll };
   }
 
   /**
@@ -1234,7 +1308,8 @@ export class SyncEngine {
     sizeExcluded: ReadonlySet<string> = new Set(),
     direction: SyncDirection = "sync",
   ): Promise<PushLoopOutcome> {
-    const { localChanges, localDeletedPaths, pushFilesAll } = pinned;
+    const { localChanges, localDeletedPaths, pushFilesAll, pushDeletionsAll } =
+      pinned;
     const maxRetries = this.deps.maxPushRetries ?? DEFAULT_MAX_PUSH_RETRIES;
     let attempt = 0;
     let examinedHead = "";
@@ -1242,6 +1317,8 @@ export class SyncEngine {
     let applyWrites: RemoteChange[] = [];
     let applyDeletes: RemoteChange[] = [];
     let pushFiles = new Map<string, SyncContent>();
+    let pushDeletions = new Set<string>();
+    let withheldDeletions: string[] = [];
     let merge: MergeResolution = EMPTY_MERGE;
     let alreadyInHead: string[] = [];
     let deferredPaths = new Set<string>();
@@ -1391,6 +1468,26 @@ export class SyncEngine {
               ...merge.mergedFiles,
             ]);
 
+      // Deletions of this iteration (#3476). A deletion whose OWNER local
+      // change conflicted/converged is withheld: the conflict outcome
+      // (merge/quarantine/pin) replaces the raw push, deletion included —
+      // the path re-derives next sync instead of being deleted under a
+      // remote edit. (Pull-only runs never populate `pushDeletionsAll`.)
+      pushDeletions = new Set<string>();
+      withheldDeletions = [];
+      for (const [delPath, owner] of pushDeletionsAll) {
+        if (convergedPushPaths.has(owner)) {
+          withheldDeletions.push(delPath);
+          continue;
+        }
+        // A path deleted by one local change but re-written by another
+        // (rename away + new file created at the old path) needs no
+        // deletion — the write overwrites it; sending both would be
+        // ambiguous (the primitive rejects the overlap loudly).
+        if (pushFiles.has(delPath)) continue;
+        pushDeletions.add(delPath);
+      }
+
       // #3475 phantom-commit guard: drop pushFiles whose bytes are ALREADY
       // identical in the examined head tree. Parallel-run state: another
       // device pushed the same content and this device's PER-FILE watermark
@@ -1402,22 +1499,25 @@ export class SyncEngine {
       // content) — the fast path (head unmoved, no pins) is the one that
       // needs it. Runs BEFORE the R5 secret scan: bytes already durable in
       // HEAD must not trigger a push refusal.
-      if (pushFiles.size > 0) {
-        if (headTreeByPath === undefined) {
-          // Fast path: `examinedHead === watermark.lastSyncedSha`, and
-          // `rootTreeSha` was D22-verified against the actual commit this
-          // very cycle (detectChanges) — one tree GET, and only when there
-          // is something to push (the no-change happy path never gets here).
-          headTreeByPath = treeByPath(
-            await getTree(
-              this.transport,
-              spec.owner,
-              spec.repo,
-              watermark.rootTreeSha,
-              this.deps.baseURL,
-            ),
-          );
-        }
+      if (
+        (pushFiles.size > 0 || pushDeletions.size > 0) &&
+        headTreeByPath === undefined
+      ) {
+        // Fast path: `examinedHead === watermark.lastSyncedSha`, and
+        // `rootTreeSha` was D22-verified against the actual commit this
+        // very cycle (detectChanges) — one tree GET, and only when there
+        // is something to push (the no-change happy path never gets here).
+        headTreeByPath = treeByPath(
+          await getTree(
+            this.transport,
+            spec.owner,
+            spec.repo,
+            watermark.rootTreeSha,
+            this.deps.baseURL,
+          ),
+        );
+      }
+      if (pushFiles.size > 0 && headTreeByPath !== undefined) {
         for (const [path, content] of pushFiles) {
           const headBlobSha = headTreeByPath.get(path);
           if (
@@ -1434,7 +1534,32 @@ export class SyncEngine {
           );
         }
       }
-      if (pushFiles.size === 0) break;
+      if (pushDeletions.size > 0 && headTreeByPath !== undefined) {
+        // #3476 absence guard (mirror of #3475 for deletions): a path
+        // already gone from the examined head (convergent delete, remote
+        // rename) must NOT be sent — GitHub rejects a sha:null entry for
+        // an absent path with HTTP 422 GitRPC::BadObjectState. Nothing is
+        // lost: the watermark rebuild drops the path and the delete never
+        // re-derives.
+        for (const path of [...pushDeletions]) {
+          if (!headTreeByPath.has(path)) pushDeletions.delete(path);
+        }
+        // Empty-tree refusal: GitHub cannot create an EMPTY tree (the POST
+        // fails HTTP 404 — empirically verified). A deletion set wiping
+        // EVERY entry of the head tree with nothing pushed alongside is
+        // deferred loudly instead of failing the whole repo.
+        if (
+          pushFiles.size === 0 &&
+          pushDeletions.size >= headTreeByPath.size
+        ) {
+          withheldDeletions.push(...pushDeletions);
+          deferredWarnings.push(
+            `deletion of ALL ${pushDeletions.size} remaining file(s) deferred — GitHub cannot create an empty tree; the deletes re-derive and propagate once the repo has at least one surviving file`,
+          );
+          pushDeletions.clear();
+        }
+      }
+      if (pushFiles.size === 0 && pushDeletions.size === 0) break;
 
       // R5 secret-scan — refuse the WHOLE push (a partial set could ship an
       // inconsistent asset graph). Findings carry path+kind, never the
@@ -1468,9 +1593,10 @@ export class SyncEngine {
           files: new Map(
             [...pushFiles].map(([p, c]) => [p, toCommitContent(c)]),
           ),
+          deletions: [...pushDeletions],
           message:
-            this.deps.commitMessage?.(spec, pushFiles.size) ??
-            `chore(exosync): sync ${pushFiles.size} file(s)`,
+            this.deps.commitMessage?.(spec, pushFiles.size, pushDeletions.size) ??
+            `chore(exosync): sync ${pushFiles.size} file(s)${pushDeletions.size > 0 ? `, ${pushDeletions.size} deletion(s)` : ""}`,
           baseURL: this.deps.baseURL,
           redact: this.deps.redact,
         });
@@ -1499,6 +1625,8 @@ export class SyncEngine {
       applyWrites,
       applyDeletes,
       pushFiles,
+      pushedDeletions: pushedSha !== undefined ? [...pushDeletions] : [],
+      withheldDeletions,
       merge,
       remoteOversized,
       alreadyInHead,
@@ -2162,6 +2290,7 @@ export class SyncEngine {
     examinedHead: string,
     actualParent: string,
     pushFiles: Map<string, SyncContent>,
+    pushedDeletions: ReadonlySet<string>,
     warnings: string[],
     mode: ModeOps,
   ): Promise<void> {
@@ -2207,6 +2336,11 @@ export class SyncEngine {
         if (pushFiles.has(c.path)) {
           warnings.push(
             `race-window: concurrent commit ${actualParent} changed ${c.path} between conflict check (head ${examinedHead}) and push — local version won; previous version recoverable from git history`,
+          );
+        }
+        if (pushedDeletions.has(c.path)) {
+          warnings.push(
+            `race-window: concurrent commit ${actualParent} changed ${c.path} which this push DELETED — the delete won; the concurrent version is recoverable from git history`,
           );
         }
       }
