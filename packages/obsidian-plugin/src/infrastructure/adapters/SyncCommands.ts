@@ -81,7 +81,12 @@ export class SyncCommands {
         );
         return;
       }
+      const log = this.deps.log ?? ((m: string): void => console.warn(m));
       const collection = await this.deps.collectSpecs();
+      // Skipped-declaration diagnostics matter MOST in the on-demand
+      // report — it is the command users debug "why is repo X missing"
+      // with (code-reviewer LOW, PR #3474).
+      for (const w of collection.warnings) log(`[ExoSync parity] ${w}`);
       if (collection.specs.length === 0) {
         this.deps.notify(
           "Nothing to check — no materialized AssetSpaces with a GitHub source found",

@@ -427,6 +427,42 @@ describe("ParityValidator — M1 detector 2: persistent divergence", () => {
     ]);
   });
 
+  it("does NOT escalate a repo whose sync cycle did not converge (failed status)", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1") });
+    await bootstrap(h);
+    h.local.files.set(FILE_A, mdAsset("u1", "stuck edit"));
+    const prev = await h.validator.runRound([h.spec], { trigger: "post-sync" });
+
+    // The sync ran but FAILED for this repo (e.g. secret-scan refusal) —
+    // its pendings legitimately survive; escalation here would pollute the
+    // M1 evidence window every round (code-reviewer HIGH, PR #3474).
+    const failed: RepoSyncResult = {
+      repoKey: h.spec.repoKey,
+      status: "error",
+      pulledCount: 0,
+      pushedCount: 0,
+      mergedCount: 0,
+      quarantinedCount: 0,
+      warnings: [],
+      deferredDeletes: [],
+      detail: "refusing to push: secret detected",
+    };
+    const next = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      previousRound: prev,
+      syncResults: [failed],
+    });
+    expect(next.m1Total).toBe(0);
+
+    // Same round shape with a CONVERGED status still escalates.
+    const converged = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      previousRound: prev,
+      syncResults: [{ ...failed, status: "synced", detail: undefined }],
+    });
+    expect(converged.m1Total).toBe(1);
+  });
+
   it("does NOT escalate when the divergence changed or on standalone rounds", async () => {
     const h = makeHarness({ [FILE_A]: mdAsset("u1") });
     await bootstrap(h);

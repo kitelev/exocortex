@@ -106,6 +106,12 @@ const REPO_URL_REGEX = /^https:\/\/github\.com\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+$
  * one pure function): anchored `https://github.com/<owner>/<repo>`, ≤256
  * chars, no extra path segments, no path-traversal patterns. Returns null
  * on any mismatch (callers warn-and-skip; D12 warn-not-block).
+ *
+ * Verbatim quirk #5 (code-reviewer LOW, PR #3474): the legacy chain
+ * stripped `.git` TWICE — the caller's normalisation plus the
+ * `(?:\.git)?$` in `parseGitHubURL` — so `…/r.git.git` parsed as repo `r`.
+ * Preserved here (case-sensitive second strip, exactly like the legacy
+ * regex) to keep repoKeys — and therefore watermarks — stable.
  */
 export function parseStrictGitHubRepoURL(
   url: string,
@@ -115,9 +121,13 @@ export function parseStrictGitHubRepoURL(
   }
   if (!REPO_URL_REGEX.test(url)) return null;
   const trailing = url.slice("https://github.com/".length);
-  const [owner, repo, ...rest] = trailing.split("/");
+  const [owner, rawRepo, ...rest] = trailing.split("/");
   if (rest.length > 0) return null;
-  if (owner === ".." || repo === ".." || repo.startsWith(".")) return null;
+  if (owner === ".." || rawRepo === ".." || rawRepo.startsWith(".")) {
+    return null;
+  }
+  const repo = rawRepo.replace(/\.git$/, "");
+  if (repo.length === 0) return null;
   return { owner, repo };
 }
 

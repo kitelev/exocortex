@@ -104,6 +104,17 @@ describe("parseStrictGitHubRepoURL", () => {
     const long = `https://github.com/a/${"b".repeat(260)}`;
     expect(parseStrictGitHubRepoURL(long)).toBeNull();
   });
+
+  it("strips one trailing .git (verbatim quirk #5 — legacy double-strip)", () => {
+    // Callers normalise once; the legacy parseGitHubURL regex stripped a
+    // second `.git`, so `…/r.git.git` always parsed as repo `r`. RepoKeys
+    // (and therefore watermarks) must stay stable across the extraction.
+    expect(parseStrictGitHubRepoURL("https://github.com/o/r.git")).toEqual({
+      owner: "o",
+      repo: "r",
+    });
+    expect(parseStrictGitHubRepoURL("https://github.com/o/.git")).toBeNull();
+  });
 });
 
 describe("classifySpaceDeclaration", () => {

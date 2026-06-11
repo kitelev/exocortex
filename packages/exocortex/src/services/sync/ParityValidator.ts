@@ -269,7 +269,14 @@ export class ParityValidator {
         const base = new Map(
           watermark.files.map((f) => [f.path, f.blobSha] as const),
         );
-        const local = await this.readLocalSnapshot(spec, false);
+        // Mode-correct walk (code-reviewer MEDIUM, PR #3474): a file-mode
+        // repo must snapshot its binaries byte-exact — the text walk would
+        // both miss attachment edits (no conservation coverage) and
+        // mis-hash non-UTF8 content (phantom dirty → false M1).
+        const local = await this.readLocalSnapshot(
+          spec,
+          spec.spaceKind === "file",
+        );
         const dirty = new Map<string, string>();
         for (const [path, sha] of local.shas) {
           if (base.get(path) !== sha) dirty.set(path, sha);
@@ -306,9 +313,18 @@ export class ParityValidator {
 
     // Escalation requires a sync BETWEEN the two snapshots (a pending edit
     // legitimately persists across standalone checks when the user simply
-    // has not synced yet) — only post-sync rounds guarantee that.
+    // has not synced yet) — only post-sync rounds guarantee that. And the
+    // sync must have actually CONVERGED the repo: a failed cycle (error /
+    // secret-detected / retry-exhausted / conflict / busy / skipped) never
+    // advanced the watermark, so its pendings legitimately survive — an
+    // escalation there would pollute the M1 evidence window with false
+    // positives every round (code-reviewer HIGH, PR #3474).
     if (opts.previousRound != null && opts.trigger === "post-sync") {
-      this.escalatePersistentDivergence(repos, opts.previousRound);
+      this.escalatePersistentDivergence(
+        repos,
+        opts.previousRound,
+        opts.syncResults,
+      );
     }
 
     const checkedRepos = repos.filter((r) => r.status === "checked").length;
@@ -556,7 +572,10 @@ export class ParityValidator {
           shas.set(path, await gitBlobSha(text, this.deps.sha1));
         }
       } catch (err) {
-        warnings.push(`local ${path} unreadable (${errMsg(err)}) — skipped`);
+        const redact = this.deps.redact ?? ((m: string): string => m);
+        warnings.push(
+          `local ${path} unreadable (${redact(errMsg(err))}) — skipped`,
+        );
       }
     }
     return { shas, texts, warnings };
@@ -726,8 +745,9 @@ export class ParityValidator {
         this.deps.baseURL,
       );
     } catch (err) {
+      const redact = this.deps.redact ?? ((m: string): string => m);
       ctx.warnings.push(
-        `blob fetch for ${path} failed (${errMsg(err)}) — left unverified`,
+        `blob fetch for ${path} failed (${redact(errMsg(err))}) — left unverified`,
       );
       return { path, presence: "both", cls: "unverified-divergence", ...shas };
     }
@@ -768,14 +788,17 @@ export class ParityValidator {
     const dirty = opts.snapshot?.dirtyByRepo.get(spec.repoKey);
     if (dirty === undefined || dirty.size === 0) return [];
 
-    const headShas = new Set([...remote.values()].map((e) => e.blobSha));
     const merged = new Set(syncResult?.mergedPaths ?? []);
     const quarantined = new Set(syncResult?.quarantinedPaths ?? []);
 
     const violations: ParityM1Violation[] = [];
     for (const [path, preSha] of dirty) {
       if (local.shas.get(path) === preSha) continue; // untouched / pending
-      if (headShas.has(preSha)) continue; // pushed as-is into the head
+      // "Pushed as-is" is a PER-PATH claim, like everything else here —
+      // a whole-tree blob-set membership would let a wrongful overwrite
+      // of path A hide behind an identical blob at path B (duplicate
+      // attachments are realistic; code-reviewer MEDIUM, PR #3474).
+      if (remote.get(path)?.blobSha === preSha) continue;
       if (merged.has(path)) continue; // legitimately transformed (3-way)
       if (quarantined.has(path)) continue; // preserved in quarantine
       if (pinned.has(path)) continue; // re-derives next sync
@@ -793,9 +816,16 @@ export class ParityValidator {
   private escalatePersistentDivergence(
     current: RepoParityReport[],
     previous: ParityRoundRecord,
+    syncResults: RepoSyncResult[] | undefined,
   ): void {
     for (const repo of current) {
       if (repo.status !== "checked") continue;
+      // Only a repo whose sync cycle actually converged ("synced") proves
+      // the engine had its chance — anything else legitimately leaves
+      // pendings behind. Absent results (no per-repo info) keep the
+      // historical behaviour: the post-sync trigger itself is the signal.
+      const syncResult = syncResults?.find((r) => r.repoKey === repo.repoKey);
+      if (syncResult !== undefined && syncResult.status !== "synced") continue;
       const prevRepo = previous.repos.find(
         (r) => r.repoKey === repo.repoKey && r.status === "checked",
       );

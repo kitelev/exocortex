@@ -207,12 +207,12 @@ export async function runExosyncParity(
   }
 
   const token = resolveToken(opts, deps);
+  const pushService = new RestPushService({
+    token,
+    ...(opts.apiBase !== undefined ? { apiBase: opts.apiBase } : {}),
+  });
   const transport =
-    deps.transportFactory?.(token, opts.apiBase) ??
-    new RestPushService({
-      token,
-      ...(opts.apiBase !== undefined ? { apiBase: opts.apiBase } : {}),
-    }).transport();
+    deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
 
   const { specs, warnings } = collectVaultSpecs(vaultPath);
   for (const w of warnings) out(`warn: ${w}`);
@@ -253,6 +253,9 @@ export async function runExosyncParity(
       nodeLocalFilesPort(path.join(vaultPath, spec.localPath)),
     watermarks: { get: (repoKey) => watermarks.get(repoKey) },
     yaml: coreSchemaYaml,
+    // Defence-in-depth: the transport already redacts its own error
+    // strings, but validator warnings land in the report/--json output too.
+    redact: (m) => pushService.redact(m),
     ...(opts.apiBase !== undefined ? { baseURL: opts.apiBase } : {}),
   });
 
