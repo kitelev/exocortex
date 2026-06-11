@@ -134,6 +134,7 @@ import {
 import { ModalConfirmGate } from "./infrastructure/adapters/ModalConfirmGate";
 import type { RestAssetSpaceMount } from "./infrastructure/adapters/RestAssetSpaceMount";
 import { SyncCommands } from "./infrastructure/adapters/SyncCommands";
+import { registerExoSyncCommands } from "./infrastructure/adapters/registerExoSyncCommands";
 import { buildParityCheck } from "./infrastructure/adapters/ExoSyncParityFactory";
 import {
   buildSyncEngine,
@@ -3058,29 +3059,11 @@ export default class ExocortexPlugin extends Plugin {
       });
     }
 
-    // ExoSync Phase B (RFC 4e4dc453) — manual sync of the materialized
-    // AssetSpace set over requestUrl (works on BOTH platforms; the point is
-    // iOS, where no git binary exists). Registered unconditionally: with no
-    // PAT the handler surfaces the R8 "configure PAT" prompt instead of
-    // hiding the command.
-    this.addCommand({
-      id: "exosync-sync",
-      name: "Sync",
-      callback: () => {
-        void syncCommands.invokeSync();
-      },
-    });
-
-    // ExoSync Phase E (RFC 4e4dc453, E1) — standalone M1/M2 parity report
-    // over the same materialized set (the post-sync round runs
-    // automatically; this command is the on-demand probe).
-    this.addCommand({
-      id: "exosync-parity-report",
-      name: "Sync parity report",
-      callback: () => {
-        void syncCommands.invokeParityReport();
-      },
-    });
+    // ExoSync palette set (RFC 4e4dc453 Phase B/E + #3473 Pull/Push split):
+    // Sync (default full cycle) + Pull / Push (split directions) + parity
+    // report. Extracted into a helper so the registration contract
+    // (stable ids, Sync first) is unit-tested.
+    registerExoSyncCommands(this, syncCommands);
 
     // RFC 22b50a17 Decision #6 — wipe-all switch cache clearing.
     this.addCommand({

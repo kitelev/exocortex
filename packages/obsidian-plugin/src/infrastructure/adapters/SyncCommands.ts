@@ -1,5 +1,9 @@
 /**
- * SyncCommands — «Exocortex: Sync» palette logic (RFC 4e4dc453 Phase B).
+ * SyncCommands — «Exocortex: Sync» palette logic (RFC 4e4dc453 Phase B),
+ * plus the split «Pull» / «Push» commands (#3473): both are SUBSETS of the
+ * same engine cycle (pull = empty push set, push = detect+push with remote
+ * changes pinned to re-derive). Sync stays the default/primary command —
+ * the split commands are advanced ergonomics, not a replacement.
  *
  * Manual on-command sync (VL#1) of the materialized AssetSpace set (VL#4)
  * through the Phase A `SyncEngine` composed by `SyncDepsFactory`. Pure
@@ -7,7 +11,8 @@
  *
  * Cross-invocation exclusion (D11): the engine is built FRESH per invocation
  * (Issue #3382 fresh-PAT pattern), so the engine-internal guard does not
- * span invocations — this handler's `running` flag does. It is set
+ * span invocations — this handler's `running` flag does, ACROSS all three
+ * commands (a parallel Pull during a Sync is inadmissible). It is set
  * synchronously before the first `await` so a double command invocation
  * cannot slip past it. The same flag feeds `ProfileApplyManager.isSyncBusy`
  * (apply→sync direction); the sync→apply direction is covered by the
@@ -15,7 +20,7 @@
  * check here.
  */
 
-import type { RepoSyncResult, SyncRepoSpec } from "exocortex";
+import type { RepoSyncResult, SyncDirection, SyncRepoSpec } from "exocortex";
 import { orderChildrenFirst } from "exocortex";
 
 import { GitHubRestClient } from "./GitHubRestClient";
@@ -48,6 +53,8 @@ export interface SyncCommandsDeps {
 export class SyncCommands {
   private readonly deps: SyncCommandsDeps;
   private running = false;
+  /** Label of the run holding the flag — busy notices name the real culprit. */
+  private runningLabel = "Sync";
 
   constructor(deps: SyncCommandsDeps) {
     this.deps = deps;
@@ -70,10 +77,13 @@ export class SyncCommands {
       return;
     }
     if (this.running) {
-      this.deps.notify("Sync already in progress (D11) — wait for it to finish");
+      this.deps.notify(
+        `${this.runningLabel} already in progress (D11) — wait for it to finish`,
+      );
       return;
     }
     this.running = true;
+    this.runningLabel = "Sync parity report";
     try {
       if (this.deps.isSwitchInProgress()) {
         this.deps.notify(
@@ -109,14 +119,50 @@ export class SyncCommands {
     }
   }
 
+  /** Full pull→merge→push cycle — the default/primary command. */
   async invokeSync(): Promise<void> {
+    return this.invoke("sync");
+  }
+
+  /**
+   * Pull-only run (#3473): applies remote changes only — nothing leaves the
+   * device (no commit, local changes stay undiffed). Advanced ergonomics
+   * NEXT TO the default Sync, not a replacement: split-only usage
+   * accumulates divergence and bigger merges.
+   */
+  async invokePull(): Promise<void> {
+    return this.invoke("pull");
+  }
+
+  /**
+   * Push-only run (#3473): sends the local delta only — remote changes are
+   * never applied to disk (pinned to re-derive on the next pull/Sync). Same
+   * advanced-ergonomics caveat as {@link invokePull}.
+   */
+  async invokePush(): Promise<void> {
+    return this.invoke("push");
+  }
+
+  private label(direction: SyncDirection): string {
+    return direction === "pull"
+      ? "Pull"
+      : direction === "push"
+        ? "Push"
+        : "Sync";
+  }
+
+  private async invoke(direction: SyncDirection): Promise<void> {
+    const label = this.label(direction);
     if (this.running) {
-      this.deps.notify("Sync already in progress (D11) — wait for it to finish");
+      this.deps.notify(
+        `${this.runningLabel} already in progress (D11) — wait for it to finish`,
+      );
       return;
     }
     this.running = true;
+    this.runningLabel = label;
     try {
-      await this.runSync();
+      await this.runSync(direction);
     } catch (err) {
       // The palette callback fire-and-forgets this promise — surface the
       // failure instead of leaking an unhandled rejection. Redacted as
@@ -125,16 +171,17 @@ export class SyncCommands {
       const msg = GitHubRestClient.redactTokens(
         err instanceof Error ? err.message : String(err),
       );
-      this.deps.notify(`Sync failed: ${msg}`);
+      this.deps.notify(`${label} failed: ${msg}`);
       (this.deps.log ?? ((m: string): void => console.warn(m)))(
-        `[ExoSync] sync run threw: ${msg}`,
+        `[ExoSync] ${label.toLowerCase()} run threw: ${msg}`,
       );
     } finally {
       this.running = false;
     }
   }
 
-  private async runSync(): Promise<void> {
+  private async runSync(direction: SyncDirection): Promise<void> {
+    const label = this.label(direction);
     const log = this.deps.log ?? ((m: string): void => console.warn(m));
 
     if (this.deps.isSwitchInProgress()) {
@@ -166,20 +213,27 @@ export class SyncCommands {
 
     // E1 conservation snapshot — MUST precede the sync mutation (best-effort
     // by contract: captureSnapshot never throws; undefined just means no
-    // conservation coverage this round).
-    const snapshot = await this.deps.parity?.captureSnapshot(
-      collection.specs as SyncRepoSpec[],
-    );
+    // conservation coverage this round). Split runs skip the whole parity
+    // pass (#3473): they leave INTENTIONAL divergence (unpushed local /
+    // unapplied remote), so M1/M2 would report guaranteed false positives.
+    // The standalone parity-report command stays available for manual checks.
+    const snapshot =
+      direction === "sync"
+        ? await this.deps.parity?.captureSnapshot(
+            collection.specs as SyncRepoSpec[],
+          )
+        : undefined;
 
-    this.deps.notify(`Sync started (${collection.specs.length} repo(s))…`);
+    this.deps.notify(`${label} started (${collection.specs.length} repo(s))…`);
     const results = await engine.syncAll(
       orderChildrenFirst(collection.specs as SyncRepoSpec[]),
+      direction,
     );
-    this.report(results, log);
+    this.report(results, log, label);
 
     // E1 post-sync parity round (M1/M2). Best-effort: a parity failure is
     // logged + surfaced as its own Notice, never mutates the sync outcome.
-    if (this.deps.parity !== undefined) {
+    if (direction === "sync" && this.deps.parity !== undefined) {
       try {
         this.deps.notify(
           await this.deps.parity.runAfterSync(
@@ -201,11 +255,13 @@ export class SyncCommands {
   private report(
     results: RepoSyncResult[],
     log: (message: string) => void,
+    label = "Sync",
   ): void {
     let pushed = 0;
     let pulled = 0;
     let merged = 0;
     let quarantined = 0;
+    let deferred = 0;
     let synced = 0;
     const problems: string[] = [];
     let authRequired = false;
@@ -219,6 +275,7 @@ export class SyncCommands {
       pulled += r.pulledCount;
       merged += r.mergedCount;
       quarantined += r.quarantinedCount;
+      deferred += r.deferredPaths?.length ?? 0;
       switch (r.status) {
         case "synced":
           synced++;
@@ -239,17 +296,23 @@ export class SyncCommands {
     if (authRequired) {
       // R8 — explicit, never treated as success.
       this.deps.notify(
-        "Sync failed: the GitHub PAT is expired, revoked or under-scoped — update it in Settings → Exocortex",
+        `${label} failed: the GitHub PAT is expired, revoked or under-scoped — update it in Settings → Exocortex`,
       );
       return;
     }
 
-    const counts = `pushed ${pushed}, pulled ${pulled}, merged ${merged}, quarantined ${quarantined}`;
+    // Split-run deferrals (#3473) are surfaced in the Notice — without this
+    // the user only sees them in the console log.
+    const counts =
+      `pushed ${pushed}, pulled ${pulled}, merged ${merged}, quarantined ${quarantined}` +
+      (deferred > 0 ? `, deferred ${deferred} (a full Sync resolves them)` : "");
     if (problems.length === 0) {
-      this.deps.notify(`Sync done: ${synced}/${results.length} repo(s) — ${counts}`);
+      this.deps.notify(
+        `${label} done: ${synced}/${results.length} repo(s) — ${counts}`,
+      );
     } else {
       this.deps.notify(
-        `Sync finished with issues (${problems.join("; ")}) — ${counts}. See console for details.`,
+        `${label} finished with issues (${problems.join("; ")}) — ${counts}. See console for details.`,
       );
     }
   }

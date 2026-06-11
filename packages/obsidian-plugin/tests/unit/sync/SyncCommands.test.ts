@@ -58,7 +58,10 @@ function makeHarness(opts: HarnessOptions = {}) {
   const notices: string[] = [];
   const logs: string[] = [];
   const syncAll = jest.fn(
-    async (specs: SyncRepoSpec[]): Promise<RepoSyncResult[]> => {
+    async (
+      specs: SyncRepoSpec[],
+      _direction?: "sync" | "pull" | "push",
+    ): Promise<RepoSyncResult[]> => {
       if (opts.syncAllGate !== undefined) await opts.syncAllGate;
       return (
         opts.results ?? specs.map((s) => result(s.repoKey, "synced"))
@@ -201,6 +204,119 @@ describe("SyncCommands", () => {
     await expect(commands.invokeSync()).resolves.toBeUndefined();
     expect(notices.some((n) => n.includes("collect blew up"))).toBe(true);
     expect(commands.isBusy()).toBe(false);
+  });
+});
+
+describe("SyncCommands — Pull/Push split (#3473)", () => {
+  it("invokePull runs the engine in pull direction and reports with the Pull label", async () => {
+    const { commands, notices, syncAll } = makeHarness({
+      results: [result("o/r#main", "synced", { pulledCount: 3 })],
+    });
+
+    await commands.invokePull();
+
+    expect(syncAll).toHaveBeenCalledTimes(1);
+    expect(syncAll.mock.calls[0][1]).toBe("pull");
+    expect(notices.some((n) => n.startsWith("Pull started"))).toBe(true);
+    const done = notices.find((n) => n.startsWith("Pull done"));
+    expect(done).toContain("pulled 3");
+    expect(done).toContain("pushed 0");
+  });
+
+  it("invokePush runs the engine in push direction and reports with the Push label", async () => {
+    const { commands, notices, syncAll } = makeHarness({
+      results: [result("o/r#main", "synced", { pushedCount: 2 })],
+    });
+
+    await commands.invokePush();
+
+    expect(syncAll).toHaveBeenCalledTimes(1);
+    expect(syncAll.mock.calls[0][1]).toBe("push");
+    expect(notices.some((n) => n.startsWith("Push started"))).toBe(true);
+    const done = notices.find((n) => n.startsWith("Push done"));
+    expect(done).toContain("pushed 2");
+  });
+
+  it("invokeSync keeps the full cycle as the default direction", async () => {
+    const { commands, syncAll } = makeHarness();
+
+    await commands.invokeSync();
+
+    expect(syncAll.mock.calls[0][1]).toBe("sync");
+  });
+
+  it("all three commands share the D11 mutual exclusion (one running flag)", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { commands, notices, syncAll } = makeHarness({ syncAllGate: gate });
+
+    const running = commands.invokePull();
+    expect(commands.isBusy()).toBe(true);
+    await commands.invokeSync();
+    await commands.invokePush();
+
+    // The busy notice names the run actually holding the flag.
+    expect(
+      notices.filter((n) => n.startsWith("Pull already in progress")),
+    ).toHaveLength(2);
+    release();
+    await running;
+    expect(commands.isBusy()).toBe(false);
+    expect(syncAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("prompts for a PAT instead of running unauthenticated split commands (R8)", async () => {
+    const pull = makeHarness({ pat: null });
+    await pull.commands.invokePull();
+    expect(pull.notices.some((n) => n.includes("PAT"))).toBe(true);
+    expect(pull.syncAll).not.toHaveBeenCalled();
+
+    const push = makeHarness({ pat: null });
+    await push.commands.invokePush();
+    expect(push.notices.some((n) => n.includes("PAT"))).toBe(true);
+    expect(push.syncAll).not.toHaveBeenCalled();
+  });
+
+  it("split runs skip the parity round — intentional divergence is not parity noise", async () => {
+    const calls: string[] = [];
+    const parity: ParityCheck = {
+      captureSnapshot: async () => {
+        calls.push("snapshot");
+        return { dirtyByRepo: new Map(), warnings: [] };
+      },
+      runAfterSync: async () => {
+        calls.push("after-sync");
+        return "parity";
+      },
+      runStandalone: async () => {
+        calls.push("standalone");
+        return "parity";
+      },
+    };
+
+    const pull = makeHarness({ parity });
+    await pull.commands.invokePull();
+    const push = makeHarness({ parity });
+    await push.commands.invokePush();
+
+    expect(calls).toEqual([]); // neither snapshot nor after-sync round
+    expect(pull.notices.some((n) => n.startsWith("Pull done"))).toBe(true);
+    expect(push.notices.some((n) => n.startsWith("Push done"))).toBe(true);
+  });
+
+  it("surfaces conflicts deferred to a full Sync in the done notice", async () => {
+    const { commands, notices } = makeHarness({
+      results: [
+        result("o/r#main", "synced", { deferredPaths: ["a.md", "b.md"] }),
+      ],
+    });
+
+    await commands.invokePull();
+
+    const done = notices.find((n) => n.startsWith("Pull done"));
+    expect(done).toContain("deferred 2");
   });
 });
 
