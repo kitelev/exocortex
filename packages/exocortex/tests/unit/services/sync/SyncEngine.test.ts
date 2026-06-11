@@ -638,7 +638,9 @@ describe("SyncEngine — A2 merge layer integration", () => {
 
     expect(result.status).toBe("synced");
     expect(result.mergedCount).toBe(1);
+    expect(result.mergedPaths).toEqual([FILE_A]); // E1 — parity conservation input
     expect(result.quarantinedCount).toBe(0);
+    expect(result.quarantinedPaths).toBeUndefined();
     expect(result.warnings.join(" ")).toMatch(/merge\(assets\/a\.md\): w1/);
     expect(gh.headFiles().get(FILE_A)).toBe(merged); // pushed
     expect(local.files.get(FILE_A)).toBe(merged); // written to disk
@@ -701,7 +703,9 @@ describe("SyncEngine — A2 merge layer integration", () => {
 
     expect(result.status).toBe("synced");
     expect(result.quarantinedCount).toBe(1);
+    expect(result.quarantinedPaths).toEqual([FILE_A]); // E1 — conservation input
     expect(result.mergedCount).toBe(0);
+    expect(result.mergedPaths).toBeUndefined();
     expect(result.warnings.join(" ")).toMatch(/quarantined assets\/a\.md/);
     // Both versions captured (D17), nothing shipped anywhere.
     expect(store.entries).toHaveLength(1);

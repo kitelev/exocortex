@@ -316,6 +316,8 @@ interface MergeResolution {
    */
   resolvedQuarantineEntries: QuarantineEntry[];
   mergedCount: number;
+  /** Paths of successful merges — surfaced as `RepoSyncResult.mergedPaths` (E1). */
+  mergedPaths: string[];
   warnings: string[];
 }
 
@@ -349,8 +351,17 @@ const EMPTY_MERGE: MergeResolution = {
   quarantineEntries: [],
   resolvedQuarantineEntries: [],
   mergedCount: 0,
+  mergedPaths: [],
   warnings: [],
 };
+
+/** Per-path quarantine identity for `RepoSyncResult.quarantinedPaths` (E1). */
+function quarantinedPathsOf(merge: MergeResolution): string[] {
+  return [
+    ...merge.quarantineEntries.map((e) => e.path),
+    ...merge.resolvedQuarantineEntries.map((e) => e.path),
+  ];
+}
 
 export class SyncEngine {
   private readonly deps: SyncEngineDeps;
@@ -697,6 +708,9 @@ export class SyncEngine {
         return result("retry-exhausted", {
           detail: loop.detail,
           quarantinedCount: entries.length,
+          ...(entries.length > 0
+            ? { quarantinedPaths: entries.map((e) => e.path) }
+            : {}),
         });
       }
       const { examinedHead, pushedSha, applyWrites, applyDeletes, pushFiles } =
@@ -787,6 +801,12 @@ export class SyncEngine {
           quarantinedCount:
             merge.quarantineEntries.length +
             merge.resolvedQuarantineEntries.length,
+          ...(merge.mergedPaths.length > 0
+            ? { mergedPaths: merge.mergedPaths }
+            : {}),
+          ...(quarantinedPathsOf(merge).length > 0
+            ? { quarantinedPaths: quarantinedPathsOf(merge) }
+            : {}),
         });
       }
 
@@ -861,6 +881,12 @@ export class SyncEngine {
         quarantinedCount:
           merge.quarantineEntries.length +
           merge.resolvedQuarantineEntries.length,
+        ...(merge.mergedPaths.length > 0
+          ? { mergedPaths: merge.mergedPaths }
+          : {}),
+        ...(quarantinedPathsOf(merge).length > 0
+          ? { quarantinedPaths: quarantinedPathsOf(merge) }
+          : {}),
       });
     } catch (err) {
       const redact = this.deps.redact ?? ((m: string): string => m);
@@ -1303,6 +1329,7 @@ export class SyncEngine {
     const mergedWrites: RemoteChange[] = [];
     const quarantineEntries: QuarantineEntry[] = [];
     const warnings: string[] = [];
+    const mergedPaths: string[] = [];
     let mergedCount = 0;
 
     // Asset-mode invariant: every disk/remote content here is text — the
@@ -1375,6 +1402,7 @@ export class SyncEngine {
       }
 
       mergedCount++;
+      mergedPaths.push(group.local.path);
       for (const w of decision.warnings ?? []) {
         warnings.push(`merge(${group.local.path}): ${w}`);
       }
@@ -1403,6 +1431,7 @@ export class SyncEngine {
       quarantineEntries,
       resolvedQuarantineEntries: [],
       mergedCount,
+      mergedPaths,
       warnings,
     };
   }
@@ -1483,6 +1512,7 @@ export class SyncEngine {
       quarantineEntries: [],
       resolvedQuarantineEntries,
       mergedCount: 0,
+      mergedPaths: [],
       warnings,
     };
   }

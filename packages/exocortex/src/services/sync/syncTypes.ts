@@ -236,6 +236,23 @@ export interface RepoSyncResult {
    * store is A3 scope).
    */
   quarantinedCount: number;
+  /**
+   * Paths whose content the merge layer legitimately TRANSFORMED this round
+   * (3-way structured merge applied). Additive (ExoSync E1): the parity
+   * harness's edit-conservation check needs per-path identity — a pre-sync
+   * dirty path whose post-sync content matches neither the pre-sync blob
+   * nor the new head tree is accounted for (not a lost edit) exactly when
+   * it is listed here. Absent/empty ⇒ no merges this round.
+   */
+  mergedPaths?: string[];
+  /**
+   * Paths routed to the quarantine sink this round — unresolved entries AND
+   * file-mode resolved remote-wins copies (whose losing LOCAL version lives
+   * only in quarantine, never pinned — advisor C2). Additive (ExoSync E1):
+   * the conservation check accepts a vanished local version when its path
+   * is listed here (the bytes are preserved durably, M1-safe).
+   */
+  quarantinedPaths?: string[];
   warnings: string[];
   /**
    * Local deletes/renames detected but NOT pushed in A1 (the write primitive
