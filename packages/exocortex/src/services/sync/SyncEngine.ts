@@ -229,7 +229,15 @@ export function isNonFastForwardError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return (
     (/HTTP 422/.test(msg) && /git\/refs/.test(msg)) ||
-    /ref update mismatch/.test(msg)
+    /ref update mismatch/.test(msg) ||
+    // #3476 deletion race: a concurrent commit removed/renamed a deletion
+    // target between this engine's absence guard and the tree POST —
+    // GitHub rejects the sha:null entry with 422 GitRPC::BadObjectState.
+    // Retryable like a ref race: the D16 re-pull recomputes the deletion
+    // set and the absence guard drops the vanished path.
+    (/HTTP 422/.test(msg) &&
+      /git\/trees/.test(msg) &&
+      /BadObjectState/.test(msg))
   );
 }
 

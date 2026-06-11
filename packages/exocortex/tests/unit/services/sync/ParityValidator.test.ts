@@ -630,6 +630,38 @@ describe("ParityValidator — delete propagation accounting (#3476)", () => {
     expect(round.m2Total).toBe(0);
   });
 
+  it("does NOT escalate deletions the engine deliberately deferred (empty-tree refusal)", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    await bootstrap(h);
+    // Deleting EVERY file → the engine defers the whole set (GitHub cannot
+    // create an empty tree) with status "synced" + deferredDeletes — a
+    // deliberate defer, not a convergence failure. Without the exemption
+    // round 2 would flag a false persistent-divergence M1 per file.
+    h.local.files.delete(FILE_A);
+    h.local.files.delete(FILE_B);
+
+    const sync1 = await h.engine.sync(h.spec);
+    expect(sync1.status).toBe("synced");
+    expect(sync1.deferredDeletes.sort()).toEqual([FILE_A, FILE_B]);
+    const round1 = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      syncResults: [sync1],
+    });
+    expect(round1.m2Total).toBe(2); // honest pending divergence
+    expect(round1.m1Total).toBe(0);
+
+    const sync2 = await h.engine.sync(h.spec);
+    const round2 = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      previousRound: round1,
+      syncResults: [sync2],
+    });
+    expect(round2.m1Total).toBe(0); // deliberate defer never escalates
+    expect(
+      round2.repos[0].discrepancies.map((d) => d.cls),
+    ).toEqual(["deferred-local-delete", "deferred-local-delete"]);
+  });
+
   it("defers parity on a D19-skipped repo — local absence under partial materialization is not divergence", async () => {
     const h = makeHarness({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
     await bootstrap(h);

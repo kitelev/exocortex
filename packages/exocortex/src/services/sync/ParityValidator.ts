@@ -864,6 +864,12 @@ export class ParityValidator {
       // historical behaviour: the post-sync trigger itself is the signal.
       const syncResult = syncResults?.find((r) => r.repoKey === repo.repoKey);
       if (syncResult !== undefined && syncResult.status !== "synced") continue;
+      // Deletions the engine DELIBERATELY withheld this cycle (#3476:
+      // empty-tree refusal — conflict-withheld ones are pinned and classify
+      // as quarantine-pinned instead) are not convergence failures; without
+      // the exemption every such path would escalate to a false M1 on the
+      // second round and stay there until the repo regains a survivor file.
+      const deliberatelyDeferred = new Set(syncResult?.deferredDeletes ?? []);
       const prevRepo = previous.repos.find(
         (r) => r.repoKey === repo.repoKey && r.status === "checked",
       );
@@ -875,6 +881,7 @@ export class ParityValidator {
       );
       for (const d of repo.discrepancies) {
         if (!ESCALATABLE.has(d.cls)) continue;
+        if (deliberatelyDeferred.has(d.path)) continue;
         const prev = prevByPath.get(d.path);
         if (
           prev !== undefined &&

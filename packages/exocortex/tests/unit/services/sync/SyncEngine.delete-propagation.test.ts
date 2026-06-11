@@ -21,6 +21,7 @@
 
 import {
   SyncEngine,
+  isNonFastForwardError,
   type MergeLayerPort,
 } from "../../../../src";
 import {
@@ -289,5 +290,168 @@ describe("SyncEngine — split directions and deletions (#3473 × #3476)", () =>
     expect(full.status).toBe("synced");
     expect(full.pushedDeletes).toEqual([FILE_B]);
     expect(gh.headFiles().has(FILE_B)).toBe(false);
+  });
+});
+
+describe("SyncEngine — empty-tree refusal (#3476, GitHub cannot create an empty tree)", () => {
+  it("deleting EVERY remaining file is deferred loudly; remote intact, no error", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const { engine } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+    const headBefore = gh.headSha();
+
+    local.files.delete(FILE_A);
+    local.files.delete(FILE_B);
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced"); // deferred, NOT a hard error
+    expect(result.pushedSha).toBeUndefined();
+    expect(gh.headSha()).toBe(headBefore); // remote intact
+    expect(result.deferredDeletes.sort()).toEqual([FILE_A, FILE_B]);
+    expect(result.warnings.join(" ")).toMatch(/empty tree/);
+  });
+
+  it("converges once at least one file survives alongside the deletions", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const { engine } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+
+    local.files.delete(FILE_A);
+    local.files.delete(FILE_B);
+    await engine.sync(gh.spec()); // deferred (would empty the tree)
+
+    local.files.set("assets/survivor.md", mdAsset("u3", "survivor"));
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.pushedDeletes?.sort()).toEqual([FILE_A, FILE_B]);
+    expect(gh.headFiles().has(FILE_A)).toBe(false);
+    expect(gh.headFiles().has(FILE_B)).toBe(false);
+    expect(gh.headFiles().get("assets/survivor.md")).toBe(mdAsset("u3", "survivor"));
+  });
+});
+
+describe("SyncEngine — deletions under the D16 retry loop (#3476)", () => {
+  it("re-pull recomputes the deletion set after a concurrent disjoint commit (PATCH 422)", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const { engine } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+
+    let injected = false;
+    gh.onBeforePatch = (): void => {
+      if (!injected) {
+        injected = true;
+        gh.commitDirect("main", { [FILE_A]: mdAsset("u1", "raced in") }, "device B");
+      }
+    };
+    local.files.delete(FILE_B);
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.warnings.join(" ")).toMatch(/non-fast-forward push \(attempt 1\/3\)/);
+    expect(result.pushedDeletes).toEqual([FILE_B]);
+    expect(gh.headFiles().has(FILE_B)).toBe(false); // delete landed on retry
+    expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1", "raced in")); // concurrent edit intact
+    expect(local.files.get(FILE_A)).toBe(mdAsset("u1", "raced in")); // pulled on retry
+  });
+
+  it("deletion target vanishing between iterations is dropped by the absence guard (no commit)", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const { engine, watermarks } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+
+    let injected = false;
+    gh.onBeforePatch = (): void => {
+      if (!injected) {
+        injected = true;
+        gh.commitDirect("main", {}, "device B deletes b too", [FILE_B]);
+      }
+    };
+    local.files.delete(FILE_B);
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.pushedSha).toBeUndefined(); // convergent on retry — no second commit
+    expect(gh.headFiles().has(FILE_B)).toBe(false);
+    const record = watermarks.records.get(gh.spec().repoKey)!;
+    expect(record.lastSyncedSha).toBe(gh.headSha());
+    expect(record.files.some((f) => f.path === FILE_B)).toBe(false);
+  });
+
+  it("classifies the sha:null 422 GitRPC::BadObjectState tree race as retryable", () => {
+    expect(
+      isNonFastForwardError(
+        new Error(
+          "GitHub request POST https://api.github.com/repos/o/r/git/trees → HTTP 422: GitRPC::BadObjectState",
+        ),
+      ),
+    ).toBe(true);
+    // A non-race 422 on trees (e.g. malformed entry) stays NON-retryable.
+    expect(
+      isNonFastForwardError(
+        new Error(
+          "GitHub request POST https://api.github.com/repos/o/r/git/trees → HTTP 422: tree entry without content",
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("recovers when a concurrent commit deletes the target inside the primitive's window (422 BadObjectState)", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const { engine } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+
+    // Concurrent delete lands on the PRIMITIVE's internal GET-ref — after
+    // this engine's absence guard examined the head. The tree POST then
+    // rejects the sha:null entry (422 BadObjectState) → D16 re-pull →
+    // convergent delete consumed → clean no-commit convergence.
+    let refCalls = 0;
+    gh.onGetRef = (): void => {
+      refCalls++;
+      if (refCalls === 2) {
+        gh.commitDirect("main", {}, "device B deletes b in the window", [FILE_B]);
+      }
+    };
+    local.files.delete(FILE_B);
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.warnings.join(" ")).toMatch(/non-fast-forward push \(attempt 1\/3\)/);
+    expect(result.pushedSha).toBeUndefined(); // converged without a second commit
+    expect(gh.headFiles().has(FILE_B)).toBe(false);
+  });
+});
+
+describe("SyncEngine — race-window reporting for pushed deletions (#3476)", () => {
+  it("warns when a concurrent commit edited a path this push deleted", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const { engine } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+
+    // Concurrent EDIT of FILE_B lands on the primitive's internal GET-ref:
+    // the new base tree still contains FILE_B (edited), so the sha:null
+    // entry applies cleanly and the push wins — the concurrent edit is
+    // silently superseded except for the race-window warning.
+    let refCalls = 0;
+    gh.onGetRef = (): void => {
+      refCalls++;
+      if (refCalls === 2) {
+        gh.commitDirect("main", { [FILE_B]: mdAsset("u2", "edited in the window") }, "race");
+      }
+    };
+    local.files.delete(FILE_B);
+    local.files.set(FILE_A, mdAsset("u1", "local edit"));
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.pushedDeletes).toEqual([FILE_B]);
+    expect(result.warnings.join(" ")).toMatch(/which this push DELETED/);
+    expect(gh.headFiles().has(FILE_B)).toBe(false); // delete won; history holds the edit
   });
 });

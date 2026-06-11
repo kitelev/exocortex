@@ -173,6 +173,11 @@ export async function restCreateCommit(
       "GitHub createCommit: files map must be non-empty (unless deletions are provided)",
     );
   }
+  // Deduplicate: a repeated deletion path would emit two identical
+  // sha:null entries with undefined GitHub-side behaviour (public
+  // contract — engine callers already pass a Set, external callers may
+  // not).
+  const deletionSet = new Set<string>();
   for (const path of deletions) {
     if (typeof path !== "string" || path.length === 0) {
       throw new Error(
@@ -186,6 +191,7 @@ export async function restCreateCommit(
         ),
       );
     }
+    deletionSet.add(path);
   }
   if (typeof message !== "string" || message.length === 0) {
     throw new Error("GitHub createCommit: message is required");
@@ -252,7 +258,7 @@ export async function restCreateCommit(
           content,
         },
   );
-  for (const path of deletions) {
+  for (const path of deletionSet) {
     tree.push({ path, mode: "100644", type: "blob", sha: null });
   }
   const treeResp = await transport({
