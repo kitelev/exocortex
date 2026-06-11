@@ -13,7 +13,7 @@ import {
   type ILogger,
   type INotificationService,
 } from "exocortex";
-import { VaultRDFIndexer } from '@plugin/infrastructure/VaultRDFIndexer';
+import { VaultRDFIndexer, type VaultWalkStats } from '@plugin/infrastructure/VaultRDFIndexer';
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 
 export class SPARQLQueryService {
@@ -203,5 +203,14 @@ export class SPARQLQueryService {
    */
   getIndexer(): VaultRDFIndexer {
     return this.indexer;
+  }
+
+  /**
+   * Stats of the last completed FULL vault walk (Issue #3472), or null if
+   * no walk has succeeded yet. Read-only passthrough so consumers don't
+   * need the full `VaultRDFIndexer` handle.
+   */
+  getLastWalkStats(): VaultWalkStats | null {
+    return this.indexer.getLastWalkStats();
   }
 }

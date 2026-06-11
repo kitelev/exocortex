@@ -2,6 +2,7 @@ import "reflect-metadata";
 import {
   MarkdownPostProcessorContext,
   MarkdownView,
+  MetadataCache,
   Platform,
   Plugin,
   TFile,
@@ -13,6 +14,7 @@ import { LoggerFactory } from "./adapters/logging/LoggerFactory";
 import { Logger } from "./adapters/logging/Logger";
 import { FileLogChannel } from "./adapters/logging/FileLogChannel";
 import { CommandManager } from "./application/services/CommandManager";
+import { IndexingCompleteNotifier } from "./application/services/IndexingCompleteNotifier";
 import {
   ExocortexSettings,
   DEFAULT_SETTINGS,
@@ -869,6 +871,24 @@ export default class ExocortexPlugin extends Plugin {
         }
       };
 
+      // Issue #3472 — one-shot «Exocortex: indexing complete (N files,
+      // M skipped, X.Xs)» notice, emitted when the initial full vault walk
+      // finishes and SPARQL / dynamic buttons / layouts are actually ready.
+      // Two callsites share this emitter (the internal latch dedupes):
+      //   1. the eager-init warm-up chain below (covers mid-session plugin
+      //      enable, where `metadataCache.on("resolved")` may not fire
+      //      again until the user edits a file);
+      //   2. the post-resolve one-shot reindex chain (covers cold boot,
+      //      where the eager walk runs against a partially-parsed
+      //      metadataCache and the resolved-chain refresh is the
+      //      authoritative initial pass).
+      // All later full refreshes (profile switch, FileSpace declaration
+      // edits) and incremental per-file updates never call the emitter —
+      // they stay quiet by design.
+      const indexingCompleteNotifier = new IndexingCompleteNotifier(
+        this.notifier,
+      );
+
       // GTD Capture: one-click fleeting note to inbox.
       // Triggers the same Obsidian Command Palette entry as Cmd-P → "Create
       // fleeting note". The command itself is registered by
@@ -1058,8 +1078,17 @@ export default class ExocortexPlugin extends Plugin {
           // `PluginRdfIndexerAdapter.onAfterRefresh`; these onload chain
           // callsites use `sparql.refresh()` directly which bypasses the
           // adapter, so they call the helper explicitly.
+          // Issue #3472 — taken right before refresh() is invoked (inside
+          // the chain, after the eager-init promise settles) so the
+          // stale-stats guard in `notifyOnce` can reject stats from a walk
+          // that finished before THIS refresh started (coalesced-refresh
+          // false-positive path — see IndexingCompleteNotifier JSDoc).
+          let postResolveRefreshStartedAt = 0;
           void initPromise
-            .then(() => this.sparql.refresh())
+            .then(() => {
+              postResolveRefreshStartedAt = Date.now();
+              return this.sparql.refresh();
+            })
             .then(() => this.refreshAndInjectAssetSpaceMaterialization())
             .then(() => {
               // RFC c7da0bca Phase 3b-main — drop the lazy loader's
@@ -1087,6 +1116,16 @@ export default class ExocortexPlugin extends Plugin {
               // attempt registered nothing.
               await initExocmdPalette();
               this.autoRenderLayout();
+              // Issue #3472 — the initial full reindex is done AND the
+              // dependent surfaces (palette, layouts) just re-rendered:
+              // this is the moment «indexing complete» is true for the
+              // user. On refresh failure the .catch below short-circuits
+              // this call — no false-positive notice. Quiet no-op when the
+              // eager-init callsite already emitted (one-shot latch).
+              indexingCompleteNotifier.notifyOnce(
+                this.sparql.getLastIndexWalkStats(),
+                postResolveRefreshStartedAt,
+              );
             })
             .catch((err) => {
               this.logger.error(
@@ -1371,6 +1410,10 @@ export default class ExocortexPlugin extends Plugin {
           performance.mark("exocmd-fastpath-start");
           performance.mark("exocmd-fullpath-start");
           setTimeout(() => {
+            // Issue #3472 — see the stale-stats guard note at the
+            // post-resolve callsite; the ASK below lazily triggers
+            // `VaultRDFIndexer.initialize()` (the walk being reported).
+            const eagerWarmupStartedAt = Date.now();
             void this.sparql
               .query("ASK { ?s ?p ?o }")
               .then(async () => {
@@ -1391,6 +1434,33 @@ export default class ExocortexPlugin extends Plugin {
                   "exocmd-fullpath-start",
                   "exocmd-fullpath-ready",
                 );
+
+                // Issue #3472 — emit «indexing complete» from the eager
+                // path ONLY when metadataCache had already finished its
+                // initial scan (mid-session plugin enable / first install:
+                // cache is warm, counts are honest, and the
+                // `metadataCache.on("resolved")` chain may not fire again
+                // until the user edits a file — without this callsite the
+                // notice would never appear for that persona). On a cold
+                // boot the flag is still false here, the guard skips, and
+                // the post-resolve chain emits after the authoritative
+                // refresh instead. `initialized` is undocumented-but-
+                // stable Obsidian API (Dataview relies on it); if it ever
+                // disappears the comparison is `undefined === true` →
+                // false → we safely fall back to the post-resolve
+                // callsite. One-shot latch dedupes the two callsites.
+                if (
+                  (
+                    this.app.metadataCache as MetadataCache & {
+                      initialized?: boolean;
+                    }
+                  ).initialized === true
+                ) {
+                  indexingCompleteNotifier.notifyOnce(
+                    this.sparql.getLastIndexWalkStats(),
+                    eagerWarmupStartedAt,
+                  );
+                }
 
                 // RFC c7da0bca Phase 3c-2 — deleted the post-convertVault
                 // indexer block. `ExocmdBindingsIndexer.runFullScan()`

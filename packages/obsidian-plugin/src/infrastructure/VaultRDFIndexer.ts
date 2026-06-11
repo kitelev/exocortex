@@ -24,6 +24,27 @@ import {
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 
+/**
+ * Outcome of the last FULL vault walk (Issue #3472).
+ *
+ * `total`/`indexed`/`skipped` come straight from
+ * `NoteToRDFConverter.convertVaultWithValidation().summary` — `skipped` is
+ * the Issue #3468 aggregated counter (invariant violations + invalid IRIs),
+ * NOT a second parallel metric. `durationMs` covers the whole rebuild
+ * (convertVault + addAll + inference), including retry attempts when
+ * `executeWithRetry` re-runs the walk — it reports how long the user
+ * actually waited, not how long the last attempt took. `finishedAt` lets
+ * callers reject stats from a walk that completed before THEIR walk was
+ * initiated (stale-stats guard for the coalesced-refresh path).
+ */
+export interface VaultWalkStats {
+  total: number;
+  indexed: number;
+  skipped: number;
+  durationMs: number;
+  finishedAt: number;
+}
+
 export class VaultRDFIndexer {
   private tripleStore: InMemoryTripleStore;
   private converter: NoteToRDFConverter;
@@ -58,12 +79,20 @@ export class VaultRDFIndexer {
    * their work is already covered.
    */
   private refreshInFlight: Promise<void> | null = null;
+  /**
+   * Stats of the last completed FULL walk (initialize/refresh) — null until
+   * the first walk succeeds. Incremental per-file updates do not touch it.
+   * Consumed by the one-shot «indexing complete» notice (Issue #3472).
+   */
+  private lastWalkStats: VaultWalkStats | null = null;
 
   constructor(
     private app: App,
     logger?: ILogger,
     notifier?: INotificationService,
     excludedFolders: string[] = [],
+    /** Injectable clock for deterministic duration tests. */
+    private readonly now: () => number = () => Date.now(),
   ) {
     this.tripleStore = new InMemoryTripleStore();
     this.vaultAdapter = new ObsidianVaultAdapter(
@@ -103,6 +132,7 @@ export class VaultRDFIndexer {
     }
 
     try {
+      const startedAt = this.now();
       const result = await this.errorHandler.executeWithRetry(
         async () => this.converter.convertVaultWithValidation({
           excludedFolders: this.excludedFolders,
@@ -112,6 +142,7 @@ export class VaultRDFIndexer {
       this.applyFileSpaceDiscovery(result.fileSpaces);
       await this.tripleStore.addAll(result.triples);
       await this.runInference();
+      this.recordWalkStats(result.summary, startedAt);
 
       this.registerEventListeners();
 
@@ -367,6 +398,7 @@ export class VaultRDFIndexer {
     if (this.refreshInFlight !== null) {
       return this.refreshInFlight;
     }
+    const startedAt = this.now();
     const run = this.errorHandler
       .executeWithRetry(
         async () => {
@@ -377,6 +409,7 @@ export class VaultRDFIndexer {
           this.applyFileSpaceDiscovery(result.fileSpaces);
           await this.tripleStore.addAll(result.triples);
           await this.runInference();
+          this.recordWalkStats(result.summary, startedAt);
         },
         { context: "VaultRDFIndexer.refresh", operation: "refresh" }
       )
@@ -408,6 +441,28 @@ export class VaultRDFIndexer {
 
   getTripleStore(): InMemoryTripleStore {
     return this.tripleStore;
+  }
+
+  /**
+   * Stats of the last completed FULL vault walk, or null if no walk has
+   * succeeded yet. See {@link VaultWalkStats} for field semantics.
+   */
+  getLastWalkStats(): VaultWalkStats | null {
+    return this.lastWalkStats;
+  }
+
+  private recordWalkStats(
+    summary: { total: number; indexed: number; skipped: number },
+    startedAt: number,
+  ): void {
+    const finishedAt = this.now();
+    this.lastWalkStats = {
+      total: summary.total,
+      indexed: summary.indexed,
+      skipped: summary.skipped,
+      durationMs: finishedAt - startedAt,
+      finishedAt,
+    };
   }
 
   dispose(): void {
