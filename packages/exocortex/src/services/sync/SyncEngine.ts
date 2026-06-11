@@ -599,6 +599,11 @@ export class SyncEngine {
   ): Promise<RepoSyncResult> {
     const warnings: string[] = [];
     const deferredDeletes: string[] = [];
+    // Deletions detected this cycle whose push loop is still IN FLIGHT —
+    // a non-retryable throw mid-loop lands in the catch below, which must
+    // still report them as deferred (contract: never silently dropped).
+    // Cleared once the loop returns (its outcome handling owns reporting).
+    let inFlightDeletionPaths: string[] = [];
     const result = (
       status: RepoSyncResult["status"],
       extra: Partial<RepoSyncResult> = {},
@@ -760,6 +765,7 @@ export class SyncEngine {
         deferredDeletes,
         direction,
       );
+      inFlightDeletionPaths = [...pinned.pushDeletionsAll.keys()];
 
       const loop = await this.runPushLoop(
         spec,
@@ -772,6 +778,7 @@ export class SyncEngine {
         sizeExcluded,
         direction,
       );
+      inFlightDeletionPaths = [];
       if (loop.kind !== "done" && pinned.pushDeletionsAll.size > 0) {
         // Nothing was pushed on these outcomes — every detected deletion is
         // honestly deferred (re-derives next sync).
@@ -1028,6 +1035,9 @@ export class SyncEngine {
       });
     } catch (err) {
       const redact = this.deps.redact ?? ((m: string): string => m);
+      if (inFlightDeletionPaths.length > 0) {
+        deferredDeletes.push(...inFlightDeletionPaths);
+      }
       if (isAuthError(err)) {
         return result("auth-required", {
           detail: redact(

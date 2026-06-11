@@ -427,6 +427,42 @@ describe("SyncEngine — deletions under the D16 retry loop (#3476)", () => {
   });
 });
 
+describe("SyncEngine — error-path reporting for detected deletions (#3476)", () => {
+  it("reports detected deletions as deferred when the push throws a non-retryable error", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    // Wrap the transport: after bootstrap, the tree POST hard-fails 500.
+    let failTreePosts = false;
+    const inner = gh.transport();
+    const { engine } = makeEngine(gh, local, {
+      transport: async (req) => {
+        if (failTreePosts && req.method === "POST" && /git\/trees/.test(req.url)) {
+          throw new Error(
+            `GitHub request POST ${req.url} → HTTP 500: Internal Server Error`,
+          );
+        }
+        return inner(req);
+      },
+    });
+    await bootstrap(engine, gh.spec());
+
+    failTreePosts = true;
+    local.files.delete(FILE_B);
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("error");
+    expect(result.deferredDeletes).toContain(FILE_B); // never silently dropped
+    expect(gh.headFiles().has(FILE_B)).toBe(true); // remote untouched
+
+    // The deletion propagates once the transport recovers.
+    failTreePosts = false;
+    const recovered = await engine.sync(gh.spec());
+    expect(recovered.status).toBe("synced");
+    expect(recovered.pushedDeletes).toEqual([FILE_B]);
+    expect(gh.headFiles().has(FILE_B)).toBe(false);
+  });
+});
+
 describe("SyncEngine — race-window reporting for pushed deletions (#3476)", () => {
   it("warns when a concurrent commit edited a path this push deleted", async () => {
     const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });

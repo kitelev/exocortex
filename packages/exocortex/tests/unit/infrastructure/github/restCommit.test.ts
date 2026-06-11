@@ -278,6 +278,28 @@ describe("restCreateCommit (transport-agnostic core)", () => {
     ]);
   });
 
+  it("deduplicates repeated deletion paths (one sha:null entry per path)", async () => {
+    const { transport, calls } = sequencedTransport(happyResponses());
+
+    await restCreateCommit(transport, {
+      owner: "o",
+      repo: "r",
+      branch: "main",
+      files: new Map([["docs/a.md", "hello"]]),
+      deletions: ["docs/old.md", "docs/old.md"],
+      message: "duplicate deletions",
+    });
+
+    const treeBody = JSON.parse(calls[1].body as string);
+    expect(treeBody.tree).toHaveLength(2); // 1 write + 1 deduped deletion
+    expect(treeBody.tree[1]).toEqual({
+      path: "docs/old.md",
+      mode: "100644",
+      type: "blob",
+      sha: null,
+    });
+  });
+
   it("rejects a path that is both written and deleted (ambiguous)", async () => {
     const { transport } = sequencedTransport(happyResponses());
     await expect(

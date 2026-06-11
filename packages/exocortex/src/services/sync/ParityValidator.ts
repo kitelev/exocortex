@@ -881,7 +881,16 @@ export class ParityValidator {
       );
       for (const d of repo.discrepancies) {
         if (!ESCALATABLE.has(d.cls)) continue;
-        if (deliberatelyDeferred.has(d.path)) continue;
+        // Class-scoped (advisor round-2): only the deferred-local-delete
+        // shape is a deliberate defer. A pending-conflict on the SAME path
+        // (delete-vs-modify whose pin/quarantine silently broke) is exactly
+        // the engine bug this detector exists to catch — never exempt it.
+        if (
+          d.cls === "deferred-local-delete" &&
+          deliberatelyDeferred.has(d.path)
+        ) {
+          continue;
+        }
         const prev = prevByPath.get(d.path);
         if (
           prev !== undefined &&
