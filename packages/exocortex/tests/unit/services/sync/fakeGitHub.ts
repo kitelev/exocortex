@@ -247,7 +247,7 @@ export class FakeGitHubRepo {
       if (method === "POST" && m(/^\/repos\/[^/]+\/[^/]+\/git\/trees$/)) {
         const body = JSON.parse(req.body ?? "{}") as {
           base_tree?: string;
-          tree?: Array<{ path: string; content?: string; sha?: string }>;
+          tree?: Array<{ path: string; content?: string; sha?: string | null }>;
         };
         // GitHub accepts a commitish base_tree (peels commit → tree).
         let base = new Map<string, string>();
@@ -260,8 +260,19 @@ export class FakeGitHubRepo {
           base = new Map(baseTree);
         }
         for (const entry of body.tree ?? []) {
-          // Two production shapes: inline `content` (UTF-8 text) or a `sha`
-          // reference to a previously-uploaded blob (binary, Phase C).
+          // Three production shapes: inline `content` (UTF-8 text), a `sha`
+          // reference to a previously-uploaded blob (binary, Phase C), or
+          // `sha: null` — DELETE the path from the base tree (#3476).
+          if (entry.sha === null) {
+            // Real GitHub rejects a sha:null entry whose path is absent
+            // from base_tree with HTTP 422 GitRPC::BadObjectState
+            // (empirically verified against api.github.com, 2026-06-12).
+            if (!base.has(entry.path)) {
+              throw httpError(method, url, 422, "GitRPC::BadObjectState");
+            }
+            base.delete(entry.path);
+            continue;
+          }
           if (typeof entry.sha === "string") {
             if (!this.blobs.has(entry.sha)) {
               throw httpError(method, url, 404, `blob ${entry.sha} not found`);
@@ -275,6 +286,11 @@ export class FakeGitHubRepo {
           const blobSha = gitBlobShaSync(entry.content);
           this.blobs.set(blobSha, Buffer.from(entry.content, "utf-8"));
           base.set(entry.path, blobSha);
+        }
+        // Real GitHub cannot create an EMPTY tree — deleting every entry
+        // fails HTTP 404 Not Found (empirically verified, 2026-06-12).
+        if (base.size === 0) {
+          throw httpError(method, url, 404, "Not Found");
         }
         return { status: 201, json: { sha: this.storeTree(base) } };
       }

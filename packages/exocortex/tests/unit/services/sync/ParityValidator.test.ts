@@ -578,6 +578,117 @@ describe("ParityValidator — M1 detector 2: persistent divergence", () => {
   });
 });
 
+describe("ParityValidator — delete propagation accounting (#3476)", () => {
+  it("counts a not-yet-pushed local delete into M2 (pending divergence, no longer accounted)", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    await bootstrap(h);
+    h.local.files.delete(FILE_B);
+
+    // Standalone round BEFORE any sync had a chance to push the delete:
+    // an honest pending divergence, exactly like a pending-local-edit.
+    const round = await h.validator.runRound([h.spec], { trigger: "standalone" });
+
+    expect(round.repos[0].discrepancies).toMatchObject([
+      { path: FILE_B, presence: "remote-only", cls: "deferred-local-delete" },
+    ]);
+    expect(round.m2Total).toBe(1);
+    expect(round.repos[0].accountedCount).toBe(0);
+    expect(round.ok).toBe(false);
+  });
+
+  it("escalates a local delete that survived a CONVERGED sync round unchanged (M1)", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    await bootstrap(h);
+    h.local.files.delete(FILE_B);
+    const prev = await h.validator.runRound([h.spec], { trigger: "post-sync" });
+
+    // A sync reported "synced" yet the delete still was not propagated —
+    // post-#3476 that is an engine failure, not an accounted gap.
+    const synced: RepoSyncResult = {
+      repoKey: h.spec.repoKey,
+      status: "synced",
+      pulledCount: 0,
+      pushedCount: 0,
+      mergedCount: 0,
+      quarantinedCount: 0,
+      warnings: [],
+      deferredDeletes: [],
+    };
+    const next = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      previousRound: prev,
+      syncResults: [synced],
+    });
+
+    expect(next.m1Total).toBe(1);
+    expect(next.repos[0].m1Violations).toMatchObject([
+      { path: FILE_B, kind: "persistent-divergence" },
+    ]);
+  });
+
+  it("after a real sync the delete converges in ONE cycle — no journal entry survives", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    await bootstrap(h);
+    h.local.files.delete(FILE_B);
+
+    const syncResults = [await h.engine.sync(h.spec)];
+    const round = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      syncResults,
+    });
+
+    expect(round.repos[0].discrepancies).toEqual([]);
+    expect(round.m1Total).toBe(0);
+    expect(round.m2Total).toBe(0);
+    expect(round.ok).toBe(true);
+  });
+
+  it("a rename converges in ONE cycle — neither half persists in the journal", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1") });
+    await bootstrap(h);
+    const content = h.local.files.get(FILE_A) as string;
+    h.local.files.delete(FILE_A);
+    h.local.files.set("assets/renamed.md", content);
+
+    const syncResults = [await h.engine.sync(h.spec)];
+    const round = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      syncResults,
+    });
+
+    expect(round.repos[0].discrepancies).toEqual([]);
+    expect(round.m1Total).toBe(0);
+    expect(round.m2Total).toBe(0);
+  });
+
+  it("defers parity on a D19-skipped repo — local absence under partial materialization is not divergence", async () => {
+    const h = makeHarness({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    await bootstrap(h);
+    // Simulate a partially-materialized working tree: files missing locally.
+    h.local.files.delete(FILE_A);
+    h.local.files.delete(FILE_B);
+
+    const skipped: RepoSyncResult = {
+      repoKey: h.spec.repoKey,
+      status: "skipped-not-materialized",
+      pulledCount: 0,
+      pushedCount: 0,
+      mergedCount: 0,
+      quarantinedCount: 0,
+      warnings: [],
+      deferredDeletes: [],
+    };
+    const round = await h.validator.runRound([h.spec], {
+      trigger: "post-sync",
+      syncResults: [skipped],
+    });
+
+    expect(round.repos[0].status).toBe("inconclusive");
+    expect(round.m1Total).toBe(0);
+    expect(round.m2Total).toBe(0);
+  });
+});
+
 describe("ParityValidator — file-mode repos (attachment sub-check)", () => {
   it("hash-set identical on clean state; binary divergence is a pending conflict", async () => {
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]);

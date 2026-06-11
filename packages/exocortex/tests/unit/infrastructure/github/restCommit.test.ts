@@ -223,6 +223,103 @@ describe("restCreateCommit (transport-agnostic core)", () => {
     ).rejects.toThrow(/branch is required/);
   });
 
+  it("emits deletions as sha:null tree entries on top of base_tree (#3476)", async () => {
+    const { transport, calls } = sequencedTransport(happyResponses());
+
+    const sha = await restCreateCommit(transport, {
+      owner: "o",
+      repo: "r",
+      branch: "main",
+      files: new Map([["docs/a.md", "hello"]]),
+      deletions: ["docs/old.md", "docs/gone.md"],
+      message: "rename + delete",
+    });
+
+    expect(sha).toBe(COMMIT_SHA);
+    const treeBody = JSON.parse(calls[1].body as string);
+    expect(treeBody.base_tree).toBe(BASE_SHA);
+    expect(treeBody.tree).toHaveLength(3);
+    expect(treeBody.tree[0]).toEqual({
+      path: "docs/a.md",
+      mode: "100644",
+      type: "blob",
+      content: "hello",
+    });
+    expect(treeBody.tree[1]).toEqual({
+      path: "docs/old.md",
+      mode: "100644",
+      type: "blob",
+      sha: null,
+    });
+    expect(treeBody.tree[2]).toEqual({
+      path: "docs/gone.md",
+      mode: "100644",
+      type: "blob",
+      sha: null,
+    });
+  });
+
+  it("allows a deletion-only commit (empty files map + non-empty deletions)", async () => {
+    const { transport, calls } = sequencedTransport(happyResponses());
+
+    const sha = await restCreateCommit(transport, {
+      owner: "o",
+      repo: "r",
+      branch: "main",
+      files: new Map(),
+      deletions: ["docs/only-delete.md"],
+      message: "delete only",
+    });
+
+    expect(sha).toBe(COMMIT_SHA);
+    const treeBody = JSON.parse(calls[1].body as string);
+    expect(treeBody.tree).toEqual([
+      { path: "docs/only-delete.md", mode: "100644", type: "blob", sha: null },
+    ]);
+  });
+
+  it("rejects a path that is both written and deleted (ambiguous)", async () => {
+    const { transport } = sequencedTransport(happyResponses());
+    await expect(
+      restCreateCommit(transport, {
+        owner: "o",
+        repo: "r",
+        branch: "main",
+        files: new Map([["docs/a.md", "hello"]]),
+        deletions: ["docs/a.md"],
+        message: "ambiguous",
+      }),
+    ).rejects.toThrow(/both written and deleted/);
+  });
+
+  it("rejects an empty deletion path", async () => {
+    const { transport } = sequencedTransport(happyResponses());
+    await expect(
+      restCreateCommit(transport, {
+        owner: "o",
+        repo: "r",
+        branch: "main",
+        files: new Map([["docs/a.md", "hello"]]),
+        deletions: [""],
+        message: "bad deletion",
+      }),
+    ).rejects.toThrow(/deletion path/);
+  });
+
+  it("rejects when files AND deletions are both empty", async () => {
+    const { transport } = sequencedTransport(happyResponses());
+    await expect(
+      restCreateCommit(transport, {
+        owner: "o",
+        repo: "r",
+        branch: "main",
+        files: new Map(),
+        deletions: [],
+        message: "nothing",
+      }),
+    ).rejects.toThrow(/non-empty/);
+  });
+
   it("rejects an empty file map", async () => {
     const { transport } = sequencedTransport([]);
     await expect(
