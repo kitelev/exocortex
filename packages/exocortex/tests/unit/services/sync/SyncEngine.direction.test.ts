@@ -224,6 +224,47 @@ describe("SyncEngine — push-only direction (#3473)", () => {
     ).toContain(FILE_A);
   });
 
+  it("defers a remote DELETE: file stays on disk, pin prevents a resurrecting re-push", async () => {
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const { engine, watermarks } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+
+    // Device B deletes FILE_B remotely; this device edits FILE_A.
+    gh.commitDirect("main", {}, "device B delete", [FILE_B]);
+    const localEdit = mdAsset("u1", "local edit");
+    local.files.set(FILE_A, localEdit);
+
+    const push = await engine.sync(gh.spec(), "push");
+
+    expect(push.status).toBe("synced");
+    expect(push.pushedCount).toBe(1);
+    expect(push.pulledCount).toBe(0);
+    expect(local.files.get(FILE_B)).toBe(mdAsset("u2")); // delete NOT applied
+    expect(push.deferredPaths).toEqual([FILE_B]);
+    // The pin re-appends the previous base entry (the path is absent from
+    // the new tree) — without it the next sync would read the untouched
+    // local copy as a fresh ADD and resurrect the remotely-deleted file.
+    expect(
+      watermarks.records.get(gh.spec().repoKey)!.pinnedPaths,
+    ).toContain(FILE_B);
+    expect(gh.headFiles().has(FILE_B)).toBe(false); // not resurrected by the push
+
+    // The full Sync applies the deferred delete locally — still no
+    // resurrection on the remote.
+    const full = await engine.sync(gh.spec());
+    expect(full.status).toBe("synced");
+    expect(full.pulledCount).toBe(1);
+    expect(local.files.has(FILE_B)).toBe(false);
+    expect(gh.headFiles().has(FILE_B)).toBe(false);
+  });
+
   it("race-window: watermark NOT advanced — the concurrent change re-derives on the next full Sync", async () => {
     const gh = new FakeGitHubRepo({
       [FILE_A]: mdAsset("u1"),

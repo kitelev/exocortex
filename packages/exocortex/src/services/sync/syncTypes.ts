@@ -274,8 +274,10 @@ export interface RepoSyncResult {
    * Split-run deferrals (#3473): paths whose resolution was deferred to a
    * full Sync — conflicts (any direction) and, in push-only runs, remote
    * changes that were detected but never applied to disk. Each is pinned in
-   * the watermark so it re-derives on the next run. Absent/empty ⇒ nothing
-   * deferred this round (always absent for full `sync` runs).
+   * the watermark so it re-derives on the next run (in the race-window path
+   * the watermark is not advanced at all — strictly more conservative than
+   * a pin, same re-derivation guarantee). Absent/empty ⇒ nothing deferred
+   * this round (always absent for full `sync` runs).
    */
   deferredPaths?: string[];
   detail?: string;

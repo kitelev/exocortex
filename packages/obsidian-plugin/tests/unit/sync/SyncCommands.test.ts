@@ -257,8 +257,9 @@ describe("SyncCommands — Pull/Push split (#3473)", () => {
     await commands.invokeSync();
     await commands.invokePush();
 
+    // The busy notice names the run actually holding the flag.
     expect(
-      notices.filter((n) => n.includes("already in progress")),
+      notices.filter((n) => n.startsWith("Pull already in progress")),
     ).toHaveLength(2);
     release();
     await running;

@@ -53,6 +53,8 @@ export interface SyncCommandsDeps {
 export class SyncCommands {
   private readonly deps: SyncCommandsDeps;
   private running = false;
+  /** Label of the run holding the flag — busy notices name the real culprit. */
+  private runningLabel = "Sync";
 
   constructor(deps: SyncCommandsDeps) {
     this.deps = deps;
@@ -75,10 +77,13 @@ export class SyncCommands {
       return;
     }
     if (this.running) {
-      this.deps.notify("Sync already in progress (D11) — wait for it to finish");
+      this.deps.notify(
+        `${this.runningLabel} already in progress (D11) — wait for it to finish`,
+      );
       return;
     }
     this.running = true;
+    this.runningLabel = "Sync parity report";
     try {
       if (this.deps.isSwitchInProgress()) {
         this.deps.notify(
@@ -149,10 +154,13 @@ export class SyncCommands {
   private async invoke(direction: SyncDirection): Promise<void> {
     const label = this.label(direction);
     if (this.running) {
-      this.deps.notify("Sync already in progress (D11) — wait for it to finish");
+      this.deps.notify(
+        `${this.runningLabel} already in progress (D11) — wait for it to finish`,
+      );
       return;
     }
     this.running = true;
+    this.runningLabel = label;
     try {
       await this.runSync(direction);
     } catch (err) {
