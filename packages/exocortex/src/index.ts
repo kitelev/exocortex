@@ -711,3 +711,22 @@ export {
   type SpaceClassification,
   type SpaceSpecCandidate,
 } from "./services/sync/spaceSpecCore";
+export {
+  ParityValidator,
+  summarizeParityRound,
+  type ConservationSnapshot,
+  type ParityDiscrepancy,
+  type ParityDiscrepancyClass,
+  type ParityM1Violation,
+  type ParityRoundRecord,
+  type ParityRunOptions,
+  type ParityValidatorDeps,
+  type ReadonlyWatermarkSource,
+  type RepoParityReport,
+  type RepoParityStatus,
+} from "./services/sync/ParityValidator";
+export {
+  compareAssetSemantics,
+  isFormatOnlyDrift,
+  type SemanticComparison,
+} from "./services/sync/assetSemanticCompare";
