@@ -640,6 +640,7 @@ export {
   type Sha1Fn,
   type SpaceKind,
   type SyncContent,
+  type SyncDirection,
   type SyncRepoSpec,
   type WatermarkFileEntry,
   type WatermarkRecord,

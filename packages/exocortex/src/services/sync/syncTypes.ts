@@ -202,6 +202,16 @@ export type ChangeDetectionResult =
       diskBlobShas: Map<string, string>;
     };
 
+/**
+ * Direction of a sync run (#3473). Both split directions are SUBSETS of the
+ * full cycle: `pull` applies remote changes only (nothing leaves the device
+ * — no push, local changes stay undiffed), `push` sends the local delta only
+ * (remote changes are never applied to disk — their paths are pinned so they
+ * re-derive on the next pull/Sync). Split runs NEVER resolve conflicts:
+ * every conflicting path is pinned and deferred to a full `sync` run.
+ */
+export type SyncDirection = "sync" | "pull" | "push";
+
 /** Per-repo sync outcome (CQ5). `syncAll` never throws — D12 warn-not-block. */
 export interface RepoSyncResult {
   repoKey: string;
@@ -260,6 +270,14 @@ export interface RepoSyncResult {
    * They re-surface on every sync until that layer lands.
    */
   deferredDeletes: string[];
+  /**
+   * Split-run deferrals (#3473): paths whose resolution was deferred to a
+   * full Sync — conflicts (any direction) and, in push-only runs, remote
+   * changes that were detected but never applied to disk. Each is pinned in
+   * the watermark so it re-derives on the next run. Absent/empty ⇒ nothing
+   * deferred this round (always absent for full `sync` runs).
+   */
+  deferredPaths?: string[];
   detail?: string;
 }
 

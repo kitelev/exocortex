@@ -31,6 +31,19 @@
  * Ordering & isolation (D12): `syncAll` is best-effort per repo —
  * warn-not-block, one failing repo never blocks the rest; callers supply
  * children-before-parent order (or use {@link orderChildrenFirst}).
+ *
+ * Split directions (#3473): `syncAll`/`sync` accept a {@link SyncDirection}.
+ * `pull` runs the cycle with an EMPTY push set — `restCreateCommit` is never
+ * called, local changes stay undiffed and re-derive on the next full Sync.
+ * `push` detects+pushes the local delta but never applies remote changes to
+ * disk — their paths are pinned (same carry-forward as TOCTOU pins) so they
+ * re-derive instead of being silently reverted by a later stale push. Split
+ * runs NEVER resolve conflicts: neither the A2 merge layer nor the file-mode
+ * remote-wins policy (D18) fires; every conflicting path is pinned and
+ * deferred to a full Sync (`RepoSyncResult.deferredPaths`). Note the A1
+ * contract difference: a merge-layer-less full Sync aborts the whole repo on
+ * the first overlap (`conflict` status), while a split run defers the
+ * conflict and still processes the non-conflicting remainder.
  */
 
 import {
@@ -66,6 +79,7 @@ import {
   type RepoSyncResult,
   type Sha1Fn,
   type SyncContent,
+  type SyncDirection,
   type SyncRepoSpec,
   type WatermarkFileEntry,
   type WatermarkRecord,
@@ -350,6 +364,24 @@ type PushLoopOutcome =
        * must fall through to the full watermark rebuild so they converge.
        */
       alreadyInHead: string[];
+      /**
+       * Split-run deferrals (#3473) — paths the caller must PIN: conflicts
+       * (any split direction) and push-only's unapplied remote changes.
+       */
+      deferredPaths: Set<string>;
+      /**
+       * Push-only's detected-but-NEVER-applied remote changes. Fed to the
+       * watermark rebuild as a content-addressed uid-seed ONLY (their blobs
+       * are already fetched — re-fetching would burn one API call each);
+       * the entries themselves are discarded by the pin carry-forward.
+       */
+      deferredRemoteChanges: RemoteChange[];
+      /**
+       * Deferral warnings of the FINAL iteration (per-iteration like
+       * `merge.warnings` — pushing them into the cumulative array inside
+       * the D16 retry loop would duplicate them per attempt).
+       */
+      deferredWarnings: string[];
     };
 
 const EMPTY_MERGE: MergeResolution = {
@@ -493,13 +525,16 @@ export class SyncEngine {
    * {@link orderChildrenFirst}). Acquires the D11 guard ONCE for the whole
    * run — per-repo cycles inside never see their own guard.
    */
-  async syncAll(specs: SyncRepoSpec[]): Promise<RepoSyncResult[]> {
+  async syncAll(
+    specs: SyncRepoSpec[],
+    direction: SyncDirection = "sync",
+  ): Promise<RepoSyncResult[]> {
     if (this.opInProgress) return specs.map((spec) => this.busyResult(spec));
     this.opInProgress = true;
     try {
       const results: RepoSyncResult[] = [];
       for (const spec of specs) {
-        results.push(await this.syncLocked(spec));
+        results.push(await this.syncLocked(spec, direction));
       }
       return results;
     } finally {
@@ -508,17 +543,23 @@ export class SyncEngine {
   }
 
   /** Sync one repo. Never throws — failures map to a result status (CQ5). */
-  async sync(spec: SyncRepoSpec): Promise<RepoSyncResult> {
+  async sync(
+    spec: SyncRepoSpec,
+    direction: SyncDirection = "sync",
+  ): Promise<RepoSyncResult> {
     if (this.opInProgress) return this.busyResult(spec);
     this.opInProgress = true;
     try {
-      return await this.syncLocked(spec);
+      return await this.syncLocked(spec, direction);
     } finally {
       this.opInProgress = false;
     }
   }
 
-  private async syncLocked(spec: SyncRepoSpec): Promise<RepoSyncResult> {
+  private async syncLocked(
+    spec: SyncRepoSpec,
+    direction: SyncDirection = "sync",
+  ): Promise<RepoSyncResult> {
     const warnings: string[] = [];
     const deferredDeletes: string[] = [];
     const result = (
@@ -691,6 +732,7 @@ export class SyncEngine {
         mode,
         syntheticFirstSyncBase,
         sizeExcluded,
+        direction,
       );
       if (loop.kind === "conflict") {
         return result("conflict", { detail: loop.detail });
@@ -729,6 +771,11 @@ export class SyncEngine {
         loop;
       const merge = loop.merge;
       warnings.push(...merge.warnings);
+      warnings.push(...loop.deferredWarnings);
+      const deferredExtra: Partial<RepoSyncResult> =
+        loop.deferredPaths.size > 0
+          ? { deferredPaths: [...loop.deferredPaths] }
+          : {};
 
       // Quarantine sink fires ONCE, after the retry loop settled (D17). The
       // UNRESOLVED entries' paths are pinned below so the conflict
@@ -773,6 +820,11 @@ export class SyncEngine {
         // is stale — fall through so the rebuild converges it (otherwise
         // the phantom re-derives on every sync).
         loop.alreadyInHead.length === 0 &&
+        // Split-run deferrals (#3473) must persist their pins. Defence-in-
+        // depth: deferral only happens in the remote-diff branch, whose
+        // three gates (head moved / pins / forceRemoteDiff) each already
+        // block this fast path.
+        loop.deferredPaths.size === 0 &&
         // First-sync synthetic base (file mode) must still PERSIST the
         // watermark even when nothing changed — otherwise every sync
         // re-runs first-sync discovery.
@@ -812,6 +864,9 @@ export class SyncEngine {
         warnings.push(
           `race-window: watermark NOT advanced (pushed commit's parent ${newCommit.parents[0]} != examined head ${examinedHead}) — next sync reconciles the concurrent change`,
         );
+        // Split-run deferred pins (#3473) are intentionally dropped here:
+        // the watermark was not advanced at all, and the OLD base entry is
+        // strictly more conservative than a pin — everything re-derives.
         return result("synced", {
           pushedSha,
           pushedCount: pushFiles.size,
@@ -825,6 +880,7 @@ export class SyncEngine {
           ...(quarantinedPathsOf(merge).length > 0
             ? { quarantinedPaths: quarantinedPathsOf(merge) }
             : {}),
+          ...deferredExtra,
         });
       }
 
@@ -844,6 +900,13 @@ export class SyncEngine {
       // TOCTOU pins): the conflict re-derives every sync until resolved.
       for (const entry of merge.quarantineEntries) {
         pinnedPaths.add(entry.path);
+      }
+      // Split-run deferrals (#3473) pin the same way: conflicts (any split
+      // direction) and push-only's never-applied remote changes re-derive
+      // on the next pull/Sync instead of silently inverting into phantom
+      // local edits.
+      for (const path of loop.deferredPaths) {
+        pinnedPaths.add(path);
       }
       // Withheld remote-wins paths (flush failure) re-derive the same way.
       for (const path of withheldPaths) {
@@ -866,7 +929,10 @@ export class SyncEngine {
         disk,
         // Merged writes carry their precomputed blob SHA (A2 deferred LOW) —
         // the watermark rebuild must not re-fetch blobs it already knows.
-        [...applyWrites, ...merge.mergedWrites],
+        // Push-only's deferred remote changes join as a content-addressed
+        // uid-seed ONLY (#3473): their blobs are already fetched, and the
+        // pin carry-forward discards their new-tree entries anyway.
+        [...applyWrites, ...merge.mergedWrites, ...loop.deferredRemoteChanges],
         // The UNFILTERED record — applyWatermarkPins must find the
         // previous entries of size-excluded paths to carry them forward.
         persistedWatermark,
@@ -905,6 +971,7 @@ export class SyncEngine {
         ...(quarantinedPathsOf(merge).length > 0
           ? { quarantinedPaths: quarantinedPathsOf(merge) }
           : {}),
+        ...deferredExtra,
       });
     } catch (err) {
       const redact = this.deps.redact ?? ((m: string): string => m);
@@ -1165,6 +1232,7 @@ export class SyncEngine {
     mode: ModeOps,
     forceRemoteDiff = false,
     sizeExcluded: ReadonlySet<string> = new Set(),
+    direction: SyncDirection = "sync",
   ): Promise<PushLoopOutcome> {
     const { localChanges, localDeletedPaths, pushFilesAll } = pinned;
     const maxRetries = this.deps.maxPushRetries ?? DEFAULT_MAX_PUSH_RETRIES;
@@ -1176,6 +1244,9 @@ export class SyncEngine {
     let pushFiles = new Map<string, SyncContent>();
     let merge: MergeResolution = EMPTY_MERGE;
     let alreadyInHead: string[] = [];
+    let deferredPaths = new Set<string>();
+    let deferredRemoteChanges: RemoteChange[] = [];
+    let deferredWarnings: string[] = [];
     const remoteOversized = new Set<string>();
 
     for (;;) {
@@ -1194,6 +1265,12 @@ export class SyncEngine {
       // Per-iteration like the merge verdicts: a retry re-reads the head, so
       // the previous iteration's tree (and drops) are stale (#3475).
       alreadyInHead = [];
+      // Per-iteration like the merge verdicts (#3473): a re-pull changes the
+      // remote set, and warnings pushed into the cumulative array inside the
+      // D16 retry loop would duplicate per attempt.
+      deferredPaths = new Set<string>();
+      deferredRemoteChanges = [];
+      deferredWarnings = [];
       let headTreeByPath: Map<string, string> | undefined;
       const convergedPushPaths = new Set<string>();
 
@@ -1226,7 +1303,30 @@ export class SyncEngine {
           convergedPushPaths,
         );
         if (verdict.conflicts.length > 0) {
-          if (mode.fileMode) {
+          if (direction !== "sync") {
+            // Split runs NEVER resolve conflicts (#3473): neither the A2
+            // merge layer nor file-mode remote-wins (D18) fires. Every
+            // involved path is pinned so the conflict re-derives on the
+            // next full Sync; the conflicting local change is already
+            // excluded from the push set via `convergedPushPaths`.
+            for (const group of verdict.conflicts) {
+              deferredPaths.add(group.local.path);
+              if (group.local.basePath !== undefined) {
+                deferredPaths.add(group.local.basePath);
+              }
+              for (const remote of group.remotes) {
+                deferredPaths.add(remote.path);
+                if (remote.kind === "change") {
+                  deferredRemoteChanges.push(remote);
+                }
+              }
+            }
+            deferredWarnings.push(
+              `${direction}-only: ${verdict.conflicts.length} conflict(s) deferred to a full Sync (${verdict.conflicts
+                .map((g) => g.desc)
+                .join("; ")}) — paths pinned, nothing merged`,
+            );
+          } else if (mode.fileMode) {
             // Phase C file mode (D18): opaque blobs never merge — every
             // conflict resolves remote-wins deterministically, with the
             // losing LOCAL version preserved in quarantine. Resolved
@@ -1255,12 +1355,41 @@ export class SyncEngine {
         }
         applyWrites = verdict.applyWrites;
         applyDeletes = verdict.applyDeletes;
+        if (
+          direction === "push" &&
+          (applyWrites.length > 0 || applyDeletes.length > 0)
+        ) {
+          // Push-only (#3473): remote changes are detected but NEVER applied
+          // to disk. Pinning is mandatory — advancing the watermark to the
+          // pushed head WITHOUT a pin would absorb the unapplied remote blob
+          // and make the stale local copy read as a "local edit" next sync
+          // (a silent revert of the remote change).
+          for (const w of applyWrites) {
+            deferredPaths.add(w.path);
+            deferredRemoteChanges.push(w);
+          }
+          for (const d of applyDeletes) {
+            deferredPaths.add(d.path);
+          }
+          deferredWarnings.push(
+            `push-only: ${applyWrites.length + applyDeletes.length} remote change(s) NOT applied — pinned to re-derive on the next pull/Sync`,
+          );
+          applyWrites = [];
+          applyDeletes = [];
+        }
       }
 
-      pushFiles = new Map<string, SyncContent>([
-        ...[...pushFilesAll].filter(([p]) => !convergedPushPaths.has(p)),
-        ...merge.mergedFiles,
-      ]);
+      // Pull-only (#3473): the push set is EMPTY by construction — the
+      // local change-set above still feeds conflict detection (protecting
+      // local edits from being overwritten by the pull-apply), but nothing
+      // ever reaches `restCreateCommit`.
+      pushFiles =
+        direction === "pull"
+          ? new Map<string, SyncContent>()
+          : new Map<string, SyncContent>([
+              ...[...pushFilesAll].filter(([p]) => !convergedPushPaths.has(p)),
+              ...merge.mergedFiles,
+            ]);
 
       // #3475 phantom-commit guard: drop pushFiles whose bytes are ALREADY
       // identical in the examined head tree. Parallel-run state: another
@@ -1373,6 +1502,9 @@ export class SyncEngine {
       merge,
       remoteOversized,
       alreadyInHead,
+      deferredPaths,
+      deferredRemoteChanges,
+      deferredWarnings,
     };
   }
 
