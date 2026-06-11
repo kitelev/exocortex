@@ -189,11 +189,16 @@ const productionConfig = {
   },
   // Advanced production optimizations
   metafile: true,
-  // Drop debug code in production
-  drop: ["console", "debugger"],
+  // Drop debugger statements only. console.* MUST survive release builds:
+  // Logger routes log events to the DevTools console per-level via the
+  // settings-facing logChannels.<level>.console toggles (Issue #3479).
+  // Dropping "console" here (or marking console methods pure) silently
+  // turns that channel into a no-op — gated by
+  // tests/unit/build/esbuild-console-channel.test.ts +
+  // scripts/assert-console-channel.mjs (root build).
+  drop: ["debugger"],
   // Additional size optimizations
   legalComments: "none", // Remove license comments to save space
-  pure: ["console.log", "console.debug", "console.info"], // Mark as pure for tree-shaking
   ignoreAnnotations: false, // Respect pure annotations
 };
 

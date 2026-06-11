@@ -161,7 +161,8 @@ export class Logger implements ILogger {
 
   /**
    * Log error with ErrorLogOptions for structured logging
-   * Note: In production builds, console calls are dropped by esbuild.
+   * Note: console calls survive production builds (Issue #3479) and are
+   * gated at runtime by the logChannels.<level>.console settings toggles.
    * To avoid "expression has no effect" warnings, we consolidate
    * conditional logging into single console.error calls.
    */

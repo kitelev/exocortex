@@ -45,33 +45,31 @@ export class LoggingService {
 
   /**
    * Log debug message.
-   * Note: These methods intentionally have empty bodies in production builds
-   * when console calls are dropped by esbuild. The function signature remains
-   * for API compatibility, but the bodies are no-ops.
+   * Note: console calls survive production builds (Issue #3479 — the
+   * plugin's esbuild config no longer drops them); output is gated by
+   * the isVerbose flag below.
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   static debug(_message: string, _context?: unknown): void {
-    // Verbose check with console.debug inside keeps the method usable
-    // When console is dropped, the entire body becomes a no-op
     if (this.isVerbose) {
       console.debug(`[Exocortex] ${_message}`, _context ?? "");
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   static info(_message: string, _context?: unknown): void {
     // eslint-disable-next-line no-console
     console.log(`[Exocortex] ${_message}`, _context ?? "");
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   static warn(_message: string, _context?: unknown): void {
     console.warn(`[Exocortex] ${_message}`, _context ?? "");
   }
 
   /**
    * Log an error with environment-aware stack trace handling.
-   * Note: In production builds, console calls may be dropped by esbuild.
+   * Note: console calls survive production builds (Issue #3479).
    * Stack trace is included in single console.error call to avoid orphaned expressions.
    *
    * @param message - User-friendly error message
