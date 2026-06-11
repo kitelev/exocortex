@@ -1413,7 +1413,23 @@ export default class ExocortexPlugin extends Plugin {
             // Issue #3472 — see the stale-stats guard note at the
             // post-resolve callsite; the ASK below lazily triggers
             // `VaultRDFIndexer.initialize()` (the walk being reported).
+            // The metadataCache warmth flag is captured HERE, at walk
+            // start — NOT at emit time. On a cold boot Obsidian's initial
+            // metadata scan can finish DURING the multi-second eager
+            // walk; reading the live flag after the walk would route a
+            // partially-parsed-cache walk to the eager notice instead of
+            // deferring to the authoritative post-resolve refresh.
+            // `initialized` is undocumented-but-stable Obsidian API
+            // (Dataview relies on it); if it ever disappears the
+            // comparison is `undefined === true` → false → safe fallback
+            // to the post-resolve callsite.
             const eagerWarmupStartedAt = Date.now();
+            const cacheWasWarmAtWalkStart =
+              (
+                this.app.metadataCache as MetadataCache & {
+                  initialized?: boolean;
+                }
+              ).initialized === true;
             void this.sparql
               .query("ASK { ?s ?p ?o }")
               .then(async () => {
@@ -1437,25 +1453,16 @@ export default class ExocortexPlugin extends Plugin {
 
                 // Issue #3472 — emit «indexing complete» from the eager
                 // path ONLY when metadataCache had already finished its
-                // initial scan (mid-session plugin enable / first install:
-                // cache is warm, counts are honest, and the
-                // `metadataCache.on("resolved")` chain may not fire again
-                // until the user edits a file — without this callsite the
-                // notice would never appear for that persona). On a cold
-                // boot the flag is still false here, the guard skips, and
-                // the post-resolve chain emits after the authoritative
-                // refresh instead. `initialized` is undocumented-but-
-                // stable Obsidian API (Dataview relies on it); if it ever
-                // disappears the comparison is `undefined === true` →
-                // false → we safely fall back to the post-resolve
-                // callsite. One-shot latch dedupes the two callsites.
-                if (
-                  (
-                    this.app.metadataCache as MetadataCache & {
-                      initialized?: boolean;
-                    }
-                  ).initialized === true
-                ) {
+                // initial scan BEFORE this walk started (mid-session
+                // plugin enable / first install: cache is warm, counts
+                // are honest, and the `metadataCache.on("resolved")`
+                // chain may not fire again until the user edits a file —
+                // without this callsite the notice would never appear for
+                // that persona). On a cold boot the flag was still false
+                // at walk start, the guard skips, and the post-resolve
+                // chain emits after the authoritative refresh instead.
+                // One-shot latch dedupes the two callsites.
+                if (cacheWasWarmAtWalkStart) {
                   indexingCompleteNotifier.notifyOnce(
                     this.sparql.getLastIndexWalkStats(),
                     eagerWarmupStartedAt,

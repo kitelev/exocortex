@@ -31,18 +31,22 @@ import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
  * `NoteToRDFConverter.convertVaultWithValidation().summary` — `skipped` is
  * the Issue #3468 aggregated counter (invariant violations + invalid IRIs),
  * NOT a second parallel metric. `durationMs` covers the whole rebuild
- * (convertVault + addAll + inference), including retry attempts when
- * `executeWithRetry` re-runs the walk — it reports how long the user
- * actually waited, not how long the last attempt took. `finishedAt` lets
- * callers reject stats from a walk that completed before THEIR walk was
- * initiated (stale-stats guard for the coalesced-refresh path).
+ * (convertVault + addAll + inference), including retry attempts of the
+ * indexer-internal `executeWithRetry` — it reports how long the user
+ * actually waited, not how long the last attempt took. Known limitation:
+ * `SPARQLQueryService` wraps `initialize()`/`refresh()` in a SECOND
+ * `executeWithRetry`; if the inner layer exhausts its retries and the
+ * outer layer re-invokes, the timer restarts and only the last outer
+ * attempt is measured. `finishedAt` lets callers reject stats from a walk
+ * that completed before THEIR walk was initiated (stale-stats guard for
+ * the coalesced-refresh path).
  */
 export interface VaultWalkStats {
-  total: number;
-  indexed: number;
-  skipped: number;
-  durationMs: number;
-  finishedAt: number;
+  readonly total: number;
+  readonly indexed: number;
+  readonly skipped: number;
+  readonly durationMs: number;
+  readonly finishedAt: number;
 }
 
 export class VaultRDFIndexer {
@@ -448,7 +452,10 @@ export class VaultRDFIndexer {
    * succeeded yet. See {@link VaultWalkStats} for field semantics.
    */
   getLastWalkStats(): VaultWalkStats | null {
-    return this.lastWalkStats;
+    // Shallow copy — the accessor is re-exported through the public
+    // SPARQLApi; handing out the internal reference would let API
+    // consumers mutate plugin-internal state.
+    return this.lastWalkStats === null ? null : { ...this.lastWalkStats };
   }
 
   private recordWalkStats(
