@@ -1,6 +1,7 @@
 import type { TFile } from "obsidian";
 import type { InMemoryTripleStore, SolutionMapping, Triple } from "exocortex";
 import { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';
+import type { VaultWalkStats } from '@plugin/infrastructure/VaultRDFIndexer';
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';
 
 /**
@@ -350,6 +351,16 @@ export class SPARQLApi {
    */
   getRdfIndexer(): IRdfIndexerHandle {
     return this.queryService.getIndexer();
+  }
+
+  /**
+   * Stats of the last completed FULL vault walk (Issue #3472), or null if
+   * no walk has succeeded yet. Read-only — intentionally a separate
+   * accessor instead of widening {@link IRdfIndexerHandle}, which stays
+   * narrowed to `refresh()` for the Profile wiring (Issue #3327).
+   */
+  getLastIndexWalkStats(): VaultWalkStats | null {
+    return this.queryService.getLastWalkStats();
   }
 
   /**
