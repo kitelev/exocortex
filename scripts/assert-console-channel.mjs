@@ -36,17 +36,18 @@ try {
   process.exit(1);
 }
 
-const requiredCallSites = [
-  "console.debug",
-  "console.info",
-  "console.warn",
-  "console.error",
-];
-const missing = requiredCallSites.filter((site) => !code.includes(site));
+// Call-site regex (`console.<method>(`), NOT a bare substring — a string
+// literal like "console.warn" in an error message must not satisfy the gate.
+const requiredMethods = ["debug", "info", "warn", "error"];
+const callSiteRegex = (method) =>
+  new RegExp(String.raw`console\.${method}\s*\(`, "g");
+const missing = requiredMethods.filter(
+  (method) => !callSiteRegex(method).test(code),
+);
 
 if (missing.length > 0) {
   console.error(
-    `❌ [console-channel] bundle ${bundlePath} is missing call sites: ${missing.join(", ")}.\n` +
+    `❌ [console-channel] bundle ${bundlePath} is missing call sites: ${missing.map((m) => `console.${m}`).join(", ")}.\n` +
       `   The Logger console channel (settings logChannels.<level>.console) is a\n` +
       `   no-op in this build — DevTools console receives nothing while Notices\n` +
       `   and the file log still flood (Issue #3479 regression class).\n` +
@@ -56,8 +57,11 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
-const counts = requiredCallSites
-  .map((site) => `${site} ×${code.split(site).length - 1}`)
+const counts = requiredMethods
+  .map(
+    (method) =>
+      `console.${method} ×${[...code.matchAll(callSiteRegex(method))].length}`,
+  )
   .join(", ");
 console.log(
   `✅ [console-channel] ${bundlePath} retains console call sites (${counts}). ` +
