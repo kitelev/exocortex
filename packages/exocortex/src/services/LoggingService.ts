@@ -49,20 +49,20 @@ export class LoggingService {
    * plugin's esbuild config no longer drops them); output is gated by
    * the isVerbose flag below.
    */
-   
+
   static debug(_message: string, _context?: unknown): void {
     if (this.isVerbose) {
       console.debug(`[Exocortex] ${_message}`, _context ?? "");
     }
   }
 
-   
+
   static info(_message: string, _context?: unknown): void {
     // eslint-disable-next-line no-console
     console.log(`[Exocortex] ${_message}`, _context ?? "");
   }
 
-   
+
   static warn(_message: string, _context?: unknown): void {
     console.warn(`[Exocortex] ${_message}`, _context ?? "");
   }
