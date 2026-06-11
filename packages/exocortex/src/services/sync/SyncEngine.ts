@@ -343,6 +343,13 @@ type PushLoopOutcome =
       merge: MergeResolution;
       /** REMOTE paths excluded by the size cap (file mode) — pinned by the caller. */
       remoteOversized: Set<string>;
+      /**
+       * Detected-but-NOT-pushed paths whose bytes were already identical in
+       * the examined head tree (#3475 phantom-commit guard). Non-empty ⇒ the
+       * per-file watermark snapshot is stale for these paths — the caller
+       * must fall through to the full watermark rebuild so they converge.
+       */
+      alreadyInHead: string[];
     };
 
 const EMPTY_MERGE: MergeResolution = {
@@ -354,6 +361,11 @@ const EMPTY_MERGE: MergeResolution = {
   mergedPaths: [],
   warnings: [],
 };
+
+/** path → blobSha lookup over a (raw) remote tree listing. */
+function treeByPath(entries: RemoteTreeEntry[]): Map<string, string> {
+  return new Map(entries.map((e) => [e.path, e.blobSha]));
+}
 
 /** Per-path quarantine identity for `RepoSyncResult.quarantinedPaths` (E1). */
 function quarantinedPathsOf(merge: MergeResolution): string[] {
@@ -757,6 +769,10 @@ export class SyncEngine {
         merge.quarantineEntries.length === 0 &&
         merge.resolvedQuarantineEntries.length === 0 &&
         (watermark.pinnedPaths?.length ?? 0) === 0 &&
+        // Dropped already-in-HEAD paths (#3475) mean the per-file snapshot
+        // is stale — fall through so the rebuild converges it (otherwise
+        // the phantom re-derives on every sync).
+        loop.alreadyInHead.length === 0 &&
         // First-sync synthetic base (file mode) must still PERSIST the
         // watermark even when nothing changed — otherwise every sync
         // re-runs first-sync discovery.
@@ -790,7 +806,9 @@ export class SyncEngine {
         // edits on the NEXT sync — a silent revert of the concurrent change.
         // Keeping the old watermark is safe: the next sync re-pulls the
         // concurrent change and drops our own pushed files as convergent
-        // edits.
+        // edits. Convergence for `alreadyInHead` paths (#3475) is equally
+        // deferred — their stale entries re-derive next sync and resolve
+        // through the same convergent-edit drop.
         warnings.push(
           `race-window: watermark NOT advanced (pushed commit's parent ${newCommit.parents[0]} != examined head ${examinedHead}) — next sync reconciles the concurrent change`,
         );
@@ -1157,6 +1175,7 @@ export class SyncEngine {
     let applyDeletes: RemoteChange[] = [];
     let pushFiles = new Map<string, SyncContent>();
     let merge: MergeResolution = EMPTY_MERGE;
+    let alreadyInHead: string[] = [];
     const remoteOversized = new Set<string>();
 
     for (;;) {
@@ -1172,6 +1191,10 @@ export class SyncEngine {
       // Merge resolution is recomputed per iteration — a re-pull changes the
       // remote side, so a previous iteration's verdicts are stale.
       merge = EMPTY_MERGE;
+      // Per-iteration like the merge verdicts: a retry re-reads the head, so
+      // the previous iteration's tree (and drops) are stale (#3475).
+      alreadyInHead = [];
+      let headTreeByPath: Map<string, string> | undefined;
       const convergedPushPaths = new Set<string>();
 
       // Pinned paths diverge from the lastSyncedSha tree by construction —
@@ -1194,11 +1217,12 @@ export class SyncEngine {
           warnings,
           remoteOversized,
         );
+        headTreeByPath = remote.headTreeByPath;
         const verdict = this.matchLocalVsRemote(
           localChanges,
           localDeletedPaths,
           disk,
-          remote,
+          remote.changes,
           convergedPushPaths,
         );
         if (verdict.conflicts.length > 0) {
@@ -1237,6 +1261,50 @@ export class SyncEngine {
         ...[...pushFilesAll].filter(([p]) => !convergedPushPaths.has(p)),
         ...merge.mergedFiles,
       ]);
+
+      // #3475 phantom-commit guard: drop pushFiles whose bytes are ALREADY
+      // identical in the examined head tree. Parallel-run state: another
+      // device pushed the same content and this device's PER-FILE watermark
+      // snapshot is stale (D22 validates only rootTreeSha) — without the
+      // guard, restCreateCommit lands an empty or partially-identical commit
+      // with an inflated `sync N file(s)` message. In the remote-diff branch
+      // above this is expected to be a no-op (the convergent-edit drop covers
+      // disk-sourced phantoms; the merge layer excludes remote-equal merged
+      // content) — the fast path (head unmoved, no pins) is the one that
+      // needs it. Runs BEFORE the R5 secret scan: bytes already durable in
+      // HEAD must not trigger a push refusal.
+      if (pushFiles.size > 0) {
+        if (headTreeByPath === undefined) {
+          // Fast path: `examinedHead === watermark.lastSyncedSha`, and
+          // `rootTreeSha` was D22-verified against the actual commit this
+          // very cycle (detectChanges) — one tree GET, and only when there
+          // is something to push (the no-change happy path never gets here).
+          headTreeByPath = treeByPath(
+            await getTree(
+              this.transport,
+              spec.owner,
+              spec.repo,
+              watermark.rootTreeSha,
+              this.deps.baseURL,
+            ),
+          );
+        }
+        for (const [path, content] of pushFiles) {
+          const headBlobSha = headTreeByPath.get(path);
+          if (
+            headBlobSha !== undefined &&
+            headBlobSha === (await gitBlobSha(content, this.deps.sha1))
+          ) {
+            pushFiles.delete(path);
+            alreadyInHead.push(path);
+          }
+        }
+        if (alreadyInHead.length > 0) {
+          warnings.push(
+            `phantom push skipped: ${alreadyInHead.length} file(s) already identical in remote HEAD (${alreadyInHead.join(", ")}) — excluded from the commit (#3475)`,
+          );
+        }
+      }
       if (pushFiles.size === 0) break;
 
       // R5 secret-scan — refuse the WHOLE push (a partial set could ship an
@@ -1304,6 +1372,7 @@ export class SyncEngine {
       pushFiles,
       merge,
       remoteOversized,
+      alreadyInHead,
     };
   }
 
@@ -1737,7 +1806,11 @@ export class SyncEngine {
     return result("synced");
   }
 
-  /** Fetch base..head remote changes with contents + uids. */
+  /**
+   * Fetch base..head remote changes with contents + uids. Also returns the
+   * RAW head tree as a path→blobSha lookup so the push phase can reuse it
+   * for the #3475 phantom-commit guard without a second tree GET.
+   */
   private async collectRemoteChanges(
     spec: SyncRepoSpec,
     watermark: WatermarkRecord,
@@ -1746,7 +1819,10 @@ export class SyncEngine {
     sizeExcluded: ReadonlySet<string> = new Set(),
     warnings: string[] = [],
     remoteOversized: Set<string> = new Set(),
-  ): Promise<RemoteChange[]> {
+  ): Promise<{
+    changes: RemoteChange[];
+    headTreeByPath: Map<string, string>;
+  }> {
     const headCommit = await getCommitInfo(
       this.transport,
       spec.owner,
@@ -1826,7 +1902,7 @@ export class SyncEngine {
     for (const d of deleted) {
       changes.push({ path: d.path, kind: "delete", uid: d.uid });
     }
-    return changes;
+    return { changes, headTreeByPath: treeByPath(rawTree) };
   }
 
   /**

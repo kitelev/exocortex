@@ -1077,3 +1077,106 @@ describe("SyncEngine — A3: D11 one-operation guard, R8 auth, R5 secret-scan", 
     expect(gh.headSha()).toBe(headBefore); // nothing pushed
   });
 });
+
+describe("SyncEngine — #3475 phantom/empty commits (detected content already in HEAD)", () => {
+  /**
+   * Parallel-run state (#3475): the other device already pushed the same
+   * bytes (Obsidian Sync replicated the files), but THIS device's watermark
+   * never recorded them — its per-file entry still carries an older blob.
+   * `lastSyncedSha`/`rootTreeSha` stay CURRENT: D22 validates only the root
+   * tree integrity, not the per-file snapshot (see advanceWatermark
+   * docstring), so detection derives a phantom "local change" whose content
+   * is byte-identical to the remote HEAD entry.
+   */
+  async function staleWatermarkEntry(
+    watermarks: FakeWatermarkStore,
+    repoKey: string,
+    path: string,
+    staleContent: string,
+  ): Promise<void> {
+    const record = watermarks.records.get(repoKey)!;
+    const staleBlobSha = await gitBlobSha(staleContent, sha1Hex);
+    watermarks.records.set(repoKey, {
+      ...record,
+      files: record.files.map((f) =>
+        f.path === path ? { ...f, blobSha: staleBlobSha } : f,
+      ),
+    });
+  }
+
+  it("does NOT create a commit when the detected content is already in HEAD; watermark converges", async () => {
+    const alreadyPushed = mdAsset("u1", "v2 — already pushed by the other device");
+    const gh = new FakeGitHubRepo({ [FILE_A]: alreadyPushed, [FILE_B]: mdAsset("u2") });
+    const local = new FakeLocalFiles({ [FILE_A]: alreadyPushed, [FILE_B]: mdAsset("u2") });
+    const { engine, watermarks } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+    await staleWatermarkEntry(
+      watermarks,
+      gh.spec().repoKey,
+      FILE_A,
+      mdAsset("u1", "v1 — stale base"),
+    );
+
+    const headBefore = gh.headSha();
+    const commitsBefore = gh.commits.size;
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.pushedSha).toBeUndefined();
+    expect(result.pushedCount).toBe(0);
+    expect(gh.headSha()).toBe(headBefore); // no commit landed
+    expect(gh.commits.size).toBe(commitsBefore); // not even an unreferenced one
+    expect(result.warnings.join(" ")).toMatch(/already identical in remote HEAD/);
+
+    // Watermark converged: the stale entry now records the actual blob —
+    // the phantom does NOT re-derive on the next sync.
+    const after = watermarks.records.get(gh.spec().repoKey)!;
+    expect(after.files.find((f) => f.path === FILE_A)!.blobSha).toBe(
+      await gitBlobSha(alreadyPushed, sha1Hex),
+    );
+    const second = await engine.sync(gh.spec());
+    expect(second.status).toBe("synced");
+    expect(second.pushedCount).toBe(0);
+    expect(second.warnings.join(" ")).not.toMatch(/already identical/);
+    expect(gh.headSha()).toBe(headBefore);
+  });
+
+  it("pushes ONLY the real delta when one of two detected files is already in HEAD; counter is exact", async () => {
+    const alreadyPushed = mdAsset("u1", "already in HEAD");
+    const gh = new FakeGitHubRepo({ [FILE_A]: alreadyPushed, [FILE_B]: mdAsset("u2") });
+    const local = new FakeLocalFiles({ [FILE_A]: alreadyPushed, [FILE_B]: mdAsset("u2") });
+    const { engine, watermarks } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+    await staleWatermarkEntry(
+      watermarks,
+      gh.spec().repoKey,
+      FILE_A,
+      mdAsset("u1", "stale base"),
+    );
+    const realEdit = mdAsset("u2", "genuinely new content");
+    local.files.set(FILE_B, realEdit);
+
+    const headBefore = gh.headSha();
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.pushedCount).toBe(1); // the real delta only — NOT 2 (#3475 inflated counter)
+    expect(result.pushedSha).toBe(gh.headSha());
+    expect(gh.headFiles().get(FILE_B)).toBe(realEdit);
+    expect(gh.headFiles().get(FILE_A)).toBe(alreadyPushed); // untouched in the tree
+    // Commit message reports the FILTERED count.
+    const head = gh.commits.get(gh.headSha())!;
+    expect(head.message).toBe("chore(exosync): sync 1 file(s)");
+    expect(head.parents).toEqual([headBefore]); // exactly one commit, no phantom sibling
+
+    // Watermark converged for BOTH paths — nothing re-derives.
+    const after = watermarks.records.get(gh.spec().repoKey)!;
+    expect(after.lastSyncedSha).toBe(gh.headSha());
+    expect(after.files.find((f) => f.path === FILE_A)!.blobSha).toBe(
+      await gitBlobSha(alreadyPushed, sha1Hex),
+    );
+    const second = await engine.sync(gh.spec());
+    expect(second.pushedCount).toBe(0);
+    expect(gh.headSha()).toBe(result.pushedSha);
+  });
+});
