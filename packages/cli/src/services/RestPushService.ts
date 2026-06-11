@@ -119,6 +119,17 @@ export class RestPushService {
   }
 
   /**
+   * The `fetch`-backed transport, exposed for read-side consumers (ExoSync
+   * E1 `exosync-parity` reuses the SAME transport contract the write
+   * primitive ships with — error shape `GitHub request {METHOD} {url} →
+   * HTTP {status}: {body}` is what `isAuthError` keys off). Mirrors the
+   * plugin's `GitHubRestClient.restTransport()`.
+   */
+  transport(): RestCommitTransport {
+    return this.buildTransport();
+  }
+
+  /**
    * Build a `fetch`-backed transport with plugin-parity semantics: throws on
    * any non-2xx status (the core's transport contract), redacts PATs in all
    * error strings, returns `{ status, json, text }`.
