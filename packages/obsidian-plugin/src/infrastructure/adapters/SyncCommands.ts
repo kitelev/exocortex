@@ -41,6 +41,13 @@ export interface SyncCommandsDeps {
   /** Diagnostic sink for per-repo warnings/details (default console). */
   log?: (message: string) => void;
   /**
+   * Info-level sink for the success summary (#3489). Info channel default
+   * is {notice:false, console:true, file:false}, so this produces exactly
+   * one console line without duplicating the existing notify() toast or
+   * writing to the file log. Optional — absent callers get no-op.
+   */
+  logInfo?: (message: string) => void;
+  /**
    * E1 parity harness (RFC 4e4dc453 Phase E). When wired, every sync round
    * is followed by an automatic M1/M2 validation pass (best-effort — a
    * parity failure NEVER affects the sync result), and the standalone
@@ -257,6 +264,7 @@ export class SyncCommands {
     log: (message: string) => void,
     label = "Sync",
   ): void {
+    const logInfo = this.deps.logInfo ?? ((_m: string): void => undefined);
     let pushed = 0;
     let deleted = 0;
     let pulled = 0;
@@ -313,6 +321,9 @@ export class SyncCommands {
     if (problems.length === 0) {
       this.deps.notify(
         `${label} done: ${synced}/${results.length} repo(s) — ${counts}`,
+      );
+      logInfo(
+        `[ExoSync] ${label} OK: ${synced}/${results.length} repo(s) — ${counts}`,
       );
     } else {
       this.deps.notify(
