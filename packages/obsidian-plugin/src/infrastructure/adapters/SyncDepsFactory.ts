@@ -370,6 +370,13 @@ export interface BuiltSyncEngine {
   engine: SyncEngine;
   /** PAT resolved at build time; null ⇒ caller surfaces the R8 prompt. */
   pat: string | null;
+  /**
+   * #3495 — whether the engine was built with a durable quarantine sink.
+   * `false` ⇒ conflicts are pinned and re-derive every sync but BOTH versions
+   * are never saved (silent degraded mode). The caller surfaces a one-shot
+   * warn when a conflict actually occurs without a sink.
+   */
+  quarantineConfigured: boolean;
 }
 
 /**
@@ -434,5 +441,5 @@ export async function buildSyncEngine(
     ...(quarantine !== undefined ? { quarantine } : {}),
   });
 
-  return { engine, pat };
+  return { engine, pat, quarantineConfigured: quarantine !== undefined };
 }
