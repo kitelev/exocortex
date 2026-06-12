@@ -327,6 +327,11 @@ interface PinnedLocalChanges {
    * conflict outcome replaces the raw push, deletion included).
    */
   pushDeletionsAll: Map<string, string>;
+  /**
+   * Uids duplicated on disk or in the base (#3477) — uid-based remote
+   * matching is suppressed for them (path identity for the whole group).
+   */
+  dupUids: ReadonlySet<string>;
 }
 
 /** One local change overlapping one-or-more remote changes (merge input). */
@@ -1289,7 +1294,13 @@ export class SyncEngine {
       const content = disk.get(c.path);
       if (content !== undefined) pushFilesAll.set(c.path, content);
     }
-    return { localChanges, localDeletedPaths, pushFilesAll, pushDeletionsAll };
+    return {
+      localChanges,
+      localDeletedPaths,
+      pushFilesAll,
+      pushDeletionsAll,
+      dupUids: detection.duplicateUids,
+    };
   }
 
   /**
@@ -1308,8 +1319,13 @@ export class SyncEngine {
     sizeExcluded: ReadonlySet<string> = new Set(),
     direction: SyncDirection = "sync",
   ): Promise<PushLoopOutcome> {
-    const { localChanges, localDeletedPaths, pushFilesAll, pushDeletionsAll } =
-      pinned;
+    const {
+      localChanges,
+      localDeletedPaths,
+      pushFilesAll,
+      pushDeletionsAll,
+      dupUids,
+    } = pinned;
     const maxRetries = this.deps.maxPushRetries ?? DEFAULT_MAX_PUSH_RETRIES;
     let attempt = 0;
     let examinedHead = "";
@@ -1378,6 +1394,8 @@ export class SyncEngine {
           disk,
           remote.changes,
           convergedPushPaths,
+          dupUids,
+          remote.headTreeByPath,
         );
         if (verdict.conflicts.length > 0) {
           if (direction !== "sync") {
@@ -1428,6 +1446,26 @@ export class SyncEngine {
               verdict.conflicts,
               disk,
             );
+          }
+          // Cross-path remote changes consumed by a conflict group were
+          // never applied to disk — pin them, same invariant as push-only
+          // deferrals: absorbing them into the advanced watermark would
+          // make the locally-absent path read as a local DELETE next sync
+          // and push a wrongful deletion of a file nobody deleted (#3477
+          // arrival cycle: a remote dup copy + a concurrent local edit).
+          // Same-path remotes need no pin — the conflict outcome (merge /
+          // quarantine / file-mode remote-wins) settles them in place.
+          if (direction === "sync") {
+            for (const group of verdict.conflicts) {
+              for (const r of group.remotes) {
+                if (r.path === group.local.path) continue;
+                deferredPaths.add(r.path);
+                if (r.kind === "change") deferredRemoteChanges.push(r);
+                deferredWarnings.push(
+                  `conflict group ${group.desc}: remote change at ${r.path} NOT applied — pinned to re-derive on the next sync (#3477)`,
+                );
+              }
+            }
           }
         }
         applyWrites = verdict.applyWrites;
@@ -2180,6 +2218,8 @@ export class SyncEngine {
     disk: ReadonlyMap<string, SyncContent>,
     remote: RemoteChange[],
     convergedPushPaths: Set<string>,
+    dupUids: ReadonlySet<string> = new Set(),
+    headTreeByPath?: ReadonlyMap<string, string>,
   ): {
     conflicts: ConflictGroup[];
     applyWrites: RemoteChange[];
@@ -2187,10 +2227,28 @@ export class SyncEngine {
   } {
     const consumed = new Set<RemoteChange>();
     const conflicts: ConflictGroup[] = [];
+    // #3477: uid matching is suppressed for duplicated uids — local-side
+    // dups arrive via `dupUids` (ChangeDetector), remote-side dups are
+    // counted here over CHANGE entries only. A genuine remote rename is one
+    // change + one delete sharing a uid — counting deletes would suppress
+    // every rename and silently apply its new path over a local edit.
+    const remoteChangeUidCount = new Map<string, number>();
+    for (const r of remote) {
+      if (r.kind === "change" && r.uid !== undefined) {
+        remoteChangeUidCount.set(
+          r.uid,
+          (remoteChangeUidCount.get(r.uid) ?? 0) + 1,
+        );
+      }
+    }
+    const suppressedUids = new Set<string>(dupUids);
+    for (const [uid, count] of remoteChangeUidCount) {
+      if (count > 1) suppressedUids.add(uid);
+    }
     const remoteByUid = new Map<string, RemoteChange[]>();
     const remoteByPath = new Map<string, RemoteChange>();
     for (const r of remote) {
-      if (r.uid !== undefined) {
+      if (r.uid !== undefined && !suppressedUids.has(r.uid)) {
         const list = remoteByUid.get(r.uid) ?? [];
         list.push(r);
         remoteByUid.set(r.uid, list);
@@ -2200,8 +2258,23 @@ export class SyncEngine {
 
     for (const local of localChanges) {
       const candidates = new Set<RemoteChange>();
-      if (local.uid !== undefined) {
-        for (const r of remoteByUid.get(local.uid) ?? []) candidates.add(r);
+      if (local.uid !== undefined && !suppressedUids.has(local.uid)) {
+        for (const r of remoteByUid.get(local.uid) ?? []) {
+          // #3477 copy-vs-rename evidence: a cross-path remote CHANGE
+          // sharing the uid is rename evidence only when the local path is
+          // GONE from the remote head. If the head still carries our path,
+          // the remote change is an independent copy (template-copy
+          // arrival) — uid-matching it would cross-conflict the copy with
+          // the local edit and strand both behind a spurious quarantine.
+          if (
+            r.kind === "change" &&
+            r.path !== local.path &&
+            headTreeByPath?.has(local.path) === true
+          ) {
+            continue;
+          }
+          candidates.add(r);
+        }
       }
       const byPath = remoteByPath.get(local.path);
       if (byPath !== undefined) candidates.add(byPath);
@@ -2261,7 +2334,9 @@ export class SyncEngine {
           local,
           localIsDelete,
           remotes: conflicting,
-          desc: `${local.uid ?? local.path} (local ${localIsDelete ? "delete" : "change"} vs remote ${conflicting[0].kind} at ${conflicting[0].path})`,
+          // For suppressed (duplicated) uids the uid is ambiguous across
+          // paths — identify the group by path instead (#3477).
+          desc: `${local.uid !== undefined && !suppressedUids.has(local.uid) ? local.uid : local.path} (local ${localIsDelete ? "delete" : "change"} vs remote ${conflicting[0].kind} at ${conflicting[0].path})`,
         });
         // A conflicting local change must not also be pushed as-is — its
         // outcome (merged content or quarantine) replaces the raw push.

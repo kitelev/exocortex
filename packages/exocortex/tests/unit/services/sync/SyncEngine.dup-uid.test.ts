@@ -300,6 +300,13 @@ describe("SyncEngine — remote-side dup uids match by path (#3477)", () => {
     expect(result.status).toBe("synced");
     expect(result.quarantinedCount).toBe(1);
     expect(gh.headFiles().has(MOVED)).toBe(true); // never deleted by us
+
+    // The consumed-but-unapplied new path must be PINNED, not absorbed:
+    // an absorbed entry would read as a local delete next cycle and push
+    // a wrongful deletion of the renamed file (#3477 data safety).
+    const second = await engine.sync(gh.spec());
+    expect(second.pushedDeletes ?? []).toEqual([]);
+    expect(gh.headFiles().has(MOVED)).toBe(true); // still alive remotely
   });
 });
 
