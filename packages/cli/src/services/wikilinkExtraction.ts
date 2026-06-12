@@ -100,14 +100,34 @@ export function bodyOf(content: string): string {
 /**
  * All wikilink edge targets of one file: frontmatter strings + body with
  * fenced code blocks removed.
+ *
+ * `excludePredicates` (EKA Phase B / Vision VL#30, opt-in) lists top-level
+ * frontmatter keys (predicates) whose wikilinks are NOT emitted as edges —
+ * used by `audit ontology-imports --structural-only / --exclude-predicate` to
+ * measure the structural backbone import-DAG while ignoring associative
+ * Zettelkasten links (e.g. `exo__Asset_relates`). The exclusion is attributed
+ * to the TOP-LEVEL key only; body wikilinks are never predicate-attributed and
+ * are always kept (conservative — see RFC note). When `excludePredicates` is
+ * undefined or empty the output is byte-identical to the no-exclusion path:
+ * `collectFrontmatterStrings(metadata)` is exactly
+ * `Object.values(metadata).flatMap(collectFrontmatterStrings)`, so iterating
+ * the entries and concatenating yields the same string sequence in the same
+ * order.
  */
 export function extractFileWikilinkTargets(
   metadata: Record<string, unknown>,
   content: string,
+  excludePredicates?: ReadonlySet<string>,
 ): string[] {
-  const fromFrontmatter = collectFrontmatterStrings(metadata).flatMap(
-    extractWikilinkTargets,
-  );
+  const fromFrontmatter: string[] = [];
+  for (const [key, value] of Object.entries(metadata)) {
+    if (excludePredicates?.has(key)) continue;
+    for (const str of collectFrontmatterStrings(value)) {
+      for (const target of extractWikilinkTargets(str)) {
+        fromFrontmatter.push(target);
+      }
+    }
+  }
   const fromBody = extractWikilinkTargets(
     stripFencedCodeBlocks(bodyOf(content)),
   );
