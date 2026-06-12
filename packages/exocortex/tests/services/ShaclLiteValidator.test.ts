@@ -372,7 +372,10 @@ describe('validate — range conformance (IRI values)', () => {
     expect(report.violations[0].expectedRange).toBe(`${EMS}Effort`);
   });
 
-  it('T26: IRI value with no type info → no classes → range violation', () => {
+  it('T26: IRI value with no type info → unresolvable ref → sh:Warning, not sh:Violation (Issue #3488 M1)', () => {
+    // node:B is referenced but carries no type triple → its class cannot be
+    // resolved. Under open-world semantics we cannot assert a class violation;
+    // it is reported as a warning that does not break conformance / exit code.
     const shape = makeShape({
       propertyIRI: `${EMS}Effort_parent`,
       range: [`${EMS}Effort`],
@@ -384,6 +387,9 @@ describe('validate — range conformance (IRI values)', () => {
     const report = validate(triples, makeRegistry([shape]), flatHierarchy);
     expect(report.violations).toHaveLength(1);
     expect(report.violations[0].actualValue).toBe('node:B');
+    expect(report.violations[0].severity).toBe('sh:Warning');
+    expect(report.violations[0].constraint).toBe('class');
+    expect(report.conforms).toBe(true); // warnings do not break conformance
   });
 
   it('T27: range with multiple options — ANY-of semantics — first class matches', () => {
@@ -1077,15 +1083,19 @@ describe('validate — Phase 1 pilot: ems__Effort_parent→ems__ParentEffort', (
     expect(report.violations).toHaveLength(0);
   });
 
-  it('T70: broken wikilink (parent IRI with no type info) → range violation', () => {
+  it('T70: broken wikilink (parent IRI with no type info) → sh:Warning, not violation (Issue #3488 M1)', () => {
+    // A dangling / unresolvable reference cannot be asserted to violate a class
+    // constraint under open-world semantics (it may be cross-vault). It is still
+    // surfaced — as a warning — but does not break conformance / exit code.
     const triples = [
       typeTriple('task:A', TASK),
       iriTriple('task:A', EFFORT_PARENT_PROP, 'project:MISSING'),
     ];
     const report = validate(triples, makeRegistry([pilotShape]), pilotHierarchy);
-    expect(report.conforms).toBe(false);
+    expect(report.conforms).toBe(true);
     expect(report.violations).toHaveLength(1);
     expect(report.violations[0].actualValue).toBe('project:MISSING');
+    expect(report.violations[0].severity).toBe('sh:Warning');
   });
 });
 
@@ -1230,19 +1240,24 @@ describe('validate — external ontology IRI allowlist', () => {
     expect(report.violations).toHaveLength(0);
   });
 
-  it('T-EXT-07: internal exocortex IRI as superClass → still validated (not exempt)', () => {
-    // An ims__Concept IRI used as superClass should still be validated
+  it('T-EXT-07: internal exocortex IRI as superClass → still checked, reported (not silently exempt like external IRIs)', () => {
+    // An ims__Concept IRI used as superClass must NOT be blanket-exempted the
+    // way external xsd/rdf/owl IRIs are (those produce NO result at all). It is
+    // a classless internal reference → reported as a warning (Issue #3488 M1),
+    // distinguishing "internal but unresolvable here" from "external/skipped".
     const IMS = 'https://exocortex.my/ontology/ims#';
     const triples: Triple[] = [
       typeTriple('asset:SpecialClass', exoClass),
       iriTriple('asset:SpecialClass', exoClassSuperClass, `${IMS}Concept`),
-      // Note: ims#Concept has NO type triple → empty valueClasses → violation expected
     ];
     const report = validate(triples, makeRegistry([classShape]), flatHierarchy);
-    // ims#Concept is an internal IRI and should be checked — violation is expected
-    expect(report.conforms).toBe(false);
+    // Unlike external IRIs (which produce zero entries), the internal IRI IS
+    // reported — as a class warning, not silently skipped.
     expect(report.violations).toHaveLength(1);
-    expect(report.violations[0].message).toContain('sh:class violation');
+    expect(report.violations[0].constraint).toBe('class');
+    expect(report.violations[0].severity).toBe('sh:Warning');
+    expect(report.violations[0].message).toContain('unresolvable-ref');
+    expect(report.conforms).toBe(true);
   });
 });
 
