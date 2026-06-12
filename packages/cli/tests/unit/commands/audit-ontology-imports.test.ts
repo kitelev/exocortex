@@ -5,7 +5,10 @@ import { tmpdir } from "os";
 import {
   scanVaultForOntologyImports,
   auditOntologyImportsCommand,
+  computeImportProposal,
   ONTOLOGY_CLASS_UID,
+  type OntologyImportsResult,
+  type DerivedEdge,
 } from "../../../src/commands/audit-ontology-imports.js";
 import { auditCommand } from "../../../src/commands/audit.js";
 
@@ -69,12 +72,196 @@ describe("audit ontology-imports — Commander wiring", () => {
     expect(sub).toBeDefined();
   });
 
-  it("subcommand declares --vault required + --output options", () => {
+  it("subcommand declares --vault required + --output + --also + --propose-imports", () => {
     const sub = auditOntologyImportsCommand();
     expect(sub.name()).toBe("ontology-imports");
     const opts = sub.options.map((o) => o.long);
     expect(opts).toContain("--vault");
     expect(opts).toContain("--output");
+    expect(opts).toContain("--also");
+    expect(opts).toContain("--propose-imports");
+  });
+});
+
+/**
+ * computeImportProposal is pure over an OntologyImportsResult, so it is tested
+ * directly with synthetic graphs — this exercises the condensation /
+ * transitive-reduction / FAS / conflict branches in isolation (the conflict
+ * branch is unreachable through scanVault, where every declared import also
+ * manifests as a derived edge).
+ */
+function makeResult(
+  ontologies: Array<{ uid: string; label: string; declaredImports: string[] }>,
+  derivedEdges: Array<Omit<DerivedEdge, "valid"> & { valid?: boolean }>,
+): OntologyImportsResult {
+  return {
+    ontologies: ontologies.map((o) => ({
+      uid: o.uid,
+      label: o.label,
+      path: `${o.uid}.md`,
+      declaredImports: o.declaredImports,
+      unresolvedImports: [],
+      selfImport: false,
+      assetCount: 0,
+      inDegree: 0,
+      outDegree: 0,
+      internalLinks: 0,
+      externalLinksOut: 0,
+      externalLinksIn: 0,
+      violatingOut: 0,
+    })),
+    derivedEdges: derivedEdges.map((e) => ({ ...e, valid: e.valid ?? false })),
+  } as unknown as OntologyImportsResult;
+}
+
+const edgeKey = (e: { source: { uid: string }; target: { uid: string } }): string =>
+  `${e.source.uid}->${e.target.uid}`;
+
+describe("computeImportProposal — additions-only diff (Шаг 1b)", () => {
+  it("proposes the transitive reduction of the acyclic part (A→C dropped)", () => {
+    // A→B, A→C, B→C derived (DAG, no declared imports). Minimal additions:
+    // A→B + B→C; the shortcut A→C is implied transitively.
+    const result = makeResult(
+      [
+        { uid: "A", label: "$a", declaredImports: [] },
+        { uid: "B", label: "$b", declaredImports: [] },
+        { uid: "C", label: "$c", declaredImports: [] },
+      ],
+      [
+        { source: "A", target: "B", occurrences: 1 },
+        { source: "A", target: "C", occurrences: 1 },
+        { source: "B", target: "C", occurrences: 1 },
+      ],
+    );
+    const p = computeImportProposal(result);
+    expect(p.acyclicEdgeCount).toBe(3);
+    expect(p.alreadyCovered).toBe(0);
+    expect(p.additions.map(edgeKey).sort()).toEqual(["A->B", "B->C"]);
+    expect(p.intraScc).toHaveLength(0);
+    expect(p.conflicts).toHaveLength(0);
+  });
+
+  it("proposes nothing when the declared closure already covers the edge", () => {
+    const result = makeResult(
+      [
+        { uid: "A", label: "$a", declaredImports: ["B"] },
+        { uid: "B", label: "$b", declaredImports: [] },
+      ],
+      [{ source: "A", target: "B", occurrences: 2, valid: true }],
+    );
+    const p = computeImportProposal(result);
+    expect(p.acyclicEdgeCount).toBe(1);
+    expect(p.alreadyCovered).toBe(1);
+    expect(p.additions).toHaveLength(0);
+  });
+
+  it("flags a transitively-redundant declared import (R8, never removes it)", () => {
+    // A imports B and C; B imports C ⇒ A→C is redundant (A→B→C).
+    const result = makeResult(
+      [
+        { uid: "A", label: "$a", declaredImports: ["B", "C"] },
+        { uid: "B", label: "$b", declaredImports: ["C"] },
+        { uid: "C", label: "$c", declaredImports: [] },
+      ],
+      [
+        { source: "A", target: "B", occurrences: 1, valid: true },
+        { source: "A", target: "C", occurrences: 1, valid: true },
+        { source: "B", target: "C", occurrences: 1, valid: true },
+      ],
+    );
+    const p = computeImportProposal(result);
+    expect(p.additions).toHaveLength(0);
+    expect(p.redundantDeclared.map(edgeKey)).toEqual(["A->C"]);
+  });
+});
+
+describe("computeImportProposal — intra-SCC cycles + suggested FAS", () => {
+  it("reports a cycle as an intra-SCC component with a min-weight FAS", () => {
+    // A↔B cycle: A→B occ 2, B→A occ 1. No acyclic edges to add; the FAS cuts
+    // the cheaper B→A edge.
+    const result = makeResult(
+      [
+        { uid: "A", label: "$a", declaredImports: [] },
+        { uid: "B", label: "$b", declaredImports: [] },
+      ],
+      [
+        { source: "A", target: "B", occurrences: 2 },
+        { source: "B", target: "A", occurrences: 1 },
+      ],
+    );
+    const p = computeImportProposal(result);
+    expect(p.acyclicEdgeCount).toBe(0);
+    expect(p.additions).toHaveLength(0);
+    expect(p.intraScc).toHaveLength(1);
+    const scc = p.intraScc[0];
+    expect(scc.ontologies.map((o) => o.uid).sort()).toEqual(["A", "B"]);
+    expect(scc.edgeCount).toBe(2);
+    expect(scc.occurrenceCount).toBe(3);
+    expect(scc.suggestedCuts.map(edgeKey)).toEqual(["B->A"]);
+    expect(scc.suggestedCuts[0].occurrences).toBe(1);
+  });
+});
+
+describe("computeImportProposal — conflicts (declared edge opposes derived)", () => {
+  it("routes a cross-SCC derived edge that would cycle the declared graph into conflicts", () => {
+    // Declared B→A; derived A→B (no derived B→A). Adding A→B as an import would
+    // make A↔B in the import graph, so it is a conflict (Phase-3 re-home), not
+    // an addition.
+    const result = makeResult(
+      [
+        { uid: "A", label: "$a", declaredImports: [] },
+        { uid: "B", label: "$b", declaredImports: ["A"] },
+      ],
+      [{ source: "A", target: "B", occurrences: 3 }],
+    );
+    const p = computeImportProposal(result);
+    expect(p.acyclicEdgeCount).toBe(1);
+    expect(p.additions).toHaveLength(0);
+    expect(p.conflicts.map(edgeKey)).toEqual(["A->B"]);
+    expect(p.conflicts[0].occurrences).toBe(3);
+  });
+});
+
+describe("computeImportProposal — end-to-end from a scanned vault", () => {
+  let vault: string;
+  beforeEach(() => {
+    vault = join(
+      tmpdir(),
+      `propose-imports-e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    mkdirSync(vault, { recursive: true });
+    writeAsset(join(vault, "exo"), { uid: ONTOLOGY_CLASS_UID, label: "exo__Ontology" });
+  });
+  afterEach(() => rmSync(vault, { recursive: true, force: true }));
+
+  it("derives a minimal proposal from real cross-ontology links (A→B→C)", async () => {
+    writeOntology(join(vault, "alpha"), ONTO_A, "$alpha");
+    writeOntology(join(vault, "beta"), ONTO_B, "$beta");
+    writeOntology(join(vault, "gamma"), ONTO_C, "$gamma");
+    // a1 → b1 and a1 → c1 ; b1 → c1. Acyclic ⇒ proposal A→B, B→C (A→C implied).
+    writeAsset(join(vault, "alpha"), {
+      uid: "11111111-1111-4111-8111-111111111111",
+      isDefinedBy: `[[${ONTO_A}]]`,
+      body: "Links [[22222222-2222-4222-8222-222222222222]] and [[33333333-3333-4333-8333-333333333333]].",
+    });
+    writeAsset(join(vault, "beta"), {
+      uid: "22222222-2222-4222-8222-222222222222",
+      isDefinedBy: `[[${ONTO_B}]]`,
+      body: "Link [[33333333-3333-4333-8333-333333333333]].",
+    });
+    writeAsset(join(vault, "gamma"), {
+      uid: "33333333-3333-4333-8333-333333333333",
+      isDefinedBy: `[[${ONTO_C}]]`,
+    });
+
+    const result = await scanVaultForOntologyImports(vault);
+    const p = computeImportProposal(result);
+    // A→B, A→C, B→C cross-ontology derived; minimal additions drop A→C.
+    expect(p.additions.map(edgeKey).sort()).toEqual([
+      `${ONTO_A}->${ONTO_B}`,
+      `${ONTO_B}->${ONTO_C}`,
+    ]);
+    expect(p.intraScc).toHaveLength(0);
   });
 });
 

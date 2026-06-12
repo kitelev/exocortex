@@ -7,9 +7,18 @@ import { findReferencedFile } from "../executors/folderRepairHelpers.js";
 import {
   tarjanSCC,
   transitiveClosure,
+  condense,
+  transitiveReduction,
+  greedyFeedbackArcSet,
   type AdjacencyMap,
+  type WeightedEdge,
 } from "../services/ontologyImportsGraph.js";
 import { extractFileWikilinkTargets } from "../services/wikilinkExtraction.js";
+import { resolveTargetPath } from "../services/ontologyImportsResolve.js";
+import {
+  CrossVaultClassifier,
+  type CrossVaultHit,
+} from "../services/ontologyImportsCrossVault.js";
 import {
   isNodeModulesPath,
   isTemplatesPath,
@@ -104,9 +113,10 @@ export interface OntologyImportsResult {
   /** Violating pairs grouped src→tgt, sorted by occurrences desc (VL#8). */
   violations: ViolationPair[];
   /**
-   * Links to assets whose ontology lives only in another vault (VL#13).
-   * Classification requires `--also` (PR2) — always empty until then; without
-   * `--also` such links are indistinguishable from broken and counted there.
+   * Links to assets whose ontology lives only in another vault (VL#13),
+   * grouped src→tgt. Populated only when `--also <path>` supplies the secondary
+   * vaults used to classify them — without `--also` such links are
+   * indistinguishable from broken and counted in {@link skips}.broken instead.
    */
   crossVault: ViolationPair[];
   linkCounts: {
@@ -137,13 +147,67 @@ export interface OntologyImportsResult {
    * gaps / validate-wikilinks territory, not imports-invariant violations).
    */
   clean: boolean;
+  /**
+   * Import-additions proposal — present only with `--propose-imports`
+   * ({@link computeImportProposal}). Read-only suggestion; the audit verdict
+   * ({@link clean}) is unaffected.
+   */
+  proposal?: ImportProposal;
+}
+
+/** One proposed (or evidential) ontology→ontology import edge. */
+export interface ProposedImport {
+  source: OntologyRef;
+  target: OntologyRef;
+  /** Direct derived occurrences on this a→b edge (evidence / cut cost). */
+  occurrences: number;
+}
+
+/** A derived-graph cycle (SCC ≥ 2) that imports cannot legitimize (Phase 3). */
+export interface IntraSccComponent {
+  /** Ontologies forming the strongly-connected component (label-sorted). */
+  ontologies: OntologyRef[];
+  /** Intra-SCC derived edges / occurrences trapped in the cycle. */
+  edgeCount: number;
+  occurrenceCount: number;
+  /**
+   * Suggested feedback-arc-set: edges to cut to break the cycle (Phase 3),
+   * cheapest (lowest occurrence) first — the R1 «backward edges, min
+   * link-count» heuristic.
+   */
+  suggestedCuts: ProposedImport[];
+}
+
+/**
+ * RFC df39007b §Решение Шаг 1b — `--propose-imports` result. Additions-only:
+ * {@link additions} is the minimal set of `exo__Ontology_imports` edges to add
+ * so the declared closure covers the acyclic part of the derived graph;
+ * declared imports are never proposed for removal (R8).
+ */
+export interface ImportProposal {
+  /** Minimal import additions (transitive reduction of the acyclic part). */
+  additions: ProposedImport[];
+  /** Cross-SCC derived edges (the acyclic part the proposal must cover). */
+  acyclicEdgeCount: number;
+  /** Cross-SCC derived edges already covered by the declared closure. */
+  alreadyCovered: number;
+  /**
+   * Cross-SCC derived edges that cannot be added as an import without creating
+   * a cycle in the declared graph (a declared edge already points the other
+   * way) — these need a Phase-3 re-home/remove, not an import.
+   */
+  conflicts: ProposedImport[];
+  /** Derived-graph cycles needing Phase 3, each with a suggested FAS. */
+  intraScc: IntraSccComponent[];
+  /**
+   * Declared imports that are transitively redundant (reachable without the
+   * direct edge) — informational only (R8); never auto-removed.
+   */
+  redundantDeclared: ProposedImport[];
 }
 
 const MAX_EXAMPLES = 5;
 const MAX_NO_ONTOLOGY_EXAMPLES = 10;
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const NON_MARKDOWN_EXTENSIONS = new Set([
   "png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico", "avif",
@@ -202,11 +266,32 @@ interface OntologyMeta extends OntologyRef {
  * edge-cases: duplicate ontology UID = hard error, self-import = warning
  * (excluded from the graph), unresolvable import = `unresolvedImports`.
  */
+export interface ScanOntologyImportsOptions {
+  /**
+   * RFC df39007b VL#13: secondary vault roots consulted ONLY to classify a
+   * primary-broken target as cross-vault (target lives in another vault) vs
+   * genuinely broken. Never legitimizes the link.
+   */
+  alsoPaths?: string[];
+}
+
 export async function scanVaultForOntologyImports(
   vaultPath: string,
+  options: ScanOntologyImportsOptions = {},
 ): Promise<OntologyImportsResult> {
   const adapter = new CachingNodeFsAdapter(vaultPath, { cacheContent: true });
   const assets = await adapter.indexedAssets();
+
+  // ---- Phase A: --also cross-vault classifier (VL#13) ----
+  const alsoPaths = options.alsoPaths ?? [];
+  let crossVaultClassifier: CrossVaultClassifier | null = null;
+  if (alsoPaths.length > 0) {
+    crossVaultClassifier = new CrossVaultClassifier(
+      alsoPaths,
+      ONTOLOGY_CLASS_UID,
+    );
+    await crossVaultClassifier.build();
+  }
 
   // ---- Phase B: ontology discovery (instances of exo__Ontology) ----
   const ontologyByPath = new Map<string, string>(); // path → uid
@@ -372,32 +457,32 @@ export async function scanVaultForOntologyImports(
   const externalOutByOntology = new Map<string, number>();
   const externalInByOntology = new Map<string, number>();
   const violatingOutByOntology = new Map<string, number>();
+  // Cross-vault (VL#13) — only populated when `--also` vaults are supplied.
+  const crossVaultMap = new Map<
+    string,
+    { source: OntologyRef; target: OntologyRef; occurrences: number; examples: string[] }
+  >();
 
-  const resolveTargetPath = async (target: string): Promise<string | "ambiguous" | null> => {
-    // Path-form targets: exact vault-relative path first.
-    if (target.includes("/")) {
-      const cleaned = target.replace(/^\//, "");
-      const candidate = cleaned.endsWith(".md") ? cleaned : `${cleaned}.md`;
-      if (await adapter.hasIndexedPath(candidate)) return candidate;
-      // fall through to basename of the last segment (Obsidian shortest-path)
-      target = cleaned.slice(cleaned.lastIndexOf("/") + 1);
-    }
-    if (target.endsWith(".md")) target = target.slice(0, -3);
-    // UID-first (R5 normative order), then basename.
-    if (UUID_RE.test(target)) {
-      const byUid = await adapter.findFileByUID(target);
-      if (byUid) return byUid;
-    }
-    const byBasename = await adapter.findPathsByBasename(target);
-    if (byBasename.length === 1) return byBasename[0];
-    if (byBasename.length > 1) {
-      // R5: ambiguous basename — three resolution mechanisms could disagree;
-      // counted separately, never guessed.
-      const distinct = new Set(byBasename);
-      return distinct.size === 1 ? byBasename[0] : "ambiguous";
-    }
-    return null;
+  // Hoisted ref builder (also used by Phase F): UID → {uid,label,path}.
+  const toRef = (uid: string): OntologyRef => {
+    const meta = ontologyMeta.get(uid);
+    return meta
+      ? { uid: meta.uid, label: meta.label, path: meta.path }
+      : { uid, label: uid, path: "" };
   };
+  // Synthetic ref for a link whose source asset has no resolvable ontology —
+  // a cross-vault occurrence is still a VL#13 violation regardless of source.
+  const NO_ONTOLOGY_REF: OntologyRef = {
+    uid: "(no-ontology)",
+    label: "(no-ontology source)",
+    path: "",
+  };
+  const crossVaultTargetRef = (hit: CrossVaultHit): OntologyRef =>
+    hit.ontology ?? {
+      uid: `cross-vault:${hit.targetPath}`,
+      label: `(no ontology — ${hit.vaultPath})`,
+      path: hit.targetPath,
+    };
 
   for (const asset of assets) {
     if (isNodeModulesPath(asset.path) || isTemplatesPath(asset.path)) continue;
@@ -413,15 +498,39 @@ export async function scanVaultForOntologyImports(
         continue;
       }
 
-      const resolvedPath = await resolveTargetPath(target);
+      const resolvedPath = await resolveTargetPath(adapter, target);
       if (resolvedPath === "ambiguous") {
         skips["dup-basename"]++;
         pushExample(skipExamples["dup-basename"], `${asset.path} → ${target}`);
         continue;
       }
       if (resolvedPath === null) {
-        // Fail-open (VL#6): broken link — validate-wikilinks territory. With
-        // --also (PR2) some of these reclassify as cross-vault violations.
+        // Target unresolved in the primary vault. With --also (VL#13), check
+        // whether it lives in a secondary vault → cross-vault violation;
+        // otherwise it is a genuinely broken link (fail-open skip, VL#6).
+        if (crossVaultClassifier) {
+          const hit = await crossVaultClassifier.classify(target);
+          if (hit) {
+            linkCounts.crossVault++;
+            const srcRef = sourceOntology ? toRef(sourceOntology) : NO_ONTOLOGY_REF;
+            const tgtRef = crossVaultTargetRef(hit);
+            const key = `${srcRef.uid} ${tgtRef.uid}`;
+            const pair = crossVaultMap.get(key);
+            if (pair) {
+              pair.occurrences++;
+              pushExample(pair.examples, asset.path);
+            } else {
+              crossVaultMap.set(key, {
+                source: srcRef,
+                target: tgtRef,
+                occurrences: 1,
+                examples: [asset.path],
+              });
+            }
+            continue;
+          }
+        }
+        // Fail-open (VL#6): broken link — validate-wikilinks territory.
         skips.broken++;
         pushExample(skipExamples.broken, `${asset.path} → ${target}`);
         continue;
@@ -501,11 +610,6 @@ export async function scanVaultForOntologyImports(
     inDegree.set(edge.target, (inDegree.get(edge.target) ?? 0) + 1);
   }
 
-  const toRef = (uid: string): OntologyRef => {
-    const meta = ontologyMeta.get(uid)!;
-    return { uid: meta.uid, label: meta.label, path: meta.path };
-  };
-
   const ontologies: OntologyReport[] = ontologyUids
     .map((uid) => ({
       ...toRef(uid),
@@ -531,6 +635,10 @@ export async function scanVaultForOntologyImports(
     }))
     .sort((a, b) => b.occurrences - a.occurrences);
 
+  const crossVault: ViolationPair[] = [...crossVaultMap.values()].sort(
+    (a, b) => b.occurrences - a.occurrences,
+  );
+
   const acyclic = sccs.length === 0;
   const clean =
     violations.length === 0 &&
@@ -547,7 +655,7 @@ export async function scanVaultForOntologyImports(
     declared: { edgeCount: declaredEdgeCount, sccs, acyclic },
     derivedEdges,
     violations,
-    crossVault: [],
+    crossVault,
     linkCounts,
     skips,
     skipExamples,
@@ -565,9 +673,201 @@ export async function scanVaultForOntologyImports(
   };
 }
 
+/**
+ * RFC df39007b §Решение Шаг 1b — `--propose-imports`.
+ *
+ * Pure over an already-computed {@link OntologyImportsResult} (no I/O). The
+ * derived graph is generally cyclic, and a transitive reduction is only defined
+ * on a DAG — so:
+ *   (a) condense the derived graph into SCCs (cycles collapse to super-nodes);
+ *   (b) the cross-SCC derived edges form a DAG over ontologies — its transitive
+ *       reduction, minus what the declared closure already covers, is the
+ *       minimal ADDITIONS set M (closure(declared ∪ M) ⊇ acyclic-part(derived));
+ *   (c) intra-SCC edges cannot be legitimized by a DAG of imports → reported per
+ *       component with a suggested feedback-arc-set (Phase 3).
+ *
+ * Declared imports are never proposed for removal (R8); transitively-redundant
+ * ones are surfaced as an informational flag.
+ */
+export function computeImportProposal(
+  result: OntologyImportsResult,
+): ImportProposal {
+  const nodes = result.ontologies.map((o) => o.uid);
+  const refOf = (uid: string): OntologyRef => {
+    const o = result.ontologies.find((x) => x.uid === uid);
+    return o ? { uid: o.uid, label: o.label, path: o.path } : { uid, label: uid, path: "" };
+  };
+
+  // Declared adjacency (resolved imports) + derived adjacency + occurrences.
+  const declared: AdjacencyMap = new Map();
+  for (const o of result.ontologies) {
+    if (o.declaredImports.length > 0) {
+      declared.set(o.uid, new Set(o.declaredImports));
+    }
+  }
+  const derived: AdjacencyMap = new Map();
+  const occurrenceOf = new Map<string, number>();
+  for (const edge of result.derivedEdges) {
+    let set = derived.get(edge.source);
+    if (!set) {
+      set = new Set();
+      derived.set(edge.source, set);
+    }
+    set.add(edge.target);
+    occurrenceOf.set(`${edge.source} ${edge.target}`, edge.occurrences);
+  }
+
+  // Condense the derived graph; split derived edges into the acyclic part
+  // (cross-SCC) and intra-SCC (cycle) edges.
+  const { components, componentOf } = condense(nodes, derived);
+  const crossEdges: Array<{ source: string; target: string; occurrences: number }> = [];
+  const intraByComponent = new Map<number, WeightedEdge[]>();
+  let alreadyCovered = 0;
+  for (const edge of result.derivedEdges) {
+    const ci = componentOf.get(edge.source);
+    const cj = componentOf.get(edge.target);
+    const intra = ci !== undefined && cj !== undefined && ci === cj;
+    if (intra) {
+      let arr = intraByComponent.get(ci);
+      if (!arr) {
+        arr = [];
+        intraByComponent.set(ci, arr);
+      }
+      arr.push({ source: edge.source, target: edge.target, weight: edge.occurrences });
+    } else {
+      crossEdges.push({
+        source: edge.source,
+        target: edge.target,
+        occurrences: edge.occurrences,
+      });
+      if (edge.valid) alreadyCovered++;
+    }
+  }
+
+  // Build a DAG = declared ∪ (non-conflicting cross-SCC derived edges). A cross
+  // edge a→b conflicts when the declared graph already reaches a from b (adding
+  // a→b would make a cycle) — that needs a Phase-3 re-home, not an import.
+  const reaches = (from: string, to: string, adj: AdjacencyMap): boolean => {
+    if (from === to) return true;
+    const queue = [...(adj.get(from) ?? [])];
+    const seen = new Set<string>();
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (current === to) return true;
+      if (seen.has(current)) continue;
+      seen.add(current);
+      for (const next of adj.get(current) ?? []) queue.push(next);
+    }
+    return false;
+  };
+  const combined: AdjacencyMap = new Map();
+  for (const [from, tos] of declared) combined.set(from, new Set(tos));
+  const conflicts: ProposedImport[] = [];
+  const sortedCross = [...crossEdges].sort((a, b) =>
+    a.source === b.source ? a.target.localeCompare(b.target) : a.source.localeCompare(b.source),
+  );
+  for (const edge of sortedCross) {
+    if (reaches(edge.target, edge.source, combined)) {
+      conflicts.push({ source: refOf(edge.source), target: refOf(edge.target), occurrences: edge.occurrences });
+    } else {
+      let set = combined.get(edge.source);
+      if (!set) {
+        set = new Set();
+        combined.set(edge.source, set);
+      }
+      set.add(edge.target);
+    }
+  }
+
+  // Minimal additions = transitive reduction of `combined`, minus declared.
+  const reduced = transitiveReduction(nodes, combined);
+  const additions: ProposedImport[] = [];
+  for (const [from, tos] of reduced) {
+    for (const to of tos) {
+      if (declared.get(from)?.has(to)) continue; // already declared — not an addition
+      additions.push({
+        source: refOf(from),
+        target: refOf(to),
+        occurrences: occurrenceOf.get(`${from} ${to}`) ?? 0,
+      });
+    }
+  }
+  additions.sort(
+    (a, b) =>
+      b.occurrences - a.occurrences ||
+      a.source.uid.localeCompare(b.source.uid) ||
+      a.target.uid.localeCompare(b.target.uid),
+  );
+
+  // Intra-SCC cycles: suggested feedback-arc-set per component.
+  const intraScc: IntraSccComponent[] = [];
+  for (const [ci, weighted] of intraByComponent) {
+    const componentNodes = components[ci];
+    const fas = greedyFeedbackArcSet(componentNodes, weighted);
+    const suggestedCuts = fas
+      .map((e) => ({
+        source: refOf(e.source),
+        target: refOf(e.target),
+        occurrences: e.weight,
+      }))
+      .sort(
+        (a, b) =>
+          a.occurrences - b.occurrences ||
+          a.source.uid.localeCompare(b.source.uid) ||
+          a.target.uid.localeCompare(b.target.uid),
+      );
+    intraScc.push({
+      ontologies: componentNodes
+        .map(refOf)
+        .sort((a, b) => a.label.localeCompare(b.label)),
+      edgeCount: weighted.length,
+      occurrenceCount: weighted.reduce((sum, e) => sum + e.weight, 0),
+      suggestedCuts,
+    });
+  }
+  intraScc.sort(
+    (a, b) => b.ontologies.length - a.ontologies.length || b.occurrenceCount - a.occurrenceCount,
+  );
+
+  // Transitively-redundant declared imports (R8 informational): edge a→b where
+  // some other direct import of a already reaches b.
+  const declaredClosure = transitiveClosure(nodes, declared);
+  const redundantDeclared: ProposedImport[] = [];
+  for (const [from, tos] of declared) {
+    for (const to of tos) {
+      let redundant = false;
+      for (const via of tos) {
+        if (via === to) continue;
+        if (declaredClosure.get(via)?.has(to)) {
+          redundant = true;
+          break;
+        }
+      }
+      if (redundant) {
+        redundantDeclared.push({
+          source: refOf(from),
+          target: refOf(to),
+          occurrences: occurrenceOf.get(`${from} ${to}`) ?? 0,
+        });
+      }
+    }
+  }
+
+  return {
+    additions,
+    acyclicEdgeCount: crossEdges.length,
+    alreadyCovered,
+    conflicts,
+    intraScc,
+    redundantDeclared,
+  };
+}
+
 export interface AuditOntologyImportsOptions {
   vault: string;
   output?: OutputFormat;
+  also?: string[];
+  proposeImports?: boolean;
 }
 
 function formatRef(ref: OntologyRef): string {
@@ -619,6 +919,17 @@ function printText(result: OntologyImportsResult): void {
     }
   }
 
+  if (result.crossVault.length > 0) {
+    console.error(
+      `\nCross-vault violations (VL#13 — target lives in another vault; --also classified):`,
+    );
+    for (const pair of result.crossVault) {
+      console.error(
+        `  ${formatRef(pair.source)} → ${formatRef(pair.target)}: ${pair.occurrences}`,
+      );
+    }
+  }
+
   const unresolvedTotal = result.ontologies.reduce(
     (sum, o) => sum + o.unresolvedImports.length,
     0,
@@ -661,23 +972,106 @@ function toRefSafe(result: OntologyImportsResult, uid: string): OntologyRef {
   );
 }
 
+/** Human-readable `--propose-imports` section (additions / FAS / R8 flag). */
+function printProposal(proposal: ImportProposal): void {
+  console.log(
+    `\n=== Import proposal (--propose-imports) ===\n` +
+      `Acyclic part: ${proposal.acyclicEdgeCount} cross-SCC derived edge(s), ` +
+      `${proposal.alreadyCovered} already covered by declared closure.`,
+  );
+
+  console.log(
+    `\nAdditions (minimal — transitive reduction of the condensation), ` +
+      `${proposal.additions.length} edge(s):`,
+  );
+  if (proposal.additions.length === 0) {
+    console.log("  (none — acyclic part already covered)");
+  } else {
+    for (const add of proposal.additions) {
+      console.log(
+        `  + ${formatRef(add.source)} imports ${formatRef(add.target)}  (${add.occurrences} occ)`,
+      );
+    }
+  }
+
+  if (proposal.conflicts.length > 0) {
+    console.log(
+      `\nConflicts — derived edges that would create a declared-graph cycle ` +
+        `(need Phase-3 re-home, not an import), ${proposal.conflicts.length}:`,
+    );
+    for (const c of proposal.conflicts) {
+      console.log(
+        `  ! ${formatRef(c.source)} → ${formatRef(c.target)}  (${c.occurrences} occ)`,
+      );
+    }
+  }
+
+  if (proposal.intraScc.length > 0) {
+    console.log(
+      `\nIntra-SCC cycles (require Phase 3 — imports cannot legitimize a cycle), ` +
+        `${proposal.intraScc.length} component(s):`,
+    );
+    for (const comp of proposal.intraScc) {
+      console.log(
+        `  SCC[${comp.ontologies.length}] ${comp.edgeCount} edge(s) / ${comp.occurrenceCount} occ — ` +
+          `members: ${comp.ontologies.map((o) => o.label).join(", ")}`,
+      );
+      console.log(
+        `    suggested feedback-arc-set to cut (cheapest first), ${comp.suggestedCuts.length} edge(s):`,
+      );
+      for (const cut of comp.suggestedCuts) {
+        console.log(
+          `      ✂ ${formatRef(cut.source)} → ${formatRef(cut.target)}  (${cut.occurrences} occ)`,
+        );
+      }
+    }
+  }
+
+  if (proposal.redundantDeclared.length > 0) {
+    console.log(
+      `\nRedundant declared imports (informational, R8 — never auto-removed), ` +
+        `${proposal.redundantDeclared.length}:`,
+    );
+    for (const r of proposal.redundantDeclared) {
+      console.log(
+        `  ~ ${formatRef(r.source)} imports ${formatRef(r.target)} (reachable without the direct edge)`,
+      );
+    }
+  }
+}
+
 /**
- * RFC df39007b Phase 1 PR1 — ontology-imports invariant audit.
+ * RFC df39007b Phase 1 — ontology-imports invariant audit.
  *
- * `exocortex audit ontology-imports --vault <path>` walks the vault, derives
- * the actual cross-ontology link graph, and reports every occurrence not
- * covered by the declared `exo__Ontology_imports` transitive closure.
- * Exit 0 = clean (0 violations, declared graph acyclic, no duplicate-UID hard
- * errors); exit 1 otherwise. Fail-open skips (broken links, ambiguous
- * basenames) and no-ontology assets never affect the exit code.
+ * `exocortex audit ontology-imports --vault <path> [--also <path>...]
+ * [--propose-imports]` walks the vault, derives the actual cross-ontology link
+ * graph, and reports every occurrence not covered by the declared
+ * `exo__Ontology_imports` transitive closure.
+ * Exit 0 = clean (0 violations, 0 cross-vault, declared graph acyclic, no
+ * duplicate-UID hard errors); exit 1 otherwise. Fail-open skips (broken links,
+ * ambiguous basenames) and no-ontology assets never affect the exit code.
+ *
+ * `--also <path>` (repeatable) supplies secondary vaults used ONLY to classify
+ * primary-broken targets as cross-vault (VL#13) — never legitimizes them.
+ * `--propose-imports` adds a minimal additions-only import proposal (PR2).
  */
 export function auditOntologyImportsCommand(): Command {
   return new Command("ontology-imports")
     .description(
-      "Detect cross-ontology wikilinks not covered by the declared exo__Ontology_imports transitive closure (DAG check, per-pair grouping, fail-open skip-accounting)",
+      "Detect cross-ontology wikilinks not covered by the declared exo__Ontology_imports transitive closure (DAG check, per-pair grouping, fail-open skip-accounting); --propose-imports suggests minimal import additions; --also classifies cross-vault links",
     )
     .requiredOption("--vault <path>", "Vault root directory")
     .option("--output <type>", "Response format: text|json", "text")
+    .option(
+      "--also <path>",
+      "Secondary vault to classify cross-vault links against (repeatable, VL#13)",
+      collectAlso,
+      [],
+    )
+    .option(
+      "--propose-imports",
+      "Emit a minimal additions-only import proposal (SCC condensation + transitive reduction + suggested feedback-arc-set)",
+    )
     .action(async (options: AuditOntologyImportsOptions) => {
       const outputFormat = (options.output ?? "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
@@ -688,12 +1082,28 @@ export function auditOntologyImportsCommand(): Command {
           throw new VaultNotFoundError(vaultPath);
         }
 
-        const result = await scanVaultForOntologyImports(vaultPath);
+        // Pre-validate --also paths so the user sees an early, clear error
+        // (mirrors `exocortex index --also`).
+        const alsoPaths = (options.also ?? []).map((p) => resolve(p));
+        for (const alsoPath of alsoPaths) {
+          if (!existsSync(alsoPath) || !statSync(alsoPath).isDirectory()) {
+            throw new VaultNotFoundError(alsoPath);
+          }
+        }
+
+        const result = await scanVaultForOntologyImports(vaultPath, {
+          alsoPaths,
+        });
+
+        if (options.proposeImports) {
+          result.proposal = computeImportProposal(result);
+        }
 
         if (outputFormat === "json") {
           console.log(JSON.stringify(result, null, 2));
         } else {
           printText(result);
+          if (result.proposal) printProposal(result.proposal);
         }
 
         if (!result.clean) process.exitCode = 1;
@@ -701,4 +1111,12 @@ export function auditOntologyImportsCommand(): Command {
         ErrorHandler.handle(error as Error);
       }
     });
+}
+
+/**
+ * Commander.js accumulator for the repeatable `--also` flag (precedent:
+ * find / sparql-index commands).
+ */
+function collectAlso(value: string, previous: string[]): string[] {
+  return previous.concat([value]);
 }
