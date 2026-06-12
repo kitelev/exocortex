@@ -41,11 +41,12 @@ describe("CommandManager - registration", () => {
         ctx.commandManager.registerAllCommands(ctx.mockPlugin);
       }).not.toThrow();
 
-      // RFC 1429fcd0 PR-3: create-fleeting-note migrated out → 6 global
-      // commands now: reload-layout, toggle-layout-visibility,
-      // toggle-archived-assets-visibility, open-sparql-query-builder,
-      // edit-properties, create-asset.
-      expect(ctx.mockPlugin.addCommand).toHaveBeenCalledTimes(6);
+      // RFC 1429fcd0 PR-3: create-fleeting-note migrated out.
+      // EKA Phase A C1 (RFC 78c2b7d0 §5): open-sparql-query-builder +
+      // create-asset removed (verified dead). 4 global commands now:
+      // reload-layout, toggle-layout-visibility,
+      // toggle-archived-assets-visibility, edit-properties.
+      expect(ctx.mockPlugin.addCommand).toHaveBeenCalledTimes(4);
     });
 
     it("should register global commands with correct IDs", () => {
@@ -59,9 +60,12 @@ describe("CommandManager - registration", () => {
       expect(registeredCommandIds).toContain("reload-layout");
       expect(registeredCommandIds).toContain("toggle-layout-visibility");
       expect(registeredCommandIds).toContain("toggle-archived-assets-visibility");
-      expect(registeredCommandIds).toContain("open-sparql-query-builder");
       expect(registeredCommandIds).toContain("edit-properties");
-      expect(registeredCommandIds).toContain("create-asset");
+      // `open-sparql-query-builder` + `create-asset` removed in EKA Phase A
+      // C1 (RFC 78c2b7d0 §5) — verified dead. Asserting absence so any
+      // silent regression (re-adding the TS class) is caught.
+      expect(registeredCommandIds).not.toContain("open-sparql-query-builder");
+      expect(registeredCommandIds).not.toContain("create-asset");
       // `create-fleeting-note` migrated to vault exocmd asset in RFC
       // 1429fcd0 PR-3 — registered by ExocmdCommandPaletteRegistrar, not
       // CommandManager. Asserting absence here so any silent regression

@@ -21,10 +21,9 @@ describe("CommandManager - create commands (vault-driven)", () => {
       expect(ctx.registeredCommands.has("create-fleeting-note")).toBe(false);
     });
 
-    it("should register create-asset as global command", () => {
-      const command = ctx.registeredCommands.get("create-asset");
-      expect(command).toBeDefined();
-      expect(typeof command.callback).toBe("function");
+    it("should NOT register create-asset (removed in EKA Phase A C1)", () => {
+      // RFC 78c2b7d0 §5: CreateAssetCommand TS class deleted (verified dead).
+      expect(ctx.registeredCommands.has("create-asset")).toBe(false);
     });
   });
 
