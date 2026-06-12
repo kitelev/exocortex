@@ -1180,33 +1180,42 @@ export async function runShapesModeAction(
     const qualifyNode = (focusNode: string): string =>
       allVaultRoots.length > 1 ? qualifyFocusNodePath(focusNode, allVaultRoots) : focusNode;
 
+    // Issue #3488: split results by severity. `sh:Violation` are genuine
+    // (errors); `sh:Warning` are unresolvable cross-vault / symbolic / external
+    // references that cannot be hard-failed under open-world semantics. Warnings
+    // are reported with a dedicated counter but do NOT break the exit code.
+    const errorResults = report.violations.filter((v) => v.severity === "sh:Violation");
+    const warningResults = report.violations.filter((v) => v.severity !== "sh:Violation");
+    const crossVaultRefWarnings = warningResults.filter((v) => v.constraint === "class").length;
+
     if (fmt === "earl") {
       const earl = buildEARLReport(vaultPath, report);
       console.log(JSON.stringify(earl, null, 2));
     } else if (fmt === "json") {
-      const annotated = report.violations.map((v) => ({
+      const annotate = (v: Violation) => ({
         ...v,
         vaultQualifiedPath: qualifyNode(v.focusNode),
-      }));
+      });
       const response = ResponseBuilder.success({
         vaultPath,
         alsoPaths: alsoPaths.map((p) => resolve(p)),
         conforms: report.conforms,
-        violationCount: report.violations.length,
-        violations: annotated,
+        violationCount: errorResults.length,
+        warningCount: warningResults.length,
+        crossVaultRefWarnings,
+        violations: errorResults.map(annotate),
+        warnings: warningResults.map(annotate),
       });
       console.log(JSON.stringify(response, null, 2));
     } else {
-      if (report.conforms) {
-        console.log(`✅ Vault conforms to all shapes (${report.violations.length === 0 ? "no violations" : `${report.violations.length} warning(s)`}).`);
-      } else {
+      if (errorResults.length > 0) {
         const byNode = new Map<string, Violation[]>();
-        for (const v of report.violations) {
+        for (const v of errorResults) {
           const existing = byNode.get(v.focusNode) ?? [];
           existing.push(v);
           byNode.set(v.focusNode, existing);
         }
-        console.log(`⚠️  Found ${report.violations.length} SHACL violation(s) in ${byNode.size} node(s):\n`);
+        console.log(`⚠️  Found ${errorResults.length} SHACL violation(s) in ${byNode.size} node(s):\n`);
         for (const [node, violations] of byNode) {
           const label = allVaultRoots.length > 1 ? qualifyNode(node) : node;
           console.log(`   ❌ ${label}`);
@@ -1215,6 +1224,17 @@ export async function runShapesModeAction(
             console.log(`      [${sev}] ${v.message}`);
           }
         }
+      } else {
+        console.log(`✅ Vault conforms to all shapes (no violations).`);
+      }
+      if (warningResults.length > 0) {
+        console.log(
+          `\nℹ️  ${warningResults.length} warning(s)` +
+            (crossVaultRefWarnings > 0
+              ? ` (${crossVaultRefWarnings} unresolvable cross-vault/symbolic ref(s) — not validated, run with --also to resolve)`
+              : "") +
+            ` — these do not affect the exit code.`,
+        );
       }
     }
 

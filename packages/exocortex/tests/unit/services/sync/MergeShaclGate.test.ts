@@ -214,4 +214,36 @@ describe("MergeShaclGate — open-world mounted scope (AC)", () => {
     // via a second variant to isolate the context filtering:
     expect(verdict.violations.every((v) => v.focusNode === SUBJ)).toBe(true);
   });
+
+  // Issue #3488: the validator now reports an *unresolvable* class ref as
+  // sh:Warning (open-world). The gate's open-world decision is `isMounted`, so
+  // class results must route through it regardless of severity. This pins that
+  // a class-range result whose target IS mounted gates the merge even though
+  // the validator labelled it a warning — aligning the gate with its own JSDoc
+  // contract ("class gating conditioned on mounted-scope, never on severity").
+  it("mounted, wrong-class ref gates even when the validator labels it a warning (Issue #3488)", async () => {
+    const REF = "obsidian://vault/22222222-2222-2222-2222-222222222222.md";
+    const gate = gateWith({
+      candidate: [
+        t(SUBJ, TYPE, iri(TASK_CLASS)),
+        t(SUBJ, `${EMS}Effort_parent`, iri(REF)),
+      ],
+      // REF is mounted (in context) but has NO type info → the validator emits
+      // a sh:Warning class result for it. Forced-mounted to make the gate check.
+      context: [],
+      shapes: [
+        {
+          propertyIRI: `${EMS}Effort_parent`,
+          domain: [],
+          range: [PROJECT_CLASS],
+          severity: "sh:Violation",
+        },
+      ],
+      isMountedRef: () => true, // everything mounted → the class check must run
+    });
+    const verdict = await gate.checkMergedAsset("a.md", "x");
+    expect(verdict.ok).toBe(false); // gates: a mounted ref must be typed/conformant
+    expect(verdict.violations[0]).toMatchObject({ constraint: "class", actualValue: REF });
+    expect(verdict.skippedOpenWorld).toBe(0);
+  });
 });
