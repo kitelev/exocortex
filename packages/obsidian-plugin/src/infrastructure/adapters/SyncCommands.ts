@@ -239,9 +239,10 @@ export class SyncCommands {
         : undefined;
 
     this.deps.notify(`${label} started (${collection.specs.length} repo(s))…`);
-    // #3496 — step trace start line on the info channel (console-only, no
-    // file/notice spam #3186). The notify() above is the single toast; this
-    // is the diagnostic counterpart.
+    // #3496 — step trace start line on the info channel (console-only on the
+    // default logChannels.info config = {notice:false,file:false}; honours the
+    // user's routing like every other info log, #3186). The notify() above is
+    // the single toast; this is the diagnostic counterpart.
     const logInfo = this.deps.logInfo ?? ((_m: string): void => undefined);
     logInfo(
       `[ExoSync] ${label} started — ${collection.specs.length} repo(s), direction=${direction}`,
@@ -308,10 +309,11 @@ export class SyncCommands {
       if (r.detail !== undefined) {
         log(`[ExoSync] ${r.repoKey}: ${r.status} — ${r.detail}`);
       }
-      // #3496 — per-repo outcome line on the info channel (console-only, no
-      // notice/file spam #3186). Fires for EVERY repo (clean ones too) and on
-      // every direction/status: the step trace is most valuable precisely when
-      // a run misbehaves, so it is NOT gated on success.
+      // #3496 — per-repo outcome line on the info channel (console-only on the
+      // default logChannels.info config, no file/notice spam #3186; honours the
+      // user's info routing if they opt in). Fires for EVERY repo (clean ones
+      // too) and on every direction/status: the step trace is most valuable
+      // precisely when a run misbehaves, so it is NOT gated on success.
       logInfo(SyncCommands.repoStepLine(r));
       pushed += r.pushedCount;
       deleted += r.pushedDeletes?.length ?? 0;
@@ -394,9 +396,10 @@ export class SyncCommands {
    * #3495 — fire the degraded-mode warn exactly when it matters: the engine
    * had no durable quarantine sink AND a conflict was actually quarantined
    * (so both versions were lost and the conflict re-derives next sync). One
-   * Notice (toast) + one info-channel console echo (no file spam #3186),
-   * latched to once per session. Auth-required runs are skipped — the PAT
-   * prompt owns that failure and the conflict resurfaces on the next good run.
+   * Notice (toast) + one info-channel console echo (console-only on the default
+   * info routing, no file spam #3186), latched to once per session.
+   * Auth-required runs are skipped — the PAT prompt owns that failure and the
+   * conflict resurfaces on the next good run.
    */
   private maybeWarnQuarantineSink(
     quarantineConfigured: boolean,
