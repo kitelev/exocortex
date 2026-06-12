@@ -22,15 +22,15 @@ Since v16.0 (RFC 8e83442b) the CLI follows a Unix-style surface built around **f
 
 The following v15 verbs were **removed**: `batch`, `batch-repair`, `command`, `dyncommand`, `exoql`, `convert`, `sparql` (deprecated alias).
 
-| Removed verb | v16 replacement |
-| --- | --- |
-| `sparql query` / `exoql` | `query` (top-level) |
-| `sparql index` | `index` (top-level) |
-| `command <name> <path>` | `apply <cmd> [path]` — semantics live in vault-defined `exocmd__Command` assets |
-| `dyncommand list` | `find --class exocmd__Command` |
-| `dyncommand exec` | `apply` with `--dry-run` / `--yes` / `--input` |
-| `batch` / `batch-repair` | pipe `find` output into `apply` (multi-target stdin) |
-| `convert` | `query` with a CONSTRUCT query and `--format ntriples` |
+| Removed verb             | v16 replacement                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------- |
+| `sparql query` / `exoql` | `query` (top-level)                                                             |
+| `sparql index`           | `index` (top-level)                                                             |
+| `command <name> <path>`  | `apply <cmd> [path]` — semantics live in vault-defined `exocmd__Command` assets |
+| `dyncommand list`        | `find --class exocmd__Command`                                                  |
+| `dyncommand exec`        | `apply` with `--dry-run` / `--yes` / `--input`                                  |
+| `batch` / `batch-repair` | pipe `find` output into `apply` (multi-target stdin)                            |
+| `convert`                | `query` with a CONSTRUCT query and `--format ntriples`                          |
 
 **Documentation:**
 
@@ -42,30 +42,26 @@ The following v15 verbs were **removed**: `batch`, `batch-repair`, `command`, `d
 
 ## Command Overview
 
-| Command | Purpose |
-| --- | --- |
-| [`find`](#find) | Select vault assets via SPARQL or class filter; prints file paths one per line |
-| [`apply`](#apply) | Apply a vault-defined `exocmd__Command` to one or more assets |
-| [`query`](#query) | Execute a SPARQL query against the vault |
-| [`index`](#index) | Build or refresh the persistent triple cache |
-| [`validate`](#validate) | Validate vault files: `iri`, `schema`, `frontmatter` |
-| [`ask`](#ask) | Natural-language question (Russian or English) → SPARQL |
-| [`classes`](#classes) | List vault classes or describe one class |
-| [`create`](#create) | Create a new vault asset with auto-generated UUID and frontmatter |
-| [`resolve`](#resolve) | Resolve a UUID (full or partial) to a file path |
-| [`watch`](#watch) | Watch the vault for file changes; emit NDJSON events |
-| [`workflow`](#workflow) | List / show / validate workflow definitions |
-| [`archive`](#archive) | Bulk-move archived assets to an archive vault (+ verify / cascade / stats) |
-| [`unarchive`](#unarchive) | Restore a single asset from the archive vault by UUID |
-| [`backfill`](#backfill) | Concept backfill tools for aiKnow assets (`suggest`, `orphan-terms`) |
-| [`recover`](#recover) | Detect and recover orphaned claude-child tmux sessions |
-| [`daemon`](#daemon) | Manage the ValidatorDaemon background process |
-| [`migrate-relcolset-to-exolayout`](#migrate-relcolset-to-exolayout) | Generate `exo__Layout` pairs from `ui__RelationColumnSet` configs |
-| [`audit`](#audit) | Regression-pattern audits (`grounding-type-literal-form`, `co-location`) |
-| [`apply-profile`](#apply-profile) | Apply an `exo__Profile` (mount-state filesystem mutation) |
-| [`bootstrap`](#bootstrap) | Bootstrap a vault with the SDK floor AssetSpace |
-| [`assetspace-add`](#assetspace-add) | Add a single AssetSpace to a vault by GitHub URL |
-| [`experimental`](#experimental) | Opt-in experimental features (`rest-push`) |
+| Command                             | Purpose                                                                        |
+| ----------------------------------- | ------------------------------------------------------------------------------ |
+| [`find`](#find)                     | Select vault assets via SPARQL or class filter; prints file paths one per line |
+| [`apply`](#apply)                   | Apply a vault-defined `exocmd__Command` to one or more assets                  |
+| [`query`](#query)                   | Execute a SPARQL query against the vault                                       |
+| [`index`](#index)                   | Build or refresh the persistent triple cache                                   |
+| [`validate`](#validate)             | Validate vault files: `iri`, `schema`, `frontmatter`                           |
+| [`ask`](#ask)                       | Natural-language question (Russian or English) → SPARQL                        |
+| [`classes`](#classes)               | List vault classes or describe one class                                       |
+| [`create`](#create)                 | Create a new vault asset with auto-generated UUID and frontmatter              |
+| [`resolve`](#resolve)               | Resolve a UUID (full or partial) to a file path                                |
+| [`watch`](#watch)                   | Watch the vault for file changes; emit NDJSON events                           |
+| [`workflow`](#workflow)             | List / show / validate workflow definitions                                    |
+| [`recover`](#recover)               | Detect and recover orphaned claude-child tmux sessions                         |
+| [`daemon`](#daemon)                 | Manage the ValidatorDaemon background process                                  |
+| [`audit`](#audit)                   | Regression-pattern audits (`co-location`, `ontology-imports`)                  |
+| [`apply-profile`](#apply-profile)   | Apply an `exo__Profile` (mount-state filesystem mutation)                      |
+| [`bootstrap`](#bootstrap)           | Bootstrap a vault with the SDK floor AssetSpace                                |
+| [`assetspace-add`](#assetspace-add) | Add a single AssetSpace to a vault by GitHub URL                               |
+| [`experimental`](#experimental)     | Opt-in experimental features (`rest-push`)                                     |
 
 ---
 
@@ -81,12 +77,12 @@ npx @kitelev/exocortex-cli find --class ems__Task --vault ~/vault
 
 **Options:**
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--vault <path>` | cwd | Path to Obsidian vault |
-| `--also <path>` | — | Additional vault to include (repeatable) |
-| `--sparql <query>` | — | SPARQL SELECT query (must bind `?path`) |
-| `--class <value>` | — | Filter by class label via the vault's `find__Alias` asset labelled `class` (e.g. `ems__Task`) |
+| Option             | Default | Description                                                                                   |
+| ------------------ | ------- | --------------------------------------------------------------------------------------------- |
+| `--vault <path>`   | cwd     | Path to Obsidian vault                                                                        |
+| `--also <path>`    | —       | Additional vault to include (repeatable)                                                      |
+| `--sparql <query>` | —       | SPARQL SELECT query (must bind `?path`)                                                       |
+| `--class <value>`  | —       | Filter by class label via the vault's `find__Alias` asset labelled `class` (e.g. `ems__Task`) |
 
 Exactly one of `--sparql` or `--class` is required; they are mutually exclusive. `--class` requires a `find__Alias` asset with `exo__Asset_label: class` in the vault.
 
@@ -115,21 +111,21 @@ npx @kitelev/exocortex-cli apply <cmd> [path] [options]
 
 **Arguments:**
 
-| Argument | Description |
-| --- | --- |
-| `<cmd>` | UUID of an `exocmd__Command` asset, or its `exocmd__Command_cliName` slug |
+| Argument | Description                                                                           |
+| -------- | ------------------------------------------------------------------------------------- |
+| `<cmd>`  | UUID of an `exocmd__Command` asset, or its `exocmd__Command_cliName` slug             |
 | `[path]` | Vault-relative path to the target asset; omit to read paths from stdin (one per line) |
 
 **Options:**
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--vault <path>` | cwd | Path to Obsidian vault |
-| `--dry-run` | off | Evaluate precondition and preview; do not write |
-| `--yes` | off | Skip destructive-command confirmation |
-| `--input <json>` | — | JSON object forwarded to `service_call` groundings as `userInput` |
-| `--seed <uuid>` | — | Deterministic UID seed for test/replay |
-| `--frozen-clock <iso>` | — | Freeze clock to an ISO timestamp for test/replay |
+| Option                 | Default | Description                                                       |
+| ---------------------- | ------- | ----------------------------------------------------------------- |
+| `--vault <path>`       | cwd     | Path to Obsidian vault                                            |
+| `--dry-run`            | off     | Evaluate precondition and preview; do not write                   |
+| `--yes`                | off     | Skip destructive-command confirmation                             |
+| `--input <json>`       | —       | JSON object forwarded to `service_call` groundings as `userInput` |
+| `--seed <uuid>`        | —       | Deterministic UID seed for test/replay                            |
+| `--frozen-clock <iso>` | —       | Freeze clock to an ISO timestamp for test/replay                  |
 
 **Behavior:**
 
@@ -166,29 +162,29 @@ npx @kitelev/exocortex-cli query "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10" -
 
 **Arguments:**
 
-| Argument | Description |
-| --- | --- |
+| Argument  | Description                                                                        |
+| --------- | ---------------------------------------------------------------------------------- |
 | `[query]` | SPARQL query string or path to a `.sparql` file (optional if `--template` is used) |
 
 **Options:**
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--vault <path>` | cwd | Path to Obsidian vault |
-| `--also <path>` | — | Additional vault to include in the query (repeatable) |
-| `--format <type>` | `table` | Output format: `table`, `json`, `csv`, `ntriples` |
-| `--output <type>` | `text` | Response format: `text` or `json` (for MCP tools) |
-| `--timeout <duration>` | `30s` | Query timeout (e.g. `30s`, `5000ms`); env fallback `EXOCORTEX_SPARQL_TIMEOUT` |
-| `--dry-run` | off | Validate query syntax without executing (no vault loading) |
-| `--explain` | off | Show the optimized query plan |
-| `--stats` | off | Show execution statistics |
-| `--no-optimize` | — | Disable query optimization |
-| `--use-cache` | off | Use the persistent triple cache (faster vault loading) |
-| `--cache-ttl <seconds>` | `300` | Query result cache TTL in seconds |
-| `--no-cache` | — | Bypass the query result cache |
-| `--template <name>` | — | Use a predefined query template |
-| `--param <params>` | — | Template parameters (`key=value,key2=value2`) |
-| `--strict` | off | Fail on unresolved label-form wikilinks in property paths (sets `EXOCORTEX_SPARQL_STRICT=1`) |
+| Option                  | Default | Description                                                                                  |
+| ----------------------- | ------- | -------------------------------------------------------------------------------------------- |
+| `--vault <path>`        | cwd     | Path to Obsidian vault                                                                       |
+| `--also <path>`         | —       | Additional vault to include in the query (repeatable)                                        |
+| `--format <type>`       | `table` | Output format: `table`, `json`, `csv`, `ntriples`                                            |
+| `--output <type>`       | `text`  | Response format: `text` or `json` (for MCP tools)                                            |
+| `--timeout <duration>`  | `30s`   | Query timeout (e.g. `30s`, `5000ms`); env fallback `EXOCORTEX_SPARQL_TIMEOUT`                |
+| `--dry-run`             | off     | Validate query syntax without executing (no vault loading)                                   |
+| `--explain`             | off     | Show the optimized query plan                                                                |
+| `--stats`               | off     | Show execution statistics                                                                    |
+| `--no-optimize`         | —       | Disable query optimization                                                                   |
+| `--use-cache`           | off     | Use the persistent triple cache (faster vault loading)                                       |
+| `--cache-ttl <seconds>` | `300`   | Query result cache TTL in seconds                                                            |
+| `--no-cache`            | —       | Bypass the query result cache                                                                |
+| `--template <name>`     | —       | Use a predefined query template                                                              |
+| `--param <params>`      | —       | Template parameters (`key=value,key2=value2`)                                                |
+| `--strict`              | off     | Fail on unresolved label-form wikilinks in property paths (sets `EXOCORTEX_SPARQL_STRICT=1`) |
 
 **Built-in templates:** `tasks-by-date`, `tasks-by-status`, `projects-active`, `concepts-by-domain`, `sleep-analysis`.
 
@@ -226,15 +222,15 @@ npx @kitelev/exocortex-cli index --vault ~/vault --stats
 
 **Options:**
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--vault <path>` | cwd | Path to Obsidian vault |
-| `--also <path>` | — | Additional vault to include in the combined index (repeatable) |
-| `--output <type>` | `text` | Response format: `text` or `json` |
-| `--stats` | off | Show cache statistics after building |
-| `--force` | off | Force rebuild even if the cache is valid |
-| `--strict` | off | Fail on the first invalid IRI instead of skipping |
-| `--no-inference` | — | Disable RDFS `subClassOf` inference materialization |
+| Option            | Default | Description                                                    |
+| ----------------- | ------- | -------------------------------------------------------------- |
+| `--vault <path>`  | cwd     | Path to Obsidian vault                                         |
+| `--also <path>`   | —       | Additional vault to include in the combined index (repeatable) |
+| `--output <type>` | `text`  | Response format: `text` or `json`                              |
+| `--stats`         | off     | Show cache statistics after building                           |
+| `--force`         | off     | Force rebuild even if the cache is valid                       |
+| `--strict`        | off     | Fail on the first invalid IRI instead of skipping              |
+| `--no-inference`  | —       | Disable RDFS `subClassOf` inference materialization            |
 
 ### validate
 
@@ -248,25 +244,25 @@ npx @kitelev/exocortex-cli validate <iri|schema|frontmatter> [options]
 
 Check vault files for IRI issues (spaces, special characters) without building the cache. Exits `1` if issues are found.
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--vault <path>` | cwd | Path to Obsidian vault |
-| `--output <type>` | `text` | Response format: `text` or `json` |
+| Option            | Default | Description                       |
+| ----------------- | ------- | --------------------------------- |
+| `--vault <path>`  | cwd     | Path to Obsidian vault            |
+| `--output <type>` | `text`  | Response format: `text` or `json` |
 
 #### validate schema
 
 Check frontmatter properties against the ontology (schema linting), or run SHACL-lite shapes validation with `--shapes-mode`. Exits `1` if violations are found.
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--vault <path>` | cwd | Path to Obsidian vault |
-| `--also <path>` | — | Additional vault merged into the validation graph (repeatable; disables `--use-cache`) |
-| `--output <type>` | `text` | Response format: `text` or `json` |
-| `--staged` | off | Only validate git-staged `.md` files (for pre-commit hooks) |
-| `--use-cache` | off | Use the persistent triple cache (ignored when `--also` is set) |
-| `--shapes-mode` | off | Run SHACL-lite shapes validation instead of schema linting |
-| `--format <type>` | `text` | Shapes-mode output format: `text`, `json`, `earl` |
-| `--class <iri>` | — | Only validate assets whose `exo__Instance_class` matches this IRI/slug |
+| Option            | Default | Description                                                                            |
+| ----------------- | ------- | -------------------------------------------------------------------------------------- |
+| `--vault <path>`  | cwd     | Path to Obsidian vault                                                                 |
+| `--also <path>`   | —       | Additional vault merged into the validation graph (repeatable; disables `--use-cache`) |
+| `--output <type>` | `text`  | Response format: `text` or `json`                                                      |
+| `--staged`        | off     | Only validate git-staged `.md` files (for pre-commit hooks)                            |
+| `--use-cache`     | off     | Use the persistent triple cache (ignored when `--also` is set)                         |
+| `--shapes-mode`   | off     | Run SHACL-lite shapes validation instead of schema linting                             |
+| `--format <type>` | `text`  | Shapes-mode output format: `text`, `json`, `earl`                                      |
+| `--class <iri>`   | —       | Only validate assets whose `exo__Instance_class` matches this IRI/slug                 |
 
 ```bash
 # Strict SHACL-lite validation of the whole vault
@@ -280,11 +276,11 @@ npx @kitelev/exocortex-cli validate schema --staged --vault ~/vault
 
 Check vault frontmatter for missing/empty properties and malformed IRIs.
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--vault <path>` | cwd | Path to Obsidian vault |
-| `--output <type>` | `text` | Response format: `text` or `json` |
-| `--staged` | off | Only validate git-staged `.md` files |
+| Option            | Default | Description                          |
+| ----------------- | ------- | ------------------------------------ |
+| `--vault <path>`  | cwd     | Path to Obsidian vault               |
+| `--output <type>` | `text`  | Response format: `text` or `json`    |
+| `--staged`        | off     | Only validate git-staged `.md` files |
 
 ---
 
@@ -299,13 +295,13 @@ npx @kitelev/exocortex-cli ask "активные проекты" --vault ~/vault
 npx @kitelev/exocortex-cli ask "what tasks are due today" --show-query --vault ~/vault
 ```
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--vault <path>` | cwd | Path to Obsidian vault |
-| `--format <type>` | `table` | Output format: `table` or `json` |
-| `--output <type>` | `text` | Response format: `text` or `json` (for MCP tools) |
-| `--show-query` | off | Show the generated SPARQL query |
-| `--explain` | off | Show an explanation of the query conversion |
+| Option            | Default | Description                                       |
+| ----------------- | ------- | ------------------------------------------------- |
+| `--vault <path>`  | cwd     | Path to Obsidian vault                            |
+| `--format <type>` | `table` | Output format: `table` or `json`                  |
+| `--output <type>` | `text`  | Response format: `text` or `json` (for MCP tools) |
+| `--show-query`    | off     | Show the generated SPARQL query                   |
+| `--explain`       | off     | Show an explanation of the query conversion       |
 
 ### classes
 
@@ -316,13 +312,13 @@ npx @kitelev/exocortex-cli classes --vault ~/vault
 npx @kitelev/exocortex-cli classes ems__Task --vault ~/vault
 ```
 
-| Argument / Option | Default | Description |
-| --- | --- | --- |
-| `[class-name]` | — | Optional class name to show details (e.g. `ems__Task`) |
-| `--vault <path>` | cwd | Path to Obsidian vault |
-| `--format <type>` | `table` | Output format: `table` or `json` |
-| `--output <type>` | `text` | Response format: `text` or `json` (for MCP tools) |
-| `--use-cache` | off | Use the persistent cache (faster for repeated queries) |
+| Argument / Option | Default | Description                                            |
+| ----------------- | ------- | ------------------------------------------------------ |
+| `[class-name]`    | —       | Optional class name to show details (e.g. `ems__Task`) |
+| `--vault <path>`  | cwd     | Path to Obsidian vault                                 |
+| `--format <type>` | `table` | Output format: `table` or `json`                       |
+| `--output <type>` | `text`  | Response format: `text` or `json` (for MCP tools)      |
+| `--use-cache`     | off     | Use the persistent cache (faster for repeated queries) |
 
 ### create
 
@@ -332,19 +328,19 @@ Create a new vault asset with auto-generated UUID, timestamps, and frontmatter. 
 npx @kitelev/exocortex-cli create --class ztlk__PermanentNote --label "My Note" --vault ~/vault
 ```
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--class <name>` | **required** | Class short name (e.g. `ztlk__PermanentNote`) or UUID |
-| `--label <text>` | **required** | Human-readable label for the asset |
-| `--vault <path>` | cwd | Path to Obsidian vault |
-| `--aliases <names...>` | — | Additional aliases for the asset |
-| `--property <key=value...>` | — | Property key-value pairs (repeatable) |
-| `--body <text>` | — | Markdown body content (use `-` to read from stdin) |
-| `--body-file <path>` | — | Read body content from a file |
-| `--dry-run` | off | Preview the exact file content (stderr) without writing |
-| `--created-by <uuid>` | — | Creator UUID |
-| `--timezone <tz>` | `Asia/Almaty` | Timezone for timestamps |
-| `--skip-wikilink-validation` | off | Skip wikilink existence validation |
+| Option                       | Default       | Description                                             |
+| ---------------------------- | ------------- | ------------------------------------------------------- |
+| `--class <name>`             | **required**  | Class short name (e.g. `ztlk__PermanentNote`) or UUID   |
+| `--label <text>`             | **required**  | Human-readable label for the asset                      |
+| `--vault <path>`             | cwd           | Path to Obsidian vault                                  |
+| `--aliases <names...>`       | —             | Additional aliases for the asset                        |
+| `--property <key=value...>`  | —             | Property key-value pairs (repeatable)                   |
+| `--body <text>`              | —             | Markdown body content (use `-` to read from stdin)      |
+| `--body-file <path>`         | —             | Read body content from a file                           |
+| `--dry-run`                  | off           | Preview the exact file content (stderr) without writing |
+| `--created-by <uuid>`        | —             | Creator UUID                                            |
+| `--timezone <tz>`            | `Asia/Almaty` | Timezone for timestamps                                 |
+| `--skip-wikilink-validation` | off           | Skip wikilink existence validation                      |
 
 ```bash
 # With custom properties and body from stdin
@@ -365,13 +361,13 @@ npx @kitelev/exocortex-cli resolve a1b2c3d4-e5f6-7890-abcd-ef1234567890 --vault 
 npx @kitelev/exocortex-cli resolve a1b2 --partial --format path --vault ~/vault
 ```
 
-| Argument / Option | Default | Description |
-| --- | --- | --- |
-| `<uuid>` | **required** | Full or partial UUID to resolve |
-| `--vault <path>` | cwd | Path to Obsidian vault |
-| `--format <type>` | `uri` | Output format: `uri`, `path`, or `json` |
-| `--output <type>` | `text` | Response format: `text` or `json` (for MCP tools) |
-| `--partial` | off | Match partial UUIDs (returns all matches) |
+| Argument / Option | Default      | Description                                       |
+| ----------------- | ------------ | ------------------------------------------------- |
+| `<uuid>`          | **required** | Full or partial UUID to resolve                   |
+| `--vault <path>`  | cwd          | Path to Obsidian vault                            |
+| `--format <type>` | `uri`        | Output format: `uri`, `path`, or `json`           |
+| `--output <type>` | `text`       | Response format: `text` or `json` (for MCP tools) |
+| `--partial`       | off          | Match partial UUIDs (returns all matches)         |
 
 ### watch
 
@@ -381,12 +377,12 @@ Watch the vault for file changes and emit NDJSON events on stdout (one JSON obje
 npx @kitelev/exocortex-cli watch --vault ~/vault --asset-type ems__Task | jq -c 'select(.type == "modify")'
 ```
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--vault <path>` | cwd | Path to Obsidian vault |
-| `--pattern <glob>` | — | Glob pattern to filter files (e.g. `*.md`, `tasks/**`) |
-| `--asset-type <type>` | — | Filter by asset type from frontmatter (e.g. `ems__Task`) |
-| `--debounce <ms>` | `100` | Per-file debounce interval in milliseconds |
+| Option                | Default | Description                                              |
+| --------------------- | ------- | -------------------------------------------------------- |
+| `--vault <path>`      | cwd     | Path to Obsidian vault                                   |
+| `--pattern <glob>`    | —       | Glob pattern to filter files (e.g. `*.md`, `tasks/**`)   |
+| `--asset-type <type>` | —       | Filter by asset type from frontmatter (e.g. `ems__Task`) |
+| `--debounce <ms>`     | `100`   | Per-file debounce interval in milliseconds               |
 
 Event shape: `{type: "create"|"modify"|"delete", path, relativePath, timestamp, assetType?}`. Watcher errors are emitted to stdout as structured JSON error events.
 
@@ -400,90 +396,13 @@ npx @kitelev/exocortex-cli workflow show <uid> --vault ~/vault
 npx @kitelev/exocortex-cli workflow validate <uid> --vault ~/vault
 ```
 
-| Subcommand | Description |
-| --- | --- |
-| `list` | List all workflow definitions in the vault |
-| `show <uid>` | Show details of a workflow definition |
-| `validate <uid>` | Validate a workflow definition |
+| Subcommand       | Description                                |
+| ---------------- | ------------------------------------------ |
+| `list`           | List all workflow definitions in the vault |
+| `show <uid>`     | Show details of a workflow definition      |
+| `validate <uid>` | Validate a workflow definition             |
 
 All subcommands accept `--vault <path>` (default: cwd) and `--output text|json` (default: `text`).
-
-### archive
-
-Archive assets from the active vault to a separate archive vault. Checks cross-references before moving so no links break. Four modes: default archival (requires `--class` and `--year`), `--verify`, `--cascade`, `--stats`. Result JSON is printed to stdout.
-
-```bash
-npx @kitelev/exocortex-cli archive \
-  --vault ~/vault --archive-vault ~/vault-archive \
-  --class ems__Task,ems__Meeting --year 2025
-```
-
-| Option | Default | Description |
-| --- | --- | --- |
-| `--vault <path>` | **required** | Path to the active vault |
-| `--archive-vault <path>` | **required** | Path to the archive vault |
-| `--class <names>` | — | Comma-separated class short names or UUIDs (required for archival mode) |
-| `--year <year>` | — | Filter by resolution/end timestamp year (required for archival mode) |
-| `--dry-run` | off | Preview without writing files |
-| `--no-referenced` | — | Negation flag for the reference check (assets referenced by active files are skipped by default) |
-| `--verify` | off | Verify archive integrity instead of archiving (read-only; exits `1` on issues) |
-| `--cascade` | off | Iteratively resolve archived-to-archived chains (no `--class`/`--year` needed) |
-| `--stats` | off | Print archive vault statistics by class and year (read-only) |
-
-```bash
-# Verify integrity (read-only)
-npx @kitelev/exocortex-cli archive --verify --vault ~/vault --archive-vault ~/vault-archive
-
-# Resolve archived-to-archived dependency chains after a bulk run
-npx @kitelev/exocortex-cli archive --cascade --vault ~/vault --archive-vault ~/vault-archive
-
-# Archive vault statistics
-npx @kitelev/exocortex-cli archive --stats --vault ~/vault --archive-vault ~/vault-archive
-```
-
-### unarchive
-
-Restore a single asset from the archive vault back to the active vault (reverse of `archive`). The restored file lands in `<active-vault>/03 Knowledge/inbox/`.
-
-```bash
-npx @kitelev/exocortex-cli unarchive \
-  --uuid ca0d0001-1111-2222-3333-444455556666 \
-  --vault ~/vault --archive-vault ~/vault-archive
-```
-
-| Option | Default | Description |
-| --- | --- | --- |
-| `--uuid <uuid>` | **required** | UUID of the asset to restore |
-| `--vault <path>` | **required** | Path to the active vault |
-| `--archive-vault <path>` | **required** | Path to the archive vault |
-| `--dry-run` | off | Preview without writing files |
-
-### backfill
-
-Concept backfill tools for aiKnow assets. Parent command with two subcommands.
-
-#### backfill suggest
-
-Suggest concept backfill candidates for aiKnow assets, written as JSONL.
-
-| Option | Default | Description |
-| --- | --- | --- |
-| `--aiKnow-dir <path>` | **required** | Path to the aiKnow assets directory |
-| `--vault <path>` | — | Path to Obsidian vault (for finding concepts) |
-| `--output <path>` | `~/.cache/exocortex/backfill-candidates.jsonl` | Output JSONL path |
-| `--auto-threshold <number>` | `0.8` | Auto-approve confidence threshold |
-| `--frequency-cap <number>` | `100` | Skip concepts with ≥N existing stamps in the aiKnow dir |
-| `--dry-run` | on | Output JSONL but do not write to the vault (default mode) |
-
-#### backfill orphan-terms
-
-Extract high-frequency terms from aiKnow assets that have no matching `ims__Concept`.
-
-| Option | Default | Description |
-| --- | --- | --- |
-| `--aiKnow-dir <path>` | **required** | Path to the aiKnow assets directory |
-| `--vault <path>` | — | Path to Obsidian vault (for finding concepts) |
-| `--top <number>` | `20` | Number of top orphan terms to return |
 
 ### recover
 
@@ -494,11 +413,11 @@ npx @kitelev/exocortex-cli recover --vault ~/vault-2025
 npx @kitelev/exocortex-cli recover --apply --vault ~/vault-2025
 ```
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--vault <path>` | `$EXOCORTEX_VAULT` or `~/vault-2025` | Path to Obsidian vault |
-| `--dry-run` | — | List orphans without applying changes (default behavior) |
-| `--apply` | off | Apply recovery: set Failed + kill the tmux session |
+| Option           | Default                              | Description                                              |
+| ---------------- | ------------------------------------ | -------------------------------------------------------- |
+| `--vault <path>` | `$EXOCORTEX_VAULT` or `~/vault-2025` | Path to Obsidian vault                                   |
+| `--dry-run`      | —                                    | List orphans without applying changes (default behavior) |
+| `--apply`        | off                                  | Apply recovery: set Failed + kill the tmux session       |
 
 ### daemon
 
@@ -508,26 +427,10 @@ Manage the ValidatorDaemon background process (long-running, Unix socket).
 npx @kitelev/exocortex-cli daemon start
 ```
 
-| Subcommand | Option | Default | Description |
-| --- | --- | --- | --- |
-| `start` | `--socket <path>` | `~/.cache/exocortex/validator.sock` | Unix socket path |
-| `start` | `--idle-timeout <seconds>` | `300` | Exit after N seconds of inactivity |
-
-### migrate-relcolset-to-exolayout
-
-Generate `exo__Layout` + `exo__BacklinksTableBlock` pairs from existing `ui__RelationColumnSet` configs. Dry-run by default; pass `--apply` to write.
-
-```bash
-npx @kitelev/exocortex-cli migrate-relcolset-to-exolayout --vault ~/vault            # dry-run
-npx @kitelev/exocortex-cli migrate-relcolset-to-exolayout --vault ~/vault --apply
-```
-
-| Option | Default | Description |
-| --- | --- | --- |
-| `--vault <path>` | **required** | Path to the source vault |
-| `--out-dir <path>` | `exo-layout-migrated` | Vault-relative folder where generated files land on `--apply` |
-| `--apply` | off | Write generated files to the vault (default: dry-run, prints to stderr) |
-| `--json` | off | Emit the migration report as JSON to stdout |
+| Subcommand | Option                     | Default                             | Description                        |
+| ---------- | -------------------------- | ----------------------------------- | ---------------------------------- |
+| `start`    | `--socket <path>`          | `~/.cache/exocortex/validator.sock` | Unix socket path                   |
+| `start`    | `--idle-timeout <seconds>` | `300`                               | Exit after N seconds of inactivity |
 
 ---
 
@@ -535,15 +438,7 @@ npx @kitelev/exocortex-cli migrate-relcolset-to-exolayout --vault ~/vault --appl
 
 ### audit
 
-Audit the vault for regression patterns. Parent command with two subcommands.
-
-#### audit grounding-type-literal-form
-
-Detect any `exocmd__Grounding_type` in literal-string form (not wikilink) in vault frontmatter.
-
-```bash
-npx @kitelev/exocortex-cli audit grounding-type-literal-form --vault ~/vault
-```
+Audit the vault for regression patterns. Parent command with subcommands.
 
 #### audit co-location
 
@@ -563,14 +458,14 @@ Apply the specified `exo__Profile` (mount-state filesystem mutation): materializ
 npx @kitelev/exocortex-cli apply-profile <profile-uid> --vault ~/vault --yes --verbose
 ```
 
-| Argument / Option | Default | Description |
-| --- | --- | --- |
-| `<profile-uid>` | **required** | Target Profile UID |
-| `--vault <path>` | **required** | Path to Obsidian vault |
-| `--yes` | off | Confirm apply (headless safety override) |
-| `--verbose` | off | Print the plan summary to stderr before deciding |
-| `--ref <branch>` | `main` | Git ref to pull when materializing AssetSpaces |
-| `--token <pat>` | — | GitHub PAT for private-repo materialization (or env `GITHUB_TOKEN` / `GH_TOKEN`) |
+| Argument / Option | Default      | Description                                                                      |
+| ----------------- | ------------ | -------------------------------------------------------------------------------- |
+| `<profile-uid>`   | **required** | Target Profile UID                                                               |
+| `--vault <path>`  | **required** | Path to Obsidian vault                                                           |
+| `--yes`           | off          | Confirm apply (headless safety override)                                         |
+| `--verbose`       | off          | Print the plan summary to stderr before deciding                                 |
+| `--ref <branch>`  | `main`       | Git ref to pull when materializing AssetSpaces                                   |
+| `--token <pat>`   | —            | GitHub PAT for private-repo materialization (or env `GITHUB_TOKEN` / `GH_TOKEN`) |
 
 Refuses (exit `5`) when profile resolution is degraded or the plan would strip the TS-floor AssetSpaces. Use `find --class exo__Profile` to list available profiles.
 
@@ -585,14 +480,14 @@ npx @kitelev/exocortex-cli bootstrap \
   --exocmd https://github.com/kitelev/exoas-exocmd
 ```
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--vault <path>` | **required** | Path to the target vault |
-| `--exo <url>` | **required** | Public GitHub URL of the exo TBox AssetSpace |
-| `--exocmd <url>` | — | Optional GitHub URL of the exocmd UI-command AssetSpace; omit for a bare SDK/headless vault |
-| `--ref <branch>` | `main` | Branch ref to pull from |
-| `--token <pat>` | — | GitHub PAT for private repos (or env `GITHUB_TOKEN` / `GH_TOKEN`) |
-| `--json` | off | Emit result as JSON |
+| Option           | Default      | Description                                                                                 |
+| ---------------- | ------------ | ------------------------------------------------------------------------------------------- |
+| `--vault <path>` | **required** | Path to the target vault                                                                    |
+| `--exo <url>`    | **required** | Public GitHub URL of the exo TBox AssetSpace                                                |
+| `--exocmd <url>` | —            | Optional GitHub URL of the exocmd UI-command AssetSpace; omit for a bare SDK/headless vault |
+| `--ref <branch>` | `main`       | Branch ref to pull from                                                                     |
+| `--token <pat>`  | —            | GitHub PAT for private repos (or env `GITHUB_TOKEN` / `GH_TOKEN`)                           |
+| `--json`         | off          | Emit result as JSON                                                                         |
 
 ### assetspace-add
 
@@ -604,14 +499,14 @@ npx @kitelev/exocortex-cli assetspace-add \
   --url https://github.com/kitelev/exoas-pmbok-ontology
 ```
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--vault <path>` | **required** | Path to the target vault |
-| `--url <url>` | **required** | Public GitHub URL of the AssetSpace |
-| `--folder <name>` | URL-derived | Local folder name under `assetspaces/` |
-| `--ref <branch>` | `main` | Branch ref to pull from |
-| `--token <pat>` | — | GitHub PAT for private repos (or env `GITHUB_TOKEN` / `GH_TOKEN`) |
-| `--json` | off | Emit result as JSON |
+| Option            | Default      | Description                                                       |
+| ----------------- | ------------ | ----------------------------------------------------------------- |
+| `--vault <path>`  | **required** | Path to the target vault                                          |
+| `--url <url>`     | **required** | Public GitHub URL of the AssetSpace                               |
+| `--folder <name>` | URL-derived  | Local folder name under `assetspaces/`                            |
+| `--ref <branch>`  | `main`       | Branch ref to pull from                                           |
+| `--token <pat>`   | —            | GitHub PAT for private repos (or env `GITHUB_TOKEN` / `GH_TOKEN`) |
+| `--json`          | off          | Emit result as JSON                                               |
 
 ### experimental
 
@@ -630,19 +525,19 @@ EXOCORTEX_EXPERIMENTAL_REST_PUSH=1 npx @kitelev/exocortex-cli experimental rest-
   --token-from-gh
 ```
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--repo <owner/repo>` | **required** | Target repo as `owner/repo` |
-| `--branch <branch>` | `main` | Branch to commit on |
-| `--file <repoPath>` | **required** | Path within the repo to write |
-| `--content <text>` | — | Inline file content |
-| `--content-file <localPath>` | — | Read file content from a local path |
-| `--message <msg>` | **required** | Commit message |
-| `--token-from-gh` | off | Resolve PAT via `gh auth token` |
-| `--token <pat>` | — | GitHub PAT (or env `GITHUB_TOKEN` / `GH_TOKEN`); prefer `--token-from-gh` |
-| `--experimental` | off | Opt in (alternative to `EXOCORTEX_EXPERIMENTAL_REST_PUSH=1`) |
-| `--api-base <url>` | `https://api.github.com` | GitHub API base URL |
-| `--json` | off | Emit result as JSON |
+| Option                       | Default                  | Description                                                               |
+| ---------------------------- | ------------------------ | ------------------------------------------------------------------------- |
+| `--repo <owner/repo>`        | **required**             | Target repo as `owner/repo`                                               |
+| `--branch <branch>`          | `main`                   | Branch to commit on                                                       |
+| `--file <repoPath>`          | **required**             | Path within the repo to write                                             |
+| `--content <text>`           | —                        | Inline file content                                                       |
+| `--content-file <localPath>` | —                        | Read file content from a local path                                       |
+| `--message <msg>`            | **required**             | Commit message                                                            |
+| `--token-from-gh`            | off                      | Resolve PAT via `gh auth token`                                           |
+| `--token <pat>`              | —                        | GitHub PAT (or env `GITHUB_TOKEN` / `GH_TOKEN`); prefer `--token-from-gh` |
+| `--experimental`             | off                      | Opt in (alternative to `EXOCORTEX_EXPERIMENTAL_REST_PUSH=1`)              |
+| `--api-base <url>`           | `https://api.github.com` | GitHub API base URL                                                       |
+| `--json`                     | off                      | Emit result as JSON                                                       |
 
 ---
 
@@ -650,17 +545,17 @@ EXOCORTEX_EXPERIMENTAL_REST_PUSH=1 npx @kitelev/exocortex-cli experimental rest-
 
 All commands use standardized exit codes following Unix conventions (`src/utils/ExitCodes.ts`):
 
-| Code | Constant | Description |
-| --- | --- | --- |
-| `0` | `SUCCESS` | Command completed successfully |
-| `1` | `GENERAL_ERROR` | General error (catch-all) |
-| `2` | `INVALID_ARGUMENTS` | Invalid command-line arguments or options |
-| `3` | `FILE_NOT_FOUND` | File or directory not found |
-| `4` | `PERMISSION_DENIED` | Permission denied (file system access) |
-| `5` | `OPERATION_FAILED` | Command execution failed (business logic error) |
-| `6` | `INVALID_STATE_TRANSITION` | Invalid asset state transition |
-| `7` | `TRANSACTION_FAILED` | Atomic operation could not complete |
-| `8` | `CONCURRENT_MODIFICATION` | File changed during operation |
+| Code | Constant                   | Description                                     |
+| ---- | -------------------------- | ----------------------------------------------- |
+| `0`  | `SUCCESS`                  | Command completed successfully                  |
+| `1`  | `GENERAL_ERROR`            | General error (catch-all)                       |
+| `2`  | `INVALID_ARGUMENTS`        | Invalid command-line arguments or options       |
+| `3`  | `FILE_NOT_FOUND`           | File or directory not found                     |
+| `4`  | `PERMISSION_DENIED`        | Permission denied (file system access)          |
+| `5`  | `OPERATION_FAILED`         | Command execution failed (business logic error) |
+| `6`  | `INVALID_STATE_TRANSITION` | Invalid asset state transition                  |
+| `7`  | `TRANSACTION_FAILED`       | Atomic operation could not complete             |
+| `8`  | `CONCURRENT_MODIFICATION`  | File changed during operation                   |
 
 Validation commands (`validate iri`, `validate schema`, `audit co-location`, `archive --verify`) exit `1` when issues/violations are found, for CI/pre-commit integration.
 
@@ -671,7 +566,7 @@ Commands that accept `--output json` (e.g. `query`, `ask`, `classes`, `resolve`,
 ```json
 {
   "success": true,
-  "data": { },
+  "data": {},
   "meta": { "durationMs": 45, "itemCount": 3 }
 }
 ```

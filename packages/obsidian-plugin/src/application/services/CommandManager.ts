@@ -6,7 +6,6 @@ import {
   MetadataExtractor,
   CommandVisibilityContext,
   WikiLinkHelpers,
-  GenericAssetCreationService,
   DI_TOKENS,
   registerCoreServices,
   type INotificationService,
@@ -14,16 +13,13 @@ import {
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 import { ObsidianNotificationService } from '@plugin/infrastructure/di/ObsidianNotificationService';
-import { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';
-import { OntologySchemaService } from '@plugin/application/services/OntologySchemaService';
-import { ClassDiscoveryService } from '@plugin/application/services/ClassDiscoveryService';
 
 import { ReloadLayoutCommand } from '@plugin/application/commands/ReloadLayoutCommand';
 import { ToggleLayoutVisibilityCommand } from '@plugin/application/commands/ToggleLayoutVisibilityCommand';
 import { ToggleArchivedAssetsCommand } from '@plugin/application/commands/ToggleArchivedAssetsCommand';
-import { OpenQueryBuilderCommand } from '@plugin/application/commands/OpenQueryBuilderCommand';
 import { EditPropertiesCommand } from '@plugin/application/commands/EditPropertiesCommand';
-import { CreateAssetCommand } from '@plugin/application/commands/CreateAssetCommand';
+// `CreateAssetCommand` + `OpenQueryBuilderCommand` removed in EKA Phase A C1
+// (RFC 78c2b7d0 §5) — verified dead (codegraph 0-refs).
 // `CreateFleetingNoteCommand` removed in RFC 1429fcd0 PR-3 — the command is
 // now registered from the vault `exocmd__Command` asset `692aa011-...` by
 // `ExocmdCommandPaletteRegistrar`.
@@ -54,23 +50,11 @@ export class CommandManager {
 
     const notifier: INotificationService = new ObsidianNotificationService();
 
-    const genericAssetCreationService = container.resolve(GenericAssetCreationService);
-    const sparqlQueryService = new SPARQLQueryService(
-      this.app,
-      logger,
-      undefined,
-      plugin.settings?.excludedFolders ?? [],
-    );
-    const ontologySchemaService = new OntologySchemaService(sparqlQueryService);
-    const classDiscoveryService = new ClassDiscoveryService(sparqlQueryService);
-
     const globalCommands = [
       new ReloadLayoutCommand(reloadLayoutCallback, notifier),
       new ToggleLayoutVisibilityCommand(plugin, notifier),
       new ToggleArchivedAssetsCommand(plugin, notifier),
-      new OpenQueryBuilderCommand(this.app, plugin, notifier),
       new EditPropertiesCommand(this.app, plugin, notifier),
-      new CreateAssetCommand(this.app, genericAssetCreationService, this.vaultAdapter, classDiscoveryService, notifier, ontologySchemaService, sparqlQueryService),
     ];
 
     this.commandRegistry = new CommandRegistry(globalCommands);

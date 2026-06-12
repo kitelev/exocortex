@@ -41,9 +41,9 @@ describe("CommandManager - maintenance commands (vault-driven)", () => {
       expect(command).toBeDefined();
     });
 
-    it("should register open-sparql-query-builder as global command", () => {
-      const command = ctx.registeredCommands.get("open-sparql-query-builder");
-      expect(command).toBeDefined();
+    it("should NOT register open-sparql-query-builder (removed in EKA Phase A C1)", () => {
+      // RFC 78c2b7d0 §5: OpenQueryBuilderCommand TS class deleted (verified dead).
+      expect(ctx.registeredCommands.has("open-sparql-query-builder")).toBe(false);
     });
   });
 });

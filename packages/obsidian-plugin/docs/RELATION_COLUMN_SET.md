@@ -5,12 +5,10 @@
 > columns of the default Asset Relations table. If you want to _replace_
 > those columns, remove the table's `Asset Relations` wrapper, or build a
 > standalone body composed of multiple typed blocks, see
-> [`EXO_LAYOUT.md`](./EXO_LAYOUT.md). The CLI helper
-> `exocortex migrate-relcolset-to-exolayout` generates a starting-point
-> `exo__Layout` + `exo__BacklinksTableBlock` pair from each existing
-> RelationColumnSet — read the "Migrating from `ui__RelationColumnSet`"
-> section of `EXO_LAYOUT.md` for the semantic gaps the tool cannot bridge
-> automatically.
+> [`EXO_LAYOUT.md`](./EXO_LAYOUT.md) — its "Migrating from
+> `ui__RelationColumnSet`" section covers the `exo__Layout` +
+> `exo__BacklinksTableBlock` mapping and the semantic gaps to mind when
+> migrating manually.
 
 `ui__RelationColumnSet` lets you declare, directly in the vault, which
 properties should appear as columns in the UniversalLayout auto-backlinks
