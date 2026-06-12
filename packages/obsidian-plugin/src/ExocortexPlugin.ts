@@ -2851,6 +2851,7 @@ export default class ExocortexPlugin extends Plugin {
       isSwitchInProgress: () => localDataStore.isSwitchInProgress(),
       notify: (message) => this.notifier.info(message),
       log: (message) => this.logger.warn(message),
+      logInfo: (message) => this.logger.info(message),
       // ExoSync Phase E (E1) — automatic M1/M2 parity round after every
       // sync + the standalone palette report (parallel-run validation).
       parity: buildParityCheck({

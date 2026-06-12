@@ -104,6 +104,22 @@ describe("audit co-location — revert→fail / restore→pass (integration)", (
     expect(r.skips["empty-isDefinedBy"]).toBe(2);
   });
 
+  it("excludes the CURRENT 'templates/' path (RFC df39007b R6 — the exclusion previously hardcoded only the stale '09 Templates/')", async () => {
+    // The live vault keeps Templater templates under root-level templates/
+    // (e.g. templates/ems/…). WITHOUT the R6 fix this resolvable-but-misplaced
+    // file is reported as 1 violation; WITH it the file is dropped entirely.
+    const tmplDir = join(vault, "templates", "concepts");
+    writeAsset(
+      tmplDir,
+      "eeeeeeee-0000-0000-0000-000000000000",
+      `"[[${ONTO_UID}]]"`,
+    );
+    const r = await scanVaultForCoLocation(vault);
+    // Revert-verify: restore the stale `09 Templates`-only check → flips to 1.
+    expect(r.violations).toHaveLength(0);
+    expect(r.checked).toBe(0);
+  });
+
   it("excludes '09 Templates/' (Templater templates are not assets) — revert→fail proof", async () => {
     // A Templater template carries exo__Asset_isDefinedBy by pattern inheritance
     // but physically lives in 09 Templates/ and must never move. WITHOUT the

@@ -124,7 +124,10 @@ export class NodeFsAdapter implements IFileSystemAdapter {
     return path.join(this.rootPath, filePath);
   }
 
-  private extractFrontmatter(content: string): Record<string, any> {
+  // protected (not private) so CachingNodeFsAdapter's content-caching path
+  // parses frontmatter through the SAME implementation — two parse paths
+  // selected by a constructor flag must never drift (audit #3384 H4 family).
+  protected extractFrontmatter(content: string): Record<string, any> {
     const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
     const match = content.match(frontmatterRegex);
 
