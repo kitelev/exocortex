@@ -693,10 +693,14 @@ export function computeImportProposal(
   result: OntologyImportsResult,
 ): ImportProposal {
   const nodes = result.ontologies.map((o) => o.uid);
-  const refOf = (uid: string): OntologyRef => {
-    const o = result.ontologies.find((x) => x.uid === uid);
-    return o ? { uid: o.uid, label: o.label, path: o.path } : { uid, label: uid, path: "" };
-  };
+  // Prebuilt uid→ref map: refOf is called per reduced edge / conflict / FAS cut /
+  // SCC member, so a linear scan here would be O(n·E).
+  const refByUid = new Map<string, OntologyRef>();
+  for (const o of result.ontologies) {
+    refByUid.set(o.uid, { uid: o.uid, label: o.label, path: o.path });
+  }
+  const refOf = (uid: string): OntologyRef =>
+    refByUid.get(uid) ?? { uid, label: uid, path: "" };
 
   // Declared adjacency (resolved imports) + derived adjacency + occurrences.
   const declared: AdjacencyMap = new Map();
@@ -760,6 +764,12 @@ export function computeImportProposal(
     }
     return false;
   };
+  // `combined` = declared ∪ accepted cross edges. transitiveReduction below is
+  // reachability-preserving on ANY graph (it only drops an edge when the target
+  // stays reachable), so `additions` is always correct; its MINIMALITY is
+  // guaranteed only while the declared graph is acyclic — the normal state, and
+  // a declared cycle is itself an audit violation reported separately
+  // (`result.declared.acyclic`) that the user must fix first.
   const combined: AdjacencyMap = new Map();
   for (const [from, tos] of declared) combined.set(from, new Set(tos));
   const conflicts: ProposedImport[] = [];

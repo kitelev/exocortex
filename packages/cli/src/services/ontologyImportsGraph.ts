@@ -168,10 +168,11 @@ export function condense(nodes: string[], edges: AdjacencyMap): Condensation {
  * path of length ≥ 2 (i.e. no other direct successor of `a` already reaches
  * `b`).
  *
- * Precondition: `edges` is acyclic. Callers run this only on the acyclic part
- * of the derived graph (cross-SCC edges) and on the condensation — both DAGs.
- * On a cyclic input the result is unspecified (cycle edges may be dropped),
- * never throws.
+ * Reachability-preserving on ANY graph (an edge is dropped only when its target
+ * stays reachable via another path), so it never throws or loses connectivity.
+ * The MINIMALITY / uniqueness guarantee, however, holds only on a DAG — callers
+ * run this on the acyclic part of the derived graph (cross-SCC edges) and on the
+ * condensation, both DAGs.
  */
 export function transitiveReduction(
   nodes: string[],
@@ -301,10 +302,14 @@ export function greedyFeedbackArcSet(
 
   const order = [...s1, ...s2];
   const pos = new Map(order.map((node, i) => [node, i] as const));
-  // Feedback arcs = edges pointing backwards in the linear arrangement.
-  return weightedEdges.filter(
-    (edge) =>
-      edge.source !== edge.target &&
-      (pos.get(edge.source) ?? 0) > (pos.get(edge.target) ?? 0),
-  );
+  // Feedback arcs = edges pointing backwards in the linear arrangement. Edges
+  // referencing a node outside `nodes` were never placed in the order — skip
+  // them rather than treat the missing position as 0.
+  return weightedEdges.filter((edge) => {
+    if (edge.source === edge.target) return false;
+    const from = pos.get(edge.source);
+    const to = pos.get(edge.target);
+    if (from === undefined || to === undefined) return false;
+    return from > to;
+  });
 }
