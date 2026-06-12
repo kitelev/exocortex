@@ -119,15 +119,23 @@ export class MergeShaclGate {
     let skippedOpenWorld = 0;
     for (const v of report.violations) {
       if (!focus.has(v.focusNode)) continue; // pre-existing context issue
-      if (v.severity !== "sh:Violation") continue; // warnings don't gate
-      if (
-        v.constraint === "class" &&
-        v.actualValue !== undefined &&
-        !isMounted(v.actualValue)
-      ) {
-        skippedOpenWorld++; // open-world: unmounted ref ≠ violation
+      if (v.constraint === "class") {
+        // Issue #3488: the shared validator now reports a class-range failure
+        // against an *unresolvable* value (no type info in the store) as
+        // `sh:Warning` instead of `sh:Violation`. ExoSync makes the open-world
+        // decision itself via `isMounted`, so class-range results must reach
+        // that decision regardless of the severity the validator chose:
+        //   • ref OUTSIDE the mounted scope → open-world skip (never gates).
+        //   • ref INSIDE the mounted scope (classless OR wrong-class) → gates
+        //     the merge (a mounted target should be typed/conformant).
+        if (v.actualValue !== undefined && !isMounted(v.actualValue)) {
+          skippedOpenWorld++; // open-world: unmounted ref ≠ violation
+          continue;
+        }
+        violations.push(v);
         continue;
       }
+      if (v.severity !== "sh:Violation") continue; // non-class warnings don't gate
       violations.push(v);
     }
 

@@ -220,6 +220,16 @@ export function validate(
   const allSubjects = new Set([...subjectClasses.keys(), ...subjectProps.keys()]);
 
   for (const subjectIRI of allSubjects) {
+    // Issue #3488 M2: `uid:<uuid>` keys are SYNTHETIC value-class join keys
+    // (added above so a cross-vault wikilink value `obsidian://vault/<uid>.md`
+    // resolves to the class set indexed under the owning vault's full-path
+    // subject IRI). They never carry property triples, so iterating them as
+    // focus subjects produces a phantom `sh:minCount` violation for every
+    // required property of their class — the real `obsidian://…/<uid>.md`
+    // subject (always present alongside; see the type-predicate branch above)
+    // carries the actual properties and is the proper focus node.
+    if (subjectIRI.startsWith('uid:')) continue;
+
     const classes = subjectClasses.get(subjectIRI) ?? [];
     const props = subjectProps.get(subjectIRI) ?? new Map<string, Array<IRI | Literal>>();
 
@@ -293,14 +303,28 @@ export function validate(
               ),
             );
             if (!rangeConforms) {
+              // Issue #3488 M1/M4b/M5: distinguish a genuine wrong-class violation
+              // from an *unresolvable reference*. When the value node has NO
+              // resolvable type in this store (`valueClasses` empty after the
+              // direct + uid-twin lookups above) we cannot — under open-world
+              // semantics — assert that it violates the class constraint. This
+              // happens for cross-vault targets, targets whose own class
+              // definition lives cross-vault (so they carry no rdf:type here),
+              // symbolic property-IRIs with no backing subject, and Exo003
+              // anchor files. Emit `sh:Warning` (does NOT break conformance /
+              // exit code) instead of a false `sh:Violation`. A value that IS a
+              // typed subject whose class genuinely does not conform keeps the
+              // shape's (Violation) severity.
+              const unresolvableRef = valueClasses.length === 0;
               violations.push({
                 focusNode: subjectIRI,
                 propertyPath: shape.propertyIRI,
-                severity: shape.severity,
+                severity: unresolvableRef ? 'sh:Warning' : shape.severity,
                 constraint: 'class',
-                message:
-                  shape.message ??
-                  `sh:class violation: <${obj.value}> does not conform to expected class ${shape.range.join(' | ')}`,
+                message: unresolvableRef
+                  ? `sh:class unresolvable-ref: <${obj.value}> has no resolvable type in this vault (cross-vault, symbolic, or external reference); not validated against ${shape.range.join(' | ')}`
+                  : shape.message ??
+                    `sh:class violation: <${obj.value}> does not conform to expected class ${shape.range.join(' | ')}`,
                 actualValue: obj.value,
                 expectedRange: shape.range.join(' | '),
               });
