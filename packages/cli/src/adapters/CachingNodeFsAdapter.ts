@@ -1,4 +1,3 @@
-import yaml from "js-yaml";
 import { NodeFsAdapter } from "./NodeFsAdapter.js";
 
 /**
@@ -56,7 +55,9 @@ export class CachingNodeFsAdapter extends NodeFsAdapter {
           // Single read serves both frontmatter and body — the audit hot loop
           // must not re-read 11k+ files from disk a second time.
           content = await super.readFile(rel);
-          metadata = CachingNodeFsAdapter.parseFrontmatter(content);
+          // Same parser as the base getFileMetadata path — two parse paths
+          // selected by a constructor flag must never drift.
+          metadata = this.extractFrontmatter(content);
         } else {
           metadata = await super.getFileMetadata(rel);
         }
@@ -112,20 +113,6 @@ export class CachingNodeFsAdapter extends NodeFsAdapter {
     const slash = rel.lastIndexOf("/");
     const name = slash === -1 ? rel : rel.slice(slash + 1);
     return name.endsWith(".md") ? name.slice(0, -3) : name;
-  }
-
-  /** Mirror base NodeFsAdapter.extractFrontmatter (private there). */
-  private static parseFrontmatter(content: string): Record<string, unknown> {
-    const match = content.match(/^---\n([\s\S]*?)\n---/);
-    if (!match) return {};
-    try {
-      const parsed = yaml.load(match[1]);
-      return typeof parsed === "object" && parsed !== null
-        ? (parsed as Record<string, unknown>)
-        : {};
-    } catch {
-      return {};
-    }
   }
 
   /** All indexed assets (path + frontmatter), reusing the single index pass. */

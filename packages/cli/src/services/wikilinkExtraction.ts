@@ -26,8 +26,15 @@ export function stripFencedCodeBlocks(text: string): string {
   let openFence: string | null = null;
   for (const line of lines) {
     const fenceMatch = line.match(/^[ \t]*(`{3,}|~{3,})/);
+    // CommonMark: a backtick-fence info string must not contain backticks —
+    // otherwise an inline ```code``` span at line start would open a phantom
+    // fence and silently drop the rest of the document from the link scan.
+    const validOpener =
+      fenceMatch &&
+      (fenceMatch[1][0] === "~" ||
+        !line.slice(line.indexOf(fenceMatch[1]) + fenceMatch[1].length).includes("`"));
     if (openFence === null) {
-      if (fenceMatch) {
+      if (validOpener) {
         openFence = fenceMatch[1];
       } else {
         out.push(line);

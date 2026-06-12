@@ -75,6 +75,15 @@ describe("stripFencedCodeBlocks (R10)", () => {
       "counted",
     ]);
   });
+
+  it("a line-leading inline triple-backtick span is NOT a fence opener (CommonMark: no backticks in info string)", () => {
+    const text = ["```[[in-span]]``` then [[keep-a]]", "[[keep-b]]"].join("\n");
+    expect(extractWikilinkTargets(stripFencedCodeBlocks(text))).toEqual([
+      "in-span",
+      "keep-a",
+      "keep-b",
+    ]);
+  });
 });
 
 describe("collectFrontmatterStrings", () => {
