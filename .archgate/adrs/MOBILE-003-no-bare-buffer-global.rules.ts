@@ -22,6 +22,13 @@
 // webviews and Node ≥16). Tests are not scanned: jest runs in Node, where
 // Buffer is the natural oracle for output-equivalence assertions.
 
+// Known heuristic limitations (line-based, same trade-off as MOBILE-001/002):
+//  - a `//` sequence inside a string literal truncates the scanned line, so
+//    a bare Buffer AFTER it on the same line is missed (false negative);
+//  - string literals containing the bare word `Buffer` would be flagged
+//    (false positive — none exist in scope);
+//  - mid-line block comments (`/* Buffer */ code`) are not stripped.
+
 // Bare global reference: `Buffer` not preceded by `.`/identifier chars
 // (`vault.Buffer`, `fetchTarballBuffer` stay allowed) and not followed by
 // identifier chars (`BufferSource`, `BufferEncoding` stay allowed).

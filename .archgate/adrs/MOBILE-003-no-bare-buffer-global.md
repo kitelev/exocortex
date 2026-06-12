@@ -64,7 +64,9 @@ Fourth layer of the mobile cluster: #3464 module-eval imports (MOBILE-001),
 - Known line-heuristic limitations (same trade-off as MOBILE-001/002):
   string literals containing the word `Buffer` would be flagged (none exist
   in scope); mid-line block comments (`/* Buffer */ code`) are not
-  stripped. Acceptable precision/complexity balance.
+  stripped; a `//` sequence inside a string literal truncates the scanned
+  line, so a bare `Buffer` after it on the same line is missed.
+  Acceptable precision/complexity balance.
 
 ## Verification
 
