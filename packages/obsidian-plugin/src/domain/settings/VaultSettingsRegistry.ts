@@ -4,7 +4,7 @@
  * shipped in `packages/exoas-exo` (onto-RFC 981b6070, D1 @ 6c0797e).
  *
  * Homoiconicity (RFC c78cc5c8): the SCHEMA of valid settings lives in the
- * graph (23 `exo__SettingKey` individuals, each declaring its datatype).
+ * graph (24 `exo__SettingKey` individuals, each declaring its datatype).
  * This module is the engine-side binding table (Q3 exception 1 — core
  * processing): it maps each graph key to the TypeScript field the plugin
  * actually reads. The registry↔graph parity unit test asserts this table
@@ -195,6 +195,14 @@ export const VAULT_SETTINGS_REGISTRY: readonly VaultSettingDescriptor[] = [
     keyLabel: "exo__SettingKeyEnablePropertiesLabelPatch",
     datatype: "boolean",
     settingUid: "a054aff7-962e-4dd9-b713-cc852fcbe2a6",
+  },
+  {
+    // #3499 — ExoSync opt-in verbose per-step Notice toggle (default off).
+    field: "exosyncStepNotices",
+    keyUid: "5021effa-3a68-49fb-a6ae-48fdb9b2f4ab",
+    keyLabel: "exo__SettingKeyExosyncStepNotices",
+    datatype: "boolean",
+    settingUid: "93440232-6683-405e-8e9d-d832fef16f6c",
   },
   // ── string (2) ────────────────────────────────────────────────────
   {

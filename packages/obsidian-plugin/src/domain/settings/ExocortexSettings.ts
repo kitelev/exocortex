@@ -243,6 +243,15 @@ export interface ExocortexSettings {
    * Shared config, not a secret — synced data.json is the right home.
    */
   exosyncQuarantineRepoUrl: string;
+  /**
+   * ExoSync (#3499) — opt-in verbose step toasts. When `true`, each sync step
+   * (the start line and every per-repo outcome line, #3496) is ALSO surfaced
+   * as an Obsidian Notice on top of its console line. Default `false`: a Sync
+   * touches 14+ repos = 14+ toasts per run, so this is only for users actively
+   * watching a sync. The summary toast (#3489) is unaffected — it always fires
+   * exactly once and is never double-emitted by this toggle.
+   */
+  exosyncStepNotices: boolean;
   [key: string]: unknown;
 }
 
@@ -279,4 +288,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   ],
   activeProfileUid: null,
   exosyncQuarantineRepoUrl: "",
+  exosyncStepNotices: false,
 };
