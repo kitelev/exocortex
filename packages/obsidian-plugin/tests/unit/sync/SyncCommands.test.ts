@@ -56,6 +56,8 @@ interface HarnessOptions {
   logInfo?: (m: string) => void;
   /** #3495 — whether the engine was built with a durable quarantine sink. */
   quarantineConfigured?: boolean;
+  /** #3499 — opt-in verbose per-step Notice toggle (default off). */
+  stepNoticesEnabled?: boolean;
 }
 
 function makeHarness(opts: HarnessOptions = {}) {
@@ -90,6 +92,9 @@ function makeHarness(opts: HarnessOptions = {}) {
     notify: (m) => notices.push(m),
     log: (m) => logs.push(m),
     logInfo: opts.logInfo ?? ((m) => infoLogs.push(m)),
+    ...(opts.stepNoticesEnabled !== undefined
+      ? { stepNoticesEnabled: opts.stepNoticesEnabled }
+      : {}),
     ...(opts.parity !== undefined ? { parity: opts.parity } : {}),
   });
   return { commands, notices, logs, infoLogs, syncAll };
@@ -762,5 +767,127 @@ describe("SyncCommands — #3496 step-by-step logging (info channel)", () => {
     const line = infoLogs.find((l) => l.includes("o/r#main:"));
     expect(line).toContain("deleted 1");
     expect(line).toContain("deferred 1");
+  });
+});
+
+describe("SyncCommands — #3499 opt-in per-step Notice toggle", () => {
+  it("toggle ON → notify fires for the start step line AND every per-repo step line", async () => {
+    const { commands, notices, infoLogs } = makeHarness({
+      stepNoticesEnabled: true,
+      specs: [spec("o/a"), spec("o/b")],
+      results: [
+        result("o/a#main", "synced", { pushedCount: 2, pulledCount: 1 }),
+        result("o/b#main", "synced", { mergedCount: 1, quarantinedCount: 1 }),
+      ],
+    });
+
+    await commands.invokeSync();
+
+    // Start step line surfaced as a toast (the "— " em-dash form is the
+    // diagnostic step line, distinct from the friendly "started (N repo(s))…").
+    expect(
+      notices.some(
+        (n) => n.includes("Sync started — ") && n.includes("direction=sync"),
+      ),
+    ).toBe(true);
+    // Every per-repo outcome line surfaced as a toast.
+    expect(notices.some((n) => n.includes("o/a#main:") && n.includes("pushed 2"))).toBe(
+      true,
+    );
+    expect(notices.some((n) => n.includes("o/b#main:") && n.includes("merged 1"))).toBe(
+      true,
+    );
+    // Console lines (#3496) still emitted in verbose mode (toast is in ADDITION).
+    expect(infoLogs.some((l) => l.includes("[ExoSync] Sync started"))).toBe(true);
+    expect(infoLogs.some((l) => l.includes("o/a#main:"))).toBe(true);
+  });
+
+  it("toggle OFF (default) → NO per-step toasts; behaviour unchanged (start+summary toasts only)", async () => {
+    const { commands, notices, infoLogs } = makeHarness({
+      // stepNoticesEnabled omitted → default off
+      specs: [spec("o/a"), spec("o/b")],
+      results: [
+        result("o/a#main", "synced", { pushedCount: 1 }),
+        result("o/b#main", "synced", { pulledCount: 1 }),
+      ],
+    });
+
+    await commands.invokeSync();
+
+    // No per-repo step toast.
+    expect(
+      notices.some((n) => n.includes("o/a#main:") || n.includes("o/b#main:")),
+    ).toBe(false);
+    // No diagnostic start step toast.
+    expect(notices.some((n) => n.includes("Sync started — "))).toBe(false);
+    // The friendly start toast + the single summary toast still fire (today's behaviour).
+    expect(notices.some((n) => n.startsWith("Sync started ("))).toBe(true);
+    expect(notices.filter((n) => n.startsWith("Sync done"))).toHaveLength(1);
+    // Console step lines (#3496) unchanged — present regardless of toggle.
+    expect(infoLogs.some((l) => l.includes("[ExoSync] Sync started"))).toBe(true);
+    expect(infoLogs.some((l) => l.includes("o/a#main:"))).toBe(true);
+  });
+
+  it("toggle ON → exactly ONE summary toast (no double summary from step-notify)", async () => {
+    const { commands, notices } = makeHarness({
+      stepNoticesEnabled: true,
+      specs: [spec("o/a"), spec("o/b")],
+      results: [
+        result("o/a#main", "synced", { pushedCount: 1, pulledCount: 2 }),
+        result("o/b#main", "synced", { mergedCount: 1 }),
+      ],
+    });
+
+    await commands.invokeSync();
+
+    // The "Sync done" summary toast must appear exactly once even with verbose on.
+    expect(notices.filter((n) => n.startsWith("Sync done"))).toHaveLength(1);
+    // The #3489 summary info line ("Sync OK") must NOT be mirrored as a second toast.
+    expect(notices.some((n) => n.includes("[ExoSync] Sync OK:"))).toBe(false);
+  });
+
+  it("toggle ON works for Pull and Push directions too", async () => {
+    const pull = makeHarness({
+      stepNoticesEnabled: true,
+      results: [result("o/r#main", "synced", { pulledCount: 3 })],
+    });
+    await pull.commands.invokePull();
+    expect(
+      pull.notices.some(
+        (n) => n.includes("Pull started — ") && n.includes("direction=pull"),
+      ),
+    ).toBe(true);
+    expect(pull.notices.some((n) => n.includes("o/r#main:"))).toBe(true);
+
+    const push = makeHarness({
+      stepNoticesEnabled: true,
+      results: [result("o/r#main", "synced", { pushedCount: 2 })],
+    });
+    await push.commands.invokePush();
+    expect(
+      push.notices.some(
+        (n) => n.includes("Push started — ") && n.includes("direction=push"),
+      ),
+    ).toBe(true);
+    expect(push.notices.some((n) => n.includes("o/r#main:"))).toBe(true);
+  });
+
+  it("toggle ON → step toasts still fire on the issues path (per-repo diagnostics matter most on failure)", async () => {
+    const { commands, notices } = makeHarness({
+      stepNoticesEnabled: true,
+      specs: [spec("o/a"), spec("o/b")],
+      results: [
+        result("o/a#main", "synced", { pushedCount: 1 }),
+        result("o/b#main", "error", { detail: "boom" }),
+      ],
+    });
+
+    await commands.invokeSync();
+
+    expect(notices.some((n) => n.includes("Sync started — "))).toBe(true);
+    expect(notices.some((n) => n.includes("o/a#main:"))).toBe(true);
+    expect(
+      notices.some((n) => n.includes("o/b#main:") && n.includes("error")),
+    ).toBe(true);
   });
 });

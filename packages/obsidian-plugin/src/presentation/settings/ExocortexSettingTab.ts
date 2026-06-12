@@ -735,6 +735,23 @@ export class ExocortexSettingTab extends PluginSettingTab {
         });
       });
 
+    new Setting(containerEl)
+      .setName("Show a notice for each sync step")
+      .setDesc(
+        "Verbose: surface every sync step (start + each repo) as a toast on " +
+          "top of the console line. Default off — a Sync touches 14+ repos = " +
+          "14+ toasts per run. Turn on only while actively watching a sync. " +
+          "The single summary toast is unaffected.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.exosyncStepNotices)
+          .onChange(async (value) => {
+            this.plugin.settings.exosyncStepNotices = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
     // ─────── Section 2 — Active profile ───────
     new Setting(containerEl).setName("Active profile").setHeading();
 

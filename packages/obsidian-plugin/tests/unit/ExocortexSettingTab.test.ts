@@ -160,7 +160,8 @@ describe("ExocortexSettingTab", () => {
       // Issue #3320 — Profile sections: 4 section headings + PAT row + Switch profile row + Cache stats row + (Operations log has no Setting row, body уходит в createDiv/createEl) = +7 → 39
       // RFC 13da049f R35 — added "Profiles" overview heading (+1) → 40
       // RFC 4e4dc453 Phase B — ExoSync section: heading + quarantine repo URL row (+2) → 42
-      expect(MockSetting).toHaveBeenCalledTimes(42);
+      // Issue #3499 — ExoSync verbose per-step Notice toggle (+1) → 43
+      expect(MockSetting).toHaveBeenCalledTimes(43);
     });
 
     it("should render layout visibility toggle as first setting", () => {

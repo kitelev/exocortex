@@ -48,6 +48,18 @@ export interface SyncCommandsDeps {
    */
   logInfo?: (message: string) => void;
   /**
+   * #3499 — opt-in verbose step toasts. When true, the per-step info trace
+   * lines (start + per-repo) are ALSO surfaced as user-facing Notices on top
+   * of their console line. Default off (absent/false): a Sync touches 14+
+   * repos = 14+ toasts, so this is only for users actively watching a run.
+   *
+   * The summary is intentionally NOT re-mirrored here: the «… done» summary
+   * Notice (#3489) already fires unconditionally, so gating the summary info
+   * line would produce TWO summary toasts (AC #3499 "no double summary"). The
+   * #3495 quarantine-sink warn is likewise excluded — it owns its own Notice.
+   */
+  stepNoticesEnabled?: boolean;
+  /**
    * E1 parity harness (RFC 4e4dc453 Phase E). When wired, every sync round
    * is followed by an automatic M1/M2 validation pass (best-effort — a
    * parity failure NEVER affects the sync result), and the standalone
@@ -77,6 +89,16 @@ export class SyncCommands {
   /** Apply→sync exclusion input for `ProfileApplyManager.isSyncBusy`. */
   isBusy(): boolean {
     return this.running;
+  }
+
+  /**
+   * #3499 — mirror a step trace line to a user-facing Notice when the opt-in
+   * verbose toggle is on. No-op by default (toggle off / absent): the step
+   * line stays console-only as today. Only the start + per-repo step lines
+   * call this; the summary keeps its single #3489 Notice (no double toast).
+   */
+  private maybeStepNotice(message: string): void {
+    if (this.deps.stepNoticesEnabled === true) this.deps.notify(message);
   }
 
   /**
@@ -244,9 +266,10 @@ export class SyncCommands {
     // user's routing like every other info log, #3186). The notify() above is
     // the single toast; this is the diagnostic counterpart.
     const logInfo = this.deps.logInfo ?? ((_m: string): void => undefined);
-    logInfo(
-      `[ExoSync] ${label} started — ${collection.specs.length} repo(s), direction=${direction}`,
-    );
+    const startLine = `[ExoSync] ${label} started — ${collection.specs.length} repo(s), direction=${direction}`;
+    logInfo(startLine);
+    // #3499 — verbose toggle: also surface the start step as a Notice.
+    this.maybeStepNotice(startLine);
     const results = await engine.syncAll(
       orderChildrenFirst(collection.specs as SyncRepoSpec[]),
       direction,
@@ -314,7 +337,11 @@ export class SyncCommands {
       // user's info routing if they opt in). Fires for EVERY repo (clean ones
       // too) and on every direction/status: the step trace is most valuable
       // precisely when a run misbehaves, so it is NOT gated on success.
-      logInfo(SyncCommands.repoStepLine(r));
+      const stepLine = SyncCommands.repoStepLine(r);
+      logInfo(stepLine);
+      // #3499 — verbose toggle: also surface the per-repo step as a Notice.
+      // This is the firehose the toggle exists to gate (14+ repos = 14+ toasts).
+      this.maybeStepNotice(stepLine);
       pushed += r.pushedCount;
       deleted += r.pushedDeletes?.length ?? 0;
       pulled += r.pulledCount;
