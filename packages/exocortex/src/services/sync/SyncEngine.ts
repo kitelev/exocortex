@@ -67,6 +67,7 @@ import {
   type RemoteTreeEntry,
 } from "./githubRepoReader";
 import { detectChanges, extractAssetUid } from "./ChangeDetector";
+import { bytesToBase64 } from "../../utilities/base64";
 import { gitBlobSha } from "./gitBlobSha";
 import { isAuthError } from "./CredentialStore";
 import { scanForSecrets } from "./secretScan";
@@ -173,7 +174,7 @@ function decodeUtf8Strict(bytes: Uint8Array): string | null {
 function toCommitContent(content: SyncContent): CommitFileContent {
   return typeof content === "string"
     ? content
-    : { base64: Buffer.from(content).toString("base64") };
+    : { base64: bytesToBase64(content) };
 }
 
 /**

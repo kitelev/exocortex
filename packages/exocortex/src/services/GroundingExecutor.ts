@@ -12,6 +12,7 @@ import type {
 } from "../domain/models/CommandDefinition";
 import { GroundingType } from "../domain/constants/GroundingType";
 import { AssetClass } from "../domain/constants/AssetClass";
+import { base64ToUtf8 } from "../utilities/base64";
 import { EffortStatus } from "../domain/constants/EffortStatus";
 import { IRI } from "../domain/models/rdf/IRI";
 import type { WorkflowDefinition } from "../domain/models/WorkflowDefinition";
@@ -1159,9 +1160,9 @@ export class GroundingExecutor {
    * Mirrors the encoder in CommandResolver.buildParameterisedMarker.
    */
   private static decodeBase64UrlSafe(encoded: string): string {
-    const normalised = encoded.replace(/-/g, "+").replace(/_/g, "/");
-    const padding = normalised.length % 4 === 0 ? "" : "=".repeat(4 - (normalised.length % 4));
-    return Buffer.from(normalised + padding, "base64").toString("utf-8");
+    // base64ToUtf8 re-pads internally — only the url-safe alphabet needs
+    // normalising here.
+    return base64ToUtf8(encoded.replace(/-/g, "+").replace(/_/g, "/"));
   }
 
   /**

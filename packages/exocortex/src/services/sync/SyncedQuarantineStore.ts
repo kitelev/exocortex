@@ -46,6 +46,7 @@ import {
 } from "./githubRepoReader";
 import { isNonFastForwardError } from "./SyncEngine";
 import { redactSecrets } from "./secretScan";
+import { bytesToBase64 } from "../../utilities/base64";
 import type { QuarantineEntry, QuarantinePort, Sha1Fn } from "./syncTypes";
 
 /** Persisted shape of one quarantine entry file. */
@@ -217,7 +218,7 @@ export class SyncedQuarantineStore implements QuarantinePort {
       recordCount++;
       if (conflictCopyPath !== undefined && entry.localContentBytes !== undefined) {
         files.set(conflictCopyPath, {
-          base64: Buffer.from(entry.localContentBytes).toString("base64"),
+          base64: bytesToBase64(entry.localContentBytes),
         });
       }
     }
