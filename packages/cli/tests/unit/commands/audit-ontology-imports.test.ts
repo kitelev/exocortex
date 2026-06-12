@@ -7,6 +7,7 @@ import {
   auditOntologyImportsCommand,
   computeImportProposal,
   ONTOLOGY_CLASS_UID,
+  ASSOCIATIVE_PREDICATES,
   type OntologyImportsResult,
   type DerivedEdge,
 } from "../../../src/commands/audit-ontology-imports.js";
@@ -24,6 +25,12 @@ interface AssetSpec {
   imports?: string[];
   body?: string;
   filename?: string;
+  /**
+   * Arbitrary list-valued frontmatter predicates (each value wrapped in
+   * `[[…]]`) — used to exercise VL#30 predicate-attributed exclusion
+   * (e.g. `{ exo__Asset_relates: [uidB] }`).
+   */
+  listProps?: Record<string, string[]>;
 }
 
 function writeAsset(dir: string, spec: AssetSpec): string {
@@ -43,6 +50,12 @@ function writeAsset(dir: string, spec: AssetSpec): string {
   if (spec.imports) {
     lines.push("exo__Ontology_imports:");
     for (const i of spec.imports) lines.push(`  - "[[${i}]]"`);
+  }
+  if (spec.listProps) {
+    for (const [key, values] of Object.entries(spec.listProps)) {
+      lines.push(`${key}:`);
+      for (const v of values) lines.push(`  - "[[${v}]]"`);
+    }
   }
   lines.push("---", "", spec.body ?? "Body.", "");
   const file = join(dir, `${spec.filename ?? spec.uid}.md`);
@@ -72,7 +85,7 @@ describe("audit ontology-imports — Commander wiring", () => {
     expect(sub).toBeDefined();
   });
 
-  it("subcommand declares --vault required + --output + --also + --propose-imports", () => {
+  it("subcommand declares --vault required + --output + --also + --propose-imports + VL#30 flags", () => {
     const sub = auditOntologyImportsCommand();
     expect(sub.name()).toBe("ontology-imports");
     const opts = sub.options.map((o) => o.long);
@@ -80,6 +93,8 @@ describe("audit ontology-imports — Commander wiring", () => {
     expect(opts).toContain("--output");
     expect(opts).toContain("--also");
     expect(opts).toContain("--propose-imports");
+    expect(opts).toContain("--structural-only");
+    expect(opts).toContain("--exclude-predicate");
   });
 });
 
@@ -562,5 +577,107 @@ describe("audit ontology-imports — scanVaultForOntologyImports", () => {
     const r = await scanVaultForOntologyImports(vault);
     expect(r.skips["non-markdown"]).toBe(2);
     expect(r.skips.broken).toBe(0);
+  });
+});
+
+/**
+ * EKA Phase B / Vision VL#30 — opt-in `--structural-only` / `--exclude-predicate`
+ * exclusion of associative predicates from edge extraction. The default run must
+ * stay byte-identical (no-regret); the flag must drop only the named predicates'
+ * frontmatter edges and leave body / structural edges intact.
+ */
+describe("audit ontology-imports — structural-only predicate exclusion (VL#30)", () => {
+  let vault: string;
+
+  beforeEach(() => {
+    vault = join(
+      tmpdir(),
+      `audit-onto-structural-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    mkdirSync(vault, { recursive: true });
+    writeAsset(join(vault, "exo"), {
+      uid: ONTOLOGY_CLASS_UID,
+      label: "exo__Ontology",
+    });
+  });
+
+  afterEach(() => rmSync(vault, { recursive: true, force: true }));
+
+  // Shared fixture: A imports C (A→C valid). a1 in A has an associative
+  // `exo__Asset_relates` → b1 in B (cross-ontology, NOT imported ⇒ violation by
+  // default) AND a body link → c1 in C (structural, valid). The relates edge is
+  // the only violation; the body edge must survive under --structural-only.
+  function buildAssociativeViolationVault(): void {
+    writeOntology(join(vault, "alpha"), ONTO_A, "$alpha", [ONTO_C]);
+    writeOntology(join(vault, "beta"), ONTO_B, "$beta");
+    writeOntology(join(vault, "gamma"), ONTO_C, "$gamma");
+    writeAsset(join(vault, "alpha"), {
+      uid: "11111111-1111-4111-8111-111111111111",
+      isDefinedBy: `[[${ONTO_A}]]`,
+      listProps: {
+        exo__Asset_relates: ["33333333-3333-4333-8333-333333333333"], // → b1 (B)
+      },
+      body: "Structural [[44444444-4444-4444-8444-444444444444]].", // → c1 (C, valid)
+    });
+    writeAsset(join(vault, "beta"), {
+      uid: "33333333-3333-4333-8333-333333333333",
+      isDefinedBy: `[[${ONTO_B}]]`,
+    });
+    writeAsset(join(vault, "gamma"), {
+      uid: "44444444-4444-4444-8444-444444444444",
+      isDefinedBy: `[[${ONTO_C}]]`,
+    });
+  }
+
+  it("counts an associative relates edge as a violation by DEFAULT", async () => {
+    buildAssociativeViolationVault();
+    const r = await scanVaultForOntologyImports(vault);
+    expect(r.linkCounts.crossOntologyViolation).toBe(1);
+    expect(r.violations).toHaveLength(1);
+    expect(r.violations[0].source.uid).toBe(ONTO_A);
+    expect(r.violations[0].target.uid).toBe(ONTO_B);
+    expect(r.clean).toBe(false);
+    // Default run carries no exclusion metadata.
+    expect(r.excludedPredicates).toBeUndefined();
+  });
+
+  it("drops the associative relates edge under --structural-only, keeps the structural body edge", async () => {
+    buildAssociativeViolationVault();
+    const r = await scanVaultForOntologyImports(vault, {
+      excludePredicates: ASSOCIATIVE_PREDICATES,
+    });
+    // relates A→B excluded ⇒ no violation; body A→C (valid) still counted.
+    expect(r.linkCounts.crossOntologyViolation).toBe(0);
+    expect(r.violations).toHaveLength(0);
+    expect(
+      r.derivedEdges.find((e) => e.source === ONTO_A && e.target === ONTO_B),
+    ).toBeUndefined();
+    expect(
+      r.derivedEdges.find((e) => e.source === ONTO_A && e.target === ONTO_C),
+    ).toBeDefined();
+    expect(r.clean).toBe(true);
+    expect(r.excludedPredicates).toEqual([...ASSOCIATIVE_PREDICATES]);
+  });
+
+  it("--exclude-predicate alone (just exo__Asset_relates) drops the same edge", async () => {
+    buildAssociativeViolationVault();
+    const r = await scanVaultForOntologyImports(vault, {
+      excludePredicates: ["exo__Asset_relates"],
+    });
+    expect(r.linkCounts.crossOntologyViolation).toBe(0);
+    expect(r.excludedPredicates).toEqual(["exo__Asset_relates"]);
+  });
+
+  // Revert-verify (no-regret): an EMPTY exclusion set yields a result
+  // byte-identical to the no-options call. A regression that let the flag leak
+  // into the default path would break this deep-equality.
+  it("default behaviour is byte-identical: empty exclusion deep-equals no-options run", async () => {
+    buildAssociativeViolationVault();
+    const baseline = await scanVaultForOntologyImports(vault);
+    const emptyExclusion = await scanVaultForOntologyImports(vault, {
+      excludePredicates: [],
+    });
+    expect(JSON.stringify(emptyExclusion)).toBe(JSON.stringify(baseline));
+    expect(emptyExclusion.excludedPredicates).toBeUndefined();
   });
 });

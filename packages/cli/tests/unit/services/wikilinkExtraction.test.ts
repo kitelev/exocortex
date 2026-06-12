@@ -135,3 +135,35 @@ describe("extractFileWikilinkTargets", () => {
     ]);
   });
 });
+
+describe("extractFileWikilinkTargets — predicate exclusion (VL#30)", () => {
+  const metadata = {
+    exo__Asset_isDefinedBy: "[[onto-uid]]",
+    exo__Asset_relates: ["[[rel-1|Label]]", "[[rel-2]]"],
+    ims__Concept_broader: "[[broad-1]]",
+  };
+  const content = ["---", "x: y", "---", "Body [[body-target#anchor]]."].join(
+    "\n",
+  );
+
+  it("an empty exclusion set is byte-identical to the 2-arg call (default unchanged)", () => {
+    expect(extractFileWikilinkTargets(metadata, content, new Set())).toEqual(
+      extractFileWikilinkTargets(metadata, content),
+    );
+  });
+
+  it("excludes only the named top-level frontmatter keys; body links always kept", () => {
+    const exclude = new Set(["exo__Asset_relates", "ims__Concept_broader"]);
+    expect(extractFileWikilinkTargets(metadata, content, exclude)).toEqual([
+      "onto-uid", // exo__Asset_isDefinedBy is not excluded
+      "body-target", // body links are never predicate-attributed (conservative)
+    ]);
+  });
+
+  it("an exclusion set matching no key leaves every target intact", () => {
+    const exclude = new Set(["some__Unrelated_predicate"]);
+    expect(extractFileWikilinkTargets(metadata, content, exclude)).toEqual(
+      extractFileWikilinkTargets(metadata, content),
+    );
+  });
+});

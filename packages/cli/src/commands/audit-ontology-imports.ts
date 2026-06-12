@@ -30,6 +30,25 @@ import { VaultNotFoundError } from "../utils/errors/index.js";
 export const ONTOLOGY_CLASS_UID = "829b9b3b-6fc3-4276-be6a-27d3398c012e";
 
 /**
+ * EKA Phase B / Vision de77fe27 VL#30 — curated associative (Zettelkasten /
+ * provenance) frontmatter predicates excluded from edge extraction under
+ * `--structural-only`. These are an orthogonal linking layer, NOT
+ * import/dependency edges, so they should not constitute the import-DAG nor
+ * the SCC. Excluding them isolates the STRUCTURAL backbone (superClass,
+ * Instance_class, domain/range, isDefinedBy, …) for re-layering analysis.
+ *
+ * Opt-in only — never applied by default, so the default audit output stays
+ * byte-identical. The set is extensible at the CLI via `--exclude-predicate`.
+ */
+export const ASSOCIATIVE_PREDICATES: readonly string[] = [
+  "exo__Asset_relates",
+  "ims__Concept_related",
+  "ims__Concept_broader",
+  "ims__Concept_synonym",
+  "exo__Asset_createdBy",
+];
+
+/**
  * Why an asset has no valid ontology. Per RFC df39007b VL#6 these are NOT
  * fail-open skips (unlike broken wikilinks) — they are reported as a distinct
  * data-gap category (closed by migration Phase 4), informational for the
@@ -147,6 +166,12 @@ export interface OntologyImportsResult {
    * gaps / validate-wikilinks territory, not imports-invariant violations).
    */
   clean: boolean;
+  /**
+   * EKA Phase B / VL#30 — present only when edge extraction excluded one or
+   * more associative predicates (`--structural-only` / `--exclude-predicate`).
+   * Absent in the default run, so the default JSON output is byte-identical.
+   */
+  excludedPredicates?: string[];
   /**
    * Import-additions proposal — present only with `--propose-imports`
    * ({@link computeImportProposal}). Read-only suggestion; the audit verdict
@@ -273,6 +298,15 @@ export interface ScanOntologyImportsOptions {
    * genuinely broken. Never legitimizes the link.
    */
   alsoPaths?: string[];
+  /**
+   * EKA Phase B / Vision VL#30 (opt-in): top-level frontmatter keys
+   * (predicates) whose wikilinks are NOT counted as import/dependency edges —
+   * associative Zettelkasten / provenance links. Body wikilinks are never
+   * predicate-attributed and stay counted (conservative). Empty/undefined ⟹
+   * default behaviour (every wikilink counts), byte-identical to pre-flag
+   * output. See {@link ASSOCIATIVE_PREDICATES} for the `--structural-only` set.
+   */
+  excludePredicates?: Iterable<string>;
 }
 
 export async function scanVaultForOntologyImports(
@@ -281,6 +315,10 @@ export async function scanVaultForOntologyImports(
 ): Promise<OntologyImportsResult> {
   const adapter = new CachingNodeFsAdapter(vaultPath, { cacheContent: true });
   const assets = await adapter.indexedAssets();
+
+  // EKA Phase B / VL#30 (opt-in): predicates excluded from edge extraction.
+  // Empty ⟹ default behaviour (byte-identical pre-flag output).
+  const excludeSet = new Set(options.excludePredicates ?? []);
 
   // ---- Phase A: --also cross-vault classifier (VL#13) ----
   const alsoPaths = options.alsoPaths ?? [];
@@ -487,7 +525,11 @@ export async function scanVaultForOntologyImports(
   for (const asset of assets) {
     if (isNodeModulesPath(asset.path) || isTemplatesPath(asset.path)) continue;
     const sourceOntology = assetOntology.get(asset.path) ?? null;
-    const targets = extractFileWikilinkTargets(asset.metadata, asset.content ?? "");
+    const targets = extractFileWikilinkTargets(
+      asset.metadata,
+      asset.content ?? "",
+      excludeSet,
+    );
 
     for (const target of targets) {
       linkCounts.total++;
@@ -670,6 +712,9 @@ export async function scanVaultForOntologyImports(
       ontologiesWithoutUid,
     },
     clean,
+    // VL#30: surface the exclusion only when active — keeps the default
+    // (no-flag) result object byte-identical to the pre-flag version.
+    ...(excludeSet.size > 0 ? { excludedPredicates: [...excludeSet] } : {}),
   };
 }
 
@@ -878,6 +923,10 @@ export interface AuditOntologyImportsOptions {
   output?: OutputFormat;
   also?: string[];
   proposeImports?: boolean;
+  /** VL#30: exclude the curated {@link ASSOCIATIVE_PREDICATES} set. */
+  structuralOnly?: boolean;
+  /** VL#30: additional predicate(s) to exclude (repeatable). */
+  excludePredicate?: string[];
 }
 
 function formatRef(ref: OntologyRef): string {
@@ -903,6 +952,13 @@ function printText(result: OntologyImportsResult): void {
         ? "acyclic"
         : `NOT ACYCLIC — ${result.declared.sccs.length} SCC(s)`),
   );
+
+  if (result.excludedPredicates && result.excludedPredicates.length > 0) {
+    log(
+      `Structural-only mode (VL#30): excluded ${result.excludedPredicates.length} associative ` +
+        `predicate(s) from edge extraction — ${result.excludedPredicates.join(", ")}`,
+    );
+  }
 
   if (result.duplicateOntologyUids.length > 0) {
     console.error(`\nHARD ERRORS — duplicate ontology UIDs (R7):`);
@@ -1082,6 +1138,16 @@ export function auditOntologyImportsCommand(): Command {
       "--propose-imports",
       "Emit a minimal additions-only import proposal (SCC condensation + transitive reduction + suggested feedback-arc-set)",
     )
+    .option(
+      "--structural-only",
+      "Exclude curated associative predicates (exo__Asset_relates, ims__Concept_related/broader/synonym, exo__Asset_createdBy) from edge extraction to measure the structural backbone import-DAG (EKA Phase B, Vision VL#30). Default: every wikilink counts.",
+    )
+    .option(
+      "--exclude-predicate <name>",
+      "Additional frontmatter predicate (top-level key) to exclude from edge extraction (repeatable; combines with --structural-only)",
+      collectExcludePredicate,
+      [],
+    )
     .action(async (options: AuditOntologyImportsOptions) => {
       const outputFormat = (options.output ?? "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
@@ -1101,8 +1167,17 @@ export function auditOntologyImportsCommand(): Command {
           }
         }
 
+        // VL#30 opt-in exclusion set: curated associative predicates (when
+        // --structural-only) plus any explicit --exclude-predicate entries.
+        // Empty when neither flag is given ⟹ default byte-identical output.
+        const excludePredicates = [
+          ...(options.structuralOnly ? ASSOCIATIVE_PREDICATES : []),
+          ...(options.excludePredicate ?? []),
+        ];
+
         const result = await scanVaultForOntologyImports(vaultPath, {
           alsoPaths,
+          excludePredicates,
         });
 
         if (options.proposeImports) {
@@ -1128,5 +1203,13 @@ export function auditOntologyImportsCommand(): Command {
  * find / sparql-index commands).
  */
 function collectAlso(value: string, previous: string[]): string[] {
+  return previous.concat([value]);
+}
+
+/**
+ * Commander.js accumulator for the repeatable `--exclude-predicate` flag
+ * (VL#30). Same pattern as {@link collectAlso}.
+ */
+function collectExcludePredicate(value: string, previous: string[]): string[] {
   return previous.concat([value]);
 }
