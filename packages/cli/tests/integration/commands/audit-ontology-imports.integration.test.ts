@@ -155,3 +155,102 @@ describe("audit ontology-imports — revert→fail / restore→pass (integration
     expect(r.clean).toBe(true);
   });
 });
+
+const ONTO_X = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+const CROSS_TARGET = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+
+/**
+ * Empirical revert→fail / restore→pass proof for `--also` cross-vault
+ * classification (RFC df39007b VL#13). The verdict is driven purely by data:
+ * a primary-broken target that resolves in an `--also` vault is a cross-vault
+ * violation; otherwise a fail-open broken skip. We flip the SAME link between
+ * the two states by toggling `--also` (and by toggling the secondary vault's
+ * content) — if the classifier reported the same bucket in both states it
+ * would be a false-positive guard, which this test would catch.
+ */
+describe("audit ontology-imports — --also cross-vault classification (integration)", () => {
+  let vault: string;
+  let secondary: string;
+
+  beforeEach(() => {
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    vault = join(tmpdir(), `onto-imports-cv-primary-${stamp}`);
+    secondary = join(tmpdir(), `onto-imports-cv-secondary-${stamp}`);
+    mkdirSync(vault, { recursive: true });
+    mkdirSync(secondary, { recursive: true });
+    // exo__Ontology class-definition file so each ontology's
+    // exo__Instance_class wikilink resolves (else it counts as a broken link).
+    mkdirSync(join(vault, "exo"), { recursive: true });
+    writeFileSync(
+      join(vault, "exo", `${ONTOLOGY_CLASS_UID}.md`),
+      ["---", `exo__Asset_uid: ${ONTOLOGY_CLASS_UID}`, 'exo__Asset_label: "exo__Ontology"', "---", "", "Class.", ""].join("\n"),
+      "utf-8",
+    );
+    // Primary: ontology A + asset a1 linking to a UID that lives only in the
+    // secondary vault.
+    writeOntology(join(vault, "alpha"), ONTO_A, "$alpha", []);
+    writeAsset(
+      join(vault, "alpha"),
+      ASSET_A,
+      ONTO_A,
+      `Cross-vault link: [[${CROSS_TARGET}]].`,
+    );
+  });
+
+  afterEach(() => {
+    rmSync(vault, { recursive: true, force: true });
+    rmSync(secondary, { recursive: true, force: true });
+  });
+
+  function seedSecondaryTarget(): void {
+    writeOntology(join(secondary, "xeno"), ONTO_X, "$xeno", []);
+    writeAsset(join(secondary, "xeno"), CROSS_TARGET, ONTO_X, "Target in another vault.");
+  }
+
+  it("broken WITHOUT --also, cross-vault WITH --also, broken again WITHOUT", async () => {
+    seedSecondaryTarget();
+
+    // --- State 1: no --also → indistinguishable from a broken link ---
+    let r = await scanVaultForOntologyImports(vault);
+    expect(r.linkCounts.crossVault).toBe(0);
+    expect(r.crossVault).toHaveLength(0);
+    expect(r.skips.broken).toBe(1);
+    expect(r.clean).toBe(true); // broken alone never fails the audit
+
+    // --- State 2: --also reveals the target → cross-vault violation ---
+    r = await scanVaultForOntologyImports(vault, { alsoPaths: [secondary] });
+    expect(r.linkCounts.crossVault).toBe(1);
+    expect(r.crossVault).toHaveLength(1);
+    expect(r.crossVault[0].source.uid).toBe(ONTO_A);
+    expect(r.crossVault[0].target.uid).toBe(ONTO_X);
+    expect(r.crossVault[0].occurrences).toBe(1);
+    expect(r.skips.broken).toBe(0);
+    expect(r.clean).toBe(false); // cross-vault IS a violation (VL#13)
+
+    // --- State 3: drop --also → reverts to a broken skip ---
+    r = await scanVaultForOntologyImports(vault);
+    expect(r.linkCounts.crossVault).toBe(0);
+    expect(r.skips.broken).toBe(1);
+    expect(r.clean).toBe(true);
+  });
+
+  it("stays a broken skip when --also vault does NOT contain the target", async () => {
+    // Secondary vault exists but is empty → classification finds nothing.
+    const r = await scanVaultForOntologyImports(vault, { alsoPaths: [secondary] });
+    expect(r.linkCounts.crossVault).toBe(0);
+    expect(r.crossVault).toHaveLength(0);
+    expect(r.skips.broken).toBe(1);
+    expect(r.clean).toBe(true);
+  });
+
+  it("never legitimizes the link — --also flips a clean audit to FAIL (VL#13)", async () => {
+    seedSecondaryTarget();
+    const withAlso = await scanVaultForOntologyImports(vault, {
+      alsoPaths: [secondary],
+    });
+    const withoutAlso = await scanVaultForOntologyImports(vault);
+    // Same vault, same link: --also turns a (broken-only) clean audit red.
+    expect(withoutAlso.clean).toBe(true);
+    expect(withAlso.clean).toBe(false);
+  });
+});
