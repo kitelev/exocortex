@@ -10,6 +10,7 @@ import {
 } from "../executors/folderRepairHelpers.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
+import { isTemplatesPath } from "../utils/vaultPathFilters.js";
 
 /**
  * Reasons an asset is fail-open SKIPPED (not a violation, but also not proven
@@ -87,11 +88,12 @@ export async function scanVaultForCoLocation(
     // .git/.obsidian, but not node_modules). Never audit/report those.
     if (relPath.split("/").includes("node_modules")) continue;
 
-    // "09 Templates/" holds Templater templates (intentional <%* %> / {{…}}
+    // Templates folders hold Templater templates (intentional <%* %> / {{…}}
     // placeholder syntax), not real assets — they carry exo__Asset_isDefinedBy
-    // by pattern inheritance but must never move. Excluded from co-location the
-    // same way the pre-commit hook skips them (RFC 0b7a2fad CR-1).
-    if (relPath.split("/").includes("09 Templates")) continue;
+    // by pattern inheritance but must never move (RFC 0b7a2fad CR-1). The
+    // exclusion previously hardcoded the stale "09 Templates/" path; the live
+    // vault keeps templates under root-level "templates/" (RFC df39007b R6).
+    if (isTemplatesPath(relPath)) continue;
 
     const rawIsDefinedBy = metadata["exo__Asset_isDefinedBy"];
     const ref = extractAssetReference(rawIsDefinedBy);
