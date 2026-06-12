@@ -10,12 +10,8 @@ import { askCommand } from "./commands/ask.js";
 import { validateCommand } from "./commands/validate.js";
 import { classesCommand } from "./commands/classes.js";
 import { createCommand } from "./commands/create.js";
-import { archiveCommand } from "./commands/archive.js";
-import { unarchiveCommand } from "./commands/unarchive.js";
 import { workflowCommand } from "./commands/workflow.js";
-import { migrateRelColSetToExoLayoutCommand } from "./commands/migrate-relcolset-to-exolayout.js";
 import { daemonCommand } from "./commands/daemon.js";
-import { backfillCommand } from "./commands/backfill.js";
 import { recoverCommand } from "./commands/recover.js";
 import { findCommand } from "./commands/find.js";
 import { applyCommand } from "./commands/apply.js";
@@ -58,12 +54,8 @@ export function createProgram(version?: string): Command {
   program.addCommand(askCommand());
   program.addCommand(classesCommand());
   program.addCommand(createCommand());
-  program.addCommand(archiveCommand());
-  program.addCommand(unarchiveCommand());
   program.addCommand(workflowCommand());
-  program.addCommand(migrateRelColSetToExoLayoutCommand());
   program.addCommand(daemonCommand());
-  program.addCommand(backfillCommand());
   program.addCommand(recoverCommand());
 
   // RFC 9d20c91f Phase 4+1 — regression-detection audits
