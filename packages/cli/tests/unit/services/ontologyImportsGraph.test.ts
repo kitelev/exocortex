@@ -323,6 +323,19 @@ describe("greedyFeedbackArcSet", () => {
     expect(a).toHaveLength(1);
   });
 
+  it("skips edges that reference a node outside the node set", () => {
+    // b→z where z is not a node: it was dropped from the degree maps, so it must
+    // not surface as a feedback arc via a defaulted position.
+    const fas = greedyFeedbackArcSet(
+      ["a", "b"],
+      weighted([
+        ["a", "b", 1],
+        ["b", "z", 5],
+      ]),
+    );
+    expect(fas).toEqual([]);
+  });
+
   it("makes the subgraph acyclic once the returned arcs are removed", () => {
     const nodes = ["a", "b", "c", "d"];
     const edges = weighted([
