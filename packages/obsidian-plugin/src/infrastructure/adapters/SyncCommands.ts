@@ -62,6 +62,13 @@ export class SyncCommands {
   private running = false;
   /** Label of the run holding the flag — busy notices name the real culprit. */
   private runningLabel = "Sync";
+  /**
+   * #3495 one-shot guard — the quarantine-sink-not-configured warn fires at
+   * most ONCE per plugin load (SyncCommands is a singleton per onload). A
+   * conflict re-derives every sync, so without the latch the warn would nag
+   * on every run; the latch keeps it to a single high-signal notice.
+   */
+  private quarantineSinkWarned = false;
 
   constructor(deps: SyncCommandsDeps) {
     this.deps = deps;
@@ -207,7 +214,7 @@ export class SyncCommands {
       return;
     }
 
-    const { engine, pat } = await this.deps.buildEngine(
+    const { engine, pat, quarantineConfigured } = await this.deps.buildEngine(
       collection.asUidByRepoKey,
     );
     if (pat === null || pat.length === 0) {
@@ -232,11 +239,25 @@ export class SyncCommands {
         : undefined;
 
     this.deps.notify(`${label} started (${collection.specs.length} repo(s))…`);
+    // #3496 — step trace start line on the info channel (console-only, no
+    // file/notice spam #3186). The notify() above is the single toast; this
+    // is the diagnostic counterpart.
+    const logInfo = this.deps.logInfo ?? ((_m: string): void => undefined);
+    logInfo(
+      `[ExoSync] ${label} started — ${collection.specs.length} repo(s), direction=${direction}`,
+    );
     const results = await engine.syncAll(
       orderChildrenFirst(collection.specs as SyncRepoSpec[]),
       direction,
     );
-    this.report(results, log, label);
+    const summary = this.report(results, log, label);
+
+    // #3495 — surface the silent degraded mode: a conflict was quarantined
+    // but no durable sink exists to save it. High-signal (only on an actual
+    // quarantined conflict, never on clean / deferred-only runs) and one-shot
+    // per session. Skipped on auth-required runs — the PAT prompt already
+    // owns that failure and the conflict re-surfaces on the next good run.
+    this.maybeWarnQuarantineSink(quarantineConfigured, summary);
 
     // E1 post-sync parity round (M1/M2). Best-effort: a parity failure is
     // logged + surfaced as its own Notice, never mutates the sync outcome.
@@ -259,11 +280,18 @@ export class SyncCommands {
     }
   }
 
+  /**
+   * Aggregate the per-repo results into the user-facing Notice + the #3489
+   * info summary, AND emit the #3496 per-repo step lines on the info channel.
+   * Returns the aggregate the caller needs for the #3495 degraded-mode warn —
+   * computed up front so it is available even on the auth-required early
+   * return.
+   */
   private report(
     results: RepoSyncResult[],
     log: (message: string) => void,
     label = "Sync",
-  ): void {
+  ): { quarantined: number; deferred: number; authRequired: boolean } {
     const logInfo = this.deps.logInfo ?? ((_m: string): void => undefined);
     let pushed = 0;
     let deleted = 0;
@@ -280,6 +308,11 @@ export class SyncCommands {
       if (r.detail !== undefined) {
         log(`[ExoSync] ${r.repoKey}: ${r.status} — ${r.detail}`);
       }
+      // #3496 — per-repo outcome line on the info channel (console-only, no
+      // notice/file spam #3186). Fires for EVERY repo (clean ones too) and on
+      // every direction/status: the step trace is most valuable precisely when
+      // a run misbehaves, so it is NOT gated on success.
+      logInfo(SyncCommands.repoStepLine(r));
       pushed += r.pushedCount;
       deleted += r.pushedDeletes?.length ?? 0;
       pulled += r.pulledCount;
@@ -303,12 +336,14 @@ export class SyncCommands {
       }
     }
 
+    const summary = { quarantined, deferred, authRequired };
+
     if (authRequired) {
       // R8 — explicit, never treated as success.
       this.deps.notify(
         `${label} failed: the GitHub PAT is expired, revoked or under-scoped — update it in Settings → Exocortex`,
       );
-      return;
+      return summary;
     }
 
     // Split-run deferrals (#3473) are surfaced in the Notice — without this
@@ -330,5 +365,54 @@ export class SyncCommands {
         `${label} finished with issues (${problems.join("; ")}) — ${counts}. See console for details.`,
       );
     }
+    return summary;
+  }
+
+  /**
+   * #3496 — one info-channel line per repo, summarising the phase outcomes
+   * (detect/pull/merge/push/watermark) the engine recorded for it. Pure
+   * formatting from {@link RepoSyncResult}; no engine plumbing. In-flight
+   * per-step progress (detecting…/pulling…/merging…) would need a SyncEngine
+   * progress callback — deferred to a follow-up to keep the sync engine
+   * untouched.
+   */
+  private static repoStepLine(r: RepoSyncResult): string {
+    const deletes = r.pushedDeletes?.length ?? 0;
+    const deferred = r.deferredPaths?.length ?? 0;
+    const parts = [
+      `pushed ${r.pushedCount}`,
+      `pulled ${r.pulledCount}`,
+      `merged ${r.mergedCount}`,
+      `quarantined ${r.quarantinedCount}`,
+    ];
+    if (deletes > 0) parts.push(`deleted ${deletes}`);
+    if (deferred > 0) parts.push(`deferred ${deferred}`);
+    return `[ExoSync] ${r.repoKey}: ${r.status} — ${parts.join(", ")}`;
+  }
+
+  /**
+   * #3495 — fire the degraded-mode warn exactly when it matters: the engine
+   * had no durable quarantine sink AND a conflict was actually quarantined
+   * (so both versions were lost and the conflict re-derives next sync). One
+   * Notice (toast) + one info-channel console echo (no file spam #3186),
+   * latched to once per session. Auth-required runs are skipped — the PAT
+   * prompt owns that failure and the conflict resurfaces on the next good run.
+   */
+  private maybeWarnQuarantineSink(
+    quarantineConfigured: boolean,
+    summary: { quarantined: number; authRequired: boolean },
+  ): void {
+    if (quarantineConfigured) return;
+    if (summary.authRequired) return;
+    if (summary.quarantined <= 0) return;
+    if (this.quarantineSinkWarned) return;
+    this.quarantineSinkWarned = true;
+    const message =
+      `Exocortex: quarantine sink not configured — ${summary.quarantined} conflict(s) ` +
+      `will re-derive but won't be saved. Set a quarantine repo in Settings → Exocortex.`;
+    this.deps.notify(message);
+    (this.deps.logInfo ?? ((_m: string): void => undefined))(
+      `[ExoSync] ${message}`,
+    );
   }
 }
