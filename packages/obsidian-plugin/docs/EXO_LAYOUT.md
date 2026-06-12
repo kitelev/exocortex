@@ -246,48 +246,22 @@ warnings in the console.
 
 ## Migrating from `ui__RelationColumnSet`
 
-The CLI ships with an opt-in migration helper
-(`exocortex migrate-relcolset-to-exolayout`) that scans a vault for
-existing `ui__RelationColumnSet` configs and generates a starting-point
-`exo__Layout` + `exo__BacklinksTableBlock` pair per config.
+> **Note.** The one-shot CLI migration helper
+> `exocortex migrate-relcolset-to-exolayout` was removed in RFC 78c2b7d0 §5
+> (EKA Phase A C1) once the migration was complete. Migrate manually by
+> authoring an `exo__Layout` + `exo__BacklinksTableBlock` pair per
+> `ui__RelationColumnSet` config, minding the semantic gaps below.
 
-```bash
-# Dry-run — prints YAML previews + warnings to stderr (nothing written)
-exocortex migrate-relcolset-to-exolayout --vault /path/to/vault
-
-# Apply — writes pairs to vault (default: exo-layout-migrated/)
-exocortex migrate-relcolset-to-exolayout --vault /path/to/vault --apply
-
-# JSON report
-exocortex migrate-relcolset-to-exolayout --vault /path/to/vault --json
-```
-
-**Semantic gap — read before applying:**
+**Semantic gap — read before migrating:**
 
 - `ui__RelationColumnSet` is **additive** (extends `Name` + `Instance Class`
   columns). `exo__BacklinksTableBlock` is **replacing** (renders only the
-  configured columns). The generated block will look different from the
+  configured columns). The migrated block will look different from the
   original RelationColumnSet rendering by default.
 - `exo__Layout.targetClass` is the **page class** the layout renders on.
   `ui__RelationColumnSet.targetClass` is the **row class** filtered in the
-  relations table. The migration cannot infer the former from the latter
-  and inserts a placeholder — review every generated Layout before
-  applying in production, and fix the `exo__Layout_targetClass` wikilink
-  to the class of the page you want the layout on.
-- The generated files carry `exo__Layout_coexistsWithDefault: true` so
-  the migrated block renders **in addition to** the legacy Asset
-  Relations table. Set to `false` once you are happy to remove the
-  legacy rendering.
-
-The command is non-destructive in apply mode — it writes new files and
-never edits or removes the source `ui__RelationColumnSet` assets. Delete
-the RelationColumnSet configs manually once you've verified the migrated
-Layouts.
-
-**Idempotency.** Generated UIDs are **deterministic** (SHA-1 of source UID
-
-- suffix). Re-running `--apply` against the same vault produces identical
-  Layout+Block UIDs and contents — so the second run is a no-op at the
-  filesystem level rather than creating a duplicate set of migrated files.
-  This matches the plugin ontology bootstrap (UID-aware) and avoids the
-  duplicate-assets footgun that would otherwise trip power-users.
+  relations table — set `exo__Layout_targetClass` to the class of the page
+  you want the layout on, not the row class.
+- Set `exo__Layout_coexistsWithDefault: true` so the migrated block renders
+  **in addition to** the legacy Asset Relations table; set to `false` once
+  you are happy to remove the legacy rendering.
