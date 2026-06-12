@@ -265,3 +265,166 @@ describe("detectChanges — duplicate uid on disk (A1 review LOW)", () => {
     }
   });
 });
+
+describe("detectChanges — duplicate uids use path identity for the WHOLE group (#3477)", () => {
+  const valid = (wm: WatermarkRecord): string => wm.rootTreeSha;
+  // duplicateUids is introduced by #3477 — structural access keeps the RED
+  // commit typecheck-green while the field does not exist yet.
+  const dupUidsOf = (result: unknown): ReadonlySet<string> | undefined =>
+    (result as { duplicateUids?: ReadonlySet<string> }).duplicateUids;
+
+  it("steady state (disk == base, 3 files sharing one uid) derives NO changes at all", async () => {
+    const files = {
+      "kitelev/2026-06-10 Note.md": mdAsset("u1", "note 10"),
+      "kitelev/2026-06-11 Note.md": mdAsset("u1", "note 11"),
+      "kitelev/2026-06-12 Note.md": mdAsset("u1", "note 12"),
+    };
+    const wm = await watermarkFor(files);
+    const result = await detectChanges({
+      localFiles: new Map(Object.entries(files)),
+      watermark: wm,
+      actualBaseTreeSha: valid(wm),
+      sha1: sha1Hex,
+    });
+    expect(result.kind).toBe("changes");
+    if (result.kind === "changes") {
+      // Today: the first disk file claims the (collapsed) base entry of a
+      // DIFFERENT path → phantom rename; the other base entries are LOST →
+      // phantom adds. Post-#3477: the whole group matches by path → no-op.
+      expect(result.modified).toEqual([]);
+      expect(result.added).toEqual([]);
+      expect(result.deleted).toEqual([]);
+      expect(result.warnings.join(" ")).toMatch(/duplicate uid u1/);
+      expect(dupUidsOf(result)).toEqual(new Set(["u1"]));
+    }
+  });
+
+  it("an edit inside the dup-uid group derives exactly ONE path-identity modify (no basePath)", async () => {
+    const base = {
+      "a.md": mdAsset("u1", "a"),
+      "b.md": mdAsset("u1", "b"),
+    };
+    const wm = await watermarkFor(base);
+    const result = await detectChanges({
+      localFiles: new Map([
+        ["a.md", mdAsset("u1", "a")],
+        ["b.md", mdAsset("u1", "b EDITED")],
+      ]),
+      watermark: wm,
+      actualBaseTreeSha: valid(wm),
+      sha1: sha1Hex,
+    });
+    expect(result.kind).toBe("changes");
+    if (result.kind === "changes") {
+      expect(result.modified).toEqual([
+        expect.objectContaining({ path: "b.md", uid: "u1" }),
+      ]);
+      expect(result.modified[0].basePath).toBeUndefined();
+      expect(result.added).toEqual([]);
+      expect(result.deleted).toEqual([]);
+    }
+  });
+
+  it("rename inference is suppressed for EVERY member of the dup-uid group", async () => {
+    const base = {
+      "a.md": mdAsset("u1", "a"),
+      "b.md": mdAsset("u1", "b"),
+    };
+    const wm = await watermarkFor(base);
+    const result = await detectChanges({
+      localFiles: new Map(Object.entries(base)),
+      watermark: wm,
+      actualBaseTreeSha: valid(wm),
+      sha1: sha1Hex,
+    });
+    expect(result.kind).toBe("changes");
+    if (result.kind === "changes") {
+      for (const change of [...result.added, ...result.modified]) {
+        expect(change.basePath).toBeUndefined();
+      }
+    }
+  });
+
+  it("deleting ONE member of the dup-uid group derives a DELETE for that path", async () => {
+    const base = {
+      "a.md": mdAsset("u1", "a"),
+      "b.md": mdAsset("u1", "b"),
+    };
+    const wm = await watermarkFor(base);
+    const result = await detectChanges({
+      // b.md deleted locally — its base entry must NOT be lost to the
+      // baseByUid collapse (today it is → no delete derives).
+      localFiles: new Map([["a.md", mdAsset("u1", "a")]]),
+      watermark: wm,
+      actualBaseTreeSha: valid(wm),
+      sha1: sha1Hex,
+    });
+    expect(result.kind).toBe("changes");
+    if (result.kind === "changes") {
+      expect(result.deleted).toEqual([
+        expect.objectContaining({ path: "b.md" }),
+      ]);
+      expect(result.modified).toEqual([]);
+      expect(result.added).toEqual([]);
+    }
+  });
+
+  it("watermark-only dup (one file left on disk, two base entries) suppresses uid identity too", async () => {
+    const wm = await watermarkFor({
+      "a.md": mdAsset("u1", "a"),
+      "b.md": mdAsset("u1", "b"),
+    });
+    const result = await detectChanges({
+      // Disk has ONE file with u1 at a THIRD path: with unique-uid
+      // semantics this would read as a rename of the collapsed base entry;
+      // with base-side dup detected it must stay path identity.
+      localFiles: new Map([["c.md", mdAsset("u1", "c")]]),
+      watermark: wm,
+      actualBaseTreeSha: valid(wm),
+      sha1: sha1Hex,
+    });
+    expect(result.kind).toBe("changes");
+    if (result.kind === "changes") {
+      expect(result.added).toEqual([
+        expect.objectContaining({ path: "c.md", uid: "u1" }),
+      ]);
+      expect(result.deleted.map((d) => d.path).sort()).toEqual([
+        "a.md",
+        "b.md",
+      ]);
+      expect(result.modified).toEqual([]);
+      expect(dupUidsOf(result)).toEqual(new Set(["u1"]));
+    }
+  });
+
+  it("a genuine rename of a UNIQUE uid still classifies as modified+basePath alongside a dup group (#3476 intact)", async () => {
+    const wm = await watermarkFor({
+      "a.md": mdAsset("u1", "a"),
+      "b.md": mdAsset("u1", "b"),
+      "old.md": mdAsset("u2", "solo"),
+    });
+    const result = await detectChanges({
+      localFiles: new Map([
+        ["a.md", mdAsset("u1", "a")],
+        ["b.md", mdAsset("u1", "b")],
+        ["renamed.md", mdAsset("u2", "solo")],
+      ]),
+      watermark: wm,
+      actualBaseTreeSha: valid(wm),
+      sha1: sha1Hex,
+    });
+    expect(result.kind).toBe("changes");
+    if (result.kind === "changes") {
+      expect(result.modified).toEqual([
+        expect.objectContaining({
+          path: "renamed.md",
+          uid: "u2",
+          basePath: "old.md",
+        }),
+      ]);
+      expect(result.added).toEqual([]);
+      expect(result.deleted).toEqual([]);
+      expect(dupUidsOf(result)).toEqual(new Set(["u1"]));
+    }
+  });
+});

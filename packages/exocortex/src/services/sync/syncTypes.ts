@@ -200,6 +200,14 @@ export type ChangeDetectionResult =
        * it (watermark build) instead of re-hashing the whole working tree.
        */
       diskBlobShas: Map<string, string>;
+      /**
+       * Uids seen on MORE than one path (on disk or in the base) — a vault
+       * anomaly (#3477, template-copy artifact). The whole group matched by
+       * path identity; the engine must suppress uid-based remote matching
+       * for these uids too, or a single remote change cross-conflicts with
+       * every member of the group.
+       */
+      duplicateUids: ReadonlySet<string>;
     };
 
 /**
