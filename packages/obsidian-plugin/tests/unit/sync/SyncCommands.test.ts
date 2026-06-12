@@ -54,6 +54,8 @@ interface HarnessOptions {
   parity?: ParityCheck;
   /** Optional info-level callback seam (success console signal, #3489). */
   logInfo?: (m: string) => void;
+  /** #3495 — whether the engine was built with a durable quarantine sink. */
+  quarantineConfigured?: boolean;
 }
 
 function makeHarness(opts: HarnessOptions = {}) {
@@ -79,6 +81,7 @@ function makeHarness(opts: HarnessOptions = {}) {
   const built: BuiltSyncEngine = {
     engine: { syncAll } as unknown as SyncEngine,
     pat: opts.pat === undefined ? "ghp_x" : opts.pat,
+    quarantineConfigured: opts.quarantineConfigured ?? true,
   };
   const commands = new SyncCommands({
     collectSpecs: async () => collection,
@@ -362,7 +365,7 @@ describe("SyncCommands — #3489 explicit success signal (info console + Notice)
     expect(push.infoLogs.some((l) => l.includes("[ExoSync] Push OK:"))).toBe(true);
   });
 
-  it("issues path: logInfo NOT called on error path — no regression to existing behaviour", async () => {
+  it("issues path: success SUMMARY line NOT emitted on error path (#3496 step lines still fire)", async () => {
     const { commands, notices, infoLogs } = makeHarness({
       results: [
         result("o/a#main", "synced"),
@@ -372,20 +375,25 @@ describe("SyncCommands — #3489 explicit success signal (info console + Notice)
 
     await commands.invokeSync();
 
-    // No info line emitted on the issues path
-    expect(infoLogs.filter((l) => l.includes("[ExoSync]"))).toHaveLength(0);
+    // The #3489 success SUMMARY ("Sync OK") must NOT fire on the issues path…
+    expect(infoLogs.filter((l) => l.includes("[ExoSync] Sync OK:"))).toHaveLength(0);
+    // …but #3496 step lines (start + per-repo) DO — diagnostics matter on failure.
+    expect(infoLogs.some((l) => l.includes("[ExoSync] Sync started"))).toBe(true);
     // Existing issues Notice still fires
     expect(notices.some((n) => n.includes("issues"))).toBe(true);
   });
 
-  it("auth-required path: logInfo NOT called — early return before success branch", async () => {
+  it("auth-required path: success SUMMARY NOT emitted — early return before success branch (#3496 step lines still fire)", async () => {
     const { commands, infoLogs } = makeHarness({
       results: [result("o/r#main", "auth-required")],
     });
 
     await commands.invokeSync();
 
-    expect(infoLogs).toHaveLength(0);
+    // No #3489 success summary on the auth-required early-return path…
+    expect(infoLogs.filter((l) => l.includes("[ExoSync] Sync OK:"))).toHaveLength(0);
+    // …but the #3496 start line fired before syncAll.
+    expect(infoLogs.some((l) => l.includes("[ExoSync] Sync started"))).toBe(true);
   });
 
   it("success path: no duplicate Notice (logInfo is info-only, no warn-channel Notice)", async () => {
@@ -409,6 +417,7 @@ describe("SyncCommands — #3489 explicit success signal (info console + Notice)
       buildEngine: async () => ({
         engine: { syncAll: async (specs: SyncRepoSpec[]) => specs.map((s) => result(s.repoKey, "synced")) } as unknown as import("exocortex").SyncEngine,
         pat: "ghp_x",
+        quarantineConfigured: true,
       }),
       isSwitchInProgress: () => false,
       notify: (m) => notices.push(m),
@@ -514,5 +523,244 @@ describe("SyncCommands — E1 parity harness integration", () => {
     expect(
       unwired.notices.some((n) => n.includes("not wired")),
     ).toBe(true);
+  });
+});
+
+describe("SyncCommands — #3495 quarantine-sink degraded-mode warn", () => {
+  const warnText = "quarantine sink not configured";
+
+  it("warns once (notify + logInfo) when the sink is unconfigured AND a conflict was quarantined", async () => {
+    const { commands, notices, infoLogs } = makeHarness({
+      quarantineConfigured: false,
+      results: [result("o/r#main", "synced", { quarantinedCount: 1 })],
+    });
+
+    await commands.invokeSync();
+
+    const warnNotices = notices.filter((n) => n.includes(warnText));
+    expect(warnNotices).toHaveLength(1);
+    expect(warnNotices[0]).toContain("1 conflict(s)");
+    expect(warnNotices[0]).toContain("Settings → Exocortex");
+    // Console echo on the info channel (no file spam, #3186) — exactly once.
+    expect(infoLogs.filter((l) => l.includes(warnText))).toHaveLength(1);
+  });
+
+  it("aggregates the conflict count across repos in the warn", async () => {
+    const { commands, notices } = makeHarness({
+      quarantineConfigured: false,
+      specs: [spec("o/a"), spec("o/b")],
+      results: [
+        result("o/a#main", "synced", { quarantinedCount: 2 }),
+        result("o/b#main", "synced", { quarantinedCount: 1 }),
+      ],
+    });
+
+    await commands.invokeSync();
+
+    expect(
+      notices.some((n) => n.includes(warnText) && n.includes("3 conflict(s)")),
+    ).toBe(true);
+  });
+
+  it("stays silent when the sink IS configured even with a conflict", async () => {
+    const { commands, notices, infoLogs } = makeHarness({
+      quarantineConfigured: true,
+      results: [result("o/r#main", "synced", { quarantinedCount: 2 })],
+    });
+
+    await commands.invokeSync();
+
+    expect(notices.some((n) => n.includes(warnText))).toBe(false);
+    expect(infoLogs.some((l) => l.includes(warnText))).toBe(false);
+  });
+
+  it("stays silent on a clean run (no conflict) when the sink is unconfigured", async () => {
+    const { commands, notices } = makeHarness({
+      quarantineConfigured: false,
+      results: [result("o/r#main", "synced", { pushedCount: 1 })],
+    });
+
+    await commands.invokeSync();
+
+    expect(notices.some((n) => n.includes(warnText))).toBe(false);
+  });
+
+  it("does NOT warn for deferred-only split runs (deferred is intentional, not a quarantined conflict)", async () => {
+    const { commands, notices } = makeHarness({
+      quarantineConfigured: false,
+      results: [
+        result("o/r#main", "synced", { deferredPaths: ["a.md", "b.md"] }),
+      ],
+    });
+
+    await commands.invokePull();
+
+    expect(notices.some((n) => n.includes(warnText))).toBe(false);
+  });
+
+  it("fires the warn at most once per session across multiple conflicted runs (one-shot)", async () => {
+    const { commands, notices } = makeHarness({
+      quarantineConfigured: false,
+      results: [result("o/r#main", "synced", { quarantinedCount: 1 })],
+    });
+
+    await commands.invokeSync();
+    await commands.invokeSync();
+
+    expect(notices.filter((n) => n.includes(warnText))).toHaveLength(1);
+  });
+
+  it("does NOT warn on an auth-required run even if another repo quarantined (PAT prompt only)", async () => {
+    const { commands, notices } = makeHarness({
+      quarantineConfigured: false,
+      specs: [spec("o/a"), spec("o/b")],
+      results: [
+        result("o/a#main", "synced", { quarantinedCount: 1 }),
+        result("o/b#main", "auth-required"),
+      ],
+    });
+
+    await commands.invokeSync();
+
+    expect(notices.some((n) => n.includes(warnText))).toBe(false);
+    expect(
+      notices.some((n) => n.includes("expired, revoked or under-scoped")),
+    ).toBe(true);
+  });
+
+  it("works without logInfo wired — warn still surfaces as a Notice (backward compat)", async () => {
+    const notices: string[] = [];
+    const commands = new SyncCommands({
+      collectSpecs: async () => ({
+        specs: [spec("o/r")],
+        asUidByRepoKey: new Map(),
+        warnings: [],
+      }),
+      buildEngine: async () => ({
+        engine: {
+          syncAll: async (specs: SyncRepoSpec[]) =>
+            specs.map((s) => result(s.repoKey, "synced", { quarantinedCount: 1 })),
+        } as unknown as SyncEngine,
+        pat: "ghp_x",
+        quarantineConfigured: false,
+      }),
+      isSwitchInProgress: () => false,
+      notify: (m) => notices.push(m),
+    });
+
+    await expect(commands.invokeSync()).resolves.toBeUndefined();
+    expect(notices.some((n) => n.includes(warnText))).toBe(true);
+  });
+});
+
+describe("SyncCommands — #3496 step-by-step logging (info channel)", () => {
+  it("emits a start line + per-repo outcome lines + the summary on the info channel", async () => {
+    const { commands, infoLogs } = makeHarness({
+      specs: [spec("o/a"), spec("o/b")],
+      results: [
+        result("o/a#main", "synced", { pushedCount: 2, pulledCount: 1 }),
+        result("o/b#main", "synced", { mergedCount: 1, quarantinedCount: 1 }),
+      ],
+    });
+
+    await commands.invokeSync();
+
+    // Start line — repo count + direction.
+    expect(
+      infoLogs.some(
+        (l) =>
+          l.includes("[ExoSync] Sync started") &&
+          l.includes("2 repo(s)") &&
+          l.includes("direction=sync"),
+      ),
+    ).toBe(true);
+
+    // Per-repo outcome lines — counts present.
+    const a = infoLogs.find((l) => l.includes("o/a#main:"));
+    expect(a).toContain("pushed 2");
+    expect(a).toContain("pulled 1");
+    const b = infoLogs.find((l) => l.includes("o/b#main:"));
+    expect(b).toContain("merged 1");
+    expect(b).toContain("quarantined 1");
+
+    // #3489 summary preserved.
+    expect(infoLogs.some((l) => l.includes("[ExoSync] Sync OK:"))).toBe(true);
+  });
+
+  it("per-repo step lines never become Notice toasts — only the summary toast", async () => {
+    const { commands, notices } = makeHarness({
+      specs: [spec("o/a"), spec("o/b")],
+      results: [
+        result("o/a#main", "synced", { pushedCount: 1 }),
+        result("o/b#main", "synced", { pulledCount: 1 }),
+      ],
+    });
+
+    await commands.invokeSync();
+
+    expect(notices.filter((n) => n.startsWith("Sync done"))).toHaveLength(1);
+    expect(
+      notices.some((n) => n.includes("o/a#main:") || n.includes("o/b#main:")),
+    ).toBe(false);
+    // The start line is console-only too — never a toast.
+    expect(notices.some((n) => n.includes("Sync started — "))).toBe(false);
+  });
+
+  it("emits start + per-repo lines even on the issues path (diagnostics matter most on failure)", async () => {
+    const { commands, infoLogs } = makeHarness({
+      specs: [spec("o/a"), spec("o/b")],
+      results: [
+        result("o/a#main", "synced", { pushedCount: 1 }),
+        result("o/b#main", "error", { detail: "boom" }),
+      ],
+    });
+
+    await commands.invokeSync();
+
+    expect(infoLogs.some((l) => l.includes("[ExoSync] Sync started"))).toBe(true);
+    expect(infoLogs.some((l) => l.includes("o/a#main:"))).toBe(true);
+    expect(
+      infoLogs.some((l) => l.includes("o/b#main:") && l.includes("error")),
+    ).toBe(true);
+  });
+
+  it("uses the correct direction label for Pull and Push start lines", async () => {
+    const pull = makeHarness({
+      results: [result("o/r#main", "synced", { pulledCount: 3 })],
+    });
+    await pull.commands.invokePull();
+    expect(
+      pull.infoLogs.some(
+        (l) => l.includes("[ExoSync] Pull started") && l.includes("direction=pull"),
+      ),
+    ).toBe(true);
+
+    const push = makeHarness({
+      results: [result("o/r#main", "synced", { pushedCount: 2 })],
+    });
+    await push.commands.invokePush();
+    expect(
+      push.infoLogs.some(
+        (l) => l.includes("[ExoSync] Push started") && l.includes("direction=push"),
+      ),
+    ).toBe(true);
+  });
+
+  it("per-repo line surfaces deletions and deferred counts when present", async () => {
+    const { commands, infoLogs } = makeHarness({
+      results: [
+        result("o/r#main", "synced", {
+          pushedCount: 1,
+          pushedDeletes: ["x.md"],
+          deferredPaths: ["y.md"],
+        }),
+      ],
+    });
+
+    await commands.invokePull();
+
+    const line = infoLogs.find((l) => l.includes("o/r#main:"));
+    expect(line).toContain("deleted 1");
+    expect(line).toContain("deferred 1");
   });
 });
