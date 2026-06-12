@@ -1,11 +1,16 @@
+import yaml from "js-yaml";
 import { NodeFsAdapter } from "./NodeFsAdapter.js";
 
 /**
  * One indexed markdown asset: its vault-relative path and parsed frontmatter.
+ * `content` is populated only when the adapter was constructed with
+ * `cacheContent: true` (body-link audits need the raw text; plain
+ * frontmatter audits should not pay the memory cost).
  */
 export interface IndexedAsset {
   path: string;
   metadata: Record<string, unknown>;
+  content?: string;
 }
 
 /**
@@ -26,12 +31,15 @@ export interface IndexedAsset {
 export class CachingNodeFsAdapter extends NodeFsAdapter {
   private indexed = false;
   private readonly uidToPath = new Map<string, string>();
+  private readonly basenameToPaths = new Map<string, string[]>();
   private readonly allPaths: string[] = [];
   private readonly pathSet = new Set<string>();
   private readonly assets: IndexedAsset[] = [];
+  private readonly cacheContent: boolean;
 
-  constructor(rootPath: string) {
+  constructor(rootPath: string, options?: { cacheContent?: boolean }) {
     super(rootPath);
+    this.cacheContent = options?.cacheContent ?? false;
   }
 
   /** Build the index once (idempotent). One disk pass over all markdown files. */
@@ -42,8 +50,16 @@ export class CachingNodeFsAdapter extends NodeFsAdapter {
       this.allPaths.push(rel);
       this.pathSet.add(rel);
       let metadata: Record<string, unknown> = {};
+      let content: string | undefined;
       try {
-        metadata = await super.getFileMetadata(rel);
+        if (this.cacheContent) {
+          // Single read serves both frontmatter and body — the audit hot loop
+          // must not re-read 11k+ files from disk a second time.
+          content = await super.readFile(rel);
+          metadata = CachingNodeFsAdapter.parseFrontmatter(content);
+        } else {
+          metadata = await super.getFileMetadata(rel);
+        }
       } catch {
         metadata = {};
       }
@@ -57,9 +73,59 @@ export class CachingNodeFsAdapter extends NodeFsAdapter {
           this.uidToPath.set(key, rel);
         }
       }
-      this.assets.push({ path: rel, metadata });
+      // Basename index, symmetric to uidToPath (RFC df39007b §Шаг 1): the
+      // imports audit resolves ~50k+ wikilink targets — a per-link linear
+      // scan over all paths would be O(N·M). ALL paths sharing a basename are
+      // kept so callers can detect ambiguity instead of silently guessing.
+      const base = CachingNodeFsAdapter.basenameOf(rel);
+      const existing = this.basenameToPaths.get(base);
+      if (existing) {
+        existing.push(rel);
+      } else {
+        this.basenameToPaths.set(base, [rel]);
+      }
+      this.assets.push(
+        this.cacheContent ? { path: rel, metadata, content } : { path: rel, metadata },
+      );
     }
     this.indexed = true;
+  }
+
+  /**
+   * All vault-relative paths whose basename (filename without `.md`) equals
+   * `basename`. Empty array when none. Multiple entries = ambiguous basename —
+   * callers decide (the imports audit counts these separately per RFC R5).
+   */
+  async findPathsByBasename(basename: string): Promise<string[]> {
+    await this.buildIndex();
+    return this.basenameToPaths.get(basename) ?? [];
+  }
+
+  /** Whether an indexed markdown file exists at this exact vault-relative path. */
+  async hasIndexedPath(filePath: string): Promise<boolean> {
+    await this.buildIndex();
+    const norm = filePath.replace(/\\/g, "/").replace(/^\.\//, "");
+    return this.pathSet.has(norm);
+  }
+
+  private static basenameOf(rel: string): string {
+    const slash = rel.lastIndexOf("/");
+    const name = slash === -1 ? rel : rel.slice(slash + 1);
+    return name.endsWith(".md") ? name.slice(0, -3) : name;
+  }
+
+  /** Mirror base NodeFsAdapter.extractFrontmatter (private there). */
+  private static parseFrontmatter(content: string): Record<string, unknown> {
+    const match = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!match) return {};
+    try {
+      const parsed = yaml.load(match[1]);
+      return typeof parsed === "object" && parsed !== null
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
   }
 
   /** All indexed assets (path + frontmatter), reusing the single index pass. */
