@@ -378,6 +378,16 @@ describe("SyncCommands — #3489 explicit success signal (info console + Notice)
     expect(notices.some((n) => n.includes("issues"))).toBe(true);
   });
 
+  it("auth-required path: logInfo NOT called — early return before success branch", async () => {
+    const { commands, infoLogs } = makeHarness({
+      results: [result("o/r#main", "auth-required")],
+    });
+
+    await commands.invokeSync();
+
+    expect(infoLogs).toHaveLength(0);
+  });
+
   it("success path: no duplicate Notice (logInfo is info-only, no warn-channel Notice)", async () => {
     const { commands, notices } = makeHarness();
 
