@@ -8,6 +8,7 @@
  */
 
 import type { RestCommitTransport } from "../../infrastructure/github/restCommit";
+import { base64ToBytes, base64ToUtf8 } from "../../utilities/base64";
 
 export interface RemoteTreeEntry {
   path: string;
@@ -147,9 +148,10 @@ export async function getBlobText(
   }
   const encoding = readString(json, "encoding");
   if (encoding === "utf-8") return content;
-  // GitHub returns base64 with embedded newlines. Buffer is the established
-  // base64 path in this package (see GroundingExecutor.decodeBase64Param).
-  return Buffer.from(content.replace(/\s/g, ""), "base64").toString("utf-8");
+  // GitHub returns base64 with embedded newlines — the helper strips them.
+  // Platform-neutral (no Buffer): this path is hot on every mobile sync
+  // cycle and iOS WebKit has no Node globals (Issue #3486, MOBILE-003).
+  return base64ToUtf8(content);
 }
 
 /**
@@ -178,5 +180,5 @@ export async function getBlobBytes(
   if (encoding === "utf-8") {
     return new TextEncoder().encode(content);
   }
-  return new Uint8Array(Buffer.from(content.replace(/\s/g, ""), "base64"));
+  return base64ToBytes(content);
 }

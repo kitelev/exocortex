@@ -7,6 +7,7 @@ import { Literal } from "../domain/models/rdf/Literal";
 import { Namespace } from "../domain/models/rdf/Namespace";
 import { GroundingType } from "../domain/constants/GroundingType";
 import { resolveGroundingTypeFromIRI } from "../domain/constants/GroundingTypeUIDs";
+import { utf8ToBase64 } from "../utilities/base64";
 import {
   COMMAND_VARIANT_VALUES,
   LABEL_CLASS_VALUES,
@@ -116,8 +117,7 @@ function buildParameterisedMarker(
   tokenUid: string,
   parameter: string,
 ): string {
-  const encoded = Buffer.from(parameter, "utf-8")
-    .toString("base64")
+  const encoded = utf8ToBase64(parameter)
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");

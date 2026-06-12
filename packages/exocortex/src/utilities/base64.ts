@@ -26,10 +26,21 @@
  *    (e.g. `ExoSync: malformed blob response`).
  */
 
+/**
+ * `String.fromCharCode` spread is stack-limited (~65k args on some
+ * engines) — encode in bounded chunks.
+ */
+const FROM_CHAR_CODE_CHUNK = 0x8000;
+
 /** Encode raw bytes as standard base64 (no line breaks). */
 export function bytesToBase64(bytes: Uint8Array): string {
-  void bytes;
-  throw new Error("not implemented");
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += FROM_CHAR_CODE_CHUNK) {
+    binary += String.fromCharCode(
+      ...bytes.subarray(i, i + FROM_CHAR_CODE_CHUNK),
+    );
+  }
+  return btoa(binary);
 }
 
 /**
@@ -37,8 +48,20 @@ export function bytesToBase64(bytes: Uint8Array): string {
  * Throws on malformed input.
  */
 export function base64ToBytes(base64: string): Uint8Array {
-  void base64;
-  throw new Error("not implemented");
+  const cleaned = base64.replace(/\s/g, "");
+  // Re-pad to a multiple of 4. remainder 1 is impossible base64 — leave it
+  // unpadded so atob throws (fail-loud) instead of masking corruption.
+  const remainder = cleaned.length % 4;
+  const padded =
+    remainder === 2 || remainder === 3
+      ? cleaned + "=".repeat(4 - remainder)
+      : cleaned;
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 /**
@@ -46,12 +69,14 @@ export function base64ToBytes(base64: string): Uint8Array {
  * Throws on malformed input.
  */
 export function base64ToUtf8(base64: string): string {
-  void base64;
-  throw new Error("not implemented");
+  // ignoreBOM: true = "leave the BOM in the output" — matches
+  // Buffer.toString("utf-8"); the default would silently strip it.
+  return new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+    base64ToBytes(base64),
+  );
 }
 
 /** Encode a UTF-8 string as standard base64. */
 export function utf8ToBase64(text: string): string {
-  void text;
-  throw new Error("not implemented");
+  return bytesToBase64(new TextEncoder().encode(text));
 }
