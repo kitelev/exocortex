@@ -93,7 +93,7 @@ function makeHarness(opts: HarnessOptions = {}) {
     log: (m) => logs.push(m),
     logInfo: opts.logInfo ?? ((m) => infoLogs.push(m)),
     ...(opts.stepNoticesEnabled !== undefined
-      ? { stepNoticesEnabled: opts.stepNoticesEnabled }
+      ? { stepNoticesEnabled: (): boolean => opts.stepNoticesEnabled === true }
       : {}),
     ...(opts.parity !== undefined ? { parity: opts.parity } : {}),
   });
@@ -889,5 +889,41 @@ describe("SyncCommands — #3499 opt-in per-step Notice toggle", () => {
     expect(
       notices.some((n) => n.includes("o/b#main:") && n.includes("error")),
     ).toBe(true);
+  });
+
+  it("reads the toggle LIVE — flipping it between runs takes effect without reconstructing SyncCommands", async () => {
+    // The dep is a callback (like isSwitchInProgress), so a mid-session
+    // Settings toggle reaches the very next sync without a plugin reload.
+    let enabled = false;
+    const notices: string[] = [];
+    const commands = new SyncCommands({
+      collectSpecs: async () => ({
+        specs: [spec("o/r")],
+        asUidByRepoKey: new Map(),
+        warnings: [],
+      }),
+      buildEngine: async () => ({
+        engine: {
+          syncAll: async (specs: SyncRepoSpec[]) =>
+            specs.map((s) => result(s.repoKey, "synced", { pushedCount: 1 })),
+        } as unknown as SyncEngine,
+        pat: "ghp_x",
+        quarantineConfigured: true,
+      }),
+      isSwitchInProgress: () => false,
+      notify: (m) => notices.push(m),
+      stepNoticesEnabled: () => enabled,
+    });
+
+    // First run while OFF → no per-repo step toast.
+    await commands.invokeSync();
+    expect(notices.some((n) => n.includes("o/r#main:"))).toBe(false);
+
+    // User flips the setting ON; second run reflects it with no reconstruction.
+    notices.length = 0;
+    enabled = true;
+    await commands.invokeSync();
+    expect(notices.some((n) => n.includes("o/r#main:"))).toBe(true);
+    expect(notices.some((n) => n.includes("Sync started — "))).toBe(true);
   });
 });

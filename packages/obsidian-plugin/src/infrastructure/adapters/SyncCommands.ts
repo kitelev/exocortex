@@ -48,17 +48,22 @@ export interface SyncCommandsDeps {
    */
   logInfo?: (message: string) => void;
   /**
-   * #3499 — opt-in verbose step toasts. When true, the per-step info trace
-   * lines (start + per-repo) are ALSO surfaced as user-facing Notices on top
-   * of their console line. Default off (absent/false): a Sync touches 14+
-   * repos = 14+ toasts, so this is only for users actively watching a run.
+   * #3499 — opt-in verbose step toasts. When this returns true, the per-step
+   * info trace lines (start + per-repo) are ALSO surfaced as user-facing
+   * Notices on top of their console line. Default off (absent / returns
+   * false): a Sync touches 14+ repos = 14+ toasts, so this is only for users
+   * actively watching a run.
+   *
+   * Read live (a callback, like `isSwitchInProgress`) so toggling the setting
+   * in Settings takes effect on the very next sync without a plugin reload —
+   * the whole point of the toggle is immediate observability.
    *
    * The summary is intentionally NOT re-mirrored here: the «… done» summary
    * Notice (#3489) already fires unconditionally, so gating the summary info
    * line would produce TWO summary toasts (AC #3499 "no double summary"). The
    * #3495 quarantine-sink warn is likewise excluded — it owns its own Notice.
    */
-  stepNoticesEnabled?: boolean;
+  stepNoticesEnabled?: () => boolean;
   /**
    * E1 parity harness (RFC 4e4dc453 Phase E). When wired, every sync round
    * is followed by an automatic M1/M2 validation pass (best-effort — a
@@ -98,7 +103,7 @@ export class SyncCommands {
    * call this; the summary keeps its single #3489 Notice (no double toast).
    */
   private maybeStepNotice(message: string): void {
-    if (this.deps.stepNoticesEnabled === true) this.deps.notify(message);
+    if (this.deps.stepNoticesEnabled?.() === true) this.deps.notify(message);
   }
 
   /**

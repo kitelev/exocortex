@@ -2852,10 +2852,10 @@ export default class ExocortexPlugin extends Plugin {
       notify: (message) => this.notifier.info(message),
       log: (message) => this.logger.warn(message),
       logInfo: (message) => this.logger.info(message),
-      // #3499 — opt-in verbose per-step toasts (default off). Captured at
-      // onload like the indexer's excludedFolders; toggling in Settings takes
-      // effect on the next plugin reload.
-      stepNoticesEnabled: this.settings.exosyncStepNotices,
+      // #3499 — opt-in verbose per-step toasts (default off). Read live (like
+      // isSwitchInProgress) so the Settings toggle takes effect on the next
+      // sync without a plugin reload.
+      stepNoticesEnabled: () => this.settings.exosyncStepNotices,
       // ExoSync Phase E (E1) — automatic M1/M2 parity round after every
       // sync + the standalone palette report (parallel-run validation).
       parity: buildParityCheck({
