@@ -52,11 +52,14 @@ interface HarnessOptions {
   syncAllGate?: Promise<void>;
   /** E1 parity harness seam. */
   parity?: ParityCheck;
+  /** Optional info-level callback seam (success console signal, #3489). */
+  logInfo?: (m: string) => void;
 }
 
 function makeHarness(opts: HarnessOptions = {}) {
   const notices: string[] = [];
   const logs: string[] = [];
+  const infoLogs: string[] = [];
   const syncAll = jest.fn(
     async (
       specs: SyncRepoSpec[],
@@ -83,9 +86,10 @@ function makeHarness(opts: HarnessOptions = {}) {
     isSwitchInProgress: () => opts.isSwitchInProgress ?? false,
     notify: (m) => notices.push(m),
     log: (m) => logs.push(m),
+    logInfo: opts.logInfo ?? ((m) => infoLogs.push(m)),
     ...(opts.parity !== undefined ? { parity: opts.parity } : {}),
   });
-  return { commands, notices, logs, syncAll };
+  return { commands, notices, logs, infoLogs, syncAll };
 }
 
 describe("SyncCommands", () => {
@@ -317,6 +321,91 @@ describe("SyncCommands — Pull/Push split (#3473)", () => {
 
     const done = notices.find((n) => n.startsWith("Pull done"));
     expect(done).toContain("deferred 2");
+  });
+});
+
+describe("SyncCommands — #3489 explicit success signal (info console + Notice)", () => {
+  it("success path: logInfo called exactly once with formatted summary, notify called exactly once for done", async () => {
+    const { commands, notices, infoLogs } = makeHarness({
+      specs: [spec("o/a"), spec("o/b")],
+      results: [
+        result("o/a#main", "synced", { pushedCount: 1, pulledCount: 2 }),
+        result("o/b#main", "synced", { mergedCount: 1, quarantinedCount: 1 }),
+      ],
+    });
+
+    await commands.invokeSync();
+
+    // Exactly ONE console info line for success summary
+    const infoSuccess = infoLogs.filter((l) => l.includes("[ExoSync] Sync OK:"));
+    expect(infoSuccess).toHaveLength(1);
+    const line = infoSuccess[0];
+    expect(line).toContain("2/2");
+    expect(line).toContain("pushed 1");
+    expect(line).toContain("pulled 2");
+    expect(line).toContain("merged 1");
+    expect(line).toContain("quarantined 1");
+
+    // Exactly ONE success Notice (the existing notify — no regression)
+    const doneNotices = notices.filter((n) => n.startsWith("Sync done"));
+    expect(doneNotices).toHaveLength(1);
+  });
+
+  it("success path: Pull and Push labels propagate into the info summary line", async () => {
+    const pull = makeHarness({ results: [result("o/r#main", "synced", { pulledCount: 3 })] });
+    await pull.commands.invokePull();
+    expect(pull.infoLogs.some((l) => l.includes("[ExoSync] Pull OK:"))).toBe(true);
+    expect(pull.infoLogs.filter((l) => l.includes("[ExoSync] Pull OK:"))).toHaveLength(1);
+
+    const push = makeHarness({ results: [result("o/r#main", "synced", { pushedCount: 2 })] });
+    await push.commands.invokePush();
+    expect(push.infoLogs.some((l) => l.includes("[ExoSync] Push OK:"))).toBe(true);
+  });
+
+  it("issues path: logInfo NOT called on error path — no regression to existing behaviour", async () => {
+    const { commands, notices, infoLogs } = makeHarness({
+      results: [
+        result("o/a#main", "synced"),
+        result("o/b#main", "error", { detail: "boom" }),
+      ],
+    });
+
+    await commands.invokeSync();
+
+    // No info line emitted on the issues path
+    expect(infoLogs.filter((l) => l.includes("[ExoSync]"))).toHaveLength(0);
+    // Existing issues Notice still fires
+    expect(notices.some((n) => n.includes("issues"))).toBe(true);
+  });
+
+  it("success path: no duplicate Notice (logInfo is info-only, no warn-channel Notice)", async () => {
+    const { commands, notices } = makeHarness();
+
+    await commands.invokeSync();
+
+    // There must NOT be two 'done' notices (no double-notice from warn-channel)
+    const doneNotices = notices.filter((n) => n.startsWith("Sync done"));
+    expect(doneNotices).toHaveLength(1);
+  });
+
+  it("works without logInfo wired (backward compat — optional dep)", async () => {
+    const notices: string[] = [];
+    const commands = new SyncCommands({
+      collectSpecs: async () => ({
+        specs: [spec("o/r")],
+        asUidByRepoKey: new Map(),
+        warnings: [],
+      }),
+      buildEngine: async () => ({
+        engine: { syncAll: async (specs: SyncRepoSpec[]) => specs.map((s) => result(s.repoKey, "synced")) } as unknown as import("exocortex").SyncEngine,
+        pat: "ghp_x",
+      }),
+      isSwitchInProgress: () => false,
+      notify: (m) => notices.push(m),
+    });
+
+    await expect(commands.invokeSync()).resolves.toBeUndefined();
+    expect(notices.some((n) => n.startsWith("Sync done"))).toBe(true);
   });
 });
 
