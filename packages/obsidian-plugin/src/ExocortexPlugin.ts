@@ -2862,6 +2862,15 @@ export default class ExocortexPlugin extends Plugin {
       notify: (message) => this.notifier.info(message),
       log: (message) => this.logger.warn(message),
       logInfo: (message) => this.logger.info(message),
+      // #3498 — opt-in durable verbose FILE trace (default off). Appends the
+      // step lines directly to the plugin file log, INDEPENDENT of
+      // logChannels.info.file. Read live so the Settings toggle takes effect on
+      // the next sync without a reload; no-op (no file write) when off.
+      logVerbose: (message) => {
+        if (this.settings.verboseSyncLogging) {
+          this.fileLogChannel.append("info", "ExoSync", message);
+        }
+      },
       // #3499 — opt-in verbose per-step toasts (default off). Read live (like
       // isSwitchInProgress) so the Settings toggle takes effect on the next
       // sync without a plugin reload.

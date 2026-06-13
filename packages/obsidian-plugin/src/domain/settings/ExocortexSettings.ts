@@ -252,6 +252,17 @@ export interface ExocortexSettings {
    * exactly once and is never double-emitted by this toggle.
    */
   exosyncStepNotices: boolean;
+  /**
+   * ExoSync (#3498) — opt-in durable verbose file log. When `true`, every sync
+   * step trace line (the start line, each in-flight per-step line — `detecting…`
+   * / `pulling remote tree…` / `merge layer firing…` — and each per-repo
+   * outcome line, #3496) is ALSO appended to the plugin file log, independent of
+   * the global `logChannels.info.file` toggle. Default `false`: the step trace
+   * stays console-only (#3186, no file spam). This is the low-friction switch
+   * for capturing a durable debug trace of one misbehaving run without enabling
+   * file logging for every channel.
+   */
+  verboseSyncLogging: boolean;
   [key: string]: unknown;
 }
 
@@ -289,4 +300,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   activeProfileUid: null,
   exosyncQuarantineRepoUrl: "",
   exosyncStepNotices: false,
+  verboseSyncLogging: false,
 };
