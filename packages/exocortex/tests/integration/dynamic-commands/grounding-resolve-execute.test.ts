@@ -9,8 +9,9 @@
  *
  * Fixtures:
  *   1. `linkBackProperty` declared as wikilink `[[<UID>|ems__Effort_prevIteration]]`
- *      → new asset frontmatter MUST contain `ems__Effort_prevIteration: "[[...]]"`,
- *        NOT legacy `exo__Asset_source`.
+ *      → new asset frontmatter MUST contain `ems__Effort_prevIteration: "[[<UID>]]"`
+ *        in BARE-UID form (#3195 strip-canon — UUID-named targets drop the folder
+ *        prefix), NOT legacy `exo__Asset_source` nor the path-form `[[03 Knowledge/…]]`.
  *   2. `targetClass` reference (full IRI in store) → emitted as short
  *        `exo__Instance_class: "[[ems__Task]]"`, NOT full IRI form.
  *   3. RFC 32445c1c homoiconic cutover — Grounding without any
@@ -280,7 +281,14 @@ describe("RFC da3a7555 — RDF → Resolver → Executor pipeline (create_instan
     const content = fs.getContent(createdPath!)!;
 
     // MUST use ems__Effort_prevIteration, NOT legacy exo__Asset_source.
-    expect(content).toContain(`ems__Effort_prevIteration: "[[${SOURCE_FILE_PATH.replace(/\.md$/, "")}]]"`);
+    // #3195 strip-canon (2026-05-17): the back-link target is a UUID-named file,
+    // so GroundingExecutor.extractBacklinkTarget emits the BARE UID
+    // (`[[<uid>]]`), NOT the legacy path-form (`[[03 Knowledge/inbox/<uid>]]`).
+    expect(content).toContain(`ems__Effort_prevIteration: "[[${SOURCE_UID}]]"`);
+    // Strip-canon guard: the folder prefix MUST be stripped (path-form leak is
+    // the #3195 regression marker). Anchored on the inbox prefix used by the
+    // fixture's SOURCE_FILE_PATH.
+    expect(content).not.toContain("[[03 Knowledge/inbox/");
     expect(content).not.toContain("exo__Asset_source:");
     // Must NOT contain the obsidian:// URL form (regression marker).
     expect(content).not.toMatch(/\[\[obsidian:\/\/vault/);
