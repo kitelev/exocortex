@@ -15,6 +15,14 @@ import { WikilinkValidator } from "../services/WikilinkValidator.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
+import { resolveCoLocationFolder } from "../executors/folderRepairHelpers.js";
+
+/**
+ * Fallback folder for new assets whose `exo__Asset_isDefinedBy` cannot be
+ * co-located (missing/`!`-prefixed/unresolvable). Matches the historical
+ * `cli create` default.
+ */
+const DEFAULT_INBOX_FOLDER = "01 Inbox";
 
 /**
  * Default timezone for `cli create` timestamps. The core service stays
@@ -234,6 +242,28 @@ export function createCommand(): Command {
           await wikilinkValidator.validatePropertyValues(propertyValues);
         }
 
+        // Co-location placement (RFC 0b7a2fad CR-1, issue #3520): when
+        // `exo__Asset_isDefinedBy` resolves to an on-disk ontology file, place
+        // the new asset in that ontology's folder — the same resolver used by
+        // `apply repair-folder` / `audit co-location`. Fail-open to the inbox
+        // default when isDefinedBy is missing / `!`-prefixed / unresolvable.
+        let folderPath = DEFAULT_INBOX_FOLDER;
+        const isDefinedBy = propertyValues?.["exo__Asset_isDefinedBy"];
+        if (isDefinedBy) {
+          const coLocatedFolder = await resolveCoLocationFolder(
+            fsAdapter,
+            isDefinedBy,
+          );
+          // Truthy → a resolved subfolder. The empty string "" (root-level
+          // ontology, dirname → ".") is intentionally falsy here, so a brand
+          // new asset is kept in the inbox rather than written to the vault
+          // root — a degenerate case that does not occur under CR-1 (ontologies
+          // live under assetspaces/<ns>/).
+          if (coLocatedFolder) {
+            folderPath = coLocatedFolder;
+          }
+        }
+
         // Load SHACL-lite shape registry from vault for cardinality-aware
         // property serialization (issues #3099, #3179). Failure here is
         // non-fatal — fall back to an EMPTY registry (not undefined) so the
@@ -252,7 +282,8 @@ export function createCommand(): Command {
         // `cli create` opts into the domain fields the plugin/apply omit:
         //  - classRefForm 'uuid' → `[[<uuid>]]` strip-canon
         //  - createdBy passed through verbatim (no implicit default)
-        //  - folder `01 Inbox`, aliases, timezone (Asia/Almaty default), body
+        //  - folder = co-located ontology folder (or `01 Inbox` fail-open),
+        //    aliases, timezone (Asia/Almaty default), body
         //  - shapeRegistry → cardinality-aware property emission
         const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
         const creationService = new GenericAssetCreationService(vaultAdapter);
@@ -263,7 +294,7 @@ export function createCommand(): Command {
           classUid,
           label: trimmedLabel,
           aliases: options.aliases,
-          folderPath: "01 Inbox",
+          folderPath,
           createdBy: options.createdBy,
           timezone: options.timezone || DEFAULT_TIMEZONE,
           body,

@@ -4,6 +4,7 @@ import type { NodeFsAdapter } from "../../../src/adapters/NodeFsAdapter.js";
 import {
   findReferencedFile,
   normalizePath,
+  resolveCoLocationFolder,
 } from "../../../src/executors/folderRepairHelpers.js";
 
 /**
@@ -154,5 +155,71 @@ describe("folderRepairHelpers — findReferencedFile (shared)", () => {
     expect(
       await findReferencedFile(makeFs(), "ghost", "tasks/task.md"),
     ).toBeNull();
+  });
+});
+
+describe("folderRepairHelpers — resolveCoLocationFolder (issue #3520)", () => {
+  it("resolves a UID isDefinedBy to its ontology folder", async () => {
+    const fs = makeFs({
+      findFileByUID: jest.fn(async () =>
+        "assetspaces/kitelev/exoas-exodev/exodev/32d2374c.md",
+      ),
+    });
+    expect(
+      await resolveCoLocationFolder(fs, "[[32d2374c]]"),
+    ).toBe("assetspaces/kitelev/exoas-exodev/exodev");
+  });
+
+  it("resolves a quoted alias-form isDefinedBy via its TARGET uid", async () => {
+    const fs = makeFs({
+      findFileByUID: jest.fn(async (uid: string) =>
+        uid === "32d2374c"
+          ? "assetspaces/kitelev/exoas-exodev/exodev/32d2374c.md"
+          : null,
+      ),
+    });
+    expect(
+      await resolveCoLocationFolder(fs, '"[[32d2374c|$exodev]]"'),
+    ).toBe("assetspaces/kitelev/exoas-exodev/exodev");
+  });
+
+  it("resolves a direct path-form isDefinedBy (Try 1)", async () => {
+    const fs = makeFs({
+      fileExists: jest.fn(
+        async (p: string) => p === "assetspaces/exo/exo.md",
+      ),
+    });
+    expect(
+      await resolveCoLocationFolder(fs, "[[assetspaces/exo/exo]]"),
+    ).toBe("assetspaces/exo");
+  });
+
+  it("fail-open: returns null for empty / missing isDefinedBy", async () => {
+    expect(await resolveCoLocationFolder(makeFs(), undefined)).toBeNull();
+    expect(await resolveCoLocationFolder(makeFs(), "")).toBeNull();
+    expect(await resolveCoLocationFolder(makeFs(), "[[]]")).toBeNull();
+  });
+
+  it("fail-open: returns null for a `!`-prefixed anchor reference", async () => {
+    // Even if a file happened to match, the bang-prefix short-circuits before
+    // any filesystem probe (mirrors audit co-location skip-accounting).
+    const findFileByUID = jest.fn(async () => "anywhere/!kitelev.md");
+    const fs = makeFs({ findFileByUID });
+    expect(await resolveCoLocationFolder(fs, "[[!kitelev]]")).toBeNull();
+    expect(findFileByUID).not.toHaveBeenCalled();
+  });
+
+  it("fail-open: returns null when the reference does not resolve in this vault", async () => {
+    // makeFs() resolves nothing → cross-vault / missing ontology.
+    expect(
+      await resolveCoLocationFolder(makeFs(), "[[ffffffff]]"),
+    ).toBeNull();
+  });
+
+  it("returns '' (root) for a root-level ontology file", async () => {
+    const fs = makeFs({
+      findFileByUID: jest.fn(async () => "32d2374c.md"),
+    });
+    expect(await resolveCoLocationFolder(fs, "[[32d2374c]]")).toBe("");
   });
 });
