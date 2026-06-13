@@ -221,6 +221,18 @@ export class NoteToRDFConverter {
     const triples: Triple[] = [filenameTriple];
     const subject = this.notePathToIRI(file.path);
 
+    // EKA D5 (reification): capture the resolved subject/predicate/object terms
+    // of a reified `exo__Statement` so a logical edge can be materialized after
+    // the frontmatter loop (materialize-at-index — see emission note below).
+    // `isReifiedStmt` is set from the exo__Instance_class resolution already
+    // performed in the loop (no extra valueToClassURI cost on the reindex hot
+    // path; covers alias AND bare-UID class forms via the same code path).
+    let reifiedSubject: IRI | undefined;
+    let reifiedPredicate: IRI | undefined;
+    let reifiedObject: IRI | Literal | undefined;
+    let isReifiedStmt = false;
+    const statementClassIRI = Namespace.EXO.term("Statement").value;
+
     for (const [key, value] of Object.entries(frontmatter)) {
       // Issue #3043 Phase 1: whitelisted unprefixed frontmatter keys are
       // indexed under the `exo:Asset_<key>` predicate so SPARQL queries like
@@ -260,6 +272,30 @@ export class NoteToRDFConverter {
         } else {
           // Issue #2102: valueToRDFObject now returns array for dual storage support
           const objectNodes = await this.valueToRDFObject(val, file, predicate);
+
+          // EKA D5: stash reified-statement components (first IRI/term wins).
+          // These reuse the SAME resolution as the raw _subject/_predicate/
+          // _object triples emitted below, so the materialized edge's node
+          // identities are identical to the statement triples (round-trip-safe).
+          if (
+            normalizedKey === "exo__Statement_subject" &&
+            reifiedSubject === undefined
+          ) {
+            const iri = objectNodes.find((n): n is IRI => n instanceof IRI);
+            if (iri) reifiedSubject = iri;
+          } else if (
+            normalizedKey === "exo__Statement_predicate" &&
+            reifiedPredicate === undefined
+          ) {
+            const iri = objectNodes.find((n): n is IRI => n instanceof IRI);
+            if (iri) reifiedPredicate = iri;
+          } else if (
+            normalizedKey === "exo__Statement_object" &&
+            reifiedObject === undefined
+          ) {
+            reifiedObject = objectNodes[0];
+          }
+
           for (const objectNode of objectNodes) {
             triples.push(new Triple(subject, predicate, objectNode));
 
@@ -286,6 +322,10 @@ export class NoteToRDFConverter {
           if (classNode instanceof IRI) {
             const rdfType = Namespace.RDF.term("type");
             triples.push(new Triple(subject, rdfType, classNode));
+            // EKA D5: reified-statement detection reuses this resolution.
+            if (classNode.value === statementClassIRI) {
+              isReifiedStmt = true;
+            }
           }
         }
       }
@@ -329,6 +369,19 @@ export class NoteToRDFConverter {
     // Flush rdf:type triples emitted by valueToRDFObject for enum instance IRIs (Fix #ff3858e5)
     triples.push(...this.pendingExtraTriples);
     this.pendingExtraTriples = [];
+
+    // EKA D5 (USER decision, 2026-06-13): materialize-at-index of a reified
+    // exo__Statement. A statement {subject, predicate, object} living in a
+    // junction ontology decouples the import edge $ontoA→$ontoB; emitting an
+    // additional LOGICAL EDGE `<subject> <predicate> <object>` keeps the
+    // relationship visible to SPARQL (BGP + property paths) with ZERO engine
+    // changes — it is just a normal triple. The raw exo__Statement_* triples
+    // remain (round-trip), and the edge reuses their already-resolved terms.
+    // Emitted only when subject AND predicate resolve to IRIs (SPARQL requires
+    // an IRI in those positions); the object may be an IRI or a Literal.
+    if (isReifiedStmt && reifiedSubject && reifiedPredicate && reifiedObject) {
+      triples.push(new Triple(reifiedSubject, reifiedPredicate, reifiedObject));
+    }
 
     // Issue #1329: Index body wikilinks to RDF
     // This enables SPARQL queries to find all notes referencing a target note
