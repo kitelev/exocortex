@@ -1,4 +1,5 @@
 import path from "path";
+import { extractAssetReference } from "exocortex";
 import type { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 
 /**
@@ -77,4 +78,45 @@ export async function findReferencedFile(
  */
 export function normalizePath(filePath: string): string {
   return filePath.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/$/, "");
+}
+
+/**
+ * Resolve the co-location target folder for a NEW asset from its
+ * `exo__Asset_isDefinedBy` value, using the same resolver as `apply
+ * repair-folder` / `audit co-location` (RFC 0b7a2fad CR-1). Returns the
+ * vault-relative folder where the asset should be placed, or `null` when
+ * placement cannot be determined — fail-open by design, matching the audit's
+ * skip-accounting:
+ *   - missing / empty / non-string `isDefinedBy`  → null (empty-isDefinedBy)
+ *   - `!`-prefixed reference (intentional anchor)  → null (bang-prefix)
+ *   - reference that doesn't resolve in this vault → null (unresolvable)
+ *
+ * On `null`, the caller keeps its default folder (`01 Inbox`).
+ *
+ * The asset doesn't exist on disk yet, so an empty source path is passed to
+ * {@link findReferencedFile}; this makes its "same folder as source" heuristic
+ * (Try 2) probe only the vault root, which never spuriously matches a
+ * UID-named ontology file living under `assetspaces/`. Resolution therefore
+ * comes from the direct-path (Try 1), UID-index (Try 3) or basename-scan
+ * (Try 4) branches — exactly as it does for `apply repair-folder`.
+ *
+ * A root-level ontology (`path.dirname` → ".") returns "" so the caller writes
+ * to the vault root, matching FolderRepairExecutor's expected-folder convention.
+ */
+export async function resolveCoLocationFolder(
+  fsAdapter: NodeFsAdapter,
+  isDefinedBy: unknown,
+): Promise<string | null> {
+  const reference = extractAssetReference(isDefinedBy);
+  if (!reference || reference.startsWith("!")) {
+    return null;
+  }
+
+  const ontologyPath = await findReferencedFile(fsAdapter, reference, "");
+  if (!ontologyPath) {
+    return null;
+  }
+
+  const dir = path.dirname(ontologyPath);
+  return dir === "." ? "" : dir;
 }
