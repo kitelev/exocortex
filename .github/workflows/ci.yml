@@ -464,10 +464,19 @@ jobs:
         #   and .classAncestors (the depth-aware ancestor-walk refactor it builds on).
         #   Both are platform-free InMemoryTripleStore unit suites; previously
         #   orphaned (plugin jest.config roots don't reach exocortex/tests).
+        # - Issue #3506 (orphan-suite rot): the remaining six CommandResolver.*
+        #   unit suites — inheritanceRule, universalDefaultTemplate,
+        #   propertyDefault, style, refForm.bdd, substitutionToken. All were
+        #   failing identically on origin/main (48 lines) because their fixtures
+        #   emitted the legacy bare-string Grounding_type form; RFC 9d20c91f
+        #   Phase 3 migrated it to wikilink/IRI form, so the resolver returns
+        #   null → grounding inert → command dropped. Fixtures repaired to the
+        #   wikilink-form catalog UID; adding them here so the gate runs them
+        #   and they cannot rot in zero CI jobs again.
         run: |
           node ./node_modules/jest/bin/jest.js \
             --config packages/exocortex/jest.config.js \
-            --testPathPatterns='(services/(GroundingExecutor(\.[a-zA-Z0-9_-]+)?|NamedQueryRunner|AssetConversionService|NoteToRDFConverter\.(issue-2959|filespace-skip|excluded-folders|issue-3468-skip-summary|no-process-env|dual-storage-flag)|FileSpaceDiscovery|ShaclLiteValidator(\.issue3488)?|CommandResolver\.(capabilityInheritance|classAncestors))\.test|services/sync/(ChangeDetector|SyncEngine(\.filespace|\.direction|\.delete-propagation)?|StructuredMerger|GatedStructuredMerger|MergeShaclGate|diff3|SyncedQuarantineStore|FileWatermarkStore|transportBackoff|secretScan|spaceSpecCore|ParityValidator|assetSemanticCompare|githubRepoReader\.no-buffer)\.test|utilities/(base64|iriToObsidianName|sparqlBlock)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/(BGPExecutor\.issue-2997|PropertyPathExecutor\.no-process-env)\.test|infrastructure/github/restCommit\.test|integration/dynamic-commands/(grounding-phase3b-pipeline|grounding-resolve-execute|namedquery-value-source)\.test)\.ts' \
+            --testPathPatterns='(services/(GroundingExecutor(\.[a-zA-Z0-9_-]+)?|NamedQueryRunner|AssetConversionService|NoteToRDFConverter\.(issue-2959|filespace-skip|excluded-folders|issue-3468-skip-summary|no-process-env|dual-storage-flag)|FileSpaceDiscovery|ShaclLiteValidator(\.issue3488)?|CommandResolver\.(capabilityInheritance|classAncestors|inheritanceRule|universalDefaultTemplate|propertyDefault|style|refForm\.bdd|substitutionToken))\.test|services/sync/(ChangeDetector|SyncEngine(\.filespace|\.direction|\.delete-propagation)?|StructuredMerger|GatedStructuredMerger|MergeShaclGate|diff3|SyncedQuarantineStore|FileWatermarkStore|transportBackoff|secretScan|spaceSpecCore|ParityValidator|assetSemanticCompare|githubRepoReader\.no-buffer)\.test|utilities/(base64|iriToObsidianName|sparqlBlock)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/(BGPExecutor\.issue-2997|PropertyPathExecutor\.no-process-env)\.test|infrastructure/github/restCommit\.test|integration/dynamic-commands/(grounding-phase3b-pipeline|grounding-resolve-execute|namedquery-value-source)\.test)\.ts' \
             --forceExit
 
   test-coverage:

@@ -47,7 +47,12 @@ async function addGrounding(store: InMemoryTripleStore, uid: string): Promise<vo
     new Triple(subject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
     new Triple(subject, Namespace.EXO.term("Asset_uid"), new Literal(uid)),
     new Triple(subject, Namespace.EXO.term("Asset_label"), new Literal(`Grounding ${uid}`)),
-    new Triple(subject, Namespace.EXOCMD.term("Grounding_type"), new Literal("property_delete")),
+    // RFC 9d20c91f Phase 3: Grounding_type is a wikilink-form UID ref into the
+    // exocmd__GroundingType catalog (property_delete → 4bdf1d0b), not a
+    // bare-string literal. The legacy bare-string form resolves to null in
+    // CommandResolver.resolveGroundingTypeReference → grounding inert → command
+    // dropped (the orphan rot per Issue #3506).
+    new Triple(subject, Namespace.EXOCMD.term("Grounding_type"), new Literal("[[4bdf1d0b-e9da-4d96-bafe-c5aaef8c2bd5]]")),
     new Triple(subject, Namespace.EXOCMD.term("Grounding_targetProperty"), new Literal("ems__Effort_x")),
   ]);
 }

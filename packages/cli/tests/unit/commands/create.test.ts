@@ -14,6 +14,17 @@ jest.unstable_mockModule("exocortex", () => ({
   MetadataHelpers: { buildFileContent: jest.fn(() => "---\n---\n") },
   GenericAssetCreationService: class GenericAssetCreationService {},
   ShapeRegistry: class ShapeRegistry {},
+  // Transitively required: create.ts → folderRepairHelpers.ts imports this.
+  extractAssetReference: jest.fn((v: unknown) =>
+    typeof v === "string"
+      ? v
+          .trim()
+          .replace(/^["']|["']$/g, "")
+          .replace(/^\[\[|\]\]$/g, "")
+          .split("|")[0]
+          .trim() || null
+      : null,
+  ),
   IFileSystemAdapter: {},
   FileNotFoundError: class FileNotFoundError extends Error {},
   FileAlreadyExistsError: class FileAlreadyExistsError extends Error {},
