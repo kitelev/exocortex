@@ -1,0 +1,168 @@
+name: AssetSpace CI (reusable)
+
+# Reusable per-AssetSpace SHACL CI gate for the Exocortex Knowledge Architecture
+# (EKA Alpha 16-repo schema). Canonical home: kitelev/exoas-ci ;
+# .github/workflows/assetspace-ci.yml@main. This file under exocortex/docs/ci/
+# is the REVIEWED REFERENCE COPY (issue #3513) — keep it in sync with exoas-ci.
+#
+# What it does, for the calling AssetSpace repo's checked-out content:
+#   1. resolve-deps — resolve the repo's transitive exo__AssetSpace_dependsOn
+#      closure from the central registry (kitelev/exoas-registry), so the
+#      dependent TBox is materialised and cross-repo class references resolve
+#      (issue #3513, builds on #3511). Without this the SHACL gate has no shapes
+#      to apply (false-negative) or demotes every in-scope ref to a warning.
+#   2. validate schema --shapes-mode --vault . --also <each-dep> — SHACL-lite
+#      conformance over the repo + resolved TBox. Genuine sh:Violation fails the
+#      gate (exit 1); unresolvable cross-repo refs are sh:Warning (do NOT fail).
+#   3. audit ontology-imports — cross-ontology closure / SCC check (unchanged).
+#
+# Severity contract (CLI #3488): "zero false-positives from unresolvable
+# cross-repo refs" is achieved by the CLI's severity split — a class ref whose
+# target is absent from the resolved graph is a sh:Warning, never a violation.
+# So a dep that fails to clone DEGRADES to warnings, never to a false red.
+#
+# Caller usage (.github/workflows/ci.yml in an AssetSpace repo):
+#   jobs:
+#     ci:
+#       uses: kitelev/exoas-ci/.github/workflows/assetspace-ci.yml@main
+#       with:
+#         warn_only: false        # flip to false once the repo is gate-green
+#         resolve_deps: true      # registry-driven dependent-TBox resolution
+
+on:
+  workflow_call:
+    inputs:
+      warn_only:
+        description: "Non-blocking mode (true = warn-only pilot, false = blocking gate)"
+        type: boolean
+        default: true
+      resolve_deps:
+        description: "Resolve + materialise dependent TBox via the central registry (issue #3513). Disable only for a fully self-contained repo."
+        type: boolean
+        default: true
+      registry_url:
+        description: "Central registry clone URL (holds exo__AssetSpace descriptors + dependsOn DAG)"
+        type: string
+        default: "https://github.com/kitelev/exoas-registry"
+      cli_version:
+        description: "@kitelev/exocortex-cli version spec (must include `resolve-deps`, i.e. >= the issue #3513 release)"
+        type: string
+        default: "latest"
+    secrets:
+      registry_token:
+        description: "Optional PAT for cloning the registry + PRIVATE dependency repos. Falls back to anonymous (public repos)."
+        required: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout calling repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Resolve + materialise dependent TBox (registry dependsOn closure)
+        id: deps
+        if: ${{ inputs.resolve_deps }}
+        env:
+          # Token for cloning registry + private deps. Anonymous if unset (public).
+          GH_CLONE_TOKEN: ${{ secrets.registry_token }}
+        run: |
+          set -uo pipefail
+          ALSO_FILE="$RUNNER_TEMP/also-args.txt"
+          : > "$ALSO_FILE"
+
+          auth_url() {
+            # Inject token into an https URL for private-repo clones; pass through otherwise.
+            local url="$1"
+            if [ -n "${GH_CLONE_TOKEN:-}" ] && printf '%s' "$url" | grep -q '^https://github.com/'; then
+              printf 'https://x-access-token:%s@github.com/%s' "$GH_CLONE_TOKEN" "${url#https://github.com/}"
+            else
+              printf '%s' "$url"
+            fi
+          }
+
+          echo "::group::Clone central registry"
+          if ! git clone --depth 1 "$(auth_url "${{ inputs.registry_url }}")" "$RUNNER_TEMP/registry" 2>/dev/null; then
+            echo "⚠️  Could not clone registry ${{ inputs.registry_url }} — validating standalone (deps unresolved → warnings only)."
+            echo "::endgroup::"
+            exit 0
+          fi
+          echo "::endgroup::"
+
+          echo "::group::Resolve dependsOn closure for ${{ github.repository }}"
+          # resolve-deps prints one dependency clone URL per line (self excluded).
+          # Lenient by default: an unregistered repo prints nothing → standalone.
+          DEP_URLS="$(npx -y @kitelev/exocortex-cli@${{ inputs.cli_version }} resolve-deps \
+            --registry "$RUNNER_TEMP/registry" \
+            --self "${{ github.repository }}" \
+            --format urls || true)"
+          echo "Resolved dependencies:"
+          printf '%s\n' "$DEP_URLS"
+          echo "::endgroup::"
+
+          echo "::group::Clone dependency repos"
+          i=0
+          while IFS= read -r url; do
+            [ -z "$url" ] && continue
+            name="dep-$i-$(basename "$url" .git)"
+            target="$RUNNER_TEMP/deps/$name"
+            if git clone --depth 1 "$(auth_url "$url")" "$target" 2>/dev/null; then
+              echo "  ✓ $url → $target"
+              printf -- '--also\n%s\n' "$target" >> "$ALSO_FILE"
+            else
+              # Best-effort: a dep we can't clone (private, no token) degrades to
+              # sh:Warning in validation — never a false violation. Do not fail.
+              echo "  ⚠️  could not clone $url — skipping (refs into it become warnings)"
+            fi
+            i=$((i+1))
+          done <<< "$DEP_URLS"
+          echo "::endgroup::"
+
+          echo "also_file=$ALSO_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: SHACL-lite schema validation (registry-resolved, blocking unless warn_only)
+        id: shacl
+        continue-on-error: ${{ inputs.warn_only }}
+        run: |
+          set -uo pipefail
+          ALSO_ARGS=()
+          if [ -n "${{ steps.deps.outputs.also_file }}" ] && [ -f "${{ steps.deps.outputs.also_file }}" ]; then
+            while IFS= read -r line; do
+              [ -n "$line" ] && ALSO_ARGS+=("$line")
+            done < "${{ steps.deps.outputs.also_file }}"
+          fi
+          echo "Validating with ${#ALSO_ARGS[@]} --also token(s) (deps resolved via registry)."
+          npx -y @kitelev/exocortex-cli@${{ inputs.cli_version }} validate schema \
+            --shapes-mode --vault . "${ALSO_ARGS[@]}" --output text | tee "$RUNNER_TEMP/shacl-report.txt"
+          # Propagate the validate exit code (PIPESTATUS[0]) so violations fail the gate.
+          exit "${PIPESTATUS[0]}"
+
+      - name: Ontology-imports audit (cross-ontology closure + SCC)
+        id: imports
+        continue-on-error: ${{ inputs.warn_only }}
+        run: |
+          npx -y @kitelev/exocortex-cli@${{ inputs.cli_version }} audit ontology-imports \
+            --vault . --output text | tee "$RUNNER_TEMP/imports-report.txt"
+
+      - name: CI summary
+        if: always()
+        run: |
+          {
+            echo "## AssetSpace CI — ${{ github.repository }}"
+            echo "Mode: ${{ inputs.warn_only && 'warn-only (non-blocking pilot)' || 'blocking gate' }}"
+            echo "Dependency resolution: ${{ inputs.resolve_deps && 'registry-driven (issue #3513)' || 'disabled (standalone)' }}"
+            echo ""
+            echo "### SHACL-lite (validate schema --shapes-mode)  outcome=${{ steps.shacl.outcome }}"
+            echo '```'
+            tail -25 "$RUNNER_TEMP/shacl-report.txt" 2>/dev/null || echo "(no report)"
+            echo '```'
+            echo "### ontology-imports audit  outcome=${{ steps.imports.outcome }}"
+            echo '```'
+            tail -10 "$RUNNER_TEMP/imports-report.txt" 2>/dev/null || echo "(no report)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
