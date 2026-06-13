@@ -624,17 +624,47 @@ const RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label";
 
 /**
  * Converts a frontmatter label string (e.g. "ims__Concept") to its ontology URI
- * (e.g. "https://exocortex.my/ontology/ims#Concept") using NAMESPACE_PREFIX_MAP.
- * Returns null if no matching namespace prefix is found.
+ * (e.g. "https://exocortex.my/ontology/ims#Concept").
+ *
+ * Resolution is namespace-agnostic (Issue #3512): the curated NAMESPACE_PREFIX_MAP
+ * is consulted first (it carries the non-exocortex.my namespaces — rdf/rdfs/owl —
+ * whose URIs do NOT follow the standard ontology pattern), then ANY well-formed
+ * lowercase-leading prefix falls back to the canonical
+ * `https://exocortex.my/ontology/<prefix>#<Local>` form. This mirrors
+ * Namespace.forPrefix / NoteToRDFConverter, which already derive ad-hoc namespaces
+ * for unlisted prefixes.
+ *
+ * Returns null if the label is not a well-formed `<prefix>__<Local>` token.
  */
 export function labelToOntologyIRI(label: string): string | null {
   const dunderIdx = label.indexOf("__");
   if (dunderIdx === -1) return null;
-  const prefix = label.slice(0, dunderIdx + 2);
-  const local = label.slice(dunderIdx + 2);
-  const ns = NAMESPACE_PREFIX_MAP.get(prefix);
-  if (!ns || !local) return null;
-  return ns + local;
+  const prefixWithDunder = label.slice(0, dunderIdx + 2); // e.g. "ims__"
+  const prefix = label.slice(0, dunderIdx); // e.g. "ims"
+  const local = label.slice(dunderIdx + 2); // e.g. "Concept"
+  if (!local) return null;
+
+  // 1. Curated map first — preserves the non-standard namespaces (rdf/rdfs/owl)
+  //    and the canonical exocortex prefixes verbatim.
+  const ns = NAMESPACE_PREFIX_MAP.get(prefixWithDunder);
+  if (ns) return ns + local;
+
+  // 2. Namespace-agnostic fallback (Issue #3512): derive the canonical ontology
+  //    IRI for any well-formed lowercase prefix not in the curated map. Without
+  //    this, ontology-URI subClassOf edges for classes in namespaces like
+  //    `person__` were never materialised in TripleClassHierarchy, so
+  //    isSubClassOf("person#Person", "ems#Agent") returned false — a false
+  //    sh:class violation even though person__Person IS-A ems__Agent via
+  //    exo__Class_superClass. (The legacy `ims__Person` bridged only because
+  //    `ims__` happened to be in the curated map; the only difference between the
+  //    two classes is the prefix.) Prefix shape mirrors Namespace.forPrefix; the
+  //    local-name guard mirrors NoteToRDFConverter.expandClassValue (which rejects
+  //    `[\s()]` local names) so the derived IRI always matches the converter's
+  //    emitted rdf:type — never an inert, unmatchable hierarchy entry.
+  if (/^[a-z][a-zA-Z0-9]*$/.test(prefix) && !/[\s()]/.test(local)) {
+    return `https://exocortex.my/ontology/${prefix}#${local}`;
+  }
+  return null;
 }
 
 /**
