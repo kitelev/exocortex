@@ -62,7 +62,7 @@ export interface VaultSettingDescriptor {
 }
 
 export const VAULT_SETTINGS_REGISTRY: readonly VaultSettingDescriptor[] = [
-  // ── boolean (19) ──────────────────────────────────────────────────
+  // ── boolean (21) ──────────────────────────────────────────────────
   {
     field: "layoutVisible",
     keyUid: "db21761d-a3d9-4db6-9bcc-b3fab60557b3",
@@ -203,6 +203,14 @@ export const VAULT_SETTINGS_REGISTRY: readonly VaultSettingDescriptor[] = [
     keyLabel: "exo__SettingKeyExosyncStepNotices",
     datatype: "boolean",
     settingUid: "93440232-6683-405e-8e9d-d832fef16f6c",
+  },
+  {
+    // #3498 — ExoSync opt-in durable verbose FILE log toggle (default off).
+    field: "verboseSyncLogging",
+    keyUid: "0d47507d-8a20-43bc-b508-ccae2ea26702",
+    keyLabel: "exo__SettingKeyVerboseSyncLogging",
+    datatype: "boolean",
+    settingUid: "adca3473-97c8-433f-830b-64643fb2ac88",
   },
   // ── string (2) ────────────────────────────────────────────────────
   {

@@ -161,7 +161,8 @@ describe("ExocortexSettingTab", () => {
       // RFC 13da049f R35 — added "Profiles" overview heading (+1) → 40
       // RFC 4e4dc453 Phase B — ExoSync section: heading + quarantine repo URL row (+2) → 42
       // Issue #3499 — ExoSync verbose per-step Notice toggle (+1) → 43
-      expect(MockSetting).toHaveBeenCalledTimes(43);
+      // Issue #3498 — ExoSync verbose file-log toggle (+1) → 44
+      expect(MockSetting).toHaveBeenCalledTimes(44);
     });
 
     it("should render layout visibility toggle as first setting", () => {

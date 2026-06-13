@@ -14,7 +14,12 @@ import type {
   SyncSpecCollection,
 } from "../../../src/infrastructure/adapters/SyncDepsFactory";
 import type { ParityCheck } from "../../../src/infrastructure/adapters/ExoSyncParityFactory";
-import type { RepoSyncResult, SyncEngine, SyncRepoSpec } from "exocortex";
+import type {
+  RepoSyncResult,
+  SyncEngine,
+  SyncProgressEvent,
+  SyncRepoSpec,
+} from "exocortex";
 
 const spec = (key: string): SyncRepoSpec => {
   const [owner, repo] = key.split("/");
@@ -58,18 +63,28 @@ interface HarnessOptions {
   quarantineConfigured?: boolean;
   /** #3499 — opt-in verbose per-step Notice toggle (default off). */
   stepNoticesEnabled?: boolean;
+  /**
+   * #3498 — in-flight progress events the fake engine fires through the
+   * `onProgress` callback (3rd syncAll arg) during a run, to assert routing.
+   */
+  progressEvents?: SyncProgressEvent[];
 }
 
 function makeHarness(opts: HarnessOptions = {}) {
   const notices: string[] = [];
   const logs: string[] = [];
   const infoLogs: string[] = [];
+  const verboseLogs: string[] = [];
   const syncAll = jest.fn(
     async (
       specs: SyncRepoSpec[],
       _direction?: "sync" | "pull" | "push",
+      onProgress?: (event: SyncProgressEvent) => void,
     ): Promise<RepoSyncResult[]> => {
       if (opts.syncAllGate !== undefined) await opts.syncAllGate;
+      // #3498 — replay synthetic in-flight progress so the routing
+      // (info channel + verbose file sink) is observable in the test.
+      for (const e of opts.progressEvents ?? []) onProgress?.(e);
       return (
         opts.results ?? specs.map((s) => result(s.repoKey, "synced"))
       );
@@ -92,12 +107,13 @@ function makeHarness(opts: HarnessOptions = {}) {
     notify: (m) => notices.push(m),
     log: (m) => logs.push(m),
     logInfo: opts.logInfo ?? ((m) => infoLogs.push(m)),
+    logVerbose: (m) => verboseLogs.push(m),
     ...(opts.stepNoticesEnabled !== undefined
       ? { stepNoticesEnabled: (): boolean => opts.stepNoticesEnabled === true }
       : {}),
     ...(opts.parity !== undefined ? { parity: opts.parity } : {}),
   });
-  return { commands, notices, logs, infoLogs, syncAll };
+  return { commands, notices, logs, infoLogs, verboseLogs, syncAll };
 }
 
 describe("SyncCommands", () => {
@@ -925,5 +941,61 @@ describe("SyncCommands — #3499 opt-in per-step Notice toggle", () => {
     await commands.invokeSync();
     expect(notices.some((n) => n.includes("o/r#main:"))).toBe(true);
     expect(notices.some((n) => n.includes("Sync started — "))).toBe(true);
+  });
+});
+
+describe("SyncCommands — #3498 in-flight progress + verbose file log", () => {
+  it("threads an onProgress observer into engine.syncAll", async () => {
+    const { commands, syncAll } = makeHarness();
+    await commands.invokeSync();
+    expect(syncAll).toHaveBeenCalledTimes(1);
+    // 3rd arg is the in-flight progress callback.
+    expect(typeof syncAll.mock.calls[0][2]).toBe("function");
+  });
+
+  it("renders in-flight phases to the info channel AND the verbose file sink", async () => {
+    const { commands, infoLogs, verboseLogs } = makeHarness({
+      progressEvents: [
+        { repoKey: "o/r#main", phase: "detecting" },
+        { repoKey: "o/r#main", phase: "pulling-remote" },
+        { repoKey: "o/r#main", phase: "merging" },
+      ],
+    });
+
+    await commands.invokeSync();
+
+    const expectedLines = [
+      "[ExoSync] o/r#main: detecting changes…",
+      "[ExoSync] o/r#main: pulling remote tree…",
+      "[ExoSync] o/r#main: merge layer firing…",
+    ];
+    for (const line of expectedLines) {
+      expect(infoLogs).toContain(line); // info channel (console-only by default)
+      expect(verboseLogs).toContain(line); // verbose file sink
+    }
+  });
+
+  it("forwards the start + per-repo step lines to the verbose file sink", async () => {
+    const { commands, verboseLogs } = makeHarness({
+      results: [result("o/r#main", "synced", { pushedCount: 2 })],
+    });
+
+    await commands.invokeSync();
+
+    expect(verboseLogs.some((l) => l.includes("[ExoSync] Sync started — "))).toBe(true);
+    expect(verboseLogs.some((l) => l.includes("[ExoSync] o/r#main:"))).toBe(true);
+  });
+
+  it("in-flight progress lines are NOT surfaced as toasts even when step notices are on", async () => {
+    const { commands, notices } = makeHarness({
+      stepNoticesEnabled: true,
+      progressEvents: [{ repoKey: "o/r#main", phase: "merging" }],
+    });
+
+    await commands.invokeSync();
+
+    // #3499 toasts cover start + per-repo summary lines; the in-flight phase
+    // firehose (3/repo) stays off the toast channel (#3498 info discipline).
+    expect(notices.some((n) => n.includes("merge layer firing"))).toBe(false);
   });
 });
