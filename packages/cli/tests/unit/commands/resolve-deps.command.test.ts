@@ -106,6 +106,44 @@ describe("resolve-deps command", () => {
     ]);
   });
 
+  it("excludes unsafe dependency sources from urls output, warns, but keeps them in json (security boundary)", async () => {
+    // Replace the w3c dep's source with a command-executing git transport.
+    await writeDescriptor(registry, UID_EXO, "exo", "https://github.com/kitelev/exoas-exo", [UID_W3C]);
+    await fs.writeFile(
+      path.join(registry, `${UID_W3C}.md`),
+      [
+        "---",
+        `exo__Asset_uid: ${UID_W3C}`,
+        "exo__Instance_class:",
+        `  - "[[${ASSET_SPACE_CLASS_UID}]]"`,
+        'exo__AssetSpace_namespace: "w3c-aggregated"',
+        'exo__AssetSpace_source: "ext::sh -c id"',
+        "---",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const cu = capture();
+    const ru = await runResolveDeps(
+      { registry: path.join(tmp, "registry"), self: "kitelev/exoas-exo", format: "urls" },
+      cu.io,
+    );
+    expect(ru.exitCode).toBe(0);
+    expect(cu.out).toEqual([]); // unsafe source NOT emitted as a clone target
+    expect(cu.err.join("\n")).toMatch(/unsafe git-clone targets/);
+
+    const cj = capture();
+    await runResolveDeps(
+      { registry: path.join(tmp, "registry"), self: "kitelev/exoas-exo", format: "json" },
+      cj.io,
+    );
+    const parsed = JSON.parse(cj.out.join("\n"));
+    // still present in diagnostics, flagged as unsafe
+    expect(parsed.dependencies.map((d: { uid: string }) => d.uid)).toContain(UID_W3C);
+    expect(parsed.unsafeSources.map((d: { uid: string }) => d.uid)).toEqual([UID_W3C]);
+  });
+
   it("lenient (default): self-not-found → exit 0, no urls printed, warn on stderr", async () => {
     const c = capture();
     const r = await runResolveDeps(
