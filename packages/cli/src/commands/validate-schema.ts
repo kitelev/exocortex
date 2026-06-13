@@ -657,8 +657,11 @@ export function labelToOntologyIRI(label: string): string | null {
   //    sh:class violation even though person__Person IS-A ems__Agent via
   //    exo__Class_superClass. (The legacy `ims__Person` bridged only because
   //    `ims__` happened to be in the curated map; the only difference between the
-  //    two classes is the prefix.) Prefix shape mirrors Namespace.forPrefix.
-  if (/^[a-z][a-zA-Z0-9]*$/.test(prefix)) {
+  //    two classes is the prefix.) Prefix shape mirrors Namespace.forPrefix; the
+  //    local-name guard mirrors NoteToRDFConverter.expandClassValue (which rejects
+  //    `[\s()]` local names) so the derived IRI always matches the converter's
+  //    emitted rdf:type — never an inert, unmatchable hierarchy entry.
+  if (/^[a-z][a-zA-Z0-9]*$/.test(prefix) && !/[\s()]/.test(local)) {
     return `https://exocortex.my/ontology/${prefix}#${local}`;
   }
   return null;
