@@ -39,6 +39,11 @@ const C_UID = "c3333333-3333-4333-8333-333333333333"; // ims__ConceptC
 // Predicate asset — hyphenated prefix label → NOT symbol-expandable → file IRI
 const P_UID = "00000000-0000-4000-8000-000000000abc"; // adapter-exo-ims__relatesToConcept
 
+// Concept INSTANCE object — plain label (not prefix-parseable) → file IRI.
+// Mirrors the real $kitelev-class-relations shape where statement objects are
+// concept instances resolving to file IRIs (not symbolic class IRIs).
+const D_UID = "d4444444-4444-4444-8444-444444444444";
+
 // Junction reified-statement assets
 const J1_UID = "10000000-0000-4000-8000-000000000001"; // A --rel--> B
 const J2_UID = "20000000-0000-4000-8000-000000000002"; // B --rel--> C
@@ -60,6 +65,9 @@ const P_FILE = mkFile(P_UID, "assetspaces/adapters");
 const J1_FILE = mkFile(J1_UID, "assetspaces/relations");
 const J2_FILE = mkFile(J2_UID, "assetspaces/relations");
 const J3_FILE = mkFile(J3_UID, "assetspaces/relations");
+const J4_UID = "40000000-0000-4000-8000-00000000000d"; // A --rel--> D (file-IRI object)
+const D_FILE = mkFile(D_UID, "assetspaces/concepts");
+const J4_FILE = mkFile(J4_UID, "assetspaces/relations");
 // Statement class definition (UID-named) — needed for bare-UID Instance_class
 // resolution ([[uid]] without alias → vault lookup → label → exo#Statement)
 const STMT_CLASS_FILE = mkFile(STMT_CLASS_UID, "assetspaces/exo");
@@ -115,6 +123,19 @@ const FM_BY_PATH: Record<string, IFrontmatter> = {
     exo__Asset_label: "exo__Statement",
     exo__Instance_class: ["[[exo__Class]]"],
   },
+  [D_FILE.path]: {
+    exo__Asset_uid: D_UID,
+    // Plain (non-prefix) label → resolves to a file IRI, not a symbolic IRI
+    exo__Asset_label: "Some Concept Instance",
+  },
+  [J4_FILE.path]: {
+    exo__Asset_uid: J4_UID,
+    exo__Asset_isDefinedBy: "[[55a0f8b9-e908-45bf-9c16-763589f04f16]]",
+    exo__Instance_class: [`[[${STMT_CLASS_UID}|exo__Statement]]`],
+    exo__Statement_subject: `[[${A_UID}]]`,
+    exo__Statement_predicate: `[[${P_UID}]]`,
+    exo__Statement_object: `[[${D_UID}]]`,
+  },
 };
 
 const FILE_BY_UID: Record<string, IFile> = {
@@ -125,6 +146,8 @@ const FILE_BY_UID: Record<string, IFile> = {
   [J1_UID]: J1_FILE,
   [J2_UID]: J2_FILE,
   [J3_UID]: J3_FILE,
+  [J4_UID]: J4_FILE,
+  [D_UID]: D_FILE,
   [STMT_CLASS_UID]: STMT_CLASS_FILE,
 };
 
@@ -233,6 +256,25 @@ describe("NoteToRDFConverter — EKA D5 reified exo__Statement materialization",
           subjectIRI(),
           predicateIRI(),
           Namespace.IMS.term("ConceptC"),
+        ),
+      ).toBe(true);
+    });
+
+    it("materializes a file-IRI object + file-IRI predicate (real production shape)", async () => {
+      // Real $kitelev-class-relations objects are concept instances (file IRIs),
+      // and the predicate prefix is hyphenated (file IRI). Pin that the edge's
+      // node identities stay byte-identical to the raw exo__Statement_* triples.
+      const triples = await converter.convertNote(J4_FILE);
+      const dIRI = converter.notePathToIRI(D_FILE.path);
+      // logical edge present with file-IRI object
+      expect(hasTriple(triples, subjectIRI(), predicateIRI(), dIRI)).toBe(true);
+      // and the raw object triple uses the SAME file IRI (round-trip consistency)
+      expect(
+        hasTriple(
+          triples,
+          converter.notePathToIRI(J4_FILE.path),
+          Namespace.EXO.term("Statement_object"),
+          dIRI,
         ),
       ).toBe(true);
     });
