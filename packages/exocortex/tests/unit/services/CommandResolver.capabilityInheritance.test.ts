@@ -595,5 +595,58 @@ describe("CommandResolver — C3 capability-inheritance (RFC 78c2b7d0)", () => {
       const ids = resolved.map((rc) => rc.binding.id);
       expect(ids.filter((id) => id === "bind-b")).toHaveLength(1);
     });
+
+    it("keeps cyclic-chain class bindings on the PLUGIN pre-expanded shape (advisor round-2)", async () => {
+      // Advisor round-2 regression: under a malformed cycle (A ⊑ B ⊑ A) the
+      // plugin caller pre-expands to BOTH classes (each is the other's
+      // ancestor). A naive true-leaf detection demotes both → nothing is
+      // seeded → all class bindings silently vanish (only the universal-root
+      // binding survives). The cycle-aware guard keeps both as leaves so the
+      // bare-leaf ↔ pre-expanded invariant holds.
+      const cycleStore = new InMemoryTripleStore();
+      const aUid = "aaaaaaaa-0000-0000-0000-000000000000";
+      const bUid = "bbbbbbbb-0000-0000-0000-000000000000";
+      await seedClass(cycleStore, {
+        uid: aUid,
+        label: "ems__CycleA",
+        superClassLabel: "ems__CycleB",
+      });
+      await seedClass(cycleStore, {
+        uid: bUid,
+        label: "ems__CycleB",
+        superClassLabel: "ems__CycleA",
+      });
+      const cycleResolver = new CommandResolver(cycleStore);
+      await addCommand(cycleStore, "cmd-a", "A Command");
+      await addCommand(cycleStore, "cmd-b", "B Command");
+      await addCommand(cycleStore, "cmd-univ", "Universal Command");
+      await addBinding(cycleStore, {
+        uid: "bind-a",
+        commandRef: "cmd-a",
+        targetClass: "ems__CycleA",
+      });
+      await addBinding(cycleStore, {
+        uid: "bind-b",
+        commandRef: "cmd-b",
+        targetClass: "ems__CycleB",
+      });
+      await addBinding(cycleStore, {
+        uid: "bind-univ",
+        commandRef: "cmd-univ",
+        targetClass: "exo__Asset",
+      });
+
+      // Plugin-shape: both cyclic classes (+ UID forms) + universal root.
+      const resolved = await cycleResolver.resolveForAssetMulti(
+        "obsidian://vault/03 Knowledge/cycle-instance.md",
+        ["ems__CycleA", "ems__CycleB", aUid, bUid, "exo__Asset"],
+      );
+
+      const ids = resolved.map((rc) => rc.binding.id);
+      // All class bindings present (not just the universal-root rescue).
+      expect(ids).toEqual(
+        expect.arrayContaining(["bind-a", "bind-b", "bind-univ"]),
+      );
+    });
   });
 });

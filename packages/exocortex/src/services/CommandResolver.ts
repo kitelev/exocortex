@@ -406,10 +406,23 @@ export class CommandResolver {
     // True leaves = input classes that are NOT an ancestor of any sibling
     // input class. This makes depth assignment invariant to whether the caller
     // pre-expanded the chain.
+    //
+    // Cycle guard: under a malformed cyclic TBox (`A ⊑ B ⊑ A`), a pre-expanded
+    // caller passes BOTH A and B and each is the other's ancestor. Demoting
+    // both would leave neither as a true leaf, so the BFS seeds nothing and
+    // every class binding silently vanishes. Demote `cls` only when a sibling
+    // is its ancestor AND `cls` is NOT also that sibling's ancestor — so a
+    // mutually-ancestral cycle keeps both as leaves (depth 0), preserving the
+    // bare-leaf ↔ pre-expanded invariant.
     const isAncestorOfSibling = (cls: string): boolean => {
       for (const other of inputClasses) {
         if (other === cls) continue;
-        if (ancestorSets.get(other)?.has(cls)) return true;
+        if (
+          ancestorSets.get(other)?.has(cls) &&
+          !ancestorSets.get(cls)?.has(other)
+        ) {
+          return true;
+        }
       }
       return false;
     };
