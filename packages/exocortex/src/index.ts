@@ -97,6 +97,15 @@ export {
 } from "./services/GroundingExecutor";
 export { createVaultFrontmatterClassLabelResolver } from "./services/VaultFrontmatterClassLabelResolver";
 export {
+  NamedQueryRunner,
+  type NamedQueryRunnerPort,
+  type NamedQueryContext,
+  type NamedQueryParam,
+  type NamedQueryScalar,
+} from "./services/NamedQueryRunner";
+export { iriToObsidianName } from "./utilities/iriToObsidianName";
+export { extractSparqlBlock, stripFrontmatter } from "./utilities/sparqlBlock";
+export {
   CommandExecutionFlow,
   type CommandExecutionContext,
   type CommandPromptAdapter,

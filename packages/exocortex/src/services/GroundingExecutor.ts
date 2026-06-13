@@ -17,6 +17,7 @@ import { EffortStatus } from "../domain/constants/EffortStatus";
 import { IRI } from "../domain/models/rdf/IRI";
 import type { WorkflowDefinition } from "../domain/models/WorkflowDefinition";
 import { FrontmatterService } from "../utilities/FrontmatterService";
+import type { NamedQueryRunnerPort } from "./NamedQueryRunner";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { DateTimeParsing } from "../infrastructure/sparql/filters/functions/DateTimeParsing";
 import { LoggingService } from "./LoggingService";
@@ -288,6 +289,7 @@ export class GroundingExecutor {
   private readonly classLabelToUid?: ClassLabelToUidResolver;
   private readonly workflowResolver?: WorkflowResolverPort;
   private readonly groundingLoader?: GroundingLoaderPort;
+  private readonly namedQueryRunner?: NamedQueryRunnerPort;
   private readonly clock: IClock;
   private readonly uidGen: IUidGenerator;
 
@@ -307,6 +309,9 @@ export class GroundingExecutor {
       // dispatch returns a clear error rather than silently no-op'ing.
       workflowResolver?: WorkflowResolverPort;
       groundingLoader?: GroundingLoaderPort;
+      // RFC 78c2b7d0 C4 — read-side value-source for property_set
+      // `targetValueQuery`. When absent, such groundings fail loud.
+      namedQueryRunner?: NamedQueryRunnerPort;
     },
   ) {
     this.frontmatterService = new FrontmatterService();
@@ -316,6 +321,7 @@ export class GroundingExecutor {
     this.classLabelToUid = classLabelToUid;
     this.workflowResolver = options?.workflowResolver;
     this.groundingLoader = options?.groundingLoader;
+    this.namedQueryRunner = options?.namedQueryRunner;
     this.clock = options?.clock ?? liveClock();
     this.uidGen = options?.uidGenerator ?? liveUidGenerator();
   }
@@ -439,17 +445,20 @@ export class GroundingExecutor {
 
     // RFC 31c1a0be Phase 5a — typed predicates only.
     // Multiple typed predicates simultaneously = fail-loud (RFC §4 cardinality).
+    // RFC 78c2b7d0 C4 — `targetValueQuery` joins the mutually-exclusive set as a
+    // fourth value-source (read-side NamedQuery computes the write value).
     let effectiveValue: string | undefined;
     const typedFieldsSet = [
       grounding.targetValueRef !== undefined,
       grounding.targetValueLiteral !== undefined,
       grounding.targetValueSubstitution !== undefined,
+      grounding.targetValueQuery !== undefined,
     ].filter(Boolean).length;
     if (typedFieldsSet > 1) {
       return {
         success: false,
         error:
-          "property_set: more than one of targetValueRef/targetValueLiteral/targetValueSubstitution set (cardinality 0..1 each, mutually exclusive)",
+          "property_set: more than one of targetValueRef/targetValueLiteral/targetValueSubstitution/targetValueQuery set (cardinality 0..1 each, mutually exclusive)",
       };
     }
     if (grounding.targetValueRef !== undefined) {
@@ -458,11 +467,26 @@ export class GroundingExecutor {
       effectiveValue = grounding.targetValueLiteral;
     } else if (grounding.targetValueSubstitution !== undefined) {
       effectiveValue = grounding.targetValueSubstitution;
+    } else if (grounding.targetValueQuery !== undefined) {
+      // RFC 78c2b7d0 C4 — read-side value-source (CQRS bridge). Run the
+      // referenced NamedQuery read-only with `$currentAsset` = the target IRI,
+      // and use its scalar result as the property value. IRI scalars are
+      // wrapped as a wikilink (`"[[<name>]]"`) — matching `targetValueRef`
+      // semantics — so a query selecting an entity reference (e.g. the archive
+      // ontology in C5) yields a resolvable link; literal scalars pass through.
+      const queryValueResult = await this.resolveTargetValueQuery(
+        grounding.targetValueQuery,
+        targetIRI,
+      );
+      if (!queryValueResult.success) {
+        return queryValueResult;
+      }
+      effectiveValue = queryValueResult.value;
     } else {
       return {
         success: false,
         error:
-          "property_set requires one of targetValueRef/targetValueLiteral/targetValueSubstitution",
+          "property_set requires one of targetValueRef/targetValueLiteral/targetValueSubstitution/targetValueQuery",
       };
     }
 
@@ -498,6 +522,54 @@ export class GroundingExecutor {
     await this.fileWriter.updateFile(filePath, updated);
 
     return { success: true };
+  }
+
+  /**
+   * RFC 78c2b7d0 C4 — resolve a `property_set` `targetValueQuery` to its write
+   * value via the read-side {@link NamedQueryRunner}. Auto-injects
+   * `$currentAsset` = the target IRI; the scalar result is formatted as a
+   * wikilink (IRI scalar) or passed through (literal scalar).
+   *
+   * Fail-loud on every degraded path — a `property_set` that cannot compute a
+   * value MUST NOT silently write nothing:
+   *   - runner not wired (tests/CLI/plugin missing the injection),
+   *   - the NamedQuery throws (missing body, forbidden UPDATE keyword, parse
+   *     error — all surfaced verbatim),
+   *   - the query produced no scalar (empty result set / non-scalar shape).
+   */
+  private async resolveTargetValueQuery(
+    queryUid: string,
+    targetIRI: string,
+  ): Promise<
+    { success: true; value: string } | { success: false; error: string }
+  > {
+    if (!this.namedQueryRunner) {
+      return {
+        success: false,
+        error:
+          "property_set targetValueQuery requires NamedQueryRunner injection (options.namedQueryRunner). Wire the plugin/CLI before using this value-source.",
+      };
+    }
+    let scalar;
+    try {
+      scalar = await this.namedQueryRunner.runScalar(queryUid, {
+        currentAsset: targetIRI,
+      });
+    } catch (error) {
+      return {
+        success: false,
+        error: `property_set targetValueQuery: NamedQuery '${queryUid}' failed — ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    if (scalar === null) {
+      return {
+        success: false,
+        error: `property_set targetValueQuery: NamedQuery '${queryUid}' returned no scalar value (empty result set or non-scalar shape).`,
+      };
+    }
+    const value =
+      scalar.kind === "iri" ? `"[[${scalar.value}]]"` : scalar.value;
+    return { success: true, value };
   }
 
   private async executePropertyDelete(

@@ -8,6 +8,7 @@ import { Namespace } from "../domain/models/rdf/Namespace";
 import { GroundingType } from "../domain/constants/GroundingType";
 import { resolveGroundingTypeFromIRI } from "../domain/constants/GroundingTypeUIDs";
 import { utf8ToBase64 } from "../utilities/base64";
+import { iriToObsidianName } from "../utilities/iriToObsidianName";
 import {
   COMMAND_VARIANT_VALUES,
   LABEL_CLASS_VALUES,
@@ -1557,6 +1558,15 @@ export class CommandResolver {
     } else if (substitutionRefRaw) {
       targetValueSubstitution = substitutionRefRaw;
     }
+    // RFC 78c2b7d0 C4 — `targetValueQuery` value-source: wikilink ref to a
+    // `query__NamedQuery` asset. `getObsidianName` unwraps to the bare UID
+    // (executor passes it to the NamedQueryRunner; cold-start label-form refs
+    // pass through unchanged, like targetValueRef). Read-side computes the
+    // write value — the CQRS bridge consumed by C5.
+    const targetValueQuery = await this.getObsidianName(
+      subject,
+      Namespace.EXOCMD.term("Grounding_targetValueQuery"),
+    );
     // RFC 918a2b65 Phase 1 typed predicates for service_call + property_append.
     // Plain string literals (JSON config / substitution expression); resolution
     // is identical to `targetValueLiteral`. Phase 4 (#3242) removed the legacy
@@ -1759,6 +1769,7 @@ export class CommandResolver {
       targetValueRef: targetValueRef ?? undefined,
       targetValueLiteral: targetValueLiteral ?? undefined,
       targetValueSubstitution: targetValueSubstitution ?? undefined,
+      targetValueQuery: targetValueQuery ?? undefined,
       serviceCallPayload: serviceCallPayload ?? undefined,
       appendExpression: appendExpression ?? undefined,
       sparqlUpdate: sparqlUpdate ?? undefined,
@@ -2967,24 +2978,11 @@ export class CommandResolver {
   }
 
   private iriToObsidianName(iri: string): string | null {
-    // Reverse-map an IRI under EXOCORTEX_ONTOLOGY_BASE (`https://exocortex.my/ontology/<prefix>#<local>`)
-    // back to its Obsidian property-key form `<prefix>__<local>`. Mirrors the forward path
-    // (`Namespace.fromPropertyKey` → `Namespace.forPrefix`), which auto-extends to ad-hoc
-    // namespaces under the same base. Issue #3274 — prior hardcoded whitelist (8 known
-    // prefixes) silently dropped any ad-hoc namespace (e.g. `kitelev__`, `aiKnow__`,
-    // `pmbok__` partially), making `findBindings(label)` return `[]` for bindings whose
-    // `targetClass` triple is stored as IRI under such namespaces.
-    const baseMatch = iri.match(
-      /^https:\/\/exocortex\.my\/ontology\/([a-z][a-zA-Z0-9]*)#([^#]+)$/,
-    );
-    if (baseMatch) {
-      const [, prefix, local] = baseMatch;
-      return `${prefix}__${local}`;
-    }
-    // Handle obsidian:// vault URLs (e.g., obsidian://vault/ems/ems__EffortStatusDoing.md)
-    const obsMatch = iri.match(/\/([^/]+)\.md$/);
-    if (obsMatch) return obsMatch[1];
-    return null;
+    // RFC 78c2b7d0 C4 — delegates to the shared pure utility (single source of
+    // truth) so the read-side `NamedQueryRunner` can perform the identical
+    // IRI→name reverse-mapping for SELECT bindings without duplicating the
+    // regex. Behaviour unchanged (Issue #3274 ad-hoc namespace support).
+    return iriToObsidianName(iri);
   }
 
   private normalizeWikilink(value: string): string {

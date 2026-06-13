@@ -1,6 +1,7 @@
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
 import type { IQueryBodyResolver } from "exocortex";
+import { extractSparqlBlock, stripFrontmatter } from "exocortex";
 
 /**
  * Vault-backed `IQueryBodyResolver` (RFC c78cc5c8 Phase 1a).
@@ -41,8 +42,8 @@ export class ObsidianQueryBodyResolver implements IQueryBodyResolver {
       return null;
     }
 
-    const body = this.stripFrontmatter(content);
-    return this.extractSparqlBlock(body);
+    const body = stripFrontmatter(content);
+    return extractSparqlBlock(body);
   }
 
   /**
@@ -75,17 +76,4 @@ export class ObsidianQueryBodyResolver implements IQueryBodyResolver {
     return null;
   }
 
-  private stripFrontmatter(content: string): string {
-    if (!content.startsWith("---")) return content;
-    const end = content.indexOf("\n---", 3);
-    if (end < 0) return content;
-    return content.slice(end + 4);
-  }
-
-  private extractSparqlBlock(body: string): string | null {
-    const match = body.match(/```sparql\s*\n([\s\S]*?)\n```/);
-    if (!match) return null;
-    const inner = match[1].trim();
-    return inner.length > 0 ? inner : null;
-  }
 }
