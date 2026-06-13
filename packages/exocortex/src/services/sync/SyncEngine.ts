@@ -2267,10 +2267,20 @@ export class SyncEngine {
           // the remote change is an independent copy (template-copy
           // arrival) — uid-matching it would cross-conflict the copy with
           // the local edit and strand both behind a spurious quarantine.
+          //
+          // #3485: for a LOCAL rename A→B the head carries A (the basePath),
+          // not B (local.path), so consulting local.path alone never fires
+          // the guard — the copy uid-matches the renamed change and the pair
+          // quarantines instead of converging in one cycle. The basePath
+          // still being on the head is equally strong copy evidence: the
+          // asset our rename is based on was not moved remotely, so the
+          // cross-path change is an independent copy, not rename evidence.
           if (
             r.kind === "change" &&
             r.path !== local.path &&
-            headTreeByPath?.has(local.path) === true
+            (headTreeByPath?.has(local.path) === true ||
+              (local.basePath !== undefined &&
+                headTreeByPath?.has(local.basePath) === true))
           ) {
             continue;
           }
