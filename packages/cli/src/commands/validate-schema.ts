@@ -61,6 +61,17 @@ export const NAMESPACE_PREFIX_MAP: ReadonlyMap<string, string> = new Map([
   ["ems__", "https://exocortex.my/ontology/ems#"],
   ["exocmd__", "https://exocortex.my/ontology/exocmd#"],
   ["ims__", "https://exocortex.my/ontology/ims#"],
+  // RFC 78c2b7d0 C4 — read-side query ontology (exoql__Query) + its C4
+  // refinement (query__NamedQuery). Without these, TripleClassHierarchy's
+  // labelToOntologyIRI returns null for query__/exoql__ class labels, so the
+  // ontology-URI subClassOf edges (query#NamedQuery → exoql#Query → exo#Asset)
+  // are never built — making `sh:class exo__Asset` range checks on a
+  // `targetValueQuery → query__NamedQuery` reference (C5 «Archive Ontologically»)
+  // a false violation even though NamedQuery IS-A exo__Asset via that chain.
+  // NoteToRDFConverter already derives these IRIs dynamically (Namespace.fromPropertyKey);
+  // this keeps the validator's curated prefix registry in sync.
+  ["exoql__", "https://exocortex.my/ontology/exoql#"],
+  ["query__", "https://exocortex.my/ontology/query#"],
   ["ztlk__", "https://exocortex.my/ontology/ztlk#"],
   ["ptms__", "https://exocortex.my/ontology/ptms#"],
   ["lit__", "https://exocortex.my/ontology/lit#"],
