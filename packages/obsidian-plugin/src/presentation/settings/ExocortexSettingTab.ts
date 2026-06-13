@@ -752,6 +752,23 @@ export class ExocortexSettingTab extends PluginSettingTab {
           }),
       );
 
+    new Setting(containerEl)
+      .setName("Write a verbose sync log to file")
+      .setDesc(
+        "Append every sync step (start, the in-flight detecting / pulling / " +
+          "merging lines, and each per-repo outcome) to the plugin log file " +
+          "for a durable debug trace. Independent of the global file-logging " +
+          "channel and default off — turn on to capture one misbehaving run.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.verboseSyncLogging)
+          .onChange(async (value) => {
+            this.plugin.settings.verboseSyncLogging = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
     // ─────── Section 2 — Active profile ───────
     new Setting(containerEl).setName("Active profile").setHeading();
 

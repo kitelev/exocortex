@@ -148,6 +148,29 @@ export interface SyncEngineDeps {
 }
 
 /**
+ * #3498 — coarse in-flight phases observed WHILE a single repo is processing.
+ * A UI surfaces them as live trace lines («detecting… / pulling remote tree… /
+ * merge layer firing…»). Strictly observation-only — the engine never branches
+ * on the observer.
+ */
+export type SyncProgressPhase = "detecting" | "pulling-remote" | "merging";
+
+/** A single in-flight progress event (#3498). */
+export interface SyncProgressEvent {
+  /** Repo key the phase belongs to (matches `RepoSyncResult.repoKey`). */
+  repoKey: string;
+  phase: SyncProgressPhase;
+}
+
+/**
+ * Observation-only progress callback (#3498). It MUST NOT affect the sync
+ * outcome — the engine wraps every call in a try/catch so a faulty observer
+ * can never throw into the cycle (info-channel discipline #3186; the consumer
+ * routes these to the info channel, never the warn channel).
+ */
+export type SyncProgressFn = (event: SyncProgressEvent) => void;
+
+/**
  * Mode-scoped helpers (Phase C). Computed ONCE per repo in `syncLocked`
  * and threaded through — the syncable predicate MUST be applied
  * identically at every tree/snapshot site (disk snapshot, remote diff,
@@ -571,13 +594,14 @@ export class SyncEngine {
   async syncAll(
     specs: SyncRepoSpec[],
     direction: SyncDirection = "sync",
+    onProgress?: SyncProgressFn,
   ): Promise<RepoSyncResult[]> {
     if (this.opInProgress) return specs.map((spec) => this.busyResult(spec));
     this.opInProgress = true;
     try {
       const results: RepoSyncResult[] = [];
       for (const spec of specs) {
-        results.push(await this.syncLocked(spec, direction));
+        results.push(await this.syncLocked(spec, direction, onProgress));
       }
       return results;
     } finally {
@@ -589,19 +613,38 @@ export class SyncEngine {
   async sync(
     spec: SyncRepoSpec,
     direction: SyncDirection = "sync",
+    onProgress?: SyncProgressFn,
   ): Promise<RepoSyncResult> {
     if (this.opInProgress) return this.busyResult(spec);
     this.opInProgress = true;
     try {
-      return await this.syncLocked(spec, direction);
+      return await this.syncLocked(spec, direction, onProgress);
     } finally {
       this.opInProgress = false;
+    }
+  }
+
+  /**
+   * Fire an in-flight progress event (#3498). Observation-only: a throwing
+   * observer is swallowed so it can never affect the sync outcome.
+   */
+  private emitProgress(
+    onProgress: SyncProgressFn | undefined,
+    repoKey: string,
+    phase: SyncProgressPhase,
+  ): void {
+    if (onProgress === undefined) return;
+    try {
+      onProgress({ repoKey, phase });
+    } catch {
+      // observation-only — never let a faulty observer break the cycle
     }
   }
 
   private async syncLocked(
     spec: SyncRepoSpec,
     direction: SyncDirection = "sync",
+    onProgress?: SyncProgressFn,
   ): Promise<RepoSyncResult> {
     const warnings: string[] = [];
     const deferredDeletes: string[] = [];
@@ -751,6 +794,7 @@ export class SyncEngine {
         };
       }
 
+      this.emitProgress(onProgress, spec.repoKey, "detecting");
       const detection = await detectChanges({
         localFiles: disk,
         watermark,
@@ -783,6 +827,7 @@ export class SyncEngine {
         syntheticFirstSyncBase,
         sizeExcluded,
         direction,
+        onProgress,
       );
       inFlightDeletionPaths = [];
       if (loop.kind !== "done" && pinned.pushDeletionsAll.size > 0) {
@@ -1319,6 +1364,7 @@ export class SyncEngine {
     forceRemoteDiff = false,
     sizeExcluded: ReadonlySet<string> = new Set(),
     direction: SyncDirection = "sync",
+    onProgress?: SyncProgressFn,
   ): Promise<PushLoopOutcome> {
     const {
       localChanges,
@@ -1379,6 +1425,7 @@ export class SyncEngine {
         hasPins ||
         forceRemoteDiff
       ) {
+        this.emitProgress(onProgress, spec.repoKey, "pulling-remote");
         const remote = await this.collectRemoteChanges(
           spec,
           watermark,
@@ -1399,6 +1446,12 @@ export class SyncEngine {
           remote.headTreeByPath,
         );
         if (verdict.conflicts.length > 0) {
+          // #3498 — conflict resolution is about to fire (file-mode remote-wins
+          // OR the A2 merge layer). Split runs only defer, so the "merging"
+          // phase is the full-Sync signal that the merge layer is engaging.
+          if (direction === "sync") {
+            this.emitProgress(onProgress, spec.repoKey, "merging");
+          }
           if (direction !== "sync") {
             // Split runs NEVER resolve conflicts (#3473): neither the A2
             // merge layer nor file-mode remote-wins (D18) fires. Every
@@ -2267,10 +2320,20 @@ export class SyncEngine {
           // the remote change is an independent copy (template-copy
           // arrival) — uid-matching it would cross-conflict the copy with
           // the local edit and strand both behind a spurious quarantine.
+          //
+          // #3485: for a LOCAL rename A→B the head carries A (the basePath),
+          // not B (local.path), so consulting local.path alone never fires
+          // the guard — the copy uid-matches the renamed change and the pair
+          // quarantines instead of converging in one cycle. The basePath
+          // still being on the head is equally strong copy evidence: the
+          // asset our rename is based on was not moved remotely, so the
+          // cross-path change is an independent copy, not rename evidence.
           if (
             r.kind === "change" &&
             r.path !== local.path &&
-            headTreeByPath?.has(local.path) === true
+            (headTreeByPath?.has(local.path) === true ||
+              (local.basePath !== undefined &&
+                headTreeByPath?.has(local.basePath) === true))
           ) {
             continue;
           }

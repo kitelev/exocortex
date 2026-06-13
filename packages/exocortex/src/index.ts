@@ -634,6 +634,9 @@ export {
   isNonFastForwardError,
   orderChildrenFirst,
   type SyncEngineDeps,
+  type SyncProgressEvent,
+  type SyncProgressFn,
+  type SyncProgressPhase,
 } from "./services/sync/SyncEngine";
 export {
   DEFAULT_MAX_FILE_BYTES,

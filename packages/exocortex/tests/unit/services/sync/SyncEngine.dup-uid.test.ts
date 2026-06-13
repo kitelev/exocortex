@@ -251,6 +251,50 @@ describe("SyncEngine — dup-uid arrival cycle never pushes a wrongful delete (#
   });
 });
 
+describe("SyncEngine — local-rename × copy-arrival converges in one cycle (#3485)", () => {
+  // A UNIQUE-uid local rename A→B (head carries A, the basePath, but not B)
+  // racing a remote copy-arrival at C sharing the uid. Pre-#3485 the
+  // copy-vs-rename evidence guard only consulted `headTreeByPath.has(local.path)`
+  // (= has(B) = false), so it did NOT fire — the copy uid-matched the renamed
+  // local change and the pair quarantined instead of converging. The guard must
+  // also consult `local.basePath` (= has(A) = true ⇒ the remote change is a
+  // copy, NOT rename evidence).
+  const ORIG = "assets/orig.md";
+  const RENAMED = "assets/renamed.md";
+  const COPY = "assets/copy.md";
+
+  it("a local rename racing a remote copy of the same uid does NOT quarantine; both converge", async () => {
+    const gh = new FakeGitHubRepo({ [ORIG]: mdAsset("u-rename", "content") });
+    const local = new FakeLocalFiles({ [ORIG]: mdAsset("u-rename", "content") });
+    const { engine } = makeEngine(gh, local, { mergeLayer: quarantineAllMerger });
+    await bootstrap(engine, gh);
+
+    // Local: rename ORIG → RENAMED (unique uid ⇒ ChangeDetector infers basePath).
+    local.files.delete(ORIG);
+    local.files.set(RENAMED, mdAsset("u-rename", "content"));
+    // Remote: a template-copy arrives at COPY with the same uid — ORIG is NOT
+    // deleted on the remote head (copy-arrival, not a rename).
+    gh.commitDirect("main", { [COPY]: mdAsset("u-rename", "remote copy") }, "device B copies");
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.quarantinedCount).toBe(0); // copy is NOT mistaken for rename evidence
+    // The local rename converged: ORIG renamed away, RENAMED pushed.
+    expect(gh.headFiles().has(RENAMED)).toBe(true);
+    expect(gh.headFiles().has(ORIG)).toBe(false);
+    expect(result.pushedDeletes ?? []).toEqual([ORIG]);
+    // The remote copy pull-applied to its own path, untouched by the rename.
+    expect(local.files.get(COPY)).toBe(mdAsset("u-rename", "remote copy"));
+    expect(gh.headFiles().has(COPY)).toBe(true);
+
+    // Real one-cycle convergence: the next round is a clean no-op, not a loop.
+    const next = await engine.sync(gh.spec());
+    expect(next.pushedSha).toBeUndefined();
+    expect(next.quarantinedCount).toBe(0);
+  });
+});
+
 describe("SyncEngine — remote-side dup uids match by path (#3477)", () => {
   it("TWO remote adds sharing one uid apply as independent files; a local edit of the same uid still pushes", async () => {
     const FILE = "assets/a.md";

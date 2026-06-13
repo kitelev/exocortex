@@ -20,7 +20,12 @@
  * check here.
  */
 
-import type { RepoSyncResult, SyncDirection, SyncRepoSpec } from "exocortex";
+import type {
+  RepoSyncResult,
+  SyncDirection,
+  SyncProgressEvent,
+  SyncRepoSpec,
+} from "exocortex";
 import { orderChildrenFirst } from "exocortex";
 
 import { GitHubRestClient } from "./GitHubRestClient";
@@ -47,6 +52,16 @@ export interface SyncCommandsDeps {
    * writing to the file log. Optional — absent callers get no-op.
    */
   logInfo?: (message: string) => void;
+  /**
+   * #3498 — opt-in durable verbose FILE sink for the sync step trace. Wired to
+   * append directly to the plugin file log, gated on the `verboseSyncLogging`
+   * setting (read live in the plugin wiring), INDEPENDENT of the global
+   * `logChannels.info.file` toggle. Every step line (start, each in-flight
+   * per-step line, each per-repo outcome line) is forwarded here; when the
+   * setting is off the wired callback is a no-op, so the trace stays
+   * console-only (#3186). Absent ⇒ no-op (engine-only / test compositions).
+   */
+  logVerbose?: (message: string) => void;
   /**
    * #3499 — opt-in verbose step toasts. When this returns true, the per-step
    * info trace lines (start + per-repo) are ALSO surfaced as user-facing
@@ -104,6 +119,19 @@ export class SyncCommands {
    */
   private maybeStepNotice(message: string): void {
     if (this.deps.stepNoticesEnabled?.() === true) this.deps.notify(message);
+  }
+
+  /**
+   * #3498 — render an in-flight engine progress event into a step trace line.
+   * Coarse, human-readable, mirrors the issue's example wording.
+   */
+  private static progressStepLine(event: SyncProgressEvent): string {
+    const phaseText: Record<SyncProgressEvent["phase"], string> = {
+      detecting: "detecting changes…",
+      "pulling-remote": "pulling remote tree…",
+      merging: "merge layer firing…",
+    };
+    return `[ExoSync] ${event.repoKey}: ${phaseText[event.phase]}`;
   }
 
   /**
@@ -275,9 +303,21 @@ export class SyncCommands {
     logInfo(startLine);
     // #3499 — verbose toggle: also surface the start step as a Notice.
     this.maybeStepNotice(startLine);
+    // #3498 — durable verbose file trace (no-op unless verboseSyncLogging on).
+    this.deps.logVerbose?.(startLine);
+    // #3498 — in-flight per-step progress: each phase the engine enters while
+    // processing a repo (detecting / pulling remote tree / merge layer firing)
+    // surfaces on the info channel and the verbose file sink. Observation-only:
+    // the engine swallows a throwing observer, so this never affects the sync.
+    const onProgress = (event: SyncProgressEvent): void => {
+      const line = SyncCommands.progressStepLine(event);
+      logInfo(line);
+      this.deps.logVerbose?.(line);
+    };
     const results = await engine.syncAll(
       orderChildrenFirst(collection.specs as SyncRepoSpec[]),
       direction,
+      onProgress,
     );
     const summary = this.report(results, log, label);
 
@@ -347,6 +387,8 @@ export class SyncCommands {
       // #3499 — verbose toggle: also surface the per-repo step as a Notice.
       // This is the firehose the toggle exists to gate (14+ repos = 14+ toasts).
       this.maybeStepNotice(stepLine);
+      // #3498 — durable verbose file trace (no-op unless verboseSyncLogging on).
+      this.deps.logVerbose?.(stepLine);
       pushed += r.pushedCount;
       deleted += r.pushedDeletes?.length ?? 0;
       pulled += r.pulledCount;
