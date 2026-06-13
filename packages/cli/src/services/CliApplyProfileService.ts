@@ -31,6 +31,7 @@ import {
   derivePath,
   assertTsFloorReconciled,
   SDK_FLOOR,
+  CATALOG_KEEP_NAMESPACES,
   TsFloorViolationError,
 } from "exocortex";
 
@@ -315,6 +316,20 @@ export class CliApplyProfileService {
     for (const info of infos) {
       if (existsSync(join(this.vaultPath, info.folderName))) {
         materializedUids.add(info.uid);
+      }
+    }
+
+    // EKA Alpha (issue #3511) — never tear down the catalog AssetSpaces
+    // (central registry + profiles) that supply descriptors/profiles for
+    // resolution. Keep any already-materialised one so a leaf-profile apply
+    // can't `rm` the registry that holds every descriptor (one-level
+    // self-brick). NOT force-materialised — a vault without them is unaffected.
+    for (const info of infos) {
+      if (
+        CATALOG_KEEP_NAMESPACES.has(info.namespace) &&
+        materializedUids.has(info.uid)
+      ) {
+        effective.add(info.uid);
       }
     }
 

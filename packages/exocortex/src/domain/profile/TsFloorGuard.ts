@@ -91,6 +91,24 @@ export const SDK_FLOOR: ReadonlyArray<FloorIdentity> = [
 export const PLUGIN_UI_FLOOR: ReadonlyArray<FloorIdentity> = SDK_FLOOR;
 
 /**
+ * Catalog AssetSpace namespaces that are KEPT mounted across a profile apply
+ * (issue #3511, EKA Alpha). The central registry (`exoas-registry`) holds every
+ * AssetSpace descriptor and the profiles repo (`exoas-profiles`) holds the
+ * profiles — they are the catalog that profile RESOLUTION reads from. A
+ * leaf-profile apply resolves to a dependsOn closure that does NOT include them,
+ * so strict mount-state replace would tear them down and `rm` the descriptors
+ * that every future `apply-profile` needs (a one-level-removed self-brick). They
+ * are therefore protected from tear-down when already materialised — NOT forced
+ * to materialise (a bare/legacy vault without them is unaffected). This is the
+ * catalog analogue of the TS-floor's "never destroy" guarantee. Matched by
+ * `exo__AssetSpace_namespace` (fork-safe, owner-independent).
+ */
+export const CATALOG_KEEP_NAMESPACES: ReadonlySet<string> = new Set([
+  "registry",
+  "profiles",
+]);
+
+/**
  * Thrown by {@link assertTsFloor} when a target profile's declared AssetSpace
  * set omits a floor AssetSpace. Distinguishable by `name` so callers (palette
  * command, CLI apply-profile command) can surface a clear refusal without any

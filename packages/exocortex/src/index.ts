@@ -59,6 +59,7 @@ export {
   PLUGIN_UI_FLOOR_ASSETSPACE_UIDS,
   SDK_FLOOR,
   PLUGIN_UI_FLOOR,
+  CATALOG_KEEP_NAMESPACES,
   TsFloorViolationError,
   assertTsFloor,
   assertTsFloorReconciled,

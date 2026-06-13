@@ -602,6 +602,11 @@ describe("CLI — central-registry profile resolution (Issue #3511)", () => {
     expect(existsSync(path.join(vaultRoot, MOUNT.exo))).toBe(true);
     // exoas-exodev (the declared leaf) is now materialised.
     expect(existsSync(path.join(vaultRoot, MOUNT.exodev))).toBe(true);
+    // CATALOG-KEEP (issue #3511): the registry + profiles repos that hold the
+    // descriptors/profiles MUST survive — tearing them down would `rm` the
+    // source of truth for any future profile switch (one-level self-brick).
+    expect(existsSync(path.join(vaultRoot, MOUNT.registry))).toBe(true);
+    expect(existsSync(path.join(vaultRoot, MOUNT.profiles))).toBe(true);
   });
 
   it("resolver returns `engaged` (not `degraded`) with the full dependsOn closure as declaredOntologies", async () => {

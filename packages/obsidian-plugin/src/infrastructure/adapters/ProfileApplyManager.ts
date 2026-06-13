@@ -5,6 +5,7 @@ import {
   derivePath,
   assertTsFloorReconciled,
   PLUGIN_UI_FLOOR,
+  CATALOG_KEEP_NAMESPACES,
   transitiveDependsOnClosure,
   TsFloorViolationError,
 } from "exocortex";
@@ -560,6 +561,9 @@ export class ProfileApplyManager {
       infoBySubmodulePath,
     );
 
+    // EKA Alpha (issue #3511) — keep the catalog (registry/profiles) mounted.
+    this.keepMaterializedCatalog(effectiveAsUids, allInfos, currentAsUids);
+
     const toDestroy: Array<{ asUid: string; submodulePath: string; label: string }> = [];
     const toMaterialize: Array<{ asUid: string; submodulePath: string; gitUrl: string; label: string; ref: string }> = [];
 
@@ -959,6 +963,10 @@ export class ProfileApplyManager {
       allInfos.map((i) => i.folderName),
       infoBySubmodulePath,
     );
+
+    // EKA Alpha (issue #3511) — keep the catalog (registry/profiles) mounted.
+    this.keepMaterializedCatalog(effectiveAsUids, allInfos, currentAsUids);
+
     const toDestroy: Array<{ asUid: string; submodulePath: string; label: string }> = [];
     const toMaterialize: Array<{
       asUid: string;
@@ -1262,6 +1270,21 @@ export class ProfileApplyManager {
       infoByPath,
     );
 
+    // EKA Alpha (issue #3511) — match the apply paths: expand the expected set
+    // by the `exo__AssetSpace_dependsOn` closure and keep the catalog mounted,
+    // so transitive deps that applyProfile legitimately materialises don't show
+    // up as `extra` and trigger a spurious divergence prompt.
+    const dependsOnMap = new Map<string, string[]>();
+    for (const info of allInfos) {
+      if (info.dependsOn !== undefined && info.dependsOn.length > 0) {
+        dependsOnMap.set(info.uid, info.dependsOn);
+      }
+    }
+    for (const uid of transitiveDependsOnClosure(expectedAsUids, dependsOnMap)) {
+      expectedAsUids.add(uid);
+    }
+    this.keepMaterializedCatalog(expectedAsUids, allInfos, materializedAsUids);
+
     // Diff.
     const missing = Array.from(expectedAsUids).filter((u) => !materializedAsUids.has(u));
     const extra = Array.from(materializedAsUids).filter((u) => !expectedAsUids.has(u));
@@ -1426,6 +1449,30 @@ export class ProfileApplyManager {
     return { declaredAsUids, declaredNamespaces, effectiveAsUids };
   }
 
+  /**
+   * EKA Alpha (issue #3511) — protect the catalog AssetSpaces (central registry
+   * + profiles) from tear-down. A leaf-profile apply resolves to a dependsOn
+   * closure that excludes them, so strict mount-state replace would `rm` the
+   * registry that holds every descriptor (one-level self-brick). Add any
+   * already-materialised catalog AssetSpace to the effective set so it survives.
+   * NOT force-materialised (a vault without them is unaffected). Mutates
+   * `effectiveAsUids` in place.
+   */
+  private keepMaterializedCatalog(
+    effectiveAsUids: Set<string>,
+    allInfos: ReadonlyArray<AssetSpaceInfo>,
+    materializedAsUids: ReadonlySet<string>,
+  ): void {
+    for (const info of allInfos) {
+      if (
+        CATALOG_KEEP_NAMESPACES.has(info.namespace) &&
+        materializedAsUids.has(info.uid)
+      ) {
+        effectiveAsUids.add(info.uid);
+      }
+    }
+  }
+
   private listAllAssetSpaceInfos(): AssetSpaceInfo[] {
     // Single vault scan — extracts AssetSpace ABox metadata directly from
     // frontmatter. Independent of AssetSpaceManager (так apply tests
@@ -1460,7 +1507,12 @@ export class ProfileApplyManager {
       const namespace = typeof fm["exo__AssetSpace_namespace"] === "string"
         ? (fm["exo__AssetSpace_namespace"] as string)
         : "";
-      if (!git || !namespace) continue;
+      // `git` is essential (folder derivation + materialise). `namespace` is
+      // OPTIONAL — real registry descriptors (Maven-style) may omit it, and the
+      // CLI resolver keeps them too (parity, issue #3511 — gating on namespace
+      // would silently shrink the plugin's dependsOn closure vs the CLI's).
+      // Label/floor-namespace fall back gracefully on an empty namespace.
+      if (!git) continue;
       const lastPulledSha = typeof fm["exo__AssetSpace_lastPulledSha"] === "string"
         ? (fm["exo__AssetSpace_lastPulledSha"] as string)
         : undefined;
