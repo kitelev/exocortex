@@ -40,6 +40,12 @@ export interface AssetSpaceInfo {
   folderName: string;
   /** Last-sync SHA — value of `exo__AssetSpace_lastPulledSha`, if recorded. */
   lastPulledSha?: string;
+  /**
+   * Direct `exo__AssetSpace_dependsOn` AssetSpace UIDs (EKA Alpha D18 DAG,
+   * issue #3511). Used to expand a leaf-only profile to its transitive closure.
+   * Empty/absent when the descriptor declares no dependencies.
+   */
+  dependsOn?: string[];
 }
 
 export interface AssetSpaceManagerOptions {

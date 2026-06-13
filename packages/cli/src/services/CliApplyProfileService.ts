@@ -29,8 +29,8 @@ import yaml from "js-yaml";
 import type { ApplyPlan } from "exocortex";
 import {
   derivePath,
-  assertTsFloor as assertTsFloorGuard,
-  SDK_FLOOR_ASSETSPACE_UIDS,
+  assertTsFloorReconciled,
+  SDK_FLOOR,
   TsFloorViolationError,
 } from "exocortex";
 
@@ -67,6 +67,13 @@ export interface AssetSpaceInfo {
   folderName: string;
   /** Display label — `exo__AssetSpace_namespace` ?? derived ?? uid prefix. */
   label: string;
+  /**
+   * `exo__AssetSpace_namespace` (empty string when absent). The fork-safe
+   * floor identity (issue #3511): the EKA central registry mints a NEW
+   * descriptor UID for the same `$exo` AssetSpace, so the R24 floor guard
+   * matches by namespace as well as by legacy UID.
+   */
+  namespace: string;
 }
 
 /** A single AssetSpace scheduled for tear-down. */
@@ -216,7 +223,7 @@ export class CliApplyProfileService {
           const label =
             namespace || lastSegment(folderName) || uid.slice(0, 8);
           seen.add(uid);
-          infos.push({ uid, git, folderName, label });
+          infos.push({ uid, git, folderName, label, namespace });
         }
 
         if (classes.includes(PROFILE_CLASS_UID)) {
@@ -241,10 +248,20 @@ export class CliApplyProfileService {
    * `$shared-identities` and `$exocmd` are optional, so a bare SDK vault
    * legitimately omits them. Tests live in `packages/exocortex/tests/domain/profile/`.
    *
-   * @throws {TsFloorViolationError} if any SDK-floor AssetSpace is absent.
+   * Issue #3511 (EKA Alpha) — the floor is matched by legacy UID OR
+   * `exo__AssetSpace_namespace`, so a central-registry vault whose `$exo`
+   * descriptor carries a different UID (but namespace `"exo"`) still satisfies
+   * the floor. `declaredNamespaces` is the set of namespaces of the declared
+   * (closure ∩ known) AssetSpaces.
+   *
+   * @throws {TsFloorViolationError} if the SDK floor is satisfied by neither
+   *   a declared UID nor a declared namespace.
    */
-  assertTsFloor(declaredAsUids: ReadonlySet<string>): void {
-    assertTsFloorGuard(declaredAsUids, SDK_FLOOR_ASSETSPACE_UIDS);
+  assertTsFloor(
+    declaredAsUids: ReadonlySet<string>,
+    declaredNamespaces: ReadonlySet<string>,
+  ): void {
+    assertTsFloorReconciled(declaredAsUids, declaredNamespaces, SDK_FLOOR);
   }
 
   /**
@@ -267,11 +284,19 @@ export class CliApplyProfileService {
     const knownAsUids = new Set(infoByUid.keys());
 
     // R24 — declared (pre-floor) AssetSpace set the user explicitly intends.
+    // `result.declaredOntologies` is the `_includes` chain expanded by the
+    // `exo__AssetSpace_dependsOn` closure (issue #3511), so a leaf-only profile's
+    // transitive floor dependency (e.g. exoas-exo) is part of the declared set.
     const declaredAsUids = new Set<string>();
+    const declaredNamespaces = new Set<string>();
     for (const uid of result.declaredOntologies) {
-      if (knownAsUids.has(uid)) declaredAsUids.add(uid);
+      if (knownAsUids.has(uid)) {
+        declaredAsUids.add(uid);
+        const ns = infoByUid.get(uid)?.namespace;
+        if (ns !== undefined && ns.length > 0) declaredNamespaces.add(ns);
+      }
     }
-    this.assertTsFloor(declaredAsUids);
+    this.assertTsFloor(declaredAsUids, declaredNamespaces);
 
     // Effective set for the mount-state diff. `result.effective` derives folder
     // membership from the resolver's own (1-level `parentFolderRelative`)

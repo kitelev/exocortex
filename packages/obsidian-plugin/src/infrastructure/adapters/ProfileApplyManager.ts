@@ -3,8 +3,9 @@ import type { App } from "obsidian";
 import type { ApplyPlan, IConfirmGate } from "exocortex";
 import {
   derivePath,
-  assertTsFloor as assertTsFloorGuard,
-  PLUGIN_UI_FLOOR_ASSETSPACE_UIDS,
+  assertTsFloorReconciled,
+  PLUGIN_UI_FLOOR,
+  transitiveDependsOnClosure,
   TsFloorViolationError,
 } from "exocortex";
 
@@ -532,40 +533,23 @@ export class ProfileApplyManager {
       ? await this.profileLabel(prevActiveProfileUid)
       : "<unknown>";
 
-    // R24 — assert TS-floor BEFORE any mutation. Use computeDerivedSet (NOT
-    // resolveEffectiveSet) so the floor URIs that resolveEffectiveSet injects
-    // don't mask a profile that legitimately omits a floor AS — R24 must see
-    // the user's explicit `_includes`. Apply is destructive, so we
-    // require explicit intent rather than the soft-path's UX-convenience floor.
-    const declaredOntologySet = await this.computeDerivedSet(targetProfileUid);
-    const folderToAsUid = await this.scanFolderToAsUid();
-    const declaredAsUids = new Set<string>();
-    const folderMapValues = new Set(folderToAsUid.values());
-    // RFC 01a83de8 Phase 2 retargeted `_includes` to AssetSpace UIDs, so the
-    // derived set already contains AS UIDs that resolve directly against the
-    // folder map. The former Ontology→AS translation (via the
-    // `exo__AssetSpace_containsOntology` predicate) is dead and was removed in
-    // Phase 3 T3b-cleanup.
-    for (const uid of declaredOntologySet) {
-      if (folderMapValues.has(uid)) {
-        declaredAsUids.add(uid);
-      }
-    }
-    this.assertTsFloor(declaredAsUids);
-
-    // For the actual mutation diff, also accept the shared-ontology discovery
-    // (e.g. `shared-identities` URI patterns) AND inject TS-floor at AS level
-    // — but only after the R24 guard already approved the user's explicit
-    // intent. The injection here is for completeness, not rescue.
-    const effectiveAsUids = new Set(declaredAsUids);
-    for (const floor of TS_FLOOR_ASSETSPACE_UIDS) effectiveAsUids.add(floor);
+    // R24 — assert TS-floor BEFORE any mutation. resolveDeclaredAndEffective
+    // expands the profile's `_includes` by its `exo__AssetSpace_dependsOn`
+    // closure (EKA D18, issue #3511), asserts the reconciled floor (UID OR
+    // namespace), and returns the effective set (declared ∪ TS-floor). Uses the
+    // declared (closure) set — NOT resolveEffectiveSet — so the floor URIs it
+    // would inject don't mask a profile that legitimately omits a floor AS.
+    const allInfos = this.listAllAssetSpaceInfos();
+    const { effectiveAsUids } = await this.resolveDeclaredAndEffective(
+      targetProfileUid,
+      allInfos,
+    );
 
     // Compute toDestroy / toMaterialize via .gitmodules ∩ filesystem presence.
     // Phase 6 Vision Lock #9 amendment: `.gitmodules` entries persist post-destroy
     // (URL registry). Therefore materialization state ≠ `.gitmodules` membership.
     // Source of truth for «is currently materialized» = working tree dir exists.
     const currentSubmodulePaths = await deps.gitOps.readGitmodulesPaths();
-    const allInfos = this.listAllAssetSpaceInfos();
     // Index by submodulePath for O(1) lookup.
     const infoBySubmodulePath = new Map<string, AssetSpaceInfo>();
     for (const info of allInfos) infoBySubmodulePath.set(info.folderName, info);
@@ -958,28 +942,17 @@ export class ProfileApplyManager {
         : "<unknown>";
 
     // 1. Effective AssetSpace set (declared ontologies → AS UIDs + TS-floor).
-    // Mirrors applyProfile's R24 derivation (computeDerivedSet,
-    // NOT resolveEffectiveSet — the latter silently injects floor ontologies).
-    const declaredOntologySet = await this.computeDerivedSet(targetProfileUid);
-    const folderToAsUid = await this.scanFolderToAsUid();
-    const declaredAsUids = new Set<string>();
-    const folderMapValues = new Set(folderToAsUid.values());
-    // RFC 01a83de8 Phase 2 retargeted `_includes` to AssetSpace UIDs, so the
-    // derived set already contains AS UIDs that resolve directly against the
-    // folder map. The former Ontology→AS translation (via the
-    // `exo__AssetSpace_containsOntology` predicate) is dead and was removed in
-    // Phase 3 T3b-cleanup.
-    for (const uid of declaredOntologySet) {
-      if (folderMapValues.has(uid)) {
-        declaredAsUids.add(uid);
-      }
-    }
-    this.assertTsFloor(declaredAsUids);
-    const effectiveAsUids = new Set(declaredAsUids);
-    for (const floor of TS_FLOOR_ASSETSPACE_UIDS) effectiveAsUids.add(floor);
+    // Shares resolveDeclaredAndEffective with the desktop path (parity): expand
+    // `_includes` by the dependsOn closure (EKA D18, issue #3511) + reconciled
+    // R24 floor (UID OR namespace). Uses the declared (closure) set — NOT
+    // resolveEffectiveSet — which would silently inject floor ontologies.
+    const allInfos = this.listAllAssetSpaceInfos();
+    const { effectiveAsUids } = await this.resolveDeclaredAndEffective(
+      targetProfileUid,
+      allInfos,
+    );
 
     // 2. Diff: materialised == folder exists on disk (mount-state, derivePath).
-    const allInfos = this.listAllAssetSpaceInfos();
     const infoBySubmodulePath = new Map<string, AssetSpaceInfo>();
     for (const info of allInfos) infoBySubmodulePath.set(info.folderName, info);
     const currentAsUids = await this.derivePhysicallyMaterializedAsUids(
@@ -1388,11 +1361,69 @@ export class ProfileApplyManager {
     };
   }
 
-  private assertTsFloor(effective: ReadonlySet<string>): void {
+  private assertTsFloor(
+    declaredAsUids: ReadonlySet<string>,
+    declaredNamespaces: ReadonlySet<string>,
+  ): void {
     // EV8 — delegate to the single named guard in `exocortex`. The plugin
     // enforces the **plugin-UI floor** (= the SDK floor `{exo}`, #3440) so UI
-    // commands never self-brick.
-    assertTsFloorGuard(effective, PLUGIN_UI_FLOOR_ASSETSPACE_UIDS);
+    // commands never self-brick. Issue #3511 (EKA Alpha): the floor is matched
+    // by legacy UID OR `exo__AssetSpace_namespace`, so a central-registry vault
+    // whose $exo descriptor has a different UID (namespace "exo") still passes.
+    assertTsFloorReconciled(declaredAsUids, declaredNamespaces, PLUGIN_UI_FLOOR);
+  }
+
+  /**
+   * Resolve the target profile's declared AssetSpace set, expanded by its
+   * transitive `exo__AssetSpace_dependsOn` closure (EKA Alpha D18, issue #3511),
+   * intersected with the known (scanned) AssetSpaces. Asserts the R24 TS-floor
+   * (reconciled UID-or-namespace) then returns the effective set (declared ∪
+   * TS-floor) for the mount-state diff. Shared by the desktop + REST apply paths
+   * to keep the resolution logic identical (parity invariant).
+   */
+  private async resolveDeclaredAndEffective(
+    targetProfileUid: string,
+    allInfos: ReadonlyArray<AssetSpaceInfo>,
+  ): Promise<{
+    declaredAsUids: Set<string>;
+    declaredNamespaces: Set<string>;
+    effectiveAsUids: Set<string>;
+  }> {
+    const declaredRoots = await this.computeDerivedSet(targetProfileUid);
+    const dependsOnMap = new Map<string, string[]>();
+    const folderMapValues = new Set<string>();
+    const infoByUid = new Map<string, AssetSpaceInfo>();
+    for (const info of allInfos) {
+      folderMapValues.add(info.uid);
+      infoByUid.set(info.uid, info);
+      if (info.dependsOn !== undefined && info.dependsOn.length > 0) {
+        dependsOnMap.set(info.uid, info.dependsOn);
+      }
+    }
+    // RFC 01a83de8 Phase 2 — `_includes` are AssetSpace UIDs that resolve
+    // directly against the folder map; EKA D18 expands them by the dependsOn
+    // closure (leaf-only profiles resolve to their full dependency set).
+    const declaredOntologySet = transitiveDependsOnClosure(
+      declaredRoots,
+      dependsOnMap,
+    );
+    const declaredAsUids = new Set<string>();
+    const declaredNamespaces = new Set<string>();
+    for (const uid of declaredOntologySet) {
+      if (folderMapValues.has(uid)) {
+        declaredAsUids.add(uid);
+        const ns = infoByUid.get(uid)?.namespace;
+        if (ns !== undefined && ns.length > 0) declaredNamespaces.add(ns);
+      }
+    }
+    // R24 — assert BEFORE any mutation. Use the declared (closure) set so the
+    // floor URIs that resolveEffectiveSet would inject don't mask a profile
+    // that legitimately omits a floor AS — R24 must see the user's explicit
+    // intent. Apply is destructive, so we require explicit intent.
+    this.assertTsFloor(declaredAsUids, declaredNamespaces);
+    const effectiveAsUids = new Set(declaredAsUids);
+    for (const floor of TS_FLOOR_ASSETSPACE_UIDS) effectiveAsUids.add(floor);
+    return { declaredAsUids, declaredNamespaces, effectiveAsUids };
   }
 
   private listAllAssetSpaceInfos(): AssetSpaceInfo[] {
@@ -1433,13 +1464,16 @@ export class ProfileApplyManager {
       const lastPulledSha = typeof fm["exo__AssetSpace_lastPulledSha"] === "string"
         ? (fm["exo__AssetSpace_lastPulledSha"] as string)
         : undefined;
+      // EKA Alpha D18 dependsOn DAG (issue #3511) — transitive-dep edges so a
+      // leaf-only profile can be expanded to its closure.
+      const dependsOn = parseDependsOnWikilinks(fm["exo__AssetSpace_dependsOn"]);
       // RFC 01a83de8 Phase 1b T3 — folder = derived mount path
       // (`assetspaces/<owner>/<repo>`), not the descriptor's parent folder
       // (post-migration the descriptor lives in the registry). parentFolderOf
       // is a defensive fallback for unresolvable sources.
       const folderName = derivePath(git) ?? parentFolderOf(file.path);
       seen.add(uid);
-      out.push({ uid, git, namespace, folderName, lastPulledSha });
+      out.push({ uid, git, namespace, folderName, lastPulledSha, dependsOn });
     }
     return out;
   }
@@ -1643,4 +1677,29 @@ export class ProfileApplyManager {
 function parentFolderOf(filePath: string): string {
   const idx = filePath.lastIndexOf("/");
   return idx < 0 ? "" : filePath.slice(0, idx);
+}
+
+/**
+ * Parse an `exo__AssetSpace_dependsOn` frontmatter value (a single wikilink, an
+ * array of wikilinks, or undefined) to the bare UID portion of each entry
+ * (`[[uid|alias]]` → `uid`). Used to build the EKA D18 dependsOn DAG (#3511).
+ */
+function parseDependsOnWikilinks(value: unknown): string[] {
+  const arr: unknown[] = Array.isArray(value)
+    ? value
+    : value === undefined || value === null
+      ? []
+      : [value];
+  const out: string[] = [];
+  for (const raw of arr) {
+    if (typeof raw !== "string") continue;
+    const uid = raw
+      .trim()
+      .replace(/^\[\[/, "")
+      .replace(/\]\]$/, "")
+      .split("|")[0]
+      .trim();
+    if (uid.length > 0) out.push(uid);
+  }
+  return out;
 }

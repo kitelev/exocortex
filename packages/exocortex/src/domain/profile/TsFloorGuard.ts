@@ -59,6 +59,38 @@ export const PLUGIN_UI_FLOOR_ASSETSPACE_UIDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Floor identity (issue #3511, EKA Alpha central-registry reconciliation).
+ *
+ * The legacy floor is anchored by a hardcoded AssetSpace **UID**
+ * ({@link TS_FLOOR_AS_UID_EXO}). The EKA Alpha central registry
+ * (`kitelev/exoas-registry`) however mints a DISTINCT descriptor UID for the
+ * same `$exo` AssetSpace (same git-url, same `exo__AssetSpace_namespace: "exo"`,
+ * different `exo__Asset_uid`). Matching the floor by raw UID alone therefore
+ * fails on a registry-driven vault even though the floor IS declared. To
+ * reconcile both worlds, the floor carries BOTH a legacy UID anchor AND its
+ * canonical `namespace`; {@link assertTsFloorReconciled} treats either match as
+ * satisfying the floor. `namespace` is fork-safe (a fork of `exoas-exo` keeps
+ * namespace `"exo"`), so it is the durable identity going forward.
+ */
+export interface FloorIdentity {
+  /** Legacy hardcoded AssetSpace UID anchor (pre-EKA descriptors). */
+  uid: string;
+  /** Canonical `exo__AssetSpace_namespace` (EKA-registry descriptors). */
+  namespace: string;
+}
+
+/**
+ * SDK/engine floor as reconcilable identities — `[{exo}]`. Matched by legacy
+ * UID OR `exo__AssetSpace_namespace`. See {@link FloorIdentity}.
+ */
+export const SDK_FLOOR: ReadonlyArray<FloorIdentity> = [
+  { uid: TS_FLOOR_AS_UID_EXO, namespace: "exo" },
+];
+
+/** Plugin-UI floor as reconcilable identities — same `[{exo}]` as the SDK floor (#3440). */
+export const PLUGIN_UI_FLOOR: ReadonlyArray<FloorIdentity> = SDK_FLOOR;
+
+/**
  * Thrown by {@link assertTsFloor} when a target profile's declared AssetSpace
  * set omits a floor AssetSpace. Distinguishable by `name` so callers (palette
  * command, CLI apply-profile command) can surface a clear refusal without any
@@ -96,6 +128,47 @@ export function assertTsFloor(
   if (missing.length > 0) {
     throw new TsFloorViolationError(
       `Target profile's declared set excludes TS-floor AssetSpace UID(s): ${missing.join(
+        ", ",
+      )}. Profile switch aborted to prevent runtime self-brick (R24).`,
+    );
+  }
+}
+
+/**
+ * R24 TS-floor guard, central-registry reconciled (issue #3511, EKA Alpha).
+ *
+ * The target profile's *declared* AssetSpace set (the `_includes` chain
+ * expanded by its `exo__AssetSpace_dependsOn` closure) must cover every floor
+ * identity, otherwise a destructive profile switch would tear a floor
+ * AssetSpace down and brick the runtime. A floor identity is satisfied when
+ * EITHER:
+ *
+ *   - its legacy {@link FloorIdentity.uid} is in `declaredAsUids` (pre-EKA
+ *     self-describing vaults), OR
+ *   - its {@link FloorIdentity.namespace} is in `declaredNamespaces` (EKA
+ *     central-registry vaults, where the descriptor UID differs but the
+ *     `exo__AssetSpace_namespace` is stable + fork-safe).
+ *
+ * Callers pass {@link SDK_FLOOR} (CLI/headless) or {@link PLUGIN_UI_FLOOR}
+ * (plugin) — both `[{exo}]`.
+ *
+ * @throws {TsFloorViolationError} if any floor identity is satisfied by neither
+ *   UID nor namespace.
+ */
+export function assertTsFloorReconciled(
+  declaredAsUids: ReadonlySet<string>,
+  declaredNamespaces: ReadonlySet<string>,
+  floor: ReadonlyArray<FloorIdentity>,
+): void {
+  const missing: string[] = [];
+  for (const f of floor) {
+    if (declaredAsUids.has(f.uid)) continue; // legacy UID anchor
+    if (declaredNamespaces.has(f.namespace)) continue; // EKA namespace identity
+    missing.push(`${f.namespace} (${f.uid})`);
+  }
+  if (missing.length > 0) {
+    throw new TsFloorViolationError(
+      `Target profile's declared set excludes TS-floor AssetSpace(s): ${missing.join(
         ", ",
       )}. Profile switch aborted to prevent runtime self-brick (R24).`,
     );
