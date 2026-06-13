@@ -440,6 +440,107 @@ describe("ProfileApplyManager.applyProfileViaRest", () => {
   });
 });
 
+// ─── Issue #3511 — central-registry dependsOn closure + namespace floor ──────
+//
+// A profile declares only a LEAF AssetSpace; the floor ($exo) is reached
+// transitively via `exo__AssetSpace_dependsOn`. The floor descriptor's UID is
+// the EKA registry UID (≠ TS_FLOOR_AS_UID_EXO) but its namespace is "exo", so
+// the reconciled R24 guard must accept it. Mirrors the CLI fix (parity).
+describe("ProfileApplyManager.applyProfileViaRest — central-registry (#3511)", () => {
+  const AS_LEAF = "leaf-uid-0000-0000-0000-000000000000";
+  // EKA $exo descriptor — DISTINCT from TS_FLOOR_AS_UID_EXO, namespace "exo".
+  const AS_EXO_EKA = "e5c47526-e72f-42e3-8535-3d243dd2db94";
+  const SRC_LEAF = "https://github.com/kitelev/exoas-leaf";
+  const SRC_EXO = "https://github.com/kitelev/exoas-exo";
+  const MOUNT_LEAF = "assetspaces/kitelev/exoas-leaf";
+  const MOUNT_EXO = "assetspaces/kitelev/exoas-exo";
+
+  function buildRegistryManager(leafDependsOnExo: boolean) {
+    // All descriptors live in ONE central registry folder (not self-describing).
+    const files: FakeFile[] = [
+      {
+        path: "assetspaces/kitelev/exoas-profiles/profiles/p-leaf.md",
+        basename: "p-leaf",
+        frontmatter: {
+          exo__Asset_uid: "p-leaf",
+          exo__Asset_label: "$$leaf",
+          exo__Instance_class: ["[[exo__Profile]]"],
+        },
+      },
+      {
+        path: "assetspaces/kitelev/exoas-registry/registry/leaf.md",
+        basename: "leaf",
+        frontmatter: {
+          exo__Asset_uid: AS_LEAF,
+          exo__Asset_label: "kitelev/leaf",
+          exo__Instance_class: ["[[exo__AssetSpace]]"],
+          exo__AssetSpace_source: SRC_LEAF,
+          exo__AssetSpace_namespace: "leaf",
+          ...(leafDependsOnExo
+            ? { exo__AssetSpace_dependsOn: [`[[${AS_EXO_EKA}|exoas-exo]]`] }
+            : {}),
+        },
+      },
+      {
+        path: "assetspaces/kitelev/exoas-registry/registry/exo.md",
+        basename: "exo",
+        frontmatter: {
+          exo__Asset_uid: AS_EXO_EKA,
+          exo__Asset_label: "kitelev/exo",
+          exo__Instance_class: ["[[exo__AssetSpace]]"],
+          exo__AssetSpace_source: SRC_EXO,
+          exo__AssetSpace_namespace: "exo",
+        },
+      },
+    ];
+    const { app, fsFolders } = makeFakeApp(files);
+    // $exo currently mounted (folder exists); leaf NOT mounted.
+    fsFolders.set(MOUNT_EXO, { files: [`${MOUNT_EXO}/f.md`], folders: [] });
+
+    const resolver = new FakeResolver(
+      new Map<string, ProfileResolution>([
+        ["p-leaf", { uid: "p-leaf", includes: [AS_LEAF], label: "$$leaf" }],
+      ]),
+    );
+    const restMount = new FakeRestMount();
+    const mgr = new ProfileApplyManager({
+      app,
+      lockMgr: new PluginLockManager({ app }),
+      resolver,
+      rdfIndexer: new FakeIndexer(),
+      settingsStore: new FakeSettingsStore(),
+      notify: () => {},
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      confirmGate: new FakeConfirmGate(),
+      localDataStore: new FakeLocalDataStore() as any,
+      restMount: restMount as any,
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+    });
+    return { mgr, restMount };
+  }
+
+  it("resolves a leaf-only profile to its dependsOn closure and mounts the leaf (floor reached via dependsOn, namespace-matched)", async () => {
+    const { mgr, restMount } = buildRegistryManager(/* leafDependsOnExo */ true);
+
+    // Pre-fix: floor ($exo) is the EKA UID ≠ TS_FLOOR_AS_UID_EXO → R24 by raw
+    // UID would refuse. Post-fix: namespace "exo" satisfies the floor.
+    await expect(mgr.applyProfileViaRest("p-leaf")).resolves.toBeUndefined();
+
+    // Leaf mounted (not previously materialised); $exo stays (already mounted).
+    expect(restMount.mounted.map((m) => m.submodulePath)).toContain(MOUNT_LEAF);
+    expect(restMount.unmounted).not.toContain(MOUNT_EXO);
+  });
+
+  it("control: WITHOUT the dependsOn edge the floor is unreachable → TsFloorViolationError (proves the closure satisfies the floor)", async () => {
+    const { mgr, restMount } = buildRegistryManager(/* leafDependsOnExo */ false);
+    await expect(mgr.applyProfileViaRest("p-leaf")).rejects.toThrow(
+      TsFloorViolationError,
+    );
+    expect(restMount.mounted).toEqual([]);
+    expect(restMount.unmounted).toEqual([]);
+  });
+});
+
 describe("applyProfile dispatch (mobile → REST)", () => {
   const original = Platform.isMobile;
   afterEach(() => {

@@ -4,8 +4,11 @@ import {
   TS_FLOOR_AS_UID_SHARED_IDENTITIES,
   SDK_FLOOR_ASSETSPACE_UIDS,
   PLUGIN_UI_FLOOR_ASSETSPACE_UIDS,
+  SDK_FLOOR,
+  PLUGIN_UI_FLOOR,
   TsFloorViolationError,
   assertTsFloor,
+  assertTsFloorReconciled,
 } from "../../../src/domain/profile/TsFloorGuard";
 
 // floor={exo} (RFC 5aa2a73a): shared-identities + exocmd removed from the floor.
@@ -81,6 +84,57 @@ describe("TsFloorGuard — floor = {exo}", () => {
       } catch (e) {
         expect(e).toBeInstanceOf(TsFloorViolationError);
         expect((e as Error).name).toBe("TsFloorViolationError");
+      }
+    });
+  });
+
+  // ── Reconciled floor (issue #3511, EKA Alpha central registry) ──
+  // The EKA registry mints a DISTINCT descriptor UID for the same $exo
+  // AssetSpace (git-url + namespace stable). assertTsFloorReconciled accepts
+  // either the legacy UID OR the namespace as satisfying the floor.
+  const EKA_EXO_UID = "e5c47526-e72f-42e3-8535-3d243dd2db94"; // EKA exoas-exo, namespace "exo"
+
+  describe("SDK_FLOOR / PLUGIN_UI_FLOOR reconcilable identities", () => {
+    it("SDK_FLOOR = [{exo}] anchored by legacy UID + namespace", () => {
+      expect(SDK_FLOOR).toHaveLength(1);
+      expect(SDK_FLOOR[0]).toEqual({ uid: TS_FLOOR_AS_UID_EXO, namespace: "exo" });
+    });
+
+    it("PLUGIN_UI_FLOOR equals SDK_FLOOR (both [{exo}])", () => {
+      expect(PLUGIN_UI_FLOOR).toBe(SDK_FLOOR);
+    });
+  });
+
+  describe("assertTsFloorReconciled — UID OR namespace satisfies the floor", () => {
+    it("legacy vault: declared set contains the floor UID (no namespace) → passes", () => {
+      // Pre-EKA self-describing vault — the floor descriptor's UID is declared.
+      const declaredAsUids = new Set([TS_FLOOR_AS_UID_EXO, EMS]);
+      const declaredNamespaces = new Set<string>(); // legacy fixtures omit namespace
+      expect(() =>
+        assertTsFloorReconciled(declaredAsUids, declaredNamespaces, SDK_FLOOR),
+      ).not.toThrow();
+    });
+
+    it("EKA vault: declared set has a DIFFERENT UID but namespace 'exo' → passes", () => {
+      // Central-registry descriptor — UID differs from the legacy floor UID, but
+      // its namespace is "exo", so the floor is satisfied.
+      const declaredAsUids = new Set([EKA_EXO_UID]);
+      const declaredNamespaces = new Set(["exo"]);
+      expect(() =>
+        assertTsFloorReconciled(declaredAsUids, declaredNamespaces, SDK_FLOOR),
+      ).not.toThrow();
+    });
+
+    it("neither floor UID nor floor namespace declared → refuses, naming exo", () => {
+      const declaredAsUids = new Set([EMS]);
+      const declaredNamespaces = new Set(["ems"]);
+      expect(() =>
+        assertTsFloorReconciled(declaredAsUids, declaredNamespaces, SDK_FLOOR),
+      ).toThrow(/exo \(49fd2e56/);
+      try {
+        assertTsFloorReconciled(declaredAsUids, declaredNamespaces, PLUGIN_UI_FLOOR);
+      } catch (e) {
+        expect(e).toBeInstanceOf(TsFloorViolationError);
       }
     });
   });

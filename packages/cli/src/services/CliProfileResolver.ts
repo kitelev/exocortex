@@ -27,7 +27,11 @@ import fs from "fs-extra";
 import path from "path";
 import yaml from "js-yaml";
 
-import { SDK_FLOOR_ASSETSPACE_UIDS } from "exocortex";
+import {
+  SDK_FLOOR_ASSETSPACE_UIDS,
+  derivePath,
+  transitiveDependsOnClosure,
+} from "exocortex";
 
 // TS-floor anchors (Vision Lock #17) — re-exported from the `exocortex` core
 // guard (RFC 01a83de8 §3.4 / EV8, issue #3426). Single source of truth.
@@ -139,6 +143,7 @@ export class CliProfileResolver {
     let scan: {
       folderMap: Map<string, string>;
       profiles: Map<string, ProfileFrontmatter>;
+      dependsOn: Map<string, string[]>;
     };
     try {
       scan = await this.scanAllVaults();
@@ -156,15 +161,22 @@ export class CliProfileResolver {
       return { outcome: "missing-profile", profileUid };
     }
 
-    // Walk chain → declared Ontology UID set
-    const declared = new Set<string>();
+    // Walk chain → directly-declared AssetSpace UID set (`_includes` ∪ `_imports*`).
+    const declaredRoots = new Set<string>();
     try {
-      this.walkProfileChain(profileUid, scan.profiles, declared, new Set(), 0);
+      this.walkProfileChain(profileUid, scan.profiles, declaredRoots, new Set(), 0);
     } catch (e) {
       const reason = `[CliProfileResolver] profile chain walk threw — ${String(e)}`;
       this.warn(reason);
       return { outcome: "error", reason };
     }
+
+    // EKA Alpha D18 (issue #3511) — a profile declares only LEAF AssetSpaces;
+    // expand to the transitive `exo__AssetSpace_dependsOn` closure so the
+    // effective set includes every required dependency (e.g. exodev →
+    // shared-private → public → exo → w3c). Pre-EKA self-describing vaults have
+    // no dependsOn edges, so the closure equals the literal declared set there.
+    const declared = transitiveDependsOnClosure(declaredRoots, scan.dependsOn);
 
     // Resolve declared UIDs against the AssetSpace folder map. RFC 01a83de8
     // Phase 2 retargeted `_includes` to AssetSpace UIDs, so they match the
@@ -246,9 +258,11 @@ export class CliProfileResolver {
   private async scanAllVaults(): Promise<{
     folderMap: Map<string, string>;
     profiles: Map<string, ProfileFrontmatter>;
+    dependsOn: Map<string, string[]>;
   }> {
     const folderMap = new Map<string, string>();
     const profiles = new Map<string, ProfileFrontmatter>();
+    const dependsOn = new Map<string, string[]>();
 
     for (const vaultRoot of this.vaultPaths) {
       if (!(await fs.pathExists(vaultRoot))) {
@@ -264,12 +278,48 @@ export class CliProfileResolver {
         );
 
         if (classes.some((c) => c === ASSET_SPACE_CLASS_UID)) {
-          // AssetSpace asset — register folderMap. The former Ontology→AS
-          // translation map (built from `exo__AssetSpace_containsOntology`) was
-          // removed in Phase 3 T3b-cleanup — profiles declare AS UIDs directly.
-          const folder = parentFolderRelative(asset.filePath, asset.vaultRoot);
-          if (folder.length > 0) {
-            folderMap.set(folder, asset.uid);
+          // AssetSpace asset — register folderMap from TWO sources so a profile's
+          // declared `_includes` UIDs resolve regardless of WHERE the descriptor
+          // physically lives (issue #3511):
+          //
+          //   Source A (legacy self-describing) — the descriptor's own parent
+          //     folder (first path segment). Kept for descriptors with NO
+          //     git-url (`exo__AssetSpace_source`/`_git`) — backward-compat.
+          //
+          //   Source B (EKA central registry) — the canonical mount folder
+          //     DERIVED from the descriptor's git-url via `derivePath` (the same
+          //     deriver `CliApplyProfileService.scanVault` + `bootstrap`/
+          //     `assetspace-add` use; equals the `.gitmodules` mount path). This
+          //     gives a UNIQUE folder key per repo, so N descriptors co-located
+          //     in one central registry no longer collapse to a single key (the
+          //     bug that produced "zero AssetSpace folder overlap → degraded").
+          //
+          // `folderMap.values()` (the AS-UID set) is what the degrade/effective
+          // check consumes — both sources contribute the descriptor's UID, so
+          // every scanned AssetSpace becomes resolvable.
+          const selfFolder = parentFolderRelative(asset.filePath, asset.vaultRoot);
+          if (selfFolder.length > 0 && !folderMap.has(selfFolder)) {
+            folderMap.set(selfFolder, asset.uid);
+          }
+          const source =
+            typeof asset.frontmatter["exo__AssetSpace_source"] === "string"
+              ? (asset.frontmatter["exo__AssetSpace_source"] as string)
+              : typeof asset.frontmatter["exo__AssetSpace_git"] === "string"
+                ? (asset.frontmatter["exo__AssetSpace_git"] as string)
+                : "";
+          if (source.length > 0) {
+            const derived = derivePath(source);
+            if (derived !== null) {
+              folderMap.set(derived, asset.uid); // url-derived key wins (canonical)
+            }
+          }
+          // EKA Alpha D18 dependsOn DAG (issue #3511) — collect transitive-dep
+          // edges so the resolver can expand a leaf-only profile to its closure.
+          const deps = parseWikilinkArray(
+            asset.frontmatter["exo__AssetSpace_dependsOn"],
+          );
+          if (deps.length > 0) {
+            dependsOn.set(asset.uid, deps);
           }
         }
 
@@ -294,7 +344,7 @@ export class CliProfileResolver {
       }
     }
 
-    return { folderMap, profiles };
+    return { folderMap, profiles, dependsOn };
   }
 
   private async walkVault(vaultRoot: string): Promise<AssetMeta[]> {
