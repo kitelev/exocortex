@@ -12,6 +12,7 @@
  */
 
 import { NamedQueryRunner } from "../../../src/services/NamedQueryRunner";
+import { ExoQLForbiddenKeywordError } from "../../../src/exoql";
 import type { IQueryBodyResolver } from "../../../src/interfaces/IQueryBodyResolver";
 import { InMemoryTripleStore } from "../../../src/infrastructure/rdf/InMemoryTripleStore";
 import { Triple } from "../../../src/domain/models/rdf/Triple";
@@ -153,9 +154,27 @@ describe("NamedQueryRunner.runScalar", () => {
     });
     const runner = new NamedQueryRunner(resolver, store);
 
+    // Typed assertion: the engine allowlist rejects UPDATE at parse stage, so
+    // the read-only guarantee is the SPECIFIC ExoQLForbiddenKeywordError, not
+    // any incidental throw (code-reviewer LOW — guard against silent regression
+    // where a future parser change throws for an unrelated reason).
     await expect(
       runner.runScalar("qMutate", { currentAsset: ASSET }),
-    ).rejects.toThrow();
+    ).rejects.toBeInstanceOf(ExoQLForbiddenKeywordError);
+  });
+
+  it("refuses a malformed IRI param (no IRIREF break-out)", async () => {
+    const store = buildStore();
+    const resolver = new MapQueryBodyResolver({
+      qInj: `SELECT ?a WHERE { $p <${ARCHIVE_ONTO}> ?a }`,
+    });
+    const runner = new NamedQueryRunner(resolver, store);
+
+    await expect(
+      runner.runScalar("qInj", {
+        params: { p: { value: "x> ?a ?b . ?evil <y", kind: "iri" } },
+      }),
+    ).rejects.toThrow(/malformed IRI/);
   });
 });
 

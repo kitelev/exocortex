@@ -38,8 +38,10 @@ import { iriToObsidianName } from "../utilities/iriToObsidianName";
  *     text; combined with read-only execution this is the RFC's injection
  *     mitigation (explicit contract + trusted context + read-only).
  *
- * Auto-context IRIs and params are the only substituted tokens; everything else
- * passes through to the SPARQL engine verbatim.
+ * IRI-form substitutions are validated by {@link formatIri} (refuse IRIREF
+ * break-out chars); literal-form by {@link escapeLiteral}. Auto-context IRIs and
+ * params are the only substituted tokens; everything else passes through to the
+ * SPARQL engine verbatim.
  */
 export interface NamedQueryParam {
   /** Value to substitute (an IRI string, or a literal lexical form). */
@@ -175,13 +177,13 @@ export class NamedQueryRunner implements NamedQueryRunnerPort {
     if (context.currentAsset) {
       out = out.replace(
         /\$currentAsset\b/g,
-        `<${context.currentAsset}>`,
+        NamedQueryRunner.formatIri(context.currentAsset),
       );
     }
     if (context.currentClass) {
       out = out.replace(
         /\$currentClass\b/g,
-        `<${context.currentClass}>`,
+        NamedQueryRunner.formatIri(context.currentClass),
       );
     }
 
@@ -192,7 +194,7 @@ export class NamedQueryRunner implements NamedQueryRunnerPort {
         const param = params[name];
         const formatted =
           param.kind === "iri"
-            ? `<${param.value}>`
+            ? NamedQueryRunner.formatIri(param.value)
             : `"${NamedQueryRunner.escapeLiteral(param.value)}"`;
         // Escape regex metachars in the param name (names are author-controlled
         // but defensive — a `.` in a name must not act as a wildcard).
@@ -202,6 +204,25 @@ export class NamedQueryRunner implements NamedQueryRunnerPort {
     }
 
     return out;
+  }
+
+  /**
+   * Wrap an IRI value as a SPARQL `<...>` term, refusing values that contain
+   * characters illegal inside an IRIREF: `<`, `>`, `"`, `{`, `}`, `|`, `\`,
+   * `^`, backtick, or any whitespace. The live caller passes
+   * `vaultPathToIRI(path)` (percent-encoded via `encodeURI`, always clean), so
+   * this never fires in production — but it makes the no-injection guarantee a
+   * property of the runner itself rather than of every caller pre-normalising
+   * its IRIs (code-reviewer LOW, RFC 78c2b7d0 C4). Fail-loud: a malformed IRI
+   * surfaces as an error instead of a query that breaks out of `<...>`.
+   */
+  private static formatIri(value: string): string {
+    if (/[\s<>"{}|\\^`]/.test(value)) {
+      throw new Error(
+        `NamedQueryRunner: refusing to inject malformed IRI "${value}" — contains a character illegal in a SPARQL IRIREF (would break out of <...>). Pass a percent-encoded IRI.`,
+      );
+    }
+    return `<${value}>`;
   }
 
   /** Minimal SPARQL string-literal escaping (backslash, quote, newlines, tab). */
