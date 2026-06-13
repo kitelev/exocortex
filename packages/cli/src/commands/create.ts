@@ -254,6 +254,11 @@ export function createCommand(): Command {
             fsAdapter,
             isDefinedBy,
           );
+          // Truthy → a resolved subfolder. The empty string "" (root-level
+          // ontology, dirname → ".") is intentionally falsy here, so a brand
+          // new asset is kept in the inbox rather than written to the vault
+          // root — a degenerate case that does not occur under CR-1 (ontologies
+          // live under assetspaces/<ns>/).
           if (coLocatedFolder) {
             folderPath = coLocatedFolder;
           }
