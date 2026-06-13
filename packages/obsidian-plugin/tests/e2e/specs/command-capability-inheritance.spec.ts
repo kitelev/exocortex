@@ -30,7 +30,8 @@ import * as path from "path";
  *
  * Assertions (the three C3 DoD UI gates):
  *   1. Inheritance  — `Feed Animal` (Animal-bound) is present on a Dog instance.
- *   2. Nearest-wins — `Walk Dog` (depth 0) renders ABOVE `Feed Animal` (depth 1).
+ *   2. Nearest-wins — `Walk Dog` (depth 0) precedes `Feed Animal` (depth 1) in
+ *                     render order (DOM source order within the c3demo group).
  *   3. Override     — a Cat-level binding's `overrides` edge HIDES the inherited
  *                     `Feed Animal`; only `Custom Feed` renders.
  */
@@ -130,32 +131,47 @@ test.describe("C3 capability-inheritance + override (RFC 78c2b7d0)", () => {
     ).toBeVisible({ timeout: 20000 });
   });
 
-  test("nearest-wins ordering — Walk Dog (depth 0) renders above the inherited Feed Animal (depth 1)", async () => {
+  test("nearest-wins ordering — Walk Dog (depth 0) precedes the inherited Feed Animal (depth 1)", async () => {
     const section = await openAndRenderButtons(
       "03 Knowledge/c3-dog-instance.md",
     );
 
-    const walkDog = section.locator(
-      'button.exocortex-action-button:has-text("Walk Dog")',
-    );
-    const feedAnimal = section.locator(
-      'button.exocortex-action-button:has-text("Feed Animal")',
-    );
-    await expect(walkDog).toBeVisible({ timeout: 20000 });
-    await expect(feedAnimal).toBeVisible({ timeout: 20000 });
+    await expect(
+      section.locator('button.exocortex-action-button:has-text("Walk Dog")'),
+    ).toBeVisible({ timeout: 20000 });
+    await expect(
+      section.locator('button.exocortex-action-button:has-text("Feed Animal")'),
+    ).toBeVisible({ timeout: 20000 });
 
     // Both bindings share order=100 and the `c3demo` category, so the only
     // ordering signal is class depth. `(priority, depth, order)` nearest-wins
-    // must place the subclass-targeted `Walk Dog` (depth 0) above the
-    // ancestor-targeted `Feed Animal` (depth 1).
-    const walkBox = await walkDog.boundingBox();
-    const feedBox = await feedAnimal.boundingBox();
-    expect(walkBox, "Walk Dog must have a layout box").not.toBeNull();
-    expect(feedBox, "Feed Animal must have a layout box").not.toBeNull();
+    // must place the subclass-targeted `Walk Dog` (depth 0) before the
+    // ancestor-targeted `Feed Animal` (depth 1) in the rendered sequence.
+    //
+    // Asserted via DOM source order — NOT bounding-box `y`. The two buttons
+    // live in the same `c3demo` group whose container is a horizontal
+    // `flex-wrap: wrap` row at desktop width, so both share the same `y`;
+    // the resolver's ordering surfaces as document order (= visual sequence
+    // left-to-right within the row), which is layout-direction-independent.
+    // `DynamicCommandButtonGroupBuilder.buildCategoryGroups` preserves the
+    // `resolveForAssetMulti` order into the category bucket → DOM, so document
+    // order == resolved `(priority, depth, order)` order.
+    const labels = await section
+      .locator("button.exocortex-action-button")
+      .allInnerTexts();
+    const walkIdx = labels.findIndex((t) => t.includes("Walk Dog"));
+    const feedIdx = labels.findIndex((t) => t.includes("Feed Animal"));
+    expect(walkIdx, "Walk Dog button must be present").toBeGreaterThanOrEqual(
+      0,
+    );
     expect(
-      walkBox!.y,
-      "nearest-wins: `Walk Dog` (subclass depth 0) must render above `Feed Animal` (ancestor depth 1)",
-    ).toBeLessThan(feedBox!.y);
+      feedIdx,
+      "Feed Animal button must be present",
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      walkIdx,
+      "nearest-wins: `Walk Dog` (subclass depth 0) must precede `Feed Animal` (ancestor depth 1) in render order",
+    ).toBeLessThan(feedIdx);
   });
 
   test("override hides the inherited binding — Cat shows Custom Feed but not the inherited Feed Animal", async () => {
