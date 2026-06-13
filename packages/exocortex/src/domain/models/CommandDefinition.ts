@@ -109,6 +109,15 @@ export interface GroundingDefinition {
   /** RFC 31c1a0be Phase 1: UUID of SubstitutionToken instance whose label
    *  (e.g. `$nowLocal`) becomes the substituted value. */
   readonly targetValueSubstitution?: string;
+  /** RFC 78c2b7d0 C4 (NamedQuery value-source): UUID of a `query__NamedQuery`
+   *  asset whose scalar result (first binding of first row, run read-only via
+   *  `NamedQueryRunner` with auto-injected `$currentAsset`/`$currentClass`)
+   *  becomes the `property_set` value. This is the CQRS bridge — the read side
+   *  computes a write-input. Mutually exclusive with
+   *  targetValueRef/targetValueLiteral/targetValueSubstitution. Resolved from
+   *  `exocmd__Grounding_targetValueQuery` (wikilink → bare UID). Generic /
+   *  reusable; C5 (ontological archive) is the first consumer. */
+  readonly targetValueQuery?: string;
   /** RFC 918a2b65 Phase 1: Opaque JSON config payload for `service_call`
    *  groundings. Resolved through `substituteVariables` before `JSON.parse`;
    *  merged into `userInput` defaults at `GroundingExecutor.executeServiceCall`.

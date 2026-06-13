@@ -18,6 +18,7 @@ import {
   StatusTimestampService,
   TaskStatusService,
   WorkflowResolver,
+  NamedQueryRunner,
   createVaultFrontmatterClassLabelResolver,
   registerDefaultHostFunctions,
   vaultPathToIRI,
@@ -41,6 +42,7 @@ import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { createIsInWrongFolderHostFunction } from "../precondition/createIsInWrongFolderHostFunction.js";
 import { populateCliServiceRegistry } from "../services/CliServiceRegistryPopulator.js";
+import { FsQueryBodyResolver } from "../services/FsQueryBodyResolver.js";
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
 
 export interface ApplyOptions {
@@ -285,6 +287,15 @@ async function executeOnTarget(
   // Without these the executor returns the fail-loud "workflow_transition
   // requires WorkflowResolver injection" error from
   // `GroundingExecutor.executeWorkflowTransition`.
+  // RFC 78c2b7d0 C4 — read-side value-source for property_set targetValueQuery.
+  // The NamedQuery body lives in the asset's ```sparql block, resolved by a
+  // triple-store + fs backed resolver (no Obsidian metadataCache in the CLI).
+  // Mirrors the plugin wiring (ObsidianQueryBodyResolver) so `apply` and the UI
+  // share one read-side path.
+  const namedQueryRunner = new NamedQueryRunner(
+    new FsQueryBodyResolver(tripleStore, nodeFsAdapter),
+    tripleStore,
+  );
   const groundingExecutor = new GroundingExecutor(
     nodeFsAdapter,
     nodeFsAdapter,
@@ -295,6 +306,7 @@ async function executeOnTarget(
       uidGenerator: uidGen,
       workflowResolver,
       groundingLoader: (uid) => resolver.loadGroundingByUid(uid),
+      namedQueryRunner,
     },
   );
 

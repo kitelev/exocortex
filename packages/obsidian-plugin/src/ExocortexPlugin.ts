@@ -45,6 +45,7 @@ import {
   LazyAssetGraphLoader,
   NoteToRDFConverter,
   WorkflowResolver,
+  NamedQueryRunner,
 } from "exocortex";
 import { ObsidianFileResolver } from "./infrastructure/ObsidianFileResolver";
 import { registerOrderSpecFromObsidianVault } from "./infrastructure/registerOrderSpecFromObsidianVault";
@@ -464,6 +465,14 @@ export default class ExocortexPlugin extends Plugin {
       // plugin always wires them so the workflow_transition grounding type is
       // fully functional in production.
       this.workflowResolver = new WorkflowResolver(tripleStore);
+      // RFC 78c2b7d0 C4 — read-side value-source. Reuses the same
+      // ObsidianQueryBodyResolver (```sparql block, M2 lock) the precondition
+      // path uses; resolves a property_set `targetValueQuery` to a scalar with
+      // `$currentAsset` auto-injected (the CQRS bridge consumed by C5).
+      const namedQueryRunner = new NamedQueryRunner(
+        queryBodyResolver,
+        tripleStore,
+      );
       this.groundingExecutor = new GroundingExecutor(
         obsidianFs,
         obsidianFs,
@@ -476,6 +485,7 @@ export default class ExocortexPlugin extends Plugin {
         {
           workflowResolver: this.workflowResolver,
           groundingLoader: (uid) => this.commandResolver.loadGroundingByUid(uid),
+          namedQueryRunner,
         },
       );
 
