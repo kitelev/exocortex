@@ -508,8 +508,19 @@ describe("P1.6 labelToOntologyIRI", () => {
     expect(labelToOntologyIRI("SomePlainLabel")).toBeNull();
   });
 
-  it("returns null for label with unknown prefix", () => {
-    expect(labelToOntologyIRI("unknown__Foo")).toBeNull();
+  it("derives the canonical ontology URI for an unlisted lowercase prefix (Issue #3512)", () => {
+    // Namespace-agnostic: prefixes absent from the curated NAMESPACE_PREFIX_MAP
+    // resolve via the standard exocortex ontology pattern, mirroring
+    // Namespace.forPrefix / NoteToRDFConverter's ad-hoc namespace derivation.
+    expect(labelToOntologyIRI("unknown__Foo")).toBe("https://exocortex.my/ontology/unknown#Foo");
+  });
+
+  it("resolves the canonical person__Person to person#Person (Issue #3512)", () => {
+    expect(labelToOntologyIRI("person__Person")).toBe("https://exocortex.my/ontology/person#Person");
+  });
+
+  it("returns null for a malformed (non-lowercase-leading) prefix", () => {
+    expect(labelToOntologyIRI("Unknown__Foo")).toBeNull();
   });
 
   it("returns null for label with prefix only (no local name)", () => {
