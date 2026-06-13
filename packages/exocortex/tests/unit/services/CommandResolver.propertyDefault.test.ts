@@ -44,6 +44,21 @@ function makeRecordingLogger(): RecordingLogger {
   };
 }
 
+// RFC 9d20c91f Phase 1: Grounding_type catalog UIDs (mirror of
+// packages/exocortex/src/domain/constants/GroundingTypeUIDs.ts). Fixtures emit
+// the wikilink-form Literal `"[[<uid>]]"` so post-Phase-3 ABox shape is honoured.
+const TEST_GROUNDING_TYPE_UIDS: Record<string, string> = {
+  property_set: "cf3bb923-f1f1-40be-b728-782844402426",
+  property_delete: "4bdf1d0b-e9da-4d96-bafe-c5aaef8c2bd5",
+  composite: "8f9a57db-3865-4886-92fb-c5ab7f3c3fa3",
+  service_call: "9bf9fc99-ac37-4e51-b9f5-bd920099947c",
+  create_instance: "4367e2d6-6c92-450a-becb-abce1fb07682",
+  property_append: "572f7e69-a8a1-42f6-8113-5aa65cc4b552",
+  property_increment: "afc29f90-45eb-4f94-9fe2-2ce738759161",
+  property_shift: "f4e5266f-f3cc-49fd-a5a5-ce1e8b7847a4",
+  sparql_update: "79c3e709-8d1d-4694-bcc6-b9ff07d59b86",
+};
+
 // ────────────────────────────────────────────────────────────────────────────
 // Fixture helpers — TBox assets needed for ref-form PropertyDefault parsing
 // ────────────────────────────────────────────────────────────────────────────
@@ -124,6 +139,16 @@ async function addGroundingWithPropertyDefaults(
   },
 ): Promise<IRI> {
   const subject = new IRI(`obsidian://vault/${opts.uid}.md`);
+  // RFC 9d20c91f Phase 3: Grounding_type is a wikilink-form UID ref into the
+  // exocmd__GroundingType catalog, not a bare-string literal. Map the legacy
+  // enum string to its catalog UID; bare-string fallback preserves the
+  // null-dispatch path for typo-form fixtures. Without this the resolver returns
+  // null → grounding inert → command dropped (the orphan rot per Issue #3506).
+  const groundingTypeUid =
+    TEST_GROUNDING_TYPE_UIDS[opts.type ?? "create_instance"];
+  const groundingTypeValue = groundingTypeUid
+    ? new Literal(`[[${groundingTypeUid}]]`)
+    : new Literal(opts.type ?? "create_instance");
   const triples: Triple[] = [
     new Triple(subject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
     new Triple(subject, Namespace.EXO.term("Asset_uid"), new Literal(opts.uid)),
@@ -131,7 +156,7 @@ async function addGroundingWithPropertyDefaults(
     new Triple(
       subject,
       Namespace.EXOCMD.term("Grounding_type"),
-      new Literal(opts.type ?? "create_instance"),
+      groundingTypeValue,
     ),
   ];
   for (const ref of opts.propertyDefaultRefs ?? []) {

@@ -119,7 +119,10 @@ async function addGrounding(
     new Triple(
       subject,
       Namespace.EXOCMD.term("Grounding_type"),
-      new Literal("create_instance"),
+      // RFC 9d20c91f Phase 3: wikilink-form UID ref into exocmd__GroundingType
+      // catalog (create_instance → 4367e2d6), not a bare-string literal. Legacy
+      // bare-string resolves to null → grounding inert → command dropped (#3506).
+      new Literal("[[4367e2d6-6c92-450a-becb-abce1fb07682]]"),
     ),
   ];
   for (const ref of opts.propertyDefaultRefs) {
