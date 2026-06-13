@@ -42,6 +42,7 @@ const P_UID = "00000000-0000-4000-8000-000000000abc"; // adapter-exo-ims__relate
 // Junction reified-statement assets
 const J1_UID = "10000000-0000-4000-8000-000000000001"; // A --rel--> B
 const J2_UID = "20000000-0000-4000-8000-000000000002"; // B --rel--> C
+const J3_UID = "30000000-0000-4000-8000-00000000000a"; // A --rel--> C, bare-UID class form
 
 function mkFile(uid: string, dir: string): IFile {
   return {
@@ -58,6 +59,10 @@ const C_FILE = mkFile(C_UID, "assetspaces/ims");
 const P_FILE = mkFile(P_UID, "assetspaces/adapters");
 const J1_FILE = mkFile(J1_UID, "assetspaces/relations");
 const J2_FILE = mkFile(J2_UID, "assetspaces/relations");
+const J3_FILE = mkFile(J3_UID, "assetspaces/relations");
+// Statement class definition (UID-named) — needed for bare-UID Instance_class
+// resolution ([[uid]] without alias → vault lookup → label → exo#Statement)
+const STMT_CLASS_FILE = mkFile(STMT_CLASS_UID, "assetspaces/exo");
 
 const FM_BY_PATH: Record<string, IFrontmatter> = {
   [A_FILE.path]: {
@@ -96,6 +101,20 @@ const FM_BY_PATH: Record<string, IFrontmatter> = {
     exo__Statement_predicate: `[[${P_UID}]]`,
     exo__Statement_object: `[[${C_UID}]]`,
   },
+  [J3_FILE.path]: {
+    exo__Asset_uid: J3_UID,
+    exo__Asset_isDefinedBy: "[[55a0f8b9-e908-45bf-9c16-763589f04f16]]",
+    // Bare-UID Instance_class (no |alias) — production UUID-canon TBox form
+    exo__Instance_class: [`[[${STMT_CLASS_UID}]]`],
+    exo__Statement_subject: `[[${A_UID}]]`,
+    exo__Statement_predicate: `[[${P_UID}]]`,
+    exo__Statement_object: `[[${C_UID}]]`,
+  },
+  [STMT_CLASS_FILE.path]: {
+    exo__Asset_uid: STMT_CLASS_UID,
+    exo__Asset_label: "exo__Statement",
+    exo__Instance_class: ["[[exo__Class]]"],
+  },
 };
 
 const FILE_BY_UID: Record<string, IFile> = {
@@ -105,6 +124,8 @@ const FILE_BY_UID: Record<string, IFile> = {
   [P_UID]: P_FILE,
   [J1_UID]: J1_FILE,
   [J2_UID]: J2_FILE,
+  [J3_UID]: J3_FILE,
+  [STMT_CLASS_UID]: STMT_CLASS_FILE,
 };
 
 function makeVault(): jest.Mocked<IVaultAdapter> {
@@ -198,6 +219,20 @@ describe("NoteToRDFConverter — EKA D5 reified exo__Statement materialization",
           J1,
           Namespace.EXO.term("Statement_object"),
           objectIRI(),
+        ),
+      ).toBe(true);
+    });
+
+    it("emits the logical edge for bare-UID exo__Instance_class form ([[uid]] without alias)", async () => {
+      // Production UUID-canon TBox form: exo__Instance_class: [[<stmt-uid>]].
+      // Detection resolves via vault lookup → label "exo__Statement" → exo#Statement.
+      const triples = await converter.convertNote(J3_FILE);
+      expect(
+        hasTriple(
+          triples,
+          subjectIRI(),
+          predicateIRI(),
+          Namespace.IMS.term("ConceptC"),
         ),
       ).toBe(true);
     });

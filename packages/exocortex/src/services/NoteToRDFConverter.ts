@@ -224,9 +224,14 @@ export class NoteToRDFConverter {
     // EKA D5 (reification): capture the resolved subject/predicate/object terms
     // of a reified `exo__Statement` so a logical edge can be materialized after
     // the frontmatter loop (materialize-at-index — see emission note below).
+    // `isReifiedStmt` is set from the exo__Instance_class resolution already
+    // performed in the loop (no extra valueToClassURI cost on the reindex hot
+    // path; covers alias AND bare-UID class forms via the same code path).
     let reifiedSubject: IRI | undefined;
     let reifiedPredicate: IRI | undefined;
     let reifiedObject: IRI | Literal | undefined;
+    let isReifiedStmt = false;
+    const statementClassIRI = Namespace.EXO.term("Statement").value;
 
     for (const [key, value] of Object.entries(frontmatter)) {
       // Issue #3043 Phase 1: whitelisted unprefixed frontmatter keys are
@@ -317,6 +322,10 @@ export class NoteToRDFConverter {
           if (classNode instanceof IRI) {
             const rdfType = Namespace.RDF.term("type");
             triples.push(new Triple(subject, rdfType, classNode));
+            // EKA D5: reified-statement detection reuses this resolution.
+            if (classNode.value === statementClassIRI) {
+              isReifiedStmt = true;
+            }
           }
         }
       }
@@ -370,12 +379,7 @@ export class NoteToRDFConverter {
     // remain (round-trip), and the edge reuses their already-resolved terms.
     // Emitted only when subject AND predicate resolve to IRIs (SPARQL requires
     // an IRI in those positions); the object may be an IRI or a Literal.
-    if (
-      this.isReifiedStatement(frontmatter) &&
-      reifiedSubject &&
-      reifiedPredicate &&
-      reifiedObject
-    ) {
+    if (isReifiedStmt && reifiedSubject && reifiedPredicate && reifiedObject) {
       triples.push(new Triple(reifiedSubject, reifiedPredicate, reifiedObject));
     }
 
@@ -1531,26 +1535,6 @@ export class NoteToRDFConverter {
   private isClassReference(value: string): boolean {
     if (/\s/.test(value)) return false;
     return Namespace.fromPropertyKey(value) !== null;
-  }
-
-  /**
-   * EKA D5: detect a reified `exo__Statement` asset — one whose
-   * `exo__Instance_class` resolves to the canonical `exo#Statement` class.
-   * Gates logical-edge materialization. Robust to alias form
-   * (`[[uid|exo__Statement]]`) and bare-UID form (`[[uid]]`) since
-   * valueToClassURI resolves both to `exo#Statement`.
-   */
-  private isReifiedStatement(frontmatter: Record<string, unknown>): boolean {
-    const instanceClass = frontmatter["exo__Instance_class"];
-    if (instanceClass === undefined || instanceClass === null) return false;
-    const values = Array.isArray(instanceClass)
-      ? instanceClass
-      : [instanceClass];
-    const statementIRI = Namespace.EXO.term("Statement").value;
-    return values.some((v) => {
-      const classURI = this.valueToClassURI(v);
-      return classURI instanceof IRI && classURI.value === statementIRI;
-    });
   }
 
   /**
