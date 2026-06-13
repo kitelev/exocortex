@@ -18,7 +18,8 @@
       "exo-layout-smoke.spec.ts",
       "featured-binding-promotion.spec.ts",
       "create-fleeting-note-palette.spec.ts",
-      "focus-profile-picker.spec.ts"
+      "focus-profile-picker.spec.ts",
+      "command-capability-inheritance.spec.ts"
     ],
     [
       "area-tree-collapsible.spec.ts",
