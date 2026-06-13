@@ -57,9 +57,15 @@ export {
   TS_FLOOR_AS_UID_SHARED_IDENTITIES,
   SDK_FLOOR_ASSETSPACE_UIDS,
   PLUGIN_UI_FLOOR_ASSETSPACE_UIDS,
+  SDK_FLOOR,
+  PLUGIN_UI_FLOOR,
+  CATALOG_KEEP_NAMESPACES,
   TsFloorViolationError,
   assertTsFloor,
+  assertTsFloorReconciled,
 } from "./domain/profile/TsFloorGuard";
+export type { FloorIdentity } from "./domain/profile/TsFloorGuard";
+export { transitiveDependsOnClosure } from "./domain/profile/AssetSpaceDependsOn";
 export type { IPropertyValidationService, ValidationResult } from "./domain/services/IPropertyValidationService";
 
 // Property definition types
