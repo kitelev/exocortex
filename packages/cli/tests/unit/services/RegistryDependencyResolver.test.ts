@@ -14,6 +14,7 @@ import path from "path";
 import {
   RegistryDependencyResolver,
   ownerRepoSlug,
+  isSafeCloneUrl,
 } from "../../../src/services/RegistryDependencyResolver.js";
 import { ASSET_SPACE_CLASS_UID } from "../../../src/services/CliProfileResolver.js";
 
@@ -241,6 +242,26 @@ describe("RegistryDependencyResolver", () => {
       expect(out.dependencies).toHaveLength(0);
     });
 
+    it("surfaces unsafe dependency sources (git-clone injection) and never lists them as deps-to-clone", async () => {
+      await makeRegistry(tmp, [
+        {
+          uid: UID_EXO,
+          namespace: "exo",
+          source: "https://github.com/kitelev/exoas-exo",
+          dependsOn: [{ uid: UID_W3C, alias: "exoas-w3c-aggregated" }],
+        },
+        // hostile source: an ext:: transport git would execute as a shell command
+        { uid: UID_W3C, namespace: "w3c-aggregated", source: "ext::sh -c touch${IFS}/tmp/pwned" },
+      ]);
+      const resolver = new RegistryDependencyResolver();
+      const out = await resolver.resolve(path.join(tmp, "registry"), "exo");
+      expect(out.outcome).toBe("resolved");
+      if (out.outcome !== "resolved") return;
+      expect(out.unsafeSources.map((d) => d.uid)).toEqual([UID_W3C]);
+      // still listed as a dependency (for diagnostics) but NOT a clone target
+      expect(out.dependencies.map((d) => d.uid)).toEqual([UID_W3C]);
+    });
+
     it("surfaces sourceless dependency descriptors (cannot clone)", async () => {
       await makeRegistry(tmp, [
         {
@@ -292,5 +313,32 @@ describe("ownerRepoSlug", () => {
   it("returns null for an unparseable identifier", () => {
     expect(ownerRepoSlug("just-a-namespace")).toBeNull();
     expect(ownerRepoSlug("")).toBeNull();
+  });
+});
+
+describe("isSafeCloneUrl", () => {
+  it("accepts well-formed https / ssh / scp-like URLs", () => {
+    expect(isSafeCloneUrl("https://github.com/kitelev/exoas-exo")).toBe(true);
+    expect(isSafeCloneUrl("http://example.com/o/r")).toBe(true);
+    expect(isSafeCloneUrl("ssh://git@github.com/kitelev/exoas-exo.git")).toBe(true);
+    expect(isSafeCloneUrl("git@github.com:kitelev/exoas-exo.git")).toBe(true);
+    expect(isSafeCloneUrl("git://github.com/kitelev/exoas-exo")).toBe(true);
+  });
+
+  it("rejects git option injection (leading dash)", () => {
+    expect(isSafeCloneUrl("--upload-pack=touch /tmp/pwned")).toBe(false);
+    expect(isSafeCloneUrl("-c core.fsmonitor=evil")).toBe(false);
+  });
+
+  it("rejects command-executing / odd transports", () => {
+    expect(isSafeCloneUrl("ext::sh -c id")).toBe(false);
+    expect(isSafeCloneUrl("file:///etc/passwd")).toBe(false);
+    expect(isSafeCloneUrl("fd::17")).toBe(false);
+  });
+
+  it("rejects whitespace / control chars / empty", () => {
+    expect(isSafeCloneUrl("https://github.com/o/r r")).toBe(false);
+    expect(isSafeCloneUrl("https://github.com/o/r\n")).toBe(false);
+    expect(isSafeCloneUrl("")).toBe(false);
   });
 });

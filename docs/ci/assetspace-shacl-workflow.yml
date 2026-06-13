@@ -71,6 +71,10 @@ jobs:
         env:
           # Token for cloning registry + private deps. Anonymous if unset (public).
           GH_CLONE_TOKEN: ${{ secrets.registry_token }}
+          # Defence-in-depth: restrict git to network transports only, so a
+          # malformed descriptor source can't reach a command-executing transport
+          # (ext::/file::). resolve-deps already rejects unsafe sources upstream.
+          GIT_ALLOW_PROTOCOL: "https:ssh"
         run: |
           set -uo pipefail
           ALSO_FILE="$RUNNER_TEMP/also-args.txt"
@@ -87,7 +91,7 @@ jobs:
           }
 
           echo "::group::Clone central registry"
-          if ! git clone --depth 1 "$(auth_url "${{ inputs.registry_url }}")" "$RUNNER_TEMP/registry" 2>/dev/null; then
+          if ! git clone --depth 1 -- "$(auth_url "${{ inputs.registry_url }}")" "$RUNNER_TEMP/registry" 2>/dev/null; then
             echo "⚠️  Could not clone registry ${{ inputs.registry_url }} — validating standalone (deps unresolved → warnings only)."
             echo "::endgroup::"
             exit 0
@@ -111,7 +115,7 @@ jobs:
             [ -z "$url" ] && continue
             name="dep-$i-$(basename "$url" .git)"
             target="$RUNNER_TEMP/deps/$name"
-            if git clone --depth 1 "$(auth_url "$url")" "$target" 2>/dev/null; then
+            if git clone --depth 1 -- "$(auth_url "$url")" "$target" 2>/dev/null; then
               echo "  ✓ $url → $target"
               printf -- '--also\n%s\n' "$target" >> "$ALSO_FILE"
             else
@@ -145,6 +149,10 @@ jobs:
       - name: Ontology-imports audit (cross-ontology closure + SCC)
         id: imports
         continue-on-error: ${{ inputs.warn_only }}
+        # ADVISORY by design: reported in the summary but never blocking — the
+        # exit code is `tee`'s (always 0), so this step does not gate the merge
+        # regardless of `warn_only`. SHACL (above) is the sole blocking gate. To
+        # make this gate too, mirror the SHACL step: append `; exit "${PIPESTATUS[0]}"`.
         run: |
           npx -y @kitelev/exocortex-cli@${{ inputs.cli_version }} audit ontology-imports \
             --vault . --output text | tee "$RUNNER_TEMP/imports-report.txt"

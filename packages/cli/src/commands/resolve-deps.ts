@@ -101,12 +101,24 @@ export async function runResolveDeps(
         outcome.sourceless.map((d) => d.namespace ?? d.uid).join(", "),
     );
   }
+  if (outcome.unsafeSources.length > 0) {
+    err(
+      `[resolve-deps] ⚠️  ${outcome.unsafeSources.length} dependency source(s) rejected as unsafe git-clone targets (option/transport injection) — NOT emitted: ` +
+        outcome.unsafeSources.map((d) => `${d.namespace ?? d.uid}=${d.source}`).join(", "),
+    );
+  }
 
   if (format === "json") {
     out(JSON.stringify(outcome, null, 2));
   } else {
+    // urls: only emit safe clone targets. unsafeSources are excluded above and
+    // warned to stderr so a malformed/hostile descriptor source never reaches
+    // `git clone`.
+    const unsafe = new Set(outcome.unsafeSources.map((d) => d.uid));
     for (const dep of outcome.dependencies) {
-      if (dep.source && dep.source.length > 0) out(dep.source);
+      if (dep.source && dep.source.length > 0 && !unsafe.has(dep.uid)) {
+        out(dep.source);
+      }
     }
   }
   return { exitCode: 0, outcome };

@@ -63,6 +63,13 @@ export type ResolveDepsOutcome =
        * cloned; surfaced for diagnostics.
        */
       sourceless: AssetSpaceDescriptor[];
+      /**
+       * Closure dependency descriptors whose `source` is NOT a safe `git clone`
+       * target (option-injection / command-executing transport / whitespace —
+       * see {@link isSafeCloneUrl}). Surfaced + never emitted as a clone URL, so
+       * a malformed/hostile descriptor source can't reach `git clone` in CI.
+       */
+      unsafeSources: AssetSpaceDescriptor[];
     }
   | {
       /** No descriptor in the registry matched the self identifier. */
@@ -119,37 +126,48 @@ export class RegistryDependencyResolver {
       if (d.dependsOn.length > 0) dependsOn.set(d.uid, d.dependsOn);
     }
 
-    // Transitive closure from self (includes self). BFS order is preserved by
-    // re-walking the closure deterministically below.
+    // AUTHORITATIVE membership: the transitive `dependsOn` closure from self,
+    // computed by the shared core primitive (#3511) — identical DAG semantics to
+    // the profile-apply engine. The BFS below only ORDERS this set for stable CI
+    // logs; it never decides membership, and `missingDescriptors` derives from
+    // the closure too, so the primitive's result is the single source of truth.
     const closure = transitiveDependsOnClosure([self.uid], dependsOn);
+    closure.delete(self.uid); // dependencies only — exclude self
 
-    // Re-walk in BFS order from self for a stable, dependency-before-dependent-ish
-    // ordering (the validator is order-insensitive, but stable output aids
-    // reproducible CI logs).
-    const ordered: AssetSpaceDescriptor[] = [];
-    const missingDescriptors: string[] = [];
+    // Deterministic BFS ordering over the closure (dependency-before-dependent-ish).
+    const orderedUids: string[] = [];
+    const orderedSet = new Set<string>();
     const seen = new Set<string>([self.uid]);
     const queue: string[] = [...self.dependsOn];
     while (queue.length > 0) {
       const uid = queue.shift();
       if (uid === undefined || seen.has(uid)) continue;
       seen.add(uid);
-      const d = descriptors.get(uid);
-      if (d === undefined) {
-        missingDescriptors.push(uid);
-        continue;
+      if (closure.has(uid) && !orderedSet.has(uid)) {
+        orderedUids.push(uid);
+        orderedSet.add(uid);
       }
-      ordered.push(d);
-      for (const next of d.dependsOn) {
-        if (!seen.has(next)) queue.push(next);
+      const d = descriptors.get(uid);
+      if (d !== undefined) {
+        for (const next of d.dependsOn) {
+          if (!seen.has(next)) queue.push(next);
+        }
+      }
+    }
+    // Defensive: any closure member the BFS didn't reach (reachable only via a
+    // missing intermediate descriptor) — append in stable iteration order so the
+    // ordered list always covers the full closure membership.
+    for (const uid of closure) {
+      if (!orderedSet.has(uid)) {
+        orderedUids.push(uid);
+        orderedSet.add(uid);
       }
     }
 
-    // Any closure UID neither self nor already ordered/missing is a descriptor
-    // reachable only via a missing intermediate — fold those in deterministically.
-    for (const uid of closure) {
-      if (uid === self.uid || seen.has(uid)) continue;
-      seen.add(uid);
+    // Partition the ordered closure into present descriptors vs dangling edges.
+    const ordered: AssetSpaceDescriptor[] = [];
+    const missingDescriptors: string[] = [];
+    for (const uid of orderedUids) {
       const d = descriptors.get(uid);
       if (d === undefined) missingDescriptors.push(uid);
       else ordered.push(d);
@@ -158,6 +176,9 @@ export class RegistryDependencyResolver {
     const sourceless = ordered.filter(
       (d) => d.source === null || d.source.length === 0,
     );
+    const unsafeSources = ordered.filter(
+      (d) => d.source !== null && d.source.length > 0 && !isSafeCloneUrl(d.source),
+    );
 
     return {
       outcome: "resolved",
@@ -165,6 +186,7 @@ export class RegistryDependencyResolver {
       dependencies: ordered,
       missingDescriptors,
       sourceless,
+      unsafeSources,
     };
   }
 
@@ -320,4 +342,31 @@ export function ownerRepoSlug(identifier: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Whether a descriptor `source` is a safe `git clone` target. The CI gate feeds
+ * this value straight into `git clone <url>`, so anything git would interpret as
+ * an OPTION or a command-executing TRANSPORT is a remote-code-execution vector.
+ * Reject:
+ *   - leading `-`           — parsed as an option (`--upload-pack=…`, `-c …`)
+ *   - `ext::`/`file::`/`fd::` transports — git runs arbitrary shell
+ *   - embedded whitespace / control chars / newlines — arg/line splitting
+ * Allow only well-formed http(s)/ssh/git URLs and scp-like `user@host:path`.
+ * Defence-in-depth: even though descriptor sources come from the trusted central
+ * registry, this resolver does the validation so a malformed/hostile source can
+ * never reach `git clone` (the workflow adds `--` + `GIT_ALLOW_PROTOCOL` too).
+ */
+export function isSafeCloneUrl(source: string): boolean {
+  if (typeof source !== "string" || source.length === 0) return false;
+  // eslint-disable-next-line no-control-regex
+  if (/[\s\x00-\x1f]/.test(source)) return false; // whitespace / control chars
+  if (source.startsWith("-")) return false; // git option injection
+  if (/^(ext|file|fd|ftp|ftps)::/i.test(source)) return false; // command/odd transports
+  if (/^https?:\/\/[^\s]+$/i.test(source)) return true;
+  if (/^ssh:\/\/[^\s]+$/i.test(source)) return true;
+  if (/^git:\/\/[^\s]+$/i.test(source)) return true;
+  // scp-like SSH: user@host:owner/repo (no leading dash already excluded above)
+  if (/^[A-Za-z0-9._-]+@[A-Za-z0-9._.-]+:[^\s]+$/.test(source)) return true;
+  return false;
 }
