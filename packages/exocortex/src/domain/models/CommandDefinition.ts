@@ -323,6 +323,18 @@ export interface CommandBindingDefinition {
    * `undefined` after warning (RFC-024 §5 — never crash).
    */
   readonly style?: CommandBindingStyleDefinition;
+  /**
+   * C3 capability-inheritance (RFC 78c2b7d0, the ХРЕБЕТ child RFC) — UIDs of
+   * sibling/ancestor bindings this binding absolutely overrides. Populated from
+   * `exocmd__CommandBinding_overrides` references.
+   *
+   * Semantics (resolved by `CommandResolver.resolveForAssetMulti` AFTER the
+   * superClass BFS expansion): every UID listed here is removed from the merged
+   * capability set **absolutely** — independent of which ancestor contributed
+   * it and independent of class-distance. A dangling UID (no such binding in
+   * the merged set) is fail-open: it is simply a no-op, never an error.
+   */
+  readonly overrides?: readonly string[];
 }
 
 /**

@@ -48,6 +48,22 @@ export interface ResolvedCommand {
 const MAX_TRANSITIVE_DEPTH = 10;
 
 /**
+ * C3 capability-inheritance (RFC 78c2b7d0) — symbolic label of the universal
+ * root class. Every asset implicitly specialises `exo__Asset`, so a binding
+ * targeting it must match every asset (the universal-root guard appends it to
+ * the expanded class set when the declared superClass chain omits it).
+ */
+const UNIVERSAL_ROOT_CLASS = "exo__Asset";
+
+/**
+ * C3 — sentinel ancestor-depth assigned to the universal root when it is NOT
+ * reached by the BFS (e.g. a root-concept leaf whose chain does not terminate
+ * at `exo__Asset`). Larger than any real BFS depth so universal bindings sort
+ * LAST among class-targeted bindings (least specific → "nearer class higher").
+ */
+const UNIVERSAL_FALLBACK_DEPTH = MAX_TRANSITIVE_DEPTH + 1;
+
+/**
  * RFC v2 Phase 3a — UID of the canonical `exocmd__SubstitutionToken` class
  * file (UUID-named TBox per RFC-004). Used to detect whether the value asset
  * of a `PropertyDefault_value` reference is a SubstitutionToken instance, in
@@ -63,7 +79,8 @@ const SUBSTITUTION_TOKEN_CLASS_UID = "08cec529-90eb-4d43-88de-ceecccea12b0";
  * class IRIs against this constant is the cheapest detection path; UID
  * fallback exists for the unlikely case where label expansion failed.
  */
-const SUBSTITUTION_TOKEN_CLASS_IRI = Namespace.EXOCMD.term("SubstitutionToken").value;
+const SUBSTITUTION_TOKEN_CLASS_IRI =
+  Namespace.EXOCMD.term("SubstitutionToken").value;
 
 /**
  * RFC v2 Phase 3a — known SubstitutionToken resolver-ids. RDF vocabulary
@@ -126,7 +143,8 @@ function buildParameterisedMarker(
 
 /** RFC 727572d2 — UID of `exocmd__TokenInvocation` class. */
 const TOKEN_INVOCATION_CLASS_UID = "3f28af98-c031-4718-8ba2-44ad0b012c52";
-const TOKEN_INVOCATION_CLASS_IRI = Namespace.EXOCMD.term("TokenInvocation").value;
+const TOKEN_INVOCATION_CLASS_IRI =
+  Namespace.EXOCMD.term("TokenInvocation").value;
 
 /** RFC 727572d2 — UID of `exocmd__UniversalDefaultTemplate` class. */
 const UNIVERSAL_DEFAULT_TEMPLATE_CLASS_UID =
@@ -175,7 +193,10 @@ export class CommandResolver {
    * a session unless `invalidateCache()` is called by indexer hooks
    * after a TBox file write.
    */
-  private readonly _ancestorCache = new Map<string, string[]>();
+  private readonly _ancestorDepthCache = new Map<
+    string,
+    Array<{ ref: string; depth: number }>
+  >();
 
   /**
    * RFC v2 Phase 5 (#3167) — once-per-session-per-Grounding warning suppression
@@ -225,19 +246,50 @@ export class CommandResolver {
   ) {}
 
   /**
-   * Resolve commands for an asset declaring multiple classes (RFC-009 §5.3, Issue #2958).
+   * Resolve commands for an asset declaring one or more classes (RFC-009 §5.3,
+   * Issue #2958) with **resolver-side capability inheritance** (C3, RFC
+   * 78c2b7d0 — the ХРЕБЕТ child RFC).
    *
-   * Iterates each class in `assetClasses`, merges results, and deduplicates by `binding.id`
-   * (NOT `commandRef` — the same command may have multiple bindings, each must surface once).
+   * The resolver itself expands `assetClasses` along the `exo__Class_superClass`
+   * chain (via {@link expandClassHierarchy}), so EVERY consumer inherits
+   * `targetClass` bindings from ancestor classes — not only the plugin-UI
+   * caller that historically pre-expanded the array in `extractAssetClasses`.
+   * CLI `apply`, `CommandRegistry`, and any future consumer get inheritance
+   * for free.
    *
-   * Caller-side multi-class dispatch enables universal bindings (`targetClass: exo__Asset`)
-   * to match subclass instances when the caller appends `exo__Asset` to the classes array.
+   * Resolution semantics:
+   * - `targetClass` bindings are inherited (opt-out) through the whole superClass
+   *   chain; `targetPrototype` / `targetAsset` bindings are NOT inherited (they
+   *   match by prototype / asset IRI, which class-distance never widens).
+   * - Each binding is tagged with the nearest ancestor-depth at which it matched
+   *   (declared leaf = 0, direct superclass = 1, …). The merged set is sorted by
+   *   `(priority, depth, order)` — nearest-wins ("nearer class higher" in the UI).
+   *   `targetAsset` (priority 0) and `targetPrototype` (1) still beat any
+   *   `targetClass` binding (2) regardless of depth.
+   * - An explicit `overrides` edge (`exocmd__CommandBinding_overrides`) removes
+   *   the targeted binding from the merged set ABSOLUTELY — independent of the
+   *   contributing ancestor and of distance, resolved AFTER BFS expansion. A
+   *   dangling override ref is fail-open (no-op, never an error). Override edges
+   *   are collected across the whole expanded set, so transitive chains
+   *   (A→B→C) remove both B and C.
+   * - A universal-root guard ensures `exo__Asset` bindings keep matching even
+   *   when the declared chain does not terminate at `exo__Asset`.
+   *
+   * Dedup is by `binding.id` (NOT `commandRef` — one command may surface via
+   * several bindings, each once), keeping the nearest (minimum-depth) match.
+   *
+   * Idempotent under caller pre-expansion: passing a fully-expanded chain yields
+   * the SAME result as passing only the declared leaves, because depth is
+   * derived from the class hierarchy (true-leaf detection in
+   * {@link expandClassHierarchy}), not from input-array position.
    *
    * @param subjectIRI - IRI of the target asset (subject)
-   * @param assetClasses - All declared classes of the asset (typically `exo__Instance_class`
-   *                      array + universal `exo__Asset` superclass appended by caller)
+   * @param assetClasses - Declared classes of the asset (`exo__Instance_class`).
+   *                      May be the bare leaves OR a pre-expanded chain — both
+   *                      resolve identically.
    * @param prototypeIRI - Optional prototype IRI for prototype-scoped bindings
-   * @returns Resolved commands sorted by binding priority then order; deduped by binding.id
+   * @returns Resolved commands sorted by `(priority, depth, order)`; deduped by
+   *          binding.id; overridden bindings removed
    */
   async resolveForAssetMulti(
     subjectIRI: string,
@@ -246,35 +298,159 @@ export class CommandResolver {
   ): Promise<ResolvedCommand[]> {
     if (assetClasses.length === 0) return [];
 
-    // Cache key uses sorted classes — stable across permutations
+    // Cache key uses sorted INPUT classes — stable across permutations and
+    // deterministic w.r.t. the resolver-side expansion they drive.
     const sortedClasses = [...assetClasses].sort().join(",");
     const cacheKey = `${subjectIRI}::${sortedClasses}::${prototypeIRI ?? ""}`;
     const cached = this.multiCache.get(cacheKey);
     if (cached) return cached;
 
-    const seen = new Set<string>();
-    const merged: ResolvedCommand[] = [];
+    // 1. Expand the declared classes along the superClass chain, tagging each
+    //    resolved class ref with its nearest ancestor-depth.
+    const classDepths = await this.expandClassHierarchy(assetClasses);
 
-    for (const cls of assetClasses) {
-      const bindings = await this.resolveForAsset(subjectIRI, cls, prototypeIRI);
+    // 2. Resolve bindings per expanded class, keeping the nearest (min-depth)
+    //    match per binding.id. Non-class bindings (asset / prototype) are
+    //    distance-independent, so they are pinned to depth 0.
+    const byBindingId = new Map<
+      string,
+      { rc: ResolvedCommand; depth: number }
+    >();
+    for (const [cls, classDepth] of classDepths) {
+      const bindings = await this.resolveForAsset(
+        subjectIRI,
+        cls,
+        prototypeIRI,
+      );
       for (const rc of bindings) {
-        if (!seen.has(rc.binding.id)) {
-          seen.add(rc.binding.id);
-          merged.push(rc);
+        const matchDepth =
+          this.getBindingPriority(rc.binding) === 2 ? classDepth : 0;
+        const existing = byBindingId.get(rc.binding.id);
+        if (!existing || matchDepth < existing.depth) {
+          byBindingId.set(rc.binding.id, { rc, depth: matchDepth });
         }
       }
     }
 
-    // Re-sort across merged classes: priority (asset > prototype > class) then order
+    // 3. Collect override targets across the WHOLE expanded set BEFORE removal,
+    //    so an `overrides` edge is absolute regardless of distance and
+    //    transitive chains (A→B→C) drop both B and C. Dangling refs (no such
+    //    binding in the set) are fail-open — they simply match nothing.
+    const overridden = new Set<string>();
+    for (const { rc } of byBindingId.values()) {
+      if (rc.binding.overrides) {
+        for (const target of rc.binding.overrides) overridden.add(target);
+      }
+    }
+
+    // 4. Build the merged list (excluding overridden bindings) and sort by
+    //    (priority, depth, order) — nearest-wins among same-priority bindings.
+    const merged = Array.from(byBindingId.entries())
+      .filter(([id]) => !overridden.has(id))
+      .map(([, value]) => value);
+
     merged.sort((a, b) => {
-      const priorityA = this.getBindingPriority(a.binding);
-      const priorityB = this.getBindingPriority(b.binding);
+      const priorityA = this.getBindingPriority(a.rc.binding);
+      const priorityB = this.getBindingPriority(b.rc.binding);
       if (priorityA !== priorityB) return priorityA - priorityB;
-      return (a.binding.order ?? 100) - (b.binding.order ?? 100);
+      if (a.depth !== b.depth) return a.depth - b.depth;
+      return (a.rc.binding.order ?? 100) - (b.rc.binding.order ?? 100);
     });
 
-    this.multiCache.set(cacheKey, merged);
-    return merged;
+    const result = merged.map((entry) => entry.rc);
+    this.multiCache.set(cacheKey, result);
+    return result;
+  }
+
+  /**
+   * C3 capability-inheritance (RFC 78c2b7d0) — expand the declared classes of
+   * an asset into the full set of class refs that should participate in binding
+   * resolution, each tagged with its nearest ancestor-depth (declared leaf = 0,
+   * direct superclass = 1, …).
+   *
+   * Robust to caller pre-expansion: the plugin caller historically appends the
+   * superClass chain + `exo__Asset` to the class array. To keep depth correct
+   * whether the caller passed bare leaves (CLI `apply`) OR a pre-expanded chain
+   * (plugin), we first detect the **true leaves** — input classes that are NOT
+   * an ancestor of any sibling input class — and derive depth from those. A
+   * pre-expanded `ems__Task` is recognised as an ancestor of `ems__Meeting`,
+   * so it correctly lands at depth 1, not depth 0.
+   *
+   * Includes the universal-root guard: `exo__Asset` is appended at a sentinel
+   * depth when the declared chain does not reach it, so universal bindings keep
+   * matching root-concept leaves.
+   *
+   * @returns Map of class-ref → nearest depth (both symbolic and UID-canon
+   *          forms of each ancestor are present so bindings authored in either
+   *          form match).
+   */
+  private async expandClassHierarchy(
+    inputClasses: string[],
+  ): Promise<Map<string, number>> {
+    // Ancestor set per input class (memoised by getClassAncestors).
+    const ancestorSets = new Map<string, Set<string>>();
+    for (const cls of inputClasses) {
+      if (cls === UNIVERSAL_ROOT_CLASS) {
+        ancestorSets.set(cls, new Set());
+        continue;
+      }
+      let ancestors: string[] = [];
+      try {
+        ancestors = await this.getClassAncestors(cls);
+      } catch {
+        ancestors = []; // fail-open: unknown / cold-start class
+      }
+      ancestorSets.set(cls, new Set(ancestors));
+    }
+
+    // True leaves = input classes that are NOT an ancestor of any sibling
+    // input class. This makes depth assignment invariant to whether the caller
+    // pre-expanded the chain.
+    const isAncestorOfSibling = (cls: string): boolean => {
+      for (const other of inputClasses) {
+        if (other === cls) continue;
+        if (ancestorSets.get(other)?.has(cls)) return true;
+      }
+      return false;
+    };
+    const trueLeaves = inputClasses.filter((cls) => !isAncestorOfSibling(cls));
+
+    const depths = new Map<string, number>();
+    const setMin = (ref: string, depth: number): void => {
+      const current = depths.get(ref);
+      if (current === undefined || depth < current) depths.set(ref, depth);
+    };
+
+    for (const leaf of trueLeaves) {
+      setMin(leaf, 0);
+      // Resolver-side leaf UUID→label so symbolic class-bindings match even for
+      // consumers that pass only the UID-canon leaf (CLI `apply`). Idempotent
+      // with the plugin caller's metadata-cache expansion.
+      if (this.looksLikeUUID(leaf)) {
+        try {
+          const label = await this.resolveLabelByUID(leaf);
+          if (label) setMin(label, 0);
+        } catch {
+          /* fail-open */
+        }
+      }
+      if (leaf === UNIVERSAL_ROOT_CLASS) continue;
+      let ancestors: Array<{ ref: string; depth: number }> = [];
+      try {
+        ancestors = await this.getClassAncestorsWithDepth(leaf);
+      } catch {
+        ancestors = [];
+      }
+      for (const { ref, depth } of ancestors) setMin(ref, depth);
+    }
+
+    // Universal-root guard — keep `exo__Asset` bindings matching even when the
+    // declared chain does not terminate at the root (e.g. root-concept leaf).
+    if (!depths.has(UNIVERSAL_ROOT_CLASS)) {
+      depths.set(UNIVERSAL_ROOT_CLASS, UNIVERSAL_FALLBACK_DEPTH);
+    }
+
+    return depths;
   }
 
   /**
@@ -292,7 +468,11 @@ export class CommandResolver {
     const cached = this.cache.get(cacheKey);
     if (cached) return cached;
 
-    const bindings = await this.findBindings(assetClass, prototypeIRI, subjectIRI);
+    const bindings = await this.findBindings(
+      assetClass,
+      prototypeIRI,
+      subjectIRI,
+    );
 
     const resolved: ResolvedCommand[] = [];
     for (const binding of bindings) {
@@ -365,12 +545,31 @@ export class CommandResolver {
     if (typeTriples.length === 0) return null;
 
     // Load command properties
-    const name = await this.getLiteralValue(subject, Namespace.EXO.term("Asset_label")) ?? "Unknown Command";
-    const labelTemplate = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Command_labelTemplate"));
-    const icon = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Command_icon"));
-    const confirmMessage = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Command_confirmMessage"));
-    const successMessage = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Command_successMessage"));
-    const category = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Command_category"));
+    const name =
+      (await this.getLiteralValue(
+        subject,
+        Namespace.EXO.term("Asset_label"),
+      )) ?? "Unknown Command";
+    const labelTemplate = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Command_labelTemplate"),
+    );
+    const icon = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Command_icon"),
+    );
+    const confirmMessage = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Command_confirmMessage"),
+    );
+    const successMessage = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Command_successMessage"),
+    );
+    const category = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Command_category"),
+    );
     // RFC ce27e55d: parse boolean openInSameTab — when true, platform opener
     // navigates to the new instance in the current leaf instead of a new tab.
     const openInSameTabRaw = await this.getLiteralValue(
@@ -526,7 +725,7 @@ export class CommandResolver {
   invalidateCache(): void {
     this.cache.clear();
     this.multiCache.clear();
-    this._ancestorCache.clear();
+    this._ancestorDepthCache.clear();
   }
 
   /**
@@ -570,7 +769,9 @@ export class CommandResolver {
    *
    * Returns array of { full: "{...}", body: "..." } for each placeholder.
    */
-  private extractPlaceholders(template: string): Array<{ full: string; body: string }> {
+  private extractPlaceholders(
+    template: string,
+  ): Array<{ full: string; body: string }> {
     const results: Array<{ full: string; body: string }> = [];
     let i = 0;
 
@@ -631,27 +832,54 @@ export class CommandResolver {
     }
   }
 
-  private async loadBindingDefinition(subject: IRI): Promise<CommandBindingDefinition | null> {
-    const uid = await this.getLiteralValue(subject, Namespace.EXO.term("Asset_uid"));
+  private async loadBindingDefinition(
+    subject: IRI,
+  ): Promise<CommandBindingDefinition | null> {
+    const uid = await this.getLiteralValue(
+      subject,
+      Namespace.EXO.term("Asset_uid"),
+    );
     if (!uid) return null;
 
-    const label = await this.getLiteralValue(subject, Namespace.EXO.term("Asset_label")) ?? "";
+    const label =
+      (await this.getLiteralValue(
+        subject,
+        Namespace.EXO.term("Asset_label"),
+      )) ?? "";
 
     // Load command reference
-    const commandRef = await this.getLinkedUID(subject, Namespace.EXOCMD.term("CommandBinding_command"));
+    const commandRef = await this.getLinkedUID(
+      subject,
+      Namespace.EXOCMD.term("CommandBinding_command"),
+    );
     if (!commandRef) return null;
 
     // Load target filters
-    const targetClass = await this.getLinkedValue(subject, Namespace.EXOCMD.term("CommandBinding_targetClass"));
-    const targetPrototype = await this.getLinkedValue(subject, Namespace.EXOCMD.term("CommandBinding_targetPrototype"));
-    const targetAsset = await this.getLinkedValue(subject, Namespace.EXOCMD.term("CommandBinding_targetAsset"));
+    const targetClass = await this.getLinkedValue(
+      subject,
+      Namespace.EXOCMD.term("CommandBinding_targetClass"),
+    );
+    const targetPrototype = await this.getLinkedValue(
+      subject,
+      Namespace.EXOCMD.term("CommandBinding_targetPrototype"),
+    );
+    const targetAsset = await this.getLinkedValue(
+      subject,
+      Namespace.EXOCMD.term("CommandBinding_targetAsset"),
+    );
 
     // At least one target is required
     if (!targetClass && !targetPrototype && !targetAsset) return null;
 
     // Load display options
-    const position = await this.getLiteralValue(subject, Namespace.EXOCMD.term("CommandBinding_position"));
-    const orderStr = await this.getLiteralValue(subject, Namespace.EXOCMD.term("CommandBinding_order"));
+    const position = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("CommandBinding_position"),
+    );
+    const orderStr = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("CommandBinding_order"),
+    );
 
     // RFC command-variant-split (f1dc284a) — top-level variant override.
     // Read `_variant` literal directly so callers can use `binding.variant`
@@ -679,6 +907,14 @@ export class CommandResolver {
     // RFC-024 §4 Phase 2 — resolve visual style with fallback chain
     const style = await this.loadLinkedStyle(subject, uid);
 
+    // C3 capability-inheritance (RFC 78c2b7d0) — explicit override refs. Each
+    // resolves to the target binding's UID (= its `binding.id`), which
+    // `resolveForAssetMulti` removes from the merged set absolutely.
+    const overrides = await this.getLinkedUIDs(
+      subject,
+      Namespace.EXOCMD.term("CommandBinding_overrides"),
+    );
+
     return {
       id: uid,
       label,
@@ -691,6 +927,7 @@ export class CommandResolver {
       variant,
       precondition: precondition ?? undefined,
       style: style ?? undefined,
+      overrides: overrides.length > 0 ? overrides : undefined,
     };
   }
 
@@ -774,11 +1011,17 @@ export class CommandResolver {
   private async loadStyleAsset(
     subject: IRI,
   ): Promise<CommandBindingStyleDefinition | null> {
-    const uid = await this.getLiteralValue(subject, Namespace.EXO.term("Asset_uid"));
+    const uid = await this.getLiteralValue(
+      subject,
+      Namespace.EXO.term("Asset_uid"),
+    );
     if (!uid) return null;
 
     const label =
-      (await this.getLiteralValue(subject, Namespace.EXO.term("Asset_label"))) ?? "";
+      (await this.getLiteralValue(
+        subject,
+        Namespace.EXO.term("Asset_label"),
+      )) ?? "";
 
     const variantRaw = await this.getLiteralValue(
       subject,
@@ -798,7 +1041,9 @@ export class CommandResolver {
       Namespace.EXOCMD.term("CommandBindingStyle_labelClass"),
     );
     const labelClass =
-      labelClassRaw !== null ? this.coerceLabelClass(labelClassRaw, uid) : undefined;
+      labelClassRaw !== null
+        ? this.coerceLabelClass(labelClassRaw, uid)
+        : undefined;
 
     const ariaLabel = await this.getLiteralValue(
       subject,
@@ -919,7 +1164,8 @@ export class CommandResolver {
 
     // targetPrototype: match prototype
     if (binding.targetPrototype && prototypeIRI) {
-      if (this.matchesReference(binding.targetPrototype, prototypeIRI)) return true;
+      if (this.matchesReference(binding.targetPrototype, prototypeIRI))
+        return true;
     }
 
     // targetClass: match asset class
@@ -974,7 +1220,9 @@ export class CommandResolver {
     return 2; // targetClass
   }
 
-  private async loadLinkedPrecondition(commandSubject: IRI): Promise<PreconditionDefinition | null> {
+  private async loadLinkedPrecondition(
+    commandSubject: IRI,
+  ): Promise<PreconditionDefinition | null> {
     return this.loadLinkedPreconditionFromProperty(
       commandSubject,
       Namespace.EXOCMD.term("Command_precondition"),
@@ -985,7 +1233,11 @@ export class CommandResolver {
     subject: IRI,
     predicate: IRI,
   ): Promise<PreconditionDefinition | null> {
-    const refTriples = await this.tripleStore.match(subject, predicate, undefined);
+    const refTriples = await this.tripleStore.match(
+      subject,
+      predicate,
+      undefined,
+    );
     if (refTriples.length === 0) return null;
 
     const ref = refTriples[0].object;
@@ -1001,10 +1253,23 @@ export class CommandResolver {
 
     if (!preconditionSubject) return null;
 
-    const uid = await this.getLiteralValue(preconditionSubject, Namespace.EXO.term("Asset_uid"));
-    const label = await this.getLiteralValue(preconditionSubject, Namespace.EXO.term("Asset_label")) ?? "";
-    const sparqlAsk = await this.getLiteralValue(preconditionSubject, Namespace.EXOCMD.term("Precondition_sparqlAsk"));
-    const hostFunction = await this.getLiteralValue(preconditionSubject, Namespace.EXOCMD.term("Precondition_hostFunction"));
+    const uid = await this.getLiteralValue(
+      preconditionSubject,
+      Namespace.EXO.term("Asset_uid"),
+    );
+    const label =
+      (await this.getLiteralValue(
+        preconditionSubject,
+        Namespace.EXO.term("Asset_label"),
+      )) ?? "";
+    const sparqlAsk = await this.getLiteralValue(
+      preconditionSubject,
+      Namespace.EXOCMD.term("Precondition_sparqlAsk"),
+    );
+    const hostFunction = await this.getLiteralValue(
+      preconditionSubject,
+      Namespace.EXOCMD.term("Precondition_hostFunction"),
+    );
 
     // Precondition_query — wikilink reference to an exoql__Query asset.
     // Resolved to its UID so PreconditionEvaluator can fetch the body
@@ -1018,7 +1283,10 @@ export class CommandResolver {
     if (queryRefTriples.length > 0) {
       const queryRef = queryRefTriples[0].object;
       if (queryRef instanceof IRI) {
-        const queryUid = await this.getLiteralValue(queryRef, Namespace.EXO.term("Asset_uid"));
+        const queryUid = await this.getLiteralValue(
+          queryRef,
+          Namespace.EXO.term("Asset_uid"),
+        );
         if (queryUid) query = queryUid;
       } else if (queryRef instanceof Literal) {
         query = this.normalizeWikilink(queryRef.value);
@@ -1099,7 +1367,9 @@ export class CommandResolver {
     // legacy first-by-iteration-order behaviour. Palette commands and
     // single-grounding bindings land here.
     if (refTriples.length === 1 || !context?.targetClass) {
-      const groundingSubject = await this.resolveGroundingRef(refTriples[0].object);
+      const groundingSubject = await this.resolveGroundingRef(
+        refTriples[0].object,
+      );
       if (!groundingSubject) return null;
       return this.loadGroundingDefinition(groundingSubject, depth);
     }
@@ -1189,14 +1459,24 @@ export class CommandResolver {
   ): Promise<GroundingDefinition | null> {
     if (depth >= MAX_TRANSITIVE_DEPTH) return null;
 
-    const uid = await this.getLiteralValue(subject, Namespace.EXO.term("Asset_uid"));
+    const uid = await this.getLiteralValue(
+      subject,
+      Namespace.EXO.term("Asset_uid"),
+    );
     if (!uid) return null;
 
-    const label = await this.getLiteralValue(subject, Namespace.EXO.term("Asset_label")) ?? "";
+    const label =
+      (await this.getLiteralValue(
+        subject,
+        Namespace.EXO.term("Asset_label"),
+      )) ?? "";
     const type = await this.resolveGroundingTypeReference(subject);
     if (!type) return null;
 
-    let targetProperty = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetProperty"));
+    let targetProperty = await this.getObsidianName(
+      subject,
+      Namespace.EXOCMD.term("Grounding_targetProperty"),
+    );
     // RFC 31c1a0be Phase 3: resolve UUID-form (`"[[<UID>]]"`) targetProperty
     // to the property asset's exo__Asset_label. Otherwise GroundingExecutor
     // would write the bare UUID as a frontmatter key (data corruption per
@@ -1219,7 +1499,10 @@ export class CommandResolver {
     }
     // For service_call groundings, serviceId takes priority over targetProperty
     if (type === GroundingType.SERVICE_CALL) {
-      const serviceId = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_serviceId"));
+      const serviceId = await this.getLiteralValue(
+        subject,
+        Namespace.EXOCMD.term("Grounding_serviceId"),
+      );
       if (serviceId) {
         targetProperty = serviceId;
       }
@@ -1230,12 +1513,21 @@ export class CommandResolver {
     // bare UID (executor re-wraps to `"[[<UID>]]"`). Avoids
     // getObsidianWikilinkValue's `"[[...]]"`-with-alias output that would
     // double-wrap the wikilink at dispatch time.
-    const targetValueRef = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetValueRef"));
-    const targetValueLiteral = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetValueLiteral"));
+    const targetValueRef = await this.getObsidianName(
+      subject,
+      Namespace.EXOCMD.term("Grounding_targetValueRef"),
+    );
+    const targetValueLiteral = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_targetValueLiteral"),
+    );
     // SubstitutionToken reference — read the token's exo__Asset_label
     // (e.g. "$nowLocal") so executePropertySet's substituteVariables can
     // resolve it via the existing regex paths.
-    const substitutionRefRaw = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetValueSubstitution"));
+    const substitutionRefRaw = await this.getObsidianName(
+      subject,
+      Namespace.EXOCMD.term("Grounding_targetValueSubstitution"),
+    );
     let targetValueSubstitution: string | null = null;
     if (substitutionRefRaw && this.looksLikeUUID(substitutionRefRaw)) {
       // Fail-loud: same pattern as targetProperty above. Missing/labelless
@@ -1264,8 +1556,14 @@ export class CommandResolver {
       subject,
       Namespace.EXOCMD.term("Grounding_appendExpression"),
     );
-    const isDefinedBy = await this.getObsidianWikilinkValue(subject, Namespace.EXOCMD.term("Grounding_isDefinedBy"));
-    const sparqlUpdate = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_sparqlUpdate"));
+    const isDefinedBy = await this.getObsidianWikilinkValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_isDefinedBy"),
+    );
+    const sparqlUpdate = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_sparqlUpdate"),
+    );
     // Issue #3212: `Grounding_targetClass` must yield UID-form for UUID-canon
     // TBox (vault aiKnow `[[152e39df-cc1b-4175-a4f2-2c2913018937]]`). Three
     // storage shapes flow through here:
@@ -1280,22 +1578,47 @@ export class CommandResolver {
     // For (b) and (c) we look up the class file by `exo__Asset_label` and
     // substitute the UID. Falls back to the short-name when no class file
     // matches (test fixtures without a seeded TBox, ABox typos, etc.).
-    let targetClass = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetClass"));
+    let targetClass = await this.getObsidianName(
+      subject,
+      Namespace.EXOCMD.term("Grounding_targetClass"),
+    );
     if (targetClass && !this.looksLikeUUID(targetClass)) {
       const classUid = await this.findUidByLabel(targetClass);
       if (classUid) {
         targetClass = classUid;
       }
     }
-    const targetPrototype = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetPrototype"));
-    const targetFolder = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetFolder"));
-    const linkBackProperty = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_linkBackProperty"));
-    const inputSchemaRaw = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_inputSchema"));
+    const targetPrototype = await this.getObsidianName(
+      subject,
+      Namespace.EXOCMD.term("Grounding_targetPrototype"),
+    );
+    const targetFolder = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_targetFolder"),
+    );
+    const linkBackProperty = await this.getObsidianName(
+      subject,
+      Namespace.EXOCMD.term("Grounding_linkBackProperty"),
+    );
+    const inputSchemaRaw = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_inputSchema"),
+    );
     // Issue #3134: property_increment / property_shift control fields.
-    const incrementByRaw = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_incrementBy"));
-    const shiftDelta = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_shiftDelta"));
+    const incrementByRaw = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_incrementBy"),
+    );
+    const shiftDelta = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_shiftDelta"),
+    );
     let incrementBy: number | undefined;
-    if (incrementByRaw !== undefined && incrementByRaw !== null && incrementByRaw !== "") {
+    if (
+      incrementByRaw !== undefined &&
+      incrementByRaw !== null &&
+      incrementByRaw !== ""
+    ) {
       const parsed = Number.parseInt(String(incrementByRaw), 10);
       if (Number.isFinite(parsed)) {
         incrementBy = parsed;
@@ -1347,24 +1670,28 @@ export class CommandResolver {
       try {
         const parsed = JSON.parse(inputSchemaRaw);
         if (parsed?.properties) {
-          inputSchema = Object.entries(parsed.properties as Record<string, Record<string, unknown>>).map(
-            ([name, prop]) => {
-              const rawType = prop.type;
-              const fieldType = rawType === "string" ? "text" : rawType;
-              const rawDefault =
-                prop.defaultValue !== undefined ? prop.defaultValue : prop.default;
-              const field: Record<string, unknown> = {
-                name,
-                type: fieldType,
-                label: prop.title ?? name,
-                required: Array.isArray(parsed.required) && parsed.required.includes(name),
-              };
-              if (rawDefault !== undefined && rawDefault !== null) {
-                field.defaultValue = String(rawDefault);
-              }
-              return field;
-            },
-          );
+          inputSchema = Object.entries(
+            parsed.properties as Record<string, Record<string, unknown>>,
+          ).map(([name, prop]) => {
+            const rawType = prop.type;
+            const fieldType = rawType === "string" ? "text" : rawType;
+            const rawDefault =
+              prop.defaultValue !== undefined
+                ? prop.defaultValue
+                : prop.default;
+            const field: Record<string, unknown> = {
+              name,
+              type: fieldType,
+              label: prop.title ?? name,
+              required:
+                Array.isArray(parsed.required) &&
+                parsed.required.includes(name),
+            };
+            if (rawDefault !== undefined && rawDefault !== null) {
+              field.defaultValue = String(rawDefault);
+            }
+            return field;
+          });
         }
       } catch {
         // Invalid JSON — skip inputSchema
@@ -1438,7 +1765,9 @@ export class CommandResolver {
     };
 
     if (inputSchema) {
-      (grounding as GroundingDefinition & { inputSchema: unknown[] }).inputSchema = inputSchema;
+      (
+        grounding as GroundingDefinition & { inputSchema: unknown[] }
+      ).inputSchema = inputSchema;
     }
 
     return grounding;
@@ -1645,8 +1974,9 @@ export class CommandResolver {
    * lexicographically smallest UID when multiple are found.
    */
   private async findUniversalSingleton(): Promise<IRI | null> {
-    const templateClassIRI =
-      Namespace.EXOCMD.term("UniversalDefaultTemplate").value;
+    const templateClassIRI = Namespace.EXOCMD.term(
+      "UniversalDefaultTemplate",
+    ).value;
     const classTriples = await this.tripleStore.match(
       undefined,
       Namespace.EXO.term("Instance_class"),
@@ -1789,7 +2119,8 @@ export class CommandResolver {
       for (const triple of exclusionTriples) {
         let name: string | null = null;
         if (triple.object instanceof IRI) {
-          name = this.iriToObsidianName(triple.object.value) ?? triple.object.value;
+          name =
+            this.iriToObsidianName(triple.object.value) ?? triple.object.value;
         } else if (triple.object instanceof Literal) {
           name = this.unwrapWikilink(triple.object.value);
         }
@@ -1909,7 +2240,8 @@ export class CommandResolver {
       );
     }
 
-    const isSubstitutionToken = await this.assetIsSubstitutionToken(valueSubject);
+    const isSubstitutionToken =
+      await this.assetIsSubstitutionToken(valueSubject);
     if (!isSubstitutionToken) {
       return `"[[${valueRefUid}]]"`;
     }
@@ -2060,7 +2392,8 @@ export class CommandResolver {
     for (const triple of classTriples) {
       if (triple.object instanceof IRI) {
         if (triple.object.value === TOKEN_INVOCATION_CLASS_IRI) return true;
-        if (triple.object.value.includes(TOKEN_INVOCATION_CLASS_UID)) return true;
+        if (triple.object.value.includes(TOKEN_INVOCATION_CLASS_UID))
+          return true;
       } else if (triple.object instanceof Literal) {
         const unwrapped = this.unwrapWikilink(triple.object.value);
         if (unwrapped === "exocmd__TokenInvocation") return true;
@@ -2094,7 +2427,8 @@ export class CommandResolver {
       if (triple.object instanceof IRI) {
         if (triple.object.value === SUBSTITUTION_TOKEN_CLASS_IRI) return true;
         // Edge case: class IRI is the UUID-named TBox file URL itself.
-        if (triple.object.value.includes(SUBSTITUTION_TOKEN_CLASS_UID)) return true;
+        if (triple.object.value.includes(SUBSTITUTION_TOKEN_CLASS_UID))
+          return true;
       } else if (triple.object instanceof Literal) {
         const unwrapped = this.unwrapWikilink(triple.object.value);
         if (unwrapped === "exocmd__SubstitutionToken") return true;
@@ -2125,7 +2459,9 @@ export class CommandResolver {
    *
    * Returns `null` for unknown values (caller treats grounding as inert).
    */
-  private async resolveGroundingTypeReference(subject: IRI): Promise<GroundingType | null> {
+  private async resolveGroundingTypeReference(
+    subject: IRI,
+  ): Promise<GroundingType | null> {
     const triples = await this.tripleStore.match(
       subject,
       Namespace.EXOCMD.term("Grounding_type"),
@@ -2141,9 +2477,13 @@ export class CommandResolver {
 
     if (ref instanceof Literal) {
       const raw = ref.value;
-      const wikilinkMatch = raw.match(/^\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|[^\]]*)?\]\]$/i);
+      const wikilinkMatch = raw.match(
+        /^\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|[^\]]*)?\]\]$/i,
+      );
       if (wikilinkMatch) {
-        return resolveGroundingTypeFromIRI(`obsidian://vault/${wikilinkMatch[1].toLowerCase()}.md`);
+        return resolveGroundingTypeFromIRI(
+          `obsidian://vault/${wikilinkMatch[1].toLowerCase()}.md`,
+        );
       }
 
       this.logger.warn(
@@ -2172,10 +2512,7 @@ export class CommandResolver {
     );
 
     for (const triple of uidTriples) {
-      if (
-        triple.object instanceof Literal &&
-        triple.object.value === uid
-      ) {
+      if (triple.object instanceof Literal && triple.object.value === uid) {
         return triple.subject as IRI;
       }
     }
@@ -2183,7 +2520,10 @@ export class CommandResolver {
     return null;
   }
 
-  private async getLiteralValue(subject: IRI, predicate: IRI): Promise<string | null> {
+  private async getLiteralValue(
+    subject: IRI,
+    predicate: IRI,
+  ): Promise<string | null> {
     const triples = await this.tripleStore.match(subject, predicate, undefined);
     if (triples.length === 0) return null;
 
@@ -2199,7 +2539,9 @@ export class CommandResolver {
    * (from UUID-named asset file) vs an already-symbolic identifier.
    */
   private looksLikeUUID(value: string): boolean {
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value,
+    );
   }
 
   /**
@@ -2253,10 +2595,35 @@ export class CommandResolver {
    *                   forms are resolved to the same file IRI subject.
    */
   async getClassAncestors(classRef: string): Promise<string[]> {
-    const cached = this._ancestorCache.get(classRef);
+    const withDepth = await this.getClassAncestorsWithDepth(classRef);
+    return withDepth.map((entry) => entry.ref);
+  }
+
+  /**
+   * C3 capability-inheritance (RFC 78c2b7d0) — depth-aware variant of
+   * {@link getClassAncestors}. Returns each transitive ancestor ref tagged with
+   * its nearest BFS depth from `classRef` (direct superclass = 1, grandparent =
+   * 2, …). Both symbolic (`ems__Task`) and UID-canon (`1b20a8f0-…`) forms of an
+   * ancestor surface at the same depth so bindings authored in either form
+   * match. The nearest-depth tag powers the `(priority, depth, order)`
+   * sort-key (nearest-wins) in {@link resolveForAssetMulti}.
+   *
+   * The walk is cycle-safe (visited Set keyed on the class file IRI),
+   * depth-bounded by `MAX_TRANSITIVE_DEPTH`, and consumes only the
+   * already-populated triple store. Excludes the input `classRef` itself.
+   * Returns `[]` (NOT cached — cold-start safety, Issue #3295) when the class
+   * is unknown to the store.
+   *
+   * @param classRef — Either a symbolic class name (`ems__Meeting`) or the UID
+   *                   of the class file. Both resolve to the same file IRI.
+   */
+  async getClassAncestorsWithDepth(
+    classRef: string,
+  ): Promise<Array<{ ref: string; depth: number }>> {
+    const cached = this._ancestorDepthCache.get(classRef);
     if (cached) return cached;
 
-    const result = new Set<string>();
+    const result = new Map<string, number>(); // ref → nearest BFS depth
     const visited = new Set<string>();
     const seedFileIRI = await this.resolveClassFileIRI(classRef);
     if (!seedFileIRI) {
@@ -2289,6 +2656,15 @@ export class CommandResolver {
     );
     if (seedLabel) excluded.add(seedLabel);
 
+    // Record an ancestor ref at its nearest depth. BFS first-reach is the
+    // minimum depth, but `setMin` is explicit so a later shorter path (diamond)
+    // never loses to an earlier longer one.
+    const setMin = (ref: string, depth: number): void => {
+      if (excluded.has(ref)) return;
+      const current = result.get(ref);
+      if (current === undefined || depth < current) result.set(ref, depth);
+    };
+
     const queue: Array<{ fileIRI: IRI; depth: number }> = [
       { fileIRI: seedFileIRI, depth: 0 },
     ];
@@ -2319,14 +2695,13 @@ export class CommandResolver {
         // class file has no namespace-derivable label, Issue #3242).
         // `iriToObsidianName` returns the `prefix__local` symbolic
         // form for namespace IRIs and the bare UUID basename for file
-        // IRIs; both go into the result Set so caller arrays match
+        // IRIs; both go into the result so caller arrays match
         // either form of binding (symbolic targetClass like
         // `"ems__Task"` AND UID-form `"[[<uid>]]"`).
+        const parentDepth = depth + 1;
         const isFileIRI = obj.value.startsWith("obsidian://vault/");
         const parentRef = this.iriToObsidianName(obj.value);
-        if (parentRef && !excluded.has(parentRef) && !result.has(parentRef)) {
-          result.add(parentRef);
-        }
+        if (parentRef) setMin(parentRef, parentDepth);
 
         // Map back to file IRI (the BFS-walkable subject form) so we
         // can recurse. Symbolic-namespace IRIs are NOT themselves
@@ -2348,18 +2723,19 @@ export class CommandResolver {
           parentFileIRI,
           Namespace.EXO.term("Asset_uid"),
         );
-        if (parentUid && !excluded.has(parentUid) && !result.has(parentUid)) {
-          result.add(parentUid);
-        }
+        if (parentUid) setMin(parentUid, parentDepth);
 
         if (!visited.has(parentFileIRI.value)) {
-          queue.push({ fileIRI: parentFileIRI, depth: depth + 1 });
+          queue.push({ fileIRI: parentFileIRI, depth: parentDepth });
         }
       }
     }
 
-    const ancestors = Array.from(result);
-    this._ancestorCache.set(classRef, ancestors);
+    const ancestors = Array.from(result.entries()).map(([ref, depth]) => ({
+      ref,
+      depth,
+    }));
+    this._ancestorDepthCache.set(classRef, ancestors);
     return ancestors;
   }
 
@@ -2403,10 +2779,7 @@ export class CommandResolver {
           Namespace.EXO.term("Asset_uid"),
           undefined,
         );
-        if (
-          uidTriples.length > 0 &&
-          uidTriples[0].object instanceof Literal
-        ) {
+        if (uidTriples.length > 0 && uidTriples[0].object instanceof Literal) {
           return uidTriples[0].object.value;
         }
       }
@@ -2414,7 +2787,10 @@ export class CommandResolver {
     return null;
   }
 
-  private async getLinkedUID(subject: IRI, predicate: IRI): Promise<string | null> {
+  private async getLinkedUID(
+    subject: IRI,
+    predicate: IRI,
+  ): Promise<string | null> {
     const triples = await this.tripleStore.match(subject, predicate, undefined);
     if (triples.length === 0) return null;
 
@@ -2440,7 +2816,42 @@ export class CommandResolver {
     return null;
   }
 
-  private async getLinkedValue(subject: IRI, predicate: IRI): Promise<string | null> {
+  /**
+   * C3 capability-inheritance (RFC 78c2b7d0) — multi-valued variant of
+   * {@link getLinkedUID}. Resolves EVERY object of `predicate` to the linked
+   * asset's UID (IRI → its `Asset_uid` or path basename; Literal → normalised
+   * wikilink). Used for `exocmd__CommandBinding_overrides`, which may list
+   * several target bindings. Returns `[]` when the predicate is absent.
+   */
+  private async getLinkedUIDs(subject: IRI, predicate: IRI): Promise<string[]> {
+    const triples = await this.tripleStore.match(subject, predicate, undefined);
+    const uids: string[] = [];
+    for (const triple of triples) {
+      const obj = triple.object;
+      if (obj instanceof IRI) {
+        const uidTriples = await this.tripleStore.match(
+          obj,
+          Namespace.EXO.term("Asset_uid"),
+          undefined,
+        );
+        if (uidTriples.length > 0 && uidTriples[0].object instanceof Literal) {
+          uids.push(uidTriples[0].object.value);
+        } else {
+          const fromPath = obj.value.split("/").pop()?.replace(".md", "");
+          if (fromPath) uids.push(fromPath);
+        }
+      } else if (obj instanceof Literal) {
+        const uid = this.normalizeWikilink(obj.value);
+        if (uid) uids.push(uid);
+      }
+    }
+    return uids;
+  }
+
+  private async getLinkedValue(
+    subject: IRI,
+    predicate: IRI,
+  ): Promise<string | null> {
     const triples = await this.tripleStore.match(subject, predicate, undefined);
     if (triples.length === 0) return null;
 
@@ -2457,13 +2868,17 @@ export class CommandResolver {
    * Falls back to unwrapWikilink for Literal objects (which may carry
    * wikilink-wrapped property references like "[[<UID>|ems__Effort_prevIteration]]").
    */
-  private async getObsidianName(subject: IRI, predicate: IRI): Promise<string | null> {
+  private async getObsidianName(
+    subject: IRI,
+    predicate: IRI,
+  ): Promise<string | null> {
     const triples = await this.tripleStore.match(subject, predicate, undefined);
     if (triples.length === 0) return null;
 
     const obj = triples[0].object;
     if (obj instanceof Literal) return this.unwrapWikilink(obj.value);
-    if (obj instanceof IRI) return this.iriToObsidianName(obj.value) ?? obj.value;
+    if (obj instanceof IRI)
+      return this.iriToObsidianName(obj.value) ?? obj.value;
     return null;
   }
 
@@ -2498,7 +2913,10 @@ export class CommandResolver {
    * Read a grounding target value, converting IRIs back to wikilink format.
    * Literal values are returned as-is (they already contain wikilink syntax).
    */
-  private async getObsidianWikilinkValue(subject: IRI, predicate: IRI): Promise<string | null> {
+  private async getObsidianWikilinkValue(
+    subject: IRI,
+    predicate: IRI,
+  ): Promise<string | null> {
     const triples = await this.tripleStore.match(subject, predicate, undefined);
     if (triples.length === 0) return null;
 
@@ -2517,14 +2935,19 @@ export class CommandResolver {
    * Already-aliased values ("[[UUID|alias]]") pass through unchanged.
    */
   private async resolveWikilinkAlias(value: string): Promise<string> {
-    const match = value.match(/\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]\]/);
+    const match = value.match(
+      /\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]\]/,
+    );
     if (!match) return value;
 
     const uuid = match[1];
     const assetSubject = await this.findSubjectByUID(uuid);
     if (!assetSubject) return value;
 
-    const label = await this.getLiteralValue(assetSubject, Namespace.EXO.term("Asset_label"));
+    const label = await this.getLiteralValue(
+      assetSubject,
+      Namespace.EXO.term("Asset_label"),
+    );
     if (!label) return value;
 
     return value.replace(`[[${uuid}]]`, `[[${uuid}|${label}]]`);
