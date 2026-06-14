@@ -22,6 +22,7 @@ import { assetSpaceAddCommand } from "./commands/assetspace-add.js";
 import { resolveDepsCommand } from "./commands/resolve-deps.js";
 import { experimentalCommand } from "./commands/experimental.js";
 import { exosyncParityCommand } from "./commands/exosync-parity.js";
+import { exosyncCommand } from "./commands/exosync-sync.js";
 
 // Version injected at build time by esbuild (see esbuild.config.mjs)
 declare const __CLI_VERSION__: string;
@@ -78,6 +79,9 @@ export function createProgram(version?: string): Command {
 
   // RFC 4e4dc453 Phase E (E1) — ExoSync M1/M2 parity report (read-only)
   program.addCommand(exosyncParityCommand());
+
+  // RFC 4e4dc453 Phase B parity (EKA M3.7) — ExoSync sync/pull/push from the CLI
+  program.addCommand(exosyncCommand());
 
   return program;
 }
