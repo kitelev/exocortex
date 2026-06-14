@@ -132,6 +132,9 @@ export class ExoQLAlgebraTranslator {
       };
     }
 
+    // SELECT expressions (Extend) — computed bindings (e.g. `(?a + ?b AS ?sum)`)
+    // must be materialised BEFORE ORDER BY (which may sort by them) and BEFORE
+    // projection drops non-selected variables.
     if (selectVars.length > 0) {
       for (const v of selectVars) {
         if (isVariableExpression(v)) {
@@ -152,7 +155,25 @@ export class ExoQLAlgebraTranslator {
           };
         }
       }
+    }
 
+    // ORDER BY — applied on the full (pre-projection) solution sequence so it can
+    // sort by variables that are NOT in the SELECT list (e.g. a subquery
+    // `SELECT ?person … ORDER BY ?age`). SPARQL 1.1 §18.2.4.2 places OrderBy
+    // strictly before Project. Projecting first would drop the sort key and
+    // silently turn ORDER BY into a no-op — the rows then leak through in
+    // triple-store insertion order, which surfaces most visibly when the
+    // subquery is joined with an outer pattern (kitelev/exocortex#3542).
+    if (query.order && query.order.length > 0) {
+      operation = {
+        type: "orderby",
+        comparators: query.order.map((o: Ordering) => this.aggregateTranslator.translateOrderComparator(o)),
+        input: operation,
+      };
+    }
+
+    // Projection — AFTER ORDER BY, so the sort key stays visible to OrderBy.
+    if (selectVars.length > 0) {
       const varNames = selectVars
         .filter((v: SparqljsVariable) => isVariableTerm(v) || isVariableExpression(v))
         .map((v: SparqljsVariable) => isVariableTerm(v) ? v.value : (v as import("sparqljs").VariableExpression).variable.value);
@@ -168,14 +189,6 @@ export class ExoQLAlgebraTranslator {
 
     if (query.reduced) {
       operation = { type: "reduced", input: operation };
-    }
-
-    if (query.order && query.order.length > 0) {
-      operation = {
-        type: "orderby",
-        comparators: query.order.map((o: Ordering) => this.aggregateTranslator.translateOrderComparator(o)),
-        input: operation,
-      };
     }
 
     if (query.limit !== undefined || query.offset !== undefined) {
