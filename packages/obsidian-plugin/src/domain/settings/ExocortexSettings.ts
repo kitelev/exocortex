@@ -263,6 +263,30 @@ export interface ExocortexSettings {
    * file logging for every channel.
    */
   verboseSyncLogging: boolean;
+  /**
+   * Issue #3539 — master switch for the settings-homoiconization feature
+   * (onto-RFC 981b6070, ExoSync Phase D2). When `true`, plugin settings are
+   * mirrored as `exo__Setting` vault assets: on plugin load (after
+   * `metadataCache` `"resolved"`) `initVaultSettings` runs a one-shot
+   * migration that creates an `exocortex-settings/` folder with one asset per
+   * registry setting, overlays vault values over `data.json`, installs a
+   * cross-device watcher, and write-backs UI changes. When `false` (default)
+   * the feature is **off**: `initVaultSettings` early-returns before any
+   * scan/overlay/migrate/watcher, so the plugin behaves exactly as pre-D2
+   * (reads/writes only `data.json`) and no `exocortex-settings/` folder is
+   * created for new users.
+   *
+   * ⛔ This flag is itself **NOT homoiconized** — it cannot live as a vault
+   * asset because it gates the very feature that materialises those assets (a
+   * master switch must not depend on the thing it controls). It lives only in
+   * `data.json`, is absent from `VAULT_SETTINGS_REGISTRY`, and is listed in
+   * `NON_HOMOICONIZABLE_FIELDS`. Turning the toggle off leaves any
+   * already-migrated `exocortex-settings/` assets on disk untouched (zero
+   * data-loss); turning it back on re-adopts them via `migrateMissing`
+   * (no duplicates). The gate runs once on plugin load, so a change applies
+   * on the next plugin reload.
+   */
+  settingsHomoiconizationEnabled: boolean;
   [key: string]: unknown;
 }
 
@@ -301,4 +325,7 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   exosyncQuarantineRepoUrl: "",
   exosyncStepNotices: false,
   verboseSyncLogging: false,
+  // Issue #3539 — settings-homoiconization is opt-in; default OFF so a fresh
+  // install reads/writes only data.json and never creates exocortex-settings/.
+  settingsHomoiconizationEnabled: false,
 };

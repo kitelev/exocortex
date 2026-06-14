@@ -162,7 +162,20 @@ describe("ExocortexSettingTab", () => {
       // RFC 4e4dc453 Phase B — ExoSync section: heading + quarantine repo URL row (+2) → 42
       // Issue #3499 — ExoSync verbose per-step Notice toggle (+1) → 43
       // Issue #3498 — ExoSync verbose file-log toggle (+1) → 44
-      expect(MockSetting).toHaveBeenCalledTimes(44);
+      // Issue #3539 — settings-homoiconization master toggle (+1) → 45
+      expect(MockSetting).toHaveBeenCalledTimes(45);
+    });
+
+    it("renders the settings-homoiconization toggle (Issue #3539)", () => {
+      settingTab.display();
+
+      const names = (MockSetting as jest.Mock).mock.results
+        .map((r) => {
+          const calls = (r.value.setName as jest.Mock).mock.calls;
+          return calls.length > 0 ? (calls[0][0] as string) : undefined;
+        })
+        .filter((n): n is string => typeof n === "string");
+      expect(names).toContain("Settings homoiconization");
     });
 
     it("should render layout visibility toggle as first setting", () => {
