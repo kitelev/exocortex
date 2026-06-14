@@ -8,6 +8,7 @@ import {
   CATALOG_KEEP_NAMESPACES,
   transitiveDependsOnClosure,
   TsFloorViolationError,
+  isAssetSpaceFrontmatter,
 } from "exocortex";
 
 import { PluginLockManager } from "./PluginLockManager";
@@ -1486,15 +1487,26 @@ export class ProfileApplyManager {
       const uid = typeof fm["exo__Asset_uid"] === "string" ? (fm["exo__Asset_uid"] as string) : null;
       if (uid === null) continue;
       if (seen.has(uid)) continue;
+      // Recognise AssetSpace descriptors by EITHER the canonical AssetSpace
+      // class UID (`73bd00e4-…`, strict wikilink — same as AssetSpaceManager /
+      // AssetSpaceMaterializationTracker / AssetSpaceLookupHelper / CLI) OR the
+      // legacy label-form substring. The substring-only check SILENTLY skipped
+      // UID-canon registry descriptors (`exo__Instance_class: [[73bd00e4-…]]`,
+      // RFC UUID-canon TBox) → a leaf-profile apply got an empty effective set
+      // → no-op apply (the EKA Obsidian-leg #3511 GUI regression). The OR keeps
+      // the legacy label-form (`[[exo__AssetSpace]]`) recognised too, so this is
+      // strictly additive — no behaviour change for existing label-form vaults.
       const instanceClass = fm["exo__Instance_class"];
       const classes: string[] = Array.isArray(instanceClass)
         ? instanceClass.filter((c): c is string => typeof c === "string")
         : typeof instanceClass === "string"
           ? [instanceClass]
           : [];
-      const isAssetSpace = classes.some(
-        (c) => c.includes("AssetSpace") && !c.includes("AssetSpaceManager"),
-      );
+      const isAssetSpace =
+        isAssetSpaceFrontmatter(fm) ||
+        classes.some(
+          (c) => c.includes("AssetSpace") && !c.includes("AssetSpaceManager"),
+        );
       if (!isAssetSpace) continue;
       // Dual-read `_source ?? _git` (RFC 01a83de8 v10 T3) — new
       // `exo__AssetSpace_source` supersedes legacy `_git` during the transition.

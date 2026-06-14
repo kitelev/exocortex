@@ -1,0 +1,37 @@
+# EKA "Obsidian leg" e2e image — thin app layer on the pre-built CI base.
+#
+# Self-contained and SEPARATE from Dockerfile.e2e so it never touches the
+# required-CI e2e image. Reuses the same base (Playwright runtime + Obsidian
+# binary + xvfb + node_modules) and the same xvfb entrypoint.
+#
+# BASE_IMAGE defaults to the published CI base. On Apple Silicon build/run with
+# `--platform linux/amd64` (the base is amd64-only).
+#
+# Build context = repo root (worktree). Requires a prebuilt plugin
+# (`packages/obsidian-plugin/main.js` + `manifest.json`) — run `npm run build`
+# first; the runner script `scripts/test-eka-obsidian-leg.sh` handles this.
+ARG BASE_IMAGE=ghcr.io/kitelev/exocortex-ci:latest
+FROM ${BASE_IMAGE}
+
+WORKDIR /app
+
+# Reuse the shared xvfb entrypoint (pins Obsidian update endpoints, sets
+# DOCKER/CI, wraps the command in xvfb-run).
+COPY packages/obsidian-plugin/docker-entrypoint-e2e.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+# Prebuilt plugin (built on the host, not inside the image).
+COPY packages/obsidian-plugin/main.js ./packages/obsidian-plugin/main.js
+COPY packages/obsidian-plugin/manifest.json ./packages/obsidian-plugin/manifest.json
+
+# EKA e2e harness: dedicated config + spec dir + the shared e2e utils it imports.
+COPY packages/obsidian-plugin/playwright-eka-obsidian-leg.config.ts ./packages/obsidian-plugin/
+COPY packages/obsidian-plugin/tests/e2e/eka/ ./packages/obsidian-plugin/tests/e2e/eka/
+COPY packages/obsidian-plugin/tests/e2e/utils/ ./packages/obsidian-plugin/tests/e2e/utils/
+
+ENV DISPLAY=:99
+ENV OBSIDIAN_PATH=/opt/obsidian/obsidian
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
+# The spec creates its own ephemeral vault in a tmpdir, so no OBSIDIAN_VAULT.
+CMD ["npx", "playwright", "test", "-c", "packages/obsidian-plugin/playwright-eka-obsidian-leg.config.ts"]
