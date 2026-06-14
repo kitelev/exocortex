@@ -865,6 +865,50 @@ describe("ProfileApplyManager.applyProfile", () => {
     });
   });
 
+  describe("Phase-1 pull failure — never hangs (Issue #3530)", () => {
+    // The macOS-desktop hang root cause: a private-repo tarball pull never
+    // resolved (Obsidian `requestUrl` has no timeout), so `applyProfile` stayed
+    // pending forever with `_switchInProgress` stuck. The GitHubRestClient
+    // timeout guard now makes `pullAssetSpace` REJECT on a stalled connection;
+    // here we assert the apply orchestration honours that reject deterministically
+    // — it must settle (jest's default 5s test timeout would fail a real hang)
+    // and clear `_switchInProgress`. `failOnPull` stands in for the timeout reject.
+    function pullFailSetup() {
+      return setup({
+        targetUid: "target",
+        sourceUid: null,
+        // Floor present + one extra AS to materialise (so Phase 1 pull runs).
+        targetIncludes: [
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+          "ems-uid",
+        ],
+        // ems-uid is NOT yet materialised → it lands in toMaterialize → pulled.
+        materialized: [
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+      });
+    }
+
+    it("rejects (does NOT hang) when the Phase-1 pull fails", async () => {
+      const { mgr, assetSpaceManager } = pullFailSetup();
+      assetSpaceManager.failOnPull = "ems-uid";
+      await expect(mgr.applyProfile("target")).rejects.toThrow(
+        /Simulated pull failure/,
+      );
+    });
+
+    it("clears _switchInProgress after a failed Phase-1 pull", async () => {
+      const { mgr, assetSpaceManager, localDataStore } = pullFailSetup();
+      assetSpaceManager.failOnPull = "ems-uid";
+      await expect(mgr.applyProfile("target")).rejects.toThrow();
+      expect(localDataStore.isSwitchInProgress()).toBe(false);
+    });
+  });
+
   describe("Successful switch", () => {
     it("activeProfileUid persisted к target after success", async () => {
       const { mgr, localDataStore } = setup({

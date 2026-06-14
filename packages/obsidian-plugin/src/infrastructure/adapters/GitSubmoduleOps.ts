@@ -593,6 +593,16 @@ export function stripGitEnv(): NodeJS.ProcessEnv {
   for (const k of Object.keys(env)) {
     if (STRIP.has(k)) delete env[k];
   }
+  // Disable git's interactive credential prompt. Obsidian spawns git with NO
+  // controlling TTY, so a private-repo `git submodule add` that can't resolve
+  // credentials non-interactively (no cached helper entry) would otherwise
+  // block on a prompt that can never be answered — contributing to the
+  // macOS-desktop apply-profile hang (Issue #3530). With this set, git fails
+  // fast («could not read Username … terminal prompts disabled») and the apply
+  // path surfaces a clear error instead of hanging. Cached credential helpers
+  // (osxkeychain, the e2e `url.insteadOf` PAT rewrite) are unaffected — this
+  // only suppresses the dead-end *terminal* fallback.
+  env.GIT_TERMINAL_PROMPT = "0";
   return env;
 }
 
