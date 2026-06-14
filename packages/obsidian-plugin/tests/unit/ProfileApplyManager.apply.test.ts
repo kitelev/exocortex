@@ -85,6 +85,11 @@ function makeFakeApp(files: FakeFile[]): {
         list: async (dir: string) => {
           return fsFolders.get(dir) ?? { files: [], folders: [] };
         },
+        // Issue #3532 — ensureExocortexDir() calls adapter.mkdir; production
+        // shape registers the folder so subsequent exists() returns true.
+        mkdir: async (p: string) => {
+          if (!fsFolders.has(p)) fsFolders.set(p, { files: [], folders: [] });
+        },
       },
     },
     metadataCache: {
@@ -253,8 +258,16 @@ class FakeAssetSpaceManager {
   };
   lookupAssetSpaceInfo: ((uid: string) => unknown) | null = null;
   failOnPull: string | null = null;
+  // Issue #3532 — simulate a never-resolving pull (Obsidian `requestUrl` with no
+  // native timeout on a stalled macOS-desktop connection). The watchdog must
+  // reject the whole apply on its deadline instead of letting this hang.
+  hangOnPull: string | null = null;
   async pullAssetSpace(asUid: string, gitUrl: string, ref: string) {
     this.pullCalls.push({ asUid, gitUrl, ref });
+    if (this.hangOnPull === asUid) {
+      // Never resolves — stands in for a stalled requestUrl on macOS desktop.
+      return new Promise<never>(() => {});
+    }
     if (this.failOnPull === asUid) {
       throw new Error(`Simulated pull failure for ${asUid}`);
     }
@@ -294,6 +307,13 @@ interface SetupOptions {
   materialized: string[];
   /** ExoSync D11 exclusion input (RFC 4e4dc453 Phase B). */
   isSyncBusy?: () => boolean;
+  /** Issue #3532 — never-hang watchdog deadline (ms). Default leaves it unset. */
+  applyTimeoutMs?: number;
+  /**
+   * Issue #3532 — replace the lock manager (e.g. one whose `acquireLock` never
+   * resolves, reproducing the «hang before the mutation phase» smoking gun).
+   */
+  lockMgrOverride?: unknown;
 }
 
 function setup(opts: SetupOptions) {
@@ -358,7 +378,7 @@ function setup(opts: SetupOptions) {
     });
   }
 
-  const { app, fsFolders } = makeFakeApp(files);
+  const { app, fsFiles, fsFolders } = makeFakeApp(files);
 
   // Pre-populate folder listing for materialized AS — used by enumerateFilesUnder.
   for (const folder of opts.materialized.map((uid) => allAs.find((a) => a.uid === uid)?.folder).filter((f): f is string => f !== undefined)) {
@@ -393,7 +413,9 @@ function setup(opts: SetupOptions) {
 
   const indexer = new FakeIndexer();
   const settingsStore = new FakeSettingsStore();
-  const lockMgr = new PluginLockManager({ app });
+  const lockMgr =
+    (opts.lockMgrOverride as PluginLockManager | undefined) ??
+    new PluginLockManager({ app });
   const localDataStore = new FakeLocalDataStore();
   if (opts.sourceUid !== null) {
     void localDataStore.save({ activeProfileUid: opts.sourceUid, _switchInProgress: false });
@@ -427,6 +449,9 @@ function setup(opts: SetupOptions) {
     /* eslint-enable @typescript-eslint/no-explicit-any */
     vaultRootPath: "/fake/vault",
     ...(opts.isSyncBusy !== undefined ? { isSyncBusy: opts.isSyncBusy } : {}),
+    ...(opts.applyTimeoutMs !== undefined
+      ? { applyTimeoutMs: opts.applyTimeoutMs }
+      : {}),
   });
   return {
     mgr,
@@ -439,6 +464,7 @@ function setup(opts: SetupOptions) {
     assetSpaceManager,
     confirmGate,
     app,
+    fsFiles,
     fsFolders,
     allAs,
   };
@@ -906,6 +932,145 @@ describe("ProfileApplyManager.applyProfile", () => {
       assetSpaceManager.failOnPull = "ems-uid";
       await expect(mgr.applyProfile("target")).rejects.toThrow();
       expect(localDataStore.isSwitchInProgress()).toBe(false);
+    });
+  });
+
+  describe("Never-hang watchdog — bounds the WHOLE post-confirm path (Issue #3532)", () => {
+    // #3531 bounded only the requestUrl / git-clone steps. #3532: macOS desktop
+    // STILL hung after confirm — `_switchInProgress` never flipped, no journal,
+    // 0 files cloned — i.e. a stall BEFORE the mutation phase (and other
+    // non-bounded `vault.adapter` / refresh awaits). The watchdog races the whole
+    // post-confirm critical section (lock acquire → pull → Phase 2 → commit →
+    // refresh) so a stall on ANY step rejects deterministically instead of
+    // hanging. A real hang would trip jest's per-test timeout — these tests pass
+    // only because the deadline fires first.
+    //
+    // Revert-verify: set `applyTimeoutMs: 0` (disables the watchdog) and each of
+    // these tests hangs until jest's timeout fails them — confirming the guard,
+    // not the harness, is what makes them settle.
+    const watchdogIncludes = [
+      TS_FLOOR_AS_UID_EXO,
+      TS_FLOOR_AS_UID_EXOCMD,
+      TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+      "ems-uid",
+    ];
+    const watchdogMaterialized = [
+      TS_FLOOR_AS_UID_EXO,
+      TS_FLOOR_AS_UID_EXOCMD,
+      TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+    ];
+
+    it("rejects (does NOT hang) when a Phase-1 pull never resolves", async () => {
+      const { mgr, assetSpaceManager } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: watchdogIncludes,
+        materialized: watchdogMaterialized,
+        applyTimeoutMs: 100,
+      });
+      assetSpaceManager.hangOnPull = "ems-uid"; // never resolves
+      await expect(mgr.applyProfile("target")).rejects.toThrow(
+        /timed out after 100ms.*Issue #3532/s,
+      );
+    });
+
+    it("clears _switchInProgress after the watchdog fires mid-mutation", async () => {
+      const { mgr, assetSpaceManager, localDataStore } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: watchdogIncludes,
+        materialized: watchdogMaterialized,
+        applyTimeoutMs: 100,
+      });
+      assetSpaceManager.hangOnPull = "ems-uid";
+      await expect(mgr.applyProfile("target")).rejects.toThrow(/timed out/);
+      // The stuck pull was AFTER `_switchInProgress=true` — the watchdog's
+      // onTimeout cleanup must flip it back so the next apply is not blocked.
+      expect(localDataStore.isSwitchInProgress()).toBe(false);
+    });
+
+    it("rejects (does NOT hang) when lock acquisition stalls BEFORE the mutation phase (the #3532 smoking gun)", async () => {
+      // Smoking gun: `_switchInProgress=False throughout` — the stall happened
+      // before the flag was ever set. A lock manager whose `acquireLock` never
+      // resolves reproduces «apply does not enter the mutation phase after
+      // confirm». The watchdog still rejects.
+      const hangingLockMgr = {
+        acquireLock: () => new Promise<boolean>(() => {}), // never resolves
+        releaseLock: async () => undefined,
+        heartbeat: async () => undefined,
+      };
+      const { mgr, localDataStore } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: watchdogIncludes,
+        materialized: watchdogMaterialized,
+        applyTimeoutMs: 100,
+        lockMgrOverride: hangingLockMgr,
+      });
+      await expect(mgr.applyProfile("target")).rejects.toThrow(/timed out/);
+      // Never reached the mutation phase, so the flag must still be false.
+      expect(localDataStore.isSwitchInProgress()).toBe(false);
+    });
+
+    it("does NOT fire the watchdog on a healthy apply (no false positives)", async () => {
+      const { mgr, localDataStore, gitOps } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: watchdogIncludes,
+        materialized: watchdogMaterialized,
+        applyTimeoutMs: 5_000, // generous — a healthy apply completes in <ms
+      });
+      await expect(mgr.applyProfile("target")).resolves.toBeUndefined();
+      expect(localDataStore.getActiveProfileUid()).toBe("target");
+      expect(localDataStore.isSwitchInProgress()).toBe(false);
+      expect(gitOps.calls.some((c) => c.op === "submoduleAdd")).toBe(true);
+    });
+
+    it("releases the lock on a successful apply (generation guard normal path)", async () => {
+      // Regression guard for the generation-token finally: the success path must
+      // STILL release the lock (`this.applyGeneration === myGen` true when no
+      // concurrent apply bumped the generation). A stuck lock would block the
+      // next apply with «another apply in progress».
+      const { mgr, app } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: watchdogIncludes,
+        materialized: watchdogMaterialized,
+        applyTimeoutMs: 5_000,
+      });
+      await expect(mgr.applyProfile("target")).resolves.toBeUndefined();
+      expect(await app.vault.adapter.exists(".exocortex/switch-lock.json")).toBe(
+        false,
+      );
+    });
+
+    it("scales the deadline by AssetSpace count (per-unit budget, code-review MEDIUM)", async () => {
+      // A 50ms-per-unit budget on a 2-AS materialize gives a 100ms overall
+      // deadline. With the first pull hanging, the apply still rejects (proving
+      // the deadline is finite and unit-scaled, not a flat per-step value).
+      const { mgr, assetSpaceManager } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: [
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+          "ems-uid",
+          "kpc-uid",
+        ],
+        materialized: [
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+        applyTimeoutMs: 50, // 2 units → 100ms effective deadline
+      });
+      assetSpaceManager.hangOnPull = "ems-uid";
+      const start = Date.now();
+      await expect(mgr.applyProfile("target")).rejects.toThrow(/timed out/);
+      // Sanity: settled well under jest's 5s default (proves finiteness, not the
+      // exact deadline — timing in CI is noisy).
+      expect(Date.now() - start).toBeLessThan(2_000);
     });
   });
 
