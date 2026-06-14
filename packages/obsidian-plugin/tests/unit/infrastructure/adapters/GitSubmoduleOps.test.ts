@@ -5,6 +5,7 @@ import {
   stripGitmodulesEntry,
   parseGitmodulesPaths,
   parseGitmodulesEntries,
+  stripGitEnv,
 } from "../../../../src/infrastructure/adapters/GitSubmoduleOps";
 
 describe("validateVaultPathArg", () => {
@@ -199,5 +200,40 @@ describe("GitSubmoduleOps.run security", () => {
   it("rejects empty arg list", async () => {
     const ops = new GitSubmoduleOps({ vaultRootPath: "/fake", execFileFn: jest.fn() as never });
     await expect(ops.run([])).rejects.toThrow();
+  });
+});
+
+// ─── GIT_TERMINAL_PROMPT guard (Issue #3530 — private-clone desktop hang) ────
+describe("stripGitEnv credential-prompt guard", () => {
+  // Obsidian spawns git with no controlling TTY; a private-repo `submodule add`
+  // that can't resolve creds non-interactively would block on a prompt that can
+  // never be answered. Setting GIT_TERMINAL_PROMPT=0 makes git fail fast instead
+  // of hanging — part of the macOS-desktop apply-profile hang fix.
+  it("sets GIT_TERMINAL_PROMPT=0", () => {
+    expect(stripGitEnv().GIT_TERMINAL_PROMPT).toBe("0");
+  });
+
+  it("preserves GIT_CONFIG_* (credential helpers / protocol overrides unaffected)", () => {
+    const prev = process.env.GIT_CONFIG_COUNT;
+    process.env.GIT_CONFIG_COUNT = "1";
+    try {
+      expect(stripGitEnv().GIT_CONFIG_COUNT).toBe("1");
+    } finally {
+      if (prev === undefined) delete process.env.GIT_CONFIG_COUNT;
+      else process.env.GIT_CONFIG_COUNT = prev;
+    }
+  });
+
+  it("passes GIT_TERMINAL_PROMPT=0 to the git subprocess env on run()", async () => {
+    const execFileFn = jest
+      .fn()
+      .mockResolvedValue({ stdout: "", stderr: "" }) as never;
+    const ops = new GitSubmoduleOps({ vaultRootPath: "/fake", execFileFn });
+    await ops.run(["status", "--porcelain"]);
+    const passedEnv = (execFileFn as jest.Mock).mock.calls[0][2].env as Record<
+      string,
+      string
+    >;
+    expect(passedEnv.GIT_TERMINAL_PROMPT).toBe("0");
   });
 });

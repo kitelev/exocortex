@@ -15,6 +15,18 @@ export interface GitHubRestClientOptions {
    * held in memory; setting this very large can crash Obsidian renderer.
    */
   maxTarballBytes?: number;
+  /**
+   * Per-request deadline (ms) for the underlying Obsidian `requestUrl()` call.
+   * Obsidian's `requestUrl` exposes NO native timeout / abort, so a stalled
+   * desktop connection (e.g. a private-repo tarball whose codeload redirect
+   * never resolves — observed hanging the apply-profile path on macOS desktop
+   * while the identical call completes in Docker/Linux, Issue #3530) leaves the
+   * awaiter pending forever. Every request is raced against this deadline so the
+   * caller deterministically REJECTS instead of hanging. Default 120_000 (2 min)
+   * — generous for a 50 MB tarball over a slow link, finite enough to surface a
+   * stall well before the user gives up. Set `0` to disable the guard.
+   */
+  requestTimeoutMs?: number;
 }
 
 export interface GitHubBranchHead {
@@ -57,6 +69,11 @@ export class GitHubRestClient {
   // can crash Obsidian renderer. Override via constructor `maxTarballBytes` opt.
   private static readonly DEFAULT_MAX_TARBALL_BYTES = 50 * 1024 * 1024;
 
+  // Per-request deadline for the non-abortable `requestUrl` — 2 min default.
+  // Bounds the macOS-desktop apply-profile hang (Issue #3530) so a stalled
+  // connection rejects instead of pending forever. Override via ctor opt.
+  private static readonly DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
+
   // Strict allowlist — anchored, no paths/queries/fragments, no scheme variants.
   private static readonly REPO_URL_REGEX =
     /^https:\/\/github\.com\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+$/;
@@ -69,6 +86,7 @@ export class GitHubRestClient {
   readonly #app: App;
   readonly #baseURL: string;
   readonly #maxTarballBytes: number;
+  readonly #requestTimeoutMs: number;
 
   constructor(opts: GitHubRestClientOptions) {
     // An EMPTY PAT is allowed and puts the client in unauthenticated mode
@@ -90,6 +108,12 @@ export class GitHubRestClient {
     this.#app = opts.app;
     this.#baseURL = (opts.baseURL ?? "https://api.github.com").replace(/\/$/, "");
     this.#maxTarballBytes = opts.maxTarballBytes ?? GitHubRestClient.DEFAULT_MAX_TARBALL_BYTES;
+    // A negative value is meaningless — clamp to 0 (disabled). 0 disables the
+    // guard entirely (used by tests that assert the pre-timeout behaviour).
+    this.#requestTimeoutMs = Math.max(
+      0,
+      opts.requestTimeoutMs ?? GitHubRestClient.DEFAULT_REQUEST_TIMEOUT_MS,
+    );
   }
 
   /** Obsidian App handle (needed by downstream consumers — TarExtractor, etc.). */
@@ -390,11 +414,15 @@ export class GitHubRestClient {
     }
     let resp: RequestUrlResponse;
     try {
-      resp = await requestUrl({
-        ...param,
-        headers,
-        throw: false,
-      });
+      resp = await this.withRequestTimeout(
+        requestUrl({
+          ...param,
+          headers,
+          throw: false,
+        }),
+        param.method ?? "GET",
+        param.url,
+      );
     } catch (err) {
       throw new Error(this.redact(`GitHub request failed: ${errMsg(err)}`));
     }
@@ -411,6 +439,49 @@ export class GitHubRestClient {
       );
     }
     return resp;
+  }
+
+  /**
+   * Race a non-abortable `requestUrl` promise against {@link #requestTimeoutMs}.
+   *
+   * Obsidian's `requestUrl` has no `signal`/`timeout` parameter, so a stalled
+   * desktop connection would hang the awaiter forever (the macOS-desktop
+   * apply-profile hang, Issue #3530 — a private-repo tarball pull that never
+   * resolves, while the same call completes in Docker/Linux). We reject after
+   * the deadline so the apply path unwinds (clearing `_switchInProgress`)
+   * instead of pending indefinitely.
+   *
+   * The underlying request cannot be cancelled (requestUrl exposes no abort),
+   * so on timeout it is left to settle and its eventual result is discarded —
+   * `clearTimeout` on the win path prevents the timer from leaking.
+   */
+  private withRequestTimeout(
+    p: Promise<RequestUrlResponse>,
+    method: string,
+    url: string,
+  ): Promise<RequestUrlResponse> {
+    if (this.#requestTimeoutMs <= 0) return p;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<RequestUrlResponse>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        reject(
+          new Error(
+            this.redact(
+              `GitHub request ${method} ${url} timed out after ` +
+                `${this.#requestTimeoutMs}ms (no response — stalled connection?)`,
+            ),
+          ),
+        );
+      }, this.#requestTimeoutMs);
+      // Unref so a pending timer never keeps a Node test process alive; guarded
+      // because Electron renderer / browser timers expose no `unref`.
+      (timer as unknown as { unref?: () => void }).unref?.();
+    });
+    // Promise.race forwards `p`'s own resolution/rejection verbatim (the request
+    // wins) or the deadline's Error (the stall loses) — no manual reject(e), so
+    // the original rejection reason is preserved. `.finally` clears the timer on
+    // every exit path so a pending timer never leaks.
+    return Promise.race([p, deadline]).finally(() => clearTimeout(timer));
   }
 
   /**

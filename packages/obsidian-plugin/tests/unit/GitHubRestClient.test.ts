@@ -719,4 +719,66 @@ describe("GitHubRestClient", () => {
       expect(call.headers.Authorization).toBe(`Bearer ${FAKE_PAT}`);
     });
   });
+
+  // ─── requestUrl timeout guard (Issue #3530 — macOS desktop apply hang) ─────
+  describe("requestUrl timeout guard", () => {
+    // Root regression: Obsidian's `requestUrl` has no native timeout/abort, so a
+    // stalled desktop connection (private-repo tarball whose codeload redirect
+    // never resolves) left `applyProfile` pending forever. Every request is now
+    // raced against `requestTimeoutMs`; on stall it REJECTS deterministically so
+    // the apply path unwinds (clears `_switchInProgress`) instead of hanging.
+
+    it("rejects (does NOT hang) when requestUrl never resolves", async () => {
+      // The exact production failure: requestUrl returns a Promise that never
+      // settles. Pre-fix this hangs the awaiter forever; post-fix it rejects.
+      requestUrlMock.mockReturnValue(new Promise<never>(() => {}));
+      const c = new GitHubRestClient({
+        pat: FAKE_PAT,
+        app: fakeApp,
+        requestTimeoutMs: 40,
+      });
+      const err = await c.getRepoHead("o", "r").catch((e: Error) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toMatch(/timed out after 40ms/);
+    });
+
+    it("redacts a PAT that leaks into the timeout error message", async () => {
+      // The URL never carries a PAT, but the message is routed through redact()
+      // for defense-in-depth (parity with every other thrown error here).
+      requestUrlMock.mockReturnValue(new Promise<never>(() => {}));
+      const c = new GitHubRestClient({
+        pat: FAKE_PAT,
+        app: fakeApp,
+        requestTimeoutMs: 30,
+      });
+      const err = await c
+        .fetchTarballBuffer("o", "r", "main")
+        .catch((e: Error) => e);
+      expect((err as Error).message).not.toContain("ghp_");
+    });
+
+    it("resolves normally when requestUrl wins the race", async () => {
+      // A healthy fast response must NOT be aborted — only genuine stalls do.
+      requestUrlMock.mockResolvedValue(ok({ json: { commit: { sha: "abc" } } }));
+      const c = new GitHubRestClient({
+        pat: FAKE_PAT,
+        app: fakeApp,
+        requestTimeoutMs: 5000,
+      });
+      await expect(c.getRepoHead("o", "r")).resolves.toEqual({ sha: "abc" });
+    });
+
+    it("disables the guard when requestTimeoutMs is 0 (no spurious timer)", async () => {
+      // 0 opts out — used where a caller wants the raw pre-guard behaviour.
+      // A resolved request must still complete; the never-resolving case is the
+      // caller's responsibility when the guard is explicitly disabled.
+      requestUrlMock.mockResolvedValue(ok({ json: { commit: { sha: "z" } } }));
+      const c = new GitHubRestClient({
+        pat: FAKE_PAT,
+        app: fakeApp,
+        requestTimeoutMs: 0,
+      });
+      await expect(c.getRepoHead("o", "r")).resolves.toEqual({ sha: "z" });
+    });
+  });
 });
