@@ -1,0 +1,107 @@
+/**
+ * Unit tests for activityFanIn — pure mapping of ProfileApplyManager journal
+ * entries to activity-log records (#3540). The integration contract that the
+ * modal surfaces profile/mount events correctly hinges on this mapping.
+ */
+import { describe, it, expect } from "@jest/globals";
+import { journalEntryToActivity } from "../../../../src/adapters/logging/activityFanIn";
+import type { SwitchJournalEntry } from "../../../../src/infrastructure/adapters/ProfileApplyManager";
+
+const base = { targetUid: "profile-xyz-uid", ts: "2026-06-15T00:00:00.000Z" };
+
+describe("journalEntryToActivity", () => {
+  it("overall apply phases (no `as`) → category 'profile'", () => {
+    const e: SwitchJournalEntry = { ...base, phase: "starting" };
+    expect(journalEntryToActivity(e)).toEqual({
+      category: "profile",
+      level: "info",
+      message: "Apply starting",
+    });
+  });
+
+  it("per-AssetSpace phase (carries `as`) → category 'mount' with 8-char prefix", () => {
+    const e: SwitchJournalEntry = {
+      ...base,
+      phase: "phase2-materialized",
+      as: "1b20a8f0-d745-4e93-91db-4531b3df120e",
+    };
+    expect(journalEntryToActivity(e)).toEqual({
+      category: "mount",
+      level: "info",
+      message: "Mounted 1b20a8f0",
+    });
+  });
+
+  it("unmount (phase2-destroyed + as) → mount category, 'Unmounted'", () => {
+    const e: SwitchJournalEntry = {
+      ...base,
+      phase: "phase2-destroyed",
+      as: "abcd1234-5678-90ab-cdef-1234567890ab",
+    };
+    const r = journalEntryToActivity(e);
+    expect(r.category).toBe("mount");
+    expect(r.message).toBe("Unmounted abcd1234");
+  });
+
+  it("failed phases → level 'error', error text appended", () => {
+    const e: SwitchJournalEntry = {
+      ...base,
+      phase: "apply-failed",
+      error: "PAT rejected",
+    };
+    expect(journalEntryToActivity(e)).toEqual({
+      category: "profile",
+      level: "error",
+      message: "Apply failed: PAT rejected",
+    });
+  });
+
+  it("aborted phase → level 'error'", () => {
+    const e: SwitchJournalEntry = { ...base, phase: "aborted-phase1" };
+    expect(journalEntryToActivity(e).level).toBe("error");
+  });
+
+  it("completed phase appends elapsed time", () => {
+    const e: SwitchJournalEntry = {
+      ...base,
+      phase: "apply-completed",
+      elapsedMs: 1234,
+    };
+    expect(journalEntryToActivity(e)).toEqual({
+      category: "profile",
+      level: "info",
+      message: "Apply completed (1234ms)",
+    });
+  });
+
+  it("every declared journal phase maps to a non-empty info/error record", () => {
+    const phases: SwitchJournalEntry["phase"][] = [
+      "starting",
+      "completed",
+      "failed",
+      "apply-starting",
+      "phase1-pulling",
+      "phase1-pulled",
+      "phase1-done",
+      "aborted-phase1",
+      "phase2-start",
+      "phase2-destroy-cached",
+      "phase2-destroyed",
+      "phase2-materializing",
+      "phase2-materialized",
+      "phase2-done",
+      "git-commit-done",
+      "apply-completed",
+      "apply-failed",
+      "recovery-restoring",
+      "recovery-completed",
+    ];
+    for (const phase of phases) {
+      const r = journalEntryToActivity({ ...base, phase });
+      expect(r.message.length).toBeGreaterThan(0);
+      expect(["info", "error"]).toContain(r.level);
+      // phase string should not leak raw unless intentionally unmapped
+      expect(r.message).not.toBe(phase);
+    }
+  });
+});
