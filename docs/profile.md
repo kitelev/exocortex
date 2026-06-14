@@ -228,6 +228,58 @@ when `_switchInProgress=true` is detected:
 3. Restores each from `SwitchCacheLayer` to vault.
 4. Logs recovery outcome. Clears `_switchInProgress` flag.
 
+### Partial-failure boundary — what the 2-phase commit does and does NOT cover
+
+The 2-phase design makes the **common** failure modes safe, but apply is **not
+fully atomic** on every partial failure. Know the exact boundary
+(tracked for hardening in [issue #3548](https://github.com/kitelev/exocortex/issues/3548)):
+
+**Covered (safe):**
+
+- A failure **during Phase 1** (any pull fails) leaves the vault byte-identical
+  to before the attempt — nothing is destroyed.
+- A **crash** mid-Phase-2 is reconciled on next onload: `recoverIncompleteSwitch()`
+  restores every destroyed-but-not-materialized AssetSpace from `SwitchCacheLayer`.
+- A cache-verify gate prevents a corrupt/zero-byte archive from authorizing a destroy.
+
+**Not yet atomic (desktop):** if a step **fails** mid-Phase-2 (e.g. a
+`git submodule add` errors out on the 2nd of several AssetSpaces), the in-process
+catch restores the *destroyed* AssetSpaces from cache (best-effort) but does **not**
+git-reset the working tree. The vault is therefore left with **uncommitted
+`.gitmodules`/submodule changes** and possibly one **partially-added** AssetSpace —
+the apply git-commit only runs on success. The vault content is recoverable, but
+not in a clean committed state until you re-run apply (which reconciles) or reload
+(which runs the recovery worker).
+
+**Not yet atomic (mobile / REST):** the mobile path does unmount-then-mount with
+**no rollback and no cache** — if a mount fails after an unmount, that AssetSpace
+is simply absent until you re-run apply. The state self-heals on re-run (mount-state
+is self-describing: folder-exists = active; REST mount/unmount are idempotent), but
+there is no automatic restore of an interrupted unmount.
+
+### If an apply fails or is interrupted — recovery ordering
+
+Apply is destructive, so treat a failed/interrupted apply like an interrupted
+database write. In order:
+
+1. **Don't panic — nothing is silently corrupted.** AssetSpace content is either
+   on disk, in `SwitchCacheLayer` (desktop), or re-pullable from GitHub.
+2. **Reload Obsidian** (`Reload app without saving`). On load, the recovery worker
+   restores any destroyed-but-not-materialized AssetSpaces from cache and clears the
+   in-progress flag.
+3. **Re-run «Exocortex: Apply profile»** to the same target. Apply is a strict
+   mount-state reconcile — re-running converges the vault to the target's effective
+   set regardless of the partial state left behind.
+4. **Desktop only — if `git status` in the vault shows uncommitted
+   `.gitmodules`/`assetspaces/` changes** after a failed apply, this is the
+   non-atomic window above: re-running apply (step 3) recommits cleanly; or commit
+   the vault manually once the mount-state is correct.
+
+To **minimize** the chance of hitting the window: commit (or stash) local changes
+before applying — the desktop path aborts on uncommitted changes in any to-destroy
+AssetSpace (Vision Lock #5) — and prefer a stable network/power state for a large
+cold apply (many AssetSpaces pulled sequentially).
+
 ---
 
 ## Cross-device model
@@ -254,7 +306,10 @@ a prompt unless they manually swap submodules outside the plugin.
 
 On **mobile**, where the git binary is unavailable, apply delegates to a
 REST/tarball mount/unmount path (no staging dir, no cache, no git commit); the
-desktop git-binary path is unchanged.
+desktop git-binary path is unchanged. Because the mobile path has no cache layer,
+it has **no automatic rollback** on a partial failure — see the
+[partial-failure boundary](#partial-failure-boundary--what-the-2-phase-commit-does-and-does-not-cover)
+above (it self-heals on re-run).
 
 ---
 
