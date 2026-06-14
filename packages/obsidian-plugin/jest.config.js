@@ -25,14 +25,6 @@ module.exports = {
     "!**/node_modules/**",
     "!**/__tests__/**",
     "!**/tests/**",
-    // Exclude Web Worker files - they run in Worker context and can't be unit tested with Jest
-    "!**/*.worker.ts",
-    // Exclude IncrementalRenderer - requires WebGL/PixiJS rendering which is unavailable in JSDOM
-    // DirtyTracker (its core logic) is fully tested separately
-    "!**/IncrementalRenderer.ts",
-    // Exclude 3D graph components - require WebGL context unavailable in JSDOM
-    // Scene3DManager uses Three.js WebGL renderer
-    "!**/3d/Scene3DManager.ts",
   ],
   moduleNameMapper: {
     "^exocortex$": "<rootDir>/../exocortex/src/index.ts",
