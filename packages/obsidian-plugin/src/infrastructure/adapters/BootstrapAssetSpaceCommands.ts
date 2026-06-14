@@ -325,9 +325,23 @@ export class BootstrapAssetSpaceCommands {
       return;
     }
 
-    let folderName: string;
+    // #3538: mount at the canonical Maven path `assetspaces/<owner>/<repo>` —
+    // the SAME path `invokeBootstrap` (above) and `apply-profile`
+    // (`ProfileApplyManager.listAllAssetSpaceInfos`) derive via `derivePath`.
+    // Previously this used `deriveFolderName` → flat `assetspaces/<name>`,
+    // disagreeing with bootstrap/apply on where the same repo lands: a later
+    // `apply-profile` would not recognise the flat folder as materialised (it
+    // checks the canonical `derivePath`) and re-materialise the same AssetSpace
+    // UID at the Maven path → double mount. Fall back to the flat folder only
+    // when the URL is un-derivable (`derivePath` → null), mirroring
+    // `invokeBootstrap`'s `?? TS_FLOOR_*` fallback. Platform-agnostic — the
+    // single `materialize` call below covers both the desktop (gitOps) and
+    // mobile (restMount) paths.
+    let submodulePath: string;
     try {
-      folderName = this.d.deriveFolderName(res.url);
+      submodulePath =
+        derivePath(res.url) ??
+        `${ASSETSPACES_DIR}/${this.d.deriveFolderName(res.url)}`;
     } catch (e) {
       this.d.notify(`Add AssetSpace: could not derive folder — ${this.msg(e)}`);
       return;
@@ -343,11 +357,7 @@ export class BootstrapAssetSpaceCommands {
     }
 
     try {
-      const m = await this.materialize(
-        res.url,
-        `${ASSETSPACES_DIR}/${folderName}`,
-        isGit,
-      );
+      const m = await this.materialize(res.url, submodulePath, isGit);
       this.d.notify(
         `AssetSpace added — ${m.folderName}@${m.sha} ← ${res.url}. ` +
           "Add any AssetSpaces it depends on manually — dependencies are not auto-resolved.",

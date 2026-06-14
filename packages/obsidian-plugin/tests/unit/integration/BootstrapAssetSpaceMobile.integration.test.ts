@@ -248,7 +248,7 @@ describe("Mobile bootstrap integration — real RestAssetSpaceMount + vault.adap
     expect(notices.some((n) => /file-only mode/.test(n))).toBe(false);
   });
 
-  it("after bootstrap, add-assetspace appends a third .gitmodules entry + materialises it", async () => {
+  it("after bootstrap, add-assetspace appends a third .gitmodules entry at the canonical Maven path + materialises it (#3538)", async () => {
     const adapter = new InMemoryAdapter();
     const notices: string[] = [];
     const { cmds, restMount } = makeCmds(adapter, notices, {});
@@ -256,15 +256,20 @@ describe("Mobile bootstrap integration — real RestAssetSpaceMount + vault.adap
     await cmds.invokeBootstrap();
     await cmds.invokeAddAssetSpace();
 
+    // #3538: add-assetspace materialises at the canonical Maven path
+    // `assetspaces/<owner>/<repo>` (parity with bootstrap + apply-profile), NOT
+    // the old flat `assetspaces/<name>`.
     expect(
-      adapter.files.has("assetspaces/pmbok-ontology/exoas-pmbok-ontology.md"),
+      adapter.files.has(
+        "assetspaces/kitelev/exoas-pmbok-ontology/exoas-pmbok-ontology.md",
+      ),
     ).toBe(true);
 
     const entries = await restMount.readGitmodulesEntries();
     expect(entries.map((e) => e.submodulePath)).toEqual([
       "assetspaces/kitelev/exoas-exo",
       "assetspaces/kitelev/exoas-exocmd",
-      "assetspaces/pmbok-ontology",
+      "assetspaces/kitelev/exoas-pmbok-ontology",
     ]);
     expect(notices.some((n) => /AssetSpace added/.test(n))).toBe(true);
   });

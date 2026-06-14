@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { resolve, join } from "node:path";
 import { existsSync } from "node:fs";
+import { derivePath } from "exocortex";
 import { BootstrapAssetSpaceService } from "../services/BootstrapAssetSpaceService.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { InvalidArgumentsError, VaultNotFoundError } from "../utils/errors/index.js";
@@ -12,6 +13,36 @@ interface AssetSpaceAddOptions {
   ref?: string;
   json?: boolean;
   token?: string;
+}
+
+/**
+ * Resolve the vault-relative mount path for `assetspace-add` (#3538).
+ *
+ * Defaults to the canonical Maven path `assetspaces/<owner>/<repo>` — the SAME
+ * path `bootstrap` (`bootstrap.ts`) and `apply-profile`
+ * (`CliApplyProfileService`) derive via `derivePath`. Aligning here closes the
+ * latent double-mount gap: a flat `assetspaces/<name>` folder is not recognised
+ * as materialised by `apply-profile` (which checks the canonical `derivePath`),
+ * so the same AssetSpace UID would re-mount at the Maven path.
+ *
+ * An explicit `--folder` override still maps to the flat `assetspaces/<folder>`
+ * (the documented manual escape hatch). Falls back to the flat
+ * `deriveFolderName` only when the URL is un-derivable (`derivePath` → null),
+ * mirroring `bootstrap.ts`'s `?? "assetspaces/exo"` fallback.
+ *
+ * @returns A vault-relative path rooted at `assetspaces/` (never absolute).
+ */
+export function resolveAddAssetSpacePath(
+  url: string,
+  folderOverride?: string,
+): string {
+  if (folderOverride !== undefined && folderOverride.length > 0) {
+    return `assetspaces/${folderOverride}`;
+  }
+  return (
+    derivePath(url) ??
+    `assetspaces/${BootstrapAssetSpaceService.deriveFolderName(url)}`
+  );
 }
 
 /**
@@ -66,14 +97,17 @@ export function assetSpaceAddCommand(): Command {
         const token = options.token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || undefined;
         const svc = new BootstrapAssetSpaceService({ token });
         const ref = options.ref ?? "main";
-        const folder = options.folder ?? BootstrapAssetSpaceService.deriveFolderName(options.url);
-        const targetDir = join(vaultPath, "assetspaces", folder);
+        // #3538: default to the canonical Maven path `assetspaces/<owner>/<repo>`
+        // (parity with bootstrap + apply-profile). `--folder` still overrides to
+        // a flat `assetspaces/<folder>`.
+        const assetspaceRel = resolveAddAssetSpacePath(options.url, options.folder);
+        const targetDir = join(vaultPath, assetspaceRel);
 
-        process.stderr.write(`[assetspace-add] Pulling ${options.url}@${ref} → assetspaces/${folder}/...\n`);
+        process.stderr.write(`[assetspace-add] Pulling ${options.url}@${ref} → ${assetspaceRel}/...\n`);
         const result = await svc.pullAssetSpace(options.url, ref, targetDir);
         const gitmodulesResult = svc.ensureGitmodulesEntry(
           vaultPath,
-          `assetspaces/${folder}`,
+          assetspaceRel,
           options.url,
         );
 
@@ -82,7 +116,7 @@ export function assetSpaceAddCommand(): Command {
             JSON.stringify(
               {
                 vault: vaultPath,
-                folder: `assetspaces/${folder}`,
+                folder: assetspaceRel,
                 url: options.url,
                 sha: result.sha,
                 fileCount: result.fileCount,
@@ -94,7 +128,7 @@ export function assetSpaceAddCommand(): Command {
           );
         } else {
           process.stdout.write(`\n✓ AssetSpace added\n`);
-          process.stdout.write(`  Folder: assetspaces/${folder}\n`);
+          process.stdout.write(`  Folder: ${assetspaceRel}\n`);
           process.stdout.write(`  URL: ${options.url}\n`);
           process.stdout.write(`  SHA: ${result.sha} (${result.fileCount} files)\n`);
           process.stdout.write(`  .gitmodules: ${gitmodulesResult.added ? "entry added" : "entry already present"}\n`);
