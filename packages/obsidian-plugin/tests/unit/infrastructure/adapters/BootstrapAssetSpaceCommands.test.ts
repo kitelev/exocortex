@@ -355,32 +355,63 @@ describe("BootstrapAssetSpaceCommands.invokeBootstrap — guards", () => {
 });
 
 describe("BootstrapAssetSpaceCommands.invokeAddAssetSpace", () => {
-  it("pulls into URL-derived folder and appends .gitmodules (git vault)", async () => {
+  // #3538: add-assetspace mounts at the canonical Maven path
+  // `assetspaces/<owner>/<repo>` — parity with `invokeBootstrap` +
+  // `apply-profile` (`derivePath`), NOT the old flat `assetspaces/<name>`
+  // (`deriveFolderName`). `PMBOK_URL` (kitelev/exoas-pmbok-ontology) derives to
+  // `assetspaces/kitelev/exoas-pmbok-ontology`; the staging label is keyed off
+  // the path basename `exoas-pmbok-ontology`.
+  it("pulls into the canonical Maven path and appends .gitmodules (git vault)", async () => {
     const h = makeHarness({ isGitVault: true });
     await h.cmds.invokeAddAssetSpace();
 
     expect(h.puller.pullAssetSpace).toHaveBeenCalledWith(
-      "bootstrap-pmbok-ontology",
+      "bootstrap-exoas-pmbok-ontology",
       PMBOK_URL,
       "main",
     );
     expect(h.gitOps.renameIntoVault).toHaveBeenCalledWith(
-      "/tmp/staging-bootstrap-pmbok-ontology",
-      "assetspaces/pmbok-ontology",
+      "/tmp/staging-bootstrap-exoas-pmbok-ontology",
+      "assetspaces/kitelev/exoas-pmbok-ontology",
     );
     expect(h.gitOps.appendGitmodulesEntry).toHaveBeenCalledWith(
-      "assetspaces/pmbok-ontology",
+      "assetspaces/kitelev/exoas-pmbok-ontology",
       PMBOK_URL,
     );
     expect(h.notices.some((n) => /AssetSpace added/.test(n))).toBe(true);
   });
 
-  it("file-only vault → tracks device-locally, no .gitmodules", async () => {
+  // #3538 parity, explicit: a generic `<owner>/<repo>` (no `exoas-` prefix)
+  // lands at `assetspaces/<owner>/<repo>` — proving the path is the canonical
+  // derivePath output (full repo name, two segments), NOT the prefix-stripped
+  // flat `deriveFolderName`. Revert-verify: restoring the old
+  // `${ASSETSPACES_DIR}/${folderName}` materialise arg makes this FAIL (it would
+  // mount at flat `assetspaces/widgets`).
+  it("#3538 — generic owner/repo mounts at canonical assetspaces/<owner>/<repo> (parity with bootstrap)", async () => {
+    const h = makeHarness({
+      isGitVault: true,
+      addUrl: { url: "https://github.com/acme/widgets" },
+    });
+    await h.cmds.invokeAddAssetSpace();
+
+    expect(h.gitOps.renameIntoVault).toHaveBeenCalledWith(
+      "/tmp/staging-bootstrap-widgets",
+      "assetspaces/acme/widgets",
+    );
+    expect(h.gitOps.appendGitmodulesEntry).toHaveBeenCalledWith(
+      "assetspaces/acme/widgets",
+      "https://github.com/acme/widgets",
+    );
+  });
+
+  it("file-only vault → tracks device-locally at the canonical path, no .gitmodules", async () => {
     const h = makeHarness({ isGitVault: false });
     await h.cmds.invokeAddAssetSpace();
     expect(h.gitOps.appendGitmodulesEntry).not.toHaveBeenCalled();
     expect(h.localStore.upsertFileOnlyAssetSpace).toHaveBeenCalledWith(
-      expect.objectContaining({ folderName: "assetspaces/pmbok-ontology" }),
+      expect.objectContaining({
+        folderName: "assetspaces/kitelev/exoas-pmbok-ontology",
+      }),
     );
   });
 
@@ -523,8 +554,9 @@ describe("BootstrapAssetSpaceCommands — staging-dir release (Issue #3391)", ()
 
     expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(1);
     expect(h.puller.releaseStaging).toHaveBeenCalledTimes(1);
+    // #3538: staging path keyed off the canonical Maven path basename.
     expect(h.puller.releaseStaging).toHaveBeenCalledWith(
-      "/tmp/staging-bootstrap-pmbok-ontology",
+      "/tmp/staging-bootstrap-exoas-pmbok-ontology",
     );
     expect(h.activeStagingDirs).toEqual([]);
   });
@@ -679,19 +711,35 @@ describe("BootstrapAssetSpaceCommands — mobile restMount strategy (#3535)", ()
     expect(h.notices.some((n) => /knowledge-only/.test(n))).toBe(true);
   });
 
-  it("addAssetSpace → mounts the single URL-derived AssetSpace via restMount.mount", async () => {
+  it("addAssetSpace → mounts the single URL-derived AssetSpace at the canonical Maven path via restMount.mount (#3538)", async () => {
     const h = makeMobileHarness();
     await h.cmds.invokeAddAssetSpace();
 
     expect(h.restMount.mount).toHaveBeenCalledTimes(1);
+    // #3538: mobile add-assetspace mounts at `assetspaces/<owner>/<repo>` (the
+    // same canonical path apply-profile reads), NOT the old flat path.
     expect(h.restMount.mount).toHaveBeenNthCalledWith(
       1,
       PMBOK_URL,
-      "assetspaces/pmbok-ontology",
+      "assetspaces/kitelev/exoas-pmbok-ontology",
       "main",
     );
     expect(h.notices.some((n) => /AssetSpace added/.test(n))).toBe(true);
     expect(h.notices.some((n) => /file-only mode/.test(n))).toBe(false);
+  });
+
+  it("#3538 — mobile add-assetspace of a generic owner/repo mounts at canonical assetspaces/<owner>/<repo>", async () => {
+    const h = makeMobileHarness({
+      addUrl: { url: "https://github.com/acme/widgets" },
+    });
+    await h.cmds.invokeAddAssetSpace();
+
+    expect(h.restMount.mount).toHaveBeenNthCalledWith(
+      1,
+      "https://github.com/acme/widgets",
+      "assetspaces/acme/widgets",
+      "main",
+    );
   });
 
   it("already-bootstrapped vault → no mount (use Add AssetSpace)", async () => {
