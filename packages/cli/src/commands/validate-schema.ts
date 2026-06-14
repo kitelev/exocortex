@@ -301,7 +301,7 @@ export function resolveCrossVaultInstanceClassWikilinks(
     if (!classIRI) continue;
 
     const subjectIRI = t.subject.value;
-    const dedupKey = `${subjectIRI} ${classIRI}`;
+    const dedupKey = `${subjectIRI} ${classIRI}`;
     if (emitted.has(dedupKey)) continue;
     emitted.add(dedupKey);
 
@@ -330,21 +330,29 @@ export function resolveCrossVaultInstanceClassWikilinks(
 export function dedupeTriples(triples: DomainTriple[]): DomainTriple[] {
   const seen = new Set<string>();
   const out: DomainTriple[] = [];
+  // JSON-encode every field so a value/datatype/language that itself
+  // contains the join separator can never forge a collision with a distinct
+  // triple; the key must be injective for the dedup to stay loss-less.
+  const enc = (...parts: (string | undefined)[]): string =>
+    parts.map((p) => JSON.stringify(p ?? null)).join(" ");
   for (const t of triples) {
     const o = t.object;
     let objKey: string;
     if (o instanceof DomainIRI) {
-      objKey = `i ${o.value}`;
+      objKey = enc("i", o.value);
     } else if (o instanceof DomainLiteral) {
-      objKey = `l ${o.value} ${o.datatype?.value ?? ""} ${o.language ?? ""}`;
+      // datatype + language + direction all participate in Literal.equals().
+      objKey = enc("l", o.value, o.datatype?.value, o.language, o.direction);
     } else {
-      // Unknown node shape — keep it (do not risk dropping a non-duplicate).
+      // Unknown node shape: keep it (do not risk dropping a non-duplicate).
       out.push(t);
       continue;
     }
-    const subjKey = t.subject instanceof DomainIRI ? t.subject.value : String(t.subject);
-    const predKey = t.predicate instanceof DomainIRI ? t.predicate.value : String(t.predicate);
-    const key = `${subjKey} ${predKey} ${objKey}`;
+    const subjKey =
+      t.subject instanceof DomainIRI ? t.subject.value : String(t.subject);
+    const predKey =
+      t.predicate instanceof DomainIRI ? t.predicate.value : String(t.predicate);
+    const key = `${enc(subjKey, predKey)} ${objKey}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(t);
