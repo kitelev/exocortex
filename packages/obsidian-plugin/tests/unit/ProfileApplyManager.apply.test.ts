@@ -433,6 +433,9 @@ function setup(opts: SetupOptions) {
   const assetSpaceManager = new FakeAssetSpaceManager();
   const confirmGate = new FakeConfirmGate();
 
+  // Capture user-facing Notices (#3538 legacy flat-mount warn + others).
+  const notifyMessages: string[] = [];
+
   const mgr = new ProfileApplyManager({
     app,
     lockMgr,
@@ -447,6 +450,7 @@ function setup(opts: SetupOptions) {
     confirmGate,
     localDataStore: localDataStore as any,
     /* eslint-enable @typescript-eslint/no-explicit-any */
+    notify: (m: string) => notifyMessages.push(m),
     vaultRootPath: "/fake/vault",
     ...(opts.isSyncBusy !== undefined ? { isSyncBusy: opts.isSyncBusy } : {}),
     ...(opts.applyTimeoutMs !== undefined
@@ -463,6 +467,7 @@ function setup(opts: SetupOptions) {
     uncommittedGuard,
     assetSpaceManager,
     confirmGate,
+    notifyMessages,
     app,
     fsFiles,
     fsFolders,
@@ -561,6 +566,73 @@ describe("ProfileApplyManager.applyProfile", () => {
         materialized: [TS_FLOOR_AS_UID_EXO],
       });
       await expect(mgr.applyProfile("target")).resolves.toBeUndefined();
+    });
+  });
+
+  describe("#3538 follow-up — legacy flat-mount warn", () => {
+    // $exo's source `https://github.com/kitelev/exoas-exo` derives to canonical
+    // `assetspaces/kitelev/exoas-exo`; its pre-#3538 legacy flat path is
+    // `assetspaces/exo` (deriveFolderName strips `exoas-`).
+    const FLAT_EXO = "assetspaces/exo";
+
+    it("WARNS when an AssetSpace is materialized at the legacy flat path", async () => {
+      const ctx = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: [TS_FLOOR_AS_UID_EXO], // floor={exo} — resolves OK
+        materialized: [TS_FLOOR_AS_UID_EXO],
+      });
+      // Simulate the legacy flat-mount on disk (the dogfood-iPhone state).
+      ctx.fsFolders.set(FLAT_EXO, { files: [`${FLAT_EXO}/file1.md`], folders: [] });
+
+      await expect(ctx.mgr.applyProfile("target")).resolves.toBeUndefined();
+
+      const warn = ctx.notifyMessages.find((m) =>
+        m.includes("legacy flat path"),
+      );
+      expect(warn).toBeDefined();
+      // Names the affected flat path → canonical migration target.
+      expect(warn).toContain(FLAT_EXO);
+      expect(warn).toContain("assetspaces/kitelev/exoas-exo");
+      expect(warn).toContain("docs/profile.md");
+    });
+
+    it("REVERT-VERIFY: no warn when no flat-mount folder exists on disk", async () => {
+      // Identical setup MINUS the flat folder → the guard must stay silent
+      // (no false positive on a canonically-mounted vault).
+      const ctx = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: [TS_FLOOR_AS_UID_EXO],
+        materialized: [TS_FLOOR_AS_UID_EXO],
+      });
+
+      await expect(ctx.mgr.applyProfile("target")).resolves.toBeUndefined();
+
+      expect(
+        ctx.notifyMessages.find((m) => m.includes("legacy flat path")),
+      ).toBeUndefined();
+    });
+
+    it("does NOT abort apply if detection throws (best-effort, read-only)", async () => {
+      const ctx = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: [TS_FLOOR_AS_UID_EXO],
+        materialized: [TS_FLOOR_AS_UID_EXO],
+      });
+      // Make the flat-mount existence probe throw — apply must still succeed.
+      const realExists = ctx.app.vault.adapter.exists.bind(
+        ctx.app.vault.adapter,
+      );
+      (ctx.app.vault.adapter as unknown as { exists: unknown }).exists = async (
+        p: string,
+      ) => {
+        if (p === FLAT_EXO) throw new Error("simulated adapter failure");
+        return realExists(p);
+      };
+
+      await expect(ctx.mgr.applyProfile("target")).resolves.toBeUndefined();
     });
   });
 

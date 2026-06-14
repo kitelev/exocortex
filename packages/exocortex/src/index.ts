@@ -264,7 +264,7 @@ export {
   IRICanonicalizer,
   type CanonicalizationResult,
 } from "./services/IRICanonicalizer";
-export { derivePath } from "./services/AssetSpacePathDeriver";
+export { derivePath, deriveLegacyFlatPath } from "./services/AssetSpacePathDeriver";
 export {
   discoverFileSpaceExclusions,
   frontmatterDeclaresFileSpace,

@@ -244,7 +244,7 @@ fully atomic** on every partial failure. Know the exact boundary
 
 **Not yet atomic (desktop):** if a step **fails** mid-Phase-2 (e.g. a
 `git submodule add` errors out on the 2nd of several AssetSpaces), the in-process
-catch restores the *destroyed* AssetSpaces from cache (best-effort) but does **not**
+catch restores the _destroyed_ AssetSpaces from cache (best-effort) but does **not**
 git-reset the working tree. The vault is therefore left with **uncommitted
 `.gitmodules`/submodule changes** and possibly one **partially-added** AssetSpace —
 the apply git-commit only runs on success. The vault content is recoverable, but
@@ -279,6 +279,45 @@ To **minimize** the chance of hitting the window: commit (or stash) local change
 before applying — the desktop path aborts on uncommitted changes in any to-destroy
 AssetSpace (Vision Lock #5) — and prefer a stable network/power state for a large
 cold apply (many AssetSpaces pulled sequentially).
+
+### Legacy flat-mount migration
+
+Apply locates a materialized AssetSpace by its **canonical** mount path
+`assetspaces/<owner>/<repo>` (`derivePath`). Vaults set up before #3538 may have
+AssetSpaces mounted at the **legacy flat** path `assetspaces/<repo>` (the
+`exoas-` prefix stripped) — the old `add-assetspace` / `bootstrap` layout. Apply
+does **not** recognise a flat folder as materialized, so it would re-materialize
+the same AssetSpace at the canonical path → a **double mount** of one AssetSpace
+UID (duplicate triples, SHACL noise).
+
+Apply now **detects** this and shows a one-time Notice naming each affected
+AssetSpace as `<label> (assetspaces/<repo> → assetspaces/<owner>/<repo>)`. Apply
+does **not** auto-migrate (a runtime directory move on the destructive apply path
+is intentionally out of scope — see the
+[partial-failure boundary](#partial-failure-boundary--what-the-2-phase-commit-does-and-does-not-cover)).
+Migrate manually, once, per affected AssetSpace:
+
+1. **Commit or stash** any local changes in the vault first (treat this like the
+   recovery flow above).
+2. **Remove the legacy flat mount.** The goal is to delete the flat folder and
+   its stale `.gitmodules` entry, so apply re-creates the AssetSpace at the
+   canonical path.
+   - **Desktop** (vault root, the flat path is a real git submodule):
+     ```bash
+     git submodule deinit -f assetspaces/<repo>
+     git rm -f assetspaces/<repo>            # drops the .gitmodules entry + index
+     rm -rf .git/modules/assetspaces/<repo>  # clear the submodule git dir
+     git commit -m "chore: remove legacy flat-mount assetspaces/<repo>"
+     ```
+   - **Mobile** (no git binary): delete the `assetspaces/<repo>` folder (Files app,
+     or from a synced desktop), and remove its `[submodule "assetspaces/<repo>"]`
+     stanza from `.gitmodules`.
+3. **Re-run «Exocortex: Apply profile»** to your current profile. Apply now finds
+   no materialized copy and re-materializes the AssetSpace at the canonical
+   `assetspaces/<owner>/<repo>` path. The warn Notice no longer appears.
+
+Fresh vaults bootstrapped on #3538+ mount canonically from the start and never
+see this Notice.
 
 ---
 

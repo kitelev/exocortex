@@ -300,6 +300,8 @@ function setup(opts: SetupOpts) {
     factoryMount,
     gitOps,
     notifyCalls,
+    app,
+    fsFolders,
   };
 }
 
@@ -564,5 +566,28 @@ describe("applyProfile dispatch (mobile → REST)", () => {
     expect(restMount.unmounted).toEqual(["assetspaces/kitelev/exoas-kpc"]);
     // …and the git-binary path was NOT used.
     expect(gitOps.calls).toEqual([]);
+  });
+
+  it("#3538 — warns about legacy flat-mount on the MOBILE dispatch path", async () => {
+    // Proves the both-platform claim end-to-end: the warn lives in the
+    // `applyProfile` dispatcher BEFORE the mobile/desktop split, so it must fire
+    // when mobile delegates to applyProfileViaRest (not just on desktop).
+    (Platform as unknown as { isMobile: boolean }).isMobile = true;
+    const { mgr, notifyCalls, fsFolders } = setup({
+      targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
+      materialized: [...ALL_FLOOR_UIDS],
+    });
+    // ems canonical = assetspaces/kitelev/exoas-ems; legacy flat = assetspaces/ems.
+    fsFolders.set("assetspaces/ems", {
+      files: ["assetspaces/ems/file1.md"],
+      folders: [],
+    });
+
+    await mgr.applyProfile("target");
+
+    const warn = notifyCalls.find((m) => m.includes("legacy flat path"));
+    expect(warn).toBeDefined();
+    expect(warn).toContain("assetspaces/ems");
+    expect(warn).toContain("assetspaces/kitelev/exoas-ems");
   });
 });
