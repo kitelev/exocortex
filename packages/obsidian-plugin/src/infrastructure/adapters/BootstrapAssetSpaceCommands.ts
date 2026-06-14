@@ -129,9 +129,12 @@ export interface BootstrapAssetSpaceCommandsDeps {
   localStore?: IFileOnlyAssetSpaceStore;
   /**
    * Mobile (#3535) cross-platform materialise strategy. When wired, it replaces
-   * the desktop `getPuller` + `gitOps` + `localStore` trio entirely. Exactly
-   * one of {desktop trio, `restMount`} must be present — desktop wiring passes
-   * the trio; mobile wiring passes `restMount`.
+   * the desktop `getPuller` + `gitOps` path entirely (the REST mount does the
+   * pull + materialise + `.gitmodules` write itself). Desktop wiring passes the
+   * `getPuller` + `gitOps` + `localStore` trio (no `restMount`); mobile wiring
+   * passes `restMount` (and may still pass `localStore`, which is unused on the
+   * REST path). At least one of {`getPuller` + `gitOps`, `restMount`} must be
+   * present, else `materialize` / `listTrackedEntries` throw.
    */
   restMount?: IRestBootstrapMount;
   /** `vault.adapter.exists(path)` wrapper. */
