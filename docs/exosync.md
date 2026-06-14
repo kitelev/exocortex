@@ -40,6 +40,29 @@ mount paths first), best-effort: one failing repo never blocks the rest. A
 summary notice reports `pushed / pulled / merged / quarantined` counts;
 per-repo warnings and details go to the developer console (`[ExoSync] …`).
 
+### From the CLI (desktop)
+
+The same sync runs from `@kitelev/exocortex-cli`, driving the identical
+platform-free `SyncEngine` over `node:fs` ports instead of `vault.adapter`:
+
+```bash
+exocortex exosync sync  --vault <path> --token-from-gh   # full pull→merge→push
+exocortex exosync pull  --vault <path> --token-from-gh   # apply remote only
+exocortex exosync push  --vault <path> --token-from-gh   # send local delta only
+# FileSpaces additionally require --quarantine-repo https://github.com/<o>/<r>
+```
+
+The token resolves like `exosync-parity` / `experimental rest-push`
+(`--token-from-gh` → `--token` → `GITHUB_TOKEN` / `GH_TOKEN`). The CLI writes
+the same `exosync-watermarks.local.json` the plugin uses, so the two share one
+base. Exit codes: `0` all clean · `1` at least one repo unresolved/errored ·
+`2` vacuous (no materialized AssetSpaces found). For a read-only divergence
+check without writing, use `exosync-parity`.
+
+> ⚠ The engine's D11 in-flight guard is per-process: do NOT run the CLI sync
+> while the plugin is mid-sync on the same vault (watermark write is
+> last-writer-wins across processes).
+
 ### What gets synced
 
 The sync unit is collected from vault declarations
