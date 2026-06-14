@@ -1,7 +1,11 @@
 import type { App, DataAdapter } from "obsidian";
 import { GitHubRestClient } from "./GitHubRestClient";
 import { parseGitHubURL } from "./AssetSpaceManager";
-import { validateVaultPathArg } from "./GitSubmoduleOps";
+import {
+  validateVaultPathArg,
+  parseGitmodulesEntries,
+  type GitmodulesEntry,
+} from "./GitSubmoduleOps";
 import {
   mountAssetSpaceFiles,
   appendGitmodulesEntry,
@@ -130,6 +134,24 @@ export class RestAssetSpaceMount {
     if (await this.adapter.exists(safePath)) {
       await this.adapter.rmdir(safePath, true);
     }
+  }
+
+  /**
+   * Read the current `.gitmodules` (path, url) entries via `vault.adapter` —
+   * the mobile-capable counterpart of
+   * {@link GitSubmoduleOps.readGitmodulesEntries} (#3535). Reuses the shared
+   * pure-text {@link parseGitmodulesEntries} parser (no Node `fs`). A missing
+   * `.gitmodules` yields `[]`.
+   *
+   * Used by the mobile Bootstrap / Add-AssetSpace flow
+   * ({@link BootstrapAssetSpaceCommands}) to classify the vault state (empty vs
+   * clone-needs-fetch vs bootstrapped) without the desktop-only
+   * `GitSubmoduleOps`.
+   */
+  public async readGitmodulesEntries(): Promise<GitmodulesEntry[]> {
+    if (!(await this.adapter.exists(GITMODULES))) return [];
+    const raw = await this.adapter.read(GITMODULES);
+    return parseGitmodulesEntries(raw);
   }
 
   // ───────────────────────────── ports ─────────────────────────────
