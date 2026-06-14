@@ -380,26 +380,31 @@ async function tryLoadPlugin(
   }
 }
 
+/** Whole-launch retry budget + per-attempt plugin-load ceiling (emulation flake). */
+const MAX_LAUNCH_ATTEMPTS = 8;
+const PLUGIN_LOAD_WAIT_MS = 60000;
+
 /**
  * Launch Obsidian on `vaultPath` and ensure the plugin loads, retrying the WHOLE
- * launch (close + fresh Electron) up to 3 times. The plugin-load flake is
- * per-launch under emulation, so a relaunch almost always recovers it. Returns
- * the live launcher (caller owns close); throws if all 3 attempts fail.
+ * launch (close + fresh Electron) up to {@link MAX_LAUNCH_ATTEMPTS} times. The
+ * plugin-load flake is per-launch under QEMU-emulated amd64, so a relaunch
+ * almost always recovers it. Returns the live launcher (caller owns close);
+ * throws if every attempt fails.
  */
 async function launchObsidianWithPlugin(
   vaultPath: string,
   label: string,
 ): Promise<ObsidianLauncher> {
   let lastErr = "";
-  for (let attempt = 1; attempt <= 8; attempt++) {
+  for (let attempt = 1; attempt <= MAX_LAUNCH_ATTEMPTS; attempt++) {
     const launcher = new ObsidianLauncher(vaultPath);
     try {
-      log(`${label}: launch attempt ${attempt}/3`);
+      log(`${label}: launch attempt ${attempt}/${MAX_LAUNCH_ATTEMPTS}`);
       await launcher.launch();
       const window = await launcher.getWindow();
       await launcher.waitForModalsToClose(10000);
-      if (await tryLoadPlugin(window, label, 60000)) return launcher;
-      lastErr = "plugin did not reach loaded within 90s";
+      if (await tryLoadPlugin(window, label, PLUGIN_LOAD_WAIT_MS)) return launcher;
+      lastErr = `plugin did not reach loaded within ${PLUGIN_LOAD_WAIT_MS / 1000}s`;
     } catch (e) {
       lastErr = String(e);
       log(`${label}: launch attempt ${attempt} errored: ${lastErr}`);
@@ -408,7 +413,7 @@ async function launchObsidianWithPlugin(
     await launcher.close().catch(() => undefined);
   }
   throw new Error(
-    `${label}: Obsidian + plugin failed to load after 3 attempts (${lastErr})`,
+    `${label}: Obsidian + plugin failed to load after ${MAX_LAUNCH_ATTEMPTS} attempts (${lastErr})`,
   );
 }
 
