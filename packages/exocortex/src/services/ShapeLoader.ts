@@ -59,6 +59,17 @@ export class ShapeLoader {
     const RDFS = Namespace.RDFS;
     const RDF = Namespace.RDF;
 
+    // Issue #3523: build a UID → canonical-class-IRI index once, so a
+    // domain/range value that arrived as a *synthesized* UUID-only file IRI
+    // (`obsidian://vault/<uid>.md`, no directory) — emitted by the primary
+    // vault's converter when an `--also` dependency's class def could not be
+    // resolved in the primary vault — still canonicalizes to the same symbolic
+    // ontology IRI as the merged single-vault case. The owning dep vault emits
+    // that class's `rdfs:label` under its *full-path* subject IRI
+    // (`obsidian://vault/tbox/<uid>.md`), so an exact-IRI label lookup misses;
+    // keying by the bare UID bridges the two file-IRI forms across `--also`.
+    const uidToClassIRI = await ShapeLoader.buildUidClassIndex(graph);
+
     // Find all property definition subjects (exo:Property or exo:ObjectProperty)
     const [objPropTriples, basePropTriples] = await Promise.all([
       graph.match(undefined, RDF.term("type"), EXO.term("ObjectProperty")),
@@ -134,7 +145,7 @@ export class ShapeLoader {
       const domainRaw = await Promise.all(
         domainTs.map(async (t) =>
           t.object instanceof IRI
-            ? await ShapeLoader.resolveClassIRI(t.object.value, graph)
+            ? await ShapeLoader.resolveClassIRI(t.object.value, graph, uidToClassIRI)
             : null,
         ),
       );
@@ -145,7 +156,7 @@ export class ShapeLoader {
       const rangeValuesRaw = await Promise.all(
         rangeTs.map(async (t) => {
           if (t.object instanceof IRI) {
-            return await ShapeLoader.resolveClassIRI(t.object.value, graph);
+            return await ShapeLoader.resolveClassIRI(t.object.value, graph, uidToClassIRI);
           }
           // Plain-string range values (e.g. `exo__Property_range:
           // "http://www.w3.org/2001/XMLSchema#integer"`) arrive as Literals
@@ -213,6 +224,51 @@ export class ShapeLoader {
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
+  /** Matches `obsidian://vault/[<dirs>/]<uuid>.md` and captures the bare UUID. */
+  private static readonly FILE_IRI_UID_RE =
+    /\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md$/i;
+
+  /** Extracts the lowercase UUID from a `…/<uuid>.md` file IRI, or null. */
+  private static extractUidFromFileIRI(iri: string): string | null {
+    const m = ShapeLoader.FILE_IRI_UID_RE.exec(iri);
+    return m ? m[1].toLowerCase() : null;
+  }
+
+  /**
+   * Issue #3523: builds `uid → canonical-class-IRI` from every labelled subject
+   * in the merged graph (across the primary vault + all `--also` vaults). Used
+   * by {@link resolveClassIRI} to canonicalize a domain/range value that arrived
+   * as a synthesized UUID-only file IRI whose exact-IRI label lookup misses
+   * because the labelled subject lives under a full-path IRI in another vault.
+   *
+   * Only labels that parse to a `<prefix>__<Local>` ontology IRI are indexed —
+   * human-named (non-symbolic) class files are left to the validator's existing
+   * UID-twin / open-world handling. First-label-wins per UID (UIDs are unique).
+   */
+  private static async buildUidClassIndex(
+    graph: ITripleStore,
+  ): Promise<Map<string, string>> {
+    const RDFS = Namespace.RDFS;
+    const EXO = Namespace.EXO;
+    const [rdfsLabelTs, exoLabelTs] = await Promise.all([
+      graph.match(undefined, RDFS.term("label"), undefined),
+      graph.match(undefined, EXO.term("Asset_label"), undefined),
+    ]);
+    const map = new Map<string, string>();
+    for (const t of [...rdfsLabelTs, ...exoLabelTs]) {
+      if (!(t.subject instanceof IRI) || !(t.object instanceof Literal)) continue;
+      const uid = ShapeLoader.extractUidFromFileIRI(t.subject.value);
+      if (!uid || map.has(uid)) continue;
+      const labelValue = t.object.value.trim();
+      // labelToIRI splits on the first `__`; multi-word labels would yield an
+      // invalid IRI. Restrict to single-token labels for a safe namespace IRI.
+      if (/\s/.test(labelValue)) continue;
+      const classIRI = ShapeLoader.labelToIRI(labelValue);
+      if (classIRI) map.set(uid, classIRI);
+    }
+    return map;
+  }
+
   /**
    * Resolves a domain/range IRI to its canonical namespace form.
    *
@@ -238,6 +294,7 @@ export class ShapeLoader {
   private static async resolveClassIRI(
     iri: string,
     graph: ITripleStore,
+    uidToClassIRI?: ReadonlyMap<string, string>,
   ): Promise<string | null> {
     if (
       iri.startsWith("https://exocortex.my/ontology/") ||
@@ -266,6 +323,20 @@ export class ShapeLoader {
       if (t.object instanceof Literal) {
         const resolved = ShapeLoader.labelToIRI(t.object.value);
         if (resolved) return resolved;
+      }
+    }
+
+    // Issue #3523: the exact-IRI label lookup above misses for a synthesized
+    // UUID-only cross-vault file IRI (the labelled subject lives under a
+    // full-path IRI in the `--also` vault). Fall back to the UID-keyed index so
+    // the range/domain canonicalizes to the same symbolic class IRI the merged
+    // single-vault converter would have produced — letting the class-membership
+    // (`isSubClassOf`) check unify across the `--also` boundary.
+    if (uidToClassIRI) {
+      const uid = ShapeLoader.extractUidFromFileIRI(iri);
+      if (uid) {
+        const byUid = uidToClassIRI.get(uid);
+        if (byUid) return byUid;
       }
     }
 

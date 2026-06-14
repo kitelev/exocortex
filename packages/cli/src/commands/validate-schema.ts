@@ -185,6 +185,21 @@ async function loadTriplesFromAllVaults(
   }
 
   if (alsoPaths.length > 0) {
+    // Issue #3523: a shared submodule (e.g. `exo`) mounted in BOTH the primary
+    // vault and an `--also` vault is parsed twice into byte-identical triples
+    // (same subject IRI — converters key off the per-vault-relative path). The
+    // duplicates inflate `values.length` for Single-cardinality predicates →
+    // false `sh:maxCount` violations. RDF triples are a set, so collapsing
+    // exact (subject, predicate, object) duplicates is loss-less. Scoped to the
+    // multi-vault path so single-vault loading is byte-for-byte unchanged.
+    const beforeDedup = triples.length;
+    triples = dedupeTriples(triples);
+    if (verbose && triples.length < beforeDedup) {
+      console.log(
+        `   🧹 Cross-vault dedup: removed ${beforeDedup - triples.length} duplicate triple(s) (shared-submodule double-load)`,
+      );
+    }
+
     const before = triples.length;
     triples = resolveCrossVaultInstanceClassWikilinks(triples);
     if (verbose) {
@@ -300,6 +315,41 @@ export function resolveCrossVaultInstanceClassWikilinks(
   }
 
   return additions.length > 0 ? triples.concat(additions) : triples;
+}
+
+/**
+ * Issue #3523: collapse exact-duplicate triples produced when a shared
+ * submodule is loaded more than once across `--vault` + `--also` paths.
+ *
+ * A triple's identity is (subject, predicate, object). Subject/predicate are
+ * always IRIs; the object is an IRI or a Literal (whose identity also includes
+ * datatype + language tag). Dual-storage predicates (e.g. exo__Asset_prototype
+ * → [fileIRI, uuidLiteral]) emit DISTINCT objects, so they are never collapsed
+ * into one — only byte-identical re-parses of the same file are removed.
+ */
+export function dedupeTriples(triples: DomainTriple[]): DomainTriple[] {
+  const seen = new Set<string>();
+  const out: DomainTriple[] = [];
+  for (const t of triples) {
+    const o = t.object;
+    let objKey: string;
+    if (o instanceof DomainIRI) {
+      objKey = `i ${o.value}`;
+    } else if (o instanceof DomainLiteral) {
+      objKey = `l ${o.value} ${o.datatype?.value ?? ""} ${o.language ?? ""}`;
+    } else {
+      // Unknown node shape — keep it (do not risk dropping a non-duplicate).
+      out.push(t);
+      continue;
+    }
+    const subjKey = t.subject instanceof DomainIRI ? t.subject.value : String(t.subject);
+    const predKey = t.predicate instanceof DomainIRI ? t.predicate.value : String(t.predicate);
+    const key = `${subjKey} ${predKey} ${objKey}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
 }
 
 const EXO_ASSET_LABEL_IRI = "https://exocortex.my/ontology/exo#Asset_label";
