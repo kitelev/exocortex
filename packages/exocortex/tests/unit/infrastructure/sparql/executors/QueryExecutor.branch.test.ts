@@ -41,6 +41,22 @@ describe("QueryExecutor branch coverage", () => {
 
   describe("executeService", () => {
     it("executes SERVICE operation (federated query)", async () => {
+      // Deterministic offline executor: inject an immediately-failing httpClient
+      // with no retries so a SILENT service returns empty WITHOUT any real network
+      // round-trip. The original test hit a LIVE public endpoint (dbpedia), which
+      // made it timing-fragile under parallel CI load — the 30s service timeout +
+      // 2×1s retry delays could blow past jest's 5s default and flake the gate
+      // (the QueryExecutor.branch flake observed post-TF-gate, kitelev/exocortex
+      // #3542 secondary scope). Asserting the same behaviour (SILENT on an
+      // unreachable endpoint → empty) without network keeps the test fast + stable.
+      const offlineExecutor = new QueryExecutor(tripleStore, {
+        serviceConfig: {
+          httpClient: () => Promise.reject(new Error("offline endpoint (test)")),
+          maxRetries: 0,
+          retryDelay: 0,
+        },
+      });
+
       const algebra: AlgebraOperation = {
         type: "service",
         endpoint: "http://dbpedia.org/sparql",
@@ -49,7 +65,7 @@ describe("QueryExecutor branch coverage", () => {
       };
 
       // SERVICE with silent=true should not throw even if endpoint is unreachable
-      const results = await executor.executeAll(algebra);
+      const results = await offlineExecutor.executeAll(algebra);
       // Silent service returns empty on failure
       expect(results).toHaveLength(0);
     });

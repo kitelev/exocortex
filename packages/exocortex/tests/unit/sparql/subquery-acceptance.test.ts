@@ -279,12 +279,12 @@ describe("Issue #2600: Subquery execution in ExoQLQueryExecutor", () => {
   // AC-4: ORDER BY + LIMIT in inner query
   // ---------------------------------------------------------------
   describe("AC-4: ORDER BY + LIMIT in inner query", () => {
-    // SKIPPED — kitelev/exocortex#3542: a subquery's inner ORDER BY … LIMIT/OFFSET
-    // is dropped when the subquery is JOINed with an outer pattern (rows return in
-    // insertion order). The inner query alone is correct; the bug is in the
-    // executeJoin × executeSubquery interaction. These two cases encode the correct
-    // SPARQL semantics and double as the regression test — un-skip when #3542 lands.
-    it.skip("should return only the N youngest people via subquery", async () => {
+    // kitelev/exocortex#3542 (FIXED): a subquery's inner ORDER BY … LIMIT/OFFSET
+    // was dropped when the subquery is JOINed with an outer pattern (rows returned
+    // in triple-store insertion order). Root cause: AlgebraTranslator nested Project
+    // INSIDE OrderBy, so ORDER BY on a non-selected variable (?age) lost its sort
+    // key. Fixed by ordering OrderBy before Project (SPARQL 1.1 §18.2.4.2).
+    it("should return only the N youngest people via subquery", async () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
 
@@ -312,8 +312,8 @@ describe("Issue #2600: Subquery execution in ExoQLQueryExecutor", () => {
       expect(names).not.toContain("Carol");
     });
 
-    // SKIPPED — kitelev/exocortex#3542 (same join × subquery ORDER BY defect).
-    it.skip("should respect OFFSET in inner query", async () => {
+    // kitelev/exocortex#3542 (FIXED) — same OrderBy-before-Project root cause.
+    it("should respect OFFSET in inner query", async () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
 
