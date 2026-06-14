@@ -235,10 +235,16 @@ export interface ProfileApplyManagerOptions {
    * lock) instead of hanging — the palette callsite then surfaces a Notice.
    *
    * The confirm-dialog wait is deliberately OUTSIDE this deadline — user
-   * think-time must never expire. Default 600_000 (10 min) — comfortably longer
-   * than the slowest HEALTHY multi-AssetSpace apply (the per-pull 120s and
-   * per-clone 300s bounds reject earlier on a genuinely failing step). Set `0`
-   * to disable (e.g. tests asserting the unbounded behaviour).
+   * think-time must never expire.
+   *
+   * This is the PER-AssetSpace budget: the effective deadline scales as
+   * `applyTimeoutMs × max(1, unitCount)` (AssetSpaces pull/clone/unmount
+   * sequentially), so a healthy 16-18-AS EKA-alpha cold apply is never
+   * false-positive-rejected (code-review MEDIUM). Default 600_000 (10 min/unit)
+   * — comfortably longer than the slowest HEALTHY single AS (per-pull 120s +
+   * per-clone 300s bounds, #3531, reject a genuinely stalled step far earlier
+   * with a clear message; this is the coarse never-hang backstop). Set `0` to
+   * disable (e.g. tests asserting the unbounded behaviour).
    */
   applyTimeoutMs?: number;
 }
@@ -367,6 +373,14 @@ export class ProfileApplyManager {
   private readonly vaultRootPath?: string;
   private readonly isSyncBusy?: () => boolean;
   private readonly applyTimeoutMs: number;
+  /**
+   * Monotonic apply-attempt token (Issue #3532 watchdog, code-review LOW). Each
+   * mutation claims a generation AFTER acquiring the lock; its `finally` releases
+   * the lock / pings heartbeat ONLY while still the active generation. This
+   * stops a watchdog-orphaned (stalled-then-resumed) mutation from releasing a
+   * newer apply's lock or pinging on its behalf.
+   */
+  private applyGeneration = 0;
 
   constructor(options: ProfileApplyManagerOptions) {
     this.app = options.app;
@@ -424,6 +438,7 @@ export class ProfileApplyManager {
       () => this.runReindexMountState(targetProfileUid, noticeOverride),
       `reindex ${targetProfileUid.slice(0, 8)}`,
       () => this.clearStuckSettingsState(),
+      this.applyTimeoutMs,
     );
   }
 
@@ -439,6 +454,8 @@ export class ProfileApplyManager {
     if (!acquired) {
       throw new Error(`Another switch is in progress (lock held). Try again shortly.`);
     }
+    // Generation claim AFTER acquire (code-review LOW) — see runApplyMutation.
+    const myGen = ++this.applyGeneration;
 
     const startedAt = this.now().getTime();
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -452,6 +469,7 @@ export class ProfileApplyManager {
 
       heartbeatTimer = setInterval(() => {
         // Best-effort heartbeat — swallow errors, lock manager logs them.
+        if (this.applyGeneration !== myGen) return; // abandoned (see myGen)
         void this.lockMgr.heartbeat();
       }, 30_000);
 
@@ -493,7 +511,9 @@ export class ProfileApplyManager {
       throw e;
     } finally {
       if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
-      await this.lockMgr.releaseLock();
+      // Release only if still the active generation (code-review LOW) — see
+      // runApplyMutation.
+      if (this.applyGeneration === myGen) await this.lockMgr.releaseLock();
     }
   }
 
@@ -742,31 +762,38 @@ export class ProfileApplyManager {
     const approved = await deps.confirmGate.confirmApply(plan);
     if (!approved) throw new ApplyAbortedByUser();
 
-    // Ensure `.exocortex/` exists before any lock/journal write — Obsidian's
-    // `vault.adapter.write` does NOT create parent dirs, so a fresh vault would
-    // otherwise throw ENOENT on the first lock/journal write (Issue #3532).
-    await this.ensureExocortexDir();
-
     // No-op early exit: no destroy + no materialize == mount-state already
     // matches the target. Re-index + record the selection (reindex-only path).
     // Still emit apply-completed so recoverIncompleteSwitch's tail-scan
     // has a clean cutoff for any prior aborted run (HIGH catch from review).
+    // Bracketing journal writes go through `vault.adapter` (the #3532 stall
+    // surface), so the whole branch — not just the inner reindex — runs under
+    // the watchdog (code-review MEDIUM). Calls `runReindexMountState` directly to
+    // avoid a redundant nested deadline.
     if (toDestroy.length === 0 && toMaterialize.length === 0) {
-      await this.appendJournal({
-        phase: "apply-starting",
-        targetUid: targetProfileUid,
-        ts: new Date(startedAt).toISOString(),
-      });
-      await this.reindexMountState(
-        targetProfileUid,
-        this.noChangeNotice(targetProfileLabel, currentAsUids.size),
+      await this.withApplyDeadline(
+        async () => {
+          await this.ensureExocortexDir();
+          await this.appendJournal({
+            phase: "apply-starting",
+            targetUid: targetProfileUid,
+            ts: new Date(startedAt).toISOString(),
+          });
+          await this.runReindexMountState(
+            targetProfileUid,
+            this.noChangeNotice(targetProfileLabel, currentAsUids.size),
+          );
+          await this.appendJournal({
+            phase: "apply-completed",
+            targetUid: targetProfileUid,
+            ts: this.now().toISOString(),
+            elapsedMs: this.now().getTime() - startedAt,
+          });
+        },
+        targetProfileLabel,
+        () => this.clearStuckSettingsState(),
+        this.applyTimeoutMs,
       );
-      await this.appendJournal({
-        phase: "apply-completed",
-        targetUid: targetProfileUid,
-        ts: this.now().toISOString(),
-        elapsedMs: this.now().getTime() - startedAt,
-      });
       return;
     }
 
@@ -776,7 +803,9 @@ export class ProfileApplyManager {
     // leave the apply pending forever (the macOS-desktop hang — `_switchInProgress`
     // never even flipped). On timeout the watchdog rejects + best-effort clears
     // `_switchInProgress` and releases the lock; the palette callsite surfaces
-    // the resulting error as a Notice.
+    // the resulting error as a Notice. The deadline scales with the unit count
+    // (sequential per-AS pull+clone) so a healthy large cold apply is not
+    // false-positive-rejected (code-review MEDIUM).
     await this.withApplyDeadline(
       () =>
         this.runApplyMutation({
@@ -790,6 +819,7 @@ export class ProfileApplyManager {
         }),
       targetProfileLabel,
       () => this.clearStuckLocalState(deps.localDataStore),
+      this.computeApplyDeadlineMs(toDestroy.length + toMaterialize.length),
     );
   }
 
@@ -814,11 +844,18 @@ export class ProfileApplyManager {
       infoBySubmodulePath,
       deps,
     } = ctx;
+    // Ensure `.exocortex/` exists before the lock/journal writes (Issue #3532) —
+    // under the watchdog so even a stalled mkdir/exists is bounded.
+    await this.ensureExocortexDir();
     // Acquire lock, set _switchInProgress.
     const acquired = await this.lockMgr.acquireLock(`apply-${targetProfileUid}`);
     if (!acquired) {
       throw new Error("Another apply is in progress (lock held). Try again shortly.");
     }
+    // Claim a generation AFTER acquiring the lock (code-review LOW): the finally
+    // releases the lock / the heartbeat pings ONLY while still active, so a
+    // watchdog-orphaned mutation can't release a newer apply's lock.
+    const myGen = ++this.applyGeneration;
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
     const stagingPaths: Array<{ asUid: string; stagingPath: string }> = [];
     // Tracks AS that were successfully cached в Phase 2 — drives the
@@ -849,6 +886,7 @@ export class ProfileApplyManager {
       });
 
       heartbeatTimer = setInterval(() => {
+        if (this.applyGeneration !== myGen) return; // abandoned (see myGen)
         void this.lockMgr.heartbeat();
       }, 30_000);
 
@@ -1048,7 +1086,11 @@ export class ProfileApplyManager {
     } finally {
       if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
       await this.releaseStagingPaths(stagingPaths);
-      await this.lockMgr.releaseLock();
+      // Release the lock ONLY if still the active generation (code-review LOW):
+      // a watchdog-orphaned mutation that resumes after a retry must not delete
+      // the newer apply's lock. The timed-out apply's lock is released by the
+      // watchdog's onTimeout handler instead.
+      if (this.applyGeneration === myGen) await this.lockMgr.releaseLock();
     }
   }
 
@@ -1177,11 +1219,8 @@ export class ProfileApplyManager {
     const approved = await confirmGate.confirmApply(plan);
     if (!approved) throw new ApplyAbortedByUser();
 
-    // Ensure `.exocortex/` exists before any lock/journal write (Issue #3532).
-    await this.ensureExocortexDir();
-
     // No-op early exit — mount-state already matches the target. Re-index +
-    // record the selection (reindex-only path).
+    // record the selection (reindex-only path; already watchdog-wrapped).
     if (toDestroy.length === 0 && toMaterialize.length === 0) {
       await this.reindexMountState(
         targetProfileUid,
@@ -1193,7 +1232,8 @@ export class ProfileApplyManager {
     // Never-hang watchdog (Issue #3532) — parity with the desktop path. Bound
     // the REST mount/unmount critical section so a stalled tarball mount /
     // `vault.adapter` write / refresh rejects deterministically instead of
-    // hanging; the timeout handler clears `_switchInProgress` + releases the lock.
+    // hanging; the timeout handler clears `_switchInProgress` + releases the
+    // lock. Deadline scales with the unit count (sequential per-AS mount).
     await this.withApplyDeadline(
       () =>
         this.runRestApplyMutation({
@@ -1207,6 +1247,7 @@ export class ProfileApplyManager {
         }),
       targetProfileLabel,
       () => this.clearStuckLocalState(localDataStore),
+      this.computeApplyDeadlineMs(toDestroy.length + toMaterialize.length),
     );
   }
 
@@ -1229,10 +1270,14 @@ export class ProfileApplyManager {
       restMount,
       localDataStore,
     } = ctx;
+    // Ensure `.exocortex/` exists before the lock/journal writes (Issue #3532).
+    await this.ensureExocortexDir();
     const acquired = await this.lockMgr.acquireLock(`apply-rest-${targetProfileUid}`);
     if (!acquired) {
       throw new Error("Another profile switch is in progress (lock held). Try again shortly.");
     }
+    // Generation claim AFTER acquire (code-review LOW) — see runApplyMutation.
+    const myGen = ++this.applyGeneration;
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
     try {
       // ExoSync D11 re-check (code-reviewer MEDIUM, PR #3461) — same
@@ -1253,6 +1298,7 @@ export class ProfileApplyManager {
         _switchInProgress: true,
       });
       heartbeatTimer = setInterval(() => {
+        if (this.applyGeneration !== myGen) return; // abandoned (see myGen)
         void this.lockMgr.heartbeat();
       }, 30_000);
 
@@ -1316,7 +1362,9 @@ export class ProfileApplyManager {
       throw e;
     } finally {
       if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
-      await this.lockMgr.releaseLock();
+      // Release only if still the active generation (code-review LOW) — see
+      // runApplyMutation.
+      if (this.applyGeneration === myGen) await this.lockMgr.releaseLock();
     }
   }
 
@@ -1934,9 +1982,10 @@ export class ProfileApplyManager {
     work: () => Promise<T>,
     label: string,
     onTimeout: () => Promise<void>,
+    timeoutMs: number,
   ): Promise<T> {
     const workPromise = work();
-    if (this.applyTimeoutMs <= 0) return workPromise;
+    if (timeoutMs <= 0) return workPromise;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let timedOut = false;
     const deadline = new Promise<never>((_resolve, reject) => {
@@ -1944,13 +1993,13 @@ export class ProfileApplyManager {
         timedOut = true;
         reject(
           new Error(
-            `applyProfile "${label}" timed out after ${this.applyTimeoutMs}ms — ` +
+            `applyProfile "${label}" timed out after ${timeoutMs}ms — ` +
               `a step stalled (network / git / filesystem). The vault may be ` +
               `unchanged or partially applied; reload Obsidian and re-check. ` +
               `(Issue #3532)`,
           ),
         );
-      }, this.applyTimeoutMs);
+      }, timeoutMs);
       // Unref so a pending timer never keeps a Node test process alive; guarded
       // because Electron renderer / browser timers expose no `unref`.
       (timer as unknown as { unref?: () => void }).unref?.();
@@ -1963,6 +2012,27 @@ export class ProfileApplyManager {
         await onTimeout().catch(() => undefined);
       }
     }
+  }
+
+  /**
+   * Compute the never-hang watchdog deadline (Issue #3532, code-review MEDIUM)
+   * scaled by the amount of work. The post-confirm loop pulls + clones each
+   * AssetSpace SEQUENTIALLY (Phase 1 pull ≤120s + Phase 2 clone ≤300s per AS),
+   * so a flat deadline would false-positive-reject a HEALTHY large cold apply
+   * (EKA alpha mounts ~16-18 AssetSpaces). Allot a per-unit budget on top of the
+   * configured base; `applyTimeoutMs <= 0` keeps the watchdog disabled.
+   */
+  private computeApplyDeadlineMs(unitCount: number): number {
+    if (this.applyTimeoutMs <= 0) return 0;
+    // `applyTimeoutMs` is the PER-UNIT budget; the overall deadline is it × the
+    // number of AssetSpaces being pulled/cloned/unmounted (they run
+    // sequentially). A single-AS apply gets the full base; a 16-18-AS EKA-alpha
+    // cold apply gets proportionally more so a healthy run is never
+    // false-positive-rejected. Finite either way (never-hang). Generous by
+    // design — the tight per-step protection is #3531's 120s/300s bounds, which
+    // reject a stalled network/git step (with a clear message) well before this
+    // coarse backstop.
+    return this.applyTimeoutMs * Math.max(1, unitCount);
   }
 
   /**

@@ -378,7 +378,7 @@ function setup(opts: SetupOptions) {
     });
   }
 
-  const { app, fsFolders } = makeFakeApp(files);
+  const { app, fsFiles, fsFolders } = makeFakeApp(files);
 
   // Pre-populate folder listing for materialized AS — used by enumerateFilesUnder.
   for (const folder of opts.materialized.map((uid) => allAs.find((a) => a.uid === uid)?.folder).filter((f): f is string => f !== undefined)) {
@@ -464,6 +464,7 @@ function setup(opts: SetupOptions) {
     assetSpaceManager,
     confirmGate,
     app,
+    fsFiles,
     fsFolders,
     allAs,
   };
@@ -1023,6 +1024,53 @@ describe("ProfileApplyManager.applyProfile", () => {
       expect(localDataStore.getActiveProfileUid()).toBe("target");
       expect(localDataStore.isSwitchInProgress()).toBe(false);
       expect(gitOps.calls.some((c) => c.op === "submoduleAdd")).toBe(true);
+    });
+
+    it("releases the lock on a successful apply (generation guard normal path)", async () => {
+      // Regression guard for the generation-token finally: the success path must
+      // STILL release the lock (`this.applyGeneration === myGen` true when no
+      // concurrent apply bumped the generation). A stuck lock would block the
+      // next apply with «another apply in progress».
+      const { mgr, app } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: watchdogIncludes,
+        materialized: watchdogMaterialized,
+        applyTimeoutMs: 5_000,
+      });
+      await expect(mgr.applyProfile("target")).resolves.toBeUndefined();
+      expect(await app.vault.adapter.exists(".exocortex/switch-lock.json")).toBe(
+        false,
+      );
+    });
+
+    it("scales the deadline by AssetSpace count (per-unit budget, code-review MEDIUM)", async () => {
+      // A 50ms-per-unit budget on a 2-AS materialize gives a 100ms overall
+      // deadline. With the first pull hanging, the apply still rejects (proving
+      // the deadline is finite and unit-scaled, not a flat per-step value).
+      const { mgr, assetSpaceManager } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: [
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+          "ems-uid",
+          "kpc-uid",
+        ],
+        materialized: [
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+        applyTimeoutMs: 50, // 2 units → 100ms effective deadline
+      });
+      assetSpaceManager.hangOnPull = "ems-uid";
+      const start = Date.now();
+      await expect(mgr.applyProfile("target")).rejects.toThrow(/timed out/);
+      // Sanity: settled well under jest's 5s default (proves finiteness, not the
+      // exact deadline — timing in CI is noisy).
+      expect(Date.now() - start).toBeLessThan(2_000);
     });
   });
 
