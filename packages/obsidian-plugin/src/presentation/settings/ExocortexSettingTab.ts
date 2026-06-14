@@ -182,6 +182,25 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Settings homoiconization")
+      .setDesc(
+        "When enabled, plugin settings are materialised as vault assets in an " +
+          'exocortex-settings/ folder so they are editable as notes and synced ' +
+          "alongside other assets. When disabled (default), settings live only " +
+          "in data.json and that folder is never created. Turning this off " +
+          "leaves any already-migrated assets on disk untouched (never deleted). " +
+          "Change applies on the next plugin reload. Issue #3539.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.settingsHomoiconizationEnabled)
+          .onChange(async (value) => {
+            this.plugin.settings.settingsHomoiconizationEnabled = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("Lazy bootstrap folders")
       .setDesc(
         "Path prefixes (one per line, trailing slash required) walked eagerly " +

@@ -1914,6 +1914,22 @@ export default class ExocortexPlugin extends Plugin {
    *  4. live watchers for cross-device changes arriving via sync.
    */
   private async initVaultSettings(): Promise<void> {
+    // Issue #3539 — master switch (default OFF). When disabled, skip the
+    // entire D2 pipeline: no scanAll / applyScan / migrateMissing and no
+    // metadataCache watcher. `vaultSettingsStore` stays null, so
+    // `saveSettings()` write-back is a no-op (optional-chained) and the
+    // plugin behaves exactly as pre-D2 (reads/writes only data.json). No
+    // `exocortex-settings/` folder is created for new users; any already-
+    // migrated assets are left on disk untouched (re-adopted on re-enable).
+    // The gate is checked once here on load, so flipping the toggle in the
+    // SettingTab takes effect on the next plugin reload.
+    if (this.settings.settingsHomoiconizationEnabled !== true) {
+      this.logger.info(
+        "[D2] settings-homoiconization disabled (settingsHomoiconizationEnabled=false) — skipping vault-asset settings init",
+      );
+      return;
+    }
+
     const store = new VaultSettingsStore({
       app: this.app,
       logger: this.logger,
