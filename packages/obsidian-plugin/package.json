@@ -14,7 +14,8 @@
     "test:visual": "npx playwright test -c playwright-ct.config.ts --grep visual",
     "test:visual:update": "npx playwright test -c playwright-ct.config.ts --grep visual --update-snapshots",
     "test:e2e": "playwright test -c playwright-e2e.config.ts",
-    "test:e2e:local": "cd ../.. && ./scripts/test-e2e-local.sh"
+    "test:e2e:local": "cd ../.. && ./scripts/test-e2e-local.sh",
+    "test:e2e:eka": "./scripts/test-eka-obsidian-leg.sh"
   },
   "dependencies": {
     "@codemirror/state": "^6.5.2",

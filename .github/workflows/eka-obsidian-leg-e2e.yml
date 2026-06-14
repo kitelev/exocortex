@@ -1,0 +1,114 @@
+name: EKA Obsidian-leg E2E
+
+# Opt-in / scheduled live-network smoke for the EKA "Obsidian leg" — drives the
+# full alpha path (bootstrap → add → apply-profile → create) through the plugin
+# against LIVE GitHub (public + private kitelev/exoas-*) in a containerised
+# Obsidian. See packages/obsidian-plugin/tests/e2e/eka/eka-obsidian-leg.spec.ts.
+#
+# ⛔ Deliberately NOT a pull_request trigger and NOT a required check: every run
+# clones live private repos with a write-capable PAT, so it must never gate PRs
+# (would make every PR pull live exoas-* and inherit network flakiness). It runs:
+#   - workflow_dispatch — manual on-demand,
+#   - schedule          — nightly regression smoke,
+#   - push: [main]      — post-merge smoke after the test (or the plugin) changes.
+on:
+  workflow_dispatch: {}
+  schedule:
+    # 02:00 UTC nightly (07:00 Asia/Almaty).
+    - cron: "0 2 * * *"
+  push:
+    branches: [main]
+    paths:
+      - "packages/obsidian-plugin/tests/e2e/eka/**"
+      - "packages/obsidian-plugin/playwright-eka-obsidian-leg.config.ts"
+      - "packages/obsidian-plugin/Dockerfile.eka-e2e"
+      - "packages/obsidian-plugin/scripts/test-eka-obsidian-leg.sh"
+      - "packages/obsidian-plugin/src/**"
+      - "packages/exocortex/src/**"
+      - ".github/workflows/eka-obsidian-leg-e2e.yml"
+
+# Avoid piling up scheduled + push runs.
+concurrency:
+  group: eka-obsidian-leg-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  eka-obsidian-leg:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build plugin (main.js)
+        run: |
+          npm run build -w exocortex
+          npm run build -w @kitelev/exocortex-services
+          node packages/obsidian-plugin/esbuild.config.mjs production
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve base image (pull from GHCR or build locally)
+        id: base
+        run: |
+          set -euo pipefail
+          LATEST="ghcr.io/kitelev/exocortex-ci:latest"
+          if docker pull "$LATEST" 2>/dev/null; then
+            echo "::notice::Pulled pre-built base $LATEST"
+            echo "image=$LATEST" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No pre-built base in GHCR — building locally from Dockerfile.ci"
+            docker build -t exocortex-ci-base:local -f packages/obsidian-plugin/Dockerfile.ci .
+            echo "image=exocortex-ci-base:local" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build EKA e2e Docker image
+        run: |
+          docker build \
+            --build-arg "BASE_IMAGE=${{ steps.base.outputs.image }}" \
+            -f packages/obsidian-plugin/Dockerfile.eka-e2e \
+            -t exocortex-eka-e2e:ci \
+            .
+
+      - name: Run EKA Obsidian-leg e2e
+        env:
+          # REGISTRY_TOKEN is a provisioned org secret: a PAT with read access
+          # to the private kitelev/exoas-* repos. Mapped to the env var the spec
+          # reads (EKA_E2E_PAT).
+          EKA_E2E_PAT: ${{ secrets.REGISTRY_TOKEN }}
+        run: |
+          if [ -z "${EKA_E2E_PAT}" ]; then
+            echo "::error::REGISTRY_TOKEN secret is empty — cannot run the live EKA Obsidian-leg e2e."
+            exit 1
+          fi
+          mkdir -p eka-results
+          docker run --init --rm \
+            -e EKA_E2E_PAT="${EKA_E2E_PAT}" \
+            -v "$PWD/eka-results:/app/packages/obsidian-plugin/test-results-eka" \
+            exocortex-eka-e2e:ci
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: eka-obsidian-leg-results
+          path: eka-results
+          retention-days: 14
+          if-no-files-found: ignore
