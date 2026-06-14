@@ -3099,11 +3099,15 @@ export default class ExocortexPlugin extends Plugin {
     });
 
     // RFC 13da049f Phase 6.2/6.3 — Bootstrap vault + Add AssetSpace by URL.
-    // Desktop-only: both reuse the Phase 5 apply deps (AssetSpaceManager
-    // REST pull + GitSubmoduleOps staging move / .gitmodules). Registered only
-    // when those deps are wired (desktop + vault.adapter.basePath available).
-    if (applyDeps !== null) {
-      this.registerBootstrapCommands(applyDeps, localDataStore);
+    // Desktop reuses the Phase 5 apply deps (AssetSpaceManager REST pull +
+    // GitSubmoduleOps staging move / .gitmodules). Mobile (#3535) reuses the
+    // cross-platform RestAssetSpaceMount (RFC 01a83de8) — the same adapter
+    // apply-profile already mounts through — so a fresh mobile vault can
+    // cold-start (bootstrap → add registry/profiles → apply-profile) without a
+    // desktop. The Desktop↔Mobile Command Parity invariant requires both
+    // surfaces; the gate mirrors the apply-profile gate above.
+    if (applyDeps !== null || (Platform.isMobile && restMount !== null)) {
+      this.registerBootstrapCommands(applyDeps, restMount, localDataStore);
     }
 
     this.logger.info(
@@ -3113,15 +3117,22 @@ export default class ExocortexPlugin extends Plugin {
 
   /**
    * Wire + register the RFC 13da049f Phase 6.2/6.3 palette commands
-   * («Bootstrap vault» + «Add AssetSpace by URL»). Reuses the Phase 5
-   * `AssetSpaceManager` (REST tarball pull) and `GitSubmoduleOps` (staging
-   * move + `.gitmodules` text manipulation) — no REST/security logic is
-   * duplicated. Desktop-only; the caller gates on `applyDeps !== null`.
+   * («Bootstrap vault» + «Add AssetSpace by URL»). On DESKTOP reuses the Phase 5
+   * `AssetSpaceManager` (REST tarball pull) + `GitSubmoduleOps` (staging move +
+   * `.gitmodules`) — no REST/security logic duplicated. On MOBILE (#3535,
+   * `applyDeps === null`) reuses the cross-platform `RestAssetSpaceMount`
+   * (RFC 01a83de8) — `vault.adapter` materialise, no Node `fs`. Both commands
+   * register on both platforms (Desktop↔Mobile Command Parity).
+   *
+   * Prefers the desktop git path when wired; falls back to the REST mount only
+   * when `applyDeps === null` (mobile — the gate guarantees `restMount !== null`
+   * there).
    */
   private registerBootstrapCommands(
     applyDeps: {
       gitOps: GitSubmoduleOps;
-    },
+    } | null,
+    restMount: RestAssetSpaceMount | null,
     localDataStore: PluginLocalDataStore,
   ): void {
     const deriveFolderName = (url: string): string => {
@@ -3129,19 +3140,30 @@ export default class ExocortexPlugin extends Plugin {
       return repo.startsWith("exoas-") ? repo.slice("exoas-".length) : repo;
     };
 
+    // Mobile path: desktop deps unavailable (`applyDeps === null`) but the
+    // cross-platform `RestAssetSpaceMount` is wired. `RestAssetSpaceMount`
+    // structurally satisfies `IRestBootstrapMount` (mount() → {sha},
+    // readGitmodulesEntries()).
+    const restStrategy =
+      applyDeps === null && restMount !== null ? restMount : undefined;
+
     const bootstrapCommands = new BootstrapAssetSpaceCommands({
       // Issue #3382 — rebuild the AssetSpaceManager per invocation from the
       // CURRENT stored PAT instead of reusing the onload-captured
       // `applyDeps.assetSpaceManager` (which froze an empty-PAT client
       // when the vault had no PAT at load time). A PAT configured after onload
       // now authenticates Bootstrap / Add-AssetSpace pulls without a reload.
-      getPuller: () =>
-        buildAssetSpacePuller({
-          app: this.app,
-          localDataStore,
-          notifier: this.notifier,
-        }),
-      gitOps: applyDeps.gitOps,
+      // Omitted on the mobile REST path (restStrategy handles materialise).
+      getPuller: restStrategy
+        ? undefined
+        : () =>
+            buildAssetSpacePuller({
+              app: this.app,
+              localDataStore,
+              notifier: this.notifier,
+            }),
+      gitOps: applyDeps?.gitOps,
+      restMount: restStrategy,
       localStore: localDataStore,
       vaultExists: (p) => this.app.vault.adapter.exists(p),
       listFolder: (dir) => this.app.vault.adapter.list(dir),

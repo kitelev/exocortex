@@ -15,9 +15,12 @@
  * is injected via {@link BootstrapAssetSpaceCommandsDeps} so the class is fully
  * unit-testable with fakes. Real wiring lives in `ExocortexPlugin`.
  *
- * Desktop-only (Phase 6 scope, like Phase 5): the injected puller / gitOps throw
- * on mobile, and the plugin registers these commands only when desktop deps are
- * available.
+ * Cross-platform (#3535): on DESKTOP the injected `getPuller` + `gitOps` run the
+ * staging-pull + `.gitmodules` path (Node `fs`); on MOBILE an injected
+ * {@link IRestBootstrapMount} (RFC 01a83de8 `RestAssetSpaceMount`) materialises
+ * via `vault.adapter` (no Node `fs`). The plugin wires whichever is available
+ * (`applyDeps` on desktop, `restMount` on mobile) and registers both commands on
+ * both platforms — Desktop↔Mobile Command Parity invariant.
  *
  * Commands provided:
  *   1. `Exocortex: Bootstrap vault` — cold-start an empty vault with the TS-floor
@@ -64,6 +67,36 @@ export interface IGitSubmoduleOps {
   ): Promise<{ added: boolean }>;
 }
 
+/**
+ * Cross-platform (incl. iOS) materialise + `.gitmodules` strategy — the
+ * mobile-capable counterpart of {@link IAssetSpacePuller} + {@link IGitSubmoduleOps}
+ * (#3535). A single combined op (pull tarball → materialise into the vault
+ * folder → write `.gitmodules`) over `vault.adapter`, with NO Node `fs` /
+ * staging dir / file-only registry split. Satisfied structurally by
+ * `RestAssetSpaceMount` (RFC 01a83de8) — the same adapter that `apply-profile`
+ * already mounts through on mobile.
+ *
+ * When injected, it fully replaces the desktop `getPuller` + `gitOps` path:
+ * `.gitmodules` becomes the single source of truth that `apply-profile`
+ * (`listAllAssetSpaceInfos`) reads, written regardless of `.git` presence (a
+ * fresh mobile vault has no `.git`).
+ */
+export interface IRestBootstrapMount {
+  /**
+   * Pull `gitUrl`'s tarball, materialise it into `submodulePath`, and write the
+   * `.gitmodules` entry — all via `vault.adapter`. Returns the tarball SHA.
+   */
+  mount(
+    gitUrl: string,
+    submodulePath: string,
+    ref: string,
+  ): Promise<{ sha: string }>;
+  /** Read the current `.gitmodules` (path, url) entries via `vault.adapter`. */
+  readGitmodulesEntries(): Promise<
+    Array<{ submodulePath: string; url: string }>
+  >;
+}
+
 /** Subset of {@link PluginLocalDataStore} used for AC10 file-only tracking. */
 export interface IFileOnlyAssetSpaceStore {
   upsertFileOnlyAssetSpace(entry: {
@@ -91,9 +124,19 @@ export interface BootstrapAssetSpaceCommandsDeps {
    * plugin loaded → 401/404 on private-repo pulls. Production wiring resolves
    * this to {@link ApplyDepsFactory.buildAssetSpacePuller}.
    */
-  getPuller: () => Promise<IAssetSpacePuller>;
-  gitOps: IGitSubmoduleOps;
-  localStore: IFileOnlyAssetSpaceStore;
+  getPuller?: () => Promise<IAssetSpacePuller>;
+  gitOps?: IGitSubmoduleOps;
+  localStore?: IFileOnlyAssetSpaceStore;
+  /**
+   * Mobile (#3535) cross-platform materialise strategy. When wired, it replaces
+   * the desktop `getPuller` + `gitOps` path entirely (the REST mount does the
+   * pull + materialise + `.gitmodules` write itself). Desktop wiring passes the
+   * `getPuller` + `gitOps` + `localStore` trio (no `restMount`); mobile wiring
+   * passes `restMount` (and may still pass `localStore`, which is unused on the
+   * REST path). At least one of {`getPuller` + `gitOps`, `restMount`} must be
+   * present, else `materialize` / `listTrackedEntries` throw.
+   */
+  restMount?: IRestBootstrapMount;
   /** `vault.adapter.exists(path)` wrapper. */
   vaultExists: (path: string) => Promise<boolean>;
   /** `vault.adapter.list(dir)` wrapper. */
@@ -166,7 +209,7 @@ export class BootstrapAssetSpaceCommands {
    *   - `bootstrapped` — at least one `assetspaces/<ns>/` folder has content.
    */
   async detectVaultState(): Promise<VaultBootstrapState> {
-    const entries = await this.d.gitOps.readGitmodulesEntries();
+    const entries = await this.listTrackedEntries();
     const materialized = await this.hasMaterializedAssetSpaces();
     if (entries.length > 0) {
       return materialized ? "bootstrapped" : "clone-needs-fetch";
@@ -213,7 +256,10 @@ export class BootstrapAssetSpaceCommands {
     }
 
     const isGit = await this.d.isGitVault();
-    if (!isGit) {
+    // On mobile (restMount) the REST mount always writes `.gitmodules` via
+    // vault.adapter regardless of `.git` presence (apply-profile reads it), so
+    // the desktop "file-only mode" notice would be misleading — suppress it.
+    if (!isGit && this.d.restMount === undefined) {
       this.d.notify(
         "Vault is not a git repository — bootstrapping in file-only mode (no .gitmodules; AssetSpaces tracked device-locally).",
       );
@@ -288,7 +334,9 @@ export class BootstrapAssetSpaceCommands {
     }
 
     const isGit = await this.d.isGitVault();
-    if (!isGit) {
+    // See invokeBootstrap: the mobile REST path writes `.gitmodules` regardless,
+    // so the desktop "file-only mode" notice does not apply.
+    if (!isGit && this.d.restMount === undefined) {
       this.d.notify(
         "Vault is not a git repository — adding in file-only mode (no .gitmodules; tracked device-locally).",
       );
@@ -322,7 +370,7 @@ export class BootstrapAssetSpaceCommands {
   private async fetchTrackedAssetSpaces(): Promise<void> {
     let entries: Array<{ submodulePath: string; url: string }>;
     try {
-      entries = await this.d.gitOps.readGitmodulesEntries();
+      entries = await this.listTrackedEntries();
     } catch (e) {
       this.d.notify(`Bootstrap: could not read .gitmodules — ${this.msg(e)}`);
       return;
@@ -365,15 +413,44 @@ export class BootstrapAssetSpaceCommands {
     submodulePath: string,
     isGit: boolean,
   ): Promise<MaterializeResult> {
+    // Mobile (#3535 / RFC 01a83de8): one cross-platform op — pull the tarball,
+    // materialise it into the vault folder, and write the `.gitmodules` entry,
+    // all via `vault.adapter` (no Node fs, no staging dir, no file-only
+    // registry split). `.gitmodules` is the single source of truth that
+    // apply-profile (`listAllAssetSpaceInfos`) reads, so it is written
+    // regardless of the `isGit` flag (a fresh mobile vault has no `.git`).
+    if (this.d.restMount !== undefined) {
+      const { sha } = await this.d.restMount.mount(
+        url,
+        submodulePath,
+        this.ref,
+      );
+      return { folderName: submodulePath, sha };
+    }
+
+    // Desktop path — staging tarball pull + rename-into-vault + `.gitmodules`
+    // append (git vault) / file-only registry (AC10 non-git vault).
+    const getPuller = this.d.getPuller;
+    const gitOps = this.d.gitOps;
+    const localStore = this.d.localStore;
+    if (
+      getPuller === undefined ||
+      gitOps === undefined ||
+      localStore === undefined
+    ) {
+      throw new Error(
+        "BootstrapAssetSpaceCommands: desktop materialise requires getPuller + gitOps + localStore (or wire restMount for mobile)",
+      );
+    }
     // Resolve the puller lazily so the pull uses the PAT current at
     // command-execution time, not the one captured at plugin onload (#3382).
-    const puller = await this.d.getPuller();
+    const puller = await getPuller();
     const result = await puller.pullAssetSpace(
       `bootstrap-${basename(submodulePath)}`,
       url,
       this.ref,
     );
-    await this.d.gitOps.renameIntoVault(result.stagingPath, submodulePath);
+    await gitOps.renameIntoVault(result.stagingPath, submodulePath);
     // Issue #3391: `renameIntoVault` MOVED the staging dir into the vault, so
     // its StagingDirTracker entry now points at a path that no longer exists.
     // `pullAssetSpace` keeps the dir alive on success by design (caller owns
@@ -388,9 +465,9 @@ export class BootstrapAssetSpaceCommands {
     // cleanup convention (`stagingTracker.release(...).catch(() => undefined)`).
     await puller.releaseStaging(result.stagingPath).catch(() => undefined);
     if (isGit) {
-      await this.d.gitOps.appendGitmodulesEntry(submodulePath, url);
+      await gitOps.appendGitmodulesEntry(submodulePath, url);
     } else {
-      await this.d.localStore.upsertFileOnlyAssetSpace({
+      await localStore.upsertFileOnlyAssetSpace({
         folderName: submodulePath,
         url,
         sha: result.sha,
@@ -444,6 +521,25 @@ export class BootstrapAssetSpaceCommands {
     } catch {
       // Best-effort re-index; failure must not surface as a bootstrap error.
     }
+  }
+
+  /**
+   * Read the `.gitmodules` (path, url) entries via whichever strategy is wired —
+   * the mobile {@link IRestBootstrapMount} (vault.adapter) or the desktop
+   * {@link IGitSubmoduleOps} (Node fs). Throws if neither is wired.
+   */
+  private async listTrackedEntries(): Promise<
+    Array<{ submodulePath: string; url: string }>
+  > {
+    if (this.d.restMount !== undefined) {
+      return this.d.restMount.readGitmodulesEntries();
+    }
+    if (this.d.gitOps !== undefined) {
+      return this.d.gitOps.readGitmodulesEntries();
+    }
+    throw new Error(
+      "BootstrapAssetSpaceCommands: neither restMount (mobile) nor gitOps (desktop) wired",
+    );
   }
 
   private msg(e: unknown): string {

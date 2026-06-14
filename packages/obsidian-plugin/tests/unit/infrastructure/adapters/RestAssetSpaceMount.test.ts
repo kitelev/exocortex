@@ -344,3 +344,48 @@ describe("RestAssetSpaceMount.unmount", () => {
     );
   });
 });
+
+describe("RestAssetSpaceMount.readGitmodulesEntries (#3535 — mobile vault state)", () => {
+  it("returns [] when .gitmodules is absent", async () => {
+    const adapter = new InMemoryAdapter();
+    const mount = makeMount(adapter, makeFakeClient(new ArrayBuffer(0)));
+    await expect(mount.readGitmodulesEntries()).resolves.toEqual([]);
+  });
+
+  it("parses (path, url) entries from a vault.adapter .gitmodules", async () => {
+    const adapter = new InMemoryAdapter();
+    await adapter.write(
+      ".gitmodules",
+      `[submodule "assetspaces/kitelev/exoas-exo"]\n` +
+        `\tpath = assetspaces/kitelev/exoas-exo\n` +
+        `\turl = https://github.com/kitelev/exoas-exo\n` +
+        `[submodule "assetspaces/kitelev/exoas-exocmd"]\n` +
+        `\tpath = assetspaces/kitelev/exoas-exocmd\n` +
+        `\turl = https://github.com/kitelev/exoas-exocmd\n`,
+    );
+    const mount = makeMount(adapter, makeFakeClient(new ArrayBuffer(0)));
+    await expect(mount.readGitmodulesEntries()).resolves.toEqual([
+      {
+        submodulePath: "assetspaces/kitelev/exoas-exo",
+        url: "https://github.com/kitelev/exoas-exo",
+      },
+      {
+        submodulePath: "assetspaces/kitelev/exoas-exocmd",
+        url: "https://github.com/kitelev/exoas-exocmd",
+      },
+    ]);
+  });
+
+  it("round-trips an entry written by mount() (mount → read)", async () => {
+    const adapter = new InMemoryAdapter();
+    const tarball = await makeTarball("kitelev-exoas-ems-abc1234", [
+      { name: "README.md", data: new TextEncoder().encode("# EMS\n") },
+    ]);
+    const mount = makeMount(adapter, makeFakeClient(tarball));
+    await mount.mount(URL_OK, PATH_OK, "main");
+
+    await expect(mount.readGitmodulesEntries()).resolves.toEqual([
+      { submodulePath: PATH_OK, url: URL_OK },
+    ]);
+  });
+});
