@@ -25,7 +25,9 @@ const baseGrounding: GroundingDefinition = {
   label: "g",
   type: GroundingType.PROPERTY_SET,
   targetProperty: "ems__Effort_status",
-  targetValue: "[[ems__EffortStatusDone]]",
+  // RFC 918a2b65 Phase 4: legacy `targetValue` was dropped from
+  // GroundingDefinition; the typed ref-form replacement is `targetValueRef`.
+  targetValueRef: "[[ems__EffortStatusDone]]",
 };
 
 function makeRC(
@@ -621,7 +623,11 @@ describe("CommandExecutionFlow", () => {
       await flow.run(rc, { targetIRI: "iri://x", filePath: "x.md" });
 
       expect(openFn).toHaveBeenCalledTimes(1);
-      expect(openFn).toHaveBeenCalledWith("01 Inbox/abc-uuid.md");
+      // RFC ce27e55d: the flow forwards an opts bag carrying `sameTab`
+      // (command.openInSameTab); makeRC() omits the flag → undefined.
+      expect(openFn).toHaveBeenCalledWith("01 Inbox/abc-uuid.md", {
+        sameTab: undefined,
+      });
     });
 
     it("does nothing when fileOpener is omitted (CLI/headless surface)", async () => {

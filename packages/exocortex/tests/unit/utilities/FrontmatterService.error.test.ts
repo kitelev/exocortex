@@ -174,7 +174,9 @@ describe("FrontmatterService Edge Cases", () => {
       const content = "---\n---\nBody";
       const result = service.updateProperty(content, "tags", ["a", "b", "c"]);
 
-      expect(result).toContain("tags: a,b,c");
+      // FrontmatterService.serializeValue emits arrays as multi-line YAML lists
+      // (two-space-indented `- item`), not a comma-joined scalar.
+      expect(result).toContain("tags:\n  - a\n  - b\n  - c");
     });
   });
 

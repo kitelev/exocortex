@@ -35,6 +35,24 @@ import { IFileSystemReader, IFileSystemWriter } from "../../../src/interfaces/IF
 const TASK_IRI = "https://exocortex.my/ontology/ems/task-smoke-001";
 const FILE_PATH = "/vault/task-smoke-001.md";
 
+// RFC 9d20c91f Phase 3: `exocmd__Grounding_type` is a wikilink-form UID ref into
+// the `exocmd__GroundingType` catalog (mirror of
+// packages/exocortex/src/domain/constants/GroundingTypeUIDs.ts), NOT a bare
+// string. A bare string fails CommandResolver.resolveGroundingTypeReference →
+// grounding inert → command dropped from resolveForAsset.
+const GROUNDING_TYPE_WIKILINK: Record<string, string> = {
+  property_set: "[[cf3bb923-f1f1-40be-b728-782844402426]]",
+  property_delete: "[[4bdf1d0b-e9da-4d96-bafe-c5aaef8c2bd5]]",
+  composite: "[[8f9a57db-3865-4886-92fb-c5ab7f3c3fa3]]",
+  service_call: "[[9bf9fc99-ac37-4e51-b9f5-bd920099947c]]",
+  create_instance: "[[4367e2d6-6c92-450a-becb-abce1fb07682]]",
+  property_append: "[[572f7e69-a8a1-42f6-8113-5aa65cc4b552]]",
+  property_increment: "[[afc29f90-45eb-4f94-9fe2-2ce738759161]]",
+  property_shift: "[[f4e5266f-f3cc-49fd-a5a5-ce1e8b7847a4]]",
+  sparql_update: "[[79c3e709-8d1d-4694-bcc6-b9ff07d59b86]]",
+  workflow_transition: "[[5c1a2552-d576-496d-8823-563573dd1e2f]]",
+};
+
 const TASK_FRONTMATTER = [
   "---",
   "exo__Asset_uid: task-smoke-001",
@@ -123,7 +141,6 @@ async function seedCommand(
     gndUid: string;
     gndType: string;
     gndTargetProperty?: string;
-    gndTargetValue?: string;
     gndTargetValueRef?: string;
     gndTargetValueLiteral?: string;
     gndTargetValueSubstitution?: string;
@@ -152,16 +169,15 @@ async function seedCommand(
     new Triple(gndSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
     new Triple(gndSubject, Namespace.EXO.term("Asset_uid"), new Literal(opts.gndUid)),
     new Triple(gndSubject, Namespace.EXO.term("Asset_label"), new Literal(`Gnd: ${opts.cmdLabel}`)),
-    new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal(opts.gndType)),
+    new Triple(
+      gndSubject,
+      Namespace.EXOCMD.term("Grounding_type"),
+      new Literal(GROUNDING_TYPE_WIKILINK[opts.gndType] ?? opts.gndType),
+    ),
   ];
   if (opts.gndTargetProperty) {
     gndTriples.push(
       new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_targetProperty"), new Literal(opts.gndTargetProperty)),
-    );
-  }
-  if (opts.gndTargetValue) {
-    gndTriples.push(
-      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_targetValue"), new Literal(opts.gndTargetValue)),
     );
   }
   if (opts.gndTargetValueRef) {

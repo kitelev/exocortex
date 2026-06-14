@@ -347,12 +347,13 @@ describe("SPARQL Critical User Paths (Integration)", () => {
 
       expect(results).toHaveLength(4);
       const orderedLabels = results.map((r) => (r.get("label") as Literal).value);
-      // ORDER BY DESC uses string comparison for typed literals in current implementation
-      // "8" > "5" > "3" > "10" in string ordering
-      expect(orderedLabels[0]).toBe("Fix bug in query optimizer"); // "8"
-      expect(orderedLabels[1]).toBe("Add integration tests"); // "5"
-      expect(orderedLabels[2]).toBe("Book flights"); // "3"
-      expect(orderedLabels[3]).toBe("Implement SPARQL parser"); // "10"
+      // ORDER BY DESC(?votes) now sorts numeric typed literals numerically
+      // (10 > 8 > 5 > 3), not lexicographically. SPARQL §15.1 — ordering
+      // respects the operand datatype for xsd numerics.
+      expect(orderedLabels[0]).toBe("Implement SPARQL parser"); // 10
+      expect(orderedLabels[1]).toBe("Fix bug in query optimizer"); // 8
+      expect(orderedLabels[2]).toBe("Add integration tests"); // 5
+      expect(orderedLabels[3]).toBe("Book flights"); // 3
     });
   });
 
