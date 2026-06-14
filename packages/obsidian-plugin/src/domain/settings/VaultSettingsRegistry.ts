@@ -258,6 +258,9 @@ export const NON_HOMOICONIZABLE_FIELDS: readonly string[] = [
   "pat", // secret (LocalSecretsStore) — never even in data.json
   "displayNameSettings", // structural (nested object) — deferred (D26)
   "logChannels", // structural (nested object) — deferred (D26)
+  "settingsHomoiconizationEnabled", // Issue #3539 — master switch that GATES
+  // the homoiconization feature; cannot itself be a vault asset (would depend
+  // on the thing it controls). data.json-only, never migrated.
 ];
 
 const byField = new Map(VAULT_SETTINGS_REGISTRY.map((d) => [d.field, d]));
