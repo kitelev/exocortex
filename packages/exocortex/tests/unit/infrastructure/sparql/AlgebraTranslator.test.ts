@@ -411,11 +411,12 @@ describe("AlgebraTranslator", () => {
       const ast = parser.parse(query);
       const algebra = translator.translate(ast);
 
-      // ORDER BY wraps REDUCED
-      expect(algebra.type).toBe("orderby");
-      const reduced = (algebra as any).input;
-      expect(reduced.type).toBe("reduced");
-      expect(reduced.input.type).toBe("project");
+      // SPARQL 1.1 §18.2.4.2 nesting (outer→inner): REDUCED → Project → OrderBy.
+      // OrderBy sits INSIDE Project so it can sort by non-selected vars (#3542).
+      expect(algebra.type).toBe("reduced");
+      const project = (algebra as any).input;
+      expect(project.type).toBe("project");
+      expect(project.input.type).toBe("orderby");
     });
 
     it("translates SELECT REDUCED with LIMIT", () => {
@@ -439,9 +440,12 @@ describe("AlgebraTranslator", () => {
       const ast = parser.parse(query);
       const algebra = translator.translate(ast);
 
-      expect(algebra.type).toBe("orderby");
-      expect((algebra as any).comparators).toHaveLength(1);
-      expect((algebra as any).comparators[0].descending).toBe(false);
+      // Project wraps OrderBy (OrderBy before Project per SPARQL 1.1, #3542).
+      expect(algebra.type).toBe("project");
+      const orderby = (algebra as any).input;
+      expect(orderby.type).toBe("orderby");
+      expect(orderby.comparators).toHaveLength(1);
+      expect(orderby.comparators[0].descending).toBe(false);
     });
 
     it("translates SELECT with ORDER BY DESC", () => {
@@ -453,8 +457,11 @@ describe("AlgebraTranslator", () => {
       const ast = parser.parse(query);
       const algebra = translator.translate(ast);
 
-      expect(algebra.type).toBe("orderby");
-      expect((algebra as any).comparators[0].descending).toBe(true);
+      // Project wraps OrderBy (OrderBy before Project per SPARQL 1.1, #3542).
+      expect(algebra.type).toBe("project");
+      const orderby = (algebra as any).input;
+      expect(orderby.type).toBe("orderby");
+      expect(orderby.comparators[0].descending).toBe(true);
     });
 
     it("translates SELECT with LIMIT", () => {
@@ -499,14 +506,16 @@ describe("AlgebraTranslator", () => {
       expect((algebra as any).limit).toBe(20);
       expect((algebra as any).offset).toBe(10);
 
+      // SPARQL 1.1 §18.2.4.2 nesting (outer→inner):
+      // Slice → Distinct → Project → OrderBy (#3542).
       let current = (algebra as any).input;
-      expect(current.type).toBe("orderby");
-
-      current = current.input;
       expect(current.type).toBe("distinct");
 
       current = current.input;
       expect(current.type).toBe("project");
+
+      current = current.input;
+      expect(current.type).toBe("orderby");
     });
   });
 
@@ -1054,9 +1063,11 @@ describe("AlgebraTranslator", () => {
       const input = (algebra as any).input;
       expect(input.left.type).toBe("subquery");
       const innerQuery = input.left.query;
-      // OrderBy wraps the project
-      expect(innerQuery.type).toBe("orderby");
-      expect(innerQuery.comparators[0].descending).toBe(true);
+      // Project wraps OrderBy — OrderBy executes before projection drops the
+      // sort key (?score is not in SELECT ?x), SPARQL 1.1 §18.2.4.2 (#3542).
+      expect(innerQuery.type).toBe("project");
+      expect(innerQuery.input.type).toBe("orderby");
+      expect(innerQuery.input.comparators[0].descending).toBe(true);
     });
 
     it("translates subquery with LIMIT", () => {
