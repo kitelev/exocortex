@@ -13,6 +13,9 @@ import { ILogger } from "./adapters/logging/ILogger";
 import { LoggerFactory } from "./adapters/logging/LoggerFactory";
 import { Logger } from "./adapters/logging/Logger";
 import { FileLogChannel } from "./adapters/logging/FileLogChannel";
+import { ActivityLogService } from "./adapters/logging/ActivityLogService";
+import { journalEntryToActivity } from "./adapters/logging/activityFanIn";
+import { ActivityLogModal } from "./presentation/modals/ActivityLogModal";
 import { CommandManager } from "./application/services/CommandManager";
 import { IndexingCompleteNotifier } from "./application/services/IndexingCompleteNotifier";
 import {
@@ -239,6 +242,13 @@ export default class ExocortexPlugin extends Plugin {
   /** RFC 22b50a17 Phase 4 — AssetSpace status badge (✅/⏸). */
   private assetSpaceStatusIconPatch: AssetSpaceStatusIconPatch | null = null;
   private fileLogChannel!: FileLogChannel;
+  /**
+   * #3540 — in-memory activity stream (ring buffer + pub/sub) backing the
+   * «Open activity log» modal. Created in `onload()` and hoisted so every
+   * activity source (ExoSync, profile apply, mount/unmount, bootstrap) can
+   * `record(...)` from onload onward, independent of whether the modal is open.
+   */
+  private activityLog!: ActivityLogService;
   // Issue #3320 — promoted from private so the Settings UI can route its
   // Save / Test connection / Switch failure messages via the same notifier
   // that powers the rest of the plugin (lint `no-restricted-syntax` rule
@@ -330,6 +340,8 @@ export default class ExocortexPlugin extends Plugin {
       this.notifier = new ObsidianNotificationService();
       this.fileLogChannel = new FileLogChannel(this.app.vault.adapter, this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`);
       await this.fileLogChannel.ensureFileExists();
+      // #3540 — always-on activity buffer; sources fan in from onload onward.
+      this.activityLog = new ActivityLogService();
       this.configureLogChannels();
 
       this.printNameRuleService = new PrintNameRuleService(this.app);
@@ -2860,8 +2872,16 @@ export default class ExocortexPlugin extends Plugin {
         }),
       isSwitchInProgress: () => localDataStore.isSwitchInProgress(),
       notify: (message) => this.notifier.info(message),
-      log: (message) => this.logger.warn(message),
-      logInfo: (message) => this.logger.info(message),
+      log: (message) => {
+        this.logger.warn(message);
+        // #3540 — surface ExoSync warnings in the activity stream.
+        this.activityLog.record({ category: "exosync", level: "warn", message });
+      },
+      logInfo: (message) => {
+        this.logger.info(message);
+        // #3540 — always-on ExoSync step feed (onProgress info channel).
+        this.activityLog.record({ category: "exosync", level: "info", message });
+      },
       // #3498 — opt-in durable verbose FILE trace (default off). Appends the
       // step lines directly to the plugin file log, INDEPENDENT of
       // logChannels.info.file. Read live so the Settings toggle takes effect on
@@ -2890,6 +2910,8 @@ export default class ExocortexPlugin extends Plugin {
       rdfIndexer,
       settingsStore,
       notify: (message) => this.notifier.info(message),
+      // #3540 — fan profile apply / mount / unmount phases into the activity log.
+      onPhase: (entry) => this.activityLog.record(journalEntryToActivity(entry)),
       assetSpaceManager: applyDeps?.assetSpaceManager,
       gitOps: applyDeps?.gitOps,
       restMount: restMount ?? undefined,
@@ -3061,6 +3083,18 @@ export default class ExocortexPlugin extends Plugin {
       },
     });
 
+    // #3540 — «Open activity log»: real-time modal over the in-memory activity
+    // stream (ExoSync / profile apply / mount-unmount / bootstrap). Pure UI +
+    // in-memory buffer (no Node/fs/git) → registered UNCONDITIONALLY so it works
+    // identically on desktop and mobile (Desktop↔Mobile Command Parity).
+    this.addCommand({
+      id: "open-activity-log",
+      name: "Open activity log",
+      callback: () => {
+        new ActivityLogModal(this.app, this.activityLog).open();
+      },
+    });
+
     // RFC 0a0791c1 Phase 5 T2 — «Apply profile» (the single consolidated
     // profile command; the former soft «Switch focus profile» was removed and
     // the mount-state «Switch knowledge profile» was renamed here). Needs the
@@ -3190,7 +3224,11 @@ export default class ExocortexPlugin extends Plugin {
             resolve,
           ).open();
         }),
-      notify: (message) => this.notifier.info(message),
+      notify: (message) => {
+        this.notifier.info(message);
+        // #3540 — surface bootstrap / add-assetspace progress in the activity log.
+        this.activityLog.record({ category: "bootstrap", level: "info", message });
+      },
       onMaterialized: () => this.refreshAndInjectAssetSpaceMaterialization(),
     });
 

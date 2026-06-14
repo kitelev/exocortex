@@ -6143,3 +6143,28 @@
 .exocortex-invalid-input {
   border-color: var(--text-error) !important;
 }
+
+/* #3540 — «Open activity log» modal: scrollable monospace activity stream
+   (modelled on the Obsidian Sync activity log body). */
+.exocortex-activity-log-list {
+  font-family: var(--font-monospace, monospace);
+  font-size: var(--font-smaller, 0.85em);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 50vh;
+  min-height: 8em;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s, 4px);
+  padding: var(--size-4-2, 8px);
+  margin-bottom: var(--size-4-3, 12px);
+}
+
+.exocortex-activity-log-row {
+  line-height: 1.4;
+}
+
+.exocortex-activity-log-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}

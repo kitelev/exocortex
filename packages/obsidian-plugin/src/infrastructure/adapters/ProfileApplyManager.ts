@@ -177,6 +177,13 @@ export interface ProfileApplyManagerOptions {
   now?: () => Date;
   /** User-facing notifier (typically `new Notice()`). */
   notify?: (message: string) => void;
+  /**
+   * Observability hook (#3540) — invoked for EVERY journal entry written, so an
+   * in-memory activity stream can surface per-phase / per-AssetSpace progress in
+   * real time. Independent of {@link notify} (which is sparse + user-facing).
+   * Default no-op. Must not throw — failures are swallowed at the call site.
+   */
+  onPhase?: (entry: SwitchJournalEntry) => void;
 
   // --- Apply dependencies (RFC 22b50a17 Phase 3) ---
   /** AssetSpaceManager — provides pullAssetSpace + lookupAssetSpaceInfo. */
@@ -360,6 +367,7 @@ export class ProfileApplyManager {
   private readonly maxExtendsDepth: number;
   private readonly now: () => Date;
   private readonly notify: (message: string) => void;
+  private readonly onPhase: (entry: SwitchJournalEntry) => void;
 
   // Apply dependencies (may be undefined when only reindex wired).
   private readonly assetSpaceManager?: AssetSpaceManager;
@@ -392,6 +400,7 @@ export class ProfileApplyManager {
     this.maxExtendsDepth = options.maxExtendsDepth ?? DEFAULT_MAX_EXTENDS_DEPTH;
     this.now = options.now ?? (() => new Date());
     this.notify = options.notify ?? (() => undefined);
+    this.onPhase = options.onPhase ?? (() => undefined);
 
     this.assetSpaceManager = options.assetSpaceManager;
     this.cacheLayer = options.cacheLayer;
@@ -1928,6 +1937,14 @@ export class ProfileApplyManager {
   }
 
   private async appendJournal(entry: SwitchJournalEntry): Promise<void> {
+    // Observability fan-out (#3540) — surface every phase to the activity
+    // stream BEFORE the disk write so the modal updates even if the journal
+    // write later fails. Isolated: a bad observer must not break apply.
+    try {
+      this.onPhase(entry);
+    } catch {
+      // swallow — observability is best-effort, never blocks the switch.
+    }
     const line = JSON.stringify(entry) + "\n";
     let existing = "";
     try {
