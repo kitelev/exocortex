@@ -99,9 +99,10 @@ describe("QueryExecutor branch coverage", () => {
 
       const algebra = parseAndTranslate(query);
       const results = await executor.executeAll(algebra);
-      // REDUCED eliminates duplicates - 3 subjects with 2 unique types
-      // but SELECT returns per-solution so all 3 are distinct rows
-      expect(results).toHaveLength(3);
+      // executeReduced deliberately eliminates ALL duplicates (DISTINCT-equivalent;
+      // SPARQL 1.1 §10.2 permits REDUCED to drop any/all duplicates). The data has
+      // 3 subjects but only 2 unique ?type values (ex:Task, ex:Project) → 2 rows.
+      expect(results).toHaveLength(2);
     });
   });
 
