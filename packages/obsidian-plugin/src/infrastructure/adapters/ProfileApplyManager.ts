@@ -2041,6 +2041,14 @@ export class ProfileApplyManager {
    * persisted `_switchInProgress` flag and releases the lock so the next apply
    * is not blocked by a stuck state. All failures swallowed — this runs in a
    * degraded (stalled) environment.
+   *
+   * Invariant the unconditional `releaseLock` relies on: {@link withApplyDeadline}
+   * `await`s this in its `finally` BEFORE the timeout rejection propagates, and
+   * apply is user-driven (no internal concurrent caller), so this release cannot
+   * race a retry's fresh `acquireLock`. The orphaned mutation's OWN release is
+   * still generation-guarded (it could resume after a retry). Do NOT introduce a
+   * programmatic auto-retry from inside `onTimeout` without generation-gating
+   * these releases too.
    */
   private async clearStuckLocalState(
     localDataStore: PluginLocalDataStore,
