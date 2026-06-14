@@ -93,14 +93,6 @@ export interface ExocortexSettings {
    */
   autoReadingModeForExocortexAssets: boolean;
   /**
-   * RFC be70f741 Phase 1 — enable the `RelationColumnSetRepository` and the
-   * future `RelationColumnSetResolver`.  Phase 1 is behaviour-neutral (no
-   * consumer wired yet) so the flag defaults to `true`; it exists so the
-   * Phase 3 integration can be bisected if a regression surfaces in the
-   * UniversalLayout auto-backlinks table.
-   */
-  enableRelationColumnSetResolver: boolean;
-  /**
    * RFC exo__Layout Phase 2 — enable `ExoLayoutRenderer`.  When `true` and an
    * `exo__Layout` asset targets one of the current asset's classes, the
    * renderer replaces (or coexists with, depending on the Layout's
@@ -307,7 +299,6 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   autoAdjustPlannedEndTimestamp: false,
   logChannels: DEFAULT_LOG_CHANNELS,
   autoReadingModeForExocortexAssets: true,
-  enableRelationColumnSetResolver: true,
   enableExoLayoutRenderer: true,
   showIconsInFileExplorer: true,
   enableSparqlAutoExecute: false,

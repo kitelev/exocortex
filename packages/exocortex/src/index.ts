@@ -480,26 +480,6 @@ export type {
 // ExoQL public API
 export { ExoQL, ExoQLError, type OwnFilterConfig } from "./exoql";
 
-// RelationColumnSet (RFC be70f741 Phase 1)
-export {
-  RELATION_COLUMN_SET_CLASS_IRI,
-  RELATION_COLUMN_SET_CLASS_UID,
-  createRelationColumnSetFromFrontmatter,
-  isRelationColumnSet,
-  isRelationColumnSetFrontmatter,
-  normalizeRef as normalizeRelationColumnSetRef,
-  type CreateRelationColumnSetOptions,
-  type RelationColumnSet,
-} from "./domain/layout";
-
-// RelationColumnSetResolver (RFC be70f741 Phase 2)
-export {
-  RelationColumnSetResolver,
-  type RelationColumnSetProvider,
-  type RelationColumnSetResolverLogger,
-  type RelationColumnSetResolverOptions,
-} from "./application/services";
-
 // Layout / LayoutBlock (RFC exo__Layout Phase 1 — 6628d78a-78a9-473c-ace3-e9b6d28750d1)
 export {
   LAYOUT_CLASS_IRI,

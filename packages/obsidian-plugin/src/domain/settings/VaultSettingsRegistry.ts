@@ -155,13 +155,6 @@ export const VAULT_SETTINGS_REGISTRY: readonly VaultSettingDescriptor[] = [
     settingUid: "2c5195c7-94c2-4d10-a694-c44a45513188",
   },
   {
-    field: "enableRelationColumnSetResolver",
-    keyUid: "626da39d-eda9-4b51-a847-94cc0d78185d",
-    keyLabel: "exo__SettingKeyEnableRelationColumnSetResolver",
-    datatype: "boolean",
-    settingUid: "d33d7369-2ecb-475b-906e-be21d3e2d48c",
-  },
-  {
     field: "enableExoLayoutRenderer",
     keyUid: "83a97247-135f-4e09-a4a7-60a0c1d8cb7a",
     keyLabel: "exo__SettingKeyEnableExoLayoutRenderer",

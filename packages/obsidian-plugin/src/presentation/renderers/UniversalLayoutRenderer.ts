@@ -9,7 +9,7 @@ import { ActionButtonsGroup } from '@plugin/presentation/components/ActionButton
 import { IVaultAdapter, MetadataExtractor, INotificationService } from "exocortex";
 import { FolderRepairService } from "exocortex";
 import { CommandResolver, PreconditionEvaluator, GroundingExecutor } from "exocortex";
-import type { LayoutSelector, RelationColumnSetResolver, ITripleStore, LazyAssetGraphLoader } from "exocortex";
+import type { LayoutSelector, ITripleStore, LazyAssetGraphLoader } from "exocortex";
 import { IRI, vaultPathToIRI } from "exocortex";
 import type { ExoLayoutRepository } from "@plugin/infrastructure/repositories";
 import { ExoLayoutRenderer } from "./ExoLayoutRenderer";
@@ -66,7 +66,6 @@ export class UniversalLayoutRenderer {
   private groundingExecutor?: GroundingExecutor;
   private notificationService?: INotificationService;
   private tripleStore?: ITripleStore;
-  private relationColumnSetResolver: RelationColumnSetResolver | null = null;
   private exoLayoutRepository: ExoLayoutRepository | null = null;
   private layoutSelector: LayoutSelector | null = null;
   private panelResolver: PanelResolver | null = null;
@@ -103,7 +102,6 @@ export class UniversalLayoutRenderer {
       groundingExecutor?: GroundingExecutor;
       notificationService?: INotificationService;
       tripleStore?: ITripleStore;
-      relationColumnSetResolver?: RelationColumnSetResolver | null;
       exoLayoutRepository?: ExoLayoutRepository | null;
       layoutSelector?: LayoutSelector | null;
       panelResolver?: PanelResolver;
@@ -133,8 +131,6 @@ export class UniversalLayoutRenderer {
     this.groundingExecutor = rfc009Services?.groundingExecutor;
     this.notificationService = rfc009Services?.notificationService;
     this.tripleStore = rfc009Services?.tripleStore;
-    this.relationColumnSetResolver =
-      rfc009Services?.relationColumnSetResolver ?? null;
     this.exoLayoutRepository = rfc009Services?.exoLayoutRepository ?? null;
     this.layoutSelector = rfc009Services?.layoutSelector ?? null;
     this.panelResolver = rfc009Services?.panelResolver ?? null;
@@ -193,8 +189,7 @@ export class UniversalLayoutRenderer {
 
     this.relationsRenderer = new RelationsRenderer(
       this.app, this.settings, this.reactRenderer, this.backlinksCacheManager,
-      this.metadataService, this.plugin, () => this.refresh(), this.vaultAdapter,
-      this.relationColumnSetResolver);
+      this.metadataService, this.plugin, () => this.refresh(), this.vaultAdapter);
 
     this.buttonGroupsBuilder = new ButtonGroupsBuilder({
       app: this.app,

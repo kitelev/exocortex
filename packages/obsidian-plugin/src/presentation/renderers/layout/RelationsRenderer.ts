@@ -2,7 +2,6 @@ import { TFile, Keymap } from "obsidian";
 import React from "react";
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import { MetadataHelpers, IVaultAdapter, IFile } from "exocortex";
-import type { RelationColumnSetResolver } from "exocortex";
 import { AssetRelationsTableWithToggle } from '@plugin/presentation/components/AssetRelationsTable';
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { ExocortexSettings } from '@plugin/domain/settings/ExocortexSettings';
@@ -33,17 +32,6 @@ export const LEGACY_HARDCODED_GROUP_SPECIFIC_PROPERTIES: Readonly<
   ems__Effort_area: Object.freeze(["ems__Effort_status"]),
 });
 
-function toInstanceClassArray(value: unknown): string[] {
-  if (value == null) return [];
-  if (Array.isArray(value)) {
-    return value.filter((entry): entry is string => typeof entry === "string");
-  }
-  if (typeof value === "string") {
-    return [value];
-  }
-  return [];
-}
-
 export class RelationsRenderer {
   constructor(
     private app: ObsidianApp,
@@ -54,67 +42,20 @@ export class RelationsRenderer {
     private plugin: ExocortexPluginInterface,
     private refresh: () => Promise<void>,
     private vaultAdapter: IVaultAdapter,
-    private relationColumnSetResolver: RelationColumnSetResolver | null = null,
   ) {}
 
   /**
    * Compose the `groupSpecificProperties` map consumed by
-   * `AssetRelationsTable`.  Overlays resolver-backed per-group configs on top
-   * of the legacy hardcoded map so that legacy behaviour survives missing
-   * configs (RFC be70f741 v2 §"Интеграция", first non-null fallback chain).
+   * `AssetRelationsTable` — the legacy hardcoded per-group column overrides.
    *
-   * Algorithm
-   * - Feature-flag `enableRelationColumnSetResolver` OR absent resolver →
-   *   return the legacy map unchanged.
-   * - Iterate relations once, dedup by `propertyName`; for each unique
-   *   property consult the resolver using the row asset's
-   *   `exo__Instance_class` array (RFC v2 §"Мульти-классовый row").
-   *   First hit wins per resolver semantics (Phase 2 priority ladder).
-   * - Resolver miss → legacy fallback for that key (if present).
-   * - Legacy keys untouched by any relation are preserved in the output so
-   *   the snapshot shape matches the pre-integration literal.
-   *
-   * @param relations — flat list produced by `getAssetRelations`.
    * @returns fresh plain object; never the LEGACY_HARDCODED constant itself.
    */
-  buildGroupSpecificProperties(
-    relations: readonly AssetRelation[],
-  ): Record<string, string[]> {
+  buildGroupSpecificProperties(): Record<string, string[]> {
     const legacy: Record<string, string[]> = {};
     for (const [key, value] of Object.entries(LEGACY_HARDCODED_GROUP_SPECIFIC_PROPERTIES)) {
       legacy[key] = [...value];
     }
-
-    if (!this.settings.enableRelationColumnSetResolver || !this.relationColumnSetResolver) {
-      return legacy;
-    }
-
-    const out: Record<string, string[]> = {};
-    const seen = new Set<string>();
-
-    for (const relation of relations) {
-      const propertyName = relation.propertyName;
-      if (!propertyName || seen.has(propertyName)) continue;
-      seen.add(propertyName);
-
-      const rowClasses = toInstanceClassArray(
-        (relation.metadata as Record<string, unknown> | undefined)?.exo__Instance_class,
-      );
-      const resolved = this.relationColumnSetResolver.resolve(rowClasses, propertyName);
-      if (resolved) {
-        out[propertyName] = [...resolved.columns];
-      } else if (legacy[propertyName]) {
-        out[propertyName] = legacy[propertyName];
-      }
-    }
-
-    for (const [key, value] of Object.entries(legacy)) {
-      if (!(key in out)) {
-        out[key] = value;
-      }
-    }
-
-    return out;
+    return legacy;
   }
 
   async getAssetRelations(
@@ -246,7 +187,7 @@ export class RelationsRenderer {
         sortBy: config.sortBy || "title",
         sortOrder: config.sortOrder || "asc",
         showProperties: config.showProperties || [],
-        groupSpecificProperties: this.buildGroupSpecificProperties(relations),
+        groupSpecificProperties: this.buildGroupSpecificProperties(),
         showEffortVotes: this.settings.showEffortVotes,
         onToggleEffortVotes: async () => {
           this.settings.showEffortVotes = !this.settings.showEffortVotes;

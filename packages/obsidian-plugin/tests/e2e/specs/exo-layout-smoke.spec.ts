@@ -18,9 +18,8 @@ import { ObsidianLauncher } from "../utils/obsidian-launcher";
  * Instance Class Asset Relations table, and NOT wrapped in the legacy
  * "Asset Relations" heading (because `coexistsWithDefault: false`).
  *
- * Budget ≤25s (RFC v1 §Phase 3 exit-criteria). Shard 3 hosts this spec
- * alongside the RelationColumnSet smoke because both drive the same
- * UniversalLayout pipeline with minimal interaction (no modals, no input).
+ * Budget ≤25s (RFC v1 §Phase 3 exit-criteria). Drives the UniversalLayout
+ * pipeline with minimal interaction (no modals, no input).
  */
 test.describe(
   "ExoLayout — Phase 3 smoke",

@@ -1,8 +1,7 @@
 /**
  * RFC exo__Layout Phase 3 — docs example CI gate (M5 usability).
  *
- * Parallel to `docs-example-renders.spec.tsx` (RelationColumnSet gate): reads
- * `docs/EXO_LAYOUT.md`, extracts the two ```yaml fenced blocks (Layout +
+ * Reads `docs/EXO_LAYOUT.md`, extracts the two ```yaml fenced blocks (Layout +
  * BacklinksTableBlock) from the Quickstart section, parses each through the
  * production factories (`createLayoutFromFrontmatter` /
  * `createLayoutBlockFromFrontmatter`), and mounts `BacklinksTableBlockView`

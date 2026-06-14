@@ -1,9 +1,9 @@
 /**
  * Obsidian-flavoured adapter for `ExoLayoutRepository`.
  *
- * Identical subscription pattern to `ObsidianRelationColumnSetAdapter`:
- * `changed` / `deleted` live on `metadataCache`, `renamed` lives on
- * `vault`, so offref must target the correct Events instance.
+ * Subscription pattern: `changed` / `deleted` live on `metadataCache`,
+ * `renamed` lives on `vault`, so offref must target the correct Events
+ * instance.
  *
  * @module infrastructure/repositories
  */

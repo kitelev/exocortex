@@ -14,7 +14,7 @@
  */
 
 import { WikiLinkHelpers } from "../../utilities/WikiLinkHelpers";
-import { normalizeRef } from "./RelationColumnSet";
+import { normalizeRef } from "./normalizeRef";
 
 export interface LayoutBlockBase {
   readonly uid: string;
