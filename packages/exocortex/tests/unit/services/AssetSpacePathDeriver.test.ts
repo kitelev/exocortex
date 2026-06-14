@@ -1,4 +1,7 @@
-import { derivePath } from "../../../src/services/AssetSpacePathDeriver";
+import {
+  derivePath,
+  deriveLegacyFlatPath,
+} from "../../../src/services/AssetSpacePathDeriver";
 
 describe("derivePath (RFC 01a83de8 v10 UD1)", () => {
   const EXPECTED = "assetspaces/kitelev/exoas-ems";
@@ -110,5 +113,82 @@ describe("derivePath (RFC 01a83de8 v10 UD1)", () => {
       expect(https).toBe(ssh);
       expect(https).toBe(EXPECTED);
     });
+  });
+});
+
+describe("deriveLegacyFlatPath (#3538 follow-up — flat-mount detection)", () => {
+  describe("strips the `exoas-` prefix to the pre-#3538 flat path", () => {
+    it.each([
+      ["HTTPS", "https://github.com/kitelev/exoas-ems", "assetspaces/ems"],
+      [
+        "HTTPS with .git",
+        "https://github.com/kitelev/exoas-registry.git",
+        "assetspaces/registry",
+      ],
+      [
+        "SSH scp-like",
+        "git@github.com:kitelev/exoas-kitelev-profiles.git",
+        "assetspaces/kitelev-profiles",
+      ],
+      [
+        "all forms normalise",
+        "  ssh://git@github.com:22/kitelev/exoas-testlib.git/  ",
+        "assetspaces/testlib",
+      ],
+    ])("%s → flat path", (_label, url, expected) => {
+      expect(deriveLegacyFlatPath(url)).toBe(expected);
+    });
+  });
+
+  it("repo WITHOUT an `exoas-` prefix keeps its name (single level)", () => {
+    expect(deriveLegacyFlatPath("https://github.com/alice/shared")).toBe(
+      "assetspaces/shared",
+    );
+  });
+
+  describe("legacy flat path DIFFERS from canonical — the migration signal", () => {
+    it("registry: flat (exoas- stripped) vs canonical owner/repo", () => {
+      // `deriveFolderName` stripped only the leading `exoas-` token, so
+      // `exoas-kitelev-registry` → `kitelev-registry` (NOT `registry`).
+      const url = "https://github.com/kitelev/exoas-kitelev-registry";
+      expect(deriveLegacyFlatPath(url)).toBe("assetspaces/kitelev-registry");
+      expect(derivePath(url)).toBe("assetspaces/kitelev/exoas-kitelev-registry");
+      // The two MUST differ — that inequality is exactly what apply-profile's
+      // flat-mount detection keys on.
+      expect(deriveLegacyFlatPath(url)).not.toBe(derivePath(url));
+    });
+
+    it("short repo: flat assetspaces/registry vs canonical owner/repo", () => {
+      const url = "https://github.com/kitelev/exoas-registry";
+      expect(deriveLegacyFlatPath(url)).toBe("assetspaces/registry");
+      expect(derivePath(url)).toBe("assetspaces/kitelev/exoas-registry");
+      expect(deriveLegacyFlatPath(url)).not.toBe(derivePath(url));
+    });
+  });
+
+  describe("null on un-derivable input (same cases as derivePath)", () => {
+    it.each([
+      ["empty string", ""],
+      ["non-string", 42 as unknown as string],
+      ["undefined", undefined as unknown as string],
+      ["host only, no repo", "https://github.com/kitelev"],
+      ["file:// local clone", "file:///tmp/abc/remote-as1"],
+      ["path traversal", "https://github.com/owner/.."],
+      // `exoas-` with nothing after the prefix → empty flat segment → null.
+      ["exoas- prefix only (empty stripped repo)", "https://github.com/o/exoas-"],
+    ])("%s → null", (_label, input) => {
+      expect(deriveLegacyFlatPath(input)).toBeNull();
+    });
+  });
+
+  it("inherits derivePath's traversal guard — never emits a `..` component", () => {
+    for (const input of [
+      "../../etc/passwd",
+      "https://github.com/owner/..",
+      "git@github.com:../escape.git",
+    ]) {
+      const out = deriveLegacyFlatPath(input);
+      if (out !== null) expect(out.split("/")).not.toContain("..");
+    }
   });
 });

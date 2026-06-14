@@ -98,3 +98,37 @@ export function derivePath(source: unknown): string | null {
 
   return `${ASSET_SPACES_PREFIX}/${owner}/${repo}`;
 }
+
+/**
+ * Derive the LEGACY flat mount path `assetspaces/<repo>` (with an `exoas-`
+ * prefix stripped) that pre-#3538 `add-assetspace` / `bootstrap` mounted at,
+ * before the canonical Maven `derivePath` (`assetspaces/<owner>/<repo>`) was
+ * adopted. Mirrors the old `deriveFolderName` — both the plugin closure and the
+ * CLI `BootstrapAssetSpaceService.deriveFolderName` — which stripped the
+ * `exoas-` prefix and mounted a single level under `assetspaces/`.
+ *
+ * Used ONLY by flat-mount detection (#3538 follow-up): an AssetSpace
+ * materialized at this legacy path is invisible to apply-profile's canonical
+ * `derivePath` materialization check → it gets re-materialized at the canonical
+ * path → latent DOUBLE MOUNT of the same AssetSpace UID. Detection compares the
+ * two; they differ exactly when a manual migration is warranted.
+ *
+ * Reuses `derivePath` so it inherits the same normalisation (scheme/.git/
+ * trailing-slash/scp-form/credentials) and the path-traversal / out-of-charset
+ * segment guards — the returned `<repo>` is already validated. Returns `null`
+ * for the same un-derivable inputs as `derivePath` (no `<owner>/<repo>` pair)
+ * and when the stripped repo is empty (`exoas-` with nothing after it).
+ */
+export function deriveLegacyFlatPath(source: unknown): string | null {
+  const canonical = derivePath(source);
+  if (canonical === null) return null;
+  // canonical === `assetspaces/<owner>/<repo>` with validated segments — the
+  // third path component is the repo name.
+  const repo = canonical.split("/")[2];
+  if (repo === undefined || repo.length === 0) return null;
+  const flat = repo.startsWith("exoas-")
+    ? repo.slice("exoas-".length)
+    : repo;
+  if (flat.length === 0) return null;
+  return `${ASSET_SPACES_PREFIX}/${flat}`;
+}

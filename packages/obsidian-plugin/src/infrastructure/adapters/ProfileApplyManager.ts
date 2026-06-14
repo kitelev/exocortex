@@ -3,6 +3,7 @@ import type { App } from "obsidian";
 import type { ApplyPlan, IConfirmGate } from "exocortex";
 import {
   derivePath,
+  deriveLegacyFlatPath,
   assertTsFloorReconciled,
   PLUGIN_UI_FLOOR,
   CATALOG_KEEP_NAMESPACES,
@@ -651,6 +652,17 @@ export class ProfileApplyManager {
         "applyProfile: ExoSync run in progress (D11 guard) — retry after it finishes",
       );
     }
+    // #3538 follow-up — WARN (read-only, no FS mutation) when any AssetSpace is
+    // still materialized at a LEGACY FLAT path (`assetspaces/<repo>`, pre-#3538)
+    // whose canonical `derivePath` (`assetspaces/<owner>/<repo>`) differs. Both
+    // apply paths below key materialization on the canonical path, so a
+    // flat-mounted AS is invisible → re-materialized at the canonical path →
+    // latent DOUBLE MOUNT of the same UID. Auto-migration (runtime directory
+    // move + `.gitmodules` rewrite) is intentionally deferred (risky on the
+    // apply core — cf. partial-failure atomicity boundary, #3548); this only
+    // surfaces the gap and points to the manual migration guide. Placed before
+    // the mobile/desktop split so the single warn covers both platforms.
+    await this.warnLegacyFlatMounts();
     // RFC 01a83de8 Phase 3 T2 — on mobile the git binary is unavailable, so
     // delegate to the REST/tarball mount/unmount path (no staging / cache /
     // git commit). Desktop keeps the git-binary path below unchanged.
@@ -1793,6 +1805,79 @@ export class ProfileApplyManager {
       out.set(info.folderName, info.uid);
     }
     return out;
+  }
+
+  /**
+   * #3538 follow-up — detect AssetSpaces materialized at a LEGACY FLAT path
+   * (`assetspaces/<repo>`, pre-#3538 `deriveFolderName`) whose canonical
+   * `derivePath` (`assetspaces/<owner>/<repo>`) differs and which still has its
+   * flat folder on disk.
+   *
+   * Read-only (only `vault.adapter.exists`, no mutation). Both-platform — uses
+   * neither `gitOps` (desktop-only) nor `.gitmodules`; the on-disk flat folder
+   * is the authoritative signal regardless of how the entry was recorded.
+   *
+   * apply-profile keys materialization on the canonical `derivePath`
+   * (`derivePhysicallyMaterializedAsUids` on desktop; `vault.adapter.exists` of
+   * the canonical folder on mobile), so a flat-mounted AssetSpace is NOT
+   * recognised as materialized → re-materialized at the canonical path →
+   * latent DOUBLE MOUNT of the same AssetSpace UID. This surfaces the affected
+   * AssetSpaces so the user can migrate them manually (see docs/profile.md);
+   * auto-migration is deferred (risky runtime directory move).
+   */
+  private async detectLegacyFlatMounts(): Promise<
+    Array<{ flat: string; canonical: string; label: string }>
+  > {
+    const out: Array<{ flat: string; canonical: string; label: string }> = [];
+    const seenFlat = new Set<string>();
+    for (const info of this.listAllAssetSpaceInfos()) {
+      const flat = deriveLegacyFlatPath(info.git);
+      // No legacy form, or the canonical path IS the flat path (un-derivable
+      // source fell back to flat) → nothing to migrate.
+      if (flat === null || flat === info.folderName) continue;
+      if (seenFlat.has(flat)) continue;
+      let exists: boolean;
+      try {
+        exists = await this.app.vault.adapter.exists(flat);
+      } catch {
+        // Best-effort detection — never let a probe failure block apply.
+        continue;
+      }
+      if (!exists) continue;
+      seenFlat.add(flat);
+      out.push({
+        flat,
+        canonical: info.folderName,
+        label: info.namespace || info.uid.slice(0, 8),
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Emit a single user-facing Notice (via {@link notify}) when
+   * {@link detectLegacyFlatMounts} finds any legacy flat-mount. No-op (no
+   * Notice) when none — so fresh vaults bootstrapped on the canonical layout
+   * never see this. Failures are swallowed: a detection problem must never
+   * abort the apply itself.
+   */
+  private async warnLegacyFlatMounts(): Promise<void> {
+    let legacy: Array<{ flat: string; canonical: string; label: string }>;
+    try {
+      legacy = await this.detectLegacyFlatMounts();
+    } catch {
+      return;
+    }
+    if (legacy.length === 0) return;
+    const list = legacy
+      .map((m) => `${m.label} (${m.flat} → ${m.canonical})`)
+      .join(", ");
+    this.notify(
+      `⚠ ${legacy.length} AssetSpace(s) mounted at a legacy flat path: ${list}. ` +
+        "apply-profile expects the canonical assetspaces/<owner>/<repo> layout — " +
+        "migrate manually to avoid a double mount (see docs/profile.md → " +
+        '"Legacy flat-mount migration").',
+    );
   }
 
   /**
