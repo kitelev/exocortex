@@ -341,4 +341,13 @@ describe("isSafeCloneUrl", () => {
     expect(isSafeCloneUrl("https://github.com/o/r\n")).toBe(false);
     expect(isSafeCloneUrl("")).toBe(false);
   });
+
+  // Regression guard for #3525 (js/regex/duplicate-in-character-class): the
+  // scp-like host class `[A-Za-z0-9._-]` must still accept dotted subdomains.
+  it("accepts scp-like SSH with dotted/subdomain hosts", () => {
+    expect(isSafeCloneUrl("git@ssh.github.com:kitelev/exoas-exo.git")).toBe(
+      true,
+    );
+    expect(isSafeCloneUrl("user@my-host.example.co.uk:owner/repo")).toBe(true);
+  });
 });
