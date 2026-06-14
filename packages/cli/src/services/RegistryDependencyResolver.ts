@@ -367,6 +367,6 @@ export function isSafeCloneUrl(source: string): boolean {
   if (/^ssh:\/\/[^\s]+$/i.test(source)) return true;
   if (/^git:\/\/[^\s]+$/i.test(source)) return true;
   // scp-like SSH: user@host:owner/repo (no leading dash already excluded above)
-  if (/^[A-Za-z0-9._-]+@[A-Za-z0-9._.-]+:[^\s]+$/.test(source)) return true;
+  if (/^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:[^\s]+$/.test(source)) return true;
   return false;
 }
