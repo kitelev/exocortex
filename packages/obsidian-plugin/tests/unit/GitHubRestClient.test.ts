@@ -743,18 +743,22 @@ describe("GitHubRestClient", () => {
     });
 
     it("redacts a PAT that leaks into the timeout error message", async () => {
-      // The URL never carries a PAT, but the message is routed through redact()
-      // for defense-in-depth (parity with every other thrown error here).
+      // Non-vacuous: embed a PAT-shaped token in the request URL (via baseURL)
+      // so the timeout message ("GitHub request GET <url> timed out…") WOULD
+      // contain it verbatim if redact() were skipped — proving the new timeout
+      // path scrubs PATs, not just that the URL happens to be PAT-free.
       requestUrlMock.mockReturnValue(new Promise<never>(() => {}));
       const c = new GitHubRestClient({
         pat: FAKE_PAT,
         app: fakeApp,
+        baseURL: `https://api.github.com/${FAKE_PAT}`,
         requestTimeoutMs: 30,
       });
-      const err = await c
-        .fetchTarballBuffer("o", "r", "main")
-        .catch((e: Error) => e);
-      expect((err as Error).message).not.toContain("ghp_");
+      const err = await c.getRepoHead("o", "r").catch((e: Error) => e);
+      // The raw URL embedded the token; the thrown message must have redacted it.
+      expect((err as Error).message).toMatch(/timed out after 30ms/);
+      expect((err as Error).message).not.toContain(FAKE_PAT);
+      expect((err as Error).message).toContain("***REDACTED***");
     });
 
     it("resolves normally when requestUrl wins the race", async () => {
