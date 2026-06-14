@@ -41,24 +41,46 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      # Gate the whole (heavy) pipeline on the token being present. When
+      # REGISTRY_TOKEN is not provisioned this self-skips green with a warning
+      # annotation instead of a hard red — mirrors the spec's `test.skip(!PAT)`
+      # so the nightly/post-merge smoke is not perpetually red on a repo that
+      # simply has not been given the secret.
+      - name: Check EKA token
+        id: tok
+        env:
+          EKA_E2E_PAT: ${{ secrets.REGISTRY_TOKEN }}
+        run: |
+          if [ -n "${EKA_E2E_PAT}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::REGISTRY_TOKEN not set — skipping the live EKA Obsidian-leg smoke. Provision REGISTRY_TOKEN (PAT with read access to private kitelev/exoas-*) to enable it."
+          fi
+
       - name: Checkout
+        if: steps.tok.outputs.present == 'true'
         uses: actions/checkout@v6
 
       - name: Setup Node
+        if: steps.tok.outputs.present == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       - name: Install dependencies
+        if: steps.tok.outputs.present == 'true'
         run: npm ci
 
       - name: Build plugin (main.js)
+        if: steps.tok.outputs.present == 'true'
         run: |
           npm run build -w exocortex
           npm run build -w @kitelev/exocortex-services
           node packages/obsidian-plugin/esbuild.config.mjs production
 
       - name: Log in to GHCR
+        if: steps.tok.outputs.present == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -66,6 +88,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Resolve base image (pull from GHCR or build locally)
+        if: steps.tok.outputs.present == 'true'
         id: base
         run: |
           set -euo pipefail
@@ -80,6 +103,7 @@ jobs:
           fi
 
       - name: Build EKA e2e Docker image
+        if: steps.tok.outputs.present == 'true'
         run: |
           docker build \
             --build-arg "BASE_IMAGE=${{ steps.base.outputs.image }}" \
@@ -88,16 +112,13 @@ jobs:
             .
 
       - name: Run EKA Obsidian-leg e2e
+        if: steps.tok.outputs.present == 'true'
         env:
           # REGISTRY_TOKEN is a provisioned org secret: a PAT with read access
           # to the private kitelev/exoas-* repos. Mapped to the env var the spec
-          # reads (EKA_E2E_PAT).
+          # reads (EKA_E2E_PAT). Presence is gated by the «Check EKA token» step.
           EKA_E2E_PAT: ${{ secrets.REGISTRY_TOKEN }}
         run: |
-          if [ -z "${EKA_E2E_PAT}" ]; then
-            echo "::error::REGISTRY_TOKEN secret is empty — cannot run the live EKA Obsidian-leg e2e."
-            exit 1
-          fi
           mkdir -p eka-results
           docker run --init --rm \
             -e EKA_E2E_PAT="${EKA_E2E_PAT}" \
