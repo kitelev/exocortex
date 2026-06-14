@@ -1,4 +1,5 @@
 import { App, Modal } from "obsidian";
+import { derivePath } from "exocortex";
 import { isLikelyGitHubUrl } from "./BootstrapVaultModal";
 
 export interface AddAssetSpaceInput {
@@ -9,9 +10,11 @@ export interface AddAssetSpaceInput {
  * AddAssetSpaceModal — input gate for the `Exocortex: Add AssetSpace by URL`
  * palette command (RFC 13da049f Phase 6.3).
  *
- * Collects a single public GitHub repo URL and live-previews the folder it will
- * be materialised into (`assetspaces/<folder>`, with the `exoas-` prefix
- * stripped, mirroring the CLI `assetspace-add` default).
+ * Collects a single public GitHub repo URL and live-previews the canonical
+ * Maven path it will be materialised into — `assetspaces/<owner>/<repo>` via
+ * `derivePath` (#3538), matching `invokeAddAssetSpace`, `bootstrap`, and
+ * `apply-profile`. Falls back to the flat `assetspaces/<name>` (`exoas-` prefix
+ * stripped) only when the URL is un-derivable, mirroring the command itself.
  *
  * Resolves `{ url }` only when the user clicks «Add» with a plausible GitHub
  * URL. Esc / Cancel / any close path resolves `null`. The promise resolves
@@ -104,13 +107,16 @@ export class AddAssetSpaceModal extends Modal {
   private previewText(url: string): string {
     if (url.length === 0) return "Target folder: (enter a URL)";
     if (!isLikelyGitHubUrl(url)) return "Target folder: (invalid URL)";
-    let folder = "(unknown)";
+    let path = "(unknown)";
     try {
-      folder = this.deriveFolderName(url);
+      // Mirror invokeAddAssetSpace (#3538): canonical Maven path
+      // `assetspaces/<owner>/<repo>` (derivePath), flat fallback only when the
+      // URL is un-derivable. Keeps the preview honest vs the actual mount path.
+      path = derivePath(url) ?? `assetspaces/${this.deriveFolderName(url)}`;
     } catch {
-      folder = "(unknown)";
+      path = "(unknown)";
     }
-    return `Target folder: assetspaces/${folder}`;
+    return `Target folder: ${path}`;
   }
 
   private submit(): void {

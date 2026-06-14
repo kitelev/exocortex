@@ -214,13 +214,16 @@ describe("AddAssetSpaceModal", () => {
     return repo.startsWith("exoas-") ? repo.slice("exoas-".length) : repo;
   };
 
-  it("live-previews the derived target folder", () => {
+  it("live-previews the canonical Maven target folder (#3538)", () => {
     new AddAssetSpaceModal(fakeApp, derive, () => undefined).open();
     const input = document.querySelector("input") as HTMLInputElement;
     input.value = "https://github.com/kitelev/exoas-pmbok-ontology";
     input.dispatchEvent(new Event("input"));
+    // #3538: the preview must match the actual mount path — the canonical
+    // `assetspaces/<owner>/<repo>` (real derivePath), NOT the old flat
+    // `assetspaces/<name>` (the injected `derive` fake is only the fallback now).
     expect(document.body.textContent).toMatch(
-      /Target folder: assetspaces\/pmbok-ontology/,
+      /Target folder: assetspaces\/kitelev\/exoas-pmbok-ontology/,
     );
   });
 
