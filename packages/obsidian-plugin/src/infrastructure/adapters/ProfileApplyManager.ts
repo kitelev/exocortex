@@ -218,10 +218,89 @@ export interface ProfileApplyManagerOptions {
    * `_switchInProgress`; this closes the opposite direction.
    */
   isSyncBusy?: () => boolean;
+  /**
+   * Overall deadline (ms) for the post-confirm apply critical section — lock
+   * acquire → Phase 1 pull → Phase 2 destroy/materialize → git commit → RDF
+   * refresh (and the REST/reindex equivalents).
+   *
+   * Issue #3532: on macOS desktop the apply-profile path hung forever AFTER the
+   * confirm dialog — `_switchInProgress` never even flipped (the stall happened
+   * before the mutation phase), no journal, 0 files cloned. The per-request
+   * (`requestTimeoutMs`, #3531) + per-git-clone (`execFile` timeout) bounds only
+   * cover the network/subprocess steps; the surrounding `vault.adapter` writes
+   * (lock + journal), `rdfIndexer.refresh()`, and any other Obsidian-API await
+   * have NO shared upper bound, so a single macOS-specific stall left the whole
+   * promise pending. This watchdog races the entire critical section so it
+   * REJECTS deterministically (clearing `_switchInProgress` + releasing the
+   * lock) instead of hanging — the palette callsite then surfaces a Notice.
+   *
+   * The confirm-dialog wait is deliberately OUTSIDE this deadline — user
+   * think-time must never expire. Default 600_000 (10 min) — comfortably longer
+   * than the slowest HEALTHY multi-AssetSpace apply (the per-pull 120s and
+   * per-clone 300s bounds reject earlier on a genuinely failing step). Set `0`
+   * to disable (e.g. tests asserting the unbounded behaviour).
+   */
+  applyTimeoutMs?: number;
 }
 
 const DEFAULT_JOURNAL_PATH = ".exocortex/switch-journal.jsonl";
 const DEFAULT_MAX_EXTENDS_DEPTH = 5;
+/**
+ * Default never-hang watchdog deadline for the post-confirm apply critical
+ * section (Issue #3532). 10 min — generous vs a healthy apply, finite enough to
+ * surface a macOS-desktop stall well before the user gives up.
+ */
+const DEFAULT_APPLY_TIMEOUT_MS = 600_000;
+
+/** Apply dependencies resolved by {@link ProfileApplyManager.assertApplyDepsWired}. */
+interface ResolvedApplyDeps {
+  assetSpaceManager: AssetSpaceManager;
+  cacheLayer: ICacheLayer;
+  gitOps: GitSubmoduleOps;
+  uncommittedGuard: UncommittedChangesGuard;
+  confirmGate: IConfirmGate;
+  localDataStore: PluginLocalDataStore;
+  vaultRootPath: string;
+}
+
+/**
+ * Post-confirm desktop apply mutation context — bundles the locals the extracted
+ * {@link ProfileApplyManager.runApplyMutation} needs so the public
+ * {@link ProfileApplyManager.applyProfile} can hand the whole critical section
+ * to the never-hang watchdog (Issue #3532).
+ */
+interface DesktopApplyMutationContext {
+  targetProfileUid: string;
+  targetProfileLabel: string;
+  startedAt: number;
+  toDestroy: Array<{ asUid: string; submodulePath: string; label: string }>;
+  toMaterialize: Array<{
+    asUid: string;
+    submodulePath: string;
+    gitUrl: string;
+    label: string;
+    ref: string;
+  }>;
+  infoBySubmodulePath: Map<string, AssetSpaceInfo>;
+  deps: ResolvedApplyDeps;
+}
+
+/** Post-confirm REST/mobile apply mutation context (Issue #3532 watchdog parity). */
+interface RestApplyMutationContext {
+  targetProfileUid: string;
+  targetProfileLabel: string;
+  startedAt: number;
+  toDestroy: Array<{ asUid: string; submodulePath: string; label: string }>;
+  toMaterialize: Array<{
+    asUid: string;
+    submodulePath: string;
+    gitUrl: string;
+    label: string;
+    ref: string;
+  }>;
+  restMount: RestAssetSpaceMount;
+  localDataStore: PluginLocalDataStore;
+}
 
 /**
  * R24 TS-floor guard error. Re-exported from the `exocortex` core
@@ -287,6 +366,7 @@ export class ProfileApplyManager {
   private readonly localDataStore?: PluginLocalDataStore;
   private readonly vaultRootPath?: string;
   private readonly isSyncBusy?: () => boolean;
+  private readonly applyTimeoutMs: number;
 
   constructor(options: ProfileApplyManagerOptions) {
     this.app = options.app;
@@ -309,6 +389,12 @@ export class ProfileApplyManager {
     this.localDataStore = options.localDataStore;
     this.vaultRootPath = options.vaultRootPath;
     this.isSyncBusy = options.isSyncBusy;
+    // Negative is meaningless — clamp to 0 (disabled). `0` keeps the unbounded
+    // behaviour (tests that assert pre-watchdog semantics).
+    this.applyTimeoutMs = Math.max(
+      0,
+      options.applyTimeoutMs ?? DEFAULT_APPLY_TIMEOUT_MS,
+    );
   }
 
   /**
@@ -330,6 +416,25 @@ export class ProfileApplyManager {
     targetProfileUid: string,
     noticeOverride?: string,
   ): Promise<void> {
+    // Never-hang watchdog (Issue #3532) — the reindex path acquires a lock,
+    // writes journal entries (`vault.adapter`), and calls `rdfIndexer.refresh()`,
+    // none of which has a native upper bound. Race the whole section so a
+    // macOS-desktop stall rejects deterministically instead of hanging.
+    await this.withApplyDeadline(
+      () => this.runReindexMountState(targetProfileUid, noticeOverride),
+      `reindex ${targetProfileUid.slice(0, 8)}`,
+      () => this.clearStuckSettingsState(),
+    );
+  }
+
+  private async runReindexMountState(
+    targetProfileUid: string,
+    noticeOverride?: string,
+  ): Promise<void> {
+    // Ensure the `.exocortex/` parent exists before the lock/journal writes —
+    // Obsidian's `vault.adapter.write` does NOT create parent dirs, so a fresh
+    // vault would otherwise throw ENOENT on the first lock write (Issue #3532).
+    await this.ensureExocortexDir();
     const acquired = await this.lockMgr.acquireLock(`switch-profile-${targetProfileUid}`);
     if (!acquired) {
       throw new Error(`Another switch is in progress (lock held). Try again shortly.`);
@@ -637,6 +742,11 @@ export class ProfileApplyManager {
     const approved = await deps.confirmGate.confirmApply(plan);
     if (!approved) throw new ApplyAbortedByUser();
 
+    // Ensure `.exocortex/` exists before any lock/journal write — Obsidian's
+    // `vault.adapter.write` does NOT create parent dirs, so a fresh vault would
+    // otherwise throw ENOENT on the first lock/journal write (Issue #3532).
+    await this.ensureExocortexDir();
+
     // No-op early exit: no destroy + no materialize == mount-state already
     // matches the target. Re-index + record the selection (reindex-only path).
     // Still emit apply-completed so recoverIncompleteSwitch's tail-scan
@@ -660,6 +770,50 @@ export class ProfileApplyManager {
       return;
     }
 
+    // Never-hang watchdog (Issue #3532): bound the whole post-confirm mutation
+    // (lock acquire → Phase 1 pull → Phase 2 → git commit → RDF refresh). A
+    // single stalled `vault.adapter` write / git step / refresh would otherwise
+    // leave the apply pending forever (the macOS-desktop hang — `_switchInProgress`
+    // never even flipped). On timeout the watchdog rejects + best-effort clears
+    // `_switchInProgress` and releases the lock; the palette callsite surfaces
+    // the resulting error as a Notice.
+    await this.withApplyDeadline(
+      () =>
+        this.runApplyMutation({
+          targetProfileUid,
+          targetProfileLabel,
+          startedAt,
+          toDestroy,
+          toMaterialize,
+          infoBySubmodulePath,
+          deps,
+        }),
+      targetProfileLabel,
+      () => this.clearStuckLocalState(deps.localDataStore),
+    );
+  }
+
+  /**
+   * Post-confirm desktop apply mutation — extracted from {@link applyProfile}
+   * so {@link withApplyDeadline} can race the whole critical section against a
+   * deadline (Issue #3532). Acquire lock → Phase 1 pull → Phase 2
+   * destroy/materialize → git commit → persist + RDF refresh. Its own
+   * try/catch/finally clears `_switchInProgress` + releases the lock on any
+   * error or on success; the watchdog's timeout handler repeats that best-effort
+   * if this promise is still pending when the deadline fires (idempotent).
+   */
+  private async runApplyMutation(
+    ctx: DesktopApplyMutationContext,
+  ): Promise<void> {
+    const {
+      targetProfileUid,
+      targetProfileLabel,
+      startedAt,
+      toDestroy,
+      toMaterialize,
+      infoBySubmodulePath,
+      deps,
+    } = ctx;
     // Acquire lock, set _switchInProgress.
     const acquired = await this.lockMgr.acquireLock(`apply-${targetProfileUid}`);
     if (!acquired) {
@@ -1023,6 +1177,9 @@ export class ProfileApplyManager {
     const approved = await confirmGate.confirmApply(plan);
     if (!approved) throw new ApplyAbortedByUser();
 
+    // Ensure `.exocortex/` exists before any lock/journal write (Issue #3532).
+    await this.ensureExocortexDir();
+
     // No-op early exit — mount-state already matches the target. Re-index +
     // record the selection (reindex-only path).
     if (toDestroy.length === 0 && toMaterialize.length === 0) {
@@ -1033,6 +1190,45 @@ export class ProfileApplyManager {
       return;
     }
 
+    // Never-hang watchdog (Issue #3532) — parity with the desktop path. Bound
+    // the REST mount/unmount critical section so a stalled tarball mount /
+    // `vault.adapter` write / refresh rejects deterministically instead of
+    // hanging; the timeout handler clears `_switchInProgress` + releases the lock.
+    await this.withApplyDeadline(
+      () =>
+        this.runRestApplyMutation({
+          targetProfileUid,
+          targetProfileLabel,
+          startedAt,
+          toDestroy,
+          toMaterialize,
+          restMount,
+          localDataStore,
+        }),
+      targetProfileLabel,
+      () => this.clearStuckLocalState(localDataStore),
+    );
+  }
+
+  /**
+   * Post-confirm REST/mobile apply mutation — extracted from
+   * {@link applyProfileViaRest} so {@link withApplyDeadline} can race the whole
+   * critical section against a deadline (Issue #3532 watchdog parity with the
+   * desktop path). Own try/catch/finally clears `_switchInProgress` + releases
+   * the lock on error/success; the watchdog repeats that best-effort on timeout.
+   */
+  private async runRestApplyMutation(
+    ctx: RestApplyMutationContext,
+  ): Promise<void> {
+    const {
+      targetProfileUid,
+      targetProfileLabel,
+      startedAt,
+      toDestroy,
+      toMaterialize,
+      restMount,
+      localDataStore,
+    } = ctx;
     const acquired = await this.lockMgr.acquireLock(`apply-rest-${targetProfileUid}`);
     if (!acquired) {
       throw new Error("Another profile switch is in progress (lock held). Try again shortly.");
@@ -1352,15 +1548,7 @@ export class ProfileApplyManager {
 
   // === Apply helpers ===
 
-  private assertApplyDepsWired(): {
-    assetSpaceManager: AssetSpaceManager;
-    cacheLayer: ICacheLayer;
-    gitOps: GitSubmoduleOps;
-    uncommittedGuard: UncommittedChangesGuard;
-    confirmGate: IConfirmGate;
-    localDataStore: PluginLocalDataStore;
-    vaultRootPath: string;
-  } {
+  private assertApplyDepsWired(): ResolvedApplyDeps {
     if (
       this.assetSpaceManager === undefined ||
       this.cacheLayer === undefined ||
@@ -1722,6 +1910,129 @@ export class ProfileApplyManager {
       return p?.label ?? uid.slice(0, 8);
     } catch {
       return uid.slice(0, 8);
+    }
+  }
+
+  /**
+   * Never-hang watchdog (Issue #3532). Race `work()` against {@link applyTimeoutMs}.
+   *
+   * Obsidian's `vault.adapter` writes (lock + journal), `rdfIndexer.refresh()`,
+   * and (pre-#3531) `requestUrl` have no shared upper bound — a single stalled
+   * step on macOS desktop left the whole apply pending forever (the
+   * `_switchInProgress`-never-flips signature in #3532). On timeout we REJECT
+   * with a clear, PAT-free error AND run `onTimeout` (best-effort clear of the
+   * persisted in-progress flag + lock release), because the stuck `work` promise
+   * won't run its own `finally` while it's still pending. If `work` settles
+   * normally (success OR a real error) `onTimeout` never runs — `work`'s own
+   * try/catch/finally already cleaned up; the two are idempotent if both fire.
+   *
+   * The losing (stuck) promise cannot be cancelled, so it is left to settle and
+   * its eventual result discarded; `clearTimeout` on the win path prevents a
+   * leaked timer.
+   */
+  private async withApplyDeadline<T>(
+    work: () => Promise<T>,
+    label: string,
+    onTimeout: () => Promise<void>,
+  ): Promise<T> {
+    const workPromise = work();
+    if (this.applyTimeoutMs <= 0) return workPromise;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        reject(
+          new Error(
+            `applyProfile "${label}" timed out after ${this.applyTimeoutMs}ms — ` +
+              `a step stalled (network / git / filesystem). The vault may be ` +
+              `unchanged or partially applied; reload Obsidian and re-check. ` +
+              `(Issue #3532)`,
+          ),
+        );
+      }, this.applyTimeoutMs);
+      // Unref so a pending timer never keeps a Node test process alive; guarded
+      // because Electron renderer / browser timers expose no `unref`.
+      (timer as unknown as { unref?: () => void }).unref?.();
+    });
+    try {
+      return await Promise.race([workPromise, deadline]);
+    } finally {
+      clearTimeout(timer);
+      if (timedOut) {
+        await onTimeout().catch(() => undefined);
+      }
+    }
+  }
+
+  /**
+   * Best-effort recovery after a watchdog timeout on a path backed by
+   * {@link PluginLocalDataStore} (desktop apply + REST apply). Clears the
+   * persisted `_switchInProgress` flag and releases the lock so the next apply
+   * is not blocked by a stuck state. All failures swallowed — this runs in a
+   * degraded (stalled) environment.
+   */
+  private async clearStuckLocalState(
+    localDataStore: PluginLocalDataStore,
+  ): Promise<void> {
+    try {
+      const s = localDataStore.snapshot();
+      await localDataStore.save({
+        activeProfileUid: s.activeProfileUid,
+        _switchInProgress: false,
+      });
+    } catch {
+      // Swallow — best-effort in a degraded environment.
+    }
+    try {
+      await this.lockMgr.releaseLock();
+    } catch {
+      // Swallow.
+    }
+  }
+
+  /**
+   * Best-effort recovery after a watchdog timeout on the reindex path, which
+   * tracks `_switchInProgress` via {@link settingsStore} (not localDataStore).
+   */
+  private async clearStuckSettingsState(): Promise<void> {
+    try {
+      const s = await this.settingsStore.load();
+      s._switchInProgress = false;
+      await this.settingsStore.save(s);
+    } catch {
+      // Swallow.
+    }
+    try {
+      await this.lockMgr.releaseLock();
+    } catch {
+      // Swallow.
+    }
+  }
+
+  /**
+   * Ensure the `.exocortex/` parent dir (holding the lock + journal files)
+   * exists before the first write. Obsidian's `vault.adapter.write` does NOT
+   * create parent directories, so on a fresh vault the very first lock/journal
+   * write would throw ENOENT (Issue #3532 defensive; mirrors the Docker-e2e
+   * manual `mkdir .exocortex/` workaround). Best-effort + idempotent: skips if
+   * the dir already exists and swallows mkdir errors (a genuine failure surfaces
+   * later as a clear write error rather than a confusing mkdir trace).
+   */
+  private async ensureExocortexDir(): Promise<void> {
+    const idx = this.journalPath.lastIndexOf("/");
+    if (idx <= 0) return;
+    const dir = this.journalPath.slice(0, idx);
+    try {
+      if (await this.app.vault.adapter.exists(dir)) return;
+      const adapter = this.app.vault.adapter as unknown as {
+        mkdir?: (p: string) => Promise<void>;
+      };
+      if (typeof adapter.mkdir === "function") {
+        await adapter.mkdir(dir);
+      }
+    } catch {
+      // Best-effort — the subsequent write surfaces a clear error if needed.
     }
   }
 
