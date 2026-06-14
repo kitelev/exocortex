@@ -4,6 +4,7 @@ import {
   isGroundingFrontmatter,
   isCommandBindingFrontmatter,
 } from "../../../../src/domain/models/CommandDefinition";
+import type { GroundingDefinition } from "../../../../src/domain/models/CommandDefinition";
 import { GroundingType } from "../../../../src/domain/constants/GroundingType";
 
 describe("CommandDefinition", () => {
@@ -158,7 +159,10 @@ describe("CommandDefinition", () => {
     });
 
     it("should represent create_instance grounding with minimal fields", () => {
-      const gnd = {
+      // Annotated as GroundingDefinition so the optional create_instance fields
+      // (targetClass / targetPrototype / targetFolder) are in scope for the
+      // undefined-assertions below; a bare literal would narrow to {id,label,type}.
+      const gnd: GroundingDefinition = {
         id: "gnd-create-minimal",
         label: "Create instance",
         type: GroundingType.CREATE_INSTANCE,

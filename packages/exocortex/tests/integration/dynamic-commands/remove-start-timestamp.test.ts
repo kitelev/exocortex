@@ -104,7 +104,11 @@ async function seedCommandTriples(store: InMemoryTripleStore): Promise<void> {
     new Triple(gndSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
     new Triple(gndSubject, Namespace.EXO.term("Asset_uid"), new Literal(GND_UID)),
     new Triple(gndSubject, Namespace.EXO.term("Asset_label"), new Literal("Delete startTimestamp")),
-    new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("property_delete")),
+    // RFC 9d20c91f Phase 3: Grounding_type is a wikilink-form UID ref into the
+    // exocmd__GroundingType catalog (property_delete → 4bdf1d0b), not a bare
+    // string. A bare string fails CommandResolver.resolveGroundingTypeReference
+    // → grounding inert → command dropped.
+    new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("[[4bdf1d0b-e9da-4d96-bafe-c5aaef8c2bd5]]")),
     new Triple(
       gndSubject,
       Namespace.EXOCMD.term("Grounding_targetProperty"),

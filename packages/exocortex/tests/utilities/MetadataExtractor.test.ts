@@ -73,12 +73,15 @@ describe("MetadataExtractor", () => {
   });
 
   describe("extractInstanceClass", () => {
-    it("should extract single instance class", () => {
+    it("should return the raw exo__Instance_class value (normalization is the consumer's job)", () => {
+      // extractInstanceClass is a thin raw-passthrough since #2788; wikilink /
+      // single-element-array normalization happens downstream (e.g.
+      // CommandManager.resolveClassIsPrototype via WikiLinkHelpers.normalize).
       const metadata = { exo__Instance_class: ["[[ems__Task]]"] };
 
       const result = extractor.extractInstanceClass(metadata);
 
-      expect(result).toBe("ems__Task");
+      expect(result).toEqual(["[[ems__Task]]"]);
     });
 
     it("should extract array of instance classes", () => {
@@ -273,7 +276,8 @@ describe("MetadataExtractor", () => {
       const result = extractor.extractCommandVisibilityContext(mockFile);
 
       expect(result).toEqual({
-        instanceClass: "ems__Task",
+        // Raw passthrough — see "should return the raw exo__Instance_class value".
+        instanceClass: ["[[ems__Task]]"],
         currentStatus: "[[StatusInProgress]]",
         metadata,
         isArchived: false,
