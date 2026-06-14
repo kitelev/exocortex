@@ -91,7 +91,10 @@ fi
 # runs all suites under jest.config.js `roots` (`<rootDir>/tests`). Mirrors the
 # CI gate in .github/workflows/ci.yml `test-coverage-exocortex`.
 echo "📦 Running exocortex core test suite (full)..."
-EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --forceExit"
+# tests/performance/** excluded — wall-clock micro-benchmarks with tight ms
+# thresholds flake under parallel-worker CI load (mirrors the CI gate in
+# .github/workflows/ci.yml test-coverage-exocortex).
+EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathIgnorePatterns /node_modules/ /tests/performance/ --forceExit"
 if [ "$CI" = "true" ]; then
     if timeout 300 node ./node_modules/jest/bin/jest.js $EXOCORTEX_JEST_ARGS; then
         echo "✅ Exocortex core tests passed!"
