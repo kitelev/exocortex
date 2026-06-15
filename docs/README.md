@@ -77,7 +77,6 @@ by path.
 ### Obsidian plugin — `packages/obsidian-plugin/docs/`
 
 - [EXO_LAYOUT.md](../packages/obsidian-plugin/docs/EXO_LAYOUT.md) — layout engine
-- [RELATION_COLUMN_SET.md](../packages/obsidian-plugin/docs/RELATION_COLUMN_SET.md) — relation column sets
 - [TESTING.md](../packages/obsidian-plugin/docs/TESTING.md) — plugin testing guide
 - [release-checklist-mobile.md](../packages/obsidian-plugin/docs/release-checklist-mobile.md) — mobile release checklist
 - [FLAKY_DASHBOARD.md](../packages/obsidian-plugin/docs/FLAKY_DASHBOARD.md) — flaky-test dashboard (drives `flaky-aggregate`/`flaky-render-markdown` scripts)
