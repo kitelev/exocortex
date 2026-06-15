@@ -2119,18 +2119,35 @@ export class CommandResolver {
         undefined,
       );
       let targetClassCondition: string | undefined = undefined;
+      let targetClassConditionUid: string | undefined = undefined;
       if (conditionTriples.length > 0) {
-        const resolved = await this.resolveLabelRef(
+        // Issue #3562: extract the condition ref directly (UID-canon when the
+        // wikilink points to a UUID-named class TBox). Previously this resolved
+        // straight to a label via `resolveLabelRef` and skipped the ENTIRE rule
+        // when label resolution failed — which happens right after
+        // `Apply profile` materialises the class TBox before the triple store
+        // / metadataCache have indexed it, masking the #3555 fix. We now keep
+        // the UID so the executor can match it UID↔UID without the lagging
+        // resolver; the label is resolved best-effort (for legacy label-form
+        // targets) and its failure no longer drops the rule.
+        const refName = await this.getObsidianName(
           refSubject,
           Namespace.EXOCMD.term("InheritanceRule_targetClassCondition"),
         );
-        if (!resolved) {
+        if (!refName) {
           this.logger.warn(
             `Grounding ${groundingUid}: InheritanceRule has exocmd__InheritanceRule_targetClassCondition triple but ref is unresolvable — entire rule skipped (would otherwise apply unconditionally, broadening scope).`,
           );
           continue;
         }
-        targetClassCondition = resolved;
+        if (this.looksLikeUUID(refName)) {
+          targetClassConditionUid = refName;
+          targetClassCondition =
+            (await this.resolveLabelByUID(refName)) ?? undefined;
+        } else {
+          // Legacy label-form condition (e.g. `[[ems__Area]]` / `ems__Area`).
+          targetClassCondition = refName;
+        }
       }
 
       const exclusionTriples = await this.tripleStore.match(
@@ -2139,6 +2156,7 @@ export class CommandResolver {
         undefined,
       );
       const targetClassExclusion: string[] = [];
+      const targetClassExclusionUids: string[] = [];
       let exclusionBroken = false;
       for (const triple of exclusionTriples) {
         let name: string | null = null;
@@ -2152,14 +2170,17 @@ export class CommandResolver {
           exclusionBroken = true;
           continue;
         }
-        const resolved = this.looksLikeUUID(name)
-          ? await this.resolveLabelByUID(name)
-          : name;
-        if (!resolved) {
-          exclusionBroken = true;
-          continue;
+        // Issue #3562: same UID-canon treatment as the condition. A UUID-form
+        // exclusion is enforced via its UID even when the label can't be
+        // resolved (post-apply lag) — dropping it would broaden the rule's
+        // scope, so keeping the UID-only exclusion is the safe direction.
+        if (this.looksLikeUUID(name)) {
+          targetClassExclusionUids.push(name);
+          const label = await this.resolveLabelByUID(name);
+          if (label) targetClassExclusion.push(label);
+        } else {
+          targetClassExclusion.push(name);
         }
-        targetClassExclusion.push(resolved);
       }
       if (exclusionBroken) {
         this.logger.warn(
@@ -2184,7 +2205,9 @@ export class CommandResolver {
         sourcePropertyName,
         targetPropertyName,
         targetClassCondition,
+        targetClassConditionUid,
         targetClassExclusion,
+        targetClassExclusionUids,
         priority,
       });
     }

@@ -265,6 +265,10 @@ describe("CommandResolver — RFC v2 Phase 3a resolveInheritanceRules", () => {
     expect(cond!.sourcePropertyName).toBe("ems__Effort_area");
     expect(cond!.targetPropertyName).toBe("ems__Effort_areaInherited");
     expect(cond!.targetClassCondition).toBe("ems__Area");
+    // Issue #3562: the UID-canon form of the condition is carried alongside the
+    // label, so the executor can match UID↔UID without the (post-apply lagging)
+    // label→UID resolver.
+    expect(cond!.targetClassConditionUid).toBe(COND_CLASS_AREA);
     expect(cond!.targetClassExclusion).toEqual([]);
 
     const excl = byPriority.get(50);
@@ -326,24 +330,100 @@ describe("CommandResolver — RFC v2 Phase 3a resolveInheritanceRules", () => {
     expect(rule.targetClassExclusion).toEqual(
       expect.arrayContaining(["ems__Task", "ems__Project"]),
     );
+    // Issue #3562: UID-canon forms carried alongside the labels for resolver-
+    // free matching.
+    expect(rule.targetClassExclusionUids).toEqual(
+      expect.arrayContaining([EXCL_CLASS_TASK, EXCL_CLASS_PROJ]),
+    );
     expect(rule.priority).toBe(25);
   });
 
-  // HIGH fix (PR #3224 code-review, 2026-05-22): broken condition/exclusion
-  // refs must skip the ENTIRE rule, not silently expand scope.
-  it("skips entire rule when targetClassCondition triple exists but ref unresolvable", async () => {
-    const BROKEN_CLASS_UID = "ffffffff-ffff-4fff-8fff-ffffffffffff";
-    // Add InheritanceRule that references a class UID that has no asset (no Asset_label triple).
+  // Issue #3562: a UID-form condition whose LABEL is unresolvable is now
+  // RETAINED with its UID (not dropped). The original "drop on unresolvable"
+  // behaviour (PR #3224) conflated "broken ref" with "label not yet indexed" —
+  // and the latter happens routinely right after `Apply profile` materialises
+  // the class TBox, silently skipping the conditional rule until reload. The
+  // rule still carries a condition (the UID), so scope is NOT broadened: it
+  // matches ONLY assets of that UID class (none, if the class is genuinely
+  // broken; the real class once its label later resolves). Still NOT
+  // unconditional.
+  it("retains rule with UID-only condition when targetClassCondition label is unresolvable (Issue #3562)", async () => {
+    const STALE_CLASS_UID = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+    // InheritanceRule references a class UID that has no Asset_label triple
+    // (mirrors a freshly-materialised class TBox not yet indexed post-apply).
     await addInheritanceRuleAsset(store, {
       uid: RULE_UID_COND,
       sourcePropertyRefUid: SRC_PROP_UID,
       targetPropertyRefUid: TGT_PROP_UID,
-      targetClassConditionRefUid: BROKEN_CLASS_UID, // exists in triple but never labelled
+      targetClassConditionRefUid: STALE_CLASS_UID,
       priority: 100,
     });
     await addGroundingWithInheritanceRules(store, {
       uid: GROUNDING_UID,
-      label: "Grounding with broken condition ref",
+      label: "Grounding with UID-only (label-unresolvable) condition",
+      ruleRefUids: [RULE_UID_COND],
+    });
+    await addCommandForGrounding(store, COMMAND_UID, GROUNDING_UID);
+
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+
+    // Rule retained — NOT dropped.
+    expect(cmd!.grounding.inheritanceRule).toHaveLength(1);
+    const rule = cmd!.grounding.inheritanceRule![0];
+    // Condition preserved as the UID (resolver-free match path); label absent.
+    expect(rule.targetClassConditionUid).toBe(STALE_CLASS_UID);
+    expect(rule.targetClassCondition).toBeUndefined();
+    // No "entire rule skipped" warn — retention is the correct, safe outcome.
+    expect(
+      logger.warnings.some((w) => w.includes("entire rule skipped")),
+    ).toBe(false);
+  });
+
+  // Issue #3562: a genuinely BROKEN condition ref — one whose triple object
+  // yields no name at all (not merely an unresolvable label) — still skips the
+  // entire rule. `getObsidianName` returns null only when there is no parseable
+  // ref to anchor the condition on, so retaining it WOULD make the rule
+  // unconditional (scope broadening). Preserve the PR #3224 safety for that
+  // case.
+  it("skips entire rule when targetClassCondition ref yields no parseable name", async () => {
+    const ruleSubject = new IRI(`obsidian://vault/${RULE_UID_COND}.md`);
+    await store.addAll([
+      new Triple(
+        ruleSubject,
+        Namespace.RDF.term("type"),
+        Namespace.EXOCMD.term("InheritanceRule"),
+      ),
+      new Triple(
+        ruleSubject,
+        Namespace.EXO.term("Asset_uid"),
+        new Literal(RULE_UID_COND),
+      ),
+      new Triple(
+        ruleSubject,
+        Namespace.EXOCMD.term("InheritanceRule_sourceProperty"),
+        new IRI(`obsidian://vault/${SRC_PROP_UID}.md`),
+      ),
+      new Triple(
+        ruleSubject,
+        Namespace.EXOCMD.term("InheritanceRule_targetProperty"),
+        new IRI(`obsidian://vault/${TGT_PROP_UID}.md`),
+      ),
+      // Condition triple present but its object is a whitespace-only literal →
+      // unwraps to the empty string → getObsidianName yields no usable name.
+      new Triple(
+        ruleSubject,
+        Namespace.EXOCMD.term("InheritanceRule_targetClassCondition"),
+        new Literal(" "),
+      ),
+      new Triple(
+        ruleSubject,
+        Namespace.EXOCMD.term("InheritanceRule_priority"),
+        new Literal("100"),
+      ),
+    ]);
+    await addGroundingWithInheritanceRules(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding with nameless condition ref",
       ruleRefUids: [RULE_UID_COND],
     });
     await addCommandForGrounding(store, COMMAND_UID, GROUNDING_UID);
@@ -352,7 +432,6 @@ describe("CommandResolver — RFC v2 Phase 3a resolveInheritanceRules", () => {
 
     // Entire rule dropped — would-be unconditional rule is not silently applied.
     expect(cmd!.grounding.inheritanceRule).toBeUndefined();
-    // Warn surfaces the scope-broadening risk.
     expect(
       logger.warnings.some((w) =>
         w.includes("targetClassCondition triple but ref is unresolvable") &&
@@ -361,31 +440,36 @@ describe("CommandResolver — RFC v2 Phase 3a resolveInheritanceRules", () => {
     ).toBe(true);
   });
 
-  it("skips entire rule when one targetClassExclusion entry is unresolvable (asymmetric scope expansion)", async () => {
-    const BROKEN_EXCL_UID = "ffffffff-ffff-4fff-8fff-fffffffffff0";
-    // Two exclusion refs — one valid, one broken (no asset_label triple).
+  it("retains rule with UID-only exclusion when one exclusion label is unresolvable (Issue #3562)", async () => {
+    const STALE_EXCL_UID = "ffffffff-ffff-4fff-8fff-fffffffffff0";
+    // Two exclusion refs — one labelled, one whose label isn't indexed yet.
     await addInheritanceRuleAsset(store, {
       uid: RULE_UID_EXCL,
       sourcePropertyRefUid: SRC_PROP_UID,
       targetPropertyRefUid: TGT_PROP_UID,
-      targetClassExclusionRefUids: [EXCL_CLASS_TASK, BROKEN_EXCL_UID],
+      targetClassExclusionRefUids: [EXCL_CLASS_TASK, STALE_EXCL_UID],
       priority: 50,
     });
     await addGroundingWithInheritanceRules(store, {
       uid: GROUNDING_UID,
-      label: "Grounding with broken exclusion entry",
+      label: "Grounding with UID-only (label-unresolvable) exclusion",
       ruleRefUids: [RULE_UID_EXCL],
     });
     await addCommandForGrounding(store, COMMAND_UID, GROUNDING_UID);
 
     const cmd = await resolver.loadCommand(COMMAND_UID);
 
-    expect(cmd!.grounding.inheritanceRule).toBeUndefined();
+    // Rule retained — exclusion enforced via UID, not silently dropped.
+    expect(cmd!.grounding.inheritanceRule).toHaveLength(1);
+    const rule = cmd!.grounding.inheritanceRule![0];
+    // Both excluded class UIDs present (UID-canon enforcement path).
+    expect(rule.targetClassExclusionUids).toEqual(
+      expect.arrayContaining([EXCL_CLASS_TASK, STALE_EXCL_UID]),
+    );
+    // Only the resolvable label appears in the label-form list.
+    expect(rule.targetClassExclusion).toEqual(["ems__Task"]);
     expect(
-      logger.warnings.some((w) =>
-        w.includes("targetClassExclusion entry") &&
-        w.includes("entire rule skipped"),
-      ),
-    ).toBe(true);
+      logger.warnings.some((w) => w.includes("entire rule skipped")),
+    ).toBe(false);
   });
 });

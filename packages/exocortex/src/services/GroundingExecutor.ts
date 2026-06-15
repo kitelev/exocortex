@@ -1273,11 +1273,13 @@ export class GroundingExecutor {
     for (const rule of inheritanceRule) {
       const conditionOk = await this.inheritanceConditionMatches(
         rule.targetClassCondition,
+        rule.targetClassConditionUid,
         targetClassNames,
       );
       if (!conditionOk) continue;
       const excluded = await this.inheritanceExclusionMatches(
         rule.targetClassExclusion,
+        rule.targetClassExclusionUids,
         targetClassNames,
       );
       if (excluded) continue;
@@ -1300,43 +1302,79 @@ export class GroundingExecutor {
 
   /**
    * Check if a class condition matches any of the target's classes. Absent
-   * condition = unconditional rule (always matches).
-   *
-   * Matching is dual-form: direct symbolic equality (target authored with
-   * `[[ems__Area]]` style) OR via the injected ClassLabelToUidResolver
-   * (target authored with UID-canon `[[82c74542-...]]`). Resolver absence /
-   * failure falls back to direct-only — backward-compatible with test/CLI
-   * harnesses that don't wire the Obsidian metadata-cache adapter.
+   * condition (no label AND no UID) = unconditional rule (always matches).
    */
   private async inheritanceConditionMatches(
-    condition: string | undefined,
+    conditionLabel: string | undefined,
+    conditionUid: string | undefined,
     targetClassNames: string[],
   ): Promise<boolean> {
-    if (!condition) return true;
-    return this.classMatchesAny(condition, targetClassNames);
+    if (!conditionLabel && !conditionUid) return true;
+    return this.classRefMatchesAny(conditionLabel, conditionUid, targetClassNames);
   }
 
+  /**
+   * A rule is excluded when ANY excluded class matches the target. The UID and
+   * label exclusion sets are checked independently (Issue #3562 — they are not
+   * a positional parallel; either set alone is sufficient to exclude).
+   */
   private async inheritanceExclusionMatches(
-    exclusions: readonly string[],
+    exclusionLabels: readonly string[],
+    exclusionUids: readonly string[] | undefined,
     targetClassNames: string[],
   ): Promise<boolean> {
-    for (const ex of exclusions) {
-      if (await this.classMatchesAny(ex, targetClassNames)) return true;
+    for (const uid of exclusionUids ?? []) {
+      if (uid && targetClassNames.includes(uid)) return true;
+    }
+    for (const label of exclusionLabels) {
+      if (await this.classRefMatchesAny(label, undefined, targetClassNames)) {
+        return true;
+      }
     }
     return false;
   }
 
-  private async classMatchesAny(
-    label: string,
+  /**
+   * Match a class ref — carried as an optional UID-canon form and/or an
+   * optional label — against the target's class names.
+   *
+   * Issue #3562: the UID-canon direct check runs FIRST and needs no external
+   * resolver, so a UID-canon condition (`[[82c74542-...]]`) matches a UID-canon
+   * target class immediately — even right after `Apply profile`, before the
+   * Obsidian `metadataCache` (which backs `classLabelToUid`) has indexed the
+   * freshly-mounted class TBox. Previously the only bridge was the label→UID
+   * resolver, which lags post-apply and silently skipped conditional
+   * inheritance rules (orphaning child areas/tasks) until the next reload.
+   *
+   * The label-direct and resolver paths remain as fallbacks for legacy
+   * label-form data (target authored `[[ems__Area]]`, or a condition that has
+   * no UID-canon form). Resolver absence / failure degrades gracefully.
+   */
+  private async classRefMatchesAny(
+    label: string | undefined,
+    uid: string | undefined,
     targetClassNames: string[],
   ): Promise<boolean> {
-    if (targetClassNames.includes(label)) return true;
-    if (!this.classLabelToUid) return false;
-    try {
-      const uid = await this.classLabelToUid(label);
-      if (uid && uid.length > 0 && targetClassNames.includes(uid)) return true;
-    } catch {
-      // Resolver failures degrade gracefully — direct-only match still applied.
+    // 1. UID-canon direct match — resolver-free, fresh immediately post-apply.
+    if (uid && targetClassNames.includes(uid)) return true;
+    // 2. Label-direct match — target authored in legacy label form.
+    if (label && targetClassNames.includes(label)) return true;
+    // 3. Fallback: bridge label→UID via the injected resolver (Obsidian
+    //    metadataCache in the plugin / fs scan in the CLI). Lags right after
+    //    apply, hence steps 1-2 above.
+    if (label && this.classLabelToUid) {
+      try {
+        const resolvedUid = await this.classLabelToUid(label);
+        if (
+          resolvedUid &&
+          resolvedUid.length > 0 &&
+          targetClassNames.includes(resolvedUid)
+        ) {
+          return true;
+        }
+      } catch {
+        // Resolver failures degrade gracefully — direct matches still applied.
+      }
     }
     return false;
   }

@@ -3309,6 +3309,101 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
       expect(labelToUid).toHaveBeenCalledWith("ems__Area");
     });
 
+    // -- Issue #3562: UID-canon condition matches UID-canon target WITHOUT the
+    //    label→UID resolver. Reproduces the post-`Apply profile` staleness where
+    //    the resolver (Obsidian metadataCache) has not yet indexed the freshly
+    //    materialised class TBox and returns null — previously skipping the
+    //    conditional rule and orphaning the new child Area (masking the #3555
+    //    fix). The fix carries `targetClassConditionUid` so the match is UID↔UID
+    //    direct. Revert-verify: FAILS pre-fix (condition matched only via the
+    //    null-returning resolver → ems__Area_parent absent), PASSES post-fix.
+    it("Issue #3562: UID-canon condition matches UID-canon target even when the label→UID resolver returns null (post-apply stale cache)", async () => {
+      const AREA_UID = "82c74542-1b14-4217-b852-d84730484b25";
+      // Simulate the post-apply lagging resolver: the class TBox is on disk but
+      // not yet in the metadataCache, so label→UID resolution returns null.
+      const staleResolver = jest.fn().mockResolvedValue(null);
+      const executorStaleResolver = new GroundingExecutor(
+        reader,
+        writer,
+        registry,
+        staleResolver,
+      );
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Area",
+        targetFolder: "03 Knowledge/areas",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Area_parent",
+            // Production shape: condition carries the UID-canon form (resolved
+            // from the `[[82c74542-…]]` wikilink by CommandResolver). Label is
+            // best-effort and irrelevant to the UID-direct match.
+            targetClassCondition: "ems__Area",
+            targetClassConditionUid: AREA_UID,
+            targetClassExclusion: [],
+            priority: 100,
+          },
+        ],
+      });
+      // Source area authored UID-canon: exo__Instance_class → [[82c74542-…]].
+      reader.readFile.mockResolvedValue(buildTargetFm([AREA_UID]));
+
+      const result = await executorStaleResolver.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "Child area pre-reload" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // The conditional rule applied: child area is NOT orphaned.
+      expect(content).toContain(`ems__Area_parent: "[[${TARGET_AREA_UID}]]"`);
+    });
+
+    // -- Issue #3562: UID-canon EXCLUSION enforced even when the label is
+    //    unresolvable (resolver null). The new instance is an Area, so a rule
+    //    excluding ems__Area must NOT apply. --
+    it("Issue #3562: UID-canon exclusion is enforced via UID when the resolver returns null", async () => {
+      const AREA_UID = "82c74542-1b14-4217-b852-d84730484b25";
+      const staleResolver = jest.fn().mockResolvedValue(null);
+      const executorStaleResolver = new GroundingExecutor(
+        reader,
+        writer,
+        registry,
+        staleResolver,
+      );
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Area",
+        targetFolder: "03 Knowledge/areas",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_parent",
+            // Excludes ems__Area (UID-canon). Target IS an Area → must skip.
+            targetClassExclusion: [],
+            targetClassExclusionUids: [AREA_UID],
+            priority: 50,
+          },
+        ],
+      });
+      reader.readFile.mockResolvedValue(buildTargetFm([AREA_UID]));
+
+      const result = await executorStaleResolver.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "Area must be excluded" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // Exclusion held: ems__Effort_parent must NOT be inherited onto an Area.
+      expect(content).not.toContain("ems__Effort_parent:");
+    });
+
     // -- End-to-end Grounding `a6ef8fda` semantics — golden scenario --
 
     it("End-to-end (Grounding a6ef8fda semantics): Area target → Task with Draft status + area + isDefinedBy", async () => {
