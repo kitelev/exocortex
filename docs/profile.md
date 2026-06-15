@@ -139,6 +139,51 @@ After a successful apply, the target profile UID is persisted as
 filter. It records "which profile this device last reconciled to"; the on-disk
 state is the source of truth.
 
+### Apply on a git-backed vault (commit first)
+
+On a **git-backed vault** (the recommended setup for submodule mode), apply
+**refuses to tear down an AssetSpace that has uncommitted changes** — it would
+otherwise destroy un-pushed work. This is the Vision Lock #5 _uncommitted abort_
+guard, surfaced as `UncommittedChangesAbortError`:
+
+```
+Apply aborted — N uncommitted file(s) in M AssetSpace(s) this profile would
+remove. Commit or stash the vault before applying.
+```
+
+This trips up a **fresh** onboarding flow, because the 3-step setup
+(**Bootstrap → Add registry/profiles → Apply profile**) pulls the AssetSpace
+folders into `assetspaces/` as **untracked** files. Git sees those untracked
+files as "uncommitted", so the very first apply that needs to unmount one of them
+aborts.
+
+**Fix — commit the vault once before the first apply:**
+
+```bash
+# From the vault root, after Bootstrap + Add-AssetSpace, before Apply profile:
+git add -A
+git commit -m "vault setup"
+```
+
+Then re-run **`Exocortex: Apply profile`**.
+
+> **⚠️ Protect your PAT.** A fresh vault has no `.gitignore`, so `git add -A`
+> would commit `.obsidian/data.local.json` — which holds your GitHub **personal
+> access token**. Before committing, add a `.gitignore` at the vault root:
+>
+> ```gitignore
+> .obsidian/
+> .exocortex/
+> ```
+>
+> (`.obsidian/` keeps the PAT + device-local plugin state out of git;
+> `.exocortex/` is the local switch-cache / journal, also device-local.)
+
+Apply does **not** auto-commit for you — committing is an explicit, user-owned
+git action (auto-commit-then-apply would blur the apply atomicity boundary; see
+_Partial-failure boundary_ below). The guard is intentional: it never silently
+destroys uncommitted work.
+
 ### Floor policy (R24) — refuse, don't rescue
 
 Apply is destructive, so it requires **explicit intent**. Before any mutation, a

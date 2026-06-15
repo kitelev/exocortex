@@ -57,6 +57,15 @@ export interface ProfileChoice {
 export interface ProfileCommandsDeps {
   switchMgr: ProfileApplyManager;
   pushMgr: IAssetSpacePusher;
+  /**
+   * Factory rebuilding the pusher from the CURRENTLY stored GitHub PAT, per
+   * invocation. Preferred over the onload-captured {@link pushMgr} inside
+   * {@link ProfileCommands.invokePushCurrentAssetSpace} so a PAT configured AFTER
+   * onload authenticates a push without a reload (Issue #3557 — same fix as the
+   * apply path's `assetSpaceManagerFactory`). Falls back to {@link pushMgr} when
+   * absent (tests / legacy wiring).
+   */
+  pushMgrFactory?: () => Promise<IAssetSpacePusher>;
   /** Returns available `exo__Profile` assets (label + uid pairs) — the picker. */
   profileLister: () => Promise<ProfileChoice[]>;
   /**
@@ -82,6 +91,7 @@ export interface ProfileCommandsDeps {
 export class ProfileCommands {
   private readonly switchMgr: ProfileApplyManager;
   private readonly pushMgr: IAssetSpacePusher;
+  private readonly pushMgrFactory?: () => Promise<IAssetSpacePusher>;
   private readonly profileLister: () => Promise<ProfileChoice[]>;
   private readonly fuzzyPick: ProfileCommandsDeps["fuzzyPick"];
   private readonly getActiveFilePath: () => string | null;
@@ -91,6 +101,7 @@ export class ProfileCommands {
   constructor(deps: ProfileCommandsDeps) {
     this.switchMgr = deps.switchMgr;
     this.pushMgr = deps.pushMgr;
+    this.pushMgrFactory = deps.pushMgrFactory;
     this.profileLister = deps.profileLister;
     this.fuzzyPick = deps.fuzzyPick;
     this.getActiveFilePath = deps.getActiveFilePath;
@@ -146,7 +157,10 @@ export class ProfileCommands {
       if (e instanceof UncommittedChangesAbortError) {
         const total = e.affectedFiles.reduce((s, a) => s + a.files.length, 0);
         this.notify(
-          `Apply profile aborted — ${total} uncommitted file(s) в ${e.affectedFiles.length} AssetSpace(s). Commit or stash first.`,
+          `Apply profile aborted — ${total} uncommitted file(s) in ${e.affectedFiles.length} AssetSpace(s) this profile would remove. ` +
+            `Commit (or stash) the vault first, then re-apply. Fresh git-backed vault? The pulled assetspaces/ are untracked — run ` +
+            `\`git add -A && git commit -m "vault setup"\` (and gitignore \`.obsidian/\` + \`.exocortex/\` to keep your PAT out of git). ` +
+            `See docs/profile.md.`,
         );
         return;
       }
@@ -190,7 +204,23 @@ export class ProfileCommands {
       return;
     }
 
-    const asUid = this.pushMgr.lookupAssetSpaceForPath(folderName);
+    // #3557 — rebuild the pusher from the CURRENT PAT so a PAT configured after
+    // onload authenticates the push without a reload. Falls back to the
+    // onload-captured pushMgr when no factory is wired (tests / legacy). The
+    // factory does async PAT I/O that can reject; this command is invoked
+    // fire-and-forget, so surface a failure as a Notice rather than leaving an
+    // unhandled rejection (code-reviewer LOW).
+    let pushMgr: IAssetSpacePusher;
+    try {
+      pushMgr = this.pushMgrFactory
+        ? await this.pushMgrFactory()
+        : this.pushMgr;
+    } catch (e) {
+      this.notify(`Push failed: ${this.safeMessage(e)}`);
+      return;
+    }
+
+    const asUid = pushMgr.lookupAssetSpaceForPath(folderName);
     if (asUid === null) {
       this.notify(
         `Folder \`${folderName}\` is not declared as an AssetSpace ABox`,
@@ -200,7 +230,7 @@ export class ProfileCommands {
 
     this.notify(`Pushing \`${folderName}\`…`);
     try {
-      const sha = await this.pushMgr.pushAssetSpace(asUid);
+      const sha = await pushMgr.pushAssetSpace(asUid);
       if (sha === "" || sha === undefined) {
         // Empty sha indicates «no dirty files» — pushAssetSpace already
         // emitted a Notice. Avoid duplicate user message.

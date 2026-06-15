@@ -20,7 +20,6 @@ import type { GitSubmoduleOps } from "./GitSubmoduleOps";
 import type { RestAssetSpaceMount } from "./RestAssetSpaceMount";
 import type { UncommittedChangesGuard } from "./UncommittedChangesGuard";
 import type { PluginLocalDataStore } from "./PluginLocalDataStore";
-import { TS_FLOOR_ASSETSPACE_UIDS } from "./ProfileOnloadWiring";
 
 /**
  * ProfileApplyManager — coordinates profile switching:
@@ -211,6 +210,18 @@ export interface ProfileApplyManagerOptions {
    * captured {@link restMount} when absent.
    */
   restMountFactory?: () => Promise<RestAssetSpaceMount>;
+  /**
+   * Factory building an {@link AssetSpaceManager} (the desktop REST tarball
+   * puller) with the CURRENTLY stored GitHub PAT. Preferred over the captured
+   * {@link assetSpaceManager} inside the DESKTOP apply materialize path so a PAT
+   * configured AFTER onload is honoured without a reload — the desktop analogue
+   * of {@link restMountFactory} and the same Issue #3382 fix already applied to
+   * Bootstrap / Add-AssetSpace. Falls back to the captured {@link assetSpaceManager}
+   * when absent (tests / legacy wiring). Fixes Issue #3557: applying a profile
+   * with PRIVATE AssetSpaces right after configuring the PAT (no reload) hit an
+   * anonymous tarball request → HTTP 404.
+   */
+  assetSpaceManagerFactory?: () => Promise<AssetSpaceManager>;
   /** Uncommitted-changes guard (Vision Lock #5). */
   uncommittedGuard?: UncommittedChangesGuard;
   /** Confirmation gate — ModalConfirmGate в plugin runtime. */
@@ -297,6 +308,12 @@ interface DesktopApplyMutationContext {
   }>;
   infoBySubmodulePath: Map<string, AssetSpaceInfo>;
   deps: ResolvedApplyDeps;
+  /**
+   * The AssetSpace puller for Phase-1 materialize — rebuilt from the CURRENT
+   * PAT per apply (Issue #3557) so a PAT set after onload is honoured without a
+   * reload. Falls back to the onload-captured `deps.assetSpaceManager`.
+   */
+  puller: AssetSpaceManager;
 }
 
 /** Post-confirm REST/mobile apply mutation context (Issue #3532 watchdog parity). */
@@ -376,6 +393,7 @@ export class ProfileApplyManager {
   private readonly gitOps?: GitSubmoduleOps;
   private readonly restMount?: RestAssetSpaceMount;
   private readonly restMountFactory?: () => Promise<RestAssetSpaceMount>;
+  private readonly assetSpaceManagerFactory?: () => Promise<AssetSpaceManager>;
   private readonly uncommittedGuard?: UncommittedChangesGuard;
   private readonly confirmGate?: IConfirmGate;
   private readonly localDataStore?: PluginLocalDataStore;
@@ -408,6 +426,7 @@ export class ProfileApplyManager {
     this.gitOps = options.gitOps;
     this.restMount = options.restMount;
     this.restMountFactory = options.restMountFactory;
+    this.assetSpaceManagerFactory = options.assetSpaceManagerFactory;
     this.uncommittedGuard = options.uncommittedGuard;
     this.confirmGate = options.confirmGate;
     this.localDataStore = options.localDataStore;
@@ -673,6 +692,16 @@ export class ProfileApplyManager {
       return this.applyProfileViaRest(targetProfileUid);
     }
     const deps = this.assertApplyDepsWired();
+    // #3557 — rebuild the puller from the CURRENTLY stored PAT so a PAT
+    // configured AFTER onload is honoured on the desktop apply materialize path
+    // without a reload (mirrors restMountFactory on mobile + the #3382
+    // Bootstrap/Add fix). The onload-captured `deps.assetSpaceManager` froze an
+    // empty-PAT client when the vault had no PAT at load — applying a profile
+    // with PRIVATE AssetSpaces then made an anonymous tarball request → HTTP 404.
+    // Falls back to the captured manager when no factory is wired (tests/legacy).
+    const puller = this.assetSpaceManagerFactory
+      ? await this.assetSpaceManagerFactory()
+      : deps.assetSpaceManager;
 
     const startedAt = this.now().getTime();
     const prevActiveProfileUid = deps.localDataStore.getActiveProfileUid();
@@ -752,7 +781,10 @@ export class ProfileApplyManager {
       if (!uncommitted.clean) {
         const total = uncommitted.affectedFiles.reduce((s, a) => s + a.files.length, 0);
         throw new UncommittedChangesAbortError(
-          `Apply aborted — ${total} uncommitted file(s) in ${uncommitted.affectedFiles.length} to-destroy AssetSpace(s). Commit or stash first.`,
+          `Apply aborted — ${total} uncommitted file(s) in ${uncommitted.affectedFiles.length} AssetSpace(s) this profile would remove. ` +
+            `Commit or stash the vault before applying. On a fresh git-backed vault, Bootstrap / Add-AssetSpace leave the pulled ` +
+            `assetspaces/ untracked — run \`git add -A && git commit -m "vault setup"\` first (and gitignore \`.obsidian/\` + ` +
+            `\`.exocortex/\` so your PAT is never committed). See docs/profile.md → "Apply on a git-backed vault (commit first)".`,
           uncommitted.affectedFiles,
         );
       }
@@ -837,6 +869,7 @@ export class ProfileApplyManager {
           toMaterialize,
           infoBySubmodulePath,
           deps,
+          puller,
         }),
       targetProfileLabel,
       () => this.clearStuckLocalState(deps.localDataStore),
@@ -864,6 +897,7 @@ export class ProfileApplyManager {
       toMaterialize,
       infoBySubmodulePath,
       deps,
+      puller,
     } = ctx;
     // Ensure `.exocortex/` exists before the lock/journal writes (Issue #3532) —
     // under the watchdog so even a stalled mkdir/exists is bounded.
@@ -921,7 +955,7 @@ export class ProfileApplyManager {
         try {
           // R28 — SHA-aware cache lookup. We don't know upstream SHA up-front,
           // so we pull. (R28 future optimization: HEAD probe before pull.)
-          const result = await deps.assetSpaceManager.pullAssetSpace(
+          const result = await puller.pullAssetSpace(
             target.asUid,
             target.gitUrl,
             target.ref,
@@ -1515,15 +1549,16 @@ export class ProfileApplyManager {
     const folderMapValues = new Set(folderToAsUid.values());
     // `_includes` are AssetSpace UIDs (RFC 01a83de8 Phase 2) → resolve directly
     // against the folder map. The TS-floor ontology URIs added by
-    // resolveEffectiveSet are not AS UIDs and are re-injected at AS level just
-    // below. The former Ontology→AS translation (containsOntology) is dead —
-    // removed in Phase 3 T3b-cleanup.
+    // resolveEffectiveSet are not AS UIDs; the AS-level floor is re-injected
+    // AFTER materializedAsUids is computed (see addReconciledFloor below — issue
+    // #3558: the floor must be resolved against the UIDs actually mounted). The
+    // former Ontology→AS translation (containsOntology) is dead — removed in
+    // Phase 3 T3b-cleanup.
     for (const uid of declared) {
       if (folderMapValues.has(uid)) {
         expectedAsUids.add(uid);
       }
     }
-    for (const floor of TS_FLOOR_ASSETSPACE_UIDS) expectedAsUids.add(floor);
 
     // Materialized AS UIDs: .gitmodules ∩ working-tree-on-disk
     // (Phase 6 Vision Lock #9 amendment: `.gitmodules` ≠ materialization state).
@@ -1550,6 +1585,22 @@ export class ProfileApplyManager {
       expectedAsUids.add(uid);
     }
     this.keepMaterializedCatalog(expectedAsUids, allInfos, materializedAsUids);
+
+    // Floor reconcile (issue #3558): the plugin-UI floor ({exo}) is anchored by a
+    // hardcoded legacy AssetSpace UID, but an EKA central-registry vault mounts
+    // $exo under a DIFFERENT descriptor UID (same fork-safe namespace "exo").
+    // Represent the floor by the UID actually materialized for its namespace so a
+    // floor mounted under a registry UID is neither reported "missing" (the
+    // perpetual false-positive «materialize exo» modal on every reload) nor torn
+    // down as "extra" — falling back to the legacy anchor only when genuinely
+    // absent (so a truly-missing floor still triggers reconcile).
+    const namespaceByUid = new Map<string, string>();
+    for (const info of allInfos) namespaceByUid.set(info.uid, info.namespace);
+    ProfileApplyManager.addReconciledFloor(
+      expectedAsUids,
+      materializedAsUids,
+      namespaceByUid,
+    );
 
     // Diff.
     const missing = Array.from(expectedAsUids).filter((u) => !materializedAsUids.has(u));
@@ -1655,6 +1706,51 @@ export class ProfileApplyManager {
   }
 
   /**
+   * Add the plugin-UI TS-floor to a diff `target` set, reconciled by namespace
+   * (issue #3558) — the AS-level analogue of {@link assertTsFloorReconciled}.
+   *
+   * The floor ({exo}) is anchored by a hardcoded legacy AssetSpace UID
+   * ({@link TS_FLOOR_AS_UID_EXO}), but an EKA central-registry vault mints a
+   * DISTINCT descriptor UID for the same `$exo` AssetSpace (same
+   * `exo__AssetSpace_namespace: "exo"`, different `exo__Asset_uid`). Injecting
+   * the raw anchor into an apply/reconcile diff makes a floor mounted under the
+   * registry UID look "missing"/"to-materialize" (or its registry twin look
+   * "extra"/"to-destroy") — the perpetual false-positive reconcile modal.
+   *
+   * For each floor identity, adds to `target`:
+   *   - its hardcoded UID, when that UID is itself `present` (legacy
+   *     self-describing vault — the anchor descriptor IS the one mounted/declared);
+   *   - else the `present` UID whose namespace matches the floor (the registry
+   *     twin actually mounted/declared for that namespace);
+   *   - else the hardcoded UID (the floor is genuinely absent — keep the legacy
+   *     anchor so a truly-missing floor still surfaces in the diff).
+   *
+   * `present` are the UIDs that exist in the relevant world (materialized AS for
+   * reconcile, declared closure for apply); `namespaceByUid` maps every scanned
+   * AssetSpace UID to its `exo__AssetSpace_namespace`.
+   */
+  private static addReconciledFloor(
+    target: Set<string>,
+    present: ReadonlySet<string>,
+    namespaceByUid: ReadonlyMap<string, string>,
+  ): void {
+    const presentUidByNamespace = new Map<string, string>();
+    for (const uid of present) {
+      const ns = namespaceByUid.get(uid);
+      if (ns !== undefined && ns.length > 0 && !presentUidByNamespace.has(ns)) {
+        presentUidByNamespace.set(ns, uid);
+      }
+    }
+    for (const f of PLUGIN_UI_FLOOR) {
+      if (present.has(f.uid)) {
+        target.add(f.uid);
+      } else {
+        target.add(presentUidByNamespace.get(f.namespace) ?? f.uid);
+      }
+    }
+  }
+
+  /**
    * Resolve the target profile's declared AssetSpace set, expanded by its
    * transitive `exo__AssetSpace_dependsOn` closure (EKA Alpha D18, issue #3511),
    * intersected with the known (scanned) AssetSpaces. Asserts the R24 TS-floor
@@ -1703,7 +1799,21 @@ export class ProfileApplyManager {
     // intent. Apply is destructive, so we require explicit intent.
     this.assertTsFloor(declaredAsUids, declaredNamespaces);
     const effectiveAsUids = new Set(declaredAsUids);
-    for (const floor of TS_FLOOR_ASSETSPACE_UIDS) effectiveAsUids.add(floor);
+    // Floor reconcile (issue #3558) — represent the floor by the declared
+    // registry UID for its namespace instead of always injecting the hardcoded
+    // legacy anchor. On an EKA central-registry vault the $exo descriptor UID
+    // differs from the anchor (namespace "exo" stays fork-safe), so injecting the
+    // raw anchor would add a second, never-mounted floor UID to the effective set
+    // and apply would try to re-materialize the already-mounted floor (duplicate
+    // mount). assertTsFloor above guarantees the floor IS declared (UID OR
+    // namespace), so this only normalises which UID represents it.
+    const namespaceByUid = new Map<string, string>();
+    for (const info of allInfos) namespaceByUid.set(info.uid, info.namespace);
+    ProfileApplyManager.addReconciledFloor(
+      effectiveAsUids,
+      declaredAsUids,
+      namespaceByUid,
+    );
     return { declaredAsUids, declaredNamespaces, effectiveAsUids };
   }
 
