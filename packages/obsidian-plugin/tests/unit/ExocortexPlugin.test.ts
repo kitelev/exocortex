@@ -13,6 +13,7 @@ import { AliasSyncService } from "../../src/application/services/AliasSyncServic
 import { SPARQLCodeBlockProcessor } from "../../src/application/processors/SPARQLCodeBlockProcessor";
 import { ExocortexSettingTab } from "../../src/presentation/settings/ExocortexSettingTab";
 import { DEFAULT_SETTINGS } from "../../src/domain/settings/ExocortexSettings";
+import { ProfileApplyManager } from "../../src/infrastructure/adapters/ProfileApplyManager";
 
 // Mock all dependencies
 jest.mock("../../src/adapters/logging/LoggerFactory");
@@ -272,6 +273,64 @@ describe("ExocortexPlugin", () => {
       expect(mockWorkspace.getActiveFile).toHaveBeenCalled();
       // Layout should not be rendered
       expect(mockLayoutRenderer.render).not.toHaveBeenCalled();
+    });
+  });
+
+  // Issue #3554 — profile apply → next Obsidian load hangs at "Loading plugins…".
+  // After an `Apply profile` sets `data.local.json.activeProfileUid`, the next
+  // load deadlocked: `registerProfileCommands` (awaited by `onload`) awaited the
+  // profile recovery/reconcile block inline, and `ProfileApplyManager.reconcileToLocal`
+  // can open a blocking confirm modal (`confirmGate.confirmApply`). During onload,
+  // BEFORE `workspace.onLayoutReady` fires, that modal never resolves → the inline
+  // `await` never returns → `onload` never resolves → Obsidian hangs forever at
+  // "Loading plugins…" (`layoutReady` never fires, vault unusable). The fix defers
+  // the whole recovery/reconcile block to `onLayoutReady`, so onload returns promptly
+  // and any reconcile modal is shown only after the UI is interactive.
+  describe("Issue #3554 — profile recovery must not block onload (deferred to onLayoutReady)", () => {
+    beforeEach(() => {
+      // Give the device-local store a working adapter so registerProfileCommands
+      // reaches the recovery block (PluginLocalDataStore reads data.local.json).
+      mockApp.vault.adapter = {
+        exists: jest.fn().mockResolvedValue(false),
+        read: jest.fn().mockResolvedValue("{}"),
+        write: jest.fn().mockResolvedValue(undefined),
+      };
+    });
+
+    it("onload completes even when a profile recovery op never resolves (deferred past layoutReady)", async () => {
+      // `onLayoutReady` CAPTURES callbacks without running them — faithfully
+      // simulates the real onload window where `layoutReady` has NOT fired yet.
+      const deferred: Array<() => void> = [];
+      mockWorkspace.onLayoutReady = jest.fn((cb: () => void) => {
+        deferred.push(cb);
+      });
+
+      // Stand-in for the reconcile confirm-modal deadlock: a recovery op whose
+      // promise NEVER resolves. If onload awaits it inline (the bug), onload hangs
+      // forever. recoverIfNeeded() runs unconditionally in the recovery block, so
+      // it is a reliable probe regardless of desktop/mobile applyDeps wiring.
+      const neverResolves = new Promise<{
+        recovered: boolean;
+        targetUid: string | null;
+      }>(() => {
+        /* never settles */
+      });
+      const recoverSpy = jest
+        .spyOn(ProfileApplyManager.prototype, "recoverIfNeeded")
+        .mockReturnValue(neverResolves);
+
+      // onload MUST resolve promptly despite the hanging recovery op.
+      const outcome = await Promise.race([
+        plugin.onload().then(() => "resolved" as const),
+        new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2000)),
+      ]);
+      expect(outcome).toBe("resolved");
+
+      // The recovery block was DEFERRED, not awaited inline: recoverIfNeeded is
+      // not invoked during onload (it would run only after layoutReady fires)…
+      expect(recoverSpy).not.toHaveBeenCalled();
+      // …and it was scheduled via onLayoutReady.
+      expect(mockWorkspace.onLayoutReady).toHaveBeenCalled();
     });
   });
 

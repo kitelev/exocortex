@@ -2881,73 +2881,27 @@ export default class ExocortexPlugin extends Plugin {
     // original on the same lock file.
     this.profileApplyManager = switchMgr;
 
-    // Crash-recovery: если previous session left `_switchInProgress=true`
-    // в settings (ProfileApplyManager docstring line 18), re-trigger
-    // the idempotent re-index so the flag self-clears. Failure swallowed —
-    // user-facing recovery is а Phase D follow-up; the only side-effect
-    // of skipping this is the «stuck switch in progress» footgun (code-
-    // reviewer HIGH catch).
-    try {
-      const initialSettings = await settingsStore.load();
-      if (initialSettings._switchInProgress) {
-        this.logger.warn(
-          "[ExocortexPlugin] previous session left _switchInProgress=true — attempting idempotent recovery",
-        );
-      }
-      const recovery = await switchMgr.recoverIfNeeded();
-      if (recovery.recovered) {
-        this.logger.info(
-          `[ExocortexPlugin] Profile switch recovery completed for ${recovery.targetUid}`,
-        );
-      }
-    } catch (error) {
-      this.logger.warn(
-        "[ExocortexPlugin] Profile switch recovery failed",
-        error instanceof Error ? error : new Error(String(error)),
+    // Issue #3554 — DEFER crash-recovery + cross-device reconcile to
+    // `onLayoutReady`. These best-effort ops were previously awaited INLINE here,
+    // and `registerProfileCommands` is itself awaited by `onload`. When an applied
+    // profile leaves `activeProfileUid` set, `reconcileToLocal()` can compute a
+    // divergence and open a blocking `ApplyConfirmModal` (via
+    // `confirmGate.confirmApply`). During onload — BEFORE `layoutReady` — that modal
+    // can never be confirmed, so the `await` deadlocked: `onload` never resolved and
+    // Obsidian hung forever at "Loading plugins…" (`layoutReady` never fired, the
+    // vault stayed unusable; clearing `activeProfileUid → null` was the only
+    // recovery). Running them AFTER `layoutReady` lets onload return promptly AND
+    // lets the reconcile confirm modal (if any) be shown + confirmed normally once
+    // the UI is interactive. All three ops are idempotent best-effort (each its own
+    // try/catch) and none gate the command registration below, so deferral is safe
+    // on both desktop and mobile.
+    this.app.workspace.onLayoutReady(() => {
+      void this.runDeferredProfileRecovery(
+        settingsStore,
+        switchMgr,
+        applyDeps !== null,
       );
-    }
-
-    // RFC 22b50a17 Phase 3 — apply recovery worker. Only fires when
-    // apply deps are wired AND the journal tail shows destroyed-not-
-    // materialized AS — covers the «plugin crashed mid-Phase 2» case where
-    // soft recoverIfNeeded() would re-trigger a no-op refresh but leave
-    // vault filesystem partial-destroyed.
-    if (applyDeps !== null) {
-      try {
-        const result = await switchMgr.recoverIncompleteSwitch();
-        if (result.restored.length > 0) {
-          this.logger.info(
-            `[ExocortexPlugin] apply recovery restored ${result.restored.length} AssetSpace(s): ${result.restored.join(", ")}`,
-          );
-        }
-      } catch (error) {
-        this.logger.warn(
-          "[ExocortexPlugin] apply recovery failed",
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
-
-      // Cross-device divergence detection (RFC 22b50a17 §Cross-device).
-      // Best-effort: failure не block onload; user can manually re-trigger
-      // by switching profiles в Cmd+P.
-      try {
-        const reconcile = await switchMgr.reconcileToLocal();
-        if (reconcile.outcome === "reconciled") {
-          this.logger.info(
-            "[ExocortexPlugin] cross-device profile divergence reconciled to local activeProfileUid",
-          );
-        } else if (reconcile.outcome === "declined") {
-          this.logger.info(
-            "[ExocortexPlugin] cross-device divergence detected, user declined reconcile",
-          );
-        }
-      } catch (error) {
-        this.logger.warn(
-          "[ExocortexPlugin] cross-device reconcile failed",
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
-    }
+    });
 
     const pushMgr = await this.buildAssetSpacePusher();
 
@@ -3096,6 +3050,94 @@ export default class ExocortexPlugin extends Plugin {
     this.logger.info(
       "[ExocortexPlugin] Profile palette commands registered",
     );
+  }
+
+  /**
+   * Issue #3554 — crash-recovery + cross-device reconcile, run AFTER
+   * `onLayoutReady` (never inline in `onload`).
+   *
+   * `reconcileToLocal()` can open a blocking `ApplyConfirmModal`; awaiting it
+   * during onload (before `layoutReady`) deadlocks Obsidian on "Loading plugins…"
+   * because the modal can never be confirmed. Deferred to `onLayoutReady`, onload
+   * returns promptly and the modal — if a divergence is found — is shown only once
+   * the UI is interactive.
+   *
+   * All three steps are best-effort: each is independently try/catch'd so a single
+   * failure (or a never-terminating reconcile) can't take down the others, and the
+   * whole thing runs detached (`void`) so it never blocks layout.
+   */
+  private async runDeferredProfileRecovery(
+    settingsStore: PluginSettingsStoreAdapter,
+    switchMgr: ProfileApplyManager,
+    hasApplyDeps: boolean,
+  ): Promise<void> {
+    // Crash-recovery: если previous session left `_switchInProgress=true`
+    // в settings (ProfileApplyManager docstring line 18), re-trigger
+    // the idempotent re-index so the flag self-clears. Failure swallowed —
+    // user-facing recovery is а Phase D follow-up; the only side-effect
+    // of skipping this is the «stuck switch in progress» footgun (code-
+    // reviewer HIGH catch).
+    try {
+      const initialSettings = await settingsStore.load();
+      if (initialSettings._switchInProgress) {
+        this.logger.warn(
+          "[ExocortexPlugin] previous session left _switchInProgress=true — attempting idempotent recovery",
+        );
+      }
+      const recovery = await switchMgr.recoverIfNeeded();
+      if (recovery.recovered) {
+        this.logger.info(
+          `[ExocortexPlugin] Profile switch recovery completed for ${recovery.targetUid}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        "[ExocortexPlugin] Profile switch recovery failed",
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+
+    // RFC 22b50a17 Phase 3 — apply recovery worker. Only fires when
+    // apply deps are wired AND the journal tail shows destroyed-not-
+    // materialized AS — covers the «plugin crashed mid-Phase 2» case where
+    // soft recoverIfNeeded() would re-trigger a no-op refresh but leave
+    // vault filesystem partial-destroyed.
+    if (hasApplyDeps) {
+      try {
+        const result = await switchMgr.recoverIncompleteSwitch();
+        if (result.restored.length > 0) {
+          this.logger.info(
+            `[ExocortexPlugin] apply recovery restored ${result.restored.length} AssetSpace(s): ${result.restored.join(", ")}`,
+          );
+        }
+      } catch (error) {
+        this.logger.warn(
+          "[ExocortexPlugin] apply recovery failed",
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
+
+      // Cross-device divergence detection (RFC 22b50a17 §Cross-device).
+      // Best-effort: failure не block onload; user can manually re-trigger
+      // by switching profiles в Cmd+P.
+      try {
+        const reconcile = await switchMgr.reconcileToLocal();
+        if (reconcile.outcome === "reconciled") {
+          this.logger.info(
+            "[ExocortexPlugin] cross-device profile divergence reconciled to local activeProfileUid",
+          );
+        } else if (reconcile.outcome === "declined") {
+          this.logger.info(
+            "[ExocortexPlugin] cross-device divergence detected, user declined reconcile",
+          );
+        }
+      } catch (error) {
+        this.logger.warn(
+          "[ExocortexPlugin] cross-device reconcile failed",
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
+    }
   }
 
   /**
