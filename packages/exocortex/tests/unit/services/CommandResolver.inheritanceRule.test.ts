@@ -380,11 +380,12 @@ describe("CommandResolver — RFC v2 Phase 3a resolveInheritanceRules", () => {
   });
 
   // Issue #3562: a genuinely BROKEN condition ref — one whose triple object
-  // yields no name at all (not merely an unresolvable label) — still skips the
-  // entire rule. `getObsidianName` returns null only when there is no parseable
-  // ref to anchor the condition on, so retaining it WOULD make the rule
-  // unconditional (scope broadening). Preserve the PR #3224 safety for that
-  // case.
+  // yields no usable name (here a whitespace-only literal, which
+  // `getObsidianName`→`unwrapWikilink` trims to the empty string; the
+  // `!refName || !refName.trim()` guard then fires) — still skips the entire
+  // rule. Retaining it WOULD make the rule unconditional (scope broadening),
+  // so the PR #3224 safety is preserved for the truly-nameless case (distinct
+  // from a UID-form ref whose label merely isn't indexed yet).
   it("skips entire rule when targetClassCondition ref yields no parseable name", async () => {
     const ruleSubject = new IRI(`obsidian://vault/${RULE_UID_COND}.md`);
     await store.addAll([

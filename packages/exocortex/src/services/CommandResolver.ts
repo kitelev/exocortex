@@ -2134,7 +2134,13 @@ export class CommandResolver {
           refSubject,
           Namespace.EXOCMD.term("InheritanceRule_targetClassCondition"),
         );
-        if (!refName) {
+        // A nameless/blank ref (no parseable name — e.g. an empty- or
+        // whitespace-only literal object) genuinely cannot anchor the
+        // condition; retaining it would make the rule unconditional (scope
+        // broadening), so skip the entire rule (PR #3224 safety). `.trim()`
+        // hardens against `unwrapWikilink` ever surfacing a whitespace-only
+        // name (today it already trims to "").
+        if (!refName || !refName.trim()) {
           this.logger.warn(
             `Grounding ${groundingUid}: InheritanceRule has exocmd__InheritanceRule_targetClassCondition triple but ref is unresolvable — entire rule skipped (would otherwise apply unconditionally, broadening scope).`,
           );

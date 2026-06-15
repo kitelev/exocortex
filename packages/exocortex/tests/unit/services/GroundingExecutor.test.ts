@@ -3364,7 +3364,10 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
 
     // -- Issue #3562: UID-canon EXCLUSION enforced even when the label is
     //    unresolvable (resolver null). The new instance is an Area, so a rule
-    //    excluding ems__Area must NOT apply. --
+    //    excluding ems__Area must NOT apply. Revert-verified: pre-fix
+    //    `inheritanceExclusionMatches` ignored the UID-only set (empty label
+    //    list → no exclusion) → ems__Effort_parent inherited onto the Area
+    //    (FAIL); post-fix the UID set is checked independently → excluded. --
     it("Issue #3562: UID-canon exclusion is enforced via UID when the resolver returns null", async () => {
       const AREA_UID = "82c74542-1b14-4217-b852-d84730484b25";
       const staleResolver = jest.fn().mockResolvedValue(null);
