@@ -280,6 +280,37 @@ before applying — the desktop path aborts on uncommitted changes in any to-des
 AssetSpace (Vision Lock #5) — and prefer a stable network/power state for a large
 cold apply (many AssetSpaces pulled sequentially).
 
+### Obsidian hangs at "Loading plugins…" after an apply
+
+> **Fixed in the #3554 build.** Recovery/reconcile now runs after the workspace is
+> ready, so onload can no longer deadlock. The steps below are the manual recovery
+> for anyone still on a pre-#3554 build (e.g. an older BRAT install).
+
+**Symptom:** right after a successful `Apply profile`, the _next_ Obsidian load (a
+`Reload app without saving`, or a full quit + relaunch) gets stuck on
+"Loading plugins…" forever — the workspace never finishes loading and the vault is
+unusable. `Reload app in Restricted Mode` (community plugins off) loads fine, which
+points at the Exocortex plugin's load path.
+
+**Cause (pre-#3554):** a successful apply records the chosen profile in
+`data.local.json` (`activeProfileUid`). On the next load, the plugin's onload
+recovery/reconcile step ran **before** the UI was ready and could open a confirm
+dialog that can never be answered while Obsidian is still loading — so plugin load
+never finished and `layoutReady` never fired.
+
+**Recovery (manual, one-time):**
+
+1. Quit Obsidian.
+2. Edit `<vault>/.obsidian/plugins/exocortex/data.local.json` and set
+   `"activeProfileUid": null` (or delete that key). This does **not** undo the
+   apply — the reduced mount stays exactly as applied; the profile just becomes
+   "untracked" (no longer cached as the active selection).
+3. Relaunch Obsidian. The vault loads normally.
+
+After updating to the #3554 build the cache is safe again — you can re-select the
+profile via `Apply profile` and `activeProfileUid` will be honoured on the next
+load without any hang.
+
 ### Legacy flat-mount migration
 
 Apply locates a materialized AssetSpace by its **canonical** mount path
