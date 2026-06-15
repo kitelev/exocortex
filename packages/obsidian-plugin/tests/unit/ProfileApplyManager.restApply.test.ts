@@ -170,32 +170,15 @@ class FakeRestMount {
 
 class FakeGitOps {
   calls: string[] = [];
-  /**
-   * When true, every git operation throws the exact `fatal: not a git
-   * repository` surfaced on a real NON-git vault (#3567). Used by the desktop
-   * git-free revert-verify: pre-fix the desktop apply hits these → rejects;
-   * post-fix the REST path never touches gitOps → resolves.
-   */
-  constructor(private readonly throwsNotGitRepo = false) {}
-  private throwIfNonGit(): void {
-    if (this.throwsNotGitRepo) {
-      throw new Error(
-        "fatal: not a git repository (or any of the parent directories): .git",
-      );
-    }
-  }
   async readGitmodulesPaths(): Promise<Set<string>> {
     this.calls.push("readGitmodulesPaths");
-    this.throwIfNonGit();
     return new Set();
   }
   async submoduleAdd(): Promise<void> {
     this.calls.push("submoduleAdd");
-    this.throwIfNonGit();
   }
   async submoduleDeinit(): Promise<void> {
     this.calls.push("submoduleDeinit");
-    this.throwIfNonGit();
   }
 }
 
@@ -224,11 +207,6 @@ interface SetupOpts {
   wireRestMount?: boolean;
   /** Whether to also wire gitOps (to assert it is NOT used). */
   wireGitOps?: boolean;
-  /**
-   * Make the wired gitOps model a NON-git vault (#3567): every git op throws
-   * `fatal: not a git repository`. Only meaningful with `wireGitOps: true`.
-   */
-  gitOpsThrows?: boolean;
   /** Wire a fresh-PAT factory (returns `factoryMount`) preferred over capture. */
   wireRestMountFactory?: boolean;
 }
@@ -293,7 +271,7 @@ function setup(opts: SetupOpts) {
   const confirmGate = new FakeConfirmGate();
   const restMount = new FakeRestMount();
   const factoryMount = new FakeRestMount();
-  const gitOps = new FakeGitOps(opts.gitOpsThrows === true);
+  const gitOps = new FakeGitOps();
   const notifyCalls: string[] = [];
 
   const mgr = new ProfileApplyManager({
@@ -647,21 +625,27 @@ describe("applyProfile dispatch (desktop → REST, git-free, #3567)", () => {
     ]);
     expect(restMount.unmounted).toEqual(["assetspaces/kitelev/exoas-kpc"]);
     // …and the git-binary path was NOT used (no `git submodule add` → no
-    // `fatal: not a git repository` possible). PRE-fix this array contains
-    // `readGitmodulesPaths` + `submoduleAdd` (desktop git path) → fails.
+    // `fatal: not a git repository` possible). Revert-verify (empirically
+    // confirmed): with the old `Platform.isMobile &&` gate restored, desktop
+    // falls through to the git path → `assertApplyDepsWired()` rejects (this
+    // setup wires only restMount + gitOps, not the full git deps bundle) → the
+    // unguarded `await mgr.applyProfile` throws → this test FAILS. Post-fix the
+    // REST path is taken, gitOps stays untouched → PASS.
     expect(gitOps.calls).toEqual([]);
   });
 
-  it("NON-git vault: desktop apply mounts via REST instead of `fatal: not a git repository` (#3567 repro)", async () => {
-    // gitOpsThrows models the real symptom: any git op on a non-git vault
-    // throws `fatal: not a git repository`. PRE-fix the desktop path hits
-    // gitOps and REJECTS with that fatal; POST-fix the git-free REST path is
-    // taken and the apply RESOLVES.
+  it("desktop apply RESOLVES via REST + persists the applied profile (no git path)", async () => {
+    // The #3567 outcome at the unit layer: on a vault where the git path would
+    // crash, desktop apply must complete via the git-free REST mount. Here the
+    // wired gitOps would be the ONLY route to `git submodule add` → the real
+    // `fatal: not a git repository`; asserting it stays untouched proves no
+    // such fatal is reachable. Revert-verify: with the old gate, desktop falls
+    // through to the git path → `assertApplyDepsWired()` rejects → this
+    // `resolves` expectation FAILS pre-fix; post-fix it RESOLVES.
     const { mgr, restMount, gitOps, localDataStore } = setup({
       targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
       materialized: [...ALL_FLOOR_UIDS],
       wireGitOps: true,
-      gitOpsThrows: true,
     });
 
     await expect(mgr.applyProfile("target")).resolves.toBeUndefined();
