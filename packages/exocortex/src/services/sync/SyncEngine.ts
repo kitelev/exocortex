@@ -236,9 +236,7 @@ function isSafeRepoRelativePath(path: string): boolean {
   if (path.length === 0 || path.startsWith("/") || path.includes("\\")) {
     return false;
   }
-  return path
-    .split("/")
-    .every((s) => s.length > 0 && s !== "." && s !== "..");
+  return path.split("/").every((s) => s.length > 0 && s !== "." && s !== "..");
 }
 
 /**
@@ -449,6 +447,21 @@ type PushLoopOutcome =
        */
       deferredWarnings: string[];
     };
+
+/**
+ * Outcome of the ASSET-mode first-sync probe ({@link SyncEngine.bootstrapWatermark}).
+ *  - `settled`: the cycle is fully decided here — a clean mount (local tree
+ *    identical to remote) was seeded → `synced`, or a GENUINE divergence (a
+ *    remote-head file absent locally, or a same-path content difference) →
+ *    `full-conflict` (A2/A3, D22 — never a silent overwrite).
+ *  - `additive-base`: the local tree is a pure SUPERSET of the remote head
+ *    (R ⊆ L by path+blob — only local-only new files diverge, #3565). The
+ *    caller continues the normal cycle with this synthetic base so the
+ *    local-only files derive as pushable adds (a clean fast-forward).
+ */
+type FirstSyncBootstrap =
+  | { kind: "settled"; outcome: RepoSyncResult }
+  | { kind: "additive-base"; base: WatermarkRecord };
 
 const EMPTY_MERGE: MergeResolution = {
   mergedFiles: new Map(),
@@ -759,23 +772,41 @@ export class SyncEngine {
       let syntheticFirstSyncBase = false;
       if (watermark === null) {
         if (!mode.fileMode) {
-          return await this.bootstrapWatermark(spec, disk, warnings, result);
+          // Asset-mode first-sync (#3565). A clean mount (local tree identical
+          // to remote) seeds the watermark and no-ops. A PURELY ADDITIVE
+          // divergence — local-only new files, every remote-head file still
+          // present on disk byte-identical (R ⊆ L) — hands back a synthetic
+          // base so those locals derive as pushable adds (a clean
+          // fast-forward, no remote changes to reconcile). A GENUINE
+          // divergence (a remote file absent locally, or a same-path content
+          // difference) stays `full-conflict` — routed to the merge/quarantine
+          // layer (A2/A3, D22), never a silent overwrite.
+          const bootstrap = await this.bootstrapWatermark(
+            spec,
+            disk,
+            warnings,
+            result,
+          );
+          if (bootstrap.kind === "settled") return bootstrap.outcome;
+          syntheticFirstSyncBase = true;
+          watermark = bootstrap.base;
+        } else {
+          syntheticFirstSyncBase = true;
+          // Phase C file-mode first-sync (advisor C1): there is no exact-match
+          // requirement — divergence resolves through the remote-wins layer,
+          // which IS the file-mode merge/quarantine layer (D22-compatible).
+          // The synthetic base = the intersection of disk and remote head
+          // where blobs already match; everything else derives as local adds
+          // (pushed — may re-create files another device deleted; data
+          // resurrection is the accepted first-sync trade-off, M1 zero-loss
+          // wins) or remote changes (pulled / conflicting → remote-wins).
+          watermark = await this.buildFileModeFirstSyncBase(
+            spec,
+            disk,
+            mode,
+            warnings,
+          );
         }
-        syntheticFirstSyncBase = true;
-        // Phase C file-mode first-sync (advisor C1): there is no exact-match
-        // requirement — divergence resolves through the remote-wins layer,
-        // which IS the file-mode merge/quarantine layer (D22-compatible).
-        // The synthetic base = the intersection of disk and remote head
-        // where blobs already match; everything else derives as local adds
-        // (pushed — may re-create files another device deleted; data
-        // resurrection is the accepted first-sync trade-off, M1 zero-loss
-        // wins) or remote changes (pulled / conflicting → remote-wins).
-        watermark = await this.buildFileModeFirstSyncBase(
-          spec,
-          disk,
-          mode,
-          warnings,
-        );
       }
 
       // A size-excluded LOCAL path must also vanish from the diff base —
@@ -1640,10 +1671,7 @@ export class SyncEngine {
         // fails HTTP 404 — empirically verified). A deletion set wiping
         // EVERY entry of the head tree with nothing pushed alongside is
         // deferred loudly instead of failing the whole repo.
-        if (
-          pushFiles.size === 0 &&
-          pushDeletions.size >= headTreeByPath.size
-        ) {
+        if (pushFiles.size === 0 && pushDeletions.size >= headTreeByPath.size) {
           withheldDeletions.push(...pushDeletions);
           deferredWarnings.push(
             `deletion of ALL ${pushDeletions.size} remaining file(s) deferred — GitHub cannot create an empty tree; the deletes re-derive and propagate once the repo has at least one surviving file`,
@@ -1687,7 +1715,11 @@ export class SyncEngine {
           ),
           deletions: [...pushDeletions],
           message:
-            this.deps.commitMessage?.(spec, pushFiles.size, pushDeletions.size) ??
+            this.deps.commitMessage?.(
+              spec,
+              pushFiles.size,
+              pushDeletions.size,
+            ) ??
             `chore(exosync): sync ${pushFiles.size} file(s)${pushDeletions.size > 0 ? `, ${pushDeletions.size} deletion(s)` : ""}`,
           baseURL: this.deps.baseURL,
           redact: this.deps.redact,
@@ -2084,10 +2116,24 @@ export class SyncEngine {
   }
 
   /**
-   * First-sync bootstrap (safe subset): when no watermark exists but the
-   * local working tree EXACTLY equals the remote head tree (fresh mount), the
-   * watermark is seeded and the sync is a no-op. Any difference is a genuine
-   * first-sync divergence → full-conflict (A2/A3, D22).
+   * Asset-mode first-sync probe (no watermark). Classifies the local working
+   * tree against the remote head into one of three outcomes (see
+   * {@link FirstSyncBootstrap}):
+   *
+   *  - **clean mount** — local tree identical to remote: seed the watermark,
+   *    no-op (`settled` → `synced`).
+   *  - **purely additive** (#3565) — every remote-head file is present on disk
+   *    byte-identical (R ⊆ L) and disk has extra local-only files: return a
+   *    synthetic base = the remote head tree (`additive-base`). The normal
+   *    cycle then derives the local-only files as pushable adds — a clean
+   *    fast-forward, no remote changes to reconcile, M1 zero-loss intact
+   *    (no overwrite, no merge needed). The real watermark is persisted by
+   *    `advanceWatermark` at the end of the successful cycle.
+   *  - **genuine divergence** — a remote-head file absent locally, OR a
+   *    same-path content difference (overlapping edit): `settled` →
+   *    `full-conflict`. Routed to the merge/quarantine layer (A2/A3, D22),
+   *    NEVER a silent overwrite. Reserving `full-conflict` for real overlaps
+   *    is what distinguishes this from the additive case.
    */
   private async bootstrapWatermark(
     spec: SyncRepoSpec,
@@ -2097,7 +2143,7 @@ export class SyncEngine {
       status: RepoSyncResult["status"],
       extra?: Partial<RepoSyncResult>,
     ) => RepoSyncResult,
-  ): Promise<RepoSyncResult> {
+  ): Promise<FirstSyncBootstrap> {
     const head = await getHeadSha(
       this.transport,
       spec.owner,
@@ -2122,23 +2168,29 @@ export class SyncEngine {
       )
     ).filter((e) => isSyncablePath(e.path));
 
-    if (headTree.length !== disk.size) {
-      return result("full-conflict", {
-        detail: `first-sync: no watermark and local tree (${disk.size} files) differs from remote head (${headTree.length} files) — A2/A3 scope`,
-      });
-    }
+    // Verify R ⊆ L: every remote-head file must be present on disk with an
+    // identical blob. A remote file absent locally, or a same-path content
+    // difference, is a GENUINE first-sync divergence (remote-side edits/files
+    // to reconcile, or an overlapping edit) → full-conflict (A2/A3, D22 —
+    // never a silent overwrite). #3565: the count check that used to gate
+    // this is GONE — a pure local-only superset (disk.size > headTree.length)
+    // is no longer a conflict; it is the additive case handled below.
     for (const entry of headTree) {
       const content = disk.get(entry.path);
       if (
         content === undefined ||
         (await gitBlobSha(content, this.deps.sha1)) !== entry.blobSha
       ) {
-        return result("full-conflict", {
-          detail: `first-sync: no watermark and local content diverges from remote head at ${entry.path} — A2/A3 scope`,
-        });
+        return {
+          kind: "settled",
+          outcome: result("full-conflict", {
+            detail: `first-sync: no watermark and local content diverges from remote head at ${entry.path} — A2/A3 scope`,
+          }),
+        };
       }
     }
 
+    // R ⊆ L holds. The base = the remote head tree (every entry matches disk).
     const files: WatermarkFileEntry[] = headTree.map((e) => {
       const content = disk.get(e.path);
       // Asset-mode-only path (file-mode first-sync goes through the
@@ -2147,15 +2199,33 @@ export class SyncEngine {
         typeof content === "string" ? extractAssetUid(content) : undefined;
       return { path: e.path, blobSha: e.blobSha, ...(uid ? { uid } : {}) };
     });
-    await this.deps.watermarkStore.set(spec.repoKey, {
+    const base: WatermarkRecord = {
       lastSyncedSha: head,
       rootTreeSha: headCommit.treeSha,
       files,
-    });
+    };
+
+    if (disk.size === headTree.length) {
+      // Clean mount — local tree identical to remote: seed + no-op (fast path,
+      // avoids the synthetic-base cycle + its extra remote diff for the common
+      // 12/13 unchanged repos on every apply-profile).
+      await this.deps.watermarkStore.set(spec.repoKey, base);
+      warnings.push(
+        `watermark bootstrapped from head ${head} (local tree identical to remote)`,
+      );
+      return { kind: "settled", outcome: result("synced") };
+    }
+
+    // disk.size > headTree.length → PURELY ADDITIVE first-sync (#3565): the
+    // only divergence is local-only new files (R ⊆ L by path+blob, verified
+    // above). Hand the head-tree base back so the normal cycle derives those
+    // locals as pushable adds. Without this, the canonical onboarding
+    // (apply profile → create asset → Sync) deadlocked: every direction
+    // returned `full-conflict — first-sync` and pushed nothing.
     warnings.push(
-      `watermark bootstrapped from head ${head} (local tree identical to remote)`,
+      `first-sync (asset mode): local tree (${disk.size} files) is a pure superset of remote head ${head} (${headTree.length} files) — ${disk.size - headTree.length} local-only addition(s) derive as pushable adds (#3565)`,
     );
-    return result("synced");
+    return { kind: "additive-base", base };
   }
 
   /**

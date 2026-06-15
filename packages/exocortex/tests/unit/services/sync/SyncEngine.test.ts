@@ -99,7 +99,9 @@ describe("SyncEngine — first-sync bootstrap (D22)", () => {
 
   it("returns full-conflict when disk diverges and no watermark exists (never overwrites)", async () => {
     const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1", "remote") });
-    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1", "local-divergent") });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1", "local-divergent"),
+    });
     const { engine } = makeEngine(gh, local);
 
     const result = await engine.sync(gh.spec());
@@ -111,10 +113,105 @@ describe("SyncEngine — first-sync bootstrap (D22)", () => {
   });
 });
 
+// #3565 — the canonical onboarding (apply profile → create asset → Sync) used
+// to DEADLOCK on an asset-mode AssetSpace: a purely ADDITIVE local divergence
+// (local-only new files, every remote-head file still present byte-identical)
+// returned `full-conflict — first-sync` and pushed nothing, with no watermark
+// ever established. The fix gives asset-mode first-sync the additive-tolerant
+// synthetic base file-mode already had, while RESERVING full-conflict for
+// genuine overlapping edits/deletes (zero-loss intact).
+describe("SyncEngine — first-sync additive divergence (#3565)", () => {
+  it("pushes local-only additions when local is a pure superset of remote head", async () => {
+    // Profile applied (remote materialized byte-identical), then the tester
+    // created a new asset → local = remote ∪ {new file}, no watermark yet.
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const { engine, watermarks } = makeEngine(gh, local);
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.pushedCount).toBe(1); // the local-only add — a clean ff
+    expect(gh.headFiles().get(FILE_B)).toBe(mdAsset("u2")); // landed on remote
+    expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1")); // neighbour intact
+    expect(result.warnings.join(" ")).toMatch(/pure superset/);
+
+    // The deadlock is gone: a watermark is established, so a re-sync no-ops
+    // (pre-fix every re-run reproduced full-conflict indefinitely).
+    const record = watermarks.records.get(gh.spec().repoKey)!;
+    expect(record.files.map((f) => f.path).sort()).toEqual([FILE_A, FILE_B]);
+    const again = await engine.sync(gh.spec());
+    expect(again.status).toBe("synced");
+    expect(again.pushedCount).toBe(0);
+  });
+
+  it("pushes several local-only additions in one first sync", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      ["assets/c.md"]: mdAsset("u3"),
+      ["assets/d.md"]: mdAsset("u4"),
+    });
+    const { engine } = makeEngine(gh, local);
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.pushedCount).toBe(2);
+    expect(gh.headFiles().get("assets/c.md")).toBe(mdAsset("u3"));
+    expect(gh.headFiles().get("assets/d.md")).toBe(mdAsset("u4"));
+  });
+
+  it("stays full-conflict when a remote-head file is absent locally (not purely additive)", async () => {
+    // R ⊄ L: a remote file is missing on disk — ambiguous (remote add vs local
+    // delete) with no watermark, so the conservative zero-loss answer holds.
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const { engine, watermarks } = makeEngine(gh, local);
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("full-conflict");
+    expect(result.detail).toMatch(/first-sync/);
+    expect(gh.headFiles().get(FILE_B)).toBe(mdAsset("u2")); // remote untouched
+    expect(watermarks.records.size).toBe(0); // no watermark on conflict
+  });
+
+  it("stays full-conflict when an addition coincides with a same-path edit (genuine overlap)", async () => {
+    // Local both edits FILE_A and adds FILE_B. The FILE_A edit breaks R ⊆ L,
+    // so the whole first sync stays full-conflict — the add is NOT pushed,
+    // preserving M1 zero-loss for the overlapping edit.
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1", "remote") });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1", "local-edit"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const { engine } = makeEngine(gh, local);
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("full-conflict");
+    expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1", "remote")); // untouched
+    expect(gh.headFiles().has(FILE_B)).toBe(false); // add NOT pushed amid overlap
+  });
+});
+
 describe("SyncEngine — push-only happy path (VL#7, D3)", () => {
   it("pushes a local edit via restCreateCommit and advances the watermark", async () => {
-    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
-    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
     const { engine, watermarks } = makeEngine(gh, local);
     await bootstrap(engine, gh.spec());
 
@@ -146,7 +243,10 @@ describe("SyncEngine — push-only happy path (VL#7, D3)", () => {
   });
 
   it("non-.md files are excluded symmetrically (binary safety)", async () => {
-    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), "img/pic.png": "PNGBYTES" });
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      "img/pic.png": "PNGBYTES",
+    });
     const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") }); // png absent locally
     const { engine } = makeEngine(gh, local);
     await bootstrap(engine, gh.spec()); // bootstrap ignores the png
@@ -167,19 +267,31 @@ describe("SyncEngine — pull phase (no-conflict remote changes)", () => {
     const { engine, watermarks } = makeEngine(gh, local);
     await bootstrap(engine, gh.spec());
 
-    gh.commitDirect("main", { [FILE_B]: mdAsset("u2", "from device B") }, "device B");
+    gh.commitDirect(
+      "main",
+      { [FILE_B]: mdAsset("u2", "from device B") },
+      "device B",
+    );
     const result = await engine.sync(gh.spec());
 
     expect(result.status).toBe("synced");
     expect(result.pushedCount).toBe(0);
     expect(result.pulledCount).toBe(1);
     expect(local.files.get(FILE_B)).toBe(mdAsset("u2", "from device B"));
-    expect(watermarks.records.get(gh.spec().repoKey)!.lastSyncedSha).toBe(gh.headSha());
+    expect(watermarks.records.get(gh.spec().repoKey)!.lastSyncedSha).toBe(
+      gh.headSha(),
+    );
   });
 
   it("applies a remote delete locally when the file is locally untouched", async () => {
-    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
-    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
     const { engine } = makeEngine(gh, local);
     await bootstrap(engine, gh.spec());
 
@@ -191,12 +303,22 @@ describe("SyncEngine — pull phase (no-conflict remote changes)", () => {
   });
 
   it("pushes local + applies remote when changes are disjoint", async () => {
-    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
-    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
     const { engine } = makeEngine(gh, local);
     await bootstrap(engine, gh.spec());
 
-    gh.commitDirect("main", { [FILE_B]: mdAsset("u2", "remote v2") }, "device B");
+    gh.commitDirect(
+      "main",
+      { [FILE_B]: mdAsset("u2", "remote v2") },
+      "device B",
+    );
     local.files.set(FILE_A, mdAsset("u1", "local v2"));
     const result = await engine.sync(gh.spec());
 
@@ -217,7 +339,11 @@ describe("SyncEngine — conflicts (A2/A3 deferral, never overwrite)", () => {
     await bootstrap(engine, gh.spec());
     const wmBefore = watermarks.records.get(gh.spec().repoKey)!.lastSyncedSha;
 
-    gh.commitDirect("main", { [FILE_A]: mdAsset("u1", "remote edit") }, "device B");
+    gh.commitDirect(
+      "main",
+      { [FILE_A]: mdAsset("u1", "remote edit") },
+      "device B",
+    );
     local.files.set(FILE_A, mdAsset("u1", "local edit"));
     const result = await engine.sync(gh.spec());
 
@@ -225,16 +351,28 @@ describe("SyncEngine — conflicts (A2/A3 deferral, never overwrite)", () => {
     expect(result.detail).toMatch(/u1/);
     expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1", "remote edit")); // remote untouched
     expect(local.files.get(FILE_A)).toBe(mdAsset("u1", "local edit")); // disk untouched
-    expect(watermarks.records.get(gh.spec().repoKey)!.lastSyncedSha).toBe(wmBefore); // watermark frozen
+    expect(watermarks.records.get(gh.spec().repoKey)!.lastSyncedSha).toBe(
+      wmBefore,
+    ); // watermark frozen
   });
 
   it("local delete vs remote modify → conflict", async () => {
-    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
-    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
     const { engine } = makeEngine(gh, local);
     await bootstrap(engine, gh.spec());
 
-    gh.commitDirect("main", { [FILE_B]: mdAsset("u2", "remote edit") }, "device B");
+    gh.commitDirect(
+      "main",
+      { [FILE_B]: mdAsset("u2", "remote edit") },
+      "device B",
+    );
     local.files.delete(FILE_B);
     const result = await engine.sync(gh.spec());
 
@@ -256,14 +394,22 @@ describe("SyncEngine — conflicts (A2/A3 deferral, never overwrite)", () => {
     expect(result.status).toBe("synced");
     expect(result.pushedCount).toBe(0);
     expect(result.pushedSha).toBeUndefined();
-    expect(watermarks.records.get(gh.spec().repoKey)!.lastSyncedSha).toBe(gh.headSha());
+    expect(watermarks.records.get(gh.spec().repoKey)!.lastSyncedSha).toBe(
+      gh.headSha(),
+    );
   });
 });
 
 describe("SyncEngine — deletes & renames propagate (#3476; full coverage in SyncEngine.delete-propagation.test.ts)", () => {
   it("local delete is pushed; nothing deferred, remote drops the file", async () => {
-    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
-    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
     const { engine } = makeEngine(gh, local);
     await bootstrap(engine, gh.spec());
 
@@ -306,20 +452,30 @@ describe("SyncEngine — D16 non-fast-forward retry loop", () => {
     ).toBe(true);
     expect(
       isNonFastForwardError(
-        new Error("GitHub createCommit: ref update mismatch (expected a, got b)"),
+        new Error(
+          "GitHub createCommit: ref update mismatch (expected a, got b)",
+        ),
       ),
     ).toBe(true);
     expect(
       isNonFastForwardError(
-        new Error("GitHub request POST https://api.github.com/repos/o/r/git/trees → HTTP 422: bad tree"),
+        new Error(
+          "GitHub request POST https://api.github.com/repos/o/r/git/trees → HTTP 422: bad tree",
+        ),
       ),
     ).toBe(false);
     expect(isNonFastForwardError(new Error("network down"))).toBe(false);
   });
 
   it("recovers from a concurrent push racing the PATCH (re-pull → retry)", async () => {
-    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
-    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
     const { engine } = makeEngine(gh, local);
     await bootstrap(engine, gh.spec());
 
@@ -329,14 +485,20 @@ describe("SyncEngine — D16 non-fast-forward retry loop", () => {
     gh.onBeforePatch = (): void => {
       if (!injected) {
         injected = true;
-        gh.commitDirect("main", { [FILE_B]: mdAsset("u2", "raced in") }, "device B race");
+        gh.commitDirect(
+          "main",
+          { [FILE_B]: mdAsset("u2", "raced in") },
+          "device B race",
+        );
       }
     };
     local.files.set(FILE_A, mdAsset("u1", "local edit"));
     const result = await engine.sync(gh.spec());
 
     expect(result.status).toBe("synced");
-    expect(result.warnings.join(" ")).toMatch(/non-fast-forward push \(attempt 1\/3\)/);
+    expect(result.warnings.join(" ")).toMatch(
+      /non-fast-forward push \(attempt 1\/3\)/,
+    );
     expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1", "local edit"));
     expect(gh.headFiles().get(FILE_B)).toBe(mdAsset("u2", "raced in"));
     expect(local.files.get(FILE_B)).toBe(mdAsset("u2", "raced in")); // pulled on retry
@@ -351,7 +513,11 @@ describe("SyncEngine — D16 non-fast-forward retry loop", () => {
     let counter = 0;
     gh.onBeforePatch = (): void => {
       counter++;
-      gh.commitDirect("main", { [`assets/race-${counter}.md`]: mdAsset(`race-${counter}`) }, "race");
+      gh.commitDirect(
+        "main",
+        { [`assets/race-${counter}.md`]: mdAsset(`race-${counter}`) },
+        "race",
+      );
     };
     local.files.set(FILE_A, mdAsset("u1", "local edit"));
     const result = await engine.sync(gh.spec());
@@ -362,8 +528,14 @@ describe("SyncEngine — D16 non-fast-forward retry loop", () => {
   });
 
   it("race on a NON-pushed path: watermark is not advanced and the next sync does NOT revert the concurrent change", async () => {
-    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
-    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
     const { engine, watermarks } = makeEngine(gh, local);
     await bootstrap(engine, gh.spec());
     const baseSha = watermarks.records.get(gh.spec().repoKey)!.lastSyncedSha;
@@ -386,7 +558,9 @@ describe("SyncEngine — D16 non-fast-forward retry loop", () => {
 
     expect(first.status).toBe("synced");
     expect(first.warnings.join(" ")).toMatch(/watermark NOT advanced/);
-    expect(watermarks.records.get(gh.spec().repoKey)!.lastSyncedSha).toBe(baseSha);
+    expect(watermarks.records.get(gh.spec().repoKey)!.lastSyncedSha).toBe(
+      baseSha,
+    );
 
     gh.onGetRef = undefined;
     const second = await engine.sync(gh.spec());
@@ -395,7 +569,9 @@ describe("SyncEngine — D16 non-fast-forward retry loop", () => {
     expect(second.pushedCount).toBe(0); // own pushed edit converges, nothing re-pushed
     expect(gh.headFiles().get(FILE_B)).toBe(concurrent); // concurrent change NOT reverted
     expect(local.files.get(FILE_B)).toBe(concurrent); // pulled to disk
-    expect(watermarks.records.get(gh.spec().repoKey)!.lastSyncedSha).toBe(gh.headSha());
+    expect(watermarks.records.get(gh.spec().repoKey)!.lastSyncedSha).toBe(
+      gh.headSha(),
+    );
   });
 
   it("warns on the residual race window (concurrent commit between conflict check and the primitive's GET-ref)", async () => {
@@ -412,7 +588,11 @@ describe("SyncEngine — D16 non-fast-forward retry loop", () => {
     gh.onGetRef = (): void => {
       refCalls++;
       if (refCalls === 2) {
-        gh.commitDirect("main", { [FILE_A]: mdAsset("u1", "raced overwrite") }, "race");
+        gh.commitDirect(
+          "main",
+          { [FILE_A]: mdAsset("u1", "raced overwrite") },
+          "race",
+        );
       }
     };
     const result = await engine.sync(gh.spec());
@@ -474,7 +654,9 @@ describe("SyncEngine — error paths (D12 warn-not-block)", () => {
     const engine = new SyncEngine({
       transport: async (req) => {
         if (req.url.includes("broken-owner")) {
-          throw new Error(`GitHub request ${req.method} ${req.url} → HTTP 500: boom`);
+          throw new Error(
+            `GitHub request ${req.method} ${req.url} → HTTP 500: boom`,
+          );
         }
         return ghOk.transport()(req);
       },
@@ -539,14 +721,21 @@ describe("SyncEngine — TOCTOU guard on pull-apply (A1 review MEDIUM)", () => {
       FILE_B,
       mdAsset("u2", "user edit mid-sync"),
     );
-    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
     const { engine, watermarks } = makeEngine(gh, local);
     await bootstrap(engine, gh.spec());
     const oldEntry = watermarks.records
       .get(gh.spec().repoKey)!
       .files.find((f) => f.path === FILE_B)!;
 
-    gh.commitDirect("main", { [FILE_B]: mdAsset("u2", "remote edit") }, "device B");
+    gh.commitDirect(
+      "main",
+      { [FILE_B]: mdAsset("u2", "remote edit") },
+      "device B",
+    );
     local.armed = true;
     const result = await engine.sync(gh.spec());
 
@@ -576,7 +765,10 @@ describe("SyncEngine — TOCTOU guard on pull-apply (A1 review MEDIUM)", () => {
       FILE_B,
       mdAsset("u2", "user edit mid-sync"),
     );
-    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
     const { engine, watermarks } = makeEngine(gh, local);
     await bootstrap(engine, gh.spec());
     const oldEntry = watermarks.records
@@ -720,9 +912,9 @@ describe("SyncEngine — A2 merge layer integration", () => {
     expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1", "remote edit"));
     expect(local.files.get(FILE_A)).toBe(mdAsset("u1", "local edit"));
     // Watermark pinned → the same conflict re-derives on the next sync.
-    expect(
-      watermarks.records.get(gh.spec().repoKey)!.pinnedPaths,
-    ).toContain(FILE_A);
+    expect(watermarks.records.get(gh.spec().repoKey)!.pinnedPaths).toContain(
+      FILE_A,
+    );
     const second = await engine.sync(gh.spec());
     expect(second.quarantinedCount).toBe(1);
     expect(store.entries).toHaveLength(2);
@@ -743,7 +935,11 @@ describe("SyncEngine — A2 merge layer integration", () => {
     });
     await bootstrap(engine, gh.spec());
 
-    gh.commitDirect("main", { [FILE_A]: yamlAsset("Base", "remote-value") }, "B");
+    gh.commitDirect(
+      "main",
+      { [FILE_A]: yamlAsset("Base", "remote-value") },
+      "B",
+    );
     local.files.set(FILE_A, yamlAsset("Local"));
     const result = await engine.sync(gh.spec());
 
@@ -778,8 +974,14 @@ describe("SyncEngine — A3: convergent rename (A2 deferred MEDIUM)", () => {
   const RENAMED = "assets/renamed.md";
 
   it("identical rename a→b on both sides is consumed — no false delete-vs-modify quarantine", async () => {
-    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
-    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
     const store = new InMemoryQuarantineStore();
     const { engine } = makeEngine(gh, local, {
       mergeLayer: stubMergeLayer(() => ({
@@ -791,7 +993,9 @@ describe("SyncEngine — A3: convergent rename (A2 deferred MEDIUM)", () => {
     await bootstrap(engine, gh.spec());
 
     // Both devices ran the SAME rename (rename-to-uid / co-location case).
-    gh.commitDirect("main", { [RENAMED]: mdAsset("u1") }, "remote rename", [FILE_A]);
+    gh.commitDirect("main", { [RENAMED]: mdAsset("u1") }, "remote rename", [
+      FILE_A,
+    ]);
     local.files.delete(FILE_A);
     local.files.set(RENAMED, mdAsset("u1"));
     const result = await engine.sync(gh.spec());
@@ -805,8 +1009,14 @@ describe("SyncEngine — A3: convergent rename (A2 deferred MEDIUM)", () => {
   });
 
   it("GENUINE remote delete vs local rename still quarantines (never silently resurrects)", async () => {
-    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
-    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
     const store = new InMemoryQuarantineStore();
     const { engine } = makeEngine(gh, local, {
       mergeLayer: stubMergeLayer(() => ({
@@ -864,8 +1074,14 @@ describe("SyncEngine — A3: merged blob not re-fetched (A2 deferred LOW)", () =
 
 describe("SyncEngine — A3: D16 terminal-quarantine", () => {
   it("retry exhaustion routes contended files AND pending merge entries to quarantine", async () => {
-    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
-    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1"), [FILE_B]: mdAsset("u2") });
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
     const store = new InMemoryQuarantineStore();
     const { engine } = makeEngine(gh, local, {
       maxPushRetries: 1,
@@ -887,7 +1103,11 @@ describe("SyncEngine — A3: D16 terminal-quarantine", () => {
     let n = 0;
     gh.onBeforePatch = (): void => {
       n++;
-      gh.commitDirect("main", { [`assets/race-${n}.md`]: mdAsset(`r${n}`) }, "race");
+      gh.commitDirect(
+        "main",
+        { [`assets/race-${n}.md`]: mdAsset(`r${n}`) },
+        "race",
+      );
     };
     const result = await engine.sync(gh.spec());
 
@@ -901,7 +1121,9 @@ describe("SyncEngine — A3: D16 terminal-quarantine", () => {
     });
     expect(byPath.get(FILE_B)).toMatchObject({
       uid: "u2",
-      reason: expect.stringMatching(/non-fast-forward push failed after 1 retr/),
+      reason: expect.stringMatching(
+        /non-fast-forward push failed after 1 retr/,
+      ),
       localContent: mdAsset("u2", "contended edit"),
       remoteContent: mdAsset("u2"), // best-effort current head version
     });
@@ -929,7 +1151,11 @@ describe("SyncEngine — A3: D16 terminal-quarantine", () => {
     let n = 0;
     gh.onBeforePatch = (): void => {
       n++;
-      gh.commitDirect("main", { [`assets/race-${n}.md`]: mdAsset(`r${n}`) }, "race");
+      gh.commitDirect(
+        "main",
+        { [`assets/race-${n}.md`]: mdAsset(`r${n}`) },
+        "race",
+      );
     };
     const result = await engine.sync(gh.spec());
 
@@ -1027,7 +1253,9 @@ describe("SyncEngine — A3: D11 one-operation guard, R8 auth, R5 secret-scan", 
     const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
     const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
     const transport: RestCommitTransport = async (req) => {
-      throw new Error(`GitHub request ${req.method} ${req.url} → HTTP 401: Bad credentials`);
+      throw new Error(
+        `GitHub request ${req.method} ${req.url} → HTTP 401: Bad credentials`,
+      );
     };
     const { engine } = makeEngine(gh, local, { transport });
 
@@ -1045,7 +1273,9 @@ describe("SyncEngine — A3: D11 one-operation guard, R8 auth, R5 secret-scan", 
     const transport: RestCommitTransport = async (req) => {
       if (failures > 0) {
         failures--;
-        throw new Error(`GitHub request ${req.method} ${req.url} → HTTP 403: API rate limit exceeded`);
+        throw new Error(
+          `GitHub request ${req.method} ${req.url} → HTTP 403: API rate limit exceeded`,
+        );
       }
       return inner(req);
     };
@@ -1105,9 +1335,18 @@ describe("SyncEngine — #3475 phantom/empty commits (detected content already i
   }
 
   it("does NOT create a commit when the detected content is already in HEAD; watermark converges", async () => {
-    const alreadyPushed = mdAsset("u1", "v2 — already pushed by the other device");
-    const gh = new FakeGitHubRepo({ [FILE_A]: alreadyPushed, [FILE_B]: mdAsset("u2") });
-    const local = new FakeLocalFiles({ [FILE_A]: alreadyPushed, [FILE_B]: mdAsset("u2") });
+    const alreadyPushed = mdAsset(
+      "u1",
+      "v2 — already pushed by the other device",
+    );
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: alreadyPushed,
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({
+      [FILE_A]: alreadyPushed,
+      [FILE_B]: mdAsset("u2"),
+    });
     const { engine, watermarks } = makeEngine(gh, local);
     await bootstrap(engine, gh.spec());
     await staleWatermarkEntry(
@@ -1126,7 +1365,9 @@ describe("SyncEngine — #3475 phantom/empty commits (detected content already i
     expect(result.pushedCount).toBe(0);
     expect(gh.headSha()).toBe(headBefore); // no commit landed
     expect(gh.commits.size).toBe(commitsBefore); // not even an unreferenced one
-    expect(result.warnings.join(" ")).toMatch(/already identical in remote HEAD/);
+    expect(result.warnings.join(" ")).toMatch(
+      /already identical in remote HEAD/,
+    );
 
     // Watermark converged: the stale entry now records the actual blob —
     // the phantom does NOT re-derive on the next sync.
@@ -1143,8 +1384,14 @@ describe("SyncEngine — #3475 phantom/empty commits (detected content already i
 
   it("pushes ONLY the real delta when one of two detected files is already in HEAD; counter is exact", async () => {
     const alreadyPushed = mdAsset("u1", "already in HEAD");
-    const gh = new FakeGitHubRepo({ [FILE_A]: alreadyPushed, [FILE_B]: mdAsset("u2") });
-    const local = new FakeLocalFiles({ [FILE_A]: alreadyPushed, [FILE_B]: mdAsset("u2") });
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: alreadyPushed,
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({
+      [FILE_A]: alreadyPushed,
+      [FILE_B]: mdAsset("u2"),
+    });
     const { engine, watermarks } = makeEngine(gh, local);
     await bootstrap(engine, gh.spec());
     await staleWatermarkEntry(
