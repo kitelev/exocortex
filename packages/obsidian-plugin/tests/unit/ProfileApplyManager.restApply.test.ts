@@ -170,15 +170,32 @@ class FakeRestMount {
 
 class FakeGitOps {
   calls: string[] = [];
+  /**
+   * When true, every git operation throws the exact `fatal: not a git
+   * repository` surfaced on a real NON-git vault (#3567). Used by the desktop
+   * git-free revert-verify: pre-fix the desktop apply hits these → rejects;
+   * post-fix the REST path never touches gitOps → resolves.
+   */
+  constructor(private readonly throwsNotGitRepo = false) {}
+  private throwIfNonGit(): void {
+    if (this.throwsNotGitRepo) {
+      throw new Error(
+        "fatal: not a git repository (or any of the parent directories): .git",
+      );
+    }
+  }
   async readGitmodulesPaths(): Promise<Set<string>> {
     this.calls.push("readGitmodulesPaths");
+    this.throwIfNonGit();
     return new Set();
   }
   async submoduleAdd(): Promise<void> {
     this.calls.push("submoduleAdd");
+    this.throwIfNonGit();
   }
   async submoduleDeinit(): Promise<void> {
     this.calls.push("submoduleDeinit");
+    this.throwIfNonGit();
   }
 }
 
@@ -207,6 +224,11 @@ interface SetupOpts {
   wireRestMount?: boolean;
   /** Whether to also wire gitOps (to assert it is NOT used). */
   wireGitOps?: boolean;
+  /**
+   * Make the wired gitOps model a NON-git vault (#3567): every git op throws
+   * `fatal: not a git repository`. Only meaningful with `wireGitOps: true`.
+   */
+  gitOpsThrows?: boolean;
   /** Wire a fresh-PAT factory (returns `factoryMount`) preferred over capture. */
   wireRestMountFactory?: boolean;
 }
@@ -271,7 +293,7 @@ function setup(opts: SetupOpts) {
   const confirmGate = new FakeConfirmGate();
   const restMount = new FakeRestMount();
   const factoryMount = new FakeRestMount();
-  const gitOps = new FakeGitOps();
+  const gitOps = new FakeGitOps(opts.gitOpsThrows === true);
   const notifyCalls: string[] = [];
 
   const mgr = new ProfileApplyManager({
@@ -589,5 +611,88 @@ describe("applyProfile dispatch (mobile → REST)", () => {
     expect(warn).toBeDefined();
     expect(warn).toContain("assetspaces/ems");
     expect(warn).toContain("assetspaces/kitelev/exoas-ems");
+  });
+});
+
+// #3567 (P0 alpha-blocker) — the private-AS mount must be git-free on DESKTOP
+// too, not just mobile. Before the fix `applyProfile` only delegated to the
+// REST path when `Platform.isMobile`; desktop fell through to the git-binary
+// path (`GitSubmoduleOps.submoduleAdd` → `git submodule add` → `execFile`),
+// which `fatal: not a git repository`-crashes on a vault the user never
+// `git init`-ed (the real onboarding case caught on a work-MacBook). These
+// tests pin the desktop dispatch to the git-free REST path and are the
+// revert-verify control for the gate relaxation (Desktop↔Mobile Parity).
+describe("applyProfile dispatch (desktop → REST, git-free, #3567)", () => {
+  const original = Platform.isMobile;
+  beforeEach(() => {
+    // Explicit DESKTOP — the regression lived in the `Platform.isMobile` gate.
+    (Platform as unknown as { isMobile: boolean }).isMobile = false;
+  });
+  afterEach(() => {
+    (Platform as unknown as { isMobile: boolean }).isMobile = original;
+  });
+
+  it("delegates to applyProfileViaRest on DESKTOP — gitOps never touched (revert-verify)", async () => {
+    const { mgr, restMount, gitOps } = setup({
+      targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
+      materialized: [...ALL_FLOOR_UIDS, "kpc-uid"],
+      wireGitOps: true,
+    });
+
+    await mgr.applyProfile("target");
+
+    // REST path exercised on desktop…
+    expect(restMount.mounted.map((m) => m.submodulePath)).toEqual([
+      "assetspaces/kitelev/exoas-ems",
+    ]);
+    expect(restMount.unmounted).toEqual(["assetspaces/kitelev/exoas-kpc"]);
+    // …and the git-binary path was NOT used (no `git submodule add` → no
+    // `fatal: not a git repository` possible). PRE-fix this array contains
+    // `readGitmodulesPaths` + `submoduleAdd` (desktop git path) → fails.
+    expect(gitOps.calls).toEqual([]);
+  });
+
+  it("NON-git vault: desktop apply mounts via REST instead of `fatal: not a git repository` (#3567 repro)", async () => {
+    // gitOpsThrows models the real symptom: any git op on a non-git vault
+    // throws `fatal: not a git repository`. PRE-fix the desktop path hits
+    // gitOps and REJECTS with that fatal; POST-fix the git-free REST path is
+    // taken and the apply RESOLVES.
+    const { mgr, restMount, gitOps, localDataStore } = setup({
+      targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
+      materialized: [...ALL_FLOOR_UIDS],
+      wireGitOps: true,
+      gitOpsThrows: true,
+    });
+
+    await expect(mgr.applyProfile("target")).resolves.toBeUndefined();
+
+    // Materialized via REST tarball, never via git.
+    expect(restMount.mounted.map((m) => m.submodulePath)).toEqual([
+      "assetspaces/kitelev/exoas-ems",
+    ]);
+    expect(gitOps.calls).toEqual([]);
+    // Applied profile persisted as last-applied cache.
+    expect(localDataStore.getActiveProfileUid()).toBe("target");
+  });
+
+  it("prefers the fresh-PAT restMountFactory on desktop (no captured restMount needed)", async () => {
+    // Parity with the mobile fresh-PAT flow (#3382/#3557): a PAT configured
+    // after onload is honoured on desktop too — the factory mount is used.
+    const { mgr, restMount, factoryMount, gitOps } = setup({
+      targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
+      materialized: [...ALL_FLOOR_UIDS],
+      wireRestMount: false,
+      wireRestMountFactory: true,
+      wireGitOps: true,
+    });
+
+    await mgr.applyProfile("target");
+
+    // Fresh-PAT factory mount used; captured mount untouched; git untouched.
+    expect(factoryMount.mounted.map((m) => m.submodulePath)).toEqual([
+      "assetspaces/kitelev/exoas-ems",
+    ]);
+    expect(restMount.mounted).toEqual([]);
+    expect(gitOps.calls).toEqual([]);
   });
 });
