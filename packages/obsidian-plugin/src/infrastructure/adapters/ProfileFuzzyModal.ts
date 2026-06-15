@@ -8,18 +8,48 @@ import type { ProfileChoice } from "./ProfileCommands";
  * caller's Promise with the chosen profile, or `null` when the user
  * dismisses the picker without selecting anything.
  *
- * Lifecycle contract:
- *   - On `onChooseItem` → resolve with the chosen value.
- *   - On `onClose` without a prior choice → resolve with `null`.
- *   - The Promise resolves exactly once; double-fire is suppressed via
- *     a private flag so the «choose then close» sequence does not call
- *     `resolve` twice.
+ * Lifecycle contract (⚠ order matters — see «close-before-choose» below):
+ *   - `onChooseItem` only RECORDS the chosen value (does NOT resolve).
+ *   - `onClose` performs the single resolution, deferred to a microtask,
+ *     using whatever `onChooseItem` recorded (or `null` on cancel).
+ *   - The Promise resolves exactly once; a `settled` flag suppresses the
+ *     double `onClose` that Obsidian can emit.
+ *
+ * ## Why resolution is deferred (the picker-no-op bug, Issue #3561)
+ *
+ * Obsidian's real `SuggestModal.selectSuggestion` runs (verified against
+ * `obsidian.asar`):
+ *
+ *   selectSuggestion(e, t) {
+ *     this.app.keymap.updateModifiers(t);
+ *     this.close();                  // ← onClose() FIRES FIRST
+ *     this.isOpen = false;
+ *     this.onChooseSuggestion(e, t); // ← onChooseItem(e.item) AFTER close
+ *   }
+ *
+ * and `FuzzySuggestModal.onChooseSuggestion(e,t)` → `onChooseItem(e.item, t)`.
+ * So on a real selection `close()` (→ `onClose`) runs BEFORE `onChooseItem`,
+ * both synchronously inside one `selectSuggestion` call.
+ *
+ * The previous implementation resolved synchronously inside `onClose`: it saw
+ * no choice recorded yet, resolved with `null`, and the `onChooseItem` that
+ * fired immediately afterwards was suppressed by the guard flag. Result —
+ * `fuzzyPick` resolved `null`, `ProfileCommands.invokeApplyProfile` treated it
+ * as «user cancelled» and returned silently → the human-path picker selection
+ * was a NO-OP (apply only ran via the DevTools `applyProfile(uid)` workaround).
+ *
+ * The fix: `onChooseItem` records the choice; `onClose` schedules the single
+ * resolution on a microtask. The microtask runs after the synchronous
+ * `selectSuggestion` stack completes — by which point `onChooseItem` has
+ * recorded the chosen item — so a selection resolves with the item and a
+ * cancel (Escape, no choice) resolves with `null`. Order-independent.
  *
  * Active profile is decorated с trailing «✓ (active)» so users can see
  * the current selection без duplicating the picker state.
  */
 export class ProfileFuzzyModal extends FuzzySuggestModal<ProfileChoice> {
-  private resolved = false;
+  private chosen: ProfileChoice | null = null;
+  private settled = false;
   private readonly resolve: (value: ProfileChoice | null) => void;
 
   constructor(
@@ -42,20 +72,21 @@ export class ProfileFuzzyModal extends FuzzySuggestModal<ProfileChoice> {
   }
 
   onChooseItem(item: ProfileChoice): void {
-    if (this.resolved) return;
-    this.resolved = true;
-    this.resolve(item);
+    // Record only. Obsidian fires this AFTER onClose (see class docstring),
+    // so resolving here would race a close that has already run. The single
+    // resolution happens in onClose's deferred microtask, reading `chosen`.
+    this.chosen = item;
   }
 
   override onClose(): void {
-    // Resolve BEFORE super.onClose() so a throw from Obsidian's lifecycle
-    // teardown cannot leave the awaiter pending forever (code-reviewer
-    // medium catch — Obsidian's FuzzySuggestModal.onClose runs DOM
-    // cleanup; rare, but if it throws the resolve below would be
-    // skipped → memory leak).
-    if (!this.resolved) {
-      this.resolved = true;
-      this.resolve(null);
+    // Schedule the single resolution BEFORE super.onClose() so a throw from
+    // Obsidian's DOM teardown cannot leave the awaiter pending forever
+    // (code-reviewer medium catch). The microtask still runs after the whole
+    // synchronous selectSuggestion stack (close → onChooseItem), so `chosen`
+    // is populated for a real selection and stays null for a cancel.
+    if (!this.settled) {
+      this.settled = true;
+      queueMicrotask(() => this.resolve(this.chosen));
     }
     super.onClose();
   }
