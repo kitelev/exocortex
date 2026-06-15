@@ -381,10 +381,20 @@ The Exocortex layout renders automatically in Reading Mode based on the note's `
 
 ## Plugin Settings
 
-Open **Settings → Exocortex** to configure the plugin. Two things worth knowing up front:
+Open **Settings → Exocortex** to configure the plugin. Three things worth knowing up front:
 
 - **Settings live in your vault.** After updating the plugin you will see an `exocortex-settings/` folder appear, with one `exo__Setting` note per setting. This is a one-shot migration (the plugin shows a Notice like *"Exocortex: migrated N setting(s) to vault assets"*); editing those notes is equivalent to changing the setting in the UI. See [Settings Homoiconization](settings-homoiconization.md).
 - **Excluded folders**: folder prefixes listed in this setting (default: `09 Templates/`) are skipped by RDF indexing and SHACL-lite validation — useful for template folders whose frontmatter is incomplete by design. Reload Obsidian after editing the list; the indexer snapshots it at startup.
+- **GitHub PAT** (Settings → Exocortex → *Profile: GitHub PAT*): a fine-grained Personal Access Token used to **push** AssetSpace changes and to **pull private** AssetSpaces. You do **not** need it for the public starter onboarding (Steps 2–2b are all public, no token). Set it only when you run **"Exocortex: Sync"** (push), the **"Push current assetspace"** command, or **"Apply profile"** on a profile that includes a private repository. It is stored in `data.local.json` (not `data.json`), so Obsidian Sync **excludes it from network replication**. Use **"Save PAT"** / **"Test connection"** to store and verify it; leave the field blank and click Save to clear it.
+
+### Adding your own / private AssetSpaces
+
+The starter onboarding (Step 2b) pulls only **public** repositories, so no token is involved. To add **your own** or a **private** AssetSpace:
+
+1. Configure your **GitHub PAT** in *Settings → Exocortex* (see the bullet above), scoped to the repositories you own (fine-grained PAT with a per-repository allowlist is recommended).
+2. Declare the AssetSpace in a profile (an `exo__Profile` asset that lists it under `exo__Profile_includes`) and run **"Exocortex: Apply profile"**. Apply uses your PAT to materialize private AssetSpaces.
+
+> The **"Add assetspace by URL"** command is for a single **public** repository (no token), and it does **not** pull that repo's dependencies automatically. For private content, or for a complete dependency-resolved set, prefer the profile path (**Apply profile**) over **Add assetspace by URL**.
 
 ---
 
