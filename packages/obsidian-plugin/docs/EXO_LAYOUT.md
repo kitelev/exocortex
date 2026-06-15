@@ -171,26 +171,6 @@ the legacy Asset Relations section **in addition** to the Layout blocks.
   adds new blocks (e.g. a `PropertiesBlock` for pinned metadata) and
   you still want the class-wide Asset Relations table below.
 
-## Coexistence with `ui__RelationColumnSet`
-
-Both features live side-by-side and never fight:
-
-- `exo__Layout` (this page) owns the **body structure** of a note —
-  which blocks render, in what order, with what columns.
-- `ui__RelationColumnSet` (see `RELATION_COLUMN_SET.md`) customises the
-  **column map of the default Asset Relations table**, which only
-  renders when `coexistsWithDefault: true` **or** when no Layout
-  matches the open note's class at all.
-
-So if a note has both a matching Layout and matching RelationColumnSet
-configs:
-
-- `coexistsWithDefault: false` → Layout wins; RelationColumnSet is not
-  consulted (Asset Relations not rendered at all).
-- `coexistsWithDefault: true` → Layout blocks render first, then the
-  default Asset Relations table renders below with columns picked by
-  RelationColumnSet's resolver (same ladder as always).
-
 ## Troubleshooting
 
 `log.warn` messages emitted by the pipeline, listed in the order they
@@ -243,25 +223,3 @@ If the ontology is absent the plugin loads without error; Layout-based
 rendering falls back to the default Asset Relations table. Layouts that
 reference unknown ontology classes will log `unknown block class`
 warnings in the console.
-
-## Migrating from `ui__RelationColumnSet`
-
-> **Note.** The one-shot CLI migration helper
-> `exocortex migrate-relcolset-to-exolayout` was removed in RFC 78c2b7d0 §5
-> (EKA Phase A C1) once the migration was complete. Migrate manually by
-> authoring an `exo__Layout` + `exo__BacklinksTableBlock` pair per
-> `ui__RelationColumnSet` config, minding the semantic gaps below.
-
-**Semantic gap — read before migrating:**
-
-- `ui__RelationColumnSet` is **additive** (extends `Name` + `Instance Class`
-  columns). `exo__BacklinksTableBlock` is **replacing** (renders only the
-  configured columns). The migrated block will look different from the
-  original RelationColumnSet rendering by default.
-- `exo__Layout.targetClass` is the **page class** the layout renders on.
-  `ui__RelationColumnSet.targetClass` is the **row class** filtered in the
-  relations table — set `exo__Layout_targetClass` to the class of the page
-  you want the layout on, not the row class.
-- Set `exo__Layout_coexistsWithDefault: true` so the migrated block renders
-  **in addition to** the legacy Asset Relations table; set to `false` once
-  you are happy to remove the legacy rendering.

@@ -37,7 +37,6 @@ import {
   FolderRepairService,
   GroundingExecutor,
   ServiceRegistry,
-  RelationColumnSetResolver,
   LayoutSelector,
   ShapeLoader,
   ShaclShapeRegistry,
@@ -53,8 +52,6 @@ import {
 import { ObsidianFileResolver } from "./infrastructure/ObsidianFileResolver";
 import { registerOrderSpecFromObsidianVault } from "./infrastructure/registerOrderSpecFromObsidianVault";
 import {
-  RelationColumnSetRepository,
-  ObsidianRelationColumnSetAdapter,
   ExoLayoutRepository,
   ObsidianExoLayoutAdapter,
 } from "./infrastructure/repositories";
@@ -221,9 +218,6 @@ export default class ExocortexPlugin extends Plugin {
   // `ExocmdBindingsCache` + `ExocmdBindingsIndexer`) were deleted in
   // Phase 3c-2 once parallel-mode parity was confirmed via PR #3257.
   lazyAssetGraphLoader?: LazyAssetGraphLoader;
-  private relationColumnSetRepository: RelationColumnSetRepository | null =
-    null;
-  private relationColumnSetResolver: RelationColumnSetResolver | null = null;
   private exoLayoutRepository: ExoLayoutRepository | null = null;
   private layoutSelector: LayoutSelector | null = null;
   private timerManager!: TimerManager;
@@ -512,32 +506,8 @@ export default class ExocortexPlugin extends Plugin {
         workflowResolver: this.workflowResolver,
       });
 
-      // RFC be70f741 Phase 3 — wire RelationColumnSetRepository + Resolver so
-      // `UniversalLayoutRenderer` → `RelationsRenderer` can consult the index
-      // when composing `groupSpecificProperties`.  Initialize BEFORE the
-      // renderer construction so the snapshot is populated when the resolver
-      // is first invoked.  The `enableRelationColumnSetResolver` flag gates
-      // consumption — the repository always runs so the snapshot is warm if
-      // the flag is toggled at runtime.
-      const relationColumnSetLogger = {
-        warn: (message: string) =>
-          this.logger.warn("RelationColumnSet", { message }),
-        info: (message: string) =>
-          this.logger.info("RelationColumnSet", { message }),
-      };
-      this.relationColumnSetRepository = new RelationColumnSetRepository(
-        new ObsidianRelationColumnSetAdapter(this.app),
-        { logger: relationColumnSetLogger },
-      );
-      this.relationColumnSetRepository.initialize();
-      const repo = this.relationColumnSetRepository;
-      this.relationColumnSetResolver = new RelationColumnSetResolver(
-        () => repo.getSnapshot().all,
-        { logger: relationColumnSetLogger },
-      );
-
       // RFC exo__Layout Phase 2 — wire ExoLayoutRepository + LayoutSelector
-      // using the same live-snapshot pattern as RelationColumnSet.
+      // using a live-snapshot pattern.
       const exoLayoutLogger = {
         warn: (message: string) => this.logger.warn("ExoLayout", { message }),
         info: (message: string) => this.logger.info("ExoLayout", { message }),
@@ -629,7 +599,6 @@ export default class ExocortexPlugin extends Plugin {
           groundingExecutor: this.groundingExecutor,
           notificationService: notifier,
           tripleStore,
-          relationColumnSetResolver: this.relationColumnSetResolver,
           exoLayoutRepository: this.exoLayoutRepository,
           layoutSelector: this.layoutSelector,
           panelResolver: this.panelResolver,
@@ -1042,34 +1011,6 @@ export default class ExocortexPlugin extends Plugin {
           // `onunload()`; guards the unload race where a queued
           // "resolved" event fires post-dispose.
           this.exoLayoutRepository?.rebuildNow();
-
-          // Issue #3372 — DO NOT REMOVE this line without re-running the
-          // relation-column-set-smoke e2e spec end-to-end on warm Obsidian
-          // boots (full shard-3 sequence in Docker). Unit tests in
-          // `RelationColumnSetRepository.test.ts` exercise `rebuildNow()`
-          // semantics in isolation but do NOT guard this integration call
-          // site.
-          //
-          // Sibling cold-start race in
-          // `RelationColumnSetRepository`. Same shape as #3368: the repo
-          // calls synchronous `rebuildSync()` in `initialize()` BEFORE
-          // metadataCache has parsed `ui__RelationColumnSet` fixtures, then
-          // subscribes to `metadataCache.on("changed" / "deleted" /
-          // "renamed")` (NOT `on("resolved")`). On warm Obsidian boots
-          // metadataCache can finish parsing RelationColumnSet assets
-          // BEFORE that listener is wired ⇒ empty snapshot ⇒
-          // `RelationColumnSetResolver` silently falls back to defaults
-          // (custom RCS column overrides never apply). Mirror the
-          // ExoLayoutRepository fix above: invoke `rebuildNow()` from this
-          // authoritative "metadata fully parsed" handler. Same rationale
-          // re: idempotency, cheapness, optional chaining (nulled in
-          // `onunload()`), and placement outside `postResolveReindexDone`
-          // (re-emissions on large vault reindexes refresh the snapshot
-          // too). Unit tests in `RelationColumnSetRepository.test.ts`
-          // exercise `rebuildNow()` semantics; this integration call site
-          // is guarded by this comment + JSDoc on `rebuildNow()`, not by
-          // an automated test (mirrors #3368 verification scope).
-          this.relationColumnSetRepository?.rebuildNow();
 
           if (postResolveReindexDone) return;
           postResolveReindexDone = true;
@@ -1729,14 +1670,6 @@ export default class ExocortexPlugin extends Plugin {
     // Cleanup layout renderer (includes backlinks cache, metadata cache, etc.)
     if (this.layoutRenderer) {
       this.layoutRenderer.cleanup();
-    }
-
-    // RFC be70f741 Phase 3 — release metadataCache subscriptions and pending
-    // debounce timers held by the RelationColumnSetRepository.
-    if (this.relationColumnSetRepository) {
-      this.relationColumnSetRepository.dispose();
-      this.relationColumnSetRepository = null;
-      this.relationColumnSetResolver = null;
     }
 
     // RFC exo__Layout Phase 2 — release ExoLayoutRepository subscriptions.

@@ -1,8 +1,7 @@
 /**
  * LayoutSelector — resolve the winning `exo__Layout` for an asset's class set.
  *
- * Priority ladder (RFC exo__Layout §Priority ladder, RFC-applied lessons from
- * RFC be70f741 RelationColumnSetResolver):
+ * Priority ladder (RFC exo__Layout §Priority ladder):
  *
  * 1. Normalize every entry of `exo__Instance_class` via
  *    {@link WikiLinkHelpers.normalize} — same semantics as all other
