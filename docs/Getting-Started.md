@@ -113,8 +113,10 @@ The fastest way to get a complete, working Areas → Projects → Tasks + Daily 
 > **⚠️ Git-backed vault? Commit before the first Apply.** If your vault is a git repository, Bootstrap + Add-AssetSpace leave the pulled `assetspaces/` as **untracked** files, and **Apply profile** refuses to unmount an AssetSpace with uncommitted changes (it never silently destroys un-pushed work) — you'll see `Apply aborted — N uncommitted file(s) …`. Before step 3, commit the vault once from a terminal at the vault root:
 >
 > ```bash
-> # First add a .gitignore so your PAT (data.local.json) is never committed:
-> printf '.obsidian/\n.exocortex/\n' > .gitignore
+> # First add a .gitignore so your PAT (data.local.json) is never committed.
+> # `>>` appends — if you already have a .gitignore it is preserved (just make
+> # sure these two lines are present; remove any duplicates afterwards):
+> printf '.obsidian/\n.exocortex/\n' >> .gitignore
 > git add -A && git commit -m "vault setup"
 > ```
 >

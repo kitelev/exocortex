@@ -203,6 +203,27 @@ describe("ProfileCommands.invokePushCurrentAssetSpace", () => {
     expect(stale.pushedAs).toHaveLength(0);
     expect(notices.some((n) => /feedfac/.test(n))).toBe(true);
   });
+
+  it("#3557 — surfaces a Notice (no unhandled rejection) when pushMgrFactory rejects", async () => {
+    const notices: string[] = [];
+    const cmd = new ProfileCommands({
+      switchMgr: new FakeSwitchMgr() as unknown as ProfileApplyManager,
+      pushMgr: new FakePushMgr(),
+      pushMgrFactory: async () => {
+        throw new Error("PAT read failed");
+      },
+      profileLister: async () => [],
+      fuzzyPick: async () => null,
+      getActiveFilePath: () => "assetspaces/exo/foo.md",
+      getActiveProfileUid: () => null,
+      notify: (m) => notices.push(m),
+    });
+
+    // Fire-and-forget callsite — a factory rejection must degrade to a Notice,
+    // not an unhandled promise rejection.
+    await expect(cmd.invokePushCurrentAssetSpace()).resolves.not.toThrow();
+    expect(notices.some((n) => /Push failed.*PAT read failed/.test(n))).toBe(true);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

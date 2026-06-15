@@ -206,10 +206,19 @@ export class ProfileCommands {
 
     // #3557 — rebuild the pusher from the CURRENT PAT so a PAT configured after
     // onload authenticates the push without a reload. Falls back to the
-    // onload-captured pushMgr when no factory is wired (tests / legacy).
-    const pushMgr = this.pushMgrFactory
-      ? await this.pushMgrFactory()
-      : this.pushMgr;
+    // onload-captured pushMgr when no factory is wired (tests / legacy). The
+    // factory does async PAT I/O that can reject; this command is invoked
+    // fire-and-forget, so surface a failure as a Notice rather than leaving an
+    // unhandled rejection (code-reviewer LOW).
+    let pushMgr: IAssetSpacePusher;
+    try {
+      pushMgr = this.pushMgrFactory
+        ? await this.pushMgrFactory()
+        : this.pushMgr;
+    } catch (e) {
+      this.notify(`Push failed: ${this.safeMessage(e)}`);
+      return;
+    }
 
     const asUid = pushMgr.lookupAssetSpaceForPath(folderName);
     if (asUid === null) {
