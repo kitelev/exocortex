@@ -174,6 +174,35 @@ describe("ProfileCommands.invokePushCurrentAssetSpace", () => {
     await expect(h.cmd.invokePushCurrentAssetSpace()).resolves.not.toThrow();
     expect(h.notices.some((n) => /Push failed.*rate limit/.test(n))).toBe(true);
   });
+
+  it("#3557 — uses pushMgrFactory (current PAT) over the onload-captured pushMgr", async () => {
+    // The onload-captured pushMgr froze with whatever PAT existed at load (empty
+    // on a fresh vault). A PAT set after onload must authenticate the push
+    // without a reload → the command rebuilds the pusher per invocation.
+    const stale = new FakePushMgr(); // no lookup entry — would no-op if used
+    const fresh = new FakePushMgr();
+    fresh.lookups.set("assetspaces/exo", "as-uid-1");
+    fresh.pushReturn = "feedface00112233445566778899aabbccddeeff";
+    const notices: string[] = [];
+    const cmd = new ProfileCommands({
+      switchMgr: new FakeSwitchMgr() as unknown as ProfileApplyManager,
+      pushMgr: stale,
+      pushMgrFactory: async () => fresh,
+      profileLister: async () => [],
+      fuzzyPick: async () => null,
+      getActiveFilePath: () => "assetspaces/exo/foo.md",
+      getActiveProfileUid: () => null,
+      notify: (m) => notices.push(m),
+    });
+
+    await cmd.invokePushCurrentAssetSpace();
+
+    // The fresh (current-PAT) pusher handled the push; the stale onload one was
+    // never touched. Pre-fix: stale.lookupAssetSpaceForPath → null → no-op.
+    expect(fresh.pushedAs).toEqual(["as-uid-1"]);
+    expect(stale.pushedAs).toHaveLength(0);
+    expect(notices.some((n) => /feedfac/.test(n))).toBe(true);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

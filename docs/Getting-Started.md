@@ -8,12 +8,12 @@
 
 Exocortex has been verified to work with the following minimum versions. Older versions are known to miss critical fixes for grounding, createAsset, and IRI resolution.
 
-| Component            | Minimum version | Recommended    | Why                                                                |
-| -------------------- | --------------- | -------------- | ------------------------------------------------------------------ |
-| **Obsidian**         | 1.5.0           | 1.7.0 or newer | Plugin uses APIs available since 1.5.                              |
-| **Exocortex plugin** | v15.90.9        | Latest release | Fixes for createAsset, IRI resolution, targetValue.                |
+| Component            | Minimum version | Recommended    | Why                                                                                                                               |
+| -------------------- | --------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Obsidian**         | 1.5.0           | 1.7.0 or newer | Plugin uses APIs available since 1.5.                                                                                             |
+| **Exocortex plugin** | v15.90.9        | Latest release | Fixes for createAsset, IRI resolution, targetValue.                                                                               |
 | **git** (CLI)        | Optional        | Latest         | Only needed for git-backed vaults — used to register pulled AssetSpaces as git submodules. Non-git vaults work in file-only mode. |
-| **BRAT**             | Latest          | Latest         | Delivers plugin updates automatically.                             |
+| **BRAT**             | Latest          | Latest         | Delivers plugin updates automatically.                                                                                            |
 
 ### How to check your versions
 
@@ -109,6 +109,16 @@ The fastest way to get a complete, working Areas → Projects → Tasks + Daily 
 3. **Apply the profile**: **Cmd/Ctrl + P → "Exocortex: Apply profile"** → choose **`starter`**. The plugin materializes exactly the starter set — 7 AssetSpaces: `exo`, `exocmd`, `ems`, `ems-commands`, `period`, `period-commands`, `person` — and nothing else (no `shared-identities`, no personal data).
 
 > **Why this path**: the `starter` profile mounts only what a fresh vault needs (floor = `{exo}`), so first-run indexing is fast and your vault stays free of unrelated assets. You can still add more AssetSpaces later via **"Add assetspace by URL"** — dependencies are **not** pulled automatically.
+
+> **⚠️ Git-backed vault? Commit before the first Apply.** If your vault is a git repository, Bootstrap + Add-AssetSpace leave the pulled `assetspaces/` as **untracked** files, and **Apply profile** refuses to unmount an AssetSpace with uncommitted changes (it never silently destroys un-pushed work) — you'll see `Apply aborted — N uncommitted file(s) …`. Before step 3, commit the vault once from a terminal at the vault root:
+>
+> ```bash
+> # First add a .gitignore so your PAT (data.local.json) is never committed:
+> printf '.obsidian/\n.exocortex/\n' > .gitignore
+> git add -A && git commit -m "vault setup"
+> ```
+>
+> Then run **"Exocortex: Apply profile"**. (The starter profile is all-public, so no PAT is needed — but gitignoring `.obsidian/` is still the right habit for when you add a private profile later.) See [Profile → Apply on a git-backed vault](profile.md) for details.
 
 ### Step 3: Verify Installation
 
@@ -383,15 +393,15 @@ The Exocortex layout renders automatically in Reading Mode based on the note's `
 
 Open **Settings → Exocortex** to configure the plugin. Three things worth knowing up front:
 
-- **Settings live in your vault.** After updating the plugin you will see an `exocortex-settings/` folder appear, with one `exo__Setting` note per setting. This is a one-shot migration (the plugin shows a Notice like *"Exocortex: migrated N setting(s) to vault assets"*); editing those notes is equivalent to changing the setting in the UI. See [Settings Homoiconization](settings-homoiconization.md).
+- **Settings live in your vault.** After updating the plugin you will see an `exocortex-settings/` folder appear, with one `exo__Setting` note per setting. This is a one-shot migration (the plugin shows a Notice like _"Exocortex: migrated N setting(s) to vault assets"_); editing those notes is equivalent to changing the setting in the UI. See [Settings Homoiconization](settings-homoiconization.md).
 - **Excluded folders**: folder prefixes listed in this setting (default: `09 Templates/`) are skipped by RDF indexing and SHACL-lite validation — useful for template folders whose frontmatter is incomplete by design. Reload Obsidian after editing the list; the indexer snapshots it at startup.
-- **GitHub PAT** (Settings → Exocortex → *Profile: GitHub PAT*): a fine-grained Personal Access Token used to **push** AssetSpace changes and to **pull private** AssetSpaces. You do **not** need it for the public starter onboarding (Steps 2–2b are all public, no token). Set it only when you run **"Exocortex: Sync"** (push), the **"Push current assetspace"** command, or **"Apply profile"** on a profile that includes a private repository. It is stored in `data.local.json` (not `data.json`), so Obsidian Sync **excludes it from network replication**. Use **"Save PAT"** / **"Test connection"** to store and verify it; leave the field blank and click Save to clear it.
+- **GitHub PAT** (Settings → Exocortex → _Profile: GitHub PAT_): a fine-grained Personal Access Token used to **push** AssetSpace changes and to **pull private** AssetSpaces. You do **not** need it for the public starter onboarding (Steps 2–2b are all public, no token). Set it only when you run **"Exocortex: Sync"** (push), the **"Push current assetspace"** command, or **"Apply profile"** on a profile that includes a private repository. It is stored in `data.local.json` (not `data.json`), so Obsidian Sync **excludes it from network replication**. Use **"Save PAT"** / **"Test connection"** to store and verify it; leave the field blank and click Save to clear it.
 
 ### Adding your own / private AssetSpaces
 
 The starter onboarding (Step 2b) pulls only **public** repositories, so no token is involved. To add **your own** or a **private** AssetSpace:
 
-1. Configure your **GitHub PAT** in *Settings → Exocortex* (see the bullet above), scoped to the repositories you own (fine-grained PAT with a per-repository allowlist is recommended).
+1. Configure your **GitHub PAT** in _Settings → Exocortex_ (see the bullet above), scoped to the repositories you own (fine-grained PAT with a per-repository allowlist is recommended).
 2. Declare the AssetSpace in a profile (an `exo__Profile` asset that lists it under `exo__Profile_includes`) and run **"Exocortex: Apply profile"**. Apply uses your PAT to materialize private AssetSpaces.
 
 > The **"Add assetspace by URL"** command is for a single **public** repository (no token), and it does **not** pull that repo's dependencies automatically. For private content, or for a complete dependency-resolved set, prefer the profile path (**Apply profile**) over **Add assetspace by URL**.

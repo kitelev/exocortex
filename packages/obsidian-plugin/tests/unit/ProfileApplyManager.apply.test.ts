@@ -314,17 +314,40 @@ interface SetupOptions {
    * resolves, reproducing the «hang before the mutation phase» smoking gun).
    */
   lockMgrOverride?: unknown;
+  /**
+   * #3558 — override the `$exo` floor AssetSpace descriptor's uid + namespace to
+   * simulate an EKA central-registry vault: the registry mints a DISTINCT
+   * descriptor uid for `$exo` while the fork-safe namespace stays "exo". When
+   * set, the `assetspaces/kitelev/exoas-exo` descriptor uses
+   * `{uid, namespace}` instead of the default
+   * `{TS_FLOOR_AS_UID_EXO, "exoas-exo"}`. The floor must then be recognised by
+   * namespace, not by the hardcoded anchor uid.
+   */
+  exoDescriptor?: { uid: string; namespace: string };
+  /**
+   * #3557 — wire an `assetSpaceManagerFactory` (the fresh-PAT puller rebuilt per
+   * apply). When set, the desktop apply materialize path pulls via the factory
+   * result instead of the onload-captured `assetSpaceManager`, so a PAT
+   * configured after onload is honoured without a reload.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assetSpaceManagerFactory?: () => Promise<any>;
 }
 
 function setup(opts: SetupOptions) {
   // Vault contains AssetSpace ABox assets for each TS-floor + extras.
-  const tsFloorFolders: Array<{ uid: string; folder: string }> = [
-    { uid: TS_FLOOR_AS_UID_EXO, folder: "assetspaces/kitelev/exoas-exo" },
+  const tsFloorFolders: Array<{ uid: string; folder: string; namespace?: string }> = [
+    {
+      // #3558 — exoDescriptor override simulates an EKA central-registry vault.
+      uid: opts.exoDescriptor?.uid ?? TS_FLOOR_AS_UID_EXO,
+      folder: "assetspaces/kitelev/exoas-exo",
+      namespace: opts.exoDescriptor?.namespace,
+    },
     { uid: TS_FLOOR_AS_UID_EXOCMD, folder: "assetspaces/kitelev/exoas-exocmd" },
     { uid: TS_FLOOR_AS_UID_SHARED_IDENTITIES, folder: "assetspaces/kitelev/exoas-shared-identities" },
   ];
 
-  const extraAs: Array<{ uid: string; folder: string }> = [
+  const extraAs: Array<{ uid: string; folder: string; namespace?: string }> = [
     { uid: "ems-uid", folder: "assetspaces/kitelev/exoas-ems" },
     { uid: "kpc-uid", folder: "assetspaces/kitelev/exoas-kpc" },
     { uid: "ims-uid", folder: "assetspaces/kitelev/exoas-ims" },
@@ -348,7 +371,7 @@ function setup(opts: SetupOptions) {
     // these AS UIDs directly, so the R24 guard resolves them against the folder
     // map without any Ontology→AS translation (removed in Phase 3 T3b-cleanup).
     ...allAs.map((as) => {
-      const ns = as.folder.split("/").pop();
+      const ns = as.namespace ?? as.folder.split("/").pop();
       return {
         path: `${as.folder}/${as.uid}.md`,
         basename: as.uid,
@@ -455,6 +478,10 @@ function setup(opts: SetupOptions) {
     ...(opts.isSyncBusy !== undefined ? { isSyncBusy: opts.isSyncBusy } : {}),
     ...(opts.applyTimeoutMs !== undefined
       ? { applyTimeoutMs: opts.applyTimeoutMs }
+      : {}),
+    ...(opts.assetSpaceManagerFactory !== undefined
+      ? /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+        { assetSpaceManagerFactory: opts.assetSpaceManagerFactory as any }
       : {}),
   });
   return {
@@ -1007,6 +1034,50 @@ describe("ProfileApplyManager.applyProfile", () => {
     });
   });
 
+  describe("#3557 — PAT-after-onload: desktop apply rebuilds the puller per invocation", () => {
+    function freshPullerSetupOpts(extra: Partial<SetupOptions>): SetupOptions {
+      return {
+        targetUid: "target",
+        sourceUid: null,
+        // Floor present + one extra AS to materialise (so Phase 1 pull runs).
+        targetIncludes: [
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+          "ems-uid",
+        ],
+        // ems-uid is NOT materialised → it lands in toMaterialize → pulled.
+        materialized: [
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+        ...extra,
+      };
+    }
+
+    it("pulls via assetSpaceManagerFactory (current PAT), NOT the onload-captured manager", async () => {
+      const freshPuller = new FakeAssetSpaceManager();
+      const { mgr, assetSpaceManager } = setup(
+        freshPullerSetupOpts({ assetSpaceManagerFactory: async () => freshPuller }),
+      );
+      await mgr.applyProfile("target");
+      // The fresh (current-PAT) puller did the materialize pull. Pre-fix the
+      // apply used the onload-captured `deps.assetSpaceManager` — frozen with an
+      // empty PAT when none was set at load → anonymous tarball → HTTP 404 on a
+      // private repo (Issue #3557).
+      expect(freshPuller.pullCalls.map((c) => c.asUid)).toContain("ems-uid");
+      expect(assetSpaceManager.pullCalls).toHaveLength(0);
+    });
+
+    it("sibling (revert-verify) — falls back to the onload manager when no factory is wired", async () => {
+      const { mgr, assetSpaceManager } = setup(freshPullerSetupOpts({}));
+      await mgr.applyProfile("target");
+      // No factory wired (tests/legacy) → the onload-captured manager pulls.
+      expect(assetSpaceManager.pullCalls.map((c) => c.asUid)).toContain("ems-uid");
+    });
+  });
+
   describe("Never-hang watchdog — bounds the WHOLE post-confirm path (Issue #3532)", () => {
     // #3531 bounded only the requestUrl / git-clone steps. #3532: macOS desktop
     // STILL hung after confirm — `_switchInProgress` never flipped, no journal,
@@ -1401,6 +1472,45 @@ describe("ProfileApplyManager.reconcileToLocal", () => {
     await localDataStore.save({ activeProfileUid: "target", _switchInProgress: false });
     confirmGate.approve = false;
     const result = await mgr.reconcileToLocal();
+    expect(result.outcome).toBe("declined");
+  });
+
+  // === #3558 — central-registry floor UID reconciliation ===
+  // An EKA central-registry vault mounts $exo under a descriptor UID that
+  // DIFFERS from the hardcoded TS_FLOOR_AS_UID_EXO anchor (fork-safe namespace
+  // "exo" stays the same). The floor must be recognised by namespace, otherwise
+  // every reload injects the hardcoded anchor into the expected set → reports the
+  // already-mounted floor "missing" → perpetual false-positive reconcile modal.
+  const REGISTRY_EXO_UID = "e5c47526-e72f-42e3-8535-3d243dd2db94";
+
+  it("#3558 — no-divergence when $exo floor is mounted under a registry UID (namespace match)", async () => {
+    const { mgr, localDataStore } = setup({
+      targetUid: "target",
+      sourceUid: null,
+      // Profile + vault key the exo floor on the registry UID, namespace "exo".
+      targetIncludes: [REGISTRY_EXO_UID],
+      materialized: [REGISTRY_EXO_UID],
+      exoDescriptor: { uid: REGISTRY_EXO_UID, namespace: "exo" },
+    });
+    await localDataStore.save({ activeProfileUid: "target", _switchInProgress: false });
+    const result = await mgr.reconcileToLocal();
+    // Pre-fix: hardcoded TS_FLOOR_AS_UID_EXO injected → floor "missing" → modal
+    // → outcome "reconciled". Post-fix: namespace "exo" satisfies the floor.
+    expect(result.outcome).toBe("no-divergence");
+  });
+
+  it("#3558 sibling (revert-verify) — still detects divergence when $exo floor is genuinely absent", async () => {
+    const { mgr, localDataStore, confirmGate } = setup({
+      targetUid: "target",
+      sourceUid: null,
+      targetIncludes: [REGISTRY_EXO_UID],
+      materialized: [], // $exo NOT mounted at all — a real divergence.
+      exoDescriptor: { uid: REGISTRY_EXO_UID, namespace: "exo" },
+    });
+    await localDataStore.save({ activeProfileUid: "target", _switchInProgress: false });
+    confirmGate.approve = false; // decline → no applyProfile side effects.
+    const result = await mgr.reconcileToLocal();
+    // The namespace reconciliation must NOT suppress a legitimately-missing floor.
     expect(result.outcome).toBe("declined");
   });
 });

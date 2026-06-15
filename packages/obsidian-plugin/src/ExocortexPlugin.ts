@@ -2867,6 +2867,16 @@ export default class ExocortexPlugin extends Plugin {
       // Fresh-PAT rebuild at switch time (Issue #3382 pattern) so a PAT set
       // after onload is honoured without a reload — the primary mobile flow.
       restMountFactory: () => buildRestAssetSpaceMount({ app: this.app }),
+      // Issue #3557 — desktop analogue: rebuild the apply puller from the CURRENT
+      // PAT at switch time so a PAT configured after onload authenticates a
+      // PRIVATE-AssetSpace apply without a reload (lazy closure — only invoked on
+      // the desktop materialize path, never on mobile's REST path).
+      assetSpaceManagerFactory: () =>
+        buildAssetSpacePuller({
+          app: this.app,
+          localDataStore,
+          notifier: this.notifier,
+        }),
       uncommittedGuard: applyDeps?.uncommittedGuard,
       confirmGate,
       cacheLayer: applyDeps?.cacheLayer,
@@ -2960,6 +2970,10 @@ export default class ExocortexPlugin extends Plugin {
     const commandsHandler = new ProfileCommands({
       switchMgr,
       pushMgr,
+      // Issue #3557 — rebuild the pusher from the current PAT per push so a PAT
+      // set after onload authenticates without a reload (desktop + mobile both
+      // read the same stored PAT via buildAssetSpacePusher).
+      pushMgrFactory: () => this.buildAssetSpacePusher(),
       profileLister,
       fuzzyPick,
       getActiveFilePath: () =>
