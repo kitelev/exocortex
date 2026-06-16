@@ -56,8 +56,11 @@ const SEED_AREA_REL = path.posix.join(
   `${SEED_AREA_UID}.md`,
 );
 
-// Configure the whole alpha-create path as a serial suite (shared vault/window).
-test.describe.configure({ mode: "serial" });
+// Shared vault/window across steps (workers:1 in the config keeps them ordered).
+// NOTE: intentionally NOT `mode: "serial"` during bring-up — a single failing
+// scenario must not skip the rest, so one CI run surfaces every grounding's
+// real on-disk behaviour. (createCommandAndFill logs each created file.)
+test.describe.configure({ mode: "default" });
 
 test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", () => {
   let vaultPath = "";

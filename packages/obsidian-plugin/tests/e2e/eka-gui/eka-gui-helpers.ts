@@ -465,6 +465,15 @@ export async function clickCreateButtonAndFill(
     },
     30_000,
   );
+  // Diagnostic: dump each created file's frontmatter so the actual relationship
+  // keys the grounding wrote are visible in CI logs (drives assertion design).
+  for (const rel of created) {
+    const fm = readVaultFile(vaultPath, rel)
+      .split("\n")
+      .slice(0, 30)
+      .join(" | ");
+    log(`created via "${buttonText}": ${rel} :: ${fm}`);
+  }
   return created;
 }
 
