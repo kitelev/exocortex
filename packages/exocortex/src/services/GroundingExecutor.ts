@@ -1187,6 +1187,11 @@ export class GroundingExecutor {
     target: string,
   ): boolean {
     if (!target) return false;
+    // `target` is the fully-bracketed wikilink inner emitted by
+    // extractBacklinkTarget (a full UUID under UID-canon, or a whitelisted path
+    // form). Because the needle is fully bracketed, `[[A]]` is a substring of
+    // `[[B]]` only when A === B — substring match cannot alias one target onto
+    // another.
     const needle = `[[${target}]]`;
     const refs = (v: unknown): boolean =>
       typeof v === "string" && v.includes(needle);
