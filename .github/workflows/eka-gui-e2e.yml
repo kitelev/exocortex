@@ -1,0 +1,128 @@
+name: EKA GUI-BDD E2E
+
+# Release-gate GUI-BDD smoke (node a2e20c69 Ф4): formalises the prose Gherkin
+# scenarios of vault node 76d9207c as repeatable e2e against a FRESH ephemeral
+# vault built from the REAL published kitelev/exoas-* ontology repos, exercising
+# the live create-instance commands + the #3555 InheritanceRule.
+# See packages/obsidian-plugin/tests/e2e/eka-gui/.
+#
+# NOT a required check (never in branch protection): it clones live (public)
+# repos + boots real Obsidian in Docker, so network/QEMU flake must never GATE
+# PRs (the 13 required hermetic checks already cover plugin logic). It runs:
+#   - push: [main]      — "авто на каждом релизе": post-merge smoke whenever the
+#                         suite or the plugin/core changes,
+#   - schedule          — nightly regression smoke against published content,
+#   - workflow_dispatch — manual on-demand,
+#   - pull_request      — ONLY on PRs that touch the suite itself (paths filter),
+#                         so suite changes are verified pre-merge without running
+#                         on unrelated PRs. Safe here (unlike eka-obsidian-leg):
+#                         PUBLIC repos only, no PAT/secret on the PR path. Still
+#                         non-required, so a flake never blocks the PR.
+#
+# Unlike eka-obsidian-leg-e2e.yml, this suite clones only PUBLIC repos, so it
+# needs NO PAT and never self-skips. GITHUB_TOKEN is passed only to lift the
+# anonymous clone rate limit.
+on:
+  workflow_dispatch: {}
+  schedule:
+    # 02:30 UTC nightly (07:30 Asia/Almaty) — offset from eka-obsidian-leg (02:00).
+    - cron: "30 2 * * *"
+  push:
+    branches: [main]
+    paths:
+      - "packages/obsidian-plugin/tests/e2e/eka-gui/**"
+      - "packages/obsidian-plugin/playwright-eka-gui.config.ts"
+      - "packages/obsidian-plugin/Dockerfile.eka-gui-e2e"
+      - "packages/obsidian-plugin/tests/e2e/utils/**"
+      - "packages/obsidian-plugin/src/**"
+      - "packages/exocortex/src/**"
+      - ".github/workflows/eka-gui-e2e.yml"
+  pull_request:
+    # Suite-change PRs only — verifies the e2e suite pre-merge; never runs on
+    # unrelated PRs. Non-required → flake cannot block merge.
+    paths:
+      - "packages/obsidian-plugin/tests/e2e/eka-gui/**"
+      - "packages/obsidian-plugin/playwright-eka-gui.config.ts"
+      - "packages/obsidian-plugin/Dockerfile.eka-gui-e2e"
+      - ".github/workflows/eka-gui-e2e.yml"
+
+# Avoid piling up scheduled + push runs.
+concurrency:
+  group: eka-gui-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  eka-gui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build plugin (main.js)
+        run: |
+          npm run build -w exocortex
+          npm run build -w @kitelev/exocortex-services
+          node packages/obsidian-plugin/esbuild.config.mjs production
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve base image (pull from GHCR or build locally)
+        id: base
+        run: |
+          set -euo pipefail
+          LATEST="ghcr.io/kitelev/exocortex-ci:latest"
+          if docker pull "$LATEST" 2>/dev/null; then
+            echo "::notice::Pulled pre-built base $LATEST"
+            echo "image=$LATEST" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No pre-built base in GHCR — building locally from Dockerfile.ci"
+            docker build -t exocortex-ci-base:local -f packages/obsidian-plugin/Dockerfile.ci .
+            echo "image=exocortex-ci-base:local" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build EKA GUI e2e Docker image
+        run: |
+          docker build \
+            --build-arg "BASE_IMAGE=${{ steps.base.outputs.image }}" \
+            -f packages/obsidian-plugin/Dockerfile.eka-gui-e2e \
+            -t exocortex-eka-gui-e2e:ci \
+            .
+
+      - name: Run EKA GUI-BDD e2e
+        env:
+          # Public repos clone unauthenticated; the token only lifts the anon
+          # rate limit. GITHUB_TOKEN is always present, so the suite always runs.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p eka-gui-results
+          docker run --init --rm \
+            -e GITHUB_TOKEN="${GITHUB_TOKEN}" \
+            -v "$PWD/eka-gui-results:/app/packages/obsidian-plugin/test-results-eka-gui" \
+            exocortex-eka-gui-e2e:ci
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: eka-gui-e2e-results
+          path: eka-gui-results
+          retention-days: 14
+          if-no-files-found: ignore
