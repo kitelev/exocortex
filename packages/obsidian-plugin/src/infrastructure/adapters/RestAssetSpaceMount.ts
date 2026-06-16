@@ -113,6 +113,21 @@ export class RestAssetSpaceMount {
       targetPath: safePath,
     });
 
+    // Record the AssetSpace in `.gitmodules` (path + source URL). This is NOT a
+    // git submodule registration — a git-free REST mount creates no gitlink
+    // (`.git/config` / index stay untouched; mount-state visibility is
+    // folder-presence, see class doc). The stanza is an INTENTIONAL, load-bearing
+    // URL registry — NOT vestigial (D6 triage, node 794a95ae) — consumed by the
+    // git-free rediscovery flows that have no other source for the remote URLs:
+    //   - Bootstrap «clone-needs-fetch» — after a vault is cloned/synced without
+    //     `--recurse-submodules` the `assetspaces/*` folders are empty but the
+    //     URLs survive here, so {@link BootstrapAssetSpaceCommands}'s
+    //     `fetchTrackedAssetSpaces()` re-materialises each AssetSpace from its
+    //     recorded URL.
+    //   - «Unmount assetspace» — {@link readGitmodulesEntries} is the canonical
+    //     "what's mounted" registry the command lists.
+    // The live apply path keys mount-state on folder presence, but neither it nor
+    // ExoSync (descriptor-sourced URLs) read this — so do not "clean up" the write.
     await this.appendGitmodulesEntry(safePath, gitUrl);
     return result;
   }
