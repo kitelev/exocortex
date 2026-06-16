@@ -439,41 +439,6 @@ export async function renderedButtonLabels(window: Page): Promise<string[]> {
 }
 
 /**
- * Warm up command resolution: open `relPath` and re-render until ALL `expected`
- * create buttons appear. Binding + grounding (incl. InheritanceRule) resolution
- * settles a few seconds AFTER the triple store stops growing — an early click
- * (e.g. the very first scenario) otherwise fires a grounding whose IR list is
- * still empty, so the backlink (Effort_area / Area_parent) is never written.
- * Polling until the slowest button ("Create Project") renders guarantees the
- * per-class binding scan + IR resolution are complete before any scenario acts.
- */
-export async function waitForButtonsResolved(
-  window: Page,
-  relPath: string,
-  expected: string[],
-  timeoutMs = 90_000,
-): Promise<void> {
-  await openAssetAndRender(window, relPath);
-  await pollUntil(
-    `create buttons resolved (${expected.join(", ")})`,
-    async () => {
-      const labels = await renderedButtonLabels(window);
-      if (expected.every((e) => labels.some((l) => l.includes(e)))) return true;
-      // Re-resolve to pick up bindings/rules indexed since the last render.
-      await window.evaluate(() => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const p = (window as any).app?.plugins?.plugins?.exocortex;
-        p?.commandResolver?.invalidateCache?.();
-        p?.refreshLayout?.();
-      });
-      return false;
-    },
-    timeoutMs,
-    2500,
-  );
-}
-
-/**
  * Click a create-instance button by visible text, then drive the resulting
  * {@link DynamicFormModal} (a plain React form, unlike the un-drivable
  * FuzzySuggestModal): fill the `label` field and submit. Returns the set of
@@ -546,4 +511,62 @@ export function readVaultFile(vaultPath: string, relOrAbs: string): string {
     ? relOrAbs
     : path.join(vaultPath, relOrAbs);
   return fs.readFileSync(abs, "utf8");
+}
+
+/**
+ * Create an instance on `targetRel` via `buttonText` and return the created file
+ * carrying `backlinkRe` (the inherited relationship key). Retries the whole
+ * open→click→create cycle until the backlink appears.
+ *
+ * WHY retry: binding + grounding (incl. InheritanceRule) resolution settles
+ * asynchronously a few seconds after the triple store stops growing. The FIRST
+ * click on a freshly-launched vault can fire a grounding whose IR list is still
+ * empty → the backlink (Effort_area / Effort_parent / Area_parent) is never
+ * written and the executor falls back to a bare prototype link. Re-opening the
+ * target re-resolves the grounding against the now-more-indexed store; a few
+ * attempts with backoff deterministically reach the resolved state (mirrors the
+ * real "reload Obsidian if assets don't appear yet" UX). Created files from a
+ * failed attempt are deleted so the snapshot diff stays clean.
+ */
+export async function createOnTarget(
+  window: Page,
+  vaultPath: string,
+  targetRel: string,
+  buttonText: string,
+  labelBase: string,
+  backlinkRe: RegExp,
+  attempts = 4,
+): Promise<{ rel: string; fm: string }> {
+  let lastDump = "";
+  for (let i = 1; i <= attempts; i++) {
+    await openAssetAndRender(window, targetRel);
+    const created = await clickCreateButtonAndFill(
+      window,
+      vaultPath,
+      buttonText,
+      `${labelBase} ${i}`,
+    );
+    for (const rel of created) {
+      const fm = readVaultFile(vaultPath, rel);
+      if (backlinkRe.test(fm)) return { rel, fm };
+    }
+    // Backlink absent → grounding IR not resolved yet. Clean up + retry.
+    lastDump = created
+      .map((r) => `${r}: ${readVaultFile(vaultPath, r).replace(/\n/g, " | ")}`)
+      .join("\n");
+    for (const rel of created) {
+      try {
+        fs.rmSync(path.join(vaultPath, rel));
+      } catch {
+        /* ignore */
+      }
+    }
+    log(
+      `createOnTarget "${buttonText}" attempt ${i}/${attempts}: ${backlinkRe} absent — retrying`,
+    );
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  throw new Error(
+    `"${buttonText}" never wrote ${backlinkRe} after ${attempts} attempts.\nLast created:\n${lastDump}`,
+  );
 }
