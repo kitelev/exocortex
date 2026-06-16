@@ -1,4 +1,3 @@
-import { Platform } from "obsidian";
 import type { App } from "obsidian";
 import type { ApplyPlan, IConfirmGate } from "exocortex";
 import {
@@ -682,13 +681,20 @@ export class ProfileApplyManager {
     // surfaces the gap and points to the manual migration guide. Placed before
     // the mobile/desktop split so the single warn covers both platforms.
     await this.warnLegacyFlatMounts();
-    // RFC 01a83de8 Phase 3 T2 — on mobile the git binary is unavailable, so
-    // delegate to the REST/tarball mount/unmount path (no staging / cache /
-    // git commit). Desktop keeps the git-binary path below unchanged.
-    if (
-      Platform.isMobile &&
-      (this.restMount !== undefined || this.restMountFactory !== undefined)
-    ) {
+    // #3567 (P0 alpha-blocker) — route the private-AS mount through the
+    // git-free REST/tarball path on BOTH platforms whenever it is wired
+    // (Desktop↔Mobile Command Parity Invariant). The legacy git-binary path
+    // (`runApplyMutation` → `GitSubmoduleOps.submoduleAdd` → `execFile("git",…)`)
+    // requires (a) a `git` binary AND (b) an enclosing `.git` repo with an
+    // initial commit — neither of which a real desktop vault necessarily has.
+    // A non-git vault hit `fatal: not a git repository`, masked in our e2e
+    // harness by an upfront `git init` a real tester never performs.
+    // `RestAssetSpaceMount` (RFC 01a83de8 Phase 3 T2, #3410) is fully git-free
+    // (requestUrl tarball + `vault.adapter` materialize + TEXT `.gitmodules`
+    // stanza) and has been wired on both platforms via `restMountFactory` since
+    // #3410 — only the prior `Platform.isMobile &&` gate kept desktop on git.
+    // The git path remains a tested fallback for legacy wiring that omits restMount.
+    if (this.restMount !== undefined || this.restMountFactory !== undefined) {
       return this.applyProfileViaRest(targetProfileUid);
     }
     const deps = this.assertApplyDepsWired();

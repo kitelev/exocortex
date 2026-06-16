@@ -591,3 +591,92 @@ describe("applyProfile dispatch (mobile → REST)", () => {
     expect(warn).toContain("assetspaces/kitelev/exoas-ems");
   });
 });
+
+// #3567 (P0 alpha-blocker) — the private-AS mount must be git-free on DESKTOP
+// too, not just mobile. Before the fix `applyProfile` only delegated to the
+// REST path when `Platform.isMobile`; desktop fell through to the git-binary
+// path (`GitSubmoduleOps.submoduleAdd` → `git submodule add` → `execFile`),
+// which `fatal: not a git repository`-crashes on a vault the user never
+// `git init`-ed (the real onboarding case caught on a work-MacBook). These
+// tests pin the desktop dispatch to the git-free REST path and are the
+// revert-verify control for the gate relaxation (Desktop↔Mobile Parity).
+describe("applyProfile dispatch (desktop → REST, git-free, #3567)", () => {
+  const original = Platform.isMobile;
+  beforeEach(() => {
+    // Explicit DESKTOP — the regression lived in the `Platform.isMobile` gate.
+    (Platform as unknown as { isMobile: boolean }).isMobile = false;
+  });
+  afterEach(() => {
+    (Platform as unknown as { isMobile: boolean }).isMobile = original;
+  });
+
+  it("delegates to applyProfileViaRest on DESKTOP — gitOps never touched (revert-verify)", async () => {
+    const { mgr, restMount, gitOps } = setup({
+      targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
+      materialized: [...ALL_FLOOR_UIDS, "kpc-uid"],
+      wireGitOps: true,
+    });
+
+    await mgr.applyProfile("target");
+
+    // REST path exercised on desktop…
+    expect(restMount.mounted.map((m) => m.submodulePath)).toEqual([
+      "assetspaces/kitelev/exoas-ems",
+    ]);
+    expect(restMount.unmounted).toEqual(["assetspaces/kitelev/exoas-kpc"]);
+    // …and the git-binary path was NOT used (no `git submodule add` → no
+    // `fatal: not a git repository` possible). Revert-verify (empirically
+    // confirmed): with the old `Platform.isMobile &&` gate restored, desktop
+    // falls through to the git path → `assertApplyDepsWired()` rejects (this
+    // setup wires only restMount + gitOps, not the full git deps bundle) → the
+    // unguarded `await mgr.applyProfile` throws → this test FAILS. Post-fix the
+    // REST path is taken, gitOps stays untouched → PASS.
+    expect(gitOps.calls).toEqual([]);
+  });
+
+  it("desktop apply RESOLVES via REST + persists the applied profile (no git path)", async () => {
+    // The #3567 outcome at the unit layer: on a vault where the git path would
+    // crash, desktop apply must complete via the git-free REST mount. Here the
+    // wired gitOps would be the ONLY route to `git submodule add` → the real
+    // `fatal: not a git repository`; asserting it stays untouched proves no
+    // such fatal is reachable. Revert-verify: with the old gate, desktop falls
+    // through to the git path → `assertApplyDepsWired()` rejects → this
+    // `resolves` expectation FAILS pre-fix; post-fix it RESOLVES.
+    const { mgr, restMount, gitOps, localDataStore } = setup({
+      targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
+      materialized: [...ALL_FLOOR_UIDS],
+      wireGitOps: true,
+    });
+
+    await expect(mgr.applyProfile("target")).resolves.toBeUndefined();
+
+    // Materialized via REST tarball, never via git.
+    expect(restMount.mounted.map((m) => m.submodulePath)).toEqual([
+      "assetspaces/kitelev/exoas-ems",
+    ]);
+    expect(gitOps.calls).toEqual([]);
+    // Applied profile persisted as last-applied cache.
+    expect(localDataStore.getActiveProfileUid()).toBe("target");
+  });
+
+  it("prefers the fresh-PAT restMountFactory on desktop (no captured restMount needed)", async () => {
+    // Parity with the mobile fresh-PAT flow (#3382/#3557): a PAT configured
+    // after onload is honoured on desktop too — the factory mount is used.
+    const { mgr, restMount, factoryMount, gitOps } = setup({
+      targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
+      materialized: [...ALL_FLOOR_UIDS],
+      wireRestMount: false,
+      wireRestMountFactory: true,
+      wireGitOps: true,
+    });
+
+    await mgr.applyProfile("target");
+
+    // Fresh-PAT factory mount used; captured mount untouched; git untouched.
+    expect(factoryMount.mounted.map((m) => m.submodulePath)).toEqual([
+      "assetspaces/kitelev/exoas-ems",
+    ]);
+    expect(restMount.mounted).toEqual([]);
+    expect(gitOps.calls).toEqual([]);
+  });
+});
