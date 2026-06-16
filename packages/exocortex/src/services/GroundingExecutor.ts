@@ -1151,10 +1151,55 @@ export class GroundingExecutor {
       targetIRI,
       targetFilePath,
     );
+    // Issue #3561: the legacy exo__Asset_prototype default is a degraded-mode
+    // safety net — it must fire ONLY when the new instance has no link back to
+    // its creation target at all. An InheritanceRule may already have linked it
+    // under a relationship key the two named checks above don't enumerate:
+    // ems__Effort_area (Task/Project created on an Area) or ems__Area_parent
+    // (child Area created on an Area). Maintaining a hard-coded key list is
+    // exactly what went stale and produced #3561 (area IRs fire correctly, the
+    // instance IS linked, yet the legacy default still wrote a spurious
+    // exo__Asset_prototype=[[area]] + a red "No backlink rule fired" error).
+    // Detect the link by VALUE instead: if any property already references the
+    // target, the asset is not orphaned, so the legacy default (and its noisy
+    // Bug #5 warning) must not fire. Future relationship keys are covered for
+    // free, eliminating the stale-list bug class.
+    if (GroundingExecutor.propertiesReferenceTarget(properties, backLinkTarget)) {
+      return;
+    }
     properties.exo__Asset_prototype = `"[[${backLinkTarget}]]"`;
     LoggingService.error(
       "[GroundingExecutor] No backlink rule fired (Universal IRs absent or no class match). Falling back to legacy exo__Asset_prototype default. Bug #5 may surface if target is not a prototype-instance.",
     );
+  }
+
+  /**
+   * Issue #3561 — true when any property value already references `target` in
+   * wikilink form (`[[<target>]]`), under ANY property name. Lets
+   * {@link applyMissingBacklinkTopUp} recognise that an InheritanceRule already
+   * linked the new instance to its creation target (ems__Effort_area /
+   * ems__Area_parent / ems__Effort_parent / exo__Asset_prototype, or any future
+   * relationship key) so the legacy prototype default is not written redundantly.
+   * Multi-valued (array) properties are scanned element-wise.
+   */
+  private static propertiesReferenceTarget(
+    properties: Record<string, unknown>,
+    target: string,
+  ): boolean {
+    if (!target) return false;
+    // `target` is the fully-bracketed wikilink inner emitted by
+    // extractBacklinkTarget (a full UUID under UID-canon, or a whitelisted path
+    // form). Because the needle is fully bracketed, `[[A]]` is a substring of
+    // `[[B]]` only when A === B — substring match cannot alias one target onto
+    // another.
+    const needle = `[[${target}]]`;
+    const refs = (v: unknown): boolean =>
+      typeof v === "string" && v.includes(needle);
+    for (const value of Object.values(properties)) {
+      if (refs(value)) return true;
+      if (Array.isArray(value) && value.some(refs)) return true;
+    }
+    return false;
   }
 
   /**

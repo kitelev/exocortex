@@ -3849,4 +3849,148 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
       errorSpy.mockRestore();
     });
   });
+
+  // =========================================================================
+  // Issue #3561 — area-targeted creates must NOT emit the legacy
+  // exo__Asset_prototype fallback (+ red "No backlink rule fired" error) when an
+  // InheritanceRule already linked the new instance back to the target Area.
+  //
+  // Root cause: applyMissingBacklinkTopUp recognised ONLY exo__Asset_prototype
+  // and ems__Effort_parent as "backlink already written". Area creates link via
+  // ems__Effort_area (Task/Project-on-Area) or ems__Area_parent (Area-on-Area),
+  // which the named-key guard missed → a spurious exo__Asset_prototype=[[area]]
+  // + console error, even though the area relationship was set correctly.
+  // Fix detects the link by VALUE (any property already pointing at the target).
+  // =========================================================================
+  describe("Issue #3561 — area-targeted create backlink detection", () => {
+    // UID-canon fixture mirrors the real vault: the target Area's file is named
+    // <area-uid>.md and its exo__Asset_uid equals that uid, so the IR-copied
+    // value ("[[<area-uid>]]") and extractBacklinkTarget (<area-uid>) coincide.
+    const AREA_UID = "a1b2c3d4-1111-4222-8333-444455556666";
+    const AREA_FILE_PATH = `assetspaces/areas/${AREA_UID}.md`;
+    // UID-canon vaults store exo__Asset_uid BARE (verified against real
+    // ems__Area assets), so the InheritanceRule wraps it into a wikilink
+    // ("[[<uid>]]") via formatInheritedScalar — which is what makes the area
+    // relationship coincide with the back-link target.
+    const AREA_TARGET_FM = [
+      "---",
+      `exo__Asset_uid: ${AREA_UID}`,
+      'exo__Asset_label: "My Area"',
+      "exo__Instance_class:",
+      '  - "[[ems__Area]]"',
+      "---",
+      "Body",
+    ].join("\n");
+
+    function spyOnError() {
+      return jest
+        .spyOn(
+          require("../../../src/services/LoggingService").LoggingService,
+          "error",
+        )
+        .mockImplementation();
+    }
+
+    it("Task created on an Area: ems__Effort_area IR fires → NO exo__Asset_prototype, NO 'No backlink rule fired' error", async () => {
+      reader.readFile.mockResolvedValue(AREA_TARGET_FM);
+      const errorSpy = spyOnError();
+
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_area",
+            targetClassCondition: "ems__Area",
+            targetClassExclusion: [],
+            priority: 100,
+          },
+        ],
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        AREA_FILE_PATH,
+        { label: "Task on Area" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // Correct relationship is set ...
+      expect(content).toContain(`ems__Effort_area: "[[${AREA_UID}]]"`);
+      // ... and the spurious legacy fallback is gone.
+      expect(content).not.toContain("exo__Asset_prototype:");
+      const calls = errorSpy.mock.calls.flat().map(String);
+      expect(calls.some((s) => s.includes("No backlink rule fired"))).toBe(false);
+
+      errorSpy.mockRestore();
+    });
+
+    it("child Area created on an Area: ems__Area_parent IR fires → NO exo__Asset_prototype, NO error", async () => {
+      reader.readFile.mockResolvedValue(AREA_TARGET_FM);
+      const errorSpy = spyOnError();
+
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Area",
+        targetFolder: "01 Inbox",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Area_parent",
+            targetClassCondition: "ems__Area",
+            targetClassExclusion: [],
+            priority: 100,
+          },
+        ],
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        AREA_FILE_PATH,
+        { label: "Sub-area" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain(`ems__Area_parent: "[[${AREA_UID}]]"`);
+      expect(content).not.toContain("exo__Asset_prototype:");
+      const calls = errorSpy.mock.calls.flat().map(String);
+      expect(calls.some((s) => s.includes("No backlink rule fired"))).toBe(false);
+
+      errorSpy.mockRestore();
+    });
+
+    it("regression: genuine degraded mode (no IR, nothing links to target) STILL writes legacy exo__Asset_prototype + error", async () => {
+      // No inheritanceRule → no backlink established → the degraded-mode safety
+      // net must remain intact (the asset would otherwise be orphaned).
+      reader.readFile.mockResolvedValue(AREA_TARGET_FM);
+      const errorSpy = spyOnError();
+
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        AREA_FILE_PATH,
+        { label: "Orphan" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain(`exo__Asset_prototype: "[[${AREA_UID}]]"`);
+      const calls = errorSpy.mock.calls.flat().map(String);
+      expect(calls.some((s) => s.includes("No backlink rule fired"))).toBe(true);
+
+      errorSpy.mockRestore();
+    });
+  });
 });
