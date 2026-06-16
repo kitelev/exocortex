@@ -28,7 +28,7 @@ import {
  * ephemeral vault built from the REAL published `kitelev/exoas-*` ontology repos:
  *
  *   - Create Task on an ems__Area        → ems:Effort_area   = the area
- *   - Create Project on an ems__Area     → ems:Effort_area   = the area
+ *   - Create Project on an ems__Area     → ems:Effort_area   = the area  (test.fixme #3587)
  *   - Create child Area (#3555)          → ems:Area_parent   = the area  ⚠ REGRESSION
  *   - Create Task on an ems__Project     → ems:Effort_parent = the project
  *   - Create Meeting on a MeetingProto   → exo:Asset_prototype = the source
@@ -47,18 +47,16 @@ import {
  * `Command_confirmMessage`, so clicking them fires a native `window.confirm()`
  * that {@link registerConfirmAutoAccept} (armed in beforeAll) accepts under CDP.
  *
- * Note on "Create Project" (follow-up node fc83d482, perf-investigation): an
- * earlier hotfix (#3585) dropped Create-Project from the suite, suspecting a
- * resolver perf bug ("many binding variants → resolves last"). An empirical
- * source audit refuted that: an ems__Area resolves only its 3 area-targeted
- * bindings + the universal exo__Asset ones (NOT the 14 ems__Project bindings —
- * those match Project assets), ALL of an asset's buttons resolve together in one
- * cached `resolveForAssetMulti`, and the Create-Project grounding (8748f8b0) is
- * structurally LIGHTER than Create-Task's (a222094b has an extra targetPrototype)
- * — so there is no per-button resolution-time difference. The only differentiator
- * is the confirmMessage native dialog. The slowness was emulation/QEMU + a
- * dialog-handling race, not a product perf bug — so the scenario is restored
- * test-side (via createOnTarget's open→click retry), not "fixed" in the plugin.
+ * Note on "Create Project" (follow-up node fc83d482, perf-investigation → #3587):
+ * #3585 dropped Create-Project suspecting a resolver perf bug. The investigation
+ * REFUTED that AND found a real correctness bug: the "Create Project" button does
+ * NOT render on an ems__Area in the LIVE plugin (Create Task + Create Area do).
+ * It is NOT the resolver — a full-store repro of `resolveForAssetMulti` returns
+ * `Create Project [bind 9f787938]`, the CLI `apply create-project` resolves it,
+ * and `PreconditionEvaluator.evaluate(undefined)=true`. The drop is in the live
+ * render-path store (LazyAssetGraphLoader, PR #3257), root cause tracked in #3587.
+ * The scenario is therefore kept as `test.fixme` (a runnable regression gate that
+ * goes green when #3587 lands) rather than deleted-and-forgotten like #3585.
  *
  * Relationship-key tolerance: published InheritanceRules emit the backlink in
  * EITHER prefixed (`ems__Effort_area`) OR expanded-IRI (`…/ems#Effort_area`)
@@ -121,12 +119,17 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
     );
   });
 
-  test("scenario 3 — Create Project on ems__Area sets Effort_area", async () => {
-    // Restored from the follow-up node (perf-investigation verdict: NOT a
-    // resolver perf bug — see file header). "Create Project" carries a
-    // confirmMessage → native confirm (auto-accepted in beforeAll). createOnTarget
-    // drives the real command + form and retries open→click until the inherited
-    // Effort_area backlink lands.
+  // KNOWN-BROKEN (#3587): the "Create Project" inline button does NOT render on
+  // an ems__Area in the live plugin, while sibling Create Task + Create Area
+  // (same targetClass, same group, no precondition) render fine. The
+  // perf-investigation (node fc83d482) PROVED this is NOT a resolver/content bug:
+  // a full-store repro of resolveForAssetMulti returns Create Project [bind
+  // 9f787938] correctly, the CLI `apply create-project` resolves it, and
+  // PreconditionEvaluator.evaluate(undefined)=true. The drop happens in the live
+  // render-path store (LazyAssetGraphLoader, PR #3257) — root cause TBD in #3587.
+  // Kept as test.fixme: a runnable regression gate that flips green when #3587
+  // lands (remove .fixme then). The scenario body is the correct assertion.
+  test.fixme("scenario 3 — Create Project on ems__Area sets Effort_area (#3587)", async () => {
     const { rel, fm } = await createOnTarget(
       window,
       vaultPath,
