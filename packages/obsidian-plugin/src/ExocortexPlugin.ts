@@ -67,7 +67,7 @@ import {
   createCommandPanelFromFrontmatter,
   isLayoutFrontmatter,
 } from "./domain/layout";
-import { isCommandBindingFrontmatter } from "exocortex";
+import { isCommandBindingFrontmatter, isTsFloorAssetSpace } from "exocortex";
 import { SPARQLCodeBlockProcessor } from "./application/processors/SPARQLCodeBlockProcessor";
 import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlockProcessor";
 import { SPARQLApi } from "./application/api/SPARQLApi";
@@ -116,8 +116,15 @@ import { createAssetSpacePusher } from "./infrastructure/adapters/AssetSpacePush
 import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
 import { SwitchCacheLayer } from "./infrastructure/adapters/SwitchCacheLayer";
 import { ClearSwitchCacheConfirmModal } from "./infrastructure/adapters/ClearSwitchCacheConfirmModal";
-import { parseGitHubURL } from "./infrastructure/adapters/AssetSpaceManager";
+import {
+  parseGitHubURL,
+  type AssetSpaceInfo,
+} from "./infrastructure/adapters/AssetSpaceManager";
 import { BootstrapAssetSpaceCommands } from "./infrastructure/adapters/BootstrapAssetSpaceCommands";
+import {
+  UnmountAssetSpaceCommand,
+  type UnmountableAssetSpace,
+} from "./infrastructure/adapters/UnmountAssetSpaceCommand";
 import { BootstrapVaultModal } from "./presentation/modals/BootstrapVaultModal";
 import { AddAssetSpaceModal } from "./presentation/modals/AddAssetSpaceModal";
 import { SimpleConfirmModal } from "./presentation/modals/SimpleConfirmModal";
@@ -3061,6 +3068,17 @@ export default class ExocortexPlugin extends Plugin {
       this.registerBootstrapCommands(applyDeps, restMount, localDataStore);
     }
 
+    // #e6b8827c — «Unmount assetspace»: the inverse of «Add assetspace by URL».
+    // Unmount mechanics already existed only INSIDE apply-profile's strict
+    // mount-state replace; this surfaces a single-AssetSpace unmount as a
+    // first-class palette action (CLI parity: `assetspace-remove`). Uses the
+    // git-free cross-platform `RestAssetSpaceMount.unmount`, so it registers on
+    // BOTH desktop and mobile when the REST mount is wired (Desktop↔Mobile
+    // Command Parity). A TS-floor AssetSpace is refused (floor-policy A).
+    if (restMount !== null) {
+      this.registerUnmountCommand(restMount, switchMgr);
+    }
+
     this.logger.info(
       "[ExocortexPlugin] Profile palette commands registered",
     );
@@ -3250,6 +3268,107 @@ export default class ExocortexPlugin extends Plugin {
       name: "Add assetspace by URL",
       callback: () => {
         void bootstrapCommands.invokeAddAssetSpace();
+      },
+    });
+  }
+
+  /**
+   * Wire + register the «Exocortex: Unmount assetspace» palette command
+   * (#e6b8827c) — the inverse of «Add assetspace by URL». Lists the currently
+   * mounted AssetSpaces (the `.gitmodules` registry, cross-referenced with the
+   * AssetSpace descriptor scan for uid/namespace → TS-floor identity), fuzzy-
+   * picks one, and tears it down via the git-free cross-platform
+   * {@link RestAssetSpaceMount.unmount}.
+   *
+   * Floor-policy A — a TS-floor AssetSpace (`{exo}`, matched by UID or
+   * namespace via {@link isTsFloorAssetSpace}) surfaces in the picker as
+   * protected and is REFUSED on selection (no mutation), mirroring
+   * apply-profile's R24 guard. `restMount` is the unified git-free path
+   * (post git-elim), so this registers on both desktop + mobile (Desktop↔Mobile
+   * Command Parity).
+   */
+  private registerUnmountCommand(
+    restMount: RestAssetSpaceMount,
+    switchMgr: ProfileApplyManager,
+  ): void {
+    const lastSegment = (p: string): string => {
+      const norm = p.replace(/\/+$/, "");
+      const idx = norm.lastIndexOf("/");
+      return idx < 0 ? norm : norm.slice(idx + 1);
+    };
+
+    const unmountCommand = new UnmountAssetSpaceCommand({
+      listMounted: async (): Promise<UnmountableAssetSpace[]> => {
+        // `.gitmodules` is the canonical "what's mounted" registry (the same
+        // source apply-profile reads). Enrich each entry with its descriptor's
+        // uid + namespace (from the vault scan) so the TS-floor identity can be
+        // computed; an entry with no scannable descriptor is treated as a
+        // non-floor mount (uid/namespace "").
+        const entries = await restMount.readGitmodulesEntries();
+        const infoByFolder = new Map<string, AssetSpaceInfo>();
+        for (const info of switchMgr.listAllAssetSpaceInfos()) {
+          infoByFolder.set(info.folderName, info);
+        }
+        return entries
+          .filter((e) => e.submodulePath.length > 0)
+          .map((e) => {
+            const info = infoByFolder.get(e.submodulePath);
+            const uid = info?.uid ?? "";
+            const namespace = info?.namespace ?? "";
+            return {
+              submodulePath: e.submodulePath,
+              url: e.url,
+              uid,
+              namespace,
+              label: namespace || lastSegment(e.submodulePath),
+              isFloor: isTsFloorAssetSpace(uid, namespace),
+            };
+          })
+          .sort((a, b) => a.label.localeCompare(b.label));
+      },
+      // Reuse the shared ProfileFuzzyModal (keyed by submodulePath) — floor
+      // entries are decorated so the user sees why they cannot be removed.
+      fuzzyPick: (items, title) =>
+        new Promise<UnmountableAssetSpace | null>((resolve) => {
+          const choices: ProfileChoice[] = items.map((m) => ({
+            uid: m.submodulePath,
+            label: m.isFloor ? `${m.label} ✕ floor (protected)` : m.label,
+          }));
+          const byPath = new Map(items.map((m) => [m.submodulePath, m]));
+          const modal = new ProfileFuzzyModal(
+            this.app,
+            choices,
+            title,
+            (chosen) =>
+              resolve(chosen === null ? null : byPath.get(chosen.uid) ?? null),
+          );
+          modal.open();
+        }),
+      confirm: (message) =>
+        new Promise<boolean>((resolve) => {
+          new SimpleConfirmModal(
+            this.app,
+            {
+              title: "Unmount assetspace?",
+              body: message,
+              confirmLabel: "Unmount",
+            },
+            resolve,
+          ).open();
+        }),
+      unmount: (submodulePath) => restMount.unmount(submodulePath),
+      notify: (message) => {
+        this.notifier.info(message);
+        this.activityLog.record({ category: "bootstrap", level: "info", message });
+      },
+      onUnmounted: () => this.refreshAndInjectAssetSpaceMaterialization(),
+    });
+
+    this.addCommand({
+      id: "unmount-assetspace",
+      name: "Unmount assetspace",
+      callback: () => {
+        void unmountCommand.invokeUnmount();
       },
     });
   }

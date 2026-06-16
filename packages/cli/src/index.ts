@@ -19,6 +19,7 @@ import { auditCommand } from "./commands/audit.js";
 import { applyProfileCommand } from "./commands/apply-profile.js";
 import { bootstrapCommand } from "./commands/bootstrap.js";
 import { assetSpaceAddCommand } from "./commands/assetspace-add.js";
+import { assetSpaceRemoveCommand } from "./commands/assetspace-remove.js";
 import { resolveDepsCommand } from "./commands/resolve-deps.js";
 import { experimentalCommand } from "./commands/experimental.js";
 import { exosyncParityCommand } from "./commands/exosync-parity.js";
@@ -69,6 +70,8 @@ export function createProgram(version?: string): Command {
   // RFC 13da049f Phase 6.2 + 6.3 — Bootstrap + Add AssetSpace CLI
   program.addCommand(bootstrapCommand());
   program.addCommand(assetSpaceAddCommand());
+  // #e6b8827c — unmount a single AssetSpace (inverse of assetspace-add)
+  program.addCommand(assetSpaceRemoveCommand());
 
   // Issue #3513 (builds on #3511) — registry-driven dependsOn resolution for
   // the per-AssetSpace SHACL CI gate.

@@ -192,3 +192,32 @@ export function assertTsFloorReconciled(
     );
   }
 }
+
+/**
+ * Per-AssetSpace floor membership check (the unmount-command counterpart of the
+ * set-level {@link assertTsFloorReconciled}). Returns `true` when a SINGLE
+ * AssetSpace — identified by its descriptor `uid` + `exo__AssetSpace_namespace`
+ * — is a floor member, so a standalone `unmount-assetspace` / `assetspace-remove`
+ * command can refuse to tear it down (it would self-brick the runtime, R24).
+ *
+ * Reconciled identity (issue #3511): a floor member matches when EITHER its
+ * legacy {@link FloorIdentity.uid} equals `uid` OR its {@link FloorIdentity.namespace}
+ * equals `namespace`. The namespace match is fork-safe (an `exoas-exo` fork keeps
+ * namespace `"exo"`) and covers EKA central-registry descriptors that mint a new
+ * UID for the same `$exo` AssetSpace. An empty `namespace` never matches by
+ * namespace (only by UID), so an un-described mount is treated as non-floor.
+ *
+ * Callers pass {@link SDK_FLOOR} (CLI/headless) or {@link PLUGIN_UI_FLOOR}
+ * (plugin) — both `[{exo}]` post-#3440.
+ */
+export function isTsFloorAssetSpace(
+  uid: string,
+  namespace: string,
+  floor: ReadonlyArray<FloorIdentity> = SDK_FLOOR,
+): boolean {
+  return floor.some(
+    (f) =>
+      (uid.length > 0 && f.uid === uid) ||
+      (namespace.length > 0 && f.namespace === namespace),
+  );
+}

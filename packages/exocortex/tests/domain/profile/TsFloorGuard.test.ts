@@ -9,6 +9,7 @@ import {
   TsFloorViolationError,
   assertTsFloor,
   assertTsFloorReconciled,
+  isTsFloorAssetSpace,
 } from "../../../src/domain/profile/TsFloorGuard";
 
 // floor={exo} (RFC 5aa2a73a): shared-identities + exocmd removed from the floor.
@@ -136,6 +137,46 @@ describe("TsFloorGuard — floor = {exo}", () => {
       } catch (e) {
         expect(e).toBeInstanceOf(TsFloorViolationError);
       }
+    });
+  });
+
+  describe("isTsFloorAssetSpace — per-AssetSpace floor membership (#e6b8827c unmount guard)", () => {
+    it("legacy floor UID (any namespace) → floor", () => {
+      expect(isTsFloorAssetSpace(TS_FLOOR_AS_UID_EXO, "")).toBe(true);
+      expect(isTsFloorAssetSpace(TS_FLOOR_AS_UID_EXO, "exo")).toBe(true);
+      // Even a mislabeled namespace doesn't un-floor the legacy UID anchor.
+      expect(isTsFloorAssetSpace(TS_FLOOR_AS_UID_EXO, "weird")).toBe(true);
+    });
+
+    it("EKA central-registry descriptor: DIFFERENT UID but namespace 'exo' → floor (fork-safe)", () => {
+      expect(isTsFloorAssetSpace(EKA_EXO_UID, "exo")).toBe(true);
+    });
+
+    it("non-floor AssetSpace (ems) → NOT floor", () => {
+      expect(isTsFloorAssetSpace(EMS, "ems")).toBe(false);
+    });
+
+    it("exocmd + shared-identities are OPTIONAL, NOT floor (RFC 5aa2a73a / #3440)", () => {
+      // Critical: the unmount command MUST allow tearing exocmd/shared-identities
+      // down (they are optional libraries, not the floor). Neither UID nor
+      // namespace is a floor member.
+      expect(isTsFloorAssetSpace(TS_FLOOR_AS_UID_EXOCMD, "exocmd")).toBe(false);
+      expect(
+        isTsFloorAssetSpace(TS_FLOOR_AS_UID_SHARED_IDENTITIES, "shared-identities"),
+      ).toBe(false);
+    });
+
+    it("empty namespace never matches by namespace (un-described mount → non-floor)", () => {
+      // A mount with no scannable descriptor (uid "" + namespace "") is treated
+      // as non-floor — it is unmountable. An empty namespace must NOT collide
+      // with a floor entry whose namespace is also conceptually absent.
+      expect(isTsFloorAssetSpace("", "")).toBe(false);
+      expect(isTsFloorAssetSpace("some-unknown-uid", "")).toBe(false);
+    });
+
+    it("respects an explicit floor argument (defaults to SDK_FLOOR)", () => {
+      // Empty floor → nothing is ever a floor member.
+      expect(isTsFloorAssetSpace(TS_FLOOR_AS_UID_EXO, "exo", [])).toBe(false);
     });
   });
 });
