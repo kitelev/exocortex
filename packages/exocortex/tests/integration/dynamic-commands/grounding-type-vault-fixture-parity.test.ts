@@ -1,12 +1,13 @@
 /**
  * @file Vault-fixture parity test for RFC 9d20c91f Phase 2.
  *
- * Walks `packages/exoas-exocmd/` (the shared submodule clone) and finds
- * every asset whose `exo__Instance_class` points to the `exocmd__GroundingType`
- * class (UID `708604a5-a682-4ff6-9391-c2e80ab78ca5`). Asserts:
+ * Recursively walks `packages/exoas-exocmd/` (the shared submodule clone) and
+ * finds every asset whose `exo__Instance_class` points to the
+ * `exocmd__GroundingType` class (UID `708604a5-a682-4ff6-9391-c2e80ab78ca5`).
+ * Asserts:
  *
- * 1. Exactly 9 instances (matches `GroundingType` TS enum cardinality)
- * 2. The 9 vault UIDs are exactly the values in `GROUNDING_TYPE_UIDS`
+ * 1. Exactly 10 instances (matches `GroundingType` TS enum cardinality)
+ * 2. The 10 vault UIDs are exactly the values in `GROUNDING_TYPE_UIDS`
  * 3. Each vault asset's `exo__Asset_label` matches the expected naming
  *    convention X (e.g., `exocmd__GroundingTypePropertySet` for
  *    `GroundingType.PROPERTY_SET`)
@@ -14,6 +15,10 @@
  * If a vault asset is renamed, removed, or has its UID changed without
  * coordinated TS update, this test fails before any runtime regression
  * propagates to production.
+ *
+ * The walk is recursive so it is robust to the co-location invariant (CR-1):
+ * assets now live under per-namespace subfolders (e.g. `exoas-exocmd/exocmd/`)
+ * rather than flat at the submodule root.
  */
 
 import * as fs from "fs";
@@ -87,28 +92,36 @@ function scanGroundingTypeInstances(): VaultAsset[] {
     );
   }
   const instances: VaultAsset[] = [];
-  for (const entry of fs.readdirSync(SUBMODULE_PATH, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
-    const fullPath = path.join(SUBMODULE_PATH, entry.name);
-    const content = fs.readFileSync(fullPath, "utf8");
-    const fm = parseFrontmatter(content);
-    const instanceClass = fm["exo__Instance_class"];
-    const refs: string[] = Array.isArray(instanceClass)
-      ? (instanceClass as string[])
-      : typeof instanceClass === "string"
-        ? [instanceClass]
-        : [];
-    const classUids = refs
-      .map(extractWikilinkUid)
-      .filter((uid): uid is string => uid !== null);
-    if (classUids.includes(GROUNDING_TYPE_CLASS_UID)) {
-      instances.push({
-        uid: (fm["exo__Asset_uid"] as string | undefined) ?? "",
-        label: (fm["exo__Asset_label"] as string | undefined) ?? "",
-        instanceClassRefs: refs,
-      });
+  const walk = (dir: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith(".")) continue;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+      const content = fs.readFileSync(fullPath, "utf8");
+      const fm = parseFrontmatter(content);
+      const instanceClass = fm["exo__Instance_class"];
+      const refs: string[] = Array.isArray(instanceClass)
+        ? (instanceClass as string[])
+        : typeof instanceClass === "string"
+          ? [instanceClass]
+          : [];
+      const classUids = refs
+        .map(extractWikilinkUid)
+        .filter((uid): uid is string => uid !== null);
+      if (classUids.includes(GROUNDING_TYPE_CLASS_UID)) {
+        instances.push({
+          uid: (fm["exo__Asset_uid"] as string | undefined) ?? "",
+          label: (fm["exo__Asset_label"] as string | undefined) ?? "",
+          instanceClassRefs: refs,
+        });
+      }
     }
-  }
+  };
+  walk(SUBMODULE_PATH);
   return instances;
 }
 
