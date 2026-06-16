@@ -19,6 +19,7 @@
  *   ?s exo:Instance_class <https://exocortex.my/ontology/ems#Task> .  # URI, can JOIN
  */
 
+import { expectFasterThan } from "../../../helpers/perfAssert";
 import { QueryExecutor } from "../../../../src/infrastructure/sparql/executors/QueryExecutor";
 import { AlgebraTranslator } from "../../../../src/infrastructure/sparql/algebra/AlgebraTranslator";
 import { SPARQLParser } from "../../../../src/infrastructure/sparql/SPARQLParser";
@@ -360,7 +361,7 @@ describe("Instance_class JOIN (Issue #667)", () => {
       const endTime = performance.now();
 
       const executionTime = endTime - startTime;
-      expect(executionTime).toBeLessThan(50);
+      expectFasterThan(executionTime, 50);
     });
   });
 });

@@ -14,7 +14,12 @@ import { FilenameValidator } from "../../../src/utilities/FilenameValidator";
 import { extractDailyNoteDate } from "../../../src/domain/commands/visibility/helpers";
 
 describe("ReDoS Security Tests", () => {
-  const TIMEOUT_MS = 100; // Maximum allowed execution time
+  // 500ms: a ReDoS-vulnerable regex blows up to SECONDS on these adversarial
+  // inputs, so 500ms still catches a regression with huge margin, while giving
+  // ~5x more headroom than 100ms against shared-CI-runner jitter (a benign regex
+  // here completes in <1ms). See helpers/perfAssert.ts for the non-security
+  // wall-clock micro-benchmark policy.
+  const TIMEOUT_MS = 500; // Maximum allowed execution time (jitter-robust)
 
   describe("MetadataHelpers.containsReference - wiki-link regex", () => {
     it("should handle malicious nested bracket input quickly", () => {

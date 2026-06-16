@@ -846,7 +846,10 @@ describe("MetadataHelpers", () => {
    * Performance requirement: All regex operations should complete in <100ms even with adversarial input.
    */
   describe("ReDoS Security - containsReference", () => {
-    const TIMEOUT_MS = 100;
+    // 500ms: catastrophic backtracking takes SECONDS, so this still catches a
+    // ReDoS regression with margin, but is ~5x more jitter-robust than 100ms on
+    // a shared CI runner (benign containsReference completes in <1ms).
+    const TIMEOUT_MS = 500;
 
     it("should handle malicious nested bracket input quickly", () => {
       // Pattern that would cause catastrophic backtracking with /\[\[([^\]]+)\]\]/

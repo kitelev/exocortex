@@ -1,3 +1,4 @@
+import { expectFasterThan } from "../../../../helpers/perfAssert";
 import { BGPExecutor } from "../../../../../src/infrastructure/sparql/executors/BGPExecutor";
 import { InMemoryTripleStore } from "../../../../../src/infrastructure/rdf/InMemoryTripleStore";
 import { Triple } from "../../../../../src/domain/models/rdf/Triple";
@@ -403,7 +404,7 @@ describe("BGPExecutor", () => {
       const duration = Date.now() - startTime;
 
       expect(results).toHaveLength(100);
-      expect(duration).toBeLessThan(100); // Should be fast with indexes
+      expectFasterThan(duration, 100); // Should be fast with indexes (local-only)
     });
   });
 

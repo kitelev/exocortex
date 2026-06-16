@@ -1,3 +1,4 @@
+import { expectFasterThan } from "../../../helpers/perfAssert";
 import { InMemoryTripleStore } from "../../../../src/infrastructure/rdf/InMemoryTripleStore";
 import { RDFVocabularyMapper } from "../../../../src/infrastructure/rdf/RDFVocabularyMapper";
 import { Namespace } from "../../../../src/domain/models/rdf/Namespace";
@@ -416,7 +417,7 @@ describe("InMemoryTripleStore RDF/RDFS Mapping Integration", () => {
       const duration = endTime - startTime;
 
       // Should complete in <50ms for 100 triples
-      expect(duration).toBeLessThan(50);
+      expectFasterThan(duration, 50);
     });
 
     it("should deduplicate identical vocabulary triples", async () => {

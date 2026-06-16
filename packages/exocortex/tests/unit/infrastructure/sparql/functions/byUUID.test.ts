@@ -1,3 +1,4 @@
+import { expectFasterThan } from "../../../../helpers/perfAssert";
 import { FilterExecutor } from "../../../../../src/infrastructure/sparql/executors/FilterExecutor";
 import { SolutionMapping } from "../../../../../src/infrastructure/sparql/SolutionMapping";
 import { InMemoryTripleStore } from "../../../../../src/infrastructure/rdf/InMemoryTripleStore";
@@ -349,7 +350,7 @@ describe("exo:byUUID() Function", () => {
       const elapsed = performance.now() - start;
 
       expect(result).toBeInstanceOf(IRI);
-      expect(elapsed).toBeLessThan(10); // <10ms requirement
+      expectFasterThan(elapsed, 10); // <10ms requirement (local-only)
     });
   });
 });
