@@ -6131,6 +6131,14 @@
   font-size: var(--font-ui-smaller, 0.8em);
 }
 
+/* F4 UX polish — empty/invalid target-folder preview is a hint, not a value:
+   render it as a faded placeholder so the auto-derived path reads as a live
+   preview rather than an unfinished field. */
+.add-assetspace-preview.is-placeholder {
+  font-style: italic;
+  opacity: 0.7;
+}
+
 .bootstrap-modal-error {
   display: none;
 }

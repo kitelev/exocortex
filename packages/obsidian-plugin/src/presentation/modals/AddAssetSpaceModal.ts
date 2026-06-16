@@ -67,8 +67,8 @@ export class AddAssetSpaceModal extends Modal {
 
     this.previewEl = contentEl.createEl("p", {
       cls: "add-assetspace-preview",
-      text: this.previewText(""),
     });
+    this.refreshPreview();
     input.addEventListener("input", () => this.refreshPreview());
 
     contentEl.createEl("p", {
@@ -101,12 +101,27 @@ export class AddAssetSpaceModal extends Modal {
   private refreshPreview(): void {
     if (this.previewEl === null) return;
     const url = (this.urlInput?.value ?? "").trim();
-    this.previewEl.textContent = this.previewText(url);
+    const { text, isPlaceholder } = this.previewState(url);
+    this.previewEl.textContent = text;
+    // Empty / invalid states are hints, not a real path — render them as a
+    // muted placeholder so the auto-derived value reads as a live preview
+    // rather than an unfinished field (F4 UX polish).
+    this.previewEl.classList.toggle("is-placeholder", isPlaceholder);
   }
 
-  private previewText(url: string): string {
-    if (url.length === 0) return "Target folder: (enter a URL)";
-    if (!isLikelyGitHubUrl(url)) return "Target folder: (invalid URL)";
+  private previewState(url: string): { text: string; isPlaceholder: boolean } {
+    if (url.length === 0) {
+      return {
+        text: "Target folder: auto-derived from the repository URL",
+        isPlaceholder: true,
+      };
+    }
+    if (!isLikelyGitHubUrl(url)) {
+      return {
+        text: "Target folder: enter a valid GitHub URL",
+        isPlaceholder: true,
+      };
+    }
     let path = "(unknown)";
     try {
       // Mirror invokeAddAssetSpace (#3538): canonical Maven path
@@ -116,7 +131,7 @@ export class AddAssetSpaceModal extends Modal {
     } catch {
       path = "(unknown)";
     }
-    return `Target folder: ${path}`;
+    return { text: `Target folder: ${path}`, isPlaceholder: false };
   }
 
   private submit(): void {

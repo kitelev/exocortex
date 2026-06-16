@@ -227,6 +227,43 @@ describe("AddAssetSpaceModal", () => {
     );
   });
 
+  it("empty state — preview reads as an auto-derived placeholder hint (F4)", () => {
+    new AddAssetSpaceModal(fakeApp, derive, () => undefined).open();
+    const preview = document.querySelector(
+      ".add-assetspace-preview",
+    ) as HTMLElement;
+    // F4: the empty preview must read as a live auto-preview hint, not as an
+    // unfinished "(enter a URL)" placeholder field.
+    expect(preview.textContent).toBe(
+      "Target folder: auto-derived from the repository URL",
+    );
+    // Hint, not a real path → muted placeholder styling.
+    expect(preview.classList.contains("is-placeholder")).toBe(true);
+  });
+
+  it("invalid URL — preview shows a placeholder hint, not a path (F4)", () => {
+    new AddAssetSpaceModal(fakeApp, derive, () => undefined).open();
+    const input = document.querySelector("input") as HTMLInputElement;
+    input.value = "ftp://nope";
+    input.dispatchEvent(new Event("input"));
+    const preview = document.querySelector(
+      ".add-assetspace-preview",
+    ) as HTMLElement;
+    expect(preview.textContent).toBe("Target folder: enter a valid GitHub URL");
+    expect(preview.classList.contains("is-placeholder")).toBe(true);
+  });
+
+  it("valid URL clears the placeholder styling on the live preview (F4)", () => {
+    new AddAssetSpaceModal(fakeApp, derive, () => undefined).open();
+    const input = document.querySelector("input") as HTMLInputElement;
+    input.value = "https://github.com/kitelev/exoas-pmbok-ontology";
+    input.dispatchEvent(new Event("input"));
+    const preview = document.querySelector(
+      ".add-assetspace-preview",
+    ) as HTMLElement;
+    expect(preview.classList.contains("is-placeholder")).toBe(false);
+  });
+
   it("valid URL → resolves it", () => {
     let result: { url: string } | null | undefined;
     new AddAssetSpaceModal(fakeApp, derive, (r) => {
