@@ -138,70 +138,77 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
     await new Promise((r) => setTimeout(r, 4000));
 
     const diag = await window.evaluate(
-      async ({ areaRel, areaClass, cmd, gnd, bind }) => {
+      async ({ projCmd, projGnd, taskCmd, taskGnd }) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const plugin = (window as any).app?.plugins?.plugins?.exocortex;
-        const areaIRI = `obsidian://vault/${encodeURI(areaRel)}`;
         const store = plugin?.sparql?.getTripleStore?.();
-        const count = store ? await store.count() : -1;
-        const out: Record<string, unknown> = { count };
+        const out: Record<string, unknown> = { count: await store.count() };
+        const all = await store.match(undefined, undefined, undefined);
+        const short = (v: string) =>
+          typeof v === "string" ? v.split(/[#/]/).pop() || v : String(v);
 
-        // subject-triple presence in the LIVE store (by UID substring in subject IRI)
-        const countSubj = async (uid: string) => {
+        // dump triples whose subject contains the UID (predicate => object)
+        const dumpSubj = (uid: string) =>
+          all
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .filter((t: any) => t.subject?.value?.includes?.(uid))
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .map((t: any) => {
+              const o = t.object?.value ?? t.object;
+              const oForm =
+                t.object?.constructor?.name === "IRI"
+                  ? `IRI(${short(o)})`
+                  : `Lit(${o})`;
+              return `${short(t.predicate?.value)} => ${oForm}`;
+            });
+
+        out.projCmdTriples = dumpSubj(projCmd);
+        out.projGndTriples = dumpSubj(projGnd);
+        out.taskCmdTriples = dumpSubj(taskCmd);
+        out.taskGndTriples = dumpSubj(taskGnd);
+
+        // subject IRI as stored (full form) for cmd + gnd of both
+        const subjIRI = (uid: string) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const t = all.find((x: any) => x.subject?.value?.includes(uid));
+          return t?.subject?.value ?? null;
+        };
+        out.projCmdSubjectIRI = subjIRI(projCmd);
+        out.projGndSubjectIRI = subjIRI(projGnd);
+        out.taskGndSubjectIRI = subjIRI(taskGnd);
+
+        // loadGroundingByUid isolates the grounding itself from the command→grounding link
+        const lg = async (uid: string) => {
           try {
-            const all = await store.match(undefined, undefined, undefined);
-            return all.filter(
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              (t: any) =>
-                typeof t.subject?.value === "string" &&
-                t.subject.value.includes(uid),
-            ).length;
+            const g = await plugin.commandResolver.loadGroundingByUid(uid);
+            return g ? `OK type=${g.type} targetClass=${g.targetClass}` : "NULL";
           } catch (e) {
             return `err:${String(e)}`;
           }
         };
-        out.subjCmd = await countSubj(cmd);
-        out.subjGnd = await countSubj(gnd);
-        out.subjBind = await countSubj(bind);
+        out.loadGroundingProj = await lg(projGnd);
+        out.loadGroundingTask = await lg(taskGnd);
 
-        try {
-          const resolved = await plugin.commandResolver.resolveForAssetMulti(
-            areaIRI,
-            [areaClass, "ems__Area", "exo__Asset"],
-          );
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          out.resolveMulti = resolved.map(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (rc: any) => `${rc.command?.name} [bind ${rc.binding?.id}]`,
-          );
-        } catch (e) {
-          out.resolveMultiErr = String(e);
-        }
-
-        try {
-          const c = await plugin.commandResolver.loadCommand(cmd, {
-            targetClass: "ems__Area",
-          });
-          out.loadCommand = c
-            ? `OK name=${c.name} grounding=${!!c.grounding} confirm=${c.confirmMessage}`
-            : "NULL";
-        } catch (e) {
-          out.loadCommandErr = String(e);
-        }
-
-        // rendered buttons
-        out.renderedButtons = Array.from(
-          document.querySelectorAll(".exocortex-action-button"),
-        ).map((el) => (el.textContent || "").trim());
+        const lc = async (uid: string) => {
+          try {
+            const c = await plugin.commandResolver.loadCommand(uid, {
+              targetClass: "ems__Area",
+            });
+            return c ? `OK name=${c.name} grounding=${!!c.grounding}` : "NULL";
+          } catch (e) {
+            return `err:${String(e)}`;
+          }
+        };
+        out.loadCommandProj = await lc(projCmd);
+        out.loadCommandTask = await lc(taskCmd);
 
         return out;
       },
       {
-        areaRel: SEED_AREA_REL,
-        areaClass: "82c74542-1b14-4217-b852-d84730484b25",
-        cmd: "3520c214-abe4-4ada-9a2d-04516b957ba2",
-        gnd: "8748f8b0-989b-45a0-88a9-155bc5126f3c",
-        bind: "9f787938-5ee8-484d-ba3f-f1d1e1a0b337",
+        projCmd: "3520c214-abe4-4ada-9a2d-04516b957ba2",
+        projGnd: "8748f8b0-989b-45a0-88a9-155bc5126f3c",
+        taskCmd: "dec97198-a458-4273-b081-7b250e0a9031",
+        taskGnd: "a222094b-f499-4342-aec0-65c4ba99c657",
       },
     );
     log(`DIAG #3587 LIVE STORE TRUTH ===> ${JSON.stringify(diag, null, 2)}`);
