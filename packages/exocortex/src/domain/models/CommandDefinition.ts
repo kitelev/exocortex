@@ -273,8 +273,28 @@ export interface InheritanceRuleResolved {
   readonly targetPropertyName: string;
   /** Resolved `exo__Asset_label` of the class condition; absent = unconditional. */
   readonly targetClassCondition?: string;
+  /**
+   * UID-canon form of the class condition — the `exo__Asset_uid` that the
+   * `exocmd__InheritanceRule_targetClassCondition` wikilink points to, when it
+   * is authored as a UUID ref (the production UID-canon shape).
+   *
+   * Issue #3562: carried alongside the label so the executor can match the
+   * condition against a UID-canon target class **UID↔UID directly**, with no
+   * dependency on the label→UID resolver (Obsidian `metadataCache` in the
+   * plugin, fs scan in the CLI). That resolver lags right after
+   * `Apply profile` materialises the class TBox, which silently skipped
+   * conditional inheritance rules until the next reload. Absent for legacy
+   * label-form conditions (then matching falls back to the label + resolver).
+   */
+  readonly targetClassConditionUid?: string;
   /** Resolved labels of excluded classes; empty = no exclusion. */
   readonly targetClassExclusion: readonly string[];
+  /**
+   * UID-canon forms of excluded classes (Issue #3562 — same rationale as
+   * {@link targetClassConditionUid}). Treated as an independent set of UID-form
+   * exclusion refs, NOT a positional parallel to {@link targetClassExclusion}.
+   */
+  readonly targetClassExclusionUids?: readonly string[];
   /** Priority for ordering when Phase 3b engine applies multiple rules. */
   readonly priority: number;
 }
