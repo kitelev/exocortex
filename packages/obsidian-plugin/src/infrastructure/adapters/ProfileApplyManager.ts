@@ -1751,14 +1751,28 @@ export class ProfileApplyManager {
       }
     }
 
-    // Materialized AS UIDs: .gitmodules ∩ working-tree-on-disk
-    // (Phase 6 Vision Lock #9 amendment: `.gitmodules` ≠ materialization state).
-    const submodulePaths = await gitOps.readGitmodulesPaths();
+    // Materialized AS UIDs: ALL AssetSpace descriptor folders ∩
+    // working-tree-on-disk — IDENTICAL to the apply paths
+    // (`applyProfile` / `applyProfileViaRest`, which key materialization on
+    // `allInfos.map(i => i.folderName)`). #D2 (GUI-BDD-CI Ф3, node c470f71d):
+    // the prior `.gitmodules`-only scan (`gitOps.readGitmodulesPaths()`)
+    // UNDER-reported materialization — a folder present on disk but absent from
+    // `.gitmodules` (desktop git-free REST mount whose `.gitmodules` is written
+    // via `vault.adapter`, or any unreadable/empty `.gitmodules`) was invisible
+    // to the reconcile preview yet still torn down by the subsequent
+    // `applyProfile`. The preview showed «Assetspaces to remove: (none)» while
+    // the apply unmounted a personal AssetSpace (privacy-boundary surprise). The
+    // on-disk descriptor-folder scan is the authoritative materialization signal
+    // both the preview and the actual apply MUST share so their removal-deltas
+    // agree. The `.gitmodules`-persists-post-destroy intersection (Phase 6
+    // Vision Lock #9) still holds — `derivePhysicallyMaterializedAsUids` ANDs
+    // each path with `vault.adapter.exists`, so a destroyed-but-stanza-preserved
+    // entry whose folder is gone is still correctly excluded.
     const allInfos = this.listAllAssetSpaceInfos();
     const infoByPath = new Map<string, AssetSpaceInfo>();
     for (const info of allInfos) infoByPath.set(info.folderName, info);
     const materializedAsUids = await this.derivePhysicallyMaterializedAsUids(
-      submodulePaths,
+      allInfos.map((i) => i.folderName),
       infoByPath,
     );
 
