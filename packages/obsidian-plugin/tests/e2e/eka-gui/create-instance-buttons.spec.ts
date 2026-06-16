@@ -119,6 +119,94 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
     );
   });
 
+  // TEMP DIAGNOSTIC (#3587 root-cause) — dumps live render-path store truth so
+  // CI logs pinpoint store-vs-resolver-vs-render. Removed before merge.
+  test("DIAG #3587 — live store truth for Create Project on ems__Area", async () => {
+    await window.evaluate(async (p) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const app = (window as any).app;
+      const file = app.vault.getAbstractFileByPath(p);
+      const leaf = app.workspace.getLeaf(true);
+      await leaf.openFile(file, { state: { mode: "preview" } });
+    }, SEED_AREA_REL);
+    await window.evaluate(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const plugin = (window as any).app?.plugins?.plugins?.exocortex;
+      plugin?.commandResolver?.invalidateCache?.();
+      plugin?.refreshLayout?.();
+    });
+    await new Promise((r) => setTimeout(r, 4000));
+
+    const diag = await window.evaluate(
+      async ({ areaRel, areaClass, cmd, gnd, bind }) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const plugin = (window as any).app?.plugins?.plugins?.exocortex;
+        const areaIRI = `obsidian://vault/${encodeURI(areaRel)}`;
+        const store = plugin?.sparql?.getTripleStore?.();
+        const count = store ? await store.count() : -1;
+        const out: Record<string, unknown> = { count };
+
+        // subject-triple presence in the LIVE store (by UID substring in subject IRI)
+        const countSubj = async (uid: string) => {
+          try {
+            const all = await store.match(undefined, undefined, undefined);
+            return all.filter(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (t: any) =>
+                typeof t.subject?.value === "string" &&
+                t.subject.value.includes(uid),
+            ).length;
+          } catch (e) {
+            return `err:${String(e)}`;
+          }
+        };
+        out.subjCmd = await countSubj(cmd);
+        out.subjGnd = await countSubj(gnd);
+        out.subjBind = await countSubj(bind);
+
+        try {
+          const resolved = await plugin.commandResolver.resolveForAssetMulti(
+            areaIRI,
+            [areaClass, "ems__Area", "exo__Asset"],
+          );
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          out.resolveMulti = resolved.map(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (rc: any) => `${rc.command?.name} [bind ${rc.binding?.id}]`,
+          );
+        } catch (e) {
+          out.resolveMultiErr = String(e);
+        }
+
+        try {
+          const c = await plugin.commandResolver.loadCommand(cmd, {
+            targetClass: "ems__Area",
+          });
+          out.loadCommand = c
+            ? `OK name=${c.name} grounding=${!!c.grounding} confirm=${c.confirmMessage}`
+            : "NULL";
+        } catch (e) {
+          out.loadCommandErr = String(e);
+        }
+
+        // rendered buttons
+        out.renderedButtons = Array.from(
+          document.querySelectorAll(".exocortex-action-button"),
+        ).map((el) => (el.textContent || "").trim());
+
+        return out;
+      },
+      {
+        areaRel: SEED_AREA_REL,
+        areaClass: "82c74542-1b14-4217-b852-d84730484b25",
+        cmd: "3520c214-abe4-4ada-9a2d-04516b957ba2",
+        gnd: "8748f8b0-989b-45a0-88a9-155bc5126f3c",
+        bind: "9f787938-5ee8-484d-ba3f-f1d1e1a0b337",
+      },
+    );
+    log(`DIAG #3587 LIVE STORE TRUTH ===> ${JSON.stringify(diag, null, 2)}`);
+  });
+
   // KNOWN-BROKEN (#3587): the "Create Project" inline button does NOT render on
   // an ems__Area in the live plugin, while sibling Create Task + Create Area
   // (same targetClass, same group, no precondition) render fine. The
