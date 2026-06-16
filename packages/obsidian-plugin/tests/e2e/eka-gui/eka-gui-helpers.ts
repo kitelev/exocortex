@@ -70,6 +70,9 @@ export const UID = {
 /** Stable UID of the single seeded ems__Area the create-button scenarios target. */
 export const SEED_AREA_UID = "e2e0a4ea-0000-4000-a000-000000000001";
 export const SEED_AREA_LABEL = "EKA E2E Seed Area";
+/** Stable UID of the seeded ems__Project (Task-on-Project scenario target). */
+export const SEED_PROJECT_UID = "e2e0a4ea-0000-4000-a000-000000000002";
+export const SEED_PROJECT_LABEL = "EKA E2E Seed Project";
 
 export function log(msg: string): void {
   // eslint-disable-next-line no-console
@@ -173,6 +176,21 @@ export function setupGuiVault(): string {
       `exo__Asset_label: "${SEED_AREA_LABEL}"\n` +
       `exo__Asset_createdAt: 2026-06-16T00:00:00\n` +
       `---\n\nEphemeral e2e seed area. Recreated fresh every run.\n`,
+  );
+  // Seed ONE ems__Project too — the "Create Task on Project" scenario targets it
+  // directly (Create Task resolves fast/reliably; the "Create Project" button is
+  // slow/variable to resolve under Docker indexing, so we seed instead of
+  // creating it via that button — see the create-Project scenario in the
+  // follow-up node).
+  fs.writeFileSync(
+    path.join(seedDir, `${SEED_PROJECT_UID}.md`),
+    `---\n` +
+      `exo__Asset_uid: ${SEED_PROJECT_UID}\n` +
+      `exo__Instance_class:\n  - "[[${UID.emsProjectClass}]]"\n` +
+      `exo__Asset_isDefinedBy: "[[${UID.emsAnchor}]]"\n` +
+      `exo__Asset_label: "${SEED_PROJECT_LABEL}"\n` +
+      `exo__Asset_createdAt: 2026-06-16T00:00:00\n` +
+      `---\n\nEphemeral e2e seed project. Recreated fresh every run.\n`,
   );
 
   // A trivial note so Obsidian's waitForVaultReady (markdownFiles > 0) does not
