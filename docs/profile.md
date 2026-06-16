@@ -279,28 +279,44 @@ The 2-phase design makes the **common** failure modes safe, but apply is **not
 fully atomic** on every partial failure. Know the exact boundary
 (tracked for hardening in [issue #3548](https://github.com/kitelev/exocortex/issues/3548)):
 
+> **Which path runs?** Since the git-elim cutover ([#3567](https://github.com/kitelev/exocortex/issues/3567))
+> apply routes through the **REST/tarball path on BOTH desktop and mobile**
+> (`restMountFactory` is wired unconditionally). The git-binary path below is a
+> legacy fallback only reached when neither `restMount` nor `restMountFactory`
+> is wired — in practice, tests.
+
 **Covered (safe):**
 
 - A failure **during Phase 1** (any pull fails) leaves the vault byte-identical
   to before the attempt — nothing is destroyed.
-- A **crash** mid-Phase-2 is reconciled on next onload: `recoverIncompleteSwitch()`
-  restores every destroyed-but-not-materialized AssetSpace from `SwitchCacheLayer`.
-- A cache-verify gate prevents a corrupt/zero-byte archive from authorizing a destroy.
+- **REST path (production, both platforms) — mount-before-unmount + rollback
+  ([#3548](https://github.com/kitelev/exocortex/issues/3548)):** the new
+  AssetSpaces are materialized **first**; the old set is torn down only once
+  every new one is confirmed present. A **mount failure** mid-apply rolls back
+  exactly what was added (`unmount` is idempotent — also clears a partially-pulled
+  folder), restoring the **exact pre-apply mount-state** with **zero data loss**
+  (only freshly-pulled content is removed) and leaving `activeProfileUid` at the
+  previous profile. The destructive unmount of the old set runs only after that,
+  so a failure **after** all mounts succeed leaves a benign **superset**
+  (target ∪ not-yet-removed) — never lost data; a re-run reconciles.
+- On a git-backed vault the REST path also honours the **uncommitted-changes
+  abort** (Vision Lock #5) for any to-destroy AssetSpace; on a git-free vault
+  (mobile / a vault never `git init`-ed) the check degrades gracefully and the
+  reorder provides the guarantee instead.
+- A **crash** mid-Phase-2 on the git path is reconciled on next onload:
+  `recoverIncompleteSwitch()` restores every destroyed-but-not-materialized
+  AssetSpace from `SwitchCacheLayer`. A cache-verify gate prevents a
+  corrupt/zero-byte archive from authorizing a destroy.
 
-**Not yet atomic (desktop):** if a step **fails** mid-Phase-2 (e.g. a
-`git submodule add` errors out on the 2nd of several AssetSpaces), the in-process
-catch restores the _destroyed_ AssetSpaces from cache (best-effort) but does **not**
-git-reset the working tree. The vault is therefore left with **uncommitted
-`.gitmodules`/submodule changes** and possibly one **partially-added** AssetSpace —
-the apply git-commit only runs on success. The vault content is recoverable, but
-not in a clean committed state until you re-run apply (which reconciles) or reload
-(which runs the recovery worker).
-
-**Not yet atomic (mobile / REST):** the mobile path does unmount-then-mount with
-**no rollback and no cache** — if a mount fails after an unmount, that AssetSpace
-is simply absent until you re-run apply. The state self-heals on re-run (mount-state
-is self-describing: folder-exists = active; REST mount/unmount are idempotent), but
-there is no automatic restore of an interrupted unmount.
+**Legacy git path only — not fully atomic:** if a step **fails** mid-Phase-2 on
+the git-binary fallback (e.g. a `git submodule add` errors out on the 2nd of
+several AssetSpaces), the in-process catch restores the _destroyed_ AssetSpaces
+from cache (best-effort) but does **not** git-reset the working tree. The vault is
+therefore left with **uncommitted `.gitmodules`/submodule changes** and possibly
+one **partially-added** AssetSpace — the apply git-commit only runs on success.
+The vault content is recoverable, but not in a clean committed state until you
+re-run apply (which reconciles) or reload (which runs the recovery worker). This
+path is no longer reached in production (see the routing note above).
 
 ### If an apply fails or is interrupted — recovery ordering
 
@@ -321,9 +337,10 @@ database write. In order:
    the vault manually once the mount-state is correct.
 
 To **minimize** the chance of hitting the window: commit (or stash) local changes
-before applying — the desktop path aborts on uncommitted changes in any to-destroy
-AssetSpace (Vision Lock #5) — and prefer a stable network/power state for a large
-cold apply (many AssetSpaces pulled sequentially).
+before applying — apply aborts on uncommitted changes in any to-destroy
+AssetSpace on a git-backed vault (Vision Lock #5; enforced on both the REST and
+git paths) — and prefer a stable network/power state for a large cold apply (many
+AssetSpaces pulled sequentially).
 
 ### Obsidian hangs at "Loading plugins…" after an apply
 
