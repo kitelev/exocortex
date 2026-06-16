@@ -421,10 +421,15 @@ export async function waitForStoreSettled(
  * unwritten. Two CI DIAG rounds proved this is a transient store-load race, NOT a
  * resolver bug (the resolver + converter return Create Project on a full store).
  *
- * Polling `resolveForAssetMulti(seedAreaIRI, classes)` until it returns every
- * `requiredLabels` entry directly gates on what the scenarios need: a store
- * complete enough to resolve every create command. `invalidateCache()` each poll
- * forces a fresh resolution against the now-larger store.
+ * CRITICAL: each poll FORCES a full store re-index via `sparql.refresh()`
+ * (clear + convertVault + addAll) before resolving. `invalidateCache()` alone is
+ * NOT enough — it clears only the resolver cache, not the store, so polling a
+ * store that `convertVault` populated ONCE (against a partially-parsed
+ * metadataCache) would query the same partial snapshot forever. Driving
+ * `refresh()` re-reads every file against the now-more-complete metadataCache, so
+ * successive polls grow the store until the create-command subgraph is present.
+ * This mirrors the production re-index path (resolved-handler / hot-reindex),
+ * just driven deterministically so the test asserts against a complete store.
  */
 export async function waitForCreateCommandsResolvable(
   window: Page,
@@ -442,7 +447,17 @@ export async function waitForCreateCommandsResolvable(
           const plugin = (window as any).app?.plugins?.plugins?.exocortex;
           if (!plugin?.commandResolver?.resolveForAssetMulti) return [];
           const iri = `obsidian://vault/${encodeURI(rel)}`;
-          // Fresh resolution against the current (growing) store each poll.
+          // Force a full re-index against the current metadataCache state, then
+          // mirror the plugin's post-refresh discipline (clear lazy marks +
+          // invalidate resolver caches) so resolution sees the freshly-rebuilt
+          // store. As metadataCache finishes parsing the cold-start vault,
+          // successive refreshes pick up the remaining files.
+          try {
+            await plugin.sparql?.refresh?.();
+          } catch {
+            /* transient mid-refresh — next poll retries */
+          }
+          plugin.lazyAssetGraphLoader?.clearAll?.();
           plugin.commandResolver.invalidateCache?.();
           try {
             const resolved = await plugin.commandResolver.resolveForAssetMulti(
@@ -460,7 +475,7 @@ export async function waitForCreateCommandsResolvable(
       return requiredLabels.every((l) => names.includes(l));
     },
     timeoutMs,
-    2000,
+    3000,
   );
 }
 
