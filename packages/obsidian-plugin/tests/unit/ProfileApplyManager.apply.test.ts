@@ -1645,4 +1645,70 @@ describe("ProfileApplyManager.reconcileToLocal", () => {
     // The namespace reconciliation must NOT suppress a legitimately-missing floor.
     expect(result.outcome).toBe("declined");
   });
+
+  // === #D2 (GUI-BDD-CI Ф3, node c470f71d) — reconcile-preview removal-delta
+  // must equal the actual apply mount-delta ===
+  // GUI-smoke found the reconcile modal showing «Assetspaces to remove: (none)»
+  // while the subsequent apply unmounted a personal AssetSpace (privacy-boundary
+  // surprise). Root cause: the reconcile preview keyed "materialized" on
+  // `gitOps.readGitmodulesPaths()` (a `.gitmodules`-only scan), but the apply
+  // path (`applyProfile`/`applyProfileViaRest`) keys it on the on-disk
+  // descriptor-folder scan (`allInfos.map(folderName)`). A folder present on
+  // disk but ABSENT from `.gitmodules` — exactly what the desktop git-free REST
+  // mount (#3567) produces — was invisible to the preview yet still torn down by
+  // the apply. The fix aligns the preview scan with the apply scan.
+  it("#D2 — reports an on-disk AssetSpace folder ABSENT from .gitmodules as a removal (preview == apply delta)", async () => {
+    const { mgr, localDataStore, confirmGate, gitOps } = setup({
+      targetUid: "target",
+      sourceUid: null,
+      // Active profile includes ONLY the floor — the personal AssetSpace
+      // ("ems-uid", standing in for exoas-my) is NOT in the effective set.
+      targetIncludes: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+      ],
+      // ems-uid IS materialized on disk (folder present) — like a personal
+      // AssetSpace mounted via the desktop git-free REST path.
+      materialized: [
+        "ems-uid",
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+      ],
+    });
+    // Reproduce the production divergence: the on-disk folder exists (setup put
+    // it in `fsFolders`), but its `.gitmodules` stanza is ABSENT — the exact
+    // state a desktop git-free REST mount leaves when `.gitmodules` is written
+    // via `vault.adapter` and `gitOps.readGitmodulesPaths()` (Node fs) doesn't
+    // see it (or `.gitmodules` is unreadable / empty). Strip it from the git
+    // scan ONLY; the working-tree folder stays present.
+    gitOps.gitmodulesPaths.delete("assetspaces/kitelev/exoas-ems");
+
+    await localDataStore.save({
+      activeProfileUid: "target",
+      _switchInProgress: false,
+    });
+    // Decline → assert the PREVIEW only, no apply side effects.
+    confirmGate.approve = false;
+
+    const result = await mgr.reconcileToLocal();
+
+    // Pre-fix (.gitmodules-only scan): ems-uid invisible → extra = [] →
+    // outcome "no-divergence", confirmGate never called → preview misleads
+    // ("remove none"). Post-fix (on-disk descriptor-folder scan, matching the
+    // apply path): ems-uid surfaces → divergence → modal lists it for removal.
+    expect(result.outcome).toBe("declined");
+    expect(confirmGate.lastPlan).not.toBeNull();
+    const tornDown = confirmGate.lastPlan!.assetSpacesBeingTornDown.map(
+      (a) => a.asUid,
+    );
+    expect(tornDown).toContain("ems-uid");
+    // The preview now reflects the real on-disk content that the apply removes
+    // (folder has files → non-zero count, never a phantom "(none)" entry).
+    const emsEntry = confirmGate.lastPlan!.assetSpacesBeingTornDown.find(
+      (a) => a.asUid === "ems-uid",
+    );
+    expect(emsEntry?.fileCount).toBeGreaterThan(0);
+  });
 });
