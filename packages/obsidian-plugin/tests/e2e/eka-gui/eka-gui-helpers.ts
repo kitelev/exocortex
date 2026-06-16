@@ -62,7 +62,8 @@ export const UID = {
   emsTaskClass: "1b20a8f0-d745-4e93-91db-4531b3df120e", // ems__Task class
   emsProjectClass: "7db5eeff-718a-49b0-8d2b-39b084a356e3", // ems__Project class
   emsAnchor: "f6e01f7a-d727-494a-82a3-815597d33e86", // ems ontology anchor (isDefinedBy)
-  meetingPrototype: "7ab483c7-aafc-4ac8-8aca-0de52db34a93", // ems__MeetingPrototype
+  meetingPrototype: "7ab483c7-aafc-4ac8-8aca-0de52db34a93", // ems__MeetingPrototype (class)
+  emsMeetingClass: "1b0a5e34-dd7f-4ead-b43a-6c7c5a5ecaca", // ems__Meeting (created instance's class)
   // #3555: InheritanceRule uid→ems__Area_parent — exercised live, not seeded.
   areaParentInheritanceRule: "ba0ed3e9-9749-474f-b994-654d4dede2c5",
 } as const;
@@ -73,6 +74,16 @@ export const SEED_AREA_LABEL = "EKA E2E Seed Area";
 /** Stable UID of the seeded ems__Project (Task-on-Project scenario target). */
 export const SEED_PROJECT_UID = "e2e0a4ea-0000-4000-a000-000000000002";
 export const SEED_PROJECT_LABEL = "EKA E2E Seed Project";
+/**
+ * Stable UID of the seeded **ems__MeetingPrototype-classed** asset the
+ * "Create Meeting Instance" scenario targets. The binding (`22093ca1`,
+ * targetClass `ems__MeetingPrototype`) binds the command to an INSTANCE of the
+ * prototype class — NOT to the prototype class asset `7ab483c7` itself (that
+ * shows "Create Subclass"). So we seed an asset whose `exo__Instance_class` IS
+ * `ems__MeetingPrototype`.
+ */
+export const SEED_MEETING_PROTO_UID = "e2e0a4ea-0000-4000-a000-000000000003";
+export const SEED_MEETING_PROTO_LABEL = "EKA E2E Seed Meeting Prototype";
 
 export function log(msg: string): void {
   // eslint-disable-next-line no-console
@@ -191,6 +202,21 @@ export function setupGuiVault(): string {
       `exo__Asset_label: "${SEED_PROJECT_LABEL}"\n` +
       `exo__Asset_createdAt: 2026-06-16T00:00:00\n` +
       `---\n\nEphemeral e2e seed project. Recreated fresh every run.\n`,
+  );
+  // Seed ONE ems__MeetingPrototype-classed asset — the "Create Meeting Instance"
+  // scenario targets it. The command binds on the PROTOTYPE CLASS (targetClass
+  // ems__MeetingPrototype), so an instance whose class is ems__MeetingPrototype
+  // renders the button (the prototype class asset 7ab483c7 itself would render
+  // "Create Subclass" instead).
+  fs.writeFileSync(
+    path.join(seedDir, `${SEED_MEETING_PROTO_UID}.md`),
+    `---\n` +
+      `exo__Asset_uid: ${SEED_MEETING_PROTO_UID}\n` +
+      `exo__Instance_class:\n  - "[[${UID.meetingPrototype}]]"\n` +
+      `exo__Asset_isDefinedBy: "[[${UID.emsAnchor}]]"\n` +
+      `exo__Asset_label: "${SEED_MEETING_PROTO_LABEL}"\n` +
+      `exo__Asset_createdAt: 2026-06-16T00:00:00\n` +
+      `---\n\nEphemeral e2e seed meeting-prototype instance. Recreated fresh every run.\n`,
   );
 
   // A trivial note so Obsidian's waitForVaultReady (markdownFiles > 0) does not
@@ -577,9 +603,17 @@ export async function createOnTarget(
             (r) => `${r}: ${readVaultFile(vaultPath, r).replace(/\n/g, " | ")}`,
           )
           .join(" ;; ");
+      // Nit (code-reviewer #3583): delete ONLY the instance this attempt
+      // created — matched by its unique label `${labelBase} ${i}` — not every
+      // file in the snapshot diff. If a future grounding writes >1 file per
+      // create (e.g. a backlink-target asset alongside the instance), the blanket
+      // delete would clobber that collateral; label-scoping keeps cleanup precise.
+      const attemptLabel = `${labelBase} ${i}`;
       for (const rel of created) {
         try {
-          fs.rmSync(path.join(vaultPath, rel));
+          if (readVaultFile(vaultPath, rel).includes(attemptLabel)) {
+            fs.rmSync(path.join(vaultPath, rel));
+          }
         } catch {
           /* ignore */
         }

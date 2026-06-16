@@ -5,6 +5,7 @@ import * as fs from "fs";
 import * as path from "path";
 import {
   SEED_AREA_UID,
+  SEED_MEETING_PROTO_UID,
   SEED_PROJECT_UID,
   createOnTarget,
   findByUid,
@@ -26,10 +27,12 @@ import {
  * (GUI-BDD-CI Ф4, project node a2e20c69) as repeatable e2e against a FRESH
  * ephemeral vault built from the REAL published `kitelev/exoas-*` ontology repos:
  *
- *   - Create Task on an ems__Area     → ems:Effort_area   = the area
- *   - Create child Area (#3555)       → ems:Area_parent   = the area  ⚠ REGRESSION
- *   - Create Task on an ems__Project  → ems:Effort_parent = the project
- *   - cleanup-idempotent              → created instances removed, ontologies intact
+ *   - Create Task on an ems__Area        → ems:Effort_area   = the area
+ *   - Create Project on an ems__Area     → ems:Effort_area   = the area  (test.fixme #3587)
+ *   - Create child Area (#3555)          → ems:Area_parent   = the area  ⚠ REGRESSION
+ *   - Create Task on an ems__Project     → ems:Effort_parent = the project
+ *   - Create Meeting on a MeetingProto   → exo:Asset_prototype = the source
+ *   - cleanup-idempotent                 → created instances removed, ontologies intact
  *
  * Design (see eka-gui-helpers.ts header): one suite over ONE fresh vault per run
  * ("каждый прогон = новое хранилище"); the create-instance commands + the #3555
@@ -40,13 +43,20 @@ import {
  * open→click on any transient until the inherited backlink lands. Every
  * assertion checks REAL on-disk frontmatter — no stubs.
  *
- * Only the fast/reliable "Create Task" + "Create Area" buttons are exercised
- * here; the seed ems__Area + seed ems__Project are pre-placed so the scenarios
- * target them directly. The "Create Project" button is slow + variable to
- * resolve under Docker indexing (sometimes >2 min), which made it flaky, so the
- * Create-Project-on-Area + Create-Meeting scenarios (and apply-profile #1 /
- * reload-no-hang #3554) are tracked in the follow-up node — see
- * eka-gui-helpers.ts header.
+ * The "Create Project" + "Create Meeting Instance" commands additionally carry a
+ * `Command_confirmMessage`, so clicking them fires a native `window.confirm()`
+ * that {@link registerConfirmAutoAccept} (armed in beforeAll) accepts under CDP.
+ *
+ * Note on "Create Project" (follow-up node fc83d482, perf-investigation → #3587):
+ * #3585 dropped Create-Project suspecting a resolver perf bug. The investigation
+ * REFUTED that AND found a real correctness bug: the "Create Project" button does
+ * NOT render on an ems__Area in the LIVE plugin (Create Task + Create Area do).
+ * It is NOT the resolver — a full-store repro of `resolveForAssetMulti` returns
+ * `Create Project [bind 9f787938]`, the CLI `apply create-project` resolves it,
+ * and `PreconditionEvaluator.evaluate(undefined)=true`. The drop is in the live
+ * render-path store (LazyAssetGraphLoader, PR #3257), root cause tracked in #3587.
+ * The scenario is therefore kept as `test.fixme` (a runnable regression gate that
+ * goes green when #3587 lands) rather than deleted-and-forgotten like #3585.
  *
  * Relationship-key tolerance: published InheritanceRules emit the backlink in
  * EITHER prefixed (`ems__Effort_area`) OR expanded-IRI (`…/ems#Effort_area`)
@@ -61,6 +71,10 @@ const SEED_AREA_REL = path.posix.join(
 const SEED_PROJECT_REL = path.posix.join(
   "assetspaces/kitelev/exoas-public/ems",
   `${SEED_PROJECT_UID}.md`,
+);
+const SEED_MEETING_PROTO_REL = path.posix.join(
+  "assetspaces/kitelev/exoas-public/ems",
+  `${SEED_MEETING_PROTO_UID}.md`,
 );
 
 // Independent scenarios over a shared window (workers:1 keeps them ordered).
@@ -105,6 +119,31 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
     );
   });
 
+  // KNOWN-BROKEN (#3587): the "Create Project" inline button does NOT render on
+  // an ems__Area in the live plugin, while sibling Create Task + Create Area
+  // (same targetClass, same group, no precondition) render fine. The
+  // perf-investigation (node fc83d482) PROVED this is NOT a resolver/content bug:
+  // a full-store repro of resolveForAssetMulti returns Create Project [bind
+  // 9f787938] correctly, the CLI `apply create-project` resolves it, and
+  // PreconditionEvaluator.evaluate(undefined)=true. The drop happens in the live
+  // render-path store (LazyAssetGraphLoader, PR #3257) — root cause TBD in #3587.
+  // Kept as test.fixme: a runnable regression gate that flips green when #3587
+  // lands (remove .fixme then). The scenario body is the correct assertion.
+  test.fixme("scenario 3 — Create Project on ems__Area sets Effort_area (#3587)", async () => {
+    const { rel, fm } = await createOnTarget(
+      window,
+      vaultPath,
+      SEED_AREA_REL,
+      "Create Project",
+      "E2E Project on Area",
+      /Effort_area/,
+    );
+    log(`created project on area: ${rel}`);
+    expect(fm, "project must carry the source area in Effort_area").toContain(
+      SEED_AREA_UID,
+    );
+  });
+
   test("scenario 6 — Create child Area sets ems__Area_parent (#3555 regression)", async () => {
     const { rel, fm } = await createOnTarget(
       window,
@@ -139,9 +178,30 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
     );
   });
 
+  test("scenario 5 — Create Meeting Instance on a MeetingPrototype sets prototype", async () => {
+    // The binding (22093ca1, targetClass ems__MeetingPrototype) renders on an
+    // INSTANCE of the prototype class — our seed `SEED_MEETING_PROTO`. The
+    // grounding (e01b025b) creates an ems__Meeting whose default linkBack
+    // (exo__Asset_prototype) points to the source asset. "Create Meeting
+    // Instance" carries a confirmMessage → native confirm (auto-accepted).
+    const { rel, fm } = await createOnTarget(
+      window,
+      vaultPath,
+      SEED_MEETING_PROTO_REL,
+      "Create Meeting",
+      "E2E Meeting on Proto",
+      /Asset_prototype/,
+    );
+    log(`created meeting: ${rel}`);
+    expect(
+      fm,
+      "meeting must carry the source MeetingPrototype instance in Asset_prototype",
+    ).toContain(SEED_MEETING_PROTO_UID);
+  });
+
   test("scenario 8 — cleanup removes created instances, leaves ontologies + seed intact", async () => {
     const isCreated = (fm: string): boolean =>
-      /exo__Asset_label:\s*"?E2E (Task on Area|Child Area|Task on Project)/.test(
+      /exo__Asset_label:\s*"?E2E (Task on Area|Project on Area|Child Area|Task on Project|Meeting on Proto)/.test(
         fm,
       );
 
@@ -171,6 +231,10 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
     expect(
       findByUid(vaultPath, SEED_PROJECT_UID),
       "seed project must remain",
+    ).not.toBeNull();
+    expect(
+      findByUid(vaultPath, SEED_MEETING_PROTO_UID),
+      "seed meeting-prototype instance must remain",
     ).not.toBeNull();
     expect(
       findByUid(vaultPath, "82c74542-1b14-4217-b852-d84730484b25"),
