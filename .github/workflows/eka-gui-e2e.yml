@@ -6,15 +6,18 @@ name: EKA GUI-BDD E2E
 # the live create-instance commands + the #3555 InheritanceRule.
 # See packages/obsidian-plugin/tests/e2e/eka-gui/.
 #
-# ⛔ Deliberately NOT a pull_request trigger and NOT a required check: it clones
-# live (public) repos + boots real Obsidian in Docker, so network/QEMU flake
-# must never gate PRs (the 13 required hermetic checks already cover plugin
-# logic). It runs:
-#   - workflow_dispatch — manual on-demand (also used to verify a feature branch
-#                         before merge via `gh workflow run --ref <branch>`),
-#   - schedule          — nightly regression smoke against published content,
+# NOT a required check (never in branch protection): it clones live (public)
+# repos + boots real Obsidian in Docker, so network/QEMU flake must never GATE
+# PRs (the 13 required hermetic checks already cover plugin logic). It runs:
 #   - push: [main]      — "авто на каждом релизе": post-merge smoke whenever the
-#                         suite or the plugin/core changes.
+#                         suite or the plugin/core changes,
+#   - schedule          — nightly regression smoke against published content,
+#   - workflow_dispatch — manual on-demand,
+#   - pull_request      — ONLY on PRs that touch the suite itself (paths filter),
+#                         so suite changes are verified pre-merge without running
+#                         on unrelated PRs. Safe here (unlike eka-obsidian-leg):
+#                         PUBLIC repos only, no PAT/secret on the PR path. Still
+#                         non-required, so a flake never blocks the PR.
 #
 # Unlike eka-obsidian-leg-e2e.yml, this suite clones only PUBLIC repos, so it
 # needs NO PAT and never self-skips. GITHUB_TOKEN is passed only to lift the
@@ -33,6 +36,14 @@ on:
       - "packages/obsidian-plugin/tests/e2e/utils/**"
       - "packages/obsidian-plugin/src/**"
       - "packages/exocortex/src/**"
+      - ".github/workflows/eka-gui-e2e.yml"
+  pull_request:
+    # Suite-change PRs only — verifies the e2e suite pre-merge; never runs on
+    # unrelated PRs. Non-required → flake cannot block merge.
+    paths:
+      - "packages/obsidian-plugin/tests/e2e/eka-gui/**"
+      - "packages/obsidian-plugin/playwright-eka-gui.config.ts"
+      - "packages/obsidian-plugin/Dockerfile.eka-gui-e2e"
       - ".github/workflows/eka-gui-e2e.yml"
 
 # Avoid piling up scheduled + push runs.
