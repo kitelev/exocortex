@@ -15,6 +15,7 @@ import {
   registerConfirmAutoAccept,
   renderedButtonLabels,
   setupGuiVault,
+  waitForButtonsResolved,
   waitForStoreSettled,
 } from "./eka-gui-helpers";
 
@@ -79,6 +80,16 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
     // window.confirm() — auto-accept it under CDP.
     registerConfirmAutoAccept(window);
     await waitForStoreSettled(window);
+    // Warm up resolution: binding + grounding (incl. InheritanceRule) settles
+    // a few seconds after the store; wait until the full create-button set
+    // renders so the FIRST scenario's click fires a fully-resolved grounding
+    // (otherwise the backlink IR is empty → no Effort_area). Create Project is
+    // the slowest to resolve, so its presence signals completion.
+    await waitForButtonsResolved(window, SEED_AREA_REL, [
+      "Create Task",
+      "Create Project",
+      "Create Area",
+    ]);
   });
 
   test.afterAll(async () => {

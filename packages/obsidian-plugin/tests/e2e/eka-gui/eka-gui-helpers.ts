@@ -439,6 +439,41 @@ export async function renderedButtonLabels(window: Page): Promise<string[]> {
 }
 
 /**
+ * Warm up command resolution: open `relPath` and re-render until ALL `expected`
+ * create buttons appear. Binding + grounding (incl. InheritanceRule) resolution
+ * settles a few seconds AFTER the triple store stops growing — an early click
+ * (e.g. the very first scenario) otherwise fires a grounding whose IR list is
+ * still empty, so the backlink (Effort_area / Area_parent) is never written.
+ * Polling until the slowest button ("Create Project") renders guarantees the
+ * per-class binding scan + IR resolution are complete before any scenario acts.
+ */
+export async function waitForButtonsResolved(
+  window: Page,
+  relPath: string,
+  expected: string[],
+  timeoutMs = 90_000,
+): Promise<void> {
+  await openAssetAndRender(window, relPath);
+  await pollUntil(
+    `create buttons resolved (${expected.join(", ")})`,
+    async () => {
+      const labels = await renderedButtonLabels(window);
+      if (expected.every((e) => labels.some((l) => l.includes(e)))) return true;
+      // Re-resolve to pick up bindings/rules indexed since the last render.
+      await window.evaluate(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const p = (window as any).app?.plugins?.plugins?.exocortex;
+        p?.commandResolver?.invalidateCache?.();
+        p?.refreshLayout?.();
+      });
+      return false;
+    },
+    timeoutMs,
+    2500,
+  );
+}
+
+/**
  * Click a create-instance button by visible text, then drive the resulting
  * {@link DynamicFormModal} (a plain React form, unlike the un-drivable
  * FuzzySuggestModal): fill the `label` field and submit. Returns the set of
