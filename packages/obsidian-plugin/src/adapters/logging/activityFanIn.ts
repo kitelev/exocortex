@@ -26,6 +26,7 @@ const PHASE_LABELS: Record<SwitchJournalEntry["phase"], string> = {
   "git-commit-done": "Committed submodule pointers",
   "apply-completed": "Apply completed",
   "apply-failed": "Apply failed",
+  "rest-rollback-unmounted": "Rolled back mount (apply failed)",
   "recovery-restoring": "Recovering interrupted switch",
   "recovery-completed": "Recovery complete",
 };

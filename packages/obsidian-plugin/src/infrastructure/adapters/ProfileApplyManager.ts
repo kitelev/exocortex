@@ -152,6 +152,9 @@ export interface SwitchJournalEntry {
     | "git-commit-done"
     | "apply-completed"
     | "apply-failed"
+    // #3548 — REST partial-failure rollback: a freshly-mounted AssetSpace was
+    // unmounted to restore the pre-apply mount-state after a mid-apply failure.
+    | "rest-rollback-unmounted"
     | "recovery-restoring"
     | "recovery-completed";
   targetUid: string;
@@ -1133,6 +1136,17 @@ export class ProfileApplyManager {
       } catch {
         // Swallow — original error takes precedence.
       }
+      // #3548 — actionable user-facing failure message (legacy git path; in
+      // production #3567 routes desktop through the REST path, but this remains
+      // the tested fallback for wiring that omits restMount). Unlike the REST
+      // path this is NOT a full transactional rollback (cache-restore is
+      // best-effort + any submodule added before the failure stays untracked),
+      // so point the user at the recovery worker (reload) or a reconciling
+      // re-run rather than promising a clean tree.
+      this.notify(
+        `Apply failed — the vault may be partially applied. Reload Obsidian ` +
+          `(recovery restores unmounted AssetSpaces from cache) or re-run Apply to reconcile.`,
+      );
       // Clear in-progress flag so subsequent operations не see stuck state.
       try {
         const s = deps.localDataStore.snapshot();
@@ -1253,6 +1267,38 @@ export class ProfileApplyManager {
       }
     }
 
+    // Vision Lock #5 parity (#3548) — uncommitted-changes abort on the REST
+    // path. Post-#3567 the REST path runs on desktop too (git-backed vaults),
+    // so honour the same uncommitted-edits guard the desktop git path enforces.
+    // Scope = only the to-destroy AssetSpaces (their folders will be removed).
+    // Guarded: the guard is desktop-only (gitOps-backed) and absent on mobile,
+    // and even on desktop a vault the user never `git init`-ed makes
+    // `git status` throw `fatal: not a git repository` — in either case we
+    // cannot determine dirtiness, so we degrade gracefully and proceed (the
+    // mount-before-unmount reorder below provides the atomicity guarantee on
+    // git-free vaults). A genuine dirty result still aborts before any mutation.
+    if (this.uncommittedGuard !== undefined && toDestroy.length > 0) {
+      try {
+        const uncommitted = await this.uncommittedGuard.check(
+          toDestroy.map((t) => ({ asUid: t.asUid, submodulePath: t.submodulePath })),
+        );
+        if (!uncommitted.clean) {
+          const total = uncommitted.affectedFiles.reduce((s, a) => s + a.files.length, 0);
+          throw new UncommittedChangesAbortError(
+            `Apply aborted — ${total} uncommitted file(s) in ${uncommitted.affectedFiles.length} AssetSpace(s) this profile would remove. ` +
+              `Commit or stash the vault before applying. On a fresh git-backed vault, Bootstrap / Add-AssetSpace leave the pulled ` +
+              `assetspaces/ untracked — run \`git add -A && git commit -m "vault setup"\` first (and gitignore \`.obsidian/\` + ` +
+              `\`.exocortex/\` so your PAT is never committed). See docs/profile.md → "Apply on a git-backed vault (commit first)".`,
+            uncommitted.affectedFiles,
+          );
+        }
+      } catch (e) {
+        // A real dirty-tree abort must propagate; a git-unavailable error
+        // (mobile / non-git desktop vault) must NOT — proceed (reorder covers it).
+        if (e instanceof UncommittedChangesAbortError) throw e;
+      }
+    }
+
     // 3. Build plan + ConfirmGate (destructive — unmount removes folders).
     const filesToDestroyMap = new Map<string, string[]>();
     for (const target of toDestroy) {
@@ -1340,6 +1386,11 @@ export class ProfileApplyManager {
     // Generation claim AFTER acquire (code-review LOW) — see runApplyMutation.
     const myGen = ++this.applyGeneration;
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+    // #3548 atomicity bookkeeping: AssetSpaces mounted THIS run (for rollback on
+    // mount-failure) + whether the mount loop completed (so the catch surfaces
+    // "rolled back to previous profile" vs "partially applied — re-run").
+    const mountedThisRun: Array<{ asUid: string; submodulePath: string }> = [];
+    let mountsComplete = false;
     try {
       // ExoSync D11 re-check (code-reviewer MEDIUM, PR #3461) — same
       // pre-flag window as the desktop path; see applyProfile.
@@ -1363,21 +1414,50 @@ export class ProfileApplyManager {
         void this.lockMgr.heartbeat();
       }, 30_000);
 
-      // Unmount removed AssetSpaces (rm folder + strip .gitmodules stanza).
-      for (const target of toDestroy) {
-        await restMount.unmount(target.submodulePath);
+      // #3548 — MOUNT-BEFORE-UNMOUNT for partial-failure atomicity. The new set
+      // is materialized FIRST; the old set is torn down only once every new
+      // AssetSpace is confirmed present. On a mount failure mid-loop nothing has
+      // been unmounted yet, so the pre-apply mount-state is fully recoverable by
+      // unmounting just what we added (zero data loss — only freshly-pulled
+      // AssetSpaces are removed). This replaces the prior unmount-then-mount
+      // ordering whose mount-failure window left the to-destroy set already gone
+      // with no rollback (REST has no SwitchCacheLayer).
+      // Mount new AssetSpaces (REST tarball → vault folder + .gitmodules entry).
+      for (const target of toMaterialize) {
+        try {
+          await restMount.mount(target.gitUrl, target.submodulePath, target.ref);
+        } catch (mountErr) {
+          // Roll back EVERY AssetSpace mounted this run (incl. the partial
+          // failed one — `unmount` is idempotent: it strips the `.gitmodules`
+          // stanza and removes the folder even if `mount` threw before its
+          // `.gitmodules` append). `toDestroy` was never touched, so this
+          // restores the EXACT pre-apply mount-state.
+          await this.rollbackRestMounts(
+            restMount,
+            [...mountedThisRun, { asUid: target.asUid, submodulePath: target.submodulePath }],
+            targetProfileUid,
+          );
+          throw mountErr;
+        }
+        mountedThisRun.push({ asUid: target.asUid, submodulePath: target.submodulePath });
         await this.appendJournal({
-          phase: "phase2-destroyed",
+          phase: "phase2-materialized",
           targetUid: targetProfileUid,
           as: target.asUid,
           ts: this.now().toISOString(),
         });
       }
-      // Mount new AssetSpaces (REST tarball → vault folder + .gitmodules entry).
-      for (const target of toMaterialize) {
-        await restMount.mount(target.gitUrl, target.submodulePath, target.ref);
+      // Every new AssetSpace is present — now safe to unmount the old set. A
+      // failure HERE leaves a SUPERSET (target ∪ not-yet-removed) — never data
+      // loss (the un-removed AssetSpaces were slated for removal anyway), and
+      // re-running Apply reconciles. Mark the boundary so the catch can surface
+      // the right actionable message.
+      mountsComplete = true;
+      // Unmount removed AssetSpaces (rm folder + strip .gitmodules stanza).
+      for (const target of toDestroy) {
+        await restMount.unmount(target.submodulePath);
         await this.appendJournal({
-          phase: "phase2-materialized",
+          phase: "phase2-destroyed",
           targetUid: targetProfileUid,
           as: target.asUid,
           ts: this.now().toISOString(),
@@ -1410,6 +1490,17 @@ export class ProfileApplyManager {
         ts: this.now().toISOString(),
         error: this.redactError(String(e)),
       });
+      // #3548 — actionable user-facing failure message describing the
+      // partial-applied state + recovery action. `mountsComplete` distinguishes
+      // the two outcomes: pre-unmount failure → rolled back to the previous
+      // profile (nothing lost); post-mount failure → superset left mounted.
+      this.notify(
+        mountsComplete
+          ? `Apply failed during cleanup of "${targetProfileLabel}" — the new AssetSpaces are mounted but the old set was not fully removed. ` +
+              `No data was lost; re-run Apply to reconcile.`
+          : `Apply failed — vault rolled back to the previous profile (no changes applied). ` +
+              `Check your connection / GitHub token and re-run Apply.`,
+      );
       // Clear in-progress so subsequent operations don't see stuck state.
       try {
         const s = localDataStore.snapshot();
@@ -1426,6 +1517,43 @@ export class ProfileApplyManager {
       // Release only if still the active generation (code-review LOW) — see
       // runApplyMutation.
       if (this.applyGeneration === myGen) await this.lockMgr.releaseLock();
+    }
+  }
+
+  /**
+   * #3548 — roll back AssetSpaces freshly mounted during a REST apply that then
+   * failed. Each {@link RestAssetSpaceMount.unmount} is idempotent (strips the
+   * `.gitmodules` stanza + removes the folder, no-op if absent), so this safely
+   * cleans up both fully-mounted and partially-materialized AssetSpaces. Since
+   * the to-destroy set is never touched until ALL mounts succeed, unmounting
+   * only what we added restores the EXACT pre-apply mount-state. Best-effort: a
+   * failed rollback unmount is journalled but never masks the original error
+   * (leaving a freshly-pulled AssetSpace in place is a benign superset that a
+   * re-run reconciles — never user data loss).
+   */
+  private async rollbackRestMounts(
+    restMount: RestAssetSpaceMount,
+    mounted: ReadonlyArray<{ asUid: string; submodulePath: string }>,
+    targetProfileUid: string,
+  ): Promise<void> {
+    for (const target of mounted) {
+      try {
+        await restMount.unmount(target.submodulePath);
+        await this.appendJournal({
+          phase: "rest-rollback-unmounted",
+          targetUid: targetProfileUid,
+          as: target.asUid,
+          ts: this.now().toISOString(),
+        });
+      } catch (err) {
+        await this.appendJournal({
+          phase: "rest-rollback-unmounted",
+          targetUid: targetProfileUid,
+          as: target.asUid,
+          ts: this.now().toISOString(),
+          error: this.redactError(String(err)),
+        });
+      }
     }
   }
 
