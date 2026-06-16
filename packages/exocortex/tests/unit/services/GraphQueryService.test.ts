@@ -1,4 +1,5 @@
 // Jest-compatible test file
+import { expectFasterThan } from "../../helpers/perfAssert";
 import { GraphQueryService, GraphQueryServiceConfig } from "../../../src/services/GraphQueryService";
 import { InMemoryTripleStore } from "../../../src/infrastructure/rdf/InMemoryTripleStore";
 import { Triple } from "../../../src/domain/models/rdf/Triple";
@@ -439,7 +440,7 @@ describe("GraphQueryService", () => {
 
       // Performance target: <100ms for 1K nodes
       // Allow some tolerance for CI environments
-      expect(loadTime).toBeLessThan(500); // 500ms is generous for CI
+      expectFasterThan(loadTime, 500); // generous; perf signal local-only (CI-skipped)
     }, 10000); // 10 second timeout for this test
   });
 });

@@ -1,3 +1,4 @@
+import { expectFasterThan } from "../../../../helpers/perfAssert";
 import { FilterContainsOptimizer } from "../../../../../src/infrastructure/sparql/optimization/FilterContainsOptimizer";
 import { InMemoryTripleStore } from "../../../../../src/infrastructure/rdf/InMemoryTripleStore";
 import { AlgebraTranslator } from "../../../../../src/infrastructure/sparql/algebra/AlgebraTranslator";
@@ -868,7 +869,7 @@ describe("FilterContainsOptimizer", () => {
       expect(matchingSubjects.length).toBe(1);
 
       // Index lookup should be fast (< 5ms)
-      expect(indexTime).toBeLessThan(5);
+      expectFasterThan(indexTime, 5);
 
       // Index should be faster than scan for large datasets
       // (Note: this may not always hold for small datasets due to overhead)

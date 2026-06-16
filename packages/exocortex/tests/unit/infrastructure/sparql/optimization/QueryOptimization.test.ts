@@ -1,3 +1,4 @@
+import { expectFasterThan } from "../../../../helpers/perfAssert";
 import { InMemoryTripleStore } from "../../../../../src/infrastructure/rdf/InMemoryTripleStore";
 import { QueryPlanCache } from "../../../../../src/infrastructure/sparql/cache/QueryPlanCache";
 import { AlgebraOptimizer } from "../../../../../src/infrastructure/sparql/algebra/AlgebraOptimizer";
@@ -86,7 +87,7 @@ describe("Query Optimization", () => {
       // Should find ~100 triples (1000/10 predicates)
       expect(results.length).toBe(100);
       // Should be fast (<10ms for indexed lookup)
-      expect(elapsed).toBeLessThan(10);
+      expectFasterThan(elapsed, 10);
     });
 
     it("should handle subject+predicate lookup efficiently", async () => {
@@ -98,7 +99,7 @@ describe("Query Optimization", () => {
       const elapsed = performance.now() - start;
 
       expect(results.length).toBe(1);
-      expect(elapsed).toBeLessThan(5);
+      expectFasterThan(elapsed, 5);
     });
   });
 
@@ -146,7 +147,7 @@ describe("Query Optimization", () => {
       // Should find active tasks (1/4 of tasks = 125 tasks = 500/4)
       expect(results.length).toBe(125);
       // Should execute reasonably fast
-      expect(elapsed).toBeLessThan(100);
+      expectFasterThan(elapsed, 100);
     });
   });
 
@@ -192,7 +193,7 @@ describe("Query Optimization", () => {
       // Should find all tasks (200/4 = 50)
       expect(results.length).toBe(50);
       // Should complete in reasonable time
-      expect(elapsed).toBeLessThan(200);
+      expectFasterThan(elapsed, 200);
     });
   });
 
@@ -242,7 +243,7 @@ describe("Query Optimization", () => {
 
       expect(cached).toBe(optimized);
       // Cache lookup should be much faster than planning
-      expect(cacheTime).toBeLessThan(planTime);
+      expectFasterThan(cacheTime, planTime);
     });
 
     it("should handle whitespace normalization", () => {
@@ -288,7 +289,7 @@ describe("Query Optimization", () => {
       // So all 250 tasks match the filter
       expect(results.length).toBe(250);
       // Should complete in reasonable time with optimizations
-      expect(elapsed).toBeLessThan(500);
+      expectFasterThan(elapsed, 500);
     });
 
     it("should demonstrate improvement with repeated query execution", async () => {
@@ -319,7 +320,7 @@ describe("Query Optimization", () => {
       // Second execution should complete (execution time dominates)
       // The benefit of caching is primarily in reducing parsing/optimization overhead
       // which is relatively small compared to execution time
-      expect(secondTime).toBeLessThan(100); // Just verify it completes quickly
+      expectFasterThan(secondTime, 100); // perf signal (local-only; CI-skipped)
     });
   });
 

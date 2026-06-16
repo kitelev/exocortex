@@ -388,7 +388,10 @@ describe("FilenameValidator", () => {
    * Performance requirement: All operations should complete in <100ms even with adversarial input.
    */
   describe("ReDoS Security - sanitize", () => {
-    const TIMEOUT_MS = 100;
+    // 500ms: catastrophic backtracking takes SECONDS, so this still catches a
+    // ReDoS regression with margin, but is ~5x more jitter-robust than 100ms on
+    // a shared CI runner (benign sanitize completes in <1ms).
+    const TIMEOUT_MS = 500;
 
     it("should handle input with many trailing spaces quickly", () => {
       // Pattern that would cause catastrophic backtracking with /[. ]+$/

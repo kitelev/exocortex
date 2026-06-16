@@ -1,3 +1,4 @@
+import { expectFasterThan } from "../../helpers/perfAssert";
 import { PreconditionEvaluator } from "../../../src/services/PreconditionEvaluator";
 import { InMemoryTripleStore } from "../../../src/infrastructure/rdf/InMemoryTripleStore";
 import { Triple } from "../../../src/domain/models/rdf/Triple";
@@ -511,7 +512,7 @@ describe("PreconditionEvaluator", () => {
       }
       const elapsed = performance.now() - start;
 
-      expect(elapsed).toBeLessThan(50);
+      expectFasterThan(elapsed, 50);
     });
   });
 

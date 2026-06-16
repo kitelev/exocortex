@@ -19,6 +19,7 @@
  * ```
  */
 
+import { expectFasterThan } from "../../../helpers/perfAssert";
 import { QueryExecutor } from "../../../../src/infrastructure/sparql/executors/QueryExecutor";
 import { AlgebraTranslator } from "../../../../src/infrastructure/sparql/algebra/AlgebraTranslator";
 import { SPARQLParser } from "../../../../src/infrastructure/sparql/SPARQLParser";
@@ -507,7 +508,7 @@ describe("Class Properties Query (Issue #665)", () => {
       const endTime = performance.now();
 
       const executionTime = endTime - startTime;
-      expect(executionTime).toBeLessThan(100);
+      expectFasterThan(executionTime, 100);
     });
   });
 });

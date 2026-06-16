@@ -21,6 +21,7 @@
  * PrototypeChainMaterializer, NonInheritablePropertyRegistry.
  */
 
+import { expectFasterThan } from "../../helpers/perfAssert";
 import { InMemoryTripleStore } from "../../../src/infrastructure/rdf/InMemoryTripleStore";
 import { PrototypeChainMaterializer, INFERRED_GRAPH } from "../../../src/services/PrototypeChainMaterializer";
 import { NonInheritablePropertyRegistry } from "../../../src/services/NonInheritablePropertyRegistry";
@@ -723,7 +724,7 @@ describe("Smoke: Prototype Chain Materialization", () => {
       await timedMaterializer.materialize(timedStore);
       const elapsed = performance.now() - start;
 
-      expect(elapsed).toBeLessThan(10);
+      expectFasterThan(elapsed, 10);
     });
   });
 
@@ -886,7 +887,7 @@ describe("Smoke: Prototype Chain Materialization", () => {
       await timedMat.materialize(timedStore);
       const elapsed = performance.now() - start;
 
-      expect(elapsed).toBeLessThan(10);
+      expectFasterThan(elapsed, 10);
     });
 
     it("should produce correct class count after depth-3 merge", async () => {

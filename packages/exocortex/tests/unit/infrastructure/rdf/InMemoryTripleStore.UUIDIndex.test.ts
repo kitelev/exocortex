@@ -1,3 +1,4 @@
+import { expectFasterThan } from "../../../helpers/perfAssert";
 import { InMemoryTripleStore } from "../../../../src/infrastructure/rdf/InMemoryTripleStore";
 import { IRI } from "../../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../../src/domain/models/rdf/Literal";
@@ -235,7 +236,7 @@ describe("InMemoryTripleStore UUID Index", () => {
       expect((subjects[0] as IRI).value).toContain(targetUUID);
 
       // UUID index lookup should be very fast (< 1ms for 1000 triples)
-      expect(elapsed).toBeLessThan(5);
+      expectFasterThan(elapsed, 5);
     });
   });
 });
