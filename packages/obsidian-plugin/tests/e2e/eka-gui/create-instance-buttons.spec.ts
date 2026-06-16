@@ -15,8 +15,12 @@ import {
   readVaultFile,
   registerConfirmAutoAccept,
   setupGuiVault,
+  waitForCreateCommandsResolvable,
   waitForStoreSettled,
 } from "./eka-gui-helpers";
+
+/** ems__Area class UID — the seed area's `exo__Instance_class`. */
+const EMS_AREA_CLASS_UID = "82c74542-1b14-4217-b852-d84730484b25";
 
 /**
  * ============================================================================
@@ -94,6 +98,16 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
     // auto-accept it under CDP.
     registerConfirmAutoAccept(window);
     await waitForStoreSettled(window);
+    // #3587: count-plateau ≠ store complete. Gate every scenario on the store
+    // being complete enough to resolve ALL create commands on the seed area —
+    // otherwise a scenario can assert inside the transient convertVault-load
+    // window (partial store → Create Project / Create Task subgraph not yet
+    // landed). See waitForCreateCommandsResolvable for the full rationale.
+    await waitForCreateCommandsResolvable(window, SEED_AREA_REL, EMS_AREA_CLASS_UID, [
+      "Create Task",
+      "Create Area",
+      "Create Project",
+    ]);
   });
 
   test.afterAll(async () => {
@@ -119,17 +133,22 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
     );
   });
 
-  // KNOWN-BROKEN (#3587): the "Create Project" inline button does NOT render on
-  // an ems__Area in the live plugin, while sibling Create Task + Create Area
-  // (same targetClass, same group, no precondition) render fine. The
-  // perf-investigation (node fc83d482) PROVED this is NOT a resolver/content bug:
-  // a full-store repro of resolveForAssetMulti returns Create Project [bind
-  // 9f787938] correctly, the CLI `apply create-project` resolves it, and
-  // PreconditionEvaluator.evaluate(undefined)=true. The drop happens in the live
-  // render-path store (LazyAssetGraphLoader, PR #3257) — root cause TBD in #3587.
-  // Kept as test.fixme: a runnable regression gate that flips green when #3587
-  // lands (remove .fixme then). The scenario body is the correct assertion.
-  test.fixme("scenario 3 — Create Project on ems__Area sets Effort_area (#3587)", async () => {
+  // #3587 RESOLVED — was a transient store-load TIMING RACE, NOT a Create-Project
+  // render-path logic drop. Two CI DIAG rounds + a Node convertVault repro proved
+  // the resolver + converter are correct (full store → resolveForAssetMulti returns
+  // Create Project; CLI `apply create-project` resolves it). The live failure was
+  // the harness asserting inside the transient store-load window: `waitForStoreSettled`
+  // declared "settled" at the first count plateau (~15060 of ~16512 triples) while
+  // convertVault was still incrementally populating, so Create Project's binding→
+  // command→grounding subgraph (and sometimes Create Task's backlink InheritanceRule)
+  // had not yet landed — round-1 caught loadCommand(Project)=NULL, round-2 caught it
+  // OK. Fix: `waitForStoreSettled` now also polls resolveForAssetMulti(seed area)
+  // until {Create Task, Create Area, Create Project} all resolve, so every scenario
+  // asserts against a complete store. The product is eventually-consistent
+  // (re-render on store-settle wired post-#3580/v16.97.4) — no permanent miss.
+  // Follow-up #3588 tracks the EKA-layout lazyBootstrapFolders preload gap (bigger,
+  // design trade-off, post-alpha). Now un-fixme'd → live regression gate (8/8).
+  test("scenario 3 — Create Project on ems__Area sets Effort_area (#3587)", async () => {
     const { rel, fm } = await createOnTarget(
       window,
       vaultPath,
