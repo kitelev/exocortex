@@ -861,7 +861,141 @@ test.describe("EKA Obsidian leg — bootstrap → add → apply-profile → crea
       `step 4 complete — asset ${ephemeralUid} created in exoas-exodev (via ${created.via})`,
     );
 
-    log("✅ EKA Obsidian leg PASS — bootstrap + add + apply-profile + create");
+    // ---- Step 5: applied-state assertion (follow-up node fc83d482 #1) ----
+    // The apply path persists the last-applied profile cache to the device-local
+    // data.local.json (PluginSettingsStoreAdapter → PluginLocalDataStore): a clean
+    // apply leaves activeProfileUid = the applied profile and _switchInProgress =
+    // false (set before the reindex, cleared after — ProfileApplyManager.applyProfile
+    // §510-519). This is the Gherkin scenario-1 "git-commit apply проходит
+    // (activeProfileUid set, switchInProgress=False)" gate, disk-asserted.
+    log(
+      "step 5: assert applied-state (activeProfileUid set, switch not in progress)",
+    );
+    const localDataPath = path.join(
+      vaultPath,
+      ".obsidian",
+      "plugins",
+      "exocortex",
+      "data.local.json",
+    );
+    await pollUntil(
+      "data.local.json records the applied profile",
+      () => {
+        if (!fs.existsSync(localDataPath)) return false;
+        try {
+          const d = JSON.parse(fs.readFileSync(localDataPath, "utf8")) as {
+            activeProfileUid?: unknown;
+            _switchInProgress?: unknown;
+          };
+          return (
+            d.activeProfileUid === PROFILE_UID && d._switchInProgress !== true
+          );
+        } catch {
+          return false;
+        }
+      },
+      30000,
+    );
+    const localData = JSON.parse(fs.readFileSync(localDataPath, "utf8")) as {
+      activeProfileUid?: unknown;
+      _switchInProgress?: unknown;
+    };
+    expect(
+      localData.activeProfileUid,
+      "applied profile must be cached as activeProfileUid",
+    ).toBe(PROFILE_UID);
+    expect(
+      localData._switchInProgress,
+      "switch must not be left in progress after a clean apply",
+    ).not.toBe(true);
+    // Materialized effective set: floor (exo + exocmd) + catalog (registry +
+    // profiles) + the exodev leaf, all on disk — closure-expansion proof.
+    expect(
+      countMarkdown(vaultPath, EXO_DIR),
+      "floor exo must be materialised",
+    ).toBeGreaterThan(0);
+    expect(
+      countMarkdown(vaultPath, EXOCMD_DIR),
+      "floor exocmd must be materialised",
+    ).toBeGreaterThan(0);
+    expect(
+      countMarkdown(vaultPath, EXODEV_DIR),
+      "exodev leaf must be materialised",
+    ).toBeGreaterThan(0);
+    log("step 5 complete — applied-state persisted, effective set on disk");
+
+    // ---- Step 6: reload-no-hang (#3554 regression, CRITICAL) ----
+    // #3554: profile crash-recovery + cross-device reconcile used to run INLINE in
+    // onload (before onLayoutReady). reconcileToLocal() can open a blocking
+    // ApplyConfirmModal; awaiting it during onload deadlocks Obsidian on "Loading
+    // plugins…" because the modal can never be confirmed (UI not interactive yet)
+    // → workspace.layoutReady never fires. The fix (ExocortexPlugin
+    // .runDeferredProfileRecovery) defers ALL recovery to onLayoutReady, detached
+    // (`void`), so onload returns promptly. Gate: arm the recovery path
+    // (_switchInProgress=true forces recoverIfNeeded/recoverIncompleteSwitch to
+    // run on next onload) then relaunch, and assert the plugin loads + the
+    // workspace becomes ready WITHOUT hanging — the Gherkin scenario-7 gate.
+    //
+    // Honest scope: this is a SMOKE gate (recovery-armed reload reaches
+    // layoutReady). The deterministic pre-#3554 hang needs reconcileToLocal to
+    // open a modal during onload, which requires a staged cross-device divergence
+    // that this single-profile fixture cannot set up; so it does not strictly
+    // revert-verify. launchObsidianWithPlugin additionally waits for the plugin to
+    // reach `loaded`, which is itself a coarse hang gate (a never-resolving onload
+    // would exhaust its relaunch retries).
+    log(
+      "step 6: reload-no-hang (#3554) — arm recovery, relaunch, assert layoutReady",
+    );
+    const armed = { ...localData, _switchInProgress: true };
+    fs.writeFileSync(localDataPath, JSON.stringify(armed, null, 2));
+    await launcher.close();
+    launcher = await launchObsidianWithPlugin(vaultPath, "eka-leg-3-reload");
+    window = await launcher.getWindow();
+    await expect
+      .poll(
+        () =>
+          window.evaluate(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const app = (window as any).app;
+            return app?.workspace?.layoutReady === true;
+          }),
+        {
+          timeout: 60000,
+          message:
+            "workspace.layoutReady must become true after reload (#3554 — no onload hang)",
+        },
+      )
+      .toBe(true);
+    const reloadDiag = await window.evaluate(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const app = (window as any).app;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const files = app?.vault?.getMarkdownFiles?.() ?? [];
+      return {
+        loaded: !!app?.plugins?.plugins?.exocortex,
+        layoutReady: app?.workspace?.layoutReady === true,
+        markdownFiles: files.length,
+      };
+    });
+    expect(
+      reloadDiag.loaded,
+      "plugin must load after reload (no onload hang)",
+    ).toBe(true);
+    expect(
+      reloadDiag.layoutReady,
+      "workspace must be ready after reload",
+    ).toBe(true);
+    expect(
+      reloadDiag.markdownFiles,
+      "vault must be usable (markdown files indexed) after reload",
+    ).toBeGreaterThan(0);
+    log(
+      `step 6 complete — reload-no-hang: ${JSON.stringify(reloadDiag)} (#3554 gate)`,
+    );
+
+    log(
+      "✅ EKA Obsidian leg PASS — bootstrap + add + apply-profile + create + applied-state + reload-no-hang",
+    );
   });
 });
 
