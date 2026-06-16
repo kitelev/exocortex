@@ -192,3 +192,64 @@ export function assertTsFloorReconciled(
     );
   }
 }
+
+/**
+ * Per-AssetSpace floor membership check (the unmount-command counterpart of the
+ * set-level {@link assertTsFloorReconciled}). Returns `true` when a SINGLE
+ * AssetSpace — identified by its descriptor `uid` + `exo__AssetSpace_namespace`
+ * — is a floor member, so a standalone `unmount-assetspace` / `assetspace-remove`
+ * command can refuse to tear it down (it would self-brick the runtime, R24).
+ *
+ * Reconciled identity (issue #3511): a floor member matches when EITHER its
+ * legacy {@link FloorIdentity.uid} equals `uid` OR its {@link FloorIdentity.namespace}
+ * equals `namespace`. The namespace match is fork-safe (an `exoas-exo` fork keeps
+ * namespace `"exo"`) and covers EKA central-registry descriptors that mint a new
+ * UID for the same `$exo` AssetSpace. An empty `namespace` never matches by
+ * namespace (only by UID), so an un-described mount is treated as non-floor.
+ *
+ * Callers pass {@link SDK_FLOOR} (CLI/headless) or {@link PLUGIN_UI_FLOOR}
+ * (plugin) — both `[{exo}]` post-#3440.
+ */
+export function isTsFloorAssetSpace(
+  uid: string,
+  namespace: string,
+  floor: ReadonlyArray<FloorIdentity> = SDK_FLOOR,
+): boolean {
+  return floor.some(
+    (f) =>
+      (uid.length > 0 && f.uid === uid) ||
+      (namespace.length > 0 && f.namespace === namespace),
+  );
+}
+
+/**
+ * Path-derived floor guard (belt-and-suspenders over {@link isTsFloorAssetSpace}).
+ * Returns `true` when a mount path's repo basename — stripped of the `exoas-`
+ * prefix — equals a floor namespace, regardless of whether a descriptor was
+ * found. This closes the unmount floor-bypass for a `$exo` mounted at a flat
+ * legacy path (`assetspaces/exo`) or whose descriptor is un-derivable/absent
+ * (so the descriptor-scan join on `folderName` misses): the descriptor-based
+ * {@link isTsFloorAssetSpace} can't see those, but the path itself still names
+ * the floor.
+ *
+ * Examples (floor `{exo}`):
+ *   - `assetspaces/exo`                 → `exo`            → floor (flat legacy)
+ *   - `assetspaces/kitelev/exoas-exo`   → `exoas-exo`→`exo`→ floor (Maven)
+ *   - `assetspaces/acme/exoas-exo`      → `exo`            → floor (fork — still exo)
+ *   - `assetspaces/kitelev/exoas-pmbok` → `pmbok`          → NOT floor
+ *
+ * Intentionally conservative — a path whose basename resolves to a floor
+ * namespace is by convention the floor AssetSpace, so erring toward refuse
+ * (floor-policy A) is correct. The (negligible) false-positive surface is a
+ * non-floor repo deliberately named `exo` / `exoas-exo`, which does not exist.
+ */
+export function isTsFloorMountPath(
+  submodulePath: string,
+  floor: ReadonlyArray<FloorIdentity> = SDK_FLOOR,
+): boolean {
+  const norm = submodulePath.replace(/\/+$/, "");
+  const seg = norm.slice(norm.lastIndexOf("/") + 1);
+  const ns = seg.startsWith("exoas-") ? seg.slice("exoas-".length) : seg;
+  if (ns.length === 0) return false;
+  return floor.some((f) => f.namespace === ns);
+}
