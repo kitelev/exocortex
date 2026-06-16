@@ -535,38 +535,51 @@ export async function createOnTarget(
   buttonText: string,
   labelBase: string,
   backlinkRe: RegExp,
-  attempts = 4,
+  attempts = 6,
 ): Promise<{ rel: string; fm: string }> {
-  let lastDump = "";
+  let lastErr = "";
   for (let i = 1; i <= attempts; i++) {
-    await openAssetAndRender(window, targetRel);
-    const created = await clickCreateButtonAndFill(
-      window,
-      vaultPath,
-      buttonText,
-      `${labelBase} ${i}`,
-    );
-    for (const rel of created) {
-      const fm = readVaultFile(vaultPath, rel);
-      if (backlinkRe.test(fm)) return { rel, fm };
-    }
-    // Backlink absent → grounding IR not resolved yet. Clean up + retry.
-    lastDump = created
-      .map((r) => `${r}: ${readVaultFile(vaultPath, r).replace(/\n/g, " | ")}`)
-      .join("\n");
-    for (const rel of created) {
-      try {
-        fs.rmSync(path.join(vaultPath, rel));
-      } catch {
-        /* ignore */
+    try {
+      await openAssetAndRender(window, targetRel);
+      const created = await clickCreateButtonAndFill(
+        window,
+        vaultPath,
+        buttonText,
+        `${labelBase} ${i}`,
+      );
+      for (const rel of created) {
+        const fm = readVaultFile(vaultPath, rel);
+        if (backlinkRe.test(fm)) return { rel, fm };
       }
+      // Backlink absent → grounding IR not resolved yet. Clean up + retry.
+      lastErr =
+        `${backlinkRe} absent in: ` +
+        created
+          .map(
+            (r) => `${r}: ${readVaultFile(vaultPath, r).replace(/\n/g, " | ")}`,
+          )
+          .join(" ;; ");
+      for (const rel of created) {
+        try {
+          fs.rmSync(path.join(vaultPath, rel));
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch (e) {
+      // Transient: the slow-resolving button ("Create Project") may not have
+      // rendered within the per-attempt ceiling yet, or the form raced. The
+      // re-open on the next attempt re-resolves bindings/grounding against the
+      // now-more-indexed store. Clear any half-open modal before retrying.
+      lastErr = String((e as Error)?.message ?? e);
+      await clearModals(window).catch(() => undefined);
     }
     log(
-      `createOnTarget "${buttonText}" attempt ${i}/${attempts}: ${backlinkRe} absent — retrying`,
+      `createOnTarget "${buttonText}" attempt ${i}/${attempts} not resolved (${lastErr.slice(0, 160)}) — retrying`,
     );
     await new Promise((r) => setTimeout(r, 3000));
   }
   throw new Error(
-    `"${buttonText}" never wrote ${backlinkRe} after ${attempts} attempts.\nLast created:\n${lastDump}`,
+    `"${buttonText}" did not produce ${backlinkRe} after ${attempts} attempts.\nLast: ${lastErr}`,
   );
 }
