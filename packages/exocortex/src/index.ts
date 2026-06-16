@@ -63,6 +63,8 @@ export {
   TsFloorViolationError,
   assertTsFloor,
   assertTsFloorReconciled,
+  isTsFloorAssetSpace,
+  isTsFloorMountPath,
 } from "./domain/profile/TsFloorGuard";
 export type { FloorIdentity } from "./domain/profile/TsFloorGuard";
 export { transitiveDependsOnClosure } from "./domain/profile/AssetSpaceDependsOn";

@@ -2032,7 +2032,7 @@ export class ProfileApplyManager {
     }
   }
 
-  private listAllAssetSpaceInfos(): AssetSpaceInfo[] {
+  public listAllAssetSpaceInfos(): AssetSpaceInfo[] {
     // Single vault scan — extracts AssetSpace ABox metadata directly from
     // frontmatter. Independent of AssetSpaceManager (так apply tests
     // and recovery-only flows can call this without a wired manager).
