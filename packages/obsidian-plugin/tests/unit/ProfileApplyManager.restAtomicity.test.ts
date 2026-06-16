@@ -230,6 +230,8 @@ class FakeRestMount {
 class FakeUncommittedGuard {
   dirtyPaths = new Set<string>();
   throwOnCheck = false;
+  /** When set, `check` throws this exact message (to test error classification). */
+  throwMessage = "fatal: not a git repository (injected)";
   checkCalls = 0;
   async check(
     toDestroy: ReadonlyArray<{ asUid: string; submodulePath: string }>,
@@ -243,8 +245,9 @@ class FakeUncommittedGuard {
   }> {
     this.checkCalls++;
     if (this.throwOnCheck) {
-      // Mirrors a non-git vault: `git status` → `fatal: not a git repository`.
-      throw new Error("fatal: not a git repository (injected)");
+      // Default mirrors a non-git vault: `git status` → `fatal: not a git
+      // repository`. Override `throwMessage` to test a non-git-unavailable error.
+      throw new Error(this.throwMessage);
     }
     const affected = toDestroy
       .filter((t) => this.dirtyPaths.has(t.submodulePath))
@@ -539,6 +542,26 @@ describe("ProfileApplyManager REST apply atomicity (#3548)", () => {
       await expect(mgr.applyProfileViaRest("target")).resolves.toBeUndefined();
       expect(restMount.mounted).toEqual([folderOf("ems-uid")]);
       expect(restMount.unmounted).toEqual([folderOf("kpc-uid")]);
+    });
+
+    it("fails loud on an UNEXPECTED guard error (indeterminate cleanliness — no silent proceed)", async () => {
+      const { mgr, restMount, uncommittedGuard, localDataStore } = setup({
+        targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
+        materialized: [...ALL_FLOOR_UIDS, "kpc-uid"],
+        wireUncommittedGuard: true,
+      });
+      // NOT a git-unavailable signature — e.g. transient index.lock / guard bug.
+      uncommittedGuard.throwOnCheck = true;
+      uncommittedGuard.throwMessage =
+        "fatal: Unable to create '.git/index.lock': File exists";
+
+      // Cleanliness is indeterminate → per the zero-loss mandate we must NOT
+      // silently proceed (a to-destroy AssetSpace could hold uncommitted edits).
+      await expect(mgr.applyProfileViaRest("target")).rejects.toThrow(/index\.lock/);
+      // No mutation occurred (failed before the mount/unmount loops).
+      expect(restMount.mounted).toEqual([]);
+      expect(restMount.unmounted).toEqual([]);
+      expect(localDataStore.getActiveProfileUid()).toBe("source");
     });
 
     it("does not require uncommittedGuard to be wired (mobile path)", async () => {

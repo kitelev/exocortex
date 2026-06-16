@@ -1293,9 +1293,16 @@ export class ProfileApplyManager {
           );
         }
       } catch (e) {
-        // A real dirty-tree abort must propagate; a git-unavailable error
-        // (mobile / non-git desktop vault) must NOT — proceed (reorder covers it).
+        // A real dirty-tree abort must always propagate.
         if (e instanceof UncommittedChangesAbortError) throw e;
+        // Otherwise: ONLY a git-unavailable error (the vault is not a git repo,
+        // or no `git` binary) means "no commit concept → can't check → proceed"
+        // (the mount-before-unmount reorder is the atomicity guarantee there).
+        // Any OTHER error (e.g. transient `index.lock`, an unexpected guard bug)
+        // leaves cleanliness INDETERMINATE — and silently proceeding could
+        // discard uncommitted edits in a to-destroy AssetSpace. Per the zero-loss
+        // mandate we fail loud instead so the user retries rather than lose work.
+        if (!ProfileApplyManager.isGitUnavailableError(e)) throw e;
       }
     }
 
@@ -1518,6 +1525,22 @@ export class ProfileApplyManager {
       // runApplyMutation.
       if (this.applyGeneration === myGen) await this.lockMgr.releaseLock();
     }
+  }
+
+  /**
+   * #3548 — classify an {@link UncommittedChangesGuard} failure: was git simply
+   * UNAVAILABLE (the vault is not a git repo, or no `git` binary on PATH), in
+   * which case "uncommitted relative to HEAD" is undefined and the REST apply
+   * proceeds (the mount-before-unmount reorder is the guarantee)? Any OTHER
+   * error is treated as indeterminate → fail loud (caller re-throws). The guard
+   * surfaces git stderr inside the thrown message (`… — stderr: fatal: not a git
+   * repository …`), and a missing binary surfaces as `spawn git ENOENT`.
+   */
+  private static isGitUnavailableError(e: unknown): boolean {
+    const msg = e instanceof Error ? e.message : String(e);
+    return /not a git repository|spawn git|git:? not found|command not found|ENOENT/i.test(
+      msg,
+    );
   }
 
   /**

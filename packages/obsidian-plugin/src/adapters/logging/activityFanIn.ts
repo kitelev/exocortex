@@ -33,6 +33,9 @@ const PHASE_LABELS: Record<SwitchJournalEntry["phase"], string> = {
 
 function levelForPhase(phase: SwitchJournalEntry["phase"]): ActivityLevel {
   if (phase.includes("failed") || phase.includes("aborted")) return "error";
+  // #3548 — a rollback unmount is a recovery action on a failure path: surface
+  // it above plain "info" (the paired `apply-failed` entry carries "error").
+  if (phase === "rest-rollback-unmounted") return "warn";
   return "info";
 }
 
