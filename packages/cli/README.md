@@ -61,6 +61,10 @@ The following v15 verbs were **removed**: `batch`, `batch-repair`, `command`, `d
 | [`apply-profile`](#apply-profile)   | Apply an `exo__Profile` (mount-state filesystem mutation)                      |
 | [`bootstrap`](#bootstrap)           | Bootstrap a vault with the SDK floor AssetSpace                                |
 | [`assetspace-add`](#assetspace-add) | Add a single AssetSpace to a vault by GitHub URL                               |
+| [`assetspace-remove`](#assetspace-remove) | Unmount a single AssetSpace from a vault (inverse of `assetspace-add`)   |
+| [`exosync`](#exosync)               | Sync / pull / push the materialized AssetSpace set over the GitHub REST API     |
+| [`exosync-parity`](#exosync-parity) | Read-only ExoSync divergence report (M1/M2 parity check)                       |
+| [`resolve-deps`](#resolve-deps)     | Resolve an AssetSpace's transitive `dependsOn` closure from the registry (CI gate) |
 | [`experimental`](#experimental)     | Opt-in experimental features (`rest-push`)                                     |
 
 ---
@@ -507,6 +511,93 @@ npx @kitelev/exocortex-cli assetspace-add \
 | `--ref <branch>`  | `main`       | Branch ref to pull from                                           |
 | `--token <pat>`   | —            | GitHub PAT for private repos (or env `GITHUB_TOKEN` / `GH_TOKEN`) |
 | `--json`          | off          | Emit result as JSON                                               |
+
+### assetspace-remove
+
+Unmount a single AssetSpace from a vault — the inverse of [`assetspace-add`](#assetspace-add). Strips the AssetSpace's `.gitmodules` stanza and deletes its mount folder. TS-floor AssetSpaces (`{exo}`) are refused (removing the floor would self-brick the engine).
+
+```bash
+npx @kitelev/exocortex-cli assetspace-remove \
+  --vault ~/vault \
+  --folder assetspaces/kitelev/exoas-pmbok-ontology
+```
+
+| Option            | Default      | Description                                                                                  |
+| ----------------- | ------------ | -------------------------------------------------------------------------------------------- |
+| `--vault <path>`  | **required** | Path to the target vault                                                                     |
+| `--folder <path>` | —            | Vault-relative mount path to unmount (e.g. `assetspaces/kitelev/exoas-pmbok-ontology`). Takes precedence over `--url`. |
+| `--url <url>`     | —            | Public GitHub URL of the AssetSpace — derives the canonical mount path (parity with `assetspace-add`). |
+| `--json`          | off          | Emit result as JSON                                                                          |
+
+Provide exactly one of `--folder` or `--url`.
+
+### exosync
+
+ExoSync over the GitHub REST API — the CLI counterpart of the plugin's **`Exocortex: Sync`** command (RFC `4e4dc453` Phase B). Syncs the **materialized** AssetSpace/FileSpace set against each space's GitHub repository; no `git` binary required. Three direction subcommands share the same options. See [docs/exosync.md](../../docs/exosync.md) for the full sync model, merge layer, and conflict quarantine.
+
+```bash
+npx @kitelev/exocortex-cli exosync sync --vault ~/vault --token-from-gh   # full pull→merge→push
+npx @kitelev/exocortex-cli exosync pull --vault ~/vault --token-from-gh   # apply remote only
+npx @kitelev/exocortex-cli exosync push --vault ~/vault --token-from-gh   # send local delta only
+```
+
+| Subcommand | Description                                                                       |
+| ---------- | --------------------------------------------------------------------------------- |
+| `sync`     | Full pull → merge → push cycle for every materialized repo                        |
+| `pull`     | Apply remote changes only (nothing leaves the device; local changes re-derive)    |
+| `push`     | Send the local delta only (remote changes pin to re-derive on the next pull/sync) |
+
+All three accept:
+
+| Option                    | Default     | Description                                                                  |
+| ------------------------- | ----------- | --------------------------------------------------------------------------- |
+| `--vault <path>`          | **required** | Vault root path                                                            |
+| `--config-dir <name>`     | `.obsidian` | Obsidian config dir name (watermark location)                               |
+| `--quarantine-repo <url>` | —           | Quarantine repo URL (`https://github.com/<owner>/<repo>`) — **required for FileSpaces** |
+| `--token <pat>`           | —           | GitHub PAT (or env `GITHUB_TOKEN` / `GH_TOKEN`). Prefer `--token-from-gh`.   |
+| `--token-from-gh`         | off         | Resolve the PAT via `gh auth token`                                         |
+| `--json`                  | off         | Print the full per-repo result array as JSON                                |
+| `--api-base <url>`        | —           | GitHub API base (testing)                                                   |
+
+Exit codes: `0` all clean · `1` at least one repo unresolved/errored · `2` vacuous (no materialized AssetSpaces found).
+
+> ⚠ Do not run the CLI sync while the plugin is mid-sync on the same vault — the in-flight guard is per-process (watermark write is last-writer-wins across processes).
+
+### exosync-parity
+
+Read-only ExoSync divergence report (RFC `4e4dc453` Phase E, M1/M2). Compares the materialized sync units against their remote heads **without writing** — useful for verifying that a vault is in sync, or auditing a parallel-run.
+
+```bash
+npx @kitelev/exocortex-cli exosync-parity --vault ~/vault --token-from-gh
+```
+
+| Option                | Default     | Description                                                                |
+| --------------------- | ----------- | -------------------------------------------------------------------------- |
+| `--vault <path>`      | **required** | Vault root path                                                           |
+| `--config-dir <name>` | `.obsidian` | Obsidian config dir name (watermark location)                              |
+| `--token <pat>`       | —           | GitHub PAT (or env `GITHUB_TOKEN` / `GH_TOKEN`). Prefer `--token-from-gh`.  |
+| `--token-from-gh`     | off         | Resolve the PAT via `gh auth token`                                        |
+| `--json`              | off         | Print the full round record as JSON                                        |
+| `--api-base <url>`    | —           | GitHub API base (testing)                                                  |
+
+Exit codes: `0` in parity · `1` divergence found · `2` vacuous (no materialized sync units).
+
+### resolve-deps
+
+Resolve an AssetSpace repo's transitive `dependsOn` closure from the central registry and print dependency clone URLs (issue #3513). Primarily used by the **per-AssetSpace SHACL CI gate** to materialize dependent TBox before validation.
+
+```bash
+npx @kitelev/exocortex-cli resolve-deps \
+  --registry ./exoas-registry \
+  --self kitelev/exoas-ems-ontology
+```
+
+| Option              | Default      | Description                                                                                                   |
+| ------------------- | ------------ | ------------------------------------------------------------------------------------------------------------ |
+| `--registry <path>` | **required** | Path to a checked-out central registry (`kitelev/exoas-registry`)                                            |
+| `--self <id>`       | **required** | Identity of the calling repo: an `owner/repo` slug (matches GitHub's `github.repository`), a full git URL, or a bare namespace |
+| `--format <type>`   | `urls`       | Output format: `urls` (one clone URL per line) or `json` (full diagnostics)                                  |
+| `--strict`          | off          | Exit non-zero (`2`) when `self` is not registered, instead of validating standalone                          |
 
 ### experimental
 

@@ -1,8 +1,8 @@
 # AI Development Patterns
 
-> Lessons learned from 96+ completed GitHub Issues (December 2025)
-
-This document captures patterns discovered through AI-driven development, distilled from actual implementation experience.
+> Patterns discovered through AI-driven development, distilled from actual implementation experience.
+>
+> **Note:** the concrete examples and statistics below are an **early snapshot** (≈ issues #896–989, December 2025) and have not been re-tallied against the current backlog. The *patterns* are intended to be durable; the issue numbers and counts are illustrative of when they emerged, not a running total.
 
 ---
 
