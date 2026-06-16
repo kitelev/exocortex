@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📖 Documentation
+    url: https://github.com/kitelev/exocortex/blob/main/docs/README.md
+    about: Getting Started, Troubleshooting, and reference docs — please check here first.
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/kitelev/exocortex/security/advisories/new
+    about: Please report security issues privately, not as a public issue.

@@ -133,6 +133,22 @@ Exocortex removes lock-in at **two** layers, governed by two distinct, complemen
 
 Together they guarantee neither the meaning of your knowledge nor the ability to act on it is captive to a single application.
 
+#### The no-lock-in triad
+
+A third invariant extends the *invocation* layer across **platforms**, not just clients. Reason about all three together:
+
+| Invariant                          | Governs                       | Status        |
+| ---------------------------------- | ----------------------------- | ------------- |
+| **Homoiconicity**                  | data layer (RDF)              | ✅ invariant  |
+| **UI/CLI Parity**                  | invocation across clients     | ✅ invariant  |
+| **Desktop ↔ Mobile Command Parity**| invocation across platforms   | ✅ invariant  |
+
+> **Desktop ↔ Mobile Command Parity Invariant.** Every plugin command MUST work on **both** desktop and mobile (iPhone/iPad). No command may be gated desktop-only. Where a dependency is desktop-only (Node `fs`, git binary), the command is implemented through a cross-platform path (`vault.adapter` / GitHub REST), never hidden on mobile.
+>
+> **📋 Target picture — Desktop / Mobile / Smartwatch parity:** every surface drives the full system. Smartwatch is an *aspirational direction*, not a current commitment.
+
+This invariant is codified in the project `CLAUDE.md` and was driven by real mobile dogfooding (e.g. the git-free REST mount path so Bootstrap / Add-AssetSpace / Apply-profile / Sync all run on iOS, which has no git binary).
+
 **See also:** the enforced ports/adapters statement in [ARCHITECTURE.md](./ARCHITECTURE.md); the validator-specific enforcement instance in [docs/CROSS_RUNTIME_PARITY.md](./docs/CROSS_RUNTIME_PARITY.md); the SDK-platform program _"AssetSpace + Profile platform — exo as SDK"_ (vault UID `ea93b829`, RFC `01a83de8`) that this invariant formalizes. A full capability-by-capability parity audit across all features is future work, tracked under that program.
 
 ---
