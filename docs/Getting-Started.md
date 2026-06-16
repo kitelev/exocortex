@@ -75,10 +75,17 @@ You describe your entities (tasks, projects, areas, or any custom type) in YAML 
 1. Open Obsidian Settings → Community plugins → Browse
 2. Search for **"BRAT"** (full name: "Obsidian42 - BRAT")
 3. Click Install → Enable
-4. Open BRAT settings → **Add beta plugin**
-5. Enter `kitelev/exocortex` in the **GitHub repository** field. Either the `owner/repo` form or the full GitHub URL works. Leave **Personal Access Token** empty and keep **Enable after installing the plugin** checked.
-6. Click **Add Plugin**
-7. Go to Settings → Community plugins → enable **Exocortex**
+4. Open the command palette (**Cmd/Ctrl + P**) and run **"BRAT: Plugins: Add a beta plugin for testing"**.
+
+   > **Note — BRAT 2.x has no "Add beta plugin" button.** In current BRAT (2.0.8+), BRAT's own settings tab does *not* have an "Add beta plugin" button at the top — adding a plugin is a **command-palette** action, not a settings-tab button. If you were looking for a button in BRAT's settings, that flow is gone.
+
+5. In the **Add beta plugin** dialog, enter `kitelev/exocortex` in the **GitHub repository** field. Either the `owner/repo` form or the full GitHub URL works. Leave **Personal Access Token** empty.
+6. **Select a release from the "Select a version…" dropdown.**
+
+   > ⚠️ **This step is required.** The dialog will not add the plugin until you *explicitly* pick a version from the dropdown — the implied "latest" is **not** applied automatically, and clicking **Add Plugin** with the dropdown untouched appears to do nothing. Choose the newest version (top of the list).
+
+7. Keep **Enable after installing the plugin** checked, then click **Add Plugin**.
+8. Confirm **Exocortex** is enabled under Settings → Community plugins (enable it if it isn't already).
 
 BRAT will automatically keep the plugin updated with new releases.
 
@@ -462,9 +469,9 @@ These are the most common problems encountered by first-time users. Start here b
 
 **Fix** (fallback path, does not require the URL handler):
 
-1. Open Obsidian → Settings → **Community plugins** → Installed plugins → **BRAT** → **Options**.
-2. Click **Add Beta Plugin**.
-3. Paste `kitelev/exocortex` (or the full GitHub URL) and confirm.
+1. Open the command palette (**Cmd/Ctrl + P**) and run **"BRAT: Plugins: Add a beta plugin for testing"** (in BRAT 2.x there is no "Add Beta Plugin" button — see [Installation Step 1](#step-1-install-via-brat)).
+2. Paste `kitelev/exocortex` (or the full GitHub URL) into the **GitHub repository** field.
+3. **Pick a version from the "Select a version…" dropdown** (required — the dialog ignores **Add Plugin** until a version is selected), then click **Add Plugin**.
 4. Enable Exocortex from Community plugins.
 
 ### "Create Task creates the file in an unexpected folder"
