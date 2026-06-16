@@ -1462,6 +1462,30 @@ export class ProfileApplyManager {
     if (cacheLayer === undefined || localDataStore === undefined || vaultRootPath === undefined) {
       throw new Error("recoverIncompleteSwitch: apply dependencies not wired");
     }
+
+    // Nothing-to-recover guard (#3571). On a vault that has never run a profile
+    // switch there is no journal on disk AND no persisted `_switchInProgress`
+    // flag, so recovery has nothing to do. Return early — skipping the
+    // side-effect `recovery-completed` journal write below, which on a fresh
+    // vault (where `.exocortex/` does not exist yet) throws ENOENT because
+    // `vault.adapter.write` never creates parent dirs. That throw used to
+    // propagate to the caller's catch and surface a scary
+    // "[ExocortexPlugin] apply recovery failed" Notice on first launch. A REAL
+    // incomplete switch always left a journal (and/or set the in-progress
+    // flag), so this guard never suppresses a genuine recovery — or its
+    // failure toast.
+    const journalExists = await this.app.vault.adapter.exists(this.journalPath);
+    if (!journalExists && !localDataStore.isSwitchInProgress()) {
+      return { restored: [] };
+    }
+
+    // Defensive (mirrors the apply paths at ll. 477/908/1334): we are past the
+    // guard, so a real recovery is in flight. A genuine incomplete switch left
+    // the journal — `.exocortex/` exists — but if `_switchInProgress` was set
+    // in the crash window before the first journal write, ensure the dir so the
+    // `recovery-completed` write can't ENOENT and mask the real outcome.
+    await this.ensureExocortexDir();
+
     const events = await this.readJournalTail(200);
     const destroyedAsUids = new Set<string>();
     const materializedAsUids = new Set<string>();

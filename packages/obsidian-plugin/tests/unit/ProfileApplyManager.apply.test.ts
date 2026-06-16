@@ -1307,6 +1307,33 @@ describe("ProfileApplyManager.applyProfile", () => {
   });
 });
 
+/**
+ * Make a fake adapter production-shape for the fresh-vault case: real Obsidian
+ * `vault.adapter.write` does NOT create parent directories, so a write into a
+ * dir that doesn't exist throws ENOENT (see ProfileApplyManager.ensureExocortexDir
+ * docstring). The shared makeFakeApp `write` is lenient (it just sets the file
+ * regardless of the parent), which is why the original #3571 fresh-install
+ * recovery bug slipped past the existing tests. This wrapper enforces the strict
+ * contract so the recovery path is exercised faithfully (test-fixture-realism).
+ */
+function makeAdapterWriteStrict(app: App): void {
+  const adapter = app.vault.adapter as unknown as {
+    write: (p: string, d: string) => Promise<void>;
+    exists: (p: string) => Promise<boolean>;
+  };
+  const origWrite = adapter.write.bind(adapter);
+  adapter.write = async (p: string, d: string): Promise<void> => {
+    const slash = p.lastIndexOf("/");
+    if (slash > 0) {
+      const dir = p.slice(0, slash);
+      if (!(await adapter.exists(dir))) {
+        throw new Error(`ENOENT: no such file or directory, open '${p}'`);
+      }
+    }
+    return origWrite(p, d);
+  };
+}
+
 describe("ProfileApplyManager.recoverIncompleteSwitch", () => {
   it("restores destroyed-but-not-materialized AS from cache", async () => {
     const { mgr, cacheLayer, app } = setup({
@@ -1388,6 +1415,111 @@ describe("ProfileApplyManager.recoverIncompleteSwitch", () => {
     await app.vault.adapter.write(".exocortex/switch-journal.jsonl", "");
     await mgr.recoverIncompleteSwitch();
     expect(localDataStore.isSwitchInProgress()).toBe(false);
+  });
+
+  // === #3571 — fresh-install false-alarm toast guard ===
+
+  it("#3571 — fresh install (no journal, no in-progress flag): no-op, no ENOENT toast", async () => {
+    const { mgr, app, notifyMessages } = setup({
+      targetUid: "target",
+      sourceUid: null,
+      targetIncludes: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+      ],
+      materialized: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+      ],
+    });
+    // Production-shape: on a fresh vault `.exocortex/` does not exist and the
+    // real adapter.write throws ENOENT (it never creates parent dirs).
+    makeAdapterWriteStrict(app);
+
+    // Fresh install: no journal file, no `_switchInProgress` flag, no
+    // `.exocortex/` dir. Pre-fix the unconditional `recovery-completed` journal
+    // write hit ENOENT → threw → caller surfaced the scary Notice. Post-fix the
+    // guard returns early.
+    await expect(mgr.recoverIncompleteSwitch()).resolves.toEqual({
+      restored: [],
+    });
+    // No journal entry was written (true no-op).
+    expect(
+      await app.vault.adapter.exists(".exocortex/switch-journal.jsonl"),
+    ).toBe(false);
+    // No user-facing Notice.
+    expect(notifyMessages).toEqual([]);
+  });
+
+  it("#3571 — _switchInProgress set but no journal yet (crash window): recovers without ENOENT", async () => {
+    const { mgr, app, localDataStore } = setup({
+      targetUid: "target",
+      sourceUid: null,
+      targetIncludes: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+      ],
+      materialized: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+      ],
+    });
+    makeAdapterWriteStrict(app);
+    // Crash window: the in-progress flag was persisted before the first journal
+    // write, so the flag is set but no journal / `.exocortex/` dir exists. The
+    // guard must NOT early-return here (there is a real interrupted switch), and
+    // the defensive ensureExocortexDir() must prevent the recovery-completed
+    // write from ENOENT-ing.
+    await localDataStore.save({ activeProfileUid: "x", _switchInProgress: true });
+
+    await expect(mgr.recoverIncompleteSwitch()).resolves.toEqual({
+      restored: [],
+    });
+    // Stuck flag cleared.
+    expect(localDataStore.isSwitchInProgress()).toBe(false);
+  });
+
+  it("#3571 — real incomplete switch + genuine recovery failure: still throws (toast preserved)", async () => {
+    const { mgr, app, localDataStore } = setup({
+      targetUid: "target",
+      sourceUid: null,
+      targetIncludes: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+      ],
+      materialized: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+      ],
+    });
+    // Real incomplete switch: in-progress flag + journal with a destroyed-not-
+    // materialized AS (so the guard passes and recovery work runs).
+    await localDataStore.save({ activeProfileUid: "x", _switchInProgress: true });
+    await app.vault.adapter.write(
+      ".exocortex/switch-journal.jsonl",
+      JSON.stringify({
+        phase: "phase2-destroy-cached",
+        targetUid: "t",
+        as: "ems-uid",
+        ts: "2026-06-02T00:00:00Z",
+      }) + "\n",
+    );
+    // Genuine recovery failure: the flag-clear save rejects. The guard must NOT
+    // swallow this — the caller relies on the throw to surface the legitimate
+    // "apply recovery failed" Notice.
+    (localDataStore as unknown as { save: unknown }).save = async (): Promise<void> => {
+      throw new Error("simulated localDataStore failure during recovery");
+    };
+
+    await expect(mgr.recoverIncompleteSwitch()).rejects.toThrow(
+      "simulated localDataStore failure during recovery",
+    );
   });
 });
 
