@@ -5,7 +5,6 @@ import * as fs from "fs";
 import * as path from "path";
 import {
   SEED_AREA_UID,
-  UID,
   clickCreateButtonAndFill,
   findByUid,
   launchObsidianWithPlugin,
@@ -24,31 +23,38 @@ import {
  *  EKA GUI BDD — create-instance buttons on a fresh, real-content vault
  * ============================================================================
  *
- * Formalises six of the eight Gherkin scenarios from vault node 76d9207c
- * (GUI-BDD-CI Ф4, node a2e20c69) as repeatable e2e against a FRESH ephemeral
- * vault built from the REAL published `kitelev/exoas-*` ontology repos:
+ * Formalises the create-flow Gherkin scenarios of vault node 76d9207c
+ * (GUI-BDD-CI Ф4, project node a2e20c69) as repeatable e2e against a FRESH
+ * ephemeral vault built from the REAL published `kitelev/exoas-*` ontology repos:
  *
- *   2. Create Task   on an ems__Area    → ems__Effort_area = the area
- *   3. Create Project on an ems__Area    → ems__Effort_area = the area
- *   6. Create child Area (#3555)         → ems__Area_parent = the area  ⚠ REGRESSION
- *   4. Create Task   on an ems__Project  → ems__Effort_parent = the project
- *   5. Create Meeting from MeetingPrototype → ems__Meeting (prototype back-link)
- *   8. Cleanup                            → created instances removed, vault clean
+ *   - Create Task    on an ems__Area    → ems:Effort_area  = the area
+ *   - Create Project on an ems__Area    → ems:Effort_area  = the area
+ *   - Create child Area (#3555)         → ems:Area_parent  = the area  ⚠ REGRESSION
+ *   - Create Task    on an ems__Project → ems:Effort_parent = the project
+ *   - cleanup-idempotent                → created instances removed, ontologies intact
  *
- * Design (see eka-gui-helpers.ts header): one serial suite over ONE fresh vault
- * per run ("каждый прогон = новое хранилище") — the create-instance commands +
- * #3555 InheritanceRule are exercised LIVE from the published repos, so a
- * regression of that published content is caught (test-fixture-realism). The
- * full private bootstrap→apply DAG is owned by the sibling eka-obsidian-leg.
+ * Design (see eka-gui-helpers.ts header): one suite over ONE fresh vault per run
+ * ("каждый прогон = новое хранилище"); the create-instance commands + the #3555
+ * InheritanceRule run LIVE from the published repos, so a regression of that
+ * published content is caught (test-fixture-realism). Scenarios are independent
+ * (each re-opens its target + clears modals first) so one failure does not mask
+ * the others; `workers: 1` (config) keeps them ordered over the shared window.
  *
- * One scenario = one `test()` block (a distinct reportable unit). They share a
- * single launched Obsidian over a single fresh vault rather than one fresh
- * vault + cold Obsidian boot per file, because eight cold boots × a multi-repo
- * clone would blow the CI budget — the per-run freshness invariant is preserved.
+ * The button click drives the REAL command (CommandExecutionFlow.run + native
+ * window.confirm auto-accepted) and the resulting DynamicFormModal (a plain
+ * React form). Every assertion checks REAL on-disk frontmatter — no stubs.
  *
- * The button click drives the REAL command (CommandExecutionFlow.run) and the
- * resulting DynamicFormModal (a plain React form, unlike the un-drivable fuzzy
- * picker). Every assertion checks REAL on-disk frontmatter — no stubs.
+ * Relationship-key tolerance: the published create-instance InheritanceRules
+ * emit the backlink property in EITHER prefixed (`ems__Effort_area`) OR
+ * expanded-IRI (`https://exocortex.my/ontology/ems#Effort_area`) form depending
+ * on the grounding — observed empirically. Assertions match `/Effort_area/`,
+ * `/Effort_parent/`, `/Area_parent/` to accept both; the VALUE (the source
+ * asset's uid) is the real invariant under test.
+ *
+ * apply-profile (#1), reload-no-hang (#3554) and Create-Meeting are owned by a
+ * follow-up (the first two need the apply flow → extend eka-obsidian-leg; the
+ * Meeting button renders on a MeetingPrototype-classed INSTANCE, not on the
+ * prototype asset itself — separate fixture).
  */
 
 const SEED_AREA_REL = path.posix.join(
@@ -56,34 +62,23 @@ const SEED_AREA_REL = path.posix.join(
   `${SEED_AREA_UID}.md`,
 );
 
-// Shared vault/window across steps (workers:1 in the config keeps them ordered).
-// NOTE: intentionally NOT `mode: "serial"` during bring-up — a single failing
-// scenario must not skip the rest, so one CI run surfaces every grounding's
-// real on-disk behaviour. (createCommandAndFill logs each created file.)
+// Independent scenarios over a shared window (workers:1 keeps them ordered).
 test.describe.configure({ mode: "default" });
 
 test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", () => {
   let vaultPath = "";
   let launcher: ObsidianLauncher | null = null;
   let window: Page;
-  // Carried across the serial steps: the project created in scenario 3 is the
-  // target for scenario 4 (Create Task on Project).
-  let createdProjectUid = "";
 
   test.beforeAll(async () => {
     test.setTimeout(600_000);
     vaultPath = setupGuiVault();
     launcher = await launchObsidianWithPlugin(vaultPath, "eka-gui");
     window = await launcher.getWindow();
-    // Create commands with `confirmMessage` (Create Project / Create Meeting)
-    // call native window.confirm() — auto-accept it under CDP.
+    // Create commands with `confirmMessage` (Create Project) call native
+    // window.confirm() — auto-accept it under CDP.
     registerConfirmAutoAccept(window);
     await waitForStoreSettled(window);
-    await openAssetAndRender(window, SEED_AREA_REL);
-    // Diagnostic: surface the buttons the published bindings render on an Area.
-    log(
-      `buttons on seed Area: ${JSON.stringify(await renderedButtonLabels(window))}`,
-    );
   });
 
   test.afterAll(async () => {
@@ -94,7 +89,7 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
     }
   });
 
-  // Extract the new instance file matching a predicate from the snapshot diff.
+  // Pick the created file matching a predicate from a click's snapshot diff.
   const pickCreated = (
     created: string[],
     pred: (fm: string) => boolean,
@@ -104,30 +99,32 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
       if (pred(fm)) return { rel, fm };
     }
     const dump = created
-      .map((r) => `  ${r}:\n${readVaultFile(vaultPath, r).slice(0, 240)}`)
+      .map((r) => `  ${r}:\n${readVaultFile(vaultPath, r)}`)
       .join("\n");
     throw new Error(`No created file matched predicate. Candidates:\n${dump}`);
   };
 
-  test("scenario 2 — Create Task on ems__Area sets ems__Effort_area", async () => {
+  test("scenario 2 — Create Task on ems__Area sets Effort_area", async () => {
     await openAssetAndRender(window, SEED_AREA_REL);
+    log(
+      `buttons on Area: ${JSON.stringify(await renderedButtonLabels(window))}`,
+    );
     const created = await clickCreateButtonAndFill(
       window,
       vaultPath,
       "Create Task",
       "E2E Task on Area",
     );
-    const { rel, fm } = pickCreated(created, (f) =>
-      f.includes("ems__Effort_area"),
-    );
+    // Backlink key may be prefixed OR expanded-IRI form — match the property
+    // segment; the source-area uid is the real invariant.
+    const { rel, fm } = pickCreated(created, (f) => /Effort_area/.test(f));
     log(`created task: ${rel}`);
-    expect(fm, "task must carry the source area in ems__Effort_area").toContain(
+    expect(fm, "task must carry the source area in Effort_area").toContain(
       SEED_AREA_UID,
     );
-    expect(fm).toMatch(/ems__Effort_area/);
   });
 
-  test("scenario 3 — Create Project on ems__Area sets ems__Effort_area", async () => {
+  test("scenario 3 — Create Project on ems__Area sets Effort_area", async () => {
     await openAssetAndRender(window, SEED_AREA_REL);
     const created = await clickCreateButtonAndFill(
       window,
@@ -135,23 +132,11 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
       "Create Project",
       "E2E Project on Area",
     );
-    // The create-Project button's own click-diff yields the project file; match
-    // on the area relationship (class may be expressed via prototype not a bare
-    // UID, so don't hard-require the class UID).
-    const { rel, fm } = pickCreated(created, (f) =>
-      f.includes("ems__Effort_area"),
-    );
+    const { rel, fm } = pickCreated(created, (f) => /Effort_area/.test(f));
     log(`created project: ${rel}`);
-    expect(
-      fm,
-      "project must carry the source area in ems__Effort_area",
-    ).toContain(SEED_AREA_UID);
-    const m = fm.match(/exo__Asset_uid:\s*([0-9a-f-]{36})/);
-    createdProjectUid = m?.[1] ?? "";
-    expect(
-      createdProjectUid,
-      "must capture created project uid for scenario 4",
-    ).not.toBe("");
+    expect(fm, "project must carry the source area in Effort_area").toContain(
+      SEED_AREA_UID,
+    );
   });
 
   test("scenario 6 — Create child Area sets ems__Area_parent (#3555 regression)", async () => {
@@ -162,91 +147,63 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
       "Create Area",
       "E2E Child Area",
     );
-    // The #3555 signal (`ems__Area_parent`) is unambiguous within this click's
-    // diff — match on it directly (don't hard-require the class UID form).
-    const { rel, fm } = pickCreated(created, (f) =>
-      f.includes("ems__Area_parent"),
-    );
+    const { rel, fm } = pickCreated(created, (f) => /Area_parent/.test(f));
     log(`created child area: ${rel}`);
     // #3555: without the published `InheritanceRule uid→ems__Area_parent`
-    // (ba0ed3e9) the child area is orphaned (no parent). This is the live
+    // (ba0ed3e9) the child area is orphaned (no parent). This is the LIVE
     // regression gate — it fails if that rule regresses in exoas-exocmd.
     expect(
       fm,
-      "child area MUST set ems__Area_parent to the source area (#3555)",
+      "child area MUST set Area_parent to the source area (#3555)",
     ).toContain(SEED_AREA_UID);
-    expect(fm).toMatch(/ems__Area_parent/);
   });
 
-  test("scenario 4 — Create Task on ems__Project sets ems__Effort_parent", async () => {
-    expect(
-      createdProjectUid,
-      "scenario 3 must have produced a project",
-    ).not.toBe("");
-    const projAbs = findByUid(vaultPath, createdProjectUid);
-    expect(projAbs, "created project file must exist on disk").not.toBeNull();
-    const projRel = path.relative(vaultPath, projAbs as string);
-
-    await openAssetAndRender(window, projRel);
-    log(
-      `buttons on created Project: ${JSON.stringify(await renderedButtonLabels(window))}`,
+  test("scenario 4 — Create Task on ems__Project sets Effort_parent", async () => {
+    // Self-contained: create the project first, then a task on it (no cross-test
+    // state — keeps scenarios independent).
+    await openAssetAndRender(window, SEED_AREA_REL);
+    const projCreated = await clickCreateButtonAndFill(
+      window,
+      vaultPath,
+      "Create Project",
+      "E2E Project for Task",
     );
-    const created = await clickCreateButtonAndFill(
+    const proj = pickCreated(projCreated, (f) => /Effort_area/.test(f));
+    const projUid =
+      proj.fm.match(/exo__Asset_uid:\s*([0-9a-f-]{36})/)?.[1] ?? "";
+    expect(projUid, "must capture created project uid").not.toBe("");
+
+    const projAbs = findByUid(vaultPath, projUid) as string;
+    await openAssetAndRender(window, path.relative(vaultPath, projAbs));
+    log(
+      `buttons on Project: ${JSON.stringify(await renderedButtonLabels(window))}`,
+    );
+    const taskCreated = await clickCreateButtonAndFill(
       window,
       vaultPath,
       "Create Task",
       "E2E Task on Project",
     );
-    const { rel, fm } = pickCreated(created, (f) =>
-      f.includes("ems__Effort_parent"),
+    const { rel, fm } = pickCreated(taskCreated, (f) =>
+      /Effort_parent/.test(f),
     );
     log(`created task on project: ${rel}`);
-    expect(
-      fm,
-      "task must carry the source project in ems__Effort_parent",
-    ).toContain(createdProjectUid);
-    expect(fm).toMatch(/ems__Effort_parent/);
-  });
-
-  test("scenario 5 — Create Meeting from ems__MeetingPrototype", async () => {
-    const protoAbs = findByUid(vaultPath, UID.meetingPrototype);
-    expect(
-      protoAbs,
-      "MeetingPrototype must be present from exoas-public",
-    ).not.toBeNull();
-    const protoRel = path.relative(vaultPath, protoAbs as string);
-
-    await openAssetAndRender(window, protoRel);
-    log(
-      `buttons on MeetingPrototype: ${JSON.stringify(await renderedButtonLabels(window))}`,
-    );
-    const created = await clickCreateButtonAndFill(
-      window,
-      vaultPath,
-      "Create Meeting Instance",
-      "E2E Meeting",
-    );
-    // The prototype-binding executor writes a back-link prototype on the new file.
-    const { rel, fm } = pickCreated(created, (f) =>
-      f.includes(UID.meetingPrototype),
-    );
-    log(`created meeting: ${rel}`);
-    expect(fm, "meeting must reference its MeetingPrototype").toContain(
-      UID.meetingPrototype,
+    expect(fm, "task must carry the source project in Effort_parent").toContain(
+      projUid,
     );
   });
 
   test("scenario 8 — cleanup removes created instances, leaves ontologies + seed intact", async () => {
-    // Delete every test-created instance: anything carrying one of our e2e labels.
+    await openAssetAndRender(window, SEED_AREA_REL);
+    const isCreated = (fm: string): boolean =>
+      /exo__Asset_label:\s*"?E2E (Task on Area|Project on Area|Child Area|Project for Task|Task on Project)/.test(
+        fm,
+      );
+
     const all = listMarkdown(vaultPath);
     let removed = 0;
     for (const rel of all) {
-      const fm = readVaultFile(vaultPath, rel);
-      if (
-        /exo__Asset_label:\s*"?E2E (Task on Area|Project on Area|Child Area|Task on Project|Meeting)/.test(
-          fm,
-        )
-      ) {
+      if (isCreated(readVaultFile(vaultPath, rel))) {
         fs.rmSync(path.join(vaultPath, rel));
         removed++;
       }
@@ -254,19 +211,14 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
     log(`cleanup removed ${removed} created instance(s)`);
     expect(
       removed,
-      "cleanup must have something to remove (created instances)",
+      "cleanup must remove the created instances",
     ).toBeGreaterThan(0);
 
-    // Idempotent: a second sweep removes nothing.
-    const second = listMarkdown(vaultPath).filter((rel) =>
-      /exo__Asset_label:\s*"?E2E (Task on Area|Project on Area|Child Area|Task on Project|Meeting)/.test(
-        readVaultFile(vaultPath, rel),
-      ),
+    // Idempotent: nothing matching remains.
+    const remaining = listMarkdown(vaultPath).filter((rel) =>
+      isCreated(readVaultFile(vaultPath, rel)),
     );
-    expect(
-      second.length,
-      "no created instances should remain after cleanup",
-    ).toBe(0);
+    expect(remaining.length, "no created instances should remain").toBe(0);
 
     // Seed + published ontology survive.
     expect(
@@ -274,12 +226,8 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
       "seed area must remain",
     ).not.toBeNull();
     expect(
-      findByUid(vaultPath, UID.emsAreaClass),
+      findByUid(vaultPath, "82c74542-1b14-4217-b852-d84730484b25"),
       "ems__Area class must remain",
-    ).not.toBeNull();
-    expect(
-      findByUid(vaultPath, UID.meetingPrototype),
-      "MeetingPrototype must remain",
     ).not.toBeNull();
   });
 });

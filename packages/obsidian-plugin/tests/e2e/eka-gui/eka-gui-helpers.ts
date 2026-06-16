@@ -375,11 +375,33 @@ export function registerConfirmAutoAccept(window: Page): void {
   });
 }
 
+/**
+ * Dismiss any lingering modal (DynamicFormModal / confirm) via Escape, so a
+ * leftover overlay from a prior scenario doesn't hide the action buttons of the
+ * next. Idempotent: no-op when nothing is open.
+ */
+export async function clearModals(window: Page): Promise<void> {
+  for (let i = 0; i < 4; i++) {
+    const open = await window
+      .locator(".modal-container")
+      .isVisible()
+      .catch(() => false);
+    if (!open) return;
+    await window.keyboard.press("Escape");
+    await window
+      .locator(".modal-container")
+      .waitFor({ state: "hidden", timeout: 2000 })
+      .catch(() => undefined);
+  }
+}
+
 /** Open a vault file in a fresh leaf and force a layout render (buttons appear). */
 export async function openAssetAndRender(
   window: Page,
   relPath: string,
 ): Promise<void> {
+  // Clear any leftover modal first (prior scenario's create form / confirm).
+  await clearModals(window);
   // A just-created asset can lag the in-memory vault tree (fs-move bypasses the
   // create-event). Poll until Obsidian has indexed it before opening.
   await pollUntil(
@@ -454,6 +476,12 @@ export async function clickCreateButtonAndFill(
     .locator(".dynamic-form .modal-button-container button.mod-cta")
     .first()
     .click();
+
+  // The form modal closes on submit; wait so it can't shadow the next scenario.
+  await window
+    .locator(".dynamic-form")
+    .waitFor({ state: "hidden", timeout: 10_000 })
+    .catch(() => undefined);
 
   // The grounding writes to disk async. Poll for a NEW .md file to appear.
   let created: string[] = [];
