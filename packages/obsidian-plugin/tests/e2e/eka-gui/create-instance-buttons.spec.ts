@@ -15,8 +15,12 @@ import {
   readVaultFile,
   registerConfirmAutoAccept,
   setupGuiVault,
+  waitForCreateCommandsResolvable,
   waitForStoreSettled,
 } from "./eka-gui-helpers";
+
+/** ems__Area class UID — the seed area's `exo__Instance_class`. */
+const EMS_AREA_CLASS_UID = "82c74542-1b14-4217-b852-d84730484b25";
 
 /**
  * ============================================================================
@@ -94,6 +98,16 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
     // auto-accept it under CDP.
     registerConfirmAutoAccept(window);
     await waitForStoreSettled(window);
+    // #3587: count-plateau ≠ store complete. Gate every scenario on the store
+    // being complete enough to resolve ALL create commands on the seed area —
+    // otherwise a scenario can assert inside the transient convertVault-load
+    // window (partial store → Create Project / Create Task subgraph not yet
+    // landed). See waitForCreateCommandsResolvable for the full rationale.
+    await waitForCreateCommandsResolvable(window, SEED_AREA_REL, EMS_AREA_CLASS_UID, [
+      "Create Task",
+      "Create Area",
+      "Create Project",
+    ]);
   });
 
   test.afterAll(async () => {
@@ -119,112 +133,22 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
     );
   });
 
-  // TEMP DIAGNOSTIC (#3587 root-cause) — dumps live render-path store truth so
-  // CI logs pinpoint store-vs-resolver-vs-render. Removed before merge.
-  test("DIAG #3587 — live store truth for Create Project on ems__Area", async () => {
-    await window.evaluate(async (p) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const app = (window as any).app;
-      const file = app.vault.getAbstractFileByPath(p);
-      const leaf = app.workspace.getLeaf(true);
-      await leaf.openFile(file, { state: { mode: "preview" } });
-    }, SEED_AREA_REL);
-    await window.evaluate(() => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const plugin = (window as any).app?.plugins?.plugins?.exocortex;
-      plugin?.commandResolver?.invalidateCache?.();
-      plugin?.refreshLayout?.();
-    });
-    await new Promise((r) => setTimeout(r, 4000));
-
-    const diag = await window.evaluate(
-      async ({ projCmd, projGnd, taskCmd, taskGnd }) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const plugin = (window as any).app?.plugins?.plugins?.exocortex;
-        const store = plugin?.sparql?.getTripleStore?.();
-        const out: Record<string, unknown> = { count: await store.count() };
-        const all = await store.match(undefined, undefined, undefined);
-        const short = (v: string) =>
-          typeof v === "string" ? v.split(/[#/]/).pop() || v : String(v);
-
-        // dump triples whose subject contains the UID (predicate => object)
-        const dumpSubj = (uid: string) =>
-          all
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            .filter((t: any) => t.subject?.value?.includes?.(uid))
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            .map((t: any) => {
-              const o = t.object?.value ?? t.object;
-              const oForm =
-                t.object?.constructor?.name === "IRI"
-                  ? `IRI(${short(o)})`
-                  : `Lit(${o})`;
-              return `${short(t.predicate?.value)} => ${oForm}`;
-            });
-
-        out.projCmdTriples = dumpSubj(projCmd);
-        out.projGndTriples = dumpSubj(projGnd);
-        out.taskCmdTriples = dumpSubj(taskCmd);
-        out.taskGndTriples = dumpSubj(taskGnd);
-
-        // subject IRI as stored (full form) for cmd + gnd of both
-        const subjIRI = (uid: string) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const t = all.find((x: any) => x.subject?.value?.includes(uid));
-          return t?.subject?.value ?? null;
-        };
-        out.projCmdSubjectIRI = subjIRI(projCmd);
-        out.projGndSubjectIRI = subjIRI(projGnd);
-        out.taskGndSubjectIRI = subjIRI(taskGnd);
-
-        // loadGroundingByUid isolates the grounding itself from the command→grounding link
-        const lg = async (uid: string) => {
-          try {
-            const g = await plugin.commandResolver.loadGroundingByUid(uid);
-            return g ? `OK type=${g.type} targetClass=${g.targetClass}` : "NULL";
-          } catch (e) {
-            return `err:${String(e)}`;
-          }
-        };
-        out.loadGroundingProj = await lg(projGnd);
-        out.loadGroundingTask = await lg(taskGnd);
-
-        const lc = async (uid: string) => {
-          try {
-            const c = await plugin.commandResolver.loadCommand(uid, {
-              targetClass: "ems__Area",
-            });
-            return c ? `OK name=${c.name} grounding=${!!c.grounding}` : "NULL";
-          } catch (e) {
-            return `err:${String(e)}`;
-          }
-        };
-        out.loadCommandProj = await lc(projCmd);
-        out.loadCommandTask = await lc(taskCmd);
-
-        return out;
-      },
-      {
-        projCmd: "3520c214-abe4-4ada-9a2d-04516b957ba2",
-        projGnd: "8748f8b0-989b-45a0-88a9-155bc5126f3c",
-        taskCmd: "dec97198-a458-4273-b081-7b250e0a9031",
-        taskGnd: "a222094b-f499-4342-aec0-65c4ba99c657",
-      },
-    );
-    log(`DIAG #3587 LIVE STORE TRUTH ===> ${JSON.stringify(diag, null, 2)}`);
-  });
-
-  // KNOWN-BROKEN (#3587): the "Create Project" inline button does NOT render on
-  // an ems__Area in the live plugin, while sibling Create Task + Create Area
-  // (same targetClass, same group, no precondition) render fine. The
-  // perf-investigation (node fc83d482) PROVED this is NOT a resolver/content bug:
-  // a full-store repro of resolveForAssetMulti returns Create Project [bind
-  // 9f787938] correctly, the CLI `apply create-project` resolves it, and
-  // PreconditionEvaluator.evaluate(undefined)=true. The drop happens in the live
-  // render-path store (LazyAssetGraphLoader, PR #3257) — root cause TBD in #3587.
-  // Kept as test.fixme: a runnable regression gate that flips green when #3587
-  // lands (remove .fixme then). The scenario body is the correct assertion.
-  test.fixme("scenario 3 — Create Project on ems__Area sets Effort_area (#3587)", async () => {
+  // #3587 RESOLVED — was a transient store-load TIMING RACE, NOT a Create-Project
+  // render-path logic drop. Two CI DIAG rounds + a Node convertVault repro proved
+  // the resolver + converter are correct (full store → resolveForAssetMulti returns
+  // Create Project; CLI `apply create-project` resolves it). The live failure was
+  // the harness asserting inside the transient store-load window: `waitForStoreSettled`
+  // declared "settled" at the first count plateau (~15060 of ~16512 triples) while
+  // convertVault was still incrementally populating, so Create Project's binding→
+  // command→grounding subgraph (and sometimes Create Task's backlink InheritanceRule)
+  // had not yet landed — round-1 caught loadCommand(Project)=NULL, round-2 caught it
+  // OK. Fix: `waitForStoreSettled` now also polls resolveForAssetMulti(seed area)
+  // until {Create Task, Create Area, Create Project} all resolve, so every scenario
+  // asserts against a complete store. The product is eventually-consistent
+  // (re-render on store-settle wired post-#3580/v16.97.4) — no permanent miss.
+  // Follow-up #3588 tracks the EKA-layout lazyBootstrapFolders preload gap (bigger,
+  // design trade-off, post-alpha). Now un-fixme'd → live regression gate (8/8).
+  test("scenario 3 — Create Project on ems__Area sets Effort_area (#3587)", async () => {
     const { rel, fm } = await createOnTarget(
       window,
       vaultPath,

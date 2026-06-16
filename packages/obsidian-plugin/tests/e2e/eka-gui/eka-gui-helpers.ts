@@ -407,6 +407,64 @@ export async function waitForStoreSettled(
 }
 
 /**
+ * Wait until the live plugin can resolve ALL `requiredLabels` create-commands on
+ * the seed area — i.e. the render-path store is COMPLETE for command resolution.
+ *
+ * WHY (#3587): `waitForStoreSettled` only watches `store.count()` and returns at
+ * the FIRST plateau. On the EKA assetspace layout (`assetspaces/<owner>/exoas-*`)
+ * the lazy bootstrap folders don't match, so the TBox (commands/bindings/
+ * groundings) loads ONLY via `convertVault()`, which populates the store
+ * INCREMENTALLY. The count can plateau briefly (~15060 of ~16512 triples) while
+ * convertVault is mid-walk, so a scenario asserting in that window sees a partial
+ * store: Create Project's binding→command→grounding subgraph (and sometimes Create
+ * Task's backlink InheritanceRule) hasn't landed yet → button missing / backlink
+ * unwritten. Two CI DIAG rounds proved this is a transient store-load race, NOT a
+ * resolver bug (the resolver + converter return Create Project on a full store).
+ *
+ * Polling `resolveForAssetMulti(seedAreaIRI, classes)` until it returns every
+ * `requiredLabels` entry directly gates on what the scenarios need: a store
+ * complete enough to resolve every create command. `invalidateCache()` each poll
+ * forces a fresh resolution against the now-larger store.
+ */
+export async function waitForCreateCommandsResolvable(
+  window: Page,
+  areaRel: string,
+  areaClassUid: string,
+  requiredLabels: string[],
+  timeoutMs = 120_000,
+): Promise<void> {
+  await pollUntil(
+    `create commands resolvable on seed area (${requiredLabels.join(", ")})`,
+    async () => {
+      const names = await window.evaluate(
+        async ({ rel, cls }) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const plugin = (window as any).app?.plugins?.plugins?.exocortex;
+          if (!plugin?.commandResolver?.resolveForAssetMulti) return [];
+          const iri = `obsidian://vault/${encodeURI(rel)}`;
+          // Fresh resolution against the current (growing) store each poll.
+          plugin.commandResolver.invalidateCache?.();
+          try {
+            const resolved = await plugin.commandResolver.resolveForAssetMulti(
+              iri,
+              [cls, "ems__Area", "exo__Asset"],
+            );
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            return resolved.map((rc: any) => rc?.command?.name).filter(Boolean);
+          } catch {
+            return [];
+          }
+        },
+        { rel: areaRel, cls: areaClassUid },
+      );
+      return requiredLabels.every((l) => names.includes(l));
+    },
+    timeoutMs,
+    2000,
+  );
+}
+
+/**
  * Auto-accept native `window.confirm()` dialogs. Several create commands declare
  * `confirmMessage` and the plugin's CommandPromptAdapter renders it via the
  * NATIVE `window.confirm()` — under CDP, Playwright's default is to DISMISS
