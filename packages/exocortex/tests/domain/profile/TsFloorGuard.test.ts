@@ -10,6 +10,7 @@ import {
   assertTsFloor,
   assertTsFloorReconciled,
   isTsFloorAssetSpace,
+  isTsFloorMountPath,
 } from "../../../src/domain/profile/TsFloorGuard";
 
 // floor={exo} (RFC 5aa2a73a): shared-identities + exocmd removed from the floor.
@@ -177,6 +178,37 @@ describe("TsFloorGuard — floor = {exo}", () => {
     it("respects an explicit floor argument (defaults to SDK_FLOOR)", () => {
       // Empty floor → nothing is ever a floor member.
       expect(isTsFloorAssetSpace(TS_FLOOR_AS_UID_EXO, "exo", [])).toBe(false);
+    });
+  });
+
+  describe("isTsFloorMountPath — path-based floor guard (#e6b8827c unmount belt-and-suspenders)", () => {
+    it("flat legacy mount assetspaces/exo → floor (descriptor-less bypass closed)", () => {
+      expect(isTsFloorMountPath("assetspaces/exo")).toBe(true);
+    });
+
+    it("canonical Maven mount assetspaces/<owner>/exoas-exo → floor (prefix stripped)", () => {
+      expect(isTsFloorMountPath("assetspaces/kitelev/exoas-exo")).toBe(true);
+      // Fork: a different owner is still the exo floor.
+      expect(isTsFloorMountPath("assetspaces/acme/exoas-exo")).toBe(true);
+    });
+
+    it("non-floor mounts → NOT floor", () => {
+      expect(isTsFloorMountPath("assetspaces/kitelev/exoas-pmbok-ontology")).toBe(
+        false,
+      );
+      expect(isTsFloorMountPath("assetspaces/exocmd")).toBe(false); // optional, not floor
+      expect(isTsFloorMountPath("assetspaces/kitelev/exoas-shared-private")).toBe(
+        false,
+      );
+    });
+
+    it("trailing slash + empty segment handled", () => {
+      expect(isTsFloorMountPath("assetspaces/kitelev/exoas-exo/")).toBe(true);
+      expect(isTsFloorMountPath("")).toBe(false);
+    });
+
+    it("respects an explicit floor argument", () => {
+      expect(isTsFloorMountPath("assetspaces/exo", [])).toBe(false);
     });
   });
 });

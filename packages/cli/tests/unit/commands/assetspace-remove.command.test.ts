@@ -128,6 +128,20 @@ describe("assetspace-remove — runAssetSpaceRemove (#e6b8827c)", () => {
     expect(unmountCalls).toEqual([]);
   });
 
+  it("[MEDIUM fix] path-based floor: flat exo mount with NO matching descriptor → refused", async () => {
+    // The descriptor join misses (no info at assetspaces/exo), but the path
+    // itself names the floor → isTsFloorMountPath catches it. unmount NOT called.
+    const unmountCalls: Array<{ vault: string; folder: string }> = [];
+    const res = await runAssetSpaceRemove(
+      { vault, folder: "assetspaces/exo" },
+      deps([PMBOK_INFO], unmountCalls), // exo NOT described
+    );
+    expect(res.exitCode).toBe(ExitCodes.OPERATION_FAILED);
+    expect(res.removed).toBe(false);
+    expect(unmountCalls).toEqual([]); // ← path guard
+    expect(res.stderr.join("\n")).toContain("floor namespace");
+  });
+
   it("non-floor AssetSpace (by --url) → unmount called, success exit", async () => {
     // Materialise the folder so existedBefore=true reports a real removal.
     mkdirSync(path.join(vault, "assetspaces", "kitelev", "exoas-pmbok-ontology"), {

@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { resolve, join } from "node:path";
 import { existsSync } from "node:fs";
-import { derivePath, isTsFloorAssetSpace } from "exocortex";
+import { derivePath, isTsFloorAssetSpace, isTsFloorMountPath } from "exocortex";
 import { BootstrapAssetSpaceService } from "../services/BootstrapAssetSpaceService.js";
 import {
   CliApplyProfileService,
@@ -129,15 +129,23 @@ export async function runAssetSpaceRemove(
   const folder = resolveRemoveAssetSpacePath(opts);
 
   // TS-floor guard (BEFORE any mutation). Match the target mount path against
-  // the AssetSpace descriptor scan to recover its uid + namespace.
+  // the AssetSpace descriptor scan to recover its uid + namespace, AND apply the
+  // path-based guard so a floor mounted flat / with an un-derivable descriptor
+  // (whose `folderName` join misses) is still refused.
   const infos =
     deps.scanInfos?.(vaultPath) ??
     new CliApplyProfileService({ vaultPath }).scanVault().infos;
   const match = infos.find((i) => i.folderName === folder);
-  if (match !== undefined && isTsFloorAssetSpace(match.uid, match.namespace)) {
+  const floorByDescriptor =
+    match !== undefined && isTsFloorAssetSpace(match.uid, match.namespace);
+  if (floorByDescriptor || isTsFloorMountPath(folder)) {
+    const ident = match?.label ?? folder;
+    const detail = match
+      ? `${match.namespace || match.uid}`
+      : "path resolves to a floor namespace";
     err(
-      `[assetspace-remove] Refused: «${match.label}» ` +
-        `(${match.namespace || match.uid}) is a TS-floor AssetSpace — ` +
+      `[assetspace-remove] Refused: «${ident}» ` +
+        `(${detail}) is a TS-floor AssetSpace — ` +
         `unmounting it would self-brick the runtime (R24). Aborted, no changes made.`,
     );
     return {

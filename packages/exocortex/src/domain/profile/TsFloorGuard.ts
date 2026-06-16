@@ -221,3 +221,35 @@ export function isTsFloorAssetSpace(
       (namespace.length > 0 && f.namespace === namespace),
   );
 }
+
+/**
+ * Path-derived floor guard (belt-and-suspenders over {@link isTsFloorAssetSpace}).
+ * Returns `true` when a mount path's repo basename — stripped of the `exoas-`
+ * prefix — equals a floor namespace, regardless of whether a descriptor was
+ * found. This closes the unmount floor-bypass for a `$exo` mounted at a flat
+ * legacy path (`assetspaces/exo`) or whose descriptor is un-derivable/absent
+ * (so the descriptor-scan join on `folderName` misses): the descriptor-based
+ * {@link isTsFloorAssetSpace} can't see those, but the path itself still names
+ * the floor.
+ *
+ * Examples (floor `{exo}`):
+ *   - `assetspaces/exo`                 → `exo`            → floor (flat legacy)
+ *   - `assetspaces/kitelev/exoas-exo`   → `exoas-exo`→`exo`→ floor (Maven)
+ *   - `assetspaces/acme/exoas-exo`      → `exo`            → floor (fork — still exo)
+ *   - `assetspaces/kitelev/exoas-pmbok` → `pmbok`          → NOT floor
+ *
+ * Intentionally conservative — a path whose basename resolves to a floor
+ * namespace is by convention the floor AssetSpace, so erring toward refuse
+ * (floor-policy A) is correct. The (negligible) false-positive surface is a
+ * non-floor repo deliberately named `exo` / `exoas-exo`, which does not exist.
+ */
+export function isTsFloorMountPath(
+  submodulePath: string,
+  floor: ReadonlyArray<FloorIdentity> = SDK_FLOOR,
+): boolean {
+  const norm = submodulePath.replace(/\/+$/, "");
+  const seg = norm.slice(norm.lastIndexOf("/") + 1);
+  const ns = seg.startsWith("exoas-") ? seg.slice("exoas-".length) : seg;
+  if (ns.length === 0) return false;
+  return floor.some((f) => f.namespace === ns);
+}

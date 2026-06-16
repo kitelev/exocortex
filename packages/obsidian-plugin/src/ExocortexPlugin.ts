@@ -67,7 +67,7 @@ import {
   createCommandPanelFromFrontmatter,
   isLayoutFrontmatter,
 } from "./domain/layout";
-import { isCommandBindingFrontmatter, isTsFloorAssetSpace } from "exocortex";
+import { isCommandBindingFrontmatter } from "exocortex";
 import { SPARQLCodeBlockProcessor } from "./application/processors/SPARQLCodeBlockProcessor";
 import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlockProcessor";
 import { SPARQLApi } from "./application/api/SPARQLApi";
@@ -123,6 +123,7 @@ import {
 import { BootstrapAssetSpaceCommands } from "./infrastructure/adapters/BootstrapAssetSpaceCommands";
 import {
   UnmountAssetSpaceCommand,
+  buildUnmountableList,
   type UnmountableAssetSpace,
 } from "./infrastructure/adapters/UnmountAssetSpaceCommand";
 import { BootstrapVaultModal } from "./presentation/modals/BootstrapVaultModal";
@@ -3291,40 +3292,18 @@ export default class ExocortexPlugin extends Plugin {
     restMount: RestAssetSpaceMount,
     switchMgr: ProfileApplyManager,
   ): void {
-    const lastSegment = (p: string): string => {
-      const norm = p.replace(/\/+$/, "");
-      const idx = norm.lastIndexOf("/");
-      return idx < 0 ? norm : norm.slice(idx + 1);
-    };
-
     const unmountCommand = new UnmountAssetSpaceCommand({
       listMounted: async (): Promise<UnmountableAssetSpace[]> => {
         // `.gitmodules` is the canonical "what's mounted" registry (the same
-        // source apply-profile reads). Enrich each entry with its descriptor's
-        // uid + namespace (from the vault scan) so the TS-floor identity can be
-        // computed; an entry with no scannable descriptor is treated as a
-        // non-floor mount (uid/namespace "").
+        // source apply-profile reads). The descriptor scan (a full-vault
+        // markdown walk, run once per command open — not per keystroke) supplies
+        // uid + namespace so the TS-floor identity can be computed.
+        // buildUnmountableList does the join + dual floor guard (descriptor-based
+        // AND path-based, so a floor mounted flat / with an un-derivable
+        // descriptor is still recognised).
         const entries = await restMount.readGitmodulesEntries();
-        const infoByFolder = new Map<string, AssetSpaceInfo>();
-        for (const info of switchMgr.listAllAssetSpaceInfos()) {
-          infoByFolder.set(info.folderName, info);
-        }
-        return entries
-          .filter((e) => e.submodulePath.length > 0)
-          .map((e) => {
-            const info = infoByFolder.get(e.submodulePath);
-            const uid = info?.uid ?? "";
-            const namespace = info?.namespace ?? "";
-            return {
-              submodulePath: e.submodulePath,
-              url: e.url,
-              uid,
-              namespace,
-              label: namespace || lastSegment(e.submodulePath),
-              isFloor: isTsFloorAssetSpace(uid, namespace),
-            };
-          })
-          .sort((a, b) => a.label.localeCompare(b.label));
+        const infos: AssetSpaceInfo[] = switchMgr.listAllAssetSpaceInfos();
+        return buildUnmountableList(entries, infos);
       },
       // Reuse the shared ProfileFuzzyModal (keyed by submodulePath) — floor
       // entries are decorated so the user sees why they cannot be removed.

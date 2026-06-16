@@ -30,6 +30,8 @@
  * {@link UnmountAssetSpaceCommandDeps}. Real wiring lives in `ExocortexPlugin`.
  */
 
+import { isTsFloorAssetSpace, isTsFloorMountPath } from "exocortex";
+
 /** A currently-mounted AssetSpace the user may pick to unmount. */
 export interface UnmountableAssetSpace {
   /** `.gitmodules` mount path (the unmount target, e.g. `assetspaces/kitelev/exoas-pmbok-ontology`). */
@@ -76,6 +78,64 @@ export interface UnmountAssetSpaceCommandDeps {
    * (the unmounted assets are gone). Failures are swallowed (best-effort).
    */
   onUnmounted?: () => Promise<void>;
+}
+
+/** A `.gitmodules` mount entry (the mounted-set registry). */
+export interface MountEntry {
+  submodulePath: string;
+  url: string;
+}
+
+/** Minimal AssetSpace descriptor shape consumed by {@link buildUnmountableList}. */
+export interface AssetSpaceDescriptor {
+  uid: string;
+  namespace: string;
+  /** Derived mount folder (`derivePath(git)`) — the join key against the mount path. */
+  folderName: string;
+}
+
+/** Last `/`-segment of a vault path (`assetspaces/kitelev/exoas-exo` → `exoas-exo`). */
+function lastSegment(p: string): string {
+  const norm = p.replace(/\/+$/, "");
+  const idx = norm.lastIndexOf("/");
+  return idx < 0 ? norm : norm.slice(idx + 1);
+}
+
+/**
+ * Build the picker list from the `.gitmodules` mount registry (`entries`)
+ * enriched with the AssetSpace descriptor scan (`infos`) for uid/namespace.
+ * Pure + side-effect-free so the join + floor computation is unit-testable
+ * (the wiring in `ExocortexPlugin` is otherwise hard to reach).
+ *
+ * `isFloor` is TRUE when EITHER the matched descriptor is a floor member
+ * ({@link isTsFloorAssetSpace}, by UID/namespace) OR the mount path itself names
+ * a floor namespace ({@link isTsFloorMountPath}) — the latter catches a floor
+ * mounted flat / with an un-derivable descriptor whose `folderName` join misses.
+ */
+export function buildUnmountableList(
+  entries: ReadonlyArray<MountEntry>,
+  infos: ReadonlyArray<AssetSpaceDescriptor>,
+): UnmountableAssetSpace[] {
+  const infoByFolder = new Map<string, AssetSpaceDescriptor>();
+  for (const info of infos) infoByFolder.set(info.folderName, info);
+  return entries
+    .filter((e) => e.submodulePath.length > 0)
+    .map((e) => {
+      const info = infoByFolder.get(e.submodulePath);
+      const uid = info?.uid ?? "";
+      const namespace = info?.namespace ?? "";
+      return {
+        submodulePath: e.submodulePath,
+        url: e.url,
+        uid,
+        namespace,
+        label: namespace || lastSegment(e.submodulePath),
+        isFloor:
+          isTsFloorAssetSpace(uid, namespace) ||
+          isTsFloorMountPath(e.submodulePath),
+      };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 export class UnmountAssetSpaceCommand {

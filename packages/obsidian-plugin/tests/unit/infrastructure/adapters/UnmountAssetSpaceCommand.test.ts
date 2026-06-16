@@ -1,5 +1,6 @@
 import {
   UnmountAssetSpaceCommand,
+  buildUnmountableList,
   type UnmountableAssetSpace,
   type UnmountAssetSpaceCommandDeps,
 } from "../../../../src/infrastructure/adapters/UnmountAssetSpaceCommand";
@@ -183,5 +184,84 @@ describe("UnmountAssetSpaceCommand", () => {
       true,
     );
     expect(h.state.onUnmountedCalls).toBe(0);
+  });
+});
+
+describe("buildUnmountableList — .gitmodules ∩ descriptor join + dual floor guard", () => {
+  const EXO_DESC = {
+    uid: "49fd2e56-4656-4ca7-a789-f472b16ea260",
+    namespace: "exo",
+    folderName: "assetspaces/kitelev/exoas-exo",
+  };
+  const PMBOK_DESC = {
+    uid: "abc12345-0000-0000-0000-000000000000",
+    namespace: "pmbok",
+    folderName: "assetspaces/kitelev/exoas-pmbok-ontology",
+  };
+
+  it("joins each mount entry to its descriptor (uid + namespace + label)", () => {
+    const list = buildUnmountableList(
+      [
+        { submodulePath: "assetspaces/kitelev/exoas-pmbok-ontology", url: "u1" },
+        { submodulePath: "assetspaces/kitelev/exoas-exo", url: "u2" },
+      ],
+      [EXO_DESC, PMBOK_DESC],
+    );
+    // Sorted by label: "exo" < "pmbok".
+    expect(list.map((m) => m.label)).toEqual(["exo", "pmbok"]);
+    const pmbok = list.find((m) => m.namespace === "pmbok")!;
+    expect(pmbok.uid).toBe(PMBOK_DESC.uid);
+    expect(pmbok.isFloor).toBe(false);
+  });
+
+  it("descriptor-based floor: exo mount with a matching descriptor → isFloor", () => {
+    const [exo] = buildUnmountableList(
+      [{ submodulePath: "assetspaces/kitelev/exoas-exo", url: "u" }],
+      [EXO_DESC],
+    );
+    expect(exo.isFloor).toBe(true);
+  });
+
+  it("[MEDIUM fix] path-based floor: flat exo mount with NO descriptor → still isFloor", () => {
+    // The descriptor join misses (no info for the flat path), but the path
+    // itself names the floor → isFloor must still be true (bypass closed).
+    const [exo] = buildUnmountableList(
+      [{ submodulePath: "assetspaces/exo", url: "u" }],
+      [PMBOK_DESC], // exo NOT described
+    );
+    expect(exo.uid).toBe(""); // un-described
+    expect(exo.namespace).toBe("");
+    expect(exo.isFloor).toBe(true); // ← caught by the path guard
+  });
+
+  it("[MEDIUM fix] path-based floor: Maven exo mount whose descriptor folderName mismatches → isFloor", () => {
+    // Descriptor's folderName points elsewhere (registry-hosted / un-derivable),
+    // so the folder join misses, but the mount basename resolves to the floor.
+    const [exo] = buildUnmountableList(
+      [{ submodulePath: "assetspaces/acme/exoas-exo", url: "u" }],
+      [{ ...EXO_DESC, folderName: "assetspaces/registry/exoas-registry" }],
+    );
+    expect(exo.isFloor).toBe(true);
+  });
+
+  it("empty submodulePath entries are dropped", () => {
+    const list = buildUnmountableList(
+      [
+        { submodulePath: "", url: "u" },
+        { submodulePath: "assetspaces/kitelev/exoas-pmbok-ontology", url: "u2" },
+      ],
+      [PMBOK_DESC],
+    );
+    expect(list).toHaveLength(1);
+    expect(list[0].submodulePath).toBe("assetspaces/kitelev/exoas-pmbok-ontology");
+  });
+
+  it("un-described non-floor mount → non-floor, label from path basename", () => {
+    const [orphan] = buildUnmountableList(
+      [{ submodulePath: "assetspaces/kitelev/exoas-orphan", url: "u" }],
+      [],
+    );
+    expect(orphan.isFloor).toBe(false);
+    expect(orphan.label).toBe("exoas-orphan");
   });
 });
