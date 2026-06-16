@@ -1,6 +1,6 @@
 # Getting Started with Exocortex
 
-**Set up Exocortex — an ontology-driven knowledge management plugin for Obsidian. Requires: Obsidian desktop. git is recommended for git-backed vaults, but not required.**
+**Set up Exocortex — an ontology-driven knowledge management plugin for Obsidian. This guide is written for Obsidian desktop, the easiest place to do first-time setup; the plugin itself runs on mobile too (commands route through a git-free REST path on iOS/Android). git is recommended for git-backed vaults, but not required.**
 
 ---
 

@@ -60,7 +60,7 @@ Best for: Visual knowledge management, daily planning, interactive exploration.
 
 **Prerequisites:**
 
-- **Obsidian** 1.4+
+- **Obsidian** 1.5+ (`minAppVersion` is `1.5.0`)
 
 **Install Exocortex via BRAT:**
 
@@ -360,7 +360,7 @@ This project is developed primarily by AI agents (Claude Code, GitHub Copilot) f
 | Document                                                         | Purpose                             |
 | ---------------------------------------------------------------- | ----------------------------------- |
 | **[CLAUDE.md](./CLAUDE.md)**                                     | AI agent guidelines, worktree rules |
-| **[AI Development Patterns](./docs/AI-DEVELOPMENT-PATTERNS.md)** | Lessons from 1500+ completed issues |
+| **[AI Development Patterns](./docs/AI-DEVELOPMENT-PATTERNS.md)** | Patterns distilled from AI-driven development |
 | **[Architecture Guide](./ARCHITECTURE.md)**                      | Clean Architecture patterns         |
 
 ---

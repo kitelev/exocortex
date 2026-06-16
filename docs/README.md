@@ -23,6 +23,7 @@ Index of the `docs/` tree. Top-level project docs live in the repo root
 
 - [profile.md](profile.md) — Profile pitch + Apply-profile (mount-state) model + 2-phase commit safety
 - [exosync.md](exosync.md) — ExoSync: GitHub-backed sync of the materialized AssetSpace/FileSpace set (`Exocortex: Sync` command, structured merge, conflict quarantine)
+- [exosync-parallel-run.md](exosync-parallel-run.md) — ExoSync Phase E: parallel-run mode + M1/M2 parity validation harness
 - [settings-homoiconization.md](settings-homoiconization.md) — plugin settings as `exo__Setting` vault assets (data.json as write-through mirror)
 - [rdf/ExoRDF-Mapping.md](rdf/ExoRDF-Mapping.md) — vault ↔ RDF triple mapping
 - [CROSS_RUNTIME_PARITY.md](CROSS_RUNTIME_PARITY.md) — validator-specific instance of the UI/CLI Parity Invariant (see [VISION.md](../VISION.md#uicli-parity-invariant))
@@ -35,10 +36,14 @@ Index of the `docs/` tree. Top-level project docs live in the repo root
 - [FLAKY_POLICY.md](FLAKY_POLICY.md) — flaky-test handling policy
 - [e2e-desktop.md](e2e-desktop.md) — desktop E2E setup
 - [Performance-Guide.md](Performance-Guide.md) — performance guidance
+- [ci/assetspace-shacl-gate.md](ci/assetspace-shacl-gate.md) — per-AssetSpace SHACL CI gate
 
 ## Contributing
 
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — start here: setup, PR workflow, coding standards
+- [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) · [SECURITY.md](../SECURITY.md) — community + security policy
 - [AI-DEVELOPMENT-PATTERNS.md](AI-DEVELOPMENT-PATTERNS.md) — patterns for AI-agent contributors
+- Proposals about the docs themselves live in [rfc/](rfc/) — e.g. the [Diátaxis reorganization RFC](rfc/0001-documentation-diataxis-reorganization.md)
 
 ## Operational runbooks
 
