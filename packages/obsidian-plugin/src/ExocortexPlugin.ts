@@ -107,6 +107,7 @@ import { ProfileApplyManager } from "./infrastructure/adapters/ProfileApplyManag
 import { PluginLockManager } from "./infrastructure/adapters/PluginLockManager";
 import { VaultProfileResolver } from "./infrastructure/adapters/VaultProfileResolver";
 import { PluginRdfIndexerAdapter } from "./infrastructure/adapters/PluginRdfIndexerAdapter";
+import { createProfileApplyRefreshHook } from "./infrastructure/adapters/profileApplyRefreshHook";
 import { PluginSettingsStoreAdapter } from "./infrastructure/adapters/PluginSettingsStoreAdapter";
 import { PluginLocalDataStore } from "./infrastructure/adapters/PluginLocalDataStore";
 import { StagingDirTracker } from "./infrastructure/adapters/StagingDirTracker";
@@ -2704,16 +2705,33 @@ export default class ExocortexPlugin extends Plugin {
   private async registerProfileCommands(): Promise<void> {
     const lockMgr = new PluginLockManager({ app: this.app });
     const resolver = new VaultProfileResolver(this.app);
-    // RFC 22b50a17 Phase 4 (H1 cascade catch — advisor round-2) — wire
-    // `refreshAndInjectAssetSpaceMaterialization` as the post-refresh
-    // hook so apply paths via `ProfileApplyManager`
-    // re-inject `exo:AssetSpace_materialized` triples automatically after
-    // every `rdfIndexer.refresh()`. Without this, profile switching
-    // would silently drop the runtime-derived materialization triples
-    // until the next `metadataCache.resolved` event.
+    // RFC 22b50a17 Phase 4 (H1 cascade catch — advisor round-2) — wire a
+    // post-refresh hook so apply paths via `ProfileApplyManager` re-inject
+    // `exo:AssetSpace_materialized` triples automatically after every
+    // `rdfIndexer.refresh()`. Without this, profile switching would
+    // silently drop the runtime-derived materialization triples until the
+    // next `metadataCache.resolved` event.
+    //
+    // GUI-smoke D1 — the hook ALSO invalidates the command/precondition
+    // resolver caches + lazy-loader marks and re-renders active layouts.
+    // A mount-state rebuild leaves the store complete but the resolver
+    // caches stale: inline create-buttons resolved (and cached empty)
+    // against the pre-mount store otherwise stay hidden on
+    // `ems__Project` / `ems__MeetingPrototype` until a full plugin reload.
+    // This mirrors the cold-start (`metadataCache.on("resolved")`) and
+    // hot-reindex (`scheduleHotReindex`) paths, which already do this.
     const rdfIndexer = new PluginRdfIndexerAdapter(
       this.sparql.getRdfIndexer(),
-      () => this.refreshAndInjectAssetSpaceMaterialization(),
+      createProfileApplyRefreshHook({
+        refreshAndInject: () =>
+          this.refreshAndInjectAssetSpaceMaterialization(),
+        clearLazyLoader: () => this.lazyAssetGraphLoader?.clearAll(),
+        invalidateCommandResolverCache: () =>
+          this.commandResolver.invalidateCache(),
+        invalidatePreconditionCache: () =>
+          this.preconditionEvaluator.invalidateCache(),
+        rerenderLayouts: () => this.autoRenderLayout(),
+      }),
     );
 
     // Issue #3327 Item #3 — initialize device-local switch state store and
