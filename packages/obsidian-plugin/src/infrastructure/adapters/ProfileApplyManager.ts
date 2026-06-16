@@ -1474,7 +1474,17 @@ export class ProfileApplyManager {
     // incomplete switch always left a journal (and/or set the in-progress
     // flag), so this guard never suppresses a genuine recovery — or its
     // failure toast.
-    const journalExists = await this.app.vault.adapter.exists(this.journalPath);
+    // Defensive: a rejecting `exists` (Obsidian's spec resolves false for
+    // missing paths, but be safe) must NOT itself surface the toast we're
+    // removing. On a throw, assume the journal might exist and fall through to
+    // the dir-ensured recovery path below (idempotent, never ENOENTs). Mirrors
+    // the try/catch wrapping in readJournalTail/appendJournal/ensureExocortexDir.
+    let journalExists = true;
+    try {
+      journalExists = await this.app.vault.adapter.exists(this.journalPath);
+    } catch {
+      journalExists = true;
+    }
     if (!journalExists && !localDataStore.isSwitchInProgress()) {
       return { restored: [] };
     }
