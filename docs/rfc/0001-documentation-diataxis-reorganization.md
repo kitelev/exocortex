@@ -6,7 +6,7 @@
 | **Author** | Documentation full-audit (AI), 2026-06-17 |
 | **Scope** | `kitelev/exocortex` repo documentation (not vault, not Claude-infra) |
 | **Supersedes** | — |
-| **Tracking** | (optional) GitHub Issue linking here |
+| **Tracking** | [#3592](https://github.com/kitelev/exocortex/issues/3592) · shipped P0 in [#3591](https://github.com/kitelev/exocortex/pull/3591) |
 
 > **Why in-repo:** this is a repo-governance / contributor-facing artifact about the
 > *documentation architecture*. It is versioned in-repo alongside the docs it
