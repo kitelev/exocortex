@@ -151,9 +151,9 @@ palette cannot convey (P2). The panel must be keyboard-navigable with managed fo
   adds durability, it does not fix a "silent" action.)*
 
 ### 3.4 Profile picker: descriptions, recommended badge, scope to the user — **[P7, P7b, P10]**
-- Add a **one-line description** per profile (new vault property `exo__Profile_description`
-  — RDF, consistent with the Homoiconicity invariant; the picker already sources items from
-  vault `listProfileFiles()`) and a **"recommended for new users"** badge on `starter`.
+- Add a **one-line description** per profile (via a new RDF profile-description property in
+  the vault — consistent with the Homoiconicity invariant; the picker already sources items
+  from vault `listProfileFiles()`) and a **"recommended for new users"** badge on `starter`.
 - **Scope the list to the user (P7b):** by default show only profiles relevant to this vault
   (e.g. whose includes resolve locally) behind a "Show all profiles" expander, so a tester
   isn't choosing among — or accidentally applying — `$$levina-tbank` / `$$mudriy-tbank`.
