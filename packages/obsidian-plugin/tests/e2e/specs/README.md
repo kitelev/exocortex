@@ -1,7 +1,7 @@
 # E2E specs — shared fixture invariant & ordering contract
 
 Author: RFC `3cc77ba2` Phase 2.2 — Option C (docs + ordering contract).
-Decision record: `/Users/kitelev/vault-2025/03 Knowledge/inbox/1e13509c-cc5e-4ef1-a334-af7b3d67cbd9.md` (session 3, 2026-04-25).
+Decision record: `~/vault-2025/03 Knowledge/inbox/1e13509c-cc5e-4ef1-a334-af7b3d67cbd9.md` (session 3, 2026-04-25).
 
 ## Shared fixture invariant
 

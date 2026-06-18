@@ -39,7 +39,7 @@ recur and resist point-fixes:
    section; **two** near-duplicate `NL-TO-SPARQL.md`.
 3. **Monoliths & drift.** `PATTERNS.md` and root `TROUBLESHOOTING.md` are append-only
    incident bins; the "13 required CI checks" fact is asserted in 6+ places (already
-   drifted in a phase3 ADR); `/Users/kitelev/...` absolute paths are hardcoded in
+   drifted in a phase3 ADR); `/Users/<user>/...` absolute paths are hardcoded in
    `AGENTS.md` (13×) and `TROUBLESHOOTING.md` (11×).
 
 The full findings (9 dimensions, per-doc verdicts) are in the audit report
@@ -147,8 +147,8 @@ illustrative and not exhaustive; these rules bind the Phase-2 executor):
   single paragraph after this lands.
 - **De-personalize** via a **predicate**, not an enumerated file-list (enumeration
   already missed `packages/obsidian-plugin/tests/e2e/specs/README.md` and the
-  `WORKTREE_COORDINATION.md` tombstone): rewrite every `/Users/kitelev/...` →
-  `$REPO`/relative such that `grep -rln '/Users/kitelev' --include='*.md' | grep -v
+  `WORKTREE_COORDINATION.md` tombstone): rewrite every `/Users/<user>/...` →
+  `$REPO`/relative such that `grep -rln '/Users/<user>' --include='*.md' | grep -v
   'docs/history' | grep -v '/phase3/'` returns nothing. (Decide explicitly whether
   `.claude/agents/*` count as in-scope "prose docs" — recommend yes.)
 - Document the **exo-as-SDK / AssetSpace topology** for contributors (what an AssetSpace
@@ -230,7 +230,7 @@ canonical" / "link-check green" were judgment calls).*
   non-stub".
 - **Monolith scannability:** `PATTERNS.md` and root `TROUBLESHOOTING.md` each have a TOC;
   one-off historical incident write-ups are moved to `history/` (or pruned).
-- **De-personalized:** `grep -rln '/Users/kitelev' --include='*.md' | grep -v 'docs/history'
+- **De-personalized:** `grep -rln '/Users/<user>' --include='*.md' | grep -v 'docs/history'
   | grep -v '/phase3/'` returns nothing (`.claude/agents/*` included as prose docs).
 - **CI-check single source:** `grep -rniE '13 (required|mandatory)' --include='*.md'`
   returns exactly one non-history/non-phase3 hit (the canonical paragraph); `test-bdd`

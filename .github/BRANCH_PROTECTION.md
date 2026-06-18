@@ -27,7 +27,7 @@ Run the provided script to configure branch protection via GitHub API:
 
 ```bash
 # Navigate to project root
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 
 # Run setup script
 .github/scripts/setup-branch-protection.sh
