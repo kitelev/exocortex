@@ -170,10 +170,34 @@ export default class ExocortexPlugin extends Plugin {
    * was previously empirically untested, which is exactly how the
    * `bb00efed → ems-commands/` migration silently stayed unindexed).
    *
-   * Match is `String.startsWith` against vault-relative path. Caller is
-   * responsible for ensuring each prefix in `folderPrefixes` ends with
-   * `/` so `assetspaces/ems/` does not over-match `assetspaces/ems-commands/`
-   * (Settings UI auto-appends — see ExocortexSettingTab).
+   * Two prefix dialects (mixed freely in one list):
+   *
+   *  1. **Plain prefix** (no `*`) — matched via `String.startsWith` against
+   *     the vault-relative path. Fast path; backward-compatible with the
+   *     legacy two-vault layout (`assetspaces/ems/`, `assetspaces/exocmd/`).
+   *     Caller must end each prefix with `/` so `assetspaces/ems/` does not
+   *     over-match `assetspaces/ems-commands/` (Settings UI auto-appends —
+   *     see ExocortexSettingTab).
+   *
+   *  2. **Segment-wildcard glob** (#3588) — a prefix containing a `*` is
+   *     matched segment-by-segment, where each `*` matches EXACTLY ONE path
+   *     segment. This reaches the EKA audience-layered layout, which mounts
+   *     assetspaces at `assetspaces/<owner>/<assetspace>/<namespace>/<uid>.md`
+   *     (e.g. `assetspaces/kitelev/exoas-exocmd/exocmd/<uid>.md`). A plain
+   *     `startsWith` never matches that depth → bootstrap walked 0 files →
+   *     command/binding/grounding triples arrived only via the slow
+   *     incremental `convertVault` cold-start (root of the #3587 partial-store
+   *     race). The glob `assetspaces/<star>/<star>/exocmd/` (two wildcard
+   *     segments, written `<star>` here only to avoid closing this comment)
+   *     reaches the namespace folder under ANY owner+assetspace while staying
+   *     scope-tight: it targets the SAME 5 TBox namespaces the legacy default
+   *     did (exo, ems, ems-commands, ims, exocmd), NOT every assetspace (no
+   *     leaf ABox like `exoas-my/pn`) and NOT the whole of `exoas-public` (its
+   *     30+ framework namespaces concept, person, ui, …). Folder semantics
+   *     preserved: the path must extend BEYOND the glob (a file lives inside
+   *     the namespace folder), and a wildcard never spans two segments, so a
+   *     single-wildcard `assetspaces/<star>/exocmd/` does NOT collapse the EKA
+   *     owner+assetspace nesting.
    *
    * Returns empty array if `folderPrefixes` is empty (degraded mode —
    * bootstrap walks nothing; buttons appear later via convertVault).
@@ -183,8 +207,37 @@ export default class ExocortexPlugin extends Plugin {
     folderPrefixes: string[],
   ): T[] {
     if (folderPrefixes.length === 0) return [];
-    return files.filter((f) =>
-      folderPrefixes.some((folder) => f.path.startsWith(folder)),
+    // Precompile matchers once (not per-file): plain prefixes keep the cheap
+    // startsWith; glob prefixes are pre-split into segments (trailing empty
+    // from the required trailing `/` dropped, so the segment array is the
+    // folder path the file must live inside).
+    const plainPrefixes: string[] = [];
+    const globSegmentSets: string[][] = [];
+    for (const prefix of folderPrefixes) {
+      if (prefix.includes("*")) {
+        const segs = prefix.split("/");
+        if (segs[segs.length - 1] === "") segs.pop();
+        globSegmentSets.push(segs);
+      } else {
+        plainPrefixes.push(prefix);
+      }
+    }
+    const matchesGlob = (path: string): boolean => {
+      if (globSegmentSets.length === 0) return false;
+      const pathSegs = path.split("/");
+      return globSegmentSets.some((glob) => {
+        // Folder prefix: the file must live INSIDE the folder, so it needs
+        // strictly more segments than the glob (the filename, at least).
+        if (pathSegs.length <= glob.length) return false;
+        for (let i = 0; i < glob.length; i++) {
+          if (glob[i] !== "*" && glob[i] !== pathSegs[i]) return false;
+        }
+        return true;
+      });
+    };
+    return files.filter(
+      (f) =>
+        plainPrefixes.some((p) => f.path.startsWith(p)) || matchesGlob(f.path),
     );
   }
 
