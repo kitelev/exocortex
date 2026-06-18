@@ -306,11 +306,25 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   enablePropertiesLabelPatch: true,
   excludedFolders: ["09 Templates/"],
   lazyBootstrapFolders: [
+    // Legacy two-vault layout — `assetspaces/<namespace>/` (plain startsWith).
     "assetspaces/exo/",
     "assetspaces/ems/",
     "assetspaces/ems-commands/",
     "assetspaces/ims/",
     "assetspaces/exocmd/",
+    // EKA audience-layered layout (#3588) — `assetspaces/<owner>/<assetspace>/
+    // <namespace>/` (segment-wildcard glob; each `*` = exactly one segment).
+    // Targets the SAME 5 TBox namespaces as above under any owner+assetspace
+    // (e.g. `assetspaces/kitelev/exoas-exocmd/exocmd/`,
+    // `assetspaces/kitelev/exoas-public/ems/`), so create-command/binding/
+    // grounding triples are bootstrapped eagerly instead of waiting on the
+    // slow incremental convertVault cold-start. Scope-tight: does NOT pull
+    // leaf-ABox assetspaces or the 30+ framework namespaces of exoas-public.
+    "assetspaces/*/*/exo/",
+    "assetspaces/*/*/ems/",
+    "assetspaces/*/*/ems-commands/",
+    "assetspaces/*/*/ims/",
+    "assetspaces/*/*/exocmd/",
   ],
   activeProfileUid: null,
   exosyncQuarantineRepoUrl: "",
