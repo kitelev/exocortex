@@ -13,7 +13,7 @@ For **end-user** plugin issues, see [docs/Troubleshooting.md](docs/how-to/Troubl
 
 ```bash
 # Check where worktrees were created
-cd /Users/kitelev/Developer/exocortex-development
+cd ~/Developer/exocortex-development
 ls -la  # Look for unexpected directories
 
 # If you see directories like exocortex-feat-something/ at root level → WRONG!
@@ -24,17 +24,17 @@ cd <wrong-worktree-name>
 git status
 
 # 2. If clean, remove the worktree
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 git worktree remove ../<wrong-worktree-name>
 
 # 3. If has changes, stash them first
-cd /Users/kitelev/Developer/exocortex-development/<wrong-worktree-name>
+cd ~/Developer/exocortex-development/<wrong-worktree-name>
 git stash
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 git worktree remove ../<wrong-worktree-name>
 
 # 4. Create new worktree in CORRECT location
-cd /Users/kitelev/Developer/exocortex-development
+cd ~/Developer/exocortex-development
 /worktree-create correct-task-name  # Will create in worktrees/
 
 # 5. Apply stashed changes if needed
@@ -99,7 +99,7 @@ pwd  # Check current directory
 
 ```bash
 # Step 1: Exit Claude Code session or switch directory
-cd /Users/kitelev/Developer/exocortex-development
+cd ~/Developer/exocortex-development
 
 # Step 2: THEN run cleanup
 /worktree-cleanup
@@ -127,7 +127,7 @@ cd /Users/kitelev/Developer/exocortex-development
 
 ```bash
 # When git is broken, fresh clone is fastest and most reliable
-cd /Users/kitelev/Developer/exocortex-development
+cd ~/Developer/exocortex-development
 mv exocortex exocortex-backup
 git clone git@github.com:kitelev/exocortex.git
 
@@ -142,7 +142,7 @@ npm install  # Reinstall dependencies
 
 ```bash
 # Only try this if you have important uncommitted changes in worktrees
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 
 # Step 1: Verify corruption
 git fsck --full
@@ -190,7 +190,7 @@ git gc --aggressive --prune=now
 
 ```bash
 # 1. Backup current repo (optional, if you have uncommitted work in worktrees)
-cd /Users/kitelev/Developer/exocortex-development
+cd ~/Developer/exocortex-development
 mv exocortex exocortex-backup-$(date +%Y%m%d-%H%M%S)
 
 # 2. Fresh clone from GitHub
@@ -211,7 +211,7 @@ npm install
 
 ```bash
 # Attempt repair (time-consuming, uncertain success)
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 
 # Step 1: Remove corrupted packfiles
 rm -f .git/objects/pack/pack-*.pack
@@ -1058,7 +1058,7 @@ Used HUSKY=0 after verifying all checks pass manually.
 Read /path/from/summary/CLAUDE.md  # May fail if file moved
 
 # Correct - read from current worktree
-Read /Users/kitelev/Developer/exocortex-development/worktrees/exocortex-claude1-feat-xyz/CLAUDE.md
+Read ~/Developer/exocortex-development/worktrees/exocortex-claude1-feat-xyz/CLAUDE.md
 ```
 
 **Step-by-step fix**:

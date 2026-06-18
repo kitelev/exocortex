@@ -322,7 +322,7 @@ State_Sections:
 - **Standards**: Following Clean Architecture principles
 
 ### Environment State
-- **Working Directory**: /Users/kitelev/Developer/exocortex-development/exocortex
+- **Working Directory**: ~/Developer/exocortex-development/exocortex
 - **Git Branch**: main (clean, all changes committed)
 - **Node.js**: v18.17.0
 - **Dependencies**: All up to date

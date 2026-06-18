@@ -212,7 +212,7 @@ If you need to revert these changes:
 
 ```bash
 # Revert workflow changes
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 git checkout HEAD~1 .github/workflows/ci.yml
 
 # Revert merge settings (re-enable rebase, disable squash)

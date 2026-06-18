@@ -54,7 +54,7 @@ ALL code changes MUST happen through git worktrees in the `worktrees/` subdirect
 **❌ ABSOLUTELY FORBIDDEN:**
 
 ```bash
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 vim src/some-file.ts              # ❌ NEVER DO THIS!
 git commit -am "changes"          # ❌ BLOCKED!
 ```
@@ -63,7 +63,7 @@ git commit -am "changes"          # ❌ BLOCKED!
 
 ```bash
 # 1. Create worktree
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 git worktree add ../worktrees/exocortex-[agent]-[type]-[task] -b feature/[task]
 
 # 2. Work in worktree
@@ -332,7 +332,7 @@ When working on visualization components:
 ## 📁 Directory Structure
 
 ```
-/Users/kitelev/Developer/exocortex-development/
+~/Developer/exocortex-development/
 ├── exocortex/                   # Main repository (READ-ONLY for AI agents)
 │   ├── AGENTS.md                # This file — universal agent instructions
 │   ├── CLAUDE.md                # In-repo development guide
@@ -470,7 +470,7 @@ worktrees/exocortex-aider1-perf-query-cache
 ### Initial Setup (First Time)
 
 ```bash
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 npm install
 ```
 
@@ -478,7 +478,7 @@ npm install
 
 ```bash
 # Sync main first
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 git fetch origin main
 git pull origin main --rebase
 
@@ -521,7 +521,7 @@ npm run test:e2e
 ### Before Starting Work
 
 ```bash
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 git fetch origin main
 git pull origin main --rebase
 # Now create worktree
@@ -1544,7 +1544,7 @@ If SPARQL query executes without errors but returns 0 results:
 ### 1. Create Worktree
 
 ```bash
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 git fetch origin main && git pull origin main --rebase
 git worktree add ../worktrees/exocortex-[agent]-[type]-[task] -b feature/[task]
 cd ../worktrees/exocortex-[agent]-[type]-[task]
@@ -1555,7 +1555,7 @@ npm install
 
 ```bash
 # Work in worktree
-cd /Users/kitelev/Developer/exocortex-development/worktrees/exocortex-[agent]-[type]-[task]
+cd ~/Developer/exocortex-development/worktrees/exocortex-[agent]-[type]-[task]
 
 # Follow all rules
 # Run tests frequently: npm test
@@ -1574,7 +1574,7 @@ gh pr checks --watch  # Wait for GREEN
 ### 4. Cleanup After Merge
 
 ```bash
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 git worktree remove ../worktrees/exocortex-[agent]-[type]-[task]
 git branch -d feature/[task]
 ```
@@ -1592,7 +1592,7 @@ Check with `pwd` - should contain `worktrees/` in path.
 Fix:
 
 ```bash
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 git worktree remove ../<wrong-name>
 # Create in correct location: ../worktrees/...
 ```
@@ -1720,7 +1720,7 @@ For complete development rules and patterns, see:
 # 1. Read this file (done!)
 
 # 2. Create your worktree
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 git fetch origin main && git pull origin main --rebase
 git worktree add ../worktrees/exocortex-[your-agent]-feat-[task] -b feature/[task]
 cd ../worktrees/exocortex-[your-agent]-feat-[task]
@@ -1736,7 +1736,7 @@ git push origin feature/[task]
 gh pr create
 
 # 5. After merge, cleanup
-cd /Users/kitelev/Developer/exocortex-development/exocortex
+cd ~/Developer/exocortex-development/exocortex
 git worktree remove ../worktrees/exocortex-[your-agent]-feat-[task]
 git branch -d feature/[task]
 ```
@@ -1745,4 +1745,4 @@ git branch -d feature/[task]
 
 **Remember**: This directory enables safe parallel development by multiple AI agents. When in doubt, sync early, sync often, and validate your location with `pwd`.
 
-**Tool-specific instructions**: See the coordination hub `CLAUDE.md` at `/Users/kitelev/Developer/exocortex-development/CLAUDE.md` (Claude Code) and the hub-level `.cursorrules` / `.cursor/rules/` (Cursor IDE).
+**Tool-specific instructions**: See the coordination hub `CLAUDE.md` at `~/Developer/exocortex-development/CLAUDE.md` (Claude Code) and the hub-level `.cursorrules` / `.cursor/rules/` (Cursor IDE).

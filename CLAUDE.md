@@ -1,6 +1,6 @@
 # Exocortex — In-Repo Development Guide
 
-> **Coordination rules, worktree management, and CI/CD**: See the hub `CLAUDE.md` at `/Users/kitelev/Developer/exocortex-development/CLAUDE.md` (from a worktree: `../../CLAUDE.md`; from the main `exocortex/` checkout: `../CLAUDE.md`).
+> **Coordination rules, worktree management, and CI/CD**: See the hub `CLAUDE.md` (from a worktree: `../../CLAUDE.md`; from the main `exocortex/` checkout: `../CLAUDE.md`).
 > **Universal AI agent instructions**: See `AGENTS.md`.
 > **Coding patterns**: See `PATTERNS.md`.
 > **Dev/CI troubleshooting**: See `DEV-TROUBLESHOOTING.md`.

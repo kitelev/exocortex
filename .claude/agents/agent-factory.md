@@ -122,7 +122,7 @@ class AgentNecessityAnalyzer {
 
 ```yaml
 Template_Sources:
-  primary: /Users/kitelev/.claude/agents/
+  primary: ~/.claude/agents/
   secondary: .claude/agents/templates/
   fallback: Built-in templates
 
