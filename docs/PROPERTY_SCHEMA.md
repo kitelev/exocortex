@@ -224,7 +224,7 @@ exo__Instance_class:
   - "[[1b20a8f0-d745-4e93-91db-4531b3df120e]]" # ems__Task
 ```
 
-Two non-canonical legacy forms are still accepted by the converter and are **semantically equivalent** for RDF/SHACL purposes — see `TROUBLESHOOTING.md` § _exo\_\_Instance_class wikilink form mismatch — all forms RDF-equivalent_ — but new assets must not emit them:
+Two non-canonical legacy forms are still accepted by the converter and are **semantically equivalent** for RDF/SHACL purposes — see [`../DEV-TROUBLESHOOTING.md`](../DEV-TROUBLESHOOTING.md) § _exo\_\_Instance_class wikilink form mismatch — all forms RDF-equivalent_ — but new assets must not emit them:
 
 | Form | Example                                                 | Status        |
 | ---- | ------------------------------------------------------- | ------------- |

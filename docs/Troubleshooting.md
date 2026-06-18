@@ -1,6 +1,7 @@
-# Troubleshooting Guide
+# User Troubleshooting Guide
 
-**Common issues and solutions.**
+**Common issues and solutions for Exocortex users.**
+For **development / CI** issues, see [DEV-TROUBLESHOOTING.md](../DEV-TROUBLESHOOTING.md).
 
 ---
 
@@ -183,7 +184,7 @@ But [[uuid-here]] in text shows label correctly ✅
 
 **Solutions**:
 
-1. **Update Plugin**: Ensure you're on latest version (v14.81.0+)
+1. **Update Plugin**: Ensure you're on the latest version
    - Settings → Community plugins → Check for updates
 
 2. **Switch View Mode**: Toggle between Reading/Live Preview and back
@@ -191,7 +192,7 @@ But [[uuid-here]] in text shows label correctly ✅
 
 3. **Reload layout**: Cmd/Ctrl + P → "Reload layout"
 
-**Note**: This was fixed in version 14.81.0. Update plugin if experiencing this issue.
+**Note**: If the issue persists after updating, reload the layout or toggle the view mode.
 
 ---
 

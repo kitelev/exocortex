@@ -23,8 +23,7 @@
 13. [Design Patterns](#design-patterns)
 14. [Archgate — Executable ADR Governance](#archgate--executable-adr-governance)
 15. [Error Handling](#error-handling)
-16. [Current State](#current-state-after-monorepo-migration)
-17. [Current Architecture](#current-architecture)
+16. [Current Architecture & State](#current-architecture--state-monorepo)
 
 ---
 
@@ -1481,7 +1480,7 @@ throw new Error("Invalid transition");
 
 ---
 
-## 🔍 Current State (After Monorepo Migration)
+## 🔍 Current Architecture & State (Monorepo)
 
 ### 1. ✅ RESOLVED: Storage Abstraction
 
@@ -1542,10 +1541,6 @@ throw new Error("Invalid transition");
   (`packages/cli/src/commands/sparql-query.ts`).
 
 **Remaining gap**: no cross-vault write operations or unified multi-vault index; future enhancement.
-
----
-
-## 🚀 Current Architecture (Monorepo Implementation)
 
 ### Three-Tier Architecture (IMPLEMENTED)
 

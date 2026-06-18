@@ -1,6 +1,7 @@
-# Troubleshooting Guide
+# Developer & CI Troubleshooting Guide
 
-Common issues and solutions for Exocortex development.
+Common issues and solutions for Exocortex **development** (worktrees, build, CI, tests).
+For **end-user** plugin issues, see [docs/Troubleshooting.md](docs/Troubleshooting.md).
 
 ---
 

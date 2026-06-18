@@ -563,7 +563,7 @@ exo query 'SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 5' --format json
 
 - [SPARQL Guide](SPARQL_GUIDE.md) - Complete query reference
 - [Ontology Reference](ONTOLOGY_REFERENCE.md) - Available predicates
-- [Property Schema](../../docs/PROPERTY_SCHEMA.md) - Frontmatter properties
+- [Property Schema](../../../docs/PROPERTY_SCHEMA.md) - Frontmatter properties
 
 ---
 

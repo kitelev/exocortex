@@ -549,7 +549,7 @@ exo query 'SELECT ...' --stats
 
 - [SPARQL Cookbook](SPARQL_COOKBOOK.md) - Practical query examples
 - [Ontology Reference](ONTOLOGY_REFERENCE.md) - Available predicates
-- [Property Schema](../../docs/PROPERTY_SCHEMA.md) - Frontmatter properties
+- [Property Schema](../../../docs/PROPERTY_SCHEMA.md) - Frontmatter properties
 
 ---
 

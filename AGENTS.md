@@ -337,7 +337,7 @@ When working on visualization components:
 │   ├── AGENTS.md                # This file — universal agent instructions
 │   ├── CLAUDE.md                # In-repo development guide
 │   ├── PATTERNS.md              # Coding patterns catalog
-│   ├── TROUBLESHOOTING.md       # Troubleshooting scenarios
+│   ├── DEV-TROUBLESHOOTING.md   # Dev/CI troubleshooting scenarios
 │   └── TEMPLATES.md             # Post-mortem & report templates
 ├── worktrees/                   # All worktrees live here (flat structure)
 │   ├── exocortex-agent1-feat-graph-viz/
@@ -559,6 +559,11 @@ git rebase origin/main  # Resolve conflicts if any
 ---
 
 ## ✅ Testing Requirements
+
+> **Canonical testing guide:** [`TESTING.md`](TESTING.md) is the single source of
+> truth for test types, the test pyramid, fixtures, mocking patterns, E2E suites,
+> coverage gates, and troubleshooting. This section keeps only the agent-workflow
+> rules (mandatory pre-PR run + the dynamic-command CI test layers).
 
 **MANDATORY before creating PR:**
 

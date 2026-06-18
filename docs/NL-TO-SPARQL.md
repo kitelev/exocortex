@@ -144,6 +144,22 @@ List areas of responsibility or persons.
 - "все области ответственности"
 - "все контакты"
 
+## Date Filtering
+
+The service recognizes various date formats and applies them as filters:
+
+| Format | Example |
+|--------|---------|
+| `YYYY-MM` | `2025-12` |
+| `YYYY-MM-DD` | `2025-12-15` |
+| Russian month names | `декабрь`, `январь` |
+| English month names | `december`, `january` |
+
+```bash
+npx @kitelev/exocortex-cli ask "статистика сна за декабрь 2025" --vault /path/to/vault
+npx @kitelev/exocortex-cli ask "сон за 2025-12" --vault /path/to/vault
+```
+
 ## Known Prototypes
 
 The system automatically recognizes these activity names and their prototypes:
@@ -196,6 +212,18 @@ LIMIT {{limit}}`,
 service.addTemplate(customTemplate);
 ```
 
+### Getting Query Suggestions
+
+When a query is ambiguous or low-confidence, ask the service how to improve it:
+
+```typescript
+const service = new NLToSPARQLService();
+
+// Get suggestions for improving a query
+const suggestions = service.getSuggestions("сколько всего");
+// Returns: ["Добавьте период времени (например: 'за декабрь' или 'за 2025-12')"]
+```
+
 ## API Reference
 
 ### NLToSPARQLService
@@ -241,12 +269,68 @@ service.addTemplate(customTemplate);
 | `validateParameters(template, params)` | Validate required parameters |
 | `getTemplateByName(name)` | Get template by name |
 
+## Template Library Reference
+
+### Available Templates
+
+| Name | Required Params | Description |
+|------|----------------|-------------|
+| `search_by_label` | `keyword` | Search by label substring |
+| `find_by_prototype_uuid` | `prototypeUuid` | Find instances by prototype |
+| `average_duration_by_prototype` | `prototypeUuid` | Average duration stats |
+| `sleep_analysis` | - | Sleep pattern analysis |
+| `active_projects` | - | Active projects list |
+| `projects_without_tasks` | - | Projects without child tasks |
+| `recent_activities` | - | Recent activities |
+| `tasks_by_label_pattern` | `pattern` | Tasks matching pattern |
+| `count_by_class` | - | Count by entity class |
+| `find_prototype` | `taskLabel` | Find prototype by task label |
+| `entity_properties` | `entityLabel` | All properties of entity |
+| `properties_by_uuid` | `uuid` | Properties by UUID |
+| `areas` | - | List all areas |
+| `persons` | - | List all persons |
+
+### Template Structure
+
+```typescript
+interface SPARQLTemplate {
+  name: string;           // Unique template name
+  description: string;    // Human-readable description
+  template: string;       // SPARQL with {{param}} placeholders
+  parameters: {
+    name: string;
+    description: string;
+    required: boolean;
+    example?: string;
+  }[];
+  examples: string[];     // Example natural language queries
+  keywords: string[];     // Keywords that trigger this template
+}
+```
+
 ## Best Practices
 
 1. **Use prototype UUIDs** instead of labels for reliable results (labels can change)
 2. **Add date context** for statistical queries ("за декабрь")
 3. **Specify limits** for large result sets ("первые 50")
 4. **Use quotes** for exact phrase matching ("Утренний душ")
+5. **Use `--show-query` to debug** — inspect the generated SPARQL to see what is actually queried
+6. **Use `--explain` for transparency** — understand how your query was interpreted
+
+## Confidence Scoring
+
+The conversion result includes a confidence score (0-1):
+
+- **0.7-1.0**: High confidence — template matched well with parameters
+- **0.5-0.7**: Medium confidence — template matched, some parameters inferred
+- **0.3-0.5**: Low confidence — fallback or partial match
+- **< 0.3**: Fallback query — no good template match
+
+When confidence is low, check:
+
+1. The `explanation` field for details
+2. The `alternatives` array for other possible queries
+3. The `suggestions` from `getSuggestions()` for improving your query
 
 ## Troubleshooting
 
