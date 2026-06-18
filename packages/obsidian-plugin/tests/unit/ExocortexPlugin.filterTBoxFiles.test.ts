@@ -96,4 +96,137 @@ describe("ExocortexPlugin.filterTBoxFiles (RFC c7da0bca Phase 5)", () => {
       ExocortexPlugin.filterTBoxFiles([], ["assetspaces/exo/"]),
     ).toEqual([]);
   });
+
+  // ----------------------------------------------------------------------
+  //  #3588 — EKA audience-layered layout: assetspaces are mounted under
+  //  `assetspaces/<owner>/<assetspace>/<namespace>/<uid>.md` (e.g.
+  //  `assetspaces/kitelev/exoas-exocmd/exocmd/<uid>.md`,
+  //  `assetspaces/kitelev/exoas-public/ems/<uid>.md`). A plain `startsWith`
+  //  prefix never matches that depth → bootstrap walked 0 files → command/
+  //  binding/grounding triples only arrived via the slow incremental
+  //  convertVault cold-start → create-buttons appeared late (root of the
+  //  #3587 eka-gui partial-store race). A single-segment `*` wildcard in a
+  //  prefix matches exactly one path segment, so `assetspaces/*/*/exocmd/`
+  //  reaches the namespace folder under ANY owner+assetspace WITHOUT pulling
+  //  unrelated assetspaces (leaf ABox like `exoas-my/pn/`) or the whole of
+  //  `exoas-public` (its 30+ framework namespaces concept/person/ui/…).
+  // ----------------------------------------------------------------------
+  describe("#3588 EKA layout — segment-wildcard prefixes", () => {
+    it("matches the EKA exocmd namespace folder under owner+assetspace via assetspaces/*/*/exocmd/", () => {
+      const files = [
+        { path: "assetspaces/kitelev/exoas-exocmd/exocmd/22093ca1.md" },
+        { path: "assetspaces/kitelev/exoas-public/ems/82c74542.md" },
+        { path: "assetspaces/kitelev/exoas-public/ems-commands/bb00efed.md" },
+        { path: "assetspaces/kitelev/exoas-exo/exo/Class.md" },
+      ];
+      const result = ExocortexPlugin.filterTBoxFiles(files, [
+        "assetspaces/*/*/exo/",
+        "assetspaces/*/*/ems/",
+        "assetspaces/*/*/ems-commands/",
+        "assetspaces/*/*/ims/",
+        "assetspaces/*/*/exocmd/",
+      ]);
+      expect(result.map((f) => f.path).sort()).toEqual([
+        "assetspaces/kitelev/exoas-exo/exo/Class.md",
+        "assetspaces/kitelev/exoas-exocmd/exocmd/22093ca1.md",
+        "assetspaces/kitelev/exoas-public/ems-commands/bb00efed.md",
+        "assetspaces/kitelev/exoas-public/ems/82c74542.md",
+      ]);
+    });
+
+    it("a `*` matches exactly one segment — does NOT collapse owner+assetspace into one", () => {
+      // `assetspaces/*/exocmd/` (single wildcard) must NOT match the
+      // two-level EKA nesting `assetspaces/<owner>/<assetspace>/exocmd/`.
+      const files = [
+        { path: "assetspaces/kitelev/exoas-exocmd/exocmd/x.md" },
+      ];
+      expect(
+        ExocortexPlugin.filterTBoxFiles(files, ["assetspaces/*/exocmd/"]),
+      ).toEqual([]);
+    });
+
+    it("EKA glob is scope-tight: does NOT pull leaf-ABox or unrelated exoas-public framework namespaces", () => {
+      const files = [
+        // wanted (TBox namespaces)
+        { path: "assetspaces/kitelev/exoas-public/ems/Area.md" },
+        { path: "assetspaces/kitelev/exoas-exocmd/exocmd/cmd.md" },
+        // NOT wanted: personal leaf ABox
+        { path: "assetspaces/kitelev/exoas-my/pn/2026-06-18.md" },
+        { path: "assetspaces/kitelev/exoas-my/ztlk/note.md" },
+        { path: "assetspaces/kitelev/exoas-tbank/og/secret.md" },
+        // NOT wanted: exoas-public framework namespaces unrelated to ems create-buttons
+        { path: "assetspaces/kitelev/exoas-public/concept/c.md" },
+        { path: "assetspaces/kitelev/exoas-public/person/p.md" },
+        { path: "assetspaces/kitelev/exoas-public/ui/layout.md" },
+      ];
+      const result = ExocortexPlugin.filterTBoxFiles(files, [
+        "assetspaces/*/*/exo/",
+        "assetspaces/*/*/ems/",
+        "assetspaces/*/*/ems-commands/",
+        "assetspaces/*/*/ims/",
+        "assetspaces/*/*/exocmd/",
+      ]);
+      expect(result.map((f) => f.path).sort()).toEqual([
+        "assetspaces/kitelev/exoas-exocmd/exocmd/cmd.md",
+        "assetspaces/kitelev/exoas-public/ems/Area.md",
+      ]);
+    });
+
+    it("matches files nested DEEPER than the namespace folder (prefix semantics preserved)", () => {
+      const files = [
+        { path: "assetspaces/kitelev/exoas-exocmd/exocmd/sub/deep.md" },
+      ];
+      expect(
+        ExocortexPlugin.filterTBoxFiles(files, ["assetspaces/*/*/exocmd/"]),
+      ).toHaveLength(1);
+    });
+
+    it("wildcard prefix still honours trailing-slash boundary (ems vs ems-commands)", () => {
+      const files = [
+        { path: "assetspaces/kitelev/exoas-public/ems/Effort.md" },
+        { path: "assetspaces/kitelev/exoas-public/ems-commands/bb00efed.md" },
+      ];
+      const result = ExocortexPlugin.filterTBoxFiles(files, [
+        "assetspaces/*/*/ems/",
+      ]);
+      expect(result.map((f) => f.path)).toEqual([
+        "assetspaces/kitelev/exoas-public/ems/Effort.md",
+      ]);
+    });
+
+    it("REGRESSION GUARD: legacy two-vault `assetspaces/<ns>/` prefixes still match (no wildcard)", () => {
+      const files = [
+        { path: "assetspaces/exo/Class.md" },
+        { path: "assetspaces/ems/Task.md" },
+        { path: "assetspaces/ems-commands/bb00efed.md" },
+        { path: "assetspaces/exocmd/22093ca1.md" },
+        { path: "03 Knowledge/foo.md" },
+      ];
+      const result = ExocortexPlugin.filterTBoxFiles(files, [
+        "assetspaces/exo/",
+        "assetspaces/ems/",
+        "assetspaces/ems-commands/",
+        "assetspaces/ims/",
+        "assetspaces/exocmd/",
+      ]);
+      expect(result.map((f) => f.path).sort()).toEqual([
+        "assetspaces/ems-commands/bb00efed.md",
+        "assetspaces/ems/Task.md",
+        "assetspaces/exo/Class.md",
+        "assetspaces/exocmd/22093ca1.md",
+      ]);
+    });
+
+    it("legacy + EKA prefixes coexist (mixed-layout vault during migration)", () => {
+      const files = [
+        { path: "assetspaces/ems/legacy.md" },
+        { path: "assetspaces/kitelev/exoas-public/ems/eka.md" },
+      ];
+      const result = ExocortexPlugin.filterTBoxFiles(files, [
+        "assetspaces/ems/",
+        "assetspaces/*/*/ems/",
+      ]);
+      expect(result).toHaveLength(2);
+    });
+  });
 });
