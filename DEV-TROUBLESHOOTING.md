@@ -917,27 +917,27 @@ gh pr checks <PR-NUMBER>
 - ❌ NEVER skip if your code changed UI components
 - ✅ MAY skip with documentation if:
   - All tests pass locally (verified multiple runs)
-  - All other required CI checks pass (12/13 GREEN — current required set: `archgate`, `detect-changes`, `e2e-shard (1..6)`, `lint`, `parity-gate`, `test-component`, `test-coverage`, `typecheck`)
+  - All other required CI checks pass (the [current required set](docs/reference/ci/required-checks.md))
   - Code changes don't touch failing component area
   - Failure pattern is systematic across multiple runs
   - Document in PR with full evidence
 
-**Example Documentation for PR** (historical example from Issue #436 — check names predate the current 13-check required set, but the evidence structure is the template to follow):
+**Example Documentation for PR** (adapted from Issue #436 — uses the current check names; the evidence structure is the template to follow, and the [required-checks list](docs/reference/ci/required-checks.md) is the source of truth):
 
 ```markdown
 ## CI Status
 
-**7/8 checks GREEN:**
+**12/13 checks GREEN:**
 
-- ✅ build
+- ✅ archgate
+- ✅ detect-changes
 - ✅ typecheck
 - ✅ lint
-- ✅ test-unit (1785 tests)
 - ✅ test-coverage
-- ✅ test-bdd
-- ✅ e2e-tests
+- ✅ parity-gate
+- ✅ e2e-shard (1..6)
 
-**1/8 check FLAKY:**
+**1/13 check FLAKY:**
 
 - ❌ test-component (130/168 fail in CI)
 - ✅ ALL 168 tests pass locally (verified 3 runs)
@@ -1309,7 +1309,7 @@ done
 
 ### Non-required check failure blocks Auto Release
 
-**Symptom**: All 13 required CI checks pass, PR merges via auto-merge, but Auto Release workflow shows "skipped".
+**Symptom**: All required CI checks pass, PR merges via auto-merge, but Auto Release workflow shows "skipped".
 
 **Root cause**: Auto Release triggers on `workflow_run` with `conclusion == 'success'`. A **non-required** check failure (e.g., `docs-link-check`) causes the overall CI run conclusion to be `failure`, which blocks Auto Release even though the PR was mergeable.
 

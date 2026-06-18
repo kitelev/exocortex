@@ -279,7 +279,7 @@ The plugin has **three** distinct E2E suites with separate configs and CI jobs:
 
 | Suite | Location | Config | CI job / workflow | Gating |
 | --- | --- | --- | --- | --- |
-| **Main smoke** | `tests/e2e/specs/**` | `playwright-e2e.config.ts` | `e2e-shard (1..6)` in `.github/workflows/ci.yml` | **Required** (6 of the 13 required checks); sharded via `playwright-shard-assignments.json` |
+| **Main smoke** | `tests/e2e/specs/**` | `playwright-e2e.config.ts` | `e2e-shard (1..6)` in `.github/workflows/ci.yml` | **Required** (6 of the [required checks](docs/reference/ci/required-checks.md)); sharded via `playwright-shard-assignments.json` |
 | **EKA GUI-BDD** | `tests/e2e/eka-gui/create-instance-buttons.spec.ts` (+ `eka-gui-helpers.ts`) | `playwright-eka-gui.config.ts` | `.github/workflows/eka-gui-e2e.yml` | **Non-blocking** release-gate: nightly cron + `push:[main]` + `workflow_dispatch`. Drives the real create-instance buttons (Create Task/Project/Area/Meeting) against published `exoas-*` content. |
 | **EKA Obsidian-leg** | `tests/e2e/eka/eka-obsidian-leg.spec.ts` (+ `scripts/test-eka-obsidian-leg.sh`) | run via the script | `.github/workflows/eka-obsidian-leg-e2e.yml` | **Non-blocking**: nightly cron + `push:[main]` (paths-filtered) + `workflow_dispatch`. Exercises the EKA bootstrap/apply-profile leg in real Obsidian. |
 
@@ -783,7 +783,7 @@ Notes:
 
 ### Test Jobs in CI
 
-Required status checks on `main` (13 total): `archgate`, `detect-changes`, `e2e-shard (1..6)`, `lint`, `parity-gate`, `test-component`, `test-coverage`, `typecheck`. Source of truth: `gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks`. (`test-bdd` was removed in #3433; the old `test-unit` job was repurposed to `test-ui` in #3396.)
+The required status checks on `main` are listed in **[docs/reference/ci/required-checks.md](docs/reference/ci/required-checks.md)** — the single source for that fact (with the live `gh api` command). The test-related jobs that feed those checks are described below.
 
 Test-related jobs in the pipeline:
 

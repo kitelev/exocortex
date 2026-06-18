@@ -34,7 +34,7 @@ npm run test:all
 2. **Make the change** in a focused, single-purpose PR.
 3. **Run `npm run test:all`** locally before pushing — this is mandatory.
 4. **Open a PR** with a clear, user-facing title/body (the title flows into the auto-generated release notes).
-5. **CI must pass** — all required checks are green. The current set is the source of truth at `gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks`.
+5. **CI must pass** — all required checks are green. The current set is listed in [docs/reference/ci/required-checks.md](docs/reference/ci/required-checks.md) (source of truth: `gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks`).
 6. **Squash-merge** once approved and green (`gh pr merge --squash`). Rebase merges are not used.
 
 A task is **not complete** until: CI green + PR merged + the Auto Release workflow succeeds.
