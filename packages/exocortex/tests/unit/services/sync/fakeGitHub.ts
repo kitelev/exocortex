@@ -20,6 +20,7 @@ import type {
 import type {
   LocalFilesPort,
   MaterializationCheckPort,
+  MountBaseStorePort,
   SyncRepoSpec,
   WatermarkRecord,
   WatermarkStorePort,
@@ -400,6 +401,20 @@ export class FakeWatermarkStore implements WatermarkStorePort {
   }
   async set(repoKey: string, record: WatermarkRecord): Promise<void> {
     this.records.set(repoKey, record);
+  }
+}
+
+/** In-memory MountBaseStorePort (#3590) — records the mounted commit SHA. */
+export class FakeMountBaseStore implements MountBaseStorePort {
+  readonly shas = new Map<string, string>();
+  constructor(initial: Record<string, string> = {}) {
+    for (const [k, v] of Object.entries(initial)) this.shas.set(k, v);
+  }
+  async get(repoKey: string): Promise<string | null> {
+    return this.shas.get(repoKey) ?? null;
+  }
+  async set(repoKey: string, sha: string): Promise<void> {
+    this.shas.set(repoKey, sha);
   }
 }
 

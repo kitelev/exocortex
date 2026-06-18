@@ -198,6 +198,54 @@ describe("RestAssetSpaceMount.mount", () => {
     );
   });
 
+  it("#3590 — records the mounted commit SHA as the first-sync merge base keyed by repoKey", async () => {
+    const adapter = new InMemoryAdapter();
+    const tarball = await makeTarball("kitelev-exoas-ems-abc1234", [
+      { name: "README.md", data: new TextEncoder().encode("x") },
+    ]);
+    const recorded = new Map<string, string>();
+    const mountBaseStore = {
+      get: async (k: string) => recorded.get(k) ?? null,
+      set: async (k: string, sha: string) => {
+        recorded.set(k, sha);
+      },
+    };
+    const mount = new RestAssetSpaceMount({
+      app: makeApp(adapter),
+      client: makeFakeClient(tarball) as unknown as GitHubRestClient,
+      mountBaseStore,
+    });
+
+    await mount.mount(URL_OK, PATH_OK, "main");
+
+    // repoKey == `<owner>/<repo>#<SYNC_BRANCH>` — what the sync engine reads.
+    expect(recorded.get("kitelev/exoas-ems#main")).toBe("abc1234");
+  });
+
+  it("#3590 — a mount-base store write failure does NOT fail the mount (best-effort)", async () => {
+    const adapter = new InMemoryAdapter();
+    const tarball = await makeTarball("kitelev-exoas-ems-abc1234", [
+      { name: "README.md", data: new TextEncoder().encode("x") },
+    ]);
+    const mountBaseStore = {
+      get: async () => null,
+      set: async () => {
+        throw new Error("device-local store unwritable");
+      },
+    };
+    const mount = new RestAssetSpaceMount({
+      app: makeApp(adapter),
+      client: makeFakeClient(tarball) as unknown as GitHubRestClient,
+      mountBaseStore,
+    });
+
+    const result = await mount.mount(URL_OK, PATH_OK, "main");
+
+    // Mount succeeds despite the store failure — files materialised, no throw.
+    expect(result.sha).toBe("abc1234");
+    expect(adapter.files.has(`${PATH_OK}/README.md`)).toBe(true);
+  });
+
   it("does NOT materialise files when the writeBinary loop is skipped (revert-verify control)", async () => {
     // Control proving the happy-path assertions above are load-bearing:
     // an empty tarball produces zero files and throws before .gitmodules.

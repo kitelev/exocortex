@@ -40,8 +40,10 @@ import {
   mountAssetSpaceFiles,
   appendGitmodulesEntry,
   stripGitmodulesEntry as coreStripGitmodulesEntry,
+  SYNC_BRANCH,
   type FileSystemPort,
   type AssetSpaceHttpClient,
+  type MountBaseStorePort,
   type MountFile,
 } from "exocortex";
 
@@ -66,11 +68,21 @@ export interface BootstrapServiceOptions {
    * from `--token` flag OR `GITHUB_TOKEN`/`GH_TOKEN` env (option > env).
    */
   token?: string;
+  /**
+   * #3590 — records the mounted commit SHA (the first-sync 3-way merge base)
+   * keyed by `repoKey`, the instant an AssetSpace is pulled. Optional: absent ⇒
+   * no base recorded ⇒ first-sync of a diverged repo stays the conservative
+   * full-conflict (zero regression). The CLI commands build it over the vault's
+   * device-local `exosync-mountbase.local.json` (same file `exosync sync`
+   * reads). See {@link MountBaseStorePort}.
+   */
+  mountBaseStore?: MountBaseStorePort;
 }
 
 export class BootstrapAssetSpaceService {
   private readonly fetchImpl: typeof fetch;
   private readonly token: string;
+  private readonly mountBaseStore?: MountBaseStorePort;
 
   // PAT redaction (mirrors plugin GitHubRestClient.PAT_REGEX) — replaces any
   // PAT-shaped substring that may leak into an error message / underlying
@@ -83,6 +95,7 @@ export class BootstrapAssetSpaceService {
   constructor(opts: BootstrapServiceOptions = {}) {
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
     this.token = opts.token ?? "";
+    this.mountBaseStore = opts.mountBaseStore;
   }
 
   /**
@@ -144,7 +157,7 @@ export class BootstrapAssetSpaceService {
       }
     }
 
-    return mountAssetSpaceFiles({
+    const result = await mountAssetSpaceFiles({
       http: this.httpPort(),
       fs: this.fsPort(),
       owner,
@@ -152,6 +165,24 @@ export class BootstrapAssetSpaceService {
       ref,
       targetPath: targetDir,
     });
+
+    // #3590 — record the mounted commit SHA (correct-by-construction from the
+    // tarball wrapper) as the first-sync 3-way merge base, keyed by the SAME
+    // `repoKey` the sync engine reads. Best-effort: a store-write failure must
+    // NOT fail the pull (worst case is the conservative full-conflict on first
+    // sync, never data loss).
+    if (this.mountBaseStore !== undefined) {
+      try {
+        await this.mountBaseStore.set(
+          `${owner}/${repo}#${SYNC_BRANCH}`,
+          result.sha,
+        );
+      } catch {
+        /* non-fatal — first-sync falls back to full-conflict, never a loss */
+      }
+    }
+
+    return result;
   }
 
   /**

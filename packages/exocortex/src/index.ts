@@ -634,6 +634,7 @@ export {
   type MergeConflictInput,
   type MergeDecision,
   type MergeLayerPort,
+  type MountBaseStorePort,
   type QuarantineEntry,
   type QuarantinePort,
   type RepoSyncResult,
@@ -676,6 +677,10 @@ export {
   WATERMARK_STORE_FILENAME,
   type WatermarkFileIO,
 } from "./services/sync/FileWatermarkStore";
+export {
+  FileMountBaseStore,
+  MOUNT_BASE_STORE_FILENAME,
+} from "./services/sync/FileMountBaseStore";
 export {
   isAuthError,
   type CredentialStorePort,

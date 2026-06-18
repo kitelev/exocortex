@@ -1,8 +1,10 @@
 import type { App, DataAdapter } from "obsidian";
 import yaml from "js-yaml";
 import {
+  FileMountBaseStore,
   FileWatermarkStore,
   GatedStructuredMerger,
+  MOUNT_BASE_STORE_FILENAME,
   SYNC_BRANCH,
   SpaceSpecAccumulator,
   StructuredMerger,
@@ -398,6 +400,10 @@ export async function buildSyncEngine(
   const adapter = app.vault.adapter;
   const configDir = app.vault.configDir;
   const watermarkPath = `${configDir}/plugins/exocortex/${WATERMARK_STORE_FILENAME}`;
+  // #3590 — first-sync merge base, recorded at apply/mount time by
+  // `RestAssetSpaceMount` under the SAME path convention (same vault.adapter,
+  // same `.local.`-infix file).
+  const mountBasePath = `${configDir}/plugins/exocortex/${MOUNT_BASE_STORE_FILENAME}`;
 
   let quarantine: QuarantinePort | undefined;
   const quarantineUrl = opts.quarantineRepoUrl?.trim() ?? "";
@@ -420,6 +426,9 @@ export async function buildSyncEngine(
     transport,
     watermarkStore: new FileWatermarkStore(
       vaultWatermarkFileIO(adapter, watermarkPath),
+    ),
+    mountBaseStore: new FileMountBaseStore(
+      vaultWatermarkFileIO(adapter, mountBasePath),
     ),
     materializationCheck: vaultMaterializationCheck({
       adapter,

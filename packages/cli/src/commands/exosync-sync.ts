@@ -37,8 +37,10 @@ import { webcrypto } from "node:crypto";
 import * as path from "node:path";
 import yaml from "js-yaml";
 import {
+  FileMountBaseStore,
   FileWatermarkStore,
   GatedStructuredMerger,
+  MOUNT_BASE_STORE_FILENAME,
   StructuredMerger,
   SyncedQuarantineStore,
   SyncEngine,
@@ -236,6 +238,28 @@ export function nodeWatermarkFileIO(filePath: string): WatermarkFileIO {
 }
 
 /**
+ * #3590 — node-backed mount-base store over the vault's device-local
+ * `exosync-mountbase.local.json`. SINGLE source of the path convention so the
+ * WRITE side (apply / mount commands) and the READ side (`exosync sync`) always
+ * agree on the file — a mismatch would silently lose the recorded merge base
+ * (safe, but the fix would not fire). `configDir` defaults to `.obsidian`,
+ * matching the sync command's default.
+ */
+export function nodeMountBaseStore(
+  vaultPath: string,
+  configDir = ".obsidian",
+): FileMountBaseStore {
+  const filePath = path.join(
+    vaultPath,
+    configDir,
+    "plugins",
+    "exocortex",
+    MOUNT_BASE_STORE_FILENAME,
+  );
+  return new FileMountBaseStore(nodeWatermarkFileIO(filePath));
+}
+
+/**
  * CLI full-materialization gate (D19). The CLI has no plugin profile-apply /
  * staging state to consult, so the floor check is: mount folder exists +
  * (for non-file spaces) non-empty. An empty FileSpace folder is a legitimate
@@ -346,7 +370,6 @@ export async function runExosyncSync(
     "exocortex",
     WATERMARK_STORE_FILENAME,
   );
-
   let quarantine: QuarantinePort | undefined;
   const quarantineUrl = opts.quarantineRepo?.trim() ?? "";
   if (quarantineUrl.length > 0) {
@@ -366,6 +389,7 @@ export async function runExosyncSync(
   const engine = new SyncEngine({
     transport,
     watermarkStore: new FileWatermarkStore(nodeWatermarkFileIO(watermarkPath)),
+    mountBaseStore: nodeMountBaseStore(vaultPath, configDir),
     materializationCheck: nodeMaterializationCheck(vaultPath),
     localFilesFor: (spec) =>
       nodeLocalFilesPort(path.join(vaultPath, spec.localPath)),
