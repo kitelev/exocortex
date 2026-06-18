@@ -327,6 +327,31 @@ describe("SyncEngine — first-sync cleanly-mergeable divergence (#3590)", () =>
     expect(result.pushedCount).toBe(1); // the local-only add
     expect(gh.headFiles().get(FILE_B)).toBe(mdAsset("u2"));
   });
+
+  it("recognises a no-advance via an ABBREVIATED mount SHA (anonymous tarball) — cheap path, no false 'advanced' warning", async () => {
+    // Anonymous GitHub tarballs carry a 7-char wrapper SHA; head is the full
+    // 40-char SHA. The no-advance check must prefix-match, else the common
+    // anonymous case takes a needless reconcile round-trip + a misleading log.
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const abbreviatedMountSha = gh.headSha().slice(0, 7);
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const { engine } = makeEngine(gh, local, {
+      mountBaseStore: new FakeMountBaseStore({
+        [gh.spec().repoKey]: abbreviatedMountSha,
+      }),
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.pushedCount).toBe(1);
+    // Took the cheap #3565 additive path, NOT the mount-base reconcile.
+    expect(result.warnings.join(" ")).not.toMatch(/advanced since mount/);
+    expect(result.warnings.join(" ")).toMatch(/pure superset/);
+  });
 });
 
 describe("SyncEngine — push-only happy path (VL#7, D3)", () => {

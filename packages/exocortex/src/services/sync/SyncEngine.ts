@@ -2162,8 +2162,15 @@ export class SyncEngine {
       return null; // store read failure → conservative fallback
     }
     // No record, or the remote has not advanced since the mount (the cheaper
-    // R⊆L clean-mount / additive path below handles head === mount exactly).
-    if (mountSha === null || mountSha === head) return null;
+    // R⊆L clean-mount / additive path below handles head == mount exactly).
+    // `head.startsWith(mountSha)` (not `===`) so an ABBREVIATED mount SHA
+    // (anonymous tarballs carry a 7-char wrapper SHA — extractShaFromWrapper)
+    // still recognises the no-advance case and takes the cheap path instead of
+    // a needless reconcile round-trip + a misleading "advanced" warning. A
+    // false positive (a 7-char prefix collision between head and an older
+    // ancestor) is merely conservative — it routes to the R⊆L full-conflict
+    // path, never a silent overwrite.
+    if (mountSha === null || head.startsWith(mountSha)) return null;
 
     // Verify the recorded SHA is a GENUINE ancestor of the current head by
     // walking the first-parent chain. The walk doubles as the fetch of the
