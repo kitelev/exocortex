@@ -109,6 +109,34 @@ export interface WatermarkStorePort {
 }
 
 /**
+ * Per-device, per-repo record of the commit SHA the AssetSpace was MOUNTED at
+ * (#3590). The mount/apply layer extracts this SHA correct-by-construction from
+ * the GitHub tarball wrapper dir (`<owner>-<repo>-<sha>/`) and records it the
+ * instant the working tree is materialized — BEFORE the user makes any local
+ * edits and BEFORE the remote head can advance.
+ *
+ * It is the true 3-way **merge base** for the FIRST sync (no watermark yet): the
+ * common ancestor of the local working tree and the remote head. Without it, a
+ * first-sync where the remote has advanced on DISJOINT files since the mount
+ * could only be classified as a `full-conflict` (the engine cannot tell a clean
+ * remote-only change from an overlapping edit), blocking onboarding (#3590).
+ *
+ * Lives in the SAME non-synced device-local store as the watermark
+ * (`.local.`-infix, Sync-excluded) — the merge base is device-specific. Like
+ * the watermark, it is never trusted blindly: the engine verifies the recorded
+ * SHA is a genuine ancestor of the current remote head before using its tree as
+ * the base, and falls back to the conservative `full-conflict` if it is absent,
+ * unresolvable (GC'd / rewritten), or not an ancestor — never a silent
+ * overwrite (M1 zero-loss).
+ */
+export interface MountBaseStorePort {
+  /** The commit SHA the repo was mounted at, or `null` if none recorded. */
+  get(repoKey: string): Promise<string | null>;
+  /** Record the mounted commit SHA (called by the apply/mount layer). */
+  set(repoKey: string, sha: string): Promise<void>;
+}
+
+/**
  * Local working-tree access for ONE repo, repo-relative forward-slash paths.
  * String content only — binary attachments are out of A1 scope (Phase C,
  * D4/VL#3); the engine additionally applies {@link isSyncablePath} so adapters

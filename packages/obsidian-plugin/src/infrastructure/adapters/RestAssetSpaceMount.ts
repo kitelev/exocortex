@@ -10,8 +10,10 @@ import {
   mountAssetSpaceFiles,
   appendGitmodulesEntry,
   stripGitmodulesEntry,
+  SYNC_BRANCH,
   type FileSystemPort,
   type AssetSpaceHttpClient,
+  type MountBaseStorePort,
   type MountFile,
   type MountResult,
 } from "exocortex";
@@ -54,6 +56,13 @@ import {
 export interface RestAssetSpaceMountOptions {
   app: App;
   client: GitHubRestClient;
+  /**
+   * #3590 — records the mounted commit SHA (the first-sync 3-way merge base)
+   * keyed by `repoKey`, the instant the working tree is materialized. Optional:
+   * absent ⇒ no base recorded ⇒ first-sync of a diverged repo stays the
+   * conservative full-conflict (zero regression). See {@link MountBaseStorePort}.
+   */
+  mountBaseStore?: MountBaseStorePort;
 }
 
 /** Outcome of a successful {@link RestAssetSpaceMount.mount}. */
@@ -64,6 +73,7 @@ const GITMODULES = ".gitmodules";
 export class RestAssetSpaceMount {
   private readonly app: App;
   private readonly client: GitHubRestClient;
+  private readonly mountBaseStore?: MountBaseStorePort;
 
   constructor(opts: RestAssetSpaceMountOptions) {
     if (!opts || !opts.app) {
@@ -74,6 +84,7 @@ export class RestAssetSpaceMount {
     }
     this.app = opts.app;
     this.client = opts.client;
+    this.mountBaseStore = opts.mountBaseStore;
   }
 
   private get adapter(): DataAdapter {
@@ -112,6 +123,21 @@ export class RestAssetSpaceMount {
       ref,
       targetPath: safePath,
     });
+
+    // #3590 — record the mounted commit SHA (correct-by-construction from the
+    // tarball wrapper) as the first-sync 3-way merge base, keyed by the SAME
+    // `repoKey` the sync engine reads (`<owner>/<repo>#<SYNC_BRANCH>`). Recorded
+    // NOW, before the user can edit or the remote can advance, so the very
+    // first ExoSync reconciles against a real base instead of false-conflicting.
+    // Best-effort: a store write failure must NOT fail the mount (the worst
+    // case is the conservative full-conflict on first sync, never data loss).
+    if (this.mountBaseStore !== undefined) {
+      try {
+        await this.mountBaseStore.set(`${owner}/${repo}#${SYNC_BRANCH}`, result.sha);
+      } catch {
+        /* non-fatal — first-sync falls back to full-conflict, never a loss */
+      }
+    }
 
     // Record the AssetSpace in `.gitmodules` (path + source URL). This is NOT a
     // git submodule registration — a git-free REST mount creates no gitlink

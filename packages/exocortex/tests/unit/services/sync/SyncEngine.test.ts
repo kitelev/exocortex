@@ -26,6 +26,7 @@ import {
 import {
   FakeGitHubRepo,
   FakeLocalFiles,
+  FakeMountBaseStore,
   FakeWatermarkStore,
   alwaysMaterialized,
   neverMaterialized,
@@ -199,6 +200,157 @@ describe("SyncEngine — first-sync additive divergence (#3565)", () => {
     expect(result.status).toBe("full-conflict");
     expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1", "remote")); // untouched
     expect(gh.headFiles().has(FILE_B)).toBe(false); // add NOT pushed amid overlap
+  });
+});
+
+// #3590 — first-sync false full-conflict on a cleanly-mergeable divergence.
+// Sibling of #3565: that fix covered local ⊇ remote (pure additive). This one
+// covers the COMPLEMENTARY case — the remote has ADVANCED on disjoint files
+// since the device mounted the AssetSpace, while the user made local edits.
+// Pre-fix the engine had no merge base, so any remote-head file differing from
+// disk forced `full-conflict` (blocking onboarding). The mount layer now
+// records the mounted commit SHA (the true 3-way merge base); the engine uses
+// its tree as the base and the existing 3-way machinery cleanly merges a
+// disjoint divergence while still routing a real overlap to conflict (M1).
+const CONFIG = "config/x.md";
+const FILE_C = "assets/c.md";
+
+describe("SyncEngine — first-sync cleanly-mergeable divergence (#3590)", () => {
+  it("clean 3-way merges when the remote advanced on DISJOINT files since the mount", async () => {
+    // Mount base: FILE_A + CONFIG + FILE_C, all byte-identical to remote.
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1", "orig-a"),
+      [CONFIG]: mdAsset("u9", "orig-x"),
+      [FILE_C]: mdAsset("u3", "orig-c"),
+    });
+    const mountSha = gh.headSha(); // recorded at mount, BEFORE any divergence
+
+    // Device B advances the remote, touching ONLY CONFIG (disjoint from the
+    // local edits below) — exactly the empirical #3590 shape.
+    gh.commitDirect(gh.branch, { [CONFIG]: mdAsset("u9", "remote-x") }, "remote ahead (disjoint)");
+
+    // Local working tree: edits FILE_A, adds FILE_B, deletes FILE_C, and still
+    // holds the OLD (un-pulled) CONFIG. None of these overlap the remote change.
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1", "local-a"), // local edit
+      [CONFIG]: mdAsset("u9", "orig-x"), // un-pulled mount version
+      [FILE_B]: mdAsset("u2"), // local-only add
+      // FILE_C absent → local delete
+    });
+    const { engine, watermarks } = makeEngine(gh, local, {
+      mountBaseStore: new FakeMountBaseStore({ [gh.spec().repoKey]: mountSha }),
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    // Clean merge, NOT a false full-conflict.
+    expect(result.status).toBe("synced");
+    // Remote-only change pulled to disk.
+    expect(result.pulledCount).toBe(1);
+    expect(local.files.get(CONFIG)).toBe(mdAsset("u9", "remote-x"));
+    // Local edit + add pushed; remote change NOT overwritten with the stale copy.
+    expect(result.pushedCount).toBe(2);
+    expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1", "local-a"));
+    expect(gh.headFiles().get(FILE_B)).toBe(mdAsset("u2"));
+    expect(gh.headFiles().get(CONFIG)).toBe(mdAsset("u9", "remote-x"));
+    // Local delete propagated.
+    expect(gh.headFiles().has(FILE_C)).toBe(false);
+    expect(result.pushedDeletes ?? []).toContain(FILE_C);
+
+    // A real watermark is established → re-sync no-ops (no deadlock).
+    expect(watermarks.records.size).toBe(1);
+    const again = await engine.sync(gh.spec());
+    expect(again.status).toBe("synced");
+    expect(again.pushedCount).toBe(0);
+    expect(again.pulledCount).toBe(0);
+  });
+
+  it("M1 HARD FLOOR: a REAL overlapping edit still conflicts, never silently overwrites", async () => {
+    // Both sides edit CONFIG since the mount base → genuine overlap. With no A2
+    // merge layer wired the engine MUST refuse (conflict), touching neither the
+    // remote nor disk — zero silent data loss.
+    const gh = new FakeGitHubRepo({ [CONFIG]: mdAsset("u9", "orig-x") });
+    const mountSha = gh.headSha();
+    gh.commitDirect(gh.branch, { [CONFIG]: mdAsset("u9", "remote-x") }, "remote edits CONFIG");
+    const local = new FakeLocalFiles({ [CONFIG]: mdAsset("u9", "local-x") }); // local ALSO edited CONFIG
+    const { engine, watermarks } = makeEngine(gh, local, {
+      mountBaseStore: new FakeMountBaseStore({ [gh.spec().repoKey]: mountSha }),
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).not.toBe("synced");
+    expect(gh.headFiles().get(CONFIG)).toBe(mdAsset("u9", "remote-x")); // remote untouched
+    expect(local.files.get(CONFIG)).toBe(mdAsset("u9", "local-x")); // disk untouched
+    expect(watermarks.records.size).toBe(0); // no watermark advanced on conflict
+  });
+
+  it("falls back to full-conflict when the recorded mount SHA is not a remote ancestor (unresolvable)", async () => {
+    // A stale/foreign/GC'd mount SHA must NOT be trusted as a base — the engine
+    // falls back to the conservative full-conflict (status quo), never a guess.
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1", "orig-a") });
+    gh.commitDirect(gh.branch, { [CONFIG]: mdAsset("u9", "remote-x") }, "remote ahead");
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1", "local-a"),
+      [CONFIG]: mdAsset("u9", "orig-x"),
+    });
+    const { engine, watermarks } = makeEngine(gh, local, {
+      mountBaseStore: new FakeMountBaseStore({
+        [gh.spec().repoKey]: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      }),
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("full-conflict");
+    expect(result.detail).toMatch(/first-sync/);
+    expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1", "orig-a")); // untouched
+    expect(watermarks.records.size).toBe(0);
+  });
+
+  it("keeps the #3565 additive fast path when the remote has NOT advanced (mount SHA == head)", async () => {
+    // mountSha == head → no remote divergence to reconcile; the recorded base
+    // must not perturb the pure-superset additive push (#3565 regression).
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const mountSha = gh.headSha();
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const { engine } = makeEngine(gh, local, {
+      mountBaseStore: new FakeMountBaseStore({ [gh.spec().repoKey]: mountSha }),
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.pushedCount).toBe(1); // the local-only add
+    expect(gh.headFiles().get(FILE_B)).toBe(mdAsset("u2"));
+  });
+
+  it("recognises a no-advance via an ABBREVIATED mount SHA (anonymous tarball) — cheap path, no false 'advanced' warning", async () => {
+    // Anonymous GitHub tarballs carry a 7-char wrapper SHA; head is the full
+    // 40-char SHA. The no-advance check must prefix-match, else the common
+    // anonymous case takes a needless reconcile round-trip + a misleading log.
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const abbreviatedMountSha = gh.headSha().slice(0, 7);
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const { engine } = makeEngine(gh, local, {
+      mountBaseStore: new FakeMountBaseStore({
+        [gh.spec().repoKey]: abbreviatedMountSha,
+      }),
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.pushedCount).toBe(1);
+    // Took the cheap #3565 additive path, NOT the mount-base reconcile.
+    expect(result.warnings.join(" ")).not.toMatch(/advanced since mount/);
+    expect(result.warnings.join(" ")).toMatch(/pure superset/);
   });
 });
 

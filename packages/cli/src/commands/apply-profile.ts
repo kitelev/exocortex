@@ -8,6 +8,7 @@ import {
   TsFloorViolationError,
 } from "../services/CliApplyProfileService.js";
 import { BootstrapAssetSpaceService } from "../services/BootstrapAssetSpaceService.js";
+import { nodeMountBaseStore } from "./exosync-sync.js";
 import { HeadlessConfirmGate } from "../services/HeadlessConfirmGate.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import {
@@ -161,7 +162,12 @@ export async function runApplyProfile(
     new CliApplyProfileService({
       vaultPath,
       ref: opts.ref ?? "main",
-      mount: new BootstrapAssetSpaceService({ token }),
+      // #3590 — record each mounted AssetSpace's commit SHA as the first-sync
+      // 3-way merge base (same device-local file `exosync sync` reads).
+      mount: new BootstrapAssetSpaceService({
+        token,
+        mountBaseStore: nodeMountBaseStore(vaultPath),
+      }),
     });
 
   const { infos, profileLabels } = service.scanVault();

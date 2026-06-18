@@ -1,5 +1,10 @@
 import type { App } from "obsidian";
-import type { INotificationService } from "exocortex";
+import {
+  FileMountBaseStore,
+  MOUNT_BASE_STORE_FILENAME,
+  type INotificationService,
+} from "exocortex";
+import { vaultWatermarkFileIO } from "./SyncDepsFactory";
 
 import type { ILogger } from "../../adapters/logging/ILogger";
 
@@ -94,7 +99,14 @@ export async function buildRestAssetSpaceMount(opts: {
   const secretsStore = new LocalSecretsStore({ app });
   const pat = await secretsStore.getSecret("pat");
   const client = new GitHubRestClient({ app, pat: pat ?? "" });
-  return new RestAssetSpaceMount({ app, client });
+  // #3590 — the mount records the first-sync 3-way merge base into the same
+  // device-local file (`exosync-mountbase.local.json`) the sync engine reads
+  // (built identically in `SyncDepsFactory`).
+  const mountBasePath = `${app.vault.configDir}/plugins/exocortex/${MOUNT_BASE_STORE_FILENAME}`;
+  const mountBaseStore = new FileMountBaseStore(
+    vaultWatermarkFileIO(app.vault.adapter, mountBasePath),
+  );
+  return new RestAssetSpaceMount({ app, client, mountBaseStore });
 }
 
 /**

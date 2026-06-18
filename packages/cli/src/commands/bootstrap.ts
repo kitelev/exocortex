@@ -3,6 +3,7 @@ import { resolve, join } from "node:path";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { derivePath } from "exocortex";
 import { BootstrapAssetSpaceService } from "../services/BootstrapAssetSpaceService.js";
+import { nodeMountBaseStore } from "./exosync-sync.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { InvalidArgumentsError } from "../utils/errors/index.js";
 
@@ -83,7 +84,12 @@ export function bootstrapCommand(): Command {
         // through to the next source instead of pinning anonymous mode.
         // All-empty → undefined → anonymous mode (public repos), unchanged.
         const token = options.token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || undefined;
-        const svc = new BootstrapAssetSpaceService({ token });
+        // #3590 — record each mounted commit SHA as the first-sync 3-way merge
+        // base (same device-local file `exosync sync` reads).
+        const svc = new BootstrapAssetSpaceService({
+          token,
+          mountBaseStore: nodeMountBaseStore(vaultPath),
+        });
         const ref = options.ref ?? "main";
 
         const results: Array<{ folder: string; url: string; sha: string; fileCount: number }> = [];

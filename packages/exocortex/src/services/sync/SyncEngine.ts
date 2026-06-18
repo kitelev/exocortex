@@ -82,6 +82,7 @@ import {
   type LocalFilesPort,
   type MaterializationCheckPort,
   type MergeLayerPort,
+  type MountBaseStorePort,
   type QuarantineEntry,
   type QuarantinePort,
   type RepoSyncResult,
@@ -103,6 +104,17 @@ export interface SyncEngineDeps {
   materializationCheck: MaterializationCheckPort;
   /** Working-tree access for one repo of the materialized set. */
   localFilesFor: (spec: SyncRepoSpec) => LocalFilesPort;
+  /**
+   * Per-device record of the commit SHA each repo was MOUNTED at (#3590).
+   * Absent ⇒ no first-sync merge base is available, so a no-watermark
+   * divergence stays the conservative `full-conflict` (status quo, zero
+   * regression). When present, asset-mode first-sync uses the recorded SHA's
+   * tree as the true 3-way merge base — a remote that advanced on disjoint
+   * files since the mount cleanly merges instead of false-conflicting, while a
+   * real overlapping edit still routes through the merge/quarantine layer
+   * (M1 zero-loss intact). See {@link MountBaseStorePort}.
+   */
+  mountBaseStore?: MountBaseStorePort;
   sha1: Sha1Fn;
   baseURL?: string;
   /** Cap on 422 re-pull→retry cycles (D16). Default {@link DEFAULT_MAX_PUSH_RETRIES}. */
@@ -2116,6 +2128,120 @@ export class SyncEngine {
   }
 
   /**
+   * #3590 — build a first-sync 3-way base from the recorded MOUNT commit when
+   * the remote has advanced since the AssetSpace was mounted. Returns:
+   *  - `null` — no mount base recorded, the remote has NOT advanced
+   *    (mount === head; the cheaper R⊆L path handles it), the recorded SHA is
+   *    unresolvable (GC'd / rewritten), or it is NOT a genuine ancestor of the
+   *    current head. In every `null` case the caller falls back to the
+   *    conservative R⊆L bootstrap (full-conflict on a real divergence) — never
+   *    a guessed base, never a silent overwrite.
+   *  - `{ kind: "additive-base", base }` — the mount commit's tree, validated
+   *    as an ancestor of head. The normal cycle reconciles remote changes
+   *    (mount..head) against local changes (disk vs mount) through the SAME
+   *    3-way machinery the post-watermark path uses: disjoint → clean merge,
+   *    overlap → conflict/quarantine (M1 zero-loss intact).
+   *
+   * Ancestry is verified by walking head's first-parent chain (bounded) until
+   * the recorded SHA is found — a stale/foreign SHA whose tree happened to
+   * differ would otherwise mis-classify a remote change as a local edit and
+   * push a stale blob over a newer remote version.
+   */
+  private async tryMountBaseBootstrap(
+    spec: SyncRepoSpec,
+    head: string,
+    warnings: string[],
+  ): Promise<FirstSyncBootstrap | null> {
+    const store = this.deps.mountBaseStore;
+    if (store === undefined) return null;
+
+    let mountSha: string | null;
+    try {
+      mountSha = await store.get(spec.repoKey);
+    } catch {
+      return null; // store read failure → conservative fallback
+    }
+    // No record, or the remote has not advanced since the mount (the cheaper
+    // R⊆L clean-mount / additive path below handles head == mount exactly).
+    // `head.startsWith(mountSha)` (not `===`) so an ABBREVIATED mount SHA
+    // (anonymous tarballs carry a 7-char wrapper SHA — extractShaFromWrapper)
+    // still recognises the no-advance case and takes the cheap path instead of
+    // a needless reconcile round-trip + a misleading "advanced" warning. A
+    // false positive (a 7-char prefix collision between head and an older
+    // ancestor) is merely conservative — it routes to the R⊆L full-conflict
+    // path, never a silent overwrite.
+    if (mountSha === null || head.startsWith(mountSha)) return null;
+
+    // Verify the recorded SHA is a GENUINE ancestor of the current head by
+    // walking the first-parent chain. The walk doubles as the fetch of the
+    // base commit (its treeSha) — no extra round-trip. Any transport failure
+    // (unresolvable SHA, truncated/GC'd history) → conservative fallback.
+    const MAX_ANCESTRY_WALK = 300;
+    let baseCommit: Awaited<ReturnType<typeof getCommitInfo>> | null = null;
+    try {
+      let cur = head;
+      for (let i = 0; i < MAX_ANCESTRY_WALK; i++) {
+        const info = await getCommitInfo(
+          this.transport,
+          spec.owner,
+          spec.repo,
+          cur,
+          this.deps.baseURL,
+        );
+        // `info.sha` is the canonical (full) SHA; the recorded mount SHA may be
+        // an abbreviated tarball-wrapper SHA (anonymous fetches) — match by
+        // prefix so both forms resolve to the same commit.
+        if (info.sha === mountSha || info.sha.startsWith(mountSha)) {
+          baseCommit = info;
+          break;
+        }
+        if (info.parents.length === 0) break; // root reached, not an ancestor
+        cur = info.parents[0];
+      }
+    } catch {
+      return null;
+    }
+    if (baseCommit === null) return null; // not an ancestor within the bound
+
+    // Fetch the base commit's tree → the 3-way merge base snapshot. A truncated
+    // tree throws (LOUD) → conservative fallback rather than a wrong diff.
+    let baseTree: RemoteTreeEntry[];
+    try {
+      baseTree = (
+        await getTree(
+          this.transport,
+          spec.owner,
+          spec.repo,
+          baseCommit.treeSha,
+          this.deps.baseURL,
+        )
+      ).filter((e) => isSyncablePath(e.path));
+    } catch {
+      return null;
+    }
+
+    // uid is intentionally omitted from the base snapshot here: it is only used
+    // for rename matching on the base side, and deriving it would require
+    // fetching every base blob. Both the local diff (disk uids) and the remote
+    // diff (head-blob uids) still carry uids, so uid-based conflict detection
+    // is unaffected — a base-side rename merely degrades to delete+add, never a
+    // data-loss path.
+    const files: WatermarkFileEntry[] = baseTree.map((e) => ({
+      path: e.path,
+      blobSha: e.blobSha,
+    }));
+    const base: WatermarkRecord = {
+      lastSyncedSha: baseCommit.sha,
+      rootTreeSha: baseCommit.treeSha,
+      files,
+    };
+    warnings.push(
+      `first-sync (asset mode): reconciling against the recorded mount base ${baseCommit.sha} — remote head ${head} advanced since mount; local edits 3-way merge against it instead of false-conflicting (#3590)`,
+    );
+    return { kind: "additive-base", base };
+  }
+
+  /**
    * Asset-mode first-sync probe (no watermark). Classifies the local working
    * tree against the remote head into one of three outcomes (see
    * {@link FirstSyncBootstrap}):
@@ -2151,6 +2277,19 @@ export class SyncEngine {
       spec.branch,
       this.deps.baseURL,
     );
+
+    // #3590 — true merge-base first-sync. If the mount layer recorded the
+    // commit this AssetSpace was mounted at, and the remote has ADVANCED since
+    // (head ≠ mount, mount is a genuine ancestor of head), use the mount
+    // commit's tree as the 3-way base. The normal cycle then reconciles remote
+    // changes (pull) against local changes (push): a divergence on DISJOINT
+    // paths cleanly merges instead of false full-conflict, while a real
+    // overlapping edit still routes through the merge/quarantine layer (M1
+    // zero-loss). Absent / stale / unresolvable / not-an-ancestor → null → the
+    // conservative R⊆L path below (full-conflict on overlap) is unchanged.
+    const mountBootstrap = await this.tryMountBaseBootstrap(spec, head, warnings);
+    if (mountBootstrap !== null) return mountBootstrap;
+
     const headCommit = await getCommitInfo(
       this.transport,
       spec.owner,
