@@ -38,7 +38,7 @@ recur and resist point-fixes:
    `packages/obsidian-plugin/docs/TESTING.md`, `docs/TEST-PYRAMID.md`) + an `AGENTS.md`
    section; **two** near-duplicate `NL-TO-SPARQL.md`.
 3. **Monoliths & drift.** `PATTERNS.md` and root `TROUBLESHOOTING.md` are append-only
-   incident bins; the "13 required CI checks" fact is asserted in 6+ places (already
+   incident bins; the required-CI-checks fact is asserted in 6+ places (already
    drifted in a phase3 ADR); `/Users/<user>/...` absolute paths are hardcoded in
    `AGENTS.md` (13×) and `TROUBLESHOOTING.md` (11×).
 
@@ -108,7 +108,7 @@ illustrative and not exhaustive; these rules bind the Phase-2 executor):
   and scannable) + thin package-specific pointers; fold `TEST-PYRAMID`, `.github/TESTING.md`,
   plugin `TESTING.md`, and the `AGENTS.md §Testing` section into it (or leave stubs that
   link). **Fold *current* content only** — `.github/TESTING.md:137-148` carries a stale
-  generic 7-step CI description that contradicts the "13 required checks" single-source goal;
+  generic 7-step CI description that contradicts the required-checks single-source goal;
   drop it on fold, reference the single-sourced CI paragraph instead of merging verbatim.
   The unified doc must **enumerate all e2e suites, including the recently-added `eka-gui`
   GUI-BDD and `eka-obsidian-leg` suites** (audit §b3 flagged these as 0-prose-doc; the
@@ -138,11 +138,11 @@ illustrative and not exhaustive; these rules bind the Phase-2 executor):
 ### Single-sourcing & cleanup
 - **CI-check list:** one authoritative paragraph (cite
   `gh api …/required_status_checks`), referenced from elsewhere instead of restated.
-  The stale `test-bdd`-in-13 claim lives specifically in
+  The stale retired-BDD-check-in-the-required-list claim lives specifically in
   `packages/obsidian-plugin/docs/phase3/ADR_FLAKY_X11_STRATEGY.md:28,236` (note: under
   `phase3/`, **not** `docs/history/`) — fix or freeze it there. Stamp `docs/history/` +
-  `packages/obsidian-plugin/docs/phase3/` as frozen/as-of-date. Blast radius: `13
-  required`/`test-bdd` is currently asserted in ~9 `.md` files (4 active:
+  `packages/obsidian-plugin/docs/phase3/` as frozen/as-of-date. Blast radius: the
+  required-checks list was asserted in ~9 `.md` files (4 active:
   AGENTS/CLAUDE/TESTING/TROUBLESHOOTING + history/phase3) — all active ones reference the
   single paragraph after this lands.
 - **De-personalize** via a **predicate**, not an enumerated file-list (enumeration
@@ -184,7 +184,7 @@ old paths for one release where external links may exist.
 - **Cross-link churn / broken links.** The repo's existing link-check is **narrower than
   it appears**: `ci.yml`'s `docs-link-check` job is scoped `folder-path: "docs"` (it does
   **not** see root docs, `.github/*`, or `packages/*` — exactly where Phase-1/2 churn lands)
-  **and is not among the 13 required checks** (a red link-check does not block merge). So
+  **and is not among the required checks** (a red link-check does not block merge). So
   it cannot gate the move PRs by itself. Mitigation: (a) for the duration of the reorg,
   widen the check (e.g. run `markdown-link-check` over `find . -name '*.md'` minus
   `node_modules`) **or** run a per-phase manual broken-link sweep across root/`.github/`/
@@ -233,8 +233,9 @@ canonical" / "link-check green" were judgment calls).*
 - **De-personalized:** `grep -rln '/Users/<user>' --include='*.md' | grep -v 'docs/history'
   | grep -v '/phase3/'` returns nothing (`.claude/agents/*` included as prose docs).
 - **CI-check single source:** `grep -rniE '13 (required|mandatory)' --include='*.md'`
-  returns exactly one non-history/non-phase3 hit (the canonical paragraph); `test-bdd`
-  appears only in frozen archive prose.
+  returns exactly one non-history/non-phase3 hit (the canonical paragraph); the retired
+  BDD check's name (removed in #3433) appears as a literal token only in frozen archive
+  prose.
 - **exo-as-SDK explainer:** a contributor-facing doc answers *what is an AssetSpace, why
   there are many `exoas-*` repos, what a Profile is* — without referencing private vault
   UIDs. (Closes audit §9 — not satisfied by a file-move stub.)

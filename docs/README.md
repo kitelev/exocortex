@@ -49,6 +49,7 @@ docs kept at root) is in **[TAXONOMY.md](TAXONOMY.md)**.
 ## Explanation & Architecture
 
 - [../ARCHITECTURE.md](../ARCHITECTURE.md) — layering, monorepo, clean architecture
+- [assetspace-sdk-topology.md](explanation/assetspace-sdk-topology.md) — exo-as-SDK: what an AssetSpace is, why there are many `exoas-*` repos, what a Profile is
 - [CROSS_RUNTIME_PARITY.md](explanation/CROSS_RUNTIME_PARITY.md) — validator instance of the UI/CLI Parity Invariant
 - [settings-homoiconization.md](explanation/settings-homoiconization.md) — plugin settings as `exo__Setting` vault assets
 - [exosync-parallel-run.md](explanation/exosync-parallel-run.md) — ExoSync parallel-run mode + M1/M2 parity harness
@@ -57,6 +58,7 @@ docs kept at root) is in **[TAXONOMY.md](TAXONOMY.md)**.
 ## Testing & CI
 
 - [../TESTING.md](../TESTING.md) — **canonical testing guide** (test types, pyramid, fixtures, mocking, E2E suites, coverage gates, troubleshooting)
+- [ci/required-checks.md](reference/ci/required-checks.md) — **single source** for the branch-protection required CI checks (list + live `gh api` command + gotchas)
 - [FLAKY_POLICY.md](contributing/FLAKY_POLICY.md) — flaky-test handling policy (`@flaky-track`, quarantine)
 - [e2e-desktop.md](contributing/e2e-desktop.md) — desktop E2E setup
 - [Performance-Guide.md](reference/Performance-Guide.md) — performance guidance
