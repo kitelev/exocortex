@@ -50,7 +50,7 @@ New code MUST add tests on every applicable layer before merge.
 | **Component**   | Playwright CT                | `packages/obsidian-plugin/tests/component/**` | React UI components in isolation.                                                                                         |
 | **E2E**         | Playwright + Docker Obsidian | `packages/obsidian-plugin/tests/e2e/specs/**` | Real plugin in Obsidian UI; golden-path smoke, sharded across `e2e-shard (1..6)`.                                        |
 
-**Required CI checks (13, branch-protected):** `archgate`, `detect-changes`, `e2e-shard (1..6)`, `lint`, `parity-gate`, `test-component`, `test-coverage`, `typecheck`. Source of truth: `gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks`.
+**Required CI checks (branch-protected):** see [docs/reference/ci/required-checks.md](../../docs/reference/ci/required-checks.md) — the single source (with the live `gh api …/required_status_checks` command).
 
 ---
 

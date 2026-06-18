@@ -662,9 +662,11 @@ Dynamic commands (`exocmd__Command`) are covered in three test layers. New comma
 
 **Runtime-verify gate:** new E2E specs MUST run green in CI (not only local) before the hosting task flips to Review; skipping this gate caused attribution drift flagged in Phase 2 retrospective.
 
-**Required CI checks (branch-protected, 13 contexts — `parity-gate` added post 2026-04-22):**
-`archgate`, `detect-changes`, `e2e-shard (1)`, `e2e-shard (2)`, `e2e-shard (3)`, `e2e-shard (4)`, `e2e-shard (5)`, `e2e-shard (6)`, `lint`, `parity-gate`, `test-component`, `test-coverage`, `typecheck`.
-Matrix contexts use the parenthesised form `<job> (<shard>)` — hyphenated names like `e2e-shard-1` silently resolve to no required check. `test-unit` was dropped from required contexts in f235881d (Phase 4 cutover) now that it is a deduplicated stub; `detect-changes` was added so path-filter infrastructure always runs.
+**Required CI checks (branch-protected):** see
+[docs/reference/ci/required-checks.md](docs/reference/ci/required-checks.md) — the single
+source for the list, the live `gh api …/required_status_checks` command, the
+parenthesised-matrix-context gotcha, and the history (why `parity-gate`/`detect-changes`
+are in and `test-unit` is out).
 
 **Rollback playbook:** `docs/history/ROLLBACK_RFC_CI_TESTS.md` — per-trigger mitigation (flaky quarantine / smoke budget trim / submodule → npm migration / admin nuclear rollback).
 
@@ -827,7 +829,7 @@ refactor: simplify RDF store queries
 
 ### Task NOT Complete Until:
 
-- ✅ All 13 required CI checks pass (see "GitHub Branch Protection Best Practices" above for the current list). Critical-path target after Phase 3: **~236s avg ±50s**, gate relaxed to **≤220s** per Decision B (RFC v2 relax, 2026-04-22). Original ≤135s target was infeasible given setup-floor dominance.
+- ✅ All required CI checks pass (the [current list](docs/reference/ci/required-checks.md)). Critical-path target after Phase 3: **~236s avg ±50s**, gate relaxed to **≤220s** per Decision B (RFC v2 relax, 2026-04-22). Original ≤135s target was infeasible given setup-floor dominance.
 - ✅ PR merged to main
 - ✅ Auto-release workflow creates GitHub release
 - ✅ Worktree cleaned up
