@@ -1710,7 +1710,7 @@ For complete development rules and patterns, see:
 - `exocortex/CLAUDE.md` - Comprehensive guidelines
 - `exocortex/README.md` - Project features and setup
 - `exocortex/ARCHITECTURE.md` - Architecture patterns
-- `exocortex/docs/PROPERTY_SCHEMA.md` - Frontmatter vocabulary
+- `exocortex/docs/reference/PROPERTY_SCHEMA.md` - Frontmatter vocabulary
 
 ---
 

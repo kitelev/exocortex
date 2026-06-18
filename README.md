@@ -43,10 +43,10 @@ Compared to existing tools:
 - **Semantic knowledge graph** — every piece of knowledge is an Asset with UUID, class, properties, and relationships stored as RDF triples
 - **SPARQL queries** — ask complex questions across your entire knowledge base
 - **Modular ontologies** — IMS (concepts, notes, people), EMS (tasks, projects, meetings), ZTLK (zettelkasten)
-- **Everything as Knowledge** — commands, workflows, property schemas, layouts, and even plugin settings (`exo__Setting` assets — see [docs/settings-homoiconization.md](./docs/settings-homoiconization.md)) defined as vault assets, not hardcoded
+- **Everything as Knowledge** — commands, workflows, property schemas, layouts, and even plugin settings (`exo__Setting` assets — see [docs/settings-homoiconization.md](./docs/explanation/settings-homoiconization.md)) defined as vault assets, not hardcoded
 - **Ontology plugins** — extend the system with installable ontology packages (e.g. [GTD + Jedi Techniques](https://github.com/kitelev/gtd-jedi))
-- **Profile** (production-ready) — vault-declared homoiconic profiles that drive on-disk AssetSpace materialization via a single **Apply profile** operation (mount-state strict replace). One vault, multiple contexts, selective sync. See [docs/profile.md](./docs/profile.md).
-- **ExoSync** — GitHub-backed vault sync via the **Exocortex: Sync** command: pull → merge → push over the GitHub REST API, with structured 3-way merge and quarantine for unresolvable conflicts (a SHACL merge-gate ships in core but is not yet wired into the plugin). Works on mobile (no git binary required). See [docs/exosync.md](./docs/exosync.md).
+- **Profile** (production-ready) — vault-declared homoiconic profiles that drive on-disk AssetSpace materialization via a single **Apply profile** operation (mount-state strict replace). One vault, multiple contexts, selective sync. See [docs/profile.md](./docs/explanation/profile.md).
+- **ExoSync** — GitHub-backed vault sync via the **Exocortex: Sync** command: pull → merge → push over the GitHub REST API, with structured 3-way merge and quarantine for unresolvable conflicts (a SHACL merge-gate ships in core but is not yet wired into the plugin). Works on mobile (no git binary required). See [docs/exosync.md](./docs/how-to/exosync.md).
 - **UI/CLI Parity** — every capability is reachable from the Obsidian plugin and the CLI; neither client holds exclusive features. The complement of homoiconicity: it keeps the _invocation_ layer open just as homoiconicity keeps the _data_ layer open. See [VISION.md](./VISION.md#uicli-parity-invariant).
 - **Local-first** — all data stays on your device, no cloud required
 
@@ -71,7 +71,7 @@ Best for: Visual knowledge management, daily planning, interactive exploration.
 
 BRAT will automatically keep the plugin updated with new releases.
 
-> **Next:** Follow the **[Getting Started Guide](./docs/Getting-Started.md)** to bootstrap your vault and create your first Area, Project, and Task.
+> **Next:** Follow the **[Getting Started Guide](./docs/tutorials/Getting-Started.md)** to bootstrap your vault and create your first Area, Project, and Task.
 >
 > **Note:** Layouts appear in **Reading Mode** (Ctrl/Cmd + E).
 
@@ -124,7 +124,7 @@ const labels = await store.match(
 console.log(labels.map((t) => t.object.toString()));
 ```
 
-See the **[Core API Reference](./docs/api/Core-API.md)** for the full TypeScript API, including the SPARQL engine and vault-to-RDF conversion services.
+See the **[Core API Reference](./docs/reference/Core-API.md)** for the full TypeScript API, including the SPARQL engine and vault-to-RDF conversion services.
 
 ---
 
@@ -184,7 +184,7 @@ exocortex-cli workflow list --vault ~/vault
 exocortex-cli workflow validate <uid> --vault ~/vault
 ```
 
-See **[Workflow Customization Guide](./docs/WORKFLOW_CUSTOMIZATION.md)** for details.
+See **[Workflow Customization Guide](./docs/how-to/WORKFLOW_CUSTOMIZATION.md)** for details.
 
 ### Ontology-Driven Forms
 
@@ -219,7 +219,7 @@ A profile is a regular vault asset (`exo__Profile`) that declares which AssetSpa
 
 `exo__AssetSpace_materialized` is a runtime-derived property that reflects current on-disk state in SPARQL and the inline ✅/⏸ badge on AssetSpace pages.
 
-See [docs/profile.md](./docs/profile.md) for the full architectural pitch, including the UID-canon privacy model.
+See [docs/profile.md](./docs/explanation/profile.md) for the full architectural pitch, including the UID-canon privacy model.
 
 ### Command Palette
 
@@ -325,7 +325,7 @@ flowchart TB
 
 ### Getting Started
 
-- **[Installation Guide](./docs/Getting-Started.md)** — Step-by-step setup
+- **[Installation Guide](./docs/tutorials/Getting-Started.md)** — Step-by-step setup
 
 ### By Interface
 
@@ -335,7 +335,7 @@ flowchart TB
 
 **Core Library:**
 
-- **[Core API Reference](./docs/api/Core-API.md)** — TypeScript API
+- **[Core API Reference](./docs/reference/Core-API.md)** — TypeScript API
 - **[Architecture Guide](./ARCHITECTURE.md)** — Clean Architecture patterns
 
 ---
@@ -360,7 +360,7 @@ This project is developed primarily by AI agents (Claude Code, GitHub Copilot) f
 | Document                                                         | Purpose                             |
 | ---------------------------------------------------------------- | ----------------------------------- |
 | **[CLAUDE.md](./CLAUDE.md)**                                     | AI agent guidelines, worktree rules |
-| **[AI Development Patterns](./docs/AI-DEVELOPMENT-PATTERNS.md)** | Patterns distilled from AI-driven development |
+| **[AI Development Patterns](./docs/contributing/AI-DEVELOPMENT-PATTERNS.md)** | Patterns distilled from AI-driven development |
 | **[Architecture Guide](./ARCHITECTURE.md)**                      | Clean Architecture patterns         |
 
 ---

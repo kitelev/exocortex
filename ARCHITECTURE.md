@@ -50,7 +50,7 @@ Exocortex is a **knowledge management technology** that provides:
 
 > The shared `exocortex` package contains all domain/engine logic behind platform-agnostic ports (`IFileSystemAdapter`, `IVaultAdapter`, `HttpClient`, etc.). The Obsidian plugin and CLI are **thin adapters** that inject platform-specific I/O (Obsidian Vault API vs Node `fs`/`fetch`). New user-facing capabilities must be implemented in the core first, then bound in **both** clients. Plugin-only or CLI-only implementations are invariant violations.
 
-This is the architectural enforcement of Exocortex's no-lock-in north star: the product is the vault (data) plus the SDK (engine), and every client must be able to drive the full system. See [VISION.md](./VISION.md) for the full rationale and its complementary pairing with the Homoiconicity Invariant, and [docs/CROSS_RUNTIME_PARITY.md](./docs/CROSS_RUNTIME_PARITY.md) for a validator-specific enforcement example (a byte-identical-report parity test between the CLI and plugin runtimes).
+This is the architectural enforcement of Exocortex's no-lock-in north star: the product is the vault (data) plus the SDK (engine), and every client must be able to drive the full system. See [VISION.md](./VISION.md) for the full rationale and its complementary pairing with the Homoiconicity Invariant, and [docs/CROSS_RUNTIME_PARITY.md](./docs/explanation/CROSS_RUNTIME_PARITY.md) for a validator-specific enforcement example (a byte-identical-report parity test between the CLI and plugin runtimes).
 
 ---
 
@@ -873,7 +873,7 @@ set are materialized on disk, the rest are unmounted.
   `data.local.json`, excluded from Obsidian Sync.
 - **CLI parity**: `apply-profile` command (`CliApplyProfileService`).
 
-See [docs/profile.md](docs/profile.md) for the full model.
+See [docs/profile.md](docs/explanation/profile.md) for the full model.
 
 ---
 
@@ -895,7 +895,7 @@ requiring a git binary — portable to mobile.
   POST commits → PATCH ref, fast-forward only), shared by the plugin
   (`GitHubRestClient` over Obsidian `requestUrl`) and the CLI (Node `fetch`).
 
-See [docs/exosync.md](docs/exosync.md) for the full design.
+See [docs/exosync.md](docs/how-to/exosync.md) for the full design.
 
 ---
 
@@ -918,7 +918,7 @@ ordinary vault assets discovered by class — not hardcoded `data.json` keys.
   `data.json` keys, and write-through persists settings-UI changes back to the
   vault assets.
 
-See [docs/settings-homoiconization.md](docs/settings-homoiconization.md).
+See [docs/settings-homoiconization.md](docs/explanation/settings-homoiconization.md).
 
 ---
 
@@ -971,7 +971,7 @@ See [docs/settings-homoiconization.md](docs/settings-homoiconization.md).
 | `ims__Concept_broader`    | String | Concept | Parent concept     |
 | `ims__Concept_definition` | String | Concept | Concept definition |
 
-**See [PROPERTY_SCHEMA.md](docs/PROPERTY_SCHEMA.md) for complete reference.**
+**See [PROPERTY_SCHEMA.md](docs/reference/PROPERTY_SCHEMA.md) for complete reference.**
 
 ---
 
@@ -1595,7 +1595,7 @@ graph TB
 
 ## 📚 Additional Resources
 
-- [PROPERTY_SCHEMA.md](docs/PROPERTY_SCHEMA.md) - Complete property reference
+- [PROPERTY_SCHEMA.md](docs/reference/PROPERTY_SCHEMA.md) - Complete property reference
 - [Diagrams](docs/diagrams/) - Architecture and flow diagrams
 - [ADRs](.archgate/adrs/) - Architecture decision records
 - [CLAUDE.md](CLAUDE.md) - Development guidelines

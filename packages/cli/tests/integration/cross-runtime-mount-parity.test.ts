@@ -1,7 +1,7 @@
 /**
  * Cross-runtime AssetSpace MOUNT parity (Issue #3423).
  *
- * Mirrors the `docs/CROSS_RUNTIME_PARITY.md` validator-parity pattern, but for
+ * Mirrors the `docs/explanation/CROSS_RUNTIME_PARITY.md` validator-parity pattern, but for
  * the mount pipeline. Both the CLI Node-`fs` adapter
  * ({@link BootstrapAssetSpaceService.pullAssetSpace}) and a plugin-shape
  * in-memory adapter drive the SAME shared core

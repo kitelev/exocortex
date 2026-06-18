@@ -44,4 +44,4 @@ Properties follow the format: `namespace__Class_property`
 
 ## References
 
-- [PROPERTY_SCHEMA.md](../../docs/PROPERTY_SCHEMA.md)
+- [PROPERTY_SCHEMA.md](../../docs/reference/PROPERTY_SCHEMA.md)

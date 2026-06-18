@@ -533,7 +533,7 @@ Provide exactly one of `--folder` or `--url`.
 
 ### exosync
 
-ExoSync over the GitHub REST API — the CLI counterpart of the plugin's **`Exocortex: Sync`** command (RFC `4e4dc453` Phase B). Syncs the **materialized** AssetSpace/FileSpace set against each space's GitHub repository; no `git` binary required. Three direction subcommands share the same options. See [docs/exosync.md](../../docs/exosync.md) for the full sync model, merge layer, and conflict quarantine.
+ExoSync over the GitHub REST API — the CLI counterpart of the plugin's **`Exocortex: Sync`** command (RFC `4e4dc453` Phase B). Syncs the **materialized** AssetSpace/FileSpace set against each space's GitHub repository; no `git` binary required. Three direction subcommands share the same options. See [docs/exosync.md](../../docs/how-to/exosync.md) for the full sync model, merge layer, and conflict quarantine.
 
 ```bash
 npx @kitelev/exocortex-cli exosync sync --vault ~/vault --token-from-gh   # full pull→merge→push

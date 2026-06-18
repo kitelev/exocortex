@@ -128,4 +128,4 @@ See ../../PATTERNS.md for Docker E2E setup, debugging, and critical lessons.
 - `../../PATTERNS.md` — All coding patterns (50+ patterns)
 - `../../DEV-TROUBLESHOOTING.md` — Dev/CI issues and fixes
 - `ARCHITECTURE.md` — Detailed architecture docs
-- `docs/PROPERTY_SCHEMA.md` — Frontmatter vocabulary
+- `docs/reference/PROPERTY_SCHEMA.md` — Frontmatter vocabulary

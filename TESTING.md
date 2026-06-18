@@ -800,7 +800,7 @@ Test-related jobs in the pipeline:
 
 ### Flaky Policy & Sharding
 
-See [docs/FLAKY_POLICY.md](./docs/FLAKY_POLICY.md) for the full policy. Summary of the current (post-#3396) mechanics:
+See [docs/FLAKY_POLICY.md](./docs/contributing/FLAKY_POLICY.md) for the full policy. Summary of the current (post-#3396) mechanics:
 
 - **Zero-retry default**: E2E specs run with `retries: 0` — a flake fails the run immediately instead of being masked.
 - **`@flaky-track` tag opt-in**: `playwright-e2e.config.ts` defines two projects — `e2e` (untagged specs, `grepInvert: /@flaky-track/`, retries 0) and `e2e-flaky-track` (`grep: /@flaky-track/`, `retries: 1`). Tagging a spec `@flaky-track` is the documented, reviewable way to tolerate a known flake while its root cause is being fixed (Issue #3350 / PR #3355). Removing the tag restores strict discipline automatically.
@@ -897,7 +897,7 @@ Reports are available as CI artifacts on every run.
    );
    ```
 
-   See [docs/FLAKY_POLICY.md](./docs/FLAKY_POLICY.md) for the tagging rules.
+   See [docs/FLAKY_POLICY.md](./docs/contributing/FLAKY_POLICY.md) for the tagging rules.
 
 #### Mock Leaks
 
@@ -1053,7 +1053,7 @@ await page.evaluate(() => console.log("Debug from browser"));
 
 ### Internal References
 
-- [docs/FLAKY_POLICY.md](./docs/FLAKY_POLICY.md) - Flaky test policy (@flaky-track, quarantine)
+- [docs/FLAKY_POLICY.md](./docs/contributing/FLAKY_POLICY.md) - Flaky test policy (@flaky-track, quarantine)
 - [docs/TEST-PYRAMID.md](./docs/TEST-PYRAMID.md) - _(stub → this guide)_ pyramid concepts now live in [Test Architecture](#test-architecture)
 - [packages/obsidian-plugin/docs/TESTING.md](./packages/obsidian-plugin/docs/TESTING.md) - _(stub → this guide)_ plugin-specific patterns consolidated here
 

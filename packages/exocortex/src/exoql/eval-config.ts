@@ -34,7 +34,7 @@ export interface ExoQLEvalConfig {
 /**
  * Default config — PR3 (T4) flips B2 lock to `enabled: true`. Production
  * default after RFC c78cc5c8 Phase 1a goes live. Roll back via
- * `docs/ROLLBACK_EXOQL_EVAL.md` (override config to `{ enabled: false }`).
+ * `docs/how-to/ROLLBACK_EXOQL_EVAL.md` (override config to `{ enabled: false }`).
  */
 export const DEFAULT_EVAL_CONFIG: ExoQLEvalConfig = Object.freeze({
   enabled: true,

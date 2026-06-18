@@ -14,7 +14,7 @@
 #
 # Per-cell budget: ≤5 minutes (job timeout 10 min as a hard cap).
 # Spec: packages/obsidian-plugin/tests/e2e-desktop/specs/plugin-load.smoke.spec.ts
-# Doc:  docs/e2e-desktop.md
+# Doc:  docs/contributing/e2e-desktop.md
 name: E2E Desktop Smoke
 
 on:

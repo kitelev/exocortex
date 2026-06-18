@@ -1,7 +1,7 @@
 # Developer & CI Troubleshooting Guide
 
 Common issues and solutions for Exocortex **development** (worktrees, build, CI, tests).
-For **end-user** plugin issues, see [docs/Troubleshooting.md](docs/Troubleshooting.md).
+For **end-user** plugin issues, see [docs/Troubleshooting.md](docs/how-to/Troubleshooting.md).
 
 ---
 
@@ -868,7 +868,7 @@ gh pr checks <PR-NUMBER>
    );
    ```
 
-   See `docs/FLAKY_POLICY.md` for the tagging governance.
+   See `docs/contributing/FLAKY_POLICY.md` for the tagging governance.
 
 3. **Run locally in Docker** (reproduce CI environment):
 
@@ -1318,7 +1318,7 @@ test("graph view", { timeout: 60000 }, async () => {
 - No clear error message
 - Happens intermittently
 
-**Solution**: First look for the real cause (resource exhaustion, Electron crash — check the shard's video/trace artifacts). If the spec is genuinely flaky and the root cause needs time, tag it `@flaky-track` (runs with `retries: 1` in the `e2e-flaky-track` project) and file a tracking issue — do **not** raise `retries` in the config; untagged specs deliberately run with `retries: 0`. See `docs/FLAKY_POLICY.md`.
+**Solution**: First look for the real cause (resource exhaustion, Electron crash — check the shard's video/trace artifacts). If the spec is genuinely flaky and the root cause needs time, tag it `@flaky-track` (runs with `retries: 1` in the `e2e-flaky-track` project) and file a tracking issue — do **not** raise `retries` in the config; untagged specs deliberately run with `retries: 0`. See `docs/contributing/FLAKY_POLICY.md`.
 
 **Reference**: Issue #1384 - E2E tests flaky (January 2026); Issue #3350 - `@flaky-track` routing
 
@@ -1342,7 +1342,7 @@ test("graph view", { timeout: 60000 }, async () => {
 **Prevention**:
 
 - Run E2E locally before pushing any plugin-startup-sequence change — `npm run test:e2e:docker` directly, or `npm run test:all` (which runs `npm test && npm run test:e2e:docker`, i.e. Docker E2E **included**)
-- Check `playwright-no-flaky-reporter.ts` behaviour: it fails CI on any passing-after-retry result **unless** the spec is tagged `@flaky-track` (tag-aware skip; tagged specs run with `retries: 1`). A quarantine list also exists at `tests/quarantine.ts` (currently empty). See `docs/FLAKY_POLICY.md`
+- Check `playwright-no-flaky-reporter.ts` behaviour: it fails CI on any passing-after-retry result **unless** the spec is tagged `@flaky-track` (tag-aware skip; tagged specs run with `retries: 1`). A quarantine list also exists at `tests/quarantine.ts` (currently empty). See `docs/contributing/FLAKY_POLICY.md`
 
 **Reference**: RFC-024 Phase 0 (#2833) / PR #2838 — `ChangelogModal` first-launch race
 
@@ -1952,11 +1952,11 @@ This is a UX/cosmetic concern that has **no bearing on RDF semantics or SHACL co
 
 ### What to do
 
-1. **For new assets**: emit Form C only. `/exocortex-asset` skill template and `docs/PROPERTY_SCHEMA.md` § _exo\_\_Instance_class › Canonical form_ are the source of truth.
+1. **For new assets**: emit Form C only. `/exocortex-asset` skill template and `docs/reference/PROPERTY_SCHEMA.md` § _exo\_\_Instance_class › Canonical form_ are the source of truth.
 2. **For existing assets**: Form A and Form B continue to work; migration is cosmetic and may be deferred. The pre-write hook `~/.claude/hooks/validate-wikilinks.sh` warns on non-Form-C in _new_ writes but does not block or rewrite legacy content.
 3. **If SHACL violation counts didn't change after a form-only rewrite**: that's success, not failure. Move on.
 
-**Reference**: Issue #3123. Related: `docs/PROPERTY_SCHEMA.md` § `exo__Instance_class` › _Canonical form_.
+**Reference**: Issue #3123. Related: `docs/reference/PROPERTY_SCHEMA.md` § `exo__Instance_class` › _Canonical form_.
 
 ## Plugin Patch Behavior Not Visible After Code Change
 
