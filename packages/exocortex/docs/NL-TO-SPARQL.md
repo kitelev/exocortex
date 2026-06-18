@@ -1,7 +1,7 @@
 # Natural Language to SPARQL (engine internals)
 
 > **Moved.** The NL→SPARQL guide is now a single canonical document:
-> **[../../../docs/NL-TO-SPARQL.md](../../../docs/NL-TO-SPARQL.md)**.
+> **[../../../docs/reference/NL-TO-SPARQL.md](../../../docs/reference/NL-TO-SPARQL.md)**.
 > It covers the CLI/API usage, supported query types, date filtering,
 > confidence scoring, configuration, custom templates, query suggestions, the
 > template-library reference, and troubleshooting — including the sections that

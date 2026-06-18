@@ -4,7 +4,7 @@
 > **Universal AI agent instructions**: See `AGENTS.md`.
 > **Coding patterns**: See `PATTERNS.md`.
 > **Dev/CI troubleshooting**: See `DEV-TROUBLESHOOTING.md`.
-> **User troubleshooting**: See `docs/Troubleshooting.md`.
+> **User troubleshooting**: See `docs/how-to/Troubleshooting.md`.
 > **Post-mortem templates**: See `TEMPLATES.md`.
 
 ---

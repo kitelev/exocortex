@@ -114,7 +114,7 @@ The architectural cornerstone of Exocortex is the **unification of three princip
 
 Profile **inhabits the same git substrate** as Obsidian Git but manages submodule lifecycle declaratively from vault profiles: one Apply-profile operation reconciles the on-disk AssetSpace set to exactly the target profile's effective set. The combination — one vault, many declared profiles, one mount-state apply operation — is what no competitor in the table at the top of [README.md](./README.md) offers: Notion has shared workspaces but no semantic graph; Protégé has ontologies but no usable daily-driver UI; Semantic MediaWiki has both but no vault portability and no profile-level scoping.
 
-The deep architectural pitch and the 2-phase commit safety model live in **[docs/profile.md](./docs/profile.md)**.
+The deep architectural pitch and the 2-phase commit safety model live in **[docs/profile.md](./docs/explanation/profile.md)**.
 
 ### UI/CLI Parity Invariant
 
@@ -149,7 +149,7 @@ A third invariant extends the *invocation* layer across **platforms**, not just 
 
 This invariant is codified in the project `CLAUDE.md` and was driven by real mobile dogfooding (e.g. the git-free REST mount path so Bootstrap / Add-AssetSpace / Apply-profile / Sync all run on iOS, which has no git binary).
 
-**See also:** the enforced ports/adapters statement in [ARCHITECTURE.md](./ARCHITECTURE.md); the validator-specific enforcement instance in [docs/CROSS_RUNTIME_PARITY.md](./docs/CROSS_RUNTIME_PARITY.md); the SDK-platform program _"AssetSpace + Profile platform — exo as SDK"_ (vault UID `ea93b829`, RFC `01a83de8`) that this invariant formalizes. A full capability-by-capability parity audit across all features is future work, tracked under that program.
+**See also:** the enforced ports/adapters statement in [ARCHITECTURE.md](./ARCHITECTURE.md); the validator-specific enforcement instance in [docs/CROSS_RUNTIME_PARITY.md](./docs/explanation/CROSS_RUNTIME_PARITY.md); the SDK-platform program _"AssetSpace + Profile platform — exo as SDK"_ (vault UID `ea93b829`, RFC `01a83de8`) that this invariant formalizes. A full capability-by-capability parity audit across all features is future work, tracked under that program.
 
 ---
 

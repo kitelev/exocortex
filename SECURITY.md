@@ -23,7 +23,7 @@ We aim to acknowledge reports within a few days and will keep you informed of pr
 Exocortex is **local-first**: your data lives in your own Obsidian vault and git
 repositories — there is no Exocortex server. The most security-relevant surfaces are:
 
-- **GitHub Personal Access Tokens (PATs)** used by Profile/ExoSync. By design, PATs are stored only in `data.local.json` (`LocalSecretsStore`), are excluded from Obsidian Sync via the `.local.` infix, and are **never** committed or written to the vault. ExoSync additionally scans every push payload for tokens/keys and refuses the push on a finding. See [docs/exosync.md](docs/exosync.md#security).
+- **GitHub Personal Access Tokens (PATs)** used by Profile/ExoSync. By design, PATs are stored only in `data.local.json` (`LocalSecretsStore`), are excluded from Obsidian Sync via the `.local.` infix, and are **never** committed or written to the vault. ExoSync additionally scans every push payload for tokens/keys and refuses the push on a finding. See [docs/exosync.md](docs/how-to/exosync.md#security).
 - **Vault file handling** — tarball extraction (AssetSpace bootstrap), path traversal guards, and RDF/frontmatter parsing.
 - **The CLI** operating on untrusted vaults.
 

@@ -10,7 +10,7 @@
  *  1. **Flag persistence** — `DEFAULT_EVAL_CONFIG` snapshot (`enabled`,
  *     budget caps, frozen). RFC c78cc5c8 Phase 1a (PR3 T4) flipped the B2
  *     lock to `enabled: true`; rollback path is documented in
- *     `docs/ROLLBACK_EXOQL_EVAL.md`. Any future deviation must update the
+ *     `docs/how-to/ROLLBACK_EXOQL_EVAL.md`. Any future deviation must update the
  *     manifest below explicitly.
  *
  *  2. **SPARQL function registry** — covered by

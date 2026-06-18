@@ -29,7 +29,7 @@ npm run build -w exocortex
 | Layout                  | `src/domain/layout/`, `src/application/services/`                                                       | `exo__Layout` / `LayoutBlock` models, `LayoutSelector`                                                                                                                                                 |
 | Utilities & DI          | `src/utilities/`, `src/interfaces/`, `src/infrastructure/container.ts`                                  | `FrontmatterService`, `DateFormatter`, `WikiLinkHelpers`, `MetadataHelpers`, `FilenameValidator`; adapter interfaces and the DI container                                                              |
 
-Detailed API documentation lives in [`docs/api/Core-API.md`](../../docs/api/Core-API.md).
+Detailed API documentation lives in [`docs/reference/Core-API.md`](../../docs/reference/Core-API.md).
 
 ## Examples
 

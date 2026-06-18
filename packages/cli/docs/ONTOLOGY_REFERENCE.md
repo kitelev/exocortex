@@ -584,7 +584,7 @@ ORDER BY ?class ?label
 
 - [SPARQL Guide](SPARQL_GUIDE.md) - Complete query reference
 - [SPARQL Cookbook](SPARQL_COOKBOOK.md) - Practical examples
-- [Property Schema](../../../docs/PROPERTY_SCHEMA.md) - Frontmatter properties
+- [Property Schema](../../../docs/reference/PROPERTY_SCHEMA.md) - Frontmatter properties
 
 ---
 

@@ -2,58 +2,65 @@
 
 **Single entry point** for all Exocortex documentation. It indexes the curated
 `docs/` tree **and** the root process docs (`AGENTS.md`, `PATTERNS.md`,
-`TESTING.md`, …) **and** package-local docs (`packages/*/docs/`). Folder layout
-is unchanged in this index pass; docs are grouped *logically* (loosely following
-the [Diátaxis](https://diataxis.fr/) tutorial / how-to / reference / explanation
-split) regardless of physical path.
+`TESTING.md`, …) **and** package-local docs (`packages/*/docs/`).
+
+The `docs/` tree is physically organized into the
+[Diátaxis](https://diataxis.fr/) modes — `tutorials/`, `how-to/`, `reference/`,
+`explanation/`, plus a `contributing/` bucket and a frozen `history/` archive.
+**Root-level docs** (`README`, `CLAUDE`, `AGENTS`, `VISION`, `ARCHITECTURE`,
+`PATTERNS`, `TESTING`, `DEV-TROUBLESHOOTING`, …) and **package-local docs**
+(`packages/*/docs/`) stay in place and are grouped *logically* here. The
+complete `doc → mode` classification (with the move map and the rationale for
+docs kept at root) is in **[TAXONOMY.md](TAXONOMY.md)**.
 
 > Paths are relative to this file (`docs/`). Root-level docs are linked as `../NAME.md`.
+> Old `docs/*` paths keep a one-release redirect stub, so external deep-links still resolve.
 
 ---
 
 ## Start here
 
 - [../README.md](../README.md) — product overview & feature front door
-- [Getting-Started.md](Getting-Started.md) — install, first vault, core concepts
+- [Getting-Started.md](tutorials/Getting-Started.md) — install, first vault, core concepts
 - [../VISION.md](../VISION.md) — product vision + cross-cutting invariants (UI/CLI parity, Desktop↔Mobile parity)
 - [../CONTRIBUTING.md](../CONTRIBUTING.md) — contributor setup, PR workflow, coding standards
 
 ## Tutorials & How-to
 
-- [Getting-Started.md](Getting-Started.md) — first install + first vault
-- [Plugin-Development-Guide.md](Plugin-Development-Guide.md) — building/extending the plugin
-- [WORKFLOW_CUSTOMIZATION.md](WORKFLOW_CUSTOMIZATION.md) — customizing status workflows
-- [ONTOLOGY_EXTENSION.md](ONTOLOGY_EXTENSION.md) — adding classes/properties
-- [Troubleshooting.md](Troubleshooting.md) — **user** troubleshooting (common issues & fixes)
-- [profile.md](profile.md) — Profile pitch + Apply-profile (mount-state) usage
-- [exosync.md](exosync.md) — ExoSync usage (`Exocortex: Sync`, structured merge, conflict quarantine)
+- [Getting-Started.md](tutorials/Getting-Started.md) — first install + first vault
+- [Plugin-Development-Guide.md](how-to/Plugin-Development-Guide.md) — building/extending the plugin
+- [WORKFLOW_CUSTOMIZATION.md](how-to/WORKFLOW_CUSTOMIZATION.md) — customizing status workflows
+- [ONTOLOGY_EXTENSION.md](how-to/ONTOLOGY_EXTENSION.md) — adding classes/properties
+- [Troubleshooting.md](how-to/Troubleshooting.md) — **user** troubleshooting (common issues & fixes)
+- [profile.md](explanation/profile.md) — Profile pitch + Apply-profile (mount-state) usage
+- [exosync.md](how-to/exosync.md) — ExoSync usage (`Exocortex: Sync`, structured merge, conflict quarantine)
 - [../packages/obsidian-plugin/docs/release-checklist-mobile.md](../packages/obsidian-plugin/docs/release-checklist-mobile.md) — mobile release checklist
 
 ## Reference
 
-- [PROPERTY_SCHEMA.md](PROPERTY_SCHEMA.md) — full frontmatter property vocabulary
-- [api/Core-API.md](api/Core-API.md) — `exocortex` core programmatic API
-- [NL-TO-SPARQL.md](NL-TO-SPARQL.md) — natural-language → query translation (**canonical**)
-- [SHACL_LITE_MAPPING.md](SHACL_LITE_MAPPING.md) — SHACL-lite shape mapping
-- [rdf/ExoRDF-Mapping.md](rdf/ExoRDF-Mapping.md) — vault ↔ RDF triple mapping
+- [PROPERTY_SCHEMA.md](reference/PROPERTY_SCHEMA.md) — full frontmatter property vocabulary
+- [api/Core-API.md](reference/Core-API.md) — `exocortex` core programmatic API
+- [NL-TO-SPARQL.md](reference/NL-TO-SPARQL.md) — natural-language → query translation (**canonical**)
+- [SHACL_LITE_MAPPING.md](reference/SHACL_LITE_MAPPING.md) — SHACL-lite shape mapping
+- [rdf/ExoRDF-Mapping.md](explanation/ExoRDF-Mapping.md) — vault ↔ RDF triple mapping
 - CLI reference — [CLI_API_REFERENCE.md](../packages/cli/docs/CLI_API_REFERENCE.md), [ONTOLOGY_REFERENCE.md](../packages/cli/docs/ONTOLOGY_REFERENCE.md), [SPARQL_GUIDE.md](../packages/cli/docs/SPARQL_GUIDE.md), [SPARQL_COOKBOOK.md](../packages/cli/docs/SPARQL_COOKBOOK.md), [VERSIONING.md](../packages/cli/VERSIONING.md)
 - Plugin reference — [EXO_LAYOUT.md](../packages/obsidian-plugin/docs/EXO_LAYOUT.md) — layout engine
 
 ## Explanation & Architecture
 
 - [../ARCHITECTURE.md](../ARCHITECTURE.md) — layering, monorepo, clean architecture
-- [CROSS_RUNTIME_PARITY.md](CROSS_RUNTIME_PARITY.md) — validator instance of the UI/CLI Parity Invariant
-- [settings-homoiconization.md](settings-homoiconization.md) — plugin settings as `exo__Setting` vault assets
-- [exosync-parallel-run.md](exosync-parallel-run.md) — ExoSync parallel-run mode + M1/M2 parity harness
+- [CROSS_RUNTIME_PARITY.md](explanation/CROSS_RUNTIME_PARITY.md) — validator instance of the UI/CLI Parity Invariant
+- [settings-homoiconization.md](explanation/settings-homoiconization.md) — plugin settings as `exo__Setting` vault assets
+- [exosync-parallel-run.md](explanation/exosync-parallel-run.md) — ExoSync parallel-run mode + M1/M2 parity harness
 - `diagrams/` — Mermaid architecture diagrams (`architecture-overview.mmd`, `asset-creation-flow.mmd`, `command-execution-flow.mmd`, `layout-rendering.mmd`, `property-inheritance.mmd`, `service-dependencies.mmd`, `status-workflow.mmd`, `future-architecture.mmd`)
 
 ## Testing & CI
 
 - [../TESTING.md](../TESTING.md) — **canonical testing guide** (test types, pyramid, fixtures, mocking, E2E suites, coverage gates, troubleshooting)
-- [FLAKY_POLICY.md](FLAKY_POLICY.md) — flaky-test handling policy (`@flaky-track`, quarantine)
-- [e2e-desktop.md](e2e-desktop.md) — desktop E2E setup
-- [Performance-Guide.md](Performance-Guide.md) — performance guidance
-- [ci/assetspace-shacl-gate.md](ci/assetspace-shacl-gate.md) — per-AssetSpace SHACL CI gate
+- [FLAKY_POLICY.md](contributing/FLAKY_POLICY.md) — flaky-test handling policy (`@flaky-track`, quarantine)
+- [e2e-desktop.md](contributing/e2e-desktop.md) — desktop E2E setup
+- [Performance-Guide.md](reference/Performance-Guide.md) — performance guidance
+- [ci/assetspace-shacl-gate.md](reference/ci/assetspace-shacl-gate.md) — per-AssetSpace SHACL CI gate
 - [../packages/obsidian-plugin/docs/FLAKY_DASHBOARD.md](../packages/obsidian-plugin/docs/FLAKY_DASHBOARD.md) — flaky-test dashboard
 - [.github/E2E-LOCAL-TESTING.md](../.github/E2E-LOCAL-TESTING.md) — running E2E locally
 - _Pointer stubs (consolidated into `../TESTING.md`):_ [TEST-PYRAMID.md](TEST-PYRAMID.md), [.github/TESTING.md](../.github/TESTING.md), [../packages/obsidian-plugin/docs/TESTING.md](../packages/obsidian-plugin/docs/TESTING.md), [../packages/exocortex/docs/NL-TO-SPARQL.md](../packages/exocortex/docs/NL-TO-SPARQL.md)
@@ -67,7 +74,7 @@ split) regardless of physical path.
 - [../TESTING.md](../TESTING.md) — canonical testing guide (see Testing & CI above)
 - [../DEV-TROUBLESHOOTING.md](../DEV-TROUBLESHOOTING.md) — **developer/CI** troubleshooting
 - [../TEMPLATES.md](../TEMPLATES.md) — post-mortem & report templates
-- [AI-DEVELOPMENT-PATTERNS.md](AI-DEVELOPMENT-PATTERNS.md) — patterns for AI-agent contributors
+- [AI-DEVELOPMENT-PATTERNS.md](contributing/AI-DEVELOPMENT-PATTERNS.md) — patterns for AI-agent contributors
 - [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) · [../SECURITY.md](../SECURITY.md) — community + security policy
 - [.github/COPILOT_SETUP.md](../.github/COPILOT_SETUP.md), [.github/BRANCH_PROTECTION.md](../.github/BRANCH_PROTECTION.md), [.github/GITHUB_SETTINGS.md](../.github/GITHUB_SETTINGS.md) — repo/CI setup references
 - [.archgate/adrs/](../.archgate/adrs/) — **Architecture Decision Records** (executable, enforced by the `archgate` CI check); see [../ARCHITECTURE.md § Archgate](../ARCHITECTURE.md#archgate--executable-adr-governance)
@@ -75,7 +82,7 @@ split) regardless of physical path.
 
 ## Operational runbooks
 
-- [ROLLBACK_EXOQL_EVAL.md](ROLLBACK_EXOQL_EVAL.md) — revert procedure for the ExoQL eval-config rollout (referenced by runtime config; kept active)
+- [ROLLBACK_EXOQL_EVAL.md](how-to/ROLLBACK_EXOQL_EVAL.md) — revert procedure for the ExoQL eval-config rollout (referenced by runtime config; kept active)
 - [../CHANGELOG.md](../CHANGELOG.md) — _retired_ → release notes now in [GitHub Releases](https://github.com/kitelev/exocortex/releases)
 
 ## Package documentation
@@ -103,7 +110,7 @@ physically relocated across package boundaries.
 
 ### Core engine — `packages/exocortex/docs/`
 
-- [NL-TO-SPARQL.md](../packages/exocortex/docs/NL-TO-SPARQL.md) — _(stub → [NL-TO-SPARQL.md](NL-TO-SPARQL.md))_ engine-internals pointer
+- [NL-TO-SPARQL.md](../packages/exocortex/docs/NL-TO-SPARQL.md) — _(stub → [NL-TO-SPARQL.md](reference/NL-TO-SPARQL.md))_ engine-internals pointer
 
 ## Archive — `history/`
 

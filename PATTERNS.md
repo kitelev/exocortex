@@ -478,7 +478,7 @@ exo__Property_range: "[[ems__EffortStatus]]"
 exo__Property_cardinality: "[[exo__PropertyCardinalitySingle]]"
 ```
 
-`ShapeLoader.processFile` accepts a filename-basename fallback when `exo__Asset_label` is missing, so legacy ontology files keep working without migration. See `docs/PROPERTY_SCHEMA.md` → "Property Cardinality Declarations".
+`ShapeLoader.processFile` accepts a filename-basename fallback when `exo__Asset_label` is missing, so legacy ontology files keep working without migration. See `docs/reference/PROPERTY_SCHEMA.md` → "Property Cardinality Declarations".
 
 ### Backward-compat invariants (do not violate)
 
