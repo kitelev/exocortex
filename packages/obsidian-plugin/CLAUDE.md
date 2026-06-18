@@ -2,7 +2,7 @@
 
 > **Worktree rules, PR workflow, CI/CD**: See `../../CLAUDE.md` (exocortex-development root).
 > **Coding patterns**: See `../../PATTERNS.md`.
-> **Troubleshooting**: See `../../TROUBLESHOOTING.md`.
+> **Dev/CI troubleshooting**: See `../../DEV-TROUBLESHOOTING.md`.
 
 ---
 
@@ -126,6 +126,6 @@ See ../../PATTERNS.md for Docker E2E setup, debugging, and critical lessons.
 - `../../CLAUDE.md` — Worktree coordination, PR workflow, CI checks
 - `../../AGENTS.md` — Universal AI agent instructions
 - `../../PATTERNS.md` — All coding patterns (50+ patterns)
-- `../../TROUBLESHOOTING.md` — Common issues and fixes
+- `../../DEV-TROUBLESHOOTING.md` — Dev/CI issues and fixes
 - `ARCHITECTURE.md` — Detailed architecture docs
 - `docs/PROPERTY_SCHEMA.md` — Frontmatter vocabulary

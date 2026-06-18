@@ -2,7 +2,7 @@
 
 Comprehensive documentation for testing the Exocortex monorepo. This guide covers all test types, frameworks, patterns, and best practices.
 
-> **📐 Test Pyramid Policy**: For formal test architecture strategy, coverage thresholds, and CI enforcement mechanisms, see **[docs/TEST-PYRAMID.md](./docs/TEST-PYRAMID.md)**.
+> **📐 Test Pyramid Policy**: for formal test architecture strategy, coverage thresholds, and CI enforcement mechanisms, see **[Test Architecture → Test Pyramid Policy](#test-architecture)** below. This guide is the single canonical testing doc; `docs/TEST-PYRAMID.md`, `.github/TESTING.md`, and `packages/obsidian-plugin/docs/TESTING.md` are now pointer stubs.
 
 ## Table of Contents
 
@@ -265,15 +265,25 @@ npm run test:e2e
 
 ```
 packages/obsidian-plugin/tests/e2e/
-├── test-vault/              # Test Obsidian vault
-│   ├── .obsidian/          # Obsidian config
-│   ├── Daily Notes/        # DailyNote fixtures
-│   └── Tasks/              # Task fixtures
-├── utils/                   # Test utilities
-│   └── obsidian-launcher.ts # Obsidian launcher helper
-└── specs/                   # Test specs
-    └── daily-note-tasks.spec.ts
+├── test-vault/              # Test Obsidian vault (fixtures)
+├── utils/                   # Test utilities (obsidian-launcher.ts, …)
+├── reporters/               # Custom Playwright reporters
+├── specs/                   # Main smoke suite (sharded e2e-shard 1..6)
+├── eka-gui/                 # GUI-BDD create-instance-button suite
+└── eka/                     # EKA Obsidian-leg suite
 ```
+
+#### E2E Suites (enumerated)
+
+The plugin has **three** distinct E2E suites with separate configs and CI jobs:
+
+| Suite | Location | Config | CI job / workflow | Gating |
+| --- | --- | --- | --- | --- |
+| **Main smoke** | `tests/e2e/specs/**` | `playwright-e2e.config.ts` | `e2e-shard (1..6)` in `.github/workflows/ci.yml` | **Required** (6 of the 13 required checks); sharded via `playwright-shard-assignments.json` |
+| **EKA GUI-BDD** | `tests/e2e/eka-gui/create-instance-buttons.spec.ts` (+ `eka-gui-helpers.ts`) | `playwright-eka-gui.config.ts` | `.github/workflows/eka-gui-e2e.yml` | **Non-blocking** release-gate: nightly cron + `push:[main]` + `workflow_dispatch`. Drives the real create-instance buttons (Create Task/Project/Area/Meeting) against published `exoas-*` content. |
+| **EKA Obsidian-leg** | `tests/e2e/eka/eka-obsidian-leg.spec.ts` (+ `scripts/test-eka-obsidian-leg.sh`) | run via the script | `.github/workflows/eka-obsidian-leg-e2e.yml` | **Non-blocking**: nightly cron + `push:[main]` (paths-filtered) + `workflow_dispatch`. Exercises the EKA bootstrap/apply-profile leg in real Obsidian. |
+
+> On Apple Silicon the Docker e2e runs under amd64 QEMU emulation; the EKA suites are intentionally kept **out** of the required `e2e-shard` set so emulation flake never blocks merges. Verify EKA-suite changes via their CI workflow (native amd64 runner), not local Docker.
 
 **Example**:
 
@@ -389,6 +399,23 @@ coverage thresholds remain enforced by the required `test-coverage` job.
 - Testing implementation details
 - Testing non-critical paths
 - Tests would be flaky or slow
+
+#### Preventing Coverage Regression
+
+Rules for new code:
+
+1. **New features** must include unit tests
+2. **Bug fixes** must include a regression test
+3. **Refactoring** must maintain or improve coverage
+4. **CI blocks merge** if coverage drops below the thresholds in [Coverage Gates](#coverage-gates)
+
+Coverage review checklist:
+
+- [ ] Unit tests cover the happy path
+- [ ] Unit tests cover error conditions
+- [ ] Edge cases documented and tested
+- [ ] No commented-out tests
+- [ ] Test names describe behavior, not implementation
 
 ### Current Test Distribution
 
@@ -1026,9 +1053,9 @@ await page.evaluate(() => console.log("Debug from browser"));
 
 ### Internal References
 
-- [docs/TEST-PYRAMID.md](./docs/TEST-PYRAMID.md) - Test pyramid concepts and layer guidance
 - [docs/FLAKY_POLICY.md](./docs/FLAKY_POLICY.md) - Flaky test policy (@flaky-track, quarantine)
-- [packages/obsidian-plugin/docs/TESTING.md](./packages/obsidian-plugin/docs/TESTING.md) - Plugin-specific testing patterns
+- [docs/TEST-PYRAMID.md](./docs/TEST-PYRAMID.md) - _(stub → this guide)_ pyramid concepts now live in [Test Architecture](#test-architecture)
+- [packages/obsidian-plugin/docs/TESTING.md](./packages/obsidian-plugin/docs/TESTING.md) - _(stub → this guide)_ plugin-specific patterns consolidated here
 
 ### Code Examples
 

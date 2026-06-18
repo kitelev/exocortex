@@ -3,7 +3,8 @@
 > **Coordination rules, worktree management, and CI/CD**: See the hub `CLAUDE.md` at `/Users/kitelev/Developer/exocortex-development/CLAUDE.md` (from a worktree: `../../CLAUDE.md`; from the main `exocortex/` checkout: `../CLAUDE.md`).
 > **Universal AI agent instructions**: See `AGENTS.md`.
 > **Coding patterns**: See `PATTERNS.md`.
-> **Troubleshooting**: See `TROUBLESHOOTING.md`.
+> **Dev/CI troubleshooting**: See `DEV-TROUBLESHOOTING.md`.
+> **User troubleshooting**: See `docs/Troubleshooting.md`.
 > **Post-mortem templates**: See `TEMPLATES.md`.
 
 ---

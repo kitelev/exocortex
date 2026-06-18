@@ -51,7 +51,7 @@ After EVERY completed task, write a detailed post-mortem following this template
 [Exact text to add]
 ```
 
-**Add to TROUBLESHOOTING.md** (Section: [section name]):
+**Add to DEV-TROUBLESHOOTING.md** (Section: [section name]):
 ```
 [Exact text to add]
 ```

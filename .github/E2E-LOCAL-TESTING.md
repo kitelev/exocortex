@@ -235,7 +235,7 @@ Ensure Docker has at least 4GB RAM allocated.
 
 ## 📚 Related Documentation
 
-- [TESTING.md](.github/TESTING.md) - Full testing guide
+- [TESTING.md](TESTING.md) - Full testing guide
 - [Playwright E2E docs](https://playwright.dev/docs/intro)
 
 ## 🎯 Quick Reference
