@@ -20,7 +20,15 @@
  *    `category:"exosync"` with `level:"error"`.
  */
 
-export type ActivityCategory = "exosync" | "profile" | "mount" | "bootstrap";
+export type ActivityCategory =
+  | "exosync"
+  | "profile"
+  | "mount"
+  | "bootstrap"
+  // #3540 follow-up — every user-facing toast (any `INotificationService`
+  // call routed through ObsidianNotificationService) fans in here so the
+  // activity log is complete, not just the few structured producer feeds.
+  | "notice";
 export type ActivityLevel = "info" | "warn" | "error";
 
 export interface ActivityEntry {

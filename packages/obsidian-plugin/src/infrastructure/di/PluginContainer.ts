@@ -28,7 +28,11 @@ export class PluginContainer {
     });
 
     container.register(DI_TOKENS.INotificationService, {
-      useClass: ObsidianNotificationService,
+      // useFactory (not useClass) — the service now has an optional constructor
+      // param (the activity-log recorder, #3540 follow-up), which tsyringe
+      // cannot auto-resolve. Construct it explicitly with no args; it falls back
+      // to the module-level default recorder set in ExocortexPlugin.onload().
+      useFactory: () => new ObsidianNotificationService(),
     });
 
     const vaultAdapter = new ObsidianVaultAdapter(

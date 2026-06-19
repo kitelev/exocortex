@@ -6214,6 +6214,13 @@
   border-radius: var(--radius-s, 4px);
   padding: var(--size-4-2, 8px);
   margin-bottom: var(--size-4-3, 12px);
+  /* Bug fix — the log lines must be selectable + copyable with the mouse.
+     Obsidian/Electron app chrome defaults to user-select:none, so opt the
+     activity stream back in explicitly (webkit prefix for the WKWebView /
+     Chromium runtime). The Copy button stays as a "copy all" affordance. */
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
 }
 
 .exocortex-activity-log-row {
