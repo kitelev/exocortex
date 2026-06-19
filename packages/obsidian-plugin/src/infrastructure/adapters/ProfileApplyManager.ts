@@ -1809,12 +1809,33 @@ export class ProfileApplyManager {
       });
       // The crashed apply's persistent lock survives the reload (its heartbeat
       // froze at crash time). A reload WITHIN the staleness window (5 min) leaves
-      // a not-yet-stale foreign-pid lock, so the resume's own `acquireLock` would
-      // falsely report "another switch in progress". We are recovering a
-      // CONFIRMED interrupted switch at onload (no concurrent apply can exist in
-      // this session yet), so reclaim it first — best-effort, idempotent.
-      await this.lockMgr.releaseLock({ force: true }).catch(() => {});
+      // a not-yet-stale FOREIGN-pid lock, so the resume's own `acquireLock` would
+      // falsely report "another switch in progress". Reclaim only a foreign /
+      // stale lock — a live same-session apply (this pid, fresh) is left intact
+      // so the resume can't stomp a concurrent user-triggered apply (it would
+      // instead fail to acquire and defer to the next reload — strictly safe).
+      await this.lockMgr.reclaimIfForeignOrStale().catch(() => {});
       await this.applyProfileViaRest(interrupted.targetUid, { skipConfirm: true });
+      // Close the recovery window + reconcile the last-applied cache to the
+      // resumed target. The mutation path of applyProfileViaRest already does
+      // this (writes `apply-completed` + persists `activeProfileUid=target`),
+      // but an EMPTY-delta resume (disk already matched the target at recovery
+      // time) takes its reindex-only exit, which writes `completed` (NOT a
+      // window-resetting terminal) and persists via the settings store only.
+      // Writing `recovery-completed` here prevents re-resume churn on every
+      // subsequent reload, and the explicit save guarantees `localDataStore`
+      // reflects the target regardless of which internal branch ran.
+      const resumedSnap = localDataStore.snapshot();
+      await localDataStore.save({
+        ...resumedSnap,
+        activeProfileUid: interrupted.targetUid,
+        _switchInProgress: false,
+      });
+      await this.appendJournal({
+        phase: "recovery-completed",
+        targetUid: interrupted.targetUid,
+        ts: this.now().toISOString(),
+      });
       return { restored: [], resumed: true, resumedTo: interrupted.targetUid };
     }
 

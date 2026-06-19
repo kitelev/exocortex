@@ -135,6 +135,29 @@ export class PluginLockManager {
   }
 
   /**
+   * Crash-recovery helper — delete the lock file IFF it is NOT a live lock held
+   * by THIS session: i.e. it belongs to a different pid (a crashed/other
+   * session) OR it is stale. A fresh lock owned by this session (a concurrent
+   * same-session apply in progress) is left intact. Returns whether a lock was
+   * reclaimed.
+   *
+   * Used by {@link ProfileApplyManager.recoverIncompleteSwitch} to reclaim a
+   * crashed session's still-fresh foreign-pid lock (its heartbeat froze at
+   * crash time, so `acquireLock` would not yet treat it as stale) WITHOUT
+   * stomping a concurrent same-session apply the user may have just triggered.
+   */
+  async reclaimIfForeignOrStale(): Promise<boolean> {
+    const existing = await this.readLock();
+    if (existing === null) return false;
+    // Our own still-fresh lock = a live in-progress apply — do not reclaim.
+    if (existing.pid === this.pid && !this.snapshotIsStale(existing)) {
+      return false;
+    }
+    await this.deleteLock();
+    return true;
+  }
+
+  /**
    * Synchronous staleness probe against the in-memory snapshot OR latest disk
    * read (caller chooses). For most uses, prefer `checkOnPluginLoad()` which
    * does the read + verdict together.

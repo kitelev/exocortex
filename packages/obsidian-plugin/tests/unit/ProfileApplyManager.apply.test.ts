@@ -1648,6 +1648,54 @@ describe("ProfileApplyManager.recoverIncompleteSwitch — REST apply resume (#1d
     expect(result.resumed).toBe(true);
   });
 
+  it("EMPTY-delta resume (disk already == target) reconciles localDataStore to target + closes the recovery window (no churn)", async () => {
+    // Crash in the window AFTER the last on-disk mount/unmount but BEFORE the
+    // success-save: disk already matches the target effective set, so the resume
+    // computes an empty diff and takes applyProfileViaRest's reindex-only exit
+    // (which writes `completed`, not `apply-completed`). The recovery must still
+    // reconcile localDataStore to target + write a terminal `recovery-completed`
+    // so it does not re-resume on every subsequent reload (HIGH review catch).
+    const { mgr, restMount, localDataStore, app } = setup({
+      targetUid: "target",
+      sourceUid: "source",
+      targetIncludes: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        "ems-uid",
+      ],
+      // Disk already == target effective set (floors + ems) — nothing to do.
+      materialized: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        "ems-uid",
+      ],
+      wireRestMount: true,
+    });
+    await localDataStore.save({ activeProfileUid: "source", _switchInProgress: true });
+    await app.vault.adapter.write(
+      ".exocortex/switch-journal.jsonl",
+      [
+        JSON.stringify({ phase: "apply-starting", targetUid: "target", ts: "2026-06-19T00:00:00Z" }),
+        JSON.stringify({ phase: "phase2-materialized", targetUid: "target", as: "ems-uid", ts: "2026-06-19T00:00:01Z" }),
+      ].join("\n") + "\n",
+    );
+
+    const result = await mgr.recoverIncompleteSwitch();
+
+    // Empty delta — no mount/unmount — but state reconciled to target.
+    expect(result.resumed).toBe(true);
+    expect(restMount.mounted).toEqual([]);
+    expect(restMount.unmounted).toEqual([]);
+    expect(localDataStore.getActiveProfileUid()).toBe("target");
+    expect(localDataStore.isSwitchInProgress()).toBe(false);
+
+    // Window closed: a second recovery pass does NOT re-resume (no churn loop).
+    const second = await mgr.recoverIncompleteSwitch();
+    expect(second.resumed).toBe(false);
+  });
+
   it("reclaims the crashed session's still-fresh lock so the resume is not blocked (fast reload)", async () => {
     // A reload WITHIN the lock staleness window leaves a foreign-pid lock whose
     // heartbeat is recent (not yet stale). The resume must reclaim it, else
