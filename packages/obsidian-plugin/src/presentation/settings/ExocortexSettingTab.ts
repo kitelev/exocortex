@@ -14,6 +14,7 @@ import { LocalSecretsStore } from "@plugin/infrastructure/adapters/LocalSecretsS
 import { OperationsLogReader } from "@plugin/infrastructure/adapters/OperationsLogReader";
 import { SwitchCacheLayer } from "@plugin/infrastructure/adapters/SwitchCacheLayer";
 import { resolvePastedSecret } from "@plugin/presentation/settings/patClipboard";
+import { renderPatSetupHelper } from "@plugin/presentation/settings/patSetupHelper";
 
 /**
  * Issue #3320 §1 — secret key used by buildAssetSpacePusher and now the
@@ -655,6 +656,12 @@ export class ExocortexSettingTab extends PluginSettingTab {
       " On mobile, use the Paste button to fill the field from your " +
         "clipboard instead of typing the token by hand.",
     );
+
+    // RFC 0002 §3.5 (P9) — create-token helper: a deep-link to GitHub's
+    // fine-grained token page + an inline list of the permissions the token
+    // needs. Reusable renderer (patSetupHelper) so the first-run Welcome PAT
+    // step (cd9444bd) shows identical guidance without copy drift.
+    renderPatSetupHelper(containerEl);
 
     let patInputValue = "";
     // Captured from `addText` below so the Paste button can write into the same

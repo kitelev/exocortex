@@ -6195,6 +6195,32 @@
   margin-top: 1em;
 }
 
+/* RFC 0002 §3.5 — PAT setup create-token helper (deep-link + scope list). */
+.exocortex-pat-setup-helper {
+  margin: 0.5em 0 1em;
+}
+
+.exocortex-pat-setup-create-link {
+  font-weight: var(--font-semibold, 600);
+}
+
+.exocortex-pat-setup-intro {
+  color: var(--text-muted, #6e7681);
+  font-size: var(--font-ui-smaller, 0.8em);
+  margin: 0.4em 0 0.4em;
+}
+
+.exocortex-pat-setup-scopes {
+  margin: 0;
+  padding-left: 1.4em;
+  color: var(--text-muted, #6e7681);
+  font-size: var(--font-ui-smaller, 0.8em);
+}
+
+.exocortex-pat-setup-scope {
+  margin-bottom: 0.2em;
+}
+
 /* ExoSync (RFC 4e4dc453 Phase B) — invalid quarantine repo URL cue */
 .exocortex-invalid-input {
   border-color: var(--text-error) !important;
