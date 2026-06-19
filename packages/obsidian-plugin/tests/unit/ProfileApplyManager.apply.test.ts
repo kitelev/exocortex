@@ -288,6 +288,21 @@ class FakeConfirmGate implements IConfirmGate {
   }
 }
 
+// REST mount fake (mirrors restApply harness) — records mount/unmount so the
+// REST-aware crash-recovery resume (#1d1bcde0) can be asserted against the
+// driven mount-delta.
+class FakeRestMount {
+  mounted: Array<{ gitUrl: string; submodulePath: string; ref: string }> = [];
+  unmounted: string[] = [];
+  async mount(gitUrl: string, submodulePath: string, ref: string) {
+    this.mounted.push({ gitUrl, submodulePath, ref });
+    return { sha: "abc1234", fileCount: 1 };
+  }
+  async unmount(submodulePath: string): Promise<void> {
+    this.unmounted.push(submodulePath);
+  }
+}
+
 // === Setup helpers ===
 
 interface SetupOptions {
@@ -332,6 +347,13 @@ interface SetupOptions {
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   assetSpaceManagerFactory?: () => Promise<any>;
+  /**
+   * #1d1bcde0 — wire the cross-platform REST mount so the apply path routes
+   * through `applyProfileViaRest` (production path since #3567) and the
+   * REST-aware crash-recovery resume can drive the mount-delta. Default off so
+   * the existing desktop-git apply tests keep exercising the git path.
+   */
+  wireRestMount?: boolean;
 }
 
 function setup(opts: SetupOptions) {
@@ -455,6 +477,7 @@ function setup(opts: SetupOptions) {
   };
   const assetSpaceManager = new FakeAssetSpaceManager();
   const confirmGate = new FakeConfirmGate();
+  const restMount = new FakeRestMount();
 
   // Capture user-facing Notices (#3538 legacy flat-mount warn + others).
   const notifyMessages: string[] = [];
@@ -472,6 +495,7 @@ function setup(opts: SetupOptions) {
     uncommittedGuard: uncommittedGuard as any,
     confirmGate,
     localDataStore: localDataStore as any,
+    restMount: (opts.wireRestMount ? restMount : undefined) as any,
     /* eslint-enable @typescript-eslint/no-explicit-any */
     notify: (m: string) => notifyMessages.push(m),
     vaultRootPath: "/fake/vault",
@@ -494,6 +518,7 @@ function setup(opts: SetupOptions) {
     uncommittedGuard,
     assetSpaceManager,
     confirmGate,
+    restMount,
     notifyMessages,
     app,
     fsFiles,
@@ -1444,6 +1469,8 @@ describe("ProfileApplyManager.recoverIncompleteSwitch", () => {
     // guard returns early.
     await expect(mgr.recoverIncompleteSwitch()).resolves.toEqual({
       restored: [],
+      resumed: false,
+      resumedTo: null,
     });
     // No journal entry was written (true no-op).
     expect(
@@ -1478,6 +1505,8 @@ describe("ProfileApplyManager.recoverIncompleteSwitch", () => {
 
     await expect(mgr.recoverIncompleteSwitch()).resolves.toEqual({
       restored: [],
+      resumed: false,
+      resumedTo: null,
     });
     // Stuck flag cleared.
     expect(localDataStore.isSwitchInProgress()).toBe(false);
@@ -1520,6 +1549,344 @@ describe("ProfileApplyManager.recoverIncompleteSwitch", () => {
     await expect(mgr.recoverIncompleteSwitch()).rejects.toThrow(
       "simulated localDataStore failure during recovery",
     );
+  });
+});
+
+// ============================================================================
+// #1d1bcde0 — REST-aware crash recovery (reload mid-apply on the PRODUCTION
+// REST path since #3567). The dedicated apply-recovery worker previously keyed
+// on `phase2-destroy-cached` events that ONLY the desktop-git mutation emits,
+// so an interrupted REST apply (`apply-starting` + `phase2-materialized`, NO
+// `phase2-destroy-cached`) restored nothing — the vault stayed partially
+// applied with no auto-resume. The fix drives the mount-delta to the target
+// idempotently via `applyProfileViaRest` (mount missing + unmount leftover).
+// ============================================================================
+describe("ProfileApplyManager.recoverIncompleteSwitch — REST apply resume (#1d1bcde0)", () => {
+  it("REGRESSION: interrupted REST apply (phase2-materialized, NO phase2-destroy-cached) drives the mount-delta to target", async () => {
+    // Pre-apply: source = floors + kpc. Target = floors + ems. The user clicks
+    // Apply; runRestApplyMutation mounts ems (phase2-materialized) then CRASHES
+    // (reload) BEFORE unmounting kpc (mount-before-unmount ordering). Disk at
+    // recovery = floors + kpc + ems (partial); journal = apply-starting +
+    // phase2-materialized(ems), NO phase2-destroy-cached; _switchInProgress=true,
+    // activeProfileUid still = source (the success-save never ran).
+    const { mgr, restMount, localDataStore, app } = setup({
+      targetUid: "target",
+      sourceUid: "source",
+      targetIncludes: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        "ems-uid",
+      ],
+      materialized: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        "kpc-uid",
+        "ems-uid",
+      ],
+      wireRestMount: true,
+    });
+    await localDataStore.save({ activeProfileUid: "source", _switchInProgress: true });
+    await app.vault.adapter.write(
+      ".exocortex/switch-journal.jsonl",
+      [
+        JSON.stringify({ phase: "apply-starting", targetUid: "target", ts: "2026-06-19T00:00:00Z" }),
+        JSON.stringify({ phase: "phase2-materialized", targetUid: "target", as: "ems-uid", ts: "2026-06-19T00:00:01Z" }),
+      ].join("\n") + "\n",
+    );
+
+    const result = await mgr.recoverIncompleteSwitch();
+
+    // The leftover source AssetSpace (kpc) is unmounted; ems is already mounted
+    // so nothing is re-mounted — the mount-delta is reconciled to the target.
+    expect(restMount.unmounted).toEqual(["assetspaces/kitelev/exoas-kpc"]);
+    expect(restMount.mounted).toEqual([]);
+    // activeProfileUid is declared TARGET only AFTER the mount-state matches it
+    // (runRestApplyMutation's success save), and the stuck flag is cleared.
+    expect(localDataStore.getActiveProfileUid()).toBe("target");
+    expect(localDataStore.isSwitchInProgress()).toBe(false);
+    expect(result.resumed).toBe(true);
+    expect(result.resumedTo).toBe("target");
+  });
+
+  it("REGRESSION: interrupted REST apply BEFORE the first mount (apply-starting only) mounts missing + unmounts leftover", async () => {
+    // Crash right after apply-starting (before mounting ems, before unmounting
+    // kpc). Disk = floors + kpc (pre-apply state). Recovery drives to target
+    // (mount ems, unmount kpc).
+    const { mgr, restMount, localDataStore, app } = setup({
+      targetUid: "target",
+      sourceUid: "source",
+      targetIncludes: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        "ems-uid",
+      ],
+      materialized: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        "kpc-uid",
+      ],
+      wireRestMount: true,
+    });
+    await localDataStore.save({ activeProfileUid: "source", _switchInProgress: true });
+    await app.vault.adapter.write(
+      ".exocortex/switch-journal.jsonl",
+      JSON.stringify({ phase: "apply-starting", targetUid: "target", ts: "2026-06-19T00:00:00Z" }) + "\n",
+    );
+
+    const result = await mgr.recoverIncompleteSwitch();
+
+    expect(restMount.mounted.map((m) => m.submodulePath)).toEqual([
+      "assetspaces/kitelev/exoas-ems",
+    ]);
+    expect(restMount.unmounted).toEqual(["assetspaces/kitelev/exoas-kpc"]);
+    expect(localDataStore.getActiveProfileUid()).toBe("target");
+    expect(localDataStore.isSwitchInProgress()).toBe(false);
+    expect(result.resumed).toBe(true);
+  });
+
+  it("EMPTY-delta resume (disk already == target) reconciles localDataStore to target + closes the recovery window (no churn)", async () => {
+    // Crash in the window AFTER the last on-disk mount/unmount but BEFORE the
+    // success-save: disk already matches the target effective set, so the resume
+    // computes an empty diff and takes applyProfileViaRest's reindex-only exit
+    // (which writes `completed`, not `apply-completed`). The recovery must still
+    // reconcile localDataStore to target + write a terminal `recovery-completed`
+    // so it does not re-resume on every subsequent reload (HIGH review catch).
+    const { mgr, restMount, localDataStore, app } = setup({
+      targetUid: "target",
+      sourceUid: "source",
+      targetIncludes: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        "ems-uid",
+      ],
+      // Disk already == target effective set (floors + ems) — nothing to do.
+      materialized: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        "ems-uid",
+      ],
+      wireRestMount: true,
+    });
+    await localDataStore.save({ activeProfileUid: "source", _switchInProgress: true });
+    await app.vault.adapter.write(
+      ".exocortex/switch-journal.jsonl",
+      [
+        JSON.stringify({ phase: "apply-starting", targetUid: "target", ts: "2026-06-19T00:00:00Z" }),
+        JSON.stringify({ phase: "phase2-materialized", targetUid: "target", as: "ems-uid", ts: "2026-06-19T00:00:01Z" }),
+      ].join("\n") + "\n",
+    );
+
+    const result = await mgr.recoverIncompleteSwitch();
+
+    // Empty delta — no mount/unmount — but state reconciled to target.
+    expect(result.resumed).toBe(true);
+    expect(restMount.mounted).toEqual([]);
+    expect(restMount.unmounted).toEqual([]);
+    expect(localDataStore.getActiveProfileUid()).toBe("target");
+    expect(localDataStore.isSwitchInProgress()).toBe(false);
+
+    // Window closed: a second recovery pass does NOT re-resume (no churn loop).
+    const second = await mgr.recoverIncompleteSwitch();
+    expect(second.resumed).toBe(false);
+  });
+
+  it("reclaims the crashed session's still-fresh lock so the resume is not blocked (fast reload)", async () => {
+    // A reload WITHIN the lock staleness window leaves a foreign-pid lock whose
+    // heartbeat is recent (not yet stale). The resume must reclaim it, else
+    // applyProfileViaRest's acquireLock would falsely report "another switch in
+    // progress" and the recovery would never run.
+    const { mgr, restMount, localDataStore, app } = setup({
+      targetUid: "target",
+      sourceUid: "source",
+      targetIncludes: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        "ems-uid",
+      ],
+      materialized: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        "kpc-uid",
+        "ems-uid",
+      ],
+      wireRestMount: true,
+    });
+    await localDataStore.save({ activeProfileUid: "source", _switchInProgress: true });
+    // Seed the crashed session's lock — foreign pid, FRESH heartbeat (now).
+    await app.vault.adapter.write(
+      ".exocortex/switch-lock.json",
+      JSON.stringify({
+        pid: "crashed-session-9999",
+        acquiredAt: new Date().toISOString(),
+        lastHeartbeat: new Date().toISOString(),
+        operation: "apply-rest-target",
+      }),
+    );
+    await app.vault.adapter.write(
+      ".exocortex/switch-journal.jsonl",
+      [
+        JSON.stringify({ phase: "apply-starting", targetUid: "target", ts: "2026-06-19T00:00:00Z" }),
+        JSON.stringify({ phase: "phase2-materialized", targetUid: "target", as: "ems-uid", ts: "2026-06-19T00:00:01Z" }),
+      ].join("\n") + "\n",
+    );
+
+    const result = await mgr.recoverIncompleteSwitch();
+
+    // The resume proceeded despite the foreign lock — mount-delta driven to target.
+    expect(result.resumed).toBe(true);
+    expect(restMount.unmounted).toEqual(["assetspaces/kitelev/exoas-kpc"]);
+    expect(localDataStore.getActiveProfileUid()).toBe("target");
+  });
+
+  it("does NOT skip the confirm gate for a normal apply — only the recovery resume auto-resumes", async () => {
+    // Sibling/control: a normal applyProfile still goes through the confirm gate
+    // (proves skipConfirm is scoped to the recovery resume, not leaked).
+    const { mgr, confirmGate, restMount } = setup({
+      targetUid: "target",
+      sourceUid: "source",
+      targetIncludes: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        "ems-uid",
+      ],
+      materialized: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        "kpc-uid",
+      ],
+      wireRestMount: true,
+    });
+    confirmGate.approve = false;
+    await expect(mgr.applyProfile("target")).rejects.toThrow(ApplyAbortedByUser);
+    // Declined → no mutation.
+    expect(restMount.mounted).toEqual([]);
+    expect(restMount.unmounted).toEqual([]);
+  });
+
+  it("CONTROL: the desktop-git journal (phase2-destroy-cached) still cache-restores — REST resume is path-scoped", async () => {
+    // Regression guard: the existing desktop-git cache-restore path is unchanged
+    // even with restMount wired — the journal's git signature
+    // (`phase2-destroy-cached`) routes to the cache-restore branch, NOT the REST
+    // resume.
+    const { mgr, cacheLayer, restMount, app, localDataStore } = setup({
+      targetUid: "target",
+      sourceUid: "source",
+      targetIncludes: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+      ],
+      materialized: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+      ],
+      wireRestMount: true,
+    });
+    await localDataStore.save({ activeProfileUid: "source", _switchInProgress: true });
+    await app.vault.adapter.write(
+      ".exocortex/switch-journal.jsonl",
+      [
+        JSON.stringify({ phase: "phase2-start", targetUid: "target", ts: "2026-06-19T00:00:00Z" }),
+        JSON.stringify({ phase: "phase2-destroy-cached", targetUid: "target", as: "kpc-uid", ts: "2026-06-19T00:00:01Z" }),
+        JSON.stringify({ phase: "phase2-destroyed", targetUid: "target", as: "kpc-uid", ts: "2026-06-19T00:00:02Z" }),
+      ].join("\n") + "\n",
+    );
+
+    const result = await mgr.recoverIncompleteSwitch();
+
+    // Cache-restore fired (desktop-git path); REST mount was NOT used.
+    expect(result.restored).toContain("kpc-uid");
+    expect(cacheLayer.restoreCalls.length).toBeGreaterThan(0);
+    expect(restMount.mounted).toEqual([]);
+    expect(restMount.unmounted).toEqual([]);
+    expect(result.resumed).toBe(false);
+  });
+});
+
+// #1d1bcde0 F2 — recoverIfNeeded must NOT prematurely declare an interrupted
+// APPLY mutation "Applied". A re-index would persist activeProfileUid=TARGET +
+// clear the in-progress flag against a PARTIAL mount-state. The apply-mutation
+// interruption is deferred to the apply-recovery worker (recoverIncompleteSwitch).
+describe("ProfileApplyManager.recoverIfNeeded — defers apply-mutation interruptions (#1d1bcde0 F2)", () => {
+  it("REGRESSION: interrupted REST apply does NOT re-index / declare target active (deferred to apply recovery)", async () => {
+    const { mgr, settingsStore, app, notifyMessages } = setup({
+      targetUid: "target",
+      sourceUid: "source",
+      targetIncludes: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        "ems-uid",
+      ],
+      materialized: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        "kpc-uid",
+        "ems-uid",
+      ],
+      wireRestMount: true,
+    });
+    // recoverIfNeeded reads `_switchInProgress` from the settingsStore.
+    await settingsStore.save({ activeProfileUid: "source", _switchInProgress: true });
+    await app.vault.adapter.write(
+      ".exocortex/switch-journal.jsonl",
+      [
+        JSON.stringify({ phase: "apply-starting", targetUid: "target", ts: "2026-06-19T00:00:00Z" }),
+        JSON.stringify({ phase: "phase2-materialized", targetUid: "target", as: "ems-uid", ts: "2026-06-19T00:00:01Z" }),
+      ].join("\n") + "\n",
+    );
+
+    const recovery = await mgr.recoverIfNeeded();
+
+    // Deferred — recoverIfNeeded did not re-index / declare anything.
+    expect(recovery.recovered).toBe(false);
+    expect(recovery.targetUid).toBe(null);
+    // activeProfileUid NOT prematurely flipped to target on a partial disk.
+    const settings = await settingsStore.load();
+    expect(settings.activeProfileUid).not.toBe("target");
+    // No premature "Applied <target>" / "Recovering" notice.
+    expect(notifyMessages).toEqual([]);
+  });
+
+  it("CONTROL: a pure reindex-only interruption (starting, no mutation) still re-indexes", async () => {
+    // A reindex-only switch (no filesystem mutation) interrupted mid-reindex —
+    // recoverIfNeeded SHOULD still re-trigger the idempotent re-index.
+    const { mgr, settingsStore, app } = setup({
+      targetUid: "target",
+      sourceUid: "source",
+      targetIncludes: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+      ],
+      materialized: [
+        TS_FLOOR_AS_UID_EXO,
+        TS_FLOOR_AS_UID_EXOCMD,
+        TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+      ],
+    });
+    await settingsStore.save({ activeProfileUid: "source", _switchInProgress: true });
+    await app.vault.adapter.write(
+      ".exocortex/switch-journal.jsonl",
+      JSON.stringify({ phase: "starting", targetUid: "target", ts: "2026-06-19T00:00:00Z" }) + "\n",
+    );
+
+    const recovery = await mgr.recoverIfNeeded();
+
+    expect(recovery.recovered).toBe(true);
+    expect(recovery.targetUid).toBe("target");
   });
 });
 

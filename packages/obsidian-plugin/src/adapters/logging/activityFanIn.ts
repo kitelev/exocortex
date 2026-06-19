@@ -28,6 +28,7 @@ const PHASE_LABELS: Record<SwitchJournalEntry["phase"], string> = {
   "apply-failed": "Apply failed",
   "rest-rollback-unmounted": "Rolled back mount (apply failed)",
   "recovery-restoring": "Recovering interrupted switch",
+  "recovery-resuming": "Resuming interrupted apply",
   "recovery-completed": "Recovery complete",
 };
 

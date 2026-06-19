@@ -156,6 +156,9 @@ export interface SwitchJournalEntry {
     // unmounted to restore the pre-apply mount-state after a mid-apply failure.
     | "rest-rollback-unmounted"
     | "recovery-restoring"
+    // #1d1bcde0 — REST-aware crash recovery resumed an interrupted apply by
+    // re-running the idempotent REST apply to the target (mount-delta resume).
+    | "recovery-resuming"
     | "recovery-completed";
   targetUid: string;
   ts: string; // ISO
@@ -560,14 +563,127 @@ export class ProfileApplyManager {
       : `Applied "${profileLabel}": no changes (${recognizedCount} AssetSpace(s) already match).`;
   }
 
+  /** Whether the cross-platform REST mount is wired (desktop + mobile). */
+  private restWired(): boolean {
+    return this.restMount !== undefined || this.restMountFactory !== undefined;
+  }
+
   /**
-   * Plugin-load recovery: if last journal entry shows an incomplete switch
-   * AND settings._switchInProgress=true, re-trigger the re-index идempotently.
+   * #1d1bcde0 — classify the in-flight (interrupted) switch from the journal
+   * tail so recovery can route correctly:
+   *
+   *   - `reindex`   — a pure reindex-only switch (no filesystem mutation) was
+   *     interrupted mid-reindex (`runReindexMountState` lifecycle:
+   *     `starting`…`completed`). Safe to re-run {@link reindexMountState}.
+   *   - `rest-apply` — the PRODUCTION REST apply path (#3567) was interrupted
+   *     mid mount/unmount. Signature = `apply-starting` (+ `phase2-materialized`
+   *     / `phase2-destroyed`) with NO git-only phase. Resume = drive the
+   *     mount-delta to the target idempotently.
+   *   - `git-apply`  — the desktop-git apply mutation was interrupted. Signature
+   *     = any git-only phase (`phase2-start` / `phase2-destroy-cached` /
+   *     `phase2-materializing` / `phase2-done` / `git-commit-done` /
+   *     `phase1-done`). Recovery = cache-restore destroyed-not-materialized AS.
+   *   - `none`       — no in-flight switch (last terminal event closed the window).
+   *
+   * Only events SINCE the last terminal apply (`apply-completed` /
+   * `recovery-completed`) count — an earlier completed switch is irrelevant.
+   */
+  private async classifyInterruptedSwitch(): Promise<{
+    kind: "none" | "reindex" | "rest-apply" | "git-apply";
+    targetUid: string | null;
+    destroyed: Set<string>;
+    materialized: Set<string>;
+  }> {
+    // Git-only journal phases — present iff the desktop-git mutation ran. The
+    // REST mutation emits ONLY `apply-starting` / `phase2-materialized` /
+    // `phase2-destroyed`, so any of these uniquely marks the git path.
+    const GIT_ONLY_PHASES = new Set([
+      "phase1-done",
+      "phase2-start",
+      "phase2-destroy-cached",
+      "phase2-materializing",
+      "phase2-done",
+      "git-commit-done",
+    ]);
+    const events = await this.readJournalTail(200);
+    let applyStarted = false;
+    let reindexStarted = false;
+    let restMutation = false;
+    let gitMutation = false;
+    let targetUid: string | null = null;
+    const destroyed = new Set<string>();
+    const materialized = new Set<string>();
+    for (const e of events) {
+      if (e.phase === "apply-completed" || e.phase === "recovery-completed") {
+        // Terminal — anything before was a finished/recovered switch; reset.
+        applyStarted = reindexStarted = restMutation = gitMutation = false;
+        targetUid = null;
+        destroyed.clear();
+        materialized.clear();
+        continue;
+      }
+      if (GIT_ONLY_PHASES.has(e.phase)) {
+        gitMutation = true;
+        if (typeof e.targetUid === "string") targetUid = e.targetUid;
+        if (e.phase === "phase2-destroy-cached" && typeof e.as === "string") {
+          destroyed.add(e.as);
+        }
+      }
+      switch (e.phase) {
+        case "apply-starting":
+          applyStarted = true;
+          if (typeof e.targetUid === "string") targetUid = e.targetUid;
+          break;
+        case "starting":
+          reindexStarted = true;
+          if (typeof e.targetUid === "string") targetUid = e.targetUid;
+          break;
+        case "phase2-materialized":
+          restMutation = true;
+          if (typeof e.as === "string") materialized.add(e.as);
+          if (typeof e.targetUid === "string") targetUid = e.targetUid;
+          break;
+        case "phase2-destroyed":
+          restMutation = true;
+          if (typeof e.targetUid === "string") targetUid = e.targetUid;
+          break;
+        default:
+          break;
+      }
+    }
+    if (targetUid === null) return { kind: "none", targetUid: null, destroyed, materialized };
+    if (gitMutation) return { kind: "git-apply", targetUid, destroyed, materialized };
+    // An apply that started (with or without a recorded mount yet) but emitted
+    // no git-only phase is the REST path when the REST mount is wired (the
+    // production routing since #3567). `restMutation` covers the case where the
+    // first mount already landed; `applyStarted` covers a crash before it.
+    if ((applyStarted || restMutation) && this.restWired()) {
+      return { kind: "rest-apply", targetUid, destroyed, materialized };
+    }
+    if (applyStarted || restMutation) {
+      // Apply interrupted but REST not wired — legacy desktop-git fallback.
+      return { kind: "git-apply", targetUid, destroyed, materialized };
+    }
+    if (reindexStarted) return { kind: "reindex", targetUid, destroyed, materialized };
+    return { kind: "none", targetUid: null, destroyed, materialized };
+  }
+
+  /**
+   * Plugin-load recovery: if the last journal entry shows an incomplete
+   * reindex-only switch AND settings._switchInProgress=true, re-trigger the
+   * re-index idempotently.
    *
    * Re-index is pure (no filesystem state to roll back), so we simply
-   * re-run {@link reindexMountState} — it's safe and idempotent. Genuine
-   * filesystem-partial recovery (destroyed-not-materialized AssetSpaces)
-   * is handled separately by {@link recoverIncompleteSwitch}.
+   * re-run {@link reindexMountState} — it's safe and idempotent.
+   *
+   * #1d1bcde0 (F2) — an interrupted APPLY mutation (REST or desktop-git) is
+   * NOT re-indexed here: doing so would persist `activeProfileUid = TARGET` +
+   * clear the in-progress flag against a PARTIAL mount-state, prematurely
+   * declaring an incomplete switch "Applied" while the disk does not match the
+   * target. Apply-mutation interruptions are deferred to the dedicated
+   * apply-recovery worker ({@link recoverIncompleteSwitch}), which drives the
+   * mount-state to completion (REST resume / git cache-restore) and only then
+   * declares the target applied.
    */
   async recoverIfNeeded(): Promise<{ recovered: boolean; targetUid: string | null }> {
     const lastEntry = await this.readLastJournalEntry();
@@ -577,7 +693,13 @@ export class ProfileApplyManager {
     if (lastEntry.phase === "completed") return { recovered: false, targetUid: null };
     if (!settings._switchInProgress) return { recovered: false, targetUid: null };
 
-    // Incomplete: re-trigger
+    // F2 — defer apply-mutation interruptions to recoverIncompleteSwitch.
+    const interrupted = await this.classifyInterruptedSwitch();
+    if (interrupted.kind === "rest-apply" || interrupted.kind === "git-apply") {
+      return { recovered: false, targetUid: null };
+    }
+
+    // Pure reindex-only interruption: re-trigger the idempotent re-index.
     this.notify(`Recovering incomplete switch to ${lastEntry.targetUid}...`);
     await this.reindexMountState(lastEntry.targetUid);
     return { recovered: true, targetUid: lastEntry.targetUid };
@@ -1199,7 +1321,10 @@ export class ProfileApplyManager {
    * @throws TsFloorViolationError if target excludes any TS-floor AS.
    * @throws ApplyAbortedByUser if confirmGate declines.
    */
-  async applyProfileViaRest(targetProfileUid: string): Promise<void> {
+  async applyProfileViaRest(
+    targetProfileUid: string,
+    opts?: { skipConfirm?: boolean },
+  ): Promise<void> {
     if (typeof targetProfileUid !== "string" || targetProfileUid.length === 0) {
       throw new Error("applyProfileViaRest: targetProfileUid is required");
     }
@@ -1330,7 +1455,13 @@ export class ProfileApplyManager {
         asLabel: t.label,
       })),
     };
-    const approved = await confirmGate.confirmApply(plan);
+    // #1d1bcde0 — the onload crash-recovery resume passes `skipConfirm` because
+    // the user ALREADY approved this apply before the reload; re-prompting on a
+    // resume of an in-flight (interrupted) apply is wrong UX and the
+    // to-destroy set is exactly what they consented to remove. A normal apply
+    // always goes through the gate.
+    const approved =
+      opts?.skipConfirm === true ? true : await confirmGate.confirmApply(plan);
     if (!approved) throw new ApplyAbortedByUser();
 
     // No-op early exit — mount-state already matches the target. Re-index +
@@ -1600,18 +1731,33 @@ export class ProfileApplyManager {
   }
 
   /**
-   * Recovery worker — call from plugin onload when localDataStore reports
-   * `_switchInProgress=true`. Reads journal tail, identifies AS destroyed
-   * but not materialized, restores each from cache.
+   * Recovery worker — call from plugin onload when an interrupted switch may be
+   * pending. Resolves an incomplete apply to a consistent state:
    *
-   * @returns count of restored AS.
+   *   - **REST apply** (production path since #3567): re-run the idempotent REST
+   *     apply to the target so the mount-delta is driven to completion (mount
+   *     not-yet-materialised AssetSpaces + unmount leftover source AssetSpaces).
+   *     The user already approved the apply before the reload, so the confirm
+   *     gate is skipped. Runs on BOTH platforms (restMount is wired on both).
+   *   - **Desktop-git apply**: restore destroyed-but-not-materialized
+   *     AssetSpaces from the SwitchCacheLayer (the original Phase-3 behaviour).
+   *
+   * `activeProfileUid` is declared TARGET only AFTER the mount-state matches it
+   * (the resume's success save), so a partial disk never reports as Applied
+   * (#1d1bcde0 F2).
+   *
+   * @returns `restored` — AS UIDs restored from cache (git path); `resumed` —
+   *   whether an interrupted REST apply was resumed; `resumedTo` — the resumed
+   *   target profile UID (or null).
    */
-  async recoverIncompleteSwitch(): Promise<{ restored: ReadonlyArray<string> }> {
-    const cacheLayer = this.cacheLayer;
+  async recoverIncompleteSwitch(): Promise<{
+    restored: ReadonlyArray<string>;
+    resumed: boolean;
+    resumedTo: string | null;
+  }> {
     const localDataStore = this.localDataStore;
-    const vaultRootPath = this.vaultRootPath;
-    if (cacheLayer === undefined || localDataStore === undefined || vaultRootPath === undefined) {
-      throw new Error("recoverIncompleteSwitch: apply dependencies not wired");
+    if (localDataStore === undefined) {
+      throw new Error("recoverIncompleteSwitch: localDataStore not wired");
     }
 
     // Nothing-to-recover guard (#3571). On a vault that has never run a profile
@@ -1637,7 +1783,7 @@ export class ProfileApplyManager {
       journalExists = true;
     }
     if (!journalExists && !localDataStore.isSwitchInProgress()) {
-      return { restored: [] };
+      return { restored: [], resumed: false, resumedTo: null };
     }
 
     // Defensive (mirrors the apply paths at ll. 477/908/1334): we are past the
@@ -1647,20 +1793,74 @@ export class ProfileApplyManager {
     // `recovery-completed` write can't ENOENT and mask the real outcome.
     await this.ensureExocortexDir();
 
-    const events = await this.readJournalTail(200);
-    const destroyedAsUids = new Set<string>();
-    const materializedAsUids = new Set<string>();
-    for (const e of events) {
-      if (e.phase === "phase2-destroy-cached" && typeof e.as === "string") {
-        destroyedAsUids.add(e.as);
-      } else if (e.phase === "phase2-materialized" && typeof e.as === "string") {
-        materializedAsUids.add(e.as);
-      } else if (e.phase === "apply-completed") {
-        // Anything before a completed event was a finished switch — clear set.
-        destroyedAsUids.clear();
-        materializedAsUids.clear();
-      }
+    const interrupted = await this.classifyInterruptedSwitch();
+
+    // #1d1bcde0 (F1) — REST-aware resume. An interrupted REST apply is driven to
+    // the target idempotently by re-running the REST apply (skip the confirm
+    // gate — already approved pre-crash). applyProfileViaRest persists
+    // `activeProfileUid=target` + clears the in-progress flag + writes its own
+    // `apply-completed` ONLY after the mount-state matches the target, so a
+    // partial disk is never reported as Applied.
+    if (interrupted.kind === "rest-apply" && interrupted.targetUid !== null && this.restWired()) {
+      await this.appendJournal({
+        phase: "recovery-resuming",
+        targetUid: interrupted.targetUid,
+        ts: this.now().toISOString(),
+      });
+      // The crashed apply's persistent lock survives the reload (its heartbeat
+      // froze at crash time). A reload WITHIN the staleness window (5 min) leaves
+      // a not-yet-stale FOREIGN-pid lock, so the resume's own `acquireLock` would
+      // falsely report "another switch in progress". Reclaim only a foreign /
+      // stale lock — a live same-session apply (this pid, fresh) is left intact
+      // so the resume can't stomp a concurrent user-triggered apply (it would
+      // instead fail to acquire and defer to the next reload — strictly safe).
+      await this.lockMgr.reclaimIfForeignOrStale().catch(() => {});
+      await this.applyProfileViaRest(interrupted.targetUid, { skipConfirm: true });
+      // Close the recovery window + reconcile the last-applied cache to the
+      // resumed target. The mutation path of applyProfileViaRest already does
+      // this (writes `apply-completed` + persists `activeProfileUid=target`),
+      // but an EMPTY-delta resume (disk already matched the target at recovery
+      // time) takes its reindex-only exit, which writes `completed` (NOT a
+      // window-resetting terminal) and persists via the settings store only.
+      // Writing `recovery-completed` here prevents re-resume churn on every
+      // subsequent reload, and the explicit save guarantees `localDataStore`
+      // reflects the target regardless of which internal branch ran.
+      const resumedSnap = localDataStore.snapshot();
+      await localDataStore.save({
+        ...resumedSnap,
+        activeProfileUid: interrupted.targetUid,
+        _switchInProgress: false,
+      });
+      await this.appendJournal({
+        phase: "recovery-completed",
+        targetUid: interrupted.targetUid,
+        ts: this.now().toISOString(),
+      });
+      return { restored: [], resumed: true, resumedTo: interrupted.targetUid };
     }
+
+    // Desktop-git cache-restore path — requires the cache layer + vault root.
+    // When these are absent (mobile / REST-only wiring) there is no git apply to
+    // recover; the REST branch above already handled any production interruption.
+    // Just clear the stuck flag so the system never wedges in `_switchInProgress`.
+    const cacheLayer = this.cacheLayer;
+    const vaultRootPath = this.vaultRootPath;
+    if (cacheLayer === undefined || vaultRootPath === undefined) {
+      const snapshot = localDataStore.snapshot();
+      await localDataStore.save({
+        activeProfileUid: snapshot.activeProfileUid,
+        _switchInProgress: false,
+      });
+      await this.appendJournal({
+        phase: "recovery-completed",
+        targetUid: snapshot.activeProfileUid ?? "<none>",
+        ts: this.now().toISOString(),
+      });
+      return { restored: [], resumed: false, resumedTo: null };
+    }
+
+    const destroyedAsUids = interrupted.destroyed;
+    const materializedAsUids = interrupted.materialized;
 
     const restored: string[] = [];
     for (const asUid of destroyedAsUids) {
@@ -1707,7 +1907,7 @@ export class ProfileApplyManager {
     if (restored.length > 0) {
       this.notify(`Recovered ${restored.length} AssetSpace(s) from cache after interrupted switch`);
     }
-    return { restored };
+    return { restored, resumed: false, resumedTo: null };
   }
 
   /**
