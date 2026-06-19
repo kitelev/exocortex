@@ -1,11 +1,20 @@
 import { Modal, App } from "obsidian";
 import React from "react";
-import type { InputSchemaField } from "@plugin/presentation/builders/button-groups/DynamicCommandButtonGroupBuilder";
+import type {
+  InputSchemaField,
+  AssetRefCandidate,
+} from "@plugin/presentation/builders/button-groups/DynamicCommandButtonGroupBuilder";
 import { ReactRenderer } from "@plugin/presentation/utils/ReactRenderer";
 import { DynamicForm } from "@plugin/presentation/components/dynamic-form/DynamicForm";
 import { ErrorBoundary } from "@plugin/presentation/components/ErrorBoundary";
+import { findAssetRefCandidates } from "@plugin/presentation/utils/assetRefCandidates";
 
 export type UserInput = Record<string, string>;
+
+/** Resolves the picker candidates for an `assetRef` field's `targetClassUid`. */
+export type AssetRefCandidatesResolver = (
+  classUid: string,
+) => AssetRefCandidate[];
 
 export interface DynamicFormModalOptions {
   readonly title?: string;
@@ -16,13 +25,38 @@ export class DynamicFormModal extends Modal {
   private readonly schema: InputSchemaField[];
   private readonly options: DynamicFormModalOptions;
   private readonly reactRenderer: ReactRenderer;
+  private readonly candidatesResolver: AssetRefCandidatesResolver;
   private resolvePromise: ((value: UserInput | null) => void) | null = null;
 
-  constructor(app: App, schema: InputSchemaField[], options?: DynamicFormModalOptions) {
+  constructor(
+    app: App,
+    schema: InputSchemaField[],
+    options?: DynamicFormModalOptions,
+    // T1 "Create Instance" (project bbe40f8c) — injectable for unit tests;
+    // production wiring scans the vault metadata cache by class UID.
+    candidatesResolver?: AssetRefCandidatesResolver,
+  ) {
     super(app);
     this.schema = schema;
     this.options = options ?? {};
     this.reactRenderer = new ReactRenderer();
+    this.candidatesResolver =
+      candidatesResolver ?? ((classUid) => findAssetRefCandidates(app, classUid));
+  }
+
+  /**
+   * T1: build the per-field candidate lists for `assetRef` fuzzy-picker fields
+   * that declare a `targetClassUid`. Done once at open time so the React form
+   * receives a stable snapshot.
+   */
+  private buildCandidates(): Record<string, AssetRefCandidate[]> {
+    const candidates: Record<string, AssetRefCandidate[]> = {};
+    for (const field of this.schema) {
+      if (field.type === "assetRef" && field.targetClassUid) {
+        candidates[field.name] = this.candidatesResolver(field.targetClassUid);
+      }
+    }
+    return candidates;
   }
 
   override onOpen(): void {
@@ -35,6 +69,8 @@ export class DynamicFormModal extends Modal {
 
     const container = contentEl.createEl("div", { cls: "dynamic-form-container" });
 
+    const candidates = this.buildCandidates();
+
     this.reactRenderer.render(
       container,
       React.createElement(
@@ -42,6 +78,7 @@ export class DynamicFormModal extends Modal {
         {
           children: React.createElement(DynamicForm, {
             schema: this.schema,
+            candidates,
             submitLabel: this.options.submitLabel,
             onSubmit: (values: UserInput) => {
               this.resolvePromise?.(values);

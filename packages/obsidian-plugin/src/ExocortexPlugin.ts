@@ -101,6 +101,7 @@ import { ObsidianFileSystemAdapter } from "./adapters/ObsidianFileSystemAdapter"
 import { populateServiceRegistry } from "./infrastructure/services/ServiceRegistryPopulator";
 import { ObsidianFileOpener } from "./infrastructure/services/ObsidianFileOpener";
 import { createObsidianClassLabelResolver } from "./infrastructure/services/ObsidianClassLabelResolver";
+import { createObsidianRefToFolderResolver } from "./infrastructure/services/ObsidianRefToFolderResolver";
 import { ExocmdCommandPaletteRegistrar } from "./application/services/ExocmdCommandPaletteRegistrar";
 import { ObsidianCommandPromptAdapter } from "./infrastructure/adapters/ObsidianCommandPromptAdapter";
 import {
@@ -579,6 +580,9 @@ export default class ExocortexPlugin extends Plugin {
           workflowResolver: this.workflowResolver,
           groundingLoader: (uid) => this.commandResolver.loadGroundingByUid(uid),
           namedQueryRunner,
+          // T1 "Create Instance" (project bbe40f8c) — co-locate new instances in
+          // their chosen ontology's folder via the `$isDefinedByFolder` token.
+          refToFolder: createObsidianRefToFolderResolver(this.app),
         },
       );
 

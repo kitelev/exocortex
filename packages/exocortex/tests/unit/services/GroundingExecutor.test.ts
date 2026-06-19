@@ -2,6 +2,10 @@ import {
   GroundingExecutor,
   ServiceRegistry,
 } from "../../../src/services/GroundingExecutor";
+import {
+  clearResolvers,
+  installDefaultResolvers,
+} from "../../../src/services/SubstitutionResolverRegistry";
 import { GroundingType } from "../../../src/domain/constants/GroundingType";
 import { GroundingDefinition } from "../../../src/domain/models/CommandDefinition";
 
@@ -967,6 +971,142 @@ describe("GroundingExecutor", () => {
       // (the class UID) is absent. The link references $target (the parent
       // file the user clicked on), not the class UID.
       expect(content).toContain('exo__Asset_prototype: "[[vault/test-asset]]"');
+    });
+
+    // -- T1 "Create Instance" homoiconic button (project bbe40f8c) --
+    //
+    // The host page IS the class definition. The new instance must:
+    //   - get `exo__Instance_class` = the host's own UID (via the
+    //     `targetClassSelf` SubstitutionToken resolver, NOT grounding.targetClass);
+    //   - get `exo__Asset_isDefinedBy` = the ontology the user picked in the form;
+    //   - land co-located in that ontology's folder (via `$isDefinedByFolder`).
+    describe("T1 homoiconic Create Instance (host IS the class)", () => {
+      const HOST_CLASS_PATH =
+        "assetspaces/kitelev/exoas-ems/ems/8619c4fc-64f1-4869-b17e-e34186cacca9.md";
+      const HOST_CLASS_IRI =
+        "obsidian://vault/8619c4fc-64f1-4869-b17e-e34186cacca9.md";
+      // Marker emitted by CommandResolver for a context-dependent
+      // SubstitutionToken (token-uid is a real UUID per SUBSTITUTION_MARKER_RE).
+      const TARGET_CLASS_SELF_MARKER =
+        "__SUBSTITUTE__targetClassSelf__11111111-1111-1111-1111-111111111111__";
+      const ONTOLOGY_UID = "086f71fa-dd30-4284-90cf-e609f2a6c461";
+      const ONTOLOGY_FOLDER = "assetspaces/kitelev/exoas-ems/ems";
+
+      beforeEach(() => {
+        clearResolvers();
+        installDefaultResolvers();
+      });
+
+      function makeCreateInstanceGrounding(): GroundingDefinition {
+        return makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          // NOTE: no targetClass — host is the class (resolved via PD below).
+          targetFolder: "$isDefinedByFolder",
+          propertyDefault: [
+            {
+              propertyName: "exo__Instance_class",
+              value: TARGET_CLASS_SELF_MARKER,
+            },
+          ],
+        });
+      }
+
+      it("instance_class = host UID, isDefinedBy = picked ontology, co-located in ontology folder", async () => {
+        const refToFolder = jest.fn(async (ref: string) =>
+          ref === ONTOLOGY_UID ? ONTOLOGY_FOLDER : null,
+        );
+        executor = new GroundingExecutor(reader, writer, registry, undefined, {
+          refToFolder,
+        });
+
+        const userInput = {
+          label: "My Instance",
+          exo__Asset_isDefinedBy: `"[[${ONTOLOGY_UID}]]"`,
+        };
+
+        const result = await executor.execute(
+          makeCreateInstanceGrounding(),
+          HOST_CLASS_IRI,
+          HOST_CLASS_PATH,
+          userInput,
+        );
+
+        expect(result.success).toBe(true);
+        const [path, content] = writer.createFile.mock.calls[0];
+        // Co-located in the chosen ontology's folder (NOT the host folder,
+        // which happens to differ only by being the same here — assert the
+        // resolver was consulted with the bare ontology UID).
+        expect(refToFolder).toHaveBeenCalledWith(ONTOLOGY_UID);
+        expect(path).toMatch(
+          new RegExp(`^${ONTOLOGY_FOLDER}/[a-f0-9-]{36}\\.md$`),
+        );
+        // instance_class points back at the HOST class file's own UID.
+        expect(content).toContain(
+          '"[[8619c4fc-64f1-4869-b17e-e34186cacca9]]"',
+        );
+        expect(content).toContain(`exo__Asset_isDefinedBy: "[[${ONTOLOGY_UID}]]"`);
+        expect(content).toContain("exo__Asset_label: My Instance");
+        expect(content).toContain("exo__Asset_uid:");
+        // openPath surfaced for open-after-create.
+        expect(result.openPath).toBe(path);
+      });
+
+      it("co-locates the new instance in a DIFFERENT ontology folder than the host", async () => {
+        const OTHER_FOLDER = "assetspaces/kitelev/exoas-exo/exo";
+        const OTHER_ONTOLOGY = "60967c6a-4e8a-4ee3-8922-db98b981e4f4";
+        const refToFolder = jest.fn(async (ref: string) =>
+          ref === OTHER_ONTOLOGY ? OTHER_FOLDER : null,
+        );
+        executor = new GroundingExecutor(reader, writer, registry, undefined, {
+          refToFolder,
+        });
+
+        const result = await executor.execute(
+          makeCreateInstanceGrounding(),
+          HOST_CLASS_IRI,
+          HOST_CLASS_PATH,
+          { label: "X", exo__Asset_isDefinedBy: `"[[${OTHER_ONTOLOGY}]]"` },
+        );
+
+        expect(result.success).toBe(true);
+        const [path] = writer.createFile.mock.calls[0];
+        // Lands in the picked ontology's folder, NOT the host's ems folder.
+        expect(path.startsWith(`${OTHER_FOLDER}/`)).toBe(true);
+        expect(path.startsWith("assetspaces/kitelev/exoas-ems/")).toBe(false);
+      });
+
+      it("falls back to host folder when no refToFolder resolver is wired", async () => {
+        // No refToFolder injected (CLI/test harness).
+        const result = await executor.execute(
+          makeCreateInstanceGrounding(),
+          HOST_CLASS_IRI,
+          HOST_CLASS_PATH,
+          { label: "Y", exo__Asset_isDefinedBy: `"[[${ONTOLOGY_UID}]]"` },
+        );
+
+        expect(result.success).toBe(true);
+        const [path] = writer.createFile.mock.calls[0];
+        // Host folder (parent of HOST_CLASS_PATH).
+        expect(path.startsWith("assetspaces/kitelev/exoas-ems/ems/")).toBe(true);
+      });
+
+      it("falls back to host folder when refToFolder returns null (ontology not found)", async () => {
+        const refToFolder = jest.fn(async () => null);
+        executor = new GroundingExecutor(reader, writer, registry, undefined, {
+          refToFolder,
+        });
+
+        const result = await executor.execute(
+          makeCreateInstanceGrounding(),
+          HOST_CLASS_IRI,
+          HOST_CLASS_PATH,
+          { label: "Z", exo__Asset_isDefinedBy: `"[[${ONTOLOGY_UID}]]"` },
+        );
+
+        expect(result.success).toBe(true);
+        const [path] = writer.createFile.mock.calls[0];
+        expect(path.startsWith("assetspaces/kitelev/exoas-ems/ems/")).toBe(true);
+      });
     });
 
     // RFC ce27e55d: labelTemplate fallback for one-click create_instance

@@ -102,8 +102,10 @@ export {
   type UserInput,
   type IGroundingService,
   type ClassLabelToUidResolver,
+  type RefToFolderResolver,
 } from "./services/GroundingExecutor";
 export { createVaultFrontmatterClassLabelResolver } from "./services/VaultFrontmatterClassLabelResolver";
+export { createVaultFrontmatterRefToFolderResolver } from "./services/VaultFrontmatterRefToFolderResolver";
 export {
   NamedQueryRunner,
   type NamedQueryRunnerPort,

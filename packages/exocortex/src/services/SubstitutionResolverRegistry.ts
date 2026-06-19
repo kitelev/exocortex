@@ -160,4 +160,22 @@ export function installDefaultResolvers(): void {
     if (!ctx.groundingTargetClassUid) return null;
     return `"[[${ctx.groundingTargetClassUid}]]"`;
   });
+
+  // -- "Create Instance" homoiconic button (T1, project bbe40f8c) --
+  //
+  // `targetClassSelf` — the click-target IS the class definition (`exo__Class`
+  // instance), so the new asset's `exo__Instance_class` must point back at the
+  // host file's own UID. This inverts `groundingTargetClass` (which reads a
+  // class baked into the Grounding): here the class is the host, discovered
+  // from `targetFilePath` basename (UID-canon filenames guarantee
+  // basename === uid). Returns a quoted wikilink so it serialises identically
+  // to the other class-ref defaults. `null` when no target file path is in
+  // context (CLI/test harness without a click target).
+  registerResolver("targetClassSelf", (ctx) => {
+    if (!ctx.targetFilePath) return null;
+    const normalized = ctx.targetFilePath.replace(/^\/+/, "");
+    const fileName = normalized.slice(normalized.lastIndexOf("/") + 1);
+    const uid = fileName.replace(/\.md$/i, "");
+    return uid.length > 0 ? `"[[${uid}]]"` : null;
+  });
 }

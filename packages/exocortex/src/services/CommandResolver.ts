@@ -106,6 +106,10 @@ const KNOWN_SUBSTITUTION_RESOLVER_IDS: ReadonlySet<string> = new Set([
   "targetProperty",
   "labelAsArray",
   "groundingTargetClass",
+  // T1 "Create Instance" homoiconic button (project bbe40f8c): host page IS
+  // the class definition, so the new instance's exo__Instance_class points at
+  // the host's own UID (resolved from targetFilePath basename at exec time).
+  "targetClassSelf",
 ]);
 
 /**
@@ -1712,6 +1716,14 @@ export class CommandResolver {
             };
             if (rawDefault !== undefined && rawDefault !== null) {
               field.defaultValue = String(rawDefault);
+            }
+            // T1 "Create Instance" (project bbe40f8c): an `assetRef` field may
+            // declare `targetClassUid` so the form's fuzzy reference-picker can
+            // fetch candidate instances of that class (e.g. the ontology picker
+            // targets exo__Ontology). Generic — parameterises the reusable
+            // picker by class. Propagated verbatim for the plugin form layer.
+            if (typeof prop.targetClassUid === "string") {
+              field.targetClassUid = prop.targetClassUid;
             }
             return field;
           });
