@@ -1,6 +1,7 @@
 import {
   BootstrapAssetSpaceCommands,
   type BootstrapAssetSpaceCommandsDeps,
+  type BootstrapResultInfo,
   type IAssetSpacePuller,
   type IGitSubmoduleOps,
   type IFileOnlyAssetSpaceStore,
@@ -26,6 +27,8 @@ interface Harness {
    * empty after a successful materialise WITHOUT a reload.
    */
   activeStagingDirs: string[];
+  /** Durable result panel emissions (RFC 0002 §3.3 / P5). */
+  results: BootstrapResultInfo[];
   deps: BootstrapAssetSpaceCommandsDeps;
 }
 
@@ -94,6 +97,8 @@ function makeHarness(opts: {
     return repo.startsWith("exoas-") ? repo.slice("exoas-".length) : repo;
   };
 
+  const results: BootstrapResultInfo[] = [];
+
   const deps: BootstrapAssetSpaceCommandsDeps = {
     getPuller: async () => puller,
     gitOps,
@@ -117,6 +122,7 @@ function makeHarness(opts: {
     ),
     confirm: jest.fn(async () => opts.confirm ?? true),
     notify: (m: string) => notices.push(m),
+    showResult: (r: BootstrapResultInfo) => results.push(r),
   };
 
   const vaultFolders = new Map<
@@ -132,6 +138,7 @@ function makeHarness(opts: {
     vaultFiles: new Set<string>(),
     vaultFolders,
     activeStagingDirs,
+    results,
     deps,
   };
 }
@@ -303,6 +310,72 @@ describe("BootstrapAssetSpaceCommands.invokeBootstrap — guards", () => {
     );
     // Exo-only: the single exo pull was attempted and failed — nothing else.
     expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("BootstrapAssetSpaceCommands — durable result panel (RFC 0002 §3.3 / P5)", () => {
+  // The durable panel fires ON TOP of the toast — `notify` still carries the
+  // message (asserted elsewhere); these assert the ADDITIONAL `showResult`
+  // emission. Revert-verify: deleting each `this.emitResult(...)` call in
+  // `BootstrapAssetSpaceCommands` makes the matching assertion below FAIL.
+  it("cold bootstrap success → emits a `bootstrapped` result with folder + sha", async () => {
+    const h = makeHarness({ isGitVault: true });
+    await h.cmds.invokeBootstrap();
+    expect(h.results).toEqual([
+      {
+        kind: "bootstrapped",
+        folderName: "assetspaces/kitelev/exoas-exo",
+        sha: "abc1234",
+      },
+    ]);
+  });
+
+  it("already-bootstrapped guard → emits an `already-bootstrapped` result", async () => {
+    const h = makeHarness({ materializedFolders: { exo: ["a.md"] } });
+    await h.cmds.invokeBootstrap();
+    expect(h.results).toEqual([{ kind: "already-bootstrapped" }]);
+  });
+
+  it("EC2 fetch (>0 restored) → emits a `fetched` result with the count", async () => {
+    const h = makeHarness({
+      gitmodulesEntries: [
+        { submodulePath: "assetspaces/exo", url: EXO_URL },
+        { submodulePath: "assetspaces/exocmd", url: EXOCMD_URL },
+      ],
+      materializedFolders: {},
+      confirm: true,
+    });
+    await h.cmds.invokeBootstrap();
+    expect(h.results).toEqual([{ kind: "fetched", fetched: 2, total: 2 }]);
+  });
+
+  it("hard failure / cancel / invalid URL → NO durable result (toast only)", async () => {
+    // Bootstrap pull failure.
+    const fail = makeHarness({ isGitVault: true });
+    fail.puller.pullAssetSpace.mockRejectedValueOnce(new Error("network down"));
+    await fail.cmds.invokeBootstrap();
+    expect(fail.results).toEqual([]);
+
+    // User cancelled the URL prompt.
+    const cancel = makeHarness({ bootstrapUrls: null });
+    await cancel.cmds.invokeBootstrap();
+    expect(cancel.results).toEqual([]);
+
+    // Invalid URL.
+    const invalid = makeHarness({
+      bootstrapUrls: { exoUrl: "http://evil.example/x" },
+    });
+    await invalid.cmds.invokeBootstrap();
+    expect(invalid.results).toEqual([]);
+  });
+
+  it("showResult absent → command still completes (best-effort, optional dep)", async () => {
+    const h = makeHarness({ isGitVault: true });
+    // Drop the optional dep entirely — mirrors a wiring that doesn't surface a panel.
+    delete (h.deps as { showResult?: unknown }).showResult;
+    const cmds = new BootstrapAssetSpaceCommands(h.deps);
+    await expect(cmds.invokeBootstrap()).resolves.toBeUndefined();
+    expect(h.notices.some((n) => /Bootstrap complete/.test(n))).toBe(true);
   });
 });
 

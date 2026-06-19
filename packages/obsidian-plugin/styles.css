@@ -6147,6 +6147,32 @@
   display: block;
 }
 
+/* RFC 0002 §3.3 — Bootstrap dialog de-jargon: inline floor-field explainer + link. */
+.bootstrap-vault-explainer {
+  color: var(--text-muted, #6e7681);
+  font-size: var(--font-ui-smaller, 0.8em);
+  margin: 0.25em 0 0.6em;
+}
+
+.bootstrap-vault-floor-link {
+  font-weight: var(--font-semibold, 600);
+}
+
+/* RFC 0002 §3.3 — durable, in-context bootstrap result panel (P5). */
+.bootstrap-result-summary {
+  margin: 0.5em 0;
+}
+
+.bootstrap-result-next {
+  color: var(--text-muted, #6e7681);
+  font-size: var(--font-ui-smaller, 0.8em);
+  margin: 0 0 0.75em;
+}
+
+.bootstrap-result-next-action {
+  margin-right: 0.5em;
+}
+
 /* RFC 0002 §3.1 — first-run onboarding panel (3-step starter checklist). */
 .exocortex-onboarding-intro {
   color: var(--text-muted, #6e7681);

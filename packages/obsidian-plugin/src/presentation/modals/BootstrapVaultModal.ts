@@ -5,6 +5,19 @@ export interface BootstrapVaultUrls {
 }
 
 /**
+ * The public exo *engine floor* repository, surfaced as the field's placeholder
+ * example AND linked from the inline explainer (RFC 0002 §3.3 — "a link to the
+ * floor repo"). Single source so the placeholder and the link never drift.
+ *
+ * EC7 note: this is a LINK + a greyed-out placeholder example, NOT a pre-fill.
+ * The field starts empty (the `kitelev/exoas-*` repos materialise a specific
+ * ontology and are not auto-filled as a generic default — see EC7 below); the
+ * link only lets a user *view / fork* the public floor before they decide what
+ * to enter.
+ */
+export const PUBLIC_EXO_FLOOR_URL = "https://github.com/kitelev/exoas-exo";
+
+/**
  * BootstrapVaultModal — input gate for the `Exocortex: Bootstrap vault` palette
  * command (RFC 13da049f Phase 6.2).
  *
@@ -56,24 +69,54 @@ export class BootstrapVaultModal extends Modal {
 
   override onOpen(): void {
     const { contentEl } = this;
+    contentEl.addClass("bootstrap-vault");
     contentEl.createEl("h2", {
       cls: "bootstrap-vault-title",
-      text: "Bootstrap vault",
+      text: "Set up the engine",
     });
+    // De-jargoned intro (RFC 0002 §3.3 / P6): plain language; drops the
+    // "SDK/engine floor" framing the old copy led with. The only term-of-art
+    // kept is the literal «Add AssetSpace by URL» command name (a pointer to a
+    // real command the user can run next), not an unexplained concept.
     contentEl.createEl("p", {
       text:
-        "Cold-start this empty vault with the foundational exo AssetSpace " +
-        "(the SDK/engine floor), pulled from a public GitHub repository. " +
-        "That is all a clean start needs — add any further AssetSpaces " +
-        "(such as the exocmd UI-command library) afterwards via «Add " +
-        "AssetSpace by URL», or by applying a profile.",
+        "Get this empty vault running by pulling the engine — the minimal " +
+        "foundation an Exocortex vault needs — from a GitHub repository. That " +
+        "is all a clean start needs; you can add more content afterwards from " +
+        "«Add AssetSpace by URL» or by applying a profile.",
     });
 
+    // Plain-language field label (was "exo ontology URL (required)" — jargon).
     this.exoInput = this.createUrlField(
       contentEl,
-      "exo ontology URL (required)",
-      "https://github.com/kitelev/exoas-exo",
+      "Engine repository URL (required)",
+      PUBLIC_EXO_FLOOR_URL,
     );
+
+    // Inline explainer + link to the floor repo (RFC 0002 §3.3): tells the user
+    // what the field wants and where to get a floor repo, without pre-filling it
+    // (EC7). The link is a native <a> with an explicit aria-label that states it
+    // leaves Obsidian (P16 a11y), and target=_blank paired with
+    // rel="noopener noreferrer" (no reverse-tabnabbing).
+    const explainer = contentEl.createEl("p", {
+      cls: "bootstrap-vault-explainer",
+    });
+    explainer.createEl("span", {
+      text:
+        "This is the engine floor — use the public floor repo, or your own " +
+        "fork. ",
+    });
+    explainer.createEl("a", {
+      cls: "bootstrap-vault-floor-link",
+      text: "View the public floor repo on GitHub",
+      href: PUBLIC_EXO_FLOOR_URL,
+      attr: {
+        target: "_blank",
+        rel: "noopener noreferrer",
+        "aria-label":
+          "View the public floor repository (opens GitHub in your browser)",
+      },
+    });
 
     contentEl.createEl("p", {
       cls: "bootstrap-vault-note",
@@ -114,6 +157,9 @@ export class BootstrapVaultModal extends Modal {
       type: "text",
       placeholder,
       cls: "bootstrap-vault-input bootstrap-modal-input",
+      // Screen-reader label mirrors the visible <label> so the field is named
+      // even out of visual context (P16 a11y).
+      attr: { "aria-label": label },
     });
     return input;
   }
