@@ -1109,6 +1109,113 @@ describe("GroundingExecutor", () => {
       });
     });
 
+    // -- W3 "Create Class" homoiconic button (project 85150d63) --
+    //
+    // Mirror of T1 Create Instance, but the host page IS an `exo__Ontology`
+    // (namespace definition) and the OUTPUT is a new `exo__Class`. Reuses the
+    // exact same `create_instance` machinery (no new executor code) — only the
+    // vault-declared Grounding config differs:
+    //   - `targetClass = exo__Class metaclass` (8619c4fc) → the new asset's
+    //     `exo__Instance_class` (it IS an exo__Class), via the Universal
+    //     Default Template's `exo__Instance_class = $grounding.targetClass`
+    //     PropertyDefault (filled here by the executor's scalar top-up because
+    //     the test harness has no Universal Template loaded — same as the
+    //     Create Instance block above).
+    //   - `exo__Asset_isDefinedBy = $targetClassSelf` PropertyDefault → the new
+    //     class is defined by the HOST ontology itself (the page IS the
+    //     ontology), reusing the T1 `targetClassSelf` token.
+    //   - `targetFolder = $isDefinedByFolder` → co-located in the host
+    //     ontology's folder. For Create Class this CONVERGES with the host
+    //     folder (isDefinedBy === host), so co-location holds even when the
+    //     `RefToFolderResolver` is absent — strictly more robust than T1.
+    describe("W3 homoiconic Create Class (host IS the ontology)", () => {
+      // A real exo__Ontology page ($exocmd) acting as the click target.
+      const HOST_ONTOLOGY_UID = "60967c6a-4e8a-4ee3-8922-db98b981e4f4";
+      const HOST_ONTOLOGY_FOLDER = "assetspaces/kitelev/exoas-exocmd/exocmd";
+      const HOST_ONTOLOGY_PATH = `${HOST_ONTOLOGY_FOLDER}/${HOST_ONTOLOGY_UID}.md`;
+      const HOST_ONTOLOGY_IRI = `obsidian://vault/${HOST_ONTOLOGY_UID}.md`;
+      // exo__Class metaclass — the class of the new asset (it IS an exo__Class).
+      const CLASS_METACLASS_UID = "8619c4fc-64f1-4869-b17e-e34186cacca9";
+      const TARGET_CLASS_SELF_MARKER =
+        "__SUBSTITUTE__targetClassSelf__22222222-2222-2222-2222-222222222222__";
+
+      beforeEach(() => {
+        clearResolvers();
+        installDefaultResolvers();
+      });
+
+      function makeCreateClassGrounding(): GroundingDefinition {
+        return makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          // exo__Class metaclass → new asset's exo__Instance_class (it IS a class).
+          targetClass: CLASS_METACLASS_UID,
+          targetFolder: "$isDefinedByFolder",
+          propertyDefault: [
+            {
+              // isDefinedBy = the host ontology itself (the page IS the ontology).
+              propertyName: "exo__Asset_isDefinedBy",
+              value: TARGET_CLASS_SELF_MARKER,
+            },
+          ],
+        });
+      }
+
+      it("creates a co-located exo__Class (instance_class=metaclass, isDefinedBy=host ontology) in the ontology folder", async () => {
+        const refToFolder = jest.fn(async (ref: string) =>
+          ref === HOST_ONTOLOGY_UID ? HOST_ONTOLOGY_FOLDER : null,
+        );
+        executor = new GroundingExecutor(reader, writer, registry, undefined, {
+          refToFolder,
+        });
+
+        const result = await executor.execute(
+          makeCreateClassGrounding(),
+          HOST_ONTOLOGY_IRI,
+          HOST_ONTOLOGY_PATH,
+          { label: "My New Class" },
+        );
+
+        expect(result.success).toBe(true);
+        const [path, content] = writer.createFile.mock.calls[0];
+        // isDefinedBy = host ontology → $isDefinedByFolder resolves to its folder.
+        expect(refToFolder).toHaveBeenCalledWith(HOST_ONTOLOGY_UID);
+        expect(path).toMatch(
+          new RegExp(`^${HOST_ONTOLOGY_FOLDER}/[a-f0-9-]{36}\\.md$`),
+        );
+        // The new asset IS an exo__Class (instance_class = metaclass), NOT an
+        // instance of the host ontology.
+        expect(content).toContain(`"[[${CLASS_METACLASS_UID}]]"`);
+        // Defined by the host ontology (the clicked page).
+        expect(content).toContain(
+          `exo__Asset_isDefinedBy: "[[${HOST_ONTOLOGY_UID}]]"`,
+        );
+        expect(content).toContain("exo__Asset_label: My New Class");
+        expect(content).toContain("exo__Asset_uid:");
+        // Opened after create.
+        expect(result.openPath).toBe(path);
+      });
+
+      it("co-location holds without a RefToFolderResolver (host folder === ontology folder)", async () => {
+        // No refToFolder injected (CLI/headless). Because isDefinedBy === host,
+        // the host-folder fallback lands the class in the SAME ontology folder.
+        const result = await executor.execute(
+          makeCreateClassGrounding(),
+          HOST_ONTOLOGY_IRI,
+          HOST_ONTOLOGY_PATH,
+          { label: "Fallback Class" },
+        );
+
+        expect(result.success).toBe(true);
+        const [path, content] = writer.createFile.mock.calls[0];
+        expect(path.startsWith(`${HOST_ONTOLOGY_FOLDER}/`)).toBe(true);
+        expect(content).toContain(`"[[${CLASS_METACLASS_UID}]]"`);
+        expect(content).toContain(
+          `exo__Asset_isDefinedBy: "[[${HOST_ONTOLOGY_UID}]]"`,
+        );
+        expect(content).toContain("exo__Asset_label: Fallback Class");
+      });
+    });
+
     // RFC ce27e55d: labelTemplate fallback for one-click create_instance
     // (no input modal). Verifies the executor resolves the new instance's
     // label from `grounding.labelTemplate` when no userInput.label is supplied.
