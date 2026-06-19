@@ -65,9 +65,14 @@ class ApplyConfirmModal extends Modal {
       text: `Apply к profile: ${this.plan.targetProfileLabel}`,
     });
 
-    contentEl.createEl("p", {
+    // a11y (RFC 0002 §3.11 / P16): id this consequence line so the destructive
+    // confirm button can reference it via aria-describedby — a screen-reader
+    // user hears WHAT the action does, not only the button name.
+    const consequenceId = "apply-confirm-consequence";
+    const consequenceEl = contentEl.createEl("p", {
       text: "This will modify the vault filesystem:",
     });
+    consequenceEl.setAttribute("id", consequenceId);
 
     // Section 1 — Assetspaces about to be removed
     const tearSection = contentEl.createEl("div", {
@@ -137,15 +142,38 @@ class ApplyConfirmModal extends Modal {
       text: "Apply",
       cls: "mod-warning",
     });
+    // a11y (RFC 0002 §3.11 / P16): the destructive intent is conveyed by the
+    // `mod-warning` styling AND this text marker (never a glyph alone) so it is
+    // unambiguous for assistive tech, not only sighted users.
+    confirmBtn.setAttribute(
+      "aria-label",
+      "Apply — proceed with this destructive change (removes the listed files)",
+    );
+    confirmBtn.setAttribute("aria-describedby", consequenceId);
     confirmBtn.addEventListener("click", () => {
       this.settle(true);
       this.close();
     });
     const cancelBtn = buttonRow.createEl("button", { text: "Cancel" });
+    cancelBtn.setAttribute(
+      "aria-label",
+      "Cancel — abort without modifying the vault",
+    );
     cancelBtn.addEventListener("click", () => {
       this.settle(false);
       this.close();
     });
+
+    // Managed focus (P16, §3.11) — this is a DESTRUCTIVE confirm, so land focus
+    // on the SAFE default (Cancel) rather than the irreversible action, so a
+    // keyboard / screen-reader user does not trigger the destroy by pressing
+    // Enter on open. Focus-trap + Esc-close are provided by Obsidian's Modal
+    // base. Guarded for jsdom / headless contexts.
+    try {
+      cancelBtn.focus();
+    } catch {
+      /* focus is best-effort */
+    }
   }
 
   override onClose(): void {
