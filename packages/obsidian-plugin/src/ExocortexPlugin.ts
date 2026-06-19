@@ -14,7 +14,10 @@ import { LoggerFactory } from "./adapters/logging/LoggerFactory";
 import { Logger } from "./adapters/logging/Logger";
 import { FileLogChannel } from "./adapters/logging/FileLogChannel";
 import { ActivityLogService } from "./adapters/logging/ActivityLogService";
-import { journalEntryToActivity } from "./adapters/logging/activityFanIn";
+import {
+  journalEntryToActivity,
+  progressToActivity,
+} from "./adapters/logging/activityFanIn";
 import { ActivityLogModal } from "./presentation/modals/ActivityLogModal";
 import { LogFileModal } from "./presentation/modals/LogFileModal";
 import { CommandManager } from "./application/services/CommandManager";
@@ -2978,6 +2981,10 @@ export default class ExocortexPlugin extends Plugin {
       notify: (message) => this.notifier.info(message),
       // #3540 — fan profile apply / mount / unmount phases into the activity log.
       onPhase: (entry) => this.activityLog.record(journalEntryToActivity(entry)),
+      // Live per-AssetSpace "Mounting X (2 of 5)" progress during materialize —
+      // activity-log-only (never toasted), so a long apply visibly progresses.
+      onProgress: (event) =>
+        this.activityLog.record(progressToActivity(event)),
       assetSpaceManager: applyDeps?.assetSpaceManager,
       gitOps: applyDeps?.gitOps,
       restMount: restMount ?? undefined,

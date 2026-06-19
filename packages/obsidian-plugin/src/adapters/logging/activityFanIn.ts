@@ -4,7 +4,10 @@
  * in `ExocortexPlugin.onload()` stay one-liners and the mapping is unit-testable
  * without standing up the whole plugin.
  */
-import type { SwitchJournalEntry } from "../../infrastructure/adapters/ProfileApplyManager";
+import type {
+  ApplyProgressEvent,
+  SwitchJournalEntry,
+} from "../../infrastructure/adapters/ProfileApplyManager";
 import type { ActivityLevel, ActivityRecordInput } from "./ActivityLogService";
 
 /** Human-friendly labels for ProfileApplyManager journal phases. */
@@ -62,5 +65,36 @@ export function journalEntryToActivity(
     category,
     level: levelForPhase(entry.phase),
     message: `${label}${asPart}${elapsedPart}${errorPart}`,
+  };
+}
+
+/** Present-tense verbs for the live per-AssetSpace progress feed. */
+const PROGRESS_VERBS: Record<ApplyProgressEvent["op"], string> = {
+  pull: "Pulling",
+  mount: "Mounting",
+  unmount: "Unmounting",
+};
+
+/**
+ * Map a live {@link ApplyProgressEvent} (emitted BEFORE each per-AssetSpace
+ * pull/mount/unmount) to a `category:"progress"` activity record so the log
+ * shows a long apply is actively progressing — e.g. `Mounting kpc abc12345
+ * (2 of 5)`. Always `info` level (progress is not a failure signal); the 8-char
+ * AssetSpace prefix and N-of-M count keep each line self-describing.
+ */
+export function progressToActivity(
+  event: ApplyProgressEvent,
+): ActivityRecordInput {
+  const verb = PROGRESS_VERBS[event.op] ?? event.op;
+  const asPrefix = event.as.slice(0, 8);
+  // Avoid a redundant prefix when the label IS just the UID prefix.
+  const labelPart =
+    event.label && event.label !== asPrefix
+      ? `${event.label} ${asPrefix}`
+      : asPrefix;
+  return {
+    category: "progress",
+    level: "info",
+    message: `${verb} ${labelPart} (${event.index} of ${event.total})`,
   };
 }
