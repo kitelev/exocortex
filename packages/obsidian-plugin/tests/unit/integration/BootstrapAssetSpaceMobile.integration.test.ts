@@ -16,10 +16,10 @@
  * the GitHub HTTP client (real gzipped tarball, per test-fixture-realism).
  *
  * Proves the end-to-end mobile contract a fresh iPhone vault relies on:
- *   empty vault → bootstrap → exo + exocmd materialised via vault.adapter +
- *   `.gitmodules` written; then add-assetspace → a third entry — all readable
- *   back via `RestAssetSpaceMount.readGitmodulesEntries`, which is exactly what
- *   apply-profile (`listAllAssetSpaceInfos`) consumes next.
+ *   empty vault → bootstrap → exo materialised via vault.adapter (exo-only clean
+ *   bootstrap, 2026-06-20) + `.gitmodules` written; then add-assetspace → a
+ *   second entry — all readable back via `RestAssetSpaceMount.readGitmodulesEntries`,
+ *   which is exactly what apply-profile (`listAllAssetSpaceInfos`) consumes next.
  *
  * Revert-verify (mobile): remove the `restMount` branch from
  * `BootstrapAssetSpaceCommands.materialize` / `listTrackedEntries` and these
@@ -34,7 +34,6 @@ import type { GitHubRestClient } from "../../../src/infrastructure/adapters/GitH
 import { BootstrapAssetSpaceCommands } from "../../../src/infrastructure/adapters/BootstrapAssetSpaceCommands";
 
 const EXO_URL = "https://github.com/kitelev/exoas-exo";
-const EXOCMD_URL = "https://github.com/kitelev/exoas-exocmd";
 const PMBOK_URL = "https://github.com/kitelev/exoas-pmbok-ontology";
 
 // ─── Fakes ────────────────────────────────────────────────────────────────
@@ -179,7 +178,7 @@ function makeCmds(
   adapter: InMemoryAdapter,
   notices: string[],
   prompts: {
-    bootstrapUrls?: { exoUrl: string; exocmdUrl: string } | null;
+    bootstrapUrls?: { exoUrl: string } | null;
     addUrl?: { url: string } | null;
   },
 ): { cmds: BootstrapAssetSpaceCommands; restMount: RestAssetSpaceMount } {
@@ -207,7 +206,7 @@ function makeCmds(
     deriveFolderName,
     promptBootstrapUrls: async () =>
       prompts.bootstrapUrls === undefined
-        ? { exoUrl: EXO_URL, exocmdUrl: EXOCMD_URL }
+        ? { exoUrl: EXO_URL }
         : prompts.bootstrapUrls,
     promptAddAssetSpaceUrl: async () =>
       prompts.addUrl === undefined ? { url: PMBOK_URL } : prompts.addUrl,
@@ -220,35 +219,36 @@ function makeCmds(
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe("Mobile bootstrap integration — real RestAssetSpaceMount + vault.adapter (#3535)", () => {
-  it("empty vault → bootstrap materialises exo + exocmd via vault.adapter + writes .gitmodules", async () => {
+  it("empty vault → bootstrap materialises exo only via vault.adapter + writes .gitmodules", async () => {
     const adapter = new InMemoryAdapter();
     const notices: string[] = [];
     const { cmds, restMount } = makeCmds(adapter, notices, {});
 
     await cmds.invokeBootstrap();
 
-    // Content materialised at the Maven path, wrapper stripped — via writeBinary
-    // (vault.adapter), never Node fs.
+    // Exo-only clean bootstrap (2026-06-20): exo content materialised at the
+    // Maven path, wrapper stripped — via writeBinary (vault.adapter), never Node
+    // fs. exocmd is NOT materialised by bootstrap (added later).
     expect(adapter.files.has("assetspaces/kitelev/exoas-exo/exoas-exo.md")).toBe(
       true,
     );
     expect(
       adapter.files.has("assetspaces/kitelev/exoas-exocmd/exoas-exocmd.md"),
-    ).toBe(true);
+    ).toBe(false);
     expect(adapter.orphanWrites).toEqual([]);
 
-    // .gitmodules written via vault.adapter (text file), readable back.
+    // .gitmodules written via vault.adapter (text file), readable back — just the
+    // single exo entry.
     const entries = await restMount.readGitmodulesEntries();
     expect(entries).toEqual([
       { submodulePath: "assetspaces/kitelev/exoas-exo", url: EXO_URL },
-      { submodulePath: "assetspaces/kitelev/exoas-exocmd", url: EXOCMD_URL },
     ]);
 
     expect(notices.some((n) => /Bootstrap complete/.test(n))).toBe(true);
     expect(notices.some((n) => /file-only mode/.test(n))).toBe(false);
   });
 
-  it("after bootstrap, add-assetspace appends a third .gitmodules entry at the canonical Maven path + materialises it (#3538)", async () => {
+  it("after exo-only bootstrap, add-assetspace appends a second .gitmodules entry at the canonical Maven path + materialises it (#3538)", async () => {
     const adapter = new InMemoryAdapter();
     const notices: string[] = [];
     const { cmds, restMount } = makeCmds(adapter, notices, {});
@@ -265,10 +265,10 @@ describe("Mobile bootstrap integration — real RestAssetSpaceMount + vault.adap
       ),
     ).toBe(true);
 
+    // Bootstrap wrote exo only; add-assetspace appends pmbok as the 2nd entry.
     const entries = await restMount.readGitmodulesEntries();
     expect(entries.map((e) => e.submodulePath)).toEqual([
       "assetspaces/kitelev/exoas-exo",
-      "assetspaces/kitelev/exoas-exocmd",
       "assetspaces/kitelev/exoas-pmbok-ontology",
     ]);
     expect(notices.some((n) => /AssetSpace added/.test(n))).toBe(true);

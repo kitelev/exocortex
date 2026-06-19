@@ -96,15 +96,14 @@ The plugin needs ontology files in your vault to enable layouts, action buttons,
 1. Open the command palette: **Cmd/Ctrl + P**
 2. Run **"Exocortex: Bootstrap vault"**
 3. In the dialog:
-   - **exo ontology URL** (required): `https://github.com/kitelev/exoas-exo` — the core engine floor (classes, properties, IRI resolution).
-   - **exocmd ontology URL** (optional): `https://github.com/kitelev/exoas-exocmd` — the UI command library that generates the action buttons. **Leave it blank** for a knowledge-only / SPARQL-only vault, or fill it for the full button experience.
-4. Click **Bootstrap**. The plugin downloads each repository as a tarball via the GitHub REST API, extracts it safely into your vault, and indexes it automatically — no restart needed. In a git-backed vault the pulled AssetSpaces are additionally registered as git submodules (this is the only step that uses `git`).
+   - **exo ontology URL** (required): `https://github.com/kitelev/exoas-exo` — the core engine floor (classes, properties, IRI resolution). This is all a clean start needs.
+4. Click **Bootstrap**. The plugin downloads the repository as a tarball via the GitHub REST API, extracts it safely into your vault, and indexes it automatically — no restart needed. In a git-backed vault the pulled AssetSpace is additionally registered as a git submodule (this is the only step that uses `git`).
 
 > **Notes**
 >
-> - The repositories are **public**, so no GitHub token is required.
-> - Since plugin **v16.74.0**, only the **exo** URL is required — `exocmd` is an optional UI-command library (floor = `{exo}`). A bare engine vault is a first-class configuration; add `exocmd` later if you want the action buttons.
-> - The URLs above are placeholders — you can point the fields at your own forks.
+> - The repository is **public**, so no GitHub token is required.
+> - A clean bootstrap is **exo-only** (floor = `{exo}`) — the misleading second «exocmd» field was removed. The `exocmd` UI-command library (which generates the action buttons) is added afterwards: either explicitly via **"Add assetspace by URL"** (Step 2b below) or transitively when you **Apply** a profile.
+> - The URL above is a placeholder — you can point the field at your own fork.
 
 ### Step 2b: Add the starter registry, then apply the starter profile (recommended)
 
@@ -154,9 +153,9 @@ exo__Asset_label: Test Area
 
 **If action buttons are missing but the layout appears:**
 
-> **What are "action buttons"?** They are clickable controls — Create Task, Set Status Doing, Plan on Today, etc. — that the plugin generates from the **exocmd AssetSpace** you bootstrapped. They are different from the small **filter/toggle buttons** at the top of widgets (Show Effort Area, Show Votes, Hide Empty Slots), which are built into the plugin and work without any AssetSpace.
+> **What are "action buttons"?** They are clickable controls — Create Task, Set Status Doing, Plan on Today, etc. — that the plugin generates from the **exocmd AssetSpace**. Since a clean bootstrap is exo-only, you get the action buttons once `exocmd` is present — added via **"Add assetspace by URL"** (Step 2b) or pulled transitively when you **Apply** a profile. They are different from the small **filter/toggle buttons** at the top of widgets (Show Effort Area, Show Votes, Hide Empty Slots), which are built into the plugin and work without any AssetSpace.
 
-- Verify the AssetSpaces were mounted (look for an `exocmd/` folder in your vault — created by **Bootstrap vault** in Step 2)
+- Verify `exocmd` was mounted (look for an `exocmd` folder under `assetspaces/` in your vault — added via **"Add assetspace by URL"** or by **Apply profile**, not by the exo-only **Bootstrap vault**)
 - If the `exocmd/` folder is present and the plugin loads cleanly, fully **quit and reopen Obsidian** (cold restart) to force re-indexing
 - Try Cmd/Ctrl+P → "Reload layout"
 

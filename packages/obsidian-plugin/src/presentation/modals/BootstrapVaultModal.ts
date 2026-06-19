@@ -2,31 +2,35 @@ import { App, Modal } from "obsidian";
 
 export interface BootstrapVaultUrls {
   exoUrl: string;
-  exocmdUrl: string;
 }
 
 /**
  * BootstrapVaultModal — input gate for the `Exocortex: Bootstrap vault` palette
  * command (RFC 13da049f Phase 6.2).
  *
- * Collects the exo TS-floor AssetSpace URL (required) and, optionally, the
- * exocmd UI-command library URL needed to cold-start an empty vault. exocmd is
- * optional (RFC 5aa2a73a B3 / alt-G #3426): leaving it blank yields a
- * knowledge-only / SPARQL-only vault.
+ * Collects ONLY the exo TS-floor AssetSpace URL (required) needed to cold-start
+ * an empty vault. A clean bootstrap is **exo-only** — exo is the SDK/engine
+ * floor and is all that is needed for a minimal clean start (decision
+ * 2026-06-20, project Exocortex Alpha Launch). The exocmd UI-command library is
+ * NOT part of the initial bootstrap: it (and any other AssetSpace) is added
+ * afterwards, either explicitly via «Add AssetSpace by URL» or transitively
+ * when a profile is applied (effective set / dependsOn DAG). The previous
+ * second «exocmd URL» field was misleading (it implied exocmd was required for
+ * a clean start) and has been removed.
  *
  * ## UX decisions
  *
- * - **EC7 — fields start EMPTY.** The `kitelev/exoas-*` repos are NOT pre-filled
- *   (they materialise Andrey's own ontology and do not work as a generic floor
- *   for other users). They appear only as greyed-out placeholder examples.
+ * - **EC7 — the field starts EMPTY.** The `kitelev/exoas-*` repos are NOT
+ *   pre-filled (they materialise Andrey's own ontology and do not work as a
+ *   generic floor for other users). It appears only as a greyed-out
+ *   placeholder example.
  * - **R31 — no transitive auto-add.** A note tells the user they must add any
  *   further required AssetSpaces manually; dependencies are not resolved
  *   automatically.
  *
- * Resolves `{ exoUrl, exocmdUrl }` when the user clicks «Bootstrap» with a
- * plausible exo URL (exocmd may be left blank → resolves `exocmdUrl: ""`).
- * Esc / Cancel / any close path resolves `null`. The promise resolves exactly
- * once.
+ * Resolves `{ exoUrl }` when the user clicks «Bootstrap» with a plausible exo
+ * URL. Esc / Cancel / any close path resolves `null`. The promise resolves
+ * exactly once.
  *
  * Authoritative URL validation (allowlist, traversal) happens downstream in
  * `BootstrapAssetSpaceCommands` / `GitHubRestClient.validateRepoURL`; this modal
@@ -37,7 +41,6 @@ export class BootstrapVaultModal extends Modal {
   private resolved = false;
   private readonly resolveFn: (urls: BootstrapVaultUrls | null) => void;
   private exoInput: HTMLInputElement | null = null;
-  private exocmdInput: HTMLInputElement | null = null;
   private errorEl: HTMLElement | null = null;
 
   constructor(app: App, resolve: (urls: BootstrapVaultUrls | null) => void) {
@@ -61,8 +64,9 @@ export class BootstrapVaultModal extends Modal {
       text:
         "Cold-start this empty vault with the foundational exo AssetSpace " +
         "(the SDK/engine floor), pulled from a public GitHub repository. " +
-        "exocmd (the optional UI-command library) can be added too, or left " +
-        "blank for a knowledge-only / SPARQL-only vault.",
+        "That is all a clean start needs — add any further AssetSpaces " +
+        "(such as the exocmd UI-command library) afterwards via «Add " +
+        "AssetSpace by URL», or by applying a profile.",
     });
 
     this.exoInput = this.createUrlField(
@@ -70,16 +74,11 @@ export class BootstrapVaultModal extends Modal {
       "exo ontology URL (required)",
       "https://github.com/kitelev/exoas-exo",
     );
-    this.exocmdInput = this.createUrlField(
-      contentEl,
-      "exocmd ontology URL (optional)",
-      "https://github.com/kitelev/exoas-exocmd",
-    );
 
     contentEl.createEl("p", {
       cls: "bootstrap-vault-note",
       text:
-        "The example URLs above are placeholders only — enter the repositories " +
+        "The example URL above is a placeholder only — enter the repository " +
         "you want to use. Add any further AssetSpaces afterwards via " +
         "«Add AssetSpace by URL»; dependencies are not added automatically.",
     });
@@ -121,13 +120,12 @@ export class BootstrapVaultModal extends Modal {
 
   private submit(): void {
     const exoUrl = (this.exoInput?.value ?? "").trim();
-    const exocmdUrl = (this.exocmdInput?.value ?? "").trim();
-    const problem = firstUrlProblem(exoUrl, exocmdUrl);
+    const problem = firstUrlProblem(exoUrl);
     if (problem !== null) {
       this.showError(problem);
       return;
     }
-    this.settle({ exoUrl, exocmdUrl });
+    this.settle({ exoUrl });
     this.close();
   }
 
@@ -145,27 +143,21 @@ export class BootstrapVaultModal extends Modal {
 }
 
 /**
- * Light shape check for the bootstrap URLs. Returns a human-readable problem
- * string, or null when the inputs look plausible. Authoritative validation is
+ * Light shape check for the bootstrap URL. Returns a human-readable problem
+ * string, or null when the input looks plausible. Authoritative validation is
  * downstream.
  *
- * Core-only (RFC 5aa2a73a B3 / alt-G rejection #3426): only the exo URL is
- * required. exocmd is the optional UI-command library — an empty exocmd field
- * yields a knowledge-only / SPARQL-only vault and is a first-class config. When
- * exocmd IS provided it must still be a plausible GitHub URL.
+ * Exo-only (decision 2026-06-20): a clean bootstrap requires only the exo URL.
+ * The exocmd library — and any other AssetSpace — is added later via «Add
+ * AssetSpace by URL» or transitively via a profile, so this modal no longer
+ * collects an exocmd URL.
  */
-export function firstUrlProblem(
-  exoUrl: string,
-  exocmdUrl: string,
-): string | null {
+export function firstUrlProblem(exoUrl: string): string | null {
   if (exoUrl.length === 0) {
     return "The exo URL is required.";
   }
   if (!isLikelyGitHubUrl(exoUrl)) {
     return "exo URL must look like https://github.com/<owner>/<repo>.";
-  }
-  if (exocmdUrl.length > 0 && !isLikelyGitHubUrl(exocmdUrl)) {
-    return "exocmd URL must look like https://github.com/<owner>/<repo>.";
   }
   return null;
 }
