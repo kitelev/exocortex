@@ -3360,26 +3360,35 @@ export default class ExocortexPlugin extends Plugin {
       );
     }
 
-    // RFC 22b50a17 Phase 3 — apply recovery worker. Only fires when
-    // apply deps are wired AND the journal tail shows destroyed-not-
-    // materialized AS — covers the «plugin crashed mid-Phase 2» case where
-    // soft recoverIfNeeded() would re-trigger a no-op refresh but leave
-    // vault filesystem partial-destroyed.
-    if (hasApplyDeps) {
-      try {
-        const result = await switchMgr.recoverIncompleteSwitch();
-        if (result.restored.length > 0) {
-          this.logger.info(
-            `[ExocortexPlugin] apply recovery restored ${result.restored.length} AssetSpace(s): ${result.restored.join(", ")}`,
-          );
-        }
-      } catch (error) {
-        this.logger.warn(
-          "[ExocortexPlugin] apply recovery failed",
-          error instanceof Error ? error : new Error(String(error)),
+    // RFC 22b50a17 Phase 3 — apply recovery worker. Resolves an interrupted
+    // apply to a consistent state. #1d1bcde0 — runs on BOTH platforms (NOT
+    // gated by `hasApplyDeps`): the production REST apply path (#3567) is wired
+    // on desktop AND mobile, and an interrupted REST apply is resumed by driving
+    // the mount-delta to the target. The desktop-git cache-restore branch
+    // self-guards on the cache layer. Covers the «reload mid-apply» case where
+    // soft recoverIfNeeded() would (pre-fix) re-trigger a no-op refresh + leave
+    // the vault filesystem partial-applied while prematurely declaring it
+    // Applied.
+    try {
+      const result = await switchMgr.recoverIncompleteSwitch();
+      if (result.resumed) {
+        this.logger.info(
+          `[ExocortexPlugin] apply recovery resumed the interrupted REST apply to ${result.resumedTo}`,
         );
       }
+      if (result.restored.length > 0) {
+        this.logger.info(
+          `[ExocortexPlugin] apply recovery restored ${result.restored.length} AssetSpace(s): ${result.restored.join(", ")}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        "[ExocortexPlugin] apply recovery failed",
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
 
+    if (hasApplyDeps) {
       // Cross-device divergence detection (RFC 22b50a17 §Cross-device).
       // Best-effort: failure не block onload; user can manually re-trigger
       // by switching profiles в Cmd+P.
