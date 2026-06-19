@@ -42,7 +42,7 @@ never a vault setting (it must not replicate).
   Notice summary (`ExoSync parity: M1=0, M2=∅ (N repo(s) checked)`) +
   journal append. Best-effort: a parity failure never affects the sync
   result.
-- **On demand** — palette command `Exocortex: Sync parity report`
+- **On demand** — palette command `Exocortex: Check sync status`
   (standalone round, same journal), or from a desktop shell:
 
   ```bash
