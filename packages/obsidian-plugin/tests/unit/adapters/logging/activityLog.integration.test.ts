@@ -78,7 +78,8 @@ beforeEach(() => {
 });
 
 describe("activity-log fan-in (integration)", () => {
-  it("fans ExoSync + profile + mount + bootstrap events into one categorized stream", () => {
+  it("fans ExoSync + profile + mount + notice events into one categorized stream", () => {
+    jest.spyOn(console, "debug").mockImplementation(() => undefined);
     const svc = new ActivityLogService({ now: () => 0 });
 
     // Wire exactly as ExocortexPlugin.onload does.
@@ -86,11 +87,16 @@ describe("activity-log fan-in (integration)", () => {
       svc.record({ category: "exosync", level: "info", message });
     const onPhase = (entry: SwitchJournalEntry): void =>
       svc.record(journalEntryToActivity(entry));
-    const onBootstrap = (message: string): void =>
-      svc.record({ category: "bootstrap", level: "info", message });
+    // Bootstrap / add-assetspace progress now flows through the central notifier
+    // (toast → category "notice"), NOT a dedicated bootstrap record — #3540
+    // follow-up. Use the REAL service so this mirrors onload faithfully.
+    const notifier = new ObsidianNotificationService({
+      recordActivity: ({ level, message }) =>
+        svc.record({ category: "notice", level, message }),
+    });
 
     // --- Simulate producers (the events these sources actually emit) ---
-    onBootstrap("Bootstrapping vault...");
+    notifier.info("Bootstrapping vault...");
     onSyncInfo("Detecting changes for exo");
     onSyncInfo("Fully synced");
     onPhase({ phase: "apply-starting", targetUid: "p1", ts: "t" });
@@ -114,7 +120,7 @@ describe("activity-log fan-in (integration)", () => {
       return acc;
     }, {});
     expect(byCategory).toEqual({
-      bootstrap: 1,
+      notice: 1, // bootstrap toast via the central notifier
       exosync: 2,
       profile: 2, // apply-starting + apply-completed
       mount: 2, // materialized + destroyed (per-AS)
@@ -125,11 +131,13 @@ describe("activity-log fan-in (integration)", () => {
     const text = document.querySelector(
       ".exocortex-activity-log-list",
     )?.textContent;
-    expect(text).toMatch(/\[bootstrap\] Bootstrapping vault/);
+    expect(text).toMatch(/\[notice\] Bootstrapping vault/);
     expect(text).toMatch(/\[exosync\] Fully synced/);
     expect(text).toMatch(/\[mount\] Mounted 1b20a8f0/);
     expect(text).toMatch(/\[mount\] Unmounted abcd1234/);
     expect(text).toMatch(/\[profile\] Apply completed \(50ms\)/);
+
+    jest.restoreAllMocks();
   });
 
   it("Bug 1 — the real notifier fans EVERY toast into the activity log (category 'notice')", () => {
