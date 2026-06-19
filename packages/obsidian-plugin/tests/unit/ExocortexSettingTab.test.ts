@@ -2,7 +2,24 @@ import { ExocortexSettingTab } from "../../src/presentation/settings/ExocortexSe
 import { Setting } from "obsidian";
 import { createMockApp, createMockPlugin } from "./helpers/testHelpers";
 
-// Two-step mock pattern for constructor functions
+// RFC 0002 §3.6 — the tab is now sectioned (Onboarding & sync / Display /
+// Advanced) and the toggles are no longer in a fixed positional order, so
+// these tests look up a Setting by NAME (via the capture harness below) rather
+// than by array index. The structural section assertions live in
+// ExocortexSettingTab.informationArchitecture.test.ts.
+
+interface CapturedToggle {
+  setValueArg?: boolean;
+  onChangeCb?: (value: boolean) => void | Promise<void>;
+}
+interface CapturedSetting {
+  name?: string;
+  heading: boolean;
+  toggles: CapturedToggle[];
+}
+
+const capture: { settings: CapturedSetting[] } = { settings: [] };
+
 jest.mock("obsidian", () => ({
   App: jest.fn(),
   PluginSettingTab: class MockPluginSettingTab {
@@ -25,14 +42,26 @@ describe("ExocortexSettingTab", () => {
   let mockContainerEl: any;
   let MockSetting: any;
 
+  const findSetting = (name: string): CapturedSetting | undefined =>
+    capture.settings.find((s) => s.name === name);
+
   beforeEach(() => {
-    // Create a mock element that has Obsidian's methods (recursive)
+    capture.settings = [];
+
+    // A recursive mock element that supports the Obsidian DOM helpers the
+    // settings tab uses (createEl/createDiv/createSpan/appendText/empty).
     const createMockElement: () => any = () => {
       const el = document.createElement("div");
-      // Add Obsidian-specific methods that return mock elements
       (el as any).empty = jest.fn();
-      (el as any).createEl = jest.fn().mockImplementation(() => createMockElement());
-      (el as any).createDiv = jest.fn().mockImplementation(() => createMockElement());
+      (el as any).createEl = jest
+        .fn()
+        .mockImplementation(() => createMockElement());
+      (el as any).createDiv = jest
+        .fn()
+        .mockImplementation(() => createMockElement());
+      (el as any).createSpan = jest
+        .fn()
+        .mockImplementation(() => createMockElement());
       (el as any).appendText = jest.fn();
       return el;
     };
@@ -40,13 +69,32 @@ describe("ExocortexSettingTab", () => {
       empty: jest.fn(),
       createEl: jest.fn().mockImplementation(() => createMockElement()),
       createDiv: jest.fn().mockImplementation(() => createMockElement()),
+      createSpan: jest.fn().mockImplementation(() => createMockElement()),
+      appendText: jest.fn(),
     };
 
     mockPlugin = createMockPlugin({
       settings: {
         layoutVisible: true,
         showArchivedAssets: false,
+        autoAdjustPlannedEndTimestamp: true,
         showLabelsInTabTitles: true,
+        showLabelsInProperties: true,
+        enablePropertiesLabelPatch: true,
+        enableExoLayoutRenderer: true,
+        showIconsInFileExplorer: false,
+        autoReadingModeForExocortexAssets: true,
+        showLabelsInBody: true,
+        showLabelsInGraphView: true,
+        showLabelsInLivePreview: true,
+        enableSparqlAutoExecute: false,
+        settingsHomoiconizationEnabled: false,
+        enableShaclValidation: false,
+        lazyBootstrapFolders: [],
+        excludedFolders: [],
+        exosyncQuarantineRepoUrl: "",
+        exosyncStepNotices: false,
+        verboseSyncLogging: false,
         displayNameTemplate: "{{exo__Asset_label}}",
         displayNameSettings: {
           defaultTemplate: "{{exo__Asset_label}}",
@@ -65,79 +113,89 @@ describe("ExocortexSettingTab", () => {
       saveSettings: jest.fn().mockResolvedValue(undefined),
       refreshLayout: jest.fn(),
       toggleTabTitleLabels: jest.fn(),
+      togglePropertiesLabels: jest.fn(),
+      togglePropertiesLabelPatch: jest.fn(),
+      toggleFileExplorerIcons: jest.fn(),
+      toggleBodyLabels: jest.fn(),
+      toggleGraphViewLabels: jest.fn(),
       applyDisplayNameTemplate: jest.fn(),
       configureLogChannels: jest.fn(),
+      listProfileChoices: jest.fn().mockResolvedValue([]),
+      localDataStore: { getActiveProfileUid: jest.fn().mockReturnValue(null) },
+      notifier: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
     });
 
     mockApp = createMockApp();
+    mockPlugin.app = mockApp;
 
-    // Setup Setting mock implementation
-    MockSetting = (Setting as jest.Mock);
+    MockSetting = Setting as jest.Mock;
     MockSetting.mockImplementation((containerEl: any) => {
-      const setting = {
+      const record: CapturedSetting = { heading: false, toggles: [] };
+      capture.settings.push(record);
+      const setting: any = {
         containerEl,
-        setName: jest.fn().mockReturnThis(),
+        setName: jest.fn((n: string) => {
+          record.name = n;
+          return setting;
+        }),
         setDesc: jest.fn().mockReturnThis(),
-        setHeading: jest.fn().mockReturnThis(),
-        addDropdown: jest.fn().mockImplementation((callback) => {
-          const dropdown = {
+        setHeading: jest.fn(() => {
+          record.heading = true;
+          return setting;
+        }),
+        addDropdown: jest.fn().mockImplementation((cb: any) => {
+          cb({
             addOption: jest.fn().mockReturnThis(),
             setValue: jest.fn().mockReturnThis(),
             onChange: jest.fn().mockReturnThis(),
-          };
-          callback(dropdown);
+          });
           return setting;
         }),
-        addToggle: jest.fn().mockImplementation((callback) => {
-          const toggle = {
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockReturnThis(),
+        addToggle: jest.fn().mockImplementation((cb: any) => {
+          const captured: CapturedToggle = {};
+          const toggle: any = {
+            setValue: jest.fn((v: boolean) => {
+              captured.setValueArg = v;
+              return toggle;
+            }),
+            onChange: jest.fn((fn: any) => {
+              captured.onChangeCb = fn;
+              return toggle;
+            }),
+            toggleEl: document.createElement("input"),
           };
-          callback(toggle);
+          record.toggles.push(captured);
+          cb(toggle);
           return setting;
         }),
-        addText: jest.fn().mockImplementation((callback) => {
-          const text = {
-            setPlaceholder: jest.fn().mockReturnThis(),
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockReturnThis(),
-            // Issue #3320 — PAT field sets inputEl.type = "password".
-            // Mock must expose an inputEl object с writable properties.
+        addText: jest.fn().mockImplementation((cb: any) => {
+          const text: any = {
+            setPlaceholder: jest.fn(() => text),
+            setValue: jest.fn(() => text),
+            onChange: jest.fn(() => text),
             inputEl: { type: "" } as Record<string, unknown>,
           };
-          callback(text);
+          cb(text);
           return setting;
         }),
-        addTextArea: jest.fn().mockImplementation((callback) => {
-          const textArea = {
-            setPlaceholder: jest.fn().mockReturnThis(),
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockReturnThis(),
-            // `inputEl` is mutated by the production code (rows/cols).
-            // A plain object is enough — production code only sets properties.
-            inputEl: {} as Record<string, unknown>,
+        addTextArea: jest.fn().mockImplementation((cb: any) => {
+          const textarea: any = {
+            setPlaceholder: jest.fn(() => textarea),
+            setValue: jest.fn(() => textarea),
+            onChange: jest.fn(() => textarea),
+            inputEl: { rows: 0, cols: 0 } as Record<string, unknown>,
           };
-          callback(textArea);
+          cb(textarea);
           return setting;
         }),
-        addButton: jest.fn().mockImplementation((callback) => {
-          const button = {
-            setButtonText: jest.fn().mockReturnThis(),
-            onClick: jest.fn().mockReturnThis(),
-            setCta: jest.fn().mockReturnThis(),
-            setTooltip: jest.fn().mockReturnThis(),
+        addButton: jest.fn().mockImplementation((cb: any) => {
+          const button: any = {
+            setButtonText: jest.fn(() => button),
+            onClick: jest.fn(() => button),
+            setCta: jest.fn(() => button),
+            setTooltip: jest.fn(() => button),
           };
-          callback(button);
-          return setting;
-        }),
-        addTextArea: jest.fn().mockImplementation((callback) => {
-          const textarea = {
-            setPlaceholder: jest.fn().mockReturnThis(),
-            setValue: jest.fn().mockReturnThis(),
-            onChange: jest.fn().mockReturnThis(),
-            inputEl: { rows: 0, cols: 0 },
-          };
-          callback(textarea);
+          cb(button);
           return setting;
         }),
       };
@@ -153,216 +211,44 @@ describe("ExocortexSettingTab", () => {
       settingTab.display();
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
-      // 9 toggle settings + 1 autoReadingMode toggle + 1 enableExoLayoutRenderer toggle + 1 showIconsInFileExplorer toggle + 1 enableSparqlAutoExecute toggle (#2992) + 1 lazyBootstrapFolders TextArea (RFC c7da0bca Phase 5) + 1 enableShaclValidation toggle (P1.12) + 1 enablePropertiesLabelPatch toggle (RFC-030) + 3 headings + 1 default template + 6 per-class templates + 1 reset button + 4 log level rows = 30
-      // RFC c7da0bca Phase 3c-3 — deleted `exocmdBindingsCacheEnabledOnMobile` toggle (-1) once its indexer was deleted in 3c-2.
-      // RFC c7da0bca Phase 5 — added `lazyBootstrapFolders` TextArea (+1).
-      // Log channels section: 1 heading + 4 log level rows = 5
-      // Excluded folders section (#3278): 1 heading + 1 textarea row = +2 → 32
-      // Issue #3320 — Profile sections: 4 section headings + PAT row + Switch profile row + Cache stats row + (Operations log has no Setting row, body уходит в createDiv/createEl) = +7 → 39
-      // RFC 13da049f R35 — added "Profiles" overview heading (+1) → 40
-      // RFC 4e4dc453 Phase B — ExoSync section: heading + quarantine repo URL row (+2) → 42
-      // Issue #3499 — ExoSync verbose per-step Notice toggle (+1) → 43
-      // Issue #3498 — ExoSync verbose file-log toggle (+1) → 44
-      // Issue #3539 — settings-homoiconization master toggle (+1) → 45
-      expect(MockSetting).toHaveBeenCalledTimes(45);
+      // RFC 0002 §3.6 — count = 45 (pre-§3.6) + 3 section headings
+      // («Onboarding & sync» / «Display» / «Advanced») = 48.
+      expect(MockSetting).toHaveBeenCalledTimes(48);
     });
 
-    it("renders the settings-homoiconization toggle (Issue #3539)", () => {
+    it("renders the settings-homoiconization toggle", () => {
       settingTab.display();
-
-      const names = (MockSetting as jest.Mock).mock.results
-        .map((r) => {
-          const calls = (r.value.setName as jest.Mock).mock.calls;
-          return calls.length > 0 ? (calls[0][0] as string) : undefined;
-        })
-        .filter((n): n is string => typeof n === "string");
-      expect(names).toContain("Settings homoiconization");
+      expect(findSetting("Settings homoiconization")).toBeDefined();
     });
 
-    it("should render layout visibility toggle as first setting", () => {
+    it("renders the layout-visibility toggle wired to layoutVisible", async () => {
       settingTab.display();
 
-      const firstSetting = (MockSetting as jest.Mock).mock.results[0].value;
-      expect(firstSetting.setName).toHaveBeenCalledWith("Show layout");
-      expect(firstSetting.setDesc).toHaveBeenCalledWith(
-        "Display the automatic layout below metadata in reading mode"
-      );
-    });
+      const layout = findSetting("Show layout");
+      expect(layout).toBeDefined();
+      const toggle = layout!.toggles[0];
+      expect(toggle.setValueArg).toBe(true);
 
-    it("should handle layout visibility toggle change", async () => {
-      let toggleCallbacks: any[] = [];
-      MockSetting.mockImplementation((containerEl: any) => {
-        const setting = {
-          containerEl,
-          setName: jest.fn().mockReturnThis(),
-          setDesc: jest.fn().mockReturnThis(),
-          setHeading: jest.fn().mockReturnThis(),
-          addDropdown: jest.fn().mockReturnThis(),
-          addToggle: jest.fn().mockImplementation((callback) => {
-            const toggle = {
-              setValue: jest.fn().mockReturnThis(),
-              onChange: jest.fn().mockReturnThis(),
-            };
-            toggleCallbacks.push({ toggle, callback, onChange: null });
-            toggle.onChange.mockImplementation((cb: any) => {
-              toggleCallbacks[toggleCallbacks.length - 1].onChange = cb;
-              return toggle;
-            });
-            callback(toggle);
-            return setting;
-          }),
-          addText: jest.fn().mockImplementation((callback) => {
-            const text = {
-              setPlaceholder: jest.fn().mockReturnThis(),
-              setValue: jest.fn().mockReturnThis(),
-              onChange: jest.fn().mockReturnThis(),
-              // Issue #3320 — PAT field sets inputEl.type = "password"
-              inputEl: { type: "" } as Record<string, unknown>,
-            };
-            callback(text);
-            return setting;
-          }),
-          addTextArea: jest.fn().mockImplementation((callback) => {
-            const textArea = {
-              setPlaceholder: jest.fn().mockReturnThis(),
-              setValue: jest.fn().mockReturnThis(),
-              onChange: jest.fn().mockReturnThis(),
-              inputEl: {} as Record<string, unknown>,
-            };
-            callback(textArea);
-            return setting;
-          }),
-          addButton: jest.fn().mockImplementation((callback) => {
-            const button = {
-              setButtonText: jest.fn().mockReturnThis(),
-              onClick: jest.fn().mockReturnThis(),
-              setCta: jest.fn().mockReturnThis(),
-              setTooltip: jest.fn().mockReturnThis(),
-            };
-            callback(button);
-            return setting;
-          }),
-          addTextArea: jest.fn().mockImplementation((callback) => {
-            const textarea = {
-              setPlaceholder: jest.fn().mockReturnThis(),
-              setValue: jest.fn().mockReturnThis(),
-              onChange: jest.fn().mockReturnThis(),
-              inputEl: { rows: 0, cols: 0 },
-            };
-            callback(textarea);
-            return setting;
-          }),
-        };
-        return setting;
-      });
-
-      settingTab.display();
-
-      // First setting's toggle (layout visibility)
-      const layoutToggle = toggleCallbacks[0];
-      expect(layoutToggle.toggle.setValue).toHaveBeenCalledWith(true);
-
-      // Trigger onChange
-      if (layoutToggle.onChange) {
-        await layoutToggle.onChange(false);
-      }
+      await toggle.onChangeCb?.(false);
 
       expect(mockPlugin.settings.layoutVisible).toBe(false);
       expect(mockPlugin.saveSettings).toHaveBeenCalled();
       expect(mockPlugin.refreshLayout).toHaveBeenCalled();
     });
 
-    it("should render archived assets toggle", () => {
+    it("renders the archived-assets toggle wired to showArchivedAssets", async () => {
       settingTab.display();
 
-      const secondSetting = (MockSetting as jest.Mock).mock.results[1].value;
-      expect(secondSetting.setName).toHaveBeenCalledWith("Show archived assets");
-      expect(secondSetting.setDesc).toHaveBeenCalledWith(
-        "Display archived assets in relations table with visual distinction"
-      );
-    });
+      const archived = findSetting("Show archived assets");
+      expect(archived).toBeDefined();
+      const toggle = archived!.toggles[0];
+      expect(toggle.setValueArg).toBe(false);
 
-    it("should handle archived assets toggle change", async () => {
-      let toggleCallbacks: any[] = [];
-      MockSetting.mockImplementation((containerEl: any) => {
-        const setting = {
-          containerEl,
-          setName: jest.fn().mockReturnThis(),
-          setDesc: jest.fn().mockReturnThis(),
-          setHeading: jest.fn().mockReturnThis(),
-          addDropdown: jest.fn().mockReturnThis(),
-          addToggle: jest.fn().mockImplementation((callback) => {
-            const toggle = {
-              setValue: jest.fn().mockReturnThis(),
-              onChange: jest.fn().mockReturnThis(),
-            };
-            toggleCallbacks.push({ toggle, callback, onChange: null });
-            toggle.onChange.mockImplementation((cb: any) => {
-              toggleCallbacks[toggleCallbacks.length - 1].onChange = cb;
-              return toggle;
-            });
-            callback(toggle);
-            return setting;
-          }),
-          addText: jest.fn().mockImplementation((callback) => {
-            const text = {
-              setPlaceholder: jest.fn().mockReturnThis(),
-              setValue: jest.fn().mockReturnThis(),
-              onChange: jest.fn().mockReturnThis(),
-              // Issue #3320 — PAT field sets inputEl.type = "password"
-              inputEl: { type: "" } as Record<string, unknown>,
-            };
-            callback(text);
-            return setting;
-          }),
-          addTextArea: jest.fn().mockImplementation((callback) => {
-            const textArea = {
-              setPlaceholder: jest.fn().mockReturnThis(),
-              setValue: jest.fn().mockReturnThis(),
-              onChange: jest.fn().mockReturnThis(),
-              inputEl: {} as Record<string, unknown>,
-            };
-            callback(textArea);
-            return setting;
-          }),
-          addButton: jest.fn().mockImplementation((callback) => {
-            const button = {
-              setButtonText: jest.fn().mockReturnThis(),
-              onClick: jest.fn().mockReturnThis(),
-              setCta: jest.fn().mockReturnThis(),
-              setTooltip: jest.fn().mockReturnThis(),
-            };
-            callback(button);
-            return setting;
-          }),
-          addTextArea: jest.fn().mockImplementation((callback) => {
-            const textarea = {
-              setPlaceholder: jest.fn().mockReturnThis(),
-              setValue: jest.fn().mockReturnThis(),
-              onChange: jest.fn().mockReturnThis(),
-              inputEl: { rows: 0, cols: 0 },
-            };
-            callback(textarea);
-            return setting;
-          }),
-        };
-        return setting;
-      });
-
-      settingTab.display();
-
-      // Second setting's toggle (archived assets — was third before properties removal)
-      const archivedToggle = toggleCallbacks[1];
-      expect(archivedToggle.toggle.setValue).toHaveBeenCalledWith(false);
-
-      if (archivedToggle.onChange) {
-        await archivedToggle.onChange(true);
-      }
+      await toggle.onChangeCb?.(true);
 
       expect(mockPlugin.settings.showArchivedAssets).toBe(true);
       expect(mockPlugin.saveSettings).toHaveBeenCalled();
       expect(mockPlugin.refreshLayout).toHaveBeenCalled();
     });
-
   });
 });
