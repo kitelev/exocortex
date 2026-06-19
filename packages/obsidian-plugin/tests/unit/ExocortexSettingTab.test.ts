@@ -125,6 +125,7 @@ describe("ExocortexSettingTab", () => {
             setButtonText: jest.fn().mockReturnThis(),
             onClick: jest.fn().mockReturnThis(),
             setCta: jest.fn().mockReturnThis(),
+            setTooltip: jest.fn().mockReturnThis(),
           };
           callback(button);
           return setting;
@@ -236,6 +237,7 @@ describe("ExocortexSettingTab", () => {
               setButtonText: jest.fn().mockReturnThis(),
               onClick: jest.fn().mockReturnThis(),
               setCta: jest.fn().mockReturnThis(),
+              setTooltip: jest.fn().mockReturnThis(),
             };
             callback(button);
             return setting;
@@ -328,6 +330,7 @@ describe("ExocortexSettingTab", () => {
               setButtonText: jest.fn().mockReturnThis(),
               onClick: jest.fn().mockReturnThis(),
               setCta: jest.fn().mockReturnThis(),
+              setTooltip: jest.fn().mockReturnThis(),
             };
             callback(button);
             return setting;

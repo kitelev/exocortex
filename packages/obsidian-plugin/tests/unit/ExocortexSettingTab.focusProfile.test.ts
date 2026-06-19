@@ -227,6 +227,7 @@ describe("ExocortexSettingTab — Issue #3320 Profile sections", () => {
             setButtonText: jest.fn().mockReturnThis(),
             onClick: jest.fn().mockReturnThis(),
             setCta: jest.fn().mockReturnThis(),
+            setTooltip: jest.fn().mockReturnThis(),
           });
           return setting;
         }),

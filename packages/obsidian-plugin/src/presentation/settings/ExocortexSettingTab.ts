@@ -13,6 +13,7 @@ import { GitHubRestClient } from "@plugin/infrastructure/adapters/GitHubRestClie
 import { LocalSecretsStore } from "@plugin/infrastructure/adapters/LocalSecretsStore";
 import { OperationsLogReader } from "@plugin/infrastructure/adapters/OperationsLogReader";
 import { SwitchCacheLayer } from "@plugin/infrastructure/adapters/SwitchCacheLayer";
+import { resolvePastedSecret } from "@plugin/presentation/settings/patClipboard";
 
 /**
  * Issue #3320 §1 — secret key used by buildAssetSpacePusher and now the
@@ -647,8 +648,18 @@ export class ExocortexSettingTab extends PluginSettingTab {
         "Security #1). Required for the «Push current assetspace» and " +
         "«Apply profile» commands.",
     );
+    // RFC 0002 §3.9 (P14) — mobile onboarding parity. Typing a long
+    // fine-grained token on a phone keyboard is painful, so point users at the
+    // Paste button (works on desktop AND mobile — no Platform gate).
+    patDesc.appendText(
+      " On mobile, use the Paste button to fill the field from your " +
+        "clipboard instead of typing the token by hand.",
+    );
 
     let patInputValue = "";
+    // Captured from `addText` below so the Paste button can write into the same
+    // input (and the password masking stays applied).
+    let patTextComponent: { setValue(value: string): void } | undefined;
     new Setting(containerEl)
       // eslint-disable-next-line obsidianmd/ui/sentence-case -- "PAT" is an established acronym for Personal Access Token
       .setName("Personal Access Token")
@@ -657,6 +668,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
           "to your exoas-* repos. Leave blank and click Save to clear.",
       )
       .addText((text) => {
+        patTextComponent = text;
         text.inputEl.type = "password";
         // eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder shows literal PAT format
         text.setPlaceholder("github_pat_…");
@@ -664,6 +676,36 @@ export class ExocortexSettingTab extends PluginSettingTab {
           patInputValue = value;
         });
       })
+      // RFC 0002 §3.9 (P14) — paste-from-clipboard affordance. A native
+      // Obsidian button (keyboard-focusable, Enter/Space-activatable) so PAT
+      // entry is mobile-friendly without typing the whole token. Works on both
+      // platforms (`navigator.clipboard.readText()` resolves on a user gesture
+      // in Electron AND the mobile WebView) — no Platform gate, mobile parity.
+      .addButton((button) =>
+        button
+          .setButtonText("Paste")
+          .setTooltip("Paste a GitHub token from the clipboard")
+          .onClick(async () => {
+            try {
+              const raw = await navigator.clipboard.readText();
+              const outcome = resolvePastedSecret(raw);
+              if (outcome.kind === "empty") {
+                notifier.warn(
+                  "Clipboard is empty — copy your token first, then Paste.",
+                );
+                return;
+              }
+              patTextComponent?.setValue(outcome.value);
+              patInputValue = outcome.value;
+              notifier.info("Pasted from clipboard. Click Save PAT to store it.");
+            } catch (error) {
+              notifier.error(
+                `Couldn't read the clipboard (${errorMessage(error)}) — ` +
+                  "paste into the field manually instead.",
+              );
+            }
+          }),
+      )
       .addButton((button) =>
         // eslint-disable-next-line obsidianmd/ui/sentence-case -- "PAT" is an established acronym
         button.setButtonText("Save PAT").onClick(async () => {
