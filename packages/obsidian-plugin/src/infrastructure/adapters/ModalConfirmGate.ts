@@ -65,9 +65,14 @@ class ApplyConfirmModal extends Modal {
       text: `Apply к profile: ${this.plan.targetProfileLabel}`,
     });
 
-    contentEl.createEl("p", {
+    // a11y (RFC 0002 §3.11 / P16): id this consequence line so the destructive
+    // confirm button can reference it via aria-describedby — a screen-reader
+    // user hears WHAT the action does, not only the button name.
+    const consequenceId = "apply-confirm-consequence";
+    const consequenceEl = contentEl.createEl("p", {
       text: "This will modify the vault filesystem:",
     });
+    consequenceEl.setAttribute("id", consequenceId);
 
     // Section 1 — Assetspaces about to be removed
     const tearSection = contentEl.createEl("div", {
@@ -144,6 +149,7 @@ class ApplyConfirmModal extends Modal {
       "aria-label",
       "Apply — proceed with this destructive change (removes the listed files)",
     );
+    confirmBtn.setAttribute("aria-describedby", consequenceId);
     confirmBtn.addEventListener("click", () => {
       this.settle(true);
       this.close();

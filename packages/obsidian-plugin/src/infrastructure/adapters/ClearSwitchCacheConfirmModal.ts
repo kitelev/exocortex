@@ -42,11 +42,17 @@ export class ClearSwitchCacheConfirmModal extends Modal {
       cls: "clear-switch-cache-title",
       text: "Clear switch cache?",
     });
-    contentEl.createEl("p", {
+    // a11y (RFC 0002 §3.11 / P16): id this consequence line (count + size +
+    // irreversibility) so the destructive Clear button can reference it via
+    // aria-describedby — a screen-reader user hears the impact, not only the
+    // button name.
+    const consequenceId = "clear-switch-cache-consequence";
+    const consequenceEl = contentEl.createEl("p", {
       text:
         `${this.entryCount} cached AssetSpace ${this.entryCount === 1 ? "entry" : "entries"} ` +
         `will be removed (${formatBytes(this.totalSize)}). This cannot be undone.`,
     });
+    consequenceEl.setAttribute("id", consequenceId);
     contentEl.createEl("p", {
       cls: "clear-switch-cache-detail",
       text:
@@ -78,6 +84,7 @@ export class ClearSwitchCacheConfirmModal extends Modal {
       "aria-label",
       "Clear — permanently remove all cached profiles (cannot be undone)",
     );
+    confirmBtn.setAttribute("aria-describedby", consequenceId);
     confirmBtn.addEventListener("click", () => {
       this.settle(true);
       this.close();

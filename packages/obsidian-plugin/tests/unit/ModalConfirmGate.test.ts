@@ -252,6 +252,21 @@ describe("ModalConfirmGate", () => {
       await promise;
     });
 
+    it("the destructive Apply button is described by the consequence line (aria-describedby resolves to an element)", async () => {
+      const gate = new ModalConfirmGate(fakeApp);
+      const promise = gate.confirmApply(makePlan());
+
+      const describedby = findButton("Apply")!.getAttribute("aria-describedby");
+      expect(describedby).toBeTruthy();
+      // The id must resolve to a real element in the dialog (no dangling ref).
+      const target = document.getElementById(describedby!);
+      expect(target).not.toBeNull();
+      expect(target!.textContent).toMatch(/modify the vault/i);
+
+      findButton("Cancel")?.click();
+      await promise;
+    });
+
     it("manages focus — lands on the safe default (Cancel), not the destructive Apply", async () => {
       const gate = new ModalConfirmGate(fakeApp);
       const promise = gate.confirmApply(makePlan());

@@ -121,6 +121,16 @@ describe("ClearSwitchCacheConfirmModal", () => {
       expect(findButton("Cancel")!.getAttribute("aria-label")).toBeTruthy();
     });
 
+    it("the destructive Clear button is described by the consequence line (count + size + irreversibility)", () => {
+      open({ entryCount: 2, totalSize: 4096 });
+      const describedby = findButton("Clear")!.getAttribute("aria-describedby");
+      expect(describedby).toBeTruthy();
+      const target = document.getElementById(describedby!);
+      expect(target).not.toBeNull();
+      expect(target!.textContent).toMatch(/cannot be undone/i);
+      expect(target!.textContent).toContain("2 cached AssetSpace entries");
+    });
+
     it("manages focus — lands on the safe default (Cancel), not the destructive Clear", () => {
       open();
       expect(document.activeElement).toBe(findButton("Cancel"));
