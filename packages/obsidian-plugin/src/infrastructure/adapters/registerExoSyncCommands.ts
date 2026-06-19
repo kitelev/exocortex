@@ -8,10 +8,12 @@
  *
  * Obsidian renders palette labels as "<plugin name>: <command name>", so
  * the names below surface as «Exocortex: Sync» / «Exocortex: Pull» /
- * «Exocortex: Push» / «Exocortex: Sync parity report».
+ * «Exocortex: Push» / «Exocortex: Check sync status» (the parity report,
+ * de-jargoned per RFC 0002 §3.2 P3).
  */
 
 import type { SyncCommands } from "./SyncCommands";
+import { GROOMED_COMMAND_NAMES } from "@plugin/application/services/commandPaletteContract";
 
 /**
  * Structural slice of Obsidian's `Plugin.addCommand` — keeps this module
@@ -65,9 +67,11 @@ export function registerExoSyncCommands(
   // over the same materialized set (the post-sync round runs automatically
   // after a full Sync; this command is the on-demand probe — also the
   // manual divergence check for split-only usage, which skips the round).
+  // RFC 0002 §3.2 (P3) — de-jargon: «Sync parity report» → «Check sync status».
+  // Sourced from the palette grooming contract so production + test never drift.
   plugin.addCommand({
     id: "exosync-parity-report",
-    name: "Sync parity report",
+    name: GROOMED_COMMAND_NAMES["exosync-parity-report"],
     callback: () => {
       void syncCommands.invokeParityReport();
     },

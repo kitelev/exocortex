@@ -54,13 +54,15 @@ export class AddAssetSpaceModal extends Modal {
 
   override onOpen(): void {
     const { contentEl } = this;
+    // RFC 0002 §3.2 (P3) — coherent plain-language copy with the «Add a
+    // knowledge pack» palette command (no «assetspace» jargon re-entry mid-flow).
     contentEl.createEl("h2", {
       cls: "add-assetspace-title",
-      text: "Add assetspace by URL",
+      text: "Add a knowledge pack",
     });
     contentEl.createEl("p", {
       text:
-        "Pull a single assetspace from a public GitHub repository into this " +
+        "Pull a single knowledge pack from a public GitHub repository into this " +
         "vault. The folder name is derived from the repository name.",
     });
 

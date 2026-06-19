@@ -64,7 +64,8 @@ describe("registerExoSyncCommands (#3473)", () => {
       ["exosync-sync", "Sync"],
       ["exosync-pull", "Pull"],
       ["exosync-push", "Push"],
-      ["exosync-parity-report", "Sync parity report"],
+      // RFC 0002 §3.2 (P3) — de-jargon: was «Sync parity report». Id stable.
+      ["exosync-parity-report", "Check sync status"],
     ]);
   });
 

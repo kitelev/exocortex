@@ -151,6 +151,11 @@ import {
   STARTER_REGISTRY_URL,
   STARTER_PROFILE_QUERY,
 } from "./infrastructure/adapters/firstRunOnboarding";
+import {
+  GROOMED_COMMAND_NAMES,
+  REMOVE_PACK_CONFIRM_TITLE,
+  REMOVE_PACK_CONFIRM_LABEL,
+} from "./application/services/commandPaletteContract";
 import { resolvePastedSecret } from "./presentation/settings/patClipboard";
 import { AssetSpaceMaterializationTracker } from "./infrastructure/adapters/AssetSpaceMaterializationTracker";
 import { injectAssetSpaceMaterializationTriples } from "./infrastructure/adapters/injectAssetSpaceMaterializationTriples";
@@ -399,7 +404,8 @@ export default class ExocortexPlugin extends Plugin {
    *  - `SPARQLApi.injectMaterializationTriples` (filter by status)
    *  - markdown post-processor (✅/⏸ status icon)
    */
-  public assetSpaceMaterializationTracker: AssetSpaceMaterializationTracker | null = null;
+  public assetSpaceMaterializationTracker: AssetSpaceMaterializationTracker | null =
+    null;
 
   override async onload(): Promise<void> {
     try {
@@ -431,7 +437,11 @@ export default class ExocortexPlugin extends Plugin {
       this.notifier = new ObsidianNotificationService({
         recordActivity: recordToast,
       });
-      this.fileLogChannel = new FileLogChannel(this.app.vault.adapter, this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`);
+      this.fileLogChannel = new FileLogChannel(
+        this.app.vault.adapter,
+        this.manifest.dir ??
+          `${this.app.vault.configDir}/plugins/${this.manifest.id}`,
+      );
       await this.fileLogChannel.ensureFileExists();
       this.configureLogChannels();
 
@@ -587,7 +597,8 @@ export default class ExocortexPlugin extends Plugin {
         createObsidianClassLabelResolver(this.app),
         {
           workflowResolver: this.workflowResolver,
-          groundingLoader: (uid) => this.commandResolver.loadGroundingByUid(uid),
+          groundingLoader: (uid) =>
+            this.commandResolver.loadGroundingByUid(uid),
           namedQueryRunner,
           // T1 "Create Instance" (project bbe40f8c) — co-locate new instances in
           // their chosen ontology's folder via the `$isDefinedByFolder` token.
@@ -2707,24 +2718,40 @@ export default class ExocortexPlugin extends Plugin {
               const subj = t.subject;
               const pred = t.predicate;
               const obj = t.object;
-              if (!(subj instanceof DomainIRI) || !(pred instanceof DomainIRI)) continue;
-              let algObj: { type: 'iri'; value: string } | { type: 'literal'; value: string; datatype?: string } | null = null;
+              if (!(subj instanceof DomainIRI) || !(pred instanceof DomainIRI))
+                continue;
+              let algObj:
+                | { type: "iri"; value: string }
+                | { type: "literal"; value: string; datatype?: string }
+                | null = null;
               if (obj instanceof DomainIRI) {
-                algObj = { type: 'iri', value: obj.value };
+                algObj = { type: "iri", value: obj.value };
               } else if (obj instanceof DomainLiteral) {
-                algObj = { type: 'literal', value: obj.value, datatype: obj.datatype?.value };
+                algObj = {
+                  type: "literal",
+                  value: obj.value,
+                  datatype: obj.datatype?.value,
+                };
               }
               if (!algObj) continue;
               algebraTriples.push({
-                subject: { type: 'iri', value: subj.value },
-                predicate: { type: 'iri', value: pred.value },
+                subject: { type: "iri", value: subj.value },
+                predicate: { type: "iri", value: pred.value },
                 object: algObj,
               });
             }
 
-            const shaclRegistry = new ShaclShapeRegistry(shapeRegistry.getAll());
-            const hierarchy: ShaclClassHierarchy = { isSubClassOf: (c, p) => c === p };
-            const report = shaclValidate(algebraTriples, shaclRegistry, hierarchy);
+            const shaclRegistry = new ShaclShapeRegistry(
+              shapeRegistry.getAll(),
+            );
+            const hierarchy: ShaclClassHierarchy = {
+              isSubClassOf: (c, p) => c === p,
+            };
+            const report = shaclValidate(
+              algebraTriples,
+              shaclRegistry,
+              hierarchy,
+            );
 
             const violations = report.violations.filter(
               (v) => v.severity === "sh:Violation",
@@ -2753,7 +2780,9 @@ export default class ExocortexPlugin extends Plugin {
             }
 
             for (const v of infos) {
-              console.debug(`[Exocortex SHACL] Info in ${file.path}: ${v.message}`);
+              console.debug(
+                `[Exocortex SHACL] Info in ${file.path}: ${v.message}`,
+              );
             }
           } catch (err) {
             console.error("[Exocortex] SHACL engine error", err);
@@ -2993,12 +3022,20 @@ export default class ExocortexPlugin extends Plugin {
       log: (message) => {
         this.logger.warn(message);
         // #3540 — surface ExoSync warnings in the activity stream.
-        this.activityLog.record({ category: "exosync", level: "warn", message });
+        this.activityLog.record({
+          category: "exosync",
+          level: "warn",
+          message,
+        });
       },
       logInfo: (message) => {
         this.logger.info(message);
         // #3540 — always-on ExoSync step feed (onProgress info channel).
-        this.activityLog.record({ category: "exosync", level: "info", message });
+        this.activityLog.record({
+          category: "exosync",
+          level: "info",
+          message,
+        });
       },
       // #3498 — opt-in durable verbose FILE trace (default off). Appends the
       // step lines directly to the plugin file log, INDEPENDENT of
@@ -3029,11 +3066,11 @@ export default class ExocortexPlugin extends Plugin {
       settingsStore,
       notify: (message) => this.notifier.info(message),
       // #3540 — fan profile apply / mount / unmount phases into the activity log.
-      onPhase: (entry) => this.activityLog.record(journalEntryToActivity(entry)),
+      onPhase: (entry) =>
+        this.activityLog.record(journalEntryToActivity(entry)),
       // Live per-AssetSpace "Mounting X (2 of 5)" progress during materialize —
       // activity-log-only (never toasted), so a long apply visibly progresses.
-      onProgress: (event) =>
-        this.activityLog.record(progressToActivity(event)),
+      onProgress: (event) => this.activityLog.record(progressToActivity(event)),
       assetSpaceManager: applyDeps?.assetSpaceManager,
       gitOps: applyDeps?.gitOps,
       restMount: restMount ?? undefined,
@@ -3163,25 +3200,27 @@ export default class ExocortexPlugin extends Plugin {
       pushMgrFactory: () => this.buildAssetSpacePusher(),
       profileLister,
       fuzzyPick,
-      getActiveFilePath: () =>
-        this.app.workspace.getActiveFile()?.path ?? null,
+      getActiveFilePath: () => this.app.workspace.getActiveFile()?.path ?? null,
       getActiveProfileUid: () => localDataStore.getActiveProfileUid(),
       notify: (message) => this.notifier.info(message),
     });
 
+    // RFC 0002 §3.2 (P3) — de-jargon: «Push current assetspace» → «Push current
+    // knowledge pack». Name sourced from the palette grooming contract.
     this.addCommand({
       id: "push-current-assetspace",
-      name: "Push current assetspace",
+      name: GROOMED_COMMAND_NAMES["push-current-assetspace"],
       callback: () => {
         void commandsHandler.invokePushCurrentAssetSpace();
       },
     });
 
-    // «Show current state» — reports the last-applied profile (RFC 0a0791c1
-    // Phase 5 T2 — single slot). Available regardless of platform / wiring.
+    // RFC 0002 §3.2 (P3) — de-jargon: «Show current state» → «Show active
+    // profile». Reports the last-applied profile (RFC 0a0791c1 Phase 5 T2 —
+    // single slot). Available regardless of platform / wiring.
     this.addCommand({
       id: "show-profile-state",
-      name: "Show current state",
+      name: GROOMED_COMMAND_NAMES["show-profile-state"],
       callback: () => {
         void commandsHandler.invokeShowCurrentState();
       },
@@ -3241,10 +3280,12 @@ export default class ExocortexPlugin extends Plugin {
     // (stable ids, Sync first) is unit-tested.
     registerExoSyncCommands(this, syncCommands);
 
-    // RFC 22b50a17 Decision #6 — wipe-all switch cache clearing.
+    // RFC 22b50a17 Decision #6 — wipe-all switch cache clearing. RFC 0002 §3.2
+    // (P3/P4) — de-jargon + destructive flag: «Clear switch cache (wipe-all)» →
+    // «Reset profile cache (advanced)». Name sourced from the grooming contract.
     this.addCommand({
       id: "clear-switch-cache",
-      name: "Clear switch cache (wipe-all)",
+      name: GROOMED_COMMAND_NAMES["clear-switch-cache"],
       callback: () => {
         void this.invokeClearSwitchCache();
       },
@@ -3291,9 +3332,7 @@ export default class ExocortexPlugin extends Plugin {
       this.registerUnmountCommand(restMount, switchMgr);
     }
 
-    this.logger.info(
-      "[ExocortexPlugin] Profile palette commands registered",
-    );
+    this.logger.info("[ExocortexPlugin] Profile palette commands registered");
   }
 
   /**
@@ -3628,17 +3667,22 @@ export default class ExocortexPlugin extends Plugin {
       onMaterialized: () => this.refreshAndInjectAssetSpaceMaterialization(),
     });
 
+    // RFC 0002 §3.2 (P3) — de-jargon: «Bootstrap vault» → «Set up the engine»
+    // (matches the §3.1 panel step 1 + §3.3 dialog title). Name sourced from the
+    // palette grooming contract.
     this.addCommand({
       id: "bootstrap-vault",
-      name: "Bootstrap vault",
+      name: GROOMED_COMMAND_NAMES["bootstrap-vault"],
       callback: () => {
         void bootstrapCommands.invokeBootstrap();
       },
     });
 
+    // RFC 0002 §3.2 (P3) — de-jargon: «Add assetspace by URL» → «Add a knowledge
+    // pack» (pairs with «Remove knowledge pack»). Name from the grooming contract.
     this.addCommand({
       id: "add-assetspace",
-      name: "Add assetspace by URL",
+      name: GROOMED_COMMAND_NAMES["add-assetspace"],
       callback: () => {
         void bootstrapCommands.invokeAddAssetSpace();
       },
@@ -3696,7 +3740,9 @@ export default class ExocortexPlugin extends Plugin {
             choices,
             title,
             (chosen) =>
-              resolve(chosen === null ? null : byPath.get(chosen.uid) ?? null),
+              resolve(
+                chosen === null ? null : (byPath.get(chosen.uid) ?? null),
+              ),
           );
           modal.open();
         }),
@@ -3705,9 +3751,11 @@ export default class ExocortexPlugin extends Plugin {
           new SimpleConfirmModal(
             this.app,
             {
-              title: "Unmount assetspace?",
+              // RFC 0002 §3.2 — coherent plain-language flow copy (no jargon
+              // re-entry after the «Remove knowledge pack (advanced)» palette name).
+              title: REMOVE_PACK_CONFIRM_TITLE,
               body: message,
-              confirmLabel: "Unmount",
+              confirmLabel: REMOVE_PACK_CONFIRM_LABEL,
             },
             resolve,
           ).open();
@@ -3718,9 +3766,12 @@ export default class ExocortexPlugin extends Plugin {
       onUnmounted: () => this.refreshAndInjectAssetSpaceMaterialization(),
     });
 
+    // RFC 0002 §3.2 (P3/P4) — de-jargon + destructive flag: «Unmount assetspace»
+    // → «Remove knowledge pack (advanced)». Name sourced from the grooming
+    // contract; id stays stable (Obsidian persists hotkeys by id).
     this.addCommand({
       id: "unmount-assetspace",
-      name: "Unmount assetspace",
+      name: GROOMED_COMMAND_NAMES["unmount-assetspace"],
       callback: () => {
         void unmountCommand.invokeUnmount();
       },
@@ -3762,9 +3813,7 @@ export default class ExocortexPlugin extends Plugin {
 
     try {
       const result = await cache.clear();
-      this.notifier.info(
-        `Cleared ${result.entriesRemoved} cache entries.`,
-      );
+      this.notifier.info(`Cleared ${result.entriesRemoved} cache entries.`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.notifier.error(`Clear switch cache failed: ${msg}`);
@@ -3795,5 +3844,4 @@ export default class ExocortexPlugin extends Plugin {
         lookupAssetSpaceUidByFolder(this.app, folderName),
     });
   }
-
 }

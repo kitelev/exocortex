@@ -41,7 +41,8 @@ describe("EditPropertiesCommand", () => {
     });
 
     it("should have correct name", () => {
-      expect(command.name).toBe("edit properties");
+      // RFC 0002 §3.2 (P3) — casing fix: was lowercase «edit properties».
+      expect(command.name).toBe("Edit properties");
     });
   });
 
