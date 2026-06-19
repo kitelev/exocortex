@@ -175,6 +175,101 @@ describe("DynamicForm", () => {
     });
   });
 
+  // T1 "Create Instance" (project bbe40f8c) — reusable fuzzy reference-picker.
+  describe("assetRef fuzzy reference-picker (targetClassUid)", () => {
+    const ONTOLOGY_FIELD: InputSchemaField = {
+      name: "exo__Asset_isDefinedBy",
+      type: "assetRef",
+      label: "Ontology",
+      required: true,
+      targetClassUid: "829b9b3b-6fc3-4276-be6a-27d3398c012e",
+    };
+    const CANDIDATES = {
+      exo__Asset_isDefinedBy: [
+        { uid: "uid-ems", label: "ems (Effort Management)" },
+        { uid: "uid-exo", label: "exo (Core)" },
+        { uid: "uid-ims", label: "ims (Identity)" },
+      ],
+    };
+
+    it("renders an ARIA combobox (not a plain text input) when candidates exist", () => {
+      renderForm([ONTOLOGY_FIELD], { candidates: CANDIDATES });
+      const input = screen.getByTestId("field-exo__Asset_isDefinedBy");
+      expect(input).toHaveAttribute("role", "combobox");
+      expect(input).toHaveAttribute("aria-expanded", "false");
+      expect(input).toHaveAttribute("placeholder", "Type to search…");
+    });
+
+    it("filters candidates by typed query (fuzzy/substring on label)", () => {
+      renderForm([ONTOLOGY_FIELD], { candidates: CANDIDATES });
+      const input = screen.getByTestId("field-exo__Asset_isDefinedBy");
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "ems" } });
+      expect(screen.getByText("ems (Effort Management)")).toBeInTheDocument();
+      expect(screen.queryByText("exo (Core)")).not.toBeInTheDocument();
+    });
+
+    it("commits a quoted wikilink to the selected candidate on click", () => {
+      const { onSubmit } = renderForm([ONTOLOGY_FIELD], {
+        candidates: CANDIDATES,
+      });
+      const input = screen.getByTestId("field-exo__Asset_isDefinedBy");
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "exo" } });
+      fireEvent.mouseDown(
+        screen.getByTestId("option-exo__Asset_isDefinedBy-uid-exo"),
+      );
+      fireEvent.click(screen.getByText("OK"));
+      expect(onSubmit).toHaveBeenCalledWith({
+        exo__Asset_isDefinedBy: '"[[uid-exo]]"',
+      });
+    });
+
+    it("supports keyboard nav: ArrowDown + Enter selects the active option", () => {
+      const { onSubmit } = renderForm([ONTOLOGY_FIELD], {
+        candidates: CANDIDATES,
+      });
+      const input = screen.getByTestId("field-exo__Asset_isDefinedBy");
+      fireEvent.focus(input);
+      fireEvent.keyDown(input, { key: "ArrowDown" }); // active = 0 (ems)
+      fireEvent.keyDown(input, { key: "Enter" });
+      fireEvent.click(screen.getByText("OK"));
+      expect(onSubmit).toHaveBeenCalledWith({
+        exo__Asset_isDefinedBy: '"[[uid-ems]]"',
+      });
+    });
+
+    it("required picker blocks submit until a candidate is selected", () => {
+      const { onSubmit } = renderForm([ONTOLOGY_FIELD], {
+        candidates: CANDIDATES,
+      });
+      // No selection yet → submit blocked with error.
+      fireEvent.click(screen.getByText("OK"));
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(screen.getByText("Ontology is required")).toBeInTheDocument();
+    });
+
+    it("typing free text without selecting does NOT commit a value", () => {
+      const { onSubmit } = renderForm([ONTOLOGY_FIELD], {
+        candidates: CANDIDATES,
+      });
+      const input = screen.getByTestId("field-exo__Asset_isDefinedBy");
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "garbage typed text" } });
+      fireEvent.click(screen.getByText("OK"));
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it("degrades to a plain text input when a targetClassUid field has no candidates", () => {
+      renderForm([ONTOLOGY_FIELD], {
+        candidates: { exo__Asset_isDefinedBy: [] },
+      });
+      // Still a picker shell (targetClassUid present) — combobox role, empty list.
+      const input = screen.getByTestId("field-exo__Asset_isDefinedBy");
+      expect(input).toHaveAttribute("role", "combobox");
+    });
+  });
+
   describe("validation", () => {
     it("should show error for empty required text field", () => {
       renderForm([{ name: "title", type: "text", label: "Title", required: true }]);

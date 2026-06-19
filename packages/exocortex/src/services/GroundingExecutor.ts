@@ -167,6 +167,23 @@ export type ClassLabelToUidResolver = (
   label: string,
 ) => string | null | Promise<string | null>;
 
+/**
+ * T1 "Create Instance" homoiconic button (project bbe40f8c) — resolve a
+ * vault asset reference (bare UID or label) to the vault-relative folder of
+ * the file it points at. Powers the `$isDefinedByFolder` target-folder token
+ * so a `create_instance` grounding can place the new asset co-located with its
+ * chosen `exo__Asset_isDefinedBy` ontology (co-location invariant) WITHOUT a
+ * second relocation pass.
+ *
+ * Injected by the host (plugin via metadataCache, CLI via the folder-repair
+ * helpers). A `null` return — no resolver wired, ref not found — leaves the
+ * executor to fall back to the host folder, so the create never fails on a
+ * resolution gap.
+ */
+export type RefToFolderResolver = (
+  ref: string,
+) => string | null | Promise<string | null>;
+
 /** UUID-v4 sniff used to skip resolution for already-canonical class refs. */
 const UUID_V4_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -287,6 +304,7 @@ export class GroundingExecutor {
   private readonly fileWriter: IFileSystemWriter;
   private readonly serviceRegistry: ServiceRegistry;
   private readonly classLabelToUid?: ClassLabelToUidResolver;
+  private readonly refToFolder?: RefToFolderResolver;
   private readonly workflowResolver?: WorkflowResolverPort;
   private readonly groundingLoader?: GroundingLoaderPort;
   private readonly namedQueryRunner?: NamedQueryRunnerPort;
@@ -312,6 +330,10 @@ export class GroundingExecutor {
       // RFC 78c2b7d0 C4 — read-side value-source for property_set
       // `targetValueQuery`. When absent, such groundings fail loud.
       namedQueryRunner?: NamedQueryRunnerPort;
+      // T1 "Create Instance" (project bbe40f8c) — resolve `$isDefinedByFolder`
+      // target-folder token to the chosen ontology's folder. When absent,
+      // create_instance falls back to the host folder (never fails).
+      refToFolder?: RefToFolderResolver;
     },
   ) {
     this.frontmatterService = new FrontmatterService();
@@ -319,6 +341,7 @@ export class GroundingExecutor {
     this.fileWriter = fileWriter;
     this.serviceRegistry = serviceRegistry;
     this.classLabelToUid = classLabelToUid;
+    this.refToFolder = options?.refToFolder;
     this.workflowResolver = options?.workflowResolver;
     this.groundingLoader = options?.groundingLoader;
     this.namedQueryRunner = options?.namedQueryRunner;
@@ -938,13 +961,22 @@ export class GroundingExecutor {
     // Issue #3136 (Q3.b closure): allow `$targetFolder` / `$target` tokens in
     // `grounding.targetFolder` so new instances can inherit the target's
     // parent folder declaratively (replacing legacy `createTaskForDailyNote`).
-    const resolvedFolder = this.substituteVariables(
-      grounding.targetFolder,
-      targetIRI,
-      userInput,
-      undefined,
-      targetFilePath,
-    );
+    //
+    // T1 "Create Instance" (project bbe40f8c): `$isDefinedByFolder` resolves
+    // to the folder of the instance's chosen `exo__Asset_isDefinedBy` ontology
+    // (co-location invariant). The host page is the class definition (which may
+    // live in a different ontology than the one the user picks), so we cannot
+    // reuse `$targetFolder` here. Falls back to the host folder when the ref
+    // cannot be resolved — a degraded location beats a failed create.
+    const resolvedFolder = grounding.targetFolder.includes("$isDefinedByFolder")
+      ? await this.resolveIsDefinedByFolder(properties, targetFilePath)
+      : this.substituteVariables(
+          grounding.targetFolder,
+          targetIRI,
+          userInput,
+          undefined,
+          targetFilePath,
+        );
     const filePath = resolvedFolder ? `${resolvedFolder}/${uid}.md` : `${uid}.md`;
 
     await this.fileWriter.createFile(filePath, content);
@@ -954,6 +986,63 @@ export class GroundingExecutor {
     // — actually opening the file is wired by the platform adapter through
     // CommandExecutionFlow's optional IFileOpener dependency.
     return { success: true, openPath: filePath };
+  }
+
+  /**
+   * T1 "Create Instance" (project bbe40f8c) — resolve the co-located folder for
+   * a new instance from its just-written `exo__Asset_isDefinedBy` value, using
+   * the injected {@link RefToFolderResolver}. The instance lives in the folder
+   * of the file its `isDefinedBy` ontology points at (co-location invariant).
+   *
+   * Falls back to the host (target) file's parent folder when:
+   *   - no `exo__Asset_isDefinedBy` was written (no ontology chosen),
+   *   - no resolver is wired (CLI/test harness without a vault index),
+   *   - the resolver returns null/throws (ontology file not found).
+   * A degraded-but-valid location is preferable to a failed create; the
+   * co-location audit (`audit co-location`) surfaces any drift.
+   */
+  private async resolveIsDefinedByFolder(
+    properties: Record<string, unknown>,
+    targetFilePath: string,
+  ): Promise<string> {
+    const hostFolder = GroundingExecutor.parentFolderOf(targetFilePath);
+    const rawIsDefinedBy = properties["exo__Asset_isDefinedBy"];
+    const ref = GroundingExecutor.extractBareRef(rawIsDefinedBy);
+    if (ref && this.refToFolder) {
+      try {
+        const folder = await this.refToFolder(ref);
+        if (folder !== null && folder !== undefined) return folder;
+      } catch (error) {
+        LoggingService.error(
+          `[GroundingExecutor] $isDefinedByFolder resolution failed for ref "${ref}" — falling back to host folder.`,
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
+    }
+    return hostFolder;
+  }
+
+  /** Vault-relative parent folder of a file path (empty when at vault root). */
+  private static parentFolderOf(filePath: string): string {
+    const normalized = filePath.replace(/^\/+/, "");
+    const slashIdx = normalized.lastIndexOf("/");
+    return slashIdx >= 0 ? normalized.slice(0, slashIdx) : "";
+  }
+
+  /**
+   * Strip YAML quotes, wikilink brackets, and any `|alias` segment from a
+   * frontmatter ref value (`'"[[<uid>|Label]]"'` → `<uid>`). Returns null when
+   * the value is not a string or yields no bare ref.
+   */
+  private static extractBareRef(value: unknown): string | null {
+    if (typeof value !== "string") return null;
+    let ref = value.trim();
+    ref = ref.replace(/^["']|["']$/g, "").trim();
+    ref = ref.replace(/^\[\[/, "").replace(/\]\]$/, "");
+    const pipeIdx = ref.indexOf("|");
+    if (pipeIdx >= 0) ref = ref.slice(0, pipeIdx);
+    ref = ref.trim();
+    return ref.length > 0 ? ref : null;
   }
 
   /**

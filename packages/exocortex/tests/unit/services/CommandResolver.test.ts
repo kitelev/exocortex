@@ -612,6 +612,55 @@ describe("CommandResolver", () => {
       ]);
     });
 
+    it("T1: propagates `targetClassUid` on assetRef fields for the reusable fuzzy reference-picker", async () => {
+      const groundingSubject = new IRI("obsidian://vault/gnd-create-instance.md");
+      await store.addAll([
+        new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-create-instance")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("Create Instance")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("[[4367e2d6-6c92-450a-becb-abce1fb07682]]")),
+        new Triple(
+          groundingSubject,
+          Namespace.EXOCMD.term("Grounding_inputSchema"),
+          new Literal(
+            JSON.stringify({
+              type: "object",
+              properties: {
+                label: { type: "string", title: "Label" },
+                exo__Asset_isDefinedBy: {
+                  type: "assetRef",
+                  title: "Ontology",
+                  targetClassUid: "829b9b3b-6fc3-4276-be6a-27d3398c012e",
+                },
+              },
+              required: ["label", "exo__Asset_isDefinedBy"],
+            }),
+          ),
+        ),
+      ]);
+      await addCommandAsset(store, {
+        uid: "cmd-create-instance",
+        label: "Create Instance",
+        groundingRef: "gnd-create-instance",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-create-instance");
+      const inputSchema = (cmd!.grounding as unknown as Record<string, unknown>)[
+        "inputSchema"
+      ] as Array<Record<string, unknown>>;
+
+      expect(inputSchema).toEqual([
+        { name: "label", type: "text", label: "Label", required: true },
+        {
+          name: "exo__Asset_isDefinedBy",
+          type: "assetRef",
+          label: "Ontology",
+          required: true,
+          targetClassUid: "829b9b3b-6fc3-4276-be6a-27d3398c012e",
+        },
+      ]);
+    });
+
     // RFC v2 Phase 5 (#3167): the legacy fail-loud-on-invalid-JSON test was
     // removed alongside the parser. Invalid JSON in the deprecated triple is
     // simply ignored — there is no longer a parser to throw.

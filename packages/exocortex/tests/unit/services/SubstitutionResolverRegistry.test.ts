@@ -24,7 +24,7 @@ describe("SubstitutionResolverRegistry — RFC 727572d2 Phase A2 vocabulary", ()
     installDefaultResolvers();
   });
 
-  it("registers all 14 expected resolver-ids (4 legacy + 10 new)", () => {
+  it("registers all 15 expected resolver-ids (4 legacy + 10 new + targetClassSelf)", () => {
     const ids = getRegisteredResolverIds().sort();
     expect(ids).toEqual(
       [
@@ -36,6 +36,7 @@ describe("SubstitutionResolverRegistry — RFC 727572d2 Phase A2 vocabulary", ()
         "nowYear",
         "randomUUIDv4",
         "target",
+        "targetClassSelf",
         "targetFolder",
         "targetProperty",
         "today",
@@ -44,6 +45,35 @@ describe("SubstitutionResolverRegistry — RFC 727572d2 Phase A2 vocabulary", ()
         "userInputLabel",
       ].sort(),
     );
+  });
+
+  describe("targetClassSelf (T1 Create Instance — host IS the class)", () => {
+    it("returns a quoted wikilink to the host file's own UID (basename)", () => {
+      const fn = getResolver("targetClassSelf")!;
+      const result = fn({
+        targetFilePath:
+          "assetspaces/kitelev/exoas-ems/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md",
+      } as ResolverContext);
+      expect(result).toBe('"[[1b20a8f0-d745-4e93-91db-4531b3df120e]]"');
+    });
+
+    it("strips a leading slash from the path before extracting basename", () => {
+      const fn = getResolver("targetClassSelf")!;
+      const result = fn({
+        targetFilePath: "/8619c4fc-64f1-4869-b17e-e34186cacca9.md",
+      } as ResolverContext);
+      expect(result).toBe('"[[8619c4fc-64f1-4869-b17e-e34186cacca9]]"');
+    });
+
+    it("returns null when no target file path is in context (CLI/test harness)", () => {
+      const fn = getResolver("targetClassSelf")!;
+      expect(fn({} as ResolverContext)).toBeNull();
+    });
+
+    it("returns null when the path has no basename after stripping .md", () => {
+      const fn = getResolver("targetClassSelf")!;
+      expect(fn({ targetFilePath: ".md" } as ResolverContext)).toBeNull();
+    });
   });
 
   describe("randomUUIDv4", () => {

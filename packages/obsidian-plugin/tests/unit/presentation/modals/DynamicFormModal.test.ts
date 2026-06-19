@@ -97,6 +97,63 @@ describe("DynamicFormModal", () => {
     expect(result).toBeNull();
   });
 
+  // T1 "Create Instance" (project bbe40f8c) — candidate wiring for assetRef
+  // fuzzy-picker fields.
+  describe("assetRef candidates wiring", () => {
+    const pickerSchema: InputSchemaField[] = [
+      { name: "label", type: "text", label: "Label", required: true },
+      {
+        name: "exo__Asset_isDefinedBy",
+        type: "assetRef",
+        label: "Ontology",
+        required: true,
+        targetClassUid: "829b9b3b-6fc3-4276-be6a-27d3398c012e",
+      },
+    ];
+
+    function candidatesPassedToForm(): Record<string, unknown> | undefined {
+      // mockRender(container, reactElement) — reactElement is the ErrorBoundary
+      // wrapping DynamicForm; dig into the DynamicForm props.
+      const reactEl = mockRender.mock.calls[0][1];
+      return reactEl.props.children.props.candidates;
+    }
+
+    it("resolves candidates by targetClassUid and passes them to DynamicForm", () => {
+      const resolver = jest.fn((classUid: string) =>
+        classUid === "829b9b3b-6fc3-4276-be6a-27d3398c012e"
+          ? [{ uid: "uid-ems", label: "ems" }]
+          : [],
+      );
+      const modal = new DynamicFormModal(
+        mockApp,
+        pickerSchema,
+        undefined,
+        resolver,
+      );
+      modal.onOpen();
+
+      expect(resolver).toHaveBeenCalledWith(
+        "829b9b3b-6fc3-4276-be6a-27d3398c012e",
+      );
+      expect(candidatesPassedToForm()).toEqual({
+        exo__Asset_isDefinedBy: [{ uid: "uid-ems", label: "ems" }],
+      });
+    });
+
+    it("does NOT resolve candidates for assetRef fields without targetClassUid", () => {
+      const resolver = jest.fn(() => []);
+      const modal = new DynamicFormModal(
+        mockApp,
+        [{ name: "parent", type: "assetRef", label: "Parent" }],
+        undefined,
+        resolver,
+      );
+      modal.onOpen();
+      expect(resolver).not.toHaveBeenCalled();
+      expect(candidatesPassedToForm()).toEqual({});
+    });
+  });
+
   it("should resolve with values when onSubmit is called", async () => {
     const modal = new DynamicFormModal(mockApp, schema);
 

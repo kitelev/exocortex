@@ -20,6 +20,7 @@ import {
   WorkflowResolver,
   NamedQueryRunner,
   createVaultFrontmatterClassLabelResolver,
+  createVaultFrontmatterRefToFolderResolver,
   registerDefaultHostFunctions,
   vaultPathToIRI,
   IRI,
@@ -307,6 +308,10 @@ async function executeOnTarget(
       workflowResolver,
       groundingLoader: (uid) => resolver.loadGroundingByUid(uid),
       namedQueryRunner,
+      // T1 "Create Instance" (project bbe40f8c) — co-locate new instances in
+      // their chosen ontology's folder via `$isDefinedByFolder` (UI/CLI parity,
+      // Issue #3417). Mirrors the plugin's createObsidianRefToFolderResolver.
+      refToFolder: createVaultFrontmatterRefToFolderResolver(nodeFsAdapter),
     },
   );
 
