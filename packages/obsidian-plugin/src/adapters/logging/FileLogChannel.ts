@@ -127,4 +127,32 @@ export class FileLogChannel {
       // Best-effort — if stat/rename fails, continue with append
     }
   }
+
+  /**
+   * The (vault-relative) path of the active log file, e.g.
+   * `.obsidian/plugins/exocortex/exocortex-logs.txt`. Surfaced by the
+   * «Exocortex: Open logs» command so users know exactly where the sink
+   * lives — it is the plugin data folder, NOT the vault root (P12).
+   */
+  getLogFilePath(): string {
+    return this.logFilePath;
+  }
+
+  /**
+   * Read the current log file content for display (the «Open logs» command).
+   *
+   * Returns "" when the file does not exist yet: info-level logging is off
+   * by default (only warn/error route to the file channel), so on a healthy
+   * startup the file may be absent or hold only warn/error lines. Best-effort
+   * — any adapter error yields "". Uses the DataAdapter (vault.adapter) so it
+   * works identically on desktop and mobile (Desktop↔Mobile Command Parity).
+   */
+  async read(): Promise<string> {
+    try {
+      if (!(await this.adapter.exists(this.logFilePath))) return "";
+      return await this.adapter.read(this.logFilePath);
+    } catch {
+      return "";
+    }
+  }
 }

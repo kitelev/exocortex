@@ -16,6 +16,7 @@ import { FileLogChannel } from "./adapters/logging/FileLogChannel";
 import { ActivityLogService } from "./adapters/logging/ActivityLogService";
 import { journalEntryToActivity } from "./adapters/logging/activityFanIn";
 import { ActivityLogModal } from "./presentation/modals/ActivityLogModal";
+import { LogFileModal } from "./presentation/modals/LogFileModal";
 import { CommandManager } from "./application/services/CommandManager";
 import { IndexingCompleteNotifier } from "./application/services/IndexingCompleteNotifier";
 import {
@@ -693,6 +694,11 @@ export default class ExocortexPlugin extends Plugin {
             this.commandResolver.invalidateCache();
             this.preconditionEvaluator.invalidateCache();
           },
+          // RFC 0002 §3.8 P13 (#3588) — cold-start COMMANDS skeleton gate.
+          // `isReady()` flips true after the first `convertVault()`; while it
+          // is false the renderer shows an "indexing…" placeholder in place of
+          // an empty COMMANDS region instead of a blank layout.
+          isStoreReady: () => this.sparql.isReady(),
         },
       );
 
@@ -3088,6 +3094,20 @@ export default class ExocortexPlugin extends Plugin {
       name: "Open activity log",
       callback: () => {
         new ActivityLogModal(this.app, this.activityLog).open();
+      },
+    });
+
+    // RFC 0002 §3.8 P12 (#3588) — «Open logs»: surfaces the persisted
+    // `exocortex-logs.txt` and its REAL location (the plugin data folder, not
+    // the vault root — reconciling the long-standing docs mismatch). Reads via
+    // the DataAdapter + renders a pure-DOM modal → registered UNCONDITIONALLY
+    // so it works identically on desktop and mobile (Desktop↔Mobile Command
+    // Parity). Distinct from «Open activity log» (live in-memory stream).
+    this.addCommand({
+      id: "open-logs",
+      name: "Open logs",
+      callback: () => {
+        new LogFileModal(this.app, this.fileLogChannel).open();
       },
     });
 

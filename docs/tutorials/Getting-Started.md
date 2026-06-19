@@ -77,12 +77,12 @@ You describe your entities (tasks, projects, areas, or any custom type) in YAML 
 3. Click Install → Enable
 4. Open the command palette (**Cmd/Ctrl + P**) and run **"BRAT: Plugins: Add a beta plugin for testing"**.
 
-   > **Note — BRAT 2.x has no "Add beta plugin" button.** In current BRAT (2.0.8+), BRAT's own settings tab does *not* have an "Add beta plugin" button at the top — adding a plugin is a **command-palette** action, not a settings-tab button. If you were looking for a button in BRAT's settings, that flow is gone.
+   > **Note — BRAT 2.x has no "Add beta plugin" button.** In current BRAT (2.0.8+), BRAT's own settings tab does _not_ have an "Add beta plugin" button at the top — adding a plugin is a **command-palette** action, not a settings-tab button. If you were looking for a button in BRAT's settings, that flow is gone.
 
 5. In the **Add beta plugin** dialog, enter `kitelev/exocortex` in the **GitHub repository** field. Either the `owner/repo` form or the full GitHub URL works. Leave **Personal Access Token** empty.
 6. **Select a release from the "Select a version…" dropdown.**
 
-   > ⚠️ **This step is required.** The dialog will not add the plugin until you *explicitly* pick a version from the dropdown — the implied "latest" is **not** applied automatically, and clicking **Add Plugin** with the dropdown untouched appears to do nothing. Choose the newest version (top of the list).
+   > ⚠️ **This step is required.** The dialog will not add the plugin until you _explicitly_ pick a version from the dropdown — the implied "latest" is **not** applied automatically, and clicking **Add Plugin** with the dropdown untouched appears to do nothing. Choose the newest version (top of the list).
 
 7. Keep **Enable after installing the plugin** checked, then click **Add Plugin**.
 8. Confirm **Exocortex** is enabled under Settings → Community plugins (enable it if it isn't already).
@@ -458,7 +458,7 @@ These are the most common problems encountered by first-time users. Start here b
 **Fix**:
 
 1. Open Settings → Community plugins and confirm Exocortex is **toggled on** (not just installed).
-2. Open `exocortex-logs.txt` in your **vault root**. This file is written by the plugin and captures startup errors. Search for lines starting with `[ERROR]` or `Failed` to see why initialization failed.
+2. Run **Cmd/Ctrl+P → "Exocortex: Open logs"** to view `exocortex-logs.txt` and its real location. The file lives in the **plugin's data folder** (`<vault>/.obsidian/plugins/exocortex/exocortex-logs.txt`), _not_ the vault root — the command shows the exact path and content so you never have to hunt for it. Search for lines starting with `[ERROR]` or `Failed` to see why initialization failed. (By default only warnings and errors are written to the file; for a live stream of everything the plugin is doing, run **"Exocortex: Open activity log"**.)
 3. Open Obsidian's developer console: **Ctrl/Cmd + Shift + I → Console**. Exocortex logs initialization there as well.
 4. If the log mentions schema or RDF errors, a bootstrapped AssetSpace file may be corrupted — re-run **Cmd/Ctrl+P → "Exocortex: Bootstrap vault"** (or **"Exocortex: Add assetspace by URL"** for a single space) to re-download the AssetSpace.
 5. As a last resort, disable the plugin, restart Obsidian, re-enable it.
@@ -496,14 +496,22 @@ These are the most common problems encountered by first-time users. Start here b
 
 ### General diagnostic: `exocortex-logs.txt`
 
-Whenever something feels wrong, the **first file to read** is `exocortex-logs.txt` in your vault root. It contains:
+Whenever something feels wrong, the **first place to look** is `exocortex-logs.txt`. The quickest way to it is **Cmd/Ctrl+P → "Exocortex: Open logs"** — that opens the file's content _and_ shows its exact path. The file is written to the **plugin's data folder**, not the vault root:
+
+```
+<vault>/.obsidian/plugins/exocortex/exocortex-logs.txt
+```
+
+(The `.obsidian` part follows your Obsidian config folder — if you customised it, the path adjusts accordingly. The file is **not** part of your notes and is **not** indexed by SPARQL.) It contains:
 
 - Plugin initialization
 - Every DynamicCommands execution (button click)
 - IRI resolution results
 - Failed grounding calls
 
-Quick grep to find failures:
+By default only **warnings and errors** are written to the file. To capture everything, enable the **Info** row under **Settings → Exocortex → Log channels**. For a live, no-setup stream of plugin activity, run **"Exocortex: Open activity log"** instead.
+
+Quick grep to find failures (run from the folder above, or pass the full path):
 
 ```
 grep -iE "Failed|Error" exocortex-logs.txt
@@ -532,7 +540,8 @@ These are design decisions or rough edges that are **expected** in the current r
 ### First-run indexing takes a moment
 
 - When you bootstrap the AssetSpaces for the first time, the plugin needs a few seconds to index 150+ ontology files.
-- If buttons or class links look stale on the first opening of a note, switch tabs or run **Reload layout** once.
+- During that window the action-buttons area shows an **"indexing… buttons will appear shortly"** placeholder instead of a blank layout; the real buttons replace it automatically once indexing finishes.
+- If buttons or class links still look stale after indexing, switch tabs or run **Reload layout** once.
 
 ---
 
@@ -588,7 +597,7 @@ For the full diagnostic walkthrough see [Troubleshooting](#troubleshooting) abov
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Layout doesn't appear     | Switch to Reading Mode (Ctrl/Cmd + E)                                                                                                                                    |
 | No action buttons visible | Verify the AssetSpaces are bootstrapped (`exocmd/` folder exists in vault); if the folder is present, fully quit and reopen Obsidian (cold restart) to force re-indexing |
-| Action buttons don't work | Read `exocortex-logs.txt` in vault root; check console (Ctrl/Cmd + Shift + I)                                                                                            |
+| Action buttons don't work | Run **Exocortex: Open logs** (file lives in the plugin data folder, not vault root); check console (Ctrl/Cmd + Shift + I)                                                |
 | Wiki-links grey           | Reload app without saving (Cmd/Ctrl + P); re-run **Exocortex: Bootstrap vault** if folders missing                                                                       |
 | Daily tasks not showing   | Check task has `ems__Effort_plannedStartTimestamp` matching daily note's `pn__DailyNote_day`                                                                             |
 | Literal `$input` written  | Update the plugin via BRAT — current versions substitute `$input`/`$value` in `property_set` groundings                                                                  |

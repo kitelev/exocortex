@@ -276,6 +276,43 @@ describe("ExocortexPlugin", () => {
     });
   });
 
+  // RFC 0002 §3.8 P12 (#3588) — «Exocortex: Open logs». The command surfaces
+  // the persisted log file (plugin data folder). Per the Desktop↔Mobile
+  // Command Parity invariant it MUST register UNCONDITIONALLY — no
+  // `Platform.isMobile ? null` gating — because it reads via the DataAdapter
+  // and renders a pure-DOM modal that works on both platforms.
+  describe("Issue #3588 §3.8 — «Open logs» command (Desktop↔Mobile parity)", () => {
+    const registeredIds = (spy: jest.SpyInstance): (string | undefined)[] =>
+      spy.mock.calls.map((c) => (c[0] as { id?: string }).id);
+
+    it("registers `open-logs` on desktop", async () => {
+      const addCommandSpy = jest.spyOn(plugin, "addCommand");
+      await plugin.onload();
+      expect(registeredIds(addCommandSpy)).toContain("open-logs");
+    });
+
+    it("registers `open-logs` on mobile (no Platform gating)", async () => {
+      const obsidianMock = await import("obsidian");
+      const platform = (
+        obsidianMock as unknown as {
+          Platform: { isMobile: boolean; isDesktop: boolean };
+        }
+      ).Platform;
+      const originalIsMobile = platform.isMobile;
+      const originalIsDesktop = platform.isDesktop;
+      platform.isMobile = true;
+      platform.isDesktop = false;
+      const addCommandSpy = jest.spyOn(plugin, "addCommand");
+      try {
+        await plugin.onload();
+        expect(registeredIds(addCommandSpy)).toContain("open-logs");
+      } finally {
+        platform.isMobile = originalIsMobile;
+        platform.isDesktop = originalIsDesktop;
+      }
+    });
+  });
+
   // Issue #3554 — profile apply → next Obsidian load hangs at "Loading plugins…".
   // After an `Apply profile` sets `data.local.json.activeProfileUid`, the next
   // load deadlocked: `registerProfileCommands` (awaited by `onload`) awaited the
