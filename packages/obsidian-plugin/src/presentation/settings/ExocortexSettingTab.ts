@@ -857,9 +857,30 @@ export class ExocortexSettingTab extends PluginSettingTab {
     const profileStatusEl = containerEl.createDiv({
       cls: "setting-item-description",
     });
-    profileStatusEl.appendText(
-      `Last applied: ${activeProfileUid ?? "(none — full vault on disk)"}`,
-    );
+    if (activeProfileUid === null) {
+      profileStatusEl.appendText("Last applied: (none — full vault on disk)");
+    } else {
+      // RFC 0002 §3.4 P10 — show the human label, not the raw UID. The lister
+      // is async (it scans the vault), so render the UID synchronously and
+      // upgrade to the label once resolved (same pattern as Operations log
+      // below). Falls back to the UID for a since-deleted profile / lister
+      // failure.
+      profileStatusEl.appendText(`Last applied: ${activeProfileUid}`);
+      void (async () => {
+        const lister = this.plugin.listProfileChoices;
+        if (lister === null || lister === undefined) return;
+        try {
+          const choices = await lister();
+          const match = choices.find((c) => c.uid === activeProfileUid);
+          if (match !== undefined) {
+            profileStatusEl.empty();
+            profileStatusEl.appendText(`Last applied: ${match.label}`);
+          }
+        } catch {
+          // Keep the UID fallback already rendered — not fatal.
+        }
+      })();
+    }
 
     new Setting(containerEl)
       .setName("Apply profile")

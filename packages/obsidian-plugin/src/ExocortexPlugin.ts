@@ -123,6 +123,7 @@ import { PluginSettingsStoreAdapter } from "./infrastructure/adapters/PluginSett
 import { PluginLocalDataStore } from "./infrastructure/adapters/PluginLocalDataStore";
 import { StagingDirTracker } from "./infrastructure/adapters/StagingDirTracker";
 import { ProfileFuzzyModal } from "./infrastructure/adapters/ProfileFuzzyModal";
+import { buildProfileChoice } from "./infrastructure/adapters/profileChoiceFactory";
 import { lookupAssetSpaceUidByFolder } from "./infrastructure/adapters/AssetSpaceLookupHelper";
 import { createAssetSpacePusher } from "./infrastructure/adapters/AssetSpacePusherFactory";
 import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
@@ -2826,6 +2827,24 @@ export default class ExocortexPlugin extends Plugin {
     }
   }
 
+  /**
+   * RFC 0002 §3.4 P7b — collect every `exo__Asset_uid` present in the vault so
+   * the profile picker can decide which profiles are locally relevant (their
+   * `exo__Profile_includes` AssetSpaces resolve to assets on disk). One
+   * in-memory `metadataCache` pass; called per picker open (infrequent).
+   */
+  private collectPresentAssetUids(): Set<string> {
+    const uids = new Set<string>();
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+        | Record<string, unknown>
+        | undefined;
+      const uid = fm?.["exo__Asset_uid"];
+      if (typeof uid === "string" && uid.length > 0) uids.add(uid);
+    }
+    return uids;
+  }
+
   private async registerProfileCommands(): Promise<void> {
     const lockMgr = new PluginLockManager({ app: this.app });
     const resolver = new VaultProfileResolver(this.app);
@@ -3071,25 +3090,31 @@ export default class ExocortexPlugin extends Plugin {
 
     // Shared choice-builder for the per-class palette pickers (RFC 13da049f
     // AC17). `activeUid` drives the `isActive` flag the picker surfaces.
+    //
+    // RFC 0002 §3.4 — also surfaces, per profile asset (all RDF-sourced;
+    // Homoiconicity — never hardcoded):
+    //   - `exo__Profile_description` → one-line description (P7)
+    //   - `exo__Profile_recommended: true` → «recommended» badge (P7, starter)
+    //   - locality (P7b): a profile is locally relevant when EVERY
+    //     `exo__Profile_includes` AssetSpace UID resolves to an asset present
+    //     on disk (`presentUids`). Empty includes ⇒ vacuously relevant.
     const buildProfileChoices = (
       files: TFile[],
       activeUid: string | null,
+      presentUids: Set<string>,
     ): ProfileChoice[] => {
       const choices: ProfileChoice[] = [];
       for (const file of files) {
         const cache = this.app.metadataCache.getFileCache(file);
         const fm = cache?.frontmatter as Record<string, unknown> | undefined;
         if (!fm) continue;
-        const uid =
-          typeof fm["exo__Asset_uid"] === "string"
-            ? (fm["exo__Asset_uid"] as string)
-            : null;
-        if (uid === null) continue;
-        const label =
-          typeof fm["exo__Asset_label"] === "string"
-            ? (fm["exo__Asset_label"] as string)
-            : file.basename;
-        choices.push({ uid, label, isActive: uid === activeUid });
+        const choice = buildProfileChoice(
+          fm,
+          file.basename,
+          activeUid,
+          presentUids,
+        );
+        if (choice !== null) choices.push(choice);
       }
       // Sort alphabetically by label so picker order is stable across
       // vault scans (vault.getMarkdownFiles() is filesystem-order, not
@@ -3105,6 +3130,7 @@ export default class ExocortexPlugin extends Plugin {
       buildProfileChoices(
         resolver.listProfileFiles(),
         localDataStore.getActiveProfileUid(),
+        this.collectPresentAssetUids(),
       );
 
     // Issue #3320 — share the same lister с Settings UI so its dropdown

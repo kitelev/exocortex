@@ -118,9 +118,11 @@ describe("ExocortexSettingTab — Issue #3320 Profile sections", () => {
     warn: jest.Mock;
     error: jest.Mock;
   };
+  let createdEls: any[];
 
   beforeEach(() => {
     settingCalls = [];
+    createdEls = [];
     mockNotifier = {
       info: jest.fn(),
       warn: jest.fn(),
@@ -133,6 +135,7 @@ describe("ExocortexSettingTab — Issue #3320 Profile sections", () => {
       (el as any).createEl = jest.fn().mockImplementation(() => createMockElement());
       (el as any).createDiv = jest.fn().mockImplementation(() => createMockElement());
       (el as any).appendText = jest.fn();
+      createdEls.push(el);
       return el;
     };
     mockContainerEl = {
@@ -289,6 +292,42 @@ describe("ExocortexSettingTab — Issue #3320 Profile sections", () => {
     settingTab.display();
 
     expect(getActiveProfileUid).toHaveBeenCalled();
+  });
+
+  it("Active profile status resolves the UID to the human label (RFC 0002 §3.4 P10)", async () => {
+    // listProfileChoices (mock) maps uid-b → "Work". The status line should
+    // upgrade from the raw UID to the label once the async lister resolves.
+    mockPlugin.localDataStore = {
+      getActiveProfileUid: jest.fn().mockReturnValue("uid-b"),
+    };
+
+    settingTab.display();
+    // Flush the IIFE's async lister + microtasks.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const appendCalls = createdEls.flatMap((el) =>
+      (el.appendText as jest.Mock).mock.calls.map((c: any[]) => c[0]),
+    );
+    // Human label rendered (P10), NOT left as the raw UID.
+    expect(appendCalls).toContain("Last applied: Work");
+    expect(appendCalls).not.toContain("Last applied: uid-b ✓");
+  });
+
+  it("Active profile status falls back to the raw UID for an unknown profile", async () => {
+    mockPlugin.localDataStore = {
+      getActiveProfileUid: jest.fn().mockReturnValue("uid-deleted"),
+    };
+
+    settingTab.display();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const appendCalls = createdEls.flatMap((el) =>
+      (el.appendText as jest.Mock).mock.calls.map((c: any[]) => c[0]),
+    );
+    // No lister match → keeps the UID fallback (never blank).
+    expect(appendCalls).toContain("Last applied: uid-deleted");
   });
 
   it("renders the Switch cache stats row with Clear button", () => {

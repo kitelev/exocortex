@@ -1,5 +1,6 @@
 import {
   ProfileCommands,
+  SHOW_ALL_PROFILES_UID,
   type ProfileChoice,
   type ProfileCommandsDeps,
   type IAssetSpacePusher,
@@ -378,6 +379,130 @@ describe("ProfileCommands.invokeApplyProfile (Apply profile)", () => {
 
     await expect(h.cmd.invokeApplyProfile()).resolves.not.toThrow();
     expect(h.notices.some((n) => /failed.*boom/.test(n))).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// invokeApplyProfile — user-scope (RFC 0002 §3.4 P7b «Show all profiles»)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Harness with a queued fuzzyPick so a test can script the show-all → re-open
+ * sequence (first call returns the sentinel, second returns a real profile).
+ */
+function makeScopedHarness(
+  profiles: ProfileChoice[],
+  pickResults: (ProfileChoice | null)[],
+): {
+  switchMgr: FakeSwitchMgr;
+  notices: string[];
+  pickCalls: { options: ProfileChoice[]; title: string; initialQuery?: string }[];
+  cmd: ProfileCommands;
+} {
+  const switchMgr = new FakeSwitchMgr();
+  const notices: string[] = [];
+  const pickCalls: {
+    options: ProfileChoice[];
+    title: string;
+    initialQuery?: string;
+  }[] = [];
+  let i = 0;
+  const cmd = new ProfileCommands({
+    switchMgr: switchMgr as unknown as ProfileApplyManager,
+    pushMgr: new FakePushMgr(),
+    profileLister: async () => profiles,
+    fuzzyPick: async (options, title, initialQuery) => {
+      pickCalls.push({ options, title, initialQuery });
+      return pickResults[i++] ?? null;
+    },
+    getActiveFilePath: () => null,
+    getActiveProfileUid: () => null,
+    notify: (m) => notices.push(m),
+  });
+  return { switchMgr, notices, pickCalls, cmd };
+}
+
+describe("ProfileCommands.invokeApplyProfile — user-scope (P7b)", () => {
+  const RELEVANT: ProfileChoice = {
+    uid: "rel",
+    label: "$$kitelev-my",
+    isLocallyRelevant: true,
+  };
+  const HIDDEN: ProfileChoice = {
+    uid: "hid",
+    label: "$$mudriy-tbank",
+    isLocallyRelevant: false,
+  };
+
+  it("default picker shows only locally-relevant profiles + a «Show all» entry", async () => {
+    const h = makeScopedHarness([RELEVANT, HIDDEN], [RELEVANT]);
+    await h.cmd.invokeApplyProfile();
+
+    const firstOptions = h.pickCalls[0].options;
+    // Relevant profile present; hidden one NOT in the default view.
+    expect(firstOptions.some((o) => o.uid === "rel")).toBe(true);
+    expect(firstOptions.some((o) => o.uid === "hid")).toBe(false);
+    // A «Show all profiles…» sentinel is appended (because one is hidden).
+    const sentinel = firstOptions.find((o) => o.kind === "show-all");
+    expect(sentinel?.uid).toBe(SHOW_ALL_PROFILES_UID);
+    expect(sentinel?.label).toMatch(/Show all profiles.*1 more/);
+    // Chose the relevant one → applied.
+    expect(h.switchMgr.applyCalls).toEqual(["rel"]);
+  });
+
+  it("selecting «Show all» re-opens the picker with EVERY profile, unscoped", async () => {
+    const showAll: ProfileChoice = {
+      uid: SHOW_ALL_PROFILES_UID,
+      label: "Show all profiles… (1 more)",
+      kind: "show-all",
+    };
+    const h = makeScopedHarness([RELEVANT, HIDDEN], [showAll, HIDDEN]);
+    await h.cmd.invokeApplyProfile();
+
+    expect(h.pickCalls).toHaveLength(2);
+    // Second pick offers the FULL list (no sentinel, both profiles).
+    const secondOptions = h.pickCalls[1].options;
+    expect(secondOptions.map((o) => o.uid).sort()).toEqual(["hid", "rel"]);
+    expect(secondOptions.some((o) => o.kind === "show-all")).toBe(false);
+    expect(h.pickCalls[1].initialQuery).toBeUndefined();
+    // The previously-hidden profile is now applicable.
+    expect(h.switchMgr.applyCalls).toEqual(["hid"]);
+  });
+
+  it("never applies the «Show all» sentinel itself", async () => {
+    const showAll: ProfileChoice = {
+      uid: SHOW_ALL_PROFILES_UID,
+      label: "Show all profiles…",
+      kind: "show-all",
+    };
+    // User selects show-all, then cancels the unscoped picker.
+    const h = makeScopedHarness([RELEVANT, HIDDEN], [showAll, null]);
+    await h.cmd.invokeApplyProfile();
+
+    expect(h.switchMgr.applyCalls).toHaveLength(0);
+    expect(
+      h.notices.some((n) => n.includes(SHOW_ALL_PROFILES_UID)),
+    ).toBe(false);
+  });
+
+  it("no «Show all» entry when every profile is locally relevant", async () => {
+    const h = makeScopedHarness([RELEVANT], [RELEVANT]);
+    await h.cmd.invokeApplyProfile();
+
+    expect(
+      h.pickCalls[0].options.some((o) => o.kind === "show-all"),
+    ).toBe(false);
+  });
+
+  it("fallback — shows ALL profiles directly when NONE is locally relevant (fresh vault)", async () => {
+    const h = makeScopedHarness([HIDDEN], [HIDDEN]);
+    await h.cmd.invokeApplyProfile();
+
+    // No empty picker, no lone «Show all» — the single profile is shown.
+    const opts = h.pickCalls[0].options;
+    expect(opts.some((o) => o.kind === "show-all")).toBe(false);
+    expect(opts.map((o) => o.uid)).toEqual(["hid"]);
+    expect(h.switchMgr.applyCalls).toEqual(["hid"]);
   });
 });
 
