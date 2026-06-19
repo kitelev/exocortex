@@ -1786,14 +1786,45 @@ export class ProfileApplyManager {
       return { restored: [], resumed: false, resumedTo: null };
     }
 
+    const interrupted = await this.classifyInterruptedSwitch();
+
+    // Extended nothing-to-recover guard (#7c9074ce). The #3571 guard above only
+    // short-circuits a FRESH vault (journal absent). On an established vault the
+    // journal always exists, so a CLEAN reload used to fall through to the
+    // unconditional `recovery-completed` write below — appending a vacuous
+    // terminal on EVERY onload (the live journal grew to 95 such records), which
+    // (a) grows without bound and (b) masks real recovery events. Short-circuit
+    // when there is no actual recovery work for THIS worker to do:
+    //   - no REST apply to resume (`rest-apply` target + REST wired), and
+    //   - no destroyed-but-not-materialized AssetSpace to restore from cache
+    //     (the only git-path work — `kind: none`/`reindex` never destroys; and a
+    //     `reindex` resume is a SEPARATE worker, never re-run here), and
+    //   - no stuck `_switchInProgress` flag to clear.
+    // A genuine interrupted switch always leaves the in-progress flag set (a
+    // crash skips the flag-clearing finally) OR a destroyed-not-materialized AS
+    // in the journal, so this never suppresses a real recovery — it only stops
+    // the no-op terminal that a clean reload kept appending.
+    const destroyedToRestore = [...interrupted.destroyed].filter(
+      (uid) => !interrupted.materialized.has(uid),
+    );
+    const needsRestResume =
+      interrupted.kind === "rest-apply" &&
+      interrupted.targetUid !== null &&
+      this.restWired();
+    if (
+      !needsRestResume &&
+      destroyedToRestore.length === 0 &&
+      !localDataStore.isSwitchInProgress()
+    ) {
+      return { restored: [], resumed: false, resumedTo: null };
+    }
+
     // Defensive (mirrors the apply paths at ll. 477/908/1334): we are past the
     // guard, so a real recovery is in flight. A genuine incomplete switch left
     // the journal — `.exocortex/` exists — but if `_switchInProgress` was set
     // in the crash window before the first journal write, ensure the dir so the
     // `recovery-completed` write can't ENOENT and mask the real outcome.
     await this.ensureExocortexDir();
-
-    const interrupted = await this.classifyInterruptedSwitch();
 
     // #1d1bcde0 (F1) — REST-aware resume. An interrupted REST apply is driven to
     // the target idempotently by re-running the REST apply (skip the confirm
