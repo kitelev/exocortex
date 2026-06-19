@@ -304,6 +304,33 @@ export class GitSubmoduleOps {
   }
 
   /**
+   * #3590 — the commit SHA the submodule's working tree is CHECKED OUT at
+   * (`git submodule status <path>` → the leading 40-hex SHA, independent of any
+   * uncommitted edits inside it). This is the genuine 3-way merge base for
+   * ExoSync's FIRST sync of a repo mounted before the mount layer recorded its
+   * base: local edits sit uncommitted on top of this commit, and it is a true
+   * ancestor of the remote head (the sync engine re-verifies ancestry before
+   * trusting it — M1-safe). Returns `null` — never throws — when the path is not
+   * an initialized submodule, git is unavailable (mobile → {@link assertDesktop}
+   * throws), or the output cannot be parsed; the engine then keeps its
+   * conservative full-conflict fallback. Read-only, fast, run only on first sync.
+   */
+  async submoduleHeadSha(submodulePath: string): Promise<string | null> {
+    try {
+      const safe = validateVaultPathArg(submodulePath);
+      const { stdout } = await this.run(["submodule", "status", safe]);
+      // Format per submodule: "[ +-U]<40-hex-sha> <path> (<describe>)". The
+      // optional leading status char ('+' diverges from the superproject
+      // gitlink, 'U' merge conflicts, '-' uninitialized) precedes the SHA; the
+      // SHA is always the submodule's checked-out HEAD.
+      const m = stdout.match(/^[ +\-U]?([0-9a-f]{40})\b/m);
+      return m ? m[1] : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * `git status --porcelain <pathspec>` — returns raw porcelain output.
    * Caller parses for non-empty lines == dirty.
    */

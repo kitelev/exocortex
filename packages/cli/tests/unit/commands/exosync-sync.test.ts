@@ -17,6 +17,7 @@
  *     disk composition + direction plumbing + exit codes.
  */
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { FakeGitHubRepo, mdAsset } from "../../../../exocortex/tests/unit/services/sync/fakeGitHub";
@@ -24,6 +25,7 @@ import {
   nodeLocalFilesPort,
   nodeWatermarkFileIO,
   nodeMaterializationCheck,
+  nodeLocalBaseShaProvider,
   runExosyncSync,
   type ExosyncSyncOptions,
 } from "../../../src/commands/exosync-sync";
@@ -241,5 +243,92 @@ describe("runExosyncSync — wiring", () => {
     } finally {
       fx.cleanup();
     }
+  });
+});
+
+// #3590 FULL fix — the CLI backfill source: the genuine 3-way base for a repo
+// mounted before the mount layer recorded one is the submodule's checked-out
+// HEAD. Real git fixture (test-fixture-realism — not a mock): a desktop vault
+// with a real submodule must yield the checked-out commit; non-submodule / not-
+// a-git-repo / hostile paths must degrade to null (engine then full-conflicts).
+describe("nodeLocalBaseShaProvider (#3590 base backfill source)", () => {
+  let workdir: string;
+  beforeEach(() => {
+    workdir = mkTmp("exosync-backfill-");
+  });
+  afterEach(() => rmSync(workdir, { recursive: true, force: true }));
+
+  function git(cwd: string, args: string[]): string {
+    return execFileSync("git", args, {
+      cwd,
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_AUTHOR_NAME: "t",
+        GIT_AUTHOR_EMAIL: "t@t.io",
+        GIT_COMMITTER_NAME: "t",
+        GIT_COMMITTER_EMAIL: "t@t.io",
+      },
+    }).trim();
+  }
+
+  function spec(localPath: string): SyncRepoSpec {
+    return {
+      owner: OWNER,
+      repo: REPO,
+      branch: "main",
+      repoKey: `${OWNER}/${REPO}#main`,
+      localPath,
+    };
+  }
+
+  it("returns the submodule's checked-out HEAD SHA (real git submodule)", async () => {
+    // 'remote' repo with one commit — the genuine mount base.
+    const remote = path.join(workdir, "remote");
+    mkdirSync(remote);
+    git(remote, ["init", "-q", "-b", "main"]);
+    writeFileSync(path.join(remote, "a.md"), "x");
+    git(remote, ["add", "-A"]);
+    git(remote, ["commit", "-q", "-m", "init"]);
+    const remoteHead = git(remote, ["rev-parse", "HEAD"]);
+
+    // 'vault' superproject with the remote added as a submodule.
+    const vault = path.join(workdir, "vault");
+    mkdirSync(vault);
+    git(vault, ["init", "-q", "-b", "main"]);
+    git(vault, [
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      `file://${remote}`,
+      "assetspaces/o/r",
+    ]);
+
+    const sha = await nodeLocalBaseShaProvider(vault)(spec("assetspaces/o/r"));
+    expect(sha).toBe(remoteHead);
+  });
+
+  it("returns null for a path that is NOT a submodule", async () => {
+    const vault = path.join(workdir, "plain");
+    mkdirSync(vault);
+    git(vault, ["init", "-q", "-b", "main"]);
+    expect(
+      await nodeLocalBaseShaProvider(vault)(spec("assetspaces/o/r")),
+    ).toBeNull();
+  });
+
+  it("returns null when the vault is not a git repo (git unavailable analogue)", async () => {
+    const notGit = path.join(workdir, "notgit");
+    mkdirSync(notGit);
+    expect(
+      await nodeLocalBaseShaProvider(notGit)(spec("assetspaces/o/r")),
+    ).toBeNull();
+  });
+
+  it("refuses a leading-dash localPath (never lets git misread it as an option)", async () => {
+    expect(await nodeLocalBaseShaProvider(workdir)(spec("--upload-pack=x"))).toBeNull();
+    expect(await nodeLocalBaseShaProvider(workdir)(spec(""))).toBeNull();
   });
 });

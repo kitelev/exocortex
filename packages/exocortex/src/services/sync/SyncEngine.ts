@@ -115,6 +115,24 @@ export interface SyncEngineDeps {
    * (M1 zero-loss intact). See {@link MountBaseStorePort}.
    */
   mountBaseStore?: MountBaseStorePort;
+  /**
+   * #3590 full fix — base BACKFILL source for repos MOUNTED BEFORE the mount
+   * layer began recording the base (or by any path that never recorded one):
+   * those have no `mountBaseStore` entry, so the v16.98.7 fix could not fire and
+   * every first-sync on an advanced remote false-conflicted. When the store has
+   * no entry for a repo, the engine asks this provider for the commit SHA the
+   * LOCAL working tree is based on — the platform's AUTHORITATIVE checked-out
+   * commit (desktop: the git submodule's HEAD). The returned SHA is NOT trusted
+   * blindly: it goes through the SAME genuine-ancestor verification as a recorded
+   * mount base (non-ancestor / unresolvable → conservative `full-conflict`,
+   * never a guessed base / silent overwrite, M1 zero-loss). Returns `null` when
+   * no authoritative source exists (mobile/REST mount, non-submodule, git
+   * unavailable) → the conservative fallback is unchanged (no regression). On a
+   * verified hit the engine persists the SHA into `mountBaseStore` (backfill), so
+   * subsequent first-syncs reuse it without re-invoking the provider. Absent ⇒
+   * pre-fix behaviour (only recorded mount bases are honoured).
+   */
+  localBaseShaProvider?: (spec: SyncRepoSpec) => Promise<string | null>;
   sha1: Sha1Fn;
   baseURL?: string;
   /** Cap on 422 re-pull→retry cycles (D16). Default {@link DEFAULT_MAX_PUSH_RETRIES}. */
@@ -2153,15 +2171,43 @@ export class SyncEngine {
     warnings: string[],
   ): Promise<FirstSyncBootstrap | null> {
     const store = this.deps.mountBaseStore;
-    if (store === undefined) return null;
 
-    let mountSha: string | null;
-    try {
-      mountSha = await store.get(spec.repoKey);
-    } catch {
-      return null; // store read failure → conservative fallback
+    let mountSha: string | null = null;
+    if (store !== undefined) {
+      try {
+        mountSha = await store.get(spec.repoKey);
+      } catch {
+        return null; // store read failure → conservative fallback
+      }
     }
-    // No record, or the remote has not advanced since the mount (the cheaper
+
+    // #3590 FULL fix — base BACKFILL. A repo MOUNTED BEFORE the mount layer
+    // started recording its base (or by any path that never recorded one) has no
+    // store entry → the v16.98.7 recording fix could not fire for it, and every
+    // first-sync on an advanced remote false-conflicted (the work-MacBook
+    // trigger). Recover the base from the platform's AUTHORITATIVE checked-out
+    // commit (desktop: the git submodule HEAD via `localBaseShaProvider`). It is
+    // NOT trusted blindly — it goes through the EXACT same genuine-ancestor
+    // verification below as a recorded base (non-ancestor → conservative
+    // fallback, never a silent merge on a guessed base, M1 zero-loss). `null`
+    // (mobile/REST, non-submodule, git unavailable) → conservative fallback
+    // unchanged. A verified hit is persisted (backfilled) so subsequent
+    // first-syncs reuse it without re-invoking the provider.
+    let backfilled = false;
+    if (mountSha === null && this.deps.localBaseShaProvider !== undefined) {
+      try {
+        const candidate = await this.deps.localBaseShaProvider(spec);
+        if (typeof candidate === "string" && candidate.length > 0) {
+          mountSha = candidate;
+          backfilled = true;
+        }
+      } catch {
+        // provider failure (git unavailable, not a submodule) → no candidate →
+        // conservative fallback, never a guess.
+      }
+    }
+
+    // No record/candidate, or the remote has not advanced since the mount (the cheaper
     // R⊆L clean-mount / additive path below handles head == mount exactly).
     // `head.startsWith(mountSha)` (not `===`) so an ABBREVIATED mount SHA
     // (anonymous tarballs carry a 7-char wrapper SHA — extractShaFromWrapper)
@@ -2235,8 +2281,22 @@ export class SyncEngine {
       rootTreeSha: baseCommit.treeSha,
       files,
     };
+    // #3590 FULL fix — persist the BACKFILLED (now ancestor-VERIFIED) base so a
+    // subsequent first-sync (e.g. after an overlapping full-conflict that wrote
+    // no watermark) reuses it without re-invoking the provider. Only the verified
+    // canonical SHA reaches this point — never an unverified guess (M1).
+    // Best-effort: a store-write failure must NOT fail the sync.
+    if (backfilled && store !== undefined) {
+      try {
+        await store.set(spec.repoKey, baseCommit.sha);
+      } catch {
+        /* non-fatal — next first-sync re-derives the base via the provider */
+      }
+    }
     warnings.push(
-      `first-sync (asset mode): reconciling against the recorded mount base ${baseCommit.sha} — remote head ${head} advanced since mount; local edits 3-way merge against it instead of false-conflicting (#3590)`,
+      backfilled
+        ? `first-sync (asset mode): BACKFILLED the 3-way base from the locally checked-out commit ${baseCommit.sha} (no recorded mount base) — remote head ${head} advanced since; local edits 3-way merge against it instead of false-conflicting (#3590)`
+        : `first-sync (asset mode): reconciling against the recorded mount base ${baseCommit.sha} — remote head ${head} advanced since mount; local edits 3-way merge against it instead of false-conflicting (#3590)`,
     );
     return { kind: "additive-base", base };
   }
