@@ -38,6 +38,54 @@ export class ExocortexSettingTab extends PluginSettingTab {
 
     containerEl.empty();
 
+    // RFC 0002 §3.6 (P8) — settings information architecture. The settings tab
+    // used to be a single ~25-toggle flat scroll with the onboarding-critical
+    // GitHub PAT / profile / sync controls buried at the very bottom. It is now
+    // split into three top-level sections, rendered in this order:
+    //
+    //   1. «Onboarding & sync» — PAT, profiles, ExoSync (what a new tester
+    //      needs first), moved to the TOP so PAT is no longer buried.
+    //   2. «Display» — visual / label / layout toggles + display-name templates.
+    //   3. «Advanced» — power-user behaviour, experimental flags, the free-text
+    //      path editors (gated with a caution), and the log-channel matrix.
+    //
+    // Every user-facing string here is also stripped of internal IDs (issue
+    // numbers, design-decision tags, security-requirement tags) per the §7
+    // grep gate (M4) — see ExocortexSettingTab.informationArchitecture.test.ts.
+    this.renderOnboardingAndSyncSection(containerEl);
+    this.renderDisplaySection(containerEl);
+    this.renderAdvancedSection(containerEl);
+  }
+
+  /**
+   * RFC 0002 §3.6 — «Onboarding & sync» section (top of the tab).
+   *
+   * Surfaces the onboarding-critical GitHub PAT, profiles, and ExoSync
+   * controls first — previously they were the last thing rendered, so a
+   * first-run tester had to scroll past every power-user toggle to find the
+   * PAT field the Getting Started flow needs.
+   */
+  private renderOnboardingAndSyncSection(containerEl: HTMLElement): void {
+    new Setting(containerEl).setName("Onboarding & sync").setHeading();
+
+    const intro = containerEl.createDiv({ cls: "setting-item-description" });
+    intro.appendText(
+      "Set up GitHub access, profiles, and sync here — start with these when " +
+        "you first install the plugin.",
+    );
+
+    // Profiles overview, GitHub PAT, ExoSync, Active profile, Switch cache,
+    // and the Operations log. Moved to the top of the tab (RFC 0002 §3.6).
+    this.renderProfileSections(containerEl);
+  }
+
+  /**
+   * RFC 0002 §3.6 — «Display» section: the visual / label / layout toggles a
+   * user changes day-to-day, plus the display-name template editor.
+   */
+  private renderDisplaySection(containerEl: HTMLElement): void {
+    new Setting(containerEl).setName("Display").setHeading();
+
     new Setting(containerEl)
       .setName("Show layout")
       .setDesc("Display the automatic layout below metadata in reading mode")
@@ -63,21 +111,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
             this.plugin.settings.showArchivedAssets = value;
             await this.plugin.saveSettings();
             this.plugin.refreshLayout();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Auto-adjust planned end time")
-      .setDesc(
-        "Automatically shift plannedEndTimestamp when plannedStartTimestamp changes. " +
-          "Disable if using Obsidian Sync to prevent duplicate shifts.",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.autoAdjustPlannedEndTimestamp)
-          .onChange(async (value) => {
-            this.plugin.settings.autoAdjustPlannedEndTimestamp = value;
-            await this.plugin.saveSettings();
           }),
       );
 
@@ -166,90 +199,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "SPARQL" is an established acronym
-      .setName("Auto-execute SPARQL code blocks")
-      .setDesc(
-        "When enabled, sparql and exoql code blocks are executed as queries " +
-          "during note rendering. When disabled (default), those code blocks " +
-          "render as plain code so SPARQL snippets can be pasted for " +
-          "documentation or reference without side effects. Issue #2992.",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.enableSparqlAutoExecute)
-          .onChange(async (value) => {
-            this.plugin.settings.enableSparqlAutoExecute = value;
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Settings homoiconization")
-      .setDesc(
-        "When enabled, plugin settings are materialised as vault assets in an " +
-          'exocortex-settings/ folder so they are editable as notes and synced ' +
-          "alongside other assets. When disabled (default), settings live only " +
-          "in data.json and that folder is never created. Turning this off " +
-          "leaves any already-migrated assets on disk untouched (never deleted). " +
-          "Change applies on the next plugin reload. Issue #3539.",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.settingsHomoiconizationEnabled)
-          .onChange(async (value) => {
-            this.plugin.settings.settingsHomoiconizationEnabled = value;
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Lazy bootstrap folders")
-      .setDesc(
-        "Path prefixes (one per line, trailing slash required) walked eagerly " +
-          "at plugin load so exocmd Commands/Bindings/Groundings and exo Classes/Properties " +
-          "are indexed before first render. Add extra submodules here " +
-          "(e.g. assetspaces/kitelev/, assetspaces/pmbok-ontology/) — change applies on next plugin reload. " +
-          "Empty list = bootstrap skips all folders (buttons may take 10-20s to appear on mobile).",
-      )
-      .addTextArea((textarea) => {
-        textarea
-          // eslint-disable-next-line obsidianmd/ui/sentence-case -- example shows literal vault-relative folder paths, not prose UI text
-          .setPlaceholder("assetspaces/exo/\nassetspaces/ems/")
-          .setValue((this.plugin.settings.lazyBootstrapFolders ?? []).join("\n"))
-          .onChange(async (value) => {
-            // Auto-append trailing slash to prevent `assetspaces/ems`
-            // over-matching `assetspaces/ems-commands/...` (the exact
-            // failure mode this PR fixes — see ExocortexPlugin Phase 5
-            // comment block). Code-reviewer MED catch.
-            this.plugin.settings.lazyBootstrapFolders = value
-              .split("\n")
-              .map((line) => line.trim())
-              .filter((line) => line.length > 0)
-              .map((line) => (line.endsWith("/") ? line : line + "/"));
-            await this.plugin.saveSettings();
-          });
-        textarea.inputEl.rows = 6;
-        textarea.inputEl.cols = 50;
-      });
-
-    new Setting(containerEl)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "SHACL" is an established acronym
-      .setName("Enable SHACL validation (experimental)")
-      .setDesc(
-        "When enabled, validates frontmatter properties against SHACL shapes " +
-          "on every file save (50ms debounce). Violations are logged as warnings. " +
-          "Default off in v15.x.0; will be enabled by default after soak period.",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.enableShaclValidation)
-          .onChange(async (value) => {
-            this.plugin.settings.enableShaclValidation = value;
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
       .setName("Auto reading mode for exocortex assets")
       .setDesc(
         "When opening a note with the `exo__Instance_class` frontmatter property, automatically switch to reading mode so the exocortex layout (create / status / planning panels) is visible. Disable to keep obsidian's default view mode.",
@@ -309,14 +258,15 @@ export class ExocortexSettingTab extends PluginSettingTab {
           }),
       );
 
-    // Excluded folders section — files inside these folders are skipped
-    // entirely by the RDF indexer and SHACL-lite validation.
-    this.renderExcludedFoldersSection(containerEl);
+    this.renderDisplayNameTemplatesSection(containerEl);
+  }
 
-    // Logging section
-    this.renderLogChannelsSection(containerEl);
-
-    // Display Name Template section
+  /**
+   * Display-name template editor (default + per-class templates + preview +
+   * placeholder help). Extracted from the old flat `display()` so it lives
+   * under the «Display» section (RFC 0002 §3.6).
+   */
+  private renderDisplayNameTemplatesSection(containerEl: HTMLElement): void {
     new Setting(containerEl).setName("Display name templates").setHeading();
 
     // Ensure displayNameSettings is initialized
@@ -409,11 +359,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
         }),
       );
 
-    // Issue #3320 — RFC 0a0791c1 §B.8 — 4 Profile-related sections
-    // (PAT, Active profile, Switch cache, Operations log). Rendered after
-    // the existing sections so the diff stays additive.
-    this.renderProfileSections(containerEl);
-
     // Template syntax help
     const helpEl = containerEl.createDiv({
       cls: "setting-item-description",
@@ -438,6 +383,135 @@ export class ExocortexSettingTab extends PluginSettingTab {
       li.createEl("code", { text: code });
       li.appendText(` - ${desc}`);
     }
+  }
+
+  /**
+   * RFC 0002 §3.6 — «Advanced» section: power-user behaviour, experimental
+   * flags, the free-text path editors (gated behind a caution), and the
+   * log-channel routing matrix (now with labeled columns).
+   */
+  private renderAdvancedSection(containerEl: HTMLElement): void {
+    new Setting(containerEl).setName("Advanced").setHeading();
+
+    new Setting(containerEl)
+      .setName("Auto-adjust planned end time")
+      .setDesc(
+        "Automatically shift plannedEndTimestamp when plannedStartTimestamp changes. " +
+          "Disable if using Obsidian Sync to prevent duplicate shifts.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.autoAdjustPlannedEndTimestamp)
+          .onChange(async (value) => {
+            this.plugin.settings.autoAdjustPlannedEndTimestamp = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "SPARQL" is an established acronym
+      .setName("Auto-execute SPARQL code blocks")
+      .setDesc(
+        "When enabled, sparql and exoql code blocks are executed as queries " +
+          "during note rendering. When disabled (default), those code blocks " +
+          "render as plain code so SPARQL snippets can be pasted for " +
+          "documentation or reference without side effects.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableSparqlAutoExecute)
+          .onChange(async (value) => {
+            this.plugin.settings.enableSparqlAutoExecute = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Settings homoiconization")
+      .setDesc(
+        "When enabled, plugin settings are materialised as vault assets in an " +
+          'exocortex-settings/ folder so they are editable as notes and synced ' +
+          "alongside other assets. When disabled (default), settings live only " +
+          "in data.json and that folder is never created. Turning this off " +
+          "leaves any already-migrated assets on disk untouched (never deleted). " +
+          "Change applies on the next plugin reload.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.settingsHomoiconizationEnabled)
+          .onChange(async (value) => {
+            this.plugin.settings.settingsHomoiconizationEnabled = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "SHACL" is an established acronym
+      .setName("Enable SHACL validation (experimental)")
+      .setDesc(
+        "When enabled, validates frontmatter properties against SHACL shapes " +
+          "on every file save (50ms debounce). Violations are logged as warnings. " +
+          "Default off in v15.x.0; will be enabled by default after soak period.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableShaclValidation)
+          .onChange(async (value) => {
+            this.plugin.settings.enableShaclValidation = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    // RFC 0002 §3.6 — gate the free-text path editors behind a caution. A
+    // wrong vault-relative path here silently stops files from being indexed,
+    // so warn the user before they reach the two textareas below.
+    const pathCaution = containerEl.createDiv({
+      cls: "setting-item-description exocortex-settings-caution",
+    });
+    pathCaution.createEl("strong", { text: "Caution: " });
+    pathCaution.appendText(
+      "the folder-path fields below control which files get indexed. A wrong " +
+        "path can break indexing — assets may stop loading or vanish from " +
+        "search. Leave the defaults unless you know the exact vault-relative " +
+        "paths you want to change.",
+    );
+
+    new Setting(containerEl)
+      .setName("Lazy bootstrap folders")
+      .setDesc(
+        "Path prefixes (one per line, trailing slash required) walked eagerly " +
+          "at plugin load so exocmd Commands/Bindings/Groundings and exo Classes/Properties " +
+          "are indexed before first render. Add extra submodules here " +
+          "(e.g. assetspaces/kitelev/, assetspaces/pmbok-ontology/) — change applies on next plugin reload. " +
+          "Empty list = bootstrap skips all folders (buttons may take 10-20s to appear on mobile).",
+      )
+      .addTextArea((textarea) => {
+        textarea
+          // eslint-disable-next-line obsidianmd/ui/sentence-case -- example shows literal vault-relative folder paths, not prose UI text
+          .setPlaceholder("assetspaces/exo/\nassetspaces/ems/")
+          .setValue((this.plugin.settings.lazyBootstrapFolders ?? []).join("\n"))
+          .onChange(async (value) => {
+            // Auto-append trailing slash to prevent `assetspaces/ems`
+            // over-matching `assetspaces/ems-commands/...` (the exact
+            // failure mode this PR fixes — see ExocortexPlugin Phase 5
+            // comment block). Code-reviewer MED catch.
+            this.plugin.settings.lazyBootstrapFolders = value
+              .split("\n")
+              .map((line) => line.trim())
+              .filter((line) => line.length > 0)
+              .map((line) => (line.endsWith("/") ? line : line + "/"));
+            await this.plugin.saveSettings();
+          });
+        textarea.inputEl.rows = 6;
+        textarea.inputEl.cols = 50;
+      });
+
+    // Excluded folders section — files inside these folders are skipped
+    // entirely by the RDF indexer and SHACL-lite validation.
+    this.renderExcludedFoldersSection(containerEl);
+
+    // Logging section
+    this.renderLogChannelsSection(containerEl);
   }
 
   /**
@@ -542,19 +616,41 @@ export class ExocortexSettingTab extends PluginSettingTab {
       { key: "file", label: "File" },
     ];
 
+    // RFC 0002 §3.6 — label the matrix columns. Each level row below renders 3
+    // otherwise-unlabeled toggles; this header (plus per-toggle aria-labels)
+    // tells the user which toggle routes to Notice / Console / File.
+    const header = containerEl.createDiv({
+      cls: "exocortex-log-channel-header",
+    });
+    header.createEl("span", {
+      cls: "exocortex-log-channel-level-label",
+      text: "Level",
+    });
+    for (const channel of channels) {
+      header.createEl("span", {
+        cls: "exocortex-log-channel-col-label",
+        text: channel.label,
+      });
+    }
+
     for (const level of levels) {
       const setting = new Setting(containerEl).setName(level.label);
 
       for (const channel of channels) {
-        setting.addToggle((toggle) =>
+        setting.addToggle((toggle) => {
           toggle
             .setValue(this.plugin.settings.logChannels[level.key][channel.key])
             .onChange(async (value) => {
               this.plugin.settings.logChannels[level.key][channel.key] = value;
               await this.plugin.saveSettings();
               this.plugin.configureLogChannels();
-            }),
-        );
+            });
+          // a11y — name the otherwise-anonymous toggle by its (level, channel)
+          // so screen readers and hover tooltips identify which column it is.
+          const ariaLabel = `${level.label}: route to ${channel.label} channel`;
+          toggle.toggleEl?.setAttribute("aria-label", ariaLabel);
+          toggle.toggleEl?.setAttribute("title", ariaLabel);
+        });
       }
     }
   }
@@ -644,10 +740,9 @@ export class ExocortexSettingTab extends PluginSettingTab {
     const patDesc = containerEl.createDiv({ cls: "setting-item-description" });
     patDesc.appendText(
       "Fine-grained Personal Access Token used to push AssetSpace " +
-        "submodules to GitHub. Stored в data.local.json (NOT data.json) so " +
-        "Obsidian Sync excludes it from network replication (Vision Lock #1, " +
-        "Security #1). Required for the «Push current assetspace» and " +
-        "«Apply profile» commands.",
+        "submodules to GitHub. Stored in data.local.json (not data.json) so " +
+        "Obsidian Sync never replicates it over the network. Required for the " +
+        "«Push current assetspace» and «Apply profile» commands.",
     );
     // RFC 0002 §3.9 (P14) — mobile onboarding parity. Typing a long
     // fine-grained token on a phone keyboard is painful, so point users at the
@@ -671,7 +766,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
       // eslint-disable-next-line obsidianmd/ui/sentence-case -- "PAT" is an established acronym for Personal Access Token
       .setName("Personal Access Token")
       .setDesc(
-        "Recommended: fine-grained PAT с per-repository allowlist scoped " +
+        "Recommended: fine-grained PAT with a per-repository allowlist scoped " +
           "to your exoas-* repos. Leave blank and click Save to clear.",
       )
       .addText((text) => {
@@ -776,7 +871,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
       .setDesc(
         "Optional dedicated GitHub repo (https://github.com/<owner>/<repo>) " +
           "where unresolvable sync conflicts are preserved as both-versions " +
-          "entries (D17). Leave empty to skip the durable quarantine sink — " +
+          "entries. Leave empty to skip the durable quarantine sink — " +
           "conflicts still re-derive on every sync until resolved.",
       )
       .addText((text) => {
