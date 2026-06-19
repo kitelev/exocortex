@@ -4,8 +4,14 @@
  * modal surfaces profile/mount events correctly hinges on this mapping.
  */
 import { describe, it, expect } from "@jest/globals";
-import { journalEntryToActivity } from "../../../../src/adapters/logging/activityFanIn";
-import type { SwitchJournalEntry } from "../../../../src/infrastructure/adapters/ProfileApplyManager";
+import {
+  journalEntryToActivity,
+  progressToActivity,
+} from "../../../../src/adapters/logging/activityFanIn";
+import type {
+  ApplyProgressEvent,
+  SwitchJournalEntry,
+} from "../../../../src/infrastructure/adapters/ProfileApplyManager";
 
 const base = { targetUid: "profile-xyz-uid", ts: "2026-06-15T00:00:00.000Z" };
 
@@ -103,5 +109,50 @@ describe("journalEntryToActivity", () => {
       // phase string should not leak raw unless intentionally unmapped
       expect(r.message).not.toBe(phase);
     }
+  });
+});
+
+describe("progressToActivity (live materialize progress feed)", () => {
+  const evt = (over: Partial<ApplyProgressEvent>): ApplyProgressEvent => ({
+    op: "mount",
+    as: "1b20a8f0-d745-4e93-91db-4531b3df120e",
+    label: "ems",
+    index: 1,
+    total: 3,
+    ...over,
+  });
+
+  it("mount → category 'progress', info level, 'Mounting <label> <prefix> (N of M)'", () => {
+    expect(progressToActivity(evt({ op: "mount", index: 2, total: 5 }))).toEqual(
+      {
+        category: "progress",
+        level: "info",
+        message: "Mounting ems 1b20a8f0 (2 of 5)",
+      },
+    );
+  });
+
+  it("unmount → 'Unmounting …'", () => {
+    expect(progressToActivity(evt({ op: "unmount", label: "kpc" })).message).toBe(
+      "Unmounting kpc 1b20a8f0 (1 of 3)",
+    );
+  });
+
+  it("pull → 'Pulling …'", () => {
+    expect(progressToActivity(evt({ op: "pull" })).message).toBe(
+      "Pulling ems 1b20a8f0 (1 of 3)",
+    );
+  });
+
+  it("progress is ALWAYS category 'progress' (never toasted — distinct from journal feed)", () => {
+    for (const op of ["pull", "mount", "unmount"] as const) {
+      expect(progressToActivity(evt({ op })).category).toBe("progress");
+    }
+  });
+
+  it("omits a redundant label when it equals the 8-char UID prefix", () => {
+    expect(
+      progressToActivity(evt({ label: "1b20a8f0", index: 1, total: 1 })).message,
+    ).toBe("Mounting 1b20a8f0 (1 of 1)");
   });
 });

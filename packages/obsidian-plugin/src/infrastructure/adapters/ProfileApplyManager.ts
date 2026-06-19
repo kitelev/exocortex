@@ -168,6 +168,32 @@ export interface SwitchJournalEntry {
   error?: string;
 }
 
+/**
+ * Ephemeral per-AssetSpace progress event (activity-log materialize progress) —
+ * emitted BEFORE each pull/mount/unmount so the activity log shows the apply is
+ * actively progressing ("Mounting X (2 of 5)"), not just the post-completion
+ * summary. The {@link SwitchJournalEntry} feed already records each op AFTER it
+ * finishes; this adds the live "starting op N of M" feed in front of it.
+ *
+ * Deliberately DISTINCT from {@link SwitchJournalEntry}:
+ *  - NOT persisted to the switch journal → never read by crash-recovery
+ *    classification, so adding/removing it cannot change recovery semantics.
+ *  - NOT routed through `notify` → activity-log-only, so a long apply never
+ *    spams toasts (only the sparse final summary toasts).
+ */
+export interface ApplyProgressEvent {
+  /** Which per-AssetSpace operation is about to start. */
+  op: "pull" | "mount" | "unmount";
+  /** Target AssetSpace UID. */
+  as: string;
+  /** Human label of the AssetSpace (namespace / best-effort; may be the UID). */
+  label: string;
+  /** 1-based position within the current op batch. */
+  index: number;
+  /** Total count in the current op batch. */
+  total: number;
+}
+
 export interface ProfileApplyManagerOptions {
   app: App;
   lockMgr: PluginLockManager;
@@ -189,6 +215,15 @@ export interface ProfileApplyManagerOptions {
    * Default no-op. Must not throw — failures are swallowed at the call site.
    */
   onPhase?: (entry: SwitchJournalEntry) => void;
+  /**
+   * Live per-AssetSpace progress sink (activity-log materialize progress) —
+   * invoked BEFORE each pull/mount/unmount with N-of-M context so the activity
+   * log shows a long apply is actively progressing, not only its post-fact
+   * summary. Wire to the activity log; activity-log-only by design (NOT
+   * `notify`), so it never spams toasts. Default no-op; must not throw —
+   * failures are swallowed at the call site (mirrors {@link onPhase}).
+   */
+  onProgress?: (event: ApplyProgressEvent) => void;
 
   // --- Apply dependencies (RFC 22b50a17 Phase 3) ---
   /** AssetSpaceManager — provides pullAssetSpace + lookupAssetSpaceInfo. */
@@ -391,6 +426,7 @@ export class ProfileApplyManager {
   private readonly now: () => Date;
   private readonly notify: (message: string) => void;
   private readonly onPhase: (entry: SwitchJournalEntry) => void;
+  private readonly onProgress: (event: ApplyProgressEvent) => void;
 
   // Apply dependencies (may be undefined when only reindex wired).
   private readonly assetSpaceManager?: AssetSpaceManager;
@@ -425,6 +461,7 @@ export class ProfileApplyManager {
     this.now = options.now ?? (() => new Date());
     this.notify = options.notify ?? (() => undefined);
     this.onPhase = options.onPhase ?? (() => undefined);
+    this.onProgress = options.onProgress ?? (() => undefined);
 
     this.assetSpaceManager = options.assetSpaceManager;
     this.cacheLayer = options.cacheLayer;
@@ -1082,7 +1119,16 @@ export class ProfileApplyManager {
         targetUid: targetProfileUid,
         ts: this.now().toISOString(),
       });
-      for (const target of toMaterialize) {
+      for (let i = 0; i < toMaterialize.length; i++) {
+        const target = toMaterialize[i];
+        // Live progress BEFORE the pull (desktop parity with the REST path).
+        this.emitProgress({
+          op: "pull",
+          as: target.asUid,
+          label: target.label,
+          index: i + 1,
+          total: toMaterialize.length,
+        });
         try {
           // R28 — SHA-aware cache lookup. We don't know upstream SHA up-front,
           // so we pull. (R28 future optimization: HEAD probe before pull.)
@@ -1125,7 +1171,15 @@ export class ProfileApplyManager {
       });
 
       // F2 journal-write-BEFORE-destroy: cache first, journal, then destroy.
-      for (const target of toDestroy) {
+      for (let i = 0; i < toDestroy.length; i++) {
+        const target = toDestroy[i];
+        this.emitProgress({
+          op: "unmount",
+          as: target.asUid,
+          label: target.label,
+          index: i + 1,
+          total: toDestroy.length,
+        });
         const vaultAbsPath = deps.vaultRootPath + "/" + target.submodulePath;
         // F6 — cache verifies archive before returning; if cache fails,
         // throws CacheWriteError and destroy never starts.
@@ -1167,7 +1221,17 @@ export class ProfileApplyManager {
         await deps.gitOps.readGitmodulesPaths(),
       );
 
-      for (const target of toMaterialize) {
+      for (let i = 0; i < toMaterialize.length; i++) {
+        const target = toMaterialize[i];
+        // Live progress (N-of-M) BEFORE materializing — desktop parity with the
+        // REST path; the `phase2-materializing` journal entry below has no count.
+        this.emitProgress({
+          op: "mount",
+          as: target.asUid,
+          label: target.label,
+          index: i + 1,
+          total: toMaterialize.length,
+        });
         await this.appendJournal({
           phase: "phase2-materializing",
           targetUid: targetProfileUid,
@@ -1561,7 +1625,17 @@ export class ProfileApplyManager {
       // ordering whose mount-failure window left the to-destroy set already gone
       // with no rollback (REST has no SwitchCacheLayer).
       // Mount new AssetSpaces (REST tarball → vault folder + .gitmodules entry).
-      for (const target of toMaterialize) {
+      for (let i = 0; i < toMaterialize.length; i++) {
+        const target = toMaterialize[i];
+        // Live progress BEFORE the mount so a long apply shows "Mounting X
+        // (2 of 5)" as it runs — the journal entry below only fires AFTER.
+        this.emitProgress({
+          op: "mount",
+          as: target.asUid,
+          label: target.label,
+          index: i + 1,
+          total: toMaterialize.length,
+        });
         try {
           await restMount.mount(target.gitUrl, target.submodulePath, target.ref);
         } catch (mountErr) {
@@ -1592,7 +1666,15 @@ export class ProfileApplyManager {
       // the right actionable message.
       mountsComplete = true;
       // Unmount removed AssetSpaces (rm folder + strip .gitmodules stanza).
-      for (const target of toDestroy) {
+      for (let i = 0; i < toDestroy.length; i++) {
+        const target = toDestroy[i];
+        this.emitProgress({
+          op: "unmount",
+          as: target.asUid,
+          label: target.label,
+          index: i + 1,
+          total: toDestroy.length,
+        });
         await restMount.unmount(target.submodulePath);
         await this.appendJournal({
           phase: "phase2-destroyed",
@@ -2564,6 +2646,19 @@ export class ProfileApplyManager {
 
     if (typeof profile.extends === "string" && profile.extends.length > 0) {
       await this.walkProfileChain(profile.extends, visited, result, depth + 1);
+    }
+  }
+
+  /**
+   * Emit a live progress event (activity-log materialize progress). Isolated:
+   * a bad observer must never break the apply — mirrors the `onPhase` guard in
+   * {@link appendJournal}.
+   */
+  private emitProgress(event: ApplyProgressEvent): void {
+    try {
+      this.onProgress(event);
+    } catch {
+      // swallow — progress observability is best-effort, never blocks the apply.
     }
   }
 
