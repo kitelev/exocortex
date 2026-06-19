@@ -2470,6 +2470,47 @@
   border-radius: 3px;
 }
 
+/* Profile picker suggestion rows (RFC 0002 §3.4 — descriptions, recommended
+   badge, human label). Rendered by ProfileFuzzyModal.renderSuggestion. */
+.exocortex-profile-suggestion__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.exocortex-profile-suggestion__active {
+  color: var(--text-success);
+  font-size: 0.85em;
+}
+
+.exocortex-profile-suggestion__badge {
+  font-size: 0.7em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-on-accent);
+  background-color: var(--interactive-accent);
+  padding: 1px 7px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.exocortex-profile-suggestion__desc {
+  font-size: 0.8em;
+  color: var(--text-muted);
+  margin-top: 2px;
+  /* Single-line truncate — ellipsis needs nowrap to take effect. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.exocortex-profile-suggestion--show-all .exocortex-profile-suggestion__title {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
 /* Required indicator */
 .required-indicator {
   color: var(--text-error);

@@ -1,6 +1,9 @@
-import { App, FuzzySuggestModal } from "obsidian";
+import { App, FuzzySuggestModal, type FuzzyMatch } from "obsidian";
 
 import type { ProfileChoice } from "./ProfileCommands";
+
+/** Badge text for `exo__Profile_recommended` profiles (RFC 0002 §3.4 P7). */
+export const RECOMMENDED_BADGE_TEXT = "Recommended for new users";
 
 /**
  * ProfileFuzzyModal — thin Obsidian `FuzzySuggestModal` wrapper used by
@@ -89,8 +92,74 @@ export class ProfileFuzzyModal extends FuzzySuggestModal<ProfileChoice> {
     return this.options;
   }
 
+  /**
+   * Fuzzy-searchable text for an item. Includes the description and the
+   * «recommended» marker so a user can type either to find a profile (the
+   * description is searchable, not just decorative). The «show all» sentinel
+   * returns its label verbatim. Order — label first — so the existing
+   * label-only assertions and the e2e `allTextContents` label check still hold.
+   */
   getItemText(item: ProfileChoice): string {
-    return item.isActive ? `${item.label} ✓ (active)` : item.label;
+    if (item.kind === "show-all") return item.label;
+    let text = item.label;
+    if (item.isRecommended) text += " (recommended)";
+    if (item.description !== undefined && item.description.length > 0) {
+      text += ` — ${item.description}`;
+    }
+    if (item.isActive) text += " ✓ (active)";
+    return text;
+  }
+
+  /**
+   * Render a structured, accessible suggestion row: a title line (label +
+   * active marker + «recommended» badge) and, when present, a muted
+   * description line (RFC 0002 §3.4 P7/P10 — human label + description, never
+   * the raw UID). The «show all profiles» sentinel renders as a single muted
+   * line. Overriding `renderSuggestion` replaces Obsidian's default
+   * fuzzy-highlight rendering, which is acceptable for this small, curated
+   * list; `getItemText` still drives the fuzzy match.
+   */
+  override renderSuggestion(match: FuzzyMatch<ProfileChoice>, el: HTMLElement): void {
+    const item = match.item;
+    el.addClass("exocortex-profile-suggestion");
+
+    if (item.kind === "show-all") {
+      el.addClass("exocortex-profile-suggestion--show-all");
+      el.createDiv({
+        cls: "exocortex-profile-suggestion__title",
+        text: item.label,
+      });
+      return;
+    }
+
+    const titleEl = el.createDiv({ cls: "exocortex-profile-suggestion__title" });
+    // Human label, never the UID (P10).
+    titleEl.createSpan({
+      cls: "exocortex-profile-suggestion__label",
+      text: item.label,
+    });
+    if (item.isActive) {
+      titleEl.createSpan({
+        cls: "exocortex-profile-suggestion__active",
+        text: " ✓ (active)",
+      });
+    }
+    if (item.isRecommended) {
+      titleEl.createSpan({
+        cls: "exocortex-profile-suggestion__badge",
+        text: RECOMMENDED_BADGE_TEXT,
+        // a11y — the visual badge already reads as text; aria-label keeps the
+        // semantic explicit for assistive tech even if styling hides glyphs.
+        attr: { "aria-label": RECOMMENDED_BADGE_TEXT },
+      });
+    }
+
+    if (item.description !== undefined && item.description.length > 0) {
+      el.createDiv({
+        cls: "exocortex-profile-suggestion__desc",
+        text: item.description,
+      });
+    }
   }
 
   onChooseItem(item: ProfileChoice): void {
