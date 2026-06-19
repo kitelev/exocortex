@@ -137,6 +137,7 @@ import {
   type UnmountableAssetSpace,
 } from "./infrastructure/adapters/UnmountAssetSpaceCommand";
 import { BootstrapVaultModal } from "./presentation/modals/BootstrapVaultModal";
+import { BootstrapResultModal } from "./presentation/modals/BootstrapResultModal";
 import { AddAssetSpaceModal } from "./presentation/modals/AddAssetSpaceModal";
 import { SimpleConfirmModal } from "./presentation/modals/SimpleConfirmModal";
 import { FirstRunOnboardingModal } from "./presentation/modals/FirstRunOnboardingModal";
@@ -3560,6 +3561,17 @@ export default class ExocortexPlugin extends Plugin {
       // #3540 follow-up — `notifier.info` now fans every toast into the
       // activity log itself (category "notice"), so no manual record() here.
       notify: (message) => this.notifier.info(message),
+      // Durable, in-context result panel (RFC 0002 §3.3, resolves P5) — opens
+      // ON TOP of the (transient) toast + (always-on) activity-log entry, so the
+      // user can read "what happened + what next" after the toast fades. The
+      // next-step nudge routes to the same Add-AssetSpace flow the onboarding
+      // panel's step 2 uses, pre-filled with the public starter registry
+      // (`bootstrapCommands` is in scope by the time this closure runs).
+      showResult: (result) =>
+        new BootstrapResultModal(this.app, result, {
+          onAddStarterContent: () =>
+            void bootstrapCommands.invokeAddAssetSpace(STARTER_REGISTRY_URL),
+        }).open(),
       onMaterialized: () => this.refreshAndInjectAssetSpaceMaterialization(),
     });
 

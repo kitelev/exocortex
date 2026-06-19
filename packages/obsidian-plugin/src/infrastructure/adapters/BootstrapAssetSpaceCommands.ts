@@ -121,6 +121,21 @@ export interface MaterializeResult {
   sha: string;
 }
 
+/**
+ * Terminal bootstrap outcome reported to the durable result panel (RFC 0002
+ * §3.3, resolves P5). Emitted via {@link BootstrapAssetSpaceCommandsDeps.showResult}
+ * IN ADDITION TO the existing transient toast + activity-log entry — this adds a
+ * persistent, in-context "what happened + what to do next" surface, it does not
+ * replace the (already firing) feedback.
+ *
+ * Only the three outcomes with a meaningful "next step" are reported; hard
+ * failures / cancels are NOT (the toast covers them; error-recovery is P15).
+ */
+export type BootstrapResultInfo =
+  | { kind: "bootstrapped"; folderName: string; sha: string }
+  | { kind: "fetched"; fetched: number; total: number }
+  | { kind: "already-bootstrapped" };
+
 export interface BootstrapAssetSpaceCommandsDeps {
   /**
    * Lazily resolve the REST tarball puller. Invoked once per materialise (i.e.
@@ -184,6 +199,16 @@ export interface BootstrapAssetSpaceCommandsDeps {
   /** User-facing Notice. */
   notify: (message: string) => void;
   /**
+   * Optional durable, in-context result panel (RFC 0002 §3.3, resolves P5).
+   * Called on the three terminal bootstrap outcomes that have a meaningful
+   * "what next" ({@link BootstrapResultInfo}) IN ADDITION TO `notify` — the
+   * toast still fires; this adds a persistent surface the user can read after it
+   * fades. Optional + best-effort: the plugin wires it to open a
+   * `BootstrapResultModal`; when omitted (or it throws) the command still
+   * completes normally.
+   */
+  showResult?: (result: BootstrapResultInfo) => void;
+  /**
    * Optional hook fired after a successful materialisation so the plugin can
    * re-index the freshly added assets. Failures are swallowed (best-effort).
    */
@@ -240,6 +265,10 @@ export class BootstrapAssetSpaceCommands {
       this.d.notify(
         "Vault already has AssetSpaces materialised — use «Exocortex: Add AssetSpace by URL» to add more.",
       );
+      // Durable result (RFC 0002 §3.3 / P5): the already-bootstrapped guard
+      // surfaces a persistent "what happened + what next" panel, not just a
+      // transient toast.
+      this.emitResult({ kind: "already-bootstrapped" });
       return;
     }
 
@@ -286,6 +315,13 @@ export class BootstrapAssetSpaceCommands {
         `Bootstrap complete — ${exo.folderName}@${exo.sha}. ` +
           "Reload Obsidian if the new assets do not appear. Add exocmd (UI commands) or any further AssetSpaces later via «Add assetspace by URL», or by applying a profile — dependencies are not auto-resolved.",
       );
+      // Durable result + next-step nudge (RFC 0002 §3.3 / P5) — survives the
+      // transient toast. Only on success (hard failure below keeps the toast).
+      this.emitResult({
+        kind: "bootstrapped",
+        folderName: exo.folderName,
+        sha: exo.sha,
+      });
     } catch (e) {
       this.d.notify(`Bootstrap failed: ${this.msg(e)}`);
     }
@@ -393,7 +429,13 @@ export class BootstrapAssetSpaceCommands {
     this.d.notify(
       `Fetched ${fetched}/${entries.length} AssetSpace(s) from recorded URLs.`,
     );
-    if (fetched > 0) await this.runOnMaterialized();
+    if (fetched > 0) {
+      // Durable result for the EC2 restore path (RFC 0002 §3.3 / P5) — fire only
+      // when something was actually restored (an all-failed fetch is an error
+      // surfaced per-entry, not a "what next" success).
+      this.emitResult({ kind: "fetched", fetched, total: entries.length });
+      await this.runOnMaterialized();
+    }
   }
 
   /**
@@ -516,6 +558,21 @@ export class BootstrapAssetSpaceCommands {
       await this.d.onMaterialized();
     } catch {
       // Best-effort re-index; failure must not surface as a bootstrap error.
+    }
+  }
+
+  /**
+   * Surface a durable result panel (RFC 0002 §3.3 / P5). Best-effort — when no
+   * `showResult` is wired (CLI / tests that don't need it) or it throws, the
+   * command still completes; the toast already carried the feedback.
+   */
+  private emitResult(result: BootstrapResultInfo): void {
+    if (this.d.showResult === undefined) return;
+    try {
+      this.d.showResult(result);
+    } catch {
+      // The durable panel is additive; a render failure must not surface as a
+      // bootstrap error (the toast + activity log already recorded the outcome).
     }
   }
 

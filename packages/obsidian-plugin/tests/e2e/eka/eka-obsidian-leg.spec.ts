@@ -485,6 +485,16 @@ test.describe("EKA Obsidian leg — bootstrap → add → apply-profile → crea
     const gm1 = readGitmodules(vaultPath);
     expect(gm1).toContain("exoas-exo");
 
+    // Bootstrap success now opens a durable result panel (RFC 0002 §3.3 / P5).
+    // Dismiss it before Step 2 so its overlay doesn't intercept the next
+    // command's modal (Esc, mirroring the profile-picker dismissal below).
+    await window
+      .locator(".bootstrap-result")
+      .first()
+      .waitFor({ state: "visible", timeout: 15000 })
+      .catch(() => undefined);
+    await window.keyboard.press("Escape");
+
     // ---- Step 2: Add assetspace — exocmd, registry, then profiles ----
     // exocmd is no longer a bootstrap floor field; the user adds it explicitly
     // here (the «либо явно командой add-assetspace» path of the 2026-06-20

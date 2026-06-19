@@ -15,6 +15,8 @@ jest.mock("obsidian", () => {
     text?: string;
     type?: string;
     placeholder?: string;
+    href?: string;
+    attr?: Record<string, string>;
   }
   function augment(el: HTMLElement): void {
     (el as unknown as { createEl: (tag: string, o?: CreateOpts) => HTMLElement }).createEl =
@@ -24,13 +26,27 @@ jest.mock("obsidian", () => {
         if (o?.text) child.textContent = o.text;
         if (o?.type) child.setAttribute("type", o.type);
         if (o?.placeholder) child.setAttribute("placeholder", o.placeholder);
+        // Mirror Obsidian's createEl `href` + `attr` support so links and
+        // aria-labels are queryable (RFC 0002 §3.3 floor-link + a11y).
+        if (o?.href) child.setAttribute("href", o.href);
+        if (o?.attr) {
+          for (const [k, v] of Object.entries(o.attr)) {
+            child.setAttribute(k, v);
+          }
+        }
         this.appendChild(child);
         augment(child);
         return child;
       }.bind(el);
-    // Obsidian augments HTMLElement with `.empty()`; mirror it for onClose.
+    // Obsidian augments HTMLElement with `.empty()` and `.addClass()`; mirror
+    // them for onOpen/onClose.
     (el as unknown as { empty: () => void }).empty = function (): void {
       while (this.firstChild) this.removeChild(this.firstChild);
+    }.bind(el);
+    (el as unknown as { addClass: (c: string) => void }).addClass = function (
+      c: string,
+    ): void {
+      this.classList.add(c);
     }.bind(el);
   }
   class MockModal {
@@ -61,7 +77,13 @@ import type { App } from "obsidian";
 import {
   BootstrapVaultModal,
   isLikelyGitHubUrl,
+  PUBLIC_EXO_FLOOR_URL,
 } from "../../../../src/presentation/modals/BootstrapVaultModal";
+import {
+  BootstrapResultModal,
+  resultCopy,
+} from "../../../../src/presentation/modals/BootstrapResultModal";
+import type { BootstrapResultInfo } from "../../../../src/infrastructure/adapters/BootstrapAssetSpaceCommands";
 import { AddAssetSpaceModal } from "../../../../src/presentation/modals/AddAssetSpaceModal";
 import { SimpleConfirmModal } from "../../../../src/presentation/modals/SimpleConfirmModal";
 
@@ -121,6 +143,51 @@ describe("BootstrapVaultModal", () => {
     );
   });
 
+  // RFC 0002 §3.3 / P6 — de-jargon the floor-field copy. The old jargon
+  // ("exo ontology URL", "SDK/engine floor") must be gone, replaced with plain
+  // language. Revert-verify: restoring the "exo ontology URL" label / "SDK"
+  // intro makes these assertions FAIL.
+  it("de-jargon — plain-language label + intro, no «SDK» / «ontology URL» jargon", () => {
+    new BootstrapVaultModal(fakeApp, () => undefined).open();
+    const text = document.body.textContent ?? "";
+    // Plain-language field label replaces the jargon "exo ontology URL".
+    expect(text).toMatch(/Engine repository URL \(required\)/);
+    expect(text).not.toMatch(/ontology URL/i);
+    expect(text).not.toMatch(/SDK/);
+  });
+
+  // RFC 0002 §3.3 — inline explainer + a link to the floor repo guide the user
+  // on what to enter and where to get a floor, WITHOUT pre-filling (EC7).
+  it("inline explainer + floor-repo link present, field still empty (EC7)", () => {
+    new BootstrapVaultModal(fakeApp, () => undefined).open();
+    // Explainer text guides the floor field in plain language.
+    expect(document.body.textContent).toMatch(/engine floor/i);
+    expect(document.body.textContent).toMatch(/public floor repo/i);
+    // A real, focusable link to the floor repo (not a pre-fill).
+    const link = document.querySelector(
+      "a.bootstrap-vault-floor-link",
+    ) as HTMLAnchorElement | null;
+    expect(link).not.toBeNull();
+    expect(link!.getAttribute("href")).toBe(PUBLIC_EXO_FLOOR_URL);
+    // Opens GitHub safely (no reverse-tabnabbing) + screen-reader labelled (P16).
+    expect(link!.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(link!.getAttribute("target")).toBe("_blank");
+    expect(link!.getAttribute("aria-label")).toMatch(/opens GitHub/i);
+    // EC7 — the link/placeholder are pointers; the field itself is NOT pre-filled.
+    const input = document.querySelector("input") as HTMLInputElement;
+    expect(input.value).toBe("");
+  });
+
+  // P16 a11y — the URL field carries a screen-reader label matching its visible
+  // <label>, so it is named out of visual context.
+  it("a11y — the URL input has an aria-label", () => {
+    new BootstrapVaultModal(fakeApp, () => undefined).open();
+    const input = document.querySelector("input") as HTMLInputElement;
+    expect(input.getAttribute("aria-label")).toBe(
+      "Engine repository URL (required)",
+    );
+  });
+
   it("empty field → Bootstrap shows error, does not settle", () => {
     let result: unknown = "sentinel";
     new BootstrapVaultModal(fakeApp, (r) => {
@@ -160,6 +227,120 @@ describe("BootstrapVaultModal", () => {
     }).open();
     findButton("Cancel")!.click();
     expect(result).toBeNull();
+  });
+});
+
+// RFC 0002 §3.3 / P5 — the durable, in-context bootstrap result panel. Adds a
+// persistent surface ON TOP of the (already-firing) toast + activity log, with a
+// next-step nudge. Revert-verify: removing the panel's next-step button (or its
+// `onAddStarterContent` wiring) makes the next-step assertions FAIL.
+describe("BootstrapResultModal", () => {
+  const BOOTSTRAPPED: BootstrapResultInfo = {
+    kind: "bootstrapped",
+    folderName: "assetspaces/kitelev/exoas-exo",
+    sha: "abc1234",
+  };
+
+  it("bootstrapped — durable summary states what landed + a next-step nudge", () => {
+    new BootstrapResultModal(fakeApp, BOOTSTRAPPED, {
+      onAddStarterContent: () => undefined,
+    }).open();
+    const text = document.body.textContent ?? "";
+    // Durable "what happened" — folder + sha survive the toast fade.
+    expect(text).toMatch(/assetspaces\/kitelev\/exoas-exo/);
+    expect(text).toMatch(/abc1234/);
+    // "What next" nudge points at the starter content.
+    expect(text).toMatch(/Next:/);
+    expect(text).toMatch(/starter content/i);
+  });
+
+  it("next-step button fires onAddStarterContent and closes the panel", () => {
+    let nextCalls = 0;
+    new BootstrapResultModal(fakeApp, BOOTSTRAPPED, {
+      onAddStarterContent: () => {
+        nextCalls++;
+      },
+    }).open();
+    findButton("Add the starter content")!.click();
+    expect(nextCalls).toBe(1);
+    // Panel closed (handed off to the Add-AssetSpace flow) — content torn down.
+    expect(document.querySelector(".bootstrap-result-title")).toBeNull();
+  });
+
+  it("Done button closes without firing the next step", () => {
+    let nextCalls = 0;
+    new BootstrapResultModal(fakeApp, BOOTSTRAPPED, {
+      onAddStarterContent: () => {
+        nextCalls++;
+      },
+    }).open();
+    findButton("Done")!.click();
+    expect(nextCalls).toBe(0);
+    expect(document.querySelector(".bootstrap-result-title")).toBeNull();
+  });
+
+  it("already-bootstrapped — durable «already set up» result + next-step nudge", () => {
+    new BootstrapResultModal(
+      fakeApp,
+      { kind: "already-bootstrapped" },
+      { onAddStarterContent: () => undefined },
+    ).open();
+    const text = document.body.textContent ?? "";
+    expect(text).toMatch(/already/i);
+    expect(text).toMatch(/Next:/);
+    // The forward action is still offered.
+    expect(findButton("Add the starter content")).toBeDefined();
+  });
+
+  it("fetched — durable restore summary with the count + next-step nudge", () => {
+    new BootstrapResultModal(
+      fakeApp,
+      { kind: "fetched", fetched: 2, total: 3 },
+      { onAddStarterContent: () => undefined },
+    ).open();
+    const text = document.body.textContent ?? "";
+    expect(text).toMatch(/2 of 3/);
+    expect(text).toMatch(/Next:/);
+  });
+
+  it("a11y — both buttons carry explicit aria-labels (P16)", () => {
+    new BootstrapResultModal(fakeApp, BOOTSTRAPPED, {
+      onAddStarterContent: () => undefined,
+    }).open();
+    expect(
+      findButton("Add the starter content")!.getAttribute("aria-label"),
+    ).toMatch(/Add the starter content/i);
+    expect(findButton("Done")!.getAttribute("aria-label")).toMatch(
+      /Close the setup result/i,
+    );
+  });
+});
+
+// resultCopy is the pure per-outcome wording — unit-testable without DOM.
+describe("resultCopy", () => {
+  it("every BootstrapResultInfo kind yields a title, summary and next-step hint", () => {
+    const kinds: BootstrapResultInfo[] = [
+      { kind: "bootstrapped", folderName: "assetspaces/x", sha: "deadbee" },
+      { kind: "fetched", fetched: 1, total: 4 },
+      { kind: "already-bootstrapped" },
+    ];
+    for (const k of kinds) {
+      const copy = resultCopy(k);
+      expect(copy.title.length).toBeGreaterThan(0);
+      expect(copy.summary.length).toBeGreaterThan(0);
+      // Every outcome dead-ends nowhere — there is always a "Next:" hint.
+      expect(copy.nextHint).toMatch(/Next:/);
+    }
+  });
+
+  it("bootstrapped copy embeds the folder + sha", () => {
+    const copy = resultCopy({
+      kind: "bootstrapped",
+      folderName: "assetspaces/kitelev/exoas-exo",
+      sha: "abc1234",
+    });
+    expect(copy.summary).toMatch(/assetspaces\/kitelev\/exoas-exo/);
+    expect(copy.summary).toMatch(/abc1234/);
   });
 });
 
