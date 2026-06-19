@@ -152,7 +152,8 @@ export class SyncCommands {
       return;
     }
     this.running = true;
-    this.runningLabel = "Sync parity report";
+    // RFC 0002 §3.2 (P3) — coherent with the «Check sync status» command name.
+    this.runningLabel = "Check sync status";
     try {
       if (this.deps.isSwitchInProgress()) {
         this.deps.notify(
@@ -175,9 +176,7 @@ export class SyncCommands {
       this.deps.notify(
         `ExoSync parity check started (${collection.specs.length} repo(s))…`,
       );
-      this.deps.notify(
-        await this.deps.parity.runStandalone(collection.specs),
-      );
+      this.deps.notify(await this.deps.parity.runStandalone(collection.specs));
     } catch (err) {
       const msg = GitHubRestClient.redactTokens(
         err instanceof Error ? err.message : String(err),
@@ -428,7 +427,9 @@ export class SyncCommands {
     const counts =
       `pushed ${pushed}, pulled ${pulled}, merged ${merged}, quarantined ${quarantined}` +
       (deleted > 0 ? `, deleted ${deleted}` : "") +
-      (deferred > 0 ? `, deferred ${deferred} (a full Sync resolves them)` : "");
+      (deferred > 0
+        ? `, deferred ${deferred} (a full Sync resolves them)`
+        : "");
     if (problems.length === 0) {
       this.deps.notify(
         `${label} done: ${synced}/${results.length} repo(s) — ${counts}`,

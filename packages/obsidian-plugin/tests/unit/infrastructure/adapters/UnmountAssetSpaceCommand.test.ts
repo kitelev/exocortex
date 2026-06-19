@@ -130,7 +130,9 @@ describe("UnmountAssetSpaceCommand", () => {
       EXO.submodulePath,
       PMBOK.submodulePath,
     ]);
-    expect(h.state.pickedTitle).toBe("Unmount assetspace");
+    // RFC 0002 §3.2 — picker title de-jargoned, coherent with the «Remove
+    // knowledge pack (advanced)» palette command name.
+    expect(h.state.pickedTitle).toBe("Remove knowledge pack");
   });
 
   it("[floor-refuse] floor pick → REFUSED: no confirm, no unmount, no re-index", async () => {

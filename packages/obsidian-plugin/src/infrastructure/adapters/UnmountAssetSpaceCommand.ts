@@ -1,7 +1,9 @@
 /**
  * UnmountAssetSpaceCommand — command-palette logic handler for the standalone
- * «Exocortex: Unmount assetspace» command (the inverse of «Add assetspace by
- * URL», {@link BootstrapAssetSpaceCommands.invokeAddAssetSpace}).
+ * «Exocortex: Remove knowledge pack (advanced)» command (id `unmount-assetspace`,
+ * stable; display name de-jargoned + destructive-flagged per RFC 0002 §3.2). It
+ * is the inverse of «Add a knowledge pack» (id `add-assetspace`,
+ * {@link BootstrapAssetSpaceCommands.invokeAddAssetSpace}).
  *
  * ## Why this command exists (#e6b8827c)
  *
@@ -31,6 +33,7 @@
  */
 
 import { isTsFloorAssetSpace, isTsFloorMountPath } from "exocortex";
+import { REMOVE_PACK_PICKER_TITLE } from "@plugin/application/services/commandPaletteContract";
 
 /** A currently-mounted AssetSpace the user may pick to unmount. */
 export interface UnmountableAssetSpace {
@@ -145,13 +148,15 @@ export class UnmountAssetSpaceCommand {
     this.d = deps;
   }
 
-  /** Command — `Exocortex: Unmount assetspace`. */
+  /** Command — `Exocortex: Remove knowledge pack (advanced)` (RFC 0002 §3.2). */
   async invokeUnmount(): Promise<void> {
     let mounted: UnmountableAssetSpace[];
     try {
       mounted = await this.d.listMounted();
     } catch (e) {
-      this.d.notify(`Unmount: could not list mounted AssetSpaces — ${this.msg(e)}`);
+      this.d.notify(
+        `Unmount: could not list mounted AssetSpaces — ${this.msg(e)}`,
+      );
       return;
     }
 
@@ -160,7 +165,7 @@ export class UnmountAssetSpaceCommand {
       return;
     }
 
-    const chosen = await this.d.fuzzyPick(mounted, "Unmount assetspace");
+    const chosen = await this.d.fuzzyPick(mounted, REMOVE_PACK_PICKER_TITLE);
     if (chosen === null) return; // user cancelled
 
     // Floor-policy A — refuse, не rescue. Selecting a floor AssetSpace is a
