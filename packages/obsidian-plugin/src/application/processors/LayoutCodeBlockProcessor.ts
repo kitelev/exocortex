@@ -367,12 +367,10 @@ export class LayoutCodeBlockProcessor {
     if (isTableLayout(result.layout)) {
       this.renderTableLayout(result.layout, result.rows, container);
     } else {
-      // For non-table layouts, show a placeholder for now
-      this.showErrorState(
-        container,
-        `Layout type "${result.layout.type}" is not yet supported in code blocks`,
-        ""
-      );
+      // Non-table layouts inside a code block are a documented limitation, not
+      // an error — surface an informational notice instead of the red
+      // "Error loading layout" state (UX audit finding F6).
+      this.showUnsupportedLayoutState(container, result.layout.type);
     }
   }
 
@@ -421,6 +419,35 @@ export class LayoutCodeBlockProcessor {
     loadingDiv.className = "exo-layout-loading";
     loadingDiv.textContent = message;
     container.appendChild(loadingDiv);
+  }
+
+  /**
+   * Show an informational notice for layout types that cannot yet be rendered
+   * inside a code block (e.g. graph / calendar / list layouts). This is a
+   * documented limitation — NOT a failure — so it deliberately avoids the
+   * "Error loading layout" error state, which would tell the user something
+   * went wrong when nothing did (UX audit finding F6).
+   */
+  private showUnsupportedLayoutState(
+    container: HTMLElement,
+    layoutType: string
+  ): void {
+    const noticeDiv = document.createElement("div");
+    noticeDiv.className = "exo-layout-notice";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "exo-layout-notice-title";
+    titleEl.textContent = "Layout not available in code blocks";
+    noticeDiv.appendChild(titleEl);
+
+    const messageEl = document.createElement("div");
+    messageEl.className = "exo-layout-notice-message";
+    messageEl.textContent =
+      `Code blocks currently support table layouts only — the "${layoutType}" ` +
+      `layout isn't available here yet.`;
+    noticeDiv.appendChild(messageEl);
+
+    container.appendChild(noticeDiv);
   }
 
   /**
