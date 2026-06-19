@@ -23,13 +23,19 @@
  * both platforms — Desktop↔Mobile Command Parity invariant.
  *
  * Commands provided:
- *   1. `Exocortex: Bootstrap vault` — cold-start an empty vault with the TS-floor
- *      AssetSpaces (exo + exocmd). Handles three vault states:
- *        - empty → prompt for exo + exocmd URLs (EC7: fields empty, kitelev URLs
- *          shown as placeholder examples only) → materialise both.
+ *   1. `Exocortex: Bootstrap vault` — cold-start an empty vault with the exo
+ *      TS-floor AssetSpace. A clean bootstrap is **exo-only** (decision
+ *      2026-06-20): exo is the SDK/engine floor and is all a minimal clean
+ *      start needs. exocmd (and any other AssetSpace) is added later via «Add
+ *      AssetSpace by URL» or transitively via a profile — NOT during bootstrap.
+ *      Handles three vault states:
+ *        - empty → prompt for the exo URL (EC7: field empty, kitelev URL shown
+ *          as a placeholder example only) → materialise exo.
  *        - clone-needs-fetch (EC2) → `.gitmodules` populated but folders empty
  *          (cloned without `--recurse-submodules`) → confirm → re-materialise
- *          each tracked AssetSpace from its preserved URL.
+ *          each tracked AssetSpace from its preserved URL (this re-fetch path
+ *          still restores every tracked space, exocmd included if it was added
+ *          later).
  *        - bootstrapped → no-op notice (use «Add AssetSpace» for more spaces).
  *      Non-git vaults (AC10 / M19): file-only mode — REST pulls without
  *      `.gitmodules`, tracked device-locally.
@@ -157,12 +163,12 @@ export interface BootstrapAssetSpaceCommandsDeps {
    */
   deriveFolderName: (url: string) => string;
   /**
-   * Open the bootstrap modal (two empty URL fields + example placeholders).
-   * Resolves the entered URLs, or null if the user cancelled.
+   * Open the bootstrap modal (one empty URL field + example placeholder).
+   * Resolves the entered exo URL, or null if the user cancelled. Exo-only
+   * (decision 2026-06-20): exocmd is no longer collected here.
    */
   promptBootstrapUrls: () => Promise<{
     exoUrl: string;
-    exocmdUrl: string;
   } | null>;
   /**
    * Open the add-AssetSpace modal (single URL field). Resolves the entered
@@ -186,10 +192,9 @@ export interface BootstrapAssetSpaceCommandsDeps {
   ref?: string;
 }
 
-/** TS-floor folders materialised by a cold bootstrap (fixed, mirrors CLI). */
+/** TS-floor folder materialised by a cold (exo-only) bootstrap. */
 const ASSETSPACES_DIR = "assetspaces";
 const TS_FLOOR_EXO_PATH = `${ASSETSPACES_DIR}/exo`;
-const TS_FLOOR_EXOCMD_PATH = `${ASSETSPACES_DIR}/exocmd`;
 
 export type VaultBootstrapState =
   | "empty"
@@ -243,17 +248,17 @@ export class BootstrapAssetSpaceCommands {
       return;
     }
 
-    // state === "empty" — prompt for the TS-floor URLs.
+    // state === "empty" — prompt for the exo TS-floor URL.
     const urls = await this.d.promptBootstrapUrls();
     if (urls === null) return; // user cancelled
 
-    // Core-only (RFC 5aa2a73a B3 / alt-G #3426): exo is the SDK floor; exocmd is
-    // an OPTIONAL UI-command library. An empty exocmd URL yields a knowledge-only
-    // vault and must be accepted as a first-class configuration.
-    const wantExocmd = urls.exocmdUrl.trim().length > 0;
+    // Exo-only clean bootstrap (decision 2026-06-20): exo is the SDK/engine
+    // floor and is all a minimal clean start needs. exocmd (UI commands) — and
+    // any other AssetSpace — is added later via «Add AssetSpace by URL» or
+    // transitively when a profile is applied (effective set / dependsOn DAG),
+    // NOT during bootstrap.
     try {
       this.d.validateUrl(urls.exoUrl);
-      if (wantExocmd) this.d.validateUrl(urls.exocmdUrl);
     } catch (e) {
       this.d.notify(`Bootstrap: invalid URL — ${this.msg(e)}`);
       return;
@@ -269,50 +274,20 @@ export class BootstrapAssetSpaceCommands {
       );
     }
 
-    // Materialise exo then exocmd. If exocmd fails after exo succeeded, the
-    // vault is half-bootstrapped: a re-run of «Bootstrap vault» would now
-    // classify it as `bootstrapped` and refuse, so the recovery path (use
-    // «Add assetspace by URL» for the missing floor) must be surfaced
-    // explicitly here. Re-index either way so the part that landed is picked up.
     // RFC 5aa2a73a B4: mount the TS-floor at the Maven path
     // `assetspaces/<owner>/<repo>` — the SAME path `apply-profile` derives via
     // `derivePath`. Flat paths (`assetspaces/exo`) caused a later `apply-profile`
     // to re-materialize the same AssetSpace UID at the Maven path → double mount.
     // Fallback to the flat constant only when the URL is un-derivable.
     const exoPath = derivePath(urls.exoUrl) ?? TS_FLOOR_EXO_PATH;
-    const exocmdPath = wantExocmd
-      ? (derivePath(urls.exocmdUrl) ?? TS_FLOOR_EXOCMD_PATH)
-      : TS_FLOOR_EXOCMD_PATH;
-    let exo: MaterializeResult | null = null;
     try {
-      exo = await this.materialize(urls.exoUrl, exoPath, isGit);
-      if (wantExocmd) {
-        const exocmd = await this.materialize(
-          urls.exocmdUrl,
-          exocmdPath,
-          isGit,
-        );
-        this.d.notify(
-          `Bootstrap complete — ${exo.folderName}@${exo.sha} + ${exocmd.folderName}@${exocmd.sha}. ` +
-            "Reload Obsidian if the new assets do not appear. Add any further AssetSpaces manually — dependencies are not auto-resolved.",
-        );
-      } else {
-        this.d.notify(
-          `Bootstrap complete — ${exo.folderName}@${exo.sha} (knowledge-only, no exocmd). ` +
-            "Reload Obsidian if the new assets do not appear. Add exocmd or any further AssetSpaces later via «Add assetspace by URL».",
-        );
-      }
+      const exo = await this.materialize(urls.exoUrl, exoPath, isGit);
+      this.d.notify(
+        `Bootstrap complete — ${exo.folderName}@${exo.sha}. ` +
+          "Reload Obsidian if the new assets do not appear. Add exocmd (UI commands) or any further AssetSpaces later via «Add assetspace by URL», or by applying a profile — dependencies are not auto-resolved.",
+      );
     } catch (e) {
-      if (exo !== null) {
-        this.d.notify(
-          `Bootstrap partially completed — ${exoPath} materialised, but ${exocmdPath} failed: ${this.msg(e)}. ` +
-            "Use «Add assetspace by URL» to add the missing exocmd assetspace.",
-        );
-      } else {
-        this.d.notify(`Bootstrap failed: ${this.msg(e)}`);
-      }
-      await this.runOnMaterialized();
-      return;
+      this.d.notify(`Bootstrap failed: ${this.msg(e)}`);
     }
     await this.runOnMaterialized();
   }

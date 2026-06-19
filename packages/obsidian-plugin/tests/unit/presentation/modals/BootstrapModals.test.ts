@@ -93,7 +93,7 @@ describe("isLikelyGitHubUrl", () => {
 });
 
 describe("BootstrapVaultModal", () => {
-  it("EC7 — URL fields start empty with kitelev example placeholders", () => {
+  it("exo-only — exactly one URL field, starts empty with the kitelev example placeholder", () => {
     let result: unknown;
     new BootstrapVaultModal(fakeApp, (r) => {
       result = r;
@@ -102,15 +102,15 @@ describe("BootstrapVaultModal", () => {
     const inputs = Array.from(
       document.querySelectorAll("input"),
     ) as HTMLInputElement[];
-    expect(inputs).toHaveLength(2);
+    // Exo-only clean bootstrap (2026-06-20): the misleading exocmd-URL field is
+    // gone — a single exo field remains.
+    expect(inputs).toHaveLength(1);
     expect(inputs[0].value).toBe("");
-    expect(inputs[1].value).toBe("");
     expect(inputs[0].getAttribute("placeholder")).toBe(
       "https://github.com/kitelev/exoas-exo",
     );
-    expect(inputs[1].getAttribute("placeholder")).toBe(
-      "https://github.com/kitelev/exoas-exocmd",
-    );
+    // No exocmd placeholder anywhere — the field was removed, not just blanked.
+    expect(document.body.textContent).not.toMatch(/exoas-exocmd/);
     expect(result).toBeUndefined(); // not settled yet
   });
 
@@ -121,14 +121,14 @@ describe("BootstrapVaultModal", () => {
     );
   });
 
-  it("empty fields → Bootstrap shows error, does not settle", () => {
+  it("empty field → Bootstrap shows error, does not settle", () => {
     let result: unknown = "sentinel";
     new BootstrapVaultModal(fakeApp, (r) => {
       result = r;
     }).open();
     findButton("Bootstrap")!.click();
     expect(result).toBe("sentinel"); // unchanged — not resolved
-    expect(document.body.textContent).toMatch(/required/i);
+    expect(document.body.textContent).toMatch(/exo URL is required/i);
   });
 
   it("invalid URL → error, does not settle", () => {
@@ -138,64 +138,19 @@ describe("BootstrapVaultModal", () => {
     }).open();
     const inputs = document.querySelectorAll("input");
     (inputs[0] as HTMLInputElement).value = "not-a-url";
-    (inputs[1] as HTMLInputElement).value =
-      "https://github.com/kitelev/exoas-exocmd";
     findButton("Bootstrap")!.click();
     expect(result).toBe("sentinel");
   });
 
-  it("valid URLs → resolves the entered pair", () => {
-    let result: { exoUrl: string; exocmdUrl: string } | null | undefined;
+  it("valid exo URL → resolves { exoUrl } (exo-only, no exocmd in the result)", () => {
+    let result: { exoUrl: string } | null | undefined;
     new BootstrapVaultModal(fakeApp, (r) => {
       result = r;
     }).open();
     const inputs = document.querySelectorAll("input");
     (inputs[0] as HTMLInputElement).value = "https://github.com/me/exo";
-    (inputs[1] as HTMLInputElement).value = "https://github.com/me/exocmd";
     findButton("Bootstrap")!.click();
-    expect(result).toEqual({
-      exoUrl: "https://github.com/me/exo",
-      exocmdUrl: "https://github.com/me/exocmd",
-    });
-  });
-
-  it("B3 core-only — exo filled, exocmd blank → resolves knowledge-only (empty exocmdUrl)", () => {
-    let result: { exoUrl: string; exocmdUrl: string } | null | undefined;
-    new BootstrapVaultModal(fakeApp, (r) => {
-      result = r;
-    }).open();
-    const inputs = document.querySelectorAll("input");
-    (inputs[0] as HTMLInputElement).value = "https://github.com/me/exo";
-    (inputs[1] as HTMLInputElement).value = ""; // knowledge-only
-    findButton("Bootstrap")!.click();
-    expect(result).toEqual({
-      exoUrl: "https://github.com/me/exo",
-      exocmdUrl: "",
-    });
-  });
-
-  it("B3 core-only — exo blank → still errors (exo required even when exocmd given)", () => {
-    let result: unknown = "sentinel";
-    new BootstrapVaultModal(fakeApp, (r) => {
-      result = r;
-    }).open();
-    const inputs = document.querySelectorAll("input");
-    (inputs[1] as HTMLInputElement).value = "https://github.com/me/exocmd";
-    findButton("Bootstrap")!.click();
-    expect(result).toBe("sentinel");
-    expect(document.body.textContent).toMatch(/exo URL is required/i);
-  });
-
-  it("B3 core-only — exocmd present but malformed → errors", () => {
-    let result: unknown = "sentinel";
-    new BootstrapVaultModal(fakeApp, (r) => {
-      result = r;
-    }).open();
-    const inputs = document.querySelectorAll("input");
-    (inputs[0] as HTMLInputElement).value = "https://github.com/me/exo";
-    (inputs[1] as HTMLInputElement).value = "not-a-url";
-    findButton("Bootstrap")!.click();
-    expect(result).toBe("sentinel");
+    expect(result).toEqual({ exoUrl: "https://github.com/me/exo" });
   });
 
   it("Cancel → resolves null", () => {
