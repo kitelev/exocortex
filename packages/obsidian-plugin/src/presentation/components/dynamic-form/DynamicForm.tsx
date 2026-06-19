@@ -1,4 +1,11 @@
-import React, { useState, useCallback, useMemo, useRef, useId } from "react";
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  useId,
+  useEffect,
+} from "react";
 import type {
   InputSchemaField,
   EnumOption,
@@ -149,6 +156,15 @@ const AssetRefPicker: React.FC<AssetRefPickerProps> = ({
   const [activeIndex, setActiveIndex] = useState(-1);
   const listboxId = useId();
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear any pending blur-close timer on unmount so it can't fire after the
+  // modal closes (harmless no-op in React 19, but tidy).
+  useEffect(
+    () => () => {
+      if (blurTimer.current) clearTimeout(blurTimer.current);
+    },
+    [],
+  );
 
   // No candidates supplied → behave like a plain text input (backward compat
   // with assetRef fields that don't declare a targetClassUid).

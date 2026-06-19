@@ -6265,3 +6265,38 @@
     opacity: 1;
   }
 }
+
+/* T1 "Create Instance" (project bbe40f8c) — fuzzy reference-picker dropdown.
+   The picker input reuses .dynamic-form-input; these rules style the
+   candidate list and the keyboard-active option so sighted keyboard users
+   can see the current selection (a11y already covered by aria-activedescendant). */
+.dynamic-form-assetref {
+  position: relative;
+}
+
+.dynamic-form-assetref-options {
+  position: absolute;
+  z-index: var(--layer-popover, 30);
+  left: 0;
+  right: 0;
+  margin: 2px 0 0 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  box-shadow: var(--shadow-s);
+}
+
+.dynamic-form-assetref-option {
+  padding: var(--size-2-1, 4px) var(--size-2-2, 8px);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.dynamic-form-assetref-option:hover,
+.dynamic-form-assetref-option.is-active {
+  background: var(--background-modifier-hover);
+}
