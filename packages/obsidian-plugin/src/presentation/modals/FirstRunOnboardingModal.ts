@@ -1,17 +1,34 @@
 import { App, Modal } from "obsidian";
+import { renderPatSetupHelper } from "../settings/patSetupHelper";
 
 /**
- * Action callbacks for the three onboarding steps + a one-time-close hook. The
+ * Action callbacks for the four onboarding steps + a one-time-close hook. The
  * panel is a thin, decoupled UI scaffold (RFC 0002 §3.1) — it owns no business
  * logic; each step just fires the injected action, which the plugin wires to the
- * existing Bootstrap / Add-AssetSpace / Apply-profile flows.
+ * existing Save-PAT / Bootstrap / Add-AssetSpace / Apply-profile flows.
  */
 export interface FirstRunOnboardingActions {
-  /** Step 1 — open the Bootstrap dialog (fields stay empty per EC7). */
+  /**
+   * Step 1 (PAT, optional) — persist the entered token device-local
+   * (`data.local.json`, Sync-excluded). Called with the raw field value; the
+   * wiring trims it and an empty value clears the stored token (the "skip"
+   * path). It MUST run before the materialise steps so a private-repo token is
+   * in place when Bootstrap/Add/Apply read it (cd9444bd, RFC 0002 §3.1). Async
+   * so the panel can surface a save failure.
+   */
+  onSavePat: (pat: string) => Promise<void>;
+  /**
+   * Step 1 (PAT, optional) — read a token from the clipboard for the Paste
+   * affordance (mobile onboarding parity, RFC 0002 §3.9 / P14). Returns the
+   * normalised token, or null when the clipboard is empty / unreadable. Omit to
+   * hide the Paste button (e.g. in a context with no clipboard).
+   */
+  onPastePat?: () => Promise<string | null>;
+  /** Step 2 — open the Bootstrap dialog (fields stay empty per EC7). */
   onSetupEngine: () => void;
-  /** Step 2 — open Add-AssetSpace pre-filled with the starter registry URL. */
+  /** Step 3 — open Add-AssetSpace pre-filled with the starter registry URL. */
   onAddStarter: () => void;
-  /** Step 3 — open the profile picker narrowed to the `starter` profile. */
+  /** Step 4 — open the profile picker narrowed to the `starter` profile. */
   onApplyStarterProfile: () => void;
   /**
    * Fired exactly once when the panel closes (any path: button, Esc, click-out).
@@ -35,10 +52,21 @@ interface StepSpec {
  * (RFC 0002 §3.1, resolves P1 first-run-has-zero-orientation + P2
  * sequence-not-discoverable).
  *
- * Renders a 3-step checklist that drives the canonical **starter** path:
- *   1. Set up the engine        → Bootstrap dialog (3.3)
- *   2. Add the starter content  → Add-AssetSpace pre-filled with the registry
- *   3. Apply the starter profile → profile picker on `starter` (3.4)
+ * Renders a 4-step checklist that drives the canonical **starter** path:
+ *   1. Add your GitHub token (OPTIONAL) → saves the PAT device-local FIRST so
+ *      the later steps can clone/pull private `exoas-*` repos (cd9444bd)
+ *   2. Set up the engine        → Bootstrap dialog (3.3)
+ *   3. Add the starter content  → Add-AssetSpace pre-filled with the registry
+ *   4. Apply the starter profile → profile picker on `starter` (3.4)
+ *
+ * ## Why the token step is FIRST (cd9444bd)
+ *
+ * Bootstrap / Add-AssetSpace / Apply-profile can pull **private** `exoas-*`
+ * repos, which need a GitHub PAT to clone/pull. The materialise paths read the
+ * token fresh at command-execution time (Issue #3382), so a token saved in
+ * step 1 is in place by the time steps 2-4 run. The step is **optional**: a
+ * public-only tester skips it (leaves it blank, moves to step 2) and the
+ * materialise steps pull anonymously — the public flow is never blocked.
  *
  * The step sub-dialogs stack ON TOP of this panel (Obsidian modal stacking), so
  * the panel stays open underneath and the user can walk the sequence without
@@ -48,16 +76,18 @@ interface StepSpec {
  *
  * ## Accessibility (P16, §3.11)
  *
- * - Steps are a semantic `<ol>` so assistive tech announces "list, 3 items".
+ * - Steps are a semantic `<ol>` so assistive tech announces "list, 4 items".
  * - Each action is a native `<button>` (keyboard-navigable + Enter/Space
- *   activation for free) with an explicit `aria-label`.
- * - Focus is managed: the first step's action button is focused on open.
+ *   activation for free) with an explicit `aria-label`; the token field is a
+ *   native `<input>` with an `aria-label`.
+ * - Focus is managed: the token input (the first actionable control) is focused
+ *   on open.
  * - Step order uses a text marker ("Step 1 —"), never an icon/emoji alone.
  */
 export class FirstRunOnboardingModal extends Modal {
   private readonly actions: FirstRunOnboardingActions;
   private closed = false;
-  private firstActionButton: HTMLButtonElement | null = null;
+  private firstFocusable: HTMLElement | null = null;
 
   constructor(app: App, actions: FirstRunOnboardingActions) {
     super(app);
@@ -76,14 +106,25 @@ export class FirstRunOnboardingModal extends Modal {
     contentEl.createEl("p", {
       cls: "exocortex-onboarding-intro",
       text:
-        "Let's get this vault set up in three steps. Run them in order — each " +
+        "Let's get this vault set up. Start with your GitHub token if you'll use " +
+        "private content (optional), then run the remaining steps in order — each " +
         "opens a dialog; this panel stays open so you can come back to the next " +
         "step. You can reopen this panel any time from the command palette.",
     });
 
+    const list = contentEl.createEl("ol", {
+      cls: "exocortex-onboarding-steps",
+    });
+    list.setAttribute("aria-label", "Exocortex setup steps");
+
+    // Step 1 — the optional, token-first step (cd9444bd). Rendered specially
+    // (input + paste/save + reusable §3.5 helper) BEFORE the generic action
+    // steps so it is unmistakably first.
+    this.renderPatStep(list);
+
     const steps: StepSpec[] = [
       {
-        marker: "Step 1",
+        marker: "Step 2",
         title: "Set up the engine",
         description:
           "Bootstrap this empty vault with the foundational exo AssetSpace — the " +
@@ -94,7 +135,7 @@ export class FirstRunOnboardingModal extends Modal {
         action: this.actions.onSetupEngine,
       },
       {
-        marker: "Step 2",
+        marker: "Step 3",
         title: "Add the starter content",
         description:
           "Pull the public starter registry — a curated set of AssetSpaces that gives " +
@@ -104,7 +145,7 @@ export class FirstRunOnboardingModal extends Modal {
         action: this.actions.onAddStarter,
       },
       {
-        marker: "Step 3",
+        marker: "Step 4",
         title: "Apply the starter profile",
         description:
           "Materialise the «starter» profile — it mounts the AssetSpaces the starter " +
@@ -114,45 +155,7 @@ export class FirstRunOnboardingModal extends Modal {
       },
     ];
 
-    const list = contentEl.createEl("ol", {
-      cls: "exocortex-onboarding-steps",
-    });
-    list.setAttribute("aria-label", "Exocortex setup steps");
-
-    steps.forEach((step, index) => {
-      const item = list.createEl("li", { cls: "exocortex-onboarding-step" });
-
-      const header = item.createEl("div", {
-        cls: "exocortex-onboarding-step-header",
-      });
-      header.createEl("span", {
-        cls: "exocortex-onboarding-step-marker",
-        text: `${step.marker} — `,
-      });
-      header.createEl("span", {
-        cls: "exocortex-onboarding-step-title",
-        text: step.title,
-      });
-
-      item.createEl("p", {
-        cls: "exocortex-onboarding-step-desc",
-        text: step.description,
-      });
-
-      const button = item.createEl("button", {
-        cls: "mod-cta exocortex-onboarding-step-action",
-        text: step.actionLabel,
-      });
-      // Screen-reader label spells out the step number so the action is
-      // unambiguous out of visual context (P16).
-      button.setAttribute(
-        "aria-label",
-        `${step.marker}: ${step.actionLabel}`,
-      );
-      button.addEventListener("click", () => step.action());
-
-      if (index === 0) this.firstActionButton = button;
-    });
+    steps.forEach((step) => this.renderActionStep(list, step));
 
     const footer = contentEl.createEl("div", {
       cls: "modal-button-container exocortex-onboarding-footer",
@@ -164,14 +167,128 @@ export class FirstRunOnboardingModal extends Modal {
     closeBtn.setAttribute("aria-label", "Close the setup panel");
     closeBtn.addEventListener("click", () => this.close());
 
-    // Managed focus (P16): land keyboard focus on the first actionable control
-    // so a keyboard / screen-reader user starts at step 1, not on the dialog
-    // container. Guarded — jsdom and headless contexts may lack focus support.
+    // Managed focus (P16): land keyboard focus on the first actionable control —
+    // the token input — so a keyboard / screen-reader user starts at step 1, not
+    // on the dialog container. Guarded — jsdom and headless contexts may lack
+    // focus support.
     try {
-      this.firstActionButton?.focus();
+      this.firstFocusable?.focus();
     } catch {
       /* focus is best-effort */
     }
+  }
+
+  /**
+   * Render the optional token-first step (cd9444bd, RFC 0002 §3.1): the §3.5
+   * create-token helper (deep-link + scope list, reused verbatim), a masked
+   * input, a Paste affordance (mobile parity §3.9) and an explicit Save button.
+   * Explicit Save (not keystroke-onChange) mirrors the Settings PAT field so a
+   * partial token is never persisted.
+   */
+  private renderPatStep(list: HTMLElement): void {
+    const item = list.createEl("li", {
+      cls: "exocortex-onboarding-step exocortex-onboarding-step-pat",
+    });
+
+    const header = item.createEl("div", {
+      cls: "exocortex-onboarding-step-header",
+    });
+    header.createEl("span", {
+      cls: "exocortex-onboarding-step-marker",
+      text: "Step 1 — ",
+    });
+    header.createEl("span", {
+      cls: "exocortex-onboarding-step-title",
+      text: "Add your GitHub token (optional)",
+    });
+
+    item.createEl("p", {
+      cls: "exocortex-onboarding-step-desc",
+      text:
+        "Only needed if you'll use private AssetSpaces — the later steps clone/pull " +
+        "your private exoas-* repos and need a token to do so. Add it first and the " +
+        "remaining steps can reach private content. Using only public content? Skip " +
+        "this and go straight to step 2.",
+    });
+
+    // §3.5 helper — identical create-token deep-link + permission list as the
+    // Settings PAT section (single source, no copy drift).
+    renderPatSetupHelper(item);
+
+    const row = item.createEl("div", { cls: "exocortex-onboarding-pat-row" });
+
+    const input = row.createEl("input", {
+      cls: "exocortex-onboarding-pat-input",
+    }) as HTMLInputElement;
+    input.type = "password";
+    // eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder shows the literal PAT format (matches the Settings PAT field)
+    input.placeholder = "github_pat_…";
+    input.setAttribute("aria-label", "GitHub personal access token (optional)");
+    this.firstFocusable = input;
+
+    // Paste affordance (mobile parity §3.9 / P14) — only when a clipboard
+    // reader is wired. Fills the field from the clipboard so a long token need
+    // not be typed on a phone.
+    if (this.actions.onPastePat) {
+      const pasteBtn = row.createEl("button", {
+        cls: "exocortex-onboarding-pat-paste",
+        text: "Paste",
+      });
+      pasteBtn.setAttribute("aria-label", "Paste a GitHub token from the clipboard");
+      pasteBtn.addEventListener("click", () => {
+        void (async () => {
+          try {
+            const pasted = await this.actions.onPastePat?.();
+            if (pasted) input.value = pasted;
+          } catch {
+            /* paste is best-effort; the user can still type the token */
+          }
+        })();
+      });
+    }
+
+    const saveBtn = row.createEl("button", {
+      cls: "mod-cta exocortex-onboarding-pat-save",
+      text: "Save token",
+    });
+    // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Step 1:" a11y prefix (matches the step-numbered aria-labels above) + "GitHub" proper noun
+    saveBtn.setAttribute("aria-label", "Step 1: Save your GitHub token");
+    saveBtn.addEventListener("click", () => {
+      void this.actions.onSavePat(input.value).catch(() => {
+        /* save failure is surfaced by the wiring (notifier); never throw here */
+      });
+    });
+  }
+
+  /** Render a generic single-action step (steps 2-4). */
+  private renderActionStep(list: HTMLElement, step: StepSpec): void {
+    const item = list.createEl("li", { cls: "exocortex-onboarding-step" });
+
+    const header = item.createEl("div", {
+      cls: "exocortex-onboarding-step-header",
+    });
+    header.createEl("span", {
+      cls: "exocortex-onboarding-step-marker",
+      text: `${step.marker} — `,
+    });
+    header.createEl("span", {
+      cls: "exocortex-onboarding-step-title",
+      text: step.title,
+    });
+
+    item.createEl("p", {
+      cls: "exocortex-onboarding-step-desc",
+      text: step.description,
+    });
+
+    const button = item.createEl("button", {
+      cls: "mod-cta exocortex-onboarding-step-action",
+      text: step.actionLabel,
+    });
+    // Screen-reader label spells out the step number so the action is
+    // unambiguous out of visual context (P16).
+    button.setAttribute("aria-label", `${step.marker}: ${step.actionLabel}`);
+    button.addEventListener("click", () => step.action());
   }
 
   override onClose(): void {
