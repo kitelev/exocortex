@@ -18,15 +18,24 @@
 
 import React from "react";
 import type { AssetRelation } from "@plugin/presentation/renderers/layout/types";
+import { humanizePropertyValue } from "@plugin/presentation/components/AssetRelationsTable";
 
 export interface PropertiesBlockViewProps {
   readonly title: string;
   readonly properties: ReadonlyArray<{ readonly key: string; readonly value: unknown }>;
+  /**
+   * RFC 0002 §3.7 (P11) — resolves a wikilink target (UID or name) to its
+   * `exo__Asset_label`, so UID-only enum/class values render a readable label
+   * instead of a raw `[[uuid]]`. Optional: when absent, values fall back to
+   * alias / prefix-stripped target humanization.
+   */
+  readonly resolveLabel?: (target: string) => string | null;
 }
 
 export const PropertiesBlockView: React.FC<PropertiesBlockViewProps> = ({
   title,
   properties,
+  resolveLabel,
 }) => {
   return (
     <div className="exocortex-layout-block exocortex-layout-block-properties">
@@ -49,7 +58,7 @@ export const PropertiesBlockView: React.FC<PropertiesBlockViewProps> = ({
               <tr key={key}>
                 <td className="exocortex-layout-block-property-name">{key}</td>
                 <td className="exocortex-layout-block-property-value">
-                  {formatPropertyValue(value)}
+                  {humanizePropertyValue(value, resolveLabel)}
                 </td>
               </tr>
             ))}

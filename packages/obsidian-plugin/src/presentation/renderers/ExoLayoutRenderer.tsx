@@ -34,6 +34,7 @@ import {
   BacklinksTableBlockView,
   PropertiesBlockView,
 } from "@plugin/presentation/components/LayoutBlocks";
+import { AssetMetadataService } from "@plugin/presentation/renderers/layout/helpers/AssetMetadataService";
 import { WikiLinkHelpers } from "exocortex";
 
 export interface ExoLayoutRendererDeps {
@@ -122,11 +123,19 @@ export class ExoLayoutRenderer {
       .filter(([key]) => !key.startsWith("position"))
       .map(([key, value]) => ({ key, value }));
 
+    // RFC 0002 §3.7 (P11): resolve UID-only enum/class wikilink values to a
+    // readable `exo__Asset_label` so the Properties block reads "Project",
+    // not `[[uuid]]`. Reuses the same resolver the relations table uses.
+    const metadataService = new AssetMetadataService(this.deps.app);
+    const resolveLabel = (target: string): string | null =>
+      metadataService.getAssetLabel(target);
+
     this.deps.reactRenderer.render(
       container,
       React.createElement(PropertiesBlockView, {
         title,
         properties: entries,
+        resolveLabel,
       }),
     );
   }
