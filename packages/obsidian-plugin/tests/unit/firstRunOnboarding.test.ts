@@ -14,11 +14,14 @@ import { describe, it, expect } from "@jest/globals";
 import {
   shouldShowFirstRunPanel,
   registerOnboardingCommands,
+  persistOnboardingPat,
+  PAT_SECRET_KEY,
   SETUP_COMMAND_ID,
   STARTER_REGISTRY_URL,
   STARTER_PROFILE_QUERY,
   FRESH_VAULT_MAX_NOTES,
   type OnboardingCommandRegistrar,
+  type OnboardingSecretsStore,
 } from "../../src/infrastructure/adapters/firstRunOnboarding";
 import type { VaultBootstrapState } from "../../src/infrastructure/adapters/BootstrapAssetSpaceCommands";
 
@@ -89,6 +92,69 @@ describe("starter-path constants", () => {
 
   it("narrows the profile picker to the canonical starter profile", () => {
     expect(STARTER_PROFILE_QUERY).toBe("starter");
+  });
+});
+
+describe("persistOnboardingPat — token-first step save (cd9444bd, RFC 0002 §3.1)", () => {
+  /** Minimal device-local store fake mirroring LocalSecretsStore.setSecret. */
+  function makeStore(): {
+    store: OnboardingSecretsStore;
+    saved: Array<{ key: string; value: string | null }>;
+  } {
+    const saved: Array<{ key: string; value: string | null }> = [];
+    const store: OnboardingSecretsStore = {
+      setSecret: async (key, value) => {
+        saved.push({ key, value });
+      },
+    };
+    return { store, saved };
+  }
+
+  it("uses the canonical 'pat' key the materialise steps read", () => {
+    // Guards against key drift: the bootstrap/add/apply paths read getSecret("pat"),
+    // so the onboarding save MUST write under that exact key or it silently
+    // never reaches them (Issue #3320 §1).
+    expect(PAT_SECRET_KEY).toBe("pat");
+  });
+
+  it("persists a trimmed token under the canonical key (private-repo access)", async () => {
+    const { store, saved } = makeStore();
+    await persistOnboardingPat(store, "  github_pat_abc123  ");
+    expect(saved).toEqual([{ key: "pat", value: "github_pat_abc123" }]);
+  });
+
+  it("CLEARS the token (null) for an empty value — the public-only skip path", async () => {
+    const { store, saved } = makeStore();
+    await persistOnboardingPat(store, "");
+    // null → LocalSecretsStore deletes the entry → materialise steps see no PAT
+    // and pull public repos anonymously (public flow not broken).
+    expect(saved).toEqual([{ key: "pat", value: null }]);
+  });
+
+  it("CLEARS the token for an all-whitespace value (never persists junk)", async () => {
+    const { store, saved } = makeStore();
+    await persistOnboardingPat(store, "   \n  ");
+    expect(saved).toEqual([{ key: "pat", value: null }]);
+  });
+
+  it("a saved token round-trips: a later getSecret('pat') returns it", async () => {
+    // Simulate the real before/after: save in step 1, then a materialise step
+    // reads the same store. Without the save the read is null (private pull
+    // fails); with it the token is present (private pull authenticates).
+    const bag: Record<string, string | null> = {};
+    const store: OnboardingSecretsStore & {
+      getSecret: (k: string) => string | null;
+    } = {
+      setSecret: async (key, value) => {
+        if (value === null) delete bag[key];
+        else bag[key] = value;
+      },
+      getSecret: (k) => bag[k] ?? null,
+    };
+
+    expect(store.getSecret("pat")).toBeNull(); // before
+    await persistOnboardingPat(store, "github_pat_live");
+    expect(store.getSecret("pat")).toBe("github_pat_live"); // after
   });
 });
 
