@@ -117,6 +117,8 @@ import { PluginLockManager } from "./infrastructure/adapters/PluginLockManager";
 import { VaultProfileResolver } from "./infrastructure/adapters/VaultProfileResolver";
 import { PluginRdfIndexerAdapter } from "./infrastructure/adapters/PluginRdfIndexerAdapter";
 import { createProfileApplyRefreshHook } from "./infrastructure/adapters/profileApplyRefreshHook";
+import { LinkLabelRefreshService } from "./application/services/LinkLabelRefreshService";
+import { registerRefreshLinkLabelsCommand } from "./infrastructure/adapters/registerRefreshLinkLabelsCommand";
 import { PluginSettingsStoreAdapter } from "./infrastructure/adapters/PluginSettingsStoreAdapter";
 import { PluginLocalDataStore } from "./infrastructure/adapters/PluginLocalDataStore";
 import { StagingDirTracker } from "./infrastructure/adapters/StagingDirTracker";
@@ -907,6 +909,31 @@ export default class ExocortexPlugin extends Plugin {
       this.commandManager.registerAllCommands(this, () =>
         this.autoRenderLayout(),
       );
+
+      // Веха 1 / MVP (WBS bb1c98af + 844ced36) — «Exocortex: Refresh link
+      // labels». After materialising an AssetSpace, bare `[[uid]]` wikilinks
+      // whose target lived in the previously-unmounted space keep showing the
+      // raw `uid` until an Obsidian restart (open editor views hold a stale
+      // DecorationSet; nothing re-runs `buildDecorations`). This command
+      // re-resolves them in place — ensure the index is fresh
+      // (`sparql.refresh()` → `convertVault()`, so even NEW tabs resolve),
+      // reconfigure all open editor views (`updateOptions()` recreates the
+      // WikilinkLabelViewPlugin instances → fresh decorations), and re-render
+      // dynamic layouts. The same `LinkLabelRefreshService.refresh()` is the
+      // unit the Веха 2 auto-hook will reuse. Registered UNCONDITIONALLY (no
+      // Platform gate): pure in-memory re-resolve, no Node/fs/git
+      // (Desktop↔Mobile Command Parity). Graceful — never throws / shows a
+      // Notice; unresolvable links simply stay `uid`.
+      const linkLabelRefreshService = new LinkLabelRefreshService({
+        ensureIndexFresh: () => this.sparql.refresh(),
+        rebuildEditorViews: () => this.app.workspace.updateOptions(),
+        rerenderLayouts: () => this.autoRenderLayout(),
+        logger: {
+          debug: (message, ...args) => this.logger.debug(message, ...args),
+          warn: (message, ...args) => this.logger.warn(message, ...args),
+        },
+      });
+      registerRefreshLinkLabelsCommand(this, linkLabelRefreshService);
 
       // RFC 0a0791c1 #3322 — register Profile palette commands
       // (Switch / Push current assetspace). Wraps the B.7 handler with
