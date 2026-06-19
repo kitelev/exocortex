@@ -28,26 +28,43 @@ export const STARTER_REGISTRY_URL =
 export const STARTER_PROFILE_QUERY = "starter";
 
 /**
- * First-run detection (RFC 0002 §3.1 [P1, P2]). The panel auto-shows on plugin
- * enable when the vault is **not yet bootstrapped** AND the user has not already
- * dismissed/completed onboarding on this device.
+ * The most markdown notes a vault may hold and still count as a genuinely
+ * *fresh* first-run vault. The canonical fresh-tester flow (RFC 0002 §1)
+ * installs the plugin into a brand-new / empty vault; modern Obsidian seeds at
+ * most a single stock `Welcome.md`, so `<= 1` covers "empty" and "only the
+ * stock welcome note". Anything above that is an established vault, even if it
+ * has no `assetspaces/` yet.
+ */
+export const FRESH_VAULT_MAX_NOTES = 1;
+
+/**
+ * First-run detection (RFC 0002 §3.1 [P1, P2]). The panel **auto-shows** on
+ * plugin enable only for a genuinely fresh, not-yet-bootstrapped vault that the
+ * user has not already dismissed onboarding on (this device).
  *
- * `vaultState` comes from {@link BootstrapAssetSpaceCommands.detectVaultState}
- * (cross-platform — `vault.adapter` based, so it works identically on mobile,
- * satisfying the Desktop↔Mobile Command Parity invariant). Both `empty` and
- * `clone-needs-fetch` are pre-value states that still need the guided path;
- * only `bootstrapped` suppresses the panel.
- *
- * `onboardingCompleted` is the device-local flag persisted by the panel on
- * close (see {@link PluginLocalDataStore.getOnboardingCompleted}) so the panel
- * is genuinely one-time — re-openable only via the `Setup` command.
+ * Three gates, all must pass to auto-show:
+ *   1. `onboardingCompleted` is false — the device-local one-time flag persisted
+ *      by the panel on close ({@link PluginLocalDataStore.getOnboardingCompleted}).
+ *   2. `vaultState !== "bootstrapped"` — from
+ *      {@link BootstrapAssetSpaceCommands.detectVaultState} (cross-platform,
+ *      `vault.adapter`-based → identical on mobile, satisfying Desktop↔Mobile
+ *      Command Parity). Both `empty` and `clone-needs-fetch` are pre-value states
+ *      that still need the guided path.
+ *   3. `markdownFileCount <= FRESH_VAULT_MAX_NOTES` — the vault is genuinely
+ *      fresh. `detectVaultState` reports "empty" for ANY vault lacking
+ *      `assetspaces/` (including an established 100-note vault that simply uses a
+ *      non-bootstrap layout), so this guard prevents a false-positive auto-show
+ *      over a user's existing content. Anyone this skips can still open the panel
+ *      via the always-available `Setup` command (the re-entry point).
  */
 export function shouldShowFirstRunPanel(
   vaultState: VaultBootstrapState,
   onboardingCompleted: boolean,
+  markdownFileCount: number,
 ): boolean {
   if (onboardingCompleted) return false;
-  return vaultState !== "bootstrapped";
+  if (vaultState === "bootstrapped") return false;
+  return markdownFileCount <= FRESH_VAULT_MAX_NOTES;
 }
 
 /** Stable command id for the guided Setup entry point (RFC 0002 §3.2). */

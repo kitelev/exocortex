@@ -17,6 +17,7 @@ import {
   SETUP_COMMAND_ID,
   STARTER_REGISTRY_URL,
   STARTER_PROFILE_QUERY,
+  FRESH_VAULT_MAX_NOTES,
   type OnboardingCommandRegistrar,
 } from "../../src/infrastructure/adapters/firstRunOnboarding";
 import type { VaultBootstrapState } from "../../src/infrastructure/adapters/BootstrapAssetSpaceCommands";
@@ -45,20 +46,36 @@ describe("shouldShowFirstRunPanel — first-run detection (RFC 0002 §3.1)", () 
   const notBootstrapped: VaultBootstrapState[] = ["empty", "clone-needs-fetch"];
 
   it.each(notBootstrapped)(
-    "shows on a not-yet-bootstrapped vault (%s) when onboarding not completed",
+    "shows on a genuinely-fresh not-yet-bootstrapped vault (%s)",
     (state) => {
-      expect(shouldShowFirstRunPanel(state, false)).toBe(true);
+      // 0 notes (brand-new) and 1 note (stock Welcome.md) both count as fresh.
+      expect(shouldShowFirstRunPanel(state, false, 0)).toBe(true);
+      expect(shouldShowFirstRunPanel(state, false, FRESH_VAULT_MAX_NOTES)).toBe(
+        true,
+      );
     },
   );
 
-  it("does NOT show on a bootstrapped vault even when not completed", () => {
-    expect(shouldShowFirstRunPanel("bootstrapped", false)).toBe(false);
+  it("does NOT show on a bootstrapped vault even when fresh + not completed", () => {
+    expect(shouldShowFirstRunPanel("bootstrapped", false, 0)).toBe(false);
   });
 
-  it.each<VaultBootstrapState>(["empty", "clone-needs-fetch", "bootstrapped"])(
-    "never shows once onboarding is completed (state %s)",
+  it.each(notBootstrapped)(
+    "does NOT show on a content-rich not-bootstrapped vault (%s) — false-positive guard",
     (state) => {
-      expect(shouldShowFirstRunPanel(state, true)).toBe(false);
+      // The e2e test-vault scenario: many notes but no assetspaces/ →
+      // detectVaultState reports "empty", yet it is NOT a first-run vault.
+      expect(shouldShowFirstRunPanel(state, false, 162)).toBe(false);
+      expect(
+        shouldShowFirstRunPanel(state, false, FRESH_VAULT_MAX_NOTES + 1),
+      ).toBe(false);
+    },
+  );
+
+  it.each<VaultBootstrapState>(["empty", "clone-needs-fetch", "bootstrapped"])(
+    "never shows once onboarding is completed (state %s, even when fresh)",
+    (state) => {
+      expect(shouldShowFirstRunPanel(state, true, 0)).toBe(false);
     },
   );
 });

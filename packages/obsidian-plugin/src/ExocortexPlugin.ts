@@ -3279,7 +3279,14 @@ export default class ExocortexPlugin extends Plugin {
       if (bootstrapCommands === null) return;
       const completed = await localDataStore.getOnboardingCompleted();
       const state = await bootstrapCommands.detectVaultState();
-      if (shouldShowFirstRunPanel(state, completed)) openPanel();
+      // Genuinely-fresh guard — `detectVaultState` reports "empty" for any vault
+      // without `assetspaces/`, including an established content-rich vault; the
+      // markdown-file count keeps the auto-show to actual first-run vaults (the
+      // Setup command remains the re-entry point for everyone else).
+      const markdownFileCount = this.app.vault.getMarkdownFiles().length;
+      if (shouldShowFirstRunPanel(state, completed, markdownFileCount)) {
+        openPanel();
+      }
     } catch (err) {
       this.logger.warn(
         "[ExocortexPlugin] first-run onboarding check failed: " +
