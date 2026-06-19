@@ -42,6 +42,15 @@ export interface IAssetSpacePusher {
   pushAssetSpace(asUid: string): Promise<string>;
 }
 
+/**
+ * Sentinel UID for the synthetic «Show all profiles…» picker entry. The
+ * default picker view is scoped to locally-relevant profiles (RFC 0002 §3.4
+ * P7b); when some profiles are hidden, this entry is appended so the user can
+ * broaden the list to every profile. Selecting it re-opens the picker
+ * unscoped — it is NEVER passed to `applyProfile`.
+ */
+export const SHOW_ALL_PROFILES_UID = "__exocortex_show_all_profiles__";
+
 export interface ProfileChoice {
   uid: string;
   label: string;
@@ -52,6 +61,37 @@ export interface ProfileChoice {
    * the active selection is unknown.
    */
   isActive?: boolean;
+  /**
+   * One-line, human-readable description of what the profile mounts / who it
+   * is for (RFC 0002 §3.4 P7). Sourced from the `exo__Profile_description`
+   * RDF property in the vault (Homoiconicity invariant — descriptions live in
+   * RDF, never hardcoded in TS). Optional — absent when the asset omits it.
+   */
+  description?: string;
+  /**
+   * `true` when the profile carries `exo__Profile_recommended: true` (RDF) —
+   * the picker decorates it with a «recommended for new users» badge
+   * (RFC 0002 §3.4 P7, the `starter` profile). RDF-driven, NOT a hardcoded
+   * label match, so any profile can be marked recommended without a code
+   * change (Homoiconicity invariant).
+   */
+  isRecommended?: boolean;
+  /**
+   * Whether this profile is relevant to the current vault — i.e. all of its
+   * `exo__Profile_includes` AssetSpaces resolve to assets present on disk
+   * (RFC 0002 §3.4 P7b). The picker shows locally-relevant profiles by
+   * default and hides the rest behind «Show all profiles», so a tester is not
+   * choosing among other testers' profiles (`$$levina-tbank` …). `undefined`
+   * / `true` ⇒ shown by default; `false` ⇒ hidden behind the expander.
+   */
+  isLocallyRelevant?: boolean;
+  /**
+   * Internal sentinel kind. `"show-all"` marks the synthetic «Show all
+   * profiles…» entry (see {@link SHOW_ALL_PROFILES_UID}); absent for real
+   * profiles. Selecting a `"show-all"` entry re-opens the picker unscoped
+   * rather than applying anything.
+   */
+  kind?: "show-all";
 }
 
 export interface ProfileCommandsDeps {
@@ -146,7 +186,10 @@ export class ProfileCommands {
       return;
     }
 
-    const chosen = await this.fuzzyPick(profiles, "Apply profile", initialQuery);
+    // RFC 0002 §3.4 P7b — scope the default view to locally-relevant profiles
+    // (hide other testers' profiles behind «Show all profiles»). Returns the
+    // chosen real profile, or null on cancel.
+    const chosen = await this.pickProfileScoped(profiles, initialQuery);
     if (chosen === null) return; // user cancelled
 
     this.notify(`Applying ${chosen.label}…`);
@@ -250,6 +293,56 @@ export class ProfileCommands {
   }
 
   // === Helpers ===
+
+  /**
+   * RFC 0002 §3.4 P7b — open the picker scoped to locally-relevant profiles,
+   * with a synthetic «Show all profiles…» entry when some are hidden.
+   *
+   * Default view = profiles whose `isLocallyRelevant !== false` (an undefined
+   * flag is treated as relevant, so callers that do not compute relevance keep
+   * the full list). If NOTHING is locally relevant (e.g. a fresh vault where no
+   * AssetSpace resolves yet) the full list is shown directly — the picker is
+   * never empty when profiles exist. Selecting the «Show all profiles…» entry
+   * re-opens the picker with every profile, unscoped.
+   *
+   * The fuzzy-pick wrapper is the {@link ProfileFuzzyModal}, which carries the
+   * picker-selection fix (#3561 — record-in-choose, resolve-in-close-microtask);
+   * this method only chooses which list to hand it.
+   */
+  private async pickProfileScoped(
+    profiles: ProfileChoice[],
+    initialQuery?: string,
+  ): Promise<ProfileChoice | null> {
+    const relevant = profiles.filter((p) => p.isLocallyRelevant !== false);
+    // Fallback — never present an empty picker. When no profile resolves
+    // locally, show all rather than the «Show all» expander alone.
+    const scoped = relevant.length > 0 ? relevant : profiles;
+    const hasHidden = scoped.length < profiles.length;
+
+    const firstList = hasHidden
+      ? [...scoped, ProfileCommands.showAllEntry(profiles.length - scoped.length)]
+      : scoped;
+
+    const first = await this.fuzzyPick(firstList, "Apply profile", initialQuery);
+    if (first === null) return null;
+    if (first.kind === "show-all") {
+      // User broadened the list — re-open unscoped (no pre-narrow query).
+      const all = await this.fuzzyPick(profiles, "Apply profile");
+      // A nested «show-all» is impossible (the full list contains no sentinel),
+      // but guard against accidental re-selection so it never reaches apply.
+      return all !== null && all.kind === "show-all" ? null : all;
+    }
+    return first;
+  }
+
+  /** Build the synthetic «Show all profiles…» picker entry. */
+  private static showAllEntry(hiddenCount: number): ProfileChoice {
+    return {
+      uid: SHOW_ALL_PROFILES_UID,
+      label: `Show all profiles… (${hiddenCount} more)`,
+      kind: "show-all",
+    };
+  }
 
   /**
    * Extract the AssetSpace folder name from a vault-relative path.

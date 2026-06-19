@@ -1,5 +1,9 @@
-import { ProfileFuzzyModal } from "../../src/infrastructure/adapters/ProfileFuzzyModal";
+import {
+  ProfileFuzzyModal,
+  RECOMMENDED_BADGE_TEXT,
+} from "../../src/infrastructure/adapters/ProfileFuzzyModal";
 import type { ProfileChoice } from "../../src/infrastructure/adapters/ProfileCommands";
+import type { FuzzyMatch } from "obsidian";
 
 const fakeApp = {} as any;
 
@@ -37,6 +41,106 @@ describe("ProfileFuzzyModal", () => {
     expect(modal.getItemText(profiles[0])).toBe("Personal");
     expect(modal.getItemText(profiles[1])).toBe("Work ✓ (active)");
     expect(modal.getItemText(profiles[2])).toBe("Reading");
+  });
+
+  // ── RFC 0002 §3.4 — description / recommended / show-all in getItemText ────
+  it("getItemText appends the description (searchable) — P7", () => {
+    const modal = new ProfileFuzzyModal(fakeApp, [], "Pick", () => {});
+    expect(
+      modal.getItemText({
+        uid: "u",
+        label: "$$starter",
+        description: "A safe starting point",
+      }),
+    ).toBe("$$starter — A safe starting point");
+  });
+
+  it("getItemText marks recommended profiles (searchable «recommended») — P7", () => {
+    const modal = new ProfileFuzzyModal(fakeApp, [], "Pick", () => {});
+    expect(
+      modal.getItemText({
+        uid: "u",
+        label: "$$starter",
+        isRecommended: true,
+        description: "Start here",
+        isActive: true,
+      }),
+    ).toBe("$$starter (recommended) — Start here ✓ (active)");
+  });
+
+  it("getItemText returns the «show all» sentinel label verbatim — P7b", () => {
+    const modal = new ProfileFuzzyModal(fakeApp, [], "Pick", () => {});
+    expect(
+      modal.getItemText({
+        uid: "__exocortex_show_all_profiles__",
+        label: "Show all profiles… (3 more)",
+        kind: "show-all",
+      }),
+    ).toBe("Show all profiles… (3 more)");
+  });
+
+  // ── renderSuggestion structured a11y DOM ──────────────────────────────────
+  function fuzzy(item: ProfileChoice): FuzzyMatch<ProfileChoice> {
+    return { item, match: { score: 0, matches: [] } };
+  }
+
+  it("renderSuggestion renders human label, description and recommended badge — P7/P10", () => {
+    const modal = new ProfileFuzzyModal(fakeApp, [], "Pick", () => {});
+    const el = document.createElement("div");
+    modal.renderSuggestion(
+      fuzzy({
+        uid: "97c0…",
+        label: "$$kitelev-my",
+        description: "Your personal knowledge.",
+        isRecommended: true,
+      }),
+      el,
+    );
+    // Human label, never the UID (P10).
+    expect(el.textContent).toContain("$$kitelev-my");
+    expect(el.textContent).not.toContain("97c0…");
+    // Description line (P7).
+    expect(
+      el.querySelector(".exocortex-profile-suggestion__desc")?.textContent,
+    ).toBe("Your personal knowledge.");
+    // Recommended badge with a11y label (P7).
+    const badge = el.querySelector(".exocortex-profile-suggestion__badge");
+    expect(badge?.textContent).toBe(RECOMMENDED_BADGE_TEXT);
+    expect(badge?.getAttribute("aria-label")).toBe(RECOMMENDED_BADGE_TEXT);
+  });
+
+  it("renderSuggestion omits badge/description when absent; shows active marker", () => {
+    const modal = new ProfileFuzzyModal(fakeApp, [], "Pick", () => {});
+    const el = document.createElement("div");
+    modal.renderSuggestion(
+      fuzzy({ uid: "u", label: "Plain", isActive: true }),
+      el,
+    );
+    expect(el.textContent).toContain("Plain");
+    expect(el.textContent).toContain("✓ (active)");
+    expect(
+      el.querySelector(".exocortex-profile-suggestion__badge"),
+    ).toBeNull();
+    expect(
+      el.querySelector(".exocortex-profile-suggestion__desc"),
+    ).toBeNull();
+  });
+
+  it("renderSuggestion renders the «show all» sentinel as a muted row", () => {
+    const modal = new ProfileFuzzyModal(fakeApp, [], "Pick", () => {});
+    const el = document.createElement("div");
+    modal.renderSuggestion(
+      fuzzy({
+        uid: "__exocortex_show_all_profiles__",
+        label: "Show all profiles… (2 more)",
+        kind: "show-all",
+      }),
+      el,
+    );
+    expect(el.classList.contains("exocortex-profile-suggestion--show-all")).toBe(
+      true,
+    );
+    expect(el.textContent).toContain("Show all profiles… (2 more)");
   });
 
   // ── Regression: picker selection NO-OP (Issue #3561) ──────────────────────
