@@ -23,6 +23,7 @@ import {
 } from "exocortex";
 
 import { GitHubRestClient } from "./GitHubRestClient";
+import { GitSubmoduleOps } from "./GitSubmoduleOps";
 import { LocalSecretsStore } from "./LocalSecretsStore";
 import { parseGitHubURL } from "./AssetSpaceManager";
 import type { PluginLocalDataStore } from "./PluginLocalDataStore";
@@ -422,6 +423,32 @@ export async function buildSyncEngine(
     });
   }
 
+  // #3590 FULL fix — base BACKFILL source for AssetSpaces mounted BEFORE the
+  // mount layer began recording their base (or by any path that never recorded
+  // one): they have no `exosync-mountbase.local.json` entry, so the v16.98.7
+  // recording fix could not fire and every first-sync false-conflicted (the
+  // work-MacBook trigger). The provider returns the commit the local working
+  // tree is based on — read AUTHORITATIVELY from the git submodule's checked-out
+  // HEAD on desktop. On mobile (no git binary / no filesystem root → empty
+  // basePath) it is simply absent: the engine keeps the conservative
+  // full-conflict fallback (no regression). Same engine code path on both
+  // platforms — the source degrades to null, no Platform.isMobile branch. The
+  // engine verifies the SHA is a genuine ancestor before trusting it (M1-safe).
+  let localBaseShaProvider:
+    | ((spec: SyncRepoSpec) => Promise<string | null>)
+    | undefined;
+  const vaultRootPath =
+    (adapter as unknown as { basePath?: string }).basePath ?? "";
+  if (vaultRootPath.length > 0) {
+    try {
+      const gitOps = new GitSubmoduleOps({ vaultRootPath });
+      localBaseShaProvider = (spec) => gitOps.submoduleHeadSha(spec.localPath);
+    } catch {
+      // git/node primitives unavailable → no backfill source (conservative).
+      localBaseShaProvider = undefined;
+    }
+  }
+
   const engine = new SyncEngine({
     transport,
     watermarkStore: new FileWatermarkStore(
@@ -430,6 +457,7 @@ export async function buildSyncEngine(
     mountBaseStore: new FileMountBaseStore(
       vaultWatermarkFileIO(adapter, mountBasePath),
     ),
+    ...(localBaseShaProvider !== undefined ? { localBaseShaProvider } : {}),
     materializationCheck: vaultMaterializationCheck({
       adapter,
       isSwitchInProgress: () => localDataStore.isSwitchInProgress(),

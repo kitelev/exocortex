@@ -188,6 +188,54 @@ describe("parseGitmodulesEntries", () => {
   });
 });
 
+// ─── #3590 base backfill — submodule checked-out HEAD ────────────────────────
+describe("GitSubmoduleOps.submoduleHeadSha (#3590 base backfill source)", () => {
+  const SHA = "a".repeat(40);
+
+  it("parses the checked-out SHA from a clean `git submodule status` line", async () => {
+    const execFileFn = jest.fn().mockResolvedValue({
+      stdout: ` ${SHA} assetspaces/kitelev/exoas-tbank (heads/main)\n`,
+      stderr: "",
+    }) as never;
+    const ops = new GitSubmoduleOps({ vaultRootPath: "/fake", execFileFn });
+    const got = await ops.submoduleHeadSha("assetspaces/kitelev/exoas-tbank");
+    expect(got).toBe(SHA);
+    // Read-only `submodule status`, never a mutation.
+    expect((execFileFn as jest.Mock).mock.calls[0][1]).toEqual([
+      "submodule",
+      "status",
+      "assetspaces/kitelev/exoas-tbank",
+    ]);
+  });
+
+  it("parses the SHA even with a '+' status prefix (checked-out differs from gitlink)", async () => {
+    const execFileFn = jest.fn().mockResolvedValue({
+      stdout: `+${SHA} assetspaces/kitelev/exoas-tbank (heads/main-2)\n`,
+      stderr: "",
+    }) as never;
+    const ops = new GitSubmoduleOps({ vaultRootPath: "/fake", execFileFn });
+    expect(await ops.submoduleHeadSha("assetspaces/kitelev/exoas-tbank")).toBe(
+      SHA,
+    );
+  });
+
+  it("returns null when git fails (not a submodule / git unavailable / mobile) — never throws", async () => {
+    const execFileFn = jest
+      .fn()
+      .mockRejectedValue(new Error("not a git repository")) as never;
+    const ops = new GitSubmoduleOps({ vaultRootPath: "/fake", execFileFn });
+    expect(await ops.submoduleHeadSha("assetspaces/x")).toBeNull();
+  });
+
+  it("returns null on unparseable output (no SHA present)", async () => {
+    const execFileFn = jest
+      .fn()
+      .mockResolvedValue({ stdout: "garbage\n", stderr: "" }) as never;
+    const ops = new GitSubmoduleOps({ vaultRootPath: "/fake", execFileFn });
+    expect(await ops.submoduleHeadSha("assetspaces/x")).toBeNull();
+  });
+});
+
 describe("GitSubmoduleOps.run security", () => {
   it("rejects unknown leading-dash args", async () => {
     const ops = new GitSubmoduleOps({

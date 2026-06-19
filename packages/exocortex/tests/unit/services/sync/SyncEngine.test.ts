@@ -354,6 +354,184 @@ describe("SyncEngine — first-sync cleanly-mergeable divergence (#3590)", () =>
   });
 });
 
+// #3590 FULL fix — backfill the 3-way base for repos MOUNTED BEFORE the mount
+// layer started recording it (v16.98.7) OR by any path that never recorded a
+// base. Such a repo has NO `mountBaseStore` entry, so the v16.98.7 fix could
+// not fire — every first-sync on a remote that advanced since the (un-recorded)
+// mount false-conflicted (the empirical work-MacBook trigger). The engine now
+// asks `localBaseShaProvider` for the commit the local working tree is based on
+// (desktop: the git submodule's checked-out HEAD) and runs it through the SAME
+// genuine-ancestor verification + 3-way machinery — a disjoint divergence
+// cleanly merges, a real overlap still conflicts (M1), a non-ancestor / absent
+// source falls back to the conservative full-conflict (never a guessed base).
+describe("SyncEngine — first-sync base BACKFILL for mounted-but-baseless repos (#3590 full fix)", () => {
+  it("REGRESSION: empty mountBaseStore + provider recovers the base → clean 3-way merge (not false full-conflict), and the base is backfilled", async () => {
+    // Mount base: FILE_A + CONFIG + FILE_C, all byte-identical to remote — but
+    // NOTHING is recorded in mountBaseStore (pre-fix mount).
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1", "orig-a"),
+      [CONFIG]: mdAsset("u9", "orig-x"),
+      [FILE_C]: mdAsset("u3", "orig-c"),
+    });
+    const mountSha = gh.headSha(); // the genuine base — provider will recover it
+
+    // Another device advances the remote on a DISJOINT file (CONFIG only).
+    gh.commitDirect(
+      gh.branch,
+      { [CONFIG]: mdAsset("u9", "remote-x") },
+      "remote ahead (disjoint)",
+    );
+
+    // Local working tree diverges on disjoint files (edits FILE_A, adds FILE_B,
+    // deletes FILE_C, still holds the un-pulled CONFIG).
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1", "local-a"),
+      [CONFIG]: mdAsset("u9", "orig-x"),
+      [FILE_B]: mdAsset("u2"),
+    });
+
+    // EMPTY store (no recorded base) + a provider returning the real mount SHA
+    // — this is the mounted-but-baseless shape v16.98.7 could not fix.
+    const mountBaseStore = new FakeMountBaseStore(); // empty!
+    const provider = jest.fn(async () => mountSha);
+    const { engine, watermarks } = makeEngine(gh, local, {
+      mountBaseStore,
+      localBaseShaProvider: provider,
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    // Clean merge — the backfilled base prevents the false full-conflict.
+    expect(result.status).toBe("synced");
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(result.pulledCount).toBe(1);
+    expect(local.files.get(CONFIG)).toBe(mdAsset("u9", "remote-x"));
+    expect(result.pushedCount).toBe(2);
+    expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1", "local-a"));
+    expect(gh.headFiles().get(FILE_B)).toBe(mdAsset("u2"));
+    expect(gh.headFiles().get(CONFIG)).toBe(mdAsset("u9", "remote-x"));
+    expect(gh.headFiles().has(FILE_C)).toBe(false);
+    // The recovered, ancestor-VERIFIED base is persisted (backfilled) so a later
+    // first-sync reuses it without re-invoking the provider.
+    expect(mountBaseStore.shas.get(gh.spec().repoKey)).toBe(mountSha);
+    // A real watermark is established → re-sync no-ops.
+    expect(watermarks.records.size).toBe(1);
+    const again = await engine.sync(gh.spec());
+    expect(again.status).toBe("synced");
+    expect(again.pushedCount).toBe(0);
+    expect(again.pulledCount).toBe(0);
+  });
+
+  it("M1 HARD FLOOR: a backfilled base still conflicts on a REAL overlapping edit (never silently overwrites)", async () => {
+    const gh = new FakeGitHubRepo({ [CONFIG]: mdAsset("u9", "orig-x") });
+    const mountSha = gh.headSha();
+    gh.commitDirect(
+      gh.branch,
+      { [CONFIG]: mdAsset("u9", "remote-x") },
+      "remote edits CONFIG",
+    );
+    const local = new FakeLocalFiles({ [CONFIG]: mdAsset("u9", "local-x") }); // local ALSO edited CONFIG
+    const mountBaseStore = new FakeMountBaseStore(); // empty
+    const { engine, watermarks } = makeEngine(gh, local, {
+      mountBaseStore,
+      localBaseShaProvider: async () => mountSha,
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).not.toBe("synced");
+    expect(gh.headFiles().get(CONFIG)).toBe(mdAsset("u9", "remote-x")); // remote untouched
+    expect(local.files.get(CONFIG)).toBe(mdAsset("u9", "local-x")); // disk untouched
+    expect(watermarks.records.size).toBe(0); // no watermark on conflict
+  });
+
+  it("M1: a provider SHA that is NOT a remote ancestor is rejected → conservative full-conflict, base NOT persisted", async () => {
+    // A wrong/foreign/stale recovered SHA must go through the same ancestor walk
+    // as a recorded base — a non-ancestor is never trusted as a merge base.
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1", "orig-a") });
+    gh.commitDirect(
+      gh.branch,
+      { [CONFIG]: mdAsset("u9", "remote-x") },
+      "remote ahead",
+    );
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1", "local-a"),
+      [CONFIG]: mdAsset("u9", "orig-x"),
+    });
+    const mountBaseStore = new FakeMountBaseStore(); // empty
+    const { engine, watermarks } = makeEngine(gh, local, {
+      mountBaseStore,
+      localBaseShaProvider: async () =>
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("full-conflict");
+    expect(result.detail).toMatch(/first-sync/);
+    expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1", "orig-a")); // untouched
+    expect(watermarks.records.size).toBe(0);
+    // An UNVERIFIED guess is never persisted.
+    expect(mountBaseStore.shas.has(gh.spec().repoKey)).toBe(false);
+  });
+
+  it("mobile/REST parity: NO provider source (returns null) → conservative full-conflict preserved (no regression)", async () => {
+    // On mobile (no git) the provider returns null — the engine keeps the exact
+    // pre-fix conservative behaviour: a divergent first-sync full-conflicts,
+    // never a silent merge on an absent base. Same engine code path, both
+    // platforms — no Platform.isMobile branch.
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1", "orig-a") });
+    gh.commitDirect(
+      gh.branch,
+      { [CONFIG]: mdAsset("u9", "remote-x") },
+      "remote ahead",
+    );
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1", "local-a"),
+      [CONFIG]: mdAsset("u9", "orig-x"),
+    });
+    const { engine, watermarks } = makeEngine(gh, local, {
+      mountBaseStore: new FakeMountBaseStore(),
+      localBaseShaProvider: async () => null, // no authoritative source (mobile)
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("full-conflict");
+    expect(result.detail).toMatch(/first-sync/);
+    expect(watermarks.records.size).toBe(0);
+  });
+
+  it("the RECORDED base wins: a present mountBaseStore entry short-circuits the provider (backfill is a fallback only)", async () => {
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1", "orig-a"),
+      [CONFIG]: mdAsset("u9", "orig-x"),
+    });
+    const recordedSha = gh.headSha();
+    gh.commitDirect(
+      gh.branch,
+      { [CONFIG]: mdAsset("u9", "remote-x") },
+      "remote ahead (disjoint)",
+    );
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1", "local-a"),
+      [CONFIG]: mdAsset("u9", "orig-x"),
+    });
+    const provider = jest.fn(async () => recordedSha);
+    const { engine } = makeEngine(gh, local, {
+      mountBaseStore: new FakeMountBaseStore({
+        [gh.spec().repoKey]: recordedSha,
+      }),
+      localBaseShaProvider: provider,
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(provider).not.toHaveBeenCalled(); // recorded base used, provider untouched
+  });
+});
+
 describe("SyncEngine — push-only happy path (VL#7, D3)", () => {
   it("pushes a local edit via restCreateCommit and advances the watermark", async () => {
     const gh = new FakeGitHubRepo({
