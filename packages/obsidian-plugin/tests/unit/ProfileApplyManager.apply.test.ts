@@ -1550,6 +1550,134 @@ describe("ProfileApplyManager.recoverIncompleteSwitch", () => {
       "simulated localDataStore failure during recovery",
     );
   });
+
+  // === #7c9074ce — vacuous recovery-completed guard ===
+  //
+  // The #3571 nothing-to-recover guard only fires on a FRESH vault (journal
+  // absent). On an established vault the journal always exists, so a clean
+  // reload fell through to the unconditional `recovery-completed` write —
+  // appending a vacuous terminal on EVERY onload (the live journal grew to 95
+  // such records). The fix extends the guard to short-circuit when there is no
+  // actual recovery work: no REST resume, no destroyed-not-materialized AS to
+  // restore, and no stuck `_switchInProgress` flag.
+  describe("#7c9074ce — vacuous recovery-completed guard", () => {
+    const FLOOR = [
+      TS_FLOOR_AS_UID_EXO,
+      TS_FLOOR_AS_UID_EXOCMD,
+      TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+    ];
+
+    it("REVERT-VERIFY: established vault, clean reindex tail (`completed`) + flag=false → does NOT append vacuous recovery-completed", async () => {
+      // The live smoking gun: a clean reindex-only switch ends `starting`→
+      // `completed`. `classifyInterruptedSwitch` yields kind=`reindex` (NOT
+      // `none`, since `completed` is not a reset terminal), but
+      // recoverIncompleteSwitch has nothing to do for a reindex — its resume is
+      // a SEPARATE worker. Pre-fix it still wrote a vacuous `recovery-completed`.
+      const { mgr, app, localDataStore } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: FLOOR,
+        materialized: FLOOR,
+      });
+      await localDataStore.save({ activeProfileUid: "target", _switchInProgress: false });
+      await app.vault.adapter.write(
+        ".exocortex/switch-journal.jsonl",
+        [
+          JSON.stringify({ phase: "starting", targetUid: "target", ts: "2026-06-02T00:00:00Z" }),
+          JSON.stringify({ phase: "completed", targetUid: "target", ts: "2026-06-02T00:00:05Z" }),
+        ].join("\n") + "\n",
+      );
+
+      const before = await readJournalEntries(app);
+      const result = await mgr.recoverIncompleteSwitch();
+      const after = await readJournalEntries(app);
+
+      expect(result).toEqual({ restored: [], resumed: false, resumedTo: null });
+      // No new entry — journal is byte-stable across the no-op recovery.
+      expect(after.length).toBe(before.length);
+      expect(after.filter((e) => e.phase === "recovery-completed")).toEqual([]);
+    });
+
+    it("REVERT-VERIFY: established vault, clean apply tail (`apply-completed`) + flag=false → does NOT append vacuous recovery-completed", async () => {
+      // Clean apply terminal resets the classifier to kind=`none`. Pre-fix the
+      // git-apply restore loop ran with an empty destroyed set and still wrote
+      // a vacuous `recovery-completed`.
+      const { mgr, app, localDataStore } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: FLOOR,
+        materialized: FLOOR,
+      });
+      await localDataStore.save({ activeProfileUid: "target", _switchInProgress: false });
+      await app.vault.adapter.write(
+        ".exocortex/switch-journal.jsonl",
+        [
+          JSON.stringify({ phase: "apply-starting", targetUid: "target", ts: "2026-06-02T00:00:00Z" }),
+          JSON.stringify({ phase: "apply-completed", targetUid: "target", ts: "2026-06-02T00:00:05Z" }),
+        ].join("\n") + "\n",
+      );
+
+      const before = await readJournalEntries(app);
+      await mgr.recoverIncompleteSwitch();
+      const after = await readJournalEntries(app);
+
+      expect(after.length).toBe(before.length);
+      expect(after.filter((e) => e.phase === "recovery-completed")).toEqual([]);
+    });
+
+    it("REGRESSION: real interrupted switch (destroyed-not-materialized) STILL restores + writes recovery-completed", async () => {
+      // Guard must NOT over-suppress: a genuine incomplete git-apply left a
+      // destroyed-but-not-materialized AS in the journal. Recovery must restore
+      // it from cache and write its terminal `recovery-completed`.
+      const { mgr, cacheLayer, app, localDataStore } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: FLOOR,
+        materialized: FLOOR,
+      });
+      await localDataStore.save({ activeProfileUid: "x", _switchInProgress: true });
+      await app.vault.adapter.write(
+        ".exocortex/switch-journal.jsonl",
+        JSON.stringify({
+          phase: "phase2-destroy-cached",
+          targetUid: "t",
+          as: "ems-uid",
+          ts: "2026-06-02T00:00:00Z",
+        }) + "\n",
+      );
+
+      const result = await mgr.recoverIncompleteSwitch();
+
+      expect(result.restored).toContain("ems-uid");
+      expect(cacheLayer.restoreCalls.map((r) => r.asUid)).toContain("ems-uid");
+      const after = await readJournalEntries(app);
+      expect(after.some((e) => e.phase === "recovery-completed")).toBe(true);
+      // Flag cleared after the genuine recovery.
+      expect(localDataStore.isSwitchInProgress()).toBe(false);
+    });
+
+    it("REGRESSION: clean tail but `_switchInProgress` STUCK true → still clears flag + writes recovery-completed (no over-suppress)", async () => {
+      // The guard keys on actual recovery NEED — a stuck in-progress flag IS
+      // recovery work (clear it) even when the journal tail looks terminal.
+      const { mgr, app, localDataStore } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: FLOOR,
+        materialized: FLOOR,
+      });
+      await localDataStore.save({ activeProfileUid: "target", _switchInProgress: true });
+      await app.vault.adapter.write(
+        ".exocortex/switch-journal.jsonl",
+        JSON.stringify({ phase: "apply-completed", targetUid: "target", ts: "2026-06-02T00:00:05Z" }) + "\n",
+      );
+
+      await mgr.recoverIncompleteSwitch();
+
+      expect(localDataStore.isSwitchInProgress()).toBe(false);
+      const after = await readJournalEntries(app);
+      expect(after.some((e) => e.phase === "recovery-completed")).toBe(true);
+    });
+  });
 });
 
 // ============================================================================
