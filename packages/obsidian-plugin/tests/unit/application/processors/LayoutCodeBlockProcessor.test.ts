@@ -142,6 +142,60 @@ describe("LayoutCodeBlockProcessor", () => {
     });
   });
 
+  describe("Unsupported layout notice (non-table in code block)", () => {
+    it("renders an informational notice, NOT the error state, for non-table layouts", () => {
+      const container = document.createElement("div");
+
+      // A non-table layout (e.g. graph) referenced inside an exo-layout code
+      // block is a documented limitation, not an error.
+      (processor as any).renderLayoutResult(
+        { success: true, layout: { type: "exo__GraphLayout" }, rows: [] },
+        container
+      );
+
+      // It must NOT use the "Error loading layout" error state — that frames a
+      // known limitation as a failure (finding F5/F6 — UX audit).
+      expect(container.querySelector(".exo-layout-error")).toBeFalsy();
+
+      const noticeDiv = container.querySelector(".exo-layout-notice");
+      expect(noticeDiv).toBeTruthy();
+
+      const titleEl = container.querySelector(".exo-layout-notice-title");
+      expect(titleEl?.textContent).not.toBe("Error loading layout");
+      expect(titleEl?.textContent?.toLowerCase()).not.toContain("error");
+
+      const messageEl = container.querySelector(".exo-layout-notice-message");
+      // The message names the layout type so the user understands what is unsupported.
+      expect(messageEl?.textContent).toContain("exo__GraphLayout");
+    });
+
+    it("showUnsupportedLayoutState builds a neutral notice naming the layout type", () => {
+      const container = document.createElement("div");
+
+      (processor as any).showUnsupportedLayoutState(container, "exo__CalendarLayout");
+
+      const noticeDiv = container.querySelector(".exo-layout-notice");
+      expect(noticeDiv).toBeTruthy();
+      expect(container.querySelector(".exo-layout-error")).toBeFalsy();
+
+      const messageEl = container.querySelector(".exo-layout-notice-message");
+      expect(messageEl?.textContent).toContain("exo__CalendarLayout");
+    });
+
+    it("still uses the error state for a genuine missing-layout failure (regression guard)", () => {
+      const container = document.createElement("div");
+
+      // No layout/rows => a real failure, must stay an error.
+      (processor as any).renderLayoutResult({ success: false }, container);
+
+      const errorDiv = container.querySelector(".exo-layout-error");
+      expect(errorDiv).toBeTruthy();
+      const titleEl = container.querySelector(".exo-layout-error-title");
+      expect(titleEl?.textContent).toBe("Error loading layout");
+      expect(container.querySelector(".exo-layout-notice")).toBeFalsy();
+    });
+  });
+
   describe("Refresh Indicator", () => {
     it("should show refresh indicator", () => {
       const container = document.createElement("div");
