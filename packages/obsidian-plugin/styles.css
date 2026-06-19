@@ -6176,3 +6176,37 @@
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* #3588 §3.8 P12 — «Open logs» modal: the real log-file path (plugin data
+   folder), shown monospace so it is copy-pasteable verbatim. */
+.exocortex-log-file-path {
+  font-family: var(--font-monospace, monospace);
+  font-size: var(--font-smaller, 0.85em);
+  color: var(--text-muted);
+  word-break: break-all;
+  margin-bottom: var(--size-4-2, 8px);
+}
+
+/* #3588 §3.8 P13 — cold-start COMMANDS skeleton: a muted, gently pulsing
+   placeholder shown while initial indexing is in flight, so a first-run user
+   is not staring at a blank layout. Disappears once buttons resolve. */
+.exocortex-commands-skeleton {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: var(--font-smaller, 0.85em);
+  padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-s, 4px);
+  margin-bottom: var(--size-4-3, 12px);
+  animation: exocortex-commands-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes exocortex-commands-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}

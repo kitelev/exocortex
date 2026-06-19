@@ -32,6 +32,10 @@ import {
 } from "./helpers";
 import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';
 import { LRUCache } from '@plugin/infrastructure/cache';
+import {
+  resolveCommandsRegionState,
+  COMMANDS_SKELETON_TEXT,
+} from "./commandsRegionState";
 
 /**
  * Renders the UniversalLayout view with properties, buttons, daily sections, and relations.
@@ -77,6 +81,10 @@ export class UniversalLayoutRenderer {
   // class chain + prototype chain before resolving button visibility.
   private lazyAssetGraphLoader?: LazyAssetGraphLoader;
   private prepareForRefresh?: (file: TFile) => Promise<void>;
+  // RFC 0002 §3.8 P13 (#3588) — cold-start COMMANDS skeleton gate. Returns
+  // true once the triple store finished initial indexing (`SPARQLApi.isReady`).
+  // When omitted the renderer assumes "ready" → no skeleton (back-compat).
+  private isStoreReady?: () => boolean;
   private exoLayoutRenderer!: ExoLayoutRenderer;
 
   private dependencyResolver: PropertyDependencyResolver;
@@ -120,6 +128,14 @@ export class UniversalLayoutRenderer {
        * sections-update pass starts.
        */
       prepareForRefresh?: (file: TFile) => Promise<void>;
+      /**
+       * RFC 0002 §3.8 P13 (#3588) — readiness probe for the cold-start
+       * COMMANDS skeleton. Wire `() => sparql.isReady()`; while it returns
+       * false (initial indexing in flight) an empty COMMANDS region shows an
+       * "indexing… buttons will appear shortly" placeholder instead of a blank
+       * layout. Omit to keep the legacy behaviour (no skeleton).
+       */
+      isStoreReady?: () => boolean;
     },
   ) {
     this.app = app;
@@ -136,6 +152,7 @@ export class UniversalLayoutRenderer {
     this.panelResolver = rfc009Services?.panelResolver ?? null;
     this.lazyAssetGraphLoader = rfc009Services?.lazyAssetGraphLoader;
     this.prepareForRefresh = rfc009Services?.prepareForRefresh;
+    this.isStoreReady = rfc009Services?.isStoreReady;
     this.logger = LoggerFactory.create("UniversalLayoutRenderer");
 
     // Create ReactRenderer with ErrorBoundary enabled for graceful error handling.
@@ -248,6 +265,23 @@ export class UniversalLayoutRenderer {
     this.rootContainer = null;
   }
 
+  /**
+   * RFC 0002 §3.8 P13 (#3588) — cold-start COMMANDS placeholder. Rendered in
+   * place of the (empty) buttons section while initial indexing is in flight,
+   * so a first-run user is not staring at a blank layout. Pure DOM (no React,
+   * no Node/fs) → identical on desktop and mobile. Disappears on the next
+   * re-render once the store is ready and real buttons resolve.
+   */
+  private renderCommandsSkeleton(el: HTMLElement): void {
+    const container = el.createDiv({ cls: "exocortex-buttons-section" });
+    const skeleton = container.createDiv({
+      cls: "exocortex-commands-skeleton",
+      text: COMMANDS_SKELETON_TEXT,
+    });
+    skeleton.setAttribute("role", "status");
+    skeleton.setAttribute("aria-busy", "true");
+  }
+
   public async handleMetadataChange(filePath: string): Promise<void> {
     if (this.debounceTimeout) clearTimeout(this.debounceTimeout);
 
@@ -338,9 +372,19 @@ export class UniversalLayoutRenderer {
       }
 
       const buttonGroups = await this.buttonGroupsBuilder.build(currentFile);
-      if (buttonGroups.length > 0) {
+      // RFC 0002 §3.8 P13 (#3588) — when the COMMANDS region is empty AND the
+      // triple store is still indexing, render a transient "indexing…" skeleton
+      // instead of a blank layout. Once indexing completes an empty result is
+      // trusted as genuine (no skeleton). `isStoreReady` absent → assume ready.
+      const regionState = resolveCommandsRegionState(
+        buttonGroups.length,
+        this.isStoreReady ? this.isStoreReady() : true,
+      );
+      if (regionState === "buttons") {
         const buttonsContainer = el.createDiv({ cls: "exocortex-buttons-section" });
         this.reactRenderer.render(buttonsContainer, React.createElement(ActionButtonsGroup, { groups: buttonGroups }));
+      } else if (regionState === "skeleton") {
+        this.renderCommandsSkeleton(el);
       }
 
       await this.dailyTasksRenderer.render(el, currentFile, renderHeader, this.sectionStateManager.isCollapsed("daily-tasks"));
