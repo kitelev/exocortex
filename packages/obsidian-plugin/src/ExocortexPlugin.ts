@@ -140,9 +140,11 @@ import { FirstRunOnboardingModal } from "./presentation/modals/FirstRunOnboardin
 import {
   registerOnboardingCommands,
   shouldShowFirstRunPanel,
+  persistOnboardingPat,
   STARTER_REGISTRY_URL,
   STARTER_PROFILE_QUERY,
 } from "./infrastructure/adapters/firstRunOnboarding";
+import { resolvePastedSecret } from "./presentation/settings/patClipboard";
 import { AssetSpaceMaterializationTracker } from "./infrastructure/adapters/AssetSpaceMaterializationTracker";
 import { injectAssetSpaceMaterializationTriples } from "./infrastructure/adapters/injectAssetSpaceMaterializationTriples";
 import { AssetSpaceStatusIconPatch } from "./presentation/asset-space/AssetSpaceStatusIconPatch";
@@ -3260,8 +3262,39 @@ export default class ExocortexPlugin extends Plugin {
         `${what} is unavailable in this environment — see the Getting Started guide.`,
       );
 
+    // Device-local secrets store for the optional token-first step (cd9444bd).
+    // The same store + canonical "pat" key the materialise steps read at
+    // command-execution time, so a token saved here is in place for them.
+    const secretsStore = new LocalSecretsStore({ app: this.app });
+
     const openPanel = (): void => {
       new FirstRunOnboardingModal(this.app, {
+        // Step 1 (optional, token-first): persist the PAT device-local BEFORE
+        // the materialise steps run (cd9444bd). Empty value clears it (skip
+        // path). A failure is surfaced as a notice but never blocks onboarding.
+        onSavePat: async (pat: string) => {
+          try {
+            await persistOnboardingPat(secretsStore, pat);
+            this.notifier.info(
+              pat.trim().length > 0
+                ? "Token saved. The next steps can now reach your private repos."
+                : "Token cleared.",
+            );
+          } catch (err) {
+            this.notifier.error(
+              "Saving the token failed: " +
+                (err instanceof Error ? err.message : String(err)),
+            );
+          }
+        },
+        // Step 1 paste affordance (mobile parity §3.9) — read + normalise the
+        // clipboard; works on desktop AND the mobile WebView under a user
+        // gesture (the button click), so no Platform gate.
+        onPastePat: async () => {
+          const raw = await navigator.clipboard.readText();
+          const outcome = resolvePastedSecret(raw);
+          return outcome.kind === "filled" ? outcome.value : null;
+        },
         onSetupEngine: () => {
           if (bootstrapCommands === null) {
             unavailable("Bootstrap");

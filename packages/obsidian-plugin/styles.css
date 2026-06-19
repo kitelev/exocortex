@@ -6195,6 +6195,19 @@
   margin-top: 1em;
 }
 
+/* cd9444bd — Welcome panel optional token-first step (input + paste/save row). */
+.exocortex-onboarding-pat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  align-items: center;
+}
+
+.exocortex-onboarding-pat-input {
+  flex: 1 1 12em;
+  min-width: 0;
+}
+
 /* RFC 0002 §3.5 — PAT setup create-token helper (deep-link + scope list). */
 .exocortex-pat-setup-helper {
   margin: 0.5em 0 1em;

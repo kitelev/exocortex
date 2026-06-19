@@ -67,6 +67,54 @@ export function shouldShowFirstRunPanel(
   return markdownFileCount <= FRESH_VAULT_MAX_NOTES;
 }
 
+/**
+ * Canonical device-local secret key for the GitHub PAT (Issue #3320 §1).
+ *
+ * The same literal `"pat"` is read at command-execution time by the bootstrap /
+ * add-assetspace / apply-profile materialise paths (ApplyDepsFactory,
+ * SyncDepsFactory, ExoSyncParityFactory) and written by the Settings PAT field
+ * (`ExocortexSettingTab`). The Welcome panel's PAT step (cd9444bd) MUST write
+ * under this exact key so a token entered first-thing in onboarding is the same
+ * token those later steps read — mismatching it would silently break private
+ * `exoas-*` repo clone/pull. Kept as a named constant here so the onboarding
+ * save path can reuse it without re-typing the magic string.
+ */
+export const PAT_SECRET_KEY = "pat";
+
+/**
+ * Structural slice of {@link LocalSecretsStore} — keeps this module free of an
+ * `obsidian` runtime import (unit-testable with a plain fake), mirroring
+ * {@link OnboardingCommandRegistrar}. The real `LocalSecretsStore.setSecret`
+ * satisfies this shape (passing `null`/`""` clears the entry).
+ */
+export interface OnboardingSecretsStore {
+  setSecret(key: string, value: string | null): Promise<void>;
+}
+
+/**
+ * Persist the PAT entered in the Welcome panel's first (optional) step,
+ * device-local, BEFORE the bootstrap / add / apply steps run — so those steps
+ * (which read {@link PAT_SECRET_KEY} fresh at command-execution time, NOT at
+ * onload — Issue #3382) can authenticate private-repo clone/pull.
+ *
+ * Semantics mirror the Settings "Save PAT" button exactly so the two entry
+ * points never diverge:
+ *   - the raw token is trimmed (tokens are single-line opaque strings; copying
+ *     one often drags a trailing newline);
+ *   - an empty / all-whitespace value CLEARS the stored token (passes `null`),
+ *     never persists empty-PAT junk — this is the "skip" path: a public-only
+ *     tester who leaves the field blank and clicks through ends up with no PAT,
+ *     and the materialise steps tolerate an absent PAT (public repos pull
+ *     anonymously).
+ */
+export async function persistOnboardingPat(
+  store: OnboardingSecretsStore,
+  rawPat: string,
+): Promise<void> {
+  const trimmed = rawPat.trim();
+  await store.setSecret(PAT_SECRET_KEY, trimmed.length > 0 ? trimmed : null);
+}
+
 /** Stable command id for the guided Setup entry point (RFC 0002 §3.2). */
 export const SETUP_COMMAND_ID = "setup-getting-started";
 
