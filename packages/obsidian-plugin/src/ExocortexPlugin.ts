@@ -74,7 +74,11 @@ import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlo
 import { SPARQLApi } from "./application/api/SPARQLApi";
 import { ExocortexAPI } from "./application/api/ExocortexAPI";
 import { PluginContainer } from "./infrastructure/di/PluginContainer";
-import { ObsidianNotificationService } from "./infrastructure/di/ObsidianNotificationService";
+import {
+  ObsidianNotificationService,
+  setDefaultNotificationActivityRecorder,
+  type NotificationActivityRecorder,
+} from "./infrastructure/di/ObsidianNotificationService";
 import {
   createAliasIconExtension,
   createWikilinkLabelExtension,
@@ -400,12 +404,25 @@ export default class ExocortexPlugin extends Plugin {
 
       await this.loadSettings();
 
-      // Initialize notification service and log channel routing
-      this.notifier = new ObsidianNotificationService();
+      // #3540 — always-on activity buffer; sources fan in from onload onward.
+      // Created BEFORE the notifier so every toast routed through the central
+      // INotificationService sink (ObsidianNotificationService) records here.
+      this.activityLog = new ActivityLogService();
+      // Initialize notification service + log channel routing. The notifier is
+      // the single `new Notice` sink (eslint forbids `new Notice` elsewhere),
+      // so wiring it to the activity log makes the log COMPLETE — every toast
+      // appears, not just the few structured producer feeds. The module-level
+      // default recorder also covers ObsidianNotificationService instances built
+      // inside command flows that never receive `activityLog` directly (the
+      // exocmd palette flow, CommandManager) — see #3540 follow-up.
+      const recordToast: NotificationActivityRecorder = ({ level, message }) =>
+        this.activityLog.record({ category: "notice", level, message });
+      setDefaultNotificationActivityRecorder(recordToast);
+      this.notifier = new ObsidianNotificationService({
+        recordActivity: recordToast,
+      });
       this.fileLogChannel = new FileLogChannel(this.app.vault.adapter, this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`);
       await this.fileLogChannel.ensureFileExists();
-      // #3540 — always-on activity buffer; sources fan in from onload onward.
-      this.activityLog = new ActivityLogService();
       this.configureLogChannels();
 
       this.printNameRuleService = new PrintNameRuleService(this.app);
@@ -1710,6 +1727,10 @@ export default class ExocortexPlugin extends Plugin {
   }
 
   override async onunload(): Promise<void> {
+    // #3540 follow-up — drop the module-level toast→activity-log recorder so a
+    // reloaded plugin's notifications don't fan into this (now-stale) buffer.
+    setDefaultNotificationActivityRecorder(undefined);
+
     // Dispose timer manager first to prevent any more timer callbacks from firing
     if (this.timerManager) {
       this.timerManager.dispose();
@@ -3492,11 +3513,9 @@ export default class ExocortexPlugin extends Plugin {
             resolve,
           ).open();
         }),
-      notify: (message) => {
-        this.notifier.info(message);
-        // #3540 — surface bootstrap / add-assetspace progress in the activity log.
-        this.activityLog.record({ category: "bootstrap", level: "info", message });
-      },
+      // #3540 follow-up — `notifier.info` now fans every toast into the
+      // activity log itself (category "notice"), so no manual record() here.
+      notify: (message) => this.notifier.info(message),
       onMaterialized: () => this.refreshAndInjectAssetSpaceMaterialization(),
     });
 
@@ -3585,10 +3604,8 @@ export default class ExocortexPlugin extends Plugin {
           ).open();
         }),
       unmount: (submodulePath) => restMount.unmount(submodulePath),
-      notify: (message) => {
-        this.notifier.info(message);
-        this.activityLog.record({ category: "bootstrap", level: "info", message });
-      },
+      // #3540 follow-up — toast auto-records into the activity log via notifier.
+      notify: (message) => this.notifier.info(message),
       onUnmounted: () => this.refreshAndInjectAssetSpaceMaterialization(),
     });
 

@@ -20,7 +20,18 @@
  *    `category:"exosync"` with `level:"error"`.
  */
 
-export type ActivityCategory = "exosync" | "profile" | "mount" | "bootstrap";
+export type ActivityCategory =
+  | "exosync"
+  | "profile"
+  | "mount"
+  // Reserved: bootstrap/add-assetspace/unmount progress now flows through the
+  // central notifier as "notice" (#3540 follow-up), so no producer currently
+  // emits "bootstrap" — kept as a valid category a future feed may re-adopt.
+  | "bootstrap"
+  // #3540 follow-up — every user-facing toast (any `INotificationService`
+  // call routed through ObsidianNotificationService) fans in here so the
+  // activity log is complete, not just the few structured producer feeds.
+  | "notice";
 export type ActivityLevel = "info" | "warn" | "error";
 
 export interface ActivityEntry {

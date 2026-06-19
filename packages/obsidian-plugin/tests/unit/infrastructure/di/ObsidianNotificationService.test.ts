@@ -1,4 +1,8 @@
-import { ObsidianNotificationService } from "../../../../src/infrastructure/di/ObsidianNotificationService";
+import {
+  ObsidianNotificationService,
+  setDefaultNotificationActivityRecorder,
+  type NotificationActivityRecorder,
+} from "../../../../src/infrastructure/di/ObsidianNotificationService";
 import { Notice } from "obsidian";
 
 jest.mock("obsidian", () => ({
@@ -13,11 +17,15 @@ describe("ObsidianNotificationService", () => {
     jest.spyOn(console, "debug").mockImplementation();
     jest.spyOn(console, "error").mockImplementation();
     jest.spyOn(console, "warn").mockImplementation();
+    // Reset the module-level default recorder so its presence/absence is
+    // controlled per-test, never leaked across tests.
+    setDefaultNotificationActivityRecorder(undefined);
     service = new ObsidianNotificationService();
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
+    setDefaultNotificationActivityRecorder(undefined);
   });
 
   describe("info", () => {
@@ -103,6 +111,102 @@ describe("ObsidianNotificationService", () => {
       service.warn("Warning message", 5000);
 
       expect(Notice).toHaveBeenCalledWith("⚠ Warning message", 5000);
+    });
+  });
+
+  // #3540 follow-up — every toast must fan into the activity log so the
+  // «Open activity log» modal is complete (Bug 1: not all Notices were logged).
+  describe("activity-log recording", () => {
+    it("records info as level 'info' with the plain message (no toast prefix)", () => {
+      const records: Array<{ level: string; message: string }> = [];
+      const recorder: NotificationActivityRecorder = (r) => records.push(r);
+      const svc = new ObsidianNotificationService({ recordActivity: recorder });
+
+      svc.info("hello");
+
+      expect(records).toEqual([{ level: "info", message: "hello" }]);
+      // The toast still shows — recording is additive.
+      expect(Notice).toHaveBeenCalledWith("hello", 4000);
+    });
+
+    it("records success as level 'info' with the plain message (✓ stays toast-only)", () => {
+      const records: Array<{ level: string; message: string }> = [];
+      const svc = new ObsidianNotificationService({
+        recordActivity: (r) => records.push(r),
+      });
+
+      svc.success("done");
+
+      expect(records).toEqual([{ level: "info", message: "done" }]);
+      expect(Notice).toHaveBeenCalledWith("✓ done", 4000);
+    });
+
+    it("records warn as level 'warn' with the plain message (⚠ stays toast-only)", () => {
+      const records: Array<{ level: string; message: string }> = [];
+      const svc = new ObsidianNotificationService({
+        recordActivity: (r) => records.push(r),
+      });
+
+      svc.warn("careful");
+
+      expect(records).toEqual([{ level: "warn", message: "careful" }]);
+      expect(Notice).toHaveBeenCalledWith("⚠ careful", 4000);
+    });
+
+    it("records error as level 'error' with the plain message (✗ stays toast-only)", () => {
+      const records: Array<{ level: string; message: string }> = [];
+      const svc = new ObsidianNotificationService({
+        recordActivity: (r) => records.push(r),
+      });
+
+      svc.error("boom");
+
+      expect(records).toEqual([{ level: "error", message: "boom" }]);
+      expect(Notice).toHaveBeenCalledWith("✗ boom", 4000);
+    });
+
+    it("falls back to the module-level default recorder when none is injected", () => {
+      const records: Array<{ level: string; message: string }> = [];
+      setDefaultNotificationActivityRecorder((r) => records.push(r));
+      // No explicit recorder → must use the default (covers command-flow
+      // instances built without the plugin's activityLog).
+      const svc = new ObsidianNotificationService();
+
+      svc.info("from default");
+
+      expect(records).toEqual([{ level: "info", message: "from default" }]);
+    });
+
+    it("prefers the explicit recorder over the module default", () => {
+      const explicit: Array<{ message: string }> = [];
+      const fallback: Array<{ message: string }> = [];
+      setDefaultNotificationActivityRecorder((r) => fallback.push(r));
+      const svc = new ObsidianNotificationService({
+        recordActivity: (r) => explicit.push(r),
+      });
+
+      svc.info("routed");
+
+      expect(explicit).toEqual([{ level: "info", message: "routed" }]);
+      expect(fallback).toEqual([]);
+    });
+
+    it("records nothing when neither explicit nor default recorder is set", () => {
+      const svc = new ObsidianNotificationService();
+      // Must not throw, must still toast.
+      expect(() => svc.info("silent log")).not.toThrow();
+      expect(Notice).toHaveBeenCalledWith("silent log", 4000);
+    });
+
+    it("still shows the Notice when the recorder throws (recording is isolated)", () => {
+      const svc = new ObsidianNotificationService({
+        recordActivity: () => {
+          throw new Error("sink exploded");
+        },
+      });
+
+      expect(() => svc.error("must still toast")).not.toThrow();
+      expect(Notice).toHaveBeenCalledWith("✗ must still toast", 4000);
     });
   });
 
