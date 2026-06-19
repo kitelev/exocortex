@@ -12,6 +12,73 @@ export function humanizePropertyName(raw: string): string {
   return spaced.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+const WHOLE_WIKILINK_REGEX = /^\[\[(.+)\]\]$/;
+
+/**
+ * Humanize a frontmatter *value* for display (RFC 0002 §3.7, P11) — the value
+ * counterpart of {@link humanizePropertyName} (which humanizes property *keys*).
+ *
+ * Reuses the same IRI-prefix-stripping mechanism, applied to enum/class
+ * *values* so the Properties block reads "Project" instead of
+ * `[[ems__Project]]` and "EffortStatusDoing" instead of
+ * `[[uid|ems__EffortStatusDoing]]`. Resolution order for wikilink values:
+ * explicit alias → resolved `exo__Asset_label` of a UID target (via
+ * `resolveLabel`) → the raw target; the chosen display string is then run
+ * through {@link humanizePropertyName} to strip the prefix. Non-wikilink,
+ * non-jargon values (free text, timestamps, UUIDs, numbers) pass through
+ * unchanged because `humanizePropertyName` is a no-op on them.
+ *
+ * Note: literal per-enum display (e.g. "Doing") is intentionally NOT produced —
+ * the live status asset's label is `ems__EffortStatusDoing` and the shared
+ * humanizer preserves PascalCase by design; the result is consistent with the
+ * relations table. A per-enum display map would be a separate concern.
+ */
+export function humanizePropertyValue(
+  value: unknown,
+  resolveLabel?: (target: string) => string | null,
+): string {
+  if (value === null || value === undefined) return "";
+
+  if (Array.isArray(value)) {
+    return value
+      .map((v) => humanizePropertyValue(v, resolveLabel))
+      .filter((s) => s !== "")
+      .join(", ");
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    const match = trimmed.match(WHOLE_WIKILINK_REGEX);
+    if (match) {
+      const content = match[1];
+      const pipeIndex = content.indexOf("|");
+      const target = (
+        pipeIndex === -1 ? content : content.slice(0, pipeIndex)
+      ).trim();
+      const alias =
+        pipeIndex === -1 ? undefined : content.slice(pipeIndex + 1).trim();
+      const display = alias || resolveLabel?.(target) || target;
+      return humanizePropertyName(display);
+    }
+    // Plain string: only de-jargon IRI-prefixed values (`ems__Project`);
+    // leave free text (which may legitimately contain "__") untouched.
+    if (/^[a-z]+__/.test(trimmed)) {
+      return humanizePropertyName(trimmed);
+    }
+    return trimmed;
+  }
+
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "";
+    }
+  }
+
+  return String(value);
+}
+
 export interface AssetRelation {
   path: string;
   title: string;

@@ -24,6 +24,11 @@ export type ActivityCategory =
   | "exosync"
   | "profile"
   | "mount"
+  // Live per-AssetSpace "starting op N of M" feed during a profile-apply
+  // materialize (pull/mount/unmount). Activity-log-only — emitted BEFORE each
+  // op so a long apply shows it is progressing, distinct from the post-op
+  // "mount" journal feed. Never toasted (see ProfileApplyManager.onProgress).
+  | "progress"
   // Reserved: bootstrap/add-assetspace/unmount progress now flows through the
   // central notifier as "notice" (#3540 follow-up), so no producer currently
   // emits "bootstrap" — kept as a valid category a future feed may re-adopt.
