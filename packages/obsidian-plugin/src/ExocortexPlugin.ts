@@ -130,6 +130,13 @@ import {
 import { BootstrapVaultModal } from "./presentation/modals/BootstrapVaultModal";
 import { AddAssetSpaceModal } from "./presentation/modals/AddAssetSpaceModal";
 import { SimpleConfirmModal } from "./presentation/modals/SimpleConfirmModal";
+import { FirstRunOnboardingModal } from "./presentation/modals/FirstRunOnboardingModal";
+import {
+  registerOnboardingCommands,
+  shouldShowFirstRunPanel,
+  STARTER_REGISTRY_URL,
+  STARTER_PROFILE_QUERY,
+} from "./infrastructure/adapters/firstRunOnboarding";
 import { AssetSpaceMaterializationTracker } from "./infrastructure/adapters/AssetSpaceMaterializationTracker";
 import { injectAssetSpaceMaterializationTriples } from "./infrastructure/adapters/injectAssetSpaceMaterializationTriples";
 import { AssetSpaceStatusIconPatch } from "./presentation/asset-space/AssetSpaceStatusIconPatch";
@@ -3039,9 +3046,16 @@ export default class ExocortexPlugin extends Plugin {
     const fuzzyPick = (
       options: ProfileChoice[],
       title: string,
+      initialQuery?: string,
     ): Promise<ProfileChoice | null> => {
       return new Promise<ProfileChoice | null>((resolve) => {
-        const modal = new ProfileFuzzyModal(this.app, options, title, resolve);
+        const modal = new ProfileFuzzyModal(
+          this.app,
+          options,
+          title,
+          resolve,
+          initialQuery,
+        );
         modal.open();
       });
     };
@@ -3136,9 +3150,27 @@ export default class ExocortexPlugin extends Plugin {
     // cold-start (bootstrap → add registry/profiles → apply-profile) without a
     // desktop. The Desktop↔Mobile Command Parity invariant requires both
     // surfaces; the gate mirrors the apply-profile gate above.
+    let bootstrapCommands: BootstrapAssetSpaceCommands | null = null;
     if (applyDeps !== null || (Platform.isMobile && restMount !== null)) {
-      this.registerBootstrapCommands(applyDeps, restMount, localDataStore);
+      bootstrapCommands = this.registerBootstrapCommands(
+        applyDeps,
+        restMount,
+        localDataStore,
+      );
     }
+
+    // RFC 0002 §3.1/§3.2 — first-run onboarding panel + guided «Setup
+    // (Getting Started)» command. The Setup command registers UNCONDITIONALLY
+    // (no Platform gate) so the panel is reachable on desktop AND mobile
+    // (Desktop↔Mobile Command Parity). The panel auto-shows once, on a
+    // not-yet-bootstrapped vault, deferred to onLayoutReady. `bootstrapCommands`
+    // (cross-platform vault-state detector + Bootstrap/Add driver) and
+    // `commandsHandler` (Apply-profile) drive the canonical `starter` path.
+    this.registerOnboardingPanel(
+      bootstrapCommands,
+      commandsHandler,
+      localDataStore,
+    );
 
     // #e6b8827c — «Unmount assetspace»: the inverse of «Add assetspace by URL».
     // Unmount mechanics already existed only INSIDE apply-profile's strict
@@ -3154,6 +3186,106 @@ export default class ExocortexPlugin extends Plugin {
     this.logger.info(
       "[ExocortexPlugin] Profile palette commands registered",
     );
+  }
+
+  /**
+   * RFC 0002 §3.1/§3.2 — wire the first-run onboarding panel and its re-entry
+   * `Setup (Getting Started)` command.
+   *
+   * The Setup command is registered UNCONDITIONALLY (no `Platform.isMobile`
+   * gate) so the panel is reachable on both desktop and mobile (Desktop↔Mobile
+   * Command Parity). The panel auto-shows ONCE, on a not-yet-bootstrapped vault,
+   * deferred to `onLayoutReady` — opening a Modal during onload (before
+   * `layoutReady`) can wedge "Loading plugins…" (same hazard as the reconcile
+   * deferral above).
+   *
+   * `bootstrapCommands` is the cross-platform vault-state detector + Bootstrap /
+   * Add-AssetSpace driver (null only in a degenerate no-deps environment, where
+   * bootstrap itself is impossible — the step actions then surface a notice).
+   * `profileCommands` drives Apply-profile. Both are pre-narrowed to the
+   * canonical `starter` path.
+   */
+  private registerOnboardingPanel(
+    bootstrapCommands: BootstrapAssetSpaceCommands | null,
+    profileCommands: ProfileCommands,
+    localDataStore: PluginLocalDataStore,
+  ): void {
+    const unavailable = (what: string): void =>
+      this.notifier.info(
+        `${what} is unavailable in this environment — see the Getting Started guide.`,
+      );
+
+    const openPanel = (): void => {
+      new FirstRunOnboardingModal(this.app, {
+        onSetupEngine: () => {
+          if (bootstrapCommands === null) {
+            unavailable("Bootstrap");
+            return;
+          }
+          void bootstrapCommands.invokeBootstrap();
+        },
+        onAddStarter: () => {
+          if (bootstrapCommands === null) {
+            unavailable("Add starter content");
+            return;
+          }
+          void bootstrapCommands.invokeAddAssetSpace(STARTER_REGISTRY_URL);
+        },
+        onApplyStarterProfile: () => {
+          void profileCommands.invokeApplyProfile(STARTER_PROFILE_QUERY);
+        },
+        onClosePanel: () => {
+          void localDataStore.setOnboardingCompleted(true).catch((err) => {
+            this.logger.warn(
+              "[ExocortexPlugin] persisting onboarding-completed flag failed: " +
+                (err instanceof Error ? err.message : String(err)),
+            );
+          });
+        },
+      }).open();
+    };
+
+    // Guided Setup command — unconditional (parity); the re-entry point the
+    // first-run panel depends on (RFC 0002 §3.2 bullet 1).
+    registerOnboardingCommands(this, openPanel);
+
+    // First-run auto-show — deferred to layoutReady (a Modal during onload can
+    // wedge "Loading plugins…"). Best-effort: a detection failure must not
+    // break onload.
+    this.app.workspace.onLayoutReady(() => {
+      void this.maybeShowFirstRunPanel(
+        bootstrapCommands,
+        localDataStore,
+        openPanel,
+      );
+    });
+  }
+
+  /**
+   * Decide whether to auto-show the first-run panel and do so (RFC 0002 §3.1).
+   * Shows only on a not-yet-bootstrapped vault that the user has not already
+   * dismissed onboarding on this device. All reads are cross-platform
+   * (`vault.adapter`), so the check behaves identically on mobile. Best-effort
+   * — any failure is logged, never thrown.
+   */
+  private async maybeShowFirstRunPanel(
+    bootstrapCommands: BootstrapAssetSpaceCommands | null,
+    localDataStore: PluginLocalDataStore,
+    openPanel: () => void,
+  ): Promise<void> {
+    try {
+      // No bootstrap driver → cannot detect vault state (and bootstrap itself
+      // would be impossible), so there is nothing to guide.
+      if (bootstrapCommands === null) return;
+      const completed = await localDataStore.getOnboardingCompleted();
+      const state = await bootstrapCommands.detectVaultState();
+      if (shouldShowFirstRunPanel(state, completed)) openPanel();
+    } catch (err) {
+      this.logger.warn(
+        "[ExocortexPlugin] first-run onboarding check failed: " +
+          (err instanceof Error ? err.message : String(err)),
+      );
+    }
   }
 
   /**
@@ -3263,7 +3395,7 @@ export default class ExocortexPlugin extends Plugin {
     } | null,
     restMount: RestAssetSpaceMount | null,
     localDataStore: PluginLocalDataStore,
-  ): void {
+  ): BootstrapAssetSpaceCommands {
     const deriveFolderName = (url: string): string => {
       const { repo } = parseGitHubURL(url);
       return repo.startsWith("exoas-") ? repo.slice("exoas-".length) : repo;
@@ -3303,9 +3435,14 @@ export default class ExocortexPlugin extends Plugin {
         new Promise((resolve) => {
           new BootstrapVaultModal(this.app, resolve).open();
         }),
-      promptAddAssetSpaceUrl: () =>
+      promptAddAssetSpaceUrl: (prefillUrl?: string) =>
         new Promise((resolve) => {
-          new AddAssetSpaceModal(this.app, deriveFolderName, resolve).open();
+          new AddAssetSpaceModal(
+            this.app,
+            deriveFolderName,
+            resolve,
+            prefillUrl,
+          ).open();
         }),
       confirm: (message) =>
         new Promise((resolve) => {
@@ -3342,6 +3479,11 @@ export default class ExocortexPlugin extends Plugin {
         void bootstrapCommands.invokeAddAssetSpace();
       },
     });
+
+    // Returned so `registerProfileCommands` can wire the first-run onboarding
+    // panel's step-1 (Bootstrap) and step-2 (Add starter content, prefilled)
+    // actions to this same handler — RFC 0002 §3.1.
+    return bootstrapCommands;
   }
 
   /**

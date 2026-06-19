@@ -47,7 +47,11 @@ interface Harness {
   switchMgr: FakeSwitchMgr;
   pushMgr: FakePushMgr;
   notices: string[];
-  pickCalls: { options: ProfileChoice[]; title: string }[];
+  pickCalls: {
+    options: ProfileChoice[];
+    title: string;
+    initialQuery?: string;
+  }[];
   fuzzyResult: ProfileChoice | null;
   activeFilePath: string | null;
   cmd: ProfileCommands;
@@ -68,7 +72,11 @@ function makeHarness(opts: {
       pushMgr.lookups.set(folder, uid);
   }
   const notices: string[] = [];
-  const pickCalls: { options: ProfileChoice[]; title: string }[] = [];
+  const pickCalls: {
+    options: ProfileChoice[];
+    title: string;
+    initialQuery?: string;
+  }[] = [];
   const deps: ProfileCommandsDeps = {
     switchMgr: switchMgr as unknown as ProfileApplyManager,
     pushMgr,
@@ -76,8 +84,8 @@ function makeHarness(opts: {
       if (opts.listError) throw opts.listError;
       return opts.profiles;
     },
-    fuzzyPick: async (options, title) => {
-      pickCalls.push({ options, title });
+    fuzzyPick: async (options, title, initialQuery) => {
+      pickCalls.push({ options, title, initialQuery });
       return opts.pickResult === undefined ? null : opts.pickResult;
     },
     getActiveFilePath: () => opts.activeFilePath ?? null,
@@ -285,6 +293,23 @@ describe("ProfileCommands.invokeApplyProfile (Apply profile)", () => {
     expect(h.pickCalls).toHaveLength(1);
     expect(h.pickCalls[0].options).toEqual(profiles);
     expect(h.pickCalls[0].title).toBe("Apply profile");
+    // No pre-narrowing when invoked normally (palette command).
+    expect(h.pickCalls[0].initialQuery).toBeUndefined();
+  });
+
+  it("forwards an initialQuery to the picker (onboarding §3.1 step 3 — «starter»)", async () => {
+    const profiles = [
+      { uid: "k1", label: "knowledge-one" },
+      { uid: "starter-uid", label: "starter" },
+    ];
+    const h = makeHarness({ profiles, pickResult: profiles[1] });
+    await h.cmd.invokeApplyProfile("starter");
+
+    expect(h.pickCalls).toHaveLength(1);
+    expect(h.pickCalls[0].initialQuery).toBe("starter");
+    // The full list is still passed — the query only pre-narrows.
+    expect(h.pickCalls[0].options).toEqual(profiles);
+    expect(h.switchMgr.applyCalls).toEqual(["starter-uid"]);
   });
 
   it("invokes applyProfile with the chosen uid", async () => {

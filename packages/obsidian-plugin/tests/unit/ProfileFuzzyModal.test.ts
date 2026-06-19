@@ -102,4 +102,31 @@ describe("ProfileFuzzyModal", () => {
     );
     expect(modal.inputEl.placeholder).toBe("Switch focus profile");
   });
+
+  // RFC 0002 §3.1 step 3 — the onboarding panel opens the picker narrowed to
+  // `starter`. onOpen sets the search input + fires `input` so Obsidian
+  // re-filters.
+  it("onOpen pre-narrows the picker to the initialQuery (onboarding «starter»)", () => {
+    const modal = new ProfileFuzzyModal(
+      fakeApp,
+      profiles,
+      "Apply profile",
+      () => {},
+      "starter",
+    );
+    let inputEvents = 0;
+    modal.inputEl.addEventListener("input", () => {
+      inputEvents++;
+    });
+    modal.onOpen();
+    expect(modal.inputEl.value).toBe("starter");
+    // A synthetic `input` event is dispatched so Obsidian re-filters.
+    expect(inputEvents).toBe(1);
+  });
+
+  it("onOpen leaves the input untouched when no initialQuery", () => {
+    const modal = new ProfileFuzzyModal(fakeApp, profiles, "Apply profile", () => {});
+    modal.onOpen();
+    expect(modal.inputEl.value).toBe("");
+  });
 });

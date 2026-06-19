@@ -51,16 +51,38 @@ export class ProfileFuzzyModal extends FuzzySuggestModal<ProfileChoice> {
   private chosen: ProfileChoice | null = null;
   private settled = false;
   private readonly resolve: (value: ProfileChoice | null) => void;
+  private readonly initialQuery: string;
 
   constructor(
     app: App,
     private readonly options: ProfileChoice[],
     title: string,
     resolve: (value: ProfileChoice | null) => void,
+    initialQuery?: string,
   ) {
     super(app);
     this.resolve = resolve;
+    this.initialQuery = (initialQuery ?? "").trim();
     this.setPlaceholder(title);
+  }
+
+  /**
+   * Pre-narrow the fuzzy filter when launched from the first-run onboarding
+   * panel (RFC 0002 §3.1 step 3 — open the picker on `starter`). Sets the
+   * search input and fires an `input` event so Obsidian re-filters. Best-effort
+   * — the full list is still present, so a context where the synthetic event is
+   * ignored just shows the unfiltered picker with the query pre-typed.
+   */
+  override onOpen(): void {
+    super.onOpen();
+    if (this.initialQuery.length > 0) {
+      try {
+        this.inputEl.value = this.initialQuery;
+        this.inputEl.dispatchEvent(new Event("input"));
+      } catch {
+        /* pre-narrow is best-effort; the picker still lists every profile */
+      }
+    }
   }
 
   getItems(): ProfileChoice[] {
