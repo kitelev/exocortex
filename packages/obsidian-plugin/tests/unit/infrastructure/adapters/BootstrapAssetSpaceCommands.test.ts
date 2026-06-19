@@ -427,6 +427,22 @@ describe("BootstrapAssetSpaceCommands.invokeAddAssetSpace", () => {
     expect(h.puller.pullAssetSpace).not.toHaveBeenCalled();
     expect(h.notices.some((n) => /invalid URL/i.test(n))).toBe(true);
   });
+
+  // RFC 0002 §3.1 step 2 — the onboarding panel calls
+  // invokeAddAssetSpace(prefillUrl) so the modal opens with the recommended
+  // `exoas-starter-registry` URL pre-filled. The prefill must reach the prompt.
+  it("forwards prefillUrl to the prompt (onboarding §3.1 step 2)", async () => {
+    const REGISTRY = "https://github.com/kitelev/exoas-starter-registry";
+    const h = makeHarness({ isGitVault: true });
+    await h.cmds.invokeAddAssetSpace(REGISTRY);
+    expect(h.deps.promptAddAssetSpaceUrl).toHaveBeenCalledWith(REGISTRY);
+  });
+
+  it("no prefill → prompt called with undefined (unchanged palette path)", async () => {
+    const h = makeHarness({ isGitVault: true });
+    await h.cmds.invokeAddAssetSpace();
+    expect(h.deps.promptAddAssetSpaceUrl).toHaveBeenCalledWith(undefined);
+  });
 });
 
 describe("BootstrapAssetSpaceCommands — lazy per-invocation puller (Issue #3382)", () => {

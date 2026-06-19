@@ -71,11 +71,14 @@ export interface ProfileCommandsDeps {
   /**
    * Open a fuzzy picker UI. Returns the user's choice, or null if the
    * picker was cancelled. Real implementation wraps Obsidian
-   * `FuzzySuggestModal`; tests provide a programmatic stub.
+   * `FuzzySuggestModal`; tests provide a programmatic stub. `initialQuery`
+   * (optional) pre-narrows the filter — the first-run onboarding panel passes
+   * `"starter"` so the recommended profile surfaces first (RFC 0002 §3.1 step 3).
    */
   fuzzyPick: (
     options: ProfileChoice[],
     title: string,
+    initialQuery?: string,
   ) => Promise<ProfileChoice | null>;
   /** Returns the currently-active file path, or null if no file is open. */
   getActiveFilePath: () => string | null;
@@ -124,8 +127,12 @@ export class ProfileCommands {
    *
    * User-facing error mapping: TsFloorViolationError, UncommittedChangesAbortError,
    * and ApplyAbortedByUser get clear notices distinct from generic «Apply failed».
+   *
+   * `initialQuery` (optional) pre-narrows the picker — the first-run onboarding
+   * panel passes `"starter"` so the recommended profile surfaces first
+   * (RFC 0002 §3.1 step 3). The full list is still shown.
    */
-  async invokeApplyProfile(): Promise<void> {
+  async invokeApplyProfile(initialQuery?: string): Promise<void> {
     let profiles: ProfileChoice[];
     try {
       profiles = await this.profileLister();
@@ -139,7 +146,7 @@ export class ProfileCommands {
       return;
     }
 
-    const chosen = await this.fuzzyPick(profiles, "Apply profile");
+    const chosen = await this.fuzzyPick(profiles, "Apply profile", initialQuery);
     if (chosen === null) return; // user cancelled
 
     this.notify(`Applying ${chosen.label}…`);

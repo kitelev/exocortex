@@ -243,3 +243,65 @@ describe("PluginLocalDataStore.migrateFromLegacyIfNeeded", () => {
     expect(store.getActiveProfileUid()).toBe("p-once");
   });
 });
+
+describe("PluginLocalDataStore — first-run onboarding flag (RFC 0002 §3.1)", () => {
+  it("defaults to false when absent", async () => {
+    const { app } = makeFakeApp();
+    const store = new PluginLocalDataStore({ app });
+    expect(await store.getOnboardingCompleted()).toBe(false);
+  });
+
+  it("set then read round-trips true", async () => {
+    const { app } = makeFakeApp();
+    const store = new PluginLocalDataStore({ app });
+    await store.setOnboardingCompleted(true);
+    expect(await store.getOnboardingCompleted()).toBe(true);
+  });
+
+  it("set false clears the flag", async () => {
+    const { app } = makeFakeApp();
+    const store = new PluginLocalDataStore({ app });
+    await store.setOnboardingCompleted(true);
+    await store.setOnboardingCompleted(false);
+    expect(await store.getOnboardingCompleted()).toBe(false);
+  });
+
+  it("only `true` reads as completed (defensive against truthy junk)", async () => {
+    const { app } = makeFakeApp({
+      [PATH]: JSON.stringify({ onboardingCompleted: "yes" }),
+    });
+    const store = new PluginLocalDataStore({ app });
+    expect(await store.getOnboardingCompleted()).toBe(false);
+  });
+
+  it("device-local: RMW preserves sibling keys (PAT, switch state)", async () => {
+    const { app, files } = makeFakeApp({
+      [PATH]: JSON.stringify({
+        pat: "ghp_secret",
+        activeProfileUid: "p-x",
+        _switchInProgress: true,
+      }),
+    });
+    const store = new PluginLocalDataStore({ app });
+    await store.setOnboardingCompleted(true);
+
+    const onDisk = JSON.parse(files.get(PATH) as string) as Record<
+      string,
+      unknown
+    >;
+    expect(onDisk.onboardingCompleted).toBe(true);
+    // Sibling keys untouched (read-modify-write).
+    expect(onDisk.pat).toBe("ghp_secret");
+    expect(onDisk.activeProfileUid).toBe("p-x");
+    expect(onDisk._switchInProgress).toBe(true);
+  });
+
+  it("a switch-state save() preserves the onboarding flag (disjoint namespace)", async () => {
+    const { app } = makeFakeApp();
+    const store = new PluginLocalDataStore({ app });
+    await store.setOnboardingCompleted(true);
+    // A later, unrelated switch-state write must not clobber the flag.
+    await store.save({ activeProfileUid: "p-y", _switchInProgress: false });
+    expect(await store.getOnboardingCompleted()).toBe(true);
+  });
+});

@@ -19,11 +19,17 @@ export interface AddAssetSpaceInput {
  * Resolves `{ url }` only when the user clicks «Add» with a plausible GitHub
  * URL. Esc / Cancel / any close path resolves `null`. The promise resolves
  * exactly once.
+ *
+ * An optional `initialUrl` pre-fills the field — used by the first-run
+ * onboarding panel (RFC 0002 §3.1 step 2) to offer the public, stable
+ * `exoas-starter-registry` URL one click away. The user still confirms; a
+ * pre-fill is a recommended default, not an auto-action.
  */
 export class AddAssetSpaceModal extends Modal {
   private resolved = false;
   private readonly resolveFn: (input: AddAssetSpaceInput | null) => void;
   private readonly deriveFolderName: (url: string) => string;
+  private readonly initialUrl: string;
   private urlInput: HTMLInputElement | null = null;
   private previewEl: HTMLElement | null = null;
   private errorEl: HTMLElement | null = null;
@@ -32,10 +38,12 @@ export class AddAssetSpaceModal extends Modal {
     app: App,
     deriveFolderName: (url: string) => string,
     resolve: (input: AddAssetSpaceInput | null) => void,
+    initialUrl?: string,
   ) {
     super(app);
     this.deriveFolderName = deriveFolderName;
     this.resolveFn = resolve;
+    this.initialUrl = (initialUrl ?? "").trim();
   }
 
   private settle(value: AddAssetSpaceInput | null): void {
@@ -64,6 +72,12 @@ export class AddAssetSpaceModal extends Modal {
       cls: "add-assetspace-input bootstrap-modal-input",
     });
     this.urlInput = input;
+    // Pre-fill the recommended starter-registry URL when launched from the
+    // first-run onboarding panel (RFC 0002 §3.1 step 2). The user still reviews
+    // + confirms; the preview reflects the pre-filled value immediately.
+    if (this.initialUrl.length > 0) {
+      input.value = this.initialUrl;
+    }
 
     this.previewEl = contentEl.createEl("p", {
       cls: "add-assetspace-preview",

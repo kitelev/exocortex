@@ -275,6 +275,43 @@ describe("AddAssetSpaceModal", () => {
     expect(result).toEqual({ url: "https://github.com/me/thing" });
   });
 
+  it("initialUrl pre-fills the field + live-previews it (onboarding §3.1 step 2)", () => {
+    const REGISTRY = "https://github.com/kitelev/exoas-starter-registry";
+    new AddAssetSpaceModal(fakeApp, derive, () => undefined, REGISTRY).open();
+    const input = document.querySelector("input") as HTMLInputElement;
+    // The recommended registry URL is pre-filled; the user still confirms.
+    expect(input.value).toBe(REGISTRY);
+    // Preview reflects the pre-filled value immediately (not a placeholder hint).
+    const preview = document.querySelector(
+      ".add-assetspace-preview",
+    ) as HTMLElement;
+    expect(preview.classList.contains("is-placeholder")).toBe(false);
+    expect(preview.textContent).toMatch(
+      /Target folder: assetspaces\/kitelev\/exoas-starter-registry/,
+    );
+  });
+
+  it("pre-filled URL → Add resolves it without retyping", () => {
+    const REGISTRY = "https://github.com/kitelev/exoas-starter-registry";
+    let result: { url: string } | null | undefined;
+    new AddAssetSpaceModal(
+      fakeApp,
+      derive,
+      (r) => {
+        result = r;
+      },
+      REGISTRY,
+    ).open();
+    findButton("Add")!.click();
+    expect(result).toEqual({ url: REGISTRY });
+  });
+
+  it("no initialUrl → field starts empty (unchanged default)", () => {
+    new AddAssetSpaceModal(fakeApp, derive, () => undefined).open();
+    const input = document.querySelector("input") as HTMLInputElement;
+    expect(input.value).toBe("");
+  });
+
   it("invalid URL → error, no resolve", () => {
     let result: unknown = "sentinel";
     new AddAssetSpaceModal(fakeApp, derive, (r) => {

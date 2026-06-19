@@ -61,6 +61,7 @@ const KEY_ACTIVE_PROFILE_UID = "activeProfileUid";
 const KEY_SWITCH_IN_PROGRESS = "_switchInProgress";
 const KEY_ACTIVE_STAGING_DIRS = "_activeStagingDirs";
 const KEY_FILE_ONLY_ASSET_SPACES = "_fileOnlyAssetSpaces";
+const KEY_ONBOARDING_COMPLETED = "onboardingCompleted";
 
 export interface PluginLocalDataStoreOptions {
   app: App;
@@ -348,6 +349,34 @@ export class PluginLocalDataStore {
       sha: e.sha,
       addedAt: e.addedAt,
     }));
+    await this.persist(all);
+  }
+
+  /**
+   * Read the device-local first-run onboarding flag (RFC 0002 §3.1). `true`
+   * once the user has dismissed/completed the "Welcome to Exocortex" panel on
+   * this device, so it does not auto-show again (it stays re-openable via the
+   * `Setup` command).
+   *
+   * Device-local by design — onboarding is per-device UX state, NOT a vault
+   * fact to replicate via Sync (one device's "I've seen this" must not suppress
+   * the panel on a teammate's fresh device). Reads from disk on each call (the
+   * value lives outside {@link LocalSwitchState}, read once at onload), and is
+   * preserved across switch-state writes by their RMW. Defaults to `false` when
+   * absent or unreadable.
+   */
+  async getOnboardingCompleted(): Promise<boolean> {
+    const all = await this.readAllRaw();
+    return all[KEY_ONBOARDING_COMPLETED] === true;
+  }
+
+  /**
+   * Persist the first-run onboarding flag. RMW preserves unknown sibling keys
+   * (PAT, switch state, staging dirs) — see the class docstring.
+   */
+  async setOnboardingCompleted(completed: boolean): Promise<void> {
+    const all = await this.readAllRaw();
+    all[KEY_ONBOARDING_COMPLETED] = completed;
     await this.persist(all);
   }
 
