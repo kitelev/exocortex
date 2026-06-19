@@ -34,6 +34,8 @@
 import { Command } from "commander";
 import { promises as fsp, existsSync } from "node:fs";
 import { webcrypto } from "node:crypto";
+import { execFile as execFileCb } from "node:child_process";
+import { promisify } from "node:util";
 import * as path from "node:path";
 import yaml from "js-yaml";
 import {
@@ -259,6 +261,41 @@ export function nodeMountBaseStore(
   return new FileMountBaseStore(nodeWatermarkFileIO(filePath));
 }
 
+const execFile = promisify(execFileCb);
+
+/**
+ * #3590 FULL fix — node-backed base BACKFILL source for AssetSpaces mounted
+ * BEFORE the mount layer recorded their base (no `exosync-mountbase.local.json`
+ * entry). Returns the commit SHA the submodule's working tree is checked out at
+ * (`git submodule status <path>` → leading 40-hex SHA) — the genuine 3-way merge
+ * base (local edits sit uncommitted on top; a true remote-head ancestor, which
+ * the engine re-verifies before trusting — M1-safe). Returns `null` — never
+ * throws — when the path is not an initialized submodule, git is unavailable, or
+ * the output is unparseable; the engine then keeps its conservative
+ * full-conflict fallback. Read-only `execFile` (no shell — injection-safe).
+ */
+export function nodeLocalBaseShaProvider(
+  vaultPath: string,
+): (spec: SyncRepoSpec) => Promise<string | null> {
+  return async (spec) => {
+    // A leading-dash localPath could be misread by git as an option — refuse it.
+    if (spec.localPath.length === 0 || spec.localPath.startsWith("-")) {
+      return null;
+    }
+    try {
+      const { stdout } = await execFile(
+        "git",
+        ["-C", vaultPath, "submodule", "status", spec.localPath],
+        { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 },
+      );
+      const m = stdout.match(/^[ +\-U]?([0-9a-f]{40})\b/m);
+      return m ? m[1] : null;
+    } catch {
+      return null;
+    }
+  };
+}
+
 /**
  * CLI full-materialization gate (D19). The CLI has no plugin profile-apply /
  * staging state to consult, so the floor check is: mount folder exists +
@@ -390,6 +427,7 @@ export async function runExosyncSync(
     transport,
     watermarkStore: new FileWatermarkStore(nodeWatermarkFileIO(watermarkPath)),
     mountBaseStore: nodeMountBaseStore(vaultPath, configDir),
+    localBaseShaProvider: nodeLocalBaseShaProvider(vaultPath),
     materializationCheck: nodeMaterializationCheck(vaultPath),
     localFilesFor: (spec) =>
       nodeLocalFilesPort(path.join(vaultPath, spec.localPath)),
