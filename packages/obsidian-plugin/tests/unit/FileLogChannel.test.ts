@@ -14,6 +14,7 @@ interface MockAdapter {
   stat: jest.Mock;
   rename: jest.Mock;
   remove: jest.Mock;
+  read: jest.Mock;
 }
 
 describe("FileLogChannel", () => {
@@ -29,6 +30,7 @@ describe("FileLogChannel", () => {
       stat: jest.fn().mockResolvedValue({ size: 0, type: "file", ctime: 0, mtime: 0 }),
       rename: jest.fn().mockResolvedValue(undefined),
       remove: jest.fn().mockResolvedValue(undefined),
+      read: jest.fn().mockResolvedValue(""),
     };
     channel = new FileLogChannel(mockAdapter as any, PLUGIN_DIR);
   });
@@ -254,6 +256,42 @@ describe("FileLogChannel", () => {
       expect(mockAdapter.stat).not.toHaveBeenCalled();
       expect(mockAdapter.rename).not.toHaveBeenCalled();
       expect(mockAdapter.write).toHaveBeenCalledWith(LOG_FILE, expect.stringContaining("First line ever"));
+    });
+  });
+
+  // RFC 0002 §3.8 P12 (#3588) — surface API used by the «Open logs» command.
+  describe("getLogFilePath + read (Open logs source)", () => {
+    it("exposes the log path inside the plugin data folder, not the vault root", () => {
+      expect(channel.getLogFilePath()).toBe(LOG_FILE);
+      expect(channel.getLogFilePath()).toContain(".obsidian/plugins/exocortex");
+      expect(channel.getLogFilePath()).not.toBe("exocortex-logs.txt");
+    });
+
+    it("reads the current log file content via the adapter", async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue("[ERROR] boom\n");
+
+      const content = await channel.read();
+
+      expect(mockAdapter.exists).toHaveBeenCalledWith(LOG_FILE);
+      expect(mockAdapter.read).toHaveBeenCalledWith(LOG_FILE);
+      expect(content).toBe("[ERROR] boom\n");
+    });
+
+    it("returns empty string when the log file does not exist yet", async () => {
+      mockAdapter.exists.mockResolvedValue(false);
+
+      const content = await channel.read();
+
+      expect(content).toBe("");
+      expect(mockAdapter.read).not.toHaveBeenCalled();
+    });
+
+    it("returns empty string (best-effort) when the adapter read throws", async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockRejectedValue(new Error("EPERM"));
+
+      await expect(channel.read()).resolves.toBe("");
     });
   });
 });
