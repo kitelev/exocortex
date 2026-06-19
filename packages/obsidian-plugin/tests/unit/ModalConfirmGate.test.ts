@@ -216,4 +216,51 @@ describe("ModalConfirmGate", () => {
 
     await expect(promise).resolves.toBe(false);
   });
+
+  // RFC 0002 §3.11 / P16 — destructive confirm a11y: text marker + styling (not
+  // a glyph alone), and managed focus lands on the SAFE default so a keyboard
+  // user does not trigger the irreversible action by pressing Enter on open.
+  describe("accessibility (P16, §3.11)", () => {
+    it("the destructive Apply button conveys intent via text + mod-warning styling, never a glyph alone", async () => {
+      const gate = new ModalConfirmGate(fakeApp);
+      const promise = gate.confirmApply(makePlan());
+
+      const confirmBtn = findButton("Apply")!;
+      // Styling cue.
+      expect(confirmBtn.classList.contains("mod-warning")).toBe(true);
+      // Text cue — readable label, not an emoji glyph alone.
+      const txt = (confirmBtn.textContent ?? "").trim();
+      expect(txt.length).toBeGreaterThan(1);
+      expect(
+        /^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+$/u.test(txt),
+      ).toBe(false);
+      // Screen-reader label spells out the destructive intent.
+      expect(confirmBtn.getAttribute("aria-label")).toMatch(/destructive/i);
+
+      findButton("Cancel")?.click();
+      await promise;
+    });
+
+    it("both buttons carry explicit aria-labels", async () => {
+      const gate = new ModalConfirmGate(fakeApp);
+      const promise = gate.confirmApply(makePlan());
+
+      expect(findButton("Apply")!.getAttribute("aria-label")).toBeTruthy();
+      expect(findButton("Cancel")!.getAttribute("aria-label")).toBeTruthy();
+
+      findButton("Cancel")?.click();
+      await promise;
+    });
+
+    it("manages focus — lands on the safe default (Cancel), not the destructive Apply", async () => {
+      const gate = new ModalConfirmGate(fakeApp);
+      const promise = gate.confirmApply(makePlan());
+
+      expect(document.activeElement).toBe(findButton("Cancel"));
+      expect(document.activeElement).not.toBe(findButton("Apply"));
+
+      findButton("Cancel")?.click();
+      await promise;
+    });
+  });
 });

@@ -137,15 +137,37 @@ class ApplyConfirmModal extends Modal {
       text: "Apply",
       cls: "mod-warning",
     });
+    // a11y (RFC 0002 §3.11 / P16): the destructive intent is conveyed by the
+    // `mod-warning` styling AND this text marker (never a glyph alone) so it is
+    // unambiguous for assistive tech, not only sighted users.
+    confirmBtn.setAttribute(
+      "aria-label",
+      "Apply — proceed with this destructive change (removes the listed files)",
+    );
     confirmBtn.addEventListener("click", () => {
       this.settle(true);
       this.close();
     });
     const cancelBtn = buttonRow.createEl("button", { text: "Cancel" });
+    cancelBtn.setAttribute(
+      "aria-label",
+      "Cancel — abort without modifying the vault",
+    );
     cancelBtn.addEventListener("click", () => {
       this.settle(false);
       this.close();
     });
+
+    // Managed focus (P16, §3.11) — this is a DESTRUCTIVE confirm, so land focus
+    // on the SAFE default (Cancel) rather than the irreversible action, so a
+    // keyboard / screen-reader user does not trigger the destroy by pressing
+    // Enter on open. Focus-trap + Esc-close are provided by Obsidian's Modal
+    // base. Guarded for jsdom / headless contexts.
+    try {
+      cancelBtn.focus();
+    } catch {
+      /* focus is best-effort */
+    }
   }
 
   override onClose(): void {

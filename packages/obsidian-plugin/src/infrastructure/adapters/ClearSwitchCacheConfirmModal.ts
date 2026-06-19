@@ -59,6 +59,10 @@ export class ClearSwitchCacheConfirmModal extends Modal {
     });
 
     const cancelBtn = actions.createEl("button", { text: "Cancel" });
+    cancelBtn.setAttribute(
+      "aria-label",
+      "Cancel — keep the cached profiles",
+    );
     cancelBtn.addEventListener("click", () => {
       this.settle(false);
       this.close();
@@ -68,10 +72,25 @@ export class ClearSwitchCacheConfirmModal extends Modal {
       cls: "mod-warning",
       text: "Clear",
     });
+    // a11y (RFC 0002 §3.11 / P16): destructive intent via `mod-warning` styling
+    // AND this text marker (never a glyph alone) for assistive tech.
+    confirmBtn.setAttribute(
+      "aria-label",
+      "Clear — permanently remove all cached profiles (cannot be undone)",
+    );
     confirmBtn.addEventListener("click", () => {
       this.settle(true);
       this.close();
     });
+
+    // Managed focus (P16, §3.11) — DESTRUCTIVE confirm lands on the safe default
+    // (Cancel), not the irreversible wipe. Focus-trap + Esc-close come from
+    // Obsidian's Modal base. Guarded for jsdom / headless contexts.
+    try {
+      cancelBtn.focus();
+    } catch {
+      /* focus is best-effort */
+    }
   }
 
   override onClose(): void {
