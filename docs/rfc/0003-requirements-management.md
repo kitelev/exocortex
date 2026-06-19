@@ -129,8 +129,8 @@ loop). The Phase-2 hard-gate (§3.7) requires net-new behavior to be **spec-firs
 ### 3.2 Storage — per-module requirement assetspaces; Pages fail-closed by repo visibility
 
 Requirements are first-class vault RDF assets (Homoiconicity Invariant; RDF is
-purpose-built for machine-readable requirements + traceability
-([ontology-based traceability](https://www.researchgate.net/publication/332311255_An_Ontology-based_Approach_to_Support_for_Requirements_Traceability_in_Agile_Development))).
+purpose-built for machine-readable requirements + traceability — ontology-based
+requirements-traceability literature, INCOSE / Mark Austin et al.).
 Following the EKA audience-layered + per-module assetspace pattern (verified
 against the live structure):
 
@@ -408,5 +408,5 @@ re-approval?*
 - [Anthropic — Claude Code best practices](https://code.claude.com/docs/en/best-practices)
 - [AWS Kiro — feature specs / EARS](https://kiro.dev/docs/specs/feature-specs/) (EARS = Easy Approach to Requirements Syntax, 5 patterns; Ubiquitous = invariants/NFR)
 - [Gojko Adzic — Specification by Example, 10 years later](https://gojko.net/2020/03/17/sbe-10-years.html)
-- [Ontology-based requirements traceability](https://www.researchgate.net/publication/332311255_An_Ontology-based_Approach_to_Support_for_Requirements_Traceability_in_Agile_Development)
+- Ontology-based requirements traceability (INCOSE; Mark Austin et al., "Ontology-Enabled Traceability Mechanisms")
 - Repo grounding: `origin/main` (`1ada25cb`) — #3401/#3433/#3545 (Cucumber removal), `.archgate` ADRs, `eka-gui-e2e`, `uj__UserJourney` (starter-kit), CLI `audit` dispatcher, EKA per-module assetspaces (`exoas-exo`, …, verified live).
