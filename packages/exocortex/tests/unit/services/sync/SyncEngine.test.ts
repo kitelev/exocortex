@@ -227,15 +227,22 @@ describe("SyncEngine — first-sync cleanly-mergeable divergence (#3590)", () =>
 
     // Device B advances the remote, touching ONLY CONFIG (disjoint from the
     // local edits below) — exactly the empirical #3590 shape.
-    gh.commitDirect(gh.branch, { [CONFIG]: mdAsset("u9", "remote-x") }, "remote ahead (disjoint)");
+    gh.commitDirect(
+      gh.branch,
+      { [CONFIG]: mdAsset("u9", "remote-x") },
+      "remote ahead (disjoint)",
+    );
 
-    // Local working tree: edits FILE_A, adds FILE_B, deletes FILE_C, and still
-    // holds the OLD (un-pulled) CONFIG. None of these overlap the remote change.
+    // Local working tree: edits FILE_A, adds FILE_B, and still holds the OLD
+    // (un-pulled) CONFIG + the unchanged FILE_C. None overlap the remote change.
+    // (The genuine-DELETION case — FILE_C absent from disk while unchanged on
+    // remote head — is now conservatively routed to full-conflict by the #3610
+    // base-tree⊆working-tree sanity guard; see that describe block.)
     const local = new FakeLocalFiles({
       [FILE_A]: mdAsset("u1", "local-a"), // local edit
       [CONFIG]: mdAsset("u9", "orig-x"), // un-pulled mount version
       [FILE_B]: mdAsset("u2"), // local-only add
-      // FILE_C absent → local delete
+      [FILE_C]: mdAsset("u3", "orig-c"), // unchanged (present — not a deletion)
     });
     const { engine, watermarks } = makeEngine(gh, local, {
       mountBaseStore: new FakeMountBaseStore({ [gh.spec().repoKey]: mountSha }),
@@ -253,9 +260,8 @@ describe("SyncEngine — first-sync cleanly-mergeable divergence (#3590)", () =>
     expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1", "local-a"));
     expect(gh.headFiles().get(FILE_B)).toBe(mdAsset("u2"));
     expect(gh.headFiles().get(CONFIG)).toBe(mdAsset("u9", "remote-x"));
-    // Local delete propagated.
-    expect(gh.headFiles().has(FILE_C)).toBe(false);
-    expect(result.pushedDeletes ?? []).toContain(FILE_C);
+    // FILE_C unchanged on both sides — untouched.
+    expect(gh.headFiles().get(FILE_C)).toBe(mdAsset("u3", "orig-c"));
 
     // A real watermark is established → re-sync no-ops (no deadlock).
     expect(watermarks.records.size).toBe(1);
@@ -271,7 +277,11 @@ describe("SyncEngine — first-sync cleanly-mergeable divergence (#3590)", () =>
     // remote nor disk — zero silent data loss.
     const gh = new FakeGitHubRepo({ [CONFIG]: mdAsset("u9", "orig-x") });
     const mountSha = gh.headSha();
-    gh.commitDirect(gh.branch, { [CONFIG]: mdAsset("u9", "remote-x") }, "remote edits CONFIG");
+    gh.commitDirect(
+      gh.branch,
+      { [CONFIG]: mdAsset("u9", "remote-x") },
+      "remote edits CONFIG",
+    );
     const local = new FakeLocalFiles({ [CONFIG]: mdAsset("u9", "local-x") }); // local ALSO edited CONFIG
     const { engine, watermarks } = makeEngine(gh, local, {
       mountBaseStore: new FakeMountBaseStore({ [gh.spec().repoKey]: mountSha }),
@@ -289,7 +299,11 @@ describe("SyncEngine — first-sync cleanly-mergeable divergence (#3590)", () =>
     // A stale/foreign/GC'd mount SHA must NOT be trusted as a base — the engine
     // falls back to the conservative full-conflict (status quo), never a guess.
     const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1", "orig-a") });
-    gh.commitDirect(gh.branch, { [CONFIG]: mdAsset("u9", "remote-x") }, "remote ahead");
+    gh.commitDirect(
+      gh.branch,
+      { [CONFIG]: mdAsset("u9", "remote-x") },
+      "remote ahead",
+    );
     const local = new FakeLocalFiles({
       [FILE_A]: mdAsset("u1", "local-a"),
       [CONFIG]: mdAsset("u9", "orig-x"),
@@ -383,11 +397,13 @@ describe("SyncEngine — first-sync base BACKFILL for mounted-but-baseless repos
     );
 
     // Local working tree diverges on disjoint files (edits FILE_A, adds FILE_B,
-    // deletes FILE_C, still holds the un-pulled CONFIG).
+    // still holds the un-pulled CONFIG + the unchanged FILE_C). (The genuine
+    // first-sync DELETION case is now covered by the #3610 sanity guard block.)
     const local = new FakeLocalFiles({
       [FILE_A]: mdAsset("u1", "local-a"),
       [CONFIG]: mdAsset("u9", "orig-x"),
       [FILE_B]: mdAsset("u2"),
+      [FILE_C]: mdAsset("u3", "orig-c"), // unchanged (present — not a deletion)
     });
 
     // EMPTY store (no recorded base) + a provider returning the real mount SHA
@@ -410,7 +426,7 @@ describe("SyncEngine — first-sync base BACKFILL for mounted-but-baseless repos
     expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1", "local-a"));
     expect(gh.headFiles().get(FILE_B)).toBe(mdAsset("u2"));
     expect(gh.headFiles().get(CONFIG)).toBe(mdAsset("u9", "remote-x"));
-    expect(gh.headFiles().has(FILE_C)).toBe(false);
+    expect(gh.headFiles().get(FILE_C)).toBe(mdAsset("u3", "orig-c")); // untouched
     // The recovered, ancestor-VERIFIED base is persisted (backfilled) so a later
     // first-sync reuses it without re-invoking the provider.
     expect(mountBaseStore.shas.get(gh.spec().repoKey)).toBe(mountSha);
@@ -529,6 +545,204 @@ describe("SyncEngine — first-sync base BACKFILL for mounted-but-baseless repos
 
     expect(result.status).toBe("synced");
     expect(provider).not.toHaveBeenCalled(); // recorded base used, provider untouched
+  });
+});
+
+// #3610 — base-tree⊆working-tree sanity guard (defence-in-depth, from the #3609
+// advisor review). The first-sync 3-way base is the recorded mount-SHA tree
+// (#3596) or the backfilled submodule-HEAD tree (#3609); it is verified to be a
+// GENUINE ANCESTOR of remote head, but ancestry alone does NOT prove the base
+// tree matches the commit the local working tree was actually derived from.
+//
+// If a base file is ABSENT from the working tree AND remote head still carries
+// it UNCHANGED since the base, the pre-guard engine inferred a *local deletion*
+// and silently pushed the delete — `synced`, no conflict, no warning. Under the
+// NORMAL lifecycle (tarball / `git submodule add` makes working-tree ==
+// base-commit tree byte-for-byte) that IS a genuine deletion; under out-of-band
+// submodule manipulation it is data loss. The two are INDISTINGUISHABLE from
+// {base-tree, disk, head-tree} alone, so the guard is conservative: any such
+// suspicious base file routes the WHOLE first-sync run to `full-conflict`
+// (merge/quarantine, A2/A3) instead of inferring a silent deletion. M1
+// zero-loss in BOTH directions — no silent delete, no silent resurrection.
+//
+// Scope: ONLY the first-sync mount-base path. Steady-state watermark deletions
+// (the common happy path) are UNTOUCHED — see the #3476 delete-propagation
+// tests below and the dedicated steady-state regression at the end of this block.
+describe("SyncEngine — #3610 base-tree⊆working-tree sanity guard (first-sync)", () => {
+  it("DATA-LOSS GUARD: a recorded-mount base file absent from disk but UNCHANGED on remote head routes the run to full-conflict — never a silent delete push", async () => {
+    // Mount base: FILE_A + CONFIG + FILE_C, all byte-identical to remote.
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1", "orig-a"),
+      [CONFIG]: mdAsset("u9", "orig-x"),
+      [FILE_C]: mdAsset("u3", "orig-c"),
+    });
+    const mountSha = gh.headSha();
+
+    // Remote advances on a DISJOINT file (CONFIG); FILE_C stays UNCHANGED on
+    // remote head — so the mount-base path is taken (head != mount, ancestor).
+    gh.commitDirect(
+      gh.branch,
+      { [CONFIG]: mdAsset("u9", "remote-x") },
+      "remote ahead (disjoint)",
+    );
+
+    // Working tree LACKS FILE_C while the base tree has it and remote head still
+    // carries it unchanged. Pre-guard the engine pushed a silent delete of
+    // FILE_C (data loss under out-of-band base/working-tree mismatch).
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1", "local-a"),
+      [CONFIG]: mdAsset("u9", "orig-x"),
+      [FILE_B]: mdAsset("u2"),
+      // FILE_C absent → looks like a local delete (suspicious — guard fires)
+    });
+    const { engine, watermarks } = makeEngine(gh, local, {
+      mountBaseStore: new FakeMountBaseStore({ [gh.spec().repoKey]: mountSha }),
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    // Guard routes the WHOLE run to full-conflict — never a silent delete push.
+    expect(result.status).toBe("full-conflict");
+    expect(result.detail).toMatch(/base[- ]?tree/i);
+    // FILE_C is NOT deleted on remote (the data loss the guard prevents).
+    expect(gh.headFiles().has(FILE_C)).toBe(true);
+    expect(gh.headFiles().get(FILE_C)).toBe(mdAsset("u3", "orig-c"));
+    // Nothing pushed/written, no watermark advanced — idempotent.
+    expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1", "orig-a"));
+    expect(gh.headFiles().has(FILE_B)).toBe(false);
+    expect(gh.headFiles().get(CONFIG)).toBe(mdAsset("u9", "remote-x"));
+    expect(local.files.get(FILE_A)).toBe(mdAsset("u1", "local-a")); // disk untouched
+    expect(watermarks.records.size).toBe(0);
+  });
+
+  it("DATA-LOSS GUARD (backfill path): a BACKFILLED base file absent from disk but unchanged on remote head full-conflicts and is NOT persisted", async () => {
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1", "orig-a"),
+      [CONFIG]: mdAsset("u9", "orig-x"),
+      [FILE_C]: mdAsset("u3", "orig-c"),
+    });
+    const mountSha = gh.headSha();
+    gh.commitDirect(
+      gh.branch,
+      { [CONFIG]: mdAsset("u9", "remote-x") },
+      "remote ahead (disjoint)",
+    );
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1", "local-a"),
+      [CONFIG]: mdAsset("u9", "orig-x"),
+      [FILE_B]: mdAsset("u2"),
+      // FILE_C absent
+    });
+    const mountBaseStore = new FakeMountBaseStore(); // empty → provider backfill
+    const { engine, watermarks } = makeEngine(gh, local, {
+      mountBaseStore,
+      localBaseShaProvider: async () => mountSha,
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("full-conflict");
+    expect(result.detail).toMatch(/base[- ]?tree/i);
+    expect(gh.headFiles().has(FILE_C)).toBe(true); // not deleted on remote
+    expect(watermarks.records.size).toBe(0);
+    // The base is rejected for the silent-deletion inference → NOT persisted
+    // (next first-sync re-derives and re-guards; idempotent).
+    expect(mountBaseStore.shas.has(gh.spec().repoKey)).toBe(false);
+  });
+
+  it("TARGETED: a base file absent from disk that remote head CHANGED is NOT guard-suspicious — flows to the 3-way merge (local-delete vs remote-modify → conflict, never silent)", async () => {
+    // FILE_C absent from disk, but remote MODIFIED it since the base → the
+    // "unchanged on remote head" qualifier is false → the guard does NOT fire.
+    // The additive-base proceeds and the 3-way machinery classifies it as a
+    // local-delete-vs-remote-modify conflict (zero-loss, but NOT the guard).
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1", "orig-a"),
+      [FILE_C]: mdAsset("u3", "orig-c"),
+    });
+    const mountSha = gh.headSha();
+    gh.commitDirect(
+      gh.branch,
+      { [FILE_C]: mdAsset("u3", "remote-changed-c") },
+      "remote edits FILE_C",
+    );
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1", "local-a"), // disjoint local edit
+      // FILE_C absent → local delete, but remote CHANGED it
+    });
+    const { engine, watermarks } = makeEngine(gh, local, {
+      mountBaseStore: new FakeMountBaseStore({ [gh.spec().repoKey]: mountSha }),
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    // Zero-loss: FILE_C not deleted, remote untouched, no watermark.
+    expect(result.status).not.toBe("synced");
+    expect(gh.headFiles().get(FILE_C)).toBe(mdAsset("u3", "remote-changed-c"));
+    expect(watermarks.records.size).toBe(0);
+    // It is NOT the #3610 guard that fired — the 3-way conflict layer handled it.
+    expect(`${result.detail ?? ""} ${result.warnings.join(" ")}`).not.toMatch(
+      /sanity guard/i,
+    );
+  });
+
+  it("CONVERGENT: a base file absent from disk that remote head ALSO deleted is NOT suspicious — the disjoint divergence still clean-merges (no false full-conflict)", async () => {
+    // FILE_C deleted on BOTH sides; remote also advanced CONFIG (disjoint). The
+    // guard checks "unchanged on remote head" — FILE_C is absent from head, so
+    // it is NOT suspicious → the #3590 clean merge proceeds.
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1", "orig-a"),
+      [CONFIG]: mdAsset("u9", "orig-x"),
+      [FILE_C]: mdAsset("u3", "orig-c"),
+    });
+    const mountSha = gh.headSha();
+    gh.commitDirect(
+      gh.branch,
+      { [CONFIG]: mdAsset("u9", "remote-x") },
+      "remote ahead (disjoint) + delete FILE_C",
+      [FILE_C], // remote ALSO deleted FILE_C (convergent)
+    );
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1", "local-a"),
+      [CONFIG]: mdAsset("u9", "orig-x"),
+      [FILE_B]: mdAsset("u2"),
+      // FILE_C absent → convergent delete (already gone on remote head)
+    });
+    const { engine, watermarks } = makeEngine(gh, local, {
+      mountBaseStore: new FakeMountBaseStore({ [gh.spec().repoKey]: mountSha }),
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    // Clean merge — guard does NOT fire on a convergent delete.
+    expect(result.status).toBe("synced");
+    expect(local.files.get(CONFIG)).toBe(mdAsset("u9", "remote-x")); // pulled
+    expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1", "local-a")); // pushed
+    expect(gh.headFiles().get(FILE_B)).toBe(mdAsset("u2")); // pushed
+    expect(gh.headFiles().has(FILE_C)).toBe(false); // gone on both sides
+    expect(watermarks.records.size).toBe(1);
+  });
+
+  it("STEADY-STATE UNCHANGED: a genuine deletion after the watermark is established still pushes (the guard is scoped to first-sync only)", async () => {
+    // Establish a watermark first (disk == remote head). Then delete FILE_B
+    // locally and re-sync — the steady-state watermark path is NOT touched by
+    // the #3610 first-sync guard, so the genuine deletion propagates normally.
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const { engine } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec()); // watermark established
+
+    local.files.delete(FILE_B); // genuine deletion in steady state
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.pushedDeletes).toEqual([FILE_B]);
+    expect(gh.headFiles().has(FILE_B)).toBe(false); // deletion landed remotely
   });
 });
 

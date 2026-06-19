@@ -2168,7 +2168,12 @@ export class SyncEngine {
   private async tryMountBaseBootstrap(
     spec: SyncRepoSpec,
     head: string,
+    disk: ReadonlyMap<string, SyncContent>,
     warnings: string[],
+    result: (
+      status: RepoSyncResult["status"],
+      extra?: Partial<RepoSyncResult>,
+    ) => RepoSyncResult,
   ): Promise<FirstSyncBootstrap | null> {
     const store = this.deps.mountBaseStore;
 
@@ -2266,6 +2271,68 @@ export class SyncEngine {
       return null;
     }
 
+    // #3610 — base-tree⊆working-tree sanity guard (defence-in-depth, from the
+    // #3609 advisor review). The base above is a VERIFIED ancestor of head, but
+    // ancestry does NOT prove the base tree matches the commit the local working
+    // tree was actually derived from. A base file ABSENT from the working tree
+    // whose remote-head blob is UNCHANGED since the base would, in the normal
+    // 3-way cycle, be inferred as a LOCAL DELETION and silently pushed — correct
+    // under the normal lifecycle (a tarball / `git submodule add` materialization
+    // makes working-tree == base-commit tree byte-for-byte, so the disk-missing
+    // file IS a genuine deletion), but DATA LOSS under out-of-band submodule
+    // manipulation that moved the working tree off its derivation commit. The
+    // two cases are INDISTINGUISHABLE from {base, disk, head} alone, so route the
+    // WHOLE run to full-conflict (merge/quarantine, A2/A3) rather than infer a
+    // silent deletion — M1 zero-loss in BOTH directions (no silent delete, no
+    // silent resurrection). A file absent from disk that remote CHANGED (≠ base
+    // blob) is NOT suspicious here — it falls through to the 3-way machinery as a
+    // local-delete-vs-remote-modify conflict; a file absent from disk AND from
+    // remote head is a convergent delete and is likewise not flagged. The
+    // head-tree fetch is paid only on this rare first-sync-mount-base path (the
+    // recorded/backfilled mount is an ancestor and the remote advanced since).
+    let headTreeByPath: Map<string, string>;
+    try {
+      const headCommit = await getCommitInfo(
+        this.transport,
+        spec.owner,
+        spec.repo,
+        head,
+        this.deps.baseURL,
+      );
+      headTreeByPath = treeByPath(
+        (
+          await getTree(
+            this.transport,
+            spec.owner,
+            spec.repo,
+            headCommit.treeSha,
+            this.deps.baseURL,
+          )
+        ).filter((e) => isSyncablePath(e.path)),
+      );
+    } catch {
+      return null; // head unresolvable → conservative fallback (R⊆L path)
+    }
+    const suspicious = baseTree.filter(
+      (b) => !disk.has(b.path) && headTreeByPath.get(b.path) === b.blobSha,
+    );
+    if (suspicious.length > 0) {
+      const sample =
+        suspicious
+          .slice(0, 3)
+          .map((s) => s.path)
+          .join(", ") + (suspicious.length > 3 ? ", …" : "");
+      warnings.push(
+        `first-sync (asset mode): base-tree⊆working-tree sanity guard fired — ${suspicious.length} base file(s) absent from the working tree but UNCHANGED on remote head (${sample}); the verified-ancestor base may not match the working tree's derivation commit (out-of-band submodule manipulation) → routing to merge/quarantine instead of inferring a silent deletion (#3610)`,
+      );
+      return {
+        kind: "settled",
+        outcome: result("full-conflict", {
+          detail: `first-sync: base-tree⊆working-tree sanity guard — ${suspicious.length} base file(s) absent from the working tree are unchanged on remote head (${sample}); refusing to infer a silent deletion from a base that may not match the derivation commit — divergence must go through merge/quarantine (A2/A3), never a silent delete (#3610)`,
+        }),
+      };
+    }
+
     // uid is intentionally omitted from the base snapshot here: it is only used
     // for rename matching on the base side, and deriving it would require
     // fetching every base blob. Both the local diff (disk uids) and the remote
@@ -2347,7 +2414,13 @@ export class SyncEngine {
     // overlapping edit still routes through the merge/quarantine layer (M1
     // zero-loss). Absent / stale / unresolvable / not-an-ancestor → null → the
     // conservative R⊆L path below (full-conflict on overlap) is unchanged.
-    const mountBootstrap = await this.tryMountBaseBootstrap(spec, head, warnings);
+    const mountBootstrap = await this.tryMountBaseBootstrap(
+      spec,
+      head,
+      disk,
+      warnings,
+      result,
+    );
     if (mountBootstrap !== null) return mountBootstrap;
 
     const headCommit = await getCommitInfo(
