@@ -221,6 +221,45 @@ describe("PluginLockManager.releaseLock", () => {
   });
 });
 
+describe("PluginLockManager.reclaimIfForeignOrStale (#1d1bcde0)", () => {
+  it("returns false (no reclaim) when no lock file exists", async () => {
+    const { mgr, store } = makeHarness();
+    expect(await mgr.reclaimIfForeignOrStale()).toBe(false);
+    expect(store.removes).toHaveLength(0);
+  });
+
+  it("does NOT reclaim our own still-fresh lock (a live same-session apply)", async () => {
+    const { mgr, store } = makeHarness();
+    await mgr.acquireLock("apply-rest-target");
+    // Same pid, fresh heartbeat → live in-progress apply, must survive.
+    expect(await mgr.reclaimIfForeignOrStale()).toBe(false);
+    expect(store.files.has(".exocortex/switch-lock.json")).toBe(true);
+  });
+
+  it("reclaims a FOREIGN-pid still-fresh lock (crashed/other session)", async () => {
+    const a = makeHarness({ pid: "pid-A" });
+    await a.mgr.acquireLock("op-A");
+
+    // A different session (the recovering one) reclaims the crashed pid-A lock
+    // even though its heartbeat is fresh.
+    const recovering = new PluginLockManager({
+      app: a.app,
+      pid: "pid-recover",
+      now: () => a.clock.current,
+    });
+    expect(await recovering.reclaimIfForeignOrStale()).toBe(true);
+    expect(readSnapshot(a.store)).toBeNull();
+  });
+
+  it("reclaims our OWN lock once it has gone stale", async () => {
+    const { mgr, store, clock } = makeHarness({ staleMs: 1000 });
+    await mgr.acquireLock("op");
+    clock.advance(2000); // heartbeat now older than staleMs
+    expect(await mgr.reclaimIfForeignOrStale()).toBe(true);
+    expect(store.files.has(".exocortex/switch-lock.json")).toBe(false);
+  });
+});
+
 describe("PluginLockManager.checkOnPluginLoad", () => {
   it("returns null holder when no lock file present", async () => {
     const { mgr } = makeHarness();
