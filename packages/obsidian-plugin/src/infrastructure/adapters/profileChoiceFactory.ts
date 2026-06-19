@@ -84,6 +84,11 @@ export function buildProfileChoice(
       : basename;
 
   const includeUids = extractIncludeUids(fm["exo__Profile_includes"]);
+  // Scope check on DIRECT includes only. `exo__Profile_imports` (transitive
+  // parent composition, RFC-deferred 0..1 MVP) is intentionally not walked
+  // here: at worst a profile whose imported parent is absent shows as relevant
+  // — it never HIDES a relevant profile, so the picker stays safe. The
+  // apply-time effective set (VaultProfileResolver) still resolves `_imports`.
   const isLocallyRelevant = includeUids.every((u) => presentUids.has(u));
 
   return {

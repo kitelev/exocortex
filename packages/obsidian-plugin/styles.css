@@ -2500,6 +2500,8 @@
   font-size: 0.8em;
   color: var(--text-muted);
   margin-top: 2px;
+  /* Single-line truncate — ellipsis needs nowrap to take effect. */
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
