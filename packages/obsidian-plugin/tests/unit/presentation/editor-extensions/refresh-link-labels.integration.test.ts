@@ -37,7 +37,11 @@ const MISSING_UID = "ffffffff-0000-0000-0000-000000000000";
  */
 function makeMetadataCache(indexedFiles: Map<string, { label?: string }>) {
   return {
-    getFirstLinkpathDest: (linkpath: string): TFile | null => {
+    // Mirror Obsidian's real 2-arg signature (linkpath, sourcePath).
+    getFirstLinkpathDest: (
+      linkpath: string,
+      _sourcePath: string,
+    ): TFile | null => {
       const key = linkpath.endsWith(".md") ? linkpath.slice(0, -3) : linkpath;
       if (!indexedFiles.has(key)) return null;
       const file = new TFile();

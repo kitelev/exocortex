@@ -75,10 +75,15 @@ export interface LinkLabelRefreshDeps {
    */
   ensureIndexFresh: () => Promise<void> | void;
   /**
-   * Force every open Markdown editor view to reconfigure its editor
-   * extensions — recreates the `WikilinkLabelViewPlugin` instances → fresh
-   * `buildDecorations` against the current `metadataCache`. Maps to
-   * `app.workspace.updateOptions()`.
+   * Force every open Markdown editor view to reconfigure ALL of its editor
+   * extensions — recreating the `WikilinkLabelViewPlugin` instances among them
+   * → fresh `buildDecorations` against the current `metadataCache`. Maps to
+   * `app.workspace.updateOptions()`, which (per Obsidian's API docs)
+   * reconfigures all open Markdown views and is "fairly expensive". CodeMirror
+   * preserves cursor/scroll/selection across the reconfigure (they live in
+   * editor state, not the extensions), so there is no user-visible disruption.
+   * Acceptable for a rare, user-initiated command; the Веха 2 auto-hook that
+   * reuses `refresh()` should weigh this all-extensions cost per profile-apply.
    */
   rebuildEditorViews: () => void;
   /**
