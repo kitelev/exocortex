@@ -84,17 +84,19 @@ export function renderPatSetupHelper(containerEl: HTMLElement): HTMLElement {
     cls: "exocortex-pat-setup-helper",
   });
 
-  const link = wrapper.createEl("a", {
+  wrapper.createEl("a", {
     cls: "exocortex-pat-setup-create-link",
     text: PAT_CREATE_TOKEN_LABEL,
     href: GITHUB_FINE_GRAINED_TOKEN_URL,
+    attr: {
+      // _blank + noopener/noreferrer: open GitHub without reverse-tabnabbing.
+      target: "_blank",
+      rel: "noopener noreferrer",
+      // Screen-reader label states the link leaves Obsidian (P16).
+      "aria-label":
+        "Create a fine-grained GitHub token (opens GitHub in your browser)",
+    },
   });
-  link.setAttribute("target", "_blank");
-  link.setAttribute("rel", "noopener noreferrer");
-  link.setAttribute(
-    "aria-label",
-    "Create a fine-grained GitHub token (opens GitHub in your browser)",
-  );
 
   wrapper.createEl("p", {
     cls: "exocortex-pat-setup-intro",

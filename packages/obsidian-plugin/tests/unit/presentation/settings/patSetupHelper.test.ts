@@ -19,9 +19,15 @@ interface CreateOpts {
   cls?: string;
   text?: string;
   href?: string;
+  attr?: Record<string, string>;
 }
 
-/** Give a jsdom element Obsidian's `createEl` (recursive, attribute-copying). */
+/**
+ * Give a jsdom element Obsidian's `createEl` (recursive, attribute-copying).
+ * Honours `cls` / `text` / `href` AND the `attr` map, mirroring Obsidian's
+ * real `DomElementInfo` — so reusers of this fake (the cd9444bd Welcome panel)
+ * see attributes set via the idiomatic `attr` map, not just `setAttribute`.
+ */
 function augment(el: HTMLElement): HTMLElement {
   (
     el as unknown as { createEl: (tag: string, o?: CreateOpts) => HTMLElement }
@@ -30,6 +36,11 @@ function augment(el: HTMLElement): HTMLElement {
     if (o?.cls) child.className = o.cls;
     if (o?.text) child.textContent = o.text;
     if (o?.href) (child as HTMLAnchorElement).setAttribute("href", o.href);
+    if (o?.attr) {
+      for (const [name, value] of Object.entries(o.attr)) {
+        child.setAttribute(name, value);
+      }
+    }
     this.appendChild(child);
     augment(child);
     return child;
