@@ -60,6 +60,35 @@ describe("desktopOnlyCommandGate — MOBILE-004 detection", () => {
       `;
       expect(findDesktopOnlyGatedAddCommands(src)).toHaveLength(1);
     });
+
+    it("flags an Allman-brace `if (!Platform.isMobile)` block", () => {
+      const src = `
+        if (!Platform.isMobile)
+        {
+          this.addCommand({ id: "allman", name: "Allman" });
+        }
+      `;
+      expect(findDesktopOnlyGatedAddCommands(src)).toHaveLength(1);
+    });
+
+    it("flags a brace-less multi-line `if (!Platform.isMobile)` single statement", () => {
+      const src = `
+        if (!Platform.isMobile)
+          this.addCommand({ id: "nobrace", name: "No brace" });
+      `;
+      const hits = findDesktopOnlyGatedAddCommands(src);
+      expect(hits).toHaveLength(1);
+      expect(hits[0].reason).toMatch(/brace-less/);
+    });
+
+    it("flags a brace-less guard even across a comment line", () => {
+      const src = `
+        if (!Platform.isMobile)
+          // historical note
+          this.addCommand({ id: "c", name: "C" });
+      `;
+      expect(findDesktopOnlyGatedAddCommands(src)).toHaveLength(1);
+    });
   });
 
   describe("PASSES (parity-correct / unconditional → no false positive)", () => {
@@ -106,6 +135,52 @@ describe("desktopOnlyCommandGate — MOBILE-004 detection", () => {
       `;
       expect(findDesktopOnlyGatedAddCommands(src)).toHaveLength(0);
     });
+
+    it("does NOT flag a brace-less guard over a non-addCommand statement", () => {
+      const src = `
+        if (!Platform.isMobile)
+          doDesktopOnlyThing();
+        this.addCommand({ id: "after", name: "After (unconditional)" });
+      `;
+      expect(findDesktopOnlyGatedAddCommands(src)).toHaveLength(0);
+    });
+  });
+
+  // Honest false-negative boundary — these desktop-only-gating shapes are NOT
+  // caught (documented in the ADR). The gate is defense-in-depth for the
+  // likeliest regression; these assertions pin the current coverage limit so a
+  // future improvement that starts catching them updates the test deliberately.
+  describe("documented false-negatives (not yet caught)", () => {
+    it("does NOT catch an early-return `if (Platform.isMobile) return;` guard", () => {
+      const src = `
+        function wire(plugin) {
+          if (Platform.isMobile) return;
+          plugin.addCommand({ id: "early", name: "Early" });
+        }
+      `;
+      expect(findDesktopOnlyGatedAddCommands(src)).toHaveLength(0);
+    });
+
+    it("does NOT catch an else-branch desktop-only registration", () => {
+      const src = `
+        if (Platform.isMobile) {
+          doMobile();
+        } else {
+          this.addCommand({ id: "else", name: "Else" });
+        }
+      `;
+      expect(findDesktopOnlyGatedAddCommands(src)).toHaveLength(0);
+    });
+
+    it("does NOT catch data-flow gating through a deps variable", () => {
+      const src = `
+        const deps = Platform.isMobile ? null : build();
+        if (deps !== null) {
+          this.addCommand({ id: "dataflow", name: "Data flow" });
+        }
+      `;
+      expect(findDesktopOnlyGatedAddCommands(src)).toHaveLength(0);
+    });
   });
 
   describe("isDesktopOnlyCondition", () => {
@@ -123,11 +198,13 @@ describe("desktopOnlyCommandGate — MOBILE-004 detection", () => {
   });
 
   describe("real plugin source is parity-clean", () => {
-    it("ExocortexPlugin.ts has zero desktop-only-gated addCommand", () => {
-      const file = resolve(__dirname, "../../src/ExocortexPlugin.ts");
-      const content = readFileSync(file, "utf8");
-      const hits = findDesktopOnlyGatedAddCommands(content);
-      expect(hits).toEqual([]);
+    it.each([
+      "../../src/ExocortexPlugin.ts",
+      // RFC 0002 §3.9 subject — the onboarding command registration file.
+      "../../src/infrastructure/adapters/firstRunOnboarding.ts",
+    ])("%s has zero desktop-only-gated addCommand", (relPath) => {
+      const content = readFileSync(resolve(__dirname, relPath), "utf8");
+      expect(findDesktopOnlyGatedAddCommands(content)).toEqual([]);
     });
   });
 });

@@ -15,11 +15,14 @@
  * Every plugin command must register on BOTH desktop and mobile. A command
  * whose `addCommand(...)` is reachable only when NOT on mobile (a desktop-only
  * gate) is a parity violation — mobile/iPhone users can never invoke it. The
- * canonical anti-patterns:
+ * caught anti-patterns:
  *
- *   if (!Platform.isMobile) { this.addCommand({...}); }   // block guard
- *   if (Platform.isDesktopApp) plugin.addCommand({...});  // single-statement
- *   if (!Platform.isMobile) this.addCommand({...});        // single-statement
+ *   if (!Platform.isMobile) { this.addCommand({...}); }   // braced block guard
+ *   if (Platform.isDesktopApp) plugin.addCommand({...});  // same-line statement
+ *   if (!Platform.isMobile)                                // Allman-brace block
+ *   { this.addCommand({...}); }
+ *   if (!Platform.isMobile)                                // no-brace single stmt
+ *     this.addCommand({...});
  *
  * The PARITY pattern — which registers on both platforms — is explicitly NOT
  * flagged, because its condition admits a positive (non-negated) mobile branch:
@@ -35,10 +38,14 @@
  *    is only ever opened by an `if (...)` whose condition is desktop-only, which
  *    is rare, so a stray string brace elsewhere cannot conjure a false guard.
  *  - A `//` sequence inside a string literal truncates the scanned line.
- *  - Data-flow gating (e.g. `const deps = Platform.isMobile ? null : build();`
- *    then `if (deps !== null) addCommand(...)`) is NOT tracked — only a
- *    lexically-enclosing desktop-only `if` guard is. The likeliest regression
- *    (literally wrapping `addCommand` in `if (!Platform.isMobile)`) IS caught.
+ *  - These desktop-only-gating shapes are NOT caught (documented false
+ *    negatives — the gate is defense-in-depth for the LIKELIEST regression,
+ *    literally wrapping `addCommand` in an `if (!Platform.isMobile)`):
+ *      · data-flow gating — `const deps = Platform.isMobile ? null : build();`
+ *        then `if (deps !== null) addCommand(...)` (no lexical Platform guard);
+ *      · early-return guard — `if (Platform.isMobile) return;` then addCommand;
+ *      · else-branch — `if (Platform.isMobile) {...} else { addCommand(...) }`;
+ *      · a multi-LINE `if (...)` condition (parens not balanced on one line).
  */
 
 export interface DesktopOnlyGateHit {
@@ -111,11 +118,15 @@ export function findDesktopOnlyGatedAddCommands(
   const hits: DesktopOnlyGateHit[] = [];
   // Brace depths at which an active desktop-only guard block was opened.
   const guardStartDepths: number[] = [];
+  // Set after a brace-less desktop-only `if (cond)` line: the guard applies to
+  // the next meaningful line (an Allman `{` block, or a single statement).
+  let pendingDesktopOnlyIf = false;
   let depth = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     const trimmed = raw.trimStart();
+    const isBlank = trimmed.length === 0;
     const isComment =
       trimmed.startsWith("*") ||
       trimmed.startsWith("//") ||
@@ -131,9 +142,35 @@ export function findDesktopOnlyGatedAddCommands(
       guardStartDepths.pop();
     }
 
-    if (!isComment) {
-      const hasAdd = ADDCOMMAND.test(code);
+    // Blank / comment lines never resolve a pending guard or carry detection,
+    // but DO still feed brace counting (a `}` in a comment is rare; consistent
+    // with the documented heuristic).
+    if (isBlank || isComment) {
+      const o = (code.match(/\{/g) || []).length;
+      const c = (code.match(/\}/g) || []).length;
+      depth += o - c;
+      continue;
+    }
 
+    let resolvedPending = false;
+    if (pendingDesktopOnlyIf) {
+      pendingDesktopOnlyIf = false;
+      resolvedPending = true;
+      if (trimmed.startsWith("{")) {
+        // Allman-brace block opened by the previous desktop-only `if`.
+        guardStartDepths.push(depth);
+      } else if (ADDCOMMAND.test(code)) {
+        // Brace-less single statement guarded desktop-only.
+        hits.push({
+          line: i + 1,
+          reason: "addCommand gated desktop-only by a brace-less `if`",
+          snippet: trimmed.slice(0, 120),
+        });
+      }
+    }
+
+    if (!resolvedPending) {
+      const hasAdd = ADDCOMMAND.test(code);
       if (hasAdd) {
         if (guardStartDepths.length > 0) {
           // Inside an active desktop-only guard block.
@@ -155,12 +192,15 @@ export function findDesktopOnlyGatedAddCommands(
           }
         }
       } else {
-        // Detect a desktop-only block guard opening on this line:
-        //   if (<desktop-only-cond>) {
-        if (code.includes("{")) {
-          const cond = extractIfCondition(code);
-          if (cond !== null && isDesktopOnlyCondition(cond)) {
+        const cond = extractIfCondition(code);
+        if (cond !== null && isDesktopOnlyCondition(cond)) {
+          if (code.includes("{")) {
+            // Same-line braced block guard: `if (<desktop-only-cond>) {`.
             guardStartDepths.push(depth);
+          } else {
+            // Brace-less desktop-only `if` — the guard applies to the NEXT
+            // meaningful line (Allman block or single statement).
+            pendingDesktopOnlyIf = true;
           }
         }
       }

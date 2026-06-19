@@ -65,8 +65,21 @@ Implemented in `.archgate/lint/desktopOnlyCommandGate.ts`, shared verbatim with
 the jest revert-verify test
 `packages/obsidian-plugin/tests/unit/desktopOnlyCommandGate.test.ts` (no drift
 between the gate and its test). Line/brace based, with the same documented
-heuristic trade-offs as MOBILE-001/002/003 (braces inside string literals can
-desync depth; data-flow gating via an intermediate `Platform.isMobile ? null`
-deps variable is not tracked — only a lexically-enclosing desktop-only `if`
-guard is). Scope is `packages/obsidian-plugin/src` — the only place a `Plugin`
-instance (and thus `Plugin.addCommand`) exists.
+heuristic trade-offs as MOBILE-001/002/003. Caught forms: a same-line braced
+block (`if (!Platform.isMobile) { addCommand(...) }`), an Allman-brace block,
+a brace-less single statement, and a same-line single statement.
+
+Defense-in-depth for the **likeliest** regression (literally wrapping
+`addCommand` in an `if (!Platform.isMobile)`). These desktop-only-gating shapes
+are NOT caught (honest false-negative boundary):
+
+- **data-flow gating** — `const deps = Platform.isMobile ? null : build();` then
+  `if (deps !== null) addCommand(...)` (no lexical Platform guard around the
+  registration);
+- **early-return guard** — `if (Platform.isMobile) return;` before `addCommand`;
+- **else-branch** — `if (Platform.isMobile) {...} else { addCommand(...) }`;
+- a **multi-line** `if (...)` condition (parens not balanced on one line);
+- braces inside string/regex literals can desync the depth counter.
+
+Scope is `packages/obsidian-plugin/src` — the only place a `Plugin` instance
+(and thus `Plugin.addCommand`) exists.
