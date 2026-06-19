@@ -5,9 +5,10 @@
  * the REAL `GitSubmoduleOps` `.gitmodules` text manipulation + `renameIntoVault`
  * against a real tmpdir vault. The tarball pull is faked (no network) but the
  * staging→vault move + `.gitmodules` write are real filesystem operations, so
- * this proves the end-to-end materialisation contract:
- *   empty vault → bootstrap → `.gitmodules` has 2 entries + assetspaces/exo +
- *   assetspaces/exocmd populated.
+ * this proves the end-to-end materialisation contract (exo-only clean bootstrap,
+ * 2026-06-20):
+ *   empty vault → bootstrap → `.gitmodules` has 1 entry + assetspaces/exo
+ *   populated (exocmd added later via «Add AssetSpace by URL» / profile).
  */
 
 /* eslint-disable no-restricted-imports, import/no-nodejs-modules */
@@ -115,7 +116,7 @@ describe("Bootstrap integration — real GitSubmoduleOps + tmpdir vault (git mod
     if (vaultRoot) await fs.rm(vaultRoot, { recursive: true, force: true });
   });
 
-  it("empty vault → bootstrap → 2 .gitmodules entries + assetspaces/exo + assetspaces/exocmd populated", async () => {
+  it("empty vault → bootstrap → 1 .gitmodules entry + assetspaces/exo populated (exo-only)", async () => {
     vaultRoot = await makeTmpVault();
     const gitOps = new GitSubmoduleOps({ vaultRootPath: vaultRoot });
     const probes = makeVaultProbes(vaultRoot);
@@ -132,10 +133,8 @@ describe("Bootstrap integration — real GitSubmoduleOps + tmpdir vault (git mod
       isGitVault: async () => true,
       validateUrl: () => undefined,
       deriveFolderName: (u) => u.split("/").pop() ?? "x",
-      promptBootstrapUrls: async () => ({
-        exoUrl: EXO_URL,
-        exocmdUrl: EXOCMD_URL,
-      }),
+      // Exo-only clean bootstrap (2026-06-20): the modal yields only the exo URL.
+      promptBootstrapUrls: async () => ({ exoUrl: EXO_URL }),
       promptAddAssetSpaceUrl: async () => null,
       confirm: async () => true,
       notify: (m) => notices.push(m),
@@ -143,24 +142,22 @@ describe("Bootstrap integration — real GitSubmoduleOps + tmpdir vault (git mod
 
     await cmds.invokeBootstrap();
 
-    // Both folders materialised with the fake AssetSpace file — at the Maven
-    // mount path `assetspaces/<owner>/<repo>` (RFC 5aa2a73a B4).
+    // exo materialised with the fake AssetSpace file — at the Maven mount path
+    // `assetspaces/<owner>/<repo>` (RFC 5aa2a73a B4). exocmd is NOT materialised
+    // by bootstrap (added later via «Add AssetSpace by URL» / profile).
     const exoFile = path.join(
       vaultRoot,
       "assetspaces/kitelev/exoas-exo/73bd00e4-ccc0-4f3f-b20d-c4388c4588fb.md",
     );
-    const exocmdFile = path.join(
-      vaultRoot,
-      "assetspaces/kitelev/exoas-exocmd/73bd00e4-ccc0-4f3f-b20d-c4388c4588fb.md",
-    );
     await expect(fs.access(exoFile)).resolves.toBeUndefined();
-    await expect(fs.access(exocmdFile)).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(vaultRoot, "assetspaces/kitelev/exoas-exocmd")),
+    ).rejects.toThrow();
 
-    // `.gitmodules` has exactly the two TS-floor entries (Maven paths).
+    // `.gitmodules` has exactly the one exo TS-floor entry (Maven path).
     const entries = await gitOps.readGitmodulesEntries();
     expect(entries).toEqual([
       { submodulePath: "assetspaces/kitelev/exoas-exo", url: EXO_URL },
-      { submodulePath: "assetspaces/kitelev/exoas-exocmd", url: EXOCMD_URL },
     ]);
 
     expect(notices.some((n) => /Bootstrap complete/.test(n))).toBe(true);
@@ -192,10 +189,7 @@ describe("Bootstrap integration — real GitSubmoduleOps + tmpdir vault (git mod
       isGitVault: async () => true,
       validateUrl: () => undefined,
       deriveFolderName: (u) => u.split("/").pop() ?? "x",
-      promptBootstrapUrls: async () => ({
-        exoUrl: EXO_URL,
-        exocmdUrl: EXOCMD_URL,
-      }),
+      promptBootstrapUrls: async () => ({ exoUrl: EXO_URL }),
       promptAddAssetSpaceUrl: async () => null,
       confirm: async () => true,
       notify: () => undefined,
@@ -233,10 +227,7 @@ describe("Bootstrap integration — real GitSubmoduleOps + tmpdir vault (git mod
       isGitVault: async () => true,
       validateUrl: () => undefined,
       deriveFolderName: (u) => u.split("/").pop() ?? "x",
-      promptBootstrapUrls: async () => ({
-        exoUrl: EXO_URL,
-        exocmdUrl: EXOCMD_URL,
-      }),
+      promptBootstrapUrls: async () => ({ exoUrl: EXO_URL }),
       promptAddAssetSpaceUrl: async () => null,
       confirm: async () => true,
       notify: () => undefined,
@@ -412,7 +403,7 @@ describe("Bootstrap integration — staging-dir release (Issue #3391, real track
       isGitVault: async () => true,
       validateUrl: () => undefined,
       deriveFolderName: (u) => u.split("/").pop() ?? "x",
-      promptBootstrapUrls: async () => ({ exoUrl: EXO_URL, exocmdUrl: EXOCMD_URL }),
+      promptBootstrapUrls: async () => ({ exoUrl: EXO_URL }),
       promptAddAssetSpaceUrl: async () => null,
       confirm: async () => true,
       notify: () => undefined,
@@ -420,8 +411,8 @@ describe("Bootstrap integration — staging-dir release (Issue #3391, real track
 
     await cmds.invokeBootstrap();
 
-    // Both pulled, both moved into the vault, both staging entries released.
-    expect((mgr.pullAssetSpace as jest.Mock).mock.calls).toHaveLength(2);
+    // Exo-only: exo pulled, moved into the vault, its staging entry released.
+    expect((mgr.pullAssetSpace as jest.Mock).mock.calls).toHaveLength(1);
     await expect(fs.access(
       path.join(vaultRoot, "assetspaces/kitelev/exoas-exo/73bd00e4-ccc0-4f3f-b20d-c4388c4588fb.md"),
     )).resolves.toBeUndefined();

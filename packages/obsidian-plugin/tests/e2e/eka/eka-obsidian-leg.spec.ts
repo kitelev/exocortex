@@ -15,8 +15,10 @@ import * as path from "path";
  * Drives the FULL alpha-tester path through the Exocortex **plugin** (not the
  * CLI) against LIVE GitHub, in a fresh ephemeral vault:
  *
- *   1. Bootstrap vault   → floor `exoas-exo` + `exoas-exocmd` (public).
- *   2. Add assetspace    → central `exoas-registry` + `exoas-profiles` (public).
+ *   1. Bootstrap vault   → exo-only floor `exoas-exo` (public). exocmd is no
+ *                          longer a bootstrap field (2026-06-20 decision).
+ *   2. Add assetspace    → `exoas-exocmd` + central `exoas-registry` +
+ *                          `exoas-profiles` (public).
  *   3. Apply profile     → `$$kitelev-exodev` (62338881-…) — materialises the
  *                          full transitive effective set (PRIVATE `exoas-exodev`
  *                          leaf + deps + floor), with NO degraded refuse. This
@@ -457,37 +459,39 @@ test.describe("EKA Obsidian leg — bootstrap → add → apply-profile → crea
     launcher = await launchObsidianWithPlugin(vaultPath, "eka-leg-1");
     let window = await launcher.getWindow();
 
-    // ---- Step 1: Bootstrap vault (exo + exocmd floor) ----
-    log("step 1: bootstrap-vault");
+    // ---- Step 1: Bootstrap vault (exo-only clean bootstrap, 2026-06-20) ----
+    log("step 1: bootstrap-vault (exo-only)");
     await waitForCommand(window, COMMAND.bootstrap);
     await executeCommand(window, COMMAND.bootstrap);
-    // BootstrapVaultModal: two text inputs (exo, exocmd) + «Bootstrap» CTA.
+    // BootstrapVaultModal: ONE text input (exo) + «Bootstrap» CTA. The misleading
+    // exocmd-URL field was removed — exocmd is added in Step 2 via add-assetspace
+    // (it would otherwise arrive transitively when a profile is applied).
     await window.waitForSelector(".bootstrap-vault-input", { timeout: 15000 });
-    const bootInputs = window.locator(".bootstrap-vault-input");
-    await bootInputs.nth(0).fill(EXO_URL);
-    await bootInputs.nth(1).fill(EXOCMD_URL);
+    await window.locator(".bootstrap-vault-input").fill(EXO_URL);
     await window
       .locator(".bootstrap-vault-actions button.mod-cta")
       .click();
-    // Materialisation (2 tarball pulls) runs async. Bootstrap writes the
-    // `.gitmodules` entry AFTER moving files into place, so gate on BOTH entries
+    // Materialisation (1 tarball pull) runs async. Bootstrap writes the
+    // `.gitmodules` entry AFTER moving files into place, so gate on the entry
     // being registered (not just the .md on disk) — otherwise a fast disk poll
-    // races the second `appendGitmodulesEntry` and the assertion below flakes.
+    // races `appendGitmodulesEntry` and the assertion below flakes.
     await pollUntil(
-      "floor materialised + registered (exo + exocmd)",
+      "exo floor materialised + registered",
       () =>
         countMarkdown(vaultPath, EXO_DIR) > 0 &&
-        countMarkdown(vaultPath, EXOCMD_DIR) > 0 &&
-        readGitmodules(vaultPath).includes("exoas-exo") &&
-        readGitmodules(vaultPath).includes("exoas-exocmd"),
+        readGitmodules(vaultPath).includes("exoas-exo"),
       180000,
     );
     const gm1 = readGitmodules(vaultPath);
     expect(gm1).toContain("exoas-exo");
-    expect(gm1).toContain("exoas-exocmd");
 
-    // ---- Step 2: Add assetspace — registry then profiles ----
+    // ---- Step 2: Add assetspace — exocmd, registry, then profiles ----
+    // exocmd is no longer a bootstrap floor field; the user adds it explicitly
+    // here (the «либо явно командой add-assetspace» path of the 2026-06-20
+    // decision). It is also part of the profile effective set, so a later
+    // apply-profile keeps it materialised.
     for (const [label, url, dir] of [
+      ["exocmd", EXOCMD_URL, EXOCMD_DIR],
       ["registry", REGISTRY_URL, REGISTRY_DIR],
       ["profiles", PROFILES_URL, PROFILES_DIR],
     ] as const) {
@@ -515,6 +519,7 @@ test.describe("EKA Obsidian leg — bootstrap → add → apply-profile → crea
       "profile 62338881 must exist on disk after add-assetspace profiles",
     ).not.toBeNull();
     const gm2 = readGitmodules(vaultPath);
+    expect(gm2).toContain("exoas-exocmd"); // added explicitly in Step 2 now
     expect(gm2).toContain("exoas-registry");
     expect(gm2).toContain("exoas-profiles");
 

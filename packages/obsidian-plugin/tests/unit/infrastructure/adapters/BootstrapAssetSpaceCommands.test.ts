@@ -33,7 +33,7 @@ function makeHarness(opts: {
   gitmodulesEntries?: Array<{ submodulePath: string; url: string }>;
   materializedFolders?: Record<string, string[]>; // folder → files
   isGitVault?: boolean;
-  bootstrapUrls?: { exoUrl: string; exocmdUrl: string } | null;
+  bootstrapUrls?: { exoUrl: string } | null;
   addUrl?: { url: string } | null;
   confirm?: boolean;
 } = {}): Harness {
@@ -109,7 +109,7 @@ function makeHarness(opts: {
     deriveFolderName,
     promptBootstrapUrls: jest.fn(async () =>
       opts.bootstrapUrls === undefined
-        ? { exoUrl: EXO_URL, exocmdUrl: EXOCMD_URL }
+        ? { exoUrl: EXO_URL }
         : opts.bootstrapUrls,
     ),
     promptAddAssetSpaceUrl: jest.fn(async () =>
@@ -171,51 +171,15 @@ describe("BootstrapAssetSpaceCommands.detectVaultState", () => {
 });
 
 describe("BootstrapAssetSpaceCommands.invokeBootstrap — empty vault (git)", () => {
-  it("pulls exo + exocmd into fixed folders and appends .gitmodules", async () => {
+  // Exo-only clean bootstrap (decision 2026-06-20): the modal no longer collects
+  // an exocmd URL, and invokeBootstrap materialises ONLY exo. exocmd is added
+  // later via «Add AssetSpace by URL» or transitively via a profile.
+  //
+  // Revert-verify: restoring the exocmd materialise branch (a second
+  // `materialize(urls.exocmdUrl, …)` call) makes the `toHaveBeenCalledTimes(1)`
+  // assertions FAIL (a second pull/rename/append fires).
+  it("pulls exo only into the Maven folder and appends a single .gitmodules entry", async () => {
     const h = makeHarness({ isGitVault: true });
-    await h.cmds.invokeBootstrap();
-
-    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(2);
-    expect(h.puller.pullAssetSpace).toHaveBeenNthCalledWith(
-      1,
-      "bootstrap-exoas-exo",
-      EXO_URL,
-      "main",
-    );
-    expect(h.puller.pullAssetSpace).toHaveBeenNthCalledWith(
-      2,
-      "bootstrap-exoas-exocmd",
-      EXOCMD_URL,
-      "main",
-    );
-    // RFC 5aa2a73a B4: floor mounts at the Maven path `assetspaces/<owner>/<repo>`.
-    expect(h.gitOps.renameIntoVault).toHaveBeenNthCalledWith(
-      1,
-      "/tmp/staging-bootstrap-exoas-exo",
-      "assetspaces/kitelev/exoas-exo",
-    );
-    expect(h.gitOps.renameIntoVault).toHaveBeenNthCalledWith(
-      2,
-      "/tmp/staging-bootstrap-exoas-exocmd",
-      "assetspaces/kitelev/exoas-exocmd",
-    );
-    expect(h.gitOps.appendGitmodulesEntry).toHaveBeenCalledWith(
-      "assetspaces/kitelev/exoas-exo",
-      EXO_URL,
-    );
-    expect(h.gitOps.appendGitmodulesEntry).toHaveBeenCalledWith(
-      "assetspaces/kitelev/exoas-exocmd",
-      EXOCMD_URL,
-    );
-    expect(h.localStore.upsertFileOnlyAssetSpace).not.toHaveBeenCalled();
-    expect(h.notices.some((n) => /Bootstrap complete/.test(n))).toBe(true);
-  });
-
-  it("B3 core-only — empty exocmd URL → pulls exo only, no exocmd pull/.gitmodules", async () => {
-    const h = makeHarness({
-      isGitVault: true,
-      bootstrapUrls: { exoUrl: EXO_URL, exocmdUrl: "" },
-    });
     await h.cmds.invokeBootstrap();
 
     expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(1);
@@ -225,6 +189,7 @@ describe("BootstrapAssetSpaceCommands.invokeBootstrap — empty vault (git)", ()
       EXO_URL,
       "main",
     );
+    // RFC 5aa2a73a B4: floor mounts at the Maven path `assetspaces/<owner>/<repo>`.
     expect(h.gitOps.renameIntoVault).toHaveBeenCalledTimes(1);
     expect(h.gitOps.renameIntoVault).toHaveBeenNthCalledWith(
       1,
@@ -236,19 +201,26 @@ describe("BootstrapAssetSpaceCommands.invokeBootstrap — empty vault (git)", ()
       "assetspaces/kitelev/exoas-exo",
       EXO_URL,
     );
-    expect(h.notices.some((n) => /knowledge-only/.test(n))).toBe(true);
+    // exocmd is NOT pulled during bootstrap.
+    expect(h.puller.pullAssetSpace).not.toHaveBeenCalledWith(
+      "bootstrap-exoas-exocmd",
+      EXOCMD_URL,
+      "main",
+    );
+    expect(h.localStore.upsertFileOnlyAssetSpace).not.toHaveBeenCalled();
+    expect(h.notices.some((n) => /Bootstrap complete/.test(n))).toBe(true);
   });
 });
 
 describe("BootstrapAssetSpaceCommands.invokeBootstrap — empty vault (file-only / non-git, AC10)", () => {
-  it("materializes without .gitmodules and tracks device-locally", async () => {
+  it("materializes exo only without .gitmodules and tracks device-locally", async () => {
     const h = makeHarness({ isGitVault: false });
     await h.cmds.invokeBootstrap();
 
-    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(2);
-    expect(h.gitOps.renameIntoVault).toHaveBeenCalledTimes(2);
+    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(1);
+    expect(h.gitOps.renameIntoVault).toHaveBeenCalledTimes(1);
     expect(h.gitOps.appendGitmodulesEntry).not.toHaveBeenCalled();
-    expect(h.localStore.upsertFileOnlyAssetSpace).toHaveBeenCalledTimes(2);
+    expect(h.localStore.upsertFileOnlyAssetSpace).toHaveBeenCalledTimes(1);
     expect(h.localStore.upsertFileOnlyAssetSpace).toHaveBeenCalledWith(
       expect.objectContaining({
         folderName: "assetspaces/kitelev/exoas-exo",
@@ -315,42 +287,22 @@ describe("BootstrapAssetSpaceCommands.invokeBootstrap — guards", () => {
 
   it("invalid URL → notify, no pull", async () => {
     const h = makeHarness({
-      bootstrapUrls: { exoUrl: "http://evil.example/x", exocmdUrl: EXOCMD_URL },
+      bootstrapUrls: { exoUrl: "http://evil.example/x" },
     });
     await h.cmds.invokeBootstrap();
     expect(h.puller.pullAssetSpace).not.toHaveBeenCalled();
     expect(h.notices.some((n) => /invalid URL/i.test(n))).toBe(true);
   });
 
-  it("pull failure surfaces a notice and stops", async () => {
+  it("exo pull failure surfaces a notice and stops", async () => {
     const h = makeHarness({ isGitVault: true });
     h.puller.pullAssetSpace.mockRejectedValueOnce(new Error("network down"));
     await h.cmds.invokeBootstrap();
     expect(h.notices.some((n) => /Bootstrap failed.*network down/.test(n))).toBe(
       true,
     );
-    // exocmd pull never attempted after exo failed
+    // Exo-only: the single exo pull was attempted and failed — nothing else.
     expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(1);
-  });
-
-  it("partial failure (exo ok, exocmd fails) → actionable recovery notice", async () => {
-    const h = makeHarness({ isGitVault: true });
-    h.puller.pullAssetSpace
-      .mockResolvedValueOnce({
-        asUid: "bootstrap-exo",
-        stagingPath: "/tmp/staging-bootstrap-exo",
-        sha: "abc1234",
-      })
-      .mockRejectedValueOnce(new Error("exocmd boom"));
-    await h.cmds.invokeBootstrap();
-    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(2);
-    // exo materialised, exocmd did not
-    expect(h.gitOps.renameIntoVault).toHaveBeenCalledTimes(1);
-    expect(
-      h.notices.some(
-        (n) => /partially completed/i.test(n) && /Add assetspace by URL/i.test(n),
-      ),
-    ).toBe(true);
   });
 });
 
@@ -538,29 +490,26 @@ describe("BootstrapAssetSpaceCommands — staging-dir release (Issue #3391)", ()
    * (`activeStagingDirs` keeps the 1–2 entries the pulls registered);
    * restoring it makes them PASS.
    */
-  it("bootstrap (git) — releases both staging dirs, no leftover entry", async () => {
+  it("bootstrap (git) — releases the exo staging dir, no leftover entry", async () => {
     const h = makeHarness({ isGitVault: true });
     await h.cmds.invokeBootstrap();
 
-    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(2);
-    // Released for each pulled staging path, after the move into the vault.
-    expect(h.puller.releaseStaging).toHaveBeenCalledTimes(2);
+    // Exo-only: a single pull + a single release after the move into the vault.
+    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(1);
+    expect(h.puller.releaseStaging).toHaveBeenCalledTimes(1);
     expect(h.puller.releaseStaging).toHaveBeenCalledWith(
       "/tmp/staging-bootstrap-exoas-exo",
-    );
-    expect(h.puller.releaseStaging).toHaveBeenCalledWith(
-      "/tmp/staging-bootstrap-exoas-exocmd",
     );
     // The tracker registry is empty post-success — no reload needed.
     expect(h.activeStagingDirs).toEqual([]);
   });
 
-  it("bootstrap (file-only / non-git) — releases staging dirs too", async () => {
+  it("bootstrap (file-only / non-git) — releases the exo staging dir too", async () => {
     const h = makeHarness({ isGitVault: false });
     await h.cmds.invokeBootstrap();
 
-    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(2);
-    expect(h.puller.releaseStaging).toHaveBeenCalledTimes(2);
+    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(1);
+    expect(h.puller.releaseStaging).toHaveBeenCalledTimes(1);
     expect(h.activeStagingDirs).toEqual([]);
   });
 
@@ -613,7 +562,7 @@ interface MobileHarness {
 function makeMobileHarness(opts: {
   gitmodulesEntries?: Array<{ submodulePath: string; url: string }>;
   materializedFolders?: Record<string, string[]>;
-  bootstrapUrls?: { exoUrl: string; exocmdUrl: string } | null;
+  bootstrapUrls?: { exoUrl: string } | null;
   addUrl?: { url: string } | null;
   confirm?: boolean;
 } = {}): MobileHarness {
@@ -671,7 +620,7 @@ function makeMobileHarness(opts: {
     deriveFolderName,
     promptBootstrapUrls: jest.fn(async () =>
       opts.bootstrapUrls === undefined
-        ? { exoUrl: EXO_URL, exocmdUrl: EXOCMD_URL }
+        ? { exoUrl: EXO_URL }
         : opts.bootstrapUrls,
     ),
     promptAddAssetSpaceUrl: jest.fn(async () =>
@@ -685,22 +634,22 @@ function makeMobileHarness(opts: {
 }
 
 describe("BootstrapAssetSpaceCommands — mobile restMount strategy (#3535)", () => {
-  it("empty vault → bootstrap materialises exo + exocmd via restMount.mount (Maven paths), writes .gitmodules, no Node-fs deps", async () => {
+  it("empty vault → bootstrap materialises exo only via restMount.mount (Maven path), writes .gitmodules, no Node-fs deps", async () => {
     const h = makeMobileHarness();
     await h.cmds.invokeBootstrap();
 
     // detectVaultState read .gitmodules via the mobile vault.adapter path.
     expect(h.restMount.readGitmodulesEntries).toHaveBeenCalled();
-    // One combined cross-platform op per floor AssetSpace, at the Maven path.
-    expect(h.restMount.mount).toHaveBeenCalledTimes(2);
+    // Exo-only clean bootstrap (2026-06-20): a single combined cross-platform op
+    // for exo, at the Maven path. exocmd is added later (Add AssetSpace / profile).
+    expect(h.restMount.mount).toHaveBeenCalledTimes(1);
     expect(h.restMount.mount).toHaveBeenNthCalledWith(
       1,
       EXO_URL,
       "assetspaces/kitelev/exoas-exo",
       "main",
     );
-    expect(h.restMount.mount).toHaveBeenNthCalledWith(
-      2,
+    expect(h.restMount.mount).not.toHaveBeenCalledWith(
       EXOCMD_URL,
       "assetspaces/kitelev/exoas-exocmd",
       "main",
@@ -709,22 +658,6 @@ describe("BootstrapAssetSpaceCommands — mobile restMount strategy (#3535)", ()
     // The misleading desktop "file-only mode" notice MUST NOT fire on mobile,
     // even though there is no `.git` — restMount writes .gitmodules regardless.
     expect(h.notices.some((n) => /file-only mode/.test(n))).toBe(false);
-  });
-
-  it("empty vault, core-only (empty exocmd URL) → mounts exo only", async () => {
-    const h = makeMobileHarness({
-      bootstrapUrls: { exoUrl: EXO_URL, exocmdUrl: "" },
-    });
-    await h.cmds.invokeBootstrap();
-
-    expect(h.restMount.mount).toHaveBeenCalledTimes(1);
-    expect(h.restMount.mount).toHaveBeenNthCalledWith(
-      1,
-      EXO_URL,
-      "assetspaces/kitelev/exoas-exo",
-      "main",
-    );
-    expect(h.notices.some((n) => /knowledge-only/.test(n))).toBe(true);
   });
 
   it("addAssetSpace → mounts the single URL-derived AssetSpace at the canonical Maven path via restMount.mount (#3538)", async () => {
