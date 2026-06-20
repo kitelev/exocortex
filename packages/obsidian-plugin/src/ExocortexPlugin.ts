@@ -2874,6 +2874,30 @@ export default class ExocortexPlugin extends Plugin {
     return uids;
   }
 
+  /**
+   * Open the live in-memory «Open activity log» modal (#3540), wired with a
+   * cross-nav hook to the persisted log-file modal. The two log views are easy
+   * to confuse in the command palette, so each opens the other in one click —
+   * the hook re-enters via {@link openLogFileModal}, which in turn wires the
+   * reciprocal hook, so the bridge stays bidirectional at every hop.
+   */
+  private openActivityLogModal(): void {
+    new ActivityLogModal(this.app, this.activityLog, () =>
+      this.openLogFileModal(),
+    ).open();
+  }
+
+  /**
+   * Open the persisted «Open log file» modal (RFC 0002 §3.8 / #3588), wired with
+   * a cross-nav hook back to the live activity-log modal. Reciprocal of
+   * {@link openActivityLogModal}.
+   */
+  private openLogFileModal(): void {
+    new LogFileModal(this.app, this.fileLogChannel, () =>
+      this.openActivityLogModal(),
+    ).open();
+  }
+
   private async registerProfileCommands(): Promise<void> {
     const lockMgr = new PluginLockManager({ app: this.app });
     const resolver = new VaultProfileResolver(this.app);
@@ -3228,29 +3252,37 @@ export default class ExocortexPlugin extends Plugin {
       },
     });
 
-    // #3540 — «Open activity log»: real-time modal over the in-memory activity
-    // stream (ExoSync / profile apply / mount-unmount / bootstrap). Pure UI +
-    // in-memory buffer (no Node/fs/git) → registered UNCONDITIONALLY so it works
-    // identically on desktop and mobile (Desktop↔Mobile Command Parity).
+    // #3540 — «Open activity log (live)»: real-time modal over the in-memory
+    // activity stream (ExoSync / profile apply / mount-unmount / bootstrap).
+    // Pure UI + in-memory buffer (no Node/fs/git) → registered UNCONDITIONALLY
+    // so it works identically on desktop and mobile (Desktop↔Mobile Command
+    // Parity). The «(live)» qualifier disambiguates it from «Open log file
+    // (saved)» below — the in-memory stream is ephemeral (cleared on reload),
+    // the file persists across reloads (the dedup is naming + cross-nav, not a
+    // merge — the two are functionally distinct: live stream vs saved file).
     this.addCommand({
       id: "open-activity-log",
-      name: "Open activity log",
+      name: "Open activity log (live)",
       callback: () => {
-        new ActivityLogModal(this.app, this.activityLog).open();
+        this.openActivityLogModal();
       },
     });
 
-    // RFC 0002 §3.8 P12 (#3588) — «Open logs»: surfaces the persisted
-    // `exocortex-logs.txt` and its REAL location (the plugin data folder, not
-    // the vault root — reconciling the long-standing docs mismatch). Reads via
-    // the DataAdapter + renders a pure-DOM modal → registered UNCONDITIONALLY
-    // so it works identically on desktop and mobile (Desktop↔Mobile Command
-    // Parity). Distinct from «Open activity log» (live in-memory stream).
+    // RFC 0002 §3.8 P12 (#3588) — «Open log file (saved)»: surfaces the
+    // persisted `exocortex-logs.txt` and its REAL location (the plugin data
+    // folder, not the vault root — reconciling the long-standing docs mismatch).
+    // Reads via the DataAdapter + renders a pure-DOM modal → registered
+    // UNCONDITIONALLY so it works identically on desktop and mobile
+    // (Desktop↔Mobile Command Parity). The «(saved)» qualifier disambiguates it
+    // from «Open activity log (live)» — this is the persistent file (survives
+    // reload/crash, the cold-start / post-mortem use-case), the live stream is
+    // in-memory only. The command id stays `open-logs` so existing hotkeys keep
+    // working.
     this.addCommand({
       id: "open-logs",
-      name: "Open logs",
+      name: "Open log file (saved)",
       callback: () => {
-        new LogFileModal(this.app, this.fileLogChannel).open();
+        this.openLogFileModal();
       },
     });
 
