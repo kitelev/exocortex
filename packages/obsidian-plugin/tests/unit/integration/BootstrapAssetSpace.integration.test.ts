@@ -116,7 +116,7 @@ describe("Bootstrap integration — real GitSubmoduleOps + tmpdir vault (git mod
     if (vaultRoot) await fs.rm(vaultRoot, { recursive: true, force: true });
   });
 
-  it("empty vault → bootstrap → 1 .gitmodules entry + assetspaces/exo populated (exo-only)", async () => {
+  it("empty vault → bootstrap → 1 .gitmodules entry + assetspaces/exo populated (exo-only) @req:c50395c8-7eda-424d-b828-a25ad4a59756", async () => {
     vaultRoot = await makeTmpVault();
     const gitOps = new GitSubmoduleOps({ vaultRootPath: vaultRoot });
     const probes = makeVaultProbes(vaultRoot);
