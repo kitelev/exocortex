@@ -260,7 +260,9 @@ export class ProfileCommands {
       await this.switchMgr.undoLastApply();
     } catch (e) {
       if (e instanceof NoPreviousProfileError) {
-        this.notify("Nothing to undo — no previous profile recorded.");
+        // Surface the specific reason (e.g. the previous profile was deleted),
+        // not a generic "no previous profile recorded".
+        this.notify(`Nothing to undo — ${e.message}.`);
         return;
       }
       if (e instanceof ApplyAbortedByUser) {

@@ -8,6 +8,7 @@ import {
 import {
   type ProfileApplyManager,
   ApplyAbortedByUser,
+  NoPreviousProfileError,
   TsFloorViolationError,
   UncommittedChangesAbortError,
 } from "../../src/infrastructure/adapters/ProfileApplyManager";
@@ -382,6 +383,22 @@ describe("ProfileCommands.invokeUndoLastApply", () => {
     h.switchMgr.undoThrows = new Error("boom");
     await h.cmd.invokeUndoLastApply();
     expect(h.notices.some((n) => /Undo failed: boom/.test(n))).toBe(true);
+  });
+
+  it("deleted previous profile (NoPreviousProfileError) → surfaces the specific reason", async () => {
+    const h = makeHarness({
+      profiles: [{ uid: "prof-prev", label: "Personal" }],
+      previousProfileUid: "prof-prev",
+    });
+    // LOW #2 — undoLastApply pre-resolves and throws with a deleted-profile
+    // message; the command surfaces it instead of a generic "not recorded".
+    h.switchMgr.undoThrows = new NoPreviousProfileError(
+      "the profile you'd revert to no longer exists in the vault",
+    );
+    await h.cmd.invokeUndoLastApply();
+    expect(
+      h.notices.some((n) => /Nothing to undo — the profile you'd revert to no longer exists/.test(n)),
+    ).toBe(true);
   });
 });
 

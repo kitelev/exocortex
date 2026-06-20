@@ -197,6 +197,8 @@ async function setup() {
     new Map<string, ProfileResolution>([
       ["A", { uid: "A", includes: [EXO.uid, EMS.uid], label: "Profile A" }],
       ["B", { uid: "B", includes: [EXO.uid, KPC.uid], label: "Profile B" }],
+      // Profile C — DISTINCT identity, IDENTICAL effective set to A (LOW #1).
+      ["C", { uid: "C", includes: [EXO.uid, EMS.uid], label: "Profile C" }],
     ]),
   );
 
@@ -291,6 +293,39 @@ describe("ProfileApplyManager.undoLastApply", () => {
 
   it("throws NoPreviousProfileError when nothing has been switched yet", async () => {
     const { mgr } = await setup();
+    await expect(mgr.undoLastApply()).rejects.toBeInstanceOf(
+      NoPreviousProfileError,
+    );
+  });
+
+  // LOW #1 (code-review) — a switch between two DISTINCT profiles that share an
+  // identical effective set takes the no-op reindex path; the undo target must
+  // still be recorded so «Undo» is offered.
+  it("records the undo target on the no-op path (distinct profiles, identical effective set)", async () => {
+    const { mgr, localDataStore, restMount } = await setup();
+    await mgr.applyProfile("A"); // mounts ems → mount-state {exo, ems}
+    restMount.mounted.length = 0;
+    restMount.unmounted.length = 0;
+    // C declares the SAME effective set as A → empty mount diff → no-op branch.
+    await mgr.applyProfile("C");
+    expect(restMount.mounted).toEqual([]);
+    expect(restMount.unmounted).toEqual([]);
+    expect(localDataStore.getActiveProfileUid()).toBe("C");
+    // The identity changed A→C even though nothing was (un)mounted — undo offered.
+    expect(localDataStore.getPreviousProfileUid()).toBe("A");
+    expect(mgr.getUndoTargetProfileUid()).toBe("A");
+  });
+
+  // LOW #2 (code-review) — undo to a profile that was since deleted from the
+  // vault throws NoPreviousProfileError (clear message) rather than a confusing
+  // TsFloorViolationError from an empty effective set.
+  it("throws NoPreviousProfileError (not TS-floor) when the previous profile was deleted", async () => {
+    const { mgr, localDataStore } = await setup();
+    await mgr.applyProfile("A");
+    await mgr.applyProfile("B"); // previous = A
+    // Simulate A being deleted: point the undo target at an unresolvable UID.
+    const snap = localDataStore.snapshot();
+    await localDataStore.save({ ...snap, previousProfileUid: "ghost-deleted" });
     await expect(mgr.undoLastApply()).rejects.toBeInstanceOf(
       NoPreviousProfileError,
     );

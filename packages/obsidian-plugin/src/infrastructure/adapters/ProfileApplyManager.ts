@@ -1019,6 +1019,14 @@ export class ProfileApplyManager {
             targetProfileUid,
             this.noChangeNotice(targetProfileLabel, currentAsUids.size),
           );
+          // LOW #1 — record the undo target even on the no-op path so a switch
+          // between two distinct profiles with an identical effective set still
+          // offers «Undo» (the reindex above only persisted activeProfileUid).
+          await this.recordNoOpUndoTarget(
+            deps.localDataStore,
+            prevActiveProfileUid,
+            targetProfileUid,
+          );
           await this.appendJournal({
             phase: "apply-completed",
             targetUid: targetProfileUid,
@@ -1081,6 +1089,43 @@ export class ProfileApplyManager {
   }
 
   /**
+   * Record the undo target for the no-op (empty-diff) apply branches
+   * (RFC 0002 §3.10 — code-review LOW #1). The MUTATING apply success-saves
+   * record the undo target inline, but the no-op reindex path persists only
+   * `activeProfileUid` (via the settings store), so a switch between two
+   * DISTINCT profiles that happen to share an identical effective AssetSpace set
+   * (→ empty mount diff → no-op) would otherwise leave «Undo» unavailable even
+   * though the active profile IDENTITY changed. This persists
+   * `previousProfileUid = prevActiveProfileUid` when this apply genuinely changed
+   * identity (old ≠ new, old non-null); otherwise leaves the undo target intact.
+   *
+   * Best-effort — must run AFTER the reindex set `activeProfileUid = target` so
+   * the spread preserves it; a failure here only loses the undo offer (never
+   * corrupts state), so it is swallowed.
+   */
+  private async recordNoOpUndoTarget(
+    localDataStore: PluginLocalDataStore,
+    prevActiveProfileUid: string | null,
+    targetProfileUid: string,
+  ): Promise<void> {
+    if (
+      prevActiveProfileUid === null ||
+      prevActiveProfileUid === targetProfileUid
+    ) {
+      return;
+    }
+    try {
+      const snap = localDataStore.snapshot();
+      await localDataStore.save({
+        ...snap,
+        previousProfileUid: prevActiveProfileUid,
+      });
+    } catch {
+      // Undo-offer bookkeeping is additive — never surface as an apply error.
+    }
+  }
+
+  /**
    * The undo target — the profile active immediately before the most recent
    * successful apply (RFC 0002 §3.10), or `null` when none is recorded / the
    * local data store is not wired. Synchronous (reads the in-memory cache) so
@@ -1112,6 +1157,16 @@ export class ProfileApplyManager {
     const previous = this.getUndoTargetProfileUid();
     if (previous === null) {
       throw new NoPreviousProfileError();
+    }
+    // LOW #2 — if the recorded previous profile was deleted from the vault,
+    // applyProfile would resolve an empty effective set and throw a confusing
+    // `TsFloorViolationError`. Pre-resolve so the user gets a clear "the
+    // previous profile no longer exists" message instead.
+    const resolved = await this.resolver.resolve(previous);
+    if (resolved === null) {
+      throw new NoPreviousProfileError(
+        "the profile you'd revert to no longer exists in the vault",
+      );
     }
     await this.applyProfile(previous);
   }
@@ -1614,6 +1669,14 @@ export class ProfileApplyManager {
       await this.reindexMountState(
         targetProfileUid,
         this.noChangeNotice(targetProfileLabel, currentAsUids.size),
+      );
+      // LOW #1 — record the undo target on the no-op path too (desktop parity);
+      // see recordNoOpUndoTarget. A distinct-profile switch with an identical
+      // effective set must still offer «Undo».
+      await this.recordNoOpUndoTarget(
+        localDataStore,
+        prevActiveProfileUid,
+        targetProfileUid,
       );
       return;
     }
