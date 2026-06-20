@@ -1,5 +1,8 @@
 import React from "react";
-import { RelationsRenderer } from "../../src/presentation/renderers/layout/RelationsRenderer";
+import {
+  RelationsRenderer,
+  RELATIONS_EMPTY_TEXT,
+} from "../../src/presentation/renderers/layout/RelationsRenderer";
 import { Keymap, TFile } from "obsidian";
 import {
   createMockApp,
@@ -729,11 +732,53 @@ describe("RelationsRenderer", () => {
   });
 
   describe("render", () => {
-    it("should not render anything when relations array is empty", async () => {
-      await renderer.render(mockElement, [], {});
+    describe("empty-state (F11)", () => {
+      it("should render the empty-state container instead of nothing when relations array is empty", async () => {
+        await renderer.render(mockElement, [], {});
 
-      expect(mockElement.createDiv).not.toHaveBeenCalled();
-      expect(mockReactRenderer.render).not.toHaveBeenCalled();
+        expect(mockElement.createDiv).toHaveBeenCalledWith({
+          cls: "exocortex-assets-relations",
+        });
+      });
+
+      it("should render the 'No related assets yet' affordance when relations array is empty", async () => {
+        await renderer.render(mockElement, [], {});
+
+        const emptyState = mockElement.querySelector(".exocortex-relations-empty");
+        expect(emptyState).not.toBeNull();
+        expect(emptyState?.textContent).toBe(RELATIONS_EMPTY_TEXT);
+        expect(RELATIONS_EMPTY_TEXT).toBe("No related assets yet");
+      });
+
+      it("should not render the React relations table when relations array is empty", async () => {
+        await renderer.render(mockElement, [], {});
+
+        expect(mockReactRenderer.render).not.toHaveBeenCalled();
+      });
+
+      it("should render the collapsible header for the empty-state when renderHeader is provided", async () => {
+        const renderHeader = jest.fn();
+
+        await renderer.render(mockElement, [], {}, renderHeader, false);
+
+        expect(renderHeader).toHaveBeenCalledWith(
+          expect.anything(),
+          "relations",
+          "Asset Relations",
+        );
+      });
+
+      it("should not render the empty-state message when the section is collapsed", async () => {
+        const renderHeader = jest.fn();
+
+        await renderer.render(mockElement, [], {}, renderHeader, true);
+
+        // Container + header still render so the collapsed section is discoverable,
+        // but the empty-state body is suppressed while collapsed.
+        expect(renderHeader).toHaveBeenCalled();
+        expect(mockElement.querySelector(".exocortex-relations-empty")).toBeNull();
+        expect(mockReactRenderer.render).not.toHaveBeenCalled();
+      });
     });
 
     it("should create container with correct class", async () => {

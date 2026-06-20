@@ -6430,6 +6430,19 @@
   }
 }
 
+/* F11 — Asset Relations empty-state: a muted affordance shown when an asset
+   has zero relations, so a first-run user sees the section exists rather than
+   a silently absent block. Mirrors the COMMANDS skeleton styling, but settled
+   (no pulse animation) — this is a genuine empty result, not loading. */
+.exocortex-relations-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: var(--font-smaller, 0.85em);
+  padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-s, 4px);
+}
+
 /* T1 "Create Instance" (project bbe40f8c) — fuzzy reference-picker dropdown.
    The picker input reuses .dynamic-form-input; these rules style the
    candidate list and the keyboard-active option so sighted keyboard users

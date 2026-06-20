@@ -446,7 +446,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       expect(headerTexts).toContain("owner");
     });
 
-    it("should handle empty state gracefully", async () => {
+    it("should render the relations empty-state when there are no relations (F11)", async () => {
       const currentFile = new TFile("test.md");
 
       (mockApp.workspace.getActiveFile as jest.Mock).mockReturnValue(
@@ -461,14 +461,28 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       await waitForReact();
 
-      // With no frontmatter and no relations, nothing should be rendered
       // Properties section has been removed
       expect(
         domContainer.querySelector(".exocortex-properties-section"),
       ).toBeFalsy();
-      // Relations table should NOT appear (no relations)
+
+      // F11 — the Asset Relations section is now discoverable even with zero
+      // relations: the container renders and shows the "No related assets yet"
+      // empty-state instead of silently omitting the whole block.
+      const relationsContainer = domContainer.querySelector(
+        ".exocortex-assets-relations",
+      );
+      expect(relationsContainer).toBeTruthy();
+
+      const emptyState = relationsContainer?.querySelector(
+        ".exocortex-relations-empty",
+      );
+      expect(emptyState).toBeTruthy();
+      expect(emptyState?.textContent).toBe("No related assets yet");
+
+      // No relations table is rendered when there are no relations.
       expect(
-        domContainer.querySelector(".exocortex-assets-relations"),
+        relationsContainer?.querySelector(".exocortex-relations-table"),
       ).toBeFalsy();
     });
 
