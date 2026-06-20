@@ -2511,6 +2511,25 @@
   font-style: italic;
 }
 
+/* «Insert template token» picker rows (homoiconic templating MVP) — mirrors
+   the profile-suggestion layout: a title line and a muted description line. */
+.exocortex-token-suggestion__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.exocortex-token-suggestion__desc {
+  font-size: 0.8em;
+  color: var(--text-muted);
+  margin-top: 2px;
+  /* Single-line truncate — ellipsis needs nowrap to take effect. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Required indicator */
 .required-indicator {
   color: var(--text-error);

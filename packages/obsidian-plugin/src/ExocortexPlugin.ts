@@ -3880,13 +3880,16 @@ export default class ExocortexPlugin extends Plugin {
    * emits no extra Notice.
    */
   private async invokeInsertTemplateToken(editor: Editor): Promise<void> {
-    const choice = await pickTemplateToken(
-      this.app,
-      TEMPLATE_TOKEN_CHOICES,
-      "Insert template token",
-    );
-    if (choice === null) return; // dismissed without a selection — no-op
+    // Single try covers both the picker await (Modal.open could throw) and the
+    // resolve+insert — so no failure escapes as an unhandled rejection (the
+    // command body calls this via bare `void`).
     try {
+      const choice = await pickTemplateToken(
+        this.app,
+        TEMPLATE_TOKEN_CHOICES,
+        "Insert template token",
+      );
+      if (choice === null) return; // dismissed without a selection — no-op
       insertTemplateToken(editor, choice);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
