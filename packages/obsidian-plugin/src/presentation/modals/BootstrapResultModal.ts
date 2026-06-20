@@ -14,8 +14,9 @@ import type {
 export interface BootstrapResultModalActions {
   /**
    * Next-step nudge (success outcomes, §3.3) — open «Add AssetSpace by URL»
-   * pre-filled with the public starter-registry URL so the user can pull the
-   * starter content right away. The user still reviews + confirms in that modal.
+   * pre-filled with the public EKA registry URL so the user can pull the
+   * AssetSpace registry right away (the natural next step after bootstrapping
+   * the exo floor). The user still reviews + confirms in that modal.
    */
   onAddStarterContent: () => void;
   /**
@@ -126,11 +127,13 @@ export class BootstrapResultModal extends Modal {
       // Success (§3.3) — the next-step nudge + one-click forward action.
       const nextBtn = actions.createEl("button", {
         cls: "mod-cta bootstrap-result-next-action",
-        text: "Add the starter content",
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "AssetSpace" is the product's domain term (same casing as the "Add AssetSpace by URL" command)
+        text: "Add the AssetSpace registry",
       });
       nextBtn.setAttribute(
         "aria-label",
-        "Add the starter content (opens a dialog pre-filled with the recommended starter registry)",
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "AssetSpace" + "EKA" are product domain terms (matches the "Add AssetSpace by URL" command)
+        "Add the AssetSpace registry (opens a dialog pre-filled with the recommended EKA registry)",
       );
       nextBtn.addEventListener("click", () => {
         this.close();
@@ -183,8 +186,8 @@ export function resultCopy(result: BootstrapResultInfo): ResultCopy {
           `The engine floor landed — ${result.folderName} @ ${result.sha}. ` +
           "Reload Obsidian if the new assets do not appear yet.",
         nextHint:
-          "Next: add the starter content — a ready-to-use Areas → Projects → " +
-          "Tasks structure.",
+          "Next: add the AssetSpace registry — the catalog of AssetSpaces and " +
+          "profiles you'll pick from to mount a working vault.",
       };
     case "fetched":
       return {
@@ -193,8 +196,8 @@ export function resultCopy(result: BootstrapResultInfo): ResultCopy {
           `Restored ${result.fetched} of ${result.total} tracked AssetSpace(s) ` +
           "from their recorded URLs.",
         nextHint:
-          "Next: add the starter content, or apply a profile to mount what you " +
-          "need.",
+          "Next: add the AssetSpace registry, or apply a profile to mount what " +
+          "you need.",
       };
     case "already-bootstrapped":
       return {
@@ -203,7 +206,7 @@ export function resultCopy(result: BootstrapResultInfo): ResultCopy {
           "This vault already has AssetSpaces materialised — there is nothing " +
           "to bootstrap.",
         nextHint:
-          "Next: add the starter content, or use «Add AssetSpace by URL» to " +
+          "Next: add the AssetSpace registry, or use «Add AssetSpace by URL» to " +
           "pull another AssetSpace.",
       };
     case "failed":

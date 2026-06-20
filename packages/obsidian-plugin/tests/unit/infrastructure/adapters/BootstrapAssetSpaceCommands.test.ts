@@ -462,11 +462,11 @@ describe("BootstrapAssetSpaceCommands.invokeAddAssetSpace", () => {
     expect(h.notices.some((n) => /invalid URL/i.test(n))).toBe(true);
   });
 
-  // RFC 0002 §3.1 step 2 — the onboarding panel calls
+  // RFC 0002 §3.1 steps 3-4 — the onboarding panel calls
   // invokeAddAssetSpace(prefillUrl) so the modal opens with the recommended
-  // `exoas-starter-registry` URL pre-filled. The prefill must reach the prompt.
-  it("forwards prefillUrl to the prompt (onboarding §3.1 step 2)", async () => {
-    const REGISTRY = "https://github.com/kitelev/exoas-starter-registry";
+  // EKA registry / profiles URL pre-filled. The prefill must reach the prompt.
+  it("forwards prefillUrl to the prompt (onboarding §3.1 steps 3-4)", async () => {
+    const REGISTRY = "https://github.com/kitelev/exoas-registry";
     const h = makeHarness({ isGitVault: true });
     await h.cmds.invokeAddAssetSpace(REGISTRY);
     expect(h.deps.promptAddAssetSpaceUrl).toHaveBeenCalledWith(REGISTRY);

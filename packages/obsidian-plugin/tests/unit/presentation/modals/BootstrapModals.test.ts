@@ -300,9 +300,9 @@ describe("BootstrapResultModal", () => {
     // Durable "what happened" — folder + sha survive the toast fade.
     expect(text).toMatch(/assetspaces\/kitelev\/exoas-exo/);
     expect(text).toMatch(/abc1234/);
-    // "What next" nudge points at the starter content.
+    // "What next" nudge points at the EKA registry (the post-bootstrap step).
     expect(text).toMatch(/Next:/);
-    expect(text).toMatch(/starter content/i);
+    expect(text).toMatch(/AssetSpace registry/i);
   });
 
   it("next-step button fires onAddStarterContent and closes the panel", () => {
@@ -312,7 +312,7 @@ describe("BootstrapResultModal", () => {
         nextCalls++;
       },
     }).open();
-    findButton("Add the starter content")!.click();
+    findButton("Add the AssetSpace registry")!.click();
     expect(nextCalls).toBe(1);
     // Panel closed (handed off to the Add-AssetSpace flow) — content torn down.
     expect(document.querySelector(".bootstrap-result-title")).toBeNull();
@@ -340,7 +340,7 @@ describe("BootstrapResultModal", () => {
     expect(text).toMatch(/already/i);
     expect(text).toMatch(/Next:/);
     // The forward action is still offered.
-    expect(findButton("Add the starter content")).toBeDefined();
+    expect(findButton("Add the AssetSpace registry")).toBeDefined();
   });
 
   it("fetched — durable restore summary with the count + next-step nudge", () => {
@@ -359,8 +359,8 @@ describe("BootstrapResultModal", () => {
       onAddStarterContent: () => undefined,
     }).open();
     expect(
-      findButton("Add the starter content")!.getAttribute("aria-label"),
-    ).toMatch(/Add the starter content/i);
+      findButton("Add the AssetSpace registry")!.getAttribute("aria-label"),
+    ).toMatch(/Add the AssetSpace registry/i);
     expect(findButton("Done")!.getAttribute("aria-label")).toMatch(
       /Close the setup result/i,
     );
@@ -385,7 +385,7 @@ describe("BootstrapResultModal", () => {
     expect(text).toMatch(/rejected the request/i);
     expect(text).toMatch(/GitHub PAT/);
     // No success nudge on a failure panel.
-    expect(findButton("Add the starter content")).toBeUndefined();
+    expect(findButton("Add the AssetSpace registry")).toBeUndefined();
   });
 
   it("failed — «Try again» fires onRetry with the failing operation + closes", () => {
@@ -551,8 +551,8 @@ describe("AddAssetSpaceModal", () => {
     expect(result).toEqual({ url: "https://github.com/me/thing" });
   });
 
-  it("initialUrl pre-fills the field + live-previews it (onboarding §3.1 step 2)", () => {
-    const REGISTRY = "https://github.com/kitelev/exoas-starter-registry";
+  it("initialUrl pre-fills the field + live-previews it (onboarding §3.1 steps 3-4)", () => {
+    const REGISTRY = "https://github.com/kitelev/exoas-registry";
     new AddAssetSpaceModal(fakeApp, derive, () => undefined, REGISTRY).open();
     const input = document.querySelector("input") as HTMLInputElement;
     // The recommended registry URL is pre-filled; the user still confirms.
@@ -563,12 +563,12 @@ describe("AddAssetSpaceModal", () => {
     ) as HTMLElement;
     expect(preview.classList.contains("is-placeholder")).toBe(false);
     expect(preview.textContent).toMatch(
-      /Target folder: assetspaces\/kitelev\/exoas-starter-registry/,
+      /Target folder: assetspaces\/kitelev\/exoas-registry/,
     );
   });
 
   it("pre-filled URL → Add resolves it without retyping", () => {
-    const REGISTRY = "https://github.com/kitelev/exoas-starter-registry";
+    const REGISTRY = "https://github.com/kitelev/exoas-registry";
     let result: { url: string } | null | undefined;
     new AddAssetSpaceModal(
       fakeApp,

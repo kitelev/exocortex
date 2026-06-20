@@ -3812,8 +3812,8 @@ export default class ExocortexPlugin extends Plugin {
     });
 
     // Returned so `registerProfileCommands` can wire the first-run onboarding
-    // panel's step-1 (Bootstrap) and step-2 (Add starter content, prefilled)
-    // actions to this same handler — RFC 0002 §3.1.
+    // panel's step-2 (Bootstrap exo) and steps 3-4 (Add registry / profiles,
+    // prefilled) actions to this same handler — RFC 0002 §3.1.
     return bootstrapCommands;
   }
 
