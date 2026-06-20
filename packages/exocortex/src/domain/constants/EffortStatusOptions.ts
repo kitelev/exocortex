@@ -7,9 +7,8 @@
  * parser substitutes into the symbolic class IRI via
  * {@link NoteToRDFConverter.expandClassValue} so starter-kit `ASK`
  * preconditions match. Migrating values to UUID-canon form requires the
- * coordinated `SPARQLTemplateLibrary.EFFORT_STATUSES` +
- * `NoteToRDFConverter` + starter-kit ASK migration deferred to a follow-up
- * phase (see EffortStatus.ts directional doc note).
+ * coordinated `NoteToRDFConverter` + starter-kit ASK migration deferred to
+ * a follow-up phase (see EffortStatus.ts directional doc note).
  *
  * Split out of the former `EffortStatusConfig.ts` in Phase 4 PR-D — the
  * surrounding name-to-enum / wikilink helpers (`STATUS_NAME_TO_ENUM`,

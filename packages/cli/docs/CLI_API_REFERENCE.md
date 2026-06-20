@@ -20,17 +20,17 @@
 
 All commands use standardized exit codes following Unix conventions (defined in `src/utils/ExitCodes.ts`):
 
-| Code | Constant | Description |
-|------|----------|-------------|
-| `0` | `SUCCESS` | Command completed successfully |
-| `1` | `GENERAL_ERROR` | General error (catch-all for non-specific errors) |
-| `2` | `INVALID_ARGUMENTS` | Invalid command-line arguments or options |
-| `3` | `FILE_NOT_FOUND` | File or directory not found |
-| `4` | `PERMISSION_DENIED` | Permission denied (file system access) |
-| `5` | `OPERATION_FAILED` | Command execution failed (business logic error) |
-| `6` | `INVALID_STATE_TRANSITION` | Invalid asset state transition |
-| `7` | `TRANSACTION_FAILED` | Transaction failed (atomic operation could not complete) |
-| `8` | `CONCURRENT_MODIFICATION` | Concurrent modification detected (file changed during operation) |
+| Code | Constant                   | Description                                                      |
+| ---- | -------------------------- | ---------------------------------------------------------------- |
+| `0`  | `SUCCESS`                  | Command completed successfully                                   |
+| `1`  | `GENERAL_ERROR`            | General error (catch-all for non-specific errors)                |
+| `2`  | `INVALID_ARGUMENTS`        | Invalid command-line arguments or options                        |
+| `3`  | `FILE_NOT_FOUND`           | File or directory not found                                      |
+| `4`  | `PERMISSION_DENIED`        | Permission denied (file system access)                           |
+| `5`  | `OPERATION_FAILED`         | Command execution failed (business logic error)                  |
+| `6`  | `INVALID_STATE_TRANSITION` | Invalid asset state transition                                   |
+| `7`  | `TRANSACTION_FAILED`       | Transaction failed (atomic operation could not complete)         |
+| `8`  | `CONCURRENT_MODIFICATION`  | Concurrent modification detected (file changed during operation) |
 
 Validation-style commands (`validate iri`, `validate schema`, `audit co-location`, `archive --verify`) exit `1` when issues or violations are found, so they can gate CI and pre-commit pipelines.
 
@@ -53,14 +53,14 @@ esac
 
 ## Structured JSON Responses (MCP Compatible)
 
-Commands that accept `--output json` (e.g. `query`, `ask`, `classes`, `resolve`, `index`, `validate`, `workflow`, `audit`) emit a structured response envelope. Types are defined in `src/responses/StructuredResponse.ts`.
+Commands that accept `--output json` (e.g. `query`, `classes`, `resolve`, `index`, `validate`, `workflow`, `audit`) emit a structured response envelope. Types are defined in `src/responses/StructuredResponse.ts`.
 
 ### Success Response
 
 ```json
 {
   "success": true,
-  "data": { },
+  "data": {},
   "meta": { "durationMs": 45, "itemCount": 3 }
 }
 ```
@@ -81,7 +81,7 @@ Commands that accept `--output json` (e.g. `query`, `ask`, `classes`, `resolve`,
       "message": "The file does not exist at the specified path",
       "suggestion": "Verify the file path and ensure it exists within the vault"
     },
-    "context": { }
+    "context": {}
   }
 }
 ```
@@ -90,21 +90,21 @@ Commands that accept `--output json` (e.g. `query`, `ask`, `classes`, `resolve`,
 
 ### Error Categories
 
-| Category | Description | Typical Action |
-|----------|-------------|----------------|
-| `validation` | Input validation failures (missing files, invalid arguments) | Fix input and retry |
-| `permission` | Access control violations (file permissions) | Request appropriate access |
-| `state` | Business logic violations (invalid state transitions) | Change current state first |
-| `internal` | Unexpected errors (system failures) | Report bug or retry |
+| Category     | Description                                                  | Typical Action             |
+| ------------ | ------------------------------------------------------------ | -------------------------- |
+| `validation` | Input validation failures (missing files, invalid arguments) | Fix input and retry        |
+| `permission` | Access control violations (file permissions)                 | Request appropriate access |
+| `state`      | Business logic violations (invalid state transitions)        | Change current state first |
+| `internal`   | Unexpected errors (system failures)                          | Report bug or retry        |
 
 ### Error Codes
 
-| Category | Codes |
-|----------|-------|
+| Category     | Codes                                                                                                                                                                            |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `validation` | `VALIDATION_FILE_NOT_FOUND`, `VALIDATION_INVALID_PATH`, `VALIDATION_INVALID_ARGUMENTS`, `VALIDATION_MISSING_REQUIRED`, `VALIDATION_INVALID_FORMAT`, `VALIDATION_VAULT_NOT_FOUND` |
-| `permission` | `PERMISSION_DENIED`, `PERMISSION_READ_ONLY` |
-| `state` | `STATE_INVALID_TRANSITION`, `STATE_CONCURRENT_MODIFICATION`, `STATE_ASSET_NOT_TASK`, `STATE_ALREADY_EXISTS` |
-| `internal` | `INTERNAL_TRANSACTION_FAILED`, `INTERNAL_OPERATION_FAILED`, `INTERNAL_QUERY_TIMEOUT`, `INTERNAL_UNKNOWN` |
+| `permission` | `PERMISSION_DENIED`, `PERMISSION_READ_ONLY`                                                                                                                                      |
+| `state`      | `STATE_INVALID_TRANSITION`, `STATE_CONCURRENT_MODIFICATION`, `STATE_ASSET_NOT_TASK`, `STATE_ALREADY_EXISTS`                                                                      |
+| `internal`   | `INTERNAL_TRANSACTION_FAILED`, `INTERNAL_OPERATION_FAILED`, `INTERNAL_QUERY_TIMEOUT`, `INTERNAL_UNKNOWN`                                                                         |
 
 ### Script Integration
 
@@ -134,21 +134,21 @@ fi
 
 ```typescript
 interface WatchEvent {
-  type: "create" | "modify" | "delete";  // Event type
-  path: string;                           // Absolute path to file
-  relativePath: string;                   // Path relative to vault root
-  timestamp: string;                      // ISO 8601 timestamp
-  assetType?: string;                     // Asset type from frontmatter (for .md files)
+  type: "create" | "modify" | "delete"; // Event type
+  path: string; // Absolute path to file
+  relativePath: string; // Path relative to vault root
+  timestamp: string; // ISO 8601 timestamp
+  assetType?: string; // Asset type from frontmatter (for .md files)
 }
 ```
 
 ### Event Types
 
-| Type | Description |
-|------|-------------|
+| Type     | Description                                                   |
+| -------- | ------------------------------------------------------------- |
 | `create` | File was created (detected via file birthtime < 1 second old) |
-| `modify` | File was modified (existing file changed) |
-| `delete` | File was deleted (file no longer exists) |
+| `modify` | File was modified (existing file changed)                     |
+| `delete` | File was deleted (file no longer exists)                      |
 
 ### Error Events
 
@@ -169,12 +169,12 @@ Watcher errors are emitted to stdout as structured error responses (same envelop
 
 `--pattern` uses [minimatch](https://github.com/isaacs/minimatch) glob syntax:
 
-| Pattern | Description |
-|---------|-------------|
-| `*.md` | All markdown files in root |
-| `**/*.md` | All markdown files (recursive) |
-| `tasks/**` | All files in tasks directory |
-| `*.{md,txt}` | Markdown and text files |
+| Pattern      | Description                    |
+| ------------ | ------------------------------ |
+| `*.md`       | All markdown files in root     |
+| `**/*.md`    | All markdown files (recursive) |
+| `tasks/**`   | All files in tasks directory   |
+| `*.{md,txt}` | Markdown and text files        |
 
 ### MCP Integration Example
 
@@ -183,8 +183,10 @@ import { spawn } from "child_process";
 
 const watcher = spawn("exocortex-cli", [
   "watch",
-  "--vault", "/path/to/vault",
-  "--asset-type", "ems__Task"
+  "--vault",
+  "/path/to/vault",
+  "--asset-type",
+  "ems__Task",
 ]);
 
 watcher.stdout.on("data", (data) => {
@@ -192,7 +194,7 @@ watcher.stdout.on("data", (data) => {
   for (const line of lines) {
     const event = JSON.parse(line);
     mcpServer.notify("resources/updated", {
-      uri: `exocortex://task/${event.relativePath}`
+      uri: `exocortex://task/${event.relativePath}`,
     });
   }
 });
@@ -204,12 +206,12 @@ watcher.stdout.on("data", (data) => {
 
 Most commands accept:
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--vault <path>` | string | `process.cwd()` (some commands require it explicitly) | Path to Obsidian vault |
-| `--output <type>` | enum | `text` | Response format: `text`, `json` (for MCP tools/automation) |
-| `--help` | boolean | — | Show help for command |
-| `--version` | boolean | — | Show CLI version |
+| Option            | Type    | Default                                               | Description                                                |
+| ----------------- | ------- | ----------------------------------------------------- | ---------------------------------------------------------- |
+| `--vault <path>`  | string  | `process.cwd()` (some commands require it explicitly) | Path to Obsidian vault                                     |
+| `--output <type>` | enum    | `text`                                                | Response format: `text`, `json` (for MCP tools/automation) |
+| `--help`          | boolean | —                                                     | Show help for command                                      |
+| `--version`       | boolean | —                                                     | Show CLI version                                           |
 
 Per-command flags (including `--format`, `--dry-run`, `--also`, `--use-cache`) are documented in the [README](../README.md) — defaults vary by command.
 
