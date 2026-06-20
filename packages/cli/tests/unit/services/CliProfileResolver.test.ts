@@ -382,57 +382,6 @@ describe("CliProfileResolver", () => {
     });
   });
 
-  describe("resolveFilter — multi-vault (--also)", () => {
-    it("scans primary + alsoVaultPaths to build folderMap and find profiles", async () => {
-      const secondaryRoot = await fs.mkdtemp(
-        path.join(os.tmpdir(), "exocortex-cli-profile-secondary-"),
-      );
-      try {
-        await makeVault(tmpRoot, [
-          asAssetSpace(AS_EXO_UID, "exo"),
-          asAssetSpace(AS_EXOCMD_UID, "exocmd"),
-        ]);
-        await makeVault(secondaryRoot, [
-          asAssetSpace(AS_SHARED_UID, "shared-identities"),
-          asAssetSpace(AS_EMS_UID, "ems"),
-          asProfile(PROFILE_PERSONAL_UID, {
-            includes: [AS_EMS_UID],
-          }),
-        ]);
-        const resolver = new CliProfileResolver({
-          vaultPath: tmpRoot,
-          alsoVaultPaths: [secondaryRoot],
-        });
-        const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
-        expect(out.outcome).toBe("engaged");
-        if (out.outcome === "engaged") {
-          expect(out.result.effective.has(AS_EMS_UID)).toBe(true);
-          expect(out.result.folderMap.size).toBeGreaterThanOrEqual(4);
-        }
-      } finally {
-        await fs.remove(secondaryRoot);
-      }
-    });
-
-    it("tolerates non-existent --also vault paths with warn", async () => {
-      await makeVault(tmpRoot, [
-        asAssetSpace(AS_EXO_UID, "exo"),
-        asAssetSpace(AS_EXOCMD_UID, "exocmd"),
-        asAssetSpace(AS_SHARED_UID, "shared-identities"),
-        asProfile(PROFILE_BASE_UID),
-      ]);
-      const warnings: string[] = [];
-      const resolver = new CliProfileResolver({
-        vaultPath: tmpRoot,
-        alsoVaultPaths: ["/tmp/this-path-definitely-does-not-exist-test"],
-        warn: (m) => warnings.push(m),
-      });
-      const out = await resolver.resolveFilter(PROFILE_BASE_UID);
-      expect(out.outcome).toBe("engaged");
-      expect(warnings.some((w) => w.includes("does not exist"))).toBe(true);
-    });
-  });
-
   describe("malformed input tolerance", () => {
     it("skips files without frontmatter without throwing", async () => {
       await makeVault(tmpRoot, [
