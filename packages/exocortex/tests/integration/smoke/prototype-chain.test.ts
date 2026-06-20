@@ -152,7 +152,7 @@ describe("Smoke: Prototype Chain Materialization", () => {
   // -----------------------------------------------------------------------
 
   describe("Inheritance of missing properties", () => {
-    it("should inherit area from prototype when instance has no own area", async () => {
+    it("@req:449f29ce-cbd5-4ac8-94d4-28aa56a013c2 should inherit area from prototype when instance has no own area", async () => {
       await seedNonInheritableProperties(store);
       await seedPrototype(store);
       await seedInstanceWithoutArea(store);

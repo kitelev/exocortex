@@ -1,8 +1,8 @@
 # Authoring functional requirements (`req__Requirement`)
 
-> **Status:** P0 foundation (RFC 0003). The checker + CI gate land in **P1**; this
-> guide documents the format and discipline so requirements written now are
-> already P1-ready.
+> **Status:** P1 (RFC 0003) — the traceability checker (`exocortex requirements
+audit`) and the **soft** `requirements-trace` CI gate are now live. This guide
+> documents the format and discipline.
 > **Source of truth:** [`docs/rfc/0003-requirements-management.md`](./rfc/0003-requirements-management.md).
 
 This is the **how-to** for writing a functional requirement. It is a companion to
@@ -88,11 +88,24 @@ it("@req:449f29ce-cbd5-4ac8-94d4-28aa56a013c2 inherits area from prototype when 
 });
 ```
 
-The P1 `exocortex-cli requirements audit` checker greps test titles for
-`@req:<uid>`, derives `req__Requirement_verifiedBy`, and reports **orphans** (req
-with no binding), **dangling tags** (tag → missing req), and **duplicate bindings**
-(one uid claimed by >1 test). Until P1 lands, record the test in
-`req__Requirement_verifiedBy` as `<file>::<title>` by hand.
+The `exocortex requirements audit` checker greps test titles for `@req:<uid>`,
+derives `req__Requirement_verifiedBy`, and reports **orphans** (req with no
+binding), **dangling tags** (tag → missing req), **duplicate bindings** (one uid
+claimed by >1 test), the **P0 binding-class floor**, and **coverage**. Run it
+locally against the reqs assetspace (or your vault) + the repo test corpus:
+
+```bash
+npx @kitelev/exocortex-cli requirements audit \
+  --reqs <path-to-exoas-exo-reqs-or-vault> --tests . --output text
+# JSON for tooling/CI: --output json   ·   --strict also fails on orphans
+```
+
+`@req:<uid>` in the test title is the canonical back-edge; keeping
+`req__Requirement_verifiedBy` as `<file>::<title>` in the asset is the
+human-readable companion (the checker derives bindings from the tags, not the
+property). A `@req:` tag must be a well-formed UUID — archgate **REQ-001**
+warns whole-tree on malformed/truncated tags; existence/resolution is the soft
+`requirements-trace` CI job's job (it has the vault graph).
 
 ## The revert-verify discipline (what makes a binding _valid_)
 

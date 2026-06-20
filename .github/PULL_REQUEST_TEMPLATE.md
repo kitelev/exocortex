@@ -15,6 +15,19 @@ The PR title flows into the auto-generated release notes — make it user-facing
 - [ ] Refactor / internal
 - [ ] Other:
 
+## Requirements (RFC 0003)
+
+<!--
+For a PR that changes USER-FACING FUNCTIONAL behavior, reference the
+req__Requirement it implements and (for a verified binding) the revert-verify
+evidence. These tokens are grep-able by archgate + the `requirements-trace` CI
+job. See docs/requirements-authoring.md. Delete this section for non-functional
+PRs (refactors, docs, NFR/architecture — those live as .archgate ADRs).
+
+Req: <requirement-uid>
+Revert-verified: @req:<requirement-uid> reverting <prod-ref> → <test> RED (<failure shape>); restored → GREEN
+-->
+
 ## Checklist
 
 - [ ] `npm run test:all` passes locally
@@ -22,6 +35,7 @@ The PR title flows into the auto-generated release notes — make it user-facing
 - [ ] Engine/domain logic lives in the `exocortex` core (UI/CLI Parity); both clients get bindings if user-facing
 - [ ] No command is gated desktop-only (Desktop ↔ Mobile parity) — N/A if not a command
 - [ ] Docs updated if behavior/flags/commands changed
+- [ ] Functional behavior change references its `req__Requirement` (`Req: <uid>`) — N/A otherwise (RFC 0003)
 - [ ] No secrets / personal absolute paths added
 
 ## Notes for reviewers

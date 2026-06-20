@@ -170,7 +170,7 @@ describe("WikilinkLabelResolver", () => {
       });
     });
 
-    it("resolves label when no alias", () => {
+    it("@req:830ef788-0631-42cf-8b78-481ec6cfdeac resolves label when no alias", () => {
       const mockApp = createMockApp({
         "my-project": "Project Alpha",
       });
