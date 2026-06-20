@@ -61,13 +61,13 @@ export class ShapeLoader {
 
     // Issue #3523: build a UID → canonical-class-IRI index once, so a
     // domain/range value that arrived as a *synthesized* UUID-only file IRI
-    // (`obsidian://vault/<uid>.md`, no directory) — emitted by the primary
-    // vault's converter when an `--also` dependency's class def could not be
-    // resolved in the primary vault — still canonicalizes to the same symbolic
-    // ontology IRI as the merged single-vault case. The owning dep vault emits
-    // that class's `rdfs:label` under its *full-path* subject IRI
-    // (`obsidian://vault/tbox/<uid>.md`), so an exact-IRI label lookup misses;
-    // keying by the bare UID bridges the two file-IRI forms across `--also`.
+    // (`obsidian://vault/<uid>.md`, no directory) — emitted by a vault's
+    // converter when a dependency's class def could not be resolved locally —
+    // still canonicalizes to the same symbolic ontology IRI as the merged
+    // single-vault case. The owning dep vault emits that class's `rdfs:label`
+    // under its *full-path* subject IRI (`obsidian://vault/tbox/<uid>.md`), so
+    // an exact-IRI label lookup misses; keying by the bare UID bridges the two
+    // file-IRI forms.
     const uidToClassIRI = await ShapeLoader.buildUidClassIndex(graph);
 
     // Find all property definition subjects (exo:Property or exo:ObjectProperty)
@@ -236,7 +236,7 @@ export class ShapeLoader {
 
   /**
    * Issue #3523: builds `uid → canonical-class-IRI` from every labelled subject
-   * in the merged graph (across the primary vault + all `--also` vaults). Used
+   * in the merged graph. Used
    * by {@link resolveClassIRI} to canonicalize a domain/range value that arrived
    * as a synthesized UUID-only file IRI whose exact-IRI label lookup misses
    * because the labelled subject lives under a full-path IRI in another vault.
@@ -327,11 +327,11 @@ export class ShapeLoader {
     }
 
     // Issue #3523: the exact-IRI label lookup above misses for a synthesized
-    // UUID-only cross-vault file IRI (the labelled subject lives under a
-    // full-path IRI in the `--also` vault). Fall back to the UID-keyed index so
-    // the range/domain canonicalizes to the same symbolic class IRI the merged
-    // single-vault converter would have produced — letting the class-membership
-    // (`isSubClassOf`) check unify across the `--also` boundary.
+    // UUID-only file IRI (the labelled subject lives under a full-path IRI in
+    // another vault). Fall back to the UID-keyed index so the range/domain
+    // canonicalizes to the same symbolic class IRI the merged single-vault
+    // converter would have produced — letting the class-membership
+    // (`isSubClassOf`) check unify across the vault boundary.
     if (uidToClassIRI) {
       const uid = ShapeLoader.extractUidFromFileIRI(iri);
       if (uid) {

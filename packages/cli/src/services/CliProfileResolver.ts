@@ -81,8 +81,6 @@ export type ResolveFilterOutcome =
 export interface CliProfileResolverOptions {
   /** Primary vault path. */
   vaultPath: string;
-  /** Additional vault paths (mirrors CLI `--also`). */
-  alsoVaultPaths?: ReadonlyArray<string>;
   /** Override max `_extends` chain depth (default 5). */
   maxExtendsDepth?: number;
   /** Injectable logger for warn-level diagnostics (defaults to no-op). */
@@ -114,8 +112,7 @@ export class CliProfileResolver {
   private readonly warn: (msg: string) => void;
 
   constructor(options: CliProfileResolverOptions) {
-    const also = options.alsoVaultPaths ?? [];
-    this.vaultPaths = [options.vaultPath, ...also].map((p) => path.resolve(p));
+    this.vaultPaths = [path.resolve(options.vaultPath)];
     this.maxExtendsDepth = options.maxExtendsDepth ?? DEFAULT_MAX_EXTENDS_DEPTH;
     this.warn = options.warn ?? (() => undefined);
   }

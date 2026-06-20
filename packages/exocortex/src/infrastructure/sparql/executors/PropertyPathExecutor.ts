@@ -65,8 +65,7 @@ export class PropertyPathExecutor {
         path: pathDesc,
         hint:
           "Wikilink could not be resolved to IRI (likely label-form wikilink with no matching basename/alias). " +
-          "Check whether the target file exists in the queried vault, add an alias, " +
-          "or load the target vault via --also. See issue #3282.",
+          "Check whether the target file exists in the queried vault, or add an alias. See issue #3282.",
       };
       // Use console.error for visibility — previous console.warn was silently
       // swallowed by tooling and users could not diagnose zero-result queries.
