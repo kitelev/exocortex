@@ -79,6 +79,42 @@ describe("StructuredMerger — file-level outcomes", () => {
       warnings: [],
     });
   });
+
+  it("gone on both sides (both deleted) → conflict, never an empty/lost merge", () => {
+    // Direct-caller existence matrix (SyncEngine consumes convergent deletes
+    // upstream): a both-deleted path must NOT fabricate content — it conflicts.
+    const base = asset({ label: "old" });
+    const r = merger.mergeAsset({
+      path: "a.md",
+      base,
+      local: undefined,
+      remote: undefined,
+    });
+    expect(r).toMatchObject({
+      status: "conflict",
+      reason: expect.stringMatching(/gone on both sides/),
+    });
+  });
+
+  it("unparseable frontmatter on one side → conflict (zero-loss: never silently merges malformed YAML)", () => {
+    // A malformed-YAML side could otherwise let a structural merge silently
+    // drop keys. The merger must fail loud → quarantine, not guess.
+    const base = asset({ label: "old", extra: { keep: '"k"' } });
+    const remote = asset({ label: "edited remotely", extra: { keep: '"k"' } });
+    // Unterminated double-quoted scalar — js-yaml CORE_SCHEMA throws on parse.
+    const localBroken =
+      '---\nexo__Asset_uid: u1\nexo__Asset_label: "unterminated\nkeep: "k"\n---\n\nbody text\n';
+    const r = merger.mergeAsset({
+      path: "a.md",
+      base,
+      local: localBroken,
+      remote,
+    });
+    expect(r).toMatchObject({
+      status: "conflict",
+      reason: expect.stringMatching(/unparseable frontmatter on local side/),
+    });
+  });
 });
 
 describe("StructuredMerger — frontmatter per-key 3-way (D1)", () => {
@@ -125,6 +161,23 @@ describe("StructuredMerger — frontmatter per-key 3-way (D1)", () => {
     const r = merger.mergeAsset({ path: "a.md", base, local, remote });
     expect(r.status).toBe("merged");
     if (r.status === "merged") expect(fmOf(r.content).newKey).toBe("same");
+  });
+
+  it("same scalar key deleted on BOTH sides → convergent delete (no resurrection, other additions survive)", () => {
+    // Both sides intend the same delete → the key is gone, not a conflict, and
+    // not re-added by the other side. Each side's unrelated addition survives.
+    const base = asset({ label: "old", extra: { a: '"1"' } });
+    const local = asset({ extra: { a: '"1"', b: '"L"' } }); // label deleted, +b
+    const remote = asset({ extra: { a: '"1"', c: '"R"' } }); // label deleted, +c
+    const r = merger.mergeAsset({ path: "a.md", base, local, remote });
+    expect(r.status).toBe("merged");
+    if (r.status === "merged") {
+      const fm = fmOf(r.content);
+      expect(fm.exo__Asset_label).toBeUndefined(); // convergent delete holds
+      expect(fm.a).toBe("1");
+      expect(fm.b).toBe("L"); // local-only addition preserved
+      expect(fm.c).toBe("R"); // remote-only addition preserved (zero-loss)
+    }
   });
 });
 
@@ -327,6 +380,59 @@ describe("StructuredMerger — body section merge (D21, not LWW)", () => {
     if (r.status === "merged") {
       expect(r.content).toMatch(/intro LOCAL/);
       expect(r.content).toMatch(/x REMOTE/);
+    }
+  });
+
+  it("the SAME new heading added differently on both sides → conflict (zero-loss, not pick-one)", () => {
+    // Distinct from "sections added on each side both survive" (different
+    // headings). Here both sides introduce the SAME heading with divergent
+    // content — there is no base to merge against, so it must conflict rather
+    // than silently drop one side's section.
+    const base = bodied("## A\n\nx");
+    const local = bodied("## A\n\nx\n\n## New\n\nL content");
+    const remote = bodied("## A\n\nx\n\n## New\n\nR content");
+    const r = merger.mergeAsset({ path: "a.md", base, local, remote });
+    expect(r).toMatchObject({
+      status: "conflict",
+      reason: expect.stringMatching(/added differently on both sides/),
+    });
+  });
+
+  it("line-level fallback: non-overlapping line edits inside ONE paragraph both survive (no needless quarantine)", () => {
+    // A fenced code block with no blank lines is a SINGLE paragraph, so
+    // paragraph-granularity diff3 sees it as one region changed on both sides
+    // (would conflict). The line-level fallback recovers the clean merge —
+    // local's first-line edit AND remote's last-line edit both land, zero loss.
+    const fenceBody = (first: string, last: string): string =>
+      "## Code\n```\n" + first + "\nlineB\n" + last + "\n```";
+    const base = bodied(fenceBody("lineA", "lineC"));
+    const local = bodied(fenceBody("lineA-LOCAL", "lineC"));
+    const remote = bodied(fenceBody("lineA", "lineC-REMOTE"));
+    const r = merger.mergeAsset({ path: "a.md", base, local, remote });
+    expect(r.status).toBe("merged");
+    if (r.status === "merged") {
+      expect(r.content).toMatch(/lineA-LOCAL/); // local line edit survives
+      expect(r.content).toMatch(/lineC-REMOTE/); // remote line edit survives
+      // fence integrity preserved (still exactly two markers).
+      expect((r.content.match(/```/g) ?? []).length).toBe(2);
+    }
+  });
+
+  it("divergent section REORDER on both sides → warning, every section survives (zero-loss)", () => {
+    // Section contents identical everywhere; only the ORDER differs on each
+    // side. Order divergence is non-destructive — it must warn (not conflict)
+    // and lose NO section.
+    const base = bodied("## A\n\na\n\n## B\n\nb\n\n## C\n\nc");
+    const local = bodied("## C\n\nc\n\n## A\n\na\n\n## B\n\nb");
+    const remote = bodied("## B\n\nb\n\n## C\n\nc\n\n## A\n\na");
+    const r = merger.mergeAsset({ path: "a.md", base, local, remote });
+    expect(r.status).toBe("merged");
+    if (r.status === "merged") {
+      expect(r.warnings.join(" ")).toMatch(/order diverged/);
+      // All three sections present — nothing dropped by the reorder.
+      expect(r.content).toMatch(/## A/);
+      expect(r.content).toMatch(/## B/);
+      expect(r.content).toMatch(/## C/);
     }
   });
 });
