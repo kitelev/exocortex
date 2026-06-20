@@ -142,11 +142,14 @@ vault; it contains no UID, so it is **already decoupled** from vault UID drift; 
 stays **readable**. Rewriting these to `[[<synthetic-uuid>|ems__Task]]` would replace a
 working, drift-proof reference with a non-resolving fake UID for zero benefit.
 
-**Why synthetic `[[uuid|alias]]` for the example's own assets:** these mirror the
-real UID-canon on-disk storage form (the plugin writes `[[<uid>|alias]]`). The UUID is a
+**Why a synthetic placeholder UUID for the example's own assets:** the UUID is a
 **placeholder** the reader replaces with their own generated UID — **never** a real vault
-UID (docs must not go stale when a vault UID changes). Use an obviously-synthetic value
-(e.g. `a1b2c3d4-…`, `d1111111-…`).
+UID (docs must not go stale when a vault UID changes). The `|alias` is a **readability aid**
+so the reader can see which asset a bare UUID refers to; the plugin's own canonical on-disk
+form is **strip-canon `[[<uid>]]` without an alias** (per the 2026-05-17 strip-canon
+decision — asset creation and groundings write `[[<uid>]]`), so a copied `|alias` is
+harmless but not required. Use an obviously-synthetic value (e.g. `a1b2c3d4-…`,
+`d1111111-…`).
 
 > All such wikilinks live inside fenced/inline code in the docs, so GitHub renders them
 > as literal example text (no broken-link rendering). The form choice above is about
