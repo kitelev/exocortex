@@ -17,9 +17,23 @@ import type { ParityCheck } from "../../../src/infrastructure/adapters/ExoSyncPa
 import type {
   RepoSyncResult,
   SyncEngine,
+  SyncPhaseTimings,
   SyncProgressEvent,
   SyncRepoSpec,
 } from "exocortex";
+import { emptyTimings } from "exocortex";
+
+/** Phase 0 — a production-shape timing fixture for the summary-surface tests. */
+const timingsOf = (hashMs: number, readMs: number): SyncPhaseTimings => {
+  const t = emptyTimings();
+  t.durations.hash = hashMs;
+  t.durations.localRead = readMs;
+  t.durations.restCommit = 200;
+  t.counts.filesHashed = 3;
+  t.counts.filesRead = 3;
+  t.counts.restCalls = 2;
+  return t;
+};
 
 const spec = (key: string): SyncRepoSpec => {
   const [owner, repo] = key.split("/");
@@ -1013,5 +1027,78 @@ describe("SyncCommands — #3498 in-flight progress + verbose file log", () => {
     // #3499 toasts cover start + per-repo summary lines; the in-flight phase
     // firehose (3/repo) stays off the toast channel (#3498 info discipline).
     expect(notices.some((n) => n.includes("merge layer firing"))).toBe(false);
+  });
+
+  // ExoSync Phase 0 (measure-first) — per-phase timing surfaces.
+  describe("Phase 0 timing breakdown surface", () => {
+    it("appends the aggregate ⏱ breakdown to the summary toast (dominant phase visible)", async () => {
+      const { commands, notices } = makeHarness({
+        results: [
+          result("o/r#main", "synced", { timings: timingsOf(150, 15) }),
+        ],
+      });
+
+      await commands.invokeSync();
+
+      const summary = notices.find((n) => n.includes("Sync done:"));
+      expect(summary).toBeDefined();
+      // The timing line rides the SAME summary toast as a 2nd line — preserves
+      // the "no double summary" invariant (#3499).
+      expect(summary).toContain("⏱ ExoSync");
+      // hash (150ms) dominates the read (15ms) → it leads the breakdown.
+      expect(summary).toContain("hash");
+      expect(summary!.indexOf("hash")).toBeLessThan(
+        summary!.indexOf("localRead"),
+      );
+    });
+
+    it("emits a per-AS breakdown to the always-on activity-log channel (logInfo)", async () => {
+      const { commands, infoLogs } = makeHarness({
+        results: [
+          result("o/r#main", "synced", { timings: timingsOf(150, 15) }),
+          result("o/s#main", "synced", { timings: timingsOf(90, 9) }),
+        ],
+        specs: [spec("o/r"), spec("o/s")],
+      });
+
+      await commands.invokeSync();
+
+      // Per-AS detail lands on logInfo (→ #3540 persistent activity log,
+      // iPhone-readable in-app), one line per repo, never a toast firehose.
+      const perRepo = infoLogs.filter((l) =>
+        l.includes("[ExoSync timings]"),
+      );
+      expect(perRepo.length).toBe(2);
+      expect(perRepo.some((l) => l.includes("o/r#main"))).toBe(true);
+      expect(perRepo.some((l) => l.includes("o/s#main"))).toBe(true);
+    });
+
+    it("aggregates the per-AS breakdowns into one run total on the toast", async () => {
+      const { commands, notices } = makeHarness({
+        results: [
+          result("o/r#main", "synced", { timings: timingsOf(100, 10) }),
+          result("o/s#main", "synced", { timings: timingsOf(100, 10) }),
+        ],
+        specs: [spec("o/r"), spec("o/s")],
+      });
+
+      await commands.invokeSync();
+
+      const summary = notices.find((n) => n.includes("Sync done:"));
+      // 6 files hashed total across the 2 repos (3 each).
+      expect(summary).toContain("6 hashed");
+    });
+
+    it("omits the timing line entirely when no AS reported any time", async () => {
+      const { commands, notices } = makeHarness({
+        results: [result("o/r#main", "synced")], // no timings (e.g. busy/skip)
+      });
+
+      await commands.invokeSync();
+
+      const summary = notices.find((n) => n.includes("Sync done:"));
+      expect(summary).toBeDefined();
+      expect(summary).not.toContain("⏱");
+    });
   });
 });
