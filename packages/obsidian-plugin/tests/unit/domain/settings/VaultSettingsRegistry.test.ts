@@ -17,11 +17,11 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 describe("VaultSettingsRegistry", () => {
-  it("contains exactly 24 descriptors (20 boolean / 2 string / 2 stringList)", () => {
-    expect(VAULT_SETTINGS_REGISTRY).toHaveLength(24);
+  it("contains exactly 23 descriptors (19 boolean / 2 string / 2 stringList)", () => {
+    expect(VAULT_SETTINGS_REGISTRY).toHaveLength(23);
     const byType = { boolean: 0, string: 0, stringList: 0 };
     for (const d of VAULT_SETTINGS_REGISTRY) byType[d.datatype]++;
-    expect(byType).toEqual({ boolean: 20, string: 2, stringList: 2 });
+    expect(byType).toEqual({ boolean: 19, string: 2, stringList: 2 });
   });
 
   it("has unique fields, keyUids and settingUids (all UUID-shaped)", () => {

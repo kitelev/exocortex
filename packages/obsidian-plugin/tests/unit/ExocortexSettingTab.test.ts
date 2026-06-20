@@ -87,7 +87,6 @@ describe("ExocortexSettingTab", () => {
         showLabelsInBody: true,
         showLabelsInGraphView: true,
         showLabelsInLivePreview: true,
-        enableSparqlAutoExecute: false,
         settingsHomoiconizationEnabled: false,
         enableShaclValidation: false,
         lazyBootstrapFolders: [],
@@ -212,8 +211,9 @@ describe("ExocortexSettingTab", () => {
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
       // RFC 0002 §3.6 — count = 45 (pre-§3.6) + 3 section headings
-      // («Onboarding & sync» / «Display» / «Advanced») = 48.
-      expect(MockSetting).toHaveBeenCalledTimes(48);
+      // («Onboarding & sync» / «Display» / «Advanced») = 48, minus the
+      // removed "Auto-execute SPARQL code blocks" toggle = 47.
+      expect(MockSetting).toHaveBeenCalledTimes(47);
     });
 
     it("renders the settings-homoiconization toggle", () => {

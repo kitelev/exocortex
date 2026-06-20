@@ -111,14 +111,6 @@ export interface ExocortexSettings {
    */
   showIconsInFileExplorer: boolean;
   /**
-   * When `true`, ` ```sparql ` and ` ```exoql ` markdown code blocks are
-   * executed as queries during note rendering (legacy behaviour). When
-   * `false` (default), those code blocks render as plain code so users can
-   * paste SPARQL snippets for documentation/reference without side effects.
-   * Issue #2992.
-   */
-  enableSparqlAutoExecute: boolean;
-  /**
    * P1.12 — enable the metadataCache SHACL-lite validation debounce (P1.10).
    * Default `false` in v15.x.0; will flip to `true` in v15.y.0 after soak.
    * Hot-toggle: the `scheduleValidation` guard reads this flag on every
@@ -159,8 +151,6 @@ export interface ExocortexSettings {
    *   - The list is snapshotted by every component that builds its own
    *     indexer (`SPARQLApi`, `CommandManager`, `LayoutService`). Editing
    *     the list in Settings only takes effect after reloading Obsidian.
-   *     `SPARQLCodeBlockProcessor` re-reads the current setting on each
-   *     render and is therefore self-healing.
    *   - `LazyAssetGraphLoader` (the per-render lazy walker) is NOT gated
    *     on this list. Opening an excluded-folder file directly may push
    *     its triples into the in-memory store, but `convertNote` does not
@@ -301,7 +291,6 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   autoReadingModeForExocortexAssets: true,
   enableExoLayoutRenderer: true,
   showIconsInFileExplorer: true,
-  enableSparqlAutoExecute: false,
   enableShaclValidation: false,
   enablePropertiesLabelPatch: true,
   excludedFolders: ["09 Templates/"],

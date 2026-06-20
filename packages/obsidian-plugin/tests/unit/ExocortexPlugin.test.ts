@@ -10,7 +10,6 @@ import { CommandManager } from "../../src/application/services/CommandManager";
 import { TaskStatusService, DI_TOKENS, registerCoreServices, resetContainer } from "exocortex";
 import { TaskTrackingService } from "../../src/application/services/TaskTrackingService";
 import { AliasSyncService } from "../../src/application/services/AliasSyncService";
-import { SPARQLCodeBlockProcessor } from "../../src/application/processors/SPARQLCodeBlockProcessor";
 import { ExocortexSettingTab } from "../../src/presentation/settings/ExocortexSettingTab";
 import { DEFAULT_SETTINGS } from "../../src/domain/settings/ExocortexSettings";
 import { ProfileApplyManager } from "../../src/infrastructure/adapters/ProfileApplyManager";
@@ -22,7 +21,6 @@ jest.mock("../../src/presentation/renderers/UniversalLayoutRenderer");
 jest.mock("../../src/application/services/CommandManager");
 jest.mock("../../src/application/services/TaskTrackingService");
 jest.mock("../../src/application/services/AliasSyncService");
-jest.mock("../../src/application/processors/SPARQLCodeBlockProcessor");
 jest.mock("../../src/presentation/settings/ExocortexSettingTab");
 jest.mock("../../src/infrastructure/di/PluginContainer", () => ({
   PluginContainer: {
@@ -40,7 +38,6 @@ describe("ExocortexPlugin", () => {
   let mockTaskStatusService: any;
   let mockTaskTrackingService: any;
   let mockAliasSyncService: any;
-  let mockSparqlProcessor: any;
   let mockWorkspace: any;
   let mockMetadataCache: any;
   let mockVault: any;
@@ -151,13 +148,6 @@ describe("ExocortexPlugin", () => {
     };
     (AliasSyncService as jest.Mock).mockImplementation(() => mockAliasSyncService);
 
-    // Setup mock SPARQL processor
-    mockSparqlProcessor = {
-      process: jest.fn(),
-      cleanup: jest.fn(),
-    };
-    (SPARQLCodeBlockProcessor as jest.Mock).mockImplementation(() => mockSparqlProcessor);
-
     // Setup mock settings tab
     (ExocortexSettingTab as jest.Mock).mockImplementation(() => ({}));
 
@@ -200,18 +190,9 @@ describe("ExocortexPlugin", () => {
       expect(rendererCall[3]).toBe(plugin.vaultAdapter);
       // TaskStatusService is now resolved from DI container, not instantiated directly
       expect(TaskTrackingService).toHaveBeenCalledWith(mockApp, mockVault, mockMetadataCache);
-      expect(SPARQLCodeBlockProcessor).toHaveBeenCalledWith(plugin, expect.any(Object));
       expect(CommandManager).toHaveBeenCalledWith(mockApp);
       expect(mockCommandManager.registerAllCommands).toHaveBeenCalled();
       expect(plugin.addSettingTab).toHaveBeenCalled();
-      expect(plugin.registerMarkdownCodeBlockProcessor).toHaveBeenCalledWith(
-        "sparql",
-        expect.any(Function)
-      );
-      expect(plugin.registerMarkdownCodeBlockProcessor).toHaveBeenCalledWith(
-        "exoql",
-        expect.any(Function)
-      );
       // 10 - 4 semantic search file events (create, modify, delete, rename) = 6
       // + 1 PrintNameRuleService refresh + 1 ThemeResolver invalidation (RFC-024 Phase 1) = 8
       // + 3 PanelResolver invalidations (RFC-024 Phase 3 — layout/binding `changed`, `deleted`, vault `rename`) = 11
@@ -1534,91 +1515,6 @@ describe("ExocortexPlugin", () => {
 
       // Assert
       expect(mockWorkspace.getActiveViewOfType).toHaveBeenCalled();
-    });
-  });
-
-  describe("SPARQL processor integration", () => {
-    it("should register SPARQL code block processor (delegates to processor when toggle on)", async () => {
-      // Arrange
-      await plugin.onload();
-      // Issue #2992: auto-execute is opt-in (default off). Enable for legacy delegation test.
-      plugin.settings.enableSparqlAutoExecute = true;
-
-      // Assert registration happened
-      expect(plugin.registerMarkdownCodeBlockProcessor).toHaveBeenCalledWith(
-        "sparql",
-        expect.any(Function)
-      );
-
-      // Get the registered processor function
-      const processorCall = (plugin.registerMarkdownCodeBlockProcessor as jest.Mock).mock.calls[0];
-      const processorFn = processorCall[1];
-
-      // Test that it calls the SPARQL processor
-      const source = "SELECT * WHERE { ?s ?p ?o }";
-      const el = document.createElement("div");
-      const ctx = {} as any;
-
-      // Act
-      processorFn(source, el, ctx);
-
-      // Assert
-      expect(mockSparqlProcessor.process).toHaveBeenCalledWith(source, el, ctx);
-    });
-
-    it("should register exoql code block processor as alias for SPARQL (delegates when toggle on)", async () => {
-      // Arrange
-      await plugin.onload();
-      plugin.settings.enableSparqlAutoExecute = true;
-
-      // Assert
-      expect(plugin.registerMarkdownCodeBlockProcessor).toHaveBeenCalledWith(
-        "exoql",
-        expect.any(Function)
-      );
-
-      // Find the exoql processor call
-      const calls = (plugin.registerMarkdownCodeBlockProcessor as jest.Mock).mock.calls;
-      const exoqlCall = calls.find((c: any[]) => c[0] === "exoql");
-      expect(exoqlCall).toBeDefined();
-      const processorFn = exoqlCall![1];
-
-      // Test that it calls the same SPARQL processor
-      const source = "SELECT * WHERE { ?s ?p ?o }";
-      const el = document.createElement("div");
-      const ctx = {} as any;
-
-      // Act
-      processorFn(source, el, ctx);
-
-      // Assert
-      expect(mockSparqlProcessor.process).toHaveBeenCalledWith(source, el, ctx);
-    });
-
-    it("Issue #2992: when toggle is off (default), does NOT execute SPARQL — renders plain code", async () => {
-      // Arrange
-      await plugin.onload();
-      // Default is false; assert explicitly for clarity
-      expect(plugin.settings.enableSparqlAutoExecute).toBe(false);
-
-      const calls = (plugin.registerMarkdownCodeBlockProcessor as jest.Mock).mock.calls;
-      const sparqlCall = calls.find((c: any[]) => c[0] === "sparql");
-      const processorFn = sparqlCall![1];
-
-      const source = "ASK { ?s ?p ?o }";
-      const el = document.createElement("div");
-      const ctx = {} as any;
-
-      // Act
-      processorFn(source, el, ctx);
-
-      // Assert — processor not invoked, plain <pre><code> appended
-      expect(mockSparqlProcessor.process).not.toHaveBeenCalled();
-      const pre = el.querySelector("pre.language-sparql");
-      expect(pre).not.toBeNull();
-      const code = pre!.querySelector("code.language-sparql");
-      expect(code).not.toBeNull();
-      expect(code!.textContent).toBe(source);
     });
   });
 
