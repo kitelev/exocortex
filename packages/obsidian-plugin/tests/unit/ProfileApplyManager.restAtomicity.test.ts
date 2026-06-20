@@ -576,4 +576,79 @@ describe("ProfileApplyManager REST apply atomicity (#3548)", () => {
       expect(restMount.unmounted).toEqual([folderOf("kpc-uid")]);
     });
   });
+
+  // Concurrent-switch guard on the production REST mutation path. A second apply
+  // started while a foreign session still holds the persistent switch-lock must
+  // refuse to touch the filesystem — the lock is the only thing preventing two
+  // applies from mutating the same AssetSpace folders simultaneously (the
+  // race that corrupts mount-state / loses data). The reindex-only lock
+  // contention is covered in ProfileApplyManager.test.ts; this pins the
+  // destructive mount/unmount path.
+  describe("concurrent apply — lock guard (REST production path)", () => {
+    it("refuses a second apply while the lock is held — no mount/unmount, pre-apply state intact", async () => {
+      const { mgr, restMount, localDataStore, fsFolders, app } = setup({
+        targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
+        materialized: [...ALL_FLOOR_UIDS, "kpc-uid"],
+      });
+      // A foreign session (distinct pid) holds a FRESH (non-stale) lock.
+      const foreignLock = new PluginLockManager({ app, pid: "foreign-pid" });
+      expect(await foreignLock.acquireLock("foreign-apply")).toBe(true);
+
+      await expect(mgr.applyProfileViaRest("target")).rejects.toThrow(
+        /lock held/i,
+      );
+
+      // Zero filesystem mutation: nothing mounted, nothing unmounted.
+      expect(restMount.mounted).toEqual([]);
+      expect(restMount.unmounted).toEqual([]);
+      // The pre-apply mount-state is fully intact — kpc still on disk, ems not.
+      expect(fsFolders.has(folderOf("kpc-uid"))).toBe(true);
+      expect(fsFolders.has(folderOf("ems-uid"))).toBe(false);
+      // Active profile unchanged + in-progress flag never raised.
+      expect(localDataStore.getActiveProfileUid()).toBe("source");
+      expect(localDataStore.isSwitchInProgress()).toBe(false);
+    });
+  });
+
+  // A best-effort rollback must never MASK the original failure. When a mount
+  // fails AND the rollback unmount of that freshly-pulled partial folder itself
+  // throws, the apply must still reject with the ROOT cause (the mount error),
+  // not the secondary rollback error — so the user is told why the apply failed,
+  // and the to-destroy set (real user data) is still never touched (the failure
+  // happened in the mount phase, before any unmount of the old set).
+  describe("rollback unmount failure never masks the original mount error", () => {
+    it("propagates the mount error (not the rollback-unmount error) and leaves the to-destroy set intact", async () => {
+      const { mgr, restMount, localDataStore, fsFolders } = setup({
+        targetIncludes: [...ALL_FLOOR_UIDS, "ems-uid"],
+        materialized: [...ALL_FLOOR_UIDS, "kpc-uid"],
+      });
+      // The only to-materialize mount fails, AND its rollback unmount also throws.
+      restMount.failMountOn.add(folderOf("ems-uid"));
+      restMount.failUnmountOn.add(folderOf("ems-uid"));
+
+      // The rejection surfaces the ROOT cause — the mount error — not the
+      // secondary rollback-unmount error (rollbackRestMounts journals each
+      // unmount failure but never rethrows it). Capture the error ONCE — a
+      // second apply would run against the partial folder left on disk and
+      // diverge — and assert on its message directly.
+      let caught: unknown;
+      try {
+        await mgr.applyProfileViaRest("target");
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      const message = (caught as Error).message;
+      expect(message).toMatch(/mount failed/);
+      expect(message).not.toMatch(/unmount failed/);
+
+      // The to-destroy AssetSpace (the only real user data here) was never
+      // reached — the failure happened in the mount phase, before any unmount.
+      expect(restMount.unmounted).not.toContain(folderOf("kpc-uid"));
+      expect(fsFolders.has(folderOf("kpc-uid"))).toBe(true);
+      // State is left clean despite the double failure.
+      expect(localDataStore.getActiveProfileUid()).toBe("source");
+      expect(localDataStore.isSwitchInProgress()).toBe(false);
+    });
+  });
 });
