@@ -392,7 +392,7 @@ describe("RFC 36347daf Phase 3: CLI apply workflow_transition", () => {
     }
   }
 
-  it("forward Backlog → Doing — status mutated, postAction marker written", async () => {
+  it("forward Backlog → Doing — status mutated, postAction marker written @req:14b1c592-9879-4523-bc6e-5cebd81d4ac4", async () => {
     vault = buildVault();
 
     await runApply(vault.root, COMMAND_UID, `${TASK_UID}.md`);
