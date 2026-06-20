@@ -26,6 +26,14 @@ import {
   insertTemplateToken,
 } from "./infrastructure/adapters/TemplateTokenInserter";
 import { pickTemplateToken } from "./infrastructure/adapters/TemplateTokenFuzzyModal";
+import {
+  collectTemplateChoices,
+  insertTemplate,
+  resolveTemplateForInsert,
+  type TemplateChoice,
+  type TemplateInserterApp,
+} from "./infrastructure/adapters/TemplateInserter";
+import { fuzzySelect } from "./infrastructure/adapters/FuzzySelectModal";
 import { CommandManager } from "./application/services/CommandManager";
 import { IndexingCompleteNotifier } from "./application/services/IndexingCompleteNotifier";
 import {
@@ -3310,6 +3318,20 @@ export default class ExocortexPlugin extends Plugin {
       },
     });
 
+    // Homoiconic templating Веха 2 (project 17f58ebe / vision 09a3fbec) —
+    // «Insert template»: editor-only command → fuzzy picker over the vault's
+    // `exotemplate__Template` assets (homoiconic — blocks ARE vault assets) →
+    // inserts the chosen template's body at the cursor with `$token` markers
+    // resolved via the shared registry (Веха 4). Same editor-only, unconditional
+    // (Desktop↔Mobile parity), no Node/git/fs deps as the MVP token command.
+    this.addCommand({
+      id: "insert-template",
+      name: "Insert template",
+      editorCallback: (editor: Editor) => {
+        void this.invokeInsertTemplate(editor);
+      },
+    });
+
     // RFC 0a0791c1 Phase 5 T2 — «Apply profile» (the single consolidated
     // profile command; the former soft «Switch focus profile» was removed and
     // the mount-state «Switch knowledge profile» was renamed here). Needs the
@@ -3937,6 +3959,41 @@ export default class ExocortexPlugin extends Plugin {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.notifier.error(`Insert template token failed: ${msg}`);
+    }
+  }
+
+  /**
+   * «Insert template» (homoiconic templating Веха 2, project 17f58ebe). Lists
+   * the vault's `exotemplate__Template` assets, opens the fuzzy picker; on a
+   * choice, reads the template file, strips its frontmatter, resolves `$token`
+   * markers in the body via the shared registry, and inserts the result at the
+   * cursor. An empty vault (no templates) surfaces a guiding Notice rather than
+   * an empty picker; a dismissed picker is a silent no-op; a read/resolve error
+   * is surfaced, not swallowed.
+   */
+  private async invokeInsertTemplate(editor: Editor): Promise<void> {
+    try {
+      const choices = collectTemplateChoices(
+        this.app as unknown as TemplateInserterApp,
+      );
+      if (choices.length === 0) {
+        this.notifier.info(
+          "No templates found. Create an exotemplate__Template asset (with a body) to insert it here.",
+        );
+        return;
+      }
+      const choice = await fuzzySelect<TemplateChoice>(
+        this.app,
+        choices,
+        (c) => ({ title: c.label, description: c.path }),
+        "Insert template",
+      );
+      if (choice === null) return; // dismissed without a selection — no-op
+      const content = await this.app.vault.cachedRead(choice.file);
+      insertTemplate(editor, resolveTemplateForInsert(content));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.notifier.error(`Insert template failed: ${msg}`);
     }
   }
 
