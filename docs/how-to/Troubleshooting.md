@@ -1,7 +1,232 @@
 # User Troubleshooting Guide
 
 **Common issues and solutions for Exocortex users.**
-For **development / CI** issues, see [DEV-TROUBLESHOOTING.md](../../DEV-TROUBLESHOOTING.md).
+
+This page has two halves:
+
+- **[Setup, auth & sync](#setup-auth--sync)** — the _operational_ issues you hit
+  while getting a vault running: GitHub auth/PAT, ExoSync conflicts, applying a
+  profile, bootstrapping, and mobile. **Start here if you're an early tester.**
+- **Layout & usage** (the sections below the divider) — display/behaviour issues
+  once a vault is up: layouts, buttons, wiki-links, daily tasks, graph view.
+
+> **First-run hiccups during install** (no buttons yet, grey class links, plugin
+> not loading, BRAT URL doing nothing) are walked through in the
+> [Getting Started → Troubleshooting](../tutorials/Getting-Started.md#troubleshooting)
+> section — that's the place for setup-time problems.
+>
+> For new vocabulary (AssetSpace, Profile, mount-state, TS-floor, PAT, …) see the
+> [Concepts glossary](../explanation/Concepts.md).
+>
+> For **development / CI** issues, see [DEV-TROUBLESHOOTING.md](../../DEV-TROUBLESHOOTING.md).
+
+---
+
+## Setup, auth & sync
+
+These are the issues early testers hit most. They are grouped by the command
+that surfaces them: **GitHub auth**, **Sync**, **Apply profile**, **Bootstrap**,
+and **Mobile**.
+
+### GitHub auth — Personal Access Token (PAT)
+
+**Problem**: Adding or syncing a **private** AssetSpace fails with _"repository
+does not exist"_, **404**, or **401**.
+
+**Cause**: A **fine-grained** PAT whose repository allowlist doesn't cover the
+repo gets a **404** from GitHub (it hides the existence of repos you can't see) —
+so a "does not exist" error usually means the token is _missing that repo_, not
+that the repo is gone. A genuine **401/403** means the token is expired, revoked,
+or under-scoped. Public onboarding (`$$core`, the registry, the profiles space)
+needs **no** PAT at all.
+
+**Solutions**:
+
+1. **Settings → Exocortex → GitHub PAT.** Use a **fine-grained** token from
+   [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)
+   (not the classic `/settings/tokens/new` page). Scope it to your `exoas-*`
+   repos with a **per-repository allowlist** and grant exactly:
+
+   | Permission   | Access         | Why                                            |
+   | ------------ | -------------- | ---------------------------------------------- |
+   | **Contents** | Read and write | Pull private AssetSpaces and push your commits |
+   | **Metadata** | Read-only      | Mandatory baseline (GitHub auto-selects it)    |
+
+2. Click **Save PAT**, then **Test connection** to confirm it reaches GitHub
+   before you rely on it.
+3. **If a private repo "does not exist"** during Apply/Sync, check the token's
+   repository allowlist first — that is the most common cause.
+
+The token is stored device-local in
+`.obsidian/plugins/exocortex/data.local.json` (key `pat`); the `.local.` infix
+keeps it out of Obsidian Sync replication, and it is never committed.
+
+---
+
+### "I saved a PAT but the plugin still acts unauthenticated"
+
+**Problem**: You entered a valid PAT, but a Bootstrap / Add-pack / Apply of a
+private repo still fails as if no token were set.
+
+**Cause & fix**:
+
+- **Bootstrap, Add a knowledge pack, and Sync read the _currently-stored_ PAT at
+  command time** — a freshly-saved token works **without a reload** (fixed in
+  [#3382](https://github.com/kitelev/exocortex/issues/3382)). Just re-run the
+  command.
+- **One path captures the PAT at plugin onload: the mobile profile-mount path.**
+  If, on mobile, an **Apply profile** of a private profile still pulls
+  unauthenticated after you saved the PAT, **reload Obsidian** (Cmd/Ctrl + P →
+  "Reload app without saving") so the new PAT is picked up, then re-apply.
+
+---
+
+### Sync (`Exocortex: Sync`)
+
+**Problem**: `Exocortex: Sync` reports an error status, or conflicts pile up.
+
+**Reading the result**: One run syncs every mounted AssetSpace (pull → merge →
+push, best-effort). The summary notice shows `pushed / pulled / merged /
+quarantined`; per-repo detail goes to the developer console
+(`[ExoSync] …`, Ctrl/Cmd + Shift + I). Common statuses:
+
+1. **`auth-required` (HTTP 401 / 403)** — the PAT is expired, revoked, or
+   under-scoped. (A _fine-grained_ PAT missing a private repo surfaces as a
+   generic **404**, not `auth-required` — see [GitHub auth](#github-auth--personal-access-token-pat) above.)
+2. **`full-conflict`** — the first sync over a tree that already diverged from
+   the remote, or a watermark whose base commit no longer matches the remote
+   (e.g. after a backup restore). **Nothing is touched.** Align the local tree
+   with the remote (or delete the watermark file
+   `exosync-watermarks.local.json` in the plugin folder) and re-sync.
+3. **Conflicts → quarantine** — a real conflict is preserved, not guessed; it
+   **re-derives on every sync until you resolve it**. There is **no dedicated
+   resolver UI yet** — resolve by making the two sides **converge** (edit the
+   local file and/or the remote so they agree); once they match, the pin clears
+   and the entry auto-tombstones as `resolved`. Optionally set a
+   **Quarantine repo URL** (Settings → Exocortex → ExoSync) to keep conflict
+   copies cross-device. **FileSpaces refuse to sync without a quarantine repo**,
+   because their remote-wins policy would otherwise destroy the only local copy.
+4. **First sync is safe** — on a freshly-mounted AssetSpace the first sync just
+   bootstraps the baseline; nothing is overwritten unless the local tree already
+   diverged from the remote.
+5. **Local deletes/renames are not pushed** — the write primitive cannot express
+   deletions, so they appear as `deferredDeletes` warnings and re-surface every
+   sync. Remote deletes _are_ applied locally.
+
+For the full sync model (3-way merge, FileSpaces, CLI usage), see
+[ExoSync](exosync.md).
+
+---
+
+### Apply profile (`Exocortex: Apply profile`)
+
+> A **profile** is a vault-declared set of AssetSpaces to mount, and **Apply
+> profile** is a **mount-state strict replace**: it materializes the profile's
+> AssetSpaces and **unmounts everything else**. See the
+> [Concepts glossary → Profile](../explanation/Concepts.md) and
+> [profile.md](../explanation/profile.md).
+
+**"My assets disappeared after I applied a profile"**
+
+- They are **not lost** — Apply _unmounted_ the AssetSpaces that the new profile
+  doesn't include (their folders are removed from disk but re-pullable from
+  GitHub / restored from cache). **Re-apply a profile that includes them** (one
+  whose `exo__Profile_includes` lists their AssetSpace) to bring them back.
+
+**"Apply aborted — N uncommitted file(s) …" (`UncommittedChangesAbortError`)**
+
+- On a **git-backed** vault, Apply refuses to unmount an AssetSpace with
+  uncommitted changes — it never destroys un-pushed work. A fresh setup pulls
+  AssetSpaces in as **untracked** files, which git counts as "uncommitted", so
+  the very first Apply aborts. **Fix — commit the vault once first:**
+
+  ```bash
+  # Add a .gitignore so your PAT (data.local.json) is never committed:
+  printf '.obsidian/\n.exocortex/\n' >> .gitignore
+  git add -A && git commit -m "vault setup"
+  ```
+
+  Then re-run **Apply profile**. (Apply never auto-commits — committing is a
+  deliberate, user-owned git action.)
+
+**"Apply refused — profile omits the floor" (`TsFloorViolationError`)**
+
+- Every profile must include the **TS-floor** — `exo`, the core class/property
+  definitions the engine needs. Apply **refuses** a profile that would strip the
+  floor rather than silently re-adding it, because stripping it would self-brick
+  the plugin (no class defs, no commands). Add `exo` back to the profile, or pick
+  a profile that includes it.
+
+**Apply failed or was interrupted**
+
+- Nothing is silently corrupted (2-phase commit + journal + on-load recovery).
+  In order:
+  1. **Reload Obsidian** ("Reload app without saving"). The recovery worker
+     restores any AssetSpace that was destroyed-but-not-yet-materialized.
+  2. **Re-run "Apply profile"** to the same target — Apply is a strict reconcile,
+     so re-running converges the vault regardless of the partial state.
+  3. **Desktop only** — if `git status` shows uncommitted
+     `.gitmodules` / `assetspaces/` changes afterwards, re-running Apply
+     recommits cleanly (or commit manually once the mount-state is correct).
+
+**Obsidian hangs at "Loading plugins…" right after an Apply**
+
+- **Fixed in the #3554 build** — update via BRAT (Cmd/Ctrl + P → "BRAT: Check
+  for updates to all beta plugins"). On an older build, the one-time manual
+  recovery is to quit Obsidian, set `"activeProfileUid": null` in
+  `.obsidian/plugins/exocortex/data.local.json` (this does **not** undo the
+  apply — the reduced mount stays as applied), and relaunch.
+
+---
+
+### Bootstrap & knowledge packs
+
+**"I bootstrapped but there are no action buttons"**
+
+- A clean bootstrap is **exo-only** (the floor). Action buttons (Create Task,
+  Set Status, Plan on Today, …) come from the **`exocmd`** AssetSpace — add it
+  via **Cmd/Ctrl + P → "Exocortex: Add a knowledge pack"**, or pull it
+  transitively by **applying a profile**. (The small filter/toggle buttons at the
+  top of widgets are built into the plugin and don't need `exocmd`.)
+
+**Bootstrapping a vault that already has notes**
+
+- The first-run wizard auto-shows only on a _genuinely fresh_ vault, but the
+  commands always work from the palette. Run **"Exocortex: Set up the engine"**
+  manually; re-open the wizard any time with **"Exocortex: Setup (getting
+  started)"**.
+
+**"Add a knowledge pack" didn't pull dependencies**
+
+- It pulls **one public repo** and does **not** follow `dependsOn`. For a
+  dependency-resolved set, add the **registry** and **profiles** AssetSpaces
+  first, then **Apply profile** (it resolves the closure over the descriptors
+  already in your vault). This is the standard bootstrap order — see
+  [Getting Started → Step 2b](../tutorials/Getting-Started.md#step-2b-add-the-registry--profiles-then-apply-a-profile-recommended).
+
+**First-run indexing placeholder**
+
+- Right after a bootstrap the buttons area shows _"indexing… buttons will appear
+  shortly"_ for a few seconds while 150+ ontology files index; the real buttons
+  replace it automatically. If links still look stale after that, switch tabs or
+  run **Reload layout** once.
+
+---
+
+### Mobile (iPhone / iPad)
+
+**Everything runs over REST — no `git` binary needed.** Sync, Apply profile,
+Bootstrap and Add-knowledge-pack all work on mobile (Desktop↔Mobile command
+parity); sync and apply use a REST/tarball transport instead of `git`.
+
+- **PAT saved after onload needs a reload on mobile** — the mobile
+  profile-mount path captures the PAT at plugin load, so after saving a PAT
+  **reload Obsidian** before applying a private profile (see
+  ["I saved a PAT…"](#i-saved-a-pat-but-the-plugin-still-acts-unauthenticated)).
+- **Keep mounts lean for fast reindexing** — a phone reindexes everything it
+  mounts, so a large mount can take noticeably longer than on desktop. Apply a
+  **lean profile** (only the AssetSpaces you actually need) to keep indexing
+  fast. This is one of the core reasons Profiles exist.
 
 ---
 

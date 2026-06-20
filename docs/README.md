@@ -22,6 +22,7 @@ docs kept at root) is in **[TAXONOMY.md](TAXONOMY.md)**.
 
 - [../README.md](../README.md) — product overview & feature front door
 - [Getting-Started.md](tutorials/Getting-Started.md) — install, first vault, core concepts
+- [explanation/Concepts.md](explanation/Concepts.md) — tester's glossary (AssetSpace, Profile, mount-state, PAT, ExoSync, …)
 - [../VISION.md](../VISION.md) — product vision + cross-cutting invariants (UI/CLI parity, Desktop↔Mobile parity)
 - [../CONTRIBUTING.md](../CONTRIBUTING.md) — contributor setup, PR workflow, coding standards
 
@@ -31,7 +32,7 @@ docs kept at root) is in **[TAXONOMY.md](TAXONOMY.md)**.
 - [Plugin-Development-Guide.md](how-to/Plugin-Development-Guide.md) — building/extending the plugin
 - [WORKFLOW_CUSTOMIZATION.md](how-to/WORKFLOW_CUSTOMIZATION.md) — customizing status workflows
 - [ONTOLOGY_EXTENSION.md](how-to/ONTOLOGY_EXTENSION.md) — adding classes/properties
-- [Troubleshooting.md](how-to/Troubleshooting.md) — **user** troubleshooting (common issues & fixes)
+- [Troubleshooting.md](how-to/Troubleshooting.md) — **user** troubleshooting: setup/auth/sync (PAT, ExoSync, Apply profile, bootstrap, mobile) + layout/usage fixes
 - [profile.md](explanation/profile.md) — Profile pitch + Apply-profile (mount-state) usage
 - [exosync.md](how-to/exosync.md) — ExoSync usage (`Exocortex: Sync`, structured merge, conflict quarantine)
 - [templating.md](how-to/templating.md) — homoiconic templating: insert tokens, insert template blocks, `body_template` grounding
@@ -50,6 +51,7 @@ docs kept at root) is in **[TAXONOMY.md](TAXONOMY.md)**.
 ## Explanation & Architecture
 
 - [../ARCHITECTURE.md](../ARCHITECTURE.md) — layering, monorepo, clean architecture
+- [Concepts.md](explanation/Concepts.md) — **tester's glossary**: AssetSpace, Profile, mount-state, TS-floor, homoiconicity, co-location, UID-canon, PAT, ExoSync, FileSpace, BRAT (one-liners + deep-doc links)
 - [assetspace-sdk-topology.md](explanation/assetspace-sdk-topology.md) — exo-as-SDK: what an AssetSpace is, why there are many `exoas-*` repos, what a Profile is
 - [CROSS_RUNTIME_PARITY.md](explanation/CROSS_RUNTIME_PARITY.md) — validator instance of the UI/CLI Parity Invariant
 - [settings-homoiconization.md](explanation/settings-homoiconization.md) — plugin settings as `exo__Setting` vault assets
