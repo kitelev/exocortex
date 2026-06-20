@@ -343,8 +343,8 @@ re-approval?*
 | **Cucumber/Gherkin step-def runner** | Proven failure here (#3401: 204 self-asserting scenarios, zero prod). Format kept; runner forbidden. |
 | **`@req` tag = sufficient binding** (v1's implicit assumption) | Tag proves *association*, not *exercise* — would reproduce harness-theater at the traceability layer. v2 requires revert-verify + binding-class. |
 | **All requirements as new `req` assets incl. architectural/NFR** (v1) | Four-places-of-truth duplication, unjustified per-PR tax for a solo+AI dev. v2 federates: ADR owns architectural/NFR, BDD owns functional. |
-| **`.feature`/markdown spec files in-repo as canon** | Duplicates the vault graph; non-SPARQL-queryable; disconnected from homoiconic model. Pages is generated *from* the graph instead. |
-| **Single shared `req` assetspace for all instances** | Loses profile-scoped mount + audience-layered privacy. Per-module `exoas-<m>-reqs` gives both, and makes Pages fail-closed by repo visibility. |
+| **`.feature`/markdown spec files in-repo as canon** | Duplicates the vault graph; non-SPARQL-queryable; disconnected from homoiconic model. The (carved) Pages generator renders *from* the graph instead. |
+| **Single shared `req` assetspace for all instances** | Loses profile-scoped mount + audience-layered privacy. Per-module `exoas-<m>-reqs` gives both, and makes the future Pages publication fail-closed by repo visibility. |
 | **Audience via query-time public/private allowlist** | One mis-scoped query leaks private requirements. The per-module repo-visibility boundary (§3.2) is default-deny by construction. (The Pages *publication* that relies on it is carved to a separate RFC.) |
 | **Soft-only / manual-flip enforcement** | Becomes shelfware (the `uj` death). v2 adds a dated auto-flip criterion + soft-gate expiry. |
 | **ReqIF** | XML, heavyweight, non-RDF, non-executable. No interop need. |
