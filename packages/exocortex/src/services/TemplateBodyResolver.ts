@@ -74,3 +74,22 @@ export function resolveTemplateBody(
     return typeof value === "string" && value.length > 0 ? value : literal;
   });
 }
+
+/**
+ * Strip the leading YAML frontmatter block, returning the markdown body. When
+ * no frontmatter is present the whole content is the body. A single newline
+ * separating the closing `---` from the body is consumed so the body does not
+ * start with a blank line. `\r?\n` tolerates CRLF (Windows vaults).
+ *
+ * Single source for "an exotemplate__Template asset's body is its file body"
+ * — reused by the plugin editor inserter, the plugin TemplateLoaderPort, and
+ * the CLI TemplateLoaderPort (one strip, no per-consumer regex drift).
+ *
+ * NOTE — distinct from `utilities/sparqlBlock.stripFrontmatter`, which keeps a
+ * leading newline (`\nbody`). This one consumes the separating newline so the
+ * inserted/copied block does not start blank, and is CRLF-tolerant.
+ */
+export function stripTemplateFrontmatter(content: string): string {
+  const match = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+  return match ? content.slice(match[0].length) : content;
+}

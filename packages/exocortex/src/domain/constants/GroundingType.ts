@@ -64,4 +64,19 @@ export enum GroundingType {
    * RFC 36347daf Phase 2 — homoiconic workflow definitions.
    */
   WORKFLOW_TRANSITION = "workflow_transition",
+  /**
+   * Copy a body template's resolved markdown into the body of the target
+   * (typically a just-created asset inside a composite). Reads the template
+   * markdown from `bodyTemplate` (inline literal) OR `templateRef` (UID of an
+   * `exotemplate__Template` asset, loaded via the injected TemplateLoaderPort),
+   * resolves `$token` markers via the shared SubstitutionResolverRegistry, and
+   * replaces the target file's body (frontmatter preserved).
+   *
+   * Homoiconic templating subproject 17f58ebe, Веха 3 — the body-copy primitive
+   * (`create_instance` writes an empty body). Composable as one step of a
+   * `composite` grounding; when it follows a `create_instance` step it writes
+   * into the newly created asset (the composite threads the created file's path
+   * to subsequent `body_template` steps).
+   */
+  BODY_TEMPLATE = "body_template",
 }

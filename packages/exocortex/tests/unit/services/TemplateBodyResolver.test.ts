@@ -22,7 +22,10 @@ import {
   installDefaultResolvers,
   registerResolver,
 } from "../../../src/services/SubstitutionResolverRegistry";
-import { resolveTemplateBody } from "../../../src/services/TemplateBodyResolver";
+import {
+  resolveTemplateBody,
+  stripTemplateFrontmatter,
+} from "../../../src/services/TemplateBodyResolver";
 
 describe("resolveTemplateBody — registry-driven $token substitution (vehy 2-4)", () => {
   beforeEach(() => {
@@ -110,5 +113,32 @@ describe("resolveTemplateBody — registry-driven $token substitution (vehy 2-4)
   it("resolves the live built-in vocabulary (module-load install) after beforeEach", () => {
     // beforeEach reinstalled defaults; `nowYear` is a built-in 4-digit resolver.
     expect(resolveTemplateBody("Year $nowYear")).toMatch(/^Year \d{4}$/);
+  });
+});
+
+describe("stripTemplateFrontmatter (Веха 3 — template body = file body)", () => {
+  it("returns the body after the frontmatter, consuming the separating newline", () => {
+    expect(
+      stripTemplateFrontmatter("---\nexo__Asset_uid: x\n---\n## Plan\n- step"),
+    ).toBe("## Plan\n- step");
+  });
+
+  it("returns the whole content when there is no frontmatter", () => {
+    expect(stripTemplateFrontmatter("## Just a body")).toBe("## Just a body");
+  });
+
+  it("returns an empty body after frontmatter", () => {
+    expect(stripTemplateFrontmatter("---\na: b\n---\n")).toBe("");
+  });
+
+  it("tolerates CRLF frontmatter (Windows vault)", () => {
+    expect(
+      stripTemplateFrontmatter("---\r\na: b\r\n---\r\n## Plan\r\n- x"),
+    ).toBe("## Plan\r\n- x");
+  });
+
+  it("differs from sparqlBlock.stripFrontmatter — no leading newline kept", () => {
+    // sparqlBlock.stripFrontmatter would return "\n## Plan"; this one consumes it.
+    expect(stripTemplateFrontmatter("---\na: b\n---\n## Plan")).not.toMatch(/^\n/);
   });
 });

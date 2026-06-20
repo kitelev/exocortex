@@ -280,4 +280,43 @@ describe("parseGroundingDefinitionFromFrontmatter", () => {
       expect(def.targetValueRef).toBe("abc-123");
     });
   });
+
+  describe("body_template fields (Веха 3, subproject 17f58ebe)", () => {
+    it("maps inline exocmd__Grounding_bodyTemplate to bodyTemplate", () => {
+      const def = parseGroundingDefinitionFromFrontmatter(
+        "uid",
+        {
+          exocmd__Grounding_type: typeLink(GroundingType.BODY_TEMPLATE),
+          exocmd__Grounding_bodyTemplate: "## Plan\n- $today",
+        },
+        failingResolveStep,
+      );
+      expect(def.type).toBe(GroundingType.BODY_TEMPLATE);
+      expect(def.bodyTemplate).toBe("## Plan\n- $today");
+      expect(def.templateRef).toBeUndefined();
+    });
+
+    it("normalizes exocmd__Grounding_templateRef wikilink to a bare UID", () => {
+      const def = parseGroundingDefinitionFromFrontmatter(
+        "uid",
+        {
+          exocmd__Grounding_type: typeLink(GroundingType.BODY_TEMPLATE),
+          exocmd__Grounding_templateRef:
+            '"[[8bdf4506-80bf-4999-8fda-1ea0808b4ee5|exotemplate__Template]]"',
+        },
+        failingResolveStep,
+      );
+      expect(def.templateRef).toBe("8bdf4506-80bf-4999-8fda-1ea0808b4ee5");
+    });
+
+    it("leaves both fields undefined when neither key is present", () => {
+      const def = parseGroundingDefinitionFromFrontmatter(
+        "uid",
+        { exocmd__Grounding_type: typeLink(GroundingType.PROPERTY_SET) },
+        failingResolveStep,
+      );
+      expect(def.bodyTemplate).toBeUndefined();
+      expect(def.templateRef).toBeUndefined();
+    });
+  });
 });

@@ -28,6 +28,7 @@ import {
 import { pickTemplateToken } from "./infrastructure/adapters/TemplateTokenFuzzyModal";
 import {
   collectTemplateChoices,
+  extractTemplateBody,
   insertTemplate,
   resolveTemplateForInsert,
   type TemplateChoice,
@@ -614,6 +615,23 @@ export default class ExocortexPlugin extends Plugin {
           workflowResolver: this.workflowResolver,
           groundingLoader: (uid) =>
             this.commandResolver.loadGroundingByUid(uid),
+          // Subproject 17f58ebe Веха 3 — load an exotemplate__Template asset's
+          // body by UID for `body_template` groundings that use `templateRef`.
+          // UID-canon → filename basename === uid; fall back to a frontmatter
+          // exo__Asset_uid scan for label-named template files.
+          templateLoader: async (uid) => {
+            const files = this.app.vault.getMarkdownFiles();
+            const file =
+              files.find((f) => f.basename === uid) ??
+              files.find(
+                (f) =>
+                  this.app.metadataCache.getFileCache(f)?.frontmatter?.[
+                    "exo__Asset_uid"
+                  ] === uid,
+              );
+            if (!file) return null;
+            return extractTemplateBody(await this.app.vault.cachedRead(file));
+          },
           namedQueryRunner,
           // T1 "Create Instance" (project bbe40f8c) — co-locate new instances in
           // their chosen ontology's folder via the `$isDefinedByFolder` token.

@@ -11,6 +11,7 @@ import type {
   PropertyDefaultResolved,
 } from "../domain/models/CommandDefinition";
 import { GroundingType } from "../domain/constants/GroundingType";
+import { resolveTemplateBody } from "./TemplateBodyResolver";
 import { AssetClass } from "../domain/constants/AssetClass";
 import { base64ToUtf8 } from "../utilities/base64";
 import { EffortStatus } from "../domain/constants/EffortStatus";
@@ -297,6 +298,16 @@ export type GroundingLoaderPort = (
   uid: string,
 ) => Promise<GroundingDefinition | null>;
 
+/**
+ * Subproject 17f58ebe Веха 3 — load an `exotemplate__Template` asset's markdown
+ * BODY by UID, for `body_template` groundings that reference a template via
+ * `templateRef`. Returns the body (frontmatter stripped) or `null` when the
+ * template UID is unresolvable. When absent (CLI/test without a vault index),
+ * `body_template` falls back to the inline `bodyTemplate` literal or fails loud.
+ * Plugin wires `(uid) => read template file → extractTemplateBody`.
+ */
+export type TemplateLoaderPort = (uid: string) => Promise<string | null>;
+
 @injectable()
 export class GroundingExecutor {
   private readonly frontmatterService: FrontmatterService;
@@ -307,6 +318,7 @@ export class GroundingExecutor {
   private readonly refToFolder?: RefToFolderResolver;
   private readonly workflowResolver?: WorkflowResolverPort;
   private readonly groundingLoader?: GroundingLoaderPort;
+  private readonly templateLoader?: TemplateLoaderPort;
   private readonly namedQueryRunner?: NamedQueryRunnerPort;
   private readonly clock: IClock;
   private readonly uidGen: IUidGenerator;
@@ -327,6 +339,9 @@ export class GroundingExecutor {
       // dispatch returns a clear error rather than silently no-op'ing.
       workflowResolver?: WorkflowResolverPort;
       groundingLoader?: GroundingLoaderPort;
+      // Subproject 17f58ebe Веха 3 — load exotemplate__Template body by UID for
+      // `body_template` groundings that reference a template via `templateRef`.
+      templateLoader?: TemplateLoaderPort;
       // RFC 78c2b7d0 C4 — read-side value-source for property_set
       // `targetValueQuery`. When absent, such groundings fail loud.
       namedQueryRunner?: NamedQueryRunnerPort;
@@ -344,6 +359,7 @@ export class GroundingExecutor {
     this.refToFolder = options?.refToFolder;
     this.workflowResolver = options?.workflowResolver;
     this.groundingLoader = options?.groundingLoader;
+    this.templateLoader = options?.templateLoader;
     this.namedQueryRunner = options?.namedQueryRunner;
     this.clock = options?.clock ?? liveClock();
     this.uidGen = options?.uidGenerator ?? liveUidGenerator();
@@ -434,6 +450,14 @@ export class GroundingExecutor {
 
         case GroundingType.WORKFLOW_TRANSITION:
           return await this.executeWorkflowTransition(
+            grounding,
+            targetIRI,
+            targetFilePath,
+            userInput,
+          );
+
+        case GroundingType.BODY_TEMPLATE:
+          return await this.executeBodyTemplate(
             grounding,
             targetIRI,
             targetFilePath,
@@ -645,13 +669,24 @@ export class GroundingExecutor {
 
     const completedSteps: number[] = [];
 
+    // Subproject 17f58ebe Веха 3 — track the most-recently-created asset's path
+    // so a later `body_template` step writes into THAT file (the created
+    // instance), not the composite click-target. Only `body_template` consumes
+    // this thread; every other step type keeps operating on `filePath`, so this
+    // is a zero-regression addition for existing composites.
+    let lastCreatedPath: string | undefined;
+
     try {
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
+        const stepPath =
+          step.type === GroundingType.BODY_TEMPLATE && lastCreatedPath
+            ? lastCreatedPath
+            : filePath;
         const result = await this.executeStep(
           step,
           targetIRI,
-          filePath,
+          stepPath,
           userInput,
           depth + 1,
         );
@@ -663,6 +698,9 @@ export class GroundingExecutor {
             error: `Composite step ${i} failed: ${result.error}`,
           };
         }
+        // create_instance returns the new file's path — thread it to a later
+        // body_template step.
+        if (result.openPath) lastCreatedPath = result.openPath;
         completedSteps.push(i);
       }
 
@@ -810,6 +848,96 @@ export class GroundingExecutor {
     );
     await this.fileWriter.updateFile(filePath, updated);
     return { success: true };
+  }
+
+  /**
+   * Subproject 17f58ebe Веха 3 — `body_template` grounding. Resolve a body
+   * template (inline `bodyTemplate` literal OR `templateRef` →
+   * `exotemplate__Template` body via the injected loader) and write it as the
+   * BODY of the target file, preserving its frontmatter. `$token` markers are
+   * resolved via the shared SubstitutionResolverRegistry (Веха 4). Inside a
+   * `composite`, the target is the most-recently created asset (the composite
+   * threads its path here) — so create_instance + body_template gives a created
+   * asset with a templated body.
+   */
+  private async executeBodyTemplate(
+    grounding: GroundingDefinition,
+    targetIRI: string,
+    targetFilePath: string,
+    userInput?: UserInput,
+  ): Promise<ExecutionResult> {
+    // 1. Source the raw template markdown. templateRef (homoiconic, points at an
+    //    exotemplate__Template asset) wins; inline bodyTemplate is the fallback
+    //    / test path. Neither → fail loud (a no-op body write is a config error).
+    let rawBody: string | null = null;
+    if (grounding.templateRef) {
+      if (!this.templateLoader) {
+        // A templateRef was authored but no loader is wired — degrade to the
+        // inline literal if present, else fail loud rather than silently no-op.
+        if (grounding.bodyTemplate === undefined) {
+          return {
+            success: false,
+            error: `body_template: templateRef "${grounding.templateRef}" set but no TemplateLoaderPort is wired (and no inline bodyTemplate fallback).`,
+          };
+        }
+        rawBody = grounding.bodyTemplate;
+      } else {
+        rawBody = await this.templateLoader(grounding.templateRef);
+        if (rawBody === null) {
+          return {
+            success: false,
+            error: `body_template: templateRef "${grounding.templateRef}" did not resolve to a template body (asset missing or empty).`,
+          };
+        }
+      }
+    } else if (grounding.bodyTemplate !== undefined) {
+      rawBody = grounding.bodyTemplate;
+    } else {
+      return {
+        success: false,
+        error: "body_template requires bodyTemplate or templateRef",
+      };
+    }
+
+    // 2. Resolve $token markers via the shared registry (Веха 4). Context is
+    //    lenient — unknown / empty / non-scalar tokens stay literal.
+    const resolved = resolveTemplateBody(rawBody, {
+      userInput,
+      targetIRI,
+      targetFilePath,
+    });
+
+    // 3. Write the resolved markdown as the target file's body, preserving any
+    //    frontmatter the create_instance step (or the existing file) wrote.
+    let content: string;
+    try {
+      content = await this.fileReader.readFile(targetFilePath);
+    } catch (error) {
+      return {
+        success: false,
+        error: `body_template: failed to read target file "${targetFilePath}": ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    const newContent = GroundingExecutor.replaceBody(content, resolved);
+    await this.fileWriter.updateFile(targetFilePath, newContent);
+    return { success: true };
+  }
+
+  /**
+   * Replace a markdown file's body (everything after the leading frontmatter
+   * block) with `body`, preserving the frontmatter. When the file has no
+   * frontmatter, the whole content becomes `body`. `\r?\n` tolerates CRLF.
+   *
+   * NOTE: an EMPTY frontmatter (`---\n---`) has no line between the fences, so
+   * the regex treats it as "no frontmatter" and `body` replaces the whole file.
+   * This never triggers on the composite create_instance path (it always writes
+   * non-empty frontmatter: uid/label/instance_class/createdAt); it only affects
+   * a standalone body_template on an empty-FM file — an acceptable corner.
+   */
+  private static replaceBody(content: string, body: string): string {
+    const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---/);
+    if (!fmMatch) return body;
+    return `${fmMatch[0]}\n${body}`;
   }
 
   private async executeCreateInstance(
