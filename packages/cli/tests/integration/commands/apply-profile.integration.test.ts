@@ -203,7 +203,7 @@ describe("CLI — apply-profile real mount-state switch (Issue #3416)", () => {
     await makeFixtureVault(vaultRoot, testlibMaterialised);
   }
 
-  it("[revert-verify] tear-down: switching to a narrower profile removes the AS folder + strips .gitmodules", async () => {
+  it("@req:919c4aeb-23cf-4aef-a954-0244db31c0bb [revert-verify] tear-down: switching to a narrower profile removes the AS folder + strips .gitmodules", async () => {
     await setup(/* testlibMaterialised */ true);
     const testlibMount = path.join(vaultRoot, MOUNT_TESTLIB);
     expect(existsSync(testlibMount)).toBe(true); // precondition
@@ -260,7 +260,7 @@ describe("CLI — apply-profile real mount-state switch (Issue #3416)", () => {
     expect(existsSync(testlibMount)).toBe(true);
   });
 
-  it("materialise: switching to a wider profile pulls the AS via (faked) tarball + adds .gitmodules", async () => {
+  it("@req:7dea2191-12ca-447a-b1f1-23dbc99272d1 materialise: switching to a wider profile pulls the AS via (faked) tarball + adds .gitmodules", async () => {
     await setup(/* testlibMaterialised */ false);
     const testlibMount = path.join(vaultRoot, MOUNT_TESTLIB);
     expect(existsSync(testlibMount)).toBe(false); // precondition
@@ -559,7 +559,7 @@ describe("CLI — central-registry profile resolution (Issue #3511)", () => {
     await fs.writeFile(path.join(vaultRoot, ".gitmodules"), gm, "utf-8");
   }
 
-  it("resolves the profile WITHOUT degraded/refuse and materialises the transitive dependsOn closure", async () => {
+  it("@req:a23e8e34-b4f2-49d9-8b1b-0c3acc3a65e7 resolves the profile WITHOUT degraded/refuse and materialises the transitive dependsOn closure", async () => {
     await makeRegistryVault();
 
     // Fake mount: stub the only network op so no GitHub tarball is fetched.
