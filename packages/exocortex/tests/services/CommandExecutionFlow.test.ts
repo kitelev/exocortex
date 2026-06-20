@@ -56,6 +56,16 @@ function makeFlow(overrides?: {
   promptResult?: UserInput | null;
   tripleStore?: InMemoryTripleStore;
   fileOpener?: IFileOpener;
+  requiredPropertyResolver?: (
+    hostClassUid: string,
+  ) => Promise<
+    Array<{
+      propertyKey: string;
+      label: string;
+      fieldType: "text" | "date" | "number" | "boolean" | "assetRef";
+      targetClassUid?: string;
+    }>
+  >;
 }) {
   const groundingExecutor = {
     execute: jest
@@ -95,6 +105,7 @@ function makeFlow(overrides?: {
     prompts,
     tripleStore,
     fileOpener,
+    overrides?.requiredPropertyResolver,
   );
 
   return {
@@ -697,6 +708,170 @@ describe("CommandExecutionFlow", () => {
       );
       // Success path side-effects should still have fired (no error toast).
       expect(notificationService.error).not.toHaveBeenCalled();
+    });
+  });
+
+  // T3 «Create Instance» (project bbe40f8c) — SHACL required-property field
+  // augmentation. Active ONLY for the host-as-class flagship (create_instance
+  // with no targetClass).
+  describe("required-property field augmentation (T3)", () => {
+    const HOST_UID = "88b938af-1a55-451c-b3cc-2f03e5115fcf";
+    const HOST_PATH = `assetspaces/x/${HOST_UID}.md`;
+
+    // The host-as-class flagship grounding: create_instance, NO targetClass,
+    // with the static label + ontology inputSchema.
+    function flagshipRC() {
+      return makeRC(
+        {},
+        {
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: undefined,
+          inputSchema: [
+            { name: "label", type: "text" },
+            { name: "exo__Asset_isDefinedBy", type: "assetRef" },
+          ],
+        },
+      );
+    }
+
+    async function schemaPassedToPrompt(
+      overrides: Parameters<typeof makeFlow>[0],
+      ctxOverrides?: { filePath?: string | null; rc?: ReturnType<typeof makeRC> },
+    ) {
+      const { flow, prompts } = makeFlow({
+        promptResult: { label: "x" },
+        ...overrides,
+      });
+      const rc = ctxOverrides?.rc ?? flagshipRC();
+      await flow.run(rc, {
+        targetIRI: `obsidian://vault/${HOST_PATH}`,
+        filePath:
+          ctxOverrides && "filePath" in ctxOverrides
+            ? ctxOverrides.filePath ?? null
+            : HOST_PATH,
+      });
+      const calls = prompts.promptInputSchema.mock.calls;
+      return calls.length > 0
+        ? (calls[0][0] as Array<Record<string, unknown>>)
+        : null;
+    }
+
+    it("appends the host class's required properties to the form schema", async () => {
+      const schema = await schemaPassedToPrompt({
+        requiredPropertyResolver: async () => [
+          { propertyKey: "exo__Setting_value", label: "exo__Setting_value", fieldType: "text" },
+          {
+            propertyKey: "exo__Setting_key",
+            label: "exo__Setting_key",
+            fieldType: "assetRef",
+            targetClassUid: "a37d39ec-413d-4d9c-8cf2-da9b6025b00c",
+          },
+        ],
+      });
+      const names = schema!.map((f) => f.name);
+      expect(names).toEqual([
+        "label",
+        "exo__Asset_isDefinedBy",
+        "exo__Setting_value",
+        "exo__Setting_key",
+      ]);
+      const keyField = schema!.find((f) => f.name === "exo__Setting_key")!;
+      expect(keyField).toMatchObject({
+        type: "assetRef",
+        required: true,
+        targetClassUid: "a37d39ec-413d-4d9c-8cf2-da9b6025b00c",
+      });
+    });
+
+    it("gives boolean fields a defaultValue of 'false' (always submit-valid)", async () => {
+      const schema = await schemaPassedToPrompt({
+        requiredPropertyResolver: async () => [
+          { propertyKey: "ex__C_flag", label: "ex__C_flag", fieldType: "boolean" },
+        ],
+      });
+      const flagField = schema!.find((f) => f.name === "ex__C_flag")!;
+      expect(flagField).toMatchObject({
+        type: "boolean",
+        required: true,
+        defaultValue: "false",
+      });
+    });
+
+    it("skips properties already covered by the Universal Default Template", async () => {
+      const schema = await schemaPassedToPrompt({
+        requiredPropertyResolver: async () => [
+          { propertyKey: "exo__Instance_class", label: "x", fieldType: "text" },
+          { propertyKey: "exo__Asset_label", label: "x", fieldType: "text" },
+          { propertyKey: "exo__Setting_value", label: "x", fieldType: "text" },
+        ],
+      });
+      const names = schema!.map((f) => f.name);
+      expect(names).not.toContain("exo__Instance_class");
+      expect(names).not.toContain("exo__Asset_label");
+      expect(names).toContain("exo__Setting_value");
+    });
+
+    it("skips properties already present as a static schema field", async () => {
+      const schema = await schemaPassedToPrompt({
+        requiredPropertyResolver: async () => [
+          { propertyKey: "exo__Asset_isDefinedBy", label: "x", fieldType: "assetRef" },
+          { propertyKey: "exo__Setting_value", label: "x", fieldType: "text" },
+        ],
+      });
+      // exo__Asset_isDefinedBy already in the static schema → not duplicated.
+      const occurrences = schema!.filter(
+        (f) => f.name === "exo__Asset_isDefinedBy",
+      ).length;
+      expect(occurrences).toBe(1);
+    });
+
+    it("is a no-op when the grounding bakes a targetClass (not the flagship)", async () => {
+      const rc = makeRC(
+        {},
+        {
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "[[ems__Task]]",
+          inputSchema: [{ name: "label", type: "text" }],
+        },
+      );
+      const resolver = jest.fn(async () => [
+        { propertyKey: "exo__Setting_value", label: "x", fieldType: "text" as const },
+      ]);
+      const schema = await schemaPassedToPrompt(
+        { requiredPropertyResolver: resolver },
+        { rc },
+      );
+      expect(resolver).not.toHaveBeenCalled();
+      expect(schema!.map((f) => f.name)).toEqual(["label"]);
+    });
+
+    it("is a no-op when no resolver is wired", async () => {
+      const schema = await schemaPassedToPrompt({});
+      expect(schema!.map((f) => f.name)).toEqual([
+        "label",
+        "exo__Asset_isDefinedBy",
+      ]);
+    });
+
+    it("is a no-op when there is no filePath (global palette surface)", async () => {
+      const resolver = jest.fn(async () => [
+        { propertyKey: "exo__Setting_value", label: "x", fieldType: "text" as const },
+      ]);
+      const schema = await schemaPassedToPrompt(
+        { requiredPropertyResolver: resolver },
+        { filePath: null },
+      );
+      expect(resolver).not.toHaveBeenCalled();
+      expect(schema!.map((f) => f.name)).toEqual([
+        "label",
+        "exo__Asset_isDefinedBy",
+      ]);
+    });
+
+    it("resolves the host class UID from the file basename", async () => {
+      const resolver = jest.fn(async () => []);
+      await schemaPassedToPrompt({ requiredPropertyResolver: resolver });
+      expect(resolver).toHaveBeenCalledWith(HOST_UID);
     });
   });
 });

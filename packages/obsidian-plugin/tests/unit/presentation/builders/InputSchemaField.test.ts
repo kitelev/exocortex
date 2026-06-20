@@ -15,6 +15,17 @@ describe("InputSchemaField type definitions", () => {
       expect(field.type).toBe("date");
     });
 
+    // T3 «Create Instance» — number/boolean for required-property datatype ranges.
+    it("should accept number type", () => {
+      const field: InputSchemaField = { name: "count", type: "number" };
+      expect(field.type).toBe("number");
+    });
+
+    it("should accept boolean type", () => {
+      const field: InputSchemaField = { name: "flag", type: "boolean" };
+      expect(field.type).toBe("boolean");
+    });
+
     it("should accept enum type", () => {
       const field: InputSchemaField = { name: "status", type: "enum" };
       expect(field.type).toBe("enum");

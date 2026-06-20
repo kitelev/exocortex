@@ -138,6 +138,31 @@ function renderField(
         />
       );
 
+    case "number":
+      return (
+        <input
+          type="number"
+          className="dynamic-form-input"
+          value={value}
+          onChange={(e) => onChange(field.name, e.target.value)}
+          data-testid={`field-${field.name}`}
+        />
+      );
+
+    case "boolean":
+      // Committed as the string "true"/"false" so it serialises to a YAML
+      // boolean in frontmatter. A checkbox is always "filled" (default false),
+      // so a required boolean never blocks submit.
+      return (
+        <input
+          type="checkbox"
+          className="dynamic-form-checkbox"
+          checked={value === "true"}
+          onChange={(e) => onChange(field.name, e.target.checked ? "true" : "false")}
+          data-testid={`field-${field.name}`}
+        />
+      );
+
     case "enum":
       return (
         <select
