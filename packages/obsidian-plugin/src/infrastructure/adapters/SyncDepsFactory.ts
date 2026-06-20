@@ -5,6 +5,7 @@ import {
   FileWatermarkStore,
   GatedStructuredMerger,
   MOUNT_BASE_STORE_FILENAME,
+  QuarantineResolver,
   SYNC_BRANCH,
   SpaceSpecAccumulator,
   StructuredMerger,
@@ -479,4 +480,71 @@ export async function buildSyncEngine(
   });
 
   return { engine, pat, quarantineConfigured: quarantine !== undefined };
+}
+
+export interface BuildQuarantineResolverOptions {
+  app: App;
+  /**
+   * Quarantine repo URL from settings — OPTIONAL. The resolver is device-local
+   * first (it finds conflicts in the watermark pins); a configured repo is used
+   * only to drop its cross-device count via `markResolved` and to skip the disk
+   * backup (the local version is already durable there).
+   */
+  quarantineRepoUrl?: string;
+  sha1?: Sha1Fn;
+}
+
+export interface BuiltQuarantineResolver {
+  resolver: QuarantineResolver;
+  /** PAT resolved at build time; null ⇒ caller surfaces the R8 prompt. */
+  pat: string | null;
+}
+
+/**
+ * Build a fresh {@link QuarantineResolver} from the CURRENTLY stored PAT
+ * (Issue #3382 fresh-credential pattern). The resolver reads the AssetSpace
+ * head + commits resolutions over the SAME `restCommit` transport the engine
+ * uses, and reads/writes the SAME device-local watermark
+ * (`exosync-watermarks.local.json`) — so a resolution the plugin applies is the
+ * exact base a subsequent CLI sync sees.
+ */
+export async function buildQuarantineResolver(
+  opts: BuildQuarantineResolverOptions,
+): Promise<BuiltQuarantineResolver> {
+  const { app } = opts;
+  const sha1 = opts.sha1 ?? webCryptoSha1;
+  const secretsStore = new LocalSecretsStore({ app });
+  const pat = await secretsStore.getSecret("pat");
+  const client = new GitHubRestClient({ app, pat: pat ?? "" });
+  const transport = client.restTransport();
+  const adapter = app.vault.adapter;
+  const configDir = app.vault.configDir;
+  const watermarkPath = `${configDir}/plugins/exocortex/${WATERMARK_STORE_FILENAME}`;
+
+  let quarantine: QuarantinePort | undefined;
+  const quarantineUrl = opts.quarantineRepoUrl?.trim() ?? "";
+  if (quarantineUrl.length > 0) {
+    GitHubRestClient.validateRepoURL(quarantineUrl);
+    const { owner, repo } = parseGitHubURL(quarantineUrl);
+    quarantine = new SyncedQuarantineStore({
+      transport: withRateLimitBackoff(transport),
+      sha1,
+      owner,
+      repo,
+      branch: SYNC_BRANCH,
+      redact: (m) => GitHubRestClient.redactTokens(m),
+    });
+  }
+
+  const resolver = new QuarantineResolver({
+    transport,
+    watermarkStore: new FileWatermarkStore(
+      vaultWatermarkFileIO(adapter, watermarkPath),
+    ),
+    localFilesFor: (spec) => vaultLocalFilesPort(adapter, spec.localPath),
+    sha1,
+    redact: (m) => GitHubRestClient.redactTokens(m),
+    ...(quarantine !== undefined ? { quarantine } : {}),
+  });
+  return { resolver, pat };
 }

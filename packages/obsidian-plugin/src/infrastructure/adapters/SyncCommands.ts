@@ -368,11 +368,20 @@ export class SyncCommands {
     let quarantined = 0;
     let deferred = 0;
     let synced = 0;
+    // #a0a3d1d6 — surface duplicate-uid anomalies (#3477) in the summary: the
+    // ChangeDetector already emits a per-uid warning, but the user only sees
+    // them buried in the console log. Counting the distinct uids here lets the
+    // toast point at `exosync dedup-uids` (CLI) / the dedup helper.
+    const dupUids = new Set<string>();
     const problems: string[] = [];
     let authRequired = false;
 
     for (const r of results) {
-      for (const w of r.warnings) log(`[ExoSync] ${r.repoKey}: ${w}`);
+      for (const w of r.warnings) {
+        log(`[ExoSync] ${r.repoKey}: ${w}`);
+        const dup = /duplicate uid ([^\s]+)/.exec(w);
+        if (dup !== null) dupUids.add(dup[1]);
+      }
       if (r.detail !== undefined) {
         log(`[ExoSync] ${r.repoKey}: ${r.status} — ${r.detail}`);
       }
@@ -424,11 +433,20 @@ export class SyncCommands {
     // Split-run deferrals (#3473) are surfaced in the Notice — without this
     // the user only sees them in the console log. Pushed deletions (#3476)
     // surface as their own count: a real propagation, not a deferral.
+    // Quarantine (#a0a3d1d6): point the user at the resolver — without this the
+    // count is a dead-end ("quarantined 14" but no way to act). dup-uids (#3477)
+    // get their own pointer to `exosync dedup-uids`.
     const counts =
       `pushed ${pushed}, pulled ${pulled}, merged ${merged}, quarantined ${quarantined}` +
+      (quarantined > 0
+        ? " (run 'Resolve sync conflicts' to fix)"
+        : "") +
       (deleted > 0 ? `, deleted ${deleted}` : "") +
       (deferred > 0
         ? `, deferred ${deferred} (a full Sync resolves them)`
+        : "") +
+      (dupUids.size > 0
+        ? `, ${dupUids.size} duplicate uid(s) (run 'exosync dedup-uids')`
         : "");
     if (problems.length === 0) {
       this.deps.notify(

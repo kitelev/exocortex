@@ -619,6 +619,18 @@ export {
   type SyncProgressFn,
   type SyncProgressPhase,
 } from "./services/sync/SyncEngine";
+// ExoSync quarantine resolver (finding a0a3d1d6) — the user-facing reconcile
+// the engine announced but never built. Device-local-first (watermark pins +
+// disk + AssetSpace head), one-action convergent resolution, zero-loss.
+export {
+  QuarantineResolver,
+  backupPathFor,
+  type ConflictDetail,
+  type QuarantineResolverDeps,
+  type ResolvableConflict,
+  type ResolveChoice,
+  type ResolveResult,
+} from "./services/sync/QuarantineResolver";
 export {
   DEFAULT_MAX_FILE_BYTES,
   InMemoryQuarantineStore,
