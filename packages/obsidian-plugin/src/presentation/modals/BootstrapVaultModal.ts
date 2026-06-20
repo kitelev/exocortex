@@ -9,11 +9,16 @@ export interface BootstrapVaultUrls {
  * example AND linked from the inline explainer (RFC 0002 §3.3 — "a link to the
  * floor repo"). Single source so the placeholder and the link never drift.
  *
- * EC7 note: this is a LINK + a greyed-out placeholder example, NOT a pre-fill.
- * The field starts empty (the `kitelev/exoas-*` repos materialise a specific
- * ontology and are not auto-filled as a generic default — see EC7 below); the
- * link only lets a user *view / fork* the public floor before they decide what
- * to enter.
+ * EC7 note: this is a LINK + a greyed-out placeholder example, NOT an
+ * *auto*-pre-fill. The field starts empty (the `kitelev/exoas-*` repos
+ * materialise a specific ontology and are not auto-filled as a generic default
+ * — see EC7 below); the link only lets a user *view / fork* the public floor
+ * before they decide what to enter.
+ *
+ * This same URL is ALSO the value the explicit «Use default» button writes into
+ * the field on click (directive 2026-06-20). That is an opt-in user action, so
+ * it does not violate EC7's no-*auto*-prefill rule — the field still starts
+ * empty; the user chooses to populate it.
  */
 export const PUBLIC_EXO_FLOOR_URL = "https://github.com/kitelev/exoas-exo";
 
@@ -168,13 +173,43 @@ export class BootstrapVaultModal extends Modal {
     const fieldId = "bootstrap-vault-exo-url";
     const labelEl = wrap.createEl("label", { text: label });
     labelEl.setAttribute("for", fieldId);
-    const input = wrap.createEl("input", {
+    // The input and its inline «Use default» button share a row so the
+    // affordance sits next to the field (the label stays on its own line above).
+    const inputRow = wrap.createEl("div", {
+      cls: "bootstrap-vault-input-row",
+    });
+    const input = inputRow.createEl("input", {
       type: "text",
       placeholder,
       cls: "bootstrap-vault-input bootstrap-modal-input",
       // Screen-reader label mirrors the visible <label> so the field is named
       // even out of visual context (P16 a11y); id pairs with the label's for.
       attr: { id: fieldId, "aria-label": label },
+    });
+    // «Use default» — one-click fill of the public engine floor URL (directive
+    // Андрей 2026-06-20). EC7 is preserved: the field still STARTS empty (no
+    // auto-pre-fill); this is an explicit, opt-in user action that populates it.
+    // Reuses PUBLIC_EXO_FLOOR_URL (single source — no hardcoded dup). Pure DOM,
+    // so it works identically on desktop and mobile (no Platform gating).
+    const useDefaultBtn = inputRow.createEl("button", {
+      cls: "bootstrap-vault-use-default",
+      text: "Use default",
+      // type=button so it never acts as an implicit form-submit affordance;
+      // aria-label names the action out of visual context (P16 a11y).
+      attr: {
+        type: "button",
+        "aria-label": "Use the default public engine floor URL",
+      },
+    });
+    useDefaultBtn.addEventListener("click", () => {
+      input.value = PUBLIC_EXO_FLOOR_URL;
+      // A valid URL is now present — clear any stale validation error.
+      this.clearError();
+      try {
+        input.focus();
+      } catch {
+        /* focus is best-effort */
+      }
     });
     return input;
   }
@@ -194,6 +229,12 @@ export class BootstrapVaultModal extends Modal {
     if (this.errorEl === null) return;
     this.errorEl.textContent = message;
     this.errorEl.classList.add("is-visible");
+  }
+
+  private clearError(): void {
+    if (this.errorEl === null) return;
+    this.errorEl.textContent = "";
+    this.errorEl.classList.remove("is-visible");
   }
 
   override onClose(): void {
