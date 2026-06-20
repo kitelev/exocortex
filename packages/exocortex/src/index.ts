@@ -147,6 +147,10 @@ export type {
   ResolverContext,
   ResolverFn,
 } from "./services/SubstitutionResolverRegistry";
+// Homoiconic templating (vehy 2-4) — resolve `$token` markers inside a markdown
+// body via the shared registry. Consumed by the editor "Insert template"
+// command and the `body_template` grounding step.
+export { resolveTemplateBody } from "./services/TemplateBodyResolver";
 export { InstantiationRuleResolver } from "./services/InstantiationRuleResolver";
 export type { InstantiationRule, PropertySetRule } from "./services/InstantiationRuleResolver";
 export { VisibilityGenerator } from "./services/VisibilityGenerator";
