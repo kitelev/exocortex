@@ -26,7 +26,13 @@ import type {
   SyncProgressEvent,
   SyncRepoSpec,
 } from "exocortex";
-import { orderChildrenFirst } from "exocortex";
+import {
+  aggregateTimings,
+  formatRepoTimings,
+  formatTimingsLine,
+  orderChildrenFirst,
+  totalMs,
+} from "exocortex";
 
 import { GitHubRestClient } from "./GitHubRestClient";
 import type { SyncSpecCollection, BuiltSyncEngine } from "./SyncDepsFactory";
@@ -419,6 +425,16 @@ export class SyncCommands {
       this.maybeStepNotice(stepLine);
       // #3498 — durable verbose file trace (no-op unless verboseSyncLogging on).
       this.deps.logVerbose?.(stepLine);
+      // ExoSync Phase 0 (measure-first) — per-AS phase breakdown. Goes to the
+      // ALWAYS-ON activity log (logInfo, #3540 — persistent + iPhone-readable
+      // in-app) and the durable file trace, never a toast (would be the same
+      // 14-repo firehose). This is the per-phase + per-AS data Andrey reads to
+      // decide which optimisation Phase 1 picks.
+      if (r.timings !== undefined && totalMs(r.timings) > 0) {
+        const timingLine = formatRepoTimings(r.repoKey, r.timings);
+        logInfo(timingLine);
+        this.deps.logVerbose?.(timingLine);
+      }
       pushed += r.pushedCount;
       deleted += r.pushedDeletes?.length ?? 0;
       pulled += r.pulledCount;
@@ -443,6 +459,20 @@ export class SyncCommands {
     }
 
     const summary = { quarantined, deferred, authRequired };
+
+    // ExoSync Phase 0 (measure-first) — aggregate the per-AS breakdowns into a
+    // run total and surface the dominant phase. The concise line rides the
+    // single summary toast (as a 2nd line — preserves the "no double summary"
+    // toast invariant #3499) so Andrey reads which phase dominated immediately
+    // on iPhone; the same line also goes to the always-on activity log.
+    const aggTimings = aggregateTimings(results);
+    const timingLine =
+      totalMs(aggTimings) > 0 ? formatTimingsLine(aggTimings) : "";
+    if (timingLine !== "") {
+      logInfo(timingLine);
+      this.deps.logVerbose?.(timingLine);
+    }
+    const timingSuffix = timingLine !== "" ? `\n${timingLine}` : "";
 
     if (authRequired) {
       // R8 — explicit, never treated as success.
@@ -472,14 +502,14 @@ export class SyncCommands {
         : "");
     if (problems.length === 0) {
       this.deps.notify(
-        `${label} done: ${synced}/${results.length} repo(s) — ${counts}`,
+        `${label} done: ${synced}/${results.length} repo(s) — ${counts}${timingSuffix}`,
       );
       logInfo(
         `[ExoSync] ${label} OK: ${synced}/${results.length} repo(s) — ${counts}`,
       );
     } else {
       this.deps.notify(
-        `${label} finished with issues (${problems.join("; ")}) — ${counts}. See console for details.`,
+        `${label} finished with issues (${problems.join("; ")}) — ${counts}. See console for details.${timingSuffix}`,
       );
     }
     return summary;

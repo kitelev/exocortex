@@ -48,7 +48,11 @@ import {
   SyncEngine,
   SYNC_BRANCH,
   WATERMARK_STORE_FILENAME,
+  aggregateTimings,
+  formatRepoTimings,
+  formatTimingsLine,
   orderChildrenFirst,
+  totalMs,
   withRateLimitBackoff,
   type LocalFilesPort,
   type MaterializationCheckPort,
@@ -363,6 +367,10 @@ function printRepoResult(
   if ((r.deferredDeletes?.length ?? 0) > 0) {
     out(`  deferred deletes: ${r.deferredDeletes.join(", ")}`);
   }
+  // ExoSync Phase 0 (measure-first) — per-AS phase breakdown for desktop runs.
+  if (r.timings !== undefined && totalMs(r.timings) > 0) {
+    out(`  ${formatRepoTimings(r.repoKey, r.timings)}`);
+  }
 }
 
 /** A repo result is a FAILURE (non-zero exit) when it left unresolved
@@ -477,6 +485,10 @@ export async function runExosyncSync(
     out(
       `Summary: ${results.length} repo(s) — pulled ${totals.pulled}, pushed ${totals.pushed}, merged ${totals.merged}, quarantined ${totals.quarantined}`,
     );
+    // ExoSync Phase 0 (measure-first) — run-total per-phase breakdown so the
+    // dominant phase is visible (which optimisation Phase 1 picks).
+    const aggTimings = aggregateTimings(results);
+    if (totalMs(aggTimings) > 0) out(formatTimingsLine(aggTimings));
   }
 
   return results.some((r) => isFailureStatus(r.status)) ? 1 : 0;
