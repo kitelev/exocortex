@@ -2919,6 +2919,13 @@ export default class ExocortexPlugin extends Plugin {
     // `ems__Project` / `ems__MeetingPrototype` until a full plugin reload.
     // This mirrors the cold-start (`metadataCache.on("resolved")`) and
     // hot-reindex (`scheduleHotReindex`) paths, which already do this.
+    //
+    // Link-label Веха 2 (WBS f01836c1) — the hook ALSO re-resolves
+    // wikilink labels in the open editor views (`updateOptions()`), so a
+    // bare `[[uid]]` whose target lived in a previously-unmounted
+    // AssetSpace stops showing the raw `uid` automatically on apply — the
+    // same editor-view rebuild the manual «Refresh link labels» command
+    // (`LinkLabelRefreshService`) performs, now fired without a command.
     const rdfIndexer = new PluginRdfIndexerAdapter(
       this.sparql.getRdfIndexer(),
       createProfileApplyRefreshHook({
@@ -2930,6 +2937,7 @@ export default class ExocortexPlugin extends Plugin {
         invalidatePreconditionCache: () =>
           this.preconditionEvaluator.invalidateCache(),
         rerenderLayouts: () => this.autoRenderLayout(),
+        refreshEditorLabels: () => this.app.workspace.updateOptions(),
       }),
     );
 
