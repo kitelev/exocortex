@@ -273,14 +273,18 @@ describe("FolderRepairService", () => {
       await expect(service.repairFolder(file, "new-folder")).rejects.toBe("string error");
     });
 
-    it("should not create folder when expectedFolder is empty string (root)", async () => {
+    it("should move to vault root (no leading slash) when expectedFolder is empty string", async () => {
+      // Regression guard: a root-level target must produce the relative path
+      // `asset.md`, NOT `/asset.md`. A leading slash is an *absolute* path that
+      // FileSystemVaultAdapter.resolvePath returns verbatim, so `fs.move` would
+      // relocate the asset to the OS filesystem root — out of the vault (lost).
       const file = createMockFile();
       mockVault.getAbstractFileByPath.mockReturnValue(null);
 
       await service.repairFolder(file, "");
 
       expect(mockVault.createFolder).not.toHaveBeenCalled();
-      expect(mockVault.rename).toHaveBeenCalledWith(file, "/asset.md");
+      expect(mockVault.rename).toHaveBeenCalledWith(file, "asset.md");
     });
   });
 

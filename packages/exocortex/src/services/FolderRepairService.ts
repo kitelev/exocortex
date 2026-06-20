@@ -60,8 +60,14 @@ export class FolderRepairService {
    * Move asset to its expected folder based on exo__Asset_isDefinedBy
    */
   async repairFolder(file: IFile, expectedFolder: string): Promise<void> {
-    // Construct new path
-    const newPath = `${expectedFolder}/${file.name}`;
+    // Construct new path. For a root-level target (expectedFolder === "") the
+    // file lands at the vault root as `<name>`, NOT `/<name>`: a leading-slash
+    // path is an *absolute* filesystem path. `FileSystemVaultAdapter.resolvePath`
+    // returns absolute paths verbatim, so `/<name>` would `fs.move` the asset to
+    // the OS filesystem root — out of the vault entirely (lost). This mirrors the
+    // CLI `FolderRepairExecutor`/`BatchExecutor`, which already build
+    // `expectedFolder ? \`${expectedFolder}/${fileName}\` : fileName`.
+    const newPath = expectedFolder ? `${expectedFolder}/${file.name}` : file.name;
 
     // Check if target path already exists
     const existingFile = this.vault.getAbstractFileByPath(newPath);
