@@ -42,30 +42,29 @@ The following v15 verbs were **removed**: `batch`, `batch-repair`, `command`, `d
 
 ## Command Overview
 
-| Command                             | Purpose                                                                        |
-| ----------------------------------- | ------------------------------------------------------------------------------ |
-| [`find`](#find)                     | Select vault assets via SPARQL or class filter; prints file paths one per line |
-| [`apply`](#apply)                   | Apply a vault-defined `exocmd__Command` to one or more assets                  |
-| [`query`](#query)                   | Execute a SPARQL query against the vault                                       |
-| [`index`](#index)                   | Build or refresh the persistent triple cache                                   |
-| [`validate`](#validate)             | Validate vault files: `iri`, `schema`, `frontmatter`                           |
-| [`ask`](#ask)                       | Natural-language question (Russian or English) → SPARQL                        |
-| [`classes`](#classes)               | List vault classes or describe one class                                       |
-| [`create`](#create)                 | Create a new vault asset with auto-generated UUID and frontmatter              |
-| [`resolve`](#resolve)               | Resolve a UUID (full or partial) to a file path                                |
-| [`watch`](#watch)                   | Watch the vault for file changes; emit NDJSON events                           |
-| [`workflow`](#workflow)             | List / show / validate workflow definitions                                    |
-| [`recover`](#recover)               | Detect and recover orphaned claude-child tmux sessions                         |
-| [`daemon`](#daemon)                 | Manage the ValidatorDaemon background process                                  |
-| [`audit`](#audit)                   | Regression-pattern audits (`co-location`, `ontology-imports`)                  |
-| [`apply-profile`](#apply-profile)   | Apply an `exo__Profile` (mount-state filesystem mutation)                      |
-| [`bootstrap`](#bootstrap)           | Bootstrap a vault with the SDK floor AssetSpace                                |
-| [`assetspace-add`](#assetspace-add) | Add a single AssetSpace to a vault by GitHub URL                               |
-| [`assetspace-remove`](#assetspace-remove) | Unmount a single AssetSpace from a vault (inverse of `assetspace-add`)   |
-| [`exosync`](#exosync)               | Sync / pull / push the materialized AssetSpace set over the GitHub REST API     |
-| [`exosync-parity`](#exosync-parity) | Read-only ExoSync divergence report (M1/M2 parity check)                       |
-| [`resolve-deps`](#resolve-deps)     | Resolve an AssetSpace's transitive `dependsOn` closure from the registry (CI gate) |
-| [`experimental`](#experimental)     | Opt-in experimental features (`rest-push`)                                     |
+| Command                                   | Purpose                                                                            |
+| ----------------------------------------- | ---------------------------------------------------------------------------------- |
+| [`find`](#find)                           | Select vault assets via SPARQL or class filter; prints file paths one per line     |
+| [`apply`](#apply)                         | Apply a vault-defined `exocmd__Command` to one or more assets                      |
+| [`query`](#query)                         | Execute a SPARQL query against the vault                                           |
+| [`index`](#index)                         | Build or refresh the persistent triple cache                                       |
+| [`validate`](#validate)                   | Validate vault files: `iri`, `schema`, `frontmatter`                               |
+| [`classes`](#classes)                     | List vault classes or describe one class                                           |
+| [`create`](#create)                       | Create a new vault asset with auto-generated UUID and frontmatter                  |
+| [`resolve`](#resolve)                     | Resolve a UUID (full or partial) to a file path                                    |
+| [`watch`](#watch)                         | Watch the vault for file changes; emit NDJSON events                               |
+| [`workflow`](#workflow)                   | List / show / validate workflow definitions                                        |
+| [`recover`](#recover)                     | Detect and recover orphaned claude-child tmux sessions                             |
+| [`daemon`](#daemon)                       | Manage the ValidatorDaemon background process                                      |
+| [`audit`](#audit)                         | Regression-pattern audits (`co-location`, `ontology-imports`)                      |
+| [`apply-profile`](#apply-profile)         | Apply an `exo__Profile` (mount-state filesystem mutation)                          |
+| [`bootstrap`](#bootstrap)                 | Bootstrap a vault with the SDK floor AssetSpace                                    |
+| [`assetspace-add`](#assetspace-add)       | Add a single AssetSpace to a vault by GitHub URL                                   |
+| [`assetspace-remove`](#assetspace-remove) | Unmount a single AssetSpace from a vault (inverse of `assetspace-add`)             |
+| [`exosync`](#exosync)                     | Sync / pull / push the materialized AssetSpace set over the GitHub REST API        |
+| [`exosync-parity`](#exosync-parity)       | Read-only ExoSync divergence report (M1/M2 parity check)                           |
+| [`resolve-deps`](#resolve-deps)           | Resolve an AssetSpace's transitive `dependsOn` closure from the registry (CI gate) |
+| [`experimental`](#experimental)           | Opt-in experimental features (`rest-push`)                                         |
 
 ---
 
@@ -290,23 +289,6 @@ Check vault frontmatter for missing/empty properties and malformed IRIs.
 
 ## Auxiliary Commands
 
-### ask
-
-Ask a question in natural language (Russian or English) about your vault. Converts the question to SPARQL and executes it.
-
-```bash
-npx @kitelev/exocortex-cli ask "активные проекты" --vault ~/vault
-npx @kitelev/exocortex-cli ask "what tasks are due today" --show-query --vault ~/vault
-```
-
-| Option            | Default | Description                                       |
-| ----------------- | ------- | ------------------------------------------------- |
-| `--vault <path>`  | cwd     | Path to Obsidian vault                            |
-| `--format <type>` | `table` | Output format: `table` or `json`                  |
-| `--output <type>` | `text`  | Response format: `text` or `json` (for MCP tools) |
-| `--show-query`    | off     | Show the generated SPARQL query                   |
-| `--explain`       | off     | Show an explanation of the query conversion       |
-
 ### classes
 
 List all classes in the vault, or show details of one class. Alias: `describe-class`.
@@ -522,12 +504,12 @@ npx @kitelev/exocortex-cli assetspace-remove \
   --folder assetspaces/kitelev/exoas-pmbok-ontology
 ```
 
-| Option            | Default      | Description                                                                                  |
-| ----------------- | ------------ | -------------------------------------------------------------------------------------------- |
-| `--vault <path>`  | **required** | Path to the target vault                                                                     |
+| Option            | Default      | Description                                                                                                            |
+| ----------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `--vault <path>`  | **required** | Path to the target vault                                                                                               |
 | `--folder <path>` | —            | Vault-relative mount path to unmount (e.g. `assetspaces/kitelev/exoas-pmbok-ontology`). Takes precedence over `--url`. |
-| `--url <url>`     | —            | Public GitHub URL of the AssetSpace — derives the canonical mount path (parity with `assetspace-add`). |
-| `--json`          | off          | Emit result as JSON                                                                          |
+| `--url <url>`     | —            | Public GitHub URL of the AssetSpace — derives the canonical mount path (parity with `assetspace-add`).                 |
+| `--json`          | off          | Emit result as JSON                                                                                                    |
 
 Provide exactly one of `--folder` or `--url`.
 
@@ -549,15 +531,15 @@ npx @kitelev/exocortex-cli exosync push --vault ~/vault --token-from-gh   # send
 
 All three accept:
 
-| Option                    | Default     | Description                                                                  |
-| ------------------------- | ----------- | --------------------------------------------------------------------------- |
-| `--vault <path>`          | **required** | Vault root path                                                            |
-| `--config-dir <name>`     | `.obsidian` | Obsidian config dir name (watermark location)                               |
-| `--quarantine-repo <url>` | —           | Quarantine repo URL (`https://github.com/<owner>/<repo>`) — **required for FileSpaces** |
-| `--token <pat>`           | —           | GitHub PAT (or env `GITHUB_TOKEN` / `GH_TOKEN`). Prefer `--token-from-gh`.   |
-| `--token-from-gh`         | off         | Resolve the PAT via `gh auth token`                                         |
-| `--json`                  | off         | Print the full per-repo result array as JSON                                |
-| `--api-base <url>`        | —           | GitHub API base (testing)                                                   |
+| Option                    | Default      | Description                                                                             |
+| ------------------------- | ------------ | --------------------------------------------------------------------------------------- |
+| `--vault <path>`          | **required** | Vault root path                                                                         |
+| `--config-dir <name>`     | `.obsidian`  | Obsidian config dir name (watermark location)                                           |
+| `--quarantine-repo <url>` | —            | Quarantine repo URL (`https://github.com/<owner>/<repo>`) — **required for FileSpaces** |
+| `--token <pat>`           | —            | GitHub PAT (or env `GITHUB_TOKEN` / `GH_TOKEN`). Prefer `--token-from-gh`.              |
+| `--token-from-gh`         | off          | Resolve the PAT via `gh auth token`                                                     |
+| `--json`                  | off          | Print the full per-repo result array as JSON                                            |
+| `--api-base <url>`        | —            | GitHub API base (testing)                                                               |
 
 Exit codes: `0` all clean · `1` at least one repo unresolved/errored · `2` vacuous (no materialized AssetSpaces found).
 
@@ -571,14 +553,14 @@ Read-only ExoSync divergence report (RFC `4e4dc453` Phase E, M1/M2). Compares th
 npx @kitelev/exocortex-cli exosync-parity --vault ~/vault --token-from-gh
 ```
 
-| Option                | Default     | Description                                                                |
-| --------------------- | ----------- | -------------------------------------------------------------------------- |
-| `--vault <path>`      | **required** | Vault root path                                                           |
-| `--config-dir <name>` | `.obsidian` | Obsidian config dir name (watermark location)                              |
-| `--token <pat>`       | —           | GitHub PAT (or env `GITHUB_TOKEN` / `GH_TOKEN`). Prefer `--token-from-gh`.  |
-| `--token-from-gh`     | off         | Resolve the PAT via `gh auth token`                                        |
-| `--json`              | off         | Print the full round record as JSON                                        |
-| `--api-base <url>`    | —           | GitHub API base (testing)                                                  |
+| Option                | Default      | Description                                                                |
+| --------------------- | ------------ | -------------------------------------------------------------------------- |
+| `--vault <path>`      | **required** | Vault root path                                                            |
+| `--config-dir <name>` | `.obsidian`  | Obsidian config dir name (watermark location)                              |
+| `--token <pat>`       | —            | GitHub PAT (or env `GITHUB_TOKEN` / `GH_TOKEN`). Prefer `--token-from-gh`. |
+| `--token-from-gh`     | off          | Resolve the PAT via `gh auth token`                                        |
+| `--json`              | off          | Print the full round record as JSON                                        |
+| `--api-base <url>`    | —            | GitHub API base (testing)                                                  |
 
 Exit codes: `0` in parity · `1` divergence found · `2` vacuous (no materialized sync units).
 
@@ -592,12 +574,12 @@ npx @kitelev/exocortex-cli resolve-deps \
   --self kitelev/exoas-ems-ontology
 ```
 
-| Option              | Default      | Description                                                                                                   |
-| ------------------- | ------------ | ------------------------------------------------------------------------------------------------------------ |
-| `--registry <path>` | **required** | Path to a checked-out central registry (`kitelev/exoas-registry`)                                            |
+| Option              | Default      | Description                                                                                                                    |
+| ------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `--registry <path>` | **required** | Path to a checked-out central registry (`kitelev/exoas-registry`)                                                              |
 | `--self <id>`       | **required** | Identity of the calling repo: an `owner/repo` slug (matches GitHub's `github.repository`), a full git URL, or a bare namespace |
-| `--format <type>`   | `urls`       | Output format: `urls` (one clone URL per line) or `json` (full diagnostics)                                  |
-| `--strict`          | off          | Exit non-zero (`2`) when `self` is not registered, instead of validating standalone                          |
+| `--format <type>`   | `urls`       | Output format: `urls` (one clone URL per line) or `json` (full diagnostics)                                                    |
+| `--strict`          | off          | Exit non-zero (`2`) when `self` is not registered, instead of validating standalone                                            |
 
 ### experimental
 
@@ -652,7 +634,7 @@ Validation commands (`validate iri`, `validate schema`, `audit co-location`, `ar
 
 ## Structured JSON Responses
 
-Commands that accept `--output json` (e.g. `query`, `ask`, `classes`, `resolve`, `index`, `validate`, `workflow`, `audit`) emit a structured response envelope for MCP tools and automation:
+Commands that accept `--output json` (e.g. `query`, `classes`, `resolve`, `index`, `validate`, `workflow`, `audit`) emit a structured response envelope for MCP tools and automation:
 
 ```json
 {

@@ -79,7 +79,7 @@ BRAT will automatically keep the plugin updated with new releases.
 
 Best for: Automation, AI agents, batch operations.
 
-The CLI exposes five core verbs — `find`, `apply`, `query`, `index`, `validate` — plus auxiliary commands (`ask`, `classes`, `create`, `archive`, `workflow`, and more).
+The CLI exposes five core verbs — `find`, `apply`, `query`, `index`, `validate` — plus auxiliary commands (`classes`, `create`, `archive`, `workflow`, and more).
 
 ```bash
 # Run via npx (or npm install -g @kitelev/exocortex-cli)
@@ -225,21 +225,21 @@ See [docs/profile.md](./docs/explanation/profile.md) for the full architectural 
 
 Statically registered plugin commands (all prefixed `Exocortex:` in the palette):
 
-| Command                            | Description                                                                                                                                |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Create asset**                   | Create a new asset via an ontology-driven form                                                                                              |
-| **edit properties**                | Edit the active asset's frontmatter properties                                                                                              |
-| **Reload layout**                  | Re-render the layout on the active asset                                                                                                    |
-| **Toggle layout visibility**       | Show or hide layouts in Reading Mode                                                                                                        |
-| **Toggle archived assets visibility** | Show or hide archived assets in layout tables                                                                                            |
-| **open sparql query builder**      | Open the interactive SPARQL query builder                                                                                                   |
-| **Apply profile**                  | Apply a vault-declared profile — mount-state strict replace of the AssetSpace set (available when filesystem materialization is wired: desktop git, or mobile REST) |
-| **Sync**                           | ExoSync: pull → merge → push the materialized AssetSpace set over the GitHub REST API                                                       |
-| **Bootstrap vault**                | Fetch tracked AssetSpaces into a vault (desktop)                                                                                            |
-| **Add assetspace by URL**          | Add an AssetSpace from a public GitHub repository (desktop)                                                                                 |
-| **Push current assetspace**        | Push the AssetSpace containing the active file to its remote                                                                                |
-| **Show current state**             | Report the last-applied profile                                                                                                             |
-| **Clear switch cache (wipe-all)**  | Clear the profile-switch tarball cache                                                                                                      |
+| Command                               | Description                                                                                                                                                         |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Create asset**                      | Create a new asset via an ontology-driven form                                                                                                                      |
+| **edit properties**                   | Edit the active asset's frontmatter properties                                                                                                                      |
+| **Reload layout**                     | Re-render the layout on the active asset                                                                                                                            |
+| **Toggle layout visibility**          | Show or hide layouts in Reading Mode                                                                                                                                |
+| **Toggle archived assets visibility** | Show or hide archived assets in layout tables                                                                                                                       |
+| **open sparql query builder**         | Open the interactive SPARQL query builder                                                                                                                           |
+| **Apply profile**                     | Apply a vault-declared profile — mount-state strict replace of the AssetSpace set (available when filesystem materialization is wired: desktop git, or mobile REST) |
+| **Sync**                              | ExoSync: pull → merge → push the materialized AssetSpace set over the GitHub REST API                                                                               |
+| **Bootstrap vault**                   | Fetch tracked AssetSpaces into a vault (desktop)                                                                                                                    |
+| **Add assetspace by URL**             | Add an AssetSpace from a public GitHub repository (desktop)                                                                                                         |
+| **Push current assetspace**           | Push the AssetSpace containing the active file to its remote                                                                                                        |
+| **Show current state**                | Report the last-applied profile                                                                                                                                     |
+| **Clear switch cache (wipe-all)**     | Clear the profile-switch tarball cache                                                                                                                              |
 
 In addition, vault-defined `exocmd__Command` assets are registered **dynamically** as palette commands (the homoiconic command layer) — their set depends on the commands declared in your vault, with visibility gated by their preconditions.
 
@@ -292,13 +292,13 @@ flowchart TB
 
 ### Packages
 
-| Package                         | npm                      | Purpose                                                                     |
-| ------------------------------- | ------------------------ | --------------------------------------------------------------------------- |
-| **exocortex**                   | Private                  | Core business logic, domain models, SPARQL engine, 35+ services             |
+| Package                         | npm                      | Purpose                                                                      |
+| ------------------------------- | ------------------------ | ---------------------------------------------------------------------------- |
+| **exocortex**                   | Private                  | Core business logic, domain models, SPARQL engine, 35+ services              |
 | **@exocortex/obsidian-plugin**  | Private                  | Interactive UI: React components, layout renderers, palette commands, modals |
-| **@kitelev/exocortex-cli**      | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
-| **@kitelev/exocortex-services** | Private                  | Shared runtime-agnostic grounding-service factories (RFC 94e520da Phase 1)  |
-| **@exocortex/test-utils**       | Private                  | Shared test utilities, mock factories, flaky test reporter                  |
+| **@kitelev/exocortex-cli**      | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration  |
+| **@kitelev/exocortex-services** | Private                  | Shared runtime-agnostic grounding-service factories (RFC 94e520da Phase 1)   |
+| **@exocortex/test-utils**       | Private                  | Shared test utilities, mock factories, flaky test reporter                   |
 
 ### Technical Standards
 
@@ -357,11 +357,11 @@ This project is developed primarily by AI agents (Claude Code, GitHub Copilot) f
 
 ### AI Development Resources
 
-| Document                                                         | Purpose                             |
-| ---------------------------------------------------------------- | ----------------------------------- |
-| **[CLAUDE.md](./CLAUDE.md)**                                     | AI agent guidelines, worktree rules |
+| Document                                                                      | Purpose                                       |
+| ----------------------------------------------------------------------------- | --------------------------------------------- |
+| **[CLAUDE.md](./CLAUDE.md)**                                                  | AI agent guidelines, worktree rules           |
 | **[AI Development Patterns](./docs/contributing/AI-DEVELOPMENT-PATTERNS.md)** | Patterns distilled from AI-driven development |
-| **[Architecture Guide](./ARCHITECTURE.md)**                      | Clean Architecture patterns         |
+| **[Architecture Guide](./ARCHITECTURE.md)**                                   | Clean Architecture patterns                   |
 
 ---
 

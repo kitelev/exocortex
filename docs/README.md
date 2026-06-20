@@ -9,7 +9,7 @@ The `docs/` tree is physically organized into the
 `explanation/`, plus a `contributing/` bucket and a frozen `history/` archive.
 **Root-level docs** (`README`, `CLAUDE`, `AGENTS`, `VISION`, `ARCHITECTURE`,
 `PATTERNS`, `TESTING`, `DEV-TROUBLESHOOTING`, …) and **package-local docs**
-(`packages/*/docs/`) stay in place and are grouped *logically* here. The
+(`packages/*/docs/`) stay in place and are grouped _logically_ here. The
 complete `doc → mode` classification (with the move map and the rationale for
 docs kept at root) is in **[TAXONOMY.md](TAXONOMY.md)**.
 
@@ -40,7 +40,6 @@ docs kept at root) is in **[TAXONOMY.md](TAXONOMY.md)**.
 
 - [PROPERTY_SCHEMA.md](reference/PROPERTY_SCHEMA.md) — full frontmatter property vocabulary
 - [api/Core-API.md](reference/Core-API.md) — `exocortex` core programmatic API
-- [NL-TO-SPARQL.md](reference/NL-TO-SPARQL.md) — natural-language → query translation (**canonical**)
 - [SHACL_LITE_MAPPING.md](reference/SHACL_LITE_MAPPING.md) — SHACL-lite shape mapping
 - [rdf/ExoRDF-Mapping.md](explanation/ExoRDF-Mapping.md) — vault ↔ RDF triple mapping
 - CLI reference — [CLI_API_REFERENCE.md](../packages/cli/docs/CLI_API_REFERENCE.md), [ONTOLOGY_REFERENCE.md](../packages/cli/docs/ONTOLOGY_REFERENCE.md), [SPARQL_GUIDE.md](../packages/cli/docs/SPARQL_GUIDE.md), [SPARQL_COOKBOOK.md](../packages/cli/docs/SPARQL_COOKBOOK.md), [VERSIONING.md](../packages/cli/VERSIONING.md)
@@ -65,7 +64,7 @@ docs kept at root) is in **[TAXONOMY.md](TAXONOMY.md)**.
 - [ci/assetspace-shacl-gate.md](reference/ci/assetspace-shacl-gate.md) — per-AssetSpace SHACL CI gate
 - [../packages/obsidian-plugin/docs/FLAKY_DASHBOARD.md](../packages/obsidian-plugin/docs/FLAKY_DASHBOARD.md) — flaky-test dashboard
 - [.github/E2E-LOCAL-TESTING.md](../.github/E2E-LOCAL-TESTING.md) — running E2E locally
-- _Pointer stubs (consolidated into `../TESTING.md`):_ [TEST-PYRAMID.md](TEST-PYRAMID.md), [.github/TESTING.md](../.github/TESTING.md), [../packages/obsidian-plugin/docs/TESTING.md](../packages/obsidian-plugin/docs/TESTING.md), [../packages/exocortex/docs/NL-TO-SPARQL.md](../packages/exocortex/docs/NL-TO-SPARQL.md)
+- _Pointer stubs (consolidated into `../TESTING.md`):_ [TEST-PYRAMID.md](TEST-PYRAMID.md), [.github/TESTING.md](../.github/TESTING.md), [../packages/obsidian-plugin/docs/TESTING.md](../packages/obsidian-plugin/docs/TESTING.md)
 
 ## Contributor & AI-agent guide
 
@@ -109,10 +108,6 @@ physically relocated across package boundaries.
 - [FLAKY_DASHBOARD.md](../packages/obsidian-plugin/docs/FLAKY_DASHBOARD.md) — flaky-test dashboard (drives `flaky-aggregate`/`flaky-render-markdown` scripts)
 - [TESTING.md](../packages/obsidian-plugin/docs/TESTING.md) — _(stub → [../TESTING.md](../TESTING.md))_
 - `phase3/` — _(historical, frozen)_ Phase-3 CI/X11 stabilization ADR + spikes. The [ADR](../packages/obsidian-plugin/docs/phase3/ADR_FLAKY_X11_STRATEGY.md) is referenced by `docker-entrypoint-e2e.sh`, so the folder is kept in place. Also: [T3_1_QUARANTINE_DECISION_MATRIX](../packages/obsidian-plugin/docs/phase3/T3_1_QUARANTINE_DECISION_MATRIX.md), [T3_3_TRACKING_ISSUES](../packages/obsidian-plugin/docs/phase3/T3_3_TRACKING_ISSUES.md), [T5_1_XVFB_TUNING_SPIKE](../packages/obsidian-plugin/docs/phase3/T5_1_XVFB_TUNING_SPIKE.md), [T5_2_XVFB_RUN_SPIKE](../packages/obsidian-plugin/docs/phase3/T5_2_XVFB_RUN_SPIKE.md), [T5_3_HEADED_CHROMIUM_SPIKE](../packages/obsidian-plugin/docs/phase3/T5_3_HEADED_CHROMIUM_SPIKE.md)
-
-### Core engine — `packages/exocortex/docs/`
-
-- [NL-TO-SPARQL.md](../packages/exocortex/docs/NL-TO-SPARQL.md) — _(stub → [NL-TO-SPARQL.md](reference/NL-TO-SPARQL.md))_ engine-internals pointer
 
 ## Archive — `history/`
 

@@ -1258,9 +1258,9 @@ export class NoteToRDFConverter {
             // replace is safe. Mirrors valueToClassURI's Issue #2745 lookup.
             //
             // RFC 31c1a0be Phase 4 PR-B (#3194) invariant: the class IRI
-            // emitted here is coupled to `SPARQLTemplateLibrary.EFFORT_STATUSES`
-            // and starter-kit ASK preconditions. Migrating to UUID-form
-            // requires changing all three together; see Phase 5 follow-up.
+            // emitted here is coupled to the symbolic effort-status form in
+            // starter-kit ASK preconditions. Migrating to UUID-form requires
+            // changing both together; see Phase 5 follow-up.
             const basenameClassIRI = this.expandClassValue(targetFile.basename);
             if (basenameClassIRI) {
               // Fix #ff3858e5: emit rdf:type triple so sh:class constraints resolve

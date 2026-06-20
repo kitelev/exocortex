@@ -6,7 +6,6 @@ import { sparqlQueryCommand } from "./commands/sparql-query.js";
 import { sparqlIndexCommand } from "./commands/sparql-index.js";
 import { watchCommand } from "./commands/watch.js";
 import { resolveCommand } from "./commands/resolve.js";
-import { askCommand } from "./commands/ask.js";
 import { validateCommand } from "./commands/validate.js";
 import { classesCommand } from "./commands/classes.js";
 import { createCommand } from "./commands/create.js";
@@ -54,7 +53,6 @@ export function createProgram(version?: string): Command {
   // Auxiliary commands retained from v15
   program.addCommand(watchCommand());
   program.addCommand(resolveCommand());
-  program.addCommand(askCommand());
   program.addCommand(classesCommand());
   program.addCommand(createCommand());
   program.addCommand(workflowCommand());

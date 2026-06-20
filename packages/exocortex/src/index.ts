@@ -215,28 +215,7 @@ export {
   TypeRegistry,
   type TypeRegistryConfig,
 } from "./services/TypeRegistry";
-export {
-  NLToSPARQLService,
-  type NLToSPARQLConfig,
-  type NLToSPARQLResult,
-  DEFAULT_NL_TO_SPARQL_CONFIG,
-} from "./services/NLToSPARQLService";
-export {
-  SPARQL_TEMPLATES,
-  SPARQL_PREFIXES,
-  PREDICATES,
-  ASSET_CLASSES,
-  EFFORT_STATUSES,
-  KNOWN_PROTOTYPES,
-  KNOWN_CLASSES,
-  findClassByTerm,
-  type KnownClass,
-  findMatchingTemplates,
-  fillTemplate,
-  validateParameters,
-  getTemplateByName,
-  type SPARQLTemplate,
-} from "./services/SPARQLTemplateLibrary";
+export { SPARQL_PREFIXES } from "./services/SparqlPrefixes";
 export {
   CriticalityZoneService,
   CriticalityZoneUUIDs,

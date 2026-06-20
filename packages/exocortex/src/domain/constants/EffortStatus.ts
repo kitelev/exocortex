@@ -8,19 +8,18 @@
  * resolves targets uniformly with the rest of the graph.
  *
  * **Not yet removable.** The enum values are coupled to:
- *   - `SPARQLTemplateLibrary.EFFORT_STATUSES` (symbolic PREFIX-form in queries)
  *   - `NoteToRDFConverter.expandClassValue` symbolic class-IRI emission
  *     (Issues #2782/#2959 — SPARQL `ASK` preconditions match the symbolic
  *     namespace IRI, not file UUIDs)
  *   - 18+ direct call sites comparing against the symbolic form (workflow
  *     engine, visibility rules, kanban provider, renderers; broader grep
- *     including companion `EFFORT_STATUSES` reaches ~25 files — all well
- *     above the 15-caller cascade-cap that gates in-PR migration)
+ *     reaches ~25 files — all well above the 15-caller cascade-cap that
+ *     gates in-PR migration)
  *
- * Removal requires a coordinated migration of (a) the SPARQL templates,
- * (b) the converter's class-IRI substitution branch, (c) all callers, AND
- * (d) the starter-kit ASK preconditions in the public-ontologies repo —
- * deferred to RFC 31c1a0be Phase 5b (cross-repo coordinated PR series).
+ * Removal requires a coordinated migration of (a) the converter's class-IRI
+ * substitution branch, (b) all callers, AND (c) the starter-kit ASK
+ * preconditions in the public-ontologies repo — deferred to
+ * RFC 31c1a0be Phase 5b (cross-repo coordinated PR series).
  *
  * The companion `EffortStatusConfig.ts` (legacy name-to-enum / wikilink
  * helpers with no production callers) was removed in Phase 4 PR-D, #3194;
