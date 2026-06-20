@@ -62,6 +62,7 @@ import {
   type YamlCodec,
 } from "exocortex";
 import { collectVaultSpecs } from "./exosync-parity.js";
+import { registerQuarantineCommands } from "./exosync-quarantine.js";
 import { RestPushService } from "../services/RestPushService.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 
@@ -96,7 +97,7 @@ export interface ExosyncSyncDeps {
  * plugin's `webCryptoSha1` and `exosync-parity`'s `nodeSha1` (the CLI and
  * plugin deliberately keep separate per-runtime impls of the same Sha1Fn).
  */
-const nodeSha1: Sha1Fn = async (bytes) => {
+export const nodeSha1: Sha1Fn = async (bytes) => {
   const digest = await webcrypto.subtle.digest(
     "SHA-1",
     bytes.buffer.slice(
@@ -121,7 +122,10 @@ const coreSchemaYaml: YamlCodec = {
 /** Token precedence mirrors `exosync-parity` / `experimental rest-push`.
  * Sync touches PRIVATE repos (404-hidden without a PAT) and pushes commits,
  * so a token is always required. */
-function resolveToken(opts: ExosyncSyncOptions, deps: ExosyncSyncDeps): string {
+export function resolveToken(
+  opts: ExosyncSyncOptions,
+  deps: ExosyncSyncDeps,
+): string {
   if (opts.tokenFromGh === true) {
     return RestPushService.resolveGhToken(deps.ghTokenRunner);
   }
@@ -138,7 +142,7 @@ function resolveToken(opts: ExosyncSyncOptions, deps: ExosyncSyncDeps): string {
 /** Parse `https://github.com/<owner>/<repo>` → {owner, repo}; throws on a
  * non-GitHub / malformed URL (same allowlist as the REST mount/quarantine
  * path). */
-function parseGitHubRepoUrl(url: string): { owner: string; repo: string } {
+export function parseGitHubRepoUrl(url: string): { owner: string; repo: string } {
   const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/.exec(
     url.trim(),
   );
@@ -345,6 +349,14 @@ function printRepoResult(
   );
   if (r.detail !== undefined) out(`  ${r.detail}`);
   for (const w of r.warnings) out(`  warn: ${w}`);
+  // Surface the actual quarantined PATHS, not just the count — without this the
+  // user only sees "quarantined N" and has no idea WHICH files need resolving
+  // (finding a0a3d1d6). The resolver picks them up via `exosync quarantine list`.
+  if ((r.quarantinedPaths?.length ?? 0) > 0) {
+    out(
+      `  quarantined (→ exosync quarantine resolve): ${r.quarantinedPaths!.join(", ")}`,
+    );
+  }
   if ((r.deferredPaths?.length ?? 0) > 0) {
     out(`  deferred (→ full sync): ${r.deferredPaths!.join(", ")}`);
   }
@@ -529,6 +541,10 @@ export function exosyncCommand(): Command {
         "Send the local delta only (remote changes are pinned to re-derive on the next pull/sync)",
       ),
   ).action(makeDirectionAction("push"));
+
+  // Quarantine resolver + dedup-uids (finding a0a3d1d6) — kept in a sibling
+  // module so this file stays focused on the sync directions.
+  registerQuarantineCommands(cmd);
 
   return cmd;
 }
