@@ -56,8 +56,14 @@
 import {
   restCreateCommit,
   type CommitFileContent,
+  type RestCommitRequest,
   type RestCommitTransport,
 } from "../../infrastructure/github/restCommit";
+import {
+  SyncPhaseTimer,
+  classifyRestPhase,
+  type NowFn,
+} from "./SyncPhaseTimer";
 import {
   getBlobBytes,
   getBlobText,
@@ -134,6 +140,11 @@ export interface SyncEngineDeps {
    */
   localBaseShaProvider?: (spec: SyncRepoSpec) => Promise<string | null>;
   sha1: Sha1Fn;
+  /**
+   * Clock for the Phase 0 per-phase timing instrumentation (measure-first).
+   * Defaults to `Date.now`. Injected in tests for deterministic durations.
+   */
+  now?: NowFn;
   baseURL?: string;
   /** Cap on 422 re-pull→retry cycles (D16). Default {@link DEFAULT_MAX_PUSH_RETRIES}. */
   maxPushRetries?: number;
@@ -518,14 +529,112 @@ function quarantinedPathsOf(merge: MergeResolution): string[] {
 
 export class SyncEngine {
   private readonly deps: SyncEngineDeps;
-  /** Backoff-wrapped transport (R6) — ALL remote calls go through it. */
+  /**
+   * Backoff-wrapped transport (R6) — ALL remote calls go through it. Phase 0:
+   * additionally wrapped with timing instrumentation so every REST round-trip
+   * is attributed to a phase bucket (observation-only, never branches).
+   */
   private readonly transport: RestCommitTransport;
+  /**
+   * Phase 0: timing-wrapped `sha1`. ALL hashing goes through `gitBlobSha(_,
+   * this.sha1)` so the `hash` bucket captures the hypothesised hot path.
+   */
+  private readonly sha1: Sha1Fn;
+  /** Phase 0 clock (default `Date.now`; injected in tests). */
+  private readonly now: NowFn;
+  /**
+   * Phase 0: the timer of the AS currently being synced. Set by `syncLocked`
+   * and read by the transport/sha1/localFiles chokepoint wrappers. Safe as a
+   * single field because syncs are serialised by the D11 `opInProgress`
+   * guard; `null` outside a sync (the wrappers skip timing then).
+   */
+  private activeTimer: SyncPhaseTimer | null = null;
   /** D11 — one sync/apply operation at a time. */
   private opInProgress = false;
 
   constructor(deps: SyncEngineDeps) {
     this.deps = deps;
-    this.transport = withRateLimitBackoff(deps.transport, deps.backoff);
+    this.now = deps.now ?? ((): number => Date.now());
+    this.transport = this.instrumentTransport(
+      withRateLimitBackoff(deps.transport, deps.backoff),
+    );
+    this.sha1 = this.instrumentSha1(deps.sha1);
+  }
+
+  /**
+   * Phase 0 — wrap the transport so every REST round-trip is timed into its
+   * phase bucket (by URL/method) and counted. Transparent pass-through: same
+   * args, same return, same throw; timing accrues in `finally`. No-op when no
+   * sync is in flight (`activeTimer === null`).
+   */
+  private instrumentTransport(raw: RestCommitTransport): RestCommitTransport {
+    return async (req: RestCommitRequest) => {
+      const timer = this.activeTimer;
+      if (timer === null) return raw(req);
+      timer.bumpRest();
+      return timer.time(classifyRestPhase(req), () => raw(req));
+    };
+  }
+
+  /**
+   * Phase 0 — wrap `sha1` so every digest accrues to the `hash` bucket and the
+   * hashed-file count. `gitBlobSha` calls this exactly once per file, so the
+   * bucket ≈ wall-clock spent hashing all files.
+   */
+  private instrumentSha1(raw: Sha1Fn): Sha1Fn {
+    return (data) => {
+      const timer = this.activeTimer;
+      if (timer === null) return raw(data);
+      timer.bumpHashed();
+      return timer.time("hash", () => raw(data));
+    };
+  }
+
+  /**
+   * Phase 0 — wrap a per-repo `LocalFilesPort` so the directory walk, file
+   * reads and pull-applied writes are timed. Transparent: every method
+   * delegates; only the timed ones are decorated. Optional byte-port methods
+   * are forwarded only when the underlying port provides them.
+   */
+  private instrumentLocalFiles(raw: LocalFilesPort): LocalFilesPort {
+    const timed = <T>(
+      phase: Parameters<SyncPhaseTimer["time"]>[0],
+      op: () => Promise<T>,
+    ): Promise<T> => {
+      const timer = this.activeTimer;
+      return timer === null ? op() : timer.time(phase, op);
+    };
+    const wrapped: LocalFilesPort = {
+      list: () => timed("localList", () => raw.list()),
+      read: (path) => {
+        this.activeTimer?.bumpRead();
+        return timed("localRead", () => raw.read(path));
+      },
+      write: (path, content) =>
+        timed("localWrite", () => {
+          this.activeTimer?.bumpWritten();
+          return raw.write(path, content);
+        }),
+      delete: (path) => raw.delete(path),
+    };
+    // Bind the optional byte-port methods to `raw` so the wrapper closures call
+    // a plain bound function — no non-null assertion, no unbound-method.
+    const rawReadBinary = raw.readBinary?.bind(raw);
+    if (rawReadBinary !== undefined) {
+      wrapped.readBinary = (path) => {
+        this.activeTimer?.bumpRead();
+        return timed("localRead", () => rawReadBinary(path));
+      };
+    }
+    const rawWriteBinary = raw.writeBinary?.bind(raw);
+    if (rawWriteBinary !== undefined) {
+      wrapped.writeBinary = (path, bytes) =>
+        timed("localWrite", () => {
+          this.activeTimer?.bumpWritten();
+          return rawWriteBinary(path, bytes);
+        });
+    }
+    return wrapped;
   }
 
   /**
@@ -612,7 +721,7 @@ export class SyncEngine {
     for (const entry of headTree) {
       const content = disk.get(entry.path);
       if (content === undefined) continue;
-      if ((await gitBlobSha(content, this.deps.sha1)) === entry.blobSha) {
+      if ((await gitBlobSha(content, this.sha1)) === entry.blobSha) {
         files.push({ path: entry.path, blobSha: entry.blobSha });
       }
     }
@@ -689,6 +798,12 @@ export class SyncEngine {
     direction: SyncDirection = "sync",
     onProgress?: SyncProgressFn,
   ): Promise<RepoSyncResult> {
+    // Phase 0 — fresh per-AS timer. Set as the engine's `activeTimer` so the
+    // transport/sha1/localFiles chokepoint wrappers attribute their durations
+    // to this repo, and restored in `finally` (nested safe via save/restore).
+    const timer = new SyncPhaseTimer(this.now);
+    const prevTimer = this.activeTimer;
+    this.activeTimer = timer;
     const warnings: string[] = [];
     const deferredDeletes: string[] = [];
     // Deletions detected this cycle whose push loop is still IN FLIGHT —
@@ -708,6 +823,9 @@ export class SyncEngine {
       quarantinedCount: 0,
       warnings,
       deferredDeletes,
+      // Phase 0 — snapshot at the return point captures the full breakdown
+      // for whatever phases ran (early skips snapshot ~zero, harmless).
+      timings: timer.snapshot(),
       ...extra,
     });
 
@@ -723,7 +841,11 @@ export class SyncEngine {
       }
 
       const mode = this.modeOps(spec);
-      const localFiles = this.deps.localFilesFor(spec);
+      // Phase 0 — instrument the per-repo port so local list/read/write
+      // durations attribute to this AS's timer (the hypothesised hot path).
+      const localFiles = this.instrumentLocalFiles(
+        this.deps.localFilesFor(spec),
+      );
       if (
         mode.fileMode &&
         (localFiles.readBinary === undefined ||
@@ -860,7 +982,7 @@ export class SyncEngine {
         localFiles: disk,
         watermark,
         actualBaseTreeSha: await this.resolveBaseTreeSha(spec, watermark),
-        sha1: this.deps.sha1,
+        sha1: this.sha1,
       });
       if (detection.kind === "full-conflict") {
         return result("full-conflict", {
@@ -1159,6 +1281,10 @@ export class SyncEngine {
       }
       warnings.push(`sync failed: ${redact(errMsg(err))}`);
       return result("error", { detail: redact(errMsg(err)) });
+    } finally {
+      // Phase 0 — restore the previous timer (null outside a sync) so the
+      // chokepoint wrappers never accumulate into a stale repo's breakdown.
+      this.activeTimer = prevTimer;
     }
   }
 
@@ -1675,7 +1801,7 @@ export class SyncEngine {
           const headBlobSha = headTreeByPath.get(path);
           if (
             headBlobSha !== undefined &&
-            headBlobSha === (await gitBlobSha(content, this.deps.sha1))
+            headBlobSha === (await gitBlobSha(content, this.sha1))
           ) {
             pushFiles.delete(path);
             alreadyInHead.push(path);
@@ -1902,7 +2028,7 @@ export class SyncEngine {
           content: decision.content,
           // Precomputed so the watermark rebuild reuses it instead of
           // re-fetching the merged blob (A2 deferred LOW).
-          blobSha: await gitBlobSha(decision.content, this.deps.sha1),
+          blobSha: await gitBlobSha(decision.content, this.sha1),
           ...(uid !== undefined ? { uid } : {}),
         });
       }
@@ -2458,7 +2584,7 @@ export class SyncEngine {
       const content = disk.get(entry.path);
       if (
         content === undefined ||
-        (await gitBlobSha(content, this.deps.sha1)) !== entry.blobSha
+        (await gitBlobSha(content, this.sha1)) !== entry.blobSha
       ) {
         // Divergent (same-path content difference) or absent on disk: NOT part
         // of the R⊆L synthetic base. Absent-on-disk → a remote-only ADD the
@@ -2915,7 +3041,7 @@ export class SyncEngine {
       // Reuse the blob SHA computed during change detection (A1 perf
       // finding: no-op syncs double-hashed the whole working tree).
       const sha =
-        diskBlobShas?.get(path) ?? (await gitBlobSha(content, this.deps.sha1));
+        diskBlobShas?.get(path) ?? (await gitBlobSha(content, this.sha1));
       uidByBlobSha.set(
         sha,
         typeof content === "string" ? extractAssetUid(content) : undefined,

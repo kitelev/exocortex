@@ -619,6 +619,26 @@ export {
   type SyncProgressFn,
   type SyncProgressPhase,
 } from "./services/sync/SyncEngine";
+// ExoSync Phase 0 (measure-first) — per-phase wall-clock instrumentation.
+// Engine attributes every REST round-trip / SHA-1 digest / file read into a
+// phase bucket; consumers aggregate + format the breakdown for the device.
+export {
+  SyncPhaseTimer,
+  SYNC_PHASES,
+  classifyRestPhase,
+  emptyTimings,
+  addTimings,
+  aggregateTimings,
+  totalMs,
+  dominantPhase,
+  fmtMs,
+  formatTimingsLine,
+  formatRepoTimings,
+  type SyncPhase,
+  type SyncPhaseCounts,
+  type SyncPhaseTimings,
+  type NowFn,
+} from "./services/sync/SyncPhaseTimer";
 // ExoSync quarantine resolver (finding a0a3d1d6) — the user-facing reconcile
 // the engine announced but never built. Device-local-first (watermark pins +
 // disk + AssetSpace head), one-action convergent resolution, zero-loss.

@@ -9,6 +9,8 @@
  * (iOS-portable, same as the write primitive it reuses).
  */
 
+import type { SyncPhaseTimings } from "./SyncPhaseTimer";
+
 /**
  * Which `exo__Space` subtype a sync unit declares (Phase C, onto-RFC
  * 18808c73). `"asset"` (default) — UID-bearing markdown assets, text-only
@@ -323,6 +325,15 @@ export interface RepoSyncResult {
    * this round (always absent for full `sync` runs).
    */
   deferredPaths?: string[];
+  /**
+   * Phase 0 (measure-first) — per-phase wall-clock breakdown of this repo's
+   * sync: local list/read/write, SHA-1 hashing, and each remote REST class
+   * (head/commit/tree/blob/push), plus operation counts. Observation-only,
+   * always populated by the engine. Consumers aggregate it into a readable
+   * per-sync summary so the dominant phase is visible on the device (iPhone).
+   * See {@link SyncPhaseTimings}.
+   */
+  timings?: SyncPhaseTimings;
   detail?: string;
 }
 
