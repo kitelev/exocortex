@@ -14,7 +14,7 @@ complete `doc → mode` classification (with the move map and the rationale for
 docs kept at root) is in **[TAXONOMY.md](TAXONOMY.md)**.
 
 > Paths are relative to this file (`docs/`). Root-level docs are linked as `../NAME.md`.
-> Old `docs/*` paths keep a one-release redirect stub, so external deep-links still resolve.
+> The old flat `docs/*` redirect stubs were removed (RFC 0001 Phase 5 — the one-release grace elapsed); update any external deep-links to the Diátaxis paths below.
 
 ---
 
@@ -39,9 +39,9 @@ docs kept at root) is in **[TAXONOMY.md](TAXONOMY.md)**.
 ## Reference
 
 - [PROPERTY_SCHEMA.md](reference/PROPERTY_SCHEMA.md) — full frontmatter property vocabulary
-- [api/Core-API.md](reference/Core-API.md) — `exocortex` core programmatic API
+- [Core-API.md](reference/Core-API.md) — `exocortex` core programmatic API
 - [SHACL_LITE_MAPPING.md](reference/SHACL_LITE_MAPPING.md) — SHACL-lite shape mapping
-- [rdf/ExoRDF-Mapping.md](explanation/ExoRDF-Mapping.md) — vault ↔ RDF triple mapping
+- [ExoRDF-Mapping.md](explanation/ExoRDF-Mapping.md) — vault ↔ RDF triple mapping
 - CLI reference — [CLI_API_REFERENCE.md](../packages/cli/docs/CLI_API_REFERENCE.md), [ONTOLOGY_REFERENCE.md](../packages/cli/docs/ONTOLOGY_REFERENCE.md), [SPARQL_GUIDE.md](../packages/cli/docs/SPARQL_GUIDE.md), [SPARQL_COOKBOOK.md](../packages/cli/docs/SPARQL_COOKBOOK.md), [VERSIONING.md](../packages/cli/VERSIONING.md)
 - Plugin reference — [EXO_LAYOUT.md](../packages/obsidian-plugin/docs/EXO_LAYOUT.md) — layout engine
 

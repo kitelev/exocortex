@@ -967,7 +967,7 @@ export class ProfileApplyManager {
           `Apply aborted — ${total} uncommitted file(s) in ${uncommitted.affectedFiles.length} AssetSpace(s) this profile would remove. ` +
             `Commit or stash the vault before applying. On a fresh git-backed vault, Bootstrap / Add-AssetSpace leave the pulled ` +
             `assetspaces/ untracked — run \`git add -A && git commit -m "vault setup"\` first (and gitignore \`.obsidian/\` + ` +
-            `\`.exocortex/\` so your PAT is never committed). See docs/profile.md → "Apply on a git-backed vault (commit first)".`,
+            `\`.exocortex/\` so your PAT is never committed). See docs/explanation/profile.md → "Apply on a git-backed vault (commit first)".`,
           uncommitted.affectedFiles,
         );
       }
@@ -1612,7 +1612,7 @@ export class ProfileApplyManager {
             `Apply aborted — ${total} uncommitted file(s) in ${uncommitted.affectedFiles.length} AssetSpace(s) this profile would remove. ` +
               `Commit or stash the vault before applying. On a fresh git-backed vault, Bootstrap / Add-AssetSpace leave the pulled ` +
               `assetspaces/ untracked — run \`git add -A && git commit -m "vault setup"\` first (and gitignore \`.obsidian/\` + ` +
-              `\`.exocortex/\` so your PAT is never committed). See docs/profile.md → "Apply on a git-backed vault (commit first)".`,
+              `\`.exocortex/\` so your PAT is never committed). See docs/explanation/profile.md → "Apply on a git-backed vault (commit first)".`,
             uncommitted.affectedFiles,
           );
         }
@@ -2601,7 +2601,7 @@ export class ProfileApplyManager {
    * the canonical folder on mobile), so a flat-mounted AssetSpace is NOT
    * recognised as materialized → re-materialized at the canonical path →
    * latent DOUBLE MOUNT of the same AssetSpace UID. This surfaces the affected
-   * AssetSpaces so the user can migrate them manually (see docs/profile.md);
+   * AssetSpaces so the user can migrate them manually (see docs/explanation/profile.md);
    * auto-migration is deferred (risky runtime directory move).
    */
   private async detectLegacyFlatMounts(): Promise<
@@ -2654,7 +2654,7 @@ export class ProfileApplyManager {
     this.notify(
       `⚠ ${legacy.length} AssetSpace(s) mounted at a legacy flat path: ${list}. ` +
         "apply-profile expects the canonical assetspaces/<owner>/<repo> layout — " +
-        "migrate manually to avoid a double mount (see docs/profile.md → " +
+        "migrate manually to avoid a double mount (see docs/explanation/profile.md → " +
         '"Legacy flat-mount migration").',
     );
   }

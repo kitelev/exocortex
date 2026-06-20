@@ -646,7 +646,7 @@ describe("ProfileApplyManager.applyProfile", () => {
       // Names the affected flat path → canonical migration target.
       expect(warn).toContain(FLAT_EXO);
       expect(warn).toContain("assetspaces/kitelev/exoas-exo");
-      expect(warn).toContain("docs/profile.md");
+      expect(warn).toContain("docs/explanation/profile.md");
     });
 
     it("REVERT-VERIFY: no warn when no flat-mount folder exists on disk", async () => {
