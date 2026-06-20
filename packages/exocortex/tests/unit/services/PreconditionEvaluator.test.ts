@@ -621,4 +621,164 @@ describe("PreconditionEvaluator", () => {
       expect(resolver.resolveSparql).not.toHaveBeenCalled();
     });
   });
+
+  // --- Command-visibility edge-case hardening ---------------------------
+  // Buttons / palette entries are gated by these paths; a regression here
+  // means a tester sees the wrong commands or a command silently breaks
+  // (UX-critical). The fail-open/closed asymmetry caused real visibility
+  // bugs (#3296 / #3298 Repair Folder). These suites lock the contract.
+
+  describe("host function that throws (robustness — graceful fail-closed)", () => {
+    it("async evaluate: resolves to false when a registered host function throws (does not reject)", async () => {
+      evaluator.registerHostFunction("boom", () => {
+        throw new Error("host fn blew up");
+      });
+      const precondition = {
+        id: "pre-boom",
+        label: "Throwing host fn",
+        hostFunction: "boom",
+      };
+      // A registered-but-throwing host fn must fail closed (command hidden),
+      // not propagate. The inline-button path has its own caller-side catch,
+      // but the palette checkCallback (sync) had none — an uncaught throw
+      // there surfaces as a palette-breaking exception in Obsidian.
+      await expect(
+        evaluator.evaluate(precondition, ASSET_IRI),
+      ).resolves.toBe(false);
+    });
+
+    it("sync evaluateHostFunctionSync: returns false when a registered host function throws (does not throw)", () => {
+      evaluator.registerHostFunction("boom", () => {
+        throw new Error("host fn blew up");
+      });
+      // checkCallback (Cmd+P) runs this synchronously on every palette open —
+      // a thrown error here would break the command palette. Registered-but-
+      // errored must read as fail-closed (false), distinct from the
+      // unregistered signal (null).
+      expect(() =>
+        evaluator.evaluateHostFunctionSync("boom", ASSET_IRI),
+      ).not.toThrow();
+      expect(evaluator.evaluateHostFunctionSync("boom", ASSET_IRI)).toBe(false);
+    });
+
+    it("a throwing host function does not poison sibling registered functions", () => {
+      evaluator.registerHostFunction("boom", () => {
+        throw new Error("nope");
+      });
+      evaluator.registerHostFunction("ok", () => true);
+      expect(evaluator.evaluateHostFunctionSync("boom", ASSET_IRI)).toBe(false);
+      expect(evaluator.evaluateHostFunctionSync("ok", ASSET_IRI)).toBe(true);
+    });
+  });
+
+  describe("fail-open vs fail-closed asymmetry for unregistered host functions (regression guard)", () => {
+    // PreconditionEvaluator deliberately treats an UNREGISTERED host function
+    // differently on its two surfaces (documented at PreconditionEvaluator.ts
+    // ~138-159). The async evaluate() path is fail-OPEN (inline buttons stay
+    // visible — permissive), evaluateHostFunctionSync() is fail-CLOSED
+    // (returns null so the palette registrar hides the command and surfaces
+    // misconfiguration loudly). This pairing locks the contract: if someone
+    // "unifies" the two paths, this test breaks loudly and forces a
+    // deliberate decision instead of a silent regression (cf. #3296 / #3298).
+    const UNREGISTERED = "neverRegisteredFn";
+
+    it("async evaluate is FAIL-OPEN (inline buttons): unregistered host fn → true", async () => {
+      const result = await evaluator.evaluate(
+        { id: "p", label: "Unregistered", hostFunction: UNREGISTERED },
+        ASSET_IRI,
+      );
+      expect(result).toBe(true);
+    });
+
+    it("sync evaluateHostFunctionSync is FAIL-CLOSED (Cmd+P): unregistered host fn → null", () => {
+      const result = evaluator.evaluateHostFunctionSync(UNREGISTERED, ASSET_IRI);
+      expect(result).toBeNull();
+    });
+
+    it("the two surfaces disagree on the same unregistered name (asymmetry is intentional)", async () => {
+      const asyncResult = await evaluator.evaluate(
+        { id: "p", label: "U", hostFunction: UNREGISTERED },
+        ASSET_IRI,
+      );
+      const syncResult = evaluator.evaluateHostFunctionSync(
+        UNREGISTERED,
+        ASSET_IRI,
+      );
+      expect(asyncResult).toBe(true); // fail open
+      expect(syncResult).toBeNull(); // fail closed (caller decides)
+      // Coercion-agnostic proof they diverge: true !== null.
+      expect(asyncResult === (syncResult as unknown)).toBe(false);
+    });
+  });
+
+  describe("precondition field priority contract (sparqlAsk > query > hostFunction)", () => {
+    // evaluate() consults at most ONE strategy, in source order. These tests
+    // pin the order so a refactor can't silently reshuffle it — gating the
+    // wrong field would mis-show/mis-hide commands.
+    it("sparqlAsk wins over hostFunction when both present (host fn never consulted)", async () => {
+      let hostFnCalled = false;
+      evaluator.registerHostFunction("shouldNotRun", () => {
+        hostFnCalled = true;
+        return true; // would force visible if it were consulted
+      });
+      // Empty store → ASK does not match → false. host fn would have returned
+      // true, so result === false proves sparqlAsk took priority.
+      const result = await evaluator.evaluate(
+        {
+          id: "p",
+          label: "ask+host",
+          sparqlAsk: `PREFIX ems: <https://exocortex.my/ontology/ems#>
+            ASK { <${ASSET_IRI}> ems:Effort_startTimestamp ?ts }`,
+          hostFunction: "shouldNotRun",
+        },
+        ASSET_IRI,
+      );
+      expect(result).toBe(false);
+      expect(hostFnCalled).toBe(false);
+    });
+
+    it("query wins over hostFunction when both present and no sparqlAsk", async () => {
+      let hostFnCalled = false;
+      const resolver = {
+        resolveSparql: jest.fn().mockResolvedValue("ASK { }"), // trivially true
+      };
+      const ev = new PreconditionEvaluator(store, resolver);
+      ev.registerHostFunction("shouldNotRun", () => {
+        hostFnCalled = true;
+        return false; // would force hidden if it were consulted
+      });
+      const result = await ev.evaluate(
+        {
+          id: "p",
+          label: "query+host",
+          query: "q-uid",
+          hostFunction: "shouldNotRun",
+        },
+        ASSET_IRI,
+      );
+      expect(result).toBe(true); // query (ASK {}) → true
+      expect(hostFnCalled).toBe(false);
+      expect(resolver.resolveSparql).toHaveBeenCalledWith("q-uid");
+    });
+  });
+
+  describe("empty / edge-shaped precondition fields", () => {
+    it("returns true when hostFunction is an empty string (falsy → no-precondition path)", async () => {
+      const result = await evaluator.evaluate(
+        { id: "p", label: "Empty host", hostFunction: "" },
+        ASSET_IRI,
+      );
+      expect(result).toBe(true);
+    });
+
+    it("returns true when precondition has id/label but no strategy field at all", async () => {
+      // Defensive: a malformed precondition asset (no sparqlAsk/query/host)
+      // should not hide the command — falls through to the permissive default.
+      const result = await evaluator.evaluate(
+        { id: "p", label: "No strategy" },
+        ASSET_IRI,
+      );
+      expect(result).toBe(true);
+    });
+  });
 });

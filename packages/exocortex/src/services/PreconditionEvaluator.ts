@@ -40,6 +40,12 @@ export type HostFunction = (context: EvalContext) => boolean;
  * Default behavior:
  * - No precondition → true (permissive: command always available)
  * - SPARQL engine error → false (fail closed for safety)
+ * - Registered host function throws → false (fail closed for safety)
+ * - Unregistered host function → true on the async {@link evaluate} path
+ *   (fail open, permissive for inline buttons); `null` on
+ *   {@link evaluateHostFunctionSync} (caller decides — the palette registrar
+ *   treats `null` as fail closed to surface misconfiguration). This
+ *   asymmetry is intentional and regression-guarded by unit tests.
  *
  * Issue #2429
  */
@@ -195,7 +201,20 @@ export class PreconditionEvaluator {
       ? { ...context, targetIRI }
       : { targetIRI };
 
-    return fn(evalContext);
+    try {
+      return fn(evalContext);
+    } catch {
+      // A registered host function that throws is treated as fail-closed
+      // (command hidden), consistent with the SPARQL-engine-error policy.
+      // This matters most for `evaluateHostFunctionSync`, which runs inside
+      // Obsidian's synchronous `addCommand({ checkCallback })` on every
+      // Command Palette open — an uncaught throw there surfaces as a
+      // palette-breaking exception. The async inline-button path also relied
+      // on its own caller-side catch; centralising here makes both surfaces
+      // uniformly graceful. Note this only governs the registered-but-errored
+      // case; the unregistered fail-open/closed asymmetry above is unchanged.
+      return false;
+    }
   }
 
   private async evaluateSparqlAsk(
