@@ -16,8 +16,8 @@ const UUID_RE =
  *      `"ambiguous"` (three resolution mechanisms could disagree — counted,
  *      never guessed), nothing returns `null`.
  *
- * Shared by the primary scan and the `--also` cross-vault classifier so both
- * resolve targets identically (PR2). Pure over the adapter — no graph state.
+ * Used by the ontology-imports scan to resolve wikilink targets. Pure over the
+ * adapter — no graph state.
  */
 export async function resolveTargetPath(
   adapter: CachingNodeFsAdapter,

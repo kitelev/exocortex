@@ -19,12 +19,6 @@ describe("CLI v16 — find command (RFC 8e83442b T1.1)", () => {
     expect(opts).toContain("--vault");
   });
 
-  it("declares the repeatable --also option", () => {
-    const cmd = findCommand();
-    const opts = cmd.options.map((o) => o.long);
-    expect(opts).toContain("--also");
-  });
-
   it("has a description mentioning SPARQL", () => {
     const cmd = findCommand();
     expect(cmd.description().toLowerCase()).toContain("sparql");
