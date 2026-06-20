@@ -169,13 +169,6 @@ export const VAULT_SETTINGS_REGISTRY: readonly VaultSettingDescriptor[] = [
     settingUid: "fd52049e-cb58-449b-a0d3-a0d9cc2cd986",
   },
   {
-    field: "enableSparqlAutoExecute",
-    keyUid: "fcd1ecb0-56cf-4d7e-b097-a8db80b90d9f",
-    keyLabel: "exo__SettingKeyEnableSparqlAutoExecute",
-    datatype: "boolean",
-    settingUid: "bdf8a359-30ef-40d2-9ddc-94cdbf81a1e2",
-  },
-  {
     field: "enableShaclValidation",
     keyUid: "ecea90cb-b0eb-45d3-8ce2-97d7e4f1a793",
     keyLabel: "exo__SettingKeyEnableShaclValidation",

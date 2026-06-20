@@ -5,7 +5,6 @@
  * across various components of the Exocortex plugin.
  *
  * Test categories:
- * 2. SPARQLCodeBlockProcessor - invalid queries, triple store failures
  * 3. ObsidianVaultAdapter - missing metadata cache, file operation failures
  * 4. SPARQLApi - query service errors, refresh failures
  * 5. File system errors - permissions, concurrent modification
@@ -17,7 +16,6 @@
 import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter";
 import { SPARQLApi } from "../../../src/application/api/SPARQLApi";
 import { SPARQLQueryService } from "../../../src/application/services/SPARQLQueryService";
-import { SPARQLCodeBlockProcessor } from "../../../src/application/processors/SPARQLCodeBlockProcessor";
 import { App, TFile, Vault, MetadataCache, FileManager } from "obsidian";
 import { IFile } from "exocortex";
 import type ExocortexPlugin from "../../../src/ExocortexPlugin";
@@ -38,121 +36,6 @@ jest.mock("exocortex", () => ({
   },
 }));
 jest.mock("../../../src/application/services/SPARQLQueryService");
-
-describe("SPARQLCodeBlockProcessor Error Handling", () => {
-  let processor: SPARQLCodeBlockProcessor;
-  let mockPlugin: ExocortexPlugin;
-
-  beforeEach(() => {
-    mockPlugin = {
-      app: {
-        vault: {},
-        metadataCache: {},
-      } as App,
-    } as ExocortexPlugin;
-
-    processor = new SPARQLCodeBlockProcessor(mockPlugin, { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() } as any);
-  });
-
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-
-  describe("Scenario 4: Triple store not initialized error", () => {
-    it("should throw error when executeQuery called without triple store", async () => {
-      // Access private method for testing
-      const executeQuery = (processor as any).executeQuery.bind(processor);
-
-      // tripleStore is null by default
-      await expect(executeQuery("SELECT * WHERE { ?s ?p ?o }")).rejects.toThrow(
-        "Triple store not initialized"
-      );
-    });
-
-    it("should throw error in executeAlgebra when triple store is null", async () => {
-      const executeAlgebra = (processor as any).executeAlgebra.bind(processor);
-      const mockAlgebra = { type: "bgp", triples: [] };
-
-      await expect(executeAlgebra(mockAlgebra)).rejects.toThrow(
-        "Triple store not initialized"
-      );
-    });
-
-    it("should throw error in executeConstructQuery when triple store is null", async () => {
-      const executeConstructQuery = (processor as any).executeConstructQuery.bind(processor);
-      const mockAlgebra = { type: "construct", template: [], where: { type: "bgp", triples: [] } };
-
-      await expect(executeConstructQuery(mockAlgebra)).rejects.toThrow(
-        "Triple store not initialized"
-      );
-    });
-  });
-
-  describe("Scenario 5: Cannot execute unknown operation type", () => {
-    it("should throw error for unsupported algebra operation types", async () => {
-      // Set up a mock triple store
-      (processor as any).tripleStore = {};
-
-      const executeAlgebra = (processor as any).executeAlgebra.bind(processor);
-      // Create an operation type that doesn't have 'input' property and isn't 'bgp'
-      const unsupportedOperation = { type: "unknown_operation" };
-
-      await expect(executeAlgebra(unsupportedOperation)).rejects.toThrow(
-        "Cannot execute operation type: unknown_operation"
-      );
-    });
-  });
-
-  describe("Scenario 6: Refresh query error handling", () => {
-    it("should call renderError when refresh fails", async () => {
-      const container = document.createElement("div");
-      const el = document.createElement("div");
-      const source = "SELECT * WHERE { ?s ?p ?o }";
-
-      // Set up active query
-      (processor as any).activeQueries.set(el, {
-        source,
-        lastResults: [],
-      });
-
-      const testError = new Error("Refresh failed");
-
-      // Mock methods
-      (processor as any).invalidateTripleStore = jest.fn();
-      (processor as any).ensureTripleStoreLoaded = jest.fn().mockRejectedValue(testError);
-      (processor as any).renderError = jest.fn();
-
-      await (processor as any).refreshQuery(el, container, source);
-
-      expect((processor as any).renderError).toHaveBeenCalledWith(testError, container, source);
-    });
-
-    it("should handle non-Error objects in refresh error", async () => {
-      const container = document.createElement("div");
-      const el = document.createElement("div");
-      const source = "SELECT * WHERE { ?s ?p ?o }";
-
-      (processor as any).activeQueries.set(el, {
-        source,
-        lastResults: [],
-      });
-
-      // Mock throwing a non-Error value
-      (processor as any).invalidateTripleStore = jest.fn();
-      (processor as any).ensureTripleStoreLoaded = jest.fn().mockRejectedValue("String error");
-      (processor as any).renderError = jest.fn();
-
-      await (processor as any).refreshQuery(el, container, source);
-
-      // Should convert string to Error
-      expect((processor as any).renderError).toHaveBeenCalledWith(
-        expect.objectContaining({ message: "String error" }),
-        container,
-        source
-      );
-    });
-  });
-});
 
 /**
  * 3. ObsidianVaultAdapter Error Scenarios

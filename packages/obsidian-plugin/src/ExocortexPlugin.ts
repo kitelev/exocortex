@@ -87,7 +87,6 @@ import {
   isLayoutFrontmatter,
 } from "./domain/layout";
 import { isCommandBindingFrontmatter } from "exocortex";
-import { SPARQLCodeBlockProcessor } from "./application/processors/SPARQLCodeBlockProcessor";
 import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlockProcessor";
 import { SPARQLApi } from "./application/api/SPARQLApi";
 import { ExocortexAPI } from "./application/api/ExocortexAPI";
@@ -301,7 +300,6 @@ export default class ExocortexPlugin extends Plugin {
   // TTL ensures stale entries are evicted even if not accessed
   private metadataCache!: LRUCache<string, Record<string, unknown>>;
   vaultAdapter!: ObsidianVaultAdapter;
-  private sparqlProcessor!: SPARQLCodeBlockProcessor;
   private layoutProcessor!: LayoutCodeBlockProcessor;
   sparql!: SPARQLApi;
   /**
@@ -486,7 +484,6 @@ export default class ExocortexPlugin extends Plugin {
       registerOrderSpecFromObsidianVault(this.app);
 
       const notifier = this.notifier;
-      this.sparqlProcessor = new SPARQLCodeBlockProcessor(this, notifier);
       this.layoutProcessor = new LayoutCodeBlockProcessor(this);
       this.sparql = new SPARQLApi(this);
       this.api = new ExocortexAPI(this);
@@ -1081,38 +1078,6 @@ export default class ExocortexPlugin extends Plugin {
       });
 
       this.addSettingTab(new ExocortexSettingTab(this.app, this));
-
-      // Issue #2992: gate auto-execution behind opt-in setting. When
-      // `enableSparqlAutoExecute` is `false` (default), render the code block
-      // as plain `<pre><code>` so users can paste SPARQL snippets for
-      // documentation/reference without triggering query execution on every
-      // render. The setting is read at render time, so flipping the toggle
-      // takes effect on next render without a plugin reload.
-      const renderSparqlBlock = (
-        source: string,
-        el: HTMLElement,
-        ctx: Parameters<
-          Parameters<typeof this.registerMarkdownCodeBlockProcessor>[1]
-        >[2],
-        language: "sparql" | "exoql",
-      ): void | Promise<void> => {
-        if (this.settings.enableSparqlAutoExecute) {
-          return this.sparqlProcessor.process(source, el, ctx);
-        }
-        const pre = el.createEl("pre");
-        pre.addClass(`language-${language}`);
-        const code = pre.createEl("code");
-        code.addClass(`language-${language}`);
-        code.setText(source);
-      };
-
-      this.registerMarkdownCodeBlockProcessor("sparql", (source, el, ctx) =>
-        renderSparqlBlock(source, el, ctx, "sparql"),
-      );
-
-      this.registerMarkdownCodeBlockProcessor("exoql", (source, el, ctx) =>
-        renderSparqlBlock(source, el, ctx, "exoql"),
-      );
 
       this.registerMarkdownCodeBlockProcessor("exo-layout", (source, el, ctx) =>
         this.layoutProcessor.process(source, el, ctx),
@@ -1829,11 +1794,6 @@ export default class ExocortexPlugin extends Plugin {
     }
 
     this.removeAutoRenderedLayouts();
-
-    // Cleanup SPARQL processor
-    if (this.sparqlProcessor) {
-      this.sparqlProcessor.cleanup();
-    }
 
     // Cleanup Layout processor
     if (this.layoutProcessor) {
