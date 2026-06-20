@@ -7,6 +7,8 @@ import {
   SEED_AREA_UID,
   SEED_MEETING_PROTO_UID,
   SEED_PROJECT_UID,
+  UID,
+  createInstanceOnClass,
   createOnTarget,
   findByUid,
   launchObsidianWithPlugin,
@@ -22,6 +24,31 @@ import {
 /** ems__Area class UID — the seed area's `exo__Instance_class`. */
 const EMS_AREA_CLASS_UID = "82c74542-1b14-4217-b852-d84730484b25";
 
+/** exo__Class **metaclass** UID — what the flagship "Create Instance" binding targets. */
+const EXO_CLASS_METACLASS_UID = "8619c4fc-64f1-4869-b17e-e34186cacca9";
+/**
+ * A real published class-definition page to drive the flagship "Create Instance"
+ * on: the `ems__Task` class def (an `exo__Class` instance), shipped in the cloned
+ * `exoas-public` repo. Co-located in the ems ontology folder.
+ */
+const EMS_TASK_CLASSDEF_REL = path.posix.join(
+  "assetspaces/kitelev/exoas-public/ems",
+  `${UID.emsTaskClass}.md`,
+);
+/**
+ * The ontology the picker SELECTS — deliberately `$exo`, DIFFERENT from the
+ * ems__Task class-def's own isDefinedBy (`$ems`). Picking a different ontology
+ * proves the form's reusable reference-picker drives BOTH the new instance's
+ * `exo__Asset_isDefinedBy` AND its co-location folder ($isDefinedByFolder) — not
+ * a copy of the host class's own ontology. `$exo` lives in the cloned exoas-exo.
+ */
+const PICK_ONTOLOGY_UID = "ca97bb2f-99bd-4ceb-b51e-c386b9231ae3"; // $exo
+// Fuzzy query for the picker. `label.includes(query)` is a substring match, so
+// this surfaces `$exo` AND any `$exo…`-prefixed sibling (e.g. `$exocmd`); the
+// test then clicks the exact `$exo` option BY UID, so selection is deterministic.
+const PICK_ONTOLOGY_QUERY = "$exo";
+const PICK_ONTOLOGY_DIR = "assetspaces/kitelev/exoas-exo/exo";
+
 /**
  * ============================================================================
  *  EKA GUI BDD — create-instance buttons on a fresh, real-content vault
@@ -36,6 +63,9 @@ const EMS_AREA_CLASS_UID = "82c74542-1b14-4217-b852-d84730484b25";
  *   - Create child Area (#3555)          → ems:Area_parent   = the area  ⚠ REGRESSION
  *   - Create Task on an ems__Project     → ems:Effort_parent = the project
  *   - Create Meeting on a MeetingProto   → exo:Asset_prototype = the source
+ *   - Create Instance on an exo__Class   → exo:Instance_class = host class +
+ *                                          isDefinedBy/folder = PICKED ontology
+ *                                          (flagship bbe40f8c, two-field form)
  *   - cleanup-idempotent                 → created instances removed, ontologies intact
  *
  * Design (see eka-gui-helpers.ts header): one suite over ONE fresh vault per run
@@ -218,9 +248,77 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
     ).toContain(SEED_MEETING_PROTO_UID);
   });
 
+  // ── Flagship: homoiconic «Create Instance» on a CLASS-def page (project ──────
+  // bbe40f8c, T5 — closes the deferred live-visual of node 8e892543). ──────────
+  //
+  // The other scenarios drive the ems-specific create buttons on INSTANCES with a
+  // single-field (label) form. THIS drives the generic "Create Instance" command
+  // — bound to the `exo__Class` METACLASS, so it renders on every class-def page
+  // — on a real published class def (ems__Task), through the TWO-field form:
+  // `Label` + the reusable Ontology fuzzy reference-picker (T2). It proves the
+  // full flagship path end-to-end against the live published command/binding/
+  // grounding: button render → form → picker selection → on-disk UUID instance
+  // whose exo__Instance_class is the host class (via the $targetClassSelf
+  // PropertyDefault) and whose exo__Asset_isDefinedBy + folder follow the PICKED
+  // ontology ($exo ≠ the host's own $ems → proves the picker drives both).
+  test("scenario 9 — Create Instance on an exo__Class page (flagship bbe40f8c)", async () => {
+    // Store-completeness gate for THIS target: the binding targets the exo__Class
+    // metaclass (not ems__Area), so gate on "Create Instance" resolving on the
+    // class-def page itself (same #3587 rationale as the beforeAll area gate).
+    await waitForCreateCommandsResolvable(
+      window,
+      EMS_TASK_CLASSDEF_REL,
+      EXO_CLASS_METACLASS_UID,
+      ["Create Instance"],
+      120_000,
+      ["exo__Class", "exo__Asset"],
+    );
+
+    const { rel, fm } = await createInstanceOnClass(
+      window,
+      vaultPath,
+      EMS_TASK_CLASSDEF_REL,
+      UID.emsTaskClass, // host class — set as exo__Instance_class ($targetClassSelf)
+      PICK_ONTOLOGY_UID, // picked ontology — set as exo__Asset_isDefinedBy
+      PICK_ONTOLOGY_QUERY,
+      "E2E Instance on Class",
+      PICK_ONTOLOGY_DIR, // expected co-location folder (folded into retry-accept)
+    );
+    log(`created flagship instance: ${rel}`);
+
+    // Pin each UID to its OWN property (not a bare whole-frontmatter substring),
+    // so a hypothetical value-swap of the two refs can't pass vacuously.
+    // exo__Instance_class = the host class (the class-def page IS the class).
+    expect(
+      fm,
+      "exo__Instance_class must be the host class ($targetClassSelf)",
+    ).toMatch(
+      new RegExp(`exo__Instance_class:[\\s\\S]{0,60}?${UID.emsTaskClass}`),
+    );
+    // exo__Asset_isDefinedBy = the PICKED ontology ($exo), proving the picker
+    // drove it (≠ the host class's own $ems).
+    expect(
+      fm,
+      "exo__Asset_isDefinedBy must be the picked ontology ($exo)",
+    ).toMatch(new RegExp(`exo__Asset_isDefinedBy:[^\\n]*${PICK_ONTOLOGY_UID}`));
+    // Co-located in the PICKED ontology's folder ($isDefinedByFolder) — exoas-exo,
+    // NOT the host class's ems folder.
+    expect(
+      rel.startsWith(PICK_ONTOLOGY_DIR + "/"),
+      `instance must be co-located in the picked ontology folder (got ${rel})`,
+    ).toBe(true);
+    // UID-canon: the instance file is UUID-named.
+    expect(
+      path.basename(rel),
+      `instance file must be UUID-named (got ${path.basename(rel)})`,
+    ).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$/,
+    );
+  });
+
   test("scenario 8 — cleanup removes created instances, leaves ontologies + seed intact", async () => {
     const isCreated = (fm: string): boolean =>
-      /exo__Asset_label:\s*"?E2E (Task on Area|Project on Area|Child Area|Task on Project|Meeting on Proto)/.test(
+      /exo__Asset_label:\s*"?E2E (Task on Area|Project on Area|Child Area|Task on Project|Meeting on Proto|Instance on Class)/.test(
         fm,
       );
 
