@@ -42,11 +42,17 @@ export class ClearSwitchCacheConfirmModal extends Modal {
       cls: "clear-switch-cache-title",
       text: "Clear switch cache?",
     });
-    contentEl.createEl("p", {
+    // a11y (RFC 0002 §3.11 / P16): id this consequence line (count + size +
+    // irreversibility) so the destructive Clear button can reference it via
+    // aria-describedby — a screen-reader user hears the impact, not only the
+    // button name.
+    const consequenceId = "clear-switch-cache-consequence";
+    const consequenceEl = contentEl.createEl("p", {
       text:
         `${this.entryCount} cached AssetSpace ${this.entryCount === 1 ? "entry" : "entries"} ` +
         `will be removed (${formatBytes(this.totalSize)}). This cannot be undone.`,
     });
+    consequenceEl.setAttribute("id", consequenceId);
     contentEl.createEl("p", {
       cls: "clear-switch-cache-detail",
       text:
@@ -59,6 +65,10 @@ export class ClearSwitchCacheConfirmModal extends Modal {
     });
 
     const cancelBtn = actions.createEl("button", { text: "Cancel" });
+    cancelBtn.setAttribute(
+      "aria-label",
+      "Cancel — keep the cached profiles",
+    );
     cancelBtn.addEventListener("click", () => {
       this.settle(false);
       this.close();
@@ -68,10 +78,26 @@ export class ClearSwitchCacheConfirmModal extends Modal {
       cls: "mod-warning",
       text: "Clear",
     });
+    // a11y (RFC 0002 §3.11 / P16): destructive intent via `mod-warning` styling
+    // AND this text marker (never a glyph alone) for assistive tech.
+    confirmBtn.setAttribute(
+      "aria-label",
+      "Clear — permanently remove all cached profiles (cannot be undone)",
+    );
+    confirmBtn.setAttribute("aria-describedby", consequenceId);
     confirmBtn.addEventListener("click", () => {
       this.settle(true);
       this.close();
     });
+
+    // Managed focus (P16, §3.11) — DESTRUCTIVE confirm lands on the safe default
+    // (Cancel), not the irreversible wipe. Focus-trap + Esc-close come from
+    // Obsidian's Modal base. Guarded for jsdom / headless contexts.
+    try {
+      cancelBtn.focus();
+    } catch {
+      /* focus is best-effort */
+    }
   }
 
   override onClose(): void {
