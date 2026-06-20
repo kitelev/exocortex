@@ -61,7 +61,6 @@ const {
   buildEARLReport,
   runShapesValidation,
   applyLegacyExceptionFilter,
-  resolveCrossVaultInstanceClassWikilinks,
 } = await import("../../../src/commands/validate-schema.js");
 
 // Import mocked DomainIRI/DomainLiteral so instanceof checks in applyLegacyExceptionFilter work
@@ -116,15 +115,9 @@ describe("Issue #2713: validate schema command", () => {
       expect(option).toBeDefined();
     });
 
-    it("should register exactly 8 options (incl. --also for multi-vault SHACL — Issue #3127, --class for RFC 8e83442b T1.4)", () => {
+    it("should register exactly 7 options (--class for RFC 8e83442b T1.4)", () => {
       const cmd = validateSchemaCommand();
-      expect(cmd.options).toHaveLength(8);
-    });
-
-    it("should register --also option (Issue #3127 — repeatable additional vaults)", () => {
-      const cmd = validateSchemaCommand();
-      const option = cmd.options.find((o: any) => o.long === "--also");
-      expect(option).toBeDefined();
+      expect(cmd.options).toHaveLength(7);
     });
 
     it("should register --shapes-mode option", () => {
@@ -988,126 +981,3 @@ describe("P4.3 applyLegacyExceptionFilter", () => {
   });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
-// resolveCrossVaultInstanceClassWikilinks — multi-vault literal Instance_class
-// post-processing. Confirms uid→class-IRI map construction + canonical-IRI
-// emission + rdf:type emission for cross-vault literal wikilinks.
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe("resolveCrossVaultInstanceClassWikilinks", () => {
-  const RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label";
-  const EXO_ASSET_LABEL = "https://exocortex.my/ontology/exo#Asset_label";
-  const EXO_INSTANCE_CLASS = "https://exocortex.my/ontology/exo#Instance_class";
-  const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
-  const EMS_PROJECT = "https://exocortex.my/ontology/ems#Project";
-
-  // Helpers matching the mocked DomainIRI/DomainLiteral/DomainTriple shape.
-  const iri = (v: string) => new DomainIRI(v);
-  const lit = (v: string) => new DomainLiteral(v);
-  const makeTriple = (s: any, p: any, o: any): any => ({
-    subject: s,
-    predicate: p,
-    object: o,
-  });
-
-  const CLASS_FILE_IRI =
-    "obsidian://vault/assetspaces/ems/7db5eeff-718a-49b0-8d2b-39b084a356e3.md";
-  const ASSET_IRI =
-    "obsidian://vault/assetspaces/exodev/9541965c-c5dc-48ff-94b2-98aad3d62b2e.md";
-  const CLASS_UID = "7db5eeff-718a-49b0-8d2b-39b084a356e3";
-
-  it("emits canonical Instance_class IRI + rdf:type when class file is in primary vault and asset references via literal wikilink", () => {
-    const triples = [
-      makeTriple(iri(CLASS_FILE_IRI), iri(RDFS_LABEL), lit("ems__Project")),
-      makeTriple(iri(ASSET_IRI), iri(EXO_INSTANCE_CLASS), lit(`[[${CLASS_UID}]]`)),
-    ];
-    const result = resolveCrossVaultInstanceClassWikilinks(triples as any);
-    expect(result.length).toBe(triples.length + 2);
-    const added = result.slice(triples.length);
-    const canonicalInstance = added.find(
-      (t: any) =>
-        t.predicate.value === EXO_INSTANCE_CLASS &&
-        t.object instanceof DomainIRI &&
-        t.object.value === EMS_PROJECT,
-    );
-    const rdfType = added.find(
-      (t: any) =>
-        t.predicate.value === RDF_TYPE &&
-        t.object instanceof DomainIRI &&
-        t.object.value === EMS_PROJECT,
-    );
-    expect(canonicalInstance).toBeDefined();
-    expect(rdfType).toBeDefined();
-  });
-
-  it("resolves class IRI from exo:Asset_label as well as rdfs:label", () => {
-    const triples = [
-      makeTriple(iri(CLASS_FILE_IRI), iri(EXO_ASSET_LABEL), lit("ems__Project")),
-      makeTriple(iri(ASSET_IRI), iri(EXO_INSTANCE_CLASS), lit(`[[${CLASS_UID}]]`)),
-    ];
-    const result = resolveCrossVaultInstanceClassWikilinks(triples as any);
-    expect(result.length).toBe(triples.length + 2);
-  });
-
-  it("handles [[uid|alias]] wikilink form", () => {
-    const triples = [
-      makeTriple(iri(CLASS_FILE_IRI), iri(RDFS_LABEL), lit("ems__Project")),
-      makeTriple(
-        iri(ASSET_IRI),
-        iri(EXO_INSTANCE_CLASS),
-        lit(`[[${CLASS_UID}|ems__Project]]`),
-      ),
-    ];
-    const result = resolveCrossVaultInstanceClassWikilinks(triples as any);
-    expect(result.length).toBe(triples.length + 2);
-  });
-
-  it("no-op when class definition is missing (uid not in map)", () => {
-    const triples = [
-      makeTriple(iri(ASSET_IRI), iri(EXO_INSTANCE_CLASS), lit(`[[${CLASS_UID}]]`)),
-    ];
-    const result = resolveCrossVaultInstanceClassWikilinks(triples as any);
-    expect(result).toBe(triples);
-  });
-
-  it("no-op when value is already a canonical IRI (not a literal wikilink)", () => {
-    const triples = [
-      makeTriple(iri(CLASS_FILE_IRI), iri(RDFS_LABEL), lit("ems__Project")),
-      makeTriple(iri(ASSET_IRI), iri(EXO_INSTANCE_CLASS), iri(EMS_PROJECT)),
-    ];
-    const result = resolveCrossVaultInstanceClassWikilinks(triples as any);
-    expect(result.length).toBe(triples.length);
-  });
-
-  it("skips multi-word labels that would yield invalid IRIs", () => {
-    const triples = [
-      makeTriple(iri(CLASS_FILE_IRI), iri(RDFS_LABEL), lit("ems__Project Special")),
-      makeTriple(iri(ASSET_IRI), iri(EXO_INSTANCE_CLASS), lit(`[[${CLASS_UID}]]`)),
-    ];
-    const result = resolveCrossVaultInstanceClassWikilinks(triples as any);
-    expect(result.length).toBe(triples.length);
-  });
-
-  it("deduplicates emissions when one subject has multiple literal wikilinks resolving to same class", () => {
-    const triples = [
-      makeTriple(iri(CLASS_FILE_IRI), iri(RDFS_LABEL), lit("ems__Project")),
-      makeTriple(iri(ASSET_IRI), iri(EXO_INSTANCE_CLASS), lit(`[[${CLASS_UID}]]`)),
-      makeTriple(iri(ASSET_IRI), iri(EXO_INSTANCE_CLASS), lit(`[[${CLASS_UID}|alias]]`)),
-    ];
-    const result = resolveCrossVaultInstanceClassWikilinks(triples as any);
-    expect(result.length).toBe(triples.length + 2);
-  });
-
-  it("ignores non-Instance_class predicates with literal wikilink values", () => {
-    const triples = [
-      makeTriple(iri(CLASS_FILE_IRI), iri(RDFS_LABEL), lit("ems__Project")),
-      makeTriple(
-        iri(ASSET_IRI),
-        iri("https://exocortex.my/ontology/exo#Asset_relates"),
-        lit(`[[${CLASS_UID}]]`),
-      ),
-    ];
-    const result = resolveCrossVaultInstanceClassWikilinks(triples as any);
-    expect(result.length).toBe(triples.length);
-  });
-});

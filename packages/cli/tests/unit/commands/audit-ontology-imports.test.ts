@@ -85,13 +85,12 @@ describe("audit ontology-imports — Commander wiring", () => {
     expect(sub).toBeDefined();
   });
 
-  it("subcommand declares --vault required + --output + --also + --propose-imports + VL#30 flags", () => {
+  it("subcommand declares --vault required + --output + --propose-imports + VL#30 flags", () => {
     const sub = auditOntologyImportsCommand();
     expect(sub.name()).toBe("ontology-imports");
     const opts = sub.options.map((o) => o.long);
     expect(opts).toContain("--vault");
     expect(opts).toContain("--output");
-    expect(opts).toContain("--also");
     expect(opts).toContain("--propose-imports");
     expect(opts).toContain("--structural-only");
     expect(opts).toContain("--exclude-predicate");

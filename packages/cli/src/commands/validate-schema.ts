@@ -89,7 +89,6 @@ export type ShapesFormat = "text" | "json" | "earl";
 
 export interface ValidateSchemaOptions {
   vault: string;
-  also?: string[];
   output?: OutputFormat;
   staged?: boolean;
   useCache?: boolean;
@@ -125,35 +124,12 @@ export function frontmatterMatchesClass(
 }
 
 /**
- * Commander.js accumulator for repeatable --also flag.
- * Each --also <path> adds a vault path to the array.
- */
-function collectAlso(value: string, previous: string[]): string[] {
-  return previous.concat([value]);
-}
-
-/**
- * Loads triples from the primary vault plus any additional --also vaults
- * and concatenates them into a single array (last-write-wins on duplicate
- * subjects, matching `exoql query --also` semantics).
- *
- * If `--use-cache` and `--also` are combined, the cache is disabled and a
- * warning is logged: the per-vault triple cache cannot represent merged
- * multi-vault state.
+ * Loads triples from the vault into a single array.
  */
 async function loadTriplesFromAllVaults(
   vaultPath: string,
-  alsoPaths: string[],
   useCache: boolean,
-  verbose: boolean,
 ): Promise<{ triples: DomainTriple[]; cacheHit: boolean }> {
-  if (useCache && alsoPaths.length > 0) {
-    if (verbose) {
-      console.log("⚠️  --use-cache is disabled when --also is specified (per-vault cache cannot represent multi-vault state).");
-    }
-    useCache = false;
-  }
-
   let triples: DomainTriple[];
   let cacheHit = false;
   if (useCache) {
@@ -167,200 +143,10 @@ async function loadTriplesFromAllVaults(
     triples = (await converter.convertVault()) as DomainTriple[];
   }
 
-  for (const alsoPath of alsoPaths) {
-    const resolvedAlsoPath = resolve(alsoPath);
-    if (!existsSync(resolvedAlsoPath)) {
-      throw new VaultNotFoundError(resolvedAlsoPath);
-    }
-    if (verbose) {
-      console.log(`📦 Loading additional vault: ${resolvedAlsoPath}...`);
-    }
-    const alsoAdapter = new FileSystemVaultAdapter(resolvedAlsoPath);
-    const alsoConverter = new NoteToRDFConverter(alsoAdapter);
-    const alsoTriples = (await alsoConverter.convertVault()) as DomainTriple[];
-    triples = triples.concat(alsoTriples);
-    if (verbose) {
-      console.log(`   ➕ Added ${alsoTriples.length} triples from ${resolvedAlsoPath}`);
-    }
-  }
-
-  if (alsoPaths.length > 0) {
-    // Issue #3523: a shared submodule (e.g. `exo`) mounted in BOTH the primary
-    // vault and an `--also` vault is parsed twice into byte-identical triples
-    // (same subject IRI — converters key off the per-vault-relative path). The
-    // duplicates inflate `values.length` for Single-cardinality predicates →
-    // false `sh:maxCount` violations. RDF triples are a set, so collapsing
-    // exact (subject, predicate, object) duplicates is loss-less. Scoped to the
-    // multi-vault path so single-vault loading is byte-for-byte unchanged.
-    const beforeDedup = triples.length;
-    triples = dedupeTriples(triples);
-    if (verbose && triples.length < beforeDedup) {
-      console.log(
-        `   🧹 Cross-vault dedup: removed ${beforeDedup - triples.length} duplicate triple(s) (shared-submodule double-load)`,
-      );
-    }
-
-    const before = triples.length;
-    triples = resolveCrossVaultInstanceClassWikilinks(triples);
-    if (verbose) {
-      const added = triples.length - before;
-      if (added > 0) {
-        console.log(
-          `   🔗 Cross-vault Instance_class resolution: emitted ${added} additional canonical-IRI triple(s)`,
-        );
-      }
-    }
-  }
-
   return { triples, cacheHit };
 }
 
-const EXO_INSTANCE_CLASS_IRI =
-  "https://exocortex.my/ontology/exo#Instance_class";
 const RDF_TYPE_IRI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
-const INSTANCE_CLASS_LITERAL_WIKILINK_RE =
-  /^\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|[^\]]*)?\]\]$/i;
-const SUBJECT_UID_SUFFIX_RE =
-  /\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md$/i;
-
-/**
- * In multi-vault scans (`--also` repeated), each per-path NoteToRDFConverter
- * resolves `exo__Instance_class` wikilink targets only against its own vault.
- * When a class definition file lives in vault A and a typed asset lives in
- * vault B passed via `--also`, the converter in B cannot find the class file,
- * leaving the value as a literal `[[<uid>]]` instead of the canonical class
- * IRI. SHACL sh:class checks then fail for the asset, even though the asset
- * IS correctly typed in another vault.
- *
- * This post-processing pass closes the gap purely in CLI scope:
- *
- *   1. Scan all triples once to build a `uid → canonical-class-IRI` map from
- *      class-definition files. A file at `obsidian://…/<uid>.md` is a class
- *      definition when it carries an `rdfs:label` or `exo:Asset_label`
- *      literal whose value matches the `<namespacePrefix>__<LocalName>`
- *      pattern recognised by `labelToOntologyIRI()`.
- *
- *   2. Walk the triple set again. For each triple with predicate
- *      `exo:Instance_class` and a Literal object of form `[[<uid>]]` or
- *      `[[<uid>|alias]]`, emit the missing canonical-IRI triple AND a
- *      matching `rdf:type` triple (the SHACL validator reads either
- *      predicate, see ShaclLiteValidator.ts L158–159).
- *
- * The literal triple is preserved — downstream consumers that read the raw
- * wikilink (SPARQL queries against the literal form) keep working. Only
- * additive emission, no replacement.
- */
-export function resolveCrossVaultInstanceClassWikilinks(
-  triples: DomainTriple[],
-): DomainTriple[] {
-  const uidToClassIRI = new Map<string, string>();
-  for (const t of triples) {
-    if (
-      !(t.subject instanceof DomainIRI) ||
-      !(t.predicate instanceof DomainIRI) ||
-      !(t.object instanceof DomainLiteral)
-    ) {
-      continue;
-    }
-    if (t.predicate.value !== RDFS_LABEL && t.predicate.value !== EXO_ASSET_LABEL_IRI) {
-      continue;
-    }
-    const m = SUBJECT_UID_SUFFIX_RE.exec(t.subject.value);
-    if (!m) continue;
-    const uid = m[1].toLowerCase();
-    if (uidToClassIRI.has(uid)) continue;
-    const labelValue = t.object.value.trim();
-    // labelToOntologyIRI splits on first `__`; multi-word or whitespace-bearing
-    // labels (e.g. "ems__Project Special") would yield an invalid IRI. Restrict
-    // to single-token labels to keep DomainIRI construction safe.
-    if (/\s/.test(labelValue)) continue;
-    const classIRI = labelToOntologyIRI(labelValue);
-    if (classIRI) {
-      uidToClassIRI.set(uid, classIRI);
-    }
-  }
-
-  if (uidToClassIRI.size === 0) return triples;
-
-  const emitted = new Set<string>();
-  const additions: DomainTriple[] = [];
-  for (const t of triples) {
-    if (
-      !(t.subject instanceof DomainIRI) ||
-      !(t.predicate instanceof DomainIRI) ||
-      !(t.object instanceof DomainLiteral)
-    ) {
-      continue;
-    }
-    if (t.predicate.value !== EXO_INSTANCE_CLASS_IRI) continue;
-    const lit = t.object.value.trim();
-    const m = INSTANCE_CLASS_LITERAL_WIKILINK_RE.exec(lit);
-    if (!m) continue;
-    const uid = m[1].toLowerCase();
-    const classIRI = uidToClassIRI.get(uid);
-    if (!classIRI) continue;
-
-    const subjectIRI = t.subject.value;
-    const dedupKey = `${subjectIRI} ${classIRI}`;
-    if (emitted.has(dedupKey)) continue;
-    emitted.add(dedupKey);
-
-    const classNode = new DomainIRI(classIRI);
-    additions.push(
-      new DomainTriple(t.subject, new DomainIRI(EXO_INSTANCE_CLASS_IRI), classNode),
-    );
-    additions.push(
-      new DomainTriple(t.subject, new DomainIRI(RDF_TYPE_IRI), classNode),
-    );
-  }
-
-  return additions.length > 0 ? triples.concat(additions) : triples;
-}
-
-/**
- * Issue #3523: collapse exact-duplicate triples produced when a shared
- * submodule is loaded more than once across `--vault` + `--also` paths.
- *
- * A triple's identity is (subject, predicate, object). Subject/predicate are
- * always IRIs; the object is an IRI or a Literal (whose identity also includes
- * datatype + language tag). Dual-storage predicates (e.g. exo__Asset_prototype
- * → [fileIRI, uuidLiteral]) emit DISTINCT objects, so they are never collapsed
- * into one — only byte-identical re-parses of the same file are removed.
- */
-export function dedupeTriples(triples: DomainTriple[]): DomainTriple[] {
-  const seen = new Set<string>();
-  const out: DomainTriple[] = [];
-  // JSON-encode every field so a value/datatype/language that itself
-  // contains the join separator can never forge a collision with a distinct
-  // triple; the key must be injective for the dedup to stay loss-less.
-  const enc = (...parts: (string | undefined)[]): string =>
-    parts.map((p) => JSON.stringify(p ?? null)).join(" ");
-  for (const t of triples) {
-    const o = t.object;
-    let objKey: string;
-    if (o instanceof DomainIRI) {
-      objKey = enc("i", o.value);
-    } else if (o instanceof DomainLiteral) {
-      // datatype + language + direction all participate in Literal.equals().
-      objKey = enc("l", o.value, o.datatype?.value, o.language, o.direction);
-    } else {
-      // Unknown node shape: keep it (do not risk dropping a non-duplicate).
-      out.push(t);
-      continue;
-    }
-    const subjKey =
-      t.subject instanceof DomainIRI ? t.subject.value : String(t.subject);
-    const predKey =
-      t.predicate instanceof DomainIRI ? t.predicate.value : String(t.predicate);
-    const key = `${enc(subjKey, predKey)} ${objKey}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(t);
-  }
-  return out;
-}
-
-const EXO_ASSET_LABEL_IRI = "https://exocortex.my/ontology/exo#Asset_label";
 
 /**
  * Resolves a focusNode IRI (obsidian://vault/<relPath>) to the absolute
@@ -1105,26 +891,18 @@ export function applyLegacyExceptionFilter(
 
 /**
  * Runs SHACL-lite shapes validation against vault triples.
- *
- * When `alsoPaths` is supplied, shape definitions are loaded from each path
- * in addition to the primary vault and merged into a single registry
- * (first-wins on duplicate propertyIRI). Caller is responsible for merging
- * triples from --also vaults into `triples` before calling.
  */
 export async function runShapesValidation(
   vaultPath: string,
   triples: DomainTriple[],
-  alsoPaths: string[] = [],
 ): Promise<ValidationReport> {
   // Load shapes from the merged RDF graph rather than the filesystem. After
   // RFC-004 UUID-canonicalization, exo__Property_domain/range frontmatter is
   // pure-UID wikilinks (`[[<uid>]]`) that the filesystem loader cannot resolve
   // to canonical class IRIs without scanning every TBox class file. The graph
   // loader uses in-memory rdfs:label triples to bridge file IRI → namespace
-  // IRI, and also automatically picks up shapes from --also vaults (since
-  // their triples are already merged in).
+  // IRI.
   void vaultPath;
-  void alsoPaths;
   const tripleStore = new InMemoryTripleStore();
   await tripleStore.addAll(triples as unknown as Triple[]);
   const registry = new ShaclShapeRegistry(
@@ -1174,7 +952,6 @@ export function filterReportToStagedFocusNodes(
  */
 function emitEmptyStagedShapesResult(
   vaultPath: string,
-  alsoPaths: string[],
   fmt: ShapesFormat,
 ): void {
   if (fmt === "earl") {
@@ -1183,7 +960,6 @@ function emitEmptyStagedShapesResult(
   } else if (fmt === "json") {
     const response = ResponseBuilder.success({
       vaultPath,
-      alsoPaths: alsoPaths.map((p) => resolve(p)),
       conforms: true,
       violationCount: 0,
       violations: [],
@@ -1219,34 +995,16 @@ export async function runShapesModeAction(
       throw new VaultNotFoundError(vaultPath);
     }
 
-    const alsoPaths = options.also ?? [];
-    const allVaultRoots = [vaultPath, ...alsoPaths.map((p) => resolve(p))];
-
     // Issue #3245: when --staged is set, scope SHACL violations to git-staged
     // files. Short-circuit on the zero-staged case to mirror frontmatter-mode
     // behaviour (line ~1157-1172 below) and avoid a full-vault parse on every
     // pre-commit invocation with nothing to check.
-    //
-    // Cross-vault note: `getStagedMdFiles` runs `git diff --cached` from the
-    // primary vault, so when --also is also supplied the staged set covers
-    // only the primary vault. focusNode IRIs from --also vaults use the same
-    // `obsidian://vault/<relPath>` shape (no vault discriminator), so a
-    // violation whose relPath happens to also exist in the staged set would
-    // be retained. In the canonical Exocortex setup --also vaults mount the
-    // same shared submodules as the primary vault, so file content is
-    // identical and the collision is benign; we surface a text-mode warning
-    // for any other layout.
     let stagedFilter: ReadonlySet<string> | null = null;
     if (options.staged) {
       const stagedFiles = stagedResolver(vaultPath);
       if (stagedFiles.length === 0) {
-        emitEmptyStagedShapesResult(vaultPath, alsoPaths, fmt);
+        emitEmptyStagedShapesResult(vaultPath, fmt);
         return;
-      }
-      if (fmt === "text" && alsoPaths.length > 0) {
-        console.log(
-          "⚠️  --staged scopes git diff --cached to the primary vault; focusNode IRIs from --also vaults that match a staged relPath will also pass the filter.",
-        );
       }
       stagedFilter = new Set(stagedFiles);
     }
@@ -1257,9 +1015,7 @@ export async function runShapesModeAction(
 
     const { triples, cacheHit } = await loadTriplesFromAllVaults(
       vaultPath,
-      alsoPaths,
       Boolean(options.useCache),
-      fmt === "text",
     );
     if (fmt === "text" && cacheHit) {
       console.log("🚀 Cache hit! Loading from persistent cache...");
@@ -1270,14 +1026,13 @@ export async function runShapesModeAction(
       console.log(`🔍 Running SHACL-lite validation...`);
     }
 
-    const rawReport = await runShapesValidation(vaultPath, triples, alsoPaths);
+    const rawReport = await runShapesValidation(vaultPath, triples);
     let report = applyLegacyExceptionFilter(triples, rawReport);
     if (stagedFilter) {
       report = filterReportToStagedFocusNodes(report, stagedFilter);
     }
 
-    const qualifyNode = (focusNode: string): string =>
-      allVaultRoots.length > 1 ? qualifyFocusNodePath(focusNode, allVaultRoots) : focusNode;
+    const qualifyNode = (focusNode: string): string => focusNode;
 
     // Issue #3488: split results by severity. `sh:Violation` are genuine
     // (errors); `sh:Warning` are unresolvable cross-vault / symbolic / external
@@ -1297,7 +1052,6 @@ export async function runShapesModeAction(
       });
       const response = ResponseBuilder.success({
         vaultPath,
-        alsoPaths: alsoPaths.map((p) => resolve(p)),
         conforms: report.conforms,
         violationCount: errorResults.length,
         warningCount: warningResults.length,
@@ -1316,8 +1070,7 @@ export async function runShapesModeAction(
         }
         console.log(`⚠️  Found ${errorResults.length} SHACL violation(s) in ${byNode.size} node(s):\n`);
         for (const [node, violations] of byNode) {
-          const label = allVaultRoots.length > 1 ? qualifyNode(node) : node;
-          console.log(`   ❌ ${label}`);
+          console.log(`   ❌ ${node}`);
           for (const v of violations) {
             const sev = v.severity.replace("sh:", "");
             console.log(`      [${sev}] ${v.message}`);
@@ -1330,7 +1083,7 @@ export async function runShapesModeAction(
         console.log(
           `\nℹ️  ${warningResults.length} warning(s)` +
             (crossVaultRefWarnings > 0
-              ? ` (${crossVaultRefWarnings} unresolvable cross-vault/symbolic ref(s) — not validated, run with --also to resolve)`
+              ? ` (${crossVaultRefWarnings} unresolvable class/symbolic ref(s) — not validated)`
               : "") +
             ` — these do not affect the exit code.`,
         );
@@ -1355,10 +1108,9 @@ export function validateSchemaCommand(): Command {
   return new Command("schema")
     .description("Check frontmatter properties against ontology (Issue #2713)")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
-    .option("--also <path>", "Additional vault to merge into validation graph (repeatable). --use-cache is disabled when --also is present.", collectAlso, [])
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
     .option("--staged", "Only validate git-staged .md files (for pre-commit hooks)")
-    .option("--use-cache", "Use persistent triple cache (faster vault loading; disabled when --also is set)")
+    .option("--use-cache", "Use persistent triple cache (faster vault loading)")
     .option("--shapes-mode", "Run SHACL-lite shapes validation instead of schema linting")
     .option("--format <type>", "Output format for shapes-mode: text|json|earl", "text")
     .option("--class <iri>", "Only validate assets whose exo__Instance_class matches this IRI/slug (RFC 8e83442b T1.4)")
@@ -1413,17 +1165,14 @@ export function validateSchemaCommand(): Command {
           });
         }
 
-        // 2. Load vault (+ --also vaults) into triple store
+        // 2. Load vault into triple store
         if (outputFormat === "text") {
           console.log(`📦 Loading vault: ${vaultPath}...`);
         }
 
-        const alsoPaths = options.also ?? [];
         const { triples: loadedTriples, cacheHit } = await loadTriplesFromAllVaults(
           vaultPath,
-          alsoPaths,
           Boolean(options.useCache),
-          outputFormat === "text",
         );
         const triples: Triple[] = loadedTriples as Triple[];
         if (outputFormat === "text" && cacheHit) {

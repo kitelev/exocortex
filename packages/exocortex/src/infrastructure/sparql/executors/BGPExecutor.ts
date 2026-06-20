@@ -559,8 +559,7 @@ export class BGPExecutor {
       value: truncated,
       hint:
         "Wikilink could not be resolved to IRI (likely label-form wikilink with no matching basename/alias). " +
-        "Check whether the target file exists in the queried vault, add an alias, " +
-        "or load the target vault via --also. See issue #3282.",
+        "Check whether the target file exists in the queried vault, or add an alias. See issue #3282.",
     };
     console.error(
       `[BGPExecutor] literal-safety guard fired in ${context}: literal in ${position} position — yielding 0 solutions. value="${truncated}"`,

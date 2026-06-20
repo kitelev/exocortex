@@ -125,6 +125,38 @@ already-bucketed or non-prose.
 
 ---
 
+## Doc example wikilink convention
+
+Frontmatter examples in the docs reference vault assets with `[[…]]` wikilinks.
+Use the right form per **what is being referenced** — the two forms are not
+interchangeable:
+
+| Reference is to…                                                                                                                                                    | Form                                                          | Example                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| A **well-known TBox anchor** — a class, property, or enum status defined by the platform (`ems__Task`, `ems__EffortStatusDone`, `exo__Property`, `ims__Concept`, …) | **label-form** `[[prefix__Name]]`                             | `exo__Instance_class: "[[ems__Task]]"`                                                   |
+| An **invented ABox asset of the example itself** — the workflow / task / state the example is teaching the reader to create                                         | **`[[<uuid>\|alias]]`** with a **synthetic placeholder UUID** | `ems__WorkflowState_workflow: "[[a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d\|Simple Kanban]]"` |
+
+**Why label-form for TBox anchors (not synthetic UIDs):** the real TBox asset
+carries the label as an `aliases` entry, so `[[ems__Task]]` **resolves** in a live
+vault; it contains no UID, so it is **already decoupled** from vault UID drift; and it
+stays **readable**. Rewriting these to `[[<synthetic-uuid>|ems__Task]]` would replace a
+working, drift-proof reference with a non-resolving fake UID for zero benefit.
+
+**Why a synthetic placeholder UUID for the example's own assets:** the UUID is a
+**placeholder** the reader replaces with their own generated UID — **never** a real vault
+UID (docs must not go stale when a vault UID changes). The `|alias` is a **readability aid**
+so the reader can see which asset a bare UUID refers to; the plugin's own canonical on-disk
+form is **strip-canon `[[<uid>]]` without an alias** (per the 2026-05-17 strip-canon
+decision — asset creation and groundings write `[[<uid>]]`), so a copied `|alias` is
+harmless but not required. Use an obviously-synthetic value (e.g. `a1b2c3d4-…`,
+`d1111111-…`).
+
+> All such wikilinks live inside fenced/inline code in the docs, so GitHub renders them
+> as literal example text (no broken-link rendering). The form choice above is about
+> teaching the correct, copy-pasteable shape — not about GitHub rendering.
+
+---
+
 _Generated for RFC 0001 Phase 2. The redirect stubs at every moved old path (one-release
 grace) were removed in Phase 5 once the grace elapsed; the new canonical Diátaxis paths
 above are now the only locations._
