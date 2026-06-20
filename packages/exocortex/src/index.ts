@@ -133,6 +133,20 @@ export { EffortStatusWorkflow } from "./services/EffortStatusWorkflow";
 export { WorkflowEngine } from "./services/WorkflowEngine";
 export type { WorkflowValidationResult } from "./services/WorkflowEngine";
 export { WorkflowResolver } from "./services/WorkflowResolver";
+// Homoiconic substitution-token registry (RFC 727572d2). Public so consumers
+// (Obsidian plugin templating, CLI) can resolve/register token vocabulary —
+// e.g. the editor "Insert template token" command reuses `getResolver`.
+export {
+  installDefaultResolvers,
+  getResolver,
+  registerResolver,
+  clearResolvers,
+  getRegisteredResolverIds,
+} from "./services/SubstitutionResolverRegistry";
+export type {
+  ResolverContext,
+  ResolverFn,
+} from "./services/SubstitutionResolverRegistry";
 export { InstantiationRuleResolver } from "./services/InstantiationRuleResolver";
 export type { InstantiationRule, PropertySetRule } from "./services/InstantiationRuleResolver";
 export { VisibilityGenerator } from "./services/VisibilityGenerator";
