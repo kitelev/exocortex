@@ -2443,40 +2443,84 @@ export class SyncEngine {
     // Verify R ⊆ L: every remote-head file must be present on disk with an
     // identical blob. A remote file absent locally, or a same-path content
     // difference, is a GENUINE first-sync divergence (remote-side edits/files
-    // to reconcile, or an overlapping edit) → full-conflict (A2/A3, D22 —
-    // never a silent overwrite). #3565: the count check that used to gate
-    // this is GONE — a pure local-only superset (disk.size > headTree.length)
-    // is no longer a conflict; it is the additive case handled below.
+    // to reconcile, or an overlapping edit). #3565: the count check that used
+    // to gate the additive case is GONE — a pure local-only superset
+    // (disk.size > headTree.length) is no longer a conflict.
+    //
+    // Unlike the historical short-circuit (return `full-conflict` on the FIRST
+    // divergence — a whole-repo deadlock), the divergent/absent head files are
+    // COLLECTED out of the synthetic base and the run reconciles ZERO-LOSS via
+    // the no-base path below — provided a merge layer is wired to route the
+    // overlaps safely (else the conservative status quo is preserved).
+    const matchingFiles: WatermarkFileEntry[] = [];
+    let firstDivergentPath: string | undefined;
     for (const entry of headTree) {
       const content = disk.get(entry.path);
       if (
         content === undefined ||
         (await gitBlobSha(content, this.deps.sha1)) !== entry.blobSha
       ) {
-        return {
-          kind: "settled",
-          outcome: result("full-conflict", {
-            detail: `first-sync: no watermark and local content diverges from remote head at ${entry.path} — A2/A3 scope`,
-          }),
-        };
+        // Divergent (same-path content difference) or absent on disk: NOT part
+        // of the R⊆L synthetic base. Absent-on-disk → a remote-only ADD the
+        // cycle pulls (resurrection, the accepted first-sync trade-off, M1 —
+        // never inferred as a silent delete). Same-path difference → an add/add
+        // overlap routed through the merge/quarantine layer below.
+        if (firstDivergentPath === undefined) firstDivergentPath = entry.path;
+        continue;
       }
-    }
-
-    // R ⊆ L holds. The base = the remote head tree (every entry matches disk).
-    const files: WatermarkFileEntry[] = headTree.map((e) => {
-      const content = disk.get(e.path);
-      // Asset-mode-only path (file-mode first-sync goes through the
-      // remote-wins layer): contents are text by construction.
+      // Asset-mode-only path (file-mode first-sync goes through the remote-wins
+      // layer): contents are text by construction.
       const uid =
         typeof content === "string" ? extractAssetUid(content) : undefined;
-      return { path: e.path, blobSha: e.blobSha, ...(uid ? { uid } : {}) };
-    });
+      matchingFiles.push({
+        path: entry.path,
+        blobSha: entry.blobSha,
+        ...(uid ? { uid } : {}),
+      });
+    }
+
+    // The synthetic base = the R⊆L-matching subset. Every base file is present
+    // on disk BY CONSTRUCTION, so the #3610 silent-delete inference (a base file
+    // absent from the working tree) can never fire on this base.
     const base: WatermarkRecord = {
       lastSyncedSha: head,
       rootTreeSha: headCommit.treeSha,
-      files,
+      files: matchingFiles,
     };
 
+    if (firstDivergentPath !== undefined) {
+      // GENUINE first-sync divergence with NO 3-way merge base available
+      // (no recorded mount base, no submodule HEAD to backfill — REST/tarball
+      // private mounts, mobile). Historically this DEAD-ENDED at `full-conflict`
+      // and froze the WHOLE repo, pushing/pulling nothing and establishing no
+      // watermark (the empirical exoas-tbank work-MacBook deadlock, WBS
+      // bde445cd). With the A2 merge/quarantine layer available, reconcile
+      // ZERO-LOSS against the byte-identical subset instead: the normal cycle
+      // PULLS remote-only files, PUSHES local-only files, and routes overlapping
+      // same-path divergences through the merge layer — a disjoint edit
+      // auto-merges (D20 union), a true overlap QUARANTINES both versions (D17).
+      // Local stays on disk, remote stays on the remote, both captured in the
+      // quarantine sink: never a silent overwrite, never a silent delete.
+      //
+      // Without a merge layer there is no safe place to route an overlap, so the
+      // conservative status quo (full-conflict) is preserved — refuse, never
+      // guess. (Production ALWAYS wires the merge layer; the gate is what keeps
+      // the no-merge-layer compositions' conservative contract intact.)
+      if (this.deps.mergeLayer === undefined) {
+        return {
+          kind: "settled",
+          outcome: result("full-conflict", {
+            detail: `first-sync: no watermark and local content diverges from remote head at ${firstDivergentPath} — A2/A3 scope`,
+          }),
+        };
+      }
+      warnings.push(
+        `first-sync (asset mode): no 3-way merge base and local diverges from remote head (first at ${firstDivergentPath}) — reconciling ZERO-LOSS against ${matchingFiles.length} byte-identical file(s) as a synthetic base: remote-only files pull, local-only files push, overlapping divergences route to the merge/quarantine layer (both versions preserved), never a silent overwrite or delete`,
+      );
+      return { kind: "additive-base", base };
+    }
+
+    // R ⊆ L holds — `matchingFiles` is the FULL remote head tree.
     if (disk.size === headTree.length) {
       // Clean mount — local tree identical to remote: seed + no-op (fast path,
       // avoids the synthetic-base cycle + its extra remote diff for the common
