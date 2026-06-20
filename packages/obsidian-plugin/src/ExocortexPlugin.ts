@@ -3202,6 +3202,8 @@ export default class ExocortexPlugin extends Plugin {
       fuzzyPick,
       getActiveFilePath: () => this.app.workspace.getActiveFile()?.path ?? null,
       getActiveProfileUid: () => localDataStore.getActiveProfileUid(),
+      // RFC 0002 §3.10 — undo target for «Undo last profile apply».
+      getPreviousProfileUid: () => localDataStore.getPreviousProfileUid(),
       notify: (message) => this.notifier.info(message),
     });
 
@@ -3270,6 +3272,24 @@ export default class ExocortexPlugin extends Plugin {
         name: "Apply profile",
         callback: () => {
           void commandsHandler.invokeApplyProfile();
+        },
+      });
+
+      // RFC 0002 §3.10 (resolves P15) — «Undo last profile apply»: revert to the
+      // profile active before the most recent apply in one click. Gated like
+      // apply-profile (registration parity desktop↔mobile — undoLastApply routes
+      // through the same applyProfile path). `checkCallback` hides it from the
+      // palette until an undo target exists (no dead command on a fresh vault),
+      // so it only appears once the user has actually switched profiles.
+      this.addCommand({
+        id: "undo-profile-apply",
+        name: "Undo last profile apply",
+        checkCallback: (checking: boolean) => {
+          const hasUndoTarget = localDataStore.getPreviousProfileUid() !== null;
+          if (checking) return hasUndoTarget;
+          if (!hasUndoTarget) return false;
+          void commandsHandler.invokeUndoLastApply();
+          return true;
         },
       });
     }
@@ -3663,6 +3683,13 @@ export default class ExocortexPlugin extends Plugin {
         new BootstrapResultModal(this.app, result, {
           onAddStarterContent: () =>
             void bootstrapCommands.invokeAddAssetSpace(STARTER_REGISTRY_URL),
+          // RFC 0002 §3.10 — one-click retry of the failed operation: re-open
+          // the same Bootstrap / Add flow (its modal collects the URL again) so
+          // the user can fix the URL / token / connection and retry in place.
+          onRetry: (operation) =>
+            operation === "bootstrap"
+              ? void bootstrapCommands.invokeBootstrap()
+              : void bootstrapCommands.invokeAddAssetSpace(),
         }).open(),
       onMaterialized: () => this.refreshAndInjectAssetSpaceMaterialization(),
     });

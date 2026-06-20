@@ -122,19 +122,46 @@ export interface MaterializeResult {
 }
 
 /**
+ * Which Bootstrap / Add operation failed — used by the durable failure panel
+ * (RFC 0002 §3.10) to phrase the title + retry action.
+ */
+export type BootstrapOperation = "bootstrap" | "add";
+
+/**
+ * Classified cause of a Bootstrap / Add failure (RFC 0002 §3.10, resolves P15b).
+ * Drives the durable result panel's recovery-step copy:
+ *   - `bad-url`  — the repo URL failed validation / folder derivation.
+ *   - `network`  — the tarball pull could not reach GitHub (offline / DNS /
+ *                  timeout).
+ *   - `auth`     — GitHub rejected the token (401 / 403-not-rate-limit, or a
+ *                  private-repo 404 from an under-scoped fine-grained PAT).
+ *   - `unknown`  — anything else; the panel points at the logs.
+ */
+export type BootstrapFailureCause = "bad-url" | "network" | "auth" | "unknown";
+
+/**
  * Terminal bootstrap outcome reported to the durable result panel (RFC 0002
- * §3.3, resolves P5). Emitted via {@link BootstrapAssetSpaceCommandsDeps.showResult}
+ * §3.3 + §3.10). Emitted via {@link BootstrapAssetSpaceCommandsDeps.showResult}
  * IN ADDITION TO the existing transient toast + activity-log entry — this adds a
  * persistent, in-context "what happened + what to do next" surface, it does not
  * replace the (already firing) feedback.
  *
- * Only the three outcomes with a meaningful "next step" are reported; hard
- * failures / cancels are NOT (the toast covers them; error-recovery is P15).
+ * The three SUCCESS outcomes carry a "next step" nudge (§3.3 / P5). The `failed`
+ * outcome (§3.10 / P15) carries a classified `cause` + the failing `operation`
+ * so the panel surfaces WHY it failed and HOW to recover, routed through the
+ * same durable panel rather than a toast that fades.
  */
 export type BootstrapResultInfo =
   | { kind: "bootstrapped"; folderName: string; sha: string }
   | { kind: "fetched"; fetched: number; total: number }
-  | { kind: "already-bootstrapped" };
+  | { kind: "already-bootstrapped" }
+  | {
+      kind: "failed";
+      operation: BootstrapOperation;
+      cause: BootstrapFailureCause;
+      /** Raw error detail (already redaction-safe — a message, not a token). */
+      detail: string;
+    };
 
 export interface BootstrapAssetSpaceCommandsDeps {
   /**
@@ -199,11 +226,12 @@ export interface BootstrapAssetSpaceCommandsDeps {
   /** User-facing Notice. */
   notify: (message: string) => void;
   /**
-   * Optional durable, in-context result panel (RFC 0002 §3.3, resolves P5).
-   * Called on the three terminal bootstrap outcomes that have a meaningful
-   * "what next" ({@link BootstrapResultInfo}) IN ADDITION TO `notify` — the
-   * toast still fires; this adds a persistent surface the user can read after it
-   * fades. Optional + best-effort: the plugin wires it to open a
+   * Optional durable, in-context result panel (RFC 0002 §3.3 + §3.10). Called on
+   * the terminal bootstrap outcomes ({@link BootstrapResultInfo}) IN ADDITION TO
+   * `notify` — the toast still fires; this adds a persistent surface the user can
+   * read after it fades. Success outcomes carry a "what next" nudge (§3.3 / P5);
+   * the `failed` outcome carries the classified cause + recovery step (§3.10 /
+   * P15b). Optional + best-effort: the plugin wires it to open a
    * `BootstrapResultModal`; when omitted (or it throws) the command still
    * completes normally.
    */
@@ -290,6 +318,8 @@ export class BootstrapAssetSpaceCommands {
       this.d.validateUrl(urls.exoUrl);
     } catch (e) {
       this.d.notify(`Bootstrap: invalid URL — ${this.msg(e)}`);
+      // Durable failure panel (RFC 0002 §3.10 / P15b) — cause is known (bad URL).
+      this.emitFailure("bootstrap", e, "bad-url");
       return;
     }
 
@@ -324,6 +354,10 @@ export class BootstrapAssetSpaceCommands {
       });
     } catch (e) {
       this.d.notify(`Bootstrap failed: ${this.msg(e)}`);
+      // Durable failure panel (RFC 0002 §3.10 / P15b) — classify the pull failure
+      // (network / PAT / unknown) so the user sees the cause + recovery step,
+      // not just a transient toast.
+      this.emitFailure("bootstrap", e);
     }
     await this.runOnMaterialized();
   }
@@ -344,6 +378,7 @@ export class BootstrapAssetSpaceCommands {
       this.d.validateUrl(res.url);
     } catch (e) {
       this.d.notify(`Add AssetSpace: invalid URL — ${this.msg(e)}`);
+      this.emitFailure("add", e, "bad-url");
       return;
     }
 
@@ -366,6 +401,7 @@ export class BootstrapAssetSpaceCommands {
         `${ASSETSPACES_DIR}/${this.d.deriveFolderName(res.url)}`;
     } catch (e) {
       this.d.notify(`Add AssetSpace: could not derive folder — ${this.msg(e)}`);
+      this.emitFailure("add", e, "bad-url");
       return;
     }
 
@@ -386,6 +422,8 @@ export class BootstrapAssetSpaceCommands {
       );
     } catch (e) {
       this.d.notify(`Add AssetSpace failed: ${this.msg(e)}`);
+      // Durable failure panel (RFC 0002 §3.10 / P15b).
+      this.emitFailure("add", e);
       return;
     }
     await this.runOnMaterialized();
@@ -577,6 +615,27 @@ export class BootstrapAssetSpaceCommands {
   }
 
   /**
+   * Emit a durable FAILURE result (RFC 0002 §3.10, resolves P15b) — classifies
+   * the error (or uses an explicit `causeOverride` when the cause is already
+   * known, e.g. URL validation) and routes it through the same durable panel as
+   * success outcomes, so a pull failure surfaces "what went wrong + how to
+   * recover" persistently rather than only via the transient toast. Best-effort
+   * via {@link emitResult}.
+   */
+  private emitFailure(
+    operation: BootstrapOperation,
+    error: unknown,
+    causeOverride?: BootstrapFailureCause,
+  ): void {
+    this.emitResult({
+      kind: "failed",
+      operation,
+      cause: causeOverride ?? classifyBootstrapFailure(error),
+      detail: this.msg(error),
+    });
+  }
+
+  /**
    * Read the `.gitmodules` (path, url) entries via whichever strategy is wired —
    * the mobile {@link IRestBootstrapMount} (vault.adapter) or the desktop
    * {@link IGitSubmoduleOps} (Node fs). Throws if neither is wired.
@@ -605,4 +664,50 @@ function basename(p: string): string {
   const norm = p.replace(/\/+$/, "");
   const idx = norm.lastIndexOf("/");
   return idx < 0 ? norm : norm.slice(idx + 1);
+}
+
+/**
+ * Classify a Bootstrap / Add failure into a {@link BootstrapFailureCause}
+ * (RFC 0002 §3.10, resolves P15b) for the durable result panel. Pure (string
+ * pattern-match over the error message) so the per-cause routing is
+ * unit-testable in isolation. Order matters — auth (HTTP status) is checked
+ * before the generic patterns so an "HTTP 403" never falls through to
+ * `unknown`.
+ *
+ * The HTTP-status detection mirrors the core `isAuthError` contract
+ * (`GitHub request {METHOD} {url} → HTTP {status}: {body}`): 401, or 403 WITHOUT
+ * rate-limit markers (a 403 + "rate limit"/"abuse detection" is throttling, not
+ * auth). A private-repo 404 from an under-scoped fine-grained PAT is GitHub's
+ * existence-hiding behaviour — for a new tester far more often a token-scope
+ * problem than a typo, so it routes to the auth recovery copy (which also says
+ * "or check the URL").
+ */
+export function classifyBootstrapFailure(
+  error: unknown,
+): BootstrapFailureCause {
+  const msg = error instanceof Error ? error.message : String(error);
+  if (/HTTP 401/.test(msg)) return "auth";
+  if (
+    /HTTP 403/.test(msg) &&
+    !/rate limit/i.test(msg) &&
+    !/abuse detection/i.test(msg)
+  ) {
+    return "auth";
+  }
+  if (/HTTP 404/.test(msg)) return "auth";
+  if (
+    /invalid (github repo )?url|could not derive folder|path-traversal|extra path segments/i.test(
+      msg,
+    )
+  ) {
+    return "bad-url";
+  }
+  if (
+    /network|offline|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|timed ?out|fetch failed|getaddrinfo|request failed|net::/i.test(
+      msg,
+    )
+  ) {
+    return "network";
+  }
+  return "unknown";
 }

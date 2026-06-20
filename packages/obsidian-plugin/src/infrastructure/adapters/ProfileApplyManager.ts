@@ -415,6 +415,21 @@ export class ApplyAbortedByUser extends Error {
   }
 }
 
+/**
+ * Thrown by {@link ProfileApplyManager.undoLastApply} when there is no recorded
+ * previous profile to revert to (RFC 0002 §3.10) — no apply has switched
+ * profile yet on this device. The command-palette handler maps it to a friendly
+ * «nothing to undo» Notice; the command itself is hidden via `checkCallback`
+ * until {@link ProfileApplyManager.getUndoTargetProfileUid} is non-null, so this
+ * is only a defensive guard against a race.
+ */
+export class NoPreviousProfileError extends Error {
+  constructor(message = "No previous profile to undo to") {
+    super(message);
+    this.name = "NoPreviousProfileError";
+  }
+}
+
 export class ProfileApplyManager {
   private readonly app: App;
   private readonly lockMgr: PluginLockManager;
@@ -1046,6 +1061,62 @@ export class ProfileApplyManager {
   }
 
   /**
+   * Compute the undo-target slot to persist after a successful apply
+   * (RFC 0002 §3.10). The pre-apply active profile becomes the new undo target
+   * ONLY when this apply genuinely switched profile (`priorActiveUid` is set and
+   * differs from the target) — a re-apply of the same profile, or the very first
+   * apply (no prior active), leaves the previous undo target untouched. Returns
+   * `undefined` to mean "leave the persisted value as-is" (the store's
+   * read-modify-write preserves it).
+   */
+  private computeUndoTarget(
+    priorActiveUid: string | null,
+    targetProfileUid: string,
+    currentPrevious: string | null | undefined,
+  ): string | null | undefined {
+    if (priorActiveUid !== null && priorActiveUid !== targetProfileUid) {
+      return priorActiveUid;
+    }
+    return currentPrevious;
+  }
+
+  /**
+   * The undo target — the profile active immediately before the most recent
+   * successful apply (RFC 0002 §3.10), or `null` when none is recorded / the
+   * local data store is not wired. Synchronous (reads the in-memory cache) so
+   * the command palette can gate «Undo last profile apply» visibility on it.
+   */
+  getUndoTargetProfileUid(): string | null {
+    return this.localDataStore?.getPreviousProfileUid() ?? null;
+  }
+
+  /**
+   * «Undo last profile apply» (RFC 0002 §3.10, resolves P15). Re-applies the
+   * profile that was active immediately before the most recent apply so a wrong
+   * profile choice is one click to revert.
+   *
+   * Implemented as a normal {@link applyProfile} of the previous profile — a
+   * mount-state strict replace. This is **zero-data-loss by construction**: it
+   * goes through the SAME confirm gate + uncommitted-changes guard + (on the
+   * REST path) mount-before-unmount ordering as any apply, so it never destroys
+   * un-pushed work. It is NOT a filesystem rollback — it re-materialises the
+   * prior effective set and unmounts the rest.
+   *
+   * After the undo completes, the profile being undone FROM becomes the new undo
+   * target (the apply success-save records it), so a second invocation toggles
+   * back — a single-level undo/redo.
+   *
+   * @throws NoPreviousProfileError when no previous profile is recorded.
+   */
+  async undoLastApply(): Promise<void> {
+    const previous = this.getUndoTargetProfileUid();
+    if (previous === null) {
+      throw new NoPreviousProfileError();
+    }
+    await this.applyProfile(previous);
+  }
+
+  /**
    * Post-confirm desktop apply mutation — extracted from {@link applyProfile}
    * so {@link withApplyDeadline} can race the whole critical section against a
    * deadline (Issue #3532). Acquire lock → Phase 1 pull → Phase 2
@@ -1283,10 +1354,19 @@ export class ProfileApplyManager {
       });
 
       // ---- Persist new state + trigger RDF re-index ----
-      // Record the applied profile as the last-applied cache.
+      // Record the applied profile as the last-applied cache, and the profile
+      // active BEFORE this apply as the undo target (RFC 0002 §3.10) — only
+      // when this apply genuinely switched profile (old ≠ new); otherwise keep
+      // the prior undo target untouched.
       const persistState = deps.localDataStore.snapshot();
+      const priorActiveUid = persistState.activeProfileUid;
       await deps.localDataStore.save({
         ...persistState,
+        previousProfileUid: this.computeUndoTarget(
+          priorActiveUid,
+          targetProfileUid,
+          persistState.previousProfileUid,
+        ),
         activeProfileUid: targetProfileUid,
         _switchInProgress: false,
       });
@@ -1684,10 +1764,18 @@ export class ProfileApplyManager {
         });
       }
 
-      // Persist the applied profile as last-applied cache + clear in-progress.
+      // Persist the applied profile as last-applied cache + clear in-progress,
+      // and record the pre-apply profile as the undo target (RFC 0002 §3.10)
+      // when this apply genuinely switched profile (old ≠ new).
       const persistState = localDataStore.snapshot();
+      const priorActiveUid = persistState.activeProfileUid;
       await localDataStore.save({
         ...persistState,
+        previousProfileUid: this.computeUndoTarget(
+          priorActiveUid,
+          targetProfileUid,
+          persistState.previousProfileUid,
+        ),
         activeProfileUid: targetProfileUid,
         _switchInProgress: false,
       });

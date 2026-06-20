@@ -16,13 +16,24 @@ import {
 
 class FakeSwitchMgr {
   applyCalls: string[] = [];
+  undoCalls = 0;
   /** Error to throw from the next applyProfile call (then cleared). */
   applyThrows: Error | null = null;
+  /** Error to throw from the next undoLastApply call (then cleared). */
+  undoThrows: Error | null = null;
   async applyProfile(uid: string): Promise<void> {
     this.applyCalls.push(uid);
     if (this.applyThrows) {
       const e = this.applyThrows;
       this.applyThrows = null;
+      throw e;
+    }
+  }
+  async undoLastApply(): Promise<void> {
+    this.undoCalls++;
+    if (this.undoThrows) {
+      const e = this.undoThrows;
+      this.undoThrows = null;
       throw e;
     }
   }
@@ -65,6 +76,7 @@ function makeHarness(opts: {
   asLookups?: Array<[string, string]>;
   listError?: Error;
   activeProfileUid?: string | null;
+  previousProfileUid?: string | null;
 }): Harness {
   const switchMgr = new FakeSwitchMgr();
   const pushMgr = new FakePushMgr();
@@ -91,6 +103,7 @@ function makeHarness(opts: {
     },
     getActiveFilePath: () => opts.activeFilePath ?? null,
     getActiveProfileUid: () => opts.activeProfileUid ?? null,
+    getPreviousProfileUid: () => opts.previousProfileUid ?? null,
     notify: (m) => notices.push(m),
   };
   return {
@@ -201,6 +214,7 @@ describe("ProfileCommands.invokePushCurrentAssetSpace", () => {
       fuzzyPick: async () => null,
       getActiveFilePath: () => "assetspaces/exo/foo.md",
       getActiveProfileUid: () => null,
+      getPreviousProfileUid: () => null,
       notify: (m) => notices.push(m),
     });
 
@@ -225,6 +239,7 @@ describe("ProfileCommands.invokePushCurrentAssetSpace", () => {
       fuzzyPick: async () => null,
       getActiveFilePath: () => "assetspaces/exo/foo.md",
       getActiveProfileUid: () => null,
+      getPreviousProfileUid: () => null,
       notify: (m) => notices.push(m),
     });
 
@@ -232,6 +247,141 @@ describe("ProfileCommands.invokePushCurrentAssetSpace", () => {
     // not an unhandled promise rejection.
     await expect(cmd.invokePushCurrentAssetSpace()).resolves.not.toThrow();
     expect(notices.some((n) => /Push failed.*PAT read failed/.test(n))).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// invokePushCurrentAssetSpace — PAT push 403 after a green "Test connection"
+// (RFC 0002 §3.10 / P15c)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("ProfileCommands.invokePushCurrentAssetSpace — auth-failure (P15c)", () => {
+  it("403 push (post green Test-connection) → explains scope/expiry, not opaque", async () => {
+    const h = makeHarness({
+      profiles: [],
+      activeFilePath: "assetspaces/exo/foo.md",
+      asLookups: [["assetspaces/exo", "as-uid-1"]],
+    });
+    // Transport error shape from GitHubRestClient: a write rejected for a
+    // read-scoped (or expired) token.
+    h.pushMgr.pushThrows = new Error(
+      "GitHub request POST https://api.github.com/repos/u/exoas-x/git/commits → HTTP 403: Resource not accessible by personal access token",
+    );
+
+    await h.cmd.invokePushCurrentAssetSpace();
+
+    const notice = h.notices.find((n) => /Push failed/.test(n)) ?? "";
+    // The explanatory message names the read/write scope gap + recovery path.
+    expect(notice).toMatch(/Contents: Read and write/);
+    expect(notice).toMatch(/Settings . GitHub PAT|GitHub PAT/);
+    expect(notice).toMatch(/Test connection/);
+  });
+
+  it("401 push → same auth explanation", async () => {
+    const h = makeHarness({
+      profiles: [],
+      activeFilePath: "assetspaces/exo/foo.md",
+      asLookups: [["assetspaces/exo", "as-uid-1"]],
+    });
+    h.pushMgr.pushThrows = new Error(
+      "GitHub request POST https://api.github.com/repos/u/exoas-x/git/refs → HTTP 401: Bad credentials",
+    );
+    await h.cmd.invokePushCurrentAssetSpace();
+    expect(h.notices.some((n) => /Contents: Read and write/.test(n))).toBe(true);
+  });
+
+  it("non-auth push failure keeps the generic message (no false scope advice)", async () => {
+    const h = makeHarness({
+      profiles: [],
+      activeFilePath: "assetspaces/exo/foo.md",
+      asLookups: [["assetspaces/exo", "as-uid-1"]],
+    });
+    // 422 non-fast-forward is NOT an auth problem — must not get scope advice.
+    h.pushMgr.pushThrows = new Error(
+      "GitHub request PATCH https://api.github.com/repos/u/exoas-x/git/refs → HTTP 422: Update is not a fast forward",
+    );
+    await h.cmd.invokePushCurrentAssetSpace();
+    const notice = h.notices.find((n) => /Push failed/.test(n)) ?? "";
+    expect(notice).not.toMatch(/Contents: Read and write/);
+    expect(notice).toMatch(/fast forward/);
+  });
+
+  it("403 rate-limit is throttling, not auth — generic message", async () => {
+    const h = makeHarness({
+      profiles: [],
+      activeFilePath: "assetspaces/exo/foo.md",
+      asLookups: [["assetspaces/exo", "as-uid-1"]],
+    });
+    h.pushMgr.pushThrows = new Error(
+      "GitHub request POST https://api.github.com/... → HTTP 403: API rate limit exceeded",
+    );
+    await h.cmd.invokePushCurrentAssetSpace();
+    expect(h.notices.some((n) => /Contents: Read and write/.test(n))).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// invokeUndoLastApply (RFC 0002 §3.10 / P15a)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("ProfileCommands.invokeUndoLastApply", () => {
+  it("no previous profile → friendly notice, no undo call", async () => {
+    const h = makeHarness({ profiles: [], previousProfileUid: null });
+    await h.cmd.invokeUndoLastApply();
+    expect(h.switchMgr.undoCalls).toBe(0);
+    expect(h.notices.some((n) => /Nothing to undo/.test(n))).toBe(true);
+  });
+
+  it("previous profile set → reverts + 'Reverting to <label>…' notice", async () => {
+    const h = makeHarness({
+      profiles: [{ uid: "prof-prev", label: "Personal" }],
+      previousProfileUid: "prof-prev",
+    });
+    await h.cmd.invokeUndoLastApply();
+    expect(h.switchMgr.undoCalls).toBe(1);
+    expect(h.notices.some((n) => /Reverting to Personal/.test(n))).toBe(true);
+  });
+
+  it("undo cancelled (ApplyAbortedByUser) → 'Undo cancelled.'", async () => {
+    const h = makeHarness({
+      profiles: [{ uid: "prof-prev", label: "Personal" }],
+      previousProfileUid: "prof-prev",
+    });
+    h.switchMgr.undoThrows = new ApplyAbortedByUser();
+    await h.cmd.invokeUndoLastApply();
+    expect(h.notices.some((n) => /Undo cancelled/.test(n))).toBe(true);
+  });
+
+  it("undo TS-floor refusal → distinct notice", async () => {
+    const h = makeHarness({
+      profiles: [{ uid: "prof-prev", label: "Personal" }],
+      previousProfileUid: "prof-prev",
+    });
+    h.switchMgr.undoThrows = new TsFloorViolationError("floor brick");
+    await h.cmd.invokeUndoLastApply();
+    expect(h.notices.some((n) => /Undo refused/.test(n))).toBe(true);
+  });
+
+  it("undo uncommitted abort → actionable notice", async () => {
+    const h = makeHarness({
+      profiles: [{ uid: "prof-prev", label: "Personal" }],
+      previousProfileUid: "prof-prev",
+    });
+    h.switchMgr.undoThrows = new UncommittedChangesAbortError("dirty", [
+      { asUid: "x", submodulePath: "assetspaces/x", files: ["a.md", "b.md"] },
+    ]);
+    await h.cmd.invokeUndoLastApply();
+    expect(h.notices.some((n) => /Undo aborted.*uncommitted/.test(n))).toBe(true);
+  });
+
+  it("generic undo failure → 'Undo failed: …'", async () => {
+    const h = makeHarness({
+      profiles: [{ uid: "prof-prev", label: "Personal" }],
+      previousProfileUid: "prof-prev",
+    });
+    h.switchMgr.undoThrows = new Error("boom");
+    await h.cmd.invokeUndoLastApply();
+    expect(h.notices.some((n) => /Undo failed: boom/.test(n))).toBe(true);
   });
 });
 
@@ -417,6 +567,7 @@ function makeScopedHarness(
     },
     getActiveFilePath: () => null,
     getActiveProfileUid: () => null,
+      getPreviousProfileUid: () => null,
     notify: (m) => notices.push(m),
   });
   return { switchMgr, notices, pickCalls, cmd };
