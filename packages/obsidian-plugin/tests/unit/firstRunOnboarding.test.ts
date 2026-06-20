@@ -17,8 +17,8 @@ import {
   persistOnboardingPat,
   PAT_SECRET_KEY,
   SETUP_COMMAND_ID,
-  STARTER_REGISTRY_URL,
-  STARTER_PROFILE_QUERY,
+  REGISTRY_ASSETSPACE_URL,
+  PROFILES_ASSETSPACE_URL,
   FRESH_VAULT_MAX_NOTES,
   type OnboardingCommandRegistrar,
   type OnboardingSecretsStore,
@@ -83,15 +83,17 @@ describe("shouldShowFirstRunPanel — first-run detection (RFC 0002 §3.1)", () 
   );
 });
 
-describe("starter-path constants", () => {
-  it("pre-fills the public starter registry (no EC7 conflict)", () => {
-    expect(STARTER_REGISTRY_URL).toBe(
-      "https://github.com/kitelev/exoas-starter-registry",
+describe("EKA bootstrap-path constants (RFC 0002 §3.1 / EKA D12)", () => {
+  it("pre-fills the public EKA AssetSpace registry for step 3", () => {
+    expect(REGISTRY_ASSETSPACE_URL).toBe(
+      "https://github.com/kitelev/exoas-registry",
     );
   });
 
-  it("narrows the profile picker to the canonical starter profile", () => {
-    expect(STARTER_PROFILE_QUERY).toBe("starter");
+  it("pre-fills the public EKA profiles AssetSpace for step 4", () => {
+    expect(PROFILES_ASSETSPACE_URL).toBe(
+      "https://github.com/kitelev/exoas-profiles",
+    );
   });
 });
 

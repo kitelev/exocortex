@@ -6,10 +6,14 @@ import {
 } from "../settings/patConnectionTest";
 
 /**
- * Action callbacks for the four onboarding steps + a one-time-close hook. The
+ * Action callbacks for the five onboarding steps + a one-time-close hook. The
  * panel is a thin, decoupled UI scaffold (RFC 0002 §3.1) — it owns no business
  * logic; each step just fires the injected action, which the plugin wires to the
- * existing Save-PAT / Bootstrap / Add-AssetSpace / Apply-profile flows.
+ * existing Save-PAT / Bootstrap / Add-AssetSpace / Apply-profile flows. The
+ * materialise steps follow the EKA D12 bootstrap order: bootstrap the exo SDK
+ * floor → add the AssetSpace registry → add the profiles AssetSpace → apply a
+ * chosen profile (which resolves its `dependsOn` closure over the now-present
+ * registry descriptors).
  */
 export interface FirstRunOnboardingActions {
   /**
@@ -38,12 +42,14 @@ export interface FirstRunOnboardingActions {
    * Never rejects — a rejected token / network error resolves `{ ok: false }`.
    */
   onTestPat?: (pat: string) => Promise<PatConnectionResult>;
-  /** Step 2 — open the Bootstrap dialog (fields stay empty per EC7). */
+  /** Step 2 — open the Bootstrap dialog for the exo SDK floor (fields stay empty per EC7). */
   onSetupEngine: () => void;
-  /** Step 3 — open Add-AssetSpace pre-filled with the starter registry URL. */
-  onAddStarter: () => void;
-  /** Step 4 — open the profile picker narrowed to the `starter` profile. */
-  onApplyStarterProfile: () => void;
+  /** Step 3 — open Add-AssetSpace pre-filled with the EKA registry URL. */
+  onAddRegistry: () => void;
+  /** Step 4 — open Add-AssetSpace pre-filled with the EKA profiles URL. */
+  onAddProfiles: () => void;
+  /** Step 5 — open the profile picker (lists every profile; user picks one). */
+  onApplyProfile: () => void;
   /**
    * Fired exactly once when the panel closes (any path: button, Esc, click-out).
    * Used to persist the device-local "onboarding completed" flag so the panel
@@ -66,21 +72,23 @@ interface StepSpec {
  * (RFC 0002 §3.1, resolves P1 first-run-has-zero-orientation + P2
  * sequence-not-discoverable).
  *
- * Renders a 4-step checklist that drives the canonical **starter** path:
+ * Renders a 5-step checklist that drives the EKA D12 bootstrap path:
  *   1. Add your GitHub token (OPTIONAL) → saves the PAT device-local FIRST so
  *      the later steps can clone/pull private `exoas-*` repos (cd9444bd)
- *   2. Set up the engine        → Bootstrap dialog (3.3)
- *   3. Add the starter content  → Add-AssetSpace pre-filled with the registry
- *   4. Apply the starter profile → profile picker on `starter` (3.4)
+ *   2. Set up the engine          → Bootstrap the exo SDK floor (3.3)
+ *   3. Add the AssetSpace registry → Add-AssetSpace pre-filled with exoas-registry
+ *   4. Add the profiles AssetSpace → Add-AssetSpace pre-filled with exoas-profiles
+ *   5. Apply a profile            → profile picker (lists every profile; pick one)
  *
  * ## Why the token step is FIRST (cd9444bd)
  *
  * Bootstrap / Add-AssetSpace / Apply-profile can pull **private** `exoas-*`
  * repos, which need a GitHub PAT to clone/pull. The materialise paths read the
  * token fresh at command-execution time (Issue #3382), so a token saved in
- * step 1 is in place by the time steps 2-4 run. The step is **optional**: a
+ * step 1 is in place by the time steps 2-5 run. The step is **optional**: a
  * public-only tester skips it (leaves it blank, moves to step 2) and the
- * materialise steps pull anonymously — the public flow is never blocked.
+ * materialise steps pull anonymously (the public registry + profiles, and a
+ * fully-public profile such as `$$core`) — the public flow is never blocked.
  *
  * The step sub-dialogs stack ON TOP of this panel (Obsidian modal stacking), so
  * the panel stays open underneath and the user can walk the sequence without
@@ -90,7 +98,7 @@ interface StepSpec {
  *
  * ## Accessibility (P16, §3.11)
  *
- * - Steps are a semantic `<ol>` so assistive tech announces "list, 4 items".
+ * - Steps are a semantic `<ol>` so assistive tech announces "list, 5 items".
  * - Each action is a native `<button>` (keyboard-navigable + Enter/Space
  *   activation for free) with an explicit `aria-label`; the token field is a
  *   native `<input>` with an `aria-label`.
@@ -150,22 +158,34 @@ export class FirstRunOnboardingModal extends Modal {
       },
       {
         marker: "Step 3",
-        title: "Add the starter content",
+        title: "Add the AssetSpace registry",
         description:
-          "Pull the public starter registry — a curated set of AssetSpaces that gives " +
-          "you a ready-to-use Areas → Projects → Tasks structure. The recommended URL is " +
-          "pre-filled for you; just confirm.",
-        actionLabel: "Add the starter content",
-        action: this.actions.onAddStarter,
+          "Pull the public registry — the catalog of every AssetSpace and the " +
+          "knowledge profiles that group them. The recommended URL is pre-filled; " +
+          "just confirm. It's public, so no token is needed for this step.",
+        actionLabel: "Add the AssetSpace registry",
+        action: this.actions.onAddRegistry,
       },
       {
         marker: "Step 4",
-        title: "Apply the starter profile",
+        title: "Add the profiles AssetSpace",
         description:
-          "Materialise the «starter» profile — it mounts the AssetSpaces the starter " +
-          "content needs. The picker opens narrowed to «starter»; select it to finish.",
-        actionLabel: "Apply the starter profile",
-        action: this.actions.onApplyStarterProfile,
+          "Pull the public profiles AssetSpace — the knowledge profiles you'll pick " +
+          "from in the next step. The recommended URL is pre-filled; just confirm. " +
+          "Public, so no token is needed here either.",
+        actionLabel: "Add the profiles AssetSpace",
+        action: this.actions.onAddProfiles,
+      },
+      {
+        marker: "Step 5",
+        title: "Apply a profile",
+        description:
+          "Pick a knowledge profile to materialise — it mounts the AssetSpaces that " +
+          "profile needs (resolving them through the registry you just added). Your " +
+          "own private profile needs the token from step 1; the public «$$core» " +
+          "profile (exo only) works with no token.",
+        actionLabel: "Apply a profile",
+        action: this.actions.onApplyProfile,
       },
     ];
 
@@ -326,7 +346,7 @@ export class FirstRunOnboardingModal extends Modal {
     }
   }
 
-  /** Render a generic single-action step (steps 2-4). */
+  /** Render a generic single-action step (steps 2-5). */
   private renderActionStep(list: HTMLElement, step: StepSpec): void {
     const item = list.createEl("li", { cls: "exocortex-onboarding-step" });
 

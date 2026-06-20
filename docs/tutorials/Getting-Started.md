@@ -105,18 +105,21 @@ The plugin needs ontology files in your vault to enable layouts, action buttons,
 > - A clean bootstrap is **exo-only** (floor = `{exo}`) — the misleading second «exocmd» field was removed. The `exocmd` UI-command library (which generates the action buttons) is added afterwards: either explicitly via **"Add a knowledge pack"** (Step 2b below) or transitively when you **Apply** a profile.
 > - The URL above is a placeholder — you can point the field at your own fork.
 
-### Step 2b: Add the starter registry, then apply the starter profile (recommended)
+### Step 2b: Add the registry + profiles, then apply a profile (recommended)
 
-The fastest way to get a complete, working Areas → Projects → Tasks + Daily vault — **without** loading anyone's personal notes — is the **3-step onboarding** built on the **starter registry**:
+The fastest way to get a complete, working Areas → Projects → Tasks + Daily vault is the **EKA bootstrap flow** — add the public AssetSpace **registry** and **profiles**, then pick a profile to mount. (The first-run **"Exocortex: Setup (getting started)"** wizard walks you through these same steps with the URLs pre-filled.)
 
-1. **Set up the engine** → `exoas-exo` (Step 2 above; `exocmd` optional, since the profile pulls it).
-2. **Add the registry**: **Cmd/Ctrl + P → "Exocortex: Add a knowledge pack"** → enter
-   `https://github.com/kitelev/exoas-starter-registry`. This is a small public registry — it declares the starter AssetSpaces and a `starter` knowledge profile; it does **not** pull them yet.
-3. **Apply the profile**: **Cmd/Ctrl + P → "Exocortex: Apply profile"** → choose **`starter`**. The plugin materializes exactly the starter set — 7 AssetSpaces: `exo`, `exocmd`, `ems`, `ems-commands`, `period`, `period-commands`, `person` — and nothing else (no `shared-identities`, no personal data).
+1. **Add your token (optional)** → only needed if you'll mount **private** AssetSpaces. **Cmd/Ctrl + P → "Exocortex: Settings"** (or the wizard's first step) to save a GitHub PAT. Skip it for a fully-public vault.
+2. **Set up the engine** → `exoas-exo` (Step 2 above; the engine floor).
+3. **Add the AssetSpace registry**: **Cmd/Ctrl + P → "Exocortex: Add a knowledge pack"** → enter
+   `https://github.com/kitelev/exoas-registry`. This public registry declares every AssetSpace and its `dependsOn` graph — so a later **Apply profile** can resolve any profile's full dependency closure. It does **not** pull those AssetSpaces yet.
+4. **Add the profiles AssetSpace**: **"Exocortex: Add a knowledge pack"** → enter
+   `https://github.com/kitelev/exoas-profiles`. This public AssetSpace declares the knowledge profiles you'll pick from in the next step.
+5. **Apply a profile**: **Cmd/Ctrl + P → "Exocortex: Apply profile"** → choose one. The plugin resolves that profile's `exo__AssetSpace_dependsOn` closure against the registry you added and materializes exactly its effective set. A fully-public choice is **`$$core`** (mounts only `exo`, no token needed); a personal profile (e.g. `$$kitelev-my`) needs the token from step 1 to pull its private AssetSpaces.
 
-> **Why this path**: the `starter` profile mounts only what a fresh vault needs (floor = `{exo}`), so first-run indexing is fast and your vault stays free of unrelated assets. You can still add more AssetSpaces later via **"Add a knowledge pack"** — dependencies are **not** pulled automatically.
+> **Why add the registry first**: a single **Add a knowledge pack** pulls only that one AssetSpace — it does **not** follow `dependsOn` transitively. **Apply profile** resolves the closure only over descriptors already in your vault, so the registry (all descriptors) and profiles must be present before you apply. This is the standard EKA bootstrap order.
 
-> **⚠️ Git-backed vault? Commit before the first Apply.** If your vault is a git repository, Bootstrap + Add-AssetSpace leave the pulled `assetspaces/` as **untracked** files, and **Apply profile** refuses to unmount an AssetSpace with uncommitted changes (it never silently destroys un-pushed work) — you'll see `Apply aborted — N uncommitted file(s) …`. Before step 3, commit the vault once from a terminal at the vault root:
+> **⚠️ Git-backed vault? Commit before the first Apply.** If your vault is a git repository, Bootstrap + Add-AssetSpace leave the pulled `assetspaces/` as **untracked** files, and **Apply profile** refuses to unmount an AssetSpace with uncommitted changes (it never silently destroys un-pushed work) — you'll see `Apply aborted — N uncommitted file(s) …`. Before step 5, commit the vault once from a terminal at the vault root:
 >
 > ```bash
 > # First add a .gitignore so your PAT (data.local.json) is never committed.
@@ -126,7 +129,7 @@ The fastest way to get a complete, working Areas → Projects → Tasks + Daily 
 > git add -A && git commit -m "vault setup"
 > ```
 >
-> Then run **"Exocortex: Apply profile"**. (The starter profile is all-public, so no PAT is needed — but gitignoring `.obsidian/` is still the right habit for when you add a private profile later.) See [Profile → Apply on a git-backed vault](../explanation/profile.md) for details.
+> Then run **"Exocortex: Apply profile"**. (The `$$core` profile is all-public, so no PAT is needed — but gitignoring `.obsidian/` is still the right habit for when you apply a private profile later.) See [Profile → Apply on a git-backed vault](../explanation/profile.md) for details.
 
 ### Step 3: Verify Installation
 

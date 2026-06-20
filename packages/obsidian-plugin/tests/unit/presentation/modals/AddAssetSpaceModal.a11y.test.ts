@@ -143,11 +143,11 @@ describe("AddAssetSpaceModal — accessibility (P16, §3.11)", () => {
     expect(document.activeElement).toBe(urlInput());
   });
 
-  it("focus lands on the field even when pre-filled (onboarding step 3)", () => {
-    open("https://github.com/kitelev/exoas-starter-registry");
+  it("focus lands on the field even when pre-filled (onboarding steps 3-4)", () => {
+    open("https://github.com/kitelev/exoas-registry");
     expect(document.activeElement).toBe(urlInput());
     expect(urlInput().value).toBe(
-      "https://github.com/kitelev/exoas-starter-registry",
+      "https://github.com/kitelev/exoas-registry",
     );
   });
 
