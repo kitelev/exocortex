@@ -262,6 +262,99 @@ describe("ActionsRenderer", () => {
     });
   });
 
+  describe("Error surfacing (#3628)", () => {
+    it("surfaces an error (not a silent no-op) when no executor is wired", () => {
+      const onError = jest.fn();
+      const actions = createMockActions(); // has groundingSparql, but no onExecuteCommand
+
+      render(
+        <ActionsRenderer actions={actions} {...defaultProps} onError={onError} />,
+      );
+
+      fireEvent.click(screen.getByRole("button"));
+
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(onError.mock.calls[0][0]).toContain("Start");
+    });
+
+    it("surfaces an error when the command has no action configured", () => {
+      const onError = jest.fn();
+      const onExecuteCommand = jest.fn();
+      const actions = createMockActions({
+        commands: [
+          {
+            uid: "cmd-1",
+            label: "Start",
+            icon: "play-circle",
+            groundingSparql: undefined,
+          },
+        ],
+      });
+
+      render(
+        <ActionsRenderer
+          actions={actions}
+          {...defaultProps}
+          onExecuteCommand={onExecuteCommand}
+          onError={onError}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button"));
+
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(onExecuteCommand).not.toHaveBeenCalled();
+    });
+
+    it("surfaces execution errors instead of swallowing them", async () => {
+      const onError = jest.fn();
+      const onExecuteCommand = jest
+        .fn<() => Promise<void>>()
+        .mockRejectedValue(new Error("boom"));
+      const actions = createMockActions(); // has groundingSparql
+
+      render(
+        <ActionsRenderer
+          actions={actions}
+          {...defaultProps}
+          onExecuteCommand={onExecuteCommand}
+          onError={onError}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button"));
+
+      await waitFor(() => {
+        expect(onError).toHaveBeenCalledTimes(1);
+      });
+      expect(onError.mock.calls[0][0]).toContain("boom");
+    });
+
+    it("does not surface an error on a successful execution", async () => {
+      const onError = jest.fn();
+      const onExecuteCommand = jest
+        .fn<() => Promise<void>>()
+        .mockResolvedValue(undefined);
+      const actions = createMockActions();
+
+      render(
+        <ActionsRenderer
+          actions={actions}
+          {...defaultProps}
+          onExecuteCommand={onExecuteCommand}
+          onError={onError}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button"));
+
+      await waitFor(() => {
+        expect(onExecuteCommand).toHaveBeenCalled();
+      });
+      expect(onError).not.toHaveBeenCalled();
+    });
+  });
+
   describe("Disabled State", () => {
     it("should disable buttons when disabled prop is true", () => {
       const actions = createMockActions();

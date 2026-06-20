@@ -89,6 +89,12 @@ export interface TableLayoutRendererProps {
    * resolved label instead of the raw target path.
    */
   getAssetLabel?: (path: string) => string | null;
+
+  /**
+   * Callback to surface a user-facing error from an action button (e.g. a Notice
+   * toast) instead of failing silently (#3628).
+   */
+  onError?: (message: string) => void;
 }
 
 /**
@@ -180,6 +186,7 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
   onCheckPrecondition,
   onExecuteCommand,
   getAssetLabel,
+  onError,
 }) => {
   const options = { ...defaultOptions, ...propOptions };
   const columns = layout.columns || [];
@@ -354,6 +361,7 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
           assetPath={row.path}
           onCheckPrecondition={onCheckPrecondition}
           onExecuteCommand={onExecuteCommand}
+          onError={onError}
         />
       </td>
     );

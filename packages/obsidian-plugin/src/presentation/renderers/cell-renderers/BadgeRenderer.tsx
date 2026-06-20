@@ -5,13 +5,32 @@ import React from "react";
 import type { CellRendererProps } from "./types";
 
 /**
- * Extract label from wikilink or return value as-is.
+ * Extract a display label from a wikilink (or return the value as-is).
+ *
+ * Mirrors LinkRenderer: an explicit alias wins; otherwise, when getAssetLabel
+ * is provided, the alias-less target is resolved to its exo:Asset_label so a
+ * badge bound to a wikilink/IRI property shows the human label instead of the
+ * raw UUID/IRI (#3629).
  */
-function extractLabel(value: string): string {
+function extractLabel(
+  value: string,
+  getAssetLabel?: (path: string) => string | null,
+): string {
   // Match [[target]] or [[target|alias]]
   const match = value.match(/^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
   if (match) {
-    return match[2]?.trim() || match[1].trim();
+    const target = match[1].trim();
+    const alias = match[2]?.trim();
+    if (alias) {
+      return alias;
+    }
+    if (getAssetLabel) {
+      const resolved = getAssetLabel(target);
+      if (resolved) {
+        return resolved;
+      }
+    }
+    return target;
   }
   return value;
 }
@@ -48,13 +67,14 @@ function getBadgeColorClass(value: string): string {
 export const BadgeRenderer: React.FC<CellRendererProps> = ({
   value,
   onLinkClick,
+  getAssetLabel,
 }) => {
   if (value == null || value === "") {
     return <span className="exo-cell-badge exo-cell-badge-empty">-</span>;
   }
 
   const stringValue = String(value);
-  const label = extractLabel(stringValue);
+  const label = extractLabel(stringValue, getAssetLabel);
   const colorClass = getBadgeColorClass(label);
 
   // Check if this is a wikilink - if so, make it clickable
