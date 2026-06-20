@@ -457,7 +457,7 @@ These are the most common problems encountered by first-time users. Start here b
 **Fix**:
 
 1. Open Settings → Community plugins and confirm Exocortex is **toggled on** (not just installed).
-2. Run **Cmd/Ctrl+P → "Exocortex: Open logs"** to view `exocortex-logs.txt` and its real location. The file lives in the **plugin's data folder** (`<vault>/.obsidian/plugins/exocortex/exocortex-logs.txt`), _not_ the vault root — the command shows the exact path and content so you never have to hunt for it. Search for lines starting with `[ERROR]` or `Failed` to see why initialization failed. (By default only warnings and errors are written to the file; for a live stream of everything the plugin is doing, run **"Exocortex: Open activity log"**.)
+2. Run **Cmd/Ctrl+P → "Exocortex: Open log file (saved)"** to view `exocortex-logs.txt` and its real location. The file lives in the **plugin's data folder** (`<vault>/.obsidian/plugins/exocortex/exocortex-logs.txt`), _not_ the vault root — the command shows the exact path and content so you never have to hunt for it. Search for lines starting with `[ERROR]` or `Failed` to see why initialization failed. (By default only warnings and errors are written to the file; for a live stream of everything the plugin is doing, run **"Exocortex: Open activity log (live)"**.)
 3. Open Obsidian's developer console: **Ctrl/Cmd + Shift + I → Console**. Exocortex logs initialization there as well.
 4. If the log mentions schema or RDF errors, a bootstrapped AssetSpace file may be corrupted — re-run **Cmd/Ctrl+P → "Exocortex: Set up the engine"** (or **"Exocortex: Add a knowledge pack"** for a single space) to re-download the AssetSpace.
 5. As a last resort, disable the plugin, restart Obsidian, re-enable it.
@@ -495,7 +495,7 @@ These are the most common problems encountered by first-time users. Start here b
 
 ### General diagnostic: `exocortex-logs.txt`
 
-Whenever something feels wrong, the **first place to look** is `exocortex-logs.txt`. The quickest way to it is **Cmd/Ctrl+P → "Exocortex: Open logs"** — that opens the file's content _and_ shows its exact path. The file is written to the **plugin's data folder**, not the vault root:
+Whenever something feels wrong, the **first place to look** is `exocortex-logs.txt`. The quickest way to it is **Cmd/Ctrl+P → "Exocortex: Open log file (saved)"** — that opens the file's content _and_ shows its exact path. The file is written to the **plugin's data folder**, not the vault root:
 
 ```
 <vault>/.obsidian/plugins/exocortex/exocortex-logs.txt
@@ -508,7 +508,7 @@ Whenever something feels wrong, the **first place to look** is `exocortex-logs.t
 - IRI resolution results
 - Failed grounding calls
 
-By default only **warnings and errors** are written to the file. To capture everything, enable the **Info** row under **Settings → Exocortex → Log channels**. For a live, no-setup stream of plugin activity, run **"Exocortex: Open activity log"** instead.
+By default only **warnings and errors** are written to the file. To capture everything, enable the **Info** row under **Settings → Exocortex → Log channels**. For a live, no-setup stream of plugin activity, run **"Exocortex: Open activity log (live)"** instead.
 
 Quick grep to find failures (run from the folder above, or pass the full path):
 
@@ -596,7 +596,7 @@ For the full diagnostic walkthrough see [Troubleshooting](#troubleshooting) abov
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Layout doesn't appear     | Switch to Reading Mode (Ctrl/Cmd + E)                                                                                                                                    |
 | No action buttons visible | Verify the AssetSpaces are bootstrapped (`exocmd/` folder exists in vault); if the folder is present, fully quit and reopen Obsidian (cold restart) to force re-indexing |
-| Action buttons don't work | Run **Exocortex: Open logs** (file lives in the plugin data folder, not vault root); check console (Ctrl/Cmd + Shift + I)                                                |
+| Action buttons don't work | Run **Exocortex: Open log file (saved)** (file lives in the plugin data folder, not vault root); check console (Ctrl/Cmd + Shift + I)                                    |
 | Wiki-links grey           | Reload app without saving (Cmd/Ctrl + P); re-run **Exocortex: Set up the engine** if folders missing                                                                     |
 | Daily tasks not showing   | Check task has `ems__Effort_plannedStartTimestamp` matching daily note's `pn__DailyNote_day`                                                                             |
 | Literal `$input` written  | Update the plugin via BRAT — current versions substitute `$input`/`$value` in `property_set` groundings                                                                  |

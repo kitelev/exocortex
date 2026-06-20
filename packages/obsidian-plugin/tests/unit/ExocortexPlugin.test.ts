@@ -340,6 +340,46 @@ describe("ExocortexPlugin", () => {
       const names = nameById(addCommandSpy);
       expect(names.get("open-logs")).toBe("Open log file (saved)");
     });
+
+    // Guards the production cross-nav wiring: both commands must route through the
+    // helper that opens the modal WITH the reciprocal cross-nav hook. A regression
+    // that inlines `new ActivityLogModal(this.app, this.activityLog)` in the
+    // callback (dropping the hook) compiles fine — the param is optional — but
+    // would no longer call the helper, so this test fails.
+    const callbackById = (spy: jest.SpyInstance, id: string): (() => void) | undefined =>
+      spy.mock.calls
+        .map((c) => c[0] as { id?: string; callback?: () => void })
+        .find((cmd) => cmd.id === id)?.callback;
+
+    it("`open-activity-log` callback routes through the cross-nav-wired helper", async () => {
+      const addCommandSpy = jest.spyOn(plugin, "addCommand");
+      const helperSpy = jest
+        .spyOn(
+          plugin as unknown as { openActivityLogModal: () => void },
+          "openActivityLogModal",
+        )
+        .mockImplementation(() => {});
+      await plugin.onload();
+      const callback = callbackById(addCommandSpy, "open-activity-log");
+      expect(callback).toBeDefined();
+      callback!();
+      expect(helperSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("`open-logs` callback routes through the cross-nav-wired helper", async () => {
+      const addCommandSpy = jest.spyOn(plugin, "addCommand");
+      const helperSpy = jest
+        .spyOn(
+          plugin as unknown as { openLogFileModal: () => void },
+          "openLogFileModal",
+        )
+        .mockImplementation(() => {});
+      await plugin.onload();
+      const callback = callbackById(addCommandSpy, "open-logs");
+      expect(callback).toBeDefined();
+      callback!();
+      expect(helperSpy).toHaveBeenCalledTimes(1);
+    });
   });
 
   // Issue #3554 — profile apply → next Obsidian load hangs at "Loading plugins…".
