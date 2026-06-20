@@ -1,5 +1,9 @@
 import { App, Modal } from "obsidian";
 import { renderPatSetupHelper } from "../settings/patSetupHelper";
+import {
+  describePatConnection,
+  type PatConnectionResult,
+} from "../settings/patConnectionTest";
 
 /**
  * Action callbacks for the four onboarding steps + a one-time-close hook. The
@@ -24,6 +28,16 @@ export interface FirstRunOnboardingActions {
    * hide the Paste button (e.g. in a context with no clipboard).
    */
   onPastePat?: () => Promise<string | null>;
+  /**
+   * Step 1 (PAT, optional) — verify the entered token reaches GitHub WITHOUT
+   * saving it, reusing the same validate logic as the Settings "Test
+   * connection" button (RFC 0002). Called with the raw field value; the wiring
+   * trims it, builds a `GitHubRestClient`, and resolves a structured
+   * {@link PatConnectionResult} the panel renders as an inline status. Omit to
+   * hide the "Test connection" button (e.g. a context with no GitHub client).
+   * Never rejects — a rejected token / network error resolves `{ ok: false }`.
+   */
+  onTestPat?: (pat: string) => Promise<PatConnectionResult>;
   /** Step 2 — open the Bootstrap dialog (fields stay empty per EC7). */
   onSetupEngine: () => void;
   /** Step 3 — open Add-AssetSpace pre-filled with the starter registry URL. */
@@ -258,6 +272,54 @@ export class FirstRunOnboardingModal extends Modal {
         /* save failure is surfaced by the wiring (notifier); never throw here */
       });
     });
+
+    // Test connection (RFC 0002) — verify the token reaches GitHub BEFORE the
+    // user relies on it, reusing the Settings validate logic (onTestPat). Only
+    // rendered when wired (parity with the optional Paste affordance). The
+    // result lands in an inline aria-live status so the outcome is announced
+    // without a transient toast.
+    if (this.actions.onTestPat) {
+      const onTestPat = this.actions.onTestPat;
+
+      const testBtn = row.createEl("button", {
+        cls: "exocortex-onboarding-pat-test",
+        text: "Test connection",
+      });
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Step 1:" a11y prefix (matches the step-numbered aria-labels above) + "GitHub" proper noun
+      testBtn.setAttribute("aria-label", "Step 1: Test the GitHub token connection");
+
+      // Status line: role=status + aria-live=polite so assistive tech announces
+      // the outcome; the textual message (and is-valid / is-invalid colour
+      // class) carries valid/invalid + reason — never a glyph alone (P16).
+      const status = item.createEl("p", {
+        cls: "exocortex-onboarding-pat-status",
+      });
+      status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite");
+
+      testBtn.addEventListener("click", () => {
+        void (async () => {
+          testBtn.disabled = true;
+          status.classList.remove("is-valid", "is-invalid");
+          status.classList.add("is-pending");
+          status.textContent = "Testing the connection…";
+          try {
+            const result = await onTestPat(input.value);
+            status.classList.remove("is-pending");
+            status.classList.add(result.ok ? "is-valid" : "is-invalid");
+            status.textContent = describePatConnection(result);
+          } catch {
+            // onTestPat is contracted never to reject (it returns a failure
+            // result), but guard so a wiring bug never throws into the handler.
+            status.classList.remove("is-pending");
+            status.classList.add("is-invalid");
+            status.textContent = "Test connection failed: unexpected error.";
+          } finally {
+            testBtn.disabled = false;
+          }
+        })();
+      });
+    }
   }
 
   /** Render a generic single-action step (steps 2-4). */

@@ -356,3 +356,114 @@ describe("FirstRunOnboardingModal — token-first step (cd9444bd, RFC 0002 §3.1
     expect(patInput()).not.toBeNull();
   });
 });
+
+describe("FirstRunOnboardingModal — Test connection (RFC 0002)", () => {
+  function patStatus(): HTMLElement | null {
+    return document.querySelector("p.exocortex-onboarding-pat-status");
+  }
+
+  it("renders a Test connection button only when onTestPat is wired", () => {
+    const { actions } = makeActions({
+      onTestPat: async () => ({ ok: false, reason: "x" }),
+    });
+    new FirstRunOnboardingModal(fakeApp, actions).open();
+    expect(findButton("Test connection")).toBeDefined();
+    expect(patStatus()).not.toBeNull();
+  });
+
+  it("hides the Test connection button when no validator is wired", () => {
+    const { actions } = makeActions({ onTestPat: undefined });
+    new FirstRunOnboardingModal(fakeApp, actions).open();
+    expect(findButton("Test connection")).toBeUndefined();
+    expect(patStatus()).toBeNull();
+  });
+
+  it("the Test connection button is keyboard-accessible with an aria-label (P16)", () => {
+    const { actions } = makeActions({
+      onTestPat: async () => ({ ok: false, reason: "x" }),
+    });
+    new FirstRunOnboardingModal(fakeApp, actions).open();
+    const btn = findButton("Test connection")!;
+    expect(btn.tagName).toBe("BUTTON");
+    expect(btn.getAttribute("aria-label")).toMatch(/test.*connection/i);
+  });
+
+  it("the status line is an aria-live region (assistive tech announces the outcome)", () => {
+    const { actions } = makeActions({
+      onTestPat: async () => ({ ok: false, reason: "x" }),
+    });
+    new FirstRunOnboardingModal(fakeApp, actions).open();
+    const status = patStatus()!;
+    expect(status.getAttribute("role")).toBe("status");
+    expect(status.getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("validates the CURRENT input value (not a saved token) and shows a success status", async () => {
+    const seen: string[] = [];
+    const { actions } = makeActions({
+      onTestPat: async (pat: string) => {
+        seen.push(pat);
+        return {
+          ok: true,
+          remaining: 4321,
+          resetAt: new Date("2026-06-20T10:00:00.000Z"),
+          repos: ["kitelev/exoas-exo"],
+        };
+      },
+    });
+    new FirstRunOnboardingModal(fakeApp, actions).open();
+
+    patInput().value = "github_pat_typed_but_not_saved";
+    findButton("Test connection")!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(seen).toEqual(["github_pat_typed_but_not_saved"]);
+    const status = patStatus()!;
+    expect(status.classList.contains("is-valid")).toBe(true);
+    expect(status.classList.contains("is-invalid")).toBe(false);
+    // Reuses describePatConnection → the same wording as the Settings notice.
+    expect(status.textContent).toContain("GitHub OK");
+    expect(status.textContent).toContain("4321 requests remaining");
+    expect(status.textContent).toContain("kitelev/exoas-exo");
+  });
+
+  it("shows an invalid status with the reason when the token is rejected", async () => {
+    const { actions } = makeActions({
+      onTestPat: async () => ({
+        ok: false,
+        reason: "HTTP 401: Bad credentials",
+      }),
+    });
+    new FirstRunOnboardingModal(fakeApp, actions).open();
+
+    patInput().value = "github_pat_revoked";
+    findButton("Test connection")!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const status = patStatus()!;
+    expect(status.classList.contains("is-invalid")).toBe(true);
+    expect(status.classList.contains("is-valid")).toBe(false);
+    expect(status.textContent).toContain("Test connection failed");
+    expect(status.textContent).toContain("HTTP 401");
+  });
+
+  it("re-enables the button and surfaces an invalid status if onTestPat unexpectedly throws", async () => {
+    const { actions } = makeActions({
+      onTestPat: async () => {
+        throw new Error("wiring bug");
+      },
+    });
+    new FirstRunOnboardingModal(fakeApp, actions).open();
+
+    const btn = findButton("Test connection")!;
+    patInput().value = "github_pat_x";
+    expect(() => btn.click()).not.toThrow();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(btn.disabled).toBe(false);
+    expect(patStatus()!.classList.contains("is-invalid")).toBe(true);
+  });
+});

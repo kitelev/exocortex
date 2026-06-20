@@ -150,6 +150,7 @@ import { BootstrapResultModal } from "./presentation/modals/BootstrapResultModal
 import { AddAssetSpaceModal } from "./presentation/modals/AddAssetSpaceModal";
 import { SimpleConfirmModal } from "./presentation/modals/SimpleConfirmModal";
 import { FirstRunOnboardingModal } from "./presentation/modals/FirstRunOnboardingModal";
+import { testPatConnection } from "./presentation/settings/patConnectionTest";
 import {
   registerOnboardingCommands,
   shouldShowFirstRunPanel,
@@ -3470,6 +3471,16 @@ export default class ExocortexPlugin extends Plugin {
           const outcome = resolvePastedSecret(raw);
           return outcome.kind === "filled" ? outcome.value : null;
         },
+        // Step 1 "Test connection" — verify the entered token reaches GitHub
+        // BEFORE saving/relying on it, reusing the Settings validate logic
+        // (single source). Works on desktop AND mobile (GitHubRestClient is a
+        // requestUrl REST call, not Node fs/git). Total — resolves a
+        // {ok:false} result on a rejected token / network error, never throws.
+        onTestPat: (pat: string) =>
+          testPatConnection(
+            pat,
+            (token) => new GitHubRestClient({ pat: token, app: this.app }),
+          ),
         onSetupEngine: () => {
           if (bootstrapCommands === null) {
             unavailable("Bootstrap");
