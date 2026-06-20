@@ -7,7 +7,7 @@ import { Triple, Subject, Object as RDFObject } from "../domain/models/rdf/Tripl
  * Synth-A IRI form: `obsidian://vault/<uuid>.md` with NO subdirectory segment.
  *
  * Emitted by `NoteToRDFConverter.synthesizeWikilinkTargetIRI` (Issue #3219)
- * when an `--also`-loaded vault's converter encounters a UUID-form wikilink
+ * when a secondary-loaded vault's converter encounters a UUID-form wikilink
  * whose target file is not present in that vault. The synthesized IRI is the
  * bare basename, missing the canonical `assetspaces/<sub>/` path prefix that
  * the target's owning vault uses for the same file.
@@ -32,7 +32,7 @@ export interface CanonicalizationResult {
 /**
  * Issue #3286 — post-load IRI canonicalization for cross-vault RDF stores.
  *
- * In a multi-vault load (`--also`-style federation), the same logical UID can
+ * In a multi-vault (federated) load, the same logical UID can
  * surface in two distinct IRI forms:
  *   - Full-path: `obsidian://vault/assetspaces/<sub>/<uuid>.md` — emitted by
  *     the vault that owns the file.

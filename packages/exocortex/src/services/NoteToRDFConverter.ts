@@ -145,10 +145,10 @@ export class NoteToRDFConverter {
 
   /**
    * Issue #3219 — when the vault adapter is rooted at a subdirectory (e.g.
-   * `--also <root>/assetspaces/<sub>`), file.path is relative to the adapter
+   * `<root>/assetspaces/<sub>`), file.path is relative to the adapter
    * root so subject IRIs lose the `assetspaces/<sub>/` component. The mount
    * prefix is prepended to every adapter-derived path before IRI conversion
-   * so subjects are consistent with primary-vault subject IRIs.
+   * so subjects are consistent with full-vault subject IRIs.
    *
    * Normalised: no leading slash, single trailing slash when non-empty, so
    * `${prefix}${path}` stays a valid relative vault path.

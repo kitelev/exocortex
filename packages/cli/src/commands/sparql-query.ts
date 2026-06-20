@@ -10,7 +10,6 @@ import {
   AlgebraSerializer,
   ExoQLQueryExecutor,
   NoteToRDFConverter,
-  IRICanonicalizer,
   Triple,
   UpdateExecutor,
   type UpdateResult,
@@ -28,7 +27,6 @@ import { VaultNotFoundError, InvalidArgumentsError, QueryTimeoutError } from "..
 import { ResponseBuilder, ErrorCode, type QueryResult, type ConstructResult } from "../responses/index.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { CacheManager } from "../cache/CacheManager.js";
-import { CombinedCacheManager } from "../cache/CombinedCacheManager.js";
 import { QueryResultCache } from "../cache/QueryResultCache.js";
 import { ProgressIndicator } from "../utils/ProgressIndicator.js";
 import { QueryAnalyzer } from "../utils/QueryAnalyzer.js";
@@ -37,16 +35,9 @@ import { SPARQLErrorEnhancer } from "../utils/SPARQLErrorEnhancer.js";
 import { NTriplesFormatter } from "../utils/NTriplesFormatter.js";
 import { scanVaultNamespaces } from "../utils/VaultNamespaceScanner.js";
 import { injectExocortexPrefixes, transformShorthandNotation, filterOntologyPrefixes } from "../utils/QueryPrefixInjector.js";
-import { deriveSubjectIriPrefix } from "../utils/AlsoVaultMountPrefix.js";
-import { resolveCrossVaultInstanceClassWikilinks } from "../utils/crossVaultInstanceClassResolver.js";
-import {
-  buildVaultUidIndex,
-  isCanonicalizationEnabled,
-} from "../cache/buildVaultUidIndex.js";
 
 export interface SparqlQueryOptions {
   vault: string;
-  also?: string[];
   format: "table" | "json" | "csv" | "ntriples";
   output?: OutputFormat;
   explain?: boolean;
@@ -237,20 +228,11 @@ export async function executeWithTimeout<T>(
   return Promise.race([queryPromise, timeoutPromise]);
 }
 
-/**
- * Commander.js accumulator for repeatable --also flag.
- * Each --also <path> adds a vault path to the array.
- */
-function collectAlso(value: string, previous: string[]): string[] {
-  return previous.concat([value]);
-}
-
 export function sparqlQueryCommand(): Command {
   return new Command("query")
     .description("Execute SPARQL query against Obsidian vault")
     .argument("[query]", "SPARQL query string or path to .sparql file (optional if --template is used)")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
-    .option("--also <path>", "Additional vault to include in query (repeatable)", collectAlso, [])
     .option("--format <type>", "Output format: table|json|csv|ntriples", "table")
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
     .option("--timeout <duration>", "Query timeout (e.g., 30s, 5000ms)", "30s")
@@ -373,162 +355,26 @@ export function sparqlQueryCommand(): Command {
         }
         const loadStartTime = Date.now();
 
-        const alsoVaults = options.also || [];
         const useCacheEffective = options.useCache ?? false;
 
         let triples: Triple[] = [];
         let cacheHit = false;
-        let combinedCacheHit = false;
 
-        // Issue #3281: when both --use-cache and --also are specified, try the
-        // combined cross-vault index first. It contains primary + every --also
-        // vault's triples WITH RDFS / prototype-chain materialization applied
-        // over the combined store, so cross-vault subClass and prototype chains
-        // resolve correctly (previous per-vault caches materialized inferences
-        // within each vault individually, missing cross-vault deductions).
-        //
-        if (useCacheEffective && alsoVaults.length > 0) {
-          const combinedCache = new CombinedCacheManager(
-            vaultPath,
-            alsoVaults.map((a) => resolve(a)),
-          );
-          const combinedResult = await combinedCache.loadIfValid();
-          if (combinedResult !== null) {
-            triples = combinedResult.triples;
-            cacheHit = true;
-            combinedCacheHit = true;
-            if (outputFormat === "text") {
-              console.log(
-                `🚀 Combined cache hit! Loaded ${triples.length} triples from cross-vault index (${combinedCache.getAllVaultPaths().length} vaults).`,
-              );
-            }
-          } else {
-            if (outputFormat === "text") {
-              console.log(
-                `ℹ️  Combined cache miss (or invalid). Falling back to per-vault load. Run \`exocortex index --vault <primary> --also <...>\` to build the cross-vault index.`,
-              );
-            }
+        if (useCacheEffective) {
+          // Use the persistent single-vault triple cache for faster loading.
+          const cacheManager = new CacheManager(vaultPath);
+          const cacheResult = await cacheManager.loadOrBuild();
+          triples = cacheResult.triples;
+          cacheHit = cacheResult.cacheHit;
+
+          if (outputFormat === "text" && cacheHit) {
+            console.log(`🚀 Cache hit! Loading from persistent cache...`);
           }
-        }
-
-        if (!combinedCacheHit) {
-          // Issue #3352 — pre-build sibling adapters once so primary's
-          // `getFirstLinkpathDest` can resolve label-form wikilinks
-          // whose target lives in an additional vault. The same adapters
-          // are reused below when loading each additional vault, so the
-          // adapter that walked the vault is the same one consulted as a
-          // sibling.
-          const alsoAdapters: FileSystemVaultAdapter[] = [];
-          const alsoPaths: {
-            resolvedAlsoPath: string;
-            subjectIriPrefix: string;
-          }[] = [];
-          for (const alsoPath of alsoVaults) {
-            const resolvedAlsoPath = resolve(alsoPath);
-            if (!existsSync(resolvedAlsoPath)) {
-              throw new VaultNotFoundError(resolvedAlsoPath);
-            }
-            const subjectIriPrefix = deriveSubjectIriPrefix(resolvedAlsoPath);
-            alsoAdapters.push(
-              new FileSystemVaultAdapter(resolvedAlsoPath, {
-                subjectIriPrefix,
-              }),
-            );
-            alsoPaths.push({ resolvedAlsoPath, subjectIriPrefix });
-          }
-
-          if (useCacheEffective) {
-            // Use cached triples for faster loading (primary vault only).
-            // Note (#3352): siblingAdapters cannot retro-fix wikilinks that
-            // were already serialised as bare Literals at cache build time.
-            // Users who need cross-vault label-form resolution on the cached
-            // path should rebuild the index via `index --also` (which
-            // routes through `buildCombinedTriples`).
-            const cacheManager = new CacheManager(vaultPath);
-            const cacheResult = await cacheManager.loadOrBuild();
-            triples = cacheResult.triples;
-            cacheHit = cacheResult.cacheHit;
-
-            if (outputFormat === "text" && cacheHit) {
-              console.log(`🚀 Cache hit! Loading from persistent cache...`);
-            }
-          } else {
-            // Traditional vault loading — primary adapter is configured
-            // with the pre-built sibling adapters.
-            const vaultAdapter = new FileSystemVaultAdapter(vaultPath, {
-              siblingAdapters: alsoAdapters,
-            });
-            const converter = new NoteToRDFConverter(vaultAdapter);
-            triples = await converter.convertVault();
-          }
-
-          // Load additional vaults if --also specified, using the
-          // pre-built adapters so primary's sibling list stays in sync.
-          for (let i = 0; i < alsoAdapters.length; i++) {
-            const alsoAdapter = alsoAdapters[i];
-            const { resolvedAlsoPath, subjectIriPrefix } = alsoPaths[i];
-            if (outputFormat === "text") {
-              console.log(`📦 Loading additional vault: ${resolvedAlsoPath}...`);
-            }
-            const alsoConverter = new NoteToRDFConverter(
-              alsoAdapter,
-              undefined,
-              { subjectIriPrefix },
-            );
-            const alsoTriples = await alsoConverter.convertVault();
-            triples = triples.concat(alsoTriples);
-            if (outputFormat === "text") {
-              console.log(`   ➕ Added ${alsoTriples.length} triples from ${resolvedAlsoPath}`);
-            }
-          }
-
-          // Issue #3219 — when `--also` vaults were loaded without the
-          // combined-cache index, `exo__Instance_class` wikilinks whose
-          // target class file lives in a different loaded vault degrade to
-          // raw string literals (`"[[<class-uid>]]"`) because each per-
-          // vault `NoteToRDFConverter` instance can only see its own vault
-          // during `getFirstLinkpathDest`. Apply the same cross-vault
-          // resolution `buildCombinedTriples` runs on the cached path so
-          // class-filtered SPARQL queries find these subjects too.
-          if (alsoVaults.length > 0) {
-            triples = resolveCrossVaultInstanceClassWikilinks(
-              triples as Triple[],
-            ) as Triple[];
-
-            // Issue #3286 — apply post-load synth-A → full-path IRI
-            // canonicalization on the non-cached fallback path, mirroring
-            // the same step that `buildCombinedTriples` runs for the
-            // combined-cache build. Without this, JOINs across vaults
-            // silently miss whenever an --also-loaded vault references a
-            // primary-owned UID via the basename-only synth-A form.
-            //
-            // Gated by `EXOCORTEX_IRI_CANONICALIZE=true` (default off).
-            // The primary adapter and pre-built alsoAdapters carry the
-            // correct `subjectIriPrefix` so the canonical-IRI lookup is
-            // consistent with what the converter emitted as subject IRIs.
-            if (isCanonicalizationEnabled()) {
-              const primaryAdapter = new FileSystemVaultAdapter(vaultPath, {
-                siblingAdapters: alsoAdapters,
-              });
-              const uidIndex = buildVaultUidIndex([
-                primaryAdapter,
-                ...alsoAdapters,
-              ]);
-              const canonResult = IRICanonicalizer.canonicalize(
-                triples,
-                uidIndex,
-              );
-              triples = canonResult.triples;
-              if (
-                outputFormat === "text" &&
-                canonResult.remapCount > 0
-              ) {
-                console.log(
-                  `   🪄 IRI canonicalization (Issue #3286): remapped ${canonResult.remapCount} triple(s) covering ${canonResult.uniqueRemapCount} distinct synth-A IRI(s)`,
-                );
-              }
-            }
-          }
+        } else {
+          // Traditional single-vault loading.
+          const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
+          const converter = new NoteToRDFConverter(vaultAdapter);
+          triples = await converter.convertVault();
         }
 
         const tripleStore = new InMemoryTripleStore();
@@ -537,8 +383,7 @@ export function sparqlQueryCommand(): Command {
         const loadDuration = Date.now() - loadStartTime;
         if (outputFormat === "text") {
           const cacheStatus = cacheHit ? " (from cache)" : "";
-          const alsoStatus = alsoVaults.length > 0 ? ` (${alsoVaults.length + 1} vaults)` : "";
-          console.log(`✅ Loaded ${triples.length} triples in ${loadDuration}ms${cacheStatus}${alsoStatus}\n`);
+          console.log(`✅ Loaded ${triples.length} triples in ${loadDuration}ms${cacheStatus}\n`);
           console.log(`🔍 Parsing SPARQL query...`);
         }
 
@@ -553,15 +398,6 @@ export function sparqlQueryCommand(): Command {
         // Scan vault for namespace directories and auto-register prefixes
         // Filter out ontology prefixes to avoid collision (exo/, ems/ dirs vs ontology IRIs)
         const vaultPrefixes = filterOntologyPrefixes(scanVaultNamespaces(vaultPath));
-        // Also scan additional vaults for namespace directories
-        for (const alsoPath of alsoVaults) {
-          const alsoPrefixes = filterOntologyPrefixes(scanVaultNamespaces(resolve(alsoPath)));
-          for (const [prefix, uri] of alsoPrefixes) {
-            if (!vaultPrefixes.has(prefix)) {
-              vaultPrefixes.set(prefix, uri);
-            }
-          }
-        }
         if (vaultPrefixes.size > 0) {
           parser.setVaultPrefixes(vaultPrefixes);
         }

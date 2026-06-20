@@ -116,17 +116,6 @@ jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
   })),
 }));
 
-// Mock CombinedCacheManager — Issue #3281 introduces cross-vault index
-// reads from sparql-query when --use-cache + --also are used. Default
-// behaviour for these single-vault tests is "no combined cache available".
-jest.unstable_mockModule("../../../src/cache/CombinedCacheManager.js", () => ({
-  CombinedCacheManager: jest.fn(() => ({
-    getCachePath: jest.fn().mockReturnValue("/mock/combined-cache/path"),
-    getAllVaultPaths: jest.fn().mockReturnValue([]),
-    loadIfValid: jest.fn().mockResolvedValue(null),
-  })),
-}));
-
 const { sparqlQueryCommand } = await import("../../../src/commands/sparql-query.js");
 
 // Note: These tests require complex mocking due to new ErrorHandler/VaultNotFoundError imports.
