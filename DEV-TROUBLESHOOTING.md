@@ -833,6 +833,8 @@ If you just completed a task with zero errors from start to release, document wh
 
 **Problem**: Playwright component tests pass 100% locally but fail systematically in GitHub Actions CI.
 
+> _Test counts in this section (`168` component tests, `130` failing) are illustrative figures from the Issue #436 snapshot — run `npm run test:component` for the current total._
+
 **Diagnosis**:
 
 ```bash
@@ -967,6 +969,8 @@ gh pr checks <PR-NUMBER>
 ## Pre-Commit Hook Fails Despite Passing Tests
 
 **Problem**: `husky - pre-commit script failed (code 1)` but manual test run shows all tests passing.
+
+> _The `1785` count below is an illustrative snapshot from the Issue #436 era — run `npm run test:all` for the current total._
 
 **Diagnosis**:
 
