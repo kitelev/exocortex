@@ -12,7 +12,6 @@ import {
 import { GitHubRestClient } from "@plugin/infrastructure/adapters/GitHubRestClient";
 import { LocalSecretsStore } from "@plugin/infrastructure/adapters/LocalSecretsStore";
 import { OperationsLogReader } from "@plugin/infrastructure/adapters/OperationsLogReader";
-import { SwitchCacheLayer } from "@plugin/infrastructure/adapters/SwitchCacheLayer";
 import { resolvePastedSecret } from "@plugin/presentation/settings/patClipboard";
 import { renderPatSetupHelper } from "@plugin/presentation/settings/patSetupHelper";
 import {
@@ -78,8 +77,8 @@ export class ExocortexSettingTab extends PluginSettingTab {
         "you first install the plugin.",
     );
 
-    // Profiles overview, GitHub PAT, ExoSync, Active profile, Switch cache,
-    // and the Operations log. Moved to the top of the tab (RFC 0002 §3.6).
+    // Profiles overview, GitHub PAT, ExoSync, Active profile, and the
+    // Operations log. Moved to the top of the tab (RFC 0002 §3.6).
     this.renderProfileSections(containerEl);
   }
 
@@ -641,16 +640,16 @@ export class ExocortexSettingTab extends PluginSettingTab {
   }
 
   /**
-   * Issue #3320 — render the 4 Profile sections (PAT, Active profile,
-   * Switch cache, Operations log) per RFC 0a0791c1 §B.8.
+   * Issue #3320 — render the Profile sections (PAT, Active profile,
+   * Operations log) per RFC 0a0791c1 §B.8. The non-functional «Switch cache»
+   * section (always-zero stats + a Clear-cache button that only toasted a
+   * «Phase C+D, not implemented in v3» notice) was removed as dead UI — it
+   * leaked an internal phase name and offered no working control to a tester.
    *
    * Architectural notes:
    *
-   *   - LocalSecretsStore / OperationsLogReader / SwitchCacheLayer are
-   *     constructed locally here. They are cheap, stateless wrappers over
-   *     the vault adapter (or, in SwitchCacheLayer's case, intentionally
-   *     empty in v3 — its docstring explicitly says «Settings UI wires
-   *     getCacheStats() and shows zeros — acceptable»).
+   *   - LocalSecretsStore / OperationsLogReader are constructed locally here.
+   *     They are cheap, stateless wrappers over the vault adapter.
    *
    *   - ProfileApplyManager is NOT constructed here — it would race
    *     the manager from registerProfileCommands on the persisted
@@ -678,7 +677,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
     const app = this.plugin.app;
     const notifier = this.plugin.notifier;
     const secretsStore = new LocalSecretsStore({ app });
-    const switchCache = new SwitchCacheLayer();
     const operationsLog = new OperationsLogReader({ app });
 
     // ─────── Section 0 — Profile overview (Phase 5 apply-model) ───────
@@ -960,30 +958,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
           "confirmation prompt guards it because it mutates the filesystem.",
       );
 
-    // ─────── Section 3 — Switch cache ───────
-    new Setting(containerEl).setName("Switch cache").setHeading();
-
-    // In v3 the SwitchCacheLayer is constructed here freshly per display()
-    // и therefore reports zeros — by design, per its docstring. Phase C+D
-    // would hoist a singleton to retain populated stats.
-    const stats = switchCache.getCacheStats();
-    const sizeMb = (stats.totalSize / (1024 * 1024)).toFixed(2);
-    new Setting(containerEl)
-      .setName("Cache stats")
-      .setDesc(
-        `${stats.count} cached AssetSpaces · ${sizeMb} MB · ` +
-          `oldest: ${stats.oldestEntry ?? "(empty)"}`,
-      )
-      .addButton((button) =>
-        button.setButtonText("Clear cache").onClick(() => {
-          notifier.info(
-            "Clear cache: Phase C+D feature, not implemented in v3. " +
-              "The cache is currently empty by construction.",
-          );
-        }),
-      );
-
-    // ─────── Section 4 — Operations log ───────
+    // ─────── Section 3 — Operations log ───────
     new Setting(containerEl).setName("Operations log").setHeading();
 
     const opsDesc = containerEl.createDiv({ cls: "setting-item-description" });
