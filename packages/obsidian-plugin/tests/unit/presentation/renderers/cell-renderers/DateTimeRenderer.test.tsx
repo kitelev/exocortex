@@ -123,6 +123,58 @@ describe("DateTimeRenderer", () => {
   });
 });
 
+describe("Date-only TZ-safety (#3630 / F12)", () => {
+  const createColumn = (): LayoutColumn => ({
+    uid: "col-1",
+    label: "Created",
+    property: "created",
+  });
+
+  // A date-only ISO value ("2026-06-20") must parse as LOCAL midnight, not UTC
+  // midnight. `new Date("2026-06-20")` parses as UTC midnight, which renders one
+  // day earlier west of UTC. The renderer exposes the parsed instant via the
+  // `title` (toISOString), so we assert the parsed instant equals LOCAL midnight
+  // of the same calendar day — a TZ-independent invariant that discriminates the
+  // bug on any machine whose UTC offset is non-zero (the bug is invisible on UTC,
+  // which is inherent: UTC midnight === local midnight there).
+  it("DateRenderer parses a date-only value as local midnight", () => {
+    render(<DateRenderer value="2026-06-20" column={createColumn()} />);
+
+    const el = document.querySelector(".exo-cell-date") as HTMLElement;
+    expect(el).toBeTruthy();
+    const expectedLocalMidnight = new Date(2026, 5, 20).toISOString();
+    expect(el.getAttribute("title")).toBe(expectedLocalMidnight);
+  });
+
+  it("DateTimeRenderer parses a date-only value as local midnight", () => {
+    render(<DateTimeRenderer value="2026-06-20" column={createColumn()} />);
+
+    const el = document.querySelector(".exo-cell-datetime") as HTMLElement;
+    expect(el).toBeTruthy();
+    const expectedLocalMidnight = new Date(2026, 5, 20).toISOString();
+    expect(el.getAttribute("title")).toBe(expectedLocalMidnight);
+  });
+
+  it("full ISO timestamps without TZ designator stay local (no regression)", () => {
+    render(
+      <DateTimeRenderer value="2026-06-20T10:30:00" column={createColumn()} />,
+    );
+
+    const el = document.querySelector(".exo-cell-datetime") as HTMLElement;
+    const expectedLocal = new Date(2026, 5, 20, 10, 30, 0).toISOString();
+    expect(el.getAttribute("title")).toBe(expectedLocal);
+  });
+
+  it("ISO timestamps with Z designator stay UTC (no regression)", () => {
+    render(
+      <DateTimeRenderer value="2026-06-20T10:30:00Z" column={createColumn()} />,
+    );
+
+    const el = document.querySelector(".exo-cell-datetime") as HTMLElement;
+    expect(el.getAttribute("title")).toBe("2026-06-20T10:30:00.000Z");
+  });
+});
+
 describe("DateRenderer", () => {
   const createColumn = (): LayoutColumn => ({
     uid: "col-1",

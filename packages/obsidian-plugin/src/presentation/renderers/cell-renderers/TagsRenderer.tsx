@@ -29,15 +29,26 @@ function parseTags(value: unknown): string[] {
 }
 
 /**
- * Extract label from wikilink or return value as-is.
+ * Extract a target + display label from a wikilink (or return the value as-is).
+ *
+ * Mirrors LinkRenderer: an explicit alias wins; otherwise, when getAssetLabel
+ * is provided, the alias-less target is resolved to its exo:Asset_label so a
+ * tag bound to a wikilink/IRI property shows the human label instead of the raw
+ * UUID/IRI (#3629).
  */
-function extractLabel(value: string): { target: string; label: string } {
+function extractLabel(
+  value: string,
+  getAssetLabel?: (path: string) => string | null,
+): { target: string; label: string } {
   const match = value.match(/^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
   if (match) {
-    return {
-      target: match[1].trim(),
-      label: match[2]?.trim() || match[1].trim(),
-    };
+    const target = match[1].trim();
+    const alias = match[2]?.trim();
+    let label: string | undefined = alias;
+    if (!label && getAssetLabel) {
+      label = getAssetLabel(target) || undefined;
+    }
+    return { target, label: label || target };
   }
   return { target: value, label: value };
 }
@@ -73,6 +84,7 @@ function getTagColorClass(value: string): string {
 export const TagsRenderer: React.FC<CellRendererProps> = ({
   value,
   onLinkClick,
+  getAssetLabel,
 }) => {
   const tags = parseTags(value);
 
@@ -83,7 +95,7 @@ export const TagsRenderer: React.FC<CellRendererProps> = ({
   return (
     <span className="exo-cell-tags">
       {tags.map((tag, index) => {
-        const { target, label } = extractLabel(tag);
+        const { target, label } = extractLabel(tag, getAssetLabel);
         const colorClass = getTagColorClass(label);
         const isWikiLink = /^\[\[.+\]\]$/.test(tag);
 

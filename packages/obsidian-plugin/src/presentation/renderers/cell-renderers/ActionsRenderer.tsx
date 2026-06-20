@@ -111,6 +111,16 @@ export interface ActionsRendererProps {
   disabled?: boolean;
 
   /**
+   * Callback to surface a user-facing error message (e.g. a Notice toast).
+   *
+   * Without this, action-button failures — a missing executor, a command with
+   * no grounding, or an execution that throws — are swallowed to the console
+   * and the button silently no-ops (#3628). When provided, those conditions are
+   * reported to the user instead of failing silently.
+   */
+  onError?: (message: string) => void;
+
+  /**
    * Custom class name
    */
   className?: string;
@@ -134,6 +144,7 @@ export const ActionsRenderer: React.FC<ActionsRendererProps> = ({
   assetPath,
   onCheckPrecondition,
   onExecuteCommand,
+  onError,
   disabled = false,
   className,
 }) => {
@@ -203,8 +214,19 @@ export const ActionsRenderer: React.FC<ActionsRendererProps> = ({
       event.preventDefault();
       event.stopPropagation();
 
-      if (!cmd.groundingSparql || !onExecuteCommand) {
-        console.warn(`No grounding SPARQL for command: ${cmd.label}`);
+      // Surface why a click had no effect instead of silently bailing (#3628):
+      // a command with no grounding, or no executor wired by the host, used to
+      // log to the console and no-op — indistinguishable from a broken button.
+      if (!cmd.groundingSparql) {
+        const message = `No action is configured for "${cmd.label}".`;
+        console.warn(message);
+        onError?.(message);
+        return;
+      }
+      if (!onExecuteCommand) {
+        const message = `Cannot run "${cmd.label}": no command executor is available for layout actions.`;
+        console.warn(message);
+        onError?.(message);
         return;
       }
 
@@ -233,7 +255,9 @@ export const ActionsRenderer: React.FC<ActionsRendererProps> = ({
           }
         }
       } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
         console.error(`Command execution failed for ${cmd.label}:`, error);
+        onError?.(`Failed to run "${cmd.label}": ${detail}`);
       } finally {
         setCommandStates((prev) => ({
           ...prev,
@@ -241,7 +265,7 @@ export const ActionsRenderer: React.FC<ActionsRendererProps> = ({
         }));
       }
     },
-    [assetUri, commands, onCheckPrecondition, onExecuteCommand],
+    [assetUri, commands, onCheckPrecondition, onExecuteCommand, onError],
   );
 
   // Render a single button

@@ -378,6 +378,114 @@ describe("LayoutService", () => {
       expect(result.success).toBe(true);
       expect(result.rows![0].values["col-001"]).toBeInstanceOf(Date);
     });
+
+    it("parses a date-only datetime value as local midnight (#3630 / F12)", async () => {
+      const layoutWithDate: TableLayout = {
+        ...defaultLayout,
+        columns: [
+          { uid: "col-001", label: "Due", property: "[[due]]", renderer: "datetime" },
+        ],
+      };
+      mockParserParseFromFile.mockResolvedValue({
+        success: true,
+        layout: layoutWithDate,
+      });
+
+      const mapping = new SolutionMapping();
+      mapping.set("asset", new IRI("obsidian://vault/test.md"));
+      mapping.set("col0", new Literal("2026-06-20"));
+      mockSparqlQuery.mockResolvedValue([mapping]);
+
+      const result = await service.renderLayout(layoutFile);
+      const value = result.rows![0].values["col-001"];
+
+      expect(value).toBeInstanceOf(Date);
+      // Local midnight of the 20th — NOT UTC midnight (which shifts a day west
+      // of UTC). Discriminates the bug on any non-UTC machine.
+      expect((value as Date).getTime()).toBe(new Date(2026, 5, 20).getTime());
+    });
+
+    it("converts a bare IRI to a resolvable wikilink for badge columns (#3629 / F10)", async () => {
+      const layoutWithBadge: TableLayout = {
+        ...defaultLayout,
+        columns: [
+          { uid: "col-001", label: "Status", property: "[[ems__Effort_status]]", renderer: "badge" },
+        ],
+      };
+      mockParserParseFromFile.mockResolvedValue({
+        success: true,
+        layout: layoutWithBadge,
+      });
+
+      const mapping = new SolutionMapping();
+      mapping.set("asset", new IRI("obsidian://vault/test.md"));
+      mapping.set(
+        "col0",
+        new IRI("obsidian://vault/assetspaces/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md"),
+      );
+      mockSparqlQuery.mockResolvedValue([mapping]);
+
+      const result = await service.renderLayout(layoutFile);
+
+      // A bare IRI must become a resolvable [[basename]] wikilink so the renderer
+      // can resolve it to a human label via getAssetLabel — instead of showing
+      // the raw IRI/UUID.
+      expect(result.rows![0].values["col-001"]).toBe(
+        "[[1b20a8f0-d745-4e93-91db-4531b3df120e]]",
+      );
+    });
+
+    it("converts a bare IRI to a resolvable wikilink for tags columns (#3629 / F10)", async () => {
+      const layoutWithTags: TableLayout = {
+        ...defaultLayout,
+        columns: [
+          { uid: "col-001", label: "Class", property: "[[exo__Instance_class]]", renderer: "tags" },
+        ],
+      };
+      mockParserParseFromFile.mockResolvedValue({
+        success: true,
+        layout: layoutWithTags,
+      });
+
+      const mapping = new SolutionMapping();
+      mapping.set("asset", new IRI("obsidian://vault/test.md"));
+      mapping.set(
+        "col0",
+        new IRI("obsidian://vault/assetspaces/ems/7db5eeff-718a-49b0-8d2b-39b084a356e3.md"),
+      );
+      mockSparqlQuery.mockResolvedValue([mapping]);
+
+      const result = await service.renderLayout(layoutFile);
+
+      expect(result.rows![0].values["col-001"]).toBe(
+        "[[7db5eeff-718a-49b0-8d2b-39b084a356e3]]",
+      );
+    });
+
+    it("extracts the localname from a symbolic IRI for badge columns (#3629 / F10)", async () => {
+      const layoutWithBadge: TableLayout = {
+        ...defaultLayout,
+        columns: [
+          { uid: "col-001", label: "Status", property: "[[ems__Effort_status]]", renderer: "badge" },
+        ],
+      };
+      mockParserParseFromFile.mockResolvedValue({
+        success: true,
+        layout: layoutWithBadge,
+      });
+
+      const mapping = new SolutionMapping();
+      mapping.set("asset", new IRI("obsidian://vault/test.md"));
+      mapping.set(
+        "col0",
+        new IRI("https://exocortex.my/ontology/ems#EffortStatusDoing"),
+      );
+      mockSparqlQuery.mockResolvedValue([mapping]);
+
+      const result = await service.renderLayout(layoutFile);
+
+      expect(result.rows![0].values["col-001"]).toBe("[[EffortStatusDoing]]");
+    });
   });
 
   describe("renderLayoutFromWikiLink", () => {

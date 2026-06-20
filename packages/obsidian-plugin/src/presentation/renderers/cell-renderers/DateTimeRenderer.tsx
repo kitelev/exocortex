@@ -44,6 +44,19 @@ function parseDate(value: unknown): Date | null {
 
   // String (ISO format or other parseable format)
   if (typeof value === "string") {
+    // Date-only ISO values ("2026-06-20") parse as UTC midnight via `new Date`,
+    // which renders one day earlier for users west of UTC (#3630). Construct a
+    // LOCAL-midnight Date instead so the calendar day is stable in every TZ.
+    const dateOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnly) {
+      const local = new Date(
+        Number(dateOnly[1]),
+        Number(dateOnly[2]) - 1,
+        Number(dateOnly[3]),
+      );
+      return isNaN(local.getTime()) ? null : local;
+    }
+
     // Try ISO format first
     let date = new Date(value);
     if (!isNaN(date.getTime())) return date;

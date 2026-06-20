@@ -406,6 +406,12 @@ export class LayoutCodeBlockProcessor {
           );
         },
         getAssetLabel: (path: string) => this.wikilinkResolver.getAssetLabel(path),
+        // Surface action-button failures to the user instead of failing silently
+        // (#3628). Routed through the central notifier (eslint forbids `new
+        // Notice` elsewhere).
+        onError: (message: string) => {
+          this.plugin.notifier?.error(message);
+        },
       })
     );
   }
