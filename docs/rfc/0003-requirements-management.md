@@ -2,17 +2,18 @@
 
 | | |
 | --- | --- |
-| **Status** | Proposed |
-| **Author** | Requirements-management research (al-reqmgmt child, AI) + Andrey interview, 2026-06-19/20 |
+| **Status** | Accepted (v2 final — Andrey-approved, 2026-06-21) |
+| **Author** | Requirements-management research (al-reqmgmt child, AI) + Andrey interview, 2026-06-19/20/21 |
 | **Scope** | Cross-cutting process + a small vault ontology (`req`). Defines *where business requirements live, in what format, how they trace to tests/code, and how CI enforces that every change updates them*. Not an implementation — implementation is tracked as a vault subproject (§8). |
 | **Supersedes** | — |
 | **Tracking** | "Exocortex requirements-management system" `ems__Project`, child of Alpha Launch `[[f33732f4-410e-424a-91e2-9e894f68e2de]]` |
 
 > **Why in-repo:** this RFC proposes both a vault ontology (`req__Requirement`)
-> *and* repo-side enforcement (CI gate, archgate rule, Pages publication). It is
-> versioned next to the CI/Pages machinery it changes, following RFC 0001/0002
-> precedent for repo-touching proposals. The `req` ontology *assets* are created
-> during implementation (not by this docs-only RFC).
+> *and* repo-side enforcement (CI gate, archgate rule). It is versioned next to
+> the CI machinery it changes, following RFC 0001/0002 precedent for repo-touching
+> proposals. The `req` ontology *assets* are created during implementation (not by
+> this docs-only RFC). (Living-Documentation / GitHub-Pages publication is **carved
+> into a separate RFC** — see the Revision-3 note below + §6.)
 
 > **Grounding:** every decision is traceable to (a) the 2026 community/official
 > consensus on Spec-Driven Development and (b) Andrey's interview (§9). Reality
@@ -37,6 +38,19 @@
 > (§3.3), EARS corrected and relocated to the ADR domain, archgate's no-vault-graph
 > constraint fixed (§3.7), corrected test counts, and an integrity metric (§7).
 
+> **Revision 3 (2026-06-21) — final.** A *second* interview round (Andrey,
+> `al-decisions2`) settled the one fork Revision 2 had resolved on its own:
+> **D4 (Living Documentation / GitHub Pages).** Revision 2 kept P4 inline with a
+> "fail-closed by repo visibility" privacy design; **the final decision is to carve
+> P4 out into a separate RFC** that owns the privacy model. Rationale: the Pages
+> privacy model is non-trivial (one mis-scoped publish leaks T-Bank/personal data)
+> **and a non-blocker** for the core requirements machinery — so it is decoupled,
+> and RFC 0003 ships **without P4**. Core (P0–P3, P5) is unchanged. The
+> audience-by-repo-visibility *storage* split (§3.2) stays here (it is the storage
+> design); only the *publication* layer moves to the carved RFC. NFRs remain
+> ADR-homed (deferred from the `req` ontology by design, D5 — §3.9). This is the
+> sole change vs Revision 2; D1/D2/D3/D5 + A1–A14 are unchanged.
+
 ---
 
 ## 1. Context & problem
@@ -46,8 +60,8 @@ Exocortex are described in a BDD-style executable format; **(2)** all *existing*
 requirements are migrated into that base; **(3)** every codebase change
 updates/enriches the requirements base — likely via CI/archgate gating. Target
 (not a current blocker): browse the requirements as a published site on **GitHub
-Pages**. Core: *everything works, and all changes flow through one requirements
-process.*
+Pages** — **carved into a separate RFC** (Revision-3 note; §6). Core: *everything
+works, and all changes flow through one requirements process.*
 
 ### What exists today (credited — reuse the lessons, not the cruft)
 
@@ -104,8 +118,9 @@ binding (§3.6). (cf. internal rules `test-fixture-realism`,
 5. **No new test runner**, and a binding is valid **only** if the cited test
    *fails when the behavior is reverted* — the harness-theater path is
    structurally closed.
-6. (Target, non-blocking) Public requirements **published to GitHub Pages** as
-   Living Documentation, **fail-closed by repo visibility**.
+6. (Carved to a separate RFC — Revision-3 note; §6) Public requirements
+   **published to GitHub Pages** as Living Documentation, fail-closed by repo
+   visibility. Not part of RFC 0003's scope.
 
 ## 3. Proposed solution
 
@@ -126,7 +141,7 @@ requirements are *reverse-documented* from already-written tests
 For **net-new** work, requirements are genuinely *spec-first* (the real SDD
 loop). The Phase-2 hard-gate (§3.7) requires net-new behavior to be **spec-first**.
 
-### 3.2 Storage — per-module requirement assetspaces; Pages fail-closed by repo visibility
+### 3.2 Storage — per-module requirement assetspaces; audience boundary by repo visibility
 
 Requirements are first-class vault RDF assets (Homoiconicity Invariant; RDF is
 purpose-built for machine-readable requirements + traceability — ontology-based
@@ -149,13 +164,16 @@ against the live structure):
   commands — *iff* those commands live in an `exoas-ems-cmds` assetspace (does not
   exist yet; not created now).
 
-**GitHub Pages privacy = solved at the storage layer.** Public-module reqs
-assetspaces (`exoas-exo-reqs`, …) are public git repos → published to Pages **by
-repo visibility**; requirements about private modules (e.g. T-Bank commands) live
-in a **private** `exoas-*-reqs` repo → never published. This is **fail-closed by
-repo visibility**, strictly safer than a query-time allowlist (panel's
-highest-blast-radius concern). The Pages generator iterates only over
-**explicitly public** reqs assetspaces (default-deny).
+**Audience boundary = set at the storage layer (by repo visibility).** Public-module
+reqs assetspaces (`exoas-exo-reqs`, …) are public git repos; requirements about
+private modules (e.g. T-Bank commands) live in a **private** `exoas-*-reqs` repo.
+This per-module repo-visibility split is the *storage* design and stays in RFC 0003.
+It also **pre-resolves the future Pages-privacy model fail-closed**: any publication
+layer iterates only over **explicitly public** reqs assetspaces (default-deny),
+strictly safer than a query-time allowlist (the panel's highest-blast-radius
+concern). The **publication layer itself (GitHub Pages / Living Documentation) is
+carved into a separate RFC** (Revision-3 note; §6) — RFC 0003 only establishes the
+storage boundary it will rely on.
 
 The assetspaces themselves are created in **implementation** (§8), not by this RFC.
 
@@ -230,7 +248,7 @@ confirmed) is the executable mechanism:
 3. Reports **orphan requirements** (no binding), **dangling tags** (tag → missing
    req), **duplicate bindings** (one uid claimed by >1 test → copy-paste
    contamination warning), and (best-effort) **untraced behaviors**.
-4. Emits a machine-readable report for CI + the Pages generator.
+4. Emits a machine-readable report for CI (and, later, the carved Pages generator).
 
 **The binding-validity rule (closes harness-theater 2.0):**
 
@@ -295,9 +313,10 @@ type**, no overlap:
 This eliminates the four-places-of-truth duplication (an invariant is **not**
 restated as a `req` asset — it *is* the ADR) **and** fills the NFR gap (NFRs have
 a home — the ADR — so the `req` ontology needs no NFR slot). The
-requirements-management **system** is the *federation*: the Living Documentation
-site (§3.2 Pages) presents **both** — functional requirements from the vault +
-architectural/NFR from ADRs — as one browsable, traceable base.
+requirements-management **system** is the *federation* of both — functional
+requirements from the vault + architectural/NFR from ADRs. (Presenting them as one
+browsable site is the carved Living-Documentation RFC's job; RFC 0003 makes both
+SPARQL-/CI-queryable.)
 
 ## 4. Traceability model (RDF + repo edges)
 
@@ -324,9 +343,9 @@ re-approval?*
 | **Cucumber/Gherkin step-def runner** | Proven failure here (#3401: 204 self-asserting scenarios, zero prod). Format kept; runner forbidden. |
 | **`@req` tag = sufficient binding** (v1's implicit assumption) | Tag proves *association*, not *exercise* — would reproduce harness-theater at the traceability layer. v2 requires revert-verify + binding-class. |
 | **All requirements as new `req` assets incl. architectural/NFR** (v1) | Four-places-of-truth duplication, unjustified per-PR tax for a solo+AI dev. v2 federates: ADR owns architectural/NFR, BDD owns functional. |
-| **`.feature`/markdown spec files in-repo as canon** | Duplicates the vault graph; non-SPARQL-queryable; disconnected from homoiconic model. Pages is generated *from* the graph instead. |
-| **Single shared `req` assetspace for all instances** | Loses profile-scoped mount + audience-layered privacy. Per-module `exoas-<m>-reqs` gives both, and makes Pages fail-closed by repo visibility. |
-| **Pages via query-time public/private allowlist** | One mis-scoped query leaks private requirements. Repo-visibility fail-closed (§3.2) is default-deny. |
+| **`.feature`/markdown spec files in-repo as canon** | Duplicates the vault graph; non-SPARQL-queryable; disconnected from homoiconic model. The (carved) Pages generator renders *from* the graph instead. |
+| **Single shared `req` assetspace for all instances** | Loses profile-scoped mount + audience-layered privacy. Per-module `exoas-<m>-reqs` gives both, and makes the future Pages publication fail-closed by repo visibility. |
+| **Audience via query-time public/private allowlist** | One mis-scoped query leaks private requirements. The per-module repo-visibility boundary (§3.2) is default-deny by construction. (The Pages *publication* that relies on it is carved to a separate RFC.) |
 | **Soft-only / manual-flip enforcement** | Becomes shelfware (the `uj` death). v2 adds a dated auto-flip criterion + soft-gate expiry. |
 | **ReqIF** | XML, heavyweight, non-RDF, non-executable. No interop need. |
 | **Big-bang migration** | Disproportionate; gating an empty base deadlocks. Incremental, exo-first. |
@@ -340,7 +359,7 @@ re-approval?*
 | **P1 — Checker + soft CI** | `exocortex-cli requirements audit` (orphans/dangling/duplicates/coverage + binding-class) + `@req:<uid>`-in-`it()` convention + `requirements-trace` CI job **(soft)** + archgate whole-tree `@req`-resolves rule + `Req:`/`Revert-verified:` PR-body tokens. **Bring the read-surface carrot forward**: the audit report ("what behaviors have no test / my coverage") ships here so writing a requirement pays back immediately, before any gate. | soft CI |
 | **P2 — Migrate exo (Alpha-critical)** | Distill `exo`-module functional behaviors into `exoas-exo-reqs`, each revert-verified-bound. Enumerate the P0 checklist that arms the flip. | soft→ |
 | **P3 — Hard-gate** | Auto-flip `requirements-trace` to **required** when the P0 checklist is fully revert-verified, **or** soft-gate expiry at Alpha GA. New behavior must be spec-first. | **hard CI** |
-| **P4 — Living Documentation (GitHub Pages)** | Generator: public reqs assetspaces + ADRs → static site (requirements, scenarios, coverage, traceability matrix). **Fail-closed by repo visibility** (default-deny, no-private-leak is the P4 acceptance gate). | — |
+| **~~P4 — Living Documentation (GitHub Pages)~~** | ⛔ **CARVED OUT (D4, Revision-3)** → a separate RFC owns it: the generator (public reqs assetspaces + ADRs → static site), the fail-closed-by-repo-visibility privacy model, and the no-private-leak acceptance gate. **Not part of RFC 0003.** | — |
 | **P5 — Expand** | Add further `exoas-<module>-reqs` per module (e.g. `exoas-ems-cmd-reqs` once `exoas-ems-cmds` exists); raise coverage thresholds. | hard CI |
 
 ## 7. Success metrics
@@ -355,14 +374,19 @@ re-approval?*
   bookkeeping (so 100% coverage can't hide uniformly-stale prose).
 - **Process adherence:** % of behavior-changing PRs that add/update a
   `req__Requirement` (Phase 2: 100%, enforced).
-- **Browsability:** public Pages site live and current, **zero private leak** (P4).
+
+(Browsability / public-Pages metrics move to the carved Living-Documentation RFC.)
 
 ## 8. Definition of Done (this RFC's scope = design only)
 
-- [ ] RFC merged (docs-only, CI green).
-- [ ] Implementation tracked as a vault `ems__Project` subproject under Alpha
-      Launch with leaf `ems__Task`s for P0–P5 (created by this work; **no
-      implementation started**).
+- [x] RFC merged (docs-only, CI green) — Revision 2 via PR #3608; this Revision-3
+      re-merges with the D4 carve-out.
+- [x] Implementation tracked as a vault `ems__Project` subproject under Alpha
+      Launch (`89728805-bd0e-4c02-a158-8c60593aff0d`) with leaf `ems__Task`s for
+      **P0–P3 + P5** (P4 carved). **P0 implemented** (child `al-reqmgmt-p0`,
+      authoring guide PR #3648); P1–P3, P5 not started.
+- [ ] (Follow-up) A separate **Living Documentation / GitHub Pages** RFC created
+      that owns the carved P4 + its fail-closed privacy model.
 
 (Implementation DoD lives in the subproject tasks, not here.)
 
@@ -384,8 +408,10 @@ re-approval?*
 - **D2 + D5** (duplication + NFR gap): Andrey's decision — **ADR/archgate own
   architectural + NFR; BDD `req` owns functional**. One stroke, no duplication.
 - **D3** (ramp never flips): **dated auto-flip criterion + soft-gate expiry**.
-- **D4** (Pages privacy): **fail-closed by repo visibility** — resolved by the
-  storage design.
+- **D4** (Pages privacy): Revision 2 chose *keep inline, fail-closed by repo
+  visibility*; the **al-decisions2 final decision (Revision 3) carves P4 out into
+  a separate RFC** that owns the privacy model. RFC 0003 keeps only the storage
+  audience boundary it relies on.
 - **Storage refinement** (Andrey): **per-module requirement assetspaces** —
   `exoas-req` (TBox), `exoas-exo-reqs` (exo ABox, first), future
   `exoas-ems-cmd-reqs`. Verified to compose with EKA co-location/profile-mount.
