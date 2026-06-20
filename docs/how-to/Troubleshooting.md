@@ -70,14 +70,17 @@ private repo still fails as if no token were set.
 
 **Cause & fix**:
 
-- **Bootstrap, Add a knowledge pack, and Sync read the _currently-stored_ PAT at
-  command time** — a freshly-saved token works **without a reload** (fixed in
-  [#3382](https://github.com/kitelev/exocortex/issues/3382)). Just re-run the
-  command.
-- **One path captures the PAT at plugin onload: the mobile profile-mount path.**
-  If, on mobile, an **Apply profile** of a private profile still pulls
-  unauthenticated after you saved the PAT, **reload Obsidian** (Cmd/Ctrl + P →
-  "Reload app without saving") so the new PAT is picked up, then re-apply.
+- **Current builds read the _currently-stored_ PAT at command time on every
+  path** — Bootstrap, Add a knowledge pack, Sync, **and Apply profile (both
+  desktop and mobile)** rebuild their GitHub client from the PAT you just saved,
+  so a freshly-entered token works **without a reload**
+  ([#3382](https://github.com/kitelev/exocortex/issues/3382) for Bootstrap/Add,
+  [#3557](https://github.com/kitelev/exocortex/issues/3557) for the apply
+  materialize path). **Just re-run the command.**
+- **If it still fails unauthenticated, you're probably on an older build** where
+  apply used an onload-captured client. **Reload Obsidian** (Cmd/Ctrl + P →
+  "Reload app without saving") so the PAT is picked up, then re-apply — and
+  update via BRAT so the per-command PAT rebuild applies.
 
 ---
 
@@ -99,9 +102,13 @@ quarantined`; per-repo detail goes to the developer console
    with the remote (or delete the watermark file
    `exosync-watermarks.local.json` in the plugin folder) and re-sync.
 3. **Conflicts → quarantine** — a real conflict is preserved, not guessed; it
-   **re-derives on every sync until you resolve it**. There is **no dedicated
-   resolver UI yet** — resolve by making the two sides **converge** (edit the
-   local file and/or the remote so they agree); once they match, the pin clears
+   **re-derives on every sync until you resolve it**. Resolve it with
+   **Cmd/Ctrl + P → "Exocortex: Resolve sync conflicts"**, which lists each
+   conflict and shows the two versions side-by-side (local | remote) with
+   **Keep local / Keep remote / Merge** (an editable field seeded with the local
+   version); choosing writes the kept version to disk **and** the remote.
+   Alternatively, resolve by making the two sides **converge** by hand (edit the
+   local file and/or the remote so they agree) — once they match, the pin clears
    and the entry auto-tombstones as `resolved`. Optionally set a
    **Quarantine repo URL** (Settings → Exocortex → ExoSync) to keep conflict
    copies cross-device. **FileSpaces refuse to sync without a quarantine repo**,
@@ -219,9 +226,11 @@ For the full sync model (3-way merge, FileSpaces, CLI usage), see
 Bootstrap and Add-knowledge-pack all work on mobile (Desktop↔Mobile command
 parity); sync and apply use a REST/tarball transport instead of `git`.
 
-- **PAT saved after onload needs a reload on mobile** — the mobile
-  profile-mount path captures the PAT at plugin load, so after saving a PAT
-  **reload Obsidian** before applying a private profile (see
+- **A PAT saved after the plugin loaded is honoured without a reload** — the
+  mobile apply path rebuilds its GitHub client from the currently-stored PAT on
+  each apply (#3382 pattern), just like desktop. If a private apply still fails
+  unauthenticated, you're likely on an older build — reload Obsidian and update
+  via BRAT (see
   ["I saved a PAT…"](#i-saved-a-pat-but-the-plugin-still-acts-unauthenticated)).
 - **Keep mounts lean for fast reindexing** — a phone reindexes everything it
   mounts, so a large mount can take noticeably longer than on desktop. Apply a

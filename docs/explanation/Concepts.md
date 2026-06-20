@@ -107,7 +107,8 @@ Synchronizes your mounted AssetSpaces directly against their GitHub repos over
 the REST API — no Obsidian Sync subscription and no `git` binary, so the same
 path works on desktop and iOS. One **`Exocortex: Sync`** runs pull → merge → push
 per repo; conflicts it cannot safely merge go to **quarantine** and re-derive
-every sync until you make the two sides converge.
+every sync until you resolve them (run **`Exocortex: Resolve sync conflicts`**,
+or converge the two sides by hand).
 → [exosync.md](../how-to/exosync.md)
 
 ### FileSpace — _an attachments space_
