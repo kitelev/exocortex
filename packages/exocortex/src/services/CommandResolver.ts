@@ -1773,6 +1773,18 @@ export class CommandResolver {
       }
     }
 
+    // Subproject 17f58ebe Веха 3 — body_template grounding fields. bodyTemplate
+    // is the inline markdown literal; templateRef points at an
+    // exotemplate__Template asset (UID-canon → its obsidian name is the UID).
+    const bodyTemplate = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_bodyTemplate"),
+    );
+    const templateRef = await this.getObsidianName(
+      subject,
+      Namespace.EXOCMD.term("Grounding_templateRef"),
+    );
+
     const grounding: GroundingDefinition = {
       id: uid,
       label,
@@ -1798,6 +1810,8 @@ export class CommandResolver {
       prefillLabelWithDate: prefillLabelWithDate || undefined,
       labelTemplate: labelTemplate ?? undefined,
       direction,
+      bodyTemplate: bodyTemplate ?? undefined,
+      templateRef: templateRef ?? undefined,
     };
 
     if (inputSchema) {

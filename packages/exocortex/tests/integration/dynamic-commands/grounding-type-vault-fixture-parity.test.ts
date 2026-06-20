@@ -6,8 +6,8 @@
  * `exocmd__GroundingType` class (UID `708604a5-a682-4ff6-9391-c2e80ab78ca5`).
  * Asserts:
  *
- * 1. Exactly 10 instances (matches `GroundingType` TS enum cardinality)
- * 2. The 10 vault UIDs are exactly the values in `GROUNDING_TYPE_UIDS`
+ * 1. Exactly 11 instances (matches `GroundingType` TS enum cardinality)
+ * 2. The 11 vault UIDs are exactly the values in `GROUNDING_TYPE_UIDS`
  * 3. Each vault asset's `exo__Asset_label` matches the expected naming
  *    convention X (e.g., `exocmd__GroundingTypePropertySet` for
  *    `GroundingType.PROPERTY_SET`)
@@ -43,6 +43,8 @@ const ENUM_TO_EXPECTED_LABEL: Record<GroundingType, string> = {
   [GroundingType.SPARQL_UPDATE]:       "exocmd__GroundingTypeSparqlUpdate",
   // RFC 36347daf Phase 2 — workflow_transition catalog instance.
   [GroundingType.WORKFLOW_TRANSITION]: "exocmd__GroundingTypeWorkflowTransition",
+  // Subproject 17f58ebe Веха 3 — body_template catalog instance.
+  [GroundingType.BODY_TEMPLATE]:       "exocmd__GroundingTypeBodyTemplate",
 };
 
 interface VaultAsset {
@@ -132,8 +134,8 @@ describe("RFC 9d20c91f Phase 2 — vault-fixture parity (exoas-exocmd submodule)
     instances = scanGroundingTypeInstances();
   });
 
-  it("contains exactly 10 GroundingType instances", () => {
-    expect(instances).toHaveLength(10);
+  it("contains exactly 11 GroundingType instances", () => {
+    expect(instances).toHaveLength(11);
   });
 
   it("instance UIDs match TS GROUNDING_TYPE_UIDS exactly", () => {

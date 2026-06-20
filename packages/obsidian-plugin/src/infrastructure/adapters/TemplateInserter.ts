@@ -1,5 +1,5 @@
 import type { Editor, TFile } from "obsidian";
-import { resolveTemplateBody } from "exocortex";
+import { resolveTemplateBody, stripTemplateFrontmatter } from "exocortex";
 
 /**
  * TemplateInserter — logic behind the editor "Insert template" command
@@ -106,17 +106,13 @@ export function collectTemplateChoices(
 }
 
 /**
- * Strip the leading YAML frontmatter block, returning the markdown body. When
- * no frontmatter is present the whole content is the body. A single newline
- * separating the closing `---` from the body is consumed so the inserted block
- * does not start with a blank line.
+ * Strip the leading YAML frontmatter block, returning the markdown body.
+ * Delegates to the core `stripFrontmatter` so the editor inserter, the plugin
+ * TemplateLoaderPort, and the CLI TemplateLoaderPort share one strip impl
+ * (Веха 3 — no per-consumer regex drift).
  */
 export function extractTemplateBody(content: string): string {
-  // `\r?\n` so a CRLF-stored template file (Windows vault) strips correctly
-  // rather than leaking its frontmatter block into the inserted body — matching
-  // the repo's newer frontmatter strippers (validate-schema, CliProfileResolver).
-  const match = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
-  return match ? content.slice(match[0].length) : content;
+  return stripTemplateFrontmatter(content);
 }
 
 /**

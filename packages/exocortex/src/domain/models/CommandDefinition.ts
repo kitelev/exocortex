@@ -236,6 +236,26 @@ export interface GroundingDefinition {
    * Authored as the `exocmd__Grounding_direction` RDF triple (xsd:string).
    */
   readonly direction?: "forward" | "rollback";
+  /**
+   * Subproject 17f58ebe Веха 3 — `body_template` grounding. Inline markdown
+   * literal used as the body template. `$token` markers resolve via the shared
+   * SubstitutionResolverRegistry at execute time. Disjoint with
+   * {@link templateRef} (templateRef takes priority when both are present).
+   *
+   * Authored as the `exocmd__Grounding_bodyTemplate` RDF triple (xsd:string).
+   */
+  readonly bodyTemplate?: string;
+  /**
+   * Subproject 17f58ebe Веха 3 — `body_template` grounding. Bare UID of an
+   * `exotemplate__Template` asset whose markdown BODY is loaded (via the
+   * injected TemplateLoaderPort) and used as the body template. Preferred over
+   * the inline {@link bodyTemplate} when both are set; when no loader is wired
+   * (CLI/test) the step falls back to {@link bodyTemplate} or fails loud.
+   *
+   * Authored as the `exocmd__Grounding_templateRef` RDF triple (UID wikilink,
+   * normalized to a bare UID by the parser).
+   */
+  readonly templateRef?: string;
 }
 
 /**

@@ -19,6 +19,7 @@ import {
   TaskStatusService,
   WorkflowResolver,
   NamedQueryRunner,
+  stripTemplateFrontmatter,
   createVaultFrontmatterClassLabelResolver,
   createVaultFrontmatterRefToFolderResolver,
   registerDefaultHostFunctions,
@@ -307,6 +308,14 @@ async function executeOnTarget(
       uidGenerator: uidGen,
       workflowResolver,
       groundingLoader: (uid) => resolver.loadGroundingByUid(uid),
+      // Subproject 17f58ebe Веха 3 — load an exotemplate__Template asset's body
+      // by UID for `body_template` groundings that use `templateRef` (UI/CLI
+      // parity, Issue #3417). Mirrors the plugin's templateLoader.
+      templateLoader: async (uid) => {
+        const path = await nodeFsAdapter.findFileByUID(uid);
+        if (!path) return null;
+        return stripTemplateFrontmatter(await nodeFsAdapter.readFile(path));
+      },
       namedQueryRunner,
       // T1 "Create Instance" (project bbe40f8c) — co-locate new instances in
       // their chosen ontology's folder via `$isDefinedByFolder` (UI/CLI parity,

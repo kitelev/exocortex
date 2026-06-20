@@ -105,6 +105,15 @@ export function parseGroundingDefinitionFromFrontmatter(
     ? normalizeGroundingRef(rawTargetValueRef)
     : undefined;
 
+  // Subproject 17f58ebe Веха 3 — body_template grounding fields. templateRef is
+  // a wikilink to an exotemplate__Template asset → normalized to its bare UID.
+  const rawTemplateRef = fm["exocmd__Grounding_templateRef"] as
+    | string
+    | undefined;
+  const templateRef = rawTemplateRef
+    ? normalizeGroundingRef(rawTemplateRef)
+    : undefined;
+
   return {
     id: uid,
     label: (fm["exo__Asset_label"] as string) ?? "",
@@ -133,6 +142,8 @@ export function parseGroundingDefinitionFromFrontmatter(
     linkBackProperty: fm["exocmd__Grounding_linkBackProperty"] as
       | string
       | undefined,
+    bodyTemplate: fm["exocmd__Grounding_bodyTemplate"] as string | undefined,
+    templateRef,
     steps,
   };
 }
