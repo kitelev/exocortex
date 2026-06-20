@@ -33,7 +33,7 @@ Compared to existing tools:
 | File-based (git-friendly) |    ✅     |   —    |  —   |         —          |   ✅    |
 | UI from ontology          |    ✅     |   ✅   |  ~   |         ~          |   ✅    |
 | Offline-first             |    ✅     |   ~    |  —   |         —          |   ✅    |
-| For knowledge workers     |    ✅     |   ✅   |  ✅  |         ~          |   ��    |
+| For knowledge workers     |    ✅     |   ✅   |  ✅  |         ~          |    —    |
 | Action layer (commands)   |    ✅     |   ~    |  ✅  |         —          |    —    |
 
 ---
@@ -42,12 +42,13 @@ Compared to existing tools:
 
 - **Semantic knowledge graph** — every piece of knowledge is an Asset with UUID, class, properties, and relationships stored as RDF triples
 - **SPARQL queries** — ask complex questions across your entire knowledge base
-- **Modular ontologies** — IMS (concepts, notes, people), EMS (tasks, projects, meetings), ZTLK (zettelkasten)
+- **Modular ontologies (AssetSpaces)** — the engine itself is domain-agnostic; every domain vocabulary ships as a separate, versioned, independently-shareable package you mount on demand. See [Exo-as-SDK topology](./docs/explanation/assetspace-sdk-topology.md).
 - **Everything as Knowledge** — commands, workflows, property schemas, layouts, and even plugin settings (`exo__Setting` assets — see [docs/explanation/settings-homoiconization.md](./docs/explanation/settings-homoiconization.md)) defined as vault assets, not hardcoded
-- **Ontology plugins** — extend the system with installable ontology packages (e.g. [GTD + Jedi Techniques](https://github.com/kitelev/gtd-jedi))
+- **Installable ontology packages** — extend the graph by mounting an AssetSpace from any public or private GitHub repo (`assetspace-add` in the CLI, **Add a knowledge pack** in the plugin) — no engine change required
 - **Profile** (production-ready) — vault-declared homoiconic profiles that drive on-disk AssetSpace materialization via a single **Apply profile** operation (mount-state strict replace). One vault, multiple contexts, selective sync. See [docs/explanation/profile.md](./docs/explanation/profile.md).
 - **ExoSync** — GitHub-backed vault sync via the **Exocortex: Sync** command: pull → merge → push over the GitHub REST API, with structured 3-way merge and quarantine for unresolvable conflicts (a SHACL merge-gate ships in core but is not yet wired into the plugin). Works on mobile (no git binary required). See [docs/how-to/exosync.md](./docs/how-to/exosync.md).
 - **UI/CLI Parity** — every capability is reachable from the Obsidian plugin and the CLI; neither client holds exclusive features. The complement of homoiconicity: it keeps the _invocation_ layer open just as homoiconicity keeps the _data_ layer open. See [VISION.md](./VISION.md#uicli-parity-invariant).
+- **Desktop / Mobile parity** — every plugin command works on both desktop and mobile; none is gated desktop-only (a desktop-only dependency such as the git binary is bridged through a cross-platform path — `vault.adapter` / GitHub REST). The third member of the no-lock-in triad. See [VISION.md](./VISION.md#the-no-lock-in-triad).
 - **Local-first** — all data stays on your device, no cloud required
 
 ---
@@ -84,14 +85,12 @@ The CLI exposes five core verbs — `find`, `apply`, `query`, `index`, `validate
 ```bash
 # Run via npx (or npm install -g @kitelev/exocortex-cli)
 
-# Query your knowledge graph
+# Query your knowledge graph — core `exo:` vocabulary, works on any vault
 npx @kitelev/exocortex-cli query "
 PREFIX exo: <https://exocortex.my/ontology/exo#>
-PREFIX ems: <https://exocortex.my/ontology/ems#>
-SELECT ?task ?label WHERE {
-  ?task exo:Instance_class ems:Task .
-  ?task exo:Asset_label ?label
-}" --vault ~/vault
+SELECT ?asset ?label WHERE {
+  ?asset exo:Asset_label ?label
+} LIMIT 20" --vault ~/vault
 
 # Apply a vault-defined command (exocmd__Command) to an asset —
 # e.g. a status-transition command that completes a task.
@@ -138,14 +137,16 @@ Every piece of knowledge is a Markdown file with YAML frontmatter:
 ---
 exo__Asset_uid: 965fd5c2-808e-4c7e-8242-e2e5d85bd996
 exo__Instance_class:
-  - "[[ims__Concept]]"
+  - "[[3f9a1c20-0000-4000-8000-000000000001|Concept]]" # any class your ontology defines
 exo__Asset_label: "Exocortex"
 exo__Asset_relates:
-  - "[[PKM]]"
-  - "[[Semantic Web]]"
+  - "[[7b2e4d80-0000-4000-8000-000000000002|PKM]]"
+  - "[[a1c8f600-0000-4000-8000-000000000003|Semantic Web]]"
 ---
 Knowledge content in Markdown...
 ```
+
+> Wikilinks resolve by UID; the readable alias after `|` is just for humans. Class membership (`exo__Instance_class`) points at whichever ontology class your mounted AssetSpaces define — the engine has no built-in domain classes of its own.
 
 Assets are connected through typed relationships. Individual assets are information; connected assets become knowledge.
 
@@ -154,37 +155,25 @@ Assets are connected through typed relationships. Individual assets are informat
 Ask complex questions about your knowledge:
 
 ```sparql
-# Find all tasks related to a specific concept
+# Find every asset related to one with a given label — pure core `exo:` vocabulary
 PREFIX exo: <https://exocortex.my/ontology/exo#>
-PREFIX ems: <https://exocortex.my/ontology/ems#>
-SELECT ?task ?label WHERE {
-  ?task exo:Instance_class ems:Task .
-  ?task exo:Asset_label ?label .
-  ?task exo:Asset_relates ?concept .
-  ?concept exo:Asset_label "Machine Learning" .
+SELECT ?asset ?label WHERE {
+  ?asset exo:Asset_label ?label .
+  ?asset exo:Asset_relates ?other .
+  ?other exo:Asset_label "Machine Learning" .
 }
-```
-
-### Effort Lifecycle
-
-Complete workflow from idea to completion with automatic timestamp tracking:
-
-```
-Draft → Backlog → Analysis → ToDo → Doing → Done
-                     ↓
-                  Trashed
 ```
 
 ### Workflow Customization
 
-Define custom status lifecycles for your tasks and projects — all using regular vault assets:
+Status lifecycles are not built into the engine — you define them for **any** class as regular vault assets, and the UI buttons follow:
 
 ```bash
 exocortex-cli workflow list --vault ~/vault
 exocortex-cli workflow validate <uid> --vault ~/vault
 ```
 
-See **[Workflow Customization Guide](./docs/how-to/WORKFLOW_CUSTOMIZATION.md)** for details.
+See the **[Workflow Customization Guide](./docs/how-to/WORKFLOW_CUSTOMIZATION.md)** for the mechanism. Concrete domain lifecycles (e.g. the EMS effort flow `Draft → Backlog → Analysis → ToDo → Doing → Done`) live in their own AssetSpace, not in core — see that AssetSpace's README.
 
 ### Ontology-Driven Forms
 
@@ -196,7 +185,7 @@ Embed Layout definitions directly in your notes:
 
 ````markdown
 ```exo-layout
-[[emslayout__UpcomingTasksLayout]]
+[[8c4d2e10-0000-4000-8000-000000000004|MyLayout]]
 ```
 ````
 
@@ -206,7 +195,7 @@ Features: wikilink syntax, loading state, error handling, auto-refresh, interact
 
 Install community ontology packages (AssetSpaces) to extend your knowledge graph:
 
-- **CLI:** `npx @kitelev/exocortex-cli assetspace-add --vault ~/vault --url https://github.com/kitelev/exoas-pmbok-ontology` adds a single AssetSpace from a public GitHub URL; `bootstrap` sets up a fresh vault with the SDK floor.
+- **CLI:** `npx @kitelev/exocortex-cli assetspace-add --vault ~/vault --url https://github.com/kitelev/exoas-pmbok` adds a single AssetSpace from a public GitHub URL; `bootstrap` sets up a fresh vault with the SDK floor.
 - **Plugin:** the **Add a knowledge pack** and **Set up the engine** palette commands do the same from Obsidian. (A first-run **Setup (getting started)** wizard chains them with the recommended URLs pre-filled — see the [Getting Started Guide](./docs/tutorials/Getting-Started.md).)
 
 ### Profile — Vault-Declared Context
@@ -243,7 +232,7 @@ Statically registered plugin commands (all prefixed `Exocortex:` in the palette)
 | **Remove knowledge pack (advanced)**  | Unmount an AssetSpace from the vault                                                                                                                                |
 | **Reset profile cache (advanced)**    | Clear the profile-switch tarball cache                                                                                                                              |
 
-In addition, vault-defined `exocmd__Command` assets are registered **dynamically** as palette commands (the homoiconic command layer) — their set depends on the commands declared in your vault, with visibility gated by their preconditions. Asset-creation commands (e.g. **Create Task Instance**, **Create Project**) live in this dynamic layer rather than as a static "Create asset" command.
+In addition, vault-defined `exocmd__Command` assets are registered **dynamically** as palette commands (the homoiconic command layer) — their set depends on the commands declared in your mounted AssetSpaces, with visibility gated by their preconditions. Asset-creation and status-transition commands come from this dynamic layer rather than being hardcoded in the engine; which ones you see depends on which AssetSpaces you mount.
 
 ---
 

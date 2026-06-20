@@ -30,16 +30,15 @@ If any component is below the minimum, update it before continuing.
 1. [Requirements](#requirements)
 2. [What is Exocortex?](#what-is-exocortex)
 3. [Installation](#installation)
-4. [Your First Area](#your-first-area)
-5. [Your First Project](#your-first-project)
-6. [Your First Task](#your-first-task)
-7. [Daily Planning](#daily-planning)
-8. [Understanding the Layout](#understanding-the-layout)
-9. [Plugin Settings](#plugin-settings)
-10. [Troubleshooting](#troubleshooting)
-11. [Known Limitations](#known-limitations)
-12. [Feedback](#feedback)
-13. [Next Steps](#next-steps)
+4. [Your first assets — the EMS example domain](#your-first-assets--the-ems-example-domain)
+   - [Your First Area](#your-first-area) · [Your First Project](#your-first-project) · [Your First Task](#your-first-task)
+5. [Daily Planning](#daily-planning)
+6. [Understanding the Layout](#understanding-the-layout)
+7. [Plugin Settings](#plugin-settings)
+8. [Troubleshooting](#troubleshooting)
+9. [Known Limitations](#known-limitations)
+10. [Feedback](#feedback)
+11. [Getting Help](#getting-help)
 
 ---
 
@@ -48,6 +47,8 @@ If any component is below the minimum, update it before continuing.
 Exocortex is an Obsidian plugin that lets you **define custom entity types, their properties, and UI — all as data, not code**. Think of it as Notion databases, but with an ontology layer and fully offline.
 
 You describe your entities (tasks, projects, areas, or any custom type) in YAML frontmatter, and the plugin automatically generates layouts, action buttons, and workflows based on those definitions. No server, no vendor lock-in — your data lives as Markdown files in your git repository.
+
+> **About this guide.** The setup flow — install → bootstrap → registry → profiles → apply → sync — is **ontology-agnostic**: it is the engine, and it knows nothing about any particular domain. The hands-on walkthrough later (Areas → Projects → Tasks) uses the **EMS AssetSpace** (Effort Management) as one concrete example domain. EMS is not part of the engine — it is a mountable package. For the EMS domain model itself (its classes, status lifecycle, and properties) see the **[EMS AssetSpace README](https://github.com/kitelev/exoas-public)**; the same mechanism drives any ontology you mount.
 
 > **Important — Reading Mode is required**: every Exocortex layout (action buttons, Asset Relations, Area tree, Daily Tasks) renders **only in Obsidian's Reading Mode**. In Live Preview or Source Mode the layout is intentionally hidden — you will see only the raw frontmatter. Toggle with **Ctrl/Cmd + E** or the reading-glass icon in the top-right. This is a deliberate design choice (read vs. edit separation), not a bug.
 
@@ -188,7 +189,13 @@ The **first** sync over a freshly-mounted AssetSpace just bootstraps its baselin
 
 ---
 
-## Your First Area
+## Your first assets — the EMS example domain
+
+> **From here on, the walkthrough uses the EMS AssetSpace as a concrete example.** EMS (Effort Management) ships the classes you see below — Area, Project, Task — plus a status lifecycle. It is one mountable domain among many, not part of the engine. The steps demonstrate the **mechanism** (define an asset in frontmatter → the layout, buttons, and workflows follow); to apply it to a different domain, mount that domain's AssetSpace and use its classes instead. The full EMS reference (every class, the status lifecycle, all properties) lives in the **[EMS AssetSpace README](https://github.com/kitelev/exoas-public)** — it is intentionally not duplicated here.
+>
+> **Tip:** the **recommended** path below is the in-layout **buttons** (Create Project, Create Task). They write the correct, canonical (UID-form) frontmatter for you, so you never have to type wikilinks by hand. The manual-frontmatter examples are shown for reference; when you type a class label like `[[ems__Area]]`, the plugin resolves it so the link works — only the **buttons** write the canonical UID-form frontmatter to disk for you.
+
+### Your First Area
 
 Areas represent broad domains of work (e.g., "Development", "Marketing", "Personal Projects").
 
@@ -223,7 +230,7 @@ The Exocortex layout renders with these sections (header labels match the on-scr
 
 ---
 
-## Your First Project
+### Your First Project
 
 Projects represent specific initiatives within an area.
 
@@ -270,12 +277,7 @@ REST API for the mobile app.
 
 ### Available Status Values
 
-- `ems__EffortStatusDraft` - Initial idea, not yet committed
-- `ems__EffortStatusBacklog` - Committed, awaiting analysis
-- `ems__EffortStatusAnalysis` - Being analyzed/planned
-- `ems__EffortStatusToDo` - Ready to start
-- `ems__EffortStatusDoing` - In progress
-- `ems__EffortStatusDone` - Completed
+EMS ships a status lifecycle — `Draft → Backlog → Analysis → ToDo → Doing → Done` (plus `Trashed`). The individual status values (`ems__EffortStatusBacklog`, `ems__EffortStatusToDo`, …) and their exact meaning are part of the **EMS domain model**, documented in the **[EMS AssetSpace README](https://github.com/kitelev/exoas-public)** — kept there (not duplicated here) so the two never drift.
 
 ### What You'll See
 
@@ -284,7 +286,7 @@ REST API for the mobile app.
 
 ---
 
-## Your First Task
+### Your First Task
 
 Tasks represent specific work items within a project.
 
