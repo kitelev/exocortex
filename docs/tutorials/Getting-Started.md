@@ -193,7 +193,7 @@ The **first** sync over a freshly-mounted AssetSpace just bootstraps its baselin
 
 > **From here on, the walkthrough uses the EMS AssetSpace as a concrete example.** EMS (Effort Management) ships the classes you see below — Area, Project, Task — plus a status lifecycle. It is one mountable domain among many, not part of the engine. The steps demonstrate the **mechanism** (define an asset in frontmatter → the layout, buttons, and workflows follow); to apply it to a different domain, mount that domain's AssetSpace and use its classes instead. The full EMS reference (every class, the status lifecycle, all properties) lives in the **[EMS AssetSpace README](https://github.com/kitelev/exoas-public)** — it is intentionally not duplicated here.
 >
-> **Tip:** the **recommended** path below is the in-layout **buttons** (Create Project, Create Task). They write the correct, canonical (UID-form) frontmatter for you, so you never have to type wikilinks by hand. The manual-frontmatter examples are shown for reference; when you type a class label like `[[ems__Area]]`, the plugin resolves and canonicalizes it on save.
+> **Tip:** the **recommended** path below is the in-layout **buttons** (Create Project, Create Task). They write the correct, canonical (UID-form) frontmatter for you, so you never have to type wikilinks by hand. The manual-frontmatter examples are shown for reference; when you type a class label like `[[ems__Area]]`, the plugin resolves it so the link works — only the **buttons** write the canonical UID-form frontmatter to disk for you.
 
 ### Your First Area
 
