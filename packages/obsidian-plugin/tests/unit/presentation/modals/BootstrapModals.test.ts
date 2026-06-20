@@ -284,7 +284,7 @@ describe("BootstrapVaultModal", () => {
 // RFC 0002 §3.3 / P5 — the durable, in-context bootstrap result panel. Adds a
 // persistent surface ON TOP of the (already-firing) toast + activity log, with a
 // next-step nudge. Revert-verify: removing the panel's next-step button (or its
-// `onAddStarterContent` wiring) makes the next-step assertions FAIL.
+// `onAddRegistry` wiring) makes the next-step assertions FAIL.
 describe("BootstrapResultModal", () => {
   const BOOTSTRAPPED: BootstrapResultInfo = {
     kind: "bootstrapped",
@@ -294,25 +294,25 @@ describe("BootstrapResultModal", () => {
 
   it("bootstrapped — durable summary states what landed + a next-step nudge", () => {
     new BootstrapResultModal(fakeApp, BOOTSTRAPPED, {
-      onAddStarterContent: () => undefined,
+      onAddRegistry: () => undefined,
     }).open();
     const text = document.body.textContent ?? "";
     // Durable "what happened" — folder + sha survive the toast fade.
     expect(text).toMatch(/assetspaces\/kitelev\/exoas-exo/);
     expect(text).toMatch(/abc1234/);
-    // "What next" nudge points at the starter content.
+    // "What next" nudge points at the EKA registry (the post-bootstrap step).
     expect(text).toMatch(/Next:/);
-    expect(text).toMatch(/starter content/i);
+    expect(text).toMatch(/AssetSpace registry/i);
   });
 
-  it("next-step button fires onAddStarterContent and closes the panel", () => {
+  it("next-step button fires onAddRegistry and closes the panel", () => {
     let nextCalls = 0;
     new BootstrapResultModal(fakeApp, BOOTSTRAPPED, {
-      onAddStarterContent: () => {
+      onAddRegistry: () => {
         nextCalls++;
       },
     }).open();
-    findButton("Add the starter content")!.click();
+    findButton("Add the AssetSpace registry")!.click();
     expect(nextCalls).toBe(1);
     // Panel closed (handed off to the Add-AssetSpace flow) — content torn down.
     expect(document.querySelector(".bootstrap-result-title")).toBeNull();
@@ -321,7 +321,7 @@ describe("BootstrapResultModal", () => {
   it("Done button closes without firing the next step", () => {
     let nextCalls = 0;
     new BootstrapResultModal(fakeApp, BOOTSTRAPPED, {
-      onAddStarterContent: () => {
+      onAddRegistry: () => {
         nextCalls++;
       },
     }).open();
@@ -334,20 +334,20 @@ describe("BootstrapResultModal", () => {
     new BootstrapResultModal(
       fakeApp,
       { kind: "already-bootstrapped" },
-      { onAddStarterContent: () => undefined },
+      { onAddRegistry: () => undefined },
     ).open();
     const text = document.body.textContent ?? "";
     expect(text).toMatch(/already/i);
     expect(text).toMatch(/Next:/);
     // The forward action is still offered.
-    expect(findButton("Add the starter content")).toBeDefined();
+    expect(findButton("Add the AssetSpace registry")).toBeDefined();
   });
 
   it("fetched — durable restore summary with the count + next-step nudge", () => {
     new BootstrapResultModal(
       fakeApp,
       { kind: "fetched", fetched: 2, total: 3 },
-      { onAddStarterContent: () => undefined },
+      { onAddRegistry: () => undefined },
     ).open();
     const text = document.body.textContent ?? "";
     expect(text).toMatch(/2 of 3/);
@@ -356,11 +356,11 @@ describe("BootstrapResultModal", () => {
 
   it("a11y — both buttons carry explicit aria-labels (P16)", () => {
     new BootstrapResultModal(fakeApp, BOOTSTRAPPED, {
-      onAddStarterContent: () => undefined,
+      onAddRegistry: () => undefined,
     }).open();
     expect(
-      findButton("Add the starter content")!.getAttribute("aria-label"),
-    ).toMatch(/Add the starter content/i);
+      findButton("Add the AssetSpace registry")!.getAttribute("aria-label"),
+    ).toMatch(/Add the AssetSpace registry/i);
     expect(findButton("Done")!.getAttribute("aria-label")).toMatch(
       /Close the setup result/i,
     );
@@ -378,20 +378,20 @@ describe("BootstrapResultModal", () => {
 
   it("failed (auth) — surfaces the cause + a PAT recovery step", () => {
     new BootstrapResultModal(fakeApp, FAILED_AUTH, {
-      onAddStarterContent: () => undefined,
+      onAddRegistry: () => undefined,
     }).open();
     const text = document.body.textContent ?? "";
     expect(text).toMatch(/didn't finish/i);
     expect(text).toMatch(/rejected the request/i);
     expect(text).toMatch(/GitHub PAT/);
     // No success nudge on a failure panel.
-    expect(findButton("Add the starter content")).toBeUndefined();
+    expect(findButton("Add the AssetSpace registry")).toBeUndefined();
   });
 
   it("failed — «Try again» fires onRetry with the failing operation + closes", () => {
     const retried: string[] = [];
     new BootstrapResultModal(fakeApp, FAILED_AUTH, {
-      onAddStarterContent: () => undefined,
+      onAddRegistry: () => undefined,
       onRetry: (op) => retried.push(op),
     }).open();
     findButton("Try again")!.click();
@@ -409,7 +409,7 @@ describe("BootstrapResultModal", () => {
         cause: "bad-url",
         detail: "Invalid GitHub repo URL: x",
       },
-      { onAddStarterContent: () => undefined, onRetry: (op) => retried.push(op) },
+      { onAddRegistry: () => undefined, onRetry: (op) => retried.push(op) },
     ).open();
     const text = document.body.textContent ?? "";
     expect(text).toMatch(/check the URL/i);
@@ -419,7 +419,7 @@ describe("BootstrapResultModal", () => {
 
   it("failed without onRetry wired — still renders (cause + Dismiss), no crash", () => {
     new BootstrapResultModal(fakeApp, FAILED_AUTH, {
-      onAddStarterContent: () => undefined,
+      onAddRegistry: () => undefined,
     }).open();
     expect(findButton("Try again")).toBeUndefined();
     // The Done button is labelled «Dismiss» on a failure panel.
@@ -551,8 +551,8 @@ describe("AddAssetSpaceModal", () => {
     expect(result).toEqual({ url: "https://github.com/me/thing" });
   });
 
-  it("initialUrl pre-fills the field + live-previews it (onboarding §3.1 step 2)", () => {
-    const REGISTRY = "https://github.com/kitelev/exoas-starter-registry";
+  it("initialUrl pre-fills the field + live-previews it (onboarding §3.1 steps 3-4)", () => {
+    const REGISTRY = "https://github.com/kitelev/exoas-registry";
     new AddAssetSpaceModal(fakeApp, derive, () => undefined, REGISTRY).open();
     const input = document.querySelector("input") as HTMLInputElement;
     // The recommended registry URL is pre-filled; the user still confirms.
@@ -563,12 +563,12 @@ describe("AddAssetSpaceModal", () => {
     ) as HTMLElement;
     expect(preview.classList.contains("is-placeholder")).toBe(false);
     expect(preview.textContent).toMatch(
-      /Target folder: assetspaces\/kitelev\/exoas-starter-registry/,
+      /Target folder: assetspaces\/kitelev\/exoas-registry/,
     );
   });
 
   it("pre-filled URL → Add resolves it without retyping", () => {
-    const REGISTRY = "https://github.com/kitelev/exoas-starter-registry";
+    const REGISTRY = "https://github.com/kitelev/exoas-registry";
     let result: { url: string } | null | undefined;
     new AddAssetSpaceModal(
       fakeApp,

@@ -21,8 +21,8 @@ export interface AddAssetSpaceInput {
  * exactly once.
  *
  * An optional `initialUrl` pre-fills the field — used by the first-run
- * onboarding panel (RFC 0002 §3.1 step 2) to offer the public, stable
- * `exoas-starter-registry` URL one click away. The user still confirms; a
+ * onboarding panel (RFC 0002 §3.1 steps 3-4) to offer the public, stable
+ * EKA registry / profiles URL one click away. The user still confirms; a
  * pre-fill is a recommended default, not an auto-action.
  */
 export class AddAssetSpaceModal extends Modal {

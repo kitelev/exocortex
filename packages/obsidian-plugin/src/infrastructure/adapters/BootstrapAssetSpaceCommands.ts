@@ -216,7 +216,7 @@ export interface BootstrapAssetSpaceCommandsDeps {
    * Open the add-AssetSpace modal (single URL field). Resolves the entered
    * URL, or null if the user cancelled. `prefillUrl` (optional) pre-fills the
    * field — used by the first-run onboarding panel to offer the recommended
-   * `exoas-starter-registry` URL (RFC 0002 §3.1 step 2); the user still confirms.
+   * EKA registry / profiles URL (RFC 0002 §3.1 steps 3-4); the user still confirms.
    */
   promptAddAssetSpaceUrl: (
     prefillUrl?: string,
@@ -366,8 +366,8 @@ export class BootstrapAssetSpaceCommands {
    * Command 2 — `Exocortex: Add AssetSpace by URL`.
    *
    * `prefillUrl` (optional) pre-fills the modal field — the first-run
-   * onboarding panel passes the public `exoas-starter-registry` URL here
-   * (RFC 0002 §3.1 step 2). The user still reviews + confirms in the modal;
+   * onboarding panel passes the public EKA registry / profiles URL here
+   * (RFC 0002 §3.1 steps 3-4). The user still reviews + confirms in the modal;
    * the materialisation path below is unchanged.
    */
   async invokeAddAssetSpace(prefillUrl?: string): Promise<void> {
