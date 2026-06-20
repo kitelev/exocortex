@@ -252,17 +252,6 @@ jest.mock("@plugin/infrastructure/adapters/OperationsLogReader", () => {
   }
   return { OperationsLogReader: MockOperationsLogReader };
 });
-jest.mock("@plugin/infrastructure/adapters/SwitchCacheLayer", () => ({
-  SwitchCacheLayer: class {
-    getCacheStats(): {
-      count: number;
-      totalSize: number;
-      oldestEntry: string | null;
-    } {
-      return { count: 0, totalSize: 0, oldestEntry: null };
-    }
-  },
-}));
 
 const INTERNAL_ID_PATTERNS: { label: string; re: RegExp }[] = [
   { label: "Vision Lock", re: /Vision Lock/ },

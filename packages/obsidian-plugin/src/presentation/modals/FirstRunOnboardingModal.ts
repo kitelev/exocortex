@@ -288,9 +288,16 @@ export class FirstRunOnboardingModal extends Modal {
     // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Step 1:" a11y prefix (matches the step-numbered aria-labels above) + "GitHub" proper noun
     saveBtn.setAttribute("aria-label", "Step 1: Save your GitHub token");
     saveBtn.addEventListener("click", () => {
-      void this.actions.onSavePat(input.value).catch(() => {
-        /* save failure is surfaced by the wiring (notifier); never throw here */
-      });
+      void this.actions
+        .onSavePat(input.value)
+        // Tick step 1 off only once the token actually persists (saving "" is
+        // the valid skip path and still resolves). A save failure is surfaced
+        // by the wiring's notifier and leaves the step un-ticked so the tester
+        // knows to retry.
+        .then(() => this.markStepDone(item, header))
+        .catch(() => {
+          /* save failure is surfaced by the wiring (notifier); never throw here */
+        });
     });
 
     // Test connection (RFC 0002) — verify the token reaches GitHub BEFORE the
@@ -374,7 +381,38 @@ export class FirstRunOnboardingModal extends Modal {
     // Screen-reader label spells out the step number so the action is
     // unambiguous out of visual context (P16).
     button.setAttribute("aria-label", `${step.marker}: ${step.actionLabel}`);
-    button.addEventListener("click", () => step.action());
+    button.addEventListener("click", () => {
+      step.action();
+      // Tick the step off so a tester walking the checklist can see what they
+      // have already done — especially after the sub-dialog stacks on top and
+      // they return to this panel.
+      this.markStepDone(item, header);
+    });
+  }
+
+  /**
+   * Mark a step as completed once its primary action has been invoked, so a
+   * tester can track their progress through the checklist (RFC 0002 §3.1
+   * polish). Adds an `is-done` modifier to the step `<li>` and a plain-text
+   * "✓ Done" marker into the step header.
+   *
+   * Idempotent — re-actioning a step (the sub-dialogs stack on top, so a step
+   * button can be clicked again) keeps a single marker.
+   *
+   * Accessibility (P16): the marker carries the word "Done" — never a glyph
+   * alone — and lives in a `role="status"` / `aria-live="polite"` region so
+   * assistive tech announces the completion as it happens.
+   */
+  private markStepDone(item: HTMLElement, header: HTMLElement): void {
+    if (item.classList.contains("is-done")) return;
+    item.classList.add("is-done");
+    const done = header.createEl("span", {
+      cls: "exocortex-onboarding-step-done",
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- decorative "✓" completion glyph precedes the status word "Done"; the word (never the glyph alone) carries the meaning per P16
+      text: "✓ Done",
+    });
+    done.setAttribute("role", "status");
+    done.setAttribute("aria-live", "polite");
   }
 
   override onClose(): void {

@@ -479,3 +479,110 @@ describe("FirstRunOnboardingModal — Test connection (RFC 0002)", () => {
     expect(patStatus()!.classList.contains("is-invalid")).toBe(true);
   });
 });
+
+describe("FirstRunOnboardingModal — step-completion indicator (RFC 0002 §3.1 polish)", () => {
+  function doneMarkers(): HTMLElement[] {
+    return Array.from(
+      document.querySelectorAll(".exocortex-onboarding-step-done"),
+    );
+  }
+
+  it("ticks a materialise step off with a ✓ Done marker once its action runs", () => {
+    const { actions } = makeActions();
+    new FirstRunOnboardingModal(fakeApp, actions).open();
+
+    const btn = findButton("Set up the engine")!;
+    const li = btn.closest("li.exocortex-onboarding-step") as HTMLElement;
+    // Not done before the action runs.
+    expect(li.classList.contains("is-done")).toBe(false);
+    expect(li.querySelector(".exocortex-onboarding-step-done")).toBeNull();
+
+    btn.click();
+
+    expect(li.classList.contains("is-done")).toBe(true);
+    const marker = li.querySelector(".exocortex-onboarding-step-done")!;
+    expect(marker.textContent).toContain("Done");
+  });
+
+  it("the ✓ Done marker is an aria-live status with the word Done (P16, never glyph-only)", () => {
+    const { actions } = makeActions();
+    new FirstRunOnboardingModal(fakeApp, actions).open();
+
+    findButton("Apply a profile")!.click();
+
+    const marker = doneMarkers()[0];
+    expect(marker).toBeDefined();
+    expect(marker.getAttribute("role")).toBe("status");
+    expect(marker.getAttribute("aria-live")).toBe("polite");
+    // The word "Done" carries the meaning — the ✓ glyph is decorative.
+    expect(marker.textContent).toMatch(/done/i);
+  });
+
+  it("ticks off only the actioned step — sibling steps stay un-done (independent tracking)", () => {
+    const { actions } = makeActions();
+    new FirstRunOnboardingModal(fakeApp, actions).open();
+
+    findButton("Set up the engine")!.click();
+
+    // Exactly one marker across the whole checklist.
+    expect(doneMarkers()).toHaveLength(1);
+    const engineLi = findButton("Set up the engine")!.closest("li")!;
+    const registryLi = findButton("Add the AssetSpace registry")!.closest("li")!;
+    expect(engineLi.classList.contains("is-done")).toBe(true);
+    expect(registryLi.classList.contains("is-done")).toBe(false);
+  });
+
+  it("re-actioning a step keeps a single ✓ Done marker (idempotent — sub-dialogs let a step be re-clicked)", () => {
+    const { actions } = makeActions();
+    new FirstRunOnboardingModal(fakeApp, actions).open();
+
+    const btn = findButton("Add the AssetSpace registry")!;
+    btn.click();
+    btn.click();
+    btn.click();
+
+    const li = btn.closest("li.exocortex-onboarding-step") as HTMLElement;
+    expect(li.querySelectorAll(".exocortex-onboarding-step-done")).toHaveLength(1);
+  });
+
+  it("ticks step 1 off once the token save resolves (incl. the empty skip path)", async () => {
+    const { actions } = makeActions();
+    new FirstRunOnboardingModal(fakeApp, actions).open();
+
+    const saveBtn = findButton("Save token")!;
+    const patLi = saveBtn.closest(
+      "li.exocortex-onboarding-step-pat",
+    ) as HTMLElement;
+    expect(patLi.classList.contains("is-done")).toBe(false);
+
+    saveBtn.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(patLi.classList.contains("is-done")).toBe(true);
+    expect(
+      patLi.querySelector(".exocortex-onboarding-step-done")?.textContent,
+    ).toContain("Done");
+  });
+
+  it("does NOT tick step 1 off when the token save fails (tester should retry)", async () => {
+    const { actions } = makeActions({
+      onSavePat: async () => {
+        throw new Error("disk full");
+      },
+    });
+    new FirstRunOnboardingModal(fakeApp, actions).open();
+
+    const saveBtn = findButton("Save token")!;
+    const patLi = saveBtn.closest(
+      "li.exocortex-onboarding-step-pat",
+    ) as HTMLElement;
+
+    saveBtn.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(patLi.classList.contains("is-done")).toBe(false);
+    expect(patLi.querySelector(".exocortex-onboarding-step-done")).toBeNull();
+  });
+});

@@ -98,14 +98,6 @@ jest.mock("@plugin/infrastructure/adapters/OperationsLogReader", () => {
   return { OperationsLogReader: MockOperationsLogReader };
 });
 
-jest.mock("@plugin/infrastructure/adapters/SwitchCacheLayer", () => ({
-  SwitchCacheLayer: class {
-    getCacheStats(): { count: number; totalSize: number; oldestEntry: string | null } {
-      return { count: 0, totalSize: 0, oldestEntry: null };
-    }
-  },
-}));
-
 describe("ExocortexSettingTab — Issue #3320 Profile sections", () => {
   let settingTab: ExocortexSettingTab;
   let mockApp: any;
@@ -242,15 +234,15 @@ describe("ExocortexSettingTab — Issue #3320 Profile sections", () => {
     settingTab.containerEl = mockContainerEl;
   });
 
-  it("renders all 4 Profile section headings in expected order", () => {
+  it("renders the Profile section headings in expected order", () => {
     settingTab.display();
     const headings = settingCalls.filter((c) => c.heading).map((c) => c.name);
     // The Display-Name section also contributes headings. We just assert
-    // что 4 expected headings appear в the correct relative order.
+    // что the expected headings appear в the correct relative order. The dead
+    // «Switch cache» section was removed, so it is no longer in the sequence.
     const expected = [
       "Profile: GitHub PAT",
       "Active profile",
-      "Switch cache",
       "Operations log",
     ];
     const filtered = headings.filter((h) =>
@@ -330,10 +322,15 @@ describe("ExocortexSettingTab — Issue #3320 Profile sections", () => {
     expect(appendCalls).toContain("Last applied: uid-deleted");
   });
 
-  it("renders the Switch cache stats row with Clear button", () => {
+  it("does NOT render the dead «Switch cache» section (removed as non-functional UI)", () => {
     settingTab.display();
+    // The section showed always-zero stats and a Clear-cache button that only
+    // toasted a «Phase C+D, not implemented in v3» notice — dead UI leaking an
+    // internal phase name. It must no longer render to a tester.
+    const cacheHeading = settingCalls.find((c) => c.name === "Switch cache");
     const cacheRow = settingCalls.find((c) => c.name === "Cache stats");
-    expect(cacheRow).toBeDefined();
+    expect(cacheHeading).toBeUndefined();
+    expect(cacheRow).toBeUndefined();
   });
 
   it("renders the Operations log <pre> element", () => {

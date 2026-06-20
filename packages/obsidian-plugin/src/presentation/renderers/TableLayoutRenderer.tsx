@@ -423,7 +423,7 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
           <tbody>
             <tr>
               <td colSpan={totalColumns} className="exo-layout-empty-message">
-                No data available
+                No items to display yet
               </td>
             </tr>
           </tbody>

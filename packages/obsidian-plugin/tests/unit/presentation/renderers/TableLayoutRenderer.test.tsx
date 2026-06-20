@@ -143,7 +143,7 @@ describe("TableLayoutRenderer", () => {
         />
       );
 
-      expect(screen.getByText("No data available")).toBeInTheDocument();
+      expect(screen.getByText("No items to display yet")).toBeInTheDocument();
     });
 
     it("still renders column headers in empty state", () => {
