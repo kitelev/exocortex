@@ -143,6 +143,11 @@ describe("extractTemplateBody — strip leading frontmatter", () => {
   it("handles an empty body after frontmatter", () => {
     expect(extractTemplateBody(`---\nexo__Asset_uid: x\n---\n`)).toBe("");
   });
+
+  it("strips a CRLF frontmatter block (L1 — Windows vault) without leaking it", () => {
+    const content = `---\r\nexo__Asset_label: T\r\n---\r\n## Plan\r\n- step`;
+    expect(extractTemplateBody(content)).toBe("## Plan\r\n- step");
+  });
 });
 
 describe("resolveTemplateForInsert — strip frontmatter + resolve tokens", () => {

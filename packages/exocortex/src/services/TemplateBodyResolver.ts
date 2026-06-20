@@ -18,10 +18,15 @@
  *   - Веха 4 — the `$token` resolution itself.
  *
  * Leniency contract (deliberately different from grounding value positions):
- * a markdown body is freeform prose, so an UNKNOWN `$word`, a non-scalar
- * resolver (`string[]`), or a context-missing resolver (`null`) leaves the
- * literal `$word` untouched rather than throwing or emitting an empty string.
- * Only KNOWN scalar tokens are spliced — `$5.00`, `$totallyUnknown` survive.
+ * a markdown body is freeform prose, so the literal `$word` is left untouched
+ * (rather than thrown on or blanked) when the token is UNKNOWN, when the
+ * resolver yields a non-scalar (`string[]`), `null`, OR an EMPTY string. The
+ * last case matters because several built-in resolvers (`target`,
+ * `targetFolder`, `userInputLabel`, …) return `""` when their context is
+ * absent — and the editor "Insert template" path resolves with NO context. A
+ * visible unresolved `$target` the user can fix beats a silently-deleted token.
+ * Only KNOWN, NON-EMPTY scalar tokens are spliced — `$5.00`, `$totallyUnknown`,
+ * and context-missing `$target` all survive.
  */
 
 import {
@@ -61,10 +66,11 @@ export function resolveTemplateBody(
     const resolver = getResolver(name);
     if (resolver === undefined) return literal;
     const value = resolver(ctx);
-    // Only scalar strings are spliced into freeform body text. `string[]`
-    // (list-typed properties) and `null` (context missing) leave the literal
-    // marker intact — surprising YAML-ish output / empty holes are worse than
-    // a visible unresolved token the user can fix.
-    return typeof value === "string" ? value : literal;
+    // Only KNOWN, NON-EMPTY scalar strings are spliced into freeform body text.
+    // `string[]` (list-typed), `null`, and `""` (context-missing resolvers such
+    // as `target`/`targetFolder`/`userInputLabel` return empty when their
+    // context is absent) all leave the literal marker intact — a visible
+    // unresolved token the user can fix beats a silently-deleted one.
+    return typeof value === "string" && value.length > 0 ? value : literal;
   });
 }

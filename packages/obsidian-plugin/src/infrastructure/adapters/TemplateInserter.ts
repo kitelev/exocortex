@@ -112,7 +112,10 @@ export function collectTemplateChoices(
  * does not start with a blank line.
  */
 export function extractTemplateBody(content: string): string {
-  const match = content.match(/^---\n[\s\S]*?\n---\n?/);
+  // `\r?\n` so a CRLF-stored template file (Windows vault) strips correctly
+  // rather than leaking its frontmatter block into the inserted body — matching
+  // the repo's newer frontmatter strippers (validate-schema, CliProfileResolver).
+  const match = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
   return match ? content.slice(match[0].length) : content;
 }
 

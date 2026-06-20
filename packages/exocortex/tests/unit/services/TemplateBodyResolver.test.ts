@@ -66,6 +66,16 @@ describe("resolveTemplateBody — registry-driven $token substitution (vehy 2-4)
     expect(resolveTemplateBody("x $maybe y")).toBe("x $maybe y");
   });
 
+  it("leaves a token whose resolver yields an EMPTY string untouched (M1 — context-missing resolvers)", () => {
+    // Built-in `target` returns "" when no targetIRI is in context — and the
+    // editor "Insert template" path resolves with no context. A silently-deleted
+    // token is worse than a visible one the user can fix.
+    expect(resolveTemplateBody("link: $target end")).toBe("link: $target end");
+    expect(resolveTemplateBody("$userInputLabel here")).toBe(
+      "$userInputLabel here",
+    );
+  });
+
   it("does not partially match — $todayX resolves token name 'todayX', not 'today'", () => {
     registerResolver("today", () => "2026-06-20");
     // 'todayX' is unregistered → whole `$todayX` left literal; `today` NOT spliced.
