@@ -143,7 +143,18 @@ export class BootstrapVaultModal extends Modal {
       cls: "mod-cta",
       text: "Bootstrap",
     });
+    bootstrapBtn.setAttribute("aria-label", "Bootstrap the vault with this engine repository");
     bootstrapBtn.addEventListener("click", () => this.submit());
+
+    // Managed focus (RFC 0002 §3.11 / P16) — land keyboard focus on the
+    // engine-URL field so a keyboard / screen-reader user starts at the input,
+    // not the dialog container. Focus-trap + Esc-close are provided by
+    // Obsidian's Modal base. Guarded — jsdom / headless contexts may lack focus.
+    try {
+      this.exoInput?.focus();
+    } catch {
+      /* focus is best-effort */
+    }
   }
 
   private createUrlField(
@@ -152,14 +163,18 @@ export class BootstrapVaultModal extends Modal {
     placeholder: string,
   ): HTMLInputElement {
     const wrap = parent.createEl("div", { cls: "bootstrap-vault-field" });
-    wrap.createEl("label", { text: label });
+    // a11y (P16, §3.11): wire the visible <label> to the <input> via for/id so
+    // assistive tech reads the field name when focus lands on it.
+    const fieldId = "bootstrap-vault-exo-url";
+    const labelEl = wrap.createEl("label", { text: label });
+    labelEl.setAttribute("for", fieldId);
     const input = wrap.createEl("input", {
       type: "text",
       placeholder,
       cls: "bootstrap-vault-input bootstrap-modal-input",
       // Screen-reader label mirrors the visible <label> so the field is named
-      // even out of visual context (P16 a11y).
-      attr: { "aria-label": label },
+      // even out of visual context (P16 a11y); id pairs with the label's for.
+      attr: { id: fieldId, "aria-label": label },
     });
     return input;
   }

@@ -67,11 +67,17 @@ export class AddAssetSpaceModal extends Modal {
     });
 
     const wrap = contentEl.createEl("div", { cls: "add-assetspace-field" });
-    wrap.createEl("label", { text: "Repository URL" });
+    // a11y (RFC 0002 §3.11 / P16): wire the visible <label> to the <input> via
+    // for/id so assistive tech reads the field name when focus lands on it, and
+    // add an aria-label so the field is named even out of visual context.
+    const fieldId = "add-assetspace-url";
+    const labelEl = wrap.createEl("label", { text: "Repository URL" });
+    labelEl.setAttribute("for", fieldId);
     const input = wrap.createEl("input", {
       type: "text",
       placeholder: "https://github.com/kitelev/exoas-pmbok-ontology",
       cls: "add-assetspace-input bootstrap-modal-input",
+      attr: { id: fieldId, "aria-label": "Repository URL" },
     });
     this.urlInput = input;
     // Pre-fill the recommended starter-registry URL when launched from the
@@ -103,6 +109,7 @@ export class AddAssetSpaceModal extends Modal {
       cls: "modal-button-container add-assetspace-actions",
     });
     const cancelBtn = actions.createEl("button", { text: "Cancel" });
+    cancelBtn.setAttribute("aria-label", "Cancel — do not add a knowledge pack");
     cancelBtn.addEventListener("click", () => {
       this.settle(null);
       this.close();
@@ -111,7 +118,18 @@ export class AddAssetSpaceModal extends Modal {
       cls: "mod-cta",
       text: "Add",
     });
+    addBtn.setAttribute("aria-label", "Add the knowledge pack from this URL");
     addBtn.addEventListener("click", () => this.submit());
+
+    // Managed focus (RFC 0002 §3.11 / P16) — land keyboard focus on the URL
+    // field so a keyboard / screen-reader user starts at the input rather than
+    // the dialog container. Focus-trap + Esc-close are provided by Obsidian's
+    // Modal base. Guarded — jsdom / headless contexts may lack focus support.
+    try {
+      this.urlInput?.focus();
+    } catch {
+      /* focus is best-effort */
+    }
   }
 
   private refreshPreview(): void {
