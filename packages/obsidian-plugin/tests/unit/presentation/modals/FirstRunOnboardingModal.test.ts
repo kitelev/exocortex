@@ -422,6 +422,8 @@ describe("FirstRunOnboardingModal — Test connection (RFC 0002)", () => {
     const status = patStatus()!;
     expect(status.classList.contains("is-valid")).toBe(true);
     expect(status.classList.contains("is-invalid")).toBe(false);
+    // aria-busy is transient — cleared once the result lands.
+    expect(status.hasAttribute("aria-busy")).toBe(false);
     // Reuses describePatConnection → the same wording as the Settings notice.
     expect(status.textContent).toContain("GitHub OK");
     expect(status.textContent).toContain("4321 requests remaining");

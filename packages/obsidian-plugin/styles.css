@@ -6302,6 +6302,11 @@
   color: var(--text-muted, #6e7681);
 }
 
+.exocortex-onboarding-pat-status.is-pending {
+  color: var(--text-muted, #6e7681);
+  font-style: italic;
+}
+
 .exocortex-onboarding-pat-status.is-valid {
   color: var(--text-success, #2e7d32);
 }

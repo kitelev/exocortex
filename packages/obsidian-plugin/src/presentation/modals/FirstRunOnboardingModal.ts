@@ -302,6 +302,9 @@ export class FirstRunOnboardingModal extends Modal {
           testBtn.disabled = true;
           status.classList.remove("is-valid", "is-invalid");
           status.classList.add("is-pending");
+          // aria-busy while the request is in flight so assistive tech knows the
+          // status region is updating (cleared in finally).
+          status.setAttribute("aria-busy", "true");
           status.textContent = "Testing the connection…";
           try {
             const result = await onTestPat(input.value);
@@ -315,6 +318,7 @@ export class FirstRunOnboardingModal extends Modal {
             status.classList.add("is-invalid");
             status.textContent = "Test connection failed: unexpected error.";
           } finally {
+            status.removeAttribute("aria-busy");
             testBtn.disabled = false;
           }
         })();
