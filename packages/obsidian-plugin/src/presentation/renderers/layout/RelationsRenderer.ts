@@ -17,6 +17,17 @@ export interface UniversalLayoutConfig {
 }
 
 /**
+ * F11 — user-facing copy for the Asset Relations empty-state.
+ *
+ * Shown (in place of silently omitting the whole section) when an asset has
+ * zero relations, so a first-run user who just created their first
+ * Area/Project/Task sees that the feature exists rather than a missing block.
+ * Mirrors the intent of the cold-start COMMANDS skeleton (RFC 0002 §3.8 P13),
+ * but this is a *settled* state — not a transient indexing placeholder.
+ */
+export const RELATIONS_EMPTY_TEXT = "No related assets yet";
+
+/**
  * Legacy hardcoded fallback map for `groupSpecificProperties`.
  *
  * Captures the exact behaviour shipped pre-RFC be70f741 so that existing
@@ -155,10 +166,6 @@ export class RelationsRenderer {
     renderHeader?: (container: HTMLElement, sectionId: string, title: string) => void,
     isCollapsed?: boolean,
   ): Promise<void> {
-    if (relations.length === 0) {
-      return;
-    }
-
     const container = el.createDiv({ cls: "exocortex-assets-relations" });
 
     // Render collapsible header if function provided
@@ -176,6 +183,20 @@ export class RelationsRenderer {
 
     // Only render content if not collapsed
     if (isCollapsed) {
+      return;
+    }
+
+    // F11 — empty-state: render a muted "No related assets yet" affordance
+    // instead of an early return, so the section is discoverable on a
+    // freshly-created asset with no backlinks/children (a first-run tester's
+    // very first Area/Project/Task). Consistent with the cold-start COMMANDS
+    // skeleton, but settled (no pulse): this is a genuine empty result, not a
+    // transient indexing placeholder.
+    if (relations.length === 0) {
+      contentContainer.createDiv({
+        cls: "exocortex-relations-empty",
+        text: RELATIONS_EMPTY_TEXT,
+      });
       return;
     }
 
