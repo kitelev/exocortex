@@ -9,11 +9,16 @@ export interface BootstrapVaultUrls {
  * example AND linked from the inline explainer (RFC 0002 §3.3 — "a link to the
  * floor repo"). Single source so the placeholder and the link never drift.
  *
- * EC7 note: this is a LINK + a greyed-out placeholder example, NOT a pre-fill.
- * The field starts empty (the `kitelev/exoas-*` repos materialise a specific
- * ontology and are not auto-filled as a generic default — see EC7 below); the
- * link only lets a user *view / fork* the public floor before they decide what
- * to enter.
+ * EC7 note: this is a LINK + a greyed-out placeholder example, NOT an
+ * *auto*-pre-fill. The field starts empty (the `kitelev/exoas-*` repos
+ * materialise a specific ontology and are not auto-filled as a generic default
+ * — see EC7 below); the link only lets a user *view / fork* the public floor
+ * before they decide what to enter.
+ *
+ * This same URL is ALSO the value the explicit «Use default» button writes into
+ * the field on click (directive 2026-06-20). That is an opt-in user action, so
+ * it does not violate EC7's no-*auto*-prefill rule — the field still starts
+ * empty; the user chooses to populate it.
  */
 export const PUBLIC_EXO_FLOOR_URL = "https://github.com/kitelev/exoas-exo";
 
