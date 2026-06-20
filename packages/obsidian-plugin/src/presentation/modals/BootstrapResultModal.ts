@@ -18,7 +18,7 @@ export interface BootstrapResultModalActions {
    * AssetSpace registry right away (the natural next step after bootstrapping
    * the exo floor). The user still reviews + confirms in that modal.
    */
-  onAddStarterContent: () => void;
+  onAddRegistry: () => void;
   /**
    * Failure recovery (§3.10) — re-run the operation that failed (bootstrap OR
    * add-AssetSpace), so a wrong URL / dropped network / mis-scoped token is one
@@ -137,7 +137,7 @@ export class BootstrapResultModal extends Modal {
       );
       nextBtn.addEventListener("click", () => {
         this.close();
-        this.actions.onAddStarterContent();
+        this.actions.onAddRegistry();
       });
       this.firstFocusable = nextBtn;
     }

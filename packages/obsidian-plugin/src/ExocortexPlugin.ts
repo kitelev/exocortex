@@ -3777,7 +3777,7 @@ export default class ExocortexPlugin extends Plugin {
       // is in scope by the time this closure runs).
       showResult: (result) =>
         new BootstrapResultModal(this.app, result, {
-          onAddStarterContent: () =>
+          onAddRegistry: () =>
             void bootstrapCommands.invokeAddAssetSpace(REGISTRY_ASSETSPACE_URL),
           // RFC 0002 §3.10 — one-click retry of the failed operation: re-open
           // the same Bootstrap / Add flow (its modal collects the URL again) so

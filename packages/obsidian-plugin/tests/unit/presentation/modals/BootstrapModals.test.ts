@@ -284,7 +284,7 @@ describe("BootstrapVaultModal", () => {
 // RFC 0002 §3.3 / P5 — the durable, in-context bootstrap result panel. Adds a
 // persistent surface ON TOP of the (already-firing) toast + activity log, with a
 // next-step nudge. Revert-verify: removing the panel's next-step button (or its
-// `onAddStarterContent` wiring) makes the next-step assertions FAIL.
+// `onAddRegistry` wiring) makes the next-step assertions FAIL.
 describe("BootstrapResultModal", () => {
   const BOOTSTRAPPED: BootstrapResultInfo = {
     kind: "bootstrapped",
@@ -294,7 +294,7 @@ describe("BootstrapResultModal", () => {
 
   it("bootstrapped — durable summary states what landed + a next-step nudge", () => {
     new BootstrapResultModal(fakeApp, BOOTSTRAPPED, {
-      onAddStarterContent: () => undefined,
+      onAddRegistry: () => undefined,
     }).open();
     const text = document.body.textContent ?? "";
     // Durable "what happened" — folder + sha survive the toast fade.
@@ -305,10 +305,10 @@ describe("BootstrapResultModal", () => {
     expect(text).toMatch(/AssetSpace registry/i);
   });
 
-  it("next-step button fires onAddStarterContent and closes the panel", () => {
+  it("next-step button fires onAddRegistry and closes the panel", () => {
     let nextCalls = 0;
     new BootstrapResultModal(fakeApp, BOOTSTRAPPED, {
-      onAddStarterContent: () => {
+      onAddRegistry: () => {
         nextCalls++;
       },
     }).open();
@@ -321,7 +321,7 @@ describe("BootstrapResultModal", () => {
   it("Done button closes without firing the next step", () => {
     let nextCalls = 0;
     new BootstrapResultModal(fakeApp, BOOTSTRAPPED, {
-      onAddStarterContent: () => {
+      onAddRegistry: () => {
         nextCalls++;
       },
     }).open();
@@ -334,7 +334,7 @@ describe("BootstrapResultModal", () => {
     new BootstrapResultModal(
       fakeApp,
       { kind: "already-bootstrapped" },
-      { onAddStarterContent: () => undefined },
+      { onAddRegistry: () => undefined },
     ).open();
     const text = document.body.textContent ?? "";
     expect(text).toMatch(/already/i);
@@ -347,7 +347,7 @@ describe("BootstrapResultModal", () => {
     new BootstrapResultModal(
       fakeApp,
       { kind: "fetched", fetched: 2, total: 3 },
-      { onAddStarterContent: () => undefined },
+      { onAddRegistry: () => undefined },
     ).open();
     const text = document.body.textContent ?? "";
     expect(text).toMatch(/2 of 3/);
@@ -356,7 +356,7 @@ describe("BootstrapResultModal", () => {
 
   it("a11y — both buttons carry explicit aria-labels (P16)", () => {
     new BootstrapResultModal(fakeApp, BOOTSTRAPPED, {
-      onAddStarterContent: () => undefined,
+      onAddRegistry: () => undefined,
     }).open();
     expect(
       findButton("Add the AssetSpace registry")!.getAttribute("aria-label"),
@@ -378,7 +378,7 @@ describe("BootstrapResultModal", () => {
 
   it("failed (auth) — surfaces the cause + a PAT recovery step", () => {
     new BootstrapResultModal(fakeApp, FAILED_AUTH, {
-      onAddStarterContent: () => undefined,
+      onAddRegistry: () => undefined,
     }).open();
     const text = document.body.textContent ?? "";
     expect(text).toMatch(/didn't finish/i);
@@ -391,7 +391,7 @@ describe("BootstrapResultModal", () => {
   it("failed — «Try again» fires onRetry with the failing operation + closes", () => {
     const retried: string[] = [];
     new BootstrapResultModal(fakeApp, FAILED_AUTH, {
-      onAddStarterContent: () => undefined,
+      onAddRegistry: () => undefined,
       onRetry: (op) => retried.push(op),
     }).open();
     findButton("Try again")!.click();
@@ -409,7 +409,7 @@ describe("BootstrapResultModal", () => {
         cause: "bad-url",
         detail: "Invalid GitHub repo URL: x",
       },
-      { onAddStarterContent: () => undefined, onRetry: (op) => retried.push(op) },
+      { onAddRegistry: () => undefined, onRetry: (op) => retried.push(op) },
     ).open();
     const text = document.body.textContent ?? "";
     expect(text).toMatch(/check the URL/i);
@@ -419,7 +419,7 @@ describe("BootstrapResultModal", () => {
 
   it("failed without onRetry wired — still renders (cause + Dismiss), no crash", () => {
     new BootstrapResultModal(fakeApp, FAILED_AUTH, {
-      onAddStarterContent: () => undefined,
+      onAddRegistry: () => undefined,
     }).open();
     expect(findButton("Try again")).toBeUndefined();
     // The Done button is labelled «Dismiss» on a failure panel.
