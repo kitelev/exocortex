@@ -15,6 +15,10 @@ import { OperationsLogReader } from "@plugin/infrastructure/adapters/OperationsL
 import { SwitchCacheLayer } from "@plugin/infrastructure/adapters/SwitchCacheLayer";
 import { resolvePastedSecret } from "@plugin/presentation/settings/patClipboard";
 import { renderPatSetupHelper } from "@plugin/presentation/settings/patSetupHelper";
+import {
+  testPatConnection,
+  describePatConnection,
+} from "@plugin/presentation/settings/patConnectionTest";
 
 /**
  * Issue #3320 §1 — secret key used by buildAssetSpacePusher and now the
@@ -831,33 +835,22 @@ export class ExocortexSettingTab extends PluginSettingTab {
       )
       .addButton((button) =>
         button.setButtonText("Test connection").onClick(async () => {
-          try {
-            const pat = await secretsStore.getSecret(PAT_SECRET_KEY);
-            if (pat === null || pat.length === 0) {
-              notifier.warn(
-                "No PAT stored. Enter a PAT and click Save first.",
-              );
-              return;
-            }
-            const client = new GitHubRestClient({ pat, app });
-            const rate = await client.checkRateLimit();
-            let reposNote = "";
-            try {
-              const repos = await client.listRepos(5);
-              reposNote =
-                repos.length === 0
-                  ? "; no repos visible to this PAT"
-                  : `; sample: ${repos.slice(0, 5).join(", ")}`;
-            } catch (reposError) {
-              reposNote = `; listRepos failed: ${errorMessage(reposError)}`;
-            }
-            notifier.info(
-              `GitHub OK — ${rate.remaining} requests remaining` +
-                `, resets ${rate.resetAt.toISOString()}${reposNote}`,
-              8000,
-            );
-          } catch (error) {
-            notifier.error(`Test connection failed: ${errorMessage(error)}`);
+          const pat = await secretsStore.getSecret(PAT_SECRET_KEY);
+          if (pat === null || pat.length === 0) {
+            notifier.warn("No PAT stored. Enter a PAT and click Save first.");
+            return;
+          }
+          // Reuse the shared validate logic (single source — same sequence the
+          // onboarding panel runs; no duplicated GitHub API calls).
+          const result = await testPatConnection(
+            pat,
+            (token) => new GitHubRestClient({ pat: token, app }),
+          );
+          const message = describePatConnection(result);
+          if (result.ok) {
+            notifier.info(message, 8000);
+          } else {
+            notifier.error(message);
           }
         }),
       );
