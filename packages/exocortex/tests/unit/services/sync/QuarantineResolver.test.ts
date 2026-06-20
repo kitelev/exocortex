@@ -21,6 +21,8 @@ import {
   SyncEngine,
   backupPathFor,
   gitBlobSha,
+  isFileSpaceSyncablePath,
+  isSyncablePath,
   type SyncRepoSpec,
   type WatermarkRecord,
   type YamlCodec,
@@ -139,6 +141,14 @@ describe("QuarantineResolver.listOpenConflicts", () => {
     const conflicts = await resolver.listOpenConflicts([spec]);
     expect(conflicts.map((c) => c.path)).toEqual([PATH]);
   });
+
+  it("skips a file-mode FileSpace spec entirely (asset-mode resolver only)", async () => {
+    // Same conflict, but the spec is a `file`-mode FileSpace — binary
+    // remote-wins, not user-resolvable via a UTF-8 3-way (code-reviewer round-2).
+    const { spec, resolver } = await makeConflict();
+    const fileSpec: SyncRepoSpec = { ...spec, spaceKind: "file" };
+    expect(await resolver.listOpenConflicts([fileSpec])).toEqual([]);
+  });
 });
 
 describe("QuarantineResolver.loadConflict", () => {
@@ -195,9 +205,12 @@ describe("QuarantineResolver.resolve — keep-remote (zero-loss)", () => {
     const backup = backupPathFor(PATH);
     expect(result.discardedLocalBackupPath).toBe(backup);
     expect(disk.files.get(backup)).toBe(local);
-    // The backup is a .txt — excluded from sync AND from the triple store.
-    expect(backup.endsWith(".md")).toBe(false);
+    // The backup is a .txt — excluded from the triple store AND from BOTH sync
+    // predicates (asset-mode `.md` check + file-mode `.conflict.` infix), so it
+    // never leaks to a remote even in a FileSpace (code-reviewer round-2).
     expect(backup.endsWith(".txt")).toBe(true);
+    expect(isSyncablePath(backup)).toBe(false);
+    expect(isFileSpaceSyncablePath(backup)).toBe(false);
 
     const wm = await watermarks.get(spec.repoKey);
     expect(wm?.pinnedPaths ?? []).not.toContain(PATH);
@@ -223,8 +236,8 @@ describe("QuarantineResolver.resolve — merged", () => {
 });
 
 describe("QuarantineResolver.resolve — quarantine repo configured", () => {
-  it("calls markResolved and skips the disk backup (local already durable)", async () => {
-    const { repo, spec, disk, watermarks } = await makeConflict();
+  it("calls markResolved AND still backs up the discarded local (repo copy may be stale, HIGH-1)", async () => {
+    const { repo, spec, disk, watermarks, local } = await makeConflict();
     const marked: Array<{ repoKey: string; path: string }> = [];
     const resolver = new QuarantineResolver({
       transport: repo.transport(),
@@ -242,9 +255,10 @@ describe("QuarantineResolver.resolve — quarantine repo configured", () => {
     const result = await resolver.resolve(spec, PATH, { take: "remote" });
 
     expect(marked).toEqual([{ repoKey: spec.repoKey, path: PATH }]);
-    // Repo holds the local copy already → no on-disk backup clutter.
-    expect(result.discardedLocalBackupPath).toBeUndefined();
-    expect([...disk.files.keys()]).not.toContain(backupPathFor(PATH));
+    // Zero-loss: the EXACT disk bytes are preserved regardless of the repo copy
+    // (which was captured at quarantine time and may be stale after a re-edit).
+    expect(result.discardedLocalBackupPath).toBe(backupPathFor(PATH));
+    expect(disk.files.get(backupPathFor(PATH))).toBe(local);
   });
 });
 

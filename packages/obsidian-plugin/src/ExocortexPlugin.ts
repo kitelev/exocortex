@@ -3069,6 +3069,12 @@ export default class ExocortexPlugin extends Plugin {
     // transport (iOS-capable, no git binary). Built BEFORE the apply manager
     // so its busy flag feeds the D11 apply→sync exclusion below. The engine
     // is composed fresh per invocation (fresh-PAT pattern, Issue #3382).
+    // Mutable holder so SyncCommands (built first) can refuse to run while the
+    // resolver (built just below) is open — D11, both write the same
+    // device-local watermark (code-reviewer HIGH-2). A holder field sidesteps a
+    // forward `let` (which prefer-const rejects); the closure reads it at
+    // sync/apply time, by which point it is set.
+    const resolverHolder: { commands?: QuarantineResolverCommands } = {};
     const syncCommands = new SyncCommands({
       collectSpecs: () => collectSyncRepoSpecs(this.app),
       buildEngine: (asUidByRepoKey) =>
@@ -3079,6 +3085,7 @@ export default class ExocortexPlugin extends Plugin {
           quarantineRepoUrl: this.settings.exosyncQuarantineRepoUrl,
         }),
       isSwitchInProgress: () => localDataStore.isSwitchInProgress(),
+      isResolverBusy: () => resolverHolder.commands?.isBusy() ?? false,
       notify: (message) => this.notifier.info(message),
       log: (message) => {
         this.logger.warn(message);
@@ -3146,6 +3153,9 @@ export default class ExocortexPlugin extends Plugin {
         new QuarantineResolverModal(this.app, ctx).open();
       },
     });
+    // Publish into the holder so the sync/apply busy-guards (built above) can
+    // see the resolver's busy flag (HIGH-2).
+    resolverHolder.commands = quarantineResolverCommands;
 
     const switchMgr = new ProfileApplyManager({
       app: this.app,

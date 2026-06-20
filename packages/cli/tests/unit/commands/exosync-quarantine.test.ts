@@ -181,7 +181,7 @@ describe("exosync quarantine resolve", () => {
         fx.remote,
       );
       // ZERO-LOSS: the discarded local lives on in a .txt backup, byte-for-byte.
-      const backup = path.join(fx.vault, MOUNT, `${CONFLICT}.conflict-local.txt`);
+      const backup = path.join(fx.vault, MOUNT, `${CONFLICT}.conflict.local.txt`);
       expect(existsSync(backup)).toBe(true);
       expect(readFileSync(backup, "utf-8")).toBe(local);
       expect(lines.join("\n")).toMatch(/discarded local version is preserved/);

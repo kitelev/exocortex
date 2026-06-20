@@ -99,7 +99,7 @@ export class QuarantineResolverModal extends Modal {
       cls: "exosync-resolver-consequence",
       text:
         "Choosing writes the kept version to disk AND to the remote; the other " +
-        "version stays recoverable (remote in git history, local in a .conflict-local.txt backup).",
+        "version stays recoverable (remote in git history, local in a .conflict.local.txt backup).",
     });
     consequence.setAttribute("id", consequenceId);
 

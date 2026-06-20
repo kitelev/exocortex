@@ -41,6 +41,16 @@ export interface SyncCommandsDeps {
   ) => Promise<BuiltSyncEngine>;
   /** D11 — profile apply in flight (PluginLocalDataStore). */
   isSwitchInProgress: () => boolean;
+  /**
+   * D11 — the quarantine resolver modal is open / a resolution is in flight.
+   * A resolution WRITES disk + remote + the SAME device-local watermark, so a
+   * sync must refuse while it is held (the apply guard already does, via
+   * `isSyncBusy`; this closes the symmetric sync direction — code-reviewer
+   * HIGH-2). Optional (absent ⇒ no resolver wired): a forward-reference
+   * closure breaks the construction-order cycle (sync is built before the
+   * resolver).
+   */
+  isResolverBusy?: () => boolean;
   /** User-facing Notice (route through ObsidianNotificationService). */
   notify: (message: string) => void;
   /** Diagnostic sink for per-repo warnings/details (default console). */
@@ -161,6 +171,12 @@ export class SyncCommands {
         );
         return;
       }
+      if (this.deps.isResolverBusy?.() === true) {
+        this.deps.notify(
+          "The conflict resolver is open — run the parity report after it closes (D11)",
+        );
+        return;
+      }
       const log = this.deps.log ?? ((m: string): void => console.warn(m));
       const collection = await this.deps.collectSpecs();
       // Skipped-declaration diagnostics matter MOST in the on-demand
@@ -255,6 +271,12 @@ export class SyncCommands {
     if (this.deps.isSwitchInProgress()) {
       this.deps.notify(
         "A profile apply is in progress — sync after it finishes (D11)",
+      );
+      return;
+    }
+    if (this.deps.isResolverBusy?.() === true) {
+      this.deps.notify(
+        "The conflict resolver is open — sync after it closes (D11)",
       );
       return;
     }

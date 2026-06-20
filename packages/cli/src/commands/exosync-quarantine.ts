@@ -222,14 +222,27 @@ export async function runQuarantineResolve(
 }
 
 /**
- * Rewrite the `exo__Asset_uid` scalar to a fresh value — matches the SAME
- * lenient value shape as {@link extractAssetUid} (`[^\s"']+`), so any uid the
- * sync engine recognises can be re-stamped.
+ * Rewrite the `exo__Asset_uid` scalar to a fresh value, scoped to the `---`
+ * frontmatter block exactly like {@link extractAssetUid} reads it (same block
+ * isolation + same lenient value shape `[^\s"']+`). Scoping the WRITE to the
+ * same region as the READ avoids re-stamping a `exo__Asset_uid:` token that
+ * happens to appear in the body (code-reviewer MEDIUM-1). Returns the content
+ * unchanged when there is no frontmatter uid line.
  */
 function rewriteUid(content: string, fresh: string): string {
-  return content.replace(
+  const fm = /^(---\r?\n)([\s\S]*?)(\r?\n---(?=\r?\n|$))/.exec(content);
+  if (fm === null) return content;
+  const rewrittenBlock = fm[2].replace(
     /^(exo__Asset_uid:[ \t]*["']?)[^\s"']+(["']?[ \t]*)$/m,
     `$1${fresh}$2`,
+  );
+  if (rewrittenBlock === fm[2]) return content;
+  return (
+    content.slice(0, fm.index) +
+    fm[1] +
+    rewrittenBlock +
+    fm[3] +
+    content.slice(fm.index + fm[0].length)
   );
 }
 
