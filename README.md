@@ -228,7 +228,6 @@ Statically registered plugin commands (all prefixed `Exocortex:` in the palette)
 | Command                               | Description                                                                                                                                                         |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Setup (getting started)**           | Open the guided first-run setup wizard (token → engine → registry → profiles → apply); re-openable any time                                                         |
-| **Create asset**                      | Create a new asset via an ontology-driven form                                                                                                                      |
 | **Edit properties**                   | Edit the active asset's frontmatter properties                                                                                                                      |
 | **Reload layout**                     | Re-render the layout on the active asset                                                                                                                            |
 | **Toggle layout visibility**          | Show or hide layouts in Reading Mode                                                                                                                                |
@@ -244,7 +243,7 @@ Statically registered plugin commands (all prefixed `Exocortex:` in the palette)
 | **Remove knowledge pack (advanced)**  | Unmount an AssetSpace from the vault                                                                                                                                |
 | **Reset profile cache (advanced)**    | Clear the profile-switch tarball cache                                                                                                                              |
 
-In addition, vault-defined `exocmd__Command` assets are registered **dynamically** as palette commands (the homoiconic command layer) — their set depends on the commands declared in your vault, with visibility gated by their preconditions.
+In addition, vault-defined `exocmd__Command` assets are registered **dynamically** as palette commands (the homoiconic command layer) — their set depends on the commands declared in your vault, with visibility gated by their preconditions. Asset-creation commands (e.g. **Create Task Instance**, **Create Project**) live in this dynamic layer rather than as a static "Create asset" command.
 
 ---
 
