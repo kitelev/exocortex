@@ -163,8 +163,8 @@ import {
   registerOnboardingCommands,
   shouldShowFirstRunPanel,
   persistOnboardingPat,
-  STARTER_REGISTRY_URL,
-  STARTER_PROFILE_QUERY,
+  REGISTRY_ASSETSPACE_URL,
+  PROFILES_ASSETSPACE_URL,
 } from "./infrastructure/adapters/firstRunOnboarding";
 import {
   GROOMED_COMMAND_NAMES,
@@ -3510,15 +3510,22 @@ export default class ExocortexPlugin extends Plugin {
           }
           void bootstrapCommands.invokeBootstrap();
         },
-        onAddStarter: () => {
+        onAddRegistry: () => {
           if (bootstrapCommands === null) {
-            unavailable("Add starter content");
+            unavailable("Add the AssetSpace registry");
             return;
           }
-          void bootstrapCommands.invokeAddAssetSpace(STARTER_REGISTRY_URL);
+          void bootstrapCommands.invokeAddAssetSpace(REGISTRY_ASSETSPACE_URL);
         },
-        onApplyStarterProfile: () => {
-          void profileCommands.invokeApplyProfile(STARTER_PROFILE_QUERY);
+        onAddProfiles: () => {
+          if (bootstrapCommands === null) {
+            unavailable("Add the profiles AssetSpace");
+            return;
+          }
+          void bootstrapCommands.invokeAddAssetSpace(PROFILES_ASSETSPACE_URL);
+        },
+        onApplyProfile: () => {
+          void profileCommands.invokeApplyProfile();
         },
         onClosePanel: () => {
           void localDataStore.setOnboardingCompleted(true).catch((err) => {
@@ -3765,12 +3772,13 @@ export default class ExocortexPlugin extends Plugin {
       // ON TOP of the (transient) toast + (always-on) activity-log entry, so the
       // user can read "what happened + what next" after the toast fades. The
       // next-step nudge routes to the same Add-AssetSpace flow the onboarding
-      // panel's step 2 uses, pre-filled with the public starter registry
-      // (`bootstrapCommands` is in scope by the time this closure runs).
+      // panel's step 3 uses, pre-filled with the public EKA registry — the
+      // natural next step after bootstrapping the exo floor (`bootstrapCommands`
+      // is in scope by the time this closure runs).
       showResult: (result) =>
         new BootstrapResultModal(this.app, result, {
           onAddStarterContent: () =>
-            void bootstrapCommands.invokeAddAssetSpace(STARTER_REGISTRY_URL),
+            void bootstrapCommands.invokeAddAssetSpace(REGISTRY_ASSETSPACE_URL),
           // RFC 0002 §3.10 — one-click retry of the failed operation: re-open
           // the same Bootstrap / Add flow (its modal collects the URL again) so
           // the user can fix the URL / token / connection and retry in place.

@@ -89,8 +89,9 @@ function makeActions(over: Partial<FirstRunOnboardingActions> = {}): {
     },
     onPastePat: async () => "github_pat_pasted",
     onSetupEngine: () => calls.push("engine"),
-    onAddStarter: () => calls.push("starter"),
-    onApplyStarterProfile: () => calls.push("profile"),
+    onAddRegistry: () => calls.push("registry"),
+    onAddProfiles: () => calls.push("profiles"),
+    onApplyProfile: () => calls.push("profile"),
     onClosePanel: () => calls.push("close"),
     ...over,
   };
@@ -114,7 +115,7 @@ beforeEach(() => {
 });
 
 describe("FirstRunOnboardingModal", () => {
-  it("renders the welcome heading + a 4-step ordered checklist (token-first)", () => {
+  it("renders the welcome heading + a 5-step ordered checklist (token-first)", () => {
     const { actions } = makeActions();
     new FirstRunOnboardingModal(fakeApp, actions).open();
 
@@ -125,10 +126,10 @@ describe("FirstRunOnboardingModal", () => {
     const list = document.querySelector("ol.exocortex-onboarding-steps");
     expect(list).not.toBeNull();
     const items = document.querySelectorAll("li.exocortex-onboarding-step");
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(5);
 
     // Each step has a plain-text marker (not a glyph) — P16. Step 1 is the
-    // optional token step (cd9444bd), then the three materialise steps.
+    // optional token step (cd9444bd), then the four EKA materialise steps.
     const markers = Array.from(
       document.querySelectorAll(".exocortex-onboarding-step-marker"),
     ).map((m) => m.textContent);
@@ -137,27 +138,35 @@ describe("FirstRunOnboardingModal", () => {
       "Step 2 — ",
       "Step 3 — ",
       "Step 4 — ",
+      "Step 5 — ",
     ]);
   });
 
-  it("step 1 button fires onSetupEngine (opens Bootstrap)", () => {
+  it("step 2 button fires onSetupEngine (opens Bootstrap)", () => {
     const { actions, calls } = makeActions();
     new FirstRunOnboardingModal(fakeApp, actions).open();
     findButton("Set up the engine")!.click();
     expect(calls).toEqual(["engine"]);
   });
 
-  it("step 2 button fires onAddStarter (Add starter content)", () => {
+  it("step 3 button fires onAddRegistry (Add the AssetSpace registry)", () => {
     const { actions, calls } = makeActions();
     new FirstRunOnboardingModal(fakeApp, actions).open();
-    findButton("Add the starter content")!.click();
-    expect(calls).toEqual(["starter"]);
+    findButton("Add the AssetSpace registry")!.click();
+    expect(calls).toEqual(["registry"]);
   });
 
-  it("step 3 button fires onApplyStarterProfile (Apply starter profile)", () => {
+  it("step 4 button fires onAddProfiles (Add the profiles AssetSpace)", () => {
     const { actions, calls } = makeActions();
     new FirstRunOnboardingModal(fakeApp, actions).open();
-    findButton("Apply the starter profile")!.click();
+    findButton("Add the profiles AssetSpace")!.click();
+    expect(calls).toEqual(["profiles"]);
+  });
+
+  it("step 5 button fires onApplyProfile (Apply a profile)", () => {
+    const { actions, calls } = makeActions();
+    new FirstRunOnboardingModal(fakeApp, actions).open();
+    findButton("Apply a profile")!.click();
     expect(calls).toEqual(["profile"]);
   });
 
@@ -167,12 +176,13 @@ describe("FirstRunOnboardingModal", () => {
     const actionButtons = Array.from(
       document.querySelectorAll("button.exocortex-onboarding-step-action"),
     ) as HTMLButtonElement[];
-    expect(actionButtons).toHaveLength(3);
-    // Steps 2-4 (the token step is step 1 and has its own Save button).
+    expect(actionButtons).toHaveLength(4);
+    // Steps 2-5 (the token step is step 1 and has its own Save button).
     expect(actionButtons.map((b) => b.getAttribute("aria-label"))).toEqual([
       "Step 2: Set up the engine",
-      "Step 3: Add the starter content",
-      "Step 4: Apply the starter profile",
+      "Step 3: Add the AssetSpace registry",
+      "Step 4: Add the profiles AssetSpace",
+      "Step 5: Apply a profile",
     ]);
   });
 
@@ -185,9 +195,9 @@ describe("FirstRunOnboardingModal", () => {
   it("clicking a step does NOT close the panel (sub-dialogs stack on top)", () => {
     const { actions, calls } = makeActions();
     new FirstRunOnboardingModal(fakeApp, actions).open();
-    findButton("Add the starter content")!.click();
+    findButton("Add the AssetSpace registry")!.click();
     // No close persisted yet — the panel stays open underneath the sub-dialog.
-    expect(calls).toEqual(["starter"]);
+    expect(calls).toEqual(["registry"]);
     expect(document.querySelector("ol.exocortex-onboarding-steps")).not.toBeNull();
   });
 

@@ -11,21 +11,28 @@
 import type { VaultBootstrapState } from "./BootstrapAssetSpaceCommands";
 
 /**
- * The public, stable starter-content registry pre-filled into step 2 of the
- * onboarding panel. Unlike the Bootstrap floor URL (kept empty per EC7 — the
- * `kitelev/exoas-*` repos are Andrey's own ontology, not a generic floor), this
- * registry IS genuinely recommended for every new tester, so pre-filling it is
- * a deliberate UX affordance and not an EC7 conflict (RFC 0002 §3.1 / §3.3).
+ * The EKA AssetSpace **registry** (`kitelev/exoas-registry`) — the catalog of
+ * `exo__AssetSpace` descriptors + their `dependsOn` DAG (EKA D18). Pre-filled
+ * into the "Add the AssetSpace registry" onboarding step. Adding it lands every
+ * descriptor in the vault so a later "Apply profile" can resolve a chosen
+ * profile's `dependsOn` closure (the descriptors carry the `_source` URLs the
+ * apply step materialises from). Public — pulls anonymously; the PAT (step 1) is
+ * only needed for the *private* leaf AssetSpaces a chosen profile pulls
+ * (RFC 0002 §3.1 / EKA D12 bootstrap: bootstrap exo → add registry → add
+ * profiles → apply profile).
  */
-export const STARTER_REGISTRY_URL =
-  "https://github.com/kitelev/exoas-starter-registry";
+export const REGISTRY_ASSETSPACE_URL =
+  "https://github.com/kitelev/exoas-registry";
 
 /**
- * Initial fuzzy-filter query for step 3's profile picker, so the canonical
- * `starter` profile surfaces first (RFC 0002 §3.1 step 3 / §3.4). The picker
- * still lists all profiles — the query just pre-narrows it.
+ * The EKA **profiles** AssetSpace (`kitelev/exoas-profiles`) — the
+ * `exo__Profile` instances. Pre-filled into the "Add the profiles AssetSpace"
+ * onboarding step. Adding it lands the profile assets in the vault so the final
+ * "Apply profile" step can list + pick one (the picker shows every profile in
+ * the vault). Public — pulls anonymously.
  */
-export const STARTER_PROFILE_QUERY = "starter";
+export const PROFILES_ASSETSPACE_URL =
+  "https://github.com/kitelev/exoas-profiles";
 
 /**
  * The most markdown notes a vault may hold and still count as a genuinely
