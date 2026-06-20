@@ -221,7 +221,7 @@ export class ProfileCommands {
           `Apply profile aborted — ${total} uncommitted file(s) in ${e.affectedFiles.length} AssetSpace(s) this profile would remove. ` +
             `Commit (or stash) the vault first, then re-apply. Fresh git-backed vault? The pulled assetspaces/ are untracked — run ` +
             `\`git add -A && git commit -m "vault setup"\` (and gitignore \`.obsidian/\` + \`.exocortex/\` to keep your PAT out of git). ` +
-            `See docs/profile.md.`,
+            `See docs/explanation/profile.md.`,
         );
         return;
       }
@@ -277,7 +277,7 @@ export class ProfileCommands {
         const total = e.affectedFiles.reduce((s, a) => s + a.files.length, 0);
         this.notify(
           `Undo aborted — ${total} uncommitted file(s) in ${e.affectedFiles.length} AssetSpace(s) reverting would remove. ` +
-            `Commit (or stash) the vault first, then undo again. See docs/profile.md.`,
+            `Commit (or stash) the vault first, then undo again. See docs/explanation/profile.md.`,
         );
         return;
       }
