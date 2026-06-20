@@ -228,6 +228,57 @@ describe("BootstrapVaultModal", () => {
     findButton("Cancel")!.click();
     expect(result).toBeNull();
   });
+
+  // Directive (Андрей 2026-06-20): a «Use default» button next to the URL field
+  // one-click-fills the public engine floor URL. This is an EXPLICIT opt-in
+  // action — it does NOT change EC7 (the field still STARTS empty); it only
+  // populates on click. Revert-verify: removing the button / its handler makes
+  // these assertions FAIL.
+  it("«Use default» button fills the field with the public engine floor URL", () => {
+    new BootstrapVaultModal(fakeApp, () => undefined).open();
+    const input = document.querySelector("input") as HTMLInputElement;
+    // EC7 holds — the field starts empty (no auto-pre-fill).
+    expect(input.value).toBe("");
+    const useDefault = findButton("Use default");
+    expect(useDefault).toBeDefined();
+    useDefault!.click();
+    // Reuses the existing PUBLIC_EXO_FLOOR_URL constant (no hardcoded dup).
+    expect(input.value).toBe(PUBLIC_EXO_FLOOR_URL);
+    expect(input.value).toBe("https://github.com/kitelev/exoas-exo");
+  });
+
+  it("«Use default» → field then passes validation and Bootstrap resolves { exoUrl }", () => {
+    let result: { exoUrl: string } | null | undefined;
+    new BootstrapVaultModal(fakeApp, (r) => {
+      result = r;
+    }).open();
+    findButton("Use default")!.click();
+    findButton("Bootstrap")!.click();
+    expect(result).toEqual({ exoUrl: PUBLIC_EXO_FLOOR_URL });
+  });
+
+  it("a11y — «Use default» is a real <button type=button> with an aria-label (P16)", () => {
+    new BootstrapVaultModal(fakeApp, () => undefined).open();
+    const useDefault = findButton("Use default")!;
+    expect(useDefault.tagName).toBe("BUTTON");
+    // type=button so it never acts as an implicit form-submit affordance.
+    expect(useDefault.getAttribute("type")).toBe("button");
+    expect(useDefault.getAttribute("aria-label")).toBeTruthy();
+  });
+
+  it("«Use default» clears a prior validation error", () => {
+    new BootstrapVaultModal(fakeApp, () => undefined).open();
+    // Provoke the empty-field error first.
+    findButton("Bootstrap")!.click();
+    const errorEl = document.querySelector(
+      ".bootstrap-vault-error",
+    ) as HTMLElement;
+    expect(errorEl.textContent).toMatch(/required/i);
+    expect(errorEl.classList.contains("is-visible")).toBe(true);
+    // Filling a valid default URL clears the stale error.
+    findButton("Use default")!.click();
+    expect(errorEl.classList.contains("is-visible")).toBe(false);
+  });
 });
 
 // RFC 0002 §3.3 / P5 — the durable, in-context bootstrap result panel. Adds a

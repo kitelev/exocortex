@@ -6184,6 +6184,24 @@
   font-weight: var(--font-semibold, 600);
 }
 
+/* Directive 2026-06-20 — the «Use default» button sits inline next to the
+   engine-URL input: the input flex-grows, the button hugs its content. */
+.bootstrap-vault-input-row {
+  display: flex;
+  gap: 0.5em;
+  align-items: center;
+}
+
+.bootstrap-vault-input-row .bootstrap-vault-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.bootstrap-vault-use-default {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .bootstrap-vault-note,
 .add-assetspace-note,
 .add-assetspace-preview {
