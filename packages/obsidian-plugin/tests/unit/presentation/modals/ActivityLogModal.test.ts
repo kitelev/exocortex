@@ -235,3 +235,36 @@ describe("ActivityLogModal — render & controls", () => {
     expect(rows[0].textContent).toBe("07:30:15 [bootstrap] cold start");
   });
 });
+
+// «Open logs» ↔ «Open activity log» dedup (interview decision (b), 2026-06-20):
+// keep both commands, add a reciprocal one-click bridge so a user who opened the
+// wrong log view can switch without returning to the command palette. This is
+// the activity→file half (the file→activity half lives in LogFileModal).
+describe("ActivityLogModal — cross-nav to log file", () => {
+  it("renders an «Open log file» footer button when the cross-nav hook is provided", () => {
+    const svc = new ActivityLogService({ now: () => 0 });
+    new ActivityLogModal(fakeApp, svc, () => {}).open();
+    expect(findButton("Open log file")).toBeDefined();
+    // The existing controls remain present (additive change).
+    expect(findButton("Copy")).toBeDefined();
+    expect(findButton("Clear")).toBeDefined();
+    expect(findButton("Done")).toBeDefined();
+  });
+
+  it("omits the «Open log file» button when no cross-nav hook is given (backward compatible)", () => {
+    const svc = new ActivityLogService({ now: () => 0 });
+    new ActivityLogModal(fakeApp, svc).open();
+    expect(findButton("Open log file")).toBeUndefined();
+  });
+
+  it("«Open log file» invokes the hook and closes this modal (views never stack)", () => {
+    const svc = new ActivityLogService({ now: () => 0 });
+    const onOpenLogFile = jest.fn();
+    new ActivityLogModal(fakeApp, svc, onOpenLogFile).open();
+    expect(document.querySelector(".exocortex-activity-log-list")).not.toBeNull();
+    findButton("Open log file")!.click();
+    expect(onOpenLogFile).toHaveBeenCalledTimes(1);
+    // close() runs before the sibling opens → this modal's list is detached.
+    expect(document.querySelector(".exocortex-activity-log-list")).toBeNull();
+  });
+});

@@ -151,3 +151,42 @@ describe("LogFileModal", () => {
     expect(document.body.querySelector(".exocortex-log-file-path")).toBeNull();
   });
 });
+
+// «Open logs» ↔ «Open activity log» dedup (interview decision (b), 2026-06-20):
+// the file→activity half of the reciprocal cross-nav bridge. The empty-state
+// hint already pointed users at the live stream; this promotes that to a
+// one-click footer button (and the activity→file half lives in ActivityLogModal).
+describe("LogFileModal — cross-nav to activity log", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  const findButton = (label: string): HTMLButtonElement | undefined =>
+    Array.from(document.body.querySelectorAll("button")).find(
+      (b) => b.textContent === label,
+    ) as HTMLButtonElement | undefined;
+
+  it("renders an «Open activity log» footer button when the cross-nav hook is provided", () => {
+    const modal = new LogFileModal(fakeApp, makeSource(""), () => {});
+    modal.open(); // button is created synchronously in onOpen, before load()
+    expect(findButton("Open activity log")).toBeDefined();
+    expect(findButton("Copy")).toBeDefined();
+    expect(findButton("Done")).toBeDefined();
+  });
+
+  it("omits the «Open activity log» button when no cross-nav hook is given (backward compatible)", () => {
+    const modal = new LogFileModal(fakeApp, makeSource(""));
+    modal.open();
+    expect(findButton("Open activity log")).toBeUndefined();
+  });
+
+  it("«Open activity log» invokes the hook and closes this modal (views never stack)", () => {
+    const onOpenActivityLog = jest.fn();
+    const modal = new LogFileModal(fakeApp, makeSource(""), onOpenActivityLog);
+    modal.open();
+    expect(document.body.querySelector(".exocortex-log-file-path")).not.toBeNull();
+    findButton("Open activity log")!.click();
+    expect(onOpenActivityLog).toHaveBeenCalledTimes(1);
+    expect(document.body.querySelector(".exocortex-log-file-path")).toBeNull();
+  });
+});

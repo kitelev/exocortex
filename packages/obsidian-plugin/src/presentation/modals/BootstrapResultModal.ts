@@ -258,8 +258,8 @@ function failureCopy(
         title,
         summary: `The operation failed — ${detail}`,
         nextHint:
-          "Next: open «Open logs» from the command palette for the full error, " +
-          "then try again.",
+          "Next: open «Open log file (saved)» from the command palette for the " +
+          "full error, then try again.",
       };
   }
 }

@@ -53,13 +53,23 @@ export function shouldAutoScroll(metrics: {
  */
 export class ActivityLogModal extends Modal {
   private readonly svc: ActivityLogService;
+  private readonly onOpenLogFile?: () => void;
   private listEl: HTMLElement | null = null;
   private unsub: (() => void) | null = null;
   private unsubClear: (() => void) | null = null;
 
-  constructor(app: App, svc: ActivityLogService) {
+  /**
+   * @param onOpenLogFile Optional cross-navigation hook — when provided, the
+   *   footer gains an «Open log file» button that switches to the persisted
+   *   `LogFileModal`. This is the reciprocal of `LogFileModal`'s «Open activity
+   *   log» button: the two log views (live in-memory ↔ saved file) are easy to
+   *   confuse in the command palette, so each modal offers a one-click bridge to
+   *   the other instead of forcing the user back to the palette to guess again.
+   */
+  constructor(app: App, svc: ActivityLogService, onOpenLogFile?: () => void) {
     super(app);
     this.svc = svc;
+    this.onOpenLogFile = onOpenLogFile;
   }
 
   override onOpen(): void {
@@ -91,6 +101,17 @@ export class ActivityLogModal extends Modal {
       // clear() fires the onClear subscription below → re-renders empty.
       this.svc.clear();
     });
+    if (this.onOpenLogFile) {
+      // Cross-nav to the persisted log file (saved). Close this modal first so
+      // the two log views never stack on top of each other.
+      const openFileBtn = footer.createEl("button", {
+        text: "Open log file",
+      });
+      openFileBtn.addEventListener("click", () => {
+        this.close();
+        this.onOpenLogFile?.();
+      });
+    }
     const doneBtn = footer.createEl("button", { text: "Done" });
     doneBtn.addEventListener("click", () => {
       this.close();

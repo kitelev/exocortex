@@ -313,6 +313,35 @@ describe("ExocortexPlugin", () => {
     });
   });
 
+  // Dedup «Open logs» ↔ «Open activity log» (interview decision (b), 2026-06-20).
+  // The two commands are functionally distinct (live in-memory stream vs saved
+  // file) but were easy to confuse in the palette; disambiguate their display
+  // names with «(live)» / «(saved)» qualifiers. The command ids stay stable
+  // (`open-activity-log` / `open-logs`) so existing hotkeys keep working.
+  describe("Dedup logs — disambiguated command names (live / saved)", () => {
+    const nameById = (spy: jest.SpyInstance): Map<string, string> =>
+      new Map(
+        spy.mock.calls.map((c) => {
+          const cmd = c[0] as { id?: string; name?: string };
+          return [cmd.id ?? "", cmd.name ?? ""];
+        }),
+      );
+
+    it("registers «Open activity log (live)» under the stable `open-activity-log` id", async () => {
+      const addCommandSpy = jest.spyOn(plugin, "addCommand");
+      await plugin.onload();
+      const names = nameById(addCommandSpy);
+      expect(names.get("open-activity-log")).toBe("Open activity log (live)");
+    });
+
+    it("registers «Open log file (saved)» under the stable `open-logs` id", async () => {
+      const addCommandSpy = jest.spyOn(plugin, "addCommand");
+      await plugin.onload();
+      const names = nameById(addCommandSpy);
+      expect(names.get("open-logs")).toBe("Open log file (saved)");
+    });
+  });
+
   // Issue #3554 — profile apply → next Obsidian load hangs at "Loading plugins…".
   // After an `Apply profile` sets `data.local.json.activeProfileUid`, the next
   // load deadlocked: `registerProfileCommands` (awaited by `onload`) awaited the
