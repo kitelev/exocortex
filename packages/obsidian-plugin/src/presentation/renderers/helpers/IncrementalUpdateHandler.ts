@@ -191,9 +191,21 @@ export class IncrementalUpdateHandler {
     config: UniversalLayoutConfig,
     renderHeader: RenderHeaderFn,
   ): Promise<void> {
-    container.empty();
-    const relations = await this.deps.relationsRenderer.getAssetRelations(file, config);
     const parent = container.parentElement || rootContainer;
+    // RELATIONS now always renders a fresh `.exocortex-assets-relations`
+    // container into `parent` — including the F11 empty-state. Emptying the old
+    // container (instead of removing it) would leave an orphan sibling that
+    // accumulates a duplicate "No related assets yet" block on every empty
+    // incremental re-render. Remove it (like `updateButtons`) so exactly one
+    // relations container survives. DAILY_TASKS / AREA_TREE keep emptying —
+    // their renderers may legitimately no-op on an irrelevant asset, and their
+    // queue/concurrency semantics depend on the container staying attached.
+    if (section === LayoutSection.RELATIONS) {
+      container.remove();
+    } else {
+      container.empty();
+    }
+    const relations = await this.deps.relationsRenderer.getAssetRelations(file, config);
     const { sectionStateManager: ssm } = this.deps;
 
     switch (section) {
