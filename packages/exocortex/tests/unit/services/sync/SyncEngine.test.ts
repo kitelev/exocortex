@@ -1971,3 +1971,212 @@ describe("SyncEngine — #3475 phantom/empty commits (detected content already i
     expect(gh.headSha()).toBe(result.pushedSha);
   });
 });
+
+// ZERO-LOSS no-base first-sync reconcile (REST/tarball private mounts, mobile).
+//
+// Empirical trigger (work-MacBook exoas-tbank, 2026-06-20 — WBS bde445cd): a
+// PRIVATE AssetSpace mounted via REST/tarball (PAT) has NO git-submodule HEAD,
+// so the #3590 backfill (`localBaseShaProvider`) returns null, and no mount base
+// was recorded (`mountBaseStore` empty) — `tryMountBaseBootstrap` returns null.
+// With local content diverging from the advanced remote head, the engine
+// DEAD-ENDED at `full-conflict`: the WHOLE repo froze, nothing pulled, nothing
+// pushed, no watermark established — a permanent deadlock (the 61-diff symptom).
+//
+// The fix: when there is NO 3-way base AND the A2 merge layer is available,
+// reconcile ZERO-LOSS instead of dead-ending. The synthetic base = the
+// R⊆L-matching subset (the byte-identical files); because every base file is
+// present on disk BY CONSTRUCTION, the #3610 silent-delete inference can never
+// fire here. The normal cycle then PULLS remote-only files, PUSHES local-only
+// files, and routes overlapping same-path divergences through the merge layer:
+// a disjoint edit auto-merges (D20 union), a true overlap QUARANTINES both
+// versions (D17). Mount-type-agnostic (REST, tarball, mobile, submodule). The
+// conservative `full-conflict` is PRESERVED for compositions without a merge
+// layer (no safe place to route an overlap → refuse, never guess).
+describe("SyncEngine — zero-loss no-base first-sync reconcile (REST/mobile)", () => {
+  const stubMergeLayer = (
+    fn: (input: MergeConflictInput) => MergeDecision,
+  ): MergeLayerPort => ({ resolve: async (i) => fn(i) });
+
+  // The REST/tarball/mobile shape: no recorded mount base, no submodule-HEAD
+  // provider → `tryMountBaseBootstrap` returns null (the exoas-tbank case).
+  const SHARED = "assets/shared.md";
+  const OVERLAP = "assets/overlap.md";
+  const REMOTE_ONLY = "assets/remote-only.md";
+  const LOCAL_ONLY = "assets/local-only.md";
+
+  it("core: an overlapping divergence QUARANTINES both versions instead of dead-ending at full-conflict (revert-verify target)", async () => {
+    // No watermark, no mount base, no provider → no 3-way base. Local diverges
+    // from the remote head on the SAME path (the og/48a1b9f0 analog).
+    const gh = new FakeGitHubRepo({ [OVERLAP]: mdAsset("u1", "remote-divergent") });
+    const local = new FakeLocalFiles({ [OVERLAP]: mdAsset("u1", "local-divergent") });
+    const store = new InMemoryQuarantineStore();
+    const { engine, watermarks } = makeEngine(gh, local, {
+      mergeLayer: stubMergeLayer(() => ({
+        action: "quarantine",
+        reason: "no-base overlap",
+      })),
+      quarantine: store,
+      // Explicitly the REST/mobile shape — no mount base, no submodule HEAD.
+      mountBaseStore: new FakeMountBaseStore(),
+      localBaseShaProvider: async () => null,
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    // PRE-FIX this returned `full-conflict` with an empty quarantine and no
+    // watermark (the deadlock). POST-FIX the sync RESOLVES zero-loss.
+    expect(result.status).toBe("synced");
+    expect(result.quarantinedCount).toBe(1);
+    expect(result.quarantinedPaths).toEqual([OVERLAP]);
+    // BOTH versions durably preserved (D17) — nothing lost.
+    expect(store.entries).toHaveLength(1);
+    expect(store.entries[0]).toMatchObject({
+      path: OVERLAP,
+      uid: "u1",
+      localContent: mdAsset("u1", "local-divergent"),
+      remoteContent: mdAsset("u1", "remote-divergent"),
+    });
+    // Neither side overwritten: local stays on disk, remote stays on the remote.
+    expect(local.files.get(OVERLAP)).toBe(mdAsset("u1", "local-divergent"));
+    expect(gh.headFiles().get(OVERLAP)).toBe(mdAsset("u1", "remote-divergent"));
+    // A watermark IS established (deadlock gone) — the conflict re-derives via
+    // the pin, but the repo is no longer frozen.
+    expect(watermarks.records.size).toBe(1);
+    expect(watermarks.records.get(gh.spec().repoKey)!.pinnedPaths).toContain(
+      OVERLAP,
+    );
+  });
+
+  it("mixed 61-diff shape: remote-only PULLS, local-only PUSHES, overlap QUARANTINES — all in one reconcile, nothing lost", async () => {
+    // Mirrors the empirical mix: some files identical, some remote-ahead, some
+    // local-only, some overlapping — the engine must reconcile each direction
+    // zero-loss in a single first sync.
+    const gh = new FakeGitHubRepo({
+      [SHARED]: mdAsset("u0"), // byte-identical on both sides
+      [OVERLAP]: mdAsset("u1", "remote"), // same-path divergence
+      [REMOTE_ONLY]: mdAsset("u2"), // present on remote, absent on disk
+    });
+    const local = new FakeLocalFiles({
+      [SHARED]: mdAsset("u0"),
+      [OVERLAP]: mdAsset("u1", "local"),
+      [LOCAL_ONLY]: mdAsset("u3"), // present on disk, absent on remote
+    });
+    const store = new InMemoryQuarantineStore();
+    const { engine } = makeEngine(gh, local, {
+      mergeLayer: stubMergeLayer(() => ({
+        action: "quarantine",
+        reason: "overlap",
+      })),
+      quarantine: store,
+      mountBaseStore: new FakeMountBaseStore(),
+      localBaseShaProvider: async () => null,
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.pulledCount).toBe(1); // REMOTE_ONLY pulled to disk
+    expect(result.pushedCount).toBe(1); // LOCAL_ONLY pushed to remote
+    expect(result.quarantinedCount).toBe(1); // OVERLAP both versions preserved
+
+    // Remote-only file resurrected on disk (M1: resurrection is the accepted
+    // first-sync trade-off — NEVER a silent delete).
+    expect(local.files.get(REMOTE_ONLY)).toBe(mdAsset("u2"));
+    // Local-only file landed on the remote.
+    expect(gh.headFiles().get(LOCAL_ONLY)).toBe(mdAsset("u3"));
+    // Shared file untouched on both sides.
+    expect(local.files.get(SHARED)).toBe(mdAsset("u0"));
+    expect(gh.headFiles().get(SHARED)).toBe(mdAsset("u0"));
+    // Overlap: BOTH versions survive — local on disk, remote on the remote,
+    // both captured in quarantine. Nothing overwritten, nothing deleted.
+    expect(local.files.get(OVERLAP)).toBe(mdAsset("u1", "local"));
+    expect(gh.headFiles().get(OVERLAP)).toBe(mdAsset("u1", "remote"));
+    expect(store.entries).toHaveLength(1);
+    expect(store.entries[0]).toMatchObject({
+      path: OVERLAP,
+      localContent: mdAsset("u1", "local"),
+      remoteContent: mdAsset("u1", "remote"),
+    });
+  });
+
+  it("end-to-end with the REAL GatedStructuredMerger: a DISJOINT no-base divergence auto-merges (union), nothing lost", async () => {
+    const codec: YamlCodec = {
+      parse: (text) => yaml.load(text, { schema: yaml.CORE_SCHEMA }),
+      stringify: (value) =>
+        yaml.dump(value, { schema: yaml.CORE_SCHEMA, lineWidth: -1 }),
+    };
+    // Same uid + shared key, but local and remote each added a DISJOINT key —
+    // a genuine no-base add/add the structured merger resolves by union.
+    const remoteAsset =
+      "---\nexo__Asset_uid: u1\nexo__Asset_label: Shared\nremoteKey: r\n---\n\nbody\n";
+    const localAsset =
+      "---\nexo__Asset_uid: u1\nexo__Asset_label: Shared\nlocalKey: l\n---\n\nbody\n";
+    const gh = new FakeGitHubRepo({ [OVERLAP]: remoteAsset });
+    const local = new FakeLocalFiles({ [OVERLAP]: localAsset });
+    const { engine } = makeEngine(gh, local, {
+      mergeLayer: new GatedStructuredMerger(new StructuredMerger(codec)),
+      quarantine: new InMemoryQuarantineStore(),
+      mountBaseStore: new FakeMountBaseStore(),
+      localBaseShaProvider: async () => null,
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.mergedCount).toBe(1);
+    expect(result.quarantinedCount).toBe(0);
+    // The merged result is the UNION — BOTH disjoint contributions survive on
+    // disk AND on the remote (zero-loss auto-merge of a no-base divergence).
+    const mergedOnDisk = local.files.get(OVERLAP)!;
+    expect(mergedOnDisk).toContain("remoteKey: r");
+    expect(mergedOnDisk).toContain("localKey: l");
+    expect(gh.headFiles().get(OVERLAP)).toContain("remoteKey: r");
+    expect(gh.headFiles().get(OVERLAP)).toContain("localKey: l");
+  });
+
+  it("REGRESSION: a no-base divergence WITHOUT a merge layer stays conservative full-conflict (status quo, never guesses)", async () => {
+    // No merge layer ⇒ no safe place to route an overlap ⇒ the engine MUST keep
+    // the pre-fix conservative answer: refuse, touch nothing, establish no
+    // watermark. This guards the #3565/#3590/#3610 conservative contract.
+    const gh = new FakeGitHubRepo({ [OVERLAP]: mdAsset("u1", "remote") });
+    const local = new FakeLocalFiles({ [OVERLAP]: mdAsset("u1", "local") });
+    const { engine, watermarks } = makeEngine(gh, local, {
+      // No mergeLayer wired (and no base sources).
+      mountBaseStore: new FakeMountBaseStore(),
+      localBaseShaProvider: async () => null,
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("full-conflict");
+    expect(result.detail).toMatch(/first-sync/);
+    expect(gh.headFiles().get(OVERLAP)).toBe(mdAsset("u1", "remote")); // untouched
+    expect(local.files.get(OVERLAP)).toBe(mdAsset("u1", "local")); // untouched
+    expect(watermarks.records.size).toBe(0); // no watermark on conflict
+  });
+
+  it("M1 HARD FLOOR: the reconcile NEVER pushes the local version over the remote (overlap is owned by the merge layer)", async () => {
+    // Even though the overlap is detected as a local "add" against the synthetic
+    // base, it must NOT be pushed raw — its outcome (quarantine here) replaces
+    // the push. The remote keeps its version byte-exact.
+    const gh = new FakeGitHubRepo({ [OVERLAP]: mdAsset("u1", "remote-precious") });
+    const local = new FakeLocalFiles({ [OVERLAP]: mdAsset("u1", "local-stale") });
+    const remoteHeadBefore = gh.headSha();
+    const { engine } = makeEngine(gh, local, {
+      mergeLayer: stubMergeLayer(() => ({
+        action: "quarantine",
+        reason: "overlap",
+      })),
+      quarantine: new InMemoryQuarantineStore(),
+      mountBaseStore: new FakeMountBaseStore(),
+      localBaseShaProvider: async () => null,
+    });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("synced");
+    expect(result.pushedCount).toBe(0); // local NOT pushed over the remote
+    expect(gh.headSha()).toBe(remoteHeadBefore); // remote ref unmoved
+    expect(gh.headFiles().get(OVERLAP)).toBe(mdAsset("u1", "remote-precious"));
+  });
+});
