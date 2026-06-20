@@ -351,6 +351,12 @@ export const BUILT_IN_NODE_STYLES: Record<string, Partial<NodeStyle>> = {
     color: "#f59e0b",
     shape: "diamond",
   },
+  // Person — canonical class. `ims__Person` retained for backward-compat with
+  // not-yet-migrated graph nodes (deprecated; data migration is M3.5-B post-alpha).
+  "person__Person": {
+    color: "#06b6d4",
+    shape: "circle",
+  },
   "ims__Person": {
     color: "#06b6d4",
     shape: "circle",
