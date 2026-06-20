@@ -441,7 +441,7 @@ describe("RFC v2 Phase 3b — CommandResolver → GroundingExecutor pipeline int
     await seedCommandAndBindings(store);
   });
 
-  it("Area target: produces Task with Draft status + Effort_area set + no Effort_parent + isDefinedBy inherited", async () => {
+  it("@req:a863ecc1-9230-4457-880b-d3a18b33494f Area target: produces Task with Draft status + Effort_area set + no Effort_parent + isDefinedBy inherited", async () => {
     // Seed target Area asset (file + triples for resolver class-lookup).
     fs = new InMemoryFileSystem({
       [TARGET_AREA_PATH]: buildTargetMd(TARGET_AREA_UID, [CLASS_AREA_UID], {

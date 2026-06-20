@@ -559,7 +559,7 @@ async function readJournalEntries(app: App): Promise<SwitchJournalEntry[]> {
 
 describe("ProfileApplyManager.applyProfile", () => {
   describe("R24 — TS-floor guard", () => {
-    it("throws TsFloorViolationError when target excludes any floor AS UID before any mutation", async () => {
+    it("@req:f640c8f8-3d29-43da-8610-0187ac488876 throws TsFloorViolationError when target excludes any floor AS UID before any mutation", async () => {
       // Target profile includes ONLY ems — missing all 3 TS-floor AS.
       const { mgr, gitOps, cacheLayer } = setup({
         targetUid: "target",

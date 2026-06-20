@@ -212,6 +212,145 @@ jobs:
       - name: Run ADR compliance checks
         run: archgate check --ci
 
+  # RFC 0003 (requirements management) P1 — traceability checker, SOFT gate.
+  #
+  # This job is intentionally NOT in branch-protection required checks, and its
+  # audit step is `continue-on-error`, so a red traceability report can never
+  # block a merge in Phase 1 (RFC 0003 §3.7 soft→hard ramp). It clones the
+  # public reqs assetspace, runs `exocortex requirements audit` against the
+  # repo's test corpus, surfaces the report as a step-summary + sticky PR
+  # comment (the "read-surface carrot" — P1 deliverable), and is the home of the
+  # diff-aware traceability checks (archgate has no vault-graph access).
+  #
+  # P3 flips it hard by (a) adding `requirements-trace` to the required checks
+  # and (b) dropping `continue-on-error` on the audit step — a CI-config change,
+  # not a code change.
+  requirements-trace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node & install deps
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Build core + services + CLI
+        run: |
+          npm run build -w exocortex
+          npm run build -w @kitelev/exocortex-services
+          npm run build -w @kitelev/exocortex-cli
+
+      - name: Clone reqs assetspace (public)
+        run: |
+          git clone --depth 1 \
+            https://github.com/kitelev/exoas-exo-reqs.git \
+            "$RUNNER_TEMP/exoas-exo-reqs"
+
+      - name: Run traceability audit (soft — never blocks)
+        id: audit
+        continue-on-error: true
+        run: |
+          node packages/cli/dist/index.js requirements audit \
+            --reqs "$RUNNER_TEMP/exoas-exo-reqs" --tests . --output json \
+            | tee "$RUNNER_TEMP/req-report.json"
+          echo "--- human-readable ---"
+          node packages/cli/dist/index.js requirements audit \
+            --reqs "$RUNNER_TEMP/exoas-exo-reqs" --tests . --output text
+
+      - name: Write step summary
+        if: always()
+        run: |
+          {
+            echo '## Requirements traceability (RFC 0003 P1 — soft, non-blocking)'
+            echo
+            echo '```json'
+            cat "$RUNNER_TEMP/req-report.json" 2>/dev/null || echo '{ "error": "no report produced" }'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post / update PR comment (best-effort)
+        if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- requirements-trace -->';
+            let report = null;
+            try {
+              report = JSON.parse(
+                fs.readFileSync(process.env.RUNNER_TEMP + '/req-report.json', 'utf8'),
+              );
+            } catch (e) {
+              report = null;
+            }
+            const fmt = (r) => {
+              if (!r) {
+                return 'No traceability report was produced (checker failed to run).';
+              }
+              const pct = (r.coverage * 100).toFixed(1);
+              const lines = [
+                `**Requirements:** ${r.requirementCount} · **bound:** ${r.bound} · **coverage:** ${pct}% · **tags:** ${r.tagCount}`,
+                '',
+                '| finding | count |',
+                '| --- | --- |',
+                `| orphan requirements (no \`@req\` binding) | ${r.orphans.length} |`,
+                `| dangling \`@req\` tags (no requirement) | ${r.dangling.length} |`,
+                `| duplicate bindings | ${r.duplicates.length} |`,
+                `| P0 binding-class floor violations | ${r.floorViolations.length} |`,
+              ];
+              if (r.dangling.length) {
+                lines.push('', '**Dangling tags:**');
+                for (const d of r.dangling) lines.push(`- \`@req:${d.uid}\` ${d.file}:${d.line}`);
+              }
+              if (r.floorViolations.length) {
+                lines.push('', '**Floor violations (P0 bound solely to unit):**');
+                for (const f of r.floorViolations) {
+                  lines.push(`- \`${f.uid}\` [${f.bindingClasses.join(', ')}] ${f.label}`);
+                }
+              }
+              lines.push(
+                '',
+                r.clean
+                  ? '✅ no hard findings (dangling + binding-class floor clean)'
+                  : '⚠️ hard findings present — **soft gate, non-blocking in P1**',
+              );
+              return lines.join('\n');
+            };
+            const body =
+              `${marker}\n## 🧭 Requirements traceability (RFC 0003 P1 — soft)\n\n` +
+              `${fmt(report)}\n\n` +
+              `<sub>Soft, non-blocking. Flips to a required gate in P3 (RFC 0003 §3.7).</sub>`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+            });
+            const existing = comments.data.find(
+              (c) => c.body && c.body.includes(marker),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
+
   # UI / integration tests (jest-environment-obsidian) — the tests/ui suite
   # (ActionButtonsLayout + UniversalLayoutRenderer, ~53 cases). This is the
   # SOLE CI runner of jest.ui.config.js: the test-coverage jest.config.js
