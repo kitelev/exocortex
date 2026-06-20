@@ -89,6 +89,20 @@ You describe your entities (tasks, projects, areas, or any custom type) in YAML 
 
 BRAT will automatically keep the plugin updated with new releases.
 
+### Recommended: the first-run setup wizard
+
+The fastest way through setup is the built-in wizard. **When you enable Exocortex on a fresh vault** (empty, or only the stock `Welcome.md`), a **"Welcome to Exocortex"** panel opens automatically with a **5-step checklist** that walks you through the whole canonical path — with the recommended repository URLs pre-filled:
+
+1. **Add your GitHub token** (optional) — only needed for **private** AssetSpaces; skip it for a fully-public vault. Includes a **Create token on GitHub** link and a **Test connection** button (see [Plugin Settings → GitHub PAT](#plugin-settings)).
+2. **Set up the engine** — bootstraps the `exo` SDK floor.
+3. **Add the AssetSpace registry** — `kitelev/exoas-registry` (pre-filled).
+4. **Add the profiles AssetSpace** — `kitelev/exoas-profiles` (pre-filled).
+5. **Apply a profile** — pick one; it mounts that profile's AssetSpaces.
+
+Each step opens its own dialog **on top of** the panel, so the panel stays open underneath and you can come back to the next step. **Re-open the wizard any time** via **Cmd/Ctrl + P → "Exocortex: Setup (getting started)"** — handy if your vault already had notes (the wizard auto-shows only on a genuinely fresh vault, but the command always works).
+
+> **Prefer to do it by hand?** The numbered **Step 2 / Step 2b** sections below are the same flow done manually and explained in depth. If the wizard is open, just follow it; the sections below are the reference for what each step does (and the git-commit note in Step 2b still applies to a git-backed vault before the first Apply).
+
 ### Step 2: Bootstrap your vault (the engine floor)
 
 The plugin needs ontology files in your vault to enable layouts, action buttons, and commands. Rather than downloading anything by hand, the plugin pulls them straight from public GitHub repositories using its built-in **Set up the engine** command.
@@ -162,9 +176,15 @@ exo__Asset_label: Test Area
 - If the `exocmd/` folder is present and the plugin loads cleanly, fully **quit and reopen Obsidian** (cold restart) to force re-indexing
 - Try Cmd/Ctrl+P → "Reload layout"
 
-### Keeping AssetSpaces up to date: "Exocortex: Sync"
+### Your first sync: "Exocortex: Sync"
 
-Bootstrapped AssetSpaces are GitHub-backed. To pull (and push) updates later, run **Cmd/Ctrl + P → "Exocortex: Sync"**. The command syncs every materialized AssetSpace with its GitHub repository and requires a GitHub **Personal Access Token** configured in **Settings → Exocortex**. See [ExoSync](../how-to/exosync.md) for details.
+Bootstrapped AssetSpaces are GitHub-backed. To pull (and push) updates, run **Cmd/Ctrl + P → "Exocortex: Sync"**. This is the last step of the canonical setup path.
+
+1. **Configure a GitHub PAT first** — Sync needs the fine-grained token from the section above (it pushes/pulls AssetSpace commits). Without one, the command shows a "configure PAT" notice instead of running. The engine reads the currently-stored PAT on every invocation, so a freshly-saved token works without a reload.
+2. **Run "Exocortex: Sync".** One run syncs **every** materialized AssetSpace with its GitHub repository — pull → merge → push, children-before-parents, best-effort (one failing repo never blocks the rest).
+3. **Read the summary notice** — it reports `pushed / pulled / merged / quarantined` counts; per-repo details go to the developer console (`[ExoSync] …`).
+
+The **first** sync over a freshly-mounted AssetSpace just bootstraps its baseline (nothing is overwritten unless the local tree already diverged from the remote). For the full model — 3-way merge, conflict quarantine, FileSpaces, CLI usage, and troubleshooting (`full-conflict`, `auth-required`, rate limits) — see [ExoSync](../how-to/exosync.md).
 
 ---
 
@@ -412,8 +432,18 @@ Open **Settings → Exocortex** to configure the plugin. Three things worth know
 
 The starter onboarding (Step 2b) pulls only **public** repositories, so no token is involved. To add **your own** or a **private** AssetSpace:
 
-1. Configure your **GitHub PAT** in _Settings → Exocortex_ (see the bullet above), scoped to the repositories you own (fine-grained PAT with a per-repository allowlist is recommended).
+1. **Create a fine-grained GitHub PAT.** This is the single fiddliest setup step, so the plugin scaffolds it: both the first-run wizard's step 1 and _Settings → Exocortex → GitHub PAT_ show a **Create token on GitHub** link that deep-links straight to GitHub's **fine-grained** token page — [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new). Use the **fine-grained** page (not the classic `/settings/tokens/new` one), scope the token to your `exoas-*` repositories with a per-repository allowlist, and grant exactly these permissions:
+
+   | Permission   | Access         | Why                                                                                        |
+   | ------------ | -------------- | ------------------------------------------------------------------------------------------ |
+   | **Contents** | Read and write | Push AssetSpace commits to your `exoas-*` repos (and pull private ones)                    |
+   | **Metadata** | Read-only      | Mandatory baseline (GitHub auto-selects it); also lets **Test connection** list your repos |
+
+   Paste the token into the PAT field and click **Save PAT**, then **Test connection** to verify it reaches GitHub before you rely on it. (The token is stored device-local in `data.local.json`, never synced — see the bullet above.)
+
 2. Declare the AssetSpace in a profile (an `exo__Profile` asset that lists it under `exo__Profile_includes`) and run **"Exocortex: Apply profile"**. Apply uses your PAT to materialize private AssetSpaces.
+
+> **Under-scoped fine-grained PAT?** GitHub returns **404** (not 403) for a private repo the token's allowlist doesn't cover — so a "repo does not exist" error during Apply/Sync usually means the token is missing that repo, not that the repo is gone. Check the token's repository allowlist first.
 
 > The **"Add a knowledge pack"** command is for a single **public** repository (no token), and it does **not** pull that repo's dependencies automatically. For private content, or for a complete dependency-resolved set, prefer the profile path (**Apply profile**) over **Add a knowledge pack**.
 
