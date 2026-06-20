@@ -121,6 +121,12 @@ export {
   type CommandPromptAdapter,
   type IFileOpener,
 } from "./services/CommandExecutionFlow";
+export {
+  createTripleStoreRequiredPropertyResolver,
+  type RequiredPropertyResolver,
+  type RequiredPropertyField,
+  type RequiredPropertyFieldType,
+} from "./services/RequiredPropertyResolver";
 export { TaskStatusService } from "./services/TaskStatusService";
 export { AreaCreationService } from "./services/AreaCreationService";
 export {

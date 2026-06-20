@@ -6,6 +6,7 @@ import type { ILogger } from "../interfaces/ILogger";
 import type { ITripleStore } from "../interfaces/ITripleStore";
 import type { GroundingDefinition } from "../domain/models/CommandDefinition";
 import { GroundingType } from "../domain/constants/GroundingType";
+import type { RequiredPropertyResolver } from "./RequiredPropertyResolver";
 import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
 import { Namespace } from "../domain/models/rdf/Namespace";
@@ -95,6 +96,10 @@ export class CommandExecutionFlow {
     private readonly prompts: CommandPromptAdapter,
     private readonly tripleStore?: ITripleStore,
     private readonly fileOpener?: IFileOpener,
+    // T3 «Create Instance» (project bbe40f8c) — resolves a host class's SHACL
+    // required (`minCount > 0`) properties so the create-instance form prompts
+    // for them. Optional: absent → no augmentation (back-compat).
+    private readonly requiredPropertyResolver?: RequiredPropertyResolver,
   ) {}
 
   async run(
@@ -111,10 +116,15 @@ export class CommandExecutionFlow {
     let userInput: UserInput | undefined = ctx.injectedUserInput;
     const inputSchema = CommandExecutionFlow.extractInputSchema(rc);
     if (inputSchema !== null && inputSchema.length > 0) {
-      const effectiveSchema = await this.applyLabelDatePrefill(
+      let effectiveSchema = await this.applyLabelDatePrefill(
         inputSchema,
         command.grounding,
         ctx.targetIRI,
+      );
+      effectiveSchema = await this.applyRequiredPropertyFields(
+        effectiveSchema,
+        command.grounding,
+        ctx,
       );
       const collected = await this.prompts.promptInputSchema(effectiveSchema);
       if (collected === null) return;
@@ -237,6 +247,106 @@ export class CommandExecutionFlow {
       if (typeof existing === "string" && existing.length > 0) return field;
       return { ...f, defaultValue: prefill };
     });
+  }
+
+  /**
+   * T3 «Create Instance» (project bbe40f8c) — append the host class's SHACL
+   * required (`exo__Property_minCount > 0`) properties as form fields, so the
+   * create-instance form prompts for them and the new asset is SHACL-valid.
+   *
+   * Active ONLY for the host-as-class «Create Instance» flagship — a
+   * `create_instance` grounding with **no** `targetClass` (verified the only
+   * such grounding; every other create command bakes a `targetClass`). The new
+   * instance's class IS the host class (`$targetClassSelf`), so its required
+   * properties come from the host class def. No-op (schema unchanged) when:
+   *   - the grounding isn't that flagship,
+   *   - no resolver is wired (CLI/test harness without a vault store),
+   *   - no `filePath` (global palette surface with no active file),
+   *   - the resolver throws, or the class has no required properties (common).
+   *
+   * Fields already covered — by the static schema (e.g. `label`,
+   * `exo__Asset_isDefinedBy`) or by the Universal Default Template
+   * ({@link ALWAYS_COVERED}: uid/createdAt/updatedAt/label/createdBy/
+   * instance_class/isDefinedBy) — are skipped, so the form never double-asks.
+   */
+  async applyRequiredPropertyFields(
+    schema: ReadonlyArray<unknown>,
+    grounding: GroundingDefinition,
+    ctx: CommandExecutionContext,
+  ): Promise<ReadonlyArray<unknown>> {
+    if (grounding.type !== GroundingType.CREATE_INSTANCE) return schema;
+    if (grounding.targetClass) return schema;
+    if (!this.requiredPropertyResolver) return schema;
+    if (!ctx.filePath) return schema;
+
+    const hostClassUid = CommandExecutionFlow.basenameUid(ctx.filePath);
+    if (!hostClassUid) return schema;
+
+    let required;
+    try {
+      required = await this.requiredPropertyResolver(hostClassUid);
+    } catch (error) {
+      this.logger.info(
+        `[CommandExecutionFlow] required-property resolution failed for "${hostClassUid}": ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return schema;
+    }
+    if (required.length === 0) return schema;
+
+    const covered = new Set<string>(CommandExecutionFlow.ALWAYS_COVERED);
+    for (const field of schema) {
+      if (
+        field &&
+        typeof field === "object" &&
+        typeof (field as Record<string, unknown>).name === "string"
+      ) {
+        covered.add((field as Record<string, unknown>).name as string);
+      }
+    }
+
+    const additions = required
+      .filter((f) => !covered.has(f.propertyKey))
+      .map((f) => {
+        const field: Record<string, unknown> = {
+          name: f.propertyKey,
+          type: f.fieldType,
+          label: f.label,
+          required: true,
+        };
+        if (f.targetClassUid) field.targetClassUid = f.targetClassUid;
+        // A boolean is always "filled" — default to false so it submits valid.
+        if (f.fieldType === "boolean") field.defaultValue = "false";
+        return field;
+      });
+
+    if (additions.length === 0) return schema;
+    return [...schema, ...additions];
+  }
+
+  /** Frontmatter keys always supplied by the Universal Default Template. */
+  private static readonly ALWAYS_COVERED: ReadonlyArray<string> = [
+    "exo__Asset_uid",
+    "exo__Asset_createdAt",
+    "exo__Asset_updatedAt",
+    "exo__Asset_label",
+    "exo__Asset_createdBy",
+    "exo__Instance_class",
+    "exo__Asset_isDefinedBy",
+  ];
+
+  /** Vault-relative file path → its basename UID (UID-canon), or null. */
+  private static basenameUid(filePath: string): string | null {
+    const base = filePath
+      .replace(/^\/+/, "")
+      .split("/")
+      .pop()
+      ?.replace(/\.md$/i, "");
+    if (!base) return null;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      base,
+    )
+      ? base.toLowerCase()
+      : null;
   }
 
   /**

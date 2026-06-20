@@ -63,6 +63,55 @@ describe("DynamicForm", () => {
     });
   });
 
+  // T3 «Create Instance» — number/boolean field types for required-property
+  // datatype ranges (xsd:integer/decimal/… → number, xsd:boolean → boolean).
+  describe("number field (T3)", () => {
+    it("should render a number input", () => {
+      renderForm([{ name: "count", type: "number", label: "Count" }]);
+      const input = screen.getByTestId("field-count");
+      expect(input.tagName).toBe("INPUT");
+      expect(input).toHaveAttribute("type", "number");
+    });
+
+    it("should forward typed numeric value", () => {
+      const { onSubmit } = renderForm([{ name: "count", type: "number" }]);
+      fireEvent.change(screen.getByTestId("field-count"), {
+        target: { value: "42" },
+      });
+      fireEvent.click(screen.getByText("OK"));
+      expect(onSubmit).toHaveBeenCalledWith({ count: "42" });
+    });
+  });
+
+  describe("boolean field (T3)", () => {
+    it("should render a checkbox", () => {
+      renderForm([{ name: "flag", type: "boolean", label: "Flag" }]);
+      const input = screen.getByTestId("field-flag");
+      expect(input.tagName).toBe("INPUT");
+      expect(input).toHaveAttribute("type", "checkbox");
+    });
+
+    it("commits 'true'/'false' string on toggle", () => {
+      const { onSubmit } = renderForm([
+        { name: "flag", type: "boolean", defaultValue: "false" },
+      ]);
+      const cb = screen.getByTestId("field-flag");
+      expect(cb).not.toBeChecked();
+      fireEvent.click(cb);
+      expect(cb).toBeChecked();
+      fireEvent.click(screen.getByText("OK"));
+      expect(onSubmit).toHaveBeenCalledWith({ flag: "true" });
+    });
+
+    it("a required boolean defaulting to 'false' submits without blocking", () => {
+      const { onSubmit } = renderForm([
+        { name: "flag", type: "boolean", required: true, defaultValue: "false" },
+      ]);
+      fireEvent.click(screen.getByText("OK"));
+      expect(onSubmit).toHaveBeenCalledWith({ flag: "false" });
+    });
+  });
+
   describe("enum field", () => {
     it("should render a select dropdown with string options", () => {
       renderForm([{

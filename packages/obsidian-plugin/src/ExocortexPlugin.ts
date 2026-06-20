@@ -198,6 +198,7 @@ import {
 } from "./infrastructure/adapters/SyncDepsFactory";
 import {
   CommandExecutionFlow,
+  createTripleStoreRequiredPropertyResolver,
   DI_TOKENS,
   type IVaultSettings,
 } from "exocortex";
@@ -1020,6 +1021,11 @@ export default class ExocortexPlugin extends Plugin {
             new ObsidianCommandPromptAdapter(this.app),
             tripleStore,
             new ObsidianFileOpener(this.app),
+            // T3 «Create Instance» — required-property form augmentation for the
+            // palette surface too (Cmd+P on a class-def page).
+            tripleStore
+              ? createTripleStoreRequiredPropertyResolver(tripleStore)
+              : undefined,
           );
           await new ExocmdCommandPaletteRegistrar(
             this,

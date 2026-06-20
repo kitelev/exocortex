@@ -72,7 +72,17 @@ export interface EnumOption {
  */
 export interface InputSchemaField {
   readonly name: string;
-  readonly type: "text" | "date" | "enum" | "multiline" | "assetRef";
+  // T3 «Create Instance» (project bbe40f8c) — `number` / `boolean` added so the
+  // required-property resolver can map xsd:integer/decimal/… → number and
+  // xsd:boolean → boolean from a property's range.
+  readonly type:
+    | "text"
+    | "date"
+    | "number"
+    | "boolean"
+    | "enum"
+    | "multiline"
+    | "assetRef";
   readonly label?: string;
   readonly required?: boolean;
   readonly defaultValue?: string;

@@ -13,6 +13,7 @@ import {
   INotificationService,
   CommandExecutionFlow,
   ITripleStore,
+  createTripleStoreRequiredPropertyResolver,
 } from "exocortex";
 import {
   ButtonBuilderContext,
@@ -120,6 +121,12 @@ export class ButtonGroupsBuilder {
         new ObsidianCommandPromptAdapter(app),
         tripleStore,
         new ObsidianFileOpener(app),
+        // T3 «Create Instance» — augment the create-instance form with the host
+        // class's SHACL required properties (over the same in-memory store; works
+        // on desktop and mobile, no Platform.isMobile gating).
+        tripleStore
+          ? createTripleStoreRequiredPropertyResolver(tripleStore)
+          : undefined,
       );
       this.builders.push(
         new DynamicCommandButtonGroupBuilder({
