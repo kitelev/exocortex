@@ -260,7 +260,7 @@ describe("RFC 78c2b7d0 C5 — Archive Ontologically (homoiconic composite)", () 
     }
   }
 
-  it("relocates the asset into the archive ontology folder and re-anchors isDefinedBy (real mutation)", async () => {
+  it("relocates the asset into the archive ontology folder and re-anchors isDefinedBy (real mutation) @req:8efc003c-f0b3-4572-b702-710d66b8b184", async () => {
     const vault = buildVault();
     root = vault.root;
 

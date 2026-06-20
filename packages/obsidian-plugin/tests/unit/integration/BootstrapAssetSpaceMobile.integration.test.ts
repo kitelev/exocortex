@@ -248,7 +248,7 @@ describe("Mobile bootstrap integration — real RestAssetSpaceMount + vault.adap
     expect(notices.some((n) => /file-only mode/.test(n))).toBe(false);
   });
 
-  it("after exo-only bootstrap, add-assetspace appends a second .gitmodules entry at the canonical Maven path + materialises it (#3538)", async () => {
+  it("after exo-only bootstrap, add-assetspace appends a second .gitmodules entry at the canonical Maven path + materialises it (#3538) @req:59afd046-eb41-4fd5-a03a-062a53d0acc5", async () => {
     const adapter = new InMemoryAdapter();
     const notices: string[] = [];
     const { cmds, restMount } = makeCmds(adapter, notices, {});

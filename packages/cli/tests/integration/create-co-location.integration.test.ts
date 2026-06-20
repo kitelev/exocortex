@@ -131,7 +131,7 @@ describe("Issue #3520: `cli create` co-locates by exo__Asset_isDefinedBy", () =>
     return JSON.parse(json);
   }
 
-  it("resolvable isDefinedBy → asset placed in the ontology folder (not inbox)", async () => {
+  it("resolvable isDefinedBy → asset placed in the ontology folder (not inbox) @req:ec877f5e-d466-41fb-a3ae-9b8239cd7345", async () => {
     const result = await runCreate([
       "--property",
       `exo__Asset_isDefinedBy=[[${ONTOLOGY_UID}]]`,
