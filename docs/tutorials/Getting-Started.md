@@ -6,14 +6,14 @@
 
 ## Requirements
 
-Exocortex has been verified to work with the following minimum versions. Older versions are known to miss critical fixes for grounding, createAsset, and IRI resolution.
+Exocortex has been verified to work with the following minimum versions. Older versions miss the EKA setup commands this guide walks you through (and earlier fixes for grounding, createAsset, and IRI resolution).
 
-| Component            | Minimum version | Recommended    | Why                                                                                                                               |
-| -------------------- | --------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **Obsidian**         | 1.5.0           | 1.7.0 or newer | Plugin uses APIs available since 1.5.                                                                                             |
-| **Exocortex plugin** | v15.90.9        | Latest release | Fixes for createAsset, IRI resolution, targetValue.                                                                               |
-| **git** (CLI)        | Optional        | Latest         | Only needed for git-backed vaults — used to register pulled AssetSpaces as git submodules. Non-git vaults work in file-only mode. |
-| **BRAT**             | Latest          | Latest         | Delivers plugin updates automatically.                                                                                            |
+| Component            | Minimum version | Recommended    | Why                                                                                                                                                                                                                                                                                      |
+| -------------------- | --------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Obsidian**         | 1.5.0           | 1.7.0 or newer | Plugin uses APIs available since 1.5.                                                                                                                                                                                                                                                    |
+| **Exocortex plugin** | v16.111.0       | Latest release | This guide's setup flow uses the EKA command names it ships («Set up the engine», «Add a knowledge pack», «Apply profile») and the Bootstrap → registry → profiles → Create Instance path. Older builds expose differently-named or missing commands, so the steps below will not match. |
+| **git** (CLI)        | Optional        | Latest         | Only needed for git-backed vaults — used to register pulled AssetSpaces as git submodules. Non-git vaults work in file-only mode.                                                                                                                                                        |
+| **BRAT**             | Latest          | Latest         | Delivers plugin updates automatically.                                                                                                                                                                                                                                                   |
 
 ### How to check your versions
 
