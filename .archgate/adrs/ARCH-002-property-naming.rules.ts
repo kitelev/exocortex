@@ -3,7 +3,7 @@ export default {
   rules: {
     "property-naming-convention": {
       description:
-        "Frontmatter property constants must use approved namespace prefixes (exo__, ems__, ims__, ztlk__, ptms__, lit__, inbox__)",
+        "Frontmatter property constants must use approved namespace prefixes (exo__, ems__, ims__, ztlk__, ptms__, lit__, inbox__, req__)",
       severity: "warning",
       async check(ctx) {
         // Check domain constants files for property definitions
@@ -23,6 +23,11 @@ export default {
           "ptms__",
           "lit__",
           "inbox__",
+          // RFC 0003 (requirements management, A13): the `req` namespace is the
+          // canonical home for functional requirement constants. Added proactively
+          // so `req__*` domain constants (e.g. a future homoiconic req renderer)
+          // never trip this warning. No `req__` domain constants exist yet.
+          "req__",
         ];
 
         for (const file of allFiles) {
@@ -43,7 +48,7 @@ export default {
                 message: `Property uses non-standard namespace prefix: ${hit.content.trim()}`,
                 file: hit.file,
                 line: hit.line,
-                fix: `Use approved namespaces: exo__, ems__, ims__, ztlk__, ptms__, lit__, inbox__`,
+                fix: `Use approved namespaces: exo__, ems__, ims__, ztlk__, ptms__, lit__, inbox__, req__`,
               });
             }
           }

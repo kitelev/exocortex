@@ -18,15 +18,16 @@ Properties follow the format: `namespace__Class_property`
 
 ### Approved Namespaces
 
-| Namespace | Domain |
-|-----------|--------|
-| `exo__` | Core Exocortex |
-| `ems__` | Effort Management System |
-| `ims__` | Information Management System |
-| `ztlk__` | Zettelkasten |
-| `ptms__` | Personality Type Management System |
-| `lit__` | Literature |
-| `inbox__` | Inbox |
+| Namespace | Domain                             |
+| --------- | ---------------------------------- |
+| `exo__`   | Core Exocortex                     |
+| `ems__`   | Effort Management System           |
+| `ims__`   | Information Management System      |
+| `ztlk__`  | Zettelkasten                       |
+| `ptms__`  | Personality Type Management System |
+| `lit__`   | Literature                         |
+| `inbox__` | Inbox                              |
+| `req__`   | Requirements management (RFC 0003) |
 
 ## Do's and Don'ts
 

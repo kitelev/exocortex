@@ -98,7 +98,7 @@ beforeEach(() => {
 });
 
 describe("createTripleStoreRequiredPropertyResolver", () => {
-  it("resolves a class's required (minCount>0) properties, skipping non-required", async () => {
+  it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 resolves a class's required (minCount>0) properties, skipping non-required", async () => {
     const store = await seed([
       {
         key: "exo__Setting_key",

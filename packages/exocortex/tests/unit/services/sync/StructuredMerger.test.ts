@@ -82,7 +82,7 @@ describe("StructuredMerger — file-level outcomes", () => {
 });
 
 describe("StructuredMerger — frontmatter per-key 3-way (D1)", () => {
-  it("non-overlapping scalar edits on different keys merge", () => {
+  it("@req:40b1be4d-0aae-4c1b-8047-998e7f3ebf8b non-overlapping scalar edits on different keys merge", () => {
     const base = asset({ label: "L0", extra: { ems__Effort_status: '"[[s0]]"' } });
     const local = asset({ label: "L1", extra: { ems__Effort_status: '"[[s0]]"' } });
     const remote = asset({ label: "L0", extra: { ems__Effort_status: '"[[s1]]"' } });
