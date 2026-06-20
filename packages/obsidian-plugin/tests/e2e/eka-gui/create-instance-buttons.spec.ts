@@ -43,7 +43,10 @@ const EMS_TASK_CLASSDEF_REL = path.posix.join(
  * a copy of the host class's own ontology. `$exo` lives in the cloned exoas-exo.
  */
 const PICK_ONTOLOGY_UID = "ca97bb2f-99bd-4ceb-b51e-c386b9231ae3"; // $exo
-const PICK_ONTOLOGY_QUERY = "$exo"; // fuzzy query that surfaces the $exo option
+// Fuzzy query for the picker. `label.includes(query)` is a substring match, so
+// this surfaces `$exo` AND any `$exo…`-prefixed sibling (e.g. `$exocmd`); the
+// test then clicks the exact `$exo` option BY UID, so selection is deterministic.
+const PICK_ONTOLOGY_QUERY = "$exo";
 const PICK_ONTOLOGY_DIR = "assetspaces/kitelev/exoas-exo/exo";
 
 /**
@@ -279,20 +282,25 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
       PICK_ONTOLOGY_UID, // picked ontology — set as exo__Asset_isDefinedBy
       PICK_ONTOLOGY_QUERY,
       "E2E Instance on Class",
+      PICK_ONTOLOGY_DIR, // expected co-location folder (folded into retry-accept)
     );
     log(`created flagship instance: ${rel}`);
 
+    // Pin each UID to its OWN property (not a bare whole-frontmatter substring),
+    // so a hypothetical value-swap of the two refs can't pass vacuously.
     // exo__Instance_class = the host class (the class-def page IS the class).
     expect(
       fm,
-      "instance must carry the host class in exo__Instance_class ($targetClassSelf)",
-    ).toContain(UID.emsTaskClass);
+      "exo__Instance_class must be the host class ($targetClassSelf)",
+    ).toMatch(
+      new RegExp(`exo__Instance_class:[\\s\\S]{0,60}?${UID.emsTaskClass}`),
+    );
     // exo__Asset_isDefinedBy = the PICKED ontology ($exo), proving the picker
     // drove it (≠ the host class's own $ems).
     expect(
       fm,
-      "instance must carry the picked ontology in exo__Asset_isDefinedBy",
-    ).toContain(PICK_ONTOLOGY_UID);
+      "exo__Asset_isDefinedBy must be the picked ontology ($exo)",
+    ).toMatch(new RegExp(`exo__Asset_isDefinedBy:[^\\n]*${PICK_ONTOLOGY_UID}`));
     // Co-located in the PICKED ontology's folder ($isDefinedByFolder) — exoas-exo,
     // NOT the host class's ems folder.
     expect(

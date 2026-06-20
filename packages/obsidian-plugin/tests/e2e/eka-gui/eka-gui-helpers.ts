@@ -749,6 +749,7 @@ export async function createInstanceOnClass(
   ontologyUid: string,
   ontologyQuery: string,
   labelBase: string,
+  expectedFolder: string,
   attempts = 6,
 ): Promise<{ rel: string; fm: string }> {
   const pickerSel = '.dynamic-form [data-testid="field-exo__Asset_isDefinedBy"]';
@@ -827,16 +828,23 @@ export async function createInstanceOnClass(
       }
 
       // Accept the instance carrying BOTH the host class (via $targetClassSelf)
-      // AND the picked ontology (isDefinedBy). Anything else = grounding not yet
-      // fully resolved → clean up + retry.
+      // AND the picked ontology (isDefinedBy) AND co-located in that ontology's
+      // folder ($isDefinedByFolder). Folder is part of the predicate so a folder-
+      // resolution miss — `resolveIsDefinedByFolder` silently falls back to the
+      // host folder when refToFolder returns null — is RETRIED (re-open re-
+      // resolves against the more-indexed store), not surfaced as a hard fail.
       for (const rel of created) {
         const fm = readVaultFile(vaultPath, rel);
-        if (fm.includes(hostClassUid) && fm.includes(ontologyUid)) {
+        if (
+          fm.includes(hostClassUid) &&
+          fm.includes(ontologyUid) &&
+          rel.startsWith(expectedFolder + "/")
+        ) {
           return { rel, fm };
         }
       }
       lastErr =
-        `instance missing host class ${hostClassUid} or ontology ${ontologyUid} in: ` +
+        `instance missing host class ${hostClassUid} / ontology ${ontologyUid} / folder ${expectedFolder} in: ` +
         created
           .map((r) => `${r}: ${readVaultFile(vaultPath, r).replace(/\n/g, " | ")}`)
           .join(" ;; ");
