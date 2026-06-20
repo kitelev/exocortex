@@ -107,9 +107,10 @@ export function collectTemplateChoices(
 
 /**
  * Strip the leading YAML frontmatter block, returning the markdown body.
- * Delegates to the core `stripFrontmatter` so the editor inserter, the plugin
- * TemplateLoaderPort, and the CLI TemplateLoaderPort share one strip impl
- * (Веха 3 — no per-consumer regex drift).
+ * Delegates to the core `stripTemplateFrontmatter` (CRLF-aware, consumes the
+ * separating newline — distinct from `sparqlBlock.stripFrontmatter`) so the
+ * editor inserter, the plugin TemplateLoaderPort, and the CLI TemplateLoaderPort
+ * share one strip impl (Веха 3 — no per-consumer regex drift).
  */
 export function extractTemplateBody(content: string): string {
   return stripTemplateFrontmatter(content);

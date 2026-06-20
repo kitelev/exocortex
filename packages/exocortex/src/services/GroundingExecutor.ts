@@ -927,6 +927,12 @@ export class GroundingExecutor {
    * Replace a markdown file's body (everything after the leading frontmatter
    * block) with `body`, preserving the frontmatter. When the file has no
    * frontmatter, the whole content becomes `body`. `\r?\n` tolerates CRLF.
+   *
+   * NOTE: an EMPTY frontmatter (`---\n---`) has no line between the fences, so
+   * the regex treats it as "no frontmatter" and `body` replaces the whole file.
+   * This never triggers on the composite create_instance path (it always writes
+   * non-empty frontmatter: uid/label/instance_class/createdAt); it only affects
+   * a standalone body_template on an empty-FM file — an acceptable corner.
    */
   private static replaceBody(content: string, body: string): string {
     const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---/);
