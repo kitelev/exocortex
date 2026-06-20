@@ -1330,6 +1330,133 @@ describe("ProfileApplyManager.applyProfile", () => {
       expect((commits[0].args[0] as string)).toContain("apply");
     });
   });
+
+  // F6 — the cache-verify gate is the zero-loss safety net of the desktop git
+  // path: an AssetSpace is cached BEFORE it is torn down, so a destroy can only
+  // run for content we have already backed up. The cache layer verifies its own
+  // archive before returning (F6 in RFC 22b50a17), so a `cache()` rejection
+  // means "could not back this up" and the destroy MUST NOT proceed.
+  //
+  // These pin the invariant the `FakeCacheLayer.failCache` switch was built for
+  // but no test exercised: a caching failure aborts the WHOLE destroy phase the
+  // moment it happens, leaving the vault's to-destroy AssetSpaces on disk
+  // (nothing deinit'd / no working tree removed). Paired revert-verify proves
+  // the gate is load-bearing — with caching healthy the same scenario tears the
+  // AssetSpaces down.
+  describe("F6 — cache-verify gate (cannot destroy what cannot be cached)", () => {
+    it("aborts the destroy phase the instant caching a to-destroy AssetSpace fails — zero destroys, vault intact", async () => {
+      const { mgr, gitOps, cacheLayer } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        // Target = floor only → ems + kpc are torn down (pure-destroy, no pull).
+        targetIncludes: [
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+        materialized: [
+          "ems-uid",
+          "kpc-uid",
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+      });
+      cacheLayer.failCache = true;
+
+      await expect(mgr.applyProfile("target")).rejects.toThrow(
+        /cache failure/i,
+      );
+
+      // CORE INVARIANT: a cache failure aborts BEFORE any teardown. Not a single
+      // AssetSpace may be deinit'd or have its working tree removed — the vault's
+      // to-destroy AssetSpaces are still fully on disk (zero data loss).
+      expect(
+        gitOps.calls.filter((c) => c.op === "submoduleDeinit").length,
+      ).toBe(0);
+      expect(
+        gitOps.calls.filter((c) => c.op === "removeWorkingTree").length,
+      ).toBe(0);
+      expect(
+        gitOps.calls.filter((c) => c.op === "removeGitModulesDir").length,
+      ).toBe(0);
+      // No commit either — the mutation never reached the commit step.
+      expect(gitOps.calls.filter((c) => c.op === "commit").length).toBe(0);
+    });
+
+    it("REVERT-VERIFY: with caching healthy the same profile DOES tear the AssetSpaces down (gate is load-bearing)", async () => {
+      const { mgr, gitOps, cacheLayer } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: [
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+        materialized: [
+          "ems-uid",
+          "kpc-uid",
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+      });
+      cacheLayer.failCache = false; // healthy cache → destroy proceeds.
+
+      await mgr.applyProfile("target");
+
+      // Both non-floor AssetSpaces cached then torn down (the gate let them through).
+      expect(cacheLayer.cachedCalls.length).toBe(2);
+      expect(
+        gitOps.calls.filter((c) => c.op === "submoduleDeinit").length,
+      ).toBe(2);
+      expect(
+        gitOps.calls.filter((c) => c.op === "removeWorkingTree").length,
+      ).toBe(2);
+    });
+  });
+
+  // Concurrent-switch guard on the DESTRUCTIVE apply-mutation path. The lock
+  // contention suite in ProfileApplyManager.test.ts only covers the pure
+  // (non-destructive) reindex path; this pins that a second apply, started
+  // while a foreign session still holds the persistent switch-lock, refuses to
+  // mutate the filesystem (no AssetSpace is torn down while another switch is
+  // in flight — the data-loss race the lock exists to prevent).
+  describe("Concurrent apply — lock guard (desktop git path)", () => {
+    it("refuses a second apply while the lock is held — no AssetSpace torn down", async () => {
+      const { mgr, gitOps, app, localDataStore } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: [
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+        materialized: [
+          "ems-uid",
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+      });
+      // A foreign session (distinct pid) holds a FRESH (non-stale) lock.
+      const foreignLock = new PluginLockManager({ app, pid: "foreign-pid" });
+      expect(await foreignLock.acquireLock("foreign-apply")).toBe(true);
+
+      await expect(mgr.applyProfile("target")).rejects.toThrow(/lock held/i);
+
+      // The mutation never started: ems was NOT torn down (zero destroys), so a
+      // concurrent apply cannot race a half-applied filesystem.
+      expect(
+        gitOps.calls.filter((c) => c.op === "submoduleDeinit").length,
+      ).toBe(0);
+      expect(
+        gitOps.calls.filter((c) => c.op === "removeWorkingTree").length,
+      ).toBe(0);
+      // The active profile is untouched (the failed apply never persisted).
+      expect(localDataStore.getActiveProfileUid()).toBe(null);
+    });
+  });
 });
 
 /**
