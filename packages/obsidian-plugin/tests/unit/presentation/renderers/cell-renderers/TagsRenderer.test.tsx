@@ -17,6 +17,63 @@ describe("TagsRenderer", () => {
     property: "tags",
   });
 
+  describe("getAssetLabel resolution (#3629 / F10)", () => {
+    const getAssetLabel = (path: string): string | null =>
+      path === "7db5eeff" ? "Project" : null;
+
+    it("resolves an alias-less wikilink tag to its label", () => {
+      render(
+        <TagsRenderer
+          value="[[7db5eeff]]"
+          column={createColumn()}
+          getAssetLabel={getAssetLabel}
+        />,
+      );
+
+      expect(screen.getByText("Project")).toBeInTheDocument();
+      expect(screen.queryByText("7db5eeff")).not.toBeInTheDocument();
+    });
+
+    it("falls back to the target when getAssetLabel returns null", () => {
+      render(
+        <TagsRenderer
+          value="[[unknown-uid]]"
+          column={createColumn()}
+          getAssetLabel={getAssetLabel}
+        />,
+      );
+
+      expect(screen.getByText("unknown-uid")).toBeInTheDocument();
+    });
+
+    it("prefers an explicit alias over getAssetLabel", () => {
+      render(
+        <TagsRenderer
+          value="[[7db5eeff|Explicit]]"
+          column={createColumn()}
+          getAssetLabel={getAssetLabel}
+        />,
+      );
+
+      expect(screen.getByText("Explicit")).toBeInTheDocument();
+    });
+
+    it("resolves labels for each tag in a multi-tag value", () => {
+      const resolver = (path: string): string | null =>
+        ({ "7db5eeff": "Project", "1b20a8f0": "Task" })[path] ?? null;
+      render(
+        <TagsRenderer
+          value="[[7db5eeff]], [[1b20a8f0]]"
+          column={createColumn()}
+          getAssetLabel={resolver}
+        />,
+      );
+
+      expect(screen.getByText("Project")).toBeInTheDocument();
+      expect(screen.getByText("Task")).toBeInTheDocument();
+    });
+  });
+
   describe("Array Input", () => {
     it("renders array of tags", () => {
       render(

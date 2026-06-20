@@ -570,23 +570,83 @@ export class LayoutService {
       }
 
       case "datetime": {
-        // Try to parse as date
+        // Date-only ISO values ("2026-06-20") must parse as LOCAL midnight, not
+        // UTC midnight, otherwise the day shifts one earlier west of UTC (#3630).
+        const dateOnly = stringValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (dateOnly) {
+          const local = new Date(
+            Number(dateOnly[1]),
+            Number(dateOnly[2]) - 1,
+            Number(dateOnly[3]),
+          );
+          return isNaN(local.getTime()) ? stringValue : local;
+        }
         const date = new Date(stringValue);
         return isNaN(date.getTime()) ? stringValue : date;
       }
 
-      case "link": {
-        // Keep as string for link rendering
+      case "link":
+      case "tags":
+      case "badge": {
+        // A bare IRI object (an unwrapped wikilink, e.g. a status/class binding)
+        // must become a resolvable [[basename]] wikilink so the renderer can
+        // resolve a human label via getAssetLabel — instead of showing the raw
+        // IRI/UUID (#3629).
+        if (term instanceof IRI) {
+          const basename = this.iriToBasename(stringValue);
+          if (basename) {
+            return `[[${basename}]]`;
+          }
+        }
         return stringValue;
       }
 
-      case "tags":
-      case "badge":
       case "image":
       case "text":
       default:
         return stringValue;
     }
+  }
+
+  /**
+   * Reduce an RDF IRI to a vault-resolvable basename so cell renderers can look
+   * up a human label via getAssetLabel:
+   *  - filename IRI `obsidian://vault/<path>/<uid>.md` → `<uid>`
+   *  - symbolic IRI `https://exocortex.my/ontology/<ns>#<Local>` → `<Local>`
+   *
+   * Returns null when no sensible basename can be extracted.
+   */
+  private iriToBasename(iri: string): string | null {
+    if (!iri) {
+      return null;
+    }
+
+    // Symbolic ontology IRI (http/https with a '#fragment') → localname.
+    if (/^https?:\/\//i.test(iri)) {
+      const hashIdx = iri.lastIndexOf("#");
+      if (hashIdx !== -1) {
+        const local = iri.slice(hashIdx + 1).trim();
+        if (local) {
+          return local;
+        }
+      }
+    }
+
+    // Path-style IRI (obsidian://, file://, http(s)://…/x.md) → last segment.
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(iri)) {
+      let last = iri.split("/").pop() || "";
+      try {
+        last = decodeURIComponent(last);
+      } catch {
+        // keep raw segment on malformed percent-encoding
+      }
+      last = last.replace(/\.md$/i, "").trim();
+      if (last) {
+        return last;
+      }
+    }
+
+    return null;
   }
 
   /**

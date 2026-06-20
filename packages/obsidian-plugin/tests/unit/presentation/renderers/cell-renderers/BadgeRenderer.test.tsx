@@ -136,6 +136,64 @@ describe("BadgeRenderer", () => {
     });
   });
 
+  describe("getAssetLabel resolution (#3629 / F10)", () => {
+    const getAssetLabel = (path: string): string | null =>
+      path === "1b20a8f0" ? "Doing" : null;
+
+    it("resolves an alias-less wikilink target to its label", () => {
+      render(
+        <BadgeRenderer
+          value="[[1b20a8f0]]"
+          column={createColumn()}
+          getAssetLabel={getAssetLabel}
+        />,
+      );
+
+      expect(screen.getByText("Doing")).toBeInTheDocument();
+      expect(screen.queryByText("1b20a8f0")).not.toBeInTheDocument();
+    });
+
+    it("falls back to the target when getAssetLabel returns null", () => {
+      render(
+        <BadgeRenderer
+          value="[[unknown-uid]]"
+          column={createColumn()}
+          getAssetLabel={getAssetLabel}
+        />,
+      );
+
+      expect(screen.getByText("unknown-uid")).toBeInTheDocument();
+    });
+
+    it("prefers an explicit alias over getAssetLabel", () => {
+      render(
+        <BadgeRenderer
+          value="[[1b20a8f0|Explicit]]"
+          column={createColumn()}
+          getAssetLabel={getAssetLabel}
+        />,
+      );
+
+      expect(screen.getByText("Explicit")).toBeInTheDocument();
+    });
+
+    it("resolves the label on a clickable wikilink badge", () => {
+      const onLinkClick = jest.fn();
+      render(
+        <BadgeRenderer
+          value="[[1b20a8f0]]"
+          column={createColumn()}
+          getAssetLabel={getAssetLabel}
+          onLinkClick={onLinkClick}
+        />,
+      );
+
+      const badge = screen.getByText("Doing");
+      expect(badge.tagName).toBe("A");
+      expect(badge).toHaveAttribute("data-href", "1b20a8f0");
+    });
+  });
+
   describe("Empty State", () => {
     it("renders dash for null value", () => {
       render(
