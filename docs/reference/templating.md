@@ -123,7 +123,7 @@ with no command context):
 | Token | Resolves to |
 |---|---|
 | `$today` | UTC date `YYYY-MM-DD` (`toISOString`) |
-| `$todayStart` | start of today, ISO timestamp (UTC) |
+| `$todayStart` | start of today at **local** midnight, as a UTC-serialised ISO timestamp |
 | `$nowTimestamp` | **local** date-time `YYYY-MM-DDTHH:MM:SS` (no TZ) |
 | `$nowDate` | **local** date `YYYY-MM-DD` |
 | `$nowYear` | current year, e.g. `2026` |
