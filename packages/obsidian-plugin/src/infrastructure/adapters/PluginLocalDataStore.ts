@@ -58,6 +58,7 @@ import type { App } from "obsidian";
  */
 
 const KEY_ACTIVE_PROFILE_UID = "activeProfileUid";
+const KEY_PREVIOUS_PROFILE_UID = "previousProfileUid";
 const KEY_SWITCH_IN_PROGRESS = "_switchInProgress";
 const KEY_ACTIVE_STAGING_DIRS = "_activeStagingDirs";
 const KEY_FILE_ONLY_ASSET_SPACES = "_fileOnlyAssetSpaces";
@@ -82,16 +83,30 @@ export interface LocalSwitchState {
    * slots were retired with the soft RDF filter in Phase 5 T2.
    */
   activeProfileUid: string | null;
+  /**
+   * Undo target — the profile that was active IMMEDIATELY BEFORE the most
+   * recent successful apply (RFC 0002 §3.10, resolves P15). «Undo last profile
+   * apply» re-applies this so a wrong profile choice is one click to revert.
+   * Recorded only when the apply actually switched profile (old ≠ new); `null`
+   * before any switch has ever happened. Device-local like `activeProfileUid`.
+   */
+  previousProfileUid: string | null;
   _switchInProgress: boolean;
 }
 
 /**
  * Input shape for {@link PluginLocalDataStore.save}.
+ *
+ * `previousProfileUid` is OPTIONAL: callers that only touch the active /
+ * in-progress slots omit it, and its persisted value is preserved via
+ * read-modify-write — so adding it is backward compatible with every prior
+ * `save()` call site (none of which pass it). The apply mutation paths pass it
+ * explicitly to record the undo target.
  */
 export type LocalSwitchStateInput = Pick<
   LocalSwitchState,
   "activeProfileUid" | "_switchInProgress"
->;
+> & { previousProfileUid?: string | null };
 
 /**
  * Tracked staging dir entry — registered by {@link StagingDirTracker.allocate}
@@ -125,6 +140,7 @@ export interface FileOnlyAssetSpaceEntry {
 
 const EMPTY_STATE: LocalSwitchState = {
   activeProfileUid: null,
+  previousProfileUid: null,
   _switchInProgress: false,
 };
 
@@ -161,6 +177,17 @@ export class PluginLocalDataStore {
     return this.cache.activeProfileUid;
   }
 
+  /**
+   * Returns the cached undo target — the profile active immediately before the
+   * most recent successful apply (RFC 0002 §3.10), or `null` when no prior
+   * switch has happened. Requires `init()` first. Drives «Undo last profile
+   * apply» availability + execution.
+   */
+  getPreviousProfileUid(): string | null {
+    this.assertInitialized();
+    return this.cache.previousProfileUid;
+  }
+
   /** Returns the cached switch-in-progress flag. Requires `init()` first. */
   isSwitchInProgress(): boolean {
     this.assertInitialized();
@@ -187,6 +214,12 @@ export class PluginLocalDataStore {
     all[KEY_ACTIVE_PROFILE_UID] =
       state.activeProfileUid === null ? null : state.activeProfileUid;
     all[KEY_SWITCH_IN_PROGRESS] = state._switchInProgress;
+    // Optional undo-target slot (RFC 0002 §3.10): write only when the caller
+    // provides it, so existing call sites that omit it keep the persisted value
+    // via the read-modify-write above (backward compatible).
+    if (state.previousProfileUid !== undefined) {
+      all[KEY_PREVIOUS_PROFILE_UID] = state.previousProfileUid;
+    }
     await this.persist(all);
     this.cache = this.deriveStateFromRaw(all);
     this.initialized = true;
@@ -404,6 +437,7 @@ export class PluginLocalDataStore {
       typeof v === "string" ? v : null;
     return {
       activeProfileUid: asStr(all[KEY_ACTIVE_PROFILE_UID]),
+      previousProfileUid: asStr(all[KEY_PREVIOUS_PROFILE_UID]),
       _switchInProgress: all[KEY_SWITCH_IN_PROGRESS] === true,
     };
   }
