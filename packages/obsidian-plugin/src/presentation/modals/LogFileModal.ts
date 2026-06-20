@@ -20,26 +20,41 @@ export interface LogFileSource {
 export const EMPTY_LOG_HINT =
   "No file logs yet. By default only warnings and errors are written to this " +
   "file (enable Info under Settings → Exocortex → Log channels for verbose " +
-  "logging). For the live activity stream, run «Exocortex: Open activity log».";
+  "logging). For the live activity stream, use the «Open activity log» button " +
+  "below.";
 
 /**
  * LogFileModal — surfaces the persisted `exocortex-logs.txt` (GitHub #3588 P12).
  *
- * The «Exocortex: Open logs» command opens this. It reconciles the long-standing
- * docs mismatch (the file was documented as living in the vault root, but the
- * sink is the plugin data folder, `FileLogChannel`): the modal shows the REAL
- * path at the top and the file content below, so the user never has to hunt for
- * it. Reads via the DataAdapter and renders pure DOM (no Node/fs/git) → works
- * identically on desktop and mobile (Desktop↔Mobile Command Parity).
+ * The «Exocortex: Open log file (saved)» command opens this. It reconciles the
+ * long-standing docs mismatch (the file was documented as living in the vault
+ * root, but the sink is the plugin data folder, `FileLogChannel`): the modal
+ * shows the REAL path at the top and the file content below, so the user never
+ * has to hunt for it. Reads via the DataAdapter and renders pure DOM (no
+ * Node/fs/git) → works identically on desktop and mobile (Desktop↔Mobile
+ * Command Parity).
  */
 export class LogFileModal extends Modal {
   private readonly source: LogFileSource;
+  private readonly onOpenActivityLog?: () => void;
   private bodyEl: HTMLElement | null = null;
   private loadedText = "";
 
-  constructor(app: App, source: LogFileSource) {
+  /**
+   * @param onOpenActivityLog Optional cross-navigation hook — when provided, the
+   *   footer gains an «Open activity log» button that switches to the live
+   *   in-memory `ActivityLogModal`. Reciprocal of `ActivityLogModal`'s «Open log
+   *   file» button: each log view offers a one-click bridge to the other so the
+   *   user who opened the wrong one does not have to return to the palette.
+   */
+  constructor(
+    app: App,
+    source: LogFileSource,
+    onOpenActivityLog?: () => void,
+  ) {
     super(app);
     this.source = source;
+    this.onOpenActivityLog = onOpenActivityLog;
   }
 
   override onOpen(): void {
@@ -70,6 +85,17 @@ export class LogFileModal extends Modal {
     copyBtn.addEventListener("click", () => {
       void this.copyToClipboard();
     });
+    if (this.onOpenActivityLog) {
+      // Cross-nav to the live activity stream. Close this modal first so the two
+      // log views never stack on top of each other.
+      const openActivityBtn = footer.createEl("button", {
+        text: "Open activity log",
+      });
+      openActivityBtn.addEventListener("click", () => {
+        this.close();
+        this.onOpenActivityLog?.();
+      });
+    }
     const doneBtn = footer.createEl("button", { text: "Done" });
     doneBtn.addEventListener("click", () => {
       this.close();

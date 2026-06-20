@@ -15,9 +15,11 @@
  * display `name` ONLY; the keys of {@link GROOMED_COMMAND_NAMES} are the stable
  * ids and must stay byte-exact.
  *
- * Scope: only the commands §3.2 grooms. Untouched commands (`reload-layout`,
- * `sync`/`pull`/`push`, `apply-profile`, `open-activity-log`, `open-logs`, …)
- * are deliberately absent — their names are already plain and benign.
+ * Scope: only the commands §3.2 grooms. Other commands (`reload-layout`,
+ * `sync`/`pull`/`push`, `apply-profile`, …) are deliberately absent — their
+ * names are already plain and benign. `open-activity-log` / `open-logs` are
+ * likewise out of §3.2 scope; their «(live)» / «(saved)» disambiguation is owned
+ * by the separate logs-dedup change, not this grooming contract.
  */
 
 /** The user-facing text marker that flags a destructive / power-user command. */

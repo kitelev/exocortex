@@ -131,15 +131,16 @@ export class FileLogChannel {
   /**
    * The (vault-relative) path of the active log file, e.g.
    * `.obsidian/plugins/exocortex/exocortex-logs.txt`. Surfaced by the
-   * «Exocortex: Open logs» command so users know exactly where the sink
-   * lives — it is the plugin data folder, NOT the vault root (P12).
+   * «Exocortex: Open log file (saved)» command so users know exactly where the
+   * sink lives — it is the plugin data folder, NOT the vault root (P12).
    */
   getLogFilePath(): string {
     return this.logFilePath;
   }
 
   /**
-   * Read the current log file content for display (the «Open logs» command).
+   * Read the current log file content for display (the «Open log file (saved)»
+   * command).
    *
    * Returns "" when the file does not exist yet: info-level logging is off
    * by default (only warn/error route to the file channel), so on a healthy

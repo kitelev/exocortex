@@ -313,6 +313,75 @@ describe("ExocortexPlugin", () => {
     });
   });
 
+  // Dedup «Open logs» ↔ «Open activity log» (interview decision (b), 2026-06-20).
+  // The two commands are functionally distinct (live in-memory stream vs saved
+  // file) but were easy to confuse in the palette; disambiguate their display
+  // names with «(live)» / «(saved)» qualifiers. The command ids stay stable
+  // (`open-activity-log` / `open-logs`) so existing hotkeys keep working.
+  describe("Dedup logs — disambiguated command names (live / saved)", () => {
+    const nameById = (spy: jest.SpyInstance): Map<string, string> =>
+      new Map(
+        spy.mock.calls.map((c) => {
+          const cmd = c[0] as { id?: string; name?: string };
+          return [cmd.id ?? "", cmd.name ?? ""];
+        }),
+      );
+
+    it("registers «Open activity log (live)» under the stable `open-activity-log` id", async () => {
+      const addCommandSpy = jest.spyOn(plugin, "addCommand");
+      await plugin.onload();
+      const names = nameById(addCommandSpy);
+      expect(names.get("open-activity-log")).toBe("Open activity log (live)");
+    });
+
+    it("registers «Open log file (saved)» under the stable `open-logs` id", async () => {
+      const addCommandSpy = jest.spyOn(plugin, "addCommand");
+      await plugin.onload();
+      const names = nameById(addCommandSpy);
+      expect(names.get("open-logs")).toBe("Open log file (saved)");
+    });
+
+    // Guards the production cross-nav wiring: both commands must route through the
+    // helper that opens the modal WITH the reciprocal cross-nav hook. A regression
+    // that inlines `new ActivityLogModal(this.app, this.activityLog)` in the
+    // callback (dropping the hook) compiles fine — the param is optional — but
+    // would no longer call the helper, so this test fails.
+    const callbackById = (spy: jest.SpyInstance, id: string): (() => void) | undefined =>
+      spy.mock.calls
+        .map((c) => c[0] as { id?: string; callback?: () => void })
+        .find((cmd) => cmd.id === id)?.callback;
+
+    it("`open-activity-log` callback routes through the cross-nav-wired helper", async () => {
+      const addCommandSpy = jest.spyOn(plugin, "addCommand");
+      const helperSpy = jest
+        .spyOn(
+          plugin as unknown as { openActivityLogModal: () => void },
+          "openActivityLogModal",
+        )
+        .mockImplementation(() => {});
+      await plugin.onload();
+      const callback = callbackById(addCommandSpy, "open-activity-log");
+      expect(callback).toBeDefined();
+      callback!();
+      expect(helperSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("`open-logs` callback routes through the cross-nav-wired helper", async () => {
+      const addCommandSpy = jest.spyOn(plugin, "addCommand");
+      const helperSpy = jest
+        .spyOn(
+          plugin as unknown as { openLogFileModal: () => void },
+          "openLogFileModal",
+        )
+        .mockImplementation(() => {});
+      await plugin.onload();
+      const callback = callbackById(addCommandSpy, "open-logs");
+      expect(callback).toBeDefined();
+      callback!();
+      expect(helperSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
   // Issue #3554 — profile apply → next Obsidian load hangs at "Loading plugins…".
   // After an `Apply profile` sets `data.local.json.activeProfileUid`, the next
   // load deadlocked: `registerProfileCommands` (awaited by `onload`) awaited the
