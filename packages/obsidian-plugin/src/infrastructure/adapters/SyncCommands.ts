@@ -41,6 +41,16 @@ export interface SyncCommandsDeps {
   ) => Promise<BuiltSyncEngine>;
   /** D11 — profile apply in flight (PluginLocalDataStore). */
   isSwitchInProgress: () => boolean;
+  /**
+   * D11 — the quarantine resolver modal is open / a resolution is in flight.
+   * A resolution WRITES disk + remote + the SAME device-local watermark, so a
+   * sync must refuse while it is held (the apply guard already does, via
+   * `isSyncBusy`; this closes the symmetric sync direction — code-reviewer
+   * HIGH-2). Optional (absent ⇒ no resolver wired): a forward-reference
+   * closure breaks the construction-order cycle (sync is built before the
+   * resolver).
+   */
+  isResolverBusy?: () => boolean;
   /** User-facing Notice (route through ObsidianNotificationService). */
   notify: (message: string) => void;
   /** Diagnostic sink for per-repo warnings/details (default console). */
@@ -161,6 +171,12 @@ export class SyncCommands {
         );
         return;
       }
+      if (this.deps.isResolverBusy?.() === true) {
+        this.deps.notify(
+          "The conflict resolver is open — run the parity report after it closes (D11)",
+        );
+        return;
+      }
       const log = this.deps.log ?? ((m: string): void => console.warn(m));
       const collection = await this.deps.collectSpecs();
       // Skipped-declaration diagnostics matter MOST in the on-demand
@@ -255,6 +271,12 @@ export class SyncCommands {
     if (this.deps.isSwitchInProgress()) {
       this.deps.notify(
         "A profile apply is in progress — sync after it finishes (D11)",
+      );
+      return;
+    }
+    if (this.deps.isResolverBusy?.() === true) {
+      this.deps.notify(
+        "The conflict resolver is open — sync after it closes (D11)",
       );
       return;
     }
@@ -368,11 +390,20 @@ export class SyncCommands {
     let quarantined = 0;
     let deferred = 0;
     let synced = 0;
+    // #a0a3d1d6 — surface duplicate-uid anomalies (#3477) in the summary: the
+    // ChangeDetector already emits a per-uid warning, but the user only sees
+    // them buried in the console log. Counting the distinct uids here lets the
+    // toast point at `exosync dedup-uids` (CLI) / the dedup helper.
+    const dupUids = new Set<string>();
     const problems: string[] = [];
     let authRequired = false;
 
     for (const r of results) {
-      for (const w of r.warnings) log(`[ExoSync] ${r.repoKey}: ${w}`);
+      for (const w of r.warnings) {
+        log(`[ExoSync] ${r.repoKey}: ${w}`);
+        const dup = /duplicate uid ([^\s]+)/.exec(w);
+        if (dup !== null) dupUids.add(dup[1]);
+      }
       if (r.detail !== undefined) {
         log(`[ExoSync] ${r.repoKey}: ${r.status} — ${r.detail}`);
       }
@@ -424,11 +455,20 @@ export class SyncCommands {
     // Split-run deferrals (#3473) are surfaced in the Notice — without this
     // the user only sees them in the console log. Pushed deletions (#3476)
     // surface as their own count: a real propagation, not a deferral.
+    // Quarantine (#a0a3d1d6): point the user at the resolver — without this the
+    // count is a dead-end ("quarantined 14" but no way to act). dup-uids (#3477)
+    // get their own pointer to `exosync dedup-uids`.
     const counts =
       `pushed ${pushed}, pulled ${pulled}, merged ${merged}, quarantined ${quarantined}` +
+      (quarantined > 0
+        ? " (run 'Resolve sync conflicts' to fix)"
+        : "") +
       (deleted > 0 ? `, deleted ${deleted}` : "") +
       (deferred > 0
         ? `, deferred ${deferred} (a full Sync resolves them)`
+        : "") +
+      (dupUids.size > 0
+        ? `, ${dupUids.size} duplicate uid(s) (run 'exosync dedup-uids')`
         : "");
     if (problems.length === 0) {
       this.deps.notify(

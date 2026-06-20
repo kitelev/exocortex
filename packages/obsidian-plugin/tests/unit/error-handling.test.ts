@@ -2,7 +2,6 @@
  * Error Handling Negative Tests
  *
  * Tests for error scenarios across the codebase:
- * 2. SPARQLCodeBlockProcessor - error handling in process method
  * 3. ObsidianVaultAdapter - file not found scenarios
  * 4. SingleVaultManager - vault switching errors
  * 5. LRUCache - invalid constructor parameters
@@ -51,16 +50,6 @@ jest.mock("exocortex", () => ({
 }));
 
 describe("Error Handling - Negative Tests", () => {
-  describe("2. SPARQLCodeBlockProcessor - error handling", () => {
-    // The processor handles invalid queries by rendering an error view
-    // This is tested in the integration tests, but we verify the error path exists
-    it("should have error handling for query execution", () => {
-      // SPARQLCodeBlockProcessor catches errors in process() and renderError()
-      // Verified by code inspection - the catch block on line 136 handles this
-      expect(true).toBe(true);
-    });
-  });
-
   describe("3. ObsidianVaultAdapter - file not found scenarios", () => {
     let adapter: ObsidianVaultAdapter;
     let mockVault: jest.Mocked<Vault>;

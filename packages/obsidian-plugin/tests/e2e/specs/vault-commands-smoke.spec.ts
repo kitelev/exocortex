@@ -23,7 +23,6 @@ import * as path from "path";
  * - 03 Knowledge/commands/bind-status-done-for-tasks.md  (Binding: Complete → ems__Task)
  * - Tasks/dynamic-cmd-test-without-ts.md (Task with status Backlog)
  * - Tasks/dynamic-cmd-test-with-ts.md    (Task with status Doing)
- * - exoql-test-page.md (ExoQL code block)
  */
 test.describe.configure({ mode: "parallel" });
 
@@ -258,47 +257,6 @@ test.describe("Vault Commands Smoke Tests", () => {
         return await app.vault.read(activeFile);
       });
     }, { timeout: 15000 }).toContain("Doing");
-  });
-
-  test("should render ExoQL code block with results or loading state", async () => {
-    await launcher.openFile("exoql-test-page.md");
-    const window = await launcher.getWindow();
-
-    await launcher.waitForModalsToClose(10000);
-    // Issue #2992: SPARQL auto-execute is opt-in (default off). Enable it
-    // for this test so the legacy SPARQLCodeBlockProcessor path runs.
-    await window.evaluate(async () => {
-      const app = (window as any).app;
-      const plugin = app.plugins?.plugins?.exocortex;
-      if (plugin) {
-        plugin.settings.enableSparqlAutoExecute = true;
-        await plugin.saveSettings?.();
-      }
-    });
-    // Re-open so the markdown post-processor re-runs with the new setting.
-    await launcher.openFile("exoql-test-page.md");
-    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
-
-    // ExoQL code blocks are processed by SPARQLCodeBlockProcessor and MUST
-    // render .sparql-code-block — fixture exoql-test-page.md contains an exoql
-    // code block, so if processor works this element is guaranteed.
-    const codeBlock = window.locator(".sparql-code-block");
-    await expect(codeBlock).toBeVisible({ timeout: 15000 });
-
-    // Results container is always created by the processor (line 165 of
-    // SPARQLCodeBlockProcessor.ts) regardless of query outcome.
-    const resultsContainer = codeBlock.locator(".sparql-results-container");
-    await expect(resultsContainer).toBeVisible({ timeout: 10000 });
-
-    // Poll for one of the outcome states: table | no-results | error | loading.
-    // This bypasses flakiness where SPARQL takes a moment to execute.
-    await expect.poll(async () => {
-      const hasTable = await codeBlock.locator(".sparql-results-table").count();
-      const hasNoResults = await codeBlock.locator(".sparql-no-results").count();
-      const hasError = await codeBlock.locator(".sparql-error-view").count();
-      const hasLoading = await codeBlock.locator(".sparql-loading").count();
-      return hasTable + hasNoResults + hasError + hasLoading > 0;
-    }, { timeout: 15000 }).toBe(true);
   });
 
   test("should load property editor schemas from resolver", async () => {

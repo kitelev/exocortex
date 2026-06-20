@@ -413,24 +413,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "SPARQL" is an established acronym
-      .setName("Auto-execute SPARQL code blocks")
-      .setDesc(
-        "When enabled, sparql and exoql code blocks are executed as queries " +
-          "during note rendering. When disabled (default), those code blocks " +
-          "render as plain code so SPARQL snippets can be pasted for " +
-          "documentation or reference without side effects.",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.enableSparqlAutoExecute)
-          .onChange(async (value) => {
-            this.plugin.settings.enableSparqlAutoExecute = value;
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
       .setName("Settings homoiconization")
       .setDesc(
         "When enabled, plugin settings are materialised as vault assets in an " +
@@ -552,8 +534,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
         "auto-appended on save so a sibling folder sharing a name prefix " +
         "is not silently excluded. Reload Obsidian after editing the list — " +
         "indexer, command manager, and layout service each snapshot this " +
-        "list at startup. SPARQL code-blocks honour the current setting on " +
-        "next render.",
+        "list at startup.",
     );
 
     // Ensure excludedFolders exists (older settings JSON may not have the key)

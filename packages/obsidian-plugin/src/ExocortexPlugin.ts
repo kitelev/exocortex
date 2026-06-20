@@ -87,7 +87,6 @@ import {
   isLayoutFrontmatter,
 } from "./domain/layout";
 import { isCommandBindingFrontmatter } from "exocortex";
-import { SPARQLCodeBlockProcessor } from "./application/processors/SPARQLCodeBlockProcessor";
 import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlockProcessor";
 import { SPARQLApi } from "./application/api/SPARQLApi";
 import { ExocortexAPI } from "./application/api/ExocortexAPI";
@@ -188,8 +187,12 @@ import { ModalConfirmGate } from "./infrastructure/adapters/ModalConfirmGate";
 import type { RestAssetSpaceMount } from "./infrastructure/adapters/RestAssetSpaceMount";
 import { SyncCommands } from "./infrastructure/adapters/SyncCommands";
 import { registerExoSyncCommands } from "./infrastructure/adapters/registerExoSyncCommands";
+import { QuarantineResolverCommands } from "./infrastructure/adapters/QuarantineResolverCommands";
+import { QuarantineResolverModal } from "./infrastructure/adapters/QuarantineResolverModal";
+import { registerQuarantineResolverCommand } from "./infrastructure/adapters/registerQuarantineResolverCommand";
 import { buildParityCheck } from "./infrastructure/adapters/ExoSyncParityFactory";
 import {
+  buildQuarantineResolver,
   buildSyncEngine,
   collectSyncRepoSpecs,
 } from "./infrastructure/adapters/SyncDepsFactory";
@@ -297,7 +300,6 @@ export default class ExocortexPlugin extends Plugin {
   // TTL ensures stale entries are evicted even if not accessed
   private metadataCache!: LRUCache<string, Record<string, unknown>>;
   vaultAdapter!: ObsidianVaultAdapter;
-  private sparqlProcessor!: SPARQLCodeBlockProcessor;
   private layoutProcessor!: LayoutCodeBlockProcessor;
   sparql!: SPARQLApi;
   /**
@@ -482,7 +484,6 @@ export default class ExocortexPlugin extends Plugin {
       registerOrderSpecFromObsidianVault(this.app);
 
       const notifier = this.notifier;
-      this.sparqlProcessor = new SPARQLCodeBlockProcessor(this, notifier);
       this.layoutProcessor = new LayoutCodeBlockProcessor(this);
       this.sparql = new SPARQLApi(this);
       this.api = new ExocortexAPI(this);
@@ -1077,38 +1078,6 @@ export default class ExocortexPlugin extends Plugin {
       });
 
       this.addSettingTab(new ExocortexSettingTab(this.app, this));
-
-      // Issue #2992: gate auto-execution behind opt-in setting. When
-      // `enableSparqlAutoExecute` is `false` (default), render the code block
-      // as plain `<pre><code>` so users can paste SPARQL snippets for
-      // documentation/reference without triggering query execution on every
-      // render. The setting is read at render time, so flipping the toggle
-      // takes effect on next render without a plugin reload.
-      const renderSparqlBlock = (
-        source: string,
-        el: HTMLElement,
-        ctx: Parameters<
-          Parameters<typeof this.registerMarkdownCodeBlockProcessor>[1]
-        >[2],
-        language: "sparql" | "exoql",
-      ): void | Promise<void> => {
-        if (this.settings.enableSparqlAutoExecute) {
-          return this.sparqlProcessor.process(source, el, ctx);
-        }
-        const pre = el.createEl("pre");
-        pre.addClass(`language-${language}`);
-        const code = pre.createEl("code");
-        code.addClass(`language-${language}`);
-        code.setText(source);
-      };
-
-      this.registerMarkdownCodeBlockProcessor("sparql", (source, el, ctx) =>
-        renderSparqlBlock(source, el, ctx, "sparql"),
-      );
-
-      this.registerMarkdownCodeBlockProcessor("exoql", (source, el, ctx) =>
-        renderSparqlBlock(source, el, ctx, "exoql"),
-      );
 
       this.registerMarkdownCodeBlockProcessor("exo-layout", (source, el, ctx) =>
         this.layoutProcessor.process(source, el, ctx),
@@ -1825,11 +1794,6 @@ export default class ExocortexPlugin extends Plugin {
     }
 
     this.removeAutoRenderedLayouts();
-
-    // Cleanup SPARQL processor
-    if (this.sparqlProcessor) {
-      this.sparqlProcessor.cleanup();
-    }
 
     // Cleanup Layout processor
     if (this.layoutProcessor) {
@@ -3065,6 +3029,12 @@ export default class ExocortexPlugin extends Plugin {
     // transport (iOS-capable, no git binary). Built BEFORE the apply manager
     // so its busy flag feeds the D11 apply→sync exclusion below. The engine
     // is composed fresh per invocation (fresh-PAT pattern, Issue #3382).
+    // Mutable holder so SyncCommands (built first) can refuse to run while the
+    // resolver (built just below) is open — D11, both write the same
+    // device-local watermark (code-reviewer HIGH-2). A holder field sidesteps a
+    // forward `let` (which prefer-const rejects); the closure reads it at
+    // sync/apply time, by which point it is set.
+    const resolverHolder: { commands?: QuarantineResolverCommands } = {};
     const syncCommands = new SyncCommands({
       collectSpecs: () => collectSyncRepoSpecs(this.app),
       buildEngine: (asUidByRepoKey) =>
@@ -3075,6 +3045,7 @@ export default class ExocortexPlugin extends Plugin {
           quarantineRepoUrl: this.settings.exosyncQuarantineRepoUrl,
         }),
       isSwitchInProgress: () => localDataStore.isSwitchInProgress(),
+      isResolverBusy: () => resolverHolder.commands?.isBusy() ?? false,
       notify: (message) => this.notifier.info(message),
       log: (message) => {
         this.logger.warn(message);
@@ -3115,6 +3086,37 @@ export default class ExocortexPlugin extends Plugin {
       }),
     });
 
+    // Quarantine resolver (finding a0a3d1d6) — the user-facing reconcile the
+    // sync engine announced but never built. Device-local first (watermark pins
+    // + disk + AssetSpace head); Desktop↔Mobile parity by construction (REST
+    // transport, no Node fs/git). D11: refuses to open mid-sync / mid-apply, and
+    // its busy flag feeds the sync/apply guards (a resolution WRITES).
+    const quarantineResolverCommands = new QuarantineResolverCommands({
+      collectSpecs: () => collectSyncRepoSpecs(this.app),
+      buildResolver: () =>
+        buildQuarantineResolver({
+          app: this.app,
+          quarantineRepoUrl: this.settings.exosyncQuarantineRepoUrl,
+        }),
+      isSwitchInProgress: () => localDataStore.isSwitchInProgress(),
+      isSyncBusy: () => syncCommands.isBusy(),
+      notify: (message) => this.notifier.info(message),
+      log: (message) => {
+        this.logger.warn(message);
+        this.activityLog.record({
+          category: "exosync",
+          level: "warn",
+          message,
+        });
+      },
+      openResolver: (ctx) => {
+        new QuarantineResolverModal(this.app, ctx).open();
+      },
+    });
+    // Publish into the holder so the sync/apply busy-guards (built above) can
+    // see the resolver's busy flag (HIGH-2).
+    resolverHolder.commands = quarantineResolverCommands;
+
     const switchMgr = new ProfileApplyManager({
       app: this.app,
       lockMgr,
@@ -3149,8 +3151,10 @@ export default class ExocortexPlugin extends Plugin {
       cacheLayer: applyDeps?.cacheLayer,
       vaultRootPath: applyDeps?.vaultRootPath,
       localDataStore,
-      // ExoSync D11 composition — apply refuses to start mid-sync.
-      isSyncBusy: () => syncCommands.isBusy(),
+      // ExoSync D11 composition — apply refuses to start mid-sync OR
+      // mid-conflict-resolve (the resolver also WRITES disk + remote).
+      isSyncBusy: () =>
+        syncCommands.isBusy() || quarantineResolverCommands.isBusy(),
     });
 
     // Issue #3320 — expose the manager на plugin instance so onload recovery /
@@ -3395,6 +3399,8 @@ export default class ExocortexPlugin extends Plugin {
     // report. Extracted into a helper so the registration contract
     // (stable ids, Sync first) is unit-tested.
     registerExoSyncCommands(this, syncCommands);
+    // «Exocortex: Resolve sync conflicts» (finding a0a3d1d6).
+    registerQuarantineResolverCommand(this, quarantineResolverCommands);
 
     // RFC 22b50a17 Decision #6 — wipe-all switch cache clearing. RFC 0002 §3.2
     // (P3/P4) — de-jargon + destructive flag: «Clear switch cache (wipe-all)» →

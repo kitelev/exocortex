@@ -53,6 +53,8 @@ interface HarnessOptions {
   pat?: string | null;
   results?: RepoSyncResult[];
   isSwitchInProgress?: boolean;
+  /** D11 — the conflict resolver modal is open (HIGH-2 guard). */
+  isResolverBusy?: boolean;
   /** Resolves to release a hanging syncAll (double-invoke test). */
   syncAllGate?: Promise<void>;
   /** E1 parity harness seam. */
@@ -104,6 +106,7 @@ function makeHarness(opts: HarnessOptions = {}) {
     collectSpecs: async () => collection,
     buildEngine: async () => built,
     isSwitchInProgress: () => opts.isSwitchInProgress ?? false,
+    isResolverBusy: () => opts.isResolverBusy ?? false,
     notify: (m) => notices.push(m),
     log: (m) => logs.push(m),
     logInfo: opts.logInfo ?? ((m) => infoLogs.push(m)),
@@ -143,6 +146,19 @@ describe("SyncCommands", () => {
     await commands.invokeSync();
 
     expect(notices.some((n) => n.includes("profile apply"))).toBe(true);
+    expect(syncAll).not.toHaveBeenCalled();
+  });
+
+  it("refuses to start while the conflict resolver is open (D11 / HIGH-2)", async () => {
+    const { commands, notices, syncAll } = makeHarness({
+      isResolverBusy: true,
+    });
+
+    await commands.invokeSync();
+
+    expect(notices.some((n) => n.includes("conflict resolver is open"))).toBe(
+      true,
+    );
     expect(syncAll).not.toHaveBeenCalled();
   });
 

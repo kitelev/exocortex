@@ -252,7 +252,9 @@ describe("IncrementalUpdateHandler", () => {
     it("should update relations section", async () => {
       const sectionContainer = document.createElement("div");
       sectionContainer.className = "exocortex-assets-relations";
-      sectionContainer.empty = jest.fn();
+      // RELATIONS removes (not empties) the old container so no orphan sibling
+      // accumulates when the F11 empty-state re-renders repeatedly.
+      sectionContainer.remove = jest.fn();
       mockRootContainer.appendChild(sectionContainer);
 
       await handler.updateSections(
@@ -262,8 +264,37 @@ describe("IncrementalUpdateHandler", () => {
         {}
       );
 
-      expect(sectionContainer.empty).toHaveBeenCalled();
+      expect(sectionContainer.remove).toHaveBeenCalled();
       expect(mockDeps.relationsRenderer.render).toHaveBeenCalled();
+    });
+
+    it("should not accumulate orphan relations containers across repeated empty re-renders (F11)", async () => {
+      // Simulate the real RelationsRenderer.render: each call creates exactly
+      // one fresh `.exocortex-assets-relations` container in the parent.
+      mockDeps.relationsRenderer.render.mockImplementation(
+        async (parent: HTMLElement) => {
+          const c = document.createElement("div");
+          c.className = "exocortex-assets-relations";
+          parent.appendChild(c);
+        },
+      );
+      mockDeps.relationsRenderer.getAssetRelations.mockResolvedValue([]);
+
+      // Seed an initial relations container (as a full render would leave).
+      const seed = document.createElement("div");
+      seed.className = "exocortex-assets-relations";
+      mockRootContainer.appendChild(seed);
+
+      // Two consecutive empty incremental re-renders.
+      await handler.updateSections(
+        mockRootContainer, mockFile, [LayoutSection.RELATIONS], {});
+      await handler.updateSections(
+        mockRootContainer, mockFile, [LayoutSection.RELATIONS], {});
+
+      // Exactly one relations container survives — no orphan stacking.
+      expect(
+        mockRootContainer.querySelectorAll(".exocortex-assets-relations").length,
+      ).toBe(1);
     });
 
     it("should update multiple sections in sequence", async () => {

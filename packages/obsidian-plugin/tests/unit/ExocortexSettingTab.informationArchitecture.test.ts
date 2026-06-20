@@ -311,7 +311,6 @@ describe("ExocortexSettingTab — RFC 0002 §3.6 information architecture", () =
         showLabelsInBody: true,
         showLabelsInGraphView: true,
         showLabelsInLivePreview: true,
-        enableSparqlAutoExecute: false,
         settingsHomoiconizationEnabled: false,
         enableShaclValidation: false,
         lazyBootstrapFolders: ["assetspaces/exo/"],
@@ -386,8 +385,6 @@ describe("ExocortexSettingTab — RFC 0002 §3.6 information architecture", () =
 
   it("retains the user-facing copy after stripping the internal IDs", () => {
     const text = renderedText();
-    // The SPARQL desc kept its content, lost "Issue #2992".
-    expect(text).toContain("without side effects");
     // The PAT desc kept the privacy explanation, lost "Vision Lock #1, Security #1".
     expect(text).toContain("Obsidian Sync never replicates it over the network");
   });
