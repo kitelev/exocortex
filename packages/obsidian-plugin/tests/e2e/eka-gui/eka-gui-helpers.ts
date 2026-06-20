@@ -433,16 +433,20 @@ export async function waitForStoreSettled(
  */
 export async function waitForCreateCommandsResolvable(
   window: Page,
-  areaRel: string,
-  areaClassUid: string,
+  targetRel: string,
+  targetClassUid: string,
   requiredLabels: string[],
   timeoutMs = 120_000,
+  // Extra class identifiers (label / ancestor) merged with `targetClassUid` when
+  // probing resolution. Default mirrors a seed ems__Area page; the flagship
+  // class-def gate passes `["exo__Class", "exo__Asset"]` instead.
+  classAliases: string[] = ["ems__Area", "exo__Asset"],
 ): Promise<void> {
   await pollUntil(
-    `create commands resolvable on seed area (${requiredLabels.join(", ")})`,
+    `create commands resolvable on ${targetRel} (${requiredLabels.join(", ")})`,
     async () => {
       const names = await window.evaluate(
-        async ({ rel, cls }) => {
+        async ({ rel, cls, aliases }) => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const plugin = (window as any).app?.plugins?.plugins?.exocortex;
           if (!plugin?.commandResolver?.resolveForAssetMulti) return [];
@@ -462,7 +466,7 @@ export async function waitForCreateCommandsResolvable(
           try {
             const resolved = await plugin.commandResolver.resolveForAssetMulti(
               iri,
-              [cls, "ems__Area", "exo__Asset"],
+              [cls, ...aliases],
             );
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             return resolved.map((rc: any) => rc?.command?.name).filter(Boolean);
@@ -470,7 +474,7 @@ export async function waitForCreateCommandsResolvable(
             return [];
           }
         },
-        { rel: areaRel, cls: areaClassUid },
+        { rel: targetRel, cls: targetClassUid, aliases: classAliases },
       );
       return requiredLabels.every((l) => names.includes(l));
     },
@@ -706,5 +710,158 @@ export async function createOnTarget(
   }
   throw new Error(
     `"${buttonText}" did not produce ${backlinkRe} after ${attempts} attempts.\nLast: ${lastErr}`,
+  );
+}
+
+/**
+ * Drive the flagship homoiconic «Create Instance» command (project bbe40f8c) on
+ * a CLASS-definition page — an `exo__Class` instance such as the `ems__Task`
+ * class def. Opens the class-def page → clicks the inline "Create Instance"
+ * button (bound to the `exo__Class` metaclass) → fills the two-field
+ * DynamicFormModal — a `Label` text input plus the generic, reusable
+ * **Ontology fuzzy reference-picker** (`exo__Asset_isDefinedBy`, an `assetRef`
+ * over `exo__Ontology`, T2) — → submits → returns the created instance file +
+ * its frontmatter.
+ *
+ * Differs from {@link createOnTarget}: that drives a single-field (label) form on
+ * an INSTANCE; this drives the two-field form on a CLASS and additionally selects
+ * an ontology via the combobox. The grounding (`ef896bf8`, `create_instance`,
+ * `$isDefinedByFolder`) sets the new instance's `exo__Instance_class` to the HOST
+ * class's own UID (the `$targetClassSelf` PropertyDefault) and its
+ * `exo__Asset_isDefinedBy` to the PICKED ontology → co-located in that ontology's
+ * folder (co-location invariant).
+ *
+ * Retries the whole open→click→fill cycle until a valid instance lands — the
+ * binding+grounding resolution settles asynchronously (the same store-load race
+ * {@link createOnTarget} guards). A failed attempt's instance is deleted
+ * (label-scoped) so the snapshot diff stays clean for the next attempt.
+ *
+ * The picker is a real React component ({@link ReferencePicker}, drivable under
+ * CDP — unlike the un-drivable FuzzySuggestModal): its input is
+ * `[data-testid="field-exo__Asset_isDefinedBy"]` and each option is
+ * `[data-testid="option-exo__Asset_isDefinedBy-<uid>"]`, committing on mousedown.
+ */
+export async function createInstanceOnClass(
+  window: Page,
+  vaultPath: string,
+  classDefRel: string,
+  hostClassUid: string,
+  ontologyUid: string,
+  ontologyQuery: string,
+  labelBase: string,
+  attempts = 6,
+): Promise<{ rel: string; fm: string }> {
+  const pickerSel = '.dynamic-form [data-testid="field-exo__Asset_isDefinedBy"]';
+  const optionSel = `[data-testid="option-exo__Asset_isDefinedBy-${ontologyUid}"]`;
+  let lastErr = "";
+  for (let i = 1; i <= attempts; i++) {
+    const attemptLabel = `${labelBase} ${i}`;
+    try {
+      await openAssetAndRender(window, classDefRel);
+      const before = new Set(listMarkdown(vaultPath));
+
+      // Inline button bound to the exo__Class metaclass — only one command binds
+      // there ("Create Instance"), so the text match is unambiguous.
+      const btn = window
+        .locator(".exocortex-action-button", { hasText: "Create Instance" })
+        .first();
+      await expect(
+        btn,
+        '"Create Instance" button must render on the class-def page',
+      ).toBeVisible({ timeout: 20_000 });
+      await btn.click();
+
+      // Field 1 — Label (plain text input).
+      const labelField = window
+        .locator(
+          '.dynamic-form [data-testid="field-label"], .dynamic-form input.dynamic-form-input',
+        )
+        .first();
+      await expect(
+        labelField,
+        "create-instance form label input must appear",
+      ).toBeVisible({ timeout: 15_000 });
+      await labelField.fill(attemptLabel);
+
+      // Field 2 — Ontology fuzzy reference-picker: focus → type to filter → pick
+      // the committed option (commits "[[uid]]" into the form value on mousedown).
+      const picker = window.locator(pickerSel);
+      await expect(
+        picker,
+        "ontology reference-picker input must appear",
+      ).toBeVisible({ timeout: 15_000 });
+      await picker.fill(ontologyQuery);
+      const option = window.locator(optionSel);
+      await expect(
+        option,
+        `ontology option ${ontologyUid} must appear in the picker`,
+      ).toBeVisible({ timeout: 10_000 });
+      await option.click();
+
+      // Submit the form (modal CTA).
+      await window
+        .locator(".dynamic-form .modal-button-container button.mod-cta")
+        .first()
+        .click();
+      await window
+        .locator(".dynamic-form")
+        .waitFor({ state: "hidden", timeout: 10_000 })
+        .catch(() => undefined);
+
+      // The grounding writes the instance to disk async — poll for the new file.
+      let created: string[] = [];
+      await pollUntil(
+        `new instance created via "Create Instance"`,
+        () => {
+          created = listMarkdown(vaultPath).filter((p) => !before.has(p));
+          return created.length > 0;
+        },
+        30_000,
+      );
+      for (const rel of created) {
+        const head = readVaultFile(vaultPath, rel)
+          .split("\n")
+          .slice(0, 30)
+          .join(" | ");
+        log(`created via "Create Instance": ${rel} :: ${head}`);
+      }
+
+      // Accept the instance carrying BOTH the host class (via $targetClassSelf)
+      // AND the picked ontology (isDefinedBy). Anything else = grounding not yet
+      // fully resolved → clean up + retry.
+      for (const rel of created) {
+        const fm = readVaultFile(vaultPath, rel);
+        if (fm.includes(hostClassUid) && fm.includes(ontologyUid)) {
+          return { rel, fm };
+        }
+      }
+      lastErr =
+        `instance missing host class ${hostClassUid} or ontology ${ontologyUid} in: ` +
+        created
+          .map((r) => `${r}: ${readVaultFile(vaultPath, r).replace(/\n/g, " | ")}`)
+          .join(" ;; ");
+      for (const rel of created) {
+        try {
+          if (readVaultFile(vaultPath, rel).includes(attemptLabel)) {
+            fs.rmSync(path.join(vaultPath, rel));
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch (e) {
+      // Transient: button not yet rendered / form raced / picker option not yet
+      // populated. Re-open on the next attempt re-resolves against the
+      // now-more-indexed store. Clear any half-open modal first.
+      lastErr = String((e as Error)?.message ?? e);
+      await clearModals(window).catch(() => undefined);
+    }
+    log(
+      `createInstanceOnClass attempt ${i}/${attempts} not resolved (${lastErr.slice(0, 160)}) — retrying`,
+    );
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  throw new Error(
+    `"Create Instance" did not produce a valid instance (host ${hostClassUid} + ontology ${ontologyUid}) after ${attempts} attempts.\nLast: ${lastErr}`,
   );
 }
