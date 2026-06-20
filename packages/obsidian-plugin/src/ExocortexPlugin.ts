@@ -2938,6 +2938,9 @@ export default class ExocortexPlugin extends Plugin {
           this.preconditionEvaluator.invalidateCache(),
         rerenderLayouts: () => this.autoRenderLayout(),
         refreshEditorLabels: () => this.app.workspace.updateOptions(),
+        logger: {
+          warn: (message, ...args) => this.logger.warn(message, ...args),
+        },
       }),
     );
 

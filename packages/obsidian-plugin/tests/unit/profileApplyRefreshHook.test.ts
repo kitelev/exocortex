@@ -65,18 +65,21 @@ describe("createProfileApplyRefreshHook", () => {
 
   it("stays graceful when refreshEditorLabels throws (best-effort UI polish)", async () => {
     const deps = makeDeps();
+    const warn = jest.fn();
     deps.refreshEditorLabels.mockImplementation(() => {
       throw new Error("updateOptions blew up");
     });
 
     // Must resolve, not reject — the earlier duties already succeeded.
     await expect(
-      createProfileApplyRefreshHook(deps)(),
+      createProfileApplyRefreshHook({ ...deps, logger: { warn } })(),
     ).resolves.toBeUndefined();
     // The earlier, more-important duties still ran.
     expect(deps.refreshAndInject).toHaveBeenCalledTimes(1);
     expect(deps.invalidateCommandResolverCache).toHaveBeenCalledTimes(1);
     expect(deps.rerenderLayouts).toHaveBeenCalledTimes(1);
+    // And the failure leaves a breadcrumb (not silently swallowed).
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it("re-injects BEFORE invalidating + re-rendering + label-refresh (store must be rebuilt first)", async () => {

@@ -76,6 +76,12 @@ export interface ProfileApplyRefreshDeps {
    * (Веха 2 auto re-resolve, WBS `f01836c1`).
    */
   refreshEditorLabels: () => void;
+  /**
+   * Optional logger for graceful per-step failure visibility. Mirrors
+   * `LinkLabelRefreshService` so an `refreshEditorLabels` failure on the
+   * auto path leaves the same breadcrumb the manual command would.
+   */
+  logger?: { warn?(message: string, ...args: unknown[]): void };
 }
 
 export function createProfileApplyRefreshHook(
@@ -107,9 +113,15 @@ export function createProfileApplyRefreshHook(
     // recreated decorations resolve against the up-to-date metadataCache.
     try {
       deps.refreshEditorLabels();
-    } catch {
+    } catch (err) {
       // Graceful by contract — unresolvable links simply stay as their raw
-      // `uid` (the WikilinkLabelViewPlugin already degrades that way).
+      // `uid` (the WikilinkLabelViewPlugin already degrades that way). Log
+      // a breadcrumb so a regression here is not invisible, mirroring the
+      // manual command's `LinkLabelRefreshService.rebuildEditorViews` path.
+      deps.logger?.warn?.(
+        "[ProfileApplyRefresh] refreshEditorLabels failed (continuing)",
+        err,
+      );
     }
   };
 }
