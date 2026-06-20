@@ -14,6 +14,11 @@ import { createProfileApplyRefreshHook } from "../../src/infrastructure/adapters
  * `invalidatePreconditionCache` / `clearLazyLoader` / `rerenderLayouts`
  * lines from `createProfileApplyRefreshHook` and the
  * "invalidates caches + re-renders" tests below FAIL; restore → PASS.
+ *
+ * Link-label Веха 2 (WBS f01836c1): the hook ALSO re-resolves wikilink
+ * labels in open editor views (`refreshEditorLabels`). Revert-verify:
+ * delete the `deps.refreshEditorLabels()` call from the hook and the
+ * "re-resolves wikilink labels" + order tests FAIL; restore → PASS.
  */
 describe("createProfileApplyRefreshHook", () => {
   function makeDeps() {
@@ -23,6 +28,7 @@ describe("createProfileApplyRefreshHook", () => {
       invalidateCommandResolverCache: jest.fn(),
       invalidatePreconditionCache: jest.fn(),
       rerenderLayouts: jest.fn(),
+      refreshEditorLabels: jest.fn(),
     };
   }
 
@@ -51,7 +57,32 @@ describe("createProfileApplyRefreshHook", () => {
     expect(deps.rerenderLayouts).toHaveBeenCalledTimes(1);
   });
 
-  it("re-injects BEFORE invalidating + re-rendering (store must be rebuilt first)", async () => {
+  it("re-resolves wikilink labels in open editor views after a mount-state rebuild (Веха 2)", async () => {
+    const deps = makeDeps();
+    await createProfileApplyRefreshHook(deps)();
+    expect(deps.refreshEditorLabels).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays graceful when refreshEditorLabels throws (best-effort UI polish)", async () => {
+    const deps = makeDeps();
+    const warn = jest.fn();
+    deps.refreshEditorLabels.mockImplementation(() => {
+      throw new Error("updateOptions blew up");
+    });
+
+    // Must resolve, not reject — the earlier duties already succeeded.
+    await expect(
+      createProfileApplyRefreshHook({ ...deps, logger: { warn } })(),
+    ).resolves.toBeUndefined();
+    // The earlier, more-important duties still ran.
+    expect(deps.refreshAndInject).toHaveBeenCalledTimes(1);
+    expect(deps.invalidateCommandResolverCache).toHaveBeenCalledTimes(1);
+    expect(deps.rerenderLayouts).toHaveBeenCalledTimes(1);
+    // And the failure leaves a breadcrumb (not silently swallowed).
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-injects BEFORE invalidating + re-rendering + label-refresh (store must be rebuilt first)", async () => {
     const order: string[] = [];
     const deps = {
       refreshAndInject: jest.fn(async () => {
@@ -65,6 +96,7 @@ describe("createProfileApplyRefreshHook", () => {
         order.push("invalidatePreconditionCache"),
       ),
       rerenderLayouts: jest.fn(() => order.push("rerenderLayouts")),
+      refreshEditorLabels: jest.fn(() => order.push("refreshEditorLabels")),
     };
 
     await createProfileApplyRefreshHook(deps)();
@@ -75,7 +107,23 @@ describe("createProfileApplyRefreshHook", () => {
       "invalidateCommandResolverCache",
       "invalidatePreconditionCache",
       "rerenderLayouts",
+      "refreshEditorLabels",
     ]);
+  });
+
+  it("re-resolves editor labels only AFTER the index-fresh re-inject (fresh metadataCache)", async () => {
+    const order: string[] = [];
+    const deps = makeDeps();
+    deps.refreshAndInject.mockImplementation(async () =>
+      order.push("refreshAndInject"),
+    );
+    deps.refreshEditorLabels.mockImplementation(() =>
+      order.push("refreshEditorLabels"),
+    );
+
+    await createProfileApplyRefreshHook(deps)();
+
+    expect(order).toEqual(["refreshAndInject", "refreshEditorLabels"]);
   });
 
   it("re-renders only AFTER caches are invalidated (fresh resolution)", async () => {
