@@ -286,6 +286,113 @@ describe("BootstrapAssetSpaceCommands.invokeBootstrap — EC2 clone-needs-fetch"
   });
 });
 
+describe("BootstrapAssetSpaceCommands.invokeBootstrap — EC2 clone-needs-fetch resilience", () => {
+  it("one of three tracked entries fails → the other two still fetched, count + durable result reflect the partial restore, re-index fires", async () => {
+    // Resilience: a single bad entry (dead URL, transient network) must NOT abort
+    // the whole clone-needs-fetch recovery — the loop is per-entry try/catch.
+    // Revert-verify: drop the per-entry try/catch (fail-fast) and only the FIRST
+    // entry would be attempted; this asserts all three are attempted, 2 succeed.
+    const h = makeHarness({
+      gitmodulesEntries: [
+        { submodulePath: "assetspaces/exo", url: EXO_URL },
+        { submodulePath: "assetspaces/exocmd", url: EXOCMD_URL },
+        { submodulePath: "assetspaces/pmbok-ontology", url: PMBOK_URL },
+      ],
+      materializedFolders: {},
+      confirm: true,
+    });
+    // Wire the optional re-index hook so we can assert it fires on partial restore
+    // (rebuild cmds from the mutated deps — same pattern as the lazy-puller tests).
+    const onMaterialized = jest.fn(async () => undefined);
+    h.deps.onMaterialized = onMaterialized;
+    const cmds = new BootstrapAssetSpaceCommands(h.deps);
+    // Fail ONLY the exocmd entry (asUid = `bootstrap-<basename>`); others succeed.
+    h.puller.pullAssetSpace.mockImplementation(
+      async (asUid: string, _url: string, _ref?: string) => {
+        if (asUid === "bootstrap-exocmd") {
+          throw new Error("network down for exocmd");
+        }
+        return { asUid, stagingPath: `/tmp/staging-${asUid}`, sha: "abc1234" };
+      },
+    );
+
+    await cmds.invokeBootstrap();
+
+    // All three attempted (per-entry resilience, not fail-fast).
+    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(3);
+    // Only the two successes were moved into the vault.
+    expect(h.gitOps.renameIntoVault).toHaveBeenCalledWith(
+      "/tmp/staging-bootstrap-exo",
+      "assetspaces/exo",
+    );
+    expect(h.gitOps.renameIntoVault).toHaveBeenCalledWith(
+      "/tmp/staging-bootstrap-pmbok-ontology",
+      "assetspaces/pmbok-ontology",
+    );
+    expect(h.gitOps.renameIntoVault).toHaveBeenCalledTimes(2);
+    // Per-entry failure notice + accurate aggregate count.
+    expect(
+      h.notices.some((n) => /Fetch failed for assetspaces\/exocmd/.test(n)),
+    ).toBe(true);
+    expect(h.notices.some((n) => /Fetched 2\/3/.test(n))).toBe(true);
+    // Durable result reflects the partial restore (fetched>0 → emitted + re-index).
+    expect(h.results).toEqual([{ kind: "fetched", fetched: 2, total: 3 }]);
+    expect(onMaterialized).toHaveBeenCalledTimes(1);
+  });
+
+  it("ALL tracked entries fail → Fetched 0/N, NO durable result, NO re-index (no false success)", async () => {
+    // When nothing is restored the flow surfaces per-entry failures only — it does
+    // NOT emit a `fetched` "what next" panel (that would be a false success) and
+    // does NOT trigger the post-materialise re-index. Revert-verify: remove the
+    // `if (fetched > 0)` guard and a `fetched: 0` result / re-index would fire.
+    const h = makeHarness({
+      gitmodulesEntries: [
+        { submodulePath: "assetspaces/exo", url: EXO_URL },
+        { submodulePath: "assetspaces/exocmd", url: EXOCMD_URL },
+      ],
+      materializedFolders: {},
+      confirm: true,
+    });
+    const onMaterialized = jest.fn(async () => undefined);
+    h.deps.onMaterialized = onMaterialized;
+    const cmds = new BootstrapAssetSpaceCommands(h.deps);
+    h.puller.pullAssetSpace.mockRejectedValue(new Error("network down"));
+
+    await cmds.invokeBootstrap();
+
+    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(2);
+    expect(h.notices.filter((n) => /Fetch failed for/.test(n))).toHaveLength(2);
+    expect(h.notices.some((n) => /Fetched 0\/2/.test(n))).toBe(true);
+    // No false-success panel + no re-index on zero restore.
+    expect(h.results.some((r) => r.kind === "fetched")).toBe(false);
+    expect(onMaterialized).not.toHaveBeenCalled();
+  });
+
+  it("a tracked entry with an empty submodulePath is skipped (no pull), valid entries still fetched", async () => {
+    // A malformed `.gitmodules` stanza with an empty `path =` must not crash the
+    // recovery loop nor pull into an empty target — it is skipped. The aggregate
+    // total still counts it (entries.length), so the count reads `1/2`.
+    const h = makeHarness({
+      gitmodulesEntries: [
+        { submodulePath: "", url: EXO_URL },
+        { submodulePath: "assetspaces/exo", url: EXO_URL },
+      ],
+      materializedFolders: {},
+      confirm: true,
+    });
+    await h.cmds.invokeBootstrap();
+
+    // Only the valid entry was pulled; the empty-path entry was skipped (no throw).
+    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(1);
+    expect(h.puller.pullAssetSpace).toHaveBeenCalledWith(
+      "bootstrap-exo",
+      EXO_URL,
+      "main",
+    );
+    expect(h.notices.some((n) => /Fetched 1\/2/.test(n))).toBe(true);
+  });
+});
+
 describe("BootstrapAssetSpaceCommands.invokeBootstrap — guards", () => {
   it("user cancels the URL prompt → no pull", async () => {
     const h = makeHarness({ bootstrapUrls: null });
@@ -806,6 +913,38 @@ describe("BootstrapAssetSpaceCommands — mobile restMount strategy (#3535)", ()
       "main",
     );
     expect(h.notices.some((n) => /Fetched 2\/2/.test(n))).toBe(true);
+  });
+
+  it("EC2 clone-needs-fetch resilience — one restMount.mount rejects → the other is still mounted (Fetched 1/2)", async () => {
+    // Mobile parity with the desktop EC2 resilience: a single failing mount must
+    // not abort the rest of the clone-needs-fetch recovery (per-entry try/catch).
+    const h = makeMobileHarness({
+      gitmodulesEntries: [
+        { submodulePath: "assetspaces/kitelev/exoas-exo", url: EXO_URL },
+        { submodulePath: "assetspaces/kitelev/exoas-exocmd", url: EXOCMD_URL },
+      ],
+      materializedFolders: {},
+      confirm: true,
+    });
+    h.restMount.mount.mockImplementation(
+      async (_gitUrl: string, submodulePath: string, _ref: string) => {
+        if (submodulePath === "assetspaces/kitelev/exoas-exocmd") {
+          throw new Error("network down for exocmd");
+        }
+        return { sha: "deadbee" };
+      },
+    );
+
+    await h.cmds.invokeBootstrap();
+
+    // Both attempted (resilient loop), one failed — the other still mounted.
+    expect(h.restMount.mount).toHaveBeenCalledTimes(2);
+    expect(
+      h.notices.some((n) =>
+        /Fetch failed for assetspaces\/kitelev\/exoas-exocmd/.test(n),
+      ),
+    ).toBe(true);
+    expect(h.notices.some((n) => /Fetched 1\/2/.test(n))).toBe(true);
   });
 
   it("detectVaultState classifies via restMount.readGitmodulesEntries (no gitOps)", async () => {

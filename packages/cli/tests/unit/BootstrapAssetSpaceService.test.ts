@@ -329,6 +329,49 @@ describe("BootstrapAssetSpaceService", () => {
       ).rejects.toThrow(/exists и not empty/);
     });
 
+    it("allows an existing EMPTY target dir — proceeds к mount (only NON-empty is refused)", async () => {
+      // A pre-created but empty `assetspaces/<owner>/<repo>` folder (e.g. left by
+      // a prior aborted mount, or a `git submodule update` stub that created the
+      // mount point without populating it) must NOT block a fresh pull — the
+      // guard refuses only NON-empty targets (`readdirSync(...).length > 0`).
+      // Revert-verify: a guard that threw on ANY existing dir (drop the
+      // `.length > 0` check) would make this throw `exists и not empty`.
+      const tarball = buildFakeGitHubTarball("kitelev", "exoas-exo", "abc1234", [
+        { path: "README.md", content: "# exo" },
+      ]);
+      const svc = new BootstrapAssetSpaceService({ fetchImpl: fakeFetch(tarball) });
+      const target = path.join(tempBase, "assetspaces", "exo");
+      mkdirSync(target, { recursive: true }); // exists, but EMPTY
+
+      const result = await svc.pullAssetSpace(
+        "https://github.com/kitelev/exoas-exo",
+        "main",
+        target,
+      );
+
+      expect(result.fileCount).toBe(1);
+      expect(existsSync(path.join(target, "README.md"))).toBe(true);
+      expect(readFileSync(path.join(target, "README.md"), "utf8")).toBe("# exo");
+    });
+
+    it("refuses a target containing only a hidden OS file (e.g. macOS .DS_Store) — readdirSync counts dotfiles (fresh-tester trap)", async () => {
+      // Finder/Files shows the folder as "empty", but a stray `.DS_Store`
+      // (or any hidden entry) makes `readdirSync(...).length > 0`, so the
+      // non-empty guard fires. Documents the fresh-tester gotcha: a hidden OS
+      // file dropped into `assetspaces/<owner>/<repo>` blocks a re-mount with a
+      // "refusing к overwrite" error even though the folder looks empty.
+      // (Intentional refuse-non-empty safety — the guard does NOT filter
+      // dotfiles. Re-derive folder OR clear it manually to re-mount.)
+      const target = path.join(tempBase, "assetspaces", "exo");
+      mkdirSync(target, { recursive: true });
+      writeFileSync(path.join(target, ".DS_Store"), "  ");
+      const svc = new BootstrapAssetSpaceService({ fetchImpl: fakeFetch(new Uint8Array()) });
+
+      await expect(
+        svc.pullAssetSpace("https://github.com/kitelev/exoas-exo", "main", target),
+      ).rejects.toThrow(/exists и not empty/);
+    });
+
     it("propagates fetch failure", async () => {
       const svc = new BootstrapAssetSpaceService({ fetchImpl: fakeFetchError(404, "Not Found") });
       await expect(
