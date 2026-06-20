@@ -110,7 +110,7 @@ physically relocated across package boundaries.
 - [release-checklist-mobile.md](../packages/obsidian-plugin/docs/release-checklist-mobile.md) — mobile release checklist
 - [FLAKY_DASHBOARD.md](../packages/obsidian-plugin/docs/FLAKY_DASHBOARD.md) — flaky-test dashboard (drives `flaky-aggregate`/`flaky-render-markdown` scripts)
 - [TESTING.md](../packages/obsidian-plugin/docs/TESTING.md) — _(stub → [../TESTING.md](../TESTING.md))_
-- `phase3/` — _(historical, frozen)_ Phase-3 CI/X11 stabilization ADR + spikes. The [ADR](../packages/obsidian-plugin/docs/phase3/ADR_FLAKY_X11_STRATEGY.md) is referenced by `docker-entrypoint-e2e.sh`, so the folder is kept in place. Also: [T3_1_QUARANTINE_DECISION_MATRIX](../packages/obsidian-plugin/docs/phase3/T3_1_QUARANTINE_DECISION_MATRIX.md), [T3_3_TRACKING_ISSUES](../packages/obsidian-plugin/docs/phase3/T3_3_TRACKING_ISSUES.md), [T5_1_XVFB_TUNING_SPIKE](../packages/obsidian-plugin/docs/phase3/T5_1_XVFB_TUNING_SPIKE.md), [T5_2_XVFB_RUN_SPIKE](../packages/obsidian-plugin/docs/phase3/T5_2_XVFB_RUN_SPIKE.md), [T5_3_HEADED_CHROMIUM_SPIKE](../packages/obsidian-plugin/docs/phase3/T5_3_HEADED_CHROMIUM_SPIKE.md)
+- `phase3/` — _(historical, frozen)_ Phase-3 CI/X11 stabilization records. The [ADR](../packages/obsidian-plugin/docs/phase3/ADR_FLAKY_X11_STRATEGY.md) is referenced by `docker-entrypoint-e2e.sh`, so the folder is kept in place. Also: [T3_1_QUARANTINE_DECISION_MATRIX](../packages/obsidian-plugin/docs/phase3/T3_1_QUARANTINE_DECISION_MATRIX.md) (cited by `tests/quarantine.ts`), [T3_3_TRACKING_ISSUES](../packages/obsidian-plugin/docs/phase3/T3_3_TRACKING_ISSUES.md). _(The XVFB tuning spikes `T5_1`–`T5_3` and the folder's own `README` were pruned 2026-06-20 — superseded by the ADR.)_
 
 ## Archive — `history/`
 
