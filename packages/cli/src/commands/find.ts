@@ -23,16 +23,8 @@ import {
 
 export interface FindOptions {
   vault: string;
-  also?: string[];
   sparql?: string;
   class?: string;
-}
-
-/**
- * Commander.js accumulator for repeatable --also flag.
- */
-function collectAlso(value: string, previous: string[]): string[] {
-  return previous.concat([value]);
 }
 
 const FIND_ALIAS_SPARQL_PRED = "https://exocortex.my/ontology/find#Alias_sparql";
@@ -123,7 +115,6 @@ export function findCommand(): Command {
   return new Command("find")
     .description("Find vault assets via SPARQL — outputs file paths one per line (RFC 8e83442b T1.1)")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
-    .option("--also <path>", "Additional vault to include (repeatable)", collectAlso, [])
     .option("--sparql <query>", "SPARQL SELECT query (must bind ?path)")
     .option(
       "--class <value>",
@@ -151,22 +142,9 @@ export function findCommand(): Command {
           throw new VaultNotFoundError(vaultPath);
         }
 
-        const alsoVaults = options.also || [];
-
         const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
         const converter = new NoteToRDFConverter(vaultAdapter);
-        let triples: Triple[] = await converter.convertVault();
-
-        for (const alsoPath of alsoVaults) {
-          const resolvedAlsoPath = resolve(alsoPath);
-          if (!existsSync(resolvedAlsoPath)) {
-            throw new VaultNotFoundError(resolvedAlsoPath);
-          }
-          const alsoAdapter = new FileSystemVaultAdapter(resolvedAlsoPath);
-          const alsoConverter = new NoteToRDFConverter(alsoAdapter);
-          const alsoTriples = await alsoConverter.convertVault();
-          triples = triples.concat(alsoTriples);
-        }
+        const triples: Triple[] = await converter.convertVault();
 
         const tripleStore = new InMemoryTripleStore();
         await tripleStore.addAll(triples);
@@ -191,14 +169,6 @@ export function findCommand(): Command {
 
         const parser = new ExoQLParser();
         const vaultPrefixes = filterOntologyPrefixes(scanVaultNamespaces(vaultPath));
-        for (const alsoPath of alsoVaults) {
-          const alsoPrefixes = filterOntologyPrefixes(scanVaultNamespaces(resolve(alsoPath)));
-          for (const [prefix, uri] of alsoPrefixes) {
-            if (!vaultPrefixes.has(prefix)) {
-              vaultPrefixes.set(prefix, uri);
-            }
-          }
-        }
         if (vaultPrefixes.size > 0) {
           parser.setVaultPrefixes(vaultPrefixes);
         }

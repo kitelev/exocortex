@@ -16,10 +16,6 @@ import {
 import { extractFileWikilinkTargets } from "../services/wikilinkExtraction.js";
 import { resolveTargetPath } from "../services/ontologyImportsResolve.js";
 import {
-  CrossVaultClassifier,
-  type CrossVaultHit,
-} from "../services/ontologyImportsCrossVault.js";
-import {
   isNodeModulesPath,
   isTemplatesPath,
 } from "../utils/vaultPathFilters.js";
@@ -132,10 +128,10 @@ export interface OntologyImportsResult {
   /** Violating pairs grouped src→tgt, sorted by occurrences desc (VL#8). */
   violations: ViolationPair[];
   /**
-   * Links to assets whose ontology lives only in another vault (VL#13),
-   * grouped src→tgt. Populated only when `--also <path>` supplies the secondary
-   * vaults used to classify them — without `--also` such links are
-   * indistinguishable from broken and counted in {@link skips}.broken instead.
+   * Always empty (POST-3, RFC eacf04c0): cross-vault classification was removed
+   * with the cross-vault flag. Links whose target resolves nowhere in the vault
+   * are counted in {@link skips}.broken (fail-open, VL#6). Retained for
+   * output-shape backward compatibility.
    */
   crossVault: ViolationPair[];
   linkCounts: {
@@ -293,12 +289,6 @@ interface OntologyMeta extends OntologyRef {
  */
 export interface ScanOntologyImportsOptions {
   /**
-   * RFC df39007b VL#13: secondary vault roots consulted ONLY to classify a
-   * primary-broken target as cross-vault (target lives in another vault) vs
-   * genuinely broken. Never legitimizes the link.
-   */
-  alsoPaths?: string[];
-  /**
    * EKA Phase B / Vision VL#30 (opt-in): top-level frontmatter keys
    * (predicates) whose wikilinks are NOT counted as import/dependency edges —
    * associative Zettelkasten / provenance links. Body wikilinks are never
@@ -319,17 +309,6 @@ export async function scanVaultForOntologyImports(
   // EKA Phase B / VL#30 (opt-in): predicates excluded from edge extraction.
   // Empty ⟹ default behaviour (byte-identical pre-flag output).
   const excludeSet = new Set(options.excludePredicates ?? []);
-
-  // ---- Phase A: --also cross-vault classifier (VL#13) ----
-  const alsoPaths = options.alsoPaths ?? [];
-  let crossVaultClassifier: CrossVaultClassifier | null = null;
-  if (alsoPaths.length > 0) {
-    crossVaultClassifier = new CrossVaultClassifier(
-      alsoPaths,
-      ONTOLOGY_CLASS_UID,
-    );
-    await crossVaultClassifier.build();
-  }
 
   // ---- Phase B: ontology discovery (instances of exo__Ontology) ----
   const ontologyByPath = new Map<string, string>(); // path → uid
@@ -495,11 +474,6 @@ export async function scanVaultForOntologyImports(
   const externalOutByOntology = new Map<string, number>();
   const externalInByOntology = new Map<string, number>();
   const violatingOutByOntology = new Map<string, number>();
-  // Cross-vault (VL#13) — only populated when `--also` vaults are supplied.
-  const crossVaultMap = new Map<
-    string,
-    { source: OntologyRef; target: OntologyRef; occurrences: number; examples: string[] }
-  >();
 
   // Hoisted ref builder (also used by Phase F): UID → {uid,label,path}.
   const toRef = (uid: string): OntologyRef => {
@@ -508,19 +482,6 @@ export async function scanVaultForOntologyImports(
       ? { uid: meta.uid, label: meta.label, path: meta.path }
       : { uid, label: uid, path: "" };
   };
-  // Synthetic ref for a link whose source asset has no resolvable ontology —
-  // a cross-vault occurrence is still a VL#13 violation regardless of source.
-  const NO_ONTOLOGY_REF: OntologyRef = {
-    uid: "(no-ontology)",
-    label: "(no-ontology source)",
-    path: "",
-  };
-  const crossVaultTargetRef = (hit: CrossVaultHit): OntologyRef =>
-    hit.ontology ?? {
-      uid: `cross-vault:${hit.targetPath}`,
-      label: `(no ontology — ${hit.vaultPath})`,
-      path: hit.targetPath,
-    };
 
   for (const asset of assets) {
     if (isNodeModulesPath(asset.path) || isTemplatesPath(asset.path)) continue;
@@ -547,32 +508,10 @@ export async function scanVaultForOntologyImports(
         continue;
       }
       if (resolvedPath === null) {
-        // Target unresolved in the primary vault. With --also (VL#13), check
-        // whether it lives in a secondary vault → cross-vault violation;
-        // otherwise it is a genuinely broken link (fail-open skip, VL#6).
-        if (crossVaultClassifier) {
-          const hit = await crossVaultClassifier.classify(target);
-          if (hit) {
-            linkCounts.crossVault++;
-            const srcRef = sourceOntology ? toRef(sourceOntology) : NO_ONTOLOGY_REF;
-            const tgtRef = crossVaultTargetRef(hit);
-            const key = `${srcRef.uid} ${tgtRef.uid}`;
-            const pair = crossVaultMap.get(key);
-            if (pair) {
-              pair.occurrences++;
-              pushExample(pair.examples, asset.path);
-            } else {
-              crossVaultMap.set(key, {
-                source: srcRef,
-                target: tgtRef,
-                occurrences: 1,
-                examples: [asset.path],
-              });
-            }
-            continue;
-          }
-        }
-        // Fail-open (VL#6): broken link — validate-wikilinks territory.
+        // Fail-open (VL#6): target unresolved in the vault — a broken link
+        // (validate-wikilinks territory). POST-3 (RFC eacf04c0): cross-vault
+        // classification was removed with the cross-vault flag, so an
+        // unresolvable target is simply broken.
         skips.broken++;
         pushExample(skipExamples.broken, `${asset.path} → ${target}`);
         continue;
@@ -677,9 +616,9 @@ export async function scanVaultForOntologyImports(
     }))
     .sort((a, b) => b.occurrences - a.occurrences);
 
-  const crossVault: ViolationPair[] = [...crossVaultMap.values()].sort(
-    (a, b) => b.occurrences - a.occurrences,
-  );
+  // POST-3 (RFC eacf04c0): cross-vault classification removed with the
+  // cross-vault flag — always empty, retained for output-shape compatibility.
+  const crossVault: ViolationPair[] = [];
 
   const acyclic = sccs.length === 0;
   const clean =
@@ -921,7 +860,6 @@ export function computeImportProposal(
 export interface AuditOntologyImportsOptions {
   vault: string;
   output?: OutputFormat;
-  also?: string[];
   proposeImports?: boolean;
   /** VL#30: exclude the curated {@link ASSOCIATIVE_PREDICATES} set. */
   structuralOnly?: boolean;
@@ -979,17 +917,6 @@ function printText(result: OntologyImportsResult): void {
   if (result.violations.length > 0) {
     console.error(`\nViolating pairs (src → tgt, occurrences desc):`);
     for (const pair of result.violations) {
-      console.error(
-        `  ${formatRef(pair.source)} → ${formatRef(pair.target)}: ${pair.occurrences}`,
-      );
-    }
-  }
-
-  if (result.crossVault.length > 0) {
-    console.error(
-      `\nCross-vault violations (VL#13 — target lives in another vault; --also classified):`,
-    );
-    for (const pair of result.crossVault) {
       console.error(
         `  ${formatRef(pair.source)} → ${formatRef(pair.target)}: ${pair.occurrences}`,
       );
@@ -1109,31 +1036,23 @@ function printProposal(proposal: ImportProposal): void {
 /**
  * RFC df39007b Phase 1 — ontology-imports invariant audit.
  *
- * `exocortex audit ontology-imports --vault <path> [--also <path>...]
- * [--propose-imports]` walks the vault, derives the actual cross-ontology link
- * graph, and reports every occurrence not covered by the declared
- * `exo__Ontology_imports` transitive closure.
- * Exit 0 = clean (0 violations, 0 cross-vault, declared graph acyclic, no
- * duplicate-UID hard errors); exit 1 otherwise. Fail-open skips (broken links,
- * ambiguous basenames) and no-ontology assets never affect the exit code.
+ * `exocortex audit ontology-imports --vault <path> [--propose-imports]` walks
+ * the vault, derives the actual cross-ontology link graph, and reports every
+ * occurrence not covered by the declared `exo__Ontology_imports` transitive
+ * closure.
+ * Exit 0 = clean (0 violations, declared graph acyclic, no duplicate-UID hard
+ * errors); exit 1 otherwise. Fail-open skips (broken links, ambiguous
+ * basenames) and no-ontology assets never affect the exit code.
  *
- * `--also <path>` (repeatable) supplies secondary vaults used ONLY to classify
- * primary-broken targets as cross-vault (VL#13) — never legitimizes them.
  * `--propose-imports` adds a minimal additions-only import proposal (PR2).
  */
 export function auditOntologyImportsCommand(): Command {
   return new Command("ontology-imports")
     .description(
-      "Detect cross-ontology wikilinks not covered by the declared exo__Ontology_imports transitive closure (DAG check, per-pair grouping, fail-open skip-accounting); --propose-imports suggests minimal import additions; --also classifies cross-vault links",
+      "Detect cross-ontology wikilinks not covered by the declared exo__Ontology_imports transitive closure (DAG check, per-pair grouping, fail-open skip-accounting); --propose-imports suggests minimal import additions",
     )
     .requiredOption("--vault <path>", "Vault root directory")
     .option("--output <type>", "Response format: text|json", "text")
-    .option(
-      "--also <path>",
-      "Secondary vault to classify cross-vault links against (repeatable, VL#13)",
-      collectAlso,
-      [],
-    )
     .option(
       "--propose-imports",
       "Emit a minimal additions-only import proposal (SCC condensation + transitive reduction + suggested feedback-arc-set)",
@@ -1158,15 +1077,6 @@ export function auditOntologyImportsCommand(): Command {
           throw new VaultNotFoundError(vaultPath);
         }
 
-        // Pre-validate --also paths so the user sees an early, clear error
-        // (mirrors `exocortex index --also`).
-        const alsoPaths = (options.also ?? []).map((p) => resolve(p));
-        for (const alsoPath of alsoPaths) {
-          if (!existsSync(alsoPath) || !statSync(alsoPath).isDirectory()) {
-            throw new VaultNotFoundError(alsoPath);
-          }
-        }
-
         // VL#30 opt-in exclusion set: curated associative predicates (when
         // --structural-only) plus any explicit --exclude-predicate entries.
         // Empty when neither flag is given ⟹ default byte-identical output.
@@ -1176,7 +1086,6 @@ export function auditOntologyImportsCommand(): Command {
         ];
 
         const result = await scanVaultForOntologyImports(vaultPath, {
-          alsoPaths,
           excludePredicates,
         });
 
@@ -1199,16 +1108,8 @@ export function auditOntologyImportsCommand(): Command {
 }
 
 /**
- * Commander.js accumulator for the repeatable `--also` flag (precedent:
- * find / sparql-index commands).
- */
-function collectAlso(value: string, previous: string[]): string[] {
-  return previous.concat([value]);
-}
-
-/**
  * Commander.js accumulator for the repeatable `--exclude-predicate` flag
- * (VL#30). Same pattern as {@link collectAlso}.
+ * (VL#30).
  */
 function collectExcludePredicate(value: string, previous: string[]): string[] {
   return previous.concat([value]);

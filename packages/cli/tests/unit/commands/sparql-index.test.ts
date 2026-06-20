@@ -48,62 +48,6 @@ jest.unstable_mockModule("exocortex", () => ({
   PrototypeChainMaterializer: jest.fn(() => ({
     materialize: mockProtoMaterialize,
   })),
-  // Issue #3281: sparql-index.ts now also pulls in CombinedCacheManager +
-  // buildCombinedTriples (for --also flow). Those transitively reference
-  // Triple / IRI / Literal / BlankNode / NoteToRDFConverter from the
-  // exocortex package; stub them out so the test loads even though the
-  // single-vault tests below never exercise the cross-vault branch.
-  Triple: class MockTriple {
-    constructor(
-      public subject: unknown,
-      public predicate: unknown,
-      public object: unknown,
-    ) {}
-  },
-  IRI: class MockIRI {
-    constructor(public value: string) {}
-  },
-  Literal: class MockLiteral {
-    constructor(
-      public value: string,
-      public datatype?: unknown,
-      public language?: string,
-    ) {}
-  },
-  BlankNode: class MockBlankNode {
-    constructor(public value: string) {}
-  },
-  NoteToRDFConverter: jest.fn(() => ({
-    convertVault: jest.fn().mockResolvedValue([]),
-    convertVaultWithValidation: jest
-      .fn()
-      .mockResolvedValue({
-        triples: [],
-        skippedFiles: [],
-        summary: { total: 0, indexed: 0, skipped: 0 },
-      }),
-  })),
-}));
-
-// Mock CombinedCacheManager — the cross-vault index path is exercised in
-// its own dedicated unit + integration tests; here we just need a stub.
-jest.unstable_mockModule("../../../src/cache/CombinedCacheManager.js", () => ({
-  CombinedCacheManager: jest.fn(() => ({
-    getCachePath: jest.fn().mockReturnValue("/tmp/combined-cache-stub.json"),
-    getAllVaultPaths: jest.fn().mockReturnValue([]),
-    invalidate: jest.fn().mockResolvedValue(undefined),
-    saveTriples: jest.fn().mockResolvedValue(undefined),
-    getCacheStats: jest.fn().mockResolvedValue(null),
-  })),
-}));
-
-jest.unstable_mockModule("../../../src/cache/buildCombinedTriples.js", () => ({
-  buildCombinedTriples: jest.fn().mockResolvedValue({
-    triples: [],
-    rawTripleCount: 0,
-    crossVaultAddedTripleCount: 0,
-    inferredTripleCount: 0,
-  }),
 }));
 
 const { sparqlIndexCommand } = await import("../../../src/commands/sparql-index.js");
