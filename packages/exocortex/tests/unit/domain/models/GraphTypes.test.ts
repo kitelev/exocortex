@@ -96,6 +96,18 @@ describe("GraphTypes", () => {
       expect(BUILT_IN_NODE_STYLES[RDF_TYPE_PREDICATES.OWL_CLASS]).toBeDefined();
       expect(BUILT_IN_NODE_STYLES[RDF_TYPE_PREDICATES.OWL_CLASS].shape).toBe("diamond");
     });
+
+    it("should have style for person__Person (canonical person class)", () => {
+      expect(BUILT_IN_NODE_STYLES["person__Person"]).toBeDefined();
+      expect(BUILT_IN_NODE_STYLES["person__Person"].color).toBe("#06b6d4");
+      expect(BUILT_IN_NODE_STYLES["person__Person"].shape).toBe("circle");
+    });
+
+    it("should retain style for ims__Person (deprecated, backward-compat for un-migrated nodes)", () => {
+      expect(BUILT_IN_NODE_STYLES["ims__Person"]).toBeDefined();
+      expect(BUILT_IN_NODE_STYLES["ims__Person"].color).toBe("#06b6d4");
+      expect(BUILT_IN_NODE_STYLES["ims__Person"].shape).toBe("circle");
+    });
   });
 
   describe("BUILT_IN_EDGE_STYLES", () => {
