@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import {
+  type Editor,
   MarkdownPostProcessorContext,
   MarkdownView,
   MetadataCache,
@@ -20,6 +21,11 @@ import {
 } from "./adapters/logging/activityFanIn";
 import { ActivityLogModal } from "./presentation/modals/ActivityLogModal";
 import { LogFileModal } from "./presentation/modals/LogFileModal";
+import {
+  TEMPLATE_TOKEN_CHOICES,
+  insertTemplateToken,
+} from "./infrastructure/adapters/TemplateTokenInserter";
+import { pickTemplateToken } from "./infrastructure/adapters/TemplateTokenFuzzyModal";
 import { CommandManager } from "./application/services/CommandManager";
 import { IndexingCompleteNotifier } from "./application/services/IndexingCompleteNotifier";
 import {
@@ -3286,6 +3292,23 @@ export default class ExocortexPlugin extends Plugin {
       },
     });
 
+    // Homoiconic templating MVP (project 17f58ebe / vision 09a3fbec) —
+    // «Insert template token»: editor-only command → fuzzy picker
+    // (Random UUID / Current Timestamp / Current Date) → insert at cursor.
+    // `editorCallback` makes Obsidian auto-hide the command outside an active
+    // Markdown editor (interview Q4). Pure editor op — no Node/git/fs deps — so
+    // it is registered UNCONDITIONALLY (Desktop↔Mobile Command Parity; the
+    // editorCallback signature is identical on both surfaces). Token values come
+    // from the shared SubstitutionResolverRegistry (interview Q6 — reuse, not a
+    // duplicate vocabulary).
+    this.addCommand({
+      id: "insert-template-token",
+      name: "Insert template token",
+      editorCallback: (editor: Editor) => {
+        void this.invokeInsertTemplateToken(editor);
+      },
+    });
+
     // RFC 0a0791c1 Phase 5 T2 — «Apply profile» (the single consolidated
     // profile command; the former soft «Switch focus profile» was removed and
     // the mount-state «Switch knowledge profile» was renamed here). Needs the
@@ -3876,6 +3899,33 @@ export default class ExocortexPlugin extends Plugin {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.notifier.error(`Clear switch cache failed: ${msg}`);
+    }
+  }
+
+  /**
+   * «Insert template token» (homoiconic templating MVP, project 17f58ebe).
+   * Opens the fuzzy picker; on a choice, resolves the token via the shared
+   * SubstitutionResolverRegistry and inserts it at the cursor (replacing any
+   * selection). A dismissed picker (Escape) is a silent no-op. A resolver error
+   * (e.g. unregistered id — a programming error) is surfaced, not swallowed —
+   * the inserted text is otherwise its own success feedback, so the happy path
+   * emits no extra Notice.
+   */
+  private async invokeInsertTemplateToken(editor: Editor): Promise<void> {
+    // Single try covers both the picker await (Modal.open could throw) and the
+    // resolve+insert — so no failure escapes as an unhandled rejection (the
+    // command body calls this via bare `void`).
+    try {
+      const choice = await pickTemplateToken(
+        this.app,
+        TEMPLATE_TOKEN_CHOICES,
+        "Insert template token",
+      );
+      if (choice === null) return; // dismissed without a selection — no-op
+      insertTemplateToken(editor, choice);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.notifier.error(`Insert template token failed: ${msg}`);
     }
   }
 
