@@ -305,3 +305,81 @@ describe("PluginLocalDataStore — first-run onboarding flag (RFC 0002 §3.1)", 
     expect(await store.getOnboardingCompleted()).toBe(true);
   });
 });
+
+describe("PluginLocalDataStore — previousProfileUid (undo target, §3.10)", () => {
+  it("init() with absent file → null undo target", async () => {
+    const { app } = makeFakeApp();
+    const store = new PluginLocalDataStore({ app });
+    await store.init();
+    expect(store.getPreviousProfileUid()).toBeNull();
+  });
+
+  it("reads previousProfileUid from data.local.json", async () => {
+    const { app } = makeFakeApp({
+      [PATH]: JSON.stringify({
+        activeProfileUid: "p-active",
+        previousProfileUid: "p-prev",
+      }),
+    });
+    const store = new PluginLocalDataStore({ app });
+    await store.init();
+    expect(store.getActiveProfileUid()).toBe("p-active");
+    expect(store.getPreviousProfileUid()).toBe("p-prev");
+  });
+
+  it("save() persists previousProfileUid when provided", async () => {
+    const { app, files } = makeFakeApp();
+    const store = new PluginLocalDataStore({ app });
+    await store.init();
+    await store.save({
+      activeProfileUid: "p-active",
+      previousProfileUid: "p-prev",
+      _switchInProgress: false,
+    });
+    expect(store.getPreviousProfileUid()).toBe("p-prev");
+    const parsed = JSON.parse(files.get(PATH) ?? "{}");
+    expect(parsed.previousProfileUid).toBe("p-prev");
+  });
+
+  it("save() WITHOUT previousProfileUid preserves the persisted value (RMW)", async () => {
+    const { app, files } = makeFakeApp({
+      [PATH]: JSON.stringify({
+        activeProfileUid: "p-old",
+        previousProfileUid: "p-prev",
+        pat: "ghp_keep",
+      }),
+    });
+    const store = new PluginLocalDataStore({ app });
+    await store.init();
+    // Legacy-shaped save (active + in-progress only) must NOT clobber the undo
+    // target — backward compatibility for every prior call site.
+    await store.save({ activeProfileUid: "p-new", _switchInProgress: false });
+    expect(store.getActiveProfileUid()).toBe("p-new");
+    expect(store.getPreviousProfileUid()).toBe("p-prev");
+    const parsed = JSON.parse(files.get(PATH) ?? "{}");
+    expect(parsed.previousProfileUid).toBe("p-prev");
+    expect(parsed.pat).toBe("ghp_keep");
+  });
+
+  it("save() can clear the undo target with explicit null", async () => {
+    const { app } = makeFakeApp({
+      [PATH]: JSON.stringify({ previousProfileUid: "p-prev" }),
+    });
+    const store = new PluginLocalDataStore({ app });
+    await store.init();
+    await store.save({
+      activeProfileUid: "p-x",
+      previousProfileUid: null,
+      _switchInProgress: false,
+    });
+    expect(store.getPreviousProfileUid()).toBeNull();
+  });
+
+  it("getPreviousProfileUid throws before init()", () => {
+    const { app } = makeFakeApp();
+    const store = new PluginLocalDataStore({ app });
+    expect(() => store.getPreviousProfileUid()).toThrow(
+      /init\(\) must be awaited/,
+    );
+  });
+});

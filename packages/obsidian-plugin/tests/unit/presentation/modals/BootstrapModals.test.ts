@@ -314,6 +314,66 @@ describe("BootstrapResultModal", () => {
       /Close the setup result/i,
     );
   });
+
+  // RFC 0002 §3.10 / P15b — the durable FAILURE panel: cause + recovery step +
+  // one-click retry of the failed operation. Revert-verify: dropping the `failed`
+  // branch in onOpen (or its retry button) makes the retry assertions FAIL.
+  const FAILED_AUTH: BootstrapResultInfo = {
+    kind: "failed",
+    operation: "add",
+    cause: "auth",
+    detail: "HTTP 403: not accessible by token",
+  };
+
+  it("failed (auth) — surfaces the cause + a PAT recovery step", () => {
+    new BootstrapResultModal(fakeApp, FAILED_AUTH, {
+      onAddStarterContent: () => undefined,
+    }).open();
+    const text = document.body.textContent ?? "";
+    expect(text).toMatch(/didn't finish/i);
+    expect(text).toMatch(/rejected the request/i);
+    expect(text).toMatch(/GitHub PAT/);
+    // No success nudge on a failure panel.
+    expect(findButton("Add the starter content")).toBeUndefined();
+  });
+
+  it("failed — «Try again» fires onRetry with the failing operation + closes", () => {
+    const retried: string[] = [];
+    new BootstrapResultModal(fakeApp, FAILED_AUTH, {
+      onAddStarterContent: () => undefined,
+      onRetry: (op) => retried.push(op),
+    }).open();
+    findButton("Try again")!.click();
+    expect(retried).toEqual(["add"]);
+    expect(document.querySelector(".bootstrap-result-title")).toBeNull();
+  });
+
+  it("failed (bad-url, bootstrap) — retry passes operation=bootstrap", () => {
+    const retried: string[] = [];
+    new BootstrapResultModal(
+      fakeApp,
+      {
+        kind: "failed",
+        operation: "bootstrap",
+        cause: "bad-url",
+        detail: "Invalid GitHub repo URL: x",
+      },
+      { onAddStarterContent: () => undefined, onRetry: (op) => retried.push(op) },
+    ).open();
+    const text = document.body.textContent ?? "";
+    expect(text).toMatch(/check the URL/i);
+    findButton("Try again")!.click();
+    expect(retried).toEqual(["bootstrap"]);
+  });
+
+  it("failed without onRetry wired — still renders (cause + Dismiss), no crash", () => {
+    new BootstrapResultModal(fakeApp, FAILED_AUTH, {
+      onAddStarterContent: () => undefined,
+    }).open();
+    expect(findButton("Try again")).toBeUndefined();
+    // The Done button is labelled «Dismiss» on a failure panel.
+    expect(findButton("Dismiss")).toBeDefined();
+  });
 });
 
 // resultCopy is the pure per-outcome wording — unit-testable without DOM.
@@ -323,6 +383,7 @@ describe("resultCopy", () => {
       { kind: "bootstrapped", folderName: "assetspaces/x", sha: "deadbee" },
       { kind: "fetched", fetched: 1, total: 4 },
       { kind: "already-bootstrapped" },
+      { kind: "failed", operation: "add", cause: "network", detail: "ENOTFOUND" },
     ];
     for (const k of kinds) {
       const copy = resultCopy(k);
@@ -331,6 +392,34 @@ describe("resultCopy", () => {
       // Every outcome dead-ends nowhere — there is always a "Next:" hint.
       expect(copy.nextHint).toMatch(/Next:/);
     }
+  });
+
+  it("failed copy carries a per-cause recovery step (§3.10)", () => {
+    const badUrl = resultCopy({
+      kind: "failed",
+      operation: "add",
+      cause: "bad-url",
+      detail: "Invalid GitHub repo URL: x",
+    });
+    expect(badUrl.nextHint).toMatch(/check the URL/i);
+
+    const network = resultCopy({
+      kind: "failed",
+      operation: "bootstrap",
+      cause: "network",
+      detail: "ENOTFOUND",
+    });
+    expect(network.summary).toMatch(/reach GitHub/i);
+    expect(network.nextHint).toMatch(/connection/i);
+
+    const auth = resultCopy({
+      kind: "failed",
+      operation: "add",
+      cause: "auth",
+      detail: "HTTP 403",
+    });
+    expect(auth.nextHint).toMatch(/GitHub PAT/);
+    expect(auth.nextHint).toMatch(/Contents: Read/);
   });
 
   it("bootstrapped copy embeds the folder + sha", () => {

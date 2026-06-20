@@ -1,5 +1,6 @@
 import {
   BootstrapAssetSpaceCommands,
+  classifyBootstrapFailure,
   type BootstrapAssetSpaceCommandsDeps,
   type BootstrapResultInfo,
   type IAssetSpacePuller,
@@ -349,24 +350,32 @@ describe("BootstrapAssetSpaceCommands — durable result panel (RFC 0002 §3.3 /
     expect(h.results).toEqual([{ kind: "fetched", fetched: 2, total: 2 }]);
   });
 
-  it("hard failure / cancel / invalid URL → NO durable result (toast only)", async () => {
-    // Bootstrap pull failure.
+  it("hard failure / invalid URL → durable `failed` panel (RFC 0002 §3.10); cancel → no result", async () => {
+    // Bootstrap pull failure → durable failed panel (was toast-only before §3.10).
     const fail = makeHarness({ isGitVault: true });
     fail.puller.pullAssetSpace.mockRejectedValueOnce(new Error("network down"));
     await fail.cmds.invokeBootstrap();
-    expect(fail.results).toEqual([]);
+    expect(fail.results).toEqual([
+      expect.objectContaining({ kind: "failed", operation: "bootstrap" }),
+    ]);
 
-    // User cancelled the URL prompt.
+    // User cancelled the URL prompt — a cancel is NOT a failure → no panel.
     const cancel = makeHarness({ bootstrapUrls: null });
     await cancel.cmds.invokeBootstrap();
     expect(cancel.results).toEqual([]);
 
-    // Invalid URL.
+    // Invalid URL → durable failed panel (bad-url).
     const invalid = makeHarness({
       bootstrapUrls: { exoUrl: "http://evil.example/x" },
     });
     await invalid.cmds.invokeBootstrap();
-    expect(invalid.results).toEqual([]);
+    expect(invalid.results).toEqual([
+      expect.objectContaining({
+        kind: "failed",
+        operation: "bootstrap",
+        cause: "bad-url",
+      }),
+    ]);
   });
 
   it("showResult absent → command still completes (best-effort, optional dep)", async () => {
@@ -809,5 +818,109 @@ describe("BootstrapAssetSpaceCommands — mobile restMount strategy (#3535)", ()
     const state = await h.cmds.detectVaultState();
     expect(state).toBe("bootstrapped");
     expect(h.restMount.readGitmodulesEntries).toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Durable FAILURE panel (RFC 0002 §3.10 / P15b)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("classifyBootstrapFailure", () => {
+  it.each([
+    ["HTTP 401 → auth", "GitHub request POST … → HTTP 401: Bad credentials", "auth"],
+    ["HTTP 403 (no rate-limit) → auth", "… → HTTP 403: Resource not accessible by personal access token", "auth"],
+    ["HTTP 404 (private + under-scoped) → auth", "… → HTTP 404: Not Found", "auth"],
+    ["HTTP 403 rate-limit → NOT auth → unknown", "… → HTTP 403: API rate limit exceeded", "unknown"],
+    ["invalid URL → bad-url", "Invalid GitHub repo URL: foo (extra path segments)", "bad-url"],
+    ["could not derive folder → bad-url", "could not derive folder name", "bad-url"],
+    ["ENOTFOUND → network", "request to https://github.com failed, reason: getaddrinfo ENOTFOUND", "network"],
+    ["timeout → network", "GitHub request GET … timed out after 120000ms", "network"],
+    ["other → unknown", "something unexpected happened", "unknown"],
+  ])("%s", (_label, message, expected) => {
+    expect(classifyBootstrapFailure(new Error(message))).toBe(expected);
+  });
+});
+
+describe("BootstrapAssetSpaceCommands — durable failure panel", () => {
+  function failures(results: BootstrapResultInfo[]) {
+    return results.filter((r) => r.kind === "failed");
+  }
+
+  it("bootstrap invalid URL → durable failed panel (bad-url) + no pull", async () => {
+    const h = makeHarness({
+      isGitVault: true,
+      bootstrapUrls: { exoUrl: "not-a-valid-url" },
+    });
+    await h.cmds.invokeBootstrap();
+    expect(h.puller.pullAssetSpace).not.toHaveBeenCalled();
+    expect(failures(h.results)).toEqual([
+      expect.objectContaining({
+        kind: "failed",
+        operation: "bootstrap",
+        cause: "bad-url",
+      }),
+    ]);
+  });
+
+  it("bootstrap pull 403 → durable failed panel (auth)", async () => {
+    const h = makeHarness({ isGitVault: true });
+    h.puller.pullAssetSpace.mockRejectedValueOnce(
+      new Error("GitHub request GET … → HTTP 403: not accessible by token"),
+    );
+    await h.cmds.invokeBootstrap();
+    expect(failures(h.results)).toEqual([
+      expect.objectContaining({
+        kind: "failed",
+        operation: "bootstrap",
+        cause: "auth",
+      }),
+    ]);
+    // The toast still fires — durable panel is additive.
+    expect(h.notices.some((n) => /Bootstrap failed/.test(n))).toBe(true);
+  });
+
+  it("bootstrap pull network error → durable failed panel (network)", async () => {
+    const h = makeHarness({ isGitVault: true });
+    h.puller.pullAssetSpace.mockRejectedValueOnce(
+      new Error("request failed: getaddrinfo ENOTFOUND github.com"),
+    );
+    await h.cmds.invokeBootstrap();
+    expect(failures(h.results)).toEqual([
+      expect.objectContaining({ kind: "failed", cause: "network" }),
+    ]);
+  });
+
+  it("add invalid URL → durable failed panel (bad-url, operation=add)", async () => {
+    const h = makeHarness({ addUrl: { url: "nope" } });
+    await h.cmds.invokeAddAssetSpace();
+    expect(failures(h.results)).toEqual([
+      expect.objectContaining({
+        kind: "failed",
+        operation: "add",
+        cause: "bad-url",
+      }),
+    ]);
+  });
+
+  it("add pull 404 → durable failed panel (auth, operation=add)", async () => {
+    const h = makeHarness({ isGitVault: true });
+    h.puller.pullAssetSpace.mockRejectedValueOnce(
+      new Error("GitHub request GET … → HTTP 404: Not Found"),
+    );
+    await h.cmds.invokeAddAssetSpace();
+    expect(failures(h.results)).toEqual([
+      expect.objectContaining({
+        kind: "failed",
+        operation: "add",
+        cause: "auth",
+      }),
+    ]);
+  });
+
+  it("successful bootstrap emits NO failed panel (no false positive)", async () => {
+    const h = makeHarness({ isGitVault: true });
+    await h.cmds.invokeBootstrap();
+    expect(failures(h.results)).toEqual([]);
+    expect(h.results.some((r) => r.kind === "bootstrapped")).toBe(true);
   });
 });

@@ -29,9 +29,12 @@
  * happens в B.11 plugin entry-point integration.
  */
 
+import { isAuthError } from "exocortex";
+
 import type { ProfileApplyManager } from "./ProfileApplyManager";
 import {
   ApplyAbortedByUser,
+  NoPreviousProfileError,
   TsFloorViolationError,
   UncommittedChangesAbortError,
 } from "./ProfileApplyManager";
@@ -127,6 +130,12 @@ export interface ProfileCommandsDeps {
    * state» (RFC 0a0791c1 Phase 5 T2 — single slot).
    */
   getActiveProfileUid: () => string | null;
+  /**
+   * Returns the undo target — the profile active immediately before the most
+   * recent apply (RFC 0002 §3.10), or null. Used by «Undo last profile apply»
+   * for the pre-flight availability check + the "Reverting to <label>…" notice.
+   */
+  getPreviousProfileUid: () => string | null;
   /** Show a user-facing Notice. */
   notify: (message: string) => void;
 }
@@ -139,6 +148,7 @@ export class ProfileCommands {
   private readonly fuzzyPick: ProfileCommandsDeps["fuzzyPick"];
   private readonly getActiveFilePath: () => string | null;
   private readonly getActiveProfileUid: () => string | null;
+  private readonly getPreviousProfileUid: () => string | null;
   private readonly notify: (message: string) => void;
 
   constructor(deps: ProfileCommandsDeps) {
@@ -149,6 +159,7 @@ export class ProfileCommands {
     this.fuzzyPick = deps.fuzzyPick;
     this.getActiveFilePath = deps.getActiveFilePath;
     this.getActiveProfileUid = deps.getActiveProfileUid;
+    this.getPreviousProfileUid = deps.getPreviousProfileUid;
     this.notify = deps.notify;
   }
 
@@ -215,6 +226,62 @@ export class ProfileCommands {
         return;
       }
       this.notify(`Apply profile failed: ${this.safeMessage(e)}`);
+    }
+  }
+
+  /**
+   * Command — `Exocortex: Undo last profile apply` (RFC 0002 §3.10, resolves
+   * P15). Reverts to the profile active immediately before the most recent
+   * apply, so a wrong profile choice is one click to undo without re-finding it
+   * in the picker.
+   *
+   * Delegates to {@link ProfileApplyManager.undoLastApply}, which re-applies the
+   * previous profile through the SAME confirm gate + uncommitted-changes guard +
+   * mount-before-unmount path as any apply (zero data loss — it never destroys
+   * un-pushed work). When nothing is recorded yet, surfaces a friendly notice
+   * (the command is also hidden by `checkCallback` until an undo target exists,
+   * so this is a defensive fallback).
+   *
+   * Error mapping mirrors {@link invokeApplyProfile} — cancel / TS-floor /
+   * uncommitted aborts get distinct notices.
+   */
+  async invokeUndoLastApply(): Promise<void> {
+    const previous = this.getPreviousProfileUid();
+    if (previous === null) {
+      this.notify(
+        "Nothing to undo — no previous profile recorded yet. Apply a different profile first; this then reverts to the one you had.",
+      );
+      return;
+    }
+
+    const label = await this.resolveLabel(previous, this.profileLister);
+    this.notify(`Reverting to ${label}…`);
+    try {
+      await this.switchMgr.undoLastApply();
+    } catch (e) {
+      if (e instanceof NoPreviousProfileError) {
+        // Surface the specific reason (e.g. the previous profile was deleted),
+        // not a generic "no previous profile recorded".
+        this.notify(`Nothing to undo — ${e.message}.`);
+        return;
+      }
+      if (e instanceof ApplyAbortedByUser) {
+        this.notify("Undo cancelled.");
+        return;
+      }
+      if (e instanceof TsFloorViolationError) {
+        this.notify(`Undo refused — ${e.message}`);
+        return;
+      }
+      if (e instanceof UncommittedChangesAbortError) {
+        const total = e.affectedFiles.reduce((s, a) => s + a.files.length, 0);
+        this.notify(
+          `Undo aborted — ${total} uncommitted file(s) in ${e.affectedFiles.length} AssetSpace(s) reverting would remove. ` +
+            `Commit (or stash) the vault first, then undo again. See docs/profile.md.`,
+        );
+        return;
+      }
+      this.notify(`Undo failed: ${this.safeMessage(e)}`);
     }
   }
 
@@ -288,8 +355,30 @@ export class ProfileCommands {
       }
       this.notify(`Pushed \`${folderName}\` → ${sha.slice(0, 7)}`);
     } catch (e) {
-      this.notify(`Push failed: ${this.safeMessage(e)}`);
+      this.notify(this.mapPushError(e, folderName));
     }
+  }
+
+  /**
+   * RFC 0002 §3.10 (resolves P15c) — explain a PAT push that 403/401s even
+   * though «Test connection» passed. «Test connection» only proves the token can
+   * READ (list repos / metadata); a push writes repository Contents, so a token
+   * without **Contents: Read and write** — or an expired one — passes the test
+   * but 403s on push. Surface that gap + the recovery step instead of the opaque
+   * raw HTTP error. Non-auth failures (network, 422 non-fast-forward, …) keep the
+   * generic message.
+   */
+  private mapPushError(e: unknown, folderName: string): string {
+    if (isAuthError(e)) {
+      return (
+        `Push failed — GitHub rejected the token (403/401) for \`${folderName}\`. ` +
+        `«Test connection» only checks READ access; pushing needs a fine-grained token with ` +
+        `Contents: Read and write on this repo, and it must not be expired. ` +
+        `Open Settings → GitHub PAT, create/re-scope the token (Contents: Read and write), ` +
+        `save it, then push again. (${this.safeMessage(e)})`
+      );
+    }
+    return `Push failed: ${this.safeMessage(e)}`;
   }
 
   // === Helpers ===
