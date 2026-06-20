@@ -34,6 +34,7 @@ docs kept at root) is in **[TAXONOMY.md](TAXONOMY.md)**.
 - [Troubleshooting.md](how-to/Troubleshooting.md) — **user** troubleshooting (common issues & fixes)
 - [profile.md](explanation/profile.md) — Profile pitch + Apply-profile (mount-state) usage
 - [exosync.md](how-to/exosync.md) — ExoSync usage (`Exocortex: Sync`, structured merge, conflict quarantine)
+- [templating.md](how-to/templating.md) — homoiconic templating: insert tokens, insert template blocks, `body_template` grounding
 - [../packages/obsidian-plugin/docs/release-checklist-mobile.md](../packages/obsidian-plugin/docs/release-checklist-mobile.md) — mobile release checklist
 
 ## Reference
@@ -41,6 +42,7 @@ docs kept at root) is in **[TAXONOMY.md](TAXONOMY.md)**.
 - [PROPERTY_SCHEMA.md](reference/PROPERTY_SCHEMA.md) — full frontmatter property vocabulary
 - [Core-API.md](reference/Core-API.md) — `exocortex` core programmatic API
 - [SHACL_LITE_MAPPING.md](reference/SHACL_LITE_MAPPING.md) — SHACL-lite shape mapping
+- [templating.md](reference/templating.md) — templating commands, `exotemplate__Template` class, `body_template` grounding, substitution tokens
 - [ExoRDF-Mapping.md](explanation/ExoRDF-Mapping.md) — vault ↔ RDF triple mapping
 - CLI reference — [CLI_API_REFERENCE.md](../packages/cli/docs/CLI_API_REFERENCE.md), [ONTOLOGY_REFERENCE.md](../packages/cli/docs/ONTOLOGY_REFERENCE.md), [SPARQL_GUIDE.md](../packages/cli/docs/SPARQL_GUIDE.md), [SPARQL_COOKBOOK.md](../packages/cli/docs/SPARQL_COOKBOOK.md), [VERSIONING.md](../packages/cli/VERSIONING.md)
 - Plugin reference — [EXO_LAYOUT.md](../packages/obsidian-plugin/docs/EXO_LAYOUT.md) — layout engine
@@ -51,6 +53,7 @@ docs kept at root) is in **[TAXONOMY.md](TAXONOMY.md)**.
 - [assetspace-sdk-topology.md](explanation/assetspace-sdk-topology.md) — exo-as-SDK: what an AssetSpace is, why there are many `exoas-*` repos, what a Profile is
 - [CROSS_RUNTIME_PARITY.md](explanation/CROSS_RUNTIME_PARITY.md) — validator instance of the UI/CLI Parity Invariant
 - [settings-homoiconization.md](explanation/settings-homoiconization.md) — plugin settings as `exo__Setting` vault assets
+- [templating.md](explanation/templating.md) — why homoiconic templating (templates as assets, one token vocabulary; replaces Templates/Templater)
 - [exosync-parallel-run.md](explanation/exosync-parallel-run.md) — ExoSync parallel-run mode + M1/M2 parity harness
 - `diagrams/` — Mermaid architecture diagrams (`architecture-overview.mmd`, `asset-creation-flow.mmd`, `command-execution-flow.mmd`, `layout-rendering.mmd`, `property-inheritance.mmd`, `service-dependencies.mmd`, `status-workflow.mmd`, `future-architecture.mmd`)
 
