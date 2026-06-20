@@ -65,11 +65,11 @@ Best for: Visual knowledge management, daily planning, interactive exploration.
 **Install Exocortex via BRAT:**
 
 1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) plugin from Obsidian Community Plugins
-2. Open BRAT settings → **Add Beta Plugin**
-3. Enter repository: `kitelev/exocortex`
-4. Click **Add Plugin** and enable Exocortex in Community plugins
+2. Open the command palette (**Cmd/Ctrl + P**) and run **"BRAT: Plugins: Add a beta plugin for testing"** — in current BRAT (2.0.8+) adding a plugin is a command-palette action, **not** a settings-tab button.
+3. Enter repository `kitelev/exocortex`, then **select a release from the "Select a version…" dropdown** (required — the dialog ignores **Add Plugin** until a version is picked).
+4. Click **Add Plugin** and confirm Exocortex is enabled in Community plugins.
 
-BRAT will automatically keep the plugin updated with new releases.
+BRAT will automatically keep the plugin updated with new releases. For the full walkthrough (Restricted Mode, Windows `obsidian://` fallback, version-dropdown gotcha) see the **[Getting Started Guide](./docs/tutorials/Getting-Started.md#installation)**.
 
 > **Next:** Follow the **[Getting Started Guide](./docs/tutorials/Getting-Started.md)** to bootstrap your vault and create your first Area, Project, and Task.
 >
@@ -207,7 +207,7 @@ Features: wikilink syntax, loading state, error handling, auto-refresh, interact
 Install community ontology packages (AssetSpaces) to extend your knowledge graph:
 
 - **CLI:** `npx @kitelev/exocortex-cli assetspace-add --vault ~/vault --url https://github.com/kitelev/exoas-pmbok-ontology` adds a single AssetSpace from a public GitHub URL; `bootstrap` sets up a fresh vault with the SDK floor.
-- **Plugin:** the **Add assetspace by URL** and **Bootstrap vault** palette commands do the same from Obsidian.
+- **Plugin:** the **Add a knowledge pack** and **Set up the engine** palette commands do the same from Obsidian. (A first-run **Setup (getting started)** wizard chains them with the recommended URLs pre-filled — see the [Getting Started Guide](./docs/tutorials/Getting-Started.md).)
 
 ### Profile — Vault-Declared Context
 
@@ -227,19 +227,22 @@ Statically registered plugin commands (all prefixed `Exocortex:` in the palette)
 
 | Command                               | Description                                                                                                                                                         |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Setup (getting started)**           | Open the guided first-run setup wizard (token → engine → registry → profiles → apply); re-openable any time                                                         |
 | **Create asset**                      | Create a new asset via an ontology-driven form                                                                                                                      |
-| **edit properties**                   | Edit the active asset's frontmatter properties                                                                                                                      |
+| **Edit properties**                   | Edit the active asset's frontmatter properties                                                                                                                      |
 | **Reload layout**                     | Re-render the layout on the active asset                                                                                                                            |
 | **Toggle layout visibility**          | Show or hide layouts in Reading Mode                                                                                                                                |
 | **Toggle archived assets visibility** | Show or hide archived assets in layout tables                                                                                                                       |
-| **open sparql query builder**         | Open the interactive SPARQL query builder                                                                                                                           |
 | **Apply profile**                     | Apply a vault-declared profile — mount-state strict replace of the AssetSpace set (available when filesystem materialization is wired: desktop git, or mobile REST) |
+| **Undo last profile apply**           | Revert the most recent profile apply, restoring the previous mount state                                                                                            |
 | **Sync**                              | ExoSync: pull → merge → push the materialized AssetSpace set over the GitHub REST API                                                                               |
-| **Bootstrap vault**                   | Fetch tracked AssetSpaces into a vault (desktop)                                                                                                                    |
-| **Add assetspace by URL**             | Add an AssetSpace from a public GitHub repository (desktop)                                                                                                         |
-| **Push current assetspace**           | Push the AssetSpace containing the active file to its remote                                                                                                        |
-| **Show current state**                | Report the last-applied profile                                                                                                                                     |
-| **Clear switch cache (wipe-all)**     | Clear the profile-switch tarball cache                                                                                                                              |
+| **Check sync status**                 | Report sync divergence for the materialized AssetSpaces without writing (read-only parity check)                                                                    |
+| **Set up the engine**                 | Bootstrap a vault with the foundational exo AssetSpace floor                                                                                                        |
+| **Add a knowledge pack**              | Add an AssetSpace from a public GitHub repository                                                                                                                   |
+| **Push current knowledge pack**       | Push the AssetSpace containing the active file to its remote                                                                                                        |
+| **Show active profile**               | Report the last-applied profile                                                                                                                                     |
+| **Remove knowledge pack (advanced)**  | Unmount an AssetSpace from the vault                                                                                                                                |
+| **Reset profile cache (advanced)**    | Clear the profile-switch tarball cache                                                                                                                              |
 
 In addition, vault-defined `exocmd__Command` assets are registered **dynamically** as palette commands (the homoiconic command layer) — their set depends on the commands declared in your vault, with visibility gated by their preconditions.
 
