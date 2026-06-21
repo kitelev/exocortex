@@ -31,6 +31,7 @@ function makeCommands(): SyncCommands {
       specs: [],
       asUidByRepoKey: new Map(),
       warnings: [],
+      mountedNotDeclared: [],
     }),
     buildEngine: async () => {
       throw new Error("unreachable in registration tests");
