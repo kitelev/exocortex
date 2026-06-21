@@ -32,6 +32,7 @@
 import {
   getResolver,
   installDefaultResolvers,
+  isResolverModifierAware,
   type ResolverContext,
 } from "./SubstitutionResolverRegistry";
 
@@ -42,12 +43,38 @@ import {
 installDefaultResolvers();
 
 /**
- * Token marker: `$` followed by an identifier (letter, then letters/digits/_).
+ * Token marker: `$` followed by an identifier (letter, then letters/digits/_),
+ * then an OPTIONAL date modifier suffix (Веха 5 — Templater `tp.date.*`):
+ *   - offset  `[+-]\d+[dwMy]`         e.g. `+7d`, `-3d`, `+2w`, `+1M`, `+1y`
+ *   - format  `:` then a format charset (`HH:mm:ss`, `DD.MM.YYYY`, `YYYY/MM/DD`)
+ * Examples captured as (name, suffix):
+ *   `$today`            → ("today", "")            — bare, suffix empty
+ *   `$date+7d`           → ("date", "+7d")
+ *   `$date:DD.MM.YYYY`   → ("date", ":DD.MM.YYYY")
+ *   `$now+1M:YYYY-MM`    → ("now", "+1M:YYYY-MM")
+ *   `$today.md`          → ("today", "")  + literal ".md" (no leading `:`)
+ *   `$today-end`         → ("today", "")  + literal "-end" (no digit after `-`)
  * The identifier is greedy so `$todayX` matches the whole name `todayX` (an
- * unknown token → left literal), never the prefix `today`. A token name stops
- * at the first non-identifier char, so `$today.md` → `<value>.md`.
+ * unknown token → left literal), never the prefix `today`. The suffix only
+ * matches a date-shaped offset and/or a `:`-led format, so non-date tokens with
+ * trailing punctuation (`$today.md`, `$today-end`) capture an empty suffix and
+ * behave exactly as before this feature.
+ *
+ * Format charset stops at whitespace/comma/etc, so a sentence like
+ * `Due $date:YYYY-MM-DD, soon` keeps `, soon` outside the token. (A trailing `.`
+ * IS in the charset — `Due $date:YYYY-MM-DD.` renders `…2026-06-21.` with the
+ * period reproduced as a literal format char, visually identical.)
+ *
+ * LIMITATION — a format containing a SPACE or COMMA is truncated at that char in
+ * BODY text: `$now:h:mm A` resolves only `:h:mm` → `12:30` and the ` A` survives
+ * as prose, `$date:dddd, MMMM Do YYYY` resolves only `:dddd`. Multi-word formats
+ * (`h:mm A`, `dddd, MMMM Do YYYY`) are reachable only via a vault
+ * `exocmd__TokenInvocation_parameter` (the resolver itself handles spaces), NOT
+ * via an inline body suffix. For body use, compose contiguous formats (`HH:mm`,
+ * `YYYY-MM-DDTHH:mm:ss`) or multiple tokens. (Descoped: bracket-escaping.)
  */
-const TOKEN_RE = /\$([A-Za-z][A-Za-z0-9_]*)/g;
+const TOKEN_RE =
+  /\$([A-Za-z][A-Za-z0-9_]*)((?:[+-]\d+[dwMy])?(?::[A-Za-z0-9:./-]+)?)/g;
 
 /**
  * Replace every KNOWN scalar `$token` in `rawBody` with its resolver value.
@@ -62,16 +89,24 @@ export function resolveTemplateBody(
   rawBody: string,
   ctx: ResolverContext = {},
 ): string {
-  return rawBody.replace(TOKEN_RE, (literal, name: string) => {
+  return rawBody.replace(TOKEN_RE, (literal, name: string, suffix: string) => {
     const resolver = getResolver(name);
     if (resolver === undefined) return literal;
-    const value = resolver(ctx);
+    // Modifier-aware date resolvers (`date`/`now`/`tomorrow`/`yesterday`)
+    // consume the suffix; all others ignore the second arg.
+    const value = resolver(ctx, suffix.length > 0 ? suffix : undefined);
     // Only KNOWN, NON-EMPTY scalar strings are spliced into freeform body text.
     // `string[]` (list-typed), `null`, and `""` (context-missing resolvers such
     // as `target`/`targetFolder`/`userInputLabel` return empty when their
-    // context is absent) all leave the literal marker intact — a visible
+    // context is absent) all leave the FULL literal marker intact — a visible
     // unresolved token the user can fix beats a silently-deleted one.
-    return typeof value === "string" && value.length > 0 ? value : literal;
+    if (typeof value !== "string" || value.length === 0) return literal;
+    // For a modifier-aware resolver the suffix is already baked into `value`.
+    // For a legacy (modifier-unaware) resolver the suffix was NOT part of this
+    // token's semantics, so reproduce it verbatim — `$today+7d` → `<date>+7d`,
+    // `$nowDate:foo` → `<date>:foo` — identical to pre-feature behaviour where
+    // the old regex stopped at the first non-identifier char.
+    return isResolverModifierAware(name) ? value : value + suffix;
   });
 }
 

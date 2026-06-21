@@ -48,16 +48,46 @@ export type ResolverFn = (
 const _resolvers = new Map<string, ResolverFn>();
 
 /**
+ * Ids of resolvers that consume the optional `parameter` as an inline
+ * MODIFIER (date format / offset suffix — Веха 5 / Templater `tp.date.*`
+ * parity). The TemplateBodyResolver captures `$date+7d:YYYY-MM-DD`-style
+ * suffixes and forwards them as `parameter` to these resolvers, which bake the
+ * value in. For resolvers NOT in this set the body resolver reproduces the
+ * suffix verbatim, so a legacy token like `$today+7d` stays `<date>+7d` exactly
+ * as before this feature (zero regression). See {@link isResolverModifierAware}.
+ */
+const _modifierAware = new Set<string>();
+
+/**
  * Register a resolver. Idempotent overwrite — last registration wins. Tests
  * may inject deterministic resolvers (e.g. fixed UUID, fixed timestamp);
  * production wiring at package init time installs the live implementations.
+ *
+ * @param modifierAware when true, marks this resolver as consuming the inline
+ *        `parameter` modifier (date format/offset, Веха 5). Defaults to false
+ *        so every existing call site keeps legacy "ignore the suffix" behaviour.
  */
-export function registerResolver(id: string, fn: ResolverFn): void {
+export function registerResolver(
+  id: string,
+  fn: ResolverFn,
+  modifierAware = false,
+): void {
   _resolvers.set(id, fn);
+  if (modifierAware) _modifierAware.add(id);
 }
 
 export function getResolver(id: string): ResolverFn | undefined {
   return _resolvers.get(id);
+}
+
+/**
+ * True when the resolver `id` consumes the inline `parameter` modifier (date
+ * format/offset suffix). The body resolver uses this to decide whether the
+ * captured `$token<suffix>` suffix was already baked into the value (aware →
+ * yes) or must be reproduced verbatim (not aware → legacy behaviour).
+ */
+export function isResolverModifierAware(id: string): boolean {
+  return _modifierAware.has(id);
 }
 
 export function getRegisteredResolverIds(): string[] {
@@ -66,6 +96,7 @@ export function getRegisteredResolverIds(): string[] {
 
 export function clearResolvers(): void {
   _resolvers.clear();
+  _modifierAware.clear();
 }
 
 // -- Built-in resolvers (RFC 727572d2 Phase A2 vocabulary) --
@@ -74,18 +105,257 @@ function pad2(n: number): string {
   return n < 10 ? `0${n}` : String(n);
 }
 
+// -- Date format + offset tokens (Веха 5 — Templater `tp.date.*` parity) --
+//
+// Templater's `tp.date.now(format, offset)` / `tp.date.tomorrow(format)` /
+// `tp.date.yesterday(format)` produce a formatted, optionally day-shifted date.
+// The homoiconic equivalent is an inline `$token<offset><:format>` suffix on a
+// date token (`$date`, `$now`, `$tomorrow`, `$yesterday`), e.g.
+//   $date                  → 2026-06-21          (default YYYY-MM-DD)
+//   $date:DD.MM.YYYY        → 21.06.2026
+//   $date+7d                → 2026-06-28          (+7 days, default format)
+//   $date+1M:YYYY-MM         → 2026-07
+//   $now:HH:mm:ss            → 14:30:05
+//   $tomorrow / $yesterday   → ±1 day convenience tokens
+// The TemplateBodyResolver parses the suffix and forwards it as `parameter`;
+// these resolvers own offset+format parsing (self-contained semantics). All
+// arithmetic/formatting uses plain `Date` + hardcoded English names — NO Node
+// `fs`, NO `Intl` — so it behaves identically on desktop and mobile (Desktop↔
+// Mobile command parity invariant).
+
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
+const MONTH_NAMES_SHORT = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+const DAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const;
+const DAY_NAMES_SHORT = [
+  "Sun",
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
+] as const;
+
+/** English ordinal day-of-month (1 → "1st", 22 → "22nd", 11 → "11th"). */
+function ordinalDay(n: number): string {
+  const suffixes = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${suffixes[(v - 20) % 10] || suffixes[v] || suffixes[0]}`;
+}
+
+/**
+ * moment-style format tokens, longest-first so the alternation never mis-splits
+ * (`YYYY` before `YY`, `MMMM` before `MM`, `dddd` before `ddd`, `DD`/`Do` before
+ * `D`). `String.replace` does not re-scan substituted output, so a month name
+ * like "June" is never re-matched. Unrecognised characters (`-`, `:`, `/`, `.`,
+ * `T`, spaces, …) pass through literally — e.g. ISO `YYYY-MM-DDTHH:mm:ss` keeps
+ * its `-`, `T`, `:` separators.
+ */
+const DATE_FORMAT_RE =
+  /YYYY|YY|MMMM|MMM|MM|M|Do|DD|D|dddd|ddd|HH|H|hh|h|mm|m|ss|s|A|a/g;
+
+/** Format a Date with a moment-style format string (local time, English names). */
+function formatDate(d: Date, format: string): string {
+  const h12 = ((d.getHours() + 11) % 12) + 1;
+  return format.replace(DATE_FORMAT_RE, (tok) => {
+    switch (tok) {
+      case "YYYY":
+        return String(d.getFullYear());
+      case "YY":
+        return pad2(d.getFullYear() % 100);
+      case "MMMM":
+        return MONTH_NAMES[d.getMonth()];
+      case "MMM":
+        return MONTH_NAMES_SHORT[d.getMonth()];
+      case "MM":
+        return pad2(d.getMonth() + 1);
+      case "M":
+        return String(d.getMonth() + 1);
+      case "Do":
+        return ordinalDay(d.getDate());
+      case "DD":
+        return pad2(d.getDate());
+      case "D":
+        return String(d.getDate());
+      case "dddd":
+        return DAY_NAMES[d.getDay()];
+      case "ddd":
+        return DAY_NAMES_SHORT[d.getDay()];
+      case "HH":
+        return pad2(d.getHours());
+      case "H":
+        return String(d.getHours());
+      case "hh":
+        return pad2(h12);
+      case "h":
+        return String(h12);
+      case "mm":
+        return pad2(d.getMinutes());
+      case "m":
+        return String(d.getMinutes());
+      case "ss":
+        return pad2(d.getSeconds());
+      case "s":
+        return String(d.getSeconds());
+      case "A":
+        return d.getHours() < 12 ? "AM" : "PM";
+      case "a":
+        return d.getHours() < 12 ? "am" : "pm";
+      default:
+        return tok;
+    }
+  });
+}
+
+/**
+ * Add `n` months/years to `d` with moment-style day CLAMPING (matches
+ * Templater's `tp.date.*`): if the source day-of-month does not exist in the
+ * target month it is clamped to that month's last day rather than rolling over.
+ *   Jan 31 +1M  → Feb 28 (or 29)   NOT Mar 3 (raw `Date.setMonth` roll-over)
+ *   Feb 29 +1y  → Feb 28           NOT Mar 1
+ * Implemented by parking the day at 1 before the shift (so `setMonth` never
+ * rolls), then clamping to `min(originalDay, lastDayOfTargetMonth)`.
+ */
+function addMonthsClamped(d: Date, n: number, unit: "M" | "y"): Date {
+  const day = d.getDate();
+  const r = new Date(d.getTime());
+  r.setDate(1);
+  if (unit === "M") r.setMonth(r.getMonth() + n);
+  else r.setFullYear(r.getFullYear() + n);
+  // Last day of the (now day-1) target month — day 0 of the next month.
+  const lastDay = new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate();
+  r.setDate(Math.min(day, lastDay));
+  return r;
+}
+
+/**
+ * Shift `d` by a signed offset string `[+-]\d+[dwMy]?` (`d`ays default, `w`eeks,
+ * `M`onths, `y`ears — moment convention: `M`=month, lowercase reserved). Month/
+ * year shifts CLAMP to the last valid day (moment/Templater parity, see
+ * {@link addMonthsClamped}). A malformed offset — or one that overflows the
+ * representable Date range — leaves the date unchanged (lenient: a freeform body
+ * must never throw or emit `NaN`). Returns a NEW Date (does not mutate input).
+ */
+function applyDateOffset(d: Date, offset: string | null): Date {
+  if (!offset) return d;
+  const m = offset.match(/^([+-])(\d+)([dwMy])?$/);
+  if (!m) return d;
+  const n = (m[1] === "-" ? -1 : 1) * parseInt(m[2], 10);
+  const unit = m[3] ?? "d";
+  let r = new Date(d.getTime());
+  switch (unit) {
+    case "d":
+      r.setDate(r.getDate() + n);
+      break;
+    case "w":
+      r.setDate(r.getDate() + n * 7);
+      break;
+    case "M":
+      r = addMonthsClamped(r, n, "M");
+      break;
+    case "y":
+      r = addMonthsClamped(r, n, "y");
+      break;
+  }
+  // Overflow (e.g. an absurd day count) → Invalid Date. Stay lenient: fall back
+  // to the unshifted date rather than formatting `NaN-NaN-NaN`.
+  return isNaN(r.getTime()) ? d : r;
+}
+
+/**
+ * Split a date modifier `parameter` into its offset and format parts. The FIRST
+ * `:` separates offset from format; everything after it is the format (which may
+ * itself contain `:` for time, e.g. `HH:mm:ss`). Either part may be absent:
+ *   "+7d:YYYY-MM-DD" → { offset: "+7d", format: "YYYY-MM-DD" }
+ *   ":HH:mm"          → { offset: null,  format: "HH:mm" }
+ *   "+7d"             → { offset: "+7d", format: null }
+ *   undefined/""      → { offset: null,  format: null }
+ */
+function parseDateModifier(parameter?: string): {
+  offset: string | null;
+  format: string | null;
+} {
+  if (!parameter) return { offset: null, format: null };
+  const colon = parameter.indexOf(":");
+  if (colon < 0) return { offset: parameter || null, format: null };
+  const offsetPart = parameter.slice(0, colon);
+  const format = parameter.slice(colon + 1);
+  return { offset: offsetPart || null, format: format || null };
+}
+
+/**
+ * Build a date resolver with a base day shift and a default format. The inline
+ * modifier (offset + format) is applied ON TOP of the base shift, so
+ * `$tomorrow+7d` is base +1 then +7 = +8 days. Ignores `ctx` (date tokens are
+ * context-free).
+ */
+function makeDateResolver(
+  baseDayShift: number,
+  defaultFormat: string,
+): ResolverFn {
+  return (_ctx, parameter) => {
+    const { offset, format } = parseDateModifier(parameter);
+    let d = new Date();
+    if (baseDayShift !== 0) d.setDate(d.getDate() + baseDayShift);
+    d = applyDateOffset(d, offset);
+    return formatDate(d, format ?? defaultFormat);
+  };
+}
+
 /**
  * Install the default Phase A2 resolver set. Idempotent — safe to call from
  * multiple entry points (CLI bootstrap, plugin bootstrap, test setup). Tests
  * may call {@link clearResolvers} first to start from empty state.
  */
 export function installDefaultResolvers(): void {
-  // -- Existing tokens (legacy parity) --
+  // -- Existing tokens (legacy parity) — modifier-UNAWARE, untouched --
   registerResolver("today", () => new Date().toISOString().slice(0, 10));
-  registerResolver(
-    "todayStart",
-    () => new Date(new Date().setHours(0, 0, 0, 0)).toISOString(),
+  registerResolver("todayStart", () =>
+    new Date(new Date().setHours(0, 0, 0, 0)).toISOString(),
   );
+
+  // -- Date format + offset tokens (Веха 5 — Templater `tp.date.*` parity) --
+  // modifier-AWARE: the inline `$token<offset><:format>` suffix is consumed and
+  // baked into the value. `now` defaults to a datetime shape (tp.date.now);
+  // `date`/`tomorrow`/`yesterday` default to a calendar date.
+  registerResolver("date", makeDateResolver(0, "YYYY-MM-DD"), true);
+  registerResolver("now", makeDateResolver(0, "YYYY-MM-DDTHH:mm:ss"), true);
+  registerResolver("tomorrow", makeDateResolver(1, "YYYY-MM-DD"), true);
+  registerResolver("yesterday", makeDateResolver(-1, "YYYY-MM-DD"), true);
   // `target` and `targetFolder` are context-dependent — executor resolves them
   // from marker form; they're registered here too for symmetry but their
   // handlers fall back to empty when context missing.
