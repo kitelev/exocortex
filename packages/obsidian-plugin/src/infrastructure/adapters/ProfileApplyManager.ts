@@ -1,5 +1,5 @@
 import type { App } from "obsidian";
-import type { ApplyPlan, IConfirmGate, MountProgressPhase } from "exocortex";
+import type { ApplyPlan, IConfirmGate, MountProgressPhase } from "@kitelev/exocortex-core";
 import {
   derivePath,
   deriveLegacyFlatPath,
@@ -9,7 +9,7 @@ import {
   transitiveDependsOnClosure,
   TsFloorViolationError,
   isAssetSpaceFrontmatter,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 import { PluginLockManager } from "./PluginLockManager";
 import { nodeFsPromises } from "./lazyNodeModules";
@@ -390,7 +390,7 @@ interface RestApplyMutationContext {
 
 /**
  * R24 TS-floor guard error. Re-exported from the `exocortex` core
- * ({@link ../../../../../exocortex/src/domain/profile/TsFloorGuard}) so the
+ * ({@link ../../../../../core/src/domain/profile/TsFloorGuard}) so the
  * single class identity is shared across plugin + CLI — `e instanceof
  * TsFloorViolationError` works regardless of import path. Retained as a named
  * export here for backward-compat with the profile command palette et al.

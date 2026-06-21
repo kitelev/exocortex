@@ -1,7 +1,7 @@
 /**
  * Test Reporters and Utilities for Flaky Test Detection
  *
- * @module @exocortex/test-utils/reporters
+ * @module @kitelev/exocortex-test-utils/reporters
  */
 
 export {

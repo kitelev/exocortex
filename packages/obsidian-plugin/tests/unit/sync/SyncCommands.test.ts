@@ -20,8 +20,8 @@ import type {
   SyncPhaseTimings,
   SyncProgressEvent,
   SyncRepoSpec,
-} from "exocortex";
-import { emptyTimings } from "exocortex";
+} from "@kitelev/exocortex-core";
+import { emptyTimings } from "@kitelev/exocortex-core";
 
 /** Phase 0 — a production-shape timing fixture for the summary-surface tests. */
 const timingsOf = (hashMs: number, readMs: number): SyncPhaseTimings => {
@@ -543,7 +543,7 @@ describe("SyncCommands — #3489 explicit success signal (info console + Notice)
         mountedNotDeclared: [],
       }),
       buildEngine: async () => ({
-        engine: { syncAll: async (specs: SyncRepoSpec[]) => specs.map((s) => result(s.repoKey, "synced")) } as unknown as import("exocortex").SyncEngine,
+        engine: { syncAll: async (specs: SyncRepoSpec[]) => specs.map((s) => result(s.repoKey, "synced")) } as unknown as import("@kitelev/exocortex-core").SyncEngine,
         pat: "ghp_x",
         quarantineConfigured: true,
       }),

@@ -28,7 +28,7 @@ default back to `false` causes `evaluateQueryRef` to return `false` for
 every query-referenced precondition (fail-closed) — the SPARQL_ASK and
 host-function paths are unaffected.
 
-Edit `packages/exocortex/src/exoql/eval-config.ts`:
+Edit `packages/core/src/exoql/eval-config.ts`:
 
 ```ts
 export const DEFAULT_EVAL_CONFIG: ExoQLEvalConfig = {

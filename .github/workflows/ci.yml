@@ -115,7 +115,7 @@ jobs:
       - name: Type check
         run: npm run check:types
 
-  # RFC 0a0791c1 Phase B.0 — supply-chain gate for `packages/exocortex`
+  # RFC 0a0791c1 Phase B.0 — supply-chain gate for `packages/core`
   # direct dependencies (incl. nanotar@0.3.0 pinned-exact). Audit runs
   # against the per-package lockfile so pre-existing root-tree vulns in
   # dev tooling (babel, fast-uri) don't trigger noise. Fails the job if
@@ -133,11 +133,11 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: packages/exocortex/package-lock.json
+          cache-dependency-path: packages/core/package-lock.json
 
       - name: npm audit (block high+)
         run: npm audit --audit-level=high
-        working-directory: packages/exocortex
+        working-directory: packages/core
 
   lint:
     runs-on: ubuntu-latest
@@ -257,7 +257,7 @@ jobs:
 
       - name: Build core + services + CLI
         run: |
-          npm run build -w exocortex
+          npm run build -w @kitelev/exocortex-core
           npm run build -w @kitelev/exocortex-services
           npm run build -w @kitelev/exocortex-cli
 
@@ -655,7 +655,7 @@ jobs:
 
   test-coverage-exocortex:
     # Bare ubuntu-latest — node-only core suite, no browser needed. Runs the
-    # FULL packages/exocortex/jest.config.js (all ~319 suites), not an allow-list.
+    # FULL packages/core/jest.config.js (all ~319 suites), not an allow-list.
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -673,7 +673,7 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=4096"
           CI: "true"
         # TF-gate (project "Exocortex Alpha Launch", O1+O2): run the FULL
-        # packages/exocortex/jest.config.js instead of an inline allow-list.
+        # packages/core/jest.config.js instead of an inline allow-list.
         #
         # The previous `--testPathPatterns` allow-list gated only ~55 of the
         # ~319 core suites, leaving ~83% of the SPARQL/RDF/grounding engine
@@ -698,7 +698,7 @@ jobs:
         # the perf thresholds for a (non-blocking) perf job is a separate follow-up.
         run: |
           node ./node_modules/jest/bin/jest.js \
-            --config packages/exocortex/jest.config.js \
+            --config packages/core/jest.config.js \
             --testPathIgnorePatterns '/node_modules/' '/tests/performance/' \
             --forceExit
 

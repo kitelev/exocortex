@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { resolve, join } from "node:path";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
-import { derivePath } from "exocortex";
+import { derivePath } from "@kitelev/exocortex-core";
 import { BootstrapAssetSpaceService } from "../services/BootstrapAssetSpaceService.js";
 import { nodeMountBaseStore } from "./exosync-sync.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";

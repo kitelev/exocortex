@@ -1,4 +1,4 @@
-import { PropertyCleanupService, ILogger } from "exocortex";
+import { PropertyCleanupService, ILogger } from "@kitelev/exocortex-core";
 import { TFile, Vault } from "obsidian";
 
 describe("PropertyCleanupService", () => {

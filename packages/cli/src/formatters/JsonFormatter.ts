@@ -1,4 +1,4 @@
-import type { SolutionMapping } from "exocortex";
+import type { SolutionMapping } from "@kitelev/exocortex-core";
 
 export class JsonFormatter {
   format(results: SolutionMapping[]): string {

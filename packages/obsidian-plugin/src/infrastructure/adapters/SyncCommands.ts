@@ -25,14 +25,14 @@ import type {
   SyncDirection,
   SyncProgressEvent,
   SyncRepoSpec,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import {
   aggregateTimings,
   formatRepoTimings,
   formatTimingsLine,
   orderChildrenFirst,
   totalMs,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 import { GitHubRestClient } from "./GitHubRestClient";
 import type { SyncSpecCollection, BuiltSyncEngine } from "./SyncDepsFactory";

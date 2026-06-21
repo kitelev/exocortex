@@ -16,7 +16,7 @@ import {
 import {
   loadDefaultSpec,
   clearOrderSpecLoader,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 interface FakeFile {
   path: string;

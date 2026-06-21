@@ -10,7 +10,7 @@ import {
   NoteToRDFConverter,
   Triple,
   IRI,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { TableFormatter } from "../formatters/TableFormatter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";

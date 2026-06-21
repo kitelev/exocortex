@@ -24,7 +24,7 @@
  */
 import { Platform } from "obsidian";
 import type { App, TFile } from "obsidian";
-import type { IConfirmGate } from "exocortex";
+import type { IConfirmGate } from "@kitelev/exocortex-core";
 
 import {
   ProfileApplyManager,

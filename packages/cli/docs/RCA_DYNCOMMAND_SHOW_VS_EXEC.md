@@ -27,7 +27,7 @@ Hypothesis-driven bisect of the two code paths in
 
 `buildTripleStore` (line 676) is a pure function of `vaultPath` filesystem
 state at the time of invocation. `CommandResolver.loadCommand` (defined in
-`packages/exocortex/src/services/CommandResolver.ts:165`) is deterministic
+`packages/core/src/services/CommandResolver.ts:165`) is deterministic
 given a fixed triple store. Therefore, **within a single process, steps 1–3
 must produce byte-identical `command.precondition` objects.**
 

@@ -2,7 +2,7 @@ import type {
   IMultiVaultManager,
   IVaultContext,
   VaultChangeCallback,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 /**
  * Single vault manager implementation for backward compatibility.

@@ -1,5 +1,5 @@
 import { jest, describe, it, expect } from "@jest/globals";
-import { extractAssetReference } from "exocortex";
+import { extractAssetReference } from "@kitelev/exocortex-core";
 import type { NodeFsAdapter } from "../../../src/adapters/NodeFsAdapter.js";
 import {
   findReferencedFile,
@@ -17,7 +17,7 @@ import {
  * `extractAssetReference` (exported from `exocortex`) and the shared
  * `folderRepairHelpers` module. This suite imports those single sources
  * directly:
- *   - `import { extractAssetReference } from "exocortex"` fails to resolve
+ *   - `import { extractAssetReference } from "@kitelev/exocortex-core"` fails to resolve
  *     pre-fix (no such export — it was a private method on three classes).
  *   - `import { findReferencedFile, normalizePath } from
  *     "../../../src/executors/folderRepairHelpers.js"` fails to resolve

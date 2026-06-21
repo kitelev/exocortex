@@ -48,7 +48,7 @@ const {
   ShaclShapeRegistry,
   DomainIRI,
   DomainLiteral,
-} = await import("exocortex");
+} = await import("@kitelev/exocortex-core");
 
 const { FileSystemVaultAdapter } = await import(
   "../../src/adapters/FileSystemVaultAdapter.js"

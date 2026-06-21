@@ -16,7 +16,7 @@
 
 import { describe, it, expect } from "@jest/globals";
 import type { App, TFile } from "obsidian";
-import type { ILogger, INotificationService } from "exocortex";
+import type { ILogger, INotificationService } from "@kitelev/exocortex-core";
 
 import {
   createAssetSpacePusher,

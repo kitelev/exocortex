@@ -35,7 +35,7 @@ on:
       - "packages/obsidian-plugin/Dockerfile.eka-gui-e2e"
       - "packages/obsidian-plugin/tests/e2e/utils/**"
       - "packages/obsidian-plugin/src/**"
-      - "packages/exocortex/src/**"
+      - "packages/core/src/**"
       - ".github/workflows/eka-gui-e2e.yml"
   pull_request:
     # Suite-change PRs only — verifies the e2e suite pre-merge; never runs on
@@ -73,7 +73,7 @@ jobs:
 
       - name: Build plugin (main.js)
         run: |
-          npm run build -w exocortex
+          npm run build -w @kitelev/exocortex-core
           npm run build -w @kitelev/exocortex-services
           node packages/obsidian-plugin/esbuild.config.mjs production
 

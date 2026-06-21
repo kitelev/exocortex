@@ -4,7 +4,7 @@ import type {
   CommandExecutionFlow,
   IVaultSettings,
   CommandDefinition,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import type { ExocortexPluginInterface } from "../../../../src/types";
 import type { ILogger } from "../../../../src/adapters/logging/ILogger";
 

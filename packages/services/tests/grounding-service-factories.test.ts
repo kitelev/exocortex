@@ -1,5 +1,5 @@
 import { describe, it, expect } from "@jest/globals";
-import { FrontmatterService } from "../../exocortex/src/utilities/FrontmatterService";
+import { FrontmatterService } from "../../core/src/utilities/FrontmatterService";
 import {
   createCreateAssetService,
   createCreateRelatedTaskService,

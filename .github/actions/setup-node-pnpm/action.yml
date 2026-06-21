@@ -38,7 +38,7 @@ runs:
         path: |
           node_modules
           packages/cli/node_modules
-          packages/exocortex/node_modules
+          packages/core/node_modules
           packages/obsidian-plugin/node_modules
           packages/test-utils/node_modules
         key: ${{ runner.os }}-nm-node${{ inputs.node-version }}-${{ hashFiles('package-lock.json') }}${{ inputs.cache-key-extra != '' && format('-{0}', inputs.cache-key-extra) || '' }}

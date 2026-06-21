@@ -16,7 +16,7 @@ import {
   type SolutionMapping,
   type ConstructOperation,
   SPARQL_PREFIXES,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { TableFormatter } from "../formatters/TableFormatter.js";
 import { JsonFormatter } from "../formatters/JsonFormatter.js";

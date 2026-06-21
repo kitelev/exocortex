@@ -4,7 +4,7 @@ import {
   type HostFunction,
   type IFile,
   type IVaultAdapter,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 /**
  * CLI counterpart of the plugin's

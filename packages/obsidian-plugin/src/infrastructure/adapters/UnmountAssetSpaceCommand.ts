@@ -32,7 +32,7 @@
  * {@link UnmountAssetSpaceCommandDeps}. Real wiring lives in `ExocortexPlugin`.
  */
 
-import { isTsFloorAssetSpace, isTsFloorMountPath } from "exocortex";
+import { isTsFloorAssetSpace, isTsFloorMountPath } from "@kitelev/exocortex-core";
 import { REMOVE_PACK_PICKER_TITLE } from "@plugin/application/services/commandPaletteContract";
 
 /** A currently-mounted AssetSpace the user may pick to unmount. */

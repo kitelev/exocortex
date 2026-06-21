@@ -20,7 +20,7 @@ import os from "os";
 import path from "path";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
-import { NoteToRDFConverter } from "exocortex";
+import { NoteToRDFConverter } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

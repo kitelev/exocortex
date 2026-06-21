@@ -2,7 +2,7 @@ import {
   DomainIRI as IRI,
   InMemoryTripleStore,
   Namespace,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 import {
   ASSET_SPACE_MATERIALIZED_PREDICATE,

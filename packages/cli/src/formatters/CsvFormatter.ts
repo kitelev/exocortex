@@ -1,4 +1,4 @@
-import type { SolutionMapping } from "exocortex";
+import type { SolutionMapping } from "@kitelev/exocortex-core";
 
 /**
  * Formats SPARQL query results as CSV (RFC 4180 compliant).

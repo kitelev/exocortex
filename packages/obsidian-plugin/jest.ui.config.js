@@ -25,7 +25,7 @@ module.exports = {
           esModuleInterop: true,
           isolatedModules: true,
           paths: {
-            "exocortex": ["<rootDir>/../exocortex/src/index.ts"],
+            "@kitelev/exocortex-core": ["<rootDir>/../core/src/index.ts"],
             "@plugin/types": ["<rootDir>/src/types/index.ts"],
             "@plugin/types/*": ["<rootDir>/src/types/*"],
             "@plugin/adapters/*": ["<rootDir>/src/adapters/*"],
@@ -41,7 +41,7 @@ module.exports = {
   },
   transformIgnorePatterns: ["node_modules/(?!(react|react-dom)/)"],
   moduleNameMapper: {
-    "^exocortex$": "<rootDir>/../exocortex/src/index.ts",
+    "^@kitelev/exocortex-core$": "<rootDir>/../core/src/index.ts",
     "^@plugin/types$": "<rootDir>/src/types/index.ts",
     "^@plugin/types/(.*)$": "<rootDir>/src/types/$1",
     "^@plugin/adapters/(.*)$": "<rootDir>/src/adapters/$1",

@@ -106,8 +106,9 @@ Each file can use YAML frontmatter to target specific paths:
 ```markdown
 ---
 paths:
-  - packages/exocortex/**
+  - packages/core/**
 ---
+
 # Core Package Instructions
 
 Business logic should be storage-agnostic...

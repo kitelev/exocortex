@@ -8,7 +8,7 @@
  * @since 1.0.0
  */
 
-import type { IVaultAdapter, IFile, IFrontmatter } from "exocortex";
+import type { IVaultAdapter, IFile, IFrontmatter } from "@kitelev/exocortex-core";
 
 import {
   type Layout,

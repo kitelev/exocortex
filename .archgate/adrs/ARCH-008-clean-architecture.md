@@ -17,7 +17,7 @@ The Dependency Rule states: **inner layers NEVER depend on outer layers**.
 
 - **Domain** must not import from Application, Infrastructure, or Presentation
 - **Application** must not import from Infrastructure or Presentation
-- **Core package** (packages/exocortex) must not import from consumer packages (obsidian-plugin, cli)
+- **Core package** (packages/core) must not import from consumer packages (obsidian-plugin, cli)
 
 ## Do's and Don'ts
 

@@ -3,7 +3,7 @@ import { ICommand } from "./ICommand";
 import { ExocortexPluginInterface } from "@plugin/types";
 import { PropertyEditorModal } from "@plugin/presentation/modals/PropertyEditorModal";
 import { GROOMED_COMMAND_NAMES } from "@plugin/application/services/commandPaletteContract";
-import type { CommandVisibilityContext, INotificationService } from "exocortex";
+import type { CommandVisibilityContext, INotificationService } from "@kitelev/exocortex-core";
 
 export class EditPropertiesCommand implements ICommand {
   id = "edit-properties";

@@ -23,10 +23,10 @@
 ```
 packages/
 ├── exocortex/          # exocortex — core: domain models, RDF, SPARQL, services
-├── obsidian-plugin/    # @exocortex/obsidian-plugin — UI, renderers, commands (consumer)
+├── obsidian-plugin/    # @kitelev/exocortex-obsidian-plugin — UI, renderers, commands (consumer)
 ├── cli/                # @kitelev/exocortex-cli — CLI tooling (consumer)
 ├── services/           # @kitelev/exocortex-services — shared grounding-service factories
-└── test-utils/         # @exocortex/test-utils — shared test infrastructure
+└── test-utils/         # @kitelev/exocortex-test-utils — shared test infrastructure
 ```
 
 > `packages/exoas-exo` and `packages/exoas-exocmd` are data submodules
@@ -34,7 +34,7 @@ packages/
 
 Notable subsystems with elevated regression risk (see «Auto-merge discipline» below):
 
-- `packages/exocortex/src/services/sync/` — ExoSync engine: change detection, diff3/structured merge, SHACL merge gate, quarantine + watermark stores.
+- `packages/core/src/services/sync/` — ExoSync engine: change detection, diff3/structured merge, SHACL merge gate, quarantine + watermark stores.
 - `packages/obsidian-plugin/src/domain/settings/VaultSettingsRegistry.ts` + `packages/obsidian-plugin/src/infrastructure/adapters/VaultSettingsStore.ts` — homoiconic plugin settings: settings are loaded from vault `exo__Setting` assets (with one-shot migration from `data.json`), so parsing/migration bugs here corrupt user settings.
 
 ## Architecture (Clean Architecture)
@@ -55,12 +55,12 @@ infrastructure/  → Obsidian API adapters, file system
 
 ## Test Suite Awareness
 
-The exocortex-package jest config has `roots: ['<rootDir>/tests']`, but exocortex suites run in CI only if matched by the inline `--testPathPatterns` allowlist of the `test-coverage-exocortex` job in `.github/workflows/ci.yml` (that inline list is the actual CI gate — `scripts/test-ci-batched.sh` is only the local `npm run test:unit` mirror, no workflow invokes it). New integration suites under `packages/exocortex/tests/integration/**` are NOT picked up automatically — either add them to the CI allowlist (and mirror in the script) or accept they can rot silently.
+The exocortex-package jest config has `roots: ['<rootDir>/tests']`, but exocortex suites run in CI only if matched by the inline `--testPathPatterns` allowlist of the `test-coverage-exocortex` job in `.github/workflows/ci.yml` (that inline list is the actual CI gate — `scripts/test-ci-batched.sh` is only the local `npm run test:unit` mirror, no workflow invokes it). New integration suites under `packages/core/tests/integration/**` are NOT picked up automatically — either add them to the CI allowlist (and mirror in the script) or accept they can rot silently.
 
 When fixing a bug, run the directly-affected suite locally even if it isn't gated by CI:
 
 ```bash
-npm test -- packages/exocortex/tests/integration/<affected-suite>.test.ts
+npm test -- packages/core/tests/integration/<affected-suite>.test.ts
 ```
 
 **Reference**: PR #3189 — `create-instance-grounding.test.ts` was silently red on `main` (12/12 fail, missing parent.md fixture) because the allowlist never included it. Coverage gates measure file/line %, not "did this suite pass"; orphan integration suites can rot indefinitely.
@@ -94,8 +94,8 @@ gh pr merge --auto --squash                         # Wait for the required CI c
 ## Auto-merge discipline (CRITICAL)
 
 For PRs touching parser / TBox / schema / migration paths
-(`packages/exocortex/src/services/{CommandResolver,GroundingExecutor,NoteToRDFConverter}.ts`,
-`packages/exocortex/src/services/sync/` — ExoSync merge/sync engine (SyncEngine, StructuredMerger, GatedStructuredMerger, MergeShaclGate, diff3),
+(`packages/core/src/services/{CommandResolver,GroundingExecutor,NoteToRDFConverter}.ts`,
+`packages/core/src/services/sync/` — ExoSync merge/sync engine (SyncEngine, StructuredMerger, GatedStructuredMerger, MergeShaclGate, diff3),
 `packages/obsidian-plugin/src/**/VaultSettings*` — homoiconic settings loader (VaultSettingsRegistry, VaultSettingsStore: vault `exo__Setting` parsing + one-shot migration),
 `assetspaces/*/*.md` in any cloned ontology repo):
 

@@ -20,7 +20,7 @@ import {
   restCreateCommit,
   type RestCommitTransport,
   type RestCommitResponse,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 export interface RestPushServiceOptions {
   /** GitHub PAT. Empty/undefined → unauthenticated (push WILL fail — auth required). */

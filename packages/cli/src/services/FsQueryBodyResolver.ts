@@ -7,8 +7,8 @@ import {
   iriToVaultPath,
   extractSparqlBlock,
   stripFrontmatter,
-} from "exocortex";
-import type { IFileSystemReader } from "exocortex";
+} from "@kitelev/exocortex-core";
+import type { IFileSystemReader } from "@kitelev/exocortex-core";
 
 /**
  * RFC 78c2b7d0 C4 — CLI-side `IQueryBodyResolver` for `query__NamedQuery`

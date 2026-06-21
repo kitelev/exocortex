@@ -27,7 +27,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
-const { ShapeLoader, GenericAssetCreationService } = await import("exocortex");
+const { ShapeLoader, GenericAssetCreationService } = await import("@kitelev/exocortex-core");
 const { FileSystemVaultAdapter } = await import(
   "../../src/adapters/FileSystemVaultAdapter.js"
 );

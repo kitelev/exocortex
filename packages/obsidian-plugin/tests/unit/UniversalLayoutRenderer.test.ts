@@ -7,7 +7,7 @@ import {
   DI_TOKENS,
   registerCoreServices,
   resetContainer,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 describe("UniversalLayoutRenderer", () => {
   let mockApp: any;

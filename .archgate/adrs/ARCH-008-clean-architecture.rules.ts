@@ -7,7 +7,7 @@ export default {
       severity: "error",
       async check(ctx) {
         const domainFiles = await ctx.glob(
-          "packages/exocortex/src/domain/**/*.ts",
+          "packages/core/src/domain/**/*.ts",
         );
         const forbidden = [
           { pattern: /from\s+['"].*\/application\//, layer: "application" },
@@ -42,7 +42,7 @@ export default {
       severity: "error",
       async check(ctx) {
         const appFiles = await ctx.glob(
-          "packages/exocortex/src/application/**/*.ts",
+          "packages/core/src/application/**/*.ts",
         );
         const forbidden = [
           { pattern: /from\s+['"].*\/presentation\//, layer: "presentation" },
@@ -71,7 +71,7 @@ export default {
         "Core package must not import from consumer packages (obsidian-plugin, cli)",
       severity: "error",
       async check(ctx) {
-        const coreFiles = await ctx.glob("packages/exocortex/src/**/*.ts");
+        const coreFiles = await ctx.glob("packages/core/src/**/*.ts");
         const forbidden = [
           {
             pattern: /from\s+['"]@plugin\//,
@@ -93,7 +93,7 @@ export default {
                 message: `Core package imports from ${pkg}. Core must be framework-agnostic.`,
                 file: hit.file,
                 line: hit.line,
-                fix: `Core (packages/exocortex) must never depend on consumer packages. Define interfaces in core, implement in consumers.`,
+                fix: `Core (packages/core) must never depend on consumer packages. Define interfaces in core, implement in consumers.`,
               });
             }
           }
@@ -107,7 +107,7 @@ export default {
       severity: "warning",
       async check(ctx) {
         const domainFiles = await ctx.glob(
-          "packages/exocortex/src/domain/**/*.ts",
+          "packages/core/src/domain/**/*.ts",
         );
         const sideEffects = [
           {

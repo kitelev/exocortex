@@ -19,7 +19,7 @@
  * @example
  * // In jest.config.js
  * module.exports = {
- *   setupFilesAfterEnv: ['@exocortex/test-utils/reporters/quarantine-setup'],
+ *   setupFilesAfterEnv: ['@kitelev/exocortex-test-utils/reporters/quarantine-setup'],
  * };
  */
 

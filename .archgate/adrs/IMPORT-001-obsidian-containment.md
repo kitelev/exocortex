@@ -16,7 +16,7 @@ files:
 
 Obsidian API imports must be contained in presentation and infrastructure layers. Application and domain layers in the plugin package must remain framework-agnostic.
 
-This complements ARCH-008 (which protects packages/exocortex) by protecting layers within the obsidian-plugin package itself.
+This complements ARCH-008 (which protects packages/core) by protecting layers within the obsidian-plugin package itself.
 
 ## Decision
 

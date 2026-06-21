@@ -106,10 +106,10 @@ Exocortex is organized as a **monorepo** with five npm workspace packages plus t
 ```
 /packages
   /exocortex                  - exocortex (storage-agnostic core: domain, RDF/SPARQL engine, services)
-  /obsidian-plugin            - @exocortex/obsidian-plugin (Obsidian UI integration)
+  /obsidian-plugin            - @kitelev/exocortex-obsidian-plugin (Obsidian UI integration)
   /cli                        - @kitelev/exocortex-cli (command-line automation tool)
   /services                   - @kitelev/exocortex-services (shared grounding-service factories)
-  /test-utils                 - @exocortex/test-utils (shared test utilities and mock factories)
+  /test-utils                 - @kitelev/exocortex-test-utils (shared test utilities and mock factories)
   /exoas-exo                  - data submodule (exo ontology assets; excluded from npm workspaces)
   /exoas-exocmd               - data submodule (exocmd command assets; excluded from npm workspaces)
 ```
@@ -129,7 +129,7 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 
 **Purpose**: Core business entities, rules, and logic independent of any framework
 
-**Location**: `packages/exocortex/src/domain/`
+**Location**: `packages/core/src/domain/`
 
 **Components**:
 
@@ -152,7 +152,7 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 
 **Purpose**: Use cases and business services
 
-**Location**: `packages/exocortex/src/services/` (the bulk of core services) and `packages/exocortex/src/application/` (error handling, layout resolution). The plugin-side facade `CommandManager` lives in `packages/obsidian-plugin/src/application/services/`.
+**Location**: `packages/core/src/services/` (the bulk of core services) and `packages/core/src/application/` (error handling, layout resolution). The plugin-side facade `CommandManager` lives in `packages/obsidian-plugin/src/application/services/`.
 
 **Components**:
 
@@ -174,7 +174,7 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 
 **Purpose**: Implementation details and external integrations
 
-**Core Infrastructure** (`packages/exocortex/src/infrastructure/`):
+**Core Infrastructure** (`packages/core/src/infrastructure/`):
 
 - **IFileSystemAdapter**: Abstract interface for storage operations
 - **Utilities**: Pure helpers (DateFormatter, WikiLinkHelpers, FrontmatterService)
@@ -195,7 +195,7 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 - Plugin: Obsidian API (Vault, MetadataCache, TFile)
 - CLI: Node.js fs, path modules
 
-### Layer 4: Presentation Layer (in @exocortex/obsidian-plugin)
+### Layer 4: Presentation Layer (in @kitelev/exocortex-obsidian-plugin)
 
 **Purpose**: User interface and user interactions
 
@@ -254,7 +254,7 @@ All cross-cutting concerns are abstracted through interfaces in `exocortex`:
 **Interface Definitions:**
 
 ```typescript
-// packages/exocortex/src/interfaces/ILogger.ts
+// packages/core/src/interfaces/ILogger.ts
 export interface ILogger {
   debug(message: string, context?: Record<string, any>): void;
   info(message: string, context?: Record<string, any>): void;
@@ -262,21 +262,21 @@ export interface ILogger {
   error(message: string, error?: Error, context?: Record<string, any>): void;
 }
 
-// packages/exocortex/src/interfaces/IEventBus.ts
+// packages/core/src/interfaces/IEventBus.ts
 export interface IEventBus {
   publish<T = any>(eventName: string, data: T): void;
   subscribe<T = any>(eventName: string, handler: (data: T) => void): () => void;
   unsubscribe(eventName: string, handler: (data: any) => void): void;
 }
 
-// packages/exocortex/src/interfaces/IConfiguration.ts
+// packages/core/src/interfaces/IConfiguration.ts
 export interface IConfiguration {
   get<T = any>(key: string): T | undefined;
   set<T = any>(key: string, value: T): Promise<void>;
   getAll(): Record<string, any>;
 }
 
-// packages/exocortex/src/interfaces/INotificationService.ts
+// packages/core/src/interfaces/INotificationService.ts
 export interface INotificationService {
   info(message: string, duration?: number): void;
   success(message: string, duration?: number): void;
@@ -319,7 +319,7 @@ export type DIToken = (typeof DI_TOKENS)[keyof typeof DI_TOKENS];
 ```typescript
 import "reflect-metadata";
 import { container } from "tsyringe";
-import { DI_TOKENS } from "exocortex";
+import { DI_TOKENS } from "@kitelev/exocortex-core";
 import { ObsidianLogger } from "./ObsidianLogger";
 import { ObsidianEventBus } from "./ObsidianEventBus";
 import { ObsidianConfiguration } from "./ObsidianConfiguration";
@@ -385,7 +385,7 @@ export default class ExocortexPlugin extends Plugin {
 ```typescript
 import "reflect-metadata";
 import { container } from "tsyringe";
-import { DI_TOKENS } from "exocortex";
+import { DI_TOKENS } from "@kitelev/exocortex-core";
 import { NodeLogger } from "./NodeLogger";
 import { NodeEventBus } from "./NodeEventBus";
 import { NodeConfiguration } from "./NodeConfiguration";
@@ -394,7 +394,7 @@ import { NodeNotificationService } from "./NodeNotificationService";
 export class CLIContainer {
   static setup(): void {
     container.register(DI_TOKENS.ILogger, {
-      useFactory: () => new NodeLogger("@exocortex/cli"),
+      useFactory: () => new NodeLogger("@kitelev/exocortex-cli"),
     });
 
     container.register(DI_TOKENS.IEventBus, {
@@ -445,7 +445,12 @@ const service = new PropertyCleanupService(vaultAdapter);
 
 ```typescript
 import { injectable, inject } from "tsyringe";
-import { DI_TOKENS, IVaultAdapter, ILogger, IFile } from "exocortex";
+import {
+  DI_TOKENS,
+  IVaultAdapter,
+  ILogger,
+  IFile,
+} from "@kitelev/exocortex-core";
 
 @injectable()
 export class PropertyCleanupService {
@@ -497,7 +502,7 @@ import {
   IVaultAdapter,
   ILogger,
   IFile,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 describe("PropertyCleanupService with DI", () => {
   let mockVaultAdapter: jest.Mocked<IVaultAdapter>;
@@ -603,23 +608,23 @@ describe("PropertyCleanupService with DI", () => {
 > For the authoritative, always-current inventory, list the referenced `src/`
 > directories — per-file tables in docs drift quickly.
 
-### Core Services (`packages/exocortex/src/services/`)
+### Core Services (`packages/core/src/services/`)
 
 Roughly 60 service modules, plus the `assetspace/`, `profile/`, and `sync/`
 subdirectories. Main clusters:
 
-| Cluster                          | Representative modules                                                                                                          |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Vault-driven command machinery** | `CommandResolver`, `PreconditionEvaluator`, `GroundingExecutor`, `CommandExecutionFlow`, `WorkflowEngine`/`WorkflowResolver`     |
-| **Asset creation**               | `GenericAssetCreationService`, `AreaCreationService`, `ClassCreationService`, `ConceptCreationService`, `SupervisionCreationService`, `DynamicFrontmatterGenerator` |
-| **Status & effort lifecycle**    | `EffortStatusWorkflow`, `TaskStatusService`, `StatusTimestampService`, `EffortVotingService`, `PlanningService`, `SessionEventService` |
-| **RDF & schema resolution**      | `NoteToRDFConverter`, `PrototypeChainMaterializer`, `PropertySchemaResolver`, `InstantiationRuleResolver`, `IRICanonicalizer`, `SourceAnnotator`, `ClassHierarchy` |
-| **Validation (SHACL-lite)**      | `ShaclLiteValidator`, `ShapeLoader`, `ShapeRegistry`, `ValidatorDaemon`                                                          |
-| **Maintenance & repair**         | `FolderRepairService`, `PropertyCleanupService`, `RenameToUidService`, `FixMissingLabelService`, `ArchiveAssetService`           |
-| **Profiles & AssetSpaces**       | `services/profile/`, `services/assetspace/` (see [Profiles & AssetSpace Mounting](#profiles--assetspace-mounting))               |
-| **Sync**                         | `services/sync/` (see [ExoSync](#exosync))                                                                                       |
+| Cluster                            | Representative modules                                                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Vault-driven command machinery** | `CommandResolver`, `PreconditionEvaluator`, `GroundingExecutor`, `CommandExecutionFlow`, `WorkflowEngine`/`WorkflowResolver`                                        |
+| **Asset creation**                 | `GenericAssetCreationService`, `AreaCreationService`, `ClassCreationService`, `ConceptCreationService`, `SupervisionCreationService`, `DynamicFrontmatterGenerator` |
+| **Status & effort lifecycle**      | `EffortStatusWorkflow`, `TaskStatusService`, `StatusTimestampService`, `EffortVotingService`, `PlanningService`, `SessionEventService`                              |
+| **RDF & schema resolution**        | `NoteToRDFConverter`, `PrototypeChainMaterializer`, `PropertySchemaResolver`, `InstantiationRuleResolver`, `IRICanonicalizer`, `SourceAnnotator`, `ClassHierarchy`  |
+| **Validation (SHACL-lite)**        | `ShaclLiteValidator`, `ShapeLoader`, `ShapeRegistry`, `ValidatorDaemon`                                                                                             |
+| **Maintenance & repair**           | `FolderRepairService`, `PropertyCleanupService`, `RenameToUidService`, `FixMissingLabelService`, `ArchiveAssetService`                                              |
+| **Profiles & AssetSpaces**         | `services/profile/`, `services/assetspace/` (see [Profiles & AssetSpace Mounting](#profiles--assetspace-mounting))                                                  |
+| **Sync**                           | `services/sync/` (see [ExoSync](#exosync))                                                                                                                          |
 
-### Core Utilities (`packages/exocortex/src/utilities/`)
+### Core Utilities (`packages/core/src/utilities/`)
 
 Pure helpers shared by all clients: `FrontmatterService` (YAML
 parsing/manipulation), `DateFormatter`, `WikiLinkHelpers`, `MetadataHelpers`,
@@ -650,12 +655,12 @@ components), `AreaHierarchyTree`, `AssetRelationsTable`, `DailyTasksTable`,
 Subdirectories group the rest by purpose:
 
 | Directory                     | Purpose                                                           |
-| ----------------------------- | ------------------------------------------------------------------ |
-| `property-fields/`            | Inline field renderers per datatype + `PropertyFieldFactory`       |
-| `property-editor/`            | React modal property editor (`PropertyEditorForm` + field set)     |
-| `sparql/`                     | SPARQL query builder, result views (table/list/graph), error view  |
-| `dynamic-form/`               | Schema-driven dynamic form fields                                  |
-| `daily-tasks/`, `properties/` | Specialized table and property-field components                    |
+| ----------------------------- | ----------------------------------------------------------------- |
+| `property-fields/`            | Inline field renderers per datatype + `PropertyFieldFactory`      |
+| `property-editor/`            | React modal property editor (`PropertyEditorForm` + field set)    |
+| `sparql/`                     | SPARQL query builder, result views (table/list/graph), error view |
+| `dynamic-form/`               | Schema-driven dynamic form fields                                 |
+| `daily-tasks/`, `properties/` | Specialized table and property-field components                   |
 
 **Main UI components have Playwright CT tests** ✅
 
@@ -666,7 +671,7 @@ Subdirectories group the rest by purpose:
 `PropertyEditorModal`, `SPARQLQueryBuilderModal`, `SimpleConfirmModal`.
 
 Profile-related modals live in `infrastructure/adapters/`:
-`ProfileFuzzyModal` (profile picker for *Apply profile*) and
+`ProfileFuzzyModal` (profile picker for _Apply profile_) and
 `ClearSwitchCacheConfirmModal`.
 
 ---
@@ -811,13 +816,13 @@ ExoQL is the public API for querying the Exocortex knowledge graph. It wraps SPA
 
 **Key components:**
 
-| Component         | Package         | Purpose                                                                                       |
-| ----------------- | --------------- | ---------------------------------------------------------------------------------------------- |
-| `ExoQLParser`     | exocortex       | Parses ExoQL queries (`src/infrastructure/sparql/SPARQLParser.ts`)                             |
-| `exoql/` module   | exocortex       | ExoQL evaluation extensions (`src/exoql/` — ExoEval allowlist validator, evaluation config)    |
-| `OWN()` function  | exocortex       | Filter function that returns only own (non-inherited) properties                               |
-| Source annotation | exocortex       | Every triple is annotated with its origin (own, inherited, inferred)                           |
-| ExoQL code block  | obsidian-plugin | `exoql` code block processor (alias of `sparql` block) for queries in vault notes              |
+| Component         | Package         | Purpose                                                                                           |
+| ----------------- | --------------- | ------------------------------------------------------------------------------------------------- |
+| `ExoQLParser`     | exocortex       | Parses ExoQL queries (`src/infrastructure/sparql/SPARQLParser.ts`)                                |
+| `exoql/` module   | exocortex       | ExoQL evaluation extensions (`src/exoql/` — ExoEval allowlist validator, evaluation config)       |
+| `OWN()` function  | exocortex       | Filter function that returns only own (non-inherited) properties                                  |
+| Source annotation | exocortex       | Every triple is annotated with its origin (own, inherited, inferred)                              |
+| ExoQL code block  | obsidian-plugin | `exoql` code block processor (alias of `sparql` block) for queries in vault notes                 |
 | `query` command   | cli             | CLI query verb (the old `sparql` and `exoql` verbs were removed; see `packages/cli/src/index.ts`) |
 
 ### PropertySchemaResolver
@@ -831,15 +836,15 @@ Property schemas are now resolved from the triple store at runtime instead of be
 
 ### What Was Removed
 
-| Removed                                           | Replaced By                                    |
-| ------------------------------------------------- | ---------------------------------------------- |
-| 5 hardcoded `ButtonGroupBuilder` classes          | 1 universal `DynamicCommandButtonGroupBuilder` |
-| Static command registrations in `CommandRegistry` | Dynamic resolution via `CommandResolver`       |
-| Hardcoded `PROPERTY_SCHEMAS` map                  | `PropertySchemaResolver` (triple store)        |
-| Hardcoded `EFFORT_PROPERTY_MAP`                   | `InstantiationRuleResolver` (vault)            |
-| Hardcoded `INSTANCE_CLASS_MAP`                    | `InstantiationRuleResolver` (vault)            |
-| 7 hardcoded label fallback implementations        | SPARQL-based label template syntax             |
-| 3-tier area fallback in `AssetMetadataService`    | Prototype chain inheritance                    |
+| Removed                                                        | Replaced By                                                                     |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| 5 hardcoded `ButtonGroupBuilder` classes                       | 1 universal `DynamicCommandButtonGroupBuilder`                                  |
+| Static command registrations in `CommandRegistry`              | Dynamic resolution via `CommandResolver`                                        |
+| Hardcoded `PROPERTY_SCHEMAS` map                               | `PropertySchemaResolver` (triple store)                                         |
+| Hardcoded `EFFORT_PROPERTY_MAP`                                | `InstantiationRuleResolver` (vault)                                             |
+| Hardcoded `INSTANCE_CLASS_MAP`                                 | `InstantiationRuleResolver` (vault)                                             |
+| 7 hardcoded label fallback implementations                     | SPARQL-based label template syntax                                              |
+| 3-tier area fallback in `AssetMetadataService`                 | Prototype chain inheritance                                                     |
 | Per-class `canX` visibility predicates (`*VisibilityRules.ts`) | Vault-declared `exocmd__Command` preconditions evaluated via SPARQL ASK (#3384) |
 
 ---
@@ -848,7 +853,7 @@ Property schemas are now resolved from the triple store at runtime instead of be
 
 `exo__Profile` is a vault-declared class that groups **AssetSpaces** (git-backed
 asset repositories mounted under `assetspaces/`) for runtime materialization.
-*Apply profile* (`Cmd+P → Exocortex: Apply profile`, picker: `ProfileFuzzyModal`)
+_Apply profile_ (`Cmd+P → Exocortex: Apply profile`, picker: `ProfileFuzzyModal`)
 performs a **mount-state strict replace**: AssetSpaces in the profile's effective
 set are materialized on disk, the rest are unmounted.
 
@@ -856,7 +861,7 @@ set are materialized on disk, the rest are unmounted.
 
 - **Effective set** = declared `exo__Profile_includes` ∪ transitive
   `exo__Profile_imports` ∪ the **TS-floor**.
-- **TS-floor guard** (`packages/exocortex/src/domain/profile/TsFloorGuard.ts`):
+- **TS-floor guard** (`packages/core/src/domain/profile/TsFloorGuard.ts`):
   the always-mounted floor is **`{exo}`** (the SDK core); `exocmd` and
   `shared-identities` are optional. `assertTsFloor` **refuses** (throws
   `TsFloorViolationError`) rather than silently re-adding the floor — stripping
@@ -882,7 +887,7 @@ See [docs/profile.md](docs/explanation/profile.md) for the full model.
 ExoSync synchronizes vault AssetSpaces with their GitHub remotes without
 requiring a git binary — portable to mobile.
 
-- **Core engine** (`packages/exocortex/src/services/sync/`): `SyncEngine`
+- **Core engine** (`packages/core/src/services/sync/`): `SyncEngine`
   orchestrates pull/merge/push; `ChangeDetector` + `FileWatermarkStore` track
   local/remote drift; `StructuredMerger` performs frontmatter-aware 3-way
   merges (`diff3.ts`); `GatedStructuredMerger` + `MergeShaclGate` validate merge
@@ -890,7 +895,7 @@ requiring a git binary — portable to mobile.
   isolates conflicting/invalid results instead of corrupting the vault;
   `CredentialStore` and `secretScan` handle PAT storage and leak prevention;
   `transportBackoff` and `githubRepoReader` wrap the remote-read path.
-- **Write path** (`packages/exocortex/src/infrastructure/github/restCommit.ts`):
+- **Write path** (`packages/core/src/infrastructure/github/restCommit.ts`):
   transport-agnostic GitHub **Git Data API** 4-call chain (GET ref → POST trees →
   POST commits → PATCH ref, fast-forward only), shared by the plugin
   (`GitHubRestClient` over Obsidian `requestUrl`) and the CLI (Node `fetch`).
@@ -1001,7 +1006,7 @@ interface IAssetRepository {
 Command visibility used to be implemented as a Strategy-pattern layer of
 per-class `canX` predicates (`TaskVisibilityRules.ts`, `EffortVisibilityRules.ts`,
 etc.). That layer was **removed together with the pre-homoiconic command system
-(#3384)**. `packages/exocortex/src/domain/commands/visibility/` now retains only
+(#3384)**. `packages/core/src/domain/commands/visibility/` now retains only
 the shared `CommandVisibilityContext` type and helper utilities.
 
 Visibility is declared in the vault instead:
@@ -1012,7 +1017,7 @@ Visibility is declared in the vault instead:
   (`exocmd__Precondition_sparqlAsk`) evaluated against the RDF store, or a
   registered **host function** (`exocmd__Precondition_hostFunction`) for checks
   that need platform context.
-- `PreconditionEvaluator` (`packages/exocortex/src/services/`) evaluates them at
+- `PreconditionEvaluator` (`packages/core/src/services/`) evaluates them at
   render time; `DynamicCommandButtonGroupBuilder` and the command-palette
   registrar only surface commands whose preconditions hold.
 
@@ -1258,7 +1263,7 @@ All application errors extend the base `ApplicationError` class, providing:
 - **Timestamp** for when error occurred
 
 ```typescript
-// packages/exocortex/src/domain/errors/ApplicationError.ts
+// packages/core/src/domain/errors/ApplicationError.ts
 export abstract class ApplicationError extends Error {
   abstract readonly code: ErrorCode; // Standardized error code
   abstract readonly retriable: boolean; // Can operation be retried?
@@ -1286,7 +1291,7 @@ export abstract class ApplicationError extends Error {
 ### Error Code Ranges
 
 ```typescript
-// packages/exocortex/src/domain/errors/ErrorCode.ts
+// packages/core/src/domain/errors/ErrorCode.ts
 enum ErrorCode {
   // Validation Errors (1000-1999)
   INVALID_INPUT = 1000,
@@ -1333,7 +1338,7 @@ The centralized error handler provides:
 - **Telemetry hooks** for monitoring and alerting
 
 ```typescript
-// packages/exocortex/src/application/errors/ApplicationErrorHandler.ts
+// packages/core/src/application/errors/ApplicationErrorHandler.ts
 export class ApplicationErrorHandler {
   constructor(
     retryConfig?: RetryConfig,
@@ -1536,7 +1541,7 @@ throw new Error("Invalid transition");
 **Current state**:
 
 - The **plugin** operates on a single Obsidian vault (Obsidian's model).
-- The **CLI** supports multi-vault *reads*: `query` accepts a repeatable
+- The **CLI** supports multi-vault _reads_: `query` accepts a repeatable
   `--also <path>` option that adds extra vault paths to the query store
   (`packages/cli/src/commands/sparql-query.ts`).
 
@@ -1605,13 +1610,13 @@ graph TB
 
 ## 🔄 Revision History
 
-| Version | Date       | Changes                                                                                             |
-| ------- | ---------- | --------------------------------------------------------------------------------------------------- |
-| 1.0     | 2025-10-26 | Initial architecture documentation (pre-#122)                                                       |
-| 1.1     | 2025-11-26 | Added Error Handling section (#438)                                                                 |
-| 1.2     | 2025-11-29 | Documented CommandVisibility domain segregation (#468)                                              |
-| 1.3     | 2026-02-19 | Updated to v15.0.1: tech stack versions, test counts (#2176)                                        |
-| 2.0     | 2026-04-05 | RFC-011/012: vault-driven architecture, prototype chains, ExoQL, removed hardcoded builders (#2583) |
+| Version | Date       | Changes                                                                                                                                                              |
+| ------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 2025-10-26 | Initial architecture documentation (pre-#122)                                                                                                                        |
+| 1.1     | 2025-11-26 | Added Error Handling section (#438)                                                                                                                                  |
+| 1.2     | 2025-11-29 | Documented CommandVisibility domain segregation (#468)                                                                                                               |
+| 1.3     | 2026-02-19 | Updated to v15.0.1: tech stack versions, test counts (#2176)                                                                                                         |
+| 2.0     | 2026-04-05 | RFC-011/012: vault-driven architecture, prototype chains, ExoQL, removed hardcoded builders (#2583)                                                                  |
 | 2.1     | 2026-06-10 | Audit cleanup: visibility-rules layer removal (#3384), real package/component inventories, Profiles/ExoSync/homoiconic-settings sections, stale #122 framing removed |
 
 ---

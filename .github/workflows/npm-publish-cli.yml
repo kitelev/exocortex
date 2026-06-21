@@ -51,7 +51,7 @@ jobs:
         run: npm ci
 
       - name: Build core package
-        run: npm run build -w exocortex
+        run: npm run build -w @kitelev/exocortex-core
 
       - name: Build services workspace
         # CLI bundle imports @kitelev/exocortex-services (file:../services workspace).

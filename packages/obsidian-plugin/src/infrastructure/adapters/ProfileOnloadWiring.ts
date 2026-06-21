@@ -10,7 +10,7 @@
  *
  * RFC 01a83de8 §3.4 / EV8 (issue #3426) re-homed the floor to a single named
  * guard in `exocortex`
- * ({@link ../../../../../exocortex/src/domain/profile/TsFloorGuard}). RFC
+ * ({@link ../../../../../core/src/domain/profile/TsFloorGuard}). RFC
  * 5aa2a73a (#3440) then collapsed the floor to **`{exo}`** for both tiers: the
  * plugin-UI floor is now just `$exo`. `exocmd` (the vault-side UI commands the
  * plugin renders) and `shared-identities` are OPTIONAL — a profile may omit
@@ -18,14 +18,14 @@
  * existing plugin imports keep working.
  */
 
-import { PLUGIN_UI_FLOOR_ASSETSPACE_UIDS } from "exocortex";
+import { PLUGIN_UI_FLOOR_ASSETSPACE_UIDS } from "@kitelev/exocortex-core";
 
 export {
   TS_FLOOR_AS_UID_EXO,
   TS_FLOOR_AS_UID_EXOCMD,
   TS_FLOOR_AS_UID_SHARED_IDENTITIES,
   PLUGIN_UI_FLOOR_ASSETSPACE_UIDS,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 /**
  * TS-floor AssetSpace UIDs the plugin enforces (Vision Lock #17, AS-UID level).

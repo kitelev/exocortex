@@ -27,7 +27,7 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from "@jest/globals";
 import * as obsidian from "obsidian";
 import type { App } from "obsidian";
-import type { INotificationService } from "exocortex";
+import type { INotificationService } from "@kitelev/exocortex-core";
 
 import { buildAssetSpacePuller } from "../../../src/infrastructure/adapters/ApplyDepsFactory";
 import { LocalSecretsStore } from "../../../src/infrastructure/adapters/LocalSecretsStore";

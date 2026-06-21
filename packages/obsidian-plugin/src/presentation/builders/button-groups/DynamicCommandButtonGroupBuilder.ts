@@ -10,7 +10,7 @@ import type {
   PreconditionEvaluator,
   EvalContext,
   CommandExecutionFlow,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import {
   IButtonGroupBuilder,
   ButtonBuilderContext,

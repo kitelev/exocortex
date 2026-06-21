@@ -1,4 +1,4 @@
-import { SPARQL_PREFIXES } from "exocortex";
+import { SPARQL_PREFIXES } from "@kitelev/exocortex-core";
 
 /**
  * Standard Exocortex ontology IRI base used to derive ad-hoc prefix

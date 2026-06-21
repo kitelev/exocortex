@@ -3,7 +3,7 @@ import type {
   ConflictDetail,
   ResolvableConflict,
   ResolveChoice,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import type { ResolverModalContext } from "./QuarantineResolverCommands";
 import { buildPaneModel, type DiffRow } from "./conflictDiff";
 

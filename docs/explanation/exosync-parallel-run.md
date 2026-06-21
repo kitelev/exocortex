@@ -159,9 +159,9 @@ grep -o '"ts":"[^"]*"\|"m1Total":[0-9]*\|"m2Total":[0-9]*\|"ok":[a-z]*' \
 
 | Concern                                               | Source                                                                         |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Harness core (classification, detectors, caps)        | `packages/exocortex/src/services/sync/ParityValidator.ts`                      |
-| Semantic proxy (canonical frontmatter + body)         | `packages/exocortex/src/services/sync/assetSemanticCompare.ts`                 |
-| Shared spec classification (plugin + CLI, one parser) | `packages/exocortex/src/services/sync/spaceSpecCore.ts`                        |
+| Harness core (classification, detectors, caps)        | `packages/core/src/services/sync/ParityValidator.ts`                           |
+| Semantic proxy (canonical frontmatter + body)         | `packages/core/src/services/sync/assetSemanticCompare.ts`                      |
+| Shared spec classification (plugin + CLI, one parser) | `packages/core/src/services/sync/spaceSpecCore.ts`                             |
 | Plugin wiring (post-sync hook, journal, Sync probe)   | `packages/obsidian-plugin/src/infrastructure/adapters/ExoSyncParityFactory.ts` |
 | Palette commands                                      | `packages/obsidian-plugin/src/infrastructure/adapters/SyncCommands.ts`         |
 | CLI probe                                             | `packages/cli/src/commands/exosync-parity.ts`                                  |

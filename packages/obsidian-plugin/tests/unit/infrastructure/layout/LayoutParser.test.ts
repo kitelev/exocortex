@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
-import type { IVaultAdapter, IFile, IFolder, IFrontmatter } from "exocortex";
+import type { IVaultAdapter, IFile, IFolder, IFrontmatter } from "@kitelev/exocortex-core";
 import {
   LayoutParser,
   type LayoutParseResult,

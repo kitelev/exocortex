@@ -1,4 +1,4 @@
-import type { IEventBus } from "exocortex";
+import type { IEventBus } from "@kitelev/exocortex-core";
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 
 type EventHandler<T = unknown> = (data: T) => void;

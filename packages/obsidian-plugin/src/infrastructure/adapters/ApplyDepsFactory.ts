@@ -3,7 +3,7 @@ import {
   FileMountBaseStore,
   MOUNT_BASE_STORE_FILENAME,
   type INotificationService,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { vaultWatermarkFileIO } from "./SyncDepsFactory";
 
 import type { ILogger } from "../../adapters/logging/ILogger";

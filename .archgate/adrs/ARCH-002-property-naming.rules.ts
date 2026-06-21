@@ -8,10 +8,10 @@ export default {
       async check(ctx) {
         // Check domain constants files for property definitions
         const constantFiles = await ctx.glob(
-          "packages/exocortex/src/domain/**/constants*.ts",
+          "packages/core/src/domain/**/constants*.ts",
         );
         const modelFiles = await ctx.glob(
-          "packages/exocortex/src/domain/**/models/**/*.ts",
+          "packages/core/src/domain/**/models/**/*.ts",
         );
         const allFiles = [...constantFiles, ...modelFiles];
 

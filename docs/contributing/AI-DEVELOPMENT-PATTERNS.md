@@ -2,7 +2,7 @@
 
 > Patterns discovered through AI-driven development, distilled from actual implementation experience.
 >
-> **Note:** the concrete examples and statistics below are an **early snapshot** (≈ issues #896–989, December 2025) and have not been re-tallied against the current backlog. The *patterns* are intended to be durable; the issue numbers and counts are illustrative of when they emerged, not a running total.
+> **Note:** the concrete examples and statistics below are an **early snapshot** (≈ issues #896–989, December 2025) and have not been re-tallied against the current backlog. The _patterns_ are intended to be durable; the issue numbers and counts are illustrative of when they emerged, not a running total.
 
 ---
 
@@ -24,11 +24,11 @@
 
 ### Characteristics
 
-| Metric | Value |
-|--------|-------|
-| Average steps | 70-100 |
-| Success rate | 100% (all merged) |
-| Typical PR time | 2-4 hours |
+| Metric          | Value             |
+| --------------- | ----------------- |
+| Average steps   | 70-100            |
+| Success rate    | 100% (all merged) |
+| Typical PR time | 2-4 hours         |
 
 ### Implementation Workflow
 
@@ -63,16 +63,19 @@
 ### Real-world Examples
 
 **DateTime Subtraction (Issue #972, #962, #963)**:
+
 - Pattern: `xsd:dateTime - xsd:dateTime = xsd:dayTimeDuration`
 - Implementation: ArithmeticOperator with type-aware dispatch
 - Test coverage: Positive/negative durations, timezone handling
 
 **String Functions (Issue #982, #983)**:
+
 - Pattern: NORMALIZE(), FOLD() following XPath/XQuery semantics
 - Implementation: StringFunctionExecutor with Unicode support
 - Test coverage: NFC/NFD/NFKC/NFKD normalization forms
 
 **RDF-Star Support (Issue #956, #957, #979)**:
+
 - Pattern: Quoted triples in BGP and CONSTRUCT
 - Implementation: Extended parser + TriplePattern model
 - Test coverage: Nested annotations, reification queries
@@ -101,12 +104,14 @@
 **Problem observed**: 25+ execution attempts before successful merge (307 steps)
 
 **Root causes identified**:
+
 - Complex component with many dependencies
 - State management between cells and rows
 - Event handling for sorting/filtering
 - Integration with existing table infrastructure
 
 **Solution pattern**:
+
 ```typescript
 // 1. Start with minimal viable renderer
 class TableLayoutRenderer {
@@ -127,12 +132,12 @@ class TableLayoutRenderer {
 
 ### Post-First-Component Acceleration
 
-| Component | Steps | Time | Notes |
-|-----------|-------|------|-------|
-| TableLayoutRenderer (#967) | 307 | ~5 hours | First, most complex |
-| KanbanLayoutRenderer (#970) | 84 | ~1.5 hours | Learned from #967 |
-| GraphLayoutRenderer (#971) | 151 | ~2.5 hours | D3.js integration |
-| CalendarLayoutRenderer (#977) | 94 | ~1.5 hours | Temporal handling |
+| Component                     | Steps | Time       | Notes               |
+| ----------------------------- | ----- | ---------- | ------------------- |
+| TableLayoutRenderer (#967)    | 307   | ~5 hours   | First, most complex |
+| KanbanLayoutRenderer (#970)   | 84    | ~1.5 hours | Learned from #967   |
+| GraphLayoutRenderer (#971)    | 151   | ~2.5 hours | D3.js integration   |
+| CalendarLayoutRenderer (#977) | 94    | ~1.5 hours | Temporal handling   |
 
 **Key insight**: First component establishes patterns; subsequent components benefit from warm context.
 
@@ -173,10 +178,10 @@ P3 (Low - Batch Processing)
 grep -r "unused" packages/*/src/ | wc -l  # Count scope
 
 # 2. Fix by package (maintain focus)
-# packages/exocortex → packages/obsidian-plugin → packages/cli
+# packages/core → packages/obsidian-plugin → packages/cli
 
 # 3. Run targeted tests after each fix
-npm test -- --testPathPatterns="packages/exocortex"
+npm test -- --testPathPatterns="packages/core"
 
 # 4. Commit by severity level
 git commit -m "fix(security): address ReDoS vulnerabilities (P0)"
@@ -185,11 +190,11 @@ git commit -m "fix(quality): remove unused variables (P3)"
 
 ### Efficiency Metrics
 
-| Priority | Avg Steps | Typical Time | Automation Potential |
-|----------|-----------|--------------|---------------------|
-| P0 | 90-120 | 2-3 hours | Low (manual analysis) |
-| P1 | 60-90 | 1-2 hours | Medium (lint --fix) |
-| P2/P3 | 50-70 | 1 hour | High (batch sed/awk) |
+| Priority | Avg Steps | Typical Time | Automation Potential  |
+| -------- | --------- | ------------ | --------------------- |
+| P0       | 90-120    | 2-3 hours    | Low (manual analysis) |
+| P1       | 60-90     | 1-2 hours    | Medium (lint --fix)   |
+| P2/P3    | 50-70     | 1 hour       | High (batch sed/awk)  |
 
 ---
 
@@ -227,6 +232,7 @@ Agent C: Issue #983 (SPARQL function)      ← Different subsystem
 ```
 
 **Selection criteria for parallel work**:
+
 1. Different subsystems (presentation vs infrastructure vs core)
 2. No shared dependencies between issues
 3. Clear ownership through issue assignment
@@ -271,11 +277,11 @@ git worktree add ../worktrees/retry-feature -b feature/retry
 
 ### Success Metrics for Complex Components
 
-| Metric | Target | Warning | Critical |
-|--------|--------|---------|----------|
-| Steps to merge | < 150 | 150-250 | > 250 |
-| Failed attempts | 0-1 | 2-3 | > 3 |
-| Time to merge | < 4h | 4-8h | > 8h |
+| Metric          | Target | Warning | Critical |
+| --------------- | ------ | ------- | -------- |
+| Steps to merge  | < 150  | 150-250 | > 250    |
+| Failed attempts | 0-1    | 2-3     | > 3      |
+| Time to merge   | < 4h   | 4-8h    | > 8h     |
 
 ---
 
@@ -283,16 +289,17 @@ git worktree add ../worktrees/retry-feature -b feature/retry
 
 Based on 96 completed issues (December 15-16, 2025):
 
-| Category | Issues | Avg Steps | Success Rate |
-|----------|--------|-----------|--------------|
-| SPARQL features | 45+ | 85 | 100% |
-| Layout System | 12 | 140 | 100% |
-| Code Quality | 15 | 90 | 100% |
-| RDF-Star | 4 | 95 | 100% |
+| Category        | Issues | Avg Steps | Success Rate |
+| --------------- | ------ | --------- | ------------ |
+| SPARQL features | 45+    | 85        | 100%         |
+| Layout System   | 12     | 140       | 100%         |
+| Code Quality    | 15     | 90        | 100%         |
+| RDF-Star        | 4      | 95        | 100%         |
 
 **Total productivity**: ~96 issues in 2 days = ~48 issues/day
 
 **Key enablers**:
+
 1. Warm context from sequential related tasks
 2. Clear specification (SPARQL W3C, Layout DSL)
 3. Established test patterns

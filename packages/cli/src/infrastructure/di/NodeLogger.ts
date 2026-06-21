@@ -1,4 +1,4 @@
-import { ILogger } from "exocortex";
+import { ILogger } from "@kitelev/exocortex-core";
 
 export class NodeLogger implements ILogger {
   constructor(private appName: string = "exocortex-cli") {}

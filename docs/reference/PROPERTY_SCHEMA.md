@@ -174,14 +174,14 @@ exo__Asset_createdAt: 2025-10-26T14:30:45
 
 **Ontology reference (which system defines this asset)**
 
-| Attribute         | Value                                                       |
-| ----------------- | ----------------------------------------------------------- |
-| **Type**          | String (WikiLink)                                           |
-| **Required**      | ✅ Yes (ALL assets)                                         |
-| **Format**        | Quoted UID wikilink: `"[[<ontology-asset-uid>]]"`           |
-| **Purpose**       | Link asset to defining ontology                             |
-| **Generated**     | Inherited from parent or set explicitly                     |
-| **Mutable**       | Rarely (usually stays constant)                             |
+| Attribute         | Value                                                                                     |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| **Type**          | String (WikiLink)                                                                         |
+| **Required**      | ✅ Yes (ALL assets)                                                                       |
+| **Format**        | Quoted UID wikilink: `"[[<ontology-asset-uid>]]"`                                         |
+| **Purpose**       | Link asset to defining ontology                                                           |
+| **Generated**     | Inherited from parent or set explicitly                                                   |
+| **Mutable**       | Rarely (usually stays constant)                                                           |
 | **Common Values** | `"[[<ontology-asset-uid>]]"`; legacy `!`-prefix anchors (`"[[!ems]]"`, `"[[!concepts]]"`) |
 
 **Example**:
@@ -1072,13 +1072,13 @@ some__Multi_field:
 
 **Human-readable display name for a property (RFC-030)**
 
-| Attribute    | Value                                                                       |
-| ------------ | --------------------------------------------------------------------------- |
-| **Type**     | String                                                                       |
-| **Required** | No                                                                           |
-| **Domain**   | Property-definition assets (class descends from `exo__Property`)             |
-| **Purpose**  | Display text for the predicate key in Obsidian's Properties block            |
-| **Mutable**  | ✅ Yes                                                                       |
+| Attribute    | Value                                                             |
+| ------------ | ----------------------------------------------------------------- |
+| **Type**     | String                                                            |
+| **Required** | No                                                                |
+| **Domain**   | Property-definition assets (class descends from `exo__Property`)  |
+| **Purpose**  | Display text for the predicate key in Obsidian's Properties block |
+| **Mutable**  | ✅ Yes                                                            |
 
 When set on a property-definition asset, `PropertiesLabelPatch`
 (`packages/obsidian-plugin/src/presentation/properties/PropertiesLabelPatch.ts`)
@@ -1309,7 +1309,7 @@ ems__Effort_status: [[ems__EffortStatusDraft]]
 
 Status transitions are **workflow-driven**, not enforced by a hardcoded
 transition table. `WorkflowResolver`
-(`packages/exocortex/src/services/WorkflowResolver.ts`) resolves the
+(`packages/core/src/services/WorkflowResolver.ts`) resolves the
 applicable workflow with this priority:
 
 1. **Asset-specific workflow** — the asset's `ems__Effort_workflow` property.
@@ -1318,7 +1318,7 @@ applicable workflow with this priority:
    `ems__Workflow_isDefault: true` for the asset's class.
 3. **Hardcoded fallback** — `PROJECT_DEFAULT_WORKFLOW` /
    `TASK_DEFAULT_WORKFLOW`
-   (`packages/exocortex/src/domain/defaults/DefaultWorkflows.ts`), for
+   (`packages/core/src/domain/defaults/DefaultWorkflows.ts`), for
    backward compatibility.
 
 The fallback defaults are:
@@ -1444,7 +1444,7 @@ aliases:
 ## 🔗 Related Documentation
 
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) - System architecture overview
-- [PreconditionEvaluator.ts](../../packages/exocortex/src/services/PreconditionEvaluator.ts) - Command visibility (vault-declared `exocmd__Precondition` evaluation; the former hardcoded `CommandVisibility` layer was removed in #3384)
+- [PreconditionEvaluator.ts](../../packages/core/src/services/PreconditionEvaluator.ts) - Command visibility (vault-declared `exocmd__Precondition` evaluation; the former hardcoded `CommandVisibility` layer was removed in #3384)
 
 ---
 

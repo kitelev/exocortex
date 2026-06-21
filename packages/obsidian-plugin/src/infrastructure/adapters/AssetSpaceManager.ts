@@ -7,8 +7,8 @@
 import { nodeFsPromises, nodePath } from "./lazyNodeModules";
 import type { App, TFile } from "obsidian";
 import { Platform } from "obsidian";
-import type { INotificationService } from "exocortex";
-import { derivePath } from "exocortex";
+import type { INotificationService } from "@kitelev/exocortex-core";
+import { derivePath } from "@kitelev/exocortex-core";
 import { GitHubRestClient } from "./GitHubRestClient";
 import { TarExtractor, type ExtractedTarFile } from "./TarExtractor";
 import { StagingDirTracker } from "./StagingDirTracker";

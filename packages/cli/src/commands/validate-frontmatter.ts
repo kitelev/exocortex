@@ -5,7 +5,7 @@ import { execSync } from "child_process";
 import {
   NoteToRDFConverter,
   type ExocortexInvariantViolation,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";

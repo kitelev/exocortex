@@ -3,7 +3,7 @@
  *
  * This file lists tests that are temporarily disabled (quarantined) while
  * being investigated/fixed. The quarantine machinery itself lives in
- * `@exocortex/test-utils` (see `packages/test-utils/src/reporters/quarantine.ts`).
+ * `@kitelev/exocortex-test-utils` (see `packages/test-utils/src/reporters/quarantine.ts`).
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * RFC Phase 3.3 — Quarantine activation (T3.2 deliverable, 2026-05-01)
@@ -49,7 +49,7 @@
  * }
  */
 
-import type { QuarantinedTest } from "@exocortex/test-utils";
+import type { QuarantinedTest } from "@kitelev/exocortex-test-utils";
 
 /**
  * Quarantined specs.

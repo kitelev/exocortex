@@ -1,7 +1,7 @@
 import React from "react";
 import { AreaTreeRenderer } from "../../src/presentation/renderers/layout/AreaTreeRenderer";
 import { Keymap } from "obsidian";
-import { AssetClass, AreaHierarchyBuilder } from "exocortex";
+import { AssetClass, AreaHierarchyBuilder } from "@kitelev/exocortex-core";
 import {
   createMockApp,
   createMockTFile,
@@ -19,8 +19,8 @@ jest.mock("obsidian", () => ({
   },
 }));
 
-jest.mock("exocortex", () => ({
-  ...jest.requireActual("exocortex"),
+jest.mock("@kitelev/exocortex-core", () => ({
+  ...jest.requireActual("@kitelev/exocortex-core"),
   AssetClass: {
     AREA: "ems__Area",
     PROJECT: "ems__Project",

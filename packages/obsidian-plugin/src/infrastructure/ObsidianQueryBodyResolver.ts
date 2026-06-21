@@ -1,7 +1,7 @@
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
-import type { IQueryBodyResolver } from "exocortex";
-import { extractSparqlBlock, stripFrontmatter } from "exocortex";
+import type { IQueryBodyResolver } from "@kitelev/exocortex-core";
+import { extractSparqlBlock, stripFrontmatter } from "@kitelev/exocortex-core";
 
 /**
  * Vault-backed `IQueryBodyResolver` (RFC c78cc5c8 Phase 1a).

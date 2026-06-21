@@ -4,7 +4,7 @@ import {
   ExoQLAlgebraTranslator,
   AlgebraOptimizer,
   AlgebraSerializer,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 /**
  * Prefix declaration extracted from a SPARQL query.

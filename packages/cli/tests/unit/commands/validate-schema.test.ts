@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { mkdirSync, writeFileSync } from "fs";
 
 // Mock exocortex (heavy dependency)
-jest.unstable_mockModule("exocortex", () => ({
+jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   InMemoryTripleStore: jest.fn(),
   ExoQLParser: jest.fn(),
   ExoQLAlgebraTranslator: jest.fn(),
@@ -64,7 +64,7 @@ const {
 } = await import("../../../src/commands/validate-schema.js");
 
 // Import mocked DomainIRI/DomainLiteral so instanceof checks in applyLegacyExceptionFilter work
-const { DomainIRI, DomainLiteral } = await import("exocortex");
+const { DomainIRI, DomainLiteral } = await import("@kitelev/exocortex-core");
 
 const TMP_DIR = "/tmp/validate-schema-test-" + Date.now();
 

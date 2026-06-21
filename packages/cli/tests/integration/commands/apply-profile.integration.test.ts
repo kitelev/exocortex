@@ -26,7 +26,7 @@ import os from "os";
 import path from "path";
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 
-import type { ApplyPlan, IConfirmGate } from "exocortex";
+import type { ApplyPlan, IConfirmGate } from "@kitelev/exocortex-core";
 import { runApplyProfile, applyProfileCommand } from "../../../src/commands/apply-profile.js";
 import {
   ASSET_SPACE_CLASS_UID,

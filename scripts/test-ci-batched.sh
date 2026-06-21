@@ -84,7 +84,7 @@ fi
 
 # Run the FULL exocortex core suite (TF-gate O1+O2, project "Exocortex Alpha
 # Launch"). Previously this ran a hand-maintained allow-list of ~55 of the ~319
-# suites under packages/exocortex/jest.config.js, leaving ~83% of the core
+# suites under packages/core/jest.config.js, leaving ~83% of the core
 # engine ungated and rotting silently (jest roots vs CI allowlist gotcha — see
 # packages/obsidian-plugin/CLAUDE.md "Test Suite Awareness"). The allow-list was
 # also a maintenance trap (every new suite had to be hand-added). Dropping it
@@ -94,7 +94,7 @@ echo "📦 Running exocortex core test suite (full)..."
 # tests/performance/** excluded — wall-clock micro-benchmarks with tight ms
 # thresholds flake under parallel-worker CI load (mirrors the CI gate in
 # .github/workflows/ci.yml test-coverage-exocortex).
-EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathIgnorePatterns /node_modules/ /tests/performance/ --forceExit"
+EXOCORTEX_JEST_ARGS="--config packages/core/jest.config.js --testPathIgnorePatterns /node_modules/ /tests/performance/ --forceExit"
 if [ "$CI" = "true" ]; then
     if timeout 300 node ./node_modules/jest/bin/jest.js $EXOCORTEX_JEST_ARGS; then
         echo "✅ Exocortex core tests passed!"

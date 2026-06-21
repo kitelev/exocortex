@@ -2,7 +2,7 @@ import type { App } from "obsidian";
 import {
   registerOrderSpecLoader,
   type FrontmatterOrderSpec,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 /**
  * Plugin-side loader for `exo__FrontmatterOrderSpec` assets.

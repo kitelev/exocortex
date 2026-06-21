@@ -14,7 +14,7 @@ import {
   CommandExecutionFlow,
   ITripleStore,
   createTripleStoreRequiredPropertyResolver,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import {
   ButtonBuilderContext,
   IButtonGroupBuilder,

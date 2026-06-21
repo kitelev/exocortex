@@ -1,4 +1,4 @@
-import { EffortStatus } from "exocortex";
+import { EffortStatus } from "@kitelev/exocortex-core";
 import { ObsidianApp } from '@plugin/types';
 
 export class BlockerHelpers {

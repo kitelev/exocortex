@@ -1,6 +1,6 @@
 import { DailyNavigationRenderer } from "../../../../src/presentation/renderers/helpers/DailyNavigationRenderer";
 import { DailyNoteHelpers } from "../../../../src/presentation/renderers/helpers/DailyNoteHelpers";
-import { IVaultAdapter, MetadataExtractor } from "exocortex";
+import { IVaultAdapter, MetadataExtractor } from "@kitelev/exocortex-core";
 import { ILogger } from "../../../../src/adapters/logging/ILogger";
 
 // Mock DailyNoteHelpers

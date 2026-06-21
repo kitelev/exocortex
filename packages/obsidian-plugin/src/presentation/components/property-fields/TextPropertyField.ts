@@ -1,6 +1,6 @@
 import { Setting, setIcon } from "obsidian";
 import type { TextPropertyFieldProps, ValidationResult } from "./types";
-import type { INotificationService } from "exocortex";
+import type { INotificationService } from "@kitelev/exocortex-core";
 
 /**
  * Text property field renderer.

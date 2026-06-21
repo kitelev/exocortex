@@ -1,5 +1,5 @@
 import { ICommand } from "./ICommand";
-import type { INotificationService } from "exocortex";
+import type { INotificationService } from "@kitelev/exocortex-core";
 
 export class ReloadLayoutCommand implements ICommand {
   id = "reload-layout";

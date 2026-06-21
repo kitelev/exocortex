@@ -24,7 +24,7 @@
  *  `it.failing`), and assertion (1) becomes red on any future drift.
  */
 
-import { functionHandlers } from "../../../../exocortex/src/infrastructure/sparql/filters/FunctionRegistry";
+import { functionHandlers } from "../../../../core/src/infrastructure/sparql/filters/FunctionRegistry";
 
 const EXPECTED_FUNCTIONS_INCLUDING_EXOQL_EVAL: ReadonlyArray<string> = [
   "abs",

@@ -24,7 +24,7 @@ on:
       - "packages/obsidian-plugin/Dockerfile.eka-e2e"
       - "packages/obsidian-plugin/scripts/test-eka-obsidian-leg.sh"
       - "packages/obsidian-plugin/src/**"
-      - "packages/exocortex/src/**"
+      - "packages/core/src/**"
       - ".github/workflows/eka-obsidian-leg-e2e.yml"
 
 # Avoid piling up scheduled + push runs.
@@ -75,7 +75,7 @@ jobs:
       - name: Build plugin (main.js)
         if: steps.tok.outputs.present == 'true'
         run: |
-          npm run build -w exocortex
+          npm run build -w @kitelev/exocortex-core
           npm run build -w @kitelev/exocortex-services
           node packages/obsidian-plugin/esbuild.config.mjs production
 

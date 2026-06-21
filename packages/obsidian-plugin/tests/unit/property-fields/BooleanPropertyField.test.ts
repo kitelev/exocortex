@@ -1,4 +1,4 @@
-import { PropertyFieldType } from "exocortex";
+import { PropertyFieldType } from "@kitelev/exocortex-core";
 import { BooleanPropertyField } from "../../../src/presentation/components/property-fields/BooleanPropertyField";
 
 // Helper to extend HTMLElement with Obsidian's methods

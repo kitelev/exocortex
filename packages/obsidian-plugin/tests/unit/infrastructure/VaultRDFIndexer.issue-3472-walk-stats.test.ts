@@ -5,10 +5,10 @@ import {
   NoteToRDFConverter,
   ApplicationErrorHandler,
   Namespace,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter";
 
-jest.mock("exocortex");
+jest.mock("@kitelev/exocortex-core");
 jest.mock("../../../src/adapters/ObsidianVaultAdapter");
 
 /**

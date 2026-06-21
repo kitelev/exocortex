@@ -19,8 +19,8 @@ import {
   registerCoreServices,
   resetContainer,
   GroundingType,
-} from "exocortex";
-import type { ResolvedCommand } from "exocortex";
+} from "@kitelev/exocortex-core";
+import type { ResolvedCommand } from "@kitelev/exocortex-core";
 
 /**
  * Creates mock RFC-009 services for UI tests.

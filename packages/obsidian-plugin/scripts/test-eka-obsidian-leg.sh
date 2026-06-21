@@ -41,7 +41,7 @@ cd "$REPO_ROOT"
 
 if [ "${SKIP_BUILD:-}" != "1" ]; then
   echo "== Building plugin (main.js) =="
-  npm run build -w exocortex >/dev/null
+  npm run build -w @kitelev/exocortex-core >/dev/null
   npm run build -w @kitelev/exocortex-services >/dev/null
   node packages/obsidian-plugin/esbuild.config.mjs production
 

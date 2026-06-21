@@ -8,7 +8,7 @@ import {
   NetworkError,
   ServiceError,
   type INotificationService,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 /**
  * Task data for iOS Live Activities integration

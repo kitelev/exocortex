@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs-extra";
-import { NoteToRDFConverter, Triple, IRI } from "exocortex";
+import { NoteToRDFConverter, Triple, IRI } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import {
   serializeNode,

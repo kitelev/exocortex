@@ -1,5 +1,5 @@
 import type { App, TFile } from "obsidian";
-import { normaliseExcludedFolders } from "exocortex";
+import { normaliseExcludedFolders } from "@kitelev/exocortex-core";
 import type { ILogger } from "@plugin/adapters/logging/ILogger";
 import { DEFAULT_SETTINGS } from "@plugin/domain/settings/ExocortexSettings";
 import {

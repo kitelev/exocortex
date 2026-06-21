@@ -45,7 +45,7 @@ import {
   type AssetSpaceHttpClient,
   type MountBaseStorePort,
   type MountFile,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 const REPO_URL_REGEX = /^https:\/\/github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?$/;
 

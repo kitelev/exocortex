@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { MetadataHelpers, EffortSortingHelpers } from "exocortex";
+import { MetadataHelpers, EffortSortingHelpers } from "@kitelev/exocortex-core";
 import { useTableSortStore } from '@plugin/presentation/stores';
 import type { DailyTask } from './types';
 import {

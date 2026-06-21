@@ -17,7 +17,7 @@
  * verbatim — it is module-private in diff3.ts) so the alignment matches.
  */
 
-import type { ConflictDetail } from "exocortex";
+import type { ConflictDetail } from "@kitelev/exocortex-core";
 
 export type DiffClass = "context" | "added" | "removed" | "conflict";
 
@@ -56,7 +56,7 @@ export interface PaneModel {
 
 /**
  * Monotonic LCS pairing: index in `a` → index in `b`. Copied verbatim from
- * `packages/exocortex/src/services/sync/diff3.ts` (`lcsMatch` is module-private
+ * `packages/core/src/services/sync/diff3.ts` (`lcsMatch` is module-private
  * there) so the UI alignment matches the engine's 3-way merge exactly.
  */
 function lcsMatch(

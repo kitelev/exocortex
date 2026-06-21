@@ -1,4 +1,4 @@
-import { WikiLinkHelpers } from "exocortex";
+import { WikiLinkHelpers } from "@kitelev/exocortex-core";
 
 describe("WikiLinkHelpers.normalize — UUID-alias wikilinks (issue #2764)", () => {
   it("should prefer alias when target is a UUID", () => {

@@ -13,6 +13,6 @@ module.exports = {
     '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.test.json' }],
   },
   moduleNameMapper: {
-    '^exocortex$': '<rootDir>/../exocortex/src/index.ts',
+    '^@kitelev/exocortex-core$': '<rootDir>/../core/src/index.ts',
   },
 };

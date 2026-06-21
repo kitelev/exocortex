@@ -9,7 +9,7 @@ import {
   ExoQLQueryExecutor,
   NoteToRDFConverter,
   Triple,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError, InvalidArgumentsError } from "../utils/errors/index.js";

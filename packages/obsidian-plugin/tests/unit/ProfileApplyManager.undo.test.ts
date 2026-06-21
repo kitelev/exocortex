@@ -18,7 +18,7 @@
  * pre-apply profile as the undo target (see "revert-verify" annotation).
  */
 import type { App, TFile } from "obsidian";
-import type { ApplyPlan, IConfirmGate } from "exocortex";
+import type { ApplyPlan, IConfirmGate } from "@kitelev/exocortex-core";
 
 import {
   ProfileApplyManager,

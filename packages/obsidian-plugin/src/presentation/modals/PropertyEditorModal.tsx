@@ -1,6 +1,6 @@
 import { Modal, App, TFile } from "obsidian";
 import React from "react";
-import { FrontmatterService, INotificationService } from "exocortex";
+import { FrontmatterService, INotificationService } from "@kitelev/exocortex-core";
 import { ExocortexPluginInterface } from '@plugin/types';
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import { PropertyEditorForm } from '@plugin/presentation/components/property-editor/PropertyEditorForm';

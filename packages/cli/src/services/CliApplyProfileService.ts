@@ -26,14 +26,14 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import yaml from "js-yaml";
 
-import type { ApplyPlan } from "exocortex";
+import type { ApplyPlan } from "@kitelev/exocortex-core";
 import {
   derivePath,
   assertTsFloorReconciled,
   SDK_FLOOR,
   CATALOG_KEEP_NAMESPACES,
   TsFloorViolationError,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 import {
   ASSET_SPACE_CLASS_UID,
@@ -247,7 +247,7 @@ export class CliApplyProfileService {
    * EV8 — delegates to the single named guard in `exocortex`. The CLI/headless
    * engine enforces the **SDK floor** = `{exo}` (RFC 5aa2a73a / #3440):
    * `$shared-identities` and `$exocmd` are optional, so a bare SDK vault
-   * legitimately omits them. Tests live in `packages/exocortex/tests/domain/profile/`.
+   * legitimately omits them. Tests live in `packages/core/tests/domain/profile/`.
    *
    * Issue #3511 (EKA Alpha) — the floor is matched by legacy UID OR
    * `exo__AssetSpace_namespace`, so a central-registry vault whose `$exo`

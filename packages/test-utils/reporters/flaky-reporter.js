@@ -9,7 +9,7 @@
  * module.exports = {
  *   reporters: [
  *     'default',
- *     ['@exocortex/test-utils/reporters/flaky-reporter', {
+ *     ['@kitelev/exocortex-test-utils/reporters/flaky-reporter', {
  *       outputFile: 'flaky-report.json',
  *       failOnFlaky: false, // Set to true to fail CI on flaky tests
  *     }],

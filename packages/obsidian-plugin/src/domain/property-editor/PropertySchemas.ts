@@ -1,4 +1,4 @@
-import type { PropertySchemaResolver, ClassHierarchyResolver, EnumValueResolver, EnumValue } from "exocortex";
+import type { PropertySchemaResolver, ClassHierarchyResolver, EnumValueResolver, EnumValue } from "@kitelev/exocortex-core";
 import { PropertySchemaService } from "./PropertySchemaService";
 
 export type PropertyFieldType =

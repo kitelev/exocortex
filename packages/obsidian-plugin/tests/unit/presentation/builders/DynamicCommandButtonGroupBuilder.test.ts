@@ -1,8 +1,8 @@
 import { DynamicCommandButtonGroupBuilder } from "../../../../src/presentation/builders/button-groups/DynamicCommandButtonGroupBuilder";
 import { PanelResolver } from "../../../../src/application/services/PanelResolver";
 import type { CommandPanel } from "../../../../src/domain/layout/CommandPanel";
-import { GroundingType, CommandExecutionFlow } from "exocortex";
-import type { CommandPromptAdapter, UserInput } from "exocortex";
+import { GroundingType, CommandExecutionFlow } from "@kitelev/exocortex-core";
+import type { CommandPromptAdapter, UserInput } from "@kitelev/exocortex-core";
 
 const mockLogger = {
   info: jest.fn(),

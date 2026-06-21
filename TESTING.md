@@ -34,7 +34,7 @@ npm run test:component  # Playwright component tests
 npm run test:e2e:docker # E2E tests in Docker
 
 # Run with coverage (core package only — the root package.json has no test:coverage script)
-npm run test:coverage -w exocortex
+npm run test:coverage -w @kitelev/exocortex-core
 ```
 
 ### Writing Your First Test
@@ -69,12 +69,12 @@ describe("FrontmatterService", () => {
 
 ### Test File Naming Conventions
 
-| Pattern      | Location                                    | Runner        |
-| ------------ | ------------------------------------------- | ------------- |
-| `*.test.ts`  | `packages/*/tests/unit/`                    | Jest          |
+| Pattern      | Location                                    | Runner                           |
+| ------------ | ------------------------------------------- | -------------------------------- |
+| `*.test.ts`  | `packages/*/tests/unit/`                    | Jest                             |
 | `*.test.ts`  | `packages/*/tests/ui/`                      | Jest (jest-environment-obsidian) |
-| `*.spec.tsx` | `packages/obsidian-plugin/tests/component/` | Playwright CT |
-| `*.spec.ts`  | `packages/obsidian-plugin/tests/e2e/specs/` | Playwright    |
+| `*.spec.tsx` | `packages/obsidian-plugin/tests/component/` | Playwright CT                    |
+| `*.spec.ts`  | `packages/obsidian-plugin/tests/e2e/specs/` | Playwright                       |
 
 ---
 
@@ -88,7 +88,7 @@ describe("FrontmatterService", () => {
 
 **Location**:
 
-- `packages/exocortex/tests/` - Core business logic
+- `packages/core/tests/` - Core business logic
 - `packages/obsidian-plugin/tests/unit/` - Plugin-specific logic
 - `packages/cli/tests/unit/` - CLI commands and utilities
 
@@ -100,10 +100,10 @@ describe("FrontmatterService", () => {
 npm run test:unit
 
 # Run single test file
-npx jest packages/exocortex/tests/utilities/FrontmatterService.test.ts --no-coverage
+npx jest packages/core/tests/utilities/FrontmatterService.test.ts --no-coverage
 
 # Run with watch mode (development)
-npx jest --watch packages/exocortex/tests/utilities/FrontmatterService.test.ts
+npx jest --watch packages/core/tests/utilities/FrontmatterService.test.ts
 ```
 
 **Example**:
@@ -277,11 +277,11 @@ packages/obsidian-plugin/tests/e2e/
 
 The plugin has **three** distinct E2E suites with separate configs and CI jobs:
 
-| Suite | Location | Config | CI job / workflow | Gating |
-| --- | --- | --- | --- | --- |
-| **Main smoke** | `tests/e2e/specs/**` | `playwright-e2e.config.ts` | `e2e-shard (1..6)` in `.github/workflows/ci.yml` | **Required** (6 of the [required checks](docs/reference/ci/required-checks.md)); sharded via `playwright-shard-assignments.json` |
-| **EKA GUI-BDD** | `tests/e2e/eka-gui/create-instance-buttons.spec.ts` (+ `eka-gui-helpers.ts`) | `playwright-eka-gui.config.ts` | `.github/workflows/eka-gui-e2e.yml` | **Non-blocking** release-gate: nightly cron + `push:[main]` + `workflow_dispatch`. Drives the real create-instance buttons (Create Task/Project/Area/Meeting) against published `exoas-*` content. |
-| **EKA Obsidian-leg** | `tests/e2e/eka/eka-obsidian-leg.spec.ts` (+ `scripts/test-eka-obsidian-leg.sh`) | run via the script | `.github/workflows/eka-obsidian-leg-e2e.yml` | **Non-blocking**: nightly cron + `push:[main]` (paths-filtered) + `workflow_dispatch`. Exercises the EKA bootstrap/apply-profile leg in real Obsidian. |
+| Suite                | Location                                                                        | Config                         | CI job / workflow                                | Gating                                                                                                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Main smoke**       | `tests/e2e/specs/**`                                                            | `playwright-e2e.config.ts`     | `e2e-shard (1..6)` in `.github/workflows/ci.yml` | **Required** (6 of the [required checks](docs/reference/ci/required-checks.md)); sharded via `playwright-shard-assignments.json`                                                                   |
+| **EKA GUI-BDD**      | `tests/e2e/eka-gui/create-instance-buttons.spec.ts` (+ `eka-gui-helpers.ts`)    | `playwright-eka-gui.config.ts` | `.github/workflows/eka-gui-e2e.yml`              | **Non-blocking** release-gate: nightly cron + `push:[main]` + `workflow_dispatch`. Drives the real create-instance buttons (Create Task/Project/Area/Meeting) against published `exoas-*` content. |
+| **EKA Obsidian-leg** | `tests/e2e/eka/eka-obsidian-leg.spec.ts` (+ `scripts/test-eka-obsidian-leg.sh`) | run via the script             | `.github/workflows/eka-obsidian-leg-e2e.yml`     | **Non-blocking**: nightly cron + `push:[main]` (paths-filtered) + `workflow_dispatch`. Exercises the EKA bootstrap/apply-profile leg in real Obsidian.                                             |
 
 > On Apple Silicon the Docker e2e runs under amd64 QEMU emulation; the EKA suites are intentionally kept **out** of the required `e2e-shard` set so emulation flake never blocks merges. Verify EKA-suite changes via their CI workflow (native amd64 runner), not local Docker.
 
@@ -347,11 +347,11 @@ The project follows a **test pyramid architecture** to ensure fast feedback, mai
 
 #### Ratios and Enforcement
 
-| Layer           | Target Ratio  | CI Gate                    | Framework      |
-| --------------- | ------------- | -------------------------- | -------------- |
-| Unit Tests      | ≥70%          | Advisory (review)          | Jest           |
-| Component Tests | 10-25%        | All must pass              | Playwright CT  |
-| E2E Tests       | ≤10%          | All must pass              | Playwright E2E |
+| Layer           | Target Ratio | CI Gate           | Framework      |
+| --------------- | ------------ | ----------------- | -------------- |
+| Unit Tests      | ≥70%         | Advisory (review) | Jest           |
+| Component Tests | 10-25%       | All must pass     | Playwright CT  |
+| E2E Tests       | ≤10%         | All must pass     | Playwright E2E |
 
 #### Why This Structure?
 
@@ -421,12 +421,12 @@ Coverage review checklist:
 
 As of June 2026 (file counts; re-derive with the commands below rather than trusting this table):
 
-| Type                 | Files | How to count                                                              |
-| -------------------- | ----- | ------------------------------------------------------------------------- |
-| Jest (`*.test.ts`)   | 691   | `find packages -name '*.test.ts' -not -path '*/node_modules/*' \| wc -l`  |
-| Jest (`*.test.tsx`)  | 20    | `find packages -name '*.test.tsx' -not -path '*/node_modules/*' \| wc -l` |
-| Component (CT)       | 34    | `find packages/obsidian-plugin/tests/component -name '*.spec.tsx' \| wc -l` |
-| E2E specs            | 20    | `find packages/obsidian-plugin/tests/e2e/specs -name '*.spec.ts' \| wc -l` |
+| Type                | Files | How to count                                                                |
+| ------------------- | ----- | --------------------------------------------------------------------------- |
+| Jest (`*.test.ts`)  | 691   | `find packages -name '*.test.ts' -not -path '*/node_modules/*' \| wc -l`    |
+| Jest (`*.test.tsx`) | 20    | `find packages -name '*.test.tsx' -not -path '*/node_modules/*' \| wc -l`   |
+| Component (CT)      | 34    | `find packages/obsidian-plugin/tests/component -name '*.spec.tsx' \| wc -l` |
+| E2E specs           | 20    | `find packages/obsidian-plugin/tests/e2e/specs -name '*.spec.ts' \| wc -l`  |
 
 Jest files span unit, UI, integration, and performance suites across all packages. The distribution remains strongly unit-heavy, in line with the pyramid guidance above.
 
@@ -443,19 +443,19 @@ Pure business logic, storage-agnostic utilities.
 - Utility functions
 - SPARQL engine
 
-**Configuration**: `packages/exocortex/jest.config.js`
+**Configuration**: `packages/core/jest.config.js`
 
-**Coverage Threshold**: 95% statements / branches / functions / lines — **local-only** (`packages/exocortex/jest.config.js`). CI does **not** collect coverage for this package: the `test-coverage-exocortex` job runs an allowlist of regression suites *without* `--coverage` (see `.github/workflows/ci.yml`). Core sources do, however, count toward the obsidian-plugin merged coverage gate (the plugin jest config collects coverage from `packages/exocortex/src/**` too).
+**Coverage Threshold**: 95% statements / branches / functions / lines — **local-only** (`packages/core/jest.config.js`). CI does **not** collect coverage for this package: the `test-coverage-exocortex` job runs an allowlist of regression suites _without_ `--coverage` (see `.github/workflows/ci.yml`). Core sources do, however, count toward the obsidian-plugin merged coverage gate (the plugin jest config collects coverage from `packages/core/src/**` too).
 
 ```bash
 # Run core tests
-npx jest --config packages/exocortex/jest.config.js
+npx jest --config packages/core/jest.config.js
 
 # Run core tests with the local 95% coverage gate
-npm run test:coverage -w exocortex
+npm run test:coverage -w @kitelev/exocortex-core
 ```
 
-#### @exocortex/obsidian-plugin
+#### @kitelev/exocortex-obsidian-plugin
 
 Obsidian UI integration layer.
 
@@ -480,7 +480,7 @@ Obsidian UI integration layer.
 npx jest --config packages/obsidian-plugin/jest.config.js
 ```
 
-#### @exocortex/cli
+#### @kitelev/exocortex-cli
 
 Command-line automation tool.
 
@@ -770,16 +770,16 @@ it("should provide helpful error message", async () => {
 
 This is the **single source of truth** for coverage thresholds in this guide. Values below mirror `.github/workflows/ci.yml` and the per-package jest configs — if they disagree, the configs win.
 
-| Package                    | Statements | Branches | Functions | Lines | Enforced where                                                                 |
-| -------------------------- | ---------- | -------- | --------- | ----- | ------------------------------------------------------------------------------ |
-| obsidian-plugin (merged)   | 75.5%      | 63%      | 69%       | 76%   | `test-coverage` CI job (merges shard coverage) + `packages/obsidian-plugin/jest.config.js` |
-| cli                        | 65%        | 60%      | 70%       | 65%   | `test-coverage-cli` CI job                                                      |
-| exocortex (core)           | 95%        | 95%      | 95%       | 95%   | **Local-only** (`packages/exocortex/jest.config.js`, via `npm run test:coverage -w exocortex`) |
+| Package                  | Statements | Branches | Functions | Lines | Enforced where                                                                                          |
+| ------------------------ | ---------- | -------- | --------- | ----- | ------------------------------------------------------------------------------------------------------- |
+| obsidian-plugin (merged) | 75.5%      | 63%      | 69%       | 76%   | `test-coverage` CI job (merges shard coverage) + `packages/obsidian-plugin/jest.config.js`              |
+| cli                      | 65%        | 60%      | 70%       | 65%   | `test-coverage-cli` CI job                                                                              |
+| exocortex (core)         | 95%        | 95%      | 95%       | 95%   | **Local-only** (`packages/core/jest.config.js`, via `npm run test:coverage -w @kitelev/exocortex-core`) |
 
 Notes:
 
-- The obsidian-plugin merged coverage also includes `packages/exocortex/src/**` sources (see `collectCoverageFrom` in the plugin jest config), so core code is indirectly gated in CI through the plugin thresholds.
-- CI does **not** collect coverage for the exocortex package itself: the `test-coverage-exocortex` job runs an allowlist of regression suites without `--coverage`. The 95% gate fires only on local `npm run test:coverage -w exocortex` runs.
+- The obsidian-plugin merged coverage also includes `packages/core/src/**` sources (see `collectCoverageFrom` in the plugin jest config), so core code is indirectly gated in CI through the plugin thresholds.
+- CI does **not** collect coverage for the exocortex package itself: the `test-coverage-exocortex` job runs an allowlist of regression suites without `--coverage`. The 95% gate fires only on local `npm run test:coverage -w @kitelev/exocortex-core` runs.
 
 ### Test Jobs in CI
 
@@ -1059,7 +1059,7 @@ await page.evaluate(() => console.log("Debug from browser"));
 
 ### Code Examples
 
-- `packages/exocortex/tests/` - Core package test examples
+- `packages/core/tests/` - Core package test examples
 - `packages/obsidian-plugin/tests/unit/` - Unit test patterns
 - `packages/obsidian-plugin/tests/component/` - Component test patterns
 

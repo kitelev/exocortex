@@ -2,7 +2,7 @@ import path from "path";
 import { BaseCommandExecutor, CommandContext } from "./BaseCommandExecutor.js";
 import { ErrorHandler } from "../../utils/ErrorHandler.js";
 import { ExitCodes } from "../../utils/ExitCodes.js";
-import { DateFormatter } from "exocortex";
+import { DateFormatter } from "@kitelev/exocortex-core";
 import { rewriteInboundWikilinks } from "../../utils/wikilinkRewriter.js";
 
 /**

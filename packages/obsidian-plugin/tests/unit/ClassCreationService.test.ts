@@ -4,7 +4,7 @@ import {
   IVaultAdapter,
   IFile,
   IFolder,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 /**
  * Production-shape fake IVaultAdapter mirroring the real Obsidian contract the

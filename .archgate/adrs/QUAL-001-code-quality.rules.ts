@@ -16,7 +16,7 @@ export default {
       severity: "warning",
       async check(ctx) {
         const serviceFiles = await ctx.glob(
-          "packages/exocortex/src/services/*.ts",
+          "packages/core/src/services/*.ts",
         );
 
         // Static utility classes that intentionally don't use DI
@@ -58,7 +58,7 @@ export default {
       severity: "warning",
       async check(ctx) {
         const coreFiles = await ctx.glob(
-          "packages/exocortex/src/services/**/*.ts",
+          "packages/core/src/services/**/*.ts",
         );
 
         for (const file of coreFiles) {

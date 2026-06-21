@@ -1,4 +1,4 @@
-import { PropertyFieldType } from "exocortex";
+import { PropertyFieldType } from "@kitelev/exocortex-core";
 import {
   StatusSelectPropertyField,
   EFFORT_STATUS_OPTIONS,

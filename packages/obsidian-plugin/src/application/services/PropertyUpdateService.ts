@@ -5,7 +5,7 @@ import {
   ApplicationErrorHandler,
   NetworkError,
   type INotificationService,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 export class PropertyUpdateService {
   private logger: ILogger;

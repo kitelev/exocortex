@@ -31,7 +31,7 @@ import * as os from "node:os";
 /* eslint-enable no-restricted-imports, import/no-nodejs-modules */
 
 import type { App, TFile } from "obsidian";
-import type { ApplyPlan, IConfirmGate } from "exocortex";
+import type { ApplyPlan, IConfirmGate } from "@kitelev/exocortex-core";
 
 import {
   ProfileApplyManager,

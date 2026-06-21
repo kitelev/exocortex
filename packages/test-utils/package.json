@@ -1,5 +1,5 @@
 {
-  "name": "@exocortex/test-utils",
+  "name": "@kitelev/exocortex-test-utils",
   "version": "1.0.0",
   "description": "Shared test utilities and mock factories for Exocortex packages",
   "main": "./src/index.ts",

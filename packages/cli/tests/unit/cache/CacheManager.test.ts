@@ -6,7 +6,7 @@ import os from "os";
 // Mock exocortex dependencies
 const mockConvertVault = jest.fn();
 const mockConvertVaultWithValidation = jest.fn();
-jest.unstable_mockModule("exocortex", () => ({
+jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   NoteToRDFConverter: jest.fn(() => ({
     convertVault: mockConvertVault,
     convertVaultWithValidation: mockConvertVaultWithValidation,

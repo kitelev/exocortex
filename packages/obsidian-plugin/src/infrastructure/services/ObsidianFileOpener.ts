@@ -1,6 +1,6 @@
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
-import type { IFileOpener } from "exocortex";
+import type { IFileOpener } from "@kitelev/exocortex-core";
 
 /**
  * Obsidian-side adapter for {@link IFileOpener} (Issue #3184 B5).

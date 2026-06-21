@@ -1,5 +1,5 @@
 import { ICommand } from "./ICommand";
-import { CommandResolver, ResolvedCommand } from "exocortex";
+import { CommandResolver, ResolvedCommand } from "@kitelev/exocortex-core";
 
 /**
  * Thin registry that provides global (UI-only) commands and delegates

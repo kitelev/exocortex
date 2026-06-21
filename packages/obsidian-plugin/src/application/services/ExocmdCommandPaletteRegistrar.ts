@@ -5,8 +5,8 @@ import type {
   CommandDefinition,
   PreconditionEvaluator,
   EvalContext,
-} from "exocortex";
-import type { IVaultSettings } from "exocortex";
+} from "@kitelev/exocortex-core";
+import type { IVaultSettings } from "@kitelev/exocortex-core";
 import type { ExocortexPluginInterface } from "@plugin/types";
 import type { ILogger } from "@plugin/adapters/logging/ILogger";
 

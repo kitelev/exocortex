@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync, statSync } from "fs";
 import { resolve } from "path";
-import { extractAssetReference } from "exocortex";
+import { extractAssetReference } from "@kitelev/exocortex-core";
 import { CachingNodeFsAdapter } from "../adapters/CachingNodeFsAdapter.js";
 import { findReferencedFile } from "../executors/folderRepairHelpers.js";
 import {

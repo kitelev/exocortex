@@ -3,7 +3,7 @@ id: ARCH-002
 title: Property Naming Convention
 domain: data
 rules: true
-files: ["packages/exocortex/src/domain/**/*.ts"]
+files: ["packages/core/src/domain/**/*.ts"]
 ---
 
 # Property Naming Convention

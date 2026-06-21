@@ -33,7 +33,7 @@ import {
   type IClock,
   type IFile,
   type IUidGenerator,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import {
   VaultNotFoundError,

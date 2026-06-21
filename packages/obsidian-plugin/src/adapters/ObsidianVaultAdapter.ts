@@ -1,5 +1,5 @@
 import { Vault, TFile, TFolder, MetadataCache, App, parseYaml } from "obsidian";
-import { IVaultAdapter, IFile, IFolder, IFrontmatter, FrontmatterService } from "exocortex";
+import { IVaultAdapter, IFile, IFolder, IFrontmatter, FrontmatterService } from "@kitelev/exocortex-core";
 
 export class ObsidianVaultAdapter implements IVaultAdapter {
   private fileCache: WeakMap<IFile, TFile> = new WeakMap();

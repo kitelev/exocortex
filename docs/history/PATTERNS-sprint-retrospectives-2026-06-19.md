@@ -1,7 +1,7 @@
 # Development Patterns — Sprint & Post-Mortem Retrospectives (frozen archive)
 
 > **Frozen archive — as of 2026-06-19.** Dated sprint retrospectives and a post-mortem extracted
-> from `PATTERNS.md` (RFC 0001 §4 Phase 3). Each documented *what was done* in a specific
+> from `PATTERNS.md` (RFC 0001 §4 Phase 3). Each documented _what was done_ in a specific
 > past work batch (issue/step/line tables) rather than a reusable coding technique. They are
 > preserved verbatim for historical reference and are **not** maintained; for current,
 > reusable patterns see [`../../PATTERNS.md`](../../PATTERNS.md).
@@ -517,7 +517,7 @@ Achieve significant coverage increases by targeting critical user paths first, t
 
 ```bash
 # Generate coverage report (script lives in the exocortex workspace, not repo root)
-npm run test:coverage -w exocortex
+npm run test:coverage -w @kitelev/exocortex-core
 
 # Find least-covered critical files
 cat coverage/lcov-report/index.html | grep -A2 "src/domain" | sort
@@ -629,14 +629,14 @@ Before implementing any RFC Issue, run a 15-minute codebase audit:
 1. Search for the feature name in existing code:
 
    ```bash
-   grep -r "PropertyPath\|propertyPath" packages/exocortex/src/
-   grep -r "Subquery\|subquery\|SubSelect" packages/exocortex/src/
+   grep -r "PropertyPath\|propertyPath" packages/core/src/
+   grep -r "Subquery\|subquery\|SubSelect" packages/core/src/
    ```
 
 2. Check existing test coverage:
 
    ```bash
-   grep -r "property.path\|transitive" packages/exocortex/tests/
+   grep -r "property.path\|transitive" packages/core/tests/
    ```
 
 3. If feature exists: redirect Issue to test coverage + docs instead of reimplementation.
@@ -702,4 +702,3 @@ Then extract property names from:
 **Reference**: Issue #2713 Post-Mortem — PR #2716
 
 ---
-

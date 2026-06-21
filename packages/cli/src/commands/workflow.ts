@@ -10,7 +10,7 @@ import {
   type WorkflowDefinition,
   type WorkflowStateDefinition,
   type WorkflowTransitionDefinition,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder } from "../responses/index.js";

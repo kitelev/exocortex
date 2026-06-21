@@ -24,8 +24,8 @@ import {
   FakeGitHubRepo,
   mdAsset,
   sha1Hex,
-} from "../../../../exocortex/tests/unit/services/sync/fakeGitHub";
-import { gitBlobSha } from "exocortex";
+} from "../../../../core/tests/unit/services/sync/fakeGitHub";
+import { gitBlobSha } from "@kitelev/exocortex-core";
 import {
   runQuarantineList,
   runQuarantineResolve,

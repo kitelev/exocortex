@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
 import { resolve } from "path";
-import { InMemoryTripleStore, RDFSInferenceEngine, NonInheritablePropertyRegistry, PropertyCardinalityRegistry, PrototypeChainMaterializer } from "exocortex";
+import { InMemoryTripleStore, RDFSInferenceEngine, NonInheritablePropertyRegistry, PropertyCardinalityRegistry, PrototypeChainMaterializer } from "@kitelev/exocortex-core";
 import { CacheManager } from "../cache/CacheManager.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";

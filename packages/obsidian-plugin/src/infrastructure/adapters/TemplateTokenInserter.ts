@@ -1,5 +1,5 @@
 import type { Editor } from "obsidian";
-import { getResolver, installDefaultResolvers } from "exocortex";
+import { getResolver, installDefaultResolvers } from "@kitelev/exocortex-core";
 
 /**
  * TemplateTokenInserter — pure logic behind the editor "Insert template token"

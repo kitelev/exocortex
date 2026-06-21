@@ -7,7 +7,7 @@ import { LoggerFactory } from "../../src/adapters/logging/LoggerFactory";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { UniversalLayoutRenderer } from "../../src/presentation/renderers/UniversalLayoutRenderer";
 import { CommandManager } from "../../src/application/services/CommandManager";
-import { TaskStatusService, DI_TOKENS, registerCoreServices, resetContainer } from "exocortex";
+import { TaskStatusService, DI_TOKENS, registerCoreServices, resetContainer } from "@kitelev/exocortex-core";
 import { TaskTrackingService } from "../../src/application/services/TaskTrackingService";
 import { AliasSyncService } from "../../src/application/services/AliasSyncService";
 import { ExocortexSettingTab } from "../../src/presentation/settings/ExocortexSettingTab";
@@ -2225,7 +2225,7 @@ describe("ExocortexPlugin", () => {
         },
       );
 
-      const exocortexModule = await import("exocortex");
+      const exocortexModule = await import("@kitelev/exocortex-core");
       loadFromRDFGraphSpy = jest
         .spyOn(exocortexModule.ShapeLoader, "loadFromRDFGraph")
         .mockResolvedValue({ size: 0, getAll: () => [] } as any);
@@ -2318,7 +2318,7 @@ describe("ExocortexPlugin", () => {
         },
       );
 
-      const exocortexModule = await import("exocortex");
+      const exocortexModule = await import("@kitelev/exocortex-core");
       loadFromRDFGraphSpy = jest
         .spyOn(exocortexModule.ShapeLoader, "loadFromRDFGraph")
         .mockResolvedValue({ size: 1, getAll: () => [] } as any);
@@ -2472,7 +2472,7 @@ describe("ExocortexPlugin", () => {
         },
       );
 
-      const exocortexModule = await import("exocortex");
+      const exocortexModule = await import("@kitelev/exocortex-core");
       loadFromRDFGraphSpy = jest
         .spyOn(exocortexModule.ShapeLoader, "loadFromRDFGraph")
         .mockResolvedValue({ size: 0, getAll: () => [] } as any);

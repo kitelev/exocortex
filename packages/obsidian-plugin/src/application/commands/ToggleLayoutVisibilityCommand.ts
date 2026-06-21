@@ -1,6 +1,6 @@
 import { ICommand } from "./ICommand";
 import { ExocortexPluginInterface } from '@plugin/types';
-import type { INotificationService } from "exocortex";
+import type { INotificationService } from "@kitelev/exocortex-core";
 
 export class ToggleLayoutVisibilityCommand implements ICommand {
   id = "toggle-layout-visibility";

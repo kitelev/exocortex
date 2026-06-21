@@ -33,7 +33,7 @@ import {
   InMemoryTripleStore,
   NoteToRDFConverter,
   type Triple,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

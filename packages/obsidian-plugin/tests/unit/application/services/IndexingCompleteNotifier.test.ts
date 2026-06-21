@@ -1,6 +1,6 @@
 import { IndexingCompleteNotifier } from "../../../../src/application/services/IndexingCompleteNotifier";
 import type { VaultWalkStats } from "../../../../src/infrastructure/VaultRDFIndexer";
-import type { INotificationService } from "exocortex";
+import type { INotificationService } from "@kitelev/exocortex-core";
 
 /**
  * Issue #3472 — one-shot «indexing complete» notice.

@@ -14,7 +14,7 @@ Exocortex is developed in a monorepo (npm workspaces) — not inside a vault's `
 git clone git@github.com:kitelev/exocortex.git
 cd exocortex
 npm install
-npm run dev  # Watch mode for @exocortex/obsidian-plugin (root script: npm run dev -w @exocortex/obsidian-plugin)
+npm run dev  # Watch mode for @kitelev/exocortex-obsidian-plugin (root script: npm run dev -w @kitelev/exocortex-obsidian-plugin)
 ```
 
 ### Package Structure
@@ -22,10 +22,10 @@ npm run dev  # Watch mode for @exocortex/obsidian-plugin (root script: npm run d
 ```
 packages/
 ├── exocortex/          # Core: domain models, RDF, SPARQL, services (storage-agnostic)
-├── obsidian-plugin/    # @exocortex/obsidian-plugin — Obsidian UI integration
+├── obsidian-plugin/    # @kitelev/exocortex-obsidian-plugin — Obsidian UI integration
 ├── cli/                # @kitelev/exocortex-cli — command-line tools
 ├── services/           # @kitelev/exocortex-services — shared grounding-service factories
-└── test-utils/         # @exocortex/test-utils — shared test infrastructure
+└── test-utils/         # @kitelev/exocortex-test-utils — shared test infrastructure
 ```
 
 > `packages/exoas-exo` and `packages/exoas-exocmd` are data submodules (ontology assets), not code packages.
@@ -36,10 +36,10 @@ packages/
 
 There are two paths, depending on what the command does:
 
-| Path | Use for |
-| --- | --- |
-| **(a) Global UI command** — TypeScript `ICommand` | Plugin-level UI actions that need app/plugin dependencies (reload layout, open a modal, toggle a view) |
-| **(b) Homoiconic exocmd command** — vault asset | Domain commands that operate on assets (status transitions, creation, planning). **Preferred path** — no plugin code change required |
+| Path                                              | Use for                                                                                                                              |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **(a) Global UI command** — TypeScript `ICommand` | Plugin-level UI actions that need app/plugin dependencies (reload layout, open a modal, toggle a view)                               |
+| **(b) Homoiconic exocmd command** — vault asset   | Domain commands that operate on assets (status transitions, creation, planning). **Preferred path** — no plugin code change required |
 
 ### (a) Global UI command
 
@@ -48,11 +48,11 @@ There are two paths, depending on what the command does:
 `packages/obsidian-plugin/src/application/commands/MyCustomCommand.ts`:
 
 ```typescript
-import { ICommand } from './ICommand';
+import { ICommand } from "./ICommand";
 
 export class MyCustomCommand implements ICommand {
-  id = 'my-custom-command';
-  name = 'My Custom Command';
+  id = "my-custom-command";
+  name = "My Custom Command";
 
   callback = async (): Promise<void> => {
     // Your logic here
@@ -96,8 +96,8 @@ a `render` method. There is no `BaseRenderer` base class to extend.
 `src/presentation/renderers/layout/MyCustomRenderer.ts`:
 
 ```typescript
-import { App } from 'obsidian';
-import { IVaultAdapter } from 'exocortex';
+import { App } from "obsidian";
+import { IVaultAdapter } from "@kitelev/exocortex-core";
 
 export class MyCustomRenderer {
   constructor(
@@ -107,10 +107,10 @@ export class MyCustomRenderer {
 
   async render(
     container: HTMLElement,
-    metadata: Record<string, unknown>
+    metadata: Record<string, unknown>,
   ): Promise<void> {
-    const section = container.createDiv({ cls: 'my-custom-section' });
-    section.createEl('h3', { text: 'My Custom Section' });
+    const section = container.createDiv({ cls: "my-custom-section" });
+    section.createEl("h3", { text: "My Custom Section" });
 
     // Render logic using this.app, this.vault, metadata
   }
@@ -135,7 +135,7 @@ private async renderCustomSection(container: HTMLElement): Promise<void> {
 ### 1. Create Modal Class
 
 ```typescript
-import { App, Modal } from 'obsidian';
+import { App, Modal } from "obsidian";
 
 export class MyCustomModal extends Modal {
   private onSubmit: (result: MyResult) => void;
@@ -147,19 +147,26 @@ export class MyCustomModal extends Modal {
 
   onOpen(): void {
     const { contentEl } = this;
-    contentEl.createEl('h2', { text: 'My custom modal' });
+    contentEl.createEl("h2", { text: "My custom modal" });
 
     // Form elements
-    const input = contentEl.createEl('input', { type: 'text' });
+    const input = contentEl.createEl("input", { type: "text" });
 
     // Buttons
-    const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
-    const okButton = buttonContainer.createEl('button', { text: 'OK', cls: 'mod-cta' });
-    okButton.addEventListener('click', () => this.submit());
+    const buttonContainer = contentEl.createDiv({
+      cls: "modal-button-container",
+    });
+    const okButton = buttonContainer.createEl("button", {
+      text: "OK",
+      cls: "mod-cta",
+    });
+    okButton.addEventListener("click", () => this.submit());
   }
 
   private submit(): void {
-    this.onSubmit({ /* result */ });
+    this.onSubmit({
+      /* result */
+    });
     this.close();
   }
 }
@@ -169,12 +176,9 @@ export class MyCustomModal extends Modal {
 
 ```typescript
 callback = async (): Promise<void> => {
-  const modal = new MyCustomModal(
-    this.plugin.app,
-    async (result) => {
-      // Handle result
-    }
-  );
+  const modal = new MyCustomModal(this.plugin.app, async (result) => {
+    // Handle result
+  });
   modal.open();
 };
 ```
@@ -188,16 +192,16 @@ callback = async (): Promise<void> => {
 `tests/unit/MyCustomCommand.test.ts`:
 
 ```typescript
-import { MyCustomCommand } from '../../src/application/commands/MyCustomCommand';
+import { MyCustomCommand } from "../../src/application/commands/MyCustomCommand";
 
-describe('MyCustomCommand', () => {
+describe("MyCustomCommand", () => {
   let command: MyCustomCommand;
 
   beforeEach(() => {
     command = new MyCustomCommand();
   });
 
-  it('should execute successfully', async () => {
+  it("should execute successfully", async () => {
     await command.callback();
     // Assertions
   });
@@ -228,6 +232,7 @@ device — GitHub Actions does not cover iOS/Android WebView:
 ---
 
 **See also:**
+
 - [Core API Reference](../reference/Core-API.md)
 - [Testing Guide](../../TESTING.md)
 - [Mobile Smoke Release Checklist](../../packages/obsidian-plugin/docs/release-checklist-mobile.md)

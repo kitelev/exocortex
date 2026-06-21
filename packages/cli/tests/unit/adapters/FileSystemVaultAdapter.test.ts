@@ -3,7 +3,7 @@ import fs from "fs-extra";
 import path from "path";
 
 // Mock exocortex module before import
-jest.unstable_mockModule("exocortex", () => ({
+jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   IVaultAdapter: class {},
   IFile: class {},
   IFolder: class {},

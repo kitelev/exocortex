@@ -1,7 +1,7 @@
 import fs from "fs-extra";
 import path from "path";
 import yaml from "js-yaml";
-import { IVaultAdapter, IFile, IFolder, IFrontmatter } from "exocortex";
+import { IVaultAdapter, IFile, IFolder, IFrontmatter } from "@kitelev/exocortex-core";
 import { rewriteInboundWikilinks } from "../utils/wikilinkRewriter.js";
 
 /** UUID v4 pattern for wikilink resolution */
@@ -318,7 +318,7 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
 
   private createFileObject(filePath: string): IFile {
     // Match Obsidian TFile semantics: `basename` is the name WITHOUT extension
-    // and `name` is the full filename. Shared services in `packages/exocortex`
+    // and `name` is the full filename. Shared services in `packages/core`
     // (GenericAssetCreationService.inheritParentContext, NoteToRDFConverter,
     // AreaHierarchyBuilder, AssetConversionService) rely on this contract.
     const name = path.basename(filePath);

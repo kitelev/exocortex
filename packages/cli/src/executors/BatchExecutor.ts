@@ -5,7 +5,7 @@ import {
   FrontmatterService,
   DateFormatter,
   extractAssetReference,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { findReferencedFile, normalizePath } from "./folderRepairHelpers.js";
 import { TransactionManager } from "../utils/TransactionManager.js";
 import { InvalidArgumentsError } from "../utils/errors/index.js";

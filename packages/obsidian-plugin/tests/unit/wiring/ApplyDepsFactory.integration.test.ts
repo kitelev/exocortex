@@ -17,7 +17,7 @@
 
 import { describe, it, expect, jest } from "@jest/globals";
 import type { App } from "obsidian";
-import type { INotificationService } from "exocortex";
+import type { INotificationService } from "@kitelev/exocortex-core";
 
 import type { ILogger } from "../../../src/adapters/logging/ILogger";
 

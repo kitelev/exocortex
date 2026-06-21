@@ -2,7 +2,7 @@
  * Unit tests for HeadlessConfirmGate (RFC 22b50a17 Phase 1b).
  */
 import { describe, it, expect, jest } from "@jest/globals";
-import type { ApplyPlan } from "exocortex";
+import type { ApplyPlan } from "@kitelev/exocortex-core";
 import { HeadlessConfirmGate } from "../../../src/services/HeadlessConfirmGate.js";
 
 function makePlan(overrides: Partial<ApplyPlan> = {}): ApplyPlan {

@@ -1,5 +1,5 @@
-import { parseTarballGzip } from "exocortex";
-import type { TarballEntry } from "exocortex";
+import { parseTarballGzip } from "@kitelev/exocortex-core";
+import type { TarballEntry } from "@kitelev/exocortex-core";
 
 export interface ExtractedTarFile {
   path: string;

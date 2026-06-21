@@ -20,7 +20,7 @@ jest.unstable_mockModule("../../../src/formatters/JsonFormatter.js", () => ({
 // Mock the heavy exocortex dependencies
 const mockParseFn = jest.fn().mockReturnValue({ type: "query", queryType: "SELECT" });
 
-jest.unstable_mockModule("exocortex", () => ({
+jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   InMemoryTripleStore: jest.fn(() => ({
     addAll: jest.fn(),
   })),
@@ -212,7 +212,7 @@ describe("sparqlQueryCommand --dry-run flag", () => {
 
     it("should report syntax errors with line numbers when --dry-run is set", async () => {
       // Make parser throw error with line/column info
-      const { SPARQLParseError } = await import("exocortex");
+      const { SPARQLParseError } = await import("@kitelev/exocortex-core");
       mockParseFn.mockImplementationOnce(() => {
         throw new SPARQLParseError("Unexpected token", 3, 15);
       });
@@ -249,7 +249,7 @@ describe("sparqlQueryCommand --dry-run flag", () => {
     });
 
     it("should exit with code 1 for invalid query in --dry-run mode", async () => {
-      const { SPARQLParseError } = await import("exocortex");
+      const { SPARQLParseError } = await import("@kitelev/exocortex-core");
       mockParseFn.mockImplementationOnce(() => {
         throw new SPARQLParseError("Syntax error", 1, 1);
       });
@@ -380,7 +380,7 @@ describe("sparqlQueryCommand enhanced error messages", () => {
   describe("property name suggestions", () => {
     it("should suggest correct property name for common typos", async () => {
       // Simulate error with unknown property
-      const { SPARQLParseError } = await import("exocortex");
+      const { SPARQLParseError } = await import("@kitelev/exocortex-core");
       mockParseFn.mockImplementationOnce(() => {
         throw new SPARQLParseError("Unknown prefix: ems__Task_status", 5, 10);
       });

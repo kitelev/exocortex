@@ -5,8 +5,8 @@ domain: frontend
 rules: true
 files:
   [
-    "packages/exocortex/src/**/*.ts",
-    "packages/exocortex/src/**/*.tsx",
+    "packages/core/src/**/*.ts",
+    "packages/core/src/**/*.tsx",
     "packages/obsidian-plugin/src/**/*.ts",
     "packages/obsidian-plugin/src/**/*.tsx",
     "packages/services/src/**/*.ts",
@@ -40,7 +40,7 @@ rule).
 - Live member access to the `process` global (`process.env`, `process.exit`,
   `process.once`, ... — including the `process?.env` / `process!.env` forms,
   which throw the same ReferenceError) is FORBIDDEN in
-  `packages/exocortex/src/**`, `packages/obsidian-plugin/src/**` and
+  `packages/core/src/**`, `packages/obsidian-plugin/src/**` and
   `packages/services/src/**` (bundled into the plugin transitively) unless
   the SAME line contains a `typeof process` guard. The sanctioned idiom is
   the one-line alias:

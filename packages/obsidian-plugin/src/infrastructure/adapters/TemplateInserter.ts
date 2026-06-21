@@ -1,5 +1,5 @@
 import type { Editor, TFile } from "obsidian";
-import { resolveTemplateBody, stripTemplateFrontmatter } from "exocortex";
+import { resolveTemplateBody, stripTemplateFrontmatter } from "@kitelev/exocortex-core";
 
 /**
  * TemplateInserter — logic behind the editor "Insert template" command

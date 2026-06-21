@@ -74,7 +74,7 @@ jest.mock("obsidian", () => {
 
 // `derivePath` lives in the `exocortex` core package; stub it so this UI test
 // stays DOM-only and does not pull the core build.
-jest.mock("exocortex", () => ({
+jest.mock("@kitelev/exocortex-core", () => ({
   derivePath: (url: string) => {
     const m = /github\.com\/([^/]+)\/([^/]+)$/.exec(url);
     return m ? `assetspaces/${m[1]}/${m[2]}` : null;

@@ -1,6 +1,6 @@
 import {
   EffortStatusWorkflow,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 describe("EffortStatusWorkflow", () => {
   let workflow: EffortStatusWorkflow;

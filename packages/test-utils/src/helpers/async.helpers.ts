@@ -2,7 +2,7 @@
  * Async test helpers for waiting and retrying.
  *
  * @example
- * import { flushPromises, waitForCondition, waitForDomElement, retry } from "@exocortex/test-utils";
+ * import { flushPromises, waitForCondition, waitForDomElement, retry } from "@kitelev/exocortex-test-utils";
  *
  * // Flush microtask queue
  * await flushPromises();

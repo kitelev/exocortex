@@ -13,20 +13,20 @@ after the `FLAKY_THRESHOLD` gate was removed (audit epic #3384, PR #3396).
 
 ## Definitions
 
-| Term | Definition |
-| ---- | ---------- |
-| **Flaky test** | A test that, within a single CI job run, failed at least once but passed on a retry. |
+| Term               | Definition                                                                                                             |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| **Flaky test**     | A test that, within a single CI job run, failed at least once but passed on a retry.                                   |
 | **`@flaky-track`** | A Playwright tag that opts a known-flaky E2E spec into `retries: 1` while its root cause is tracked in a GitHub issue. |
-| **Quarantine** | A deliberate skip or tolerated-failure recorded in `tests/quarantine.ts`, pointing to a tracking issue. |
+| **Quarantine**     | A deliberate skip or tolerated-failure recorded in `tests/quarantine.ts`, pointing to a tracking issue.                |
 
 ## Current model (post-#3396)
 
 ### What was removed
 
-The per-shard **`FLAKY_THRESHOLD` gate** (the "Enforce FLAKY_THRESHOLD" step
+The per-shard **`FLAKY_THRESHOLD` gate** (the "Enforce FLAKY*THRESHOLD" step
 in `test-coverage-shard`, configured via `vars.FLAKY_THRESHOLD` /
-`vars.FLAKY_THRESHOLD_SHARD_{N}` repository variables) was **removed** in
-PR #3396 (commit `788d06ef`, audit epic #3384). It was a no-op while Jest
+`vars.FLAKY_THRESHOLD_SHARD*{N}`repository variables) was **removed** in
+PR #3396 (commit`788d06ef`, audit epic #3384). It was a no-op while Jest
 retries are disabled: with no retries there is never a flaky report, so the
 gate always skipped. Do **not** use the old
 `gh variable set FLAKY_THRESHOLD ...` runbook — the variables are no longer
@@ -39,7 +39,6 @@ read by any workflow.
 
 2. **Two-project `@flaky-track` routing** (Issue #3350, PR #3355).
    `playwright-e2e.config.ts` defines two Playwright projects:
-
    - `e2e` — untagged specs (`grepInvert: /@flaky-track/`), `retries: 0`.
    - `e2e-flaky-track` — specs tagged `@flaky-track` (`grep: /@flaky-track/`),
      `retries: 1`.
@@ -64,7 +63,7 @@ read by any workflow.
    (Component)" CI step prints the `flaky-report-playwright.json` count if
    any CT test passed after retry — it warns but does not fail the job.
 
-6. **Quarantine** (`tests/quarantine.ts`) — the *what to skip* lever,
+6. **Quarantine** (`tests/quarantine.ts`) — the _what to skip_ lever,
    currently empty by design (T3.1 decision matrix). See below.
 
 ## Governance
@@ -89,13 +88,13 @@ root cause is being fixed. Requirements for the PR that adds the tag:
 `QuarantinedTest` type (defined in
 `packages/test-utils/src/reporters/quarantine.ts`) has fields:
 
-- `file` *(required)* — path to the spec file.
-- `name` *(required)* — the exact test title.
-- `issue` *(optional)* — link to the tracking GitHub issue.
-- `reason` *(optional)* — one-line cause description.
-- `quarantinedAt` *(optional)* — ISO date the test was quarantined.
-- `expiresAt` *(optional)* — ISO date the quarantine expires.
-- `owner` *(optional)* — who quarantined the test.
+- `file` _(required)_ — path to the spec file.
+- `name` _(required)_ — the exact test title.
+- `issue` _(optional)_ — link to the tracking GitHub issue.
+- `reason` _(optional)_ — one-line cause description.
+- `quarantinedAt` _(optional)_ — ISO date the test was quarantined.
+- `expiresAt` _(optional)_ — ISO date the quarantine expires.
+- `owner` _(optional)_ — who quarantined the test.
 
 Anti-rot rules (Charter §4 Risk 4):
 
@@ -144,8 +143,8 @@ Open a PR per the governance rules above; remove the tag in the fix PR.
 
 ## Relationship with other tools
 
-- **`tests/quarantine.ts`** — the *what* to skip; machinery in
-  `@exocortex/test-utils` (`packages/test-utils/src/reporters/quarantine.ts`).
+- **`tests/quarantine.ts`** — the _what_ to skip; machinery in
+  `@kitelev/exocortex-test-utils` (`packages/test-utils/src/reporters/quarantine.ts`).
 - **Jest flaky reporter**
   (`packages/test-utils/src/reporters/flaky-reporter.ts`, wired in
   `packages/obsidian-plugin/jest.config.js` under CI) — evidence collection
@@ -157,9 +156,9 @@ Open a PR per the governance rules above; remove the tag in the fix PR.
 
 ## Change log
 
-| Date | Author | Change |
-| ---- | ------ | ------ |
-| 2026-04-24 | ExoAssistant (RFC 3cc77ba2 Phase 1.3 author) | Initial policy. `FLAKY_THRESHOLD = 0` per-shard; variable-based gate governance. |
-| 2026-06-04 | Issue #3350 / PR #3355 | `@flaky-track` two-project routing added (`retries: 1` for tagged specs); NoFlakyReporter made tag-aware. |
-| 2026-06-05 | Audit epic #3384 / PR #3396 (commit `788d06ef`) | Per-shard `FLAKY_THRESHOLD` gate removed as a no-op. |
-| 2026-06-10 | Docs audit | Policy rewritten around the post-#3396 model (this document). |
+| Date       | Author                                          | Change                                                                                                    |
+| ---------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 2026-04-24 | ExoAssistant (RFC 3cc77ba2 Phase 1.3 author)    | Initial policy. `FLAKY_THRESHOLD = 0` per-shard; variable-based gate governance.                          |
+| 2026-06-04 | Issue #3350 / PR #3355                          | `@flaky-track` two-project routing added (`retries: 1` for tagged specs); NoFlakyReporter made tag-aware. |
+| 2026-06-05 | Audit epic #3384 / PR #3396 (commit `788d06ef`) | Per-shard `FLAKY_THRESHOLD` gate removed as a no-op.                                                      |
+| 2026-06-10 | Docs audit                                      | Policy rewritten around the post-#3396 model (this document).                                             |

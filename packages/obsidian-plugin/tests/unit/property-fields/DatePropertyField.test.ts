@@ -1,4 +1,4 @@
-import { PropertyFieldType } from "exocortex";
+import { PropertyFieldType } from "@kitelev/exocortex-core";
 import { DatePropertyField } from "../../../src/presentation/components/property-fields/DatePropertyField";
 
 // Helper to extend HTMLElement with Obsidian's methods

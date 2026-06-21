@@ -3,7 +3,7 @@ import { join } from "path";
 import {
   registerOrderSpecLoader,
   type FrontmatterOrderSpec,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 /**
  * Scan vault for `exo__FrontmatterOrderSpec` assets (class UID

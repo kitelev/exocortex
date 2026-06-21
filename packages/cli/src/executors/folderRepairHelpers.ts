@@ -1,5 +1,5 @@
 import path from "path";
-import { extractAssetReference } from "exocortex";
+import { extractAssetReference } from "@kitelev/exocortex-core";
 import type { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 
 /**

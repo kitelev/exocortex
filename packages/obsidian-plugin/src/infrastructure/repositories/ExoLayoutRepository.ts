@@ -33,7 +33,7 @@ import {
   isLayoutFrontmatter,
   type Layout,
   type LayoutBlock,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 export interface ExoLayoutVaultAdapter {
   getAllMarkdownPaths(): readonly string[];

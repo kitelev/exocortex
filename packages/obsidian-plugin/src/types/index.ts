@@ -3,7 +3,7 @@
  */
 
 import type { App, Plugin, TFile } from "obsidian";
-import type { IVaultAdapter } from "exocortex";
+import type { IVaultAdapter } from "@kitelev/exocortex-core";
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';
 import type { ThemeResolver } from '@plugin/application/services/ThemeResolver';
 

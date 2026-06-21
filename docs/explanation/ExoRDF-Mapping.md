@@ -30,14 +30,14 @@
 
 ### Core Namespaces
 
-| Prefix | Namespace IRI | Purpose |
-|--------|---------------|---------|
-| `exo:` | `https://exocortex.my/ontology/exo#` | Core universal properties (all assets) |
-| `ems:` | `https://exocortex.my/ontology/ems#` | Effort Management System (tasks, projects) |
-| `rdf:` | `http://www.w3.org/1999/02/22-rdf-syntax-ns#` | RDF core vocabulary |
-| `rdfs:` | `http://www.w3.org/2000/01/rdf-schema#` | RDF Schema vocabulary |
-| `owl:` | `http://www.w3.org/2002/07/owl#` | Web Ontology Language |
-| `xsd:` | `http://www.w3.org/2001/XMLSchema#` | XML Schema datatypes |
+| Prefix  | Namespace IRI                                 | Purpose                                    |
+| ------- | --------------------------------------------- | ------------------------------------------ |
+| `exo:`  | `https://exocortex.my/ontology/exo#`          | Core universal properties (all assets)     |
+| `ems:`  | `https://exocortex.my/ontology/ems#`          | Effort Management System (tasks, projects) |
+| `rdf:`  | `http://www.w3.org/1999/02/22-rdf-syntax-ns#` | RDF core vocabulary                        |
+| `rdfs:` | `http://www.w3.org/2000/01/rdf-schema#`       | RDF Schema vocabulary                      |
+| `owl:`  | `http://www.w3.org/2002/07/owl#`              | Web Ontology Language                      |
+| `xsd:`  | `http://www.w3.org/2001/XMLSchema#`           | XML Schema datatypes                       |
 
 ### Mapping Strategy
 
@@ -105,14 +105,14 @@ ems:Area      rdfs:subClassOf  exo:Asset .
 
 ### Mapping Table
 
-| ExoRDF Class | RDF/RDFS Superclass | Relationship | Rationale |
-|--------------|---------------------|--------------|-----------|
-| `exo:Asset` | `rdfs:Resource` | `rdfs:subClassOf` | All Exocortex entities are RDF resources |
-| `exo:Class` | `rdfs:Class` | `rdfs:subClassOf` | ExoRDF classes are also RDF classes |
-| `exo:Property` | `rdf:Property` | `rdfs:subClassOf` | ExoRDF properties are also RDF properties |
-| `ems:Task` | `exo:Asset` | `rdfs:subClassOf` | Tasks are specialized assets |
-| `ems:Project` | `exo:Asset` | `rdfs:subClassOf` | Projects are specialized assets |
-| `ems:Area` | `exo:Asset` | `rdfs:subClassOf` | Areas are specialized assets |
+| ExoRDF Class   | RDF/RDFS Superclass | Relationship      | Rationale                                 |
+| -------------- | ------------------- | ----------------- | ----------------------------------------- |
+| `exo:Asset`    | `rdfs:Resource`     | `rdfs:subClassOf` | All Exocortex entities are RDF resources  |
+| `exo:Class`    | `rdfs:Class`        | `rdfs:subClassOf` | ExoRDF classes are also RDF classes       |
+| `exo:Property` | `rdf:Property`      | `rdfs:subClassOf` | ExoRDF properties are also RDF properties |
+| `ems:Task`     | `exo:Asset`         | `rdfs:subClassOf` | Tasks are specialized assets              |
+| `ems:Project`  | `exo:Asset`         | `rdfs:subClassOf` | Projects are specialized assets           |
+| `ems:Area`     | `exo:Asset`         | `rdfs:subClassOf` | Areas are specialized assets              |
 
 ### Visual Hierarchy
 
@@ -138,14 +138,14 @@ ExoRDF properties are **subproperties** of RDF/RDFS properties.
 
 ### Core Property Mappings
 
-| ExoRDF Property | RDF/RDFS Superproperty | Relationship | Purpose |
-|-----------------|------------------------|--------------|---------|
-| `exo:Instance_class` | `rdf:type` | `rdfs:subPropertyOf` | Asset type classification |
-| `exo:Asset_isDefinedBy` | `rdfs:isDefinedBy` | `rdfs:subPropertyOf` | Ontology reference |
-| `exo:Class_superClass` | `rdfs:subClassOf` | `rdfs:subPropertyOf` | Class hierarchy |
-| `exo:Property_range` | `rdfs:range` | `rdfs:subPropertyOf` | Property value type |
-| `exo:Property_domain` | `rdfs:domain` | `rdfs:subPropertyOf` | Property applies to |
-| `exo:Property_superProperty` | `rdfs:subPropertyOf` | `rdfs:subPropertyOf` | Property hierarchy |
+| ExoRDF Property              | RDF/RDFS Superproperty | Relationship         | Purpose                   |
+| ---------------------------- | ---------------------- | -------------------- | ------------------------- |
+| `exo:Instance_class`         | `rdf:type`             | `rdfs:subPropertyOf` | Asset type classification |
+| `exo:Asset_isDefinedBy`      | `rdfs:isDefinedBy`     | `rdfs:subPropertyOf` | Ontology reference        |
+| `exo:Class_superClass`       | `rdfs:subClassOf`      | `rdfs:subPropertyOf` | Class hierarchy           |
+| `exo:Property_range`         | `rdfs:range`           | `rdfs:subPropertyOf` | Property value type       |
+| `exo:Property_domain`        | `rdfs:domain`          | `rdfs:subPropertyOf` | Property applies to       |
+| `exo:Property_superProperty` | `rdfs:subPropertyOf`   | `rdfs:subPropertyOf` | Property hierarchy        |
 
 ### Triples Representation
 
@@ -164,12 +164,14 @@ exo:Property_superProperty rdfs:subPropertyOf rdfs:subPropertyOf .
 For each asset, the triple store generates **both** ExoRDF and RDF/RDFS triples:
 
 **Input** (Obsidian frontmatter):
+
 ```yaml
 exo__Instance_class:
   - "[[ems__Task]]"
 ```
 
 **Output** (RDF triples):
+
 ```turtle
 # ExoRDF triple (custom predicate)
 <asset-uri> exo:Instance_class ems:Task .
@@ -179,6 +181,7 @@ exo__Instance_class:
 ```
 
 **Why both?**
+
 - **ExoRDF triple**: Preserves original property name for tooling
 - **RDF/RDFS triple**: Enables standard SPARQL queries and inference
 
@@ -187,7 +190,7 @@ exo__Instance_class:
 ## 🆔 URI Construction Strategy
 
 Production uses a **dual IRI scheme** (emitted by `NoteToRDFConverter`,
-`packages/exocortex/src/services/NoteToRDFConverter.ts`):
+`packages/core/src/services/NoteToRDFConverter.ts`):
 
 ### Subject IRIs — file IRIs
 
@@ -218,11 +221,11 @@ effectively UID-stable in practice:
 When a frontmatter value is a wikilink, the emitted object depends on the
 target:
 
-| Wikilink target | Emitted object | Example |
-|---|---|---|
-| Target whose basename/label parses as `<prefix>__<LocalName>` (class-like: classes, enum members such as statuses) | Symbolic namespace IRI `https://exocortex.my/ontology/<prefix>#<LocalName>` | `"[[ems__EffortStatusDoing]]"` → `ems:EffortStatusDoing` |
-| Any other resolvable target file | File IRI `obsidian://vault/<path>.md` | `"[[Implement SPARQL Engine]]"` → `<obsidian://vault/Implement%20SPARQL%20Engine.md>` |
-| Unresolvable UUID-form wikilink | Synthesized file IRI `obsidian://vault/<uuid>.md` (see IRI canonicalization below) | — |
+| Wikilink target                                                                                                    | Emitted object                                                                     | Example                                                                               |
+| ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Target whose basename/label parses as `<prefix>__<LocalName>` (class-like: classes, enum members such as statuses) | Symbolic namespace IRI `https://exocortex.my/ontology/<prefix>#<LocalName>`        | `"[[ems__EffortStatusDoing]]"` → `ems:EffortStatusDoing`                              |
+| Any other resolvable target file                                                                                   | File IRI `obsidian://vault/<path>.md`                                              | `"[[Implement SPARQL Engine]]"` → `<obsidian://vault/Implement%20SPARQL%20Engine.md>` |
+| Unresolvable UUID-form wikilink                                                                                    | Synthesized file IRI `obsidian://vault/<uuid>.md` (see IRI canonicalization below) | —                                                                                     |
 
 `exo__Instance_class` values always resolve to symbolic class IRIs
 (`valueToClassURI`), enabling canonical SPARQL JOINs against class
@@ -270,6 +273,7 @@ for the position being matched (see the examples below).
 ### Example 1: Simple Task
 
 **Obsidian Note** (`Review PR #365.md`):
+
 ```yaml
 ---
 exo__Asset_uid: 550e8400-e29b-41d4-a716-446655440000
@@ -283,6 +287,7 @@ ems__Task_size: M
 ```
 
 **Generated RDF Triples**:
+
 ```turtle
 @prefix exo: <https://exocortex.my/ontology/exo#> .
 @prefix ems: <https://exocortex.my/ontology/ems#> .
@@ -307,6 +312,7 @@ ems__Task_size: M
 ### Example 2: Project with Tasks
 
 **Project Note** (`Implement SPARQL Engine.md`):
+
 ```yaml
 ---
 exo__Asset_uid: 7c9e6679-7425-40de-944b-e07fc1f90ae7
@@ -318,6 +324,7 @@ exo__Asset_isDefinedBy: "[[Ontology/EMS]]"
 ```
 
 **Task Note** (`Fix SPARQL Parser.md`):
+
 ```yaml
 ---
 exo__Asset_uid: 3b241101-e2bb-4255-8caf-4136c566a964
@@ -328,6 +335,7 @@ ems__Effort_parent: "[[Implement SPARQL Engine]]"
 ```
 
 **Generated RDF Triples**:
+
 ```turtle
 # Project
 <obsidian://vault/Implement%20SPARQL%20Engine.md>
@@ -349,6 +357,7 @@ ems__Effort_parent: "[[Implement SPARQL Engine]]"
 ### Example 1: Find All Tasks
 
 **Using ExoRDF predicates**:
+
 ```sparql
 PREFIX exo: <https://exocortex.my/ontology/exo#>
 PREFIX ems: <https://exocortex.my/ontology/ems#>
@@ -361,6 +370,7 @@ WHERE {
 ```
 
 **Using RDF/RDFS predicates** (after mapping):
+
 ```sparql
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -376,6 +386,7 @@ WHERE {
 ### Example 2: Find All Assets (Using Inference)
 
 **Query all asset types via `rdfs:subClassOf` inference**:
+
 ```sparql
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -390,6 +401,7 @@ WHERE {
 ```
 
 **Results** (includes tasks, projects, areas):
+
 ```
 asset                                                              type        label
 ===================================================================================================
@@ -401,6 +413,7 @@ obsidian://vault/Development.md                                    ems:Area    "
 ### Example 3: Class Hierarchy Query
 
 **Find all subclasses of `exo:Asset`**:
+
 ```sparql
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX exo: <https://exocortex.my/ontology/exo#>
@@ -412,6 +425,7 @@ WHERE {
 ```
 
 **Results**:
+
 ```
 subclass
 ==================
@@ -423,6 +437,7 @@ ems:Area
 ### Example 4: Property Hierarchy Query
 
 **Find all superproperties of `exo:Instance_class`**:
+
 ```sparql
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX exo: <https://exocortex.my/ontology/exo#>
@@ -434,6 +449,7 @@ WHERE {
 ```
 
 **Results**:
+
 ```
 superproperty
 ========================
@@ -454,6 +470,7 @@ When RDF/RDFS mapping is active, SPARQL queries support these inference capabili
 **Rule**: If `A rdfs:subClassOf B` and `B rdfs:subClassOf C`, then `A rdfs:subClassOf C`.
 
 **Example**:
+
 ```sparql
 # Find all resources (including tasks via ems:Task rdfs:subClassOf exo:Asset rdfs:subClassOf rdfs:Resource)
 SELECT ?resource WHERE {
@@ -466,6 +483,7 @@ SELECT ?resource WHERE {
 **Rule**: If `P rdfs:subPropertyOf Q` and `Q rdfs:subPropertyOf R`, then `P rdfs:subPropertyOf R`.
 
 **Example**:
+
 ```sparql
 # Find all instances (using exo:Instance_class → rdf:type chain)
 SELECT ?instance ?type WHERE {
@@ -479,6 +497,7 @@ SELECT ?instance ?type WHERE {
 **Rule**: If `P rdfs:domain C` and `?s P ?o`, then `?s rdf:type C`.
 
 **Example**:
+
 ```sparql
 # Automatically infer asset types from properties used
 SELECT ?asset WHERE {
@@ -488,12 +507,12 @@ SELECT ?asset WHERE {
 
 ### Performance Considerations
 
-| Inference Type | Complexity | Performance |
-|----------------|------------|-------------|
-| Direct property/class lookup | O(1) | < 1ms (index-based) |
-| `rdfs:subClassOf` (1 level) | O(n) | < 10ms (n = subclasses) |
-| `rdfs:subClassOf*` (transitive) | O(n²) | < 100ms (n = hierarchy depth) |
-| Full graph reasoning | O(2^n) | > 1s (requires reasoning engine) |
+| Inference Type                  | Complexity | Performance                      |
+| ------------------------------- | ---------- | -------------------------------- |
+| Direct property/class lookup    | O(1)       | < 1ms (index-based)              |
+| `rdfs:subClassOf` (1 level)     | O(n)       | < 10ms (n = subclasses)          |
+| `rdfs:subClassOf*` (transitive) | O(n²)      | < 100ms (n = hierarchy depth)    |
+| Full graph reasoning            | O(2^n)     | > 1s (requires reasoning engine) |
 
 **Recommendation**: Use `rdfs:subClassOf*` sparingly in production queries. Cache results when possible.
 
@@ -524,6 +543,7 @@ The mapping implementation **must not** depend on Obsidian-specific APIs. It sho
 Expected memory increase: **~15-20%** (dual triples for mapped properties).
 
 **Example**:
+
 - 1000 assets × 10 properties each = 10,000 ExoRDF triples
 - ~6 mapped properties × 1000 assets = 6,000 additional RDF/RDFS triples
 - Total: 16,000 triples (~15% increase)
@@ -559,13 +579,14 @@ Expected memory increase: **~15-20%** (dual triples for mapped properties).
 
 ## 🔄 Version History
 
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0 | 2025-11-12 | Initial specification |
+| Version | Date       | Changes               |
+| ------- | ---------- | --------------------- |
+| 1.0     | 2025-11-12 | Initial specification |
 
 ---
 
 **Next Steps**: This specification defines the mapping. Implementation happens in:
+
 1. Issue #366: URI construction utilities
 2. Issue #367: Triple store integration
 3. Issue #368: Comprehensive tests

@@ -44,11 +44,11 @@ npm run test:all   # MUST pass: unit + component + e2e
 New code MUST add tests on every applicable layer before merge.
 
 | Layer           | Runner                       | Location                                      | Purpose                                                                                                                   |
-| --------------- | ---------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| **Unit**        | Jest (ts-jest)               | `packages/*/tests/unit/**`                    | Services, executors, command + visibility logic, helpers — mocked boundaries.                                            |
+| --------------- | ---------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Unit**        | Jest (ts-jest)               | `packages/*/tests/unit/**`                    | Services, executors, command + visibility logic, helpers — mocked boundaries.                                             |
 | **Integration** | Jest + real services         | `packages/cli/tests/integration/**`           | End-to-end command flows through the real `GroundingExecutor` / adapters against fixtures (e.g. `packages/exoas-exocmd`). |
 | **Component**   | Playwright CT                | `packages/obsidian-plugin/tests/component/**` | React UI components in isolation.                                                                                         |
-| **E2E**         | Playwright + Docker Obsidian | `packages/obsidian-plugin/tests/e2e/specs/**` | Real plugin in Obsidian UI; golden-path smoke, sharded across `e2e-shard (1..6)`.                                        |
+| **E2E**         | Playwright + Docker Obsidian | `packages/obsidian-plugin/tests/e2e/specs/**` | Real plugin in Obsidian UI; golden-path smoke, sharded across `e2e-shard (1..6)`.                                         |
 
 **Required CI checks (branch-protected):** see [docs/reference/ci/required-checks.md](../../docs/reference/ci/required-checks.md) — the single source (with the live `gh api …/required_status_checks` command).
 
@@ -62,12 +62,12 @@ packages/
     src/domain/        — Entities, value objects, repositories
     src/application/   — Use cases, services
     src/infrastructure — File system adapters
-  obsidian-plugin/    — @exocortex/obsidian-plugin (Obsidian UI — consumer)
+  obsidian-plugin/    — @kitelev/exocortex-obsidian-plugin (Obsidian UI — consumer)
     src/presentation/  — UI components, modals, renderers
     src/infrastructure — Obsidian API integration
   cli/                — @kitelev/exocortex-cli (CLI tooling — consumer)
   services/           — @kitelev/exocortex-services (shared grounding-service factories)
-  test-utils/         — @exocortex/test-utils (shared test infrastructure)
+  test-utils/         — @kitelev/exocortex-test-utils (shared test infrastructure)
 ```
 
 > `packages/exoas-exo` and `packages/exoas-exocmd` are data submodules (ontology

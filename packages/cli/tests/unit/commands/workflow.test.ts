@@ -14,7 +14,7 @@ jest.unstable_mockModule("fs", () => ({
 
 // Mock exocortex
 const mockValidate = jest.fn();
-jest.unstable_mockModule("exocortex", () => ({
+jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   FrontmatterService: jest.fn(() => ({
     parse: jest.fn((content) => {
       const match = content.match(/^---\n([\s\S]*?)\n---/);
@@ -23,7 +23,7 @@ jest.unstable_mockModule("exocortex", () => ({
     }),
   })),
   // Minimal stub matching the public WikiLinkHelpers.resolveSymbolic shape.
-  // Real impl is exercised by `packages/exocortex/tests/utilities/WikiLinkHelpers.test.ts`;
+  // Real impl is exercised by `packages/core/tests/utilities/WikiLinkHelpers.test.ts`;
   // here we only need a passthrough that returns the canonical alias / target
   // so the workflow class-name substring discriminator runs against symbolic
   // strings, not UUIDs.

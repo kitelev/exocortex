@@ -14,7 +14,7 @@
  * machine-readable output the Phase 3 orchestrator may emit.
  */
 
-import type { IConfirmGate, ApplyPlan } from "exocortex";
+import type { IConfirmGate, ApplyPlan } from "@kitelev/exocortex-core";
 
 export interface HeadlessConfirmGateOptions {
   /** Confirm apply (safety override). False by default. */

@@ -7,7 +7,7 @@ import {
   IFileSystemWriter,
   FileNotFoundError,
   FileAlreadyExistsError,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 import { ObsidianFileSystemAdapter } from "../../src/adapters/ObsidianFileSystemAdapter";
 

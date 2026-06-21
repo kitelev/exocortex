@@ -21,8 +21,8 @@ import type {
   SolutionMapping,
   ILogger,
   INotificationService,
-} from "exocortex";
-import { Literal, IRI } from "exocortex";
+} from "@kitelev/exocortex-core";
+import { Literal, IRI } from "@kitelev/exocortex-core";
 
 import type {
   Layout,

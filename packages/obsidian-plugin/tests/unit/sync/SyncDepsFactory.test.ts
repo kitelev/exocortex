@@ -17,7 +17,7 @@ import {
   SYNC_BRANCH,
 } from "../../../src/infrastructure/adapters/SyncDepsFactory";
 import type { App } from "obsidian";
-import type { SyncRepoSpec } from "exocortex";
+import type { SyncRepoSpec } from "@kitelev/exocortex-core";
 import {
   InMemoryAdapter,
   assetSpaceFm,

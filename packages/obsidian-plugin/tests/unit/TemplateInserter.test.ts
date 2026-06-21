@@ -27,7 +27,7 @@ import {
   clearResolvers,
   installDefaultResolvers,
   registerResolver,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 interface FakeFile {
   path: string;

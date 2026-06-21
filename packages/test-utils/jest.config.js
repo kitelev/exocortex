@@ -14,6 +14,6 @@ module.exports = {
     ],
   },
   moduleNameMapper: {
-    "^@exocortex/test-utils$": "<rootDir>/src/index.ts",
+    "^@kitelev/exocortex-test-utils$": "<rootDir>/src/index.ts",
   },
 };

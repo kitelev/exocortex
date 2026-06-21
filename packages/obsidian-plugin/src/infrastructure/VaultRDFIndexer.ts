@@ -20,7 +20,7 @@ import {
   type INotificationService,
   type IFile,
   IRI,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 

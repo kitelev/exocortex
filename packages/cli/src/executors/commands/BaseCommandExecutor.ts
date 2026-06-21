@@ -1,6 +1,6 @@
 import { NodeFsAdapter } from "../../adapters/NodeFsAdapter.js";
 import { PathResolver } from "../../utils/PathResolver.js";
-import { FrontmatterService, DateFormatter } from "exocortex";
+import { FrontmatterService, DateFormatter } from "@kitelev/exocortex-core";
 
 /**
  * Context shared across command executors

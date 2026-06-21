@@ -1,4 +1,4 @@
-import { IConfiguration } from "exocortex";
+import { IConfiguration } from "@kitelev/exocortex-core";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";

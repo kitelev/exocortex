@@ -28,7 +28,7 @@
   "author": "A. Kitelev",
   "license": "MIT",
   "dependencies": {
-    "exocortex": "file:../exocortex"
+    "@kitelev/exocortex-core": "file:../core"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

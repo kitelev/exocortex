@@ -14,7 +14,7 @@ import {
   ServiceRegistry,
   StatusTimestampService,
   TaskStatusService,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../../../src/adapters/FileSystemVaultAdapter.js";
 import {
   createCleanPropertiesService,

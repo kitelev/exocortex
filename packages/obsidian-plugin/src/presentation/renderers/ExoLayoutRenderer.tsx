@@ -24,7 +24,7 @@
 
 import React from "react";
 import type { TFile } from "obsidian";
-import type { Layout, LayoutBlock } from "exocortex";
+import type { Layout, LayoutBlock } from "@kitelev/exocortex-core";
 import type { ReactRenderer } from "@plugin/presentation/utils/ReactRenderer";
 import type { ExoLayoutSnapshot } from "@plugin/infrastructure/repositories";
 import type { AssetRelation } from "./layout/types";
@@ -35,7 +35,7 @@ import {
   PropertiesBlockView,
 } from "@plugin/presentation/components/LayoutBlocks";
 import { AssetMetadataService } from "@plugin/presentation/renderers/layout/helpers/AssetMetadataService";
-import { WikiLinkHelpers } from "exocortex";
+import { WikiLinkHelpers } from "@kitelev/exocortex-core";
 
 export interface ExoLayoutRendererDeps {
   readonly app: ObsidianApp;

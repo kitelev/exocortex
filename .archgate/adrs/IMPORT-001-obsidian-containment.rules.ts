@@ -23,7 +23,7 @@ export default {
                 "Plugin application layer imports obsidian runtime. Consider using DI interfaces.",
               file: hit.file,
               line: hit.line,
-              fix: "Use interface from exocortex package or import type instead of runtime import",
+              fix: "Use interface from @kitelev/exocortex-core package or import type instead of runtime import",
             });
           }
         }

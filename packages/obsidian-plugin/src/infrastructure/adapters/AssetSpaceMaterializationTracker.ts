@@ -1,5 +1,5 @@
 import type { App } from "obsidian";
-import { derivePath } from "exocortex";
+import { derivePath } from "@kitelev/exocortex-core";
 
 import { isAssetSpaceFrontmatter } from "./AssetSpaceFrontmatter";
 

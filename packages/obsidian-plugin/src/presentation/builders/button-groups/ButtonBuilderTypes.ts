@@ -2,7 +2,7 @@ import { TFile } from "obsidian";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
 import { ExocortexSettings } from '@plugin/domain/settings/ExocortexSettings';
 import { ActionButton, ButtonGroup } from '@plugin/presentation/components/ActionButtonsGroup';
-import { CommandVisibilityContext } from "exocortex";
+import { CommandVisibilityContext } from "@kitelev/exocortex-core";
 import { ObsidianApp, ExocortexPluginInterface, MetadataRecord } from '@plugin/types';
 
 /**

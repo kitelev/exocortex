@@ -2,7 +2,7 @@ import type {
   PropertySchemaResolver,
   PropertySchema,
   ClassHierarchyResolver,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import type { PropertySchemaDefinition, PropertyFieldType } from "./PropertySchemas";
 
 /**

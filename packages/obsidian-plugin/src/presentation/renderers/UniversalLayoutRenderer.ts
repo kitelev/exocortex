@@ -6,11 +6,11 @@ import React from "react";
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import { ExocortexSettings } from '@plugin/domain/settings/ExocortexSettings';
 import { ActionButtonsGroup } from '@plugin/presentation/components/ActionButtonsGroup';
-import { IVaultAdapter, MetadataExtractor, INotificationService } from "exocortex";
-import { FolderRepairService } from "exocortex";
-import { CommandResolver, PreconditionEvaluator, GroundingExecutor } from "exocortex";
-import type { LayoutSelector, ITripleStore, LazyAssetGraphLoader } from "exocortex";
-import { IRI, vaultPathToIRI } from "exocortex";
+import { IVaultAdapter, MetadataExtractor, INotificationService } from "@kitelev/exocortex-core";
+import { FolderRepairService } from "@kitelev/exocortex-core";
+import { CommandResolver, PreconditionEvaluator, GroundingExecutor } from "@kitelev/exocortex-core";
+import type { LayoutSelector, ITripleStore, LazyAssetGraphLoader } from "@kitelev/exocortex-core";
+import { IRI, vaultPathToIRI } from "@kitelev/exocortex-core";
 import type { ExoLayoutRepository } from "@plugin/infrastructure/repositories";
 import { ExoLayoutRenderer } from "./ExoLayoutRenderer";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
@@ -432,7 +432,7 @@ export class UniversalLayoutRenderer {
 
   private resolveLayoutForFile(
     file: TFile,
-  ): import("exocortex").Layout | null {
+  ): import("@kitelev/exocortex-core").Layout | null {
     if (this.layoutSelector === null) return null;
     const cache = this.app.metadataCache.getFileCache(file);
     const raw = cache?.frontmatter?.["exo__Instance_class"];

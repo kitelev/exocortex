@@ -8,7 +8,7 @@
  * Both runtimes consume the same factories:
  * - CLI (`@kitelev/exocortex-cli`) — wired via `CliServiceRegistryPopulator`,
  *   adapter is `NodeVaultAdapter` over fs/promises.
- * - Plugin (`@exocortex/obsidian-plugin`) — wired via `ServiceRegistryPopulator`,
+ * - Plugin (`@kitelev/exocortex-obsidian-plugin`) — wired via `ServiceRegistryPopulator`,
  *   adapter is `ObsidianVaultAdapter` over Obsidian's `app.vault` API.
  *
  * Domain services themselves continue to live in the shared `exocortex`

@@ -1,7 +1,7 @@
 import { ExocmdCommandPaletteRegistrar } from "../../../../src/application/services/ExocmdCommandPaletteRegistrar";
-import { InMemoryTripleStore } from "exocortex";
-import { PreconditionEvaluator } from "exocortex";
-import { registerDefaultHostFunctions } from "exocortex";
+import { InMemoryTripleStore } from "@kitelev/exocortex-core";
+import { PreconditionEvaluator } from "@kitelev/exocortex-core";
+import { registerDefaultHostFunctions } from "@kitelev/exocortex-core";
 
 /**
  * Unit tests for `ExocmdCommandPaletteRegistrar` covering both code paths:

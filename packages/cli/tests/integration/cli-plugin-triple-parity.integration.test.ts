@@ -36,7 +36,7 @@ import {
   type IFolder,
   type IFrontmatter,
   type Triple,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
 
 /**

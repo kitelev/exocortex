@@ -1,6 +1,6 @@
 import { Plugin } from "obsidian";
 import { setIcon } from "obsidian";
-import type { INotificationService } from "exocortex";
+import type { INotificationService } from "@kitelev/exocortex-core";
 
 /**
  * PropertiesUidCopyPatch - Adds a copy button next to exo__Asset_uid in Obsidian's native Properties block

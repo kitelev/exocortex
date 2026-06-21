@@ -1,4 +1,4 @@
-import { ServiceRegistry } from "exocortex";
+import { ServiceRegistry } from "@kitelev/exocortex-core";
 import {
   populateServiceRegistry,
   type ServiceRegistryDeps,

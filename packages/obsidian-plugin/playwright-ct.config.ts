@@ -85,9 +85,9 @@ export default defineConfig({
     ctViteConfig: {
       resolve: {
         alias: {
-          "exocortex": path.resolve(
+          "@kitelev/exocortex-core": path.resolve(
             __dirname,
-            "../../packages/exocortex/src",
+            "../../packages/core/src",
           ),
           obsidian: path.resolve(__dirname, "./tests/__mocks__/obsidian.ts"),
           "@": path.resolve(__dirname, "./src"),

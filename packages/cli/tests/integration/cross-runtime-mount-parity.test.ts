@@ -28,7 +28,7 @@ import {
   type FileSystemPort,
   type AssetSpaceHttpClient,
   type MountFile,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 import { BootstrapAssetSpaceService } from "../../src/services/BootstrapAssetSpaceService";
 

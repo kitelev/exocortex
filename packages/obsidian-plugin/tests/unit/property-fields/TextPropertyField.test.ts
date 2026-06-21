@@ -1,4 +1,4 @@
-import { PropertyFieldType } from "exocortex";
+import { PropertyFieldType } from "@kitelev/exocortex-core";
 import { TextPropertyField } from "../../../src/presentation/components/property-fields/TextPropertyField";
 
 // Helper to extend HTMLElement with Obsidian's methods
