@@ -362,6 +362,18 @@ export default class ExocortexPlugin extends Plugin {
   // calling refresh(), avoiding a concurrent clear()/convertVault() race.
   private eagerInitPromise: Promise<void> | null = null;
 
+  // Cold-start double-walk debounce (al-index-debounce / WBS 7b0f4e56).
+  // Set true ONLY when the eager-init convertVault walk ran against a
+  // metadataCache that was ALREADY fully resolved at walk start
+  // (`metadataCache.initialized === true`). In that case the store is
+  // complete — the #2780/#3587 partial-store race cannot occur — so the
+  // post-resolve handler's full `clear()+convertVault()` re-walk (`refresh()`)
+  // would only re-produce identical triples and is skipped. Stays false on
+  // the common cold boot (eager walk ran while Obsidian was still parsing
+  // frontmatter), so the authoritative refresh runs as before and #3587
+  // correctness is preserved.
+  private eagerWalkRanAgainstResolvedCache = false;
+
   /**
    * Issue #3320 — ProfileApplyManager hoisted onto the plugin instance
    * so onload recovery / reconcile reuse the single manager без re-constructing
@@ -1206,6 +1218,22 @@ export default class ExocortexPlugin extends Plugin {
           void initPromise
             .then(() => {
               postResolveRefreshStartedAt = Date.now();
+              // Cold-start double-walk debounce (al-index-debounce / WBS
+              // 7b0f4e56). Skip the redundant full `clear()+convertVault()`
+              // re-walk when the eager walk already ran against a fully-
+              // resolved metadataCache: the store is then already complete
+              // (the #2780/#3587 partial-store race cannot have occurred) and
+              // `refresh()` would only re-produce identical triples — a
+              // second multi-second walk on a 12k+ file vault. The lighter
+              // post-refresh steps below (materialization re-inject, cache
+              // invalidation, palette, re-render) still run so dependent
+              // surfaces stay consistent. On the common cold boot the eager
+              // walk ran against a still-parsing cache, the flag is false,
+              // and the authoritative refresh runs exactly as before — #3587
+              // correctness preserved.
+              if (this.eagerWalkRanAgainstResolvedCache) {
+                return undefined;
+              }
               return this.sparql.refresh();
             })
             .then(() => this.refreshAndInjectAssetSpaceMaterialization())
@@ -1569,6 +1597,16 @@ export default class ExocortexPlugin extends Plugin {
                   "exocmd-fullpath-start",
                   "exocmd-fullpath-ready",
                 );
+
+                // Cold-start double-walk debounce (al-index-debounce). The
+                // eager walk just succeeded; record whether it ran against an
+                // already-resolved metadataCache. When true, the store is
+                // complete and the post-resolve `refresh()` (clear()+
+                // convertVault()) is redundant — see the resolved handler.
+                // When the walk ran against a still-parsing cache (the
+                // #2780/#3587 cold-boot partial-store path) this stays false
+                // and the authoritative refresh runs as before.
+                this.eagerWalkRanAgainstResolvedCache = cacheWasWarmAtWalkStart;
 
                 // Issue #3472 — emit «indexing complete» from the eager
                 // path ONLY when metadataCache had already finished its

@@ -1942,6 +1942,70 @@ describe("ExocortexPlugin", () => {
 
       expect(refreshSpy).toHaveBeenCalledTimes(1);
     });
+
+    // Cold-start double-walk debounce (al-index-debounce / WBS 7b0f4e56).
+    // On a COLD boot the eager `convertVault()` walk runs while Obsidian is
+    // still parsing frontmatter, so it can leave files with 0 triples
+    // (#2780/#3587 partial-store). The post-resolve `refresh()` is the
+    // authoritative re-walk against the now-resolved cache and MUST run.
+    // The default mock `metadataCache` has no `initialized` flag, so the
+    // eager walk is treated as cold → refresh runs. This pins the #3587
+    // correctness contract: breaking the optimization to skip refresh
+    // unconditionally turns this RED (partial-store would silently return).
+    it("#3587: still runs the full post-resolve refresh on a COLD boot (eager walk ran against a still-parsing cache)", async () => {
+      // metadataCache.initialized is undefined (cold) → eager walk is NOT warm.
+      expect(
+        (mockMetadataCache as { initialized?: boolean }).initialized,
+      ).toBeUndefined();
+
+      await plugin.onload();
+      await flushPromises();
+
+      expect(querySpy).toHaveBeenCalledWith("ASK { ?s ?p ?o }");
+      expect(refreshSpy).not.toHaveBeenCalled();
+
+      resolvedHandler!();
+      await flushPromises();
+
+      // Authoritative re-walk runs → store rebuilt against resolved cache.
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // The optimization itself: on a WARM boot (metadataCache already resolved
+    // when the eager walk started) the eager convertVault saw every file, so
+    // the store is already complete. The post-resolve full re-walk is pure
+    // redundant work and is SKIPPED — while the cheap dependent-surface
+    // refresh (cache invalidation, palette, re-render) still runs. Breaking
+    // the debounce (never setting the flag / always refreshing) turns this RED.
+    it("debounce: SKIPS the redundant full re-walk on a WARM boot (eager walk already ran against a resolved cache), but still invalidates caches", async () => {
+      // Simulate a warm boot: metadataCache is already resolved at walk start.
+      (mockMetadataCache as { initialized?: boolean }).initialized = true;
+
+      await plugin.onload();
+      await flushPromises();
+
+      // Eager walk ran against the warm cache → store is complete.
+      expect(querySpy).toHaveBeenCalledWith("ASK { ?s ?p ?o }");
+
+      const commandResolverSpy = jest.spyOn(
+        plugin.commandResolver,
+        "invalidateCache",
+      );
+      const preconditionEvaluatorSpy = jest.spyOn(
+        plugin.preconditionEvaluator,
+        "invalidateCache",
+      );
+
+      resolvedHandler!();
+      await flushPromises();
+
+      // Redundant clear()+convertVault() re-walk is skipped.
+      expect(refreshSpy).not.toHaveBeenCalled();
+      // …but the lightweight post-refresh chain still runs so dependent
+      // surfaces (command/precondition caches, palette, layout) stay fresh.
+      expect(commandResolverSpy).toHaveBeenCalled();
+      expect(preconditionEvaluatorSpy).toHaveBeenCalled();
+    });
   });
 
   describe("Issue #2785: hot-mutation cache invalidation (post-click layout refresh)", () => {
