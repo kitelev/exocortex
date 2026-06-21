@@ -6057,39 +6057,121 @@
   font-family: var(--font-monospace);
   white-space: normal;
 }
-/* Side-by-side local | remote; stacks vertically when the modal is narrow. */
-.exosync-resolver-cols {
+/* ── IntelliJ-style 3-pane diff: Local | Merge (editable) | Remote ───────── */
+/* Conflict navigation bar (Prev/Next + counter). */
+.exosync-resolver-navbar {
   display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
   flex-wrap: wrap;
+}
+.exosync-resolver-nav-count {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+/* 3 equal columns horizontally; stacks vertically when the modal is narrow. */
+.exosync-resolver-3pane {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 12px;
   margin: 8px 0;
 }
-.exosync-resolver-col {
-  flex: 1 1 280px;
+.exosync-resolver-pane {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
-.exosync-resolver-col-title {
+.exosync-resolver-pane-title {
   margin: 0 0 4px;
   font-size: var(--font-ui-small);
 }
-.exosync-resolver-col-body {
-  max-height: 240px;
+.exosync-resolver-pane-body {
+  max-height: 320px;
   overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
   border-radius: 4px;
-  padding: 6px 8px;
+  padding: 4px 0;
+  font-family: var(--font-monospace);
   font-size: var(--font-ui-smaller);
 }
-.exosync-resolver-merge {
-  margin: 8px 0;
+/* One diff line: marker gutter + text, coloured by semantic class. */
+.exosync-diff-line {
+  display: flex;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 0 8px;
+  border-left: 3px solid transparent;
+}
+.exosync-diff-marker {
+  flex: 0 0 1.2em;
+  text-align: center;
+  opacity: 0.7;
+  user-select: none;
+}
+.exosync-diff-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* added = green, removed = red, conflict = warning — all via theme vars so the
+ * light/dark adaptation is automatic; rgba fallbacks for older themes. */
+.exosync-diff-added {
+  background: var(--background-modifier-success, rgba(var(--color-green-rgb), 0.15));
+  border-left-color: var(--color-green, #4caf50);
+}
+.exosync-diff-removed {
+  background: var(--background-modifier-error, rgba(var(--color-red-rgb), 0.15));
+  border-left-color: var(--color-red, #e05252);
+  color: var(--text-muted);
+}
+.exosync-diff-conflict {
+  /* Hard rgba first; the var() form overrides it when --color-orange-rgb
+   * resolves, and is simply ignored (keeping the hard tint) on themes that
+   * omit the var — so the conflict tint never disappears entirely. */
+  background: rgba(217, 147, 13, 0.15);
+  background: rgba(var(--color-orange-rgb), 0.15);
+  border-left-color: var(--text-warning, var(--color-orange, #d9930d));
+}
+/* Active conflict hunk (Prev/Next navigation highlight). */
+.exosync-diff-line.is-active-conflict {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+.exosync-diff-hunk {
+  display: contents;
+}
+.exosync-resolver-hunk-btn {
+  margin: 2px 8px 4px;
+  font-size: var(--font-ui-smaller);
+  padding: 1px 6px;
+}
+.exosync-resolver-pane--merge .exosync-resolver-merge-area {
+  flex: 1 1 auto;
 }
 .exosync-resolver-merge-area {
   width: 100%;
-  min-height: 120px;
+  min-height: 240px;
   font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+}
+/* Screen-reader-only diff semantics (meaning is never colour-only — WCAG 1.4.1). */
+.exosync-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* Narrow modal / mobile: stack the three panes vertically (Local → Merge → Remote). */
+@media (max-width: 720px) {
+  .exosync-resolver-3pane {
+    grid-template-columns: 1fr;
+  }
 }
 .exosync-resolver-error {
   color: var(--text-error);
