@@ -56,7 +56,7 @@ describe("audit co-location — revert→fail / restore→pass (integration)", (
     rmSync(vault, { recursive: true, force: true });
   });
 
-  it("PASS when co-located, FAIL when moved away, PASS again when restored", async () => {
+  it("@req:dd9d1be5-16d4-49be-bbde-1e4fdd53c8ee PASS when co-located, FAIL when moved away, PASS again when restored", async () => {
     // --- State 1: co-located → audit PASS (0 violations) ---
     const coLocated = writeAsset(ontoDir, ASSET_UID, `"[[${ONTO_UID}]]"`);
     let r = await scanVaultForCoLocation(vault);

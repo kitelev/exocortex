@@ -164,7 +164,7 @@ describe("RFC 78c2b7d0 C4 — CLI apply property_set targetValueQuery", () => {
     }
   }
 
-  it("re-anchors isDefinedBy to the NamedQuery-computed archive ontology (real mutation)", async () => {
+  it("@req:bbaa37e1-de71-426e-9399-97dba43967e4 re-anchors isDefinedBy to the NamedQuery-computed archive ontology (real mutation)", async () => {
     const vault = buildVault();
     root = vault.root;
 
