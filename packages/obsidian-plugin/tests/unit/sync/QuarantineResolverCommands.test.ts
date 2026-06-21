@@ -49,6 +49,7 @@ const conflict = (
 /** Minimal fake QuarantineResolver (structural). */
 function fakeResolver(opts: {
   conflicts: ResolvableConflict[];
+  dupUids?: number;
   resolve?: (
     spec: SyncRepoSpec,
     path: string,
@@ -57,6 +58,7 @@ function fakeResolver(opts: {
 }): QuarantineResolver {
   return {
     listOpenConflicts: async () => opts.conflicts,
+    detectDuplicateUids: async () => opts.dupUids ?? 0,
     loadConflict: async (s: SyncRepoSpec, path: string): Promise<ConflictDetail> => ({
       repoKey: s.repoKey,
       path,
@@ -80,6 +82,7 @@ interface HarnessOpts {
   specs?: SyncRepoSpec[];
   pat?: string | null;
   conflicts?: ResolvableConflict[];
+  dupUids?: number;
   isSyncBusy?: boolean;
   isSwitchInProgress?: boolean;
   resolve?: (
@@ -95,6 +98,7 @@ function makeHarness(opts: HarnessOpts = {}) {
   let openedCtx: ResolverModalContext | null = null;
   const resolver = fakeResolver({
     conflicts: opts.conflicts ?? [conflict("a/b#main")],
+    ...(opts.dupUids !== undefined ? { dupUids: opts.dupUids } : {}),
     ...(opts.resolve !== undefined ? { resolve: opts.resolve } : {}),
   });
   const built: BuiltQuarantineResolverLike = {
@@ -151,10 +155,21 @@ describe("QuarantineResolverCommands.invokeResolve — guards & states", () => {
     expect(h.getCtx()).toBeNull();
   });
 
-  it("reports ✅ when there are no open conflicts", async () => {
-    const h = makeHarness({ conflicts: [] });
+  it("reports ✅ when there are no open conflicts (and no dup-uids)", async () => {
+    const h = makeHarness({ conflicts: [], dupUids: 0 });
     await h.commands.invokeResolve();
     expect(h.notices.join()).toMatch(/No open sync conflicts/);
+    expect(h.getCtx()).toBeNull();
+    expect(h.commands.isBusy()).toBe(false);
+  });
+
+  it("points at dedup-uids (NOT a misleading ✅) when conflicts are empty but dup-uids exist (#a0a3d1d6)", async () => {
+    const h = makeHarness({ conflicts: [], dupUids: 4 });
+    await h.commands.invokeResolve();
+    const joined = h.notices.join();
+    expect(joined).toMatch(/4 duplicate uid\(s\)/);
+    expect(joined).toMatch(/exosync dedup-uids/);
+    expect(joined).not.toMatch(/nothing to resolve ✅/);
     expect(h.getCtx()).toBeNull();
     expect(h.commands.isBusy()).toBe(false);
   });

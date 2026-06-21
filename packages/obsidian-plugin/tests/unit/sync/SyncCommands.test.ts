@@ -216,6 +216,41 @@ describe("SyncCommands", () => {
     expect(done).toContain("quarantined 1");
   });
 
+  it("points the quarantined hint at 'Resolve sync conflicts' when NO dup-uids (#a0a3d1d6 baseline)", async () => {
+    const { commands, notices } = makeHarness({
+      results: [result("o/r#main", "synced", { quarantinedCount: 1 })],
+    });
+    await commands.invokeSync();
+    const done = notices.find((n) => n.startsWith("Sync done"))!;
+    expect(done).toContain("quarantined 1");
+    expect(done).toContain("run 'Resolve sync conflicts' to fix");
+    expect(done).not.toContain("duplicate uids block the resolver");
+  });
+
+  it("redirects the quarantined hint to dedup-uids when dup-uids block the resolver (#a0a3d1d6 fix 3a)", async () => {
+    const { commands, notices } = makeHarness({
+      results: [
+        result("o/r#main", "synced", {
+          quarantinedCount: 7,
+          deferredPaths: ["a.md", "b.md"],
+          warnings: [
+            "duplicate uid uid-x on disk — uid identity suppressed for the group (#3477)",
+            "duplicate uid uid-y on disk — uid identity suppressed for the group (#3477)",
+          ],
+        }),
+      ],
+    });
+    await commands.invokeSync();
+    const done = notices.find((n) => n.startsWith("Sync done"))!;
+    expect(done).toContain("quarantined 7");
+    // The misleading hint is GONE when dup-uids are the blocker...
+    expect(done).not.toContain("run 'Resolve sync conflicts' to fix");
+    // ...replaced by the real first step (dedup-uids → Sync).
+    expect(done).toContain("duplicate uids block the resolver");
+    expect(done).toContain("exosync dedup-uids");
+    expect(done).toContain("2 duplicate uid(s)");
+  });
+
   it("surfaces auth-required as an explicit PAT prompt, never success (R8)", async () => {
     const { commands, notices } = makeHarness({
       results: [result("o/r#main", "auth-required")],

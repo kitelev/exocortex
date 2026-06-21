@@ -297,3 +297,56 @@ describe("QuarantineResolver — convergence with the real SyncEngine", () => {
     expect(wm?.pinnedPaths ?? []).not.toContain(PATH);
   });
 });
+
+describe("QuarantineResolver.detectDuplicateUids", () => {
+  /** Minimal resolver — detectDuplicateUids touches only localFilesFor (disk). */
+  function makeResolver(disk: FakeLocalFiles): {
+    resolver: QuarantineResolver;
+    spec: SyncRepoSpec;
+  } {
+    const repo = new FakeGitHubRepo({ "seed.md": mdAsset("seed") });
+    const resolver = new QuarantineResolver({
+      transport: repo.transport(),
+      watermarkStore: new FakeWatermarkStore(),
+      localFilesFor: () => disk,
+      sha1: sha1Hex,
+    });
+    return { resolver, spec: repo.spec() };
+  }
+
+  it("counts distinct uids appearing on >1 markdown file (the #3477 root)", async () => {
+    // uid-dup on 3 paths (co-location copies), uid-dup2 on 2, uid-uniq once.
+    const disk = new FakeLocalFiles({
+      "tbank-efforts/a.md": mdAsset("uid-dup", "x"),
+      "private/b.md": mdAsset("uid-dup", "y"),
+      "og/c.md": mdAsset("uid-dup", "z"),
+      "toos/d.md": mdAsset("uid-dup2", "p"),
+      "pn/e.md": mdAsset("uid-dup2", "q"),
+      "pns/f.md": mdAsset("uid-uniq", "r"),
+    });
+    const { resolver, spec } = makeResolver(disk);
+    // 2 distinct uids are duplicated (uid-dup, uid-dup2); uid-uniq is not.
+    expect(await resolver.detectDuplicateUids([spec])).toBe(2);
+  });
+
+  it("returns 0 when every uid is unique (no false dissonance signal)", async () => {
+    const disk = new FakeLocalFiles({
+      "a.md": mdAsset("uid-1"),
+      "b.md": mdAsset("uid-2"),
+      "c.md": mdAsset("uid-3"),
+    });
+    const { resolver, spec } = makeResolver(disk);
+    expect(await resolver.detectDuplicateUids([spec])).toBe(0);
+  });
+
+  it("ignores non-.md files and uid-less notes (matches `exosync dedup-uids` scope)", async () => {
+    const disk = new FakeLocalFiles({
+      "a.md": mdAsset("uid-1"),
+      // a backup written by the resolver itself — never an asset, never counted.
+      "a.md.conflict.local.txt": mdAsset("uid-1", "discarded local"),
+      "no-uid.md": "---\nexo__Asset_label: x\n---\nbody\n",
+    });
+    const { resolver, spec } = makeResolver(disk);
+    expect(await resolver.detectDuplicateUids([spec])).toBe(0);
+  });
+});
