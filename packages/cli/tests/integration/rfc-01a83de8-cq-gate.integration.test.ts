@@ -305,7 +305,7 @@ describe("RFC 01a83de8 §5 CQ gate — STRICT-mode profile-imports closure (Issu
   });
 
   describe("label-form `_imports` (mandate violated — EV7)", () => {
-    it("STRICT mode THROWS instead of silently collapsing the closure", async () => {
+    it("STRICT mode THROWS instead of silently collapsing the closure @req:70e12858-9e9e-4e2d-84fe-e582bfa02513", async () => {
       process.env.EXOCORTEX_SPARQL_STRICT = "1";
       await expect(runQuery(fixture("label"), CQ2)).rejects.toThrow(
         /Literal in subject position/,
