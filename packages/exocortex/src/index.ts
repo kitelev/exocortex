@@ -538,13 +538,6 @@ export {
   type ValidatorOptions,
 } from "./services/ShaclLiteValidator";
 export * from "./application/errors";
-export {
-  ValidatorDaemon,
-  DEFAULT_SOCKET_PATH,
-  IDLE_TIMEOUT_MS,
-  type DaemonRequest,
-  type DaemonResponse,
-} from "./services/ValidatorDaemon";
 
 // Profile apply confirmation contract (RFC 22b50a17 Phase 1b)
 export type {

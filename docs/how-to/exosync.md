@@ -52,7 +52,7 @@ exocortex exosync push  --vault <path> --token-from-gh   # send local delta only
 # FileSpaces additionally require --quarantine-repo https://github.com/<o>/<r>
 ```
 
-The token resolves like `exosync-parity` / `experimental rest-push`
+The token resolves like `exosync-parity` / `exosync`
 (`--token-from-gh` → `--token` → `GITHUB_TOKEN` / `GH_TOKEN`). The CLI writes
 the same `exosync-watermarks.local.json` the plugin uses, so the two share one
 base. Exit codes: `0` all clean · `1` at least one repo unresolved/errored ·
@@ -262,21 +262,21 @@ loss and are visible cross-device. Design points:
 
 ## Source map
 
-| Module (`packages/exocortex/src/`)                             | Role                                                                       |
-| -------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `services/sync/SyncEngine.ts`                                  | pull→merge→push orchestrator, retry loop, watermark advance                |
-| `services/sync/ChangeDetector.ts`                              | uid/path 3-way change detection vs the watermark base                      |
-| `services/sync/StructuredMerger.ts` + `diff3.ts`               | frontmatter + section/paragraph 3-way merge                                |
-| `services/sync/GatedStructuredMerger.ts` + `MergeShaclGate.ts` | merge layer composition + SHACL gate                                       |
-| `services/sync/SyncedQuarantineStore.ts`                       | durable cross-device conflict store                                        |
-| `services/sync/FileWatermarkStore.ts`                          | per-device watermark persistence                                           |
-| `services/sync/CredentialStore.ts`                             | PAT port contract + auth-failure detection                                 |
-| `services/sync/secretScan.ts` / `transportBackoff.ts`          | push refusal on secrets / rate-limit backoff                               |
-| `services/sync/githubRepoReader.ts`                            | Git Data API read helpers                                                  |
-| `services/sync/spaceSpecCore.ts`                               | shared sync-unit classification (plugin + CLI, one parser)                 |
+| Module (`packages/exocortex/src/`)                             | Role                                                                                      |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `services/sync/SyncEngine.ts`                                  | pull→merge→push orchestrator, retry loop, watermark advance                               |
+| `services/sync/ChangeDetector.ts`                              | uid/path 3-way change detection vs the watermark base                                     |
+| `services/sync/StructuredMerger.ts` + `diff3.ts`               | frontmatter + section/paragraph 3-way merge                                               |
+| `services/sync/GatedStructuredMerger.ts` + `MergeShaclGate.ts` | merge layer composition + SHACL gate                                                      |
+| `services/sync/SyncedQuarantineStore.ts`                       | durable cross-device conflict store                                                       |
+| `services/sync/FileWatermarkStore.ts`                          | per-device watermark persistence                                                          |
+| `services/sync/CredentialStore.ts`                             | PAT port contract + auth-failure detection                                                |
+| `services/sync/secretScan.ts` / `transportBackoff.ts`          | push refusal on secrets / rate-limit backoff                                              |
+| `services/sync/githubRepoReader.ts`                            | Git Data API read helpers                                                                 |
+| `services/sync/spaceSpecCore.ts`                               | shared sync-unit classification (plugin + CLI, one parser)                                |
 | `services/sync/ParityValidator.ts` + `assetSemanticCompare.ts` | Phase E M1/M2 parity harness ([parallel-run doc](../explanation/exosync-parallel-run.md)) |
-| `services/FileSpaceDiscovery.ts`                               | FileSpace → indexer-exclusion prefixes                                     |
-| `infrastructure/github/restCommit.ts`                          | the 4-call commit+push write primitive                                     |
+| `services/FileSpaceDiscovery.ts`                               | FileSpace → indexer-exclusion prefixes                                                    |
+| `infrastructure/github/restCommit.ts`                          | the 4-call commit+push write primitive                                                    |
 
 Plugin wiring: `packages/obsidian-plugin/src/infrastructure/adapters/SyncCommands.ts`
 (palette handler) and `SyncDepsFactory.ts` (engine composition over
