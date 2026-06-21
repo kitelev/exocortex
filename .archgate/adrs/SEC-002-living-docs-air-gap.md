@@ -1,5 +1,5 @@
 ---
-id: SEC-001
+id: SEC-002
 title: Living-Docs build is PAT-less (fail-closed by absence)
 domain: security
 rules: true
@@ -37,7 +37,7 @@ fetched (RFC 0004 §3.1 / §5).
 
 ## Enforcement (machine-checked)
 
-This ADR carries an archgate rule (`SEC-001-living-docs-air-gap.rules.ts`) that
+This ADR carries an archgate rule (`SEC-002-living-docs-air-gap.rules.ts`) that
 **fails the build** if `living-docs.yml` references any secret beyond the default
 `GITHUB_TOKEN`, or overrides the checkout credential. The guarantee is thus
 **verified, not assumed** — the inspectable absence of a private-repo credential

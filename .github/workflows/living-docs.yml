@@ -12,7 +12,7 @@
 # explicit human confirmation (MVP-4, RFC 0004 §5).
 #
 # The PAT-less air-gap is additionally enforced as a REQUIRED gate by the archgate
-# rule SEC-001 (.archgate/adrs/SEC-001-living-docs-air-gap.rules.ts) and proved by
+# rule SEC-002 (.archgate/adrs/SEC-002-living-docs-air-gap.rules.ts) and proved by
 # the docs-site test `test/workflow-air-gap.test.mjs`.
 name: Living Docs
 

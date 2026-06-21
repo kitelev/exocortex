@@ -1,7 +1,7 @@
 /// <reference path="../rules.d.ts" />
 
 /**
- * SEC-001: Living-Docs build is PAT-less (fail-closed by absence).
+ * SEC-002: Living-Docs build is PAT-less (fail-closed by absence).
  *
  * The Living-Documentation build workflow must inject NO credential that grants
  * access to any private repo. Concretely: no `secrets.*` reference other than the
