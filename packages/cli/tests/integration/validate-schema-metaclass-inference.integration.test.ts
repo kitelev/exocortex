@@ -159,7 +159,7 @@ afterAll(() => {
 });
 
 describe("Issue #3247 integration: metaclass inference chain", () => {
-  it("does not emit sh:class violation against exo__Asset for instance of class typed-as exo__Class without own superClass", () => {
+  it("@req:60abc8ac-34d0-4c1e-93f1-bcd904d78c22 does not emit sh:class violation against exo__Asset for instance of class typed-as exo__Class without own superClass", () => {
     const falsePositives = violations.filter(
       (v) =>
         v.propertyPath ===

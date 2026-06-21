@@ -127,7 +127,7 @@ describe("Phase 0 Task 0.3: apply --seed / --frozen-clock determinism", () => {
     }
   }
 
-  it("two runs with identical --seed and --frozen-clock yield byte-identical created file", async () => {
+  it("@req:1d3b688e-c7c9-4ed4-81de-60f195158033 two runs with identical --seed and --frozen-clock yield byte-identical created file", async () => {
     const detArgs = ["--seed", SEED, "--frozen-clock", FROZEN_CLOCK];
 
     await runApply(vault.root, detArgs);
