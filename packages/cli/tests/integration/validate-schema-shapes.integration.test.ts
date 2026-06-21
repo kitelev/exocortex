@@ -71,7 +71,7 @@ describe("BDD: validate schema --shapes-mode (P1.7 — synthetic vault fixtures)
     }
   });
 
-  it("Scenario: asset-a.md — sh:maxCount violation for ems__Task_name (Single cardinality, 2 values)", () => {
+  it("@req:6e00a56c-11d4-4915-b81c-006b6ae16bd9 Scenario: asset-a.md — sh:maxCount violation for ems__Task_name (Single cardinality, 2 values)", () => {
     const v = violations.find(
       (x) =>
         x.focusNode.includes("asset-a.md") &&
