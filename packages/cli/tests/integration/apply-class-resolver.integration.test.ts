@@ -152,7 +152,7 @@ describe("Issue #3258: CLI `apply` emits UID-form exo__Instance_class", () => {
     }
   }
 
-  it("emits exo__Instance_class as UID-form wikilink when class TBox is present", async () => {
+  it("@req:56d736ac-21e2-4536-81a4-f270f9cda34e emits exo__Instance_class as UID-form wikilink when class TBox is present", async () => {
     vault = buildVault({ withClassTBox: true });
 
     await runApply(vault.root);
