@@ -4,15 +4,19 @@ import { createProgram } from "../../../src/program";
 /**
  * RFC 7c7859d1 (dogfood homoiconic command surface) — W0 cleanup.
  *
- * W0 removes four dead/superseded commands from the exocortex-cli surface:
+ * W0 removes three dead/superseded commands from the exocortex-cli surface:
  *   - `watch`        — dead code (FileSystemWatcher had no production consumer)
  *   - `daemon`       — whole stack unwired in prod (DaemonClient + ValidatorDaemon)
- *   - `recover`      — tmux-recovery, unused (OrphanRecoveryService)
  *   - `experimental` — `rest-push` PoC superseded by `exosync push`
+ *
+ * `recover` was originally classified W0 too, but a code-review found a live
+ * launchd consumer (`com.exocortex.aitask-recover` hourly job calls
+ * `exocortex-cli recover --apply`). It is therefore RETAINED here and
+ * reclassified migration-first (asserted present in the sanity list below).
  *
  * This test exercises the REAL command registry (createProgram from
  * src/program.ts), not a dummy tree, so it empirically fails if any of the
- * four commands is re-registered (Executable Specification — revert-verify).
+ * three removed commands is re-registered (Executable Specification — revert-verify).
  */
 describe("CLI surface — W0 removed commands (RFC 7c7859d1)", () => {
   function topLevelNames(): string[] {
@@ -27,10 +31,6 @@ describe("CLI surface — W0 removed commands (RFC 7c7859d1)", () => {
 
   it("does NOT register the removed 'daemon' command", () => {
     expect(topLevelNames()).not.toContain("daemon");
-  });
-
-  it("does NOT register the removed 'recover' command", () => {
-    expect(topLevelNames()).not.toContain("recover");
   });
 
   it("does NOT register the removed 'experimental' command", () => {
@@ -49,6 +49,7 @@ describe("CLI surface — W0 removed commands (RFC 7c7859d1)", () => {
       "create",
       "audit",
       "exosync",
+      "recover",
     ]) {
       expect(names).toContain(kept);
     }

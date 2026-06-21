@@ -53,6 +53,7 @@ The following v15 verbs were **removed**: `batch`, `batch-repair`, `command`, `d
 | [`create`](#create)                       | Create a new vault asset with auto-generated UUID and frontmatter                  |
 | [`resolve`](#resolve)                     | Resolve a UUID (full or partial) to a file path                                    |
 | [`workflow`](#workflow)                   | List / show / validate workflow definitions                                        |
+| [`recover`](#recover)                     | Detect and recover orphaned claude-child tmux sessions                             |
 | [`audit`](#audit)                         | Regression-pattern audits (`co-location`, `ontology-imports`)                      |
 | [`apply-profile`](#apply-profile)         | Apply an `exo__Profile` (mount-state filesystem mutation)                          |
 | [`bootstrap`](#bootstrap)                 | Bootstrap a vault with the SDK floor AssetSpace                                    |
@@ -368,6 +369,21 @@ npx @kitelev/exocortex-cli workflow validate <uid> --vault ~/vault
 | `validate <uid>` | Validate a workflow definition             |
 
 All subcommands accept `--vault <path>` (default: cwd) and `--output text|json` (default: `text`).
+
+### recover
+
+Detect and recover orphaned `claude-child` tmux sessions. A session is orphaned when its corresponding vault task is not in Doing status. Default mode is dry-run.
+
+```bash
+npx @kitelev/exocortex-cli recover --vault ~/vault-2025
+npx @kitelev/exocortex-cli recover --apply --vault ~/vault-2025
+```
+
+| Option           | Default                              | Description                                              |
+| ---------------- | ------------------------------------ | -------------------------------------------------------- |
+| `--vault <path>` | `$EXOCORTEX_VAULT` or `~/vault-2025` | Path to Obsidian vault                                   |
+| `--dry-run`      | —                                    | List orphans without applying changes (default behavior) |
+| `--apply`        | off                                  | Apply recovery: set Failed + kill the tmux session       |
 
 ---
 

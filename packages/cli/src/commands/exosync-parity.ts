@@ -86,7 +86,7 @@ const coreSchemaYaml: YamlCodec = {
     yaml.dump(value, { schema: yaml.CORE_SCHEMA, lineWidth: -1 }),
 };
 
-/** Token precedence mirrors `experimental rest-push`. Read-only API calls
+/** Token precedence mirrors `exosync`. Read-only API calls
  * still need auth: the sync units are private repos (404-hidden without a
  * PAT — the documented fine-grained blind spot). */
 function resolveToken(

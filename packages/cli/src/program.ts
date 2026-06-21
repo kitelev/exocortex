@@ -7,6 +7,7 @@ import { validateCommand } from "./commands/validate.js";
 import { classesCommand } from "./commands/classes.js";
 import { createCommand } from "./commands/create.js";
 import { workflowCommand } from "./commands/workflow.js";
+import { recoverCommand } from "./commands/recover.js";
 import { findCommand } from "./commands/find.js";
 import { applyCommand } from "./commands/apply.js";
 import { auditCommand } from "./commands/audit.js";
@@ -51,6 +52,10 @@ export function createProgram(version?: string): Command {
   program.addCommand(classesCommand());
   program.addCommand(createCommand());
   program.addCommand(workflowCommand());
+  // recover — retained: live launchd consumer (com.exocortex.aitask-recover
+  // hourly job calls `exocortex-cli recover --apply`). RFC 7c7859d1 reclassifies
+  // it from W0 cheap-remove to migration-first (retire/port that consumer first).
+  program.addCommand(recoverCommand());
 
   // RFC 9d20c91f Phase 4+1 — regression-detection audits
   program.addCommand(auditCommand());
