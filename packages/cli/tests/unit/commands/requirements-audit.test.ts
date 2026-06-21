@@ -3,6 +3,7 @@ import {
   parsePriority,
   parseBindingClasses,
   parseStatus,
+  parseEvidence,
   extractReqTags,
   auditTraceability,
   isHardFail,
@@ -25,6 +26,8 @@ function req(partial: Partial<RequirementRecord> & { uid: string }): Requirement
     priority: "P0",
     bindingClasses: ["integration"],
     status: "Draft",
+    evidence: [],
+    evidenceMissing: [],
     ...partial,
   };
 }
@@ -470,10 +473,57 @@ describe("auditTraceability — active-requirement invariant (SDD feature-lifecy
     expect(r.orphans.map((o) => o.uid)).toEqual([UID_A]);
   });
 
-  it("an active ui-acceptance requirement (manual evidence) is satisfied — no violation", () => {
-    const reqs = [req({ uid: UID_A, status: "Active", bindingClasses: ["ui-acceptance"] })];
+  it("an active ui-acceptance requirement WITH resolving committed evidence is satisfied — no violation", () => {
+    const reqs = [
+      req({
+        uid: UID_A,
+        status: "Active",
+        bindingClasses: ["ui-acceptance"],
+        evidence: ["evidence/a.md"],
+        evidenceMissing: [], // resolves
+      }),
+    ];
     const r = auditTraceability(reqs, []); // no jest tag — manual tier
     expect(r.activeTotal).toBe(1);
+    expect(r.activeViolations).toHaveLength(0);
+    expect(r.clean).toBe(true);
+  });
+
+  it("an active ui-acceptance requirement WITHOUT evidence is an invariant violation (hard, not clean)", () => {
+    // RFC 0003 §3.6 evidence-attestation (al-night-uiaccept): the ui-acceptance
+    // binding IS the recorded evidence — an active ui-acceptance req must link a
+    // resolving committed artifact, else the tier is a "trust the prose" no-op.
+    const reqs = [
+      req({ uid: UID_A, status: "Active", bindingClasses: ["ui-acceptance"] }),
+    ];
+    const r = auditTraceability(reqs, []); // no jest tag, no evidence
+    expect(r.activeTotal).toBe(1);
+    expect(r.activeViolations.map((a) => a.uid)).toEqual([UID_A]);
+    expect(r.activeViolations[0].reason).toMatch(/evidence/i);
+    expect(r.clean).toBe(false);
+  });
+
+  it("an active ui-acceptance requirement with a DANGLING (non-resolving) evidence link is a violation", () => {
+    const reqs = [
+      req({
+        uid: UID_A,
+        status: "Active",
+        bindingClasses: ["ui-acceptance"],
+        evidence: ["evidence/gone.md"],
+        evidenceMissing: ["evidence/gone.md"], // declared but not committed
+      }),
+    ];
+    const r = auditTraceability(reqs, []);
+    expect(r.activeViolations.map((a) => a.uid)).toEqual([UID_A]); // active gate
+    expect(r.danglingEvidence.map((e) => e.uid)).toEqual([UID_A]); // also dangling
+    expect(r.clean).toBe(false);
+  });
+
+  it("an active ui-acceptance requirement bound by a jest @req tag is satisfied without evidence (tag precedence)", () => {
+    const reqs = [
+      req({ uid: UID_A, status: "Active", bindingClasses: ["ui-acceptance"] }),
+    ];
+    const r = auditTraceability(reqs, [tag(UID_A)]); // jest-bound → satisfied
     expect(r.activeViolations).toHaveLength(0);
     expect(r.clean).toBe(true);
   });
@@ -579,5 +629,114 @@ describe("auditTraceability — ui-acceptance verification tier (RFC 0003 §3.6)
     expect(r.floorViolations).toHaveLength(0);
     expect(r.p0Bound).toBe(1);
     expect(r.rampReady).toBe(true);
+  });
+});
+
+describe("parseEvidence", () => {
+  it("parses a scalar evidence path", () => {
+    expect(parseEvidence("evidence/a.md")).toEqual(["evidence/a.md"]);
+  });
+
+  it("parses a list of evidence paths", () => {
+    expect(parseEvidence(["evidence/a.md", "evidence/b.png"])).toEqual([
+      "evidence/a.md",
+      "evidence/b.png",
+    ]);
+  });
+
+  it("trims and drops blank entries", () => {
+    expect(parseEvidence(["  evidence/a.md  ", "", "   "])).toEqual([
+      "evidence/a.md",
+    ]);
+  });
+
+  it("returns [] for null / non-string", () => {
+    expect(parseEvidence(undefined)).toEqual([]);
+    expect(parseEvidence(null)).toEqual([]);
+    expect(parseEvidence(42)).toEqual([]);
+  });
+});
+
+describe("auditTraceability — evidence-attestation (RFC 0003 §3.6, al-night-uiaccept)", () => {
+  it("flags a declared evidence link that does not resolve (danglingEvidence, hard)", () => {
+    const reqs = [
+      req({
+        uid: UID_A,
+        status: "Proposed",
+        priority: "P2",
+        bindingClasses: ["ui-acceptance"],
+        evidence: ["evidence/gone.md"],
+        evidenceMissing: ["evidence/gone.md"],
+      }),
+    ];
+    const r = auditTraceability(reqs, []);
+    expect(r.danglingEvidence.map((e) => e.uid)).toEqual([UID_A]);
+    expect(r.danglingEvidence[0].missing).toEqual(["evidence/gone.md"]);
+    expect(r.clean).toBe(false);
+  });
+
+  it("a resolving evidence link is NOT dangling", () => {
+    const reqs = [
+      req({
+        uid: UID_A,
+        status: "Proposed",
+        priority: "P2",
+        bindingClasses: ["ui-acceptance"],
+        evidence: ["evidence/a.md"],
+        evidenceMissing: [],
+      }),
+    ];
+    const r = auditTraceability(reqs, []);
+    expect(r.danglingEvidence).toHaveLength(0);
+    expect(r.clean).toBe(true);
+  });
+
+  it("danglingEvidence applies to ANY req that declares evidence, not just ui-acceptance", () => {
+    const reqs = [
+      req({
+        uid: UID_A,
+        status: "Proposed",
+        priority: "P2",
+        bindingClasses: ["unit"],
+        evidence: ["evidence/missing.png"],
+        evidenceMissing: ["evidence/missing.png"],
+      }),
+    ];
+    const r = auditTraceability(reqs, []);
+    expect(r.danglingEvidence.map((e) => e.uid)).toEqual([UID_A]);
+    expect(r.clean).toBe(false);
+  });
+
+  it("reports ui-acceptance evidence coverage stats", () => {
+    const reqs = [
+      req({
+        uid: UID_A,
+        bindingClasses: ["ui-acceptance"],
+        evidence: ["evidence/a.md"],
+        evidenceMissing: [],
+      }),
+      req({ uid: UID_B, bindingClasses: ["ui-acceptance"] }), // no evidence
+      req({ uid: UID_C, bindingClasses: ["integration"] }), // not ui-acceptance
+    ];
+    const r = auditTraceability(reqs, []);
+    expect(r.uiAcceptanceTotal).toBe(2);
+    expect(r.uiAcceptanceEvidenced).toBe(1);
+    expect(r.uiAcceptanceMissingEvidence).toBe(1);
+  });
+
+  it("a Proposed ui-acceptance req with no evidence is reported but does NOT block (warning, clean)", () => {
+    // evidence is HARD only for the in-force `active` subset (migration-friendly).
+    const reqs = [
+      req({
+        uid: UID_A,
+        status: "Proposed",
+        priority: "P2",
+        bindingClasses: ["ui-acceptance"],
+      }),
+    ];
+    const r = auditTraceability(reqs, []);
+    expect(r.uiAcceptanceMissingEvidence).toBe(1);
+    expect(r.activeViolations).toHaveLength(0);
+    expect(r.clean).toBe(true);
   });
 });

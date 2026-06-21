@@ -182,22 +182,23 @@ The assetspaces themselves are created in **implementation** (§8), not by this 
 `req__Requirement` (`exo__Class`, superclass `exo__Asset`) — design intent;
 final shapes refined in implementation:
 
-| Property                            | Card. | Range / values                                                           | Purpose                                                                                                      |
-| ----------------------------------- | ----- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `req__Requirement_statement` (body) | 1     | **Gherkin Given/When/Then** in the asset body                            | The functional spec (human + AI readable)                                                                    |
-| `req__Requirement_jobStory`         | 0..1  | "When ⟨situation⟩, I want ⟨motivation⟩, so ⟨outcome⟩"                    | Optional user-value framing                                                                                  |
-| `req__Requirement_covers`           | 1..N  | wikilink → command / feature                                             | What behavior this is _about_                                                                                |
-| `req__Requirement_verifiedBy`       | 0..N  | (derived) test-ID(s) the checker resolves from `@req:<uid>` tags         | The existing real test(s) that exercise it                                                                   |
-| `req__Requirement_bindingClass`     | 0..N  | `unit` \| `integration` \| `e2e` \| `gui-bdd` \| `ui-acceptance`         | Class of each binding (gates P0, §3.6). `ui-acceptance` = manual computer-control verification (no jest tag) |
-| `req__Requirement_implementedBy`    | 0..N  | wikilink → command / PR# / code ref                                      | Implementation pointer                                                                                       |
-| `req__Requirement_refines`          | 0..1  | wikilink → parent `req__Requirement` (UWI child→parent)                  | Decomposition / acceptance↔system layering                                                                   |
-| `req__Requirement_status`           | 1     | `Draft` \| `Approved` \| `Deprecated` (enum assets) — **human-authored** | Lifecycle                                                                                                    |
-| `req__Requirement_priority`         | 1     | `P0`..`P3` (enum)                                                        | Migration & gate ordering                                                                                    |
-| `req__Requirement_area`             | 0..1  | wikilink → `ems__Area`                                                   | Grouping (Alpha-critical, etc.)                                                                              |
-| `req__Requirement_author`           | 1     | wikilink → person/ExoAssistant                                           | Drafter provenance                                                                                           |
-| `req__Requirement_approvedBy`       | 0..1  | wikilink → person                                                        | Approver (≠ drafter)                                                                                         |
-| `req__Requirement_approvedAt`       | 0..1  | dateTime                                                                 | When approved (for re-approval-on-change)                                                                    |
-| `req__Requirement_baseline`         | 0..1  | wikilink → approved snapshot / `pmbok__ChangeRequest`                    | Versioning / change-history                                                                                  |
+| Property                            | Card. | Range / values                                                                                  | Purpose                                                                                                      |
+| ----------------------------------- | ----- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `req__Requirement_statement` (body) | 1     | **Gherkin Given/When/Then** in the asset body                                                   | The functional spec (human + AI readable)                                                                    |
+| `req__Requirement_jobStory`         | 0..1  | "When ⟨situation⟩, I want ⟨motivation⟩, so ⟨outcome⟩"                                           | Optional user-value framing                                                                                  |
+| `req__Requirement_covers`           | 1..N  | wikilink → command / feature                                                                    | What behavior this is _about_                                                                                |
+| `req__Requirement_verifiedBy`       | 0..N  | (derived) test-ID(s) the checker resolves from `@req:<uid>` tags                                | The existing real test(s) that exercise it                                                                   |
+| `req__Requirement_bindingClass`     | 0..N  | `unit` \| `integration` \| `e2e` \| `gui-bdd` \| `ui-acceptance`                                | Class of each binding (gates P0, §3.6). `ui-acceptance` = manual computer-control verification (no jest tag) |
+| `req__Requirement_evidence`         | 0..N  | path → committed evidence artifact (screenshot / attestation `.md`)                             | `ui-acceptance` evidence-attestation (§3.6): the committed, CI-resolved artifact backing a manual binding    |
+| `req__Requirement_implementedBy`    | 0..N  | wikilink → command / PR# / code ref                                                             | Implementation pointer                                                                                       |
+| `req__Requirement_refines`          | 0..1  | wikilink → parent `req__Requirement` (UWI child→parent)                                         | Decomposition / acceptance↔system layering                                                                   |
+| `req__Requirement_status`           | 1     | `Proposed`/`Draft` \| `Approved` \| `Active` \| `Deprecated` (enum assets) — **human-authored** | Lifecycle (`Active` = in-force, always-on hard-gated, §3.6/§3.7)                                             |
+| `req__Requirement_priority`         | 1     | `P0`..`P3` (enum)                                                                               | Migration & gate ordering                                                                                    |
+| `req__Requirement_area`             | 0..1  | wikilink → `ems__Area`                                                                          | Grouping (Alpha-critical, etc.)                                                                              |
+| `req__Requirement_author`           | 1     | wikilink → person/ExoAssistant                                                                  | Drafter provenance                                                                                           |
+| `req__Requirement_approvedBy`       | 0..1  | wikilink → person                                                                               | Approver (≠ drafter)                                                                                         |
+| `req__Requirement_approvedAt`       | 0..1  | dateTime                                                                                        | When approved (for re-approval-on-change)                                                                    |
+| `req__Requirement_baseline`         | 0..1  | wikilink → approved snapshot / `pmbok__ChangeRequest`                                           | Versioning / change-history                                                                                  |
 
 - **`verified` is runtime-derived, never persisted** (precedent:
   `exo__AssetSpace_materialized`): a requirement is _verified_ iff it has ≥1
@@ -283,6 +284,34 @@ layer, the only tests are the real ones already in CI, and a binding that doesn'
 fail-on-revert is invalid by definition. (The `ui-acceptance` tier substitutes
 recorded live-UI evidence for the jest revert-verify; it is not a self-asserting
 runner.)
+
+> **Evidence-attestation — making the `ui-acceptance` tier CI-verifiable.** The
+> `ui-acceptance` binding _is_ the recorded evidence — so "recorded" must mean
+> **committed, linked, and CI-resolved**, not "trust the prose". A `ui-acceptance`
+> requirement links its evidence via `req__Requirement_evidence` (0..N) — a path
+> to a committed artifact (screenshot, or, when the live screenshot is ephemeral,
+> an attestation `.md` recording date · plugin version · observed result · the
+> revert-verify spec). The traceability checker resolves each path against the
+> committed reqs tree and enforces, **without running a GUI**:
+>
+> - **dangling evidence (HARD)** — a declared `_evidence` path that does not
+>   resolve to a committed file inside the reqs tree. Exactly symmetric with a
+>   dangling `@req` tag (typo / deleted / not-committed). Folds into `clean`
+>   (soft-swallowed until the §3.7 hard-gate flip).
+> - **active ui-acceptance ⇒ resolving evidence required (HARD, always-on)** — an
+>   `active` `ui-acceptance` requirement with no resolving evidence is an
+>   active-requirement invariant violation (the always-on blocking gate, §3.7).
+>   This is what makes the active-invariant _mean something_ for the manual tier
+>   (previously it was trivially satisfied by the class declaration alone). A
+>   `@req` jest tag still takes precedence (an active ui-acceptance req that is
+>   also jest-bound needs no separate evidence). Proposed/Draft ui-acceptance reqs
+>   are reported (evidence-coverage stat) but **not** gated — migration-friendly.
+>
+> This closes the only "trust me" gap left in the tier model: a `ui-acceptance`
+> binding can no longer be asserted in-force without a committed, machine-checkable
+> evidence artifact. It does **not** re-execute the UI in CI (that would overlap
+> `eka-gui-e2e` / be an architectural fork) — it verifies the evidence _exists +
+> is linked_.
 
 ### 3.7 Enforcement — soft→hard ramp with a real flip-trigger
 
