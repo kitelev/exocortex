@@ -453,6 +453,14 @@ describe("auditTraceability — active-requirement invariant (SDD feature-lifecy
     expect(r.clean).toBe(true); // active-gate does not fire
   });
 
+  it("a non-canonically-cased active status still trips the gate (case-insensitive)", () => {
+    // defense-in-depth: a hand-authored `...Statusactive` must not silently escape.
+    const reqs = [req({ uid: UID_A, status: "active", bindingClasses: ["unit"] })];
+    const r = auditTraceability(reqs, []);
+    expect(r.activeTotal).toBe(1);
+    expect(r.activeViolations.map((a) => a.uid)).toEqual([UID_A]);
+  });
+
   it("counts only the unbound active reqs as violations (mixed set)", () => {
     const reqs = [
       req({ uid: UID_A, status: "Active" }), // bound below → ok

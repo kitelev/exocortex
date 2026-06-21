@@ -244,7 +244,11 @@ export function parseBindingClasses(value: unknown): string[] {
   return out;
 }
 
-/** Parse the lifecycle status local-name (`Draft`/`Approved`/`Deprecated`). */
+/**
+ * Parse the lifecycle status local-name: `Proposed`/`Approved`/`Active`/
+ * `Deprecated` (legacy `Draft` → treated like `Proposed`). Original case is
+ * preserved; consumers comparing to `Active` normalize case (see auditTraceability).
+ */
 export function parseStatus(value: unknown): string | null {
   const raw = asStringArray(value)[0];
   if (!raw) return null;
@@ -432,7 +436,9 @@ export function auditTraceability(
   const activeViolations: ActiveViolationFinding[] = [];
   let activeTotal = 0;
   for (const r of requirements) {
-    if (r.status !== "Active") continue;
+    // Case-insensitive so a non-canonically-cased status (e.g. a hand-authored
+    // `...Statusactive`) cannot silently escape this always-on safety gate.
+    if (r.status?.toLowerCase() !== "active") continue;
     activeTotal++;
     const isBound = occByUid.has(r.uid.toLowerCase());
     if (!isBound && !isManuallyVerified(r)) {
