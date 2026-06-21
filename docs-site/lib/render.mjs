@@ -70,6 +70,10 @@ export function layout({ title, content, relRoot = "" }) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Publicly reachable by link, but kept out of search engines: noindex (do not
+     index), nofollow (do not follow links for indexing), noarchive (no cached
+     copy). The content is public, but discoverability is deliberately not. -->
+<meta name="robots" content="noindex, nofollow, noarchive">
 <title>${escapeHtml(title)} · Exocortex Living Docs</title>
 <link rel="stylesheet" href="${relRoot}assets/style.css">
 </head>

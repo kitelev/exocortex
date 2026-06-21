@@ -1,19 +1,22 @@
-# Living Documentation (RFC 0004) — PAT-less build.
+# Living Documentation (RFC 0004) — PAT-less build + GitHub Pages deploy.
 #
-# Privacy is guaranteed BY CONSTRUCTION: this workflow injects NO PAT / no
-# broad-scope secret into git or the generator. `actions/checkout` runs with only
-# the default repo-scoped GITHUB_TOKEN, which cannot read other private repos — so
-# `git submodule update` can pull ONLY public submodules. A private submodule would
-# fail the credential-free fetch and break the build (fail-closed by absence, §5).
+# Privacy is guaranteed BY CONSTRUCTION: the BUILD job injects NO PAT / no
+# broad-scope secret. `actions/checkout` runs with only the default repo-scoped
+# GITHUB_TOKEN, which cannot read other private repos — so `git submodule update`
+# can pull ONLY public submodules. A private submodule would fail the
+# credential-free fetch and break the build (fail-closed by absence, §5).
 #
-# Scope (MVP-3): BUILD + TEST the generator and publish the built `_site` as a
-# downloadable CI ARTIFACT — there is still NO GitHub Pages deploy here. Enabling
-# Pages and the first publish are outward-facing + irreversible and require
-# explicit human confirmation (MVP-4, RFC 0004 §5).
+# The PAT-less air-gap is enforced as a REQUIRED gate by the archgate rule SEC-002
+# (.archgate/adrs/SEC-002-living-docs-air-gap.rules.ts) and proved by the docs-site
+# test `test/workflow-air-gap.test.mjs`.
 #
-# The PAT-less air-gap is additionally enforced as a REQUIRED gate by the archgate
-# rule SEC-002 (.archgate/adrs/SEC-002-living-docs-air-gap.rules.ts) and proved by
-# the docs-site test `test/workflow-air-gap.test.mjs`.
+# Scope (MVP-4): the site IS published to GitHub Pages, but ONLY on push-to-main
+# or a manual dispatch — never on a pull_request (PRs build + test only). The
+# deploy uses the repo-scoped GITHUB_TOKEN (`pages: write` / `id-token: write`)
+# to publish to THIS repo's own Pages — that is NOT a credential to any other
+# private repo, so the air-gap (no private-repo fetch) is preserved. Every page
+# carries `<meta name="robots" content="noindex, nofollow, noarchive">`: the site
+# is reachable by link but deliberately kept out of search-engine indexes.
 name: Living Docs
 
 on:
@@ -34,18 +37,24 @@ on:
       - "packages/exoas-exo"
       - ".github/workflows/living-docs.yml"
 
-# Read-only: this job never needs write access (no Pages deploy — MVP-3).
+# Default (build job): read-only, PAT-less. The deploy job narrowly elevates to
+# the repo-scoped Pages permissions — see its own `permissions:` block.
 permissions:
   contents: read
 
 concurrency:
-  group: living-docs-${{ github.ref }}
-  cancel-in-progress: true
+  # Serialize Pages deploys; do NOT cancel an in-flight deploy.
+  group: living-docs-pages
+  cancel-in-progress: false
 
 jobs:
   build:
-    name: build (PAT-less, no publish)
+    name: build (PAT-less)
     runs-on: ubuntu-latest
+    # Explicitly read-only: the build that produces the docs has no credential
+    # granting access to any private repo (the entire air-gap, RFC 0004 §5).
+    permissions:
+      contents: read
     steps:
       # No `token:` and no `ssh-key:` override → only the default repo-scoped
       # GITHUB_TOKEN is available. Public submodules fetch fine; a private one
@@ -68,7 +77,7 @@ jobs:
         working-directory: docs-site
         run: npm test
 
-      - name: Build the site (local only — no publish)
+      - name: Build the site
         run: node docs-site/build.mjs --out _site
 
       - name: Verify the site built
@@ -79,12 +88,28 @@ jobs:
           test -d _site/adrs
           echo "Living-Docs site built: $(find _site -type f | wc -l) files."
 
-      # Publish the built site as a downloadable CI artifact (NO deploy — the
-      # site is inspectable here, but is not served to the public until MVP-4
-      # enables GitHub Pages on explicit human confirmation).
-      - name: Upload _site as a CI artifact (no publish)
-        uses: actions/upload-artifact@v4
+      # Package _site as the GitHub Pages artifact (also downloadable for review).
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          name: living-docs-site
           path: _site
-          retention-days: 14
+
+  deploy:
+    name: deploy to GitHub Pages
+    needs: build
+    # ⛔ Deploy ONLY on push-to-main or a manual dispatch — never on a PR. PRs
+    # build + test only; they never publish.
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    # Repo-scoped Pages permissions — publish to THIS repo's Pages only. NOT a
+    # credential to any other (private) repo, so the air-gap is preserved.
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages (repo-scoped GITHUB_TOKEN, no PAT)
+        id: deployment
+        uses: actions/deploy-pages@v4

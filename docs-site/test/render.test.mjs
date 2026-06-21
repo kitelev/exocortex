@@ -134,3 +134,26 @@ test("indexPage renders summary tables + links", () => {
   assert.match(html, /100%/); // coverage stat
   assert.match(html, /req one/);
 });
+
+test("every page carries a noindex robots meta (publicly reachable, not search-indexed)", () => {
+  const stats = { total: 0, covered: 0, coverage: 1, byStatus: {}, byPriority: {} };
+  const index = indexPage({ reqs: [], adrs: [], stats, ontology: { classes: [], properties: [] } });
+  const req = requirementPage({
+    uid: "u1",
+    label: "r",
+    status: "Draft",
+    priority: null,
+    bindingClasses: [],
+    covers: [],
+    verifiedBy: [],
+    implementedBy: [],
+    area: null,
+    author: null,
+    covered: false,
+    body: "x",
+  });
+  const adr = adrPage({ id: "ARCH-001", title: "T", domain: "data", rules: false, body: "x" });
+  for (const html of [index, req, adr]) {
+    assert.match(html, /<meta name="robots" content="noindex, nofollow, noarchive">/);
+  }
+});
