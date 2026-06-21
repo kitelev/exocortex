@@ -262,21 +262,20 @@ function rewriteUid(content: string, fresh: string): string {
 }
 
 /**
- * Content-preserving whitespace normalization for the IDENTICAL-copy test.
- * Two files equal after this carry the SAME semantic content (only cosmetic
- * whitespace differs: line endings, trailing whitespace, trailing blank lines)
- * — so deleting one is provably zero-loss. Deliberately does NOT touch
- * frontmatter field VALUES (e.g. a differing `exo__Asset_updatedAt`) or the
- * body text, and reorders nothing: ANY real content difference must surface as
- * DIFFERING (→ re-uuid, never delete). Conservative by construction — the only
- * bytes it collapses are whitespace that no markdown/RDF reader treats as data.
+ * Content-preserving normalization for the IDENTICAL-copy test. Two files equal
+ * after this carry the SAME content — only line-ending STYLE (CRLF vs LF) and
+ * trailing blank lines / a final newline differ, which no markdown/RDF reader
+ * treats as data — so deleting one is provably zero-loss. Deliberately MINIMAL:
+ * it does NOT strip per-line trailing whitespace (a Markdown hard line break is
+ * two trailing spaces — collapsing it would be a real rendering change), does
+ * NOT touch frontmatter field VALUES (e.g. a differing `exo__Asset_updatedAt`),
+ * the body text, or interior/leading whitespace, and reorders nothing. ANY such
+ * difference surfaces as DIFFERING (→ re-uuid, never delete) — conservative by
+ * construction, erring toward re-uuid at every doubt.
  */
 export function normalizeForCompare(content: string): string {
   return content
-    .replace(/\r\n?/g, "\n") // CRLF / lone CR → LF
-    .split("\n")
-    .map((line) => line.replace(/[ \t]+$/, "")) // strip trailing whitespace per line
-    .join("\n")
+    .replace(/\r\n?/g, "\n") // CRLF / lone CR → LF (line-ending style is not data)
     .replace(/\n+$/, ""); // ignore trailing blank lines / final-newline differences
 }
 
@@ -439,7 +438,7 @@ export async function runDedupUids(
         `Plan: delete ${plannedDeletes} identical copy(ies), re-uuid ${plannedReuuids} differing variant(s).`,
       );
       out(
-        "DRY-RUN — nothing changed. Re-run with `--auto --apply` to execute (deletes are recoverable via the git remote).",
+        "DRY-RUN — nothing changed. Re-run with `--auto --apply` to execute (a deleted copy's content always survives in the kept file; if previously synced it is also recoverable from the git remote).",
       );
       return 1; // duplicates still present → "needs attention"
     }
@@ -614,7 +613,7 @@ export function registerQuarantineCommands(exosync: Command): void {
       )
       .option(
         "--apply",
-        "Execute the --auto plan (without it --auto is a dry-run; deletes are recoverable via the git remote)",
+        "Execute the --auto plan (without it --auto is a dry-run; a deleted copy's content always survives in the kept file, and if previously synced is recoverable from the git remote)",
       ),
   ).action(
     async (

@@ -345,15 +345,20 @@ describe("dedup-uids zero-loss classifier (planDedupGroup / normalizeForCompare)
     expect(reuuid[0]).toMatchObject({ path: "c.md", fromUid: "dupe-uid" });
   });
 
-  it("normalizeForCompare collapses ONLY whitespace, never field values or body", () => {
+  it("normalizeForCompare collapses ONLY line-endings + trailing blanks, never field values or content", () => {
     const a = "---\nexo__Asset_uid: x\n---\n\nbody\n";
-    // same content, CRLF + trailing whitespace + trailing blank line
-    const b = "---\r\nexo__Asset_uid: x  \r\n---\r\n\r\nbody\r\n\r\n";
+    // same content: only CRLF vs LF + trailing blank lines differ (not data)
+    const b = "---\r\nexo__Asset_uid: x\r\n---\r\n\r\nbody\r\n\r\n";
     expect(normalizeForCompare(a)).toBe(normalizeForCompare(b));
     // a differing timestamp value is NOT collapsed → stays distinct
     const c = "---\nexo__Asset_uid: x\nexo__Asset_updatedAt: 2026-01-01\n---\n\nbody\n";
     const d = "---\nexo__Asset_uid: x\nexo__Asset_updatedAt: 2026-02-02\n---\n\nbody\n";
     expect(normalizeForCompare(c)).not.toBe(normalizeForCompare(d));
+    // Conservative: a trailing-whitespace difference (Markdown hard line break
+    // is two trailing spaces) is NOT collapsed → DIFFERING → re-uuid, not delete.
+    const e = "---\nexo__Asset_uid: x\n---\n\nline one\nline two\n";
+    const f = "---\nexo__Asset_uid: x\n---\n\nline one  \nline two\n";
+    expect(normalizeForCompare(e)).not.toBe(normalizeForCompare(f));
   });
 });
 
