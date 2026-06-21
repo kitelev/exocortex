@@ -488,10 +488,19 @@ export class SyncCommands {
     // Quarantine (#a0a3d1d6): point the user at the resolver — without this the
     // count is a dead-end ("quarantined 14" but no way to act). dup-uids (#3477)
     // get their own pointer to `exosync dedup-uids`.
+    // #a0a3d1d6 dissonance-fix (3a — UX honesty): the "run 'Resolve sync
+    // conflicts'" hint is MISLEADING when duplicate uids are present — those
+    // conflicts are routed to cross-path deferred / ambiguous-quarantine that
+    // the resolver's genuine-3-way filter excludes, so it would answer "nothing
+    // to resolve". When dup-uids block resolution, point at the real first step
+    // (dedup-uids → Sync) instead of the resolver.
+    const dupsBlock = dupUids.size > 0;
     const counts =
       `pushed ${pushed}, pulled ${pulled}, merged ${merged}, quarantined ${quarantined}` +
       (quarantined > 0
-        ? " (run 'Resolve sync conflicts' to fix)"
+        ? dupsBlock
+          ? " (⚠ duplicate uids block the resolver — run 'exosync dedup-uids' then Sync first)"
+          : " (run 'Resolve sync conflicts' to fix)"
         : "") +
       (deleted > 0 ? `, deleted ${deleted}` : "") +
       (deferred > 0

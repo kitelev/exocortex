@@ -141,7 +141,17 @@ export class QuarantineResolverCommands {
     const specs = collection.specs as SyncRepoSpec[];
     const conflicts = await resolver.listOpenConflicts(specs);
     if (conflicts.length === 0) {
-      this.deps.notify("No open sync conflicts — nothing to resolve ✅");
+      // #a0a3d1d6 dissonance: the sync summary may report "quarantined N /
+      // deferred N", yet the resolver legitimately lists nothing — duplicate
+      // uids (#3477) suppress uid-identity, routing those conflicts to
+      // cross-path `deferred` / ambiguous-quarantine that the genuine-3-way
+      // filter excludes. Don't claim a misleading "✅"; point at the real fix.
+      const dupCount = await resolver.detectDuplicateUids(specs);
+      this.deps.notify(
+        dupCount > 0
+          ? `No directly-resolvable conflicts — but ${dupCount} duplicate uid(s) detected (#3477) block resolution. Run 'exosync dedup-uids' then Sync to surface them.`
+          : "No open sync conflicts — nothing to resolve ✅",
+      );
       return false;
     }
 
