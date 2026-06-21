@@ -52,7 +52,7 @@ describe("CLI v16 — find --class (T1.10, alias-driven)", () => {
     exitSpy.mockRestore();
   });
 
-  it("resolves --class via find__Alias and emits the matching path", async () => {
+  it("@req:480909a6-f23f-416a-b6e4-00c73229a4ed resolves --class via find__Alias and emits the matching path", async () => {
     const cmd = findCommand();
     await cmd.parseAsync(
       ["--vault", FIXTURE_VAULT, "--class", "ems__Task"],

@@ -73,7 +73,7 @@ describe("Issue #3111: `command --dry-run` filesystem contract", () => {
   }
 
   describe("rename-to-uid --dry-run (Issue #3111 primary)", () => {
-    it("does not rename file or mutate frontmatter", async () => {
+    it("@req:cd33eff0-4414-4fc3-8fa5-461bb92093fc does not rename file or mutate frontmatter", async () => {
       const filePath = path.join(vaultRoot, "Note.md");
       fs.writeFileSync(filePath, buildTaskMd({ uid: ASSET_UID, label: "Note" }), "utf-8");
       const before = snapshot(filePath);
