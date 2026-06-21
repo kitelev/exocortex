@@ -755,6 +755,7 @@ export {
 export {
   LocalConflictCacheStore,
   CONFLICT_CACHE_STORE_FILENAME,
+  type ConflictCacheReadPort,
   type ConflictCacheRecord,
   type LocalConflictCacheStoreDeps,
 } from "./services/sync/LocalConflictCacheStore";

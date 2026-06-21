@@ -68,6 +68,18 @@ interface StoreShape {
   entries: Record<string, ConflictCacheRecord>;
 }
 
+/**
+ * Read-only view of the device-local conflict cache — the offline source the
+ * {@link QuarantineResolver} reads to list / diff a conflict without a network
+ * fetch. {@link LocalConflictCacheStore} implements it.
+ */
+export interface ConflictCacheReadPort {
+  /** One cached conflict, or null when not cached. */
+  get(repoKey: string, path: string): Promise<ConflictCacheRecord | null>;
+  /** Every cached conflict (across all repos). */
+  list(): Promise<ConflictCacheRecord[]>;
+}
+
 /** Stable cache key for one conflict — repoKey + path (NUL-separated). */
 function cacheKey(repoKey: string, path: string): string {
   return `${repoKey}\0${path}`;
@@ -90,7 +102,9 @@ export interface LocalConflictCacheStoreDeps {
   now?: () => string;
 }
 
-export class LocalConflictCacheStore implements QuarantinePort {
+export class LocalConflictCacheStore
+  implements QuarantinePort, ConflictCacheReadPort
+{
   private readonly io: WatermarkFileIO;
   private readonly now: () => string;
   private writeChain: Promise<void> = Promise.resolve();
