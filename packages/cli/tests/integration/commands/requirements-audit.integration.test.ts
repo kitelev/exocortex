@@ -258,6 +258,23 @@ describe("requirements audit — IO end-to-end (integration)", () => {
     expect(missing.evidenceMissing).toEqual(["evidence/absent.md"]);
   });
 
+  it("loadRequirements does NOT accept a DIRECTORY as evidence (must be a regular file)", async () => {
+    // A dir / `.` would otherwise satisfy the gate with no real artifact
+    // (existsSync is true for directories) — the loophole the feature closes.
+    const subDir = join(reqsDir, "exo-reqs");
+    const UID_DIR = "55555555-5555-4555-8555-555555555555";
+    writeRequirement(subDir, {
+      uid: UID_DIR,
+      bindingClasses: ["UiAcceptance"],
+      evidence: ["evidence", "."], // an existing directory + own dir
+    });
+    mkdirSync(join(subDir, "evidence"), { recursive: true }); // dir exists
+
+    const reqs = await loadRequirements(reqsDir);
+    const dir = reqs.find((r) => r.uid === UID_DIR)!;
+    expect(dir.evidenceMissing.sort()).toEqual([".", "evidence"]); // both rejected
+  });
+
   it("end-to-end: an active ui-acceptance req with a committed evidence link is clean; reverting the file makes it red", async () => {
     const subDir = join(reqsDir, "exo-reqs");
     const UID_UIA = "44444444-4444-4444-8444-444444444444";

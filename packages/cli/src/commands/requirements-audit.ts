@@ -380,8 +380,16 @@ export async function loadRequirements(
     const reqDirAbs = dirname(resolve(reqsPath, relPath));
     const evidenceMissing = evidence.filter((rel) => {
       const abs = resolve(reqDirAbs, rel);
-      // Must be a committed file AND inside the reqs tree (not an escape).
-      return !(abs.startsWith(reqsRootPrefix) && existsSync(abs));
+      // Must be a committed regular FILE inside the reqs tree (not an escape,
+      // not a directory). `existsSync` alone is true for a directory / `.` — a
+      // dir-as-evidence would satisfy the gate with no real artifact, exactly
+      // the "trust me" loophole this feature closes. `existsSync` first so
+      // `statSync` never throws on a broken path.
+      return !(
+        abs.startsWith(reqsRootPrefix) &&
+        existsSync(abs) &&
+        statSync(abs).isFile()
+      );
     });
 
     requirements.push({
