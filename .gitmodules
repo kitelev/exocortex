@@ -4,3 +4,6 @@
 [submodule "packages/exoas-exocmd"]
 	path = packages/exoas-exocmd
 	url = https://github.com/kitelev/exoas-exocmd
+[submodule "packages/exoas-exo-reqs"]
+	path = packages/exoas-exo-reqs
+	url = https://github.com/kitelev/exoas-exo-reqs
