@@ -130,6 +130,14 @@ function normaliseSubjectIriPrefix(prefix: string | undefined): string {
  */
 @injectable()
 export class NoteToRDFConverter {
+  /**
+   * Default files between {@link convertVaultWithValidation} progress emissions
+   * (#al-activitylog-progress). 200 keeps a 5 000-file vault to ~25 activity-log
+   * lines (well under the 1 000-entry ring buffer) while still showing steady
+   * movement; vaults smaller than one interval emit nothing intermediate.
+   */
+  static readonly INDEX_PROGRESS_INTERVAL = 200;
+
   private readonly vocabularyMapper: RDFVocabularyMapper;
 
   /**
@@ -743,6 +751,26 @@ export class NoteToRDFConverter {
     options: {
       strict?: boolean;
       excludedFolders?: string[];
+      /**
+       * Periodic progress callback during the walk (#al-activitylog-progress).
+       * Invoked `(processed, total)` every {@link options.progressIntervalFiles}
+       * files so a long index visibly advances in the activity log instead of
+       * going silent until completion. Optional — CLI / tests that omit it pay
+       * zero cost. `processed` counts every file the loop visits (indexed AND
+       * skipped); `total` is `files.length` after exclusions. The terminal
+       * count is delivered by the caller's own completion notice, so this fires
+       * only on intermediate multiples (never a redundant final `total of total`).
+       * Best-effort: callback throws are swallowed so a bad observer can never
+       * break indexing.
+       */
+      onProgress?: (processed: number, total: number) => void;
+      /**
+       * Files between {@link options.onProgress} emissions. Default
+       * {@link NoteToRDFConverter.INDEX_PROGRESS_INTERVAL}. A small vault below
+       * one interval emits nothing intermediate (only the caller's completion
+       * notice), so tiny vaults stay quiet.
+       */
+      progressIntervalFiles?: number;
     } = {}
   ): Promise<{
     triples: Triple[];
@@ -791,7 +819,27 @@ export class NoteToRDFConverter {
           (file) => !isPathExcluded(file.path, excludedPrefixes),
         );
 
+    // Periodic progress (#al-activitylog-progress). Emit `(processed, total)`
+    // every `progressInterval` files so a long walk visibly advances in the
+    // activity log. Best-effort — a throwing observer must never abort indexing.
+    const onProgress = options.onProgress;
+    const progressInterval =
+      options.progressIntervalFiles && options.progressIntervalFiles > 0
+        ? options.progressIntervalFiles
+        : NoteToRDFConverter.INDEX_PROGRESS_INTERVAL;
+    const totalFiles = files.length;
+    let processed = 0;
+
     for (const file of files) {
+      processed++;
+      if (onProgress && processed % progressInterval === 0 && processed < totalFiles) {
+        try {
+          onProgress(processed, totalFiles);
+        } catch {
+          // Isolate observer failures — progress is best-effort, never blocks
+          // the walk (mirrors ProfileApplyManager.emitProgress).
+        }
+      }
       try {
         // Issue #2997 Phase 2 — Loader two-phase commit (all-or-nothing).
         //

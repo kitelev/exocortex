@@ -42,6 +42,14 @@ import {
   TS_FLOOR_AS_UID_SHARED_IDENTITIES,
 } from "../../src/infrastructure/adapters/ProfileOnloadWiring";
 
+/** Per-AssetSpace progress variant (excludes the `reindex` marker) — narrows
+ *  the discriminated union so `index`/`label`/`total` are accessible. */
+type PerAsProgress = Extract<ApplyProgressEvent, { as: string }>;
+const perAs =
+  (op: "pull" | "mount" | "unmount") =>
+  (e: ApplyProgressEvent): e is PerAsProgress =>
+    e.op === op && (e as PerAsProgress).step === undefined;
+
 // ─── Fakes (mirror restApply.test.ts) ───────────────────────────────────────
 
 interface FakeFile {
@@ -135,13 +143,23 @@ class FakeConfirmGate implements IConfirmGate {
   }
 }
 
-/** REST mount that appends to a SHARED trace so we can prove progress precedes the op. */
+/** REST mount that appends to a SHARED trace so we can prove progress precedes the op.
+ *  Mirrors the real mount core's sub-phase order (fetch → extract → materialize) by
+ *  invoking the optional `onProgress` callback, so within-AS sub-step progress is testable. */
 class TracingRestMount {
   mounted: string[] = [];
   unmounted: string[] = [];
   constructor(private readonly trace: string[]) {}
-  async mount(_gitUrl: string, submodulePath: string, _ref: string) {
+  async mount(
+    _gitUrl: string,
+    submodulePath: string,
+    _ref: string,
+    onProgress?: (phase: "fetch" | "extract" | "materialize") => void,
+  ) {
+    onProgress?.("fetch");
     this.trace.push(`mount:${submodulePath}`);
+    onProgress?.("extract");
+    onProgress?.("materialize");
     this.mounted.push(submodulePath);
     return { sha: "abc1234", fileCount: 1 };
   }
@@ -231,7 +249,11 @@ function setup(opts: SetupOpts) {
     settingsStore: new FakeSettingsStore(),
     notify: (m) => notifyCalls.push(m),
     onProgress: (e) => {
-      trace.push(`progress:${e.op}:${e.index}/${e.total}`);
+      trace.push(
+        e.op === "reindex"
+          ? "progress:reindex"
+          : `progress:${e.step ?? e.op}:${e.index}/${e.total}`,
+      );
       progressEvents.push(e);
       if (opts.throwingProgress) throw new Error("hostile observer");
     },
@@ -266,7 +288,7 @@ describe("ProfileApplyManager — live materialize progress feed (WBS 4b2bc60f)"
       ["assetspaces/kitelev/exoas-ems", "assetspaces/kitelev/exoas-kpc"].sort(),
     );
     // …and a mount progress event fired for EACH, with 1-based N-of-M.
-    const mountProgress = progressEvents.filter((e) => e.op === "mount");
+    const mountProgress = progressEvents.filter(perAs("mount"));
     expect(mountProgress.length).toBe(2);
     expect(mountProgress.map((e) => `${e.index}/${e.total}`)).toEqual([
       "1/2",
@@ -290,7 +312,7 @@ describe("ProfileApplyManager — live materialize progress feed (WBS 4b2bc60f)"
     await mgr.applyProfile("target");
 
     expect(restMount.unmounted.length).toBe(2);
-    const unmountProgress = progressEvents.filter((e) => e.op === "unmount");
+    const unmountProgress = progressEvents.filter(perAs("unmount"));
     expect(unmountProgress.length).toBe(2);
     expect(unmountProgress.map((e) => `${e.index}/${e.total}`)).toEqual([
       "1/2",
@@ -333,7 +355,7 @@ describe("ProfileApplyManager — live materialize progress feed (WBS 4b2bc60f)"
     await mgr.applyProfile("target");
 
     // Progress DID happen (2 mounts) …
-    expect(progressEvents.filter((e) => e.op === "mount").length).toBe(2);
+    expect(progressEvents.filter(perAs("mount")).length).toBe(2);
     // … but the only toast is the single final reconciliation summary — no
     // per-AssetSpace "Mounting … (N of M)" line ever reaches notify().
     expect(notifyCalls.length).toBe(1);
@@ -366,5 +388,47 @@ describe("ProfileApplyManager — live materialize progress feed (WBS 4b2bc60f)"
     // it so the apply still completes and the mount still happens.
     await expect(mgr.applyProfile("target")).resolves.toBeUndefined();
     expect(restMount.mounted).toEqual(["assetspaces/kitelev/exoas-ems"]);
+  });
+
+  // ── #al-activitylog-progress: finer within-AS sub-steps + reindex marker ──
+
+  it("emits finer within-AS sub-step progress (fetch→extract→materialize) per mount", async () => {
+    // Mount 1 AS so the sub-step sequence is unambiguous.
+    const { mgr, progressEvents } = setup({
+      targetIncludes: [...FLOOR_UIDS, "ems-uid"],
+      materialized: FLOOR_UIDS,
+    });
+
+    await mgr.applyProfile("target");
+
+    // The within-AS sub-steps the mount core surfaces, in order, all carrying
+    // the per-AS label + N-of-M context (finer than the single baseline marker).
+    const steps = progressEvents
+      .filter(
+        (e): e is PerAsProgress => e.op === "mount" && e.step !== undefined,
+      )
+      .map((e) => `${e.step}:${e.index}/${e.total}:${e.label}`);
+    expect(steps).toEqual([
+      "fetch:1/1:exoas-ems",
+      "extract:1/1:exoas-ems",
+      "materialize:1/1:exoas-ems",
+    ]);
+  });
+
+  it("emits a 'reindex' progress marker AFTER mounts, before completion", async () => {
+    const { mgr, progressEvents, trace } = setup({
+      targetIncludes: [...FLOOR_UIDS, "ems-uid", "kpc-uid"],
+      materialized: FLOOR_UIDS,
+    });
+
+    await mgr.applyProfile("target");
+
+    // Exactly one reindex marker — the apply-tail RDF rebuild announcement.
+    const reindex = progressEvents.filter((e) => e.op === "reindex");
+    expect(reindex.length).toBe(1);
+    // …and it comes AFTER the per-AS mount work (announces the silent tail).
+    const lastMount = trace.lastIndexOf("mount:assetspaces/kitelev/exoas-kpc");
+    const reindexAt = trace.indexOf("progress:reindex");
+    expect(reindexAt).toBeGreaterThan(lastMount);
   });
 });

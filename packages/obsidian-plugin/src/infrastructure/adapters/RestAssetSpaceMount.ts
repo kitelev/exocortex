@@ -16,6 +16,7 @@ import {
   type MountBaseStorePort,
   type MountFile,
   type MountResult,
+  type MountProgressPhase,
 } from "exocortex";
 
 /**
@@ -109,6 +110,13 @@ export class RestAssetSpaceMount {
     gitUrl: string,
     submodulePath: string,
     ref: string = "main",
+    /**
+     * Optional sub-phase progress sink (#al-activitylog-progress) — forwarded
+     * into {@link mountAssetSpaceFiles} so a long mount surfaces fetch → extract
+     * → materialize, finer than the caller's single "Mounting X" marker. Omitted
+     * by bootstrap/fetch-tracked callers (zero cost).
+     */
+    onProgress?: (phase: MountProgressPhase) => void,
   ): Promise<RestMountResult> {
     const safePath = validateVaultPathArg(submodulePath);
     // Allowlist + owner/repo extraction (throws on traversal / non-github).
@@ -122,6 +130,7 @@ export class RestAssetSpaceMount {
       repo,
       ref,
       targetPath: safePath,
+      onProgress,
     });
 
     // #3590 — record the mounted commit SHA (correct-by-construction from the

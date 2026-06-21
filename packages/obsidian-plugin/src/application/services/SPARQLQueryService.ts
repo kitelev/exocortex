@@ -31,6 +31,12 @@ export class SPARQLQueryService {
     logger?: ILogger,
     notifier?: INotificationService,
     excludedFolders: string[] = [],
+    /**
+     * Periodic full-walk progress sink (#al-activitylog-progress) — forwarded
+     * into {@link VaultRDFIndexer} so cold-start indexing AND profile-apply
+     * reindex visibly advance in the activity log. Optional.
+     */
+    onIndexProgress?: (processed: number, total: number) => void,
   ) {
     const defaultLogger = LoggerFactory.create("SPARQLQueryService");
     this.logger = logger || {
@@ -54,7 +60,14 @@ export class SPARQLQueryService {
       notifier || defaultNotifier
     );
 
-    this.indexer = new VaultRDFIndexer(app, this.logger, notifier, excludedFolders);
+    this.indexer = new VaultRDFIndexer(
+      app,
+      this.logger,
+      notifier,
+      excludedFolders,
+      undefined,
+      onIndexProgress,
+    );
     this.parser = new ExoQLParser();
     this.translator = new ExoQLAlgebraTranslator();
     this.optimizer = new AlgebraOptimizer();

@@ -18,6 +18,7 @@ import { ActivityLogService } from "./adapters/logging/ActivityLogService";
 import {
   journalEntryToActivity,
   progressToActivity,
+  indexProgressToActivity,
 } from "./adapters/logging/activityFanIn";
 import { ActivityLogModal } from "./presentation/modals/ActivityLogModal";
 import { LogFileModal } from "./presentation/modals/LogFileModal";
@@ -486,7 +487,12 @@ export default class ExocortexPlugin extends Plugin {
 
       const notifier = this.notifier;
       this.layoutProcessor = new LayoutCodeBlockProcessor(this);
-      this.sparql = new SPARQLApi(this);
+      // #al-activitylog-progress — surface periodic full-walk progress
+      // (cold-start init AND profile-apply reindex) in the activity log so a
+      // long index visibly advances instead of going silent until completion.
+      this.sparql = new SPARQLApi(this, (processed, total) =>
+        this.activityLog.record(indexProgressToActivity(processed, total)),
+      );
       this.api = new ExocortexAPI(this);
 
       // RFC 22b50a17 Phase 4 — AssetSpace materialization tracker.

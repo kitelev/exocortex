@@ -69,23 +69,47 @@ export function journalEntryToActivity(
 }
 
 /** Present-tense verbs for the live per-AssetSpace progress feed. */
-const PROGRESS_VERBS: Record<ApplyProgressEvent["op"], string> = {
+const PROGRESS_VERBS: Record<"pull" | "mount" | "unmount", string> = {
   pull: "Pulling",
   mount: "Mounting",
   unmount: "Unmounting",
 };
 
 /**
- * Map a live {@link ApplyProgressEvent} (emitted BEFORE each per-AssetSpace
- * pull/mount/unmount) to a `category:"progress"` activity record so the log
- * shows a long apply is actively progressing — e.g. `Mounting kpc abc12345
- * (2 of 5)`. Always `info` level (progress is not a failure signal); the 8-char
- * AssetSpace prefix and N-of-M count keep each line self-describing.
+ * Present-tense verbs for the finer within-AS sub-phases
+ * (#al-activitylog-progress) surfaced by the mount core during a slow mount.
+ */
+const SUBSTEP_VERBS: Record<"fetch" | "extract" | "materialize", string> = {
+  fetch: "Fetching",
+  extract: "Extracting",
+  materialize: "Installing",
+};
+
+/**
+ * Map a live {@link ApplyProgressEvent} to a `category:"progress"` activity
+ * record so the log shows a long apply is actively progressing. Cases:
+ *  - per-AS op WITHOUT `step` — the 4b2bc60f baseline start marker, e.g.
+ *    `Mounting kpc abc12345 (2 of 5)`;
+ *  - per-AS op WITH `step` — a finer within-AS sub-phase, e.g.
+ *    `Fetching kpc abc12345 (2 of 5)` (#al-activitylog-progress);
+ *  - `reindex` — the apply-tail RDF rebuild, e.g. `Reindexing vault after apply`.
+ * Always `info` level (progress is not a failure signal); the 8-char AssetSpace
+ * prefix and N-of-M count keep each per-AS line self-describing.
  */
 export function progressToActivity(
   event: ApplyProgressEvent,
 ): ActivityRecordInput {
-  const verb = PROGRESS_VERBS[event.op] ?? event.op;
+  if (event.op === "reindex") {
+    return {
+      category: "progress",
+      level: "info",
+      message: "Reindexing vault after apply",
+    };
+  }
+  const verb =
+    event.step !== undefined
+      ? SUBSTEP_VERBS[event.step]
+      : (PROGRESS_VERBS[event.op] ?? event.op);
   const asPrefix = event.as.slice(0, 8);
   // Avoid a redundant prefix when the label IS just the UID prefix.
   const labelPart =
@@ -96,5 +120,24 @@ export function progressToActivity(
     category: "progress",
     level: "info",
     message: `${verb} ${labelPart} (${event.index} of ${event.total})`,
+  };
+}
+
+/**
+ * Map a periodic indexing-progress tick to a `category:"progress"` record
+ * (#al-activitylog-progress). The {@link VaultRDFIndexer} full walk (cold-start
+ * init AND profile-apply reindex) emits `(processed, total)` every N files so a
+ * long index visibly advances — e.g. `Indexing vault: 400 of 5123 assets` —
+ * instead of going silent until the one-shot completion notice (#3472).
+ * Always `info` level.
+ */
+export function indexProgressToActivity(
+  processed: number,
+  total: number,
+): ActivityRecordInput {
+  return {
+    category: "progress",
+    level: "info",
+    message: `Indexing vault: ${processed} of ${total} assets`,
   };
 }

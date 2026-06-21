@@ -82,7 +82,9 @@ describe("SPARQLQueryService", () => {
         mockApp,
         expect.any(Object), // logger (default or provided)
         undefined,          // notifier (undefined when not provided to SPARQLQueryService)
-        []                  // excludedFolders (defaults to [] when no setting is passed)
+        [],                 // excludedFolders (defaults to [] when no setting is passed)
+        undefined,          // now (default clock — not overridden here)
+        undefined,          // onIndexProgress (no progress sink wired in this path)
       );
     });
   });
