@@ -118,6 +118,24 @@ export interface TraceabilityReport {
   unknownPriority: number;
   /** True iff there are no hard findings (no dangling tags, no floor violations). */
   clean: boolean;
+  /**
+   * Enumerated P0 checklist — total P0-priority requirements (the set that arms
+   * the hard-gate flip, RFC 0003 §3.7).
+   */
+  p0Total: number;
+  /** P0 requirements with ≥1 binding. */
+  p0Bound: number;
+  /** P0 requirements with NO binding — the coverage gap that blocks the ramp. */
+  p0Orphans: number;
+  /**
+   * Ramp-ready (RFC 0003 §3.7 auto-flip criterion): every enumerated P0
+   * requirement is bound, all P0 binding-class floors are met, and no tag is
+   * dangling — i.e. the P0 checklist is fully (revert-verified-)bound and the
+   * `requirements-trace` CI gate is safe to flip from soft to hard. False when
+   * there are no P0 requirements (nothing to certify — fail-safe so `--gate hard`
+   * blocks rather than passes vacuously on an empty / failed-to-clone reqs set).
+   */
+  rampReady: boolean;
 }
 
 /** Normalize a frontmatter value that may be a scalar or list into a string[]. */
@@ -315,9 +333,31 @@ export function auditTraceability(
     }
   }
 
+  // Enumerated P0 checklist (RFC 0003 §3.7): the set whose full revert-verified
+  // binding arms the soft→hard gate flip. A P0 requirement is "covered" for the
+  // ramp when it has ≥1 binding; the binding-class floor + dangling checks above
+  // certify the *quality* of those bindings.
+  let p0Total = 0;
+  let p0Bound = 0;
+  for (const r of requirements) {
+    if (r.priority !== "P0") continue;
+    p0Total++;
+    if (occByUid.has(r.uid.toLowerCase())) p0Bound++;
+  }
+  const p0Orphans = p0Total - p0Bound;
+
   const requirementCount = requirements.length;
   const coverage = requirementCount === 0 ? 1 : bound / requirementCount;
   const clean = dangling.length === 0 && floorViolations.length === 0;
+
+  // The auto-flip criterion: every enumerated P0 req bound, all P0 floors met,
+  // no dangling tags. Requires p0Total > 0 so `--gate hard` fails-safe (blocks)
+  // on an empty / failed-to-clone reqs set rather than passing vacuously.
+  const rampReady =
+    p0Total > 0 &&
+    p0Orphans === 0 &&
+    floorViolations.length === 0 &&
+    dangling.length === 0;
 
   return {
     requirementCount,
@@ -330,6 +370,10 @@ export function auditTraceability(
     floorViolations,
     unknownPriority,
     clean,
+    p0Total,
+    p0Bound,
+    p0Orphans,
+    rampReady,
   };
 }
 
@@ -338,10 +382,14 @@ function formatPercent(ratio: number): string {
 }
 
 /** Render a human-readable report to stdout/stderr (stderr for findings). */
-function renderText(report: TraceabilityReport): void {
+function renderText(report: TraceabilityReport, gate: GateMode = "soft"): void {
   console.log(
     `Requirements: ${report.requirementCount} | bound: ${report.bound} | ` +
       `coverage: ${formatPercent(report.coverage)} | tags: ${report.tagCount}`,
+  );
+  console.log(
+    `P0 checklist: ${report.p0Bound}/${report.p0Total} bound | ` +
+      `ramp-ready: ${report.rampReady ? "yes" : "no"} | gate: ${gate}`,
   );
 
   if (report.dangling.length > 0) {
@@ -383,32 +431,76 @@ function renderText(report: TraceabilityReport): void {
     );
   }
 
-  if (report.clean) {
-    console.log(`\nOK: no hard findings (dangling tags + binding-class floor are clean).`);
+  if (!report.clean) {
+    console.error(
+      `\nFAIL: ${report.dangling.length} dangling + ${report.floorViolations.length} floor violation(s).`,
+    );
+  } else if (gate === "hard" && !report.rampReady) {
+    // clean (no dangling/floor) but the P0 checklist is not fully bound — the
+    // hard gate blocks on the coverage gap (RFC 0003 §3.7 ramp criterion).
+    console.error(
+      `\nFAIL (hard gate): ramp not ready — ${report.p0Orphans} P0 requirement(s) unbound` +
+        (report.p0Total === 0 ? " (no P0 requirements found)" : "") +
+        ".",
+    );
   } else {
-    console.error(`\nFAIL: ${report.dangling.length} dangling + ${report.floorViolations.length} floor violation(s).`);
+    console.log(`\nOK: no hard findings (dangling tags + binding-class floor are clean).`);
   }
+}
+
+/**
+ * Gate mode (RFC 0003 §3.7 soft→hard ramp):
+ *  - `soft` (default): exit 1 only on *hard findings* (dangling tags + P0
+ *    binding-class floor violations). P0 coverage gaps are warnings. This is
+ *    the Phase-1/2 behaviour — the `requirements-trace` CI job swallows the exit
+ *    via `continue-on-error`, so it never blocks a merge.
+ *  - `hard`: additionally exit 1 when the report is **not ramp-ready** (any
+ *    enumerated P0 requirement unbound). This is the Phase-3 gate — at the
+ *    M3-closure flip the CI job switches to `--gate hard`, drops
+ *    `continue-on-error`, and joins branch-protection required checks.
+ */
+export type GateMode = "soft" | "hard";
+
+/**
+ * True iff the report should cause a non-zero exit under the given gate mode.
+ * Exported so the unit tests pin the exact soft/hard exit-code contract that
+ * the P3 CI flip depends on.
+ */
+export function isHardFail(
+  report: TraceabilityReport,
+  gate: GateMode,
+  strict: boolean,
+): boolean {
+  return (
+    !report.clean ||
+    (strict && report.orphans.length > 0) ||
+    (gate === "hard" && !report.rampReady)
+  );
 }
 
 export interface RequirementsAuditOptions {
   reqs: string;
   tests?: string;
   output?: OutputFormat;
-  /** Also fail (exit 1) on orphan requirements (future hard-gate use). */
+  /** Also fail (exit 1) on orphan requirements (any priority). */
   strict?: boolean;
+  /** Gate mode: `soft` (default) | `hard`. RFC 0003 §3.7. */
+  gate?: GateMode;
 }
 
 /**
- * RFC 0003 P1 — `exocortex requirements audit --reqs <dir> --tests <dir>`.
+ * RFC 0003 P1/P3 — `exocortex requirements audit --reqs <dir> --tests <dir>`.
  *
- * Soft by default at the CI layer (the `requirements-trace` job is
- * `continue-on-error`); the CLI itself still sets a meaningful exit code so the
- * P3 hard-gate flip is a CI-config change, not a code change.
+ * Soft by default (`--gate soft`); the `requirements-trace` CI job runs it
+ * `continue-on-error`, so a red report never blocks a merge in Phases 1–2. The
+ * CLI sets a meaningful exit code in every mode so the P3 hard-gate flip is a
+ * one-flag CI-config change (`--gate soft` → `--gate hard`, drop
+ * `continue-on-error`, add to required checks), not a code change.
  */
 export function requirementsAuditCommand(): Command {
   return new Command("audit")
     .description(
-      "Audit requirement↔test traceability: orphans, dangling @req tags, duplicate bindings, binding-class floor, coverage",
+      "Audit requirement↔test traceability: orphans, dangling @req tags, duplicate bindings, binding-class floor, coverage, P0 ramp-readiness",
     )
     .requiredOption(
       "--reqs <path>",
@@ -421,9 +513,16 @@ export function requirementsAuditCommand(): Command {
     )
     .option("--output <type>", "Response format: text|json", "text")
     .option("--strict", "Also exit 1 on orphan requirements", false)
+    .option(
+      "--gate <mode>",
+      "Gate mode: soft (warn only on hard findings) | hard (also block when the P0 checklist is not ramp-ready)",
+      "soft",
+    )
     .action(async (options: RequirementsAuditOptions) => {
       const outputFormat = (options.output ?? "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
+
+      const gate: GateMode = options.gate === "hard" ? "hard" : "soft";
 
       try {
         const reqsPath = resolve(options.reqs);
@@ -442,15 +541,14 @@ export function requirementsAuditCommand(): Command {
         const report = auditTraceability(requirements, tags);
 
         if (outputFormat === "json") {
-          console.log(JSON.stringify(report, null, 2));
+          console.log(JSON.stringify({ ...report, gate }, null, 2));
         } else {
-          renderText(report);
+          renderText(report, gate);
         }
 
-        const hardFail =
-          !report.clean ||
-          (options.strict === true && report.orphans.length > 0);
-        if (hardFail) process.exitCode = 1;
+        if (isHardFail(report, gate, options.strict === true)) {
+          process.exitCode = 1;
+        }
       } catch (error) {
         ErrorHandler.handle(error as Error);
       }
