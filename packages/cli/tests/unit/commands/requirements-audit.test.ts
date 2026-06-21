@@ -5,9 +5,11 @@ import {
   parseStatus,
   extractReqTags,
   auditTraceability,
+  isHardFail,
   requirementsAuditCommand,
   type RequirementRecord,
   type TagOccurrence,
+  type TraceabilityReport,
 } from "../../../src/commands/requirements-audit.js";
 import { requirementsCommand } from "../../../src/commands/requirements.js";
 
@@ -39,7 +41,7 @@ describe("requirements — Commander wiring", () => {
     expect(sub).toBeDefined();
   });
 
-  it("audit subcommand declares --reqs (required) + --tests + --output + --strict", () => {
+  it("audit subcommand declares --reqs (required) + --tests + --output + --strict + --gate", () => {
     const sub = requirementsAuditCommand();
     expect(sub.name()).toBe("audit");
     const opts = sub.options.map((o) => o.long);
@@ -47,8 +49,12 @@ describe("requirements — Commander wiring", () => {
     expect(opts).toContain("--tests");
     expect(opts).toContain("--output");
     expect(opts).toContain("--strict");
+    expect(opts).toContain("--gate");
     const reqsOpt = sub.options.find((o) => o.long === "--reqs");
     expect(reqsOpt?.required).toBe(true);
+    // --gate defaults to "soft" so the CI flip is a one-flag change.
+    const gateOpt = sub.options.find((o) => o.long === "--gate");
+    expect(gateOpt?.defaultValue).toBe("soft");
   });
 });
 
@@ -238,5 +244,123 @@ describe("auditTraceability — binding-class floor (P0, hard)", () => {
     const r = auditTraceability(reqs, [tag(UID_A)]);
     expect(r.unknownPriority).toBe(1);
     expect(r.floorViolations).toHaveLength(0);
+  });
+});
+
+describe("auditTraceability — P0 checklist + ramp-readiness (RFC 0003 §3.7)", () => {
+  it("counts P0 totals and ramp is ready when every P0 is bound with a real-prod floor", () => {
+    const reqs = [
+      req({ uid: UID_A, priority: "P0", bindingClasses: ["integration"] }),
+      req({ uid: UID_B, priority: "P0", bindingClasses: ["e2e"] }),
+      // a P1 requirement does not arm/disarm the ramp
+      req({ uid: UID_C, priority: "P1", bindingClasses: ["unit"] }),
+    ];
+    const r = auditTraceability(reqs, [tag(UID_A), tag(UID_B), tag(UID_C)]);
+    expect(r.p0Total).toBe(2);
+    expect(r.p0Bound).toBe(2);
+    expect(r.p0Orphans).toBe(0);
+    expect(r.rampReady).toBe(true);
+  });
+
+  it("is NOT ramp-ready when a P0 requirement is unbound (orphan)", () => {
+    const reqs = [
+      req({ uid: UID_A, priority: "P0" }),
+      req({ uid: UID_B, priority: "P0" }),
+    ];
+    const r = auditTraceability(reqs, [tag(UID_A)]); // UID_B unbound
+    expect(r.p0Total).toBe(2);
+    expect(r.p0Bound).toBe(1);
+    expect(r.p0Orphans).toBe(1);
+    expect(r.rampReady).toBe(false);
+    // ...but a P0 orphan is still only a warning for `clean` (soft gate)
+    expect(r.clean).toBe(true);
+  });
+
+  it("is NOT ramp-ready when a P0 binding-class floor is violated", () => {
+    const reqs = [req({ uid: UID_A, priority: "P0", bindingClasses: ["unit"] })];
+    const r = auditTraceability(reqs, [tag(UID_A)]);
+    expect(r.p0Bound).toBe(1);
+    expect(r.floorViolations).toHaveLength(1);
+    expect(r.rampReady).toBe(false);
+  });
+
+  it("is NOT ramp-ready when a tag is dangling", () => {
+    const reqs = [req({ uid: UID_A, priority: "P0" })];
+    const r = auditTraceability(reqs, [tag(UID_A), tag(UID_D, "stale.test.ts", 7)]);
+    expect(r.dangling).toHaveLength(1);
+    expect(r.rampReady).toBe(false);
+  });
+
+  it("is NOT ramp-ready (fail-safe) when there are no P0 requirements at all", () => {
+    const reqs = [req({ uid: UID_A, priority: "P1" })];
+    const r = auditTraceability(reqs, [tag(UID_A)]);
+    expect(r.p0Total).toBe(0);
+    expect(r.rampReady).toBe(false);
+  });
+
+  it("a P1 orphan does not disarm the ramp (only P0 arms it)", () => {
+    const reqs = [
+      req({ uid: UID_A, priority: "P0" }),
+      req({ uid: UID_B, priority: "P1" }), // unbound P1 — not part of the checklist
+    ];
+    const r = auditTraceability(reqs, [tag(UID_A)]);
+    expect(r.p0Orphans).toBe(0);
+    expect(r.rampReady).toBe(true);
+  });
+});
+
+describe("isHardFail — soft/hard exit-code contract (P3 flip)", () => {
+  /** Build a minimal clean+ramp-ready report, override fields per case. */
+  function report(over: Partial<TraceabilityReport> = {}): TraceabilityReport {
+    return {
+      requirementCount: 1,
+      tagCount: 1,
+      bound: 1,
+      coverage: 1,
+      orphans: [],
+      dangling: [],
+      duplicates: [],
+      floorViolations: [],
+      unknownPriority: 0,
+      clean: true,
+      p0Total: 1,
+      p0Bound: 1,
+      p0Orphans: 0,
+      rampReady: true,
+      ...over,
+    };
+  }
+
+  it("a clean ramp-ready report never fails, in either mode", () => {
+    expect(isHardFail(report(), "soft", false)).toBe(false);
+    expect(isHardFail(report(), "hard", false)).toBe(false);
+  });
+
+  it("hard findings (not clean) fail in BOTH modes", () => {
+    const dirty = report({
+      clean: false,
+      dangling: [{ uid: UID_C, file: "x.test.ts", line: 1 }],
+      rampReady: false,
+    });
+    expect(isHardFail(dirty, "soft", false)).toBe(true);
+    expect(isHardFail(dirty, "hard", false)).toBe(true);
+  });
+
+  it("a P0 coverage gap (clean but not ramp-ready) fails ONLY in hard mode", () => {
+    const gap = report({ p0Bound: 0, p0Orphans: 1, rampReady: false });
+    // soft: a P0 orphan is a warning — does not fail
+    expect(isHardFail(gap, "soft", false)).toBe(false);
+    // hard: the P3 gate blocks on the coverage gap
+    expect(isHardFail(gap, "hard", false)).toBe(true);
+  });
+
+  it("--strict fails on any orphan in soft mode (back-compat)", () => {
+    const orphaned = report({
+      orphans: [{ uid: UID_B, label: "b", path: "p" }],
+      // a non-P0 orphan keeps ramp-ready true, so only --strict catches it
+      rampReady: true,
+    });
+    expect(isHardFail(orphaned, "soft", false)).toBe(false);
+    expect(isHardFail(orphaned, "soft", true)).toBe(true);
   });
 });

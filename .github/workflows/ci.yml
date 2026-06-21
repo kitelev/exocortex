@@ -212,25 +212,42 @@ jobs:
       - name: Run ADR compliance checks
         run: archgate check --ci
 
-  # RFC 0003 (requirements management) P1 — traceability checker, SOFT gate.
+  # RFC 0003 (requirements management) — traceability checker.
   #
-  # This job is intentionally NOT in branch-protection required checks, and its
-  # audit step is `continue-on-error`, so a red traceability report can never
-  # block a merge in Phase 1 (RFC 0003 §3.7 soft→hard ramp). It clones the
-  # public reqs assetspace, runs `exocortex requirements audit` against the
-  # repo's test corpus, surfaces the report as a step-summary + sticky PR
-  # comment (the "read-surface carrot" — P1 deliverable), and is the home of the
-  # diff-aware traceability checks (archgate has no vault-graph access).
+  # Currently runs in SOFT mode (`REQ_GATE: soft` + `continue-on-error` on the
+  # audit step + NOT in branch-protection required checks), so a red report can
+  # never block a merge during the P1/P2 ramp (RFC 0003 §3.7). It clones the
+  # public reqs assetspaces, runs `exocortex requirements audit` against the
+  # repo's test corpus, and surfaces the report — coverage, P0 checklist,
+  # ramp-readiness — as a step-summary + sticky PR comment (the "read-surface
+  # carrot"). It is the home of the diff-aware traceability checks (archgate has
+  # no vault-graph access).
   #
-  # P3 flips it hard by (a) adding `requirements-trace` to the required checks
-  # and (b) dropping `continue-on-error` on the audit step — a CI-config change,
-  # not a code change.
+  # P3 HARD-GATE FLIP (RFC 0003 §3.7 + Alpha-GA decision = M3-closure
+  # `1ec7677e`). The mechanism is built (this job + the `--gate` flag); the flip
+  # is a deliberate, deterministic, one-action CI-config change performed AT
+  # M3-closure — NOT auto-magic. To flip:
+  #   1. set `REQ_GATE: hard` below (the audit then exits 1 when the P0 checklist
+  #      is not ramp-ready — every enumerated P0 requirement bound + floor-met);
+  #   2. delete `continue-on-error: true` on the "Run traceability audit" step;
+  #   3. add `requirements-trace` to branch-protection required status checks.
+  # Surface readiness BEFORE flipping: the report's `rampReady` field (shown in
+  # the PR comment) must already be `true` on main.
+  #
+  # SOFT-GATE EXPIRY (RFC 0003 §3.7): the gate MUST flip hard at M3-closure.
+  # Staying soft past M3-closure is permitted only with an explicit, documented
+  # user dispensation — the gate is not allowed to silently remain advisory.
   requirements-trace:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     permissions:
       contents: read
       pull-requests: write
+    env:
+      # Single source of truth for the soft→hard flip. Flip to `hard` at
+      # M3-closure (see the block above). `soft` = warn only; `hard` = also
+      # block when the P0 checklist is not ramp-ready.
+      REQ_GATE: soft
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -244,28 +261,41 @@ jobs:
           npm run build -w @kitelev/exocortex-services
           npm run build -w @kitelev/exocortex-cli
 
-      - name: Clone reqs assetspace (public)
+      - name: Clone reqs assetspaces (public)
+        # The audit walks `$RUNNER_TEMP/reqs` recursively, so each per-module
+        # reqs assetspace (RFC 0003 §3.2) is just one more clone line here.
         run: |
+          mkdir -p "$RUNNER_TEMP/reqs"
           git clone --depth 1 \
             https://github.com/kitelev/exoas-exo-reqs.git \
-            "$RUNNER_TEMP/exoas-exo-reqs"
+            "$RUNNER_TEMP/reqs/exoas-exo-reqs"
 
-      - name: Run traceability audit (soft — never blocks)
+      - name: Run traceability audit (soft — never blocks until the P3 flip)
         id: audit
+        # ⛔ Remove this `continue-on-error` line at the P3 M3-closure flip so a
+        # hard finding (REQ_GATE=hard) blocks the merge.
         continue-on-error: true
         run: |
+          # The JSON run is the AUTHORITATIVE gate signal — capture its exit code
+          # directly (a `| tee` would mask it behind tee's 0). `exit $rc` at the
+          # end makes the step's verdict the gate's verdict, so the M3-closure
+          # flip (drop continue-on-error) blocks robustly regardless of the
+          # human-readable run.
+          rc=0
           node packages/cli/dist/index.js requirements audit \
-            --reqs "$RUNNER_TEMP/exoas-exo-reqs" --tests . --output json \
-            | tee "$RUNNER_TEMP/req-report.json"
-          echo "--- human-readable ---"
+            --reqs "$RUNNER_TEMP/reqs" --tests . --gate "$REQ_GATE" --output json \
+            > "$RUNNER_TEMP/req-report.json" || rc=$?
+          cat "$RUNNER_TEMP/req-report.json"
+          echo "--- human-readable (gate=$REQ_GATE) ---"
           node packages/cli/dist/index.js requirements audit \
-            --reqs "$RUNNER_TEMP/exoas-exo-reqs" --tests . --output text
+            --reqs "$RUNNER_TEMP/reqs" --tests . --gate "$REQ_GATE" --output text || true
+          exit $rc
 
       - name: Write step summary
         if: always()
         run: |
           {
-            echo '## Requirements traceability (RFC 0003 P1 — soft, non-blocking)'
+            echo "## Requirements traceability (RFC 0003 — gate: ${REQ_GATE})"
             echo
             echo '```json'
             cat "$RUNNER_TEMP/req-report.json" 2>/dev/null || echo '{ "error": "no report produced" }'
@@ -293,12 +323,15 @@ jobs:
                 return 'No traceability report was produced (checker failed to run).';
               }
               const pct = (r.coverage * 100).toFixed(1);
+              const gate = r.gate ?? 'soft';
               const lines = [
                 `**Requirements:** ${r.requirementCount} · **bound:** ${r.bound} · **coverage:** ${pct}% · **tags:** ${r.tagCount}`,
+                `**P0 checklist:** ${r.p0Bound}/${r.p0Total} bound · **ramp-ready:** ${r.rampReady ? '✅ yes' : '❌ no'} · **gate:** \`${gate}\``,
                 '',
                 '| finding | count |',
                 '| --- | --- |',
                 `| orphan requirements (no \`@req\` binding) | ${r.orphans.length} |`,
+                `| P0 requirements unbound (blocks the ramp) | ${r.p0Orphans} |`,
                 `| dangling \`@req\` tags (no requirement) | ${r.dangling.length} |`,
                 `| duplicate bindings | ${r.duplicates.length} |`,
                 `| P0 binding-class floor violations | ${r.floorViolations.length} |`,
@@ -313,18 +346,40 @@ jobs:
                   lines.push(`- \`${f.uid}\` [${f.bindingClasses.join(', ')}] ${f.label}`);
                 }
               }
-              lines.push(
-                '',
-                r.clean
-                  ? '✅ no hard findings (dangling + binding-class floor clean)'
-                  : '⚠️ hard findings present — **soft gate, non-blocking in P1**',
-              );
+              const hardFindings = !r.clean;
+              const wouldBlockHard = hardFindings || !r.rampReady;
+              if (hardFindings) {
+                lines.push(
+                  '',
+                  gate === 'hard'
+                    ? '❌ hard findings present — **HARD gate, blocking**'
+                    : '⚠️ hard findings present — **soft gate, non-blocking**',
+                );
+              } else if (!r.rampReady) {
+                lines.push(
+                  '',
+                  gate === 'hard'
+                    ? `❌ P0 checklist not ramp-ready (${r.p0Orphans} unbound) — **HARD gate, blocking**`
+                    : `⚠️ P0 checklist not ramp-ready (${r.p0Orphans} unbound) — would block once flipped hard`,
+                );
+              } else {
+                lines.push('', '✅ ramp-ready — clean + every P0 requirement bound');
+              }
+              if (gate === 'soft') {
+                lines.push(
+                  '',
+                  wouldBlockHard
+                    ? '> 🔴 **This PR would FAIL the P3 hard gate** (see above).'
+                    : '> 🟢 Ready for the P3 hard flip (clean + ramp-ready).',
+                );
+              }
               return lines.join('\n');
             };
+            const gateLabel = (report && report.gate) === 'hard' ? 'P3 — HARD' : 'P1/P2 — soft';
             const body =
-              `${marker}\n## 🧭 Requirements traceability (RFC 0003 P1 — soft)\n\n` +
+              `${marker}\n## 🧭 Requirements traceability (RFC 0003 · ${gateLabel})\n\n` +
               `${fmt(report)}\n\n` +
-              `<sub>Soft, non-blocking. Flips to a required gate in P3 (RFC 0003 §3.7).</sub>`;
+              `<sub>Soft until the P3 flip at Alpha-GA / M3-closure (RFC 0003 §3.7). The \`rampReady\` field shows when it is safe to flip.</sub>`;
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             const comments = await github.rest.issues.listComments({

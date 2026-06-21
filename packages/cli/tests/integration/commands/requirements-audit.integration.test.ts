@@ -171,4 +171,51 @@ describe("requirements audit — IO end-to-end (integration)", () => {
     // hard findings present → not clean
     expect(report.clean).toBe(false);
   });
+
+  it("end-to-end: ramp-ready when every P0 is bound, NOT ready when one is orphaned", async () => {
+    // Two P0 requirements, both with a real-prod floor.
+    writeRequirement(join(reqsDir, "exo-reqs"), { uid: UID_P0_INT });
+    const UID_P0_SECOND = "22222222-2222-4222-8222-222222222222";
+    writeRequirement(join(reqsDir, "exo-reqs"), {
+      uid: UID_P0_SECOND,
+      bindingClasses: ["E2e"],
+    });
+
+    // First pass: only one is bound → P0 orphan → NOT ramp-ready.
+    writeTest(
+      join(testsDir, "x"),
+      "x.test.ts",
+      `it("@req:${UID_P0_INT} bound", () => {});`,
+    );
+    {
+      const [reqs, tags] = await Promise.all([
+        loadRequirements(reqsDir),
+        scanTestTags(testsDir),
+      ]);
+      const report = auditTraceability(reqs, tags);
+      expect(report.p0Total).toBe(2);
+      expect(report.p0Bound).toBe(1);
+      expect(report.p0Orphans).toBe(1);
+      expect(report.rampReady).toBe(false);
+      // clean is still true — the P0 orphan is a soft warning
+      expect(report.clean).toBe(true);
+    }
+
+    // Second pass: bind the second P0 → ramp becomes ready.
+    writeTest(
+      join(testsDir, "y"),
+      "y.test.ts",
+      `it("@req:${UID_P0_SECOND} now bound", () => {});`,
+    );
+    {
+      const [reqs, tags] = await Promise.all([
+        loadRequirements(reqsDir),
+        scanTestTags(testsDir),
+      ]);
+      const report = auditTraceability(reqs, tags);
+      expect(report.p0Bound).toBe(2);
+      expect(report.p0Orphans).toBe(0);
+      expect(report.rampReady).toBe(true);
+    }
+  });
 });

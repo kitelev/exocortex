@@ -1,8 +1,11 @@
 # Authoring functional requirements (`req__Requirement`)
 
-> **Status:** P1 (RFC 0003) — the traceability checker (`exocortex requirements
-audit`) and the **soft** `requirements-trace` CI gate are now live. This guide
-> documents the format and discipline.
+> **Status:** P1–P3 mechanism live (RFC 0003) — the traceability checker
+> (`exocortex requirements audit`), the **soft** `requirements-trace` CI gate,
+> and the **hard-gate capability** (`--gate hard` + `rampReady`) are all built.
+> The gate still runs **soft**; it flips hard at M3-closure (see
+> [The soft→hard gate](#the-softhard-gate-rfc-0003-37)). This guide documents the
+> format and discipline.
 > **Source of truth:** [`docs/rfc/0003-requirements-management.md`](./rfc/0003-requirements-management.md).
 
 This is the **how-to** for writing a functional requirement. It is a companion to
@@ -98,6 +101,7 @@ locally against the reqs assetspace (or your vault) + the repo test corpus:
 npx @kitelev/exocortex-cli requirements audit \
   --reqs <path-to-exoas-exo-reqs-or-vault> --tests . --output text
 # JSON for tooling/CI: --output json   ·   --strict also fails on orphans
+# Gate mode: --gate soft (default, warn) | --gate hard (block when not ramp-ready)
 ```
 
 `@req:<uid>` in the test title is the canonical back-edge; keeping
@@ -151,6 +155,50 @@ Lower priorities (P1–P3) may be unit-only.
 > the `unit`/`integration` revert-verify and mark the `e2e`/`gui-bdd` floor binding
 > as **revert-verify deferred** — it is completed when the checker + CI run on
 > native-amd64. Such a requirement's derived `verified` is _partial_ until then.
+
+## The soft→hard gate (RFC 0003 §3.7)
+
+The `requirements-trace` CI job has two modes, selected by the checker's
+`--gate` flag (and, in CI, the job-level `REQ_GATE` env):
+
+| `--gate`         | exit 1 when…                                                                                                                    | CI effect today                                                         |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `soft` (default) | a **hard finding** is present: a dangling `@req` tag, or a P0 binding-class floor violation. P0 coverage gaps are **warnings**. | swallowed by `continue-on-error` — never blocks a merge                 |
+| `hard`           | the above **or** the report is **not ramp-ready** (any enumerated P0 requirement unbound).                                      | would block (once `continue-on-error` is dropped + the job is required) |
+
+**Ramp-ready** is the auto-flip criterion (the JSON report's `rampReady` field):
+every enumerated **P0** requirement is bound, all P0 binding-class floors are met,
+and no tag dangles. The PR comment shows `P0 checklist: X/Y bound · ramp-ready:
+✅/❌` so you can see — before flipping — whether `main` is safe to flip. (It is
+fail-safe: `rampReady` is `false` when there are **no** P0 requirements, so
+`--gate hard` blocks rather than passing vacuously on an empty/failed-to-clone
+reqs set.)
+
+### The flip (deterministic, one action, at M3-closure)
+
+The trigger is **Alpha GA = M3-closure** (`ems__Project` milestone `1ec7677e`) —
+not a calendar date and not auto-magic. When M3 closes, flip the gate by editing
+`.github/workflows/ci.yml`:
+
+1. set `REQ_GATE: hard` on the `requirements-trace` job;
+2. delete the `continue-on-error: true` on its **Run traceability audit** step;
+3. add `requirements-trace` to branch-protection required status checks.
+
+Confirm `rampReady` is already `true` on `main` before flipping (the PR comment /
+`--gate hard` run will tell you). After the flip, **new behavior must be
+spec-first**: a behavior PR that leaves a P0 requirement unbound fails the gate.
+
+**Soft-gate expiry.** The gate _must_ flip hard at M3-closure. Staying soft past
+M3-closure is allowed only with an explicit, documented user dispensation — the
+gate is not permitted to silently remain advisory (this is the discipline
+`uj__UserJourney` lacked).
+
+```bash
+# preview the hard-gate verdict locally before the flip
+npx @kitelev/exocortex-cli requirements audit \
+  --reqs <reqs-dir> --tests . --gate hard --output text
+# exit 1 if not ramp-ready; the text/JSON report shows the P0 checklist + rampReady
+```
 
 ## Authorship vs verification (decoupled on purpose)
 
