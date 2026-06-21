@@ -49,7 +49,7 @@ function gateWith(opts: {
 }
 
 describe("MergeShaclGate — intrinsic constraints always gate", () => {
-  it("minCount violation on the merged asset fails the gate", async () => {
+  it("@req:b0fd3343-03c5-409a-bede-5c47eae5593c minCount violation on the merged asset fails the gate", async () => {
     const gate = gateWith({
       candidate: [t(SUBJ, TYPE, iri(TASK_CLASS))],
       shapes: [

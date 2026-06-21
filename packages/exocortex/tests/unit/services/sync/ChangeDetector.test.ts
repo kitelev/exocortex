@@ -146,7 +146,7 @@ describe("detectChanges — uid-keyed diff (D18)", () => {
     }
   });
 
-  it("rename: same uid at a new path → modified with basePath, NOT delete+add", async () => {
+  it("@req:8a97d6ed-9ffc-4802-8df5-09d1b371cb09 rename: same uid at a new path → modified with basePath, NOT delete+add", async () => {
     const content = mdAsset("u1");
     const wm = await watermarkFor({ "old/a.md": content });
     const result = await detectChanges({

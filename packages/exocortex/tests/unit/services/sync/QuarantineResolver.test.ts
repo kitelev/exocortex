@@ -188,7 +188,7 @@ describe("QuarantineResolver.resolve — keep-local", () => {
 });
 
 describe("QuarantineResolver.resolve — keep-remote (zero-loss)", () => {
-  it("writes remote to disk, preserves the discarded local in a .txt backup, and unpins", async () => {
+  it("@req:e85487a7-695e-4dea-b076-dc5f42ce2d50 writes remote to disk, preserves the discarded local in a .txt backup, and unpins", async () => {
     const { repo, spec, disk, watermarks, resolver, local, remote } =
       await makeConflict();
     const remoteHeadBefore = repo.headSha();
