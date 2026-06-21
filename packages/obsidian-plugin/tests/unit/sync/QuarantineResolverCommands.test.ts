@@ -109,6 +109,7 @@ function makeHarness(opts: HarnessOpts = {}) {
     specs: opts.specs ?? [spec("a/b")],
     asUidByRepoKey: new Map(),
     warnings: [],
+    mountedNotDeclared: [],
   };
   const commands = new QuarantineResolverCommands({
     collectSpecs: async () => collection,

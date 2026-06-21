@@ -84,6 +84,8 @@ interface HarnessOptions {
    * `onProgress` callback (3rd syncAll arg) during a run, to assert routing.
    */
   progressEvents?: SyncProgressEvent[];
+  /** FINDING-3 — mounted-but-undeclared pack folders surfaced by the run. */
+  mountedNotDeclared?: string[];
 }
 
 function makeHarness(opts: HarnessOptions = {}) {
@@ -110,6 +112,7 @@ function makeHarness(opts: HarnessOptions = {}) {
     specs: opts.specs ?? [spec("o/r")],
     asUidByRepoKey: new Map(),
     warnings: [],
+    mountedNotDeclared: opts.mountedNotDeclared ?? [],
   };
   const built: BuiltSyncEngine = {
     engine: { syncAll } as unknown as SyncEngine,
@@ -192,6 +195,44 @@ describe("SyncCommands", () => {
 
     expect(notices.some((n) => n.includes("Nothing to sync"))).toBe(true);
     expect(syncAll).not.toHaveBeenCalled();
+  });
+
+  // FINDING-3 (al-ux-findings) — surface mounted-but-undeclared packs.
+  it("warns about mounted packs that have no AssetSpace descriptor (FINDING-3)", async () => {
+    const { commands, notices } = makeHarness({
+      mountedNotDeclared: ["assetspaces/kitelev/exoas-temp"],
+    });
+
+    await commands.invokeSync();
+
+    const warn = notices.find((n) => n.includes("won't sync"));
+    expect(warn).toBeDefined();
+    expect(warn).toContain("1 mounted pack(s)");
+    expect(warn).toContain("no AssetSpace descriptor");
+  });
+
+  it("surfaces the mounted-not-declared warning even when nothing is syncable (FINDING-3)", async () => {
+    const { commands, notices } = makeHarness({
+      specs: [],
+      mountedNotDeclared: [
+        "assetspaces/kitelev/exoas-temp",
+        "assetspaces/kitelev/exoas-other",
+      ],
+    });
+
+    await commands.invokeSync();
+
+    expect(notices.some((n) => n.includes("2 mounted pack(s)"))).toBe(true);
+    // The nothing-to-sync notice still fires too.
+    expect(notices.some((n) => n.includes("Nothing to sync"))).toBe(true);
+  });
+
+  it("does NOT warn when every mounted pack is declared (FINDING-3)", async () => {
+    const { commands, notices } = makeHarness({ mountedNotDeclared: [] });
+
+    await commands.invokeSync();
+
+    expect(notices.some((n) => n.includes("won't sync"))).toBe(false);
   });
 
   it("aggregates counts across repos in the success notice", async () => {
@@ -499,6 +540,7 @@ describe("SyncCommands — #3489 explicit success signal (info console + Notice)
         specs: [spec("o/r")],
         asUidByRepoKey: new Map(),
         warnings: [],
+        mountedNotDeclared: [],
       }),
       buildEngine: async () => ({
         engine: { syncAll: async (specs: SyncRepoSpec[]) => specs.map((s) => result(s.repoKey, "synced")) } as unknown as import("exocortex").SyncEngine,
@@ -722,6 +764,7 @@ describe("SyncCommands — #3495 quarantine-sink degraded-mode warn", () => {
         specs: [spec("o/r")],
         asUidByRepoKey: new Map(),
         warnings: [],
+        mountedNotDeclared: [],
       }),
       buildEngine: async () => ({
         engine: {
@@ -983,6 +1026,7 @@ describe("SyncCommands — #3499 opt-in per-step Notice toggle", () => {
         specs: [spec("o/r")],
         asUidByRepoKey: new Map(),
         warnings: [],
+        mountedNotDeclared: [],
       }),
       buildEngine: async () => ({
         engine: {

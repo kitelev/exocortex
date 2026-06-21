@@ -82,6 +82,15 @@ export interface SyncSpecCollection {
   asUidByRepoKey: Map<string, string>;
   /** Skipped AssetSpaces (unparseable / non-GitHub source). */
   warnings: string[];
+  /**
+   * FINDING-3 (al-ux-findings) — mount folders (`assetspaces/<owner>/<repo>`)
+   * that exist on disk but match NO AssetSpace descriptor in the sync unit.
+   * These are typically ad-hoc packs added via «Add a knowledge pack» by a URL
+   * outside the registry: they mount (files pulled) but carry no `exo__AssetSpace`
+   * descriptor, so ExoSync never pushes edits made in them. Surfaced as a notice
+   * so the user is not silently surprised that their edits don't sync.
+   */
+  mountedNotDeclared: string[];
 }
 
 /**
@@ -129,11 +138,48 @@ export async function collectSyncRepoSpecs(
     acc.commit(verdict.candidate);
   }
 
+  // FINDING-3 — detect mounted-but-undeclared packs: enumerate physical mount
+  // folders and subtract the declared+materialized set. A folder present on
+  // disk with no descriptor is an ad-hoc add (pulled by URL, never registered)
+  // → it won't sync. Best-effort: any adapter error yields an empty list so a
+  // listing failure never blocks the sync.
+  const declaredPaths = new Set(acc.specs.map((s) => s.localPath));
+  const mountFolders = await enumerateMountFolders(app);
+  const mountedNotDeclared = mountFolders.filter((p) => !declaredPaths.has(p));
+
   return {
     specs: acc.specs,
     asUidByRepoKey: acc.asUidByRepoKey,
     warnings: acc.warnings,
+    mountedNotDeclared,
   };
+}
+
+/**
+ * Enumerate physical AssetSpace mount folders — `assetspaces/<owner>/<repo>`,
+ * the canonical two-level layout `derivePath` produces. Pure filesystem walk
+ * over `vault.adapter` (desktop + mobile). Best-effort: a missing `assetspaces`
+ * dir or any list error yields `[]` (a detection helper must never throw into
+ * the sync path).
+ */
+async function enumerateMountFolders(app: App): Promise<string[]> {
+  const root = "assetspaces";
+  const out: string[] = [];
+  try {
+    if (!(await app.vault.adapter.exists(root))) return out;
+    const owners = (await app.vault.adapter.list(root)).folders;
+    for (const owner of owners) {
+      try {
+        const repos = (await app.vault.adapter.list(owner)).folders;
+        out.push(...repos);
+      } catch {
+        // one owner dir unreadable → skip it, keep the rest
+      }
+    }
+  } catch {
+    // assetspaces missing / unreadable → no mounts to report
+  }
+  return out;
 }
 
 /** Default `Sha1Fn` over WebCrypto (renderer-safe on desktop AND iOS). */
