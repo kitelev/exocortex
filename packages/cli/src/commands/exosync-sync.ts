@@ -39,9 +39,11 @@ import { promisify } from "node:util";
 import * as path from "node:path";
 import yaml from "js-yaml";
 import {
+  FileLocalManifestStore,
   FileMountBaseStore,
   FileWatermarkStore,
   GatedStructuredMerger,
+  LOCAL_MANIFEST_STORE_FILENAME,
   MOUNT_BASE_STORE_FILENAME,
   StructuredMerger,
   SyncedQuarantineStore,
@@ -222,6 +224,15 @@ export function nodeLocalFilesPort(root: string): LocalFilesPort {
         bytes.byteOffset + bytes.byteLength,
       ) as ArrayBuffer;
       await writeAtomic(abs(rel), (tmp) => fsp.writeFile(tmp, Buffer.from(buf)));
+    },
+    // mtime-manifest (perf): cheap metadata, no content read. `null` on ENOENT.
+    async stat(rel): Promise<{ mtimeMs: number; size: number } | null> {
+      try {
+        const s = await fsp.stat(abs(rel));
+        return { mtimeMs: s.mtimeMs, size: s.size };
+      } catch {
+        return null;
+      }
     },
   };
 }
@@ -427,6 +438,16 @@ export async function runExosyncSync(
     "exocortex",
     WATERMARK_STORE_FILENAME,
   );
+  // mtime-manifest (perf) — sits next to the watermark in the same device-local
+  // (`.local.`, Sync-excluded) store dir. Same single-file IO contract as the
+  // watermark, so `nodeWatermarkFileIO` is reused verbatim.
+  const manifestPath = path.join(
+    vaultPath,
+    configDir,
+    "plugins",
+    "exocortex",
+    LOCAL_MANIFEST_STORE_FILENAME,
+  );
   let quarantine: QuarantinePort | undefined;
   const quarantineUrl = opts.quarantineRepo?.trim() ?? "";
   if (quarantineUrl.length > 0) {
@@ -446,6 +467,11 @@ export async function runExosyncSync(
   const engine = new SyncEngine({
     transport,
     watermarkStore: new FileWatermarkStore(nodeWatermarkFileIO(watermarkPath)),
+    // mtime-manifest local-hash skip (perf) — same IO/store family as the
+    // watermark; skips reading+re-hashing unchanged asset files each sync.
+    localManifestStore: new FileLocalManifestStore(
+      nodeWatermarkFileIO(manifestPath),
+    ),
     mountBaseStore: nodeMountBaseStore(vaultPath, configDir),
     localBaseShaProvider: nodeLocalBaseShaProvider(vaultPath),
     materializationCheck: nodeMaterializationCheck(vaultPath),
