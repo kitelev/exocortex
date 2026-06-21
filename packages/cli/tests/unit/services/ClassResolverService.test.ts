@@ -95,6 +95,59 @@ describe("ClassResolverService", () => {
       expect(uuid).toBe("exo-class-uuid");
     });
 
+    // Production-shape (UID-canon TBox, RFC 7c7859d1 dogfood W1): class
+    // definitions reference the exo__Class metaclass BY UUID, not by a
+    // label-form wikilink. The metaclass UID is discovered from a sibling file
+    // whose label is exactly "exo__Class". Before the fix, isClassDefinition
+    // only matched the literal "exo__Class"/"ims__Class" strings, so a UID-form
+    // reference never matched and `--class ems__Task` threw ClassNotFoundError
+    // while `--class <uuid>` worked via pass-through.
+    it("should resolve UID-canon class def referencing the exo__Class metaclass by UUID", async () => {
+      const META_UID = "8619c4fc-64f1-4869-b17e-e34186cacca9";
+      const TASK_UID = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+      mockFsAdapter.getMarkdownFiles.mockResolvedValue([
+        `assetspaces/exo/${META_UID}.md`, // exo__Class metaclass (UUID-named)
+        `assetspaces/ems/${TASK_UID}.md`, // ems__Task class definition
+      ]);
+      mockFsAdapter.getFileMetadata
+        .mockResolvedValueOnce({
+          // The metaclass file — label "exo__Class" is how it is discovered.
+          exo__Asset_uid: META_UID,
+          exo__Asset_label: "exo__Class",
+        })
+        .mockResolvedValueOnce({
+          // Real UID-canon shape: instance_class is a [[<uuid>]] wikilink string
+          // (yaml.load strips the quotes), NOT a label-form wikilink.
+          exo__Instance_class: [`[[${META_UID}]]`],
+          exo__Asset_uid: TASK_UID,
+          exo__Asset_label: "ems__Task",
+        });
+
+      const uuid = await resolver.resolve("/vault", "ems__Task");
+
+      expect(uuid).toBe(TASK_UID);
+    });
+
+    // Guard: without a metaclass file in the vault, a UID-only reference must
+    // NOT be treated as a class definition (no false-positive metaclass UID).
+    it("should NOT index a UID-form ref when no exo__Class metaclass is present", async () => {
+      // A clearly-fictional metaclass UID that no file in this fixture declares
+      // via label — so it is never discovered and the ref is not a class def.
+      const UNDISCOVERED_META_UID = "99999999-9999-4999-8999-999999999999";
+      mockFsAdapter.getMarkdownFiles.mockResolvedValue([
+        "assetspaces/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md",
+      ]);
+      mockFsAdapter.getFileMetadata.mockResolvedValue({
+        exo__Instance_class: [`[[${UNDISCOVERED_META_UID}]]`],
+        exo__Asset_uid: "1b20a8f0-d745-4e93-91db-4531b3df120e",
+        exo__Asset_label: "ems__Task",
+      });
+
+      await expect(
+        resolver.resolve("/vault", "ems__Task"),
+      ).rejects.toBeInstanceOf(ClassNotFoundError);
+    });
+
     it("should throw ClassNotFoundError with available class suggestions", async () => {
       mockFsAdapter.getMarkdownFiles.mockResolvedValue([
         "class1.md",

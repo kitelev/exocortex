@@ -91,8 +91,20 @@ export class ClassResolverService {
   /**
    * Build the class name -> UUID index by scanning vault files.
    *
-   * Scans all markdown files and looks for files where exo__Instance_class
-   * contains "ims__Class" or "exo__Class". For those files:
+   * A file is a class definition when its `exo__Instance_class` references the
+   * class metaclass. Two reference forms are recognized:
+   *  - legacy label-form wikilinks: `[[exo__Class]]` / `[[ims__Class]]`
+   *  - UID-canon form: `[[<metaclass-uuid>]]`, where the metaclass UUID is
+   *    discovered from the vault (a file whose `exo__Asset_label` is exactly
+   *    `exo__Class` / `ims__Class`) — no metaclass UUID is hardcoded.
+   *
+   * Under UID-canon TBox (CLAUDE.md) every class definition references the
+   * metaclass by UUID, so the legacy string match alone never matches and
+   * short-name resolution silently fails — `--class ems__Task` throws while
+   * `--class <uuid>` still works via pass-through. Discovering the metaclass
+   * UID(s) by label closes that gap (dogfood W1, RFC 7c7859d1).
+   *
+   * For class-definition files:
    * - exo__Asset_uid is used as the UUID (preferred)
    * - If exo__Asset_uid is missing, the file basename is used if it is a valid UUID
    * - The file basename and exo__Asset_label are used as lookup keys
@@ -102,35 +114,45 @@ export class ClassResolverService {
 
     const files = await this.fsAdapter.getMarkdownFiles();
 
+    // Pass 1: read each file's metadata once, extract the minimal fields, and
+    // discover the class-metaclass UID(s) by label so UID-canon class refs can
+    // be matched without hardcoding a metaclass UUID.
+    const entries: {
+      basename: string;
+      uid?: string;
+      label?: string;
+      classValues: string[];
+    }[] = [];
+    const metaclassUids = new Set<string>();
+
     for (const file of files) {
       try {
         const metadata = await this.fsAdapter.getFileMetadata(file);
 
-        if (!this.isClassDefinition(metadata)) {
-          continue;
-        }
-
-        // Determine UUID: prefer exo__Asset_uid, fallback to filename if it's a UUID
         const basename = this.getBasename(file);
         let uid = metadata.exo__Asset_uid;
         if (!uid && this.isUUID(basename)) {
           uid = basename;
         }
-        if (!uid) {
-          continue;
-        }
+        const uidStr = uid ? String(uid) : undefined;
 
-        const uidStr = String(uid);
+        const rawLabel = metadata.exo__Asset_label;
+        const label = typeof rawLabel === "string" ? rawLabel : undefined;
 
-        // Index by basename (for human-named files like ztlk__PermanentNote.md)
-        if (basename) {
-          index.set(basename, uidStr);
-        }
+        const instanceClass = metadata.exo__Instance_class;
+        const classValues = instanceClass
+          ? (Array.isArray(instanceClass)
+              ? instanceClass
+              : [instanceClass]
+            ).map((value) => String(value))
+          : [];
 
-        // Index by exo__Asset_label (primary lookup key for UUID-named files)
-        const label = metadata.exo__Asset_label;
-        if (label && typeof label === "string" && label !== basename) {
-          index.set(label, uidStr);
+        entries.push({ basename, uid: uidStr, label, classValues });
+
+        // Discover class-metaclass UID(s): a file whose label is exactly
+        // `exo__Class` / `ims__Class` is the metaclass every class instances.
+        if (uidStr && (label === "exo__Class" || label === "ims__Class")) {
+          metaclassUids.add(uidStr);
         }
       } catch {
         // Skip files that can't be read
@@ -138,25 +160,54 @@ export class ClassResolverService {
       }
     }
 
+    // Pass 2: index files that are class definitions.
+    for (const entry of entries) {
+      if (!entry.uid) {
+        continue;
+      }
+      if (!this.isClassDefinition(entry.classValues, metaclassUids)) {
+        continue;
+      }
+
+      // Index by basename (for human-named files like ztlk__PermanentNote.md)
+      if (entry.basename) {
+        index.set(entry.basename, entry.uid);
+      }
+
+      // Index by exo__Asset_label (primary lookup key for UUID-named files)
+      if (entry.label && entry.label !== entry.basename) {
+        index.set(entry.label, entry.uid);
+      }
+    }
+
     return index;
   }
 
   /**
-   * Check if a file's metadata indicates it is a class definition.
-   * Recognizes both `ims__Class` (legacy) and `exo__Class` (current) markers.
+   * Check whether a file's `exo__Instance_class` values mark it as a class
+   * definition. Matches both the legacy label-form (`[[exo__Class]]` /
+   * `[[ims__Class]]`) and the UID-canon form (`[[<metaclass-uuid>]]`), where the
+   * metaclass UID(s) were discovered from the vault by label.
    */
-  private isClassDefinition(metadata: Record<string, unknown>): boolean {
-    const instanceClass = metadata.exo__Instance_class;
-
-    if (!instanceClass) {
+  private isClassDefinition(
+    classValues: string[],
+    metaclassUids: Set<string>,
+  ): boolean {
+    return classValues.some((str) => {
+      // Legacy label-form wikilinks.
+      if (str.includes("ims__Class") || str.includes("exo__Class")) {
+        return true;
+      }
+      // UID-canon form: a file whose `exo__Instance_class` references a
+      // discovered metaclass UID is by definition a class definition. The
+      // metaclass UID(s) are only discovered from files labelled
+      // `exo__Class` / `ims__Class`, so this match cannot pick up a non-class.
+      for (const uid of metaclassUids) {
+        if (uid && str.includes(uid)) {
+          return true;
+        }
+      }
       return false;
-    }
-
-    const classValues = Array.isArray(instanceClass) ? instanceClass : [instanceClass];
-
-    return classValues.some((value) => {
-      const str = String(value);
-      return str.includes("ims__Class") || str.includes("exo__Class");
     });
   }
 
