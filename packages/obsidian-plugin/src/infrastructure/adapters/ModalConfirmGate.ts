@@ -62,7 +62,7 @@ class ApplyConfirmModal extends Modal {
     // — keeps the adapter testable without a custom Modal mock.
     contentEl.createEl("h2", {
       cls: "apply-confirm-title",
-      text: `Apply к profile: ${this.plan.targetProfileLabel}`,
+      text: `Apply profile: ${this.plan.targetProfileLabel}`,
     });
 
     // a11y (RFC 0002 §3.11 / P16): id this consequence line so the destructive
