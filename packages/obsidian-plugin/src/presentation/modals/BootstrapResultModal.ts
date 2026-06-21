@@ -254,7 +254,9 @@ function failureCopy(
           "Next: open Settings → GitHub PAT, create a fine-grained token with " +
           "Contents: Read-only (or Read and write, to also push) scoped to this " +
           "repo, save it, then try again. If the repository is public, double-check " +
-          "the URL instead.",
+          "the URL — and note GitHub returns the same error when the repository " +
+          "is empty or has no default branch (main) yet, so confirm it has content " +
+          "on its main branch.",
       };
     case "unknown":
       return {

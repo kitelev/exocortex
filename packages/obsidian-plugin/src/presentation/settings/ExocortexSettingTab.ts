@@ -745,6 +745,13 @@ export class ExocortexSettingTab extends PluginSettingTab {
     // Captured from `addText` below so the Paste button can write into the same
     // input (and the password masking stays applied).
     let patTextComponent: { setValue(value: string): void } | undefined;
+    // DEFECT-5 (al-ux-findings 2026-06-21) — persistent inline "Test connection"
+    // status element, created right after the PAT row below and referenced from
+    // the Test-connection click handler. A const ref holder (mutated, never
+    // reassigned) lets the handler closure reach the element even though it is
+    // created after the Setting. Mirrors the onboarding panel's aria-live status
+    // so the result survives instead of fading with a transient toast.
+    const patTestStatus: { el?: HTMLElement } = {};
     new Setting(containerEl)
       // eslint-disable-next-line obsidianmd/ui/sentence-case -- "PAT" is an established acronym for Personal Access Token
       .setName("Personal Access Token")
@@ -814,25 +821,60 @@ export class ExocortexSettingTab extends PluginSettingTab {
       )
       .addButton((button) =>
         button.setButtonText("Test connection").onClick(async () => {
+          // DEFECT-5 — update the persistent inline status (mirrors the
+          // onboarding panel). Colour + text (never a glyph alone) convey
+          // valid/invalid; role=status + aria-live announce the change.
+          const setStatus = (
+            text: string,
+            state: "pending" | "valid" | "invalid",
+          ): void => {
+            const el = patTestStatus.el;
+            if (el === undefined) return;
+            el.classList.remove("is-pending", "is-valid", "is-invalid");
+            el.classList.add(`is-${state}`);
+            if (state === "pending") {
+              el.setAttribute("aria-busy", "true");
+            } else {
+              el.removeAttribute("aria-busy");
+            }
+            el.textContent = text;
+          };
           const pat = await secretsStore.getSecret(PAT_SECRET_KEY);
           if (pat === null || pat.length === 0) {
-            notifier.warn("No PAT stored. Enter a PAT and click Save first.");
+            setStatus(
+              "No PAT stored. Enter a PAT and click Save first.",
+              "invalid",
+            );
             return;
           }
-          // Reuse the shared validate logic (single source — same sequence the
-          // onboarding panel runs; no duplicated GitHub API calls).
-          const result = await testPatConnection(
-            pat,
-            (token) => new GitHubRestClient({ pat: token, app }),
-          );
-          const message = describePatConnection(result);
-          if (result.ok) {
-            notifier.info(message, 8000);
-          } else {
-            notifier.error(message);
+          button.setDisabled(true);
+          setStatus("Testing the connection…", "pending");
+          try {
+            // Reuse the shared validate logic (single source — same sequence the
+            // onboarding panel runs; no duplicated GitHub API calls).
+            const result = await testPatConnection(
+              pat,
+              (token) => new GitHubRestClient({ pat: token, app }),
+            );
+            setStatus(
+              describePatConnection(result),
+              result.ok ? "valid" : "invalid",
+            );
+          } finally {
+            button.setDisabled(false);
           }
         }),
       );
+
+    // DEFECT-5 (al-ux-findings 2026-06-21) — persistent inline status for the
+    // "Test connection" result, placed just below the PAT row. The prior
+    // toast-only feedback faded (~8 s) before the user could read it; this stays
+    // until the next test. role=status + aria-live=polite for assistive tech.
+    patTestStatus.el = containerEl.createEl("p", {
+      cls: "exocortex-settings-pat-status",
+    });
+    patTestStatus.el.setAttribute("role", "status");
+    patTestStatus.el.setAttribute("aria-live", "polite");
 
     // ─────── ExoSync (RFC 4e4dc453 Phase B) ───────
     // eslint-disable-next-line obsidianmd/ui/sentence-case -- "ExoSync" is the feature's proper name
