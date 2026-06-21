@@ -22,8 +22,9 @@ import { VaultNotFoundError } from "../utils/errors/index.js";
  *  - **duplicate bindings** — one uid claimed by more than one distinct test
  *    occurrence (warning: copy-paste contamination signal);
  *  - **binding-class floor violations** — a `P0` requirement bound *solely* to
- *    a `unit` binding-class, violating RFC 0003 §3.6 (hard finding: P0 must hit
- *    at least one integration/e2e/gui-bdd binding);
+ *    below-floor binding-classes (`unit` and/or `component` — jsdom, not
+ *    real-prod), violating RFC 0003 §3.6 (hard finding: P0 must hit at least one
+ *    integration/e2e/gui-bdd/ui-acceptance binding);
  *  - **coverage** — % of requirements with ≥1 binding.
  *
  * The report is emitted as text (human) or json (CI comment + Pages generator).
@@ -53,9 +54,16 @@ const TEST_GLOB_IGNORE = ["**/node_modules/**", "**/dist/**", "**/.git/**"];
  * Maps a `req__RequirementBindingClass<Token>` capture (the local-name suffix of
  * the enum wikilink) to the canonical binding-class token. Falls back to the
  * lower-cased capture for any future class not enumerated here.
+ *
+ * `component` (`.test.tsx` / jsdom) is a distinct tier from `unit`: it is parsed
+ * to its own token here (the `?? token` fallback already produced `"component"`;
+ * this explicit entry completes + documents the canonical set) and is classified
+ * BELOW the real-prod floor — see REAL_PROD_CLASSES (component is intentionally
+ * absent there, like `unit`).
  */
 const BINDING_CLASS_MAP: Record<string, string> = {
   unit: "unit",
+  component: "component",
   integration: "integration",
   e2e: "e2e",
   guibdd: "gui-bdd",
@@ -74,6 +82,12 @@ const UI_ACCEPTANCE = "ui-acceptance";
  * A binding class that exercises production beyond a pure unit test. `ui-acceptance`
  * is included: a manual live-UI acceptance check exercises real production more
  * than a unit test, so it satisfies the P0 binding-class floor.
+ *
+ * ⛔ `unit` and `component` are intentionally ABSENT — both are below-real-prod
+ * (a `component` test runs a UI component under jsdom, NOT against live Obsidian /
+ * a real desktop UI), so neither satisfies the P0 floor alone. Do NOT add
+ * `component` here: a jsdom binding must not be able to satisfy the real-prod
+ * floor (req__RequirementBindingClassComponent, RFC 0003 §3.6).
  */
 const REAL_PROD_CLASSES = new Set([
   "integration",
@@ -532,7 +546,7 @@ function renderText(report: TraceabilityReport, gate: GateMode = "soft"): void {
 
   if (report.floorViolations.length > 0) {
     console.error(
-      `\nBinding-class floor violations (${report.floorViolations.length}) — P0 bound solely to unit:`,
+      `\nBinding-class floor violations (${report.floorViolations.length}) — P0 bound solely to below-floor classes (unit/component):`,
     );
     for (const f of report.floorViolations) {
       console.error(`  ${f.uid}  [${f.bindingClasses.join(", ")}]  ${f.label}`);

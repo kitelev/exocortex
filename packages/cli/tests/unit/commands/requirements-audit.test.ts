@@ -97,6 +97,17 @@ describe("parseBindingClasses", () => {
       ),
     ).toEqual(["ui-acceptance"]);
   });
+  it("maps the component enum local-name to a distinct `component` token (not collapsed into unit)", () => {
+    // SDD-hardening A: component (.test.tsx / jsdom) is its own tier, parsed to
+    // "component" — NOT "unit". Pins the contract against the real exoas-req enum
+    // asset's local-name (req__RequirementBindingClassComponent, aefdb1a3).
+    expect(
+      parseBindingClasses(
+        "[[aefdb1a3-ae87-4d4e-93fb-fb989a243c0c|req__RequirementBindingClassComponent]]",
+      ),
+    ).toEqual(["component"]);
+  });
+
   it("ignores free-text (non-enum) bindingClass entries", () => {
     expect(
       parseBindingClasses([
@@ -240,6 +251,44 @@ describe("auditTraceability — binding-class floor (P0, hard)", () => {
     const r = auditTraceability(reqs, [tag(UID_B)]);
     expect(r.floorViolations).toHaveLength(0);
     expect(r.clean).toBe(true);
+  });
+
+  // SDD-hardening A (al-night-component): `component` (.test.tsx / jsdom) is a
+  // distinct binding-class classified BELOW the real-prod floor — like `unit`,
+  // a jsdom component test does not exercise live production. This is the
+  // binding for req 547ef066. Revert-verified: temporarily adding "component"
+  // to REAL_PROD_CLASSES makes assertions (2)/(3) FAIL (no floor violation);
+  // restored → PASS (RFC 0003 §3.6).
+  it("@req:547ef066-9155-4ec2-9893-fdc31c4674ea recognizes component as a distinct binding class and treats it as below the P0 real-prod floor", () => {
+    // (1) component is parsed to a distinct token — NOT collapsed into "unit"
+    expect(
+      parseBindingClasses(
+        "[[aefdb1a3-ae87-4d4e-93fb-fb989a243c0c|req__RequirementBindingClassComponent]]",
+      ),
+    ).toEqual(["component"]);
+
+    // (2) a P0 requirement bound SOLELY to component → floor violation
+    const solely = auditTraceability(
+      [req({ uid: UID_D, priority: "P0", bindingClasses: ["component"] })],
+      [tag(UID_D)],
+    );
+    expect(solely.floorViolations.map((f) => f.uid)).toEqual([UID_D]);
+    expect(solely.clean).toBe(false);
+
+    // (3) component + unit (both below-floor) → STILL a floor violation
+    const bothBelow = auditTraceability(
+      [req({ uid: UID_D, priority: "P0", bindingClasses: ["component", "unit"] })],
+      [tag(UID_D)],
+    );
+    expect(bothBelow.floorViolations).toHaveLength(1);
+
+    // (4) component + a real-prod class (integration) → floor satisfied
+    const withRealProd = auditTraceability(
+      [req({ uid: UID_D, priority: "P0", bindingClasses: ["component", "integration"] })],
+      [tag(UID_D)],
+    );
+    expect(withRealProd.floorViolations).toHaveLength(0);
+    expect(withRealProd.clean).toBe(true);
   });
 
   it("does not apply the floor to P1+ requirements", () => {
