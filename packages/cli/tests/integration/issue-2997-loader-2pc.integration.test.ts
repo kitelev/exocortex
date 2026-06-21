@@ -98,7 +98,7 @@ describe("Issue #2997 Phase 2 — Loader two-phase commit (all-or-nothing)", () 
   });
 
   it(
-    "loads the full mixed fixture vault: only valid files contribute triples, all 11 bad files reported as skipped",
+    "loads the full mixed fixture vault: only valid files contribute triples, all 11 bad files reported as skipped @req:fe50da38-4798-46e6-bb0a-b4b88596c340",
     async () => {
       const fixtureRoot = resolve(__dirname, "../fixtures/issue-2997");
       const adapter = new FileSystemVaultAdapter(fixtureRoot);

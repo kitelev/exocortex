@@ -182,7 +182,7 @@ afterAll(() => {
 });
 
 describe("Issue #3242 integration: label-less class chain", () => {
-  it("does not emit sh:class violation against exo__Asset on exo__Asset_relates path", () => {
+  it("does not emit sh:class violation against exo__Asset on exo__Asset_relates path @req:7a337cbd-75ab-436c-986b-d061ace9f4da", () => {
     const falsePositives = violations.filter(
       (v) =>
         v.propertyPath ===
