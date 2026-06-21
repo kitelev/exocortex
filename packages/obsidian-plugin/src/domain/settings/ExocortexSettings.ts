@@ -217,12 +217,12 @@ export interface ExocortexSettings {
    */
   activeProfileUid: string | null;
   /**
-   * ExoSync (RFC 4e4dc453 Phase B) — dedicated quarantine repo URL
-   * (`https://github.com/<owner>/<repo>`). Unresolvable merge conflicts are
-   * committed there as both-versions JSON entries (D17, durable cross-device).
-   * Empty string (default) ⇒ no durable quarantine sink; the engine still
-   * preserves data via watermark pins (conflicts re-derive every sync).
-   * Shared config, not a secret — synced data.json is the right home.
+   * @deprecated No longer wired (offline-resolution program). The synced
+   * git-repo quarantine store was retired; conflicts are now preserved in the
+   * device-local conflict cache and resolved offline. This field is kept as a
+   * dormant no-op for backward-compat (and registry↔graph parity); nothing
+   * reads it and the Settings UI no longer surfaces it. Removing the declared
+   * setting (registry + exoas-exo graph individual) is a follow-up cleanup.
    */
   exosyncQuarantineRepoUrl: string;
   /**

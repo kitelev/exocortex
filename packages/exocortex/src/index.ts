@@ -743,16 +743,10 @@ export {
   scanForSecrets,
   type SecretFinding,
 } from "./services/sync/secretScan";
-export {
-  SyncedQuarantineStore,
-  type OpenQuarantineEntry,
-  type QuarantineEntryRecord,
-  type SyncedQuarantineStoreDeps,
-} from "./services/sync/SyncedQuarantineStore";
 // Device-local conflict cache (offline-resolution foundation): a QuarantinePort
 // that persists the 3 versions of every conflict to a `.local.` (Sync-excluded)
-// file so the resolver can work offline. CompositeQuarantineStore tees it with
-// the optional synced repo while both coexist.
+// file so the resolver can work offline. It is the SOLE durable quarantine sink
+// (the synced git-repo quarantine store was retired — offline-resolution program).
 export {
   LocalConflictCacheStore,
   CONFLICT_CACHE_STORE_FILENAME,
@@ -760,7 +754,6 @@ export {
   type ConflictCacheRecord,
   type LocalConflictCacheStoreDeps,
 } from "./services/sync/LocalConflictCacheStore";
-export { CompositeQuarantineStore } from "./services/sync/CompositeQuarantineStore";
 // Deferred-push outbox (offline conflict resolution): resolutions made offline
 // queue here; the engine flushes them on the next sync with a TOCTOU guard.
 export {

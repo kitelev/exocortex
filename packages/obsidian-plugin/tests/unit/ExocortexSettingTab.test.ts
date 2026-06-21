@@ -214,8 +214,9 @@ describe("ExocortexSettingTab", () => {
       // («Onboarding & sync» / «Display» / «Advanced») = 48, minus the
       // removed "Auto-execute SPARQL code blocks" toggle = 47, minus the
       // removed dead «Switch cache» section (its heading + the «Cache stats»
-      // row = 2 Settings) = 45.
-      expect(MockSetting).toHaveBeenCalledTimes(45);
+      // row = 2 Settings) = 45, minus the removed «Quarantine repo URL» row
+      // (synced quarantine store retired — offline-resolution program) = 44.
+      expect(MockSetting).toHaveBeenCalledTimes(44);
     });
 
     it("renders the settings-homoiconization toggle", () => {

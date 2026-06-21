@@ -51,7 +51,6 @@ const OWNER = "test-owner";
 const REPO = "test-repo";
 const MOUNT = `assetspaces/${OWNER}/${REPO}`;
 const SOURCE = `https://github.com/${OWNER}/${REPO}`;
-const QUARANTINE_URL = `https://github.com/${OWNER}/quarantine`;
 const PAT = `ghp_${"x".repeat(36)}`;
 
 const asset = (uid: string, label: string, extra?: string): string =>
@@ -61,7 +60,6 @@ const asset = (uid: string, label: string, extra?: string): string =>
 
 interface Harness {
   repo: FakeGitHubRepo;
-  quarantineRepo: FakeGitHubRepo;
   adapter: InMemoryAdapter;
   sync: () => Promise<
     Awaited<ReturnType<import("exocortex").SyncEngine["syncAll"]>>
@@ -70,14 +68,11 @@ interface Harness {
 
 async function makeHarness(opts: {
   initialFiles: Record<string, string>;
-  withQuarantineRepo?: boolean;
 }): Promise<Harness> {
   const repo = new FakeGitHubRepo(opts.initialFiles);
-  const quarantineRepo = new FakeGitHubRepo({});
   requestUrlMock.mockImplementation(
     fakeRequestUrlRouter({
       [`${OWNER}/${REPO}`]: repo,
-      [`${OWNER}/quarantine`]: quarantineRepo,
     }),
   );
 
@@ -108,15 +103,12 @@ async function makeHarness(opts: {
       localDataStore,
       asUidByRepoKey: collection.asUidByRepoKey,
       sha1: sha1Hex,
-      ...(opts.withQuarantineRepo === true
-        ? { quarantineRepoUrl: QUARANTINE_URL }
-        : {}),
     });
     expect(pat).toBe(PAT);
     return engine.syncAll(collection.specs);
   };
 
-  return { repo, quarantineRepo, adapter, sync };
+  return { repo, adapter, sync };
 }
 
 describe("ExoSync over requestUrl (desktop parity, AC#3)", () => {
@@ -251,36 +243,6 @@ describe("ExoSync over requestUrl (desktop parity, AC#3)", () => {
     expect(records).toHaveLength(1);
     expect(records[0].localContent).toContain("local-version");
     expect(records[0].remoteContent).toContain("remote-version");
-  });
-
-  it("persists both versions to the synced quarantine repo (D17)", async () => {
-    const h = await makeHarness({
-      initialFiles: { "a.md": asset("u1", "one") },
-      withQuarantineRepo: true,
-    });
-    await h.sync(); // bootstrap
-
-    h.adapter.seedFile(`${MOUNT}/a.md`, asset("u1", "local-version"));
-    h.repo.commitDirect(
-      "main",
-      { "a.md": asset("u1", "remote-version") },
-      "device B",
-    );
-    const results = await h.sync();
-
-    expect(results[0].quarantinedCount).toBe(1);
-    const entries = [...h.quarantineRepo.headFiles().entries()].filter(
-      ([path]) => path.startsWith("entries/"),
-    );
-    expect(entries).toHaveLength(1);
-    const record = JSON.parse(entries[0][1]) as {
-      status: string;
-      localContent?: string;
-      remoteContent?: string;
-    };
-    expect(record.status).toBe("open");
-    expect(record.localContent).toContain("local-version");
-    expect(record.remoteContent).toContain("remote-version");
   });
 
   it("maps HTTP 401 to auth-required, never success (R8 — desktop parity)", async () => {

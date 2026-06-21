@@ -154,9 +154,11 @@ export interface QuarantineResolverDeps {
    */
   commitMessage?: (spec: SyncRepoSpec, path: string) => string;
   /**
-   * OPTIONAL configured quarantine repo. When present, a resolution also calls
-   * `markResolved` so the cross-device unresolved-count drops immediately.
-   * Absent ⇒ pure device-local mode (the pin clears on the next sync anyway).
+   * OPTIONAL quarantine sink. When present, a resolution also calls
+   * `markResolved` to drop a cross-device unresolved-count. No production caller
+   * wires this any more (the synced quarantine store was retired); kept for the
+   * port contract + tests. Absent ⇒ pure device-local mode (the pin clears on
+   * the next sync anyway).
    */
   quarantine?: QuarantinePort;
   /**
@@ -212,8 +214,9 @@ export class QuarantineResolver {
     spec: SyncRepoSpec,
   ): Promise<ResolvableConflict[]> {
     // Asset-mode only: a file-mode FileSpace conflict is opaque binary resolved
-    // remote-wins (D18) — the losing local lives in the synced quarantine store,
-    // not here, and a UTF-8 3-way would corrupt it. Skip the whole spec.
+    // remote-wins (D18) — the losing local lives in the device-local conflict
+    // cache (its binary payload), not here, and a UTF-8 3-way would corrupt it.
+    // Skip the whole spec.
     if (spec.spaceKind === "file") return [];
     const watermark = await this.deps.watermarkStore.get(spec.repoKey);
     let pinned = watermark?.pinnedPaths ?? [];

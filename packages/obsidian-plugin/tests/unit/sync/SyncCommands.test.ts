@@ -613,7 +613,9 @@ describe("SyncCommands — E1 parity harness integration", () => {
 });
 
 describe("SyncCommands — #3495 quarantine-sink degraded-mode warn", () => {
-  const warnText = "quarantine sink not configured";
+  // NB: vestigial in production (the device-local cache is always the durable
+  // sink) — these tests still exercise the warn LOGIC via the test double.
+  const warnText = "no durable quarantine sink";
 
   it("warns once (notify + logInfo) when the sink is unconfigured AND a conflict was quarantined", async () => {
     const { commands, notices, infoLogs } = makeHarness({
@@ -626,7 +628,6 @@ describe("SyncCommands — #3495 quarantine-sink degraded-mode warn", () => {
     const warnNotices = notices.filter((n) => n.includes(warnText));
     expect(warnNotices).toHaveLength(1);
     expect(warnNotices[0]).toContain("1 conflict(s)");
-    expect(warnNotices[0]).toContain("Settings → Exocortex");
     // Console echo on the info channel (no file spam, #3186) — exactly once.
     expect(infoLogs.filter((l) => l.includes(warnText))).toHaveLength(1);
   });

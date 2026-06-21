@@ -16,9 +16,9 @@
  * versions here, on disk, is what lets the resolver list / diff / resolve a
  * conflict with ZERO network (PR-3): the remote version is already local.
  *
- * ⛤ Deliberately NOT redacted (unlike {@link SyncedQuarantineStore}). The
- * synced store redacts secrets because it COMMITS conflict copies to a remote
- * git repo — a leak vector. This cache is the OPPOSITE: it never syncs (the
+ * ⛤ Deliberately NOT redacted (unlike a synced/remote quarantine store). A
+ * store that COMMITS conflict copies to a remote git repo must redact secrets —
+ * a leak vector. This cache is the OPPOSITE: it never syncs (the
  * `.local.` exclusion is the leak guard), and it MUST hold the EXACT bytes —
  * a redacted cache would make the offline resolver diff and PUSH corrupted
  * content (a redaction is not reversible). Leak mitigation here is "the file

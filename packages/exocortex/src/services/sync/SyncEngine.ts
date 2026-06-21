@@ -208,9 +208,9 @@ export interface SyncEngineDeps {
   /**
    * Quarantine sink for unresolvable / SHACL-invalid merges (D17) and for
    * D16 terminal-quarantine (contended files after retry exhaustion).
-   * Production: `SyncedQuarantineStore`. Optional — skipping it loses no
-   * data: the file stays untouched on disk and the watermark pin (or the
-   * non-advanced watermark) re-derives the conflict every sync.
+   * Production: the device-local `LocalConflictCacheStore`. Optional — skipping
+   * it loses no data: the file stays untouched on disk and the watermark pin (or
+   * the non-advanced watermark) re-derives the conflict every sync.
    */
   quarantine?: QuarantinePort;
   /**

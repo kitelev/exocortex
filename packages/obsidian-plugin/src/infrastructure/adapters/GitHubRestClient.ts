@@ -304,9 +304,9 @@ export class GitHubRestClient {
    * depend on), owns the Authorization header, and redacts PATs in error
    * bodies.
    *
-   * Transport-only by intent: consumers (SyncEngine, githubRepoReader,
-   * SyncedQuarantineStore) issue Git Data API calls through it. Do not use
-   * it as a general-purpose authenticated HTTP client.
+   * Transport-only by intent: consumers (SyncEngine, githubRepoReader, the
+   * QuarantineResolver) issue Git Data API calls through it. Do not use it as a
+   * general-purpose authenticated HTTP client.
    */
   public restTransport(): RestCommitTransport {
     return (req) => this.request(req);

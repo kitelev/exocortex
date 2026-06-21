@@ -2,7 +2,6 @@ import type { App, DataAdapter } from "obsidian";
 import yaml from "js-yaml";
 import {
   CONFLICT_CACHE_STORE_FILENAME,
-  CompositeQuarantineStore,
   FileLocalManifestStore,
   FileMountBaseStore,
   FileWatermarkStore,
@@ -13,14 +12,11 @@ import {
   MOUNT_BASE_STORE_FILENAME,
   OUTBOX_STORE_FILENAME,
   QuarantineResolver,
-  SYNC_BRANCH,
   SpaceSpecAccumulator,
   StructuredMerger,
   SyncEngine,
-  SyncedQuarantineStore,
   WATERMARK_STORE_FILENAME,
   classifySpaceDeclaration,
-  withRateLimitBackoff,
   type LocalFilesPort,
   type MaterializationCheckPort,
   type QuarantinePort,
@@ -33,7 +29,6 @@ import {
 import { GitHubRestClient } from "./GitHubRestClient";
 import { GitSubmoduleOps } from "./GitSubmoduleOps";
 import { LocalSecretsStore } from "./LocalSecretsStore";
-import { parseGitHubURL } from "./AssetSpaceManager";
 import type { PluginLocalDataStore } from "./PluginLocalDataStore";
 
 /**
@@ -69,10 +64,10 @@ import type { PluginLocalDataStore } from "./PluginLocalDataStore";
  *    plugin-side ShapeRegistry/ClassHierarchy/triplesFor composition is a
  *    follow-up; unresolvable merges still quarantine (D17).
  *  - quarantine — the device-local `LocalConflictCacheStore` (offline-resolution
- *    foundation) is ALWAYS wired: it persists the 3 versions of every conflict
- *    to a `.local.` (Sync-excluded) file so the resolver can work offline. A
- *    user-configured `SyncedQuarantineStore` (settings) is TEE'd alongside it
- *    via `CompositeQuarantineStore` for the cross-device count.
+ *    foundation) is the SOLE quarantine sink: it persists the 3 versions of every
+ *    conflict to a `.local.` (Sync-excluded) file so the resolver works offline.
+ *    The synced git-repo quarantine store was retired (offline-resolution program);
+ *    the cache is durable on its own (survives restart).
  */
 
 /** Per-repo sync branch — re-exported from the core (ExoSync E1: the
@@ -393,11 +388,6 @@ export interface BuildSyncEngineOptions {
   localDataStore: PluginLocalDataStore;
   /** repoKey → AssetSpace uid map from {@link collectSyncRepoSpecs}. */
   asUidByRepoKey: ReadonlyMap<string, string>;
-  /**
-   * Quarantine repo URL (`https://github.com/<owner>/<repo>`) from settings.
-   * Empty/undefined ⇒ no durable quarantine sink (engine pins re-derive).
-   */
-  quarantineRepoUrl?: string;
   /** Test seam — defaults to {@link webCryptoSha1}. */
   sha1?: Sha1Fn;
 }
@@ -459,26 +449,10 @@ export async function buildSyncEngine(
     io: vaultWatermarkFileIO(adapter, outboxPath),
   });
 
-  let quarantine: QuarantinePort = conflictCache;
-  const quarantineUrl = opts.quarantineRepoUrl?.trim() ?? "";
-  if (quarantineUrl.length > 0) {
-    GitHubRestClient.validateRepoURL(quarantineUrl);
-    const { owner, repo } = parseGitHubURL(quarantineUrl);
-    const synced = new SyncedQuarantineStore({
-      // The engine wraps ITS transport internally; the quarantine store
-      // needs its own backoff wrap (it is the highest-volume caller).
-      transport: withRateLimitBackoff(transport),
-      sha1,
-      owner,
-      repo,
-      branch: SYNC_BRANCH,
-      redact: (m) => GitHubRestClient.redactTokens(m),
-    });
-    // Tee: device-local cache FIRST (durability-critical), synced repo second
-    // (cross-device count). The cache write always runs even if the synced push
-    // fails — see CompositeQuarantineStore.
-    quarantine = new CompositeQuarantineStore([conflictCache, synced]);
-  }
+  // The device-local conflict cache is the SOLE quarantine sink (the synced
+  // git-repo quarantine store was retired — offline-resolution program). It is
+  // durable on its own (survives restart) and feeds the offline resolver.
+  const quarantine: QuarantinePort = conflictCache;
 
   // #3590 FULL fix — base BACKFILL source for AssetSpaces mounted BEFORE the
   // mount layer began recording their base (or by any path that never recorded
@@ -548,13 +522,6 @@ export async function buildSyncEngine(
 
 export interface BuildQuarantineResolverOptions {
   app: App;
-  /**
-   * Quarantine repo URL from settings — OPTIONAL. The resolver is device-local
-   * first (it finds conflicts in the watermark pins); a configured repo is used
-   * only to drop its cross-device count via `markResolved` and to skip the disk
-   * backup (the local version is already durable there).
-   */
-  quarantineRepoUrl?: string;
   sha1?: Sha1Fn;
 }
 
@@ -597,21 +564,6 @@ export async function buildQuarantineResolver(
     io: vaultWatermarkFileIO(adapter, outboxPath),
   });
 
-  let quarantine: QuarantinePort | undefined;
-  const quarantineUrl = opts.quarantineRepoUrl?.trim() ?? "";
-  if (quarantineUrl.length > 0) {
-    GitHubRestClient.validateRepoURL(quarantineUrl);
-    const { owner, repo } = parseGitHubURL(quarantineUrl);
-    quarantine = new SyncedQuarantineStore({
-      transport: withRateLimitBackoff(transport),
-      sha1,
-      owner,
-      repo,
-      branch: SYNC_BRANCH,
-      redact: (m) => GitHubRestClient.redactTokens(m),
-    });
-  }
-
   const resolver = new QuarantineResolver({
     transport,
     watermarkStore: new FileWatermarkStore(
@@ -622,7 +574,6 @@ export async function buildQuarantineResolver(
     redact: (m) => GitHubRestClient.redactTokens(m),
     conflictCache,
     outbox,
-    ...(quarantine !== undefined ? { quarantine } : {}),
   });
   return { resolver, pat };
 }
