@@ -316,6 +316,7 @@ describe("isHardFail — soft/hard exit-code contract (P3 flip)", () => {
       requirementCount: 1,
       tagCount: 1,
       bound: 1,
+      manuallyVerified: 0,
       coverage: 1,
       orphans: [],
       dangling: [],
@@ -362,5 +363,52 @@ describe("isHardFail — soft/hard exit-code contract (P3 flip)", () => {
     });
     expect(isHardFail(orphaned, "soft", false)).toBe(false);
     expect(isHardFail(orphaned, "soft", true)).toBe(true);
+  });
+});
+
+describe("auditTraceability — ui-acceptance verification tier (RFC 0003 §3.6)", () => {
+  it("a ui-acceptance requirement with NO jest tag is manually-verified, not an orphan", () => {
+    const reqs = [req({ uid: UID_A, bindingClasses: ["ui-acceptance"] })];
+    const r = auditTraceability(reqs, []); // no @req tag at all
+    expect(r.orphans).toHaveLength(0);
+    expect(r.manuallyVerified).toBe(1);
+    expect(r.bound).toBe(0);
+    expect(r.coverage).toBe(1); // (bound 0 + manual 1) / 1
+    expect(r.clean).toBe(true);
+  });
+
+  it("a P0 ui-acceptance requirement is covered (does NOT block the ramp)", () => {
+    const reqs = [
+      req({ uid: UID_A, priority: "P0", bindingClasses: ["integration"] }),
+      req({ uid: UID_B, priority: "P0", bindingClasses: ["ui-acceptance"] }),
+    ];
+    const r = auditTraceability(reqs, [tag(UID_A)]); // only UID_A jest-bound
+    expect(r.p0Total).toBe(2);
+    expect(r.p0Bound).toBe(2); // UID_B covered by manual ui-acceptance
+    expect(r.p0Orphans).toBe(0);
+    expect(r.rampReady).toBe(true);
+  });
+
+  it("ui-acceptance satisfies the P0 binding-class floor (real-prod-exercising)", () => {
+    const reqs = [req({ uid: UID_A, priority: "P0", bindingClasses: ["ui-acceptance"] })];
+    const r = auditTraceability(reqs, []);
+    expect(r.floorViolations).toHaveLength(0);
+  });
+
+  it("a ui-acceptance requirement that ALSO has a jest tag counts as jest-bound", () => {
+    const reqs = [
+      req({ uid: UID_A, bindingClasses: ["ui-acceptance", "integration"] }),
+    ];
+    const r = auditTraceability(reqs, [tag(UID_A)]);
+    expect(r.bound).toBe(1);
+    expect(r.manuallyVerified).toBe(0); // jest tag takes precedence in the count
+    expect(r.orphans).toHaveLength(0);
+  });
+
+  it("a plain (non-ui-acceptance) requirement with no tag is STILL an orphan", () => {
+    const reqs = [req({ uid: UID_A, bindingClasses: ["unit"] })];
+    const r = auditTraceability(reqs, []);
+    expect(r.orphans.map((o) => o.uid)).toEqual([UID_A]);
+    expect(r.manuallyVerified).toBe(0);
   });
 });

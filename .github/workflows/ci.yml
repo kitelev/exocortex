@@ -269,6 +269,9 @@ jobs:
           git clone --depth 1 \
             https://github.com/kitelev/exoas-exo-reqs.git \
             "$RUNNER_TEMP/reqs/exoas-exo-reqs"
+          git clone --depth 1 \
+            https://github.com/kitelev/exoas-ems-reqs.git \
+            "$RUNNER_TEMP/reqs/exoas-ems-reqs"
 
       - name: Run traceability audit (soft — never blocks until the P3 flip)
         id: audit

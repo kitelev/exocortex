@@ -1,17 +1,17 @@
 # RFC 0003 — Requirements management (Spec-Driven Development for Exocortex)
 
-| | |
-| --- | --- |
-| **Status** | Accepted (v2 final — Andrey-approved, 2026-06-21) |
-| **Author** | Requirements-management research (al-reqmgmt child, AI) + Andrey interview, 2026-06-19/20/21 |
-| **Scope** | Cross-cutting process + a small vault ontology (`req`). Defines *where business requirements live, in what format, how they trace to tests/code, and how CI enforces that every change updates them*. Not an implementation — implementation is tracked as a vault subproject (§8). |
-| **Supersedes** | — |
-| **Tracking** | "Exocortex requirements-management system" `ems__Project`, child of Alpha Launch `[[f33732f4-410e-424a-91e2-9e894f68e2de]]` |
+|                |                                                                                                                                                                                                                                                                                     |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Status**     | Accepted (v2 final — Andrey-approved, 2026-06-21)                                                                                                                                                                                                                                   |
+| **Author**     | Requirements-management research (al-reqmgmt child, AI) + Andrey interview, 2026-06-19/20/21                                                                                                                                                                                        |
+| **Scope**      | Cross-cutting process + a small vault ontology (`req`). Defines _where business requirements live, in what format, how they trace to tests/code, and how CI enforces that every change updates them_. Not an implementation — implementation is tracked as a vault subproject (§8). |
+| **Supersedes** | —                                                                                                                                                                                                                                                                                   |
+| **Tracking**   | "Exocortex requirements-management system" `ems__Project`, child of Alpha Launch `[[f33732f4-410e-424a-91e2-9e894f68e2de]]`                                                                                                                                                         |
 
 > **Why in-repo:** this RFC proposes both a vault ontology (`req__Requirement`)
-> *and* repo-side enforcement (CI gate, archgate rule). It is versioned next to
+> _and_ repo-side enforcement (CI gate, archgate rule). It is versioned next to
 > the CI machinery it changes, following RFC 0001/0002 precedent for repo-touching
-> proposals. The `req` ontology *assets* are created during implementation (not by
+> proposals. The `req` ontology _assets_ are created during implementation (not by
 > this docs-only RFC). (Living-Documentation / GitHub-Pages publication is **carved
 > into a separate RFC** — see the Revision-3 note below + §6.)
 
@@ -23,7 +23,7 @@
 > (requirements-engineering rigor · engineering-feasibility/source-accuracy ·
 > failure-mode skeptic) + an interview-per-finding pass with Andrey. The panel's
 > two CRITICAL findings drove the biggest changes: (1) **a `@req` tag proves
-> *association*, not *exercise*** — green+tagged ≠ behavior tested — so v2 adds a
+> _association_, not _exercise_** — green+tagged ≠ behavior tested — so v2 adds a
 > **revert-verify binding gate + binding-class** (§3.6); (2) **AI authoring the
 > requirement, the test, and the tag is a self-consistent-but-wrong loop** — so
 > the `Draft→Verified` transition now requires falsifiable revert-verify
@@ -38,7 +38,7 @@
 > (§3.3), EARS corrected and relocated to the ADR domain, archgate's no-vault-graph
 > constraint fixed (§3.7), corrected test counts, and an integrity metric (§7).
 
-> **Revision 3 (2026-06-21) — final.** A *second* interview round (Andrey,
+> **Revision 3 (2026-06-21) — final.** A _second_ interview round (Andrey,
 > `al-decisions2`) settled the one fork Revision 2 had resolved on its own:
 > **D4 (Living Documentation / GitHub Pages).** Revision 2 kept P4 inline with a
 > "fail-closed by repo visibility" privacy design; **the final decision is to carve
@@ -46,8 +46,8 @@
 > privacy model is non-trivial (one mis-scoped publish leaks T-Bank/personal data)
 > **and a non-blocker** for the core requirements machinery — so it is decoupled,
 > and RFC 0003 ships **without P4**. Core (P0–P3, P5) is unchanged. The
-> audience-by-repo-visibility *storage* split (§3.2) stays here (it is the storage
-> design); only the *publication* layer moves to the carved RFC. NFRs remain
+> audience-by-repo-visibility _storage_ split (§3.2) stays here (it is the storage
+> design); only the _publication_ layer moves to the carved RFC. NFRs remain
 > ADR-homed (deferred from the `req` ontology by design, D5 — §3.9). This is the
 > sole change vs Revision 2; D1/D2/D3/D5 + A1–A14 are unchanged.
 
@@ -56,35 +56,35 @@
 ## 1. Context & problem
 
 Andrey's vision (verbatim, 2026-06-19): **(1)** all business requirements to
-Exocortex are described in a BDD-style executable format; **(2)** all *existing*
+Exocortex are described in a BDD-style executable format; **(2)** all _existing_
 requirements are migrated into that base; **(3)** every codebase change
 updates/enriches the requirements base — likely via CI/archgate gating. Target
 (not a current blocker): browse the requirements as a published site on **GitHub
-Pages** — **carved into a separate RFC** (Revision-3 note; §6). Core: *everything
-works, and all changes flow through one requirements process.*
+Pages** — **carved into a separate RFC** (Revision-3 note; §6). Core: _everything
+works, and all changes flow through one requirements process._
 
 ### What exists today (credited — reuse the lessons, not the cruft)
 
-| Artifact | Role | Status |
-| --- | --- | --- |
-| `.archgate/` ADRs (`.md` + `.rules.ts`) | Architecture Decision Records as machine-enforced rules (e.g. ARCH-001 "all vault files UUID-named", ARCH-007 "commands appear only when applicable"). `archgate` is a required CI check. These **are** the project's architectural + non-functional requirements. | Active enforcement — in v2, the **canonical home for architectural/NFR requirements** (see §3.9). |
-| `uj__UserJourney` (ns `uj`) | Vault BDD combo-format: Job Story + Gherkin body + acceptance gates. Run via `/user-journey` + computer-control. | Exists in **starter-kit only**, **manual**, **Andrey never used it** — superseded. The *format insight* is reused; the class is not carried forward. |
-| `eka-gui-e2e` workflow | Formalizes prose Gherkin scenarios as repeatable Playwright e2e against a fresh ephemeral vault on native-amd64 CI. | Active release-gate. Real-prod execution — a **valid `_verifiedBy` binding target** for functional requirements. |
-| Playwright e2e `.spec.ts` (~24), Jest unit/component/integration (~720 `.test.ts` + ~20 `.test.tsx`) | Where functional behavior is *actually* specified today — as code, not readable requirements. | Active. Functional requirements are **implicit and scattered** here + in RFCs. |
-| `parity-gate` | CLI↔plugin behavioral parity (replaced retired `test-bdd`). | Required CI check. |
+| Artifact                                                                                             | Role                                                                                                                                                                                                                                                               | Status                                                                                                                                               |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.archgate/` ADRs (`.md` + `.rules.ts`)                                                              | Architecture Decision Records as machine-enforced rules (e.g. ARCH-001 "all vault files UUID-named", ARCH-007 "commands appear only when applicable"). `archgate` is a required CI check. These **are** the project's architectural + non-functional requirements. | Active enforcement — in v2, the **canonical home for architectural/NFR requirements** (see §3.9).                                                    |
+| `uj__UserJourney` (ns `uj`)                                                                          | Vault BDD combo-format: Job Story + Gherkin body + acceptance gates. Run via `/user-journey` + computer-control.                                                                                                                                                   | Exists in **starter-kit only**, **manual**, **Andrey never used it** — superseded. The _format insight_ is reused; the class is not carried forward. |
+| `eka-gui-e2e` workflow                                                                               | Formalizes prose Gherkin scenarios as repeatable Playwright e2e against a fresh ephemeral vault on native-amd64 CI.                                                                                                                                                | Active release-gate. Real-prod execution — a **valid `_verifiedBy` binding target** for functional requirements.                                     |
+| Playwright e2e `.spec.ts` (~24), Jest unit/component/integration (~720 `.test.ts` + ~20 `.test.tsx`) | Where functional behavior is _actually_ specified today — as code, not readable requirements.                                                                                                                                                                      | Active. Functional requirements are **implicit and scattered** here + in RFCs.                                                                       |
+| `parity-gate`                                                                                        | CLI↔plugin behavioral parity (replaced retired `test-bdd`).                                                                                                                                                                                                        | Required CI check.                                                                                                                                   |
 
 ### ⛔ The decisive lesson (the failure mode this RFC must not repeat)
 
 Exocortex **already tried** Cucumber/Gherkin and removed it **twice**:
 
-- #3401 — *"delete plugin-BDD harness-theater: 204 self-asserting scenarios that
+- #3401 — _"delete plugin-BDD harness-theater: 204 self-asserting scenarios that
   imported only `@cucumber/cucumber` and asserted self-set world state (no
-  production renderer / CommandManager / DOM invoked → zero prod exercised)"*.
+  production renderer / CommandManager / DOM invoked → zero prod exercised)"_.
 - #3433 removed the vestigial CLI BDD infrastructure; #3545 deleted the cucumber
   deps.
 
 The failure was **not** Given/When/Then as a format — it was that the tests
-**never exercised production**. The panel sharpened this: a parallel *runner* is
+**never exercised production**. The panel sharpened this: a parallel _runner_ is
 one way to get there, but **so is a `@req` tag pointing at a green test that
 doesn't exercise the behavior**. v2 therefore forbids the runner **and** makes
 "the cited test fails when the behavior is reverted" the validity condition of a
@@ -116,7 +116,7 @@ binding (§3.6). (cf. internal rules `test-fixture-realism`,
 4. **Every codebase change flows through the requirements base** — enforced
    deterministically (soft→hard ramp with a real flip-trigger), not advisory.
 5. **No new test runner**, and a binding is valid **only** if the cited test
-   *fails when the behavior is reverted* — the harness-theater path is
+   _fails when the behavior is reverted_ — the harness-theater path is
    structurally closed.
 6. (Carved to a separate RFC — Revision-3 note; §6) Public requirements
    **published to GitHub Pages** as Living Documentation, fail-closed by repo
@@ -130,15 +130,15 @@ Adopt **Spec-Driven Development (SDD)**, the 2026 default for AI coding
 ([GitHub Spec Kit](https://github.blog/ai-and-ml/generative-ai/spec-driven-development-with-ai-get-started-with-a-new-open-source-toolkit/);
 [Anthropic best-practices](https://code.claude.com/docs/en/best-practices); Thoughtworks/Fowler).
 Exocortex already performs most of the SDD loop informally — RFCs are
-*Specify+Plan*, PMBOK WBS / `ems__Task` are *Tasks*, child sessions are
-*Implement*, `.archgate` ADRs are the *Constitution*. The **missing layer** is a
+_Specify+Plan_, PMBOK WBS / `ems__Task` are _Tasks_, child sessions are
+_Implement_, `.archgate` ADRs are the _Constitution_. The **missing layer** is a
 persistent, enforced **functional-requirements base** the loop reads from and
 writes back to. This RFC adds exactly that layer; it complements RFCs/PMBOK/ADRs.
 
 **Two regimes, named honestly** (panel finding): for the **migration back-fill**,
-requirements are *reverse-documented* from already-written tests
+requirements are _reverse-documented_ from already-written tests
 (test-first-then-spec) — Specification-by-Example applied to existing behavior.
-For **net-new** work, requirements are genuinely *spec-first* (the real SDD
+For **net-new** work, requirements are genuinely _spec-first_ (the real SDD
 loop). The Phase-2 hard-gate (§3.7) requires net-new behavior to be **spec-first**.
 
 ### 3.2 Storage — per-module requirement assetspaces; audience boundary by repo visibility
@@ -150,24 +150,24 @@ Following the EKA audience-layered + per-module assetspace pattern (verified
 against the live structure):
 
 - **`exoas-req`** — the `req` **TBox** only: class `req__Requirement` + properties
-  + enums. Namespace `req` (naming=namespace invariant ✓). Other reqs assetspaces
-  `dependsOn exoas-req` in `exoas-registry`.
-- **`exoas-<module>-reqs`** — the **ABox**: functional requirement *instances*
+  - enums. Namespace `req` (naming=namespace invariant ✓). Other reqs assetspaces
+    `dependsOn exoas-req` in `exoas-registry`.
+- **`exoas-<module>-reqs`** — the **ABox**: functional requirement _instances_
   about one module. First: **`exoas-exo-reqs`** (requirements for the `exo`
   module = Alpha-critical, migrated first). Each instance:
   `exo__Asset_isDefinedBy → the assetspace's own anchor` (co-location key, so it
   lands here — verified: EKA instances are `isDefinedBy` their owner-assetspace
   anchor, e.g. `exoas-exodev/exodev/* → [[32d2374c]]`), `exo__Instance_class →
-  req__Requirement` (the class in `exoas-req`, a cross-assetspace `rdf:type`
+req__Requirement` (the class in `exoas-req`, a cross-assetspace `rdf:type`
   edge), `req__Requirement_covers → exo command/feature`.
 - **Future, conditional**: `exoas-ems-cmd-reqs` for requirements about `ems`-class
-  commands — *iff* those commands live in an `exoas-ems-cmds` assetspace (does not
+  commands — _iff_ those commands live in an `exoas-ems-cmds` assetspace (does not
   exist yet; not created now).
 
 **Audience boundary = set at the storage layer (by repo visibility).** Public-module
 reqs assetspaces (`exoas-exo-reqs`, …) are public git repos; requirements about
 private modules (e.g. T-Bank commands) live in a **private** `exoas-*-reqs` repo.
-This per-module repo-visibility split is the *storage* design and stays in RFC 0003.
+This per-module repo-visibility split is the _storage_ design and stays in RFC 0003.
 It also **pre-resolves the future Pages-privacy model fail-closed**: any publication
 layer iterates only over **explicitly public** reqs assetspaces (default-deny),
 strictly safer than a query-time allowlist (the panel's highest-blast-radius
@@ -182,30 +182,30 @@ The assetspaces themselves are created in **implementation** (§8), not by this 
 `req__Requirement` (`exo__Class`, superclass `exo__Asset`) — design intent;
 final shapes refined in implementation:
 
-| Property | Card. | Range / values | Purpose |
-| --- | --- | --- | --- |
-| `req__Requirement_statement` (body) | 1 | **Gherkin Given/When/Then** in the asset body | The functional spec (human + AI readable) |
-| `req__Requirement_jobStory` | 0..1 | "When ⟨situation⟩, I want ⟨motivation⟩, so ⟨outcome⟩" | Optional user-value framing |
-| `req__Requirement_covers` | 1..N | wikilink → command / feature | What behavior this is *about* |
-| `req__Requirement_verifiedBy` | 0..N | (derived) test-ID(s) the checker resolves from `@req:<uid>` tags | The existing real test(s) that exercise it |
-| `req__Requirement_bindingClass` | 0..N | `unit` \| `integration` \| `e2e` \| `gui-bdd` | Class of each binding (gates P0, §3.6) |
-| `req__Requirement_implementedBy` | 0..N | wikilink → command / PR# / code ref | Implementation pointer |
-| `req__Requirement_refines` | 0..1 | wikilink → parent `req__Requirement` (UWI child→parent) | Decomposition / acceptance↔system layering |
-| `req__Requirement_status` | 1 | `Draft` \| `Approved` \| `Deprecated` (enum assets) — **human-authored** | Lifecycle |
-| `req__Requirement_priority` | 1 | `P0`..`P3` (enum) | Migration & gate ordering |
-| `req__Requirement_area` | 0..1 | wikilink → `ems__Area` | Grouping (Alpha-critical, etc.) |
-| `req__Requirement_author` | 1 | wikilink → person/ExoAssistant | Drafter provenance |
-| `req__Requirement_approvedBy` | 0..1 | wikilink → person | Approver (≠ drafter) |
-| `req__Requirement_approvedAt` | 0..1 | dateTime | When approved (for re-approval-on-change) |
-| `req__Requirement_baseline` | 0..1 | wikilink → approved snapshot / `pmbok__ChangeRequest` | Versioning / change-history |
+| Property                            | Card. | Range / values                                                           | Purpose                                                                                                      |
+| ----------------------------------- | ----- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `req__Requirement_statement` (body) | 1     | **Gherkin Given/When/Then** in the asset body                            | The functional spec (human + AI readable)                                                                    |
+| `req__Requirement_jobStory`         | 0..1  | "When ⟨situation⟩, I want ⟨motivation⟩, so ⟨outcome⟩"                    | Optional user-value framing                                                                                  |
+| `req__Requirement_covers`           | 1..N  | wikilink → command / feature                                             | What behavior this is _about_                                                                                |
+| `req__Requirement_verifiedBy`       | 0..N  | (derived) test-ID(s) the checker resolves from `@req:<uid>` tags         | The existing real test(s) that exercise it                                                                   |
+| `req__Requirement_bindingClass`     | 0..N  | `unit` \| `integration` \| `e2e` \| `gui-bdd` \| `ui-acceptance`         | Class of each binding (gates P0, §3.6). `ui-acceptance` = manual computer-control verification (no jest tag) |
+| `req__Requirement_implementedBy`    | 0..N  | wikilink → command / PR# / code ref                                      | Implementation pointer                                                                                       |
+| `req__Requirement_refines`          | 0..1  | wikilink → parent `req__Requirement` (UWI child→parent)                  | Decomposition / acceptance↔system layering                                                                   |
+| `req__Requirement_status`           | 1     | `Draft` \| `Approved` \| `Deprecated` (enum assets) — **human-authored** | Lifecycle                                                                                                    |
+| `req__Requirement_priority`         | 1     | `P0`..`P3` (enum)                                                        | Migration & gate ordering                                                                                    |
+| `req__Requirement_area`             | 0..1  | wikilink → `ems__Area`                                                   | Grouping (Alpha-critical, etc.)                                                                              |
+| `req__Requirement_author`           | 1     | wikilink → person/ExoAssistant                                           | Drafter provenance                                                                                           |
+| `req__Requirement_approvedBy`       | 0..1  | wikilink → person                                                        | Approver (≠ drafter)                                                                                         |
+| `req__Requirement_approvedAt`       | 0..1  | dateTime                                                                 | When approved (for re-approval-on-change)                                                                    |
+| `req__Requirement_baseline`         | 0..1  | wikilink → approved snapshot / `pmbok__ChangeRequest`                    | Versioning / change-history                                                                                  |
 
 - **`verified` is runtime-derived, never persisted** (precedent:
-  `exo__AssetSpace_materialized`): a requirement is *verified* iff it has ≥1
+  `exo__AssetSpace_materialized`): a requirement is _verified_ iff it has ≥1
   revert-verified `_verifiedBy` test passing in CI. The read-only checker computes
   it; it is **not** a stored `_status` value (that mix was ill-typed — panel).
 - **Re-approval on change**: any diff to an `Approved` requirement's statement
   body resets `_status → Draft` (baseline-freeze-on-change; §3.5).
-- **EARS is *not* used here** — EARS "THE SYSTEM SHALL…" (Ubiquitous pattern for
+- **EARS is _not_ used here** — EARS "THE SYSTEM SHALL…" (Ubiquitous pattern for
   invariants/NFRs) belongs to the **ADR domain** (§3.9), not to functional BDD.
 
 UID-canon filenames, UWI (`_refines` child→parent), co-located per CR-1.
@@ -232,7 +232,7 @@ UID-canon filenames, UWI (`_refines` child→parent), co-located per CR-1.
   and the binding and then self-certify. Therefore authorship of the requirement
   is **decoupled from verification of its binding**: the `Approved → verified`
   fact is established **only** by falsifiable revert-verify evidence (§3.6), not
-  by drafting. Human approval covers the *prose*; revert-verify covers the *bind*.
+  by drafting. Human approval covers the _prose_; revert-verify covers the _bind_.
 
 ### 3.6 Executable — bind to existing tests, revert-verified, NO new runner
 
@@ -256,21 +256,37 @@ confirmed) is the executable mechanism:
   must **fail when the production behavior is reverted**. The checker can't run
   this automatically, so the RFC mandates it as an authoring gate and makes it a
   **machine-checkable token** — a `Revert-verified: @req:<uid> reverting <ref> →
-  <test> RED` line in the PR/commit body (borrowing the internal
+<test> RED` line in the PR/commit body (borrowing the internal
   `integration-test-revert-verify` discipline). `verified` (§3.3) requires this
   token to exist.
-- **Binding-class gate for P0**: a `P0` requirement may **not** be bound *solely*
-  to a `unit` test — at least one `_verifiedBy` must be `integration`, `e2e`, or
-  `gui-bdd` (real-prod-exercising, e.g. `eka-gui` / Playwright). `req__Requirement_bindingClass`
+- **Binding-class gate for P0**: a `P0` requirement may **not** be bound _solely_
+  to a `unit` test — at least one `_verifiedBy` must be `integration`, `e2e`,
+  `gui-bdd`, or `ui-acceptance` (real-prod-exercising, e.g. `eka-gui` / Playwright
+  / live computer-control). `req__Requirement_bindingClass`
   records each binding's class; the checker enforces the floor.
+
+> **Verification tiers — automated (`@req` jest tag) vs manual (`ui-acceptance`).**
+> Most requirements bind to an automated test via a `@req:<uid>` tag and are
+> revert-verified by the discipline above. Some user-facing behaviors are only
+> meaningfully verifiable through the **live UI** (computer-control against real
+> Obsidian) — for these, `req__Requirement_bindingClass: ui-acceptance` declares
+> a **manual** verification path: the binding is the recorded **computer-control
+> evidence** (screenshot + date + observed result), **not** a jest tag. The
+> traceability checker therefore does **not** expect a `@req` jest binding for a
+> `ui-acceptance` requirement and does **not** flag it as an orphan; it counts it
+> as _manually verified_ (covered, exempt from the jest-orphan check), and
+> `ui-acceptance` satisfies the P0 floor (live UI is real-prod-exercising). This
+> tier is what the UX/onboarding requirements (`exoas-ui-reqs`) use.
 
 This structurally cannot become harness-theater: there is no second assertion
 layer, the only tests are the real ones already in CI, and a binding that doesn't
-fail-on-revert is invalid by definition.
+fail-on-revert is invalid by definition. (The `ui-acceptance` tier substitutes
+recorded live-UI evidence for the jest revert-verify; it is not a self-asserting
+runner.)
 
 ### 3.7 Enforcement — soft→hard ramp with a real flip-trigger
 
-Anthropic: *hooks/CI gates are deterministic guarantees; CLAUDE.md is advisory.*
+Anthropic: _hooks/CI gates are deterministic guarantees; CLAUDE.md is advisory._
 
 - **Phase 1 (soft):** a new CI job **`requirements-trace`** runs the checker
   **non-blocking** — posts the report (orphans, dangling, duplicates, coverage %)
@@ -281,7 +297,7 @@ Anthropic: *hooks/CI gates are deterministic guarantees; CLAUDE.md is advisory.*
   resolves" via grep) — because archgate's `RuleContext` is repo-scoped
   (`glob`/`grep`/`readFile`) with **no vault-graph access** and CI runs it
   whole-tree (verified: `.archgate` rules can't see vault assets nor a diff
-  delta). Behavior PRs carry a repo-visible **`Req: <uid>`** token archgate *can*
+  delta). Behavior PRs carry a repo-visible **`Req: <uid>`** token archgate _can_
   grep; the CI job validates the token resolves.
 - **Phase 2 (hard) — with a forced flip:** the Alpha-critical (exo) requirement
   set is an **enumerated checklist** in the implementation subproject. When every
@@ -305,15 +321,15 @@ requirements are **not** migrated into `req` — they are already ADRs (§3.9).
 The single most important v2 decision (Andrey): **two requirement homes by
 type**, no overlap:
 
-| Requirement type | Canonical home | Format | Enforcement |
-| --- | --- | --- | --- |
-| **Architectural + non-functional** (NFR: performance, security, reliability; structural invariants like UUID-filenames, command-visibility) | **`.archgate` ADRs** | EARS "THE SYSTEM SHALL…" / ADR prose + `.rules.ts` | `archgate` (existing required check) |
-| **Functional** (user-facing behaviors, command outcomes, the link-renders-"Daily" example) | **vault BDD `req__Requirement`** | Gherkin Given/When/Then | `requirements-trace` (new) |
+| Requirement type                                                                                                                            | Canonical home                   | Format                                             | Enforcement                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | -------------------------------------------------- | ------------------------------------ |
+| **Architectural + non-functional** (NFR: performance, security, reliability; structural invariants like UUID-filenames, command-visibility) | **`.archgate` ADRs**             | EARS "THE SYSTEM SHALL…" / ADR prose + `.rules.ts` | `archgate` (existing required check) |
+| **Functional** (user-facing behaviors, command outcomes, the link-renders-"Daily" example)                                                  | **vault BDD `req__Requirement`** | Gherkin Given/When/Then                            | `requirements-trace` (new)           |
 
 This eliminates the four-places-of-truth duplication (an invariant is **not**
-restated as a `req` asset — it *is* the ADR) **and** fills the NFR gap (NFRs have
+restated as a `req` asset — it _is_ the ADR) **and** fills the NFR gap (NFRs have
 a home — the ADR — so the `req` ontology needs no NFR slot). The
-requirements-management **system** is the *federation* of both — functional
+requirements-management **system** is the _federation_ of both — functional
 requirements from the vault + architectural/NFR from ADRs. (Presenting them as one
 browsable site is the carved Living-Documentation RFC's job; RFC 0003 makes both
 SPARQL-/CI-queryable.)
@@ -331,36 +347,36 @@ PR/commit body --Revert-verified:--> binding validity      (falsifiable evidence
 ADR  --archgate rule-->              architectural/NFR enforcement (separate lane)
 ```
 
-SPARQL answers: *which Alpha-critical functional requirements have no
-revert-verified test?*, *which commands have zero covering requirement?*, *what
-requirements does PR #N touch?*, *which `Approved` requirements changed without
-re-approval?*
+SPARQL answers: _which Alpha-critical functional requirements have no
+revert-verified test?_, _which commands have zero covering requirement?_, _what
+requirements does PR #N touch?_, _which `Approved` requirements changed without
+re-approval?_
 
 ## 5. Alternatives considered (rejected)
 
-| Alternative | Why rejected |
-| --- | --- |
-| **Cucumber/Gherkin step-def runner** | Proven failure here (#3401: 204 self-asserting scenarios, zero prod). Format kept; runner forbidden. |
-| **`@req` tag = sufficient binding** (v1's implicit assumption) | Tag proves *association*, not *exercise* — would reproduce harness-theater at the traceability layer. v2 requires revert-verify + binding-class. |
-| **All requirements as new `req` assets incl. architectural/NFR** (v1) | Four-places-of-truth duplication, unjustified per-PR tax for a solo+AI dev. v2 federates: ADR owns architectural/NFR, BDD owns functional. |
-| **`.feature`/markdown spec files in-repo as canon** | Duplicates the vault graph; non-SPARQL-queryable; disconnected from homoiconic model. The (carved) Pages generator renders *from* the graph instead. |
-| **Single shared `req` assetspace for all instances** | Loses profile-scoped mount + audience-layered privacy. Per-module `exoas-<m>-reqs` gives both, and makes the future Pages publication fail-closed by repo visibility. |
-| **Audience via query-time public/private allowlist** | One mis-scoped query leaks private requirements. The per-module repo-visibility boundary (§3.2) is default-deny by construction. (The Pages *publication* that relies on it is carved to a separate RFC.) |
-| **Soft-only / manual-flip enforcement** | Becomes shelfware (the `uj` death). v2 adds a dated auto-flip criterion + soft-gate expiry. |
-| **ReqIF** | XML, heavyweight, non-RDF, non-executable. No interop need. |
-| **Big-bang migration** | Disproportionate; gating an empty base deadlocks. Incremental, exo-first. |
-| **Keep/extend `uj__UserJourney`** | Unused, manual, starter-kit-scoped. Format insight reused under a fresh, CI-bound `req` class. |
+| Alternative                                                           | Why rejected                                                                                                                                                                                              |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cucumber/Gherkin step-def runner**                                  | Proven failure here (#3401: 204 self-asserting scenarios, zero prod). Format kept; runner forbidden.                                                                                                      |
+| **`@req` tag = sufficient binding** (v1's implicit assumption)        | Tag proves _association_, not _exercise_ — would reproduce harness-theater at the traceability layer. v2 requires revert-verify + binding-class.                                                          |
+| **All requirements as new `req` assets incl. architectural/NFR** (v1) | Four-places-of-truth duplication, unjustified per-PR tax for a solo+AI dev. v2 federates: ADR owns architectural/NFR, BDD owns functional.                                                                |
+| **`.feature`/markdown spec files in-repo as canon**                   | Duplicates the vault graph; non-SPARQL-queryable; disconnected from homoiconic model. The (carved) Pages generator renders _from_ the graph instead.                                                      |
+| **Single shared `req` assetspace for all instances**                  | Loses profile-scoped mount + audience-layered privacy. Per-module `exoas-<m>-reqs` gives both, and makes the future Pages publication fail-closed by repo visibility.                                     |
+| **Audience via query-time public/private allowlist**                  | One mis-scoped query leaks private requirements. The per-module repo-visibility boundary (§3.2) is default-deny by construction. (The Pages _publication_ that relies on it is carved to a separate RFC.) |
+| **Soft-only / manual-flip enforcement**                               | Becomes shelfware (the `uj` death). v2 adds a dated auto-flip criterion + soft-gate expiry.                                                                                                               |
+| **ReqIF**                                                             | XML, heavyweight, non-RDF, non-executable. No interop need.                                                                                                                                               |
+| **Big-bang migration**                                                | Disproportionate; gating an empty base deadlocks. Incremental, exo-first.                                                                                                                                 |
+| **Keep/extend `uj__UserJourney`**                                     | Unused, manual, starter-kit-scoped. Format insight reused under a fresh, CI-bound `req` class.                                                                                                            |
 
 ## 6. Phasing
 
-| Phase | Deliverable | Gate |
-| --- | --- | --- |
-| **P0 — Ontology & storage** | `exoas-req` (TBox: class + props + enums) + `exoas-exo-reqs` (ABox repo), registry `dependsOn`, authoring guidance, 3–5 seed `exo` requirements incl. Andrey's link-label example, each **revert-verified**. | — |
-| **P1 — Checker + soft CI** | `exocortex-cli requirements audit` (orphans/dangling/duplicates/coverage + binding-class) + `@req:<uid>`-in-`it()` convention + `requirements-trace` CI job **(soft)** + archgate whole-tree `@req`-resolves rule + `Req:`/`Revert-verified:` PR-body tokens. **Bring the read-surface carrot forward**: the audit report ("what behaviors have no test / my coverage") ships here so writing a requirement pays back immediately, before any gate. | soft CI |
-| **P2 — Migrate exo (Alpha-critical)** | Distill `exo`-module functional behaviors into `exoas-exo-reqs`, each revert-verified-bound. Enumerate the P0 checklist that arms the flip. | soft→ |
-| **P3 — Hard-gate** | Auto-flip `requirements-trace` to **required** when the P0 checklist is fully revert-verified, **or** soft-gate expiry at Alpha GA. New behavior must be spec-first. | **hard CI** |
-| **~~P4 — Living Documentation (GitHub Pages)~~** | ⛔ **CARVED OUT (D4, Revision-3)** → a separate RFC owns it: the generator (public reqs assetspaces + ADRs → static site), the fail-closed-by-repo-visibility privacy model, and the no-private-leak acceptance gate. **Not part of RFC 0003.** | — |
-| **P5 — Expand** | Add further `exoas-<module>-reqs` per module (e.g. `exoas-ems-cmd-reqs` once `exoas-ems-cmds` exists); raise coverage thresholds. | hard CI |
+| Phase                                            | Deliverable                                                                                                                                                                                                                                                                                                                                                                                                                                         | Gate        |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| **P0 — Ontology & storage**                      | `exoas-req` (TBox: class + props + enums) + `exoas-exo-reqs` (ABox repo), registry `dependsOn`, authoring guidance, 3–5 seed `exo` requirements incl. Andrey's link-label example, each **revert-verified**.                                                                                                                                                                                                                                        | —           |
+| **P1 — Checker + soft CI**                       | `exocortex-cli requirements audit` (orphans/dangling/duplicates/coverage + binding-class) + `@req:<uid>`-in-`it()` convention + `requirements-trace` CI job **(soft)** + archgate whole-tree `@req`-resolves rule + `Req:`/`Revert-verified:` PR-body tokens. **Bring the read-surface carrot forward**: the audit report ("what behaviors have no test / my coverage") ships here so writing a requirement pays back immediately, before any gate. | soft CI     |
+| **P2 — Migrate exo (Alpha-critical)**            | Distill `exo`-module functional behaviors into `exoas-exo-reqs`, each revert-verified-bound. Enumerate the P0 checklist that arms the flip.                                                                                                                                                                                                                                                                                                         | soft→       |
+| **P3 — Hard-gate**                               | Auto-flip `requirements-trace` to **required** when the P0 checklist is fully revert-verified, **or** soft-gate expiry at Alpha GA. New behavior must be spec-first.                                                                                                                                                                                                                                                                                | **hard CI** |
+| **~~P4 — Living Documentation (GitHub Pages)~~** | ⛔ **CARVED OUT (D4, Revision-3)** → a separate RFC owns it: the generator (public reqs assetspaces + ADRs → static site), the fail-closed-by-repo-visibility privacy model, and the no-private-leak acceptance gate. **Not part of RFC 0003.**                                                                                                                                                                                                     | —           |
+| **P5 — Expand**                                  | Add further `exoas-<module>-reqs` per module (e.g. `exoas-ems-cmd-reqs` once `exoas-ems-cmds` exists); raise coverage thresholds.                                                                                                                                                                                                                                                                                                                   | hard CI     |
 
 ## 7. Success metrics
 
@@ -393,23 +409,25 @@ re-approval?*
 ## 9. Interview record (Andrey, 2026-06-19/20)
 
 **STEP B (pre-RFC):**
+
 1. **Storage** → vault RDF canon + GitHub Pages; open to abandoning `uj`; "all
    changes through one process"; Pages "не блокер". → refined in STEP E to
    **per-module assetspaces** (below).
 2. **Enforcement** → soft→hard ramp.
 3. **Migration** → incremental, Alpha-critical first.
-4–9. Gherkin format, per-behavior granularity, RDF traceability,
+   4–9. Gherkin format, per-behavior granularity, RDF traceability,
    bind-to-existing-tests (no Cucumber), AI-drafts/user-approves, MVP→target —
    confirmed.
 
 **STEP E (interview-per-finding, after the adversarial panel):**
-- **D1** (CRITICAL — tag proves association not exercise): **revert-verify evidence
-  + binding-class for P0** (P0 must hit e2e/integration/gui-bdd).
+
+- **D1** (CRITICAL — tag proves association not exercise): \*\*revert-verify evidence
+  - binding-class for P0\*\* (P0 must hit e2e/integration/gui-bdd).
 - **D2 + D5** (duplication + NFR gap): Andrey's decision — **ADR/archgate own
   architectural + NFR; BDD `req` owns functional**. One stroke, no duplication.
 - **D3** (ramp never flips): **dated auto-flip criterion + soft-gate expiry**.
-- **D4** (Pages privacy): Revision 2 chose *keep inline, fail-closed by repo
-  visibility*; the **al-decisions2 final decision (Revision 3) carves P4 out into
+- **D4** (Pages privacy): Revision 2 chose _keep inline, fail-closed by repo
+  visibility_; the **al-decisions2 final decision (Revision 3) carves P4 out into
   a separate RFC** that owns the privacy model. RFC 0003 keeps only the storage
   audience boundary it relies on.
 - **Storage refinement** (Andrey): **per-module requirement assetspaces** —
@@ -421,7 +439,7 @@ re-approval?*
 - **Untraced-behavior detection** is best-effort (needs a command/feature
   registry to enumerate against) — P1 ships orphan + dangling + duplicate; defer
   full untraced-behavior to a later phase.
-- **Acceptance↔system layering** via `_refines` is provided; the *boundary* of
+- **Acceptance↔system layering** via `_refines` is provided; the _boundary_ of
   "one verifiable behavior" stays a human judgment (guidance, not a checker rule).
 - **`req` namespace registration** in `exoas-registry` + `dependsOn exoas-req` —
   settle the exact anchor names for each `exoas-<module>-reqs` in P0.

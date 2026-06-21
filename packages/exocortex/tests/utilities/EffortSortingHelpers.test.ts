@@ -32,7 +32,7 @@ describe("EffortSortingHelpers", () => {
   });
 
   describe("sortByStartTime", () => {
-    it("should put tasks with specific time before tasks without time", () => {
+    it("@req:e1242876-0dc5-4903-8a95-2ee631ff90cf should put tasks with specific time before tasks without time", () => {
       const taskWithTime = { startTimestamp: "2025-01-15T09:00:00" };
       const taskWithoutTime = { startTimestamp: "2025-01-15T00:00:00" };
 
@@ -93,7 +93,7 @@ describe("EffortSortingHelpers", () => {
       expect(EffortSortingHelpers.sortByPriority(b, a)).toBe(1);
     });
 
-    it("should prioritize not done over done", () => {
+    it("@req:ed68d305-2f3a-4e8a-8285-d66620ee0158 should prioritize not done over done", () => {
       const a = { isTrashed: false, isDone: false, metadata: {} };
       const b = { isTrashed: false, isDone: true, metadata: {} };
       expect(EffortSortingHelpers.sortByPriority(a, b)).toBe(-1);
