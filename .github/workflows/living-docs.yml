@@ -6,9 +6,14 @@
 # `git submodule update` can pull ONLY public submodules. A private submodule would
 # fail the credential-free fetch and break the build (fail-closed by absence, §5).
 #
-# MVP-2 scope: BUILD + TEST the generator only — there is NO GitHub Pages deploy
-# here. Enabling Pages and the first publish are outward-facing + irreversible and
-# require explicit human confirmation (MVP-4, RFC 0004 §5).
+# Scope (MVP-3): BUILD + TEST the generator and publish the built `_site` as a
+# downloadable CI ARTIFACT — there is still NO GitHub Pages deploy here. Enabling
+# Pages and the first publish are outward-facing + irreversible and require
+# explicit human confirmation (MVP-4, RFC 0004 §5).
+#
+# The PAT-less air-gap is additionally enforced as a REQUIRED gate by the archgate
+# rule SEC-002 (.archgate/adrs/SEC-002-living-docs-air-gap.rules.ts) and proved by
+# the docs-site test `test/workflow-air-gap.test.mjs`.
 name: Living Docs
 
 on:
@@ -20,8 +25,16 @@ on:
       - "packages/exoas-exo-reqs"
       - "packages/exoas-exo"
       - ".github/workflows/living-docs.yml"
+  push:
+    branches: [main]
+    paths:
+      - "docs-site/**"
+      - ".archgate/**"
+      - "packages/exoas-exo-reqs"
+      - "packages/exoas-exo"
+      - ".github/workflows/living-docs.yml"
 
-# Read-only: this job never needs write access (no deploy in MVP-2).
+# Read-only: this job never needs write access (no Pages deploy — MVP-3).
 permissions:
   contents: read
 
@@ -65,3 +78,13 @@ jobs:
           test -d _site/requirements
           test -d _site/adrs
           echo "Living-Docs site built: $(find _site -type f | wc -l) files."
+
+      # Publish the built site as a downloadable CI artifact (NO deploy — the
+      # site is inspectable here, but is not served to the public until MVP-4
+      # enables GitHub Pages on explicit human confirmation).
+      - name: Upload _site as a CI artifact (no publish)
+        uses: actions/upload-artifact@v4
+        with:
+          name: living-docs-site
+          path: _site
+          retention-days: 14

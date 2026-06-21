@@ -1,8 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { toAdrRecord, loadAdrs } from "../lib/adrs.mjs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -46,3 +48,21 @@ test(
     if (clean) assert.equal(clean.rules, true);
   },
 );
+
+test("loadAdrs throws on a duplicate ADR id (no silent page overwrite)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "adrs-dup-"));
+  await mkdir(join(dir, "adrs"), { recursive: true });
+  try {
+    await writeFile(
+      join(dir, "adrs", "X-001-a.md"),
+      `---\nid: X-001\ntitle: First\ndomain: a\n---\nbody a`,
+    );
+    await writeFile(
+      join(dir, "adrs", "X-001-b.md"),
+      `---\nid: X-001\ntitle: Second\ndomain: b\n---\nbody b`,
+    );
+    await assert.rejects(() => loadAdrs(join(dir, "adrs")), /Duplicate ADR id "X-001"/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

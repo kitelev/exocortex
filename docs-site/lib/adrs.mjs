@@ -50,6 +50,22 @@ export async function loadAdrs(adrsPath) {
     const content = await readFile(file, "utf-8");
     records.push(toAdrRecord(file, content));
   }
+
+  // Fail loud on a duplicate ADR id: each `id` becomes a `adrs/<id>.html` page,
+  // so two ADRs sharing an id would SILENTLY overwrite one another in the output
+  // (and produce two index rows linking to the same page). Surface it as a build
+  // error instead of shipping a broken/missing page.
+  const byId = new Map();
+  for (const r of records) {
+    const prev = byId.get(r.id);
+    if (prev) {
+      throw new Error(
+        `Duplicate ADR id "${r.id}": ${prev.file} and ${r.file} both render to adrs/${r.id}.html. Give each ADR a unique id.`,
+      );
+    }
+    byId.set(r.id, r);
+  }
+
   records.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
   return records;
 }
