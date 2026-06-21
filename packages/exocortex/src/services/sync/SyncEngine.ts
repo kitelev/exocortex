@@ -1097,6 +1097,55 @@ export class SyncEngine {
         };
       }
 
+      // ── No-op REST optimisation (perf — ExoSync Phase 1) ────────────────
+      // D22 base-validation needs the ACTUAL root tree of the watermark commit.
+      // Status quo fetches it eagerly (getCommitInfo(base), 1 REST every sync).
+      // But git commits are content-addressed: the commit object at
+      // `watermark.lastSyncedSha` can NEVER carry a tree other than the one we
+      // recorded as `rootTreeSha`. So when the head ref STILL points at
+      // lastSyncedSha, the base commit is BY DEFINITION reachable (it IS the
+      // current head — never GC'd) and its tree is necessarily rootTreeSha —
+      // the getCommitInfo(base) round-trip is PROVABLY moot. We fetch the head
+      // ONCE here (on the steady-state asset path the mtime-manifest already
+      // governs) and, when it equals lastSyncedSha, pass the recorded
+      // rootTreeSha straight through — turning a no-op sync from 2 REST/AS
+      // (base-commit + head) into 1 (head only). The fetched head is threaded
+      // into runPushLoop so its first iteration reuses it (no double getHeadSha)
+      // — but ONLY when there is nothing local to push, so an actual push always
+      // re-fetches the freshest head (the push race window is unchanged).
+      //
+      // Zero-loss backstop: the skip is gated on `!fullRehash`, so the periodic
+      // full re-hash valve (the SAME one that guards the mtime-preserving edit)
+      // ALSO performs the full getCommitInfo(base) validation — catching the
+      // (adversarial-only) corrupt watermark whose rootTreeSha drifted from
+      // files[] yet stayed JSON-parseable. Natural corruption yields a null
+      // watermark + full re-scan (R10) long before that. And even within the
+      // valve window a drifted base can never drive a silent remote overwrite:
+      // the diff runs against `watermark.files` (not rootTreeSha), and every
+      // push is GitHub-side force:false fast-forward-gated (restCommit — the
+      // ultimate remote-side backstop), so a stale base degrades to a 422 →
+      // re-pull → re-push, never a loss. Every other case
+      // (cache off, first sync, file mode, full re-hash, head moved) keeps the
+      // eager getCommitInfo(base) validation unchanged (status quo).
+      let prefetchedHead: string | undefined;
+      let actualBaseTreeSha: string | null;
+      if (canUseCache && !fullRehash) {
+        // canUseCache ⇒ watermark !== null (asset-mode steady state).
+        prefetchedHead = await getHeadSha(
+          this.transport,
+          spec.owner,
+          spec.repo,
+          spec.branch,
+          this.deps.baseURL,
+        );
+        actualBaseTreeSha =
+          prefetchedHead === watermark.lastSyncedSha
+            ? watermark.rootTreeSha
+            : await this.resolveBaseTreeSha(spec, watermark);
+      } else {
+        actualBaseTreeSha = await this.resolveBaseTreeSha(spec, watermark);
+      }
+
       this.emitProgress(onProgress, spec.repoKey, "detecting");
       const detection = await detectChanges({
         localFiles: disk,
@@ -1104,7 +1153,7 @@ export class SyncEngine {
         // when the cache is off → every file is hashed from `disk` (status quo).
         ...(canUseCache ? { cachedEntries: reused } : {}),
         watermark,
-        actualBaseTreeSha: await this.resolveBaseTreeSha(spec, watermark),
+        actualBaseTreeSha,
         sha1: this.sha1,
       });
       if (detection.kind === "full-conflict") {
@@ -1185,6 +1234,7 @@ export class SyncEngine {
         sizeExcluded,
         direction,
         onProgress,
+        prefetchedHead,
       );
       inFlightDeletionPaths = [];
       if (loop.kind !== "done" && pinned.pushDeletionsAll.size > 0) {
@@ -1729,6 +1779,13 @@ export class SyncEngine {
     sizeExcluded: ReadonlySet<string> = new Set(),
     direction: SyncDirection = "sync",
     onProgress?: SyncProgressFn,
+    /**
+     * Head SHA pre-fetched in `syncLocked` for the no-op REST optimisation
+     * (perf — ExoSync Phase 1). Reused on the FIRST attempt ONLY when there is
+     * nothing local to push, so a push always re-fetches the freshest head and
+     * the push race window is unchanged. A 422 retry always re-fetches too.
+     */
+    prefetchedHead?: string,
   ): Promise<PushLoopOutcome> {
     const {
       localChanges,
@@ -1754,13 +1811,26 @@ export class SyncEngine {
     const remoteOversized = new Set<string>();
 
     for (;;) {
-      examinedHead = await getHeadSha(
-        this.transport,
-        spec.owner,
-        spec.repo,
-        spec.branch,
-        this.deps.baseURL,
-      );
+      // Reuse the head pre-fetched in syncLocked on the FIRST attempt — but
+      // ONLY when there is nothing local to push (perf — ExoSync Phase 1). A
+      // pure no-op / pull-only sync then spends ONE getHeadSha total (the
+      // pre-fetch), not two. An actual push re-fetches the freshest head here
+      // (its race window is unchanged); a 422 retry (attempt > 0) ALWAYS
+      // re-fetches — the contended push proves the remote moved, so the stale
+      // value must not drive the re-pull.
+      examinedHead =
+        attempt === 0 &&
+        prefetchedHead !== undefined &&
+        pushFilesAll.size === 0 &&
+        pushDeletionsAll.size === 0
+          ? prefetchedHead
+          : await getHeadSha(
+              this.transport,
+              spec.owner,
+              spec.repo,
+              spec.branch,
+              this.deps.baseURL,
+            );
       applyWrites = [];
       applyDeletes = [];
       // Merge resolution is recomputed per iteration — a re-pull changes the
@@ -1959,10 +2029,13 @@ export class SyncEngine {
         (pushFiles.size > 0 || pushDeletions.size > 0) &&
         headTreeByPath === undefined
       ) {
-        // Fast path: `examinedHead === watermark.lastSyncedSha`, and
-        // `rootTreeSha` was D22-verified against the actual commit this
-        // very cycle (detectChanges) — one tree GET, and only when there
-        // is something to push (the no-change happy path never gets here).
+        // Fast path: `examinedHead === watermark.lastSyncedSha`, so
+        // `rootTreeSha` is the base commit's tree — validated this cycle
+        // either eagerly (getCommitInfo, detectChanges) or, on the no-op REST
+        // path, by the head-unmoved invariant itself (head === base ⇒ the
+        // content-addressed commit carries exactly rootTreeSha). One tree GET,
+        // and only when there is something to push (the no-change happy path
+        // never gets here); a stale rootTreeSha would 404 here and fail safe.
         headTreeByPath = treeByPath(
           await getTree(
             this.transport,
