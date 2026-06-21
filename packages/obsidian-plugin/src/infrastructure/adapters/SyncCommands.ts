@@ -289,6 +289,21 @@ export class SyncCommands {
 
     const collection = await this.deps.collectSpecs();
     for (const w of collection.warnings) log(`[ExoSync] ${w}`);
+    // FINDING-3 (al-ux-findings) — surface mounted-but-undeclared packs so the
+    // user is not silently surprised that edits in an ad-hoc «Add a knowledge
+    // pack» repo (added by URL outside the registry, hence no AssetSpace
+    // descriptor) never push. One notice per run; also logged for the record.
+    if (collection.mountedNotDeclared.length > 0) {
+      const n = collection.mountedNotDeclared.length;
+      log(
+        `[ExoSync] ${n} mounted pack(s) not synced (no AssetSpace descriptor): ` +
+          collection.mountedNotDeclared.join(", "),
+      );
+      this.deps.notify(
+        `${n} mounted pack(s) won't sync — they have no AssetSpace descriptor ` +
+          "(added by URL outside the registry). Their edits stay local.",
+      );
+    }
     if (collection.specs.length === 0) {
       this.deps.notify(
         "Nothing to sync — no materialized AssetSpaces with a GitHub source found",

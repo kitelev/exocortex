@@ -50,6 +50,29 @@ describe("collectSyncRepoSpecs", () => {
     expect(result.specs).toEqual([spec()]);
     expect(result.asUidByRepoKey.get(`o/r#${SYNC_BRANCH}`)).toBe("uid-1");
     expect(result.warnings).toEqual([]);
+    // A declared+mounted folder is NOT flagged as undeclared.
+    expect(result.mountedNotDeclared).toEqual([]);
+  });
+
+  // FINDING-3 (al-ux-findings) — a mount folder on disk with no AssetSpace
+  // descriptor (ad-hoc «Add a knowledge pack» by URL) is reported as
+  // mounted-but-undeclared so ExoSync can warn the user it won't sync.
+  it("flags a mounted folder that has no AssetSpace descriptor (FINDING-3)", async () => {
+    const adapter = new InMemoryAdapter();
+    adapter.mkdirAll("assetspaces/o/r"); // declared (descriptor as1.md below)
+    adapter.mkdirAll("assetspaces/o/adhoc"); // mounted, NO descriptor
+    const app = makeApp({
+      adapter,
+      mdFiles: [{ path: "as1.md" }],
+      frontmatters: new Map([
+        ["as1.md", assetSpaceFm("uid-1", "https://github.com/o/r")],
+      ]),
+    });
+
+    const result = await collectSyncRepoSpecs(app as unknown as App);
+
+    expect(result.specs).toEqual([spec()]);
+    expect(result.mountedNotDeclared).toEqual(["assetspaces/o/adhoc"]);
   });
 
   it("excludes AssetSpaces whose mount folder is absent (VL#4)", async () => {
