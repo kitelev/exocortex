@@ -860,6 +860,11 @@ export class ExocortexSettingTab extends PluginSettingTab {
               describePatConnection(result),
               result.ok ? "valid" : "invalid",
             );
+          } catch {
+            // testPatConnection is contracted never to reject (it returns a
+            // failure result), but guard so a wiring bug never leaves the status
+            // stuck on "Testing…" / aria-busy. Mirrors the onboarding panel.
+            setStatus("Test connection failed: unexpected error.", "invalid");
           } finally {
             button.setDisabled(false);
           }
