@@ -199,7 +199,7 @@ describe("Issue #3179: create cardinality emission via core service (integration
     );
   });
 
-  it("AC#1: ems__Effort_relatesTo (Multiple cardinality) → array form", async () => {
+  it("@req:699d121c-d410-4a26-b68c-14470ded6d39 AC#1: ems__Effort_relatesTo (Multiple cardinality) → array form", async () => {
     const { frontmatter, content } = await run(
       { ems__Effort_relatesTo: `[[${STATUS_BACKLOG_UID}]]` },
       "TEST-3179-multi",

@@ -63,7 +63,7 @@ describe("Issue #3113: rename-to-uid updates inbound wikilinks", () => {
     return full;
   }
 
-  it("collapses all wikilink shapes to bare [[uid]]; skips code/embeds/already-UID-form", async () => {
+  it("@req:8dc90308-e3e8-4f46-918a-c7757dd4b675 collapses all wikilink shapes to bare [[uid]]; skips code/embeds/already-UID-form", async () => {
     const inbox = "01 Inbox/Choco.md";
     write(inbox, targetFile({ uid: ASSET_UID, label: "Choco" }));
 
