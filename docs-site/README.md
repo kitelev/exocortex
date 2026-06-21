@@ -30,6 +30,19 @@ This generator does **no filtering** and needs none: the privacy guarantee is
 generator reads _only_ the local checkout — there is no network access and no
 cross-repo fetch. You cannot leak what was never fetched.
 
+### Output trust assumption (content rendering)
+
+Structural HTML (labels, uids, badges, attributes) is HTML-escaped
+(`escapeHtml`), and output **filenames** are sanitized (`safeSegment`) so a
+malformed `exo__Asset_uid`/ADR `id` cannot escape the output directory. The
+requirement/ADR **body** markdown, however, is rendered with `marked` at its
+default settings, so raw HTML in a body passes through verbatim. This is
+**intentional**: every source is a **public** submodule, so its authoring is
+trusted and its content is already public. The body render adds no net exposure
+over the public source. (If a future EXPAND phase ever ingests less-trusted
+content, sanitize the rendered body — e.g. DOMPurify — at that point; for the
+MVP's public-submodule sources it is not needed.)
+
 ## Usage
 
 ```bash

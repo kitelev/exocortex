@@ -79,6 +79,30 @@ test("buildSite emits a complete static site from fixtures", async () => {
   }
 });
 
+test("buildSite sanitizes a malformed uid — no path traversal escape", async () => {
+  const root = await mkdtemp(join(tmpdir(), "livingdocs-trav-"));
+  const reqs = join(root, "reqs");
+  const archgate = join(root, ".archgate");
+  const out = join(root, "_site");
+  await mkdir(reqs, { recursive: true });
+  await mkdir(join(archgate, "adrs"), { recursive: true });
+  // A hostile asset whose uid tries to escape the output directory.
+  await writeFile(
+    join(reqs, "evil.md"),
+    `---\nexo__Asset_uid: "../../../../ESCAPED"\nexo__Asset_label: "req: evil"\nreq__Requirement_status: "[[u|req__RequirementStatusDraft]]"\n---\nbody`,
+  );
+  try {
+    await buildSite({ reqs, archgate, out });
+    // The traversal target (outside out) must NOT exist.
+    assert.ok(!existsSync(join(root, "ESCAPED.html")), "uid must not escape output dir");
+    assert.ok(!existsSync(join(root, "..", "ESCAPED.html")));
+    // A sanitized file IS written inside out/requirements/.
+    assert.ok(existsSync(join(out, "requirements", "..-..-..-..-ESCAPED.html")));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("buildSite is idempotent / cleans output dir", async () => {
   const { root, reqs, archgate } = await makeFixture();
   const out = join(root, "_site");

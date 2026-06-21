@@ -9,6 +9,7 @@ import {
   adrPage,
   ontologyPage,
   STYLESHEET,
+  safeSegment,
 } from "./render.mjs";
 
 /**
@@ -58,11 +59,13 @@ export async function buildSite(opts) {
     indexPage({ reqs: requirements, adrs, stats, ontology: onto, generatedNote }),
   );
 
+  // safeSegment guards against a malformed asset whose uid/id contains a path
+  // separator escaping the output dir (defense-in-depth; real uids are UUIDs).
   for (const r of requirements) {
-    await write(join("requirements", `${r.uid}.html`), requirementPage(r));
+    await write(join("requirements", `${safeSegment(r.uid)}.html`), requirementPage(r));
   }
   for (const a of adrs) {
-    await write(join("adrs", `${a.id}.html`), adrPage(a));
+    await write(join("adrs", `${safeSegment(a.id)}.html`), adrPage(a));
   }
   if (onto.classes.length || onto.properties.length) {
     await write("ontology.html", ontologyPage(onto));

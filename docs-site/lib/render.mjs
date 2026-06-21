@@ -25,6 +25,20 @@ export function slug(s) {
     .replace(/^-+|-+$/g, "");
 }
 
+/**
+ * Sanitize a uid/id into a single SAFE path segment for an output filename + its
+ * matching href. Strips any path separator or other unsafe character (so a
+ * malformed `exo__Asset_uid: "../../etc/x"` cannot escape the output directory),
+ * while preserving case — identity for real data (UUIDs, `ARCH-001`). A segment
+ * that is empty or only dots is replaced with a literal marker. Used by both the
+ * filename writer (`site.mjs`) and the index hrefs so links always resolve.
+ */
+export function safeSegment(s) {
+  const cleaned = String(s ?? "").replace(/[^a-zA-Z0-9._-]/g, "-");
+  if (cleaned === "" || /^\.+$/.test(cleaned)) return "_invalid_";
+  return cleaned;
+}
+
 const STATUS_CLASS = {
   Approved: "ok",
   Draft: "warn",
@@ -174,7 +188,7 @@ export function indexPage({ reqs, adrs, stats, ontology, generatedNote }) {
   const reqRows = reqs
     .map(
       (r) => `<tr>
-  <td><a href="requirements/${escapeHtml(r.uid)}.html">${escapeHtml(r.label)}</a></td>
+  <td><a href="requirements/${safeSegment(r.uid)}.html">${escapeHtml(r.label)}</a></td>
   <td>${statusBadge(r.status)}</td>
   <td>${priorityBadge(r.priority) || "—"}</td>
   <td>${coverageBadge(r.covered, r.verifiedBy.length)}</td>
@@ -184,8 +198,8 @@ export function indexPage({ reqs, adrs, stats, ontology, generatedNote }) {
   const adrRows = adrs
     .map(
       (a) => `<tr>
-  <td><a href="adrs/${escapeHtml(a.id)}.html">${escapeHtml(a.id)}</a></td>
-  <td><a href="adrs/${escapeHtml(a.id)}.html">${escapeHtml(a.title)}</a></td>
+  <td><a href="adrs/${safeSegment(a.id)}.html">${escapeHtml(a.id)}</a></td>
+  <td><a href="adrs/${safeSegment(a.id)}.html">${escapeHtml(a.title)}</a></td>
   <td><span class="chip">${escapeHtml(a.domain)}</span></td>
   <td>${a.rules ? "⚙ enforced" : "documented"}</td>
 </tr>`,

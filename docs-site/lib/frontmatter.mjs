@@ -1,4 +1,4 @@
-import yaml from "js-yaml";
+import { parse as parseYaml } from "yaml";
 
 /**
  * Split a markdown document into its YAML frontmatter (the `---`-fenced block at
@@ -23,7 +23,7 @@ export function parseFrontmatter(content) {
   }
   let data = {};
   try {
-    const loaded = yaml.load(m[1]);
+    const loaded = parseYaml(m[1]);
     if (loaded && typeof loaded === "object") data = loaded;
   } catch {
     // Fail-open: an unparseable frontmatter yields an empty data object rather

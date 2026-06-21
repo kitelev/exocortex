@@ -8,7 +8,17 @@ import {
   requirementPage,
   adrPage,
   indexPage,
+  safeSegment,
 } from "../lib/render.mjs";
+
+test("safeSegment is identity for real ids but strips path separators", () => {
+  assert.equal(safeSegment("14b1c592-9879-4523-bc6e-5cebd81d4ac4"), "14b1c592-9879-4523-bc6e-5cebd81d4ac4");
+  assert.equal(safeSegment("ARCH-001"), "ARCH-001"); // case preserved
+  assert.equal(safeSegment("../../etc/passwd"), "..-..-etc-passwd"); // no separators survive
+  assert.doesNotMatch(safeSegment("../../etc/x"), /\//);
+  assert.equal(safeSegment(".."), "_invalid_");
+  assert.equal(safeSegment(""), "_invalid_");
+});
 
 test("escapeHtml neutralizes injection characters", () => {
   assert.equal(escapeHtml(`<script>"&'`), "&lt;script&gt;&quot;&amp;&#39;");
