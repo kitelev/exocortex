@@ -139,6 +139,63 @@ export interface MountBaseStorePort {
 }
 
 /**
+ * One file's entry in the per-device local mtime-manifest (perf, ExoSync
+ * Phase 1). A content-addressing CACHE keyed by `(mtimeMs, size)`: when a
+ * file's current stat matches a stored entry, its `blobSha` (and parsed
+ * `uid`) are reused WITHOUT reading or re-hashing the file. The keying fact:
+ * any real edit through Obsidian/the OS bumps `mtimeMs` (and usually `size`),
+ * so an unchanged `(mtimeMs, size)` reliably means unchanged content. The one
+ * theoretical hole — a content edit that preserves BOTH mtime and byte-size —
+ * is backstopped by the periodic full re-hash (see
+ * {@link LocalManifestRecord.lastFullRehashMs}) and, when the remote also
+ * moved, by the remote tree-SHA diff. NEVER a content authority.
+ */
+export interface LocalManifestEntry {
+  /** File modification time (ms) captured when the blobSha was computed. */
+  mtimeMs: number;
+  /** File byte size captured when the blobSha was computed. */
+  size: number;
+  /** Git blob SHA of the content at that `(mtimeMs, size)`. */
+  blobSha: string;
+  /** `exo__Asset_uid` parsed from the content then, if present (asset mode). */
+  uid?: string;
+}
+
+/**
+ * Per-device, per-repo local file manifest (perf cache). Lives in the SAME
+ * NON-synced device-local store family as the watermark (`.local.`-infix,
+ * Sync-excluded) — file mtimes are device-specific. Tolerant: a
+ * missing/corrupt record means "no cache" → the engine reads+hashes every
+ * file (status quo), never a wrong skip.
+ */
+export interface LocalManifestRecord {
+  version: 1;
+  /** Cache entries keyed by repo-relative forward-slash path. */
+  files: Record<string, LocalManifestEntry>;
+  /**
+   * Wall-clock (ms) of the last FULL re-hash (cache bypass). Zero-loss
+   * safety valve: when `now - lastFullRehashMs >= fullRehashIntervalMs` the
+   * engine ignores the cache and re-hashes every file, catching the
+   * (extraordinarily rare) edit that preserved both mtime and size. Bounds
+   * the staleness window to the interval regardless of sync frequency.
+   */
+  lastFullRehashMs: number;
+}
+
+/**
+ * Per-device local manifest persistence port (perf). Absent ⇒ the
+ * mtime-manifest optimisation is disabled and the engine reads+hashes every
+ * file each sync (status quo, zero regression). Tolerant on read (corrupt ⇒
+ * `null` ⇒ full re-hash), atomic on write (temp+rename) like the watermark
+ * store — a torn manifest is harmless (re-hash) but must never be a wrong
+ * skip.
+ */
+export interface LocalManifestStorePort {
+  get(repoKey: string): Promise<LocalManifestRecord | null>;
+  set(repoKey: string, record: LocalManifestRecord): Promise<void>;
+}
+
+/**
  * Local working-tree access for ONE repo, repo-relative forward-slash paths.
  * String content only — binary attachments are out of A1 scope (Phase C,
  * D4/VL#3); the engine additionally applies {@link isSyncablePath} so adapters
@@ -166,6 +223,18 @@ export interface LocalFilesPort {
   readBinary?(path: string): Promise<Uint8Array>;
   /** Byte-exact atomic write (same atomicity contract as {@link write}). */
   writeBinary?(path: string, bytes: Uint8Array): Promise<void>;
+  /**
+   * Cheap file metadata (modification time + byte size) WITHOUT reading the
+   * content — the mtime-manifest optimisation (perf, ExoSync Phase 1). Returns
+   * `null` when the path does not exist. OPTIONAL: a port without it disables
+   * the optimisation (the engine falls back to reading+hashing every file —
+   * status quo, zero regression). CLI: `node:fs` `stat().mtimeMs`/`size`;
+   * plugin: `DataAdapter.stat().mtime`/`size`. Used ONLY to decide whether a
+   * file is unchanged since the last sync — NEVER as a content authority (the
+   * blobSha cache is keyed by `(mtime, size)`, and a periodic full re-hash +
+   * the remote tree-SHA still backstop a mtime-preserving edit; M1 zero-loss).
+   */
+  stat?(path: string): Promise<{ mtimeMs: number; size: number } | null>;
 }
 
 /** Result of the full-materialization gate check (D19). */

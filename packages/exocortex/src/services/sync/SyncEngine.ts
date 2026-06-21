@@ -86,6 +86,9 @@ import {
   type AssetChange,
   type ChangeDetectionResult,
   type LocalFilesPort,
+  type LocalManifestEntry,
+  type LocalManifestRecord,
+  type LocalManifestStorePort,
   type MaterializationCheckPort,
   type MergeLayerPort,
   type MountBaseStorePort,
@@ -104,6 +107,17 @@ import {
 /** D16: retries after the first non-fast-forward failure. */
 export const DEFAULT_MAX_PUSH_RETRIES = 3;
 
+/**
+ * Zero-loss safety valve for the mtime-manifest (perf, ExoSync Phase 1).
+ * When `now - lastFullRehashMs >= this`, the engine ignores the `(mtime,size)`
+ * cache and re-hashes EVERY file — catching the (extraordinarily rare) content
+ * edit that preserved both mtime and byte-size, which the cache would
+ * otherwise skip. Time-based (not per-sync-count) so the staleness window is
+ * bounded by wall-clock regardless of sync frequency, and frequent no-op syncs
+ * stay cheap. Default 12h; override via {@link SyncEngineDeps.localManifestFullRehashMs}.
+ */
+export const DEFAULT_LOCAL_MANIFEST_REHASH_MS = 12 * 60 * 60 * 1000;
+
 export interface SyncEngineDeps {
   transport: RestCommitTransport;
   watermarkStore: WatermarkStorePort;
@@ -121,6 +135,26 @@ export interface SyncEngineDeps {
    * (M1 zero-loss intact). See {@link MountBaseStorePort}.
    */
   mountBaseStore?: MountBaseStorePort;
+  /**
+   * Per-device local mtime-manifest store (perf, ExoSync Phase 1). When wired
+   * AND the per-repo {@link LocalFilesPort} provides `stat`, the engine skips
+   * reading + re-hashing ASSET-mode files whose `(mtimeMs, size)` are
+   * unchanged since the last sync, reusing the cached `blobSha`/`uid`. Absent
+   * (or no `stat`) ⇒ the engine reads + hashes every file each sync (status
+   * quo, zero regression). Disabled for file-mode (Phase C binary) repos. The
+   * cache never changes a sync OUTCOME — only which files are read/hashed; a
+   * stale entry causes a re-hash (cache miss), never a wrong skip (M1
+   * zero-loss), and a periodic full re-hash backstops the mtime-preserving
+   * edit. See {@link LocalManifestStorePort}.
+   */
+  localManifestStore?: LocalManifestStorePort;
+  /**
+   * Override for the mtime-manifest periodic full-rehash interval (ms). See
+   * {@link DEFAULT_LOCAL_MANIFEST_REHASH_MS}. Lower = smaller staleness window
+   * for the mtime-preserving edit, more frequent full re-hashes; tests inject
+   * `0` (rehash every sync) or `Infinity` (never).
+   */
+  localManifestFullRehashMs?: number;
   /**
    * #3590 full fix — base BACKFILL source for repos MOUNTED BEFORE the mount
    * layer began recording the base (or by any path that never recorded one):
@@ -634,6 +668,13 @@ export class SyncEngine {
           return rawWriteBinary(path, bytes);
         });
     }
+    // mtime-manifest stat sweep (perf) — metadata-only, timed into the
+    // `localList` bucket (same directory-walk phase). The before/after signal
+    // is the collapse of `localRead`/`hash` + their counts, not stat time.
+    const rawStat = raw.stat?.bind(raw);
+    if (rawStat !== undefined) {
+      wrapped.stat = (path) => timed("localList", () => rawStat(path));
+    }
     return wrapped;
   }
 
@@ -872,29 +913,12 @@ export class SyncEngine {
       }
 
       const maxBytes = this.deps.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
-      const disk = new Map<string, SyncContent>();
-      // Paths excluded by the size cap on the LOCAL side. The exclusion
-      // must hold across every representation (disk snapshot, diff base,
-      // remote diff, watermark) — a path visible on one side only would
-      // read as a phantom add/delete (reviewer HIGH: cap-boundary
-      // crossing).
-      const sizeExcluded = new Set<string>();
-      for (const path of (await localFiles.list()).filter(mode.syncable)) {
-        if (mode.fileMode) {
-          const bytes = await readBinaryStrict(localFiles, path);
-          if (bytes.byteLength > maxBytes) {
-            sizeExcluded.add(path);
-            warnings.push(
-              `skipped oversized file ${path} (${bytes.byteLength} bytes > ${maxBytes} cap) — excluded from sync symmetrically (Phase C size cap)`,
-            );
-            continue;
-          }
-          disk.set(path, bytes);
-        } else {
-          disk.set(path, await localFiles.read(path));
-        }
-      }
 
+      // The watermark is loaded BEFORE the local snapshot so the mtime-manifest
+      // cache (perf) can be gated on its presence: the cache only applies to a
+      // steady-state sync — first-sync logic (bootstrapWatermark / file-mode
+      // first-sync) needs the FULL disk snapshot, so a null watermark forces a
+      // read+hash of every file (status quo). (Reordered from after the loop.)
       let watermark = await this.deps.watermarkStore.get(spec.repoKey);
       // Kind-flip guard (reviewer MEDIUM — makes the documented downgrade
       // marker operational): a file-mode watermark read by an asset-mode
@@ -921,6 +945,102 @@ export class SyncEngine {
         );
         watermark = null;
       }
+
+      // ── Local snapshot (mtime-manifest optimisation, perf — ExoSync Ph1) ──
+      // When the port exposes `stat`, a manifest store is wired, the watermark
+      // exists and this is an ASSET-mode repo, files whose `(mtimeMs, size)`
+      // match the manifest are NOT read or re-hashed — their cached blobSha/uid
+      // is reused. This collapses a no-op sync's dominant cost (read + SHA-1 of
+      // every file) into a cheap stat sweep. Any other case reads + hashes every
+      // file exactly as before (status quo, zero regression). file-mode (Phase C
+      // binary) is intentionally excluded — the dominant cost is the asset md
+      // corpus, and binary keeps its size-cap-on-read path unchanged.
+      // `.bind` so the method is called with its own port as `this` (no
+      // unbound-method) — the instrumented `stat` is an arrow closure, so the
+      // bind is a no-op functionally but keeps the linter sound.
+      const statFn =
+        this.deps.localManifestStore !== undefined
+          ? localFiles.stat?.bind(localFiles)
+          : undefined;
+      const canUseCache =
+        statFn !== undefined && watermark !== null && !mode.fileMode;
+      const manifest =
+        canUseCache && this.deps.localManifestStore !== undefined
+          ? await this.deps.localManifestStore.get(spec.repoKey)
+          : null;
+      const rehashIntervalMs =
+        this.deps.localManifestFullRehashMs ?? DEFAULT_LOCAL_MANIFEST_REHASH_MS;
+      // Zero-loss safety valve: bypass the cache (re-hash everything) on the
+      // first sync with no manifest and every `rehashIntervalMs`, catching the
+      // (extraordinarily rare) edit that preserved both mtime and size.
+      const fullRehash =
+        canUseCache &&
+        (manifest === null ||
+          this.now() - manifest.lastFullRehashMs >= rehashIntervalMs);
+
+      const disk = new Map<string, SyncContent>();
+      // Paths excluded by the size cap on the LOCAL side. The exclusion
+      // must hold across every representation (disk snapshot, diff base,
+      // remote diff, watermark) — a path visible on one side only would
+      // read as a phantom add/delete (reviewer HIGH: cap-boundary
+      // crossing).
+      const sizeExcluded = new Set<string>();
+      // mtime-manifest cache hits (perf): blobSha+uid reused without read/hash,
+      // DISJOINT from `disk`. Fed to detectChanges as `cachedEntries`.
+      const reused = new Map<string, { blobSha: string; uid?: string }>();
+      // blobSha at sync-start for cache-hit (NOT-read) files — applyRemoteChanges
+      // needs it for the TOCTOU check (their content is absent from `disk`).
+      const cachedBlobShas = new Map<string, string>();
+      // (mtimeMs,size) for every present cache-participating path — to rebuild
+      // the manifest after detection.
+      const statByPath = new Map<string, { mtimeMs: number; size: number }>();
+      // Persist the manifest only when it actually changed (a file was
+      // read/added/removed) or a full re-hash advanced its timestamp — a pure
+      // no-op sync (every file a cache hit) writes nothing.
+      let manifestDirty = false;
+      for (const path of (await localFiles.list()).filter(mode.syncable)) {
+        if (mode.fileMode) {
+          const bytes = await readBinaryStrict(localFiles, path);
+          if (bytes.byteLength > maxBytes) {
+            sizeExcluded.add(path);
+            warnings.push(
+              `skipped oversized file ${path} (${bytes.byteLength} bytes > ${maxBytes} cap) — excluded from sync symmetrically (Phase C size cap)`,
+            );
+            continue;
+          }
+          disk.set(path, bytes);
+          continue;
+        }
+        if (!canUseCache || statFn === undefined) {
+          // status quo — read + hash every asset file.
+          disk.set(path, await localFiles.read(path));
+          continue;
+        }
+        const st = await statFn(path);
+        const cached =
+          !fullRehash && st !== null ? manifest?.files[path] : undefined;
+        if (
+          st !== null &&
+          cached !== undefined &&
+          cached.mtimeMs === st.mtimeMs &&
+          cached.size === st.size
+        ) {
+          // Cache hit — unchanged since last sync: reuse blobSha+uid, NO read,
+          // NO hash. The (mtime,size) match is the unchanged-content signal.
+          reused.set(path, {
+            blobSha: cached.blobSha,
+            ...(cached.uid !== undefined ? { uid: cached.uid } : {}),
+          });
+          cachedBlobShas.set(path, cached.blobSha);
+          statByPath.set(path, st);
+          continue;
+        }
+        // Cache miss (new / mtime-or-size changed / full re-hash) — read + hash.
+        manifestDirty = true;
+        disk.set(path, await localFiles.read(path));
+        if (st !== null) statByPath.set(path, st);
+      }
+
       let syntheticFirstSyncBase = false;
       if (watermark === null) {
         if (!mode.fileMode) {
@@ -980,6 +1100,9 @@ export class SyncEngine {
       this.emitProgress(onProgress, spec.repoKey, "detecting");
       const detection = await detectChanges({
         localFiles: disk,
+        // Cache hits fold into the diff WITHOUT re-hashing (perf). Empty/absent
+        // when the cache is off → every file is hashed from `disk` (status quo).
+        ...(canUseCache ? { cachedEntries: reused } : {}),
         watermark,
         actualBaseTreeSha: await this.resolveBaseTreeSha(spec, watermark),
         sha1: this.sha1,
@@ -990,6 +1113,57 @@ export class SyncEngine {
         });
       }
       warnings.push(...detection.warnings);
+
+      // Rebuild + persist the mtime-manifest (perf). Done right after detection
+      // so it covers the no-op fast path too. `detection.diskBlobShas` now holds
+      // the blobSha for BOTH freshly-read and reused files; reused files carry
+      // their stat forward. A pulled file's stale entry (recorded pre-pull) only
+      // causes a re-hash next sync (cache miss) — never a wrong skip. Persisted
+      // only when dirty (a file changed, or the full-rehash timestamp advanced).
+      if (canUseCache && this.deps.localManifestStore !== undefined) {
+        const files: Record<string, LocalManifestEntry> = {};
+        for (const [path, content] of disk) {
+          const st = statByPath.get(path);
+          const blobSha = detection.diskBlobShas.get(path);
+          if (st === undefined || blobSha === undefined) continue;
+          const uid =
+            typeof content === "string" ? extractAssetUid(content) : undefined;
+          files[path] = {
+            mtimeMs: st.mtimeMs,
+            size: st.size,
+            blobSha,
+            ...(uid !== undefined ? { uid } : {}),
+          };
+        }
+        for (const [path, entry] of reused) {
+          const st = statByPath.get(path);
+          if (st === undefined) continue;
+          files[path] = {
+            mtimeMs: st.mtimeMs,
+            size: st.size,
+            blobSha: entry.blobSha,
+            ...(entry.uid !== undefined ? { uid: entry.uid } : {}),
+          };
+        }
+        // A path present last time but gone now (deleted) ⇒ the manifest shrank.
+        if (
+          manifest !== null &&
+          Object.keys(manifest.files).some((p) => !(p in files))
+        ) {
+          manifestDirty = true;
+        }
+        if (manifestDirty || fullRehash || manifest === null) {
+          const record: LocalManifestRecord = {
+            version: 1,
+            files,
+            lastFullRehashMs:
+              fullRehash || manifest === null
+                ? this.now()
+                : manifest.lastFullRehashMs,
+          };
+          await this.deps.localManifestStore.set(spec.repoKey, record);
+        }
+      }
 
       const pinned = this.pinLocalChanges(
         detection,
@@ -1187,6 +1361,9 @@ export class SyncEngine {
         ),
         applyDeletes.filter((d) => !withheldPaths.has(d.path)),
         warnings,
+        // mtime-manifest: cache-hit (NOT-read) files have no `disk` snapshot —
+        // their sync-start blobSha drives the TOCTOU check instead.
+        cachedBlobShas,
       );
 
       // Quarantined paths keep their OLD watermark entry (same mechanism as
@@ -2145,6 +2322,12 @@ export class SyncEngine {
     applyWrites: RemoteChange[],
     applyDeletes: RemoteChange[],
     warnings: string[],
+    // mtime-manifest (perf): sync-start blobSha for cache-hit files that were
+    // NOT read (so absent from `disk`). For those the TOCTOU check compares a
+    // fresh hash against this blobSha instead of comparing content snapshots —
+    // a cache hit must NOT read as "vanished from snapshot" and wrongly defer
+    // the pull (M1 zero-loss: never overwrites a concurrently-edited file).
+    cachedBlobShas: ReadonlyMap<string, string> = new Map(),
   ): Promise<{ pulledCount: number; pinnedPaths: Set<string> }> {
     let pulledCount = 0;
     const pinnedPaths = new Set<string>();
@@ -2173,6 +2356,16 @@ export class SyncEngine {
         await writeBinaryStrict(localFiles, path, content);
       }
     };
+    // TOCTOU verdict for a cache-hit path (no content snapshot): the file is
+    // safe to overwrite/delete iff its CURRENT content still hashes to the
+    // sync-start blobSha. A mismatch (concurrent edit, or the rare
+    // mtime-preserving edit) defers — never a silent overwrite.
+    const cacheHitUnchanged = async (path: string): Promise<boolean> => {
+      const current = await tryRead(path, false); // manifest cache = asset text
+      if (current === undefined) return true; // already gone — write recreates / delete no-ops
+      const currentSha = await gitBlobSha(current, this.sha1);
+      return currentSha === cachedBlobShas.get(path);
+    };
     for (const w of applyWrites) {
       if (w.content === undefined) continue; // change entries always carry content
       if (!isSafeRepoRelativePath(w.path)) {
@@ -2181,6 +2374,19 @@ export class SyncEngine {
         continue;
       }
       const snapshot = disk.get(w.path);
+      if (snapshot === undefined && cachedBlobShas.has(w.path)) {
+        // Cache-hit local file (unchanged per manifest, not read this sync).
+        if (!(await cacheHitUnchanged(w.path))) {
+          warnings.push(
+            `pull-apply skipped: ${w.path} changed on disk mid-sync (TOCTOU) — remote change re-derives next sync`,
+          );
+          pinnedPaths.add(w.path);
+          continue;
+        }
+        await writeContent(w.path, w.content);
+        pulledCount++;
+        continue;
+      }
       const current = await tryRead(
         w.path,
         typeof (snapshot ?? w.content) !== "string",
@@ -2202,6 +2408,19 @@ export class SyncEngine {
         continue;
       }
       const snapshot = disk.get(d.path);
+      if (snapshot === undefined && cachedBlobShas.has(d.path)) {
+        // Cache-hit local file being remote-deleted (not read this sync).
+        if (!(await cacheHitUnchanged(d.path))) {
+          warnings.push(
+            `pull-delete skipped: ${d.path} changed on disk mid-sync (TOCTOU) — delete-vs-modify re-derives next sync`,
+          );
+          pinnedPaths.add(d.path);
+          continue;
+        }
+        await localFiles.delete(d.path);
+        pulledCount++;
+        continue;
+      }
       if (snapshot !== undefined) {
         const current = await tryRead(d.path, typeof snapshot !== "string");
         if (current !== undefined && !contentEquals(current, snapshot)) {

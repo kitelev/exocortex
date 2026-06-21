@@ -617,6 +617,7 @@ export {
 } from "./services/sync/githubRepoReader";
 export {
   DEFAULT_MAX_PUSH_RETRIES,
+  DEFAULT_LOCAL_MANIFEST_REHASH_MS,
   SyncEngine,
   isNonFastForwardError,
   orderChildrenFirst,
@@ -666,6 +667,9 @@ export {
   type AssetChange,
   type ChangeDetectionResult,
   type LocalFilesPort,
+  type LocalManifestEntry,
+  type LocalManifestRecord,
+  type LocalManifestStorePort,
   type MaterializationCheck,
   type MaterializationCheckPort,
   type MergeConflictInput,
@@ -684,6 +688,12 @@ export {
   type WatermarkRecord,
   type WatermarkStorePort,
 } from "./services/sync/syncTypes";
+// ExoSync Phase 1 (perf) — device-local mtime-manifest store: skips reading +
+// re-hashing files whose (mtime,size) are unchanged since the last sync.
+export {
+  FileLocalManifestStore,
+  LOCAL_MANIFEST_STORE_FILENAME,
+} from "./services/sync/FileLocalManifestStore";
 // ExoSync A2 — StructuredMerger (3-way frontmatter per-key + D20 set-union
 // tombstones + D21 structured body merge) over the generic diff3 helper.
 export { diff3, type Diff3Result } from "./services/sync/diff3";

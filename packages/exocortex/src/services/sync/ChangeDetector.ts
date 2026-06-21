@@ -44,9 +44,21 @@ export interface DetectChangesParams {
   /**
    * Allowlist-scoped disk snapshot: repo-relative path → content. Phase C
    * file-mode passes raw bytes — uid identity never applies to bytes
-   * (opaque blobs match by path), text identity is unchanged.
+   * (opaque blobs match by path), text identity is unchanged. With the
+   * mtime-manifest optimisation active this holds ONLY the files actually
+   * read this sync (new / mtime-or-size-changed); unchanged files arrive via
+   * {@link cachedEntries} instead — the two maps are DISJOINT and together
+   * cover every present syncable path.
    */
   localFiles: ReadonlyMap<string, SyncContent>;
+  /**
+   * Precomputed `{ blobSha, uid }` for files the caller already knows are
+   * unchanged since the last sync (mtime-manifest cache hit, perf). Folded
+   * into the disk snapshot WITHOUT re-reading or re-hashing. Keys MUST be
+   * disjoint from {@link localFiles}. Absent/empty ⇒ every file is hashed
+   * from `localFiles` (status quo, zero regression).
+   */
+  cachedEntries?: ReadonlyMap<string, { blobSha: string; uid?: string }>;
   watermark: WatermarkRecord | null;
   /**
    * Actual root tree SHA of the `watermark.lastSyncedSha` commit on the
@@ -67,7 +79,8 @@ interface DiskEntry {
 export async function detectChanges(
   params: DetectChangesParams,
 ): Promise<ChangeDetectionResult> {
-  const { localFiles, watermark, actualBaseTreeSha, sha1 } = params;
+  const { localFiles, cachedEntries, watermark, actualBaseTreeSha, sha1 } =
+    params;
 
   if (watermark === null) {
     return { kind: "full-conflict", reason: "first-sync" };
@@ -98,6 +111,14 @@ export async function detectChanges(
       // Bytes are opaque (file-mode, D18): no uid identity — path matches.
       uid: typeof content === "string" ? extractAssetUid(content) : undefined,
     });
+  }
+  // mtime-manifest cache hits (perf): unchanged files whose blobSha+uid the
+  // caller already resolved — no read, no hash. Disjoint from `localFiles`.
+  if (cachedEntries !== undefined) {
+    for (const [path, entry] of cachedEntries) {
+      diskBlobShas.set(path, entry.blobSha);
+      disk.push({ path, blobSha: entry.blobSha, uid: entry.uid });
+    }
   }
 
   const added: AssetChange[] = [];

@@ -43,10 +43,18 @@ interface FakeRequestUrlParam {
 export class InMemoryAdapter {
   readonly files = new Map<string, string | Uint8Array>();
   readonly dirs = new Set<string>([""]);
+  // mtime tracking — mirrors a real FS: every write bumps the file's mtime, so
+  // the mtime-manifest (perf) detects changes exactly as on a real device.
+  private readonly mtimes = new Map<string, number>();
+  private clock = 1_000;
 
   private parent(p: string): string {
     const i = p.lastIndexOf("/");
     return i < 0 ? "" : p.slice(0, i);
+  }
+
+  private touch(p: string): void {
+    this.mtimes.set(p, ++this.clock);
   }
 
   async exists(path: string): Promise<boolean> {
@@ -67,6 +75,7 @@ export class InMemoryAdapter {
       throw new Error(`ENOENT: parent folder of ${path} does not exist`);
     }
     this.files.set(path, content);
+    this.touch(path);
   }
 
   /** Real `DataAdapter.readBinary` shape — ArrayBuffer, byte-exact. */
@@ -89,12 +98,14 @@ export class InMemoryAdapter {
       throw new Error(`ENOENT: parent folder of ${path} does not exist`);
     }
     this.files.set(path, new Uint8Array(data));
+    this.touch(path);
   }
 
   async remove(path: string): Promise<void> {
     if (!this.files.delete(path)) {
       throw new Error(`ENOENT: ${path}`);
     }
+    this.mtimes.delete(path);
   }
 
   async rename(from: string, to: string): Promise<void> {
@@ -109,6 +120,28 @@ export class InMemoryAdapter {
     }
     this.files.delete(from);
     this.files.set(to, content);
+    this.mtimes.delete(from);
+    this.touch(to);
+  }
+
+  /** Real `DataAdapter.stat` shape — cheap metadata (mtime/size, no read). */
+  async stat(
+    path: string,
+  ): Promise<{
+    type: "file" | "folder";
+    ctime: number;
+    mtime: number;
+    size: number;
+  } | null> {
+    if (this.dirs.has(path)) {
+      return { type: "folder", ctime: 0, mtime: 0, size: 0 };
+    }
+    const content = this.files.get(path);
+    if (content === undefined) return null;
+    const size =
+      typeof content === "string" ? Buffer.byteLength(content) : content.byteLength;
+    const mtime = this.mtimes.get(path) ?? ++this.clock;
+    return { type: "file", ctime: mtime, mtime, size };
   }
 
   async mkdir(path: string): Promise<void> {
@@ -156,6 +189,7 @@ export class InMemoryAdapter {
     const i = path.lastIndexOf("/");
     if (i > 0) this.mkdirAll(path.slice(0, i));
     this.files.set(path, content);
+    this.touch(path); // a re-seed simulates a local edit → mtime bumps
   }
 }
 

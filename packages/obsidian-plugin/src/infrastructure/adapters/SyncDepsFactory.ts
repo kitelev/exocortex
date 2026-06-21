@@ -1,9 +1,11 @@
 import type { App, DataAdapter } from "obsidian";
 import yaml from "js-yaml";
 import {
+  FileLocalManifestStore,
   FileMountBaseStore,
   FileWatermarkStore,
   GatedStructuredMerger,
+  LOCAL_MANIFEST_STORE_FILENAME,
   MOUNT_BASE_STORE_FILENAME,
   QuarantineResolver,
   SYNC_BRANCH,
@@ -202,7 +204,7 @@ export function vaultLocalFilesPort(
   rootPath: string,
 ): LocalFilesPort {
   const abs = (rel: string): string => `${rootPath}/${rel}`;
-  return {
+  const port: LocalFilesPort = {
     async list(): Promise<string[]> {
       const out: string[] = [];
       const walk = async (dir: string): Promise<void> => {
@@ -257,6 +259,29 @@ export function vaultLocalFilesPort(
       await adapter.rename(tmp, target);
     },
   };
+  // mtime-manifest (perf): expose `stat` ONLY when the underlying adapter
+  // supports it. Real Obsidian `DataAdapter.stat` is cheap metadata (no content
+  // read) and works on desktop AND mobile; an adapter without it (an older
+  // host, a partial test double) simply disables the optimisation — the engine
+  // falls back to reading+hashing every file (status quo, zero regression),
+  // never a crash.
+  const rawStat = (
+    adapter as {
+      stat?: (
+        path: string,
+      ) => Promise<{ type?: string; mtime: number; size: number } | null>;
+    }
+  ).stat;
+  if (typeof rawStat === "function") {
+    port.stat = async (
+      path: string,
+    ): Promise<{ mtimeMs: number; size: number } | null> => {
+      const s = await rawStat.call(adapter, abs(path));
+      if (s === null || s === undefined || s.type !== "file") return null;
+      return { mtimeMs: s.mtime, size: s.size };
+    };
+  }
+  return port;
 }
 
 /** Single-file `WatermarkFileIO` over `vault.adapter` (D8 store). */
@@ -406,6 +431,10 @@ export async function buildSyncEngine(
   // `RestAssetSpaceMount` under the SAME path convention (same vault.adapter,
   // same `.local.`-infix file).
   const mountBasePath = `${configDir}/plugins/exocortex/${MOUNT_BASE_STORE_FILENAME}`;
+  // mtime-manifest (perf) — device-local, `.local.`-infix, same store family as
+  // the watermark; skips reading+re-hashing unchanged asset files each sync
+  // (the dominant iPhone cost on a 14-AS / ~6304-file vault).
+  const manifestPath = `${configDir}/plugins/exocortex/${LOCAL_MANIFEST_STORE_FILENAME}`;
 
   let quarantine: QuarantinePort | undefined;
   const quarantineUrl = opts.quarantineRepoUrl?.trim() ?? "";
@@ -454,6 +483,11 @@ export async function buildSyncEngine(
     transport,
     watermarkStore: new FileWatermarkStore(
       vaultWatermarkFileIO(adapter, watermarkPath),
+    ),
+    // mtime-manifest local-hash skip (perf) — same vault.adapter IO/store
+    // family as the watermark. The port's `stat` (added above) gates it.
+    localManifestStore: new FileLocalManifestStore(
+      vaultWatermarkFileIO(adapter, manifestPath),
     ),
     mountBaseStore: new FileMountBaseStore(
       vaultWatermarkFileIO(adapter, mountBasePath),
