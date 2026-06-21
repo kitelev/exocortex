@@ -58,6 +58,9 @@ function createMockDeps(withVaultAdapter = false): ServiceRegistryDeps {
   if (withVaultAdapter) {
     deps.vaultAdapter = {
       getAbstractFileByPath: jest.fn().mockReturnValue(mockIFile),
+      // Co-location resolver (FolderRepairService) probes this; null → the
+      // ontology ref doesn't resolve → callers fall back to the host folder.
+      getFirstLinkpathDest: jest.fn().mockReturnValue(null),
       getFrontmatter: jest.fn().mockReturnValue({
         exo__Asset_uid: "test-uid-123",
         exo__Asset_label: "Test Asset",
@@ -845,14 +848,20 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
   });
 
   describe("createSubclass", () => {
-    it("should create child class with exo__Class_superClass pointing to parent", async () => {
+    it("should create a UID-named child class with exo__Class_superClass pointing to parent", async () => {
       const service = registry.get("createSubclass")!;
       await service.execute("test-uid-123", { label: "ChildClass" });
 
-      expect(deps.vaultAdapter!.create).toHaveBeenCalledWith(
-        expect.stringContaining("classes/childclass.md"),
-        expect.stringContaining("exo__Class_superClass: \"[[test-uid-123]]\""),
+      const [path, content] = (
+        deps.vaultAdapter!.create as jest.Mock
+      ).mock.calls[0] as [string, string];
+      expect(content).toContain('exo__Class_superClass: "[[test-uid-123]]"');
+      // UID-canon (DEFECT-D1): UID-named, NOT vault-root label-named
+      // "classes/childclass.md".
+      expect(path).toMatch(
+        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$/,
       );
+      expect(path.toLowerCase()).not.toContain("childclass");
     });
 
     it("should write exo__Instance_class as exo__Class", async () => {

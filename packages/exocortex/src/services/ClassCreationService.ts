@@ -3,12 +3,15 @@ import { v4 as uuidv4 } from "uuid";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { MetadataHelpers } from "../utilities/MetadataHelpers";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
+import { FolderRepairService } from "./FolderRepairService";
 import { DI_TOKENS } from "../interfaces/tokens";
 
 @injectable()
 export class ClassCreationService {
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private vault: IVaultAdapter,
+    @inject(DI_TOKENS.FolderRepairService)
+    private folderRepair: FolderRepairService,
   ) {}
 
   async createSubclass(
@@ -17,8 +20,6 @@ export class ClassCreationService {
     parentMetadata: Record<string, unknown>,
   ): Promise<IFile> {
     const uid = uuidv4();
-    const fileName = this.generateFileName(label);
-    const fullFileName = fileName.endsWith(".md") ? fileName : `${fileName}.md`;
 
     const frontmatter = this.generateClassFrontmatter(
       parentFile.basename,
@@ -29,12 +30,35 @@ export class ClassCreationService {
 
     const fileContent = MetadataHelpers.buildFileContent(frontmatter);
 
-    const folderPath = "classes";
-    const filePath = `${folderPath}/${fullFileName}`;
+    // UUID-CANON TBOX (CLAUDE.md): TBox classes MUST be UID-named, never
+    // label-named — so the symbolic-IRI subject scheme resolves and SHACL can
+    // verify class membership. Mirrors Create Instance, which UID-names too.
+    const fullFileName = `${uid}.md`;
 
-    const folder = this.vault.getAbstractFileByPath(folderPath);
-    if (!folder) {
-      await this.vault.createFolder(folderPath);
+    // CO-LOCATION INVARIANT (CLAUDE.md, RFC 0b7a2fad): place the new class in
+    // the folder of its `exo__Asset_isDefinedBy` ontology, using the same
+    // resolver as Create Instance (`$isDefinedByFolder`) / `apply
+    // repair-folder` (FolderRepairService → IVaultAdapter.getFirstLinkpathDest).
+    // The new class inherits the parent's isDefinedBy, so resolution targets
+    // the parent's ontology folder. Falls back to the parent class's own
+    // folder when the ontology ref can't be resolved (empty / `!`-anchor /
+    // unresolvable isDefinedBy) — a degraded-but-co-located location matching
+    // GroundingExecutor's host-folder fallback; the parent class is itself
+    // co-located, so the subclass stays in-ontology either way.
+    const resolvedFolder = this.folderRepair.getExpectedFolderSync(
+      parentFile,
+      frontmatter,
+    );
+    const folderPath =
+      resolvedFolder ?? ClassCreationService.parentFolderOf(parentFile.path);
+
+    const filePath = folderPath ? `${folderPath}/${fullFileName}` : fullFileName;
+
+    if (folderPath) {
+      const folder = this.vault.getAbstractFileByPath(folderPath);
+      if (!folder) {
+        await this.vault.createFolder(folderPath);
+      }
     }
 
     const createdFile = await this.vault.create(filePath, fileContent);
@@ -42,18 +66,12 @@ export class ClassCreationService {
     return createdFile;
   }
 
-  private generateFileName(label: string): string {
-    let result = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    // Remove leading dashes using a loop to avoid ReDoS
-    // The pattern /^-+|-+$/g with alternation can cause backtracking
-    while (result.startsWith("-")) {
-      result = result.slice(1);
-    }
-    // Remove trailing dashes
-    while (result.endsWith("-")) {
-      result = result.slice(0, -1);
-    }
-    return result;
+  /** Vault-relative parent folder of a file path ("" when at the vault root). */
+  private static parentFolderOf(filePath: string | undefined): string {
+    if (!filePath) return "";
+    const normalized = filePath.replace(/^\/+/, "");
+    const slashIdx = normalized.lastIndexOf("/");
+    return slashIdx >= 0 ? normalized.slice(0, slashIdx) : "";
   }
 
   private generateClassFrontmatter(
