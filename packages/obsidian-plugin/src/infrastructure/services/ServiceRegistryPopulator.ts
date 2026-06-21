@@ -223,7 +223,10 @@ export function populateServiceRegistry(
     const renameToUidService = new RenameToUidService(vaultAdapter);
     const folderRepairService = new FolderRepairService(vaultAdapter);
     const conceptCreationService = new ConceptCreationService(vaultAdapter);
-    const classCreationService = new ClassCreationService(vaultAdapter);
+    const classCreationService = new ClassCreationService(
+      vaultAdapter,
+      folderRepairService,
+    );
     // Obsidian-aware resolver for shared @kitelev/exocortex-services factories
     // (RFC 94e520da Phase 1, T1.3). Produces byte-identical IFile resolution
     // to the legacy `resolveIFile` helper below — see ObsidianTargetResolver.
