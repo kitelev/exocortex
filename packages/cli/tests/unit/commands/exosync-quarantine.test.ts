@@ -30,6 +30,8 @@ import {
   runQuarantineList,
   runQuarantineResolve,
   runDedupUids,
+  planDedupGroup,
+  normalizeForCompare,
 } from "../../../src/commands/exosync-quarantine";
 
 const ASSET_SPACE_CLASS_UID = "73bd00e4-ccc0-4f3f-b20d-c4388c4588fb";
@@ -255,6 +257,233 @@ describe("exosync dedup-uids", () => {
       );
       expect(again).toBe(0);
       expect(lines3.join("\n")).toMatch(/No duplicate uids/);
+    } finally {
+      fx.cleanup();
+    }
+  });
+});
+
+/** Deterministic uuid generator for the pure-classifier unit tests. */
+function mkSeq(): () => string {
+  let n = 0;
+  return () => `fresh-uuid-${++n}`;
+}
+
+describe("dedup-uids zero-loss classifier (planDedupGroup / normalizeForCompare)", () => {
+  // ⛤ THE critical safety property: differing content is NEVER deleted.
+  // Revert-verify: break `normalizeForCompare` (e.g. collapse the body) so it
+  // treats distinct notes as identical → this test goes RED (a delete is
+  // emitted for differing content). Restore → GREEN.
+  it("SAFETY: never plans a delete for content that differs from every kept copy", () => {
+    const decisions = planDedupGroup(
+      "dupe-uid",
+      [
+        { path: "a.md", content: mdAsset("dupe-uid", "alpha body") },
+        { path: "b.md", content: mdAsset("dupe-uid", "BETA body — totally different") },
+      ],
+      mkSeq(),
+    );
+    // No delete for differing content — both variants must survive.
+    expect(decisions.filter((d) => d.action === "delete")).toHaveLength(0);
+    expect(decisions.some((d) => d.action === "keep")).toBe(true);
+    expect(decisions.some((d) => d.action === "reuuid")).toBe(true);
+  });
+
+  it("plans a DELETE only for a whitespace-identical copy (zero-loss); keeps the lexicographic-first", () => {
+    const base = mdAsset("dupe-uid", "same body");
+    // b is identical to a save for CRLF line endings + trailing blank lines.
+    const crlfCopy = base.replace(/\n/g, "\r\n") + "\n\n";
+    const decisions = planDedupGroup(
+      "dupe-uid",
+      [
+        { path: "b.md", content: crlfCopy },
+        { path: "a.md", content: base },
+      ],
+      mkSeq(),
+    );
+    const deletes = decisions.filter((d) => d.action === "delete");
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]).toMatchObject({ path: "b.md", identicalTo: "a.md" });
+    expect(decisions.find((d) => d.action === "keep")?.path).toBe("a.md");
+    expect(decisions.some((d) => d.action === "reuuid")).toBe(false);
+  });
+
+  it("byte-identical duplicates: keep the first, delete the rest", () => {
+    const note = mdAsset("dupe-uid", "identical");
+    const decisions = planDedupGroup(
+      "dupe-uid",
+      [
+        { path: "x/a.md", content: note },
+        { path: "x/b.md", content: note },
+        { path: "x/c.md", content: note },
+      ],
+      mkSeq(),
+    );
+    expect(decisions.find((d) => d.action === "keep")?.path).toBe("x/a.md");
+    expect(decisions.filter((d) => d.action === "delete").map((d) => d.path)).toEqual([
+      "x/b.md",
+      "x/c.md",
+    ]);
+    expect(decisions.some((d) => d.action === "reuuid")).toBe(false);
+  });
+
+  it("mixed group: identical copy → delete, distinct variant → re-uuid (both survive)", () => {
+    const v1 = mdAsset("dupe-uid", "variant ONE");
+    const decisions = planDedupGroup(
+      "dupe-uid",
+      [
+        { path: "a.md", content: v1 },
+        { path: "b.md", content: v1 }, // identical to a
+        { path: "c.md", content: mdAsset("dupe-uid", "variant TWO — different") },
+      ],
+      mkSeq(),
+    );
+    expect(decisions.find((d) => d.action === "keep")?.path).toBe("a.md");
+    expect(decisions.filter((d) => d.action === "delete").map((d) => d.path)).toEqual(["b.md"]);
+    const reuuid = decisions.filter((d) => d.action === "reuuid");
+    expect(reuuid).toHaveLength(1);
+    expect(reuuid[0]).toMatchObject({ path: "c.md", fromUid: "dupe-uid" });
+  });
+
+  it("normalizeForCompare collapses ONLY line-endings + trailing blanks, never field values or content", () => {
+    const a = "---\nexo__Asset_uid: x\n---\n\nbody\n";
+    // same content: only CRLF vs LF + trailing blank lines differ (not data)
+    const b = "---\r\nexo__Asset_uid: x\r\n---\r\n\r\nbody\r\n\r\n";
+    expect(normalizeForCompare(a)).toBe(normalizeForCompare(b));
+    // a differing timestamp value is NOT collapsed → stays distinct
+    const c = "---\nexo__Asset_uid: x\nexo__Asset_updatedAt: 2026-01-01\n---\n\nbody\n";
+    const d = "---\nexo__Asset_uid: x\nexo__Asset_updatedAt: 2026-02-02\n---\n\nbody\n";
+    expect(normalizeForCompare(c)).not.toBe(normalizeForCompare(d));
+    // Conservative: a trailing-whitespace difference (Markdown hard line break
+    // is two trailing spaces) is NOT collapsed → DIFFERING → re-uuid, not delete.
+    const e = "---\nexo__Asset_uid: x\n---\n\nline one\nline two\n";
+    const f = "---\nexo__Asset_uid: x\n---\n\nline one  \nline two\n";
+    expect(normalizeForCompare(e)).not.toBe(normalizeForCompare(f));
+  });
+});
+
+describe("exosync dedup-uids --auto (zero-loss auto-resolve, e2e disk)", () => {
+  it("--auto is DRY-RUN by default — prints the plan, changes nothing (exit 1)", async () => {
+    const note = mdAsset("dupe-uid", "identical content");
+    const fx = await makeConflictVault({
+      base: mdAsset("uid-1", "base"),
+      local: mdAsset("uid-1", "LOCAL"),
+      extraMount: { "dup-a.md": note, "dup-b.md": note },
+    });
+    try {
+      const lines: string[] = [];
+      const code = await runDedupUids(
+        { vault: fx.vault, token: FAKE_PAT, auto: true },
+        deps(fx.gh, lines),
+      );
+      expect(code).toBe(1); // dups still present
+      const out = lines.join("\n");
+      expect(out).toMatch(/DRY-RUN/);
+      expect(out).toMatch(/DELETE\s+.*dup-b\.md/);
+      // nothing mutated
+      expect(existsSync(path.join(fx.vault, MOUNT, "dup-a.md"))).toBe(true);
+      expect(existsSync(path.join(fx.vault, MOUNT, "dup-b.md"))).toBe(true);
+      expect(readFileSync(path.join(fx.vault, MOUNT, "dup-b.md"), "utf-8")).toBe(note);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("--auto --apply deletes a byte-identical copy, keeping the canonical content (zero-loss)", async () => {
+    const note = mdAsset("dupe-uid", "the surviving content");
+    const fx = await makeConflictVault({
+      base: mdAsset("uid-1", "base"),
+      local: mdAsset("uid-1", "LOCAL"),
+      extraMount: { "dup-a.md": note, "dup-b.md": note },
+    });
+    try {
+      const lines: string[] = [];
+      const code = await runDedupUids(
+        { vault: fx.vault, token: FAKE_PAT, auto: true, apply: true },
+        deps(fx.gh, lines),
+      );
+      expect(code).toBe(0);
+      // lexicographic-first kept, the rest deleted; content preserved verbatim
+      expect(existsSync(path.join(fx.vault, MOUNT, "dup-a.md"))).toBe(true);
+      expect(existsSync(path.join(fx.vault, MOUNT, "dup-b.md"))).toBe(false);
+      expect(readFileSync(path.join(fx.vault, MOUNT, "dup-a.md"), "utf-8")).toBe(note);
+      expect(lines.join("\n")).toMatch(/deleted .*dup-b\.md/);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("SAFETY e2e: --auto --apply NEVER deletes differing content — re-uuids instead, both survive intact", async () => {
+    const fx = await makeConflictVault({
+      base: mdAsset("uid-1", "base"),
+      local: mdAsset("uid-1", "LOCAL"),
+      extraMount: {
+        "dup-a.md": mdAsset("dupe-uid", "note A — keep me"),
+        "dup-b.md": mdAsset("dupe-uid", "note B — DIFFERENT, must never be deleted"),
+      },
+    });
+    try {
+      const lines: string[] = [];
+      const code = await runDedupUids(
+        { vault: fx.vault, token: FAKE_PAT, auto: true, apply: true },
+        deps(fx.gh, lines),
+      );
+      expect(code).toBe(0);
+      // BOTH files survive — differing content is re-uuid'd, never deleted.
+      expect(existsSync(path.join(fx.vault, MOUNT, "dup-a.md"))).toBe(true);
+      expect(existsSync(path.join(fx.vault, MOUNT, "dup-b.md"))).toBe(true);
+      const a = readFileSync(path.join(fx.vault, MOUNT, "dup-a.md"), "utf-8");
+      const b = readFileSync(path.join(fx.vault, MOUNT, "dup-b.md"), "utf-8");
+      expect(a).toContain("note A — keep me");
+      expect(b).toContain("note B — DIFFERENT, must never be deleted");
+      // distinct uids now: anchor keeps the original, the variant gets a fresh one
+      expect(a).toMatch(/^exo__Asset_uid: dupe-uid$/m);
+      expect(b).not.toMatch(/^exo__Asset_uid: dupe-uid$/m);
+      expect(b).toMatch(/^exo__Asset_uid: [0-9a-f-]{36}$/m);
+      const out = lines.join("\n");
+      expect(out).toMatch(/re-uuid .*dup-b\.md/);
+      // No file was actually deleted — only the summary counter mentions "deleted 0".
+      expect(out).not.toMatch(/deleted \S+\.md/);
+      expect(out).toMatch(/deleted 0 identical/);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("--auto --apply mixed group: delete the identical copy AND re-uuid the distinct variant; idempotent", async () => {
+    const v1 = mdAsset("dupe-uid", "variant ONE");
+    const fx = await makeConflictVault({
+      base: mdAsset("uid-1", "base"),
+      local: mdAsset("uid-1", "LOCAL"),
+      extraMount: {
+        "dup-a.md": v1,
+        "dup-b.md": v1, // byte-identical to a → delete
+        "dup-c.md": mdAsset("dupe-uid", "variant TWO — different"), // distinct → re-uuid
+      },
+    });
+    try {
+      const lines: string[] = [];
+      const code = await runDedupUids(
+        { vault: fx.vault, token: FAKE_PAT, auto: true, apply: true },
+        deps(fx.gh, lines),
+      );
+      expect(code).toBe(0);
+      expect(existsSync(path.join(fx.vault, MOUNT, "dup-a.md"))).toBe(true); // anchor kept
+      expect(existsSync(path.join(fx.vault, MOUNT, "dup-b.md"))).toBe(false); // identical → deleted
+      expect(existsSync(path.join(fx.vault, MOUNT, "dup-c.md"))).toBe(true); // distinct → re-uuid'd
+      const c = readFileSync(path.join(fx.vault, MOUNT, "dup-c.md"), "utf-8");
+      expect(c).toContain("variant TWO — different");
+      expect(c).toMatch(/^exo__Asset_uid: [0-9a-f-]{36}$/m);
+      expect(c).not.toMatch(/^exo__Asset_uid: dupe-uid$/m);
+
+      // Idempotent: a second pass finds no duplicates.
+      const lines2: string[] = [];
+      const again = await runDedupUids(
+        { vault: fx.vault, token: FAKE_PAT },
+        deps(fx.gh, lines2),
+      );
+      expect(again).toBe(0);
+      expect(lines2.join("\n")).toMatch(/No duplicate uids/);
     } finally {
       fx.cleanup();
     }
