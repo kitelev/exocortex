@@ -558,13 +558,14 @@ export class SyncCommands {
   }
 
   /**
-   * #3495 — fire the degraded-mode warn exactly when it matters: the engine
-   * had no durable quarantine sink AND a conflict was actually quarantined
-   * (so both versions were lost and the conflict re-derives next sync). One
-   * Notice (toast) + one info-channel console echo (console-only on the default
-   * info routing, no file spam #3186), latched to once per session.
-   * Auth-required runs are skipped — the PAT prompt owns that failure and the
-   * conflict resurfaces on the next good run.
+   * #3495 — degraded-mode warn when the engine had no durable quarantine sink
+   * AND a conflict was quarantined. ⚠ VESTIGIAL since the offline-resolution
+   * program: the device-local conflict cache is now ALWAYS the (durable) sink,
+   * so `quarantineConfigured` is always `true` and this returns at the first
+   * guard — it never fires. Retained (with its tested logic) only so the
+   * #3495 contract is preserved if a "sink unavailable" condition is ever
+   * reintroduced; the full plumbing removal is a follow-up. The message no
+   * longer points at the (removed) quarantine-repo setting.
    */
   private maybeWarnQuarantineSink(
     quarantineConfigured: boolean,
@@ -576,8 +577,8 @@ export class SyncCommands {
     if (this.quarantineSinkWarned) return;
     this.quarantineSinkWarned = true;
     const message =
-      `Exocortex: quarantine sink not configured — ${summary.quarantined} conflict(s) ` +
-      `will re-derive but won't be saved. Set a quarantine repo in Settings → Exocortex.`;
+      `Exocortex: no durable quarantine sink — ${summary.quarantined} conflict(s) ` +
+      `re-derive but aren't saved. Reinstall/repair the plugin if this persists.`;
     this.deps.notify(message);
     (this.deps.logInfo ?? ((_m: string): void => undefined))(
       `[ExoSync] ${message}`,
