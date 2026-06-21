@@ -294,6 +294,51 @@ jobs:
             --reqs "$RUNNER_TEMP/reqs" --tests . --gate "$REQ_GATE" --output text || true
           exit $rc
 
+      - name: Active-requirement gate (BLOCKING — SDD feature-lifecycle invariant)
+        if: always()
+        # ⛔ NO continue-on-error. This is the ALWAYS-ON invariant (Andrey,
+        # 2026-06-21): an `active` requirement MUST carry a verification binding,
+        # else CI is red. Vacuous while zero requirements are `active`; arms
+        # per-requirement the moment one is flipped to `active`. The bound test
+        # being GREEN is enforced by the test suite itself (the bound test runs
+        # in CI); THIS step enforces the binding EXISTS (anti-orphan/dangling for
+        # the active subset). Independent of the soft→hard P0 ramp (REQ_GATE).
+        # The only way to make CI green without fixing the code is an explicit
+        # move of the requirement to Deprecated (a conscious withdrawal).
+        run: |
+          node -e '
+            const fs = require("fs");
+            let r;
+            try {
+              r = JSON.parse(
+                fs.readFileSync(process.env.RUNNER_TEMP + "/req-report.json", "utf8"),
+              );
+            } catch (e) {
+              console.error(
+                "Active-gate: no traceability report produced (checker failed to run) — failing closed.",
+              );
+              process.exit(1);
+            }
+            const v = r.activeViolations || [];
+            if (v.length > 0) {
+              console.error(
+                "❌ Active-requirement invariant violated (" + v.length +
+                  "): an active requirement has no verification binding.",
+              );
+              for (const a of v) {
+                console.error("  " + a.uid + "  " + a.label + "\n    → " + a.reason);
+              }
+              console.error(
+                "Fix: add a revert-verified @req binding, OR move the requirement to Deprecated.",
+              );
+              process.exit(1);
+            }
+            console.log(
+              "✅ Active-gate OK — " + (r.activeTotal || 0) +
+                " active requirement(s), all bound.",
+            );
+          '
+
       - name: Write step summary
         if: always()
         run: |

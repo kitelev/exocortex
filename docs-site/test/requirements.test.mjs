@@ -67,13 +67,13 @@ test("toRequirementRecord marks uncovered when verifiedBy is empty", () => {
 // Integration: read the real exoas-exo-reqs submodule fixtures.
 const hasSubmodule = existsSync(REQS_DIR);
 test(
-  "loadRequirements reads the exoas-exo-reqs submodule (27 requirements; the $exo-reqs anchor is excluded)",
+  "loadRequirements reads the exoas-exo-reqs submodule (30 requirements; the $exo-reqs anchor is excluded)",
   { skip: hasSubmodule ? false : "submodule not checked out" },
   async () => {
     const reqs = await loadRequirements(REQS_DIR);
-    // 28 .md files = 27 req__Requirement instances + 1 assetspace anchor
+    // 31 .md files = 30 req__Requirement instances + 1 assetspace anchor
     // ($exo-reqs, which carries no req__Requirement_status and is correctly excluded).
-    assert.equal(reqs.length, 27, "expected 27 functional requirements (anchor excluded)");
+    assert.equal(reqs.length, 30, "expected 30 functional requirements (anchor excluded)");
     assert.ok(
       reqs.every((r) => r.status !== null),
       "every requirement must carry a parseable status",
@@ -94,11 +94,11 @@ test(
   async () => {
     const reqs = await loadRequirements(REQS_DIR);
     const stats = requirementStats(reqs);
-    assert.equal(stats.total, 27);
+    assert.equal(stats.total, 30);
     assert.ok(stats.coverage >= 0 && stats.coverage <= 1);
     assert.equal(
       Object.values(stats.byStatus).reduce((a, b) => a + b, 0),
-      27,
+      30,
     );
   },
 );
