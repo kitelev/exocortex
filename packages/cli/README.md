@@ -52,10 +52,7 @@ The following v15 verbs were **removed**: `batch`, `batch-repair`, `command`, `d
 | [`classes`](#classes)                     | List vault classes or describe one class                                           |
 | [`create`](#create)                       | Create a new vault asset with auto-generated UUID and frontmatter                  |
 | [`resolve`](#resolve)                     | Resolve a UUID (full or partial) to a file path                                    |
-| [`watch`](#watch)                         | Watch the vault for file changes; emit NDJSON events                               |
 | [`workflow`](#workflow)                   | List / show / validate workflow definitions                                        |
-| [`recover`](#recover)                     | Detect and recover orphaned claude-child tmux sessions                             |
-| [`daemon`](#daemon)                       | Manage the ValidatorDaemon background process                                      |
 | [`audit`](#audit)                         | Regression-pattern audits (`co-location`, `ontology-imports`)                      |
 | [`apply-profile`](#apply-profile)         | Apply an `exo__Profile` (mount-state filesystem mutation)                          |
 | [`bootstrap`](#bootstrap)                 | Bootstrap a vault with the SDK floor AssetSpace                                    |
@@ -64,7 +61,6 @@ The following v15 verbs were **removed**: `batch`, `batch-repair`, `command`, `d
 | [`exosync`](#exosync)                     | Sync / pull / push the materialized AssetSpace set over the GitHub REST API        |
 | [`exosync-parity`](#exosync-parity)       | Read-only ExoSync divergence report (M1/M2 parity check)                           |
 | [`resolve-deps`](#resolve-deps)           | Resolve an AssetSpace's transitive `dependsOn` closure from the registry (CI gate) |
-| [`experimental`](#experimental)           | Opt-in experimental features (`rest-push`)                                         |
 
 ---
 
@@ -355,23 +351,6 @@ npx @kitelev/exocortex-cli resolve a1b2 --partial --format path --vault ~/vault
 | `--output <type>` | `text`       | Response format: `text` or `json` (for MCP tools) |
 | `--partial`       | off          | Match partial UUIDs (returns all matches)         |
 
-### watch
-
-Watch the vault for file changes and emit NDJSON events on stdout (one JSON object per line). Startup messages go to stderr. SIGINT/SIGTERM shut down gracefully with exit code `0`.
-
-```bash
-npx @kitelev/exocortex-cli watch --vault ~/vault --asset-type ems__Task | jq -c 'select(.type == "modify")'
-```
-
-| Option                | Default | Description                                              |
-| --------------------- | ------- | -------------------------------------------------------- |
-| `--vault <path>`      | cwd     | Path to Obsidian vault                                   |
-| `--pattern <glob>`    | —       | Glob pattern to filter files (e.g. `*.md`, `tasks/**`)   |
-| `--asset-type <type>` | —       | Filter by asset type from frontmatter (e.g. `ems__Task`) |
-| `--debounce <ms>`     | `100`   | Per-file debounce interval in milliseconds               |
-
-Event shape: `{type: "create"|"modify"|"delete", path, relativePath, timestamp, assetType?}`. Watcher errors are emitted to stdout as structured JSON error events.
-
 ### workflow
 
 Manage custom workflow definitions stored in the vault.
@@ -389,34 +368,6 @@ npx @kitelev/exocortex-cli workflow validate <uid> --vault ~/vault
 | `validate <uid>` | Validate a workflow definition             |
 
 All subcommands accept `--vault <path>` (default: cwd) and `--output text|json` (default: `text`).
-
-### recover
-
-Detect and recover orphaned `claude-child` tmux sessions. A session is orphaned when its corresponding vault task is not in Doing status. Default mode is dry-run.
-
-```bash
-npx @kitelev/exocortex-cli recover --vault ~/vault-2025
-npx @kitelev/exocortex-cli recover --apply --vault ~/vault-2025
-```
-
-| Option           | Default                              | Description                                              |
-| ---------------- | ------------------------------------ | -------------------------------------------------------- |
-| `--vault <path>` | `$EXOCORTEX_VAULT` or `~/vault-2025` | Path to Obsidian vault                                   |
-| `--dry-run`      | —                                    | List orphans without applying changes (default behavior) |
-| `--apply`        | off                                  | Apply recovery: set Failed + kill the tmux session       |
-
-### daemon
-
-Manage the ValidatorDaemon background process (long-running, Unix socket).
-
-```bash
-npx @kitelev/exocortex-cli daemon start
-```
-
-| Subcommand | Option                     | Default                             | Description                        |
-| ---------- | -------------------------- | ----------------------------------- | ---------------------------------- |
-| `start`    | `--socket <path>`          | `~/.cache/exocortex/validator.sock` | Unix socket path                   |
-| `start`    | `--idle-timeout <seconds>` | `300`                               | Exit after N seconds of inactivity |
 
 ---
 
@@ -580,37 +531,6 @@ npx @kitelev/exocortex-cli resolve-deps \
 | `--self <id>`       | **required** | Identity of the calling repo: an `owner/repo` slug (matches GitHub's `github.repository`), a full git URL, or a bare namespace |
 | `--format <type>`   | `urls`       | Output format: `urls` (one clone URL per line) or `json` (full diagnostics)                                                    |
 | `--strict`          | off          | Exit non-zero (`2`) when `self` is not registered, instead of validating standalone                                            |
-
-### experimental
-
-Opt-in experimental features. Unstable — may change or be removed.
-
-#### experimental rest-push
-
-Commit and push a file to a GitHub repo via the pure REST Git Data API (no `git` binary). Gated behind `EXOCORTEX_EXPERIMENTAL_REST_PUSH=1` or `--experimental`.
-
-```bash
-EXOCORTEX_EXPERIMENTAL_REST_PUSH=1 npx @kitelev/exocortex-cli experimental rest-push \
-  --repo kitelev/some-repo \
-  --file notes/hello.md \
-  --content "hello" \
-  --message "docs: add hello note" \
-  --token-from-gh
-```
-
-| Option                       | Default                  | Description                                                               |
-| ---------------------------- | ------------------------ | ------------------------------------------------------------------------- |
-| `--repo <owner/repo>`        | **required**             | Target repo as `owner/repo`                                               |
-| `--branch <branch>`          | `main`                   | Branch to commit on                                                       |
-| `--file <repoPath>`          | **required**             | Path within the repo to write                                             |
-| `--content <text>`           | —                        | Inline file content                                                       |
-| `--content-file <localPath>` | —                        | Read file content from a local path                                       |
-| `--message <msg>`            | **required**             | Commit message                                                            |
-| `--token-from-gh`            | off                      | Resolve PAT via `gh auth token`                                           |
-| `--token <pat>`              | —                        | GitHub PAT (or env `GITHUB_TOKEN` / `GH_TOKEN`); prefer `--token-from-gh` |
-| `--experimental`             | off                      | Opt in (alternative to `EXOCORTEX_EXPERIMENTAL_REST_PUSH=1`)              |
-| `--api-base <url>`           | `https://api.github.com` | GitHub API base URL                                                       |
-| `--json`                     | off                      | Emit result as JSON                                                       |
 
 ---
 
