@@ -575,6 +575,12 @@ export async function buildQuarantineResolver(
   const adapter = app.vault.adapter;
   const configDir = app.vault.configDir;
   const watermarkPath = `${configDir}/plugins/exocortex/${WATERMARK_STORE_FILENAME}`;
+  // Device-local conflict cache (PR-2) — the resolver's OFFLINE source for a
+  // conflict's remote+base versions (same `.local.` store the engine writes).
+  const conflictCachePath = `${configDir}/plugins/exocortex/${CONFLICT_CACHE_STORE_FILENAME}`;
+  const conflictCache = new LocalConflictCacheStore({
+    io: vaultWatermarkFileIO(adapter, conflictCachePath),
+  });
 
   let quarantine: QuarantinePort | undefined;
   const quarantineUrl = opts.quarantineRepoUrl?.trim() ?? "";
@@ -599,6 +605,7 @@ export async function buildQuarantineResolver(
     localFilesFor: (spec) => vaultLocalFilesPort(adapter, spec.localPath),
     sha1,
     redact: (m) => GitHubRestClient.redactTokens(m),
+    conflictCache,
     ...(quarantine !== undefined ? { quarantine } : {}),
   });
   return { resolver, pat };

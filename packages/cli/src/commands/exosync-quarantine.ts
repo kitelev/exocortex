@@ -22,7 +22,9 @@ import { promises as fsp, existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import * as path from "node:path";
 import {
+  CONFLICT_CACHE_STORE_FILENAME,
   FileWatermarkStore,
+  LocalConflictCacheStore,
   QuarantineResolver,
   SYNC_BRANCH,
   SyncedQuarantineStore,
@@ -79,6 +81,18 @@ function buildResolver(
     "exocortex",
     WATERMARK_FILE,
   );
+  // Device-local conflict cache (PR-2) — the resolver's OFFLINE source for a
+  // conflict's remote+base versions (same `.local.` store the engine writes).
+  const conflictCachePath = path.join(
+    vaultPath,
+    configDir,
+    "plugins",
+    "exocortex",
+    CONFLICT_CACHE_STORE_FILENAME,
+  );
+  const conflictCache = new LocalConflictCacheStore({
+    io: nodeWatermarkFileIO(conflictCachePath),
+  });
 
   let quarantine: QuarantinePort | undefined;
   const quarantineUrl = opts.quarantineRepo?.trim() ?? "";
@@ -102,6 +116,7 @@ function buildResolver(
     sha1: nodeSha1,
     ...(opts.apiBase !== undefined ? { baseURL: opts.apiBase } : {}),
     redact: (m) => pushService.redact(m),
+    conflictCache,
     ...(quarantine !== undefined ? { quarantine } : {}),
   });
   return { resolver, specs, warnings };
