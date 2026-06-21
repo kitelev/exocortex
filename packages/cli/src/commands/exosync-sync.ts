@@ -47,7 +47,9 @@ import {
   GatedStructuredMerger,
   LOCAL_MANIFEST_STORE_FILENAME,
   LocalConflictCacheStore,
+  LocalOutboxStore,
   MOUNT_BASE_STORE_FILENAME,
+  OUTBOX_STORE_FILENAME,
   StructuredMerger,
   SyncedQuarantineStore,
   SyncEngine,
@@ -362,8 +364,16 @@ function printRepoResult(
   out: (line: string) => void,
 ): void {
   const head = r.pushedSha !== undefined ? ` →@${r.pushedSha.slice(0, 7)}` : "";
+  const resolvedSuffix =
+    (r.outboxPushedCount ?? 0) > 0
+      ? `, pushed ${r.outboxPushedCount} resolved`
+      : "";
+  const reconflictSuffix =
+    (r.outboxReconflictedCount ?? 0) > 0
+      ? `, ${r.outboxReconflictedCount} re-conflicted (remote moved)`
+      : "";
   out(
-    `${r.repoKey}${head}: ${r.status} — pulled ${r.pulledCount}, pushed ${r.pushedCount}, merged ${r.mergedCount}, quarantined ${r.quarantinedCount}${(r.pushedDeletes?.length ?? 0) > 0 ? `, deleted ${r.pushedDeletes!.length}` : ""}`,
+    `${r.repoKey}${head}: ${r.status} — pulled ${r.pulledCount}, pushed ${r.pushedCount}, merged ${r.mergedCount}, quarantined ${r.quarantinedCount}${(r.pushedDeletes?.length ?? 0) > 0 ? `, deleted ${r.pushedDeletes!.length}` : ""}${resolvedSuffix}${reconflictSuffix}`,
   );
   if (r.detail !== undefined) out(`  ${r.detail}`);
   for (const w of r.warnings) out(`  warn: ${w}`);
@@ -465,6 +475,16 @@ export async function runExosyncSync(
   const conflictCache = new LocalConflictCacheStore({
     io: nodeWatermarkFileIO(conflictCachePath),
   });
+  // Deferred-push outbox (PR-3b) — the engine flushes queued offline resolutions
+  // on each non-pull sync (TOCTOU-guarded). Same `.local.` store family.
+  const outboxPath = path.join(
+    vaultPath,
+    configDir,
+    "plugins",
+    "exocortex",
+    OUTBOX_STORE_FILENAME,
+  );
+  const outbox = new LocalOutboxStore({ io: nodeWatermarkFileIO(outboxPath) });
 
   let quarantine: QuarantinePort = conflictCache;
   const quarantineUrl = opts.quarantineRepo?.trim() ?? "";
@@ -506,6 +526,7 @@ export async function runExosyncSync(
     // unresolvable merges (D17) — parity with the plugin's Phase B wiring.
     mergeLayer: new GatedStructuredMerger(new StructuredMerger(coreSchemaYaml)),
     quarantine,
+    outbox,
     ...(opts.apiBase !== undefined ? { baseURL: opts.apiBase } : {}),
   });
 

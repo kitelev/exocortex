@@ -145,7 +145,7 @@ describe("exosync quarantine list", () => {
 });
 
 describe("exosync quarantine resolve", () => {
-  it("--take local converges disk + remote to local and reports the push", async () => {
+  it("--take local applies to disk and DEFERS the push to the next sync (offline-first, PR-3b)", async () => {
     const local = mdAsset("uid-1", "LOCAL edit");
     const fx = await makeConflictVault({ base: mdAsset("uid-1", "base"), local });
     const lines: string[] = [];
@@ -156,11 +156,13 @@ describe("exosync quarantine resolve", () => {
         deps(fx.gh, lines),
       );
       expect(code).toBe(0);
-      // Remote head now holds the local choice (the 2-pass-killer commit).
-      expect(fx.gh.headFiles().get(CONFLICT)).toBe(local);
-      // Disk still holds local.
+      // Disk holds the chosen (local) content immediately.
       expect(readFileSync(path.join(fx.vault, MOUNT, CONFLICT), "utf-8")).toBe(local);
+      // The convergent push is DEFERRED — the remote is NOT touched at resolve
+      // time (the engine flushes the outbox on the next `exosync sync`).
+      expect(fx.gh.headFiles().get(CONFLICT)).toBe(fx.remote);
       expect(lines.join("\n")).toMatch(/Resolved alpha\.md \(local\)/);
+      expect(lines.join("\n")).toMatch(/awaiting push/);
     } finally {
       fx.cleanup();
     }

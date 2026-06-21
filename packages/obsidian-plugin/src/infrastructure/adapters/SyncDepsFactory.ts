@@ -9,7 +9,9 @@ import {
   GatedStructuredMerger,
   LOCAL_MANIFEST_STORE_FILENAME,
   LocalConflictCacheStore,
+  LocalOutboxStore,
   MOUNT_BASE_STORE_FILENAME,
+  OUTBOX_STORE_FILENAME,
   QuarantineResolver,
   SYNC_BRANCH,
   SpaceSpecAccumulator,
@@ -450,6 +452,12 @@ export async function buildSyncEngine(
   const conflictCache = new LocalConflictCacheStore({
     io: vaultWatermarkFileIO(adapter, conflictCachePath),
   });
+  // Deferred-push outbox (PR-3b) — the engine flushes queued offline resolutions
+  // on each non-pull sync (TOCTOU-guarded). Same `.local.` store family.
+  const outboxPath = `${configDir}/plugins/exocortex/${OUTBOX_STORE_FILENAME}`;
+  const outbox = new LocalOutboxStore({
+    io: vaultWatermarkFileIO(adapter, outboxPath),
+  });
 
   let quarantine: QuarantinePort = conflictCache;
   const quarantineUrl = opts.quarantineRepoUrl?.trim() ?? "";
@@ -530,6 +538,7 @@ export async function buildSyncEngine(
       new StructuredMerger(coreSchemaYamlCodec),
     ),
     quarantine,
+    outbox,
   });
 
   // A durable quarantine sink is now ALWAYS present (the device-local conflict
@@ -581,6 +590,12 @@ export async function buildQuarantineResolver(
   const conflictCache = new LocalConflictCacheStore({
     io: vaultWatermarkFileIO(adapter, conflictCachePath),
   });
+  // Deferred-push outbox (PR-3b) — resolve() queues offline resolutions here;
+  // the engine flushes them on the next sync.
+  const outboxPath = `${configDir}/plugins/exocortex/${OUTBOX_STORE_FILENAME}`;
+  const outbox = new LocalOutboxStore({
+    io: vaultWatermarkFileIO(adapter, outboxPath),
+  });
 
   let quarantine: QuarantinePort | undefined;
   const quarantineUrl = opts.quarantineRepoUrl?.trim() ?? "";
@@ -606,6 +621,7 @@ export async function buildQuarantineResolver(
     sha1,
     redact: (m) => GitHubRestClient.redactTokens(m),
     conflictCache,
+    outbox,
     ...(quarantine !== undefined ? { quarantine } : {}),
   });
   return { resolver, pat };

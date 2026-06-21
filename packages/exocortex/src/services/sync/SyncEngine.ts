@@ -75,6 +75,10 @@ import {
 import { detectChanges, extractAssetUid } from "./ChangeDetector";
 import { bytesToBase64 } from "../../utilities/base64";
 import { gitBlobSha } from "./gitBlobSha";
+import {
+  OUTBOX_REMOTE_ABSENT,
+  type OutboxStorePort,
+} from "./LocalOutboxStore";
 import { isAuthError } from "./CredentialStore";
 import { scanForSecrets } from "./secretScan";
 import { withRateLimitBackoff, type BackoffOptions } from "./transportBackoff";
@@ -209,6 +213,16 @@ export interface SyncEngineDeps {
    * non-advanced watermark) re-derives the conflict every sync.
    */
   quarantine?: QuarantinePort;
+  /**
+   * Deferred-push outbox (offline conflict resolution, PR-3b). When present, the
+   * engine FLUSHES it at the start of every non-pull sync: each queued resolution
+   * is pushed to the AssetSpace remote ONLY if the remote path has not moved
+   * since the resolution (the entry's `baseRemoteSha` TOCTOU key). If the remote
+   * moved, the entry is dropped WITHOUT overwriting — the path is still pinned, so
+   * this sync's detect re-derives the conflict (the user's choice stays on disk).
+   * Optional — absent ⇒ resolutions commit synchronously (no deferred push).
+   */
+  outbox?: OutboxStorePort;
   /**
    * Rate-limit backoff tuning (R6). The engine always wraps the transport
    * with `withRateLimitBackoff`; inject `sleep`/`random` in tests.
@@ -847,6 +861,10 @@ export class SyncEngine {
     this.activeTimer = timer;
     const warnings: string[] = [];
     const deferredDeletes: string[] = [];
+    // Deferred-push outbox flush results for this repo (PR-3b) — accumulated
+    // before detect and surfaced on EVERY return via the result() builder.
+    let outboxPushed = 0;
+    let outboxReconflicted = 0;
     // Deletions detected this cycle whose push loop is still IN FLIGHT —
     // a non-retryable throw mid-loop lands in the catch below, which must
     // still report them as deferred (contract: never silently dropped).
@@ -864,6 +882,10 @@ export class SyncEngine {
       quarantinedCount: 0,
       warnings,
       deferredDeletes,
+      ...(outboxPushed > 0 ? { outboxPushedCount: outboxPushed } : {}),
+      ...(outboxReconflicted > 0
+        ? { outboxReconflictedCount: outboxReconflicted }
+        : {}),
       // Phase 0 — snapshot at the return point captures the full breakdown
       // for whatever phases ran (early skips snapshot ~zero, harmless).
       timings: timer.snapshot(),
@@ -913,6 +935,18 @@ export class SyncEngine {
       }
 
       const maxBytes = this.deps.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
+
+      // Deferred-push outbox flush (PR-3b) — BEFORE the watermark is loaded for
+      // detect, so a clean push's watermark snap/unpin is visible to this same
+      // sync's detection (it then sees base==local==remote and finalises). Only
+      // for non-pull runs (pull never pushes; #3473). Best-effort: offline / push
+      // failure leaves the entry for the next sync; a TOCTOU remote-move drops the
+      // entry without overwriting and the still-pinned path re-derives the conflict.
+      if (direction !== "pull" && this.deps.outbox !== undefined) {
+        const flushed = await this.flushOutbox(spec, warnings);
+        outboxPushed = flushed.pushed;
+        outboxReconflicted = flushed.reconflicted;
+      }
 
       // The watermark is loaded BEFORE the local snapshot so the mtime-manifest
       // cache (perf) can be gated on its presence: the cache only applies to a
@@ -1554,6 +1588,164 @@ export class SyncEngine {
       );
       return false;
     }
+  }
+
+  /**
+   * Flush the deferred-push outbox for one repo (offline conflict resolution,
+   * PR-3b). For each queued resolution:
+   *
+   *  - re-fetch the current remote head tree (ONE fetch for the repo);
+   *  - if the remote blob-SHA for the path STILL equals the resolution's
+   *    `baseRemoteSha` (the remote has not moved since the offline choice) →
+   *    push the chosen content (`restCreateCommit`, `force:false`), snap the
+   *    watermark base to the choice + unpin, drop the conflict-cache entry, and
+   *    remove the outbox entry. The path converges (base==local==remote);
+   *  - if the remote MOVED (sha differs) → ⛤ DO NOT overwrite. Drop the outbox
+   *    entry only; the path is still pinned, so this same sync's detect
+   *    re-derives the conflict (disk-chosen vs the new remote) and re-quarantines
+   *    it. Zero-loss: the chosen content stays on disk, the new remote stays in
+   *    git history, the user simply chooses again.
+   *
+   * Offline (head fetch fails) or a concurrent-push race (commit 422) leaves the
+   * entry in place to retry next sync — never a partial/forced overwrite.
+   */
+  private async flushOutbox(
+    spec: SyncRepoSpec,
+    warnings: string[],
+  ): Promise<{ pushed: number; reconflicted: number }> {
+    const outbox = this.deps.outbox;
+    if (outbox === undefined) return { pushed: 0, reconflicted: 0 };
+    const pending = await outbox.listForRepo(spec.repoKey);
+    if (pending.length === 0) return { pushed: 0, reconflicted: 0 };
+    const redact = this.deps.redact ?? ((m: string): string => m);
+
+    let head: string;
+    let remoteShaByPath: Map<string, string>;
+    try {
+      ({ head, shaByPath: remoteShaByPath } = await this.outboxHeadTreeShas(spec));
+    } catch (err) {
+      // Offline / unreachable — defer the whole flush to the next sync.
+      warnings.push(
+        `outbox flush deferred (${pending.length} resolution(s) awaiting push): ${redact(errMsg(err))}`,
+      );
+      return { pushed: 0, reconflicted: 0 };
+    }
+
+    let pushed = 0;
+    let reconflicted = 0;
+    for (const entry of pending) {
+      const currentRemoteSha =
+        remoteShaByPath.get(entry.path) ?? OUTBOX_REMOTE_ABSENT;
+      if (currentRemoteSha !== entry.baseRemoteSha) {
+        // ⛤ TOCTOU: the remote moved since the offline resolution. Never
+        // overwrite — drop the queued push; the still-pinned path re-derives the
+        // conflict in this sync's detect (the user's choice is on disk).
+        await outbox.remove(entry.repoKey, entry.path);
+        reconflicted++;
+        warnings.push(
+          redact(
+            `outbox: remote moved for ${entry.path} since you resolved it — NOT pushed; resolve again (your choice is preserved on disk)`,
+          ),
+        );
+        continue;
+      }
+      // Remote unchanged at our guard-read → push the chosen content. The
+      // `expectedHeadSha` CAS closes the window between THIS guard-read and
+      // restCreateCommit's own ref-read: if the head moved in between, the push
+      // aborts (no overwrite) and we leave the entry to retry next sync — which
+      // re-checks the per-path TOCTOU and re-conflicts if needed. force:false
+      // additionally guards restCreateCommit's own GET→PATCH window (→ 422).
+      try {
+        await restCreateCommit(this.transport, {
+          owner: spec.owner,
+          repo: spec.repo,
+          branch: spec.branch,
+          files: new Map([[entry.path, entry.chosenContent]]),
+          message: `chore(exosync): push resolved conflict for ${entry.path}`,
+          expectedHeadSha: head,
+          ...(this.deps.baseURL !== undefined ? { baseURL: this.deps.baseURL } : {}),
+          ...(this.deps.redact !== undefined ? { redact: this.deps.redact } : {}),
+        });
+      } catch (err) {
+        warnings.push(
+          `outbox: push deferred for ${entry.path}, will retry next sync: ${redact(errMsg(err))}`,
+        );
+        continue; // leave the entry; never overwrite on a failed/raced/moved push
+      }
+      await this.snapOutboxWatermark(spec, entry.path, entry.chosenContent);
+      await this.deps.quarantine?.markResolved?.(entry.repoKey, entry.path);
+      await outbox.remove(entry.repoKey, entry.path);
+      pushed++;
+    }
+    if (pushed > 0) {
+      warnings.push(`pushed ${pushed} resolved conflict(s)`);
+    }
+    return { pushed, reconflicted };
+  }
+
+  /**
+   * AssetSpace head commit SHA + path→blobSha of its tree (one fetch — outbox
+   * TOCTOU). The head SHA is the CAS token for the flush push (`expectedHeadSha`).
+   */
+  private async outboxHeadTreeShas(
+    spec: SyncRepoSpec,
+  ): Promise<{ head: string; shaByPath: Map<string, string> }> {
+    const head = await getHeadSha(
+      this.transport,
+      spec.owner,
+      spec.repo,
+      spec.branch,
+      this.deps.baseURL,
+    );
+    const commit = await getCommitInfo(
+      this.transport,
+      spec.owner,
+      spec.repo,
+      head,
+      this.deps.baseURL,
+    );
+    const tree = await getTree(
+      this.transport,
+      spec.owner,
+      spec.repo,
+      commit.treeSha,
+      this.deps.baseURL,
+    );
+    const shaByPath = new Map<string, string>();
+    for (const e of tree) shaByPath.set(e.path, e.blobSha);
+    return { head, shaByPath };
+  }
+
+  /**
+   * Snap the watermark base for a flushed resolution to the chosen blob and
+   * unpin the path (mirror of {@link QuarantineResolver}'s snap) — the next
+   * detect sees base==local==remote and finalises without a merge.
+   * lastSyncedSha/rootTreeSha stay untouched (advancing them would falsely claim
+   * other unpulled remote paths as synced — M1 loss).
+   */
+  private async snapOutboxWatermark(
+    spec: SyncRepoSpec,
+    path: string,
+    chosen: string,
+  ): Promise<void> {
+    const record = await this.deps.watermarkStore.get(spec.repoKey);
+    if (record === null) return;
+    const pinnedPaths = (record.pinnedPaths ?? []).filter((p) => p !== path);
+    const blobSha = await gitBlobSha(chosen, this.sha1);
+    const uid = extractAssetUid(chosen);
+    const entry = { path, blobSha, ...(uid !== undefined ? { uid } : {}) };
+    const idx = record.files.findIndex((f) => f.path === path);
+    const files =
+      idx >= 0
+        ? record.files.map((f, i) => (i === idx ? entry : f))
+        : [...record.files, entry];
+    await this.deps.watermarkStore.set(spec.repoKey, {
+      ...record,
+      files,
+      ...(pinnedPaths.length > 0
+        ? { pinnedPaths }
+        : { pinnedPaths: undefined }),
+    });
   }
 
   /**

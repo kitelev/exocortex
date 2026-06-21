@@ -403,6 +403,19 @@ export interface RepoSyncResult {
    * See {@link SyncPhaseTimings}.
    */
   timings?: SyncPhaseTimings;
+  /**
+   * Deferred-push outbox results this sync (offline conflict resolution, PR-3b).
+   * `outboxPushedCount` — resolutions whose convergent commit was flushed to the
+   * remote now (the command layer surfaces "pushed N resolved"). Absent/0 ⇒ none.
+   */
+  outboxPushedCount?: number;
+  /**
+   * Deferred resolutions NOT pushed because the remote path moved since the
+   * offline resolution (TOCTOU) — the entry was dropped without overwriting and
+   * the conflict re-surfaces this sync (zero-loss; the chosen content is still on
+   * disk). Absent/0 ⇒ none.
+   */
+  outboxReconflictedCount?: number;
   detail?: string;
 }
 

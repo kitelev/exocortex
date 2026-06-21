@@ -396,6 +396,9 @@ export class SyncCommands {
     let quarantined = 0;
     let deferred = 0;
     let synced = 0;
+    // Deferred-push outbox flush totals (PR-3b — offline resolutions).
+    let resolvedPushed = 0;
+    let resolvedReconflicted = 0;
     // #a0a3d1d6 — surface duplicate-uid anomalies (#3477) in the summary: the
     // ChangeDetector already emits a per-uid warning, but the user only sees
     // them buried in the console log. Counting the distinct uids here lets the
@@ -441,6 +444,8 @@ export class SyncCommands {
       merged += r.mergedCount;
       quarantined += r.quarantinedCount;
       deferred += r.deferredPaths?.length ?? 0;
+      resolvedPushed += r.outboxPushedCount ?? 0;
+      resolvedReconflicted += r.outboxReconflictedCount ?? 0;
       switch (r.status) {
         case "synced":
           synced++;
@@ -505,6 +510,12 @@ export class SyncCommands {
       (deleted > 0 ? `, deleted ${deleted}` : "") +
       (deferred > 0
         ? `, deferred ${deferred} (a full Sync resolves them)`
+        : "") +
+      (resolvedPushed > 0
+        ? `, pushed ${resolvedPushed} resolved conflict(s)`
+        : "") +
+      (resolvedReconflicted > 0
+        ? `, ${resolvedReconflicted} resolution(s) re-conflicted (remote moved — resolve again)`
         : "") +
       (dupUids.size > 0
         ? `, ${dupUids.size} duplicate uid(s) (run 'exosync dedup-uids')`

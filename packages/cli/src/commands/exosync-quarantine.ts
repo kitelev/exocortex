@@ -25,6 +25,8 @@ import {
   CONFLICT_CACHE_STORE_FILENAME,
   FileWatermarkStore,
   LocalConflictCacheStore,
+  LocalOutboxStore,
+  OUTBOX_STORE_FILENAME,
   QuarantineResolver,
   SYNC_BRANCH,
   SyncedQuarantineStore,
@@ -93,6 +95,16 @@ function buildResolver(
   const conflictCache = new LocalConflictCacheStore({
     io: nodeWatermarkFileIO(conflictCachePath),
   });
+  // Deferred-push outbox (PR-3b) — resolve() queues offline resolutions here;
+  // the engine flushes them on the next `exosync sync`.
+  const outboxPath = path.join(
+    vaultPath,
+    configDir,
+    "plugins",
+    "exocortex",
+    OUTBOX_STORE_FILENAME,
+  );
+  const outbox = new LocalOutboxStore({ io: nodeWatermarkFileIO(outboxPath) });
 
   let quarantine: QuarantinePort | undefined;
   const quarantineUrl = opts.quarantineRepo?.trim() ?? "";
@@ -117,6 +129,7 @@ function buildResolver(
     ...(opts.apiBase !== undefined ? { baseURL: opts.apiBase } : {}),
     redact: (m) => pushService.redact(m),
     conflictCache,
+    outbox,
     ...(quarantine !== undefined ? { quarantine } : {}),
   });
   return { resolver, specs, warnings };
@@ -221,13 +234,13 @@ export async function runQuarantineResolve(
   const spec = specs.find((s) => s.repoKey === target.repoKey)!;
   const result = await resolver.resolve(spec, target.path, choice);
 
-  out(
-    `Resolved ${target.path} (${result.resolvedTo}) in ${target.repoKey}${
-      result.pushedSha !== undefined
+  const outcome =
+    result.awaitingPush === true
+      ? " — awaiting push (run `exosync sync` to push it)"
+      : result.pushedSha !== undefined
         ? ` — pushed @${result.pushedSha.slice(0, 7)}`
-        : " — remote already matched"
-    }.`,
-  );
+        : " — remote already matched";
+  out(`Resolved ${target.path} (${result.resolvedTo}) in ${target.repoKey}${outcome}.`);
   if (result.discardedLocalBackupPath !== undefined) {
     out(
       `  ↳ your discarded local version is preserved at ${spec.localPath}/${result.discardedLocalBackupPath}`,

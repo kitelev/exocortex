@@ -113,6 +113,17 @@ export interface RestCreateCommitParams {
    */
   deletions?: readonly string[];
   message: string;
+  /**
+   * Optional compare-and-swap guard (zero-loss, ExoSync outbox flush). When set,
+   * the chain ABORTS before building anything if the current ref SHA (step 1)
+   * does not equal this value — i.e. the remote moved since the caller observed
+   * it. Closes the TOCTOU window between a caller's own head-read and this chain's
+   * ref-read: a concurrent push in that window would otherwise be silently
+   * overwritten by a clean fast-forward. The caller catches the thrown error and
+   * leaves its work queued / re-derives the conflict (never an overwrite).
+   * Omitted ⇒ no check (historical behaviour byte-for-byte).
+   */
+  expectedHeadSha?: string;
   /** Defaults to `https://api.github.com`. Trailing slash stripped. */
   baseURL?: string;
   /**
@@ -210,6 +221,19 @@ export async function restCreateCommit(
   if (typeof baseSha !== "string" || baseSha.length === 0) {
     throw new Error(
       redact(`GitHub createCommit: missing object.sha for ref heads/${branch}`),
+    );
+  }
+  // Compare-and-swap guard (zero-loss): the remote moved since the caller's
+  // head-read → abort BEFORE building/pushing, so a concurrent change in that
+  // window is never overwritten by a clean fast-forward.
+  if (
+    params.expectedHeadSha !== undefined &&
+    baseSha !== params.expectedHeadSha
+  ) {
+    throw new Error(
+      redact(
+        `GitHub createCommit: head heads/${branch} moved since the caller's check (expected ${params.expectedHeadSha}, found ${baseSha}) — refusing to avoid overwriting a concurrent change`,
+      ),
     );
   }
 
