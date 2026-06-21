@@ -1119,7 +1119,12 @@ export class SyncEngine {
       // ALSO performs the full getCommitInfo(base) validation — catching the
       // (adversarial-only) corrupt watermark whose rootTreeSha drifted from
       // files[] yet stayed JSON-parseable. Natural corruption yields a null
-      // watermark + full re-scan (R10) long before that. Every other case
+      // watermark + full re-scan (R10) long before that. And even within the
+      // valve window a drifted base can never drive a silent remote overwrite:
+      // the diff runs against `watermark.files` (not rootTreeSha), and every
+      // push is GitHub-side force:false fast-forward-gated (restCommit — the
+      // ultimate remote-side backstop), so a stale base degrades to a 422 →
+      // re-pull → re-push, never a loss. Every other case
       // (cache off, first sync, file mode, full re-hash, head moved) keeps the
       // eager getCommitInfo(base) validation unchanged (status quo).
       let prefetchedHead: string | undefined;

@@ -393,4 +393,46 @@ describe("SyncEngine — no-op REST halving (perf, zero-loss)", () => {
     // (nothing to push), so getHeadSha fires exactly once.
     expect(headGets(requests)).toBe(1);
   });
+
+  it("ZERO-LOSS residual: a drifted rootTreeSha is undetected while the skip is active, but the full re-hash valve catches it", async () => {
+    // The ONLY case where the skip could trust a wrong `rootTreeSha` is a
+    // corrupt watermark whose rootTreeSha drifted from the real tree while
+    // lastSyncedSha stayed a live head and the JSON stayed parseable (natural
+    // corruption yields a null watermark + full re-scan long before this). This
+    // pins the bounded contract: the drift is silently tolerated WHILE the skip
+    // is active (the diff still runs against the intact `files[]`, and any push
+    // is GitHub-side force:false fast-forward-gated), and the periodic full
+    // re-hash valve runs the full getCommitInfo(base) D22 and CATCHES it.
+    const files = { [A]: mdAsset("u1") };
+    const gh = new FakeGitHubRepo(files);
+    const local = new StatLocalFiles(files);
+    const wm = new FakeWatermarkStore();
+    const manifest = new MemManifestStore();
+
+    const skipEngine = makeEngine(gh.transport(), local, {
+      localManifestStore: manifest,
+      watermarkStore: wm,
+    });
+    await warmUp(skipEngine, gh); // seeds a CORRECT watermark + warm manifest
+
+    // Corrupt the recorded rootTreeSha; lastSyncedSha still points at the head.
+    const repoKey = gh.spec().repoKey;
+    const rec = wm.records.get(repoKey);
+    if (rec === undefined) throw new Error("test setup: watermark missing");
+    wm.records.set(repoKey, { ...rec, rootTreeSha: "0".repeat(40) });
+
+    // Skip active (head unmoved) ⇒ getCommitInfo(base) skipped ⇒ the drift is
+    // NOT detected; the diff runs against the intact watermark.files → no-op.
+    const [residual] = await skipEngine.syncAll([gh.spec()], "sync");
+    expect(residual.status).toBe("synced");
+
+    // The periodic full re-hash valve runs the FULL D22 and catches the drift.
+    const valveEngine = makeEngine(gh.transport(), local, {
+      localManifestStore: manifest, // shared warm manifest (valve, not first-sync)
+      watermarkStore: wm, // still-corrupt watermark
+      localManifestFullRehashMs: 0, // valve fires every sync
+    });
+    const [caught] = await valveEngine.syncAll([gh.spec()], "sync");
+    expect(caught.status).toBe("full-conflict"); // base-mismatch detected (D22)
+  });
 });
