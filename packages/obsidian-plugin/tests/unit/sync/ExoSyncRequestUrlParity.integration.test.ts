@@ -222,6 +222,37 @@ describe("ExoSync over requestUrl (desktop parity, AC#3)", () => {
     expect(h.repo.headFiles().get("a.md")).toContain("remote-version");
   });
 
+  it("captures the 3 versions in the device-local conflict cache even with NO quarantine repo (offline foundation)", async () => {
+    const h = await makeHarness({
+      initialFiles: { "a.md": asset("u1", "one") },
+      // NB: no withQuarantineRepo — the device-local cache must be wired anyway.
+    });
+    await h.sync(); // bootstrap
+
+    h.adapter.seedFile(`${MOUNT}/a.md`, asset("u1", "local-version"));
+    h.repo.commitDirect(
+      "main",
+      { "a.md": asset("u1", "remote-version") },
+      "device B",
+    );
+    const results = await h.sync();
+    expect(results[0].quarantinedCount).toBe(1);
+
+    // The factory wired LocalConflictCacheStore unconditionally → the 3 versions
+    // are on disk in the `.local.` (Sync-excluded) cache, ready for an offline
+    // resolve. (Revert-verify: drop the cache wiring in buildSyncEngine and this
+    // file never gets written → FAIL.)
+    const cachePath = `.obsidian/plugins/exocortex/exosync-conflicts.local.json`;
+    expect(await h.adapter.exists(cachePath)).toBe(true);
+    const store = JSON.parse(await h.adapter.read(cachePath)) as {
+      entries: Record<string, { localContent?: string; remoteContent?: string }>;
+    };
+    const records = Object.values(store.entries);
+    expect(records).toHaveLength(1);
+    expect(records[0].localContent).toContain("local-version");
+    expect(records[0].remoteContent).toContain("remote-version");
+  });
+
   it("persists both versions to the synced quarantine repo (D17)", async () => {
     const h = await makeHarness({
       initialFiles: { "a.md": asset("u1", "one") },

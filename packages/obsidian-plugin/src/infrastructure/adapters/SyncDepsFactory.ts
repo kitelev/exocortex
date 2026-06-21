@@ -1,11 +1,14 @@
 import type { App, DataAdapter } from "obsidian";
 import yaml from "js-yaml";
 import {
+  CONFLICT_CACHE_STORE_FILENAME,
+  CompositeQuarantineStore,
   FileLocalManifestStore,
   FileMountBaseStore,
   FileWatermarkStore,
   GatedStructuredMerger,
   LOCAL_MANIFEST_STORE_FILENAME,
+  LocalConflictCacheStore,
   MOUNT_BASE_STORE_FILENAME,
   QuarantineResolver,
   SYNC_BRANCH,
@@ -63,9 +66,11 @@ import type { PluginLocalDataStore } from "./PluginLocalDataStore";
  *    contract). The optional SHACL merge-gate is NOT wired in Phase B —
  *    plugin-side ShapeRegistry/ClassHierarchy/triplesFor composition is a
  *    follow-up; unresolvable merges still quarantine (D17).
- *  - quarantine — `SyncedQuarantineStore` against the user-configured
- *    quarantine repo (settings), absent ⇒ engine degrades safely (watermark
- *    pins re-derive conflicts, no data loss).
+ *  - quarantine — the device-local `LocalConflictCacheStore` (offline-resolution
+ *    foundation) is ALWAYS wired: it persists the 3 versions of every conflict
+ *    to a `.local.` (Sync-excluded) file so the resolver can work offline. A
+ *    user-configured `SyncedQuarantineStore` (settings) is TEE'd alongside it
+ *    via `CompositeQuarantineStore` for the cross-device count.
  */
 
 /** Per-repo sync branch — re-exported from the core (ExoSync E1: the
@@ -400,10 +405,10 @@ export interface BuiltSyncEngine {
   /** PAT resolved at build time; null ⇒ caller surfaces the R8 prompt. */
   pat: string | null;
   /**
-   * #3495 — whether the engine was built with a durable quarantine sink.
-   * `false` ⇒ conflicts are pinned and re-derive every sync but BOTH versions
-   * are never saved (silent degraded mode). The caller surfaces a one-shot
-   * warn when a conflict actually occurs without a sink.
+   * #3495 — whether the engine was built with a durable quarantine sink. Now
+   * ALWAYS `true`: the device-local conflict cache is wired unconditionally and
+   * is itself durable (survives restart), so conflicts are never silently
+   * dropped. Retained so the caller's one-shot "no sink" warning stays inert.
    */
   quarantineConfigured: boolean;
 }
@@ -436,12 +441,22 @@ export async function buildSyncEngine(
   // (the dominant iPhone cost on a 14-AS / ~6304-file vault).
   const manifestPath = `${configDir}/plugins/exocortex/${LOCAL_MANIFEST_STORE_FILENAME}`;
 
-  let quarantine: QuarantinePort | undefined;
+  // Device-local conflict cache (offline-resolution foundation) — ALWAYS wired,
+  // same `.local.` (Sync-excluded) store family as the watermark. It captures
+  // the 3 versions of every conflict on disk so the resolver can work offline
+  // (PR-3). It is also a durable sink in its own right (survives restart), so
+  // conflicts are NEVER silently dropped — the #3495 degraded-mode is gone.
+  const conflictCachePath = `${configDir}/plugins/exocortex/${CONFLICT_CACHE_STORE_FILENAME}`;
+  const conflictCache = new LocalConflictCacheStore({
+    io: vaultWatermarkFileIO(adapter, conflictCachePath),
+  });
+
+  let quarantine: QuarantinePort = conflictCache;
   const quarantineUrl = opts.quarantineRepoUrl?.trim() ?? "";
   if (quarantineUrl.length > 0) {
     GitHubRestClient.validateRepoURL(quarantineUrl);
     const { owner, repo } = parseGitHubURL(quarantineUrl);
-    quarantine = new SyncedQuarantineStore({
+    const synced = new SyncedQuarantineStore({
       // The engine wraps ITS transport internally; the quarantine store
       // needs its own backoff wrap (it is the highest-volume caller).
       transport: withRateLimitBackoff(transport),
@@ -451,6 +466,10 @@ export async function buildSyncEngine(
       branch: SYNC_BRANCH,
       redact: (m) => GitHubRestClient.redactTokens(m),
     });
+    // Tee: device-local cache FIRST (durability-critical), synced repo second
+    // (cross-device count). The cache write always runs even if the synced push
+    // fails — see CompositeQuarantineStore.
+    quarantine = new CompositeQuarantineStore([conflictCache, synced]);
   }
 
   // #3590 FULL fix — base BACKFILL source for AssetSpaces mounted BEFORE the
@@ -510,10 +529,12 @@ export async function buildSyncEngine(
     mergeLayer: new GatedStructuredMerger(
       new StructuredMerger(coreSchemaYamlCodec),
     ),
-    ...(quarantine !== undefined ? { quarantine } : {}),
+    quarantine,
   });
 
-  return { engine, pat, quarantineConfigured: quarantine !== undefined };
+  // A durable quarantine sink is now ALWAYS present (the device-local conflict
+  // cache) — conflicts are always saved, so the #3495 "no sink" warning is moot.
+  return { engine, pat, quarantineConfigured: true };
 }
 
 export interface BuildQuarantineResolverOptions {
@@ -554,6 +575,12 @@ export async function buildQuarantineResolver(
   const adapter = app.vault.adapter;
   const configDir = app.vault.configDir;
   const watermarkPath = `${configDir}/plugins/exocortex/${WATERMARK_STORE_FILENAME}`;
+  // Device-local conflict cache (PR-2) — the resolver's OFFLINE source for a
+  // conflict's remote+base versions (same `.local.` store the engine writes).
+  const conflictCachePath = `${configDir}/plugins/exocortex/${CONFLICT_CACHE_STORE_FILENAME}`;
+  const conflictCache = new LocalConflictCacheStore({
+    io: vaultWatermarkFileIO(adapter, conflictCachePath),
+  });
 
   let quarantine: QuarantinePort | undefined;
   const quarantineUrl = opts.quarantineRepoUrl?.trim() ?? "";
@@ -578,6 +605,7 @@ export async function buildQuarantineResolver(
     localFilesFor: (spec) => vaultLocalFilesPort(adapter, spec.localPath),
     sha1,
     redact: (m) => GitHubRestClient.redactTokens(m),
+    conflictCache,
     ...(quarantine !== undefined ? { quarantine } : {}),
   });
   return { resolver, pat };

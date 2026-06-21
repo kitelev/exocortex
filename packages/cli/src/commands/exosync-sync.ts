@@ -39,11 +39,14 @@ import { promisify } from "node:util";
 import * as path from "node:path";
 import yaml from "js-yaml";
 import {
+  CONFLICT_CACHE_STORE_FILENAME,
+  CompositeQuarantineStore,
   FileLocalManifestStore,
   FileMountBaseStore,
   FileWatermarkStore,
   GatedStructuredMerger,
   LOCAL_MANIFEST_STORE_FILENAME,
+  LocalConflictCacheStore,
   MOUNT_BASE_STORE_FILENAME,
   StructuredMerger,
   SyncedQuarantineStore,
@@ -448,11 +451,27 @@ export async function runExosyncSync(
     "exocortex",
     LOCAL_MANIFEST_STORE_FILENAME,
   );
-  let quarantine: QuarantinePort | undefined;
+  // Device-local conflict cache (offline-resolution foundation) — ALWAYS wired,
+  // same `.local.` (Sync-excluded) store family as the watermark; reuses
+  // `nodeWatermarkFileIO` verbatim. Captures the 3 versions of every conflict on
+  // disk so the resolver works offline (PR-3) and conflicts are never dropped.
+  const conflictCachePath = path.join(
+    vaultPath,
+    configDir,
+    "plugins",
+    "exocortex",
+    CONFLICT_CACHE_STORE_FILENAME,
+  );
+  const conflictCache = new LocalConflictCacheStore({
+    io: nodeWatermarkFileIO(conflictCachePath),
+  });
+
+  let quarantine: QuarantinePort = conflictCache;
   const quarantineUrl = opts.quarantineRepo?.trim() ?? "";
-  if (quarantineUrl.length > 0) {
+  const syncedQuarantineConfigured = quarantineUrl.length > 0;
+  if (syncedQuarantineConfigured) {
     const { owner, repo } = parseGitHubRepoUrl(quarantineUrl);
-    quarantine = new SyncedQuarantineStore({
+    const synced = new SyncedQuarantineStore({
       // The engine wraps ITS transport internally; the quarantine store is
       // the highest-volume caller, so it needs its own backoff wrap.
       transport: withRateLimitBackoff(transport),
@@ -462,6 +481,8 @@ export async function runExosyncSync(
       branch: SYNC_BRANCH,
       redact: (m) => pushService.redact(m),
     });
+    // Tee: device-local cache FIRST (durability-critical), synced repo second.
+    quarantine = new CompositeQuarantineStore([conflictCache, synced]);
   }
 
   const engine = new SyncEngine({
@@ -484,12 +505,12 @@ export async function runExosyncSync(
     // GatedStructuredMerger without a SHACL gate still quarantines
     // unresolvable merges (D17) — parity with the plugin's Phase B wiring.
     mergeLayer: new GatedStructuredMerger(new StructuredMerger(coreSchemaYaml)),
-    ...(quarantine !== undefined ? { quarantine } : {}),
+    quarantine,
     ...(opts.apiBase !== undefined ? { baseURL: opts.apiBase } : {}),
   });
 
   out(
-    `ExoSync ${direction}: ${specs.length} repo(s), vault ${vaultPath}${quarantine !== undefined ? " (quarantine configured)" : ""}`,
+    `ExoSync ${direction}: ${specs.length} repo(s), vault ${vaultPath}${syncedQuarantineConfigured ? " (synced quarantine configured)" : ""}`,
   );
   // Children before parents (deeper mount paths first) — D12 ordering.
   const ordered = orderChildrenFirst(specs);

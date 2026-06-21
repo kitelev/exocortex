@@ -749,6 +749,18 @@ export {
   type QuarantineEntryRecord,
   type SyncedQuarantineStoreDeps,
 } from "./services/sync/SyncedQuarantineStore";
+// Device-local conflict cache (offline-resolution foundation): a QuarantinePort
+// that persists the 3 versions of every conflict to a `.local.` (Sync-excluded)
+// file so the resolver can work offline. CompositeQuarantineStore tees it with
+// the optional synced repo while both coexist.
+export {
+  LocalConflictCacheStore,
+  CONFLICT_CACHE_STORE_FILENAME,
+  type ConflictCacheReadPort,
+  type ConflictCacheRecord,
+  type LocalConflictCacheStoreDeps,
+} from "./services/sync/LocalConflictCacheStore";
+export { CompositeQuarantineStore } from "./services/sync/CompositeQuarantineStore";
 // ExoSync E1 — platform-free space-declaration classification core shared by
 // the plugin's collectSyncRepoSpecs and the CLI's exosync-parity collector
 // (one parser, no drift), plus the M1/M2 parity validation harness
