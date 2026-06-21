@@ -67,7 +67,6 @@ already-bucketed or non-prose.
 | `docs/exosync.md`                                                      | `docs/how-to/exosync.md`                             | how-to       | ExoSync **usage** (`Exocortex: Sync`, structured merge, conflict quarantine)                                                                                                           |
 | `docs/ROLLBACK_EXOQL_EVAL.md`                                          | `docs/how-to/ROLLBACK_EXOQL_EVAL.md`                 | how-to       | operational rollback **procedure** (runbook); task-oriented                                                                                                                            |
 | `docs/PROPERTY_SCHEMA.md`                                              | `docs/reference/PROPERTY_SCHEMA.md`                  | reference    | frontmatter property vocabulary (pure reference)                                                                                                                                       |
-| `docs/NL-TO-SPARQL.md`                                                 | `docs/reference/NL-TO-SPARQL.md`                     | reference    | canonical NL → query translation reference                                                                                                                                             |
 | `docs/SHACL_LITE_MAPPING.md`                                           | `docs/reference/SHACL_LITE_MAPPING.md`               | reference    | self-labeled "Status: Reference"; vocabulary mapping                                                                                                                                   |
 | `docs/Performance-Guide.md`                                            | `docs/reference/Performance-Guide.md`                | reference    | **straddle**: "optimization tips **and performance characteristics**" — the system-characteristics content (index permutations, complexity) dominates over the tuning tips → reference |
 | `docs/api/Core-API.md`                                                 | `docs/reference/Core-API.md`                         | reference    | programmatic core API reference (`api/` subdir flattened — single file)                                                                                                                |
@@ -110,18 +109,18 @@ already-bucketed or non-prose.
 
 ## Package-local docs — logically `reference/`, physically stay (npm-shipped)
 
-| Path                                                                                  | Mode                                                                            |
-| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `packages/cli/docs/CLI_API_REFERENCE.md`                                              | reference                                                                       |
-| `packages/cli/docs/ONTOLOGY_REFERENCE.md`                                             | reference                                                                       |
-| `packages/cli/docs/SPARQL_GUIDE.md`, `SPARQL_COOKBOOK.md`                             | reference                                                                       |
-| `packages/cli/VERSIONING.md`                                                          | reference                                                                       |
-| `packages/cli/docs/RCA_DYNCOMMAND_SHOW_VS_EXEC.md`, `SUNSET_LEGACY_COMMAND_START.md`  | contributing (process)                                                          |
-| `packages/obsidian-plugin/docs/EXO_LAYOUT.md`                                         | reference                                                                       |
-| `packages/obsidian-plugin/docs/release-checklist-mobile.md`                           | how-to                                                                          |
-| `packages/obsidian-plugin/docs/FLAKY_DASHBOARD.md`                                    | contributing                                                                    |
-| `packages/obsidian-plugin/docs/TESTING.md`, `packages/exocortex/docs/NL-TO-SPARQL.md` | stubs → canonical (root `TESTING.md` / `docs/reference/NL-TO-SPARQL.md`)        |
-| `packages/obsidian-plugin/docs/phase3/**`                                             | frozen archive (referenced by `docker-entrypoint-e2e.sh` comment — do not move) |
+| Path                                                                                 | Mode                                                                            |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| `packages/cli/docs/CLI_API_REFERENCE.md`                                             | reference                                                                       |
+| `packages/cli/docs/ONTOLOGY_REFERENCE.md`                                            | reference                                                                       |
+| `packages/cli/docs/SPARQL_GUIDE.md`, `SPARQL_COOKBOOK.md`                            | reference                                                                       |
+| `packages/cli/VERSIONING.md`                                                         | reference                                                                       |
+| `packages/cli/docs/RCA_DYNCOMMAND_SHOW_VS_EXEC.md`, `SUNSET_LEGACY_COMMAND_START.md` | contributing (process)                                                          |
+| `packages/obsidian-plugin/docs/EXO_LAYOUT.md`                                        | reference                                                                       |
+| `packages/obsidian-plugin/docs/release-checklist-mobile.md`                          | how-to                                                                          |
+| `packages/obsidian-plugin/docs/FLAKY_DASHBOARD.md`                                   | contributing                                                                    |
+| `packages/obsidian-plugin/docs/TESTING.md`                                           | stub → canonical (root `TESTING.md`)                                            |
+| `packages/obsidian-plugin/docs/phase3/**`                                            | frozen archive (referenced by `docker-entrypoint-e2e.sh` comment — do not move) |
 
 ---
 
