@@ -53,25 +53,31 @@ test(
 );
 
 test(
-  "living-docs.yml has no Pages deploy step (MVP-3 is build-only, no publish)",
+  "living-docs.yml deploy is gated to push/dispatch — a pull_request never publishes (MVP-4)",
   { skip: hasWorkflow ? false : "workflow not present" },
   () => {
     const yaml = readFileSync(WORKFLOW, "utf-8");
-    assert.doesNotMatch(
+    // The deploy job must be conditioned off pull_request events: PRs build +
+    // test only, they never publish.
+    assert.match(
       yaml,
-      /actions\/deploy-pages|deploy-pages@|actions\/upload-pages-artifact/,
-      "MVP-3 must not deploy to GitHub Pages — that is MVP-4 (explicit human confirm).",
+      /if:\s*\$\{\{\s*github\.event_name\s*==\s*'push'\s*\|\|\s*github\.event_name\s*==\s*'workflow_dispatch'\s*\}\}/,
+      "the deploy job must run only on push-to-main or workflow_dispatch, never on a PR",
     );
   },
 );
 
 test(
-  "living-docs.yml grants only read permissions (no write/pages — no deploy)",
+  "the build is read-only PAT-less; deploy uses repo-scoped deploy-pages (no cross-repo PAT) (MVP-4)",
   { skip: hasWorkflow ? false : "workflow not present" },
   () => {
     const yaml = readFileSync(WORKFLOW, "utf-8");
+    // The default + build permissions are read-only — the air-gap build cannot write.
     assert.match(yaml, /permissions:\s*\n\s*contents:\s*read/);
-    assert.doesNotMatch(yaml, /pages:\s*write/);
-    assert.doesNotMatch(yaml, /id-token:\s*write/);
+    // `pages: write` must NOT be the top-level default; it is granted only inside
+    // the deploy job (repo-scoped, for THIS repo's Pages — not a cross-repo PAT).
+    assert.doesNotMatch(yaml, /^permissions:\s*\n\s*pages:\s*write/m);
+    // Deploy uses the standard GitHub Pages action (repo-scoped GITHUB_TOKEN).
+    assert.match(yaml, /actions\/deploy-pages@/);
   },
 );
