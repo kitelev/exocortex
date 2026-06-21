@@ -13,8 +13,15 @@
  *  - `quarantine resolve <path> --take local|remote|file <path>` — apply one
  *    choice convergently (disk + remote commit), zero-loss.
  *  - `dedup-uids`        — report duplicate `exo__Asset_uid`s on disk (the
- *    #3477 anomaly) and, with `--fix`, assign a fresh uuid to every duplicate
- *    but the first (frontmatter rewrite only — never a rename).
+ *    #3477 anomaly). `--fix` assigns a fresh uuid to every duplicate but the
+ *    first (frontmatter rewrite only — never a rename). `--auto` is the
+ *    zero-loss auto-resolver: byte/whitespace-IDENTICAL copies are deleted
+ *    (their content survives verbatim in the kept file), while DISTINCT
+ *    variants that merely share a uid are re-uuid'd (both survive). It is
+ *    DRY-RUN by default — `--apply` is the explicit opt-in to actually
+ *    delete/re-uuid. The classifier is conservative: a file is deleted ONLY
+ *    when its normalized content equals a kept copy's, so differing content can
+ *    never be destroyed (mis-classification at worst re-uuids harmlessly).
  */
 
 import { Command } from "commander";
@@ -254,9 +261,87 @@ function rewriteUid(content: string, fresh: string): string {
   );
 }
 
-/** `exosync dedup-uids` — report (and optionally fix) duplicate uids on disk. */
+/**
+ * Content-preserving normalization for the IDENTICAL-copy test. Two files equal
+ * after this carry the SAME content — only line-ending STYLE (CRLF vs LF) and
+ * trailing blank lines / a final newline differ, which no markdown/RDF reader
+ * treats as data — so deleting one is provably zero-loss. Deliberately MINIMAL:
+ * it does NOT strip per-line trailing whitespace (a Markdown hard line break is
+ * two trailing spaces — collapsing it would be a real rendering change), does
+ * NOT touch frontmatter field VALUES (e.g. a differing `exo__Asset_updatedAt`),
+ * the body text, or interior/leading whitespace, and reorders nothing. ANY such
+ * difference surfaces as DIFFERING (→ re-uuid, never delete) — conservative by
+ * construction, erring toward re-uuid at every doubt.
+ */
+export function normalizeForCompare(content: string): string {
+  return content
+    .replace(/\r\n?/g, "\n") // CRLF / lone CR → LF (line-ending style is not data)
+    .replace(/\n+$/, ""); // ignore trailing blank lines / final-newline differences
+}
+
+/** One planned action for a file in a duplicate-uid group. */
+export type DedupDecision =
+  | { action: "keep"; path: string; uid: string }
+  | { action: "reuuid"; path: string; fromUid: string; toUid: string }
+  | { action: "delete"; path: string; identicalTo: string };
+
+/**
+ * Zero-loss auto-resolution plan for ONE duplicate-uid group. Files sharing a
+ * uid are partitioned into content-equivalence classes (by
+ * {@link normalizeForCompare}), processed in lexicographic path order:
+ *  - the class of the lexicographically-first path KEEPS the uid (its first
+ *    member is kept); every other member is a whitespace-identical copy →
+ *    DELETE (zero-loss: its content survives verbatim in the kept file);
+ *  - every OTHER class is a DISTINCT variant that merely shares the duplicate
+ *    uid → its first member is RE-UUID'd (zero-loss: it survives with a fresh
+ *    uid); the rest of that class are identical to it → DELETE.
+ *
+ * ⛔ INVARIANT (the zero-loss safety property a reviewer must trust): a
+ * `delete` is emitted ONLY for a file whose normalized content equals an
+ * ALREADY-KEPT representative's. A file whose content matches no kept
+ * representative is KEPT (anchor) or RE-UUID'd — NEVER deleted. Differing
+ * content is therefore impossible to destroy. Mis-classifying identical as
+ * differing is harmless (extra re-uuid); the classifier errs that way at every
+ * doubt because equality is required, not assumed.
+ *
+ * @param freshUid injected uuid generator (deterministic in tests).
+ */
+export function planDedupGroup(
+  uid: string,
+  files: ReadonlyArray<{ path: string; content: string }>,
+  freshUid: () => string,
+): DedupDecision[] {
+  const ordered = [...files].sort((a, b) => a.path.localeCompare(b.path));
+  const kept: Array<{ path: string; norm: string }> = [];
+  const decisions: DedupDecision[] = [];
+  for (const f of ordered) {
+    const norm = normalizeForCompare(f.content);
+    const rep = kept.find((k) => k.norm === norm);
+    if (rep !== undefined) {
+      // Content-identical to an already-kept file → safe to delete (zero-loss).
+      decisions.push({ action: "delete", path: f.path, identicalTo: rep.path });
+      continue;
+    }
+    kept.push({ path: f.path, norm });
+    if (kept.length === 1) {
+      // Anchor of the group — keeps the original (duplicate) uid.
+      decisions.push({ action: "keep", path: f.path, uid });
+    } else {
+      // A distinct variant sharing the duplicate uid → re-uuid (never delete).
+      decisions.push({
+        action: "reuuid",
+        path: f.path,
+        fromUid: uid,
+        toUid: freshUid(),
+      });
+    }
+  }
+  return decisions;
+}
+
+/** `exosync dedup-uids` — report (and optionally fix / auto-resolve) duplicate uids on disk. */
 export async function runDedupUids(
-  opts: QuarantineCliOptions & { fix?: boolean },
+  opts: QuarantineCliOptions & { fix?: boolean; auto?: boolean; apply?: boolean },
   deps: ExosyncSyncDeps = {},
 ): Promise<number> {
   const out = deps.out ?? ((line: string): void => console.log(line));
@@ -301,10 +386,133 @@ export async function runDedupUids(
     return 0;
   }
 
+  const rel = (p: string): string => path.relative(vaultPath, p);
+
+  // `--auto` (zero-loss auto-resolve): identical copies → delete the extras,
+  // distinct variants → re-uuid. Destructive, so DRY-RUN by default — `--apply`
+  // is the explicit opt-in to actually delete/re-uuid (never destructive
+  // without it). Supersedes `--fix`.
+  if (opts.auto === true) {
+    // Plan every group from a single content snapshot (read each dup file once).
+    const plans: Array<{
+      uid: string;
+      decisions: DedupDecision[];
+      snap: Map<string, string>;
+    }> = [];
+    for (const [uid, paths] of dups) {
+      const files: Array<{ path: string; content: string }> = [];
+      const snap = new Map<string, string>();
+      for (const p of paths) {
+        const c = await fsp.readFile(p, "utf-8");
+        files.push({ path: p, content: c });
+        snap.set(p, c);
+      }
+      plans.push({ uid, decisions: planDedupGroup(uid, files, randomUUID), snap });
+    }
+
+    let plannedDeletes = 0;
+    let plannedReuuids = 0;
+    out(`${dups.length} duplicate uid(s) on disk — zero-loss plan:`);
+    for (const { uid, decisions } of plans) {
+      out(`  ${uid}:`);
+      for (const d of decisions) {
+        if (d.action === "keep") {
+          out(`    KEEP    ${rel(d.path)}  (keeps uid ${uid})`);
+        } else if (d.action === "reuuid") {
+          plannedReuuids++;
+          out(
+            `    RE-UUID ${rel(d.path)}  (content differs → fresh uid; both survive, zero-loss)`,
+          );
+        } else {
+          plannedDeletes++;
+          out(
+            `    DELETE  ${rel(d.path)}  (identical content → ${rel(d.identicalTo)}; zero-loss)`,
+          );
+        }
+      }
+    }
+
+    if (opts.apply !== true) {
+      out("");
+      out(
+        `Plan: delete ${plannedDeletes} identical copy(ies), re-uuid ${plannedReuuids} differing variant(s).`,
+      );
+      out(
+        "DRY-RUN — nothing changed. Re-run with `--auto --apply` to execute (a deleted copy's content always survives in the kept file; if previously synced it is also recoverable from the git remote).",
+      );
+      return 1; // duplicates still present → "needs attention"
+    }
+
+    let deleted = 0;
+    let reuuided = 0;
+    let skipped = 0;
+    for (const { decisions, snap } of plans) {
+      // Deletes first: each targets a file identical to a kept representative,
+      // so this never touches a file we still need to re-uuid.
+      for (const d of decisions) {
+        if (d.action !== "delete") continue;
+        let current: string;
+        try {
+          current = await fsp.readFile(d.path, "utf-8");
+        } catch {
+          continue; // already gone
+        }
+        // TOCTOU guard: only delete if the file is byte/whitespace-identical to
+        // the snapshot we classified — refuse to delete anything that changed.
+        if (
+          normalizeForCompare(current) !==
+          normalizeForCompare(snap.get(d.path) ?? "")
+        ) {
+          out(
+            `  ! skipped delete ${rel(d.path)} (changed since scan — re-run dedup-uids)`,
+          );
+          skipped++;
+          continue;
+        }
+        await fsp.rm(d.path, { force: true });
+        out(`  deleted ${rel(d.path)} (identical to ${rel(d.identicalTo)})`);
+        deleted++;
+      }
+      // Re-uuid the distinct variants (frontmatter rewrite only — never a rename).
+      for (const d of decisions) {
+        if (d.action !== "reuuid") continue;
+        let current: string;
+        try {
+          current = await fsp.readFile(d.path, "utf-8");
+        } catch {
+          continue;
+        }
+        if (extractAssetUid(current) !== d.fromUid) {
+          out(
+            `  ! skipped re-uuid ${rel(d.path)} (uid changed since scan — re-run dedup-uids)`,
+          );
+          skipped++;
+          continue;
+        }
+        const rewritten = rewriteUid(current, d.toUid);
+        if (rewritten !== current) {
+          await fsp.writeFile(d.path, rewritten, "utf-8");
+          out(`  re-uuid ${rel(d.path)} → uid=${d.toUid} (content differs from kept copy)`);
+          reuuided++;
+        }
+      }
+    }
+    out(
+      `Resolved: deleted ${deleted} identical copy(ies), re-uuid ${reuuided} differing variant(s).${
+        skipped > 0 ? ` ${skipped} skipped (re-run).` : ""
+      } Run \`exosync sync\` to propagate.`,
+    );
+    return skipped > 0 ? 1 : 0; // unresolved leftovers → exit 1
+  }
+
+  if (opts.apply === true) {
+    out("Note: --apply only applies with --auto; running in report mode.");
+  }
+
   out(`${dups.length} duplicate uid(s) on disk:`);
   for (const [uid, paths] of dups) {
     out(`  ${uid} — ${paths.length} files:`);
-    for (const p of paths) out(`    ${path.relative(vaultPath, p)}`);
+    for (const p of paths) out(`    ${rel(p)}`);
   }
 
   if (opts.fix !== true) {
@@ -396,15 +604,31 @@ export function registerQuarantineCommands(exosync: Command): void {
     exosync
       .command("dedup-uids")
       .description(
-        "Report duplicate exo__Asset_uid on disk (#3477); --fix re-uuids all but the first",
+        "Report duplicate exo__Asset_uid on disk (#3477); --fix re-uuids all but the first; --auto zero-loss auto-resolve (identical→delete, differing→re-uuid; dry-run unless --apply)",
       )
-      .option("--fix", "Assign a fresh uuid to every duplicate but the first"),
-  ).action(async (options: QuarantineCliOptions & { fix?: boolean }) => {
-    try {
-      process.exitCode = await runDedupUids(options);
-    } catch (error) {
-      ErrorHandler.handle(error, { command: "exosync dedup-uids" });
-      process.exitCode = 1;
-    }
-  });
+      .option("--fix", "Assign a fresh uuid to every duplicate but the first")
+      .option(
+        "--auto",
+        "Zero-loss auto-resolve: delete identical copies, re-uuid distinct variants (DRY-RUN unless --apply). Supersedes --fix.",
+      )
+      .option(
+        "--apply",
+        "Execute the --auto plan (without it --auto is a dry-run; a deleted copy's content always survives in the kept file, and if previously synced is recoverable from the git remote)",
+      ),
+  ).action(
+    async (
+      options: QuarantineCliOptions & {
+        fix?: boolean;
+        auto?: boolean;
+        apply?: boolean;
+      },
+    ) => {
+      try {
+        process.exitCode = await runDedupUids(options);
+      } catch (error) {
+        ErrorHandler.handle(error, { command: "exosync dedup-uids" });
+        process.exitCode = 1;
+      }
+    },
+  );
 }
