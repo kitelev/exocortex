@@ -142,3 +142,89 @@ describe("stripTemplateFrontmatter (Веха 3 — template body = file body)", 
     expect(stripTemplateFrontmatter("---\na: b\n---\n## Plan")).not.toMatch(/^\n/);
   });
 });
+
+describe("resolveTemplateBody — inline date format + offset tokens (Веха 5)", () => {
+  // Pin "now" to a fixed LOCAL noon so date assertions are TZ-independent.
+  // 2026-06-21 is a Sunday.
+  beforeEach(() => {
+    clearResolvers();
+    installDefaultResolvers();
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-06-21T12:30:45"));
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("resolves a bare $date / $now / $tomorrow / $yesterday in body text", () => {
+    expect(resolveTemplateBody("Today: $date")).toBe("Today: 2026-06-21");
+    expect(resolveTemplateBody("Now: $now")).toBe("Now: 2026-06-21T12:30:45");
+    expect(resolveTemplateBody("Due $tomorrow")).toBe("Due 2026-06-22");
+    expect(resolveTemplateBody("Was $yesterday")).toBe("Was 2026-06-20");
+  });
+
+  it("resolves an inline format suffix $date:DD.MM.YYYY", () => {
+    expect(resolveTemplateBody("Дата: $date:DD.MM.YYYY")).toBe(
+      "Дата: 21.06.2026",
+    );
+  });
+
+  it("resolves an inline offset suffix $date+7d", () => {
+    expect(resolveTemplateBody("Review by $date+7d")).toBe(
+      "Review by 2026-06-28",
+    );
+  });
+
+  it("resolves offset + format together $date+1M:YYYY-MM", () => {
+    expect(resolveTemplateBody("Sprint $date+1M:YYYY-MM end")).toBe(
+      "Sprint 2026-07 end",
+    );
+  });
+
+  it("keeps a time format's internal colons but stops at whitespace", () => {
+    expect(resolveTemplateBody("Logged at $now:HH:mm:ss today")).toBe(
+      "Logged at 12:30:45 today",
+    );
+  });
+
+  it("stops the format at a comma (surrounding prose survives)", () => {
+    expect(resolveTemplateBody("Due $date:YYYY-MM-DD, then ship")).toBe(
+      "Due 2026-06-21, then ship",
+    );
+  });
+
+  it("resolves multiple date tokens with distinct modifiers in one body", () => {
+    expect(resolveTemplateBody("from $date to $date+7d ($date+7d:dddd)")).toBe(
+      "from 2026-06-21 to 2026-06-28 (Sunday)",
+    );
+  });
+
+  it("ZERO REGRESSION — legacy modifier-UNAWARE token reproduces the suffix verbatim", () => {
+    // `today` is legacy (UTC, modifier-unaware). Its value with the suffix
+    // re-appended must equal the pre-feature output (old regex stopped at the
+    // first non-identifier char, leaving `+7d` / `:foo` literal). We register a
+    // deterministic `today` so the assertion is exact regardless of UTC offset.
+    registerResolver("today", () => "2026-06-21");
+    expect(resolveTemplateBody("$today+7d")).toBe("2026-06-21+7d");
+    expect(resolveTemplateBody("$today:YYYY")).toBe("2026-06-21:YYYY");
+  });
+
+  it("ZERO REGRESSION — $today.md / $today-end / $today/x still split at punctuation", () => {
+    registerResolver("today", () => "2026-06-21");
+    // `.md` has no leading `:` → not a format suffix; `-end` has no digit after
+    // `-` → not an offset; `/x` is neither. All capture an empty suffix.
+    expect(resolveTemplateBody("$today.md $today-end $today/x")).toBe(
+      "2026-06-21.md 2026-06-21-end 2026-06-21/x",
+    );
+  });
+
+  it("leaves an UNKNOWN token-with-suffix fully literal (whole match preserved)", () => {
+    expect(resolveTemplateBody("$bogus+7d:YYYY-MM-DD stays")).toBe(
+      "$bogus+7d:YYYY-MM-DD stays",
+    );
+  });
+
+  it("leaves a literal $5.00 price untouched (no letter after $)", () => {
+    expect(resolveTemplateBody("Costs $5.00 total")).toBe("Costs $5.00 total");
+  });
+});
