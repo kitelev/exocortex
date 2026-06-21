@@ -761,6 +761,17 @@ export {
   type LocalConflictCacheStoreDeps,
 } from "./services/sync/LocalConflictCacheStore";
 export { CompositeQuarantineStore } from "./services/sync/CompositeQuarantineStore";
+// Deferred-push outbox (offline conflict resolution): resolutions made offline
+// queue here; the engine flushes them on the next sync with a TOCTOU guard.
+export {
+  LocalOutboxStore,
+  OUTBOX_STORE_FILENAME,
+  OUTBOX_REMOTE_ABSENT,
+  type OutboxEntry,
+  type OutboxReadPort,
+  type OutboxStorePort,
+  type LocalOutboxStoreDeps,
+} from "./services/sync/LocalOutboxStore";
 // ExoSync E1 — platform-free space-declaration classification core shared by
 // the plugin's collectSyncRepoSpecs and the CLI's exosync-parity collector
 // (one parser, no drift), plus the M1/M2 parity validation harness

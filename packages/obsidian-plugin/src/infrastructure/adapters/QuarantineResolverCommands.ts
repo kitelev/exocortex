@@ -188,9 +188,11 @@ export class QuarantineResolverCommands {
       const spec = this.specFor(specByRepoKey, conflict);
       const result = await resolver.resolve(spec, conflict.path, choice);
       const where =
-        result.pushedSha !== undefined
-          ? `pushed @${result.pushedSha.slice(0, 7)}`
-          : "remote already matched";
+        result.awaitingPush === true
+          ? "awaiting push (will sync on next Sync)"
+          : result.pushedSha !== undefined
+            ? `pushed @${result.pushedSha.slice(0, 7)}`
+            : "remote already matched";
       this.deps.notify(
         `Resolved ${conflict.path} (${result.resolvedTo}) — ${where}`,
       );
