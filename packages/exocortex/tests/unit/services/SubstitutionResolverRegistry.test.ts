@@ -323,6 +323,32 @@ describe("date format + offset tokens (Веха 5 — Templater `tp.date.*` pari
     });
   });
 
+  describe("month/year offset clamps day to last valid day (moment parity)", () => {
+    // These re-pin "now" to a day-31 / leap-day so the clamp is observable —
+    // the suite default (June 21) exists in every target month and cannot catch
+    // roll-over vs clamping divergence.
+    it("Jan 31 +1M → Feb 28 (non-leap year clamps, NOT Mar 3 roll-over)", () => {
+      jest.setSystemTime(new Date("2026-01-31T12:00:00"));
+      expect(call("date", "+1M")).toBe("2026-02-28");
+    });
+    it("Jan 31 +1M → Feb 29 (leap year clamps to 29)", () => {
+      jest.setSystemTime(new Date("2024-01-31T12:00:00"));
+      expect(call("date", "+1M")).toBe("2024-02-29");
+    });
+    it("Mar 31 +1M → Apr 30 (30-day month clamp)", () => {
+      jest.setSystemTime(new Date("2026-03-31T12:00:00"));
+      expect(call("date", "+1M")).toBe("2026-04-30");
+    });
+    it("Feb 29 +1y → Feb 28 (leap → non-leap year clamps)", () => {
+      jest.setSystemTime(new Date("2024-02-29T12:00:00"));
+      expect(call("date", "+1y")).toBe("2025-02-28");
+    });
+    it("Jan 31 −1M → Dec 31 (backward, December has 31 days, no clamp)", () => {
+      jest.setSystemTime(new Date("2026-01-31T12:00:00"));
+      expect(call("date", "-1M")).toBe("2025-12-31");
+    });
+  });
+
   describe("leniency — malformed modifier never throws", () => {
     it("malformed offset leaves the date unshifted (default format)", () => {
       expect(call("date", "+abc")).toBe("2026-06-21");
@@ -332,6 +358,9 @@ describe("date format + offset tokens (Веха 5 — Templater `tp.date.*` pari
     });
     it("offset with unknown unit char is treated as no-match (unshifted)", () => {
       expect(call("date", "+3q")).toBe("2026-06-21");
+    });
+    it("absurd day offset overflows Date → falls back to unshifted (no NaN)", () => {
+      expect(call("date", "+999999999999d")).toBe("2026-06-21");
     });
   });
 

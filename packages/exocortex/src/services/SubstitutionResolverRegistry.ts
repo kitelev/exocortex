@@ -242,10 +242,33 @@ function formatDate(d: Date, format: string): string {
 }
 
 /**
+ * Add `n` months/years to `d` with moment-style day CLAMPING (matches
+ * Templater's `tp.date.*`): if the source day-of-month does not exist in the
+ * target month it is clamped to that month's last day rather than rolling over.
+ *   Jan 31 +1M  → Feb 28 (or 29)   NOT Mar 3 (raw `Date.setMonth` roll-over)
+ *   Feb 29 +1y  → Feb 28           NOT Mar 1
+ * Implemented by parking the day at 1 before the shift (so `setMonth` never
+ * rolls), then clamping to `min(originalDay, lastDayOfTargetMonth)`.
+ */
+function addMonthsClamped(d: Date, n: number, unit: "M" | "y"): Date {
+  const day = d.getDate();
+  const r = new Date(d.getTime());
+  r.setDate(1);
+  if (unit === "M") r.setMonth(r.getMonth() + n);
+  else r.setFullYear(r.getFullYear() + n);
+  // Last day of the (now day-1) target month — day 0 of the next month.
+  const lastDay = new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate();
+  r.setDate(Math.min(day, lastDay));
+  return r;
+}
+
+/**
  * Shift `d` by a signed offset string `[+-]\d+[dwMy]?` (`d`ays default, `w`eeks,
- * `M`onths, `y`ears — moment convention: `M`=month, lowercase reserved). A
- * malformed offset leaves the date unchanged (lenient — a freeform body must
- * not throw). Returns a NEW Date (does not mutate the input).
+ * `M`onths, `y`ears — moment convention: `M`=month, lowercase reserved). Month/
+ * year shifts CLAMP to the last valid day (moment/Templater parity, see
+ * {@link addMonthsClamped}). A malformed offset — or one that overflows the
+ * representable Date range — leaves the date unchanged (lenient: a freeform body
+ * must never throw or emit `NaN`). Returns a NEW Date (does not mutate input).
  */
 function applyDateOffset(d: Date, offset: string | null): Date {
   if (!offset) return d;
@@ -253,7 +276,7 @@ function applyDateOffset(d: Date, offset: string | null): Date {
   if (!m) return d;
   const n = (m[1] === "-" ? -1 : 1) * parseInt(m[2], 10);
   const unit = m[3] ?? "d";
-  const r = new Date(d.getTime());
+  let r = new Date(d.getTime());
   switch (unit) {
     case "d":
       r.setDate(r.getDate() + n);
@@ -262,13 +285,15 @@ function applyDateOffset(d: Date, offset: string | null): Date {
       r.setDate(r.getDate() + n * 7);
       break;
     case "M":
-      r.setMonth(r.getMonth() + n);
+      r = addMonthsClamped(r, n, "M");
       break;
     case "y":
-      r.setFullYear(r.getFullYear() + n);
+      r = addMonthsClamped(r, n, "y");
       break;
   }
-  return r;
+  // Overflow (e.g. an absurd day count) → Invalid Date. Stay lenient: fall back
+  // to the unshifted date rather than formatting `NaN-NaN-NaN`.
+  return isNaN(r.getTime()) ? d : r;
 }
 
 /**

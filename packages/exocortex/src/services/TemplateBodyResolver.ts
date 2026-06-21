@@ -64,6 +64,14 @@ installDefaultResolvers();
  * `Due $date:YYYY-MM-DD, soon` keeps `, soon` outside the token. (A trailing `.`
  * IS in the charset — `Due $date:YYYY-MM-DD.` renders `…2026-06-21.` with the
  * period reproduced as a literal format char, visually identical.)
+ *
+ * LIMITATION — a format containing a SPACE or COMMA is truncated at that char in
+ * BODY text: `$now:h:mm A` resolves only `:h:mm` → `12:30` and the ` A` survives
+ * as prose, `$date:dddd, MMMM Do YYYY` resolves only `:dddd`. Multi-word formats
+ * (`h:mm A`, `dddd, MMMM Do YYYY`) are reachable only via a vault
+ * `exocmd__TokenInvocation_parameter` (the resolver itself handles spaces), NOT
+ * via an inline body suffix. For body use, compose contiguous formats (`HH:mm`,
+ * `YYYY-MM-DDTHH:mm:ss`) or multiple tokens. (Descoped: bracket-escaping.)
  */
 const TOKEN_RE =
   /\$([A-Za-z][A-Za-z0-9_]*)((?:[+-]\d+[dwMy])?(?::[A-Za-z0-9:./-]+)?)/g;

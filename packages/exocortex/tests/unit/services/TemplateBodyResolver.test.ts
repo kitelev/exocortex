@@ -227,4 +227,22 @@ describe("resolveTemplateBody — inline date format + offset tokens (Веха 5
   it("leaves a literal $5.00 price untouched (no letter after $)", () => {
     expect(resolveTemplateBody("Costs $5.00 total")).toBe("Costs $5.00 total");
   });
+
+  it("LIMITATION — a space/comma in a body format truncates it at that char", () => {
+    // Documents the body-path boundary (the format charset excludes space/comma):
+    // `$now:h:mm A` resolves only `:h:mm` → `12:30`; the ` A` survives as prose.
+    // Multi-word formats are reachable only via TokenInvocation_parameter.
+    expect(resolveTemplateBody("Time $now:h:mm A done")).toBe(
+      "Time 12:30 A done",
+    );
+    expect(resolveTemplateBody("$date:dddd, MMMM Do YYYY")).toBe(
+      "Sunday, MMMM Do YYYY",
+    );
+  });
+
+  it("leaves a malformed offset as prose ($date+abc → <date>+abc)", () => {
+    // `+abc` is not a date-shaped offset (no digit after `+`) → suffix is empty,
+    // `$date` resolves, `+abc` stays literal prose.
+    expect(resolveTemplateBody("$date+abc")).toBe("2026-06-21+abc");
+  });
 });
