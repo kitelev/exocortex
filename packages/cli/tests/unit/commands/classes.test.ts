@@ -2,7 +2,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals
 import fs from "fs";
 
 // Mock dependencies
-jest.unstable_mockModule("exocortex", () => ({
+jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   InMemoryTripleStore: jest.fn(() => ({
     addAll: jest.fn(),
     match: jest.fn().mockReturnValue([]),

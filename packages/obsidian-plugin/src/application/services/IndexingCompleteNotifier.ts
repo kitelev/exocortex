@@ -1,4 +1,4 @@
-import type { INotificationService } from "exocortex";
+import type { INotificationService } from "@kitelev/exocortex-core";
 import type { VaultWalkStats } from "@plugin/infrastructure/VaultRDFIndexer";
 
 /**

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
-import type { IVaultAdapter, IFile, IFolder, IFrontmatter, ILogger, INotificationService } from "exocortex";
-import { SolutionMapping, Literal, IRI } from "exocortex";
+import type { IVaultAdapter, IFile, IFolder, IFrontmatter, ILogger, INotificationService } from "@kitelev/exocortex-core";
+import { SolutionMapping, Literal, IRI } from "@kitelev/exocortex-core";
 import type { TableLayout, LayoutSort, LayoutColumn } from "../../../../src/domain/layout";
 import { LayoutType } from "../../../../src/domain/layout";
 

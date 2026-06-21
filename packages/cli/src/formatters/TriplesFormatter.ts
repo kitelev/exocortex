@@ -1,4 +1,4 @@
-import type { Triple } from "exocortex";
+import type { Triple } from "@kitelev/exocortex-core";
 
 /**
  * Formatter for RDF triples output.

@@ -61,7 +61,7 @@ export default {
         // (obsidian-plugin depends on @kitelev/exocortex-services), so its
         // src is mobile-reachable and scanned too.
         const files = [
-          ...(await ctx.glob("packages/exocortex/src/**/*.{ts,tsx}")),
+          ...(await ctx.glob("packages/core/src/**/*.{ts,tsx}")),
           ...(await ctx.glob("packages/obsidian-plugin/src/**/*.{ts,tsx}")),
           ...(await ctx.glob("packages/services/src/**/*.{ts,tsx}")),
         ];

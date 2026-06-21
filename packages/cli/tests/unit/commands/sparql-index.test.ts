@@ -31,7 +31,7 @@ const mockProtoMaterialize = jest.fn();
 
 const mockCardinalityRegistryInitialize = jest.fn();
 
-jest.unstable_mockModule("exocortex", () => ({
+jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   InMemoryTripleStore: jest.fn(() => ({
     addAll: mockAddAll,
     match: mockMatch,

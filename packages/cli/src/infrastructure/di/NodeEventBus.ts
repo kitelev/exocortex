@@ -1,4 +1,4 @@
-import { IEventBus } from "exocortex";
+import { IEventBus } from "@kitelev/exocortex-core";
 
 type EventHandler<T = any> = (data: T) => void;
 

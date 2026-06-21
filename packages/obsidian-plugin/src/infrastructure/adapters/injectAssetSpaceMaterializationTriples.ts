@@ -5,7 +5,7 @@ import {
   Namespace,
   vaultPathToIRI,
   type ITripleStore,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 import type { AssetSpaceMaterializationStatus } from "./AssetSpaceMaterializationTracker";
 

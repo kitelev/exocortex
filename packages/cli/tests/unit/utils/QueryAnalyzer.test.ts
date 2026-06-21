@@ -13,7 +13,7 @@ const mockParseError = class SPARQLParseError extends Error {
   }
 };
 
-jest.unstable_mockModule("exocortex", () => ({
+jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   ExoQLParser: jest.fn(() => ({
     parse: mockParseFn,
   })),

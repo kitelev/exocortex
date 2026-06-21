@@ -33,7 +33,7 @@
  * folder via derivePath), a FakeLocalDataStore preserving the dual AC14 slots.
  */
 import type { App, TFile } from "obsidian";
-import type { ApplyPlan, IConfirmGate } from "exocortex";
+import type { ApplyPlan, IConfirmGate } from "@kitelev/exocortex-core";
 
 import {
   ProfileApplyManager,

@@ -18,7 +18,7 @@
  *      (caller falls back to no-filter / full vault) to prevent self-brick
  *
  * **Phase 6 follow-up** (deferred): extract the shared resolver / translation
- * logic to `packages/exocortex/` so plugin and CLI consume one implementation.
+ * logic to `packages/core/` so plugin and CLI consume one implementation.
  * For the spike P0 we duplicate the plugin's logic verbatim — drift surface
  * tracked by `multi-parser-predicate-migration.md` rule + this comment.
  */
@@ -31,7 +31,7 @@ import {
   SDK_FLOOR_ASSETSPACE_UIDS,
   derivePath,
   transitiveDependsOnClosure,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 // TS-floor anchors (Vision Lock #17) — re-exported from the `exocortex` core
 // guard (RFC 01a83de8 §3.4 / EV8, issue #3426). Single source of truth.
@@ -40,7 +40,7 @@ export {
   TS_FLOOR_AS_UID_EXOCMD,
   TS_FLOOR_AS_UID_SHARED_IDENTITIES,
   SDK_FLOOR_ASSETSPACE_UIDS,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 /**
  * TS-floor AssetSpace UIDs the CLI/headless engine enforces — the **SDK floor**

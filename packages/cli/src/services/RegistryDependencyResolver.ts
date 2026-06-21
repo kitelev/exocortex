@@ -27,7 +27,7 @@ import fs from "fs-extra";
 import path from "path";
 import yaml from "js-yaml";
 
-import { transitiveDependsOnClosure, derivePath } from "exocortex";
+import { transitiveDependsOnClosure, derivePath } from "@kitelev/exocortex-core";
 
 import {
   ASSET_SPACE_CLASS_UID,

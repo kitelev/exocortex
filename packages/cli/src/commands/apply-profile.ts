@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
 import { resolve } from "path";
-import type { IConfirmGate } from "exocortex";
+import type { IConfirmGate } from "@kitelev/exocortex-core";
 import { CliProfileResolver } from "../services/CliProfileResolver.js";
 import {
   CliApplyProfileService,

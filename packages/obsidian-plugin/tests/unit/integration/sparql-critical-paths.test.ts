@@ -19,7 +19,7 @@ import {
   Triple,
   IRI,
   Literal
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 // Standard namespace URIs
 const RDF_TYPE = new IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");

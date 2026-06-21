@@ -3,7 +3,7 @@ import {
   clearResolvers,
   installDefaultResolvers,
   registerResolver,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import {
   TEMPLATE_TOKEN_CHOICES,
   type TemplateTokenChoice,

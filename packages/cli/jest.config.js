@@ -5,7 +5,7 @@ module.exports = {
   testMatch: ["<rootDir>/tests/**/*.test.ts"],
   setupFilesAfterEnv: ["<rootDir>/tests/setup.ts"],
   moduleNameMapper: {
-    "^exocortex$": "<rootDir>/../exocortex/src/index.ts",
+    "^@kitelev/exocortex-core$": "<rootDir>/../core/src/index.ts",
     "^@kitelev/exocortex-services$": "<rootDir>/../services/src/index.ts",
     "^(\\.{1,2}/.*)\\.js$": "$1",
   },

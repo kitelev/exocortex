@@ -2,7 +2,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
 import * as path from "path";
-import { TaskCreationService, AssetClass } from "exocortex";
+import { TaskCreationService, AssetClass } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 export function createTaskCommand() {
     const cmd = new Command("task");

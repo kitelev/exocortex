@@ -1,6 +1,6 @@
-import { AssetConversionService } from "exocortex";
-import { IVaultAdapter, IFile } from "exocortex";
-import { AssetClass } from "exocortex";
+import { AssetConversionService } from "@kitelev/exocortex-core";
+import { IVaultAdapter, IFile } from "@kitelev/exocortex-core";
+import { AssetClass } from "@kitelev/exocortex-core";
 
 describe("AssetConversionService", () => {
   let service: AssetConversionService;

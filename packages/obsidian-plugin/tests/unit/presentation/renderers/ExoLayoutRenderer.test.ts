@@ -6,7 +6,7 @@
  *   - Layout.blocks iteration order preserved in DOM.
  */
 
-import type { Layout, LayoutBlock } from "exocortex";
+import type { Layout, LayoutBlock } from "@kitelev/exocortex-core";
 import { ExoLayoutRenderer } from "../../../../src/presentation/renderers/ExoLayoutRenderer";
 import type { ExoLayoutSnapshot } from "../../../../src/infrastructure/repositories";
 import type { AssetRelation } from "../../../../src/presentation/renderers/layout/types";

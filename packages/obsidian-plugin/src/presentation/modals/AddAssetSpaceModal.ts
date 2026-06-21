@@ -1,5 +1,5 @@
 import { App, Modal } from "obsidian";
-import { derivePath } from "exocortex";
+import { derivePath } from "@kitelev/exocortex-core";
 import { isLikelyGitHubUrl } from "./BootstrapVaultModal";
 
 export interface AddAssetSpaceInput {

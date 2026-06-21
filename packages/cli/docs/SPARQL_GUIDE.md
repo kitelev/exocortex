@@ -77,7 +77,7 @@ exo query my-query.sparql
 ### Install CLI
 
 ```bash
-npm install -g @exocortex/cli
+npm install -g @kitelev/exocortex-cli
 ```
 
 ### Verify Installation
@@ -99,13 +99,13 @@ exo query <query> [options]
 
 ### Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--vault <path>` | Path to Obsidian vault | Current directory |
-| `--format <type>` | Output format: `table`, `json`, `csv` | `table` |
-| `--explain` | Show optimized query plan | Off |
-| `--stats` | Show execution statistics | Off |
-| `--no-optimize` | Disable query optimization | Optimized |
+| Option            | Description                           | Default           |
+| ----------------- | ------------------------------------- | ----------------- |
+| `--vault <path>`  | Path to Obsidian vault                | Current directory |
+| `--format <type>` | Output format: `table`, `json`, `csv` | `table`           |
+| `--explain`       | Show optimized query plan             | Off               |
+| `--stats`         | Show execution statistics             | Off               |
+| `--no-optimize`   | Disable query optimization            | Optimized         |
 
 ### Examples
 
@@ -448,6 +448,7 @@ exo query 'SELECT ?task ?label WHERE { ... }' --format table
 ```
 
 Output:
+
 ```
 ┌─────────────────────────────────────────────┬────────────────────┐
 │ task                                        │ label              │
@@ -464,6 +465,7 @@ exo query 'SELECT ?task ?label WHERE { ... }' --format json
 ```
 
 Output:
+
 ```json
 [
   {
@@ -484,6 +486,7 @@ exo query 'SELECT ?task ?label WHERE { ... }' --format csv
 ```
 
 Output:
+
 ```csv
 task,label
 obsidian://vault/Tasks/Review%20PR%20123.md,Review PR #123
@@ -501,6 +504,7 @@ Error: Vault not found: /path/to/vault
 ```
 
 **Solution**: Specify the correct vault path:
+
 ```bash
 exo query 'SELECT ...' --vault /correct/path/to/vault
 ```
@@ -512,6 +516,7 @@ Error: Parse error on line 1: Unexpected token
 ```
 
 **Solution**: Check SPARQL syntax:
+
 - Ensure PREFIX declarations end without a period
 - Triple patterns must end with a period
 - Strings must be properly quoted
@@ -519,11 +524,13 @@ Error: Parse error on line 1: Unexpected token
 ### Empty Results
 
 **Possible causes**:
+
 1. No matching data in vault
 2. Incorrect predicate URIs (check namespace)
 3. Filter too restrictive
 
 **Debug steps**:
+
 ```bash
 # Check what predicates exist
 exo query 'SELECT DISTINCT ?p WHERE { ?s ?p ?o } LIMIT 50'
@@ -535,6 +542,7 @@ exo query 'SELECT ?s ?o WHERE { ?s <https://exocortex.my/ontology/exo#Asset_labe
 ### Query Too Slow
 
 **Solutions**:
+
 1. Add LIMIT to reduce results
 2. Use more specific patterns (reduce BGP size)
 3. Check `--stats` for bottleneck identification

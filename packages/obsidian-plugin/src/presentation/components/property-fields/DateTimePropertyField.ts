@@ -111,7 +111,7 @@ export class DateTimePropertyField {
    * Format datetime-local input value to local timestamp string.
    * Format: YYYY-MM-DDTHH:mm:ss (no timezone suffix)
    *
-   * This format is consistent with DateFormatter.toLocalTimestamp() in @exocortex/core,
+   * This format is consistent with DateFormatter.toLocalTimestamp() in @kitelev/exocortex-core,
    * avoiding timezone conversion issues when the value is later parsed.
    */
   private formatToISO(value: string): string {

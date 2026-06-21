@@ -1,5 +1,5 @@
 import { SPARQLQueryService } from "./SPARQLQueryService";
-import { PropertyFieldType } from "exocortex";
+import { PropertyFieldType } from "@kitelev/exocortex-core";
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 
 /**

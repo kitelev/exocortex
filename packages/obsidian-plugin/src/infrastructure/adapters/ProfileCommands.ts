@@ -29,7 +29,7 @@
  * happens в B.11 plugin entry-point integration.
  */
 
-import { isAuthError } from "exocortex";
+import { isAuthError } from "@kitelev/exocortex-core";
 
 import type { ProfileApplyManager } from "./ProfileApplyManager";
 import {

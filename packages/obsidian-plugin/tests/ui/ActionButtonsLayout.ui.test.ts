@@ -9,8 +9,8 @@ import {
   registerCoreServices,
   resetContainer,
   GroundingType,
-} from "exocortex";
-import type { ResolvedCommand } from "exocortex";
+} from "@kitelev/exocortex-core";
+import type { ResolvedCommand } from "@kitelev/exocortex-core";
 
 function createMockRFC009Services() {
   const makeCommand = (id: string, name: string): ResolvedCommand => ({

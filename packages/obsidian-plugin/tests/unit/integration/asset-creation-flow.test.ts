@@ -13,7 +13,7 @@ import {
   IVaultAdapter,
   IFile,
   IFolder
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 /**
  * In-memory vault adapter for integration testing.

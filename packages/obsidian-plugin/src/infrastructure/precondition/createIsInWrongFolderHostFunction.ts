@@ -3,7 +3,7 @@ import {
   needsFolderRepair,
   type FolderRepairService,
   type HostFunction,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 /**
  * Factory for the `isInWrongFolder` precondition host function used by the

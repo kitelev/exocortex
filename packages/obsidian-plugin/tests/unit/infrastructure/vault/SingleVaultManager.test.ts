@@ -5,7 +5,7 @@ import {
   IFile,
   IFolder,
   IFrontmatter,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 class MockVaultAdapter implements IVaultAdapter {
   async read(_file: IFile): Promise<string> {

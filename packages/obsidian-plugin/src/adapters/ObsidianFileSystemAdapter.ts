@@ -4,7 +4,7 @@ import {
   IFileSystemAdapter,
   FileNotFoundError,
   FileAlreadyExistsError,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 export class ObsidianFileSystemAdapter implements IFileSystemAdapter {
   constructor(private vault: Vault) {}

@@ -24,7 +24,7 @@ import type {
   ResolveChoice,
   ResolveResult,
   SyncRepoSpec,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 import { GitHubRestClient } from "./GitHubRestClient";
 import type { SyncSpecCollection } from "./SyncDepsFactory";

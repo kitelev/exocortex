@@ -4,7 +4,7 @@ import type ExocortexPlugin from '@plugin/ExocortexPlugin';
 import { AssetMetadataService } from '@plugin/presentation/renderers/layout/helpers/AssetMetadataService';
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { BlockerHelpers } from '@plugin/presentation/utils/BlockerHelpers';
-import { MetadataHelpers } from "exocortex";
+import { MetadataHelpers } from "@kitelev/exocortex-core";
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 import type { ILogger } from '@plugin/adapters/logging/ILogger';
 

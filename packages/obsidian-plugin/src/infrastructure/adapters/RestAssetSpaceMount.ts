@@ -17,7 +17,7 @@ import {
   type MountFile,
   type MountResult,
   type MountProgressPhase,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 /**
  * RestAssetSpaceMount — cross-platform (incl. iOS) AssetSpace mount/unmount

@@ -1,5 +1,5 @@
 {
-  "name": "@exocortex/obsidian-plugin",
+  "name": "@kitelev/exocortex-obsidian-plugin",
   "version": "0.0.0-dev",
   "description": "Exocortex plugin for Obsidian - UI adapter for the Exocortex knowledge management system",
   "main": "../../main.js",
@@ -23,7 +23,7 @@
     "@tanstack/react-query": "^5.90.12",
     "@tanstack/react-virtual": "^3.13.13",
     "@kitelev/exocortex-services": "*",
-    "exocortex": "*",
+    "@kitelev/exocortex-core": "*",
     "nanotar": "0.3.0",
     "obsidian": "latest",
     "react": "^19.2.3",

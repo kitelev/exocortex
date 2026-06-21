@@ -4,8 +4,8 @@ import type {
   IFolder,
   IRI,
   IVaultFileReader,
-} from "exocortex";
-import { iriToVaultPath } from "exocortex";
+} from "@kitelev/exocortex-core";
+import { iriToVaultPath } from "@kitelev/exocortex-core";
 
 /**
  * Production `IFileResolver` for the Obsidian runtime.

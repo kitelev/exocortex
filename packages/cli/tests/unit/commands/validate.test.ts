@@ -10,7 +10,7 @@ jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
 }));
 
 // Mock exocortex (CacheManager dependency + validate-schema dependency)
-jest.unstable_mockModule("exocortex", () => ({
+jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   NoteToRDFConverter: jest.fn(),
   Triple: jest.fn(),
   IRI: jest.fn(),

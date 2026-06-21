@@ -1,6 +1,6 @@
 import React from "react";
 import { ErrorBoundary } from "../../src/presentation/components/ErrorBoundary";
-import { ApplicationErrorHandler } from "exocortex/application/errors";
+import { ApplicationErrorHandler } from "@kitelev/exocortex-core/application/errors";
 
 /**
  * Component that throws an error for testing

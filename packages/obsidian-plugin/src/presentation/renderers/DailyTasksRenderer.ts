@@ -8,9 +8,9 @@ import {
   DailyTasksTableWithToggle,
   isDateOnlyTimestamp,
 } from '@plugin/presentation/components/DailyTasksTable';
-import { AssetClass, EffortStatus, IVaultAdapter, IFile } from "exocortex";
-import { MetadataExtractor } from "exocortex";
-import { EffortSortingHelpers } from "exocortex";
+import { AssetClass, EffortStatus, IVaultAdapter, IFile } from "@kitelev/exocortex-core";
+import { MetadataExtractor } from "@kitelev/exocortex-core";
+import { EffortSortingHelpers } from "@kitelev/exocortex-core";
 import { AssetMetadataService } from "./layout/helpers/AssetMetadataService";
 import { DailyNoteHelpers } from "./helpers/DailyNoteHelpers";
 import { BlockerHelpers } from '@plugin/presentation/utils/BlockerHelpers';

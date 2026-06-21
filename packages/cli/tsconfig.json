@@ -14,7 +14,7 @@
     "strict": true,
     "resolveJsonModule": true,
     "paths": {
-      "exocortex": ["../exocortex/src"],
+      "@kitelev/exocortex-core": ["../core/src"],
       "@kitelev/exocortex-services": ["../services/src"]
     }
   },

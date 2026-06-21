@@ -1,5 +1,5 @@
 import type { App, CachedMetadata, TFile } from "obsidian";
-import type { RefToFolderResolver } from "exocortex";
+import type { RefToFolderResolver } from "@kitelev/exocortex-core";
 
 /**
  * T1 "Create Instance" homoiconic button (project bbe40f8c) — metadata-cache

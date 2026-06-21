@@ -5,8 +5,8 @@ domain: frontend
 rules: true
 files:
   [
-    "packages/exocortex/src/**/*.ts",
-    "packages/exocortex/src/**/*.tsx",
+    "packages/core/src/**/*.ts",
+    "packages/core/src/**/*.tsx",
     "packages/services/src/**/*.ts",
     "packages/services/src/**/*.tsx",
   ]
@@ -37,13 +37,13 @@ Fourth layer of the mobile cluster: #3464 module-eval imports (MOBILE-001),
 ## Decision
 
 - Bare `Buffer` references — value OR type position — are FORBIDDEN in
-  `packages/exocortex/src/**` and `packages/services/src/**` (both bundled
+  `packages/core/src/**` and `packages/services/src/**` (both bundled
   into the plugin transitively, so both are mobile-reachable). Type
   positions are banned too: they cost nothing today (zero occurrences) and
   a `: Buffer` type in a platform-neutral package is a leaked Node contract
   that invites the next value usage.
 - All base64 ⇄ bytes/UTF-8 conversion goes through the platform-neutral
-  helpers in `packages/exocortex/src/utilities/base64.ts` (`bytesToBase64`,
+  helpers in `packages/core/src/utilities/base64.ts` (`bytesToBase64`,
   `base64ToBytes`, `base64ToUtf8`, `utf8ToBase64`) — built on `atob`/`btoa`
   plus `TextEncoder`/`TextDecoder`, available in both Obsidian webviews and
   Node ≥16.

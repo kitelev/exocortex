@@ -32,7 +32,7 @@ import type { App } from "obsidian";
 import {
   FakeGitHubRepo,
   sha1Hex,
-} from "../../../../exocortex/tests/unit/services/sync/fakeGitHub";
+} from "../../../../core/tests/unit/services/sync/fakeGitHub";
 import {
   buildSyncEngine,
   collectSyncRepoSpecs,
@@ -62,7 +62,7 @@ interface Harness {
   repo: FakeGitHubRepo;
   adapter: InMemoryAdapter;
   sync: () => Promise<
-    Awaited<ReturnType<import("exocortex").SyncEngine["syncAll"]>>
+    Awaited<ReturnType<import("@kitelev/exocortex-core").SyncEngine["syncAll"]>>
   >;
 }
 

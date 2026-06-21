@@ -16,7 +16,7 @@ import {
   type PropertySchemaDefinition,
 } from "../../../src/domain/property-editor/PropertySchemas";
 import { PropertySchemaService } from "../../../src/domain/property-editor/PropertySchemaService";
-import type { PropertySchemaResolver, PropertySchema, ClassHierarchyResolver, EnumValueResolver, EnumValue } from "exocortex";
+import type { PropertySchemaResolver, PropertySchema, ClassHierarchyResolver, EnumValueResolver, EnumValue } from "@kitelev/exocortex-core";
 
 function createMockResolver(
   schemas: Map<string, PropertySchema>,

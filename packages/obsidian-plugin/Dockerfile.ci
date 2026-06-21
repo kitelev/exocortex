@@ -55,7 +55,7 @@ WORKDIR /app
 # submodules are excluded from `workspaces` in root package.json, so no
 # package.json is required for them).
 COPY package*.json ./
-COPY packages/exocortex/package*.json ./packages/exocortex/
+COPY packages/core/package*.json ./packages/core/
 COPY packages/obsidian-plugin/package*.json ./packages/obsidian-plugin/
 COPY packages/cli/package*.json ./packages/cli/
 COPY packages/test-utils/package*.json ./packages/test-utils/

@@ -43,7 +43,7 @@
  *      URL-derived folder, append the `.gitmodules` entry (idempotent).
  */
 
-import { derivePath } from "exocortex";
+import { derivePath } from "@kitelev/exocortex-core";
 
 /** Subset of {@link AssetSpaceManager} used here (REST tarball pull). */
 export interface IAssetSpacePuller {

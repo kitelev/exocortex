@@ -1,4 +1,4 @@
-import type { ConflictDetail } from "exocortex";
+import type { ConflictDetail } from "@kitelev/exocortex-core";
 import {
   buildPaneModel,
   type DiffRow,

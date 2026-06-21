@@ -48,7 +48,7 @@ jest.mock("obsidian", () => {
 });
 
 import type { App } from "obsidian";
-import type { ApplyPlan } from "exocortex";
+import type { ApplyPlan } from "@kitelev/exocortex-core";
 import {
   ModalConfirmGate,
   MODAL_FILE_LIST_CAP,

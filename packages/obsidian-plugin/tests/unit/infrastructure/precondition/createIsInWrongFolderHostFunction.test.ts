@@ -1,5 +1,5 @@
 import { App, TFile, TFolder } from "obsidian";
-import { FolderRepairService, type EvalContext } from "exocortex";
+import { FolderRepairService, type EvalContext } from "@kitelev/exocortex-core";
 import { createIsInWrongFolderHostFunction } from "../../../../src/infrastructure/precondition/createIsInWrongFolderHostFunction";
 
 describe("createIsInWrongFolderHostFunction", () => {

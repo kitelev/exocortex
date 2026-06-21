@@ -9,7 +9,7 @@
 // cycle with v16.81.x and threw `ReferenceError: Can't find variable:
 // Buffer`, breaking the entire mobile ExoSync leg).
 //
-// Banned in packages/exocortex/src + packages/services/src (both bundled
+// Banned in packages/core/src + packages/services/src (both bundled
 // into the plugin transitively → mobile-reachable). Type positions are
 // banned too — zero exist today, and a `: Buffer` type in platform-neutral
 // code is a leaked Node contract that invites the next value usage.
@@ -52,7 +52,7 @@ export default {
         // (obsidian-plugin depends on @kitelev/exocortex-services), so its
         // src is mobile-reachable and scanned too.
         const files = [
-          ...(await ctx.glob("packages/exocortex/src/**/*.{ts,tsx}")),
+          ...(await ctx.glob("packages/core/src/**/*.{ts,tsx}")),
           ...(await ctx.glob("packages/services/src/**/*.{ts,tsx}")),
         ];
         for (const file of files) {
@@ -77,7 +77,7 @@ export default {
                 "Bare `Buffer` reference — iOS WebKit has no Node `Buffer` global, this throws ReferenceError at runtime on Obsidian mobile (Issue #3486).",
               file: hit.file,
               line: hit.line,
-              fix: "Use the platform-neutral helpers in packages/exocortex/src/utilities/base64.ts (bytesToBase64 / base64ToBytes / base64ToUtf8 / utf8ToBase64).",
+              fix: "Use the platform-neutral helpers in packages/core/src/utilities/base64.ts (bytesToBase64 / base64ToBytes / base64ToUtf8 / utf8ToBase64).",
             });
           }
         }

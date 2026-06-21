@@ -1,6 +1,6 @@
 import { TFile } from "obsidian";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
-import { MetadataExtractor, IVaultAdapter, DateFormatter, IFile } from "exocortex";
+import { MetadataExtractor, IVaultAdapter, DateFormatter, IFile } from "@kitelev/exocortex-core";
 import { DailyNoteHelpers } from "./DailyNoteHelpers";
 import { ObsidianApp } from '@plugin/types';
 

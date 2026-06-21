@@ -1,6 +1,6 @@
 # Cross-Runtime Parity Contract (P1.13)
 
-> **Scope note.** This document describes **one specific enforcement instance** of the broader **UI/CLI Parity Invariant** — namely, the SHACL-lite *validator* parity contract between the CLI and plugin runtimes. It is not the definition of the invariant. For the principle itself (every user-facing capability must be invokable from both the Obsidian plugin and the CLI, enforced via a shared platform-agnostic core behind ports), see [VISION.md](../../VISION.md#uicli-parity-invariant) and the enforced ports/adapters statement in [ARCHITECTURE.md](../../ARCHITECTURE.md). This file stays focused on the validator contract.
+> **Scope note.** This document describes **one specific enforcement instance** of the broader **UI/CLI Parity Invariant** — namely, the SHACL-lite _validator_ parity contract between the CLI and plugin runtimes. It is not the definition of the invariant. For the principle itself (every user-facing capability must be invokable from both the Obsidian plugin and the CLI, enforced via a shared platform-agnostic core behind ports), see [VISION.md](../../VISION.md#uicli-parity-invariant) and the enforced ports/adapters statement in [ARCHITECTURE.md](../../ARCHITECTURE.md). This file stays focused on the validator contract.
 
 ## Overview
 
@@ -11,7 +11,7 @@ The Exocortex SHACL-lite validator runs in two runtimes:
 | **CLI** (`npx @kitelev/exocortex-cli validate schema --shapes-mode`) | `packages/cli/src/commands/validate-schema.ts`    | `ShapeLoader.loadFromVaultFS`  | `TripleClassHierarchy` (rdfs:subClassOf BFS)        | `domainToAlgebraTriples()` helper |
 | **Plugin** (`ExocortexPlugin.scheduleValidation`)                    | `packages/obsidian-plugin/src/ExocortexPlugin.ts` | `ShapeLoader.loadFromRDFGraph` | `{ isSubClassOf: (c, p) => c === p }` (exact match) | Inline loop                       |
 
-Both paths call the **same** shared engine function `shaclValidate` from the `exocortex` core package (`packages/exocortex`), which guarantees a common foundation.
+Both paths call the **same** shared engine function `shaclValidate` from the `exocortex` core package (`packages/core`), which guarantees a common foundation.
 
 ## Parity Contract
 

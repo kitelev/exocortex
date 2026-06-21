@@ -1,9 +1,9 @@
 import { VaultRDFIndexer } from "../../../src/infrastructure/VaultRDFIndexer";
 import type { App, TFile, EventRef } from "obsidian";
-import { InMemoryTripleStore, NoteToRDFConverter, ApplicationErrorHandler, IRI, RDFSInferenceEngine, NonInheritablePropertyRegistry, PrototypeChainMaterializer, INFERRED_GRAPH, Namespace } from "exocortex";
+import { InMemoryTripleStore, NoteToRDFConverter, ApplicationErrorHandler, IRI, RDFSInferenceEngine, NonInheritablePropertyRegistry, PrototypeChainMaterializer, INFERRED_GRAPH, Namespace } from "@kitelev/exocortex-core";
 import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter";
 
-jest.mock("exocortex");
+jest.mock("@kitelev/exocortex-core");
 jest.mock("../../../src/adapters/ObsidianVaultAdapter");
 
 describe("VaultRDFIndexer", () => {

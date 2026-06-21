@@ -22,7 +22,7 @@ const {
   violationToError,
 } = await import("../../../src/commands/validate-frontmatter.js");
 
-const { NoteToRDFConverter } = await import("exocortex");
+const { NoteToRDFConverter } = await import("@kitelev/exocortex-core");
 const { FileSystemVaultAdapter } = await import(
   "../../../src/adapters/FileSystemVaultAdapter.js"
 );

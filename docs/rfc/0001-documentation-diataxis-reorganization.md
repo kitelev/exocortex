@@ -1,15 +1,15 @@
 # RFC 0001 — Documentation reorganization (Diátaxis)
 
-| | |
-| --- | --- |
-| **Status** | Proposed |
-| **Author** | Documentation full-audit (AI), 2026-06-17 |
-| **Scope** | `kitelev/exocortex` repo documentation (not vault, not Claude-infra) |
-| **Supersedes** | — |
-| **Tracking** | [#3592](https://github.com/kitelev/exocortex/issues/3592) · shipped P0 in [#3591](https://github.com/kitelev/exocortex/pull/3591) |
+|                |                                                                                                                                   |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Status**     | Proposed                                                                                                                          |
+| **Author**     | Documentation full-audit (AI), 2026-06-17                                                                                         |
+| **Scope**      | `kitelev/exocortex` repo documentation (not vault, not Claude-infra)                                                              |
+| **Supersedes** | —                                                                                                                                 |
+| **Tracking**   | [#3592](https://github.com/kitelev/exocortex/issues/3592) · shipped P0 in [#3591](https://github.com/kitelev/exocortex/pull/3591) |
 
 > **Why in-repo:** this is a repo-governance / contributor-facing artifact about the
-> *documentation architecture*. It is versioned in-repo alongside the docs it
+> _documentation architecture_. It is versioned in-repo alongside the docs it
 > reorganizes (OSS best-practice), unlike feature/ontology RFCs that live in the vault.
 
 > **Revision 2 (2026-06-18):** refined after a 3-lens adversarial review (taxonomy/phase
@@ -85,15 +85,16 @@ docs/
 
 **Taxonomy mapping notes** (added after adversarial review — the bucket list above is
 illustrative and not exhaustive; these rules bind the Phase-2 executor):
+
 - **Package-local docs stay physical.** `packages/cli/docs/*` (CLI_API_REFERENCE,
   ONTOLOGY_REFERENCE, SPARQL_GUIDE/COOKBOOK) and other `packages/*/docs/*` are
   **npm-shipped** with their package — they are **only logically grouped** under
-  `reference/` *in the `docs/README.md` index*, **not** physically relocated across
+  `reference/` _in the `docs/README.md` index_, **not** physically relocated across
   package boundaries.
 - **Complete doc→mode table is a Phase-2 deliverable.** ~7 top-level `docs/*` not named
   above (e.g. `Performance-Guide`, `Plugin-Development-Guide`, `AI-DEVELOPMENT-PATTERNS`,
   `FLAKY_POLICY`, `e2e-desktop`, `exosync-parallel-run`, `ROLLBACK_EXOQL_EVAL`) must each
-  get an explicit bucket in a full mapping table produced *before* Phase-2 moves — no
+  get an explicit bucket in a full mapping table produced _before_ Phase-2 moves — no
   doc may be left unclassified at move time.
 - **Mode straddle is acceptable, classification must be explicit.** `WORKFLOW_CUSTOMIZATION`
   / `ONTOLOGY_EXTENSION` are step-by-step (lean tutorial) yet placed in `how-to/`;
@@ -103,11 +104,12 @@ illustrative and not exhaustive; these rules bind the Phase-2 executor):
   a clean fit.
 
 ### Consolidations
+
 - **Testing (4 → 1):** one canonical testing doc — **root `TESTING.md`** (justified: it
-  is the largest at 1112 ln *and* the only one with a TOC, i.e. already the most complete
+  is the largest at 1112 ln _and_ the only one with a TOC, i.e. already the most complete
   and scannable) + thin package-specific pointers; fold `TEST-PYRAMID`, `.github/TESTING.md`,
   plugin `TESTING.md`, and the `AGENTS.md §Testing` section into it (or leave stubs that
-  link). **Fold *current* content only** — `.github/TESTING.md:137-148` carries a stale
+  link). **Fold _current_ content only** — `.github/TESTING.md:137-148` carries a stale
   generic 7-step CI description that contradicts the required-checks single-source goal;
   drop it on fold, reference the single-sourced CI paragraph instead of merging verbatim.
   The unified doc must **enumerate all e2e suites, including the recently-added `eka-gui`
@@ -117,25 +119,27 @@ illustrative and not exhaustive; these rules bind the Phase-2 executor):
   (drop **its** stale v14.81.0 pin — verified at `docs/Troubleshooting.md:186,194`,
   **not** the root doc); rename root `TROUBLESHOOTING.md` → `DEV-TROUBLESHOOTING.md`
   (or move to `contributing/`) to end the identical-title collision, and drop the
-  root doc's personal-path content. *(Audit §d8 located the pin correctly in the user
-  doc; the prior draft of this RFC mis-attributed it to root — corrected.)*
+  root doc's personal-path content. _(Audit §d8 located the pin correctly in the user
+  doc; the prior draft of this RFC mis-attributed it to root — corrected.)_
 - **NL-TO-SPARQL (2 → 1):** **content-fold before stub** — each copy has concentrated
-  *unique* sections (user `docs/`: Known Prototypes, Configuration, Adding Custom
-  Templates, API Reference; `packages/exocortex/docs/`: Date Filtering, Confidence
+  _unique_ sections (user `docs/`: Known Prototypes, Configuration, Adding Custom
+  Templates, API Reference; `packages/core/docs/`: Date Filtering, Confidence
   Scoring, Advanced Usage, Template Library Reference, Best Practices), so the ~20%
   delta is not cosmetic. First migrate the unique sections into the one canonical
-  user how-to in `docs/`, *then* replace the `packages/exocortex/docs/` copy with a
+  user how-to in `docs/`, _then_ replace the `packages/core/docs/` copy with a
   short "engine internals" pointer. A diff-based "no orphaned section" check gates this.
 - **ARCHITECTURE:** merge the two adjacent "Current State"/"Current Architecture"
   sections.
 
 ### Monolith hygiene
+
 - **PATTERNS.md:** separate genuinely-reusable patterns from one-off incident
   write-ups; archive the latter (or move to `history/`). Add a TOC.
 - **AGENTS.md:** move embedded example post-mortems → `TEMPLATES.md`; de-duplicate
   worktree/naming/merge rules against `CLAUDE.md`.
 
 ### Single-sourcing & cleanup
+
 - **CI-check list:** one authoritative paragraph (cite
   `gh api …/required_status_checks`), referenced from elsewhere instead of restated.
   The stale retired-BDD-check-in-the-required-list claim lives specifically in
@@ -149,10 +153,10 @@ illustrative and not exhaustive; these rules bind the Phase-2 executor):
   already missed `packages/obsidian-plugin/tests/e2e/specs/README.md` and the
   `WORKTREE_COORDINATION.md` tombstone): rewrite every `/Users/<user>/...` →
   `$REPO`/relative such that `grep -rln '/Users/<user>' --include='*.md' | grep -v
-  'docs/history' | grep -v '/phase3/'` returns nothing. (Decide explicitly whether
+'docs/history' | grep -v '/phase3/'` returns nothing. (Decide explicitly whether
   `.claude/agents/*` count as in-scope "prose docs" — recommend yes.)
 - Document the **exo-as-SDK / AssetSpace topology** for contributors (what an AssetSpace
-  is, why many `exoas-*` repos exist, what a Profile is — *without* referencing private
+  is, why many `exoas-*` repos exist, what a Profile is — _without_ referencing private
   vault UIDs) in `explanation/` or ARCHITECTURE. This is a **content** deliverable with
   its own DoD line (§7), not a one-line file-move — Phase 4 must not ship a hollow stub.
 - Remove the `WORKTREE_COORDINATION.md` tombstone in **Phase 1** — verified it has **zero
@@ -168,19 +172,20 @@ old paths for one release where external links may exist.
   index; consolidate the 4 testing docs → 1 (+stubs); disambiguate the 2
   Troubleshooting docs; **content-fold then** merge the 2 NL-TO-SPARQL; merge
   ARCHITECTURE's two "Current" sections; delete the `WORKTREE_COORDINATION.md`
-  tombstone (zero inbound links). *Highest value / lowest risk.*
-  > **Avoid Phase-1→Phase-2 double-churn:** where the canonical doc's *final* home is a
+  tombstone (zero inbound links). _Highest value / lowest risk._
+  > **Avoid Phase-1→Phase-2 double-churn:** where the canonical doc's _final_ home is a
   > taxonomy folder (testing → `contributing/`, root Troubleshooting → `contributing/`),
   > consolidate **directly into the target path** in Phase 1 rather than into the root and
   > re-homing in Phase 2 — otherwise Phase-1 stubs/links get rewritten twice.
 - **Phase 2 — Taxonomy moves:** introduce `tutorials/how-to/reference/explanation/
-  contributing/` and move files in; leave redirect stubs; bulk-fix cross-links.
+contributing/` and move files in; leave redirect stubs; bulk-fix cross-links.
 - **Phase 3 — Monolith hygiene:** prune/split PATTERNS + root TROUBLESHOOTING;
   de-personalize paths; freeze `history/`.
 - **Phase 4 — Single-sourcing:** CI-check single source; SDK/AssetSpace explainer;
   remove tombstones.
 
 ## 5. Risks & mitigations
+
 - **Cross-link churn / broken links.** The repo's existing link-check is **narrower than
   it appears**: `ci.yml`'s `docs-link-check` job is scoped `folder-path: "docs"` (it does
   **not** see root docs, `.github/*`, or `packages/*` — exactly where Phase-1/2 churn lands)
@@ -188,10 +193,10 @@ old paths for one release where external links may exist.
   it cannot gate the move PRs by itself. Mitigation: (a) for the duration of the reorg,
   widen the check (e.g. run `markdown-link-check` over `find . -name '*.md'` minus
   `node_modules`) **or** run a per-phase manual broken-link sweep across root/`.github/`/
-  `packages/`; (b) redirect stubs at old paths for one release (markdown stubs help *human/
-  markdown* inbound links only).
+  `packages/`; (b) redirect stubs at old paths for one release (markdown stubs help _human/
+  markdown_ inbound links only).
 - **External deep-links break** — **non-markdown references** (CI/scripts/config) are
-  *not* protected by redirect stubs and must be updated in the same PR as the move.
+  _not_ protected by redirect stubs and must be updated in the same PR as the move.
   Verified config refs (mostly comments, so a move staled them rather than breaking the
   pipeline): `packages/obsidian-plugin/docker-entrypoint-e2e.sh:5` → `ADR_FLAKY_X11_STRATEGY.md`
   (a **comment**, not loaded by CI — `ci.yml` has **zero** references to it, correcting an
@@ -206,6 +211,7 @@ old paths for one release where external links may exist.
   content edits.
 
 ## 6. Alternatives considered
+
 - **Targeted fixes only (no reorg).** Rejected for the architecture decision (chosen:
   full Diátaxis) but its low-risk subset (index + de-dup) is exactly Phase 1.
 - **Hosted docs-site (mkdocs/Docusaurus).** Deferred to a future RFC — it improves
@@ -216,9 +222,9 @@ old paths for one release where external links may exist.
 
 ## 7. Definition of Done
 
-*Each item below is phrased as a mechanical predicate so a reviewer can decide pass/fail
+_Each item below is phrased as a mechanical predicate so a reviewer can decide pass/fail
 objectively (adversarial-review finding: the prior DoD's "every doc" / "exactly one
-canonical" / "link-check green" were judgment calls).*
+canonical" / "link-check green" were judgment calls)._
 
 - **Single index:** every prose doc in the audit inventory (§a, ~98 docs) is either linked
   from `docs/README.md` **or** explicitly listed under a `history/`/`archive` heading. A
@@ -231,13 +237,13 @@ canonical" / "link-check green" were judgment calls).*
 - **Monolith scannability:** `PATTERNS.md` and root `TROUBLESHOOTING.md` each have a TOC;
   one-off historical incident write-ups are moved to `history/` (or pruned).
 - **De-personalized:** `grep -rln '/Users/<user>' --include='*.md' | grep -v 'docs/history'
-  | grep -v '/phase3/'` returns nothing (`.claude/agents/*` included as prose docs).
+| grep -v '/phase3/'` returns nothing (`.claude/agents/*` included as prose docs).
 - **CI-check single source:** `grep -rniE '13 (required|mandatory)' --include='*.md'`
   returns exactly one non-history/non-phase3 hit (the canonical paragraph); the retired
   BDD check's name (removed in #3433) appears as a literal token only in frozen archive
   prose.
-- **exo-as-SDK explainer:** a contributor-facing doc answers *what is an AssetSpace, why
-  there are many `exoas-*` repos, what a Profile is* — without referencing private vault
+- **exo-as-SDK explainer:** a contributor-facing doc answers _what is an AssetSpace, why
+  there are many `exoas-_` repos, what a Profile is\* — without referencing private vault
   UIDs. (Closes audit §9 — not satisfied by a file-move stub.)
 - **Links resolve:** a link-check covering **root + `docs/` + `.github/` + `packages/`**
   (widened scope or per-phase manual sweep, per §5) reports zero broken internal links;

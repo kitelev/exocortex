@@ -103,7 +103,12 @@ npx @kitelev/exocortex-cli apply <cmd> "tasks/my-task.md" --vault ~/vault --dry-
 Best for: Building custom applications.
 
 ```typescript
-import { InMemoryTripleStore, Triple, IRI, Literal } from "exocortex";
+import {
+  InMemoryTripleStore,
+  Triple,
+  IRI,
+  Literal,
+} from "@kitelev/exocortex-core";
 
 const store = new InMemoryTripleStore();
 await store.add(
@@ -243,12 +248,12 @@ Monorepo with packages sharing a Clean Architecture core. Two runtime entry poin
 ```mermaid
 flowchart TB
     subgraph Runtimes["Runtime entry points"]
-        Plugin["@exocortex/obsidian-plugin<br/>(Obsidian UI, renderers, commands)"]
+        Plugin["@kitelev/exocortex-obsidian-plugin<br/>(Obsidian UI, renderers, commands)"]
         CLI["@kitelev/exocortex-cli<br/>(Node CLI, automation, AI agents)"]
     end
 
     subgraph Shared["Shared (runtime-agnostic) packages"]
-        Core["@exocortex/core (exocortex)<br/>Domain models · RDF/SPARQL · Services"]
+        Core["@kitelev/exocortex-core (exocortex)<br/>Domain models · RDF/SPARQL · Services"]
         Services["@kitelev/exocortex-services<br/>Grounding-service factories"]
         Interfaces[["IVaultAdapter · IFileSystemAdapter<br/>(ports defined in core)"]]
     end
@@ -283,13 +288,13 @@ flowchart TB
 
 ### Packages
 
-| Package                         | npm                      | Purpose                                                                      |
-| ------------------------------- | ------------------------ | ---------------------------------------------------------------------------- |
-| **exocortex**                   | Private                  | Core business logic, domain models, SPARQL engine, 35+ services              |
-| **@exocortex/obsidian-plugin**  | Private                  | Interactive UI: React components, layout renderers, palette commands, modals |
-| **@kitelev/exocortex-cli**      | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration  |
-| **@kitelev/exocortex-services** | Private                  | Shared runtime-agnostic grounding-service factories (RFC 94e520da Phase 1)   |
-| **@exocortex/test-utils**       | Private                  | Shared test utilities, mock factories, flaky test reporter                   |
+| Package                                | npm                      | Purpose                                                                      |
+| -------------------------------------- | ------------------------ | ---------------------------------------------------------------------------- |
+| **exocortex**                          | Private                  | Core business logic, domain models, SPARQL engine, 35+ services              |
+| **@kitelev/exocortex-obsidian-plugin** | Private                  | Interactive UI: React components, layout renderers, palette commands, modals |
+| **@kitelev/exocortex-cli**             | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration  |
+| **@kitelev/exocortex-services**        | Private                  | Shared runtime-agnostic grounding-service factories (RFC 94e520da Phase 1)   |
+| **@kitelev/exocortex-test-utils**      | Private                  | Shared test utilities, mock factories, flaky test reporter                   |
 
 ### Technical Standards
 

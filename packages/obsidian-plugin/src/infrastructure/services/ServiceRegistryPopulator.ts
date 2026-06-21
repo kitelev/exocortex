@@ -18,7 +18,7 @@ import {
   type UserInput,
   type IFile,
   WorkflowResolver,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 /**
  * Build a `ClassRefResolver` (UUID → symbolic class label) backed by

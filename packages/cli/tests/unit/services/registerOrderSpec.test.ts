@@ -14,7 +14,7 @@ import { join } from "path";
 // registerOrderSpec.ts imports from real `exocortex` source via
 // jest config moduleNameMapper. No mock — verify true behaviour.
 const { registerOrderSpecFromVault } = await import("../../../src/services/registerOrderSpec.js");
-const { loadDefaultSpec, clearOrderSpecLoader } = await import("exocortex");
+const { loadDefaultSpec, clearOrderSpecLoader } = await import("@kitelev/exocortex-core");
 
 const HEAD = [
   "exo__Asset_isDefinedBy",

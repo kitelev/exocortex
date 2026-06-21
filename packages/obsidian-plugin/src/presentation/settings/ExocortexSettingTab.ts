@@ -1,5 +1,5 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
-import { normaliseExcludedFolders } from "exocortex";
+import { normaliseExcludedFolders } from "@kitelev/exocortex-core";
 import type ExocortexPlugin from "@plugin/ExocortexPlugin";
 import { DEFAULT_DISPLAY_NAME_TEMPLATE } from "@plugin/domain/display-name/DisplayNameTemplateEngine";
 import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";

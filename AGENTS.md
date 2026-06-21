@@ -21,7 +21,7 @@ Exocortex is a **knowledge management system** that gives users convenient contr
 - Tracks effort history and work state transitions
 - Surfaces vote-based prioritization signals
 - CLI tools for automation (`packages/cli`)
-- Shared semantic utilities (`packages/exocortex`)
+- Shared semantic utilities (`packages/core`)
 
 **Architecture**: Clean Architecture with strict layering
 
@@ -29,7 +29,7 @@ Exocortex is a **knowledge management system** that gives users convenient contr
 - `packages/obsidian-plugin/src/application` - Use cases and orchestration
 - `packages/obsidian-plugin/src/domain` - Pure business logic (framework-independent)
 - `packages/obsidian-plugin/src/infrastructure` - I/O, external dependencies, Obsidian API
-- `packages/exocortex` - Shared utilities across all packages
+- `packages/core` - Shared utilities across all packages
 - `packages/cli` - Command-line interface tools
 
 ---
@@ -648,16 +648,16 @@ jest.mock("../../src/presentation/modals/AreaSelectionModal", () => ({
 
 Dynamic commands (`exocmd__Command`) are covered in three test layers. New commands MUST be added to every applicable layer before merge. Historical source of truth: RFC v5 at `docs/history/rfc-ci-button-testing-2026-04-20.md` (in-repo); the locations below reflect the current tree.
 
-| Layer                | Runner                          | Location                                      | Scope                                                                                                                                                                                                                                                           |
-| -------------------- | ------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **L1 — Unit**        | Jest (ts-jest)                  | `packages/cli/tests/unit/**` (subdirs mirror `src/`: `services/`, `executors/`, `commands/`, `precondition/`, …) | CLI services, executors, command wiring, and precondition logic with mocked boundaries.                                                                    |
-| **L2 — Integration** | Jest + real `GroundingExecutor` | Dynamic-command suites: `packages/exocortex/tests/integration/dynamic-commands/**`. CLI command integration: `packages/cli/tests/integration/commands/**` (currently `apply-profile` + `audit-co-location`). | Dynamic commands through `CommandResolver` / `PreconditionEvaluator` / `GroundingExecutor`. ⚠️ Dynamic-command suites run in CI only if matched by the inline `--testPathPatterns` allowlist of the `test-coverage-exocortex` job in `.github/workflows/ci.yml` (that inline list — NOT `scripts/test-ci-batched.sh`, which no workflow invokes — is the actual CI gate; the script is only the local `npm run test:unit` mirror and must be kept in sync). Legacy parametrized-catalogue + YAML contract gate retired 2026-05-23 — replaced by RFC v2 byte-diff testing (`aaaa2dea`). |
-| **L3 — E2E**         | Playwright + Docker Obsidian    | `packages/obsidian-plugin/tests/e2e/specs/**` | Smoke subset (RFC §7.4.3) exercising the real plugin UI, sharded across `e2e-shard (1..6)`.                                                                                                                                                                       |
+| Layer                | Runner                          | Location                                                                                                                                                                                                | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **L1 — Unit**        | Jest (ts-jest)                  | `packages/cli/tests/unit/**` (subdirs mirror `src/`: `services/`, `executors/`, `commands/`, `precondition/`, …)                                                                                        | CLI services, executors, command wiring, and precondition logic with mocked boundaries.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **L2 — Integration** | Jest + real `GroundingExecutor` | Dynamic-command suites: `packages/core/tests/integration/dynamic-commands/**`. CLI command integration: `packages/cli/tests/integration/commands/**` (currently `apply-profile` + `audit-co-location`). | Dynamic commands through `CommandResolver` / `PreconditionEvaluator` / `GroundingExecutor`. ⚠️ Dynamic-command suites run in CI only if matched by the inline `--testPathPatterns` allowlist of the `test-coverage-exocortex` job in `.github/workflows/ci.yml` (that inline list — NOT `scripts/test-ci-batched.sh`, which no workflow invokes — is the actual CI gate; the script is only the local `npm run test:unit` mirror and must be kept in sync). Legacy parametrized-catalogue + YAML contract gate retired 2026-05-23 — replaced by RFC v2 byte-diff testing (`aaaa2dea`). |
+| **L3 — E2E**         | Playwright + Docker Obsidian    | `packages/obsidian-plugin/tests/e2e/specs/**`                                                                                                                                                           | Smoke subset (RFC §7.4.3) exercising the real plugin UI, sharded across `e2e-shard (1..6)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 **Layer authoring rules:**
 
 - New CLI helper/service → L1 unit test under `packages/cli/tests/unit/`, mirroring the `src/` path of the code under test.
-- New `exocmd__Command` or grounding change → L2 suite in `packages/exocortex/tests/integration/dynamic-commands/` **plus** an entry in the inline `--testPathPatterns` allowlist of the `test-coverage-exocortex` job in `.github/workflows/ci.yml` (and mirror it in `scripts/test-ci-batched.sh` for local `npm run test:unit`) — suites missing from the CI allowlist do NOT run in CI and rot silently (see «Test Suite Awareness» in `CLAUDE.md`).
+- New `exocmd__Command` or grounding change → L2 suite in `packages/core/tests/integration/dynamic-commands/` **plus** an entry in the inline `--testPathPatterns` allowlist of the `test-coverage-exocortex` job in `.github/workflows/ci.yml` (and mirror it in `scripts/test-ci-batched.sh` for local `npm run test:unit`) — suites missing from the CI allowlist do NOT run in CI and rot silently (see «Test Suite Awareness» in `CLAUDE.md`).
 - New user-visible button flow → L3 smoke spec under `packages/obsidian-plugin/tests/e2e/specs/` (or extend an existing spec, e.g. `dynamic-commands.spec.ts`) covering the golden path.
 
 **Runtime-verify gate:** new E2E specs MUST run green in CI (not only local) before the hosting task flips to Review; skipping this gate caused attribution drift flagged in Phase 2 retrospective.
@@ -1428,13 +1428,13 @@ npm run check:types  # Catches unused imports, type errors
 
 1. Read vault ontology files to get correct namespace URIs
 2. Update code to match vault definitions (vault is source of truth)
-3. Verify both CLI and Obsidian plugin use same `packages/exocortex/src/domain/models/rdf/Namespace.ts` constants
+3. Verify both CLI and Obsidian plugin use same `packages/core/src/domain/models/rdf/Namespace.ts` constants
 4. Test SPARQL queries in both environments
 
 **Example**:
 
 ```typescript
-// packages/exocortex/src/domain/models/rdf/Namespace.ts
+// packages/core/src/domain/models/rdf/Namespace.ts
 static readonly EXO = new Namespace("exo", "https://exocortex.my/ontology/exo#");
 static readonly EMS = new Namespace("ems", "https://exocortex.my/ontology/ems#");
 ```
@@ -1455,7 +1455,7 @@ If SPARQL query executes without errors but returns 0 results:
 
    ```bash
    # Compare code URIs
-   grep -A2 "static readonly EXO" packages/exocortex/src/domain/models/rdf/Namespace.ts
+   grep -A2 "static readonly EXO" packages/core/src/domain/models/rdf/Namespace.ts
 
    # Compare canonical ontology URIs in the in-repo data submodule
    # (packages/exoas-exo; empty dir in a fresh worktree means the submodule

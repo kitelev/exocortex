@@ -13,7 +13,7 @@ import {
   ParityLogStore,
   detectObsidianSyncState,
 } from "../../../src/infrastructure/adapters/ExoSyncParityFactory";
-import type { ParityRoundRecord } from "exocortex";
+import type { ParityRoundRecord } from "@kitelev/exocortex-core";
 
 /** Minimal in-memory DataAdapter surface the store touches. */
 class FakeAdapter {

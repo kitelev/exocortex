@@ -6,7 +6,7 @@ import {
   type IFolder,
   type IFrontmatter,
   type IVaultAdapter,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { createIsInWrongFolderHostFunction } from "../../../src/precondition/createIsInWrongFolderHostFunction.js";
 
 describe("createIsInWrongFolderHostFunction (CLI parity)", () => {

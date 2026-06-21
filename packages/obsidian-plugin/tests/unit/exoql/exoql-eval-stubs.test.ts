@@ -7,7 +7,7 @@
  * `evaluateWithExoEval` entry-point exported from `@exocortex`.
  */
 
-import { evaluateWithExoEval } from "../../../../exocortex/src/exoql";
+import { evaluateWithExoEval } from "../../../../core/src/exoql";
 
 describe("exoql__Query + exo:eval — BDD anchors", () => {
   it("happy path: trivial ASK { } returns ask-result envelope true", async () => {
@@ -39,7 +39,7 @@ describe("exoql__Query + exo:eval — BDD anchors", () => {
 
   it("nested-eval-count budget: deferred — covered by @exocortex eval-config tests", () => {
     // Budget enforcement lives in DEFAULT_EVAL_CONFIG and is exercised in
-    // packages/exocortex/tests/unit/exoql/evaluateWithExoEval.test.ts.
+    // packages/core/tests/unit/exoql/evaluateWithExoEval.test.ts.
     // This anchor stays green to preserve BDD coverage attribution.
     expect(true).toBe(true);
   });

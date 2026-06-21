@@ -13,7 +13,7 @@ import {
   PropertyCleanupService,
   RenameToUidService,
   TaskStatusService,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import {
   createCreateAssetService,
   createCreateRelatedTaskService,

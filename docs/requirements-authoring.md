@@ -137,7 +137,7 @@ human-authored lifecycle only (Draft/Approved/Deprecated).
 ### Worked example (seed `449f29ce`, prototype inheritance)
 
 - **Behavior:** an instance inherits its prototype's properties it does not own.
-- **Test:** `packages/exocortex/tests/integration/smoke/prototype-chain.test.ts`
+- **Test:** `packages/core/tests/integration/smoke/prototype-chain.test.ts`
   › `should inherit area from prototype when instance has no own area`.
 - **Revert:** in `PrototypeChainMaterializer.materialize`, neutralize the
   inherited-triple `store.add(...)` writes.

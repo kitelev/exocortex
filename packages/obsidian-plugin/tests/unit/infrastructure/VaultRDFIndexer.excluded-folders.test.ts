@@ -5,7 +5,7 @@ import {
   NoteToRDFConverter,
   ApplicationErrorHandler,
   Namespace,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter";
 
 // Mock `exocortex` wholesale (matches the sibling VaultRDFIndexer.test.ts
@@ -17,8 +17,8 @@ import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter
 // over-match silently slip back in (see ~/.claude/rules/test-fixture-
 // realism.md). The other exports are stubs because the indexer pulls them
 // in for types or unrelated subsystems we don't exercise here.
-jest.mock("exocortex", () => {
-  const actual = jest.requireActual("exocortex");
+jest.mock("@kitelev/exocortex-core", () => {
+  const actual = jest.requireActual("@kitelev/exocortex-core");
   return {
     InMemoryTripleStore: jest.fn(),
     NoteToRDFConverter: jest.fn(),
@@ -127,7 +127,7 @@ describe("VaultRDFIndexer — excludedFolders plumbing", () => {
       NonInheritablePropertyRegistry,
       PropertyCardinalityRegistry,
       PrototypeChainMaterializer,
-    } = jest.requireMock("exocortex") as {
+    } = jest.requireMock("@kitelev/exocortex-core") as {
       RDFSInferenceEngine: jest.Mock;
       NonInheritablePropertyRegistry: jest.Mock;
       PropertyCardinalityRegistry: jest.Mock;

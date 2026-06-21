@@ -1,5 +1,5 @@
 import type { App, CachedMetadata, TFile } from "obsidian";
-import type { ClassLabelToUidResolver } from "exocortex";
+import type { ClassLabelToUidResolver } from "@kitelev/exocortex-core";
 
 /**
  * Issue #3223 — alias-index-backed {@link ClassLabelToUidResolver}.

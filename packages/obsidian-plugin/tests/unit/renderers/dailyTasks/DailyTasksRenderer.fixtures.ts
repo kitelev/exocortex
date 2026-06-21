@@ -2,7 +2,7 @@ import { DailyTasksRenderer } from "../../../../src/presentation/renderers/Daily
 import { TFile, Keymap } from "obsidian";
 import { ExocortexSettings } from "../../../../src/domain/settings/ExocortexSettings";
 import { ILogger } from "../../../../src/infrastructure/logging/ILogger";
-import { MetadataExtractor, IVaultAdapter } from "exocortex";
+import { MetadataExtractor, IVaultAdapter } from "@kitelev/exocortex-core";
 import { ReactRenderer } from "../../../../src/presentation/utils/ReactRenderer";
 import { AssetMetadataService } from "../../../../src/presentation/renderers/layout/helpers/AssetMetadataService";
 

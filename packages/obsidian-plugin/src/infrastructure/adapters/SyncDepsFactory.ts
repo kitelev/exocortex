@@ -24,7 +24,7 @@ import {
   type SyncRepoSpec,
   type WatermarkFileIO,
   type YamlCodec,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 import { GitHubRestClient } from "./GitHubRestClient";
 import { GitSubmoduleOps } from "./GitSubmoduleOps";
@@ -73,7 +73,7 @@ import type { PluginLocalDataStore } from "./PluginLocalDataStore";
 /** Per-repo sync branch — re-exported from the core (ExoSync E1: the
  * constant moved to `spaceSpecCore` so the CLI shares it; see its docstring
  * for the repoKey/watermark-reset caveat). */
-export { SYNC_BRANCH } from "exocortex";
+export { SYNC_BRANCH } from "@kitelev/exocortex-core";
 
 /** Result of {@link collectSyncRepoSpecs}. */
 export interface SyncSpecCollection {

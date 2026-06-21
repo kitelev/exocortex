@@ -1,5 +1,5 @@
 import { App, Modal } from "obsidian";
-import type { IConfirmGate, ApplyPlan } from "exocortex";
+import type { IConfirmGate, ApplyPlan } from "@kitelev/exocortex-core";
 
 /**
  * ModalConfirmGate — plugin-side implementation of `IConfirmGate`

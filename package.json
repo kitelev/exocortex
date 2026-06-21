@@ -13,8 +13,8 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "dev": "npm run dev -w @exocortex/obsidian-plugin",
-    "build": "npm run build -w exocortex && npm run build -w @kitelev/exocortex-services && npm run build --workspaces --if-present && tsc -noEmit -skipLibCheck && node packages/obsidian-plugin/esbuild.config.mjs production && node scripts/assert-mobile-loadable.mjs && node scripts/assert-console-channel.mjs",
+    "dev": "npm run dev -w @kitelev/exocortex-obsidian-plugin",
+    "build": "npm run build -w @kitelev/exocortex-core && npm run build -w @kitelev/exocortex-services && npm run build --workspaces --if-present && tsc -noEmit -skipLibCheck && node packages/obsidian-plugin/esbuild.config.mjs production && node scripts/assert-mobile-loadable.mjs && node scripts/assert-console-channel.mjs",
     "lint": "eslint packages/obsidian-plugin/src --ext .ts,.tsx",
     "lint:fix": "eslint packages/obsidian-plugin/src --ext .ts,.tsx --fix",
     "format": "prettier --write 'packages/**/*.{ts,tsx}'",

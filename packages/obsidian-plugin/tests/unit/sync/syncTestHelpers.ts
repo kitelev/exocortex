@@ -18,7 +18,7 @@
  *    `isRateLimitError`, `isAuthError`) is therefore exercised end-to-end.
  */
 
-import type { FakeGitHubRepo } from "../../../../exocortex/tests/unit/services/sync/fakeGitHub";
+import type { FakeGitHubRepo } from "../../../../core/tests/unit/services/sync/fakeGitHub";
 
 /** Minimal `RequestUrlResponse`-shaped object. */
 export interface FakeRequestUrlResponse {

@@ -1,4 +1,4 @@
-import { Triple, IRI, Literal, BlankNode } from "exocortex";
+import { Triple, IRI, Literal, BlankNode } from "@kitelev/exocortex-core";
 
 /**
  * Serializable RDF node representation used by the JSON triple-cache format.

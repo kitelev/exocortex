@@ -68,7 +68,7 @@ import {
   NoteToRDFConverter,
   WorkflowResolver,
   NamedQueryRunner,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { ObsidianFileResolver } from "./infrastructure/ObsidianFileResolver";
 import { registerOrderSpecFromObsidianVault } from "./infrastructure/registerOrderSpecFromObsidianVault";
 import {
@@ -87,7 +87,7 @@ import {
   createCommandPanelFromFrontmatter,
   isLayoutFrontmatter,
 } from "./domain/layout";
-import { isCommandBindingFrontmatter } from "exocortex";
+import { isCommandBindingFrontmatter } from "@kitelev/exocortex-core";
 import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlockProcessor";
 import { SPARQLApi } from "./application/api/SPARQLApi";
 import { ExocortexAPI } from "./application/api/ExocortexAPI";
@@ -202,7 +202,7 @@ import {
   createTripleStoreRequiredPropertyResolver,
   DI_TOKENS,
   type IVaultSettings,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 /**
  * Exocortex Plugin - Automatic layout rendering

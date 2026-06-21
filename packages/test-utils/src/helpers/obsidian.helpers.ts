@@ -2,7 +2,7 @@
  * Obsidian mock helpers for unit tests.
  *
  * @example
- * import { createMockApp, createMockPlugin, createMockTFile } from "@exocortex/test-utils";
+ * import { createMockApp, createMockPlugin, createMockTFile } from "@kitelev/exocortex-test-utils";
  *
  * const mockApp = createMockApp();
  * const mockPlugin = createMockPlugin();

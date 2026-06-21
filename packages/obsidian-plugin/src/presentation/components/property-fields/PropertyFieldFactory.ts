@@ -1,5 +1,5 @@
 import { App } from "obsidian";
-import { PropertyFieldType, type PropertyDefinition, type INotificationService } from "exocortex";
+import { PropertyFieldType, type PropertyDefinition, type INotificationService } from "@kitelev/exocortex-core";
 import type { ValidationResult } from "./types";
 import { TextPropertyField } from "./TextPropertyField";
 import { DatePropertyField } from "./DatePropertyField";

@@ -7,7 +7,7 @@ directly against the spaces' GitHub repositories over the REST API. It needs no
 Obsidian Sync subscription and no `git` binary — pull, merge and push all run
 through HTTP (`requestUrl` in the plugin), so the same path works on desktop
 and iOS. The engine itself
-(`packages/exocortex/src/services/sync/SyncEngine.ts`) is platform-free; all
+(`packages/core/src/services/sync/SyncEngine.ts`) is platform-free; all
 platform specifics (file access, credential storage, SHA-1, transport) are
 injected ports composed by the plugin in
 `packages/obsidian-plugin/src/infrastructure/adapters/SyncDepsFactory.ts`.
@@ -85,7 +85,7 @@ byte-exact instead (see below).
 
 Per repo, one cycle is **pull → conflict check → merge → push**, orchestrated
 around the pre-existing write primitive `restCreateCommit`
-(`packages/exocortex/src/infrastructure/github/restCommit.ts`) — the GitHub
+(`packages/core/src/infrastructure/github/restCommit.ts`) — the GitHub
 **Git Data API** 4-call chain: `GET git/refs/heads/{branch}` → `POST
 git/trees` (multi-file, atomic) → `POST git/commits` → `PATCH
 git/refs/heads/{branch}` with `force: false`. Reads use the same API family
@@ -262,7 +262,7 @@ loss and are visible cross-device. Design points:
 
 ## Source map
 
-| Module (`packages/exocortex/src/`)                             | Role                                                                                      |
+| Module (`packages/core/src/`)                                  | Role                                                                                      |
 | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `services/sync/SyncEngine.ts`                                  | pull→merge→push orchestrator, retry loop, watermark advance                               |
 | `services/sync/ChangeDetector.ts`                              | uid/path 3-way change detection vs the watermark base                                     |

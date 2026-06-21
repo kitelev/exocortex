@@ -1,5 +1,5 @@
 import type { App } from "obsidian";
-import type { IFile } from "exocortex";
+import type { IFile } from "@kitelev/exocortex-core";
 import type { ITargetResolver } from "@kitelev/exocortex-services";
 import type { ObsidianVaultAdapter } from "../../adapters/ObsidianVaultAdapter";
 

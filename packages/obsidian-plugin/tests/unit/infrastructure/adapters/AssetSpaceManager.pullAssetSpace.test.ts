@@ -23,7 +23,7 @@ import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import type { App } from "obsidian";
-import type { INotificationService } from "exocortex";
+import type { INotificationService } from "@kitelev/exocortex-core";
 import { createTar } from "nanotar";
 
 import {

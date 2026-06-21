@@ -25,7 +25,7 @@ npm run build
 npm run test:all
 ```
 
-- The repo is a monorepo (npm workspaces): `packages/exocortex` (core), `packages/obsidian-plugin`, `packages/cli`, `packages/services`, `packages/test-utils`. See [ARCHITECTURE.md](ARCHITECTURE.md).
+- The repo is a monorepo (npm workspaces): `packages/core` (core), `packages/obsidian-plugin`, `packages/cli`, `packages/services`, `packages/test-utils`. See [ARCHITECTURE.md](ARCHITECTURE.md).
 - `packages/exoas-exo` / `packages/exoas-exocmd` are **public data submodules** (ontology assets), not code packages — no auth token needed.
 
 ## Pull-request workflow

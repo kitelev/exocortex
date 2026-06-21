@@ -3,7 +3,7 @@ import type {
   ConflictDetail,
   ResolvableConflict,
   ResolveChoice,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { QuarantineResolverModal } from "../../../src/infrastructure/adapters/QuarantineResolverModal";
 import type { ResolverModalContext } from "../../../src/infrastructure/adapters/QuarantineResolverCommands";
 

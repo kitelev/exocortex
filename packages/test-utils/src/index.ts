@@ -1,5 +1,5 @@
 /**
- * @exocortex/test-utils
+ * @kitelev/exocortex-test-utils
  *
  * Shared test utilities and mock factories for Exocortex packages.
  *
@@ -14,7 +14,7 @@
  *   flushPromises,
  *   waitForCondition,
  *   resetAllCounters,
- * } from "@exocortex/test-utils";
+ * } from "@kitelev/exocortex-test-utils";
  *
  * describe("MyComponent", () => {
  *   beforeEach(() => {

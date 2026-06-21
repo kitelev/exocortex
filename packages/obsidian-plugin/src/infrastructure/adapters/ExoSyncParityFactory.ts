@@ -32,7 +32,7 @@ import {
   type RepoSyncResult,
   type SyncRepoSpec,
   type YamlCodec,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 import { GitHubRestClient } from "./GitHubRestClient";
 import { LocalSecretsStore } from "./LocalSecretsStore";

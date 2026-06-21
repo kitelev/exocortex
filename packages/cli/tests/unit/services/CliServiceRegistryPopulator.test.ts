@@ -2,7 +2,7 @@ import { jest, describe, it, expect, beforeEach } from "@jest/globals";
 
 // Use real ServiceRegistry since it's a simple Map wrapper
 // and the function under test just calls .register() on the passed instance
-jest.unstable_mockModule("exocortex", () => {
+jest.unstable_mockModule("@kitelev/exocortex-core", () => {
   class ServiceRegistry {
     private services = new Map<string, any>();
     register(id: string, service: any) { this.services.set(id, service); }
@@ -58,7 +58,7 @@ beforeEach(async () => {
   const popMod = await import("../../../src/services/CliServiceRegistryPopulator.js");
   populateCliServiceRegistry = popMod.populateCliServiceRegistry;
   CLI_STUB_SERVICE_IDS = popMod.CLI_STUB_SERVICE_IDS;
-  const exoMod = await import("exocortex");
+  const exoMod = await import("@kitelev/exocortex-core");
   ServiceRegistry = (exoMod as any).ServiceRegistry;
 });
 

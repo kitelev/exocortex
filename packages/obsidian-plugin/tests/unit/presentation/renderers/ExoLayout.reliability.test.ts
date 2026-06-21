@@ -17,7 +17,7 @@ import {
   createLayoutFromFrontmatter,
   isLayoutBlockFrontmatter,
   isLayoutFrontmatter,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 describe("exo__Layout fault-injection matrix (RFC exo__Layout Phase 2)", () => {
   test("null/undefined frontmatter does NOT throw; parser returns null", () => {

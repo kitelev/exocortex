@@ -7,7 +7,7 @@ import {
   ShapeRegistry,
   GenericAssetCreationService,
   type GenericAssetCreationConfig,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { ClassResolverService } from "../services/ClassResolverService.js";

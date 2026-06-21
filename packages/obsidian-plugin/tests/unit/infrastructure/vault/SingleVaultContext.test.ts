@@ -1,5 +1,5 @@
 import { SingleVaultContext } from "../../../../src/infrastructure/vault/SingleVaultContext";
-import { IVaultAdapter, IFile, IFolder, IFrontmatter } from "exocortex";
+import { IVaultAdapter, IFile, IFolder, IFrontmatter } from "@kitelev/exocortex-core";
 
 class MockVaultAdapter implements IVaultAdapter {
   async read(_file: IFile): Promise<string> {

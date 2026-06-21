@@ -48,7 +48,7 @@ import {
   InMemoryTripleStore,
   NoteToRDFConverter,
   type DomainTriple as Triple,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
 
 // ── Fixture UIDs (deterministic) ────────────────────────────────────────────

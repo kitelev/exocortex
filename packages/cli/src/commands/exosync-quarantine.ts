@@ -38,7 +38,7 @@ import {
   extractAssetUid,
   type ResolveChoice,
   type SyncRepoSpec,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { collectVaultSpecs } from "./exosync-parity.js";
 import {
   nodeLocalFilesPort,

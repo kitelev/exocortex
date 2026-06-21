@@ -125,7 +125,7 @@ export function formatForInput(isoString: string): string {
  * Formats a Date object as a local timestamp string for storage.
  * Format: YYYY-MM-DDTHH:mm:ss (no timezone suffix)
  *
- * This format is consistent with DateFormatter.toLocalTimestamp() in @exocortex/core.
+ * This format is consistent with DateFormatter.toLocalTimestamp() in @kitelev/exocortex-core.
  *
  * @param date - The Date object to format
  * @returns A local timestamp string like "2025-12-02T13:03:00"

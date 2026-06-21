@@ -33,8 +33,8 @@ import {
   DEFAULT_EVAL_CONFIG,
   ExoQLForbiddenKeywordError,
   validateExoQLAllowlist,
-} from "../../../../exocortex/src/exoql";
-import { ExoQLParser } from "../../../../exocortex/src/infrastructure/sparql/SPARQLParser";
+} from "../../../../core/src/exoql";
+import { ExoQLParser } from "../../../../core/src/infrastructure/sparql/SPARQLParser";
 
 const parser = new ExoQLParser();
 

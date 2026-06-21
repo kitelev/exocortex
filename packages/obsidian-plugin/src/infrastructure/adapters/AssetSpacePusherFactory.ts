@@ -1,5 +1,5 @@
 import type { App } from "obsidian";
-import type { ILogger, INotificationService } from "exocortex";
+import type { ILogger, INotificationService } from "@kitelev/exocortex-core";
 
 import { AssetSpaceManager } from "./AssetSpaceManager";
 import {

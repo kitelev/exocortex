@@ -15,7 +15,7 @@ import {
   ApplicationErrorHandler,
   ValidationError,
   NetworkError,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import React, { ReactNode, ErrorInfo } from "react";
 
 // Mock console.error to avoid noise in tests

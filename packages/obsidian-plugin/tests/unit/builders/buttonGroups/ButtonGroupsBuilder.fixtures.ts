@@ -7,7 +7,7 @@ import {
   CommandResolver,
   PreconditionEvaluator,
   GroundingExecutor,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { ILogger } from "../../../../src/infrastructure/logging/ILogger";
 
 export interface ButtonGroupsBuilderTestContext {

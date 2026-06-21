@@ -57,7 +57,7 @@
     "ora": "^9.0.0"
   },
   "devDependencies": {
-    "exocortex": "file:../exocortex",
+    "@kitelev/exocortex-core": "file:../core",
     "@kitelev/exocortex-services": "file:../services",
     "@types/fs-extra": "^11.0.0",
     "@types/jest": "^30.0.0",

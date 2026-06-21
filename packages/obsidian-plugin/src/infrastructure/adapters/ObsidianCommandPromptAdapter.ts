@@ -1,5 +1,5 @@
 import type { App } from "obsidian";
-import type { CommandPromptAdapter, UserInput } from "exocortex";
+import type { CommandPromptAdapter, UserInput } from "@kitelev/exocortex-core";
 import { DynamicFormModal } from "@plugin/presentation/modals/DynamicFormModal";
 import type { InputSchemaField } from "@plugin/presentation/builders/button-groups/DynamicCommandButtonGroupBuilder";
 

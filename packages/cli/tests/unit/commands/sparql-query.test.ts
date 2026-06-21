@@ -18,7 +18,7 @@ jest.unstable_mockModule("../../../src/formatters/JsonFormatter.js", () => ({
 }));
 
 // Mock the heavy exocortex dependencies
-jest.unstable_mockModule("exocortex", () => ({
+jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   InMemoryTripleStore: jest.fn(() => ({
     addAll: jest.fn(),
   })),
@@ -290,7 +290,7 @@ describe("sparqlQueryCommand", () => {
       existsSyncSpy.mockReturnValue(true);
 
       // The mocked parser returns successfully, but let's test error branch
-      const { SPARQLParser } = await import("exocortex");
+      const { SPARQLParser } = await import("@kitelev/exocortex-core");
       (SPARQLParser as jest.Mock).mockImplementationOnce(() => ({
         parse: jest.fn(() => { throw new Error("Parse error"); }),
       }));

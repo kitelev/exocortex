@@ -3,7 +3,7 @@ id: QUAL-001
 title: Code Quality Standards
 domain: backend
 rules: true
-files: ["packages/exocortex/src/**/*.ts"]
+files: ["packages/core/src/**/*.ts"]
 ---
 
 # Code Quality Standards
@@ -20,7 +20,7 @@ All service classes in the core package must use `@injectable()` decorator for D
 
 ### No Console in Core
 
-Core package (`packages/exocortex`) should use structured logging via `ILogger` interface, not direct `console.*` calls. Exceptions: benchmarks, infrastructure logging services.
+Core package (`packages/core`) should use structured logging via `ILogger` interface, not direct `console.*` calls. Exceptions: benchmarks, infrastructure logging services.
 
 ## Do's and Don'ts
 

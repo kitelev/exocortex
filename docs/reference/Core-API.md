@@ -2,7 +2,7 @@
 
 **exocortex - Storage-agnostic business logic package**
 
-> Generated against `packages/exocortex/src` at commit `507b3bbb` (2026-06-10). Every signature below is verified against the source; see `packages/exocortex/src/index.ts` for the full export map.
+> Generated against `packages/core/src` at commit `507b3bbb` (2026-06-10). Every signature below is verified against the source; see `packages/core/src/index.ts` for the full export map.
 
 ---
 
@@ -14,11 +14,12 @@ The `exocortex` package provides storage-independent business logic:
 import {
   GenericAssetCreationService,
   EffortStatusWorkflow,
-  RDFSerializer
-} from 'exocortex';
+  RDFSerializer,
+} from "@kitelev/exocortex-core";
 ```
 
 **Key benefits:**
+
 - No Obsidian dependencies (works in CLI, other UIs)
 - Pure TypeScript business logic
 - Comprehensive test coverage
@@ -32,7 +33,7 @@ import {
 ### Generic Asset Creation Service
 
 ```typescript
-import { GenericAssetCreationService } from 'exocortex';
+import { GenericAssetCreationService } from "@kitelev/exocortex-core";
 
 class GenericAssetCreationService {
   constructor(vault: IVaultAdapter);
@@ -46,13 +47,13 @@ class GenericAssetCreationService {
   /** Create an asset of any class type. Writes `<folderPath>/<uuid>.md`. */
   createAsset(
     config: GenericAssetCreationConfig,
-    propertyDefinitions?: AssetPropertyDefinition[]
+    propertyDefinitions?: AssetPropertyDefinition[],
   ): Promise<IFile>;
 
   /** Pure (no-write) assembly — used by `cli create --dry-run`. */
   buildAsset(
     config: GenericAssetCreationConfig,
-    propertyDefinitions?: AssetPropertyDefinition[]
+    propertyDefinitions?: AssetPropertyDefinition[],
   ): AssetBuildResult;
 }
 ```
@@ -61,15 +62,15 @@ Core fields of `GenericAssetCreationConfig` (all optional except `className`):
 
 ```typescript
 interface GenericAssetCreationConfig {
-  className: string;                          // e.g. "ems__Task"
+  className: string; // e.g. "ems__Task"
   label?: string;
   folderPath?: string;
   propertyValues?: Record<string, unknown>;
   parentFile?: IFile;
   parentMetadata?: Record<string, unknown>;
-  classResolver?: ClassRefResolver;           // (uuid: string) => string | null | undefined
+  classResolver?: ClassRefResolver; // (uuid: string) => string | null | undefined
   // Opt-in domain fields (used by `cli create`):
-  classRefForm?: 'label' | 'uuid';
+  classRefForm?: "label" | "uuid";
   classUid?: string;
   createdBy?: string;
   aliases?: string[];
@@ -80,25 +81,27 @@ interface GenericAssetCreationConfig {
 ```
 
 **Example — creating a task**:
+
 ```typescript
 const service = new GenericAssetCreationService(vault);
 
 const file = await service.createAsset({
-  className: 'ems__Task',
-  label: 'Build API endpoint',
+  className: "ems__Task",
+  label: "Build API endpoint",
   propertyValues: {
-    ems__Effort_status: '"[[ems__EffortStatusToDo]]"'
-  }
+    ems__Effort_status: '"[[ems__EffortStatusToDo]]"',
+  },
 });
 
 // Result: IFile { path: "<folder>/<uuid>.md", basename: "<uuid>", ... }
 ```
 
 **Example — dry-run preview (no vault write)**:
+
 ```typescript
 const preview = service.buildAsset({
-  className: 'ems__Project',
-  label: 'API Server'
+  className: "ems__Project",
+  label: "API Server",
 });
 
 // AssetBuildResult { uid, folderPath, path, frontmatter, content }
@@ -110,10 +113,10 @@ const preview = service.buildAsset({
 Facade over `WorkflowEngine` for effort status rollback logic. Note: there are **no** `canTransition` / `transition` methods on this class — forward transitions are executed elsewhere (groundings / `TaskStatusService`); this facade answers "what was the previous status?".
 
 ```typescript
-import { EffortStatusWorkflow } from 'exocortex';
+import { EffortStatusWorkflow } from "@kitelev/exocortex-core";
 
 class EffortStatusWorkflow {
-  constructor();  // parameterless; legacy empty-store resolver installed
+  constructor(); // parameterless; legacy empty-store resolver installed
 
   /** Swap in a production triple-store-backed WorkflowResolver. */
   setResolver(resolver: WorkflowResolver): void;
@@ -126,7 +129,7 @@ class EffortStatusWorkflow {
    */
   getPreviousStatus(
     currentStatus: string,
-    instanceClass: string | string[] | null
+    instanceClass: string | string[] | null,
   ): string | null | undefined;
 
   /** '"[[ems__EffortStatusDoing]]"' → 'ems__EffortStatusDoing' */
@@ -138,10 +141,11 @@ class EffortStatusWorkflow {
 ```
 
 **Example**:
+
 ```typescript
 const workflow = new EffortStatusWorkflow();
 
-workflow.getPreviousStatus('"[[ems__EffortStatusDraft]]"', 'ems__Task');
+workflow.getPreviousStatus('"[[ems__EffortStatusDraft]]"', "ems__Task");
 // null — Draft is the initial state, no rollback
 
 workflow.normalizeStatus('"[[ems__EffortStatusDoing]]"');
@@ -153,7 +157,7 @@ workflow.normalizeStatus('"[[ems__EffortStatusDoing]]"');
 Increments the `ems__Effort_votes` frontmatter property on a Task/Project file.
 
 ```typescript
-import { EffortVotingService } from 'exocortex';
+import { EffortVotingService } from "@kitelev/exocortex-core";
 
 class EffortVotingService {
   constructor(vault: IVaultAdapter);
@@ -164,6 +168,7 @@ class EffortVotingService {
 ```
 
 **Example**:
+
 ```typescript
 const voting = new EffortVotingService(vault);
 const newCount = await voting.incrementEffortVotes(taskFile);
@@ -174,8 +179,11 @@ const newCount = await voting.incrementEffortVotes(taskFile);
 Builds an `ems__Area` tree rooted at a given area file.
 
 ```typescript
-import { AreaHierarchyBuilder, type AssetRelation } from 'exocortex';
-import type { AreaNode } from 'exocortex';
+import {
+  AreaHierarchyBuilder,
+  type AssetRelation,
+} from "@kitelev/exocortex-core";
+import type { AreaNode } from "@kitelev/exocortex-core";
 
 class AreaHierarchyBuilder {
   constructor(vault: IVaultAdapter);
@@ -188,15 +196,16 @@ class AreaHierarchyBuilder {
    */
   buildHierarchy(
     currentAreaPath: string,
-    relations: AssetRelation[]
+    relations: AssetRelation[],
   ): AreaNode | null;
 }
 ```
 
 **Example**:
+
 ```typescript
 const builder = new AreaHierarchyBuilder(vault);
-const tree = builder.buildHierarchy('areas/work.md', []);
+const tree = builder.buildHierarchy("areas/work.md", []);
 
 if (tree) {
   console.log(tree.title, tree.children.length);
@@ -206,7 +215,7 @@ if (tree) {
 ### Planning Service
 
 ```typescript
-import { PlanningService } from 'exocortex';
+import { PlanningService } from "@kitelev/exocortex-core";
 
 class PlanningService {
   constructor(vault: IVaultAdapter);
@@ -228,11 +237,17 @@ class PlanningService {
 RDF terms are **classes**, not plain objects:
 
 ```typescript
-import { IRI, Literal, BlankNode, Triple, Namespace } from 'exocortex';
+import {
+  IRI,
+  Literal,
+  BlankNode,
+  Triple,
+  Namespace,
+} from "@kitelev/exocortex-core";
 
 type Subject = IRI | BlankNode | QuotedTriple;
 type Predicate = IRI;
-type Object = IRI | BlankNode | Literal | QuotedTriple;  // exported as `Object`
+type Object = IRI | BlankNode | Literal | QuotedTriple; // exported as `Object`
 
 class Triple {
   constructor(subject: Subject, predicate: Predicate, object: Object);
@@ -240,7 +255,7 @@ class Triple {
   get predicate(): Predicate;
   get object(): Object;
   equals(other: Triple): boolean;
-  toString(): string;  // N-Triples-ish: "<s> <p> <o> ."
+  toString(): string; // N-Triples-ish: "<s> <p> <o> ."
 }
 ```
 
@@ -249,7 +264,7 @@ class Triple {
 ### Triple Store
 
 ```typescript
-import { InMemoryTripleStore } from 'exocortex';
+import { InMemoryTripleStore } from "@kitelev/exocortex-core";
 
 class InMemoryTripleStore implements ITripleStore {
   add(triple: Triple): Promise<void>;
@@ -262,7 +277,7 @@ class InMemoryTripleStore implements ITripleStore {
   match(
     subject?: Subject,
     predicate?: Predicate,
-    object?: Object
+    object?: Object,
   ): Promise<Triple[]>;
 
   clear(): Promise<void>;
@@ -279,7 +294,12 @@ class InMemoryTripleStore implements ITripleStore {
   // Named graphs (SPARQL 1.1 datasets):
   addToGraph(triple: Triple, graph: GraphName): Promise<void>;
   removeFromGraph(triple: Triple, graph: GraphName): Promise<boolean>;
-  matchInGraph(s?: Subject, p?: Predicate, o?: Object, graph?: GraphName): Promise<Triple[]>;
+  matchInGraph(
+    s?: Subject,
+    p?: Predicate,
+    o?: Object,
+    graph?: GraphName,
+  ): Promise<Triple[]>;
   getNamedGraphs(): Promise<IRI[]>;
   hasGraph(graph: IRI): Promise<boolean>;
   clearGraph(graph: GraphName): Promise<void>;
@@ -290,19 +310,28 @@ class InMemoryTripleStore implements ITripleStore {
 There is **no** `query()` method — use `match()` for pattern access, or the SPARQL engine (`ExoQLQueryExecutor` / `ExoQL`) for query-language access.
 
 **Example**:
+
 ```typescript
 const store = new InMemoryTripleStore();
 
-const task = new IRI('obsidian://vault/tasks/3f2a.md');
-const rdfType = Namespace.RDF.term('type');
+const task = new IRI("obsidian://vault/tasks/3f2a.md");
+const rdfType = Namespace.RDF.term("type");
 
-await store.add(new Triple(task, rdfType, Namespace.EMS.term('Task')));
+await store.add(new Triple(task, rdfType, Namespace.EMS.term("Task")));
 await store.add(
-  new Triple(task, Namespace.EXO.term('Asset_label'), new Literal('Build API endpoint'))
+  new Triple(
+    task,
+    Namespace.EXO.term("Asset_label"),
+    new Literal("Build API endpoint"),
+  ),
 );
 
-const allTasks = await store.match(undefined, rdfType, Namespace.EMS.term('Task'));
-const aboutTask = await store.match(task);  // all triples with this subject
+const allTasks = await store.match(
+  undefined,
+  rdfType,
+  Namespace.EMS.term("Task"),
+);
+const aboutTask = await store.match(task); // all triples with this subject
 const total = await store.count();
 ```
 
@@ -311,7 +340,11 @@ const total = await store.count();
 `SPARQLParser` is an alias of `ExoQLParser` (the ExoQL-extended SPARQL 1.1/1.2 parser built on `sparqljs`).
 
 ```typescript
-import { SPARQLParser, SPARQLParseError, type SPARQLQuery } from 'exocortex';
+import {
+  SPARQLParser,
+  SPARQLParseError,
+  type SPARQLQuery,
+} from "@kitelev/exocortex-core";
 
 const parser = new SPARQLParser();
 
@@ -334,38 +367,42 @@ try {
 Format is a **positional** argument; options come second.
 
 ```typescript
-import { RDFSerializer, type RDFSerializationFormat } from 'exocortex';
+import {
+  RDFSerializer,
+  type RDFSerializationFormat,
+} from "@kitelev/exocortex-core";
 
-type RDFSerializationFormat = 'turtle' | 'n-triples' | 'json-ld';
+type RDFSerializationFormat = "turtle" | "n-triples" | "json-ld";
 
 class RDFSerializer {
   constructor(store: ITripleStore);
 
   serialize(
     format: RDFSerializationFormat,
-    options?: RDFSerializeOptions
+    options?: RDFSerializeOptions,
   ): Promise<string>;
 
   serializeTriples(
     triples: Triple[],
     format: RDFSerializationFormat,
-    options?: RDFSerializeOptions
+    options?: RDFSerializeOptions,
   ): string;
 
   /** Batched streaming output. */
   stream(
     format: RDFSerializationFormat,
-    options?: RDFStreamOptions
+    options?: RDFStreamOptions,
   ): AsyncIterableIterator<string>;
 }
 ```
 
 **Example**:
+
 ```typescript
 const serializer = new RDFSerializer(store);
 
-const turtle = await serializer.serialize('turtle');
-const jsonld = await serializer.serialize('json-ld', { pretty: true });
+const turtle = await serializer.serialize("turtle");
+const jsonld = await serializer.serialize("json-ld", { pretty: true });
 ```
 
 ---
@@ -377,11 +414,11 @@ const jsonld = await serializer.serialize('json-ld', { pretty: true });
 Instance-based (not static). There is **no** `stringify` method; use `createFrontmatter` / `updateProperty` to produce content.
 
 ```typescript
-import { FrontmatterService } from 'exocortex';
+import { FrontmatterService } from "@kitelev/exocortex-core";
 
 interface FrontmatterParseResult {
   exists: boolean;
-  content: string;          // raw YAML between --- delimiters
+  content: string; // raw YAML between --- delimiters
   originalContent: string;
 }
 
@@ -407,7 +444,10 @@ class FrontmatterService {
   getPropertyValue(frontmatterContent: string, property: string): string | null;
 
   /** Prepend a new frontmatter block (canonical property ordering applied). */
-  createFrontmatter(content: string, properties: Record<string, unknown>): string;
+  createFrontmatter(
+    content: string,
+    properties: Record<string, unknown>,
+  ): string;
 
   /** "https://exocortex.my/ontology/ems#Effort_status" → "ems__Effort_status" */
   static normalizeIRI(property: string): string;
@@ -418,37 +458,38 @@ class FrontmatterService {
 ```
 
 **Example**:
+
 ```typescript
 const service = new FrontmatterService();
 
-const result = service.parse('---\nstatus: draft\n---\nBody');
+const result = service.parse("---\nstatus: draft\n---\nBody");
 // result.exists === true, result.content === 'status: draft'
 
 const updated = service.updateProperty(
-  '---\nstatus: draft\n---\nBody',
-  'ems__Effort_status',
-  '"[[ems__EffortStatusDone]]"'
+  "---\nstatus: draft\n---\nBody",
+  "ems__Effort_status",
+  '"[[ems__EffortStatusDone]]"',
 );
 ```
 
 ### Date Formatter
 
 ```typescript
-import { DateFormatter } from 'exocortex';
+import { DateFormatter } from "@kitelev/exocortex-core";
 
 class DateFormatter {
-  static toISOTimestamp(date: Date): string;        // "2025-10-24T14:30:45Z" (UTC)
-  static toLocalTimestamp(date: Date): string;      // "2025-10-24T14:30:45" (local, no zone)
-  static toDateWikilink(date: Date): string;        // '"[[2025-10-24]]"' (quoted)
-  static getTodayWikilink(): string;                // toDateWikilink(new Date())
-  static toDateString(date: Date): string;          // "2025-10-24"
-  static parseWikilink(wikilink: string): string | null;  // '"[[2025-10-24]]"' → "2025-10-24"
+  static toISOTimestamp(date: Date): string; // "2025-10-24T14:30:45Z" (UTC)
+  static toLocalTimestamp(date: Date): string; // "2025-10-24T14:30:45" (local, no zone)
+  static toDateWikilink(date: Date): string; // '"[[2025-10-24]]"' (quoted)
+  static getTodayWikilink(): string; // toDateWikilink(new Date())
+  static toDateString(date: Date): string; // "2025-10-24"
+  static parseWikilink(wikilink: string): string | null; // '"[[2025-10-24]]"' → "2025-10-24"
   static addDays(date: Date, days: number): Date;
   static isSameDay(date1: Date, date2: Date): boolean;
-  static getTodayStartTimestamp(): string;          // "YYYY-MM-DDT00:00:00" (today, local)
-  static toTimestampAtStartOfDay(dateStr: string): string;  // "2025-11-11" → "2025-11-11T00:00:00"
-  static normalizeTimestamp(timestamp: string): string;     // any parseable form → ISO UTC "…Z"
-  static isISOTimestamp(timestamp: string): boolean;        // strict "YYYY-MM-DDTHH:MM:SSZ" check
+  static getTodayStartTimestamp(): string; // "YYYY-MM-DDT00:00:00" (today, local)
+  static toTimestampAtStartOfDay(dateStr: string): string; // "2025-11-11" → "2025-11-11T00:00:00"
+  static normalizeTimestamp(timestamp: string): string; // any parseable form → ISO UTC "…Z"
+  static isISOTimestamp(timestamp: string): boolean; // strict "YYYY-MM-DDTHH:MM:SSZ" check
 }
 ```
 
@@ -457,7 +498,7 @@ class DateFormatter {
 ### Wiki Link Helpers
 
 ```typescript
-import { WikiLinkHelpers } from 'exocortex';
+import { WikiLinkHelpers } from "@kitelev/exocortex-core";
 
 class WikiLinkHelpers {
   /**
@@ -472,12 +513,12 @@ class WikiLinkHelpers {
 
   static equals(
     a: string | null | undefined,
-    b: string | null | undefined
+    b: string | null | undefined,
   ): boolean;
 
   static includes(
     array: string[] | string | null | undefined,
-    value: string
+    value: string,
   ): boolean;
 
   /**
@@ -487,12 +528,12 @@ class WikiLinkHelpers {
    */
   static resolveSymbolic(
     value: string | null | undefined,
-    resolver: (uuid: string) => string | null | undefined
+    resolver: (uuid: string) => string | null | undefined,
   ): string;
 
   static resolveSymbolicArray(
     values: string[] | string | null | undefined,
-    resolver: (uuid: string) => string | null | undefined
+    resolver: (uuid: string) => string | null | undefined,
   ): string[];
 }
 ```
@@ -514,13 +555,15 @@ import type {
   IVaultFolderManager,
   IVaultFrontmatterManager,
   IVaultLinkResolver,
-  IFile, IFolder, IFrontmatter,
-} from 'exocortex';
+  IFile,
+  IFolder,
+  IFrontmatter,
+} from "@kitelev/exocortex-core";
 
 interface IVaultFileReader {
   read(file: IFile): Promise<string>;
   exists(path: string): Promise<boolean>;
-  getAllFiles(): IFile[];                                     // synchronous
+  getAllFiles(): IFile[]; // synchronous
   getAbstractFileByPath(path: string): IFile | IFolder | null;
 }
 
@@ -533,7 +576,11 @@ interface IVaultFileWriter {
 
 interface IVaultFileRenamer {
   rename(file: IFile, newPath: string): Promise<void>;
-  updateLinks(oldPath: string, newPath: string, oldBasename: string): Promise<void>;
+  updateLinks(
+    oldPath: string,
+    newPath: string,
+    oldBasename: string,
+  ): Promise<void>;
 }
 
 interface IVaultFolderManager {
@@ -542,10 +589,10 @@ interface IVaultFolderManager {
 }
 
 interface IVaultFrontmatterManager {
-  getFrontmatter(file: IFile): IFrontmatter | null;           // synchronous
+  getFrontmatter(file: IFile): IFrontmatter | null; // synchronous
   updateFrontmatter(
     file: IFile,
-    updater: (current: IFrontmatter) => IFrontmatter
+    updater: (current: IFrontmatter) => IFrontmatter,
   ): Promise<void>;
 }
 
@@ -554,7 +601,8 @@ interface IVaultLinkResolver {
 }
 
 interface IVaultAdapter
-  extends IVaultFileReader,
+  extends
+    IVaultFileReader,
     IVaultFileWriter,
     IVaultFileRenamer,
     IVaultFolderManager,
@@ -574,8 +622,8 @@ interface IFileStat {
 
 interface IFile {
   path: string;
-  basename: string;          // filename without extension
-  name: string;              // filename with extension
+  basename: string; // filename without extension
+  name: string; // filename with extension
   parent: IFolder | null;
   stat?: IFileStat;
 }
@@ -597,17 +645,18 @@ interface IFrontmatter {
 ### Creating Custom Service
 
 ```typescript
-import type { IVaultAdapter, IFrontmatter } from 'exocortex';
+import type { IVaultAdapter, IFrontmatter } from "@kitelev/exocortex-core";
 
 class CustomService {
   constructor(private vault: IVaultAdapter) {}
 
   async processNotes(): Promise<void> {
-    for (const file of this.vault.getAllFiles()) {          // sync
-      const frontmatter = this.vault.getFrontmatter(file);   // sync, null when absent
+    for (const file of this.vault.getAllFiles()) {
+      // sync
+      const frontmatter = this.vault.getFrontmatter(file); // sync, null when absent
       if (!frontmatter) continue;
 
-      const content = await this.vault.read(file);           // takes IFile, not path
+      const content = await this.vault.read(file); // takes IFile, not path
 
       // Process...
 
@@ -628,8 +677,10 @@ Implementing the full `IVaultAdapter` composite is only needed for production ad
 import type {
   IVaultFileReader,
   IVaultFrontmatterManager,
-  IFile, IFolder, IFrontmatter,
-} from 'exocortex';
+  IFile,
+  IFolder,
+  IFrontmatter,
+} from "@kitelev/exocortex-core";
 
 class FakeVault implements IVaultFileReader, IVaultFrontmatterManager {
   constructor(
@@ -668,7 +719,7 @@ class FakeVault implements IVaultFileReader, IVaultFrontmatterManager {
   }
 
   private toFile(path: string): IFile {
-    const basename = path.replace(/^.*\//, '').replace(/\.md$/, '');
+    const basename = path.replace(/^.*\//, "").replace(/\.md$/, "");
     return { path, basename, name: `${basename}.md`, parent: null };
   }
 }
@@ -685,16 +736,16 @@ Keep fakes faithful to the real contract: return `null` for missing frontmatter,
 `AssetClass` is an **enum** of well-known class names (selected members shown; see `domain/constants/AssetClass.ts` for the full list, which includes prototypes, workflow classes, and `exocmd__*` command classes):
 
 ```typescript
-import { AssetClass } from 'exocortex';
+import { AssetClass } from "@kitelev/exocortex-core";
 
 enum AssetClass {
-  AREA = 'ems__Area',
-  TASK = 'ems__Task',
-  PROJECT = 'ems__Project',
-  MEETING = 'ems__Meeting',
-  DAILY_NOTE = 'pn__DailyNote',
-  CONCEPT = 'ims__Concept',
-  CLASS = 'exo__Class',
+  AREA = "ems__Area",
+  TASK = "ems__Task",
+  PROJECT = "ems__Project",
+  MEETING = "ems__Meeting",
+  DAILY_NOTE = "pn__DailyNote",
+  CONCEPT = "ims__Concept",
+  CLASS = "exo__Class",
   // ... 24 members total
 }
 ```
@@ -704,16 +755,16 @@ enum AssetClass {
 `EffortStatus` is an **enum** with seven values:
 
 ```typescript
-import { EffortStatus } from 'exocortex';
+import { EffortStatus } from "@kitelev/exocortex-core";
 
 enum EffortStatus {
-  DRAFT = 'ems__EffortStatusDraft',
-  BACKLOG = 'ems__EffortStatusBacklog',
-  ANALYSIS = 'ems__EffortStatusAnalysis',
-  TODO = 'ems__EffortStatusToDo',
-  DOING = 'ems__EffortStatusDoing',
-  DONE = 'ems__EffortStatusDone',
-  TRASHED = 'ems__EffortStatusTrashed',
+  DRAFT = "ems__EffortStatusDraft",
+  BACKLOG = "ems__EffortStatusBacklog",
+  ANALYSIS = "ems__EffortStatusAnalysis",
+  TODO = "ems__EffortStatusToDo",
+  DOING = "ems__EffortStatusDoing",
+  DONE = "ems__EffortStatusDone",
+  TRASHED = "ems__EffortStatusTrashed",
 }
 ```
 
@@ -722,7 +773,7 @@ These symbolic string values are the pre-UUID-canon form; new code should resolv
 ### Asset Relation
 
 ```typescript
-import type { AssetRelation } from 'exocortex';
+import type { AssetRelation } from "@kitelev/exocortex-core";
 
 interface AssetRelation {
   path: string;
@@ -736,7 +787,7 @@ interface AssetRelation {
 ### Area Node
 
 ```typescript
-import type { AreaNode, AreaNodeData } from 'exocortex';
+import type { AreaNode, AreaNodeData } from "@kitelev/exocortex-core";
 
 interface AreaNodeData {
   path: string;
@@ -761,10 +812,13 @@ interface AreaNode extends AreaNodeData {
 Thrown by `IFileSystemAdapter` implementations:
 
 ```typescript
-import { FileNotFoundError, FileAlreadyExistsError } from 'exocortex';
+import {
+  FileNotFoundError,
+  FileAlreadyExistsError,
+} from "@kitelev/exocortex-core";
 
 try {
-  await fs.readFile('non-existent.md');  // fs: IFileSystemAdapter implementation
+  await fs.readFile("non-existent.md"); // fs: IFileSystemAdapter implementation
 } catch (error) {
   if (error instanceof FileNotFoundError) {
     // Handle missing file
@@ -775,7 +829,7 @@ try {
 ### SPARQL Errors
 
 ```typescript
-import { SPARQLParser, SPARQLParseError } from 'exocortex';
+import { SPARQLParser, SPARQLParseError } from "@kitelev/exocortex-core";
 
 const parser = new SPARQLParser();
 
@@ -784,7 +838,7 @@ try {
 } catch (error) {
   if (error instanceof SPARQLParseError) {
     console.error(error.message);
-    console.error(error.line, error.column);  // optional position info
+    console.error(error.line, error.column); // optional position info
   }
 }
 ```
@@ -796,7 +850,7 @@ Triple store transactions throw `TripleAlreadyExistsError`, `TripleNotFoundError
 ## Package Structure
 
 ```
-packages/exocortex/src/
+packages/core/src/
 ├── application/      # Application-level services (layout selection, ...)
 ├── domain/           # Models (RDF terms, commands, layout), constants, errors
 ├── exoql/            # ExoQL public query API facade
@@ -810,5 +864,6 @@ packages/exocortex/src/
 ---
 
 **See also:**
+
 - [Plugin Development Guide](../how-to/Plugin-Development-Guide.md)
 - [Testing Guide](../../TESTING.md)

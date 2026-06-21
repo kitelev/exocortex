@@ -52,7 +52,7 @@ void __dirname;
 const { runShapesValidation } = await import(
   "../../src/commands/validate-schema.js"
 );
-const { NoteToRDFConverter } = await import("exocortex");
+const { NoteToRDFConverter } = await import("@kitelev/exocortex-core");
 const { FileSystemVaultAdapter } = await import(
   "../../src/adapters/FileSystemVaultAdapter.js"
 );

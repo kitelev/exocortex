@@ -6,7 +6,7 @@ import { TFile, Notice } from "obsidian";
 import {
   DI_TOKENS,
   IVaultAdapter,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),

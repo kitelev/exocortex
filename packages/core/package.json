@@ -1,0 +1,61 @@
+{
+  "name": "@kitelev/exocortex-core",
+  "version": "0.1.0",
+  "description": "Core business logic for Exocortex knowledge management system",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "source": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./domain/errors": {
+      "types": "./dist/domain/errors/index.d.ts",
+      "import": "./dist/domain/errors/index.js",
+      "require": "./dist/domain/errors/index.js"
+    },
+    "./application/errors": {
+      "types": "./dist/application/errors/index.d.ts",
+      "import": "./dist/application/errors/index.js",
+      "require": "./dist/application/errors/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "exocortex",
+    "knowledge-management",
+    "task-management",
+    "core"
+  ],
+  "author": "A. Kitelev",
+  "license": "MIT",
+  "dependencies": {
+    "nanotar": "0.3.0",
+    "reflect-metadata": "^0.2.2",
+    "sparqljs": "^3.7.3",
+    "tsyringe": "^4.10.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/js-yaml": "^4.0.0",
+    "@types/node": "^20.19.24",
+    "@types/sparqljs": "^3.1.12",
+    "@types/uuid": "^10.0.0",
+    "eslint": "^9.38.0",
+    "fast-check": "^3.23.2",
+    "jest": "^30.0.0",
+    "js-yaml": "^4.1.1",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3"
+  }
+}

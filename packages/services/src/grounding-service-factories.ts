@@ -1,4 +1,4 @@
-import { WikiLinkHelpers, DateFormatter, iriToVaultPath } from "exocortex";
+import { WikiLinkHelpers, DateFormatter, iriToVaultPath } from "@kitelev/exocortex-core";
 import type {
   ClassRefResolver,
   IGroundingService,
@@ -15,7 +15,7 @@ import type {
   FixMissingLabelService,
   RenameToUidService,
   FolderRepairService,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 /**
  * Shared, storage-agnostic grounding-service factories used by both the CLI

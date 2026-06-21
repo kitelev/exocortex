@@ -10,7 +10,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import * as path from "node:path";
-import type { RestCommitTransport } from "exocortex";
+import type { RestCommitTransport } from "@kitelev/exocortex-core";
 import {
   collectVaultSpecs,
   runExosyncParity,

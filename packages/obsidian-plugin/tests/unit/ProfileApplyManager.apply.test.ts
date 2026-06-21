@@ -19,7 +19,7 @@
  * executed (no false positives).
  */
 import type { App, TFile } from "obsidian";
-import type { ApplyPlan, IConfirmGate } from "exocortex";
+import type { ApplyPlan, IConfirmGate } from "@kitelev/exocortex-core";
 
 import {
   ProfileApplyManager,

@@ -20,7 +20,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
-import { FakeGitHubRepo, mdAsset } from "../../../../exocortex/tests/unit/services/sync/fakeGitHub";
+import { FakeGitHubRepo, mdAsset } from "../../../../core/tests/unit/services/sync/fakeGitHub";
 import {
   nodeLocalFilesPort,
   nodeWatermarkFileIO,
@@ -29,7 +29,7 @@ import {
   runExosyncSync,
   type ExosyncSyncOptions,
 } from "../../../src/commands/exosync-sync";
-import type { SyncRepoSpec } from "exocortex";
+import type { SyncRepoSpec } from "@kitelev/exocortex-core";
 
 const ASSET_SPACE_CLASS_UID = "73bd00e4-ccc0-4f3f-b20d-c4388c4588fb";
 const OWNER = "test-owner";

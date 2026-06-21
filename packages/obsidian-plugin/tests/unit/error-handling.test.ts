@@ -18,7 +18,7 @@ import { App, TFolder, Vault, MetadataCache, FileManager, Plugin } from "obsidia
 import {
   IFile,
   IVaultContext,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { ExocortexPluginInterface } from "../../src/types";
 import { SingleVaultManager } from "../../src/infrastructure/vault/SingleVaultManager";
@@ -35,8 +35,8 @@ jest.mock("obsidian", () => ({
   Notice: jest.fn(),
 }));
 jest.mock("../../src/application/services/SPARQLQueryService");
-jest.mock("exocortex", () => ({
-  ...jest.requireActual("exocortex"),
+jest.mock("@kitelev/exocortex-core", () => ({
+  ...jest.requireActual("@kitelev/exocortex-core"),
   canCreateInstance: jest.fn(),
   LoggingService: {
     error: jest.fn(),

@@ -524,7 +524,11 @@ it("should preserve already quoted wikilinks", async () => {
 **Solution**: Load `ShapeRegistry` from the vault and route the cardinality check through it.
 
 ```typescript
-import { Namespace, ShapeLoader, type ShapeRegistry } from "exocortex";
+import {
+  Namespace,
+  ShapeLoader,
+  type ShapeRegistry,
+} from "@kitelev/exocortex-core";
 
 // 1. Load the registry once per CLI/service invocation
 let shapeRegistry: ShapeRegistry | undefined;
@@ -576,7 +580,7 @@ These invariants protect existing callers and avoid mass vault rewrites when new
 
 **Reference Implementations**:
 
-- `GenericAssetCreationService.formatPropertyValueWithCardinality()` (`packages/exocortex/src/services/GenericAssetCreationService.ts`, ~line 605) — cardinality lookup against optional `ShapeRegistry`; ported from the former CLI `AssetCreationService`.
+- `GenericAssetCreationService.formatPropertyValueWithCardinality()` (`packages/core/src/services/GenericAssetCreationService.ts`, ~line 605) — cardinality lookup against optional `ShapeRegistry`; ported from the former CLI `AssetCreationService`.
 - `ShapeLoader.processFile()` — filename-basename fallback for property assets that omit `exo__Asset_label`.
 
 **Reference**: Issue #3099 — `cli create` ignored cardinality declarations and emitted YAML arrays unconditionally.
@@ -734,24 +738,24 @@ If yes to any → prioritize sequential implementation for maximum efficiency.
 
 ### Key Architecture Knowledge
 
-**PropertyPathExecutor** (`packages/exocortex/src/infrastructure/sparql/executors/`):
+**PropertyPathExecutor** (`packages/core/src/infrastructure/sparql/executors/`):
 
 - Handles SPARQL property path operators: `+` (OneOrMore), `*` (ZeroOrMore), `?` (ZeroOrOne), `^` (Inverse), `/` (Sequence), `|` (Alternative)
 - **MAX_DEPTH = 100**: Prevents infinite loops in recursive paths
 - Edge cases to test: empty graphs, failing paths, depth limits
 
-**QueryPlanCache** (`packages/exocortex/src/infrastructure/sparql/cache/`):
+**QueryPlanCache** (`packages/core/src/infrastructure/sparql/cache/`):
 
 - LRU eviction with configurable size
 - **Whitespace normalization**: Cache keys are trimmed and whitespace-collapsed
 - Edge cases to test: cache size of 1, whitespace-only queries, LRU order after updates
 
-**FilterExecutor** (`packages/exocortex/src/infrastructure/sparql/executors/`):
+**FilterExecutor** (`packages/core/src/infrastructure/sparql/executors/`):
 
 - Handles EXISTS/NOT EXISTS via `ExistsEvaluator` callback pattern
 - Delegates EXISTS subquery evaluation to callback, doesn't execute directly
 
-**AlgebraTranslator** (`packages/exocortex/src/infrastructure/sparql/algebra/`):
+**AlgebraTranslator** (`packages/core/src/infrastructure/sparql/algebra/`):
 
 - Handles BIND expressions and Subqueries
 - No separate executor needed - translated during algebra generation
@@ -784,7 +788,7 @@ describe("Edge Cases", () => {
 ### File Locations for SPARQL Tests
 
 ```
-packages/exocortex/tests/unit/infrastructure/sparql/
+packages/core/tests/unit/infrastructure/sparql/
 ├── executors/
 │   ├── BGPExecutor.test.ts           # Basic Graph Pattern
 │   ├── FilterExecutor.test.ts        # FILTER, EXISTS/NOT EXISTS
@@ -800,13 +804,13 @@ packages/exocortex/tests/unit/infrastructure/sparql/
 
 ```bash
 # 1. Find implementation constants
-grep -r "MAX_DEPTH\|LIMIT\|SIZE" packages/exocortex/src/infrastructure/sparql/
+grep -r "MAX_DEPTH\|LIMIT\|SIZE" packages/core/src/infrastructure/sparql/
 
 # 2. Check existing edge case coverage
-grep -r "Edge Case\|should handle\|should respect" packages/exocortex/tests/unit/infrastructure/sparql/
+grep -r "Edge Case\|should handle\|should respect" packages/core/tests/unit/infrastructure/sparql/
 
 # 3. Identify untested scenarios (script lives in the exocortex workspace, not repo root)
-npm run test:coverage -w exocortex -- --collectCoverageFrom="src/infrastructure/sparql/**"
+npm run test:coverage -w @kitelev/exocortex-core -- --collectCoverageFrom="src/infrastructure/sparql/**"
 ```
 
 ### Reference
@@ -1007,7 +1011,7 @@ CommandVisibility.test.ts       (1200 LOC - partial tests remain)
 ### 1. Always export from main package index (primary API)
 
 ```typescript
-// packages/exocortex/src/index.ts
+// packages/core/src/index.ts
 export * from "./domain/errors";
 export * from "./application/errors";
 ```
@@ -1017,7 +1021,7 @@ export * from "./application/errors";
 ### 2. Optionally add subpath exports (optimization)
 
 ```json
-// packages/exocortex/package.json
+// packages/core/package.json
 {
   "exports": {
     ".": {
@@ -1054,7 +1058,7 @@ import { ErrorCode } from "./ErrorCode";
 
 ### Real-world Example (PR #451)
 
-**Problem**: Component tests failed with "Cannot find module '@exocortex/core/domain/errors'"
+**Problem**: Component tests failed with "Cannot find module '@kitelev/exocortex-core/domain/errors'"
 
 **Solution**:
 
@@ -1118,7 +1122,7 @@ import { ErrorCode } from "./ErrorCode";
 **Structure:**
 
 ```
-packages/exocortex/tests/
+packages/core/tests/
 ├── unit/infrastructure/sparql/
 │   ├── executors/           # BGP, Filter, PropertyPath
 │   ├── functions/           # Built-in functions (TRIPLE, isTRIPLE, etc.)
@@ -1752,7 +1756,11 @@ export const useTableSortStore = create<TableSortStore>()(
         ...DEFAULT_TABLE_SORT_STATE,
 
         setSort: (table, column, order) =>
-          set(() => ({ [table]: { column, order } }), false, `setSort:${table}`),
+          set(
+            () => ({ [table]: { column, order } }),
+            false,
+            `setSort:${table}`,
+          ),
 
         toggleSort: (table, column) =>
           set(
@@ -2167,7 +2175,7 @@ function setNodeProperty(node: object, key: string, value: number): void {
 }
 ```
 
-Key insights: CodeQL flags code that *reads* `event.origin` but doesn't conditionally block; prefer discriminated-union message types so TypeScript enforces the allowed property set at compile time. See also «Prototype-Pollution Prevention Pattern» in this document.
+Key insights: CodeQL flags code that _reads_ `event.origin` but doesn't conditionally block; prefer discriminated-union message types so TypeScript enforces the allowed property set at compile time. See also «Prototype-Pollution Prevention Pattern» in this document.
 
 **Reference**: Issues #1211/#1248 (origin check), #1212/#1244 (property injection) — historical fixes in the removed `physics.worker.ts`
 
@@ -2530,7 +2538,7 @@ Index wikilinks from markdown body content to enable complete graph analysis.
 
 ### Implementation (actual: `NoteToRDFConverter.convertBodyWikilinks`)
 
-Body links are emitted by `NoteToRDFConverter.convertBodyWikilinks(file, subject)` (`packages/exocortex/src/services/NoteToRDFConverter.ts`, ~line 1541), called from the main conversion path:
+Body links are emitted by `NoteToRDFConverter.convertBodyWikilinks(file, subject)` (`packages/core/src/services/NoteToRDFConverter.ts`, ~line 1541), called from the main conversion path:
 
 ```typescript
 // NoteToRDFConverter.convertBodyWikilinks (abridged)
@@ -4201,7 +4209,7 @@ When a bug fix changes existing behavior (e.g., narrowing dual-storage from all 
 
 ```bash
 # Before writing any fix code — run the affected test file
-npx jest --config packages/exocortex/jest.config.js <path/to/test.ts> --no-coverage
+npx jest --config packages/core/jest.config.js <path/to/test.ts> --no-coverage
 
 # Record: N passed, M failed
 # Then implement the fix
@@ -4293,7 +4301,7 @@ classTemplates: {
 }
 ```
 
-String-form class constants still live in `packages/exocortex/src/domain/constants/AssetClass.ts` (`AssetClass.TASK_PROTOTYPE = "ems__TaskPrototype"`); when a consumer must accept both forms, add the UID alongside the label at the **consumer's keying site** (as above), not as a parallel enum member.
+String-form class constants still live in `packages/core/src/domain/constants/AssetClass.ts` (`AssetClass.TASK_PROTOTYPE = "ems__TaskPrototype"`); when a consumer must accept both forms, add the UID alongside the label at the **consumer's keying site** (as above), not as a parallel enum member.
 
 ### Test Pattern
 
@@ -4302,7 +4310,9 @@ it.each([
   ["string-based", "ems__TaskPrototype"],
   ["UID-based", "75302770-279e-4a59-ba85-09df29725713"],
 ])("resolves display template for %s identifier", (_, classKey) => {
-  expect(resolveTemplate(classKey)).toBe("{{exo__Asset_label}} (TaskPrototype)");
+  expect(resolveTemplate(classKey)).toBe(
+    "{{exo__Asset_label}} (TaskPrototype)",
+  );
 });
 ```
 
@@ -4862,7 +4872,7 @@ Code:
 
 ### Step-by-Step Implementation
 
-#### 1. Timestamp logic — service method (`packages/exocortex/src/services/StatusTimestampService.ts`)
+#### 1. Timestamp logic — service method (`packages/core/src/services/StatusTimestampService.ts`)
 
 Surviving example — `addReviewTimestamp` (StatusTimestampService.ts:57):
 
@@ -6438,7 +6448,7 @@ Code (generic, no per-button classes):
   CommandExecutionFlow → GroundingExecutor — executes the click
 ```
 
-Domain services that groundings call via `service_call` (e.g. `CriticalityZoneService`, which writes `ems__Task_zone`) still live in `packages/exocortex/src/services/` and are registered in `container.ts` / `tokens.ts`.
+Domain services that groundings call via `service_call` (e.g. `CriticalityZoneService`, which writes `ems__Task_zone`) still live in `packages/core/src/services/` and are registered in `container.ts` / `tokens.ts`.
 
 ### Implementation Checklist (new button = vault assets, usually zero plugin code)
 
@@ -6992,7 +7002,7 @@ function setWithCollisionGuard<K, V extends { file: { path: string } }>(
 
 ## Archived — sprint & post-mortem retrospectives
 
-Dated sprint retrospectives and a post-mortem (records of *what was done* in specific past
+Dated sprint retrospectives and a post-mortem (records of _what was done_ in specific past
 work batches — issue/step/line tables — rather than reusable coding techniques) were moved
 out of this catalog to a frozen archive (as of 2026-06-19):
 

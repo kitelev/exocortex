@@ -38,7 +38,7 @@ import {
   type Sha1Fn,
   type SyncRepoSpec,
   type YamlCodec,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { RestPushService } from "../services/RestPushService.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";

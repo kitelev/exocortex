@@ -4,7 +4,7 @@ import {
   type IFolder,
   type IVaultFileReader,
   vaultPathToIRI,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { ObsidianFileResolver } from "@plugin/infrastructure/ObsidianFileResolver";
 
 describe("ObsidianFileResolver", () => {

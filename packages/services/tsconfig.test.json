@@ -6,7 +6,7 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "paths": {
-      "exocortex": ["../exocortex/src"]
+      "@kitelev/exocortex-core": ["../core/src"]
     }
   },
   "include": ["src/**/*", "tests/**/*"]

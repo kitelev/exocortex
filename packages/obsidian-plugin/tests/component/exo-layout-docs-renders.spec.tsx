@@ -22,7 +22,7 @@ import {
   isBacklinksTableBlock,
   type Layout,
   type LayoutBlock,
-} from "../../../exocortex/src/domain/layout";
+} from "../../../core/src/domain/layout";
 
 import { BacklinksTableBlockView } from "../../src/presentation/components/LayoutBlocks";
 import type { AssetRelation } from "../../src/presentation/renderers/layout/types";

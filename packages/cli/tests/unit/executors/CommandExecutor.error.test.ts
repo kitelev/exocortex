@@ -119,7 +119,7 @@ jest.unstable_mockModule("../../../src/adapters/NodeFsAdapter.js", () => ({
   NodeFsAdapter: jest.fn(() => mockFsAdapterInstance),
 }));
 
-jest.unstable_mockModule("exocortex", () => ({
+jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   FrontmatterService: jest.fn(() => mockFrontmatterService),
   DateFormatter: mockDateFormatter,
   MetadataHelpers: mockMetadataHelpers,

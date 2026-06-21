@@ -1,7 +1,7 @@
 import { TFile, Keymap } from "obsidian";
 import React from "react";
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
-import { MetadataHelpers, IVaultAdapter, IFile } from "exocortex";
+import { MetadataHelpers, IVaultAdapter, IFile } from "@kitelev/exocortex-core";
 import { AssetRelationsTableWithToggle } from '@plugin/presentation/components/AssetRelationsTable';
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { ExocortexSettings } from '@plugin/domain/settings/ExocortexSettings';

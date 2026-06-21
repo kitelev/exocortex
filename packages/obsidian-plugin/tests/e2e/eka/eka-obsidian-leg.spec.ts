@@ -45,7 +45,7 @@ import * as path from "path";
  *   - The other write surface, ExoSync `Sync`/`Push` (RFC 4e4dc453 SyncEngine,
  *     `restCreateCommit` Git Data API), has its REST write path ALREADY proven
  *     green against the dedicated sandbox `kitelev/exosync-test-sandbox` by
- *     `packages/exocortex/tests/integration/sync/syncEngine.real-github.integration.test.ts`
+ *     `packages/core/tests/integration/sync/syncEngine.real-github.integration.test.ts`
  *     (disposable per-run branch, cleaned up). Re-driving it through the plugin
  *     GUI would need an ExoSync repo binding + watermark config on the
  *     ephemeral vault — scaffolding orthogonal to the apply-profile proof.

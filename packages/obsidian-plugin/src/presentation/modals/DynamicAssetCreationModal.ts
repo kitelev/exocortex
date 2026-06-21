@@ -4,7 +4,7 @@ import type {
   OntologySchemaService,
   OntologyPropertyDefinition,
 } from '@plugin/application/services/OntologySchemaService';
-import { PropertyFieldType, FilenameValidator } from "exocortex";
+import { PropertyFieldType, FilenameValidator } from "@kitelev/exocortex-core";
 import {
   PropertyFieldFactory,
   type PropertyFieldInstance,

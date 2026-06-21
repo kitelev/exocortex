@@ -1,4 +1,4 @@
-import { ConceptCreationService, AssetClass } from "exocortex";
+import { ConceptCreationService, AssetClass } from "@kitelev/exocortex-core";
 
 describe("ConceptCreationService", () => {
   let service: ConceptCreationService;

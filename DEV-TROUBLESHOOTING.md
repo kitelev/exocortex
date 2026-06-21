@@ -281,14 +281,14 @@ cp worktrees/your-worktree/path/to/file.ts /tmp/file-backup.ts
 ```bash
 # 1. Copy modified files to temp directory
 mkdir -p /tmp/my-changes
-cp -r packages/exocortex/src /tmp/my-changes/
+cp -r packages/core/src /tmp/my-changes/
 cp -r packages/obsidian-plugin/src /tmp/my-changes/
 # Add other modified paths as needed
 
 # 2. Fresh clone and recreate worktree (see Quick Recovery above)
 
 # 3. Restore backup after worktree creation
-cp -r /tmp/my-changes/src/* packages/exocortex/src/
+cp -r /tmp/my-changes/src/* packages/core/src/
 # Restore other files as needed
 
 # 4. Install deps and build
@@ -562,12 +562,12 @@ Verify locally with `archgate check --ci` (uses the same global-install path as 
 
 ### Fresh Worktree Component Test Failures
 
-**Problem**: Component tests fail with "Cannot find module '@exocortex/core/dist/..." in fresh worktrees
+**Problem**: Component tests fail with "Cannot find module '@kitelev/exocortex-core/dist/..." in fresh worktrees
 
 **Symptoms**:
 
 ```
-Cannot find module '@exocortex/core/dist/domain/errors/index.js'
+Cannot find module '@kitelev/exocortex-core/dist/domain/errors/index.js'
 ```
 
 - Error appears during pre-commit hook or `npm run test:component`
@@ -588,7 +588,7 @@ npm run test:component
 
 **Why This Happens**:
 
-- Playwright CT uses subpath imports (e.g., `@exocortex/core/domain/errors`)
+- Playwright CT uses subpath imports (e.g., `@kitelev/exocortex-core/domain/errors`)
 - Subpath imports point to `dist/` folder
 - Fresh worktree has no `dist/` folder until build runs
 - Jest unit tests use main package import (works without build)

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from "@jest/globals";
 import { TableFormatter } from "../../src/formatters/TableFormatter";
-import { SolutionMapping } from "exocortex";
-import { IRI } from "exocortex";
-import { Literal } from "exocortex";
+import { SolutionMapping } from "@kitelev/exocortex-core";
+import { IRI } from "@kitelev/exocortex-core";
+import { Literal } from "@kitelev/exocortex-core";
 
 describe("TableFormatter", () => {
   let formatter: TableFormatter;

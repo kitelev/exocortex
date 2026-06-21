@@ -2,7 +2,7 @@
  * Test factories for creating mock data.
  *
  * @example
- * import { TaskFactory, ProjectFactory, AreaFactory } from "@exocortex/test-utils";
+ * import { TaskFactory, ProjectFactory, AreaFactory } from "@kitelev/exocortex-test-utils";
  *
  * // Create fixtures
  * const task = TaskFactory.doing();

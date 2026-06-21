@@ -1,7 +1,7 @@
 import { Setting } from "obsidian";
 import type { StatusSelectPropertyFieldProps, ValidationResult } from "./types";
 import { WikilinkLabelResolver } from "@plugin/presentation/utils/WikilinkLabelResolver";
-import { EFFORT_STATUS_OPTIONS } from "exocortex";
+import { EFFORT_STATUS_OPTIONS } from "@kitelev/exocortex-core";
 export { EFFORT_STATUS_OPTIONS };
 
 /**

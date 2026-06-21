@@ -1,7 +1,7 @@
 import {
   PropertyFieldType,
   rangeToFieldType,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 describe("PropertyFieldType", () => {
   describe("enum values", () => {

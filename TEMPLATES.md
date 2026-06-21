@@ -8,10 +8,11 @@ Standard templates for post-mortems, reports, and documentation.
 
 After EVERY completed task, write a detailed post-mortem following this template:
 
-```markdown
+````markdown
 ## Task: [Feature/Fix Name]
 
 ### Completed
+
 - [What was implemented]
 - [Tests added: X unit + Y E2E]
 - [Coverage: Z%]
@@ -20,7 +21,7 @@ After EVERY completed task, write a detailed post-mortem following this template
 ### Errors Encountered & Solutions
 
 1. **[Error Category]**: [Error description]
-   - **Error**: ```[Exact error message / stack trace]```
+   - **Error**: `[Exact error message / stack trace]`
    - **Root Cause**: [Why it happened]
    - **Solution**: [Exact steps to fix]
    - **Prevention**: [How to avoid in future]
@@ -37,23 +38,31 @@ After EVERY completed task, write a detailed post-mortem following this template
 ### Documentation Improvements Proposed
 
 **Add to AGENTS.md** (Section: [section name]):
-```
+````
+
 [Exact text to add]
+
 ```
 
 **Add to CLAUDE.md** (Section: [section name]):
 ```
+
 [Exact text to add]
+
 ```
 
 **Add to PATTERNS.md** (Section: [section name]):
 ```
+
 [Exact text to add]
+
 ```
 
 **Add to DEV-TROUBLESHOOTING.md** (Section: [section name]):
 ```
+
 [Exact text to add]
+
 ```
 
 ### Future Agent Guidance
@@ -71,6 +80,7 @@ After EVERY completed task, write a detailed post-mortem following this template
 ## Task: CLI Creation Commands (Issue #423)
 
 ### Completed
+
 - Implemented 4 CLI commands: create-task, create-meeting, create-area, create-project
 - Tests added: 25 unit tests (100% coverage of new code)
 - Coverage: All 1770 unit tests + 55 UI + 345 component tests passed first try
@@ -82,6 +92,7 @@ After EVERY completed task, write a detailed post-mortem following this template
 **Result: ZERO ERRORS during development** 🎉
 
 Only workflow issue:
+
 1. **Auto-merge rebase not allowed**:
    - **Attempted**: `gh pr merge 435 --auto --rebase`
    - **Error**: Repository settings disable rebase merge
@@ -91,47 +102,55 @@ Only workflow issue:
 ### Lessons Learned
 
 **Why zero errors happened:**
+
 - **Warm context**: Sequential related tasks (PR #432-434 before #435) = 2-2.5x productivity
-- **Pattern research**: Read `exocortex` package creation services (`packages/exocortex/src/services/*CreationService.ts`) before implementing
+- **Pattern research**: Read `exocortex` package creation services (`packages/core/src/services/*CreationService.ts`) before implementing
 - **Ontology verification**: Checked which asset classes have which properties
 - **Comprehensive tests**: 25 unit tests caught potential issues early
 
 **Patterns discovered:**
+
 - Areas don't have `ems__Effort_status` (only efforts: tasks/projects/meetings)
 - Meetings use same creation pattern as tasks (no separate service)
 - MetadataHelpers.buildFileContent() handles array formatting automatically
 
 **Best practices:**
+
 - Research > implementation: 15 min reading code saved 2+ hours debugging
 - Sequential related tasks leverage warm context for faster development
-- Copy proven patterns from the `exocortex` package (`packages/exocortex`) instead of reinventing
+- Copy proven patterns from the `exocortex` package (`packages/core`) instead of reinventing
 
 ### Documentation Improvements Proposed
 
 **Add to CLAUDE.md** (Section: "Why Self-Improvement Matters"):
 ```
+
 ### Example: Zero-Error Implementation
 
 **Task**: CLI Creation Commands (Issue #423)
 **Result**: Zero errors from start to release
 
 **Why it succeeded:**
+
 - Warm context from sequential related tasks (2-2.5x productivity)
 - Pattern research before implementation
 - Comprehensive tests catching issues early
+
 ```
 
 **Add to CLAUDE.md** (Section: "Development Patterns"):
 ```
+
 ### Shared Utility Pattern for Cross-Table Features
 
 Quick audit commands to check if feature already exists before implementing...
+
 ```
 
 ### Future Agent Guidance
 
 **For next CLI command implementation:**
-1. Read packages/exocortex/src/services/*CreationService.ts for patterns
+1. Read packages/core/src/services/*CreationService.ts for patterns
 2. Check ontology to determine which properties apply to which classes
 3. Use MetadataHelpers.buildFileContent() for file assembly
 4. Follow test pattern: mock process.exit() and expect throw
@@ -154,6 +173,7 @@ Write detailed report following the template above.
 "I've completed [task] and documented my experience. Here's my post-mortem report with proposed improvements to [files]. **May I have your permission to update these documentation files?**"
 
 **Step 3: Wait for user decision**
+
 - User says **"Yes"/"Approved"** → Proceed with edits
 - User says **"No"/"Not now"** → Do NOT edit files
 - User says **"Adjust X"** → Modify proposals, present again

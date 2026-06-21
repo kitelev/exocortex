@@ -4,7 +4,7 @@ import {
   NetworkError,
   type ILogger,
   type INotificationService,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 export class AliasSyncService {
   private errorHandler: ApplicationErrorHandler;

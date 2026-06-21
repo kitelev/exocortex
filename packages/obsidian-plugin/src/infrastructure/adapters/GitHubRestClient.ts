@@ -2,7 +2,7 @@ import type { App, RequestUrlParam, RequestUrlResponse } from "obsidian";
 import { requestUrl } from "obsidian";
 import { parseTarGzip } from "nanotar";
 import type { TarFileItem } from "nanotar";
-import { restCreateCommit, type RestCommitTransport } from "exocortex";
+import { restCreateCommit, type RestCommitTransport } from "@kitelev/exocortex-core";
 
 export interface GitHubRestClientOptions {
   pat: string;

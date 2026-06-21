@@ -1,4 +1,4 @@
-import { INotificationService } from "exocortex";
+import { INotificationService } from "@kitelev/exocortex-core";
 import { Notice } from "obsidian";
 import type { ActivityLevel } from "../../adapters/logging/ActivityLogService";
 

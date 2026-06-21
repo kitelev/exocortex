@@ -2,7 +2,7 @@ import {
   SupervisionCreationService,
   type SupervisionFormData,
   type IVaultSettings,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 function createMockVaultSettings(): IVaultSettings {
   return {

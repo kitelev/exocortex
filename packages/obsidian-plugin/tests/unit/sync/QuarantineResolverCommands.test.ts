@@ -23,7 +23,7 @@ import type {
   ResolveChoice,
   ResolveResult,
   SyncRepoSpec,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 
 const spec = (key: string): SyncRepoSpec => {
   const [owner, repo] = key.split("/");

@@ -1,6 +1,6 @@
 import { ICommand } from "./ICommand";
 import { ExocortexPluginInterface } from '@plugin/types';
-import type { INotificationService } from "exocortex";
+import type { INotificationService } from "@kitelev/exocortex-core";
 
 export class ToggleArchivedAssetsCommand implements ICommand {
   id = "toggle-archived-assets-visibility";

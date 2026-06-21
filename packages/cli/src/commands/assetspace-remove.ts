@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { resolve, join } from "node:path";
 import { existsSync } from "node:fs";
-import { derivePath, isTsFloorAssetSpace, isTsFloorMountPath } from "exocortex";
+import { derivePath, isTsFloorAssetSpace, isTsFloorMountPath } from "@kitelev/exocortex-core";
 import { BootstrapAssetSpaceService } from "../services/BootstrapAssetSpaceService.js";
 import {
   CliApplyProfileService,

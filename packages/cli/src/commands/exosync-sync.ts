@@ -67,7 +67,7 @@ import {
   type SyncRepoSpec,
   type WatermarkFileIO,
   type YamlCodec,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { collectVaultSpecs } from "./exosync-parity.js";
 import { registerQuarantineCommands } from "./exosync-quarantine.js";
 import { RestPushService } from "../services/RestPushService.js";

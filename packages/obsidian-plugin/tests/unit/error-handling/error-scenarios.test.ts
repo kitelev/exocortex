@@ -17,7 +17,7 @@ import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter
 import { SPARQLApi } from "../../../src/application/api/SPARQLApi";
 import { SPARQLQueryService } from "../../../src/application/services/SPARQLQueryService";
 import { App, TFile, Vault, MetadataCache, FileManager } from "obsidian";
-import { IFile } from "exocortex";
+import { IFile } from "@kitelev/exocortex-core";
 import type ExocortexPlugin from "../../../src/ExocortexPlugin";
 
 // Mocks
@@ -25,8 +25,8 @@ jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("exocortex", () => ({
-  ...jest.requireActual("exocortex"),
+jest.mock("@kitelev/exocortex-core", () => ({
+  ...jest.requireActual("@kitelev/exocortex-core"),
   canCreateInstance: jest.fn(),
   LoggingService: {
     error: jest.fn(),

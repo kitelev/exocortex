@@ -1,5 +1,5 @@
 import type { TFile } from "obsidian";
-import type { InMemoryTripleStore, SolutionMapping, Triple } from "exocortex";
+import type { InMemoryTripleStore, SolutionMapping, Triple } from "@kitelev/exocortex-core";
 import { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';
 import type { VaultWalkStats } from '@plugin/infrastructure/VaultRDFIndexer';
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';

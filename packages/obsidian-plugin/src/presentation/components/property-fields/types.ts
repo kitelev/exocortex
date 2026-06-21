@@ -1,4 +1,4 @@
-import type { PropertyDefinition } from "exocortex";
+import type { PropertyDefinition } from "@kitelev/exocortex-core";
 import type { App } from "obsidian";
 
 /**

@@ -1,5 +1,5 @@
 import path from "path";
-import { extractAssetReference } from "exocortex";
+import { extractAssetReference } from "@kitelev/exocortex-core";
 import { BaseCommandExecutor, CommandContext } from "./BaseCommandExecutor.js";
 import { ErrorHandler } from "../../utils/ErrorHandler.js";
 import { ExitCodes } from "../../utils/ExitCodes.js";

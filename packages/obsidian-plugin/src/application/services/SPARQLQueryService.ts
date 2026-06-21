@@ -12,7 +12,7 @@ import {
   ApplicationErrorHandler,
   type ILogger,
   type INotificationService,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
 import { VaultRDFIndexer, type VaultWalkStats } from '@plugin/infrastructure/VaultRDFIndexer';
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 

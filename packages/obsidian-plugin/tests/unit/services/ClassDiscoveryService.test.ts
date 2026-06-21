@@ -1,6 +1,6 @@
 import { SPARQLQueryService } from "../../../src/application/services/SPARQLQueryService";
 import { ClassDiscoveryService } from "../../../src/application/services/ClassDiscoveryService";
-import { DomainLiteral as Literal } from "exocortex";
+import { DomainLiteral as Literal } from "@kitelev/exocortex-core";
 
 jest.mock("../../../src/application/services/SPARQLQueryService");
 

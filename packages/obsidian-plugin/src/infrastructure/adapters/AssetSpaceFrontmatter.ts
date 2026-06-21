@@ -30,4 +30,4 @@ export {
    * frozen). Single source of truth shared with the RDF-indexer skip.
    */
   FILE_SPACE_CLASS_UID,
-} from "exocortex";
+} from "@kitelev/exocortex-core";
