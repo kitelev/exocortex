@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync, statSync } from "fs";
 import fs from "fs-extra";
-import { resolve } from "path";
+import { dirname, resolve } from "path";
 import * as glob from "glob";
 import { CachingNodeFsAdapter } from "../adapters/CachingNodeFsAdapter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
@@ -101,6 +101,16 @@ function isManuallyVerified(r: RequirementRecord): boolean {
   return r.bindingClasses.includes(UI_ACCEPTANCE);
 }
 
+/**
+ * True iff the requirement declares ≥1 evidence link that RESOLVES to a committed
+ * artifact (declared minus missing). The `ui-acceptance` tier's verification
+ * binding IS the recorded computer-control evidence (RFC 0003 §3.6); this makes
+ * "recorded" mean "committed + linked + present", not "trust the prose".
+ */
+function hasResolvingEvidence(r: RequirementRecord): boolean {
+  return r.evidence.length - r.evidenceMissing.length > 0;
+}
+
 export interface RequirementRecord {
   uid: string;
   label: string;
@@ -117,6 +127,20 @@ export interface RequirementRecord {
    * deprecated`. `Active` = in-force, CI-hard-gated (see ActiveViolationFinding).
    */
   status: string | null;
+  /**
+   * Declared `req__Requirement_evidence` paths — links to committed evidence
+   * artifacts (screenshot / attestation `.md`) for the `ui-acceptance`
+   * verification tier (RFC 0003 §3.6). Each is resolved (in `loadRequirements`)
+   * relative to the requirement asset's own directory. Empty when none declared.
+   */
+  evidence: string[];
+  /**
+   * Subset of `evidence` whose path did NOT resolve to a committed file inside
+   * the reqs tree — the broken-link / not-committed set. Resolved by the IO
+   * layer (`loadRequirements`) so `auditTraceability` stays pure. Empty when all
+   * declared evidence resolves (or none is declared).
+   */
+  evidenceMissing: string[];
 }
 
 export interface TagOccurrence {
@@ -168,6 +192,21 @@ export interface ActiveViolationFinding {
   reason: string;
 }
 
+/**
+ * A requirement that declares `req__Requirement_evidence` whose path(s) do not
+ * resolve to a committed file inside the reqs tree (RFC 0003 §3.6
+ * evidence-attestation). Exactly symmetric with a dangling `@req` tag: a
+ * typo / deleted / not-committed evidence artifact. HARD finding (folds into
+ * `clean`) — opt-in (only bites a requirement that *declares* an evidence link).
+ */
+export interface DanglingEvidenceFinding {
+  uid: string;
+  label: string;
+  path: string;
+  /** The declared evidence path(s) that did not resolve to a committed file. */
+  missing: string[];
+}
+
 export interface TraceabilityReport {
   requirementCount: number;
   tagCount: number;
@@ -184,11 +223,27 @@ export interface TraceabilityReport {
   dangling: TagOccurrence[];
   duplicates: DuplicateFinding[];
   floorViolations: FloorViolationFinding[];
+  /**
+   * Requirements declaring a `req__Requirement_evidence` link that does not
+   * resolve to a committed file (RFC 0003 §3.6) — HARD, folds into `clean`,
+   * symmetric with dangling `@req` tags.
+   */
+  danglingEvidence: DanglingEvidenceFinding[];
+  /** Total `ui-acceptance`-bound requirements (the evidence-attestation tier). */
+  uiAcceptanceTotal: number;
+  /** `ui-acceptance` requirements with ≥1 resolving committed evidence link. */
+  uiAcceptanceEvidenced: number;
+  /**
+   * `ui-acceptance` requirements with NO resolving evidence — evidence-coverage
+   * gap (reported for visibility; HARD only for the `active` subset, via
+   * `activeViolations`, RFC 0003 §3.6 + the always-on active-requirement gate).
+   */
+  uiAcceptanceMissingEvidence: number;
   /** Requirements whose priority could not be parsed (floor check skipped). */
   unknownPriority: number;
   /**
    * True iff there are no hard findings (no dangling tags, no floor violations,
-   * no active-requirement invariant violations).
+   * no active-requirement invariant violations, no dangling evidence links).
    */
   clean: boolean;
   /** Total `active`-status requirements (the always-on hard-gated set). */
@@ -271,6 +326,19 @@ export function parseStatus(value: unknown): string | null {
 }
 
 /**
+ * Parse `req__Requirement_evidence` values (scalar or list) into committed
+ * evidence-artifact paths (RFC 0003 §3.6 evidence-attestation). Each path is a
+ * repo-relative reference to a committed screenshot / attestation `.md`, resolved
+ * (in `loadRequirements`) relative to the requirement asset's own directory.
+ * Blank entries are dropped; returns [] when none parse.
+ */
+export function parseEvidence(value: unknown): string[] {
+  return asStringArray(value)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+/**
  * Load `req__Requirement` instances from a directory tree. An asset is treated
  * as a functional requirement iff it carries a `req__Requirement_status`
  * frontmatter property (namespace-unambiguous: the assetspace anchor and TBox
@@ -282,6 +350,15 @@ export async function loadRequirements(
   const adapter = new CachingNodeFsAdapter(reqsPath);
   const assets = await adapter.indexedAssets();
   const requirements: RequirementRecord[] = [];
+  // Resolve evidence paths against the committed reqs tree. An evidence path
+  // counts as resolving ONLY when it points to an existing file INSIDE the reqs
+  // root (a committed artifact) — a path escaping the tree (`../…`) or a missing
+  // file is "missing" (→ danglingEvidence). `resolve` collapses `..`, so the
+  // containment check is a prefix test against the absolute reqs root.
+  const reqsRootAbs = resolve(reqsPath);
+  const reqsRootPrefix = reqsRootAbs.endsWith("/")
+    ? reqsRootAbs
+    : `${reqsRootAbs}/`;
 
   for (const { path: relPath, metadata } of assets) {
     // Skip vendored / VCS dirs — each per-module reqs clone carries its own
@@ -299,6 +376,14 @@ export async function loadRequirements(
         ? (metadata["exo__Asset_label"] as string)
         : uid;
 
+    const evidence = parseEvidence(metadata["req__Requirement_evidence"]);
+    const reqDirAbs = dirname(resolve(reqsPath, relPath));
+    const evidenceMissing = evidence.filter((rel) => {
+      const abs = resolve(reqDirAbs, rel);
+      // Must be a committed file AND inside the reqs tree (not an escape).
+      return !(abs.startsWith(reqsRootPrefix) && existsSync(abs));
+    });
+
     requirements.push({
       uid,
       label,
@@ -308,6 +393,8 @@ export async function loadRequirements(
         metadata["req__Requirement_bindingClass"],
       ),
       status: parseStatus(metadata["req__Requirement_status"]),
+      evidence,
+      evidenceMissing,
     });
   }
 
@@ -455,16 +542,60 @@ export function auditTraceability(
     if (r.status?.toLowerCase() !== "active") continue;
     activeTotal++;
     const isBound = occByUid.has(r.uid.toLowerCase());
-    if (!isBound && !isManuallyVerified(r)) {
-      activeViolations.push({
+    // A jest `@req` binding satisfies the active req regardless of binding class
+    // (matches the existing "jest tag takes precedence" count semantics).
+    if (isBound) continue;
+    if (isManuallyVerified(r)) {
+      // ui-acceptance tier: the verification binding IS the recorded
+      // computer-control evidence (RFC 0003 §3.6). For an `active` ui-acceptance
+      // requirement, require that evidence to be committed + linked + resolving —
+      // otherwise the tier is a self-asserting "trust the prose" (the gap
+      // al-night-uiaccept closes). A declared-but-missing evidence path is ALSO
+      // a danglingEvidence finding; here it additionally blocks the always-on
+      // active gate. Proposed/Draft ui-acceptance reqs are NOT gated on evidence
+      // (migration-friendly) — only the in-force `active` subset.
+      if (!hasResolvingEvidence(r)) {
+        activeViolations.push({
+          uid: r.uid,
+          label: r.label,
+          path: r.path,
+          reason:
+            "active ui-acceptance requirement has no resolving committed evidence (req__Requirement_evidence) — commit + link the evidence artifact, or move it to Deprecated",
+        });
+      }
+      continue;
+    }
+    activeViolations.push({
+      uid: r.uid,
+      label: r.label,
+      path: r.path,
+      reason:
+        "active requirement has no @req binding (and is not ui-acceptance) — fix the binding or move it to Deprecated",
+    });
+  }
+
+  // Evidence-attestation findings (RFC 0003 §3.6 — al-night-uiaccept). A
+  // declared evidence link that doesn't resolve to a committed file is HARD
+  // (symmetric with dangling @req tags); ui-acceptance evidence coverage is
+  // reported for visibility (HARD only for the active subset, above).
+  const danglingEvidence: DanglingEvidenceFinding[] = [];
+  let uiAcceptanceTotal = 0;
+  let uiAcceptanceEvidenced = 0;
+  for (const r of requirements) {
+    if (r.evidenceMissing.length > 0) {
+      danglingEvidence.push({
         uid: r.uid,
         label: r.label,
         path: r.path,
-        reason:
-          "active requirement has no @req binding (and is not ui-acceptance) — fix the binding or move it to Deprecated",
+        missing: r.evidenceMissing,
       });
     }
+    if (isManuallyVerified(r)) {
+      uiAcceptanceTotal++;
+      if (hasResolvingEvidence(r)) uiAcceptanceEvidenced++;
+    }
   }
+  const uiAcceptanceMissingEvidence = uiAcceptanceTotal - uiAcceptanceEvidenced;
 
   const requirementCount = requirements.length;
   // Coverage = fraction of requirements with a declared verification path
@@ -475,7 +606,8 @@ export function auditTraceability(
   const clean =
     dangling.length === 0 &&
     floorViolations.length === 0 &&
-    activeViolations.length === 0;
+    activeViolations.length === 0 &&
+    danglingEvidence.length === 0;
 
   // The auto-flip criterion: every enumerated P0 req bound, all P0 floors met,
   // no dangling tags. Requires p0Total > 0 so `--gate hard` fails-safe (blocks)
@@ -496,6 +628,10 @@ export function auditTraceability(
     dangling,
     duplicates,
     floorViolations,
+    danglingEvidence,
+    uiAcceptanceTotal,
+    uiAcceptanceEvidenced,
+    uiAcceptanceMissingEvidence,
     unknownPriority,
     clean,
     activeTotal,
@@ -526,6 +662,11 @@ function renderText(report: TraceabilityReport, gate: GateMode = "soft"): void {
     `Active requirements: ${report.activeTotal} | ` +
       `invariant violations: ${report.activeViolations.length}`,
   );
+  console.log(
+    `ui-acceptance: ${report.uiAcceptanceTotal} | ` +
+      `with committed evidence: ${report.uiAcceptanceEvidenced} | ` +
+      `missing evidence: ${report.uiAcceptanceMissingEvidence}`,
+  );
 
   if (report.activeViolations.length > 0) {
     console.error(
@@ -550,6 +691,15 @@ function renderText(report: TraceabilityReport, gate: GateMode = "soft"): void {
     );
     for (const f of report.floorViolations) {
       console.error(`  ${f.uid}  [${f.bindingClasses.join(", ")}]  ${f.label}`);
+    }
+  }
+
+  if (report.danglingEvidence.length > 0) {
+    console.error(
+      `\nDangling evidence links (${report.danglingEvidence.length}) — req__Requirement_evidence path does not resolve to a committed file (HARD):`,
+    );
+    for (const e of report.danglingEvidence) {
+      console.error(`  ${e.uid}  [${e.missing.join(", ")}]  ${e.label}`);
     }
   }
 
@@ -579,7 +729,8 @@ function renderText(report: TraceabilityReport, gate: GateMode = "soft"): void {
   if (!report.clean) {
     console.error(
       `\nFAIL: ${report.dangling.length} dangling + ${report.floorViolations.length} floor violation(s)` +
-        ` + ${report.activeViolations.length} active-requirement invariant violation(s).`,
+        ` + ${report.activeViolations.length} active-requirement invariant violation(s)` +
+        ` + ${report.danglingEvidence.length} dangling evidence link(s).`,
     );
   } else if (gate === "hard" && !report.rampReady) {
     // clean (no dangling/floor) but the P0 checklist is not fully bound — the

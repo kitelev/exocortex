@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import { mkdirSync, rmSync, writeFileSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
 import { tmpdir } from "os";
 import {
   loadRequirements,
@@ -19,6 +19,7 @@ interface ReqSpec {
   priority?: string; // "P0".."P3"
   bindingClasses?: string[]; // ["Unit","Integration",...] local-name suffixes
   status?: string;
+  evidence?: string[]; // req__Requirement_evidence paths (rel. to the req dir)
 }
 
 /** Write a req__Requirement ABox asset that mirrors the P0 seed shape. */
@@ -41,8 +42,21 @@ function writeRequirement(dir: string, spec: ReqSpec): void {
       lines.push(`  - "[[b|req__RequirementBindingClass${c}]]"`);
     }
   }
+  if (spec.evidence && spec.evidence.length > 0) {
+    lines.push("req__Requirement_evidence:");
+    for (const e of spec.evidence) {
+      lines.push(`  - "${e}"`);
+    }
+  }
   lines.push("---", "", "## Statement (Gherkin)", "");
   writeFileSync(join(dir, `${spec.uid}.md`), lines.join("\n"), "utf-8");
+}
+
+/** Write a committed evidence artifact at a path relative to the req dir. */
+function writeEvidence(reqDir: string, relPath: string): void {
+  const abs = join(reqDir, relPath);
+  mkdirSync(dirname(abs), { recursive: true });
+  writeFileSync(abs, "# evidence attestation\n", "utf-8");
 }
 
 /** Write a non-requirement asset (assetspace anchor) — must be ignored. */
@@ -216,6 +230,64 @@ describe("requirements audit — IO end-to-end (integration)", () => {
       expect(report.p0Bound).toBe(2);
       expect(report.p0Orphans).toBe(0);
       expect(report.rampReady).toBe(true);
+    }
+  });
+
+  it("loadRequirements resolves evidence: present file → resolves, absent → evidenceMissing", async () => {
+    const subDir = join(reqsDir, "exo-reqs");
+    const UID_OK = "22222222-2222-4222-8222-222222222222";
+    const UID_MISSING = "33333333-3333-4333-8333-333333333333";
+    writeRequirement(subDir, {
+      uid: UID_OK,
+      bindingClasses: ["UiAcceptance"],
+      evidence: ["evidence/present.md"],
+    });
+    writeEvidence(subDir, "evidence/present.md");
+    writeRequirement(subDir, {
+      uid: UID_MISSING,
+      bindingClasses: ["UiAcceptance"],
+      evidence: ["evidence/absent.md"],
+    });
+
+    const reqs = await loadRequirements(reqsDir);
+    const ok = reqs.find((r) => r.uid === UID_OK)!;
+    const missing = reqs.find((r) => r.uid === UID_MISSING)!;
+    expect(ok.evidence).toEqual(["evidence/present.md"]);
+    expect(ok.evidenceMissing).toEqual([]);
+    expect(missing.evidence).toEqual(["evidence/absent.md"]);
+    expect(missing.evidenceMissing).toEqual(["evidence/absent.md"]);
+  });
+
+  it("end-to-end: an active ui-acceptance req with a committed evidence link is clean; reverting the file makes it red", async () => {
+    const subDir = join(reqsDir, "exo-reqs");
+    const UID_UIA = "44444444-4444-4444-8444-444444444444";
+    writeRequirement(subDir, {
+      uid: UID_UIA,
+      priority: "P1",
+      status: "Active",
+      bindingClasses: ["UiAcceptance"],
+      evidence: ["evidence/uia.md"],
+    });
+    writeEvidence(subDir, "evidence/uia.md");
+
+    {
+      const reqs = await loadRequirements(reqsDir);
+      const report = auditTraceability(reqs, []);
+      expect(report.uiAcceptanceTotal).toBe(1);
+      expect(report.uiAcceptanceEvidenced).toBe(1);
+      expect(report.activeViolations).toHaveLength(0);
+      expect(report.clean).toBe(true);
+    }
+
+    // Revert: remove the committed evidence artifact → active gate goes red.
+    rmSync(join(subDir, "evidence/uia.md"));
+    {
+      const reqs = await loadRequirements(reqsDir);
+      const report = auditTraceability(reqs, []);
+      expect(report.uiAcceptanceEvidenced).toBe(0);
+      expect(report.danglingEvidence.map((e) => e.uid)).toEqual([UID_UIA]);
+      expect(report.activeViolations.map((a) => a.uid)).toEqual([UID_UIA]);
+      expect(report.clean).toBe(false);
     }
   });
 });

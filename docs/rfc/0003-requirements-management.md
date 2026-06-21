@@ -189,6 +189,7 @@ final shapes refined in implementation:
 | `req__Requirement_covers`           | 1..N  | wikilink → command / feature                                             | What behavior this is _about_                                                                                |
 | `req__Requirement_verifiedBy`       | 0..N  | (derived) test-ID(s) the checker resolves from `@req:<uid>` tags         | The existing real test(s) that exercise it                                                                   |
 | `req__Requirement_bindingClass`     | 0..N  | `unit` \| `integration` \| `e2e` \| `gui-bdd` \| `ui-acceptance`         | Class of each binding (gates P0, §3.6). `ui-acceptance` = manual computer-control verification (no jest tag) |
+| `req__Requirement_evidence`         | 0..N  | path → committed evidence artifact (screenshot / attestation `.md`)      | `ui-acceptance` evidence-attestation (§3.6): the committed, CI-resolved artifact backing a manual binding    |
 | `req__Requirement_implementedBy`    | 0..N  | wikilink → command / PR# / code ref                                      | Implementation pointer                                                                                       |
 | `req__Requirement_refines`          | 0..1  | wikilink → parent `req__Requirement` (UWI child→parent)                  | Decomposition / acceptance↔system layering                                                                   |
 | `req__Requirement_status`           | 1     | `Draft` \| `Approved` \| `Deprecated` (enum assets) — **human-authored** | Lifecycle                                                                                                    |
@@ -283,6 +284,34 @@ layer, the only tests are the real ones already in CI, and a binding that doesn'
 fail-on-revert is invalid by definition. (The `ui-acceptance` tier substitutes
 recorded live-UI evidence for the jest revert-verify; it is not a self-asserting
 runner.)
+
+> **Evidence-attestation — making the `ui-acceptance` tier CI-verifiable.** The
+> `ui-acceptance` binding _is_ the recorded evidence — so "recorded" must mean
+> **committed, linked, and CI-resolved**, not "trust the prose". A `ui-acceptance`
+> requirement links its evidence via `req__Requirement_evidence` (0..N) — a path
+> to a committed artifact (screenshot, or, when the live screenshot is ephemeral,
+> an attestation `.md` recording date · plugin version · observed result · the
+> revert-verify spec). The traceability checker resolves each path against the
+> committed reqs tree and enforces, **without running a GUI**:
+>
+> - **dangling evidence (HARD)** — a declared `_evidence` path that does not
+>   resolve to a committed file inside the reqs tree. Exactly symmetric with a
+>   dangling `@req` tag (typo / deleted / not-committed). Folds into `clean`
+>   (soft-swallowed until the §3.7 hard-gate flip).
+> - **active ui-acceptance ⇒ resolving evidence required (HARD, always-on)** — an
+>   `active` `ui-acceptance` requirement with no resolving evidence is an
+>   active-requirement invariant violation (the always-on blocking gate, §3.7).
+>   This is what makes the active-invariant _mean something_ for the manual tier
+>   (previously it was trivially satisfied by the class declaration alone). A
+>   `@req` jest tag still takes precedence (an active ui-acceptance req that is
+>   also jest-bound needs no separate evidence). Proposed/Draft ui-acceptance reqs
+>   are reported (evidence-coverage stat) but **not** gated — migration-friendly.
+>
+> This closes the only "trust me" gap left in the tier model: a `ui-acceptance`
+> binding can no longer be asserted in-force without a committed, machine-checkable
+> evidence artifact. It does **not** re-execute the UI in CI (that would overlap
+> `eka-gui-e2e` / be an architectural fork) — it verifies the evidence _exists +
+> is linked_.
 
 ### 3.7 Enforcement — soft→hard ramp with a real flip-trigger
 
