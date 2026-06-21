@@ -199,7 +199,10 @@ export async function loadRequirements(
   const requirements: RequirementRecord[] = [];
 
   for (const { path: relPath, metadata } of assets) {
-    if (relPath.split("/").includes("node_modules")) continue;
+    // Skip vendored / VCS dirs — each per-module reqs clone carries its own
+    // `.git/` when the CI job clones several into one parent (RFC 0003 §3.2).
+    const segments = relPath.split("/");
+    if (segments.includes("node_modules") || segments.includes(".git")) continue;
     if (metadata["req__Requirement_status"] === undefined) continue;
 
     const uid =

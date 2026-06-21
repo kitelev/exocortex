@@ -276,12 +276,20 @@ jobs:
         # hard finding (REQ_GATE=hard) blocks the merge.
         continue-on-error: true
         run: |
+          # The JSON run is the AUTHORITATIVE gate signal — capture its exit code
+          # directly (a `| tee` would mask it behind tee's 0). `exit $rc` at the
+          # end makes the step's verdict the gate's verdict, so the M3-closure
+          # flip (drop continue-on-error) blocks robustly regardless of the
+          # human-readable run.
+          rc=0
           node packages/cli/dist/index.js requirements audit \
             --reqs "$RUNNER_TEMP/reqs" --tests . --gate "$REQ_GATE" --output json \
-            | tee "$RUNNER_TEMP/req-report.json"
-          echo "--- human-readable ---"
+            > "$RUNNER_TEMP/req-report.json" || rc=$?
+          cat "$RUNNER_TEMP/req-report.json"
+          echo "--- human-readable (gate=$REQ_GATE) ---"
           node packages/cli/dist/index.js requirements audit \
-            --reqs "$RUNNER_TEMP/reqs" --tests . --gate "$REQ_GATE" --output text
+            --reqs "$RUNNER_TEMP/reqs" --tests . --gate "$REQ_GATE" --output text || true
+          exit $rc
 
       - name: Write step summary
         if: always()
