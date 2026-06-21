@@ -5864,6 +5864,28 @@
   color: var(--text-error, #c62828);
 }
 
+/* DEFECT-5 (al-ux-findings) — persistent inline "Test connection" status in the
+   Settings PAT section, mirroring the onboarding panel's status (above). Colour
+   + text (never a glyph alone) convey valid / invalid; role=status announces it. */
+.exocortex-settings-pat-status {
+  margin: 0.4em 0 0;
+  font-size: var(--font-ui-smaller, 0.8em);
+  color: var(--text-muted, #6e7681);
+}
+
+.exocortex-settings-pat-status.is-pending {
+  color: var(--text-muted, #6e7681);
+  font-style: italic;
+}
+
+.exocortex-settings-pat-status.is-valid {
+  color: var(--text-success, #2e7d32);
+}
+
+.exocortex-settings-pat-status.is-invalid {
+  color: var(--text-error, #c62828);
+}
+
 /* RFC 0002 §3.5 — PAT setup create-token helper (deep-link + scope list). */
 .exocortex-pat-setup-helper {
   margin: 0.5em 0 1em;
