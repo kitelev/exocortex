@@ -37,6 +37,7 @@ const KNOWN_EXCEPTIONS = new Set([
   "exo__Property_minCount", // SHACL_LITE_MAPPING.md Phase 3+ planned property (YAGNI Drop #3 in RFC 82a72aca v3)
   "exo__Property_severity", // SHACL_LITE_MAPPING.md sh:severity alignment — docs-only mapping reference (aa6615f0)
   "exo__AssetSpace_materialized", // runtime-derived property; code constructs via Namespace.EXO.term("AssetSpace_materialized") rather than literal string (docs/explanation/profile.md)
+  "exo__AssetSpace_visibility", // RFC 0004 references this ONLY in negated form ("no ... property is introduced") to document the design decision NOT to add it (PAT-less + public-submodule-only is self-sufficient); not in code by design (docs/rfc/0004-living-documentation.md)
 ]);
 
 function extractPropertiesFromDocs() {
