@@ -96,7 +96,12 @@ export interface RequirementRecord {
   priority: string | null;
   /** Canonical binding classes declared on the requirement (may be empty). */
   bindingClasses: string[];
-  /** `Draft`|`Approved`|`Deprecated`, or null when unparseable. */
+  /**
+   * Lifecycle status local-name: `Proposed`|`Approved`|`Active`|`Deprecated`
+   * (legacy `Draft` still parses → treated like `Proposed`), or null when
+   * unparseable. SDD feature-lifecycle: `proposed → approved → active →
+   * deprecated`. `Active` = in-force, CI-hard-gated (see ActiveViolationFinding).
+   */
   status: string | null;
 }
 
@@ -126,6 +131,29 @@ export interface FloorViolationFinding {
   bindingClasses: string[];
 }
 
+/**
+ * An `active` requirement that is not satisfied by a verification binding — the
+ * SDD feature-lifecycle invariant violation (Andrey, 2026-06-21): *an active
+ * requirement is either satisfied or explicitly withdrawn (Deprecated).*
+ *
+ * The checker enforces the binding-existence half of the invariant: an `active`
+ * requirement MUST carry ≥1 `@req` binding (or be `ui-acceptance` manual). The
+ * other half — that the bound test is GREEN — is enforced by the test suite
+ * itself (the bound test runs in CI; if the behavior breaks, that test goes
+ * red). Together: an active requirement whose behavior is broken turns CI red,
+ * unless it is explicitly moved to `Deprecated`. This is an ALWAYS-ON hard
+ * finding (independent of the soft→hard P0 ramp): it is vacuous while zero
+ * requirements are `active`, and arms per-requirement the moment one is flipped
+ * to `active`.
+ */
+export interface ActiveViolationFinding {
+  uid: string;
+  label: string;
+  path: string;
+  /** Why the active requirement is unsatisfied (e.g. "no @req binding"). */
+  reason: string;
+}
+
 export interface TraceabilityReport {
   requirementCount: number;
   tagCount: number;
@@ -144,8 +172,19 @@ export interface TraceabilityReport {
   floorViolations: FloorViolationFinding[];
   /** Requirements whose priority could not be parsed (floor check skipped). */
   unknownPriority: number;
-  /** True iff there are no hard findings (no dangling tags, no floor violations). */
+  /**
+   * True iff there are no hard findings (no dangling tags, no floor violations,
+   * no active-requirement invariant violations).
+   */
   clean: boolean;
+  /** Total `active`-status requirements (the always-on hard-gated set). */
+  activeTotal: number;
+  /**
+   * `active` requirements with no verification binding — the SDD-lifecycle
+   * invariant violation (always a hard finding, any gate mode). Empty (vacuous)
+   * until the first requirement is flipped to `active`.
+   */
+  activeViolations: ActiveViolationFinding[];
   /**
    * Enumerated P0 checklist — total P0-priority requirements (the set that arms
    * the hard-gate flip, RFC 0003 §3.7).
@@ -386,13 +425,37 @@ export function auditTraceability(
   }
   const p0Orphans = p0Total - p0Bound;
 
+  // Active-requirement invariant (SDD feature-lifecycle, Andrey 2026-06-21): an
+  // `active` requirement MUST carry a verification binding (a `@req` jest tag OR
+  // ui-acceptance manual evidence). An unbound active requirement is an
+  // always-on hard finding — vacuous while zero requirements are `active`.
+  const activeViolations: ActiveViolationFinding[] = [];
+  let activeTotal = 0;
+  for (const r of requirements) {
+    if (r.status !== "Active") continue;
+    activeTotal++;
+    const isBound = occByUid.has(r.uid.toLowerCase());
+    if (!isBound && !isManuallyVerified(r)) {
+      activeViolations.push({
+        uid: r.uid,
+        label: r.label,
+        path: r.path,
+        reason:
+          "active requirement has no @req binding (and is not ui-acceptance) — fix the binding or move it to Deprecated",
+      });
+    }
+  }
+
   const requirementCount = requirements.length;
   // Coverage = fraction of requirements with a declared verification path
   // (a jest `@req` binding OR manual ui-acceptance). Backward-compatible when
   // there are no ui-acceptance reqs (manuallyVerified === 0).
   const coverage =
     requirementCount === 0 ? 1 : (bound + manuallyVerified) / requirementCount;
-  const clean = dangling.length === 0 && floorViolations.length === 0;
+  const clean =
+    dangling.length === 0 &&
+    floorViolations.length === 0 &&
+    activeViolations.length === 0;
 
   // The auto-flip criterion: every enumerated P0 req bound, all P0 floors met,
   // no dangling tags. Requires p0Total > 0 so `--gate hard` fails-safe (blocks)
@@ -415,6 +478,8 @@ export function auditTraceability(
     floorViolations,
     unknownPriority,
     clean,
+    activeTotal,
+    activeViolations,
     p0Total,
     p0Bound,
     p0Orphans,
@@ -437,6 +502,20 @@ function renderText(report: TraceabilityReport, gate: GateMode = "soft"): void {
     `P0 checklist: ${report.p0Bound}/${report.p0Total} bound | ` +
       `ramp-ready: ${report.rampReady ? "yes" : "no"} | gate: ${gate}`,
   );
+  console.log(
+    `Active requirements: ${report.activeTotal} | ` +
+      `invariant violations: ${report.activeViolations.length}`,
+  );
+
+  if (report.activeViolations.length > 0) {
+    console.error(
+      `\nActive-requirement invariant violations (${report.activeViolations.length}) — ` +
+        `an active requirement has no verification binding (HARD, always blocks):`,
+    );
+    for (const a of report.activeViolations) {
+      console.error(`  ${a.uid}  ${a.label}\n    → ${a.reason}`);
+    }
+  }
 
   if (report.dangling.length > 0) {
     console.error(`\nDangling @req tags (${report.dangling.length}) — uid has no requirement:`);
@@ -479,7 +558,8 @@ function renderText(report: TraceabilityReport, gate: GateMode = "soft"): void {
 
   if (!report.clean) {
     console.error(
-      `\nFAIL: ${report.dangling.length} dangling + ${report.floorViolations.length} floor violation(s).`,
+      `\nFAIL: ${report.dangling.length} dangling + ${report.floorViolations.length} floor violation(s)` +
+        ` + ${report.activeViolations.length} active-requirement invariant violation(s).`,
     );
   } else if (gate === "hard" && !report.rampReady) {
     // clean (no dangling/floor) but the P0 checklist is not fully bound — the
@@ -497,9 +577,12 @@ function renderText(report: TraceabilityReport, gate: GateMode = "soft"): void {
 /**
  * Gate mode (RFC 0003 §3.7 soft→hard ramp):
  *  - `soft` (default): exit 1 only on *hard findings* (dangling tags + P0
- *    binding-class floor violations). P0 coverage gaps are warnings. This is
- *    the Phase-1/2 behaviour — the `requirements-trace` CI job swallows the exit
- *    via `continue-on-error`, so it never blocks a merge.
+ *    binding-class floor violations + active-requirement invariant violations).
+ *    P0 coverage gaps are warnings. The dangling/floor part is swallowed by the
+ *    `requirements-trace` CI job's `continue-on-error` (Phase-1/2); the
+ *    **active-requirement invariant** is enforced by a SEPARATE blocking CI
+ *    step (no `continue-on-error`) so an unbound `active` requirement blocks a
+ *    merge in any phase (always-on, vacuous at zero active reqs).
  *  - `hard`: additionally exit 1 when the report is **not ramp-ready** (any
  *    enumerated P0 requirement unbound). This is the Phase-3 gate — at the
  *    M3-closure flip the CI job switches to `--gate hard`, drops

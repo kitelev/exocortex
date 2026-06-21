@@ -12,7 +12,7 @@ import {
  * @property {string} uid
  * @property {string} label
  * @property {string} file                       source filename
- * @property {string|null} status                Draft|Approved|Deprecated
+ * @property {string|null} status                Proposed|Approved|Active|Deprecated (legacy Draft → Proposed)
  * @property {string|null} priority              P0..P3
  * @property {string[]} bindingClasses           unit|integration|e2e|gui-bdd
  * @property {string[]} covers

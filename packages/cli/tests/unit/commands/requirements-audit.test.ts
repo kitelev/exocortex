@@ -121,6 +121,11 @@ describe("parseStatus", () => {
     expect(parseStatus("[[uid|req__RequirementStatusDraft]]")).toBe("Draft");
     expect(parseStatus("[[uid|req__RequirementStatusApproved]]")).toBe("Approved");
   });
+  it("parses the SDD feature-lifecycle statuses (proposed/active)", () => {
+    expect(parseStatus("[[uid|req__RequirementStatusProposed]]")).toBe("Proposed");
+    expect(parseStatus("[[uid|req__RequirementStatusActive]]")).toBe("Active");
+    expect(parseStatus("[[uid|req__RequirementStatusDeprecated]]")).toBe("Deprecated");
+  });
   it("returns null when absent", () => {
     expect(parseStatus(undefined)).toBeNull();
   });
@@ -335,6 +340,8 @@ describe("isHardFail — soft/hard exit-code contract (P3 flip)", () => {
       floorViolations: [],
       unknownPriority: 0,
       clean: true,
+      activeTotal: 0,
+      activeViolations: [],
       p0Total: 1,
       p0Bound: 1,
       p0Orphans: 0,
@@ -374,6 +381,88 @@ describe("isHardFail — soft/hard exit-code contract (P3 flip)", () => {
     });
     expect(isHardFail(orphaned, "soft", false)).toBe(false);
     expect(isHardFail(orphaned, "soft", true)).toBe(true);
+  });
+
+  it("an active-requirement invariant violation fails in BOTH modes (always-on)", () => {
+    // clean is false when activeViolations is non-empty (auditTraceability sets
+    // it); a report with the violation must block regardless of gate mode — the
+    // SDD invariant is independent of the soft→hard P0 ramp.
+    const v = report({
+      clean: false,
+      activeTotal: 1,
+      activeViolations: [
+        { uid: UID_A, label: "active req", path: "p", reason: "no @req binding" },
+      ],
+      // ramp is otherwise fine — only the active-gate is tripped
+      rampReady: true,
+    });
+    expect(isHardFail(v, "soft", false)).toBe(true);
+    expect(isHardFail(v, "hard", false)).toBe(true);
+  });
+});
+
+describe("auditTraceability — active-requirement invariant (SDD feature-lifecycle)", () => {
+  it("an active requirement WITH a @req binding is satisfied (no violation, clean)", () => {
+    const reqs = [req({ uid: UID_A, status: "Active" })];
+    const r = auditTraceability(reqs, [tag(UID_A)]);
+    expect(r.activeTotal).toBe(1);
+    expect(r.activeViolations).toHaveLength(0);
+    expect(r.clean).toBe(true);
+  });
+
+  it("an active requirement with NO binding is an invariant violation (hard, not clean)", () => {
+    const reqs = [req({ uid: UID_A, status: "Active", bindingClasses: ["unit"] })];
+    const r = auditTraceability(reqs, []); // no @req tag
+    expect(r.activeTotal).toBe(1);
+    expect(r.activeViolations.map((a) => a.uid)).toEqual([UID_A]);
+    expect(r.clean).toBe(false);
+    // also surfaces as an orphan (the informational view), but the active-gate
+    // is the hard one
+    expect(r.orphans.map((o) => o.uid)).toEqual([UID_A]);
+  });
+
+  it("an active ui-acceptance requirement (manual evidence) is satisfied — no violation", () => {
+    const reqs = [req({ uid: UID_A, status: "Active", bindingClasses: ["ui-acceptance"] })];
+    const r = auditTraceability(reqs, []); // no jest tag — manual tier
+    expect(r.activeTotal).toBe(1);
+    expect(r.activeViolations).toHaveLength(0);
+    expect(r.clean).toBe(true);
+  });
+
+  it("a PROPOSED requirement with no binding is NOT an active violation (only an orphan warning)", () => {
+    // priority P2 isolates the active-gate from the P0 binding-class floor.
+    const reqs = [
+      req({ uid: UID_A, status: "Proposed", priority: "P2", bindingClasses: ["unit"] }),
+    ];
+    const r = auditTraceability(reqs, []);
+    expect(r.activeTotal).toBe(0);
+    expect(r.activeViolations).toHaveLength(0);
+    // proposed-unbound is a (non-blocking) orphan, not an active-gate violation
+    expect(r.orphans.map((o) => o.uid)).toEqual([UID_A]);
+    expect(r.clean).toBe(true);
+  });
+
+  it("is vacuous when zero requirements are active (forward-only safety)", () => {
+    const reqs = [
+      req({ uid: UID_A, status: "Proposed" }),
+      req({ uid: UID_B, status: "Approved" }),
+    ];
+    const r = auditTraceability(reqs, []); // none bound, none active
+    expect(r.activeTotal).toBe(0);
+    expect(r.activeViolations).toHaveLength(0);
+    expect(r.clean).toBe(true); // active-gate does not fire
+  });
+
+  it("counts only the unbound active reqs as violations (mixed set)", () => {
+    const reqs = [
+      req({ uid: UID_A, status: "Active" }), // bound below → ok
+      req({ uid: UID_B, status: "Active", bindingClasses: ["unit"] }), // unbound → violation
+      req({ uid: UID_C, status: "Proposed" }), // proposed unbound → not a violation
+    ];
+    const r = auditTraceability(reqs, [tag(UID_A)]);
+    expect(r.activeTotal).toBe(2);
+    expect(r.activeViolations.map((a) => a.uid)).toEqual([UID_B]);
+    expect(r.clean).toBe(false);
   });
 });
 

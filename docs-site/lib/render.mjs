@@ -39,10 +39,14 @@ export function safeSegment(s) {
   return cleaned;
 }
 
+// SDD feature-lifecycle statuses (proposed → approved → active → deprecated).
+// `Draft` retained as a legacy alias of `Proposed`.
 const STATUS_CLASS = {
-  Approved: "ok",
-  Draft: "warn",
-  Deprecated: "muted",
+  Active: "ok", // in force — merged + revert-verified test green (CI-hard-gated)
+  Approved: "ok", // human-approved prose; implementation in progress
+  Proposed: "warn", // drafted, awaiting human review/approval
+  Draft: "warn", // legacy alias of Proposed
+  Deprecated: "muted", // explicitly withdrawn
 };
 
 export function statusBadge(status) {
