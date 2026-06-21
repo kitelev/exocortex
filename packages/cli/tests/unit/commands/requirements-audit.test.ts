@@ -83,8 +83,19 @@ describe("parseBindingClasses", () => {
         "[[u2|req__RequirementBindingClassIntegration]]",
         "[[u3|req__RequirementBindingClassE2e]]",
         "[[u4|req__RequirementBindingClassGuiBdd]]",
+        "[[u5|req__RequirementBindingClassUiAcceptance]]",
       ]),
-    ).toEqual(["unit", "integration", "e2e", "gui-bdd"]);
+    ).toEqual(["unit", "integration", "e2e", "gui-bdd", "ui-acceptance"]);
+  });
+
+  it("maps the PUBLISHED ui-acceptance enum IRI (exoas-req 9709619c) to ui-acceptance", () => {
+    // Pins the contract against the real enum asset's local-name (so a rename in
+    // exoas-req cannot silently break the ui-acceptance exemption + P0 floor).
+    expect(
+      parseBindingClasses(
+        "[[9709619c-e16d-4501-89ed-3c2abd6af87d|req__RequirementBindingClassUiAcceptance]]",
+      ),
+    ).toEqual(["ui-acceptance"]);
   });
   it("ignores free-text (non-enum) bindingClass entries", () => {
     expect(
@@ -410,5 +421,17 @@ describe("auditTraceability — ui-acceptance verification tier (RFC 0003 §3.6)
     const r = auditTraceability(reqs, []);
     expect(r.orphans.map((o) => o.uid)).toEqual([UID_A]);
     expect(r.manuallyVerified).toBe(0);
+  });
+
+  it("a P0 [ui-acceptance, integration] req with NO jest tag is manually-verified (not orphan, floor met)", () => {
+    const reqs = [
+      req({ uid: UID_A, priority: "P0", bindingClasses: ["ui-acceptance", "integration"] }),
+    ];
+    const r = auditTraceability(reqs, []); // no jest tag
+    expect(r.manuallyVerified).toBe(1);
+    expect(r.orphans).toHaveLength(0);
+    expect(r.floorViolations).toHaveLength(0);
+    expect(r.p0Bound).toBe(1);
+    expect(r.rampReady).toBe(true);
   });
 });
