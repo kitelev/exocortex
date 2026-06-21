@@ -1,0 +1,18 @@
+{
+  "name": "exocortex-docs-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Living-Documentation site generator (RFC 0004): renders the public requirements + ADRs of kitelev/exocortex into a static, from-graph site. Self-contained — no dependency on @kitelev/exocortex-cli.",
+  "bin": {
+    "exocortex-docs-site": "build.mjs"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "marked": "^12.0.2"
+  }
+}

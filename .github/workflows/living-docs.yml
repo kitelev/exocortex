@@ -1,0 +1,67 @@
+# Living Documentation (RFC 0004) — PAT-less build.
+#
+# Privacy is guaranteed BY CONSTRUCTION: this workflow injects NO PAT / no
+# broad-scope secret into git or the generator. `actions/checkout` runs with only
+# the default repo-scoped GITHUB_TOKEN, which cannot read other private repos — so
+# `git submodule update` can pull ONLY public submodules. A private submodule would
+# fail the credential-free fetch and break the build (fail-closed by absence, §5).
+#
+# MVP-2 scope: BUILD + TEST the generator only — there is NO GitHub Pages deploy
+# here. Enabling Pages and the first publish are outward-facing + irreversible and
+# require explicit human confirmation (MVP-4, RFC 0004 §5).
+name: Living Docs
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - "docs-site/**"
+      - ".archgate/**"
+      - "packages/exoas-exo-reqs"
+      - "packages/exoas-exo"
+      - ".github/workflows/living-docs.yml"
+
+# Read-only: this job never needs write access (no deploy in MVP-2).
+permissions:
+  contents: read
+
+concurrency:
+  group: living-docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build (PAT-less, no publish)
+    runs-on: ubuntu-latest
+    steps:
+      # No `token:` and no `ssh-key:` override → only the default repo-scoped
+      # GITHUB_TOKEN is available. Public submodules fetch fine; a private one
+      # would fail here (fail-closed), which is the entire privacy guarantee.
+      - name: Checkout (public submodules only — no PAT)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install generator deps (docs-site, standalone)
+        working-directory: docs-site
+        run: npm ci
+
+      - name: Unit + fixture tests (node:test)
+        working-directory: docs-site
+        run: npm test
+
+      - name: Build the site (local only — no publish)
+        run: node docs-site/build.mjs --out _site
+
+      - name: Verify the site built
+        run: |
+          test -f _site/index.html
+          test -f _site/.nojekyll
+          test -d _site/requirements
+          test -d _site/adrs
+          echo "Living-Docs site built: $(find _site -type f | wc -l) files."
