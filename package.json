@@ -6,7 +6,8 @@
   "workspaces": [
     "packages/*",
     "!packages/exoas-exo",
-    "!packages/exoas-exocmd"
+    "!packages/exoas-exocmd",
+    "!packages/exoas-exo-reqs"
   ],
   "engines": {
     "node": ">=18.0.0"
