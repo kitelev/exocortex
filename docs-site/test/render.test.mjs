@@ -5,6 +5,7 @@ import {
   mdToHtml,
   statusBadge,
   coverageBadge,
+  awaitingReviewSection,
   requirementPage,
   adrPage,
   indexPage,
@@ -156,4 +157,64 @@ test("every page carries a noindex robots meta (publicly reachable, not search-i
   for (const html of [index, req, adr]) {
     assert.match(html, /<meta name="robots" content="noindex, nofollow, noarchive">/);
   }
+});
+
+test("awaitingReviewSection lists Proposed/Draft as deep-links and excludes Active/Approved", () => {
+  const reqs = [
+    { uid: "p1", label: "needs review one", status: "Proposed", priority: "P0", covered: true, verifiedBy: ["t"] },
+    { uid: "d2", label: "legacy draft two", status: "Draft", priority: null, covered: false, verifiedBy: [] },
+    { uid: "a3", label: "already active", status: "Active", priority: "P1", covered: true, verifiedBy: ["t"] },
+    { uid: "ap4", label: "already approved", status: "Approved", priority: "P2", covered: true, verifiedBy: ["t"] },
+  ];
+  const html = awaitingReviewSection(reqs);
+  assert.match(html, /id="awaiting-review"/);
+  assert.match(html, /Awaiting review/);
+  // count chip = the two awaiting (Proposed + Draft), not the active/approved ones
+  assert.match(html, /<span class="chip">2<\/span>/);
+  // both awaiting requirements are deep-linked
+  assert.match(html, /requirements\/p1\.html/);
+  assert.match(html, /requirements\/d2\.html/);
+  assert.match(html, /needs review one/);
+  // Active / Approved requirements are excluded from the queue
+  assert.doesNotMatch(html, /requirements\/a3\.html/);
+  assert.doesNotMatch(html, /requirements\/ap4\.html/);
+  assert.doesNotMatch(html, /already active/);
+});
+
+test("awaitingReviewSection shows a positive note when nothing awaits approval", () => {
+  const html = awaitingReviewSection([
+    { uid: "a3", label: "active", status: "Active", priority: "P1", covered: true, verifiedBy: ["t"] },
+  ]);
+  assert.match(html, /reviewed/); // the `review-queue reviewed` empty-state class
+  assert.match(html, /review queue is empty/);
+  assert.doesNotMatch(html, /review-list/); // no queue list rendered
+});
+
+test("awaitingReviewSection escapes a label with HTML metacharacters", () => {
+  const html = awaitingReviewSection([
+    { uid: "p1", label: "req: a < b && c", status: "Proposed", priority: null, covered: false, verifiedBy: [] },
+  ]);
+  assert.match(html, /a &lt; b &amp;&amp; c/);
+  assert.doesNotMatch(html, /a < b && c/);
+});
+
+test("indexPage embeds the awaiting-review queue ahead of the full requirements table", () => {
+  const reqs = [
+    { uid: "p1", label: "proposed req", status: "Proposed", priority: "P0", verifiedBy: ["t"], covered: true },
+    { uid: "a2", label: "active req", status: "Active", priority: "P1", verifiedBy: ["t"], covered: true },
+  ];
+  const adrs = [{ id: "ARCH-001", title: "Filenames", domain: "data", rules: false }];
+  const stats = {
+    total: 2,
+    covered: 2,
+    coverage: 1,
+    byStatus: { Proposed: 1, Active: 1 },
+    byPriority: { P0: 1, P1: 1 },
+  };
+  const html = indexPage({ reqs, adrs, stats, ontology: { classes: [], properties: [] } });
+  assert.match(html, /id="awaiting-review"/);
+  // header nav exposes the review queue
+  assert.match(html, /index\.html#awaiting-review/);
+  // the review queue appears before the full functional-requirements table
+  assert.ok(html.indexOf('id="awaiting-review"') < html.indexOf('id="requirements"'));
 });

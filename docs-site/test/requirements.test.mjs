@@ -67,13 +67,19 @@ test("toRequirementRecord marks uncovered when verifiedBy is empty", () => {
 // Integration: read the real exoas-exo-reqs submodule fixtures.
 const hasSubmodule = existsSync(REQS_DIR);
 test(
-  "loadRequirements reads the exoas-exo-reqs submodule (30 requirements; the $exo-reqs anchor is excluded)",
+  "loadRequirements reads the exoas-exo-reqs submodule (anchor + non-requirement assets excluded)",
   { skip: hasSubmodule ? false : "submodule not checked out" },
   async () => {
     const reqs = await loadRequirements(REQS_DIR);
-    // 31 .md files = 30 req__Requirement instances + 1 assetspace anchor
-    // ($exo-reqs, which carries no req__Requirement_status and is correctly excluded).
-    assert.equal(reqs.length, 30, "expected 30 functional requirements (anchor excluded)");
+    // The submodule grows over time (new requirements added on each bump), so
+    // assert a lower bound rather than an exact count — an exact count is a
+    // maintenance trap that reds the docs-site test on every reqs pointer bump.
+    // Non-requirement assets (the $exo-reqs assetspace anchor and ui-acceptance
+    // evidence-attestations) carry no req__Requirement_status and are excluded.
+    assert.ok(
+      reqs.length >= 30,
+      `expected ≥30 functional requirements (anchor excluded), got ${reqs.length}`,
+    );
     assert.ok(
       reqs.every((r) => r.status !== null),
       "every requirement must carry a parseable status",
@@ -94,11 +100,13 @@ test(
   async () => {
     const reqs = await loadRequirements(REQS_DIR);
     const stats = requirementStats(reqs);
-    assert.equal(stats.total, 30);
+    assert.equal(stats.total, reqs.length);
+    assert.ok(stats.total >= 30, `expected ≥30 requirements, got ${stats.total}`);
     assert.ok(stats.coverage >= 0 && stats.coverage <= 1);
+    // byStatus must partition the full set (sum === total) regardless of count.
     assert.equal(
       Object.values(stats.byStatus).reduce((a, b) => a + b, 0),
-      30,
+      stats.total,
     );
   },
 );

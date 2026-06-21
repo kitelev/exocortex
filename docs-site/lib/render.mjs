@@ -67,6 +67,48 @@ export function coverageBadge(covered, n) {
     : `<span class="badge badge-warn" title="no verification binding yet">○ uncovered</span>`;
 }
 
+/**
+ * Render the "Awaiting review" queue — the requirements that need human approval
+ * (status `Proposed`, plus the legacy `Draft` alias). This is the morning-approve
+ * surface of the SDD feature-lifecycle (RFC 0003): a focused, deep-linkable list
+ * separated from the full reference table so a reviewer sees exactly what awaits
+ * their sign-off and can open each to read its Gherkin and approve. Already-
+ * `Active`/`Approved`/`Deprecated` requirements are intentionally excluded.
+ * Renders a positive "nothing awaiting" note when the queue is empty.
+ *
+ * @param {Array<{uid:string,label:string,status:string|null,priority:string|null,covered:boolean,verifiedBy?:string[]}>} reqs
+ */
+export function awaitingReviewSection(reqs) {
+  const awaiting = (reqs ?? []).filter(
+    (r) => r.status === "Proposed" || r.status === "Draft",
+  );
+  if (awaiting.length === 0) {
+    return `
+<section id="awaiting-review" class="review-queue reviewed">
+  <h2>Awaiting review <span class="badge badge-ok">✓ none</span></h2>
+  <p class="note">The review queue is empty — no requirement is in the <em>Proposed</em> state awaiting approval.</p>
+</section>`;
+  }
+  const items = awaiting
+    .map(
+      (r) => `<li>
+  <a href="requirements/${safeSegment(r.uid)}.html">${escapeHtml(r.label)}</a>
+  ${[priorityBadge(r.priority), coverageBadge(r.covered, (r.verifiedBy ?? []).length)]
+    .filter(Boolean)
+    .join(" ")}
+</li>`,
+    )
+    .join("\n");
+  return `
+<section id="awaiting-review" class="review-queue">
+  <h2>Awaiting review <span class="chip">${awaiting.length}</span></h2>
+  <p class="note">Requirements drafted and <strong>awaiting approval</strong> (status <em>Proposed</em>). Open one to read its <code>Given / When / Then</code> statement, then approve. Sorted by priority.</p>
+  <ul class="review-list">
+${items}
+  </ul>
+</section>`;
+}
+
 /** A full HTML page shell (Jekyll-free static output). */
 export function layout({ title, content, relRoot = "" }) {
   return `<!doctype html>
@@ -85,6 +127,7 @@ export function layout({ title, content, relRoot = "" }) {
 <header class="site-header">
   <a class="brand" href="${relRoot}index.html">Exocortex · Living Documentation</a>
   <nav>
+    <a href="${relRoot}index.html#awaiting-review">Review queue</a>
     <a href="${relRoot}index.html#requirements">Requirements</a>
     <a href="${relRoot}index.html#adrs">Architecture</a>
     <a href="${relRoot}ontology.html">Ontology</a>
@@ -231,6 +274,8 @@ export function indexPage({ reqs, adrs, stats, ontology, generatedNote }) {
   <p class="chips">${statusChips}</p>
 </section>
 
+${awaitingReviewSection(reqs)}
+
 <section id="requirements">
   <h2>Functional requirements</h2>
   <p class="note">Each requirement carries a Gherkin <code>Given/When/Then</code> statement. <em>Coverage</em> reflects the <code>verifiedBy</code> binding declared on the requirement (from-graph). All lifecycle statuses are shown, explicitly labelled.</p>
@@ -303,4 +348,10 @@ table.grid th{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;colo
 .note{color:var(--muted);font-size:.9rem}
 .kv ul{margin:.2rem 0 0;padding-left:1.1rem}
 .kv li{margin:.2rem 0}
+.review-queue{border-left:4px solid var(--warn-fg);background:#fffdf5;border-radius:0 10px 10px 0;padding:.2rem 1.1rem 1rem;margin:1.4rem 0}
+.review-queue.reviewed{border-left-color:var(--ok-fg);background:#f6fef9}
+.review-queue h2{border-bottom:none;margin:1rem 0 .3rem;font-size:1.2rem}
+.review-list{list-style:none;margin:.4rem 0 0;padding:0}
+.review-list li{padding:.45rem 0;border-bottom:1px solid var(--line)}
+.review-list li:last-child{border-bottom:none}
 `;
