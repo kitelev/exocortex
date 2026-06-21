@@ -157,6 +157,37 @@ describe("ExoSync deferred-push outbox — resolve queues, sync flushes (PR-3b)"
     expect(detail.remote).toBe(MOVED);
   });
 
+  it("⛤ TOCTOU in-window (zero-loss): remote moves AFTER the flush guard-read but BEFORE restCreateCommit's ref-read → CAS refuses, no overwrite, entry retried", async () => {
+    const s = setup();
+    await quarantineConflict(s);
+    await s.resolver.resolve(s.spec, FILE, { take: "local" });
+
+    // The flush's guard-read sees the unchanged remote (REMOTE) and proceeds.
+    // Inject a concurrent push in the narrow window between that guard-read and
+    // restCreateCommit's OWN ref-read: arm-call #1 = the flush's getHeadSha,
+    // #2 = restCreateCommit's GET-ref — move the SAME path right then.
+    const MOVED = mdAsset("u1", "moved in the race window");
+    let callsSinceArm = 0;
+    s.gh.onGetRef = (): void => {
+      callsSinceArm++;
+      if (callsSinceArm === 2) {
+        s.gh.onGetRef = undefined;
+        s.gh.commitDirect("main", { [FILE]: MOVED }, "device C in-window");
+      }
+    };
+
+    const flush = await s.engine.sync(s.spec);
+    s.gh.onGetRef = undefined;
+
+    // ⛤ The in-window move is NOT overwritten — the CAS aborted the push.
+    expect(s.gh.headFiles().get(FILE)).toBe(MOVED);
+    expect(flush.outboxPushedCount ?? 0).toBe(0);
+    // The entry is left queued (not dropped) — the next sync re-checks the
+    // per-path TOCTOU and re-conflicts; the user's choice stays on disk.
+    expect(await s.outbox.listForRepo(s.spec.repoKey)).toHaveLength(1);
+    expect(s.disk.files.get(FILE)).toBe(LOCAL);
+  });
+
   it("resolve runs fully OFFLINE: a throwing transport still queues the deferred push (cache-sourced)", async () => {
     const s = setup();
     await quarantineConflict(s); // populates the cache via a working transport

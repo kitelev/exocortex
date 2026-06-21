@@ -1619,9 +1619,10 @@ export class SyncEngine {
     if (pending.length === 0) return { pushed: 0, reconflicted: 0 };
     const redact = this.deps.redact ?? ((m: string): string => m);
 
+    let head: string;
     let remoteShaByPath: Map<string, string>;
     try {
-      remoteShaByPath = await this.outboxHeadTreeShas(spec);
+      ({ head, shaByPath: remoteShaByPath } = await this.outboxHeadTreeShas(spec));
     } catch (err) {
       // Offline / unreachable — defer the whole flush to the next sync.
       warnings.push(
@@ -1648,8 +1649,12 @@ export class SyncEngine {
         );
         continue;
       }
-      // Remote unchanged → push the chosen content. force:false guards a
-      // concurrent push between our read and the ref update (→ 422, left to retry).
+      // Remote unchanged at our guard-read → push the chosen content. The
+      // `expectedHeadSha` CAS closes the window between THIS guard-read and
+      // restCreateCommit's own ref-read: if the head moved in between, the push
+      // aborts (no overwrite) and we leave the entry to retry next sync — which
+      // re-checks the per-path TOCTOU and re-conflicts if needed. force:false
+      // additionally guards restCreateCommit's own GET→PATCH window (→ 422).
       try {
         await restCreateCommit(this.transport, {
           owner: spec.owner,
@@ -1657,14 +1662,15 @@ export class SyncEngine {
           branch: spec.branch,
           files: new Map([[entry.path, entry.chosenContent]]),
           message: `chore(exosync): push resolved conflict for ${entry.path}`,
+          expectedHeadSha: head,
           ...(this.deps.baseURL !== undefined ? { baseURL: this.deps.baseURL } : {}),
           ...(this.deps.redact !== undefined ? { redact: this.deps.redact } : {}),
         });
       } catch (err) {
         warnings.push(
-          `outbox: push failed for ${entry.path}, will retry next sync: ${redact(errMsg(err))}`,
+          `outbox: push deferred for ${entry.path}, will retry next sync: ${redact(errMsg(err))}`,
         );
-        continue; // leave the entry; never overwrite on a failed/raced push
+        continue; // leave the entry; never overwrite on a failed/raced/moved push
       }
       await this.snapOutboxWatermark(spec, entry.path, entry.chosenContent);
       await this.deps.quarantine?.markResolved?.(entry.repoKey, entry.path);
@@ -1677,10 +1683,13 @@ export class SyncEngine {
     return { pushed, reconflicted };
   }
 
-  /** Path → blobSha of the AssetSpace head tree (one fetch — outbox TOCTOU). */
+  /**
+   * AssetSpace head commit SHA + path→blobSha of its tree (one fetch — outbox
+   * TOCTOU). The head SHA is the CAS token for the flush push (`expectedHeadSha`).
+   */
   private async outboxHeadTreeShas(
     spec: SyncRepoSpec,
-  ): Promise<Map<string, string>> {
+  ): Promise<{ head: string; shaByPath: Map<string, string> }> {
     const head = await getHeadSha(
       this.transport,
       spec.owner,
@@ -1702,9 +1711,9 @@ export class SyncEngine {
       commit.treeSha,
       this.deps.baseURL,
     );
-    const out = new Map<string, string>();
-    for (const e of tree) out.set(e.path, e.blobSha);
-    return out;
+    const shaByPath = new Map<string, string>();
+    for (const e of tree) shaByPath.set(e.path, e.blobSha);
+    return { head, shaByPath };
   }
 
   /**
