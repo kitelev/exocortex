@@ -141,6 +141,9 @@ describe("ModalConfirmGate", () => {
     const title = document.querySelector(".apply-confirm-title");
     expect(title).not.toBeNull();
     expect(title?.textContent).toContain("Work");
+    // Title prefix must be the clean English «Apply profile:» — guards against
+    // the stray Cyrillic «к» regression (live UX smoke 2026-06-21).
+    expect(title?.textContent).toContain("Apply profile:");
 
     findButton("Cancel")?.click();
     await promise;
