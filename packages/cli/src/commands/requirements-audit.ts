@@ -59,10 +59,33 @@ const BINDING_CLASS_MAP: Record<string, string> = {
   integration: "integration",
   e2e: "e2e",
   guibdd: "gui-bdd",
+  uiacceptance: "ui-acceptance",
 };
 
-/** A binding class that exercises production beyond a pure unit test. */
-const REAL_PROD_CLASSES = new Set(["integration", "e2e", "gui-bdd"]);
+/**
+ * The manual-acceptance binding class (RFC 0003 §3.6 verification tier): a
+ * requirement verified by computer-control evidence (live UI), NOT by a `@req`
+ * jest tag. Such requirements are exempt from the orphan / jest-binding check —
+ * their verification path is the recorded computer-control evidence, not a tag.
+ */
+const UI_ACCEPTANCE = "ui-acceptance";
+
+/**
+ * A binding class that exercises production beyond a pure unit test. `ui-acceptance`
+ * is included: a manual live-UI acceptance check exercises real production more
+ * than a unit test, so it satisfies the P0 binding-class floor.
+ */
+const REAL_PROD_CLASSES = new Set([
+  "integration",
+  "e2e",
+  "gui-bdd",
+  UI_ACCEPTANCE,
+]);
+
+/** True iff a requirement is verified manually (computer-control), not via a jest @req tag. */
+function isManuallyVerified(r: RequirementRecord): boolean {
+  return r.bindingClasses.includes(UI_ACCEPTANCE);
+}
 
 export interface RequirementRecord {
   uid: string;
@@ -106,9 +129,14 @@ export interface FloorViolationFinding {
 export interface TraceabilityReport {
   requirementCount: number;
   tagCount: number;
-  /** Requirements with ≥1 binding. */
+  /** Requirements with ≥1 jest `@req` binding. */
   bound: number;
-  /** bound / requirementCount, 0..1 (1 when there are no requirements). */
+  /**
+   * Requirements verified manually via computer-control (binding class
+   * `ui-acceptance`, no jest tag expected) — RFC 0003 §3.6 verification tier.
+   */
+  manuallyVerified: number;
+  /** (bound + manuallyVerified) / requirementCount, 0..1 (1 when none). */
   coverage: number;
   orphans: OrphanFinding[];
   dangling: TagOccurrence[];
@@ -295,9 +323,17 @@ export function auditTraceability(
 
   const orphans: OrphanFinding[] = [];
   let bound = 0;
+  let manuallyVerified = 0;
   for (const r of requirements) {
-    if (occByUid.has(r.uid.toLowerCase())) bound++;
-    else orphans.push({ uid: r.uid, label: r.label, path: r.path });
+    if (occByUid.has(r.uid.toLowerCase())) {
+      bound++;
+    } else if (isManuallyVerified(r)) {
+      // ui-acceptance: verified by computer-control evidence, no jest tag
+      // expected → covered, NOT an orphan (RFC 0003 §3.6 verification tier).
+      manuallyVerified++;
+    } else {
+      orphans.push({ uid: r.uid, label: r.label, path: r.path });
+    }
   }
 
   const dangling: TagOccurrence[] = [];
@@ -345,12 +381,17 @@ export function auditTraceability(
   for (const r of requirements) {
     if (r.priority !== "P0") continue;
     p0Total++;
-    if (occByUid.has(r.uid.toLowerCase())) p0Bound++;
+    // A P0 req is covered by a jest binding OR by manual ui-acceptance evidence.
+    if (occByUid.has(r.uid.toLowerCase()) || isManuallyVerified(r)) p0Bound++;
   }
   const p0Orphans = p0Total - p0Bound;
 
   const requirementCount = requirements.length;
-  const coverage = requirementCount === 0 ? 1 : bound / requirementCount;
+  // Coverage = fraction of requirements with a declared verification path
+  // (a jest `@req` binding OR manual ui-acceptance). Backward-compatible when
+  // there are no ui-acceptance reqs (manuallyVerified === 0).
+  const coverage =
+    requirementCount === 0 ? 1 : (bound + manuallyVerified) / requirementCount;
   const clean = dangling.length === 0 && floorViolations.length === 0;
 
   // The auto-flip criterion: every enumerated P0 req bound, all P0 floors met,
@@ -366,6 +407,7 @@ export function auditTraceability(
     requirementCount,
     tagCount: tags.length,
     bound,
+    manuallyVerified,
     coverage,
     orphans,
     dangling,
@@ -388,6 +430,7 @@ function formatPercent(ratio: number): string {
 function renderText(report: TraceabilityReport, gate: GateMode = "soft"): void {
   console.log(
     `Requirements: ${report.requirementCount} | bound: ${report.bound} | ` +
+      `ui-acceptance: ${report.manuallyVerified} | ` +
       `coverage: ${formatPercent(report.coverage)} | tags: ${report.tagCount}`,
   );
   console.log(

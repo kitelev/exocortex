@@ -146,9 +146,28 @@ human-authored lifecycle only (Draft/Approved/Deprecated).
 ## Binding-class floor for P0
 
 A **P0** requirement may **not** be bound _solely_ to a `unit` test — at least one
-`_verifiedBy` must be `integration`, `e2e`, or `gui-bdd` (real-prod-exercising). Set
-`req__Requirement_bindingClass` for each binding; the P1 checker enforces the floor.
-Lower priorities (P1–P3) may be unit-only.
+`_verifiedBy` must be `integration`, `e2e`, `gui-bdd`, or `ui-acceptance`
+(real-prod-exercising). Set `req__Requirement_bindingClass` for each binding; the
+checker enforces the floor. Lower priorities (P1–P3) may be unit-only.
+
+### `ui-acceptance` — manual computer-control verification (no jest tag)
+
+Some behaviors are only meaningfully verifiable through the **live UI**. For these,
+set `req__Requirement_bindingClass: ui-acceptance`: the requirement is verified by
+recorded **computer-control evidence** (screenshot + date + observed result), **not**
+by a `@req:<uid>` jest tag. The checker **does not** expect a jest binding for a
+`ui-acceptance` requirement and **does not** flag it as an orphan — it counts it as
+_manually verified_ (covered), and `ui-acceptance` satisfies the P0 floor. Record the
+evidence in the requirement body in place of the `Revert-verified:` token, e.g.:
+
+```
+UI-verified (ui-acceptance): <date> — computer-control on live Obsidian; <action> →
+<observed result> (screenshot <ref>).
+```
+
+A `ui-acceptance` requirement may **also** carry a `@req` jest tag (mixed); then it
+is jest-bound as usual. (Enum UID `9709619c-e16d-4501-89ed-3c2abd6af87d`,
+`req__RequirementBindingClassUiAcceptance`, in `exoas-req`.)
 
 > **NO-Docker note.** `e2e` / `gui-bdd` revert-verify needs a Docker/native-amd64 run
 > (real Obsidian via Playwright). When authoring from a NO-Docker session, complete
