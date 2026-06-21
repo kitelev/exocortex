@@ -473,6 +473,22 @@ describe("resultCopy", () => {
     expect(auth.nextHint).toMatch(/Contents: Read/);
   });
 
+  // DEFECT-2 (al-ux-findings 2026-06-21) — a 404 routes to the `auth` cause
+  // (classifyBootstrapFailure), but GitHub also returns 404 for an empty repo /
+  // a repo with no default branch, not only a token-scope problem. The recovery
+  // copy must mention that case so a tester whose repo is empty/branchless is
+  // not sent only to the PAT page.
+  it("auth copy also covers an empty repo / missing default branch (DEFECT-2)", () => {
+    const auth = resultCopy({
+      kind: "failed",
+      operation: "add",
+      cause: "auth",
+      detail: "HTTP 404",
+    });
+    expect(auth.nextHint).toMatch(/empty/i);
+    expect(auth.nextHint).toMatch(/default branch/i);
+  });
+
   it("bootstrapped copy embeds the folder + sha", () => {
     const copy = resultCopy({
       kind: "bootstrapped",
