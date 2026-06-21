@@ -28,11 +28,7 @@ import {
   LocalOutboxStore,
   OUTBOX_STORE_FILENAME,
   QuarantineResolver,
-  SYNC_BRANCH,
-  SyncedQuarantineStore,
   extractAssetUid,
-  withRateLimitBackoff,
-  type QuarantinePort,
   type ResolveChoice,
   type SyncRepoSpec,
 } from "exocortex";
@@ -41,7 +37,6 @@ import {
   nodeLocalFilesPort,
   nodeSha1,
   nodeWatermarkFileIO,
-  parseGitHubRepoUrl,
   resolveToken,
   type ExosyncSyncDeps,
   type ExosyncSyncOptions,
@@ -106,20 +101,6 @@ function buildResolver(
   );
   const outbox = new LocalOutboxStore({ io: nodeWatermarkFileIO(outboxPath) });
 
-  let quarantine: QuarantinePort | undefined;
-  const quarantineUrl = opts.quarantineRepo?.trim() ?? "";
-  if (quarantineUrl.length > 0) {
-    const { owner, repo } = parseGitHubRepoUrl(quarantineUrl);
-    quarantine = new SyncedQuarantineStore({
-      transport: withRateLimitBackoff(transport),
-      sha1: nodeSha1,
-      owner,
-      repo,
-      branch: SYNC_BRANCH,
-      redact: (m) => pushService.redact(m),
-    });
-  }
-
   const resolver = new QuarantineResolver({
     transport,
     watermarkStore: new FileWatermarkStore(nodeWatermarkFileIO(watermarkPath)),
@@ -130,7 +111,6 @@ function buildResolver(
     redact: (m) => pushService.redact(m),
     conflictCache,
     outbox,
-    ...(quarantine !== undefined ? { quarantine } : {}),
   });
   return { resolver, specs, warnings };
 }
@@ -363,10 +343,6 @@ function withQuarantineOptions(cmd: Command): Command {
       "--config-dir <name>",
       "Obsidian config dir name (watermark location)",
       ".obsidian",
-    )
-    .option(
-      "--quarantine-repo <url>",
-      "Quarantine repo URL (optional — device-local pins are the default source)",
     )
     .option(
       "--token <pat>",

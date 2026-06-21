@@ -466,12 +466,12 @@ export interface QuarantineEntry {
 }
 
 /**
- * Quarantine persistence port (D17). The durable SYNCED store is
- * {@link SyncedQuarantineStore} (A3); {@link InMemoryQuarantineStore} remains
- * for tests/compositions without a quarantine repo. Skipping the port loses
- * no data: the conflicting file stays untouched on disk, the remote version
- * stays in git history, and the watermark pin re-derives the conflict on
- * every subsequent sync.
+ * Quarantine persistence port (D17). The production durable store is the
+ * device-local `LocalConflictCacheStore` (offline-resolution foundation — it
+ * captures the 3 versions of every conflict on disk); {@link InMemoryQuarantineStore}
+ * remains for tests/compositions without one. Skipping the port loses no data:
+ * the conflicting file stays untouched on disk, the remote version stays in git
+ * history, and the watermark pin re-derives the conflict on every subsequent sync.
  */
 export interface QuarantinePort {
   quarantine(entry: QuarantineEntry): Promise<void>;

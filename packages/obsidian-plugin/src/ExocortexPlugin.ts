@@ -3065,7 +3065,6 @@ export default class ExocortexPlugin extends Plugin {
           app: this.app,
           localDataStore,
           asUidByRepoKey,
-          quarantineRepoUrl: this.settings.exosyncQuarantineRepoUrl,
         }),
       isSwitchInProgress: () => localDataStore.isSwitchInProgress(),
       isResolverBusy: () => resolverHolder.commands?.isBusy() ?? false,
@@ -3119,7 +3118,6 @@ export default class ExocortexPlugin extends Plugin {
       buildResolver: () =>
         buildQuarantineResolver({
           app: this.app,
-          quarantineRepoUrl: this.settings.exosyncQuarantineRepoUrl,
         }),
       isSwitchInProgress: () => localDataStore.isSwitchInProgress(),
       isSyncBusy: () => syncCommands.isBusy(),

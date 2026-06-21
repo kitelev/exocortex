@@ -9,7 +9,7 @@
  * platform-specific pieces are the injected ports below
  * (`nodeLocalFilesPort`, `nodeWatermarkFileIO`, `nodeMaterializationCheck`,
  * `nodeSha1`). The merge layer (`GatedStructuredMerger` + `StructuredMerger`),
- * quarantine sink (`SyncedQuarantineStore`), watermark store
+ * quarantine sink (`LocalConflictCacheStore`), watermark store
  * (`FileWatermarkStore`) and sync-unit collection (`collectVaultSpecs`, shared
  * with `exosync-parity`) are reused verbatim from the core package.
  *
@@ -40,7 +40,6 @@ import * as path from "node:path";
 import yaml from "js-yaml";
 import {
   CONFLICT_CACHE_STORE_FILENAME,
-  CompositeQuarantineStore,
   FileLocalManifestStore,
   FileMountBaseStore,
   FileWatermarkStore,
@@ -51,16 +50,13 @@ import {
   MOUNT_BASE_STORE_FILENAME,
   OUTBOX_STORE_FILENAME,
   StructuredMerger,
-  SyncedQuarantineStore,
   SyncEngine,
-  SYNC_BRANCH,
   WATERMARK_STORE_FILENAME,
   aggregateTimings,
   formatRepoTimings,
   formatTimingsLine,
   orderChildrenFirst,
   totalMs,
-  withRateLimitBackoff,
   type LocalFilesPort,
   type MaterializationCheckPort,
   type QuarantinePort,
@@ -84,13 +80,6 @@ export interface ExosyncSyncOptions {
   json?: boolean;
   token?: string;
   tokenFromGh?: boolean;
-  /**
-   * Quarantine repo URL (`https://github.com/<owner>/<repo>`). Optional for
-   * AssetSpaces (conflicts pin + re-derive). REQUIRED to sync FileSpaces
-   * (their remote-wins policy destroys the losing local bytes, whose only
-   * surviving copy is the quarantine entry).
-   */
-  quarantineRepo?: string;
   apiBase?: string;
 }
 
@@ -486,24 +475,9 @@ export async function runExosyncSync(
   );
   const outbox = new LocalOutboxStore({ io: nodeWatermarkFileIO(outboxPath) });
 
-  let quarantine: QuarantinePort = conflictCache;
-  const quarantineUrl = opts.quarantineRepo?.trim() ?? "";
-  const syncedQuarantineConfigured = quarantineUrl.length > 0;
-  if (syncedQuarantineConfigured) {
-    const { owner, repo } = parseGitHubRepoUrl(quarantineUrl);
-    const synced = new SyncedQuarantineStore({
-      // The engine wraps ITS transport internally; the quarantine store is
-      // the highest-volume caller, so it needs its own backoff wrap.
-      transport: withRateLimitBackoff(transport),
-      sha1: nodeSha1,
-      owner,
-      repo,
-      branch: SYNC_BRANCH,
-      redact: (m) => pushService.redact(m),
-    });
-    // Tee: device-local cache FIRST (durability-critical), synced repo second.
-    quarantine = new CompositeQuarantineStore([conflictCache, synced]);
-  }
+  // The device-local conflict cache is the SOLE quarantine sink (the synced
+  // git-repo quarantine store was retired — offline-resolution program).
+  const quarantine: QuarantinePort = conflictCache;
 
   const engine = new SyncEngine({
     transport,
@@ -531,7 +505,7 @@ export async function runExosyncSync(
   });
 
   out(
-    `ExoSync ${direction}: ${specs.length} repo(s), vault ${vaultPath}${syncedQuarantineConfigured ? " (synced quarantine configured)" : ""}`,
+    `ExoSync ${direction}: ${specs.length} repo(s), vault ${vaultPath}`,
   );
   // Children before parents (deeper mount paths first) — D12 ordering.
   const ordered = orderChildrenFirst(specs);
@@ -570,10 +544,6 @@ function withSyncOptions(cmd: Command): Command {
       "--config-dir <name>",
       "Obsidian config dir name (watermark location)",
       ".obsidian",
-    )
-    .option(
-      "--quarantine-repo <url>",
-      "Quarantine repo URL (https://github.com/<owner>/<repo>) — required for FileSpaces",
     )
     .option(
       "--token <pat>",
