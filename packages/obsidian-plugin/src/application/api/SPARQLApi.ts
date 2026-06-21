@@ -140,12 +140,22 @@ export class SPARQLApi {
    * const api = new SPARQLApi(plugin);
    * ```
    */
-  constructor(plugin: ExocortexPlugin) {
+  constructor(
+    plugin: ExocortexPlugin,
+    /**
+     * Periodic full-walk progress sink (#al-activitylog-progress) — forwarded
+     * to {@link SPARQLQueryService} → {@link VaultRDFIndexer} so cold-start
+     * indexing AND profile-apply reindex visibly advance in the activity log.
+     * The plugin wires this to `activityLog.record(indexProgressToActivity(...))`.
+     */
+    onIndexProgress?: (processed: number, total: number) => void,
+  ) {
     this.queryService = new SPARQLQueryService(
       plugin.app,
       undefined,
       undefined,
       plugin.settings?.excludedFolders ?? [],
+      onIndexProgress,
     );
   }
 

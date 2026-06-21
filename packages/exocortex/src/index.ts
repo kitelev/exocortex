@@ -592,6 +592,7 @@ export {
   type MountFile,
   type MountResult,
   type MountAssetSpaceParams,
+  type MountProgressPhase,
   type GitmodulesAppendResult,
 } from "./services/assetspace/AssetSpaceMount";
 

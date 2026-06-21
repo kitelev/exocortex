@@ -1,5 +1,5 @@
 import type { App } from "obsidian";
-import type { ApplyPlan, IConfirmGate } from "exocortex";
+import type { ApplyPlan, IConfirmGate, MountProgressPhase } from "exocortex";
 import {
   derivePath,
   deriveLegacyFlatPath,
@@ -181,18 +181,33 @@ export interface SwitchJournalEntry {
  *  - NOT routed through `notify` → activity-log-only, so a long apply never
  *    spams toasts (only the sparse final summary toasts).
  */
-export interface ApplyProgressEvent {
-  /** Which per-AssetSpace operation is about to start. */
-  op: "pull" | "mount" | "unmount";
-  /** Target AssetSpace UID. */
-  as: string;
-  /** Human label of the AssetSpace (namespace / best-effort; may be the UID). */
-  label: string;
-  /** 1-based position within the current op batch. */
-  index: number;
-  /** Total count in the current op batch. */
-  total: number;
-}
+export type ApplyProgressEvent =
+  | {
+      /** Which per-AssetSpace operation is about to start / progressing. */
+      op: "pull" | "mount" | "unmount";
+      /**
+       * Optional sub-phase WITHIN the per-AS op (#al-activitylog-progress).
+       * Absent = the 4b2bc60f baseline "starting op N of M" marker (emitted
+       * BEFORE the op). Present = a finer within-AS step surfaced by the mount
+       * core (`fetch` tarball → `extract` → `materialize` files), so a slow
+       * mount shows WHICH phase it is in, not just that it started.
+       */
+      step?: MountProgressPhase;
+      /** Target AssetSpace UID. */
+      as: string;
+      /** Human label of the AssetSpace (namespace / best-effort; may be the UID). */
+      label: string;
+      /** 1-based position within the current op batch. */
+      index: number;
+      /** Total count in the current op batch. */
+      total: number;
+    }
+  // Apply-tail RDF reindex (#al-activitylog-progress) — emitted BEFORE the
+  // `rdfIndexer.refresh()` that follows mount/unmount, so the previously-silent
+  // (and longest) phase of an apply is announced. The live N-of-M file counter
+  // DURING this reindex comes from the indexer's own `onProgress` feed
+  // (`convertVault`), not from this marker.
+  | { op: "reindex" };
 
 export interface ProfileApplyManagerOptions {
   app: App;
@@ -1425,6 +1440,9 @@ export class ProfileApplyManager {
         activeProfileUid: targetProfileUid,
         _switchInProgress: false,
       });
+      // Announce the apply-tail reindex (#al-activitylog-progress) — see the
+      // REST path; mirrored here so the git fallback has the same visibility.
+      this.emitProgress({ op: "reindex" });
       await this.rdfIndexer.refresh();
 
       const elapsedMs = this.now().getTime() - startedAt;
@@ -1780,7 +1798,23 @@ export class ProfileApplyManager {
           total: toMaterialize.length,
         });
         try {
-          await restMount.mount(target.gitUrl, target.submodulePath, target.ref);
+          // Finer within-AS progress (#al-activitylog-progress) — the mount core
+          // reports fetch → extract → materialize so a slow mount shows its
+          // current phase beyond the single "Mounting X (N of M)" marker above.
+          await restMount.mount(
+            target.gitUrl,
+            target.submodulePath,
+            target.ref,
+            (step) =>
+              this.emitProgress({
+                op: "mount",
+                step,
+                as: target.asUid,
+                label: target.label,
+                index: i + 1,
+                total: toMaterialize.length,
+              }),
+          );
         } catch (mountErr) {
           // Roll back EVERY AssetSpace mounted this run (incl. the partial
           // failed one — `unmount` is idempotent: it strips the `.gitmodules`
@@ -1842,6 +1876,10 @@ export class ProfileApplyManager {
         activeProfileUid: targetProfileUid,
         _switchInProgress: false,
       });
+      // Announce the apply-tail reindex (#al-activitylog-progress) — previously
+      // silent and the longest phase. The live N-of-M file counter during this
+      // refresh comes from the indexer's own convertVault progress feed.
+      this.emitProgress({ op: "reindex" });
       await this.rdfIndexer.refresh();
 
       const elapsedMs = this.now().getTime() - startedAt;

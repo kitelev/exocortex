@@ -177,6 +177,14 @@ function buildMountFiles(entries: TarballEntry[], wrapper: string): MountFile[] 
   return files;
 }
 
+/**
+ * Sub-phase of a single AssetSpace mount (#al-activitylog-progress). A mount
+ * proceeds `fetch` (download tarball — the long network step) → `extract`
+ * (gunzip + parse entries) → `materialize` (write files to disk). Surfaced so a
+ * slow mount shows WHICH phase it is in, finer than a single "Mounting X" marker.
+ */
+export type MountProgressPhase = "fetch" | "extract" | "materialize";
+
 /** Parameters for {@link mountAssetSpaceFiles}. */
 export interface MountAssetSpaceParams {
   http: HttpClient;
@@ -186,6 +194,13 @@ export interface MountAssetSpaceParams {
   ref: string;
   /** Mount target in the port's path convention (vault-relative or absolute). */
   targetPath: string;
+  /**
+   * Optional sub-phase progress sink (#al-activitylog-progress) — invoked
+   * BEFORE each phase (`fetch` → `extract` → `materialize`) so a long mount
+   * shows live progress. Best-effort: a throwing observer is swallowed so it
+   * can never break a mount. Omitted by the CLI bootstrap path (zero cost).
+   */
+  onProgress?: (phase: MountProgressPhase) => void;
 }
 
 /**
@@ -201,7 +216,20 @@ export interface MountAssetSpaceParams {
  */
 export async function mountAssetSpaceFiles(params: MountAssetSpaceParams): Promise<MountResult> {
   const { http, fs, owner, repo, ref, targetPath } = params;
+  // Best-effort sub-phase progress (#al-activitylog-progress) — a throwing
+  // observer must never break the mount.
+  const emit = (phase: MountProgressPhase): void => {
+    if (params.onProgress === undefined) return;
+    try {
+      params.onProgress(phase);
+    } catch {
+      /* swallow — progress is best-effort, never blocks the mount */
+    }
+  };
+
+  emit("fetch");
   const blob = await http.fetchTarball(owner, repo, ref);
+  emit("extract");
   const entries = await parseTarballGzip(blob);
   if (entries.length === 0) {
     throw new Error(`tarball empty for ${owner}/${repo}@${ref}`);
@@ -209,6 +237,7 @@ export async function mountAssetSpaceFiles(params: MountAssetSpaceParams): Promi
   const wrapper = discoverWrapperDir(entries);
   const sha = extractShaFromWrapper(wrapper);
   const files = buildMountFiles(entries, wrapper);
+  emit("materialize");
   const fileCount = await fs.materialize(targetPath, files);
   return { sha, fileCount };
 }

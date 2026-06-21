@@ -90,6 +90,16 @@ export class VaultRDFIndexer {
    */
   private lastWalkStats: VaultWalkStats | null = null;
 
+  /**
+   * Periodic per-file progress sink for FULL walks (#al-activitylog-progress).
+   * Forwarded into `convertVaultWithValidation({ onProgress })` from both
+   * `initialize()` and `refresh()` so a long cold-start index AND a
+   * profile-apply reindex both visibly advance in the activity log. Optional —
+   * omitted in unit tests / non-plugin contexts. Per-file incremental updates
+   * (`updateFile`) deliberately do NOT emit (single-file, instant).
+   */
+  private readonly onIndexProgress?: (processed: number, total: number) => void;
+
   constructor(
     private app: App,
     logger?: ILogger,
@@ -97,7 +107,9 @@ export class VaultRDFIndexer {
     excludedFolders: string[] = [],
     /** Injectable clock for deterministic duration tests. */
     private readonly now: () => number = () => Date.now(),
+    onIndexProgress?: (processed: number, total: number) => void,
   ) {
+    this.onIndexProgress = onIndexProgress;
     this.tripleStore = new InMemoryTripleStore();
     this.vaultAdapter = new ObsidianVaultAdapter(
       app.vault,
@@ -140,6 +152,7 @@ export class VaultRDFIndexer {
       const result = await this.errorHandler.executeWithRetry(
         async () => this.converter.convertVaultWithValidation({
           excludedFolders: this.excludedFolders,
+          onProgress: this.onIndexProgress,
         }),
         { context: "VaultRDFIndexer.initialize", operation: "convertVault" }
       );
@@ -409,6 +422,7 @@ export class VaultRDFIndexer {
           await this.tripleStore.clear();
           const result = await this.converter.convertVaultWithValidation({
             excludedFolders: this.excludedFolders,
+            onProgress: this.onIndexProgress,
           });
           this.applyFileSpaceDiscovery(result.fileSpaces);
           await this.tripleStore.addAll(result.triples);

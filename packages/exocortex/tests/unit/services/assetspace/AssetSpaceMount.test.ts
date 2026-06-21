@@ -215,4 +215,80 @@ describe("mountAssetSpaceFiles", () => {
     // bad entry anywhere means zero files hit the port (all-or-nothing).
     expect(fs.files.size).toBe(0);
   });
+
+  // ── #al-activitylog-progress: finer within-AS sub-phase progress ──
+
+  it("emits sub-phase progress in order: fetch → extract → materialize", async () => {
+    const fs = inMemoryFs();
+    const blob = makeTarball("kitelev-exoas-ems-abc1234", [
+      { name: "README.md", data: enc("# EMS\n") },
+    ]);
+    const phases: string[] = [];
+    await mountAssetSpaceFiles({
+      http: fakeHttp(blob),
+      fs,
+      owner: "kitelev",
+      repo: "exoas-ems",
+      ref: "main",
+      targetPath: "assetspaces/kitelev/exoas-ems",
+      onProgress: (phase) => phases.push(phase),
+    });
+    expect(phases).toEqual(["fetch", "extract", "materialize"]);
+  });
+
+  it("emits 'fetch' BEFORE the network call (live, not post-fact)", async () => {
+    const fs = inMemoryFs();
+    const order: string[] = [];
+    const http: AssetSpaceHttpClient = {
+      async fetchTarball() {
+        order.push("network");
+        return makeTarball("o-r-abc1234", [{ name: "a.md", data: enc("a") }]);
+      },
+    };
+    await mountAssetSpaceFiles({
+      http,
+      fs,
+      owner: "o",
+      repo: "r",
+      ref: "main",
+      targetPath: "assetspaces/x",
+      onProgress: (phase) => order.push(`progress:${phase}`),
+    });
+    // The fetch announcement precedes the actual network fetch.
+    expect(order[0]).toBe("progress:fetch");
+    expect(order.indexOf("progress:fetch")).toBeLessThan(order.indexOf("network"));
+  });
+
+  it("a throwing onProgress observer never breaks the mount", async () => {
+    const fs = inMemoryFs();
+    const blob = makeTarball("o-r-abc1234", [{ name: "a.md", data: enc("a") }]);
+    const result = await mountAssetSpaceFiles({
+      http: fakeHttp(blob),
+      fs,
+      owner: "o",
+      repo: "r",
+      ref: "main",
+      targetPath: "assetspaces/x",
+      onProgress: () => {
+        throw new Error("hostile observer");
+      },
+    });
+    expect(result.fileCount).toBe(1);
+    expect(fs.files.get("assetspaces/x/a.md")).toBeDefined();
+  });
+
+  it("omitting onProgress is a zero-cost no-op (CLI bootstrap path)", async () => {
+    const fs = inMemoryFs();
+    const blob = makeTarball("o-r-abc1234", [{ name: "a.md", data: enc("a") }]);
+    await expect(
+      mountAssetSpaceFiles({
+        http: fakeHttp(blob),
+        fs,
+        owner: "o",
+        repo: "r",
+        ref: "main",
+        targetPath: "assetspaces/x",
+      }),
+    ).resolves.toMatchObject({ fileCount: 1 });
+  });
 });

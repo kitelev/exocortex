@@ -7,6 +7,7 @@ import { describe, it, expect } from "@jest/globals";
 import {
   journalEntryToActivity,
   progressToActivity,
+  indexProgressToActivity,
 } from "../../../../src/adapters/logging/activityFanIn";
 import type {
   ApplyProgressEvent,
@@ -112,8 +113,10 @@ describe("journalEntryToActivity", () => {
   });
 });
 
+type PerAsProgress = Extract<ApplyProgressEvent, { as: string }>;
+
 describe("progressToActivity (live materialize progress feed)", () => {
-  const evt = (over: Partial<ApplyProgressEvent>): ApplyProgressEvent => ({
+  const evt = (over: Partial<PerAsProgress>): ApplyProgressEvent => ({
     op: "mount",
     as: "1b20a8f0-d745-4e93-91db-4531b3df120e",
     label: "ems",
@@ -154,5 +157,50 @@ describe("progressToActivity (live materialize progress feed)", () => {
     expect(
       progressToActivity(evt({ label: "1b20a8f0", index: 1, total: 1 })).message,
     ).toBe("Mounting 1b20a8f0 (1 of 1)");
+  });
+
+  // ── #al-activitylog-progress: finer within-AS sub-steps + reindex marker ──
+
+  it("within-AS sub-step (step:'fetch') → 'Fetching …'", () => {
+    expect(progressToActivity(evt({ op: "mount", step: "fetch" })).message).toBe(
+      "Fetching ems 1b20a8f0 (1 of 3)",
+    );
+  });
+
+  it("within-AS sub-step (step:'extract') → 'Extracting …'", () => {
+    expect(
+      progressToActivity(evt({ op: "mount", step: "extract" })).message,
+    ).toBe("Extracting ems 1b20a8f0 (1 of 3)");
+  });
+
+  it("within-AS sub-step (step:'materialize') → 'Installing …'", () => {
+    expect(
+      progressToActivity(evt({ op: "mount", step: "materialize", index: 2, total: 5 }))
+        .message,
+    ).toBe("Installing ems 1b20a8f0 (2 of 5)");
+  });
+
+  it("reindex marker → 'Reindexing vault after apply' (category 'progress', info)", () => {
+    expect(progressToActivity({ op: "reindex" })).toEqual({
+      category: "progress",
+      level: "info",
+      message: "Reindexing vault after apply",
+    });
+  });
+});
+
+describe("indexProgressToActivity (periodic full-walk progress)", () => {
+  it("maps (processed, total) → 'Indexing vault: N of M assets', category 'progress'", () => {
+    expect(indexProgressToActivity(400, 5123)).toEqual({
+      category: "progress",
+      level: "info",
+      message: "Indexing vault: 400 of 5123 assets",
+    });
+  });
+
+  it("is always category 'progress', info level", () => {
+    const r = indexProgressToActivity(1, 1);
+    expect(r.category).toBe("progress");
+    expect(r.level).toBe("info");
   });
 });

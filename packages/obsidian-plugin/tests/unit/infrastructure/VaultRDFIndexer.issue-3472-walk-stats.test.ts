@@ -166,4 +166,57 @@ describe("VaultRDFIndexer walk stats (Issue #3472)", () => {
     expect(threw).toBe(true);
     expect(indexer.getLastWalkStats()).toBeNull();
   });
+
+  // ── #al-activitylog-progress: onIndexProgress threading into convertVault ──
+
+  it("forwards the onIndexProgress sink into convertVaultWithValidation (initialize)", async () => {
+    now.mockReturnValueOnce(1000).mockReturnValueOnce(2000);
+    const onIndexProgress = jest.fn();
+    const indexer = new VaultRDFIndexer(
+      mockApp,
+      undefined,
+      undefined,
+      [],
+      now,
+      onIndexProgress,
+    );
+
+    await indexer.initialize();
+
+    expect(mockConverter.convertVaultWithValidation).toHaveBeenCalledWith(
+      expect.objectContaining({ onProgress: onIndexProgress }),
+    );
+  });
+
+  it("forwards the onIndexProgress sink into convertVaultWithValidation (refresh)", async () => {
+    now.mockReturnValue(1000);
+    const onIndexProgress = jest.fn();
+    const indexer = new VaultRDFIndexer(
+      mockApp,
+      undefined,
+      undefined,
+      [],
+      now,
+      onIndexProgress,
+    );
+    await indexer.initialize();
+    mockConverter.convertVaultWithValidation.mockClear();
+
+    await indexer.refresh();
+
+    expect(mockConverter.convertVaultWithValidation).toHaveBeenCalledWith(
+      expect.objectContaining({ onProgress: onIndexProgress }),
+    );
+  });
+
+  it("passes onProgress: undefined when no sink is wired (default)", async () => {
+    now.mockReturnValueOnce(1000).mockReturnValueOnce(2000);
+    const indexer = new VaultRDFIndexer(mockApp, undefined, undefined, [], now);
+
+    await indexer.initialize();
+
+    expect(mockConverter.convertVaultWithValidation).toHaveBeenCalledWith(
+      expect.objectContaining({ onProgress: undefined }),
+    );
+  });
 });
