@@ -1636,10 +1636,40 @@ export class SyncEngine {
     for (const entry of pending) {
       const currentRemoteSha =
         remoteShaByPath.get(entry.path) ?? OUTBOX_REMOTE_ABSENT;
-      if (currentRemoteSha !== entry.baseRemoteSha) {
-        // ⛤ TOCTOU: the remote moved since the offline resolution. Never
-        // overwrite — drop the queued push; the still-pinned path re-derives the
-        // conflict in this sync's detect (the user's choice is on disk).
+
+      // ── Cross-path consolidation (#3729) ────────────────────────────────
+      // A resolved conflict whose asset's remote copy lives at a DIFFERENT
+      // path than the conflict path (a co-located rename of the SAME asset:
+      // local `tbank-efforts/X.md` ↔ remote `og/X.md`). The conflict path is
+      // ABSENT on the remote, yet some SIBLING remote path still holds EXACTLY
+      // the blob the resolution was based on (`baseRemoteSha`) — that sibling
+      // IS the stale remote copy. Without this, the per-path TOCTOU below reads
+      // the conflict path (absent) ≠ baseRemoteSha and drops the push FOREVER,
+      // while the sibling re-introduces the conflict on every sync ("keep local
+      // never sticks"). Resolution: push the chosen content to the conflict
+      // path AND delete the stale sibling(s) in the SAME commit, converging the
+      // asset to ONE remote path. Zero-loss: the deleted blob survives in git
+      // history (forward commit, never a rewrite) and in the device-local
+      // conflict cache. A genuine TOCTOU (remote truly moved — the based-on
+      // blob is gone from the tree entirely) yields NO sibling match and still
+      // drops below. The match is CONTENT-ADDRESSED (a sibling qualifies iff it
+      // STILL holds exactly the based-on blob), so deleting it discards exactly
+      // the remote version the user already saw and superseded — never an
+      // independent edit. (Assets carry a unique `exo__Asset_uid`, so a
+      // byte-identical-but-distinct asset cannot collide on the blob-SHA.)
+      const stalePaths =
+        currentRemoteSha === OUTBOX_REMOTE_ABSENT &&
+        entry.baseRemoteSha !== OUTBOX_REMOTE_ABSENT
+          ? [...remoteShaByPath]
+              .filter(([p, sha]) => p !== entry.path && sha === entry.baseRemoteSha)
+              .map(([p]) => p)
+          : [];
+
+      if (currentRemoteSha !== entry.baseRemoteSha && stalePaths.length === 0) {
+        // ⛤ TOCTOU: the remote moved since the offline resolution AND no sibling
+        // path still holds the based-on blob. Never overwrite — drop the queued
+        // push; the still-pinned path re-derives the conflict in this sync's
+        // detect (the user's choice is on disk).
         await outbox.remove(entry.repoKey, entry.path);
         reconflicted++;
         warnings.push(
@@ -1649,7 +1679,8 @@ export class SyncEngine {
         );
         continue;
       }
-      // Remote unchanged at our guard-read → push the chosen content. The
+      // Push the chosen content (same-path: remote unchanged at our guard-read;
+      // cross-path: the SAME commit deletes the stale sibling copies). The
       // `expectedHeadSha` CAS closes the window between THIS guard-read and
       // restCreateCommit's own ref-read: if the head moved in between, the push
       // aborts (no overwrite) and we leave the entry to retry next sync — which
@@ -1661,7 +1692,11 @@ export class SyncEngine {
           repo: spec.repo,
           branch: spec.branch,
           files: new Map([[entry.path, entry.chosenContent]]),
-          message: `chore(exosync): push resolved conflict for ${entry.path}`,
+          ...(stalePaths.length > 0 ? { deletions: stalePaths } : {}),
+          message:
+            stalePaths.length > 0
+              ? `chore(exosync): resolve cross-path conflict for ${entry.path} (consolidate ${stalePaths.length} stale remote path(s))`
+              : `chore(exosync): push resolved conflict for ${entry.path}`,
           expectedHeadSha: head,
           ...(this.deps.baseURL !== undefined ? { baseURL: this.deps.baseURL } : {}),
           ...(this.deps.redact !== undefined ? { redact: this.deps.redact } : {}),
@@ -1672,10 +1707,25 @@ export class SyncEngine {
         );
         continue; // leave the entry; never overwrite on a failed/raced/moved push
       }
-      await this.snapOutboxWatermark(spec, entry.path, entry.chosenContent);
+      await this.snapOutboxWatermark(
+        spec,
+        entry.path,
+        entry.chosenContent,
+        stalePaths,
+      );
       await this.deps.quarantine?.markResolved?.(entry.repoKey, entry.path);
+      // Stale sibling copies were deleted on the remote — clear their cross-
+      // device unresolved-count too (best-effort; most have no cache entry).
+      for (const sp of stalePaths) {
+        await this.deps.quarantine?.markResolved?.(entry.repoKey, sp);
+      }
       await outbox.remove(entry.repoKey, entry.path);
       pushed++;
+      if (stalePaths.length > 0) {
+        warnings.push(
+          `consolidated cross-path conflict for ${entry.path} — removed ${stalePaths.length} stale remote copy/copies (recoverable in git history)`,
+        );
+      }
     }
     if (pushed > 0) {
       warnings.push(`pushed ${pushed} resolved conflict(s)`);
@@ -1727,18 +1777,27 @@ export class SyncEngine {
     spec: SyncRepoSpec,
     path: string,
     chosen: string,
+    stalePaths: readonly string[] = [],
   ): Promise<void> {
     const record = await this.deps.watermarkStore.get(spec.repoKey);
     if (record === null) return;
-    const pinnedPaths = (record.pinnedPaths ?? []).filter((p) => p !== path);
+    // Unpin the resolved path AND any stale sibling paths consolidated away
+    // (#3729) — their remote copies were deleted in the resolution commit, so
+    // they must not keep re-deriving the conflict.
+    const removeFromPins = new Set<string>([path, ...stalePaths]);
+    const pinnedPaths = (record.pinnedPaths ?? []).filter(
+      (p) => !removeFromPins.has(p),
+    );
     const blobSha = await gitBlobSha(chosen, this.sha1);
     const uid = extractAssetUid(chosen);
     const entry = { path, blobSha, ...(uid !== undefined ? { uid } : {}) };
-    const idx = record.files.findIndex((f) => f.path === path);
+    // Drop base entries for the consolidated-away stale paths before snapping
+    // the surviving path — their remote blobs no longer exist.
+    const staleSet = new Set(stalePaths);
+    const base = record.files.filter((f) => !staleSet.has(f.path));
+    const idx = base.findIndex((f) => f.path === path);
     const files =
-      idx >= 0
-        ? record.files.map((f, i) => (i === idx ? entry : f))
-        : [...record.files, entry];
+      idx >= 0 ? base.map((f, i) => (i === idx ? entry : f)) : [...base, entry];
     await this.deps.watermarkStore.set(spec.repoKey, {
       ...record,
       files,
