@@ -71,7 +71,11 @@ export function tallyMutants(report) {
     noCoverage: 0,
     other: 0,
   };
-  const files = report.files ?? {};
+  // A report that parses as JSON `null`, a string, or an array has no mutants —
+  // route it through the zero-mutants fail-closed path (never crash with a raw
+  // stack trace, never silently pass).
+  const files =
+    report && typeof report === "object" ? (report.files ?? {}) : {};
   for (const fileReport of Object.values(files)) {
     for (const mutant of fileReport.mutants ?? []) {
       switch (mutant.status) {
@@ -111,15 +115,23 @@ export function mutationScore(counts) {
   return ((counts.killed + counts.timeout) / counts.total) * 100;
 }
 
+/** Reject a non-finite budget so a typo fails CLOSED, never `score < NaN` (false → green). */
+function asFiniteBudget(raw, source) {
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    throw new Error(
+      `budget from ${source} is not a number: ${JSON.stringify(raw)}`,
+    );
+  }
+  return { value, source };
+}
+
 function resolveBudget(args) {
   if (process.env.MUTATION_BUDGET !== undefined) {
-    return {
-      value: Number(process.env.MUTATION_BUDGET),
-      source: "env MUTATION_BUDGET",
-    };
+    return asFiniteBudget(process.env.MUTATION_BUDGET, "env MUTATION_BUDGET");
   }
   if (args.budget !== undefined && args.budget !== true) {
-    return { value: Number(args.budget), source: "--budget" };
+    return asFiniteBudget(args.budget, "--budget");
   }
   const pkg = process.env.MUTATION_PACKAGE ?? args.package;
   if (!pkg || pkg === true) {
@@ -137,7 +149,7 @@ function resolveBudget(args) {
       `budget key "${pkg}" not found in ${budgetFile} (keys: ${Object.keys(budgets).join(", ")})`,
     );
   }
-  return { value: Number(budgets[pkg]), source: `${budgetFile}#${pkg}` };
+  return asFiniteBudget(budgets[pkg], `${budgetFile}#${pkg}`);
 }
 
 function main() {

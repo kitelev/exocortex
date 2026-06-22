@@ -125,4 +125,27 @@ describe("check-mutation-score.mjs — mutation-score break-budget gate (P4, @re
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("zero score-relevant mutants");
   });
+
+  it("fails closed (exit 1) when the report is a non-object (JSON null)", () => {
+    // JSON.parse("null") → null; must route through the zero-mutants
+    // fail-closed path, never crash with a raw stack trace, never pass.
+    const p = path.join(workDir, "null.json");
+    writeFileSync(p, "null");
+    const r = runGate(p, 50);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("zero score-relevant mutants");
+  });
+
+  it("fails closed (exit 1) when the budget is not a number (no silent score < NaN)", () => {
+    // A typo'd budget must fail CLOSED — `score < NaN` is always false, which
+    // would otherwise pass a real below-budget run silently.
+    const report = writeReport("any.json", { Killed: 1, Survived: 9 });
+    const r = spawnSync("node", [scriptPath, "--report", report], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: { ...process.env, MUTATION_BUDGET: "not-a-number" },
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("is not a number");
+  });
 });
