@@ -380,3 +380,177 @@ describe("ExoSync cross-path conflict consolidation (#3729)", () => {
     expect(await s.resolver.listOpenConflicts([s.spec])).toHaveLength(0);
   });
 });
+
+// ── Batch head-staleness: N>1 keep-local stragglers converge in ONE sync ─────
+// The exact production sequel to #3729: after the cross-path consolidation fix
+// shipped (v16.149.3), Andrey's `exoas-tbank` keep-local of SEVEN cross-path
+// stragglers in one sync healed only ONE — the flush pushed each queued
+// resolution in its OWN restCreateCommit against a head SHA captured ONCE before
+// the loop, so the FIRST push moved heads/main and the 2nd..Nth pushes failed
+// the expectedHeadSha CAS ("head heads/main moved since the commit"), were
+// deferred and RE-quarantined in the SAME sync ("pushed 1 resolved conflict(s)"
+// → group RE-DETECTED). The fix commits every pushable resolution + the union
+// of stale deletions in ONE atomic tree commit (one head move), so all queued
+// keep-local resolutions land in one sync.
+const M_SHARED = "shared/anchor.md";
+const M_SHARED_BODY = mdAsset("anchor", "anchor, unchanged");
+// Three distinct same-uid cross-path stragglers (flat local ↔ co-located remote),
+// each with its OWN uid/body so blob SHAs are distinct (no cross-contamination of
+// the content-addressed stale-sibling match).
+const STRAGGLERS = [
+  {
+    uid: "s1",
+    flat: "tbank-efforts/s1.md",
+    colocated: "og/s1.md",
+    local: mdAsset("s1", "LOCAL edit s1, flat isDefinedBy"),
+    remote: mdAsset("s1", "REMOTE edit s1, co-located isDefinedBy"),
+  },
+  {
+    uid: "s2",
+    flat: "tbank-efforts/s2.md",
+    colocated: "toos/s2.md",
+    local: mdAsset("s2", "LOCAL edit s2, flat isDefinedBy"),
+    remote: mdAsset("s2", "REMOTE edit s2, co-located isDefinedBy"),
+  },
+  {
+    uid: "s3",
+    flat: "tbank-pns/2026-06-17 Note.md",
+    colocated: "tbank-pn/2026-06-17 Note.md",
+    local: mdAsset("s3", "LOCAL edit s3, flat isDefinedBy"),
+    remote: mdAsset("s3", "REMOTE edit s3, co-located isDefinedBy"),
+  },
+] as const;
+
+function setupMultiXPath() {
+  const gh = new FakeGitHubRepo({ [M_SHARED]: M_SHARED_BODY });
+  const cache = new LocalConflictCacheStore({ io: memIO() });
+  const outbox = new LocalOutboxStore({ io: memIO() });
+  const watermarks = new FakeWatermarkStore();
+  const disk = new FakeLocalFiles({ [M_SHARED]: M_SHARED_BODY });
+  const engine = new SyncEngine({
+    transport: gh.transport(),
+    watermarkStore: watermarks,
+    materializationCheck: alwaysMaterialized(),
+    localFilesFor: () => disk,
+    sha1: sha1Hex,
+    quarantine: cache,
+    outbox,
+    mergeLayer: forceQuarantine,
+  });
+  const resolver = new QuarantineResolver({
+    transport: gh.transport(),
+    watermarkStore: watermarks,
+    localFilesFor: () => disk,
+    sha1: sha1Hex,
+    conflictCache: cache,
+    outbox,
+  });
+  return { gh, cache, outbox, watermarks, disk, engine, resolver, spec: gh.spec() };
+}
+
+/**
+ * Bootstrap converged, then introduce N same-uid cross-path divergences (the
+ * remote co-location migration), quarantine them, and keep-local each — leaving
+ * N queued resolutions in the outbox awaiting a single flush.
+ */
+async function quarantineAndResolveAll(
+  s: ReturnType<typeof setupMultiXPath>,
+): Promise<void> {
+  await s.engine.sync(s.spec); // bootstrap (disk == remote == {M_SHARED})
+  // Local keeps each asset at its FLAT path; the remote migration put each SAME
+  // uid at its CO-LOCATED path with divergent frontmatter (no common base).
+  for (const g of STRAGGLERS) s.disk.files.set(g.flat, g.local);
+  s.gh.commitDirect(
+    "main",
+    {
+      [M_SHARED]: M_SHARED_BODY,
+      ...Object.fromEntries(STRAGGLERS.map((g) => [g.colocated, g.remote])),
+    },
+    "remote bulk co-location migration",
+  );
+  const r = await s.engine.sync(s.spec);
+  expect(r.quarantinedCount).toBeGreaterThanOrEqual(STRAGGLERS.length);
+
+  // Keep-local each conflict → one outbox entry per straggler.
+  const open = await s.resolver.listOpenConflicts([s.spec]);
+  expect(open.length).toBe(STRAGGLERS.length);
+  for (const c of open) {
+    await s.resolver.resolve(s.spec, c.path, { take: "local" });
+  }
+  expect(await s.outbox.listForRepo(s.spec.repoKey)).toHaveLength(
+    STRAGGLERS.length,
+  );
+}
+
+describe("ExoSync batch head-staleness — multiple keep-local stragglers converge in ONE sync", () => {
+  it("@req:e1c6bf01-0580-474b-b66b-9c81180978c6 keep-local of N>1 cross-path stragglers ALL converge in ONE sync — atomic batch commit moves the head once (was 1-per-sync 'head moved' defer + re-quarantine)", async () => {
+    const s = setupMultiXPath();
+    await quarantineAndResolveAll(s);
+
+    // ── ONE flush sync resolves EVERY queued straggler ──────────────────────
+    const flush = await s.engine.sync(s.spec);
+    // ⛤ REVERT-VERIFY BINDING: pre-fix the per-push flush moves the head on the
+    // first push, so the 2nd..Nth fail the CAS and are deferred — outboxPushedCount
+    // would be 1 (received), not STRAGGLERS.length (3). The atomic batch makes it 3.
+    expect(flush.outboxPushedCount).toBe(STRAGGLERS.length);
+    expect(flush.outboxReconflictedCount ?? 0).toBe(0);
+
+    // Outbox fully drained — NOTHING deferred within the batch.
+    expect(await s.outbox.listForRepo(s.spec.repoKey)).toHaveLength(0);
+
+    // Every asset converged to its single (flat) path; every stale co-located
+    // sibling is gone (deleted, recoverable in git history); the anchor is
+    // untouched.
+    const head = s.gh.headFiles();
+    for (const g of STRAGGLERS) {
+      expect(head.get(g.flat)).toBe(g.local); // converged to the flat path
+      expect(head.has(g.colocated)).toBe(false); // stale sibling consolidated away
+    }
+    expect(head.get(M_SHARED)).toBe(M_SHARED_BODY);
+
+    // No conflict re-surfaces for ANY straggler on a subsequent sync — keep-local
+    // stuck for all of them in ONE sync.
+    expect(await s.resolver.listOpenConflicts([s.spec])).toHaveLength(0);
+    const after = await s.engine.sync(s.spec);
+    expect(after.quarantinedCount).toBe(0);
+    expect(after.status).toBe("synced");
+  });
+
+  it("⛤ zero-loss: a genuine concurrent EXTERNAL writer moving the head aborts the WHOLE batch (expectedHeadSha CAS) — every entry stays queued, nothing overwritten", async () => {
+    const s = setupMultiXPath();
+    await quarantineAndResolveAll(s);
+
+    // The flush's guard-read (getHeadSha) sees the unchanged head and proceeds;
+    // inject a concurrent EXTERNAL push in the window before the batch commit's
+    // OWN ref-read (arm-call #1 = flush getHeadSha, #2 = restCreateCommit GET-ref)
+    // by moving an UNRELATED remote path — the CAS must abort the entire batch.
+    let getRefCalls = 0;
+    s.gh.onGetRef = (): void => {
+      getRefCalls++;
+      if (getRefCalls === 2) {
+        s.gh.onGetRef = undefined;
+        s.gh.commitDirect(
+          "main",
+          { [M_SHARED]: mdAsset("anchor", "external writer moved the anchor") },
+          "external writer in the race window",
+        );
+      }
+    };
+
+    const flush = await s.engine.sync(s.spec);
+    s.gh.onGetRef = undefined;
+
+    // ⛤ The whole batch aborts — NOTHING pushed, every straggler stays queued.
+    expect(flush.outboxPushedCount ?? 0).toBe(0);
+    expect(await s.outbox.listForRepo(s.spec.repoKey)).toHaveLength(
+      STRAGGLERS.length,
+    );
+    // The external change is preserved (never overwritten); the stale siblings
+    // are all still present (no partial consolidation).
+    const head = s.gh.headFiles();
+    expect(head.get(M_SHARED)).toBe(mdAsset("anchor", "external writer moved the anchor"));
+    for (const g of STRAGGLERS) {
+      expect(head.get(g.colocated)).toBe(g.remote); // untouched
+    }
+  });
+});
