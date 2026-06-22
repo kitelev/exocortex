@@ -180,6 +180,41 @@ describe("progressToActivity (live materialize progress feed)", () => {
     ).toBe("Installing ems 1b20a8f0 (2 of 5)");
   });
 
+  // ── al-mount-observability: granular within-AS install file progress ──
+
+  it("formats a within-AS materialize file tick as 'Installing <label> <uid8>: N of M files (X%)' @req:eba100d5-503f-43e0-bd31-994dd6303c37", () => {
+    expect(
+      progressToActivity(
+        evt({
+          op: "mount",
+          step: "materialize",
+          label: "my",
+          as: "08dd15ed-0000-0000-0000-000000000000",
+          fileProcessed: 400,
+          fileTotal: 5000,
+        }),
+      ),
+    ).toEqual({
+      category: "progress",
+      level: "info",
+      message: "Installing my 08dd15ed: 400 of 5000 files (8%)",
+    });
+  });
+
+  it("rounds the install percent (200 of 1000 → 20%) @req:eba100d5-503f-43e0-bd31-994dd6303c37", () => {
+    expect(
+      progressToActivity(
+        evt({ op: "mount", step: "materialize", fileProcessed: 200, fileTotal: 1000 }),
+      ).message,
+    ).toBe("Installing ems 1b20a8f0: 200 of 1000 files (20%)");
+  });
+
+  it("a materialize event WITHOUT file counts keeps the per-AS '(N of M)' form (no regression)", () => {
+    expect(
+      progressToActivity(evt({ op: "mount", step: "materialize", index: 3, total: 7 })).message,
+    ).toBe("Installing ems 1b20a8f0 (3 of 7)");
+  });
+
   it("reindex marker → 'Reindexing vault after apply' (category 'progress', info)", () => {
     expect(progressToActivity({ op: "reindex" })).toEqual({
       category: "progress",

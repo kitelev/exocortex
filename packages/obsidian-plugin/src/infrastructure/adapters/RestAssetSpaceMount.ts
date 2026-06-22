@@ -17,6 +17,7 @@ import {
   type MountFile,
   type MountResult,
   type MountProgressPhase,
+  type MountFileProgress,
 } from "@kitelev/exocortex-core";
 
 /**
@@ -113,10 +114,12 @@ export class RestAssetSpaceMount {
     /**
      * Optional sub-phase progress sink (#al-activitylog-progress) — forwarded
      * into {@link mountAssetSpaceFiles} so a long mount surfaces fetch → extract
-     * → materialize, finer than the caller's single "Mounting X" marker. Omitted
-     * by bootstrap/fetch-tracked callers (zero cost).
+     * → materialize, finer than the caller's single "Mounting X" marker. The
+     * `materialize` phase additionally carries a {@link MountFileProgress} payload
+     * every N files for a large AssetSpace (al-mount-observability). Omitted by
+     * bootstrap/fetch-tracked callers (zero cost).
      */
-    onProgress?: (phase: MountProgressPhase) => void,
+    onProgress?: (phase: MountProgressPhase, progress?: MountFileProgress) => void,
   ): Promise<RestMountResult> {
     const safePath = validateVaultPathArg(submodulePath);
     // Allowlist + owner/repo extraction (throws on traversal / non-github).
@@ -235,7 +238,11 @@ export class RestAssetSpaceMount {
       read: (p) => adapter.read(p),
       write: (p, c) => adapter.write(p, c),
       removeDir: (p) => adapter.rmdir(p, true),
-      async materialize(targetPath: string, files: MountFile[]): Promise<number> {
+      async materialize(
+        targetPath: string,
+        files: MountFile[],
+        onFileWritten?: (processed: number) => void,
+      ): Promise<number> {
         const ensureDir = async (dir: string): Promise<void> => {
           if (dir.length === 0) return;
           if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
@@ -266,6 +273,9 @@ export class RestAssetSpaceMount {
           if (parent.length > 0) await ensureDirChain(parent);
           await adapter.writeBinary(target, toArrayBuffer(file.content));
           count++;
+          // Per-file install progress tick (al-mount-observability) — the core
+          // throttles this to every N files for a large AssetSpace.
+          onFileWritten?.(count);
         }
         return count;
       },

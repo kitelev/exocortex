@@ -286,7 +286,11 @@ export class BootstrapAssetSpaceService {
       async removeDir(p: string): Promise<void> {
         rmSync(p, { recursive: true, force: true });
       },
-      async materialize(targetDir: string, files: MountFile[]): Promise<number> {
+      async materialize(
+        targetDir: string,
+        files: MountFile[],
+        onFileWritten?: (processed: number) => void,
+      ): Promise<number> {
         const stagingDir = await mkdtemp(join(tmpdir(), `exo-bootstrap-${basename(targetDir)}-`));
         let fileCount = 0;
         try {
@@ -305,6 +309,10 @@ export class BootstrapAssetSpaceService {
             mkdirSync(dirname(target), { recursive: true });
             writeFileSync(target, file.content);
             fileCount++;
+            // Per-file progress tick (al-mount-observability) — the core
+            // throttles it; the CLI bootstrap path omits onProgress so this is a
+            // no-op closure here (zero cost).
+            onFileWritten?.(fileCount);
           }
 
           // Atomic move к target.

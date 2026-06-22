@@ -586,6 +586,9 @@ export {
   type MountResult,
   type MountAssetSpaceParams,
   type MountProgressPhase,
+  type MountFileProgress,
+  MATERIALIZE_PROGRESS_INTERVAL,
+  MATERIALIZE_PROGRESS_MIN_FILES,
   type GitmodulesAppendResult,
 } from "./services/assetspace/AssetSpaceMount";
 

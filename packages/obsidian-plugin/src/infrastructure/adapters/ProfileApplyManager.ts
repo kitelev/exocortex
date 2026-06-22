@@ -201,6 +201,16 @@ export type ApplyProgressEvent =
       index: number;
       /** Total count in the current op batch. */
       total: number;
+      /**
+       * Within-AS install progress (al-mount-observability) — files written so
+       * far during the `materialize` step. Present only on throttled materialize
+       * ticks for a large AssetSpace (> MATERIALIZE_PROGRESS_MIN_FILES); absent
+       * on the baseline per-AS / sub-phase markers. Distinct from
+       * {@link index}/{@link total} (which count AssetSpaces, not files).
+       */
+      fileProcessed?: number;
+      /** Within-AS install progress — the AssetSpace's total file volume. */
+      fileTotal?: number;
     }
   // Apply-tail RDF reindex (#al-activitylog-progress) — emitted BEFORE the
   // `rdfIndexer.refresh()` that follows mount/unmount, so the previously-silent
@@ -1805,7 +1815,7 @@ export class ProfileApplyManager {
             target.gitUrl,
             target.submodulePath,
             target.ref,
-            (step) =>
+            (step, progress) =>
               this.emitProgress({
                 op: "mount",
                 step,
@@ -1813,6 +1823,10 @@ export class ProfileApplyManager {
                 label: target.label,
                 index: i + 1,
                 total: toMaterialize.length,
+                // Within-AS install progress (al-mount-observability) — carried
+                // only on throttled `materialize` ticks for a large AssetSpace.
+                fileProcessed: progress?.processed,
+                fileTotal: progress?.total,
               }),
           );
         } catch (mountErr) {
