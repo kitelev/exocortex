@@ -1631,8 +1631,14 @@ export class SyncEngine {
       return { pushed: 0, reconflicted: 0 };
     }
 
-    let pushed = 0;
+    // ── Phase 1: classify every queued resolution against the ONE head-tree
+    // snapshot captured above (no head mutation yet). TOCTOU-skips drop here;
+    // the rest are collected into a single batch. ───────────────────────────
     let reconflicted = 0;
+    const pushable: Array<{
+      entry: (typeof pending)[number];
+      stalePaths: string[];
+    }> = [];
     for (const entry of pending) {
       const currentRemoteSha =
         remoteShaByPath.get(entry.path) ?? OUTBOX_REMOTE_ABSENT;
@@ -1679,51 +1685,94 @@ export class SyncEngine {
         );
         continue;
       }
-      // Push the chosen content (same-path: remote unchanged at our guard-read;
-      // cross-path: the SAME commit deletes the stale sibling copies). The
-      // `expectedHeadSha` CAS closes the window between THIS guard-read and
-      // restCreateCommit's own ref-read: if the head moved in between, the push
-      // aborts (no overwrite) and we leave the entry to retry next sync — which
-      // re-checks the per-path TOCTOU and re-conflicts if needed. force:false
-      // additionally guards restCreateCommit's own GET→PATCH window (→ 422).
-      try {
-        await restCreateCommit(this.transport, {
-          owner: spec.owner,
-          repo: spec.repo,
-          branch: spec.branch,
-          files: new Map([[entry.path, entry.chosenContent]]),
-          ...(stalePaths.length > 0 ? { deletions: stalePaths } : {}),
-          message:
-            stalePaths.length > 0
-              ? `chore(exosync): resolve cross-path conflict for ${entry.path} (consolidate ${stalePaths.length} stale remote path(s))`
-              : `chore(exosync): push resolved conflict for ${entry.path}`,
-          expectedHeadSha: head,
-          ...(this.deps.baseURL !== undefined ? { baseURL: this.deps.baseURL } : {}),
-          ...(this.deps.redact !== undefined ? { redact: this.deps.redact } : {}),
-        });
-      } catch (err) {
-        warnings.push(
-          `outbox: push deferred for ${entry.path}, will retry next sync: ${redact(errMsg(err))}`,
-        );
-        continue; // leave the entry; never overwrite on a failed/raced/moved push
+      pushable.push({ entry, stalePaths });
+    }
+
+    if (pushable.length === 0) {
+      return { pushed: 0, reconflicted };
+    }
+
+    // ── Phase 2: ONE atomic commit for ALL pushable resolutions (batch
+    // head-staleness fix). Pre-fix this loop pushed each resolution in its OWN
+    // restCreateCommit: the FIRST push moved heads/{branch}, so the 2nd…Nth
+    // pushes (each carrying the head captured ONCE above as `expectedHeadSha`)
+    // failed the CAS guard with "head moved", were deferred and re-quarantined
+    // in the SAME sync — only ONE straggler converged per sync, the rest
+    // re-surfaced (Andrey's 7-straggler keep-local that never stuck). Committing
+    // every chosen content + the union of stale-sibling deletions in a SINGLE
+    // tree update moves the head exactly once, so all queued keep-local
+    // resolutions land in one sync. restCreateCommit already builds a recursive
+    // multi-file tree with `sha:null` deletions (#3476), so one commit expresses
+    // N writes + M deletes. Atomic = all-or-nothing: a genuine concurrent
+    // EXTERNAL writer (head moved between our head fetch and our one commit)
+    // aborts the WHOLE batch via `expectedHeadSha` → every entry stays queued
+    // (zero-loss, never a partial/forced overwrite), and the next sync re-checks
+    // each per-path TOCTOU and re-conflicts only those whose remote truly moved.
+    const batchFiles = new Map<string, string>();
+    for (const { entry } of pushable) {
+      batchFiles.set(entry.path, entry.chosenContent);
+    }
+    // Union of stale-sibling deletions, MINUS any path another resolution writes
+    // in this same batch — never delete a path we are committing (the write
+    // wins; restCreateCommit also rejects a path that is both written and
+    // deleted). Each entry's watermark snap below uses only its EFFECTIVELY
+    // deleted siblings (same filter), keeping the unpin/base-drop consistent.
+    const batchDeletions = new Set<string>();
+    for (const { stalePaths } of pushable) {
+      for (const p of stalePaths) {
+        if (!batchFiles.has(p)) batchDeletions.add(p);
       }
+    }
+    const deletions = [...batchDeletions];
+    try {
+      await restCreateCommit(this.transport, {
+        owner: spec.owner,
+        repo: spec.repo,
+        branch: spec.branch,
+        files: batchFiles,
+        ...(deletions.length > 0 ? { deletions } : {}),
+        message:
+          deletions.length > 0
+            ? `chore(exosync): resolve ${pushable.length} keep-local conflict(s) (consolidate ${deletions.length} stale remote path(s))`
+            : `chore(exosync): push ${pushable.length} resolved conflict(s)`,
+        expectedHeadSha: head,
+        ...(this.deps.baseURL !== undefined ? { baseURL: this.deps.baseURL } : {}),
+        ...(this.deps.redact !== undefined ? { redact: this.deps.redact } : {}),
+      });
+    } catch (err) {
+      // The whole batch is deferred — a concurrent external writer moved the
+      // head (CAS abort) or the commit raced (422). Leave EVERY entry queued;
+      // never a partial/forced overwrite. The next sync re-checks each per-path
+      // TOCTOU and re-conflicts only those whose remote genuinely moved.
+      warnings.push(
+        `outbox: batch push deferred for ${pushable.length} resolution(s), will retry next sync: ${redact(errMsg(err))}`,
+      );
+      return { pushed: 0, reconflicted };
+    }
+
+    // The single commit landed — finalise every resolution (watermark snap +
+    // unpin, markResolved, drain outbox). Per-entry warnings preserve the
+    // existing consolidation/pushed log lines.
+    let pushed = 0;
+    for (const { entry, stalePaths } of pushable) {
+      const deletedSiblings = stalePaths.filter((p) => !batchFiles.has(p));
       await this.snapOutboxWatermark(
         spec,
         entry.path,
         entry.chosenContent,
-        stalePaths,
+        deletedSiblings,
       );
       await this.deps.quarantine?.markResolved?.(entry.repoKey, entry.path);
       // Stale sibling copies were deleted on the remote — clear their cross-
       // device unresolved-count too (best-effort; most have no cache entry).
-      for (const sp of stalePaths) {
+      for (const sp of deletedSiblings) {
         await this.deps.quarantine?.markResolved?.(entry.repoKey, sp);
       }
       await outbox.remove(entry.repoKey, entry.path);
       pushed++;
-      if (stalePaths.length > 0) {
+      if (deletedSiblings.length > 0) {
         warnings.push(
-          `consolidated cross-path conflict for ${entry.path} — removed ${stalePaths.length} stale remote copy/copies (recoverable in git history)`,
+          `consolidated cross-path conflict for ${entry.path} — removed ${deletedSiblings.length} stale remote copy/copies (recoverable in git history)`,
         );
       }
     }
