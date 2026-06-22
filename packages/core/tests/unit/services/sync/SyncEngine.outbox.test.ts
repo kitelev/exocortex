@@ -232,3 +232,151 @@ describe("ExoSync deferred-push outbox — resolve queues, sync flushes (PR-3b)"
     expect(await s.resolver.listOpenConflicts([s.spec])).toHaveLength(0);
   });
 });
+
+// ── Cross-path conflict consolidation (#3729) ───────────────────────────────
+// The exact production bug: a co-location reorg moved an asset on the REMOTE
+// (flat `tbank-efforts/x.md` → co-located `og/x.md`) while the local vault kept
+// the flat path, and the asset's frontmatter diverged on both sides (no common
+// base). ExoSync correctly quarantines, but pre-fix "keep local" NEVER stuck:
+// the flush read the conflict (flat) path — ABSENT on the remote — against the
+// based-on remote blob and dropped the push forever as a phantom TOCTOU, while
+// the co-located sibling re-introduced the conflict every sync. The fix: the
+// flush detects that the based-on blob still lives at a SIBLING remote path and
+// CONSOLIDATES (push chosen → conflict path + delete the stale sibling in one
+// zero-loss commit) instead of dropping.
+const SHARED = "shared/keep.md";
+const SHARED_BODY = mdAsset("keep", "shared, unchanged on both sides");
+const FLAT = "tbank-efforts/x.md"; // local (old flat) path
+const COLOCATED = "og/x.md"; // remote (new co-located) path — SAME uid
+const FLAT_LOCAL = mdAsset("u1", "LOCAL edit, flat isDefinedBy");
+const COLOCATED_REMOTE = mdAsset("u1", "REMOTE edit, co-located isDefinedBy");
+
+function setupXPath() {
+  const gh = new FakeGitHubRepo({ [SHARED]: SHARED_BODY });
+  const cache = new LocalConflictCacheStore({ io: memIO() });
+  const outbox = new LocalOutboxStore({ io: memIO() });
+  const watermarks = new FakeWatermarkStore();
+  const disk = new FakeLocalFiles({ [SHARED]: SHARED_BODY });
+  const engine = new SyncEngine({
+    transport: gh.transport(),
+    watermarkStore: watermarks,
+    materializationCheck: alwaysMaterialized(),
+    localFilesFor: () => disk,
+    sha1: sha1Hex,
+    quarantine: cache,
+    outbox,
+    mergeLayer: forceQuarantine,
+  });
+  const resolver = new QuarantineResolver({
+    transport: gh.transport(),
+    watermarkStore: watermarks,
+    localFilesFor: () => disk,
+    sha1: sha1Hex,
+    conflictCache: cache,
+    outbox,
+  });
+  return { gh, cache, outbox, watermarks, disk, engine, resolver, spec: gh.spec() };
+}
+
+/** Bootstrap converged, then introduce a cross-path same-uid divergence. */
+async function crossPathConflict(
+  s: ReturnType<typeof setupXPath>,
+): Promise<string> {
+  await s.engine.sync(s.spec); // bootstrap (disk == remote == {SHARED})
+  // Local keeps the asset at the FLAT path; the remote co-location migration
+  // put the SAME uid at the CO-LOCATED path with different frontmatter.
+  s.disk.files.set(FLAT, FLAT_LOCAL);
+  s.gh.commitDirect(
+    "main",
+    { [SHARED]: SHARED_BODY, [COLOCATED]: COLOCATED_REMOTE },
+    "remote co-location migration",
+  );
+  const r = await s.engine.sync(s.spec);
+  expect(r.quarantinedCount).toBeGreaterThanOrEqual(1);
+  const open = await s.resolver.listOpenConflicts([s.spec]);
+  expect(open.length).toBeGreaterThanOrEqual(1);
+  return open[0].path; // the conflict (flat) path the user resolves
+}
+
+describe("ExoSync cross-path conflict consolidation (#3729)", () => {
+  it("@req:5bcfe5d0-a64c-4c87-85a4-7fb8e3140c78 keep-local of a co-located rename consolidates: pushes local to the flat path AND deletes the stale co-located remote copy, converging (was a phantom TOCTOU drop)", async () => {
+    const s = setupXPath();
+    const conflictPath = await crossPathConflict(s);
+
+    await s.resolver.resolve(s.spec, conflictPath, { take: "local" });
+    // Deferred (outbox), still pinned, NOT yet pushed.
+    expect(await s.outbox.listForRepo(s.spec.repoKey)).toHaveLength(1);
+
+    const flush = await s.engine.sync(s.spec);
+    expect(flush.outboxPushedCount).toBe(1);
+    expect(flush.outboxReconflictedCount ?? 0).toBe(0);
+
+    // Remote converged to ONE path (the flat conflict path) with the local
+    // content; the stale co-located sibling is GONE (deleted, recoverable in
+    // git history); SHARED untouched.
+    const head = s.gh.headFiles();
+    expect(head.get(conflictPath)).toBe(FLAT_LOCAL);
+    expect(head.has(COLOCATED)).toBe(false);
+    expect(head.get(SHARED)).toBe(SHARED_BODY);
+
+    // Outbox drained, conflict cleared, no re-conflict on a subsequent sync.
+    expect(await s.outbox.listForRepo(s.spec.repoKey)).toHaveLength(0);
+    expect(await s.resolver.listOpenConflicts([s.spec])).toHaveLength(0);
+    const after = await s.engine.sync(s.spec);
+    expect(after.quarantinedCount).toBe(0);
+    expect(after.status).toBe("synced");
+  });
+
+  it("⛤ zero-loss: a genuine cross-path TOCTOU (the stale sibling itself moved) does NOT delete anything — drops and re-conflicts", async () => {
+    const s = setupXPath();
+    const conflictPath = await crossPathConflict(s);
+    await s.resolver.resolve(s.spec, conflictPath, { take: "local" });
+
+    // The co-located sibling is edited again on the remote AFTER the offline
+    // resolution → the based-on blob is no longer anywhere in the tree → no
+    // sibling match → never delete, drop instead.
+    s.gh.commitDirect(
+      "main",
+      { [SHARED]: SHARED_BODY, [COLOCATED]: mdAsset("u1", "remote moved AGAIN") },
+      "device C",
+    );
+
+    const flush = await s.engine.sync(s.spec);
+    expect(flush.outboxPushedCount ?? 0).toBe(0);
+    expect(flush.outboxReconflictedCount).toBe(1);
+    // The remote sibling is preserved (never overwritten/deleted).
+    expect(s.gh.headFiles().get(COLOCATED)).toBe(mdAsset("u1", "remote moved AGAIN"));
+  });
+
+  it("consolidates ALL stale siblings when the based-on blob is duplicated across ≥2 remote paths (one commit deletes every copy)", async () => {
+    const s = setupXPath();
+    const conflictPath = await crossPathConflict(s);
+    await s.resolver.resolve(s.spec, conflictPath, { take: "local" });
+
+    // Before the flush, a SECOND remote sibling appears holding the SAME
+    // based-on blob (a uid duplicated to a third co-located path). The
+    // match is CONTENT-ADDRESSED (blob-SHA), so BOTH siblings must be
+    // consolidated away in the single resolution commit.
+    const COLOCATED_2 = "archive/x.md";
+    s.gh.commitDirect(
+      "main",
+      {
+        [SHARED]: SHARED_BODY,
+        [COLOCATED]: COLOCATED_REMOTE,
+        [COLOCATED_2]: COLOCATED_REMOTE, // same content → same blob-SHA
+      },
+      "uid duplicated to a second co-located path",
+    );
+
+    const flush = await s.engine.sync(s.spec);
+    expect(flush.outboxPushedCount).toBe(1);
+    expect(flush.outboxReconflictedCount ?? 0).toBe(0);
+
+    const head = s.gh.headFiles();
+    expect(head.get(conflictPath)).toBe(FLAT_LOCAL); // converged to the flat path
+    expect(head.has(COLOCATED)).toBe(false); // both stale copies gone
+    expect(head.has(COLOCATED_2)).toBe(false);
+    expect(head.get(SHARED)).toBe(SHARED_BODY); // unrelated file untouched
+    expect(await s.resolver.listOpenConflicts([s.spec])).toHaveLength(0);
+  });
+});
