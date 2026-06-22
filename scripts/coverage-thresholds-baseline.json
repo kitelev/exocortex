@@ -1,0 +1,23 @@
+{
+  "_comment": "Coverage-threshold high-water mark (test-quality audit 2026-06-22, P5.1). The monotonic guard (scripts/check-coverage-monotonic.mjs) FAILS if any jest.config.js coverageThreshold.global metric drops BELOW the value recorded here. Thresholds may only grow: when coverage rises, ratchet a number here UP (allowed silently). LOWERING a number here is the explicit, reviewed act that a coverage regression requires — it must carry a req__Requirement justification (RFC 0003 everything-req-first). The guard mechanizes 'no silent threshold drift' (e.g. the documented plugin branches 64->63 marginal drift); the baseline edit is the conscious withdrawal.",
+  "thresholds": {
+    "packages/core/jest.config.js": {
+      "branches": 95,
+      "functions": 95,
+      "lines": 95,
+      "statements": 95
+    },
+    "packages/obsidian-plugin/jest.config.js": {
+      "statements": 75.5,
+      "branches": 63,
+      "functions": 69,
+      "lines": 76
+    },
+    "packages/cli/jest.config.js": {
+      "statements": 65,
+      "branches": 60,
+      "functions": 70,
+      "lines": 65
+    }
+  }
+}

@@ -114,14 +114,28 @@ describe("SessionEventService - branch coverage", () => {
       expect(filePath).toMatch(/^[0-9a-f-]+\.md$/);
     });
 
-    it("should cache folder path after first call", async () => {
+    it("creates each event under the resolved default folder across consecutive calls", async () => {
       mockVault.getDefaultNewFileParent.mockReturnValue({ path: "cached-folder", name: "cached-folder" });
 
       await service.createSessionStartEvent("Area1");
       await service.createSessionEndEvent("Area1");
 
-      // getDefaultNewFileParent should only be called once due to caching
-      expect(mockVault.getDefaultNewFileParent).toHaveBeenCalledTimes(1);
+      // BEHAVIOUR, not memoization (test-quality audit 2026-06-22, P1.1):
+      // the old assertion pinned `getDefaultNewFileParent` CALL COUNT (== 1),
+      // which couples the test to an internal cache optimization — it breaks on
+      // a valid refactor (removing the cache) even though the observable
+      // behaviour is unchanged, and it never verifies the folder is actually
+      // applied. Assert the OUTCOME instead: both consecutive events land under
+      // the resolved default folder. This survives the cache being removed and
+      // still catches a real regression (the 2nd event no longer placed in the
+      // resolved folder).
+      expect(mockVault.create).toHaveBeenCalledTimes(2);
+      expect(mockVault.create.mock.calls[0][0]).toMatch(
+        /^cached-folder\/[0-9a-f-]+\.md$/,
+      );
+      expect(mockVault.create.mock.calls[1][0]).toMatch(
+        /^cached-folder\/[0-9a-f-]+\.md$/,
+      );
     });
 
     it("should handle empty folder path (no folder creation needed)", async () => {

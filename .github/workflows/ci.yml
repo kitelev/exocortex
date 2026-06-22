@@ -169,6 +169,14 @@ jobs:
       - name: Guard test anti-patterns
         run: bash scripts/check-test-antipatterns.sh
 
+      # Test-quality audit 2026-06-22 (recommendation P5.1): coverage-monotonic
+      # ratchet. jest coverageThreshold.global metrics may only GROW; this fails
+      # the lint job if any threshold drifts BELOW the high-water mark recorded
+      # in scripts/coverage-thresholds-baseline.json. Lowering a baseline number
+      # is the explicit, req-justified withdrawal (RFC 0003 everything-req-first).
+      - name: Guard coverage-threshold monotonicity
+        run: node scripts/check-coverage-monotonic.mjs
+
   docs-link-check:
     runs-on: ubuntu-latest
     timeout-minutes: 3

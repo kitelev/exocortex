@@ -357,7 +357,12 @@ describe("ProfileApplyManager.reindexMountState — happy path (apply reindex)",
     expect(lines).toHaveLength(2);
     expect(lines[0].phase).toBe("starting");
     expect(lines[1].phase).toBe("completed");
-    expect(lines[1].elapsedMs).toBeGreaterThanOrEqual(0);
+    // Non-vacuous (test-quality audit 2026-06-22, P1.3): the old ">= 0"
+    // duration assert is always true and verifies nothing about the value.
+    // Assert the completed entry actually CARRIES a numeric elapsedMs — this
+    // fails if the field is dropped/undefined (a real regression), without the
+    // vacuous always-true value claim.
+    expect(typeof lines[1].elapsedMs).toBe("number");
   });
 
   it("notifies user with profile label + elapsed ms", async () => {
