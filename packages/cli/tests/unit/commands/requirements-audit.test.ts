@@ -36,6 +36,19 @@ function tag(uid: string, file = "a.test.ts", line = 1): TagOccurrence {
   return { uid, file, line };
 }
 
+/**
+ * A `@req` tag living in a GUI-in-CI runner (`eka-gui`) spec — the AUTOMATED
+ * ui-acceptance sub-mode (al-gui-ci-runner dedup). Path mirrors the real
+ * `packages/obsidian-plugin/tests/e2e/eka-gui/*.spec.ts` runner location.
+ */
+function guiTag(
+  uid: string,
+  file = "packages/obsidian-plugin/tests/e2e/eka-gui/create-instance-buttons.spec.ts",
+  line = 1,
+): TagOccurrence {
+  return { uid, file, line };
+}
+
 describe("requirements — Commander wiring", () => {
   it("registers 'audit' under the 'requirements' parent command", () => {
     const parent = requirementsCommand();
@@ -519,13 +532,69 @@ describe("auditTraceability — active-requirement invariant (SDD feature-lifecy
     expect(r.clean).toBe(false);
   });
 
-  it("an active ui-acceptance requirement bound by a jest @req tag is satisfied without evidence (tag precedence)", () => {
+  it("@req:58326e2f-2b89-49f2-af1d-78829fd78b57 an active ui-acceptance requirement bound by a GUI-in-CI runner (eka-gui) @req tag is satisfied WITHOUT committed evidence (AUTOMATED sub-mode)", () => {
+    // al-gui-ci-runner dedup: a `@req` binding in an eka-gui runner spec IS the
+    // auto-evidence (the eka-gui run drives real plugin UI on native-amd64 CI),
+    // so the active ui-acceptance req is satisfied without a hand-written
+    // committed attestation. ONE engine — no parallel ui-acceptance runner.
     const reqs = [
       req({ uid: UID_A, status: "Active", bindingClasses: ["ui-acceptance"] }),
     ];
-    const r = auditTraceability(reqs, [tag(UID_A)]); // jest-bound → satisfied
+    const r = auditTraceability(reqs, [guiTag(UID_A)]); // eka-gui-bound → automated
     expect(r.activeViolations).toHaveLength(0);
+    expect(r.uiAcceptanceAutomated).toBe(1);
+    expect(r.uiAcceptanceManual).toBe(0);
     expect(r.clean).toBe(true);
+  });
+
+  it("an active ui-acceptance requirement bound ONLY by a NON-GUI @req tag, no committed evidence, is an invariant violation (revert-verify: a jsdom/CLI tag cannot auto-evidence a live-UI acceptance)", () => {
+    // Closes the `if (isBound) continue;` hole: before al-gui-ci-runner, ANY
+    // @req tag (even in a unit/jsdom test) satisfied an active ui-acceptance req.
+    // A non-GUI tag is not a live-UI run → it does NOT auto-evidence the tier.
+    // REVERT-VERIFY: restoring the broad `if (isBound) continue;` for the
+    // ui-acceptance branch makes this expectation FAIL (the unit-test tag would
+    // spuriously satisfy the req); the al-gui-ci-runner logic makes it PASS.
+    const reqs = [
+      req({ uid: UID_A, status: "Active", bindingClasses: ["ui-acceptance"] }),
+    ];
+    const r = auditTraceability(reqs, [tag(UID_A)]); // non-GUI unit-test tag only
+    expect(r.activeViolations.map((a) => a.uid)).toEqual([UID_A]);
+    expect(r.activeViolations[0].reason).toMatch(/eka-gui|live-UI/i);
+    expect(r.uiAcceptanceAutomated).toBe(0);
+    expect(r.clean).toBe(false);
+  });
+
+  it("an active ui-acceptance requirement satisfied by committed evidence (no GUI-runner tag) counts as MANUAL sub-mode", () => {
+    const reqs = [
+      req({
+        uid: UID_A,
+        status: "Active",
+        bindingClasses: ["ui-acceptance"],
+        evidence: ["evidence/a.md"],
+        evidenceMissing: [],
+      }),
+    ];
+    const r = auditTraceability(reqs, []); // no tag — manual committed evidence
+    expect(r.activeViolations).toHaveLength(0);
+    expect(r.uiAcceptanceAutomated).toBe(0);
+    expect(r.uiAcceptanceManual).toBe(1);
+    expect(r.clean).toBe(true);
+  });
+
+  it("a ui-acceptance req with BOTH a GUI-runner tag AND committed evidence counts as automated (reproducible verification wins)", () => {
+    const reqs = [
+      req({
+        uid: UID_A,
+        status: "Active",
+        bindingClasses: ["ui-acceptance"],
+        evidence: ["evidence/a.md"],
+        evidenceMissing: [],
+      }),
+    ];
+    const r = auditTraceability(reqs, [guiTag(UID_A)]);
+    expect(r.activeViolations).toHaveLength(0);
+    expect(r.uiAcceptanceAutomated).toBe(1);
+    expect(r.uiAcceptanceManual).toBe(0);
   });
 
   it("a PROPOSED requirement with no binding is NOT an active violation (only an orphan warning)", () => {

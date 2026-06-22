@@ -118,11 +118,17 @@ jobs:
             -v "$PWD/eka-gui-results:/app/packages/obsidian-plugin/test-results-eka-gui" \
             exocortex-eka-gui-e2e:ci
 
-      - name: Upload artifacts on failure
-        if: failure()
+      # Upload on EVERY run (not just failure): a PASSING acceptance run produces
+      # the auto-evidence for its `@req`-bound ui-acceptance scenarios — the
+      # req-evidence.json manifest + per-scenario DOM screenshots (al-gui-ci-runner
+      # dedup). The eka-gui run IS the automated ui-acceptance evidence, so the
+      # artifact must be retained on success, not only on failure (failure also
+      # carries the trace/video for debugging via `if: always()`).
+      - name: Upload EKA GUI req-evidence + artifacts
+        if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: eka-gui-e2e-results
+          name: eka-gui-req-evidence
           path: eka-gui-results
           retention-days: 14
           if-no-files-found: ignore

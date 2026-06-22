@@ -27,11 +27,18 @@ export default defineConfig({
   expect: {
     timeout: 60_000,
   },
-  reporter: [["list"]],
+  // `list` for the human log + the req-evidence reporter (al-gui-ci-runner): it
+  // writes test-results-eka-gui/req-evidence.json mapping each `@req:<uid>`
+  // scenario → result — the machine-readable AUTOMATED ui-acceptance evidence
+  // (uploaded as the eka-gui-req-evidence CI artifact, retained on success too).
+  reporter: [["list"], ["./tests/e2e/eka-gui/req-evidence-reporter.ts"]],
   outputDir: "test-results-eka-gui",
   use: {
     trace: "retain-on-failure",
-    screenshot: "only-on-failure",
+    // `on` (not only-on-failure): capture a per-scenario DOM screenshot on EVERY
+    // run so a PASSING acceptance leaves a durable visual evidence trail (the
+    // auto-produced ui-acceptance evidence), alongside the req-evidence manifest.
+    screenshot: "on",
     video: "retain-on-failure",
     launchOptions: {
       args: [
