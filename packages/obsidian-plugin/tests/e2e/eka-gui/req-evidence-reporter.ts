@@ -120,6 +120,7 @@ export default class ReqEvidenceReporter implements Reporter {
   }
 
   printsToStdio(): boolean {
-    return false;
+    // onEnd prints a one-line summary to stdout — report that honestly.
+    return true;
   }
 }

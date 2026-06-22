@@ -606,8 +606,11 @@ export function auditTraceability(
       // A `@req` tag in a NON-GUI test (jsdom unit/component, CLI integration) is
       // NOT a live-UI verification, so it does NOT auto-evidence a ui-acceptance
       // req — closing the `if (isBound)` hole where a unit-test tag faked an
-      // acceptance. Proposed/Draft ui-acceptance reqs are NOT gated (migration-
-      // friendly) — only the in-force `active` subset.
+      // acceptance. This binds the WHOLE req: a combination-classed req (e.g.
+      // [ui-acceptance, integration]) is governed by these two sub-modes, NOT by
+      // its other class's plain `@req` tag — a non-GUI tag alone never satisfies a
+      // req that carries `ui-acceptance` (the live-UI tier wins). Proposed/Draft
+      // ui-acceptance reqs are NOT gated (migration-friendly) — only `active`.
       if (hasGuiRunnerBinding(r) || hasResolvingEvidence(r)) continue;
       activeViolations.push({
         uid: r.uid,
