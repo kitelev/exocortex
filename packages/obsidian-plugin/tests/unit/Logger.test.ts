@@ -1,6 +1,5 @@
 import { Logger } from "../../src/adapters/logging/Logger";
 import { LoggerFactory } from "../../src/adapters/logging/LoggerFactory";
-import type { ILogger } from "../../src/adapters/logging/ILogger";
 import { ErrorCodes } from "../../src/adapters/logging/ErrorCodes";
 
 describe("Logger", () => {
@@ -515,14 +514,6 @@ describe("LoggerFactory", () => {
       const logger = LoggerFactory.create("FactoryContext");
       logger.info("Factory test");
       expect(consoleInfoSpy).toHaveBeenCalledWith("[FactoryContext] Factory test");
-    });
-
-    it("should implement ILogger interface", () => {
-      const logger: ILogger = LoggerFactory.create("Interface");
-      expect(typeof logger.debug).toBe("function");
-      expect(typeof logger.info).toBe("function");
-      expect(typeof logger.warn).toBe("function");
-      expect(typeof logger.error).toBe("function");
     });
 
     it("should create multiple independent loggers", () => {

@@ -50,10 +50,6 @@ describe("LayoutCodeBlockProcessor", () => {
       expect(processor).toBeInstanceOf(LayoutCodeBlockProcessor);
     });
 
-    it("should have a process method", () => {
-      expect(typeof processor.process).toBe("function");
-    });
-
     it("should start with zero active layouts", () => {
       expect(processor.getActiveLayoutCount()).toBe(0);
     });

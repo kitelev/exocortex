@@ -41,28 +41,6 @@ describe("PropertyUpdateService", () => {
     });
   });
 
-  describe("public API", () => {
-    it("should have updateProperty method", () => {
-      expect(typeof service.updateProperty).toBe("function");
-    });
-
-    it("should have updateTextProperty method", () => {
-      expect(typeof service.updateTextProperty).toBe("function");
-    });
-
-    it("should have updateDateTimeProperty method", () => {
-      expect(typeof service.updateDateTimeProperty).toBe("function");
-    });
-
-    it("should have updateNumberProperty method", () => {
-      expect(typeof service.updateNumberProperty).toBe("function");
-    });
-
-    it("should have updateBooleanProperty method", () => {
-      expect(typeof service.updateBooleanProperty).toBe("function");
-    });
-  });
-
   describe("updateProperty", () => {
     it("should update property with new value", async () => {
       await service.updateProperty(mockFile, "testKey", "testValue");

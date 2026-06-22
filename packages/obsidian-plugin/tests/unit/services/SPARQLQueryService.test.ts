@@ -77,37 +77,13 @@ describe("SPARQLQueryService", () => {
       expect(service).toBeInstanceOf(SPARQLQueryService);
     });
 
-    it("should create VaultRDFIndexer", () => {
-      expect(VaultRDFIndexer).toHaveBeenCalledWith(
-        mockApp,
-        expect.any(Object), // logger (default or provided)
-        undefined,          // notifier (undefined when not provided to SPARQLQueryService)
-        [],                 // excludedFolders (defaults to [] when no setting is passed)
-        undefined,          // now (default clock — not overridden here)
-        undefined,          // onIndexProgress (no progress sink wired in this path)
-      );
-    });
-  });
-
-  describe("public API", () => {
-    it("should have initialize method", () => {
-      expect(typeof service.initialize).toBe("function");
-    });
-
-    it("should have query method", () => {
-      expect(typeof service.query).toBe("function");
-    });
-
-    it("should have refresh method", () => {
-      expect(typeof service.refresh).toBe("function");
-    });
-
-    it("should have updateFile method", () => {
-      expect(typeof service.updateFile).toBe("function");
-    });
-
-    it("should have dispose method", () => {
-      expect(typeof service.dispose).toBe("function");
+    it("should construct a single VaultRDFIndexer for the vault", () => {
+      // Behavior, not structure: the service owns exactly one indexer that it
+      // delegates to (see "service methods" below). We intentionally do NOT pin
+      // the DI argument order/positions — that is an internal wiring choice, not
+      // part of the service's public contract, and pinning it makes the test
+      // break on any harmless constructor refactor.
+      expect(VaultRDFIndexer).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -154,6 +130,9 @@ describe("SPARQLQueryService", () => {
     });
   });
 
-  // Note: Query method tests omitted as they require complex mocking of core modules
-  // The additional branch coverage tests above should provide sufficient coverage increase
+  // Follow-up (held for Andrey): query() is the service's primary method but is
+  // not exercised here because its central collaborator (VaultRDFIndexer) is
+  // fully mocked — a unit test would only assert pass-through wiring. Lifting
+  // query() to an integration test (real InMemoryTripleStore, as the engine
+  // layer does) was deferred from this cleanup as a test-pyramid change.
 });

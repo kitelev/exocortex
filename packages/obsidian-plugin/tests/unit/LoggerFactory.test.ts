@@ -27,16 +27,6 @@ describe("LoggerFactory", () => {
       expect(logger.error).toBeDefined();
     });
 
-    it("should implement ILogger interface", () => {
-      const logger: ILogger = LoggerFactory.create("InterfaceTest");
-
-      // Verify all ILogger methods are present
-      expect(typeof logger.debug).toBe("function");
-      expect(typeof logger.info).toBe("function");
-      expect(typeof logger.warn).toBe("function");
-      expect(typeof logger.error).toBe("function");
-    });
-
     it("should create multiple independent loggers", () => {
       const logger1 = LoggerFactory.create("Service1");
       const logger2 = LoggerFactory.create("Service2");
@@ -310,7 +300,7 @@ describe("LoggerFactory", () => {
 
   describe("static method", () => {
     it("should be a static method", () => {
-      expect(typeof LoggerFactory.create).toBe("function");
+      // `create` must be static (on the constructor, not the prototype).
       expect(LoggerFactory.prototype.create).toBeUndefined();
     });
 

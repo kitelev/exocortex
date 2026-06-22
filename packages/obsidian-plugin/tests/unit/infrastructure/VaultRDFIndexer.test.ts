@@ -107,36 +107,6 @@ describe("VaultRDFIndexer", () => {
     });
   });
 
-  describe("public API", () => {
-    it("should have initialize method", () => {
-      expect(typeof indexer.initialize).toBe("function");
-    });
-
-    it("should have updateFile method", () => {
-      expect(typeof indexer.updateFile).toBe("function");
-    });
-
-    it("should have removeFile method", () => {
-      expect(typeof indexer.removeFile).toBe("function");
-    });
-
-    it("should have renameFile method", () => {
-      expect(typeof indexer.renameFile).toBe("function");
-    });
-
-    it("should have refresh method", () => {
-      expect(typeof indexer.refresh).toBe("function");
-    });
-
-    it("should have getTripleStore method", () => {
-      expect(typeof indexer.getTripleStore).toBe("function");
-    });
-
-    it("should have dispose method", () => {
-      expect(typeof indexer.dispose).toBe("function");
-    });
-  });
-
   describe("file operations", () => {
     beforeEach(async () => {
       await indexer.initialize();

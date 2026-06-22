@@ -61,24 +61,6 @@ describe("TaskTrackingService", () => {
     });
   });
 
-  describe("public API", () => {
-    it("should have registerListener method", () => {
-      expect(typeof service.registerListener).toBe("function");
-    });
-
-    it("should have handleFileChange method", () => {
-      expect(typeof service.handleFileChange).toBe("function");
-    });
-
-    it("should have getCurrentTask method", () => {
-      expect(typeof service.getCurrentTask).toBe("function");
-    });
-
-    it("should have clearCurrentTask method", () => {
-      expect(typeof service.clearCurrentTask).toBe("function");
-    });
-  });
-
   describe("registerListener", () => {
     it("should not throw when called", () => {
       expect(() => service.registerListener()).not.toThrow();
