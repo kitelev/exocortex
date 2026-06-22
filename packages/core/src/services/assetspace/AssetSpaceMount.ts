@@ -61,8 +61,19 @@ export interface FileSystemPort {
    * a non-empty target). Each `relPath` is already core-validated against
    * zip-slip; the adapter MAY keep its own defense-in-depth resolve check.
    * Returns the number of files written.
+   *
+   * `onFileWritten(processed)` — optional per-file progress tick
+   * (al-mount-observability). Invoked by the adapter after each file is written
+   * with the 1-based count so the core can re-emit throttled within-AS install
+   * progress for a large AssetSpace. Best-effort: the core wraps it so a
+   * throwing observer can never break the mount; adapters MAY call it
+   * unconditionally (cheap when absent → no-op closure not passed).
    */
-  materialize(targetPath: string, files: MountFile[]): Promise<number>;
+  materialize(
+    targetPath: string,
+    files: MountFile[],
+    onFileWritten?: (processed: number) => void,
+  ): Promise<number>;
   /** Recursively remove a mount tree. The platform owns any safety guards. */
   removeDir(path: string): Promise<void>;
 }
@@ -185,6 +196,33 @@ function buildMountFiles(entries: TarballEntry[], wrapper: string): MountFile[] 
  */
 export type MountProgressPhase = "fetch" | "extract" | "materialize";
 
+/**
+ * Within-AS materialize file-write progress (al-mount-observability) — the
+ * count of files written so far and the AssetSpace's total file volume. Carried
+ * by the `materialize` sub-phase of {@link MountAssetSpaceParams.onProgress} so a
+ * slow install advances visibly (`N of M files`) instead of going silent.
+ */
+export interface MountFileProgress {
+  processed: number;
+  total: number;
+}
+
+/**
+ * Files between within-AS materialize progress ticks (al-mount-observability).
+ * Mirrors {@link NoteToRDFConverter.INDEX_PROGRESS_INTERVAL} (200) — keeps a
+ * ~5 000-file mount to ~25 activity-log lines.
+ */
+export const MATERIALIZE_PROGRESS_INTERVAL = 200;
+
+/**
+ * Minimum file count for a mount to emit granular materialize progress
+ * (al-mount-observability). A small AssetSpace materialises fast enough that the
+ * per-AS "Mounting … (i of N)" marker suffices; only large AssetSpaces went
+ * silent for ~100s during the file-write phase, so only those (strictly greater
+ * than this threshold) emit per-file ticks.
+ */
+export const MATERIALIZE_PROGRESS_MIN_FILES = 500;
+
 /** Parameters for {@link mountAssetSpaceFiles}. */
 export interface MountAssetSpaceParams {
   http: HttpClient;
@@ -199,8 +237,13 @@ export interface MountAssetSpaceParams {
    * BEFORE each phase (`fetch` → `extract` → `materialize`) so a long mount
    * shows live progress. Best-effort: a throwing observer is swallowed so it
    * can never break a mount. Omitted by the CLI bootstrap path (zero cost).
+   *
+   * The `materialize` phase additionally re-emits with a {@link MountFileProgress}
+   * payload every {@link MATERIALIZE_PROGRESS_INTERVAL} files for a large
+   * AssetSpace (> {@link MATERIALIZE_PROGRESS_MIN_FILES}) — al-mount-observability.
+   * The `progress` arg is `undefined` for the baseline phase markers.
    */
-  onProgress?: (phase: MountProgressPhase) => void;
+  onProgress?: (phase: MountProgressPhase, progress?: MountFileProgress) => void;
 }
 
 /**
@@ -218,10 +261,10 @@ export async function mountAssetSpaceFiles(params: MountAssetSpaceParams): Promi
   const { http, fs, owner, repo, ref, targetPath } = params;
   // Best-effort sub-phase progress (#al-activitylog-progress) — a throwing
   // observer must never break the mount.
-  const emit = (phase: MountProgressPhase): void => {
+  const emit = (phase: MountProgressPhase, progress?: MountFileProgress): void => {
     if (params.onProgress === undefined) return;
     try {
-      params.onProgress(phase);
+      params.onProgress(phase, progress);
     } catch {
       /* swallow — progress is best-effort, never blocks the mount */
     }
@@ -238,7 +281,29 @@ export async function mountAssetSpaceFiles(params: MountAssetSpaceParams): Promi
   const sha = extractShaFromWrapper(wrapper);
   const files = buildMountFiles(entries, wrapper);
   emit("materialize");
-  const fileCount = await fs.materialize(targetPath, files);
+  // Granular within-AS install progress (al-mount-observability). The file-write
+  // phase is the longest for a large AssetSpace and was previously silent (one
+  // "materialize" marker then ~100s of nothing on iPhone). Mirror the indexing
+  // observability (NoteToRDFConverter `Indexing vault: N of M` every 200): when
+  // the file volume exceeds the threshold, hand the platform's materialize a
+  // per-file tick and re-emit it throttled every N files, skipping the final
+  // tick (the post-mount "Mounted" marker covers completion). Below the
+  // threshold a small AS stays quiet — the per-AS "Mounting … (i of N)" marker
+  // is signal enough.
+  const total = files.length;
+  const trackProgress =
+    params.onProgress !== undefined && total > MATERIALIZE_PROGRESS_MIN_FILES;
+  const fileCount = await fs.materialize(
+    targetPath,
+    files,
+    trackProgress
+      ? (processed) => {
+          if (processed % MATERIALIZE_PROGRESS_INTERVAL === 0 && processed < total) {
+            emit("materialize", { processed, total });
+          }
+        }
+      : undefined,
+  );
   return { sha, fileCount };
 }
 

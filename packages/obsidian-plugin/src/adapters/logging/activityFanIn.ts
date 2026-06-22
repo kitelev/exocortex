@@ -116,6 +116,23 @@ export function progressToActivity(
     event.label && event.label !== asPrefix
       ? `${event.label} ${asPrefix}`
       : asPrefix;
+  // Within-AS install progress (al-mount-observability) — a throttled
+  // `materialize` tick carries the file count + the AS volume, rendered as
+  // `Installing my 08dd15ed: 400 of 5000 files (8%)` (interview-validated:
+  // files + percent), mirroring `Indexing vault: N of M assets`. The baseline
+  // per-AS / sub-phase markers (no file counts) keep the `(index of total)`
+  // AssetSpace-batch form.
+  if (event.fileTotal !== undefined && event.fileProcessed !== undefined) {
+    const pct =
+      event.fileTotal > 0
+        ? Math.round((event.fileProcessed / event.fileTotal) * 100)
+        : 0;
+    return {
+      category: "progress",
+      level: "info",
+      message: `${verb} ${labelPart}: ${event.fileProcessed} of ${event.fileTotal} files (${pct}%)`,
+    };
+  }
   return {
     category: "progress",
     level: "info",
