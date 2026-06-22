@@ -76,6 +76,25 @@ describe("FrontmatterService", () => {
 | `*.spec.tsx` | `packages/obsidian-plugin/tests/component/` | Playwright CT                    |
 | `*.spec.ts`  | `packages/obsidian-plugin/tests/e2e/specs/` | Playwright                       |
 
+> **Canon directory for new core service tests** (test-quality audit 2026-06-22, §2):
+> the core package historically grew two parallel service-test directories —
+> `packages/core/tests/services/` (24 legacy files) and
+> `packages/core/tests/unit/services/`. The **canon for any NEW core service
+> test is `packages/core/tests/unit/services/`.** The 24 legacy files are
+> intentionally left in place (zero churn — no value in moving them); only new
+> additions are steered to the canon dir. `scripts/check-test-antipatterns.sh`
+> enforces this with a ratchet that fails CI if a new file lands in the legacy
+> dir.
+
+> **Integration-style tests run from `tests/unit/`.** The plugin jest config's
+> `testMatch` only globs `tests/unit/**`, `tests/performance/**` and
+> `../core/tests/**` — a file placed under `packages/obsidian-plugin/tests/integration/`
+> is **not** executed by the unit runner. Name integration tests
+> `*.integration.test.ts` and keep them under `tests/unit/` so they are picked
+> up and contribute coverage (e.g.
+> `tests/unit/services/SPARQLQueryService.integration.test.ts`, which drives the
+> real engine stack rather than mocking the central collaborator).
+
 ---
 
 ## Test Types
