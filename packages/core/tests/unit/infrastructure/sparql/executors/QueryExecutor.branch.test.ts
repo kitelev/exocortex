@@ -81,7 +81,7 @@ describe("QueryExecutor branch coverage", () => {
 
       const results = await executor.executeAll(algebra);
       // GRAPH operation delegates to GraphExecutor - may return 0 if no graph triples
-      expect(results.length).toBeGreaterThanOrEqual(0);
+      expect(Array.isArray(results)).toBe(true);
     });
 
     it("executes GRAPH with variable name iterates named graphs", async () => {
@@ -93,7 +93,7 @@ describe("QueryExecutor branch coverage", () => {
 
       const results = await executor.executeAll(algebra);
       // Variable graph iterates all named graphs - may be empty if no named graphs
-      expect(results.length).toBeGreaterThanOrEqual(0);
+      expect(Array.isArray(results)).toBe(true);
     });
   });
 
@@ -382,7 +382,7 @@ describe("QueryExecutor branch coverage", () => {
 
       const results = await executor.executeAll(algebra);
       // "type" is shared, should use bind join
-      expect(results.length).toBeGreaterThanOrEqual(0);
+      expect(Array.isArray(results)).toBe(true);
     });
   });
 
@@ -547,7 +547,7 @@ describe("QueryExecutor branch coverage", () => {
       };
 
       const results = await executor.executeAll(algebra);
-      expect(results.length).toBeGreaterThanOrEqual(0);
+      expect(Array.isArray(results)).toBe(true);
     });
 
     it("collects variables from logical operands", async () => {
@@ -586,7 +586,7 @@ describe("QueryExecutor branch coverage", () => {
       };
 
       const results = await executor.executeAll(algebra);
-      expect(results.length).toBeGreaterThanOrEqual(0);
+      expect(Array.isArray(results)).toBe(true);
     });
 
     it("collects variables from function args", async () => {
@@ -615,7 +615,7 @@ describe("QueryExecutor branch coverage", () => {
       };
 
       const results = await executor.executeAll(algebra);
-      expect(results.length).toBeGreaterThanOrEqual(0);
+      expect(Array.isArray(results)).toBe(true);
     });
 
     it("collects variables from EXISTS pattern in expression tree", async () => {
@@ -648,7 +648,7 @@ describe("QueryExecutor branch coverage", () => {
       };
 
       const results = await executor.executeAll(algebra);
-      expect(results.length).toBeGreaterThanOrEqual(0);
+      expect(Array.isArray(results)).toBe(true);
     });
   });
 

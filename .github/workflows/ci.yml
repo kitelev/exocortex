@@ -161,6 +161,14 @@ jobs:
       - name: Validate e2e shard assignments
         run: node scripts/validate-shard-assignments.mjs
 
+      # Test-quality audit 2026-06-22 (recommendation P4): ratchet guard against
+      # low-value test anti-patterns (method-exists `.toBe("function")` asserts +
+      # vacuous `toBeGreaterThanOrEqual(0)` length asserts). Fails if their count
+      # exceeds the committed baseline — bans NEW occurrences while grandfathering
+      # existing debt. See scripts/check-test-antipatterns.sh.
+      - name: Guard test anti-patterns
+        run: bash scripts/check-test-antipatterns.sh
+
   docs-link-check:
     runs-on: ubuntu-latest
     timeout-minutes: 3

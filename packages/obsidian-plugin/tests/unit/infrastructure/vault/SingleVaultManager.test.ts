@@ -204,17 +204,4 @@ describe("SingleVaultManager", () => {
     });
   });
 
-  describe("IMultiVaultManager interface compliance", () => {
-    it("should implement all required methods", () => {
-      expect(typeof manager.getCurrentVault).toBe("function");
-      expect(typeof manager.setCurrentVault).toBe("function");
-      expect(typeof manager.getVault).toBe("function");
-      expect(typeof manager.listVaults).toBe("function");
-      expect(typeof manager.registerVault).toBe("function");
-      expect(typeof manager.unregisterVault).toBe("function");
-      expect(typeof manager.onVaultChanged).toBe("function");
-      expect(typeof manager.hasVault).toBe("function");
-      expect(typeof manager.getVaultCount).toBe("function");
-    });
-  });
 });

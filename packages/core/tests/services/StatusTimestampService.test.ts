@@ -469,4 +469,89 @@ Project description.`;
       expect(mockVault.modify).toHaveBeenCalledWith(mockFile, expectedContent);
     });
   });
+
+  describe("shiftPlannedEndTimestamp", () => {
+    // Consolidated from the former StatusTimestampService.branch.test.ts.
+    // shiftPlannedEndTimestamp was the only behavior unique to that file; its
+    // add*/remove* tests duplicated (more weakly) the content-level assertions
+    // already present above, so the .branch file was removed (zero coverage
+    // loss). The positive/negative-delta tests below assert the shift itself,
+    // not merely that modify was called.
+
+    it("should shift planned end timestamp forward by a positive delta", async () => {
+      mockVault.read.mockResolvedValue(
+        '---\nems__Effort_plannedEndTimestamp: "2025-06-15T10:00:00"\n---\n',
+      );
+
+      await service.shiftPlannedEndTimestamp(mockFile, 3600000); // +1 hour
+
+      // Verify the SHIFT math: the date handed to the formatter must equal
+      // currentDate + delta (the formatter itself is mocked, so we assert its
+      // input rather than the formatted output string).
+      const expectedShifted = new Date(
+        new Date("2025-06-15T10:00:00").getTime() + 3600000,
+      );
+      expect(DateFormatter.toLocalTimestamp).toHaveBeenCalledWith(
+        expectedShifted,
+      );
+      expect(mockVault.modify).toHaveBeenCalledWith(
+        mockFile,
+        expect.stringContaining("ems__Effort_plannedEndTimestamp"),
+      );
+    });
+
+    it("should shift planned end timestamp backward by a negative delta", async () => {
+      mockVault.read.mockResolvedValue(
+        '---\nems__Effort_plannedEndTimestamp: "2025-06-15T10:00:00"\n---\n',
+      );
+
+      await service.shiftPlannedEndTimestamp(mockFile, -3600000); // -1 hour
+
+      const expectedShifted = new Date(
+        new Date("2025-06-15T10:00:00").getTime() - 3600000,
+      );
+      expect(DateFormatter.toLocalTimestamp).toHaveBeenCalledWith(
+        expectedShifted,
+      );
+      expect(mockVault.modify).toHaveBeenCalled();
+    });
+
+    it("should return early when frontmatter does not exist", async () => {
+      mockVault.read.mockResolvedValue("No frontmatter here");
+
+      await service.shiftPlannedEndTimestamp(mockFile, 3600000);
+
+      expect(mockVault.modify).not.toHaveBeenCalled();
+    });
+
+    it("should return early when plannedEndTimestamp is not set", async () => {
+      mockVault.read.mockResolvedValue("---\nexo__Asset_uid: abc\n---\n");
+
+      await service.shiftPlannedEndTimestamp(mockFile, 3600000);
+
+      expect(mockVault.modify).not.toHaveBeenCalled();
+    });
+
+    it("should return early when plannedEndTimestamp is an invalid date", async () => {
+      mockVault.read.mockResolvedValue(
+        '---\nems__Effort_plannedEndTimestamp: "not-a-date"\n---\n',
+      );
+
+      await service.shiftPlannedEndTimestamp(mockFile, 3600000);
+
+      expect(mockVault.modify).not.toHaveBeenCalled();
+    });
+
+    it("should strip quotes before parsing the timestamp value", async () => {
+      mockVault.read.mockResolvedValue(
+        "---\nems__Effort_plannedEndTimestamp: '2025-06-15T10:00:00'\n---\n",
+      );
+
+      await service.shiftPlannedEndTimestamp(mockFile, 3600000);
+
+      // If quotes were not stripped, new Date("'2025...'") would be invalid and
+      // the method would return early — so a modify call proves quote-stripping.
+      expect(mockVault.modify).toHaveBeenCalled();
+    });
+  });
 });
