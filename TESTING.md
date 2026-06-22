@@ -654,6 +654,66 @@ const metadata = createMockMetadata({
 const metadata = createMockMetadata({ exo__Asset_label: null });
 ```
 
+#### Lift over-mock service-wrappers to integration
+
+> Test-quality audit 2026-06-22, P3.1 (Testing-Trophy opportunistic-lift policy).
+
+When you **touch** a plugin service-wrapper test that wholesale-mocks a central
+collaborator (`@kitelev/exocortex-core` / `-services`, `VaultRDFIndexer`, a
+`/services/` / `/adapters/` / `/infrastructure/` module) and asserts **only
+delegation** (`expect(mockX.foo).toHaveBeenCalled()`) with **no output-value
+assertion**, lift it to a `*.integration.test.ts` that drives the **real**
+collaborator. A pass-through test proves "the call was forwarded" but never
+exercises the behaviour the user depends on — and it breaks on any valid
+internal refactor while a real bug (wrong query, wrong mapping) slips through.
+
+**The correct seam is the Obsidian platform boundary only** (vault /
+metadataCache). Everything inside `@kitelev/exocortex-*` stays REAL (jest maps
+the workspace packages to source). Fake a realistic in-memory `App` whose
+`getMarkdownFiles()` / `getFileCache().frontmatter` / `read()` mirror the real
+Obsidian read contract, then assert on the real solution mappings.
+
+**Exemplar:** `packages/obsidian-plugin/tests/unit/services/SPARQLQueryService.integration.test.ts`.
+The old over-mock unit (`SPARQLQueryService.test.ts`) fully mocked
+`VaultRDFIndexer` and asserted only `initialize/refresh/dispose
+toHaveBeenCalled` — the service's primary method (`query()` actually parsing +
+executing SPARQL) was never exercised. It was deleted and replaced by an
+integration suite where the whole engine stack is real (`ObsidianVaultAdapter` →
+`NoteToRDFConverter` → `InMemoryTripleStore` → `ExoQLParser`/executor) and only
+the Obsidian boundary is faked.
+
+```typescript
+// ❌ over-mock pass-through (delegation only — verifies nothing real)
+jest.mock("@kitelev/exocortex-core", () => ({ VaultRDFIndexer: jest.fn() }));
+it("refreshes the index", async () => {
+  await service.query("SELECT ...");
+  expect(mockIndexer.refresh).toHaveBeenCalled(); // only that a call happened
+});
+
+// ✅ integration lift (real engine, fake only the Obsidian boundary)
+it("returns the assets matching the SPARQL query", async () => {
+  const { app } = buildApp([
+    {
+      path: "a.md",
+      frontmatter: {
+        /* real fm */
+      },
+    },
+  ]);
+  const service = new SPARQLQueryService(app); // real VaultRDFIndexer underneath
+  const rows = await service.query("SELECT ?s WHERE { ?s a exo:Asset }");
+  expect(rows).toEqual([{ s: "https://exocortex.my/...a" }]); // real solution mapping
+});
+```
+
+**Policy:** lift **by touch**, not as a big-bang sweep (cascade-cap — each lift is
+independent and revert-verifiable). The
+[`scripts/check-test-antipatterns.sh`](scripts/check-test-antipatterns.sh)
+over-mock ratchet (baseline 0) bans **introducing** a NEW pure pass-through
+over-mock file, so the shift is self-sustaining without relying on reviewer
+memory: a new plugin service-wrapper test must drive a real collaborator or it
+fails the `lint` gate.
+
 ### Async Testing
 
 #### Testing Promises

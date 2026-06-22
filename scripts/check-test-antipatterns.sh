@@ -30,6 +30,25 @@
 #      ratchet only prevents the legacy dir from GROWING. A new test added there
 #      fails the guard with a pointer to the canon dir.
 #
+#   4. over-mock pass-through service-wrappers — a test file that wholesale-mocks
+#      a CENTRAL internal collaborator (`@kitelev/exocortex-core`/`-services`, or
+#      a relative mock of `/services/`, `/adapters/`, `/infrastructure/`,
+#      `VaultRDFIndexer`) AND asserts ONLY delegation (`toHaveBeenCalled*`) with
+#      ZERO output-value assertions in the whole file. Such a test verifies the
+#      service forwarded a call but NEVER exercises the real behaviour — exactly
+#      the shape the audit's Testing-Trophy shift targets (P2 + P3). The
+#      canonical example (`SPARQLQueryService.test.ts`) was DELETED and lifted to
+#      `SPARQLQueryService.integration.test.ts` (real engine stack, faking only
+#      the Obsidian boundary), so the current baseline is 0 — there are no pure
+#      pass-through over-mock files today. This ratchet bans INTRODUCING a new
+#      one: a new plugin service-wrapper test must drive a real collaborator
+#      (lift to `*.integration.test.ts`) instead of mocking it and asserting
+#      delegation. See TESTING.md §"Lift over-mock service-wrappers to integration".
+#      Like the method-exists guard the detection is heuristic (FP-tolerant): the
+#      file-level "no output-value assertion anywhere" filter is narrow (almost
+#      every real test asserts an output), and a justified exception bumps the
+#      baseline UP with a PR comment (the same escape hatch as the other ratchets).
+#
 # Mechanism: count current occurrences across all test files and FAIL if the
 # count exceeds the committed baseline. This bans NEW occurrences (recidivism)
 # while grandfathering the existing debt. As the debt is cleaned, ratchet the
@@ -39,6 +58,13 @@
 # Usage:
 #   bash scripts/check-test-antipatterns.sh                 # CI gate
 #   bash scripts/check-test-antipatterns.sh --update-baseline  # print current counts
+#
+# Testability (the @req binding test drives the guard against a fixture tree):
+#   ANTIPATTERN_SCAN_DIR    — test-corpus root to scan (default: packages)
+#   ANTIPATTERN_NONCANON_DIR— legacy non-canon service dir (default: packages/core/tests/services)
+#   BASELINE_METHOD_EXISTS / BASELINE_VACUOUS_LENGTH /
+#   BASELINE_NONCANON_SERVICE_DIR / BASELINE_OVERMOCK — override the committed
+#   baselines (used by the guard's own revert-verify test, never in CI).
 
 set -u
 
@@ -46,41 +72,80 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 # --- Baselines (grandfathered existing occurrences). Ratchet DOWN as cleaned. ---
-BASELINE_METHOD_EXISTS=55
-BASELINE_VACUOUS_LENGTH=22
+# Env-overridable so the guard's own @req binding test can force a RED/GREEN
+# verdict against a fixture corpus without touching the real tree (the defaults
+# are the committed baselines used in CI).
+BASELINE_METHOD_EXISTS="${BASELINE_METHOD_EXISTS:-55}"
+BASELINE_VACUOUS_LENGTH="${BASELINE_VACUOUS_LENGTH:-21}"
 # Legacy non-canon core service-test dir. Canon for NEW tests is
 # packages/core/tests/unit/services/. This grandfathers the existing files and
 # bans growth (see header item 3). Ratchet DOWN if legacy files are removed.
-BASELINE_NONCANON_SERVICE_DIR=24
+BASELINE_NONCANON_SERVICE_DIR="${BASELINE_NONCANON_SERVICE_DIR:-24}"
+# Over-mock pass-through service-wrappers (header item 4). Baseline 0 — the
+# canonical over-mock was lifted to an integration suite, so no pure pass-through
+# over-mock file exists today. Bans introducing one.
+BASELINE_OVERMOCK="${BASELINE_OVERMOCK:-0}"
+
+# Scan root (default: the whole monorepo packages tree). Overridable for the
+# guard's revert-verify test (points at a fixture corpus).
+SCAN_DIR="${ANTIPATTERN_SCAN_DIR:-packages}"
 
 # --- Patterns (must match the grep used to compute the baselines above). ---
 ME_PATTERN="\.toBe\((\"|')function(\"|')\)"
 VL_PATTERN="toBeGreaterThanOrEqual\(0\)"
 
+# over-mock detection patterns (header item 4):
+#  - OM_MOCK: a wholesale jest.mock() of a CENTRAL internal collaborator. Matches
+#    the core/services workspace packages and relative mocks into the
+#    service/adapter/infrastructure layers (the central-collaborator surface),
+#    NOT platform mocks like jest.mock("obsidian").
+#  - OM_OUTPUT_ASSERT: any output-VALUE assertion. A file carrying one is NOT a
+#    pure pass-through (it exercises real behaviour) → excluded.
+OM_MOCK="jest\.mock\((\"|')[^\"']*(@kitelev/exocortex-(core|services)|/services/|/adapters/|/infrastructure/|VaultRDFIndexer)"
+OM_OUTPUT_ASSERT="\.(toEqual|toStrictEqual|toMatchObject|toMatchSnapshot|toContain|toContainEqual|toHaveLength|toHaveProperty|toMatch|toThrow|toThrowError|toBeTruthy|toBeFalsy|toBeDefined|toBeNull|toBeNaN|toBeInstanceOf|toBeGreaterThan|toBeGreaterThanOrEqual|toBeLessThan|toBeLessThanOrEqual|toBeCloseTo)\(|\.toBe\(|resolves|rejects"
+
 # Canon-dir guideline: count .test.ts files in the legacy non-canon dir.
-NONCANON_SERVICE_DIR="packages/core/tests/services"
+NONCANON_SERVICE_DIR="${ANTIPATTERN_NONCANON_DIR:-packages/core/tests/services}"
 
 count() {
   # Line count of matches across all test files. grep exits 1 on no match;
   # the trailing `| wc -l` makes the pipeline's exit status wc's (0), and we
   # avoid `set -e`/pipefail so a zero count never aborts the script.
-  grep -rnE "$1" packages --include='*.test.ts' --include='*.test.tsx' 2>/dev/null | wc -l | tr -d ' '
+  grep -rnE "$1" "$SCAN_DIR" --include='*.test.ts' --include='*.test.tsx' 2>/dev/null | wc -l | tr -d ' '
 }
 
 list_files() {
-  grep -rlE "$1" packages --include='*.test.ts' --include='*.test.tsx' 2>/dev/null | sed 's/^/     /'
+  grep -rlE "$1" "$SCAN_DIR" --include='*.test.ts' --include='*.test.tsx' 2>/dev/null | sed 's/^/     /'
+}
+
+# Count test files that are over-mock pass-through service-wrappers: wholesale
+# mock a central collaborator AND assert delegation (toHaveBeenCalled) AND have
+# NO output-value assertion anywhere in the file. Emits one path per match on
+# stdout; callers `| wc -l` to count or read the list directly.
+overmock_files() {
+  grep -rlE "$OM_MOCK" "$SCAN_DIR" --include='*.test.ts' --include='*.test.tsx' 2>/dev/null |
+    while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      # Must assert delegation …
+      grep -qE 'toHaveBeenCalled' "$f" || continue
+      # … and carry NO output-value assertion (pure pass-through).
+      grep -qE "$OM_OUTPUT_ASSERT" "$f" && continue
+      echo "$f"
+    done
 }
 
 ME_COUNT="$(count "$ME_PATTERN")"
 VL_COUNT="$(count "$VL_PATTERN")"
 # Top-level .test.ts files in the legacy non-canon service dir (flat dir).
 NONCANON_COUNT="$(find "$NONCANON_SERVICE_DIR" -maxdepth 1 -name '*.test.ts' 2>/dev/null | wc -l | tr -d ' ')"
+OVERMOCK_COUNT="$(overmock_files | sed '/^$/d' | wc -l | tr -d ' ')"
 
 if [ "${1:-}" = "--update-baseline" ]; then
   echo "Current counts (paste into this script's BASELINE_* values):"
   echo "  BASELINE_METHOD_EXISTS=$ME_COUNT"
   echo "  BASELINE_VACUOUS_LENGTH=$VL_COUNT"
   echo "  BASELINE_NONCANON_SERVICE_DIR=$NONCANON_COUNT"
+  echo "  BASELINE_OVERMOCK=$OVERMOCK_COUNT"
   exit 0
 fi
 
@@ -113,8 +178,22 @@ if [ "$NONCANON_COUNT" -gt "$BASELINE_NONCANON_SERVICE_DIR" ]; then
   fail=1
 fi
 
+if [ "$OVERMOCK_COUNT" -gt "$BASELINE_OVERMOCK" ]; then
+  echo "❌ over-mock pass-through service-wrappers increased: $OVERMOCK_COUNT > baseline $BASELINE_OVERMOCK"
+  echo "   A new test file wholesale-mocks a central collaborator"
+  echo "   (@kitelev/exocortex-core/-services, or /services//adapters//infrastructure/,"
+  echo "   VaultRDFIndexer) and asserts ONLY delegation (toHaveBeenCalled*) with no"
+  echo "   output-value assertion — it verifies a call was forwarded but never"
+  echo "   exercises real behaviour. Lift it to a *.integration.test.ts that drives"
+  echo "   the real collaborator and faking only the Obsidian boundary (see"
+  echo "   TESTING.md §\"Lift over-mock service-wrappers to integration\")."
+  echo "   Files with this pattern:"
+  overmock_files | sed 's/^/     /'
+  fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
-  echo "✅ test anti-pattern guard OK — method-exists=$ME_COUNT/$BASELINE_METHOD_EXISTS, vacuous-length=$VL_COUNT/$BASELINE_VACUOUS_LENGTH, non-canon-service-dir=$NONCANON_COUNT/$BASELINE_NONCANON_SERVICE_DIR (no recurrence)"
+  echo "✅ test anti-pattern guard OK — method-exists=$ME_COUNT/$BASELINE_METHOD_EXISTS, vacuous-length=$VL_COUNT/$BASELINE_VACUOUS_LENGTH, non-canon-service-dir=$NONCANON_COUNT/$BASELINE_NONCANON_SERVICE_DIR, over-mock=$OVERMOCK_COUNT/$BASELINE_OVERMOCK (no recurrence)"
 fi
 
 # Non-fatal nudge: when counts drop, the baseline should be ratcheted down so the
@@ -127,6 +206,9 @@ if [ "$VL_COUNT" -lt "$BASELINE_VACUOUS_LENGTH" ]; then
 fi
 if [ "$NONCANON_COUNT" -lt "$BASELINE_NONCANON_SERVICE_DIR" ]; then
   echo "ℹ️  non-canon service-dir dropped to $NONCANON_COUNT (baseline $BASELINE_NONCANON_SERVICE_DIR) — ratchet BASELINE_NONCANON_SERVICE_DIR down via --update-baseline."
+fi
+if [ "$OVERMOCK_COUNT" -lt "$BASELINE_OVERMOCK" ]; then
+  echo "ℹ️  over-mock dropped to $OVERMOCK_COUNT (baseline $BASELINE_OVERMOCK) — ratchet BASELINE_OVERMOCK down via --update-baseline."
 fi
 
 exit $fail
