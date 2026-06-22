@@ -714,6 +714,57 @@ over-mock file, so the shift is self-sustaining without relying on reviewer
 memory: a new plugin service-wrapper test must drive a real collaborator or it
 fails the `lint` gate.
 
+### Mutation Testing (nightly)
+
+[Stryker](https://stryker-mutator.io/) mutation testing **proves the suite
+actually catches bugs**. It modifies source ("mutants" — flip `>` to `>=`,
+delete a statement, swap `&&`/`||`, …) and checks whether a test fails ("kills"
+the mutant). A **surviving** mutant is a test gap: the code was broken and _no
+test noticed_. This is the automated form of the manual per-fix revert-verify —
+it finds harness theater **systemically**, across the whole suite, not just on
+the files you happen to touch.
+
+```
+mutation score = (killed + timeout) / (killed + timeout + survived + no-coverage)
+```
+
+**Scope: `packages/core` + `packages/cli` only** (the deterministic engine + the
+fast CLI). The plugin and e2e layers are excluded — they are far too slow under
+mutation. It runs as a **nightly cron**
+([`.github/workflows/mutation-nightly.yml`](.github/workflows/mutation-nightly.yml)),
+**NOT a required PR check** — a full Stryker run is too slow for the critical PR
+path. core is CommonJS jest ([`stryker.config.mjs`](stryker.config.mjs)); cli is
+ESM jest, so it needs `--experimental-vm-modules`
+([`stryker.cli.config.mjs`](stryker.cli.config.mjs)).
+
+Run on-demand locally (slow — scope down with Stryker's `--mutate` while iterating):
+
+```bash
+npm run test:mutation:core            # packages/core
+npm run test:mutation:cli             # packages/cli (sets NODE_OPTIONS for you)
+npx stryker run stryker.config.mjs --mutate 'packages/core/src/utilities/**/*.ts'  # narrow scope
+```
+
+**Break-budget gate.** [`scripts/check-mutation-score.mjs`](scripts/check-mutation-score.mjs)
+reads the Stryker JSON report and fails (exit 1) when a package's score drops
+below its budget in [`scripts/mutation-budget.json`](scripts/mutation-budget.json).
+The budgets are **conservative honest floors** — initial scores can be low, and
+the first nightly run on `main` establishes the real baseline. **Ratchet each
+number UP** toward the observed score as the suite hardens; lowering one is a
+conscious withdrawal that, under everything-req-first (RFC 0003), needs a
+`req__Requirement` justification. The gate also writes the score + killed/survived
+counts to the job-summary for observability. An escaped mutant that drops the
+score below budget turns the nightly **red** — see the revert-verify binding in
+[`packages/obsidian-plugin/tests/unit/build/check-mutation-score.test.ts`](packages/obsidian-plugin/tests/unit/build/check-mutation-score.test.ts)
+(`@req:7af848cd`, runs in required CI: it drives the real gate against fixture
+reports — below-budget → red, at/above → green).
+
+**Speed.** `coverageAnalysis: perTest` + `enableFindRelatedTests` run only the
+covering tests per mutant; Stryker `incremental` (persisted across runs via
+actions/cache) means the first nightly is the slow full baseline and subsequent
+runs only re-mutate changed files. The full first run over core+cli is long
+(~1.5–2.5h on the runners) — acceptable nightly, never on the PR path.
+
 ### Async Testing
 
 #### Testing Promises

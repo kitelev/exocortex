@@ -1,0 +1,113 @@
+name: Mutation Testing (nightly)
+
+# Stryker mutation testing over packages/core + packages/cli. Mutation testing
+# PROVES the test suite actually catches bugs (a surviving mutant = a test gap
+# the manual per-fix revert-verify cannot find systemically).
+#
+# Test-quality improvement-plan 2026-06-22 (P4). NIGHTLY CRON ONLY — NOT a
+# required PR check (decision Q2: a full Stryker run is far too slow for the
+# critical PR path; plugin/e2e are excluded entirely as too slow under mutation).
+# The score gate (scripts/check-mutation-score.mjs vs scripts/mutation-budget.json)
+# fails this job when a package's mutation score drops below its honest
+# break-budget, and the job-summary surfaces the score + killed/survived counts.
+#
+# Speed: Stryker `incremental` caches per-mutant results; the incremental file is
+# persisted across runs via actions/cache, so the first run is the slow full
+# baseline and subsequent runs only re-mutate changed files.
+
+on:
+  schedule:
+    # 03:30 UTC nightly (08:30 Asia/Almaty) — offset from the other nightlies
+    # (eka-obsidian-leg 02:00, eka-gui 02:30, e2e-desktop 06:00).
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Which package(s) to mutate"
+        type: choice
+        options: [both, core, cli]
+        default: both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    # Generous — the first full run is the slow baseline (~1.5-2.5h for full
+    # core+cli on these runners); incremental runs after that are minutes.
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [core, cli]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # core integration suites read fixtures from the exoas-exocmd data
+          # submodule; without it the dry-run would fail.
+          submodules: recursive
+
+      - name: Skip non-selected package (manual dispatch)
+        id: gate
+        run: |
+          sel="${{ github.event.inputs.package || 'both' }}"
+          if [ "$sel" = "both" ] || [ "$sel" = "${{ matrix.package }}" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping ${{ matrix.package }} (dispatch selected: $sel)"
+          fi
+
+      - name: Setup Node & install deps
+        if: steps.gate.outputs.run == 'true'
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Restore Stryker incremental cache
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: reports/mutation/incremental-${{ matrix.package }}.json
+          key: stryker-incremental-${{ matrix.package }}-${{ github.run_id }}
+          restore-keys: |
+            stryker-incremental-${{ matrix.package }}-
+
+      - name: Run Stryker (${{ matrix.package }})
+        if: steps.gate.outputs.run == 'true'
+        env:
+          # CLI is ESM — jest needs the VM-modules flag (mirrors test:mutation:cli).
+          NODE_OPTIONS: --experimental-vm-modules
+        run: npm run test:mutation:${{ matrix.package }}
+
+      - name: Mutation-score summary header
+        if: steps.gate.outputs.run == 'true' && always()
+        run: |
+          {
+            echo "## Mutation score — \`${{ matrix.package }}\`"
+            echo ""
+            echo "| package | score | budget | verdict | killed | timeout | survived | no-cov |"
+            echo "|---|---|---|---|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Mutation-score gate (${{ matrix.package }})
+        if: steps.gate.outputs.run == 'true' && always()
+        # The gate appends its score row to the job-summary BEFORE exiting, so the
+        # observability table is present even when the run is below budget (RED).
+        run: |
+          node scripts/check-mutation-score.mjs \
+            --report reports/mutation/mutation-${{ matrix.package }}.json \
+            --package ${{ matrix.package }}
+
+      - name: Upload mutation HTML report
+        if: steps.gate.outputs.run == 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report-${{ matrix.package }}
+          path: reports/mutation/mutation-${{ matrix.package }}.html
+          if-no-files-found: ignore
+          retention-days: 14
