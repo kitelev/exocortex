@@ -1,0 +1,7 @@
+{
+  "_comment": "Mutation-score break-budgets per package (test-quality plan P4, RFC 0003 everything-req-first). The NIGHTLY mutation workflow (.github/workflows/mutation-nightly.yml) runs Stryker over packages/{core,cli}/src and fails when the total mutation score (killed+timeout over killed+timeout+survived+no-coverage) falls BELOW the budget here. These are INTENTIONALLY conservative honest floors — initial mutation scores can be low, and the first nightly run on main establishes the real baseline. RATCHET each number UP (toward the observed score minus a small margin) as the suite hardens; LOWERING a number is a conscious withdrawal that, under everything-req-first, requires a req__Requirement justification. NOT a PR-gating check (decision Q2: nightly only — a full Stryker run is too slow for the critical PR path).",
+  "budgets": {
+    "core": 40,
+    "cli": 40
+  }
+}
