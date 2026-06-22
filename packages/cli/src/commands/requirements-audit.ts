@@ -79,6 +79,30 @@ const BINDING_CLASS_MAP: Record<string, string> = {
 const UI_ACCEPTANCE = "ui-acceptance";
 
 /**
+ * GUI-in-CI runner spec path (al-gui-ci-runner — dedup of `eka-gui-e2e`).
+ *
+ * A `@req:<uid>` tag whose test file lives under `tests/e2e/eka-gui/` is an
+ * **automated GUI verification**: it binds the requirement to a scenario of the
+ * `eka-gui-e2e` suite, which drives the REAL plugin UI against a fresh vault on
+ * native-amd64 CI and asserts real on-disk frontmatter. For the `ui-acceptance`
+ * tier this is the *automated* sub-mode: the eka-gui run auto-produces the
+ * evidence (screenshot / DOM snapshot / per-`@req` manifest), deduplicating the
+ * hand-written committed evidence-attestation. A `@req` tag in any OTHER test
+ * (a jsdom unit/component test, a CLI integration test) is NOT a GUI-in-CI run
+ * and so does NOT auto-evidence a `ui-acceptance` requirement.
+ *
+ * Scoped deliberately to `eka-gui` (public repos, always-runs) — NOT its sibling
+ * `eka-obsidian-leg` (private repos, PAT-gated, self-skips), which is not a
+ * reliable always-on auto-evidence source.
+ */
+const GUI_RUNNER_SPEC_RE = /(^|[\\/])tests[\\/]e2e[\\/]eka-gui[\\/]/;
+
+/** True iff a scanned test-file path is a GUI-in-CI runner (`eka-gui`) spec. */
+export function isGuiRunnerSpec(file: string): boolean {
+  return GUI_RUNNER_SPEC_RE.test(file);
+}
+
+/**
  * A binding class that exercises production beyond a pure unit test. `ui-acceptance`
  * is included: a manual live-UI acceptance check exercises real production more
  * than a unit test, so it satisfies the P0 binding-class floor.
@@ -233,6 +257,18 @@ export interface TraceabilityReport {
   uiAcceptanceTotal: number;
   /** `ui-acceptance` requirements with ≥1 resolving committed evidence link. */
   uiAcceptanceEvidenced: number;
+  /**
+   * `ui-acceptance` requirements verified by the AUTOMATED sub-mode — a `@req`
+   * binding in a GUI-in-CI runner (`eka-gui`) spec (al-gui-ci-runner dedup).
+   * The eka-gui run auto-produces the evidence; no committed attestation needed.
+   */
+  uiAcceptanceAutomated: number;
+  /**
+   * `ui-acceptance` requirements verified by the MANUAL sub-mode — a resolving
+   * committed evidence-attestation (computer-control), WITHOUT a GUI-runner
+   * `@req` binding. The genuinely-not-automatable tier (RFC 0003 §3.6).
+   */
+  uiAcceptanceManual: number;
   /**
    * `ui-acceptance` requirements with NO resolving evidence — evidence-coverage
    * gap (reported for visibility; HARD only for the `active` subset, via
@@ -473,6 +509,14 @@ export function auditTraceability(
     else occByUid.set(key, [t]);
   }
 
+  // True iff the requirement is bound by a `@req` tag living in a GUI-in-CI
+  // runner (`eka-gui`) spec — the AUTOMATED ui-acceptance sub-mode
+  // (al-gui-ci-runner dedup). The eka-gui run is the auto-evidence.
+  const hasGuiRunnerBinding = (r: RequirementRecord): boolean =>
+    (occByUid.get(r.uid.toLowerCase()) ?? []).some((o) =>
+      isGuiRunnerSpec(o.file),
+    );
+
   const orphans: OrphanFinding[] = [];
   let bound = 0;
   let manuallyVerified = 0;
@@ -550,29 +594,33 @@ export function auditTraceability(
     if (r.status?.toLowerCase() !== "active") continue;
     activeTotal++;
     const isBound = occByUid.has(r.uid.toLowerCase());
-    // A jest `@req` binding satisfies the active req regardless of binding class
-    // (matches the existing "jest tag takes precedence" count semantics).
-    if (isBound) continue;
     if (isManuallyVerified(r)) {
-      // ui-acceptance tier: the verification binding IS the recorded
-      // computer-control evidence (RFC 0003 §3.6). For an `active` ui-acceptance
-      // requirement, require that evidence to be committed + linked + resolving —
-      // otherwise the tier is a self-asserting "trust the prose" (the gap
-      // al-night-uiaccept closes). A declared-but-missing evidence path is ALSO
-      // a danglingEvidence finding; here it additionally blocks the always-on
-      // active gate. Proposed/Draft ui-acceptance reqs are NOT gated on evidence
-      // (migration-friendly) — only the in-force `active` subset.
-      if (!hasResolvingEvidence(r)) {
-        activeViolations.push({
-          uid: r.uid,
-          label: r.label,
-          path: r.path,
-          reason:
-            "active ui-acceptance requirement has no resolving committed evidence (req__Requirement_evidence) — commit + link the evidence artifact, or move it to Deprecated",
-        });
-      }
+      // ui-acceptance tier — TWO satisfaction sub-modes (al-gui-ci-runner dedup,
+      // RFC 0003 §3.6). The verification of a `ui-acceptance` (live-UI) req is a
+      // REAL UI run, not "any @req tag":
+      //   • AUTOMATED — a `@req` binding in a GUI-in-CI runner (`eka-gui`) spec.
+      //     The eka-gui run (real plugin UI, native-amd64 CI) auto-produces the
+      //     evidence; no committed attestation needed (the dedup — ONE engine).
+      //   • MANUAL — a resolving committed evidence-attestation (computer-control)
+      //     for the genuinely-not-automatable case.
+      // A `@req` tag in a NON-GUI test (jsdom unit/component, CLI integration) is
+      // NOT a live-UI verification, so it does NOT auto-evidence a ui-acceptance
+      // req — closing the `if (isBound)` hole where a unit-test tag faked an
+      // acceptance. Proposed/Draft ui-acceptance reqs are NOT gated (migration-
+      // friendly) — only the in-force `active` subset.
+      if (hasGuiRunnerBinding(r) || hasResolvingEvidence(r)) continue;
+      activeViolations.push({
+        uid: r.uid,
+        label: r.label,
+        path: r.path,
+        reason:
+          "active ui-acceptance requirement is not verified — bind it to an eka-gui GUI-in-CI scenario (@req in tests/e2e/eka-gui/, automated evidence) OR commit + link a req__Requirement_evidence attestation (manual), OR move it to Deprecated. A @req tag in a non-GUI test does not auto-evidence a live-UI acceptance.",
+      });
       continue;
     }
+    // Non-ui-acceptance reqs: any `@req` jest binding satisfies (unchanged —
+    // "jest tag takes precedence" count semantics).
+    if (isBound) continue;
     activeViolations.push({
       uid: r.uid,
       label: r.label,
@@ -589,6 +637,13 @@ export function auditTraceability(
   const danglingEvidence: DanglingEvidenceFinding[] = [];
   let uiAcceptanceTotal = 0;
   let uiAcceptanceEvidenced = 0;
+  // al-gui-ci-runner dedup: split the ui-acceptance tier into the AUTOMATED
+  // sub-mode (verified by a GUI-in-CI runner `@req` binding — the eka-gui run is
+  // the auto-evidence) vs the MANUAL sub-mode (committed attestation only, no
+  // GUI-runner binding). A req with BOTH counts as automated (the stronger,
+  // reproducible verification).
+  let uiAcceptanceAutomated = 0;
+  let uiAcceptanceManual = 0;
   for (const r of requirements) {
     if (r.evidenceMissing.length > 0) {
       danglingEvidence.push({
@@ -601,6 +656,8 @@ export function auditTraceability(
     if (isManuallyVerified(r)) {
       uiAcceptanceTotal++;
       if (hasResolvingEvidence(r)) uiAcceptanceEvidenced++;
+      if (hasGuiRunnerBinding(r)) uiAcceptanceAutomated++;
+      else if (hasResolvingEvidence(r)) uiAcceptanceManual++;
     }
   }
   const uiAcceptanceMissingEvidence = uiAcceptanceTotal - uiAcceptanceEvidenced;
@@ -639,6 +696,8 @@ export function auditTraceability(
     danglingEvidence,
     uiAcceptanceTotal,
     uiAcceptanceEvidenced,
+    uiAcceptanceAutomated,
+    uiAcceptanceManual,
     uiAcceptanceMissingEvidence,
     unknownPriority,
     clean,
@@ -672,7 +731,8 @@ function renderText(report: TraceabilityReport, gate: GateMode = "soft"): void {
   );
   console.log(
     `ui-acceptance: ${report.uiAcceptanceTotal} | ` +
-      `with committed evidence: ${report.uiAcceptanceEvidenced} | ` +
+      `automated (eka-gui runner): ${report.uiAcceptanceAutomated} | ` +
+      `manual (committed evidence): ${report.uiAcceptanceManual} | ` +
       `missing evidence: ${report.uiAcceptanceMissingEvidence}`,
   );
 

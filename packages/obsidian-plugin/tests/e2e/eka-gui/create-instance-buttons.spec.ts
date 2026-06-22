@@ -261,7 +261,14 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
   // whose exo__Instance_class is the host class (via the $targetClassSelf
   // PropertyDefault) and whose exo__Asset_isDefinedBy + folder follow the PICKED
   // ontology ($exo ≠ the host's own $ems → proves the picker drives both).
-  test("scenario 9 — Create Instance on an exo__Class page (flagship bbe40f8c)", async () => {
+  // `@req:` GUI-in-CI runner binding (al-gui-ci-runner dedup): this scenario IS
+  // the gui-bdd floor binding that req ace6df4f ("creating an instance surfaces
+  // the class's SHACL-required properties as form fields") already names in its
+  // prose verifiedBy — making that claim a TRACED binding the `requirements
+  // audit` checker picks up (`--tests .` scans this spec). A `@req` tag in an
+  // eka-gui spec = the AUTOMATED verification sub-mode; the eka-gui run on
+  // native-amd64 CI auto-produces the evidence (req-evidence.json + screenshot).
+  test("scenario 9 — Create Instance on an exo__Class page (flagship bbe40f8c) @req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0", async () => {
     // Store-completeness gate for THIS target: the binding targets the exo__Class
     // metaclass (not ems__Area), so gate on "Create Instance" resolving on the
     // class-def page itself (same #3587 rationale as the beforeAll area gate).
