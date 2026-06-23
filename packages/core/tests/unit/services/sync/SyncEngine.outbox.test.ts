@@ -554,3 +554,138 @@ describe("ExoSync batch head-staleness — multiple keep-local stragglers conver
     }
   });
 });
+
+// ── Cross-path keep-REMOTE / merged convergence (#3731) ──────────────────────
+// The symmetric counterpart of #3729 (keep-local). For the SAME cross-path
+// same-uid divergence (flat-local ↔ co-located-remote, no common base):
+//
+//  • keep-REMOTE needs NO remote mutation (the remote is already canonical at
+//    the co-located path). The resolver writes the chosen REMOTE content to the
+//    (flat) conflict path AND snaps that path's watermark base to the remote
+//    blob + unpins it. That snap turns the NEXT sync into a clean remote-RENAME
+//    (base@flat == remote@co-located blob, local unchanged) → the engine deletes
+//    the stale flat-local copy and pulls the co-located version: disk converges
+//    to the CO-LOCATED path, the stale flat-local copy is gone, zero re-conflict.
+//    Zero-loss: the discarded flat-local is backed up to `.conflict.local.txt`.
+//    (This already worked pre-#3731 via the snap-to-remote mechanism — #3731 was
+//    a speculative follow-up to #3729; these tests LOCK the convergence so a
+//    future refactor of the snap/unpin cannot silently regress it.)
+//
+//  • MERGED differs from BOTH sides, so it routes through the SAME deferred
+//    outbox + #3729/#3732 consolidation path as keep-local: push the merged
+//    content → the flat path AND delete the stale co-located remote sibling in
+//    one commit → converges to the FLAT path, zero re-conflict.
+const MERGED_BODY = mdAsset("u1", "MERGED edit combining flat + co-located");
+
+describe("ExoSync cross-path keep-REMOTE / merged convergence (#3731)", () => {
+  it("@req:5c7e8d2a-c2f6-445d-8a6a-2fb9e434b037 keep-REMOTE of a co-located rename converges to the co-located path with NO remote mutation: accepts the remote content, the next sync removes the stale flat-local copy + pulls the co-located version, re-derives NO conflict (zero-loss backup) — symmetric counterpart of #3729 keep-local", async () => {
+    const s = setupXPath();
+    const conflictPath = await crossPathConflict(s); // the flat conflict path
+    expect(conflictPath).toBe(FLAT);
+
+    const res = await s.resolver.resolve(s.spec, conflictPath, { take: "remote" });
+    // keep-remote needs NO push/outbox — the remote is already canonical at the
+    // co-located path. The discarded flat-local is backed up (zero-loss, ⛤ M1).
+    expect(res.awaitingPush ?? false).toBe(false);
+    expect(res.pushedSha).toBeUndefined();
+    expect(res.discardedLocalBackupPath).toBeDefined();
+    expect(await s.outbox.listForRepo(s.spec.repoKey)).toHaveLength(0);
+    // The remote is untouched by the resolve itself (no commit).
+    expect(s.gh.headFiles().has(FLAT)).toBe(false);
+    expect(s.gh.headFiles().get(COLOCATED)).toBe(COLOCATED_REMOTE);
+    // The flat path's base was snapped to the remote blob and the path unpinned.
+    expect(
+      s.watermarks.records.get(s.spec.repoKey)?.pinnedPaths ?? [],
+    ).not.toContain(conflictPath);
+
+    // ⛤ REVERT-VERIFY BINDING: the next sync sees base@flat == remote@co-located
+    // blob (local unchanged) → a clean remote-RENAME flat→co-located. The engine
+    // DELETES the stale flat-local copy and pulls the co-located version. If the
+    // resolve had NOT snapped the flat base to the remote content (the broken
+    // mechanism), the flat copy persists and the cross-path conflict re-surfaces
+    // here as a re-quarantine — so this assertion is the gap detector.
+    const after = await s.engine.sync(s.spec);
+    expect(after.quarantinedCount).toBe(0);
+    expect(after.status).toBe("synced");
+    expect(s.disk.files.has(FLAT)).toBe(false); // stale flat-local copy removed
+    expect(s.disk.files.get(COLOCATED)).toBe(COLOCATED_REMOTE); // converged to co-located
+    // The remote was NEVER mutated (keep-remote = purely local convergence).
+    const head = s.gh.headFiles();
+    expect(head.has(FLAT)).toBe(false);
+    expect(head.get(COLOCATED)).toBe(COLOCATED_REMOTE);
+    expect(await s.resolver.listOpenConflicts([s.spec])).toHaveLength(0);
+
+    // A subsequent sync re-derives NO conflict — keep-remote stuck.
+    const after2 = await s.engine.sync(s.spec);
+    expect(after2.quarantinedCount).toBe(0);
+    expect(after2.status).toBe("synced");
+  });
+
+  it("@req:5c7e8d2a-c2f6-445d-8a6a-2fb9e434b037 keep-REMOTE of N>1 cross-path stragglers ALL converge (each to its co-located path, stale flat-local copies removed) with NO cross-contamination and NO re-conflict", async () => {
+    const s = setupMultiXPath();
+    await s.engine.sync(s.spec); // bootstrap (disk == remote == {M_SHARED})
+    for (const g of STRAGGLERS) s.disk.files.set(g.flat, g.local);
+    s.gh.commitDirect(
+      "main",
+      {
+        [M_SHARED]: M_SHARED_BODY,
+        ...Object.fromEntries(STRAGGLERS.map((g) => [g.colocated, g.remote])),
+      },
+      "remote bulk co-location migration",
+    );
+    const r = await s.engine.sync(s.spec);
+    expect(r.quarantinedCount).toBeGreaterThanOrEqual(STRAGGLERS.length);
+
+    const open = await s.resolver.listOpenConflicts([s.spec]);
+    expect(open.length).toBe(STRAGGLERS.length);
+    for (const c of open) {
+      await s.resolver.resolve(s.spec, c.path, { take: "remote" });
+    }
+    // keep-remote queues NOTHING (no remote mutation) — all convergence is local.
+    expect(await s.outbox.listForRepo(s.spec.repoKey)).toHaveLength(0);
+
+    const after = await s.engine.sync(s.spec);
+    expect(after.quarantinedCount).toBe(0);
+    expect(after.status).toBe("synced");
+    const head = s.gh.headFiles();
+    for (const g of STRAGGLERS) {
+      expect(s.disk.files.has(g.flat)).toBe(false); // stale flat-local removed
+      expect(s.disk.files.get(g.colocated)).toBe(g.remote); // converged to co-located
+      expect(head.get(g.colocated)).toBe(g.remote); // remote never mutated
+    }
+    expect(await s.resolver.listOpenConflicts([s.spec])).toHaveLength(0);
+    const after2 = await s.engine.sync(s.spec);
+    expect(after2.quarantinedCount).toBe(0);
+  });
+
+  it("@req:5c7e8d2a-c2f6-445d-8a6a-2fb9e434b037 MERGED of a co-located rename converges to the flat path via the consolidating push (push merged → flat + delete the stale co-located remote sibling in one commit), re-derives NO conflict", async () => {
+    const s = setupXPath();
+    const conflictPath = await crossPathConflict(s);
+    expect(conflictPath).toBe(FLAT);
+
+    // merged differs from both sides → deferred outbox push (same path as
+    // keep-local), TOCTOU-keyed by the cached co-located remote blob.
+    const res = await s.resolver.resolve(s.spec, conflictPath, {
+      take: "merged",
+      content: MERGED_BODY,
+    });
+    expect(res.awaitingPush).toBe(true);
+    expect(res.discardedLocalBackupPath).toBeDefined();
+    expect(await s.outbox.listForRepo(s.spec.repoKey)).toHaveLength(1);
+
+    // The flush consolidates: push merged → flat path AND delete the stale
+    // co-located remote sibling in ONE commit (the #3729/#3732 path).
+    const flush = await s.engine.sync(s.spec);
+    expect(flush.outboxPushedCount).toBe(1);
+    expect(flush.outboxReconflictedCount ?? 0).toBe(0);
+    const head = s.gh.headFiles();
+    expect(head.get(conflictPath)).toBe(MERGED_BODY); // converged to the flat path
+    expect(head.has(COLOCATED)).toBe(false); // stale co-located sibling consolidated away
+    expect(head.get(SHARED)).toBe(SHARED_BODY);
+    expect(await s.outbox.listForRepo(s.spec.repoKey)).toHaveLength(0);
+    expect(await s.resolver.listOpenConflicts([s.spec])).toHaveLength(0);
+    const after = await s.engine.sync(s.spec);
+    expect(after.quarantinedCount).toBe(0);
+    expect(after.status).toBe("synced");
+  });
+});
