@@ -101,7 +101,7 @@ describe("audit ontology-imports — revert→fail / restore→pass (integration
     rmSync(vault, { recursive: true, force: true });
   });
 
-  it("FAIL without the import declaration, PASS with it, FAIL again without", async () => {
+  it("FAIL without the import declaration, PASS with it, FAIL again without @req:6999f49b-6e87-4cbb-b7e9-648ee38e68da", async () => {
     // --- State 1: no declared import A→B → the a→b link is a violation ---
     writeOntology(join(vault, "alpha"), ONTO_A, "$alpha", []);
     let r = await scanVaultForOntologyImports(vault);

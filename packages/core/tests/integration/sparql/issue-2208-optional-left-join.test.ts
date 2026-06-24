@@ -80,7 +80,7 @@ describe("Issue #2208: OPTIONAL should use LEFT JOIN semantics", () => {
   });
 
   describe("regression test - reproduces the exact bug scenario", () => {
-    it("should return all tasks, with project bound only when exists", async () => {
+    it("should return all tasks, with project bound only when exists @req:8f422d73-d74d-443c-a39e-7d546a210056", async () => {
       // Task 1: has a project
       await store.add(new Triple(
         new IRI(`${EX}task1`),
