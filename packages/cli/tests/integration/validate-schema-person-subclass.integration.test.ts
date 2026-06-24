@@ -201,7 +201,7 @@ const agentClassViolations = (focusUid: string) => {
 };
 
 describe("Issue #3512 — person__Person resolves as subclass of ems__Agent", () => {
-  it("does NOT emit a sh:class violation for a person__Person-typed responsible (KEY: fails pre-fix)", () => {
+  it("does NOT emit a sh:class violation for a person__Person-typed responsible (KEY: fails pre-fix) @req:740244c1-a29a-4c31-8d4d-c74b141fb80e", () => {
     expect(agentClassViolations(AREA_PERSON_UID)).toEqual([]);
   });
 
