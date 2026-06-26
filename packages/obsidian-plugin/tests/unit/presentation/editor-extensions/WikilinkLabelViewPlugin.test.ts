@@ -417,4 +417,84 @@ describe("WikilinkLabelViewPlugin", () => {
       expect(label).toBeNull();
     });
   });
+
+  /**
+   * Wikilink display-label precedence (RFC 0003 SDD requirement): the visible
+   * label of a wikilink resolves by precedence
+   *   explicit alias  >  target `exo__Asset_label`  >  filename (uid).
+   *
+   * This is the plugin-OWNED half of the precedence (Obsidian renders the raw
+   * target only when this plugin declines to relabel). The chain is exercised
+   * over the two plugin-owned APIs:
+   *   • `parseWikilinksFromText` — an ALIASED link is excluded (`hasAlias`), so
+   *     the ViewPlugin never overrides it → Obsidian shows the explicit alias
+   *     (alias wins over label).
+   *   • `resolveLabel` — returns `exo__Asset_label` when present (label wins over
+   *     filename), and `null` when missing/empty → the ViewPlugin emits no
+   *     decoration → Obsidian shows the bare target (filename/uid last resort).
+   *
+   * Already-satisfied (no production change): this binds an existing,
+   * plugin-owned precedence to RFC 0003. Revert-verify (where meaningful):
+   * `resolveLabel` guards a blank label (`label && … && label.trim() !== ""`)
+   * and returns `null` so the filename shows; dropping that blank-guard (so a
+   * blank `exo__Asset_label` is returned verbatim) regresses the
+   * label→filename fallback → the "empty/blank label falls back" case goes RED.
+   *
+   * @req:6636f1a7-a7a2-4c8a-9c74-6c9d0d79ffc7
+   */
+  describe("display-label precedence: alias > exo__Asset_label > filename", () => {
+    const cacheWith = (files: Record<string, { exo__Asset_label?: string }>) => ({
+      getFirstLinkpathDest: jest.fn().mockImplementation((path: string) => {
+        const fullPath = path.endsWith(".md") ? path : `${path}.md`;
+        if (files[path] || files[fullPath]) {
+          const f = new TFile();
+          (f as unknown as { path: string }).path = fullPath;
+          return f;
+        }
+        return null;
+      }),
+      getFileCache: jest.fn().mockImplementation((file: TFile) => {
+        const pathWithoutExt = file.path.replace(".md", "");
+        const md = files[file.path] || files[pathWithoutExt];
+        return md ? { frontmatter: md } : null;
+      }),
+    });
+
+    it("explicit alias wins — an aliased link is left untouched so its alias shows (alias > label)", () => {
+      // The target HAS an exo__Asset_label, but the link carries an explicit
+      // alias, so the plugin does not relabel it — Obsidian shows the alias.
+      const matches = WikilinkLabelViewPlugin.parseWikilinksFromText(
+        "Met [[5c8f1e22-aaaa-4bbb-8ccc-1d2e3f405162|Завтрак с Машей]] today",
+        0,
+      );
+      expect(matches).toHaveLength(0);
+    });
+
+    it("no alias → target exo__Asset_label wins over filename (label > filename)", () => {
+      const cache = cacheWith({
+        "5c8f1e22-aaaa-4bbb-8ccc-1d2e3f405162": {
+          exo__Asset_label: "Weekly Sync",
+        },
+      });
+      const label = WikilinkLabelViewPlugin.resolveLabel(
+        cache as any,
+        "5c8f1e22-aaaa-4bbb-8ccc-1d2e3f405162",
+      );
+      expect(label).toBe("Weekly Sync");
+    });
+
+    it("no alias + empty/missing label → null so the bare filename (uid) shows (filename last resort)", () => {
+      const emptyLabel = WikilinkLabelViewPlugin.resolveLabel(
+        cacheWith({ "5c8f1e22-aaaa-4bbb-8ccc-1d2e3f405162": { exo__Asset_label: "" } }) as any,
+        "5c8f1e22-aaaa-4bbb-8ccc-1d2e3f405162",
+      );
+      expect(emptyLabel).toBeNull();
+
+      const noLabel = WikilinkLabelViewPlugin.resolveLabel(
+        cacheWith({ "5c8f1e22-aaaa-4bbb-8ccc-1d2e3f405162": {} }) as any,
+        "5c8f1e22-aaaa-4bbb-8ccc-1d2e3f405162",
+      );
+      expect(noLabel).toBeNull();
+    });
+  });
 });
