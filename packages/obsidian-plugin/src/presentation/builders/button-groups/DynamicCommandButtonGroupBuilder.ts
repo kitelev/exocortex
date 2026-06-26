@@ -524,8 +524,20 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       // target (`ems__Meeting`) matches a binding's `targetClass` directly.
       // Both converge to the same resolved set as the alias-free form, so an
       // alias on a Meeting/Task instance class no longer suppresses its buttons
-      // (Issue: aliased `[[uid|ems__Meeting]]` previously yielded 0 buttons
-      // because `uid|ems__Meeting` is neither a UUID nor a symbolic class name).
+      // (Issue: aliased `[[uid|Some Title]]` previously yielded 0 buttons
+      // because `uid|Some Title` is neither a UUID nor a symbolic class name —
+      // the buggy extractor skipped #3141 expansion and the resolver could not
+      // match it. NB: an alias that happens to EQUAL the class name
+      // (`[[uid|ems__Meeting]]`) or a symbolic-form alias coincidentally still
+      // resolved pre-fix via `CommandResolver.matchesReference`'s #2740 alias
+      // cross-match + pipe-stripping `normalizeWikilink`; the genuinely-broken
+      // case is an ARBITRARY display alias. This strip makes resolution
+      // alias-independent for ALL forms.)
+      //
+      // NOTE: this differs deliberately from `WikiLinkHelpers.normalize`, which
+      // for `[[UUID|alias]]` returns the ALIAS (#2764, used by prototype-
+      // detection / live-preview relabeling). Here the TARGET is authoritative
+      // for resolution and the true `exo__Asset_label` is resolved via #3141.
       const pipe = cleaned.indexOf("|");
       if (pipe !== -1) cleaned = cleaned.slice(0, pipe).trim();
       if (cleaned && !classes.includes(cleaned)) classes.push(cleaned);
