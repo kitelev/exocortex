@@ -515,7 +515,19 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
     const collect = (value: unknown): void => {
       if (typeof value !== "string") return;
-      const cleaned = value.replace(/["'[\]]/g, "").trim();
+      let cleaned = value.replace(/["'[\]]/g, "").trim();
+      // A wikilink display alias (`[[<target>|<alias>]]`) is DISPLAY-ONLY — it
+      // governs how the link is rendered, never how `exo__Instance_class` is
+      // resolved for exocmd command/binding matching. Keep only the target
+      // (everything before the first `|`): a bare UUID then satisfies
+      // `isUuidRef` and gets symbolic-label expansion (#3141), and a symbolic
+      // target (`ems__Meeting`) matches a binding's `targetClass` directly.
+      // Both converge to the same resolved set as the alias-free form, so an
+      // alias on a Meeting/Task instance class no longer suppresses its buttons
+      // (Issue: aliased `[[uid|ems__Meeting]]` previously yielded 0 buttons
+      // because `uid|ems__Meeting` is neither a UUID nor a symbolic class name).
+      const pipe = cleaned.indexOf("|");
+      if (pipe !== -1) cleaned = cleaned.slice(0, pipe).trim();
       if (cleaned && !classes.includes(cleaned)) classes.push(cleaned);
     };
 
