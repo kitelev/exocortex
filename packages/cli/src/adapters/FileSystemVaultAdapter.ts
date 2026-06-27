@@ -313,6 +313,21 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     if (path.isAbsolute(filePath)) {
       return filePath;
     }
+    // #3761 — a co-location folder resolver that "relativized" an ABSOLUTE
+    // vault path by stripping its leading slash (`replace(/^\/+/, "")`) yields
+    // a fake-relative `<vault-root-without-leading-slash>/assetspaces/...`
+    // string. It is not `path.isAbsolute`, so the guard above misses it and
+    // `path.join(rootPath, …)` nests the entire vault-root path UNDER the vault
+    // root, `mkdir -p`-ing a phantom duplicate tree. Detect that the
+    // "relative" arg is the vault's own absolute path with a stripped leading
+    // slash and resolve it to the correct in-vault location instead. Normalize
+    // any trailing separator on the root so the guard holds regardless of how
+    // the caller constructed `rootPath`.
+    const root = this.rootPath.replace(/[/\\]+$/, "");
+    const reAbsolute = path.sep + filePath;
+    if (reAbsolute === root || reAbsolute.startsWith(root + path.sep)) {
+      return reAbsolute;
+    }
     return path.join(this.rootPath, filePath);
   }
 
