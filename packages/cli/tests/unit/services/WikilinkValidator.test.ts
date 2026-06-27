@@ -15,6 +15,8 @@ const mockFsAdapter = {
   directoryExists: jest.fn(),
   findFilesByMetadata: jest.fn(),
   findFileByUID: jest.fn<(uid: string) => Promise<string | null>>(),
+  findFileByUidFilename:
+    jest.fn<(uid: string) => Promise<string | null>>(),
 };
 
 jest.unstable_mockModule("../../../src/adapters/NodeFsAdapter.js", () => ({
@@ -35,7 +37,9 @@ describe("WikilinkValidator", () => {
 
   describe("validatePropertyValues()", () => {
     it("should pass for existing UUID wikilinks", async () => {
-      mockFsAdapter.fileExists.mockResolvedValue(true);
+      mockFsAdapter.findFileByUidFilename.mockResolvedValue(
+        "some/path/a3f9c2d1-1234-4567-8901-abcdef123456.md",
+      );
 
       await expect(
         validator.validatePropertyValues({
@@ -44,13 +48,13 @@ describe("WikilinkValidator", () => {
         }),
       ).resolves.toBeUndefined();
 
-      expect(mockFsAdapter.fileExists).toHaveBeenCalledWith(
-        "a3f9c2d1-1234-4567-8901-abcdef123456.md",
+      expect(mockFsAdapter.findFileByUidFilename).toHaveBeenCalledWith(
+        "a3f9c2d1-1234-4567-8901-abcdef123456",
       );
     });
 
     it("should throw WikilinkNotFoundError for missing UUID", async () => {
-      mockFsAdapter.fileExists.mockResolvedValue(false);
+      mockFsAdapter.findFileByUidFilename.mockResolvedValue(null);
       mockFsAdapter.findFileByUID.mockResolvedValue(null);
 
       await expect(
@@ -64,7 +68,7 @@ describe("WikilinkValidator", () => {
     });
 
     it("should throw WikilinkNotFoundError instance", async () => {
-      mockFsAdapter.fileExists.mockResolvedValue(false);
+      mockFsAdapter.findFileByUidFilename.mockResolvedValue(null);
       mockFsAdapter.findFileByUID.mockResolvedValue(null);
 
       await expect(
@@ -75,7 +79,7 @@ describe("WikilinkValidator", () => {
     });
 
     it("should validate multiple wikilinks in one value", async () => {
-      mockFsAdapter.fileExists.mockResolvedValue(true);
+      mockFsAdapter.findFileByUidFilename.mockResolvedValue("some/path.md");
 
       await expect(
         validator.validatePropertyValues({
@@ -84,13 +88,13 @@ describe("WikilinkValidator", () => {
         }),
       ).resolves.toBeUndefined();
 
-      expect(mockFsAdapter.fileExists).toHaveBeenCalledTimes(2);
+      expect(mockFsAdapter.findFileByUidFilename).toHaveBeenCalledTimes(2);
     });
 
     it("should fail on first missing wikilink", async () => {
-      mockFsAdapter.fileExists
-        .mockResolvedValueOnce(true) // First exists
-        .mockResolvedValueOnce(false); // Second does not
+      mockFsAdapter.findFileByUidFilename
+        .mockResolvedValueOnce("some/path.md") // First exists
+        .mockResolvedValueOnce(null); // Second does not
       mockFsAdapter.findFileByUID.mockResolvedValue(null);
 
       await expect(
@@ -109,7 +113,7 @@ describe("WikilinkValidator", () => {
         }),
       ).resolves.toBeUndefined();
 
-      expect(mockFsAdapter.fileExists).not.toHaveBeenCalled();
+      expect(mockFsAdapter.findFileByUidFilename).not.toHaveBeenCalled();
     });
 
     it("should skip non-UUID wikilinks like class names", async () => {
@@ -119,11 +123,11 @@ describe("WikilinkValidator", () => {
         }),
       ).resolves.toBeUndefined();
 
-      expect(mockFsAdapter.fileExists).not.toHaveBeenCalled();
+      expect(mockFsAdapter.findFileByUidFilename).not.toHaveBeenCalled();
     });
 
     it("should validate across multiple properties", async () => {
-      mockFsAdapter.fileExists.mockResolvedValue(true);
+      mockFsAdapter.findFileByUidFilename.mockResolvedValue("some/path.md");
 
       await expect(
         validator.validatePropertyValues({
@@ -132,7 +136,7 @@ describe("WikilinkValidator", () => {
         }),
       ).resolves.toBeUndefined();
 
-      expect(mockFsAdapter.fileExists).toHaveBeenCalledTimes(2);
+      expect(mockFsAdapter.findFileByUidFilename).toHaveBeenCalledTimes(2);
     });
 
     it("should handle properties without wikilinks", async () => {
@@ -143,19 +147,27 @@ describe("WikilinkValidator", () => {
         }),
       ).resolves.toBeUndefined();
 
-      expect(mockFsAdapter.fileExists).not.toHaveBeenCalled();
+      expect(mockFsAdapter.findFileByUidFilename).not.toHaveBeenCalled();
     });
 
-    it("should find file by UID fallback when filename does not match", async () => {
-      mockFsAdapter.fileExists.mockResolvedValue(false);
+    it("should find file by UID frontmatter fallback when filename does not match", async () => {
+      // Filename lookup misses (e.g. asset is not UID-named) but the
+      // frontmatter exo__Asset_uid scan finds it — must NOT throw.
+      mockFsAdapter.findFileByUidFilename.mockResolvedValue(null);
       mockFsAdapter.findFileByUID.mockResolvedValue("some/path/to/file.md");
 
-      // Should NOT throw because findFileByUID found it
       await expect(
         validator.validatePropertyValues({
           "prop": "[[aaaaaaaa-1111-2222-3333-444444444444|Found by UID]]",
         }),
       ).resolves.toBeUndefined();
+
+      expect(mockFsAdapter.findFileByUidFilename).toHaveBeenCalledWith(
+        "aaaaaaaa-1111-2222-3333-444444444444",
+      );
+      expect(mockFsAdapter.findFileByUID).toHaveBeenCalledWith(
+        "aaaaaaaa-1111-2222-3333-444444444444",
+      );
     });
   });
 
