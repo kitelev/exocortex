@@ -100,6 +100,72 @@ export function derivePath(source: unknown): string | null {
 }
 
 /**
+ * Inverse of {@link derivePath}: reconstruct an AssetSpace's canonical GitHub
+ * clone URL from its vault-relative mount path.
+ *
+ * `assetspaces/<owner>/<repo>` → `https://github.com/<owner>/<repo>`.
+ *
+ * **LOSSY BY DESIGN.** `derivePath` is many-to-one — it normalises scheme, host,
+ * SSH/scp form, embedded credentials, port and the `.git` suffix all away — so a
+ * true inverse cannot exist in general. This reconstruction holds only under the
+ * invariant that **every AssetSpace URL is `https://github.com/<owner>/<repo>`**,
+ * which is true for the entire current ecosystem (RFC 0005 §3.2: zero non-GitHub
+ * URLs across all vaults) and is already baked into `derivePath`'s Maven design
+ * (its docstring: "GitHub guarantees global uniqueness of `owner/repo`"). A
+ * non-GitHub / non-https AssetSpace would need an explicit URL carrier — none
+ * exist; if one is ever introduced this function still returns a github.com URL
+ * for it, so the invariant must be re-checked before adding such a source.
+ *
+ * Validates BOTH segments with the same {@link SEGMENT_RE} + `.`/`..` traversal
+ * guards as `derivePath`. This is defence-in-depth, not theatre: unlike
+ * `deriveLegacyFlatPath` (whose input is a trusted `derivePath` output),
+ * `deriveUrl`'s input is an untrusted **folder path** (e.g. an on-disk
+ * `assetspaces/<owner>/<repo>` directory name in RFC 0005 Phase 1 re-fetch), so a
+ * malformed or traversal-bearing segment must be rejected rather than spliced
+ * into a URL.
+ *
+ * Tolerates leading/trailing slashes; mirrors `derivePath` by using only the
+ * first two path segments after the `assetspaces/` prefix (deeper segments are
+ * ignored, so the round-trip `deriveUrl(derivePath(url))` is exact).
+ *
+ * @param path A vault-relative mount path of the form
+ *   `assetspaces/<owner>/<repo>`.
+ * @returns `https://github.com/<owner>/<repo>`, or `null` when the path does not
+ *   conform (wrong/absent `assetspaces/` prefix, fewer than two segments, an
+ *   out-of-charset segment, or a `.`/`..` traversal segment) — callers fall back
+ *   to their legacy URL source.
+ */
+export function deriveUrl(path: unknown): string | null {
+  if (typeof path !== "string") return null;
+  let p = path.trim();
+  if (p.length === 0) return null;
+
+  // Tolerate leading/trailing slashes so a folder path with either still parses.
+  p = p.replace(/^\/+/, "").replace(/\/+$/, "");
+
+  const prefix = `${ASSET_SPACES_PREFIX}/`;
+  if (!p.startsWith(prefix)) return null;
+
+  const segments = p
+    .slice(prefix.length)
+    .split("/")
+    .filter((seg) => seg.length > 0);
+  if (segments.length < 2) return null;
+
+  const owner = segments[0];
+  const repo = segments[1];
+  // Same traversal / out-of-charset rejection as `derivePath`: a `.`/`..` or
+  // disallowed-character segment must never be spliced into the reconstructed
+  // URL (the path may be an untrusted on-disk folder name).
+  if (owner === "." || owner === ".." || repo === "." || repo === "..") {
+    return null;
+  }
+  if (!SEGMENT_RE.test(owner) || !SEGMENT_RE.test(repo)) return null;
+
+  return `https://github.com/${owner}/${repo}`;
+}
+
+/**
  * Derive the LEGACY flat mount path `assetspaces/<repo>` (with an `exoas-`
  * prefix stripped) that pre-#3538 `add-assetspace` / `bootstrap` mounted at,
  * before the canonical Maven `derivePath` (`assetspaces/<owner>/<repo>`) was
