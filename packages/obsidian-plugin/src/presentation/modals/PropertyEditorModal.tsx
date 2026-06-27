@@ -26,6 +26,7 @@ import {
 } from '@plugin/presentation/renderers/layout/getReifiedRelations';
 import {
   reifiedToRows,
+  incomingReifiedToRows,
   dedupeRelations,
   extractInlineRelations,
   appendInlineRelationValue,
@@ -37,8 +38,12 @@ import {
   reifyRelation,
   deReifyRelation,
   parseInlineTargetsFromContent,
+  buildReifyDestinations,
   DEFAULT_REIFY_ANCHOR_UID,
+  EXO_STATEMENT_CLASS_UID,
   type ReifyPorts,
+  type ReifyDestination,
+  type RawReifyAnchor,
 } from '@plugin/presentation/components/property-editor/reifyModel';
 
 /**
@@ -69,6 +74,8 @@ export class PropertyEditorModal extends Modal {
   private currentFrontmatter: Record<string, unknown>;
   /** Reified rows cached at open (store lags a vault.delete — we drop locally). */
   private reifiedRows: RelationRow[] = [];
+  /** Incoming reified rows (A is the object) — RFC §C3 Task 3.3 object-side read-only. */
+  private incomingReifiedRows: RelationRow[] = [];
   /** Schema keys that are NON-object properties (enums/scalars) — never relations. */
   private nonRelationKeys: ReadonlySet<string> = new Set();
   /** Predicate-mapping (RFC §C3 Task 3.2): frontmatter key → predicate-DEFINITION asset UID (reify). */
@@ -212,8 +219,10 @@ export class PropertyEditorModal extends Modal {
       const key = defUid ? this.keyByPredicateDefUid.get(defUid) : undefined;
       return key ? { ...r, predicateFrontmatterKey: key } : r;
     });
+    // Incoming reified rows (A is the object) — read-only, object-side (Task 3.3).
+    this.incomingReifiedRows = incomingReifiedToRows(reified);
 
-    // The unified, deduplicated rows from the live frontmatter + enriched reified rows.
+    // The unified rows: outgoing (deduplicated) + incoming read-only.
     const initialRows = this.rebuildRows();
 
     const predicateOptions = schema
@@ -236,8 +245,65 @@ export class PropertyEditorModal extends Modal {
       createInline: this.createInlineRelation.bind(this),
       deleteRelation: this.deleteRelation.bind(this),
       reifyRelation: this.reify.bind(this),
+      resolveReifyDestinations: this.resolveReifyDestinations.bind(this),
       deReifyRelation: this.deReify.bind(this),
     };
+  }
+
+  /**
+   * RFC §C3 Task 3.3 — enumerate the writable mounted AssetSpaces the reify picker
+   * offers: the эталон junction default first, then every distinct co-location
+   * anchor that already hosts an `exo__Statement` instance (proven-writable
+   * destinations). Scanned lazily (on reify-picker open) from the metadata cache —
+   * an absent/unmounted destination is simply never listed.
+   */
+  private resolveReifyDestinations(): ReifyDestination[] {
+    const dflt = this.defaultReifyDestination();
+    // Harvest distinct (isDefinedBy-anchor, AS) pairs from existing statements.
+    const byAnchor = new Map<string, RawReifyAnchor>();
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+        | Record<string, unknown>
+        | undefined;
+      if (!fm) continue;
+      if (!isStatementFrontmatter(fm)) continue;
+      const anchorUid = wikilinkUidOf(fm["exo__Asset_isDefinedBy"]);
+      if (!anchorUid || byAnchor.has(anchorUid)) continue;
+      byAnchor.set(anchorUid, {
+        anchorUid,
+        label: this.anchorLabel(anchorUid),
+        assetSpace: this.assetSpaceOf(file.path),
+      });
+    }
+    return buildReifyDestinations([...byAnchor.values()], dflt);
+  }
+
+  /** The эталон ($kitelev-class-relations) default destination, with a resolved label/AS. */
+  private defaultReifyDestination(): ReifyDestination {
+    const anchorFile = this.app.vault
+      .getMarkdownFiles()
+      .find((f) => f.basename === DEFAULT_REIFY_ANCHOR_UID);
+    return {
+      anchorUid: DEFAULT_REIFY_ANCHOR_UID,
+      label:
+        this.anchorLabel(DEFAULT_REIFY_ANCHOR_UID) ??
+        "$kitelev-class-relations (junction, эталон)",
+      assetSpace: anchorFile ? this.assetSpaceOf(anchorFile.path) : null,
+    };
+  }
+
+  /** The `exo__Asset_label` of a UID-named anchor asset, or `null`. */
+  private anchorLabel(anchorUid: string): string | undefined {
+    const file = this.app.vault
+      .getMarkdownFiles()
+      .find((f) => f.basename === anchorUid);
+    if (!file) return undefined;
+    const label = this.app.metadataCache.getFileCache(file)?.frontmatter?.[
+      "exo__Asset_label"
+    ];
+    return typeof label === "string" && label.trim().length > 0
+      ? label.trim()
+      : undefined;
   }
 
   /**
@@ -286,13 +352,22 @@ export class PropertyEditorModal extends Modal {
     return map;
   }
 
-  /** Recompute the unified rows from the live frontmatter + cached reified rows. */
+  /**
+   * Recompute the unified rows: the deduplicated outgoing relations (live
+   * frontmatter inline + cached outgoing reified), then the incoming reified rows
+   * (read-only, object-side — RFC §C3 Task 3.3) appended after. Incoming rows are
+   * NOT deduplicated against outgoing (their "other end" is the subject, a
+   * different object) — they are a distinct, read-only view.
+   */
   private rebuildRows(): RelationRow[] {
     const inline = extractInlineRelations(
       this.currentFrontmatter,
       this.nonRelationKeys,
     );
-    return dedupeRelations(inline, this.reifiedRows);
+    return [
+      ...dedupeRelations(inline, this.reifiedRows),
+      ...this.incomingReifiedRows,
+    ];
   }
 
   /** Append a new INLINE relation to A's frontmatter; return refreshed rows. */
@@ -387,13 +462,13 @@ export class PropertyEditorModal extends Modal {
    * All writes go through `app.vault.*` / `app.fileManager.*` (Desktop↔Mobile
    * parity — no Node fs).
    */
-  private reifyPorts(): ReifyPorts {
+  private reifyPorts(anchorUid: string): ReifyPorts {
     return {
       createStatement: async (content: string, uid: string): Promise<string> => {
-        const folder = this.resolveReifyFolder(DEFAULT_REIFY_ANCHOR_UID);
+        const folder = this.resolveReifyFolder(anchorUid);
         if (folder === null) {
           throw new Error(
-            "the reify destination AssetSpace ($kitelev-class-relations) is not mounted — mount it to reify this relation.",
+            "the chosen reify destination AssetSpace is not mounted — mount it (or pick a mounted one) to reify this relation.",
           );
         }
         const path = folder ? `${folder}/${uid}.md` : `${uid}.md`;
@@ -478,8 +553,12 @@ export class PropertyEditorModal extends Modal {
     return m ? m[1] : null;
   }
 
-  /** Reify an inline relation into an `exo__Statement` asset (atomic; rebuilds rows). */
-  private async reify(row: RelationRow): Promise<RelationRow[]> {
+  /**
+   * Reify an inline relation into an `exo__Statement` asset in the chosen
+   * destination AssetSpace anchor (RFC §C3 Task 3.3 destination picker), atomic;
+   * rebuilds rows. `anchorUid` falls back to the эталон default when empty.
+   */
+  private async reify(row: RelationRow, anchorUid?: string): Promise<RelationRow[]> {
     try {
       const subjectUid =
         typeof this.currentFrontmatter["exo__Asset_uid"] === "string"
@@ -488,18 +567,22 @@ export class PropertyEditorModal extends Modal {
       if (!subjectUid) {
         throw new Error("the open asset has no exo__Asset_uid.");
       }
+      const destinationAnchor =
+        anchorUid && anchorUid.trim().length > 0
+          ? anchorUid.trim()
+          : DEFAULT_REIFY_ANCHOR_UID;
       const predicateDefUid =
         this.predicateDefUidByKey.get(row.predicateKey) ?? "";
       const newStatementUid = generateStatementUid();
       // The authoritative statement path is returned by the orchestration (no
       // TOCTOU recompute of the destination folder after the write).
-      const statementPath = await reifyRelation(this.reifyPorts(), {
+      const statementPath = await reifyRelation(this.reifyPorts(destinationAnchor), {
         subjectUid,
         predicateKey: row.predicateKey,
         predicateDefUid,
         objectUid: row.objectUid,
         inlineRawValue: row.inlineRawValue ?? "",
-        isDefinedByAnchorUid: DEFAULT_REIFY_ANCHOR_UID,
+        isDefinedByAnchorUid: destinationAnchor,
         newStatementUid,
       });
       // Atomic success — the inline copy is gone + the statement is verified.
@@ -529,7 +612,9 @@ export class PropertyEditorModal extends Modal {
         throw new Error("the reified relation has no backing statement path.");
       }
       const predicateKey = row.predicateFrontmatterKey ?? "";
-      await deReifyRelation(this.reifyPorts(), {
+      // De-reify never creates a statement, so the anchor is unused — pass the
+      // default to satisfy the (now parameterised) ports factory.
+      await deReifyRelation(this.reifyPorts(DEFAULT_REIFY_ANCHOR_UID), {
         predicateKey,
         targetUid: row.objectUid,
         statementPath: row.statementPath,
@@ -596,6 +681,28 @@ function generateStatementUid(): string {
     const v = ch === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+}
+
+/**
+ * True when a frontmatter object is an `exo__Statement` instance (its
+ * `exo__Instance_class` references the Statement class AND it carries a
+ * `_subject` — a real reified edge, not a mere mention of the class UID).
+ */
+function isStatementFrontmatter(fm: Record<string, unknown>): boolean {
+  if (fm["exo__Statement_subject"] === undefined) return false;
+  const cls = fm["exo__Instance_class"];
+  const values = Array.isArray(cls) ? cls : [cls];
+  return values.some(
+    (v) => typeof v === "string" && v.includes(EXO_STATEMENT_CLASS_UID),
+  );
+}
+
+/** Extract the bare UID from a wikilink value `"[[uid|alias]]"` (array → first), or `null`. */
+function wikilinkUidOf(value: unknown): string | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== "string") return null;
+  const m = /\[\[([^|\]]+)(?:\|[^\]]*)?\]\]/.exec(raw);
+  return m ? m[1].trim().replace(/\.md$/i, "") : null;
 }
 
 /** Extract a UID-ish token from a range class IRI (`obsidian://…/<uid>.md` → uid). */

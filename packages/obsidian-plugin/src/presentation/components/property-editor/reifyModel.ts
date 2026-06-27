@@ -44,6 +44,62 @@ export function sameTarget(a: string, b: string): boolean {
   return bareUid(a) === bareUid(b) && bareUid(a).length > 0;
 }
 
+/**
+ * A reify destination AssetSpace (RFC §C3 Task 3.3 destination picker) — the
+ * co-location anchor whose folder a new `exo__Statement` is written into, and
+ * which becomes its `exo__Asset_isDefinedBy`. Choosing the destination IS the
+ * privacy decision (a private vs a shared AssetSpace).
+ */
+export interface ReifyDestination {
+  /** The co-location anchor UID — the statement's `isDefinedBy` + its target folder. */
+  anchorUid: string;
+  /** Display label for the picker (e.g. the anchor's `exo__Asset_label` or AS name). */
+  label: string;
+  /** The AssetSpace (`exoas-<name>`) the anchor lives in, for context (or `null`). */
+  assetSpace: string | null;
+}
+
+/** A raw destination candidate the modal harvested from an existing statement. */
+export interface RawReifyAnchor {
+  anchorUid: string;
+  label?: string;
+  assetSpace?: string | null;
+}
+
+/**
+ * Build the de-duplicated destination list for the reify picker: the эталон
+ * `defaultDestination` first (always present — it is the guaranteed-writable
+ * junction default), then every distinct co-location anchor that already hosts
+ * statements (proven-writable destinations), de-duplicated by anchor UID. Only
+ * mounted/writable anchors should be passed in `rawAnchors` (an absent
+ * destination cannot be chosen).
+ */
+export function buildReifyDestinations(
+  rawAnchors: RawReifyAnchor[],
+  defaultDestination: ReifyDestination,
+): ReifyDestination[] {
+  const out: ReifyDestination[] = [];
+  const seen = new Set<string>();
+  const dfltUid = bareUid(defaultDestination.anchorUid);
+  out.push({
+    anchorUid: dfltUid,
+    label: defaultDestination.label.trim() || dfltUid,
+    assetSpace: defaultDestination.assetSpace,
+  });
+  seen.add(dfltUid);
+  for (const raw of rawAnchors) {
+    const uid = bareUid(raw.anchorUid);
+    if (!uid || seen.has(uid)) continue;
+    seen.add(uid);
+    out.push({
+      anchorUid: uid,
+      label: raw.label?.trim() || uid,
+      assetSpace: raw.assetSpace ?? null,
+    });
+  }
+  return out;
+}
+
 export interface BuildStatementParams {
   /** The new statement asset's own UID (caller-generated — no Date/random here). */
   uid: string;

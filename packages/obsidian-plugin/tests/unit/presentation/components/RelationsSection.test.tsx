@@ -1,11 +1,11 @@
 /**
- * RelationsSection — RFC `93a0b2ee` Phase 3 / Task 3.1
+ * RelationsSection — RFC `93a0b2ee` Phase 3 (Tasks 3.1 / 3.2 / 3.3)
  *
- * The property editor's Relations section: lists the open asset's outgoing
- * inline + reified relations (reified rows carry the `reified · <AS>` marker,
- * inline rows none), a per-row in-place delete affordance, and a create row
- * (predicate selector + range-scoped ReferencePicker) that emits an inline
- * relation. Scope: list + create + delete — NO reify/de-reify toggle.
+ * The property editor's Relations section: lists the open asset's outgoing inline
+ * + reified relations (reified rows carry the `reified · <AS>` marker), a per-row
+ * in-place delete affordance, a create row, the reify/de-reify toggle (3.2), and
+ * the 3.3 safety/privacy hardening — de-reify strong-confirm (checkbox-gated),
+ * object-side read-only, and the reify destination-AssetSpace picker.
  *
  * @req:e084627c-38b7-4498-be0a-a3e07e790943
  */
@@ -18,6 +18,7 @@ import {
   type PredicateOption,
 } from "../../../../src/presentation/components/property-editor/RelationsSection";
 import type { RelationRow } from "../../../../src/presentation/components/property-editor/relationsEditorModel";
+import type { ReifyDestination } from "../../../../src/presentation/components/property-editor/reifyModel";
 import type { AssetRefCandidate } from "../../../../src/presentation/builders/button-groups/DynamicCommandButtonGroupBuilder";
 
 const inlineRow: RelationRow = {
@@ -35,9 +36,30 @@ const reifiedRow: RelationRow = {
   objectUid: "concept-uid",
   objectDisplay: "concept-uid",
   kind: "reified",
+  direction: "outgoing",
   statementPath: "assetspaces/kitelev/exoas-class-relations/s1.md",
   assetSpace: "exoas-class-relations",
 };
+
+// RFC §C3 Task 3.3 — an INCOMING reified relation (the open asset A is the object;
+// the subject "owner-asset" owns the statement). Shown read-only from A's side.
+const incomingReifiedRow: RelationRow = {
+  predicateKey: "https://exocortex.my/ontology/exo-ims#relatesToConcept",
+  predicateLabel: "relatesToConcept",
+  objectUid: "owner-asset",
+  objectDisplay: "owner-asset",
+  kind: "reified",
+  direction: "incoming",
+  readOnly: true,
+  ownerDisplay: "owner-asset",
+  statementPath: "assetspaces/kitelev/exoas-class-relations/s2.md",
+  assetSpace: "exoas-class-relations",
+};
+
+const DESTINATIONS: ReifyDestination[] = [
+  { anchorUid: "anchor-default", label: "$kitelev-class-relations (junction, эталон)", assetSpace: "exoas-shared-private" },
+  { anchorUid: "anchor-private", label: "Private relations", assetSpace: "exoas-my" },
+];
 
 const PREDICATES: PredicateOption[] = [
   { key: "ems__Effort_parent", label: "Effort_parent", rangeClassUid: "proj-class" },
@@ -70,6 +92,18 @@ function renderSection(over: Partial<React.ComponentProps<typeof RelationsSectio
     />,
   );
   return { onCreate, onDelete, resolveCandidates };
+}
+
+/** Render with the full Task 3.2/3.3 toggle wiring (reify+picker, de-reify). */
+function renderWithToggle(
+  rows: RelationRow[] = [inlineRow, reifiedRow],
+  over: Partial<React.ComponentProps<typeof RelationsSection>> = {},
+) {
+  const onReify = jest.fn();
+  const onDeReify = jest.fn();
+  const resolveReifyDestinations = jest.fn(() => DESTINATIONS);
+  const r = renderSection({ rows, onReify, onDeReify, resolveReifyDestinations, ...over });
+  return { ...r, onReify, onDeReify, resolveReifyDestinations };
 }
 
 describe("RelationsSection — list", () => {
@@ -110,50 +144,185 @@ describe("RelationsSection — delete in place", () => {
   });
 });
 
-describe("RelationsSection — reify/de-reify toggle (RFC §C3 Task 3.2)", () => {
+describe("RelationsSection — reify/de-reify toggle affordances (RFC §C3 Task 3.2)", () => {
   // @req:3b9eb8d5-da3d-45d9-9df6-082f4f22c8f1
-  it("offers Reify on an inline row only, and invokes onReify with that row", () => {
-    const onReify = jest.fn();
-    const onDeReify = jest.fn();
-    renderSection({ onReify, onDeReify });
+  it("offers Reify on an inline row only, and De-reify on a reified row only", () => {
+    renderWithToggle();
     const inlineEl = screen
       .getAllByTestId("relation-row")
       .find((r) => r.getAttribute("data-kind") === "inline")!;
     const reifiedEl = screen
       .getAllByTestId("relation-row")
-      .find((r) => r.getAttribute("data-kind") === "reified")!;
+      .find(
+        (r) =>
+          r.getAttribute("data-kind") === "reified" &&
+          r.getAttribute("data-direction") === "outgoing",
+      )!;
 
-    const reifyBtn = inlineEl.querySelector('[data-testid="relation-reify"]');
-    expect(reifyBtn).not.toBeNull();
-    // The inline row must NOT offer de-reify; the reified row must NOT offer reify.
+    expect(inlineEl.querySelector('[data-testid="relation-reify"]')).not.toBeNull();
     expect(inlineEl.querySelector('[data-testid="relation-dereify"]')).toBeNull();
+    expect(reifiedEl.querySelector('[data-testid="relation-dereify"]')).not.toBeNull();
     expect(reifiedEl.querySelector('[data-testid="relation-reify"]')).toBeNull();
-
-    fireEvent.click(reifyBtn!);
-    expect(onReify).toHaveBeenCalledTimes(1);
-    expect(onReify).toHaveBeenCalledWith(inlineRow);
-    expect(onDeReify).not.toHaveBeenCalled();
-  });
-
-  it("offers De-reify on a reified row only, and invokes onDeReify with that row", () => {
-    const onReify = jest.fn();
-    const onDeReify = jest.fn();
-    renderSection({ onReify, onDeReify });
-    const reifiedEl = screen
-      .getAllByTestId("relation-row")
-      .find((r) => r.getAttribute("data-kind") === "reified")!;
-    const dereifyBtn = reifiedEl.querySelector('[data-testid="relation-dereify"]');
-    expect(dereifyBtn).not.toBeNull();
-    fireEvent.click(dereifyBtn!);
-    expect(onDeReify).toHaveBeenCalledTimes(1);
-    expect(onDeReify).toHaveBeenCalledWith(reifiedRow);
-    expect(onReify).not.toHaveBeenCalled();
   });
 
   it("offers no toggle affordance when onReify/onDeReify are omitted (Task 3.1 back-compat)", () => {
     renderSection();
     expect(screen.queryAllByTestId("relation-reify")).toHaveLength(0);
     expect(screen.queryAllByTestId("relation-dereify")).toHaveLength(0);
+  });
+
+  it("offers no Reify affordance when the destination resolver is omitted (a destination cannot be chosen)", () => {
+    renderSection({ rows: [inlineRow], onReify: jest.fn(), onDeReify: jest.fn() });
+    expect(screen.queryAllByTestId("relation-reify")).toHaveLength(0);
+  });
+});
+
+describe("RelationsSection — de-reify strong-confirm (RFC §C3 Task 3.3)", () => {
+  // @req:8d3ec42f-3334-4d96-8087-6128220a534d
+  it("opens a strong-confirm dialog (it does NOT de-reify directly) when De-reify is clicked", () => {
+    const { onDeReify } = renderWithToggle();
+    const reifiedEl = screen
+      .getAllByTestId("relation-row")
+      .find(
+        (r) =>
+          r.getAttribute("data-kind") === "reified" &&
+          r.getAttribute("data-direction") === "outgoing",
+      )!;
+    fireEvent.click(reifiedEl.querySelector('[data-testid="relation-dereify"]')!);
+    // A confirm dialog appears; nothing has been de-reified yet.
+    expect(screen.getByTestId("dereify-confirm-dialog")).toBeInTheDocument();
+    expect(screen.getByTestId("dereify-warning")).toHaveTextContent(
+      "будет удалён",
+    );
+    expect(onDeReify).not.toHaveBeenCalled();
+  });
+
+  // @req:8d3ec42f-3334-4d96-8087-6128220a534d
+  // REVERT-VERIFY anchor: the confirm button is DISABLED until the acknowledgement
+  // checkbox is checked — an accidental single click can never de-reify. Breaking
+  // the gate (`disabled={!deReifyAck}` → `disabled={false}`) turns this RED.
+  it("gates the confirm button behind the acknowledgement checkbox (accidental click cannot de-reify)", () => {
+    const { onDeReify } = renderWithToggle();
+    const reifiedEl = screen
+      .getAllByTestId("relation-row")
+      .find(
+        (r) =>
+          r.getAttribute("data-kind") === "reified" &&
+          r.getAttribute("data-direction") === "outgoing",
+      )!;
+    fireEvent.click(reifiedEl.querySelector('[data-testid="relation-dereify"]')!);
+
+    const confirmBtn = screen.getByTestId("dereify-confirm");
+    // Unchecked → the destructive confirm is DISABLED (cannot be clicked).
+    expect(confirmBtn).toBeDisabled();
+
+    // Acknowledge → the confirm becomes available and runs the de-reify.
+    fireEvent.click(screen.getByTestId("dereify-ack-checkbox"));
+    expect(confirmBtn).toBeEnabled();
+    fireEvent.click(confirmBtn);
+    expect(onDeReify).toHaveBeenCalledTimes(1);
+    expect(onDeReify).toHaveBeenCalledWith(reifiedRow);
+    // The dialog closes after a confirmed de-reify.
+    expect(screen.queryByTestId("dereify-confirm-dialog")).toBeNull();
+  });
+
+  // @req:8d3ec42f-3334-4d96-8087-6128220a534d
+  it("does not de-reify when the confirm dialog is cancelled", () => {
+    const { onDeReify } = renderWithToggle();
+    const reifiedEl = screen
+      .getAllByTestId("relation-row")
+      .find(
+        (r) =>
+          r.getAttribute("data-kind") === "reified" &&
+          r.getAttribute("data-direction") === "outgoing",
+      )!;
+    fireEvent.click(reifiedEl.querySelector('[data-testid="relation-dereify"]')!);
+    // Even after acknowledging, cancel must abort.
+    fireEvent.click(screen.getByTestId("dereify-ack-checkbox"));
+    fireEvent.click(screen.getByTestId("dereify-cancel"));
+    expect(onDeReify).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("dereify-confirm-dialog")).toBeNull();
+  });
+});
+
+describe("RelationsSection — object-side read-only (RFC §C3 Task 3.3)", () => {
+  // @req:8d3ec42f-3334-4d96-8087-6128220a534d
+  it("shows an incoming reified relation read-only — marker visible, toggle disabled and labelled «изменит <subject>», no delete", () => {
+    const { onDeReify } = renderWithToggle([incomingReifiedRow]);
+    const row = screen.getByTestId("relation-row");
+    expect(row.getAttribute("data-direction")).toBe("incoming");
+    expect(row.getAttribute("data-readonly")).toBe("true");
+    // The marker is still shown (the user SEES it is reified).
+    expect(row.querySelector(".exocortex-reified-marker")).toHaveTextContent(
+      "reified · exoas-class-relations",
+    );
+    // The toggle is read-only: a disabled affordance labelled «изменит <subject>».
+    const ro = screen.getByTestId("relation-toggle-readonly");
+    expect(ro).toHaveTextContent("изменит owner-asset");
+    expect(ro).toHaveAttribute("aria-disabled", "true");
+    // No actionable de-reify / reify / delete from the object's side.
+    expect(row.querySelector('[data-testid="relation-dereify"]')).toBeNull();
+    expect(row.querySelector('[data-testid="relation-reify"]')).toBeNull();
+    expect(row.querySelector('[data-testid="relation-delete"]')).toBeNull();
+    expect(onDeReify).not.toHaveBeenCalled();
+  });
+
+  // @req:8d3ec42f-3334-4d96-8087-6128220a534d
+  it("keeps the OUTGOING (subject-side) reified relation actionable (only the owner can toggle)", () => {
+    renderWithToggle([reifiedRow, incomingReifiedRow]);
+    const outgoing = screen
+      .getAllByTestId("relation-row")
+      .find((r) => r.getAttribute("data-direction") === "outgoing")!;
+    const incoming = screen
+      .getAllByTestId("relation-row")
+      .find((r) => r.getAttribute("data-direction") === "incoming")!;
+    expect(outgoing.querySelector('[data-testid="relation-dereify"]')).not.toBeNull();
+    expect(incoming.querySelector('[data-testid="relation-dereify"]')).toBeNull();
+  });
+});
+
+describe("RelationsSection — reify destination-AssetSpace picker (RFC §C3 Task 3.3)", () => {
+  // @req:8d3ec42f-3334-4d96-8087-6128220a534d
+  it("opens a destination picker on Reify (it does NOT reify directly), default selected first", () => {
+    const { onReify, resolveReifyDestinations } = renderWithToggle();
+    const inlineEl = screen
+      .getAllByTestId("relation-row")
+      .find((r) => r.getAttribute("data-kind") === "inline")!;
+    fireEvent.click(inlineEl.querySelector('[data-testid="relation-reify"]')!);
+    // The picker opens lazily (destinations resolved on open); no reify yet.
+    expect(resolveReifyDestinations).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("reify-destination-dialog")).toBeInTheDocument();
+    expect(screen.getByTestId("reify-destination-list").children).toHaveLength(2);
+    // The default (first) destination is pre-selected.
+    expect(screen.getByTestId("reify-destination-anchor-default")).toBeChecked();
+    expect(onReify).not.toHaveBeenCalled();
+  });
+
+  // @req:8d3ec42f-3334-4d96-8087-6128220a534d
+  it("reifies into the CHOSEN destination AssetSpace on confirm", () => {
+    const { onReify } = renderWithToggle();
+    const inlineEl = screen
+      .getAllByTestId("relation-row")
+      .find((r) => r.getAttribute("data-kind") === "inline")!;
+    fireEvent.click(inlineEl.querySelector('[data-testid="relation-reify"]')!);
+    // Choose the non-default (private) AssetSpace, then confirm.
+    fireEvent.click(screen.getByTestId("reify-destination-anchor-private"));
+    fireEvent.click(screen.getByTestId("reify-confirm"));
+    expect(onReify).toHaveBeenCalledTimes(1);
+    expect(onReify).toHaveBeenCalledWith(inlineRow, "anchor-private");
+    expect(screen.queryByTestId("reify-destination-dialog")).toBeNull();
+  });
+
+  // @req:8d3ec42f-3334-4d96-8087-6128220a534d
+  it("does not reify when the destination picker is cancelled", () => {
+    const { onReify } = renderWithToggle();
+    const inlineEl = screen
+      .getAllByTestId("relation-row")
+      .find((r) => r.getAttribute("data-kind") === "inline")!;
+    fireEvent.click(inlineEl.querySelector('[data-testid="relation-reify"]')!);
+    fireEvent.click(screen.getByTestId("reify-cancel"));
+    expect(onReify).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("reify-destination-dialog")).toBeNull();
   });
 });
 

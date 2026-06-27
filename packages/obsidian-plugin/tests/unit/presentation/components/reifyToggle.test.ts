@@ -23,11 +23,13 @@ import {
   buildStatementAsset,
   parseInlineTargetsFromContent,
   sameTarget,
+  buildReifyDestinations,
   EXO_STATEMENT_CLASS_UID,
   DEFAULT_REIFY_ANCHOR_UID,
   type ReifyPorts,
   type ReifyParams,
   type DeReifyParams,
+  type ReifyDestination,
 } from "../../../../src/presentation/components/property-editor/reifyModel";
 import { wikilinkTarget } from "../../../../src/presentation/components/property-editor/relationsEditorModel";
 
@@ -344,6 +346,45 @@ describe("parseInlineTargetsFromContent — the disk-authoritative verify read",
     expect(parseInlineTargetsFromContent(content, "ems__Effort_area")).toEqual([
       "area-9",
     ]);
+  });
+});
+
+describe("buildReifyDestinations — destination picker list (Task 3.3)", () => {
+  const dflt: ReifyDestination = {
+    anchorUid: DEFAULT_REIFY_ANCHOR_UID,
+    label: "$kitelev-class-relations (junction, эталон)",
+    assetSpace: "exoas-shared-private",
+  };
+
+  // @req:8d3ec42f-3334-4d96-8087-6128220a534d
+  it("lists the эталон default FIRST, then each distinct co-location anchor, de-duplicated", () => {
+    const dests = buildReifyDestinations(
+      [
+        { anchorUid: "anchor-a", label: "AS A", assetSpace: "exoas-exoass" },
+        { anchorUid: "anchor-a", label: "AS A dup", assetSpace: "exoas-exoass" }, // dup → drop
+        { anchorUid: DEFAULT_REIFY_ANCHOR_UID, label: "эталон dup" }, // == default → drop
+        { anchorUid: "anchor-b", assetSpace: "exoas-public" }, // no label → falls back to uid
+        { anchorUid: "  ", label: "blank" }, // blank anchor → drop
+      ],
+      dflt,
+    );
+    expect(dests.map((d) => d.anchorUid)).toEqual([
+      DEFAULT_REIFY_ANCHOR_UID,
+      "anchor-a",
+      "anchor-b",
+    ]);
+    // The default is first and carries its label.
+    expect(dests[0].label).toContain("эталон");
+    // A label-less anchor falls back to the UID as its display.
+    expect(dests[2].label).toBe("anchor-b");
+    expect(dests[2].assetSpace).toBe("exoas-public");
+  });
+
+  // @req:8d3ec42f-3334-4d96-8087-6128220a534d
+  it("returns just the default when no other anchors host statements", () => {
+    const dests = buildReifyDestinations([], dflt);
+    expect(dests).toHaveLength(1);
+    expect(dests[0].anchorUid).toBe(DEFAULT_REIFY_ANCHOR_UID);
   });
 });
 
