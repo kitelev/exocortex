@@ -1521,6 +1521,20 @@ describe("RelationsRenderer", () => {
         expect(
           isNonRelationPredicate(Namespace.EMS.term("Effort_area").value),
         ).toBe(false);
+        // Genuine OBJECT exo:Asset_* relations MUST pass (the inline path
+        // surfaces them — dropping them would be an inline/reified asymmetry).
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Asset_relates").value),
+        ).toBe(false);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Asset_prototype").value),
+        ).toBe(false);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Asset_createdBy").value),
+        ).toBe(false);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Asset_isDefinedBy").value),
+        ).toBe(false);
       });
     });
   });

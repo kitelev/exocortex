@@ -26,28 +26,54 @@ import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';
  * triple. The Relations block only wants genuine relation predicates (user-defined
  * object properties such as `ems#Effort_area`, `exo-ims#relatesToConcept`); a
  * statement whose `_predicate` is a SYSTEM / metadata / plumbing predicate
- * (`rdf:type`, the `exo:Asset_*` frontmatter system properties, `exo:Instance_class`,
- * `exo:Class_superClass`, or the `exo:Statement_*` reification slots themselves) is
- * noise, not a relation, and must be dropped. RDFS / OWL schema predicates (inferred
- * noise) are likewise excluded.
+ * (`rdf:type`, the literal `exo:Asset_*` frontmatter metadata, the TBox-structural
+ * `exo:Instance_*` / `exo:Class_*`, or the `exo:Statement_*` reification slots
+ * themselves) is noise, not a relation, and must be dropped. RDFS / OWL schema
+ * predicates (inferred noise) are likewise excluded.
  *
- * Implemented as a denylist-by-pattern rather than an allowlist because relation
- * predicates are open-ended (user-defined): we cannot enumerate every legitimate
- * relation predicate a priori, so we exclude the closed set of known non-relation
- * predicates and let everything else through. Mirrors RFC §C1 "whitelist
- * relation-предикатов (отсечь rdf:type / exo:Asset_<x> / inferred-шум)".
+ * The exclusion is deliberately a CLOSED, narrow set — NOT a coarse `exo#Asset_`
+ * prefix. The `exo:Asset_*` family contains genuine OBJECT relations the inline
+ * relation path already surfaces — `exo:Asset_relates` (canonical relates),
+ * `exo:Asset_prototype`, `exo:Asset_createdBy`, `exo:Asset_isDefinedBy`,
+ * `exo:Asset_source` — which MUST stay visible (else Task 1.3 would render a
+ * reified `Asset_relates` invisible while an inline one shows: an inline/reified
+ * asymmetry). Only the LITERAL Asset metadata properties (label / uid / timestamps /
+ * isArchived / description) are dropped. So RFC §C1's "отсечь … exo:Asset_<x>" is
+ * read as its system-metadata subset, mirrored against the inline path's behaviour.
+ *
+ * Implemented as a denylist (not an allowlist) because relation predicates are
+ * open-ended (user-defined): we exclude the closed set of known non-relation
+ * predicates and let everything else through.
  */
 const RDF_TYPE_IRI: string = Namespace.RDF.term("type").value;
 const EXO_BASE: string = Namespace.EXO.iri.value;
 const RDFS_BASE: string = Namespace.RDFS.iri.value;
 const OWL_BASE: string = Namespace.OWL.iri.value;
-/** `exo#` local-name prefixes that mark a system / metadata / plumbing predicate. */
+/**
+ * `exo#` local-name prefixes that are purely TBox-structural / reification-plumbing
+ * — never user-data relations (`Instance_class`, `Class_superClass`, the three
+ * `Statement_` slots). Safe to drop wholesale by prefix.
+ */
 const EXO_NON_RELATION_LOCALNAME_PREFIXES = [
-  "Asset_",
   "Instance_",
   "Class_",
   "Statement_",
 ];
+/**
+ * The LITERAL `exo#Asset_*` metadata properties (string / datetime / boolean
+ * values) — dropped explicitly. The OBJECT `exo:Asset_*` relations
+ * (`Asset_relates`, `Asset_prototype`, `Asset_createdBy`, `Asset_isDefinedBy`,
+ * `Asset_source`) are intentionally ABSENT here so they pass as relations,
+ * matching what the inline path surfaces.
+ */
+const EXO_NON_RELATION_ASSET_LOCALNAMES: ReadonlySet<string> = new Set([
+  "Asset_label",
+  "Asset_uid",
+  "Asset_createdAt",
+  "Asset_updatedAt",
+  "Asset_isArchived",
+  "Asset_description",
+]);
 
 /**
  * True when `predicateIri` is a SYSTEM / metadata / plumbing predicate that must
@@ -60,6 +86,7 @@ export function isNonRelationPredicate(predicateIri: string): boolean {
   }
   if (predicateIri.startsWith(EXO_BASE)) {
     const localName = predicateIri.slice(EXO_BASE.length);
+    if (EXO_NON_RELATION_ASSET_LOCALNAMES.has(localName)) return true;
     return EXO_NON_RELATION_LOCALNAME_PREFIXES.some((p) =>
       localName.startsWith(p),
     );
