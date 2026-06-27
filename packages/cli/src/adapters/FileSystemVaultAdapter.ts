@@ -320,12 +320,12 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     // `path.join(rootPath, …)` nests the entire vault-root path UNDER the vault
     // root, `mkdir -p`-ing a phantom duplicate tree. Detect that the
     // "relative" arg is the vault's own absolute path with a stripped leading
-    // slash and resolve it to the correct in-vault location instead.
+    // slash and resolve it to the correct in-vault location instead. Normalize
+    // any trailing separator on the root so the guard holds regardless of how
+    // the caller constructed `rootPath`.
+    const root = this.rootPath.replace(/[/\\]+$/, "");
     const reAbsolute = path.sep + filePath;
-    if (
-      reAbsolute === this.rootPath ||
-      reAbsolute.startsWith(this.rootPath + path.sep)
-    ) {
+    if (reAbsolute === root || reAbsolute.startsWith(root + path.sep)) {
       return reAbsolute;
     }
     return path.join(this.rootPath, filePath);

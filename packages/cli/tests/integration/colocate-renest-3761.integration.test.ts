@@ -82,6 +82,15 @@ describe("#3761 — co-located create must not re-nest the vault root", () => {
       expect(await fs.pathExists(correctTarget())).toBe(true);
       expect(await fs.pathExists(phantomRootSegment())).toBe(false);
     });
+
+    it("guard holds when the adapter root has a trailing separator (robustness)", async () => {
+      const adapter = new NodeFsAdapter(root + path.sep);
+      const fakeRelative =
+        root.replace(/^\/+/, "") + `/${REL_FOLDER}/${UID}.md`;
+      await adapter.createFile(fakeRelative, content);
+      expect(await fs.pathExists(correctTarget())).toBe(true);
+      expect(await fs.pathExists(phantomRootSegment())).toBe(false);
+    });
   });
 
   describe("FileSystemVaultAdapter (the `cli create` write path)", () => {
