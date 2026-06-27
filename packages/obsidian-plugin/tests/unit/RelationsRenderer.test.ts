@@ -815,6 +815,51 @@ describe("RelationsRenderer", () => {
       );
     });
 
+    // PDD `dccff87b` (RFC 93a0b2ee §C3 read-view follow-up) — block-level
+    // «Edit relations» affordance wiring. @req:cbb982a3-17dc-42ec-8a01-9857d81a881f
+    describe("«Edit relations» affordance wiring (PDD dccff87b)", () => {
+      const propsPassedToTable = () =>
+        (React.createElement as jest.Mock).mock.calls
+          .map((c) => c[1])
+          .find(
+            (p) => p && typeof p === "object" && "groupByProperty" in p,
+          );
+
+      it("passes an onEditRelations that invokes the edit-properties command when currentFile is provided", async () => {
+        const executeCommandById = jest.fn();
+        mockApp.commands = { executeCommandById };
+        const relations = [createMockAssetRelation()];
+
+        await renderer.render(
+          mockElement,
+          relations,
+          {},
+          undefined,
+          false,
+          mockFile,
+        );
+
+        const props = propsPassedToTable();
+        expect(props).toBeDefined();
+        expect(typeof props.onEditRelations).toBe("function");
+
+        props.onEditRelations();
+        expect(executeCommandById).toHaveBeenCalledWith(
+          "exocortex:edit-properties",
+        );
+      });
+
+      it("passes NO onEditRelations when currentFile is absent (additive — back-compat)", async () => {
+        const relations = [createMockAssetRelation()];
+
+        await renderer.render(mockElement, relations, {});
+
+        const props = propsPassedToTable();
+        expect(props).toBeDefined();
+        expect(props.onEditRelations).toBeUndefined();
+      });
+    });
+
     it("should pass correct sort configuration to component", async () => {
       const relations = [createMockAssetRelation()];
 

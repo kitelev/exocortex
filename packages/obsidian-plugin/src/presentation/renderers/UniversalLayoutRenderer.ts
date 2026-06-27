@@ -426,7 +426,7 @@ export class UniversalLayoutRenderer {
       }
 
       await this.areaTreeRenderer.render(el, currentFile, relations, renderHeader, this.sectionStateManager.isCollapsed("area-tree"));
-      await this.relationsRenderer.render(el, relations, config, renderHeader, this.sectionStateManager.isCollapsed("relations"));
+      await this.relationsRenderer.render(el, relations, config, renderHeader, this.sectionStateManager.isCollapsed("relations"), currentFile);
 
       this.currentFilePath = currentFile.path;
       this.currentConfig = config;
