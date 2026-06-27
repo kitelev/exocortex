@@ -3863,7 +3863,7 @@ export default class ExocortexPlugin extends Plugin {
     // Mobile path: desktop deps unavailable (`applyDeps === null`) but the
     // cross-platform `RestAssetSpaceMount` is wired. `RestAssetSpaceMount`
     // structurally satisfies `IRestBootstrapMount` (mount() → {sha},
-    // readGitmodulesEntries()).
+    // listMountedAssetSpaces()).
     const restStrategy =
       applyDeps === null && restMount !== null ? restMount : undefined;
 
@@ -3978,7 +3978,9 @@ export default class ExocortexPlugin extends Plugin {
   /**
    * Wire + register the «Exocortex: Unmount assetspace» palette command
    * (#e6b8827c) — the inverse of «Add assetspace by URL». Lists the currently
-   * mounted AssetSpaces (the `.gitmodules` registry, cross-referenced with the
+   * mounted AssetSpaces (RFC 0005 Phase 1 — filesystem enumeration of the
+   * materialised `assetspaces/<owner>/<repo>` folders via
+   * {@link RestAssetSpaceMount.listMountedAssetSpaces}, cross-referenced with the
    * AssetSpace descriptor scan for uid/namespace → TS-floor identity), fuzzy-
    * picks one, and tears it down via the git-free cross-platform
    * {@link RestAssetSpaceMount.unmount}.
@@ -4077,14 +4079,16 @@ export default class ExocortexPlugin extends Plugin {
   ): void {
     const unmountCommand = new UnmountAssetSpaceCommand({
       listMounted: async (): Promise<UnmountableAssetSpace[]> => {
-        // `.gitmodules` is the canonical "what's mounted" registry (the same
-        // source apply-profile reads). The descriptor scan (a full-vault
+        // RFC 0005 Phase 1 — the "what's mounted" registry is the FILESYSTEM:
+        // listMountedAssetSpaces enumerates the materialised
+        // `assetspaces/<owner>/<repo>` folders and re-derives each URL via
+        // `deriveUrl` (no `.gitmodules`). The descriptor scan (a full-vault
         // markdown walk, run once per command open — not per keystroke) supplies
         // uid + namespace so the TS-floor identity can be computed.
         // buildUnmountableList does the join + dual floor guard (descriptor-based
         // AND path-based, so a floor mounted flat / with an un-derivable
         // descriptor is still recognised).
-        const entries = await restMount.readGitmodulesEntries();
+        const entries = await restMount.listMountedAssetSpaces();
         const infos: AssetSpaceInfo[] = switchMgr.listAllAssetSpaceInfos();
         return buildUnmountableList(entries, infos);
       },
