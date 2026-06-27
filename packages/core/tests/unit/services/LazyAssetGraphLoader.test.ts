@@ -120,6 +120,24 @@ describe("LazyAssetGraphLoader", () => {
     });
   });
 
+  // RFC 93a0b2ee Task 1.2 — public delegation so a consumer (the Relations
+  // read-path) can key an asset by the SAME IRI form the converter emits.
+  describe("notePathToIRI", () => {
+    it("delegates to the converter's notePathToIRI (matches the load-mark form)", () => {
+      const path = "assetspaces/kitelev/exoas-my/my/some-uid.md";
+      expect(loader.notePathToIRI(path).value).toBe(pathToIRI(path).value);
+    });
+
+    it("is consistent with the IRI form ensureFileLoaded keys its load-mark by", async () => {
+      const file = makeFile("task.md");
+      converter.registerFile(file, []);
+      await loader.ensureFileLoaded(file);
+      // The loaded-set is keyed by converter.notePathToIRI — so the public
+      // accessor must return the IRI that isLoaded() recognises.
+      expect(loader.isLoaded(loader.notePathToIRI("task.md"))).toBe(true);
+    });
+  });
+
   describe("class chain walk", () => {
     it("loads the asset's declared classes via exo:Instance_class", async () => {
       const taskFile = makeFile("my-task.md");

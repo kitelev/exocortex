@@ -204,9 +204,19 @@ export class UniversalLayoutRenderer {
       this.app, this.reactRenderer, this.metadataExtractor,
       this.vaultAdapter, this.metadataService, this.logger);
 
+    // RFC 93a0b2ee Task 1.2 — wire the reified-relation read-path deps without
+    // touching ExocortexPlugin.ts (ctor-DI, not ExocortexPluginInterface → zero
+    // overlap with parallel sessions). `notePathToIRI` comes from the lazy
+    // loader's converter (same empty subjectIriPrefix the main indexer used to
+    // emit the statements), so reified subjects key by the matching IRI form.
+    const loader = this.lazyAssetGraphLoader;
+    const notePathToIRI = loader
+      ? (path: string) => loader.notePathToIRI(path)
+      : undefined;
     this.relationsRenderer = new RelationsRenderer(
       this.app, this.settings, this.reactRenderer, this.backlinksCacheManager,
-      this.metadataService, this.plugin, () => this.refresh(), this.vaultAdapter);
+      this.metadataService, this.plugin, () => this.refresh(), this.vaultAdapter,
+      this.tripleStore, this.isStoreReady, notePathToIRI);
 
     this.buttonGroupsBuilder = new ButtonGroupsBuilder({
       app: this.app,
