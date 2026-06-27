@@ -6198,3 +6198,23 @@
 .exosync-resolver-error {
   color: var(--text-error);
 }
+
+/* RFC 93a0b2ee Task 2 (C2) — factual reified-relation marker + persistent legend.
+   Marker states WHERE the backing exo__Statement lives (its AssetSpace); it is
+   NOT a privacy promise. The legend is always visible (not hover-only) so the
+   marker is explained on mobile. */
+.exocortex-reified-marker {
+  margin-left: 0.5em;
+  padding: 0 0.4em;
+  font-size: 0.75em;
+  color: var(--text-muted);
+  background: var(--background-modifier-border);
+  border-radius: 4px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.exocortex-reified-legend {
+  margin: 0.5em 0 0;
+  font-size: 0.75em;
+  color: var(--text-muted);
+}
