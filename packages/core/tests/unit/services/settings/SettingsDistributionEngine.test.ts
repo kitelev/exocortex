@@ -156,6 +156,32 @@ describe("SettingsDistributionEngine", () => {
     expect(live.name).toBe("from-legacy-asset");
   });
 
+  it("import SKIPS a partial/non-string stringList (never silently wipes a live list); a legitimately empty [] round-trips", async () => {
+    const live: Record<string, unknown> = { folders: ["keep/"] };
+    const partial: ImportableSettingAsset = {
+      path: "partial.md",
+      frontmatter: {
+        "setting__Setting_key": "[[cccccccc-0000-0000-0000-000000000003]]",
+        "setting__Setting_value": ["ok/", 42], // one non-string element
+      },
+    };
+    const r1 = await importSettings(makeSource(live), [partial]);
+    expect(r1.applied).toHaveLength(0);
+    expect(r1.skipped[0]).toMatchObject({ path: "partial.md", reason: "uncoercible" });
+    expect(live.folders).toEqual(["keep/"]); // untouched — no silent wipe
+
+    const empty: ImportableSettingAsset = {
+      path: "empty.md",
+      frontmatter: {
+        "setting__Setting_key": "[[cccccccc-0000-0000-0000-000000000003]]",
+        "setting__Setting_value": [],
+      },
+    };
+    const r2 = await importSettings(makeSource(live), [empty]);
+    expect(r2.applied).toEqual(["folders"]);
+    expect(live.folders).toEqual([]); // explicit empty list applies
+  });
+
   it("import SKIPS an uncoercible value (boolean key carrying a non-bool) — never writes a bad value", async () => {
     const live: Record<string, unknown> = { flagA: true };
     const bad: ImportableSettingAsset = {

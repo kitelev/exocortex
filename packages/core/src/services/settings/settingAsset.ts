@@ -51,7 +51,11 @@ export function coerceSettingValue(
     }
     case "stringList": {
       if (Array.isArray(raw)) {
-        return raw.filter((e): e is string => typeof e === "string");
+        const strs = raw.filter((e): e is string => typeof e === "string");
+        // Skip (return undefined) if ANY element was dropped — a partial/
+        // non-string array must not silently wipe a live list to a shorter
+        // (or empty) one. A legitimately empty `[]` round-trips fine.
+        return strs.length === raw.length ? strs : undefined;
       }
       if (typeof raw === "string") return [raw]; // scalar → 1-elem list
       return undefined;

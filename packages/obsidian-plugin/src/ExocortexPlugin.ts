@@ -47,6 +47,7 @@ import { ExocortexSettingTab } from "./presentation/settings/ExocortexSettingTab
 import {
   DEFAULT_SETTINGS_FOLDER,
   SETTING_CLASS_UID,
+  SETTING_SUPERCLASS_UID,
   VAULT_SETTINGS_REGISTRY,
 } from "./domain/settings/VaultSettingsRegistry";
 import { VaultSettingsStore } from "./infrastructure/adapters/VaultSettingsStore";
@@ -4093,6 +4094,12 @@ export default class ExocortexPlugin extends Plugin {
    * reads the warm metadataCache; no Platform.isMobile gate). Additive:
    * an explicit, frictionless snapshot/restore that does not touch the
    * live-mirror (VaultSettingsStore) — M2.3 deprecates that.
+   *
+   * NOT gated by `settingsHomoiconizationEnabled` (#3539) by design: that
+   * master switch gates the AUTOMATIC live-mirror (background watcher +
+   * one-shot migration). Export/Import are USER-INITIATED one-off actions —
+   * a user who left the auto-mirror off can still take an explicit snapshot.
+   * M2.3 (which makes these the primary mechanism) revisits the switch's role.
    */
   private registerSettingsDistributionCommands(): void {
     // Same allowlist + apply-path as the live-mirror's `applyRemote` so Import
@@ -4145,7 +4152,6 @@ export default class ExocortexPlugin extends Plugin {
     // the exocortex domain — subClass-closure over the 2-level hierarchy:
     // `exo__Setting` (the subclass exports type) OR its `setting__Setting`
     // superclass (RFC R8). The engine then matches each against the allowlist.
-    const SETTING_SUPERCLASS_UID = "35cf35fb-935f-4d35-a150-939f29109aec"; // setting__Setting
     const acceptClass = new Set([SETTING_CLASS_UID, SETTING_SUPERCLASS_UID]);
     registerImportSettingsCommand(this, {
       source,
