@@ -90,7 +90,68 @@ export interface AssetRelation {
   isBlocked?: boolean;
 
   metadata: Record<string, unknown>;
+
+  /**
+   * RFC `93a0b2ee` Task 2 (C2) — how this relation was sourced. A `reified`
+   * relation is backed by an `exo__Statement` asset and renders the factual
+   * "reified · <AS>" marker; `inline` (or absent — legacy) renders no marker.
+   * Edge-cases (object=Literal, inline+reified duplicate, dual-IRI subject) are
+   * resolved upstream in `RelationsRenderer.mergeReifiedRelations` (Task 1.3) —
+   * the marker keys strictly off this field, so a relation tagged `inline`
+   * never gets a marker even if it carries {@link assetSpace}.
+   */
+  provenance?: "inline" | "reified";
+  /**
+   * RFC `93a0b2ee` Task 2 (C2) — the AssetSpace (`exoas-<name>`) the backing
+   * statement asset lives in, for the factual "reified · <AS>" marker text.
+   * `undefined` → a `reified` relation shows a bare "reified".
+   */
+  assetSpace?: string;
 }
+
+/**
+ * RFC `93a0b2ee` Task 2 (C2) — the factual relation-type marker text.
+ *
+ * Returns `"reified · <AS>"` (or a bare `"reified"` when the AssetSpace is not
+ * derivable) for a relation backed by an `exo__Statement` asset; `null` for an
+ * inline relation (the default — no marker). The marker is purely FACTUAL: it
+ * states WHERE the backing statement lives, NEVER a privacy promise. Privacy
+ * depends on whether that AssetSpace is shared, which is not a queryable RDF
+ * fact (RFC §C2 decision H; `exo__AssetSpace_visibility` is an out-of-MVP
+ * follow-up). Honest-marker metric: 0 unverifiable statements.
+ */
+export function reifiedMarkerText(relation: AssetRelation): string | null {
+  if (relation.provenance !== "reified") return null;
+  const as = relation.assetSpace?.trim();
+  return as ? `reified · ${as}` : "reified";
+}
+
+/**
+ * RFC `93a0b2ee` Task 2 (C2) — the accessible/title explanation of the marker.
+ * Factual only (no privacy promise). Used for `title` (desktop hover) and
+ * `aria-label`; the persistent on-screen explanation is {@link ReifiedLegend}
+ * (the mobile/tap channel — hover is unavailable there).
+ */
+function reifiedMarkerExplanation(relation: AssetRelation): string {
+  const where = relation.assetSpace?.trim()
+    ? `в AssetSpace ${relation.assetSpace.trim()}`
+    : "в отдельном statement-ассете";
+  return `Связь вынесена ${where} (фактически — где лежит statement). Приватность зависит от того, шарится ли этот AssetSpace.`;
+}
+
+/**
+ * RFC `93a0b2ee` Task 2 (C2) — persistent explanation of the `reified · <AS>`
+ * marker, rendered below the table whenever a reified relation is present.
+ * Persistent (always visible — NOT hover-only) so the marker is explained on
+ * mobile where hover is unavailable. Factual only — no privacy promise.
+ */
+const ReifiedLegend: React.FC = () => (
+  <p className="exocortex-reified-legend" role="note">
+    «reified · &lt;AS&gt;» — связь вынесена в statement-ассет в этом AssetSpace
+    (фактически, где лежит). Приватность зависит от того, шарится ли этот
+    AssetSpace.
+  </p>
+);
 
 export interface AssetRelationsTableProps {
   relations: AssetRelation[];
@@ -459,6 +520,20 @@ const SingleTable: React.FC<SingleTableProps> = ({
           >
             {getDisplayLabel(relation)}
           </a>
+          {(() => {
+            const marker = reifiedMarkerText(relation);
+            if (!marker) return null;
+            const explanation = reifiedMarkerExplanation(relation);
+            return (
+              <span
+                className="exocortex-reified-marker"
+                title={explanation}
+                aria-label={explanation}
+              >
+                {marker}
+              </span>
+            );
+          })()}
         </td>
         <td className="instance-class">
           {renderInstanceClassCell(relation.metadata)}
@@ -628,6 +703,13 @@ export const AssetRelationsTable: React.FC<AssetRelationsTableProps> = ({
     new Set()
   );
 
+  // RFC `93a0b2ee` Task 2 (C2) — show the persistent reified-marker legend iff
+  // at least one rendered relation is reified (mobile-safe explanation channel).
+  const hasReified = useMemo(
+    () => relations.some((r) => r.provenance === "reified"),
+    [relations],
+  );
+
   const groupedRelations = useMemo(() => {
     if (!groupByProperty) {
       return { ungrouped: relations };
@@ -710,6 +792,7 @@ export const AssetRelationsTable: React.FC<AssetRelationsTableProps> = ({
             </div>
           );
         })}
+        {hasReified && <ReifiedLegend />}
       </div>
     );
   }
@@ -725,6 +808,7 @@ export const AssetRelationsTable: React.FC<AssetRelationsTableProps> = ({
         getAssetLabel={getAssetLabel}
         resolveAccent={resolveAccent}
       />
+      {hasReified && <ReifiedLegend />}
     </div>
   );
 };

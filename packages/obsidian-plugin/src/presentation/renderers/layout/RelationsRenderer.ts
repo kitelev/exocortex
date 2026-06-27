@@ -505,6 +505,7 @@ export class RelationsRenderer {
         modified,
         provenance: "reified",
         statementPath: r.statementPath ?? undefined,
+        assetSpace: r.assetSpace ?? undefined,
       });
     }
   }

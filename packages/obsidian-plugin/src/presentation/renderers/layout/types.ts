@@ -31,4 +31,12 @@ export interface AssetRelation {
    * for inline relations or when the statement IRI is not a vault-asset IRI.
    */
   statementPath?: string;
+  /**
+   * RFC `93a0b2ee` Task 2 (C2) — the AssetSpace segment (`exoas-<name>`) the
+   * backing `exo__Statement` asset lives in, parsed from {@link statementPath}
+   * by the Task 1.1 helper. Drives the factual "reified · &lt;AS&gt;" marker.
+   * `undefined` for inline relations or when the statement path has no
+   * `exoas-*` segment (the marker then shows a bare "reified").
+   */
+  assetSpace?: string;
 }
