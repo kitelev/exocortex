@@ -18,3 +18,7 @@ export {
   renderSettingAssetMarkdown,
 } from "./settingAsset";
 export { exportSettings, importSettings } from "./SettingsDistributionEngine";
+export {
+  EXOCORTEX_DISTRIBUTION_ONTOLOGY_KEY_UID,
+  resolveDistributionOntology,
+} from "./distributionOntology";
