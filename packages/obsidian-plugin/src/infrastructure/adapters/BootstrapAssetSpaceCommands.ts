@@ -74,31 +74,38 @@ export interface IGitSubmoduleOps {
 }
 
 /**
- * Cross-platform (incl. iOS) materialise + `.gitmodules` strategy — the
- * mobile-capable counterpart of {@link IAssetSpacePuller} + {@link IGitSubmoduleOps}
- * (#3535). A single combined op (pull tarball → materialise into the vault
- * folder → write `.gitmodules`) over `vault.adapter`, with NO Node `fs` /
- * staging dir / file-only registry split. Satisfied structurally by
- * `RestAssetSpaceMount` (RFC 01a83de8) — the same adapter that `apply-profile`
- * already mounts through on mobile.
+ * Cross-platform (incl. iOS) materialise strategy — the mobile-capable
+ * counterpart of {@link IAssetSpacePuller} + {@link IGitSubmoduleOps} (#3535).
+ * A single combined op (pull tarball → materialise into the vault folder) over
+ * `vault.adapter`, with NO Node `fs` / staging dir / file-only registry split.
+ * Satisfied structurally by `RestAssetSpaceMount` (RFC 01a83de8) — the same
+ * adapter `apply-profile` already mounts through on mobile.
  *
- * When injected, it fully replaces the desktop `getPuller` + `gitOps` path:
- * `.gitmodules` becomes the single source of truth that `apply-profile`
- * (`listAllAssetSpaceInfos`) reads, written regardless of `.git` presence (a
- * fresh mobile vault has no `.git`).
+ * When injected, it fully replaces the desktop `getPuller` + `gitOps` path.
+ * RFC 0005 Phase 1 — the mount writes **no** `.gitmodules`; the mounted set is
+ * tracked by folder presence (`assetspaces/<owner>/<repo>`), and
+ * {@link listMountedAssetSpaces} re-derives URLs from those paths. apply-profile
+ * (`listAllAssetSpaceInfos`) already reads filesystem presence + descriptors,
+ * not `.gitmodules`.
  */
 export interface IRestBootstrapMount {
   /**
-   * Pull `gitUrl`'s tarball, materialise it into `submodulePath`, and write the
-   * `.gitmodules` entry — all via `vault.adapter`. Returns the tarball SHA.
+   * Pull `gitUrl`'s tarball and materialise it into `submodulePath` via
+   * `vault.adapter`. Returns the tarball SHA. RFC 0005 Phase 1 — writes **no**
+   * `.gitmodules`: the folder presence at `assetspaces/<owner>/<repo>` is the
+   * mount-state record.
    */
   mount(
     gitUrl: string,
     submodulePath: string,
     ref: string,
   ): Promise<{ sha: string }>;
-  /** Read the current `.gitmodules` (path, url) entries via `vault.adapter`. */
-  readGitmodulesEntries(): Promise<
+  /**
+   * List the mounted AssetSpaces by enumerating the `assetspaces/<owner>/<repo>`
+   * folders on disk + re-deriving each URL (RFC 0005 Phase 1 — replaces reading
+   * the `.gitmodules` URL-registry). `{submodulePath, url}` per folder.
+   */
+  listMountedAssetSpaces(): Promise<
     Array<{ submodulePath: string; url: string }>
   >;
 }
@@ -264,10 +271,13 @@ export class BootstrapAssetSpaceCommands {
   }
 
   /**
-   * Classify the current vault for the bootstrap command:
-   *   - `empty` — no `.gitmodules` entries AND no materialised `assetspaces/*`.
-   *   - `clone-needs-fetch` — `.gitmodules` has entries but no folder is
-   *     materialised (EC2: cloned without `--recurse-submodules`).
+   * Classify the current vault for the bootstrap command (tracked entries come
+   * from {@link listTrackedEntries} — RFC 0005 Phase 1: folder enumeration on a
+   * git-free vault, the committed `.gitmodules` on a desktop git vault):
+   *   - `empty` — no tracked AssetSpace folders AND none materialised.
+   *   - `clone-needs-fetch` — tracked folders exist but none is materialised
+   *     (present-but-empty `assetspaces/<owner>/<repo>` dirs, or — on a git vault
+   *     — committed `.gitmodules` entries cloned without `--recurse-submodules`).
    *   - `bootstrapped` — at least one `assetspaces/<ns>/` folder has content.
    */
   async detectVaultState(): Promise<VaultBootstrapState> {
@@ -432,10 +442,13 @@ export class BootstrapAssetSpaceCommands {
   // ─────────────────────────── internal ───────────────────────────
 
   /**
-   * EC2 — re-materialise every `.gitmodules`-tracked AssetSpace whose folder is
-   * currently empty (vault was cloned without `--recurse-submodules`). A git
-   * clone always has a `.git` dir, so this path stays in git mode (the
-   * `.gitmodules` entries already exist; `appendGitmodulesEntry` is a no-op).
+   * EC2 — re-materialise every tracked AssetSpace whose folder is currently
+   * empty. The tracked set comes from {@link listTrackedEntries}: on a git-free
+   * vault (RFC 0005 Phase 1) these are the present-but-empty
+   * `assetspaces/<owner>/<repo>` folders with their URL re-derived via
+   * `deriveUrl`; on a desktop git vault they are the committed `.gitmodules`
+   * entries (cloned without `--recurse-submodules`). Re-materialising writes the
+   * content back into the same folder.
    */
   private async fetchTrackedAssetSpaces(): Promise<void> {
     let entries: Array<{ submodulePath: string; url: string }>;
@@ -489,12 +502,12 @@ export class BootstrapAssetSpaceCommands {
     submodulePath: string,
     isGit: boolean,
   ): Promise<MaterializeResult> {
-    // Mobile (#3535 / RFC 01a83de8): one cross-platform op — pull the tarball,
-    // materialise it into the vault folder, and write the `.gitmodules` entry,
-    // all via `vault.adapter` (no Node fs, no staging dir, no file-only
-    // registry split). `.gitmodules` is the single source of truth that
-    // apply-profile (`listAllAssetSpaceInfos`) reads, so it is written
-    // regardless of the `isGit` flag (a fresh mobile vault has no `.git`).
+    // Cross-platform (#3535 / RFC 01a83de8): one op — pull the tarball and
+    // materialise it into the vault folder via `vault.adapter` (no Node fs, no
+    // staging dir, no file-only registry split). RFC 0005 Phase 1 — writes NO
+    // `.gitmodules`; the materialised folder presence at
+    // `assetspaces/<owner>/<repo>` is the mount-state record that
+    // `listMountedAssetSpaces` + apply-profile read.
     if (this.d.restMount !== undefined) {
       const { sha } = await this.d.restMount.mount(
         url,
@@ -636,15 +649,19 @@ export class BootstrapAssetSpaceCommands {
   }
 
   /**
-   * Read the `.gitmodules` (path, url) entries via whichever strategy is wired —
-   * the mobile {@link IRestBootstrapMount} (vault.adapter) or the desktop
-   * {@link IGitSubmoduleOps} (Node fs). Throws if neither is wired.
+   * List the tracked AssetSpaces (path, url) via whichever strategy is wired —
+   * the cross-platform {@link IRestBootstrapMount} (RFC 0005 Phase 1: filesystem
+   * folder enumeration + `deriveUrl`, no `.gitmodules`) or the desktop
+   * {@link IGitSubmoduleOps} (reads the committed `.gitmodules` of a git vault,
+   * Node fs). Throws if neither is wired.
    */
   private async listTrackedEntries(): Promise<
     Array<{ submodulePath: string; url: string }>
   > {
     if (this.d.restMount !== undefined) {
-      return this.d.restMount.readGitmodulesEntries();
+      // RFC 0005 Phase 1 — git-free vaults track AssetSpaces by folder presence,
+      // not `.gitmodules`: enumerate the mounted folders + derived URLs.
+      return this.d.restMount.listMountedAssetSpaces();
     }
     if (this.d.gitOps !== undefined) {
       return this.d.gitOps.readGitmodulesEntries();
