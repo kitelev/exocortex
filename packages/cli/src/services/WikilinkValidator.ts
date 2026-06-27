@@ -39,10 +39,15 @@ export class WikilinkValidator {
    * @throws WikilinkNotFoundError if any wikilink references a non-existent file
    */
   async validatePropertyValues(
-    properties: Record<string, string>,
+    properties: Record<string, string | string[]>,
   ): Promise<void> {
     for (const [, value] of Object.entries(properties)) {
-      await this.validateValue(value);
+      // A multi-value property (repeated --property, issue #3759) is an array;
+      // validate every element's wikilinks.
+      const values = Array.isArray(value) ? value : [value];
+      for (const v of values) {
+        await this.validateValue(v);
+      }
     }
   }
 
