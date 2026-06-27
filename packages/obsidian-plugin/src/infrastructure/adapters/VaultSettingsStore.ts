@@ -28,6 +28,13 @@ import {
  * only via «Exocortex: Export settings». The whole store is scheduled for removal
  * ≥1 release after this deprecation window (RFC §6 R2).
  *
+ * Read-only consequence (accepted, §6 R2 — un-Exported UI changes are not
+ * durable): a UI toggle not persisted via «Export settings» reverts to the
+ * canonical asset value whenever the asset is re-read — via a
+ * `metadataCache.changed` re-fire, a profile-switch unmount→remount, OR a plugin
+ * reload (the `applyScan` load-overlay). The `deferredPushFields` resurface
+ * protection is inert here (reachable only from the now-disabled outbound path).
+ *
  * Architecture: data.json stays a write-through mirror (instant boot
  * baseline + fallback for non-homoiconized keys); the vault asset is the
  * source of truth once it exists. Discovery is class-based and
@@ -260,11 +267,13 @@ export class VaultSettingsStore {
           }
         } else {
           // Read-only transitional (M2.3): no outbound write. The user's
-          // pre-scan UI value is kept (not overlaid), but the canonical asset
-          // value is what the inbound watcher dedups against — so lastApplied
-          // tracks the ASSET, not the un-persisted UI value (a later real
-          // asset change still applies; an un-Exported UI change is not durable
-          // — RFC §6 R2, canonical = RDF).
+          // pre-scan UI value is kept (not overlaid). lastApplied has no live
+          // reader in read-only mode (pushChangedFields, its only consumer,
+          // no-ops) — set to the canonical asset value purely for consistency
+          // if outbound is ever re-enabled. The inbound watcher
+          // (onMetadataChanged) dedups against the LIVE settings value, not
+          // lastApplied, so a later real asset change still applies
+          // (canonical = RDF); an un-Exported UI change is not durable (§6 R2).
           this.lastApplied.set(field, effectiveCanonical);
         }
         continue;
@@ -368,8 +377,9 @@ export class VaultSettingsStore {
   pushChangedFields(): void {
     if (!this.outboundWriteEnabled) {
       // Read-only transitional (M2.3): never write assets from UI changes.
-      // lastApplied is left untouched (it tracks the canonical asset value via
-      // applyScan / the inbound watcher) so inbound dedup stays consistent.
+      // lastApplied is left untouched. It has no live reader in read-only mode
+      // (this method, its only consumer, returns here); the inbound watcher
+      // (onMetadataChanged) dedups against live settings, not lastApplied.
       if (!this.outboundDeprecationWarned) {
         this.outboundDeprecationWarned = true;
         this.logger.warn(
