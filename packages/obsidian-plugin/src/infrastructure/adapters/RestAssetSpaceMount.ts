@@ -218,6 +218,18 @@ export class RestAssetSpaceMount {
    * RFC 0005 §10.1; legacy flat mounts are deprecated, #3538). A missing
    * `assetspaces/` dir yields `[]`.
    *
+   * ⚠ **Known limitation (deprecated layout).** The enum assumes the canonical
+   * Maven shape `assetspaces/<owner>/<repo>/...`. A pre-#3538 **flat** mount
+   * (`assetspaces/<repo>/...`) whose content sits in a namespace subdir would
+   * have its `assetspaces/<repo>/<namespace>` read as a fake `<owner>/<repo>`
+   * pair — there is no cheap filesystem signal to tell a flat repo from an
+   * owner. This only affects the «Unmount» picker on a vault still carrying a
+   * deprecated flat mount (apply-profile + ExoSync are descriptor/presence
+   * sourced and never call this; `fetchTrackedAssetSpaces` only clones in
+   * clone-needs-fetch, where a flat-with-content mount is already `bootstrapped`
+   * and so never re-fetched). On canonical (EKA) vaults every AssetSpace is
+   * two-level, so this does not arise; migrate any flat mount per #3538.
+   *
    * Used by the cross-platform Bootstrap / Add-AssetSpace flow
    * ({@link BootstrapAssetSpaceCommands}) to classify the vault state (empty vs
    * clone-needs-fetch vs bootstrapped) and by «Unmount assetspace» to list what

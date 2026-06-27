@@ -364,4 +364,33 @@ describe("Mobile bootstrap integration — real RestAssetSpaceMount + vault.adap
       { submodulePath: "assetspaces/kitelev/exoas-exo", url: EXO_URL },
     ]);
   });
+
+  it("KNOWN LIMITATION (deprecated #3538 flat layout) — a flat mount whose content sits in a namespace subdir is mis-enumerated as owner/repo", async () => {
+    const adapter = new InMemoryAdapter();
+    const notices: string[] = [];
+    const { restMount } = makeCmds(adapter, notices, {});
+
+    // A pre-#3538 FLAT mount: the repo is one level under assetspaces/ and its
+    // content lives in a namespace subdir → assetspaces/<repo>/<ns>/file.md.
+    await adapter.writeBinary(
+      "assetspaces/ems/ems/Task.md",
+      new TextEncoder().encode("x").buffer,
+    );
+    await adapter.mkdir("assetspaces/ems/ems");
+    await adapter.mkdir("assetspaces/ems");
+    await adapter.mkdir("assetspaces");
+
+    // Documented limitation (RFC 0005 §10.1 / listMountedAssetSpaces docstring):
+    // the enum cannot tell a flat repo from an owner, so it reads
+    // assetspaces/ems/ems as a fake owner=ems/repo=ems pair. This is harmless on
+    // canonical (EKA) vaults — every AssetSpace is two-level — and the only
+    // consumer affected is the «Unmount» picker (apply-profile + ExoSync are
+    // descriptor/presence-sourced; clone-needs-fetch never re-fetches a
+    // flat-with-content mount). Pinned here so the behavior is explicit, not
+    // silently truncated; migrate any flat mount per #3538.
+    const entries = await restMount.listMountedAssetSpaces();
+    expect(entries).toEqual([
+      { submodulePath: "assetspaces/ems/ems", url: "https://github.com/ems/ems" },
+    ]);
+  });
 });

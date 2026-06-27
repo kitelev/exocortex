@@ -334,9 +334,9 @@ export class BootstrapAssetSpaceCommands {
     }
 
     const isGit = await this.d.isGitVault();
-    // On mobile (restMount) the REST mount always writes `.gitmodules` via
-    // vault.adapter regardless of `.git` presence (apply-profile reads it), so
-    // the desktop "file-only mode" notice would be misleading — suppress it.
+    // On the REST path the cross-platform mount tracks AssetSpaces by folder
+    // presence (RFC 0005 Phase 1 — no `.gitmodules` at all, on any platform), so
+    // the desktop-only "file-only mode" notice would be misleading — suppress it.
     if (!isGit && this.d.restMount === undefined) {
       this.d.notify(
         "Vault is not a git repository — bootstrapping in file-only mode (no .gitmodules; AssetSpaces tracked device-locally).",
@@ -416,8 +416,9 @@ export class BootstrapAssetSpaceCommands {
     }
 
     const isGit = await this.d.isGitVault();
-    // See invokeBootstrap: the mobile REST path writes `.gitmodules` regardless,
-    // so the desktop "file-only mode" notice does not apply.
+    // See invokeBootstrap: the REST path tracks AssetSpaces by folder presence
+    // (RFC 0005 Phase 1 — no `.gitmodules`), so the desktop "file-only mode"
+    // notice does not apply.
     if (!isGit && this.d.restMount === undefined) {
       this.d.notify(
         "Vault is not a git repository — adding in file-only mode (no .gitmodules; tracked device-locally).",
@@ -455,7 +456,7 @@ export class BootstrapAssetSpaceCommands {
     try {
       entries = await this.listTrackedEntries();
     } catch (e) {
-      this.d.notify(`Bootstrap: could not read .gitmodules — ${this.msg(e)}`);
+      this.d.notify(`Bootstrap: could not list tracked AssetSpaces — ${this.msg(e)}`);
       return;
     }
 
