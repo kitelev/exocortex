@@ -1261,8 +1261,10 @@ export class NoteToRDFConverter {
       // targetFm is keyed by the prefixed frontmatter key) → returns null → the
       // created instance silently loses `exo__Asset_isDefinedBy` (and any other
       // `$target.property(prefix__Local)` inheritance). The value is data, not a
-      // class ref, so emit it as a plain Literal. Mirrors the `isGroundingRef`
-      // predicate bypass below. Sole consumer is
+      // class ref, so emit it as a plain Literal. Same category as
+      // `targetValueLiteral` (a plain-string value read via getLiteralValue,
+      // documented below as never entering the wikilink branch) — not a
+      // file-IRI reference like the `isGroundingRef` bypass. Sole consumer is
       // CommandResolver.resolveTokenInvocation (via getLiteralValue), which wants
       // the literal key; no path relies on the IRI form.
       if (predicate?.value.endsWith("#TokenInvocation_parameter")) {
