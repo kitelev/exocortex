@@ -13,6 +13,7 @@ import type { ReifiedRelation } from "../../../../src/presentation/renderers/lay
 import {
   extractInlineRelations,
   reifiedToRows,
+  incomingReifiedToRows,
   dedupeRelations,
   buildRelationRows,
   appendInlineRelationValue,
@@ -83,6 +84,29 @@ describe("relationsEditorModel — reified rows", () => {
     expect(rows[0].predicateLabel).toBe("relatesToConcept");
     expect(rows[0].assetSpace).toBe("exoas-class-relations");
     expect(rows[0].statementPath).toBe(
+      "assetspaces/kitelev/exoas-class-relations/s1.md",
+    );
+  });
+});
+
+describe("relationsEditorModel — incoming reified rows (object-side read-only, Task 3.3)", () => {
+  // @req:8d3ec42f-3334-4d96-8087-6128220a534d
+  it("keeps INCOMING IRI-object relations read-only (with the owner display) and drops outgoing + literal-object", () => {
+    const rows = incomingReifiedToRows([
+      reified({ direction: "outgoing" }), // outgoing → not an object-side row
+      reified({ direction: "incoming" }), // incoming → read-only object-side row
+      reified({ direction: "incoming", objectIsLiteral: true, object: "literal" }), // literal → drop
+    ]);
+    expect(rows).toHaveLength(1);
+    const row = rows[0];
+    expect(row.kind).toBe("reified");
+    expect(row.direction).toBe("incoming");
+    expect(row.readOnly).toBe(true);
+    // A is the object; the displayed "other end" / owner is the subject (A.md → "A").
+    expect(row.objectDisplay).toBe("A");
+    expect(row.ownerDisplay).toBe("A");
+    expect(row.assetSpace).toBe("exoas-class-relations");
+    expect(row.statementPath).toBe(
       "assetspaces/kitelev/exoas-class-relations/s1.md",
     );
   });

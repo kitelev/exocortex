@@ -6263,6 +6263,66 @@
 .property-editor-relation-dereify:hover {
   color: var(--text-warning);
 }
+/* Object-side read-only (RFC §C3 Task 3.3) — incoming reified relation can only be
+   toggled by the subject-owner; show a disabled, explanatory affordance. */
+.property-editor-relation-readonly {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 0.8em;
+  font-style: italic;
+  cursor: not-allowed;
+}
+/* RFC §C3 Task 3.3 — reify destination picker + de-reify strong-confirm dialogs. */
+.property-editor-relation-dialog {
+  margin-top: 0.6em;
+  padding: 0.6em 0.75em;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+}
+.property-editor-dereify-dialog.mod-warning {
+  border-color: var(--text-warning);
+}
+.property-editor-relation-dialog-title {
+  font-weight: 600;
+  margin: 0 0 0.3em;
+}
+.property-editor-relation-dialog-body {
+  margin: 0 0 0.4em;
+  color: var(--text-normal);
+}
+.property-editor-relation-dialog-label {
+  margin: 0.3em 0 0.2em;
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+.property-editor-relation-dialog-warn {
+  margin: 0.3em 0;
+  color: var(--text-warning);
+  font-size: 0.85em;
+}
+.property-editor-reify-destinations {
+  list-style: none;
+  margin: 0 0 0.3em;
+  padding: 0;
+}
+.property-editor-reify-destination {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  cursor: pointer;
+  padding: 0.15em 0;
+}
+.property-editor-dereify-ack {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  margin: 0.4em 0;
+  cursor: pointer;
+}
+.property-editor-relation-dialog-actions {
+  margin-top: 0.5em;
+}
 .property-editor-relations-empty {
   color: var(--text-muted);
   font-size: 0.85em;

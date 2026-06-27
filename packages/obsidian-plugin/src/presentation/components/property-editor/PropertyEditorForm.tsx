@@ -12,6 +12,7 @@ import {
 } from "./fields";
 import { RelationsSection, type PredicateOption } from "./RelationsSection";
 import type { RelationRow } from "./relationsEditorModel";
+import type { ReifyDestination } from "./reifyModel";
 
 /**
  * RFC `93a0b2ee` Phase 3 / Task 3.1 — dependencies for the embedded Relations
@@ -30,8 +31,13 @@ export interface RelationsFormDeps {
   createInline: (predicateKey: string, targetUid: string) => Promise<RelationRow[]>;
   /** Delete a relation (inline → frontmatter, reified → statement); resolves to refreshed rows. */
   deleteRelation: (row: RelationRow) => Promise<RelationRow[]>;
-  /** RFC §C3 Task 3.2 — reify an inline relation into a statement; resolves to refreshed rows. */
-  reifyRelation?: (row: RelationRow) => Promise<RelationRow[]>;
+  /**
+   * RFC §C3 Task 3.2/3.3 — reify an inline relation into a statement in the chosen
+   * destination AssetSpace anchor; resolves to refreshed rows.
+   */
+  reifyRelation?: (row: RelationRow, anchorUid: string) => Promise<RelationRow[]>;
+  /** RFC §C3 Task 3.3 — resolve the destination AssetSpaces the reify picker offers (default first). */
+  resolveReifyDestinations?: () => ReifyDestination[];
   /** RFC §C3 Task 3.2 — de-reify a reified relation back to inline; resolves to refreshed rows. */
   deReifyRelation?: (row: RelationRow) => Promise<RelationRow[]>;
 }
@@ -245,9 +251,9 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
   );
 
   const handleRelationReify = useCallback(
-    (row: RelationRow) => {
+    (row: RelationRow, anchorUid: string) => {
       if (!relations?.reifyRelation) return;
-      void relations.reifyRelation(row).then((rows) => setRelationRows(rows));
+      void relations.reifyRelation(row, anchorUid).then((rows) => setRelationRows(rows));
     },
     [relations],
   );
@@ -279,7 +285,12 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
           resolveCandidates={relations.resolveCandidates}
           onCreate={handleRelationCreate}
           onDelete={handleRelationDelete}
-          onReify={relations.reifyRelation ? handleRelationReify : undefined}
+          onReify={
+            relations.reifyRelation && relations.resolveReifyDestinations
+              ? handleRelationReify
+              : undefined
+          }
+          resolveReifyDestinations={relations.resolveReifyDestinations}
           onDeReify={relations.deReifyRelation ? handleRelationDeReify : undefined}
         />
       )}
