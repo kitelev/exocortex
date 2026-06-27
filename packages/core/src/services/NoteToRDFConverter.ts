@@ -1250,6 +1250,27 @@ export class NoteToRDFConverter {
     if (typeof value === "string") {
       const cleanValue = this.removeQuotes(value);
 
+      // Issue #3757: `exocmd__TokenInvocation_parameter` is a pure DATA literal —
+      // a frontmatter-KEY name (`exo__Asset_isDefinedBy`) for the `targetProperty`
+      // resolver, or a date-format/offset modifier for date tokens — NEVER a
+      // class reference. Without this bypass, a key like `exo__Asset_isDefinedBy`
+      // matches the `prefix__LocalName` class-shape and gets substituted to the
+      // ontology IRI (`<https://exocortex.my/ontology/exo#Asset_isDefinedBy>`).
+      // CommandResolver then bakes that IRI into the `$target.property(...)`
+      // marker, and the resolver looks up `targetFm[<IRI>]` (a guaranteed miss —
+      // targetFm is keyed by the prefixed frontmatter key) → returns null → the
+      // created instance silently loses `exo__Asset_isDefinedBy` (and any other
+      // `$target.property(prefix__Local)` inheritance). The value is data, not a
+      // class ref, so emit it as a plain Literal. Same category as
+      // `targetValueLiteral` (a plain-string value read via getLiteralValue,
+      // documented below as never entering the wikilink branch) — not a
+      // file-IRI reference like the `isGroundingRef` bypass. Sole consumer is
+      // CommandResolver.resolveTokenInvocation (via getLiteralValue), which wants
+      // the literal key; no path relies on the IRI form.
+      if (predicate?.value.endsWith("#TokenInvocation_parameter")) {
+        return [new Literal(cleanValue)];
+      }
+
       const wikilink = this.extractWikilink(cleanValue);
       if (wikilink) {
         const targetFile = this.vault.getFirstLinkpathDest(
