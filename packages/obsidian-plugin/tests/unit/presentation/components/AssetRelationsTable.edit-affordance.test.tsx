@@ -19,6 +19,7 @@ import "@testing-library/jest-dom";
 import { render, fireEvent } from "@testing-library/react";
 import {
   AssetRelationsTable,
+  AssetRelationsTableWithToggle,
   AssetRelation,
 } from "../../../../src/presentation/components/AssetRelationsTable";
 
@@ -63,6 +64,31 @@ describe("AssetRelationsTable — read-view «Edit relations» affordance (PDD d
     expect(
       container.querySelectorAll(".exocortex-edit-relations"),
     ).toHaveLength(0);
+  });
+
+  it("AssetRelationsTableWithToggle forwards onEditRelations to the inner table (rest-spread regression lock)", () => {
+    // The production renderer renders the WithToggle wrapper, not AssetRelationsTable
+    // directly — so lock that the wrapper forwards onEditRelations (it does so via
+    // its `...props` rest-spread; this guards the "wiring breaks while tests pass"
+    // hazard if the wrapper ever destructures the prop out).
+    const onEditRelations = jest.fn();
+    const { container } = render(
+      <AssetRelationsTableWithToggle
+        relations={[baseRelation()]}
+        onEditRelations={onEditRelations}
+        showEffortVotes={false}
+        onToggleEffortVotes={jest.fn()}
+        showArchived={false}
+        onToggleArchived={jest.fn()}
+      />,
+    );
+
+    const buttons = container.querySelectorAll<HTMLButtonElement>(
+      ".exocortex-edit-relations",
+    );
+    expect(buttons).toHaveLength(1);
+    fireEvent.click(buttons[0]);
+    expect(onEditRelations).toHaveBeenCalledTimes(1);
   });
 
   it("renders a single affordance in grouped mode too", () => {
