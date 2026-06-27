@@ -805,3 +805,8 @@ export {
 // registry, 4 checks (uid-uniqueness / co-location / SHACL / DAG), and the
 // warm one-pass reader contract consumed by the `Validate vault` command (M1.5).
 export * from "./services/validation";
+
+// Generic Settings Distribution engine (RFC f402002b, M2.1): source-agnostic
+// Export/Import of a domain's declared setting keys ↔ `setting__Setting` assets,
+// allowlist-by-construction. Pure (I/O injected by the caller).
+export * from "./services/settings";
