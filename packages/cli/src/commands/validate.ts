@@ -7,6 +7,7 @@ import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder } from "../responses/index.js";
 import { validateSchemaCommand } from "./validate-schema.js";
 import { validateFrontmatterCommand } from "./validate-frontmatter.js";
+import { validateVaultCommand } from "./validate-vault.js";
 
 export interface ValidateOptions {
   vault: string;
@@ -99,6 +100,7 @@ export function validateCommand(): Command {
   cmd.addCommand(validateIriCommand());
   cmd.addCommand(validateSchemaCommand());
   cmd.addCommand(validateFrontmatterCommand());
+  cmd.addCommand(validateVaultCommand());
 
   return cmd;
 }

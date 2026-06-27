@@ -19,3 +19,4 @@ export {
   readIsDefinedByRef,
   readInstanceClassRefs,
 } from "./frontmatterRefs";
+export { readEnabledCheckIds } from "./readEnabledChecks";

@@ -124,9 +124,11 @@ export function frontmatterMatchesClass(
 }
 
 /**
- * Loads triples from the vault into a single array.
+ * Loads triples from the vault into a single array. Exported so `validate vault`
+ * (the homoiconic check-runner, RFC f402002b M1.5) reuses the same warm
+ * triple-build for its SHACL check, never re-parsing the vault separately.
  */
-async function loadTriplesFromAllVaults(
+export async function loadTriplesFromAllVaults(
   vaultPath: string,
   useCache: boolean,
 ): Promise<{ triples: DomainTriple[]; cacheHit: boolean }> {
