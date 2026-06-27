@@ -3,6 +3,7 @@ import {
   RelationsRenderer,
   RELATIONS_EMPTY_TEXT,
   isNonRelationPredicate,
+  predicateIriToKey,
 } from "../../src/presentation/renderers/layout/RelationsRenderer";
 import {
   InMemoryTripleStore,
@@ -1784,6 +1785,92 @@ describe("RelationsRenderer", () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].provenance).toBe("inline");
+    });
+
+    // The statement asset that backs a reified edge appears in the asset's
+    // backlinks via exo__Statement_subject — pure reification plumbing. It must
+    // be SUPPRESSED from the inline list (the logical edge is rendered via the
+    // reified path), not double-shown.
+    it("suppresses the statement-asset backlink (exo__Statement_* plumbing), rendering only the logical reified edge", async () => {
+      const store = new InMemoryTripleStore();
+      await seedStatement(store, S1_PATH, notePathToIRI(A_PATH), RELATES_TO, notePathToIRI(B_PATH));
+      // The statement asset S1 is a backlink of A (it references A via _subject).
+      mockBacklinksCacheManager.getBacklinks.mockReturnValue([S1_PATH]);
+      registerFiles(
+        {
+          [A_PATH]: { exo__Asset_uid: A_UID, exo__Asset_label: "Концепт A" },
+          [B_PATH]: { exo__Asset_uid: B_UID, exo__Asset_label: "Концепт B" },
+          [S1_PATH]: {
+            exo__Asset_uid: "11111111-0000-0000-0000-000000000011",
+            "exo__Statement_subject": `[[${A_UID}]]`,
+          },
+        },
+        { [A_PATH]: "Концепт A", [B_PATH]: "Концепт B" },
+      );
+      MetadataHelpers.findAllReferencingProperties.mockReturnValue([
+        "exo__Statement_subject",
+      ]);
+
+      const result = await makeRenderer(store).getAssetRelations(
+        createTestTFile(A_PATH),
+        {},
+      );
+
+      // Exactly one row — the logical reified edge to B, NOT the plumbing
+      // backlink to the statement asset S1.
+      expect(result).toHaveLength(1);
+      expect(result[0].provenance).toBe("reified");
+      expect(result[0].path).toBe(B_PATH);
+      expect(result.some((r) => r.path === S1_PATH)).toBe(false);
+    });
+
+    it("dedups two distinct statements reifying the SAME logical edge to one row", async () => {
+      const store = new InMemoryTripleStore();
+      const S2_PATH =
+        "assetspaces/kitelev/exoas-shared-private/relations/22222222-0000-0000-0000-000000000022.md";
+      // Two statements, same edge A --relatesTo--> B.
+      await seedStatement(store, S1_PATH, notePathToIRI(A_PATH), RELATES_TO, notePathToIRI(B_PATH));
+      await seedStatement(store, S2_PATH, notePathToIRI(A_PATH), RELATES_TO, notePathToIRI(B_PATH));
+      mockBacklinksCacheManager.getBacklinks.mockReturnValue([]);
+      registerFiles(
+        {
+          [A_PATH]: { exo__Asset_uid: A_UID, exo__Asset_label: "Концепт A" },
+          [B_PATH]: { exo__Asset_uid: B_UID, exo__Asset_label: "Концепт B" },
+        },
+        { [A_PATH]: "Концепт A", [B_PATH]: "Концепт B" },
+      );
+
+      const result = await makeRenderer(store).getAssetRelations(
+        createTestTFile(A_PATH),
+        {},
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].provenance).toBe("reified");
+      expect(result[0].path).toBe(B_PATH);
+    });
+  });
+
+  // RFC 93a0b2ee Task 1.3 — predicateIriToKey direct contract (dash-prefix-safe).
+  describe("predicateIriToKey", () => {
+    it("converts symbolic ontology predicate IRIs to frontmatter-key form, incl. dash prefixes", () => {
+      expect(
+        predicateIriToKey("https://exocortex.my/ontology/ems#Effort_area"),
+      ).toBe("ems__Effort_area");
+      expect(
+        predicateIriToKey(
+          "https://exocortex.my/ontology/exo-ims#relatesToConcept",
+        ),
+      ).toBe("exo-ims__relatesToConcept");
+    });
+
+    it("passes non-ontology / hash-less IRIs through unchanged", () => {
+      expect(predicateIriToKey("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")).toBe(
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+      );
+      expect(predicateIriToKey("obsidian://vault/foo.md")).toBe(
+        "obsidian://vault/foo.md",
+      );
     });
   });
 });

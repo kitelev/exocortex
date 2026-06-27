@@ -47,6 +47,20 @@ export function predicateIriToKey(iri: string): string {
 }
 
 /**
+ * RFC `93a0b2ee` Task 1.3 — frontmatter keys that are reification PLUMBING: a
+ * backlink referencing the open asset via one of these is an `exo__Statement`
+ * asset surfacing as a raw backlink, NOT a logical relation. Its logical edge is
+ * rendered via the reified path (`mergeReifiedRelations`), so the plumbing
+ * backlink is suppressed to avoid double-representing the same edge (the
+ * "statement asset shows under exo__Statement_object" noise).
+ */
+const REIFICATION_PLUMBING_KEYS: ReadonlySet<string> = new Set([
+  "exo__Statement_subject",
+  "exo__Statement_predicate",
+  "exo__Statement_object",
+]);
+
+/**
  * RFC `93a0b2ee` Task 1.2 — non-relation predicate filter ("predicate-whitelist"
  * by exclusion) applied to reified relations sourced via {@link getReifiedRelations}.
  *
@@ -283,6 +297,21 @@ export class RelationsRenderer {
             }
           }
 
+          // RFC 93a0b2ee Task 1.3 — drop reification-plumbing backlinks: a source
+          // referencing the asset ONLY via exo__Statement_* slots is a statement
+          // asset surfacing as raw plumbing; its logical edge is rendered via the
+          // reified path, so showing the plumbing backlink would double-represent
+          // the edge. (A source with a real relation property too keeps that one.)
+          if (referencingProperties.length > 0) {
+            const withoutPlumbing = referencingProperties.filter(
+              (p) => !REIFICATION_PLUMBING_KEYS.has(p),
+            );
+            if (withoutPlumbing.length === 0) {
+              continue; // pure plumbing → skip this backlink entirely
+            }
+            referencingProperties = withoutPlumbing;
+          }
+
           const enrichedMetadata = { ...metadata };
           const resolvedLabel = this.metadataService.getAssetLabel(sourcePath);
           if (resolvedLabel) {
@@ -409,11 +438,14 @@ export class RelationsRenderer {
       return `iri:${iri}`;
     };
 
-    // Canonical keys of the inline relations. An inline relation is
+    // Canonical keys already represented. Seeded with the inline relations so a
+    // reified duplicate of an inline edge is dropped (inline-wins); each emitted
+    // reified relation's key is added too, so two distinct statements reifying
+    // the SAME logical edge surface only once. An inline relation is
     // "sourceFile --propertyName--> A": subject = sourceFile (its uid lives in
     // the relation's enriched metadata), object = A. Body links carry no
     // predicate → not dedup-eligible.
-    const inlineKeys = new Set<string>();
+    const seenKeys = new Set<string>();
     for (const rel of relations) {
       if (rel.provenance !== "inline" || !rel.propertyName) continue;
       const srcUid = rel.metadata?.exo__Asset_uid;
@@ -421,7 +453,7 @@ export class RelationsRenderer {
         typeof srcUid === "string" && srcUid
           ? `uid:${srcUid}`
           : `path:${rel.path}`;
-      inlineKeys.add(`${srcToken}|${rel.propertyName}|${aToken}`);
+      seenKeys.add(`${srcToken}|${rel.propertyName}|${aToken}`);
     }
 
     for (const r of reified) {
@@ -429,7 +461,8 @@ export class RelationsRenderer {
       if (r.objectIsLiteral) continue;
 
       const key = `${tokenFor(r.subject)}|${predicateIriToKey(r.predicate)}|${tokenFor(r.object)}`;
-      if (inlineKeys.has(key)) continue; // inline-wins
+      if (seenKeys.has(key)) continue; // inline-wins + reified-vs-reified dedup
+      seenKeys.add(key);
 
       // The displayed "related asset" is the OTHER end of the edge.
       const otherIri = r.direction === "outgoing" ? r.object : r.subject;
