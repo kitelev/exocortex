@@ -2047,13 +2047,14 @@ export default class ExocortexPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
-    // onto-RFC 981b6070 (D2) — write-through to vault assets for
-    // homoiconizable fields. Every UI surface funnels through this
-    // method (SettingTab × 32 controls, palette commands,
-    // DailyTasksRenderer), so intercepting here covers them all without
-    // touching call sites. Diff-based + debounced inside the store;
-    // remote applies go through `saveData` directly, so this cannot
-    // loop.
+    // RFC f402002b M2.3 — the live-mirror UI→asset auto-write is DEPRECATED in
+    // favour of the explicit «Exocortex: Export settings» command. The store is
+    // constructed read-only (outboundWriteEnabled defaults false), so this call
+    // is now a no-op that logs a one-time deprecation notice (the asset→UI
+    // watcher stays read-only; the RDF asset is canonical, data.json a derived
+    // cache). The call is kept here (rather than removed) so the deprecation
+    // notice fires from the single saveSettings() funnel; the whole store is
+    // scheduled for removal ≥1 release after the deprecation window.
     this.vaultSettingsStore?.pushChangedFields();
   }
 
@@ -2087,6 +2088,15 @@ export default class ExocortexPlugin extends Plugin {
       return;
     }
 
+    // RFC f402002b M2.3 — read-only transitional: the store keeps the asset→UI
+    // inbound watcher + load-overlay + one-shot migrate, but the continuous
+    // UI→asset auto-write is deprecated (outboundWriteEnabled defaults false).
+    // Canonical authority = the RDF asset; data.json = derived cache. Persist UI
+    // changes to assets via «Exocortex: Export settings».
+    this.logger.info(
+      "[D2] vault-settings live-mirror is read-only (RFC f402002b M2.3 deprecation) — " +
+        "asset→UI inbound only; use «Export settings» to persist UI changes to assets",
+    );
     const store = new VaultSettingsStore({
       app: this.app,
       logger: this.logger,
