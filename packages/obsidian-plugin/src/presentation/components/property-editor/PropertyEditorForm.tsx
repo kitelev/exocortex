@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo, useEffect } from "react";
 import type { PropertySchemaDefinition } from '@plugin/domain/property-editor/PropertySchemas';
 import { getPropertySchemaForClass, getPropertySchemaForClassSync } from '@plugin/domain/property-editor/PropertySchemas';
+import type { AssetRefCandidate } from "@plugin/presentation/builders/button-groups/DynamicCommandButtonGroupBuilder";
 import {
   TextField,
   SelectField,
@@ -9,12 +10,35 @@ import {
   TimestampField,
   NumberField,
 } from "./fields";
+import { RelationsSection, type PredicateOption } from "./RelationsSection";
+import type { RelationRow } from "./relationsEditorModel";
+
+/**
+ * RFC `93a0b2ee` Phase 3 / Task 3.1 — dependencies for the embedded Relations
+ * section. Supplied by {@link PropertyEditorModal} (which owns triple-store
+ * access + the vault write-path). When absent the form behaves exactly as
+ * before (back-compat) — wikilink fields render as raw text fields.
+ */
+export interface RelationsFormDeps {
+  /** The unified, deduplicated outgoing relations at open time. */
+  initialRows: RelationRow[];
+  /** Predicates the user may create a relation with (A's class wikilink properties). */
+  predicateOptions: PredicateOption[];
+  /** Range-scoped candidate resolver for the target picker. */
+  resolveCandidates: (rangeClassUid: string | undefined) => AssetRefCandidate[];
+  /** Append a new inline relation; resolves to the refreshed row list. */
+  createInline: (predicateKey: string, targetUid: string) => Promise<RelationRow[]>;
+  /** Delete a relation (inline → frontmatter, reified → statement); resolves to refreshed rows. */
+  deleteRelation: (row: RelationRow) => Promise<RelationRow[]>;
+}
 
 export interface PropertyEditorFormProps {
   instanceClass: string;
   frontmatter: Record<string, unknown>;
   onSave: (updatedFrontmatter: Record<string, unknown>) => void;
   onCancel: () => void;
+  /** RFC `93a0b2ee` Task 3.1 — when present, render the Relations section. */
+  relations?: RelationsFormDeps;
 }
 
 interface ValidationError {
@@ -27,6 +51,7 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
   frontmatter,
   onSave,
   onCancel,
+  relations,
 }) => {
   const [schema, setSchema] = useState<PropertySchemaDefinition[]>(
     () => getPropertySchemaForClassSync(instanceClass),
@@ -169,9 +194,38 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
     [formData, getErrorForField, handleFieldChange],
   );
 
-  const editableProperties = useMemo(
-    () => schema.filter((p) => !p.readOnly),
-    [schema],
+  // RFC 93a0b2ee Task 3.1 — when the Relations section is active, relation
+  // (wikilink) properties are managed there, not as raw text fields here.
+  const editableProperties = useMemo(() => {
+    const base = schema.filter((p) => !p.readOnly);
+    return relations ? base.filter((p) => p.type !== "wikilink") : base;
+  }, [schema, relations]);
+
+  // RFC 93a0b2ee Task 3.1 — live relation rows (create/delete mutate the vault
+  // immediately and return the refreshed list, independent of the bulk Save).
+  const [relationRows, setRelationRows] = useState<RelationRow[]>(
+    () => relations?.initialRows ?? [],
+  );
+  useEffect(() => {
+    if (relations) setRelationRows(relations.initialRows);
+  }, [relations]);
+
+  const handleRelationCreate = useCallback(
+    (predicateKey: string, targetUid: string) => {
+      if (!relations) return;
+      void relations
+        .createInline(predicateKey, targetUid)
+        .then((rows) => setRelationRows(rows));
+    },
+    [relations],
+  );
+
+  const handleRelationDelete = useCallback(
+    (row: RelationRow) => {
+      if (!relations) return;
+      void relations.deleteRelation(row).then((rows) => setRelationRows(rows));
+    },
+    [relations],
   );
 
   const readOnlyProperties = useMemo(
@@ -185,6 +239,16 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
         <h3 className="property-editor-section-title">Editable properties</h3>
         {editableProperties.map(renderField)}
       </div>
+
+      {relations && (
+        <RelationsSection
+          rows={relationRows}
+          predicateOptions={relations.predicateOptions}
+          resolveCandidates={relations.resolveCandidates}
+          onCreate={handleRelationCreate}
+          onDelete={handleRelationDelete}
+        />
+      )}
 
       {readOnlyProperties.length > 0 && (
         <div className="property-editor-section property-editor-readonly-section">
