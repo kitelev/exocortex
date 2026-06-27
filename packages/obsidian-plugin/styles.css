@@ -6250,6 +6250,19 @@
 .property-editor-relation-delete:hover {
   color: var(--text-error);
 }
+.property-editor-relation-reify,
+.property-editor-relation-dereify {
+  flex: 0 0 auto;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.property-editor-relation-reify:hover {
+  color: var(--text-accent);
+}
+/* De-reify returns the relation to inline (it will travel on share) — warn-tinted. */
+.property-editor-relation-dereify:hover {
+  color: var(--text-warning);
+}
 .property-editor-relations-empty {
   color: var(--text-muted);
   font-size: 0.85em;

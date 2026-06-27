@@ -30,6 +30,10 @@ export interface RelationsFormDeps {
   createInline: (predicateKey: string, targetUid: string) => Promise<RelationRow[]>;
   /** Delete a relation (inline → frontmatter, reified → statement); resolves to refreshed rows. */
   deleteRelation: (row: RelationRow) => Promise<RelationRow[]>;
+  /** RFC §C3 Task 3.2 — reify an inline relation into a statement; resolves to refreshed rows. */
+  reifyRelation?: (row: RelationRow) => Promise<RelationRow[]>;
+  /** RFC §C3 Task 3.2 — de-reify a reified relation back to inline; resolves to refreshed rows. */
+  deReifyRelation?: (row: RelationRow) => Promise<RelationRow[]>;
 }
 
 export interface PropertyEditorFormProps {
@@ -240,6 +244,22 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
     [relations],
   );
 
+  const handleRelationReify = useCallback(
+    (row: RelationRow) => {
+      if (!relations?.reifyRelation) return;
+      void relations.reifyRelation(row).then((rows) => setRelationRows(rows));
+    },
+    [relations],
+  );
+
+  const handleRelationDeReify = useCallback(
+    (row: RelationRow) => {
+      if (!relations?.deReifyRelation) return;
+      void relations.deReifyRelation(row).then((rows) => setRelationRows(rows));
+    },
+    [relations],
+  );
+
   const readOnlyProperties = useMemo(
     () => schema.filter((p) => p.readOnly),
     [schema],
@@ -259,6 +279,8 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
           resolveCandidates={relations.resolveCandidates}
           onCreate={handleRelationCreate}
           onDelete={handleRelationDelete}
+          onReify={relations.reifyRelation ? handleRelationReify : undefined}
+          onDeReify={relations.deReifyRelation ? handleRelationDeReify : undefined}
         />
       )}
 

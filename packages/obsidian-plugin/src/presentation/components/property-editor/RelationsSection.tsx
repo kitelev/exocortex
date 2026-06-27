@@ -40,6 +40,17 @@ export interface RelationsSectionProps {
   readonly onCreate: (predicateKey: string, targetUid: string) => void;
   /** Delete a relation in place (inline → frontmatter; reified → statement asset). */
   readonly onDelete: (row: RelationRow) => void;
+  /**
+   * RFC §C3 Task 3.2 — reify an INLINE relation into an `exo__Statement` asset
+   * (the per-row "Reify" affordance). Omitted ⇒ the toggle is not offered (e.g.
+   * no triple store reachable, or Task 3.1 back-compat).
+   */
+  readonly onReify?: (row: RelationRow) => void;
+  /**
+   * RFC §C3 Task 3.2 — de-reify a REIFIED relation back to inline (the per-row
+   * "Un-reify" affordance). Omitted ⇒ the toggle is not offered.
+   */
+  readonly onDeReify?: (row: RelationRow) => void;
 }
 
 /** Factual reified marker (RFC §C2) — `reified · <AS>`, or a bare `reified`; `null` for inline. */
@@ -55,6 +66,8 @@ export const RelationsSection: React.FC<RelationsSectionProps> = ({
   resolveCandidates,
   onCreate,
   onDelete,
+  onReify,
+  onDeReify,
 }) => {
   const [predicateKey, setPredicateKey] = useState<string>(
     () => predicateOptions[0]?.key ?? "",
@@ -127,6 +140,30 @@ export const RelationsSection: React.FC<RelationsSectionProps> = ({
                   >
                     {marker}
                   </span>
+                )}
+                {onReify && row.kind === "inline" && (
+                  <button
+                    type="button"
+                    className="property-editor-relation-reify clickable-icon"
+                    aria-label={`Reify relation ${row.predicateLabel} → ${row.objectDisplay} into a statement asset`}
+                    title="Reify — move this relation into a separate statement asset (it will no longer travel inline)."
+                    data-testid="relation-reify"
+                    onClick={() => onReify(row)}
+                  >
+                    ↗
+                  </button>
+                )}
+                {onDeReify && row.kind === "reified" && (
+                  <button
+                    type="button"
+                    className="property-editor-relation-dereify clickable-icon"
+                    aria-label={`Return relation ${row.predicateLabel} → ${row.objectDisplay} to inline`}
+                    title="Un-reify — return this relation to inline frontmatter (it will travel on share)."
+                    data-testid="relation-dereify"
+                    onClick={() => onDeReify(row)}
+                  >
+                    ↩
+                  </button>
                 )}
                 <button
                   type="button"

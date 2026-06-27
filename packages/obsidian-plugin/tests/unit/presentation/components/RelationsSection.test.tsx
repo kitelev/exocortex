@@ -110,6 +110,53 @@ describe("RelationsSection — delete in place", () => {
   });
 });
 
+describe("RelationsSection — reify/de-reify toggle (RFC §C3 Task 3.2)", () => {
+  // @req:3b9eb8d5-da3d-45d9-9df6-082f4f22c8f1
+  it("offers Reify on an inline row only, and invokes onReify with that row", () => {
+    const onReify = jest.fn();
+    const onDeReify = jest.fn();
+    renderSection({ onReify, onDeReify });
+    const inlineEl = screen
+      .getAllByTestId("relation-row")
+      .find((r) => r.getAttribute("data-kind") === "inline")!;
+    const reifiedEl = screen
+      .getAllByTestId("relation-row")
+      .find((r) => r.getAttribute("data-kind") === "reified")!;
+
+    const reifyBtn = inlineEl.querySelector('[data-testid="relation-reify"]');
+    expect(reifyBtn).not.toBeNull();
+    // The inline row must NOT offer de-reify; the reified row must NOT offer reify.
+    expect(inlineEl.querySelector('[data-testid="relation-dereify"]')).toBeNull();
+    expect(reifiedEl.querySelector('[data-testid="relation-reify"]')).toBeNull();
+
+    fireEvent.click(reifyBtn!);
+    expect(onReify).toHaveBeenCalledTimes(1);
+    expect(onReify).toHaveBeenCalledWith(inlineRow);
+    expect(onDeReify).not.toHaveBeenCalled();
+  });
+
+  it("offers De-reify on a reified row only, and invokes onDeReify with that row", () => {
+    const onReify = jest.fn();
+    const onDeReify = jest.fn();
+    renderSection({ onReify, onDeReify });
+    const reifiedEl = screen
+      .getAllByTestId("relation-row")
+      .find((r) => r.getAttribute("data-kind") === "reified")!;
+    const dereifyBtn = reifiedEl.querySelector('[data-testid="relation-dereify"]');
+    expect(dereifyBtn).not.toBeNull();
+    fireEvent.click(dereifyBtn!);
+    expect(onDeReify).toHaveBeenCalledTimes(1);
+    expect(onDeReify).toHaveBeenCalledWith(reifiedRow);
+    expect(onReify).not.toHaveBeenCalled();
+  });
+
+  it("offers no toggle affordance when onReify/onDeReify are omitted (Task 3.1 back-compat)", () => {
+    renderSection();
+    expect(screen.queryAllByTestId("relation-reify")).toHaveLength(0);
+    expect(screen.queryAllByTestId("relation-dereify")).toHaveLength(0);
+  });
+});
+
 describe("RelationsSection — create (range-scoped picker)", () => {
   it("scopes the picker candidates to the selected predicate's range", () => {
     const { resolveCandidates } = renderSection();
