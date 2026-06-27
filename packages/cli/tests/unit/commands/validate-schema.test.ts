@@ -32,6 +32,7 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   createDefaultCheckRegistry: jest.fn(),
   KNOWN_CHECK_IDS: new Set<string>(),
   extractAssetReference: jest.fn(),
+  readEnabledCheckIds: jest.fn(() => []),
 }));
 
 // Mock fs-extra (CacheManager dependency)
