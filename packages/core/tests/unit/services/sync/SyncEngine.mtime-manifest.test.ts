@@ -408,3 +408,102 @@ describe("SyncEngine — mtime-manifest local-hash skip (perf, zero-loss)", () =
     expect(manifest.setCount).toBe(before); // no churn on cache-hit no-ops
   });
 });
+
+/**
+ * #3751 — ZERO-LOSS: an edit made BEFORE a `pull` must still be delivered by
+ * the next `push`. The mtime-manifest is rebuilt + persisted EVERY cycle
+ * (including `pull`), so a `pull` after a local edit records the edited
+ * `(mtime,size,blobSha)` into the manifest WITHOUT pushing the edit and WITHOUT
+ * advancing the watermark (the push base). The subsequent `push` then sees a
+ * `(mtime,size)` cache HIT, reuses the cached blobSha WITHOUT reading the file,
+ * detection correctly flags it modified-vs-base, but the push-set builder
+ * (`pinLocalChanges`) reads content from the `disk` snapshot — which a cache-hit
+ * file is absent from — so the change was SILENTLY DROPPED and `push` reported
+ * "synced, pushed 0" with the edit undelivered (the workaround was `touch` to
+ * bump mtime). The fix gates the cache-hit skip on `cached.blobSha === base`:
+ * a file divergent from the watermark base is a cache MISS → read → pushable,
+ * restoring the documented invariant "a stale entry causes a re-hash, NEVER a
+ * wrong skip".
+ *
+ * Revert-verify (integration-test-revert-verify): removing the
+ * `cached.blobSha === baseBlobByPath.get(path)` clause from the cache-hit gate
+ * in `SyncEngine.ts` makes the first test below RED (push delivers nothing,
+ * remote stays stale); restoring it → GREEN.
+ */
+describe("SyncEngine — #3751 edit-before-pull is delivered by push (zero-loss)", () => {
+  it("@req:702e8bda-1e13-42b0-9858-3d5697f71b6a push delivers a local edit made BEFORE a pull (manifest cache-hit must not skip a file divergent from the watermark base)", async () => {
+    const files = { [A]: mdAsset("u1") };
+    const gh = new FakeGitHubRepo(files);
+    const local = new StatLocalFiles(files);
+    const manifest = new MemManifestStore();
+    const engine = makeEngine(gh, local, { localManifestStore: manifest });
+
+    // Warm the cache to steady state (watermark + manifest seeded).
+    await warmUp(engine, gh);
+
+    // Edit A locally (content + mtime + size all change). The remote is NOT
+    // touched — this is a purely local pending delta.
+    const edited = mdAsset("u1", "edited locally before the pull");
+    local.userEdit(A, edited);
+
+    // `pull` first (remote unchanged → pulls nothing). The pull cycle rebuilds
+    // the mtime-manifest from the post-edit disk snapshot, but does NOT push the
+    // edit and does NOT advance the watermark.
+    const [pull] = await engine.syncAll([gh.spec()], "pull");
+    expect(pull.status).toBe("synced");
+    expect(pull.pushedCount).toBe(0);
+    expect(pull.pulledCount).toBe(0);
+
+    // `push` next. The edit MUST be delivered (AC#1/#2): the manifest is a perf
+    // cache only — correctness of delivery must not depend on it.
+    const [push] = await engine.syncAll([gh.spec()], "push");
+    expect(push.status).toBe("synced");
+    expect(push.pushedCount).toBe(1);
+
+    // Zero-loss: the edited blob reached the remote.
+    expect(gh.headFiles().get(A)).toBe(edited);
+  });
+
+  it("@req:702e8bda-1e13-42b0-9858-3d5697f71b6a the same edit-before-pull holds under a combined Sync after the pull, and converges to a clean parity (no residual local delta)", async () => {
+    const files = { [A]: mdAsset("u1"), [B]: mdAsset("u2") };
+    const gh = new FakeGitHubRepo(files);
+    const local = new StatLocalFiles(files);
+    const manifest = new MemManifestStore();
+    const engine = makeEngine(gh, local, { localManifestStore: manifest });
+    await warmUp(engine, gh);
+
+    const edited = mdAsset("u1", "edited before pull, delivered by Sync");
+    local.userEdit(A, edited);
+
+    await engine.syncAll([gh.spec()], "pull"); // manifest advances, edit unpushed
+    const [sync] = await engine.syncAll([gh.spec()], "sync"); // must deliver it
+
+    expect(sync.status).toBe("synced");
+    expect(sync.pushedCount).toBe(1);
+    expect(gh.headFiles().get(A)).toBe(edited);
+
+    // Convergence: a follow-up no-op sees no residual local delta (push and the
+    // base now agree — AC#3) and skips the read again (perf restored once the
+    // file is genuinely in sync).
+    const [noop] = await engine.syncAll([gh.spec()], "sync");
+    expect(noop.pushedCount).toBe(0);
+    expect(noop.timings!.counts.filesRead).toBe(0);
+  });
+
+  it("the cache-hit fast path is preserved for genuinely in-sync files (no perf regression)", async () => {
+    // The fix must not turn every steady-state sync into a full re-hash: a file
+    // whose cached blob equals the base is still a cache hit on a no-op.
+    const files = { [A]: mdAsset("u1"), [B]: mdAsset("u2"), [C]: mdAsset("u3") };
+    const gh = new FakeGitHubRepo(files);
+    const local = new StatLocalFiles(files);
+    const manifest = new MemManifestStore();
+    const engine = makeEngine(gh, local, { localManifestStore: manifest });
+    await warmUp(engine, gh);
+
+    const [r] = await engine.syncAll([gh.spec()], "sync");
+    expect(r.status).toBe("synced");
+    expect(r.pushedCount).toBe(0);
+    expect(r.timings!.counts.filesRead).toBe(0); // pure no-op: nothing read
+    expect(r.timings!.counts.filesHashed).toBe(0);
+  });
+});

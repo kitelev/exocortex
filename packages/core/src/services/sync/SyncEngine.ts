@@ -1032,6 +1032,24 @@ export class SyncEngine {
       // read/added/removed) or a full re-hash advanced its timestamp — a pure
       // no-op sync (every file a cache hit) writes nothing.
       let manifestDirty = false;
+      // #3751 — base blobSha per path. A manifest cache hit may SKIP reading a
+      // file ONLY when its cached blobSha matches the watermark base for that
+      // path (the file is genuinely IN SYNC). The mtime-manifest is rebuilt
+      // every cycle INCLUDING `pull`, so a local edit made before a `pull`
+      // records the EDITED (mtime,size,blobSha) into the manifest while the
+      // watermark (the push base) is NOT advanced — the edit was never pushed.
+      // Without this gate the next `push` sees a `(mtime,size)` cache hit,
+      // reuses the cached blobSha WITHOUT reading the file, detection correctly
+      // flags it modified-vs-base, but its content is absent from `disk`, so the
+      // push-set builder (`pinLocalChanges`) silently drops it → "synced" with
+      // an undelivered edit (zero-loss violation). Gating the skip on
+      // `cached.blobSha === base` restores the documented invariant: a stale /
+      // divergent entry causes a re-hash (cache miss → read → pushable), NEVER a
+      // wrong skip. canUseCache ⇒ watermark !== null.
+      const baseBlobByPath = new Map<string, string>();
+      if (canUseCache && watermark !== null) {
+        for (const f of watermark.files) baseBlobByPath.set(f.path, f.blobSha);
+      }
       for (const path of (await localFiles.list()).filter(mode.syncable)) {
         if (mode.fileMode) {
           const bytes = await readBinaryStrict(localFiles, path);
@@ -1057,10 +1075,18 @@ export class SyncEngine {
           st !== null &&
           cached !== undefined &&
           cached.mtimeMs === st.mtimeMs &&
-          cached.size === st.size
+          cached.size === st.size &&
+          // #3751 — only skip the read when the cached blob is ALREADY the
+          // sync base for this path (genuinely delivered). A `(mtime,size)`
+          // match whose blobSha diverges from the watermark base is a pending
+          // un-pushed delta (e.g. an edit made before a `pull`, whose manifest
+          // entry advanced but whose watermark did not) — it MUST be read so it
+          // lands in `disk` and the push-set carries it. Divergent ⇒ cache miss.
+          cached.blobSha === baseBlobByPath.get(path)
         ) {
-          // Cache hit — unchanged since last sync: reuse blobSha+uid, NO read,
-          // NO hash. The (mtime,size) match is the unchanged-content signal.
+          // Cache hit — unchanged AND already in sync with the base: reuse
+          // blobSha+uid, NO read, NO hash. The (mtime,size) match is the
+          // unchanged-content signal; the base match is the delivered signal.
           reused.set(path, {
             blobSha: cached.blobSha,
             ...(cached.uid !== undefined ? { uid: cached.uid } : {}),
