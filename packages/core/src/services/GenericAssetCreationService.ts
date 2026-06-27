@@ -330,11 +330,22 @@ export class GenericAssetCreationService {
         // scalar by default, array only for Multiple-cardinality properties.
         // Otherwise the PropertyFieldType formatter applies (plugin/apply).
         if (config.shapeRegistry !== undefined) {
-          frontmatter[propertyName] = this.formatPropertyValueWithCardinality(
-            propertyName,
-            String(value),
-            config.shapeRegistry,
-          );
+          if (Array.isArray(value)) {
+            // Explicit multi-value (e.g. a repeated `cli create --property
+            // key=...` flag, issue #3759): emit a flat YAML array, quoting each
+            // wikilink element exactly as a scalar would be. The repeated flag
+            // is the explicit array signal — independent of the property's
+            // declared cardinality.
+            frontmatter[propertyName] = value.map((element) =>
+              this.quoteWikilinkValue(String(element)),
+            );
+          } else {
+            frontmatter[propertyName] = this.formatPropertyValueWithCardinality(
+              propertyName,
+              String(value),
+              config.shapeRegistry,
+            );
+          }
         } else {
           const fieldType = propertyTypeMap.get(propertyName);
           frontmatter[propertyName] = this.formatValue(value, fieldType);
@@ -607,19 +618,27 @@ export class GenericAssetCreationService {
     value: string,
     shapeRegistry?: ShapeRegistry,
   ): string | string[] {
+    const formatted = this.quoteWikilinkValue(value);
+
+    // A wikilink whose property has Multiple cardinality emits an array-of-1
+    // (issue #3179). Non-wikilink values are returned unchanged.
+    if (formatted.includes("[[") && this.shouldEmitAsArray(key, shapeRegistry)) {
+      return [formatted];
+    }
+
+    return formatted;
+  }
+
+  /**
+   * Quote a wikilink value (`[[...]]`) for YAML emission, leaving non-wikilink
+   * values and already-quoted values untouched. Shared by the scalar
+   * cardinality formatter and the explicit multi-value array path (#3759).
+   */
+  private quoteWikilinkValue(value: string): string {
     if (!value.includes("[[")) {
       return value;
     }
-
-    // Quote the wikilink if not already quoted
-    const quoted =
-      value.startsWith('"') && value.endsWith('"') ? value : `"${value}"`;
-
-    if (this.shouldEmitAsArray(key, shapeRegistry)) {
-      return [quoted];
-    }
-
-    return quoted;
+    return value.startsWith('"') && value.endsWith('"') ? value : `"${value}"`;
   }
 
   /**
