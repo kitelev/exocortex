@@ -82,10 +82,18 @@ function buildApp(seed: SeedFile[]) {
   const fmByPath = new Map<string, Record<string, unknown>>();
   const diskByPath = new Map<string, string>();
 
-  const add = (f: SeedFile, opts: { metadataStale?: boolean } = {}): void => {
+  const add = (
+    f: SeedFile,
+    opts: { metadataStale?: boolean; bomCrlf?: boolean } = {},
+  ): void => {
     if (!files.some((t) => t.path === f.path)) files.push(new TFile(f.path));
     if (!opts.metadataStale) fmByPath.set(f.path, f.frontmatter);
-    diskByPath.set(f.path, renderYaml(f.frontmatter));
+    let disk = renderYaml(f.frontmatter);
+    // Simulate a foreign-tool edit: leading BOM + CRLF line endings. The
+    // disk-read frontmatter parser must normalise these, else the file fails to
+    // parse and (since removeFileTriples runs first) the asset VANISHES.
+    if (opts.bomCrlf) disk = "\uFEFF" + disk.replace(/\n/g, "\r\n");
+    diskByPath.set(f.path, disk);
   };
   const del = (path: string): void => {
     const i = files.findIndex((t) => t.path === path);
@@ -131,7 +139,10 @@ function buildApp(seed: SeedFile[]) {
   return {
     app,
     /** ExoSync pull of a new/changed asset: on disk, NO event. */
-    syncWrite: (f: SeedFile, opts?: { metadataStale?: boolean }) => add(f, opts),
+    syncWrite: (
+      f: SeedFile,
+      opts?: { metadataStale?: boolean; bomCrlf?: boolean },
+    ) => add(f, opts),
     /** ExoSync pull of a deletion: off disk, NO event. */
     syncDelete: (path: string) => del(path),
   };
@@ -354,6 +365,64 @@ describe("ExoSync post-sync reindex (RFC 8f93ff95)", () => {
     // pushedDeletes are NOT a reindex trigger (push side is already
     // event-indexed locally) — the gate is pulledCount/mergedCount only.
     expect(reindex.run).not.toHaveBeenCalled();
+  });
+
+  it("merged-only: a sync with mergedPaths but pulledCount 0 still reindexes (gate union covers merges)", async () => {
+    const harness = buildApp([EXISTING_TASK]);
+    service = new SPARQLQueryService(harness.app);
+    await service.initialize();
+
+    // A 3-way merge resolved a change on disk (mergedCount/mergedPaths), with
+    // pulledCount 0 — the reindex must still fire on the mergedPaths branch.
+    harness.syncWrite(SYNCED_TASK);
+
+    const reindexSpy = jest.fn((paths: string[]) =>
+      service!.reindexPathsFromDisk(paths),
+    );
+    const { cmds } = makeSyncCommands({
+      results: [
+        result("synced", {
+          pulledCount: 0,
+          mergedCount: 1,
+          mergedPaths: [SYNCED_TASK.path],
+        }),
+      ],
+      reindex: { run: reindexSpy },
+    });
+    await cmds.invokeSync();
+
+    expect(reindexSpy).toHaveBeenCalledWith([SYNCED_TASK.path]);
+    expect(await labelsInStore(service)).toContain("Synced Task");
+  });
+
+  it("BOM/CRLF: a foreign-tool-edited synced asset is parsed from disk, not dropped (no vanish)", async () => {
+    // The asset is already in the store (cold-start indexed). ExoSync then
+    // pulls a foreign-tool edit of it with a leading BOM + CRLF endings.
+    // updateFileFromDisk removes its triples FIRST, then re-parses from disk —
+    // without BOM/CRLF normalisation the parse fails and the asset would VANISH.
+    const harness = buildApp([EXISTING_TASK, SYNCED_TASK]);
+    service = new SPARQLQueryService(harness.app);
+    await service.initialize();
+    expect(await labelsInStore(service)).toEqual([
+      "Existing Task",
+      "Synced Task",
+    ]);
+
+    harness.syncWrite(SYNCED_TASK, { bomCrlf: true });
+
+    const { cmds } = makeSyncCommands({
+      results: [
+        result("synced", { pulledCount: 1, pulledPaths: [SYNCED_TASK.path] }),
+      ],
+      reindex: realReindex(service),
+    });
+    await cmds.invokeSync();
+
+    // Still visible — normalisation let the disk-read parser succeed.
+    expect(await labelsInStore(service)).toEqual([
+      "Existing Task",
+      "Synced Task",
+    ]);
   });
 
   it("best-effort: a reindex throw NEVER mutates the sync outcome and surfaces a reload Notice", async () => {

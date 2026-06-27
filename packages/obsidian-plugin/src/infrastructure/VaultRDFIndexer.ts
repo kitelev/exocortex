@@ -481,11 +481,20 @@ export class VaultRDFIndexer {
    * Parse the YAML frontmatter block from raw file content (disk-read path).
    * Mirrors `ObsidianVaultAdapter.extractFrontmatter` — `null` when there is
    * no block, it is empty, or the YAML is invalid.
+   *
+   * A leading BOM and `\r\n` line endings are normalised first: this is the
+   * SOLE frontmatter parser on the post-sync reindex path (no metadataCache
+   * fallback), and `updateFileFromDisk` removes the path's prior triples
+   * BEFORE calling here — so a CRLF/BOM asset that fails to parse would not
+   * just stay stale, it would silently VANISH from the store until restart.
+   * Plugin/CLI/Obsidian write LF, so this is defensive against foreign-tool
+   * edits, not the common case.
    */
   private parseFrontmatterFromContent(
     content: string,
   ): Record<string, unknown> | null {
-    const match = content.match(/^---\n([\s\S]*?)\n---/);
+    const normalised = content.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+    const match = normalised.match(/^---\n([\s\S]*?)\n---/);
     if (!match) {
       return null;
     }
