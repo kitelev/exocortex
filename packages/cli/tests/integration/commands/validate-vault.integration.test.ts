@@ -116,7 +116,7 @@ describe("validate vault + scaffold (RFC f402002b M1.5)", () => {
     expect(pass.code).toBeUndefined();
   });
 
-  it("@req:767f7d7c-3b3f-4bbe-86cd-6e02802611ae --all runs every known check and fails LOUD on the DAG check whose CLI runner is not wired (never a silent pass)", async () => {
+  it("@req:767f7d7c-3b3f-4bbe-86cd-6e02802611ae --all runs every known check and fails LOUD on the checks whose CLI runner is not wired (SHACL/DAG) — never a silent pass", async () => {
     const { out } = await run(() =>
       validateVaultCommand().parseAsync(
         ["--vault", vault, "--all", "--output", "json"],
@@ -125,8 +125,14 @@ describe("validate vault + scaffold (RFC f402002b M1.5)", () => {
     );
     const report = JSON.parse(out);
     const dag = report.results.find((r: { label: string }) => r.label === "dag-ontology-imports");
-    // DAG has no CLI runDag wired → fail-loud error, not a silent skip.
+    const shacl = report.results.find((r: { label: string }) => r.label === "shacl");
+    // SHACL/DAG have no CLI runner wired (M2 unification) → fail-loud error, not a silent skip.
     expect(dag.status).toBe("error");
     expect(dag.errorMessage).toMatch(/runDag/);
+    expect(shacl.status).toBe("error");
+    expect(shacl.errorMessage).toMatch(/runShacl/);
+    // The portable checks (uid-uniqueness, co-location) still run.
+    const uid = report.results.find((r: { label: string }) => r.label === "uid-uniqueness");
+    expect(uid.status).toBe("pass");
   });
 });

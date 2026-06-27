@@ -38,26 +38,22 @@ function readEnabledCheckIds(
   return [...enabled];
 }
 import { CachingNodeFsAdapter } from "../adapters/CachingNodeFsAdapter.js";
-import {
-  loadTriplesFromAllVaults,
-  runShapesValidation,
-} from "./validate-schema.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 
 /**
  * CLI vault-check reader (RFC f402002b, M1.5): a single fs-walk yields the warm
- * asset array; the SHACL runner reuses the same triple-build the `validate
- * schema` command does. (The DAG runner is intentionally absent here — the
- * standalone `exocortex audit ontology-imports` command remains the CLI
- * source-of-truth for the imports DAG; enabling the DAG check in `validate
- * vault` therefore fails LOUD until its portable runner lands, M2.)
+ * asset array, which powers the portable uid-uniqueness + co-location checks.
+ *
+ * The SHACL and DAG runners are intentionally absent here: SHACL needs the
+ * triple-build (`exocortex validate schema`) and DAG the imports graph
+ * (`exocortex audit ontology-imports`) — both remain the CLI source-of-truth as
+ * standalone commands; wiring them into `validate vault`'s runShacl/runDag
+ * thunks is the M2 unification. Enabling either check here therefore fails LOUD
+ * (never a silent skip). The scaffold default (uid-uniqueness only) runs clean.
  */
 class CliFsCheckReader implements IVaultCheckReader {
-  constructor(
-    private readonly vaultPath: string,
-    private readonly useCache: boolean,
-  ) {}
+  constructor(private readonly vaultPath: string) {}
 
   async read(): Promise<CheckContext> {
     const adapter = new CachingNodeFsAdapter(this.vaultPath);
@@ -66,26 +62,12 @@ class CliFsCheckReader implements IVaultCheckReader {
       path: a.path,
       frontmatter: a.metadata,
     }));
-    const vaultPath = this.vaultPath;
-    const useCache = this.useCache;
-    return {
-      assets,
-      runShacl: async () => {
-        const { triples } = await loadTriplesFromAllVaults(vaultPath, useCache);
-        const report = await runShapesValidation(vaultPath, triples);
-        return report.violations.map((v) => ({
-          focusNode: v.focusNode,
-          path: v.propertyPath,
-          message: v.message,
-        }));
-      },
-    };
+    return { assets };
   }
 }
 
 export interface ValidateVaultOptions {
   vault: string;
-  useCache?: boolean;
   all?: boolean;
   output?: OutputFormat;
 }
@@ -105,7 +87,6 @@ export function validateVaultCommand(): Command {
       "Run the homoiconic vault-integrity check-runner (enabled-set from validation-check setting__Setting instances; --all runs every check)",
     )
     .requiredOption("--vault <path>", "Vault root directory")
-    .option("--use-cache", "Reuse the persistent triple cache for the SHACL check")
     .option("--all", "Run ALL known checks, ignoring the vault enabled-set")
     .option("--output <type>", "Response format: text|json", "text")
     .action(async (options: ValidateVaultOptions) => {
@@ -117,7 +98,7 @@ export function validateVaultCommand(): Command {
           throw new VaultNotFoundError(vaultPath);
         }
 
-        const reader = new CliFsCheckReader(vaultPath, Boolean(options.useCache));
+        const reader = new CliFsCheckReader(vaultPath);
         const ctx = await reader.read(); // ONE warm pass
         const enabled = options.all
           ? [...KNOWN_CHECK_IDS]
