@@ -6218,3 +6218,50 @@
   font-size: 0.75em;
   color: var(--text-muted);
 }
+
+/* RFC 93a0b2ee Task 3.1 — property editor Relations section. */
+.property-editor-relations-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.property-editor-relation-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0.15em 0;
+}
+.property-editor-relation-predicate {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+.property-editor-relation-target {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.property-editor-relation-delete {
+  flex: 0 0 auto;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.property-editor-relation-delete:hover {
+  color: var(--text-error);
+}
+.property-editor-relations-empty {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  margin: 0.25em 0;
+}
+.property-editor-relation-create {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  margin-top: 0.5em;
+}
+.property-editor-relation-create .dynamic-form-assetref {
+  flex: 1 1 auto;
+  min-width: 0;
+}
