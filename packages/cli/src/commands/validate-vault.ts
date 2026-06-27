@@ -19,11 +19,9 @@ import {
  * and `setting__Setting_value` (boolean). Returns the truthy ones; only KNOWN
  * check-ids count, so unrelated setting__Setting instances never leak in.
  *
- * (Kept inline in the CLI rather than the core barrel — adding it as a core
- * export broke the jest cjs-module-lexer ESM-CJS enumeration of core's named
- * exports, dropping unrelated names like FileAlreadyExistsError for CLI ESM
- * importers. It re-uses KNOWN_CHECK_IDS + extractAssetReference, both already in
- * core's barrel. Shared home for plugin reuse is the M1.5-plugin follow-up.)
+ * (Kept inline in the CLI for now: it re-uses KNOWN_CHECK_IDS +
+ * extractAssetReference, both already in core's barrel, so it needs no new core
+ * export. The shared home for plugin reuse is the M1.5-plugin follow-up.)
  */
 function readEnabledCheckIds(
   assets: readonly VaultAssetRecord[],

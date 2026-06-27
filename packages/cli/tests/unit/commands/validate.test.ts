@@ -29,6 +29,16 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   DomainIRI: class { constructor(public value: string) {} },
   DomainLiteral: class { constructor(public value: string) {} },
   DomainTriple: jest.fn(),
+  // M1.5: the `validate vault` subcommand pulls validate-vault.ts →
+  // CachingNodeFsAdapter → NodeFsAdapter into this command's static graph.
+  // ESM-linking the mocked core requires every named export that graph
+  // references (otherwise the suite fails to load on the first missing one).
+  FileAlreadyExistsError: class FileAlreadyExistsError extends Error {},
+  FileNotFoundError: class FileNotFoundError extends Error {},
+  VaultCheckRunner: jest.fn(),
+  createDefaultCheckRegistry: jest.fn(),
+  KNOWN_CHECK_IDS: new Set<string>(),
+  extractAssetReference: jest.fn(),
 }));
 
 // Mock fs-extra (CacheManager dependency)
