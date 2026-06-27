@@ -1,5 +1,6 @@
 import {
   derivePath,
+  deriveUrl,
   deriveLegacyFlatPath,
 } from "../../../src/services/AssetSpacePathDeriver";
 
@@ -112,6 +113,130 @@ describe("derivePath (RFC 01a83de8 v10 UD1)", () => {
       const ssh = derivePath("git@github.com:kitelev/exoas-ems.git");
       expect(https).toBe(ssh);
       expect(https).toBe(EXPECTED);
+    });
+  });
+});
+
+describe("deriveUrl (RFC 0005 Phase 0 — inverse of derivePath)", () => {
+  const ALL_GITHUB_FORMS: Array<[string, string]> = [
+    ["HTTPS bare", "https://github.com/kitelev/exoas-ems"],
+    ["HTTPS with .git", "https://github.com/kitelev/exoas-ems.git"],
+    ["HTTP scheme", "http://github.com/kitelev/exoas-ems"],
+    ["trailing slash", "https://github.com/kitelev/exoas-ems/"],
+    [".git + trailing slash", "https://github.com/kitelev/exoas-ems.git/"],
+    ["SSH scp-like", "git@github.com:kitelev/exoas-ems.git"],
+    ["SSH scp-like no .git", "git@github.com:kitelev/exoas-ems"],
+    ["ssh:// URL", "ssh://git@github.com/kitelev/exoas-ems.git"],
+    ["ssh:// with port", "ssh://git@github.com:22/kitelev/exoas-ems.git"],
+    ["git:// protocol", "git://github.com/kitelev/exoas-ems.git"],
+    ["embedded credentials", "https://user:token@github.com/kitelev/exoas-ems"],
+    ["leading/trailing whitespace", "  https://github.com/kitelev/exoas-ems  "],
+  ];
+
+  // The requirement-bound test (revert-verify keys on this — neutralising the
+  // deriveUrl body, e.g. `return null`, makes the reconstruction + round-trip
+  // assertions go RED; restoring → GREEN).
+  it("@req:1e56367b-ca1d-4c8b-8839-343e82cee2d3 reconstructs the canonical github URL from a mount path, is the exact inverse of derivePath under the github-https invariant, and returns null for non-conforming paths", () => {
+    // 1. Direct reconstruction from a canonical mount path.
+    expect(deriveUrl("assetspaces/kitelev/exoas-exo")).toBe(
+      "https://github.com/kitelev/exoas-exo",
+    );
+    // 2. Exact inverse: deriveUrl(derivePath(url)) === canonical github URL for
+    //    every URL form derivePath normalises.
+    for (const [, url] of ALL_GITHUB_FORMS) {
+      const path = derivePath(url);
+      expect(path).not.toBeNull();
+      expect(deriveUrl(path as string)).toBe(
+        "https://github.com/kitelev/exoas-ems",
+      );
+    }
+    // 3. null for a non-conforming path (caller falls back to its legacy URL
+    //    source — the .gitmodules registry, until RFC 0005 Phase 1 removes it).
+    expect(deriveUrl("not-assetspaces/owner/repo")).toBeNull();
+    expect(deriveUrl("assetspaces/onlyone")).toBeNull();
+  });
+
+  describe("canonical reconstruction (path → https github URL)", () => {
+    it.each([
+      ["kitelev/exoas-exo", "assetspaces/kitelev/exoas-exo", "https://github.com/kitelev/exoas-exo"],
+      ["different owner same repo", "assetspaces/alice/shared", "https://github.com/alice/shared"],
+      ["dotted/.-/_ chars in repo", "assetspaces/kitelev/exoas-kitelev-registry", "https://github.com/kitelev/exoas-kitelev-registry"],
+      ["leading slash tolerated", "/assetspaces/kitelev/exoas-ems", "https://github.com/kitelev/exoas-ems"],
+      ["trailing slash tolerated", "assetspaces/kitelev/exoas-ems/", "https://github.com/kitelev/exoas-ems"],
+      ["extra segments ignored (first two used)", "assetspaces/kitelev/exoas-ems/sub/dir", "https://github.com/kitelev/exoas-ems"],
+      ["surrounding whitespace trimmed", "  assetspaces/kitelev/exoas-ems  ", "https://github.com/kitelev/exoas-ems"],
+    ])("%s → URL", (_label, path, expected) => {
+      expect(deriveUrl(path)).toBe(expected);
+    });
+  });
+
+  describe("exact inverse of derivePath — round-trip for every URL form", () => {
+    it.each(ALL_GITHUB_FORMS)(
+      "%s → derivePath → deriveUrl === canonical github URL",
+      (_label, url) => {
+        const path = derivePath(url);
+        expect(path).not.toBeNull();
+        expect(deriveUrl(path as string)).toBe(
+          "https://github.com/kitelev/exoas-ems",
+        );
+      },
+    );
+  });
+
+  describe("null on non-conforming paths (caller falls back)", () => {
+    it.each([
+      ["empty string", ""],
+      ["whitespace only", "   "],
+      ["non-string", 42 as unknown as string],
+      ["undefined", undefined as unknown as string],
+      ["null", null as unknown as string],
+      ["wrong prefix", "not-assetspaces/owner/repo"],
+      ["no prefix at all", "owner/repo"],
+      ["assetspaces only", "assetspaces"],
+      ["assetspaces/ prefix only", "assetspaces/"],
+      ["owner only (one segment)", "assetspaces/onlyone"],
+      ["bare slashes", "assetspaces///"],
+    ])("%s → null", (_label, input) => {
+      expect(deriveUrl(input)).toBeNull();
+    });
+  });
+
+  describe("traversal / out-of-charset segments rejected (no escape into URL)", () => {
+    it.each([
+      ["owner is ..", "assetspaces/../repo"],
+      ["repo is ..", "assetspaces/owner/.."],
+      ["repo is .", "assetspaces/owner/."],
+      ["owner is .", "assetspaces/./repo"],
+      ["whitespace in repo", "assetspaces/owner/repo with space"],
+      ["url-encoded escape attempt", "assetspaces/owner/%2e%2e"],
+      ["control char in owner", "assetspaces/ow\tner/repo"],
+      ["slash-bearing segment via encoding", "assetspaces/owner/re%2Fpo"],
+    ])("%s → null", (_label, input) => {
+      expect(deriveUrl(input)).toBeNull();
+    });
+
+    it("reconstructed URL never carries a `..` path component", () => {
+      for (const input of [
+        "assetspaces/../repo",
+        "assetspaces/owner/..",
+        "assetspaces/./repo",
+      ]) {
+        const out = deriveUrl(input);
+        if (out !== null) expect(out.split("/")).not.toContain("..");
+      }
+    });
+  });
+
+  describe("idempotent inverse — HTTPS and SSH forms reconstruct identically", () => {
+    it("the same repo via any form round-trips to one canonical URL", () => {
+      const fromHttps = deriveUrl(
+        derivePath("https://github.com/kitelev/exoas-ems.git") as string,
+      );
+      const fromSsh = deriveUrl(
+        derivePath("git@github.com:kitelev/exoas-ems.git") as string,
+      );
+      expect(fromHttps).toBe(fromSsh);
+      expect(fromHttps).toBe("https://github.com/kitelev/exoas-ems");
     });
   });
 });
