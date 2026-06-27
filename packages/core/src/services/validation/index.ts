@@ -10,6 +10,7 @@ export * from "./types";
 export * from "./checkIds";
 export { CheckRegistry, createDefaultCheckRegistry } from "./CheckRegistry";
 export { VaultCheckRunner } from "./VaultCheckRunner";
+export { readEnabledCheckIds } from "./readEnabledCheckIds";
 export { uidUniquenessCheck } from "./checks/uidUniquenessCheck";
 export { coLocationCheck } from "./checks/coLocationCheck";
 export { shaclCheck } from "./checks/shaclCheck";
