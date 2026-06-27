@@ -9,6 +9,7 @@
  */
 
 import { loadDefaultSpec, orderProperties } from "../services/OrderSpecResolver";
+import { serializeYamlScalar } from "./yamlScalar";
 
 /**
  * Result of frontmatter parsing operation
@@ -362,8 +363,10 @@ export class FrontmatterService {
    */
   createFrontmatter(content: string, properties: Record<string, unknown>): string {
     const ordered = orderProperties(properties, loadDefaultSpec());
+    // Issue #3748: quote scalars on new-asset writes so a label / alias
+    // containing `: ` (or another YAML indicator) stays valid YAML.
     const frontmatterLines = Object.entries(ordered).map(
-      ([key, value]) => this.serializeValue(key, value),
+      ([key, value]) => this.serializeValue(key, value, true),
     );
 
     const frontmatterBlock = `---\n${frontmatterLines.join("\n")}\n---`;
@@ -411,18 +414,33 @@ export class FrontmatterService {
    * @private
    */
   /**
-   * Serialize a property key-value pair to YAML string.
+   * Serialize a property key-value pair to a YAML frontmatter line.
    * Arrays are serialized as multi-line YAML lists.
+   *
+   * `quoteScalars` (Issue #3748) wraps string scalars / array items that would
+   * otherwise emit invalid YAML (e.g. `exo__Asset_label` containing `: `) in a
+   * double-quoted scalar. It is enabled ONLY on the `createFrontmatter` path
+   * (new-asset writes from `create_instance`). The `updateProperty` path leaves
+   * it OFF: that path receives already-formatted values — pre-quoted wikilinks
+   * and deliberate YAML flow-array strings like `["[[ems__Task]]"]` (multi-class
+   * convert) — that must be emitted verbatim, not re-quoted into a string.
    */
-  private serializeValue(property: string, value: unknown): string {
+  private serializeValue(
+    property: string,
+    value: unknown,
+    quoteScalars = false,
+  ): string {
     if (Array.isArray(value)) {
       if (value.length === 0) {
         return `${property}:`;
       }
-      const items = value.map((v) => `  - ${v}`).join("\n");
+      const items = value
+        .map((v) => `  - ${quoteScalars ? serializeYamlScalar(v) : String(v)}`)
+        .join("\n");
       return `${property}:\n${items}`;
     }
-    return `${property}: ${String(value)}`;
+    const scalar = quoteScalars ? serializeYamlScalar(value) : String(value);
+    return `${property}: ${scalar}`;
   }
 
   private escapeRegex(str: string): string {
