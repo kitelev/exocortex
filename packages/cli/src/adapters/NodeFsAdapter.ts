@@ -117,6 +117,59 @@ export class NodeFsAdapter implements IFileSystemAdapter {
     return files.length > 0 ? files[0] : null;
   }
 
+  /**
+   * Find a vault file by UID via its FILENAME (recursive), mirroring the
+   * authoritative UID->path discovery used by `exocortex resolve`
+   * (resolve.ts `findFilesWithUuid`). Matches any `<uid>.md`, `<uid> ...md`,
+   * or `<uid>-...md` at any depth, skipping hidden directories and
+   * `node_modules`.
+   *
+   * Unlike {@link findFileByUID} (which scans frontmatter and so cannot read an
+   * asset whose YAML is malformed/unparseable), this method never reads file
+   * contents — it locates UID-named assets purely by name, exactly like
+   * `resolve`. This keeps wikilink validation consistent with `resolve` for
+   * nested UID-canon assets (issue #3701).
+   *
+   * @returns vault-relative path of the first match, or null.
+   */
+  async findFileByUidFilename(uid: string): Promise<string | null> {
+    const uidLower = uid.toLowerCase();
+
+    const walk = async (dir: string): Promise<string | null> => {
+      let entries;
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true });
+      } catch {
+        return null;
+      }
+
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+
+        if (entry.isDirectory()) {
+          if (entry.name.startsWith(".") || entry.name === "node_modules") {
+            continue;
+          }
+          const found = await walk(fullPath);
+          if (found) return found;
+        } else if (entry.isFile() && entry.name.endsWith(".md")) {
+          const nameLower = entry.name.toLowerCase();
+          if (
+            nameLower.startsWith(uidLower + ".md") ||
+            nameLower.startsWith(uidLower + " ") ||
+            nameLower.startsWith(uidLower + "-")
+          ) {
+            return path.relative(this.rootPath, fullPath);
+          }
+        }
+      }
+
+      return null;
+    };
+
+    return walk(this.rootPath);
+  }
+
   private resolvePath(filePath: string): string {
     if (path.isAbsolute(filePath)) {
       return filePath;
