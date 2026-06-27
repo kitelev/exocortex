@@ -11,6 +11,7 @@ import { recoverCommand } from "./commands/recover.js";
 import { findCommand } from "./commands/find.js";
 import { applyCommand } from "./commands/apply.js";
 import { auditCommand } from "./commands/audit.js";
+import { scaffoldCommand } from "./commands/scaffold-validation.js";
 import { applyProfileCommand } from "./commands/apply-profile.js";
 import { bootstrapCommand } from "./commands/bootstrap.js";
 import { assetSpaceAddCommand } from "./commands/assetspace-add.js";
@@ -59,6 +60,7 @@ export function createProgram(version?: string): Command {
 
   // RFC 9d20c91f Phase 4+1 — regression-detection audits
   program.addCommand(auditCommand());
+  program.addCommand(scaffoldCommand());
 
   // RFC 22b50a17 Phase 1b — apply CLI scaffold (Phase 3 wires orchestrator)
   program.addCommand(applyProfileCommand());
