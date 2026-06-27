@@ -24,6 +24,14 @@
 /** `exo__Setting` class asset UID (exoas-exo, D1). */
 export const SETTING_CLASS_UID = "88b938af-1a55-451c-b3cc-2f03e5115fcf";
 
+/**
+ * `setting__Setting` superclass UID (`$setting` floor ontology, RFC f402002b
+ * M1.1) — the parent of `exo__Setting`. The Settings Distribution import reader
+ * (M2.1) accepts assets typed with EITHER this superclass OR the `exo__Setting`
+ * subclass (a 2-level subClass-closure, RFC R8).
+ */
+export const SETTING_SUPERCLASS_UID = "35cf35fb-935f-4d35-a150-939f29109aec";
+
 /** `exo__SettingKey` class asset UID (exoas-exo, D1). */
 export const SETTING_KEY_CLASS_UID = "a37d39ec-413d-4d9c-8cf2-da9b6025b00c";
 

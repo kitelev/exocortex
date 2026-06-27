@@ -46,9 +46,16 @@ import {
 import { ExocortexSettingTab } from "./presentation/settings/ExocortexSettingTab";
 import {
   DEFAULT_SETTINGS_FOLDER,
+  SETTING_CLASS_UID,
+  SETTING_SUPERCLASS_UID,
   VAULT_SETTINGS_REGISTRY,
 } from "./domain/settings/VaultSettingsRegistry";
 import { VaultSettingsStore } from "./infrastructure/adapters/VaultSettingsStore";
+import { ExocortexSettingsSource } from "./infrastructure/adapters/ExocortexSettingsSource";
+import {
+  registerExportSettingsCommand,
+  registerImportSettingsCommand,
+} from "./infrastructure/adapters/registerSettingsDistributionCommands";
 import {
   TaskStatusService,
   CommandResolver,
@@ -92,6 +99,7 @@ import {
   VaultCheckRunner,
   createDefaultCheckRegistry,
   readEnabledCheckIds,
+  readInstanceClassRefs,
 } from "@kitelev/exocortex-core";
 import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlockProcessor";
 import { SPARQLApi } from "./application/api/SPARQLApi";
@@ -3518,6 +3526,12 @@ export default class ExocortexPlugin extends Plugin {
     // registered on BOTH desktop AND mobile (Desktop↔Mobile Command Parity).
     this.registerVaultValidationCommands();
 
+    // RFC f402002b M2.1 — «Export/Import settings», registered on
+    // BOTH desktop AND mobile (Desktop↔Mobile Command Parity). Additive
+    // snapshot/restore via the generic Settings Distribution engine — does NOT
+    // touch the live-mirror (VaultSettingsStore); M2.3 deprecates that.
+    this.registerSettingsDistributionCommands();
+
     // RFC 22b50a17 Decision #6 — wipe-all switch cache clearing. RFC 0002 §3.2
     // (P3/P4) — de-jargon + destructive flag: «Clear switch cache (wipe-all)» →
     // «Reset profile cache (advanced)». Name sourced from the grooming contract.
@@ -4069,6 +4083,92 @@ export default class ExocortexPlugin extends Plugin {
         });
       },
       scaffold: (choice) => scaffolder.scaffold(choice.uid, choice.folder),
+      notify: (message) => this.notifier.info(message),
+    });
+  }
+
+  /**
+   * RFC f402002b M2.1 — «Export/Import settings» via the generic
+   * Settings Distribution engine. Both commands register UNCONDITIONALLY
+   * (Desktop↔Mobile Command Parity — Export writes via vault.adapter, Import
+   * reads the warm metadataCache; no Platform.isMobile gate). Additive:
+   * an explicit, frictionless snapshot/restore that does not touch the
+   * live-mirror (VaultSettingsStore) — M2.3 deprecates that.
+   *
+   * NOT gated by `settingsHomoiconizationEnabled` (#3539) by design: that
+   * master switch gates the AUTOMATIC live-mirror (background watcher +
+   * one-shot migration). Export/Import are USER-INITIATED one-off actions —
+   * a user who left the auto-mirror off can still take an explicit snapshot.
+   * M2.3 (which makes these the primary mechanism) revisits the switch's role.
+   */
+  private registerSettingsDistributionCommands(): void {
+    // Same allowlist + apply-path as the live-mirror's `applyRemote` so Import
+    // behaves identically to a cross-device change (mutate field, side-effect,
+    // persist data.json). Allowlist-by-construction: only VAULT_SETTINGS_REGISTRY
+    // keys are ever read/written.
+    const source = new ExocortexSettingsSource({
+      getSettings: () => this.settings as Record<string, unknown>,
+      applyLive: async (field, value) => {
+        (this.settings as Record<string, unknown>)[field] = value;
+        this.applySettingSideEffect(field, value);
+        await this.saveData(this.settings);
+      },
+    });
+
+    registerExportSettingsCommand(this, {
+      source,
+      pickOntology: () => {
+        const files = this.app.vault.getMarkdownFiles();
+        const assets = files.map((f) => ({
+          path: f.path,
+          frontmatter: (this.app.metadataCache.getFileCache(f)?.frontmatter ??
+            {}) as Record<string, unknown>,
+        }));
+        const candidates = listOntologyCandidates(assets);
+        if (candidates.length === 0) {
+          this.notifier.info(
+            "Export exocortex settings: no ontology found in this vault to export into.",
+          );
+          return Promise.resolve(null);
+        }
+        return new Promise<OntologyChoice | null>((resolve) => {
+          new OntologyFuzzyModal(
+            this.app,
+            candidates,
+            "Choose ontology to export exocortex settings into",
+            resolve,
+          ).open();
+        });
+      },
+      writeAsset: (folder, fileName, content) => {
+        const path = folder.length > 0 ? `${folder}/${fileName}` : fileName;
+        return this.app.vault.adapter.write(path, content);
+      },
+      nowIso: () => new Date().toISOString(),
+      notify: (message) => this.notifier.info(message),
+    });
+
+    // Import reads the warm metadataCache and surfaces only setting assets of
+    // the exocortex domain — subClass-closure over the 2-level hierarchy:
+    // `exo__Setting` (the subclass exports type) OR its `setting__Setting`
+    // superclass (RFC R8). The engine then matches each against the allowlist.
+    const acceptClass = new Set([SETTING_CLASS_UID, SETTING_SUPERCLASS_UID]);
+    registerImportSettingsCommand(this, {
+      source,
+      readAssets: () => {
+        const out: { path: string; frontmatter: Record<string, unknown> }[] = [];
+        for (const f of this.app.vault.getMarkdownFiles()) {
+          const fm = this.app.metadataCache.getFileCache(f)?.frontmatter as
+            | Record<string, unknown>
+            | undefined;
+          if (fm === undefined) continue;
+          const classes = readInstanceClassRefs(fm);
+          if (classes.some((c) => acceptClass.has(c))) {
+            out.push({ path: f.path, frontmatter: fm });
+          }
+        }
+        return Promise.resolve(out);
+      },
       notify: (message) => this.notifier.info(message),
     });
   }
