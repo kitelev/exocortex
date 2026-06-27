@@ -21,6 +21,7 @@ import {
   reifyRelation,
   deReifyRelation,
   buildStatementAsset,
+  parseInlineTargetsFromContent,
   sameTarget,
   EXO_STATEMENT_CLASS_UID,
   DEFAULT_REIFY_ANCHOR_UID,
@@ -164,6 +165,31 @@ describe("reifyRelation — atomic inline → reified", () => {
     expect(ports.inlineHas("ems__Effort_area", "area-1")).toBe(true);
   });
 
+  it("ROLLS BACK on a compound failure (inline removal throws AND the verify read throws) — no silent duplicate", async () => {
+    const ports = FakePorts.withInline({ ems__Effort_area: ["area-1"] });
+    ports.failRemoveInline = true; // the inline copy survives (removal threw)
+    ports.readInlineTargets = async () => {
+      throw new Error("read failed");
+    };
+    await expect(reifyRelation(ports, reifyParams())).rejects.toThrow(/rolled back/i);
+    // The statement is deleted (no leak); the inline copy survives (no loss).
+    expect(ports.statements.size).toBe(0);
+    expect(ports.deletedPaths).toHaveLength(1);
+    expect(ports.inlineHas("ems__Effort_area", "area-1")).toBe(true);
+  });
+
+  it("keeps the statement (no loss) when the removal SUCCEEDED but the verify read throws", async () => {
+    const ports = FakePorts.withInline({ ems__Effort_area: ["area-1"] });
+    // removeInline succeeds (default) → the edge now lives in the statement; the
+    // verify read fails, so we must NOT delete the statement (that would be a loss).
+    ports.readInlineTargets = async () => {
+      throw new Error("read failed");
+    };
+    await expect(reifyRelation(ports, reifyParams())).rejects.toThrow(/incomplete/i);
+    expect(ports.statements.size).toBe(1); // statement kept — edge preserved
+    expect(ports.deletedPaths).toEqual([]);
+  });
+
   it("aborts cleanly when the statement is not written to disk (nothing changed)", async () => {
     const ports = FakePorts.withInline({ ems__Effort_area: ["area-1"] });
     ports.failStatementWrite = true;
@@ -288,6 +314,36 @@ describe("round-trip — inline → reify → de-reify → inline preserves edge
     // Edge identity preserved: same target UID inline, statement gone.
     expect(ports.inlineHas("ems__Effort_area", "area-1")).toBe(true);
     expect(ports.statements.size).toBe(0);
+  });
+});
+
+describe("parseInlineTargetsFromContent — the disk-authoritative verify read", () => {
+  it("resolves the inline relation targets from raw file CONTENT (multi-value, quoted, .md-stripped)", () => {
+    const content = [
+      "---",
+      "exo__Asset_uid: asset-a",
+      "ems__Effort_area:",
+      '  - "[[area-1]]"',
+      '  - "[[area-2.md|Area Two]]"',
+      "ems__Effort_status: not-a-relation",
+      "---",
+      "body",
+    ].join("\n");
+    expect(parseInlineTargetsFromContent(content, "ems__Effort_area")).toEqual([
+      "area-1",
+      "area-2",
+    ]);
+    // A non-wikilink (literal) value is not a relation target.
+    expect(parseInlineTargetsFromContent(content, "ems__Effort_status")).toEqual([]);
+    // An absent key → no targets (used to confirm "the inline copy is gone").
+    expect(parseInlineTargetsFromContent(content, "ems__Effort_parent")).toEqual([]);
+  });
+
+  it("reads a single scalar wikilink value", () => {
+    const content = '---\nems__Effort_area: "[[area-9]]"\n---\n';
+    expect(parseInlineTargetsFromContent(content, "ems__Effort_area")).toEqual([
+      "area-9",
+    ]);
   });
 });
 

@@ -20,6 +20,9 @@
  * the object-side read-only, and the destination-AssetSpace picker are Task 3.3.
  */
 
+import { FrontmatterService } from "@kitelev/exocortex-core";
+import { wikilinkTarget } from "./relationsEditorModel";
+
 /** Canonical `exo__Statement` class UID (the reified-edge metaclass). */
 export const EXO_STATEMENT_CLASS_UID = "7920028c-8613-4756-9761-95846155ce9c";
 
@@ -138,6 +141,29 @@ export interface DeReifyParams {
   statementPath: string;
 }
 
+/**
+ * Parse the inline relation targets under `key` from a markdown file's raw
+ * CONTENT (the disk bytes). Callers pass `await app.vault.read(file)` — NOT a
+ * cached frontmatter object — so the reify/de-reify verify-after-write reads the
+ * REAL file (the privacy-critical "is the inline copy gone/restored" check must
+ * not trust a lagging in-memory cache). Returns the resolved wikilink target UIDs
+ * (`.md` stripped); non-wikilink (literal) values are skipped.
+ */
+export function parseInlineTargetsFromContent(
+  content: string,
+  key: string,
+): string[] {
+  const parsed = new FrontmatterService().parseObject(content);
+  const raw = parsed?.[key];
+  const values = raw === undefined ? [] : Array.isArray(raw) ? raw : [raw];
+  const targets: string[] = [];
+  for (const v of values) {
+    const t = wikilinkTarget(v);
+    if (t) targets.push(bareUid(t));
+  }
+  return targets;
+}
+
 /** Best-effort rollback delete — never throws (a failing rollback must not mask the cause). */
 async function safeDelete(ports: ReifyPorts, path: string): Promise<void> {
   try {
@@ -161,6 +187,8 @@ function errMessage(e: unknown): string {
  * the just-created statement is rolled back (deleted) — a lingering inline +
  * statement is a duplicate that would leak the would-be-private copy.
  *
+ * @returns the vault path of the created statement asset (so the caller can
+ * record the authoritative path instead of recomputing it — no TOCTOU).
  * @throws when a guard rejects (no predicate-def, Literal object), when the
  * statement is not written, or when the reify is rolled back. On any throw the
  * caller must NOT show a success marker.
@@ -168,7 +196,7 @@ function errMessage(e: unknown): string {
 export async function reifyRelation(
   ports: ReifyPorts,
   p: ReifyParams,
-): Promise<void> {
+): Promise<string> {
   // Predicate-mapping guard: a frontmatter key with no definition asset cannot
   // become a well-formed `exo__Statement_predicate` (RFC HIGH) — reject loudly,
   // never write a broken half-statement.
@@ -224,8 +252,17 @@ export async function reifyRelation(
     const targets = await ports.readInlineTargets(p.predicateKey);
     stillInline = targets.some((t) => sameTarget(t, p.objectUid as string));
   } catch (e) {
-    // Cannot confirm removal. The statement exists (edge preserved → no loss).
-    // Keep it rather than risk a loss; surface so the user can retry.
+    // Cannot confirm removal. If the removal itself threw, the inline copy
+    // DEFINITELY survived (the edge is preserved) — so deleting the statement is
+    // safe and prevents a silent duplicate (privacy leak). Only when the removal
+    // SUCCEEDED but the verify read failed do we keep the statement (avoid a
+    // possible loss) and surface for a manual retry.
+    if (removeError) {
+      await safeDelete(ports, path);
+      throw new Error(
+        `Reify rolled back: removing the inline copy failed (${errMessage(removeError)}) and could not be re-verified; the statement was deleted to avoid a duplicate.`,
+      );
+    }
     throw new Error(
       `Reify incomplete: could not verify the inline copy was removed (${errMessage(e)}). The statement was created (the edge is preserved); re-open to retry.`,
     );
@@ -241,6 +278,7 @@ export async function reifyRelation(
   }
 
   // inline gone + statement present → atomic success.
+  return path;
 }
 
 /**

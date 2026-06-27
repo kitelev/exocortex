@@ -31,12 +31,12 @@ import {
   appendInlineRelationValue,
   removeInlineRelationValue,
   quoteRelationValueForYaml,
-  wikilinkTarget,
   type RelationRow,
 } from '@plugin/presentation/components/property-editor/relationsEditorModel';
 import {
   reifyRelation,
   deReifyRelation,
+  parseInlineTargetsFromContent,
   DEFAULT_REIFY_ANCHOR_UID,
   type ReifyPorts,
 } from '@plugin/presentation/components/property-editor/reifyModel';
@@ -466,16 +466,10 @@ export class PropertyEditorModal extends Modal {
 
   /** Verify read: A's inline relation targets under `key`, resolved FRESH FROM DISK. */
   private async portReadInlineTargets(key: string): Promise<string[]> {
+    // Read the bytes from disk (NOT currentFrontmatter) so the verify-after-write
+    // reflects the real file — the parse is delegated to a pure, tested helper.
     const content = await this.app.vault.read(this.file);
-    const parsed = new FrontmatterService().parseObject(content);
-    const raw = parsed?.[key];
-    const values = raw === undefined ? [] : Array.isArray(raw) ? raw : [raw];
-    const targets: string[] = [];
-    for (const v of values) {
-      const t = wikilinkTarget(v);
-      if (t) targets.push(t.replace(/\.md$/i, ""));
-    }
-    return targets;
+    return parseInlineTargetsFromContent(content, key);
   }
 
   /** Parse the `exoas-<name>` AssetSpace segment from a vault path, or `null`. */
@@ -497,7 +491,9 @@ export class PropertyEditorModal extends Modal {
       const predicateDefUid =
         this.predicateDefUidByKey.get(row.predicateKey) ?? "";
       const newStatementUid = generateStatementUid();
-      await reifyRelation(this.reifyPorts(), {
+      // The authoritative statement path is returned by the orchestration (no
+      // TOCTOU recompute of the destination folder after the write).
+      const statementPath = await reifyRelation(this.reifyPorts(), {
         subjectUid,
         predicateKey: row.predicateKey,
         predicateDefUid,
@@ -508,10 +504,6 @@ export class PropertyEditorModal extends Modal {
       });
       // Atomic success — the inline copy is gone + the statement is verified.
       // Reflect the new reified row locally (the store lags the create).
-      const folder = this.resolveReifyFolder(DEFAULT_REIFY_ANCHOR_UID);
-      const statementPath = folder
-        ? `${folder}/${newStatementUid}.md`
-        : `${newStatementUid}.md`;
       this.reifiedRows.push({
         predicateKey: row.predicateKey,
         predicateLabel: row.predicateLabel,
