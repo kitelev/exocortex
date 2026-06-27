@@ -335,7 +335,9 @@ export class GenericAssetCreationService {
             // key=...` flag, issue #3759): emit a flat YAML array, quoting each
             // wikilink element exactly as a scalar would be. The repeated flag
             // is the explicit array signal — independent of the property's
-            // declared cardinality.
+            // declared cardinality. (Scoped to the shape-registry path — the CLI
+            // create path — so the no-registry plugin/apply path keeps its
+            // existing array-as-inferred-value behavior, covered by tests.)
             frontmatter[propertyName] = value.map((element) =>
               this.quoteWikilinkValue(String(element)),
             );
