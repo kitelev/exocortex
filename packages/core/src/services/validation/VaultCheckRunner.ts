@@ -1,4 +1,5 @@
 import type {
+  CheckContext,
   CheckResult,
   IVaultCheckReader,
   VaultCheckReport,
@@ -26,6 +27,18 @@ export class VaultCheckRunner {
     enabledCheckIds: readonly string[],
   ): Promise<VaultCheckReport> {
     const ctx = await reader.read(); // ← ONE pass; warm source built once
+    return this.runWithContext(ctx, enabledCheckIds);
+  }
+
+  /**
+   * Run against a context the caller already built — so the `Validate vault`
+   * command can read the warm context ONCE, derive the enabled-set from it
+   * (the command's enabled-set reader), and run, without a second read.
+   */
+  async runWithContext(
+    ctx: CheckContext,
+    enabledCheckIds: readonly string[],
+  ): Promise<VaultCheckReport> {
     const results: CheckResult[] = [];
 
     for (const checkId of enabledCheckIds) {
