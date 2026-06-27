@@ -341,6 +341,20 @@ export interface RepoSyncResult {
   pushedSha?: string;
   /** Remote changes applied to local disk (pull phase). */
   pulledCount: number;
+  /**
+   * Paths whose local content this sync ACTUALLY mutated on the pull side —
+   * the writes/merges applied to disk AND the remote-deletes propagated to
+   * disk (`pulledPaths.length === pulledCount`). Additive (RFC 8f93ff95,
+   * mirrors `mergedPaths`): ExoSync writes via the low-level
+   * `vault.adapter.write`, which fires NO Obsidian vault/metadataCache event,
+   * so nothing reindexes the triple store post-sync and pulled assets stay
+   * invisible in Layouts until restart. Surfacing the mutated paths lets the
+   * command layer drive a targeted disk-read reindex of exactly these paths.
+   * The consumer dispatches per-path by disk presence (present ⇒ re-index
+   * from disk, absent ⇒ remove triples), so deletes need no separate field.
+   * Absent/empty ⇒ nothing was pulled this round.
+   */
+  pulledPaths?: string[];
   /** Files pushed to remote. */
   pushedCount: number;
   /** Conflicting assets resolved by the merge layer (A2). */
