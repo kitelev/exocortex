@@ -1040,6 +1040,10 @@ export class GroundingExecutor {
     if (userInput) {
       for (const [key, value] of Object.entries(userInput)) {
         if (key === "label") continue;
+        // Issue #3744 — `body` is a reserved engine input (symmetric to
+        // `label`): it never becomes a frontmatter key; instead it is written
+        // as the created asset's markdown body below.
+        if (key === "body") continue;
         if (value === null || value === undefined) continue;
         properties[key] = value;
       }
@@ -1107,7 +1111,20 @@ export class GroundingExecutor {
         );
     const filePath = resolvedFolder ? `${resolvedFolder}/${uid}.md` : `${uid}.md`;
 
-    await this.fileWriter.createFile(filePath, content);
+    // Issue #3744 — `body` is a reserved userInput key (symmetric to `label`):
+    // when present and a non-empty string it becomes the new asset's markdown
+    // body, written in the same create (one `apply`, no composite grounding,
+    // no literal token). Reuses `replaceBody` — the same helper `body_template`
+    // uses — to splice the body after the just-built frontmatter. Absent/empty
+    // → frontmatter-only content (current behavior; the plugin inline button
+    // simply never passes `body`, so zero regression).
+    const rawBody = userInput?.body;
+    const finalContent =
+      typeof rawBody === "string" && rawBody.length > 0
+        ? GroundingExecutor.replaceBody(content, rawBody)
+        : content;
+
+    await this.fileWriter.createFile(filePath, finalContent);
 
     // Issue #3184 B5: surface the created file's vault-relative path so the
     // presentation layer can open it in a new tab. Core stays surface-agnostic
