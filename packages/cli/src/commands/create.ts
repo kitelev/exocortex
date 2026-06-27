@@ -51,21 +51,28 @@ interface CreateCommandOptions {
 /**
  * Parse --property flags into a key-value map.
  *
- * Each --property flag has the format "key=value".
- * Multiple values for the same key are concatenated with commas.
+ * Each --property flag has the format "key=value". A key supplied ONCE maps to
+ * a scalar string (back-compat). The SAME key supplied more than once
+ * accumulates its values into an array (issue #3759) — the standard multi-value
+ * CLI pattern — which the downstream serializer emits as a YAML array. A single
+ * `--property 'key=["a","b"]'` flow-array is NOT parsed as an array; it stays a
+ * literal value (use the repeatable flag for multi-value).
  *
  * @example
  * parseProperties(["ztlk__Note_developedFrom=[[uuid|Label]]", "custom_prop=value"])
  * // => { "ztlk__Note_developedFrom": "[[uuid|Label]]", "custom_prop": "value" }
+ * @example
+ * parseProperties(["exo__Asset_relates=[[A]]", "exo__Asset_relates=[[B]]"])
+ * // => { "exo__Asset_relates": ["[[A]]", "[[B]]"] }
  */
 function parseProperties(
   propertyArgs: string[] | undefined,
-): Record<string, string> {
+): Record<string, string | string[]> {
   if (!propertyArgs || propertyArgs.length === 0) {
     return {};
   }
 
-  const properties: Record<string, string> = {};
+  const properties: Record<string, string | string[]> = {};
 
   for (const prop of propertyArgs) {
     const eqIndex = prop.indexOf("=");
@@ -84,7 +91,17 @@ function parseProperties(
       );
     }
 
-    properties[key] = value;
+    const existing = properties[key];
+    if (existing === undefined) {
+      // First occurrence → scalar (back-compat with every single-value create).
+      properties[key] = value;
+    } else if (Array.isArray(existing)) {
+      // Third+ occurrence → append to the accumulating array.
+      existing.push(value);
+    } else {
+      // Second occurrence → promote the scalar to a two-element array.
+      properties[key] = [existing, value];
+    }
   }
 
   return properties;
@@ -195,7 +212,7 @@ export function createCommand(): Command {
     .requiredOption("--label <text>", "Human-readable label for the asset")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
     .option("--aliases <names...>", "Additional aliases for the asset")
-    .option("--property <key=value...>", "Property key-value pairs (repeatable)", collect, [])
+    .option("--property <key=value...>", "Property key-value pairs (repeatable; the SAME key passed more than once accumulates into a YAML array)", collect, [])
     .option("--body <text>", "Markdown body content (use '-' to read from stdin)")
     .option("--body-file <path>", "Read body content from file")
     .option("--dry-run", "Preview frontmatter without writing file")
@@ -248,7 +265,12 @@ export function createCommand(): Command {
         // `apply repair-folder` / `audit co-location`. Fail-open to the inbox
         // default when isDefinedBy is missing / `!`-prefixed / unresolvable.
         let folderPath = DEFAULT_INBOX_FOLDER;
-        const isDefinedBy = propertyValues?.["exo__Asset_isDefinedBy"];
+        const isDefinedByRaw = propertyValues?.["exo__Asset_isDefinedBy"];
+        // isDefinedBy is cardinality-1; if a user degenerate-passes it more than
+        // once (→ array), co-locate by the first reference.
+        const isDefinedBy = Array.isArray(isDefinedByRaw)
+          ? isDefinedByRaw[0]
+          : isDefinedByRaw;
         if (isDefinedBy) {
           const coLocatedFolder = await resolveCoLocationFolder(
             fsAdapter,
