@@ -3,13 +3,12 @@ import { GitHubRestClient } from "./GitHubRestClient";
 import { parseGitHubURL } from "./AssetSpaceManager";
 import {
   validateVaultPathArg,
-  parseGitmodulesEntries,
   type GitmodulesEntry,
 } from "./GitSubmoduleOps";
 import {
   mountAssetSpaceFiles,
-  appendGitmodulesEntry,
   stripGitmodulesEntry,
+  deriveUrl,
   SYNC_BRANCH,
   type FileSystemPort,
   type AssetSpaceHttpClient,
@@ -27,10 +26,22 @@ import {
  * ## Thin adapter over the shared mount core (Issue #3423)
  *
  * The mount/unmount pipeline (fetch tarball → discover `<owner>-<repo>-<sha>/`
- * wrapper → extract SHA → zip-slip validate → materialise files → `.gitmodules`
- * mutation) lives ONCE in `exocortex`'s {@link mountAssetSpaceFiles} +
- * `.gitmodules` text transforms. This adapter supplies the two Obsidian-coupled
- * ports:
+ * wrapper → extract SHA → zip-slip validate → materialise files) lives ONCE in
+ * `exocortex`'s {@link mountAssetSpaceFiles}. This adapter supplies the two
+ * Obsidian-coupled ports:
+ *
+ * ## RFC 0005 Phase 1 — no `.gitmodules` on a git-free vault
+ *
+ * A git-free vault (iPhone, and post-#3567 every canonical desktop vault) no
+ * longer carries a `.gitmodules` sidecar at all: {@link mount} stops writing it,
+ * and {@link listMountedAssetSpaces} reconstructs the mounted set by enumerating
+ * the canonical `assetspaces/<owner>/<repo>` folders and re-deriving each URL
+ * with {@link deriveUrl} (the pure inverse of `derivePath` under the
+ * github-https invariant). {@link unmount} still strips a *pre-existing* legacy
+ * `.gitmodules` stanza (hygiene for vaults bootstrapped on an older version) —
+ * it is a no-op when the file is absent. The desktop git-submodule path
+ * (`GitSubmoduleOps`) keeps its committed `.gitmodules` (git vaults, out of
+ * scope — RFC 0005 Phase 2, N/A).
  *
  *   - **{@link FileSystemPort}** over `vault.adapter` — `materialize()` writes
  *     files **additively** (overwrite collisions, leave files absent from the
@@ -71,6 +82,8 @@ export interface RestAssetSpaceMountOptions {
 export type RestMountResult = MountResult;
 
 const GITMODULES = ".gitmodules";
+/** Vault-relative root all AssetSpaces mount under (`assetspaces/<owner>/<repo>`). */
+const ASSETSPACES_DIR = "assetspaces";
 
 export class RestAssetSpaceMount {
   private readonly app: App;
@@ -94,9 +107,14 @@ export class RestAssetSpaceMount {
   }
 
   /**
-   * Mount an AssetSpace: fetch its GitHub tarball, materialise the content
-   * directly into `<submodulePath>/...` inside the vault, and register the
-   * `.gitmodules` entry.
+   * Mount an AssetSpace: fetch its GitHub tarball and materialise the content
+   * directly into `<submodulePath>/...` inside the vault.
+   *
+   * RFC 0005 Phase 1 — writes **no** `.gitmodules`: a git-free vault carries no
+   * such sidecar. The folder presence at `assetspaces/<owner>/<repo>` IS the
+   * mount-state record, and {@link listMountedAssetSpaces} re-derives the URL
+   * from that path via {@link deriveUrl}; rediscovery no longer needs a stored
+   * URL registry.
    *
    * The mount is **additive** at the file level — colliding paths are
    * overwritten, but files present locally yet absent from the tarball are
@@ -151,22 +169,19 @@ export class RestAssetSpaceMount {
       }
     }
 
-    // Record the AssetSpace in `.gitmodules` (path + source URL). This is NOT a
-    // git submodule registration — a git-free REST mount creates no gitlink
-    // (`.git/config` / index stay untouched; mount-state visibility is
-    // folder-presence, see class doc). The stanza is an INTENTIONAL, load-bearing
-    // URL registry — NOT vestigial (D6 triage, node 794a95ae) — consumed by the
-    // git-free rediscovery flows that have no other source for the remote URLs:
-    //   - Bootstrap «clone-needs-fetch» — after a vault is cloned/synced without
-    //     `--recurse-submodules` the `assetspaces/*` folders are empty but the
-    //     URLs survive here, so {@link BootstrapAssetSpaceCommands}'s
-    //     `fetchTrackedAssetSpaces()` re-materialises each AssetSpace from its
-    //     recorded URL.
-    //   - «Unmount assetspace» — {@link readGitmodulesEntries} is the canonical
-    //     "what's mounted" registry the command lists.
-    // The live apply path keys mount-state on folder presence, but neither it nor
-    // ExoSync (descriptor-sourced URLs) read this — so do not "clean up" the write.
-    await this.appendGitmodulesEntry(safePath, gitUrl);
+    // RFC 0005 Phase 1 — NO `.gitmodules` write. The git-free rediscovery flows
+    // that used to read the recorded URL now reconstruct it from the folder path
+    // via {@link deriveUrl} (the github-https invariant holds across the whole
+    // ecosystem — RFC 0005 §3.2):
+    //   - Bootstrap «clone-needs-fetch» — a present-but-empty
+    //     `assetspaces/<owner>/<repo>` folder is filesystem-detectable, and its
+    //     URL is `deriveUrl(folderPath)`; fully-absent AssetSpaces are
+    //     re-materialised by apply-profile (descriptor-driven).
+    //   - «Unmount assetspace» — {@link listMountedAssetSpaces} enumerates the
+    //     mounted folders (+ derived URL) — the "what's mounted" registry.
+    //   - apply-profile already keys mount-state on folder presence and sources
+    //     URLs from the AssetSpace descriptors, never from `.gitmodules`.
+    // ExoSync is descriptor-sourced and ignores `.gitmodules` entirely.
     return result;
   }
 
@@ -190,21 +205,60 @@ export class RestAssetSpaceMount {
   }
 
   /**
-   * Read the current `.gitmodules` (path, url) entries via `vault.adapter` —
-   * the mobile-capable counterpart of
-   * {@link GitSubmoduleOps.readGitmodulesEntries} (#3535). Reuses the shared
-   * pure-text {@link parseGitmodulesEntries} parser (no Node `fs`). A missing
-   * `.gitmodules` yields `[]`.
+   * List the currently-mounted AssetSpaces by enumerating the canonical
+   * `assetspaces/<owner>/<repo>` folders on disk and reconstructing each URL
+   * with {@link deriveUrl} (RFC 0005 Phase 1 — replaces reading the
+   * `.gitmodules` URL-registry, which a git-free vault no longer writes). A
+   * folder that is present on disk IS a mounted (or clone-needs-fetch, present-
+   * but-empty) AssetSpace; its URL is `https://github.com/<owner>/<repo>`.
    *
-   * Used by the mobile Bootstrap / Add-AssetSpace flow
+   * Only canonical two-level Maven paths are returned: a non-conforming folder
+   * (one level, or an out-of-charset / traversal segment) yields
+   * `deriveUrl → null` and is **skipped** (it cannot be a github AssetSpace —
+   * RFC 0005 §10.1; legacy flat mounts are deprecated, #3538). A missing
+   * `assetspaces/` dir yields `[]`.
+   *
+   * ⚠ **Known limitation (deprecated layout).** The enum assumes the canonical
+   * Maven shape `assetspaces/<owner>/<repo>/...`. A pre-#3538 **flat** mount
+   * (`assetspaces/<repo>/...`) whose content sits in a namespace subdir would
+   * have its `assetspaces/<repo>/<namespace>` read as a fake `<owner>/<repo>`
+   * pair — there is no cheap filesystem signal to tell a flat repo from an
+   * owner. This only affects the «Unmount» picker on a vault still carrying a
+   * deprecated flat mount (apply-profile + ExoSync are descriptor/presence
+   * sourced and never call this; `fetchTrackedAssetSpaces` only clones in
+   * clone-needs-fetch, where a flat-with-content mount is already `bootstrapped`
+   * and so never re-fetched). On canonical (EKA) vaults every AssetSpace is
+   * two-level, so this does not arise; migrate any flat mount per #3538.
+   *
+   * Used by the cross-platform Bootstrap / Add-AssetSpace flow
    * ({@link BootstrapAssetSpaceCommands}) to classify the vault state (empty vs
-   * clone-needs-fetch vs bootstrapped) without the desktop-only
-   * `GitSubmoduleOps`.
+   * clone-needs-fetch vs bootstrapped) and by «Unmount assetspace» to list what
+   * is mounted — all without the desktop-only `GitSubmoduleOps` and without any
+   * `.gitmodules` sidecar.
    */
-  public async readGitmodulesEntries(): Promise<GitmodulesEntry[]> {
-    if (!(await this.adapter.exists(GITMODULES))) return [];
-    const raw = await this.adapter.read(GITMODULES);
-    return parseGitmodulesEntries(raw);
+  public async listMountedAssetSpaces(): Promise<GitmodulesEntry[]> {
+    const out: GitmodulesEntry[] = [];
+    if (!(await this.adapter.exists(ASSETSPACES_DIR))) return out;
+    let owners: { files: string[]; folders: string[] };
+    try {
+      owners = await this.adapter.list(ASSETSPACES_DIR);
+    } catch {
+      return out;
+    }
+    for (const ownerDir of owners.folders) {
+      let repos: { files: string[]; folders: string[] };
+      try {
+        repos = await this.adapter.list(ownerDir);
+      } catch {
+        continue; // unreadable owner dir — skip, keep enumerating
+      }
+      for (const repoDir of repos.folders) {
+        const url = deriveUrl(repoDir);
+        if (url === null) continue; // non-conforming → not a github AssetSpace
+        out.push({ submodulePath: repoDir, url });
+      }
+    }
+    return out;
   }
 
   // ───────────────────────────── ports ─────────────────────────────
@@ -282,28 +336,14 @@ export class RestAssetSpaceMount {
     };
   }
 
-  // ───────────────────────────── .gitmodules I/O ─────────────────────────────
-
-  /**
-   * Idempotent `.gitmodules` stanza insertion over `vault.adapter` using the
-   * shared {@link appendGitmodulesEntry} text transform.
-   */
-  private async appendGitmodulesEntry(
-    submodulePath: string,
-    url: string,
-  ): Promise<void> {
-    let existing = "";
-    if (await this.adapter.exists(GITMODULES)) {
-      existing = await this.adapter.read(GITMODULES);
-    }
-    const { content, added } = appendGitmodulesEntry(existing, submodulePath, url);
-    if (added) await this.adapter.write(GITMODULES, content);
-  }
+  // ───────────────────────────── .gitmodules cleanup (legacy) ─────────────────
 
   /**
    * Strip a `.gitmodules` stanza over `vault.adapter`, reusing the shared
    * {@link stripGitmodulesEntry} text transform. No-op when `.gitmodules` is
-   * absent or has no matching stanza.
+   * absent or has no matching stanza. RFC 0005 Phase 1 stops *writing*
+   * `.gitmodules`, but {@link unmount} still strips a *pre-existing* legacy
+   * stanza (vaults bootstrapped on an older plugin version) — pure hygiene.
    */
   private async removeGitmodulesEntry(submodulePath: string): Promise<void> {
     if (!(await this.adapter.exists(GITMODULES))) return;
