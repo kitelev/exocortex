@@ -796,3 +796,8 @@ export {
   isFormatOnlyDrift,
   type SemanticComparison,
 } from "./services/sync/assetSemanticCompare";
+
+// Homoiconic vault-validation engine (RFC f402002b, M1.4): the check-runner,
+// registry, 4 checks (uid-uniqueness / co-location / SHACL / DAG), and the
+// warm one-pass reader contract consumed by the `Validate vault` command (M1.5).
+export * from "./services/validation";
