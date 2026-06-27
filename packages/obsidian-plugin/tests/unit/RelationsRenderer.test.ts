@@ -841,8 +841,10 @@ describe("RelationsRenderer", () => {
 
         const props = propsPassedToTable();
         expect(props).toBeDefined();
-        expect(typeof props.onEditRelations).toBe("function");
+        expect(props.onEditRelations).toBeDefined();
 
+        // Behaviour, not method-exists: invoking the wired callback drives the
+        // registered edit-properties command (the read-view → editor open path).
         props.onEditRelations();
         expect(executeCommandById).toHaveBeenCalledWith(
           "exocortex:edit-properties",
