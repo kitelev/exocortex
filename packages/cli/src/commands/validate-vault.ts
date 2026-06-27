@@ -4,12 +4,39 @@ import { resolve } from "path";
 import {
   VaultCheckRunner,
   createDefaultCheckRegistry,
-  readEnabledCheckIds,
   KNOWN_CHECK_IDS,
+  extractAssetReference,
   type CheckContext,
   type IVaultCheckReader,
   type VaultAssetRecord,
 } from "@kitelev/exocortex-core";
+
+/**
+ * Read the enabled validation-check set — the DATA half of the Homoiconicity
+ * Invariant: WHICH checks run is configured by validation-check `setting__Setting`
+ * instances (created by `scaffold validation-settings`), not by code. A
+ * check-Setting carries `setting__Setting_key` (→ a check-key UID = the check-id)
+ * and `setting__Setting_value` (boolean). Returns the truthy ones; only KNOWN
+ * check-ids count, so unrelated setting__Setting instances never leak in.
+ *
+ * (Kept inline in the CLI rather than the core barrel — adding it as a core
+ * export broke the jest cjs-module-lexer ESM-CJS enumeration of core's named
+ * exports, dropping unrelated names like FileAlreadyExistsError for CLI ESM
+ * importers. It re-uses KNOWN_CHECK_IDS + extractAssetReference, both already in
+ * core's barrel. Shared home for plugin reuse is the M1.5-plugin follow-up.)
+ */
+function readEnabledCheckIds(
+  assets: readonly VaultAssetRecord[],
+): string[] {
+  const enabled = new Set<string>();
+  for (const a of assets) {
+    const keyRef = extractAssetReference(a.frontmatter["setting__Setting_key"]);
+    if (!keyRef || !KNOWN_CHECK_IDS.has(keyRef)) continue;
+    const value = a.frontmatter["setting__Setting_value"];
+    if (value === true || value === "true") enabled.add(keyRef);
+  }
+  return [...enabled];
+}
 import { CachingNodeFsAdapter } from "../adapters/CachingNodeFsAdapter.js";
 import {
   loadTriplesFromAllVaults,

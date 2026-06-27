@@ -33,7 +33,7 @@ export class VaultCheckRunner {
   /**
    * Run against a context the caller already built — so the `Validate vault`
    * command can read the warm context ONCE, derive the enabled-set from it
-   * ({@link readEnabledCheckIds}), and run, without a second read.
+   * (the command's enabled-set reader), and run, without a second read.
    */
   async runWithContext(
     ctx: CheckContext,
