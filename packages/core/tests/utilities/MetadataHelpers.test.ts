@@ -641,14 +641,17 @@ describe("MetadataHelpers", () => {
       expect(result).toBe("---\ntags:\n\n---\n\n");
     });
 
-    it("should preserve value formatting", () => {
+    it("should emit YAML-safe values (bare wikilink quoted; non-label date stays bare)", () => {
       const frontmatter = {
         link: "[[MyFile]]",
         date: "2025-10-24",
       };
       const result = MetadataHelpers.buildFileContent(frontmatter);
 
-      expect(result).toBe("---\nlink: [[MyFile]]\ndate: 2025-10-24\n---\n\n");
+      // #3750: a bare `[[MyFile]]` parses as a nested flow array in real YAML,
+      // so it is quoted (universal). `date` is NOT a string-semantic property,
+      // so the date-only value stays bare (MEDIUM-3 is gated to label/aliases).
+      expect(result).toBe('---\nlink: "[[MyFile]]"\ndate: 2025-10-24\n---\n\n');
     });
 
     it("should handle multiline body", () => {
@@ -691,7 +694,9 @@ describe("MetadataHelpers", () => {
       };
       const result = MetadataHelpers.buildFileContent(frontmatter);
 
-      expect(result).toBe("---\nexo__Asset_label: \n---\n\n");
+      // #3750: a bare empty value parses as null in YAML; quote so it stays an
+      // empty string.
+      expect(result).toBe('---\nexo__Asset_label: ""\n---\n\n');
     });
   });
 
