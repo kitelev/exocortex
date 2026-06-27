@@ -54,6 +54,21 @@ describe("relationsEditorModel — inline extraction", () => {
     expect(rows[1].objectDisplay).toBe("Concept 1");
     expect(rows[2].objectDisplay).toBe("c2");
   });
+
+  it("excludes schema-declared NON-object (enum/scalar) keys even when wikilink-valued [data-integrity]", () => {
+    // ems__Effort_status / ems__Effort_size are wikilink-valued ENUMS
+    // (status-select / size-select) — they must NOT be mis-listed as deletable
+    // relations (deleting one would strip the property). buildPredicateOptions /
+    // the modal pass these as nonRelationKeys.
+    const fm = {
+      ems__Effort_status: "[[027e78f4-...|Doing]]",
+      ems__Effort_size: "[[ems__TaskSize_M]]",
+      ems__Effort_parent: "[[parent|Parent]]",
+    };
+    const nonRelationKeys = new Set(["ems__Effort_status", "ems__Effort_size"]);
+    const rows = extractInlineRelations(fm, nonRelationKeys);
+    expect(rows.map((r) => r.predicateKey)).toEqual(["ems__Effort_parent"]);
+  });
 });
 
 describe("relationsEditorModel — reified rows", () => {

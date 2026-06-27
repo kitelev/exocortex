@@ -34,7 +34,6 @@ import {
   quoteRelationValueForYaml,
   type RelationRow,
 } from '@plugin/presentation/components/property-editor/relationsEditorModel';
-import type { PredicateOption } from '@plugin/presentation/components/property-editor/RelationsSection';
 
 /**
  * The triple-store capabilities the Relations section needs. Read structurally
@@ -64,6 +63,10 @@ export class PropertyEditorModal extends Modal {
   private currentFrontmatter: Record<string, unknown>;
   /** Reified rows cached at open (store lags a vault.delete — we drop locally). */
   private reifiedRows: RelationRow[] = [];
+  /** Schema keys that are NON-object properties (enums/scalars) — never relations. */
+  private nonRelationKeys: ReadonlySet<string> = new Set();
+  /** Guards a late async re-render after the modal has been closed. */
+  private closed = false;
 
   constructor(
     app: App,
@@ -101,10 +104,13 @@ export class PropertyEditorModal extends Modal {
     // build the Relations-section deps async (triple-store query + schema) and
     // re-render with them when ready (RFC 93a0b2ee Task 3.1). Best-effort —
     // undefined when no triple store is reachable → form stays back-compat.
+    this.closed = false;
     this.renderForm(undefined);
     void this.buildRelationsDeps()
       .then((relations) => {
-        if (relations) this.renderForm(relations);
+        // Skip the re-render if the user already closed the modal (avoids
+        // mounting a React root into the emptied contentEl → leak).
+        if (relations && !this.closed) this.renderForm(relations);
       })
       .catch((error) => {
         console.error("[Exocortex Property Editor] Relations init error:", error);
@@ -176,13 +182,29 @@ export class PropertyEditorModal extends Modal {
     }
     this.reifiedRows = reifiedToRows(reified);
 
+    // Schema drives which keys are object-relations vs enum/scalar properties.
+    // Resolved once: enum (status/size) + scalar keys are excluded from relations
+    // (they would otherwise mis-list + double-render), and the wikilink keys
+    // become the create-predicate options.
+    const schema = await getPropertySchemaForClass(this.instanceClass);
+    this.nonRelationKeys = new Set(
+      schema.filter((p) => p.type !== "wikilink").map((p) => p.name),
+    );
+
     const initialRows = buildRelationRows({
       frontmatter: this.currentFrontmatter,
       reified,
+      nonRelationKeys: this.nonRelationKeys,
     });
 
     const rangeMap = await this.buildPredicateRangeMap(store);
-    const predicateOptions = await this.buildPredicateOptions(rangeMap);
+    const predicateOptions = schema
+      .filter((p) => p.type === "wikilink" && !p.readOnly)
+      .map((p) => ({
+        key: p.name,
+        label: p.label || p.name,
+        rangeClassUid: rangeMap.get(p.name),
+      }));
 
     const resolveCandidates = (
       rangeClassUid: string | undefined,
@@ -230,23 +252,12 @@ export class PropertyEditorModal extends Modal {
     return map;
   }
 
-  /** The class's wikilink (object) properties as create-predicate options. */
-  private async buildPredicateOptions(
-    rangeMap: Map<string, string>,
-  ): Promise<PredicateOption[]> {
-    const schema = await getPropertySchemaForClass(this.instanceClass);
-    return schema
-      .filter((p) => p.type === "wikilink" && !p.readOnly)
-      .map((p) => ({
-        key: p.name,
-        label: p.label || p.name,
-        rangeClassUid: rangeMap.get(p.name),
-      }));
-  }
-
   /** Recompute the unified rows from the live frontmatter + cached reified rows. */
   private rebuildRows(): RelationRow[] {
-    const inline = extractInlineRelations(this.currentFrontmatter);
+    const inline = extractInlineRelations(
+      this.currentFrontmatter,
+      this.nonRelationKeys,
+    );
     return dedupeRelations(inline, this.reifiedRows);
   }
 
@@ -327,10 +338,10 @@ export class PropertyEditorModal extends Modal {
       if (this.app.vault.getAbstractFileByPath(path)) {
         throw new Error(`statement still present after delete: ${path}`);
       }
+      this.notificationService.success("Reified relation removed");
     }
     // Drop the reified row locally (the triple store lags the delete until reindex).
     this.reifiedRows = this.reifiedRows.filter((r) => r.statementPath !== path);
-    this.notificationService.success("Reified relation removed");
   }
 
   private async handleSave(updatedFrontmatter: Record<string, unknown>): Promise<void> {
@@ -363,8 +374,11 @@ export class PropertyEditorModal extends Modal {
   }
 
   override onClose(): void {
+    this.closed = true;
     const { contentEl } = this;
+    if (this.container) this.reactRenderer.unmount(this.container);
     this.reactRenderer.unmount(contentEl);
+    this.container = null;
     contentEl.empty();
     this.plugin.refreshLayout?.();
   }

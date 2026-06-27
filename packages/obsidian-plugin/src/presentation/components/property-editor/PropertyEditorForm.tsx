@@ -102,11 +102,30 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
     return newErrors.length === 0;
   }, [schema, formData]);
 
+  // RFC 93a0b2ee Task 3.1 — when the Relations section is active, relation
+  // (wikilink) properties are managed there, not as raw text fields here.
+  const editableProperties = useMemo(() => {
+    const base = schema.filter((p) => !p.readOnly);
+    return relations ? base.filter((p) => p.type !== "wikilink") : base;
+  }, [schema, relations]);
+
   const handleSave = useCallback(() => {
-    if (validate()) {
-      onSave(formData);
+    if (!validate()) return;
+    // RFC 93a0b2ee Task 3.1 — when the Relations section is active, relations are
+    // written LIVE by the section (create/delete). The bulk Save must NOT write
+    // relation keys back from the stale `formData` snapshot (that would resurrect
+    // a deleted relation / drop a created one). Save only the scalar fields the
+    // form actually edits (the editable, non-relation properties).
+    if (relations) {
+      const editableKeys = new Set(editableProperties.map((p) => p.name));
+      const payload = Object.fromEntries(
+        Object.entries(formData).filter(([k]) => editableKeys.has(k)),
+      );
+      onSave(payload);
+      return;
     }
-  }, [validate, formData, onSave]);
+    onSave(formData);
+  }, [validate, formData, onSave, relations, editableProperties]);
 
   const getErrorForField = useCallback(
     (fieldName: string): string | undefined => {
@@ -193,13 +212,6 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
     },
     [formData, getErrorForField, handleFieldChange],
   );
-
-  // RFC 93a0b2ee Task 3.1 — when the Relations section is active, relation
-  // (wikilink) properties are managed there, not as raw text fields here.
-  const editableProperties = useMemo(() => {
-    const base = schema.filter((p) => !p.readOnly);
-    return relations ? base.filter((p) => p.type !== "wikilink") : base;
-  }, [schema, relations]);
 
   // RFC 93a0b2ee Task 3.1 — live relation rows (create/delete mutate the vault
   // immediately and return the refreshed list, independent of the bulk Save).
