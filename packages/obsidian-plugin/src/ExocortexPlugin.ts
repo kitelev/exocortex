@@ -163,7 +163,10 @@ import { BootstrapVaultModal } from "./presentation/modals/BootstrapVaultModal";
 import { BootstrapResultModal } from "./presentation/modals/BootstrapResultModal";
 import { AddAssetSpaceModal } from "./presentation/modals/AddAssetSpaceModal";
 import { SimpleConfirmModal } from "./presentation/modals/SimpleConfirmModal";
-import { FirstRunOnboardingModal } from "./presentation/modals/FirstRunOnboardingModal";
+import {
+  FirstRunOnboardingModal,
+  ONBOARDING_STEP_KEYS,
+} from "./presentation/modals/FirstRunOnboardingModal";
 import { testPatConnection } from "./presentation/settings/patConnectionTest";
 import {
   registerOnboardingCommands,
@@ -375,6 +378,10 @@ export default class ExocortexPlugin extends Plugin {
   // forbids `new Notice()` outside ObsidianNotificationService).
   notifier!: ObsidianNotificationService;
   private shaclStatusBar: HTMLElement | null = null;
+  // #3705 — the currently-open first-run onboarding panel (or null). Lets the
+  // bootstrap-result modal's next-step CTA mark the matching panel step done
+  // across the modal boundary; cleared when the panel closes.
+  private activeOnboardingPanel: FirstRunOnboardingModal | null = null;
   // Issue #2780: tracked so the post-resolve reindex can await it before
   // calling refresh(), avoiding a concurrent clear()/convertVault() race.
   private eagerInitPromise: Promise<void> | null = null;
@@ -3599,7 +3606,7 @@ export default class ExocortexPlugin extends Plugin {
     const secretsStore = new LocalSecretsStore({ app: this.app });
 
     const openPanel = (): void => {
-      new FirstRunOnboardingModal(this.app, {
+      const panel = new FirstRunOnboardingModal(this.app, {
         // Step 1 (optional, token-first): persist the PAT device-local BEFORE
         // the materialise steps run (cd9444bd). Empty value clears it (skip
         // path). A failure is surfaced as a notice but never blocks onboarding.
@@ -3661,6 +3668,12 @@ export default class ExocortexPlugin extends Plugin {
           void profileCommands.invokeApplyProfile();
         },
         onClosePanel: () => {
+          // #3705 — the panel is gone; stop routing result-modal step ticks to
+          // it (markStepDoneByKey already no-ops post-close, but drop the ref so
+          // a stale instance is not retained).
+          if (this.activeOnboardingPanel === panel) {
+            this.activeOnboardingPanel = null;
+          }
           void localDataStore.setOnboardingCompleted(true).catch((err) => {
             this.logger.warn(
               "[ExocortexPlugin] persisting onboarding-completed flag failed: " +
@@ -3668,7 +3681,11 @@ export default class ExocortexPlugin extends Plugin {
             );
           });
         },
-      }).open();
+      });
+      // #3705 — track the open panel so a stacked bootstrap-result modal's
+      // next-step CTA can mark the matching panel step done.
+      this.activeOnboardingPanel = panel;
+      panel.open();
     };
 
     // Guided Setup command — unconditional (parity); the re-entry point the
@@ -3912,6 +3929,14 @@ export default class ExocortexPlugin extends Plugin {
         new BootstrapResultModal(this.app, result, {
           onAddRegistry: () =>
             void bootstrapCommands.invokeAddAssetSpace(REGISTRY_ASSETSPACE_URL),
+          // #3705 — this CTA performs the onboarding panel's Step 3 (Add the
+          // AssetSpace registry); tick that step done if the panel is still open
+          // underneath, so the checklist matches what the user actually did.
+          // No-op when there is no onboarding panel (standalone Bootstrap run).
+          onStepCompleted: () =>
+            this.activeOnboardingPanel?.markStepDoneByKey(
+              ONBOARDING_STEP_KEYS.addRegistry,
+            ),
           // RFC 0002 §3.10 — one-click retry of the failed operation: re-open
           // the same Bootstrap / Add flow (its modal collects the URL again) so
           // the user can fix the URL / token / connection and retry in place.
