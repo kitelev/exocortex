@@ -54,7 +54,7 @@ describe("#3761 — co-located create must not re-nest the vault root", () => {
     path.join(root, REL_FOLDER, `${UID}.md`);
 
   describe("NodeFsAdapter.createFile (the `apply create-instance` fileWriter)", () => {
-    it("leading-slash-stripped absolute folder → writes to correct co-located folder, no phantom tree", async () => {
+    it("@req:9994c7d7-39dc-4e0e-ab4f-972da9ef49ad leading-slash-stripped absolute folder → writes to correct co-located folder, no phantom tree", async () => {
       const adapter = new NodeFsAdapter(root);
       // exactly what parentFolderOf produces from an absolute ontology folder
       const fakeRelative =
@@ -94,7 +94,7 @@ describe("#3761 — co-located create must not re-nest the vault root", () => {
   });
 
   describe("FileSystemVaultAdapter (the `cli create` write path)", () => {
-    it("leading-slash-stripped absolute folder → createFolder + create land correctly, no phantom tree", async () => {
+    it("@req:9994c7d7-39dc-4e0e-ab4f-972da9ef49ad leading-slash-stripped absolute folder → createFolder + create land correctly, no phantom tree", async () => {
       const adapter = new FileSystemVaultAdapter(root);
       const fakeFolder = root.replace(/^\/+/, "") + `/${REL_FOLDER}`;
 
