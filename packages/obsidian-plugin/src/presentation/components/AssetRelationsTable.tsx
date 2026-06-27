@@ -169,6 +169,16 @@ export interface AssetRelationsTableProps {
    * form is stripped upstream.
    */
   resolveAccent?: (classRef: string) => string | null;
+  /**
+   * PDD puzzle `dccff87b` (RFC `93a0b2ee` §C3 read-view follow-up) — opens the
+   * relations editor for the asset whose read-view Relations block this is.
+   * When provided, a single BLOCK-LEVEL «Edit relations» affordance
+   * (`.exocortex-edit-relations`) is rendered so the relations editor (the
+   * Relations section of the property-editor, Tasks 3.1–3.3) is discoverable
+   * directly from the read view — not only via the command palette. ADDITIVE:
+   * legacy callers that pass no callback render no affordance (zero regression).
+   */
+  onEditRelations?: () => void;
 }
 
 interface SortState {
@@ -697,11 +707,35 @@ export const AssetRelationsTable: React.FC<AssetRelationsTableProps> = ({
   onAssetClick,
   getAssetLabel,
   resolveAccent,
+  onEditRelations,
 }) => {
   // State to track collapsed groups (all expanded by default)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set()
   );
+
+  // PDD `dccff87b` — block-level «Edit relations» affordance. Rendered once at
+  // the top of the read-view Relations block when a callback is wired (i.e. the
+  // renderer threaded the viewed asset's currentFile). Activating it opens the
+  // asset's property-editor (Relations section) — the read-view → editor entry
+  // point. Absent callback → no affordance (additive; back-compat).
+  const editRelationsButton = onEditRelations ? (
+    <button
+      type="button"
+      className="exocortex-edit-relations"
+      aria-label="Edit relations"
+      title="Edit relations"
+      onClick={onEditRelations}
+      style={{
+        marginBottom: "8px",
+        padding: "4px 8px",
+        cursor: "pointer",
+        fontSize: "12px",
+      }}
+    >
+      ✎ Edit relations
+    </button>
+  ) : null;
 
   // RFC `93a0b2ee` Task 2 (C2) — show the persistent reified-marker legend iff
   // at least one rendered relation is reified (mobile-safe explanation channel).
@@ -753,6 +787,7 @@ export const AssetRelationsTable: React.FC<AssetRelationsTableProps> = ({
   if (groupByProperty) {
     return (
       <div className="exocortex-relations-grouped">
+        {editRelationsButton}
         {Object.entries(groupedRelations).map(([groupName, items]) => {
           const groupProps = groupSpecificProperties[groupName] || [];
           const mergedProperties = [...showProperties, ...groupProps];
@@ -799,6 +834,7 @@ export const AssetRelationsTable: React.FC<AssetRelationsTableProps> = ({
 
   return (
     <div className="exocortex-relations">
+      {editRelationsButton}
       <SingleTable
         items={groupedRelations.ungrouped}
         sortBy={sortBy}

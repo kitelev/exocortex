@@ -510,12 +510,34 @@ export class RelationsRenderer {
     }
   }
 
+  /**
+   * PDD `dccff87b` — open the relations editor for the read-view «Edit relations»
+   * affordance. Reuses the already-registered `exocortex:edit-properties`
+   * command (the SAME flow as Cmd+P and the ribbon — single source of truth)
+   * via Obsidian-core `app.commands.executeCommandById`; the command operates on
+   * the active file, which IS the asset whose Relations block this is. Parity-
+   * safe: Obsidian-core API only, no Node fs, no platform gate → identical on
+   * desktop AND mobile (Desktop↔Mobile Command Parity invariant).
+   */
+  private openRelationsEditor(): void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const commands = (this.app as any).commands;
+    if (typeof commands?.executeCommandById === "function") {
+      commands.executeCommandById("exocortex:edit-properties");
+    }
+  }
+
   async render(
     el: HTMLElement,
     relations: AssetRelation[],
     config: UniversalLayoutConfig,
     renderHeader?: (container: HTMLElement, sectionId: string, title: string) => void,
     isCollapsed?: boolean,
+    // PDD `dccff87b` — the asset whose read-view Relations block this is. When
+    // provided, a block-level «Edit relations» affordance is wired (opens this
+    // asset's property-editor). Optional → legacy callers render no affordance
+    // (additive, zero read-view regression).
+    currentFile?: TFile,
   ): Promise<void> {
     const container = el.createDiv({ cls: "exocortex-assets-relations" });
 
@@ -586,6 +608,12 @@ export class RelationsRenderer {
         getAssetLabel: (path: string) => this.metadataService.getAssetLabel(path),
         resolveAccent: (classRef: string) =>
           this.plugin.themeResolver?.resolveAccent(classRef) ?? null,
+        // PDD `dccff87b` — block-level «Edit relations» affordance, wired only
+        // when the renderer knows the asset (currentFile). Opens this asset's
+        // property-editor via the registered edit-properties command.
+        onEditRelations: currentFile
+          ? () => this.openRelationsEditor()
+          : undefined,
       }),
     );
   }
