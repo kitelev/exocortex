@@ -192,6 +192,19 @@ export class SPARQLQueryService {
     );
   }
 
+  /**
+   * Post-sync targeted disk-read reindex of the paths ExoSync mutated this run
+   * (RFC 8f93ff95). Passthrough to {@link VaultRDFIndexer.reindexPathsFromDisk}
+   * — re-indexes each changed path straight from disk into the shared store
+   * (present ⇒ update, absent ⇒ remove) + one global inference.
+   */
+  async reindexPathsFromDisk(paths: string[]): Promise<void> {
+    await this.errorHandler.executeWithRetry(
+      async () => this.indexer.reindexPathsFromDisk(paths),
+      { context: "SPARQLQueryService.reindexPathsFromDisk" }
+    );
+  }
+
   async dispose(): Promise<void> {
     this.indexer.dispose();
     this.executor = null;

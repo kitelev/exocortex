@@ -3144,6 +3144,35 @@ export default class ExocortexPlugin extends Plugin {
         app: this.app,
         log: (message) => this.logger.warn(message),
       }),
+      // RFC 8f93ff95 — post-sync targeted disk-read reindex. ExoSync writes via
+      // vault.adapter.write (no Obsidian event), so a pulled asset stays
+      // invisible in Layouts until restart. After a pull/merge, reindex exactly
+      // the mutated paths STRAIGHT FROM DISK into the shared store + run the
+      // follow-up UI refresh bundle. This mirrors ProfileApplyManager's
+      // post-adapter-write refresh, but TARGETED (O(k), no full convertVault
+      // freeze) and WITHOUT a store clear() — so no blank-Layout window.
+      reindex: {
+        run: async (mutatedPaths) => {
+          await this.sparql.reindexPathsFromDisk(mutatedPaths);
+          // Follow-up bundle — the createProfileApplyRefreshHook duties EXCEPT
+          // the full refresh (the targeted update already touched the store):
+          // drop lazy-loader marks, invalidate resolver/precondition caches,
+          // re-render Layouts, and re-resolve open-editor wikilink labels so a
+          // bare [[uid]] to a just-synced target stops showing the raw uid.
+          this.lazyAssetGraphLoader?.clearAll();
+          this.commandResolver.invalidateCache();
+          this.preconditionEvaluator.invalidateCache();
+          this.autoRenderLayout();
+          try {
+            this.app.workspace.updateOptions();
+          } catch (err) {
+            this.logger.warn(
+              "[ExoSync] refreshEditorLabels after post-sync reindex failed (continuing)",
+              err instanceof Error ? err : new Error(String(err)),
+            );
+          }
+        },
+      },
     });
 
     // Quarantine resolver (finding a0a3d1d6) — the user-facing reconcile the

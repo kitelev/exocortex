@@ -344,6 +344,21 @@ export class SPARQLApi {
   }
 
   /**
+   * Post-sync targeted disk-read reindex (RFC 8f93ff95). For the set of paths
+   * ExoSync mutated this run, re-index each one STRAIGHT FROM DISK into the
+   * shared triple store (present ⇒ update from disk, absent ⇒ remove triples),
+   * then run a single inference pass. Unlike {@link refresh} it is O(k) and
+   * does not clear the store — used by the ExoSync post-sync hook so pulled
+   * assets become visible in Layouts without an Obsidian restart.
+   *
+   * @param paths - Vault-relative paths mutated by the sync run
+   *   (`RepoSyncResult.pulledPaths` ∪ `mergedPaths`).
+   */
+  async reindexPathsFromDisk(paths: string[]): Promise<void> {
+    await this.queryService.reindexPathsFromDisk(paths);
+  }
+
+  /**
    * Returns an application-layer handle to the underlying RDF indexer.
    * Exposed for RFC 0a0791c1 B.4 wiring — `PluginRdfIndexerAdapter`
    * (Issue #3322) constructs an `IRdfIndexer` over this handle so
