@@ -100,7 +100,7 @@ export interface GetReifiedRelationsParams {
  * applies to a `[[<uid>]]` whose target's label is prefix-parseable. Returns
  * `null` for plain labels. Pure (no store / vault access).
  */
-function labelToSymbolicIRI(label: string | null | undefined): IRI | null {
+export function labelToSymbolicIRI(label: string | null | undefined): IRI | null {
   if (typeof label !== "string" || label.length === 0 || /\s/.test(label)) {
     return null;
   }
