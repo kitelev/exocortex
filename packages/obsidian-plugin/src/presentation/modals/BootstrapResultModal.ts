@@ -20,6 +20,21 @@ export interface BootstrapResultModalActions {
    */
   onAddRegistry: () => void;
   /**
+   * Cross-modal onboarding sync (#3705) — fired right after the success-path
+   * next-step CTA («Add the AssetSpace registry») is taken, so a first-run
+   * onboarding panel still open underneath can mark its matching step (Step 3)
+   * done, keeping the checklist in sync with what was actually performed (not
+   * only with the panel's own step buttons).
+   *
+   * Optional + decoupled: this result modal also opens standalone from the
+   * Bootstrap command (no onboarding panel underneath), where the hook is simply
+   * absent. The modal stays ignorant of onboarding step identifiers — the wiring
+   * binds this to the right step. No argument: the success path has exactly one
+   * step-advancing CTA, so the wiring already knows which step it is. The bound
+   * handler is idempotent and a no-op when the panel is already closed.
+   */
+  onStepCompleted?: () => void;
+  /**
    * Failure recovery (§3.10) — re-run the operation that failed (bootstrap OR
    * add-AssetSpace), so a wrong URL / dropped network / mis-scoped token is one
    * click to retry after the user fixes it. Optional — when absent the failure
@@ -138,6 +153,9 @@ export class BootstrapResultModal extends Modal {
       nextBtn.addEventListener("click", () => {
         this.close();
         this.actions.onAddRegistry();
+        // #3705 — tick the onboarding panel's matching step (Step 3) done if a
+        // panel is still open underneath; decoupled no-op otherwise.
+        this.actions.onStepCompleted?.();
       });
       this.firstFocusable = nextBtn;
     }
