@@ -2,8 +2,8 @@
 
 |                 |                                                                                                                                                                                                                                                                                                                            |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Status**      | **Proposed** — design + analysis only. **No code is built by this RFC.** Implementation is gated on Andrey's review of this document (he asked for "RFC + detailed plan, then we decide"). The scope/phase to actually build is itself an open decision (§6).                                                                   |
-| **Author**      | `.gitmodules` distribution investigation (`al-gitmodules-distrib` child, AI) + Andrey interview, 2026-06-27                                                                                                                                                                                                                  |
+| **Status**      | **v2 — Accepted (Phase 0 → Phase 1); prerequisites DONE.** v1 was design-only, gated on Andrey's scope decision; that gate is now **resolved** — both grounding prerequisites landed (all canonical vaults are git-free, §0) and the orchestrator (under Andrey's delegation) elected the RFC's own recommended path **Phase 0 → Phase 1**. **Phase 0** (the `deriveUrl` enabling primitive) is being built **this cycle** under req-first SDD; **Phase 1** (stop writing `.gitmodules` on the REST path) is the next follow-up. **Phase 2 is now N/A** (no git-superproject vaults remain to de-submodule, §6).                                                                   |
+| **Author**      | `.gitmodules` distribution investigation (`al-gitmodules-distrib` child, AI) + Andrey interview, 2026-06-27. **v2** (`al-rfc0005-gitmodules` child): prerequisites recorded DONE + git-free grounding corrected, 2026-06-27.                                                                                                                                                                                                                  |
 | **Scope**       | The **device-side role** of `.gitmodules` in AssetSpace distribution, and whether it can be removed by deriving the git URL from an AssetSpace's folder path. Not a new ontology class (no `/onto-rfc`). Touches repo-side machinery (`derivePath`/`deriveUrl`, REST/git mount adapters, bootstrap re-fetch) → lives in-repo. |
 | **Supersedes**  | —                                                                                                                                                                                                                                                                                                                          |
 | **Revises**     | Re-opens the **D6 triage** (`794a95ae`, PR #3582, 2026-06-16) which closed "is `.gitmodules` vestigial?" as **not-a-bug**. That triage's premise — _"there is no other source of remote URL after a fresh clone"_ — is **incomplete**: it did not consider the folder path itself as a derivable URL source (§4).             |
@@ -15,11 +15,14 @@
 > assetspace commands, and the git-superproject structure of the vaults. It is
 > versioned next to the code it changes.
 
-> **Grounding (verify-before-assert):** every reality claim is grounded against
-> exocortex `origin/main` (`5032e8da`, verified current 2026-06-27) and against
-> the live vaults (`/Users/kitelev/vault-2025` `master`, `/Users/kitelev/vault-exodev`
-> `main`) + the live GitHub AssetSpace repos (`gh api`, 2026-06-27). Where a claim
-> is design intent rather than verified fact, it is marked as such.
+> **Grounding (verify-before-assert), v2:** every reality claim is grounded against
+> exocortex `origin/main` (`c9f012f9`, verified current 2026-06-27) and against the
+> **live canonical vaults** under `/Users/kitelev/vaults/` (`vault-my`, `vault-tbank`,
+> `vault-exodev`) — **all git-free** (tarball mounts, no `.git`; verified 2026-06-27)
+> — plus the live GitHub AssetSpace repos (`gh api`, 2026-06-27). The legacy git-vault
+> `/Users/kitelev/vault-2025` referenced by v1 is **decommissioned** (graveyard,
+> reversible) and is no longer a live path (§0). Where a claim is design intent rather
+> than verified fact, it is marked as such.
 
 > **Decision provenance:** this RFC exists because Andrey's vision question
 > ("what role do `.gitmodules` play in AssetSpace distribution?") turned out to
@@ -27,6 +30,37 @@
 > URL is computable from the AssetSpace folder path, so why store it in
 > `.gitmodules`?"_ — is **architecturally valid but lossy** (§4). The interview is
 > recorded verbatim in §9.
+
+---
+
+## 0. v2 changelog — prerequisites DONE + git-free grounding (2026-06-27)
+
+v1 was written while `/Users/kitelev/vault-2025` was still a **live git superproject**
+(10 gitlinks) and explicitly held: _"Phase 1 (git-free) doesn't touch them; Phase 2
+would need a one-time de-submodule migration"_ (§10.4). Two prerequisite migrations
+have since landed, which **change the grounding and simplify the phasing**:
+
+| Prerequisite | Status | Evidence |
+| --- | --- | --- |
+| **P1 — vault-2025 (last legacy git-vault) decommissioned** | ✅ **DONE** (2026-06-27) | losslessly reconstituted into the canonical git-free `vault-my`/`vault-tbank`, then `mv`'d to graveyard `/Users/kitelev/vault-graveyard-1782569496/vault-2025-root` (reversible; git HEAD `5104935f1` intact). No longer at the live path. |
+| **P2 — vault-exodev migrated to git-free** | ✅ **DONE** | `vault-exodev` is a tarball-mount vault (no `.git` in root nor in any `assetspaces/exoas-*`; verified 2026-06-27). |
+
+**Net effect — all three canonical vaults are now git-free:**
+
+| Vault (`/Users/kitelev/vaults/`) | `.git`? | `.gitmodules` text file | git submodule gitlinks |
+| --- | --- | --- | --- |
+| `vault-my` | none (tarball mount) | 7 stanzas | **0** |
+| `vault-tbank` | none | 13 stanzas | **0** |
+| `vault-exodev` | none | 15 stanzas | **0** |
+
+So **every device vault's `.gitmodules` is now exactly the "pure text URL-registry with no git mechanism behind it"** that v1 §3.3 found on 7-of-17 vault-2025 stanzas — now it is **100% of stanzas on 100% of vaults**. The file is still written (REST mount path via `vault.adapter`) and physically present, on vaults that have no git at all — the precise "git-named file on a non-git vault" awkwardness Andrey raised (§5 goal #1). This is the strongest possible motivation for the RFC, and it is now **universal**, not a vault-2025-only edge.
+
+**Two consequences for the plan:**
+
+1. **The v1 blocker is cleared.** v1 implicitly required Phase 1 to wait until no live git-vault depended on real submodule gitlinks. With vault-2025 retired and every canonical vault git-free, **Phase 1 is now the universal device-side target** — there is no live git-superproject vault that would break.
+2. **Phase 2 is now N/A for canonical vaults.** v1 §6 Phase 2 ("de-submodule the desktop git vaults: vault-2025/vault-exodev, 10 gitlinks each") **no longer has a subject** — those git-superproject vaults no longer exist in active use. The only remaining holders of real `.gitmodules`+gitlinks are the **exocortex dev repo** (`packages/exoas-*` — a build/CI concern, not device distribution) and the **graveyard** (out of active use). Phase 2's reproducibility trade-off (§6, §10.2) is therefore moot for the distribution stack.
+
+The recommended path collapses to **Phase 0 → Phase 1**. Everything from §1 onward is the original v1 analysis; counts/claims that v1 grounded against the now-retired vault-2025 are annotated inline.
 
 ---
 
@@ -75,7 +109,7 @@ The emitted stanza is the canonical single-space form:
 | --- | --- |
 | 1. `.gitmodules` live in the AssetSpace repos themselves, for CI | ❌ **FALSE.** The `exoas-*` repos have **no** `.gitmodules` (`gh api`, 2026-06-27). `.gitmodules` lives only in the **vault** superproject. |
 | 2. CI broken-wikilinks resolves cross-ontology refs via submodule-mount (`.gitmodules`) | ❌ **FALSE.** CI resolves cross-ontology refs via the **central registry `exo__AssetSpace_dependsOn` DAG** (§2), not submodules. |
-| 3. On devices `.gitmodules` are not downloaded; sync is via ExoSync | ⚠️ **NUANCED.** `.gitmodules` is **not downloaded as AssetSpace content** and ExoSync indeed ignores it ✅ — **but the file is written locally and physically present on every device vault** (vault-2025 + vault-exodev each have 17 stanzas) as a URL-registry. |
+| 3. On devices `.gitmodules` are not downloaded; sync is via ExoSync | ⚠️ **NUANCED.** `.gitmodules` is **not downloaded as AssetSpace content** and ExoSync indeed ignores it ✅ — **but the file is written locally and physically present on every device vault** as a URL-registry. _(v1 grounded this on "vault-2025 + vault-exodev each have 17 stanzas"; **v2:** vault-2025 is retired, and the three live git-free vaults carry 7/13/15 stanzas each — see §0.)_ |
 
 So the vision is a **phantom mechanism**: the mental model of _where_ `.gitmodules`
 live and _what_ they do for CI is inverted from reality. But the **spirit** of the
@@ -169,12 +203,18 @@ self-hosted, private custom-host) — of which **none currently exist**.
 
 ### 3.3 Additional finding — `.gitmodules` is already partly decoupled from git
 
-vault-2025 has **17 `.gitmodules` stanzas but only 10 git submodule gitlinks**
-(mode `160000`). So **7 stanzas are pure URL-registry with no git-submodule
-mechanism behind them** (REST/apply-profile-managed AssetSpaces). `.gitmodules` is
+v1 found vault-2025 had **17 `.gitmodules` stanzas but only 10 git submodule gitlinks**
+(mode `160000`) — so **7 stanzas were already pure URL-registry with no git-submodule
+mechanism behind them** (REST/apply-profile-managed AssetSpaces). `.gitmodules` was
 **already** being used as a plain text registry beyond git's submodule machinery —
-which both confirms the "it's a repurposed registry" reading and means a chunk of
-it is trivially replaceable.
+confirming the "it's a repurposed registry" reading and meaning a chunk of it was
+trivially replaceable.
+
+> **v2 update (§0):** this is now the situation on **100% of stanzas, 100% of vaults.**
+> The last git-superproject vault (vault-2025, the 10-gitlink case) is retired; all
+> three live canonical vaults are git-free, so **every** `.gitmodules` stanza on
+> every device is now a pure text URL-registry with **zero** git-submodule mechanism
+> behind it. The "trivially replaceable chunk" became the whole thing.
 
 ---
 
@@ -214,7 +254,7 @@ convention is an explicit, accepted trade-off (none exist today).
 The work splits cleanly into a **safe minimal** phase and a **deeper optional**
 phase. Andrey decides how far to go.
 
-### Phase 0 — the enabling primitive (small, low-risk, prerequisite for all)
+### Phase 0 — the enabling primitive (small, low-risk, prerequisite for all) — ⏳ **IN PROGRESS this cycle**
 
 Add a pure inverse `deriveUrl(path): string | null` to
 `AssetSpacePathDeriver.ts`, mirroring `derivePath`:
@@ -224,6 +264,18 @@ callers can fall back). Unit-tested round-trip:
 `deriveUrl(derivePath(url)) === canonical-github(url)` for all GitHub inputs;
 `null` for malformed. req-first SDD (`@req`), revert-verify. **Ships nothing
 user-visible** — just the capability the later phases consume.
+
+> **v2 — DRY refinement (grounded `c9f012f9`):** the `path → url` half of Phase 0
+> **already exists**, duplicated, inside `toHttpsGitHubUrl(git)`
+> (`packages/cli/src/services/CliApplyProfileService.ts:129`): it calls
+> `derivePath(git)` then builds `https://github.com/${ownerRepo}` — exactly the
+> inverse, minus segment validation (it trusts `derivePath`'s already-validated
+> output). So Phase 0 is a **DRY extract**, not a green-field function: lift the
+> reconstruction into `deriveUrl(path)` in `packages/core` (adding the `SEGMENT_RE`
+> + traversal guards, since `deriveUrl`'s input is an untrusted folder path, not a
+> `derivePath` output), then refactor `toHttpsGitHubUrl(git)` to
+> `deriveUrl(derivePath(git)) ?? git`. Scope is `packages/core` + `packages/cli`
+> only (no `packages/obsidian-plugin` change in Phase 0).
 
 ### Phase 1 — git-free (iPhone + post-#3567 REST desktop): stop writing `.gitmodules`
 
@@ -245,7 +297,21 @@ Result: a git-free vault carries **no `.gitmodules`** at all. This is the target
 fix for Andrey's stated discomfort and the lowest-risk way to validate the whole
 idea in production.
 
-### Phase 2 (optional, bigger) — de-submodule the desktop git vaults
+> **v2 (§0):** with all three canonical vaults now git-free, Phase 1 is the
+> **universal** device-side target — there is no remaining live git-superproject
+> vault to special-case. The v1 "git-free (iPhone + REST desktop)" qualifier now
+> covers every device.
+
+### Phase 2 (optional, bigger) — de-submodule the desktop git vaults — ⛔ **N/A in v2 (no subject)**
+
+> **v2 (§0):** this phase no longer has a subject. Its target — the real
+> git-superproject vaults vault-2025/vault-exodev (10 gitlinks each) — **no longer
+> exists in active use**: vault-2025 is retired (graveyard) and vault-exodev is
+> git-free. The only remaining real `.gitmodules`+gitlinks live in the **exocortex
+> dev repo** (`packages/exoas-*`, a build/CI concern — not device distribution) and
+> the **graveyard** (out of use). The reproducibility trade-off below is therefore
+> moot for the distribution stack; Phase 2 is dropped. The original analysis is
+> retained for the record.
 
 For real git superprojects (vault-2025/vault-exodev: 10 gitlinks each), `.gitmodules`
 is **required by git itself** while gitlinks exist — you cannot just delete it.
@@ -264,10 +330,14 @@ and may be declined even if Phase 1 ships.
 
 ### Recommended path
 
-**Phase 0 → Phase 1**, then **stop and re-evaluate** whether Phase 2's
-reproducibility trade-off is worth it. Phase 1 already delivers the vision (no
-`.gitmodules` on the device that matters most — iPhone) without touching the
-git-backup story.
+**Phase 0 → Phase 1**, then **stop**. _(v2: Phase 2 is dropped — §0/§6 — so there
+is no longer a "re-evaluate Phase 2" tail; Phase 1 completes the vision.)_ Phase 1
+delivers the vision (no `.gitmodules` on **any** device — now universal, since every
+canonical vault is git-free) without touching the git-backup story, which lives only
+in the dev repo + graveyard now.
+
+**Status of this path (v2):** **Phase 0 is being built this cycle** (req-first SDD —
+`deriveUrl` DRY extract, the §6 Phase 0 box); **Phase 1 is the next follow-up**.
 
 ---
 
@@ -284,7 +354,10 @@ git-backup story.
 4. **All current AssetSpace URLs are `https://github.com`** — both vaults'
    `.gitmodules`, zero exceptions → the GitHub-https invariant holds today.
 5. **vault-2025: 17 stanzas, 10 gitlinks** — `.gitmodules` is already partly a
-   plain registry decoupled from git submodules.
+   plain registry decoupled from git submodules. **(v2: superseded by §0 — vault-2025
+   is retired; all three live canonical vaults are git-free → 100% of stanzas are now
+   pure registry, 0 gitlinks; verified `vault-my`/`vault-tbank`/`vault-exodev`
+   2026-06-27.)**
 6. **Descriptors live inside the AssetSpace folders** — 35 in vault-2025
    (`exoas-*/<ns>/*.md`) → the chicken-and-egg that motivates a vault-root
    registry, and the reason `deriveUrl` (not "read the descriptor") is the right
@@ -301,9 +374,10 @@ git-backup story.
 - [x] Andrey's "derive URL from folder path" assessed rigorously (§3) — valid, lossy, feasible under the GitHub invariant.
 - [x] D6 triage re-opened with the missing premise (§4).
 - [x] Phased implementation plan with trade-offs (§6).
-- [ ] **Andrey reviews → decides scope (Phase 0/1 only, +Phase 2, or defer).** ← the "потом решим" gate.
+- [x] **Scope decided (the "потом решим" gate is resolved):** prerequisites landed → all canonical vaults git-free (§0) → the orchestrator (Andrey's delegation) elected the RFC's own recommended path **Phase 0 → Phase 1**; **Phase 2 dropped as N/A** (no git-vault subject remains).
+- [x] **v2 — grounding corrected:** prerequisites recorded DONE; stanza/gitlink counts re-grounded to git-free reality (§0, §1.3, §3.3, §7).
 
-Implementation (any phase) is a **separate follow-up** under req-first SDD.
+Implementation proceeds under req-first SDD: **Phase 0 (`deriveUrl` DRY extract) is being built this cycle**; **Phase 1 is the next follow-up**.
 
 ---
 
@@ -343,6 +417,7 @@ Implementation (any phase) is a **separate follow-up** under req-first SDD.
 ## Sources
 
 - exocortex `origin/main` `5032e8da` (2026-06-27): `packages/core/src/services/AssetSpacePathDeriver.ts`, `.../services/assetspace/AssetSpaceMount.ts`, `.../services/sync/spaceSpecCore.ts` (+ 0 `.gitmodules` in `sync/`), `packages/obsidian-plugin/src/infrastructure/adapters/{RestAssetSpaceMount,BootstrapAssetSpaceCommands,ProfileApplyManager,GitSubmoduleOps}.ts`, `packages/cli/src/{commands/{bootstrap,assetspace-add,assetspace-remove,resolve-deps,validate-schema,audit-ontology-imports}.ts,services/{BootstrapAssetSpaceService,CliProfileResolver,CliApplyProfileService}.ts}`.
-- Live: `/Users/kitelev/vault-2025/.gitmodules` (17 stanzas, 10 gitlinks, all github.com), `/Users/kitelev/vault-exodev/.gitmodules` (17 stanzas).
+- Live (v1): `/Users/kitelev/vault-2025/.gitmodules` (17 stanzas, 10 gitlinks, all github.com), `/Users/kitelev/vault-exodev/.gitmodules` (17 stanzas).
+- Live (v2, 2026-06-27): canonical git-free vaults `/Users/kitelev/vaults/{vault-my,vault-tbank,vault-exodev}` — no `.git`; `.gitmodules` text registries of 7/13/15 stanzas, **0 gitlinks**, all github.com. vault-2025 retired → `/Users/kitelev/vault-graveyard-1782569496/vault-2025-root`. exocortex `origin/main` `c9f012f9` — `toHttpsGitHubUrl` at `packages/cli/src/services/CliApplyProfileService.ts:129` (consumes `derivePath`).
 - GitHub (2026-06-27): `kitelev/exoas-{exo,public,exocmd,registry,profiles}` (no `.gitmodules`, `ci.yml` present); `kitelev/exoas-ci/.github/workflows/assetspace-ci.yml`.
 - Prior triage: D6 node `794a95ae`, PR #3582 (2026-06-16).
