@@ -1,4 +1,4 @@
-import { App, TFile, EventRef } from "obsidian";
+import { App, TFile, EventRef, parseYaml } from "obsidian";
 import {
   InMemoryTripleStore,
   NoteToRDFConverter,
@@ -359,6 +359,167 @@ export class VaultRDFIndexer {
       },
       { context: "VaultRDFIndexer.renameFile", filePath: file.path, oldPath }
     );
+  }
+
+  /**
+   * Post-sync targeted reindex of the paths ExoSync just mutated on disk
+   * (RFC 8f93ff95). ExoSync writes via the low-level `vault.adapter.write`,
+   * which fires NO Obsidian vault/metadataCache event, so nothing reindexes
+   * the store and pulled assets stay invisible in Layouts until restart. This
+   * is the explicit trigger — exactly like `ProfileApplyManager` calling
+   * `refresh()` after its own adapter writes.
+   *
+   * Each path is re-read STRAIGHT FROM DISK (not metadataCache): present ⇒
+   * re-index from disk, absent ⇒ remove its triples (a synced deletion). Then
+   * a SINGLE `runInference()` re-materializes RDFS + prototype-chain triples
+   * for the whole batch (per-file inference is intentionally skipped — review
+   * MEDIUM-3 mitigation). Unlike {@link refresh} it does NOT `clear()` the
+   * store, so a mid-batch failure leaves a partial-but-non-empty store (no
+   * blank-Layout risk); the command layer surfaces an explicit Notice on throw.
+   *
+   * Guards mirror {@link updateFile}: a full reindex in flight is waited out
+   * (it re-reads the current vault state, covering these paths), and a mutated
+   * KNOWN FileSpace declaration falls back to a full {@link refresh} (a changed
+   * mount set must purge/admit content a targeted update cannot).
+   *
+   * @param paths - Vault-relative paths mutated by one sync run
+   *   (`RepoSyncResult.pulledPaths` ∪ `mergedPaths`). De-duplicated internally.
+   */
+  async reindexPathsFromDisk(paths: string[]): Promise<void> {
+    const unique = [...new Set(paths)];
+    if (unique.length === 0) {
+      return;
+    }
+
+    // A full reindex is rebuilding the store right now — targeted adds would
+    // race clear()/addAll(); the refresh re-reads the current vault state, so
+    // these paths are already covered.
+    if (this.refreshInFlight !== null) {
+      await this.refreshInFlight;
+      return;
+    }
+
+    // A mutated KNOWN FileSpace declaration changes the mount set (newly
+    // excluded content must be purged, previously-excluded admitted) — only a
+    // full reindex does that correctly. (A brand-new declaration arriving via
+    // sync is a Tier-1 gap covered by the next full walk / restart.)
+    if (unique.some((p) => this.fileSpaceDeclarations.has(p))) {
+      if (await this.rediscoverFileSpaces()) {
+        await this.refresh();
+        return;
+      }
+    }
+
+    for (const path of unique) {
+      await this.updateFileFromDisk(path);
+    }
+    // One global inference for the whole batch — covers inherited / subClass /
+    // prototype-chain triples the per-file targeted update skips.
+    await this.runInference();
+  }
+
+  /**
+   * Reindex one path read from disk (RFC 8f93ff95). Needs no `TFile` and does
+   * NOT read frontmatter from metadataCache: the content comes from the
+   * low-level `vault.adapter` (mobile-safe, the same seam ExoSync writes
+   * through) and the frontmatter is parsed from it. That makes a just-synced
+   * asset visible even when metadataCache has not caught up.
+   *
+   * Dispatch is by disk presence — a readable path is re-indexed, an absent
+   * path (synced deletion) has its triples removed. Does NOT run inference;
+   * the batch driver {@link reindexPathsFromDisk} runs it once afterwards.
+   */
+  private async updateFileFromDisk(path: string): Promise<void> {
+    if (!path.endsWith(".md")) {
+      return;
+    }
+
+    // Honour folder-exclusion + FileSpace mount skips for synced paths too
+    // (mirrors updateFile): excluded content must never (re-)enter the store,
+    // and a stale triple for a now-excluded path is purged.
+    if (
+      isPathExcluded(path, this.excludedFolders) ||
+      isPathExcluded(path, this.fileSpacePrefixes)
+    ) {
+      await this.removeFileTriples(path);
+      return;
+    }
+
+    const content = await this.readFromDisk(path);
+    // Always drop the path's prior triples first (overwrite-on-reindex). For a
+    // synced deletion (no content on disk) this is the whole operation.
+    await this.removeFileTriples(path);
+    if (content === null) {
+      return;
+    }
+
+    const frontmatter = this.parseFrontmatterFromContent(content);
+    if (frontmatter === null) {
+      return; // no/invalid frontmatter → nothing to index
+    }
+    const triples = await this.converter.convertNoteFromFrontmatter(
+      this.syntheticFile(path),
+      frontmatter,
+    );
+    await this.tripleStore.addAll(triples);
+  }
+
+  /**
+   * Low-level disk read by path (DataAdapter — mobile-safe, bypasses the
+   * `TFile` registry and metadataCache). Returns `null` on miss/unreadable so
+   * the caller treats a vanished path as a deletion.
+   */
+  private async readFromDisk(path: string): Promise<string | null> {
+    try {
+      return await this.app.vault.adapter.read(path);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Parse the YAML frontmatter block from raw file content (disk-read path).
+   * Mirrors `ObsidianVaultAdapter.extractFrontmatter` — `null` when there is
+   * no block, it is empty, or the YAML is invalid.
+   *
+   * A leading BOM and `\r\n` line endings are normalised first: this is the
+   * SOLE frontmatter parser on the post-sync reindex path (no metadataCache
+   * fallback), and `updateFileFromDisk` removes the path's prior triples
+   * BEFORE calling here — so a CRLF/BOM asset that fails to parse would not
+   * just stay stale, it would silently VANISH from the store until restart.
+   * Plugin/CLI/Obsidian write LF, so this is defensive against foreign-tool
+   * edits, not the common case.
+   */
+  private parseFrontmatterFromContent(
+    content: string,
+  ): Record<string, unknown> | null {
+    const normalised = content.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+    const match = normalised.match(/^---\n([\s\S]*?)\n---/);
+    if (!match) {
+      return null;
+    }
+    const yaml = match[1];
+    if (!yaml || yaml.trim() === "") {
+      return null;
+    }
+    try {
+      const parsed = parseYaml(yaml);
+      return typeof parsed === "object" && parsed !== null
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Minimal {@link IFile} from a vault path — only `path`/`basename` are read
+   * by the converter on the disk-read reindex path, so a synthetic identity
+   * (no `TFile` lookup) is sufficient and mobile-safe.
+   */
+  private syntheticFile(path: string): IFile {
+    const name = path.split("/").pop() ?? path;
+    return { path, basename: name.replace(/\.md$/, ""), name, parent: null };
   }
 
   /** Adopt a walk's discovery result as the live-event exclusion set. */

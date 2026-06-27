@@ -38,6 +38,20 @@ import { GitHubRestClient } from "./GitHubRestClient";
 import type { SyncSpecCollection, BuiltSyncEngine } from "./SyncDepsFactory";
 import type { ParityCheck } from "./ExoSyncParityFactory";
 
+/**
+ * Post-sync targeted disk-read reindex (RFC 8f93ff95). `run` is handed the
+ * union of every locally-mutated path across the run's results
+ * (`pulledPaths` ∪ `mergedPaths`); the implementation re-indexes each one
+ * STRAIGHT FROM DISK into the shared triple store (present ⇒ update, absent ⇒
+ * remove triples), runs one inference pass, then refreshes open Layouts — so a
+ * pulled asset becomes visible without an Obsidian restart. Best-effort by
+ * contract: the caller wraps it in try/catch and never lets a reindex failure
+ * mutate the (already-computed) sync outcome.
+ */
+export interface PostSyncReindex {
+  run(mutatedPaths: string[]): Promise<void>;
+}
+
 export interface SyncCommandsDeps {
   /** Enumerate the materialized sync unit (collectSyncRepoSpecs). */
   collectSpecs: () => Promise<SyncSpecCollection>;
@@ -103,6 +117,14 @@ export interface SyncCommandsDeps {
    * and existing tests stay valid.
    */
   parity?: ParityCheck;
+  /**
+   * RFC 8f93ff95 — post-sync targeted disk-read reindex. When wired, a run
+   * that actually pulled/merged assets reindexes exactly those paths into the
+   * shared triple store so they appear in Layouts without an Obsidian restart.
+   * Best-effort (own try/catch, never mutates the sync result). Optional so
+   * engine-only / test compositions stay valid (absent ⇒ no reindex).
+   */
+  reindex?: PostSyncReindex;
 }
 
 export class SyncCommands {
@@ -369,6 +391,48 @@ export class SyncCommands {
     // per session. Skipped on auth-required runs — the PAT prompt already
     // owns that failure and the conflict re-surfaces on the next good run.
     this.maybeWarnQuarantineSink(quarantineConfigured, summary);
+
+    // RFC 8f93ff95 — post-sync targeted reindex. ExoSync writes via the
+    // low-level vault.adapter.write, which fires NO Obsidian vault/metadataCache
+    // event, so nothing reindexes the triple store and pulled assets stay
+    // invisible in Layouts until restart. After a run that actually pulled or
+    // merged something, reindex exactly those paths STRAIGHT FROM DISK into the
+    // shared store + refresh Layouts. Fires for pull-only runs too (NOT gated on
+    // `direction`, unlike the parity round below); the gate is the changed-count,
+    // NOT pushedDeletes — push-side deletes were already event-indexed locally.
+    // Best-effort: `results` is already computed above, so a reindex failure
+    // NEVER affects the sync outcome — it only logs + surfaces its own Notice.
+    if (this.deps.reindex !== undefined) {
+      // Gate: at least one repo pulled or merged an asset this run (#3489
+      // counters). A no-op / push-only sync reindexes nothing.
+      const changedAny = results.some(
+        (r) => r.pulledCount > 0 || r.mergedCount > 0,
+      );
+      if (changedAny) {
+        const mutatedPaths = [
+          ...new Set(
+            results.flatMap((r) => [
+              ...(r.pulledPaths ?? []),
+              ...(r.mergedPaths ?? []),
+            ]),
+          ),
+        ];
+        if (mutatedPaths.length > 0) {
+          try {
+            await this.deps.reindex.run(mutatedPaths);
+          } catch (err) {
+            const msg = GitHubRestClient.redactTokens(
+              err instanceof Error ? err.message : String(err),
+            );
+            log(`[ExoSync] post-sync reindex failed: ${msg}`);
+            this.deps.notify(
+              "ExoSync pulled changes but the in-app index could not refresh — " +
+                "reload Obsidian to see them.",
+            );
+          }
+        }
+      }
+    }
 
     // E1 post-sync parity round (M1/M2). Best-effort: a parity failure is
     // logged + surfaced as its own Notice, never mutates the sync outcome.
