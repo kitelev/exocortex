@@ -25,15 +25,21 @@ import {
   type ReifiedRelation,
 } from '@plugin/presentation/renderers/layout/getReifiedRelations';
 import {
-  buildRelationRows,
   reifiedToRows,
   dedupeRelations,
   extractInlineRelations,
   appendInlineRelationValue,
   removeInlineRelationValue,
   quoteRelationValueForYaml,
+  wikilinkTarget,
   type RelationRow,
 } from '@plugin/presentation/components/property-editor/relationsEditorModel';
+import {
+  reifyRelation,
+  deReifyRelation,
+  DEFAULT_REIFY_ANCHOR_UID,
+  type ReifyPorts,
+} from '@plugin/presentation/components/property-editor/reifyModel';
 
 /**
  * The triple-store capabilities the Relations section needs. Read structurally
@@ -65,6 +71,10 @@ export class PropertyEditorModal extends Modal {
   private reifiedRows: RelationRow[] = [];
   /** Schema keys that are NON-object properties (enums/scalars) — never relations. */
   private nonRelationKeys: ReadonlySet<string> = new Set();
+  /** Predicate-mapping (RFC §C3 Task 3.2): frontmatter key → predicate-DEFINITION asset UID (reify). */
+  private predicateDefUidByKey: Map<string, string> = new Map();
+  /** Predicate-mapping (reverse): predicate-definition asset UID → frontmatter key (de-reify). */
+  private keyByPredicateDefUid: Map<string, string> = new Map();
   /** Guards a late async re-render after the modal has been closed. */
   private closed = false;
 
@@ -180,8 +190,6 @@ export class PropertyEditorModal extends Modal {
         notePathToIRI,
       });
     }
-    this.reifiedRows = reifiedToRows(reified);
-
     // Schema drives which keys are object-relations vs enum/scalar properties.
     // Resolved once: enum (status/size) + scalar keys are excluded from relations
     // (they would otherwise mis-list + double-render), and the wikilink keys
@@ -191,13 +199,23 @@ export class PropertyEditorModal extends Modal {
       schema.filter((p) => p.type !== "wikilink").map((p) => p.name),
     );
 
-    const initialRows = buildRelationRows({
-      frontmatter: this.currentFrontmatter,
-      reified,
-      nonRelationKeys: this.nonRelationKeys,
+    // Predicate range + the predicate-mapping maps (key ↔ predicate-def UID) are
+    // built from the same `exo:Property_range` pass: a range triple's subject IS
+    // the predicate-definition asset, and its `exo:Asset_label` IS the frontmatter
+    // key (RFC §C3 Task 3.2 predicate-mapping).
+    const rangeMap = await this.buildPredicateRangeMap(store);
+
+    // Enrich the reified rows with the frontmatter key they map back to (so
+    // de-reify writes the restored relation under the right key without guessing).
+    this.reifiedRows = reifiedToRows(reified).map((r) => {
+      const defUid = uidFromIri(r.predicateKey);
+      const key = defUid ? this.keyByPredicateDefUid.get(defUid) : undefined;
+      return key ? { ...r, predicateFrontmatterKey: key } : r;
     });
 
-    const rangeMap = await this.buildPredicateRangeMap(store);
+    // The unified, deduplicated rows from the live frontmatter + enriched reified rows.
+    const initialRows = this.rebuildRows();
+
     const predicateOptions = schema
       .filter((p) => p.type === "wikilink" && !p.readOnly)
       .map((p) => ({
@@ -217,14 +235,23 @@ export class PropertyEditorModal extends Modal {
       resolveCandidates,
       createInline: this.createInlineRelation.bind(this),
       deleteRelation: this.deleteRelation.bind(this),
+      reifyRelation: this.reify.bind(this),
+      deReifyRelation: this.deReify.bind(this),
     };
   }
 
-  /** Map each object-property's frontmatter key → its `exo:Property_range` class UID. */
+  /**
+   * Map each object-property's frontmatter key → its `exo:Property_range` class
+   * UID. As a side effect, also fills the predicate-mapping maps (key ↔ the
+   * predicate-DEFINITION asset's UID) used by reify/de-reify (RFC §C3 Task 3.2) —
+   * the range triple's subject IS that definition asset, and its label IS the key.
+   */
   private async buildPredicateRangeMap(
     store: ITripleStore,
   ): Promise<Map<string, string>> {
     const map = new Map<string, string>();
+    this.predicateDefUidByKey = new Map();
+    this.keyByPredicateDefUid = new Map();
     const rangeTriples = await store.match(
       undefined,
       Namespace.EXO.term("Property_range"),
@@ -235,6 +262,7 @@ export class PropertyEditorModal extends Modal {
       if (!(t.object instanceof IRI)) continue;
       const rangeUid = uidFromIri(t.object.value);
       if (!rangeUid) continue;
+      const defUid = uidFromIri(t.subject.value);
       const labels = await store.match(
         t.subject,
         Namespace.EXO.term("Asset_label"),
@@ -247,7 +275,13 @@ export class PropertyEditorModal extends Modal {
           break;
         }
       }
-      if (key) map.set(key, rangeUid);
+      if (key) {
+        map.set(key, rangeUid);
+        if (defUid) {
+          this.predicateDefUidByKey.set(key, defUid);
+          this.keyByPredicateDefUid.set(defUid, key);
+        }
+      }
     }
     return map;
   }
@@ -344,6 +378,182 @@ export class PropertyEditorModal extends Modal {
     this.reifiedRows = this.reifiedRows.filter((r) => r.statementPath !== path);
   }
 
+  // ---- RFC §C3 Task 3.2 — reify/de-reify toggle (privacy-critical atomicity) ----
+
+  /**
+   * The vault-backed {@link ReifyPorts} the reify/de-reify orchestration drives.
+   * Each is a single observable disk mutation; the verify reads come fresh from
+   * disk so a duplicate/loss is detected against the real file, not a cache.
+   * All writes go through `app.vault.*` / `app.fileManager.*` (Desktop↔Mobile
+   * parity — no Node fs).
+   */
+  private reifyPorts(): ReifyPorts {
+    return {
+      createStatement: async (content: string, uid: string): Promise<string> => {
+        const folder = this.resolveReifyFolder(DEFAULT_REIFY_ANCHOR_UID);
+        if (folder === null) {
+          throw new Error(
+            "the reify destination AssetSpace ($kitelev-class-relations) is not mounted — mount it to reify this relation.",
+          );
+        }
+        const path = folder ? `${folder}/${uid}.md` : `${uid}.md`;
+        await this.app.vault.create(path, content);
+        return path;
+      },
+      statementExists: async (path: string): Promise<boolean> =>
+        this.app.vault.getAbstractFileByPath(path) instanceof TFile,
+      deleteStatement: async (path: string): Promise<void> => {
+        const file = this.app.vault.getAbstractFileByPath(path);
+        if (file instanceof TFile) await this.app.fileManager.trashFile(file);
+      },
+      removeInline: (predicateKey: string, rawValue: string): Promise<void> =>
+        this.portRemoveInline(predicateKey, rawValue),
+      appendInline: (predicateKey: string, targetUid: string): Promise<void> =>
+        this.portAppendInline(predicateKey, targetUid),
+      readInlineTargets: (predicateKey: string): Promise<string[]> =>
+        this.portReadInlineTargets(predicateKey),
+    };
+  }
+
+  /** Resolve the folder of a UID-named anchor asset (`<uid>.md`), or `null` if not mounted. */
+  private resolveReifyFolder(anchorUid: string): string | null {
+    const anchor = this.app.vault
+      .getMarkdownFiles()
+      .find((f) => f.basename === anchorUid);
+    if (!anchor) return null;
+    const parent = anchor.parent?.path;
+    return parent && parent !== "/" ? parent : "";
+  }
+
+  /** Write-only: append `[[targetUid]]` to A's frontmatter under `key` (multi-value safe). */
+  private async portAppendInline(key: string, targetUid: string): Promise<void> {
+    const newValue = appendInlineRelationValue(
+      this.currentFrontmatter[key],
+      targetUid,
+    );
+    let content = await this.app.vault.read(this.file);
+    const fm = new FrontmatterService();
+    content = fm.updateProperty(
+      content,
+      key,
+      formatPropertyValue(quoteRelationValueForYaml(newValue)),
+    );
+    await this.app.vault.modify(this.file, content);
+    this.currentFrontmatter[key] = newValue;
+  }
+
+  /** Write-only: remove the single `rawValue` from A's frontmatter under `key` (siblings kept). */
+  private async portRemoveInline(key: string, rawValue: string): Promise<void> {
+    const nextValue = removeInlineRelationValue(
+      this.currentFrontmatter[key],
+      rawValue,
+    );
+    let content = await this.app.vault.read(this.file);
+    const fm = new FrontmatterService();
+    if (nextValue === undefined) {
+      content = fm.removeProperty(content, key);
+      delete this.currentFrontmatter[key];
+    } else {
+      content = fm.updateProperty(
+        content,
+        key,
+        formatPropertyValue(quoteRelationValueForYaml(nextValue)),
+      );
+      this.currentFrontmatter[key] = nextValue;
+    }
+    await this.app.vault.modify(this.file, content);
+  }
+
+  /** Verify read: A's inline relation targets under `key`, resolved FRESH FROM DISK. */
+  private async portReadInlineTargets(key: string): Promise<string[]> {
+    const content = await this.app.vault.read(this.file);
+    const parsed = new FrontmatterService().parseObject(content);
+    const raw = parsed?.[key];
+    const values = raw === undefined ? [] : Array.isArray(raw) ? raw : [raw];
+    const targets: string[] = [];
+    for (const v of values) {
+      const t = wikilinkTarget(v);
+      if (t) targets.push(t.replace(/\.md$/i, ""));
+    }
+    return targets;
+  }
+
+  /** Parse the `exoas-<name>` AssetSpace segment from a vault path, or `null`. */
+  private assetSpaceOf(path: string): string | null {
+    const m = path.match(/(?:^|\/)(exoas-[a-z0-9-]+)(?:\/|$)/i);
+    return m ? m[1] : null;
+  }
+
+  /** Reify an inline relation into an `exo__Statement` asset (atomic; rebuilds rows). */
+  private async reify(row: RelationRow): Promise<RelationRow[]> {
+    try {
+      const subjectUid =
+        typeof this.currentFrontmatter["exo__Asset_uid"] === "string"
+          ? (this.currentFrontmatter["exo__Asset_uid"] as string)
+          : "";
+      if (!subjectUid) {
+        throw new Error("the open asset has no exo__Asset_uid.");
+      }
+      const predicateDefUid =
+        this.predicateDefUidByKey.get(row.predicateKey) ?? "";
+      const newStatementUid = generateStatementUid();
+      await reifyRelation(this.reifyPorts(), {
+        subjectUid,
+        predicateKey: row.predicateKey,
+        predicateDefUid,
+        objectUid: row.objectUid,
+        inlineRawValue: row.inlineRawValue ?? "",
+        isDefinedByAnchorUid: DEFAULT_REIFY_ANCHOR_UID,
+        newStatementUid,
+      });
+      // Atomic success — the inline copy is gone + the statement is verified.
+      // Reflect the new reified row locally (the store lags the create).
+      const folder = this.resolveReifyFolder(DEFAULT_REIFY_ANCHOR_UID);
+      const statementPath = folder
+        ? `${folder}/${newStatementUid}.md`
+        : `${newStatementUid}.md`;
+      this.reifiedRows.push({
+        predicateKey: row.predicateKey,
+        predicateLabel: row.predicateLabel,
+        objectUid: row.objectUid,
+        objectDisplay: row.objectDisplay,
+        kind: "reified",
+        statementPath,
+        assetSpace: this.assetSpaceOf(statementPath),
+        predicateFrontmatterKey: row.predicateKey,
+      });
+      this.notificationService.success("Relation reified");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.notificationService.error(`Failed to reify relation: ${message}`);
+    }
+    return this.rebuildRows();
+  }
+
+  /** De-reify a reified relation back to inline (atomic; rebuilds rows). */
+  private async deReify(row: RelationRow): Promise<RelationRow[]> {
+    try {
+      if (!row.statementPath) {
+        throw new Error("the reified relation has no backing statement path.");
+      }
+      const predicateKey = row.predicateFrontmatterKey ?? "";
+      await deReifyRelation(this.reifyPorts(), {
+        predicateKey,
+        targetUid: row.objectUid,
+        statementPath: row.statementPath,
+      });
+      // Atomic success — inline restored + statement deleted. Drop the reified row.
+      this.reifiedRows = this.reifiedRows.filter(
+        (r) => r.statementPath !== row.statementPath,
+      );
+      this.notificationService.success("Relation returned to inline");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.notificationService.error(`Failed to de-reify relation: ${message}`);
+    }
+    return this.rebuildRows();
+  }
+
   private async handleSave(updatedFrontmatter: Record<string, unknown>): Promise<void> {
     try {
       let fileContent = await this.app.vault.read(this.file);
@@ -382,6 +592,18 @@ export class PropertyEditorModal extends Modal {
     contentEl.empty();
     this.plugin.refreshLayout?.();
   }
+}
+
+/** A fresh lowercase UUID for a new statement asset (no `Date`/random in the pure model). */
+function generateStatementUid(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (c?.randomUUID) return c.randomUUID().toLowerCase();
+  // Fallback (non-secure) — only when crypto.randomUUID is unavailable.
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (ch) => {
+    const r = Math.floor(Math.random() * 16);
+    const v = ch === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 /** Extract a UID-ish token from a range class IRI (`obsidian://…/<uid>.md` → uid). */
