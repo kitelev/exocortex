@@ -238,7 +238,9 @@ describe("ConceptCreationService", () => {
 
       const [, content] = mockVault.create.mock.calls[0];
 
-      expect(content).toMatch(/ims__Concept_definition:\s*$/m);
+      // #3750 MEDIUM-1/empty: a bare empty value parses as null in YAML; the
+      // serializer now emits an explicit empty string.
+      expect(content).toContain('ims__Concept_definition: ""');
     });
 
     it("should handle definition with special characters", async () => {
@@ -255,8 +257,10 @@ describe("ConceptCreationService", () => {
 
       const [, content] = mockVault.create.mock.calls[0];
 
+      // #3750 MEDIUM-1: a `: ` (colon-space) definition emitted bare is invalid
+      // YAML (the #3748 bug, on the buildFileContent serializer) — now quoted.
       expect(content).toContain(
-        "ims__Concept_definition: Definition with: quotes, commas, & symbols!",
+        'ims__Concept_definition: "Definition with: quotes, commas, & symbols!"',
       );
     });
 

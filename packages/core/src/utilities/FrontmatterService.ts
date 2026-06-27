@@ -9,7 +9,7 @@
  */
 
 import { loadDefaultSpec, orderProperties } from "../services/OrderSpecResolver";
-import { serializeYamlScalar } from "./yamlScalar";
+import { serializeYamlScalar, STRING_SCALAR_PROPERTIES } from "./yamlScalar";
 
 /**
  * Result of frontmatter parsing operation
@@ -430,16 +430,25 @@ export class FrontmatterService {
     value: unknown,
     quoteScalars = false,
   ): string {
+    // #3750 MEDIUM-3: also quote scalar-looking strings (123 / true / date)
+    // for string-semantic properties (label / aliases) so they round-trip as
+    // strings; other properties keep native number/date type.
+    const quoteAmbiguous = quoteScalars && STRING_SCALAR_PROPERTIES.has(property);
     if (Array.isArray(value)) {
       if (value.length === 0) {
         return `${property}:`;
       }
       const items = value
-        .map((v) => `  - ${quoteScalars ? serializeYamlScalar(v) : String(v)}`)
+        .map(
+          (v) =>
+            `  - ${quoteScalars ? serializeYamlScalar(v, quoteAmbiguous) : String(v)}`,
+        )
         .join("\n");
       return `${property}:\n${items}`;
     }
-    const scalar = quoteScalars ? serializeYamlScalar(value) : String(value);
+    const scalar = quoteScalars
+      ? serializeYamlScalar(value, quoteAmbiguous)
+      : String(value);
     return `${property}: ${scalar}`;
   }
 
