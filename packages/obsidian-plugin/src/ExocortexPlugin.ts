@@ -88,6 +88,11 @@ import {
   isLayoutFrontmatter,
 } from "./domain/layout";
 import { isCommandBindingFrontmatter } from "@kitelev/exocortex-core";
+import {
+  VaultCheckRunner,
+  createDefaultCheckRegistry,
+  readEnabledCheckIds,
+} from "@kitelev/exocortex-core";
 import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlockProcessor";
 import { SPARQLApi } from "./application/api/SPARQLApi";
 import { ExocortexAPI } from "./application/api/ExocortexAPI";
@@ -191,6 +196,18 @@ import { registerExoSyncCommands } from "./infrastructure/adapters/registerExoSy
 import { QuarantineResolverCommands } from "./infrastructure/adapters/QuarantineResolverCommands";
 import { QuarantineResolverModal } from "./infrastructure/adapters/QuarantineResolverModal";
 import { registerQuarantineResolverCommand } from "./infrastructure/adapters/registerQuarantineResolverCommand";
+import {
+  PluginVaultCheckReader,
+  listOntologyCandidates,
+  type WarmVaultSource,
+  type OntologyChoice,
+} from "./infrastructure/adapters/PluginVaultCheckReader";
+import { ValidationScaffolder } from "./infrastructure/adapters/ValidationScaffolder";
+import { OntologyFuzzyModal } from "./infrastructure/adapters/OntologyFuzzyModal";
+import {
+  registerValidateVaultCommand,
+  registerScaffoldValidationCommand,
+} from "./infrastructure/adapters/registerValidationCommands";
 import { buildParityCheck } from "./infrastructure/adapters/ExoSyncParityFactory";
 import {
   buildQuarantineResolver,
@@ -3490,6 +3507,10 @@ export default class ExocortexPlugin extends Plugin {
     // «Exocortex: Resolve sync conflicts» (finding a0a3d1d6).
     registerQuarantineResolverCommand(this, quarantineResolverCommands);
 
+    // RFC f402002b M1.5 — «Validate vault» + «Scaffold validation settings»,
+    // registered on BOTH desktop AND mobile (Desktop↔Mobile Command Parity).
+    this.registerVaultValidationCommands();
+
     // RFC 22b50a17 Decision #6 — wipe-all switch cache clearing. RFC 0002 §3.2
     // (P3/P4) — de-jargon + destructive flag: «Clear switch cache (wipe-all)» →
     // «Reset profile cache (advanced)». Name sourced from the grooming contract.
@@ -3944,6 +3965,87 @@ export default class ExocortexPlugin extends Plugin {
    * (post git-elim), so this registers on both desktop + mobile (Desktop↔Mobile
    * Command Parity).
    */
+  /**
+   * RFC f402002b M1.5 — register the homoiconic vault-validation commands on
+   * BOTH desktop AND mobile (⛔ Desktop↔Mobile Command Parity — no
+   * `Platform.isMobile` gate). The reader is mobile-portable (warm
+   * `metadataCache`, no per-file re-read) and SHACL runs over the already-built
+   * warm triple store (the plugin's advantage over the CLI); the scaffold writes
+   * through `vault.adapter` (no Node `fs`). The enabled-set is DATA
+   * (`readEnabledCheckIds` over validation-check `setting__Setting` instances),
+   * not code (Homoiconicity Invariant).
+   */
+  private registerVaultValidationCommands(): void {
+    const buildWarmSource = (): WarmVaultSource => {
+      const files = this.app.vault.getMarkdownFiles();
+      const byPath = new Map(files.map((f) => [f.path, f] as const));
+      return {
+        listMarkdownPaths: () => files.map((f) => f.path),
+        frontmatterOf: (path) => {
+          const file = byPath.get(path);
+          if (!file) return undefined;
+          return (
+            (this.app.metadataCache.getFileCache(file)?.frontmatter as
+              | Record<string, unknown>
+              | undefined) ?? undefined
+          );
+        },
+      };
+    };
+
+    registerValidateVaultCommand(this, {
+      runValidation: async () => {
+        // SHACL/DAG runners deferred to M2 (parity with the CLI) → portable
+        // checks run on mobile; enabling SHACL/DAG is reported fail-loud.
+        const reader = new PluginVaultCheckReader(buildWarmSource());
+        const ctx = await reader.read();
+        const enabled = readEnabledCheckIds(ctx.assets);
+        return new VaultCheckRunner(createDefaultCheckRegistry()).runWithContext(
+          ctx,
+          enabled,
+        );
+      },
+      notify: (message) => this.notifier.info(message),
+    });
+
+    const scaffolder = new ValidationScaffolder(
+      {
+        exists: (path) => this.app.vault.adapter.exists(path),
+        write: (path, content) => this.app.vault.adapter.write(path, content),
+      },
+      () => crypto.randomUUID(),
+      () => new Date().toISOString(),
+    );
+
+    registerScaffoldValidationCommand(this, {
+      pickOntology: () => {
+        const files = this.app.vault.getMarkdownFiles();
+        const assets = files.map((f) => ({
+          path: f.path,
+          frontmatter: (this.app.metadataCache.getFileCache(f)?.frontmatter ??
+            {}) as Record<string, unknown>,
+        }));
+        const candidates = listOntologyCandidates(assets);
+        if (candidates.length === 0) {
+          this.notifier.info(
+            "Scaffold validation settings: no ontology found in this vault to scaffold into.",
+          );
+          return Promise.resolve(null);
+        }
+        return new Promise<OntologyChoice | null>((resolve) => {
+          new OntologyFuzzyModal(
+            this.app,
+            candidates,
+            "Choose ontology to scaffold validation settings into",
+            resolve,
+          ).open();
+        });
+      },
+      scaffold: (choice) => scaffolder.scaffold(choice.uid, choice.folder),
+      notify: (message) => this.notifier.info(message),
+    });
+  }
+
   private registerUnmountCommand(
     restMount: RestAssetSpaceMount,
     switchMgr: ProfileApplyManager,

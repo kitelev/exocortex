@@ -5,36 +5,11 @@ import {
   VaultCheckRunner,
   createDefaultCheckRegistry,
   KNOWN_CHECK_IDS,
-  extractAssetReference,
+  readEnabledCheckIds,
   type CheckContext,
   type IVaultCheckReader,
   type VaultAssetRecord,
 } from "@kitelev/exocortex-core";
-
-/**
- * Read the enabled validation-check set — the DATA half of the Homoiconicity
- * Invariant: WHICH checks run is configured by validation-check `setting__Setting`
- * instances (created by `scaffold validation-settings`), not by code. A
- * check-Setting carries `setting__Setting_key` (→ a check-key UID = the check-id)
- * and `setting__Setting_value` (boolean). Returns the truthy ones; only KNOWN
- * check-ids count, so unrelated setting__Setting instances never leak in.
- *
- * (Kept inline in the CLI for now: it re-uses KNOWN_CHECK_IDS +
- * extractAssetReference, both already in core's barrel, so it needs no new core
- * export. The shared home for plugin reuse is the M1.5-plugin follow-up.)
- */
-function readEnabledCheckIds(
-  assets: readonly VaultAssetRecord[],
-): string[] {
-  const enabled = new Set<string>();
-  for (const a of assets) {
-    const keyRef = extractAssetReference(a.frontmatter["setting__Setting_key"]);
-    if (!keyRef || !KNOWN_CHECK_IDS.has(keyRef)) continue;
-    const value = a.frontmatter["setting__Setting_value"];
-    if (value === true || value === "true") enabled.add(keyRef);
-  }
-  return [...enabled];
-}
 import { CachingNodeFsAdapter } from "../adapters/CachingNodeFsAdapter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";

@@ -2,7 +2,15 @@ import React from "react";
 import {
   RelationsRenderer,
   RELATIONS_EMPTY_TEXT,
+  isNonRelationPredicate,
 } from "../../src/presentation/renderers/layout/RelationsRenderer";
+import {
+  InMemoryTripleStore,
+  IRI,
+  Namespace,
+  Triple,
+  vaultPathToIRI,
+} from "@kitelev/exocortex-core";
 import { Keymap, TFile } from "obsidian";
 import {
   createMockApp,
@@ -1272,6 +1280,261 @@ describe("RelationsRenderer", () => {
         showProperties: ["custom_prop1", "custom_prop2"],
         showEffortVotes: true,
         groupByProperty: true,
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // RFC 93a0b2ee Task 1.2 — reified-relation read-path: triple-store ctor-DI +
+  // cold-start isReady gate + predicate-whitelist. Production-shape: exercises
+  // `getReifiedRelationsGated` over a REAL InMemoryTripleStore (not a stub),
+  // seeding statements exactly as NoteToRDFConverter emits them.
+  //
+  // `@req:1cbd6248-2e68-43d8-8f06-f35faf25fe9a`  (req-first SDD, RFC 0003).
+  //   Revert-verified: (a) deleting the cold-start gate (`if (this.isStoreReady
+  //   && !this.isStoreReady()) return []`) makes the "not-ready → []" case RED;
+  //   (b) deleting the predicate-whitelist filter makes the "filters non-relation
+  //   predicate" case RED. Restored → GREEN.
+  // ---------------------------------------------------------------------------
+  describe("getReifiedRelationsGated (Task 1.2 — cold-start gate + predicate-whitelist)", () => {
+    // Mirrors NoteToRDFConverter.notePathToIRI with an empty subjectIriPrefix —
+    // the exact path-form the indexer emits and the wiring injects in prod.
+    const notePathToIRI = (path: string): IRI => new IRI(vaultPathToIRI(path));
+
+    const STATEMENT_SUBJECT = Namespace.EXO.term("Statement_subject");
+    const STATEMENT_PREDICATE = Namespace.EXO.term("Statement_predicate");
+    const STATEMENT_OBJECT = Namespace.EXO.term("Statement_object");
+    const RDF_TYPE = Namespace.RDF.term("type");
+    const EXO_STATEMENT_CLASS = Namespace.EXO.term("Statement");
+    /** A genuine user-defined relation predicate. */
+    const RELATES_TO = new IRI(
+      "https://exocortex.my/ontology/exo-ims#relatesToConcept",
+    );
+
+    const A_PATH =
+      "assetspaces/kitelev/exoas-my/my/aaaaaaaa-0000-0000-0000-000000000001.md";
+    const B_PATH =
+      "assetspaces/kitelev/exoas-public/concept/bbbbbbbb-0000-0000-0000-000000000002.md";
+    const S1_PATH =
+      "assetspaces/kitelev/exoas-class-relations/class-relations/11111111-0000-0000-0000-000000000011.md";
+
+    /** Seed one reified statement (raw slot triples + materialized D5 edge). */
+    async function seedStatement(
+      store: InMemoryTripleStore,
+      statementPath: string,
+      subject: IRI,
+      predicate: IRI,
+      object: IRI,
+    ): Promise<void> {
+      const stmt = notePathToIRI(statementPath);
+      await store.add(new Triple(stmt, RDF_TYPE, EXO_STATEMENT_CLASS));
+      await store.add(new Triple(stmt, STATEMENT_SUBJECT, subject));
+      await store.add(new Triple(stmt, STATEMENT_PREDICATE, predicate));
+      await store.add(new Triple(stmt, STATEMENT_OBJECT, object));
+      await store.add(new Triple(subject, predicate, object));
+    }
+
+    // NB: `noteFn` is intentionally NOT defaulted — passing `undefined`
+    // explicitly must stay undefined (a default param would resurrect
+    // `notePathToIRI` on an explicit-undefined call, defeating the
+    // dependency-absent test).
+    function makeRenderer(
+      store: InMemoryTripleStore | undefined,
+      isStoreReady: (() => boolean) | undefined,
+      noteFn: ((path: string) => IRI) | undefined,
+    ): RelationsRenderer {
+      // Label resolution feeds the dual-IRI symbolic candidate; for these
+      // path-keyed statements a plain label is fine (no symbolic form).
+      mockMetadataService.getAssetLabel.mockReturnValue("Концепт A");
+      mockVaultAdapter.getFrontmatter.mockReturnValue(null);
+      return new RelationsRenderer(
+        mockApp,
+        mockSettings,
+        mockReactRenderer,
+        mockBacklinksCacheManager,
+        mockMetadataService,
+        mockPlugin,
+        mockRefresh,
+        mockVaultAdapter,
+        store,
+        isStoreReady,
+        noteFn,
+      );
+    }
+
+    it("surfaces an outgoing reified relation when the store is ready", async () => {
+      const store = new InMemoryTripleStore();
+      await seedStatement(
+        store,
+        S1_PATH,
+        notePathToIRI(A_PATH),
+        RELATES_TO,
+        notePathToIRI(B_PATH),
+      );
+      const renderer = makeRenderer(store, () => true, notePathToIRI);
+
+      const result = await renderer.getReifiedRelationsGated(
+        createTestTFile(A_PATH),
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].direction).toBe("outgoing");
+      expect(result[0].predicate).toBe(RELATES_TO.value);
+      expect(result[0].object).toBe(notePathToIRI(B_PATH).value);
+      expect(result[0].statementPath).toBe(S1_PATH);
+    });
+
+    // Revert-verify anchor (gate): break the `isStoreReady() === false` gate and
+    // this goes RED — a not-ready store would leak a partial / under-counted set.
+    it("returns [] (no under-count) when the store is NOT ready (cold-start gate)", async () => {
+      const store = new InMemoryTripleStore();
+      await seedStatement(
+        store,
+        S1_PATH,
+        notePathToIRI(A_PATH),
+        RELATES_TO,
+        notePathToIRI(B_PATH),
+      );
+      const renderer = makeRenderer(store, () => false, notePathToIRI);
+
+      const result = await renderer.getReifiedRelationsGated(
+        createTestTFile(A_PATH),
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it("assumes ready (back-compat) when no isStoreReady probe is wired", async () => {
+      const store = new InMemoryTripleStore();
+      await seedStatement(
+        store,
+        S1_PATH,
+        notePathToIRI(A_PATH),
+        RELATES_TO,
+        notePathToIRI(B_PATH),
+      );
+      const renderer = makeRenderer(store, undefined, notePathToIRI);
+
+      const result = await renderer.getReifiedRelationsGated(
+        createTestTFile(A_PATH),
+      );
+
+      expect(result).toHaveLength(1);
+    });
+
+    // Revert-verify anchor (whitelist): break the predicate-whitelist filter and
+    // this goes RED — the rdf:type-reified statement would leak as a "relation".
+    it("filters out a reified statement whose predicate is a non-relation predicate (rdf:type)", async () => {
+      const store = new InMemoryTripleStore();
+      // A genuine relation + a noise statement reifying rdf:type — only the
+      // genuine relation must survive the whitelist.
+      await seedStatement(
+        store,
+        S1_PATH,
+        notePathToIRI(A_PATH),
+        RELATES_TO,
+        notePathToIRI(B_PATH),
+      );
+      await seedStatement(
+        store,
+        "assetspaces/kitelev/exoas-class-relations/class-relations/22222222-0000-0000-0000-000000000022.md",
+        notePathToIRI(A_PATH),
+        RDF_TYPE,
+        EXO_STATEMENT_CLASS,
+      );
+      const renderer = makeRenderer(store, () => true, notePathToIRI);
+
+      const result = await renderer.getReifiedRelationsGated(
+        createTestTFile(A_PATH),
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].predicate).toBe(RELATES_TO.value);
+    });
+
+    it("filters out a reified statement whose predicate is an exo system property (exo:Asset_label)", async () => {
+      const store = new InMemoryTripleStore();
+      await seedStatement(
+        store,
+        S1_PATH,
+        notePathToIRI(A_PATH),
+        Namespace.EXO.term("Asset_label"),
+        notePathToIRI(B_PATH),
+      );
+      const renderer = makeRenderer(store, () => true, notePathToIRI);
+
+      const result = await renderer.getReifiedRelationsGated(
+        createTestTFile(A_PATH),
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it("returns [] when the triple store dependency is absent (back-compat)", async () => {
+      const renderer = makeRenderer(undefined, () => true, notePathToIRI);
+
+      const result = await renderer.getReifiedRelationsGated(
+        createTestTFile(A_PATH),
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it("returns [] when the notePathToIRI dependency is absent (back-compat)", async () => {
+      const store = new InMemoryTripleStore();
+      await seedStatement(
+        store,
+        S1_PATH,
+        notePathToIRI(A_PATH),
+        RELATES_TO,
+        notePathToIRI(B_PATH),
+      );
+      const renderer = makeRenderer(store, () => true, undefined);
+
+      const result = await renderer.getReifiedRelationsGated(
+        createTestTFile(A_PATH),
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    describe("isNonRelationPredicate", () => {
+      it("flags rdf:type, exo system + plumbing predicates; passes genuine relations", () => {
+        expect(isNonRelationPredicate(RDF_TYPE.value)).toBe(true);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Asset_label").value),
+        ).toBe(true);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Instance_class").value),
+        ).toBe(true);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Class_superClass").value),
+        ).toBe(true);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Statement_subject").value),
+        ).toBe(true);
+        expect(
+          isNonRelationPredicate(Namespace.RDFS.term("label").value),
+        ).toBe(true);
+        // Genuine user-defined relation predicates pass.
+        expect(isNonRelationPredicate(RELATES_TO.value)).toBe(false);
+        expect(
+          isNonRelationPredicate(Namespace.EMS.term("Effort_area").value),
+        ).toBe(false);
+        // Genuine OBJECT exo:Asset_* relations MUST pass (the inline path
+        // surfaces them — dropping them would be an inline/reified asymmetry).
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Asset_relates").value),
+        ).toBe(false);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Asset_prototype").value),
+        ).toBe(false);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Asset_createdBy").value),
+        ).toBe(false);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Asset_isDefinedBy").value),
+        ).toBe(false);
       });
     });
   });
