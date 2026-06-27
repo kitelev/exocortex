@@ -58,7 +58,28 @@ export interface FirstRunOnboardingActions {
   onClosePanel?: () => void;
 }
 
+/**
+ * Stable identifiers for the onboarding steps (#3705). They let a coordinating
+ * surface — specifically a result-modal next-step CTA stacked on top of this
+ * panel — mark the matching panel step done across the modal boundary
+ * (`markStepDoneByKey`), without reaching into the panel's DOM internals. The
+ * keys are the cross-modal contract; the wiring (ExocortexPlugin) maps a
+ * result-modal CTA to the step it advances.
+ */
+export const ONBOARDING_STEP_KEYS = {
+  pat: "pat",
+  setupEngine: "setup-engine",
+  addRegistry: "add-registry",
+  addProfiles: "add-profiles",
+  applyProfile: "apply-profile",
+} as const;
+
+export type OnboardingStepKey =
+  (typeof ONBOARDING_STEP_KEYS)[keyof typeof ONBOARDING_STEP_KEYS];
+
 interface StepSpec {
+  /** Stable cross-modal identifier for `markStepDoneByKey` (#3705). */
+  key: OnboardingStepKey;
   /** Plain-text step marker (NOT a glyph) so it is screen-reader reliable (P16). */
   marker: string;
   title: string;
@@ -110,6 +131,15 @@ export class FirstRunOnboardingModal extends Modal {
   private readonly actions: FirstRunOnboardingActions;
   private closed = false;
   private firstFocusable: HTMLElement | null = null;
+  /**
+   * Step `<li>` + header, keyed by {@link OnboardingStepKey}, so an external
+   * caller can mark a step done by key (#3705). Populated as each step renders;
+   * left intact on close — `markStepDoneByKey` guards on the `closed` flag.
+   */
+  private readonly stepElements = new Map<
+    string,
+    { item: HTMLElement; header: HTMLElement }
+  >();
 
   constructor(app: App, actions: FirstRunOnboardingActions) {
     super(app);
@@ -146,6 +176,7 @@ export class FirstRunOnboardingModal extends Modal {
 
     const steps: StepSpec[] = [
       {
+        key: ONBOARDING_STEP_KEYS.setupEngine,
         marker: "Step 2",
         title: "Set up the engine",
         description:
@@ -157,6 +188,7 @@ export class FirstRunOnboardingModal extends Modal {
         action: this.actions.onSetupEngine,
       },
       {
+        key: ONBOARDING_STEP_KEYS.addRegistry,
         marker: "Step 3",
         title: "Add the AssetSpace registry",
         description:
@@ -167,6 +199,7 @@ export class FirstRunOnboardingModal extends Modal {
         action: this.actions.onAddRegistry,
       },
       {
+        key: ONBOARDING_STEP_KEYS.addProfiles,
         marker: "Step 4",
         title: "Add the profiles AssetSpace",
         description:
@@ -177,6 +210,7 @@ export class FirstRunOnboardingModal extends Modal {
         action: this.actions.onAddProfiles,
       },
       {
+        key: ONBOARDING_STEP_KEYS.applyProfile,
         marker: "Step 5",
         title: "Apply a profile",
         description:
@@ -227,6 +261,8 @@ export class FirstRunOnboardingModal extends Modal {
     const header = item.createEl("div", {
       cls: "exocortex-onboarding-step-header",
     });
+    // Register for cross-modal `markStepDoneByKey` (#3705).
+    this.stepElements.set(ONBOARDING_STEP_KEYS.pat, { item, header });
     header.createEl("span", {
       cls: "exocortex-onboarding-step-marker",
       text: "Step 1 — ",
@@ -360,6 +396,8 @@ export class FirstRunOnboardingModal extends Modal {
     const header = item.createEl("div", {
       cls: "exocortex-onboarding-step-header",
     });
+    // Register for cross-modal `markStepDoneByKey` (#3705).
+    this.stepElements.set(step.key, { item, header });
     header.createEl("span", {
       cls: "exocortex-onboarding-step-marker",
       text: `${step.marker} — `,
@@ -413,6 +451,24 @@ export class FirstRunOnboardingModal extends Modal {
     });
     done.setAttribute("role", "status");
     done.setAttribute("aria-live", "polite");
+  }
+
+  /**
+   * Mark the step identified by {@link stepKey} done from OUTSIDE the panel
+   * (#3705) — used when a result modal stacked on top advances onboarding past a
+   * panel step via its own next-step CTA (e.g. the "Engine ready" panel's "Add
+   * the AssetSpace registry" button performs Step 3), so the checklist stays in
+   * sync with what the user actually did, not only with the panel's own buttons.
+   *
+   * A safe no-op when the panel is already closed (the coordinating surface need
+   * not track the panel's lifecycle) or the key is unknown. Idempotent — it
+   * delegates to {@link markStepDone}, which keeps a single marker per step.
+   */
+  markStepDoneByKey(stepKey: string): void {
+    if (this.closed) return;
+    const entry = this.stepElements.get(stepKey);
+    if (entry === undefined) return;
+    this.markStepDone(entry.item, entry.header);
   }
 
   override onClose(): void {
