@@ -1437,18 +1437,19 @@ export class SyncEngine {
 
       // Merged contents that differ from the local copy land on disk through
       // the same TOCTOU-guarded apply as remote pulls.
-      const { pulledCount, pinnedPaths } = await this.applyRemoteChanges(
-        localFiles,
-        disk,
-        [...applyWrites, ...merge.mergedWrites].filter(
-          (w) => !withheldPaths.has(w.path),
-        ),
-        applyDeletes.filter((d) => !withheldPaths.has(d.path)),
-        warnings,
-        // mtime-manifest: cache-hit (NOT-read) files have no `disk` snapshot —
-        // their sync-start blobSha drives the TOCTOU check instead.
-        cachedBlobShas,
-      );
+      const { pulledCount, pinnedPaths, pulledPaths } =
+        await this.applyRemoteChanges(
+          localFiles,
+          disk,
+          [...applyWrites, ...merge.mergedWrites].filter(
+            (w) => !withheldPaths.has(w.path),
+          ),
+          applyDeletes.filter((d) => !withheldPaths.has(d.path)),
+          warnings,
+          // mtime-manifest: cache-hit (NOT-read) files have no `disk` snapshot —
+          // their sync-start blobSha drives the TOCTOU check instead.
+          cachedBlobShas,
+        );
 
       // Quarantined paths keep their OLD watermark entry (same mechanism as
       // TOCTOU pins): the conflict re-derives every sync until resolved.
@@ -1522,6 +1523,9 @@ export class SyncEngine {
         ...(merge.mergedPaths.length > 0
           ? { mergedPaths: merge.mergedPaths }
           : {}),
+        // RFC 8f93ff95 — surface the disk-mutated pull paths so the command
+        // layer can targeted-reindex them post-sync (mirrors `mergedPaths`).
+        ...(pulledPaths.length > 0 ? { pulledPaths } : {}),
         ...(quarantinedPathsOf(merge).length > 0
           ? { quarantinedPaths: quarantinedPathsOf(merge) }
           : {}),
@@ -2701,9 +2705,18 @@ export class SyncEngine {
     // a cache hit must NOT read as "vanished from snapshot" and wrongly defer
     // the pull (M1 zero-loss: never overwrites a concurrently-edited file).
     cachedBlobShas: ReadonlyMap<string, string> = new Map(),
-  ): Promise<{ pulledCount: number; pinnedPaths: Set<string> }> {
+  ): Promise<{
+    pulledCount: number;
+    pinnedPaths: Set<string>;
+    pulledPaths: string[];
+  }> {
     let pulledCount = 0;
     const pinnedPaths = new Set<string>();
+    // RFC 8f93ff95 — the paths actually mutated on disk this pull (writes,
+    // merges, remote-deletes), surfaced as `RepoSyncResult.pulledPaths` so the
+    // command layer can targeted-reindex them. One entry per real mutation,
+    // pushed alongside every `pulledCount++` (length stays === pulledCount).
+    const pulledPaths: string[] = [];
     // TOCTOU re-read matches the snapshot's representation: a byte snapshot
     // re-reads bytes, a text snapshot re-reads text — `contentEquals`
     // compares within the representation.
@@ -2758,6 +2771,7 @@ export class SyncEngine {
         }
         await writeContent(w.path, w.content);
         pulledCount++;
+        pulledPaths.push(w.path);
         continue;
       }
       const current = await tryRead(
@@ -2773,6 +2787,7 @@ export class SyncEngine {
       }
       await writeContent(w.path, w.content);
       pulledCount++;
+      pulledPaths.push(w.path);
     }
     for (const d of applyDeletes) {
       if (!isSafeRepoRelativePath(d.path)) {
@@ -2792,6 +2807,7 @@ export class SyncEngine {
         }
         await localFiles.delete(d.path);
         pulledCount++;
+        pulledPaths.push(d.path);
         continue;
       }
       if (snapshot !== undefined) {
@@ -2805,9 +2821,10 @@ export class SyncEngine {
         }
         await localFiles.delete(d.path);
         pulledCount++;
+        pulledPaths.push(d.path);
       }
     }
-    return { pulledCount, pinnedPaths };
+    return { pulledCount, pinnedPaths, pulledPaths };
   }
 
   /**

@@ -188,8 +188,35 @@ export class NoteToRDFConverter {
    * ```
    */
   async convertNote(file: IFile): Promise<Triple[]> {
-    const frontmatter = this.vault.getFrontmatter(file);
+    return this.convertNoteFromFrontmatter(
+      file,
+      this.vault.getFrontmatter(file),
+    );
+  }
 
+  /**
+   * Convert a note to RDF using ALREADY-RESOLVED frontmatter instead of reading
+   * it from the vault adapter (`getFrontmatter`, metadataCache-backed).
+   *
+   * RFC 8f93ff95 — ExoSync writes pulled assets via `vault.adapter.write`,
+   * which does NOT refresh Obsidian's metadataCache, so `getFrontmatter` can be
+   * stale for a just-synced file. The post-sync targeted reindex parses the
+   * frontmatter straight from disk and passes it here, decoupling the per-file
+   * conversion from metadataCache freshness. Wikilink TARGET resolution
+   * (prototype / Exo 0.0.3 anchors) still flows through the adapter —
+   * acceptable for Tier 1: the asset's OWN frontmatter triples (label, class,
+   * `ems__Effort_parent`, …) are what make it visible in a parent's Layout.
+   * Full disk-resolution of wikilinks is Tier 2.
+   *
+   * @param file - The note's path/basename identity (a synthetic `IFile` is
+   *   fine — only `path`/`basename` are read here).
+   * @param frontmatter - The note's frontmatter, already parsed (e.g. from
+   *   disk). `null` ⇒ no triples.
+   */
+  async convertNoteFromFrontmatter(
+    file: IFile,
+    frontmatter: Record<string, unknown> | null,
+  ): Promise<Triple[]> {
     if (!frontmatter) {
       return [];
     }
