@@ -1205,6 +1205,12 @@ export class GroundingExecutor {
    * prototypes / create flows without a time-of-day. Never overwrites a planned
    * timestamp that an explicit `userInput` already wrote into `properties` (the
    * prototype time is a default, not an override).
+   *
+   * Reads from `targetFm`, which is only populated when `needsTargetRead` is
+   * true (InheritanceRule / `__SUBSTITUTE` PropertyDefault / `$target.`
+   * labelTemplate). For the real prototype-instance flow this always holds —
+   * the `exo__Asset_prototype` backlink InheritanceRule forces the read — so a
+   * time-bearing prototype is always seen; a null `targetFm` is a safe no-op.
    */
   private applyPrototypeTimePropagation(
     properties: Record<string, unknown>,
@@ -1218,15 +1224,30 @@ export class GroundingExecutor {
     if (!startTime) return; // prototype declares no time-of-day → no-op
     const instanceDate = this.resolveInstanceDate(userInput);
     if (properties["ems__Effort_plannedStartTimestamp"] === undefined) {
-      properties["ems__Effort_plannedStartTimestamp"] =
-        GroundingExecutor.combineDateAndTime(instanceDate, startTime);
+      const startTs = GroundingExecutor.combineDateAndTime(
+        instanceDate,
+        startTime,
+      );
+      if (startTs !== null) {
+        properties["ems__Effort_plannedStartTimestamp"] = startTs;
+      } else {
+        LoggingService.warn(
+          `[GroundingExecutor] prototype ems__EffortPrototype_startTime "${startTime}" is not a valid HH:MM[:SS] time-of-day — skipping plannedStartTimestamp stamp.`,
+        );
+      }
     }
     const endTime = GroundingExecutor.firstScalar(
       targetFm["ems__EffortPrototype_endTime"],
     );
     if (endTime && properties["ems__Effort_plannedEndTimestamp"] === undefined) {
-      properties["ems__Effort_plannedEndTimestamp"] =
-        GroundingExecutor.combineDateAndTime(instanceDate, endTime);
+      const endTs = GroundingExecutor.combineDateAndTime(instanceDate, endTime);
+      if (endTs !== null) {
+        properties["ems__Effort_plannedEndTimestamp"] = endTs;
+      } else {
+        LoggingService.warn(
+          `[GroundingExecutor] prototype ems__EffortPrototype_endTime "${endTime}" is not a valid HH:MM[:SS] time-of-day — skipping plannedEndTimestamp stamp.`,
+        );
+      }
     }
   }
 
@@ -1252,8 +1273,18 @@ export class GroundingExecutor {
    * into a full timezone-naive local dateTime `"YYYY-MM-DDTHH:MM:SS"`. A bare
    * `HH:MM` gets `:00` seconds appended; an already-`HH:MM:SS` value passes
    * through. NEVER emits a trailing timezone offset.
+   *
+   * Returns null when `timeOfDay` is not a valid `HH:MM[:SS]` (HH 00-23, MM/SS
+   * 00-59) — the caller then skips stamping rather than splicing a garbage
+   * value into the typed `ems__Effort_planned*Timestamp` (which downstream
+   * calendar/sort consumers could not parse). Defensive against a malformed
+   * user-authored `ems__EffortPrototype_startTime`.
    */
-  private static combineDateAndTime(date: string, timeOfDay: string): string {
+  private static combineDateAndTime(
+    date: string,
+    timeOfDay: string,
+  ): string | null {
+    if (!/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(timeOfDay)) return null;
     const time = /^\d{2}:\d{2}$/.test(timeOfDay) ? `${timeOfDay}:00` : timeOfDay;
     return `${date}T${time}`;
   }

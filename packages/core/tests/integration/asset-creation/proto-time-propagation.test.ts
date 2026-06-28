@@ -138,6 +138,19 @@ const PROTO_WITHOUT_TIME = [
   "",
 ].join("\n");
 
+/** Prototype with a MALFORMED start time → must be skipped, never spliced. */
+const PROTO_BAD_TIME = [
+  "---",
+  'exo__Asset_uid: "proto-bad-uid"',
+  'exo__Asset_label: "Broken routine"',
+  "exo__Instance_class:",
+  '  - "[[df7e579d-02d4-4f3a-971f-3d1d785b689b]]"',
+  'ems__EffortPrototype_startTime: "25:99"',
+  "---",
+  "",
+].join("\n");
+const PROTO_BAD_TIME_PATH = "/vault/broken-proto.md";
+
 // create-task-instance-shaped grounding: InheritanceRule writes the prototype
 // backlink (so needsTargetRead → targetFm is the prototype frontmatter), and a
 // labelTemplate uses $today so we can assert the label denotes the chosen date.
@@ -187,6 +200,7 @@ describe(`Integration: create_instance prototype-time propagation (ec15f83e) ${R
     await fs.createFile(PROTO_PATH, PROTO_WITH_TIMES);
     await fs.createFile(PROTO_NO_END_PATH, PROTO_ONLY_START);
     await fs.createFile(PROTO_NO_TIME_PATH, PROTO_WITHOUT_TIME);
+    await fs.createFile(PROTO_BAD_TIME_PATH, PROTO_BAD_TIME);
     const serviceRegistry = new ServiceRegistry();
     groundingExecutor = new GroundingExecutor(fs, fs, serviceRegistry, undefined, {
       clock: frozenClock(`${FROZEN_TODAY}T08:00:00Z`),
@@ -195,7 +209,12 @@ describe(`Integration: create_instance prototype-time propagation (ec15f83e) ${R
 
   /** The created instance file = the only path that is not a prototype fixture. */
   function createdContent(): string {
-    const protos = new Set([PROTO_PATH, PROTO_NO_END_PATH, PROTO_NO_TIME_PATH]);
+    const protos = new Set([
+      PROTO_PATH,
+      PROTO_NO_END_PATH,
+      PROTO_NO_TIME_PATH,
+      PROTO_BAD_TIME_PATH,
+    ]);
     const path = fs.getAllPaths().find((p) => !protos.has(p));
     if (!path) throw new Error("No created file");
     return fs.getContent(path)!;
@@ -309,5 +328,21 @@ describe(`Integration: create_instance prototype-time propagation (ec15f83e) ${R
     // No timezone offset.
     expect(value).not.toContain("+05:00");
     expect(value).not.toContain("Z");
+  });
+
+  // Hardening (code-reviewer LOW): a malformed prototype time must be skipped,
+  // never spliced into the typed planned*Timestamp as a garbage value.
+  it(`${REQ} malformed prototype startTime is skipped, not written as a garbage timestamp`, async () => {
+    const result = await groundingExecutor.execute(
+      GROUNDING,
+      "https://exocortex.my/assets/broken-proto",
+      PROTO_BAD_TIME_PATH,
+      undefined,
+    );
+    expect(result.success).toBe(true);
+
+    const content = createdContent();
+    expect(content).not.toContain("ems__Effort_plannedStartTimestamp");
+    expect(content).not.toContain("25:99");
   });
 });
