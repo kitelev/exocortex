@@ -44,12 +44,6 @@ export interface RegisterForSyncDeps {
    */
   pickPack?: (mountPaths: string[]) => Promise<string | null>;
   /**
-   * Prompt for the source URL when the mount path is NOT URL-derivable (a legacy
-   * flat folder `assetspaces/<name>` rather than the canonical Maven layout).
-   * Resolves the entered URL, or `null` if cancelled.
-   */
-  promptSourceUrl?: (mountPath: string) => Promise<string | null>;
-  /**
    * Probe the GitHub PAT's push access for the pack's repo: `true` = owned
    * (round-trip pull+push), `false` = read-only / foreign (pull-only), `null` =
    * unknown (no token / probe failed). Best-effort — never throws into the flow.
@@ -129,19 +123,21 @@ export class RegisterForSyncCommand {
       }
     }
 
-    // Resolve the source URL: auto-fill from the Maven mount path; prompt only
-    // when un-derivable (legacy flat folder).
-    let sourceUrl = deriveUrl(mountPath);
+    // Resolve the source URL by reversing the canonical Maven mount path
+    // (`assetspaces/<owner>/<repo>` → `https://github.com/<owner>/<repo>`). Every
+    // pack from «Add a knowledge pack» (#3538) mounts at this two-level path, and
+    // the registrable set (`mountedNotDeclared`) is enumerated from those folders,
+    // so `deriveUrl` succeeds for every real pack. A non-derivable path (a
+    // non-canonical / flat folder) is refused HONESTLY rather than registered with
+    // a URL whose derived `localPath` would not match the folder on disk — that
+    // descriptor would never be discovered, so a "registered" notice would be a
+    // false success.
+    const sourceUrl = deriveUrl(mountPath);
     if (sourceUrl === null) {
-      if (this.d.promptSourceUrl === undefined) {
-        this.d.notify(
-          `Register for sync: cannot derive a GitHub URL from ${mountPath}, and no URL prompt is available.`,
-        );
-        return;
-      }
-      const entered = await this.d.promptSourceUrl(mountPath);
-      if (entered === null) return; // user cancelled
-      sourceUrl = entered;
+      this.d.notify(
+        `Register for sync: ${mountPath} is not a canonical assetspaces/<owner>/<repo> mount, so its GitHub source cannot be determined — cannot register.`,
+      );
+      return;
     }
 
     // Build the descriptor (pure). null ⇒ source is not a plain GitHub URL.

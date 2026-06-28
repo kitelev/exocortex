@@ -4257,18 +4257,6 @@ export default class ExocortexPlugin extends Plugin {
    * single `vault.adapter.write`, no Node `fs` / git; the same path runs on iOS).
    */
   private registerRegisterForSyncCommand(): void {
-    // deriveFolderName for the (rare) URL-prompt fallback — mirrors the
-    // bootstrap-command closure; guarded so an in-progress invalid entry never
-    // throws into the modal's live label.
-    const deriveFolderName = (url: string): string => {
-      try {
-        const { repo } = parseGitHubURL(url);
-        return repo.startsWith("exoas-") ? repo.slice("exoas-".length) : repo;
-      } catch {
-        return "";
-      }
-    };
-
     const command = new RegisterForSyncCommand({
       // The registrable set = mounted folders carrying NO descriptor (FINDING-3).
       listUnregisteredPacks: async () =>
@@ -4285,13 +4273,6 @@ export default class ExocortexPlugin extends Plugin {
             choices,
             "Choose a knowledge pack to register for sync",
             (chosen) => resolve(chosen === null ? null : chosen.uid),
-          ).open();
-        }),
-      // Legacy flat folder (un-derivable URL) → prompt; reuse the Add-pack URL modal.
-      promptSourceUrl: () =>
-        new Promise<string | null>((resolve) => {
-          new AddAssetSpaceModal(this.app, deriveFolderName, (res) =>
-            resolve(res === null ? null : res.url),
           ).open();
         }),
       // Ownership: build a fresh GitHubRestClient from the CURRENT PAT (#3382

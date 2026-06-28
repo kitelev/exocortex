@@ -31,7 +31,6 @@ interface Harness {
 function makeCmd(opts: {
   packs?: string[];
   pick?: string | null;
-  promptUrl?: string | null;
   ownership?: boolean | null;
   hasDescriptor?: boolean;
   writeThrows?: boolean;
@@ -43,8 +42,6 @@ function makeCmd(opts: {
     listUnregisteredPacks: async () =>
       opts.packs ?? ["assetspaces/kitelev/exoas-foo"],
     pickPack: async () => opts.pick ?? null,
-    promptSourceUrl: async () =>
-      opts.promptUrl === undefined ? null : opts.promptUrl,
     probeOwnership: async () =>
       opts.ownership === undefined ? null : opts.ownership,
     ...(opts.hasDescriptor !== undefined
@@ -103,31 +100,28 @@ describe("RegisterForSyncCommand (#3707)", () => {
     }
   });
 
-  it("auto-fills the source URL from the Maven mount path (no prompt)", async () => {
-    const promptSpy = jest.fn(async () => null as string | null);
+  it("auto-fills the source URL from the canonical Maven mount path", async () => {
     const h = makeCmd({ packs: ["assetspaces/kitelev/exoas-bar"] });
-    h.deps.promptSourceUrl = promptSpy;
     await h.cmd.invoke();
-    expect(promptSpy).not.toHaveBeenCalled();
     const fm = parseFrontmatter(h.written[0].content);
     expect(fm["exo__AssetSpace_source"]).toBe(
       "https://github.com/kitelev/exoas-bar",
     );
   });
 
-  it("prompts for the source URL when the mount path is un-derivable (legacy flat folder)", async () => {
-    const h = makeCmd({
-      packs: ["assetspaces/legacyflat"],
-      promptUrl: "https://github.com/kitelev/exoas-legacy",
-    });
+  it("HONESTLY refuses a non-canonical (un-derivable) mount path — no write, no false success", async () => {
+    // A flat / non-`assetspaces/<owner>/<repo>` folder has no determinable GitHub
+    // source; registering it would write a descriptor whose derived localPath
+    // could not match the folder, so it would never sync — refuse instead.
+    let reindexed = 0;
+    const h = makeCmd({ packs: ["assetspaces/legacyflat"] });
+    h.deps.onMaterialized = async () => {
+      reindexed++;
+    };
     await h.cmd.invoke();
-    expect(h.written).toHaveLength(1);
-    const fm = parseFrontmatter(h.written[0].content);
-    expect(fm["exo__AssetSpace_source"]).toBe(
-      "https://github.com/kitelev/exoas-legacy",
-    );
-    // It is still written INTO the original (flat) mount folder.
-    expect(h.written[0].mountPath).toBe("assetspaces/legacyflat");
+    expect(h.written).toHaveLength(0);
+    expect(reindexed).toBe(0);
+    expect(h.notices.join("\n")).toMatch(/cannot be determined|cannot register/);
   });
 
   it("reindexes after a successful write", async () => {
