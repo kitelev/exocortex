@@ -3274,7 +3274,13 @@ export default class ExocortexPlugin extends Plugin {
       },
       writeFile: async (filePath, content) => {
         const file = this.app.vault.getAbstractFileByPath(filePath);
-        if (file instanceof TFile) await this.app.vault.modify(file, content);
+        if (!(file instanceof TFile)) {
+          // The file vanished between the scan and the write (TOCTOU) — reject
+          // so invokeDedup's catch logs it and the "Reassigned N" count stays
+          // truthful (never silently overstates).
+          throw new Error(`no longer a vault file (moved/deleted?): ${filePath}`);
+        }
+        await this.app.vault.modify(file, content);
       },
       freshUid: () => crypto.randomUUID(),
       confirm: (groups) =>

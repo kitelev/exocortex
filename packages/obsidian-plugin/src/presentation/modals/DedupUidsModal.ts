@@ -42,14 +42,21 @@ export class DedupUidsModal extends Modal {
       text: `Found ${this.groups.length} duplicate uid(s) across ${fileCount} file(s). Reassign a fresh uuid to every duplicate but the first (the files are never renamed)? Run Sync afterwards to propagate.`,
     });
 
-    // The report — each shared uid + the paths declaring it.
+    // The report — each shared uid + the paths declaring it. Paths are shown in
+    // the lexicographic order the fix uses (so "the first" is unambiguous): the
+    // first KEEPS the uid, the rest are re-uuid'd.
     const list = contentEl.createEl("ul");
     for (const group of this.groups) {
       const item = list.createEl("li", {
         text: `${group.uid} — ${group.paths.length} files:`,
       });
       const paths = item.createEl("ul");
-      for (const path of group.paths) paths.createEl("li", { text: path });
+      const ordered = [...group.paths].sort((a, b) => a.localeCompare(b));
+      ordered.forEach((path, i) => {
+        paths.createEl("li", {
+          text: i === 0 ? `${path} (keeps this uid)` : `${path} → fresh uid`,
+        });
+      });
     }
 
     const actions = contentEl.createEl("div", {

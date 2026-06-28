@@ -18,7 +18,13 @@
  * but the first (frontmatter rewrite ONLY — the file is NEVER renamed).
  *
  * D11 exclusion (a fix WRITES): refuse to run during a sync or a profile apply,
- * and refuse re-entry while a fix is in flight.
+ * and refuse re-entry while a fix is in flight. The exclusion is INTENTIONALLY
+ * one-directional — unlike the quarantine resolver (which writes the
+ * device-local watermark, hence the symmetric HIGH-2 guard), dedup rewrites
+ * ONLY markdown frontmatter and never touches the watermark, so it need only
+ * refuse to START during a sync/apply; a sync that begins while a dedup is in
+ * flight sees the ordinary "file edited mid-sync" state that change-detection
+ * already tolerates on the next pass.
  */
 
 import {
@@ -59,11 +65,6 @@ export class DedupUidsCommands {
 
   constructor(deps: DedupUidsCommandsDeps) {
     this.deps = deps;
-  }
-
-  /** Sync→apply→dedup exclusion input. */
-  isBusy(): boolean {
-    return this.running;
   }
 
   /** «Exocortex: Deduplicate uids» palette entry point. */

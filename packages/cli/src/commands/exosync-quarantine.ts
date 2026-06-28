@@ -377,14 +377,18 @@ export async function runDedupUids(
       snap: Map<string, string>;
     }> = [];
     for (const [uid, paths] of dups) {
-      const files: Array<{ path: string; content: string }> = [];
+      const groupFiles: Array<{ path: string; content: string }> = [];
       const snap = new Map<string, string>();
       for (const p of paths) {
         const c = await fsp.readFile(p, "utf-8");
-        files.push({ path: p, content: c });
+        groupFiles.push({ path: p, content: c });
         snap.set(p, c);
       }
-      plans.push({ uid, decisions: planDedupGroup(uid, files, randomUUID), snap });
+      plans.push({
+        uid,
+        decisions: planDedupGroup(uid, groupFiles, randomUUID),
+        snap,
+      });
     }
 
     let plannedDeletes = 0;
