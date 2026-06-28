@@ -24,7 +24,12 @@
 
 import React from "react";
 import type { TFile } from "obsidian";
-import type { Layout, LayoutBlock } from "@kitelev/exocortex-core";
+import type {
+  DailyEffortsPartition,
+  DailyEffortsPartitioned,
+  Layout,
+  LayoutBlock,
+} from "@kitelev/exocortex-core";
 import type { ReactRenderer } from "@plugin/presentation/utils/ReactRenderer";
 import type { ExoLayoutSnapshot } from "@plugin/infrastructure/repositories";
 import type { AssetRelation } from "./layout/types";
@@ -32,16 +37,44 @@ import type { ILogger } from "@plugin/adapters/logging/ILogger";
 import type { ObsidianApp } from "@plugin/types";
 import {
   BacklinksTableBlockView,
+  DailyEffortsBlockView,
   PropertiesBlockView,
 } from "@plugin/presentation/components/LayoutBlocks";
 import { AssetMetadataService } from "@plugin/presentation/renderers/layout/helpers/AssetMetadataService";
-import { WikiLinkHelpers } from "@kitelev/exocortex-core";
+import {
+  WikiLinkHelpers,
+  partitionDailyEffortsByClass,
+  resolveDailyEffortVisibility,
+} from "@kitelev/exocortex-core";
+
+/**
+ * A day-scoped effort surfaced to a `daily-efforts-by-class` block. The
+ * provider (wired in `UniversalLayoutRenderer`) scans the vault for efforts
+ * whose timestamps fall in the note's day (`isEffortInDay`) and returns this
+ * minimal shape; the renderer partitions it by class once per render.
+ */
+export interface DailyEffortItem {
+  readonly path: string;
+  readonly title: string;
+  readonly metadata: Record<string, unknown>;
+}
 
 export interface ExoLayoutRendererDeps {
   readonly app: ObsidianApp;
   readonly reactRenderer: ReactRenderer;
   readonly logger: ILogger;
   readonly snapshotProvider: () => ExoLayoutSnapshot;
+  /**
+   * RFC pn__DailyNote toggles (req a38ac95b) — supplies the day's efforts for
+   * `daily-efforts-by-class` blocks. Returns `null` when `file` is not a daily
+   * note (or no day can be derived); returns the (possibly empty) effort list
+   * otherwise. Optional: when absent, daily-efforts blocks render empty. The
+   * read-path is Obsidian-core only (vault.adapter), no Platform gate
+   * (desktop↔mobile parity).
+   */
+  readonly dailyEffortsProvider?: (
+    file: TFile,
+  ) => readonly DailyEffortItem[] | null;
 }
 
 export interface ExoLayoutRenderResult {
@@ -66,6 +99,15 @@ export class ExoLayoutRenderer {
       String(layout.coexistsWithDefault),
     );
 
+    // Resolve note frontmatter (for daily-efforts visibility overrides) and
+    // the day's efforts partition ONCE per render. The partition is a single
+    // O(n) scan reused across all three daily-efforts blocks (perf — review
+    // note); it is computed lazily only when the layout actually carries a
+    // daily-efforts block.
+    const noteFrontmatter = (this.deps.app.metadataCache.getFileCache(file)
+      ?.frontmatter ?? null) as Record<string, unknown> | null;
+    const partition = this.computeDailyPartition(file, layout, snapshot);
+
     let blockCount = 0;
     for (const rawRef of layout.blocks) {
       const block = resolveBlock(rawRef, snapshot);
@@ -75,11 +117,52 @@ export class ExoLayoutRenderer {
         );
         continue;
       }
-      await this.renderBlock(container, file, block, relations);
+      // RL#4a — a block resolved as not-visible is skipped entirely (no DOM,
+      // no React render). Visibility is generic (`block.visible !== false`)
+      // for properties/backlinks blocks; for daily-efforts blocks it merges
+      // the per-note override > Layout default > built-in VL#3.
+      if (!this.isBlockVisible(block, noteFrontmatter)) {
+        continue;
+      }
+      await this.renderBlock(container, file, block, relations, partition);
       blockCount += 1;
     }
 
     return { rendered: blockCount > 0, blockCount };
+  }
+
+  /**
+   * Compute the day-efforts partition once when the layout has at least one
+   * daily-efforts block and a provider is wired. Returns `null` otherwise
+   * (non-daily layouts pay zero cost).
+   */
+  private computeDailyPartition(
+    file: TFile,
+    layout: Layout,
+    snapshot: ExoLayoutSnapshot,
+  ): DailyEffortsPartitioned<DailyEffortItem> | null {
+    if (this.deps.dailyEffortsProvider === undefined) return null;
+    const hasDailyBlock = layout.blocks.some((rawRef) => {
+      const block = resolveBlock(rawRef, snapshot);
+      return block !== null && block.kind === "daily-efforts-by-class";
+    });
+    if (!hasDailyBlock) return null;
+    const efforts = this.deps.dailyEffortsProvider(file) ?? [];
+    return partitionDailyEffortsByClass(efforts);
+  }
+
+  private isBlockVisible(
+    block: LayoutBlock,
+    noteFrontmatter: Record<string, unknown> | null,
+  ): boolean {
+    if (block.kind === "daily-efforts-by-class") {
+      return resolveDailyEffortVisibility(
+        block.partition,
+        noteFrontmatter,
+        block.visible,
+      );
+    }
+    return block.visible !== false;
   }
 
   private async renderBlock(
@@ -87,6 +170,7 @@ export class ExoLayoutRenderer {
     file: TFile,
     block: LayoutBlock,
     relations: readonly AssetRelation[],
+    partition: DailyEffortsPartitioned<DailyEffortItem> | null,
   ): Promise<void> {
     const blockContainer = container.createDiv({
       cls: "exocortex-exo-layout-block",
@@ -104,11 +188,34 @@ export class ExoLayoutRenderer {
       this.renderBacklinksBlock(blockContainer, relations, block);
       return;
     }
+    if (block.kind === "daily-efforts-by-class") {
+      this.renderDailyEffortsBlock(blockContainer, block.partition, block.title, partition);
+      return;
+    }
     // Defensive branch — parser/type guard should have prevented unknown
     // kinds from ever reaching this point; we still skip quietly.
     const unreachable: never = block;
     this.deps.logger.warn(
       `ExoLayoutRenderer: unknown block kind on asset ${(unreachable as LayoutBlock).uid}`,
+    );
+  }
+
+  private renderDailyEffortsBlock(
+    container: HTMLElement,
+    partitionKey: DailyEffortsPartition,
+    title: string,
+    partition: DailyEffortsPartitioned<DailyEffortItem> | null,
+  ): void {
+    const items = partition ? partition[partitionKey] : [];
+    this.deps.reactRenderer.render(
+      container,
+      React.createElement(DailyEffortsBlockView, {
+        title,
+        items: items.map((e) => ({ path: e.path, title: e.title })),
+        onItemClick: (path: string) => {
+          void this.deps.app.workspace.openLinkText(path, "", false);
+        },
+      }),
     );
   }
 
