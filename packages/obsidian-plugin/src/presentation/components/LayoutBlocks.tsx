@@ -144,3 +144,49 @@ function resolveCell(row: AssetRelation, column: string): string {
   const value = row.metadata[column];
   return formatPropertyValue(value);
 }
+
+/**
+ * DailyEffortsBlockView — renders one class-partition of the day's efforts
+ * (Actions / Tasks / Projects) as a clickable list (RL#4b / VL#4, RFC
+ * pn__DailyNote toggles). The partition + visibility are decided upstream in
+ * `ExoLayoutRenderer`; this view just renders the supplied items.
+ *
+ * Security: `title` and each item title are auto-escaped by JSX.
+ */
+export interface DailyEffortsBlockViewProps {
+  readonly title: string;
+  readonly items: ReadonlyArray<{ readonly path: string; readonly title: string }>;
+  readonly onItemClick?: (path: string) => void;
+}
+
+export const DailyEffortsBlockView: React.FC<DailyEffortsBlockViewProps> = ({
+  title,
+  items,
+  onItemClick,
+}) => {
+  return (
+    <div className="exocortex-layout-block exocortex-layout-block-daily-efforts">
+      <h3 className="exocortex-layout-block-title">{title}</h3>
+      {items.length === 0 ? (
+        <div className="exocortex-layout-block-empty">No efforts</div>
+      ) : (
+        <ul className="exocortex-layout-block-daily-efforts-list">
+          {items.map((item) => (
+            <li key={item.path} data-asset-path={item.path}>
+              <a
+                className="exocortex-daily-effort-link"
+                href={item.path}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onItemClick?.(item.path);
+                }}
+              >
+                {item.title}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};

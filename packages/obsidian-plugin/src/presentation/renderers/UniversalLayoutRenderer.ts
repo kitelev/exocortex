@@ -10,9 +10,10 @@ import { IVaultAdapter, MetadataExtractor, INotificationService } from "@kitelev
 import { FolderRepairService } from "@kitelev/exocortex-core";
 import { CommandResolver, PreconditionEvaluator, GroundingExecutor } from "@kitelev/exocortex-core";
 import type { LayoutSelector, ITripleStore, LazyAssetGraphLoader } from "@kitelev/exocortex-core";
-import { IRI, vaultPathToIRI } from "@kitelev/exocortex-core";
+import { IRI, vaultPathToIRI, WikiLinkHelpers } from "@kitelev/exocortex-core";
 import type { ExoLayoutRepository } from "@plugin/infrastructure/repositories";
 import { ExoLayoutRenderer } from "./ExoLayoutRenderer";
+import { collectDayEfforts } from "./helpers/DailyEffortsCollector";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
 import { ButtonGroupsBuilder } from '@plugin/presentation/builders/ButtonGroupsBuilder';
@@ -194,6 +195,11 @@ export class UniversalLayoutRenderer {
           blocksByUid: new Map(),
           blocksByLabel: new Map(),
         },
+      // RFC pn__DailyNote toggles (req a38ac95b) — supplies the day's efforts
+      // for `daily-efforts-by-class` blocks. Obsidian-core read-path only
+      // (vault.adapter), no Platform gate → desktop↔mobile parity.
+      dailyEffortsProvider: (file) =>
+        collectDayEfforts(file, this.vaultAdapter, this.metadataExtractor),
     });
   }
 
@@ -361,6 +367,22 @@ export class UniversalLayoutRenderer {
       const renderHeader = (c: HTMLElement, id: string, t: string) =>
         this.sectionStateManager.renderHeader(c, id, t, this.eventListenerManager);
 
+      // RFC exo__Layout Phase 2 — resolve the Layout once (reused below for
+      // both the daily-tasks suppression decision and block rendering).
+      // RFC pn__DailyNote toggles (req a38ac95b) — when the active layout
+      // carries daily-efforts-by-class blocks, the day's efforts are rendered
+      // through the block pipeline (Actions / Tasks / Projects), so the legacy
+      // catch-all DailyTasksRenderer is suppressed to avoid a duplicate
+      // "Tasks" section. Daily navigation (rendered above) is preserved.
+      // Back-compat: when no daily-efforts layout is active (the common case —
+      // no exo__Layout asset targets pn__DailyNote), the legacy renderer runs
+      // exactly as before → zero regression.
+      const layout = this.resolveLayoutForFile(currentFile);
+      const layoutActive =
+        layout !== null && this.settings.enableExoLayoutRenderer;
+      const dailyEffortsLayoutActive =
+        layoutActive && layout !== null && this.layoutHasDailyEffortsBlock(layout);
+
       // RFC c7da0bca Phase 3b-main — ensure the active file + its class
       // chain + prototype chain are in the triple store before button
       // resolution. The loader is idempotent + cycle-safe; per-render
@@ -397,17 +419,16 @@ export class UniversalLayoutRenderer {
         this.renderCommandsSkeleton(el);
       }
 
-      await this.dailyTasksRenderer.render(el, currentFile, renderHeader, this.sectionStateManager.isCollapsed("daily-tasks"));
+      if (!dailyEffortsLayoutActive) {
+        await this.dailyTasksRenderer.render(el, currentFile, renderHeader, this.sectionStateManager.isCollapsed("daily-tasks"));
+      }
 
       const relations = await this.relationsRenderer.getAssetRelations(currentFile, config);
 
-      // RFC exo__Layout Phase 2 — resolve Layout for current asset's classes.
-      // When a layout is found AND the feature flag is on, render its blocks.
-      // If the layout's `coexistsWithDefault` is false, skip the default
-      // AreaTree + Relations sections (full replace mode). Properties block
-      // and action buttons are always preserved per RFC §62.
-      const layout = this.resolveLayoutForFile(currentFile);
-      const layoutActive = layout !== null && this.settings.enableExoLayoutRenderer;
+      // RFC exo__Layout Phase 2 — render the resolved Layout's blocks (when the
+      // feature flag is on). If the layout's `coexistsWithDefault` is false,
+      // skip the default AreaTree + Relations sections (full replace mode).
+      // Properties block and action buttons are always preserved per RFC §62.
       if (layoutActive && layout !== null) {
         await this.exoLayoutRenderer.render(el, currentFile, layout, relations);
         if (!layout.coexistsWithDefault) {
@@ -453,6 +474,31 @@ export class UniversalLayoutRenderer {
         : [];
     if (classes.length === 0) return null;
     return this.layoutSelector.resolve(classes);
+  }
+
+  /**
+   * RFC pn__DailyNote toggles (req a38ac95b) — whether the resolved layout
+   * carries at least one `daily-efforts-by-class` block. Drives suppression of
+   * the legacy DailyTasksRenderer (its catch-all "Tasks" would otherwise
+   * duplicate the daily-efforts blocks). Resolves block refs against the
+   * ExoLayout snapshot; returns false when the repository is absent (back-compat).
+   */
+  private layoutHasDailyEffortsBlock(
+    layout: import("@kitelev/exocortex-core").Layout,
+  ): boolean {
+    const snapshot = this.exoLayoutRepository?.getSnapshot();
+    if (snapshot === undefined) return false;
+    for (const rawRef of layout.blocks) {
+      const normalized = WikiLinkHelpers.normalize(rawRef);
+      if (!normalized) continue;
+      const block =
+        snapshot.blocksByUid.get(normalized) ??
+        snapshot.blocksByLabel.get(normalized);
+      if (block !== undefined && block.kind === "daily-efforts-by-class") {
+        return true;
+      }
+    }
+    return false;
   }
 
   public async refresh(_el?: HTMLElement): Promise<void> {

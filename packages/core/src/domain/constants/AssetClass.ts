@@ -2,6 +2,15 @@ export enum AssetClass {
   AREA = "ems__Area",
   TASK = "ems__Task",
   PROJECT = "ems__Project",
+  /**
+   * Action — a subclass of `ems__Effort` (RL#3, RFC pn__DailyNote toggles).
+   * Used by the daily-efforts-by-class partition to carve `ems__Action`
+   * instances of the day into their own «Actions» block, distinct from the
+   * inclusive «Tasks» catch-all. The TBox `ems__Action` asset already declares
+   * `exo__Class_superClass = ems__Effort`, so day-scoped Effort queries already
+   * include actions; this enum entry names the class for the partition split.
+   */
+  ACTION = "ems__Action",
   MEETING = "ems__Meeting",
   INITIATIVE = "ems__Initiative",
   TASK_PROTOTYPE = "ems__TaskPrototype",

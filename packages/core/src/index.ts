@@ -505,17 +505,36 @@ export {
 export {
   BACKLINKS_TABLE_BLOCK_CLASS_IRI,
   BACKLINKS_TABLE_BLOCK_CLASS_UID,
+  DAILY_EFFORTS_BY_CLASS_BLOCK_CLASS_IRI,
+  DAILY_EFFORTS_BY_CLASS_BLOCK_CLASS_UID,
   PROPERTIES_BLOCK_CLASS_IRI,
   PROPERTIES_BLOCK_CLASS_UID,
   createLayoutBlockFromFrontmatter,
   isBacklinksTableBlock,
+  isDailyEffortsByClassBlock,
   isLayoutBlockFrontmatter,
   isPropertiesBlock,
   type BacklinksTableBlock,
   type CreateLayoutBlockOptions,
+  type DailyEffortsByClassBlock,
+  type DailyEffortsPartition,
   type LayoutBlock,
   type LayoutBlockBase,
   type PropertiesBlock,
+} from "./domain/layout";
+
+// pn__DailyNote section toggles (RFC pn__DailyNote toggles — req a38ac95b):
+// per-block visibility merge + day-efforts class partition.
+export {
+  BUILTIN_DAILY_EFFORTS_VISIBILITY,
+  DAILY_EFFORTS_OVERRIDE_KEYS,
+  coerceVisibilityOverride,
+  resolveBlockVisibility,
+  resolveDailyEffortVisibility,
+  EMS_ACTION_CLASS_UID,
+  EMS_PROJECT_CLASS_UID,
+  partitionDailyEffortsByClass,
+  type DailyEffortsPartitioned,
 } from "./domain/layout";
 
 export {
