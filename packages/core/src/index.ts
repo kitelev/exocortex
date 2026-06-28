@@ -607,6 +607,17 @@ export {
   type DetectChangesParams,
 } from "./services/sync/ChangeDetector";
 export { gitBlobSha } from "./services/sync/gitBlobSha";
+// dedup-uids (#3477) shared platform-free core (#3676) — report + fix semantics
+// composed by BOTH the CLI `runDedupUids` (Node enumeration) and the in-plugin
+// «Deduplicate uids» command (vault.adapter enumeration). Desktop↔Mobile parity.
+export {
+  rewriteAssetUid,
+  findDuplicateUidGroups,
+  planDuplicateUidFix,
+  type DedupUidFile,
+  type DedupUidGroup,
+  type DedupUidRewrite,
+} from "./services/sync/dedupUids";
 export {
   getBlobBytes,
   getBlobText,
