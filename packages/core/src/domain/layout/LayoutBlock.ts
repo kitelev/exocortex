@@ -292,7 +292,7 @@ export function createLayoutBlockFromFrontmatter(
   }
 
   warn(
-    `LayoutBlock ${base.uid}: unknown block class at ${options.sourcePath} — expected exo__PropertiesBlock or exo__BacklinksTableBlock`,
+    `LayoutBlock ${base.uid}: unknown block class at ${options.sourcePath} — expected exo__PropertiesBlock, exo__BacklinksTableBlock, or exo__DailyEffortsByClassBlock`,
   );
   return null;
 }
