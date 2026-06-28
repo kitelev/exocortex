@@ -18,6 +18,10 @@ import { EffortStatus } from "../domain/constants/EffortStatus";
 import { IRI } from "../domain/models/rdf/IRI";
 import type { WorkflowDefinition } from "../domain/models/WorkflowDefinition";
 import { FrontmatterService } from "../utilities/FrontmatterService";
+import {
+  serializeYamlScalar,
+  STRING_SCALAR_PROPERTIES,
+} from "../utilities/yamlScalar";
 import type { NamedQueryRunnerPort } from "./NamedQueryRunner";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { DateTimeParsing } from "../infrastructure/sparql/filters/functions/DateTimeParsing";
@@ -537,20 +541,28 @@ export class GroundingExecutor {
       };
     }
 
-    // RFC-028 Findings 3+4: fail loudly if $input/$value placeholder is present
-    // but no userInput.value is provided. Prevents silently writing the literal
-    // string ("$input"/"$value") into frontmatter as a value.
-    const needsUserInput = /\$(input|value)\b/.test(effectiveValue);
-    if (
-      needsUserInput &&
-      (userInput === undefined ||
-        userInput.value === undefined ||
-        userInput.value === null)
-    ) {
+    // RFC-028 Findings 3+4 (extended for named $input.<key> keys, Issue #3779):
+    // fail loudly when the value TEMPLATE references an input that was not
+    // provided. Checked against `effectiveValue` (the template) — NOT the
+    // substituted output — so a value that legitimately RESOLVES to free text
+    // containing a "$input"/"$value" substring (e.g. relabel to
+    // "Fix $input handling") is never mis-flagged (#3779 code-review MEDIUM).
+    const inputRecord = (userInput ?? {}) as Record<string, unknown>;
+    const isProvided = (v: unknown): boolean => v !== undefined && v !== null;
+    const referencedKeys = [
+      ...effectiveValue.matchAll(/\$input\.([A-Za-z_]\w*)/g),
+    ].map((m) => m[1]);
+    const usesAnonInput =
+      /\$input\b(?!\.)/.test(effectiveValue) || /\$value\b/.test(effectiveValue);
+    const missingKey = referencedKeys.find((k) => !isProvided(inputRecord[k]));
+    if (missingKey !== undefined || (usesAnonInput && !isProvided(inputRecord.value))) {
+      const hint =
+        missingKey !== undefined
+          ? `--input '{"${missingKey}":...}'`
+          : `--input '{"value":...}'`;
       return {
         success: false,
-        error:
-          "property_set: substituted value contains $input/$value placeholder but no userInput.value provided",
+        error: `property_set: value template references an input that was not provided (${hint} required)`,
       };
     }
 
@@ -560,11 +572,28 @@ export class GroundingExecutor {
       userInput,
     );
 
+    // Issue #3779: for string-semantic properties (`exo__Asset_label`,
+    // `aliases`) a substitution-derived value (e.g. a relabel `$input.label`
+    // = "Meeting: Q3") may contain YAML-significant characters. `updateProperty`
+    // writes values verbatim (callers pre-format), so route the substituted
+    // value through the same conservative quote-when-needed serializer the
+    // create path uses (#3748/#3750). Idempotent: simple labels stay bare,
+    // pre-quoted wikilinks pass through, only YAML-unsafe values get quoted.
+    // Non-string-scalar properties (timestamps, refs) are untouched. The
+    // property name is normalized to prefixed form first so a full-IRI-shaped
+    // `targetProperty` still matches the string-scalar set (#3779 review LOW).
+    const normalizedTargetProperty = FrontmatterService.normalizeIRI(
+      grounding.targetProperty,
+    );
+    const valueToWrite = STRING_SCALAR_PROPERTIES.has(normalizedTargetProperty)
+      ? serializeYamlScalar(substitutedValue, true)
+      : substitutedValue;
+
     const content = await this.fileReader.readFile(filePath);
     const updated = this.frontmatterService.updateProperty(
       content,
       grounding.targetProperty,
-      substitutedValue,
+      valueToWrite,
     );
     await this.fileWriter.updateFile(filePath, updated);
 
@@ -1781,6 +1810,13 @@ export class GroundingExecutor {
    *   "Set Planned Start/End", "Set Scheduled Date", "Set Result" buttons.
    *   Substituted only when userInput.value is defined; callers must gate
    *   missing-input at the executePropertySet layer for fail-loud semantics.
+   * - $input.<key> → userInput[<key>] (Issue #3779) — named-input substitution
+   *   that lets a vault grounding reference an inputSchema-declared input by
+   *   name (e.g. `$input.label`, `$input.parent`) instead of the single
+   *   anonymous `$input`/`$value` slot. MUST run before the bare `$input`/
+   *   `$value` substitution (more-specific first). A key whose value is
+   *   undefined/null is left untouched so executePropertySet's placeholder
+   *   gate fails loud rather than persisting a half-substituted literal.
    */
   substituteVariables(
     value: string,
@@ -1857,9 +1893,24 @@ export class GroundingExecutor {
       .replace(/\$todayStart\b/g, todayStart)
       .replace(/\$today/g, today);
 
-    if (userInput?.value !== undefined && userInput.value !== null) {
-      const inputStr = String(userInput.value);
-      result = result.replace(/\$input\b/g, inputStr).replace(/\$value\b/g, inputStr);
+    // Input substitution — anonymous `$input`/`$value` → userInput.value;
+    // named `$input.<key>` → userInput[<key>] (Issue #3779). Done in a SINGLE
+    // regex pass so a resolved value that itself contains a "$input"/"$value"
+    // substring is NOT re-scanned and clobbered by a later pass (#3779 review):
+    // String.replace advances through the original string and never re-examines
+    // inserted replacement text. The alternation tries the named form first so
+    // the bare branch never consumes the `$input` prefix of `$input.<key>`. An
+    // absent input leaves its placeholder untouched (the executePropertySet
+    // template gate then fails loud).
+    if (userInput) {
+      const ir = userInput as Record<string, unknown>;
+      result = result.replace(
+        /\$input\.([A-Za-z_]\w*)|\$(?:input|value)\b/g,
+        (whole, namedKey?: string) => {
+          const v = namedKey !== undefined ? ir[namedKey] : ir.value;
+          return v === undefined || v === null ? whole : String(v);
+        },
+      );
     }
 
     return result;

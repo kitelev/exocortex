@@ -4241,3 +4241,161 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
     });
   });
 });
+
+// Issue #3779 — named-input substitution `$input.<key>` (relabel / set-parent
+// dogfooding parity). Lets a vault grounding bind an inputSchema-named CLI input
+// (`--input '{"label":...}'` / `'{"parent":...}'`) instead of the single
+// anonymous `$input`/`$value` slot. Additive: bare `$input`/`$value` still
+// resolve to userInput.value.
+describe("substituteVariables — $input.<key> named-input resolution (#3779)", () => {
+  const TARGET_IRI = "https://exocortex.my/assets/test-asset-3779";
+  const FILE_PATH = "/vault/test-asset.md";
+
+  function createMockReader(content?: string) {
+    return {
+      readFile: jest.fn().mockResolvedValue(content ?? "---\nfoo: bar\n---\nBody"),
+      fileExists: jest.fn().mockResolvedValue(true),
+      getMarkdownFiles: jest.fn().mockResolvedValue([]),
+    };
+  }
+  function createMockWriter() {
+    return {
+      createFile: jest.fn().mockResolvedValue(""),
+      updateFile: jest.fn().mockResolvedValue(undefined),
+      writeFile: jest.fn().mockResolvedValue(undefined),
+      deleteFile: jest.fn().mockResolvedValue(undefined),
+      renameFile: jest.fn().mockResolvedValue(undefined),
+    };
+  }
+  function makeGrounding(overrides: Record<string, unknown>): GroundingDefinition {
+    return {
+      id: "gnd-test-3779",
+      label: "Test Grounding (#3779)",
+      type: GroundingType.PROPERTY_SET,
+      ...overrides,
+    } as unknown as GroundingDefinition;
+  }
+  function written(writer: ReturnType<typeof createMockWriter>): string {
+    expect(writer.updateFile).toHaveBeenCalledTimes(1);
+    return writer.updateFile.mock.calls[0][1] as string;
+  }
+
+  let reader: ReturnType<typeof createMockReader>;
+  let writer: ReturnType<typeof createMockWriter>;
+  let executor: GroundingExecutor;
+
+  beforeEach(() => {
+    reader = createMockReader();
+    writer = createMockWriter();
+    executor = new GroundingExecutor(reader, writer, new ServiceRegistry());
+  });
+
+  it("resolves $input.<key> to the matching userInput key (set-parent via targetValueRef)", async () => {
+    const grounding = makeGrounding({
+      targetProperty: "ems__Effort_parent",
+      targetValueRef: "$input.parent", // executor wraps to "[[<resolved>]]"
+    });
+
+    const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+      parent: "99999999-0000-0000-0000-000000000009",
+    });
+
+    expect(result.success).toBe(true);
+    expect(written(writer)).toContain(
+      'ems__Effort_parent: "[[99999999-0000-0000-0000-000000000009]]"',
+    );
+  });
+
+  it("resolves $input.<key> inside a literal value (relabel via targetValueLiteral)", async () => {
+    const grounding = makeGrounding({
+      targetProperty: "exo__Asset_label",
+      targetValueLiteral: "$input.label",
+    });
+
+    const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+      label: "New Label",
+    });
+
+    expect(result.success).toBe(true);
+    expect(written(writer)).toMatch(/exo__Asset_label: New Label\b/);
+  });
+
+  it("YAML-quotes a string-scalar property value that needs quoting (label with ': ')", async () => {
+    const grounding = makeGrounding({
+      targetProperty: "exo__Asset_label",
+      targetValueLiteral: "$input.label",
+    });
+
+    const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+      label: "Meeting: Q3 review",
+    });
+
+    expect(result.success).toBe(true);
+    expect(written(writer)).toContain('exo__Asset_label: "Meeting: Q3 review"');
+  });
+
+  it("fails loud (no write) when the referenced $input.<key> key is absent", async () => {
+    const grounding = makeGrounding({
+      targetProperty: "ems__Effort_parent",
+      targetValueRef: "$input.parent",
+    });
+
+    const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+      value: "wrong-key",
+    });
+
+    expect(result.success).toBe(false);
+    expect(writer.updateFile).not.toHaveBeenCalled();
+    expect(result.error).toMatch(/input|placeholder/i);
+  });
+
+  it("still resolves the anonymous $input slot to userInput.value (backward compatible)", async () => {
+    const grounding = makeGrounding({
+      targetProperty: "ems__Effort_result",
+      targetValueSubstitution: "$input",
+    });
+
+    const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+      value: "done",
+    });
+
+    expect(result.success).toBe(true);
+    expect(written(writer)).toContain("ems__Effort_result: done");
+  });
+
+  it("does not clobber resolved free-text that contains a $value substring (single-pass substitution)", async () => {
+    // Resolve $input.label to text containing the literal token "$value", AND
+    // pass a `value` key too. A naive two-pass substitution would re-scan the
+    // inserted text and replace the literal "$value" with userInput.value.
+    const grounding = makeGrounding({
+      targetProperty: "exo__Asset_label",
+      targetValueLiteral: "$input.label",
+    });
+
+    const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+      label: "Fix $value handling",
+      value: "CLOBBERED",
+    });
+
+    expect(result.success).toBe(true);
+    const out = written(writer);
+    expect(out).toContain("Fix $value handling");
+    expect(out).not.toContain("CLOBBERED");
+  });
+
+  it("does not false-reject a label that resolves to $input free-text (gate checks the template)", async () => {
+    // Template references $input.label which IS provided; the resolved value
+    // contains "$input" free-text. Gate must NOT reject (it checks the template).
+    const grounding = makeGrounding({
+      targetProperty: "exo__Asset_label",
+      targetValueLiteral: "$input.label",
+    });
+
+    const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+      label: "About $input substitution",
+    });
+
+    expect(result.success).toBe(true);
+    expect(written(writer)).toContain("About $input substitution");
+  });
+});
