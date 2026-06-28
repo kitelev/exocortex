@@ -1377,6 +1377,129 @@ describe("GroundingExecutor", () => {
           /exo__Asset_label: Осознал, что делаю шелуху \d{4}-\d{2}-\d{2}-\d{2}-\d{2}/,
         );
       });
+
+      // Bug-fix (false-alarm log): the "Vault may be in an unhealthy state"
+      // ERROR must NOT fire when the label was resolved via the *designed*
+      // one-click paths (labelTemplate / userInput). Reaching the label
+      // top-up block is normal for one-click/CLI creates (PD #3 writes an empty
+      // literal), so the unhealthy-state signal belongs only to the genuine
+      // "Untitled" fallthrough — not to a successful labelTemplate resolution.
+      // Production-shape: a healthy Universal Default Template covers uid /
+      // createdAt / instance_class (so they never reach the TS top-up) and
+      // writes an EMPTY exo__Asset_label in the one-click flow (PD #3 =
+      // $userInputLabel with no input modal). labelTemplate is the designed
+      // completion. The unhealthy-state ERROR must NOT fire on this healthy create.
+      const HEALTHY_TEMPLATE_DEFAULTS = [
+        { propertyName: "exo__Asset_uid", value: "fixed-uid-for-test" },
+        { propertyName: "exo__Asset_createdAt", value: "2026-06-28T10:00:00" },
+        { propertyName: "exo__Instance_class", value: "[[ems__Task]]" },
+        { propertyName: "exo__Asset_label", value: "" },
+      ];
+
+      it("does NOT log 'unhealthy state' when labelTemplate resolves the label (one-click flow)", async () => {
+        const errorSpy = jest
+          .spyOn(
+            require("../../../src/services/LoggingService").LoggingService,
+            "error",
+          )
+          .mockImplementation();
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+          labelTemplate: "Auto label",
+          propertyDefault: HEALTHY_TEMPLATE_DEFAULTS,
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain("exo__Asset_label: Auto label");
+        const calls = errorSpy.mock.calls.flat().map(String);
+        expect(
+          calls.some((s) =>
+            s.includes("did not cover essential scalar primitives"),
+          ),
+        ).toBe(false);
+
+        errorSpy.mockRestore();
+      });
+
+      it("blank userInput.label ('') falls back to 'Untitled' (no blank on disk) AND logs 'unhealthy state' (reviewer LOW)", async () => {
+        // A modal-submitted empty label must not write a blank exo__Asset_label
+        // to disk nor escape the unhealthy-state signal. "" is not undefined, so
+        // the `??` path would keep it; the trim-guard normalises it to "Untitled".
+        const errorSpy = jest
+          .spyOn(
+            require("../../../src/services/LoggingService").LoggingService,
+            "error",
+          )
+          .mockImplementation();
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+          propertyDefault: HEALTHY_TEMPLATE_DEFAULTS,
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+          label: "",
+        });
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain("exo__Asset_label: Untitled");
+        expect(content).not.toMatch(/exo__Asset_label:\s*$/m);
+        const calls = errorSpy.mock.calls.flat().map(String);
+        expect(
+          calls.some(
+            (s) =>
+              s.includes("did not cover essential scalar primitives") &&
+              s.includes("exo__Asset_label"),
+          ),
+        ).toBe(true);
+
+        errorSpy.mockRestore();
+      });
+
+      it("regression: genuine 'Untitled' fallthrough STILL logs 'unhealthy state'", async () => {
+        // The degraded-mode signal must survive: when NO userInput.label and NO
+        // labelTemplate produce a label, the safety net falls to "Untitled" and
+        // the unhealthy-state ERROR must still fire (revert-verify counterpart).
+        const errorSpy = jest
+          .spyOn(
+            require("../../../src/services/LoggingService").LoggingService,
+            "error",
+          )
+          .mockImplementation();
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+          // No labelTemplate → label stays empty → falls to "Untitled".
+          propertyDefault: HEALTHY_TEMPLATE_DEFAULTS,
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain("exo__Asset_label: Untitled");
+        const calls = errorSpy.mock.calls.flat().map(String);
+        expect(
+          calls.some(
+            (s) =>
+              s.includes("did not cover essential scalar primitives") &&
+              s.includes("exo__Asset_label"),
+          ),
+        ).toBe(true);
+
+        errorSpy.mockRestore();
+      });
     });
 
     // Issue #3195: strip-canon. For UUID-named prototype-instance targets
@@ -4000,11 +4123,14 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
 
   // RFC 727572d2 — safety-net top-up coverage (HIGH-1+2 reviewer fixes)
   describe("RFC 727572d2 partial-PD safety-net top-up", () => {
-    it("PD covers only uid + createdAt → top-up fills label + Instance_class + backlink + error log", async () => {
+    it("PD covers only uid + createdAt → top-up fills label + Instance_class + backlink; error flags only the genuine gap (Instance_class), NOT the userInput-provided label", async () => {
       // Simulate Universal Default Template with only 2 of 4 essential primitives
       // (e.g. partial vault corruption / in-flight migration). PR ships
       // executor with selective top-up: missing essentials filled from legacy
-      // TS, log emitted to surface vault-health regression.
+      // TS, log emitted to surface vault-health regression. NOTE: the label here
+      // is supplied via userInput (the modal/input flow) — that is the DESIGNED
+      // path, not a template gap, so the unhealthy-state error must NOT list
+      // exo__Asset_label (only the genuinely-uncovered exo__Instance_class).
       const grounding = makeGrounding({
         type: GroundingType.CREATE_INSTANCE,
         targetClass: "ems__Task",
@@ -4040,10 +4166,26 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
       // Backlink top-up: target known, no per-Grounding linkBackProperty, no IR fired
       expect(content).toContain('exo__Asset_prototype: "[[');
 
-      // Error log emitted (vault-health visibility)
+      // Error log emitted (vault-health visibility) — but ONLY for the genuine
+      // gap. exo__Instance_class was not covered by the partial PDs → flagged.
       expect(errorSpy).toHaveBeenCalled();
       const calls = errorSpy.mock.calls.flat().map(String);
-      expect(calls.some((s) => s.includes("exo__Asset_label") && s.includes("exo__Instance_class"))).toBe(true);
+      expect(
+        calls.some(
+          (s) =>
+            s.includes("essential scalar primitives") &&
+            s.includes("exo__Instance_class"),
+        ),
+      ).toBe(true);
+      // Bug-fix (false-alarm log): the label came from userInput (modal flow),
+      // so it must NOT be reported as a missing/uncovered primitive.
+      expect(
+        calls.some(
+          (s) =>
+            s.includes("essential scalar primitives") &&
+            s.includes("exo__Asset_label"),
+        ),
+      ).toBe(false);
 
       errorSpy.mockRestore();
     });
