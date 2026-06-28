@@ -101,6 +101,26 @@ describe("DynamicForm", () => {
       expect(screen.getByTestId("field-plannedDate")).toHaveValue("2026-01-15");
       expect(screen.getByTestId("field-note")).toHaveValue("$todayish");
     });
+
+    // Locks the load-bearing UTC decision: at an instant where the Almaty
+    // (UTC+5) local date (2026-06-29) differs from the UTC date (2026-06-28),
+    // the resolved value must follow the engine's UTC slice — NOT the local
+    // date — so the modal date, label `$today`, and planned timestamps agree.
+    // `toISOString()` is timezone-independent, so this never flakes on the impl;
+    // it only fails if someone reimplements with local date components.
+    it("@req:57b03ab3 uses the engine's UTC date, not the local-timezone date, across midnight", () => {
+      const prevTz = process.env.TZ;
+      process.env.TZ = "Asia/Almaty";
+      try {
+        jest.setSystemTime(new Date("2026-06-28T23:30:00Z")); // 04:30 next day in Almaty
+        renderForm([
+          { name: "plannedDate", type: "date", defaultValue: "$today" },
+        ]);
+        expect(screen.getByTestId("field-plannedDate")).toHaveValue("2026-06-28");
+      } finally {
+        process.env.TZ = prevTz;
+      }
+    });
   });
 
   // T3 «Create Instance» — number/boolean field types for required-property
