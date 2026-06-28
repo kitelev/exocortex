@@ -63,6 +63,66 @@ describe("DynamicForm", () => {
     });
   });
 
+  // Feature ec15f83e / req 57b03ab3 — the create-task-instance modal pre-fills
+  // its planned-date field with today via the `$today` token in defaultValue.
+  // UTC date slice mirrors the engine's $today basis (GroundingExecutor /
+  // labelTemplate) so the modal date, label, and planned timestamps agree.
+  describe("$today defaultValue token (req 57b03ab3)", () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date("2026-06-28T10:00:00Z"));
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("@req:57b03ab3 resolves a date field's '$today' defaultValue to today's date", () => {
+      renderForm([{ name: "plannedDate", type: "date", defaultValue: "$today" }]);
+      expect(screen.getByTestId("field-plannedDate")).toHaveValue("2026-06-28");
+    });
+
+    it("@req:57b03ab3 submits the resolved today date as the field value", () => {
+      const { onSubmit } = renderForm([
+        { name: "label", type: "text", defaultValue: "x" },
+        { name: "plannedDate", type: "date", defaultValue: "$today" },
+      ]);
+      fireEvent.click(screen.getByText("OK"));
+      expect(onSubmit).toHaveBeenCalledWith({
+        label: "x",
+        plannedDate: "2026-06-28",
+      });
+    });
+
+    it("@req:57b03ab3 leaves a literal date and non-'$today' text defaultValue untouched", () => {
+      renderForm([
+        { name: "plannedDate", type: "date", defaultValue: "2026-01-15" },
+        { name: "note", type: "text", defaultValue: "$todayish" },
+      ]);
+      expect(screen.getByTestId("field-plannedDate")).toHaveValue("2026-01-15");
+      expect(screen.getByTestId("field-note")).toHaveValue("$todayish");
+    });
+
+    // Locks the load-bearing UTC decision: at an instant where the Almaty
+    // (UTC+5) local date (2026-06-29) differs from the UTC date (2026-06-28),
+    // the resolved value must follow the engine's UTC slice — NOT the local
+    // date — so the modal date, label `$today`, and planned timestamps agree.
+    // `toISOString()` is timezone-independent, so this never flakes on the impl;
+    // it only fails if someone reimplements with local date components.
+    it("@req:57b03ab3 uses the engine's UTC date, not the local-timezone date, across midnight", () => {
+      const prevTz = process.env.TZ;
+      process.env.TZ = "Asia/Almaty";
+      try {
+        jest.setSystemTime(new Date("2026-06-28T23:30:00Z")); // 04:30 next day in Almaty
+        renderForm([
+          { name: "plannedDate", type: "date", defaultValue: "$today" },
+        ]);
+        expect(screen.getByTestId("field-plannedDate")).toHaveValue("2026-06-28");
+      } finally {
+        process.env.TZ = prevTz;
+      }
+    });
+  });
+
   // T3 «Create Instance» — number/boolean field types for required-property
   // datatype ranges (xsd:integer/decimal/… → number, xsd:boolean → boolean).
   describe("number field (T3)", () => {
