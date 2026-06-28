@@ -1494,7 +1494,18 @@ export class GroundingExecutor {
       if (finalLabel !== "Untitled" && properties.aliases === undefined) {
         properties.aliases = [finalLabel];
       }
-      missing.push("exo__Asset_label");
+      // Only the genuine degraded fallthrough ("Untitled") is an
+      // unhealthy-state signal. Reaching this block is NORMAL for the one-click
+      // / CLI flow: Universal Default Template PD #3 (`exo__Asset_label =
+      // $userInputLabel`) writes an empty literal when no input modal supplies
+      // a label, and the labelTemplate / userInput path above is the *designed*
+      // completion — not a TS-fallback rescue. Pushing "exo__Asset_label" to
+      // `missing[]` unconditionally falsely tripped the "Vault may be in an
+      // unhealthy state" ERROR on every healthy labelTemplate-driven create
+      // (bug-fix: false-alarm log). Flag only the real "Untitled" fallback.
+      if (finalLabel === "Untitled") {
+        missing.push("exo__Asset_label");
+      }
     }
 
     if (
