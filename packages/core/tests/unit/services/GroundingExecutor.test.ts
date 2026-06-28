@@ -1427,6 +1427,44 @@ describe("GroundingExecutor", () => {
         errorSpy.mockRestore();
       });
 
+      it("blank userInput.label ('') falls back to 'Untitled' (no blank on disk) AND logs 'unhealthy state' (reviewer LOW)", async () => {
+        // A modal-submitted empty label must not write a blank exo__Asset_label
+        // to disk nor escape the unhealthy-state signal. "" is not undefined, so
+        // the `??` path would keep it; the trim-guard normalises it to "Untitled".
+        const errorSpy = jest
+          .spyOn(
+            require("../../../src/services/LoggingService").LoggingService,
+            "error",
+          )
+          .mockImplementation();
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+          propertyDefault: HEALTHY_TEMPLATE_DEFAULTS,
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+          label: "",
+        });
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain("exo__Asset_label: Untitled");
+        expect(content).not.toMatch(/exo__Asset_label:\s*$/m);
+        const calls = errorSpy.mock.calls.flat().map(String);
+        expect(
+          calls.some(
+            (s) =>
+              s.includes("did not cover essential scalar primitives") &&
+              s.includes("exo__Asset_label"),
+          ),
+        ).toBe(true);
+
+        errorSpy.mockRestore();
+      });
+
       it("regression: genuine 'Untitled' fallthrough STILL logs 'unhealthy state'", async () => {
         // The degraded-mode signal must survive: when NO userInput.label and NO
         // labelTemplate produce a label, the safety net falls to "Untitled" and

@@ -1489,7 +1489,14 @@ export class GroundingExecutor {
           );
         }
       }
-      const finalLabel = label ?? "Untitled";
+      // A modal-submitted empty `userInput.label` ("") must not write a blank
+      // label to disk nor escape the unhealthy-state signal: it is not
+      // `undefined`, so `??` would keep it, and "" !== "Untitled". Treat any
+      // blank resolved label as absent → "Untitled" fallback (which is then
+      // flagged below). The labelTemplate path already guards blank at its
+      // substitution site, so only the userInput.label === "" path reaches here.
+      const finalLabel =
+        label !== undefined && label.trim().length > 0 ? label : "Untitled";
       properties.exo__Asset_label = finalLabel;
       if (finalLabel !== "Untitled" && properties.aliases === undefined) {
         properties.aliases = [finalLabel];
