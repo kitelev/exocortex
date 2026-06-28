@@ -231,6 +231,32 @@ export class SPARQLApi {
   }
 
   /**
+   * Executes a SPARQL **ASK** query and returns its boolean result.
+   *
+   * `query()` cannot serve an ASK: its contract is `SolutionMapping[]`, so it
+   * runs the ASK and discards the boolean. This method exposes the boolean the
+   * executor already computes — used to gate `exo-layout` action buttons by
+   * their `exo__Precondition_sparql` ASK (#3654 Part 1): `true` ⇒ button shown,
+   * `false` ⇒ hidden.
+   *
+   * @param sparql - A SPARQL ASK query string.
+   * @returns Promise resolving to the ASK boolean.
+   * @throws {ValidationError} If the query is not a valid ASK query.
+   * @throws {ServiceError} If the query service is not initialized or execution fails.
+   *
+   * @example
+   * ```typescript
+   * const holds = await api.ask(`
+   *   PREFIX ems: <https://exocortex.my/ontology/ems#>
+   *   ASK { <obsidian://vault/tasks/t1.md> ems:Effort_status ?s }
+   * `);
+   * ```
+   */
+  async ask(sparql: string): Promise<boolean> {
+    return this.queryService.ask(sparql);
+  }
+
+  /**
    * Returns the underlying in-memory triple store.
    *
    * Provides direct access to the RDF triple store for advanced operations
