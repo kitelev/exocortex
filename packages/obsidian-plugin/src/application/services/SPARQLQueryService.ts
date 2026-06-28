@@ -165,6 +165,87 @@ export class SPARQLQueryService {
   }
 
   /**
+   * Executes a SPARQL **ASK** query and returns its boolean result.
+   *
+   * Unlike {@link query} — whose contract is `SolutionMapping[]`, so for an ASK
+   * it runs `executor.executeAsk(algebra)` and **discards** the boolean,
+   * returning `[]` — this method surfaces the boolean the executor already
+   * computes (`QueryExecutor.executeAsk → Promise<boolean>`). It exists to gate
+   * `exo-layout` action buttons by their `exo__Precondition_sparql` ASK (#3654
+   * Part 1): `true` ⇒ the button is shown, `false` ⇒ hidden.
+   *
+   * @param queryString - A SPARQL ASK query.
+   * @returns the ASK boolean.
+   * @throws {ValidationError} if the query is not a valid ASK query (or fails to parse).
+   * @throws {ServiceError} if the service is not initialized or execution fails.
+   */
+  async ask(queryString: string): Promise<boolean> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    if (!this.executor) {
+      throw new ServiceError(
+        "query executor not initialized",
+        {
+          service: "SPARQLQueryService",
+          operation: "ask",
+        }
+      );
+    }
+
+    try {
+      const ast: SPARQLQuery = this.parser.parse(queryString);
+
+      let algebra: AlgebraOperation = this.translator.translate(ast);
+      algebra = this.optimizer.optimize(algebra);
+
+      if (!this.executor.isAskQuery(algebra)) {
+        throw new ValidationError(
+          "ask() requires an ASK query",
+          { query: queryString }
+        );
+      }
+
+      return await this.executor.executeAsk(algebra);
+    } catch (error) {
+      // Pre-built domain errors (a non-ASK ValidationError above, or a
+      // ServiceError) pass through unchanged; mirror query()'s normalisation
+      // for everything else.
+      if (error instanceof ServiceError || error instanceof ValidationError) {
+        this.errorHandler.handle(error);
+        throw error;
+      }
+
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      if (errorMessage.includes("parse") || errorMessage.includes("syntax")) {
+        const validationError = new ValidationError(
+          "invalid sparql query",
+          {
+            query: queryString,
+            originalError: errorMessage,
+          }
+        );
+        this.errorHandler.handle(validationError);
+        throw validationError;
+      }
+
+      const serviceError = new ServiceError(
+        "sparql ask execution failed",
+        {
+          service: "SPARQLQueryService",
+          operation: "ask",
+          query: queryString,
+          originalError: errorMessage,
+        }
+      );
+      this.errorHandler.handle(serviceError);
+      throw serviceError;
+    }
+  }
+
+  /**
    * Returns true once the underlying triple store is fully populated and
    * ready to execute SPARQL queries.
    *
@@ -189,6 +270,19 @@ export class SPARQLQueryService {
     await this.errorHandler.executeWithRetry(
       async () => this.indexer.updateFile(file),
       { context: "SPARQLQueryService.updateFile", filePath: file.path }
+    );
+  }
+
+  /**
+   * Post-sync targeted disk-read reindex of the paths ExoSync mutated this run
+   * (RFC 8f93ff95). Passthrough to {@link VaultRDFIndexer.reindexPathsFromDisk}
+   * — re-indexes each changed path straight from disk into the shared store
+   * (present ⇒ update, absent ⇒ remove) + one global inference.
+   */
+  async reindexPathsFromDisk(paths: string[]): Promise<void> {
+    await this.errorHandler.executeWithRetry(
+      async () => this.indexer.reindexPathsFromDisk(paths),
+      { context: "SPARQLQueryService.reindexPathsFromDisk" }
     );
   }
 

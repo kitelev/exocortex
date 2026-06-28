@@ -186,6 +186,22 @@ export class LazyAssetGraphLoader {
   }
 
   /**
+   * Compute an asset's path-form IRI with the SAME `subjectIriPrefix` the
+   * loader's converter uses (RFC `93a0b2ee` Task 1.2). Delegates to
+   * `INoteConverter.notePathToIRI` so a consumer that needs to match assets
+   * against the store (e.g. the Relations read-path sourcing reified
+   * `exo__Statement` relations) keys by the EXACT IRI form the indexer emitted
+   * — not a hand-rolled `obsidian://vault/<path>` guess that would silently
+   * miss mounted / prefix-labeled subjects (`sparql-iri-form-pre-verify`).
+   *
+   * @param path - The asset's vault-relative path (e.g. `assetspaces/…/<uid>.md`).
+   * @returns The path-form IRI (`<subjectIriPrefix><path>` → `obsidian://vault/…`).
+   */
+  notePathToIRI(path: string): IRI {
+    return this.converter.notePathToIRI(path);
+  }
+
+  /**
    * Mark a single IRI as no-longer-loaded so the next ensure-call for
    * this asset re-walks frontmatter + chains afresh.
    *

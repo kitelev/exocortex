@@ -160,6 +160,10 @@ function makeStore(
   overrides: {
     baseline?: Record<string, unknown>;
     applyRemote?: jest.Mock;
+    // RFC f402002b M2.3 — opt into the legacy/deprecated outbound UI→asset
+    // auto-write (default false = read-only transitional watcher).
+    outboundWriteEnabled?: boolean;
+    logger?: { warn: jest.Mock } & Record<string, jest.Mock>;
   } = {},
 ) {
   const applyRemote =
@@ -167,15 +171,17 @@ function makeStore(
     jest.fn(async (field: string, value: unknown) => {
       settings[field] = value;
     });
+  const logger = overrides.logger ?? noopLogger;
   const store = new VaultSettingsStore({
     app: fake.asApp(),
-    logger: noopLogger,
+    logger: logger as never,
     getSettings: () => settings,
     baseline: overrides.baseline ?? snapshot(settings),
     applyRemote,
     writeDebounceMs: 0,
+    outboundWriteEnabled: overrides.outboundWriteEnabled ?? false,
   });
-  return { store, applyRemote };
+  return { store, applyRemote, logger };
 }
 
 function snapshot(settings: Record<string, unknown>): Record<string, unknown> {
@@ -246,7 +252,10 @@ describe("VaultSettingsStore", () => {
       const settings = freshSettings();
       const baseline = snapshot(settings); // baseline: false
       settings.showArchivedAssets = true; // user toggled pre-scan
-      const { store, applyRemote } = makeStore(fake, settings, { baseline });
+      const { store, applyRemote } = makeStore(fake, settings, {
+        baseline,
+        outboundWriteEnabled: true, // M2.3: this test asserts the deprecated dirty-field push
+      });
 
       await store.applyScan(store.scanAll());
       await store.flushWrites();
@@ -484,7 +493,11 @@ describe("VaultSettingsStore", () => {
     async function setupMigrated() {
       const fake = new FakeApp();
       const settings = freshSettings();
-      const { store, applyRemote } = makeStore(fake, settings);
+      // M2.3: these blocks exercise the (now-deprecated) outbound UI→asset
+      // auto-write path → opt in explicitly.
+      const { store, applyRemote } = makeStore(fake, settings, {
+        outboundWriteEnabled: true,
+      });
       store.scanAll();
       await store.migrateMissing();
       return { fake, settings, store, applyRemote };
@@ -518,7 +531,9 @@ describe("VaultSettingsStore", () => {
     it("never creates a missing asset on push (F2 — no duplicate factory)", async () => {
       const fake = new FakeApp();
       const settings = freshSettings();
-      const { store } = makeStore(fake, settings);
+      const { store } = makeStore(fake, settings, {
+        outboundWriteEnabled: true, // M2.3: exercises the deprecated push path
+      });
       store.scanAll(); // no assets at all, no migration
 
       settings.showArchivedAssets = true;
@@ -543,11 +558,103 @@ describe("VaultSettingsStore", () => {
     });
   });
 
+  // @req:5c08b7ad-0e82-4dfa-b258-316a2d21c143
+  describe("read-only transitional deprecation (M2.3, RFC f402002b §6 R2)", () => {
+    async function setupReadOnly(logger?: { warn: jest.Mock } & Record<string, jest.Mock>) {
+      const fake = new FakeApp();
+      const settings = freshSettings();
+      // Default makeStore = read-only (outboundWriteEnabled defaults false).
+      const { store, applyRemote } = makeStore(fake, settings, { logger });
+      store.scanAll();
+      await store.migrateMissing();
+      return { fake, settings, store, applyRemote };
+    }
+
+    function tfileOf(path: string): TFile {
+      return { path } as unknown as TFile;
+    }
+
+    it("pushChangedFields is a no-op (no UI→asset write) when read-only", async () => {
+      const { fake, settings, store } = await setupReadOnly();
+      const d = descriptorByField("enableShaclValidation")!;
+      const path = `${DEFAULT_SETTINGS_FOLDER}/${d.settingUid}.md`;
+      const before = fake.files.get(path)!.frontmatter!.exo__Setting_value;
+      const processCallsBefore = fake.processCalls.length;
+
+      settings.enableShaclValidation = true; // user toggles in UI
+      store.pushChangedFields();
+      await store.flushWrites();
+
+      // The asset is NOT rewritten — the UI change is not auto-mirrored.
+      expect(fake.files.get(path)!.frontmatter!.exo__Setting_value).toBe(before);
+      expect(fake.processCalls.length).toBe(processCallsBefore);
+    });
+
+    it("logs the deprecation notice at most once across many UI saves", async () => {
+      const logger = {
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+      };
+      const { settings, store } = await setupReadOnly(logger);
+      logger.warn.mockClear(); // ignore any scan/migrate warnings
+
+      settings.enableShaclValidation = true;
+      store.pushChangedFields();
+      settings.showArchivedAssets = true;
+      store.pushChangedFields();
+      store.pushChangedFields();
+
+      const deprecationWarns = logger.warn.mock.calls.filter((c) =>
+        String(c[0]).includes("deprecated"),
+      );
+      expect(deprecationWarns).toHaveLength(1);
+    });
+
+    it("KEEPS the asset→UI inbound watcher (read-only): a synced asset change still applies", async () => {
+      const { fake, settings, store, applyRemote } = await setupReadOnly();
+      const d = descriptorByField("showArchivedAssets")!;
+      const path = `${DEFAULT_SETTINGS_FOLDER}/${d.settingUid}.md`;
+      fake.files.get(path)!.frontmatter!.exo__Setting_value = true; // arrives via sync
+
+      await store.onMetadataChanged(tfileOf(path));
+
+      expect(applyRemote).toHaveBeenCalledWith("showArchivedAssets", true);
+      expect(settings.showArchivedAssets).toBe(true);
+    });
+
+    it("a pre-scan dirty field is NOT auto-pushed to the asset (read-only) — the user must Export", async () => {
+      const fake = new FakeApp();
+      const path = fake.seedSettingAsset("showArchivedAssets", false);
+      const settings = freshSettings();
+      const baseline = snapshot(settings); // baseline: false
+      settings.showArchivedAssets = true; // user toggled pre-scan
+      const { store, applyRemote } = makeStore(fake, settings, { baseline }); // read-only
+
+      await store.applyScan(store.scanAll());
+      await store.flushWrites();
+
+      // No overlay (UI keeps the user's value during the session) and — the
+      // M2.3 invariant — NO outbound write: the asset is untouched. (canonical
+      // = RDF: the un-Exported UI value is not durable; a later asset change
+      // applies via the inbound watcher, covered above.)
+      expect(applyRemote).not.toHaveBeenCalled();
+      expect(settings.showArchivedAssets).toBe(true);
+      expect(fake.files.get(path)!.frontmatter!.exo__Setting_value).toBe(false);
+      expect(fake.processCalls.filter((p) => p === path)).toHaveLength(0);
+    });
+  });
+
   describe("watcher (remote changes + echo suppression)", () => {
     async function setupMigrated() {
       const fake = new FakeApp();
       const settings = freshSettings();
-      const { store, applyRemote } = makeStore(fake, settings);
+      // M2.3: these blocks exercise the (now-deprecated) outbound UI→asset
+      // auto-write path → opt in explicitly.
+      const { store, applyRemote } = makeStore(fake, settings, {
+        outboundWriteEnabled: true,
+      });
       store.scanAll();
       await store.migrateMissing();
       return { fake, settings, store, applyRemote };

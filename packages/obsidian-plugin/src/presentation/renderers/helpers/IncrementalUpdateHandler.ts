@@ -219,7 +219,7 @@ export class IncrementalUpdateHandler {
         break;
       case LayoutSection.RELATIONS:
         await this.deps.relationsRenderer.render(
-          parent, relations, config, renderHeader, ssm.isCollapsed("relations"));
+          parent, relations, config, renderHeader, ssm.isCollapsed("relations"), file);
         break;
     }
   }

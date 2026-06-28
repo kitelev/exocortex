@@ -1,4 +1,8 @@
 import { loadDefaultSpec, orderProperties } from "../services/OrderSpecResolver";
+import {
+  serializeYamlScalar,
+  STRING_SCALAR_PROPERTIES,
+} from "./yamlScalar";
 
 export class MetadataHelpers {
   static findAllReferencingProperties(
@@ -146,11 +150,19 @@ export class MetadataHelpers {
     const ordered = orderProperties(frontmatter, loadDefaultSpec());
     const frontmatterLines = Object.entries(ordered)
       .map(([key, value]) => {
+        // #3750 MEDIUM-1: route through serializeYamlScalar so scalars with
+        // YAML-breaking chars (colon-space, leading indicators, control chars)
+        // are quoted — mirrors the #3748 fix on the create_instance serializer
+        // (FrontmatterService.serializeValue). Scalar-looking coercion (#3750
+        // MEDIUM-3) is gated to string-semantic properties (label/aliases).
+        const quoteAmbiguous = STRING_SCALAR_PROPERTIES.has(key);
         if (Array.isArray(value)) {
-          const arrayItems = value.map((item) => `  - ${String(item)}`).join("\n");
+          const arrayItems = value
+            .map((item) => `  - ${serializeYamlScalar(item, quoteAmbiguous)}`)
+            .join("\n");
           return `${key}:\n${arrayItems}`;
         }
-        return `${key}: ${String(value)}`;
+        return `${key}: ${serializeYamlScalar(value, quoteAmbiguous)}`;
       })
       .join("\n");
 

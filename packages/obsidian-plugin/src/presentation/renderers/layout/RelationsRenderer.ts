@@ -1,14 +1,140 @@
 import { TFile, Keymap } from "obsidian";
 import React from "react";
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
-import { MetadataHelpers, IVaultAdapter, IFile } from "@kitelev/exocortex-core";
+import {
+  MetadataHelpers,
+  IVaultAdapter,
+  IFile,
+  ITripleStore,
+  IRI,
+  Namespace,
+  iriToVaultPath,
+  iriToObsidianName,
+} from "@kitelev/exocortex-core";
 import { AssetRelationsTableWithToggle } from '@plugin/presentation/components/AssetRelationsTable';
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { ExocortexSettings } from '@plugin/domain/settings/ExocortexSettings';
 import { AssetMetadataService } from "./helpers/AssetMetadataService";
 import { AssetRelation } from "./types";
+import {
+  getReifiedRelations,
+  labelToSymbolicIRI,
+  ReifiedRelation,
+} from "./getReifiedRelations";
 import { BlockerHelpers } from '@plugin/presentation/utils/BlockerHelpers';
-import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';
+import { ObsidianApp, ExocortexPluginInterface, MetadataRecord } from '@plugin/types';
+
+/** RFC 93a0b2ee Task 1.3 — Exocortex ontology IRI base (`…/ontology/`). */
+const EXOCORTEX_ONTOLOGY_BASE = "https://exocortex.my/ontology/";
+
+/**
+ * RFC `93a0b2ee` Task 1.3 — convert a symbolic predicate IRI to its frontmatter
+ * property-key form (`<prefix>__<localName>`) for dedup + grouping. Unlike
+ * `Namespace.fromPropertyKey` / `iriToObsidianName`, this handles dash-bearing
+ * prefixes (`exo-ims#relatesToConcept` → `exo-ims__relatesToConcept`) since the
+ * dedup key must canonicalise the inline frontmatter key and the reified
+ * predicate IRI to the SAME token. Non-ontology IRIs pass through unchanged.
+ */
+export function predicateIriToKey(iri: string): string {
+  if (iri.startsWith(EXOCORTEX_ONTOLOGY_BASE)) {
+    const rest = iri.slice(EXOCORTEX_ONTOLOGY_BASE.length); // e.g. "ems#Effort_area"
+    const hash = rest.indexOf("#");
+    if (hash >= 0) {
+      return `${rest.slice(0, hash)}__${rest.slice(hash + 1)}`;
+    }
+  }
+  return iri;
+}
+
+/**
+ * RFC `93a0b2ee` Task 1.3 — frontmatter keys that are reification PLUMBING: a
+ * backlink referencing the open asset via one of these is an `exo__Statement`
+ * asset surfacing as a raw backlink, NOT a logical relation. Its logical edge is
+ * rendered via the reified path (`mergeReifiedRelations`), so the plumbing
+ * backlink is suppressed to avoid double-representing the same edge (the
+ * "statement asset shows under exo__Statement_object" noise).
+ */
+const REIFICATION_PLUMBING_KEYS: ReadonlySet<string> = new Set([
+  "exo__Statement_subject",
+  "exo__Statement_predicate",
+  "exo__Statement_object",
+]);
+
+/**
+ * RFC `93a0b2ee` Task 1.2 — non-relation predicate filter ("predicate-whitelist"
+ * by exclusion) applied to reified relations sourced via {@link getReifiedRelations}.
+ *
+ * A reified `exo__Statement` reifies an arbitrary `<subject> <predicate> <object>`
+ * triple. The Relations block only wants genuine relation predicates (user-defined
+ * object properties such as `ems#Effort_area`, `exo-ims#relatesToConcept`); a
+ * statement whose `_predicate` is a SYSTEM / metadata / plumbing predicate
+ * (`rdf:type`, the literal `exo:Asset_*` frontmatter metadata, the TBox-structural
+ * `exo:Instance_*` / `exo:Class_*`, or the `exo:Statement_*` reification slots
+ * themselves) is noise, not a relation, and must be dropped. RDFS / OWL schema
+ * predicates (inferred noise) are likewise excluded.
+ *
+ * The exclusion is deliberately a CLOSED, narrow set — NOT a coarse `exo#Asset_`
+ * prefix. The `exo:Asset_*` family contains genuine OBJECT relations the inline
+ * relation path already surfaces — `exo:Asset_relates` (canonical relates),
+ * `exo:Asset_prototype`, `exo:Asset_createdBy`, `exo:Asset_isDefinedBy`,
+ * `exo:Asset_source` — which MUST stay visible (else Task 1.3 would render a
+ * reified `Asset_relates` invisible while an inline one shows: an inline/reified
+ * asymmetry). Only the LITERAL Asset metadata properties (label / uid / timestamps /
+ * isArchived / description) are dropped. So RFC §C1's "отсечь … exo:Asset_<x>" is
+ * read as its system-metadata subset, mirrored against the inline path's behaviour.
+ *
+ * Implemented as a denylist (not an allowlist) because relation predicates are
+ * open-ended (user-defined): we exclude the closed set of known non-relation
+ * predicates and let everything else through.
+ */
+const RDF_TYPE_IRI: string = Namespace.RDF.term("type").value;
+const EXO_BASE: string = Namespace.EXO.iri.value;
+const RDFS_BASE: string = Namespace.RDFS.iri.value;
+const OWL_BASE: string = Namespace.OWL.iri.value;
+/**
+ * `exo#` local-name prefixes that are purely TBox-structural / reification-plumbing
+ * — never user-data relations (`Instance_class`, `Class_superClass`, the three
+ * `Statement_` slots). Safe to drop wholesale by prefix.
+ */
+const EXO_NON_RELATION_LOCALNAME_PREFIXES = [
+  "Instance_",
+  "Class_",
+  "Statement_",
+];
+/**
+ * The LITERAL `exo#Asset_*` metadata properties (string / datetime / boolean
+ * values) — dropped explicitly. The OBJECT `exo:Asset_*` relations
+ * (`Asset_relates`, `Asset_prototype`, `Asset_createdBy`, `Asset_isDefinedBy`,
+ * `Asset_source`) are intentionally ABSENT here so they pass as relations,
+ * matching what the inline path surfaces.
+ */
+const EXO_NON_RELATION_ASSET_LOCALNAMES: ReadonlySet<string> = new Set([
+  "Asset_label",
+  "Asset_uid",
+  "Asset_createdAt",
+  "Asset_updatedAt",
+  "Asset_isArchived",
+  "Asset_description",
+]);
+
+/**
+ * True when `predicateIri` is a SYSTEM / metadata / plumbing predicate that must
+ * NOT be surfaced as a relation in the Relations block (RFC `93a0b2ee` Task 1.2).
+ */
+export function isNonRelationPredicate(predicateIri: string): boolean {
+  if (predicateIri === RDF_TYPE_IRI) return true;
+  if (predicateIri.startsWith(RDFS_BASE) || predicateIri.startsWith(OWL_BASE)) {
+    return true;
+  }
+  if (predicateIri.startsWith(EXO_BASE)) {
+    const localName = predicateIri.slice(EXO_BASE.length);
+    if (EXO_NON_RELATION_ASSET_LOCALNAMES.has(localName)) return true;
+    return EXO_NON_RELATION_LOCALNAME_PREFIXES.some((p) =>
+      localName.startsWith(p),
+    );
+  }
+  return false;
+}
 
 export interface UniversalLayoutConfig {
   sortBy?: string;
@@ -53,7 +179,75 @@ export class RelationsRenderer {
     private plugin: ExocortexPluginInterface,
     private refresh: () => Promise<void>,
     private vaultAdapter: IVaultAdapter,
+    // RFC `93a0b2ee` Task 1.2 — reified-relation read-path dependencies, all
+    // OPTIONAL so existing callers (and back-compat) behave exactly as before
+    // when absent (reified sourcing is simply skipped). Wired in production at
+    // `UniversalLayoutRenderer.initializeRenderers()` from the live triple store,
+    // the `SPARQLApi.isReady` probe, and the lazy loader's `notePathToIRI`.
+    /** Live triple store the reified `exo__Statement` instances are queried from. */
+    private store?: ITripleStore,
+    /**
+     * Cold-start readiness probe (`() => sparql.isReady()`). The reified query is
+     * GATED on this so a partially-indexed store never yields an UNDER-count of
+     * reified relations (RFC R4 / pattern #3587): while it returns false the
+     * reified fetch yields `[]`, and the post-refresh `autoRenderLayout()`
+     * re-render (self-heal) surfaces them once indexing settles. Omit → assume
+     * ready (back-compat: no gate).
+     */
+    private isStoreReady?: () => boolean,
+    /**
+     * The indexer's `notePathToIRI` (same `subjectIriPrefix`) — reused so the
+     * reified query keys an asset by the EXACT IRI form the converter emitted
+     * (R5 dual-IRI). Injected (not hand-rolled) so a mounted / prefix-labeled
+     * subject resolves instead of silently matching nothing.
+     */
+    private notePathToIRI?: (path: string) => IRI,
   ) {}
+
+  /**
+   * Fetch the asset's reified relations from its `exo__Statement` instances —
+   * GATED on store readiness and FILTERED to genuine relation predicates
+   * (RFC `93a0b2ee` §C1, Task 1.2). This is the cold-start-safe, whitelisted
+   * wrapper over the pure {@link getReifiedRelations} helper (Task 1.1). The
+   * integration of these into the unified relation list (dedup vs inline +
+   * provenance tagging) is Task 1.3 — this method has no caller in
+   * `getAssetRelations` yet.
+   *
+   * Returns `[]` (a no-op, never a partial set) when:
+   *  - the triple store or `notePathToIRI` dependency is absent (back-compat);
+   *  - the store is not ready (`isStoreReady?.() === false`) — the cold-start
+   *    gate that prevents an UNDER-count; the next post-refresh re-render fills
+   *    them in (self-heal).
+   *
+   * Otherwise it queries the helper and drops any reified relation whose
+   * `_predicate` is a non-relation system/plumbing predicate
+   * ({@link isNonRelationPredicate}).
+   *
+   * @param file - The asset whose reified relations to fetch.
+   * @returns the filtered reified relations; `[]` when gated off or none exist.
+   */
+  async getReifiedRelationsGated(file: TFile): Promise<ReifiedRelation[]> {
+    const store = this.store;
+    const notePathToIRI = this.notePathToIRI;
+    if (!store || !notePathToIRI) return [];
+    // Cold-start gate: never source reified relations from a not-yet-ready store
+    // (would under-count). `isStoreReady` absent → assume ready (back-compat).
+    if (this.isStoreReady && !this.isStoreReady()) return [];
+
+    const label =
+      this.metadataService.getAssetLabel(file.path) ??
+      (this.vaultAdapter.getFrontmatter(file as unknown as IFile)
+        ?.exo__Asset_label as string | undefined) ??
+      null;
+
+    const reified = await getReifiedRelations({
+      file: { path: file.path, label },
+      store,
+      notePathToIRI,
+    });
+    // Predicate-whitelist: keep only genuine relation predicates.
+    return reified.filter((r) => !isNonRelationPredicate(r.predicate));
+  }
 
   /**
    * Compose the `groupSpecificProperties` map consumed by
@@ -75,76 +269,100 @@ export class RelationsRenderer {
   ): Promise<AssetRelation[]> {
     const relations: AssetRelation[] = [];
 
+    // Inline relations (frontmatter / backlinks — the legacy path). RFC 93a0b2ee
+    // Task 1.3: this is no longer an early-return on absent backlinks, because
+    // reified relations (sourced from the triple store below) must surface even
+    // when the asset has zero inline backlinks.
     const backlinks = this.backlinksCacheManager.getBacklinks(file.path);
-    if (!backlinks) {
-      return relations;
-    }
+    if (backlinks) {
+      for (const sourcePath of backlinks) {
+        const sourceFile = this.vaultAdapter.getAbstractFileByPath(sourcePath);
+        if (sourceFile && sourcePath.endsWith(".md")) {
+          const iFile = sourceFile as IFile;
+          const metadata = this.vaultAdapter.getFrontmatter(iFile) || {};
 
-    for (const sourcePath of backlinks) {
-      const sourceFile = this.vaultAdapter.getAbstractFileByPath(sourcePath);
-      if (sourceFile && sourcePath.endsWith(".md")) {
-        const iFile = sourceFile as IFile;
-        const metadata = this.vaultAdapter.getFrontmatter(iFile) || {};
+          const isArchived = MetadataHelpers.isAssetArchived(metadata);
 
-        const isArchived = MetadataHelpers.isAssetArchived(metadata);
+          // Match by basename first; also match by UID for files where
+          // the filename doesn't equal the UUID (e.g. human-readable names).
+          let referencingProperties =
+            MetadataHelpers.findAllReferencingProperties(metadata, file.basename);
 
-        // Match by basename first; also match by UID for files where
-        // the filename doesn't equal the UUID (e.g. human-readable names).
-        let referencingProperties =
-          MetadataHelpers.findAllReferencingProperties(metadata, file.basename);
-
-        if (referencingProperties.length === 0) {
-          const targetFm = this.vaultAdapter.getFrontmatter(file as unknown as IFile);
-          const uid = targetFm?.exo__Asset_uid;
-          if (uid && typeof uid === "string") {
-            referencingProperties =
-              MetadataHelpers.findAllReferencingProperties(metadata, uid);
+          if (referencingProperties.length === 0) {
+            const targetFm = this.vaultAdapter.getFrontmatter(file as unknown as IFile);
+            const uid = targetFm?.exo__Asset_uid;
+            if (uid && typeof uid === "string") {
+              referencingProperties =
+                MetadataHelpers.findAllReferencingProperties(metadata, uid);
+            }
           }
-        }
 
-        const enrichedMetadata = { ...metadata };
-        const resolvedLabel = this.metadataService.getAssetLabel(sourcePath);
-        if (resolvedLabel) {
-          enrichedMetadata.exo__Asset_label = resolvedLabel;
-        }
+          // RFC 93a0b2ee Task 1.3 — drop reification-plumbing backlinks: a source
+          // referencing the asset ONLY via exo__Statement_* slots is a statement
+          // asset surfacing as raw plumbing; its logical edge is rendered via the
+          // reified path, so showing the plumbing backlink would double-represent
+          // the edge. (A source with a real relation property too keeps that one.)
+          if (referencingProperties.length > 0) {
+            const withoutPlumbing = referencingProperties.filter(
+              (p) => !REIFICATION_PLUMBING_KEYS.has(p),
+            );
+            if (withoutPlumbing.length === 0) {
+              continue; // pure plumbing → skip this backlink entirely
+            }
+            referencingProperties = withoutPlumbing;
+          }
 
-        const isBlocked = BlockerHelpers.isEffortBlocked(this.app, metadata);
+          const enrichedMetadata = { ...metadata };
+          const resolvedLabel = this.metadataService.getAssetLabel(sourcePath);
+          if (resolvedLabel) {
+            enrichedMetadata.exo__Asset_label = resolvedLabel;
+          }
 
-        if (referencingProperties.length > 0) {
-          for (const propertyName of referencingProperties) {
+          const isBlocked = BlockerHelpers.isEffortBlocked(this.app, metadata);
+
+          if (referencingProperties.length > 0) {
+            for (const propertyName of referencingProperties) {
+              const displayLabel = (enrichedMetadata.exo__Asset_label as string) || iFile.basename;
+              const relation: AssetRelation = {
+                file: { path: sourcePath, basename: iFile.basename },
+                path: sourcePath,
+                title: displayLabel,
+                metadata: enrichedMetadata,
+                propertyName: propertyName,
+                isBodyLink: false,
+                isArchived: isArchived,
+                isBlocked: isBlocked,
+                created: iFile.stat?.ctime || 0,
+                modified: iFile.stat?.mtime || 0,
+                provenance: "inline",
+              };
+              relations.push(relation);
+            }
+          } else {
             const displayLabel = (enrichedMetadata.exo__Asset_label as string) || iFile.basename;
             const relation: AssetRelation = {
               file: { path: sourcePath, basename: iFile.basename },
               path: sourcePath,
               title: displayLabel,
               metadata: enrichedMetadata,
-              propertyName: propertyName,
-              isBodyLink: false,
+              propertyName: undefined,
+              isBodyLink: true,
               isArchived: isArchived,
               isBlocked: isBlocked,
               created: iFile.stat?.ctime || 0,
               modified: iFile.stat?.mtime || 0,
+              provenance: "inline",
             };
             relations.push(relation);
           }
-        } else {
-          const displayLabel = (enrichedMetadata.exo__Asset_label as string) || iFile.basename;
-          const relation: AssetRelation = {
-            file: { path: sourcePath, basename: iFile.basename },
-            path: sourcePath,
-            title: displayLabel,
-            metadata: enrichedMetadata,
-            propertyName: undefined,
-            isBodyLink: true,
-            isArchived: isArchived,
-            isBlocked: isBlocked,
-            created: iFile.stat?.ctime || 0,
-            modified: iFile.stat?.mtime || 0,
-          };
-          relations.push(relation);
         }
       }
     }
+
+    // RFC 93a0b2ee Task 1.3 — merge reified relations (from exo__Statement
+    // instances, gated + whitelisted by Task 1.2) into the unified list,
+    // deduplicating against the inline set (inline-wins on collision).
+    await this.mergeReifiedRelations(file, relations);
 
     if (config.sortBy) {
       const sortBy = config.sortBy;
@@ -159,12 +377,167 @@ export class RelationsRenderer {
     return relations;
   }
 
+  /**
+   * RFC `93a0b2ee` Task 1.3 — merge the asset's reified relations (from its
+   * `exo__Statement` instances, fetched gated + whitelisted by Task 1.2) into
+   * the unified `relations` list, deduplicating against the already-collected
+   * inline relations.
+   *
+   * # Dedup (inline-wins)
+   *
+   * Each relation is canonicalised to `(subjectToken, predicateKey, objectToken)`
+   * where an entity token is its `exo__Asset_uid` (`uid:…`), falling back to its
+   * vault path (`path:…`) or the raw IRI (`iri:…`); the predicate is its
+   * frontmatter-key form via {@link predicateIriToKey}. Both IRI forms of an
+   * entity resolve to the same `uid:` token (R5 dual-IRI), and the open asset A's
+   * path-form AND symbolic-form both canonicalise to A's token. A reified relation
+   * whose key already appears among the inline relations is DROPPED: the inline
+   * representation wins (it is the one that travels when the asset is shared, so a
+   * reified duplicate does not make the edge private — RFC §C1 collision rule).
+   *
+   * Outgoing reified relations (A is the statement subject) never collide with an
+   * inline backlink (whose object is always A), so they are purely additive.
+   * Literal-object statements are property values, not relations (RFC R6), and are
+   * skipped here (routed to a future Properties UX).
+   *
+   * @param file - The open asset A.
+   * @param relations - The inline relations collected so far; mutated in place
+   *                    with the non-duplicate reified relations appended.
+   */
+  private async mergeReifiedRelations(
+    file: TFile,
+    relations: AssetRelation[],
+  ): Promise<void> {
+    const reified = await this.getReifiedRelationsGated(file);
+    if (reified.length === 0) return;
+
+    // A's identity — its canonical token + symbolic IRI form (so a statement
+    // that references A via either IRI form canonicalises to the same token).
+    const aFm = this.vaultAdapter.getFrontmatter(file as unknown as IFile);
+    const aUid = aFm?.exo__Asset_uid;
+    const aToken =
+      typeof aUid === "string" && aUid ? `uid:${aUid}` : `path:${file.path}`;
+    const aLabel =
+      this.metadataService.getAssetLabel(file.path) ??
+      (aFm?.exo__Asset_label as string | undefined) ??
+      null;
+    const aSymbolic = labelToSymbolicIRI(aLabel)?.value;
+
+    const tokenFor = (iri: string): string => {
+      if (iri === aSymbolic) return aToken;
+      const path = iriToVaultPath(iri);
+      if (path === file.path) return aToken;
+      if (path) {
+        const f = this.vaultAdapter.getAbstractFileByPath(path);
+        const uid = f
+          ? this.vaultAdapter.getFrontmatter(f as IFile)?.exo__Asset_uid
+          : undefined;
+        if (typeof uid === "string" && uid) return `uid:${uid}`;
+        return `path:${path}`;
+      }
+      return `iri:${iri}`;
+    };
+
+    // Canonical keys already represented. Seeded with the inline relations so a
+    // reified duplicate of an inline edge is dropped (inline-wins); each emitted
+    // reified relation's key is added too, so two distinct statements reifying
+    // the SAME logical edge surface only once. An inline relation is
+    // "sourceFile --propertyName--> A": subject = sourceFile (its uid lives in
+    // the relation's enriched metadata), object = A. Body links carry no
+    // predicate → not dedup-eligible.
+    const seenKeys = new Set<string>();
+    for (const rel of relations) {
+      if (rel.provenance !== "inline" || !rel.propertyName) continue;
+      const srcUid = rel.metadata?.exo__Asset_uid;
+      const srcToken =
+        typeof srcUid === "string" && srcUid
+          ? `uid:${srcUid}`
+          : `path:${rel.path}`;
+      seenKeys.add(`${srcToken}|${rel.propertyName}|${aToken}`);
+    }
+
+    for (const r of reified) {
+      // Literal object = a property value, not a relation (RFC R6).
+      if (r.objectIsLiteral) continue;
+
+      const key = `${tokenFor(r.subject)}|${predicateIriToKey(r.predicate)}|${tokenFor(r.object)}`;
+      if (seenKeys.has(key)) continue; // inline-wins + reified-vs-reified dedup
+      seenKeys.add(key);
+
+      // The displayed "related asset" is the OTHER end of the edge.
+      const otherIri = r.direction === "outgoing" ? r.object : r.subject;
+      const otherPath = iriToVaultPath(otherIri);
+      let basename: string;
+      let title: string;
+      let metadata: MetadataRecord;
+      let created = 0;
+      let modified = 0;
+      if (otherPath) {
+        const f = this.vaultAdapter.getAbstractFileByPath(otherPath);
+        basename =
+          otherPath.split("/").pop()?.replace(/\.md$/, "") ?? otherPath;
+        const fm = f ? this.vaultAdapter.getFrontmatter(f as IFile) : null;
+        metadata = fm ? { ...fm } : {};
+        const lbl = this.metadataService.getAssetLabel(otherPath);
+        title =
+          lbl ?? (metadata.exo__Asset_label as string | undefined) ?? basename;
+        const stat = (f as IFile | null)?.stat;
+        created = stat?.ctime ?? 0;
+        modified = stat?.mtime ?? 0;
+      } else {
+        // Symbolic / non-vault other end (e.g. a class IRI) — best-effort name.
+        const name = iriToObsidianName(otherIri) ?? otherIri;
+        basename = name;
+        title = name;
+        metadata = {};
+      }
+
+      relations.push({
+        file: { path: otherPath ?? otherIri, basename },
+        path: otherPath ?? otherIri,
+        title,
+        metadata,
+        propertyName: predicateIriToKey(r.predicate),
+        isBodyLink: false,
+        isArchived: MetadataHelpers.isAssetArchived(metadata),
+        isBlocked: BlockerHelpers.isEffortBlocked(this.app, metadata),
+        created,
+        modified,
+        provenance: "reified",
+        statementPath: r.statementPath ?? undefined,
+        assetSpace: r.assetSpace ?? undefined,
+      });
+    }
+  }
+
+  /**
+   * PDD `dccff87b` — open the relations editor for the read-view «Edit relations»
+   * affordance. Reuses the already-registered `exocortex:edit-properties`
+   * command (the SAME flow as Cmd+P and the ribbon — single source of truth)
+   * via Obsidian-core `app.commands.executeCommandById`; the command operates on
+   * the active file, which IS the asset whose Relations block this is. Parity-
+   * safe: Obsidian-core API only, no Node fs, no platform gate → identical on
+   * desktop AND mobile (Desktop↔Mobile Command Parity invariant).
+   */
+  private openRelationsEditor(): void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const commands = (this.app as any).commands;
+    if (typeof commands?.executeCommandById === "function") {
+      commands.executeCommandById("exocortex:edit-properties");
+    }
+  }
+
   async render(
     el: HTMLElement,
     relations: AssetRelation[],
     config: UniversalLayoutConfig,
     renderHeader?: (container: HTMLElement, sectionId: string, title: string) => void,
     isCollapsed?: boolean,
+    // PDD `dccff87b` — the asset whose read-view Relations block this is. When
+    // provided, a block-level «Edit relations» affordance is wired (opens this
+    // asset's property-editor). Optional → legacy callers render no affordance
+    // (additive, zero read-view regression).
+    currentFile?: TFile,
   ): Promise<void> {
     const container = el.createDiv({ cls: "exocortex-assets-relations" });
 
@@ -235,6 +608,12 @@ export class RelationsRenderer {
         getAssetLabel: (path: string) => this.metadataService.getAssetLabel(path),
         resolveAccent: (classRef: string) =>
           this.plugin.themeResolver?.resolveAccent(classRef) ?? null,
+        // PDD `dccff87b` — block-level «Edit relations» affordance, wired only
+        // when the renderer knows the asset (currentFile). Opens this asset's
+        // property-editor via the registered edit-properties command.
+        onEditRelations: currentFile
+          ? () => this.openRelationsEditor()
+          : undefined,
       }),
     );
   }

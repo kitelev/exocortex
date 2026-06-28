@@ -271,7 +271,11 @@ export {
   IRICanonicalizer,
   type CanonicalizationResult,
 } from "./services/IRICanonicalizer";
-export { derivePath, deriveLegacyFlatPath } from "./services/AssetSpacePathDeriver";
+export {
+  derivePath,
+  deriveUrl,
+  deriveLegacyFlatPath,
+} from "./services/AssetSpacePathDeriver";
 export {
   discoverFileSpaceExclusions,
   frontmatterDeclaresFileSpace,
@@ -603,6 +607,17 @@ export {
   type DetectChangesParams,
 } from "./services/sync/ChangeDetector";
 export { gitBlobSha } from "./services/sync/gitBlobSha";
+// dedup-uids (#3477) shared platform-free core (#3676) — report + fix semantics
+// composed by BOTH the CLI `runDedupUids` (Node enumeration) and the in-plugin
+// «Deduplicate uids» command (vault.adapter enumeration). Desktop↔Mobile parity.
+export {
+  rewriteAssetUid,
+  findDuplicateUidGroups,
+  planDuplicateUidFix,
+  type DedupUidFile,
+  type DedupUidGroup,
+  type DedupUidRewrite,
+} from "./services/sync/dedupUids";
 export {
   getBlobBytes,
   getBlobText,
@@ -796,3 +811,13 @@ export {
   isFormatOnlyDrift,
   type SemanticComparison,
 } from "./services/sync/assetSemanticCompare";
+
+// Homoiconic vault-validation engine (RFC f402002b, M1.4): the check-runner,
+// registry, 4 checks (uid-uniqueness / co-location / SHACL / DAG), and the
+// warm one-pass reader contract consumed by the `Validate vault` command (M1.5).
+export * from "./services/validation";
+
+// Generic Settings Distribution engine (RFC f402002b, M2.1): source-agnostic
+// Export/Import of a domain's declared setting keys ↔ `setting__Setting` assets,
+// allowlist-by-construction. Pure (I/O injected by the caller).
+export * from "./services/settings";

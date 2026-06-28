@@ -3,14 +3,18 @@ import { describe, it, expect } from "@jest/globals";
 import { bootstrapCommand } from "../../../src/commands/bootstrap.js";
 
 /**
- * Issue #3426 (Gap 1) — `bootstrap --exocmd` must be OPTIONAL.
+ * req e0e5ad0f (Andrey interview 2026-06-27) — `bootstrap` installs ONLY the SDK
+ * floor (exo). `exocmd` is an ordinary optional AssetSpace, added via
+ * `exocortex assetspace add` — NOT a bootstrap option.
  *
- * RFC 01a83de8 alt-G rejection: `exo` is the SDK; `exocmd` is the optional
- * UI-command library. A bare SDK/headless vault (only `--exo`) is first-class.
+ * History: issue #3426 (RFC 01a83de8 alt-G rejection) first made `--exocmd`
+ * OPTIONAL (was a `.requiredOption`); req e0e5ad0f then removed the flag
+ * entirely to keep bootstrap strictly about the SDK platform.
+ *
  * These tests assert the Commander option configuration directly — deterministic,
  * no network / no `process.exit`.
  */
-describe("bootstrap command — exocmd optionality (issue #3426)", () => {
+describe("bootstrap command — SDK-floor-only (req e0e5ad0f)", () => {
   it("--exo is a required (mandatory) option", () => {
     const cmd = bootstrapCommand();
     const exo = cmd.options.find((o) => o.long === "--exo");
@@ -25,18 +29,11 @@ describe("bootstrap command — exocmd optionality (issue #3426)", () => {
     expect(vault!.mandatory).toBe(true);
   });
 
-  it("--exocmd is OPTIONAL (NOT mandatory) — the core of Gap 1", () => {
+  it("registers NO --exocmd option — bootstrap installs only the SDK floor @req:e0e5ad0f-56ce-4bc8-9e1b-7a0e20a735d7", () => {
     const cmd = bootstrapCommand();
     const exocmd = cmd.options.find((o) => o.long === "--exocmd");
-    expect(exocmd).toBeDefined();
-    // Pre-#3426 this was a `.requiredOption(...)` (mandatory === true).
-    expect(exocmd!.mandatory).toBeFalsy();
-  });
-
-  it("still offers --exocmd as an opt-in flag (so post-bootstrap users can add it inline)", () => {
-    const cmd = bootstrapCommand();
-    const exocmd = cmd.options.find((o) => o.long === "--exocmd");
-    expect(exocmd).toBeDefined();
-    expect(exocmd!.flags).toContain("--exocmd");
+    // exocmd is an optional AssetSpace added via `assetspace add`, not a
+    // bootstrap option. Re-adding `.option("--exocmd", ...)` makes this RED.
+    expect(exocmd).toBeUndefined();
   });
 });

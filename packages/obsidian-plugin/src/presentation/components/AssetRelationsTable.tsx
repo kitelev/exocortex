@@ -90,7 +90,68 @@ export interface AssetRelation {
   isBlocked?: boolean;
 
   metadata: Record<string, unknown>;
+
+  /**
+   * RFC `93a0b2ee` Task 2 (C2) — how this relation was sourced. A `reified`
+   * relation is backed by an `exo__Statement` asset and renders the factual
+   * "reified · <AS>" marker; `inline` (or absent — legacy) renders no marker.
+   * Edge-cases (object=Literal, inline+reified duplicate, dual-IRI subject) are
+   * resolved upstream in `RelationsRenderer.mergeReifiedRelations` (Task 1.3) —
+   * the marker keys strictly off this field, so a relation tagged `inline`
+   * never gets a marker even if it carries {@link assetSpace}.
+   */
+  provenance?: "inline" | "reified";
+  /**
+   * RFC `93a0b2ee` Task 2 (C2) — the AssetSpace (`exoas-<name>`) the backing
+   * statement asset lives in, for the factual "reified · <AS>" marker text.
+   * `undefined` → a `reified` relation shows a bare "reified".
+   */
+  assetSpace?: string;
 }
+
+/**
+ * RFC `93a0b2ee` Task 2 (C2) — the factual relation-type marker text.
+ *
+ * Returns `"reified · <AS>"` (or a bare `"reified"` when the AssetSpace is not
+ * derivable) for a relation backed by an `exo__Statement` asset; `null` for an
+ * inline relation (the default — no marker). The marker is purely FACTUAL: it
+ * states WHERE the backing statement lives, NEVER a privacy promise. Privacy
+ * depends on whether that AssetSpace is shared, which is not a queryable RDF
+ * fact (RFC §C2 decision H; `exo__AssetSpace_visibility` is an out-of-MVP
+ * follow-up). Honest-marker metric: 0 unverifiable statements.
+ */
+export function reifiedMarkerText(relation: AssetRelation): string | null {
+  if (relation.provenance !== "reified") return null;
+  const as = relation.assetSpace?.trim();
+  return as ? `reified · ${as}` : "reified";
+}
+
+/**
+ * RFC `93a0b2ee` Task 2 (C2) — the accessible/title explanation of the marker.
+ * Factual only (no privacy promise). Used for `title` (desktop hover) and
+ * `aria-label`; the persistent on-screen explanation is {@link ReifiedLegend}
+ * (the mobile/tap channel — hover is unavailable there).
+ */
+function reifiedMarkerExplanation(relation: AssetRelation): string {
+  const where = relation.assetSpace?.trim()
+    ? `в AssetSpace ${relation.assetSpace.trim()}`
+    : "в отдельном statement-ассете";
+  return `Связь вынесена ${where} (фактически — где лежит statement). Приватность зависит от того, шарится ли этот AssetSpace.`;
+}
+
+/**
+ * RFC `93a0b2ee` Task 2 (C2) — persistent explanation of the `reified · <AS>`
+ * marker, rendered below the table whenever a reified relation is present.
+ * Persistent (always visible — NOT hover-only) so the marker is explained on
+ * mobile where hover is unavailable. Factual only — no privacy promise.
+ */
+const ReifiedLegend: React.FC = () => (
+  <p className="exocortex-reified-legend" role="note">
+    «reified · &lt;AS&gt;» — связь вынесена в statement-ассет в этом AssetSpace
+    (фактически, где лежит). Приватность зависит от того, шарится ли этот
+    AssetSpace.
+  </p>
+);
 
 export interface AssetRelationsTableProps {
   relations: AssetRelation[];
@@ -108,6 +169,16 @@ export interface AssetRelationsTableProps {
    * form is stripped upstream.
    */
   resolveAccent?: (classRef: string) => string | null;
+  /**
+   * PDD puzzle `dccff87b` (RFC `93a0b2ee` §C3 read-view follow-up) — opens the
+   * relations editor for the asset whose read-view Relations block this is.
+   * When provided, a single BLOCK-LEVEL «Edit relations» affordance
+   * (`.exocortex-edit-relations`) is rendered so the relations editor (the
+   * Relations section of the property-editor, Tasks 3.1–3.3) is discoverable
+   * directly from the read view — not only via the command palette. ADDITIVE:
+   * legacy callers that pass no callback render no affordance (zero regression).
+   */
+  onEditRelations?: () => void;
 }
 
 interface SortState {
@@ -459,6 +530,20 @@ const SingleTable: React.FC<SingleTableProps> = ({
           >
             {getDisplayLabel(relation)}
           </a>
+          {(() => {
+            const marker = reifiedMarkerText(relation);
+            if (!marker) return null;
+            const explanation = reifiedMarkerExplanation(relation);
+            return (
+              <span
+                className="exocortex-reified-marker"
+                title={explanation}
+                aria-label={explanation}
+              >
+                {marker}
+              </span>
+            );
+          })()}
         </td>
         <td className="instance-class">
           {renderInstanceClassCell(relation.metadata)}
@@ -622,10 +707,41 @@ export const AssetRelationsTable: React.FC<AssetRelationsTableProps> = ({
   onAssetClick,
   getAssetLabel,
   resolveAccent,
+  onEditRelations,
 }) => {
   // State to track collapsed groups (all expanded by default)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set()
+  );
+
+  // PDD `dccff87b` — block-level «Edit relations» affordance. Rendered once at
+  // the top of the read-view Relations block when a callback is wired (i.e. the
+  // renderer threaded the viewed asset's currentFile). Activating it opens the
+  // asset's property-editor (Relations section) — the read-view → editor entry
+  // point. Absent callback → no affordance (additive; back-compat).
+  const editRelationsButton = onEditRelations ? (
+    <button
+      type="button"
+      className="exocortex-edit-relations"
+      aria-label="Edit relations"
+      title="Edit relations"
+      onClick={onEditRelations}
+      style={{
+        marginBottom: "8px",
+        padding: "4px 8px",
+        cursor: "pointer",
+        fontSize: "12px",
+      }}
+    >
+      ✎ Edit relations
+    </button>
+  ) : null;
+
+  // RFC `93a0b2ee` Task 2 (C2) — show the persistent reified-marker legend iff
+  // at least one rendered relation is reified (mobile-safe explanation channel).
+  const hasReified = useMemo(
+    () => relations.some((r) => r.provenance === "reified"),
+    [relations],
   );
 
   const groupedRelations = useMemo(() => {
@@ -671,6 +787,7 @@ export const AssetRelationsTable: React.FC<AssetRelationsTableProps> = ({
   if (groupByProperty) {
     return (
       <div className="exocortex-relations-grouped">
+        {editRelationsButton}
         {Object.entries(groupedRelations).map(([groupName, items]) => {
           const groupProps = groupSpecificProperties[groupName] || [];
           const mergedProperties = [...showProperties, ...groupProps];
@@ -710,12 +827,14 @@ export const AssetRelationsTable: React.FC<AssetRelationsTableProps> = ({
             </div>
           );
         })}
+        {hasReified && <ReifiedLegend />}
       </div>
     );
   }
 
   return (
     <div className="exocortex-relations">
+      {editRelationsButton}
       <SingleTable
         items={groupedRelations.ungrouped}
         sortBy={sortBy}
@@ -725,6 +844,7 @@ export const AssetRelationsTable: React.FC<AssetRelationsTableProps> = ({
         getAssetLabel={getAssetLabel}
         resolveAccent={resolveAccent}
       />
+      {hasReified && <ReifiedLegend />}
     </div>
   );
 };

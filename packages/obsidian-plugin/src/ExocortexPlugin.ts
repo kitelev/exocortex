@@ -46,9 +46,16 @@ import {
 import { ExocortexSettingTab } from "./presentation/settings/ExocortexSettingTab";
 import {
   DEFAULT_SETTINGS_FOLDER,
+  SETTING_CLASS_UID,
+  SETTING_SUPERCLASS_UID,
   VAULT_SETTINGS_REGISTRY,
 } from "./domain/settings/VaultSettingsRegistry";
 import { VaultSettingsStore } from "./infrastructure/adapters/VaultSettingsStore";
+import { ExocortexSettingsSource } from "./infrastructure/adapters/ExocortexSettingsSource";
+import {
+  registerExportSettingsCommand,
+  registerImportSettingsCommand,
+} from "./infrastructure/adapters/registerSettingsDistributionCommands";
 import {
   TaskStatusService,
   CommandResolver,
@@ -88,6 +95,12 @@ import {
   isLayoutFrontmatter,
 } from "./domain/layout";
 import { isCommandBindingFrontmatter } from "@kitelev/exocortex-core";
+import {
+  VaultCheckRunner,
+  createDefaultCheckRegistry,
+  readEnabledCheckIds,
+  readInstanceClassRefs,
+} from "@kitelev/exocortex-core";
 import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlockProcessor";
 import { SPARQLApi } from "./application/api/SPARQLApi";
 import { ExocortexAPI } from "./application/api/ExocortexAPI";
@@ -158,7 +171,10 @@ import { BootstrapVaultModal } from "./presentation/modals/BootstrapVaultModal";
 import { BootstrapResultModal } from "./presentation/modals/BootstrapResultModal";
 import { AddAssetSpaceModal } from "./presentation/modals/AddAssetSpaceModal";
 import { SimpleConfirmModal } from "./presentation/modals/SimpleConfirmModal";
-import { FirstRunOnboardingModal } from "./presentation/modals/FirstRunOnboardingModal";
+import {
+  FirstRunOnboardingModal,
+  ONBOARDING_STEP_KEYS,
+} from "./presentation/modals/FirstRunOnboardingModal";
 import { testPatConnection } from "./presentation/settings/patConnectionTest";
 import {
   registerOnboardingCommands,
@@ -191,6 +207,22 @@ import { registerExoSyncCommands } from "./infrastructure/adapters/registerExoSy
 import { QuarantineResolverCommands } from "./infrastructure/adapters/QuarantineResolverCommands";
 import { QuarantineResolverModal } from "./infrastructure/adapters/QuarantineResolverModal";
 import { registerQuarantineResolverCommand } from "./infrastructure/adapters/registerQuarantineResolverCommand";
+import { DedupUidsCommands } from "./infrastructure/adapters/DedupUidsCommands";
+import { registerDedupUidsCommand } from "./infrastructure/adapters/registerDedupUidsCommand";
+import { DedupUidsModal } from "./presentation/modals/DedupUidsModal";
+import type { DedupUidFile } from "@kitelev/exocortex-core";
+import {
+  PluginVaultCheckReader,
+  listOntologyCandidates,
+  type WarmVaultSource,
+  type OntologyChoice,
+} from "./infrastructure/adapters/PluginVaultCheckReader";
+import { ValidationScaffolder } from "./infrastructure/adapters/ValidationScaffolder";
+import { OntologyFuzzyModal } from "./infrastructure/adapters/OntologyFuzzyModal";
+import {
+  registerValidateVaultCommand,
+  registerScaffoldValidationCommand,
+} from "./infrastructure/adapters/registerValidationCommands";
 import { buildParityCheck } from "./infrastructure/adapters/ExoSyncParityFactory";
 import {
   buildQuarantineResolver,
@@ -358,6 +390,10 @@ export default class ExocortexPlugin extends Plugin {
   // forbids `new Notice()` outside ObsidianNotificationService).
   notifier!: ObsidianNotificationService;
   private shaclStatusBar: HTMLElement | null = null;
+  // #3705 — the currently-open first-run onboarding panel (or null). Lets the
+  // bootstrap-result modal's next-step CTA mark the matching panel step done
+  // across the modal boundary; cleared when the panel closes.
+  private activeOnboardingPanel: FirstRunOnboardingModal | null = null;
   // Issue #2780: tracked so the post-resolve reindex can await it before
   // calling refresh(), avoiding a concurrent clear()/convertVault() race.
   private eagerInitPromise: Promise<void> | null = null;
@@ -2015,13 +2051,14 @@ export default class ExocortexPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
-    // onto-RFC 981b6070 (D2) — write-through to vault assets for
-    // homoiconizable fields. Every UI surface funnels through this
-    // method (SettingTab × 32 controls, palette commands,
-    // DailyTasksRenderer), so intercepting here covers them all without
-    // touching call sites. Diff-based + debounced inside the store;
-    // remote applies go through `saveData` directly, so this cannot
-    // loop.
+    // RFC f402002b M2.3 — the live-mirror UI→asset auto-write is DEPRECATED in
+    // favour of the explicit «Exocortex: Export settings» command. The store is
+    // constructed read-only (outboundWriteEnabled defaults false), so this call
+    // is now a no-op that logs a one-time deprecation notice (the asset→UI
+    // watcher stays read-only; the RDF asset is canonical, data.json a derived
+    // cache). The call is kept here (rather than removed) so the deprecation
+    // notice fires from the single saveSettings() funnel; the whole store is
+    // scheduled for removal ≥1 release after the deprecation window.
     this.vaultSettingsStore?.pushChangedFields();
   }
 
@@ -2055,6 +2092,15 @@ export default class ExocortexPlugin extends Plugin {
       return;
     }
 
+    // RFC f402002b M2.3 — read-only transitional: the store keeps the asset→UI
+    // inbound watcher + load-overlay + one-shot migrate, but the continuous
+    // UI→asset auto-write is deprecated (outboundWriteEnabled defaults false).
+    // Canonical authority = the RDF asset; data.json = derived cache. Persist UI
+    // changes to assets via «Exocortex: Export settings».
+    this.logger.info(
+      "[D2] vault-settings live-mirror is read-only (RFC f402002b M2.3 deprecation) — " +
+        "asset→UI inbound only; use «Export settings» to persist UI changes to assets",
+    );
     const store = new VaultSettingsStore({
       app: this.app,
       logger: this.logger,
@@ -3144,6 +3190,35 @@ export default class ExocortexPlugin extends Plugin {
         app: this.app,
         log: (message) => this.logger.warn(message),
       }),
+      // RFC 8f93ff95 — post-sync targeted disk-read reindex. ExoSync writes via
+      // vault.adapter.write (no Obsidian event), so a pulled asset stays
+      // invisible in Layouts until restart. After a pull/merge, reindex exactly
+      // the mutated paths STRAIGHT FROM DISK into the shared store + run the
+      // follow-up UI refresh bundle. This mirrors ProfileApplyManager's
+      // post-adapter-write refresh, but TARGETED (O(k), no full convertVault
+      // freeze) and WITHOUT a store clear() — so no blank-Layout window.
+      reindex: {
+        run: async (mutatedPaths) => {
+          await this.sparql.reindexPathsFromDisk(mutatedPaths);
+          // Follow-up bundle — the createProfileApplyRefreshHook duties EXCEPT
+          // the full refresh (the targeted update already touched the store):
+          // drop lazy-loader marks, invalidate resolver/precondition caches,
+          // re-render Layouts, and re-resolve open-editor wikilink labels so a
+          // bare [[uid]] to a just-synced target stops showing the raw uid.
+          this.lazyAssetGraphLoader?.clearAll();
+          this.commandResolver.invalidateCache();
+          this.preconditionEvaluator.invalidateCache();
+          this.autoRenderLayout();
+          try {
+            this.app.workspace.updateOptions();
+          } catch (err) {
+            this.logger.warn(
+              "[ExoSync] refreshEditorLabels after post-sync reindex failed (continuing)",
+              err instanceof Error ? err : new Error(String(err)),
+            );
+          }
+        },
+      },
     });
 
     // Quarantine resolver (finding a0a3d1d6) — the user-facing reconcile the
@@ -3175,6 +3250,55 @@ export default class ExocortexPlugin extends Plugin {
     // Publish into the holder so the sync/apply busy-guards (built above) can
     // see the resolver's busy flag (HIGH-2).
     resolverHolder.commands = quarantineResolverCommands;
+
+    // «Exocortex: Deduplicate uids» (#3676) — Desktop↔Mobile parity for
+    // `exosync dedup-uids`. The sync/resolver dissonance messages (#3675) point
+    // a phone user at "run dedup-uids"; this command surfaces that fix in-plugin,
+    // driving the SAME platform-free core (findDuplicateUidGroups /
+    // planDuplicateUidFix) over `vault.adapter` (no Node fs/git, iOS-capable). A
+    // fix WRITES → D11-excluded against an in-flight sync / profile apply.
+    const dedupUidsCommands = new DedupUidsCommands({
+      listFiles: async () => {
+        const files: DedupUidFile[] = [];
+        for (const file of this.app.vault.getMarkdownFiles()) {
+          try {
+            files.push({
+              path: file.path,
+              content: await this.app.vault.read(file),
+            });
+          } catch {
+            // Skip an unreadable file — the rest of the scan still proceeds.
+          }
+        }
+        return files;
+      },
+      writeFile: async (filePath, content) => {
+        const file = this.app.vault.getAbstractFileByPath(filePath);
+        if (!(file instanceof TFile)) {
+          // The file vanished between the scan and the write (TOCTOU) — reject
+          // so invokeDedup's catch logs it and the "Reassigned N" count stays
+          // truthful (never silently overstates).
+          throw new Error(`no longer a vault file (moved/deleted?): ${filePath}`);
+        }
+        await this.app.vault.modify(file, content);
+      },
+      freshUid: () => crypto.randomUUID(),
+      confirm: (groups) =>
+        new Promise<boolean>((resolve) => {
+          new DedupUidsModal(this.app, groups, resolve).open();
+        }),
+      notify: (message) => this.notifier.info(message),
+      isSyncBusy: () => syncCommands.isBusy(),
+      isSwitchInProgress: () => localDataStore.isSwitchInProgress(),
+      log: (message) => {
+        this.logger.warn(message);
+        this.activityLog.record({
+          category: "exosync",
+          level: "warn",
+          message,
+        });
+      },
+    });
 
     const switchMgr = new ProfileApplyManager({
       app: this.app,
@@ -3460,6 +3584,19 @@ export default class ExocortexPlugin extends Plugin {
     registerExoSyncCommands(this, syncCommands);
     // «Exocortex: Resolve sync conflicts» (finding a0a3d1d6).
     registerQuarantineResolverCommand(this, quarantineResolverCommands);
+    // «Exocortex: Deduplicate uids» (#3676) — registered on BOTH platforms
+    // (Desktop↔Mobile Command Parity; the fix runs over vault.adapter).
+    registerDedupUidsCommand(this, dedupUidsCommands);
+
+    // RFC f402002b M1.5 — «Validate vault» + «Scaffold validation settings»,
+    // registered on BOTH desktop AND mobile (Desktop↔Mobile Command Parity).
+    this.registerVaultValidationCommands();
+
+    // RFC f402002b M2.1 — «Export/Import settings», registered on
+    // BOTH desktop AND mobile (Desktop↔Mobile Command Parity). Additive
+    // snapshot/restore via the generic Settings Distribution engine — does NOT
+    // touch the live-mirror (VaultSettingsStore); M2.3 deprecates that.
+    this.registerSettingsDistributionCommands();
 
     // RFC 22b50a17 Decision #6 — wipe-all switch cache clearing. RFC 0002 §3.2
     // (P3/P4) — de-jargon + destructive flag: «Clear switch cache (wipe-all)» →
@@ -3549,7 +3686,7 @@ export default class ExocortexPlugin extends Plugin {
     const secretsStore = new LocalSecretsStore({ app: this.app });
 
     const openPanel = (): void => {
-      new FirstRunOnboardingModal(this.app, {
+      const panel = new FirstRunOnboardingModal(this.app, {
         // Step 1 (optional, token-first): persist the PAT device-local BEFORE
         // the materialise steps run (cd9444bd). Empty value clears it (skip
         // path). A failure is surfaced as a notice but never blocks onboarding.
@@ -3611,6 +3748,12 @@ export default class ExocortexPlugin extends Plugin {
           void profileCommands.invokeApplyProfile();
         },
         onClosePanel: () => {
+          // #3705 — the panel is gone; stop routing result-modal step ticks to
+          // it (markStepDoneByKey already no-ops post-close, but drop the ref so
+          // a stale instance is not retained).
+          if (this.activeOnboardingPanel === panel) {
+            this.activeOnboardingPanel = null;
+          }
           void localDataStore.setOnboardingCompleted(true).catch((err) => {
             this.logger.warn(
               "[ExocortexPlugin] persisting onboarding-completed flag failed: " +
@@ -3618,7 +3761,11 @@ export default class ExocortexPlugin extends Plugin {
             );
           });
         },
-      }).open();
+      });
+      // #3705 — track the open panel so a stacked bootstrap-result modal's
+      // next-step CTA can mark the matching panel step done.
+      this.activeOnboardingPanel = panel;
+      panel.open();
     };
 
     // Guided Setup command — unconditional (parity); the re-entry point the
@@ -3796,7 +3943,7 @@ export default class ExocortexPlugin extends Plugin {
     // Mobile path: desktop deps unavailable (`applyDeps === null`) but the
     // cross-platform `RestAssetSpaceMount` is wired. `RestAssetSpaceMount`
     // structurally satisfies `IRestBootstrapMount` (mount() → {sha},
-    // readGitmodulesEntries()).
+    // listMountedAssetSpaces()).
     const restStrategy =
       applyDeps === null && restMount !== null ? restMount : undefined;
 
@@ -3862,6 +4009,14 @@ export default class ExocortexPlugin extends Plugin {
         new BootstrapResultModal(this.app, result, {
           onAddRegistry: () =>
             void bootstrapCommands.invokeAddAssetSpace(REGISTRY_ASSETSPACE_URL),
+          // #3705 — this CTA performs the onboarding panel's Step 3 (Add the
+          // AssetSpace registry); tick that step done if the panel is still open
+          // underneath, so the checklist matches what the user actually did.
+          // No-op when there is no onboarding panel (standalone Bootstrap run).
+          onStepCompleted: () =>
+            this.activeOnboardingPanel?.markStepDoneByKey(
+              ONBOARDING_STEP_KEYS.addRegistry,
+            ),
           // RFC 0002 §3.10 — one-click retry of the failed operation: re-open
           // the same Bootstrap / Add flow (its modal collects the URL again) so
           // the user can fix the URL / token / connection and retry in place.
@@ -3903,7 +4058,9 @@ export default class ExocortexPlugin extends Plugin {
   /**
    * Wire + register the «Exocortex: Unmount assetspace» palette command
    * (#e6b8827c) — the inverse of «Add assetspace by URL». Lists the currently
-   * mounted AssetSpaces (the `.gitmodules` registry, cross-referenced with the
+   * mounted AssetSpaces (RFC 0005 Phase 1 — filesystem enumeration of the
+   * materialised `assetspaces/<owner>/<repo>` folders via
+   * {@link RestAssetSpaceMount.listMountedAssetSpaces}, cross-referenced with the
    * AssetSpace descriptor scan for uid/namespace → TS-floor identity), fuzzy-
    * picks one, and tears it down via the git-free cross-platform
    * {@link RestAssetSpaceMount.unmount}.
@@ -3915,20 +4072,189 @@ export default class ExocortexPlugin extends Plugin {
    * (post git-elim), so this registers on both desktop + mobile (Desktop↔Mobile
    * Command Parity).
    */
+  /**
+   * RFC f402002b M1.5 — register the homoiconic vault-validation commands on
+   * BOTH desktop AND mobile (⛔ Desktop↔Mobile Command Parity — no
+   * `Platform.isMobile` gate). The reader is mobile-portable (warm
+   * `metadataCache`, no per-file re-read) and SHACL runs over the already-built
+   * warm triple store (the plugin's advantage over the CLI); the scaffold writes
+   * through `vault.adapter` (no Node `fs`). The enabled-set is DATA
+   * (`readEnabledCheckIds` over validation-check `setting__Setting` instances),
+   * not code (Homoiconicity Invariant).
+   */
+  private registerVaultValidationCommands(): void {
+    const buildWarmSource = (): WarmVaultSource => {
+      const files = this.app.vault.getMarkdownFiles();
+      const byPath = new Map(files.map((f) => [f.path, f] as const));
+      return {
+        listMarkdownPaths: () => files.map((f) => f.path),
+        frontmatterOf: (path) => {
+          const file = byPath.get(path);
+          if (!file) return undefined;
+          return (
+            (this.app.metadataCache.getFileCache(file)?.frontmatter as
+              | Record<string, unknown>
+              | undefined) ?? undefined
+          );
+        },
+      };
+    };
+
+    registerValidateVaultCommand(this, {
+      runValidation: async () => {
+        // SHACL/DAG runners deferred to M2 (parity with the CLI) → portable
+        // checks run on mobile; enabling SHACL/DAG is reported fail-loud.
+        const reader = new PluginVaultCheckReader(buildWarmSource());
+        const ctx = await reader.read();
+        const enabled = readEnabledCheckIds(ctx.assets);
+        return new VaultCheckRunner(createDefaultCheckRegistry()).runWithContext(
+          ctx,
+          enabled,
+        );
+      },
+      notify: (message) => this.notifier.info(message),
+    });
+
+    const scaffolder = new ValidationScaffolder(
+      {
+        exists: (path) => this.app.vault.adapter.exists(path),
+        write: (path, content) => this.app.vault.adapter.write(path, content),
+      },
+      () => crypto.randomUUID(),
+      () => new Date().toISOString(),
+    );
+
+    registerScaffoldValidationCommand(this, {
+      pickOntology: () => {
+        const files = this.app.vault.getMarkdownFiles();
+        const assets = files.map((f) => ({
+          path: f.path,
+          frontmatter: (this.app.metadataCache.getFileCache(f)?.frontmatter ??
+            {}) as Record<string, unknown>,
+        }));
+        const candidates = listOntologyCandidates(assets);
+        if (candidates.length === 0) {
+          this.notifier.info(
+            "Scaffold validation settings: no ontology found in this vault to scaffold into.",
+          );
+          return Promise.resolve(null);
+        }
+        return new Promise<OntologyChoice | null>((resolve) => {
+          new OntologyFuzzyModal(
+            this.app,
+            candidates,
+            "Choose ontology to scaffold validation settings into",
+            resolve,
+          ).open();
+        });
+      },
+      scaffold: (choice) => scaffolder.scaffold(choice.uid, choice.folder),
+      notify: (message) => this.notifier.info(message),
+    });
+  }
+
+  /**
+   * RFC f402002b M2.1 — «Export/Import settings» via the generic
+   * Settings Distribution engine. Both commands register UNCONDITIONALLY
+   * (Desktop↔Mobile Command Parity — Export writes via vault.adapter, Import
+   * reads the warm metadataCache; no Platform.isMobile gate). Additive:
+   * an explicit, frictionless snapshot/restore that does not touch the
+   * live-mirror (VaultSettingsStore) — M2.3 deprecates that.
+   *
+   * NOT gated by `settingsHomoiconizationEnabled` (#3539) by design: that
+   * master switch gates the AUTOMATIC live-mirror (background watcher +
+   * one-shot migration). Export/Import are USER-INITIATED one-off actions —
+   * a user who left the auto-mirror off can still take an explicit snapshot.
+   * M2.3 (which makes these the primary mechanism) revisits the switch's role.
+   */
+  private registerSettingsDistributionCommands(): void {
+    // Same allowlist + apply-path as the live-mirror's `applyRemote` so Import
+    // behaves identically to a cross-device change (mutate field, side-effect,
+    // persist data.json). Allowlist-by-construction: only VAULT_SETTINGS_REGISTRY
+    // keys are ever read/written.
+    const source = new ExocortexSettingsSource({
+      getSettings: () => this.settings as Record<string, unknown>,
+      applyLive: async (field, value) => {
+        (this.settings as Record<string, unknown>)[field] = value;
+        this.applySettingSideEffect(field, value);
+        await this.saveData(this.settings);
+      },
+    });
+
+    registerExportSettingsCommand(this, {
+      source,
+      pickOntology: () => {
+        const files = this.app.vault.getMarkdownFiles();
+        const assets = files.map((f) => ({
+          path: f.path,
+          frontmatter: (this.app.metadataCache.getFileCache(f)?.frontmatter ??
+            {}) as Record<string, unknown>,
+        }));
+        const candidates = listOntologyCandidates(assets);
+        if (candidates.length === 0) {
+          this.notifier.info(
+            "Export exocortex settings: no ontology found in this vault to export into.",
+          );
+          return Promise.resolve(null);
+        }
+        return new Promise<OntologyChoice | null>((resolve) => {
+          new OntologyFuzzyModal(
+            this.app,
+            candidates,
+            "Choose ontology to export exocortex settings into",
+            resolve,
+          ).open();
+        });
+      },
+      writeAsset: (folder, fileName, content) => {
+        const path = folder.length > 0 ? `${folder}/${fileName}` : fileName;
+        return this.app.vault.adapter.write(path, content);
+      },
+      nowIso: () => new Date().toISOString(),
+      notify: (message) => this.notifier.info(message),
+    });
+
+    // Import reads the warm metadataCache and surfaces only setting assets of
+    // the exocortex domain — subClass-closure over the 2-level hierarchy:
+    // `exo__Setting` (the subclass exports type) OR its `setting__Setting`
+    // superclass (RFC R8). The engine then matches each against the allowlist.
+    const acceptClass = new Set([SETTING_CLASS_UID, SETTING_SUPERCLASS_UID]);
+    registerImportSettingsCommand(this, {
+      source,
+      readAssets: () => {
+        const out: { path: string; frontmatter: Record<string, unknown> }[] = [];
+        for (const f of this.app.vault.getMarkdownFiles()) {
+          const fm = this.app.metadataCache.getFileCache(f)?.frontmatter as
+            | Record<string, unknown>
+            | undefined;
+          if (fm === undefined) continue;
+          const classes = readInstanceClassRefs(fm);
+          if (classes.some((c) => acceptClass.has(c))) {
+            out.push({ path: f.path, frontmatter: fm });
+          }
+        }
+        return Promise.resolve(out);
+      },
+      notify: (message) => this.notifier.info(message),
+    });
+  }
+
   private registerUnmountCommand(
     restMount: RestAssetSpaceMount,
     switchMgr: ProfileApplyManager,
   ): void {
     const unmountCommand = new UnmountAssetSpaceCommand({
       listMounted: async (): Promise<UnmountableAssetSpace[]> => {
-        // `.gitmodules` is the canonical "what's mounted" registry (the same
-        // source apply-profile reads). The descriptor scan (a full-vault
+        // RFC 0005 Phase 1 — the "what's mounted" registry is the FILESYSTEM:
+        // listMountedAssetSpaces enumerates the materialised
+        // `assetspaces/<owner>/<repo>` folders and re-derives each URL via
+        // `deriveUrl` (no `.gitmodules`). The descriptor scan (a full-vault
         // markdown walk, run once per command open — not per keystroke) supplies
         // uid + namespace so the TS-floor identity can be computed.
         // buildUnmountableList does the join + dual floor guard (descriptor-based
         // AND path-based, so a floor mounted flat / with an un-derivable
         // descriptor is still recognised).
-        const entries = await restMount.readGitmodulesEntries();
+        const entries = await restMount.listMountedAssetSpaces();
         const infos: AssetSpaceInfo[] = switchMgr.listAllAssetSpaceInfos();
         return buildUnmountableList(entries, infos);
       },

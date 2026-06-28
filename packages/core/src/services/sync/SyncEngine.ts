@@ -1032,6 +1032,24 @@ export class SyncEngine {
       // read/added/removed) or a full re-hash advanced its timestamp — a pure
       // no-op sync (every file a cache hit) writes nothing.
       let manifestDirty = false;
+      // #3751 — base blobSha per path. A manifest cache hit may SKIP reading a
+      // file ONLY when its cached blobSha matches the watermark base for that
+      // path (the file is genuinely IN SYNC). The mtime-manifest is rebuilt
+      // every cycle INCLUDING `pull`, so a local edit made before a `pull`
+      // records the EDITED (mtime,size,blobSha) into the manifest while the
+      // watermark (the push base) is NOT advanced — the edit was never pushed.
+      // Without this gate the next `push` sees a `(mtime,size)` cache hit,
+      // reuses the cached blobSha WITHOUT reading the file, detection correctly
+      // flags it modified-vs-base, but its content is absent from `disk`, so the
+      // push-set builder (`pinLocalChanges`) silently drops it → "synced" with
+      // an undelivered edit (zero-loss violation). Gating the skip on
+      // `cached.blobSha === base` restores the documented invariant: a stale /
+      // divergent entry causes a re-hash (cache miss → read → pushable), NEVER a
+      // wrong skip. canUseCache ⇒ watermark !== null.
+      const baseBlobByPath = new Map<string, string>();
+      if (canUseCache && watermark !== null) {
+        for (const f of watermark.files) baseBlobByPath.set(f.path, f.blobSha);
+      }
       for (const path of (await localFiles.list()).filter(mode.syncable)) {
         if (mode.fileMode) {
           const bytes = await readBinaryStrict(localFiles, path);
@@ -1057,10 +1075,18 @@ export class SyncEngine {
           st !== null &&
           cached !== undefined &&
           cached.mtimeMs === st.mtimeMs &&
-          cached.size === st.size
+          cached.size === st.size &&
+          // #3751 — only skip the read when the cached blob is ALREADY the
+          // sync base for this path (genuinely delivered). A `(mtime,size)`
+          // match whose blobSha diverges from the watermark base is a pending
+          // un-pushed delta (e.g. an edit made before a `pull`, whose manifest
+          // entry advanced but whose watermark did not) — it MUST be read so it
+          // lands in `disk` and the push-set carries it. Divergent ⇒ cache miss.
+          cached.blobSha === baseBlobByPath.get(path)
         ) {
-          // Cache hit — unchanged since last sync: reuse blobSha+uid, NO read,
-          // NO hash. The (mtime,size) match is the unchanged-content signal.
+          // Cache hit — unchanged AND already in sync with the base: reuse
+          // blobSha+uid, NO read, NO hash. The (mtime,size) match is the
+          // unchanged-content signal; the base match is the delivered signal.
           reused.set(path, {
             blobSha: cached.blobSha,
             ...(cached.uid !== undefined ? { uid: cached.uid } : {}),
@@ -1437,18 +1463,19 @@ export class SyncEngine {
 
       // Merged contents that differ from the local copy land on disk through
       // the same TOCTOU-guarded apply as remote pulls.
-      const { pulledCount, pinnedPaths } = await this.applyRemoteChanges(
-        localFiles,
-        disk,
-        [...applyWrites, ...merge.mergedWrites].filter(
-          (w) => !withheldPaths.has(w.path),
-        ),
-        applyDeletes.filter((d) => !withheldPaths.has(d.path)),
-        warnings,
-        // mtime-manifest: cache-hit (NOT-read) files have no `disk` snapshot —
-        // their sync-start blobSha drives the TOCTOU check instead.
-        cachedBlobShas,
-      );
+      const { pulledCount, pinnedPaths, pulledPaths } =
+        await this.applyRemoteChanges(
+          localFiles,
+          disk,
+          [...applyWrites, ...merge.mergedWrites].filter(
+            (w) => !withheldPaths.has(w.path),
+          ),
+          applyDeletes.filter((d) => !withheldPaths.has(d.path)),
+          warnings,
+          // mtime-manifest: cache-hit (NOT-read) files have no `disk` snapshot —
+          // their sync-start blobSha drives the TOCTOU check instead.
+          cachedBlobShas,
+        );
 
       // Quarantined paths keep their OLD watermark entry (same mechanism as
       // TOCTOU pins): the conflict re-derives every sync until resolved.
@@ -1522,6 +1549,9 @@ export class SyncEngine {
         ...(merge.mergedPaths.length > 0
           ? { mergedPaths: merge.mergedPaths }
           : {}),
+        // RFC 8f93ff95 — surface the disk-mutated pull paths so the command
+        // layer can targeted-reindex them post-sync (mirrors `mergedPaths`).
+        ...(pulledPaths.length > 0 ? { pulledPaths } : {}),
         ...(quarantinedPathsOf(merge).length > 0
           ? { quarantinedPaths: quarantinedPathsOf(merge) }
           : {}),
@@ -1631,15 +1661,51 @@ export class SyncEngine {
       return { pushed: 0, reconflicted: 0 };
     }
 
-    let pushed = 0;
+    // ── Phase 1: classify every queued resolution against the ONE head-tree
+    // snapshot captured above (no head mutation yet). TOCTOU-skips drop here;
+    // the rest are collected into a single batch. ───────────────────────────
     let reconflicted = 0;
+    const pushable: Array<{
+      entry: (typeof pending)[number];
+      stalePaths: string[];
+    }> = [];
     for (const entry of pending) {
       const currentRemoteSha =
         remoteShaByPath.get(entry.path) ?? OUTBOX_REMOTE_ABSENT;
-      if (currentRemoteSha !== entry.baseRemoteSha) {
-        // ⛤ TOCTOU: the remote moved since the offline resolution. Never
-        // overwrite — drop the queued push; the still-pinned path re-derives the
-        // conflict in this sync's detect (the user's choice is on disk).
+
+      // ── Cross-path consolidation (#3729) ────────────────────────────────
+      // A resolved conflict whose asset's remote copy lives at a DIFFERENT
+      // path than the conflict path (a co-located rename of the SAME asset:
+      // local `tbank-efforts/X.md` ↔ remote `og/X.md`). The conflict path is
+      // ABSENT on the remote, yet some SIBLING remote path still holds EXACTLY
+      // the blob the resolution was based on (`baseRemoteSha`) — that sibling
+      // IS the stale remote copy. Without this, the per-path TOCTOU below reads
+      // the conflict path (absent) ≠ baseRemoteSha and drops the push FOREVER,
+      // while the sibling re-introduces the conflict on every sync ("keep local
+      // never sticks"). Resolution: push the chosen content to the conflict
+      // path AND delete the stale sibling(s) in the SAME commit, converging the
+      // asset to ONE remote path. Zero-loss: the deleted blob survives in git
+      // history (forward commit, never a rewrite) and in the device-local
+      // conflict cache. A genuine TOCTOU (remote truly moved — the based-on
+      // blob is gone from the tree entirely) yields NO sibling match and still
+      // drops below. The match is CONTENT-ADDRESSED (a sibling qualifies iff it
+      // STILL holds exactly the based-on blob), so deleting it discards exactly
+      // the remote version the user already saw and superseded — never an
+      // independent edit. (Assets carry a unique `exo__Asset_uid`, so a
+      // byte-identical-but-distinct asset cannot collide on the blob-SHA.)
+      const stalePaths =
+        currentRemoteSha === OUTBOX_REMOTE_ABSENT &&
+        entry.baseRemoteSha !== OUTBOX_REMOTE_ABSENT
+          ? [...remoteShaByPath]
+              .filter(([p, sha]) => p !== entry.path && sha === entry.baseRemoteSha)
+              .map(([p]) => p)
+          : [];
+
+      if (currentRemoteSha !== entry.baseRemoteSha && stalePaths.length === 0) {
+        // ⛤ TOCTOU: the remote moved since the offline resolution AND no sibling
+        // path still holds the based-on blob. Never overwrite — drop the queued
+        // push; the still-pinned path re-derives the conflict in this sync's
+        // detect (the user's choice is on disk).
         await outbox.remove(entry.repoKey, entry.path);
         reconflicted++;
         warnings.push(
@@ -1649,33 +1715,96 @@ export class SyncEngine {
         );
         continue;
       }
-      // Remote unchanged at our guard-read → push the chosen content. The
-      // `expectedHeadSha` CAS closes the window between THIS guard-read and
-      // restCreateCommit's own ref-read: if the head moved in between, the push
-      // aborts (no overwrite) and we leave the entry to retry next sync — which
-      // re-checks the per-path TOCTOU and re-conflicts if needed. force:false
-      // additionally guards restCreateCommit's own GET→PATCH window (→ 422).
-      try {
-        await restCreateCommit(this.transport, {
-          owner: spec.owner,
-          repo: spec.repo,
-          branch: spec.branch,
-          files: new Map([[entry.path, entry.chosenContent]]),
-          message: `chore(exosync): push resolved conflict for ${entry.path}`,
-          expectedHeadSha: head,
-          ...(this.deps.baseURL !== undefined ? { baseURL: this.deps.baseURL } : {}),
-          ...(this.deps.redact !== undefined ? { redact: this.deps.redact } : {}),
-        });
-      } catch (err) {
-        warnings.push(
-          `outbox: push deferred for ${entry.path}, will retry next sync: ${redact(errMsg(err))}`,
-        );
-        continue; // leave the entry; never overwrite on a failed/raced/moved push
+      pushable.push({ entry, stalePaths });
+    }
+
+    if (pushable.length === 0) {
+      return { pushed: 0, reconflicted };
+    }
+
+    // ── Phase 2: ONE atomic commit for ALL pushable resolutions (batch
+    // head-staleness fix). Pre-fix this loop pushed each resolution in its OWN
+    // restCreateCommit: the FIRST push moved heads/{branch}, so the 2nd…Nth
+    // pushes (each carrying the head captured ONCE above as `expectedHeadSha`)
+    // failed the CAS guard with "head moved", were deferred and re-quarantined
+    // in the SAME sync — only ONE straggler converged per sync, the rest
+    // re-surfaced (Andrey's 7-straggler keep-local that never stuck). Committing
+    // every chosen content + the union of stale-sibling deletions in a SINGLE
+    // tree update moves the head exactly once, so all queued keep-local
+    // resolutions land in one sync. restCreateCommit already builds a recursive
+    // multi-file tree with `sha:null` deletions (#3476), so one commit expresses
+    // N writes + M deletes. Atomic = all-or-nothing: a genuine concurrent
+    // EXTERNAL writer (head moved between our head fetch and our one commit)
+    // aborts the WHOLE batch via `expectedHeadSha` → every entry stays queued
+    // (zero-loss, never a partial/forced overwrite), and the next sync re-checks
+    // each per-path TOCTOU and re-conflicts only those whose remote truly moved.
+    const batchFiles = new Map<string, string>();
+    for (const { entry } of pushable) {
+      batchFiles.set(entry.path, entry.chosenContent);
+    }
+    // Union of stale-sibling deletions, MINUS any path another resolution writes
+    // in this same batch — never delete a path we are committing (the write
+    // wins; restCreateCommit also rejects a path that is both written and
+    // deleted). Each entry's watermark snap below uses only its EFFECTIVELY
+    // deleted siblings (same filter), keeping the unpin/base-drop consistent.
+    const batchDeletions = new Set<string>();
+    for (const { stalePaths } of pushable) {
+      for (const p of stalePaths) {
+        if (!batchFiles.has(p)) batchDeletions.add(p);
       }
-      await this.snapOutboxWatermark(spec, entry.path, entry.chosenContent);
+    }
+    const deletions = [...batchDeletions];
+    try {
+      await restCreateCommit(this.transport, {
+        owner: spec.owner,
+        repo: spec.repo,
+        branch: spec.branch,
+        files: batchFiles,
+        ...(deletions.length > 0 ? { deletions } : {}),
+        message:
+          deletions.length > 0
+            ? `chore(exosync): resolve ${pushable.length} keep-local conflict(s) (consolidate ${deletions.length} stale remote path(s))`
+            : `chore(exosync): push ${pushable.length} resolved conflict(s)`,
+        expectedHeadSha: head,
+        ...(this.deps.baseURL !== undefined ? { baseURL: this.deps.baseURL } : {}),
+        ...(this.deps.redact !== undefined ? { redact: this.deps.redact } : {}),
+      });
+    } catch (err) {
+      // The whole batch is deferred — a concurrent external writer moved the
+      // head (CAS abort) or the commit raced (422). Leave EVERY entry queued;
+      // never a partial/forced overwrite. The next sync re-checks each per-path
+      // TOCTOU and re-conflicts only those whose remote genuinely moved.
+      warnings.push(
+        `outbox: batch push deferred for ${pushable.length} resolution(s), will retry next sync: ${redact(errMsg(err))}`,
+      );
+      return { pushed: 0, reconflicted };
+    }
+
+    // The single commit landed — finalise every resolution (watermark snap +
+    // unpin, markResolved, drain outbox). Per-entry warnings preserve the
+    // existing consolidation/pushed log lines.
+    let pushed = 0;
+    for (const { entry, stalePaths } of pushable) {
+      const deletedSiblings = stalePaths.filter((p) => !batchFiles.has(p));
+      await this.snapOutboxWatermark(
+        spec,
+        entry.path,
+        entry.chosenContent,
+        deletedSiblings,
+      );
       await this.deps.quarantine?.markResolved?.(entry.repoKey, entry.path);
+      // Stale sibling copies were deleted on the remote — clear their cross-
+      // device unresolved-count too (best-effort; most have no cache entry).
+      for (const sp of deletedSiblings) {
+        await this.deps.quarantine?.markResolved?.(entry.repoKey, sp);
+      }
       await outbox.remove(entry.repoKey, entry.path);
       pushed++;
+      if (deletedSiblings.length > 0) {
+        warnings.push(
+          `consolidated cross-path conflict for ${entry.path} — removed ${deletedSiblings.length} stale remote copy/copies (recoverable in git history)`,
+        );
+      }
     }
     if (pushed > 0) {
       warnings.push(`pushed ${pushed} resolved conflict(s)`);
@@ -1727,18 +1856,27 @@ export class SyncEngine {
     spec: SyncRepoSpec,
     path: string,
     chosen: string,
+    stalePaths: readonly string[] = [],
   ): Promise<void> {
     const record = await this.deps.watermarkStore.get(spec.repoKey);
     if (record === null) return;
-    const pinnedPaths = (record.pinnedPaths ?? []).filter((p) => p !== path);
+    // Unpin the resolved path AND any stale sibling paths consolidated away
+    // (#3729) — their remote copies were deleted in the resolution commit, so
+    // they must not keep re-deriving the conflict.
+    const removeFromPins = new Set<string>([path, ...stalePaths]);
+    const pinnedPaths = (record.pinnedPaths ?? []).filter(
+      (p) => !removeFromPins.has(p),
+    );
     const blobSha = await gitBlobSha(chosen, this.sha1);
     const uid = extractAssetUid(chosen);
     const entry = { path, blobSha, ...(uid !== undefined ? { uid } : {}) };
-    const idx = record.files.findIndex((f) => f.path === path);
+    // Drop base entries for the consolidated-away stale paths before snapping
+    // the surviving path — their remote blobs no longer exist.
+    const staleSet = new Set(stalePaths);
+    const base = record.files.filter((f) => !staleSet.has(f.path));
+    const idx = base.findIndex((f) => f.path === path);
     const files =
-      idx >= 0
-        ? record.files.map((f, i) => (i === idx ? entry : f))
-        : [...record.files, entry];
+      idx >= 0 ? base.map((f, i) => (i === idx ? entry : f)) : [...base, entry];
     await this.deps.watermarkStore.set(spec.repoKey, {
       ...record,
       files,
@@ -2593,9 +2731,18 @@ export class SyncEngine {
     // a cache hit must NOT read as "vanished from snapshot" and wrongly defer
     // the pull (M1 zero-loss: never overwrites a concurrently-edited file).
     cachedBlobShas: ReadonlyMap<string, string> = new Map(),
-  ): Promise<{ pulledCount: number; pinnedPaths: Set<string> }> {
+  ): Promise<{
+    pulledCount: number;
+    pinnedPaths: Set<string>;
+    pulledPaths: string[];
+  }> {
     let pulledCount = 0;
     const pinnedPaths = new Set<string>();
+    // RFC 8f93ff95 — the paths actually mutated on disk this pull (writes,
+    // merges, remote-deletes), surfaced as `RepoSyncResult.pulledPaths` so the
+    // command layer can targeted-reindex them. One entry per real mutation,
+    // pushed alongside every `pulledCount++` (length stays === pulledCount).
+    const pulledPaths: string[] = [];
     // TOCTOU re-read matches the snapshot's representation: a byte snapshot
     // re-reads bytes, a text snapshot re-reads text — `contentEquals`
     // compares within the representation.
@@ -2650,6 +2797,7 @@ export class SyncEngine {
         }
         await writeContent(w.path, w.content);
         pulledCount++;
+        pulledPaths.push(w.path);
         continue;
       }
       const current = await tryRead(
@@ -2665,6 +2813,7 @@ export class SyncEngine {
       }
       await writeContent(w.path, w.content);
       pulledCount++;
+      pulledPaths.push(w.path);
     }
     for (const d of applyDeletes) {
       if (!isSafeRepoRelativePath(d.path)) {
@@ -2684,6 +2833,7 @@ export class SyncEngine {
         }
         await localFiles.delete(d.path);
         pulledCount++;
+        pulledPaths.push(d.path);
         continue;
       }
       if (snapshot !== undefined) {
@@ -2697,9 +2847,10 @@ export class SyncEngine {
         }
         await localFiles.delete(d.path);
         pulledCount++;
+        pulledPaths.push(d.path);
       }
     }
-    return { pulledCount, pinnedPaths };
+    return { pulledCount, pinnedPaths, pulledPaths };
   }
 
   /**

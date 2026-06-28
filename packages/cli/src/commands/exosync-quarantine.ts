@@ -36,6 +36,10 @@ import {
   OUTBOX_STORE_FILENAME,
   QuarantineResolver,
   extractAssetUid,
+  rewriteAssetUid,
+  findDuplicateUidGroups,
+  planDuplicateUidFix,
+  type DedupUidFile,
   type ResolveChoice,
   type SyncRepoSpec,
 } from "@kitelev/exocortex-core";
@@ -237,31 +241,6 @@ export async function runQuarantineResolve(
 }
 
 /**
- * Rewrite the `exo__Asset_uid` scalar to a fresh value, scoped to the `---`
- * frontmatter block exactly like {@link extractAssetUid} reads it (same block
- * isolation + same lenient value shape `[^\s"']+`). Scoping the WRITE to the
- * same region as the READ avoids re-stamping a `exo__Asset_uid:` token that
- * happens to appear in the body (code-reviewer MEDIUM-1). Returns the content
- * unchanged when there is no frontmatter uid line.
- */
-function rewriteUid(content: string, fresh: string): string {
-  const fm = /^(---\r?\n)([\s\S]*?)(\r?\n---(?=\r?\n|$))/.exec(content);
-  if (fm === null) return content;
-  const rewrittenBlock = fm[2].replace(
-    /^(exo__Asset_uid:[ \t]*["']?)[^\s"']+(["']?[ \t]*)$/m,
-    `$1${fresh}$2`,
-  );
-  if (rewrittenBlock === fm[2]) return content;
-  return (
-    content.slice(0, fm.index) +
-    fm[1] +
-    rewrittenBlock +
-    fm[3] +
-    content.slice(fm.index + fm[0].length)
-  );
-}
-
-/**
  * Content-preserving normalization for the IDENTICAL-copy test. Two files equal
  * after this carry the SAME content — only line-ending STYLE (CRLF vs LF) and
  * trailing blank lines / a final newline differ, which no markdown/RDF reader
@@ -353,33 +332,31 @@ export async function runDedupUids(
   const { specs, warnings } = collectVaultSpecs(vaultPath);
   for (const w of warnings) out(`warn: ${w}`);
 
-  // Group absolute file paths by the uid declared in their frontmatter, scoped
-  // to the materialized sync units (the same set sync diffs).
-  const byUid = new Map<string, string[]>();
+  // Enumerate absolute paths + content across the materialized sync units (the
+  // same set sync diffs), then defer the uid grouping to the shared
+  // platform-free helper (#3676 — the in-plugin command composes the SAME
+  // `findDuplicateUidGroups` / `planDuplicateUidFix` over `vault.adapter`).
+  const files: DedupUidFile[] = [];
   for (const spec of specs) {
     const root = path.join(vaultPath, spec.localPath);
     if (!existsSync(root)) continue;
     const port = nodeLocalFilesPort(root);
     for (const rel of await port.list()) {
       if (!rel.endsWith(".md")) continue;
-      let content: string;
       try {
-        content = await port.read(rel);
+        files.push({ path: path.join(root, rel), content: await port.read(rel) });
       } catch {
         continue;
       }
-      const uid = extractAssetUid(content);
-      if (uid === undefined) continue;
-      const abs = path.join(root, rel);
-      const list = byUid.get(uid) ?? [];
-      list.push(abs);
-      byUid.set(uid, list);
     }
   }
 
-  const dups = [...byUid.entries()]
-    .filter(([, paths]) => paths.length > 1)
-    .sort(([a], [b]) => a.localeCompare(b));
+  // Duplicate-uid groups, sorted by uid (paths keep enumeration order for the
+  // report). Shaped as `[uid, paths]` so the report / `--auto` flow below is
+  // unchanged.
+  const dups: Array<[string, string[]]> = findDuplicateUidGroups(files).map(
+    (g) => [g.uid, [...g.paths]],
+  );
 
   if (dups.length === 0) {
     out("No duplicate uids on disk. ✅");
@@ -400,14 +377,18 @@ export async function runDedupUids(
       snap: Map<string, string>;
     }> = [];
     for (const [uid, paths] of dups) {
-      const files: Array<{ path: string; content: string }> = [];
+      const groupFiles: Array<{ path: string; content: string }> = [];
       const snap = new Map<string, string>();
       for (const p of paths) {
         const c = await fsp.readFile(p, "utf-8");
-        files.push({ path: p, content: c });
+        groupFiles.push({ path: p, content: c });
         snap.set(p, c);
       }
-      plans.push({ uid, decisions: planDedupGroup(uid, files, randomUUID), snap });
+      plans.push({
+        uid,
+        decisions: planDedupGroup(uid, groupFiles, randomUUID),
+        snap,
+      });
     }
 
     let plannedDeletes = 0;
@@ -489,7 +470,7 @@ export async function runDedupUids(
           skipped++;
           continue;
         }
-        const rewritten = rewriteUid(current, d.toUid);
+        const rewritten = rewriteAssetUid(current, d.toUid);
         if (rewritten !== current) {
           await fsp.writeFile(d.path, rewritten, "utf-8");
           out(`  re-uuid ${rel(d.path)} → uid=${d.toUid} (content differs from kept copy)`);
@@ -523,21 +504,15 @@ export async function runDedupUids(
     return 1; // a non-fix report is a "needs attention" signal (exit 1)
   }
 
+  // Keep the FIRST occurrence's uid per group, re-uuid the rest (the shared
+  // `planDuplicateUidFix` plans deterministically by path so a re-run is
+  // idempotent — the first stays first). The in-plugin command applies the
+  // identical plan over `vault.adapter` (#3676 — same fix on both platforms).
   let fixed = 0;
-  for (const [, paths] of dups) {
-    // Keep the FIRST occurrence's uid; re-uuid the rest (deterministic order
-    // by path so a re-run is idempotent — the first stays first).
-    const ordered = [...paths].sort((a, b) => a.localeCompare(b));
-    for (const file of ordered.slice(1)) {
-      const content = await fsp.readFile(file, "utf-8");
-      const fresh = randomUUID();
-      const rewritten = rewriteUid(content, fresh);
-      if (rewritten !== content) {
-        await fsp.writeFile(file, rewritten, "utf-8");
-        out(`  fixed ${path.relative(vaultPath, file)} → uid=${fresh}`);
-        fixed++;
-      }
-    }
+  for (const r of planDuplicateUidFix(files, randomUUID)) {
+    await fsp.writeFile(r.path, r.content, "utf-8");
+    out(`  fixed ${rel(r.path)} → uid=${r.toUid}`);
+    fixed++;
   }
   out(`Reassigned ${fixed} uid(s). Run \`exosync sync\` to propagate.`);
   return 0;

@@ -188,8 +188,35 @@ export class NoteToRDFConverter {
    * ```
    */
   async convertNote(file: IFile): Promise<Triple[]> {
-    const frontmatter = this.vault.getFrontmatter(file);
+    return this.convertNoteFromFrontmatter(
+      file,
+      this.vault.getFrontmatter(file),
+    );
+  }
 
+  /**
+   * Convert a note to RDF using ALREADY-RESOLVED frontmatter instead of reading
+   * it from the vault adapter (`getFrontmatter`, metadataCache-backed).
+   *
+   * RFC 8f93ff95 — ExoSync writes pulled assets via `vault.adapter.write`,
+   * which does NOT refresh Obsidian's metadataCache, so `getFrontmatter` can be
+   * stale for a just-synced file. The post-sync targeted reindex parses the
+   * frontmatter straight from disk and passes it here, decoupling the per-file
+   * conversion from metadataCache freshness. Wikilink TARGET resolution
+   * (prototype / Exo 0.0.3 anchors) still flows through the adapter —
+   * acceptable for Tier 1: the asset's OWN frontmatter triples (label, class,
+   * `ems__Effort_parent`, …) are what make it visible in a parent's Layout.
+   * Full disk-resolution of wikilinks is Tier 2.
+   *
+   * @param file - The note's path/basename identity (a synthetic `IFile` is
+   *   fine — only `path`/`basename` are read here).
+   * @param frontmatter - The note's frontmatter, already parsed (e.g. from
+   *   disk). `null` ⇒ no triples.
+   */
+  async convertNoteFromFrontmatter(
+    file: IFile,
+    frontmatter: Record<string, unknown> | null,
+  ): Promise<Triple[]> {
     if (!frontmatter) {
       return [];
     }
@@ -1222,6 +1249,27 @@ export class NoteToRDFConverter {
   ): Promise<(IRI | Literal)[]> {
     if (typeof value === "string") {
       const cleanValue = this.removeQuotes(value);
+
+      // Issue #3757: `exocmd__TokenInvocation_parameter` is a pure DATA literal —
+      // a frontmatter-KEY name (`exo__Asset_isDefinedBy`) for the `targetProperty`
+      // resolver, or a date-format/offset modifier for date tokens — NEVER a
+      // class reference. Without this bypass, a key like `exo__Asset_isDefinedBy`
+      // matches the `prefix__LocalName` class-shape and gets substituted to the
+      // ontology IRI (`<https://exocortex.my/ontology/exo#Asset_isDefinedBy>`).
+      // CommandResolver then bakes that IRI into the `$target.property(...)`
+      // marker, and the resolver looks up `targetFm[<IRI>]` (a guaranteed miss —
+      // targetFm is keyed by the prefixed frontmatter key) → returns null → the
+      // created instance silently loses `exo__Asset_isDefinedBy` (and any other
+      // `$target.property(prefix__Local)` inheritance). The value is data, not a
+      // class ref, so emit it as a plain Literal. Same category as
+      // `targetValueLiteral` (a plain-string value read via getLiteralValue,
+      // documented below as never entering the wikilink branch) — not a
+      // file-IRI reference like the `isGroundingRef` bypass. Sole consumer is
+      // CommandResolver.resolveTokenInvocation (via getLiteralValue), which wants
+      // the literal key; no path relies on the IRI form.
+      if (predicate?.value.endsWith("#TokenInvocation_parameter")) {
+        return [new Literal(cleanValue)];
+      }
 
       const wikilink = this.extractWikilink(cleanValue);
       if (wikilink) {

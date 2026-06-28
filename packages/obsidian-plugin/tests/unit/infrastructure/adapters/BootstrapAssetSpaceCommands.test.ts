@@ -749,25 +749,27 @@ interface MobileHarness {
 }
 
 function makeMobileHarness(opts: {
-  gitmodulesEntries?: Array<{ submodulePath: string; url: string }>;
+  mountedEntries?: Array<{ submodulePath: string; url: string }>;
   materializedFolders?: Record<string, string[]>;
   bootstrapUrls?: { exoUrl: string } | null;
   addUrl?: { url: string } | null;
   confirm?: boolean;
 } = {}): MobileHarness {
   const notices: string[] = [];
-  const gitmodulesEntries = opts.gitmodulesEntries ?? [];
+  const mountedEntries = opts.mountedEntries ?? [];
   const materialized = opts.materializedFolders ?? {};
 
-  // Mobile materialise strategy — one combined op returning the sha (mirrors
-  // RestAssetSpaceMount.mount), plus the vault.adapter-backed .gitmodules read.
+  // Cross-platform materialise strategy — one combined op returning the sha
+  // (mirrors RestAssetSpaceMount.mount), plus the RFC 0005 Phase 1 filesystem-
+  // derived mounted-set read (no .gitmodules). The fake returns canned entries
+  // to drive the consumer's state machine.
   const restMount = {
     mount: jest.fn(
       async (_gitUrl: string, _submodulePath: string, _ref: string) => ({
         sha: "deadbee",
       }),
     ),
-    readGitmodulesEntries: jest.fn(async () => [...gitmodulesEntries]),
+    listMountedAssetSpaces: jest.fn(async () => [...mountedEntries]),
   } as jest.Mocked<IRestBootstrapMount>;
 
   const folderHasContent = Object.keys(materialized).length > 0;
@@ -823,12 +825,13 @@ function makeMobileHarness(opts: {
 }
 
 describe("BootstrapAssetSpaceCommands — mobile restMount strategy (#3535)", () => {
-  it("empty vault → bootstrap materialises exo only via restMount.mount (Maven path), writes .gitmodules, no Node-fs deps", async () => {
+  it("empty vault → bootstrap materialises exo only via restMount.mount (Maven path), no .gitmodules, no Node-fs deps", async () => {
     const h = makeMobileHarness();
     await h.cmds.invokeBootstrap();
 
-    // detectVaultState read .gitmodules via the mobile vault.adapter path.
-    expect(h.restMount.readGitmodulesEntries).toHaveBeenCalled();
+    // detectVaultState classified via the filesystem-derived mounted set
+    // (RFC 0005 Phase 1 — no .gitmodules).
+    expect(h.restMount.listMountedAssetSpaces).toHaveBeenCalled();
     // Exo-only clean bootstrap (2026-06-20): a single combined cross-platform op
     // for exo, at the Maven path. exocmd is added later (Add AssetSpace / profile).
     expect(h.restMount.mount).toHaveBeenCalledTimes(1);
@@ -844,8 +847,9 @@ describe("BootstrapAssetSpaceCommands — mobile restMount strategy (#3535)", ()
       "main",
     );
     expect(h.notices.some((n) => /Bootstrap complete/.test(n))).toBe(true);
-    // The misleading desktop "file-only mode" notice MUST NOT fire on mobile,
-    // even though there is no `.git` — restMount writes .gitmodules regardless.
+    // The misleading desktop "file-only mode" notice MUST NOT fire on the REST
+    // path, even though there is no `.git` — the REST mount is the unified
+    // cross-platform path (mount-state = folder presence, no .gitmodules).
     expect(h.notices.some((n) => /file-only mode/.test(n))).toBe(false);
   });
 
@@ -890,9 +894,9 @@ describe("BootstrapAssetSpaceCommands — mobile restMount strategy (#3535)", ()
     expect(h.notices.some((n) => /already has AssetSpaces/.test(n))).toBe(true);
   });
 
-  it("EC2 clone-needs-fetch → re-materialises each tracked entry via restMount.mount", async () => {
+  it("EC2 clone-needs-fetch → re-materialises each tracked (filesystem-derived) entry via restMount.mount", async () => {
     const h = makeMobileHarness({
-      gitmodulesEntries: [
+      mountedEntries: [
         { submodulePath: "assetspaces/kitelev/exoas-exo", url: EXO_URL },
         { submodulePath: "assetspaces/kitelev/exoas-exocmd", url: EXOCMD_URL },
       ],
@@ -919,7 +923,7 @@ describe("BootstrapAssetSpaceCommands — mobile restMount strategy (#3535)", ()
     // Mobile parity with the desktop EC2 resilience: a single failing mount must
     // not abort the rest of the clone-needs-fetch recovery (per-entry try/catch).
     const h = makeMobileHarness({
-      gitmodulesEntries: [
+      mountedEntries: [
         { submodulePath: "assetspaces/kitelev/exoas-exo", url: EXO_URL },
         { submodulePath: "assetspaces/kitelev/exoas-exocmd", url: EXOCMD_URL },
       ],
@@ -947,16 +951,16 @@ describe("BootstrapAssetSpaceCommands — mobile restMount strategy (#3535)", ()
     expect(h.notices.some((n) => /Fetched 1\/2/.test(n))).toBe(true);
   });
 
-  it("detectVaultState classifies via restMount.readGitmodulesEntries (no gitOps)", async () => {
+  it("detectVaultState classifies via restMount.listMountedAssetSpaces (filesystem, no gitOps)", async () => {
     const h = makeMobileHarness({
-      gitmodulesEntries: [
+      mountedEntries: [
         { submodulePath: "assetspaces/kitelev/exoas-exo", url: EXO_URL },
       ],
       materializedFolders: { "kitelev/exoas-exo": ["a.md"] },
     });
     const state = await h.cmds.detectVaultState();
     expect(state).toBe("bootstrapped");
-    expect(h.restMount.readGitmodulesEntries).toHaveBeenCalled();
+    expect(h.restMount.listMountedAssetSpaces).toHaveBeenCalled();
   });
 });
 

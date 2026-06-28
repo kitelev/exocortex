@@ -17,9 +17,12 @@
  *
  * Proves the end-to-end mobile contract a fresh iPhone vault relies on:
  *   empty vault → bootstrap → exo materialised via vault.adapter (exo-only clean
- *   bootstrap, 2026-06-20) + `.gitmodules` written; then add-assetspace → a
- *   second entry — all readable back via `RestAssetSpaceMount.readGitmodulesEntries`,
- *   which is exactly what apply-profile (`listAllAssetSpaceInfos`) consumes next.
+ *   bootstrap, 2026-06-20) and — RFC 0005 Phase 1 — NO `.gitmodules` written;
+ *   then add-assetspace → a second folder. The mounted set is read back by
+ *   enumerating the materialised `assetspaces/<owner>/<repo>` folders +
+ *   re-deriving each URL via `RestAssetSpaceMount.listMountedAssetSpaces`, which
+ *   is exactly what apply-profile (`listAllAssetSpaceInfos`, already filesystem-
+ *   based) consumes next.
  *
  * Revert-verify (mobile): remove the `restMount` branch from
  * `BootstrapAssetSpaceCommands.materialize` / `listTrackedEntries` and these
@@ -219,7 +222,7 @@ function makeCmds(
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe("Mobile bootstrap integration — real RestAssetSpaceMount + vault.adapter (#3535)", () => {
-  it("empty vault → bootstrap materialises exo only via vault.adapter + writes .gitmodules", async () => {
+  it("empty vault → bootstrap materialises exo only via vault.adapter; the mounted set is read back from the filesystem (RFC 0005 Phase 1, no .gitmodules) @req:b02a3994-91a2-4b87-8872-fbac860e5630", async () => {
     const adapter = new InMemoryAdapter();
     const notices: string[] = [];
     const { cmds, restMount } = makeCmds(adapter, notices, {});
@@ -237,9 +240,17 @@ describe("Mobile bootstrap integration — real RestAssetSpaceMount + vault.adap
     ).toBe(false);
     expect(adapter.orphanWrites).toEqual([]);
 
-    // .gitmodules written via vault.adapter (text file), readable back — just the
-    // single exo entry.
-    const entries = await restMount.readGitmodulesEntries();
+    // RFC 0005 Phase 1 — WRITER STOPPED: a git-free vault carries NO .gitmodules
+    // sidecar. (Re-instating the appendGitmodulesEntry write in
+    // RestAssetSpaceMount.mount makes this RED — revert-verified.)
+    expect(adapter.textFiles.has(".gitmodules")).toBe(false);
+    expect(await adapter.exists(".gitmodules")).toBe(false);
+
+    // READER from the FILESYSTEM: the mounted set + URLs are reconstructed by
+    // enumerating assetspaces/<owner>/<repo> and deriveUrl(path) — NOT from a
+    // .gitmodules registry (which does not exist). (Reverting
+    // listMountedAssetSpaces to read .gitmodules returns [] here — revert-verified.)
+    const entries = await restMount.listMountedAssetSpaces();
     expect(entries).toEqual([
       { submodulePath: "assetspaces/kitelev/exoas-exo", url: EXO_URL },
     ]);
@@ -248,7 +259,7 @@ describe("Mobile bootstrap integration — real RestAssetSpaceMount + vault.adap
     expect(notices.some((n) => /file-only mode/.test(n))).toBe(false);
   });
 
-  it("after exo-only bootstrap, add-assetspace appends a second .gitmodules entry at the canonical Maven path + materialises it (#3538) @req:59afd046-eb41-4fd5-a03a-062a53d0acc5", async () => {
+  it("after exo-only bootstrap, add-assetspace materialises a second AssetSpace at the canonical Maven path; both appear in the filesystem-derived mounted set (#3538) @req:59afd046-eb41-4fd5-a03a-062a53d0acc5", async () => {
     const adapter = new InMemoryAdapter();
     const notices: string[] = [];
     const { cmds, restMount } = makeCmds(adapter, notices, {});
@@ -265,9 +276,11 @@ describe("Mobile bootstrap integration — real RestAssetSpaceMount + vault.adap
       ),
     ).toBe(true);
 
-    // Bootstrap wrote exo only; add-assetspace appends pmbok as the 2nd entry.
-    const entries = await restMount.readGitmodulesEntries();
-    expect(entries.map((e) => e.submodulePath)).toEqual([
+    // RFC 0005 Phase 1 — still no .gitmodules; the mounted set is enumerated
+    // from the two materialised folders (exo from bootstrap + pmbok from add).
+    expect(adapter.textFiles.has(".gitmodules")).toBe(false);
+    const entries = await restMount.listMountedAssetSpaces();
+    expect(entries.map((e) => e.submodulePath).sort()).toEqual([
       "assetspaces/kitelev/exoas-exo",
       "assetspaces/kitelev/exoas-pmbok-ontology",
     ]);
@@ -280,13 +293,104 @@ describe("Mobile bootstrap integration — real RestAssetSpaceMount + vault.adap
     const { cmds, restMount } = makeCmds(adapter, notices, {});
 
     await cmds.invokeBootstrap();
-    const before = await restMount.readGitmodulesEntries();
+    const before = await restMount.listMountedAssetSpaces();
     notices.length = 0;
 
     await cmds.invokeBootstrap();
-    const after = await restMount.readGitmodulesEntries();
+    const after = await restMount.listMountedAssetSpaces();
 
     expect(after).toEqual(before);
     expect(notices.some((n) => /already has AssetSpaces/.test(n))).toBe(true);
+  });
+
+  it("clone-needs-fetch — present-but-empty assetspaces/<owner>/<repo> folder (no .gitmodules) is detected + re-fetched from the filesystem-derived URL @req:b02a3994-91a2-4b87-8872-fbac860e5630", async () => {
+    const adapter = new InMemoryAdapter();
+    const notices: string[] = [];
+    const { cmds, restMount } = makeCmds(adapter, notices, {});
+
+    // Simulate a vault synced WITHOUT content: the canonical Maven folder exists
+    // but is empty, and there is NO .gitmodules registry (git-free, RFC 0005
+    // Phase 1). The state must be derived from the filesystem alone.
+    await adapter.mkdir("assetspaces");
+    await adapter.mkdir("assetspaces/kitelev");
+    await adapter.mkdir("assetspaces/kitelev/exoas-exo");
+    expect(adapter.textFiles.has(".gitmodules")).toBe(false);
+
+    // Detection: the empty folder is enumerated (tracked) but has no .md content
+    // → clone-needs-fetch (NOT "empty", NOT "bootstrapped"). Reverting
+    // listTrackedEntries to read .gitmodules would yield [] → "empty" here.
+    expect(await cmds.detectVaultState()).toBe("clone-needs-fetch");
+
+    // Bootstrap on this state re-materialises each tracked folder from its
+    // deriveUrl(folderPath) URL (confirm=true wired in makeCmds), filling the
+    // empty folder with content — without any stored .gitmodules URL.
+    await cmds.invokeBootstrap();
+
+    expect(adapter.files.has("assetspaces/kitelev/exoas-exo/exoas-exo.md")).toBe(
+      true,
+    );
+    expect(adapter.textFiles.has(".gitmodules")).toBe(false);
+    const entries = await restMount.listMountedAssetSpaces();
+    expect(entries).toEqual([
+      { submodulePath: "assetspaces/kitelev/exoas-exo", url: EXO_URL },
+    ]);
+    expect(notices.some((n) => /Fetched 1\/1/.test(n))).toBe(true);
+  });
+
+  it("enumerates exactly the canonical 2-level owner/repo — does not descend into a repo's namespace subdirs, and skips a stray one-level folder @req:b02a3994-91a2-4b87-8872-fbac860e5630", async () => {
+    const adapter = new InMemoryAdapter();
+    const notices: string[] = [];
+    const { restMount } = makeCmds(adapter, notices, {});
+
+    // A canonical mount whose content sits a level deeper (owner/repo/<ns>/file)
+    // — the real EKA layout — plus a stray one-level folder directly under
+    // assetspaces/ (a legacy flat remnant).
+    await adapter.writeBinary(
+      "assetspaces/kitelev/exoas-exo/exo/Class.md",
+      new TextEncoder().encode("x").buffer,
+    );
+    await adapter.mkdir("assetspaces/kitelev/exoas-exo/exo");
+    await adapter.mkdir("assetspaces/kitelev/exoas-exo");
+    await adapter.mkdir("assetspaces/kitelev");
+    await adapter.mkdir("assetspaces");
+    await adapter.mkdir("assetspaces/legacyflat"); // one level → no owner/repo pair
+
+    const entries = await restMount.listMountedAssetSpaces();
+    // Exactly the canonical assetspaces/<owner>/<repo>: the enum stops at two
+    // levels (it does NOT surface the inner `exo/` namespace as a fake
+    // owner/repo), and the one-level `legacyflat` (no second-level child)
+    // contributes nothing.
+    expect(entries).toEqual([
+      { submodulePath: "assetspaces/kitelev/exoas-exo", url: EXO_URL },
+    ]);
+  });
+
+  it("KNOWN LIMITATION (deprecated #3538 flat layout) — a flat mount whose content sits in a namespace subdir is mis-enumerated as owner/repo", async () => {
+    const adapter = new InMemoryAdapter();
+    const notices: string[] = [];
+    const { restMount } = makeCmds(adapter, notices, {});
+
+    // A pre-#3538 FLAT mount: the repo is one level under assetspaces/ and its
+    // content lives in a namespace subdir → assetspaces/<repo>/<ns>/file.md.
+    await adapter.writeBinary(
+      "assetspaces/ems/ems/Task.md",
+      new TextEncoder().encode("x").buffer,
+    );
+    await adapter.mkdir("assetspaces/ems/ems");
+    await adapter.mkdir("assetspaces/ems");
+    await adapter.mkdir("assetspaces");
+
+    // Documented limitation (RFC 0005 §10.1 / listMountedAssetSpaces docstring):
+    // the enum cannot tell a flat repo from an owner, so it reads
+    // assetspaces/ems/ems as a fake owner=ems/repo=ems pair. This is harmless on
+    // canonical (EKA) vaults — every AssetSpace is two-level — and the only
+    // consumer affected is the «Unmount» picker (apply-profile + ExoSync are
+    // descriptor/presence-sourced; clone-needs-fetch never re-fetches a
+    // flat-with-content mount). Pinned here so the behavior is explicit, not
+    // silently truncated; migrate any flat mount per #3538.
+    const entries = await restMount.listMountedAssetSpaces();
+    expect(entries).toEqual([
+      { submodulePath: "assetspaces/ems/ems", url: "https://github.com/ems/ems" },
+    ]);
   });
 });

@@ -311,7 +311,10 @@ function parseDateModifier(parameter?: string): {
 } {
   if (!parameter) return { offset: null, format: null };
   const colon = parameter.indexOf(":");
-  if (colon < 0) return { offset: parameter || null, format: null };
+  // `parameter` is guaranteed non-empty here (the `!parameter` guard above
+  // returns early), so `parameter || null` was a no-op `|| null` — dropped
+  // to clear the js/trivial-conditional alert (#3696) without behaviour change.
+  if (colon < 0) return { offset: parameter, format: null };
   const offsetPart = parameter.slice(0, colon);
   const format = parameter.slice(colon + 1);
   return { offset: offsetPart || null, format: format || null };

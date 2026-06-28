@@ -1,7 +1,7 @@
 # Exo-as-SDK: AssetSpaces, the `exoas-*` repos, and Profiles
 
-> **Audience:** contributors and technical users trying to understand *why the vault is
-> split across many git repositories* and *what gets mounted when*.
+> **Audience:** contributors and technical users trying to understand _why the vault is
+> split across many git repositories_ and _what gets mounted when_.
 > **Position:** conceptual orientation. For the runtime mechanics of mounting see
 > [ARCHITECTURE.md → Profiles & AssetSpace Mounting](../../ARCHITECTURE.md#profiles--assetspace-mounting);
 > for the full Profile model see [profile.md](profile.md); for syncing see
@@ -13,18 +13,18 @@ Exocortex deliberately separates **the engine** from **the data it operates on**
 
 - **`exo` is the SDK / platform** — the RDF parser, SPARQL engine, layout renderer, command
   machinery. It ships as code (the plugin + the `@kitelev/exocortex-cli`) and as a small core
-  of class/property/command *definitions*. It knows nothing about *your* domain.
+  of class/property/command _definitions_. It knows nothing about _your_ domain.
 - **The vault is the data** — your notes, projects, people, ontologies. The product is the
-  vault *plus* the SDK, and [every client must be able to drive the full system](../../VISION.md)
+  vault _plus_ the SDK, and [every client must be able to drive the full system](../../VISION.md)
   (the no-lock-in north star, enforced by the UI/CLI Parity Invariant).
 
 Borrowing from the JVM ecosystem, the rest of this doc uses one analogy throughout:
 
-| Exocortex concept | SDK-ecosystem analogy |
-| --- | --- |
-| `exo` (engine + core defs) | the platform / runtime |
-| an **AssetSpace** | a **library (a jar)** — a versioned, shareable package of assets |
-| a **Profile** | a **BOM / manifest** — the named set of libraries you want loaded |
+| Exocortex concept          | SDK-ecosystem analogy                                             |
+| -------------------------- | ----------------------------------------------------------------- |
+| `exo` (engine + core defs) | the platform / runtime                                            |
+| an **AssetSpace**          | a **library (a jar)** — a versioned, shareable package of assets  |
+| a **Profile**              | a **BOM / manifest** — the named set of libraries you want loaded |
 
 The three questions below are just the three nouns in that table.
 
@@ -42,8 +42,8 @@ An AssetSpace is the **unit of packaging, sharing, and mounting**:
   an asset lives in the folder of the ontology its `exo__Asset_isDefinedBy` points at.
 - **Sharing** — because it is a normal git repo, an AssetSpace can be public, private, or
   shared with a specific set of collaborators, independently of every other AssetSpace.
-- **Mounting** — an AssetSpace is either *materialized* (present on disk, indexed into the
-  triple store) or *unmounted* (absent). Only mounted, UID-bearing markdown participates in
+- **Mounting** — an AssetSpace is either _materialized_ (present on disk, indexed into the
+  triple store) or _unmounted_ (absent). Only mounted, UID-bearing markdown participates in
   the graph. Two examples that always-or-often ship as AssetSpaces: `exoas-exo` (the core
   `exo` ontology) and `exoas-exocmd` (UI command definitions) — both also vendored as npm
   data submodules under `packages/`.
@@ -54,9 +54,9 @@ An AssetSpace is the **unit of packaging, sharing, and mounting**:
 ## 2. Why are there so many `exoas-*` repos?
 
 Because the **axis of separation is sharing-audience, not topic**. The question each
-AssetSpace answers is *"who is this allowed to be shared with?"* — and that has many distinct
-answers, so there are many repos. A single big vault repo could not give *personal*,
-*work*, and *shared-with-one-collaborator* data different visibility and different remotes.
+AssetSpace answers is _"who is this allowed to be shared with?"_ — and that has many distinct
+answers, so there are many repos. A single big vault repo could not give _personal_,
+_work_, and _shared-with-one-collaborator_ data different visibility and different remotes.
 
 The naming convention encodes the audience directly:
 
@@ -64,13 +64,13 @@ The naming convention encodes the audience directly:
   Private by default unless the domain is meant to be public.
 - **`exoas-shared-<audience>`** — data deliberately shared with a named audience (a team, a
   specific collaborator).
-- **Public floor spaces** — `exoas-exo`, `exoas-exocmd`, and the W3C-vocabulary space are
-  public because the SDK and its vocabulary are not secret.
+- **Public spaces** — `exoas-exo` (the SDK floor), `exoas-exocmd`, and the W3C-vocabulary
+  space are public because the SDK and its vocabulary are not secret.
 
 This split buys four things that a monorepo-vault cannot:
 
 1. **Privacy boundaries are physical.** A private AssetSpace that is not in your active
-   Profile is *not on disk* — it cannot leak into search, SPARQL, or a screenshot.
+   Profile is _not on disk_ — it cannot leak into search, SPARQL, or a screenshot.
 2. **Per-audience remotes & permissions.** Each repo has its own GitHub visibility and
    collaborators; sharing one space with someone never exposes another.
 3. **Independent versioning.** A library you depend on can be updated (pointer-bumped) without
@@ -93,7 +93,7 @@ BOM in the analogy. It is a regular markdown asset with two declarative properti
   import a "base" profile rather than re-listing its spaces).
 
 There is **one** operation over a profile — **`Cmd+P → Exocortex: Apply profile`** — and it
-performs a **mount-state strict replace**: the profile's *effective set* is materialized on
+performs a **mount-state strict replace**: the profile's _effective set_ is materialized on
 disk and everything else is unmounted. The effective set is:
 
 ```
@@ -107,7 +107,7 @@ shared-identity spaces are optional add-ons). Applying a profile that omits `exo
 recovery on load) and works on mobile through a REST/tarball transport when no git binary is
 present.
 
-The result: switching from a *work* context to a *personal* one is a single command that
+The result: switching from a _work_ context to a _personal_ one is a single command that
 physically swaps which repositories exist on disk — privacy, focus, and index size all follow
 from the mount state.
 

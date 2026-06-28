@@ -17,6 +17,24 @@ import {
  * VaultSettingsStore — reads/writes `exo__Setting` vault assets
  * (onto-RFC 981b6070 Phase 5 / ExoSync Phase D, task D2).
  *
+ * DEPRECATED — RFC f402002b M2.3 — the bidirectional **live-mirror** is being
+ * replaced by the explicit Settings-Distribution Export/Import engine (M2.1).
+ * As of M2.3 the store is a **READ-ONLY transitional watcher**: the continuous
+ * UI→asset auto-write ({@link pushChangedFields}, gated by
+ * {@link VaultSettingsStoreOptions.outboundWriteEnabled}, default false) is
+ * disabled and logs a one-time deprecation notice; the asset→UI inbound watcher
+ * + load-overlay + one-shot migrate remain. **Canonical authority = the RDF
+ * asset; data.json = derived runtime cache.** UI changes are persisted to assets
+ * only via «Exocortex: Export settings». The whole store is scheduled for removal
+ * ≥1 release after this deprecation window (RFC §6 R2).
+ *
+ * Read-only consequence (accepted, §6 R2 — un-Exported UI changes are not
+ * durable): a UI toggle not persisted via «Export settings» reverts to the
+ * canonical asset value whenever the asset is re-read — via a
+ * `metadataCache.changed` re-fire, a profile-switch unmount→remount, OR a plugin
+ * reload (the `applyScan` load-overlay). The `deferredPushFields` resurface
+ * protection is inert here (reachable only from the now-disabled outbound path).
+ *
  * Architecture: data.json stays a write-through mirror (instant boot
  * baseline + fallback for non-homoiconized keys); the vault asset is the
  * source of truth once it exists. Discovery is class-based and
@@ -77,6 +95,18 @@ export interface VaultSettingsStoreOptions {
   writeDebounceMs?: number;
   /** Folder where migrateMissing materialises assets. */
   settingsFolder?: string;
+  /**
+   * Continuous UI→asset auto-write (the "live-mirror" outbound half).
+   * DEPRECATED — RFC f402002b M2.3 — the live-mirror is being replaced by the
+   * explicit Export/Import engine. Default **false**: the store is a
+   * READ-ONLY transitional watcher (asset→UI inbound + load-overlay +
+   * one-shot migrate still work; UI changes are persisted to assets only via
+   * «Exocortex: Export settings»). Canonical authority = the RDF asset;
+   * data.json = derived runtime cache. The whole store is scheduled for
+   * removal ≥1 release after this deprecation window. Pass `true` only to
+   * exercise the legacy outbound path (tests / the deprecation window).
+   */
+  outboundWriteEnabled?: boolean;
 }
 
 interface ScanEntry {
@@ -110,6 +140,10 @@ export class VaultSettingsStore {
   ) => Promise<void>;
   private readonly writeDebounceMs: number;
   private readonly settingsFolder: string;
+  /** DEPRECATED — RFC f402002b M2.3 — see {@link VaultSettingsStoreOptions.outboundWriteEnabled}. */
+  private readonly outboundWriteEnabled: boolean;
+  /** One-shot guard so the deprecation notice is logged at most once. */
+  private outboundDeprecationWarned = false;
 
   /** field → vault path of the winning asset. */
   private readonly knownFiles = new Map<string, string>();
@@ -146,6 +180,8 @@ export class VaultSettingsStore {
     this.applyRemote = options.applyRemote;
     this.writeDebounceMs = options.writeDebounceMs ?? 1000;
     this.settingsFolder = options.settingsFolder ?? DEFAULT_SETTINGS_FOLDER;
+    // RFC f402002b M2.3 — default read-only (no continuous UI→asset auto-write).
+    this.outboundWriteEnabled = options.outboundWriteEnabled ?? false;
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -223,10 +259,22 @@ export class VaultSettingsStore {
       const isDirty = currentCanonical !== baselineCanonical;
 
       if (isDirty) {
-        // User acted before the scan landed — their change wins; push it.
-        this.lastApplied.set(field, currentCanonical);
-        if (effectiveCanonical !== currentCanonical) {
-          this.queueWrite(field, settings[field]);
+        if (this.outboundWriteEnabled) {
+          // User acted before the scan landed — their change wins; push it.
+          this.lastApplied.set(field, currentCanonical);
+          if (effectiveCanonical !== currentCanonical) {
+            this.queueWrite(field, settings[field]);
+          }
+        } else {
+          // Read-only transitional (M2.3): no outbound write. The user's
+          // pre-scan UI value is kept (not overlaid). lastApplied has no live
+          // reader in read-only mode (pushChangedFields, its only consumer,
+          // no-ops) — set to the canonical asset value purely for consistency
+          // if outbound is ever re-enabled. The inbound watcher
+          // (onMetadataChanged) dedups against the LIVE settings value, not
+          // lastApplied, so a later real asset change still applies
+          // (canonical = RDF); an un-Exported UI change is not durable (§6 R2).
+          this.lastApplied.set(field, effectiveCanonical);
         }
         continue;
       }
@@ -318,8 +366,32 @@ export class VaultSettingsStore {
    * Called from the `saveSettings()` funnel: diffs registry fields
    * against the last applied/pushed value and queues vault writes for
    * the changed ones. Cheap no-op when nothing relevant changed.
+   *
+   * DEPRECATED — RFC f402002b M2.3 — the continuous UI→asset auto-write (the
+   * "live-mirror" outbound half) is deprecated in favour of the explicit
+   * «Exocortex: Export settings» command. When {@link outboundWriteEnabled}
+   * is false (the default), this is a no-op that logs a one-time deprecation
+   * notice — the watcher stays READ-ONLY (asset→UI still works) and the RDF
+   * asset is the canonical authority. Scheduled for removal ≥1 release on.
    */
   pushChangedFields(): void {
+    if (!this.outboundWriteEnabled) {
+      // Read-only transitional (M2.3): never write assets from UI changes.
+      // lastApplied is left untouched. It has no live reader in read-only mode
+      // (this method, its only consumer, returns here); the inbound watcher
+      // (onMetadataChanged) dedups against live settings, not lastApplied.
+      if (!this.outboundDeprecationWarned) {
+        this.outboundDeprecationWarned = true;
+        this.logger.warn(
+          "[VaultSettingsStore] live-mirror UI→asset auto-write is deprecated " +
+            "(RFC f402002b M2.3, read-only transitional). Use «Exocortex: Export " +
+            "settings» to persist settings to assets; the asset→UI watcher remains " +
+            "read-only and the RDF asset is canonical. This store is scheduled for " +
+            "removal ≥1 release after the deprecation window.",
+        );
+      }
+      return;
+    }
     if (!this.scanned) return; // pre-scan changes handled as dirty fields
     const settings = this.getSettings();
     for (const d of VAULT_SETTINGS_REGISTRY) {

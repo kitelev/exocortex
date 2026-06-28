@@ -231,6 +231,32 @@ export class SPARQLApi {
   }
 
   /**
+   * Executes a SPARQL **ASK** query and returns its boolean result.
+   *
+   * `query()` cannot serve an ASK: its contract is `SolutionMapping[]`, so it
+   * runs the ASK and discards the boolean. This method exposes the boolean the
+   * executor already computes — used to gate `exo-layout` action buttons by
+   * their `exo__Precondition_sparql` ASK (#3654 Part 1): `true` ⇒ button shown,
+   * `false` ⇒ hidden.
+   *
+   * @param sparql - A SPARQL ASK query string.
+   * @returns Promise resolving to the ASK boolean.
+   * @throws {ValidationError} If the query is not a valid ASK query.
+   * @throws {ServiceError} If the query service is not initialized or execution fails.
+   *
+   * @example
+   * ```typescript
+   * const holds = await api.ask(`
+   *   PREFIX ems: <https://exocortex.my/ontology/ems#>
+   *   ASK { <obsidian://vault/tasks/t1.md> ems:Effort_status ?s }
+   * `);
+   * ```
+   */
+  async ask(sparql: string): Promise<boolean> {
+    return this.queryService.ask(sparql);
+  }
+
+  /**
    * Returns the underlying in-memory triple store.
    *
    * Provides direct access to the RDF triple store for advanced operations
@@ -341,6 +367,21 @@ export class SPARQLApi {
    */
   async reindexFile(file: TFile): Promise<void> {
     await this.queryService.updateFile(file);
+  }
+
+  /**
+   * Post-sync targeted disk-read reindex (RFC 8f93ff95). For the set of paths
+   * ExoSync mutated this run, re-index each one STRAIGHT FROM DISK into the
+   * shared triple store (present ⇒ update from disk, absent ⇒ remove triples),
+   * then run a single inference pass. Unlike {@link refresh} it is O(k) and
+   * does not clear the store — used by the ExoSync post-sync hook so pulled
+   * assets become visible in Layouts without an Obsidian restart.
+   *
+   * @param paths - Vault-relative paths mutated by the sync run
+   *   (`RepoSyncResult.pulledPaths` ∪ `mergedPaths`).
+   */
+  async reindexPathsFromDisk(paths: string[]): Promise<void> {
+    await this.queryService.reindexPathsFromDisk(paths);
   }
 
   /**

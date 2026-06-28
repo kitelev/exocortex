@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo, useEffect } from "react";
 import type { PropertySchemaDefinition } from '@plugin/domain/property-editor/PropertySchemas';
 import { getPropertySchemaForClass, getPropertySchemaForClassSync } from '@plugin/domain/property-editor/PropertySchemas';
+import type { AssetRefCandidate } from "@plugin/presentation/builders/button-groups/DynamicCommandButtonGroupBuilder";
 import {
   TextField,
   SelectField,
@@ -9,12 +10,45 @@ import {
   TimestampField,
   NumberField,
 } from "./fields";
+import { RelationsSection, type PredicateOption } from "./RelationsSection";
+import type { RelationRow } from "./relationsEditorModel";
+import type { ReifyDestination } from "./reifyModel";
+
+/**
+ * RFC `93a0b2ee` Phase 3 / Task 3.1 — dependencies for the embedded Relations
+ * section. Supplied by {@link PropertyEditorModal} (which owns triple-store
+ * access + the vault write-path). When absent the form behaves exactly as
+ * before (back-compat) — wikilink fields render as raw text fields.
+ */
+export interface RelationsFormDeps {
+  /** The unified, deduplicated outgoing relations at open time. */
+  initialRows: RelationRow[];
+  /** Predicates the user may create a relation with (A's class wikilink properties). */
+  predicateOptions: PredicateOption[];
+  /** Range-scoped candidate resolver for the target picker. */
+  resolveCandidates: (rangeClassUid: string | undefined) => AssetRefCandidate[];
+  /** Append a new inline relation; resolves to the refreshed row list. */
+  createInline: (predicateKey: string, targetUid: string) => Promise<RelationRow[]>;
+  /** Delete a relation (inline → frontmatter, reified → statement); resolves to refreshed rows. */
+  deleteRelation: (row: RelationRow) => Promise<RelationRow[]>;
+  /**
+   * RFC §C3 Task 3.2/3.3 — reify an inline relation into a statement in the chosen
+   * destination AssetSpace anchor; resolves to refreshed rows.
+   */
+  reifyRelation?: (row: RelationRow, anchorUid: string) => Promise<RelationRow[]>;
+  /** RFC §C3 Task 3.3 — resolve the destination AssetSpaces the reify picker offers (default first). */
+  resolveReifyDestinations?: () => ReifyDestination[];
+  /** RFC §C3 Task 3.2 — de-reify a reified relation back to inline; resolves to refreshed rows. */
+  deReifyRelation?: (row: RelationRow) => Promise<RelationRow[]>;
+}
 
 export interface PropertyEditorFormProps {
   instanceClass: string;
   frontmatter: Record<string, unknown>;
   onSave: (updatedFrontmatter: Record<string, unknown>) => void;
   onCancel: () => void;
+  /** RFC `93a0b2ee` Task 3.1 — when present, render the Relations section. */
+  relations?: RelationsFormDeps;
 }
 
 interface ValidationError {
@@ -27,6 +61,7 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
   frontmatter,
   onSave,
   onCancel,
+  relations,
 }) => {
   const [schema, setSchema] = useState<PropertySchemaDefinition[]>(
     () => getPropertySchemaForClassSync(instanceClass),
@@ -77,11 +112,30 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
     return newErrors.length === 0;
   }, [schema, formData]);
 
+  // RFC 93a0b2ee Task 3.1 — when the Relations section is active, relation
+  // (wikilink) properties are managed there, not as raw text fields here.
+  const editableProperties = useMemo(() => {
+    const base = schema.filter((p) => !p.readOnly);
+    return relations ? base.filter((p) => p.type !== "wikilink") : base;
+  }, [schema, relations]);
+
   const handleSave = useCallback(() => {
-    if (validate()) {
-      onSave(formData);
+    if (!validate()) return;
+    // RFC 93a0b2ee Task 3.1 — when the Relations section is active, relations are
+    // written LIVE by the section (create/delete). The bulk Save must NOT write
+    // relation keys back from the stale `formData` snapshot (that would resurrect
+    // a deleted relation / drop a created one). Save only the scalar fields the
+    // form actually edits (the editable, non-relation properties).
+    if (relations) {
+      const editableKeys = new Set(editableProperties.map((p) => p.name));
+      const payload = Object.fromEntries(
+        Object.entries(formData).filter(([k]) => editableKeys.has(k)),
+      );
+      onSave(payload);
+      return;
     }
-  }, [validate, formData, onSave]);
+    onSave(formData);
+  }, [validate, formData, onSave, relations, editableProperties]);
 
   const getErrorForField = useCallback(
     (fieldName: string): string | undefined => {
@@ -169,9 +223,47 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
     [formData, getErrorForField, handleFieldChange],
   );
 
-  const editableProperties = useMemo(
-    () => schema.filter((p) => !p.readOnly),
-    [schema],
+  // RFC 93a0b2ee Task 3.1 — live relation rows (create/delete mutate the vault
+  // immediately and return the refreshed list, independent of the bulk Save).
+  const [relationRows, setRelationRows] = useState<RelationRow[]>(
+    () => relations?.initialRows ?? [],
+  );
+  useEffect(() => {
+    if (relations) setRelationRows(relations.initialRows);
+  }, [relations]);
+
+  const handleRelationCreate = useCallback(
+    (predicateKey: string, targetUid: string) => {
+      if (!relations) return;
+      void relations
+        .createInline(predicateKey, targetUid)
+        .then((rows) => setRelationRows(rows));
+    },
+    [relations],
+  );
+
+  const handleRelationDelete = useCallback(
+    (row: RelationRow) => {
+      if (!relations) return;
+      void relations.deleteRelation(row).then((rows) => setRelationRows(rows));
+    },
+    [relations],
+  );
+
+  const handleRelationReify = useCallback(
+    (row: RelationRow, anchorUid: string) => {
+      if (!relations?.reifyRelation) return;
+      void relations.reifyRelation(row, anchorUid).then((rows) => setRelationRows(rows));
+    },
+    [relations],
+  );
+
+  const handleRelationDeReify = useCallback(
+    (row: RelationRow) => {
+      if (!relations?.deReifyRelation) return;
+      void relations.deReifyRelation(row).then((rows) => setRelationRows(rows));
+    },
+    [relations],
   );
 
   const readOnlyProperties = useMemo(
@@ -185,6 +277,23 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
         <h3 className="property-editor-section-title">Editable properties</h3>
         {editableProperties.map(renderField)}
       </div>
+
+      {relations && (
+        <RelationsSection
+          rows={relationRows}
+          predicateOptions={relations.predicateOptions}
+          resolveCandidates={relations.resolveCandidates}
+          onCreate={handleRelationCreate}
+          onDelete={handleRelationDelete}
+          onReify={
+            relations.reifyRelation && relations.resolveReifyDestinations
+              ? handleRelationReify
+              : undefined
+          }
+          resolveReifyDestinations={relations.resolveReifyDestinations}
+          onDeReify={relations.deReifyRelation ? handleRelationDeReify : undefined}
+        />
+      )}
 
       {readOnlyProperties.length > 0 && (
         <div className="property-editor-section property-editor-readonly-section">

@@ -13,18 +13,21 @@
  * NON-recursive, `rmdir(path, true)` removes the subtree, `read` throws on a
  * missing file, `writeBinary` does NOT auto-create parents.
  *
- * Coverage:
+ * Coverage (RFC 0005 Phase 1 — git-free vault carries no `.gitmodules`):
  *   1. Happy path — files materialise under mount folder, content round-trips,
- *      nested dirs created, `.gitmodules` entry appended, sha returned.
- *   2. Idempotent `.gitmodules` — re-mount of same path does not duplicate.
- *   3. `.gitmodules` append preserves existing stanzas + separators.
- *   4. unmount — removes folder subtree AND strips `.gitmodules` stanza.
+ *      nested dirs created, NO `.gitmodules` written, sha returned.
+ *   2. Re-mount writes no `.gitmodules` on either pass.
+ *   3. Mount does not touch a pre-existing legacy `.gitmodules`.
+ *   4. unmount — removes folder subtree AND strips a pre-existing legacy
+ *      `.gitmodules` stanza (hygiene).
  *   5. unmount idempotent — missing folder / absent stanza = no-op.
  *   6. Empty tarball → throws.
  *   7. Zip-slip (absolute path) → throws, no escape write.
  *   8. Rate-limit gate fires before any fetch.
  *   9. Invalid repo URL → throws before any REST call.
  *  10. Invalid submodule path (traversal) → throws.
+ *  11. listMountedAssetSpaces — enumerates `assetspaces/<owner>/<repo>` folders +
+ *      `deriveUrl`, ignoring any `.gitmodules`.
  */
 
 import type { App } from "obsidian";
@@ -68,7 +71,17 @@ class InMemoryAdapter {
   readonly orphanWrites: string[] = [];
 
   async exists(p: string): Promise<boolean> {
-    return this.files.has(p) || this.textFiles.has(p) || this.dirs.has(p);
+    if (this.files.has(p) || this.textFiles.has(p) || this.dirs.has(p)) {
+      return true;
+    }
+    // A directory exists if any known path is under it (real-FS / Obsidian
+    // DataAdapter semantics) — mount() only mkdir's the leaf path, so an
+    // ancestor like `assetspaces` must still report existing.
+    const prefix = p.replace(/\/+$/, "") + "/";
+    for (const k of this.files.keys()) if (k.startsWith(prefix)) return true;
+    for (const k of this.textFiles.keys()) if (k.startsWith(prefix)) return true;
+    for (const d of this.dirs) if (d.startsWith(prefix)) return true;
+    return false;
   }
 
   async read(p: string): Promise<string> {
@@ -110,6 +123,28 @@ class InMemoryAdapter {
     for (const k of [...this.dirs]) {
       if (k.startsWith(prefix)) this.dirs.delete(k);
     }
+  }
+
+  /** Obsidian DataAdapter.list — immediate children as full vault paths. */
+  async list(dir: string): Promise<{ files: string[]; folders: string[] }> {
+    const prefix = dir === "" ? "" : dir.replace(/\/+$/, "") + "/";
+    const files = new Set<string>();
+    const folders = new Set<string>();
+    const consider = (full: string, isDir: boolean): void => {
+      if (!full.startsWith(prefix)) return;
+      const rest = full.slice(prefix.length);
+      if (rest.length === 0) return;
+      const slash = rest.indexOf("/");
+      if (slash === -1) {
+        (isDir ? folders : files).add(prefix + rest);
+      } else {
+        folders.add(prefix + rest.slice(0, slash));
+      }
+    };
+    for (const k of this.files.keys()) consider(k, false);
+    for (const k of this.textFiles.keys()) consider(k, false);
+    for (const d of this.dirs) consider(d, true);
+    return { files: [...files], folders: [...folders] };
   }
 }
 
@@ -158,7 +193,7 @@ function makeMount(
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe("RestAssetSpaceMount.mount", () => {
-  it("materialises tarball files under the mount folder + appends .gitmodules", async () => {
+  it("materialises tarball files under the mount folder and writes NO .gitmodules (RFC 0005 Phase 1)", async () => {
     const adapter = new InMemoryAdapter();
     const tarball = await makeTarball("kitelev-exoas-ems-abc1234", [
       { name: "README.md", data: new TextEncoder().encode("# EMS\n") },
@@ -183,11 +218,9 @@ describe("RestAssetSpaceMount.mount", () => {
     expect(adapter.dirs.has(`${PATH_OK}/ontology`)).toBe(true);
     expect(adapter.orphanWrites).toEqual([]);
 
-    // .gitmodules entry registered as plain text.
-    const gm = adapter.textFiles.get(".gitmodules") ?? "";
-    expect(gm).toContain(`[submodule "${PATH_OK}"]`);
-    expect(gm).toContain(`url = ${URL_OK}`);
-    expect(gm).toContain(`path = ${PATH_OK}`);
+    // RFC 0005 Phase 1 — NO .gitmodules sidecar on a git-free vault. (Re-instating
+    // the appendGitmodulesEntry write in mount() makes this RED — revert-verified.)
+    expect(adapter.textFiles.has(".gitmodules")).toBe(false);
 
     // Rate-limit gate consulted before fetch.
     expect(client.ensureRateLimit).toHaveBeenCalledWith(1);
@@ -259,7 +292,7 @@ describe("RestAssetSpaceMount.mount", () => {
     expect(adapter.textFiles.has(".gitmodules")).toBe(false);
   });
 
-  it("is idempotent on .gitmodules — re-mount does not duplicate the stanza", async () => {
+  it("re-mount does not write a .gitmodules sidecar on either pass (RFC 0005 Phase 1)", async () => {
     const adapter = new InMemoryAdapter();
     const tarball = await makeTarball("kitelev-exoas-ems-abc1234", [
       { name: "README.md", data: new TextEncoder().encode("x") },
@@ -269,17 +302,14 @@ describe("RestAssetSpaceMount.mount", () => {
     await mount.mount(URL_OK, PATH_OK);
     await mount.mount(URL_OK, PATH_OK);
 
-    const gm = adapter.textFiles.get(".gitmodules") ?? "";
-    const occurrences = gm.split(`[submodule "${PATH_OK}"]`).length - 1;
-    expect(occurrences).toBe(1);
+    expect(adapter.textFiles.has(".gitmodules")).toBe(false);
   });
 
-  it("preserves an existing .gitmodules stanza when appending a new one", async () => {
+  it("does NOT touch a pre-existing legacy .gitmodules on mount (writer fully removed)", async () => {
     const adapter = new InMemoryAdapter();
-    await adapter.write(
-      ".gitmodules",
-      '[submodule "assetspaces/other/repo"]\n\tpath = assetspaces/other/repo\n\turl = https://github.com/o/repo\n',
-    );
+    const legacy =
+      '[submodule "assetspaces/other/repo"]\n\tpath = assetspaces/other/repo\n\turl = https://github.com/o/repo\n';
+    await adapter.write(".gitmodules", legacy);
     const tarball = await makeTarball("kitelev-exoas-ems-abc1234", [
       { name: "README.md", data: new TextEncoder().encode("x") },
     ]);
@@ -287,9 +317,9 @@ describe("RestAssetSpaceMount.mount", () => {
 
     await mount.mount(URL_OK, PATH_OK);
 
-    const gm = adapter.textFiles.get(".gitmodules") ?? "";
-    expect(gm).toContain('[submodule "assetspaces/other/repo"]');
-    expect(gm).toContain(`[submodule "${PATH_OK}"]`);
+    // The mount neither adds its own stanza nor rewrites the legacy file — it
+    // simply does not write .gitmodules at all.
+    expect(adapter.textFiles.get(".gitmodules")).toBe(legacy);
   });
 
   it("rejects an empty tarball", async () => {
@@ -355,7 +385,7 @@ describe("RestAssetSpaceMount.mount", () => {
 });
 
 describe("RestAssetSpaceMount.unmount", () => {
-  it("removes the mount folder subtree AND strips the .gitmodules stanza", async () => {
+  it("removes the mount folder subtree AND strips a pre-existing legacy .gitmodules stanza (hygiene)", async () => {
     const adapter = new InMemoryAdapter();
     const tarball = await makeTarball("kitelev-exoas-ems-abc1234", [
       { name: "README.md", data: new TextEncoder().encode("x") },
@@ -363,6 +393,13 @@ describe("RestAssetSpaceMount.unmount", () => {
     ]);
     const mount = makeMount(adapter, makeFakeClient(tarball));
     await mount.mount(URL_OK, PATH_OK);
+    // RFC 0005 Phase 1 — mount no longer writes .gitmodules; seed a LEGACY one
+    // (as a vault bootstrapped on an older plugin would have) to prove unmount
+    // still strips it for hygiene.
+    await adapter.write(
+      ".gitmodules",
+      `[submodule "${PATH_OK}"]\n\tpath = ${PATH_OK}\n\turl = ${URL_OK}\n`,
+    );
 
     await mount.unmount(PATH_OK);
 
@@ -373,7 +410,7 @@ describe("RestAssetSpaceMount.unmount", () => {
     expect(adapter.dirs.has(PATH_OK)).toBe(false);
     expect(adapter.dirs.has(`${PATH_OK}/ontology`)).toBe(false);
 
-    // .gitmodules stanza stripped.
+    // Legacy .gitmodules stanza stripped.
     const gm = adapter.textFiles.get(".gitmodules") ?? "";
     expect(gm).not.toContain(`[submodule "${PATH_OK}"]`);
   });
@@ -393,26 +430,24 @@ describe("RestAssetSpaceMount.unmount", () => {
   });
 });
 
-describe("RestAssetSpaceMount.readGitmodulesEntries (#3535 — mobile vault state)", () => {
-  it("returns [] when .gitmodules is absent", async () => {
+describe("RestAssetSpaceMount.listMountedAssetSpaces (RFC 0005 Phase 1 — filesystem-derived, no .gitmodules)", () => {
+  it("returns [] when the assetspaces/ dir is absent", async () => {
     const adapter = new InMemoryAdapter();
     const mount = makeMount(adapter, makeFakeClient(new ArrayBuffer(0)));
-    await expect(mount.readGitmodulesEntries()).resolves.toEqual([]);
+    await expect(mount.listMountedAssetSpaces()).resolves.toEqual([]);
   });
 
-  it("parses (path, url) entries from a vault.adapter .gitmodules", async () => {
+  it("enumerates assetspaces/<owner>/<repo> folders + deriveUrl, ignoring any .gitmodules", async () => {
     const adapter = new InMemoryAdapter();
-    await adapter.write(
-      ".gitmodules",
-      `[submodule "assetspaces/kitelev/exoas-exo"]\n` +
-        `\tpath = assetspaces/kitelev/exoas-exo\n` +
-        `\turl = https://github.com/kitelev/exoas-exo\n` +
-        `[submodule "assetspaces/kitelev/exoas-exocmd"]\n` +
-        `\tpath = assetspaces/kitelev/exoas-exocmd\n` +
-        `\turl = https://github.com/kitelev/exoas-exocmd\n`,
-    );
+    // A stale .gitmodules must NOT be the source — the folders are.
+    await adapter.write(".gitmodules", "[submodule \"stale/x\"]\n\tpath = stale/x\n\turl = https://github.com/stale/x\n");
+    await adapter.mkdir("assetspaces");
+    await adapter.mkdir("assetspaces/kitelev");
+    await adapter.mkdir("assetspaces/kitelev/exoas-exo");
+    await adapter.mkdir("assetspaces/kitelev/exoas-exocmd");
     const mount = makeMount(adapter, makeFakeClient(new ArrayBuffer(0)));
-    await expect(mount.readGitmodulesEntries()).resolves.toEqual([
+    const entries = await mount.listMountedAssetSpaces();
+    expect(entries.sort((a, b) => a.submodulePath.localeCompare(b.submodulePath))).toEqual([
       {
         submodulePath: "assetspaces/kitelev/exoas-exo",
         url: "https://github.com/kitelev/exoas-exo",
@@ -424,7 +459,7 @@ describe("RestAssetSpaceMount.readGitmodulesEntries (#3535 — mobile vault stat
     ]);
   });
 
-  it("round-trips an entry written by mount() (mount → read)", async () => {
+  it("lists the folder a mount() materialised (mount → list), with no .gitmodules involved", async () => {
     const adapter = new InMemoryAdapter();
     const tarball = await makeTarball("kitelev-exoas-ems-abc1234", [
       { name: "README.md", data: new TextEncoder().encode("# EMS\n") },
@@ -432,7 +467,8 @@ describe("RestAssetSpaceMount.readGitmodulesEntries (#3535 — mobile vault stat
     const mount = makeMount(adapter, makeFakeClient(tarball));
     await mount.mount(URL_OK, PATH_OK, "main");
 
-    await expect(mount.readGitmodulesEntries()).resolves.toEqual([
+    expect(adapter.textFiles.has(".gitmodules")).toBe(false);
+    await expect(mount.listMountedAssetSpaces()).resolves.toEqual([
       { submodulePath: PATH_OK, url: URL_OK },
     ]);
   });

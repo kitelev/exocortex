@@ -39,10 +39,15 @@ export class WikilinkValidator {
    * @throws WikilinkNotFoundError if any wikilink references a non-existent file
    */
   async validatePropertyValues(
-    properties: Record<string, string>,
+    properties: Record<string, string | string[]>,
   ): Promise<void> {
     for (const [, value] of Object.entries(properties)) {
-      await this.validateValue(value);
+      // A multi-value property (repeated --property, issue #3759) is an array;
+      // validate every element's wikilinks.
+      const values = Array.isArray(value) ? value : [value];
+      for (const v of values) {
+        await this.validateValue(v);
+      }
     }
   }
 
@@ -94,15 +99,23 @@ export class WikilinkValidator {
       return;
     }
 
-    const exists = await this.fsAdapter.fileExists(`${uuid}.md`);
+    // Primary: filename-based recursive lookup — the SAME authoritative UID->path
+    // discovery used by `exocortex resolve` (findFilesWithUuid). This finds nested
+    // UID-canon assets at any depth AND is robust to malformed YAML frontmatter,
+    // which the frontmatter scan below cannot read. Without this, `create`
+    // rejected a nested UID-wikilink that `resolve` happily found (issue #3701).
+    const foundByFilename = await this.fsAdapter.findFileByUidFilename(uuid);
+    if (foundByFilename) {
+      return;
+    }
 
-    if (!exists) {
-      // Also try finding by UID in metadata
-      const foundByUid = await this.fsAdapter.findFileByUID(uuid);
-
-      if (!foundByUid) {
-        throw new WikilinkNotFoundError(uuid, label);
-      }
+    // Fallback: frontmatter `exo__Asset_uid` scan — covers assets that are NOT
+    // UID-named (e.g. pn__DailyNote `YYYY-MM-DD.md`, period__Week `YYYY-Www.md`)
+    // but are referenced by their UID. Keeps validation from regressing for the
+    // calendar-plugin whitelist files.
+    const foundByUid = await this.fsAdapter.findFileByUID(uuid);
+    if (!foundByUid) {
+      throw new WikilinkNotFoundError(uuid, label);
     }
   }
 

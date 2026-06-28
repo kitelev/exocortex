@@ -2,7 +2,17 @@ import React from "react";
 import {
   RelationsRenderer,
   RELATIONS_EMPTY_TEXT,
+  isNonRelationPredicate,
+  predicateIriToKey,
 } from "../../src/presentation/renderers/layout/RelationsRenderer";
+import {
+  InMemoryTripleStore,
+  IRI,
+  Literal,
+  Namespace,
+  Triple,
+  vaultPathToIRI,
+} from "@kitelev/exocortex-core";
 import { Keymap, TFile } from "obsidian";
 import {
   createMockApp,
@@ -805,6 +815,53 @@ describe("RelationsRenderer", () => {
       );
     });
 
+    // PDD `dccff87b` (RFC 93a0b2ee §C3 read-view follow-up) — block-level
+    // «Edit relations» affordance wiring. @req:cbb982a3-17dc-42ec-8a01-9857d81a881f
+    describe("«Edit relations» affordance wiring (PDD dccff87b)", () => {
+      const propsPassedToTable = () =>
+        (React.createElement as jest.Mock).mock.calls
+          .map((c) => c[1])
+          .find(
+            (p) => p && typeof p === "object" && "groupByProperty" in p,
+          );
+
+      it("passes an onEditRelations that invokes the edit-properties command when currentFile is provided", async () => {
+        const executeCommandById = jest.fn();
+        mockApp.commands = { executeCommandById };
+        const relations = [createMockAssetRelation()];
+
+        await renderer.render(
+          mockElement,
+          relations,
+          {},
+          undefined,
+          false,
+          mockFile,
+        );
+
+        const props = propsPassedToTable();
+        expect(props).toBeDefined();
+        expect(props.onEditRelations).toBeDefined();
+
+        // Behaviour, not method-exists: invoking the wired callback drives the
+        // registered edit-properties command (the read-view → editor open path).
+        props.onEditRelations();
+        expect(executeCommandById).toHaveBeenCalledWith(
+          "exocortex:edit-properties",
+        );
+      });
+
+      it("passes NO onEditRelations when currentFile is absent (additive — back-compat)", async () => {
+        const relations = [createMockAssetRelation()];
+
+        await renderer.render(mockElement, relations, {});
+
+        const props = propsPassedToTable();
+        expect(props).toBeDefined();
+        expect(props.onEditRelations).toBeUndefined();
+      });
+    });
+
     it("should pass correct sort configuration to component", async () => {
       const relations = [createMockAssetRelation()];
 
@@ -1273,6 +1330,594 @@ describe("RelationsRenderer", () => {
         showEffortVotes: true,
         groupByProperty: true,
       });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // RFC 93a0b2ee Task 1.2 — reified-relation read-path: triple-store ctor-DI +
+  // cold-start isReady gate + predicate-whitelist. Production-shape: exercises
+  // `getReifiedRelationsGated` over a REAL InMemoryTripleStore (not a stub),
+  // seeding statements exactly as NoteToRDFConverter emits them.
+  //
+  // `@req:1cbd6248-2e68-43d8-8f06-f35faf25fe9a`  (req-first SDD, RFC 0003).
+  //   Revert-verified: (a) deleting the cold-start gate (`if (this.isStoreReady
+  //   && !this.isStoreReady()) return []`) makes the "not-ready → []" case RED;
+  //   (b) deleting the predicate-whitelist filter makes the "filters non-relation
+  //   predicate" case RED. Restored → GREEN.
+  // ---------------------------------------------------------------------------
+  describe("getReifiedRelationsGated (Task 1.2 — cold-start gate + predicate-whitelist)", () => {
+    // Mirrors NoteToRDFConverter.notePathToIRI with an empty subjectIriPrefix —
+    // the exact path-form the indexer emits and the wiring injects in prod.
+    const notePathToIRI = (path: string): IRI => new IRI(vaultPathToIRI(path));
+
+    const STATEMENT_SUBJECT = Namespace.EXO.term("Statement_subject");
+    const STATEMENT_PREDICATE = Namespace.EXO.term("Statement_predicate");
+    const STATEMENT_OBJECT = Namespace.EXO.term("Statement_object");
+    const RDF_TYPE = Namespace.RDF.term("type");
+    const EXO_STATEMENT_CLASS = Namespace.EXO.term("Statement");
+    /** A genuine user-defined relation predicate. */
+    const RELATES_TO = new IRI(
+      "https://exocortex.my/ontology/exo-ims#relatesToConcept",
+    );
+
+    const A_PATH =
+      "assetspaces/kitelev/exoas-my/my/aaaaaaaa-0000-0000-0000-000000000001.md";
+    const B_PATH =
+      "assetspaces/kitelev/exoas-public/concept/bbbbbbbb-0000-0000-0000-000000000002.md";
+    const S1_PATH =
+      "assetspaces/kitelev/exoas-class-relations/class-relations/11111111-0000-0000-0000-000000000011.md";
+
+    /** Seed one reified statement (raw slot triples + materialized D5 edge). */
+    async function seedStatement(
+      store: InMemoryTripleStore,
+      statementPath: string,
+      subject: IRI,
+      predicate: IRI,
+      object: IRI,
+    ): Promise<void> {
+      const stmt = notePathToIRI(statementPath);
+      await store.add(new Triple(stmt, RDF_TYPE, EXO_STATEMENT_CLASS));
+      await store.add(new Triple(stmt, STATEMENT_SUBJECT, subject));
+      await store.add(new Triple(stmt, STATEMENT_PREDICATE, predicate));
+      await store.add(new Triple(stmt, STATEMENT_OBJECT, object));
+      await store.add(new Triple(subject, predicate, object));
+    }
+
+    // NB: `noteFn` is intentionally NOT defaulted — passing `undefined`
+    // explicitly must stay undefined (a default param would resurrect
+    // `notePathToIRI` on an explicit-undefined call, defeating the
+    // dependency-absent test).
+    function makeRenderer(
+      store: InMemoryTripleStore | undefined,
+      isStoreReady: (() => boolean) | undefined,
+      noteFn: ((path: string) => IRI) | undefined,
+    ): RelationsRenderer {
+      // Label resolution feeds the dual-IRI symbolic candidate; for these
+      // path-keyed statements a plain label is fine (no symbolic form).
+      mockMetadataService.getAssetLabel.mockReturnValue("Концепт A");
+      mockVaultAdapter.getFrontmatter.mockReturnValue(null);
+      return new RelationsRenderer(
+        mockApp,
+        mockSettings,
+        mockReactRenderer,
+        mockBacklinksCacheManager,
+        mockMetadataService,
+        mockPlugin,
+        mockRefresh,
+        mockVaultAdapter,
+        store,
+        isStoreReady,
+        noteFn,
+      );
+    }
+
+    it("surfaces an outgoing reified relation when the store is ready", async () => {
+      const store = new InMemoryTripleStore();
+      await seedStatement(
+        store,
+        S1_PATH,
+        notePathToIRI(A_PATH),
+        RELATES_TO,
+        notePathToIRI(B_PATH),
+      );
+      const renderer = makeRenderer(store, () => true, notePathToIRI);
+
+      const result = await renderer.getReifiedRelationsGated(
+        createTestTFile(A_PATH),
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].direction).toBe("outgoing");
+      expect(result[0].predicate).toBe(RELATES_TO.value);
+      expect(result[0].object).toBe(notePathToIRI(B_PATH).value);
+      expect(result[0].statementPath).toBe(S1_PATH);
+    });
+
+    // Revert-verify anchor (gate): break the `isStoreReady() === false` gate and
+    // this goes RED — a not-ready store would leak a partial / under-counted set.
+    it("returns [] (no under-count) when the store is NOT ready (cold-start gate)", async () => {
+      const store = new InMemoryTripleStore();
+      await seedStatement(
+        store,
+        S1_PATH,
+        notePathToIRI(A_PATH),
+        RELATES_TO,
+        notePathToIRI(B_PATH),
+      );
+      const renderer = makeRenderer(store, () => false, notePathToIRI);
+
+      const result = await renderer.getReifiedRelationsGated(
+        createTestTFile(A_PATH),
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it("assumes ready (back-compat) when no isStoreReady probe is wired", async () => {
+      const store = new InMemoryTripleStore();
+      await seedStatement(
+        store,
+        S1_PATH,
+        notePathToIRI(A_PATH),
+        RELATES_TO,
+        notePathToIRI(B_PATH),
+      );
+      const renderer = makeRenderer(store, undefined, notePathToIRI);
+
+      const result = await renderer.getReifiedRelationsGated(
+        createTestTFile(A_PATH),
+      );
+
+      expect(result).toHaveLength(1);
+    });
+
+    // Revert-verify anchor (whitelist): break the predicate-whitelist filter and
+    // this goes RED — the rdf:type-reified statement would leak as a "relation".
+    it("filters out a reified statement whose predicate is a non-relation predicate (rdf:type)", async () => {
+      const store = new InMemoryTripleStore();
+      // A genuine relation + a noise statement reifying rdf:type — only the
+      // genuine relation must survive the whitelist.
+      await seedStatement(
+        store,
+        S1_PATH,
+        notePathToIRI(A_PATH),
+        RELATES_TO,
+        notePathToIRI(B_PATH),
+      );
+      await seedStatement(
+        store,
+        "assetspaces/kitelev/exoas-class-relations/class-relations/22222222-0000-0000-0000-000000000022.md",
+        notePathToIRI(A_PATH),
+        RDF_TYPE,
+        EXO_STATEMENT_CLASS,
+      );
+      const renderer = makeRenderer(store, () => true, notePathToIRI);
+
+      const result = await renderer.getReifiedRelationsGated(
+        createTestTFile(A_PATH),
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].predicate).toBe(RELATES_TO.value);
+    });
+
+    it("filters out a reified statement whose predicate is an exo system property (exo:Asset_label)", async () => {
+      const store = new InMemoryTripleStore();
+      await seedStatement(
+        store,
+        S1_PATH,
+        notePathToIRI(A_PATH),
+        Namespace.EXO.term("Asset_label"),
+        notePathToIRI(B_PATH),
+      );
+      const renderer = makeRenderer(store, () => true, notePathToIRI);
+
+      const result = await renderer.getReifiedRelationsGated(
+        createTestTFile(A_PATH),
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it("returns [] when the triple store dependency is absent (back-compat)", async () => {
+      const renderer = makeRenderer(undefined, () => true, notePathToIRI);
+
+      const result = await renderer.getReifiedRelationsGated(
+        createTestTFile(A_PATH),
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it("returns [] when the notePathToIRI dependency is absent (back-compat)", async () => {
+      const store = new InMemoryTripleStore();
+      await seedStatement(
+        store,
+        S1_PATH,
+        notePathToIRI(A_PATH),
+        RELATES_TO,
+        notePathToIRI(B_PATH),
+      );
+      const renderer = makeRenderer(store, () => true, undefined);
+
+      const result = await renderer.getReifiedRelationsGated(
+        createTestTFile(A_PATH),
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    describe("isNonRelationPredicate", () => {
+      it("flags rdf:type, exo system + plumbing predicates; passes genuine relations", () => {
+        expect(isNonRelationPredicate(RDF_TYPE.value)).toBe(true);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Asset_label").value),
+        ).toBe(true);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Instance_class").value),
+        ).toBe(true);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Class_superClass").value),
+        ).toBe(true);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Statement_subject").value),
+        ).toBe(true);
+        expect(
+          isNonRelationPredicate(Namespace.RDFS.term("label").value),
+        ).toBe(true);
+        // Genuine user-defined relation predicates pass.
+        expect(isNonRelationPredicate(RELATES_TO.value)).toBe(false);
+        expect(
+          isNonRelationPredicate(Namespace.EMS.term("Effort_area").value),
+        ).toBe(false);
+        // Genuine OBJECT exo:Asset_* relations MUST pass (the inline path
+        // surfaces them — dropping them would be an inline/reified asymmetry).
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Asset_relates").value),
+        ).toBe(false);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Asset_prototype").value),
+        ).toBe(false);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Asset_createdBy").value),
+        ).toBe(false);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Asset_isDefinedBy").value),
+        ).toBe(false);
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // RFC 93a0b2ee Task 1.3 — integrate reified relations into getAssetRelations:
+  // dedup vs inline (inline-wins) + AssetRelation.provenance/statementPath.
+  // Drives the FULL getAssetRelations over a REAL InMemoryTripleStore.
+  //
+  // `@req:7101ecef-ed89-487d-b632-d6bbfb7f0241`  (req-first SDD, RFC 0003).
+  //   Revert-verified: deleting the dedup guard (`if (inlineKeys.has(key))
+  //   continue`) makes the inline+reified collision case show 2 rows instead of
+  //   1 (inline-wins broken) → RED; restored → GREEN.
+  // ---------------------------------------------------------------------------
+  describe("getAssetRelations reified integration (Task 1.3 — dedup + provenance + collision)", () => {
+    const notePathToIRI = (path: string): IRI => new IRI(vaultPathToIRI(path));
+    const STATEMENT_SUBJECT = Namespace.EXO.term("Statement_subject");
+    const STATEMENT_PREDICATE = Namespace.EXO.term("Statement_predicate");
+    const STATEMENT_OBJECT = Namespace.EXO.term("Statement_object");
+    const RDF_TYPE = Namespace.RDF.term("type");
+    const EXO_STATEMENT_CLASS = Namespace.EXO.term("Statement");
+    const RELATES_TO = new IRI(
+      "https://exocortex.my/ontology/exo-ims#relatesToConcept",
+    );
+
+    const A_PATH =
+      "assetspaces/kitelev/exoas-my/my/aaaaaaaa-0000-0000-0000-000000000001.md";
+    const A_UID = "aaaaaaaa-0000-0000-0000-000000000001";
+    const B_PATH =
+      "assetspaces/kitelev/exoas-public/concept/bbbbbbbb-0000-0000-0000-000000000002.md";
+    const B_UID = "bbbbbbbb-0000-0000-0000-000000000002";
+    const X_PATH =
+      "assetspaces/kitelev/exoas-my/my/xxxxxxxx-0000-0000-0000-000000000009.md";
+    const X_UID = "xxxxxxxx-0000-0000-0000-000000000009";
+    const S1_PATH =
+      "assetspaces/kitelev/exoas-class-relations/class-relations/11111111-0000-0000-0000-000000000011.md";
+
+    async function seedStatement(
+      store: InMemoryTripleStore,
+      statementPath: string,
+      subject: IRI,
+      predicate: IRI,
+      object: IRI,
+    ): Promise<void> {
+      const stmt = notePathToIRI(statementPath);
+      await store.add(new Triple(stmt, RDF_TYPE, EXO_STATEMENT_CLASS));
+      await store.add(new Triple(stmt, STATEMENT_SUBJECT, subject));
+      await store.add(new Triple(stmt, STATEMENT_PREDICATE, predicate));
+      await store.add(new Triple(stmt, STATEMENT_OBJECT, object));
+      await store.add(new Triple(subject, predicate, object));
+    }
+
+    /** Register per-path frontmatter + labels on the vault-adapter mock. */
+    function registerFiles(
+      fm: Record<string, Record<string, unknown>>,
+      labels: Record<string, string> = {},
+    ): void {
+      mockVaultAdapter.getAbstractFileByPath.mockImplementation((p: string) =>
+        fm[p] ? createTestTFile(p) : null,
+      );
+      mockVaultAdapter.getFrontmatter.mockImplementation(
+        (f: any) => fm[f?.path] ?? null,
+      );
+      mockMetadataService.getAssetLabel.mockImplementation(
+        (p: string) => labels[p] ?? null,
+      );
+      MetadataHelpers.isAssetArchived.mockReturnValue(false);
+      BlockerHelpers.isEffortBlocked.mockReturnValue(false);
+    }
+
+    function makeRenderer(store: InMemoryTripleStore): RelationsRenderer {
+      return new RelationsRenderer(
+        mockApp,
+        mockSettings,
+        mockReactRenderer,
+        mockBacklinksCacheManager,
+        mockMetadataService,
+        mockPlugin,
+        mockRefresh,
+        mockVaultAdapter,
+        store,
+        () => true,
+        notePathToIRI,
+      );
+    }
+
+    it("surfaces a reified-only relation with provenance + statementPath even with NO inline backlinks", async () => {
+      const store = new InMemoryTripleStore();
+      await seedStatement(store, S1_PATH, notePathToIRI(A_PATH), RELATES_TO, notePathToIRI(B_PATH));
+      mockBacklinksCacheManager.getBacklinks.mockReturnValue([]); // no inline
+      registerFiles(
+        {
+          [A_PATH]: { exo__Asset_uid: A_UID, exo__Asset_label: "Концепт A" },
+          [B_PATH]: { exo__Asset_uid: B_UID, exo__Asset_label: "Концепт B" },
+        },
+        { [A_PATH]: "Концепт A", [B_PATH]: "Концепт B" },
+      );
+
+      const result = await makeRenderer(store).getAssetRelations(
+        createTestTFile(A_PATH),
+        {},
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].provenance).toBe("reified");
+      expect(result[0].statementPath).toBe(S1_PATH);
+      // outgoing (A is subject) → the displayed related asset is the OBJECT (B).
+      expect(result[0].path).toBe(B_PATH);
+      expect(result[0].title).toBe("Концепт B");
+      // predicate rendered in frontmatter-key form (handles the dash prefix).
+      expect(result[0].propertyName).toBe("exo-ims__relatesToConcept");
+      expect(result[0].isBodyLink).toBe(false);
+    });
+
+    it("renders an incoming reified relation with the SUBJECT as the related asset", async () => {
+      const store = new InMemoryTripleStore();
+      // C --relatesTo--> A  (A is the object → incoming)
+      await seedStatement(store, S1_PATH, notePathToIRI(B_PATH), RELATES_TO, notePathToIRI(A_PATH));
+      mockBacklinksCacheManager.getBacklinks.mockReturnValue([]);
+      registerFiles(
+        {
+          [A_PATH]: { exo__Asset_uid: A_UID, exo__Asset_label: "Концепт A" },
+          [B_PATH]: { exo__Asset_uid: B_UID, exo__Asset_label: "Концепт C" },
+        },
+        { [A_PATH]: "Концепт A", [B_PATH]: "Концепт C" },
+      );
+
+      const result = await makeRenderer(store).getAssetRelations(
+        createTestTFile(A_PATH),
+        {},
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].provenance).toBe("reified");
+      expect(result[0].path).toBe(B_PATH); // incoming → other end is the subject
+      expect(result[0].title).toBe("Концепт C");
+    });
+
+    // Revert-verify anchor (dedup / inline-wins): an edge present BOTH inline
+    // (X --relatesTo--> A backlink) AND reified (a statement of the same edge).
+    // It must appear ONCE, as inline. Break the dedup guard → 2 rows (RED).
+    it("dedups an edge present both inline and reified, keeping the inline one (inline-wins)", async () => {
+      const store = new InMemoryTripleStore();
+      // Reified incoming: X --relatesTo--> A.
+      await seedStatement(store, S1_PATH, notePathToIRI(X_PATH), RELATES_TO, notePathToIRI(A_PATH));
+      // Inline backlink: X references A via the SAME predicate key.
+      mockBacklinksCacheManager.getBacklinks.mockReturnValue([X_PATH]);
+      registerFiles(
+        {
+          [A_PATH]: { exo__Asset_uid: A_UID, exo__Asset_label: "Концепт A" },
+          [X_PATH]: {
+            exo__Asset_uid: X_UID,
+            exo__Asset_label: "Заметка X",
+            "exo-ims__relatesToConcept": `[[${A_UID}]]`,
+          },
+        },
+        { [A_PATH]: "Концепт A", [X_PATH]: "Заметка X" },
+      );
+      MetadataHelpers.findAllReferencingProperties.mockReturnValue([
+        "exo-ims__relatesToConcept",
+      ]);
+
+      const result = await makeRenderer(store).getAssetRelations(
+        createTestTFile(A_PATH),
+        {},
+      );
+
+      // ONE row — the inline one (reified duplicate dropped, inline-wins).
+      expect(result).toHaveLength(1);
+      expect(result[0].provenance).toBe("inline");
+      expect(result[0].path).toBe(X_PATH);
+      expect(result.filter((r) => r.provenance === "reified")).toHaveLength(0);
+    });
+
+    it("does NOT dedup a reified edge that has no inline counterpart (additive)", async () => {
+      const store = new InMemoryTripleStore();
+      // Inline: X --relatesTo--> A. Reified: A --relatesTo--> B (a DIFFERENT,
+      // outgoing edge) → must be additive, not deduped against the inline one.
+      await seedStatement(store, S1_PATH, notePathToIRI(A_PATH), RELATES_TO, notePathToIRI(B_PATH));
+      mockBacklinksCacheManager.getBacklinks.mockReturnValue([X_PATH]);
+      registerFiles(
+        {
+          [A_PATH]: { exo__Asset_uid: A_UID, exo__Asset_label: "Концепт A" },
+          [B_PATH]: { exo__Asset_uid: B_UID, exo__Asset_label: "Концепт B" },
+          [X_PATH]: {
+            exo__Asset_uid: X_UID,
+            exo__Asset_label: "Заметка X",
+            "exo-ims__relatesToConcept": `[[${A_UID}]]`,
+          },
+        },
+        { [A_PATH]: "Концепт A", [B_PATH]: "Концепт B", [X_PATH]: "Заметка X" },
+      );
+      MetadataHelpers.findAllReferencingProperties.mockReturnValue([
+        "exo-ims__relatesToConcept",
+      ]);
+
+      const result = await makeRenderer(store).getAssetRelations(
+        createTestTFile(A_PATH),
+        {},
+      );
+
+      expect(result).toHaveLength(2);
+      expect(result.filter((r) => r.provenance === "inline")).toHaveLength(1);
+      expect(result.filter((r) => r.provenance === "reified")).toHaveLength(1);
+    });
+
+    it("skips a literal-object reified statement (a property value, not a relation — RFC R6)", async () => {
+      const store = new InMemoryTripleStore();
+      const stmt = notePathToIRI(S1_PATH);
+      await store.add(new Triple(stmt, RDF_TYPE, EXO_STATEMENT_CLASS));
+      await store.add(new Triple(stmt, STATEMENT_SUBJECT, notePathToIRI(A_PATH)));
+      await store.add(new Triple(stmt, STATEMENT_PREDICATE, RELATES_TO));
+      await store.add(new Triple(stmt, STATEMENT_OBJECT, new Literal("a plain value")));
+      mockBacklinksCacheManager.getBacklinks.mockReturnValue([]);
+      registerFiles(
+        { [A_PATH]: { exo__Asset_uid: A_UID, exo__Asset_label: "Концепт A" } },
+        { [A_PATH]: "Концепт A" },
+      );
+
+      const result = await makeRenderer(store).getAssetRelations(
+        createTestTFile(A_PATH),
+        {},
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it("tags pre-existing inline relations with provenance:inline", async () => {
+      const store = new InMemoryTripleStore(); // empty store → no reified
+      mockBacklinksCacheManager.getBacklinks.mockReturnValue([X_PATH]);
+      registerFiles(
+        {
+          [A_PATH]: { exo__Asset_uid: A_UID, exo__Asset_label: "Концепт A" },
+          [X_PATH]: { exo__Asset_uid: X_UID, exo__Asset_label: "Заметка X" },
+        },
+        { [A_PATH]: "Концепт A", [X_PATH]: "Заметка X" },
+      );
+      MetadataHelpers.findAllReferencingProperties.mockReturnValue([
+        "ems__Effort_parent",
+      ]);
+
+      const result = await makeRenderer(store).getAssetRelations(
+        createTestTFile(A_PATH),
+        {},
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].provenance).toBe("inline");
+    });
+
+    // The statement asset that backs a reified edge appears in the asset's
+    // backlinks via exo__Statement_subject — pure reification plumbing. It must
+    // be SUPPRESSED from the inline list (the logical edge is rendered via the
+    // reified path), not double-shown.
+    it("suppresses the statement-asset backlink (exo__Statement_* plumbing), rendering only the logical reified edge", async () => {
+      const store = new InMemoryTripleStore();
+      await seedStatement(store, S1_PATH, notePathToIRI(A_PATH), RELATES_TO, notePathToIRI(B_PATH));
+      // The statement asset S1 is a backlink of A (it references A via _subject).
+      mockBacklinksCacheManager.getBacklinks.mockReturnValue([S1_PATH]);
+      registerFiles(
+        {
+          [A_PATH]: { exo__Asset_uid: A_UID, exo__Asset_label: "Концепт A" },
+          [B_PATH]: { exo__Asset_uid: B_UID, exo__Asset_label: "Концепт B" },
+          [S1_PATH]: {
+            exo__Asset_uid: "11111111-0000-0000-0000-000000000011",
+            "exo__Statement_subject": `[[${A_UID}]]`,
+          },
+        },
+        { [A_PATH]: "Концепт A", [B_PATH]: "Концепт B" },
+      );
+      MetadataHelpers.findAllReferencingProperties.mockReturnValue([
+        "exo__Statement_subject",
+      ]);
+
+      const result = await makeRenderer(store).getAssetRelations(
+        createTestTFile(A_PATH),
+        {},
+      );
+
+      // Exactly one row — the logical reified edge to B, NOT the plumbing
+      // backlink to the statement asset S1.
+      expect(result).toHaveLength(1);
+      expect(result[0].provenance).toBe("reified");
+      expect(result[0].path).toBe(B_PATH);
+      expect(result.some((r) => r.path === S1_PATH)).toBe(false);
+    });
+
+    it("dedups two distinct statements reifying the SAME logical edge to one row", async () => {
+      const store = new InMemoryTripleStore();
+      const S2_PATH =
+        "assetspaces/kitelev/exoas-shared-private/relations/22222222-0000-0000-0000-000000000022.md";
+      // Two statements, same edge A --relatesTo--> B.
+      await seedStatement(store, S1_PATH, notePathToIRI(A_PATH), RELATES_TO, notePathToIRI(B_PATH));
+      await seedStatement(store, S2_PATH, notePathToIRI(A_PATH), RELATES_TO, notePathToIRI(B_PATH));
+      mockBacklinksCacheManager.getBacklinks.mockReturnValue([]);
+      registerFiles(
+        {
+          [A_PATH]: { exo__Asset_uid: A_UID, exo__Asset_label: "Концепт A" },
+          [B_PATH]: { exo__Asset_uid: B_UID, exo__Asset_label: "Концепт B" },
+        },
+        { [A_PATH]: "Концепт A", [B_PATH]: "Концепт B" },
+      );
+
+      const result = await makeRenderer(store).getAssetRelations(
+        createTestTFile(A_PATH),
+        {},
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].provenance).toBe("reified");
+      expect(result[0].path).toBe(B_PATH);
+    });
+  });
+
+  // RFC 93a0b2ee Task 1.3 — predicateIriToKey direct contract (dash-prefix-safe).
+  describe("predicateIriToKey", () => {
+    it("converts symbolic ontology predicate IRIs to frontmatter-key form, incl. dash prefixes", () => {
+      expect(
+        predicateIriToKey("https://exocortex.my/ontology/ems#Effort_area"),
+      ).toBe("ems__Effort_area");
+      expect(
+        predicateIriToKey(
+          "https://exocortex.my/ontology/exo-ims#relatesToConcept",
+        ),
+      ).toBe("exo-ims__relatesToConcept");
+    });
+
+    it("passes non-ontology / hash-less IRIs through unchanged", () => {
+      expect(predicateIriToKey("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")).toBe(
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+      );
+      expect(predicateIriToKey("obsidian://vault/foo.md")).toBe(
+        "obsidian://vault/foo.md",
+      );
     });
   });
 });

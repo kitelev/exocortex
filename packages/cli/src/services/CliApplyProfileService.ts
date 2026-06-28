@@ -29,6 +29,7 @@ import yaml from "js-yaml";
 import type { ApplyPlan } from "@kitelev/exocortex-core";
 import {
   derivePath,
+  deriveUrl,
   assertTsFloorReconciled,
   SDK_FLOOR,
   CATALOG_KEEP_NAMESPACES,
@@ -123,14 +124,18 @@ export interface CliApplyProfileServiceOptions {
 /**
  * Convert any GitHub git URL form (HTTPS / SSH scp-like / git://) to the
  * canonical `https://github.com/<owner>/<repo>` form the tarball API needs.
- * Reuses `derivePath` (the single source of truth for owner/repo extraction);
- * falls back to the input unchanged when `derivePath` cannot parse it.
+ *
+ * `derivePath` (url → `assetspaces/<owner>/<repo>`) composed with `deriveUrl`
+ * (path → `https://github.com/<owner>/<repo>`) is the single source of truth for
+ * the url→canonical-url reconstruction (RFC 0005 Phase 0 — the path→url half used
+ * to be duplicated inline here). Falls back to the input unchanged when
+ * `derivePath` cannot parse it (`deriveUrl` of a `derivePath` output never
+ * returns null — the path is already validated).
  */
 export function toHttpsGitHubUrl(git: string): string {
   const folder = derivePath(git);
   if (folder === null) return git;
-  const ownerRepo = folder.slice("assetspaces/".length);
-  return `https://github.com/${ownerRepo}`;
+  return deriveUrl(folder) ?? git;
 }
 
 const SKIP_DIRS = new Set([

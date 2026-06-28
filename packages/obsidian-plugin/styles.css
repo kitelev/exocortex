@@ -6198,3 +6198,143 @@
 .exosync-resolver-error {
   color: var(--text-error);
 }
+
+/* RFC 93a0b2ee Task 2 (C2) — factual reified-relation marker + persistent legend.
+   Marker states WHERE the backing exo__Statement lives (its AssetSpace); it is
+   NOT a privacy promise. The legend is always visible (not hover-only) so the
+   marker is explained on mobile. */
+.exocortex-reified-marker {
+  margin-left: 0.5em;
+  padding: 0 0.4em;
+  font-size: 0.75em;
+  color: var(--text-muted);
+  background: var(--background-modifier-border);
+  border-radius: 4px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.exocortex-reified-legend {
+  margin: 0.5em 0 0;
+  font-size: 0.75em;
+  color: var(--text-muted);
+}
+
+/* RFC 93a0b2ee Task 3.1 — property editor Relations section. */
+.property-editor-relations-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.property-editor-relation-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0.15em 0;
+}
+.property-editor-relation-predicate {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+.property-editor-relation-target {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.property-editor-relation-delete {
+  flex: 0 0 auto;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.property-editor-relation-delete:hover {
+  color: var(--text-error);
+}
+.property-editor-relation-reify,
+.property-editor-relation-dereify {
+  flex: 0 0 auto;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.property-editor-relation-reify:hover {
+  color: var(--text-accent);
+}
+/* De-reify returns the relation to inline (it will travel on share) — warn-tinted. */
+.property-editor-relation-dereify:hover {
+  color: var(--text-warning);
+}
+/* Object-side read-only (RFC §C3 Task 3.3) — incoming reified relation can only be
+   toggled by the subject-owner; show a disabled, explanatory affordance. */
+.property-editor-relation-readonly {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 0.8em;
+  font-style: italic;
+  cursor: not-allowed;
+}
+/* RFC §C3 Task 3.3 — reify destination picker + de-reify strong-confirm dialogs. */
+.property-editor-relation-dialog {
+  margin-top: 0.6em;
+  padding: 0.6em 0.75em;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+}
+.property-editor-dereify-dialog.mod-warning {
+  border-color: var(--text-warning);
+}
+.property-editor-relation-dialog-title {
+  font-weight: 600;
+  margin: 0 0 0.3em;
+}
+.property-editor-relation-dialog-body {
+  margin: 0 0 0.4em;
+  color: var(--text-normal);
+}
+.property-editor-relation-dialog-label {
+  margin: 0.3em 0 0.2em;
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+.property-editor-relation-dialog-warn {
+  margin: 0.3em 0;
+  color: var(--text-warning);
+  font-size: 0.85em;
+}
+.property-editor-reify-destinations {
+  list-style: none;
+  margin: 0 0 0.3em;
+  padding: 0;
+}
+.property-editor-reify-destination {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  cursor: pointer;
+  padding: 0.15em 0;
+}
+.property-editor-dereify-ack {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  margin: 0.4em 0;
+  cursor: pointer;
+}
+.property-editor-relation-dialog-actions {
+  margin-top: 0.5em;
+}
+.property-editor-relations-empty {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  margin: 0.25em 0;
+}
+.property-editor-relation-create {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  margin-top: 0.5em;
+}
+.property-editor-relation-create .dynamic-form-assetref {
+  flex: 1 1 auto;
+  min-width: 0;
+}

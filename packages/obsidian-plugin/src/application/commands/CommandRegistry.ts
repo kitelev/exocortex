@@ -22,6 +22,12 @@ export class CommandRegistry {
     return this.globalCommands;
   }
 
+  // NOTE: currently unused (no live caller). If revived, `assetClass` MUST be a
+  // wikilink-alias-stripped class string (the TARGET before any `|`) — pass the
+  // output of `DynamicCommandButtonGroupBuilder.extractAssetClasses`, never a raw
+  // `exo__Instance_class` frontmatter value — otherwise an aliased instance class
+  // (`[[uid|Display]]`) would silently resolve no class-targeted bindings (the
+  // alias-suppresses-buttons bug this fix repaired at the builder surface).
   async getCommandsForAsset(
     subjectIRI: string,
     assetClass: string,
