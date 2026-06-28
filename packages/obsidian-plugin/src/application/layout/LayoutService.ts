@@ -517,7 +517,14 @@ export class LayoutService {
       rows.push({
         id: assetId,
         path: assetPath,
-        metadata: solution.toJSON(),
+        // Carry the store's ACTUAL subject IRI (the `?asset` binding value) so
+        // the action-button precondition gate (#3654) substitutes the right
+        // `$target`. Recomputing it from `path` downstream via
+        // `encodeURIComponent` over-encodes slashes (`/` → `%2F`) and never
+        // matches the store subject (`encodeURI`), silently hiding every
+        // button. `uri` overrides any `uri` key that `solution.toJSON()` might
+        // carry from a bound variable named `uri`.
+        metadata: { ...solution.toJSON(), uri: assetUri },
         values,
       });
     }

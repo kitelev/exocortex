@@ -406,6 +406,20 @@ export class LayoutCodeBlockProcessor {
           );
         },
         getAssetLabel: (path: string) => this.wikilinkResolver.getAssetLabel(path),
+        // Gate action buttons by their `exo__Precondition_sparql` ASK (#3654
+        // Part 1): true ⇒ shown, false ⇒ hidden. Previously unwired → every
+        // button defaulted visible. The ASK boolean is surfaced via the new
+        // `SPARQLApi.ask` (the executor already computed it; `query()` discarded
+        // it). `$target` resolves to the row's REAL store subject IRI (threaded
+        // through `LayoutService` metadata), so the ASK matches the live asset.
+        onCheckPrecondition: (sparql: string, assetUri: string) =>
+          this.checkPrecondition(sparql, assetUri),
+        // NOTE: `onExecuteCommand` is intentionally NOT wired — the raw-SPARQL-
+        // UPDATE execution engine is #3654 Part 2 (deferred; the issue's own
+        // recommendation is to route layout actions through structural exocmd
+        // commands rather than build a parallel UPDATE engine). Until then a
+        // click on a precondition-passing button surfaces the #3628
+        // "no executor available" notice via onError below.
         // Surface action-button failures to the user instead of failing silently
         // (#3628). Routed through the central notifier (eslint forbids `new
         // Notice` elsewhere).
@@ -414,6 +428,35 @@ export class LayoutCodeBlockProcessor {
         },
       })
     );
+  }
+
+  /**
+   * Evaluates an `exo-layout` action button's `exo__Precondition_sparql` ASK to
+   * decide whether the button is shown (#3654 Part 1).
+   *
+   * Substitutes `$target` → `<assetUri>` (the same text-substitution convention
+   * as the structural `PreconditionEvaluator.substituteVariables`) and runs the
+   * ASK via {@link SPARQLApi.ask}. `assetUri` is the store's real subject IRI
+   * (threaded through `LayoutService.transformToTableRows` → row metadata), so
+   * the ASK evaluates against the asset that actually exists in the graph.
+   *
+   * Only `$target` is substituted; date macros (`$now`, `$today`, …) are not
+   * supported on this niche layout-action surface — a precondition using one
+   * would fail to parse, which the caller (`ActionsRenderer`) catches and treats
+   * as "hide the button" (conservative, never a false-positive show).
+   */
+  private async checkPrecondition(
+    sparql: string,
+    assetUri: string
+  ): Promise<boolean> {
+    const api = this.plugin.getSPARQLApi();
+    if (!api) {
+      throw new Error(
+        "SPARQL API is not available for layout-action preconditions"
+      );
+    }
+    const substituted = sparql.replace(/\$target/g, `<${assetUri}>`);
+    return api.ask(substituted);
   }
 
   /**
