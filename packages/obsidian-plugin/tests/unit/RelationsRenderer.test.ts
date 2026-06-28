@@ -2,6 +2,7 @@ import React from "react";
 import {
   RelationsRenderer,
   RELATIONS_EMPTY_TEXT,
+  RELATIONS_EMPTY_ADD_TEXT,
   isNonRelationPredicate,
   predicateIriToKey,
 } from "../../src/presentation/renderers/layout/RelationsRenderer";
@@ -788,6 +789,71 @@ describe("RelationsRenderer", () => {
         expect(renderHeader).toHaveBeenCalled();
         expect(mockElement.querySelector(".exocortex-relations-empty")).toBeNull();
         expect(mockReactRenderer.render).not.toHaveBeenCalled();
+      });
+    });
+
+    // PDD `4d7decb9` — empty-state «+ Add relation» affordance (read-view, 0
+    // relations). The ≥1-branch block-level «Edit relations» affordance never
+    // renders on a zero-relations asset, so the first relation was reachable
+    // only via Cmd+P. This affordance closes that new-user discoverability gap.
+    // @req:57fc5804-2c67-4fb6-ba3d-5bac562da7c1
+    describe("«+ Add relation» empty-state affordance (PDD 4d7decb9)", () => {
+      it("renders a clickable «+ Add relation» affordance in the empty-state that opens the relations editor when currentFile is provided @req:57fc5804-2c67-4fb6-ba3d-5bac562da7c1", async () => {
+        const executeCommandById = jest.fn();
+        mockApp.commands = { executeCommandById };
+
+        await renderer.render(mockElement, [], {}, undefined, false, mockFile);
+
+        // affordance lives INSIDE the empty-state section (AC #3 placement),
+        // under the muted "No related assets yet" text.
+        const addBtn = mockElement.querySelector(
+          ".exocortex-relations-empty .exocortex-relations-empty-add",
+        );
+        expect(addBtn).not.toBeNull();
+        expect(addBtn?.textContent).toBe(RELATIONS_EMPTY_ADD_TEXT);
+
+        // Behaviour, not method-exists: activating it drives the registered
+        // edit-properties command — the same single-source-of-truth editor flow
+        // as the ≥1-branch affordance and Cmd+P.
+        (addBtn as HTMLButtonElement).click();
+        expect(executeCommandById).toHaveBeenCalledWith(
+          "exocortex:edit-properties",
+        );
+      });
+
+      it("renders NO «+ Add relation» affordance in the empty-state when currentFile is absent (additive — back-compat) @req:57fc5804-2c67-4fb6-ba3d-5bac562da7c1", async () => {
+        await renderer.render(mockElement, [], {});
+
+        expect(
+          mockElement.querySelector(".exocortex-relations-empty-add"),
+        ).toBeNull();
+        // the muted empty-state text itself still renders (section discoverable)
+        const emptyState = mockElement.querySelector(
+          ".exocortex-relations-empty",
+        );
+        expect(emptyState).not.toBeNull();
+        expect(emptyState?.textContent).toBe(RELATIONS_EMPTY_TEXT);
+      });
+
+      it("does not add the empty-state affordance on the ≥1-relation path (block-level editor wiring unaffected) @req:57fc5804-2c67-4fb6-ba3d-5bac562da7c1", async () => {
+        const executeCommandById = jest.fn();
+        mockApp.commands = { executeCommandById };
+        const relations = [createMockAssetRelation()];
+
+        await renderer.render(
+          mockElement,
+          relations,
+          {},
+          undefined,
+          false,
+          mockFile,
+        );
+
+        // ≥1 branch renders the React table; no empty-state affordance leaks in.
+        expect(
+          mockElement.querySelector(".exocortex-relations-empty-add"),
+        ).toBeNull();
+        expect(mockReactRenderer.render).toHaveBeenCalled();
       });
     });
 
