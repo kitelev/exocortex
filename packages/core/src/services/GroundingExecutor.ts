@@ -18,6 +18,10 @@ import { EffortStatus } from "../domain/constants/EffortStatus";
 import { IRI } from "../domain/models/rdf/IRI";
 import type { WorkflowDefinition } from "../domain/models/WorkflowDefinition";
 import { FrontmatterService } from "../utilities/FrontmatterService";
+import {
+  serializeYamlScalar,
+  STRING_SCALAR_PROPERTIES,
+} from "../utilities/yamlScalar";
 import type { NamedQueryRunnerPort } from "./NamedQueryRunner";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { DateTimeParsing } from "../infrastructure/sparql/filters/functions/DateTimeParsing";
@@ -537,34 +541,44 @@ export class GroundingExecutor {
       };
     }
 
-    // RFC-028 Findings 3+4: fail loudly if $input/$value placeholder is present
-    // but no userInput.value is provided. Prevents silently writing the literal
-    // string ("$input"/"$value") into frontmatter as a value.
-    const needsUserInput = /\$(input|value)\b/.test(effectiveValue);
-    if (
-      needsUserInput &&
-      (userInput === undefined ||
-        userInput.value === undefined ||
-        userInput.value === null)
-    ) {
-      return {
-        success: false,
-        error:
-          "property_set: substituted value contains $input/$value placeholder but no userInput.value provided",
-      };
-    }
-
     const substitutedValue = this.substituteVariables(
       effectiveValue,
       targetIRI,
       userInput,
     );
 
+    // RFC-028 Findings 3+4 (extended for named $input.<key> keys, Issue #3779):
+    // fail loudly if any $input / $value / $input.<key> placeholder survived
+    // substitution — i.e. the referenced userInput slot/key was not provided.
+    // Checking AFTER substitution (resolved placeholders disappear) covers both
+    // the anonymous `$input`/`$value` slot and named `$input.<key>` keys without
+    // hard-coding which key a grounding expects. Prevents silently writing the
+    // literal string ("$input"/"$value"/"$input.<key>") into frontmatter.
+    if (/\$(input|value)\b/.test(substitutedValue)) {
+      return {
+        success: false,
+        error:
+          "property_set: substituted value contains an unresolved $input/$value placeholder — provide the referenced userInput key (e.g. --input '{\"value\":...}' or '{\"<key>\":...}')",
+      };
+    }
+
+    // Issue #3779: for string-semantic properties (`exo__Asset_label`,
+    // `aliases`) a substitution-derived value (e.g. a relabel `$input.label`
+    // = "Meeting: Q3") may contain YAML-significant characters. `updateProperty`
+    // writes values verbatim (callers pre-format), so route the substituted
+    // value through the same conservative quote-when-needed serializer the
+    // create path uses (#3748/#3750). Idempotent: simple labels stay bare,
+    // pre-quoted wikilinks pass through, only YAML-unsafe values get quoted.
+    // Non-string-scalar properties (timestamps, refs) are untouched.
+    const valueToWrite = STRING_SCALAR_PROPERTIES.has(grounding.targetProperty)
+      ? serializeYamlScalar(substitutedValue, true)
+      : substitutedValue;
+
     const content = await this.fileReader.readFile(filePath);
     const updated = this.frontmatterService.updateProperty(
       content,
       grounding.targetProperty,
-      substitutedValue,
+      valueToWrite,
     );
     await this.fileWriter.updateFile(filePath, updated);
 
@@ -1781,6 +1795,13 @@ export class GroundingExecutor {
    *   "Set Planned Start/End", "Set Scheduled Date", "Set Result" buttons.
    *   Substituted only when userInput.value is defined; callers must gate
    *   missing-input at the executePropertySet layer for fail-loud semantics.
+   * - $input.<key> → userInput[<key>] (Issue #3779) — named-input substitution
+   *   that lets a vault grounding reference an inputSchema-declared input by
+   *   name (e.g. `$input.label`, `$input.parent`) instead of the single
+   *   anonymous `$input`/`$value` slot. MUST run before the bare `$input`/
+   *   `$value` substitution (more-specific first). A key whose value is
+   *   undefined/null is left untouched so executePropertySet's placeholder
+   *   gate fails loud rather than persisting a half-substituted literal.
    */
   substituteVariables(
     value: string,
@@ -1857,9 +1878,25 @@ export class GroundingExecutor {
       .replace(/\$todayStart\b/g, todayStart)
       .replace(/\$today/g, today);
 
+    // $input.<key> (named-input) MUST run before the bare $input/$value
+    // substitution below — `\$input\b` would otherwise match the `$input`
+    // prefix of `$input.label` and leave a dangling `.label`. A missing key is
+    // left untouched (placeholder gate in executePropertySet catches it).
+    if (userInput) {
+      const inputRecord = userInput as Record<string, unknown>;
+      result = result.replace(/\$input\.([A-Za-z_]\w*)/g, (whole, key) => {
+        const v = inputRecord[key];
+        return v === undefined || v === null ? whole : String(v);
+      });
+    }
+
     if (userInput?.value !== undefined && userInput.value !== null) {
       const inputStr = String(userInput.value);
-      result = result.replace(/\$input\b/g, inputStr).replace(/\$value\b/g, inputStr);
+      // `(?!\.)` so the bare-$input replace does not consume the `$input` prefix
+      // of an unresolved `$input.<key>` token (Issue #3779).
+      result = result
+        .replace(/\$input\b(?!\.)/g, inputStr)
+        .replace(/\$value\b/g, inputStr);
     }
 
     return result;
