@@ -1489,12 +1489,30 @@ export class GroundingExecutor {
           );
         }
       }
-      const finalLabel = label ?? "Untitled";
+      // A modal-submitted empty `userInput.label` ("") must not write a blank
+      // label to disk nor escape the unhealthy-state signal: it is not
+      // `undefined`, so `??` would keep it, and "" !== "Untitled". Treat any
+      // blank resolved label as absent → "Untitled" fallback (which is then
+      // flagged below). The labelTemplate path already guards blank at its
+      // substitution site, so only the userInput.label === "" path reaches here.
+      const finalLabel =
+        label !== undefined && label.trim().length > 0 ? label : "Untitled";
       properties.exo__Asset_label = finalLabel;
       if (finalLabel !== "Untitled" && properties.aliases === undefined) {
         properties.aliases = [finalLabel];
       }
-      missing.push("exo__Asset_label");
+      // Only the genuine degraded fallthrough ("Untitled") is an
+      // unhealthy-state signal. Reaching this block is NORMAL for the one-click
+      // / CLI flow: Universal Default Template PD #3 (`exo__Asset_label =
+      // $userInputLabel`) writes an empty literal when no input modal supplies
+      // a label, and the labelTemplate / userInput path above is the *designed*
+      // completion — not a TS-fallback rescue. Pushing "exo__Asset_label" to
+      // `missing[]` unconditionally falsely tripped the "Vault may be in an
+      // unhealthy state" ERROR on every healthy labelTemplate-driven create
+      // (bug-fix: false-alarm log). Flag only the real "Untitled" fallback.
+      if (finalLabel === "Untitled") {
+        missing.push("exo__Asset_label");
+      }
     }
 
     if (
