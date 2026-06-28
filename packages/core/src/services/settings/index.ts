@@ -22,3 +22,12 @@ export {
   EXOCORTEX_DISTRIBUTION_ONTOLOGY_KEY_UID,
   resolveDistributionOntology,
 } from "./distributionOntology";
+export {
+  OBSPLUGIN_SETTING_CLASS_UID,
+  PERIODIC_NOTES_PLUGIN_ID,
+  PERIODIC_NOTES_DATA_PATH,
+  PERIODIC_NOTES_DECLARED_KEYS,
+  JsonConfigSettingsSource,
+  buildPeriodicNotesSource,
+  resolveConfigPath,
+} from "./obsPluginSource";
