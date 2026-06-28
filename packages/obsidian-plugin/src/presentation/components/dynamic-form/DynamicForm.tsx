@@ -29,6 +29,23 @@ function normalizeEnumOption(opt: string | EnumOption): EnumOption {
   return typeof opt === "string" ? { value: opt, label: opt } : opt;
 }
 
+/**
+ * Resolve a field's `defaultValue`, expanding the `$today` token to today's
+ * date as `YYYY-MM-DD` so a `type="date"` input pre-fills with today (feature
+ * ec15f83e / req 57b03ab3 — the create-task-instance modal's planned-date field).
+ *
+ * Uses the UTC date slice (`toISOString().slice(0, 10)`) on purpose: it mirrors
+ * the engine's own `$today` basis (`GroundingExecutor.resolveInstanceDate` /
+ * label-template `$today` both slice `clock.now().toISOString()`), so the
+ * pre-filled modal date, the derived label, and the planned timestamps all
+ * agree by default. Any non-`$today` value (including a literal `YYYY-MM-DD`)
+ * passes through verbatim.
+ */
+function resolveDefaultValue(raw: string | undefined): string {
+  if (raw === "$today") return new Date().toISOString().slice(0, 10);
+  return raw ?? "";
+}
+
 export const DynamicForm: React.FC<DynamicFormProps> = ({
   schema,
   onSubmit,
@@ -39,7 +56,7 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
   const initialValues = useMemo(() => {
     const values: Record<string, string> = {};
     for (const field of schema) {
-      values[field.name] = field.defaultValue ?? "";
+      values[field.name] = resolveDefaultValue(field.defaultValue);
     }
     return values;
   }, [schema]);
