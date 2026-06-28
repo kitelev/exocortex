@@ -1073,6 +1073,12 @@ export class GroundingExecutor {
         // `label`): it never becomes a frontmatter key; instead it is written
         // as the created asset's markdown body below.
         if (key === "body") continue;
+        // Feature ec15f83e / req 57b03ab3 — `plannedDate` is a reserved engine
+        // input (the plugin modal's date field / the CLI `--date` parameter):
+        // it never becomes a frontmatter key; it selects the instance's target
+        // DATE for `$today`/label resolution + the prototype-time planned-
+        // timestamp stamp (see applyPrototypeTimePropagation). Defaults to today.
+        if (key === "plannedDate") continue;
         if (value === null || value === undefined) continue;
         properties[key] = value;
       }
@@ -1113,6 +1119,12 @@ export class GroundingExecutor {
         properties[grounding.linkBackProperty] = `"[[${backLinkTarget}]]"`;
       }
     }
+
+    // Feature ec15f83e / req 57b03ab3 — when the $target prototype declares a
+    // time-of-day on itself (ems__EffortPrototype_startTime/_endTime), stamp
+    // the instance's planned timestamps for the chosen date (default today).
+    // No-op for prototypes / create flows without a time-of-day.
+    this.applyPrototypeTimePropagation(properties, targetFm, userInput);
 
     // Determine uid for filename — read from properties (PropertyDefault wrote
     // it via $randomUUIDv4 token; top-up guaranteed it's set otherwise).
@@ -1160,6 +1172,90 @@ export class GroundingExecutor {
     // — actually opening the file is wired by the platform adapter through
     // CommandExecutionFlow's optional IFileOpener dependency.
     return { success: true, openPath: filePath };
+  }
+
+  /**
+   * Feature ec15f83e / req 57b03ab3 — the target DATE for a newly-created
+   * instance: the reserved `plannedDate` userInput (the plugin modal's date
+   * field / the CLI `--date` parameter) when a valid `YYYY-MM-DD`; otherwise
+   * today (same source as the `$today` token — `clock.now()` UTC date slice).
+   * Drives BOTH the date-denoting label (`$today` in the labelTemplate) AND the
+   * planned timestamps, so the two never disagree. `isoNow` lets callers reuse
+   * an already-computed `clock.now().toISOString()` (substituteVariables) to
+   * avoid a second clock read; both code paths resolve `plannedDate` identically.
+   */
+  private resolveInstanceDate(userInput?: UserInput, isoNow?: string): string {
+    const explicit = GroundingExecutor.firstScalar(
+      userInput?.["plannedDate"] as string | string[] | undefined,
+    );
+    if (explicit && /^\d{4}-\d{2}-\d{2}$/.test(explicit)) return explicit;
+    return (isoNow ?? this.clock.now().toISOString()).slice(0, 10);
+  }
+
+  /**
+   * Feature ec15f83e / req 57b03ab3 — when the $target prototype declares a
+   * time-of-day on itself (`ems__EffortPrototype_startTime`, optionally
+   * `_endTime`, in `"HH:MM"` form), stamp the new instance's
+   * `ems__Effort_plannedStartTimestamp` (and `_plannedEndTimestamp`) =
+   * {@link resolveInstanceDate} + that time, as a FULL timezone-naive local
+   * dateTime `"YYYY-MM-DDTHH:MM:SS"` (Asia/Almaty convention — matches the
+   * existing `ems__Effort_plannedStartTimestamp` frontmatter shape).
+   *
+   * No-op when the prototype declares no `startTime` → zero regression for
+   * prototypes / create flows without a time-of-day. Never overwrites a planned
+   * timestamp that an explicit `userInput` already wrote into `properties` (the
+   * prototype time is a default, not an override).
+   */
+  private applyPrototypeTimePropagation(
+    properties: Record<string, unknown>,
+    targetFm: Record<string, string | string[]> | null,
+    userInput?: UserInput,
+  ): void {
+    if (!targetFm) return;
+    const startTime = GroundingExecutor.firstScalar(
+      targetFm["ems__EffortPrototype_startTime"],
+    );
+    if (!startTime) return; // prototype declares no time-of-day → no-op
+    const instanceDate = this.resolveInstanceDate(userInput);
+    if (properties["ems__Effort_plannedStartTimestamp"] === undefined) {
+      properties["ems__Effort_plannedStartTimestamp"] =
+        GroundingExecutor.combineDateAndTime(instanceDate, startTime);
+    }
+    const endTime = GroundingExecutor.firstScalar(
+      targetFm["ems__EffortPrototype_endTime"],
+    );
+    if (endTime && properties["ems__Effort_plannedEndTimestamp"] === undefined) {
+      properties["ems__Effort_plannedEndTimestamp"] =
+        GroundingExecutor.combineDateAndTime(instanceDate, endTime);
+    }
+  }
+
+  /**
+   * First scalar of a frontmatter value (`string | string[]`), trimmed with any
+   * surrounding YAML quotes stripped. Returns null for empty / non-string.
+   */
+  private static firstScalar(
+    value: string | string[] | undefined,
+  ): string | null {
+    if (value === undefined || value === null) return null;
+    const raw = Array.isArray(value) ? value[0] : value;
+    if (typeof raw !== "string") return null;
+    const trimmed = raw
+      .trim()
+      .replace(/^["'](.*)["']$/, "$1")
+      .trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  /**
+   * Combine a `YYYY-MM-DD` date with a `"HH:MM"` (or `"HH:MM:SS"`) time-of-day
+   * into a full timezone-naive local dateTime `"YYYY-MM-DDTHH:MM:SS"`. A bare
+   * `HH:MM` gets `:00` seconds appended; an already-`HH:MM:SS` value passes
+   * through. NEVER emits a trailing timezone offset.
+   */
+  private static combineDateAndTime(date: string, timeOfDay: string): string {
+    const time = /^\d{2}:\d{2}$/.test(timeOfDay) ? `${timeOfDay}:00` : timeOfDay;
+    return `${date}T${time}`;
   }
 
   /**
@@ -1828,7 +1924,12 @@ export class GroundingExecutor {
     const date = this.clock.now();
     const now = date.toISOString();
     const nowLocal = DateFormatter.toLocalTimestamp(date);
-    const today = now.slice(0, 10);
+    // Feature ec15f83e / req 57b03ab3 — `$today` denotes the instance's nominal
+    // DAY, which is the chosen target date (reserved `plannedDate` userInput),
+    // defaulting to today. `$now`/`$nowLocal`/`$nowCompact` stay the real clock
+    // time (createdAt etc. unaffected). When no plannedDate is supplied this is
+    // identical to the prior `now.slice(0, 10)` behaviour (zero regression).
+    const today = this.resolveInstanceDate(userInput, now);
     const todayStart = `${today}T00:00:00`;
     // RFC ce27e55d $nowCompact: filename-safe minute-precision form derived
     // from nowLocal slices. nowLocal = "YYYY-MM-DDTHH:mm:ss" → indices 0..10
