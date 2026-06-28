@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
-import { resolve } from "path";
+import { resolve, relative, isAbsolute } from "path";
 import {
   InMemoryTripleStore,
   NoteToRDFConverter,
@@ -163,6 +163,28 @@ async function executeOnTarget(
     return false;
   }
 
+  // Issue #3788 — canonicalise the target to a vault-relative path before
+  // deriving its IRI. The triple store is built by NoteToRDFConverter from
+  // each note's VAULT-RELATIVE `file.path` (subject = `vaultPathToIRI(path)`),
+  // so the precondition's `$target` only matches when it is bound to that same
+  // vault-relative IRI. If the caller passes an ABSOLUTE path (or any path not
+  // already relative to the vault root — common when a script resolves the
+  // target to an absolute path), `vaultPathToIRI(targetRelative)` yields a
+  // malformed `obsidian://vault//abs/...` IRI that no subject in the store
+  // matches → `$target ems:Effort_status ?s` / `$target exo:Asset_uid ?u` bind
+  // nothing → every SPARQL-ASK precondition returns false ("Precondition not
+  // satisfied") even though the asset genuinely satisfies it, and the grounding
+  // would mutate a phantom subject. The Obsidian plugin never hits this because
+  // `TFile.path` is always vault-relative; the CLI is the only surface that
+  // accepts a raw user-supplied path string, hence the parity gap.
+  const vaultRelative = relative(vaultPath, targetPath);
+  if (vaultRelative.startsWith("..") || isAbsolute(vaultRelative)) {
+    console.error(
+      `❌ Target is outside the vault: ${targetRelative} (vault: ${vaultPath})`,
+    );
+    return false;
+  }
+
   const resolver = new CommandResolver(tripleStore);
   const command = await resolver.loadCommand(commandUid);
 
@@ -181,7 +203,7 @@ async function executeOnTarget(
     return false;
   }
 
-  const targetIRI = vaultPathToIRI(targetRelative);
+  const targetIRI = vaultPathToIRI(vaultRelative);
 
   // Shared adapter + services used by both precondition host functions
   // and grounding execution. Built once per target — these services are
@@ -207,7 +229,7 @@ async function executeOnTarget(
   // for `hasUidFilename` / `hasNonUidFilename`. Without these fields the
   // functions would fall closed on registered names, hiding commands the
   // CLI is otherwise meant to run.
-  const targetNode = vaultAdapter.getAbstractFileByPath(targetRelative);
+  const targetNode = vaultAdapter.getAbstractFileByPath(vaultRelative);
   const targetFile =
     targetNode !== null && "basename" in targetNode
       ? (targetNode as IFile)
@@ -221,7 +243,7 @@ async function executeOnTarget(
       : undefined;
   const evalContext: EvalContext = {
     targetIRI,
-    filePath: targetRelative,
+    filePath: vaultRelative,
     fileBasename: targetFile?.basename,
     assetUid: typeof assetUidRaw === "string" ? assetUidRaw : undefined,
   };
@@ -232,7 +254,7 @@ async function executeOnTarget(
   );
   if (!preconditionPassed) {
     console.error(
-      `❌ Precondition not satisfied for "${command.name}" on "${targetRelative}".`,
+      `❌ Precondition not satisfied for "${command.name}" on "${vaultRelative}".`,
     );
     return false;
   }
@@ -240,7 +262,7 @@ async function executeOnTarget(
   // Dry-run
   if (options.dryRun) {
     console.log(
-      `🔍 Dry-run: would apply "${command.name}" to "${targetRelative}" (precondition passed).`,
+      `🔍 Dry-run: would apply "${command.name}" to "${vaultRelative}" (precondition passed).`,
     );
     return true;
   }
@@ -346,19 +368,19 @@ async function executeOnTarget(
   const result = await groundingExecutor.execute(
     command.grounding,
     targetIRI,
-    targetRelative,
+    vaultRelative,
     userInput,
   );
 
   if (result.success) {
     const msg =
       command.successMessage ??
-      `Applied "${command.name}" to "${targetRelative}".`;
+      `Applied "${command.name}" to "${vaultRelative}".`;
     console.log(`✅ ${msg}`);
     return true;
   } else {
     console.error(
-      `❌ "${command.name}" failed on "${targetRelative}": ${result.error}`,
+      `❌ "${command.name}" failed on "${vaultRelative}": ${result.error}`,
     );
     return false;
   }
