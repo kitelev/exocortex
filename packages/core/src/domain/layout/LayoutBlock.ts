@@ -20,6 +20,20 @@ export interface LayoutBlockBase {
   readonly uid: string;
   readonly title: string;
   readonly collapsed: boolean;
+  /**
+   * Per-block visibility (RL#4a, RFC pn__DailyNote toggles). Holds the EXPLICIT
+   * `exo__LayoutBlock_visible` value (`true`/`false`/coerced from
+   * `"true"`/`"false"`), or `undefined` when the asset omits the flag.
+   *
+   * - Generic blocks (properties / backlinks): `ExoLayoutRenderer` renders the
+   *   block unless `visible === false` — so `undefined` (legacy, flag absent)
+   *   keeps rendering (back-compat).
+   * - Daily-efforts blocks: this value is the *Layout default* layer of the
+   *   visibility precedence (override > Layout default > built-in VL#3); when
+   *   `undefined`, the built-in VL#3 default applies (see
+   *   `resolveDailyEffortVisibility`).
+   */
+  readonly visible?: boolean;
   readonly sourcePath: string;
 }
 
@@ -38,12 +52,51 @@ export interface BacklinksTableBlock extends LayoutBlockBase {
   readonly showArchived: boolean;
 }
 
-export type LayoutBlock = PropertiesBlock | BacklinksTableBlock;
+/**
+ * Which class-partition of the day's efforts a `daily-efforts-by-class` block
+ * shows (RL#4b / VL#4, RFC pn__DailyNote toggles):
+ *   - `actions`  — `ems__Action` instances of the day.
+ *   - `tasks`    — the day's efforts EXCEPT Action and Project (so meetings /
+ *                  `ems__Meeting` and any other Effort subclass stay here —
+ *                  RL#1 inclusive carve-out).
+ *   - `projects` — `ems__Project` instances of the day.
+ */
+export type DailyEffortsPartition = "actions" | "tasks" | "projects";
+
+export interface DailyEffortsByClassBlock extends LayoutBlockBase {
+  readonly kind: "daily-efforts-by-class";
+  readonly partition: DailyEffortsPartition;
+}
+
+export type LayoutBlock =
+  | PropertiesBlock
+  | BacklinksTableBlock
+  | DailyEffortsByClassBlock;
 
 export const PROPERTIES_BLOCK_CLASS_IRI = "exo__PropertiesBlock";
 export const PROPERTIES_BLOCK_CLASS_UID = "fd039b3c-ed2b-41c2-a42e-bbfcdd074bfe";
 export const BACKLINKS_TABLE_BLOCK_CLASS_IRI = "exo__BacklinksTableBlock";
 export const BACKLINKS_TABLE_BLOCK_CLASS_UID = "2e868956-d81e-43fd-9817-1addde9cb311";
+export const DAILY_EFFORTS_BY_CLASS_BLOCK_CLASS_IRI =
+  "exo__DailyEffortsByClassBlock";
+export const DAILY_EFFORTS_BY_CLASS_BLOCK_CLASS_UID =
+  "22528ed6-6ec9-48d0-8e60-e370c0b242a9";
+
+const DAILY_EFFORTS_PARTITIONS: readonly DailyEffortsPartition[] = [
+  "actions",
+  "tasks",
+  "projects",
+];
+
+function parseDailyEffortsPartition(
+  value: unknown,
+): DailyEffortsPartition | null {
+  if (typeof value !== "string") return null;
+  const lowered = value.trim().toLowerCase();
+  return (DAILY_EFFORTS_PARTITIONS as readonly string[]).includes(lowered)
+    ? (lowered as DailyEffortsPartition)
+    : null;
+}
 
 function toStringArray(value: unknown): string[] {
   if (value == null) return [];
@@ -69,6 +122,22 @@ function parseBoolean(value: unknown, fallback: boolean): boolean {
     if (lowered === "false") return false;
   }
   return fallback;
+}
+
+/**
+ * Coerce a frontmatter visibility flag to an explicit boolean, or `undefined`
+ * when the flag is absent / not coercible. Kept local (not imported from
+ * `blockVisibility`) to avoid a runtime import cycle between the two modules.
+ * Mirrors `coerceVisibilityOverride` semantics.
+ */
+function coerceVisible(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const lowered = value.trim().toLowerCase();
+    if (lowered === "true") return true;
+    if (lowered === "false") return false;
+  }
+  return undefined;
 }
 
 function parseInteger(value: unknown): number | null {
@@ -129,10 +198,15 @@ function extractBase(
         ? labelRaw.trim()
         : basenameFromPath(options.sourcePath);
   const collapsed = parseBoolean(frontmatter["exo__LayoutBlock_collapsed"], false);
+  // Explicit flag, or undefined when absent. The renderer treats undefined as
+  // visible for generic blocks (back-compat) and as «fall to built-in VL#3»
+  // for daily-efforts blocks (RL#4a).
+  const visible = coerceVisible(frontmatter["exo__LayoutBlock_visible"]);
   return {
     uid,
     title,
     collapsed,
+    visible,
     sourcePath: options.sourcePath,
   };
 }
@@ -152,6 +226,25 @@ export function createLayoutBlockFromFrontmatter(
 
   if (classOf(frontmatter, PROPERTIES_BLOCK_CLASS_IRI, PROPERTIES_BLOCK_CLASS_UID)) {
     return { ...base, kind: "properties" };
+  }
+
+  if (
+    classOf(
+      frontmatter,
+      DAILY_EFFORTS_BY_CLASS_BLOCK_CLASS_IRI,
+      DAILY_EFFORTS_BY_CLASS_BLOCK_CLASS_UID,
+    )
+  ) {
+    const partition = parseDailyEffortsPartition(
+      frontmatter["exo__DailyEffortsByClassBlock_partition"],
+    );
+    if (partition === null) {
+      warn(
+        `DailyEffortsByClassBlock ${base.uid}: exo__DailyEffortsByClassBlock_partition must be one of actions|tasks|projects (${options.sourcePath})`,
+      );
+      return null;
+    }
+    return { ...base, kind: "daily-efforts-by-class", partition };
   }
 
   if (classOf(frontmatter, BACKLINKS_TABLE_BLOCK_CLASS_IRI, BACKLINKS_TABLE_BLOCK_CLASS_UID)) {
@@ -199,7 +292,7 @@ export function createLayoutBlockFromFrontmatter(
   }
 
   warn(
-    `LayoutBlock ${base.uid}: unknown block class at ${options.sourcePath} — expected exo__PropertiesBlock or exo__BacklinksTableBlock`,
+    `LayoutBlock ${base.uid}: unknown block class at ${options.sourcePath} — expected exo__PropertiesBlock, exo__BacklinksTableBlock, or exo__DailyEffortsByClassBlock`,
   );
   return null;
 }
@@ -210,7 +303,12 @@ export function isLayoutBlockFrontmatter(
   if (!frontmatter) return false;
   return (
     classOf(frontmatter, PROPERTIES_BLOCK_CLASS_IRI, PROPERTIES_BLOCK_CLASS_UID) ||
-    classOf(frontmatter, BACKLINKS_TABLE_BLOCK_CLASS_IRI, BACKLINKS_TABLE_BLOCK_CLASS_UID)
+    classOf(frontmatter, BACKLINKS_TABLE_BLOCK_CLASS_IRI, BACKLINKS_TABLE_BLOCK_CLASS_UID) ||
+    classOf(
+      frontmatter,
+      DAILY_EFFORTS_BY_CLASS_BLOCK_CLASS_IRI,
+      DAILY_EFFORTS_BY_CLASS_BLOCK_CLASS_UID,
+    )
   );
 }
 
@@ -222,4 +320,10 @@ export function isBacklinksTableBlock(
   value: LayoutBlock,
 ): value is BacklinksTableBlock {
   return value.kind === "backlinks-table";
+}
+
+export function isDailyEffortsByClassBlock(
+  value: LayoutBlock,
+): value is DailyEffortsByClassBlock {
+  return value.kind === "daily-efforts-by-class";
 }

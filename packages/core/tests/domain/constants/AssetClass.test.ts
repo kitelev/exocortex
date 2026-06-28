@@ -13,6 +13,10 @@ describe("AssetClass", () => {
     expect(AssetClass.PROJECT).toBe("ems__Project");
   });
 
+  it("should have ACTION constant (subclass of ems__Effort, RL#3)", () => {
+    expect(AssetClass.ACTION).toBe("ems__Action");
+  });
+
   it("should have MEETING constant", () => {
     expect(AssetClass.MEETING).toBe("ems__Meeting");
   });
@@ -93,8 +97,8 @@ describe("AssetClass", () => {
     expect(AssetClass.COMMAND_BINDING).toBe("exocmd__CommandBinding");
   });
 
-  it("should have exactly 24 constants", () => {
+  it("should have exactly 25 constants", () => {
     const values = Object.values(AssetClass);
-    expect(values).toHaveLength(24);
+    expect(values).toHaveLength(25);
   });
 });
