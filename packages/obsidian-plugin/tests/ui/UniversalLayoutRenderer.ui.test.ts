@@ -478,7 +478,18 @@ describe("UniversalLayoutRenderer UI Integration", () => {
         ".exocortex-relations-empty",
       );
       expect(emptyState).toBeTruthy();
-      expect(emptyState?.textContent).toBe("No related assets yet");
+      // PDD 4d7decb9 — the empty-state now also hosts a «+ Add relation»
+      // affordance: UniversalLayoutRenderer threads the asset's currentFile into
+      // RelationsRenderer.render, so the muted text is the leading content but no
+      // longer the WHOLE textContent. Assert the muted copy is present AND the
+      // affordance is rendered (the real layout-integration path proves it ships
+      // with currentFile, opening the relations editor).
+      expect(emptyState?.textContent).toContain("No related assets yet");
+      const addRelationAffordance = emptyState?.querySelector(
+        ".exocortex-relations-empty-add",
+      );
+      expect(addRelationAffordance).toBeTruthy();
+      expect(addRelationAffordance?.textContent).toBe("+ Add relation");
 
       // No relations table is rendered when there are no relations.
       expect(
