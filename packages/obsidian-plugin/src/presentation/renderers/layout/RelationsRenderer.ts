@@ -154,6 +154,20 @@ export interface UniversalLayoutConfig {
 export const RELATIONS_EMPTY_TEXT = "No related assets yet";
 
 /**
+ * PDD `4d7decb9` — user-facing copy for the empty-state «+ Add relation»
+ * affordance.
+ *
+ * Shown inside the Relations empty-state (a zero-relations / first-run asset)
+ * when the renderer knows the asset (`currentFile`). The block-level
+ * «✎ Edit relations» affordance (PDD `dccff87b`) only renders in the ≥1-relation
+ * branch, so on a zero-relations asset the FIRST relation was reachable only via
+ * Cmd+P — a discoverability gap for the exact new-user empty-state. This
+ * affordance closes it, opening the SAME relations editor as the ≥1-branch and
+ * Cmd+P (single source of truth: {@link RelationsRenderer.openRelationsEditor}).
+ */
+export const RELATIONS_EMPTY_ADD_TEXT = "+ Add relation";
+
+/**
  * Legacy hardcoded fallback map for `groupSpecificProperties`.
  *
  * Captures the exact behaviour shipped pre-RFC be70f741 so that existing
@@ -566,10 +580,38 @@ export class RelationsRenderer {
     // skeleton, but settled (no pulse): this is a genuine empty result, not a
     // transient indexing placeholder.
     if (relations.length === 0) {
-      contentContainer.createDiv({
+      const emptyEl = contentContainer.createDiv({
         cls: "exocortex-relations-empty",
         text: RELATIONS_EMPTY_TEXT,
       });
+      // PDD `4d7decb9` — empty-state «+ Add relation» affordance. The ≥1-branch
+      // block-level «Edit relations» button never renders here (no relations to
+      // attach it to), so on a zero-relations asset — exactly the new-user /
+      // first-run empty-state — the only path to the FIRST relation was Cmd+P.
+      // When the renderer knows the asset (currentFile), surface a clickable
+      // «+ Add relation» button INSIDE the empty-state section, right under the
+      // muted "No related assets yet" text (placement decision per AC #3: it
+      // lives in the empty-state block since there is no Relations table to host
+      // a block-level affordance). It opens the SAME relations editor as the
+      // ≥1-branch affordance and Cmd+P via openRelationsEditor() (single source
+      // of truth → exocortex:edit-properties command). currentFile-gated →
+      // legacy callers render no affordance (additive, zero read-view
+      // regression). Parity-safe: Obsidian-core executeCommandById only, no
+      // platform gate (Desktop↔Mobile Command Parity invariant).
+      if (currentFile) {
+        const addRelationBtn = emptyEl.createEl("button", {
+          cls: "exocortex-relations-empty-add",
+          text: RELATIONS_EMPTY_ADD_TEXT,
+          attr: {
+            type: "button",
+            "aria-label": "Add relation",
+            title: "Add relation",
+          },
+        });
+        addRelationBtn.addEventListener("click", () =>
+          this.openRelationsEditor(),
+        );
+      }
       return;
     }
 

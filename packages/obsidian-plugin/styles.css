@@ -5996,6 +5996,20 @@
   border-radius: var(--radius-s, 4px);
 }
 
+/* PDD 4d7decb9 — empty-state «+ Add relation» affordance: a clickable button
+   inside the Relations empty-state (zero-relations / first-run) so a new user
+   can add their FIRST relation from read-view without Cmd+P. Sits on its own
+   line under the muted "No related assets yet" text; font-style reset so it
+   reads as an action, not muted prose. */
+.exocortex-relations-empty-add {
+  display: inline-block;
+  margin-top: var(--size-4-2, 8px);
+  padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+  font-style: normal;
+  font-size: var(--font-smaller, 0.85em);
+  cursor: pointer;
+}
+
 /* T1 "Create Instance" (project bbe40f8c) — fuzzy reference-picker dropdown.
    The picker input reuses .dynamic-form-input; these rules style the
    candidate list and the keyboard-active option so sighted keyboard users
