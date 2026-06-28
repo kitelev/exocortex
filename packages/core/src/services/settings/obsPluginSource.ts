@@ -31,13 +31,17 @@ export const OBSPLUGIN_SETTING_CLASS_UID =
 
 /**
  * Resolve a dot-path (e.g. `daily.folder`) against a parsed JSON config object.
- * Returns `undefined` when any segment is missing or a non-object is traversed
- * — pure, the accessor for a {@link SettingKeySpec} whose `field` is a JSON path.
+ * Returns `undefined` when any segment is missing or a non-object is traversed.
+ * Reads OWN properties only — a `__proto__`/`constructor`/inherited segment
+ * yields `undefined` (no prototype-chain read), future-proofing the util now
+ * that it is exported from `@kitelev/exocortex-core`. Pure — the accessor for a
+ * {@link SettingKeySpec} whose `field` is a JSON path.
  */
 export function resolveConfigPath(config: unknown, path: string): unknown {
   let cur: unknown = config;
   for (const seg of path.split(".")) {
     if (cur === null || typeof cur !== "object") return undefined;
+    if (!Object.prototype.hasOwnProperty.call(cur, seg)) return undefined;
     cur = (cur as Record<string, unknown>)[seg];
   }
   return cur;

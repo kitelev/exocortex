@@ -112,5 +112,11 @@ describe("obsplugin Periodic Notes settings export (M4.1)", () => {
       expect(resolveConfigPath(null, "a.b")).toBeUndefined();
       expect(resolveConfigPath("scalar", "a")).toBeUndefined();
     });
+
+    it("reads own properties only — inherited / prototype segments yield undefined", () => {
+      expect(resolveConfigPath({}, "__proto__")).toBeUndefined();
+      expect(resolveConfigPath({}, "constructor")).toBeUndefined();
+      expect(resolveConfigPath({ daily: {} }, "daily.toString")).toBeUndefined();
+    });
   });
 });

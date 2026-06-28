@@ -22,10 +22,7 @@
  */
 import { exportSettings, type SettingsSource } from "@kitelev/exocortex-core";
 import type { OntologyChoice } from "./PluginVaultCheckReader";
-import {
-  formatExportResult,
-  type SettingsCommandRegistrar,
-} from "./registerSettingsDistributionCommands";
+import type { SettingsCommandRegistrar } from "./registerSettingsDistributionCommands";
 
 export interface ExportObsPluginSettingsDeps {
   /** Command id (byte-exact; obsidian persists hotkeys by id). */
@@ -78,7 +75,12 @@ export function registerExportObsPluginSettingsCommand(
           for (const a of assets) {
             await deps.writeAsset(choice.folder, a.fileName, a.content);
           }
-          deps.notify(formatExportResult(choice, assets));
+          // Plugin-aware notice — do NOT reuse the exocortex `formatExportResult`
+          // (its "run «Import settings» to restore" hint points at the EXOCORTEX
+          // import; obsplugin Import is M4.2, not shipped).
+          deps.notify(
+            `Export ${deps.pluginLabel} settings: wrote ${assets.length} setting asset(s) into «${choice.label}». Re-export to update (Import is not yet available).`,
+          );
         } catch (err) {
           deps.notify(
             `Export ${deps.pluginLabel} settings: errored — ${err instanceof Error ? err.message : String(err)}`,
