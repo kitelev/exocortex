@@ -4362,4 +4362,40 @@ describe("substituteVariables — $input.<key> named-input resolution (#3779)", 
     expect(result.success).toBe(true);
     expect(written(writer)).toContain("ems__Effort_result: done");
   });
+
+  it("does not clobber resolved free-text that contains a $value substring (single-pass substitution)", async () => {
+    // Resolve $input.label to text containing the literal token "$value", AND
+    // pass a `value` key too. A naive two-pass substitution would re-scan the
+    // inserted text and replace the literal "$value" with userInput.value.
+    const grounding = makeGrounding({
+      targetProperty: "exo__Asset_label",
+      targetValueLiteral: "$input.label",
+    });
+
+    const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+      label: "Fix $value handling",
+      value: "CLOBBERED",
+    });
+
+    expect(result.success).toBe(true);
+    const out = written(writer);
+    expect(out).toContain("Fix $value handling");
+    expect(out).not.toContain("CLOBBERED");
+  });
+
+  it("does not false-reject a label that resolves to $input free-text (gate checks the template)", async () => {
+    // Template references $input.label which IS provided; the resolved value
+    // contains "$input" free-text. Gate must NOT reject (it checks the template).
+    const grounding = makeGrounding({
+      targetProperty: "exo__Asset_label",
+      targetValueLiteral: "$input.label",
+    });
+
+    const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+      label: "About $input substitution",
+    });
+
+    expect(result.success).toBe(true);
+    expect(written(writer)).toContain("About $input substitution");
+  });
 });

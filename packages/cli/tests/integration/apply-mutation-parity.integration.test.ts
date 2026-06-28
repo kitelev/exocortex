@@ -229,6 +229,19 @@ describe("Issue #3779 — CLI apply mutation parity (relabel + explicit parent)"
     expect(written).toContain("# Old Label");
   });
 
+  it("@req:f7790000-3779-4bbb-8bbb-000000000002 set-label accepts a label that resolves to free text containing a '$value' substring (no false-reject / no clobber)", async () => {
+    const rel = writeTarget("bbbbbbbb-3779-4000-8000-000000000003", "Old Label");
+
+    // The resolved label legitimately contains the literal token "$value".
+    // The template gate must check the TEMPLATE (not the resolved output), and
+    // single-pass substitution must not re-scan/clobber the inserted text.
+    await runApply("set-label", rel, `{"label":"Fix $value handling"}`);
+
+    const written = read(rel);
+    expect(written).toContain("exo__Asset_label: Fix $value handling");
+    expect(written).toContain(`- "Fix $value handling"`);
+  });
+
   it("@req:f7790000-3779-4bbb-8bbb-000000000002 set-label YAML-quotes a label containing ': ' so the file stays parseable", async () => {
     const rel = writeTarget("bbbbbbbb-3779-4000-8000-000000000002", "Old Label");
 
