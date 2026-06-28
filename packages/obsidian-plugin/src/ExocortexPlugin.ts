@@ -207,6 +207,10 @@ import { registerExoSyncCommands } from "./infrastructure/adapters/registerExoSy
 import { QuarantineResolverCommands } from "./infrastructure/adapters/QuarantineResolverCommands";
 import { QuarantineResolverModal } from "./infrastructure/adapters/QuarantineResolverModal";
 import { registerQuarantineResolverCommand } from "./infrastructure/adapters/registerQuarantineResolverCommand";
+import { DedupUidsCommands } from "./infrastructure/adapters/DedupUidsCommands";
+import { registerDedupUidsCommand } from "./infrastructure/adapters/registerDedupUidsCommand";
+import { DedupUidsModal } from "./presentation/modals/DedupUidsModal";
+import type { DedupUidFile } from "@kitelev/exocortex-core";
 import {
   PluginVaultCheckReader,
   listOntologyCandidates,
@@ -3247,6 +3251,49 @@ export default class ExocortexPlugin extends Plugin {
     // see the resolver's busy flag (HIGH-2).
     resolverHolder.commands = quarantineResolverCommands;
 
+    // «Exocortex: Deduplicate uids» (#3676) — Desktop↔Mobile parity for
+    // `exosync dedup-uids`. The sync/resolver dissonance messages (#3675) point
+    // a phone user at "run dedup-uids"; this command surfaces that fix in-plugin,
+    // driving the SAME platform-free core (findDuplicateUidGroups /
+    // planDuplicateUidFix) over `vault.adapter` (no Node fs/git, iOS-capable). A
+    // fix WRITES → D11-excluded against an in-flight sync / profile apply.
+    const dedupUidsCommands = new DedupUidsCommands({
+      listFiles: async () => {
+        const files: DedupUidFile[] = [];
+        for (const file of this.app.vault.getMarkdownFiles()) {
+          try {
+            files.push({
+              path: file.path,
+              content: await this.app.vault.read(file),
+            });
+          } catch {
+            // Skip an unreadable file — the rest of the scan still proceeds.
+          }
+        }
+        return files;
+      },
+      writeFile: async (filePath, content) => {
+        const file = this.app.vault.getAbstractFileByPath(filePath);
+        if (file instanceof TFile) await this.app.vault.modify(file, content);
+      },
+      freshUid: () => crypto.randomUUID(),
+      confirm: (groups) =>
+        new Promise<boolean>((resolve) => {
+          new DedupUidsModal(this.app, groups, resolve).open();
+        }),
+      notify: (message) => this.notifier.info(message),
+      isSyncBusy: () => syncCommands.isBusy(),
+      isSwitchInProgress: () => localDataStore.isSwitchInProgress(),
+      log: (message) => {
+        this.logger.warn(message);
+        this.activityLog.record({
+          category: "exosync",
+          level: "warn",
+          message,
+        });
+      },
+    });
+
     const switchMgr = new ProfileApplyManager({
       app: this.app,
       lockMgr,
@@ -3531,6 +3578,9 @@ export default class ExocortexPlugin extends Plugin {
     registerExoSyncCommands(this, syncCommands);
     // «Exocortex: Resolve sync conflicts» (finding a0a3d1d6).
     registerQuarantineResolverCommand(this, quarantineResolverCommands);
+    // «Exocortex: Deduplicate uids» (#3676) — registered on BOTH platforms
+    // (Desktop↔Mobile Command Parity; the fix runs over vault.adapter).
+    registerDedupUidsCommand(this, dedupUidsCommands);
 
     // RFC f402002b M1.5 — «Validate vault» + «Scaffold validation settings»,
     // registered on BOTH desktop AND mobile (Desktop↔Mobile Command Parity).
