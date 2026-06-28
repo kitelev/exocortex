@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
-import { resolve, relative, isAbsolute } from "path";
+import { resolve, relative, isAbsolute, sep as pathSep } from "path";
 import {
   InMemoryTripleStore,
   NoteToRDFConverter,
@@ -178,7 +178,15 @@ async function executeOnTarget(
   // `TFile.path` is always vault-relative; the CLI is the only surface that
   // accepts a raw user-supplied path string, hence the parity gap.
   const vaultRelative = relative(vaultPath, targetPath);
-  if (vaultRelative.startsWith("..") || isAbsolute(vaultRelative)) {
+  // `..`/`../…` (escapes the root) or an absolute result (different drive on
+  // Windows) means the target is not inside the vault. Match the path boundary
+  // (`..` exactly, or `..<sep>…`) rather than a bare `startsWith("..")`, so a
+  // legitimate folder whose name merely begins with two dots is not rejected.
+  if (
+    vaultRelative === ".." ||
+    vaultRelative.startsWith(`..${pathSep}`) ||
+    isAbsolute(vaultRelative)
+  ) {
     console.error(
       `❌ Target is outside the vault: ${targetRelative} (vault: ${vaultPath})`,
     );
