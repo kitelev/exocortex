@@ -672,15 +672,25 @@ export class PropertyEditorModal extends Modal {
 }
 
 /** A fresh lowercase UUID for a new statement asset (no `Date`/random in the pure model). */
-function generateStatementUid(): string {
-  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+export function generateStatementUid(): string {
+  const c = (
+    globalThis as {
+      crypto?: {
+        randomUUID?: () => string;
+        getRandomValues?: <T extends ArrayBufferView>(array: T) => T;
+      };
+    }
+  ).crypto;
   if (c?.randomUUID) return c.randomUUID().toLowerCase();
-  // Fallback (non-secure) — only when crypto.randomUUID is unavailable.
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (ch) => {
-    const r = Math.floor(Math.random() * 16);
-    const v = ch === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+  // Fallback — crypto.getRandomValues (crypto-secure; broader availability than
+  // randomUUID, incl. older mobile WebViews). Never Math.random: insecure for
+  // identifiers (CodeQL js/insecure-randomness).
+  const bytes = new Uint8Array(16);
+  c?.getRandomValues?.(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // RFC 4122 version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 /**
