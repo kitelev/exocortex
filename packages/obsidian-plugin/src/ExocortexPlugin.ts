@@ -228,7 +228,9 @@ import {
   buildQuarantineResolver,
   buildSyncEngine,
   collectSyncRepoSpecs,
+  coreSchemaYamlCodec,
 } from "./infrastructure/adapters/SyncDepsFactory";
+import { RegisterForSyncCommand } from "./infrastructure/adapters/RegisterForSyncCommand";
 import {
   CommandExecutionFlow,
   createTripleStoreRequiredPropertyResolver,
@@ -3598,6 +3600,13 @@ export default class ExocortexPlugin extends Plugin {
     // touch the live-mirror (VaultSettingsStore); M2.3 deprecates that.
     this.registerSettingsDistributionCommands();
 
+    // Issue #3707 — «Register for sync»: write an exo__AssetSpace descriptor into
+    // a mounted-but-undeclared knowledge pack so ExoSync's class-based discovery
+    // enumerates it (FINDING-3 gap). Registered UNCONDITIONALLY on both desktop
+    // AND mobile (Desktop↔Mobile Command Parity — the descriptor write is a single
+    // vault.adapter.write, no Node fs / git).
+    this.registerRegisterForSyncCommand();
+
     // RFC 22b50a17 Decision #6 — wipe-all switch cache clearing. RFC 0002 §3.2
     // (P3/P4) — de-jargon + destructive flag: «Clear switch cache (wipe-all)» →
     // «Reset profile cache (advanced)». Name sourced from the grooming contract.
@@ -4236,6 +4245,84 @@ export default class ExocortexPlugin extends Plugin {
         return Promise.resolve(out);
       },
       notify: (message) => this.notifier.info(message),
+    });
+  }
+
+  /**
+   * Issue #3707 — wire + register «Exocortex: Register for sync». Writes an
+   * `exo__AssetSpace` descriptor INTO a mounted-but-undeclared knowledge pack so
+   * ExoSync's class-based discovery ({@link collectSyncRepoSpecs}) enumerates it
+   * into the materialised sync set (the «won't sync» FINDING-3 gap). Registered
+   * UNCONDITIONALLY (Desktop↔Mobile Command Parity — the descriptor write is a
+   * single `vault.adapter.write`, no Node `fs` / git; the same path runs on iOS).
+   */
+  private registerRegisterForSyncCommand(): void {
+    // deriveFolderName for the (rare) URL-prompt fallback — mirrors the
+    // bootstrap-command closure; guarded so an in-progress invalid entry never
+    // throws into the modal's live label.
+    const deriveFolderName = (url: string): string => {
+      try {
+        const { repo } = parseGitHubURL(url);
+        return repo.startsWith("exoas-") ? repo.slice("exoas-".length) : repo;
+      } catch {
+        return "";
+      }
+    };
+
+    const command = new RegisterForSyncCommand({
+      // The registrable set = mounted folders carrying NO descriptor (FINDING-3).
+      listUnregisteredPacks: async () =>
+        (await collectSyncRepoSpecs(this.app)).mountedNotDeclared,
+      // Multi-pack picker — reuse the shared fuzzy modal keyed by mount path.
+      pickPack: (mountPaths) =>
+        new Promise<string | null>((resolve) => {
+          const choices: ProfileChoice[] = mountPaths.map((p) => ({
+            uid: p,
+            label: p,
+          }));
+          new ProfileFuzzyModal(
+            this.app,
+            choices,
+            "Choose a knowledge pack to register for sync",
+            (chosen) => resolve(chosen === null ? null : chosen.uid),
+          ).open();
+        }),
+      // Legacy flat folder (un-derivable URL) → prompt; reuse the Add-pack URL modal.
+      promptSourceUrl: () =>
+        new Promise<string | null>((resolve) => {
+          new AddAssetSpaceModal(this.app, deriveFolderName, (res) =>
+            resolve(res === null ? null : res.url),
+          ).open();
+        }),
+      // Ownership: build a fresh GitHubRestClient from the CURRENT PAT (#3382
+      // pattern) and probe push access — owned → pull+push; read-only → pull-only;
+      // no PAT / probe failure → unknown (set-a-token nudge). Best-effort.
+      probeOwnership: async (sourceUrl) => {
+        try {
+          const secretsStore = new LocalSecretsStore({ app: this.app });
+          const pat = (await secretsStore.getSecret("pat")) ?? "";
+          const { owner, repo } = parseGitHubURL(sourceUrl);
+          const client = new GitHubRestClient({ app: this.app, pat });
+          return await client.getRepoPushAccess(owner, repo);
+        } catch {
+          return null;
+        }
+      },
+      newUid: () => crypto.randomUUID(),
+      now: () => new Date().toISOString(),
+      codec: coreSchemaYamlCodec,
+      writeDescriptor: (mountPath, fileName, content) =>
+        this.app.vault.adapter.write(`${mountPath}/${fileName}`, content),
+      notify: (message) => this.notifier.info(message),
+      onMaterialized: () => this.refreshAndInjectAssetSpaceMaterialization(),
+    });
+
+    this.addCommand({
+      id: "register-for-sync",
+      name: "Register for sync",
+      callback: () => {
+        void command.invoke();
+      },
     });
   }
 

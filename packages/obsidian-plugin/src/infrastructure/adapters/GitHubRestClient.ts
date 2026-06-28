@@ -375,6 +375,42 @@ export class GitHubRestClient {
   }
 
   /**
+   * GET /repos/{owner}/{repo} → does the AUTHENTICATED token have push access?
+   *
+   * Used by «Register for sync» (#3707) to tell an OWNED pack (round-trip
+   * pull+push) from a READ-ONLY / foreign one (pull-only) so the affordance never
+   * makes a false push claim. The authenticated repo response carries
+   * `permissions: { admin, maintain, push, triage, pull }` — `push === true`
+   * means the token can write (the prerequisite for ExoSync to push edits back).
+   *
+   * BEST-EFFORT by contract: returns `null` (ownership UNKNOWN) when there is no
+   * PAT, the request fails (404 private-without-scope, network, rate-limit), or
+   * the `permissions` block is absent — the caller degrades to a "set a token to
+   * enable push" nudge rather than guessing. NEVER throws.
+   */
+  public async getRepoPushAccess(
+    owner: string,
+    repo: string,
+  ): Promise<boolean | null> {
+    // No token → push access is undeterminable (an unauthenticated repo read
+    // carries no `permissions` block). Skip the call entirely.
+    if (this.#pat.length === 0) return null;
+    try {
+      this.requireOwnerRepo(owner, repo);
+      const resp = await this.request({
+        method: "GET",
+        url: `${this.#baseURL}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+      });
+      const push = resp?.json?.permissions?.push;
+      return typeof push === "boolean" ? push : null;
+    } catch {
+      // 404 (private repo, under-scoped PAT), network, rate-limit — ownership
+      // simply stays UNKNOWN; a probe failure must never block registration.
+      return null;
+    }
+  }
+
+  /**
    * Refuse to proceed when remaining < needed + 10 (safety buffer).
    * Throws with seconds-to-reset embedded in error message.
    */

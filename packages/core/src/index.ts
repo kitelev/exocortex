@@ -793,6 +793,12 @@ export {
   type SpaceSpecCandidate,
 } from "./services/sync/spaceSpecCore";
 export {
+  buildAssetSpaceDescriptor,
+  deriveAssetSpaceNamespace,
+  type AssetSpaceDescriptor,
+  type AssetSpaceDescriptorInput,
+} from "./services/sync/registerForSync";
+export {
   ParityValidator,
   summarizeParityRound,
   type ConservationSnapshot,
