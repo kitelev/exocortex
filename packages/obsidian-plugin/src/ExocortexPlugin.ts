@@ -56,6 +56,11 @@ import {
   registerExportSettingsCommand,
   registerImportSettingsCommand,
 } from "./infrastructure/adapters/registerSettingsDistributionCommands";
+import { registerExportObsPluginSettingsCommand } from "./infrastructure/adapters/registerObsPluginSettingsCommands";
+import {
+  buildPeriodicNotesSource,
+  PERIODIC_NOTES_DATA_PATH,
+} from "@kitelev/exocortex-core";
 import {
   TaskStatusService,
   CommandResolver,
@@ -3599,6 +3604,7 @@ export default class ExocortexPlugin extends Plugin {
     // snapshot/restore via the generic Settings Distribution engine — does NOT
     // touch the live-mirror (VaultSettingsStore); M2.3 deprecates that.
     this.registerSettingsDistributionCommands();
+    this.registerObsPluginSettingsCommands();
 
     // Issue #3707 — «Register for sync»: write an exo__AssetSpace descriptor into
     // a mounted-but-undeclared knowledge pack so ExoSync's class-based discovery
@@ -4244,6 +4250,66 @@ export default class ExocortexPlugin extends Plugin {
         }
         return Promise.resolve(out);
       },
+      notify: (message) => this.notifier.info(message),
+    });
+  }
+
+  /**
+   * M4.1 (RFC f402002b) — «Exocortex: Export Periodic Notes settings».
+   * Snapshots the Periodic Notes plugin's Daily-Notes config (`data.json`, read
+   * via `vault.adapter` → mobile-safe) into `obsplugin__Setting` assets in a
+   * user-picked ontology, reusing the generic M2 Settings Distribution engine.
+   * Registered UNCONDITIONALLY (Desktop↔Mobile Command Parity — no
+   * `Platform.isMobile` gate). Export-only (M4.1); Import is M4.2. Additive —
+   * does not touch the exocortex export or the live-mirror.
+   */
+  private registerObsPluginSettingsCommands(): void {
+    registerExportObsPluginSettingsCommand(this, {
+      commandId: "export-periodic-notes-settings",
+      commandName: "Export Periodic Notes settings",
+      pluginLabel: "Periodic Notes",
+      loadSource: async () => {
+        if (!(await this.app.vault.adapter.exists(PERIODIC_NOTES_DATA_PATH))) {
+          return null;
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(
+            await this.app.vault.adapter.read(PERIODIC_NOTES_DATA_PATH),
+          );
+        } catch {
+          return null; // unparseable data.json → treat as not-installed (notice)
+        }
+        return buildPeriodicNotesSource(parsed);
+      },
+      pickOntology: () => {
+        const files = this.app.vault.getMarkdownFiles();
+        const assets = files.map((f) => ({
+          path: f.path,
+          frontmatter: (this.app.metadataCache.getFileCache(f)?.frontmatter ??
+            {}) as Record<string, unknown>,
+        }));
+        const candidates = listOntologyCandidates(assets);
+        if (candidates.length === 0) {
+          this.notifier.info(
+            "Export Periodic Notes settings: no ontology found in this vault to export into.",
+          );
+          return Promise.resolve(null);
+        }
+        return new Promise<OntologyChoice | null>((resolve) => {
+          new OntologyFuzzyModal(
+            this.app,
+            candidates,
+            "Choose ontology to export Periodic Notes settings into",
+            resolve,
+          ).open();
+        });
+      },
+      writeAsset: (folder, fileName, content) => {
+        const path = folder.length > 0 ? `${folder}/${fileName}` : fileName;
+        return this.app.vault.adapter.write(path, content);
+      },
+      nowIso: () => new Date().toISOString(),
       notify: (message) => this.notifier.info(message),
     });
   }
