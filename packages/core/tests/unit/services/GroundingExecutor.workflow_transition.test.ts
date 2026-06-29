@@ -116,7 +116,9 @@ describe("GroundingExecutor.workflow_transition (RFC 36347daf Phase 2)", () => {
       },
     ];
     const workflowResolver: WorkflowResolverPort = {
-      resolveForAsset: jest.fn().mockResolvedValue(makeTaskWorkflow(transitions)),
+      resolveForAssetOrNull: jest
+        .fn()
+        .mockResolvedValue(makeTaskWorkflow(transitions)),
     };
 
     const loadedActions: string[] = [];
@@ -173,7 +175,9 @@ describe("GroundingExecutor.workflow_transition (RFC 36347daf Phase 2)", () => {
       },
     ];
     const workflowResolver: WorkflowResolverPort = {
-      resolveForAsset: jest.fn().mockResolvedValue(makeTaskWorkflow(transitions)),
+      resolveForAssetOrNull: jest
+        .fn()
+        .mockResolvedValue(makeTaskWorkflow(transitions)),
     };
     const groundingLoader: GroundingLoaderPort = async (uid) => ({
       id: uid,
@@ -214,7 +218,9 @@ describe("GroundingExecutor.workflow_transition (RFC 36347daf Phase 2)", () => {
       },
     ];
     const workflowResolver: WorkflowResolverPort = {
-      resolveForAsset: jest.fn().mockResolvedValue(makeTaskWorkflow(transitions)),
+      resolveForAssetOrNull: jest
+        .fn()
+        .mockResolvedValue(makeTaskWorkflow(transitions)),
     };
 
     const { executor, writer } = makeExecutor({
@@ -242,7 +248,9 @@ describe("GroundingExecutor.workflow_transition (RFC 36347daf Phase 2)", () => {
       },
     ];
     const workflowResolver: WorkflowResolverPort = {
-      resolveForAsset: jest.fn().mockResolvedValue(makeTaskWorkflow(transitions)),
+      resolveForAssetOrNull: jest
+        .fn()
+        .mockResolvedValue(makeTaskWorkflow(transitions)),
     };
 
     const { executor, writer } = makeExecutor({
@@ -279,9 +287,20 @@ describe("GroundingExecutor.workflow_transition (RFC 36347daf Phase 2)", () => {
     expect(result.error).toMatch(/WorkflowResolver injection/i);
   });
 
-  it("fails loud when target asset has no recognised ems__* class", async () => {
+  // ───── Crash fix: non-built-in effort classes degrade gracefully ─────
+  // @req:7489624f-c17f-47dd-8108-3571a5809f61 — a generic status-transition
+  // button rendered on an effort-status-bearing asset whose class is NOT one of
+  // Task/Project/Meeting (UID-canon `"[[<uid>]]"`, no alias) must NOT crash with
+  // "no recognised ems__* class". When the class has no applicable workflow the
+  // dispatch is a graceful no-op (notApplicable), and when the class DOES have a
+  // workflow (per-asset override / per-class ABox) the transition works.
+
+  it("@req:7489624f graceful no-op (notApplicable) when class has no applicable workflow — no crash", async () => {
+    // resolveForAssetOrNull returns null → the class (e.g. ems__Action, ems__Idea,
+    // exo__Asset) has no status workflow. Must NOT surface the old fail-loud
+    // "no recognised ems__* class" error.
     const workflowResolver: WorkflowResolverPort = {
-      resolveForAsset: jest.fn(),
+      resolveForAssetOrNull: jest.fn().mockResolvedValue(null),
     };
     const { executor } = makeExecutor({
       content: `---\nexo__Instance_class:\n  - "[[some-random-uid]]"\nems__Effort_status: "[[${DOING_UID}]]"\n---\n`,
@@ -289,19 +308,63 @@ describe("GroundingExecutor.workflow_transition (RFC 36347daf Phase 2)", () => {
     });
 
     const result = await executor.execute(
-      makeGrounding("forward"),
+      makeGrounding("rollback"),
       TARGET_IRI,
       FILE_PATH,
     );
 
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/no recognised ems__\* class/i);
-    expect(workflowResolver.resolveForAsset).not.toHaveBeenCalled();
+    expect(result.notApplicable).toBe(true);
+    expect(result.error).not.toMatch(/no recognised ems__\* class/i);
+    expect(result.error).toMatch(/no status workflow/i);
+    // The resolver IS consulted (data-driven), not short-circuited.
+    expect(workflowResolver.resolveForAssetOrNull).toHaveBeenCalledTimes(1);
+  });
+
+  it("@req:7489624f data-driven transition works for a NON-built-in class with a workflow", async () => {
+    // A class outside Task/Project/Meeting (UID-canon form) whose asset has a
+    // declared workflow (e.g. via ems__Effort_workflow) resolves and transitions
+    // Doing→Backlog — proving the dispatch is no longer gated by a hardcoded
+    // 3-class map.
+    const transitions: WorkflowTransitionDefinition[] = [
+      {
+        from: EffortStatus.DOING,
+        to: EffortStatus.BACKLOG,
+        label: "← Backlog",
+        isRollback: true,
+      },
+    ];
+    const workflowResolver: WorkflowResolverPort = {
+      resolveForAssetOrNull: jest
+        .fn()
+        .mockResolvedValue(makeTaskWorkflow(transitions)),
+    };
+    const { executor, writer } = makeExecutor({
+      content: `---\nexo__Instance_class:\n  - "[[d4f1c0a2-0000-4000-a000-00000000bbbb]]"\nems__Effort_status: "[[${DOING_UID}]]"\n---\n`,
+      workflowResolver,
+    });
+
+    const result = await executor.execute(
+      makeGrounding("rollback"),
+      TARGET_IRI,
+      FILE_PATH,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.notApplicable).toBeFalsy();
+    // Status mutated to Backlog (UID-canon wikilink) on disk.
+    expect(writer.updateFile).toHaveBeenCalled();
+    const written = (writer.updateFile as jest.Mock).mock.calls[0][1] as string;
+    expect(written).toContain(BACKLOG_UID);
   });
 
   it("fails loud when current status cannot be parsed", async () => {
+    // Workflow resolves (built-in Task) but the asset has no parseable status —
+    // this remains a hard, informative error (distinct from notApplicable).
     const workflowResolver: WorkflowResolverPort = {
-      resolveForAsset: jest.fn(),
+      resolveForAssetOrNull: jest
+        .fn()
+        .mockResolvedValue(makeTaskWorkflow([])),
     };
     const { executor } = makeExecutor({
       content: `---\nexo__Instance_class:\n  - "[[${TASK_UID}]]"\n# no status\n---\n`,
@@ -315,6 +378,7 @@ describe("GroundingExecutor.workflow_transition (RFC 36347daf Phase 2)", () => {
     );
 
     expect(result.success).toBe(false);
+    expect(result.notApplicable).toBeFalsy();
     expect(result.error).toMatch(/no parseable ems__Effort_status/i);
   });
 
@@ -328,7 +392,9 @@ describe("GroundingExecutor.workflow_transition (RFC 36347daf Phase 2)", () => {
       },
     ];
     const workflowResolver: WorkflowResolverPort = {
-      resolveForAsset: jest.fn().mockResolvedValue(makeTaskWorkflow(transitions)),
+      resolveForAssetOrNull: jest
+        .fn()
+        .mockResolvedValue(makeTaskWorkflow(transitions)),
     };
     const { executor } = makeExecutor({
       content: `---\nexo__Instance_class:\n  - "[[${TASK_UID}]]"\nems__Effort_status: "[[${DONE_UID}]]"\n---\n`,
@@ -356,7 +422,9 @@ describe("GroundingExecutor.workflow_transition (RFC 36347daf Phase 2)", () => {
       },
     ];
     const workflowResolver: WorkflowResolverPort = {
-      resolveForAsset: jest.fn().mockResolvedValue(makeTaskWorkflow(transitions)),
+      resolveForAssetOrNull: jest
+        .fn()
+        .mockResolvedValue(makeTaskWorkflow(transitions)),
     };
     const { executor } = makeExecutor({
       content: `---\nexo__Instance_class:\n  - "[[${TASK_UID}]]"\nems__Effort_status: "[[${DOING_UID}]]"\n---\n`,
@@ -385,7 +453,9 @@ describe("GroundingExecutor.workflow_transition (RFC 36347daf Phase 2)", () => {
       },
     ];
     const workflowResolver: WorkflowResolverPort = {
-      resolveForAsset: jest.fn().mockResolvedValue(makeTaskWorkflow(transitions)),
+      resolveForAssetOrNull: jest
+        .fn()
+        .mockResolvedValue(makeTaskWorkflow(transitions)),
     };
     const groundingLoader: GroundingLoaderPort = async () => null;
 
@@ -416,7 +486,9 @@ describe("GroundingExecutor.workflow_transition (RFC 36347daf Phase 2)", () => {
       },
     ];
     const workflowResolver: WorkflowResolverPort = {
-      resolveForAsset: jest.fn().mockResolvedValue(makeTaskWorkflow(transitions)),
+      resolveForAssetOrNull: jest
+        .fn()
+        .mockResolvedValue(makeTaskWorkflow(transitions)),
     };
     const groundingLoader: GroundingLoaderPort = async () => ({
       id: "pa-bad",

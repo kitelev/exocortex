@@ -12,7 +12,6 @@ import type {
 } from "../domain/models/CommandDefinition";
 import { GroundingType } from "../domain/constants/GroundingType";
 import { resolveTemplateBody } from "./TemplateBodyResolver";
-import { AssetClass } from "../domain/constants/AssetClass";
 import { base64ToUtf8 } from "../utilities/base64";
 import { EffortStatus } from "../domain/constants/EffortStatus";
 import { IRI } from "../domain/models/rdf/IRI";
@@ -71,24 +70,12 @@ const STATUS_ENUM_BY_UID: Readonly<Record<string, EffortStatus>> = Object.freeze
   ) as Record<string, EffortStatus>,
 );
 
-/**
- * RFC 36347daf Phase 2 — UID → AssetClass label map for workflow_transition
- * class resolution when target asset's exo__Instance_class is stored in
- * UID-form (post-RFC #3165 UUID-canon). Limited to classes that have default
- * workflows today (Task + Project + Meeting).
- *
- * Drift guards (defense in depth):
- *   1. `StatusUidByEnumIntegrity.test.ts` — UUID-shape + uniqueness check.
- *   2. Vault `validate-wikilinks` hook blocks writes to renamed class TBox files.
- *
- * Adding more workflow target classes requires adding an entry here AND
- * creating the corresponding vault Workflow ABox per the Phase 2 RFC.
- */
-export const CLASS_UID_TO_LABEL: Readonly<Record<string, string>> = Object.freeze({
-  "1b20a8f0-d745-4e93-91db-4531b3df120e": AssetClass.TASK,
-  "7db5eeff-718a-49b0-8d2b-39b084a356e3": AssetClass.PROJECT,
-  "1b0a5e34-dd7f-4ead-b43a-6c7c5a5ecaca": AssetClass.MEETING,
-});
+// RFC 36347daf Phase 2 — UID → AssetClass label map for the built-in status
+// workflows (Task/Project/Meeting). Extracted to a shared constant so the
+// data-driven WorkflowResolver can reuse it without importing GroundingExecutor
+// (avoids an import cycle). Re-exported here for backward compatibility with
+// `GroundingExecutor.status_uid_integrity.test.ts`.
+export { CLASS_UID_TO_LABEL } from "../domain/constants/WorkflowClassUids";
 import {
   installDefaultResolvers,
   getResolver,
@@ -112,6 +99,17 @@ export interface ExecutionResult {
   readonly success: boolean;
   readonly error?: string;
   readonly openPath?: string;
+  /**
+   * Marks an unsuccessful result as a benign "not applicable" outcome rather
+   * than a hard failure. Set by `workflow_transition` when the target asset's
+   * class has no applicable status workflow (e.g. `ems__Action`, which has its
+   * own one-shot lifecycle, or a class for which no `ems__Workflow` ABox /
+   * `ems__Effort_workflow` override exists). The presentation layer surfaces
+   * this as an informational notice — NOT a "Command failed" error — so a
+   * generic status-transition button rendered on such a class degrades
+   * gracefully instead of crashing. See `CommandExecutionFlow`.
+   */
+  readonly notApplicable?: boolean;
 }
 
 /**
@@ -283,12 +281,22 @@ const MAX_COMPOSITE_DEPTH = 20;
  * asset's class at execution time. Optional — when absent (tests, CLI
  * without store hydration), the workflow_transition dispatch fails loud
  * with a clear error message.
+ *
+ * `resolveForAssetOrNull` is data-driven: it accepts the raw class references
+ * (each UID-canon `"<uid>"`, alias `"<uid>|label"`, or bare label) from the
+ * target's possibly multi-valued `exo__Instance_class` and returns the
+ * applicable workflow, or `null` when no class has one (a per-asset
+ * `ems__Effort_workflow` override, a per-class `ems__Workflow` ABox, and the
+ * built-in Task/Project/Meeting defaults are all consulted). A `null` return is
+ * NOT an error — the dispatcher treats it as "no status workflow for this class"
+ * and degrades gracefully (no crash on non-Effort / lifecycle-only classes such
+ * as `ems__Action`).
  */
 export type WorkflowResolverPort = {
-  resolveForAsset(
+  resolveForAssetOrNull(
     subjectIRI: IRI,
-    assetClass: AssetClass,
-  ): Promise<WorkflowDefinition>;
+    classRefs: readonly string[],
+  ): Promise<WorkflowDefinition | null>;
 };
 
 /**
@@ -2336,27 +2344,27 @@ export class GroundingExecutor {
     const content = await this.fileReader.readFile(filePath);
     const fm = this.frontmatterService.parseObject(content) ?? {};
 
-    // 2. Resolve asset class (first ems__* match in exo__Instance_class).
-    const assetClass = this.resolveAssetClassFromFrontmatter(fm);
-    if (!assetClass) {
+    // 2. Resolve the asset's class references (any class — UID-canon, alias, or
+    //    label form; `exo__Instance_class` may be multi-valued). Only a missing
+    //    `exo__Instance_class` is a hard stop here; the classes need NOT be
+    //    built-in workflow classes — that is decided data-drivenly below.
+    const classRefs = this.resolveClassRefsFromFrontmatter(fm);
+    if (classRefs.length === 0) {
       return {
         success: false,
+        notApplicable: true,
         error:
-          "workflow_transition: target asset has no recognised ems__* class in exo__Instance_class (cannot resolve workflow).",
+          "workflow_transition: target asset has no exo__Instance_class — status transitions are not available for it.",
       };
     }
 
-    // 3. Resolve current status from ems__Effort_status.
-    const currentStatus = this.resolveStatusFromFrontmatter(fm);
-    if (!currentStatus) {
-      return {
-        success: false,
-        error:
-          "workflow_transition: target asset has no parseable ems__Effort_status value (need wikilink to an ems__EffortStatus* asset).",
-      };
-    }
-
-    // 4. Resolve workflow for this asset.
+    // 3. Resolve the workflow for this asset's class. Data-driven: a per-asset
+    //    `ems__Effort_workflow` override, a per-class `ems__Workflow` ABox, or a
+    //    built-in Task/Project/Meeting default — in that order. A `null` return
+    //    means the class has NO applicable status workflow (e.g. `ems__Action`'s
+    //    own one-shot lifecycle, or any class without a declared workflow). That
+    //    is a benign no-op, NOT a crash — generic status buttons that happen to
+    //    render on such a class degrade gracefully instead of failing loud.
     let subjectIRI: IRI;
     try {
       subjectIRI = new IRI(targetIRI);
@@ -2366,10 +2374,28 @@ export class GroundingExecutor {
         error: `workflow_transition: invalid targetIRI "${targetIRI}" — ${error instanceof Error ? error.message : String(error)}`,
       };
     }
-    const workflow = await this.workflowResolver.resolveForAsset(
+    const workflow = await this.workflowResolver.resolveForAssetOrNull(
       subjectIRI,
-      assetClass,
+      classRefs,
     );
+    if (!workflow) {
+      return {
+        success: false,
+        notApplicable: true,
+        error:
+          "workflow_transition: this asset's class has no status workflow — status transitions are not available for it.",
+      };
+    }
+
+    // 4. Resolve current status from ems__Effort_status.
+    const currentStatus = this.resolveStatusFromFrontmatter(fm);
+    if (!currentStatus) {
+      return {
+        success: false,
+        error:
+          "workflow_transition: target asset has no parseable ems__Effort_status value (need wikilink to an ems__EffortStatus* asset).",
+      };
+    }
 
     // 5. Find matching transition.
     const direction: "forward" | "rollback" = grounding.direction ?? "forward";
@@ -2380,7 +2406,7 @@ export class GroundingExecutor {
     if (!transition) {
       return {
         success: false,
-        error: `workflow_transition: no ${direction} transition from "${currentStatus}" defined in workflow "${workflow.name}" (target class: ${assetClass}).`,
+        error: `workflow_transition: no ${direction} transition from "${currentStatus}" defined in workflow "${workflow.name}" (target class: ${workflow.targetClass}).`,
       };
     }
 
@@ -2460,43 +2486,34 @@ export class GroundingExecutor {
   }
 
   /**
-   * RFC 36347daf Phase 2 — extract the first recognised `ems__*` class from
-   * frontmatter `exo__Instance_class`. Handles both string and array shapes,
-   * and wikilink-form values (`"[[<UID>|ems__Task]]"`,
-   * `"[[<UID>]]"`, `"[[ems__Task]]"`). Returns null when nothing matches.
-   *
-   * UID-form refs are resolved via the existing classLabelToUid injection
-   * when available; otherwise we fall back to the inline mapping for the
-   * Task/Project pair (the only classes that have default workflows today).
+   * RFC 36347daf Phase 2 (generalised) — extract ALL `exo__Instance_class`
+   * references from frontmatter as raw class ref strings for the data-driven
+   * {@link WorkflowResolverPort.resolveForAssetOrNull}. Handles string and array
+   * shapes and wikilink-form values; returns each inner ref WITHOUT the `[[ ]]`
+   * wrapping (`"<uid>"`, `"<uid>|label"`, or `"label"`) — the resolver
+   * normalises and maps them. Unlike the previous implementation this is NOT
+   * limited to a hardcoded set of classes, and it returns EVERY ref (not just
+   * the first) so a multi-valued `exo__Instance_class` still resolves when a
+   * workflow-bearing class is not listed first. Empty array when
+   * `exo__Instance_class` is absent or carries no usable value.
    */
-  private resolveAssetClassFromFrontmatter(
+  private resolveClassRefsFromFrontmatter(
     fm: Record<string, unknown>,
-  ): AssetClass | null {
+  ): string[] {
     const raw = fm["exo__Instance_class"];
-    if (raw === undefined || raw === null) return null;
+    if (raw === undefined || raw === null) return [];
     const values = Array.isArray(raw) ? raw : [raw];
-    const knownClasses = new Set<string>(Object.values(AssetClass));
+    const refs: string[] = [];
     for (const v of values) {
       if (typeof v !== "string") continue;
       // Strip wikilink wrapping `"[[...|label]]"` or `"[[label]]"`.
-      const inside = v.replace(/^\s*"?\[\[/, "").replace(/\]\]"?\s*$/, "");
-      const aliasPart = inside.includes("|") ? inside.split("|")[1] : inside;
-      const bare = aliasPart.trim();
-      if (knownClasses.has(bare)) {
-        return bare as AssetClass;
-      }
-      // UID-form: map UID → AssetClass label.
-      const uuidMatch = inside.match(
-        /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
-      );
-      if (uuidMatch) {
-        const uidToLabel = CLASS_UID_TO_LABEL[uuidMatch[1].toLowerCase()];
-        if (uidToLabel && knownClasses.has(uidToLabel)) {
-          return uidToLabel as AssetClass;
-        }
-      }
+      const inside = v
+        .replace(/^\s*"?\[\[/, "")
+        .replace(/\]\]"?\s*$/, "")
+        .trim();
+      if (inside.length > 0) refs.push(inside);
     }
-    return null;
+    return refs;
   }
 
   /**

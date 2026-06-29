@@ -170,6 +170,17 @@ export class CommandExecutionFlow {
       this.logger.info(
         `[CommandExecutionFlow] Executed "${command.name}" on ${displayPath}`,
       );
+    } else if (result.notApplicable) {
+      // Benign "not applicable" outcome (e.g. a generic status-transition button
+      // rendered on a class with no status workflow). Surface as an
+      // informational notice — NOT a "Command failed" error — so the user sees a
+      // clear, non-alarming message instead of a crash. See ExecutionResult.
+      this.notificationService.info(
+        result.error ?? "This command is not available for this asset.",
+      );
+      this.logger.info(
+        `[CommandExecutionFlow] Not applicable "${command.name}": ${result.error}`,
+      );
     } else {
       this.notificationService.error(
         `Command failed: ${result.error ?? "unknown error"}`,
