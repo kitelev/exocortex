@@ -15,6 +15,7 @@ import {
   PROJECT_DEFAULT_WORKFLOW,
   TASK_DEFAULT_WORKFLOW,
 } from "../domain/defaults/DefaultWorkflows";
+import { CLASS_UID_TO_LABEL } from "../domain/constants/WorkflowClassUids";
 
 /**
  * Resolves WorkflowDefinitions from vault assets stored in an ITripleStore.
@@ -73,6 +74,87 @@ export class WorkflowResolver {
 
     // Fall back to class default
     return this.resolveForClass(assetClass);
+  }
+
+  /**
+   * RFC 36347daf (generalised, fix wf-transition crash) — data-driven workflow
+   * resolution for the `workflow_transition` grounding. Accepts the RAW class
+   * reference from the target's `exo__Instance_class` (UID-canon `"<uid>"`,
+   * alias `"<uid>|label"`, or bare `"label"`) — NOT constrained to a hardcoded
+   * class set — and returns the applicable workflow, or `null` when the class
+   * has NONE.
+   *
+   * Resolution priority (all vault-data-driven except the built-in defaults):
+   *   1. Per-asset override — `ems__Effort_workflow` on the asset itself
+   *      (works for ANY class, e.g. a one-off `ems__Bug` with its own workflow).
+   *   2. Built-in default — Task / Project / Meeting resolve their
+   *      class-default workflow (a vault `ems__Workflow` ABox with matching
+   *      `Workflow_targetClass` if present, else the hardcoded fallback).
+   *   3. `null` — the class is neither overridden nor a built-in workflow class
+   *      (e.g. `ems__Action`'s own one-shot lifecycle, `exo__Asset`, or any
+   *      class for which no workflow has been declared). The caller treats this
+   *      as "no status workflow" and degrades gracefully — no crash.
+   *
+   * To make a NEW class status-managed without code changes: add an
+   * `ems__Effort_workflow` to its assets (step 1) — Homoiconicity Invariant.
+   * (Per-class `ems__Workflow` ABox support for arbitrary non-built-in classes
+   * is a follow-up; today only the built-in three resolve a class default.)
+   */
+  async resolveForAssetOrNull(
+    subjectIRI: IRI,
+    classRef: string,
+  ): Promise<WorkflowDefinition | null> {
+    // 1. Per-asset workflow override — class-independent.
+    const workflowTriples = await this.tripleStore.match(
+      subjectIRI,
+      Namespace.EMS.term("Effort_workflow"),
+      undefined,
+    );
+    if (workflowTriples.length > 0) {
+      const workflowRef = workflowTriples[0].object;
+      if (workflowRef instanceof IRI) {
+        const specific = await this.loadWorkflowBySubject(workflowRef);
+        if (specific) return specific;
+      }
+    }
+
+    // 2. Built-in class default (Task / Project / Meeting only).
+    const builtIn = this.classRefToBuiltInClass(classRef);
+    if (builtIn !== null) {
+      return this.resolveForClass(builtIn);
+    }
+
+    // 3. No applicable workflow — benign, NOT an error.
+    return null;
+  }
+
+  /**
+   * Map a raw `exo__Instance_class` reference to a built-in workflow
+   * {@link AssetClass} (Task / Project / Meeting), or `null` when it is not one
+   * of them. Tolerates UID-canon (`"<uid>"`), alias (`"<uid>|ems__Task"`), and
+   * bare-label (`"ems__Task"`) forms. Case-insensitive on the UID.
+   */
+  private classRefToBuiltInClass(classRef: string): AssetClass | null {
+    const norm = this.normalizeWikilink(classRef);
+    const bare = norm.includes("|")
+      ? (norm.split("|").pop() ?? "").trim()
+      : norm.trim();
+
+    const BUILT_IN = new Set<string>([
+      AssetClass.TASK,
+      AssetClass.PROJECT,
+      AssetClass.MEETING,
+    ]);
+    if (BUILT_IN.has(bare)) return bare as AssetClass;
+
+    const uuidMatch = norm.match(
+      /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+    );
+    if (uuidMatch) {
+      const label = CLASS_UID_TO_LABEL[uuidMatch[1].toLowerCase()];
+      if (label && BUILT_IN.has(label)) return label as AssetClass;
+    }
+    return null;
   }
 
   /**
