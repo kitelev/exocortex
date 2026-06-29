@@ -282,20 +282,20 @@ const MAX_COMPOSITE_DEPTH = 20;
  * without store hydration), the workflow_transition dispatch fails loud
  * with a clear error message.
  *
- * `resolveForAssetOrNull` is data-driven: it accepts the raw class reference
- * (UID-canon `"[[<uid>]]"`, alias `"[[<uid>|label]]"`, or bare label) from the
- * target's `exo__Instance_class` and returns the applicable workflow, or
- * `null` when the class has none (a per-asset `ems__Effort_workflow` override,
- * a per-class `ems__Workflow` ABox, and the built-in Task/Project/Meeting
- * defaults are all consulted). A `null` return is NOT an error — the
- * dispatcher treats it as "no status workflow for this class" and degrades
- * gracefully (no crash on non-Effort / lifecycle-only classes such as
- * `ems__Action`).
+ * `resolveForAssetOrNull` is data-driven: it accepts the raw class references
+ * (each UID-canon `"<uid>"`, alias `"<uid>|label"`, or bare label) from the
+ * target's possibly multi-valued `exo__Instance_class` and returns the
+ * applicable workflow, or `null` when no class has one (a per-asset
+ * `ems__Effort_workflow` override, a per-class `ems__Workflow` ABox, and the
+ * built-in Task/Project/Meeting defaults are all consulted). A `null` return is
+ * NOT an error — the dispatcher treats it as "no status workflow for this class"
+ * and degrades gracefully (no crash on non-Effort / lifecycle-only classes such
+ * as `ems__Action`).
  */
 export type WorkflowResolverPort = {
   resolveForAssetOrNull(
     subjectIRI: IRI,
-    classRef: string,
+    classRefs: readonly string[],
   ): Promise<WorkflowDefinition | null>;
 };
 
@@ -2344,12 +2344,12 @@ export class GroundingExecutor {
     const content = await this.fileReader.readFile(filePath);
     const fm = this.frontmatterService.parseObject(content) ?? {};
 
-    // 2. Resolve the asset's class reference (any class — UID-canon, alias, or
-    //    label form). Only a missing `exo__Instance_class` is a hard stop here;
-    //    the class need NOT be one of the built-in workflow classes — that is
-    //    decided data-drivenly by the resolver below.
-    const classRef = this.resolveClassRefFromFrontmatter(fm);
-    if (!classRef) {
+    // 2. Resolve the asset's class references (any class — UID-canon, alias, or
+    //    label form; `exo__Instance_class` may be multi-valued). Only a missing
+    //    `exo__Instance_class` is a hard stop here; the classes need NOT be
+    //    built-in workflow classes — that is decided data-drivenly below.
+    const classRefs = this.resolveClassRefsFromFrontmatter(fm);
+    if (classRefs.length === 0) {
       return {
         success: false,
         notApplicable: true,
@@ -2376,7 +2376,7 @@ export class GroundingExecutor {
     }
     const workflow = await this.workflowResolver.resolveForAssetOrNull(
       subjectIRI,
-      classRef,
+      classRefs,
     );
     if (!workflow) {
       return {
@@ -2486,22 +2486,24 @@ export class GroundingExecutor {
   }
 
   /**
-   * RFC 36347daf Phase 2 (generalised) — extract the FIRST `exo__Instance_class`
-   * reference from frontmatter as a raw class ref string for the data-driven
+   * RFC 36347daf Phase 2 (generalised) — extract ALL `exo__Instance_class`
+   * references from frontmatter as raw class ref strings for the data-driven
    * {@link WorkflowResolverPort.resolveForAssetOrNull}. Handles string and array
-   * shapes and wikilink-form values; returns the inner ref WITHOUT the `[[ ]]`
+   * shapes and wikilink-form values; returns each inner ref WITHOUT the `[[ ]]`
    * wrapping (`"<uid>"`, `"<uid>|label"`, or `"label"`) — the resolver
-   * normalises and maps it. Unlike the previous implementation this is NOT
-   * limited to a hardcoded set of classes: ANY class ref is returned so the
-   * resolver can apply per-asset / per-class / built-in workflow rules. Returns
-   * null ONLY when `exo__Instance_class` is absent or carries no usable value.
+   * normalises and maps them. Unlike the previous implementation this is NOT
+   * limited to a hardcoded set of classes, and it returns EVERY ref (not just
+   * the first) so a multi-valued `exo__Instance_class` still resolves when a
+   * workflow-bearing class is not listed first. Empty array when
+   * `exo__Instance_class` is absent or carries no usable value.
    */
-  private resolveClassRefFromFrontmatter(
+  private resolveClassRefsFromFrontmatter(
     fm: Record<string, unknown>,
-  ): string | null {
+  ): string[] {
     const raw = fm["exo__Instance_class"];
-    if (raw === undefined || raw === null) return null;
+    if (raw === undefined || raw === null) return [];
     const values = Array.isArray(raw) ? raw : [raw];
+    const refs: string[] = [];
     for (const v of values) {
       if (typeof v !== "string") continue;
       // Strip wikilink wrapping `"[[...|label]]"` or `"[[label]]"`.
@@ -2509,9 +2511,9 @@ export class GroundingExecutor {
         .replace(/^\s*"?\[\[/, "")
         .replace(/\]\]"?\s*$/, "")
         .trim();
-      if (inside.length > 0) return inside;
+      if (inside.length > 0) refs.push(inside);
     }
-    return null;
+    return refs;
   }
 
   /**

@@ -82,7 +82,7 @@ describe("WorkflowResolver.resolveForAssetOrNull (data-driven, crash fix)", () =
       new Triple(asset, Namespace.EMS.term("Effort_workflow"), wf),
     );
 
-    const result = await resolver.resolveForAssetOrNull(asset, `[[${BUG_UID}]]`);
+    const result = await resolver.resolveForAssetOrNull(asset, [`[[${BUG_UID}]]`]);
 
     expect(result).not.toBeNull();
     expect(result?.transitions.some((t) => t.isRollback)).toBe(true);
@@ -91,18 +91,18 @@ describe("WorkflowResolver.resolveForAssetOrNull (data-driven, crash fix)", () =
   it("returns null for a non-built-in class with NO workflow (e.g. ems__Action — own lifecycle)", async () => {
     const result = await resolver.resolveForAssetOrNull(
       asset,
-      `[[${ACTION_UID}|ems__Action]]`,
+      [`[[${ACTION_UID}|ems__Action]]`],
     );
     expect(result).toBeNull();
   });
 
   it("returns null for a bare unknown class ref with no workflow", async () => {
-    const result = await resolver.resolveForAssetOrNull(asset, "some-random-uid");
+    const result = await resolver.resolveForAssetOrNull(asset, ["some-random-uid"]);
     expect(result).toBeNull();
   });
 
   it("resolves the built-in Task default for a UID-canon Task class ref", async () => {
-    const result = await resolver.resolveForAssetOrNull(asset, `[[${TASK_UID}]]`);
+    const result = await resolver.resolveForAssetOrNull(asset, [`[[${TASK_UID}]]`]);
     expect(result).not.toBeNull();
     expect(result?.targetClass).toBe(AssetClass.TASK);
   });
@@ -110,15 +110,27 @@ describe("WorkflowResolver.resolveForAssetOrNull (data-driven, crash fix)", () =
   it("resolves the built-in default for an alias-form Task class ref", async () => {
     const result = await resolver.resolveForAssetOrNull(
       asset,
-      `${TASK_UID}|ems__Task`,
+      [`${TASK_UID}|ems__Task`],
     );
     expect(result).not.toBeNull();
     expect(result?.targetClass).toBe(AssetClass.TASK);
   });
 
   it("resolves the built-in default for a bare-label Project class ref", async () => {
-    const result = await resolver.resolveForAssetOrNull(asset, "ems__Project");
+    const result = await resolver.resolveForAssetOrNull(asset, ["ems__Project"]);
     expect(result).not.toBeNull();
     expect(result?.targetClass).toBe(AssetClass.PROJECT);
+  });
+
+  it("resolves from a multi-valued exo__Instance_class where the built-in class is NOT first", async () => {
+    // A multi-class asset (e.g. a non-built-in class listed before ems__Task) with
+    // no per-asset override must still resolve the Task workflow — the resolver
+    // scans EVERY ref, not just the first.
+    const result = await resolver.resolveForAssetOrNull(asset, [
+      `[[${BUG_UID}]]`,
+      `[[${TASK_UID}]]`,
+    ]);
+    expect(result).not.toBeNull();
+    expect(result?.targetClass).toBe(AssetClass.TASK);
   });
 });

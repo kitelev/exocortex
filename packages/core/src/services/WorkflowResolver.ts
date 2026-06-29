@@ -79,10 +79,10 @@ export class WorkflowResolver {
   /**
    * RFC 36347daf (generalised, fix wf-transition crash) — data-driven workflow
    * resolution for the `workflow_transition` grounding. Accepts the RAW class
-   * reference from the target's `exo__Instance_class` (UID-canon `"<uid>"`,
-   * alias `"<uid>|label"`, or bare `"label"`) — NOT constrained to a hardcoded
-   * class set — and returns the applicable workflow, or `null` when the class
-   * has NONE.
+   * references from the target's `exo__Instance_class` (each UID-canon `"<uid>"`,
+   * alias `"<uid>|label"`, or bare `"label"`; `exo__Instance_class` may be
+   * multi-valued) — NOT constrained to a hardcoded class set — and returns the
+   * applicable workflow, or `null` when no class has one.
    *
    * Resolution priority (all vault-data-driven except the built-in defaults):
    *   1. Per-asset override — `ems__Effort_workflow` on the asset itself
@@ -102,7 +102,7 @@ export class WorkflowResolver {
    */
   async resolveForAssetOrNull(
     subjectIRI: IRI,
-    classRef: string,
+    classRefs: readonly string[],
   ): Promise<WorkflowDefinition | null> {
     // 1. Per-asset workflow override — class-independent.
     const workflowTriples = await this.tripleStore.match(
@@ -118,10 +118,14 @@ export class WorkflowResolver {
       }
     }
 
-    // 2. Built-in class default (Task / Project / Meeting only).
-    const builtIn = this.classRefToBuiltInClass(classRef);
-    if (builtIn !== null) {
-      return this.resolveForClass(builtIn);
+    // 2. Built-in class default (Task / Project / Meeting only) — try EACH class
+    //    ref so a multi-valued `exo__Instance_class` still resolves when a
+    //    built-in class is not listed first.
+    for (const classRef of classRefs) {
+      const builtIn = this.classRefToBuiltInClass(classRef);
+      if (builtIn !== null) {
+        return this.resolveForClass(builtIn);
+      }
     }
 
     // 3. No applicable workflow — benign, NOT an error.
