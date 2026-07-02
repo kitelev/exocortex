@@ -17,6 +17,7 @@ import {
 } from "../domain/defaults/DefaultWorkflows";
 import { CLASS_UID_TO_LABEL } from "../domain/constants/WorkflowClassUids";
 import { iriToObsidianName } from "../utilities/iriToObsidianName";
+import { LoggingService } from "./LoggingService";
 
 /**
  * Resolves WorkflowDefinitions from vault assets stored in an ITripleStore.
@@ -35,6 +36,11 @@ export class WorkflowResolver {
   /** req 915b20b2 — bound on the subclass-workflow ancestry BFS (cycle guard +
    * pathological-depth backstop). Real class chains are ≤ ~4 deep. */
   private static readonly MAX_HIERARCHY_DEPTH = 16;
+
+  /** req 915b20b2 — memoise the subclass-workflow ancestry walk (positive AND
+   * negative results) so a repeated `resolveForAssetOrNull` on the same class
+   * set skips the triple-store BFS. Cleared by {@link invalidateCache}. */
+  private readonly ancestryCache = new Map<string, WorkflowDefinition | null>();
 
   constructor(private readonly tripleStore: ITripleStore) {}
 
@@ -195,51 +201,71 @@ export class WorkflowResolver {
   private async findBuiltInWorkflowByAncestry(
     classRefs: readonly string[],
   ): Promise<WorkflowDefinition | null> {
+    const cacheKey = `ancestry:${[...classRefs].sort().join(" ")}`;
+    const cached = this.ancestryCache.get(cacheKey);
+    if (cached !== undefined) return cached; // memoised positive OR negative
+    let result: WorkflowDefinition | null = null;
     try {
-      const visited = new Set<string>();
-      let frontier: IRI[] = [];
-      for (const ref of classRefs) {
-        const fileIRI = await this.resolveClassFileIRI(ref);
-        if (fileIRI) frontier.push(fileIRI);
-      }
-      let depth = 0;
-      while (frontier.length > 0 && depth < WorkflowResolver.MAX_HIERARCHY_DEPTH) {
-        const next: IRI[] = [];
-        for (const fileIRI of frontier) {
-          if (visited.has(fileIRI.value)) continue;
-          visited.add(fileIRI.value);
-          const parentTriples = await this.tripleStore.match(
-            fileIRI,
-            Namespace.EXO.term("Class_superClass"),
-            undefined,
-          );
-          for (const triple of parentTriples) {
-            const obj = triple.object;
-            if (!(obj instanceof IRI)) continue;
-            const parentName = iriToObsidianName(obj.value);
-            if (parentName) {
-              const builtIn = this.classRefToBuiltInClass(parentName);
-              if (builtIn !== null) return this.resolveForClass(builtIn);
-            }
-            // Map the parent to its class-file IRI subject to walk further up.
-            const parentFileIRI = obj.value.startsWith("obsidian://vault/")
-              ? obj
-              : parentName
-                ? await this.resolveClassFileIRI(parentName)
-                : null;
-            if (parentFileIRI && !visited.has(parentFileIRI.value)) {
-              next.push(parentFileIRI);
-            }
+      result = await this.walkAncestryForBuiltIn(classRefs);
+    } catch (error) {
+      // Benign: any resolution failure degrades to "no subclass workflow", but
+      // log it so a genuinely broken hierarchy is not silently swallowed.
+      LoggingService.warn(
+        `[WorkflowResolver] subclass-workflow ancestry walk failed for [${classRefs.join(", ")}] — treating as no workflow: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      result = null;
+    }
+    this.ancestryCache.set(cacheKey, result);
+    return result;
+  }
+
+  /**
+   * req 915b20b2 — the uncached BFS core of {@link findBuiltInWorkflowByAncestry}.
+   * Returns the first built-in ancestor's workflow, or `null` when none.
+   */
+  private async walkAncestryForBuiltIn(
+    classRefs: readonly string[],
+  ): Promise<WorkflowDefinition | null> {
+    const visited = new Set<string>();
+    let frontier: IRI[] = [];
+    for (const ref of classRefs) {
+      const fileIRI = await this.resolveClassFileIRI(ref);
+      if (fileIRI) frontier.push(fileIRI);
+    }
+    let depth = 0;
+    while (frontier.length > 0 && depth < WorkflowResolver.MAX_HIERARCHY_DEPTH) {
+      const next: IRI[] = [];
+      for (const fileIRI of frontier) {
+        if (visited.has(fileIRI.value)) continue;
+        visited.add(fileIRI.value);
+        const parentTriples = await this.tripleStore.match(
+          fileIRI,
+          Namespace.EXO.term("Class_superClass"),
+          undefined,
+        );
+        for (const triple of parentTriples) {
+          const obj = triple.object;
+          if (!(obj instanceof IRI)) continue;
+          const parentName = iriToObsidianName(obj.value);
+          if (parentName) {
+            const builtIn = this.classRefToBuiltInClass(parentName);
+            if (builtIn !== null) return this.resolveForClass(builtIn);
+          }
+          // Map the parent to its class-file IRI subject to walk further up.
+          const parentFileIRI = obj.value.startsWith("obsidian://vault/")
+            ? obj
+            : parentName
+              ? await this.resolveClassFileIRI(parentName)
+              : null;
+          if (parentFileIRI && !visited.has(parentFileIRI.value)) {
+            next.push(parentFileIRI);
           }
         }
-        frontier = next;
-        depth++;
       }
-      return null;
-    } catch {
-      // Benign: any resolution failure degrades to "no subclass workflow".
-      return null;
+      frontier = next;
+      depth++;
     }
+    return null;
   }
 
   /**
@@ -321,6 +347,7 @@ export class WorkflowResolver {
    */
   invalidateCache(): void {
     this.cache.clear();
+    this.ancestryCache.clear();
   }
 
   /**

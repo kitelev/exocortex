@@ -984,6 +984,13 @@ export class GroundingExecutor {
    * the body, so `extractBody(replaceBody(fm, body)) === body`. When the content
    * has no leading frontmatter block, the whole content IS the body. Used by
    * `create_instance` `cloneTargetBody` to carry the $target body forward.
+   *
+   * NOTE (symmetric to {@link replaceBody}): an EMPTY frontmatter (`---\n---`)
+   * has no line between the fences, so the regex treats it as "no frontmatter"
+   * and the whole content is returned as the body. This never affects the
+   * cloneTargetBody path in practice: a real $target always carries non-empty
+   * frontmatter (uid/label/instance_class), so its fence is matched and only the
+   * true body is extracted.
    */
   private static extractBody(content: string): string {
     const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---/);
