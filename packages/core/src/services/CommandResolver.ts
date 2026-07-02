@@ -2462,11 +2462,16 @@ export class CommandResolver {
       case "today":
         return d.toISOString().slice(0, 10);
       case "tomorrow": {
-        // req 915b20b2 — today + 1 day, YYYY-MM-DD (UTC, consistent with the
-        // `today` case above). Matches the `$tomorrow` registry resolver shape.
-        const t = new Date(d);
-        t.setUTCDate(t.getUTCDate() + 1);
-        return t.toISOString().slice(0, 10);
+        // req 915b20b2 / FIX-2 — the next LOCAL calendar day, YYYY-MM-DD.
+        // Vision Lock 5: `$tomorrow` is a soft daily tickler that must advance
+        // to the user's next LOCAL day. The former UTC form (setUTCDate +
+        // toISOString) mis-fired a click just after local midnight in a UTC+N
+        // timezone to the SAME local day (UTC was still the previous date).
+        // Local `new Date(y, m, d+1)` arithmetic mirrors the registry resolver
+        // `makeDateResolver(1, "YYYY-MM-DD")` (local getDate/setDate) in
+        // SubstitutionResolverRegistry, so both `$tomorrow` paths now agree.
+        const t = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+        return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
       }
       case "todayStart":
         return new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
