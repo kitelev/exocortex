@@ -189,7 +189,10 @@ const PARSE_TIME_RESOLVERS: ReadonlySet<string> = new Set([
  *
  * Binding priority (specific → general):
  * 1. targetAsset — only for a specific asset
- * 2. targetPrototype — for all instances of a prototype
+ * 2. targetPrototype — for all instances of a prototype, including instances
+ *    of its (transitive) child prototypes: the target's `exo__Asset_prototype`
+ *    chain is expanded through the store (cycle-safe, depth-capped) and the
+ *    binding matches if ANY ancestor matches (@req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec)
  * 3. targetClass — for all assets of a class
  *
  * Issue #2428
@@ -272,8 +275,12 @@ export class CommandResolver {
    *
    * Resolution semantics:
    * - `targetClass` bindings are inherited (opt-out) through the whole superClass
-   *   chain; `targetPrototype` / `targetAsset` bindings are NOT inherited (they
-   *   match by prototype / asset IRI, which class-distance never widens).
+   *   chain; `targetAsset` bindings are NOT inherited (they match by asset IRI,
+   *   which class-distance never widens). `targetPrototype` bindings are NOT
+   *   class-inherited either, but they ARE inherited along the target's own
+   *   `exo__Asset_prototype` chain (see {@link expandPrototypeChain},
+   *   @req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec): a binding on a parent
+   *   prototype matches instances of its transitive child prototypes.
    * - Each binding is tagged with the nearest ancestor-depth at which it matched
    *   (declared leaf = 0, direct superclass = 1, …). The merged set is sorted by
    *   `(priority, depth, order)` — nearest-wins ("nearer class higher" in the UI).
@@ -300,7 +307,9 @@ export class CommandResolver {
    * @param assetClasses - Declared classes of the asset (`exo__Instance_class`).
    *                      May be the bare leaves OR a pre-expanded chain — both
    *                      resolve identically.
-   * @param prototypeIRI - Optional prototype IRI for prototype-scoped bindings
+   * @param prototypeIRI - Optional DIRECT prototype ref of the target
+   *   (`exo__Asset_prototype`); expanded resolver-side into the transitive
+   *   prototype chain for `targetPrototype` matching (@req:5ad0d6b4)
    * @returns Resolved commands sorted by `(priority, depth, order)`; deduped by
    *          binding.id; overridden bindings removed
    */
@@ -312,11 +321,20 @@ export class CommandResolver {
     if (assetClasses.length === 0) return [];
 
     // Cache key uses sorted INPUT classes — stable across permutations and
-    // deterministic w.r.t. the resolver-side expansion they drive.
+    // deterministic w.r.t. the resolver-side expansion they drive. The raw
+    // prototypeIRI stays the key: its expanded chain is a deterministic
+    // derivative of (prototypeIRI, store state), and store mutations clear
+    // the caches via invalidateCache().
     const sortedClasses = [...assetClasses].sort().join(",");
     const cacheKey = `${subjectIRI}::${sortedClasses}::${prototypeIRI ?? ""}`;
     const cached = this.multiCache.get(cacheKey);
     if (cached) return cached;
+
+    // 0. Expand the direct prototype ref into its transitive prototype chain
+    //    ONCE for the whole per-class loop (@req:5ad0d6b4).
+    const prototypeChain = prototypeIRI
+      ? await this.expandPrototypeChain(prototypeIRI)
+      : undefined;
 
     // 1. Expand the declared classes along the superClass chain, tagging each
     //    resolved class ref with its nearest ancestor-depth.
@@ -333,7 +351,7 @@ export class CommandResolver {
       const bindings = await this.resolveForAsset(
         subjectIRI,
         cls,
-        prototypeIRI,
+        prototypeChain,
       );
       for (const rc of bindings) {
         const matchDepth =
@@ -488,15 +506,31 @@ export class CommandResolver {
   async resolveForAsset(
     subjectIRI: string,
     assetClass: string,
-    prototypeIRI?: string,
+    prototypeIRI?: string | readonly string[],
   ): Promise<ResolvedCommand[]> {
-    const cacheKey = `${subjectIRI}:${assetClass}:${prototypeIRI ?? ""}`;
+    // A string is the raw direct prototype ref (public callers); an array is
+    // an already-expanded chain (internal resolveForAssetMulti fast path).
+    // Both key deterministically w.r.t. the same store state. A form prefix +
+    // NUL separator rule out a collision between a raw string ref that
+    // contains "|" (alias-form refs) and a joined chain (PR #3804 review).
+    const protoKey =
+      typeof prototypeIRI === "string"
+        ? `s:${prototypeIRI}`
+        : prototypeIRI
+          ? `c:${prototypeIRI.join("\u0000")}`
+          : "";
+    const cacheKey = `${subjectIRI}:${assetClass}:${protoKey}`;
     const cached = this.cache.get(cacheKey);
     if (cached) return cached;
 
+    const prototypeChain =
+      typeof prototypeIRI === "string"
+        ? await this.expandPrototypeChain(prototypeIRI)
+        : prototypeIRI;
+
     const bindings = await this.findBindings(
       assetClass,
-      prototypeIRI,
+      prototypeChain,
       subjectIRI,
     );
 
@@ -632,14 +666,21 @@ export class CommandResolver {
    *
    * Returns bindings for:
    * - targetAsset matching subjectIRI
-   * - targetPrototype matching prototypeIRI
+   * - targetPrototype matching ANY element of the target's prototype chain
+   *   (a bare string is expanded via {@link expandPrototypeChain} first —
+   *   @req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec)
    * - targetClass matching assetClass
    */
   async findBindings(
     assetClass?: string,
-    prototypeIRI?: string,
+    prototypeIRI?: string | readonly string[],
     assetIRI?: string,
   ): Promise<CommandBindingDefinition[]> {
+    const prototypeChain =
+      typeof prototypeIRI === "string"
+        ? await this.expandPrototypeChain(prototypeIRI)
+        : prototypeIRI;
+
     // Find all CommandBinding instances
     const bindingTriples = await this.tripleStore.match(
       undefined,
@@ -655,7 +696,7 @@ export class CommandResolver {
       if (!binding) continue;
 
       // Check if this binding applies to the given context
-      if (this.bindingMatches(binding, assetClass, prototypeIRI, assetIRI)) {
+      if (this.bindingMatches(binding, assetClass, prototypeChain, assetIRI)) {
         bindings.push(binding);
       }
     }
@@ -1180,7 +1221,7 @@ export class CommandResolver {
   private bindingMatches(
     binding: CommandBindingDefinition,
     assetClass?: string,
-    prototypeIRI?: string,
+    prototypeChain?: readonly string[],
     assetIRI?: string,
   ): boolean {
     // targetAsset: match specific asset
@@ -1188,10 +1229,13 @@ export class CommandResolver {
       if (this.matchesReference(binding.targetAsset, assetIRI)) return true;
     }
 
-    // targetPrototype: match prototype
-    if (binding.targetPrototype && prototypeIRI) {
-      if (this.matchesReference(binding.targetPrototype, prototypeIRI))
-        return true;
+    // targetPrototype: match ANY ancestor in the target's prototype chain
+    // (chain[0] = the direct prototype — @req:5ad0d6b4).
+    if (binding.targetPrototype && prototypeChain) {
+      for (const prototypeRef of prototypeChain) {
+        if (this.matchesReference(binding.targetPrototype, prototypeRef))
+          return true;
+      }
     }
 
     // targetClass: match asset class
@@ -2605,6 +2649,93 @@ export class CommandResolver {
   }
 
   // -- Triple store helpers --
+
+  /**
+   * Expand a direct prototype reference into its transitive prototype chain
+   * (@req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec).
+   *
+   * Walks `exo__Asset_prototype` hop by hop through the triple store: each
+   * hop resolves the current reference to its store subject via UID lookup
+   * (bridging the dual reference forms — bare UID / wikilink / file-IRI —
+   * that {@link normalizeWikilink} + {@link extractPathBasename} cover), then
+   * reads that subject's own `exo__Asset_prototype`.
+   *
+   * Guards: a visited set (normalized, case-insensitive) breaks reference
+   * cycles (A → B → A), and the walk is capped at {@link MAX_TRANSITIVE_DEPTH}
+   * hops — a malformed vault can never hang resolution. Unresolvable hops
+   * (prototype file absent from the store, non-UUID reference) terminate the
+   * walk fail-open: the chain built so far still matches.
+   *
+   * @param prototypeRef - The target's direct `exo__Asset_prototype` reference
+   *   (bare UID, wikilink, or file-IRI form).
+   * @returns `[direct, parent, grandparent, …]` — the direct reference itself
+   *   is element 0, preserving single-hop behavior. An empty/blank ref yields
+   *   `[]` (no prototype matching — mirrors the legacy falsy-guard skip).
+   */
+  private async expandPrototypeChain(
+    prototypeRef: string,
+  ): Promise<readonly string[]> {
+    // Legacy falsy-guard parity: an empty ref must NOT produce a chain [""]
+    // that a pathological `targetPrototype: "[[]]"` binding could match
+    // (PR #3804 review).
+    if (!prototypeRef || !this.normalizeWikilink(prototypeRef)) return [];
+
+    const chain: string[] = [prototypeRef];
+    const visited = new Set<string>([
+      this.normalizeWikilink(prototypeRef).toLowerCase(),
+    ]);
+
+    let current = prototypeRef;
+    for (let hop = 0; hop < MAX_TRANSITIVE_DEPTH; hop++) {
+      const uid = this.extractUuidFromRef(current);
+      if (!uid) break;
+
+      let parentRef: string | null = null;
+      try {
+        const subject = await this.findSubjectByUID(uid);
+        if (!subject) break;
+        parentRef = await this.getLinkedValue(
+          subject,
+          Namespace.EXO.term("Asset_prototype"),
+        );
+      } catch (error) {
+        // fail-open: keep the chain built so far, but leave a diagnostic
+        // trail — a silently shortened chain is a silently missing button
+        // (PR #3804 review).
+        this.logger.debug(
+          this.capWarning(
+            `[expandPrototypeChain] store lookup failed at hop ${hop} for '${current}': ${String(error)}`,
+          ),
+        );
+        break;
+      }
+      if (!parentRef) break;
+
+      const key = this.normalizeWikilink(parentRef).toLowerCase();
+      if (visited.has(key)) break; // cycle guard
+      visited.add(key);
+
+      chain.push(parentRef);
+      current = parentRef;
+    }
+
+    return chain;
+  }
+
+  /**
+   * Extract a bare UUID from a prototype reference in any of its forms:
+   * bare UUID, `[[uuid]]` / `[[uuid|alias]]` wikilink, or
+   * `obsidian://vault/.../uuid.md` file-IRI (UUID-named asset).
+   * Returns null when the reference carries no UUID (e.g. a label-named
+   * legacy reference) — the chain walk stops there.
+   */
+  private extractUuidFromRef(ref: string): string | null {
+    const normalized = this.normalizeWikilink(ref);
+    if (this.looksLikeUUID(normalized)) return normalized;
+    const basename = this.extractPathBasename(normalized);
+    if (basename && this.looksLikeUUID(basename)) return basename;
+    return null;
+  }
 
   private async findSubjectByUID(uid: string): Promise<IRI | null> {
     // Try optimized UUID lookup first (works for UUID v4 format)
