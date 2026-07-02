@@ -176,31 +176,72 @@ describe("CommandResolver — ems__WaitingCheckTask loader stage (req 915b20b2)"
     expect(value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(String(value)).not.toContain("[[");
     // ...and it is a FUTURE date (tomorrow), strictly after today — proving it
-    // resolved to today+1, not today. Lexicographic YYYY-MM-DD compare is
-    // clock-flake-safe (no exact-tomorrow race at UTC midnight).
-    const today = new Date().toISOString().slice(0, 10);
-    expect(value).not.toBe(today);
-    expect(String(value) > today).toBe(true);
+    // resolved to today+1, not today. The baseline is computed with LOCAL
+    // getters (not UTC `toISOString`) to match the now-local `$tomorrow`
+    // value — a UTC baseline would flake in UTC-minus timezones where local
+    // tomorrow can be < UTC today. Lexicographic YYYY-MM-DD compare is
+    // clock-flake-safe (no exact-tomorrow race at local midnight).
+    const now = new Date();
+    const p2 = (n: number): string => String(n).padStart(2, "0");
+    const localToday = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
+    expect(value).not.toBe(localToday);
+    expect(String(value) > localToday).toBe(true);
   });
 
-  // FIX-2 (req 22cf… local-tz `$tomorrow`) — revert-verify
+  // FIX-2 (req bca93bfb — local-tz `$tomorrow`) — revert-verify
   // ([[integration-test-revert-verify]]). At a wall-clock instant just after
   // LOCAL midnight in a UTC+N timezone, the former UTC resolver (setUTCDate +
   // toISOString) mis-fired `$tomorrow` to the SAME local calendar day (UTC was
   // still the previous date). Vision Lock 5 requires the next LOCAL day.
   //
-  // Deterministic: force TZ=Asia/Almaty (UTC+5, no DST) + a fake clock at
-  // 2026-07-02T19:27:00Z = 2026-07-03T00:27 Almaty (local day 03, UTC day 02).
-  // Pre-fix resolves to "2026-07-03" (= local TODAY) → RED; post-fix (local
-  // getFullYear/getMonth/getDate + 1) resolves to "2026-07-04" → GREEN.
+  // Deterministic + CI-robust: `process.env.TZ` cannot be changed at runtime
+  // under jest (V8 caches the worker's timezone), and the fix has NO observable
+  // effect in a UTC runner — so we install a Date subclass that simulates a
+  // fixed UTC+5 (Asia/Almaty, no DST) offset at the instant 2026-07-02T19:27:00Z
+  // = 2026-07-03T00:27 local (local day 03, UTC day 02), independent of the
+  // runner's real timezone. Pre-fix resolves to "2026-07-03" (= local TODAY) →
+  // RED; post-fix (local getFullYear/getMonth/getDate + 1) → "2026-07-04" GREEN.
   it("resolves $tomorrow to the next LOCAL calendar day just after local midnight (UTC still previous day) @req:bca93bfb-b663-4309-a19e-996de8e526da", async () => {
-    const originalTZ = process.env.TZ;
-    process.env.TZ = "Asia/Almaty"; // UTC+5, no DST — deterministic local day
-    jest.useFakeTimers();
+    const RealDate = Date;
+    const OFFSET_MS = 5 * 60 * 60 * 1000; // UTC+5 (Asia/Almaty, no DST)
+    const FIXED_EPOCH = RealDate.parse("2026-07-02T19:27:00Z"); // 00:27 Almaty
+    class FakeAlmatyDate extends RealDate {
+      constructor(...args: unknown[]) {
+        if (args.length === 0) {
+          super(FIXED_EPOCH); // "now" = the fixed boundary instant
+        } else if (args.length === 1) {
+          super(args[0] as number | string | Date);
+        } else {
+          // (y, m, d, …) are LOCAL Almaty components → shift to the UTC epoch.
+          const [y, mo, d = 1, h = 0, mi = 0, s = 0, ms = 0] = args as number[];
+          super(RealDate.UTC(y, mo, d, h, mi, s, ms) - OFFSET_MS);
+        }
+      }
+      // Local getters = UTC getters of (epoch + offset); UTC getters inherited.
+      private shifted(): Date {
+        return new RealDate(this.getTime() + OFFSET_MS);
+      }
+      override getFullYear(): number {
+        return this.shifted().getUTCFullYear();
+      }
+      override getMonth(): number {
+        return this.shifted().getUTCMonth();
+      }
+      override getDate(): number {
+        return this.shifted().getUTCDate();
+      }
+      override getHours(): number {
+        return this.shifted().getUTCHours();
+      }
+      override getDay(): number {
+        return this.shifted().getUTCDay();
+      }
+    }
+    (globalThis as { Date: DateConstructor }).Date =
+      FakeAlmatyDate as unknown as DateConstructor;
     try {
-      jest.setSystemTime(new Date("2026-07-02T19:27:00Z"));
-      // Guard: prove TZ actually took effect (else the assertion below would be
-      // vacuous in a UTC-tz runner and silently pass both ways — fail loud).
+      // Guard: prove the simulated tz is active (else the assertion below would
+      // be vacuous in a UTC-tz runner and silently pass both ways — fail loud).
       expect(new Date().getHours()).toBe(0); // 00:27 local (Almaty)
       expect(new Date().getUTCDate()).toBe(2); // still July 2 in UTC
 
@@ -267,9 +308,7 @@ describe("CommandResolver — ems__WaitingCheckTask loader stage (req 915b20b2)"
       // (= local TODAY at this instant) — the bug FIX-2 corrects.
       expect(value).toBe("2026-07-04");
     } finally {
-      jest.useRealTimers();
-      if (originalTZ === undefined) delete process.env.TZ;
-      else process.env.TZ = originalTZ;
+      (globalThis as { Date: DateConstructor }).Date = RealDate;
     }
   });
 });
