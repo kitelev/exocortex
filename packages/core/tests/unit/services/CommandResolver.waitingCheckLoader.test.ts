@@ -182,4 +182,94 @@ describe("CommandResolver — ems__WaitingCheckTask loader stage (req 915b20b2)"
     expect(value).not.toBe(today);
     expect(String(value) > today).toBe(true);
   });
+
+  // FIX-2 (req 22cf… local-tz `$tomorrow`) — revert-verify
+  // ([[integration-test-revert-verify]]). At a wall-clock instant just after
+  // LOCAL midnight in a UTC+N timezone, the former UTC resolver (setUTCDate +
+  // toISOString) mis-fired `$tomorrow` to the SAME local calendar day (UTC was
+  // still the previous date). Vision Lock 5 requires the next LOCAL day.
+  //
+  // Deterministic: force TZ=Asia/Almaty (UTC+5, no DST) + a fake clock at
+  // 2026-07-02T19:27:00Z = 2026-07-03T00:27 Almaty (local day 03, UTC day 02).
+  // Pre-fix resolves to "2026-07-03" (= local TODAY) → RED; post-fix (local
+  // getFullYear/getMonth/getDate + 1) resolves to "2026-07-04" → GREEN.
+  it("resolves $tomorrow to the next LOCAL calendar day just after local midnight (UTC still previous day) @req:bca93bfb-b663-4309-a19e-996de8e526da", async () => {
+    const originalTZ = process.env.TZ;
+    process.env.TZ = "Asia/Almaty"; // UTC+5, no DST — deterministic local day
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(new Date("2026-07-02T19:27:00Z"));
+      // Guard: prove TZ actually took effect (else the assertion below would be
+      // vacuous in a UTC-tz runner and silently pass both ways — fail loud).
+      expect(new Date().getHours()).toBe(0); // 00:27 local (Almaty)
+      expect(new Date().getUTCDate()).toBe(2); // still July 2 in UTC
+
+      await addLabelled(
+        store,
+        PROP_PLANNED_UID,
+        "ems__Effort_plannedStartTimestamp",
+      );
+      await store.addAll([
+        new Triple(
+          iri(TOKEN_TOMORROW_UID),
+          Namespace.EXO.term("Asset_uid"),
+          new Literal(TOKEN_TOMORROW_UID),
+        ),
+        new Triple(
+          iri(TOKEN_TOMORROW_UID),
+          Namespace.EXO.term("Asset_label"),
+          new Literal("$tomorrow"),
+        ),
+        new Triple(
+          iri(TOKEN_TOMORROW_UID),
+          Namespace.EXO.term("Instance_class"),
+          Namespace.EXOCMD.term("SubstitutionToken"),
+        ),
+        new Triple(
+          iri(TOKEN_TOMORROW_UID),
+          Namespace.EXOCMD.term("SubstitutionToken_resolver"),
+          new Literal("tomorrow"),
+        ),
+      ]);
+      await store.addAll([
+        new Triple(
+          iri(PD_PLANNED_UID),
+          Namespace.RDF.term("type"),
+          Namespace.EXOCMD.term("PropertyDefault"),
+        ),
+        new Triple(
+          iri(PD_PLANNED_UID),
+          Namespace.EXO.term("Asset_uid"),
+          new Literal(PD_PLANNED_UID),
+        ),
+        new Triple(
+          iri(PD_PLANNED_UID),
+          Namespace.EXOCMD.term("PropertyDefault_property"),
+          iri(PROP_PLANNED_UID),
+        ),
+        new Triple(
+          iri(PD_PLANNED_UID),
+          Namespace.EXOCMD.term("PropertyDefault_value"),
+          iri(TOKEN_TOMORROW_UID),
+        ),
+      ]);
+      await addGrounding(store, {
+        cloneTargetBody: true,
+        propertyDefaultRefs: [PD_PLANNED_UID],
+      });
+      await addCommand(store);
+
+      const cmd = await resolver.loadCommand(COMMAND_UID);
+
+      expect(cmd).not.toBeNull();
+      const value = cmd!.grounding.propertyDefault![0].value;
+      // Local tomorrow = 2026-07-04. The UTC form returned "2026-07-03"
+      // (= local TODAY at this instant) — the bug FIX-2 corrects.
+      expect(value).toBe("2026-07-04");
+    } finally {
+      jest.useRealTimers();
+      if (originalTZ === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTZ;
+    }
+  });
 });
