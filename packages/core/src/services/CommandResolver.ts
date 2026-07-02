@@ -92,6 +92,11 @@ const SUBSTITUTION_TOKEN_CLASS_IRI =
 const KNOWN_SUBSTITUTION_RESOLVER_IDS: ReadonlySet<string> = new Set([
   // RFC v2 Phase 3a — bootstrap vocabulary
   "today",
+  // req 915b20b2 — `$tomorrow` (today + 1 day, YYYY-MM-DD) soft daily tickler
+  // for ems__WaitingCheckTask. The resolver exists in SubstitutionResolverRegistry
+  // (Веха 5) but was never whitelisted here (no vault token used it) — a
+  // parameterless SubstitutionToken referencing it fell back to wikilink form.
+  "tomorrow",
   "todayStart",
   "targetFolder",
   "target",
@@ -169,6 +174,9 @@ const UNIVERSAL_DEFAULT_TEMPLATE_CTX = "universal-default-template";
  */
 const PARSE_TIME_RESOLVERS: ReadonlySet<string> = new Set([
   "today",
+  // req 915b20b2 — `$tomorrow` is context-free (today + 1 day), baked at parse
+  // time exactly like `$today` (same session-cache semantics).
+  "tomorrow",
   "todayStart",
   "nowTimestamp",
   "nowDate",
@@ -1785,6 +1793,20 @@ export class CommandResolver {
       Namespace.EXOCMD.term("Grounding_templateRef"),
     );
 
+    // req 915b20b2 — create_instance target-body clone flag. Boolean coercion
+    // mirrors `prefillLabelWithDate` (tolerates `true` boolean or `"true"`
+    // literal). MUST be read HERE (the production loader) — the sibling
+    // GroundingFrontmatterParser has no production consumers (CLI BDD/tests
+    // only), so reading it there alone leaves the flag inert in every real
+    // apply (plugin button + CLI both go through CommandResolver.loadCommand).
+    const cloneTargetBodyRaw = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_cloneTargetBody"),
+    );
+    const cloneTargetBody =
+      cloneTargetBodyRaw !== null &&
+      String(cloneTargetBodyRaw).trim().toLowerCase() === "true";
+
     const grounding: GroundingDefinition = {
       id: uid,
       label,
@@ -1812,6 +1834,7 @@ export class CommandResolver {
       direction,
       bodyTemplate: bodyTemplate ?? undefined,
       templateRef: templateRef ?? undefined,
+      cloneTargetBody: cloneTargetBody || undefined,
     };
 
     if (inputSchema) {
@@ -2394,6 +2417,13 @@ export class CommandResolver {
     switch (resolverId) {
       case "today":
         return d.toISOString().slice(0, 10);
+      case "tomorrow": {
+        // req 915b20b2 — today + 1 day, YYYY-MM-DD (UTC, consistent with the
+        // `today` case above). Matches the `$tomorrow` registry resolver shape.
+        const t = new Date(d);
+        t.setUTCDate(t.getUTCDate() + 1);
+        return t.toISOString().slice(0, 10);
+      }
       case "todayStart":
         return new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
       case "nowTimestamp":
