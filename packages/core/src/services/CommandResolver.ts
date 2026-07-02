@@ -510,11 +510,15 @@ export class CommandResolver {
   ): Promise<ResolvedCommand[]> {
     // A string is the raw direct prototype ref (public callers); an array is
     // an already-expanded chain (internal resolveForAssetMulti fast path).
-    // Both key deterministically w.r.t. the same store state.
+    // Both key deterministically w.r.t. the same store state. A form prefix +
+    // NUL separator rule out a collision between a raw string ref that
+    // contains "|" (alias-form refs) and a joined chain (PR #3804 review).
     const protoKey =
       typeof prototypeIRI === "string"
-        ? prototypeIRI
-        : (prototypeIRI?.join("|") ?? "");
+        ? `s:${prototypeIRI}`
+        : prototypeIRI
+          ? `c:${prototypeIRI.join("\u0000")}`
+          : "";
     const cacheKey = `${subjectIRI}:${assetClass}:${protoKey}`;
     const cached = this.cache.get(cacheKey);
     if (cached) return cached;
@@ -2664,12 +2668,18 @@ export class CommandResolver {
    *
    * @param prototypeRef - The target's direct `exo__Asset_prototype` reference
    *   (bare UID, wikilink, or file-IRI form).
-   * @returns `[direct, parent, grandparent, …]` — always non-empty (the
-   *   direct reference itself is element 0, preserving single-hop behavior).
+   * @returns `[direct, parent, grandparent, …]` — the direct reference itself
+   *   is element 0, preserving single-hop behavior. An empty/blank ref yields
+   *   `[]` (no prototype matching — mirrors the legacy falsy-guard skip).
    */
   private async expandPrototypeChain(
     prototypeRef: string,
   ): Promise<readonly string[]> {
+    // Legacy falsy-guard parity: an empty ref must NOT produce a chain [""]
+    // that a pathological `targetPrototype: "[[]]"` binding could match
+    // (PR #3804 review).
+    if (!prototypeRef || !this.normalizeWikilink(prototypeRef)) return [];
+
     const chain: string[] = [prototypeRef];
     const visited = new Set<string>([
       this.normalizeWikilink(prototypeRef).toLowerCase(),
@@ -2688,8 +2698,16 @@ export class CommandResolver {
           subject,
           Namespace.EXO.term("Asset_prototype"),
         );
-      } catch {
-        break; // fail-open: keep the chain built so far
+      } catch (error) {
+        // fail-open: keep the chain built so far, but leave a diagnostic
+        // trail — a silently shortened chain is a silently missing button
+        // (PR #3804 review).
+        this.logger.debug(
+          this.capWarning(
+            `[expandPrototypeChain] store lookup failed at hop ${hop} for '${current}': ${String(error)}`,
+          ),
+        );
+        break;
       }
       if (!parentRef) break;
 
