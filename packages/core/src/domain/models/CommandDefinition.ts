@@ -256,6 +256,23 @@ export interface GroundingDefinition {
    * normalized to a bare UID by the parser).
    */
   readonly templateRef?: string;
+  /**
+   * `create_instance` grounding — when `true`, the new instance's markdown BODY
+   * is cloned from the click-target's ($target) body (frontmatter is NOT copied
+   * — only the body after the leading frontmatter block). Enables an
+   * "iterate this asset" button (e.g. `ems__WaitingCheckTask` «Следующая
+   * итерация», req 915b20b2) to carry the context notes forward across
+   * iterations without a template asset. Disjoint from `body_template`
+   * (which sources a template) and from the reserved `userInput.body`
+   * (which wins when both a non-empty user body and this flag are present).
+   * Domain-agnostic engine primitive — platform-agnostic (reads the target
+   * file via the injected reader; no Node fs), so it holds identically on
+   * desktop and mobile (Desktop↔Mobile Command Parity invariant).
+   *
+   * Authored as the `exocmd__Grounding_cloneTargetBody` RDF triple
+   * (xsd:boolean — `true`/`false`; absent → not cloned).
+   */
+  readonly cloneTargetBody?: boolean;
 }
 
 /**

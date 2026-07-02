@@ -977,6 +977,20 @@ export class GroundingExecutor {
     return `${fmMatch[0]}\n${body}`;
   }
 
+  /**
+   * req 915b20b2 — extract a markdown file's BODY (everything after the leading
+   * frontmatter block), the inverse of {@link replaceBody}. Strips the single
+   * newline that {@link replaceBody} inserts between the frontmatter fence and
+   * the body, so `extractBody(replaceBody(fm, body)) === body`. When the content
+   * has no leading frontmatter block, the whole content IS the body. Used by
+   * `create_instance` `cloneTargetBody` to carry the $target body forward.
+   */
+  private static extractBody(content: string): string {
+    const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---/);
+    if (!fmMatch) return content;
+    return content.slice(fmMatch[0].length).replace(/^\r?\n/, "");
+  }
+
   private async executeCreateInstance(
     grounding: GroundingDefinition,
     targetIRI: string,
@@ -994,6 +1008,10 @@ export class GroundingExecutor {
     // `grounding.inheritanceRule.length > 0` (RFC 32445c1c); now also needed
     // by Universal Default Template's `$target.property(isDefinedBy)` etc.
     let targetFm: Record<string, string | string[]> | null = null;
+    // req 915b20b2 — target BODY clone: captured from the same single read as
+    // targetFm when `cloneTargetBody` is set (empty string if the target has no
+    // body). `null` = not requested / not read.
+    let targetBody: string | null = null;
     const needsTargetRead =
       (grounding.inheritanceRule && grounding.inheritanceRule.length > 0) ||
       (grounding.propertyDefault &&
@@ -1005,7 +1023,9 @@ export class GroundingExecutor {
       // в frontmatter target'а для substituteVariables. Чисто `$nowCompact`
       // или `$today` не требуют target read, поэтому проверяем dotted-form.
       (grounding.labelTemplate !== undefined &&
-        /\$target\./.test(grounding.labelTemplate));
+        /\$target\./.test(grounding.labelTemplate)) ||
+      // req 915b20b2 — target body clone needs the target file content too.
+      grounding.cloneTargetBody === true;
     if (needsTargetRead && targetIRI && targetFilePath) {
       let targetContent: string;
       try {
@@ -1017,6 +1037,9 @@ export class GroundingExecutor {
         };
       }
       targetFm = this.frontmatterService.parseObject(targetContent) ?? null;
+      if (grounding.cloneTargetBody) {
+        targetBody = GroundingExecutor.extractBody(targetContent);
+      }
     }
 
     // RFC 727572d2 — Resolve grounding's targetClass to canonical UID once
@@ -1167,10 +1190,24 @@ export class GroundingExecutor {
     // uses — to splice the body after the just-built frontmatter. Absent/empty
     // → frontmatter-only content (current behavior; the plugin inline button
     // simply never passes `body`, so zero regression).
+    //
+    // req 915b20b2 — `cloneTargetBody`: when the grounding asks to clone the
+    // click-target's body AND no explicit non-empty `userInput.body` was passed,
+    // splice the captured `targetBody` (empty target body → frontmatter-only, no
+    // spurious content). Precedence: explicit userInput.body > cloned target
+    // body > empty. Frontmatter is never copied — only the markdown body.
     const rawBody = userInput?.body;
-    const finalContent =
+    const bodyToWrite =
       typeof rawBody === "string" && rawBody.length > 0
-        ? GroundingExecutor.replaceBody(content, rawBody)
+        ? rawBody
+        : grounding.cloneTargetBody &&
+            typeof targetBody === "string" &&
+            targetBody.length > 0
+          ? targetBody
+          : null;
+    const finalContent =
+      bodyToWrite !== null
+        ? GroundingExecutor.replaceBody(content, bodyToWrite)
         : content;
 
     await this.fileWriter.createFile(filePath, finalContent);

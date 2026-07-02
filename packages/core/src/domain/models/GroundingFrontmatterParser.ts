@@ -114,6 +114,13 @@ export function parseGroundingDefinitionFromFrontmatter(
     ? normalizeGroundingRef(rawTemplateRef)
     : undefined;
 
+  // `create_instance` target-body clone flag (req 915b20b2). Tolerates the
+  // YAML boolean `true` and the string literal `"true"` (vault serialisers may
+  // emit either); anything else → not cloned.
+  const rawCloneTargetBody = fm["exocmd__Grounding_cloneTargetBody"];
+  const cloneTargetBody =
+    rawCloneTargetBody === true || rawCloneTargetBody === "true";
+
   return {
     id: uid,
     label: (fm["exo__Asset_label"] as string) ?? "",
@@ -144,6 +151,7 @@ export function parseGroundingDefinitionFromFrontmatter(
       | undefined,
     bodyTemplate: fm["exocmd__Grounding_bodyTemplate"] as string | undefined,
     templateRef,
+    cloneTargetBody,
     steps,
   };
 }

@@ -16,6 +16,7 @@ import {
   TASK_DEFAULT_WORKFLOW,
 } from "../domain/defaults/DefaultWorkflows";
 import { CLASS_UID_TO_LABEL } from "../domain/constants/WorkflowClassUids";
+import { iriToObsidianName } from "../utilities/iriToObsidianName";
 
 /**
  * Resolves WorkflowDefinitions from vault assets stored in an ITripleStore.
@@ -30,6 +31,10 @@ import { CLASS_UID_TO_LABEL } from "../domain/constants/WorkflowClassUids";
 @injectable()
 export class WorkflowResolver {
   private readonly cache = new Map<string, WorkflowDefinition>();
+
+  /** req 915b20b2 — bound on the subclass-workflow ancestry BFS (cycle guard +
+   * pathological-depth backstop). Real class chains are ≤ ~4 deep. */
+  private static readonly MAX_HIERARCHY_DEPTH = 16;
 
   constructor(private readonly tripleStore: ITripleStore) {}
 
@@ -128,6 +133,17 @@ export class WorkflowResolver {
       }
     }
 
+    // 2.5. Subclass inheritance (req 915b20b2) — a class that is a transitive
+    //   subClass (via `exo__Class_superClass`) of a built-in Task/Project/Meeting
+    //   inherits that built-in's workflow. This makes the standard status
+    //   buttons (start-effort / mark-done / move-to-backlog `workflow_transition`
+    //   groundings) work on ANY Task subclass — e.g. `ems__WaitingCheckTask` —
+    //   which previously resolved `null` (only the exact built-in three matched)
+    //   and silently no-op'd. Data-driven walk over the vault class hierarchy;
+    //   degrades to `null` (benign) on any resolution failure.
+    const inherited = await this.findBuiltInWorkflowByAncestry(classRefs);
+    if (inherited) return inherited;
+
     // 3. No applicable workflow — benign, NOT an error.
     return null;
   }
@@ -157,6 +173,144 @@ export class WorkflowResolver {
     if (uuidMatch) {
       const label = CLASS_UID_TO_LABEL[uuidMatch[1].toLowerCase()];
       if (label && BUILT_IN.has(label)) return label as AssetClass;
+    }
+    return null;
+  }
+
+  /**
+   * req 915b20b2 — resolve the built-in workflow inherited by a class that is a
+   * transitive subClass (via `exo__Class_superClass`) of Task/Project/Meeting.
+   *
+   * BFS over the vault class hierarchy from each declared class ref. At each
+   * `exo__Class_superClass` parent, {@link iriToObsidianName} maps the parent
+   * IRI — symbolic (`https://exocortex.my/ontology/ems#Task`) OR class-file
+   * (`obsidian://vault/.../<uid>.md`) — to the `ems__Task` / `<uid>` form
+   * {@link classRefToBuiltInClass} understands. A parent that IS built-in wins
+   * immediately; otherwise the parent is mapped back to its class-file IRI (the
+   * BFS-walkable subject form — symbolic IRIs are not themselves subjects of
+   * `exo__Class_superClass` triples) and enqueued. Cycle-safe (visited Set on
+   * file IRIs), depth-bounded, and consumes only the triple store. Returns
+   * `null` (benign) when no built-in ancestor exists or any lookup fails.
+   */
+  private async findBuiltInWorkflowByAncestry(
+    classRefs: readonly string[],
+  ): Promise<WorkflowDefinition | null> {
+    try {
+      const visited = new Set<string>();
+      let frontier: IRI[] = [];
+      for (const ref of classRefs) {
+        const fileIRI = await this.resolveClassFileIRI(ref);
+        if (fileIRI) frontier.push(fileIRI);
+      }
+      let depth = 0;
+      while (frontier.length > 0 && depth < WorkflowResolver.MAX_HIERARCHY_DEPTH) {
+        const next: IRI[] = [];
+        for (const fileIRI of frontier) {
+          if (visited.has(fileIRI.value)) continue;
+          visited.add(fileIRI.value);
+          const parentTriples = await this.tripleStore.match(
+            fileIRI,
+            Namespace.EXO.term("Class_superClass"),
+            undefined,
+          );
+          for (const triple of parentTriples) {
+            const obj = triple.object;
+            if (!(obj instanceof IRI)) continue;
+            const parentName = iriToObsidianName(obj.value);
+            if (parentName) {
+              const builtIn = this.classRefToBuiltInClass(parentName);
+              if (builtIn !== null) return this.resolveForClass(builtIn);
+            }
+            // Map the parent to its class-file IRI subject to walk further up.
+            const parentFileIRI = obj.value.startsWith("obsidian://vault/")
+              ? obj
+              : parentName
+                ? await this.resolveClassFileIRI(parentName)
+                : null;
+            if (parentFileIRI && !visited.has(parentFileIRI.value)) {
+              next.push(parentFileIRI);
+            }
+          }
+        }
+        frontier = next;
+        depth++;
+      }
+      return null;
+    } catch {
+      // Benign: any resolution failure degrades to "no subclass workflow".
+      return null;
+    }
+  }
+
+  /**
+   * req 915b20b2 — resolve a class ref (`"[[<uid>]]"`, `"<uid>"`,
+   * `"<uid>|<label>"`, or bare `"<label>"`) to the class-file IRI subject under
+   * which its `exo__Class_superClass` triples are stored. `null` when unknown.
+   */
+  private async resolveClassFileIRI(classRef: string): Promise<IRI | null> {
+    const norm = this.normalizeWikilink(classRef);
+    const uuidMatch = norm.match(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+    );
+    if (uuidMatch) return this.findSubjectByUID(uuidMatch[0]);
+    const bare = norm.includes("|")
+      ? (norm.split("|").pop() ?? "").trim()
+      : norm.trim();
+    if (!bare) return null;
+    const uid = await this.findUidByLabel(bare);
+    if (!uid) return null;
+    return this.findSubjectByUID(uid);
+  }
+
+  /**
+   * req 915b20b2 — find the subject IRI of the asset whose `exo__Asset_uid`
+   * equals `uid`. Prefers the optional optimized UUID index; falls back to a
+   * literal scan. Mirrors {@link CommandResolver}'s resolver (self-contained
+   * here to keep WorkflowResolver dependency-free).
+   */
+  private async findSubjectByUID(uid: string): Promise<IRI | null> {
+    if (this.tripleStore.findSubjectsByUUID) {
+      const subjects = await this.tripleStore.findSubjectsByUUID(uid);
+      if (subjects.length > 0) return subjects[0] as IRI;
+    }
+    const uidTriples = await this.tripleStore.match(
+      undefined,
+      Namespace.EXO.term("Asset_uid"),
+      undefined,
+    );
+    for (const triple of uidTriples) {
+      if (triple.object instanceof Literal && triple.object.value === uid) {
+        return triple.subject as IRI;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * req 915b20b2 — resolve a class label (`ems__WaitingCheckTask`) to the
+   * `exo__Asset_uid` of the asset that carries it. `null` when unknown.
+   */
+  private async findUidByLabel(label: string): Promise<string | null> {
+    const labelTriples = await this.tripleStore.match(
+      undefined,
+      Namespace.EXO.term("Asset_label"),
+      undefined,
+    );
+    for (const triple of labelTriples) {
+      if (
+        triple.object instanceof Literal &&
+        triple.object.value === label &&
+        triple.subject instanceof IRI
+      ) {
+        const uidTriples = await this.tripleStore.match(
+          triple.subject,
+          Namespace.EXO.term("Asset_uid"),
+          undefined,
+        );
+        if (uidTriples.length > 0 && uidTriples[0].object instanceof Literal) {
+          return uidTriples[0].object.value;
+        }
+      }
     }
     return null;
   }
