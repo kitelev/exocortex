@@ -54,6 +54,7 @@ The following v15 verbs were **removed**: `batch`, `batch-repair`, `command`, `d
 | [`resolve`](#resolve)                     | Resolve a UUID (full or partial) to a file path                                    |
 | [`workflow`](#workflow)                   | List / show / validate workflow definitions                                        |
 | [`recover`](#recover)                     | Detect and recover orphaned claude-child tmux sessions                             |
+| [`scaffold`](#scaffold)                   | Scaffold homoiconic configuration assets (validation-check settings)               |
 | [`audit`](#audit)                         | Regression-pattern audits (`co-location`, `ontology-imports`)                      |
 | [`apply-profile`](#apply-profile)         | Apply an `exo__Profile` (mount-state filesystem mutation)                          |
 | [`bootstrap`](#bootstrap)                 | Bootstrap a vault with the SDK floor AssetSpace                                    |
@@ -62,6 +63,7 @@ The following v15 verbs were **removed**: `batch`, `batch-repair`, `command`, `d
 | [`exosync`](#exosync)                     | Sync / pull / push the materialized AssetSpace set over the GitHub REST API        |
 | [`exosync-parity`](#exosync-parity)       | Read-only ExoSync divergence report (M1/M2 parity check)                           |
 | [`resolve-deps`](#resolve-deps)           | Resolve an AssetSpace's transitive `dependsOn` closure from the registry (CI gate) |
+| [`requirements`](#requirements)           | Requirements↔test traceability checker (RFC 0003)                                  |
 
 ---
 
@@ -385,6 +387,22 @@ npx @kitelev/exocortex-cli recover --apply --vault ~/vault-2025
 | `--dry-run`      | —                                    | List orphans without applying changes (default behavior) |
 | `--apply`        | off                                  | Apply recovery: set Failed + kill the tmux session       |
 
+### scaffold
+
+Scaffold homoiconic configuration assets. Currently exposes one subcommand, `validation-settings`, which materializes the four validation-check `setting__Setting` instances (`uid-uniqueness=true`, the rest `false`) co-located in the chosen ontology's folder, so `validate vault` has an enabled-set to read (RFC f402002b).
+
+```bash
+npx @kitelev/exocortex-cli scaffold validation-settings \
+  --vault ~/vault-2025 \
+  --ontology <ontology-uid>
+```
+
+| Option             | Default      | Description                                                           |
+| ------------------ | ------------ | --------------------------------------------------------------------- |
+| `--vault <path>`   | **required** | Vault root directory                                                  |
+| `--ontology <uid>` | **required** | UID of the ontology whose folder the check settings are co-located in |
+| `--output <type>`  | `text`       | Response format: `text` \| `json`                                     |
+
 ---
 
 ## Vault Management Commands
@@ -547,6 +565,24 @@ npx @kitelev/exocortex-cli resolve-deps \
 | `--self <id>`       | **required** | Identity of the calling repo: an `owner/repo` slug (matches GitHub's `github.repository`), a full git URL, or a bare namespace |
 | `--format <type>`   | `urls`       | Output format: `urls` (one clone URL per line) or `json` (full diagnostics)                                                    |
 | `--strict`          | off          | Exit non-zero (`2`) when `self` is not registered, instead of validating standalone                                            |
+
+### requirements
+
+Requirements-management tooling (RFC 0003). The `requirements audit` subcommand checks requirement↔test traceability — orphan requirements, dangling `@req:<uid>` tags, duplicate bindings, the binding-class floor, coverage, and P0 ramp-readiness. Used by the `requirements-trace` CI job.
+
+```bash
+npx @kitelev/exocortex-cli requirements audit \
+  --reqs ./exoas-exo-reqs \
+  --tests .
+```
+
+| Option            | Default      | Description                                                                            |
+| ----------------- | ------------ | -------------------------------------------------------------------------------------- |
+| `--reqs <path>`   | **required** | Directory tree containing `req__Requirement` assets (a vault or a reqs assetspace)     |
+| `--tests <path>`  | `.`          | Test-corpus root scanned for `@req:<uid>` tags                                         |
+| `--output <type>` | `text`       | Response format: `text` \| `json`                                                      |
+| `--strict`        | off          | Also exit `1` on orphan requirements                                                   |
+| `--gate <mode>`   | `soft`       | Gate mode: `soft` (warn only) \| `hard` (also block when the P0 checklist isn't ready) |
 
 ---
 
