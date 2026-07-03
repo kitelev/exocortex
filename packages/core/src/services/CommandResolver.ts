@@ -2460,7 +2460,13 @@ export class CommandResolver {
     const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
     switch (resolverId) {
       case "today":
-        return d.toISOString().slice(0, 10);
+        // req 5c47471a / #3807 — today's LOCAL calendar day, YYYY-MM-DD.
+        // The former UTC form (`d.toISOString().slice(0,10)`) mis-fired just
+        // after local midnight in a UTC+N timezone to YESTERDAY's local date.
+        // Local `getFullYear()/getMonth()/getDate()` mirrors the registry
+        // resolvers `date` (makeDateResolver(0)) and `tomorrow` (#3806), so
+        // `$today` and `$date` now agree on the local calendar day.
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
       case "tomorrow": {
         // req 915b20b2 / FIX-2 — the next LOCAL calendar day, YYYY-MM-DD.
         // Vision Lock 5: `$tomorrow` is a soft daily tickler that must advance
