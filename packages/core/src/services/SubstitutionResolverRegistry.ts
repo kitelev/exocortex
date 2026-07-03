@@ -345,8 +345,17 @@ function makeDateResolver(
  * may call {@link clearResolvers} first to start from empty state.
  */
 export function installDefaultResolvers(): void {
-  // -- Existing tokens (legacy parity) — modifier-UNAWARE, untouched --
-  registerResolver("today", () => new Date().toISOString().slice(0, 10));
+  // -- Existing tokens (legacy parity) — modifier-UNAWARE --
+  // req 5c47471a / #3807 — `today` returns today's LOCAL calendar day. The
+  // former UTC form (`toISOString().slice(0,10)`) mis-fired just after local
+  // midnight in a UTC+N timezone to YESTERDAY's local date and disagreed with
+  // the already-local `$date` resolver. Local getters match `$date`/`$tomorrow`
+  // (no hardcoded timezone). Kept modifier-UNAWARE (no `makeDateResolver`) to
+  // preserve the documented `isResolverModifierAware("today") === false`.
+  registerResolver("today", () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  });
   registerResolver("todayStart", () =>
     new Date(new Date().setHours(0, 0, 0, 0)).toISOString(),
   );
