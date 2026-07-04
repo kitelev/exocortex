@@ -171,8 +171,10 @@ const GROUNDING: GroundingDefinition = {
   ],
 };
 
-// Frozen clock → deterministic "today" = 2026-06-28 (UTC date slice, matching
-// the $today token source). 08:00Z is mid-day Almaty, so no UTC date-edge.
+// Frozen clock → deterministic "today" = 2026-06-28. 12:00Z = 17:00 Asia/Almaty
+// (UTC+5), maximally clear of BOTH the local and the UTC midnight edges — max
+// tz-headroom so the now-local `$today` (DateFormatter.toDateString, #3809) and
+// the UTC date agree here regardless of the port runner's timezone (#3811).
 const FROZEN_TODAY = "2026-06-28";
 
 // ---------------------------------------------------------------------------
@@ -203,7 +205,7 @@ describe(`Integration: create_instance prototype-time propagation (ec15f83e) ${R
     await fs.createFile(PROTO_BAD_TIME_PATH, PROTO_BAD_TIME);
     const serviceRegistry = new ServiceRegistry();
     groundingExecutor = new GroundingExecutor(fs, fs, serviceRegistry, undefined, {
-      clock: frozenClock(`${FROZEN_TODAY}T08:00:00Z`),
+      clock: frozenClock(`${FROZEN_TODAY}T12:00:00Z`),
     });
   });
 

@@ -1,4 +1,5 @@
 import { Setting } from "obsidian";
+import { DateFormatter } from "@kitelev/exocortex-core";
 import type { DatePropertyFieldProps, ValidationResult } from "./types";
 
 /**
@@ -100,7 +101,11 @@ export class DatePropertyField {
     try {
       const date = new Date(value);
       if (!isNaN(date.getTime())) {
-        return date.toISOString().split("T")[0];
+        // #3811 — derive the LOCAL calendar day (via DateFormatter.toDateString)
+        // so a near-midnight datetime value doesn't slide the date-input prefill
+        // to the previous UTC day in a UTC+N timezone. The former
+        // `toISOString().split("T")[0]` produced the UTC day.
+        return DateFormatter.toDateString(date);
       }
     } catch {
       // Fall through
@@ -191,13 +196,6 @@ export class DatePropertyField {
     if (this.inputEl) {
       this.inputEl.focus();
     }
-  }
-
-  /**
-   * Get today's date in ISO format.
-   */
-  static today(): string {
-    return new Date().toISOString().split("T")[0];
   }
 
   /**

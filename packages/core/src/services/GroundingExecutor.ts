@@ -2004,7 +2004,10 @@ export class GroundingExecutor {
    * - $todayStart → today at local midnight (YYYY-MM-DDT00:00:00, no TZ) —
    *   matches `DateFormatter.getTodayStartTimestamp()`. A declarative
    *   `property_set` with `$todayStart` is byte-identical to the legacy
-   *   `planOnToday` service_call output (removed in Issue #3136).
+   *   `planOnToday` service_call output (removed in Issue #3136). #3811 aligned
+   *   the SubstitutionToken `$todayStart` (registry + CommandResolver parse-time)
+   *   to this same timezone-naive shape — the former Z-instant form
+   *   (`...T00:00:00.000Z`) is gone, so all three `$todayStart` paths agree.
    * - $targetFolder → parent folder (vault-relative) of the $target file.
    *   Resolves to empty string when target is at the vault root. Available
    *   only when callers pass `targetFilePath`; fail-fast otherwise.
