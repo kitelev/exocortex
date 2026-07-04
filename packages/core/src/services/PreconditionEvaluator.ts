@@ -89,12 +89,77 @@ export class PreconditionEvaluator {
     targetIRI: string,
     context?: EvalContext,
   ): Promise<boolean> {
-    // No precondition = always available
+    // No precondition = always available (top-level fail-open boundary).
     if (!precondition) return true;
 
-    // SPARQL ASK evaluation (inline body — legacy path)
+    // Render-scoped result memo (onto-RFC df602adc — SPARQL-M). Keyed by
+    // `sparqlAsk` (targetIRI is invariant per memo), lives ONLY for THIS command's
+    // availability check — so a leaf reused across sub-branches of the composite
+    // tree (the reuse the composite feature introduces — e.g. a factored-out
+    // "не-прототип" ASK referenced by both an `all` and a `not` branch) executes
+    // the SPARQL ASK once, not once per occurrence. Discarded when evaluate()
+    // returns → zero cross-render staleness (the store cannot change mid-tree),
+    // and fully independent from the day-aware `askCache` compile cache (#3819).
+    const memo = new Map<string, Promise<boolean>>();
+    return this.evaluateNode(precondition, targetIRI, context, memo);
+  }
+
+  /**
+   * Recursive precondition evaluator (onto-RFC df602adc — способ A). Handles the
+   * boolean-combinator tree BEFORE the terminal atomic dispatch:
+   *   - `broken` sentinel → `false` (fail-CLOSED — an unresolvable/cyclic/
+   *     malformed child hides the command);
+   *   - `composite {op:'all'}` → every child true; empty list → `false`;
+   *   - `composite {op:'any'}` → some child true; empty list → `false`;
+   *   - `not` → negation of the single child;
+   *   - otherwise the existing atomic dispatch (sparqlAsk / query / hostFunction)
+   *     and the terminal `return true` (an atomic with no eval source is
+   *     fail-OPEN — unchanged from the pre-composite behaviour).
+   *
+   * Children are evaluated concurrently (`Promise.all`) and share the render
+   * memo, so a reused atomic leaf runs its ASK once even across parallel
+   * branches.
+   */
+  private async evaluateNode(
+    precondition: PreconditionDefinition,
+    targetIRI: string,
+    context: EvalContext | undefined,
+    memo: Map<string, Promise<boolean>>,
+  ): Promise<boolean> {
+    // Broken child sentinel — fail-closed (command hidden).
+    if (precondition.broken) return false;
+
+    // AND / OR combinator.
+    if (precondition.composite) {
+      const { op, children } = precondition.composite;
+      // Empty combinator → fail-closed (an `all`/`any` with no children can't be
+      // "satisfied" in a meaningful way; matches the RFC's fail-closed default).
+      if (children.length === 0) return false;
+      const results = await Promise.all(
+        children.map((child) =>
+          this.evaluateNode(child, targetIRI, context, memo),
+        ),
+      );
+      return op === "all" ? results.every(Boolean) : results.some(Boolean);
+    }
+
+    // NOT combinator.
+    if (precondition.not) {
+      return !(await this.evaluateNode(
+        precondition.not,
+        targetIRI,
+        context,
+        memo,
+      ));
+    }
+
+    // SPARQL ASK evaluation (inline body — legacy path), memoized per render.
     if (precondition.sparqlAsk) {
-      return this.evaluateSparqlAsk(precondition.sparqlAsk, targetIRI);
+      return this.evaluateSparqlAskMemoized(
+        precondition.sparqlAsk,
+        targetIRI,
+        memo,
+      );
     }
 
     // exoql__Query reference (RFC c78cc5c8 Phase 1a) — resolve body
@@ -115,6 +180,32 @@ export class PreconditionEvaluator {
     }
 
     return true;
+  }
+
+  /**
+   * Render-scoped memoized wrapper over {@link evaluateSparqlAsk}. Caches the
+   * in-flight PROMISE (not the resolved boolean) keyed by `sparqlAsk` (targetIRI
+   * is constant across one memo — see below), so concurrent siblings in one
+   * composite tree that reference the same atomic leaf await ONE execution.
+   * Cross-tree/cross-render calls each get a fresh memo (see {@link evaluate}) →
+   * no staleness.
+   */
+  private evaluateSparqlAskMemoized(
+    sparqlAsk: string,
+    targetIRI: string,
+    memo: Map<string, Promise<boolean>>,
+  ): Promise<boolean> {
+    // Keyed by `sparqlAsk` ALONE — collision-free with no separator, because
+    // `targetIRI` is INVARIANT across a single render memo: one memo is created
+    // per top-level `evaluate()` call and `targetIRI` is threaded unchanged
+    // through the whole `evaluateNode` recursion, so every leaf in this tree is
+    // evaluated against the same target. Distinct commands / targets each get a
+    // fresh memo (see {@link evaluate}).
+    const cached = memo.get(sparqlAsk);
+    if (cached !== undefined) return cached;
+    const pending = this.evaluateSparqlAsk(sparqlAsk, targetIRI);
+    memo.set(sparqlAsk, pending);
+    return pending;
   }
 
   private async evaluateQueryRef(

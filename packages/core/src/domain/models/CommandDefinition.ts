@@ -58,12 +58,35 @@ export interface CommandDefinition {
  * Domain model for a precondition (RFC-009 Section 4.2.2).
  *
  * Determines WHEN a command button should be visible.
- * Uses SPARQL ASK query evaluated against the target asset.
  *
- * Variables in SPARQL:
+ * A precondition is one of:
+ *   - **atomic** — an evaluation leaf carrying exactly one of `sparqlAsk`,
+ *     `query`, or `hostFunction`;
+ *   - **composite** — a boolean combinator over child preconditions:
+ *     `composite` (AND/OR over `children`) or `not` (a single negated child);
+ *   - **broken** — an explicit fail-closed sentinel for a child precondition
+ *     that could not be resolved (unmounted / cyclic / malformed). Only ever
+ *     appears as a *child* node inside a composite tree.
+ *
+ * onto-RFC df602adc (Composable homoiconic preconditions) — способ A (boolean
+ * composition). The tree is authored entirely in RDF (`exocmd__AllPrecondition`
+ * / `AnyPrecondition` / `NotPrecondition` combinator assets); the engine (this
+ * interface + {@link PreconditionEvaluator}) is a pure recursive interpreter.
+ *
+ * Fail-open/fail-closed boundary (RFC Vision Lock 6):
+ *   - a command with NO precondition → always available (top-level fail-OPEN);
+ *   - a top-level precondition that cannot be resolved → `null` → same fail-open;
+ *   - a broken/empty/cyclic *child* → `false` (fail-CLOSED, command hidden).
+ *
+ * Variables in SPARQL (atomic leaves):
  * - `$target` replaced with IRI of the current asset
  * - `$now` replaced with current timestamp (ISO 8601)
  * - `$user` replaced with IRI of the current user
+ *
+ * The interface uses OPTIONAL fields (not a discriminated union) so adding the
+ * combinator/broken fields is backward-compatible — existing atomic
+ * constructors (`WorkflowCommandAdapter.buildPrecondition`, the loader's atomic
+ * branch) stay valid without touching them.
  */
 export interface PreconditionDefinition {
   /** Asset UID of the precondition */
@@ -80,6 +103,38 @@ export interface PreconditionDefinition {
    * pipeline (allowlist + flag + executor). Mutually exclusive with `sparqlAsk`.
    */
   readonly query?: string;
+  /**
+   * onto-RFC df602adc — AND/OR combinator over child preconditions.
+   * `op: 'all'` (`exocmd__AllPrecondition`) → available iff EVERY child is true;
+   * `op: 'any'` (`exocmd__AnyPrecondition`) → available iff at least one child
+   * is true. An empty `children` list evaluates to `false` (fail-closed).
+   * Disjoint with {@link not} and the atomic fields — a well-formed node carries
+   * exactly one combinator (enforced at authoring time by the Phase-3 sh:xone
+   * integrity guard; the loader picks all > any > not deterministically).
+   */
+  readonly composite?: {
+    readonly op: "all" | "any";
+    readonly children: readonly PreconditionDefinition[];
+  };
+  /**
+   * onto-RFC df602adc — NOT combinator (`exocmd__NotPrecondition`). Available
+   * iff the single nested child is NOT satisfied. Disjoint with
+   * {@link composite} and the atomic fields.
+   */
+  readonly not?: PreconditionDefinition;
+  /**
+   * onto-RFC df602adc (Impl-HIGH — explicit false-sentinel). Marks a child
+   * precondition that could NOT be loaded — an unresolvable wikilink, a cycle
+   * caught by the loader's visited-set, an over-depth reference, or a malformed
+   * atomic (no `sparqlAsk`/`query`/`hostFunction`). {@link PreconditionEvaluator}
+   * evaluates it to `false` (fail-CLOSED → command hidden).
+   *
+   * ⛔ This is a DISTINCT contract from the loader returning `null`. `null` is
+   * the fail-OPEN top-level boundary (no usable precondition → command shown);
+   * `broken` is the fail-CLOSED child boundary (a sub-precondition is broken →
+   * command hidden). Never conflate the two.
+   */
+  readonly broken?: true;
 }
 
 /**
