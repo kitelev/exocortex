@@ -1,6 +1,7 @@
 {
   "name": "@kitelev/exocortex-core",
   "version": "0.1.0",
+  "private": true,
   "description": "Core business logic for Exocortex knowledge management system",
   "main": "dist/index.js",
   "module": "dist/index.js",
