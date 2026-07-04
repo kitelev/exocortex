@@ -38,6 +38,7 @@ import {
   installDefaultResolvers,
   type ResolverContext,
 } from "../../../src/services/SubstitutionResolverRegistry";
+import { installFakeOffsetDate } from "../../helpers/installFakeOffsetDate";
 
 const CREATE_INSTANCE_TYPE_UID = "4367e2d6-6c92-450a-becb-abce1fb07682";
 const PROP_PLANNED_UID = "7f773e3e-54d0-426b-98c5-5b75d01695cb"; // ems__Effort_plannedStartTimestamp
@@ -61,51 +62,10 @@ async function addLabelled(
   ]);
 }
 
-/**
- * Installs a `Date` subclass simulating a fixed UTC+5 offset at 00:27 local
- * (2026-07-02T19:27:00Z). Local getters = UTC getters of (epoch + offset); UTC
- * getters are inherited. Returns a restore function.
- */
-function installFakeAlmatyDate(): () => void {
-  const RealDate = Date;
-  const OFFSET_MS = 5 * 60 * 60 * 1000; // UTC+5 (Asia/Almaty, no DST)
-  const FIXED_EPOCH = RealDate.parse("2026-07-02T19:27:00Z"); // 00:27 Almaty
-  class FakeAlmatyDate extends RealDate {
-    constructor(...args: unknown[]) {
-      if (args.length === 0) {
-        super(FIXED_EPOCH); // "now" = the fixed boundary instant
-      } else if (args.length === 1) {
-        super(args[0] as number | string | Date);
-      } else {
-        const [y, mo, d = 1, h = 0, mi = 0, s = 0, ms = 0] = args as number[];
-        super(RealDate.UTC(y, mo, d, h, mi, s, ms) - OFFSET_MS);
-      }
-    }
-    private shifted(): Date {
-      return new RealDate(this.getTime() + OFFSET_MS);
-    }
-    override getFullYear(): number {
-      return this.shifted().getUTCFullYear();
-    }
-    override getMonth(): number {
-      return this.shifted().getUTCMonth();
-    }
-    override getDate(): number {
-      return this.shifted().getUTCDate();
-    }
-    override getHours(): number {
-      return this.shifted().getUTCHours();
-    }
-    override getDay(): number {
-      return this.shifted().getUTCDay();
-    }
-  }
-  (globalThis as { Date: DateConstructor }).Date =
-    FakeAlmatyDate as unknown as DateConstructor;
-  return () => {
-    (globalThis as { Date: DateConstructor }).Date = RealDate;
-  };
-}
+// Fixed UTC+5 (Asia/Almaty, no DST) at 2026-07-02T19:27:00Z = 00:27 local
+// (local day 03, UTC day 02) — see the shared installFakeOffsetDate helper.
+const installFakeAlmatyDate = () =>
+  installFakeOffsetDate(5, "2026-07-02T19:27:00Z");
 
 describe("$today resolvers return the LOCAL calendar day (req 5c47471a / #3807)", () => {
   // Parse-time path — production-shape via CommandResolver.loadCommand.

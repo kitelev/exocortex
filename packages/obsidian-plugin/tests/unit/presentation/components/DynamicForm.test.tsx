@@ -3,6 +3,10 @@ import "@testing-library/jest-dom";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { DynamicForm, DynamicFormProps } from "../../../../src/presentation/components/dynamic-form/DynamicForm";
 import type { InputSchemaField } from "../../../../src/presentation/builders/button-groups/DynamicCommandButtonGroupBuilder";
+// Shared tz-simulation helper (canonical copy lives in core tests). Cross-package
+// import keeps the FakeOffsetDate technique deduplicated across the $today revert-
+// verify suites ([[jest-timezone-sensitive-tests]]).
+import { installFakeOffsetDate } from "../../../../../core/tests/helpers/installFakeOffsetDate";
 
 function renderForm(
   schema: InputSchemaField[],
@@ -65,8 +69,10 @@ describe("DynamicForm", () => {
 
   // Feature ec15f83e / req 57b03ab3 — the create-task-instance modal pre-fills
   // its planned-date field with today via the `$today` token in defaultValue.
-  // UTC date slice mirrors the engine's $today basis (GroundingExecutor /
-  // labelTemplate) so the modal date, label, and planned timestamps agree.
+  // The LOCAL date slice (req 26d79c70 / #3809) mirrors the engine's now-local
+  // $today basis (GroundingExecutor.resolveInstanceDate + label-template $today)
+  // so the modal date, label, and planned timestamps agree — see the dedicated
+  // boundary revert-verify describe below for the local-vs-UTC lock.
   describe("$today defaultValue token (req 57b03ab3)", () => {
     beforeEach(() => {
       jest.useFakeTimers();
@@ -102,23 +108,40 @@ describe("DynamicForm", () => {
       expect(screen.getByTestId("field-note")).toHaveValue("$todayish");
     });
 
-    // Locks the load-bearing UTC decision: at an instant where the Almaty
-    // (UTC+5) local date (2026-06-29) differs from the UTC date (2026-06-28),
-    // the resolved value must follow the engine's UTC slice — NOT the local
-    // date — so the modal date, label `$today`, and planned timestamps agree.
-    // `toISOString()` is timezone-independent, so this never flakes on the impl;
-    // it only fails if someone reimplements with local date components.
-    it("@req:57b03ab3 uses the engine's UTC date, not the local-timezone date, across midnight", () => {
-      const prevTz = process.env.TZ;
-      process.env.TZ = "Asia/Almaty";
+  });
+
+  // req 26d79c70 / #3809 — the `$today` prefill must resolve to today's LOCAL
+  // calendar day, matching the now-local engine `$today` (GroundingExecutor +
+  // SubstitutionToken resolvers from #3808). The former `toISOString().slice`
+  // (UTC) prefilled yesterday's local day just after local midnight in a UTC+N
+  // timezone.
+  //
+  // CI-robust ([[jest-timezone-sensitive-tests]]): `process.env.TZ` cannot be
+  // re-tzset at runtime under jest (V8 caches the worker timezone), and the fix
+  // has NO observable effect in a UTC runner — so a `Date` subclass
+  // (installFakeOffsetDate) simulates a fixed UTC+5 (Asia/Almaty, no DST) offset
+  // at 2026-07-02T19:27:00Z = 00:27 local (local day 03, UTC day 02),
+  // independent of the runner's real timezone. Kept in a separate describe with
+  // NO jest fake timers (the subclass IS the clock) to avoid the
+  // fake-timers × Date-subclass interaction. Revert-verify: reverting
+  // resolveDefaultValue to `toISOString().slice(0,10)` resolves "2026-07-02"
+  // (UTC) → RED; the local form → GREEN ("2026-07-03").
+  describe("$today prefill = LOCAL calendar day (req 26d79c70 / #3809)", () => {
+    it("@req:26d79c70-8e39-454c-b07e-a8d9d0ea2b66 prefills today's LOCAL day just after local midnight (UTC still previous day)", () => {
+      const restore = installFakeOffsetDate(5, "2026-07-02T19:27:00Z");
       try {
-        jest.setSystemTime(new Date("2026-06-28T23:30:00Z")); // 04:30 next day in Almaty
+        // Guard: prove the simulated tz is active (else the assertion below
+        // would be vacuous in a UTC-tz runner and silently pass both ways).
+        expect(new Date().getHours()).toBe(0); // 00:27 local (Almaty)
+        expect(new Date().getUTCDate()).toBe(2); // still July 2 in UTC
+
         renderForm([
           { name: "plannedDate", type: "date", defaultValue: "$today" },
         ]);
-        expect(screen.getByTestId("field-plannedDate")).toHaveValue("2026-06-28");
+        // Local today = 2026-07-03; the former UTC form prefilled "2026-07-02".
+        expect(screen.getByTestId("field-plannedDate")).toHaveValue("2026-07-03");
       } finally {
-        process.env.TZ = prevTz;
+        restore();
       }
     });
   });

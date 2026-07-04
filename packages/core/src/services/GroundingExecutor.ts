@@ -1230,18 +1230,23 @@ export class GroundingExecutor {
    * Feature ec15f83e / req 57b03ab3 — the target DATE for a newly-created
    * instance: the reserved `plannedDate` userInput (the plugin modal's date
    * field / the CLI `--date` parameter) when a valid `YYYY-MM-DD`; otherwise
-   * today (same source as the `$today` token — `clock.now()` UTC date slice).
+   * today's LOCAL calendar day (req 26d79c70 / #3809 — same source and basis as
+   * the `$today` SubstitutionToken and `$date`, which use local `Date` getters).
    * Drives BOTH the date-denoting label (`$today` in the labelTemplate) AND the
-   * planned timestamps, so the two never disagree. `isoNow` lets callers reuse
-   * an already-computed `clock.now().toISOString()` (substituteVariables) to
-   * avoid a second clock read; both code paths resolve `plannedDate` identically.
+   * planned timestamps, so the two never disagree — and, since the prototype
+   * time-of-day at {@link applyPrototypeTimePropagation} is already a local
+   * `"YYYY-MM-DDTHH:MM:SS"`, the DATE and TIME are now both local (the former
+   * UTC date slice made them disagree just after local midnight in a UTC+N
+   * timezone). `nowDate` lets callers reuse an already-computed `clock.now()`
+   * Date (substituteVariables) to avoid a second clock read; both code paths
+   * resolve `plannedDate` identically.
    */
-  private resolveInstanceDate(userInput?: UserInput, isoNow?: string): string {
+  private resolveInstanceDate(userInput?: UserInput, nowDate?: Date): string {
     const explicit = GroundingExecutor.firstScalar(
       userInput?.["plannedDate"] as string | string[] | undefined,
     );
     if (explicit && /^\d{4}-\d{2}-\d{2}$/.test(explicit)) return explicit;
-    return (isoNow ?? this.clock.now().toISOString()).slice(0, 10);
+    return DateFormatter.toDateString(nowDate ?? this.clock.now());
   }
 
   /**
@@ -2027,10 +2032,14 @@ export class GroundingExecutor {
     const nowLocal = DateFormatter.toLocalTimestamp(date);
     // Feature ec15f83e / req 57b03ab3 — `$today` denotes the instance's nominal
     // DAY, which is the chosen target date (reserved `plannedDate` userInput),
-    // defaulting to today. `$now`/`$nowLocal`/`$nowCompact` stay the real clock
-    // time (createdAt etc. unaffected). When no plannedDate is supplied this is
-    // identical to the prior `now.slice(0, 10)` behaviour (zero regression).
-    const today = this.resolveInstanceDate(userInput, now);
+    // defaulting to today's LOCAL calendar day (req 26d79c70 / #3809 — reuse the
+    // already-read `date` so the LOCAL getters slice the same instant as the
+    // rest of this method). `$now`/`$nowLocal`/`$nowCompact` stay the real clock
+    // time (createdAt etc. unaffected).
+    const today = this.resolveInstanceDate(userInput, date);
+    // `$todayStart` = today's local day at midnight, timezone-naive
+    // (YYYY-MM-DDT00:00:00) — matches DateFormatter.getTodayStartTimestamp; now
+    // that `today` is the LOCAL day it is local-day-consistent (req 26d79c70).
     const todayStart = `${today}T00:00:00`;
     // RFC ce27e55d $nowCompact: filename-safe minute-precision form derived
     // from nowLocal slices. nowLocal = "YYYY-MM-DDTHH:mm:ss" → indices 0..10

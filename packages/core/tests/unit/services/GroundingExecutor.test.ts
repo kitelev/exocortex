@@ -637,7 +637,10 @@ describe("GroundingExecutor", () => {
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
 
       expect(result.success).toBe(true);
-      const today = new Date().toISOString().slice(0, 10);
+      // req 26d79c70 / #3809 — `$today` is the LOCAL calendar day (matches the
+      // executor's DateFormatter.toDateString basis), not the UTC slice.
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, {
         plannedStartDate: today,
       });
