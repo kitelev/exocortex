@@ -28,6 +28,15 @@
  * }
  * ```
  *
+ * Limitation (#3811 review): only the LOCAL date/time GETTERS are shifted — the
+ * SETTERS (`setHours`/`setDate`/…), `getTimezoneOffset()`, and `Date`-arithmetic
+ * helpers that mix them (e.g. `DateFormatter.addDays`, `d.setHours(0,0,0,0)`)
+ * are NOT offset-aware and would read the runner's real zone under the fake. So
+ * construct dates via the multi-arg LOCAL constructor (`new Date(y, mo, d - N)`,
+ * interpreted in the simulated zone) and format with local getters
+ * (`DateFormatter.toDateString`) — avoid setter-based mutation inside the fake.
+ * If a suite needs `getTimezoneOffset()`-driven arithmetic, override it too.
+ *
  * @param offsetHours whole-hour offset east of UTC (Asia/Almaty = +5)
  * @param fixedIso    the UTC ISO instant that `new Date()` (no args) returns
  * @returns a restore function that reinstates the real global `Date`
