@@ -26,6 +26,7 @@ import { Triple } from "../../../src/domain/models/rdf/Triple";
 import { IRI } from "../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../src/domain/models/rdf/Literal";
 import { Namespace } from "../../../src/domain/models/rdf/Namespace";
+import { installFakeOffsetDate } from "../../helpers/installFakeOffsetDate";
 
 const CREATE_INSTANCE_TYPE_UID = "4367e2d6-6c92-450a-becb-abce1fb07682";
 
@@ -202,43 +203,7 @@ describe("CommandResolver — ems__WaitingCheckTask loader stage (req 915b20b2)"
   // runner's real timezone. Pre-fix resolves to "2026-07-03" (= local TODAY) →
   // RED; post-fix (local getFullYear/getMonth/getDate + 1) → "2026-07-04" GREEN.
   it("resolves $tomorrow to the next LOCAL calendar day just after local midnight (UTC still previous day) @req:bca93bfb-b663-4309-a19e-996de8e526da", async () => {
-    const RealDate = Date;
-    const OFFSET_MS = 5 * 60 * 60 * 1000; // UTC+5 (Asia/Almaty, no DST)
-    const FIXED_EPOCH = RealDate.parse("2026-07-02T19:27:00Z"); // 00:27 Almaty
-    class FakeAlmatyDate extends RealDate {
-      constructor(...args: unknown[]) {
-        if (args.length === 0) {
-          super(FIXED_EPOCH); // "now" = the fixed boundary instant
-        } else if (args.length === 1) {
-          super(args[0] as number | string | Date);
-        } else {
-          // (y, m, d, …) are LOCAL Almaty components → shift to the UTC epoch.
-          const [y, mo, d = 1, h = 0, mi = 0, s = 0, ms = 0] = args as number[];
-          super(RealDate.UTC(y, mo, d, h, mi, s, ms) - OFFSET_MS);
-        }
-      }
-      // Local getters = UTC getters of (epoch + offset); UTC getters inherited.
-      private shifted(): Date {
-        return new RealDate(this.getTime() + OFFSET_MS);
-      }
-      override getFullYear(): number {
-        return this.shifted().getUTCFullYear();
-      }
-      override getMonth(): number {
-        return this.shifted().getUTCMonth();
-      }
-      override getDate(): number {
-        return this.shifted().getUTCDate();
-      }
-      override getHours(): number {
-        return this.shifted().getUTCHours();
-      }
-      override getDay(): number {
-        return this.shifted().getUTCDay();
-      }
-    }
-    (globalThis as { Date: DateConstructor }).Date =
-      FakeAlmatyDate as unknown as DateConstructor;
+    const restore = installFakeOffsetDate(5, "2026-07-02T19:27:00Z");
     try {
       // Guard: prove the simulated tz is active (else the assertion below would
       // be vacuous in a UTC-tz runner and silently pass both ways — fail loud).
@@ -308,7 +273,7 @@ describe("CommandResolver — ems__WaitingCheckTask loader stage (req 915b20b2)"
       // (= local TODAY at this instant) — the bug FIX-2 corrects.
       expect(value).toBe("2026-07-04");
     } finally {
-      (globalThis as { Date: DateConstructor }).Date = RealDate;
+      restore();
     }
   });
 });
