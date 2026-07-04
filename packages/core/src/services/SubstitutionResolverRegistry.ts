@@ -16,6 +16,8 @@
  * RFC 727572d2-194b-4a4d-8a5a-585a1d3bac8e.
  */
 
+import { DateFormatter } from "../utilities/DateFormatter";
+
 /**
  * Runtime context made available to resolver functions. Optional fields permit
  * use in test/CLI harnesses where some context (target frontmatter, grounding
@@ -356,9 +358,15 @@ export function installDefaultResolvers(): void {
     const d = new Date();
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   });
-  registerResolver("todayStart", () =>
-    new Date(new Date().setHours(0, 0, 0, 0)).toISOString(),
-  );
+  // #3811 — `todayStart` returns today's LOCAL day at midnight in the
+  // timezone-naive `YYYY-MM-DDT00:00:00` shape (via
+  // `DateFormatter.getTodayStartTimestamp`), matching the executor's
+  // `$todayStart` (`${today}T00:00:00`) and the effort/timestamp frontmatter
+  // convention. The former `new Date(...setHours(0,0,0,0)).toISOString()` form
+  // emitted a UTC Z-instant (`...T00:00:00.000Z`) — same instant, but a
+  // different string shape that disagreed with the executor form under
+  // lexicographic comparison. Now both `$todayStart` paths share one shape.
+  registerResolver("todayStart", () => DateFormatter.getTodayStartTimestamp());
 
   // -- Date format + offset tokens (Веха 5 — Templater `tp.date.*` parity) --
   // modifier-AWARE: the inline `$token<offset><:format>` suffix is consumed and

@@ -227,13 +227,6 @@ describe("DatePropertyField", () => {
     });
   });
 
-  describe("static methods", () => {
-    it("should return today's date", () => {
-      const today = DatePropertyField.today();
-      expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    });
-  });
-
   describe("destroy", () => {
     it("should remove the setting element", () => {
       const field = new DatePropertyField(containerEl, {

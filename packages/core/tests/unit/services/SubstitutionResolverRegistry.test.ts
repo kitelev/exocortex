@@ -53,6 +53,22 @@ describe("SubstitutionResolverRegistry — RFC 727572d2 Phase A2 vocabulary", ()
     );
   });
 
+  // #3811 — `$todayStart` canon: the registry resolver emits the timezone-naive
+  // `YYYY-MM-DDT00:00:00` shape (via DateFormatter.getTodayStartTimestamp),
+  // matching the executor `$todayStart` (`${today}T00:00:00`), the parse-time
+  // resolver, and the effort/timestamp frontmatter convention. Revert-verify:
+  // the former `new Date(...setHours(0,0,0,0)).toISOString()` emitted a UTC
+  // Z-instant (`...T00:00:00.000Z`) → fails this naive-local shape → RED.
+  describe("todayStart canon (#3811 — naive-local midnight, no Z)", () => {
+    it("resolves to YYYY-MM-DDT00:00:00 (no Z, no millis) @req:ecb90c06-92af-41bd-bb81-1d4510e53fa3", () => {
+      const fn = getResolver("todayStart")!;
+      const value = fn({} as ResolverContext) as string;
+      expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00$/);
+      expect(value).not.toContain("Z");
+      expect(value).not.toContain(".000");
+    });
+  });
+
   describe("targetClassSelf (T1 Create Instance — host IS the class)", () => {
     it("returns a quoted wikilink to the host file's own UID (basename)", () => {
       const fn = getResolver("targetClassSelf")!;

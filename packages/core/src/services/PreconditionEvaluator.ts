@@ -7,6 +7,7 @@ import { ExoQLAlgebraTranslator } from "../infrastructure/sparql/algebra/Algebra
 import { ExoQLQueryExecutor } from "../infrastructure/sparql/executors/QueryExecutor";
 import type { AskOperation } from "../infrastructure/sparql/algebra/AlgebraOperation";
 import { evaluateWithExoEval } from "../exoql/evaluateWithExoEval";
+import { DateFormatter } from "../utilities/DateFormatter";
 import type { IClock } from "./IClock";
 import { liveClock } from "./IClock";
 
@@ -246,70 +247,83 @@ export class PreconditionEvaluator {
   }
 
   /**
-   * Asia/Almaty UTC offset in milliseconds (UTC+5, no DST).
-   */
-  private static readonly ALMATY_OFFSET_MS = 5 * 60 * 60 * 1000;
-
-  /**
    * Substitute custom variables in SPARQL query string.
    * This is TEXT replacement, NOT SPARQL variable binding.
    *
    * Variables:
    * - $target → <targetIRI> (wrapped in angle brackets)
-   * - $now → "2026-03-31T10:00:00.000Z"^^xsd:dateTime
-   * - $today → "2026-03-31"^^xsd:date
-   * - $yesterday → "2026-03-30"^^xsd:date (Asia/Almaty)
-   * - $thisWeekStart → "2026-03-30"^^xsd:date (Monday, Asia/Almaty)
-   * - $lastWeekStart → "2026-03-23"^^xsd:date (prev Monday, Asia/Almaty)
-   * - $thisMonthStart → "2026-03-01"^^xsd:date (Asia/Almaty)
-   * - $lastMonthStart → "2026-02-01"^^xsd:date (Asia/Almaty)
-   * - $thisYearStart → "2026-01-01"^^xsd:date (Asia/Almaty)
+   * - $now → "2026-03-31T10:00:00.000Z"^^xsd:dateTime (UTC instant)
+   * - $today → "2026-03-31"^^xsd:date (LOCAL calendar day)
+   * - $yesterday → "2026-03-30"^^xsd:date (LOCAL)
+   * - $thisWeekStart → "2026-03-30"^^xsd:date (Monday, LOCAL)
+   * - $lastWeekStart → "2026-03-23"^^xsd:date (prev Monday, LOCAL)
+   * - $thisMonthStart → "2026-03-01"^^xsd:date (LOCAL)
+   * - $lastMonthStart → "2026-02-01"^^xsd:date (LOCAL)
+   * - $thisYearStart → "2026-01-01"^^xsd:date (LOCAL)
+   *
+   * All calendar-date tokens derive from ONE shared LOCAL wall-clock day
+   * (`DateFormatter.toDateString` / local `Date` getters + plain local
+   * `new Date(y, mo, d - N)` arithmetic), consistent with the rest of the
+   * `$today` family (#3806/#3808/#3809). `$now` stays a UTC `xsd:dateTime`
+   * instant — an instant is timezone-absolute.
+   *
+   * Formerly `$today` was sliced from `clock.now().toISOString()` (UTC) while
+   * its sibling tokens derived from a hardcoded `ALMATY_OFFSET_MS` local shift,
+   * so between local midnight and 05:00 Asia/Almaty `$today` equalled
+   * `$yesterday` (internally absurd) and any visibility precondition comparing
+   * an asset date against `$today` mis-fired at the boundary (#3811). Now every
+   * token shares one local basis — no hardcoded timezone, portable, and
+   * internally consistent.
    */
   substituteVariables(query: string, targetIRI: string): string {
-    const utcNow = this.clock.now();
-    const now = utcNow.toISOString();
-    const today = now.slice(0, 10);
+    const now = this.clock.now();
+    const nowIso = now.toISOString();
 
-    // Compute Almaty-local date components
-    const almatyNow = new Date(utcNow.getTime() + PreconditionEvaluator.ALMATY_OFFSET_MS);
-    const almatyYear = almatyNow.getUTCFullYear();
-    const almatyMonth = almatyNow.getUTCMonth(); // 0-based
-    const almatyDate = almatyNow.getUTCDate();
-    const almatyDay = almatyNow.getUTCDay(); // 0=Sun
+    // ONE local wall-clock day basis (system timezone) for every calendar-date
+    // token — no hardcoded offset. `DateFormatter.toDateString` and the
+    // `new Date(y, mo, d - N)` arithmetic below all read/write local components.
+    const year = now.getFullYear();
+    const month = now.getMonth(); // 0-based
+    const date = now.getDate();
+    const day = now.getDay(); // 0=Sun
+
+    // $today
+    const todayStr = DateFormatter.toDateString(now);
 
     // $yesterday
-    const yesterday = new Date(Date.UTC(almatyYear, almatyMonth, almatyDate - 1));
-    const yesterdayStr = yesterday.toISOString().slice(0, 10);
+    const yesterdayStr = DateFormatter.toDateString(new Date(year, month, date - 1));
 
     // $thisWeekStart (Monday of current week)
-    const daysFromMonday = (almatyDay + 6) % 7; // Mon=0, Tue=1, ..., Sun=6
-    const thisWeekStart = new Date(Date.UTC(almatyYear, almatyMonth, almatyDate - daysFromMonday));
-    const thisWeekStartStr = thisWeekStart.toISOString().slice(0, 10);
+    const daysFromMonday = (day + 6) % 7; // Mon=0, Tue=1, ..., Sun=6
+    const thisWeekStartStr = DateFormatter.toDateString(
+      new Date(year, month, date - daysFromMonday),
+    );
 
     // $lastWeekStart (Monday of previous week)
-    const lastWeekStart = new Date(thisWeekStart.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const lastWeekStartStr = lastWeekStart.toISOString().slice(0, 10);
+    const lastWeekStartStr = DateFormatter.toDateString(
+      new Date(year, month, date - daysFromMonday - 7),
+    );
 
     // $thisMonthStart
-    const thisMonthStartStr = `${almatyYear}-${String(almatyMonth + 1).padStart(2, "0")}-01`;
+    const thisMonthStartStr = `${year}-${String(month + 1).padStart(2, "0")}-01`;
 
     // $lastMonthStart
-    const lastMonthIdx = almatyMonth === 0 ? 11 : almatyMonth - 1;
-    const lastMonthYear = almatyMonth === 0 ? almatyYear - 1 : almatyYear;
+    const lastMonthIdx = month === 0 ? 11 : month - 1;
+    const lastMonthYear = month === 0 ? year - 1 : year;
     const lastMonthStartStr = `${lastMonthYear}-${String(lastMonthIdx + 1).padStart(2, "0")}-01`;
 
     // $thisYearStart
-    const thisYearStartStr = `${almatyYear}-01-01`;
+    const thisYearStartStr = `${year}-01-01`;
 
     return query
       .replace(/\$target/g, `<${targetIRI}>`)
-      .replace(/\$now/g, `"${now}"^^xsd:dateTime`)
+      .replace(/\$now/g, `"${nowIso}"^^xsd:dateTime`)
       .replace(/\$yesterday/g, `"${yesterdayStr}"^^xsd:date`)
       .replace(/\$thisWeekStart/g, `"${thisWeekStartStr}"^^xsd:date`)
       .replace(/\$lastWeekStart/g, `"${lastWeekStartStr}"^^xsd:date`)
       .replace(/\$thisMonthStart/g, `"${thisMonthStartStr}"^^xsd:date`)
       .replace(/\$lastMonthStart/g, `"${lastMonthStartStr}"^^xsd:date`)
       .replace(/\$thisYearStart/g, `"${thisYearStartStr}"^^xsd:date`)
-      .replace(/\$today/g, `"${today}"^^xsd:date`);
+      .replace(/\$today/g, `"${todayStr}"^^xsd:date`);
   }
 }

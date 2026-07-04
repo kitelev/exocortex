@@ -9,6 +9,7 @@ import { GroundingType } from "../domain/constants/GroundingType";
 import { resolveGroundingTypeFromIRI } from "../domain/constants/GroundingTypeUIDs";
 import { utf8ToBase64 } from "../utilities/base64";
 import { iriToObsidianName } from "../utilities/iriToObsidianName";
+import { DateFormatter } from "../utilities/DateFormatter";
 import {
   COMMAND_VARIANT_VALUES,
   LABEL_CLASS_VALUES,
@@ -2480,7 +2481,14 @@ export class CommandResolver {
         return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
       }
       case "todayStart":
-        return new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+        // #3811 — today's LOCAL day at midnight, timezone-naive
+        // `YYYY-MM-DDT00:00:00` (via `DateFormatter.getTodayStartTimestamp`),
+        // matching the executor `$todayStart` (`${today}T00:00:00`), the
+        // registry resolver, and the effort/timestamp frontmatter convention.
+        // The former `new Date(...setHours(0,0,0,0)).toISOString()` emitted a
+        // UTC Z-instant (`...T00:00:00.000Z`) — same instant, different string
+        // shape that disagreed with the executor form.
+        return DateFormatter.getTodayStartTimestamp();
       case "nowTimestamp":
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
       case "nowDate":
