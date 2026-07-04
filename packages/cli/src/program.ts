@@ -38,7 +38,9 @@ export function createProgram(version?: string): Command {
 
   program
     .name("exocortex")
-    .description("CLI tool for Exocortex knowledge management system")
+    .description(
+      "CLI tool for Exocortex knowledge management system - SPARQL queries, task management, and more",
+    )
     .version(version ?? __CLI_VERSION__);
 
   // Five core verbs (RFC 8e83442b)
