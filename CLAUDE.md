@@ -22,7 +22,7 @@
 
 ```
 packages/
-├── exocortex/          # exocortex — core: domain models, RDF, SPARQL, services
+├── core/               # @kitelev/exocortex-core — domain models, RDF, SPARQL, services
 ├── obsidian-plugin/    # @kitelev/exocortex-obsidian-plugin — UI, renderers, commands (consumer)
 ├── cli/                # @kitelev/exocortex-cli — CLI tooling (consumer)
 ├── services/           # @kitelev/exocortex-services — shared grounding-service factories

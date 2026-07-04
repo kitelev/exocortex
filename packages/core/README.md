@@ -1,4 +1,4 @@
-# exocortex
+# @kitelev/exocortex-core
 
 Core engine of the Exocortex knowledge management system: RDF triple store, SPARQL/ExoQL query engine, SHACL-lite validation, vault-declared (homoiconic) commands, GitHub-backed sync, and AssetSpace/profile machinery — all in platform-agnostic TypeScript with **zero Obsidian dependency**.
 
@@ -6,7 +6,7 @@ Platform specifics (Obsidian API, Node `fs`, network transports) are injected th
 
 ## Installation
 
-This is a workspace package of the [exocortex monorepo](../../README.md). It is consumed in-repo by the other packages (`"exocortex": "*"` / `file:../core`), not installed standalone:
+This is a workspace package of the [exocortex monorepo](../../README.md). It is consumed in-repo by the other packages (`"@kitelev/exocortex-core": "*"` / `file:../core`), not installed standalone:
 
 ```bash
 # From the monorepo root
