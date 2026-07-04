@@ -382,6 +382,61 @@ describe("CommandResolver + PreconditionEvaluator — composite preconditions (o
     expect(await loadAndEvaluate()).toBe(false);
   });
 
+  // ---- Fail-closed SURVIVES negation & nesting (three-valued Kleene, HIGH fix) ----
+  // Guards against the value-propagation leak: a naive broken→false would make
+  // not[broken] evaluate to !(false)=true (command SHOWN in the unmounted-
+  // assetspace scenario the sentinel targets). `unknown` must propagate through
+  // `not`/`all`/`any` and collapse to false only at the top.
+  it("not[broken] (unresolvable child) → hidden (false) — fail-closed survives negation @req:4370db77-3df2-48d3-bf20-f439d49fc12e", async () => {
+    // "ghost" NOT in store → broken; not(broken) must stay hidden, NOT !false=true.
+    await addNot(store, "cNot", "ghost-uid-not-in-store");
+    await addCommand(store, "cNot");
+
+    const def = await loadPrecondition();
+    expect(def?.not?.broken).toBe(true); // loader marked the child broken
+    expect(await loadAndEvaluate()).toBe(false); // three-valued: not(unknown)→unknown→false
+  });
+
+  it("not[cycle] → hidden (false) — cyclic child is unknown, negation stays hidden", async () => {
+    // cNot = not[cyc]; cyc = all[cyc] (self-cycle) → visited-set → broken deep inside.
+    await addNot(store, "cNot", "cyc");
+    await addComposite(store, "cyc", "all", ["cyc"]);
+    await addCommand(store, "cNot");
+
+    expect(await loadAndEvaluate()).toBe(false);
+  });
+
+  it("nested not[all[broken, true]] → hidden (false) — a narrow immediate-not patch would NOT catch this", async () => {
+    await addAtomic(store, "t1", askFor("Effort_status")); // true
+    await addComposite(store, "inner", "all", ["ghost-uid", "t1"]); // all[unknown, yes] → unknown
+    await addNot(store, "cNot", "inner");
+    await addCommand(store, "cNot");
+
+    // all(broken, true) = unknown (a naive broken→false gives all(false,true)=false
+    // → not(false)=true → SHOWN, the leak). Three-valued: not(unknown)→unknown→false.
+    expect(await loadAndEvaluate()).toBe(false);
+  });
+
+  it("any[broken, true] → shown (true) — a satisfied branch wins OR (no over-hide/usability regression)", async () => {
+    await addAtomic(store, "t1", askFor("Effort_status")); // true
+    await addComposite(store, "cAny", "any", ["ghost-uid", "t1"]);
+    await addCommand(store, "cAny");
+
+    // OR short-circuits to true on the genuinely-true branch, regardless of the
+    // broken one — proves the fix does NOT poison-propagate (over-hide).
+    expect(await loadAndEvaluate()).toBe(true);
+  });
+
+  it("any[broken, false] → hidden (false) — no true branch, unknown propagates", async () => {
+    await addAtomic(store, "f1", askFor("Effort_startTimestamp")); // false
+    await addComposite(store, "cAny", "any", ["ghost-uid", "f1"]);
+    await addCommand(store, "cAny");
+
+    // any(unknown, no) → unknown → false (hidden): the broken branch might have
+    // been the one to satisfy OR, so we cannot claim availability.
+    expect(await loadAndEvaluate()).toBe(false);
+  });
+
   // ---- Fail-open boundary (top-level) ----
   it("no precondition at all → available (true, fail-open)", async () => {
     await addCommand(store, null);

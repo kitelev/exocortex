@@ -123,16 +123,24 @@ export interface PreconditionDefinition {
    */
   readonly not?: PreconditionDefinition;
   /**
-   * onto-RFC df602adc (Impl-HIGH — explicit false-sentinel). Marks a child
+   * onto-RFC df602adc (Impl-HIGH — explicit fail-closed sentinel). Marks a child
    * precondition that could NOT be loaded — an unresolvable wikilink, a cycle
    * caught by the loader's visited-set, an over-depth reference, or a malformed
-   * atomic (no `sparqlAsk`/`query`/`hostFunction`). {@link PreconditionEvaluator}
-   * evaluates it to `false` (fail-CLOSED → command hidden).
+   * atomic (no `sparqlAsk`/`query`/`hostFunction`).
+   *
+   * {@link PreconditionEvaluator} treats it as a THREE-VALUED (Kleene) `unknown`:
+   * it PROPAGATES through the boolean combinators — `not(broken) = broken`,
+   * `all` becomes `unknown` unless a child is definitively `false`, `any` becomes
+   * `unknown` unless a child is definitively `true` — and is collapsed to
+   * fail-CLOSED (`false` → command hidden) only at the top level. This is what
+   * keeps the fail-closed guarantee alive under negation/nesting: a naive
+   * `broken → false` would leak (`not[broken]` → `!false = true` → shown) in
+   * exactly the unmounted-assetspace scenario this sentinel targets.
    *
    * ⛔ This is a DISTINCT contract from the loader returning `null`. `null` is
    * the fail-OPEN top-level boundary (no usable precondition → command shown);
    * `broken` is the fail-CLOSED child boundary (a sub-precondition is broken →
-   * command hidden). Never conflate the two.
+   * command hidden, and stays hidden through negation). Never conflate the two.
    */
   readonly broken?: true;
 }
