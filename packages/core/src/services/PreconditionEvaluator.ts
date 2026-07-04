@@ -27,6 +27,16 @@ export interface EvalContext {
 export type HostFunction = (context: EvalContext) => boolean;
 
 /**
+ * Three-valued (Kleene) evaluation state for the composite-precondition tree
+ * (onto-RFC df602adc). `"unknown"` models a broken/cyclic/malformed sub-
+ * precondition — an undeterminable branch that PROPAGATES through the boolean
+ * combinators and is collapsed to fail-closed (`false`) only at the top level.
+ * This is what makes the fail-closed guarantee survive negation (`not[broken]`
+ * stays hidden) instead of leaking (`!false = true`).
+ */
+type TriState = "yes" | "no" | "unknown";
+
+/**
  * Evaluates preconditions for dynamic commands (RFC-009 §5.4).
  *
  * Supports two evaluation strategies:
@@ -89,12 +99,105 @@ export class PreconditionEvaluator {
     targetIRI: string,
     context?: EvalContext,
   ): Promise<boolean> {
-    // No precondition = always available
+    // No precondition = always available (top-level fail-open boundary).
     if (!precondition) return true;
 
-    // SPARQL ASK evaluation (inline body — legacy path)
+    // Render-scoped result memo (onto-RFC df602adc — SPARQL-M). Keyed by
+    // `sparqlAsk` (targetIRI is invariant per memo), lives ONLY for THIS command's
+    // availability check — so a leaf reused across sub-branches of the composite
+    // tree (the reuse the composite feature introduces — e.g. a factored-out
+    // "не-прототип" ASK referenced by both an `all` and a `not` branch) executes
+    // the SPARQL ASK once, not once per occurrence. Discarded when evaluate()
+    // returns → zero cross-render staleness (the store cannot change mid-tree),
+    // and fully independent from the day-aware `askCache` compile cache (#3819).
+    const memo = new Map<string, Promise<boolean>>();
+    // Three-valued (Kleene) evaluation, collapsed to fail-CLOSED at the top: an
+    // undeterminable tree (`unknown` — a broken/cyclic/malformed sub-precondition)
+    // hides the command. Only "yes" makes it available.
+    const state = await this.evaluateNode(
+      precondition,
+      targetIRI,
+      context,
+      memo,
+    );
+    return state === "yes";
+  }
+
+  /**
+   * Recursive precondition evaluator (onto-RFC df602adc — способ A), using
+   * THREE-VALUED (Kleene) logic so the fail-closed guarantee survives negation
+   * and nesting. Returns a {@link TriState}:
+   *   - `"unknown"` for a broken/cyclic/malformed sub-precondition (an
+   *     undeterminable branch). It PROPAGATES through the combinators rather than
+   *     collapsing to `"no"`, and is turned into fail-CLOSED (`false`) only at the
+   *     top level by {@link evaluate}. Collapsing broken→`"no"` here would leak
+   *     under `not` — `not[broken]` would become `!false = true` → command shown
+   *     in exactly the unmounted-assetspace scenario the broken sentinel targets.
+   *   - `not(unknown) = unknown`; `not(yes) = no`; `not(no) = yes`.
+   *   - `all`: any `"no"` → `"no"` (a failed child kills AND regardless); else any
+   *     `"unknown"` → `"unknown"`; else `"yes"`. Empty list → `"unknown"`
+   *     (malformed → fail-closed, and survives negation).
+   *   - `any`: any `"yes"` → `"yes"` (a satisfied child wins OR regardless — so
+   *     `any[broken, true]` stays SHOWN, no usability regression); else any
+   *     `"unknown"` → `"unknown"`; else `"no"`. Empty list → `"unknown"`.
+   *   - otherwise the atomic dispatch (sparqlAsk / query / hostFunction) maps
+   *     `boolean → "yes"/"no"`, and the terminal `"yes"` keeps a source-less
+   *     atomic fail-OPEN (unchanged from the pre-composite behaviour).
+   *
+   * Children are evaluated concurrently (`Promise.all`) and share the render
+   * memo, so a reused atomic leaf runs its ASK once even across parallel
+   * branches.
+   */
+  private async evaluateNode(
+    precondition: PreconditionDefinition,
+    targetIRI: string,
+    context: EvalContext | undefined,
+    memo: Map<string, Promise<boolean>>,
+  ): Promise<TriState> {
+    // Broken child sentinel — undeterminable (propagates; fail-closed at top).
+    if (precondition.broken) return "unknown";
+
+    // AND / OR combinator (Kleene).
+    if (precondition.composite) {
+      const { op, children } = precondition.composite;
+      // Empty combinator → undeterminable → fail-closed (and survives `not`).
+      if (children.length === 0) return "unknown";
+      const results = await Promise.all(
+        children.map((child) =>
+          this.evaluateNode(child, targetIRI, context, memo),
+        ),
+      );
+      if (op === "all") {
+        if (results.includes("no")) return "no";
+        if (results.includes("unknown")) return "unknown";
+        return "yes";
+      }
+      // any
+      if (results.includes("yes")) return "yes";
+      if (results.includes("unknown")) return "unknown";
+      return "no";
+    }
+
+    // NOT combinator (Kleene: unknown negates to unknown).
+    if (precondition.not) {
+      const child = await this.evaluateNode(
+        precondition.not,
+        targetIRI,
+        context,
+        memo,
+      );
+      return child === "unknown" ? "unknown" : child === "yes" ? "no" : "yes";
+    }
+
+    // SPARQL ASK evaluation (inline body — legacy path), memoized per render.
     if (precondition.sparqlAsk) {
-      return this.evaluateSparqlAsk(precondition.sparqlAsk, targetIRI);
+      return (await this.evaluateSparqlAskMemoized(
+        precondition.sparqlAsk,
+        targetIRI,
+        memo,
+      ))
+        ? "yes"
+        : "no";
     }
 
     // exoql__Query reference (RFC c78cc5c8 Phase 1a) — resolve body
@@ -102,7 +205,9 @@ export class PreconditionEvaluator {
     // (allowlist + flag + executor). Fail closed if resolver is absent
     // or the query asset cannot be loaded.
     if (precondition.query) {
-      return this.evaluateQueryRef(precondition.query, targetIRI);
+      return (await this.evaluateQueryRef(precondition.query, targetIRI))
+        ? "yes"
+        : "no";
     }
 
     // Host function evaluation
@@ -111,10 +216,39 @@ export class PreconditionEvaluator {
         precondition.hostFunction,
         targetIRI,
         context,
-      );
+      )
+        ? "yes"
+        : "no";
     }
 
-    return true;
+    // Source-less atomic → fail-open (unchanged from pre-composite behaviour).
+    return "yes";
+  }
+
+  /**
+   * Render-scoped memoized wrapper over {@link evaluateSparqlAsk}. Caches the
+   * in-flight PROMISE (not the resolved boolean) keyed by `sparqlAsk` (targetIRI
+   * is constant across one memo — see below), so concurrent siblings in one
+   * composite tree that reference the same atomic leaf await ONE execution.
+   * Cross-tree/cross-render calls each get a fresh memo (see {@link evaluate}) →
+   * no staleness.
+   */
+  private evaluateSparqlAskMemoized(
+    sparqlAsk: string,
+    targetIRI: string,
+    memo: Map<string, Promise<boolean>>,
+  ): Promise<boolean> {
+    // Keyed by `sparqlAsk` ALONE — collision-free with no separator, because
+    // `targetIRI` is INVARIANT across a single render memo: one memo is created
+    // per top-level `evaluate()` call and `targetIRI` is threaded unchanged
+    // through the whole `evaluateNode` recursion, so every leaf in this tree is
+    // evaluated against the same target. Distinct commands / targets each get a
+    // fresh memo (see {@link evaluate}).
+    const cached = memo.get(sparqlAsk);
+    if (cached !== undefined) return cached;
+    const pending = this.evaluateSparqlAsk(sparqlAsk, targetIRI);
+    memo.set(sparqlAsk, pending);
+    return pending;
   }
 
   private async evaluateQueryRef(

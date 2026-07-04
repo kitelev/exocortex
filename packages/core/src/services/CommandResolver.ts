@@ -1300,6 +1300,21 @@ export class CommandResolver {
     );
   }
 
+  /**
+   * Top-level precondition loader (onto-RFC df602adc — способ A).
+   *
+   * Resolves the precondition referenced from `predicate` on `subject`
+   * (`Command_precondition` / `CommandBinding_precondition`) into a — possibly
+   * composite — {@link PreconditionDefinition} tree via
+   * {@link loadPreconditionSubject}.
+   *
+   * Fail-OPEN boundary (unchanged from the pre-composite behaviour): returns
+   * `null` when there is no ref, the ref does not resolve, OR the resolved
+   * top-level precondition is a malformed atomic (no `sparqlAsk`/`query`/
+   * `hostFunction` and no combinator). `null` → `PreconditionEvaluator.evaluate`
+   * treats it as "no precondition" → command SHOWN. A *broken child* deep inside
+   * the tree is fail-CLOSED instead — see {@link loadChildPrecondition}.
+   */
   private async loadLinkedPreconditionFromProperty(
     subject: IRI,
     predicate: IRI,
@@ -1311,62 +1326,142 @@ export class CommandResolver {
     );
     if (refTriples.length === 0) return null;
 
-    const ref = refTriples[0].object;
-    let preconditionSubject: IRI | null = null;
-
-    if (ref instanceof IRI) {
-      preconditionSubject = ref;
-    } else if (ref instanceof Literal) {
-      // Wikilink reference: resolve by UID
-      const uid = this.normalizeWikilink(ref.value);
-      preconditionSubject = await this.findSubjectByUID(uid);
-    }
-
+    const preconditionSubject = await this.resolvePreconditionRef(
+      refTriples[0].object,
+    );
     if (!preconditionSubject) return null;
 
-    const uid = await this.getLiteralValue(
+    // Top-level: a malformed/atomic-without-source precondition yields `null`
+    // (fail-open, backward compatible). Composite/not/valid-atomic yields a
+    // definition; any broken descendants are embedded (fail-closed) inside it.
+    return this.loadPreconditionSubject(
       preconditionSubject,
+      new Set<string>(),
+      0,
+    );
+  }
+
+  /**
+   * Resolve a precondition object reference (IRI or Literal wikilink) to the
+   * referenced precondition asset's IRI subject. Returns `null` when the
+   * reference cannot be resolved (UID not indexed). Mirrors
+   * {@link resolveGroundingRef} for the precondition domain.
+   */
+  private async resolvePreconditionRef(
+    ref: IRI | Literal | unknown,
+  ): Promise<IRI | null> {
+    if (ref instanceof IRI) return ref;
+    if (ref instanceof Literal) {
+      const uid = this.normalizeWikilink(ref.value);
+      return await this.findSubjectByUID(uid);
+    }
+    return null;
+  }
+
+  /**
+   * Recursively load a precondition subject into a (possibly composite) tree.
+   *
+   * Kind is decided by PROPERTY PRESENCE (onto-RFC df602adc — dual-IRI-safe, no
+   * class-IRI walk): `AllPrecondition_preconditions` → `all`;
+   * `AnyPrecondition_preconditions` → `any`; `NotPrecondition_precondition` →
+   * `not`; otherwise atomic. Precedence all > any > not is deterministic (the
+   * Phase-3 sh:xone integrity guard ensures ≤1 combinator per instance, but the
+   * loader must never be ambiguous even for malformed authoring).
+   *
+   * Returns `null` ONLY for a malformed atomic (no combinator property AND no
+   * `sparqlAsk`/`query`/`hostFunction`, or no `Asset_uid`). The caller decides
+   * what `null` means: the top-level entry treats it as fail-OPEN (no
+   * precondition), while {@link loadChildPrecondition} converts it to a broken
+   * node (fail-CLOSED). Cycles (visited-set) and over-depth are returned as
+   * explicit `broken` nodes (fail-CLOSED) regardless of caller.
+   *
+   * @param visited UIDs of ancestor combinator nodes on the current path
+   *   (copy-on-recurse; read-only for the callee) — cycle guard.
+   * @param depth   recursion depth — capped by {@link MAX_TRANSITIVE_DEPTH}.
+   */
+  private async loadPreconditionSubject(
+    subject: IRI,
+    visited: ReadonlySet<string>,
+    depth: number,
+  ): Promise<PreconditionDefinition | null> {
+    const uid = await this.getLiteralValue(
+      subject,
       Namespace.EXO.term("Asset_uid"),
     );
     const label =
       (await this.getLiteralValue(
-        preconditionSubject,
+        subject,
         Namespace.EXO.term("Asset_label"),
       )) ?? "";
+
+    // Cycle / over-depth guards (fail-closed). Only combinator subjects recurse,
+    // but checking here keeps both boundaries in one place. At the top level
+    // (depth 0, empty visited) neither fires.
+    if (uid && visited.has(uid)) return this.brokenPreconditionNode(uid, label);
+    if (depth >= MAX_TRANSITIVE_DEPTH)
+      return this.brokenPreconditionNode(uid ?? "", label);
+
+    const allRefs = await this.tripleStore.match(
+      subject,
+      Namespace.EXOCMD.term("AllPrecondition_preconditions"),
+      undefined,
+    );
+    const anyRefs = await this.tripleStore.match(
+      subject,
+      Namespace.EXOCMD.term("AnyPrecondition_preconditions"),
+      undefined,
+    );
+    const notRefs = await this.tripleStore.match(
+      subject,
+      Namespace.EXOCMD.term("NotPrecondition_precondition"),
+      undefined,
+    );
+
+    if (allRefs.length > 0 || anyRefs.length > 0 || notRefs.length > 0) {
+      const nextVisited = new Set<string>(visited);
+      if (uid) nextVisited.add(uid);
+
+      if (allRefs.length > 0 || anyRefs.length > 0) {
+        const op: "all" | "any" = allRefs.length > 0 ? "all" : "any";
+        const listRefs = allRefs.length > 0 ? allRefs : anyRefs;
+        const children: PreconditionDefinition[] = [];
+        for (const triple of listRefs) {
+          children.push(
+            await this.loadChildPrecondition(
+              triple.object,
+              nextVisited,
+              depth + 1,
+            ),
+          );
+        }
+        return { id: uid ?? "", label, composite: { op, children } };
+      }
+
+      // NotPrecondition — exactly one child (Phase-3 Single cardinality; take
+      // the first defensively if authoring somehow yields more).
+      const child = await this.loadChildPrecondition(
+        notRefs[0].object,
+        nextVisited,
+        depth + 1,
+      );
+      return { id: uid ?? "", label, not: child };
+    }
+
+    // Atomic leaf.
     const sparqlAsk = await this.getLiteralValue(
-      preconditionSubject,
+      subject,
       Namespace.EXOCMD.term("Precondition_sparqlAsk"),
     );
     const hostFunction = await this.getLiteralValue(
-      preconditionSubject,
+      subject,
       Namespace.EXOCMD.term("Precondition_hostFunction"),
     );
-
-    // Precondition_query — wikilink reference to an exoql__Query asset.
-    // Resolved to its UID so PreconditionEvaluator can fetch the body
-    // through the existing asset-loader. RFC c78cc5c8 Phase 1a (T4).
-    const queryRefTriples = await this.tripleStore.match(
-      preconditionSubject,
-      Namespace.EXOCMD.term("Precondition_query"),
-      undefined,
-    );
-    let query: string | undefined = undefined;
-    if (queryRefTriples.length > 0) {
-      const queryRef = queryRefTriples[0].object;
-      if (queryRef instanceof IRI) {
-        const queryUid = await this.getLiteralValue(
-          queryRef,
-          Namespace.EXO.term("Asset_uid"),
-        );
-        if (queryUid) query = queryUid;
-      } else if (queryRef instanceof Literal) {
-        query = this.normalizeWikilink(queryRef.value);
-      }
-    }
+    const query = await this.loadPreconditionQueryRef(subject);
 
     if (!uid) return null;
 
-    // A precondition must have at least one evaluation source.
+    // A concrete atomic precondition must carry at least one evaluation source.
+    // Malformed atomic → null (top-level: fail-open; child: converted to broken).
     if (!sparqlAsk && !hostFunction && !query) return null;
 
     return {
@@ -1376,6 +1471,81 @@ export class CommandResolver {
       ...(hostFunction && { hostFunction }),
       ...(query && { query }),
     };
+  }
+
+  /**
+   * Load a CHILD precondition reference into a node. Unlike the top-level
+   * boundary, a child that cannot be loaded is fail-CLOSED: an unresolvable
+   * ref, a cyclic/over-depth subject, or a malformed atomic all become an
+   * explicit `broken` node (evaluated to `false` → command hidden). A child is
+   * therefore NEVER dropped from a composite's `children` list.
+   */
+  private async loadChildPrecondition(
+    ref: IRI | Literal | unknown,
+    visited: ReadonlySet<string>,
+    depth: number,
+  ): Promise<PreconditionDefinition> {
+    const childSubject = await this.resolvePreconditionRef(ref);
+    if (!childSubject) {
+      // Unresolvable wikilink (UID not indexed / precondition unmounted).
+      const hint =
+        ref instanceof Literal ? this.normalizeWikilink(ref.value) : "";
+      return this.brokenPreconditionNode(hint, "");
+    }
+
+    const def = await this.loadPreconditionSubject(
+      childSubject,
+      visited,
+      depth,
+    );
+    if (def) return def;
+
+    // Malformed atomic child (loadPreconditionSubject returned null) → broken.
+    const uid = await this.getLiteralValue(
+      childSubject,
+      Namespace.EXO.term("Asset_uid"),
+    );
+    return this.brokenPreconditionNode(uid ?? "", "");
+  }
+
+  /**
+   * Resolve `Precondition_query` (wikilink → `exoql__Query` asset UID) so
+   * PreconditionEvaluator can fetch the body through the asset-loader.
+   * RFC c78cc5c8 Phase 1a (T4). Returns `undefined` when no query ref exists.
+   */
+  private async loadPreconditionQueryRef(
+    subject: IRI,
+  ): Promise<string | undefined> {
+    const queryRefTriples = await this.tripleStore.match(
+      subject,
+      Namespace.EXOCMD.term("Precondition_query"),
+      undefined,
+    );
+    if (queryRefTriples.length === 0) return undefined;
+
+    const queryRef = queryRefTriples[0].object;
+    if (queryRef instanceof IRI) {
+      const queryUid = await this.getLiteralValue(
+        queryRef,
+        Namespace.EXO.term("Asset_uid"),
+      );
+      return queryUid ?? undefined;
+    }
+    if (queryRef instanceof Literal) {
+      return this.normalizeWikilink(queryRef.value);
+    }
+    return undefined;
+  }
+
+  /**
+   * Build a fail-closed `broken` sentinel node (onto-RFC df602adc Impl-HIGH).
+   * Distinct from the top-level `null` fail-open boundary.
+   */
+  private brokenPreconditionNode(
+    id: string,
+    label: string,
+  ): PreconditionDefinition {
+    return { id, label, broken: true };
   }
 
   /**
