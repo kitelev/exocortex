@@ -54,7 +54,15 @@ export type HostFunction = (context: EvalContext) => boolean;
 export class PreconditionEvaluator {
   private readonly hostFunctions = new Map<string, HostFunction>();
   private readonly tripleStore: ITripleStore;
-  private readonly askCache = new Map<string, AskOperation>();
+  // Keyed by the RAW sparqlAsk text → at most ONE entry per distinct query (no
+  // per-day accumulation). For temporal-token queries the entry records the LOCAL
+  // day its `$today`/`$now`/… values were compiled for; a day change REPLACES the
+  // entry (the stale-day compiled ASK is overwritten, never leaked). `day` is
+  // null for token-free queries (day-independent, never recompiled). Fixes #3819.
+  private readonly askCache = new Map<
+    string,
+    { readonly day: string | null; readonly compiled: AskOperation }
+  >();
   private readonly queryBodyResolver?: IQueryBodyResolver;
   private readonly clock: IClock;
 
@@ -177,8 +185,8 @@ export class PreconditionEvaluator {
    * Calendar/temporal tokens whose substituted value (see
    * {@link substituteVariables}) changes with the local calendar day. When a
    * `sparqlAsk` contains any of these, the compiled-ASK cache entry must NOT
-   * survive across local midnight — so {@link askCacheKey} folds the local day
-   * into the cache key for such queries.
+   * survive across local midnight, so `evaluateSparqlAsk` scopes the cache
+   * entry to the local day for such queries.
    *
    * `$today`/`$yesterday`/`$this*Start`/`$last*Start` are exactly the date
    * tokens rewritten by `substituteVariables`. `$now` is included deliberately:
@@ -191,26 +199,6 @@ export class PreconditionEvaluator {
    */
   private static readonly TEMPORAL_TOKEN =
     /\$(?:now|today|yesterday|thisWeekStart|lastWeekStart|thisMonthStart|lastMonthStart|thisYearStart)\b/;
-
-  /**
-   * Compute the `askCache` key for a `sparqlAsk`.
-   *
-   * Token-free queries → the raw `sparqlAsk` text (unchanged behaviour: one
-   * compile, reused forever — zero perf regression). Queries containing a
-   * temporal token → the raw text prefixed with the current LOCAL calendar day
-   * (`YYYY-MM-DD` via `DateFormatter.toDateString`), so a compiled ASK whose
-   * `$today`/`$now`/… were baked in for day D is a cache MISS on day D+1 and gets
-   * recompiled against the new day — no manual `invalidateCache()` needed. The
-   * local day derives from the same `clock.now()` basis as `substituteVariables`
-   * (shared `$today`-family local basis; no hardcoded timezone). Fixes #3819.
-   */
-  private askCacheKey(sparqlAsk: string): string {
-    if (!PreconditionEvaluator.TEMPORAL_TOKEN.test(sparqlAsk)) {
-      return sparqlAsk;
-    }
-    const localDay = DateFormatter.toDateString(this.clock.now());
-    return `${localDay} ${sparqlAsk}`;
-  }
 
   private compileAsk(sparqlAsk: string): AskOperation | null {
     const processedQuery = this.substituteVariables(
@@ -262,22 +250,26 @@ export class PreconditionEvaluator {
     targetIRI: string,
   ): Promise<boolean> {
     try {
-      // Date-aware cache key: temporal-token queries are keyed per LOCAL calendar
-      // day so a compiled ASK (with its `$today`/`$now`/… baked in at compile
-      // time by `compileAsk`) never survives across local midnight; token-free
-      // queries keep the raw-text key (perf-neutral). Fixes #3819.
-      const cacheKey = this.askCacheKey(sparqlAsk);
-      let compiled = this.askCache.get(cacheKey);
-
-      if (compiled === undefined) {
+      const isTemporal = PreconditionEvaluator.TEMPORAL_TOKEN.test(sparqlAsk);
+      const day = isTemporal
+        ? DateFormatter.toDateString(this.clock.now())
+        : null;
+      let entry = this.askCache.get(sparqlAsk);
+      // Recompile when absent, OR when a temporal query's cached entry was
+      // compiled for a DIFFERENT local day — the day change OVERWRITES the same
+      // raw-text key, so there is at most one entry per query (no stale-day
+      // leak) and the compiled $today/$now/... never survives local midnight.
+      // Token-free queries (day === null) are compiled once and reused forever
+      // (byte-identical to the pre-fix cache-hit path).
+      if (entry === undefined || (isTemporal && entry.day !== day)) {
         const result = this.compileAsk(sparqlAsk);
         if (!result) return false;
-        compiled = result;
-        this.askCache.set(cacheKey, compiled);
+        entry = { day, compiled: result };
+        this.askCache.set(sparqlAsk, entry);
       }
 
       const instantiated = JSON.parse(
-        JSON.stringify(compiled).replaceAll(
+        JSON.stringify(entry.compiled).replaceAll(
           PreconditionEvaluator.SENTINEL_IRI,
           targetIRI,
         ),

@@ -44,6 +44,11 @@ describe("PreconditionEvaluator askCache day-lock (req 96be4042 / #3819)", () =>
   const PLANNED = new IRI("https://exocortex.my/ontology/ems#plannedDate");
   const XSD_DATE = new IRI("http://www.w3.org/2001/XMLSchema#date");
 
+  // Restore any jest.spyOn even if an assertion throws before an inline restore.
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   // A visibility precondition: is the asset planned for TODAY (local)?
   const TODAY_ASK = `
     PREFIX ems: <https://exocortex.my/ontology/ems#>
@@ -149,7 +154,41 @@ describe("PreconditionEvaluator askCache day-lock (req 96be4042 / #3819)", () =>
     }
     // Recompiled on the new local day — one parse per day (date-aware key).
     expect(parseSpy).toHaveBeenCalledTimes(2);
+    // (afterEach restores the spy — no manual mockRestore that could leak on throw.)
+  });
 
-    parseSpy.mockRestore();
+  it("memory bound: the SAME $today query evaluated across a local-day change keeps exactly ONE cache entry (no per-day leak) @req:96be4042-6521-4f62-bdc6-ee31e7e260a5", async () => {
+    const store = new InMemoryTripleStore();
+    await store.add(
+      new Triple(new IRI(ASSET_IRI), PLANNED, new Literal("2026-07-04", XSD_DATE)),
+    );
+    const evaluator = new PreconditionEvaluator(store);
+    const precondition = {
+      id: "pre-mem",
+      label: "planned today",
+      sparqlAsk: TODAY_ASK,
+    };
+    // White-box: the cache is keyed by raw text so a day change REPLACES the
+    // entry rather than adding a second one.
+    const cache = (
+      evaluator as unknown as { askCache: Map<string, unknown> }
+    ).askCache;
+
+    let restore = installFakeOffsetDate(5, "2026-07-03T18:00:00Z"); // day D
+    try {
+      await evaluator.evaluate(precondition, ASSET_IRI);
+    } finally {
+      restore();
+    }
+    expect(cache.size).toBe(1);
+
+    restore = installFakeOffsetDate(5, "2026-07-03T19:30:00Z"); // day D+1
+    try {
+      await evaluator.evaluate(precondition, ASSET_IRI);
+    } finally {
+      restore();
+    }
+    // Still ONE entry — the day-D compiled ASK was overwritten, not accumulated.
+    expect(cache.size).toBe(1);
   });
 });
