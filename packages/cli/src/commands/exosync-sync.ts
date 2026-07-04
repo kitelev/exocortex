@@ -56,6 +56,7 @@ import {
   formatRepoTimings,
   formatTimingsLine,
   orderChildrenFirst,
+  syncProgressPhaseText,
   totalMs,
   type LocalFilesPort,
   type MaterializationCheckPort,
@@ -64,6 +65,7 @@ import {
   type RestCommitTransport,
   type Sha1Fn,
   type SyncDirection,
+  type SyncProgressEvent,
   type SyncRepoSpec,
   type WatermarkFileIO,
   type YamlCodec,
@@ -509,7 +511,17 @@ export async function runExosyncSync(
   );
   // Children before parents (deeper mount paths first) — D12 ordering.
   const ordered = orderChildrenFirst(specs);
-  const results = await engine.syncAll(ordered, direction);
+  // Live in-flight trace so a long pull (the dominant restBlob phase) never
+  // looks hung on the CLI, mirroring the plugin's step feed. `out` streams to
+  // stdout as each phase fires. Suppressed under --json so the progress lines
+  // never corrupt the machine-readable result blob.
+  const onProgress =
+    opts.json === true
+      ? undefined
+      : (event: SyncProgressEvent): void => {
+          out(`[ExoSync] ${event.repoKey}: ${syncProgressPhaseText(event)}`);
+        };
+  const results = await engine.syncAll(ordered, direction, onProgress);
 
   if (opts.json === true) {
     out(JSON.stringify(results, null, 2));

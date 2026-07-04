@@ -31,6 +31,7 @@ import {
   formatRepoTimings,
   formatTimingsLine,
   orderChildrenFirst,
+  syncProgressPhaseText,
   totalMs,
 } from "@kitelev/exocortex-core";
 
@@ -164,12 +165,10 @@ export class SyncCommands {
    * Coarse, human-readable, mirrors the issue's example wording.
    */
   private static progressStepLine(event: SyncProgressEvent): string {
-    const phaseText: Record<SyncProgressEvent["phase"], string> = {
-      detecting: "detecting changes…",
-      "pulling-remote": "pulling remote tree…",
-      merging: "merge layer firing…",
-    };
-    return `[ExoSync] ${event.repoKey}: ${phaseText[event.phase]}`;
+    // Phase → text lives in core (`syncProgressPhaseText`) so the plugin and
+    // the CLI render the live feed identically — including the new
+    // `fetching-blobs N/M` tick that fills the previously-silent restBlob gap.
+    return `[ExoSync] ${event.repoKey}: ${syncProgressPhaseText(event)}`;
   }
 
   /**

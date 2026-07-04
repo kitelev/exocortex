@@ -242,13 +242,35 @@ export interface SyncEngineDeps {
  * merge layer firing…»). Strictly observation-only — the engine never branches
  * on the observer.
  */
-export type SyncProgressPhase = "detecting" | "pulling-remote" | "merging";
+export type SyncProgressPhase =
+  | "detecting"
+  | "pulling-remote"
+  | "fetching-blobs"
+  | "merging";
+
+/**
+ * Fine-grained counter carried by a {@link SyncProgressEvent} for phases that
+ * iterate a known number of items (currently `fetching-blobs` — the remote
+ * blob download loop, which is the dominant `restBlob` cost). Lets a surface
+ * render a live `40/183` tick instead of a single silent line while a big pull
+ * runs (a repo pulling hundreds of files at ~0.4s each ran for over a minute
+ * with only one "pulling remote tree…" line and nothing after, so the sync
+ * looked hung).
+ */
+export interface SyncProgressDetail {
+  /** Items completed so far (blobs fetched). */
+  done: number;
+  /** Total items in this phase (blobs to fetch). */
+  total: number;
+}
 
 /** A single in-flight progress event (#3498). */
 export interface SyncProgressEvent {
   /** Repo key the phase belongs to (matches `RepoSyncResult.repoKey`). */
   repoKey: string;
   phase: SyncProgressPhase;
+  /** Optional counter for iterating phases (`fetching-blobs`). */
+  detail?: SyncProgressDetail;
 }
 
 /**
@@ -258,6 +280,36 @@ export interface SyncProgressEvent {
  * routes these to the info channel, never the warn channel).
  */
 export type SyncProgressFn = (event: SyncProgressEvent) => void;
+
+/**
+ * Centralised phase → human trace text for a {@link SyncProgressEvent}. Shared
+ * by every surface that renders the live feed (plugin `SyncCommands`, the CLI
+ * `exosync` command) so the wording never diverges across renderers. The
+ * caller wraps it with its own `[ExoSync] <repoKey>: ` prefix.
+ */
+export function syncProgressPhaseText(event: SyncProgressEvent): string {
+  switch (event.phase) {
+    case "detecting":
+      return "detecting changes…";
+    case "pulling-remote":
+      return "pulling remote tree…";
+    case "fetching-blobs":
+      return event.detail !== undefined
+        ? `fetching remote files ${event.detail.done}/${event.detail.total}…`
+        : "fetching remote files…";
+    case "merging":
+      return "merge layer firing…";
+  }
+}
+
+/**
+ * Blob-fetch progress throttle (the `fetching-blobs` phase). Only announce a
+ * pull with at least this many changed files — smaller loops finish before a
+ * heartbeat would help and would only add noise.
+ */
+const BLOB_PROGRESS_MIN_TOTAL = 25;
+/** Emit a `fetching-blobs` tick every N blobs fetched. */
+const BLOB_PROGRESS_STEP = 10;
 
 /**
  * Mode-scoped helpers (Phase C). Computed ONCE per repo in `syncLocked`
@@ -839,10 +891,15 @@ export class SyncEngine {
     onProgress: SyncProgressFn | undefined,
     repoKey: string,
     phase: SyncProgressPhase,
+    detail?: SyncProgressDetail,
   ): void {
     if (onProgress === undefined) return;
     try {
-      onProgress({ repoKey, phase });
+      onProgress(
+        detail === undefined
+          ? { repoKey, phase }
+          : { repoKey, phase, detail },
+      );
     } catch {
       // observation-only — never let a faulty observer break the cycle
     }
@@ -2198,6 +2255,7 @@ export class SyncEngine {
           sizeExcluded,
           warnings,
           remoteOversized,
+          onProgress,
         );
         headTreeByPath = remote.headTreeByPath;
         const verdict = this.matchLocalVsRemote(
@@ -3318,6 +3376,7 @@ export class SyncEngine {
     sizeExcluded: ReadonlySet<string> = new Set(),
     warnings: string[] = [],
     remoteOversized: Set<string> = new Set(),
+    onProgress?: SyncProgressFn,
   ): Promise<{
     changes: RemoteChange[];
     headTreeByPath: Map<string, string>;
@@ -3364,6 +3423,21 @@ export class SyncEngine {
     );
     const { changed, deleted } = diffTrees(baseFiles, headTree);
 
+    // The loop below is the dominant `restBlob` cost — one sequential REST
+    // fetch per changed file. On a big pull (hundreds of files ≈ 0.4s each) it
+    // ran for over a minute after a single "pulling remote tree…" line and
+    // nothing after, so the sync looked hung. Emit a throttled
+    // `fetching-blobs done/total` tick (observation-only, #3498 discipline) so
+    // the surface shows steady progress. Only announced for loops large enough
+    // to matter (small ones finish before a heartbeat would help).
+    const totalBlobs = changed.length;
+    if (totalBlobs >= BLOB_PROGRESS_MIN_TOTAL) {
+      this.emitProgress(onProgress, spec.repoKey, "fetching-blobs", {
+        done: 0,
+        total: totalBlobs,
+      });
+    }
+    let fetched = 0;
     const changes: RemoteChange[] = [];
     for (const c of changed) {
       if (mode.fileMode) {
@@ -3381,22 +3455,33 @@ export class SyncEngine {
           blobSha: c.blobSha,
           content: bytes,
         });
-        continue;
+      } else {
+        const content = await getBlobText(
+          this.transport,
+          spec.owner,
+          spec.repo,
+          c.blobSha,
+          this.deps.baseURL,
+        );
+        changes.push({
+          path: c.path,
+          kind: "change",
+          blobSha: c.blobSha,
+          content,
+          uid: extractAssetUid(content),
+        });
       }
-      const content = await getBlobText(
-        this.transport,
-        spec.owner,
-        spec.repo,
-        c.blobSha,
-        this.deps.baseURL,
-      );
-      changes.push({
-        path: c.path,
-        kind: "change",
-        blobSha: c.blobSha,
-        content,
-        uid: extractAssetUid(content),
-      });
+      fetched += 1;
+      if (
+        totalBlobs >= BLOB_PROGRESS_MIN_TOTAL &&
+        fetched % BLOB_PROGRESS_STEP === 0 &&
+        fetched < totalBlobs
+      ) {
+        this.emitProgress(onProgress, spec.repoKey, "fetching-blobs", {
+          done: fetched,
+          total: totalBlobs,
+        });
+      }
     }
     for (const d of deleted) {
       changes.push({ path: d.path, kind: "delete", uid: d.uid });
