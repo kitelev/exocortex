@@ -173,6 +173,45 @@ export class PreconditionEvaluator {
 
   private static readonly SENTINEL_IRI = "urn:exocortex:cache-sentinel:target";
 
+  /**
+   * Calendar/temporal tokens whose substituted value (see
+   * {@link substituteVariables}) changes with the local calendar day. When a
+   * `sparqlAsk` contains any of these, the compiled-ASK cache entry must NOT
+   * survive across local midnight — so {@link askCacheKey} folds the local day
+   * into the cache key for such queries.
+   *
+   * `$today`/`$yesterday`/`$this*Start`/`$last*Start` are exactly the date
+   * tokens rewritten by `substituteVariables`. `$now` is included deliberately:
+   * folding it into a *day*-granular key is more honest than freezing its
+   * instant forever (the prior behaviour of a raw-text key). Residual sub-day
+   * staleness — the `$now` value stays frozen to the first-compile instant
+   * *within* one local day — is intended: precondition availability granularity
+   * is the day, not the minute. (`$target` is excluded — it is re-instantiated
+   * per evaluation from the SENTINEL and never baked into a date value.)
+   */
+  private static readonly TEMPORAL_TOKEN =
+    /\$(?:now|today|yesterday|thisWeekStart|lastWeekStart|thisMonthStart|lastMonthStart|thisYearStart)\b/;
+
+  /**
+   * Compute the `askCache` key for a `sparqlAsk`.
+   *
+   * Token-free queries → the raw `sparqlAsk` text (unchanged behaviour: one
+   * compile, reused forever — zero perf regression). Queries containing a
+   * temporal token → the raw text prefixed with the current LOCAL calendar day
+   * (`YYYY-MM-DD` via `DateFormatter.toDateString`), so a compiled ASK whose
+   * `$today`/`$now`/… were baked in for day D is a cache MISS on day D+1 and gets
+   * recompiled against the new day — no manual `invalidateCache()` needed. The
+   * local day derives from the same `clock.now()` basis as `substituteVariables`
+   * (shared `$today`-family local basis; no hardcoded timezone). Fixes #3819.
+   */
+  private askCacheKey(sparqlAsk: string): string {
+    if (!PreconditionEvaluator.TEMPORAL_TOKEN.test(sparqlAsk)) {
+      return sparqlAsk;
+    }
+    const localDay = DateFormatter.toDateString(this.clock.now());
+    return `${localDay} ${sparqlAsk}`;
+  }
+
   private compileAsk(sparqlAsk: string): AskOperation | null {
     const processedQuery = this.substituteVariables(
       sparqlAsk,
@@ -223,13 +262,18 @@ export class PreconditionEvaluator {
     targetIRI: string,
   ): Promise<boolean> {
     try {
-      let compiled = this.askCache.get(sparqlAsk);
+      // Date-aware cache key: temporal-token queries are keyed per LOCAL calendar
+      // day so a compiled ASK (with its `$today`/`$now`/… baked in at compile
+      // time by `compileAsk`) never survives across local midnight; token-free
+      // queries keep the raw-text key (perf-neutral). Fixes #3819.
+      const cacheKey = this.askCacheKey(sparqlAsk);
+      let compiled = this.askCache.get(cacheKey);
 
       if (compiled === undefined) {
         const result = this.compileAsk(sparqlAsk);
         if (!result) return false;
         compiled = result;
-        this.askCache.set(sparqlAsk, compiled);
+        this.askCache.set(cacheKey, compiled);
       }
 
       const instantiated = JSON.parse(
