@@ -1,5 +1,10 @@
 import { PropertyFieldType } from "@kitelev/exocortex-core";
 import { DatePropertyField } from "../../../src/presentation/components/property-fields/DatePropertyField";
+// Cross-package import of the shared CI-robust Date-subclass helper (precedent:
+// DynamicForm.test.tsx after #3810). Locks the DatePropertyField parse-fallback
+// branch (#3810 / #3811 LOW #2): a non-YYYY-MM-DD(T) datetime value routed
+// through `new Date()` → `DateFormatter.toDateString` must yield the LOCAL day.
+import { installFakeOffsetDate } from "../../../../core/tests/helpers/installFakeOffsetDate";
 
 // Helper to extend HTMLElement with Obsidian's methods
 function extendElement(el: HTMLElement): HTMLElement {
@@ -224,6 +229,46 @@ describe("DatePropertyField", () => {
       field.setValue("2024-12-31");
       const input = containerEl.querySelector("input") as HTMLInputElement | null;
       expect(input!.value).toBe("2024-12-31");
+    });
+  });
+
+  describe("parse-fallback branch — LOCAL calendar day at the UTC boundary (#3810 / #3811 LOW #2)", () => {
+    // A datetime `value` that is neither plain `YYYY-MM-DD` nor `YYYY-MM-DDT…`
+    // reaches the `new Date(value)` fallback (DatePropertyField.parseToDateInputValue
+    // :100-108), which #3810 routed through `DateFormatter.toDateString` (local)
+    // instead of the former `toISOString().split("T")[0]` (UTC). At an instant
+    // just after LOCAL midnight in a UTC+N timezone the two disagree by a day.
+    // CI-robust via the shared `installFakeOffsetDate` Date-subclass — a UTC
+    // runner sees local === UTC, so a plain test would pass both ways.
+    it("routes a near-UTC-midnight datetime value to TODAY's LOCAL day, not the UTC previous day", () => {
+      // 2026-07-02T19:27:00Z = 2026-07-03T00:27 local (Almaty, UTC+5): local day 03, UTC day 02.
+      const restore = installFakeOffsetDate(5, "2026-07-02T19:27:00Z");
+      try {
+        // Guard: prove the simulated tz is active (else the assertion is vacuous
+        // in a UTC-tz runner and silently passes both ways — fail loud).
+        expect(new Date().getHours()).toBe(0); // 00:27 local
+        expect(new Date().getUTCDate()).toBe(2); // still July 2 in UTC
+
+        // A space-separated UTC datetime — not YYYY-MM-DD, not YYYY-MM-DDT… — so
+        // it falls through to the `new Date()` + toDateString branch.
+        new DatePropertyField(containerEl, {
+          property: {
+            uri: "exo:dueDate",
+            name: "exo__Asset_dueDate",
+            label: "Due Date",
+            fieldType: PropertyFieldType.Date,
+          },
+          value: "2026-07-02 19:27:00Z",
+          onChange: jest.fn(),
+        });
+
+        const input = containerEl.querySelector("input") as HTMLInputElement | null;
+        // LOCAL day = 2026-07-03. The former UTC `.split("T")[0]` produced "2026-07-02".
+        expect(input!.value).toBe("2026-07-03");
+        expect(input!.value).not.toBe("2026-07-02");
+      } finally {
+        restore();
+      }
     });
   });
 
