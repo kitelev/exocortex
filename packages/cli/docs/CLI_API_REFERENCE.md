@@ -2,7 +2,7 @@
 
 > **Canonical per-command documentation lives in the [package README](../README.md).** Since CLI v16.0 (RFC 8e83442b) the surface is five core verbs — `find`, `apply`, `query`, `index`, `validate` — plus auxiliary commands. The v15 verbs `batch`, `batch-repair`, `command`, `dyncommand`, `exoql`, `convert`, and the `sparql` alias were removed; see the README migration table.
 >
-> This document keeps only the **machine contracts** that automation and MCP tools depend on: exit codes, the structured JSON response envelope, and the `watch` NDJSON event contract.
+> This document keeps only the **machine contracts** that automation and MCP tools depend on: exit codes and the structured JSON response envelope.
 
 ---
 
@@ -10,7 +10,6 @@
 
 - [Exit Codes](#exit-codes)
 - [Structured JSON Responses (MCP Compatible)](#structured-json-responses-mcp-compatible)
-- [Watch NDJSON Event Contract](#watch-ndjson-event-contract)
 - [Common Options](#common-options)
 - [Stability](#stability)
 
@@ -126,82 +125,6 @@ fi
 
 ---
 
-## Watch NDJSON Event Contract
-
-`exocortex-cli watch` emits one JSON object per line on **stdout**; startup/status messages go to **stderr**. See the README for the option table.
-
-### Event Shape
-
-```typescript
-interface WatchEvent {
-  type: "create" | "modify" | "delete"; // Event type
-  path: string; // Absolute path to file
-  relativePath: string; // Path relative to vault root
-  timestamp: string; // ISO 8601 timestamp
-  assetType?: string; // Asset type from frontmatter (for .md files)
-}
-```
-
-### Event Types
-
-| Type     | Description                                                   |
-| -------- | ------------------------------------------------------------- |
-| `create` | File was created (detected via file birthtime < 1 second old) |
-| `modify` | File was modified (existing file changed)                     |
-| `delete` | File was deleted (file no longer exists)                      |
-
-### Error Events
-
-Watcher errors are emitted to stdout as structured error responses (same envelope as above, with `code: "INTERNAL_OPERATION_FAILED"`).
-
-### Signal Handling
-
-- **SIGINT** (Ctrl+C): graceful shutdown with exit code `0`
-- **SIGTERM**: graceful shutdown with exit code `0`
-
-### Debouncing
-
-- Each file has its own debounce timer (default 100 ms, `--debounce <ms>`)
-- Rapid changes to the same file are coalesced into a single event
-- Changes to different files are tracked independently
-
-### Pattern Matching
-
-`--pattern` uses [minimatch](https://github.com/isaacs/minimatch) glob syntax:
-
-| Pattern      | Description                    |
-| ------------ | ------------------------------ |
-| `*.md`       | All markdown files in root     |
-| `**/*.md`    | All markdown files (recursive) |
-| `tasks/**`   | All files in tasks directory   |
-| `*.{md,txt}` | Markdown and text files        |
-
-### MCP Integration Example
-
-```typescript
-import { spawn } from "child_process";
-
-const watcher = spawn("exocortex-cli", [
-  "watch",
-  "--vault",
-  "/path/to/vault",
-  "--asset-type",
-  "ems__Task",
-]);
-
-watcher.stdout.on("data", (data) => {
-  const lines = data.toString().split("\n").filter(Boolean);
-  for (const line of lines) {
-    const event = JSON.parse(line);
-    mcpServer.notify("resources/updated", {
-      uri: `exocortex://task/${event.relativePath}`,
-    });
-  }
-});
-```
-
----
-
 ## Common Options
 
 Most commands accept:
@@ -222,6 +145,5 @@ Per-command flags (including `--format`, `--dry-run`, `--also`, `--use-cache`) a
 - The package is published as `@kitelev/exocortex-cli` and versioned in lockstep with the Exocortex monorepo (v16.x). Releases are automated on merge to `main`.
 - The five core verbs (`find`, `apply`, `query`, `index`, `validate`), their argument positions, and exit codes `0`–`8` are the stable surface of CLI v16.
 - Output message text (console formatting) and performance characteristics may change between minor versions; rely on exit codes and `--output json` envelopes, not console text.
-- Commands under `experimental` are explicitly unstable and may change or be removed without notice.
 
 See [VERSIONING.md](../VERSIONING.md) for the versioning policy.
