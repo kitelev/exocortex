@@ -243,25 +243,29 @@ export interface SyncEngineDeps {
  * on the observer.
  */
 export type SyncProgressPhase =
+  | "reading-local"
   | "detecting"
   | "pulling-remote"
   | "fetching-blobs"
+  | "writing-files"
   | "merging";
 
 /**
  * Fine-grained counter carried by a {@link SyncProgressEvent} for phases that
- * iterate a known number of items (currently `fetching-blobs` — the remote
- * blob download loop, which is the dominant `restBlob` cost). Lets a surface
- * render a live `40/183` tick instead of a single silent line while a big pull
- * runs (a repo pulling hundreds of files at ~0.4s each ran for over a minute
- * with only one "pulling remote tree…" line and nothing after, so the sync
- * looked hung).
+ * iterate many items, so a surface can render a live tick instead of a single
+ * silent line while a slow phase runs (a repo pulling hundreds of files at
+ * ~0.4s each ran for over a minute with only one "pulling remote tree…" line
+ * and nothing after, so the sync looked hung).
  */
 export interface SyncProgressDetail {
-  /** Items completed so far (blobs fetched). */
+  /** Items completed so far (blobs fetched / files read / files written). */
   done: number;
-  /** Total items in this phase (blobs to fetch). */
-  total: number;
+  /**
+   * Total items in this phase, when known upfront (`fetching-blobs`). Absent
+   * for open-ended running counts (`reading-local` / `writing-files`, where the
+   * number of cache-miss reads / applied writes is not known in advance).
+   */
+  total?: number;
 }
 
 /** A single in-flight progress event (#3498). */
@@ -269,7 +273,7 @@ export interface SyncProgressEvent {
   /** Repo key the phase belongs to (matches `RepoSyncResult.repoKey`). */
   repoKey: string;
   phase: SyncProgressPhase;
-  /** Optional counter for iterating phases (`fetching-blobs`). */
+  /** Optional counter for iterating phases. */
   detail?: SyncProgressDetail;
 }
 
@@ -289,6 +293,10 @@ export type SyncProgressFn = (event: SyncProgressEvent) => void;
  */
 export function syncProgressPhaseText(event: SyncProgressEvent): string {
   switch (event.phase) {
+    case "reading-local":
+      return event.detail !== undefined
+        ? `reading local files ${event.detail.done}…`
+        : "reading local files…";
     case "detecting":
       return "detecting changes…";
     case "pulling-remote":
@@ -297,8 +305,18 @@ export function syncProgressPhaseText(event: SyncProgressEvent): string {
       return event.detail !== undefined
         ? `fetching remote files ${event.detail.done}/${event.detail.total}…`
         : "fetching remote files…";
+    case "writing-files":
+      return event.detail !== undefined
+        ? `writing files ${event.detail.done}…`
+        : "writing files…";
     case "merging":
       return "merge layer firing…";
+    default: {
+      // Exhaustiveness backstop — a new phase MUST add its own case above,
+      // otherwise this is a compile error instead of a silent "undefined" line.
+      const _exhaustive: never = event.phase;
+      return _exhaustive;
+    }
   }
 }
 
@@ -310,6 +328,14 @@ export function syncProgressPhaseText(event: SyncProgressEvent): string {
 const BLOB_PROGRESS_MIN_TOTAL = 25;
 /** Emit a `fetching-blobs` tick every N blobs fetched. */
 const BLOB_PROGRESS_STEP = 10;
+/**
+ * Local-IO progress throttle. Reads are many + fast per file (a cold snapshot
+ * hashes thousands at ~1-2ms each), writes are fewer + slower (a pull-apply
+ * writes hundreds at tens of ms each) — so the two phases tick at different
+ * cadences, both aiming for roughly one line every ~1-2s on a slow run.
+ */
+const LOCAL_READ_PROGRESS_STEP = 500;
+const LOCAL_WRITE_PROGRESS_STEP = 25;
 
 /**
  * Mode-scoped helpers (Phase C). Computed ONCE per repo in `syncLocked`
@@ -649,6 +675,19 @@ export class SyncEngine {
    * guard; `null` outside a sync (the wrappers skip timing then).
    */
   private activeTimer: SyncPhaseTimer | null = null;
+  /**
+   * Per-repo local-IO progress sink (mirrors {@link activeTimer}): the wrapped
+   * `LocalFilesPort` emits throttled `reading-local` / `writing-files` ticks
+   * through this so a big cold snapshot read or a big pull-apply write never
+   * looks hung. Observation-only; `null` when there is no observer or no sync
+   * in flight. Set/restored around each repo cycle in `syncLocked`.
+   */
+  private activeLocalIoProgress: {
+    emit: SyncProgressFn;
+    repoKey: string;
+    reads: number;
+    writes: number;
+  } | null = null;
   /** D11 — one sync/apply operation at a time. */
   private opInProgress = false;
 
@@ -708,11 +747,13 @@ export class SyncEngine {
       list: () => timed("localList", () => raw.list()),
       read: (path) => {
         this.activeTimer?.bumpRead();
+        this.bumpReadProgress();
         return timed("localRead", () => raw.read(path));
       },
       write: (path, content) =>
         timed("localWrite", () => {
           this.activeTimer?.bumpWritten();
+          this.bumpWriteProgress();
           return raw.write(path, content);
         }),
       delete: (path) => raw.delete(path),
@@ -723,6 +764,7 @@ export class SyncEngine {
     if (rawReadBinary !== undefined) {
       wrapped.readBinary = (path) => {
         this.activeTimer?.bumpRead();
+        this.bumpReadProgress();
         return timed("localRead", () => rawReadBinary(path));
       };
     }
@@ -731,6 +773,7 @@ export class SyncEngine {
       wrapped.writeBinary = (path, bytes) =>
         timed("localWrite", () => {
           this.activeTimer?.bumpWritten();
+          this.bumpWriteProgress();
           return rawWriteBinary(path, bytes);
         });
     }
@@ -905,6 +948,33 @@ export class SyncEngine {
     }
   }
 
+  /**
+   * Throttled `reading-local` tick fired from the wrapped port on every local
+   * read (observation-only). Running count — the cold snapshot's cache-miss
+   * read total is not known upfront. No-op when there is no observer.
+   */
+  private bumpReadProgress(): void {
+    const p = this.activeLocalIoProgress;
+    if (p === null) return;
+    p.reads += 1;
+    if (p.reads % LOCAL_READ_PROGRESS_STEP === 0) {
+      this.emitProgress(p.emit, p.repoKey, "reading-local", { done: p.reads });
+    }
+  }
+
+  /**
+   * Throttled `writing-files` tick fired from the wrapped port on every local
+   * write (observation-only). Running count, same rationale as reads.
+   */
+  private bumpWriteProgress(): void {
+    const p = this.activeLocalIoProgress;
+    if (p === null) return;
+    p.writes += 1;
+    if (p.writes % LOCAL_WRITE_PROGRESS_STEP === 0) {
+      this.emitProgress(p.emit, p.repoKey, "writing-files", { done: p.writes });
+    }
+  }
+
   private async syncLocked(
     spec: SyncRepoSpec,
     direction: SyncDirection = "sync",
@@ -916,6 +986,14 @@ export class SyncEngine {
     const timer = new SyncPhaseTimer(this.now);
     const prevTimer = this.activeTimer;
     this.activeTimer = timer;
+    // Per-repo local-IO progress sink (see `activeLocalIoProgress`) — the
+    // wrapped port emits throttled reading-local / writing-files ticks through
+    // it. Save/restore mirrors the timer so nested cycles never cross-talk.
+    const prevLocalIoProgress = this.activeLocalIoProgress;
+    this.activeLocalIoProgress =
+      onProgress !== undefined
+        ? { emit: onProgress, repoKey: spec.repoKey, reads: 0, writes: 0 }
+        : null;
     const warnings: string[] = [];
     const deferredDeletes: string[] = [];
     // Deferred-push outbox flush results for this repo (PR-3b) — accumulated
@@ -1633,6 +1711,7 @@ export class SyncEngine {
       // Phase 0 — restore the previous timer (null outside a sync) so the
       // chokepoint wrappers never accumulate into a stale repo's breakdown.
       this.activeTimer = prevTimer;
+      this.activeLocalIoProgress = prevLocalIoProgress;
     }
   }
 
