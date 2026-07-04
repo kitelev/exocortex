@@ -261,14 +261,17 @@ export class PreconditionEvaluator {
    * - $lastMonthStart → "2026-02-01"^^xsd:date (LOCAL)
    * - $thisYearStart → "2026-01-01"^^xsd:date (LOCAL)
    *
-   * The list above is the COMPLETE set of supported tokens. Each is matched with
-   * a trailing `\b` word boundary, so an unrecognized `$token` that merely shares
-   * a prefix with a supported one (e.g. `$todayStart` — an executor /
-   * SubstitutionToken form, NOT a precondition token) is left LITERAL rather than
-   * partially rewritten into malformed SPARQL (`"…"^^xsd:dateStart`). The SPARQL
-   * parser then rejects the unknown `$todayStart` loudly — better than a silent
-   * mangle (#3811 review). `$target` is exempt (an IRI substitution delimited by
-   * property-path chars, not a calendar token).
+   * The list above is the COMPLETE set of supported tokens. EVERY token (including
+   * `$target`) is matched with a trailing `\b` word boundary, so an unrecognized
+   * `$token` that merely shares a prefix with a supported one is left LITERAL
+   * rather than partially rewritten into malformed SPARQL. Examples of real
+   * prefix-colliding tokens (all executor / SubstitutionToken forms, NOT
+   * precondition tokens): `$todayStart` (else → `"…"^^xsd:dateStart`),
+   * `$nowCompact`/`$nowLocal`, and `$targetFolder`/`$targetStart`/`$targetClassSelf`
+   * (else `$target` → `<IRI>Folder`). Left literal, the unknown token fails to
+   * compile and the precondition FAILS CLOSED (evaluateSparqlAsk's bare catch →
+   * `false` → command hidden) — a predictable, safe outcome, unlike a
+   * silently-mangled query that could return the wrong ASK boolean (#3811 review).
    *
    * All calendar-date tokens derive from ONE shared LOCAL wall-clock day
    * (`DateFormatter.toDateString` / local `Date` getters + plain local
@@ -324,19 +327,24 @@ export class PreconditionEvaluator {
     // $thisYearStart
     const thisYearStartStr = `${year}-01-01`;
 
-    // Each token regex is anchored with a trailing `\b` word boundary so an
+    // EVERY token regex is anchored with a trailing `\b` word boundary so an
     // unrecognized `$token` that merely SHARES A PREFIX with a supported one is
     // left literal rather than partially rewritten into malformed SPARQL. Without
     // `\b`, a `sparqlAsk` containing `$todayStart` (an executor/SubstitutionToken
     // form, not a precondition token) would have its `$today` prefix replaced →
-    // `"YYYY-MM-DD"^^xsd:dateStart` (mangled). With `\b` it stays `$todayStart`
-    // (an unknown token the SPARQL parser rejects loudly) — better than silently
-    // wrong (#3811 review). `$now\b`/`$yesterday\b`/… likewise won't clobber
-    // `$nowCompact`/`$nowLocal` etc. `$target` keeps no `\b` — it is an IRI
-    // substitution routinely followed by SPARQL property-path chars (`/`, `.`,
-    // `)`) which already delimit it, and a trailing `\b` there is redundant.
+    // `"YYYY-MM-DD"^^xsd:dateStart` (mangled). With `\b` it stays `$todayStart` —
+    // an unknown token the SPARQL compiler can't parse, so the precondition FAILS
+    // CLOSED (evaluateSparqlAsk's bare catch → `false` → command hidden): a
+    // predictable, safe outcome, unlike a silently-mangled query that could return
+    // the WRONG ASK boolean (#3811 review). `$now\b`/`$yesterday\b`/… likewise won't clobber
+    // `$nowCompact`/`$nowLocal`. `$target\b` is anchored for the SAME reason:
+    // real grounding-only tokens share its prefix (`$targetFolder`, `$targetStart`,
+    // `$targetClassSelf` — GroundingExecutor tokens, NOT precondition tokens), so
+    // an unanchored `$target` would mangle e.g. `$targetFolder` → `<IRI>Folder`.
+    // `\b` still matches every valid precondition `$target` (always delimited by
+    // whitespace or property-path chars `/` `.` `)` `,` `<` `]` — all non-word).
     return query
-      .replace(/\$target/g, `<${targetIRI}>`)
+      .replace(/\$target\b/g, `<${targetIRI}>`)
       .replace(/\$now\b/g, `"${nowIso}"^^xsd:dateTime`)
       .replace(/\$yesterday\b/g, `"${yesterdayStr}"^^xsd:date`)
       .replace(/\$thisWeekStart\b/g, `"${thisWeekStartStr}"^^xsd:date`)

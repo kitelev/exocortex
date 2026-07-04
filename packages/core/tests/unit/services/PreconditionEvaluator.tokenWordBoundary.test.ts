@@ -46,6 +46,15 @@ describe("PreconditionEvaluator token substitution is word-boundary-anchored (re
     // calendar-date regex, not just `$today`.
     expect(evaluator.substituteVariables("$nowCompact", ASSET_IRI)).toBe("$nowCompact");
     expect(evaluator.substituteVariables("$nowLocal", ASSET_IRI)).toBe("$nowLocal");
+
+    // And the `$target` prefix: real grounding-only tokens `$targetFolder` /
+    // `$targetStart` / `$targetClassSelf` must NOT be clobbered to `<IRI>Folder`
+    // etc. by the `$target` → IRI substitution (they are not precondition tokens).
+    expect(evaluator.substituteVariables("$targetFolder", ASSET_IRI)).toBe("$targetFolder");
+    expect(evaluator.substituteVariables("$targetStart", ASSET_IRI)).toBe("$targetStart");
+    expect(evaluator.substituteVariables("$targetClassSelf", ASSET_IRI)).toBe(
+      "$targetClassSelf",
+    );
   });
 
   it("still substitutes every VALID token (word boundary is not a regression) @req:9bff6eb9-c8c2-4931-a93d-331334fc6e15", () => {
