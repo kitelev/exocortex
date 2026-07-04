@@ -34,15 +34,24 @@ function normalizeEnumOption(opt: string | EnumOption): EnumOption {
  * date as `YYYY-MM-DD` so a `type="date"` input pre-fills with today (feature
  * ec15f83e / req 57b03ab3 — the create-task-instance modal's planned-date field).
  *
- * Uses the UTC date slice (`toISOString().slice(0, 10)`) on purpose: it mirrors
- * the engine's own `$today` basis (`GroundingExecutor.resolveInstanceDate` /
- * label-template `$today` both slice `clock.now().toISOString()`), so the
+ * Uses LOCAL `Date` getters (`getFullYear()/getMonth()/getDate()`, req 26d79c70
+ * / #3809), matching the engine's now-local `$today` basis
+ * (`GroundingExecutor.resolveInstanceDate` slices the local calendar day, and
+ * the `$today` SubstitutionToken resolvers are local since #3808), so the
  * pre-filled modal date, the derived label, and the planned timestamps all
- * agree by default. Any non-`$today` value (including a literal `YYYY-MM-DD`)
+ * agree by default even just after local midnight in a UTC+N timezone (the
+ * former `toISOString().slice(0, 10)` UTC slice prefilled yesterday's local day
+ * at that boundary). Any non-`$today` value (including a literal `YYYY-MM-DD`)
  * passes through verbatim.
  */
 function resolveDefaultValue(raw: string | undefined): string {
-  if (raw === "$today") return new Date().toISOString().slice(0, 10);
+  if (raw === "$today") {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
   return raw ?? "";
 }
 
