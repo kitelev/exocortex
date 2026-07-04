@@ -51,7 +51,7 @@
     "commander": "^14.0.2",
     "fs-extra": "^11.0.0",
     "glob": "^10.3.0",
-    "js-yaml": "^4.2.0",
+    "js-yaml": "^5.0.0",
     "minimatch": "^10.2.4",
     "nanotar": "0.3.0",
     "ora": "^9.0.0"
