@@ -78,20 +78,38 @@ export function isAssetArchived(isArchived: unknown): boolean {
 }
 
 /**
- * Check if metadata has empty properties
+ * Check if metadata has empty properties.
+ *
+ * Aligned with what `PropertyCleanupService.cleanEmptyProperties`
+ * (`PropertyCleanupService.isEmptyValue`) actually removes, so the "Clean
+ * Properties" command's visibility is honest — the button shows iff clicking it
+ * would remove something (@req:f05caada-fbaa-43fb-9808-e5330c685df4):
+ *   - `null` / `undefined`               → empty
+ *   - an EXACTLY-empty string `""`       → empty (a quoted whitespace-only string
+ *     `"   "` is KEPT by the cleanup service, so it must NOT flag here — otherwise
+ *     the button appears but the click is a no-op)
+ *   - an empty array `[]` OR a list whose items are ALL empty (the cleanup service
+ *     trims each item and removes the whole list when every item is empty)
+ *   - an empty object `{}`
  */
 export function hasEmptyProperties(metadata: Record<string, unknown>): boolean {
   if (!metadata || Object.keys(metadata).length === 0) return false;
 
+  // Exactly-empty only (never trimmed) — mirror the raw-YAML cleanup, which KEEPS
+  // a quoted whitespace-only value both as a scalar and as a list item (a parsed
+  // whitespace-only string can only originate from a quoted source).
+  const isEmptyArrayItem = (v: unknown): boolean =>
+    v === null || v === undefined || v === "";
+
   return Object.values(metadata).some((value) => {
     if (value === null || value === undefined) return true;
-    if (typeof value === "string" && value.trim() === "") return true;
-    if (Array.isArray(value) && value.length === 0) return true;
-    if (
-      typeof value === "object" &&
-      !Array.isArray(value) &&
-      Object.keys(value).length === 0
-    )
+    if (typeof value === "string") return value === "";
+    // Empty `[]` or a block-form list whose items are ALL empty (the shape the
+    // cleanup service removes); a flow list `[null]` is treated the same — an
+    // acceptable, rare over-eager case for a parsed-value gate.
+    if (Array.isArray(value))
+      return value.length === 0 || value.every(isEmptyArrayItem);
+    if (typeof value === "object" && Object.keys(value).length === 0)
       return true;
     return false;
   });
