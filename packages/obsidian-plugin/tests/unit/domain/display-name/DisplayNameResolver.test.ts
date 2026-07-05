@@ -282,12 +282,22 @@ describe("DisplayNameResolver", () => {
       expect(DEFAULT_DISPLAY_NAME_SETTINGS.defaultTemplate).toBe("{{exo__Asset_label}}");
     });
 
-    it("should have class templates for common classes", () => {
-      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__Task"]).toBeDefined();
+    it("has explicit templates only for suffix classes (label + real class UID) + DailyNote; pure-label classes use the default", () => {
+      // Suffix classes — cold-start seed keyed by BOTH label AND real class UID (req b4ee3caa, #2110).
       expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__TaskPrototype"]).toBeDefined();
-      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__Project"]).toBeDefined();
-      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__Area"]).toBeDefined();
+      expect(
+        DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["df7e579d-02d4-4f3a-971f-3d1d785b689b"],
+      ).toBeDefined();
+      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__MeetingPrototype"]).toBeDefined();
+      expect(
+        DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["7ab483c7-aafc-4ac8-8aca-0de52db34a93"],
+      ).toBeDefined();
       expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["pn__DailyNote"]).toBeDefined();
+      // Pure-label classes equalled the default template → removed (they fall through unchanged).
+      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__Task"]).toBeUndefined();
+      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__Project"]).toBeUndefined();
+      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__Area"]).toBeUndefined();
+      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__Meeting"]).toBeUndefined();
     });
 
     it("should work correctly with resolver", () => {
@@ -312,6 +322,28 @@ describe("DisplayNameResolver", () => {
         basename: "morning-routine",
       });
       expect(prototypeResult).toBe("Morning routine (TaskPrototype)");
+
+      // FIX (req b4ee3caa): a TaskPrototype instance keyed by the REAL class UID
+      // (how real instances reference exo__Instance_class) now gets the suffix via
+      // the cold-start seed — previously it fell through to the label-only default.
+      const uidKeyedPrototype = resolver.resolve({
+        metadata: {
+          exo__Asset_label: "Measure HRV",
+          exo__Instance_class: ["[[df7e579d-02d4-4f3a-971f-3d1d785b689b]]"],
+        },
+        basename: "measure-hrv",
+      });
+      expect(uidKeyedPrototype).toBe("Measure HRV (TaskPrototype)");
+
+      // Pure-label class (Project) — byte-identical after its redundant classTemplate removal.
+      const projectResult = resolver.resolve({
+        metadata: {
+          exo__Asset_label: "Q3 Roadmap",
+          exo__Instance_class: ["[[ems__Project]]"],
+        },
+        basename: "q3-roadmap",
+      });
+      expect(projectResult).toBe("Q3 Roadmap");
     });
 
     it("should use default template (label only) for unknown asset types", () => {

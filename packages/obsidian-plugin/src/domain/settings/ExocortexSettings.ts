@@ -19,17 +19,22 @@ export const DEFAULT_DISPLAY_NAME_SETTINGS: DisplayNameSettings = {
   defaultTemplate: "{{exo__Asset_label}}",
 
   classTemplates: {
+    // Suffix classes: the homoiconic source is the vault exo__DisplayNameSpec
+    // (PMBOK project 47d57acf, req b4ee3caa) read by PrintNameRuleService; these TS
+    // entries are the cold-start SEED that prevents a raw→suffixed flicker before the
+    // vault specs index. Keyed by BOTH the class UID (real instances reference
+    // exo__Instance_class as `[[<class-uid>]]`) AND the label form. Adding the real
+    // class UIDs (df7e579d / 7ab483c7) fixes a pre-existing gap where UID-keyed
+    // prototype instances rendered with no suffix (only label/instance-UID keys matched).
     ems__TaskPrototype: "{{exo__Asset_label}} (TaskPrototype)",
-    // UID-based identifier for ems__TaskPrototype (Issue #2110)
-    "75302770-279e-4a59-ba85-09df29725713":
-      "{{exo__Asset_label}} (TaskPrototype)",
-    ems__Task: "{{exo__Asset_label}}",
-    ems__Project: "{{exo__Asset_label}}",
-    ems__Area: "{{exo__Asset_label}}",
+    "df7e579d-02d4-4f3a-971f-3d1d785b689b": "{{exo__Asset_label}} (TaskPrototype)",
     ems__MeetingPrototype: "{{exo__Asset_label}} (MeetingPrototype)",
-    ems__Meeting: "{{exo__Asset_label}}",
+    "7ab483c7-aafc-4ac8-8aca-0de52db34a93": "{{exo__Asset_label}} (MeetingPrototype)",
     // DailyNote uses the basename (date) as its display name since it typically doesn't have a label
     pn__DailyNote: "{{_basename}}",
+    // Pure-label classes (Task/Project/Area/Meeting) removed — they equalled defaultTemplate
+    // ("{{exo__Asset_label}}") so they now fall through to it unchanged (byte-identical).
+    // The buggy instance-UID key 75302770 (Issue #2110) is dropped — no asset references it.
   },
 };
 
