@@ -1,4 +1,5 @@
 import { PrintNameRuleService } from "@plugin/domain/display-name/PrintNameRuleService";
+import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
 import { TFile } from "obsidian";
 import type { App, CachedMetadata } from "obsidian";
 
@@ -329,5 +330,132 @@ describe("PrintNameRuleService", () => {
       const resolver = service.createMetadataResolver();
       expect(resolver("[[nonexistent]]")).toBeNull();
     });
+  });
+});
+
+describe("PrintNameRuleService — exo__DisplayNameSpec (v1 thin, single-hop) [req b4ee3caa]", () => {
+  const TASK_PROTO_UID = "df7e579d-02d4-4f3a-971f-3d1d785b689b";
+  const SPEC_UID = "spec-taskproto-uid";
+
+  // Production-shape vault: one exo__DisplayNameSpec + a PrintedProperty part + a PrintedLiteral part.
+  function taskPrototypeSpecVault(): App {
+    return createMockApp([
+      {
+        path: `${SPEC_UID}.md`,
+        frontmatter: {
+          exo__Asset_uid: SPEC_UID,
+          exo__Instance_class: ["[[07eab746-0874-4676-9d98-dbaad1bc6fb8|exo__DisplayNameSpec]]"],
+          exo__DisplayNameSpec_appliesToClass: `[[${TASK_PROTO_UID}|ems__TaskPrototype]]`,
+          exo__DisplayNameSpec_priority: 10,
+        },
+      },
+      {
+        path: "part-prop.md",
+        frontmatter: {
+          exo__Asset_uid: "part-prop",
+          exo__Instance_class: ["[[7d58de40-d941-4a66-88e2-13afc4fdc41d|exo__PrintedProperty]]"],
+          exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+          exo__DisplayNamePart_order: 1,
+          exo__PrintedProperty_property: "[[12a6151b-801f-4be2-bd6e-a787eedd56ae|exo__Asset_label]]",
+        },
+      },
+      {
+        path: "part-literal.md",
+        frontmatter: {
+          exo__Asset_uid: "part-literal",
+          exo__Instance_class: ["[[4d5437c9-788e-4a6d-9be0-4af3a84554f4|exo__PrintedLiteral]]"],
+          exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+          exo__DisplayNamePart_order: 2,
+          exo__PrintedLiteral_literal: " (TaskPrototype)",
+        },
+      },
+    ]);
+  }
+
+  it("@req:b4ee3caa-8dda-4596-89b2-59111b14602f compiles a vault DisplayNameSpec into a template and renders the composed displayName (revert-verify anchor)", () => {
+    const app = taskPrototypeSpecVault();
+    const service = new PrintNameRuleService(app);
+    service.initialize();
+
+    // Ordered parts compile to a single-hop template string.
+    const byUid = service.getTemplateForClass(TASK_PROTO_UID);
+    expect(byUid).not.toBeNull();
+    expect(byUid!.template).toBe("{{exo__Asset_label}} (TaskPrototype)");
+
+    // #2110 dual-keying: the SAME spec is reachable by the class LABEL too.
+    const byLabel = service.getTemplateForClass("ems__TaskPrototype");
+    expect(byLabel).not.toBeNull();
+    expect(byLabel!.template).toBe("{{exo__Asset_label}} (TaskPrototype)");
+
+    // End-to-end render with EMPTY classTemplates — proves the VAULT spec (not a TS
+    // hardcode) drives the suffix. Revert-verify RED anchor: reverting scanVault's
+    // spec-reading makes getTemplateForClass return null → resolver falls to
+    // defaultTemplate → displayName becomes the raw label "Morning Routine".
+    const resolver = new DisplayNameResolver(
+      { defaultTemplate: "{{exo__Asset_label}}", classTemplates: {} },
+      service,
+    );
+    const displayName = resolver.resolve({
+      metadata: {
+        exo__Instance_class: [`[[${TASK_PROTO_UID}]]`],
+        exo__Asset_label: "Morning Routine",
+      },
+      basename: TASK_PROTO_UID,
+    });
+    expect(displayName).toBe("Morning Routine (TaskPrototype)");
+  });
+
+  it("selects the higher-priority spec when two specs apply to the same class", () => {
+    const app = createMockApp([
+      {
+        path: "specA.md",
+        frontmatter: {
+          exo__Asset_uid: "specA",
+          exo__Instance_class: ["[[exo__DisplayNameSpec]]"],
+          exo__DisplayNameSpec_appliesToClass: "[[C|ems__Task]]",
+          exo__DisplayNameSpec_priority: 1,
+        },
+      },
+      {
+        path: "pA.md",
+        frontmatter: {
+          exo__Asset_uid: "pA",
+          exo__Instance_class: ["[[exo__PrintedLiteral]]"],
+          exo__DisplayNamePart_of: "[[specA]]",
+          exo__DisplayNamePart_order: 1,
+          exo__PrintedLiteral_literal: "LOW",
+        },
+      },
+      {
+        path: "specB.md",
+        frontmatter: {
+          exo__Asset_uid: "specB",
+          exo__Instance_class: ["[[exo__DisplayNameSpec]]"],
+          exo__DisplayNameSpec_appliesToClass: "[[C|ems__Task]]",
+          exo__DisplayNameSpec_priority: 99,
+        },
+      },
+      {
+        path: "pB.md",
+        frontmatter: {
+          exo__Asset_uid: "pB",
+          exo__Instance_class: ["[[exo__PrintedLiteral]]"],
+          exo__DisplayNamePart_of: "[[specB]]",
+          exo__DisplayNamePart_order: 1,
+          exo__PrintedLiteral_literal: "HIGH",
+        },
+      },
+    ]);
+    const service = new PrintNameRuleService(app);
+    service.initialize();
+    const result = service.getTemplateForClass("ems__Task");
+    expect(result).not.toBeNull();
+    expect(result!.template).toBe("HIGH");
+  });
+
+  it("returns null (→ resolver fallback) for a class with no spec", () => {
+    const service = new PrintNameRuleService(createMockApp([]));
+    service.initialize();
+    expect(service.getTemplateForClass("ems__Whatever")).toBeNull();
   });
 });
