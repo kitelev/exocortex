@@ -585,12 +585,16 @@ export default class ExocortexPlugin extends Plugin {
 
       // Register `hasObsoleteProperties` host function used by the homoiconic
       // `Clean Properties` exocmd command (vault asset
-      // `0da175e1-79e3-46b8-975b-adadeb40887a`). Without this registration
-      // `evaluateHostFunction` fails open (`return true`) and the inline
-      // button + Cmd+P entry would show on every asset regardless of whether
-      // it has empty properties to clean. The behaviour it computes is "has
-      // empty frontmatter values" (the legacy host-function name is kept so
-      // the fix needs no re-sync of the exoas-exocmd assetspace).
+      // `0da175e1-79e3-46b8-975b-adadeb40887a`). Without this registration the
+      // async inline-button path (`evaluateHostFunction`) fails OPEN
+      // (`return true`) so the button showed on every asset regardless of
+      // whether it had empty properties to clean; the sync Cmd+P path
+      // (`evaluateHostFunctionSync`) fails CLOSED for an unregistered name, so
+      // the palette entry was hidden everywhere. This registration makes both
+      // surfaces gate on the actual presence of empty properties. The
+      // behaviour it computes is "has empty frontmatter values" (the legacy
+      // host-function name is kept so the fix needs no re-sync of the
+      // exoas-exocmd assetspace).
       this.preconditionEvaluator.registerHostFunction(
         "hasObsoleteProperties",
         createHasEmptyPropertiesHostFunction(this.app),

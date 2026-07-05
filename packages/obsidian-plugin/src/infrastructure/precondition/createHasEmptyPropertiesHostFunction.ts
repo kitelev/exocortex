@@ -34,6 +34,13 @@ export function createHasEmptyPropertiesHostFunction(app: App): HostFunction {
         : null;
     if (filePath === null) return false;
 
+    // Templater templates (09 Templates/) carry exo__Asset_isDefinedBy by
+    // pattern inheritance but are NOT assets and must never be cleaned — never
+    // surface this destructive command on them (mirror
+    // createIsInWrongFolderHostFunction + co-location-enforce hook exclusion,
+    // RFC 0b7a2fad CR-1).
+    if (filePath.split("/").includes("09 Templates")) return false;
+
     const file = app.vault.getAbstractFileByPath(filePath);
     if (!(file instanceof TFile)) return false;
 

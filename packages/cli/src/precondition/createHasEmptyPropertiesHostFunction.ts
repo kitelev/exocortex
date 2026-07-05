@@ -32,6 +32,12 @@ export function createHasEmptyPropertiesHostFunction(
         : null;
     if (filePath === null) return false;
 
+    // Templater templates (09 Templates/) carry exo__Asset_isDefinedBy by
+    // pattern inheritance but are NOT assets and must never be cleaned — never
+    // surface this destructive command on them (mirror the plugin factory +
+    // co-location-enforce hook exclusion, RFC 0b7a2fad CR-1).
+    if (filePath.split("/").includes("09 Templates")) return false;
+
     const node = vaultAdapter.getAbstractFileByPath(filePath);
     if (node === null || !("basename" in node)) return false;
     const file = node as IFile;

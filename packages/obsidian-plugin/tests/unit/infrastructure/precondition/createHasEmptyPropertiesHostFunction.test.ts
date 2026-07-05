@@ -42,6 +42,18 @@ describe("createHasEmptyPropertiesHostFunction", () => {
     expect(fn(baseCtx())).toBe(false);
   });
 
+  it("returns false for a Templater template (09 Templates/) even with an empty property", () => {
+    const fn = createHasEmptyPropertiesHostFunction(
+      buildApp({
+        file: new TFile("09 Templates/task-template.md"),
+        metadata: { exo__Asset_label: "ok", empty: null },
+      }),
+    );
+    expect(fn(baseCtx({ filePath: "09 Templates/task-template.md" }))).toBe(
+      false,
+    );
+  });
+
   it("returns false when the abstract file is a folder (not a TFile)", () => {
     const fn = createHasEmptyPropertiesHostFunction(
       buildApp({ file: new TFolder("x") }),

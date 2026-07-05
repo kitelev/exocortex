@@ -50,6 +50,18 @@ describe("createHasEmptyPropertiesHostFunction (CLI parity)", () => {
     expect(fn(baseCtx({ filePath: undefined }))).toBe(false);
   });
 
+  it("returns false for a Templater template (09 Templates/) even with an empty property", () => {
+    const fn = createHasEmptyPropertiesHostFunction(
+      buildAdapter({
+        node: buildFile("09 Templates/task-template.md"),
+        frontmatter: { exo__Asset_label: "ok", empty: null } as unknown as IFrontmatter,
+      }),
+    );
+    expect(
+      fn(baseCtx({ filePath: "09 Templates/task-template.md" })),
+    ).toBe(false);
+  });
+
   it("returns false when file not found in vault", () => {
     const fn = createHasEmptyPropertiesHostFunction(
       buildAdapter({ node: null }),
