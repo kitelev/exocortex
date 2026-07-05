@@ -39,6 +39,7 @@ import * as os from "os";
 const { resolveButtons, resolveButtonsCommand } = await import(
   "../../src/commands/resolve-buttons.js"
 );
+const { ErrorHandler } = await import("../../src/utils/ErrorHandler.js");
 
 // GroundingType catalog UID (packages/core/src/domain/constants/GroundingTypeUIDs.ts)
 const GT_SERVICE_CALL = "9bf9fc99-ac37-4e51-b9f5-bd920099947c";
@@ -309,5 +310,62 @@ describe("@req:960a7ba7-3470-42ba-afdc-f6766c3c3126 resolve-buttons — binding-
     } finally {
       logSpy.mockRestore();
     }
+  });
+
+  // LOW#4 (#3833) revert-verify: on the ERROR path, `--json` must emit a
+  // structured JSON error (ErrorHandler json mode), not human text. The bug was
+  // an unconditional `ErrorHandler.setFormat("text")` regardless of `--json`.
+  //   RED  (setFormat hardcoded "text"): the error goes to `console.error` as
+  //        human text, `console.log` stays empty → JSON.parse throws.
+  //   GREEN (setFormat honours --json): the structured `{ success:false, error }`
+  //        response is printed to `console.log` → parses.
+  it("@req:960a7ba7-3470-42ba-afdc-f6766c3c3126 CLI --json error path emits a structured JSON error, not human text (LOW#4)", async () => {
+    const logs: string[] = [];
+    const errs: string[] = [];
+    const logSpy = jest
+      .spyOn(console, "log")
+      .mockImplementation((...args: unknown[]) => {
+        logs.push(args.map(String).join(" "));
+      });
+    const errSpy = jest
+      .spyOn(console, "error")
+      .mockImplementation((...args: unknown[]) => {
+        errs.push(args.map(String).join(" "));
+      });
+    // ErrorHandler.handle calls process.exit — mock it to throw so the action
+    // stops after the (already-printed) error output, without killing the test.
+    const exitSpy = jest
+      .spyOn(process, "exit")
+      .mockImplementation(((code?: number) => {
+        throw new Error(`__exit__:${code}`);
+      }) as never);
+    try {
+      await resolveButtonsCommand().parseAsync([
+        "node",
+        "resolve-buttons",
+        "does-not-exist-3833.md",
+        "--vault",
+        root,
+        "--json",
+      ]);
+    } catch (e) {
+      // Expected: the process.exit mock throws to unwind the error path.
+      expect(String(e)).toContain("__exit__");
+    } finally {
+      logSpy.mockRestore();
+      errSpy.mockRestore();
+      exitSpy.mockRestore();
+      // The action mutated the ErrorHandler static to "json" — reset it so this
+      // test stays isolated if another `it` is ever appended below.
+      ErrorHandler.setFormat("text");
+    }
+
+    // The JSON error is written to console.log (ErrorHandler json branch).
+    const payload = JSON.parse(logs.join("\n"));
+    expect(payload.success).toBe(false);
+    expect(typeof payload.error.message).toBe("string");
+    expect(payload.error.message).toMatch(/not found/i);
+    // And nothing leaked to console.error as human text on the --json path.
+    expect(errs.join("\n")).not.toMatch(/❌ Error:/);
   });
 });
