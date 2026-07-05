@@ -563,12 +563,12 @@ describe("Integration (req 87361a62): ems__Task «Partially Done» composite", (
     // startTimestamp preserved (not wiped).
     expect(original).toContain("ems__Effort_startTimestamp: 2026-07-05T09:00:00");
 
-    // -- NEW task: fresh Backlog next iteration --
-    const newPath = fs
+    // -- NEW task: fresh Backlog next iteration (exactly one created) --
+    const fresh = fs
       .getAllPaths()
-      .find((p) => p !== TASK_PATH && p.startsWith(`${DIR}/`) && p.endsWith(".md") && !p.includes(TASK) && isFreshInstance(p));
-    expect(newPath).toBeDefined();
-    const next = fs.getContent(newPath!)!;
+      .filter((p) => p.endsWith(".md") && isFreshInstance(p));
+    expect(fresh).toHaveLength(1);
+    const next = fs.getContent(fresh[0])!;
 
     // status Backlog (NOT Done).
     expect(next).toContain(`ems__Effort_status: "[[${ENUM_BACKLOG}]]"`);
