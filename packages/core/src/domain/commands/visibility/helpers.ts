@@ -95,16 +95,18 @@ export function isAssetArchived(isArchived: unknown): boolean {
 export function hasEmptyProperties(metadata: Record<string, unknown>): boolean {
   if (!metadata || Object.keys(metadata).length === 0) return false;
 
+  // Exactly-empty only (never trimmed) — mirror the raw-YAML cleanup, which KEEPS
+  // a quoted whitespace-only value both as a scalar and as a list item (a parsed
+  // whitespace-only string can only originate from a quoted source).
   const isEmptyArrayItem = (v: unknown): boolean =>
-    v === null ||
-    v === undefined ||
-    (typeof v === "string" && v.trim() === "");
+    v === null || v === undefined || v === "";
 
   return Object.values(metadata).some((value) => {
     if (value === null || value === undefined) return true;
-    // Exactly-empty only (not trimmed): mirror the raw-YAML cleanup, which keeps
-    // a quoted whitespace-only string.
     if (typeof value === "string") return value === "";
+    // Empty `[]` or a block-form list whose items are ALL empty (the shape the
+    // cleanup service removes); a flow list `[null]` is treated the same — an
+    // acceptable, rare over-eager case for a parsed-value gate.
     if (Array.isArray(value))
       return value.length === 0 || value.every(isEmptyArrayItem);
     if (typeof value === "object" && Object.keys(value).length === 0)

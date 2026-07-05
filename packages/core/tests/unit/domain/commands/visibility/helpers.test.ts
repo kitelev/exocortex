@@ -278,7 +278,14 @@ describe("helpers", () => {
     // list whose items are ALL empty, so the gate must flag it too.
     it("@req:f05caada-fbaa-43fb-9808-e5330c685df4 should return true when a list has only empty items (cleanup removes it)", () => {
       expect(hasEmptyProperties({ key: [null] })).toBe(true);
-      expect(hasEmptyProperties({ key: [null, "   ", ""] })).toBe(true);
+      expect(hasEmptyProperties({ key: [null, ""] })).toBe(true);
+    });
+
+    // A quoted whitespace-only list item is KEPT by the cleanup (quotes preserve
+    // non-emptiness), so a list containing one must NOT be flagged — mirror of the
+    // scalar case (@req:f05caada-fbaa-43fb-9808-e5330c685df4).
+    it("@req:f05caada-fbaa-43fb-9808-e5330c685df4 should return false when a list has a quoted-whitespace item (cleanup keeps it)", () => {
+      expect(hasEmptyProperties({ key: [null, "   ", ""] })).toBe(false);
     });
 
     it("should return false when a list has at least one non-empty item", () => {

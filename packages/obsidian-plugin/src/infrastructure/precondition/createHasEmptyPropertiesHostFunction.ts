@@ -6,9 +6,10 @@ import { hasEmptyProperties, type HostFunction } from "@kitelev/exocortex-core";
  * the homoiconic exocmd "Clean Properties" command (vault asset
  * `0da175e1-79e3-46b8-975b-adadeb40887a`). Returns `true` only when the
  * target asset's frontmatter contains at least one EMPTY property — a value
- * that is `null`/`undefined`, an empty string (after trim), an empty array,
- * or an empty object — exactly the properties the `cleanProperties` service
- * (`PropertyCleanupService.cleanEmptyProperties`) removes.
+ * that is `null`/`undefined`, an exactly-empty string `""` (a quoted
+ * whitespace-only value is kept), an empty array (or a block-form list of
+ * all-empty items), or an empty object — exactly the properties the
+ * `cleanProperties` service (`PropertyCleanupService.cleanEmptyProperties`) removes.
  *
  * Hides the inline button + the Cmd+P palette entry on assets that have no
  * empty properties to clean. Without this registration

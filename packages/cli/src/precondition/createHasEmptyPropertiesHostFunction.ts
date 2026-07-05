@@ -10,9 +10,10 @@ import {
  * `obsidian-plugin/src/infrastructure/precondition/createHasEmptyPropertiesHostFunction.ts`.
  *
  * Returns `true` only when the asset referenced by `ctx.filePath` has at least
- * one EMPTY frontmatter property — a value that is `null`/`undefined`, an empty
- * string (after trim), an empty array, or an empty object — exactly the
- * properties `PropertyCleanupService.cleanEmptyProperties` removes. Used by the
+ * one EMPTY frontmatter property — a value that is `null`/`undefined`, an
+ * exactly-empty string `""` (a quoted whitespace-only value is kept), an empty
+ * array (or a block-form list of all-empty items), or an empty object — exactly
+ * the properties `PropertyCleanupService.cleanEmptyProperties` removes. Used by the
  * homoiconic "Clean Properties" exocmd command (vault asset
  * `0da175e1-79e3-46b8-975b-adadeb40887a`) to keep
  * `npx exocortex-cli apply clean-properties <path>` from running on assets that
