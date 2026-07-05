@@ -395,7 +395,10 @@ export function resolveButtonsCommand(): Command {
       "Also list commands that bind but are hidden by their precondition",
     )
     .action(async (targetArg: string, options: ResolveButtonsOptions) => {
-      ErrorHandler.setFormat("text" as OutputFormat);
+      // LOW#4 (#3833) — honour --json on the error path too, so a failing
+      // resolve-buttons emits a structured JSON error (ErrorHandler json mode)
+      // instead of human text. Mirrors the resolve/validate-* convention.
+      ErrorHandler.setFormat((options.json ? "json" : "text") as OutputFormat);
       try {
         const result = await resolveButtons(options.vault, targetArg);
         if (options.json) {
