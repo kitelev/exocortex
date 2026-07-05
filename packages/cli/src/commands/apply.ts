@@ -43,6 +43,7 @@ import { ExitCodes } from "../utils/ExitCodes.js";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { createIsInWrongFolderHostFunction } from "../precondition/createIsInWrongFolderHostFunction.js";
+import { createHasEmptyPropertiesHostFunction } from "../precondition/createHasEmptyPropertiesHostFunction.js";
 import { populateCliServiceRegistry } from "../services/CliServiceRegistryPopulator.js";
 import { FsQueryBodyResolver } from "../services/FsQueryBodyResolver.js";
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
@@ -230,6 +231,13 @@ async function executeOnTarget(
   evaluator.registerHostFunction(
     "isInWrongFolder",
     createIsInWrongFolderHostFunction(vaultAdapter, folderRepairService),
+  );
+  // `hasObsoleteProperties` gates the homoiconic "Clean Properties" command
+  // (asset 0da175e1) on the presence of empty frontmatter properties — same
+  // fail-open fix as isInWrongFolder, mirrored on the CLI surface.
+  evaluator.registerHostFunction(
+    "hasObsoleteProperties",
+    createHasEmptyPropertiesHostFunction(vaultAdapter),
   );
 
   // EvalContext populated with the fields the registered host functions
