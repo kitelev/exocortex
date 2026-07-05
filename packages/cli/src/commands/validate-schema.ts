@@ -77,7 +77,6 @@ export const NAMESPACE_PREFIX_MAP: ReadonlyMap<string, string> = new Map([
   ["lit__", "https://exocortex.my/ontology/lit#"],
   ["inbox__", "https://exocortex.my/ontology/inbox#"],
   ["place__", "https://exocortex.my/ontology/place#"],
-  ["exoob__", "https://exocortex.my/ontology/exoob#"],
   ["pn__", "https://exocortex.my/ontology/pn#"],
   ["period__", "https://exocortex.my/ontology/period#"],
   ["rdf__", "http://www.w3.org/1999/02/22-rdf-syntax-ns#"],
