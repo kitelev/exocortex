@@ -263,12 +263,26 @@ describe("helpers", () => {
       expect(hasEmptyProperties({ key: "" })).toBe(true);
     });
 
-    it("should return true when a property is whitespace-only string", () => {
-      expect(hasEmptyProperties({ key: "   " })).toBe(true);
+    // @req:f05caada-fbaa-43fb-9808-e5330c685df4 — a quoted whitespace-only string
+    // is KEPT by PropertyCleanupService.isEmptyValue, so the gate must NOT flag it
+    // (else the Clean Properties button shows but clicking is a no-op).
+    it("@req:f05caada-fbaa-43fb-9808-e5330c685df4 should return false for a whitespace-only string (cleanup keeps it)", () => {
+      expect(hasEmptyProperties({ key: "   " })).toBe(false);
     });
 
     it("should return true when a property is empty array", () => {
       expect(hasEmptyProperties({ key: [] })).toBe(true);
+    });
+
+    // @req:f05caada-fbaa-43fb-9808-e5330c685df4 — cleanEmptyProperties removes a
+    // list whose items are ALL empty, so the gate must flag it too.
+    it("@req:f05caada-fbaa-43fb-9808-e5330c685df4 should return true when a list has only empty items (cleanup removes it)", () => {
+      expect(hasEmptyProperties({ key: [null] })).toBe(true);
+      expect(hasEmptyProperties({ key: [null, "   ", ""] })).toBe(true);
+    });
+
+    it("should return false when a list has at least one non-empty item", () => {
+      expect(hasEmptyProperties({ key: [null, "real"] })).toBe(false);
     });
 
     it("should return true when a property is empty object", () => {
