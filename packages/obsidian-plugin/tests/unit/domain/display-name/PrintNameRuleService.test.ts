@@ -30,276 +30,6 @@ function createMockApp(files: Array<{ path: string; frontmatter: Record<string, 
 }
 
 describe("PrintNameRuleService", () => {
-  describe("basic rule resolution", () => {
-    it("should find rule for exact class match", () => {
-      const app = createMockApp([
-        {
-          path: "rule1.md",
-          frontmatter: {
-            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
-            exoob__PrintNameRule_class: "[[ems__TaskPrototype]]",
-            exoob__PrintNameRule_template: "{{exo__Asset_label}} (TP)",
-            exoob__Rule_priority: 100,
-          },
-        },
-      ]);
-
-      const service = new PrintNameRuleService(app);
-      service.initialize();
-
-      const result = service.getTemplateForClass("ems__TaskPrototype");
-      expect(result).not.toBeNull();
-      expect(result!.template).toBe("{{exo__Asset_label}} (TP)");
-      expect(result!.priority).toBe(100);
-    });
-
-    it("should return null when no rule exists for class", () => {
-      const app = createMockApp([]);
-
-      const service = new PrintNameRuleService(app);
-      service.initialize();
-
-      expect(service.getTemplateForClass("ems__Task")).toBeNull();
-    });
-
-    it("should return null when not initialized", () => {
-      const app = createMockApp([]);
-      const service = new PrintNameRuleService(app);
-
-      expect(service.getTemplateForClass("ems__Task")).toBeNull();
-    });
-  });
-
-  describe("priority resolution", () => {
-    it("should use highest priority rule when multiple rules for same class", () => {
-      const app = createMockApp([
-        {
-          path: "rule1.md",
-          frontmatter: {
-            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
-            exoob__PrintNameRule_class: "[[ems__Task]]",
-            exoob__PrintNameRule_template: "{{exo__Asset_label}} (low)",
-            exoob__Rule_priority: 10,
-          },
-        },
-        {
-          path: "rule2.md",
-          frontmatter: {
-            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
-            exoob__PrintNameRule_class: "[[ems__Task]]",
-            exoob__PrintNameRule_template: "{{exo__Asset_label}} (high)",
-            exoob__Rule_priority: 100,
-          },
-        },
-      ]);
-
-      const service = new PrintNameRuleService(app);
-      service.initialize();
-
-      const result = service.getTemplateForClass("ems__Task");
-      expect(result!.template).toBe("{{exo__Asset_label}} (high)");
-      expect(result!.priority).toBe(100);
-    });
-
-    it("should default priority to 0 when not specified", () => {
-      const app = createMockApp([
-        {
-          path: "rule1.md",
-          frontmatter: {
-            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
-            exoob__PrintNameRule_class: "[[ems__Task]]",
-            exoob__PrintNameRule_template: "{{exo__Asset_label}}",
-          },
-        },
-      ]);
-
-      const service = new PrintNameRuleService(app);
-      service.initialize();
-
-      const result = service.getTemplateForClass("ems__Task");
-      expect(result!.priority).toBe(0);
-    });
-  });
-
-  describe("class hierarchy inheritance", () => {
-    it("should inherit rule from parent class", () => {
-      const app = createMockApp([
-        {
-          path: "effort-class.md",
-          frontmatter: {
-            exo__Instance_class: ["[[exo__Class]]"],
-            exo__Asset_label: "ems__Task",
-            exo__Class_superClass: "[[ems__Effort]]",
-          },
-        },
-        {
-          path: "rule1.md",
-          frontmatter: {
-            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
-            exoob__PrintNameRule_class: "[[ems__Effort]]",
-            exoob__PrintNameRule_template: "{{exo__Asset_label}} (Effort)",
-            exoob__Rule_priority: 50,
-          },
-        },
-      ]);
-
-      const service = new PrintNameRuleService(app);
-      service.initialize();
-
-      const result = service.getTemplateForClass("ems__Task");
-      expect(result).not.toBeNull();
-      expect(result!.template).toBe("{{exo__Asset_label}} (Effort)");
-    });
-
-    it("should prefer direct class rule over inherited rule", () => {
-      const app = createMockApp([
-        {
-          path: "task-class.md",
-          frontmatter: {
-            exo__Instance_class: ["[[exo__Class]]"],
-            exo__Asset_label: "ems__Task",
-            exo__Class_superClass: "[[ems__Effort]]",
-          },
-        },
-        {
-          path: "effort-rule.md",
-          frontmatter: {
-            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
-            exoob__PrintNameRule_class: "[[ems__Effort]]",
-            exoob__PrintNameRule_template: "{{exo__Asset_label}} (Effort)",
-            exoob__Rule_priority: 50,
-          },
-        },
-        {
-          path: "task-rule.md",
-          frontmatter: {
-            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
-            exoob__PrintNameRule_class: "[[ems__Task]]",
-            exoob__PrintNameRule_template: "{{exo__Asset_label}} (Task)",
-            exoob__Rule_priority: 10,
-          },
-        },
-      ]);
-
-      const service = new PrintNameRuleService(app);
-      service.initialize();
-
-      const result = service.getTemplateForClass("ems__Task");
-      expect(result!.template).toBe("{{exo__Asset_label}} (Task)");
-    });
-  });
-
-  describe("wikilink class value cleaning", () => {
-    it("should handle class without wikilink brackets", () => {
-      const app = createMockApp([
-        {
-          path: "rule1.md",
-          frontmatter: {
-            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
-            exoob__PrintNameRule_class: "ems__Task",
-            exoob__PrintNameRule_template: "{{exo__Asset_label}}",
-            exoob__Rule_priority: 10,
-          },
-        },
-      ]);
-
-      const service = new PrintNameRuleService(app);
-      service.initialize();
-
-      expect(service.getTemplateForClass("ems__Task")).not.toBeNull();
-    });
-
-    it("should handle class with wikilink brackets", () => {
-      const app = createMockApp([
-        {
-          path: "rule1.md",
-          frontmatter: {
-            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
-            exoob__PrintNameRule_class: "[[ems__Task]]",
-            exoob__PrintNameRule_template: "{{exo__Asset_label}}",
-            exoob__Rule_priority: 10,
-          },
-        },
-      ]);
-
-      const service = new PrintNameRuleService(app);
-      service.initialize();
-
-      expect(service.getTemplateForClass("ems__Task")).not.toBeNull();
-    });
-  });
-
-  describe("invalid rules", () => {
-    it("should skip rules without template", () => {
-      const app = createMockApp([
-        {
-          path: "rule1.md",
-          frontmatter: {
-            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
-            exoob__PrintNameRule_class: "[[ems__Task]]",
-            exoob__Rule_priority: 10,
-          },
-        },
-      ]);
-
-      const service = new PrintNameRuleService(app);
-      service.initialize();
-
-      expect(service.getTemplateForClass("ems__Task")).toBeNull();
-    });
-
-    it("should skip rules without class", () => {
-      const app = createMockApp([
-        {
-          path: "rule1.md",
-          frontmatter: {
-            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
-            exoob__PrintNameRule_template: "{{exo__Asset_label}}",
-            exoob__Rule_priority: 10,
-          },
-        },
-      ]);
-
-      const service = new PrintNameRuleService(app);
-      service.initialize();
-
-      expect(service.getRulesCount()).toBe(0);
-    });
-  });
-
-  describe("refresh", () => {
-    it("should reload rules on refresh", () => {
-      const app = createMockApp([]);
-      const service = new PrintNameRuleService(app);
-      service.initialize();
-
-      expect(service.getRulesCount()).toBe(0);
-
-      const newFiles = [
-        {
-          path: "rule1.md",
-          frontmatter: {
-            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
-            exoob__PrintNameRule_class: "[[ems__Task]]",
-            exoob__PrintNameRule_template: "{{exo__Asset_label}}",
-            exoob__Rule_priority: 10,
-          },
-        },
-      ];
-      const newMockFile = { path: "rule1.md", basename: "rule1", extension: "md" } as TFile;
-      (app.vault.getMarkdownFiles as jest.Mock).mockReturnValue([newMockFile]);
-      (app.metadataCache.getFileCache as jest.Mock).mockImplementation((file: TFile) => {
-        if (file.path === "rule1.md") {
-          return { frontmatter: newFiles[0].frontmatter };
-        }
-        return null;
-      });
-
-      service.refresh();
-
-      expect(service.getRulesCount()).toBe(1);
-    });
-  });
 
   describe("metadataResolver", () => {
     it("should resolve wikilink to metadata", () => {
@@ -497,5 +227,106 @@ describe("PrintNameRuleService — exo__DisplayNameSpec (v1 thin, single-hop) [r
     const result = service.getTemplateForClass("ems__Task");
     expect(result).not.toBeNull();
     expect(result!.template).toBe("{{exo__Asset_label}}");
+  });
+
+  it("applies a spec from a PARENT class to a child-class asset (class-hierarchy inheritance)", () => {
+    const app = createMockApp([
+      {
+        path: "task-class.md",
+        frontmatter: {
+          exo__Asset_uid: "taskcls",
+          exo__Instance_class: ["[[8619c4fc-64f1-4869-b17e-e34186cacca9|exo__Class]]"],
+          exo__Asset_label: "ems__Task",
+          exo__Class_superClass: ["[[E|ems__Effort]]"],
+        },
+      },
+      {
+        path: "spec.md",
+        frontmatter: {
+          exo__Asset_uid: "spec",
+          exo__Instance_class: ["[[exo__DisplayNameSpec]]"],
+          exo__DisplayNameSpec_appliesToClass: "[[E|ems__Effort]]",
+          exo__DisplayNameSpec_priority: 1,
+        },
+      },
+      {
+        path: "part.md",
+        frontmatter: {
+          exo__Asset_uid: "part",
+          exo__Instance_class: ["[[exo__PrintedLiteral]]"],
+          exo__DisplayNamePart_of: "[[spec]]",
+          exo__DisplayNamePart_order: 1,
+          exo__PrintedLiteral_literal: "EFFORT",
+        },
+      },
+    ]);
+    const service = new PrintNameRuleService(app);
+    service.initialize();
+    // direct spec on the parent class...
+    expect(service.getTemplateForClass("ems__Effort")!.template).toBe("EFFORT");
+    // ...inherited by the child class via the hierarchy walk.
+    expect(service.getTemplateForClass("ems__Task")!.template).toBe("EFFORT");
+  });
+
+  it("refresh() reloads specs from the vault", () => {
+    const app = createMockApp([]);
+    const service = new PrintNameRuleService(app);
+    service.initialize();
+    expect(service.getRulesCount()).toBe(0);
+
+    (app.vault.getMarkdownFiles as jest.Mock).mockReturnValue([
+      { path: "spec.md", basename: "spec", extension: "md" } as TFile,
+      { path: "part.md", basename: "part", extension: "md" } as TFile,
+    ]);
+    (app.metadataCache.getFileCache as jest.Mock).mockImplementation((f: TFile) =>
+      f.path === "spec.md"
+        ? {
+            frontmatter: {
+              exo__Asset_uid: "spec",
+              exo__Instance_class: ["[[exo__DisplayNameSpec]]"],
+              exo__DisplayNameSpec_appliesToClass: "[[ems__Task]]",
+            },
+          }
+        : f.path === "part.md"
+          ? {
+              frontmatter: {
+                exo__Asset_uid: "part",
+                exo__Instance_class: ["[[exo__PrintedLiteral]]"],
+                exo__DisplayNamePart_of: "[[spec]]",
+                exo__DisplayNamePart_order: 1,
+                exo__PrintedLiteral_literal: "X",
+              },
+            }
+          : null,
+    );
+
+    service.refresh();
+    expect(service.getRulesCount()).toBe(1);
+  });
+
+  it("skips a spec with no parts and a part carrying neither property nor literal", () => {
+    const app = createMockApp([
+      {
+        path: "empty-spec.md",
+        frontmatter: {
+          exo__Asset_uid: "es",
+          exo__Instance_class: ["[[exo__DisplayNameSpec]]"],
+          exo__DisplayNameSpec_appliesToClass: "[[ems__Task]]",
+        },
+      },
+      {
+        path: "bad-part.md",
+        frontmatter: {
+          exo__Asset_uid: "bp",
+          exo__Instance_class: ["[[exo__PrintedProperty]]"],
+          exo__DisplayNamePart_of: "[[es]]",
+          exo__DisplayNamePart_order: 1,
+        },
+      },
+    ]);
+    const service = new PrintNameRuleService(app);
+    service.initialize();
+    expect(service.getRulesCount()).toBe(0);
+    expect(service.getTemplateForClass("ems__Task")).toBeNull();
   });
 });

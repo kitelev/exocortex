@@ -19,7 +19,7 @@ const PRINTED_PROPERTY_CLASS = "exo__PrintedProperty";
 const PRINTED_PROPERTY_CLASS_UID = "7d58de40-d941-4a66-88e2-13afc4fdc41d";
 const PRINTED_LITERAL_CLASS = "exo__PrintedLiteral";
 const PRINTED_LITERAL_CLASS_UID = "4d5437c9-788e-4a6d-9be0-4af3a84554f4";
-// Compiled specs win over legacy exoob__PrintNameRule rules (which max out well below this).
+// Base priority floor for compiled exo__DisplayNameSpec rules (a spec's own priority adds on top).
 const DISPLAY_NAME_SPEC_BASE_PRIORITY = 1000;
 
 interface RawDisplayNameSpec {
@@ -109,9 +109,7 @@ export class PrintNameRuleService {
 
       const instanceClass = this.cleanClassValue(fm.exo__Instance_class);
 
-      if (instanceClass === "exoob__PrintNameRule") {
-        this.processRuleAsset(fm, file.path);
-      } else if (
+      if (
         instanceClass === DISPLAY_NAME_SPEC_CLASS ||
         instanceClass === DISPLAY_NAME_SPEC_CLASS_UID
       ) {
@@ -198,8 +196,8 @@ export class PrintNameRuleService {
 
   /**
    * Compile collected specs + parts into template strings and register them as
-   * high-priority PrintNameRules (so they win over legacy exoob rules and the
-   * TS classTemplates). Each spec is indexed under BOTH its class UID and label.
+   * high-priority PrintNameRules (so they win over the TS classTemplates cold-start
+   * seeds). Each spec is indexed under BOTH its class UID and label.
    */
   private compileDisplayNameSpecs(
     rawSpecs: Map<string, RawDisplayNameSpec>,
@@ -315,31 +313,6 @@ export class PrintNameRuleService {
       );
     }
     return [cleaned.replace(/\.md$/, "")];
-  }
-
-  private processRuleAsset(fm: Record<string, unknown>, path: string): void {
-    const ruleClass = this.cleanClassValue(fm.exoob__PrintNameRule_class);
-    const template = fm.exoob__PrintNameRule_template;
-    const priority = fm.exoob__Rule_priority;
-
-    if (!ruleClass || typeof template !== "string" || !template.trim()) {
-      return;
-    }
-
-    const rule: PrintNameRule = {
-      className: ruleClass,
-      template: template.trim(),
-      priority: typeof priority === "number" ? priority : 0,
-      sourceFile: path,
-    };
-
-    const existing = this.rules.get(ruleClass);
-    if (existing) {
-      existing.push(rule);
-      existing.sort((a, b) => b.priority - a.priority);
-    } else {
-      this.rules.set(ruleClass, [rule]);
-    }
   }
 
   private getAncestorClasses(className: string): string[] {
