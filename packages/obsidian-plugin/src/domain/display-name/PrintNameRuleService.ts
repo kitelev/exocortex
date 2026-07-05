@@ -184,8 +184,8 @@ export class PrintNameRuleService {
           : NaN;
     if (!Number.isFinite(order)) return;
 
-    // exo__PrintedProperty → resolve the referenced property's local key (label after "|").
-    const propertyKey = this.cleanClassValue(fm.exo__PrintedProperty_property);
+    // exo__PrintedProperty → resolve the referenced property's frontmatter key (all wikilink forms).
+    const propertyKey = this.resolvePropertyKey(fm.exo__PrintedProperty_property);
     const rawLiteral = fm.exo__PrintedLiteral_literal;
     const literal = typeof rawLiteral === "string" ? rawLiteral : undefined;
 
@@ -240,6 +240,52 @@ export class PrintNameRuleService {
         }
       }
     }
+  }
+
+  /**
+   * Resolve an exo__PrintedProperty_property reference to the frontmatter KEY it prints.
+   * Handles every wikilink form so a spec authored either way works:
+   *  - `[[uid|label]]` → the alias is the key (fast path, no hop);
+   *  - `[[exo__Asset_label]]` → the bare target is already the key;
+   *  - `[[<uid>]]` (UID-canon strip-alias) → second hop: read the referenced property
+   *    asset's exo__Asset_label (which equals its frontmatter key).
+   */
+  private resolvePropertyKey(value: unknown): string | null {
+    let raw = value;
+    if (Array.isArray(raw)) {
+      if (raw.length === 0) return null;
+      raw = raw[0];
+    }
+    if (typeof raw !== "string") return null;
+
+    const cleaned = raw
+      .replace(/^\[\[|\]\]$/g, "")
+      .replace(/^"|"$/g, "")
+      .trim();
+    if (!cleaned) return null;
+
+    if (cleaned.includes("|")) {
+      const label = cleaned.split("|").pop()?.trim();
+      return label || null;
+    }
+
+    const target = cleaned.replace(/\.md$/, "").trim();
+    if (!target) return null;
+
+    // Second hop: resolve the bare target to a property asset and use its label.
+    const file =
+      this.app.metadataCache.getFirstLinkpathDest(target, "") ??
+      this.app.metadataCache.getFirstLinkpathDest(
+        target.endsWith(".md") ? target : `${target}.md`,
+        "",
+      );
+    if (file instanceof TFile) {
+      const label = this.app.metadataCache.getFileCache(file)?.frontmatter?.exo__Asset_label;
+      if (typeof label === "string" && label.trim()) return label.trim();
+    }
+
+    // Fallback: the bare value is itself the frontmatter key.
+    return target;
   }
 
   /**

@@ -458,4 +458,44 @@ describe("PrintNameRuleService — exo__DisplayNameSpec (v1 thin, single-hop) [r
     service.initialize();
     expect(service.getTemplateForClass("ems__Whatever")).toBeNull();
   });
+
+  it("resolves a PrintedProperty authored with the UID-canon strip-alias form [[<uid>]] via a second hop", () => {
+    const PROP_UID = "12a6151b-801f-4be2-bd6e-a787eedd56ae";
+    const app = createMockApp([
+      // the exo__Property def asset — second hop reads its exo__Asset_label
+      {
+        path: `${PROP_UID}.md`,
+        frontmatter: {
+          exo__Asset_uid: PROP_UID,
+          exo__Instance_class: ["[[ae56ca4c-b610-42a4-a25d-058c23673296|exo__DatatypeProperty]]"],
+          exo__Asset_label: "exo__Asset_label",
+        },
+      },
+      {
+        path: "spec.md",
+        frontmatter: {
+          exo__Asset_uid: "spec",
+          exo__Instance_class: ["[[exo__DisplayNameSpec]]"],
+          exo__DisplayNameSpec_appliesToClass: "[[C|ems__Task]]",
+          exo__DisplayNameSpec_priority: 1,
+        },
+      },
+      {
+        path: "part.md",
+        frontmatter: {
+          exo__Asset_uid: "part",
+          exo__Instance_class: ["[[exo__PrintedProperty]]"],
+          exo__DisplayNamePart_of: "[[spec]]",
+          exo__DisplayNamePart_order: 1,
+          // strip-alias UID-canon form — no "|label"
+          exo__PrintedProperty_property: `[[${PROP_UID}]]`,
+        },
+      },
+    ]);
+    const service = new PrintNameRuleService(app);
+    service.initialize();
+    const result = service.getTemplateForClass("ems__Task");
+    expect(result).not.toBeNull();
+    expect(result!.template).toBe("{{exo__Asset_label}}");
+  });
 });
