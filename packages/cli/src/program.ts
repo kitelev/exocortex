@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { sparqlQueryCommand } from "./commands/sparql-query.js";
 import { sparqlIndexCommand } from "./commands/sparql-index.js";
 import { resolveCommand } from "./commands/resolve.js";
+import { resolveButtonsCommand } from "./commands/resolve-buttons.js";
 import { validateCommand } from "./commands/validate.js";
 import { classesCommand } from "./commands/classes.js";
 import { createCommand } from "./commands/create.js";
@@ -52,6 +53,10 @@ export function createProgram(version?: string): Command {
 
   // Auxiliary commands retained from v15
   program.addCommand(resolveCommand());
+  // Issue #3833 — authoritative inline-button-visibility oracle
+  // (binding-match ∩ precondition-eval; strictly more complete than
+  // `apply --dry-run`, which is precondition-only).
+  program.addCommand(resolveButtonsCommand());
   program.addCommand(classesCommand());
   program.addCommand(createCommand());
   program.addCommand(workflowCommand());
