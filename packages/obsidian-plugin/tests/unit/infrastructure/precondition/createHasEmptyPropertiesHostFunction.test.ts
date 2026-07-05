@@ -92,8 +92,8 @@ describe("createHasEmptyPropertiesHostFunction", () => {
   it.each([
     ["null value (`key:`)", { exo__Asset_label: "ok", empty: null }],
     ["empty string", { exo__Asset_label: "ok", empty: "" }],
-    ["whitespace-only string", { exo__Asset_label: "ok", empty: "   " }],
     ["empty array", { exo__Asset_label: "ok", empty: [] }],
+    ["all-empty list", { exo__Asset_label: "ok", empty: [null] }],
     ["empty object", { exo__Asset_label: "ok", empty: {} }],
   ])(
     "returns true when the asset has an empty property — %s",
