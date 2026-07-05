@@ -31,12 +31,14 @@
  *   RED  (filter reverted): prototype `visible` contains "NotOnProto".
  *   GREEN (filter present):  prototype `visible` = ["Always"] only.
  */
-import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
+import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
-const { resolveButtons } = await import("../../src/commands/resolve-buttons.js");
+const { resolveButtons, resolveButtonsCommand } = await import(
+  "../../src/commands/resolve-buttons.js"
+);
 
 // GroundingType catalog UID (packages/core/src/domain/constants/GroundingTypeUIDs.ts)
 const GT_SERVICE_CALL = "9bf9fc99-ac37-4e51-b9f5-bd920099947c";
@@ -261,7 +263,51 @@ describe("@req:960a7ba7-3470-42ba-afdc-f6766c3c3126 resolve-buttons — binding-
     expect(a.visible.map((e) => e.label)).toEqual(["Always", "NotOnProto"]);
   });
 
-  it("@req:960a7ba7-3470-42ba-afdc-f6766c3c3126 throws for a target outside the vault (Issue #3788 canonicalisation parity)", async () => {
-    await expect(resolveButtons(root, "../escape.md")).rejects.toThrow();
+  it("@req:960a7ba7-3470-42ba-afdc-f6766c3c3126 throws for an EXISTING target outside the vault (Issue #3788 canonicalisation guard)", async () => {
+    // A file that exists OUTSIDE the vault root — so resolveButtons passes the
+    // not-found guard and actually reaches the #3788 outside-vault branch
+    // (a non-existent `../x.md` would trip the earlier not-found guard instead).
+    const sibling = path.join(path.dirname(root), `rb-escape-${path.basename(root)}.md`);
+    fs.writeFileSync(sibling, "---\nexo__Asset_uid: x\n---\n", "utf-8");
+    try {
+      await expect(
+        resolveButtons(root, path.relative(root, sibling)),
+      ).rejects.toThrow(/outside the vault/);
+    } finally {
+      fs.rmSync(sibling, { force: true });
+    }
+  });
+
+  it("@req:960a7ba7-3470-42ba-afdc-f6766c3c3126 CLI command emits --json with visible + (show-hidden) hidden button-set", async () => {
+    const logs: string[] = [];
+    const logSpy = jest
+      .spyOn(console, "log")
+      .mockImplementation((...args: unknown[]) => {
+        logs.push(args.map(String).join(" "));
+      });
+    try {
+      await resolveButtonsCommand().parseAsync([
+        "node",
+        "resolve-buttons",
+        `${TARGET_PROTO}.md`,
+        "--vault",
+        root,
+        "--json",
+        "--show-hidden",
+      ]);
+      const payload = JSON.parse(logs.join("\n"));
+      expect(payload.target).toBe(`${TARGET_PROTO}.md`);
+      expect(payload.visible.map((e: { label: string }) => e.label)).toEqual([
+        "Always",
+      ]);
+      const hidden = payload.hidden.map((e: { label: string }) => e.label);
+      expect(hidden).toContain("NotOnProto");
+      expect(
+        payload.hidden.find((e: { label: string }) => e.label === "NotOnProto")
+          ?.reason,
+      ).toBe("precondition-false");
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });

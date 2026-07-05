@@ -25,10 +25,12 @@ import { createIsInWrongFolderHostFunction } from "../precondition/createIsInWro
 import { createHasEmptyPropertiesHostFunction } from "../precondition/createHasEmptyPropertiesHostFunction.js";
 
 /**
- * Issue #3833 — `resolve-buttons <target>` prints the ACTUAL command button-set
- * the plugin would render on an asset's page: **Layer A** (binding-match via the
- * class hierarchy, `CommandResolver.resolveForAssetMulti`) **∩ Layer B**
- * (precondition-eval, `PreconditionEvaluator.evaluate` per command).
+ * Issue #3833 — `resolve-buttons <target>` prints the command button-set the
+ * plugin resolves for an asset's page BEFORE the (downstream, out-of-scope)
+ * RFC-024 class-panel filter: **Layer A** (binding-match via the class
+ * hierarchy, `CommandResolver.resolveForAssetMulti`) **∩ Layer B**
+ * (precondition-eval, `PreconditionEvaluator.evaluate` per command). For the
+ * common case (no `exo__Layout` panel) this equals the live rendered set.
  *
  * This is the authoritative button-visibility oracle for layout auditing — it
  * mirrors the plugin caller `DynamicCommandButtonGroupBuilder.resolveViaFullPath`
