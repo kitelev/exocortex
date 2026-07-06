@@ -538,6 +538,10 @@ describe("Integration (req f1fbea08): archived ems__Task shows only «Un-archive
     const { resolver, evaluator } = await buildResolver(false);
     const reopen = await resolver.loadCommand(REOPEN_CMD);
     expect(reopen).not.toBeNull();
+    // Guard against a fail-open RED: the reverted wrapper MUST still load (an
+    // `undefined` precondition would fail-open to `true` and produce a spurious
+    // RED unrelated to the archived-guard). See test-fixture-realism §fixture-not-loading.
+    expect(reopen!.precondition).toBeDefined();
 
     // The guard is gone → Re-open's precondition is now TRUE on the archived task…
     expect(await evaluator.evaluate(reopen!.precondition, ARCHIVED_IRI)).toBe(
