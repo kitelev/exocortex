@@ -1240,6 +1240,24 @@ export default class ExocortexPlugin extends Plugin {
           // "resolved" event fires post-dispose.
           this.exoLayoutRepository?.rebuildNow();
 
+          // Issue #3842 — re-scan vault `exo__DisplayNameSpec` rules on the
+          // authoritative "metadata fully parsed" signal. The onload
+          // `printNameRuleService.initialize()` scan runs BEFORE metadataCache
+          // has resolved on a large vault, so late-parsed (or mid-session
+          // ExoSync-pulled) spec assets are missed — `getFileCache` returns
+          // null for their still-unparsed frontmatter → 0 rules → hardcoded
+          // suffix classes silently render without the vault-configured
+          // displayName. The `metadataCache.on("changed")` subscription
+          // (wired at construction) only fires on per-file edits, so specs
+          // synced without a subsequent edit stayed invisible until a manual
+          // refresh. `refresh()` re-runs `scanVault()` against the now-warm
+          // cache. Kept outside the `postResolveReindexDone` one-shot guard
+          // (like `rebuildNow()` above): "resolved" is rare and `scanVault`
+          // is cheap + idempotent (a bounded `getFileCache` sweep), so
+          // re-emissions after large vault-level reindexes correctly refresh
+          // the rules too.
+          this.printNameRuleService.refresh();
+
           if (postResolveReindexDone) return;
           postResolveReindexDone = true;
 

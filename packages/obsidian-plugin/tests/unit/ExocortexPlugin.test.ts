@@ -1892,6 +1892,34 @@ describe("ExocortexPlugin", () => {
       expect(preconditionEvaluatorSpy).toHaveBeenCalled();
     });
 
+    // Issue #3842 — the onload `printNameRuleService.initialize()` scan runs
+    // BEFORE metadataCache resolves on a large vault, so late-parsed (or
+    // mid-session ExoSync-pulled) `exo__DisplayNameSpec` assets are missed →
+    // 0 rules → hardcoded suffix classes render without the vault-configured
+    // displayName until a manual refresh. The fix re-scans specs on the
+    // authoritative "metadata fully parsed" `resolved` signal. This test pins
+    // that the resolved handler calls `printNameRuleService.refresh()`.
+    it("re-scans display-name specs (printNameRuleService.refresh) on 'resolved' (#3842)", async () => {
+      await plugin.onload();
+      await flushPromises();
+
+      // Spy AFTER onload — printNameRuleService is constructed inside onload.
+      // Record the baseline so the assertion isolates the resolved-triggered
+      // refresh from any onload-time scan / "changed"-event refresh.
+      const refreshRuleSpy = jest.spyOn(
+        plugin.printNameRuleService,
+        "refresh",
+      );
+      expect(refreshRuleSpy).not.toHaveBeenCalled();
+
+      resolvedHandler!();
+      await flushPromises();
+
+      // Post-fix: firing "resolved" re-scans the vault display-name specs.
+      // Pre-fix (refresh not wired into the resolved handler): 0 calls → RED.
+      expect(refreshRuleSpy).toHaveBeenCalledTimes(1);
+    });
+
     it("re-index is one-shot: subsequent 'resolved' events do not trigger another refresh", async () => {
       await plugin.onload();
       await flushPromises();
