@@ -469,6 +469,81 @@ describe("PrintNameRuleService — conditional exo__DisplayNameSpec (v2 slice, p
     ).toBe("Fix the parser");
   });
 
+  it("dual-IRI equality closes the bare-label gap — a UID-form matchValue matches a BARE-label-form status via the compile-time second hop", () => {
+    // The shipped spec authors matchValue UID-canon [[<doing-uid>]]; a legacy instance may
+    // store its status as the bare label [[ems__EffortStatusDoing]] (no UID). With the
+    // enum asset present, resolveMatchValues expands matchValue to {uid, label} at compile
+    // time, so the bare-label instance still matches. Fixture includes the EffortStatusDoing
+    // enum asset so the second hop can read its uid + label.
+    const app = createMockApp([
+      {
+        path: `${DOING_UID}.md`,
+        frontmatter: {
+          exo__Asset_uid: DOING_UID,
+          exo__Instance_class: ["[[ems__EffortStatus]]"],
+          exo__Asset_label: "ems__EffortStatusDoing",
+        },
+      },
+      {
+        path: `${STATUS_PROP_UID}.md`,
+        frontmatter: {
+          exo__Asset_uid: STATUS_PROP_UID,
+          exo__Instance_class: ["[[9a1cf31c-9d41-4ef3-9023-584a8d087d16|exo__ObjectProperty]]"],
+          exo__Asset_label: "ems__Effort_status",
+        },
+      },
+      {
+        path: `${SPEC_UID}.md`,
+        frontmatter: {
+          exo__Asset_uid: SPEC_UID,
+          exo__Instance_class: ["[[07eab746-0874-4676-9d98-dbaad1bc6fb8|exo__DisplayNameSpec]]"],
+          exo__DisplayNameSpec_appliesToClass: `[[${TASK_UID}|ems__Task]]`,
+          exo__DisplayNameSpec_priority: 50,
+          exo__DisplayNameSpec_matchPath: `[[${STATUS_PROP_UID}]]`,
+          exo__DisplayNameSpec_matchValue: `[[${DOING_UID}]]`, // UID-canon
+        },
+      },
+      {
+        path: "cond-literal.md",
+        frontmatter: {
+          exo__Asset_uid: "cond-literal",
+          exo__Instance_class: ["[[4d5437c9-788e-4a6d-9be0-4af3a84554f4|exo__PrintedLiteral]]"],
+          exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+          exo__DisplayNamePart_order: 0,
+          exo__PrintedLiteral_literal: "🔄 ",
+        },
+      },
+      {
+        path: "cond-prop.md",
+        frontmatter: {
+          exo__Asset_uid: "cond-prop",
+          exo__Instance_class: ["[[7d58de40-d941-4a66-88e2-13afc4fdc41d|exo__PrintedProperty]]"],
+          exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+          exo__DisplayNamePart_order: 1,
+          exo__PrintedProperty_property: `[[${LABEL_PROP_UID}|exo__Asset_label]]`,
+        },
+      },
+    ]);
+    const service = new PrintNameRuleService(app);
+    service.initialize();
+    const resolver = new DisplayNameResolver(
+      { defaultTemplate: "{{exo__Asset_label}}", classTemplates: {} },
+      service,
+    );
+    // bare label-form status (target IS the label, no UID) still resolves the 🔄.
+    expect(
+      resolver.resolve({ metadata: taskMeta("[[ems__EffortStatusDoing]]"), basename: "t" }),
+    ).toBe("🔄 Fix the parser");
+    // UID-form still works.
+    expect(resolver.resolve({ metadata: taskMeta(`[[${DOING_UID}]]`), basename: "t" })).toBe(
+      "🔄 Fix the parser",
+    );
+    // a different bare label must NOT match (negative control).
+    expect(
+      resolver.resolve({ metadata: taskMeta("[[ems__EffortStatusDone]]"), basename: "t" }),
+    ).toBe("Fix the parser");
+  });
+
   it("a matched conditional spec BEATS a lower-priority unconditional spec; an unmatched conditional yields to it", () => {
     // Two specs on ems__Task: a HIGH-priority conditional 🔄-Doing + a LOW-priority
     // unconditional "[TASK] <label>". Doing → conditional wins; non-Doing → conditional

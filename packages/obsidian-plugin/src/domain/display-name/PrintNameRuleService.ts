@@ -14,9 +14,12 @@ export interface DisplayNameMatcher {
   /** Frontmatter key of the instance property the condition inspects (e.g. "ems__Effort_status"). */
   matchKey: string;
   /**
-   * Accepted identities of the expected value — BOTH the UID and the label form
-   * (dual-IRI equality). A conditional rule matches when the instance value's
-   * cleaned identity set intersects this set.
+   * All identity forms of the ONE accepted value — its UID, its label, and any raw
+   * wikilink form(s) — collected at compile time (dual-IRI equality). NOT a set of
+   * distinct accepted values (v2 single-value slice; conjunctions/disjunctions are a
+   * future exo__DisplayNameMatcher). A conditional rule matches when the instance value's
+   * cleaned identity set intersects this set — so it matches whether the instance stores
+   * the value as `[[<uid>]]`, `[[<uid>|label]]`, or the bare `[[<label>]]`.
    */
   matchValues: string[];
 }
@@ -133,6 +136,32 @@ export class PrintNameRuleService {
     return instanceForms.some((form) => matcher.matchValues.includes(form));
   }
 
+  /**
+   * Resolve exo__DisplayNameSpec_matchValue into ALL identity forms of the single
+   * accepted value — the raw wikilink form(s) PLUS, via one compile-time second hop, the
+   * referenced asset's UID and label. This closes the dual-IRI gap fully: a matchValue
+   * authored UID-canon `[[<uid>]]` still matches an instance whose value is stored as the
+   * bare label `[[<label>]]` (and vice versa), because both the UID and the label end up
+   * in the accepted set. The hop runs once per spec at scanVault — no per-render cost.
+   */
+  private resolveMatchValues(value: unknown): string[] {
+    const raw = this.extractClassKeys(value);
+    if (raw.length === 0) return [];
+    const forms = new Set<string>(raw);
+    for (const id of raw) {
+      const file =
+        this.app.metadataCache.getFirstLinkpathDest(id, "") ??
+        this.app.metadataCache.getFirstLinkpathDest(id.endsWith(".md") ? id : `${id}.md`, "");
+      if (!(file instanceof TFile)) continue;
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      const uid = fm?.exo__Asset_uid;
+      const label = fm?.exo__Asset_label;
+      if (typeof uid === "string" && uid.trim()) forms.add(uid.trim());
+      if (typeof label === "string" && label.trim()) forms.add(label.trim());
+    }
+    return [...forms];
+  }
+
   createMetadataResolver(): MetadataResolver {
     return (wikilinkTarget: string): Record<string, unknown> | null => {
       const cleaned = wikilinkTarget
@@ -227,10 +256,11 @@ export class PrintNameRuleService {
 
     // Conditional specialization (v2 slice): resolve matchPath → the frontmatter key it
     // inspects (single-hop, same wikilink resolution as a PrintedProperty ref) and
-    // matchValue → the accepted identity set (UID + label). A matcher is set only when
-    // BOTH are present; otherwise the spec stays unconditional (v1 path).
+    // matchValue → the accepted identity set (all forms of the ONE accepted value). A
+    // matcher is set only when BOTH are present; otherwise the spec stays unconditional
+    // (v1 path).
     const matchKey = this.resolvePropertyKey(fm.exo__DisplayNameSpec_matchPath);
-    const matchValues = this.extractClassKeys(fm.exo__DisplayNameSpec_matchValue);
+    const matchValues = this.resolveMatchValues(fm.exo__DisplayNameSpec_matchValue);
     const hasMatcher = matchKey !== null && matchValues.length > 0;
 
     rawSpecs.set(uid, {
