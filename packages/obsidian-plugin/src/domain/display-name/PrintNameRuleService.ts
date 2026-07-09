@@ -1,11 +1,33 @@
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
 
+/**
+ * A per-render condition compiled from an exo__DisplayNameSpec's
+ * exo__DisplayNameSpec_matchPath (→ frontmatter key) + exo__DisplayNameSpec_matchValue
+ * (→ cleaned enum identity/-ies). A rule carrying a matcher is CONDITIONAL: it only
+ * participates in class selection when the rendered instance's frontmatter value at
+ * `matchKey` equals `matchValue` (evaluated per-render — the condition cannot be baked
+ * into the compiled template because it depends on the concrete instance). v2
+ * conditional-slice (RFC 92b91345, req ed4201d1).
+ */
+export interface DisplayNameMatcher {
+  /** Frontmatter key of the instance property the condition inspects (e.g. "ems__Effort_status"). */
+  matchKey: string;
+  /**
+   * Accepted identities of the expected value — BOTH the UID and the label form
+   * (dual-IRI equality). A conditional rule matches when the instance value's
+   * cleaned identity set intersects this set.
+   */
+  matchValues: string[];
+}
+
 export interface PrintNameRule {
   className: string;
   template: string;
   priority: number;
   sourceFile: string;
+  /** Present iff the spec declared exo__DisplayNameSpec_matchPath + _matchValue (conditional). */
+  matcher?: DisplayNameMatcher;
 }
 
 type MetadataResolver = (wikilinkTarget: string) => Record<string, unknown> | null;
@@ -26,6 +48,9 @@ interface RawDisplayNameSpec {
   uid: string;
   classKeys: string[]; // UID + label of appliesToClass (both indexed — #2110)
   priority: number;
+  // Conditional specialization (v2 slice — RFC 92b91345, req ed4201d1). Both present or both absent.
+  matchKey?: string; // frontmatter key resolved from exo__DisplayNameSpec_matchPath
+  matchValues?: string[]; // accepted identities (UID + label) from exo__DisplayNameSpec_matchValue
 }
 
 interface RawDisplayNamePart {
@@ -47,23 +72,65 @@ export class PrintNameRuleService {
     this.initialized = true;
   }
 
-  getTemplateForClass(className: string): { template: string; priority: number } | null {
+  /**
+   * Select the winning template for a class. Rules are priority-sorted; a CONDITIONAL
+   * rule (one carrying a `matcher`) only participates when the rendered instance's
+   * `metadata` satisfies the matcher — evaluated per-render, so a specialized displayName
+   * appears/disappears as the instance's value changes without a re-scan. Unconditional
+   * rules always participate (v1 path byte-identical). When `metadata` is omitted,
+   * conditional rules are skipped (no instance to test).
+   */
+  getTemplateForClass(
+    className: string,
+    metadata?: Record<string, unknown>,
+  ): { template: string; priority: number } | null {
     if (!this.initialized) return null;
 
-    const directRules = this.rules.get(className);
-    if (directRules && directRules.length > 0) {
-      return { template: directRules[0].template, priority: directRules[0].priority };
-    }
+    const direct = this.selectRule(this.rules.get(className), metadata);
+    if (direct) return { template: direct.template, priority: direct.priority };
 
     const ancestors = this.getAncestorClasses(className);
     for (const ancestor of ancestors) {
-      const ancestorRules = this.rules.get(ancestor);
-      if (ancestorRules && ancestorRules.length > 0) {
-        return { template: ancestorRules[0].template, priority: ancestorRules[0].priority };
-      }
+      const inherited = this.selectRule(this.rules.get(ancestor), metadata);
+      if (inherited) return { template: inherited.template, priority: inherited.priority };
     }
 
     return null;
+  }
+
+  /**
+   * Pick the highest-priority PARTICIPATING rule from a priority-sorted list. A rule
+   * participates if it is unconditional (no matcher) OR its matcher is satisfied by the
+   * instance metadata. A matched conditional rule beats an unconditional one purely by
+   * priority (the list is already sorted descending), so a conditional spec authored with
+   * a higher priority wins over the fallback; an unmatched conditional is skipped.
+   */
+  private selectRule(
+    rules: PrintNameRule[] | undefined,
+    metadata?: Record<string, unknown>,
+  ): PrintNameRule | null {
+    if (!rules || rules.length === 0) return null;
+    for (const rule of rules) {
+      if (!rule.matcher) return rule; // unconditional — always participates
+      if (metadata && this.matcherSatisfied(rule.matcher, metadata)) return rule;
+    }
+    return null;
+  }
+
+  /**
+   * True when the instance's frontmatter value at `matcher.matchKey` equals `matchValue`
+   * under dual-IRI equality: both sides are reduced to their identity set (UID + label
+   * forms via extractClassKeys) and the sets must intersect. This makes the condition
+   * robust whether the status is stored as `[[<uid>]]`, `[[<uid>|label]]`, or the bare
+   * label — see sparql-iri-form-pre-verify.
+   */
+  private matcherSatisfied(
+    matcher: DisplayNameMatcher,
+    metadata: Record<string, unknown>,
+  ): boolean {
+    const instanceForms = this.extractClassKeys(metadata[matcher.matchKey]);
+    if (instanceForms.length === 0) return false;
+    return instanceForms.some((form) => matcher.matchValues.includes(form));
   }
 
   createMetadataResolver(): MetadataResolver {
@@ -158,10 +225,19 @@ export class PrintNameRuleService {
           ? Number(rawPriority)
           : 0;
 
+    // Conditional specialization (v2 slice): resolve matchPath → the frontmatter key it
+    // inspects (single-hop, same wikilink resolution as a PrintedProperty ref) and
+    // matchValue → the accepted identity set (UID + label). A matcher is set only when
+    // BOTH are present; otherwise the spec stays unconditional (v1 path).
+    const matchKey = this.resolvePropertyKey(fm.exo__DisplayNameSpec_matchPath);
+    const matchValues = this.extractClassKeys(fm.exo__DisplayNameSpec_matchValue);
+    const hasMatcher = matchKey !== null && matchValues.length > 0;
+
     rawSpecs.set(uid, {
       uid,
       classKeys,
       priority: Number.isFinite(priority) ? priority : 0,
+      ...(hasMatcher ? { matchKey: matchKey ?? undefined, matchValues } : {}),
     });
   }
 
@@ -221,6 +297,11 @@ export class PrintNameRuleService {
 
       const priority = DISPLAY_NAME_SPEC_BASE_PRIORITY + spec.priority;
 
+      const matcher: DisplayNameMatcher | undefined =
+        spec.matchKey && spec.matchValues && spec.matchValues.length > 0
+          ? { matchKey: spec.matchKey, matchValues: spec.matchValues }
+          : undefined;
+
       for (const classKey of spec.classKeys) {
         if (!classKey) continue;
         const rule: PrintNameRule = {
@@ -228,6 +309,7 @@ export class PrintNameRuleService {
           template,
           priority,
           sourceFile: spec.uid,
+          ...(matcher ? { matcher } : {}),
         };
         const existing = this.rules.get(classKey);
         if (existing) {
