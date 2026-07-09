@@ -427,8 +427,8 @@ async function seedVault(fs: InMemoryFileSystem, gated: boolean): Promise<void> 
     allPrecond(CA_UTILITY, "Not a prototype, not archived, and visible until Done", CA_INNER, VISIBLE_UNTIL_DONE),
     allPrecond(CA_WRAPPER, "Not a prototype, not archived, and visible until terminal", CA_UTILITY, VISIBLE_UNTIL_TERMINAL),
 
-    // ---- c57642c4 (edited in place per gated) ----
-    allPrecond(C57642C4, "Visible until Done, not a prototype", ...c57Children),
+    // ---- c57642c4 (edited in place per gated; label neutral — children vary) ----
+    allPrecond(C57642C4, "Active-work visibility gate (c57642c4)", ...c57Children),
 
     // ---- Grounding (placeholder — not executed in a visibility test) ----
     grounding(SHARED_GROUNDING),
@@ -548,7 +548,7 @@ describe("Integration (req 127763f8): Trashed is a second terminal status equal 
     expect(trashed).not.toContain("Un-archive"); // not archived → Un-archive hidden
 
     const trashedArchived = await visibleCommandNames(resolver, evaluator, TRASHED_ARCHIVED_IRI);
-    expect(trashedArchived).toEqual(["Un-archive"]);
+    expect(trashedArchived.sort()).toEqual(["Un-archive"]);
 
     // Regression: Done keeps Archive Completed; Backlog keeps active-work.
     const done = await visibleCommandNames(resolver, evaluator, DONE_IRI);
