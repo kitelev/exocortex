@@ -1,11 +1,36 @@
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
 
+/**
+ * A per-render condition compiled from an exo__DisplayNameSpec's
+ * exo__DisplayNameSpec_matchPath (→ frontmatter key) + exo__DisplayNameSpec_matchValue
+ * (→ cleaned enum identity/-ies). A rule carrying a matcher is CONDITIONAL: it only
+ * participates in class selection when the rendered instance's frontmatter value at
+ * `matchKey` equals `matchValue` (evaluated per-render — the condition cannot be baked
+ * into the compiled template because it depends on the concrete instance). v2
+ * conditional-slice (RFC 92b91345, req ed4201d1).
+ */
+export interface DisplayNameMatcher {
+  /** Frontmatter key of the instance property the condition inspects (e.g. "ems__Effort_status"). */
+  matchKey: string;
+  /**
+   * All identity forms of the ONE accepted value — its UID, its label, and any raw
+   * wikilink form(s) — collected at compile time (dual-IRI equality). NOT a set of
+   * distinct accepted values (v2 single-value slice; conjunctions/disjunctions are a
+   * future exo__DisplayNameMatcher). A conditional rule matches when the instance value's
+   * cleaned identity set intersects this set — so it matches whether the instance stores
+   * the value as `[[<uid>]]`, `[[<uid>|label]]`, or the bare `[[<label>]]`.
+   */
+  matchValues: string[];
+}
+
 export interface PrintNameRule {
   className: string;
   template: string;
   priority: number;
   sourceFile: string;
+  /** Present iff the spec declared exo__DisplayNameSpec_matchPath + _matchValue (conditional). */
+  matcher?: DisplayNameMatcher;
 }
 
 type MetadataResolver = (wikilinkTarget: string) => Record<string, unknown> | null;
@@ -26,6 +51,9 @@ interface RawDisplayNameSpec {
   uid: string;
   classKeys: string[]; // UID + label of appliesToClass (both indexed — #2110)
   priority: number;
+  // Conditional specialization (v2 slice — RFC 92b91345, req ed4201d1). Both present or both absent.
+  matchKey?: string; // frontmatter key resolved from exo__DisplayNameSpec_matchPath
+  matchValues?: string[]; // accepted identities (UID + label) from exo__DisplayNameSpec_matchValue
 }
 
 interface RawDisplayNamePart {
@@ -47,23 +75,91 @@ export class PrintNameRuleService {
     this.initialized = true;
   }
 
-  getTemplateForClass(className: string): { template: string; priority: number } | null {
+  /**
+   * Select the winning template for a class. Rules are priority-sorted; a CONDITIONAL
+   * rule (one carrying a `matcher`) only participates when the rendered instance's
+   * `metadata` satisfies the matcher — evaluated per-render, so a specialized displayName
+   * appears/disappears as the instance's value changes without a re-scan. Unconditional
+   * rules always participate (v1 path byte-identical). When `metadata` is omitted,
+   * conditional rules are skipped (no instance to test).
+   */
+  getTemplateForClass(
+    className: string,
+    metadata?: Record<string, unknown>,
+  ): { template: string; priority: number } | null {
     if (!this.initialized) return null;
 
-    const directRules = this.rules.get(className);
-    if (directRules && directRules.length > 0) {
-      return { template: directRules[0].template, priority: directRules[0].priority };
-    }
+    const direct = this.selectRule(this.rules.get(className), metadata);
+    if (direct) return { template: direct.template, priority: direct.priority };
 
     const ancestors = this.getAncestorClasses(className);
     for (const ancestor of ancestors) {
-      const ancestorRules = this.rules.get(ancestor);
-      if (ancestorRules && ancestorRules.length > 0) {
-        return { template: ancestorRules[0].template, priority: ancestorRules[0].priority };
-      }
+      const inherited = this.selectRule(this.rules.get(ancestor), metadata);
+      if (inherited) return { template: inherited.template, priority: inherited.priority };
     }
 
     return null;
+  }
+
+  /**
+   * Pick the highest-priority PARTICIPATING rule from a priority-sorted list. A rule
+   * participates if it is unconditional (no matcher) OR its matcher is satisfied by the
+   * instance metadata. A matched conditional rule beats an unconditional one purely by
+   * priority (the list is already sorted descending), so a conditional spec authored with
+   * a higher priority wins over the fallback; an unmatched conditional is skipped.
+   */
+  private selectRule(
+    rules: PrintNameRule[] | undefined,
+    metadata?: Record<string, unknown>,
+  ): PrintNameRule | null {
+    if (!rules || rules.length === 0) return null;
+    for (const rule of rules) {
+      if (!rule.matcher) return rule; // unconditional — always participates
+      if (metadata && this.matcherSatisfied(rule.matcher, metadata)) return rule;
+    }
+    return null;
+  }
+
+  /**
+   * True when the instance's frontmatter value at `matcher.matchKey` equals `matchValue`
+   * under dual-IRI equality: both sides are reduced to their identity set (UID + label
+   * forms via extractClassKeys) and the sets must intersect. This makes the condition
+   * robust whether the status is stored as `[[<uid>]]`, `[[<uid>|label]]`, or the bare
+   * label — see sparql-iri-form-pre-verify.
+   */
+  private matcherSatisfied(
+    matcher: DisplayNameMatcher,
+    metadata: Record<string, unknown>,
+  ): boolean {
+    const instanceForms = this.extractClassKeys(metadata[matcher.matchKey]);
+    if (instanceForms.length === 0) return false;
+    return instanceForms.some((form) => matcher.matchValues.includes(form));
+  }
+
+  /**
+   * Resolve exo__DisplayNameSpec_matchValue into ALL identity forms of the single
+   * accepted value — the raw wikilink form(s) PLUS, via one compile-time second hop, the
+   * referenced asset's UID and label. This closes the dual-IRI gap fully: a matchValue
+   * authored UID-canon `[[<uid>]]` still matches an instance whose value is stored as the
+   * bare label `[[<label>]]` (and vice versa), because both the UID and the label end up
+   * in the accepted set. The hop runs once per spec at scanVault — no per-render cost.
+   */
+  private resolveMatchValues(value: unknown): string[] {
+    const raw = this.extractClassKeys(value);
+    if (raw.length === 0) return [];
+    const forms = new Set<string>(raw);
+    for (const id of raw) {
+      const file =
+        this.app.metadataCache.getFirstLinkpathDest(id, "") ??
+        this.app.metadataCache.getFirstLinkpathDest(id.endsWith(".md") ? id : `${id}.md`, "");
+      if (!(file instanceof TFile)) continue;
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      const uid = fm?.exo__Asset_uid;
+      const label = fm?.exo__Asset_label;
+      if (typeof uid === "string" && uid.trim()) forms.add(uid.trim());
+      if (typeof label === "string" && label.trim()) forms.add(label.trim());
+    }
+    return [...forms];
   }
 
   createMetadataResolver(): MetadataResolver {
@@ -158,10 +254,20 @@ export class PrintNameRuleService {
           ? Number(rawPriority)
           : 0;
 
+    // Conditional specialization (v2 slice): resolve matchPath → the frontmatter key it
+    // inspects (single-hop, same wikilink resolution as a PrintedProperty ref) and
+    // matchValue → the accepted identity set (all forms of the ONE accepted value). A
+    // matcher is set only when BOTH are present; otherwise the spec stays unconditional
+    // (v1 path).
+    const matchKey = this.resolvePropertyKey(fm.exo__DisplayNameSpec_matchPath);
+    const matchValues = this.resolveMatchValues(fm.exo__DisplayNameSpec_matchValue);
+    const hasMatcher = matchKey !== null && matchValues.length > 0;
+
     rawSpecs.set(uid, {
       uid,
       classKeys,
       priority: Number.isFinite(priority) ? priority : 0,
+      ...(hasMatcher ? { matchKey: matchKey ?? undefined, matchValues } : {}),
     });
   }
 
@@ -221,6 +327,11 @@ export class PrintNameRuleService {
 
       const priority = DISPLAY_NAME_SPEC_BASE_PRIORITY + spec.priority;
 
+      const matcher: DisplayNameMatcher | undefined =
+        spec.matchKey && spec.matchValues && spec.matchValues.length > 0
+          ? { matchKey: spec.matchKey, matchValues: spec.matchValues }
+          : undefined;
+
       for (const classKey of spec.classKeys) {
         if (!classKey) continue;
         const rule: PrintNameRule = {
@@ -228,6 +339,7 @@ export class PrintNameRuleService {
           template,
           priority,
           sourceFile: spec.uid,
+          ...(matcher ? { matcher } : {}),
         };
         const existing = this.rules.get(classKey);
         if (existing) {

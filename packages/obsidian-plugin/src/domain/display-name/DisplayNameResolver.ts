@@ -20,7 +20,9 @@ export class DisplayNameResolver {
     const { metadata, basename, createdDate } = context;
 
     const assetClass = this.extractAssetClass(metadata);
-    const template = this.getTemplateForClass(assetClass);
+    // Pass the instance metadata so a conditional spec (matchPath/matchValue) can be
+    // evaluated per-render — the specialized displayName tracks the instance's state.
+    const template = this.getTemplateForClass(assetClass, metadata);
     const engine = new DisplayNameTemplateEngine(template);
 
     return engine.render(
@@ -31,9 +33,12 @@ export class DisplayNameResolver {
     );
   }
 
-  getTemplateForClass(assetClass: string | null): string {
+  getTemplateForClass(
+    assetClass: string | null,
+    metadata?: Record<string, unknown>,
+  ): string {
     if (assetClass && this.ruleService) {
-      const dynamicRule = this.ruleService.getTemplateForClass(assetClass);
+      const dynamicRule = this.ruleService.getTemplateForClass(assetClass, metadata);
       if (dynamicRule) {
         return dynamicRule.template;
       }
@@ -74,7 +79,8 @@ export class DisplayNameResolver {
       .trim();
 
     if (cleaned.includes("|")) {
-      cleaned = cleaned.split("|").pop()!.trim();
+      const last = cleaned.split("|").pop();
+      cleaned = (last ?? cleaned).trim();
     }
 
     return cleaned || null;

@@ -206,7 +206,12 @@ describe("DisplayNameResolver", () => {
       });
 
       expect(result).toBe("My Task (DynamicRule)");
-      expect(mockRuleService.getTemplateForClass).toHaveBeenCalledWith("ems__Task");
+      // The resolver now forwards the instance metadata so a conditional spec
+      // (matchPath/matchValue) can be evaluated per-render (req ed4201d1).
+      expect(mockRuleService.getTemplateForClass).toHaveBeenCalledWith(
+        "ems__Task",
+        expect.objectContaining({ exo__Asset_label: "My Task" }),
+      );
     });
 
     it("should fall back to settings when no dynamic rule exists", () => {
