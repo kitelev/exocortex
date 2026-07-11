@@ -325,7 +325,7 @@ Validation checks:
 
 ### Validation errors
 
-**Symptom**: `workflow validate` reports errors like "State X has no outgoing forward transitions".
+**Symptom**: On load, the plugin ignores the custom workflow and reports validation errors like "State X has no outgoing forward transitions" (developer console / notice).
 
 **Common causes**:
 
