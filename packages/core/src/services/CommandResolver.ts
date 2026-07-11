@@ -2022,6 +2022,19 @@ export class CommandResolver {
       cloneTargetBodyRaw !== null &&
       String(cloneTargetBodyRaw).trim().toLowerCase() === "true";
 
+    // Issue #3867 — composite-step opt-in: mutate the just-created instance
+    // instead of the click-target. Boolean coercion mirrors `cloneTargetBody`.
+    // MUST be read HERE (the production loader — plugin button + CLI both go
+    // through CommandResolver.loadCommand); the sibling GroundingFrontmatterParser
+    // has no production consumers.
+    const targetsCreatedInstanceRaw = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_targetsCreatedInstance"),
+    );
+    const targetsCreatedInstance =
+      targetsCreatedInstanceRaw !== null &&
+      String(targetsCreatedInstanceRaw).trim().toLowerCase() === "true";
+
     const grounding: GroundingDefinition = {
       id: uid,
       label,
@@ -2050,6 +2063,7 @@ export class CommandResolver {
       bodyTemplate: bodyTemplate ?? undefined,
       templateRef: templateRef ?? undefined,
       cloneTargetBody: cloneTargetBody || undefined,
+      targetsCreatedInstance: targetsCreatedInstance || undefined,
     };
 
     if (inputSchema) {

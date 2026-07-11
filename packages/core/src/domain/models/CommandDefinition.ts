@@ -336,6 +336,29 @@ export interface GroundingDefinition {
    * (xsd:boolean — `true`/`false`; absent → not cloned).
    */
   readonly cloneTargetBody?: boolean;
+  /**
+   * Issue #3867 — opt-in composite-step target selector. When `true`, AND this
+   * grounding runs as a `composite` step AFTER a `create_instance` step in the
+   * same composite has produced an asset, `GroundingExecutor.executeComposite`
+   * runs this step against the CREATED asset's file (its `filePath` =
+   * `lastCreatedPath`) instead of the composite click-target. Only the step's
+   * `filePath` is re-pointed — `targetIRI` stays the click-target (so `$target`
+   * substitution still resolves to the source asset for link-back, and because
+   * the just-created asset is not yet indexed in the triple store).
+   *
+   * Absent/`false` (the default) → the step operates on the click-target
+   * exactly as today. Existing composites whose `property_set` steps
+   * intentionally close the CURRENT click-target (e.g. `ems__WaitingCheckTask`
+   * «Следующая итерация», grounding `a49471de-...`) are therefore unchanged —
+   * this is a zero-regression, opt-in addition. Threading is a no-op unless a
+   * `create_instance` step ran earlier in the same composite. It has no effect
+   * outside a composite (a top-level non-composite grounding has no
+   * `lastCreatedPath` context).
+   *
+   * Authored as the `exocmd__Grounding_targetsCreatedInstance` RDF triple
+   * (xsd:boolean — `true`/`false`; absent → click-target).
+   */
+  readonly targetsCreatedInstance?: boolean;
 }
 
 /**
