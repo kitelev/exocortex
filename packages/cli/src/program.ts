@@ -6,6 +6,7 @@ import { resolveCommand } from "./commands/resolve.js";
 import { resolveButtonsCommand } from "./commands/resolve-buttons.js";
 import { validateCommand } from "./commands/validate.js";
 import { classesCommand } from "./commands/classes.js";
+import { runQueryCommand } from "./commands/run-query.js";
 import { createCommand } from "./commands/create.js";
 import { workflowCommand } from "./commands/workflow.js";
 import { recoverCommand } from "./commands/recover.js";
@@ -58,6 +59,11 @@ export function createProgram(version?: string): Command {
   // `apply --dry-run`, which is precondition-only).
   program.addCommand(resolveButtonsCommand());
   program.addCommand(classesCommand());
+  // req 2678df55 — read axis: standalone verb to execute a query__NamedQuery
+  // asset by UID (read-only). `classes`/`describe-class` consume the same
+  // mechanism (their introspection SPARQL lives in vault query__NamedQuery
+  // assets).
+  program.addCommand(runQueryCommand());
   program.addCommand(createCommand());
   program.addCommand(workflowCommand());
   // recover — retained: live launchd consumer (com.exocortex.aitask-recover
