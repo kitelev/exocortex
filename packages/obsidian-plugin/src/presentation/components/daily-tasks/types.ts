@@ -14,10 +14,27 @@ export interface DailyTask {
   endTimestamp: string | number | null;
   status: string;
   metadata: Record<string, unknown>;
-  isDone: boolean;
-  isTrashed: boolean;
+  /**
+   * Homoiconic display name resolved through the vault `exo__DisplayNameSpec` system
+   * (DisplayNameResolver + PrintNameRuleService), computed by DailyTasksRenderer. Carries
+   * the status/class prefix (🔄/✅/❌/👥) declared in vault data — single source of truth,
+   * same as native Obsidian links. Undefined when no resolver is available (fallback to label).
+   */
+  displayName?: string;
+  /**
+   * Dual-IRI-robust "Doing" flag (derived via getStatusLabel, NOT a naive strict-equality
+   * against a label-form enum). Used for the NON-display sort that lifts Doing tasks to the top.
+   */
   isDoing: boolean;
-  isMeeting: boolean;
+  /**
+   * @deprecated Display-only status/class flags — the status/class prefix is now homoiconic
+   * (see `displayName`), so these no longer drive rendering. Retained optional for the
+   * DailyTask shape's backward-compat (many test fixtures still set them); not computed by
+   * the renderer nor read by getDisplayName.
+   */
+  isDone?: boolean;
+  isTrashed?: boolean;
+  isMeeting?: boolean;
   isBlocked: boolean;
   isEmptySlot?: boolean;
 }

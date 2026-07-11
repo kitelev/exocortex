@@ -6,6 +6,8 @@ import type { App, Plugin, TFile } from "obsidian";
 import type { IVaultAdapter } from "@kitelev/exocortex-core";
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';
 import type { ThemeResolver } from '@plugin/application/services/ThemeResolver';
+import type { PrintNameRuleService } from '@plugin/domain/display-name/PrintNameRuleService';
+import type { DisplayNameSettings } from '@plugin/domain/settings/ExocortexSettings';
 
 /**
  * Metadata extracted from Obsidian frontmatter
@@ -64,9 +66,16 @@ export interface ExocortexPluginInterface extends Plugin {
     showEffortArea?: boolean;
     showEffortVotes?: boolean;
     excludedFolders?: string[];
+    /** Per-class display name templates (homoiconic exo__DisplayNameSpec cold-start seed). */
+    displayNameSettings?: DisplayNameSettings;
   };
   vaultAdapter: IVaultAdapter;
   themeResolver?: ThemeResolver;
+  /**
+   * Homoiconic displayName rule service (compiled from vault exo__DisplayNameSpec assets).
+   * Optional so renderers degrade gracefully when it hasn't been initialized (tests).
+   */
+  printNameRuleService?: PrintNameRuleService;
   saveSettings(): Promise<void>;
   refreshLayout?(): void;
 }
