@@ -120,6 +120,24 @@ describe("GenericAssetCreationService", () => {
       expect(content).toMatch(/exo__Asset_createdAt: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     });
 
+    it("should include updatedAt equal to createdAt at creation (task 1af85afd)", async () => {
+      const config = {
+        className: "ems__Task",
+      };
+
+      await service.createAsset(config);
+
+      const content = mockVault.create.mock.calls[0][1];
+
+      // Every created asset carries exo__Asset_updatedAt from birth (enforced
+      // last-modified invariant) — set equal to createdAt at creation.
+      expect(content).toContain("exo__Asset_updatedAt:");
+      const createdAt = content.match(/exo__Asset_createdAt: (\S+)/)?.[1];
+      const updatedAt = content.match(/exo__Asset_updatedAt: (\S+)/)?.[1];
+      expect(updatedAt).toBeDefined();
+      expect(updatedAt).toBe(createdAt);
+    });
+
     it("should include UID in frontmatter", async () => {
       const config = {
         className: "ems__Task",

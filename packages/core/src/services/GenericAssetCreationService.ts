@@ -265,9 +265,15 @@ export class GenericAssetCreationService {
     // Set required system properties
     frontmatter["exo__Asset_uid"] = uid;
 
-    frontmatter["exo__Asset_createdAt"] = config.timezone
+    const createdAt = config.timezone
       ? this.generateTimestampInTimezone(config.timezone)
       : DateFormatter.toLocalTimestamp(this.clock.now());
+    frontmatter["exo__Asset_createdAt"] = createdAt;
+    // exo__Asset_updatedAt: every created asset satisfies the "updatedAt is an
+    // enforced last-modified invariant" from birth (task 1af85afd) — set equal
+    // to createdAt at creation. Subsequent mutations bump it separately (via
+    // explicit grounding steps / the plugin modify-listener).
+    frontmatter["exo__Asset_updatedAt"] = createdAt;
 
     // exo__Instance_class: opt-in UID-canon strip form (`[[<uuid>]]`) when the
     // caller resolves a class UUID and requests it; otherwise the historical
@@ -345,6 +351,7 @@ export class GenericAssetCreationService {
         if (
           propertyName === "exo__Asset_uid" ||
           propertyName === "exo__Asset_createdAt" ||
+          propertyName === "exo__Asset_updatedAt" ||
           propertyName === "exo__Asset_createdBy" ||
           propertyName === "exo__Instance_class" ||
           propertyName === "exo__Asset_label" ||
