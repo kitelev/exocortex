@@ -326,7 +326,7 @@ describe("Archive Ontologically — plugin-parity folder move (req 8efc003c)", (
     expect(moved).toContain("archived: true");
   });
 
-  it("proves the metadataCache actually lags step-1's write (the bug's mechanism)", async () => {
+  it("fixture sanity: the fake metadataCache lags a disk write (models the bug's mechanism; not the revert guard)", async () => {
     const { storage } = setup();
     const vaultAdapter = storage.vaultAdapter();
     const targetFile = makeIFile(TARGET_PATH);
