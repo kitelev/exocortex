@@ -113,6 +113,7 @@ export {
   type NamedQueryParam,
   type NamedQueryScalar,
 } from "./services/NamedQueryRunner";
+export type { ExoQLEvalResult } from "./exoql/evaluateWithExoEval";
 export { iriToObsidianName } from "./utilities/iriToObsidianName";
 export { extractSparqlBlock, stripFrontmatter } from "./utilities/sparqlBlock";
 export {

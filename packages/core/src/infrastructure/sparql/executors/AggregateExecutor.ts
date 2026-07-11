@@ -1,5 +1,12 @@
 import type { GroupOperation, AggregateExpression, Expression, CustomAggregation, StandardAggregation } from "../algebra/AlgebraOperation";
-import type { SolutionMapping } from "../SolutionMapping";
+// Value import (not `import type`): the class is instantiated below. Previously a
+// lazy `require("../SolutionMapping")` fetched the runtime class — a workaround
+// (Issue #534) that is now vestigial: `SolutionMapping` imports only rdf domain
+// models, so there is no cycle back here. `require` is `undefined` under ESM
+// (the CLI package's jest runs `--experimental-vm-modules`), which broke any
+// aggregate query executed from a CLI test; the top-level import fixes that
+// while staying behavior-preserving in the bundled CJS build.
+import { SolutionMapping } from "../SolutionMapping";
 import { Literal } from "../../../domain/models/rdf/Literal";
 import { IRI } from "../../../domain/models/rdf/IRI";
 import { FilterExecutor } from "./FilterExecutor";
@@ -62,10 +69,12 @@ export class AggregateExecutor {
       // 1. Variables from GROUP BY clause
       // 2. Variables bound to aggregate expressions
       // This fixes Issue #534 Blocker 1: aggregate functions returning extra variables
-      const { SolutionMapping: SM } = require("../SolutionMapping");
-      const result = new SM();
+      const result = new SolutionMapping();
       for (const [key, value] of resultBindings.entries()) {
-        result.set(key, value);
+        // `resultBindings` is `Map<string, unknown>`; the lazy `require`
+        // previously typed the class as `any`, silently accepting these values.
+        // Runtime behaviour is unchanged — cast to the set() param type.
+        result.set(key, value as Parameters<typeof result.set>[1]);
       }
       results.push(result);
     }
@@ -400,8 +409,7 @@ export class AggregateExecutor {
   }
 
   private createEmptyAggregateResult(operation: GroupOperation): SolutionMapping | null {
-    const { SolutionMapping: SM } = require("../SolutionMapping");
-    const result = new SM();
+    const result = new SolutionMapping();
 
     for (const aggregate of operation.aggregates) {
       const agg = aggregate.expression.aggregation;
