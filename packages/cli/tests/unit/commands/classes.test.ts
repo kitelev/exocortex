@@ -71,7 +71,7 @@ jest.unstable_mockModule("../../../src/services/NamedQueryCliRunner.js", () => (
 }));
 
 // Import the classes command after mocking
-const { classesCommand } = await import("../../../src/commands/classes.js");
+const { classesCommand, parseCount } = await import("../../../src/commands/classes.js");
 
 describe("classesCommand", () => {
   let consoleLogSpy: jest.SpiedFunction<typeof console.log>;
@@ -185,5 +185,29 @@ describe("classesCommand", () => {
 
       expect(consoleLogSpy).toHaveBeenCalled();
     });
+  });
+});
+
+// #3859 — classes/describe-class rendered NaN instance counts because the
+// COUNT-aggregate binding is a typed Literal whose `.toString()` serialises as
+// `"3093"^^<xsd:integer>` (parseInt-hostile). parseCount reads `.value` (the
+// lexical form) instead. Revert-verify: swap `.value`→`.toString()` in
+// parseCount and this suite goes RED (3093 → NaN).
+describe("parseCount (#3859 typed-literal COUNT)", () => {
+  // Mimics a core Literal: `.value` = lexical form; `.toString()` = the
+  // parseInt-hostile serialisation the real term produces.
+  const typedIntLiteral = {
+    value: "3093",
+    toString: () => '"3093"^^<http://www.w3.org/2001/XMLSchema#integer>',
+  };
+
+  it("extracts the lexical numeric value (3093, not NaN) from a typed integer Literal", () => {
+    expect(parseCount(typedIntLiteral)).toBe(3093);
+  });
+
+  it("falls back to 0 for a missing / non-numeric term", () => {
+    expect(parseCount(undefined)).toBe(0);
+    expect(parseCount(null)).toBe(0);
+    expect(parseCount({ value: "not-a-number" })).toBe(0);
   });
 });

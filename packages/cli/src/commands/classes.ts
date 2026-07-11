@@ -156,6 +156,18 @@ function requireSelectRows(
   return result.rows;
 }
 
+/**
+ * Extract a numeric count from a COUNT-aggregate binding (#3859). The bound term
+ * is a typed `Literal` whose `.toString()` serialises as `"3093"^^<xsd:integer>`
+ * (parseInt-hostile — the leading quote yields NaN); `.value` is the lexical
+ * form `3093`. Falls back to 0 for a missing / non-numeric term.
+ */
+export function parseCount(term: unknown): number {
+  const v = (term as { value?: unknown } | null | undefined)?.value;
+  const n = typeof v === "string" ? parseInt(v, 10) : NaN;
+  return Number.isNaN(n) ? 0 : n;
+}
+
 async function listAllClasses(
   runner: NamedQueryRunner,
   options: ClassesCommandOptions,
@@ -169,7 +181,7 @@ async function listAllClasses(
     const countValue = row.get("count");
     return {
       name: classIri ? extractLocalName(classIri.toString()) : "unknown",
-      count: countValue ? parseInt(countValue.toString(), 10) : 0,
+      count: parseCount(countValue),
     };
   });
 
@@ -220,9 +232,7 @@ async function showClassDetails(
     INTROSPECT_CLASS_COUNT_QUERY_UID,
   );
   const instanceCount =
-    countRows.length > 0
-      ? parseInt(countRows[0].get("count")?.toString() || "0", 10)
-      : 0;
+    countRows.length > 0 ? parseCount(countRows[0].get("count")) : 0;
 
   const propsResult = await runner.run(
     INTROSPECT_CLASS_PROPERTIES_QUERY_UID,
@@ -238,7 +248,7 @@ async function showClassDetails(
     const usageValue = row.get("usageCount");
     return {
       name: propIri ? extractLocalName(propIri.toString()) : "unknown",
-      usageCount: usageValue ? parseInt(usageValue.toString(), 10) : 0,
+      usageCount: parseCount(usageValue),
     };
   });
 
