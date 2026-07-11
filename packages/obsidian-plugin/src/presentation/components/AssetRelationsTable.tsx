@@ -102,11 +102,68 @@ export interface AssetRelation {
    */
   provenance?: "inline" | "reified";
   /**
+   * req `3f65eb4a` — the related asset's HOMOICONIC display name, resolved by
+   * `RelationsRenderer.getAssetRelations` through the vault `exo__DisplayNameSpec`
+   * system (the SAME stack as native links + the DailyNote tasks table). Carries the
+   * status/class prefix (🔄 while Doing, …). Preferred by {@link getRelationDisplayLabel};
+   * `undefined` → the plain `exo__Asset_label` / {@link title} fallback (no regression).
+   */
+  displayName?: string;
+  /**
    * RFC `93a0b2ee` Task 2 (C2) — the AssetSpace (`exoas-<name>`) the backing
    * statement asset lives in, for the factual "reified · <AS>" marker text.
    * `undefined` → a `reified` relation shows a bare "reified".
    */
   assetSpace?: string;
+}
+
+/**
+ * req `3f65eb4a` — the PLAIN row label (a custom `exo__Asset_label` wins over the
+ * `title`), without the 🚩 blocker or the homoiconic `displayName` prefix. Shared by the
+ * display + sort helpers below.
+ */
+function relationPlainLabel(relation: AssetRelation): string {
+  const label = relation.metadata?.exo__Asset_label;
+  if (label && typeof label === "string" && label.trim() !== "") {
+    return label;
+  }
+  return relation.title;
+}
+
+/**
+ * req `3f65eb4a` — compose the relation-table row's task-link cell label (for DISPLAY).
+ *
+ * The status/class prefix (🔄 Doing, ✅ Done, 👥 Meeting, …) is HOMOICONIC — carried by
+ * `relation.displayName`, resolved by `RelationsRenderer` through the vault
+ * `exo__DisplayNameSpec` system (single source of truth, the SAME as native links + the
+ * DailyNote tasks table; sibling of req a577316f). When `displayName` is absent (no
+ * `printNameRuleService` in a unit-test mock, or no matching spec) the OLD label path is
+ * used — a custom `exo__Asset_label` wins over `relation.title` (byte-identical to
+ * pre-3f65eb4a, no regression).
+ *
+ * The 🚩 blocked marker is RETAINED renderer-side: it is a computed predicate over the
+ * referenced blocker's status, which the single-value `exo__DisplayNameSpec` matcher
+ * cannot express (tracked separately as #3865).
+ */
+export function getRelationDisplayLabel(relation: AssetRelation): string {
+  const blockerIcon = relation.isBlocked ? "🚩 " : "";
+  if (relation.displayName != null && relation.displayName !== "") {
+    return blockerIcon + relation.displayName;
+  }
+  return blockerIcon + relationPlainLabel(relation);
+}
+
+/**
+ * req `3f65eb4a` — the SORT key for the relation title column: the PLAIN label (keeping
+ * the pre-existing 🚩 blocker prefix), deliberately WITHOUT the homoiconic `displayName`
+ * prefix — so rows collate by their text label, NOT by an emoji codepoint (🔄/👥). This is
+ * byte-identical to the pre-3f65eb4a title sort (no reorder regression); only the DISPLAYED
+ * cell ({@link getRelationDisplayLabel}) carries the resolver prefix. Mirrors the exo__Layout
+ * table, which likewise sorts on the unprefixed `row.title` (ExoLayoutRenderer.cellValue).
+ */
+export function getRelationSortLabel(relation: AssetRelation): string {
+  const blockerIcon = relation.isBlocked ? "🚩 " : "";
+  return blockerIcon + relationPlainLabel(relation);
 }
 
 /**
@@ -259,14 +316,10 @@ const SingleTable: React.FC<SingleTableProps> = ({
     return getInstanceClasses(metadata)[0];
   };
 
-  const getDisplayLabel = (relation: AssetRelation): string => {
-    const blockerIcon = relation.isBlocked ? "🚩 " : "";
-    const label = relation.metadata?.exo__Asset_label;
-    if (label && typeof label === "string" && label.trim() !== "") {
-      return blockerIcon + label;
-    }
-    return blockerIcon + relation.title;
-  };
+  // req `3f65eb4a` — the row task-link label now prefers the homoiconic
+  // `relation.displayName` (vault exo__DisplayNameSpec status/class prefix) via the
+  // shared, testable helper; null-safe fallback to the plain label (no regression).
+  const getDisplayLabel = getRelationDisplayLabel;
 
   const isWikiLink = (value: unknown): boolean => {
     return typeof value === "string" && /\[\[.*?\]\]/.test(value);
@@ -368,8 +421,11 @@ const SingleTable: React.FC<SingleTableProps> = ({
       let bVal: string | number;
 
       if (sortState.column === "title") {
-        aVal = getDisplayLabel(a).toLowerCase();
-        bVal = getDisplayLabel(b).toLowerCase();
+        // req `3f65eb4a` — sort on the UNPREFIXED label (getRelationSortLabel), so the
+        // homoiconic display prefix (🔄/👥) doesn't collate rows by emoji codepoint. Display
+        // still uses getDisplayLabel (with the prefix). Byte-identical to the pre-3f65eb4a sort.
+        aVal = getRelationSortLabel(a).toLowerCase();
+        bVal = getRelationSortLabel(b).toLowerCase();
       } else if (sortState.column === "exo__Instance_class") {
         const aClass = getInstanceClass(a.metadata);
         const bClass = getInstanceClass(b.metadata);
