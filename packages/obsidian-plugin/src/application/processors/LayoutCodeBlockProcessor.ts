@@ -18,7 +18,7 @@
 
 import React from "react";
 import type { MarkdownPostProcessorContext, EventRef } from "obsidian";
-import { MarkdownRenderChild } from "obsidian";
+import { MarkdownRenderChild, TFile } from "obsidian";
 import type ExocortexPlugin from "@plugin/ExocortexPlugin";
 import { LayoutService } from "../layout";
 import type { LayoutRenderResult } from "../layout";
@@ -26,6 +26,8 @@ import { ReactRenderer } from "@plugin/presentation/utils/ReactRenderer";
 import { LoggerFactory } from "@plugin/adapters/logging/LoggerFactory";
 import { TableLayoutRenderer } from "@plugin/presentation/renderers/TableLayoutRenderer";
 import { WikilinkLabelResolver } from "@plugin/presentation/utils/WikilinkLabelResolver";
+import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
+import { DEFAULT_DISPLAY_NAME_SETTINGS } from "@plugin/domain/settings/ExocortexSettings";
 import type { TableLayout } from "@plugin/domain/layout";
 import { isTableLayout } from "@plugin/domain/layout";
 
@@ -405,7 +407,19 @@ export class LayoutCodeBlockProcessor {
             newValue as import("@plugin/presentation/renderers/cell-renderers").CellValue
           );
         },
-        getAssetLabel: (path: string) => this.wikilinkResolver.getAssetLabel(path),
+        // req `71cc75f3` — route every cell wikilink label through the homoiconic
+        // displayName system (the SAME `exo__DisplayNameSpec` stack as native links, the
+        // DailyNote table a577316f and the relation/query tables 3f65eb4a) BEFORE the plain
+        // resolver, so a status/class-conditional prefix (🔄 for a Doing ems__Task, …) that
+        // the user declared as vault data appears in configured `exocortex` code-block tables
+        // too — consistently with those other surfaces. Null-safe: no resolver / no file /
+        // labelless path → the plain `getAssetLabel`. For a class whose displayName template
+        // equals the plain label (the common case) the output is byte-identical to today; a
+        // class WITH its own template (prototype suffix, pn__DailyNote basename) intentionally
+        // adopts the SAME template already shown on native links / the other tables.
+        getAssetLabel: (path: string) =>
+          this.resolveHomoiconicDisplayName(path) ??
+          this.wikilinkResolver.getAssetLabel(path),
         // Gate action buttons by their `exo__Precondition_sparql` ASK (#3654
         // Part 1): true ⇒ shown, false ⇒ hidden. Previously unwired → every
         // button defaulted visible. The ASK boolean is surfaced via the new
@@ -428,6 +442,67 @@ export class LayoutCodeBlockProcessor {
         },
       })
     );
+  }
+
+  /**
+   * req `71cc75f3` — resolve a cell wikilink's display label through the homoiconic
+   * `exo__DisplayNameSpec` system, the SAME `DisplayNameResolver` + `PrintNameRuleService`
+   * stack native links, the DailyNote tasks table (a577316f) and the layout relation/query
+   * tables (3f65eb4a) use. Reads the linked asset's real frontmatter (instance class + status)
+   * so a conditional spec (matchPath/matchValue, req ed4201d1) is evaluated per-render.
+   *
+   * Returns `null` — so the caller falls through to the plain `wikilinkResolver.getAssetLabel`
+   * — when there is NO resolver (`printNameRuleService` absent, e.g. a unit-test mock), the
+   * path resolves to no file, the file has no frontmatter, OR the asset is labelless (kept null
+   * so no basename substitution leaks into the general property-value cell path). A class with
+   * no applicable spec renders the default `{{exo__Asset_label}}` template = the plain label
+   * (byte-identical); a class WITH a `classTemplates` entry (prototype suffix, pn__DailyNote
+   * basename) renders that template — the SAME one native links and the other tables already
+   * apply — so this surface stays consistent with them.
+   */
+  private resolveHomoiconicDisplayName(path: string): string | null {
+    const ruleService = this.plugin.printNameRuleService;
+    if (!ruleService) {
+      return null;
+    }
+
+    const file = this.resolveLinkedFile(path);
+    if (!file) {
+      return null;
+    }
+
+    const metadata =
+      this.plugin.app.metadataCache.getFileCache(file)?.frontmatter;
+    if (!metadata) {
+      return null;
+    }
+
+    // Labelless asset → the plain resolver returns null today; preserve that (do NOT
+    // substitute a basename) by falling through to the plain getAssetLabel.
+    if (this.wikilinkResolver.getAssetLabel(path) === null) {
+      return null;
+    }
+
+    const settings =
+      this.plugin.settings?.displayNameSettings ?? DEFAULT_DISPLAY_NAME_SETTINGS;
+    const metadataResolver = ruleService.createMetadataResolver();
+    const resolver = new DisplayNameResolver(settings, ruleService, metadataResolver);
+
+    const resolved = resolver.resolve({ metadata, basename: file.basename });
+    return typeof resolved === "string" && resolved.trim() !== "" ? resolved : null;
+  }
+
+  /**
+   * Resolve a wikilink path to its `TFile` the SAME way `WikilinkLabelResolver.getAssetLabel`
+   * does (linkpath dest + a `.md` retry), so the homoiconic resolver reads the exact same
+   * target file as the plain fallback.
+   */
+  private resolveLinkedFile(path: string): TFile | null {
+    let file = this.plugin.app.metadataCache.getFirstLinkpathDest(path, "");
+    if (!file && !path.endsWith(".md")) {
+      file = this.plugin.app.metadataCache.getFirstLinkpathDest(path + ".md", "");
+    }
+    return file instanceof TFile ? file : null;
   }
 
   /**
