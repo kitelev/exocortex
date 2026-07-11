@@ -406,14 +406,50 @@ describe("GenericAssetCreationService", () => {
         expect(content).not.toContain("2020-01-01T00:00:00");
       });
 
-      it("should skip system property exo__Instance_class in propertyValues", async () => {
+      // exo__Instance_class is the ONE system property that is MERGED, not
+      // skipped: `--class` sets the primary class and additional values from
+      // propertyValues accumulate into the array so a multi-class asset can be
+      // created in one command (issue #3852).
+      it("should merge additional exo__Instance_class from propertyValues into the class array (issue #3852)", async () => {
         const config = {
-          className: "ems__Task",
-          propertyValues: { exo__Instance_class: ["[[custom_class]]"] },
+          className: "ztlk__Note",
+          classRefForm: "uuid" as const,
+          classUid: "65b58c34-7451-4b89-bea3-483f7c65fe73",
+          label: "Multi-class asset",
+          propertyValues: {
+            exo__Instance_class: "[[45c96de0-b70a-44b1-b35b-c023f8857a12]]",
+          },
         };
         await service.createAsset(config);
         const content = mockVault.create.mock.calls[0][1];
-        expect(content).not.toContain("custom_class");
+        // primary class (from --class) is present
+        expect(content).toContain("[[65b58c34-7451-4b89-bea3-483f7c65fe73]]");
+        // second class (from --property) is MERGED, not dropped
+        expect(content).toContain("[[45c96de0-b70a-44b1-b35b-c023f8857a12]]");
+      });
+
+      it("should merge repeated exo__Instance_class values and de-duplicate against --class", async () => {
+        const config = {
+          className: "ztlk__Note",
+          classRefForm: "uuid" as const,
+          classUid: "aaaaaaaa-0000-0000-0000-000000000000",
+          label: "Repeated multi-class",
+          propertyValues: {
+            // one genuinely new class + one that duplicates the --class primary
+            exo__Instance_class: [
+              "[[bbbbbbbb-1111-1111-1111-111111111111]]",
+              "[[aaaaaaaa-0000-0000-0000-000000000000]]",
+            ],
+          },
+        };
+        await service.createAsset(config);
+        const content = mockVault.create.mock.calls[0][1];
+        expect(content).toContain("[[bbbbbbbb-1111-1111-1111-111111111111]]");
+        // primary class is not duplicated (dedup): appears exactly once
+        const primaryOccurrences = content.split(
+          "[[aaaaaaaa-0000-0000-0000-000000000000]]",
+        ).length - 1;
+        expect(primaryOccurrences).toBe(1);
       });
 
       it("should skip system property aliases in propertyValues", async () => {
