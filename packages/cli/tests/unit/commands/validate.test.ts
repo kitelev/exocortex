@@ -58,8 +58,12 @@ jest.unstable_mockModule("fs-extra", () => ({
 const { validateCommand } = await import("../../../src/commands/validate.js");
 
 /**
- * Issue #2346: Tests for validate CLI command registration
- * Updated for #2713: validate is now a parent command with subcommands
+ * Issue #2346: Tests for validate CLI command registration.
+ * Updated for #2713 (validate became a parent command) and the CLI-removals
+ * cleanup: the legacy `validate iri` (Issue #2205) and `validate frontmatter`
+ * (Issue #2997 Phase 4) subcommands were removed — both superseded by
+ * `validate schema --shapes-mode`. The "does NOT register" assertions below
+ * are the executable-spec / revert-verify for that removal.
  */
 describe("Issue #2346: validate command", () => {
   it("should create a command with name 'validate'", () => {
@@ -74,69 +78,27 @@ describe("Issue #2346: validate command", () => {
     expect(cmd.description().toLowerCase()).toMatch(/valid|check|vault/);
   });
 
-  it("should have 'iri' subcommand", () => {
-    const cmd = validateCommand();
-    const iriCmd = cmd.commands.find((c: any) => c.name() === "iri");
-    expect(iriCmd).toBeDefined();
-  });
-
   it("should have 'schema' subcommand", () => {
     const cmd = validateCommand();
     const schemaCmd = cmd.commands.find((c: any) => c.name() === "schema");
     expect(schemaCmd).toBeDefined();
   });
 
-  it("should have 'frontmatter' subcommand (Issue #2997 Phase 4)", () => {
+  it("should have 'vault' subcommand", () => {
     const cmd = validateCommand();
-    const fmCmd = cmd.commands.find((c: any) => c.name() === "frontmatter");
-    expect(fmCmd).toBeDefined();
+    const vaultCmd = cmd.commands.find((c: any) => c.name() === "vault");
+    expect(vaultCmd).toBeDefined();
   });
 
-  it("iri subcommand should have optional --vault option with default value", () => {
+  it("does NOT register the removed 'iri' subcommand (superseded by validate schema)", () => {
     const cmd = validateCommand();
-    const iriCmd = cmd.commands.find((c: any) => c.name() === "iri") as any;
-    const option = iriCmd.options.find(
-      (opt: any) => opt.long === "--vault",
-    );
-    expect(option).toBeDefined();
-    expect(option.mandatory).toBeFalsy();
-    expect(option.defaultValue).toBeDefined();
+    const names = cmd.commands.map((c: any) => c.name());
+    expect(names).not.toContain("iri");
   });
 
-  it("iri subcommand should have optional --output option with default 'text'", () => {
+  it("does NOT register the removed 'frontmatter' subcommand (superseded by validate schema)", () => {
     const cmd = validateCommand();
-    const iriCmd = cmd.commands.find((c: any) => c.name() === "iri") as any;
-    const option = iriCmd.options.find(
-      (opt: any) => opt.long === "--output",
-    );
-    expect(option).toBeDefined();
-    expect(option.mandatory).toBeFalsy();
-    expect(option.defaultValue).toBe("text");
-  });
-
-  it("iri subcommand should register exactly 2 options", () => {
-    const cmd = validateCommand();
-    const iriCmd = cmd.commands.find((c: any) => c.name() === "iri") as any;
-    expect(iriCmd.options).toHaveLength(2);
-  });
-
-  it("iri subcommand should have --vault option that accepts a path argument", () => {
-    const cmd = validateCommand();
-    const iriCmd = cmd.commands.find((c: any) => c.name() === "iri") as any;
-    const option = iriCmd.options.find(
-      (opt: any) => opt.long === "--vault",
-    );
-    expect(option).toBeDefined();
-    expect(option.flags).toContain("<path>");
-  });
-
-  it("iri subcommand should have --output option that accepts a type argument", () => {
-    const cmd = validateCommand();
-    const iriCmd = cmd.commands.find((c: any) => c.name() === "iri") as any;
-    const option = iriCmd.options.find(
-      (opt: any) => opt.long === "--output",
-    );
-    expect(option).toBeDefined();
-    expect(option.flags).toContain("<type>");
+    const names = cmd.commands.map((c: any) => c.name());
+    expect(names).not.toContain("frontmatter");
   });
 });

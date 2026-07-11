@@ -171,12 +171,7 @@ SELECT ?asset ?label WHERE {
 
 ### Workflow Customization
 
-Status lifecycles are not built into the engine — you define them for **any** class as regular vault assets, and the UI buttons follow:
-
-```bash
-exocortex-cli workflow list --vault ~/vault
-exocortex-cli workflow validate <uid> --vault ~/vault
-```
+Status lifecycles are not built into the engine — you define them for **any** class as regular vault assets, and the UI buttons follow. The plugin picks up custom workflow definitions on load and validates them (falling back to the built-in lifecycle if a definition is malformed).
 
 See the **[Workflow Customization Guide](./docs/how-to/WORKFLOW_CUSTOMIZATION.md)** for the mechanism. Concrete domain lifecycles (e.g. the EMS effort flow `Draft → Backlog → Analysis → ToDo → Doing → Done`) live in their own AssetSpace, not in core — see that AssetSpace's README.
 

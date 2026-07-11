@@ -228,11 +228,11 @@ aliases:
 ---
 ```
 
-### Step 4: Validate
+### Step 4: Reload
 
-```bash
-exocortex-cli workflow validate a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d --vault ~/vault
-```
+Reload Obsidian (or re-open the vault) so the plugin re-indexes and picks up the
+new workflow assets. The plugin validates the workflow structure on load and
+falls back to the built-in workflow if the definition is malformed.
 
 ---
 
@@ -296,36 +296,11 @@ The wikilink format is `[[workflow-uid|Display Name]]`. The WorkflowResolver wil
 
 ---
 
-## CLI Commands
+## Validation
 
-### List all workflows
-
-```bash
-exocortex-cli workflow list --vault ~/vault
-```
-
-Output:
-
-```
-Found 2 workflow(s):
-
-| Name           | Target Class | States | Transitions | Default |
-|----------------|-------------|--------|-------------|---------|
-| Task Default   | ems__Task   |      5 |           6 |   yes   |
-| Simple Kanban  | ems__Task   |      3 |           3 |    no   |
-```
-
-### Show workflow details
-
-```bash
-exocortex-cli workflow show a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d --vault ~/vault
-```
-
-### Validate workflow structure
-
-```bash
-exocortex-cli workflow validate a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d --vault ~/vault
-```
+The plugin validates workflow structure automatically when it loads the vault.
+A malformed workflow (see the checks below) is ignored and the built-in workflow
+is used as a fallback, so a broken custom workflow never bricks the UI.
 
 Validation checks:
 
@@ -342,7 +317,7 @@ Validation checks:
 
 ### No workflow assets found
 
-**Symptom**: `workflow list` shows empty results, or the plugin uses the built-in workflow.
+**Symptom**: The plugin uses the built-in workflow instead of a custom one.
 
 **Cause**: No files with `exo__Instance_class: ["[[ems__Workflow]]"]` in the vault.
 
@@ -350,7 +325,7 @@ Validation checks:
 
 ### Validation errors
 
-**Symptom**: `workflow validate` reports errors like "State X has no outgoing forward transitions".
+**Symptom**: On load, the plugin ignores the custom workflow and reports validation errors like "State X has no outgoing forward transitions" (developer console / notice).
 
 **Common causes**:
 

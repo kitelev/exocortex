@@ -236,20 +236,11 @@ npx @kitelev/exocortex-cli index --vault ~/vault --stats
 
 ### validate
 
-Validate vault files. Parent command with three subcommands.
+Validate vault files. Parent command with `schema` and `vault` subcommands.
 
 ```bash
-npx @kitelev/exocortex-cli validate <iri|schema|frontmatter> [options]
+npx @kitelev/exocortex-cli validate <schema|vault> [options]
 ```
-
-#### validate iri
-
-Check vault files for IRI issues (spaces, special characters) without building the cache. Exits `1` if issues are found.
-
-| Option            | Default | Description                       |
-| ----------------- | ------- | --------------------------------- |
-| `--vault <path>`  | cwd     | Path to Obsidian vault            |
-| `--output <type>` | `text`  | Response format: `text` or `json` |
 
 #### validate schema
 
@@ -273,16 +264,6 @@ npx @kitelev/exocortex-cli validate schema --shapes-mode --vault ~/vault
 # Pre-commit: lint only staged files
 npx @kitelev/exocortex-cli validate schema --staged --vault ~/vault
 ```
-
-#### validate frontmatter
-
-Check vault frontmatter for missing/empty properties and malformed IRIs.
-
-| Option            | Default | Description                          |
-| ----------------- | ------- | ------------------------------------ |
-| `--vault <path>`  | cwd     | Path to Obsidian vault               |
-| `--output <type>` | `text`  | Response format: `text` or `json`    |
-| `--staged`        | off     | Only validate git-staged `.md` files |
 
 ---
 
@@ -353,24 +334,6 @@ npx @kitelev/exocortex-cli resolve a1b2 --partial --format path --vault ~/vault
 | `--format <type>` | `uri`        | Output format: `uri`, `path`, or `json`           |
 | `--output <type>` | `text`       | Response format: `text` or `json` (for MCP tools) |
 | `--partial`       | off          | Match partial UUIDs (returns all matches)         |
-
-### workflow
-
-Manage custom workflow definitions stored in the vault.
-
-```bash
-npx @kitelev/exocortex-cli workflow list --vault ~/vault
-npx @kitelev/exocortex-cli workflow show <uid> --vault ~/vault
-npx @kitelev/exocortex-cli workflow validate <uid> --vault ~/vault
-```
-
-| Subcommand       | Description                                |
-| ---------------- | ------------------------------------------ |
-| `list`           | List all workflow definitions in the vault |
-| `show <uid>`     | Show details of a workflow definition      |
-| `validate <uid>` | Validate a workflow definition             |
-
-All subcommands accept `--vault <path>` (default: cwd) and `--output text|json` (default: `text`).
 
 ### recover
 
@@ -602,7 +565,7 @@ All commands use standardized exit codes following Unix conventions (`src/utils/
 | `7`  | `TRANSACTION_FAILED`       | Atomic operation could not complete             |
 | `8`  | `CONCURRENT_MODIFICATION`  | File changed during operation                   |
 
-Validation commands (`validate iri`, `validate schema`, `audit co-location`, `archive --verify`) exit `1` when issues/violations are found, for CI/pre-commit integration.
+Validation commands (`validate schema`, `validate vault`, `audit co-location`, `audit ontology-imports`) exit `1` when issues/violations are found, for CI/pre-commit integration.
 
 ## Structured JSON Responses
 
