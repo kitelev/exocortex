@@ -37,6 +37,15 @@ describe("CLI surface — W0 removed commands (RFC 7c7859d1)", () => {
     expect(topLevelNames()).not.toContain("experimental");
   });
 
+  // CLI-removals cleanup (post-W0): `workflow` was a dormant read-only
+  // introspection command (list/show/validate over vault workflow assets) with
+  // zero code/CI/launchd consumers and no active requirement. The workflow
+  // FEATURE itself (core WorkflowEngine, plugin-driven) is unaffected — only
+  // this CLI surface was removed.
+  it("does NOT register the removed 'workflow' command", () => {
+    expect(topLevelNames()).not.toContain("workflow");
+  });
+
   it("still registers the retained core/platform commands (sanity)", () => {
     const names = topLevelNames();
     for (const kept of [

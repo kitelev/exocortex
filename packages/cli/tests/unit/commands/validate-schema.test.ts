@@ -455,23 +455,10 @@ describe("Issue #2713: validate parent command", () => {
     expect(cmd.name()).toBe("validate");
   });
 
-  it("should have 'iri' subcommand", () => {
-    const cmd = validateCommandFn();
-    const iriCmd = cmd.commands.find((c: any) => c.name() === "iri");
-    expect(iriCmd).toBeDefined();
-  });
-
   it("should have 'schema' subcommand", () => {
     const cmd = validateCommandFn();
     const schemaCmd = cmd.commands.find((c: any) => c.name() === "schema");
     expect(schemaCmd).toBeDefined();
-  });
-
-  it("iri subcommand should have --vault and --output options", () => {
-    const cmd = validateCommandFn();
-    const iriCmd = cmd.commands.find((c: any) => c.name() === "iri") as any;
-    expect(iriCmd.options.find((o: any) => o.long === "--vault")).toBeDefined();
-    expect(iriCmd.options.find((o: any) => o.long === "--output")).toBeDefined();
   });
 
   it("schema subcommand should have --staged option", () => {
