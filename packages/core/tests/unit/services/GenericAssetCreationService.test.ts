@@ -452,6 +452,21 @@ describe("GenericAssetCreationService", () => {
         expect(primaryOccurrences).toBe(1);
       });
 
+      it("should ignore empty/whitespace-only exo__Instance_class values (no malformed [[]] entry)", async () => {
+        const config = {
+          className: "ztlk__Note",
+          classRefForm: "uuid" as const,
+          classUid: "65b58c34-7451-4b89-bea3-483f7c65fe73",
+          label: "Empty extra class",
+          propertyValues: { exo__Instance_class: ["", "   "] },
+        };
+        await service.createAsset(config);
+        const content = mockVault.create.mock.calls[0][1];
+        expect(content).not.toContain("[[]]");
+        // primary class from --class is still present, no bogus extras
+        expect(content).toContain("[[65b58c34-7451-4b89-bea3-483f7c65fe73]]");
+      });
+
       it("should skip system property aliases in propertyValues", async () => {
         const config = {
           className: "ems__Task",

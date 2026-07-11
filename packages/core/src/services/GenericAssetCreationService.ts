@@ -294,7 +294,14 @@ export class GenericAssetCreationService {
         ? extraInstanceClasses
         : [extraInstanceClasses];
       for (const extra of extras) {
-        if (extra === null || extra === undefined) {
+        // Skip null/undefined and empty/whitespace-only values — the latter
+        // would otherwise emit a malformed `"[[]]"` class entry (mirrors the
+        // `createdBy` trim guard above).
+        if (
+          extra === null ||
+          extra === undefined ||
+          String(extra).trim() === ""
+        ) {
           continue;
         }
         const formatted = this.formatWikilink(String(extra));
