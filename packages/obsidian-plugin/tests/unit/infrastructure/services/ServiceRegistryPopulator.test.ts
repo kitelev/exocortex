@@ -1085,6 +1085,12 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
         exo__Asset_label: "Test Asset",
         exo__Asset_isDefinedBy: "[[!toos_areas]]",
       });
+      // repairFolder now reads the target's frontmatter FRESH from disk
+      // (vault.read + parse) to avoid the metadataCache lag inside a composite
+      // (bug 8efc003c). Keep the on-disk content consistent with getFrontmatter.
+      (deps.vaultAdapter!.read as jest.Mock).mockResolvedValue(
+        '---\nexo__Asset_uid: test-uid-123\nexo__Asset_label: Test Asset\nexo__Asset_isDefinedBy: "[[!toos_areas]]"\n---\nBody',
+      );
 
       const adapter = deps.vaultAdapter! as unknown as {
         getFirstLinkpathDest?: jest.Mock;
@@ -1135,6 +1141,10 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
         exo__Asset_uid: "test-uid-123",
         exo__Asset_label: "Test Asset",
       });
+      // Fresh-read path also lacks isDefinedBy (the asset genuinely has none).
+      (deps.vaultAdapter!.read as jest.Mock).mockResolvedValueOnce(
+        "---\nexo__Asset_uid: test-uid-123\nexo__Asset_label: Test Asset\n---\nBody",
+      );
 
       const service = registry.get("repairFolder")!;
       await expect(service.execute("test-uid-123")).rejects.toThrow(
