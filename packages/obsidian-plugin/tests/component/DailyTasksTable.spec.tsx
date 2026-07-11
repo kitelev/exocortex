@@ -30,6 +30,8 @@ test.describe("DailyTasksTable", () => {
       path: "task2.md",
       title: "Task 2",
       label: "Second Task",
+      // Homoiconic resolved name (DailyTasksRenderer resolves this via the vault ✅-Done spec).
+      displayName: "✅ Second Task",
       startTime: "10:30",
       endTime: "11:30",
       startTimestamp: null,
@@ -47,6 +49,8 @@ test.describe("DailyTasksTable", () => {
       path: "meeting1.md",
       title: "Meeting 1",
       label: "Team Sync",
+      // Homoiconic resolved name (vault 👥 Meeting spec).
+      displayName: "👥 Team Sync",
       startTime: "14:00",
       endTime: "15:00",
       startTimestamp: null,
@@ -64,6 +68,8 @@ test.describe("DailyTasksTable", () => {
       path: "task3.md",
       title: "Task 3",
       label: "Trashed Task",
+      // Homoiconic resolved name (vault ❌ Trashed spec).
+      displayName: "❌ Trashed Task",
       startTime: "",
       endTime: "",
       startTimestamp: null,
@@ -81,6 +87,8 @@ test.describe("DailyTasksTable", () => {
       path: "meeting2.md",
       title: "Meeting 2",
       label: "Completed Meeting",
+      // Homoiconic resolved name (vault ✅👥 Meeting-Done spec).
+      displayName: "✅ 👥 Completed Meeting",
       startTime: "16:00",
       endTime: "17:00",
       startTimestamp: null,
@@ -872,6 +880,8 @@ test.describe("DailyTasksTable", () => {
       path: "doing-task.md",
       title: "Doing Task",
       label: "Doing Task",
+      // Homoiconic resolved name (vault 🔄 Doing spec, d069c316).
+      displayName: "🔄 Doing Task",
       startTime: "09:00",
       endTime: "10:00",
       startTimestamp: null,
@@ -1648,11 +1658,27 @@ test.describe("Large Data Volume Rendering (100 records)", () => {
       const startTime = `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
       const endTime = `${hour.toString().padStart(2, "0")}:${(minute + 14).toString().padStart(2, "0")}`;
 
+      // Homoiconic resolved name — mirrors what DailyTasksRenderer computes via the vault
+      // exo__DisplayNameSpec system (status/class prefix from vault data, not a hardcoded map).
+      const prefix =
+        isDone && isMeeting
+          ? "✅ 👥 "
+          : isDone
+            ? "✅ "
+            : isTrashed
+              ? "❌ "
+              : isDoing
+                ? "🔄 "
+                : isMeeting
+                  ? "👥 "
+                  : "";
+
       tasks.push({
         file: { path: `task${i}.md`, basename: `task${i}` },
         path: `task${i}.md`,
         title: `Task ${i}`,
         label: `Task ${i} - ${status}`,
+        displayName: `${prefix}Task ${i} - ${status}`,
         startTime,
         endTime,
         startTimestamp: new Date(`2025-01-15T${startTime}:00`).getTime(),

@@ -8,13 +8,15 @@ import {
   DailyTasksTableWithToggle,
   isDateOnlyTimestamp,
 } from '@plugin/presentation/components/DailyTasksTable';
-import { AssetClass, EffortStatus, IVaultAdapter, IFile } from "@kitelev/exocortex-core";
+import { AssetClass, IVaultAdapter, IFile } from "@kitelev/exocortex-core";
 import { MetadataExtractor } from "@kitelev/exocortex-core";
 import { EffortSortingHelpers } from "@kitelev/exocortex-core";
 import { AssetMetadataService } from "./layout/helpers/AssetMetadataService";
 import { DailyNoteHelpers } from "./helpers/DailyNoteHelpers";
 import { BlockerHelpers } from '@plugin/presentation/utils/BlockerHelpers';
 import { getStatusLabel } from '@plugin/domain/property-editor/PropertySchemas';
+import { DisplayNameResolver } from '@plugin/domain/display-name/DisplayNameResolver';
+import { DEFAULT_DISPLAY_NAME_SETTINGS } from '@plugin/domain/settings/ExocortexSettings';
 import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';
 
 export class DailyTasksRenderer {
@@ -160,11 +162,29 @@ export class DailyTasksRenderer {
     this.logger.info(`Rendered ${tasks.length} tasks for DailyNote: ${day}`);
   }
 
+  /**
+   * Build a DisplayNameResolver the SAME way the native-link patches do (BodyLinkPatch,
+   * InlineTitlePatch, …), so a task's DailyNote-table label is produced by the homoiconic
+   * exo__DisplayNameSpec system — the status/class prefix (🔄/✅/❌/👥) comes from vault
+   * data, not a hardcoded emoji map. Degrades to a label-only resolver when the plugin's
+   * printNameRuleService / displayNameSettings are unavailable (e.g. unit-test mocks).
+   */
+  private createDisplayNameResolver(): DisplayNameResolver {
+    const ruleService = this.plugin.printNameRuleService ?? null;
+    const settings =
+      this.plugin.settings?.displayNameSettings ?? DEFAULT_DISPLAY_NAME_SETTINGS;
+    const metadataResolver = ruleService?.createMetadataResolver() ?? null;
+    return new DisplayNameResolver(settings, ruleService, metadataResolver);
+  }
+
   private async getDailyTasks(day: string): Promise<DailyTask[]> {
     try {
       const tasks: DailyTask[] = [];
 
       const allFiles = this.vaultAdapter.getAllFiles();
+
+      // One resolver per render — carries the compiled vault exo__DisplayNameSpec rules.
+      const displayNameResolver = this.createDisplayNameResolver();
 
       for (const file of allFiles) {
         const metadata = this.metadataExtractor.extractMetadata(file);
@@ -219,12 +239,13 @@ export class DailyTasksRenderer {
         const endTime =
           formatTime(endTimestamp as string | number | null | undefined) || formatTime(plannedEndTimestamp as string | number | null | undefined);
 
-        const isDone = effortStatusStr === EffortStatus.DONE;
-        const isTrashed = effortStatusStr === EffortStatus.TRASHED;
-        const isDoing = effortStatusStr === EffortStatus.DOING;
-        const isMeeting = instanceClassArray.some((c: string) =>
-          String(c).includes(AssetClass.MEETING),
-        );
+        // Dual-IRI-robust status label (normalizes [[uid]] / [[uid|label]] / label+UUID forms).
+        // isDoing feeds the NON-display sort that lifts Doing tasks to the top — derived from
+        // this normalized label, NEVER a naive strict-equality against the label-form enum (the
+        // bug that silently dropped 🔄 for UID-canon statuses). The status/class emoji prefixes
+        // are no longer derived here — they come from the homoiconic resolver (displayName below).
+        const statusLabel = getStatusLabel(effortStatusStr);
+        const isDoing = statusLabel === "Doing";
 
         const label = (metadata.exo__Asset_label as string) || file.basename;
 
@@ -236,6 +257,16 @@ export class DailyTasksRenderer {
         const enrichedMetadata = prototypeClasses
           ? { ...metadata, _prototypeClasses: prototypeClasses }
           : metadata;
+
+        // Homoiconic display name: resolve the task through the vault exo__DisplayNameSpec
+        // system (same stack as native links). Default exo__Asset_label to the basename so a
+        // labelless task keeps the old basename fallback inside the resolved prefix. Falls back
+        // to `label` when the resolver produces nothing (e.g. no printNameRuleService in tests).
+        const displayName =
+          displayNameResolver.resolve({
+            metadata: { ...enrichedMetadata, exo__Asset_label: label },
+            basename: file.basename,
+          }) ?? undefined;
 
         tasks.push({
           file: {
@@ -249,12 +280,10 @@ export class DailyTasksRenderer {
           endTime,
           startTimestamp: (startTimestamp || plannedStartTimestamp || null) as string | number | null,
           endTimestamp: (endTimestamp || plannedEndTimestamp || null) as string | number | null,
-          status: getStatusLabel(effortStatusStr),
+          status: statusLabel,
           metadata: enrichedMetadata,
-          isDone,
-          isTrashed,
+          displayName,
           isDoing,
-          isMeeting,
           isBlocked,
         });
       }
