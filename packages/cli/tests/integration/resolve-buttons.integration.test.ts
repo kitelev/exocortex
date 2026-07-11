@@ -369,3 +369,16 @@ describe("@req:960a7ba7-3470-42ba-afdc-f6766c3c3126 resolve-buttons — binding-
     expect(errs.join("\n")).not.toMatch(/❌ Error:/);
   });
 });
+
+// Homoiconization audit 2026-07-11 (Andrey interview): the verb was renamed
+// `resolve-buttons` → `resolve-inline-buttons` (the name now reflects the
+// inline-button scope; the command palette is a separate path). `resolve-buttons`
+// is kept as a back-compat alias so existing scripts + the homoiconic-rule oracle
+// references (`resolve-buttons <target> --json`) keep resolving.
+describe("resolve-inline-buttons rename + back-compat alias", () => {
+  it("has primary name resolve-inline-buttons and a resolve-buttons alias", () => {
+    const cmd = resolveButtonsCommand();
+    expect(cmd.name()).toBe("resolve-inline-buttons");
+    expect(cmd.aliases()).toContain("resolve-buttons");
+  });
+});

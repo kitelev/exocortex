@@ -25,7 +25,7 @@ import { createIsInWrongFolderHostFunction } from "../precondition/createIsInWro
 import { createHasEmptyPropertiesHostFunction } from "../precondition/createHasEmptyPropertiesHostFunction.js";
 
 /**
- * Issue #3833 — `resolve-buttons <target>` prints the command button-set the
+ * Issue #3833 — `resolve-inline-buttons <target>` prints the command button-set the
  * plugin resolves for an asset's page BEFORE the (downstream, out-of-scope)
  * RFC-024 class-panel filter: **Layer A** (binding-match via the class
  * hierarchy, `CommandResolver.resolveForAssetMulti`) **∩ Layer B**
@@ -377,11 +377,13 @@ function printHuman(result: ResolveButtonsResult, showHidden: boolean): void {
 }
 
 /**
- * `exocortex resolve-buttons <target> [--vault <v>] [--json] [--show-hidden]`
+ * `exocortex resolve-inline-buttons <target> [--vault <v>] [--json] [--show-hidden]`
  * — Issue #3833. The authoritative inline-button-visibility oracle.
+ * (Aliased `resolve-buttons` for back-compat.)
  */
 export function resolveButtonsCommand(): Command {
-  return new Command("resolve-buttons")
+  return new Command("resolve-inline-buttons")
+    .alias("resolve-buttons")
     .description(
       "Print the actual command button-set for an asset — binding-match ∩ " +
         "precondition-eval (Issue #3833). The authoritative button-visibility " +
@@ -396,7 +398,7 @@ export function resolveButtonsCommand(): Command {
     )
     .action(async (targetArg: string, options: ResolveButtonsOptions) => {
       // LOW#4 (#3833) — honour --json on the error path too, so a failing
-      // resolve-buttons emits a structured JSON error (ErrorHandler json mode)
+      // resolve-inline-buttons emits a structured JSON error (ErrorHandler json mode)
       // instead of human text. Mirrors the resolve/validate-* convention.
       ErrorHandler.setFormat((options.json ? "json" : "text") as OutputFormat);
       try {
