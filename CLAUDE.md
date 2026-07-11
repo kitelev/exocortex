@@ -55,15 +55,17 @@ infrastructure/  → Obsidian API adapters, file system
 
 ## Test Suite Awareness
 
-The exocortex-package jest config has `roots: ['<rootDir>/tests']`, but exocortex suites run in CI only if matched by the inline `--testPathPatterns` allowlist of the `test-coverage-exocortex` job in `.github/workflows/ci.yml` (that inline list is the actual CI gate — `scripts/test-ci-batched.sh` is only the local `npm run test:unit` mirror, no workflow invokes it). New integration suites under `packages/core/tests/integration/**` are NOT picked up automatically — either add them to the CI allowlist (and mirror in the script) or accept they can rot silently.
+The exocortex-package jest config has `roots: ['<rootDir>/tests']`. The `test-coverage-exocortex` job in `.github/workflows/ci.yml` now runs the **FULL** `packages/core/jest.config.js` — every suite under `roots`, with only `--testPathIgnorePatterns '/node_modules/' '/tests/performance/'` (performance micro-benchmarks are excluded from the hard gate; they flake under parallel-worker contention). **There is no longer a `--testPathPatterns` allowlist** — the previous inline allowlist gated only ~55 of the ~319 suites and let un-listed suites rot silently (Issue #3189, #3506). `scripts/test-ci-batched.sh` is only the local `npm run test:unit` mirror; no workflow invokes it.
 
-When fixing a bug, run the directly-affected suite locally even if it isn't gated by CI:
+**Consequence:** new suites under `packages/core/tests/**` (including `tests/integration/**`) **ARE** picked up automatically and CI-gated — you no longer add them to an allowlist. A suite that reads external/pinned data (e.g. a submodule) can still appear green only because the pinned data is stale; bumping the pointer surfaces the real state (see the sibling rule `cross-repo-submodule-sync.md` §stale-walker).
+
+When fixing a bug, still run the directly-affected suite locally for a fast loop:
 
 ```bash
 npm test -- packages/core/tests/integration/<affected-suite>.test.ts
 ```
 
-**Reference**: PR #3189 — `create-instance-grounding.test.ts` was silently red on `main` (12/12 fail, missing parent.md fixture) because the allowlist never included it. Coverage gates measure file/line %, not "did this suite pass"; orphan integration suites can rot indefinitely.
+**Reference (historical, allowlist era):** PR #3189 — `create-instance-grounding.test.ts` was silently red on `main` (12/12 fail, missing parent.md fixture) because the allowlist never included it. That failure mode is now closed by the full-config gate; the lesson (coverage gates measure file/line %, not "did this suite pass") remains why the allowlist was dropped.
 
 ## TypeScript Tooling
 
