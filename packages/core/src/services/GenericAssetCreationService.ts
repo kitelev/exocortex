@@ -278,6 +278,39 @@ export class GenericAssetCreationService {
         : config.className;
     frontmatter["exo__Instance_class"] = [this.formatWikilink(classRef)];
 
+    // Merge any additional `exo__Instance_class` values supplied via
+    // propertyValues (e.g. `cli create --class A --property
+    // "exo__Instance_class=[[B]]"`, or a repeated `--property` flag) into the
+    // array, so a multi-class asset can be created in one command (issue
+    // #3852). `--class` sets the primary class; extras accumulate in order,
+    // de-duplicated. Formatting goes through `formatWikilink` so bare-UUID,
+    // `[[..]]` and `"[[..]]"` inputs all normalise to the same quoted form as
+    // the primary. The propertyValues loop below still skips
+    // `exo__Instance_class`, so these are not re-emitted there.
+    const extraInstanceClasses = config.propertyValues?.["exo__Instance_class"];
+    if (extraInstanceClasses !== undefined && extraInstanceClasses !== null) {
+      const instanceClasses = frontmatter["exo__Instance_class"] as string[];
+      const extras = Array.isArray(extraInstanceClasses)
+        ? extraInstanceClasses
+        : [extraInstanceClasses];
+      for (const extra of extras) {
+        // Skip null/undefined and empty/whitespace-only values — the latter
+        // would otherwise emit a malformed `"[[]]"` class entry (mirrors the
+        // `createdBy` trim guard above).
+        if (
+          extra === null ||
+          extra === undefined ||
+          String(extra).trim() === ""
+        ) {
+          continue;
+        }
+        const formatted = this.formatWikilink(String(extra));
+        if (!instanceClasses.includes(formatted)) {
+          instanceClasses.push(formatted);
+        }
+      }
+    }
+
     // Creator — emitted only when explicitly supplied (no implicit default).
     if (config.createdBy && config.createdBy.trim() !== "") {
       frontmatter["exo__Asset_createdBy"] = this.formatWikilink(
