@@ -169,6 +169,11 @@ function buildVault(listSparql: string = LIST_SPARQL_EXCLUDE_GADGET): string {
   return root;
 }
 
+// @req:2678df55-ef74-4b45-a168-90db5e958882 — LITERAL binding for the static
+// `requirements audit` scanner. The it() titles below build the tag via a
+// `@req:${REQ}` template literal, which the audit's static `@req:<uuid>` regex
+// cannot resolve — so without this literal line the now-Active req reads as
+// unbound and reds `requirements-trace` on every PR (cross-session blast radius).
 describe("req 2678df55 — run-query + homoiconic classes read-axis", () => {
   let root: string | undefined;
   let processExitSpy: jest.SpiedFunction<typeof process.exit>;
