@@ -1,5 +1,6 @@
 import { PrintNameRuleService } from "@plugin/domain/display-name/PrintNameRuleService";
 import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
+import { DEFAULT_DISPLAY_MATCHER_HOST_FUNCTIONS } from "@plugin/presentation/utils/displayMatcherHostFunctions";
 import { TFile } from "obsidian";
 import type { App, CachedMetadata } from "obsidian";
 
@@ -672,5 +673,251 @@ describe("PrintNameRuleService — conditional exo__DisplayNameSpec (v2 slice, p
       exo__Instance_class: ["[[ems__Project]]"],
     });
     expect(withMeta!.template).toBe("PROJECT");
+  });
+});
+
+describe("PrintNameRuleService — host-function exo__DisplayNameSpec (v2 computed matcher, cross-asset) [req d6cd2371]", () => {
+  const TASK_UID = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+  const LABEL_PROP_UID = "12a6151b-801f-4be2-bd6e-a787eedd56ae"; // exo__Asset_label
+  const SPEC_UID = "spec-blocked-hostfn-uid";
+  const BLOCKER_BASENAME = "the-blocking-task";
+
+  // Production-shape vault: a 🚩-blocked exo__DisplayNameSpec for ems__Task whose matcher is a
+  // HOST FUNCTION (matchHostFunction=isEffortBlocked) + its two ordered parts + a BLOCKER asset
+  // the task's ems__Effort_blocker resolves to. The service is wired with the REAL registry
+  // (DEFAULT_DISPLAY_MATCHER_HOST_FUNCTIONS) so the REAL BlockerHelpers.isEffortBlocked runs —
+  // NO hand-injected matcher result. `setBlockerStatus` mutates the SAME blocker cache so a
+  // per-render test can flip the CROSS-ASSET condition without a re-scan.
+  function blockedHostFnVault(
+    opts: {
+      priority?: number;
+      blockerStatus?: string | null; // bare-label form, e.g. "[[ems__EffortStatusDoing]]"
+      hostFunctionName?: string; // override to exercise the fail-closed path
+      extraFiles?: Array<{ path: string; frontmatter: Record<string, unknown> }>;
+    } = {},
+  ): {
+    service: PrintNameRuleService;
+    resolver: DisplayNameResolver;
+    setBlockerStatus: (status: string | null) => void;
+  } {
+    // The blocker's frontmatter is a live object shared with the fileCache so status flips
+    // are visible to isEffortBlocked on the next render (mirrors metadataCache re-reads).
+    const blockerFm: Record<string, unknown> = {
+      exo__Asset_uid: "blocker-asset-uid",
+      exo__Asset_label: "The blocking task",
+    };
+    if (opts.blockerStatus != null) blockerFm.ems__Effort_status = opts.blockerStatus;
+
+    const fileCache = new Map<string, CachedMetadata>();
+    const mockFiles: TFile[] = [];
+    const addFile = (path: string, frontmatter: Record<string, unknown>) => {
+      const tfile = new TFile(path);
+      tfile.basename = path.replace(".md", "");
+      tfile.extension = "md";
+      mockFiles.push(tfile);
+      fileCache.set(path, { frontmatter } as CachedMetadata);
+    };
+
+    addFile(`${SPEC_UID}.md`, {
+      exo__Asset_uid: SPEC_UID,
+      exo__Instance_class: ["[[07eab746-0874-4676-9d98-dbaad1bc6fb8|exo__DisplayNameSpec]]"],
+      exo__DisplayNameSpec_appliesToClass: `[[${TASK_UID}|ems__Task]]`,
+      exo__DisplayNameSpec_priority: opts.priority ?? 100,
+      // The computed matcher: a plain string naming the registered host function.
+      exo__DisplayNameSpec_matchHostFunction: opts.hostFunctionName ?? "isEffortBlocked",
+    });
+    addFile("blocked-literal.md", {
+      exo__Asset_uid: "blocked-literal",
+      exo__Instance_class: ["[[4d5437c9-788e-4a6d-9be0-4af3a84554f4|exo__PrintedLiteral]]"],
+      exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+      exo__DisplayNamePart_order: 0,
+      exo__PrintedLiteral_literal: "🚩 ",
+    });
+    addFile("blocked-prop.md", {
+      exo__Asset_uid: "blocked-prop",
+      exo__Instance_class: ["[[7d58de40-d941-4a66-88e2-13afc4fdc41d|exo__PrintedProperty]]"],
+      exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+      exo__DisplayNamePart_order: 1,
+      exo__PrintedProperty_property: `[[${LABEL_PROP_UID}|exo__Asset_label]]`,
+    });
+    addFile(`${BLOCKER_BASENAME}.md`, blockerFm); // fileCache holds the SAME blockerFm reference
+
+    for (const ef of opts.extraFiles ?? []) addFile(ef.path, ef.frontmatter);
+
+    const app = {
+      vault: { getMarkdownFiles: jest.fn().mockReturnValue(mockFiles) },
+      metadataCache: {
+        getFileCache: jest
+          .fn()
+          .mockImplementation((file: TFile) => fileCache.get(file.path) ?? null),
+        getFirstLinkpathDest: jest.fn().mockImplementation((path: string) => {
+          const cleanPath = path.endsWith(".md") ? path : path + ".md";
+          return mockFiles.find((f) => f.path === cleanPath) ?? null;
+        }),
+      },
+    } as unknown as App;
+
+    // Wire the REAL registry (isEffortBlocked → BlockerHelpers.isEffortBlocked).
+    const service = new PrintNameRuleService(app, DEFAULT_DISPLAY_MATCHER_HOST_FUNCTIONS);
+    service.initialize();
+    const resolver = new DisplayNameResolver(
+      { defaultTemplate: "{{exo__Asset_label}}", classTemplates: {} },
+      service,
+    );
+    const setBlockerStatus = (status: string | null) => {
+      if (status === null) delete blockerFm.ems__Effort_status;
+      else blockerFm.ems__Effort_status = status;
+    };
+    return { service, resolver, setBlockerStatus };
+  }
+
+  function taskMeta(
+    opts: { blocker?: string | null; label?: string } = {},
+  ): Record<string, unknown> {
+    const m: Record<string, unknown> = {
+      exo__Instance_class: [`[[${TASK_UID}]]`],
+      exo__Asset_label: opts.label ?? "Ship the release",
+    };
+    if (opts.blocker != null) m.ems__Effort_blocker = opts.blocker;
+    return m;
+  }
+
+  it("@req:d6cd2371-bdf2-460e-840e-841480273869 a 🚩-blocked host-function spec applies ONLY to a blocked task; a non-blocked task falls through to the label (revert-verify anchor)", () => {
+    // The blocker asset's status is Doing (not done) → real isEffortBlocked returns true for a
+    // task referencing it. EMPTY classTemplates prove the VAULT host-function spec drives the 🚩,
+    // not a TS hardcode. Revert-verify RED anchor: neutralize the host-function matcher gate
+    // (treat host-function rules as never-participating) → the blocked task loses "🚩 " → RED.
+    const { resolver } = blockedHostFnVault({ blockerStatus: "[[ems__EffortStatusDoing]]" });
+
+    const blocked = resolver.resolve({
+      metadata: taskMeta({ blocker: `[[${BLOCKER_BASENAME}]]` }),
+      basename: "t1",
+    });
+    expect(blocked).toBe("🚩 Ship the release");
+
+    // No blocker → isEffortBlocked false → the spec does NOT participate.
+    const notBlocked = resolver.resolve({ metadata: taskMeta(), basename: "t2" });
+    expect(notBlocked).toBe("Ship the release");
+  });
+
+  it("the condition is CROSS-ASSET — a task whose blocker is DONE is not blocked → no 🚩 (reads the BLOCKER's status, not the task's own frontmatter)", () => {
+    const { resolver } = blockedHostFnVault({ blockerStatus: "[[ems__EffortStatusDone]]" });
+    // The task DOES carry ems__Effort_blocker, but the referenced blocker is Done → not blocked.
+    expect(
+      resolver.resolve({
+        metadata: taskMeta({ blocker: `[[${BLOCKER_BASENAME}]]` }),
+        basename: "t",
+      }),
+    ).toBe("Ship the release");
+  });
+
+  it("evaluates the condition PER-RENDER — the SAME loaded spec flips 🚩 on/off as the referenced BLOCKER's status changes (cross-asset, no re-scan)", () => {
+    const { resolver, setBlockerStatus } = blockedHostFnVault({
+      blockerStatus: "[[ems__EffortStatusDoing]]",
+    });
+    const meta = taskMeta({ blocker: `[[${BLOCKER_BASENAME}]]` }); // SAME task metadata throughout
+
+    // blocker not-done → blocked → 🚩
+    expect(resolver.resolve({ metadata: meta, basename: "t" })).toBe("🚩 Ship the release");
+    // the OTHER asset (the blocker) becomes Done → task no longer blocked → 🚩 disappears (no refresh()).
+    setBlockerStatus("[[ems__EffortStatusDone]]");
+    expect(resolver.resolve({ metadata: meta, basename: "t" })).toBe("Ship the release");
+    // blocker reverts to not-done → 🚩 returns.
+    setBlockerStatus("[[ems__EffortStatusDoing]]");
+    expect(resolver.resolve({ metadata: meta, basename: "t" })).toBe("🚩 Ship the release");
+  });
+
+  it("a matched host-function spec BEATS a lower-priority unconditional spec; an unmatched one yields to it (selection stays priority-based)", () => {
+    const { resolver } = blockedHostFnVault({
+      priority: 80, // host-function spec
+      blockerStatus: "[[ems__EffortStatusDoing]]",
+      extraFiles: [
+        {
+          path: "uncond-spec.md",
+          frontmatter: {
+            exo__Asset_uid: "uncond-spec",
+            exo__Instance_class: ["[[07eab746-0874-4676-9d98-dbaad1bc6fb8|exo__DisplayNameSpec]]"],
+            exo__DisplayNameSpec_appliesToClass: `[[${TASK_UID}|ems__Task]]`,
+            exo__DisplayNameSpec_priority: 1,
+          },
+        },
+        {
+          path: "ul.md",
+          frontmatter: {
+            exo__Asset_uid: "ul",
+            exo__Instance_class: ["[[4d5437c9-788e-4a6d-9be0-4af3a84554f4|exo__PrintedLiteral]]"],
+            exo__DisplayNamePart_of: "[[uncond-spec]]",
+            exo__DisplayNamePart_order: 0,
+            exo__PrintedLiteral_literal: "[TASK] ",
+          },
+        },
+        {
+          path: "up.md",
+          frontmatter: {
+            exo__Asset_uid: "up",
+            exo__Instance_class: ["[[7d58de40-d941-4a66-88e2-13afc4fdc41d|exo__PrintedProperty]]"],
+            exo__DisplayNamePart_of: "[[uncond-spec]]",
+            exo__DisplayNamePart_order: 1,
+            exo__PrintedProperty_property: `[[${LABEL_PROP_UID}|exo__Asset_label]]`,
+          },
+        },
+      ],
+    });
+
+    // blocked → high-priority host-function spec wins.
+    expect(
+      resolver.resolve({ metadata: taskMeta({ blocker: `[[${BLOCKER_BASENAME}]]` }), basename: "t" }),
+    ).toBe("🚩 Ship the release");
+    // not blocked → host-function skipped → unconditional "[TASK] <label>" wins (not the bare label).
+    expect(resolver.resolve({ metadata: taskMeta(), basename: "t" })).toBe(
+      "[TASK] Ship the release",
+    );
+  });
+
+  it("a spec naming an UNREGISTERED host function never participates (fail-closed) → falls through to the label", () => {
+    const { resolver } = blockedHostFnVault({
+      blockerStatus: "[[ems__EffortStatusDoing]]",
+      hostFunctionName: "noSuchDisplayMatcher",
+    });
+    // Even a genuinely blocked task gets no 🚩 — the unknown function can't be evaluated.
+    expect(
+      resolver.resolve({ metadata: taskMeta({ blocker: `[[${BLOCKER_BASENAME}]]` }), basename: "t" }),
+    ).toBe("Ship the release");
+  });
+
+  it("no-regression: a no-matcher spec is byte-identical even with the host-function registry wired (v1 path, no metadata)", () => {
+    // A pure-v1 spec (no matchPath/matchValue/matchHostFunction) still always participates when
+    // the service is constructed WITH the real host-function registry.
+    const app = createMockApp([
+      {
+        path: "v1-spec.md",
+        frontmatter: {
+          exo__Asset_uid: "v1-spec",
+          exo__Instance_class: ["[[exo__DisplayNameSpec]]"],
+          exo__DisplayNameSpec_appliesToClass: "[[C|ems__Project]]",
+          exo__DisplayNameSpec_priority: 5,
+        },
+      },
+      {
+        path: "v1-part.md",
+        frontmatter: {
+          exo__Asset_uid: "v1-part",
+          exo__Instance_class: ["[[exo__PrintedLiteral]]"],
+          exo__DisplayNamePart_of: "[[v1-spec]]",
+          exo__DisplayNamePart_order: 1,
+          exo__PrintedLiteral_literal: "PROJECT",
+        },
+      },
+    ]);
+    const service = new PrintNameRuleService(app, DEFAULT_DISPLAY_MATCHER_HOST_FUNCTIONS);
+    service.initialize();
+    // v1 call shape (no metadata) still returns the unconditional rule.
+    expect(service.getTemplateForClass("ems__Project")!.template).toBe("PROJECT");
+    // and with metadata it is unchanged (matcher-less → always participates).
+    expect(
+      service.getTemplateForClass("ems__Project", {
+        exo__Instance_class: ["[[ems__Project]]"],
+      })!.template,
+    ).toBe("PROJECT");
   });
 });

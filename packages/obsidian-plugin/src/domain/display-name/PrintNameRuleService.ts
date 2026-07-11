@@ -2,7 +2,7 @@ import { TFile } from "obsidian";
 import type { App } from "obsidian";
 
 /**
- * A per-render condition compiled from an exo__DisplayNameSpec's
+ * A per-render VALUE-EQUALITY condition compiled from an exo__DisplayNameSpec's
  * exo__DisplayNameSpec_matchPath (→ frontmatter key) + exo__DisplayNameSpec_matchValue
  * (→ cleaned enum identity/-ies). A rule carrying a matcher is CONDITIONAL: it only
  * participates in class selection when the rendered instance's frontmatter value at
@@ -10,7 +10,8 @@ import type { App } from "obsidian";
  * into the compiled template because it depends on the concrete instance). v2
  * conditional-slice (RFC 92b91345, req ed4201d1).
  */
-export interface DisplayNameMatcher {
+export interface ValueEqualityMatcher {
+  kind: "value";
   /** Frontmatter key of the instance property the condition inspects (e.g. "ems__Effort_status"). */
   matchKey: string;
   /**
@@ -24,12 +25,52 @@ export interface DisplayNameMatcher {
   matchValues: string[];
 }
 
+/**
+ * A per-render COMPUTED / host-function condition compiled from an
+ * exo__DisplayNameSpec's exo__DisplayNameSpec_matchHostFunction (→ the NAME of a
+ * registered display-matcher host function). A rule carrying this matcher participates
+ * only when the named host function returns true for the rendered instance — evaluated
+ * per-render from (app, instance metadata), so it can resolve OTHER assets (a CROSS-ASSET
+ * predicate) that a value-equality matcher on the instance's own frontmatter cannot
+ * express. The first registered function is `isEffortBlocked`. v2 computed-slice
+ * (RFC 92b91345, req d6cd2371).
+ */
+export interface HostFunctionMatcher {
+  kind: "hostFunction";
+  /** Name of a registered display-matcher host function, e.g. "isEffortBlocked". */
+  hostFunction: string;
+}
+
+/**
+ * A spec's per-render matcher. A spec MAY carry EITHER a value-equality matcher OR a
+ * host-function matcher (v2 single-matcher slice — conjunctions/disjunctions are a
+ * future exo__DisplayNameMatcher). When a spec declares both, value-equality takes
+ * precedence (see compileDisplayNameSpecs).
+ */
+export type DisplayNameMatcher = ValueEqualityMatcher | HostFunctionMatcher;
+
+/**
+ * A registered display-matcher host function: a per-render, possibly CROSS-ASSET
+ * predicate over (app, rendered-instance metadata). Seeded with isEffortBlocked. Kept
+ * as an injected registry (composition-root seeding) so the engine stays free of any
+ * concrete predicate — the plugin wires the real functions (see ExocortexPlugin).
+ */
+export type DisplayMatcherHostFunction = (
+  app: App,
+  metadata: Record<string, unknown>,
+) => boolean;
+export type DisplayMatcherHostFunctionRegistry = Record<string, DisplayMatcherHostFunction>;
+
 export interface PrintNameRule {
   className: string;
   template: string;
   priority: number;
   sourceFile: string;
-  /** Present iff the spec declared exo__DisplayNameSpec_matchPath + _matchValue (conditional). */
+  /**
+   * Present iff the spec declared a matcher — exo__DisplayNameSpec_matchPath + _matchValue
+   * (value-equality) OR exo__DisplayNameSpec_matchHostFunction (host-function). Absent =
+   * unconditional (v1 path).
+   */
   matcher?: DisplayNameMatcher;
 }
 
@@ -51,9 +92,11 @@ interface RawDisplayNameSpec {
   uid: string;
   classKeys: string[]; // UID + label of appliesToClass (both indexed — #2110)
   priority: number;
-  // Conditional specialization (v2 slice — RFC 92b91345, req ed4201d1). Both present or both absent.
+  // Value-equality specialization (v2 slice — RFC 92b91345, req ed4201d1). Both present or both absent.
   matchKey?: string; // frontmatter key resolved from exo__DisplayNameSpec_matchPath
   matchValues?: string[]; // accepted identities (UID + label) from exo__DisplayNameSpec_matchValue
+  // Host-function specialization (v2 slice — RFC 92b91345, req d6cd2371).
+  hostFunction?: string; // registered host-function name from exo__DisplayNameSpec_matchHostFunction
 }
 
 interface RawDisplayNamePart {
@@ -68,7 +111,16 @@ export class PrintNameRuleService {
   private classHierarchy: Map<string, string[]> = new Map();
   private initialized = false;
 
-  constructor(private readonly app: App) {}
+  /**
+   * @param hostFunctions Registry of display-matcher host functions (name → predicate),
+   *   consulted by a host-function matcher (req d6cd2371). Defaults to empty — a spec that
+   *   names an unregistered function never participates (fail-closed). The plugin seeds it
+   *   with isEffortBlocked (see ExocortexPlugin); v1/value-equality specs are unaffected.
+   */
+  constructor(
+    private readonly app: App,
+    private readonly hostFunctions: DisplayMatcherHostFunctionRegistry = {},
+  ) {}
 
   initialize(): void {
     this.scanVault();
@@ -121,16 +173,26 @@ export class PrintNameRuleService {
   }
 
   /**
-   * True when the instance's frontmatter value at `matcher.matchKey` equals `matchValue`
-   * under dual-IRI equality: both sides are reduced to their identity set (UID + label
-   * forms via extractClassKeys) and the sets must intersect. This makes the condition
-   * robust whether the status is stored as `[[<uid>]]`, `[[<uid>|label]]`, or the bare
-   * label — see sparql-iri-form-pre-verify.
+   * True when the rendered instance satisfies the rule's matcher, dispatched by kind:
+   *  - "hostFunction": look the named function up in the injected registry and call it
+   *    with (app, metadata) — a per-render, possibly cross-asset predicate (req d6cd2371).
+   *    An UNREGISTERED name never participates (fail-closed): a conditional prefix must
+   *    not appear when its predicate can't be evaluated.
+   *  - "value": the instance's frontmatter value at `matcher.matchKey` equals `matchValue`
+   *    under dual-IRI equality — both sides reduced to their identity set (UID + label
+   *    forms via extractClassKeys) and the sets must intersect, so it is robust whether the
+   *    status is stored as `[[<uid>]]`, `[[<uid>|label]]`, or the bare label (req ed4201d1;
+   *    see sparql-iri-form-pre-verify).
    */
   private matcherSatisfied(
     matcher: DisplayNameMatcher,
     metadata: Record<string, unknown>,
   ): boolean {
+    if (matcher.kind === "hostFunction") {
+      const fn = this.hostFunctions[matcher.hostFunction];
+      if (!fn) return false;
+      return fn(this.app, metadata);
+    }
     const instanceForms = this.extractClassKeys(metadata[matcher.matchKey]);
     if (instanceForms.length === 0) return false;
     return instanceForms.some((form) => matcher.matchValues.includes(form));
@@ -160,6 +222,28 @@ export class PrintNameRuleService {
       if (typeof label === "string" && label.trim()) forms.add(label.trim());
     }
     return [...forms];
+  }
+
+  /**
+   * Resolve exo__DisplayNameSpec_matchHostFunction to the registered host-function NAME
+   * it references. Unlike matchPath/matchValue (which are wikilinks to property/enum
+   * assets), this is a plain STRING datatype value — the name of a registered
+   * display-matcher host function (e.g. "isEffortBlocked"). Takes the first element if an
+   * array; strips surrounding wikilink brackets / quotes / whitespace defensively.
+   */
+  private resolveHostFunctionName(value: unknown): string | null {
+    let raw = value;
+    if (Array.isArray(raw)) {
+      if (raw.length === 0) return null;
+      raw = raw[0];
+    }
+    if (typeof raw !== "string") return null;
+
+    const cleaned = raw
+      .replace(/^\[\[|\]\]$/g, "")
+      .replace(/^"|"$/g, "")
+      .trim();
+    return cleaned || null;
   }
 
   createMetadataResolver(): MetadataResolver {
@@ -254,20 +338,26 @@ export class PrintNameRuleService {
           ? Number(rawPriority)
           : 0;
 
-    // Conditional specialization (v2 slice): resolve matchPath → the frontmatter key it
+    // Value-equality specialization (v2 slice): resolve matchPath → the frontmatter key it
     // inspects (single-hop, same wikilink resolution as a PrintedProperty ref) and
     // matchValue → the accepted identity set (all forms of the ONE accepted value). A
-    // matcher is set only when BOTH are present; otherwise the spec stays unconditional
-    // (v1 path).
+    // value-equality matcher is set only when BOTH are present.
     const matchKey = this.resolvePropertyKey(fm.exo__DisplayNameSpec_matchPath);
     const matchValues = this.resolveMatchValues(fm.exo__DisplayNameSpec_matchValue);
-    const hasMatcher = matchKey !== null && matchValues.length > 0;
+    const hasValueMatcher = matchKey !== null && matchValues.length > 0;
+
+    // Host-function specialization (v2 slice, req d6cd2371): resolve matchHostFunction →
+    // the registered host-function NAME (a plain string, not a wikilink). Carried on the
+    // raw spec; the union matcher is built in compileDisplayNameSpecs. Absent both → the
+    // spec stays unconditional (v1 path).
+    const hostFunction = this.resolveHostFunctionName(fm.exo__DisplayNameSpec_matchHostFunction);
 
     rawSpecs.set(uid, {
       uid,
       classKeys,
       priority: Number.isFinite(priority) ? priority : 0,
-      ...(hasMatcher ? { matchKey: matchKey ?? undefined, matchValues } : {}),
+      ...(hasValueMatcher ? { matchKey: matchKey ?? undefined, matchValues } : {}),
+      ...(hostFunction ? { hostFunction } : {}),
     });
   }
 
@@ -327,10 +417,16 @@ export class PrintNameRuleService {
 
       const priority = DISPLAY_NAME_SPEC_BASE_PRIORITY + spec.priority;
 
-      const matcher: DisplayNameMatcher | undefined =
-        spec.matchKey && spec.matchValues && spec.matchValues.length > 0
-          ? { matchKey: spec.matchKey, matchValues: spec.matchValues }
-          : undefined;
+      // Build the union matcher. A spec MAY carry EITHER a value-equality matcher OR a
+      // host-function matcher (v2 single-matcher slice). If a spec somehow declares both,
+      // value-equality takes precedence (deterministic; conjunctions are a future
+      // exo__DisplayNameMatcher).
+      let matcher: DisplayNameMatcher | undefined;
+      if (spec.matchKey && spec.matchValues && spec.matchValues.length > 0) {
+        matcher = { kind: "value", matchKey: spec.matchKey, matchValues: spec.matchValues };
+      } else if (spec.hostFunction) {
+        matcher = { kind: "hostFunction", hostFunction: spec.hostFunction };
+      }
 
       for (const classKey of spec.classKeys) {
         if (!classKey) continue;
