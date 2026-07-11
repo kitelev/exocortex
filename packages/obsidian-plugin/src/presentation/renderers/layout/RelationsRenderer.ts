@@ -22,6 +22,8 @@ import {
   ReifiedRelation,
 } from "./getReifiedRelations";
 import { BlockerHelpers } from '@plugin/presentation/utils/BlockerHelpers';
+import { DisplayNameResolver } from '@plugin/domain/display-name/DisplayNameResolver';
+import { DEFAULT_DISPLAY_NAME_SETTINGS } from '@plugin/domain/settings/ExocortexSettings';
 import { ObsidianApp, ExocortexPluginInterface, MetadataRecord } from '@plugin/types';
 
 /** RFC 93a0b2ee Task 1.3 — Exocortex ontology IRI base (`…/ontology/`). */
@@ -277,6 +279,56 @@ export class RelationsRenderer {
     return legacy;
   }
 
+  /**
+   * req `3f65eb4a` — build a {@link DisplayNameResolver} the SAME way the native-link
+   * patches (BodyLinkPatch, InlineTitlePatch, …) and the DailyNote tasks table
+   * (DailyTasksRenderer, req a577316f) do, so a relation-table task-link label is
+   * produced by the homoiconic `exo__DisplayNameSpec` system — the status/class prefix
+   * (🔄/✅/❌/👥) comes from vault data, not a hardcoded map. Degrades to a label-only
+   * resolver when `printNameRuleService` / `displayNameSettings` are unavailable (e.g. a
+   * unit-test mock) → the tables keep the plain-label fallback (no regression).
+   */
+  private createDisplayNameResolver(): DisplayNameResolver {
+    const ruleService = this.plugin.printNameRuleService ?? null;
+    const settings =
+      this.plugin.settings?.displayNameSettings ?? DEFAULT_DISPLAY_NAME_SETTINGS;
+    const metadataResolver = ruleService?.createMetadataResolver() ?? null;
+    return new DisplayNameResolver(settings, ruleService, metadataResolver);
+  }
+
+  /**
+   * req `3f65eb4a` — attach the homoiconic `displayName` to each relation, resolved
+   * through the vault `exo__DisplayNameSpec` system (one resolver per call, carrying the
+   * compiled vault specs). Mutates each `AssetRelation` in place: `displayName` is the
+   * resolver output, or `undefined` when the resolver is unavailable / yields nothing —
+   * in which case the tables fall back to the plain `exo__Asset_label` / title.
+   *
+   * The related asset's own `exo__Asset_label` is defaulted to the relation title (which
+   * already resolves label→basename), so a labelless asset keeps its basename fallback
+   * INSIDE the resolved prefix (mirrors DailyTasksRenderer). The resolver reads the
+   * related asset's `exo__Instance_class` + status from `rel.metadata` to select and
+   * evaluate its (possibly conditional) spec.
+   */
+  private applyHomoiconicDisplayNames(relations: AssetRelation[]): void {
+    const resolver = this.createDisplayNameResolver();
+    for (const rel of relations) {
+      // Guard the label to a non-empty STRING (a non-string exo__Asset_label falls through
+      // to the title) — byte-identical to the plain-label fallback in getRelationDisplayLabel.
+      const rawLabel = rel.metadata?.exo__Asset_label;
+      const label =
+        (typeof rawLabel === "string" && rawLabel.trim() !== ""
+          ? rawLabel
+          : undefined) ??
+        rel.title ??
+        rel.file.basename;
+      rel.displayName =
+        resolver.resolve({
+          metadata: { ...rel.metadata, exo__Asset_label: label },
+          basename: rel.file.basename,
+        }) ?? undefined;
+    }
+  }
+
   async getAssetRelations(
     file: TFile,
     config: UniversalLayoutConfig,
@@ -377,6 +429,18 @@ export class RelationsRenderer {
     // instances, gated + whitelisted by Task 1.2) into the unified list,
     // deduplicating against the inline set (inline-wins on collision).
     await this.mergeReifiedRelations(file, relations);
+
+    // req `3f65eb4a` — resolve each related asset's HOMOICONIC display name through
+    // the vault `exo__DisplayNameSpec` system (the SAME stack as native links + the
+    // DailyNote tasks table). Attaches `displayName` so the relation/children/query
+    // table cell carries the status/class prefix (🔄 while Doing, …) from vault data,
+    // consistently with those surfaces — replacing the plain `exo__Asset_label` text.
+    // Single injection point: this list is the ONE source that feeds the Relations
+    // block (AssetRelationsTable) AND the exo__Layout backlinks/children/query tables
+    // (ExoLayoutRenderer → BacklinksTableBlockView). Null-safe: no printNameRuleService
+    // or no matching spec → `displayName` stays undefined and the tables fall back to
+    // the plain label (byte-identical to pre-3f65eb4a, no regression).
+    this.applyHomoiconicDisplayNames(relations);
 
     if (config.sortBy) {
       const sortBy = config.sortBy;

@@ -136,6 +136,14 @@ export const BacklinksTableBlockView: React.FC<BacklinksTableBlockViewProps> = (
 
 function resolveCell(row: AssetRelation, column: string): string {
   if (column === "exo__Asset_label") {
+    // req `3f65eb4a` — the exo__Layout children/query table's label column now shows the
+    // HOMOICONIC display name (vault exo__DisplayNameSpec status/class prefix, e.g. 🔄 while
+    // Doing), resolved by RelationsRenderer onto `row.displayName` — the SAME single source
+    // as the Relations block + native links. Null-safe: no resolver / no matching spec →
+    // `displayName` is undefined → plain `row.title` fallback (byte-identical, no regression).
+    if (row.displayName != null && row.displayName !== "") {
+      return row.displayName;
+    }
     return row.title || "";
   }
   if (column === "_basename") {
