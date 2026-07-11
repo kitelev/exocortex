@@ -1501,6 +1501,18 @@ export class GroundingExecutor {
       missing.push("exo__Asset_createdAt");
     }
 
+    // exo__Asset_updatedAt: enforced last-modified invariant from birth (task
+    // 1af85afd). Created assets carry updatedAt = createdAt. This is a SILENT
+    // safety-net (NOT pushed to `missing`): the homoiconic Universal Default
+    // Template PropertyDefault is the primary mechanism, but its absence is not
+    // an "unhealthy vault" signal the way a missing uid/createdAt/label/class
+    // is — the derived updatedAt = createdAt is always recoverable here. Keeping
+    // it out of `missing` avoids a spurious unhealthy-state warning on every
+    // create_instance until the template PD lands.
+    if (properties.exo__Asset_updatedAt === undefined) {
+      properties.exo__Asset_updatedAt = properties.exo__Asset_createdAt;
+    }
+
     // RFC ce27e55d: also treat an empty / whitespace-only `exo__Asset_label`
     // written by an upstream PropertyDefault as "missing". Discovered during
     // UI smoke 2026-05-29 — Universal Default Template's PD #3

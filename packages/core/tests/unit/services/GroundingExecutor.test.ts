@@ -1617,6 +1617,26 @@ describe("GroundingExecutor", () => {
       expect(content).toMatch(/exo__Asset_createdAt: \d{4}-\d{2}-\d{2}T/);
     });
 
+    it("should include exo__Asset_updatedAt equal to createdAt at create_instance (task 1af85afd)", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // create_instance assets carry updatedAt = createdAt from birth (safety-net
+      // top-up mirroring the createdAt top-up).
+      expect(content).toContain("exo__Asset_updatedAt:");
+      const createdAt = content.match(/exo__Asset_createdAt: (\S+)/)?.[1];
+      const updatedAt = content.match(/exo__Asset_updatedAt: (\S+)/)?.[1];
+      expect(updatedAt).toBeDefined();
+      expect(updatedAt).toBe(createdAt);
+    });
+
     it("should emit exo__Asset_createdAt as a local timestamp (no Z / TZ suffix) — Issue #3188", async () => {
       const grounding = makeGrounding({
         type: GroundingType.CREATE_INSTANCE,
