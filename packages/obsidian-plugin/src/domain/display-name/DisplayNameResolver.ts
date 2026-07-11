@@ -19,10 +19,13 @@ export class DisplayNameResolver {
   resolve(context: DisplayNameContext): string | null {
     const { metadata, basename, createdDate } = context;
 
-    const assetClass = this.extractAssetClass(metadata);
-    // Pass the instance metadata so a conditional spec (matchPath/matchValue) can be
-    // evaluated per-render — the specialized displayName tracks the instance's state.
-    const template = this.getTemplateForClass(assetClass, metadata);
+    // Consider EVERY class the note carries (class-MEMBERSHIP), not only the first — so a
+    // class-level exo__DisplayNameSpec (e.g. ems__Meeting → 👥) applies whenever its class
+    // is present, regardless of order (req 83be3f2f, #3864). Pass the instance metadata so a
+    // conditional spec (matchPath/matchValue) is evaluated per-render — the specialized
+    // displayName tracks the instance's state.
+    const assetClasses = this.extractAssetClasses(metadata);
+    const template = this.getTemplateForClasses(assetClasses, metadata);
     const engine = new DisplayNameTemplateEngine(template);
 
     return engine.render(
@@ -33,41 +36,73 @@ export class DisplayNameResolver {
     );
   }
 
-  getTemplateForClass(
-    assetClass: string | null,
+  /**
+   * Select the winning template across ALL of a note's classes (class-membership,
+   * req 83be3f2f). For each class the ruleService yields its best `{template, priority}`
+   * (direct rules + ancestor-inheritance walk + the per-render conditional matcher of
+   * req ed4201d1); the highest-priority PARTICIPATING result across every class wins — so a
+   * class-level spec participates whenever its class is present among the note's classes,
+   * regardless of which one is listed first. Ties keep the earliest (first-listed) class,
+   * so a single-class note is byte-identical to the pre-membership `[0]` path. Falls back to
+   * the first class's TS classTemplate seed, then the default template — exactly as before.
+   * The single-winning-template model still picks ONE template (no prefix composition —
+   * out of scope, see req 83be3f2f).
+   */
+  getTemplateForClasses(
+    assetClasses: string[],
     metadata?: Record<string, unknown>,
   ): string {
-    if (assetClass && this.ruleService) {
-      const dynamicRule = this.ruleService.getTemplateForClass(assetClass, metadata);
-      if (dynamicRule) {
-        return dynamicRule.template;
+    if (this.ruleService && assetClasses.length > 0) {
+      let best: { template: string; priority: number } | null = null;
+      for (const assetClass of assetClasses) {
+        const rule = this.ruleService.getTemplateForClass(assetClass, metadata);
+        // Strictly-greater keeps the earliest class on a priority tie (deterministic,
+        // and byte-identical to the single-class path).
+        if (rule && (best === null || rule.priority > best.priority)) {
+          best = rule;
+        }
       }
+      if (best) return best.template;
     }
 
-    if (assetClass && this.settings.classTemplates[assetClass]) {
-      return this.settings.classTemplates[assetClass];
+    const firstClass = assetClasses[0];
+    if (firstClass && this.settings.classTemplates[firstClass]) {
+      return this.settings.classTemplates[firstClass];
     }
 
     return this.settings.defaultTemplate;
   }
 
-  private extractAssetClass(metadata: Record<string, unknown>): string | null {
+  /**
+   * Single-class variant retained for callers that have already resolved one class (and
+   * direct tests). Delegates to the all-classes path — byte-identical for one class.
+   */
+  getTemplateForClass(
+    assetClass: string | null,
+    metadata?: Record<string, unknown>,
+  ): string {
+    return this.getTemplateForClasses(assetClass ? [assetClass] : [], metadata);
+  }
+
+  private extractAssetClasses(metadata: Record<string, unknown>): string[] {
     const instanceClass = metadata.exo__Instance_class;
 
     if (!instanceClass) {
-      return null;
+      return [];
     }
 
-    if (Array.isArray(instanceClass)) {
-      if (instanceClass.length === 0) return null;
-      return this.cleanClassValue(instanceClass[0]);
-    }
+    const rawValues = Array.isArray(instanceClass) ? instanceClass : [instanceClass];
 
-    if (typeof instanceClass === "string") {
-      return this.cleanClassValue(instanceClass);
+    const classes: string[] = [];
+    const seen = new Set<string>();
+    for (const value of rawValues) {
+      const cleaned = this.cleanClassValue(value);
+      if (cleaned && !seen.has(cleaned)) {
+        seen.add(cleaned);
+        classes.push(cleaned);
+      }
     }
-
-    return null;
+    return classes;
   }
 
   private cleanClassValue(value: unknown): string | null {
