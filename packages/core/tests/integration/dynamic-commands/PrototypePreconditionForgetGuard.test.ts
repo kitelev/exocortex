@@ -146,29 +146,39 @@ const ALL_PRECONDITION_FIELD = "exocmd__AllPrecondition_preconditions";
 const ANY_PRECONDITION_FIELD = "exocmd__AnyPrecondition_preconditions";
 const NOT_PRECONDITION_FIELD = "exocmd__NotPrecondition_precondition";
 
+// Canonical "Is prototype" AtomicPrecondition(s) — meta-mechanic. RFC df602adc
+// Phase 6 extracted the duplicated inline `STRENDS "Prototype"` guard into ONE
+// reusable atomic; `NotPrecondition(IsPrototype)` is the composable not-a-prototype
+// form. UID-identity to this canonical atomic is the SOUND recognition of that form:
+// it is a fixed framework asset (not domain data), so — unlike a shape heuristic — it
+// cannot be defeated by a narrowed positive check. Extend this set if a new canonical
+// prototype-marker atomic is introduced.
+const IS_PROTOTYPE_ATOMIC_UIDS = new Set([
+  "011eb4d6-c95d-4a22-b08d-29961e056961", // "Is prototype"
+]);
+
 // Positive "is a prototype" check — the STRENDS suffix on the instance_class IRI
-// WITHOUT the `FILTER NOT EXISTS` wrapper (the extracted atomic `Is prototype`,
-// 011eb4d6, that `NotPrecondition` composites negate). Used to recognise the
-// composable not-a-prototype form `NotPrecondition(IsPrototype)`.
+// WITHOUT the `FILTER NOT EXISTS` wrapper. Shape FALLBACK for a hypothetical future
+// pure-IsPrototype atomic whose UID is not yet in IS_PROTOTYPE_ATOMIC_UIDS.
 const IS_PROTOTYPE_STRENDS_RE =
   /Instance_class[\s\S]*?STRENDS\s*\(\s*STR\s*\(\s*\?\w+\s*\)\s*,\s*["']Prototype["']\s*\)/i;
 
 /**
- * True iff the ask is the positive "target IS a prototype" check (STRENDS suffix,
- * no `NOT EXISTS` wrapper, no `UNION` branch that could admit a non-prototype).
- * NOTE (deferred hardening): this is a shape heuristic, not identity — a *narrowed*
- * positive check (`… STRENDS "Prototype" … FILTER(?extra)`) whose child is a strict
- * subset of prototypes would still classify here, and `¬child` would then NOT
- * guarantee not-a-prototype. Unreachable in current data (the only composable form
- * is `NotPrecondition(011eb4d6 pure IsPrototype)`); a fully sound alternative is
- * UID-identity to the canonical atomics — tracked as a follow-up.
+ * True iff the ask is a PURE positive "target IS a prototype" check: the STRENDS
+ * suffix, no `NOT EXISTS` wrapper, no `UNION` branch, and no ADDITIONAL narrowing
+ * `FILTER` beyond the prototype one. A narrowed check (`… STRENDS "Prototype" …
+ * FILTER(?extra)`) matches a strict *subset* of prototypes, so negating it (`¬child`)
+ * would NOT guarantee not-a-prototype — rejecting a second `FILTER` closes that hole.
+ * The SOUND recognition path is UID-identity (`IS_PROTOTYPE_ATOMIC_UIDS`); this shape
+ * check is only the fallback for a future canonical atomic with a new UID.
  */
 function askIsPositivePrototypeCheck(ask: string): boolean {
-  return (
-    IS_PROTOTYPE_STRENDS_RE.test(ask) &&
-    !/NOT\s+EXISTS/i.test(ask) &&
-    !/\bUNION\b/i.test(ask)
-  );
+  if (!IS_PROTOTYPE_STRENDS_RE.test(ask)) return false;
+  if (/NOT\s+EXISTS/i.test(ask) || /\bUNION\b/i.test(ask)) return false;
+  // A pure IsPrototype has exactly ONE FILTER (the STRENDS one); any extra FILTER
+  // narrows the match to a subset of prototypes → not sound to negate.
+  const filterCount = (ask.match(/FILTER\s*\(/gi) || []).length;
+  return filterCount <= 1;
 }
 
 /**
@@ -229,9 +239,13 @@ function enforcesNotPrototype(
   if (ask && askEnforcesNotPrototypeFlat(ask)) return true;
   const seen2 = new Set(seen).add(uid);
   // NotPrecondition(child): ¬child enforces not-a-prototype iff child is TRUE on
-  // all prototypes — i.e. child is the positive "is a prototype" check.
+  // all prototypes — i.e. child is the canonical "is a prototype" atomic.
   const notChildUid = firstWikilinkUid(pre.fm[NOT_PRECONDITION_FIELD]);
   if (notChildUid) {
+    // SOUND: ¬(canonical IsPrototype atomic) enforces not-a-prototype by identity —
+    // no need to inspect its ask, and immune to a narrowed-ask defeat.
+    if (IS_PROTOTYPE_ATOMIC_UIDS.has(notChildUid)) return true;
+    // FALLBACK: shape-recognise a pure IsPrototype atomic with a non-canonical UID.
     const wrapped = resolve(notChildUid);
     const wAsk = wrapped ? sparqlAskOf(wrapped) : null;
     if (wAsk && askIsPositivePrototypeCheck(wAsk)) return true;
@@ -476,5 +490,28 @@ describe("enforcesNotPrototype — AND/OR composite detection semantics", () => 
       leaf(A, IS_PROTO_UNION),
     ];
     expect(enforcesNotPrototype(NOT, resolveOf(assets))).toBe(false);
+  });
+
+  // UID-identity (sound) — NotPrecondition(canonical IsPrototype atomic).
+  const CANON_IS_PROTO = "011eb4d6-c95d-4a22-b08d-29961e056961";
+  const IS_PROTO_NARROWED =
+    'ASK { $target exo:Instance_class ?p . FILTER(STRENDS(STR(?p), "Prototype")) FILTER(?p != <x>) }';
+
+  it("NotPrecondition(canonical IsPrototype UID) → enforced BY IDENTITY (even with unresolvable/empty ask)", () => {
+    // No asset for the canonical UID in the map — identity alone must suffice.
+    const assets = [notWrap(ROOT, CANON_IS_PROTO)];
+    expect(enforcesNotPrototype(ROOT, resolveOf(assets))).toBe(true);
+  });
+
+  it("NotPrecondition(non-canonical UID, NARROWED IsPrototype ask) → NOT enforced (LOW#1 hole closed)", () => {
+    // A narrowed positive check (extra FILTER) is a strict subset of prototypes →
+    // negating it does NOT guarantee not-a-prototype. Shape fallback must reject it.
+    const assets = [notWrap(ROOT, A), leaf(A, IS_PROTO_NARROWED)];
+    expect(enforcesNotPrototype(ROOT, resolveOf(assets))).toBe(false);
+  });
+
+  it("NotPrecondition(non-canonical UID, PURE IsPrototype ask) → enforced via shape fallback", () => {
+    const assets = [notWrap(ROOT, A), leaf(A, IS_PROTO)];
+    expect(enforcesNotPrototype(ROOT, resolveOf(assets))).toBe(true);
   });
 });
