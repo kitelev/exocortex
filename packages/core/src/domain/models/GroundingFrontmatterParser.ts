@@ -121,6 +121,13 @@ export function parseGroundingDefinitionFromFrontmatter(
   const cloneTargetBody =
     rawCloneTargetBody === true || rawCloneTargetBody === "true";
 
+  // Issue #3867 — composite-step opt-in: mutate the just-created instance
+  // instead of the click-target. Same boolean-tolerant coercion as
+  // `cloneTargetBody`. (Parity with CommandResolver — the production loader.)
+  const rawTargetsCreatedInstance = fm["exocmd__Grounding_targetsCreatedInstance"];
+  const targetsCreatedInstance =
+    rawTargetsCreatedInstance === true || rawTargetsCreatedInstance === "true";
+
   return {
     id: uid,
     label: (fm["exo__Asset_label"] as string) ?? "",
@@ -152,6 +159,7 @@ export function parseGroundingDefinitionFromFrontmatter(
     bodyTemplate: fm["exocmd__Grounding_bodyTemplate"] as string | undefined,
     templateRef,
     cloneTargetBody,
+    targetsCreatedInstance,
     steps,
   };
 }

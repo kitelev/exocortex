@@ -707,19 +707,32 @@ export class GroundingExecutor {
     const completedSteps: number[] = [];
 
     // Subproject 17f58ebe Веха 3 — track the most-recently-created asset's path
-    // so a later `body_template` step writes into THAT file (the created
-    // instance), not the composite click-target. Only `body_template` consumes
-    // this thread; every other step type keeps operating on `filePath`, so this
-    // is a zero-regression addition for existing composites.
+    // so a later step can write into THAT file (the created instance), not the
+    // composite click-target.
+    //
+    // Two step kinds consume this thread (Issue #3867 extended it from the
+    // original `body_template`-only form):
+    //   1. `body_template` steps — ALWAYS thread (unchanged from Веха 3).
+    //   2. any step that opts in via `exocmd__Grounding_targetsCreatedInstance`
+    //      (Issue #3867) — e.g. a `property_set` in a `[create_instance,
+    //      property_set]` composite that mutates the NEW asset (create task +
+    //      move-to-backlog). Opt-in ⇒ default (flag absent) keeps operating on
+    //      `filePath`, so existing composites are unchanged.
+    // Both are gated on `lastCreatedPath` being set (a prior create_instance
+    // step ran); with no create_instance, the step targets the click-target
+    // exactly as before — a zero-regression addition. `targetIRI` is
+    // intentionally NOT re-pointed: `$target` still resolves to the source
+    // asset (link-back), and the just-created asset is not yet in the store.
     let lastCreatedPath: string | undefined;
 
     try {
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
+        const stepUsesCreatedPath =
+          step.type === GroundingType.BODY_TEMPLATE ||
+          step.targetsCreatedInstance === true;
         const stepPath =
-          step.type === GroundingType.BODY_TEMPLATE && lastCreatedPath
-            ? lastCreatedPath
-            : filePath;
+          stepUsesCreatedPath && lastCreatedPath ? lastCreatedPath : filePath;
         const result = await this.executeStep(
           step,
           targetIRI,
