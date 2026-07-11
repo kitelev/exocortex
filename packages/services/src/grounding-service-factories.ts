@@ -1,4 +1,9 @@
-import { WikiLinkHelpers, DateFormatter, iriToVaultPath } from "@kitelev/exocortex-core";
+import {
+  WikiLinkHelpers,
+  DateFormatter,
+  iriToVaultPath,
+  FrontmatterService,
+} from "@kitelev/exocortex-core";
 import type {
   ClassRefResolver,
   IGroundingService,
@@ -7,7 +12,6 @@ import type {
   IFileSystemReader,
   IFileSystemWriter,
   UserInput,
-  FrontmatterService,
   GenericAssetCreationService,
   ArchiveAssetService,
   TaskStatusService,
@@ -419,17 +423,55 @@ export function createRenameToUidService(
   };
 }
 
+/**
+ * Read the target asset's frontmatter FRESH from disk (via `vaultAdapter.read`
+ * + a lightweight parse), falling back to the cached `getFrontmatter` when the
+ * fresh read/parse yields nothing.
+ *
+ * WHY: `repairFolder` decides the destination folder from
+ * `exo__Asset_isDefinedBy`. In the plugin, `vaultAdapter.getFrontmatter` reads
+ * `app.metadataCache`, which is re-indexed ASYNCHRONOUSLY after a file write.
+ * When `repairFolder` runs as the second step of a composite whose first step
+ * just rewrote `isDefinedBy` on disk ("Archive Ontologically"), the cache still
+ * holds the OLD ontology → the expected folder resolves to the CURRENT folder →
+ * the move is a silent no-op (the file is re-anchored but never relocated).
+ * The CLI never hit this because `FileSystemVaultAdapter.getFrontmatter` already
+ * reads fresh (`fs.readFileSync`). Reading the on-disk content here makes both
+ * runtimes compute the expected folder from the just-written value (req
+ * 8efc003c). `parseObject` is the same lightweight parser used vault-wide and
+ * only the wikilink-scalar `isDefinedBy` is consumed downstream.
+ */
+async function readFreshFrontmatter(
+  vaultAdapter: IVaultAdapter,
+  frontmatter: FrontmatterService,
+  file: IFile,
+): Promise<Record<string, unknown>> {
+  try {
+    const content = await vaultAdapter.read(file);
+    const parsed = frontmatter.parseObject(content);
+    if (parsed) return parsed as Record<string, unknown>;
+  } catch {
+    // fall through to the cached frontmatter (fresh read unavailable)
+  }
+  return (vaultAdapter.getFrontmatter(file) as Record<string, unknown>) ?? {};
+}
+
 export function createRepairFolderService(
   vaultAdapter: IVaultAdapter,
   folderRepairService: FolderRepairService,
   resolver: ITargetResolver = createPathBasedTargetResolver(vaultAdapter),
 ): IGroundingService {
+  const frontmatter = new FrontmatterService();
   return {
     async execute(targetIRI: string): Promise<void> {
       const targetFile = resolver.resolveFile(targetIRI);
-      const metadata =
-        (vaultAdapter.getFrontmatter(targetFile) as Record<string, unknown>) ??
-        {};
+      // Fresh disk read, not the (possibly stale) metadataCache — see
+      // readFreshFrontmatter for the composite intra-step lag this fixes.
+      const metadata = await readFreshFrontmatter(
+        vaultAdapter,
+        frontmatter,
+        targetFile,
+      );
       const expectedFolder = await folderRepairService.getExpectedFolder(
         targetFile,
         metadata,
