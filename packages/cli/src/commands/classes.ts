@@ -3,20 +3,35 @@ import { existsSync } from "fs";
 import { resolve } from "path";
 import {
   InMemoryTripleStore,
-  ExoQLParser,
-  ExoQLAlgebraTranslator,
-  AlgebraOptimizer,
-  ExoQLQueryExecutor,
   NoteToRDFConverter,
   Triple,
-  IRI,
+  type NamedQueryRunner,
+  type NamedQueryContext,
+  type SolutionMapping,
+  type ExoQLEvalResult,
 } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
-import { TableFormatter } from "../formatters/TableFormatter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
+import { ExitCodes } from "../utils/ExitCodes.js";
+import { ErrorCode } from "../responses/index.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder } from "../responses/index.js";
 import { CacheManager } from "../cache/CacheManager.js";
+import { buildNamedQueryRunner } from "../services/NamedQueryCliRunner.js";
+
+/**
+ * Canonical `query__NamedQuery` UIDs backing schema introspection (req
+ * 2678df55 — homoiconic read axis). The SPARQL bodies live in vault assets
+ * (`exoas-public/exoql`); this command resolves them by UID and executes them
+ * read-only through `NamedQueryRunner`, then formats the rows with the in-code
+ * ASCII-table formatter (`extractLocalName` truncation). Editing an asset's
+ * ```sparql body changes what `classes`/`describe-class` prints — no code
+ * change. `run-query <uid>` executes any NamedQuery standalone.
+ */
+const INTROSPECT_CLASSES_QUERY_UID = "b6aa1da9-96b9-4066-99a9-f81cc8b316aa";
+const INTROSPECT_CLASS_COUNT_QUERY_UID = "5ba1031d-2c6e-4528-ab81-fb768d8e061a";
+const INTROSPECT_CLASS_PROPERTIES_QUERY_UID =
+  "efb7bb79-6378-44b0-b1ca-9a27e3eeb684";
 
 export interface ClassesCommandOptions {
   vault: string;
@@ -44,7 +59,8 @@ export function classesCommand(): Command {
     .alias("describe-class")
     .description(
       "List RDF classes in vault, or describe a class (predicates + counts). " +
-      "Alias `describe-class` is provided per #3043 RFC §B (schema introspection).",
+      "Alias `describe-class` is provided per #3043 RFC §B (schema introspection). " +
+      "Introspection SPARQL is read from vault query__NamedQuery assets (req 2678df55).",
     )
     .argument("[class-name]", "Optional class name to show details (e.g., ems__Task)")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
@@ -96,12 +112,16 @@ export function classesCommand(): Command {
           console.log(`✅ Loaded ${triples.length} triples in ${loadDuration}ms${cacheStatus}\n`);
         }
 
+        // req 2678df55 — read the introspection SPARQL from vault query__NamedQuery
+        // assets instead of hardcoding it in this command. The formatter stays here.
+        const runner = buildNamedQueryRunner(tripleStore, vaultPath);
+
         if (className) {
           // Show details for specific class
-          await showClassDetails(tripleStore, className, options, outputFormat);
+          await showClassDetails(runner, className, options, outputFormat);
         } else {
           // List all classes
-          await listAllClasses(tripleStore, options, outputFormat);
+          await listAllClasses(runner, options, outputFormat);
         }
       } catch (error) {
         ErrorHandler.handle(error as Error);
@@ -109,35 +129,44 @@ export function classesCommand(): Command {
     });
 }
 
+/**
+ * Narrow a NamedQuery result to its SELECT rows, or fail loud with a clear
+ * message when the introspection query asset is missing / not a SELECT.
+ */
+function requireSelectRows(
+  result: ExoQLEvalResult | null,
+  uid: string,
+): SolutionMapping[] {
+  if (result === null) {
+    ErrorHandler.handleWithMessage(
+      `Introspection query__NamedQuery asset "${uid}" not found in the vault ` +
+        "(no asset with that UID, or it has no ```sparql code-block). The " +
+        "`classes` command reads its SPARQL from vault query assets (req 2678df55).",
+      ExitCodes.FILE_NOT_FOUND,
+      ErrorCode.VALIDATION_FILE_NOT_FOUND,
+    );
+  }
+  if (result.kind !== "select") {
+    ErrorHandler.handleWithMessage(
+      `Introspection query "${uid}" is an ${result.kind} query; expected SELECT.`,
+      ExitCodes.INVALID_ARGUMENTS,
+      ErrorCode.VALIDATION_INVALID_ARGUMENTS,
+    );
+  }
+  return result.rows;
+}
+
 async function listAllClasses(
-  tripleStore: InMemoryTripleStore,
+  runner: NamedQueryRunner,
   options: ClassesCommandOptions,
   outputFormat: OutputFormat
 ): Promise<void> {
-  // SPARQL query to get all classes and their instance counts
-  const query = `
-    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-    SELECT ?class (COUNT(?instance) AS ?count)
-    WHERE {
-      ?instance rdf:type ?class .
-    }
-    GROUP BY ?class
-    ORDER BY DESC(?count)
-  `;
+  const result = await runner.run(INTROSPECT_CLASSES_QUERY_UID);
+  const rows = requireSelectRows(result, INTROSPECT_CLASSES_QUERY_UID);
 
-  const parser = new ExoQLParser();
-  const ast = parser.parse(query);
-  const translator = new ExoQLAlgebraTranslator();
-  let algebra = translator.translate(ast);
-  const optimizer = new AlgebraOptimizer();
-  algebra = optimizer.optimize(algebra);
-
-  const executor = new ExoQLQueryExecutor(tripleStore);
-  const results = await executor.executeAll(algebra);
-
-  const classes: { name: string; count: number }[] = results.map((result) => {
-    const classIri = result.get("class");
-    const countValue = result.get("count");
+  const classes: { name: string; count: number }[] = rows.map((row) => {
+    const classIri = row.get("class");
+    const countValue = row.get("count");
     return {
       name: classIri ? extractLocalName(classIri.toString()) : "unknown",
       count: countValue ? parseInt(countValue.toString(), 10) : 0,
@@ -173,59 +202,40 @@ async function listAllClasses(
 }
 
 async function showClassDetails(
-  tripleStore: InMemoryTripleStore,
+  runner: NamedQueryRunner,
   className: string,
   options: ClassesCommandOptions,
   outputFormat: OutputFormat
 ): Promise<void> {
-  // First get instance count for this class
-  const countQuery = `
-    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-    SELECT (COUNT(?instance) AS ?count)
-    WHERE {
-      ?instance rdf:type ?class .
-      FILTER(CONTAINS(STR(?class), "${className}"))
-    }
-  `;
+  // $className bound as a literal param, substituted by NamedQueryRunner before
+  // parse (engine-controlled substitution, read-only). Both introspection
+  // queries live in vault query__NamedQuery assets (req 2678df55).
+  const context: NamedQueryContext = {
+    params: { className: { value: className, kind: "literal" } },
+  };
 
-  const parser = new ExoQLParser();
-  let ast = parser.parse(countQuery);
-  let translator = new ExoQLAlgebraTranslator();
-  let algebra = translator.translate(ast);
-  let optimizer = new AlgebraOptimizer();
-  algebra = optimizer.optimize(algebra);
+  const countResult = await runner.run(INTROSPECT_CLASS_COUNT_QUERY_UID, context);
+  const countRows = requireSelectRows(
+    countResult,
+    INTROSPECT_CLASS_COUNT_QUERY_UID,
+  );
+  const instanceCount =
+    countRows.length > 0
+      ? parseInt(countRows[0].get("count")?.toString() || "0", 10)
+      : 0;
 
-  const executor = new ExoQLQueryExecutor(tripleStore);
-  const countResults = await executor.executeAll(algebra);
-  const instanceCount = countResults.length > 0
-    ? parseInt(countResults[0].get("count")?.toString() || "0", 10)
-    : 0;
+  const propsResult = await runner.run(
+    INTROSPECT_CLASS_PROPERTIES_QUERY_UID,
+    context,
+  );
+  const propsRows = requireSelectRows(
+    propsResult,
+    INTROSPECT_CLASS_PROPERTIES_QUERY_UID,
+  );
 
-  // Get properties used by instances of this class
-  const propsQuery = `
-    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-    SELECT ?property (COUNT(?value) AS ?usageCount)
-    WHERE {
-      ?instance rdf:type ?class .
-      ?instance ?property ?value .
-      FILTER(CONTAINS(STR(?class), "${className}"))
-      FILTER(?property != rdf:type)
-    }
-    GROUP BY ?property
-    ORDER BY DESC(?usageCount)
-  `;
-
-  ast = parser.parse(propsQuery);
-  translator = new ExoQLAlgebraTranslator();
-  algebra = translator.translate(ast);
-  optimizer = new AlgebraOptimizer();
-  algebra = optimizer.optimize(algebra);
-
-  const propsResults = await executor.executeAll(algebra);
-
-  const properties: PropertyInfo[] = propsResults.map((result) => {
-    const propIri = result.get("property");
-    const usageValue = result.get("usageCount");
+  const properties: PropertyInfo[] = propsRows.map((row) => {
+    const propIri = row.get("property");
+    const usageValue = row.get("usageCount");
     return {
       name: propIri ? extractLocalName(propIri.toString()) : "unknown",
       usageCount: usageValue ? parseInt(usageValue.toString(), 10) : 0,

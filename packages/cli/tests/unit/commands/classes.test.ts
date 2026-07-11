@@ -60,6 +60,16 @@ jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
   })),
 }));
 
+// req 2678df55 — classes now reads its introspection SPARQL through the
+// NamedQueryRunner (built by this factory). Mock the seam so the unit test
+// (command structure + vault-not-found) doesn't pull the real
+// FsQueryBodyResolver / NodeFsAdapter core chain.
+jest.unstable_mockModule("../../../src/services/NamedQueryCliRunner.js", () => ({
+  buildNamedQueryRunner: jest.fn(() => ({
+    run: jest.fn().mockResolvedValue({ kind: "select", rows: [] }),
+  })),
+}));
+
 // Import the classes command after mocking
 const { classesCommand } = await import("../../../src/commands/classes.js");
 
