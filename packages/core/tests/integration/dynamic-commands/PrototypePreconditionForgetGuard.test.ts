@@ -153,9 +153,37 @@ const NOT_PRECONDITION_FIELD = "exocmd__NotPrecondition_precondition";
 const IS_PROTOTYPE_STRENDS_RE =
   /Instance_class[\s\S]*?STRENDS\s*\(\s*STR\s*\(\s*\?\w+\s*\)\s*,\s*["']Prototype["']\s*\)/i;
 
-/** True iff the ask is the positive "target IS a prototype" check (no NOT EXISTS wrapper). */
+/**
+ * True iff the ask is the positive "target IS a prototype" check (STRENDS suffix,
+ * no `NOT EXISTS` wrapper, no `UNION` branch that could admit a non-prototype).
+ * NOTE (deferred hardening): this is a shape heuristic, not identity — a *narrowed*
+ * positive check (`… STRENDS "Prototype" … FILTER(?extra)`) whose child is a strict
+ * subset of prototypes would still classify here, and `¬child` would then NOT
+ * guarantee not-a-prototype. Unreachable in current data (the only composable form
+ * is `NotPrecondition(011eb4d6 pure IsPrototype)`); a fully sound alternative is
+ * UID-identity to the canonical atomics — tracked as a follow-up.
+ */
 function askIsPositivePrototypeCheck(ask: string): boolean {
-  return IS_PROTOTYPE_STRENDS_RE.test(ask) && !/NOT\s+EXISTS/i.test(ask);
+  return (
+    IS_PROTOTYPE_STRENDS_RE.test(ask) &&
+    !/NOT\s+EXISTS/i.test(ask) &&
+    !/\bUNION\b/i.test(ask)
+  );
+}
+
+/**
+ * True iff a flat ask ENFORCES not-a-prototype: it carries the canonical
+ * `FILTER NOT EXISTS { … STRENDS "Prototype" … }` clause AND is not defeated by a
+ * sibling `UNION` branch a prototype could satisfy.
+ */
+function askEnforcesNotPrototypeFlat(ask: string): boolean {
+  return NOT_A_PROTOTYPE_CLAUSE_RE.test(ask) && !/\bUNION\b/i.test(ask);
+}
+
+/** wikilinkUid of a field that may be authored as a scalar OR a single-element list. */
+function firstWikilinkUid(v: string | string[] | undefined): string | null {
+  if (Array.isArray(v)) return v.length > 0 ? wikilinkUid(v[0]) : null;
+  return wikilinkUid(v);
 }
 
 /** Read a precondition's flat sparqlAsk (multi-line block scalar or inline), or null. */
@@ -198,13 +226,11 @@ function enforcesNotPrototype(
   const pre = resolve(uid);
   if (!pre) return false;
   const ask = sparqlAskOf(pre);
-  if (ask && NOT_A_PROTOTYPE_CLAUSE_RE.test(ask)) return true;
+  if (ask && askEnforcesNotPrototypeFlat(ask)) return true;
   const seen2 = new Set(seen).add(uid);
   // NotPrecondition(child): ¬child enforces not-a-prototype iff child is TRUE on
   // all prototypes — i.e. child is the positive "is a prototype" check.
-  const notChildUid = wikilinkUid(
-    pre.fm[NOT_PRECONDITION_FIELD] as string | undefined,
-  );
+  const notChildUid = firstWikilinkUid(pre.fm[NOT_PRECONDITION_FIELD]);
   if (notChildUid) {
     const wrapped = resolve(notChildUid);
     const wAsk = wrapped ? sparqlAskOf(wrapped) : null;
@@ -251,9 +277,7 @@ describe("prototype precondition — forget-leak guard (exoas-exocmd submodule) 
   function commandEnforcesNotPrototype(cmdUid: string): boolean {
     const cmd = byUid.get(cmdUid);
     if (!cmd) return false;
-    const preUid = wikilinkUid(
-      cmd.fm["exocmd__Command_precondition"] as string | undefined,
-    );
+    const preUid = firstWikilinkUid(cmd.fm["exocmd__Command_precondition"]);
     if (!preUid) return false;
     return enforcesNotPrototype(preUid, resolve);
   }
@@ -430,5 +454,27 @@ describe("enforcesNotPrototype — AND/OR composite detection semantics", () => 
       leaf(B, PLAIN), // Not-archived
     ];
     expect(enforcesNotPrototype(ROOT, resolveOf(assets))).toBe(true);
+  });
+
+  // Hardening (LOW#1): a clause defeated by a sibling UNION branch a prototype
+  // could satisfy must NOT read as enforcing.
+  const CLAUSE_UNION =
+    'ASK { { FILTER NOT EXISTS { $target exo:Instance_class ?p . FILTER(STRENDS(STR(?p), "Prototype")) } } UNION { $target exo:Instance_class ?anything } }';
+  const IS_PROTO_UNION =
+    'ASK { { $target exo:Instance_class ?p . FILTER(STRENDS(STR(?p), "Prototype")) } UNION { $target exo:Instance_class ?q } }';
+
+  it("flat clause defeated by a sibling UNION → NOT enforced", () => {
+    expect(enforcesNotPrototype(A, resolveOf([leaf(A, CLAUSE_UNION)]))).toBe(
+      false,
+    );
+  });
+
+  it("NotPrecondition(IsPrototype-with-UNION) → NOT enforced (¬child not guaranteed on prototypes)", () => {
+    const NOT = "aaaaaaaa-0000-4000-8000-0000000000c0";
+    const assets = [
+      notWrap(NOT, A),
+      leaf(A, IS_PROTO_UNION),
+    ];
+    expect(enforcesNotPrototype(NOT, resolveOf(assets))).toBe(false);
   });
 });
