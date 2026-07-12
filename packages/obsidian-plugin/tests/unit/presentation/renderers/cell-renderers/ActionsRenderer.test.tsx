@@ -113,9 +113,16 @@ describe("ActionsRenderer", () => {
       );
 
       await waitFor(() => {
+        // Command-oriented signature (#3654 Part 2): the callback receives the
+        // whole CommandRef + the row asset's IRI + path (the host decides how to
+        // gate — raw ASK here; structural PreconditionEvaluator for structural).
         expect(onCheckPrecondition).toHaveBeenCalledWith(
-          "ASK { ?s ?p ?o }",
-          defaultProps.assetUri
+          expect.objectContaining({
+            uid: "cmd-1",
+            preconditionSparql: "ASK { ?s ?p ?o }",
+          }),
+          defaultProps.assetUri,
+          defaultProps.assetPath
         );
       });
     });
@@ -216,9 +223,62 @@ describe("ActionsRenderer", () => {
       fireEvent.click(screen.getByRole("button"));
 
       await waitFor(() => {
+        // Command-oriented signature (#3654 Part 2): the host receives the whole
+        // CommandRef (to resolve a structural command) + the row IRI + path.
         expect(onExecuteCommand).toHaveBeenCalledWith(
-          groundingSparql,
-          defaultProps.assetUri
+          expect.objectContaining({ uid: "cmd-1", groundingSparql }),
+          defaultProps.assetUri,
+          defaultProps.assetPath
+        );
+      });
+    });
+
+    it("executes a STRUCTURAL command (no raw groundingSparql) and gates it by structural precondition [@req:28731c06-b393-419b-b8ee-453ca6225b17]", async () => {
+      // A structural exocmd command has NO raw preconditionSparql/groundingSparql
+      // — it is flagged `structural`. hasPrecondition/hasExecutor must be true via
+      // the flag so the host checks its structural precondition and routes the
+      // click through CommandExecutionFlow (#3654 Part 2 / #3777).
+      const onCheckPrecondition = jest.fn().mockResolvedValue(true);
+      const onExecuteCommand = jest.fn().mockResolvedValue(undefined);
+      const actions = createMockActions({
+        commands: [
+          {
+            uid: "cmd-structural",
+            label: "Set Status",
+            icon: "check-circle",
+            structural: true,
+          },
+        ],
+      });
+
+      render(
+        <ActionsRenderer
+          actions={actions}
+          {...defaultProps}
+          onCheckPrecondition={onCheckPrecondition}
+          onExecuteCommand={onExecuteCommand}
+        />
+      );
+
+      // The structural command's precondition IS checked (button visible on true).
+      await waitFor(() => {
+        expect(onCheckPrecondition).toHaveBeenCalledWith(
+          expect.objectContaining({ uid: "cmd-structural", structural: true }),
+          defaultProps.assetUri,
+          defaultProps.assetPath
+        );
+      });
+      await waitFor(() => {
+        expect(screen.getByRole("button")).toBeInTheDocument();
+      });
+
+      // Clicking routes the whole CommandRef to the executor (no groundingSparql).
+      fireEvent.click(screen.getByRole("button"));
+      await waitFor(() => {
+        expect(onExecuteCommand).toHaveBeenCalledWith(
+          expect.objectContaining({ uid: "cmd-structural", structural: true }),
+          defaultProps.assetUri,
+          defaultProps.assetPath
         );
       });
     });
