@@ -119,11 +119,13 @@ const KNOWN_SUBSTITUTION_RESOLVER_IDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Marker for context-dependent SubstitutionToken resolvers — executor
+ * Marker for execute-time SubstitutionToken resolvers — the executor
  * substitutes at runtime when the click target IRI / file path / userInput /
- * Grounding metadata are known. Context-independent resolvers (today,
- * todayStart, nowDate, nowYear, nowMonth, nowTimestamp, randomUUIDv4) are
- * resolved at parse time and never produce this marker.
+ * Grounding metadata are known, OR when the value must be fresh per execution
+ * (`nowTimestamp` — second precision; `randomUUIDv4`), so it is NOT baked at
+ * parse time. The DAY-granularity date resolvers (today, tomorrow, todayStart,
+ * nowDate, nowYear, nowMonth) ARE resolved at parse time and never produce this
+ * marker — see {@link PARSE_TIME_RESOLVERS}.
  *
  * Shape: `__SUBSTITUTE__<resolver-id>__<token-uid>__`
  *
