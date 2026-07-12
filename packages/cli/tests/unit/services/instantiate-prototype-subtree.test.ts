@@ -31,6 +31,21 @@ const PERSON = "d350b625-0000-0000-0000-000000000020";
 const QUARTER = "ed8e4fbb-0000-0000-0000-000000000021";
 const PARENT_PROJ = "11111111-0000-0000-0000-000000000030";
 
+// Real ems class-definition UIDs (production-shape) — the derived instance class
+// of each node MUST be written as the canonical UID-alias `[[uid|label]]`, which
+// requires the class-definition asset to be present in the scanned vault. These
+// mirror the real `exoas-public/ems/*.md` files (co-mounted with the prototypes).
+const EXO_CLASS_METACLASS = "8619c4fc-64f1-4869-b17e-e34186cacca9";
+const EMS_PROJECT_CLS = "7db5eeff-718a-49b0-8d2b-39b084a356e3";
+const EMS_TASK_CLS = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+const EMS_WCT_CLS = "47dac51c-6332-467a-abb6-84498755a91e";
+// instance-class label → canonical UID-alias ref the service must write (#3906).
+const CLASS_UID_BY_LABEL: Record<string, string> = {
+  ems__Project: EMS_PROJECT_CLS,
+  ems__Task: EMS_TASK_CLS,
+  ems__WaitingCheckTask: EMS_WCT_CLS,
+};
+
 interface FakeFile {
   path: string;
   basename: string;
@@ -50,6 +65,11 @@ function mkFile(uid: string, folder = "efforts"): FakeFile {
 // Raw markdown fixtures (parsed via real FrontmatterService in the fake adapter).
 function fixtures(): Record<string, string> {
   return {
+    // Class definitions (UID-named class files) — needed so the derived instance
+    // class resolves to its canonical UID-alias ref (#3906). Metaclass-typed.
+    [EMS_PROJECT_CLS]: `---\nexo__Asset_uid: ${EMS_PROJECT_CLS}\nexo__Instance_class:\n  - "[[${EXO_CLASS_METACLASS}]]"\nexo__Class_superClass:\n  - "[[086f71fa-dd30-4284-90cf-e609f2a6c461]]"\nexo__Asset_label: ems__Project\n---\n`,
+    [EMS_TASK_CLS]: `---\nexo__Asset_uid: ${EMS_TASK_CLS}\nexo__Instance_class:\n  - "[[${EXO_CLASS_METACLASS}]]"\nexo__Class_superClass:\n  - "[[086f71fa-dd30-4284-90cf-e609f2a6c461]]"\nexo__Asset_label: ems__Task\n---\n`,
+    [EMS_WCT_CLS]: `---\nexo__Asset_uid: ${EMS_WCT_CLS}\nexo__Instance_class:\n  - "[[${EXO_CLASS_METACLASS}]]"\nexo__Class_superClass:\n  - "[[${EMS_TASK_CLS}]]"\nexo__Asset_label: ems__WaitingCheckTask\n---\n`,
     [PROJ_PROTO]: `---\nexo__Asset_uid: ${PROJ_PROTO}\nexo__Instance_class:\n  - "[[8619c4fc-64f1-4869-b17e-e34186cacca9]]"\nexo__Asset_label: ems__ProjectPrototype\n---\n`,
     [TASK_PROTO]: `---\nexo__Asset_uid: ${TASK_PROTO}\nexo__Instance_class:\n  - "[[8619c4fc-64f1-4869-b17e-e34186cacca9]]"\nexo__Asset_label: ems__TaskPrototype\n---\n`,
     [WCT_PROTO]: `---\nexo__Asset_uid: ${WCT_PROTO}\nexo__Instance_class:\n  - "[[8619c4fc-64f1-4869-b17e-e34186cacca9]]"\nexo__Asset_label: ems__WaitingCheckTaskPrototype\n---\n`,
@@ -152,13 +172,16 @@ describe("instantiatePrototypeSubtree (issue #3881 Gap 3)", () => {
       "Поручить n.rudopas заполнить Q3-26",
     );
 
-    // instance-class derivation (Prototype-suffix strip).
+    // (revert-verify anchor #3906) instance-class derivation (Prototype-suffix
+    // strip) written as the CANONICAL UID-alias `[[uid|label]]` — never a
+    // dangling symbolic `[[label]]` (class files are UID-named). Reverting the
+    // fix (writing `[[${instClassLabel}]]`) flips these RED.
     const cls = (n: { fm: Record<string, unknown> }) =>
       unq((n.fm.exo__Instance_class as string[])[0]);
-    expect(cls(rootInst)).toBe("[[ems__Project]]");
-    expect(cls(c1Inst)).toBe("[[ems__Task]]");
-    expect(cls(c2Inst)).toBe("[[ems__WaitingCheckTask]]");
-    expect(cls(c3Inst)).toBe("[[ems__Task]]");
+    expect(cls(rootInst)).toBe(`[[${EMS_PROJECT_CLS}|ems__Project]]`);
+    expect(cls(c1Inst)).toBe(`[[${EMS_TASK_CLS}|ems__Task]]`);
+    expect(cls(c2Inst)).toBe(`[[${EMS_WCT_CLS}|ems__WaitingCheckTask]]`);
+    expect(cls(c3Inst)).toBe(`[[${EMS_TASK_CLS}|ems__Task]]`);
 
     // (revert-verify anchor #2) blocker re-map onto CLONED siblings, not prototypes.
     const c1NewUid = unq(c1Inst.fm.exo__Asset_uid);
@@ -200,10 +223,42 @@ describe("instantiatePrototypeSubtree (issue #3881 Gap 3)", () => {
     const fmBlock = rootWrite.content.split("---")[1];
     const y = yaml.load(fmBlock) as Record<string, unknown>;
     expect(y.exo__Asset_label).toBe("Ревьюшница n.rudopas Q3-26"); // js-yaml strips quotes
-    expect(y.exo__Instance_class).toEqual(["[[ems__Project]]"]);
+    expect(y.exo__Instance_class).toEqual([
+      `[[${EMS_PROJECT_CLS}|ems__Project]]`,
+    ]);
     expect(y.exo__Asset_relates).toEqual(
       expect.arrayContaining([`[[${PERSON}]]`, `[[${QUARTER}]]`]),
     );
+  });
+
+  it("writes CANONICAL UID-alias class refs `[[uid|label]]`, never dangling symbolic `[[label]]` (#3906)", async () => {
+    const { vaultAdapter, fsAdapter, writes, fm } = makeAdapterAndWriter();
+    const service = createInstantiatePrototypeSubtreeService(
+      vaultAdapter,
+      fsAdapter,
+    );
+    await service.execute(rootIRI, {
+      // eslint-disable-next-line @typescript-eslint/naming-convention
+      сотрудник: `[[${PERSON}]]`,
+      // eslint-disable-next-line @typescript-eslint/naming-convention
+      квартал: `[[${QUARTER}]]`,
+    });
+
+    const nodes = parseWrites(writes, fm);
+    expect(nodes.length).toBeGreaterThan(0);
+    for (const n of nodes) {
+      const ref = unq((n.fm.exo__Instance_class as string[])[0]);
+      // (revert-verify anchor #3906) MUST be `[[uid|label]]`, not `[[label]]`.
+      // Reverting the fix writes a bare symbolic `[[ems__Project]]` → the alias
+      // regex fails to match → this assertion flips RED.
+      const m = ref.match(/^\[\[([^|\]]+)\|([^\]]+)\]\]$/);
+      expect(m).not.toBeNull();
+      const uid = m![1];
+      const label = m![2];
+      // the UID part is the REAL class-definition UID for that label (resolves to
+      // a UID-named class file that actually exists → not dangling in Obsidian).
+      expect(CLASS_UID_BY_LABEL[label]).toBe(uid);
+    }
   });
 
   it("standalone when no Project-classed param is supplied (Fork B else-branch)", async () => {
