@@ -11,12 +11,15 @@ import { createProgram } from "../../../src/program";
  *
  * `recover` was originally classified W0 too, but a code-review found a live
  * launchd consumer (`com.exocortex.aitask-recover` hourly job calls
- * `exocortex-cli recover --apply`). It is therefore RETAINED here and
- * reclassified migration-first (asserted present in the sanity list below).
+ * `exocortex-cli recover --apply`), so it was reclassified migration-first.
+ * Issue #3872 Phase 1 retired that launchd consumer (unloaded + plist/subsystem
+ * scripts removed; the subsystem targeted the decommissioned vault-2025). With
+ * the last consumer gone, Phase 2 removes the `recover` verb — it is now
+ * asserted ABSENT below.
  *
  * This test exercises the REAL command registry (createProgram from
  * src/program.ts), not a dummy tree, so it empirically fails if any of the
- * three removed commands is re-registered (Executable Specification — revert-verify).
+ * removed commands is re-registered (Executable Specification — revert-verify).
  */
 describe("CLI surface — W0 removed commands (RFC 7c7859d1)", () => {
   function topLevelNames(): string[] {
@@ -46,6 +49,13 @@ describe("CLI surface — W0 removed commands (RFC 7c7859d1)", () => {
     expect(topLevelNames()).not.toContain("workflow");
   });
 
+  // Issue #3872 Phase 2 — `recover` (orphaned-tmux-session recovery over the
+  // decommissioned vault-2025) removed after its sole live consumer (the
+  // com.exocortex.aitask-recover launchd job) was retired in Phase 1.
+  it("does NOT register the removed 'recover' command", () => {
+    expect(topLevelNames()).not.toContain("recover");
+  });
+
   it("still registers the retained core/platform commands (sanity)", () => {
     const names = topLevelNames();
     for (const kept of [
@@ -58,7 +68,6 @@ describe("CLI surface — W0 removed commands (RFC 7c7859d1)", () => {
       "create",
       "audit",
       "exosync",
-      "recover",
     ]) {
       expect(names).toContain(kept);
     }
