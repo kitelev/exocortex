@@ -195,8 +195,22 @@ describe("Issue #2333: create command", () => {
     expect(option!.mandatory).toBeFalsy();
   });
 
-  it("should register exactly 11 options", () => {
+  it("should have optional --status option (issue #3849)", () => {
     const cmd = createCommand();
-    expect(cmd.options).toHaveLength(11);
+    const option = cmd.options.find((opt) => opt.long === "--status");
+    expect(option).toBeDefined();
+    expect(option!.mandatory).toBeFalsy();
+  });
+
+  it("should have optional --yes flag (issue #3849)", () => {
+    const cmd = createCommand();
+    const option = cmd.options.find((opt) => opt.long === "--yes");
+    expect(option).toBeDefined();
+    expect(option!.mandatory).toBeFalsy();
+  });
+
+  it("should register exactly 13 options", () => {
+    const cmd = createCommand();
+    expect(cmd.options).toHaveLength(13);
   });
 });

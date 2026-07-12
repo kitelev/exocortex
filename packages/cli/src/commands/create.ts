@@ -12,6 +12,7 @@ import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { ClassResolverService } from "../services/ClassResolverService.js";
 import { WikilinkValidator } from "../services/WikilinkValidator.js";
+import { EffortStatusResolver } from "../services/EffortStatusResolver.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
@@ -32,6 +33,27 @@ const DEFAULT_INBOX_FOLDER = "01 Inbox";
 const DEFAULT_TIMEZONE = "Asia/Almaty";
 
 /**
+ * Default creator for `cli create` assets — the ExoAssistant identity. When
+ * `--created-by` is not supplied the CLI stamps this (making the `--created-by`
+ * help text truthful). The core service applies no implicit default (the
+ * plugin / apply paths stay byte-identical); the default lives here so it is
+ * scoped to `cli create` only. Issue #3849.
+ */
+const DEFAULT_CREATED_BY_UID = "4ef3962d-b8a7-42b5-bd28-88ec846f1d13";
+
+/**
+ * Default effort status for a status-bearing class (an `ems__Effort` subclass)
+ * created via `cli create` with no `--status`. Mirrors the Backlog a
+ * Write-template gives for free, so a fresh Task/Project reaches its default
+ * status without the two-step `set-draft-status → move-to-backlog` chain
+ * (issue #3849).
+ */
+const DEFAULT_STATUS_NAME = "Backlog";
+
+/** Frontmatter key for the effort status wikilink. */
+const EFFORT_STATUS_KEY = "ems__Effort_status";
+
+/**
  * Options parsed from CLI flags for the create command.
  */
 interface CreateCommandOptions {
@@ -44,6 +66,8 @@ interface CreateCommandOptions {
   bodyFile?: string;
   dryRun?: boolean;
   createdBy?: string;
+  status?: string;
+  yes?: boolean;
   timezone?: string;
   skipWikilinkValidation?: boolean;
 }
@@ -217,6 +241,8 @@ export function createCommand(): Command {
     .option("--body-file <path>", "Read body content from file")
     .option("--dry-run", "Preview frontmatter without writing file")
     .option("--created-by <uuid>", "Creator UUID (defaults to ExoAssistant)")
+    .option("--status <name>", "ems__Effort_status for status-bearing classes (default: Backlog; e.g. Draft, Doing, Done). Errors for non-status-bearing classes.")
+    .option("--yes", "Accepted for symmetry with the apply subcommands (create is non-interactive; no-op)")
     .option("--timezone <tz>", "Timezone for timestamps (defaults to Asia/Almaty)")
     .option("--skip-wikilink-validation", "Skip wikilink existence validation")
     .action(async (options: CreateCommandOptions) => {
@@ -235,10 +261,10 @@ export function createCommand(): Command {
         }
         const trimmedLabel = options.label.trim();
 
-        // Parse properties from --property flags
+        // Parse properties from --property flags. Kept mutable so the effort
+        // status default can be injected (issue #3849) before `propertyValues`
+        // is finalised below.
         const properties = parseProperties(options.property);
-        const propertyValues =
-          Object.keys(properties).length > 0 ? properties : undefined;
 
         // Resolve body content and parse escape sequences
         let body = await resolveBody(options);
@@ -253,6 +279,59 @@ export function createCommand(): Command {
 
         // Resolve class short name → UUID (UID pass-through if already a UUID).
         const classUid = await classResolver.resolve(vaultPath, options.class);
+
+        // Effort status default (issue #3849): a status-bearing class
+        // (ems__Effort or a subclass, detected by walking exo__Class_superClass
+        // to ems__Effort — no hardcoded class list) gets a default
+        // ems__Effort_status of Backlog on create, the status a Write-template
+        // gives for free, so a fresh Task/Project skips the two-step
+        // `set-draft-status → move-to-backlog` chain. A non-status-bearing
+        // class never gets a status. An explicit `--property
+        // ems__Effort_status=...` always wins (and conflicts with --status).
+        const statusResolver = new EffortStatusResolver(fsAdapter);
+        const explicitStatus = EFFORT_STATUS_KEY in properties;
+        if (options.status && explicitStatus) {
+          throw new Error(
+            `Cannot pass both --status and --property ${EFFORT_STATUS_KEY}=... (ambiguous). Use one.`,
+          );
+        }
+        if (!explicitStatus) {
+          const statusBearing = await statusResolver.isStatusBearing(classUid);
+          if (options.status) {
+            if (!statusBearing) {
+              throw new Error(
+                `--status only applies to status-bearing classes (ems__Effort subclasses); '${options.class}' is not one.`,
+              );
+            }
+            const statusUid = await statusResolver.resolveStatusUid(
+              options.status,
+            );
+            if (!statusUid) {
+              throw new Error(
+                `Unknown status '${options.status}' — no matching ems__EffortStatus<Name> enum asset found in the vault.`,
+              );
+            }
+            properties[EFFORT_STATUS_KEY] = `[[${statusUid}]]`;
+          } else if (statusBearing) {
+            // Default Backlog — fail-open: if the enum can't be resolved
+            // (degenerate vault without the ems status enums mounted) keep the
+            // historical no-status behaviour rather than failing the create.
+            const backlogUid =
+              await statusResolver.resolveStatusUid(DEFAULT_STATUS_NAME);
+            if (backlogUid) {
+              properties[EFFORT_STATUS_KEY] = `[[${backlogUid}]]`;
+            } else {
+              process.stderr.write(
+                `⚠ status-bearing class but no ${DEFAULT_STATUS_NAME} status enum found in the vault — created without ems__Effort_status.\n`,
+              );
+            }
+          }
+        }
+
+        // Finalise propertyValues AFTER any status injection so the injected
+        // status is wikilink-validated and co-location still reads isDefinedBy.
+        const propertyValues =
+          Object.keys(properties).length > 0 ? properties : undefined;
 
         // Validate property wikilinks (unless skipped).
         if (propertyValues && !options.skipWikilinkValidation) {
@@ -303,7 +382,9 @@ export function createCommand(): Command {
         // ref, cardinality, timestamp, body) to the shared core service.
         // `cli create` opts into the domain fields the plugin/apply omit:
         //  - classRefForm 'uuid' → `[[<uuid>]]` strip-canon
-        //  - createdBy passed through verbatim (no implicit default)
+        //  - createdBy defaults to ExoAssistant when `--created-by` is omitted
+        //    (issue #3849 — the default is CLI-scoped; the core applies no
+        //    implicit default, so plugin/apply stay byte-identical)
         //  - folder = co-located ontology folder (or `01 Inbox` fail-open),
         //    aliases, timezone (Asia/Almaty default), body
         //  - shapeRegistry → cardinality-aware property emission
@@ -317,7 +398,7 @@ export function createCommand(): Command {
           label: trimmedLabel,
           aliases: options.aliases,
           folderPath,
-          createdBy: options.createdBy,
+          createdBy: options.createdBy || DEFAULT_CREATED_BY_UID,
           timezone: options.timezone || DEFAULT_TIMEZONE,
           body,
           propertyValues,
