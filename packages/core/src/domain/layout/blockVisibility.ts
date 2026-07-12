@@ -5,7 +5,7 @@
  *
  *   per-note frontmatter override  >  exo__Layout per-block default  >  built-in
  *
- * The built-in default for the three daily-efforts partitions is
+ * The built-in default for the daily-efforts partitions is
  * {@link BUILTIN_DAILY_EFFORTS_VISIBILITY}: Actions shown, Tasks shown,
  * Projects HIDDEN (VL#3 — a deliberate, accepted partial regression).
  *
@@ -24,7 +24,8 @@
 import type { DailyEffortsPartition } from "./LayoutBlock";
 
 /**
- * Out-of-the-box visibility for the three daily-efforts partitions (VL#3).
+ * Out-of-the-box visibility for the daily-efforts partitions (VL#3;
+ * `closed` added by req b2a33efc / issue #3781, shown by default).
  * Used as the lowest precedence layer when neither a frontmatter override nor
  * an `exo__Layout` per-block default is present.
  */
@@ -34,10 +35,13 @@ export const BUILTIN_DAILY_EFFORTS_VISIBILITY: Readonly<
   actions: true,
   tasks: true,
   projects: false,
+  // `closed` (req b2a33efc / issue #3781) — the "Closed today" review section is
+  // shown out of the box; a per-note `pn__DailyNote_showClosed: false` hides it.
+  closed: true,
 });
 
 /**
- * Per-note frontmatter override keys for the three daily-efforts partitions
+ * Per-note frontmatter override keys for the daily-efforts partitions
  * (VL#2). Present on the `pn__DailyNote` instance; absent keys fall through to
  * the Layout / built-in default.
  */
@@ -47,6 +51,7 @@ export const DAILY_EFFORTS_OVERRIDE_KEYS: Readonly<
   actions: "pn__DailyNote_showActions",
   tasks: "pn__DailyNote_showTasks",
   projects: "pn__DailyNote_showProjects",
+  closed: "pn__DailyNote_showClosed",
 });
 
 /**
