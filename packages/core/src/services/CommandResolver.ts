@@ -9,7 +9,6 @@ import { GroundingType } from "../domain/constants/GroundingType";
 import { resolveGroundingTypeFromIRI } from "../domain/constants/GroundingTypeUIDs";
 import { utf8ToBase64 } from "../utilities/base64";
 import { iriToObsidianName } from "../utilities/iriToObsidianName";
-import { DateFormatter } from "../utilities/DateFormatter";
 import {
   COMMAND_VARIANT_VALUES,
   LABEL_CLASS_VALUES,
@@ -121,11 +120,15 @@ const KNOWN_SUBSTITUTION_RESOLVER_IDS: ReadonlySet<string> = new Set([
 /**
  * Marker for execute-time SubstitutionToken resolvers — the executor
  * substitutes at runtime when the click target IRI / file path / userInput /
- * Grounding metadata are known, OR when the value must be fresh per execution
- * (`nowTimestamp` — second precision; `randomUUIDv4`), so it is NOT baked at
- * parse time. The DAY-granularity date resolvers (today, tomorrow, todayStart,
- * nowDate, nowYear, nowMonth) ARE resolved at parse time and never produce this
- * marker — see {@link PARSE_TIME_RESOLVERS}.
+ * Grounding metadata are known, OR simply because the value must be fresh per
+ * execution. As of bug 3883 EVERY known non-parameterised resolver emits this
+ * marker: there is no longer any parse-time baking. The last parse-time bake —
+ * the DAY-granularity date resolvers (`today`, `tomorrow`, `todayStart`,
+ * `nowDate`, `nowYear`, `nowMonth`) — froze the session's LAUNCH calendar day
+ * into cached `create_instance` defaults when a long-lived plugin session
+ * stayed open across local midnight (sibling of the `nowTimestamp` freeze,
+ * bug 33d362e5 / #3882). Every marker is resolved fresh per execution by the
+ * live registry ({@link SubstitutionResolverRegistry}), so nothing is frozen.
  *
  * Shape: `__SUBSTITUTE__<resolver-id>__<token-uid>__`
  *
@@ -165,35 +168,6 @@ const UNIVERSAL_DEFAULT_TEMPLATE_CLASS_UID =
 
 /** Context-uid label appended to warn messages from Universal Template ABox. */
 const UNIVERSAL_DEFAULT_TEMPLATE_CTX = "universal-default-template";
-
-/**
- * RFC 727572d2 — context-independent DAY-granularity date resolvers safely
- * baked at parse time. Matches the existing behaviour for `today` / `todayStart`
- * (resolved when CommandResolver parses Groundings; cached for session — a
- * session rarely crosses local midnight, so a baked calendar day is tolerable).
- *
- * `randomUUIDv4` is intentionally NOT here: parse-time UUID baking would
- * produce the same UUID for every click on a cached Grounding until cache
- * invalidates — unsafe. It emits a marker for runtime resolution instead.
- *
- * `nowTimestamp` is intentionally NOT here for the SAME reason (bug
- * 33d362e5): it is a SECOND-precision timestamp used for `exo__Asset_createdAt`
- * / `exo__Asset_updatedAt`. Parse-time baking + session cache froze every
- * instance created in one Obsidian session to the SAME launch-time timestamp
- * (the plugin process is long-lived; the CLI is not, so CLI was unaffected).
- * It emits a marker resolved fresh per-execution by the live registry
- * resolver instead.
- */
-const PARSE_TIME_RESOLVERS: ReadonlySet<string> = new Set([
-  "today",
-  // req 915b20b2 — `$tomorrow` is context-free (today + 1 day), baked at parse
-  // time exactly like `$today` (same session-cache semantics).
-  "tomorrow",
-  "todayStart",
-  "nowDate",
-  "nowYear",
-  "nowMonth",
-]);
 
 /**
  * Resolves dynamic commands from vault assets stored in an ITripleStore (RFC-009 §5.3).
@@ -2636,66 +2610,12 @@ export class CommandResolver {
       return buildParameterisedMarker(resolverId, tokenUid, parameter);
     }
 
-    // Context-independent resolvers — invoke at parse time.
-    if (PARSE_TIME_RESOLVERS.has(resolverId)) {
-      return CommandResolver.parseTimeResolve(resolverId);
-    }
-
-    // Context-dependent resolvers — executor substitutes at runtime.
+    // Every known non-parameterised resolver emits an execute-time marker —
+    // the executor swaps it for the live registry resolver's value per
+    // execution (context-dependent ones need runtime context; the
+    // context-independent date/time ones must stay fresh — bug 3883 removed
+    // the last parse-time bake so nothing freezes to the session launch).
     return buildSubstitutionMarker(resolverId, tokenUid);
-  }
-
-  /**
-   * RFC 727572d2 — parse-time dispatch table for context-independent
-   * resolvers. Mirrors the production resolvers in
-   * {@link SubstitutionResolverRegistry} for parity.
-   */
-  private static parseTimeResolve(resolverId: string): string {
-    const d = new Date();
-    const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
-    switch (resolverId) {
-      case "today":
-        // req 5c47471a / #3807 — today's LOCAL calendar day, YYYY-MM-DD.
-        // The former UTC form (`d.toISOString().slice(0,10)`) mis-fired just
-        // after local midnight in a UTC+N timezone to YESTERDAY's local date.
-        // Local `getFullYear()/getMonth()/getDate()` mirrors the registry
-        // resolvers `date` (makeDateResolver(0)) and `tomorrow` (#3806), so
-        // `$today` and `$date` now agree on the local calendar day.
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-      case "tomorrow": {
-        // req 915b20b2 / FIX-2 — the next LOCAL calendar day, YYYY-MM-DD.
-        // Vision Lock 5: `$tomorrow` is a soft daily tickler that must advance
-        // to the user's next LOCAL day. The former UTC form (setUTCDate +
-        // toISOString) mis-fired a click just after local midnight in a UTC+N
-        // timezone to the SAME local day (UTC was still the previous date).
-        // Local `new Date(y, m, d+1)` arithmetic mirrors the registry resolver
-        // `makeDateResolver(1, "YYYY-MM-DD")` (local getDate/setDate) in
-        // SubstitutionResolverRegistry, so both `$tomorrow` paths now agree.
-        const t = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
-        return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
-      }
-      case "todayStart":
-        // #3811 — today's LOCAL day at midnight, timezone-naive
-        // `YYYY-MM-DDT00:00:00` (via `DateFormatter.getTodayStartTimestamp`),
-        // matching the executor `$todayStart` (`${today}T00:00:00`), the
-        // registry resolver, and the effort/timestamp frontmatter convention.
-        // The former `new Date(...setHours(0,0,0,0)).toISOString()` emitted a
-        // UTC Z-instant (`...T00:00:00.000Z`) — same instant, different string
-        // shape that disagreed with the executor form.
-        return DateFormatter.getTodayStartTimestamp();
-      // `nowTimestamp` (second-precision, used for createdAt/updatedAt) is
-      // deliberately NOT parse-time (bug 33d362e5) — it resolves at execute
-      // time via the live registry resolver so it is never frozen to the
-      // session's launch instant. See PARSE_TIME_RESOLVERS.
-      case "nowDate":
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-      case "nowYear":
-        return String(d.getFullYear());
-      case "nowMonth":
-        return pad(d.getMonth() + 1);
-      default:
-        return "";
-    }
   }
 
   /**
