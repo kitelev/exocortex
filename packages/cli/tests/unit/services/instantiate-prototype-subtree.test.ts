@@ -1,4 +1,5 @@
 import { describe, it, expect } from "@jest/globals";
+import yaml from "js-yaml";
 import { createInstantiatePrototypeSubtreeService } from "@kitelev/exocortex-services";
 import { FrontmatterService } from "@kitelev/exocortex-core";
 
@@ -187,6 +188,22 @@ describe("instantiatePrototypeSubtree (issue #3881 Gap 3)", () => {
       "753a44d5-846c-4b82-9196-4fd9a4d48777",
     );
     for (const n of nodes) expect(n.path.startsWith("efforts/")).toBe(true);
+
+    // Production-parser realism (code-reviewer MEDIUM): the real CLI/plugin read
+    // path is `js-yaml.load` (NodeFsAdapter/FileSystemVaultAdapter), not the naive
+    // FrontmatterService.parseObject the fake adapter uses. Assert the written
+    // frontmatter round-trips through the ACTUAL production YAML parser — labels
+    // containing «:» (e.g. «На 1-2-1: …») stay valid because they are JSON-quoted.
+    const rootWrite = writes.find((w) =>
+      w.content.includes(`exo__Asset_prototype: "[[${ROOT}]]"`),
+    )!;
+    const fmBlock = rootWrite.content.split("---")[1];
+    const y = yaml.load(fmBlock) as Record<string, unknown>;
+    expect(y.exo__Asset_label).toBe("Ревьюшница n.rudopas Q3-26"); // js-yaml strips quotes
+    expect(y.exo__Instance_class).toEqual(["[[ems__Project]]"]);
+    expect(y.exo__Asset_relates).toEqual(
+      expect.arrayContaining([`[[${PERSON}]]`, `[[${QUARTER}]]`]),
+    );
   });
 
   it("standalone when no Project-classed param is supplied (Fork B else-branch)", async () => {
