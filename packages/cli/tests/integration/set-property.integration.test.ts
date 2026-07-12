@@ -228,9 +228,16 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
     ["ems__Task_zone", "[[zone-uid]]", /set-criticality/],
     ["ems__Effort_parent", `[[${PARENT_UID}]]`, /set-parent/],
     ["exo__Asset_label", "New label", /set-label/],
+    ["exo__Instance_class", `[[${PARENT_UID}]]`, /convert-to-task/],
     ["ems__Effort_startTimestamp", "2026-07-12T10:00:00", /start-effort/],
     ["ems__Effort_endTimestamp", "2026-07-12T10:00:00", /mark-done/],
     ["ems__Effort_resolutionTimestamp", "2026-07-12T10:00:00", /mark-done/],
+    ["ems__Effort_plannedStartTimestamp", "2026-07-12T10:00:00", /set-planned-start/],
+    ["ems__Effort_plannedEndTimestamp", "2026-07-12T10:00:00", /set-planned-end/],
+    ["ems__Effort_scheduledDate", "2026-07-12", /set-scheduled-date/],
+    ["ems__Effort_votes", "3", /vote-on-effort/],
+    ["archived", "true", /archive/],
+    ["exo__Asset_archived", "true", /archive/],
   ])(
     "REFUSES guarded property %s → dedicated command, file unchanged @req:3800d995-2bae-401f-a23a-dac914505e9d",
     async (prop, value, cmdPattern) => {
@@ -268,6 +275,56 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
       expect(out.content).toBe(before);
     },
   );
+
+  // ── #3795 review H1 — a `$`-bearing value must round-trip verbatim ──
+
+  it("preserves a $-bearing value verbatim (no capture-group / match splice) @req:3800d995-2bae-401f-a23a-dac914505e9d", async () => {
+    // A price-like `$1` / `$&` would corrupt the file if updateProperty spliced it
+    // as a String.replace pattern (FRONTMATTER_REGEX has a group 1 = the whole
+    // frontmatter) — the #3748 data-loss class.
+    const out = await run(moviePath, [
+      "--property",
+      "concept__Movie_price",
+      "--value",
+      "$1 & $& deal",
+    ]);
+
+    expect(out.exit).toContain(0);
+    // Exactly one frontmatter block — no duplicated `---` and no injected content.
+    expect((out.content.match(/^---$/gm) ?? []).length).toBe(2);
+    expect(out.content).toContain("concept__Movie_price: $1 & $& deal");
+  });
+
+  // ── #3795 review M1 — a non-scalar / non-scalar-array value is rejected ──
+
+  it("rejects a nested-object value fail-loud (no [object Object] corruption) @req:3800d995-2bae-401f-a23a-dac914505e9d", async () => {
+    const before = fs.readFileSync(path.join(vault, moviePath), "utf-8");
+    const out = await run(moviePath, [
+      "--input",
+      '{"property":"concept__Movie_meta","value":{"a":1}}',
+    ]);
+
+    expect(out.exit).not.toContain(0);
+    expect(out.errorLog).toMatch(/must be a scalar/i);
+    expect(out.content).toBe(before);
+  });
+
+  // ── #3795 review M2 — a prototype key (toString) is NOT falsely guarded ──
+
+  it("does NOT falsely guard an inherited Object.prototype key (toString) @req:3800d995-2bae-401f-a23a-dac914505e9d", async () => {
+    // `"toString" in GUARDED_PROPERTIES` would be true (inherited) with a bare
+    // `in` check; the own-key lookup must treat it as an ordinary property.
+    const out = await run(moviePath, [
+      "--property",
+      "custom__toString",
+      "--value",
+      "ok",
+    ]);
+
+    expect(out.exit).toContain(0);
+    expect(out.errorLog).not.toMatch(/Refusing to set/);
+    expect(out.content).toContain("custom__toString: ok");
+  });
 
   // ── #3848 isDefinedBy repoint + co-location re-validation (revert axis: co-location) ──
 

@@ -33,28 +33,50 @@ const ISDEFINEDBY_KEY = "exo__Asset_isDefinedBy";
  * Properties `set-property` REFUSES because a dedicated guarded `exocmd__Command`
  * owns them — each enforces a state-machine transition or a precondition guard,
  * so setting the property directly would bypass that guard. The value is the
- * dedicated command to use instead (issue #3795 AC — "status/zone/parent/label
- * keep their dedicated guarded commands"). The status-transition FACT timestamps
- * (start/end/resolution) are included because they are set ONLY as side effects
- * of status transitions — writing one directly desyncs the status state machine.
+ * dedicated command to use instead. This is a SUPERSET of the `dogfood-cli-mutation`
+ * hook's routing table: every property that has a dedicated command is refused
+ * here and routed to that command, so `set-property` only ever handles the
+ * "everything else" class the hook leaves to it.
  *
- * NOT guarded (so `set-property` handles them — the "everything else" class):
- * plan/scheduled dates (plain user plans, not a state machine — their
- * `set-planned-*` / `set-scheduled-date` commands are conveniences, not guards),
- * `exo__Asset_isDefinedBy` (issue #3848 — allowed, with a co-location warning),
- * and any other scalar / boolean / enum / wikilink property.
+ * NOT guarded (so `set-property` handles them): `exo__Asset_isDefinedBy` (issue
+ * #3848 — allowed, with a co-location warning), and any other scalar / boolean /
+ * enum / wikilink property with no dedicated command.
+ *
+ * Looked up via {@link guardedReason} (own-key `hasOwnProperty` check) so a
+ * user-supplied property name like `toString` / `constructor` never matches an
+ * inherited Object.prototype key (#3795 review M2).
  */
 const GUARDED_PROPERTIES: Record<string, string> = {
+  // Status state machine (transitions carry preconditions).
   ems__Effort_status:
     "apply mark-done|move-to-backlog|move-to-todo|start-effort|set-draft-status <path>",
+  // Criticality zone (not-a-prototype precondition guard).
   ems__Task_zone: "apply set-criticality-high|medium|low <path>",
+  // Parent / label — dedicated guarded commands (#3779).
   ems__Effort_parent: 'apply set-parent <path> --input \'{"parent":"<uid>"}\'',
   exo__Asset_label: 'apply set-label <path> --input \'{"label":"<text>"}\'',
+  // Reclassing — dedicated Convert commands (raw set desyncs class vs co-location).
+  exo__Instance_class:
+    "apply convert-to-task|convert-to-project <path>  (reclassing is a semantic operation with a precondition)",
+  // Status-transition FACT timestamps (set only as status-transition side effects).
   ems__Effort_startTimestamp:
     "apply start-effort <path>  (or apply remove-start-timestamp <path>)",
   ems__Effort_endTimestamp:
     "apply mark-done <path>  (or apply remove-end-timestamp <path>)",
   ems__Effort_resolutionTimestamp: "apply mark-done <path>",
+  // Plan / schedule dates — dedicated commands.
+  ems__Effort_plannedStartTimestamp:
+    "apply set-planned-start|plan-on-today|plan-for-evening|shift-day-forward|shift-day-backward <path>",
+  ems__Effort_plannedEndTimestamp: "apply set-planned-end <path>",
+  ems__Effort_scheduledDate: "apply set-scheduled-date <path>",
+  // Votes — dedicated command.
+  ems__Effort_votes: "apply vote-on-effort <path>",
+  // Archive flag (bare `archived:` in frontmatter; `exo__Asset_archived` when
+  // prefixed) — dedicated archive/un-archive commands (un-archive has a Done
+  // precondition).
+  archived: "apply archive-completed|archive-ontologically|un-archive <path>",
+  exo__Asset_archived:
+    "apply archive-completed|archive-ontologically|un-archive <path>",
 };
 
 /**
@@ -67,6 +89,38 @@ const IMMUTABLE_PROPERTIES: Record<string, string> = {
   [UPDATED_AT_KEY]:
     "auto-managed by set-property (bumped on every mutation)",
 };
+
+/** Own-key lookup on a denylist that never matches inherited Object.prototype keys. */
+function guardedReason(
+  denylist: Record<string, string>,
+  property: string,
+): string | undefined {
+  return Object.prototype.hasOwnProperty.call(denylist, property)
+    ? denylist[property]
+    : undefined;
+}
+
+/**
+ * A settable value must be a scalar (string / number / boolean) or an array of
+ * scalars. A nested object would serialise to the literal `[object Object]`
+ * (silent corruption) and `null` is ambiguous with "unset" — reject both
+ * fail-loud (#3795 review M1).
+ */
+function assertScalarOrScalarArray(value: unknown): void {
+  const isScalar = (v: unknown): boolean =>
+    typeof v === "string" || typeof v === "number" || typeof v === "boolean";
+  if (isScalar(value)) return;
+  if (Array.isArray(value) && value.every(isScalar)) return;
+  const kind =
+    value === null
+      ? "null"
+      : Array.isArray(value)
+        ? "an array with non-scalar elements"
+        : typeof value;
+  throw new Error(
+    `--input.value must be a scalar (string/number/boolean) or an array of scalars, not ${kind}`,
+  );
+}
 
 interface SetPropertyOptions {
   vault: string;
@@ -266,16 +320,21 @@ export function setPropertyCommand(): Command {
         const property = FrontmatterService.normalizeIRI(rawProperty);
 
         // ── Guards (checked BEFORE any write → the file is untouched on a refusal) ──
-        if (property in IMMUTABLE_PROPERTIES) {
+        const immutableReason = guardedReason(IMMUTABLE_PROPERTIES, property);
+        if (immutableReason !== undefined) {
           throw new Error(
-            `Refusing to set "${property}" — ${IMMUTABLE_PROPERTIES[property]}.`,
+            `Refusing to set "${property}" — ${immutableReason}.`,
           );
         }
-        if (property in GUARDED_PROPERTIES) {
+        const guardedCommand = guardedReason(GUARDED_PROPERTIES, property);
+        if (guardedCommand !== undefined) {
           throw new Error(
-            `Refusing to set "${property}" via set-property — it has a dedicated guarded command so the state machine / precondition is not bypassed. Use:  exocortex ${GUARDED_PROPERTIES[property]} --vault <v>`,
+            `Refusing to set "${property}" via set-property — it has a dedicated guarded command so the state machine / precondition is not bypassed. Use:  exocortex ${guardedCommand} --vault <v>`,
           );
         }
+
+        // Reject a non-scalar / non-scalar-array value (fail-loud, #3795 review M1).
+        assertScalarOrScalarArray(value);
 
         // Wikilink existence validation — the CLI/Bash write path bypasses the
         // PreToolUse validate-wikilinks hook, so validate here like `create`.
