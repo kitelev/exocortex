@@ -72,6 +72,27 @@ function getIcon(iconName?: string): string {
 }
 
 /**
+ * A command has a precondition to evaluate when it either carries a raw
+ * `preconditionSparql` (Part 1) OR is a structural exocmd command (Part 2 —
+ * its `exocmd__Command_precondition`, if any, is evaluated by the host; a
+ * structural command with no precondition resolves to visible). Commands with
+ * neither are shown by default without a check.
+ */
+function hasPrecondition(cmd: CommandRef): boolean {
+  return !!cmd.preconditionSparql || !!cmd.structural;
+}
+
+/**
+ * A command is executable when it either carries a raw `groundingSparql`
+ * (legacy model — surfaced by the host as an honest "no engine" notice) OR is
+ * a structural exocmd command (Part 2 — routed through `CommandExecutionFlow`).
+ * A command with neither is "no action configured".
+ */
+function hasExecutor(cmd: CommandRef): boolean {
+  return !!cmd.groundingSparql || !!cmd.structural;
+}
+
+/**
  * Props for ActionsRenderer component
  */
 export interface ActionsRendererProps {
@@ -91,19 +112,40 @@ export interface ActionsRendererProps {
   assetPath?: string;
 
   /**
-   * Callback to check if a command precondition is satisfied.
-   * Returns true if the command should be visible/enabled.
-   * @param sparql - The SPARQL ASK query with $target placeholder
-   * @param assetUri - The URI to substitute for $target
+   * Callback to check if a command's precondition is satisfied for this row.
+   * Returns true if the command button should be visible.
+   *
+   * Command-oriented (#3654 Part 2): the host decides HOW to gate — a structural
+   * exocmd command (`cmd.structural`) is gated by its own
+   * `exocmd__Command_precondition` via `PreconditionEvaluator`; a legacy raw
+   * command with `cmd.preconditionSparql` is gated by that SPARQL ASK (Part 1).
+   * @param cmd - The command reference (carries uid, structural flag, raw sparql)
+   * @param assetUri - The row asset's real store subject IRI (substitutes $target)
+   * @param assetPath - The row asset's vault path (for structural eval context)
    */
-  onCheckPrecondition?: (sparql: string, assetUri: string) => Promise<boolean>;
+  onCheckPrecondition?: (
+    cmd: CommandRef,
+    assetUri: string,
+    assetPath?: string,
+  ) => Promise<boolean>;
 
   /**
-   * Callback to execute a command grounding.
-   * @param sparql - The SPARQL UPDATE query with $target and $now placeholders
-   * @param assetUri - The URI to substitute for $target
+   * Callback to execute a command when its button is clicked.
+   *
+   * Command-oriented (#3654 Part 2): a structural exocmd command
+   * (`cmd.structural`) is resolved via `CommandResolver.loadCommand` and run
+   * through the existing `CommandExecutionFlow` → `GroundingExecutor` pipeline;
+   * a raw-only command has no execution engine (raw-SPARQL-UPDATE rejected in
+   * #3777) and the host surfaces an honest notice.
+   * @param cmd - The command reference (carries uid, structural flag, raw sparql)
+   * @param assetUri - The row asset's real store subject IRI (targetIRI)
+   * @param assetPath - The row asset's vault path (filePath)
    */
-  onExecuteCommand?: (sparql: string, assetUri: string) => Promise<void>;
+  onExecuteCommand?: (
+    cmd: CommandRef,
+    assetUri: string,
+    assetPath?: string,
+  ) => Promise<void>;
 
   /**
    * Whether buttons are disabled (e.g., during execution)
@@ -155,8 +197,8 @@ export const ActionsRenderer: React.FC<ActionsRendererProps> = ({
     const initial: Record<string, CommandState> = {};
     for (const cmd of commands) {
       initial[cmd.uid] = {
-        visible: !cmd.preconditionSparql, // Visible by default if no precondition
-        loading: !!cmd.preconditionSparql, // Loading if has precondition
+        visible: !hasPrecondition(cmd), // Visible by default if no precondition
+        loading: hasPrecondition(cmd), // Loading if a precondition must be checked
         executing: false,
       };
     }
@@ -180,7 +222,7 @@ export const ActionsRenderer: React.FC<ActionsRendererProps> = ({
 
       // Check each command's precondition
       for (const cmd of commands) {
-        if (!cmd.preconditionSparql) {
+        if (!hasPrecondition(cmd)) {
           setCommandStates((prev) => ({
             ...prev,
             [cmd.uid]: { ...prev[cmd.uid], visible: true, loading: false },
@@ -189,7 +231,7 @@ export const ActionsRenderer: React.FC<ActionsRendererProps> = ({
         }
 
         try {
-          const result = await onCheckPrecondition(cmd.preconditionSparql, assetUri);
+          const result = await onCheckPrecondition(cmd, assetUri, assetPath);
           setCommandStates((prev) => ({
             ...prev,
             [cmd.uid]: { ...prev[cmd.uid], visible: result, loading: false },
@@ -206,7 +248,7 @@ export const ActionsRenderer: React.FC<ActionsRendererProps> = ({
     };
 
     checkPreconditions();
-  }, [assetUri, commands, onCheckPrecondition]);
+  }, [assetUri, assetPath, commands, onCheckPrecondition]);
 
   // Handle button click
   const handleClick = useCallback(
@@ -215,9 +257,11 @@ export const ActionsRenderer: React.FC<ActionsRendererProps> = ({
       event.stopPropagation();
 
       // Surface why a click had no effect instead of silently bailing (#3628):
-      // a command with no grounding, or no executor wired by the host, used to
-      // log to the console and no-op — indistinguishable from a broken button.
-      if (!cmd.groundingSparql) {
+      // a command with no executor (neither a structural exocmd command nor a
+      // legacy raw grounding), or no executor callback wired by the host, used
+      // to log to the console and no-op — indistinguishable from a broken
+      // button.
+      if (!hasExecutor(cmd)) {
         const message = `No action is configured for "${cmd.label}".`;
         console.warn(message);
         onError?.(message);
@@ -237,14 +281,14 @@ export const ActionsRenderer: React.FC<ActionsRendererProps> = ({
       }));
 
       try {
-        await onExecuteCommand(cmd.groundingSparql, assetUri);
+        await onExecuteCommand(cmd, assetUri, assetPath);
 
         // After execution, re-check all preconditions (state may have changed)
         if (onCheckPrecondition) {
           for (const c of commands) {
-            if (!c.preconditionSparql) continue;
+            if (!hasPrecondition(c)) continue;
             try {
-              const result = await onCheckPrecondition(c.preconditionSparql, assetUri);
+              const result = await onCheckPrecondition(c, assetUri, assetPath);
               setCommandStates((prev) => ({
                 ...prev,
                 [c.uid]: { ...prev[c.uid], visible: result },
@@ -265,7 +309,7 @@ export const ActionsRenderer: React.FC<ActionsRendererProps> = ({
         }));
       }
     },
-    [assetUri, commands, onCheckPrecondition, onExecuteCommand, onError],
+    [assetUri, assetPath, commands, onCheckPrecondition, onExecuteCommand, onError],
   );
 
   // Render a single button

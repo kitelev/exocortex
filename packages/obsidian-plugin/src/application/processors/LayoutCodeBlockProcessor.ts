@@ -28,8 +28,19 @@ import { TableLayoutRenderer } from "@plugin/presentation/renderers/TableLayoutR
 import { WikilinkLabelResolver } from "@plugin/presentation/utils/WikilinkLabelResolver";
 import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
 import { DEFAULT_DISPLAY_NAME_SETTINGS } from "@plugin/domain/settings/ExocortexSettings";
-import type { TableLayout } from "@plugin/domain/layout";
+import type { TableLayout, CommandRef } from "@plugin/domain/layout";
 import { isTableLayout } from "@plugin/domain/layout";
+// #3654 Part 2 (#3777) — layout action buttons execute through the EXISTING
+// structural exocmd command pipeline (CommandExecutionFlow → GroundingExecutor),
+// the same path the structural inline command buttons use — NOT a parallel
+// raw-SPARQL-UPDATE engine (rejected in #3777).
+import {
+  CommandExecutionFlow,
+  createTripleStoreRequiredPropertyResolver,
+} from "@kitelev/exocortex-core";
+import type { ResolvedCommand, EvalContext } from "@kitelev/exocortex-core";
+import { ObsidianCommandPromptAdapter } from "@plugin/infrastructure/adapters/ObsidianCommandPromptAdapter";
+import { ObsidianFileOpener } from "@plugin/infrastructure/services/ObsidianFileOpener";
 
 /**
  * Tracks an active layout block for cleanup and refresh management.
@@ -43,6 +54,18 @@ interface ActiveLayout {
   refreshTimeout?: ReturnType<typeof setTimeout>;
   /** Timestamp when the layout was rendered (for TTL tracking) */
   startTime: number;
+}
+
+/**
+ * Identifies a rendered layout block so an executed action button can refresh
+ * it (#3654 Part 2 / #3777). The processor already has `refreshLayout(el,
+ * container, wikilink, sourcePath)`; this threads the three non-container args
+ * down to the action-button `onComplete` closure.
+ */
+interface LayoutRefreshContext {
+  el: HTMLElement;
+  wikilink: string;
+  sourcePath: string;
 }
 
 /**
@@ -100,6 +123,14 @@ export class LayoutCodeBlockProcessor {
   private readonly CLEANUP_INTERVAL_MS = 60 * 1000;
   private cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
   private readonly logger = LoggerFactory.create("LayoutCodeBlockProcessor");
+
+  /**
+   * Lazily-built execution pipeline for structural exocmd layout actions
+   * (#3654 Part 2 / #3777). Built from the plugin's already-wired
+   * `GroundingExecutor` + `CommandResolver` + notifier the FIRST time an action
+   * button is clicked — the plugin services are not ready at construction time.
+   */
+  private commandExecutionFlow: CommandExecutionFlow | null = null;
 
   constructor(plugin: ExocortexPlugin) {
     this.plugin = plugin;
@@ -245,7 +276,11 @@ export class LayoutCodeBlockProcessor {
         return;
       }
 
-      this.renderLayoutResult(result, container);
+      this.renderLayoutResult(result, container, {
+        el,
+        wikilink,
+        sourcePath: ctx.sourcePath,
+      });
 
       // Track the active layout
       this.activeLayouts.set(el, {
@@ -342,7 +377,7 @@ export class LayoutCodeBlockProcessor {
       }
 
       container.innerHTML = "";
-      this.renderLayoutResult(result, container);
+      this.renderLayoutResult(result, container, { el, wikilink, sourcePath });
 
       // Reset TTL on successful refresh
       layout.startTime = Date.now();
@@ -358,7 +393,11 @@ export class LayoutCodeBlockProcessor {
    */
   private renderLayoutResult(
     result: LayoutRenderResult,
-    container: HTMLElement
+    container: HTMLElement,
+    // #3654 Part 2 (#3777) — identifies THIS layout block so an executed action
+    // button can refresh it (`onComplete`). Absent (e.g. some tests) → action
+    // execution still works; the post-run refresh is simply a no-op.
+    refreshCtx?: LayoutRefreshContext
   ): void {
     if (!result.layout || !result.rows) {
       this.showErrorState(container, "No layout data available", "");
@@ -367,7 +406,7 @@ export class LayoutCodeBlockProcessor {
 
     // Handle different layout types
     if (isTableLayout(result.layout)) {
-      this.renderTableLayout(result.layout, result.rows, container);
+      this.renderTableLayout(result.layout, result.rows, container, refreshCtx);
     } else {
       // Non-table layouts inside a code block are a documented limitation, not
       // an error — surface an informational notice instead of the red
@@ -382,8 +421,24 @@ export class LayoutCodeBlockProcessor {
   private renderTableLayout(
     layout: TableLayout,
     rows: import("@plugin/presentation/renderers/cell-renderers").TableRow[],
-    container: HTMLElement
+    container: HTMLElement,
+    // #3654 Part 2 (#3777) — identifies THIS block so an executed action button
+    // can refresh it. Absent → the post-run refresh is a no-op.
+    refreshCtx?: LayoutRefreshContext
   ): void {
+    // #3654 Part 2 (#3777) — refresh THIS layout block after a structural
+    // command executes (`CommandExecutionFlow` onComplete). No-op when the
+    // block's identity wasn't threaded down (some tests render directly).
+    const refresh = async (): Promise<void> => {
+      if (refreshCtx) {
+        await this.refreshLayout(
+          refreshCtx.el,
+          container,
+          refreshCtx.wikilink,
+          refreshCtx.sourcePath
+        );
+      }
+    };
     this.reactRenderer.render(
       container,
       React.createElement(TableLayoutRenderer, {
@@ -420,20 +475,24 @@ export class LayoutCodeBlockProcessor {
         getAssetLabel: (path: string) =>
           this.resolveHomoiconicDisplayName(path) ??
           this.wikilinkResolver.getAssetLabel(path),
-        // Gate action buttons by their `exo__Precondition_sparql` ASK (#3654
-        // Part 1): true ⇒ shown, false ⇒ hidden. Previously unwired → every
-        // button defaulted visible. The ASK boolean is surfaced via the new
-        // `SPARQLApi.ask` (the executor already computed it; `query()` discarded
-        // it). `$target` resolves to the row's REAL store subject IRI (threaded
-        // through `LayoutService` metadata), so the ASK matches the live asset.
-        onCheckPrecondition: (sparql: string, assetUri: string) =>
-          this.checkPrecondition(sparql, assetUri),
-        // NOTE: `onExecuteCommand` is intentionally NOT wired — the raw-SPARQL-
-        // UPDATE execution engine is #3654 Part 2 (deferred; the issue's own
-        // recommendation is to route layout actions through structural exocmd
-        // commands rather than build a parallel UPDATE engine). Until then a
-        // click on a precondition-passing button surfaces the #3628
-        // "no executor available" notice via onError below.
+        // Gate action buttons by precondition (#3654 Part 1 + Part 2, #3777):
+        // a structural exocmd command is gated by its own
+        // `exocmd__Command_precondition` via `PreconditionEvaluator` (unified
+        // with Part 1); a legacy raw command by its `exo__Precondition_sparql`
+        // ASK. true ⇒ shown, false ⇒ hidden. `$target`/`targetIRI` resolves to
+        // the row's REAL store subject IRI (threaded through `LayoutService`
+        // metadata), so the gate matches the live asset.
+        onCheckPrecondition: (cmd, assetUri, assetPath) =>
+          this.checkCommandPrecondition(cmd, assetUri, assetPath),
+        // #3654 Part 2 (#3777) — execute a structural exocmd layout action.
+        // Resolve the referenced structural command via `CommandResolver` and
+        // run it through the EXISTING `CommandExecutionFlow` → `GroundingExecutor`
+        // pipeline (the same path structural inline buttons use), targeting the
+        // row asset and refreshing THIS block on success. A raw-only /
+        // unresolvable command surfaces an honest notice (the raw-SPARQL-UPDATE
+        // engine was rejected in #3777), never a silent no-op (#3628).
+        onExecuteCommand: (cmd, assetUri, assetPath) =>
+          this.executeCommand(cmd, assetUri, assetPath, refresh),
         // Surface action-button failures to the user instead of failing silently
         // (#3628). Routed through the central notifier (eslint forbids `new
         // Notice` elsewhere).
@@ -532,6 +591,154 @@ export class LayoutCodeBlockProcessor {
     }
     const substituted = sparql.replace(/\$target/g, `<${assetUri}>`);
     return api.ask(substituted);
+  }
+
+  /**
+   * Command-oriented precondition gate for an `exo-layout` action button
+   * (#3654 Part 2 / #3777). Unifies the Part-1 raw ASK gate with the structural
+   * command's own precondition:
+   *
+   * - Structural command (`cmd.structural`) → resolve it via
+   *   {@link CommandResolver.loadCommand} and evaluate its
+   *   `exocmd__Command_precondition` through the SAME {@link PreconditionEvaluator}
+   *   the structural inline command buttons use. A structural command with no
+   *   precondition evaluates to `true` (shown). Unresolvable → keep visible; the
+   *   click handler surfaces the honest "no command" notice.
+   * - Legacy raw command with `cmd.preconditionSparql` → the Part-1
+   *   {@link checkPrecondition} SPARQL ASK gate (unchanged).
+   * - Neither → `true` (shown).
+   *
+   * Engine-not-ready (resolver / evaluator absent, e.g. cold start) → `true`
+   * (don't hide a button just because the graph is still warming up — matches
+   * the structural inline-button behaviour).
+   */
+  private async checkCommandPrecondition(
+    cmd: CommandRef,
+    assetUri: string,
+    assetPath?: string
+  ): Promise<boolean> {
+    if (cmd.structural) {
+      const resolver = this.plugin.commandResolver;
+      const evaluator = this.plugin.preconditionEvaluator;
+      if (!resolver || !evaluator) return true;
+      try {
+        const command = await resolver.loadCommand(cmd.uid);
+        if (!command) return true;
+        const evalContext: EvalContext = {
+          targetIRI: assetUri,
+          filePath: assetPath,
+          fileBasename: assetPath
+            ? (assetPath.split("/").pop() ?? undefined)
+            : undefined,
+          currentFolder: assetPath
+            ? assetPath.split("/").slice(0, -1).join("/") || undefined
+            : undefined,
+        };
+        return await evaluator.evaluate(
+          command.precondition,
+          assetUri,
+          evalContext
+        );
+      } catch {
+        // Conservative: hide on evaluation error (never a false-positive show),
+        // matching the raw-ASK gate's catch behaviour.
+        return false;
+      }
+    }
+    if (cmd.preconditionSparql) {
+      return this.checkPrecondition(cmd.preconditionSparql, assetUri);
+    }
+    return true;
+  }
+
+  /**
+   * Lazily build the structural-command execution pipeline (#3654 Part 2 /
+   * #3777) from the plugin's already-wired services. Returns `null` when the
+   * engine is not ready (no `GroundingExecutor` / `CommandResolver` yet).
+   *
+   * Mirrors the palette registrar's `CommandExecutionFlow` construction so
+   * layout action buttons and Command-Palette entries execute identically.
+   */
+  private getCommandExecutionFlow(): CommandExecutionFlow | null {
+    if (this.commandExecutionFlow) return this.commandExecutionFlow;
+    const groundingExecutor = this.plugin.groundingExecutor;
+    const commandResolver = this.plugin.commandResolver;
+    const notifier = this.plugin.notifier;
+    if (!groundingExecutor || !commandResolver || !notifier) return null;
+    const tripleStore = this.plugin.sparql?.getTripleStore?.();
+    this.commandExecutionFlow = new CommandExecutionFlow(
+      groundingExecutor,
+      notifier,
+      this.logger,
+      new ObsidianCommandPromptAdapter(this.plugin.app),
+      tripleStore,
+      new ObsidianFileOpener(this.plugin.app),
+      tripleStore
+        ? createTripleStoreRequiredPropertyResolver(tripleStore)
+        : undefined
+    );
+    return this.commandExecutionFlow;
+  }
+
+  /**
+   * Execute an `exo-layout` action button (#3654 Part 2 / #3777).
+   *
+   * Resolves the referenced STRUCTURAL exocmd command via
+   * {@link CommandResolver.loadCommand} and runs it through the EXISTING
+   * {@link CommandExecutionFlow} — the same pipeline the structural inline
+   * command buttons use — with the layout context: `targetIRI` = the row's real
+   * store subject IRI, `filePath` = the row's asset path, `onComplete` =
+   * refresh THIS layout block. `CommandExecutionFlow` handles confirm / input
+   * schema / grounding execution / success + error notices.
+   *
+   * A raw-only or unresolvable command (no structural typed grounding →
+   * `loadCommand` returns `null`) surfaces an honest notice instead of a silent
+   * no-op (#3628): the parallel raw-SPARQL-UPDATE engine was rejected in #3777,
+   * so a layout action must reference a structural exocmd command.
+   */
+  private async executeCommand(
+    cmd: CommandRef,
+    assetUri: string,
+    assetPath: string | undefined,
+    refresh: () => Promise<void>
+  ): Promise<void> {
+    const resolver = this.plugin.commandResolver;
+    const flow = this.getCommandExecutionFlow();
+    if (!resolver || !flow) {
+      this.plugin.notifier?.error(
+        `Cannot run "${cmd.label}": the command engine is not ready yet — try again once indexing completes.`
+      );
+      return;
+    }
+
+    const command = await resolver.loadCommand(cmd.uid);
+    if (!command) {
+      this.plugin.notifier?.error(
+        `Cannot run "${cmd.label}": no structural exocmd command was found for this layout action. ` +
+          `Layout actions must reference a structural exocmd command (with exocmd__Command_grounding); ` +
+          `the raw-SPARQL-UPDATE execution path is not supported.`
+      );
+      return;
+    }
+
+    const rc: ResolvedCommand = {
+      command,
+      // `CommandExecutionFlow.run` reads only `rc.command`; a minimal synthetic
+      // binding satisfies the type. Layout-action button metadata (label,
+      // position) lives in the LayoutActions asset, not a CommandBinding — so
+      // no real binding exists to resolve here (unlike inline command buttons).
+      binding: {
+        id: `layout-action-${cmd.uid}`,
+        label: cmd.label,
+        commandRef: cmd.uid,
+      },
+    };
+
+    await flow.run(rc, {
+      targetIRI: assetUri,
+      filePath: assetPath ?? null,
+      onComplete: refresh,
+    });
   }
 
   /**
