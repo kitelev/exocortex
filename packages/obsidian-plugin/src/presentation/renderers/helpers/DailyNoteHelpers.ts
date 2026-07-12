@@ -155,4 +155,66 @@ export class DailyNoteHelpers {
 
     return false; // No timestamps in day interval
   }
+
+  /**
+   * Checks if an effort was CLOSED on a given day (req b2a33efc / issue #3781):
+   * its `ems__Effort_resolutionTimestamp` OR (fallback) its
+   * `ems__Effort_endTimestamp` falls within the day's local-timezone interval.
+   *
+   * This is the "Closed today" signal, distinct from {@link isEffortInDay}
+   * (which matches start/end/plannedStart/plannedEnd). Both a DONE closure (sets
+   * end + resolution) and a TRASHED closure (sets ONLY resolution) surface here;
+   * a Trashed-only effort carries no start/end/planned timestamp so is invisible
+   * to `isEffortInDay` — this predicate is the one that catches it.
+   *
+   * The day interval is computed in LOCAL timezone (identical to
+   * `isEffortInDay`): a store-side SPARQL `STRSTARTS` on the UTC `xsd:dateTime`
+   * literal would match the UTC day, off-by-tz from the note's local day in the
+   * window near local midnight (issue #3781 design fork — the TS interval match
+   * is tz-correct).
+   *
+   * @param metadata - Effort frontmatter metadata
+   * @param dayStr - Day string in format "YYYY-MM-DD" (e.g., "2025-11-02")
+   * @returns true if resolution OR end timestamp falls within the day interval
+   */
+  static isEffortClosedInDay(
+    metadata: Record<string, unknown>,
+    dayStr: string,
+  ): boolean {
+    const parts = dayStr.split("-").map(Number);
+    if (parts.length !== 3 || parts.some(isNaN)) {
+      return false; // Invalid day format
+    }
+
+    const [year, month, day] = parts;
+
+    // Create the day interval in local timezone (month is 0-indexed).
+    const dayStart = new Date(year, month - 1, day, 0, 0, 0, 0);
+    if (isNaN(dayStart.getTime())) {
+      return false; // Invalid date
+    }
+    const dayEnd = new Date(year, month - 1, day, 23, 59, 59, 999);
+
+    // Closure signals only: resolution (primary) OR end (fallback). NOT
+    // start/planned — those are "touched the day", not "closed on the day".
+    const closureFields = [
+      metadata.ems__Effort_resolutionTimestamp,
+      metadata.ems__Effort_endTimestamp,
+    ];
+
+    for (const timestampValue of closureFields) {
+      if (!timestampValue) continue; // Skip empty fields
+
+      const timestamp = new Date(timestampValue as string | number);
+      if (isNaN(timestamp.getTime())) {
+        continue; // Skip invalid timestamps
+      }
+
+      if (timestamp >= dayStart && timestamp <= dayEnd) {
+        return true;
+      }
+    }
+
+    return false; // No closure timestamp in day interval
+  }
 }

@@ -37,6 +37,16 @@ export interface DailyEffortsPartitioned<T> {
   readonly actions: readonly T[];
   readonly tasks: readonly T[];
   readonly projects: readonly T[];
+  /**
+   * Efforts CLOSED on the note's day (req b2a33efc / issue #3781). This axis is
+   * ORTHOGONAL to the three class buckets: `partitionDailyEffortsByClass` fills
+   * only the class buckets and leaves `closed` empty; the `closed` list is
+   * supplied by the caller (the renderer), which computes it from a local-tz
+   * closure-date match (`ExoLayoutRenderer.computeDailyPartition`). An effort
+   * can appear in BOTH its class bucket and `closed` (Done tasks) or ONLY in
+   * `closed` (Trashed-only closures with no start/end/planned timestamp).
+   */
+  readonly closed: readonly T[];
 }
 
 function toClassArray(value: unknown): string[] {
@@ -100,7 +110,10 @@ export function partitionDailyEffortsByClass<
     }
   }
 
-  return { actions, tasks, projects };
+  // `closed` is an orthogonal axis filled by the caller (the renderer computes
+  // it from a local-tz closure-date match); this class-partition function only
+  // fills the class buckets. Default empty keeps existing callers/tests intact.
+  return { actions, tasks, projects, closed: [] };
 }
 
 function defaultClassesOf(e: { metadata?: Record<string, unknown> }): string[] {

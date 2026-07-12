@@ -97,7 +97,26 @@ describe("LayoutBlock — daily-efforts-by-class kind (RL#4b, req a38ac95b)", ()
     }
   });
 
-  test.each(["actions", "tasks", "projects", "PROJECTS", "  Tasks "])(
+  test("@req:b2a33efc-1b6c-4c9a-ab76-ecff66ffab08 parses a daily-efforts-by-class block with the 'closed' partition (issue #3781)", () => {
+    const block = createLayoutBlockFromFrontmatter(
+      {
+        exo__Asset_uid: "daily-closed",
+        exo__Asset_label: "Closed today",
+        exo__Instance_class: [`[[${DAILY_EFFORTS_BY_CLASS_BLOCK_CLASS_UID}]]`],
+        exo__DailyEffortsByClassBlock_partition: "closed",
+      },
+      SRC,
+    );
+    expect(block).not.toBeNull();
+    expect(block?.kind).toBe("daily-efforts-by-class");
+    expect(block && isDailyEffortsByClassBlock(block)).toBe(true);
+    if (block && isDailyEffortsByClassBlock(block)) {
+      expect(block.partition).toBe("closed");
+      expect(block.title).toBe("Closed today");
+    }
+  });
+
+  test.each(["actions", "tasks", "projects", "closed", "CLOSED", "  Closed "])(
     "accepts and normalises partition %p",
     (raw) => {
       const block = createLayoutBlockFromFrontmatter(
