@@ -133,23 +133,22 @@ export function createInstantiatePrototypeSubtreeService(
       };
 
       // Resolve an instance-class LABEL (e.g. «ems__Project») to the UID of its
-      // class-definition asset (the UID-named file whose `exo__Asset_label` is
-      // that label AND whose `exo__Instance_class` is the exo__Class metaclass).
-      // Prefer the genuine class definition; fall back to any label match. The
-      // class def is always co-mounted with the prototype it clones (the M1
+      // class-DEFINITION asset — the UID-named file whose `exo__Asset_label` is
+      // that label AND whose `exo__Instance_class` is the `exo__Class` metaclass.
+      // Strict: only a genuine class definition qualifies (never a same-labelled
+      // instance), so a miss means a genuinely absent class → fail-loud below.
+      // The class def is always co-mounted with the prototype it clones (the M1
       // pre-pass already resolves the prototype's own bare-UID class ref via the
-      // same TBox), so a miss means a genuinely absent class → fail-loud below.
+      // same TBox).
       const classUidByLabel = (label: string): string | undefined => {
-        let fallback: string | undefined;
         for (const [uid, entry] of byUid) {
           if (plainScalar(entry.fm.exo__Asset_label) !== label) continue;
           const isClassDef =
             extractAssetReference(firstValue(entry.fm.exo__Instance_class)) ===
             CLASS_METACLASS_UID;
           if (isClassDef) return uid;
-          fallback ??= uid;
         }
-        return fallback;
+        return undefined;
       };
 
       // 2. Resolve the root prototype.
