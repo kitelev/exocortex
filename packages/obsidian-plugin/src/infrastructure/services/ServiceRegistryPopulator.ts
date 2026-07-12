@@ -52,6 +52,7 @@ import {
   createRemovePropertyService,
   createSetStatusService,
   createDuplicateAssetService,
+  createInstantiatePrototypeSubtreeService,
   type IPathResolver,
 } from "@kitelev/exocortex-services";
 import type { SPARQLApi } from "../../application/api/SPARQLApi";
@@ -316,6 +317,11 @@ export function populateServiceRegistry(
     registry.register(
       "archiveAsset",
       createArchiveAssetService(vaultAdapter, archiveAssetService, targetResolver),
+    );
+
+    registry.register(
+      "instantiatePrototypeSubtree",
+      createInstantiatePrototypeSubtreeService(vaultAdapter, fileSystemAdapter),
     );
 
     registry.register(

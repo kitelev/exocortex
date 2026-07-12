@@ -39,3 +39,5 @@ export {
   type ITargetResolver,
   type IPathResolver,
 } from "./grounding-service-factories";
+
+export { createInstantiatePrototypeSubtreeService } from "./prototype-subtree-instantiator";
