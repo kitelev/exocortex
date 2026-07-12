@@ -3,8 +3,10 @@
  * dispatched from PropertyDefault values (Issue kitelev/exocortex#3162).
  *
  * Coverage:
- * - Context-independent `today` resolver → resolved AT PARSE TIME to
- *   YYYY-MM-DD ISO date string. Asserted by regex (clock-flake safe).
+ * - DAY-granularity date resolvers (`today`, `todayStart`, `tomorrow`,
+ *   `nowDate`, `nowYear`, `nowMonth`) → emit an execute-time marker
+ *   `__SUBSTITUTE__<id>__<uid>__` (bug 3883 removed the last parse-time bake so
+ *   a session open across local midnight can no longer freeze the launch day).
  * - Context-dependent `targetFolder` resolver → emits marker
  *   `__SUBSTITUTE__targetFolder__<uid>__` (Phase 3b executor wires this).
  * - Unknown resolver-id → fallback to `"[[<UID>]]"` wikilink form + warn.
@@ -24,6 +26,11 @@ import { IRI } from "../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../src/domain/models/rdf/Literal";
 import { Namespace } from "../../../src/domain/models/rdf/Namespace";
 import type { ILogger } from "../../../src/interfaces/ILogger";
+import {
+  getResolver,
+  installDefaultResolvers,
+  type ResolverContext,
+} from "../../../src/services/SubstitutionResolverRegistry";
 
 interface RecordingLogger extends ILogger {
   readonly warnings: string[];
@@ -188,7 +195,15 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
     await addLabelledAsset(store, PROP_UID, "ems__Effort_plannedStartTimestamp");
   });
 
-  it("resolves a `today` SubstitutionToken at parse time to a YYYY-MM-DD literal", async () => {
+  // Bug 3883 — DAY-granularity resolvers (today/tomorrow/todayStart/nowDate/
+  // nowYear/nowMonth) MUST emit an execute-time marker, NOT a parse-time-baked
+  // literal. Parse-time baking + the session command / Universal-Template cache
+  // froze the LAUNCH calendar day into cached create_instance defaults when a
+  // plugin session stayed open across local midnight (sibling of the
+  // nowTimestamp freeze, #3882). Revert-verify: restoring the parse-time bake
+  // (re-adding "today" to PARSE_TIME_RESOLVERS + parseTimeResolve) makes `value`
+  // a baked `YYYY-MM-DD` literal → the marker `.toBe(...)` assertion fails (RED).
+  it("encodes a `today` SubstitutionToken as an execute-time marker (must not freeze the launch day across local midnight)", async () => {
     await addSubstitutionToken(store, {
       uid: TOKEN_TODAY_UID,
       label: "$today",
@@ -210,18 +225,19 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
 
     expect(cmd!.grounding.propertyDefault).toHaveLength(1);
     const value = cmd!.grounding.propertyDefault![0].value;
-    // Clock-flake safe assertion — regex, not literal.
-    expect(value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(value).toBe(`__SUBSTITUTE__today__${TOKEN_TODAY_UID}__`);
+    // Must NOT be a parse-time-baked calendar-day literal (the frozen-launch bug).
+    expect(value).not.toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(logger.warnings).toHaveLength(0);
   });
 
-  // #3811 — `$todayStart` canon: parse-time resolution emits the timezone-naive
-  // `YYYY-MM-DDT00:00:00` shape (via DateFormatter.getTodayStartTimestamp),
-  // matching the executor `$todayStart` (`${today}T00:00:00`) and the
-  // effort/timestamp frontmatter convention. Revert-verify: the former
-  // `new Date(...setHours(0,0,0,0)).toISOString()` emitted a UTC Z-instant
-  // (`...T00:00:00.000Z`) → fails this naive-local shape → RED.
-  it("resolves a `todayStart` SubstitutionToken at parse time to naive-local YYYY-MM-DDT00:00:00 (no Z, no millis) @req:ecb90c06-92af-41bd-bb81-1d4510e53fa3", async () => {
+  // Bug 3883 — `$todayStart` now emits an execute-time marker (was parse-time-
+  // baked → froze the launch day across local midnight). Its req-guaranteed
+  // naive-local `YYYY-MM-DDT00:00:00` SHAPE (#3811) is preserved at the
+  // execute-time layer by the registry `todayStart` resolver, asserted here.
+  // Revert-verify: restoring the parse-time bake makes `value` a baked literal
+  // → the marker `.toBe(...)` assertion fails (RED).
+  it("encodes a `todayStart` SubstitutionToken as an execute-time marker resolving to naive-local YYYY-MM-DDT00:00:00 (no Z, no millis) @req:ecb90c06-92af-41bd-bb81-1d4510e53fa3", async () => {
     await addSubstitutionToken(store, {
       uid: TOKEN_TODAY_START_UID,
       label: "$todayStart",
@@ -242,12 +258,51 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
     const cmd = await resolver.loadCommand(COMMAND_UID);
 
     const value = cmd!.grounding.propertyDefault![0].value;
-    // Naive-local midnight — NOT the former UTC Z-instant `...T00:00:00.000Z`.
-    expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00$/);
-    expect(value).not.toContain("Z");
-    expect(value).not.toContain(".000");
+    // Execute-time marker (not the former parse-time-baked literal).
+    expect(value).toBe(`__SUBSTITUTE__todayStart__${TOKEN_TODAY_START_UID}__`);
+    expect(value).not.toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00$/);
+
+    // Req ecb90c06 — the marker resolves (execute-time, live registry) to
+    // naive-local midnight, NOT the former UTC Z-instant `...T00:00:00.000Z`.
+    installDefaultResolvers();
+    const resolved = getResolver("todayStart")!({} as ResolverContext) as string;
+    expect(resolved).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00$/);
+    expect(resolved).not.toContain("Z");
+    expect(resolved).not.toContain(".000");
     expect(logger.warnings).toHaveLength(0);
   });
+
+  // Bug 3883 — completeness: EVERY former parse-time DAY-granularity resolver
+  // now emits an execute-time marker (nothing baked → nothing frozen across
+  // local midnight). tomorrow/nowDate/nowYear/nowMonth join today/todayStart.
+  it.each(["today", "tomorrow", "todayStart", "nowDate", "nowYear", "nowMonth"])(
+    "encodes the `%s` day-granularity resolver as an execute-time marker",
+    async (resolverId) => {
+      const dayTokenUid = "99999999-9999-4999-8999-999999999999";
+      await addSubstitutionToken(store, {
+        uid: dayTokenUid,
+        label: `$${resolverId}`,
+        resolverId,
+      });
+      await addPropertyDefault(store, {
+        uid: PD_UID,
+        propertyRefUid: PROP_UID,
+        valueRefUid: dayTokenUid,
+      });
+      await addGrounding(store, {
+        uid: GROUNDING_UID,
+        label: `Grounding with $${resolverId} PD`,
+        propertyDefaultRefs: [PD_UID],
+      });
+      await addCommand(store, COMMAND_UID, GROUNDING_UID);
+
+      const cmd = await resolver.loadCommand(COMMAND_UID);
+      expect(cmd!.grounding.propertyDefault![0].value).toBe(
+        `__SUBSTITUTE__${resolverId}__${dayTokenUid}__`,
+      );
+      expect(logger.warnings).toHaveLength(0);
+    },
+  );
 
   // Bug 33d362e5 — `nowTimestamp` (second-precision, used for
   // exo__Asset_createdAt / exo__Asset_updatedAt) MUST emit an execute-time

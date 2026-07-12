@@ -3239,9 +3239,11 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
       expect(content).toContain("ems__Effort_sourceFolder: 03 Knowledge/areas");
     });
 
-    it("PropertyDefault literal `today` resolved at parse time passes through unchanged", async () => {
-      // CommandResolver Phase 3a invokes `today` resolver at parse time, so
-      // the executor receives an already-resolved string like "2026-05-23".
+    it("PropertyDefault already-resolved date literal passes through the executor unchanged", async () => {
+      // A non-marker PropertyDefault value (e.g. an already-resolved literal
+      // like "2026-05-23") is written verbatim by the executor. (Bug 3883: date
+      // resolvers now emit `__SUBSTITUTE__` markers that the executor swaps —
+      // covered elsewhere; this asserts the plain literal pass-through path.)
       const grounding = makeGrounding({
         type: GroundingType.CREATE_INSTANCE,
         targetClass: "ems__Task",

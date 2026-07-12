@@ -1,20 +1,23 @@
 /**
  * `$today` local-timezone revert-verify (req 5c47471a / #3807, sibling of #3806).
  *
- * Both `$today` resolution paths must return today's LOCAL calendar day
- * (YYYY-MM-DD), not the UTC day:
+ * `$today` must resolve to today's LOCAL calendar day (YYYY-MM-DD), not the UTC
+ * day. Since bug 3883 `$today` is resolved at EXECUTE time (the loader emits a
+ * marker, never a baked day — so a session across local midnight cannot freeze
+ * the launch day), so both checked paths are execute-time:
  *
- *  1. Parse-time — `CommandResolver.parseTimeResolve` case `today`, exercised
- *     production-shape through the real loader `CommandResolver.loadCommand`
- *     (a real InMemoryTripleStore seeds a `$today` SubstitutionToken +
- *     PropertyDefault + create_instance grounding; the resolved PD value is
- *     asserted).
+ *  1. Loader — the real `CommandResolver.loadCommand` (a real InMemoryTripleStore
+ *     seeds a `$today` SubstitutionToken + PropertyDefault + create_instance
+ *     grounding) emits an execute-time marker, whose live-registry `today`
+ *     resolution is then asserted to be the LOCAL calendar day.
  *  2. Registry — `SubstitutionResolverRegistry` `today` resolver, exercised via
  *     `getResolver("today")`, asserted to agree with `$date` at the boundary.
  *
- * Revert-verify ([[integration-test-revert-verify]]): reverting either path to
- * `new Date().toISOString().slice(0,10)` makes the boundary assertion resolve to
- * "2026-07-02" (the UTC day) → RED; the local form → GREEN ("2026-07-03").
+ * Revert-verify ([[integration-test-revert-verify]]): reverting the registry
+ * `today` to `new Date().toISOString().slice(0,10)` makes the boundary assertion
+ * resolve to "2026-07-02" (the UTC day) → RED; the local form → GREEN
+ * ("2026-07-03"). Restoring the parse-time bake makes the loader value a baked
+ * literal → the marker assertion in path 1 fails (RED).
  *
  * CI-robustness ([[jest-timezone-sensitive-tests]]): `process.env.TZ` cannot be
  * re-tzset at runtime under jest (V8 caches the worker timezone), and the fix
@@ -68,8 +71,12 @@ const installFakeAlmatyDate = () =>
   installFakeOffsetDate(5, "2026-07-02T19:27:00Z");
 
 describe("$today resolvers return the LOCAL calendar day (req 5c47471a / #3807)", () => {
-  // Parse-time path — production-shape via CommandResolver.loadCommand.
-  it("resolves a parse-time $today PropertyDefault to today's LOCAL day just after local midnight (UTC still previous day) @req:5c47471a-d7f7-44ce-bed8-a677bbed9b56", async () => {
+  // Loader path — production-shape via CommandResolver.loadCommand. Bug 3883
+  // made `$today` emit an execute-time MARKER (was parse-time-baked), so the
+  // loader no longer bakes a day; the req-guaranteed LOCAL calendar day is
+  // resolved fresh at execute time by the registry `today` resolver (asserted
+  // below under the simulated tz).
+  it("emits a $today marker whose execute-time registry value is today's LOCAL day just after local midnight (UTC still previous day) @req:5c47471a-d7f7-44ce-bed8-a677bbed9b56", async () => {
     const restore = installFakeAlmatyDate();
     try {
       // Guard: prove the simulated tz is active (else the assertion below would
@@ -144,9 +151,19 @@ describe("$today resolvers return the LOCAL calendar day (req 5c47471a / #3807)"
 
       expect(cmd).not.toBeNull();
       const value = cmd!.grounding.propertyDefault![0].value;
-      // Local today = 2026-07-03. The UTC form returned "2026-07-02"
-      // (yesterday's local date at this instant) — the bug #3807 corrects.
-      expect(value).toBe("2026-07-03");
+      // Bug 3883 — loadCommand now emits an execute-time marker (not a baked
+      // day), so a session open across local midnight can never freeze the
+      // launch day. Revert-verify: restoring the parse-time bake makes `value`
+      // "2026-07-03" (a literal) → the marker `.toBe(...)` fails (RED).
+      expect(value).toBe(`__SUBSTITUTE__today__${TOKEN_TODAY_UID}__`);
+      expect(value).not.toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+      // Req 5c47471a — the marker resolves (execute-time, live registry) to
+      // today's LOCAL calendar day = 2026-07-03. The former UTC form returned
+      // "2026-07-02" (yesterday's local date at this instant) — RED.
+      installDefaultResolvers();
+      const resolved = getResolver("today")!({} as ResolverContext) as string;
+      expect(resolved).toBe("2026-07-03");
     } finally {
       restore();
     }

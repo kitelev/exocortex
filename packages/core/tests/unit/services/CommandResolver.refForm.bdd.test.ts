@@ -364,10 +364,10 @@ describe("Feature: CommandResolver — ref-form PropertyDefault and InheritanceR
   // alongside the legacy parser. Ref-form is the only path.
 
   it(
-    "Scenario: SubstitutionToken parse-time resolution — " +
+    "Scenario: SubstitutionToken execute-time marker (bug 3883) — " +
       "Given a PropertyDefault with value pointing to SubstitutionToken (resolver `today`) " +
       "When the grounding is loaded " +
-      "Then the returned value matches the pattern YYYY-MM-DD",
+      "Then the returned value is the execute-time marker (never a parse-time-baked day)",
     async () => {
       // Given
       await givenLabelledAsset(store, PROP_UID_PRIMARY, "ems__Effort_plannedStartTimestamp");
@@ -391,9 +391,13 @@ describe("Feature: CommandResolver — ref-form PropertyDefault and InheritanceR
       // When
       const cmd = await resolver.loadCommand(COMMAND_UID);
 
-      // Then
+      // Then — bug 3883: `today` emits an execute-time marker resolved fresh per
+      // execution, not a parse-time-baked calendar day frozen for the session.
       expect(cmd!.grounding.propertyDefault).toHaveLength(1);
-      expect(cmd!.grounding.propertyDefault![0].value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(cmd!.grounding.propertyDefault![0].value).toBe(
+        `__SUBSTITUTE__today__${TOKEN_UID_TODAY}__`,
+      );
+      expect(cmd!.grounding.propertyDefault![0].value).not.toMatch(/^\d{4}-\d{2}-\d{2}$/);
     },
   );
 });

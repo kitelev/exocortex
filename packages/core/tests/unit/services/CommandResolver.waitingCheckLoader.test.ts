@@ -10,13 +10,16 @@
  *     `loadGroundingDefinition` → the body clone was inert in every real apply.
  *  2. `$tomorrow` SubstitutionToken — the `tomorrow` resolver exists in
  *     SubstitutionResolverRegistry but was absent from CommandResolver's
- *     KNOWN_SUBSTITUTION_RESOLVER_IDS + PARSE_TIME_RESOLVERS whitelists → a
- *     parameterless `$tomorrow` PD value fell back to `"[[<uid>]]"` wikilink
- *     form instead of resolving to a date.
+ *     KNOWN_SUBSTITUTION_RESOLVER_IDS whitelist → a parameterless `$tomorrow`
+ *     PD value fell back to `"[[<uid>]]"` wikilink form instead of resolving.
+ *     Since bug 3883 the loader emits an execute-time MARKER for `$tomorrow`
+ *     (was parse-time-baked → froze across local midnight); the marker's live-
+ *     registry value is asserted to be tomorrow's date.
  *
  * Revert-verify ([[integration-test-revert-verify]]): reverting the loader read
- * of `Grounding_cloneTargetBody` makes AC#1 RED; removing `"tomorrow"` from the
- * whitelists makes AC#2 RED. Restored → GREEN.
+ * of `Grounding_cloneTargetBody` makes AC#1 RED; removing `"tomorrow"` from
+ * KNOWN_SUBSTITUTION_RESOLVER_IDS makes AC#2 RED (wikilink fallback). Restored
+ * → GREEN.
  *
  * @req:915b20b2-e0d7-4198-80c0-5561293149f0
  */
@@ -27,6 +30,11 @@ import { IRI } from "../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../src/domain/models/rdf/Literal";
 import { Namespace } from "../../../src/domain/models/rdf/Namespace";
 import { installFakeOffsetDate } from "../../helpers/installFakeOffsetDate";
+import {
+  getResolver,
+  installDefaultResolvers,
+  type ResolverContext,
+} from "../../../src/services/SubstitutionResolverRegistry";
 
 const CREATE_INSTANCE_TYPE_UID = "4367e2d6-6c92-450a-becb-abce1fb07682";
 
@@ -141,9 +149,12 @@ describe("CommandResolver — ems__WaitingCheckTask loader stage (req 915b20b2)"
     expect(cmd!.grounding.cloneTargetBody).toBeUndefined();
   });
 
-  // AC#2 (CODE#3) — a $tomorrow SubstitutionToken PD resolves to a date, not a
-  // wikilink fallback.
-  it("resolves a $tomorrow SubstitutionToken PropertyDefault to tomorrow's YYYY-MM-DD (not a wikilink)", async () => {
+  // AC#2 (CODE#3) — a $tomorrow SubstitutionToken PD is a recognised resolver
+  // (does NOT fall back to the `"[[<uid>]]"` wikilink form) and resolves to a
+  // FUTURE date. Bug 3883 — `$tomorrow` now emits an execute-time marker at
+  // load time (was parse-time-baked → froze across local midnight); the marker
+  // resolves (live registry) to tomorrow's date, asserted below.
+  it("resolves a $tomorrow SubstitutionToken PropertyDefault to a marker whose registry value is tomorrow's YYYY-MM-DD (not a wikilink)", async () => {
     await addLabelled(store, PROP_PLANNED_UID, "ems__Effort_plannedStartTimestamp");
     await store.addAll([
       new Triple(iri(TOKEN_TOMORROW_UID), Namespace.EXO.term("Asset_uid"), new Literal(TOKEN_TOMORROW_UID)),
@@ -173,36 +184,54 @@ describe("CommandResolver — ems__WaitingCheckTask loader stage (req 915b20b2)"
     expect(cmd).not.toBeNull();
     expect(cmd!.grounding.propertyDefault).toHaveLength(1);
     const value = cmd!.grounding.propertyDefault![0].value;
-    // Resolved to a bare date (not the `"[[<uid>]]"` wikilink fallback).
-    expect(value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // A recognised resolver → execute-time marker, NOT the `"[[<uid>]]"`
+    // wikilink fallback the req guards against (and NOT a parse-time-baked
+    // date, bug 3883).
+    expect(value).toBe(`__SUBSTITUTE__tomorrow__${TOKEN_TOMORROW_UID}__`);
     expect(String(value)).not.toContain("[[");
-    // ...and it is a FUTURE date (tomorrow), strictly after today — proving it
-    // resolved to today+1, not today. The baseline is computed with LOCAL
-    // getters (not UTC `toISOString`) to match the now-local `$tomorrow`
-    // value — a UTC baseline would flake in UTC-minus timezones where local
-    // tomorrow can be < UTC today. Lexicographic YYYY-MM-DD compare is
-    // clock-flake-safe (no exact-tomorrow race at local midnight).
+
+    // The marker resolves (execute-time, live registry) to a bare FUTURE date
+    // (tomorrow), strictly after today — proving it resolved to today+1, not
+    // today. The baseline is computed with LOCAL getters (not UTC `toISOString`)
+    // to match the now-local `$tomorrow` value — a UTC baseline would flake in
+    // UTC-minus timezones where local tomorrow can be < UTC today. Lexicographic
+    // YYYY-MM-DD compare is clock-flake-safe (no exact-tomorrow race at midnight).
+    installDefaultResolvers();
+    const resolved = getResolver("tomorrow")!({} as ResolverContext) as string;
+    expect(resolved).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     const now = new Date();
     const p2 = (n: number): string => String(n).padStart(2, "0");
     const localToday = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
-    expect(value).not.toBe(localToday);
-    expect(String(value) > localToday).toBe(true);
+    expect(resolved).not.toBe(localToday);
+    expect(resolved > localToday).toBe(true);
   });
 
-  // FIX-2 (req bca93bfb — local-tz `$tomorrow`) — revert-verify
-  // ([[integration-test-revert-verify]]). At a wall-clock instant just after
-  // LOCAL midnight in a UTC+N timezone, the former UTC resolver (setUTCDate +
-  // toISOString) mis-fired `$tomorrow` to the SAME local calendar day (UTC was
-  // still the previous date). Vision Lock 5 requires the next LOCAL day.
+  // FIX-2 (req bca93bfb — local-tz `$tomorrow`). Bug 3883 — at a wall-clock
+  // instant just after LOCAL midnight in a UTC+N timezone, `$tomorrow` now
+  // resolves to an execute-time MARKER at load time (was parse-time-baked → the
+  // launch day would freeze across local midnight). This asserts the marker is
+  // emitted at that exact boundary instant.
+  //
+  // Why only the marker (not the resolved value) is asserted under the fake:
+  // the registry `tomorrow` resolver is `makeDateResolver(1)`, which advances
+  // the day with `d.setDate(d.getDate() + 1)`. The CI-robust `installFakeOffsetDate`
+  // Date subclass shifts only the LOCAL GETTERS, NOT the setters
+  // ([[jest-timezone-sensitive-tests]] limitation), so `setDate` under the fake
+  // reads the runner's real zone → the boundary VALUE is not reproducible with
+  // this fake. That's a harness limitation, not a defect: the registry resolver
+  // uses LOCAL `getDate`/`setDate` (structurally immune to the old UTC
+  // `setUTCDate + toISOString` bug this req guards against, which lived only in
+  // the now-removed parse-time path), and its "produces tomorrow" behaviour is
+  // covered by the real-time sibling test above (`getResolver("tomorrow")` > today).
   //
   // Deterministic + CI-robust: `process.env.TZ` cannot be changed at runtime
-  // under jest (V8 caches the worker's timezone), and the fix has NO observable
-  // effect in a UTC runner — so we install a Date subclass that simulates a
-  // fixed UTC+5 (Asia/Almaty, no DST) offset at the instant 2026-07-02T19:27:00Z
-  // = 2026-07-03T00:27 local (local day 03, UTC day 02), independent of the
-  // runner's real timezone. Pre-fix resolves to "2026-07-03" (= local TODAY) →
-  // RED; post-fix (local getFullYear/getMonth/getDate + 1) → "2026-07-04" GREEN.
-  it("resolves $tomorrow to the next LOCAL calendar day just after local midnight (UTC still previous day) @req:bca93bfb-b663-4309-a19e-996de8e526da", async () => {
+  // under jest (V8 caches the worker's timezone) — so we install a Date subclass
+  // that simulates a fixed UTC+5 (Asia/Almaty, no DST) offset at the instant
+  // 2026-07-02T19:27:00Z = 2026-07-03T00:27 local (local day 03, UTC day 02),
+  // independent of the runner's real timezone. Revert-verify: restoring the
+  // parse-time bake makes the loaded value a baked day → the marker assertion
+  // fails (RED); the fix → marker (GREEN).
+  it("emits a $tomorrow marker at the local-midnight boundary (execute-time, never a frozen launch day) @req:bca93bfb-b663-4309-a19e-996de8e526da", async () => {
     const restore = installFakeOffsetDate(5, "2026-07-02T19:27:00Z");
     try {
       // Guard: prove the simulated tz is active (else the assertion below would
@@ -269,9 +298,12 @@ describe("CommandResolver — ems__WaitingCheckTask loader stage (req 915b20b2)"
 
       expect(cmd).not.toBeNull();
       const value = cmd!.grounding.propertyDefault![0].value;
-      // Local tomorrow = 2026-07-04. The UTC form returned "2026-07-03"
-      // (= local TODAY at this instant) — the bug FIX-2 corrects.
-      expect(value).toBe("2026-07-04");
+      // Bug 3883 — at the local-midnight boundary, loadCommand emits an
+      // execute-time marker (not a baked day), so a session left open across
+      // local midnight can never freeze the launch day. (The resolved VALUE is
+      // covered by the real-time sibling test — see the block comment above for
+      // why the getter-only fake cannot drive the setter-based resolver.)
+      expect(value).toBe(`__SUBSTITUTE__tomorrow__${TOKEN_TOMORROW_UID}__`);
     } finally {
       restore();
     }
