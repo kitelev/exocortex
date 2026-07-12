@@ -89,39 +89,64 @@ export class DisplayNameResolver {
 
   /**
    * Compose ≥2 participating specs (already priority-DESC) into one template:
-   * `<composed prefixes><base label>`. Each spec's PREFIX is the text before its first
-   * {{placeholder}}; the base (the placeholder part = the printed label) is taken ONCE, from the
-   * highest-priority spec that carries one. Prefix markers are de-duplicated by whitespace token, so
-   * a spec that re-bakes a marker already present does not double it (req 1a550210, Option B —
-   * e.g. the Meeting "✅ 👥"-Done spec over the plain "👥" spec composes to "✅ 👥", not "✅ 👥 👥").
-   * NOTE: composition treats a prefix as space-separated marker tokens — the shipped combined specs
+   * `<composed prefixes><base label><composed suffixes>`. Each spec is split into a PREFIX (leading
+   * literals, before its first {{placeholder}}), a CORE (the placeholder region = the printed label,
+   * taken ONCE from the highest-priority spec that carries one), and a SUFFIX (trailing literals,
+   * after its last {{placeholder}}). Both prefix AND suffix markers are composed — symmetric — so a
+   * suffix spec ("{{label}} (RFC)") that co-participates with a higher-priority prefix spec keeps its
+   * "(RFC)" instead of being dropped. Markers are de-duplicated by whitespace token, so a spec that
+   * re-bakes a marker already present does not double it (req 1a550210, Option B — e.g. the Meeting
+   * "✅ 👥"-Done spec over the plain "👥" spec composes to "✅ 👥", not "✅ 👥 👥").
+   * NOTE: composition treats each side as space-separated marker tokens — the shipped combined specs
    * (e.g. "✅ 👥 ") space their markers, so re-baked markers de-dup correctly.
    */
   private composeTemplates(rules: ParticipatingRule[]): string {
-    const seen = new Set<string>();
-    const markers: string[] = [];
-    let base: string | null = null;
-    for (const rule of rules) {
-      const { prefix, rest } = this.splitAtPlaceholder(rule.template);
-      // Base label = the first (highest-priority) spec that carries a {{placeholder}} part.
-      if (base === null && rest.trim() !== "") base = rest;
-      for (const token of prefix.trim().split(/\s+/)) {
+    const seenPrefix = new Set<string>();
+    const seenSuffix = new Set<string>();
+    const prefixMarkers: string[] = [];
+    const suffixMarkers: string[] = [];
+    let core: string | null = null;
+    const collect = (raw: string, seen: Set<string>, into: string[]) => {
+      for (const token of raw.trim().split(/\s+/)) {
         if (!token || seen.has(token)) continue;
         seen.add(token);
-        markers.push(token);
+        into.push(token);
       }
+    };
+    for (const rule of rules) {
+      const { prefix, core: ruleCore, suffix } = this.splitTemplate(rule.template);
+      // Core (the label placeholder) = the first (highest-priority) spec that carries one.
+      if (core === null && ruleCore !== "") core = ruleCore;
+      collect(prefix, seenPrefix, prefixMarkers);
+      collect(suffix, seenSuffix, suffixMarkers);
     }
-    // Degenerate: no spec carried a base placeholder — fall back to the top spec's (possibly empty) rest.
-    if (base === null) base = this.splitAtPlaceholder(rules[0].template).rest;
-    const composedPrefix = markers.map((m) => `${m} `).join("");
-    return `${composedPrefix}${base}`;
+    // Degenerate: no spec carried a {{placeholder}} core — the composed prefix markers stand alone.
+    const composedCore = core ?? "";
+    const composedPrefix = prefixMarkers.map((m) => `${m} `).join("");
+    const composedSuffix = suffixMarkers.length ? ` ${suffixMarkers.join(" ")}` : "";
+    return `${composedPrefix}${composedCore}${composedSuffix}`;
   }
 
-  /** Split a template at its first {{placeholder}} → prefix (leading literals) + rest (base label + suffix). */
-  private splitAtPlaceholder(template: string): { prefix: string; rest: string } {
-    const idx = template.indexOf("{{");
-    if (idx === -1) return { prefix: template, rest: "" };
-    return { prefix: template.slice(0, idx), rest: template.slice(idx) };
+  /**
+   * Split a template into prefix (leading literals) + core (the {{placeholder}} region = the label) +
+   * suffix (trailing literals). A template with no {{placeholder}} is treated as all-prefix (a pure
+   * literal marker). Uses first `{{` and last `}}` so a multi-placeholder core stays intact.
+   */
+  private splitTemplate(template: string): {
+    prefix: string;
+    core: string;
+    suffix: string;
+  } {
+    const first = template.indexOf("{{");
+    const last = template.lastIndexOf("}}");
+    if (first === -1 || last === -1 || last < first) {
+      return { prefix: template, core: "", suffix: "" };
+    }
+    return {
+      prefix: template.slice(0, first),
+      core: template.slice(first, last + 2),
+      suffix: template.slice(last + 2),
+    };
   }
 
   /**

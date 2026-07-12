@@ -142,6 +142,94 @@ function compositionVault(
   return { resolver, setBlockerStatus };
 }
 
+/**
+ * Vault with the 🔄-Doing PREFIX spec (priority 100) + an unconditional SUFFIX spec
+ * "{{label}} (RFC)" (priority 10) on ems__Task — to prove symmetric compose (prefix + suffix).
+ */
+function compositionVaultWithSuffix(): DisplayNameResolver {
+  const fileCache = new Map<string, CachedMetadata>();
+  const mockFiles: TFile[] = [];
+  const addFile = (path: string, frontmatter: Record<string, unknown>) => {
+    const tfile = new TFile(path);
+    tfile.basename = path.replace(".md", "");
+    tfile.extension = "md";
+    mockFiles.push(tfile);
+    fileCache.set(path, { frontmatter } as CachedMetadata);
+  };
+
+  addFile(`${STATUS_PROP_UID}.md`, {
+    exo__Asset_uid: STATUS_PROP_UID,
+    exo__Instance_class: ["[[9a1cf31c-9d41-4ef3-9023-584a8d087d16|exo__ObjectProperty]]"],
+    exo__Asset_label: "ems__Effort_status",
+  });
+
+  // 🔄-Doing prefix spec (priority 100).
+  addFile("spec-doing.md", {
+    exo__Asset_uid: "spec-doing",
+    exo__Instance_class: [`[[${DISPLAY_NAME_SPEC_CLASS}|exo__DisplayNameSpec]]`],
+    exo__DisplayNameSpec_appliesToClass: `[[${TASK_UID}|ems__Task]]`,
+    exo__DisplayNameSpec_priority: 100,
+    exo__DisplayNameSpec_matchPath: `[[${STATUS_PROP_UID}|ems__Effort_status]]`,
+    exo__DisplayNameSpec_matchValue: `[[${DOING_UID}|ems__EffortStatusDoing]]`,
+  });
+  addFile("doing-literal.md", {
+    exo__Asset_uid: "doing-literal",
+    exo__Instance_class: [`[[${PRINTED_LITERAL_CLASS}|exo__PrintedLiteral]]`],
+    exo__DisplayNamePart_of: "[[spec-doing]]",
+    exo__DisplayNamePart_order: 0,
+    exo__PrintedLiteral_literal: "🔄 ",
+  });
+  addFile("doing-prop.md", {
+    exo__Asset_uid: "doing-prop",
+    exo__Instance_class: [`[[${PRINTED_PROPERTY_CLASS}|exo__PrintedProperty]]`],
+    exo__DisplayNamePart_of: "[[spec-doing]]",
+    exo__DisplayNamePart_order: 1,
+    exo__PrintedProperty_property: `[[${LABEL_PROP_UID}|exo__Asset_label]]`,
+  });
+
+  // Unconditional SUFFIX spec: "{{label}} (RFC)" (priority 10) — PrintedProperty THEN PrintedLiteral.
+  addFile("spec-suffix.md", {
+    exo__Asset_uid: "spec-suffix",
+    exo__Instance_class: [`[[${DISPLAY_NAME_SPEC_CLASS}|exo__DisplayNameSpec]]`],
+    exo__DisplayNameSpec_appliesToClass: `[[${TASK_UID}|ems__Task]]`,
+    exo__DisplayNameSpec_priority: 10,
+  });
+  addFile("suffix-prop.md", {
+    exo__Asset_uid: "suffix-prop",
+    exo__Instance_class: [`[[${PRINTED_PROPERTY_CLASS}|exo__PrintedProperty]]`],
+    exo__DisplayNamePart_of: "[[spec-suffix]]",
+    exo__DisplayNamePart_order: 0,
+    exo__PrintedProperty_property: `[[${LABEL_PROP_UID}|exo__Asset_label]]`,
+  });
+  addFile("suffix-literal.md", {
+    exo__Asset_uid: "suffix-literal",
+    exo__Instance_class: [`[[${PRINTED_LITERAL_CLASS}|exo__PrintedLiteral]]`],
+    exo__DisplayNamePart_of: "[[spec-suffix]]",
+    exo__DisplayNamePart_order: 1,
+    exo__PrintedLiteral_literal: " (RFC)",
+  });
+
+  const app = {
+    vault: { getMarkdownFiles: jest.fn().mockReturnValue(mockFiles) },
+    metadataCache: {
+      getFileCache: jest
+        .fn()
+        .mockImplementation((file: TFile) => fileCache.get(file.path) ?? null),
+      getFirstLinkpathDest: jest.fn().mockImplementation((path: string) => {
+        const clean = path.endsWith(".md") ? path : path + ".md";
+        return mockFiles.find((f) => f.path === clean) ?? null;
+      }),
+    },
+  } as unknown as App;
+
+  const service = new PrintNameRuleService(app);
+  service.initialize();
+  return new DisplayNameResolver(
+    { defaultTemplate: "{{exo__Asset_label}}", classTemplates: {} },
+    service,
+  );
+}
+
 function taskMeta(
   opts: { status?: string; blocker?: string | null; label?: string } = {},
 ): Record<string, unknown> {
@@ -208,6 +296,19 @@ describe("DisplayNameResolver — prefix composition [req 1a550210]", () => {
       basename: "backlog-unblocked",
     });
     expect(plain).toBe("Ship the release");
+  });
+
+  it("@req:1a550210-f07e-4cbc-8707-6d4b428bba11 composition is SYMMETRIC — a co-participating SUFFIX spec keeps its trailing marker, not dropped by a higher-priority prefix spec", () => {
+    // Add a SUFFIX spec on ems__Task ("{{label}} (RFC)", unconditional, priority 10) alongside the
+    // 🔄-Doing prefix spec (priority 100). A Doing task composes the prefix 🔄 (front) AND the suffix
+    // (RFC) (back) → "🔄 <label> (RFC)". Guards the latent suffix-drop the reviewer flagged (a
+    // suffix spec that is not the base must not have its trailing marker discarded).
+    const resolver = compositionVaultWithSuffix();
+    const composed = resolver.resolve({
+      metadata: taskMeta({ status: `[[${DOING_UID}]]` }),
+      basename: "doing-rfc",
+    });
+    expect(composed).toBe("🔄 Ship the release (RFC)");
   });
 
   it("@req:1a550210-f07e-4cbc-8707-6d4b428bba11 composition is PER-RENDER + CROSS-ASSET — flipping the BLOCKER's status toggles the composed 🚩 without a re-scan", () => {
