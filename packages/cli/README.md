@@ -335,21 +335,6 @@ npx @kitelev/exocortex-cli resolve a1b2 --partial --format path --vault ~/vault
 | `--output <type>` | `text`       | Response format: `text` or `json` (for MCP tools) |
 | `--partial`       | off          | Match partial UUIDs (returns all matches)         |
 
-### recover
-
-Detect and recover orphaned `claude-child` tmux sessions. A session is orphaned when its corresponding vault task is not in Doing status. Default mode is dry-run.
-
-```bash
-npx @kitelev/exocortex-cli recover --vault ~/vault-2025
-npx @kitelev/exocortex-cli recover --apply --vault ~/vault-2025
-```
-
-| Option           | Default                              | Description                                              |
-| ---------------- | ------------------------------------ | -------------------------------------------------------- |
-| `--vault <path>` | `$EXOCORTEX_VAULT` or `~/vault-2025` | Path to Obsidian vault                                   |
-| `--dry-run`      | —                                    | List orphans without applying changes (default behavior) |
-| `--apply`        | off                                  | Apply recovery: set Failed + kill the tmux session       |
-
 ### scaffold
 
 Scaffold homoiconic configuration assets. Currently exposes one subcommand, `validation-settings`, which materializes the four validation-check `setting__Setting` instances (`uid-uniqueness=true`, the rest `false`) co-located in the chosen ontology's folder, so `validate vault` has an enabled-set to read (RFC f402002b).
