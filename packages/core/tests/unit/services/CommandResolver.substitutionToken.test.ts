@@ -165,6 +165,7 @@ const TOKEN_TODAY_UID         = "22222222-2222-4222-8222-222222222222";
 const TOKEN_TARGET_FOLDER_UID = "33333333-3333-4333-8333-333333333333";
 const TOKEN_UNKNOWN_UID       = "44444444-4444-4444-8444-444444444444";
 const TOKEN_TODAY_START_UID   = "66666666-6666-4666-8666-666666666666";
+const TOKEN_NOW_TIMESTAMP_UID = "77777777-7777-4777-8777-777777777777";
 
 const PD_UID  = "55555555-5555-4555-8555-555555555555";
 
@@ -245,6 +246,47 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
     expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00$/);
     expect(value).not.toContain("Z");
     expect(value).not.toContain(".000");
+    expect(logger.warnings).toHaveLength(0);
+  });
+
+  // Bug 33d362e5 — `nowTimestamp` (second-precision, used for
+  // exo__Asset_createdAt / exo__Asset_updatedAt) MUST emit an execute-time
+  // marker, NOT a parse-time-baked literal. Parse-time baking + the session
+  // command/Universal-Template cache froze every prototype instance created in
+  // one Obsidian session to the SAME launch-time timestamp. It is the
+  // second-precision sibling of `randomUUIDv4` (also marker-only): a cached
+  // baked value is wrong for BOTH. Revert-verify: re-adding "nowTimestamp" to
+  // PARSE_TIME_RESOLVERS makes `value` a baked `YYYY-MM-DDTHH:mm:ss` literal →
+  // the marker `.toBe(...)` assertion fails (RED).
+  it("encodes a `nowTimestamp` SubstitutionToken as an execute-time marker (createdAt/updatedAt must not freeze to session launch)", async () => {
+    await addSubstitutionToken(store, {
+      uid: TOKEN_NOW_TIMESTAMP_UID,
+      label: "$nowTimestamp",
+      resolverId: "nowTimestamp",
+    });
+    await addPropertyDefault(store, {
+      uid: PD_UID,
+      propertyRefUid: PROP_UID,
+      valueRefUid: TOKEN_NOW_TIMESTAMP_UID,
+    });
+    await addGrounding(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding with $nowTimestamp PD",
+      propertyDefaultRefs: [PD_UID],
+    });
+    await addCommand(store, COMMAND_UID, GROUNDING_UID);
+
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+
+    expect(cmd!.grounding.propertyDefault).toHaveLength(1);
+    const value = cmd!.grounding.propertyDefault![0].value;
+    // Execute-time marker — resolved fresh per instance creation by the live
+    // registry resolver, so createdAt/updatedAt reflect the real creation time.
+    expect(value).toBe(
+      `__SUBSTITUTE__nowTimestamp__${TOKEN_NOW_TIMESTAMP_UID}__`,
+    );
+    // Must NOT be a parse-time-baked timestamp literal (the frozen-launch bug).
+    expect(value).not.toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/);
     expect(logger.warnings).toHaveLength(0);
   });
 
