@@ -227,3 +227,125 @@ describe("instantiatePrototypeSubtree (issue #3881 Gap 3)", () => {
     expect(relates.sort()).toEqual([`[[${PERSON}]]`, `[[${QUARTER}]]`].sort());
   });
 });
+
+// ---------------------------------------------------------------------------
+// Hardening (issue #3896): M1 fail-loud on an unresolvable node class + M2
+// idempotency guard against a duplicate re-deploy. @req:6666e9f0-...
+// Production-shape revert-verify — the service runs end-to-end over the fake
+// vault; reverting either guard flips the marked assertion RED.
+// ---------------------------------------------------------------------------
+
+const REQ = "6666e9f0-34fe-41dd-ab3a-a53c6ce94b5a";
+const EXISTING = "e0000000-0000-0000-0000-0000000000e1";
+const EXISTING_OTHER = "e0000000-0000-0000-0000-0000000000e2";
+const OTHER_QUARTER = "ffffffff-0000-0000-0000-000000000099";
+
+/** Build an adapter+writer from an arbitrary raw markdown fixture map. */
+function makeAdapterFrom(raw: Record<string, string>) {
+  const fm = new FrontmatterService();
+  const files = Object.keys(raw).map((uid) => mkFile(uid));
+  const byPath = new Map<string, string>();
+  files.forEach((f) => byPath.set(f.path, raw[f.basename]));
+  const writes: { path: string; content: string }[] = [];
+  const vaultAdapter = {
+    getAllFiles: () => files,
+    getFrontmatter: (file: { path: string }) => {
+      const content = byPath.get(file.path);
+      return content ? fm.parseObject(content) : null;
+    },
+  } as never;
+  const fsAdapter = {
+    createFile: async (path: string, content: string) => {
+      writes.push({ path, content });
+      return path;
+    },
+  } as never;
+  return { vaultAdapter, fsAdapter, writes, fm };
+}
+
+describe(`instantiatePrototypeSubtree hardening (issue #3896, @req:${REQ})`, () => {
+  const rootIRI = `obsidian://vault/efforts/${ROOT}.md`;
+
+  it(`M1: fails loud when a subtree node's class is unresolvable — no [[undefined]], zero partial write (@req:6666e9f0-34fe-41dd-ab3a-a53c6ce94b5a)`, async () => {
+    const raw = fixtures();
+    // Malform C1: strip its exo__Instance_class. It is still parented to the root
+    // (so it IS discovered in the subtree), and classLabel(undefined) → undefined
+    // → instClassLabel falsy → the OLD code would write exo__Instance_class:
+    // [[undefined]] for it.
+    raw[C1] = `---\nexo__Asset_uid: ${C1}\nexo__Asset_label: "Поручить {{сотрудник}} заполнить {{квартал}}"\nems__EffortPrototype_parentEffortPrototype: "[[${ROOT}]]"\n---\n`;
+    const { vaultAdapter, fsAdapter, writes } = makeAdapterFrom(raw);
+    const service = createInstantiatePrototypeSubtreeService(
+      vaultAdapter,
+      fsAdapter,
+    );
+
+    // (revert-verify anchor M1) — removing the pre-pass guard lets the service
+    // succeed and write a node with a dangling [[undefined]] class → this
+    // rejection assertion flips RED.
+    await expect(
+      service.execute(rootIRI, {
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        сотрудник: `[[${PERSON}]]`,
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        квартал: `[[${QUARTER}]]`,
+      }),
+    ).rejects.toThrow(/cannot resolve instance class/i);
+
+    // Atomic: the pre-pass throws BEFORE any file is written — zero partial
+    // state, and in particular nothing with a dangling [[undefined]] class.
+    expect(writes).toHaveLength(0);
+  });
+
+  it(`M2: refuses to re-deploy an already-instantiated subtree (same prototype + same ref-params) (@req:6666e9f0-34fe-41dd-ab3a-a53c6ce94b5a)`, async () => {
+    const raw = fixtures();
+    // A prior deployment already exists: an instance of the ROOT prototype whose
+    // exo__Asset_relates set is exactly the current ref-params (person + quarter).
+    raw[EXISTING] = `---\nexo__Asset_uid: ${EXISTING}\nexo__Instance_class:\n  - "[[ems__Project]]"\nexo__Asset_label: "Ревьюшница n.rudopas Q3-26"\nexo__Asset_prototype: "[[${ROOT}]]"\nexo__Asset_relates:\n  - "[[${PERSON}]]"\n  - "[[${QUARTER}]]"\n---\n`;
+    const { vaultAdapter, fsAdapter, writes } = makeAdapterFrom(raw);
+    const service = createInstantiatePrototypeSubtreeService(
+      vaultAdapter,
+      fsAdapter,
+    );
+
+    // (revert-verify anchor M2) — removing the idempotency guard lets a second
+    // full subgraph be written → this rejection assertion flips RED.
+    await expect(
+      service.execute(rootIRI, {
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        сотрудник: `[[${PERSON}]]`,
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        квартал: `[[${QUARTER}]]`,
+      }),
+    ).rejects.toThrow(/already deployed/i);
+
+    // No second subgraph written.
+    expect(writes).toHaveLength(0);
+  });
+
+  it(`M2 negative-control: a DIFFERENT employee/quarter is NOT blocked — the guard matches only the exact ref-param set (@req:6666e9f0-34fe-41dd-ab3a-a53c6ce94b5a)`, async () => {
+    const raw = fixtures();
+    // A prior deployment exists for the SAME prototype but a DIFFERENT ref-param
+    // set (different quarter) → it must NOT block the current deployment.
+    raw[EXISTING_OTHER] = `---\nexo__Asset_uid: ${EXISTING_OTHER}\nexo__Instance_class:\n  - "[[ems__Project]]"\nexo__Asset_label: "Ревьюшница n.rudopas Q2-26"\nexo__Asset_prototype: "[[${ROOT}]]"\nexo__Asset_relates:\n  - "[[${PERSON}]]"\n  - "[[${OTHER_QUARTER}]]"\n---\n`;
+    const { vaultAdapter, fsAdapter, writes, fm } = makeAdapterFrom(raw);
+    const service = createInstantiatePrototypeSubtreeService(
+      vaultAdapter,
+      fsAdapter,
+    );
+
+    await service.execute(rootIRI, {
+      // eslint-disable-next-line @typescript-eslint/naming-convention
+      сотрудник: `[[${PERSON}]]`,
+      // eslint-disable-next-line @typescript-eslint/naming-convention
+      квартал: `[[${QUARTER}]]`,
+    });
+
+    // Deploys normally: root + C1 + C2 + C3.
+    expect(writes).toHaveLength(4);
+    const nodes = parseWrites(writes, fm);
+    const rootInst = nodes.find((n) => n.protoUid === ROOT)!;
+    expect(rootInst).toBeTruthy();
+    const relates = (rootInst.fm.exo__Asset_relates as string[]).map(unq);
+    expect(relates.sort()).toEqual([`[[${PERSON}]]`, `[[${QUARTER}]]`].sort());
+  });
+});

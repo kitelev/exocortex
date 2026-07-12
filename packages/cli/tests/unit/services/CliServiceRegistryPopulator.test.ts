@@ -40,12 +40,19 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => {
   // shape stub returning null (treated as "not a vault scheme IRI", caller
   // falls back to the raw IRI) is sufficient for the import to resolve.
   const iriToVaultPath = (_iri: string): string | null => null;
+  // Issue #3896 (M4): the prototype-subtree-instantiator factory now imports
+  // `extractAssetReference` from `exocortex-core` at module-evaluation time
+  // (de-duplicating its local `extractRef`). The deps-omitted path tested here
+  // never invokes the service body, so a shape stub is sufficient for the
+  // transitive import to resolve under ESM mocking.
+  const extractAssetReference = (_value: unknown): string | null => null;
   return {
     ServiceRegistry,
     FrontmatterService,
     WikiLinkHelpers,
     DateFormatter,
     iriToVaultPath,
+    extractAssetReference,
   };
 });
 
