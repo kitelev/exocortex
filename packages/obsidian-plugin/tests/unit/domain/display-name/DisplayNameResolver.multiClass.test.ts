@@ -45,7 +45,9 @@ describe("DisplayNameResolver — multi-class membership [req 83be3f2f]", () => 
    * Production-shape vault carrying three real-shaped specs, compiled by the real
    * scanVault pipeline:
    *   - ems__Meeting → "👥 " (UNCONDITIONAL, priority 10)
-   *   - ems__Meeting + status=Done → "✅👥 " (CONDITIONAL, priority 60 — the composed spec)
+   *   - ems__Meeting + status=Done → "✅ 👥 " (CONDITIONAL, priority 60 — the combined spec, whose
+   *     leading literal SPACES its markers like the shipped 248f104c spec, so composition de-dups
+   *     the re-baked 👥 against the plain 👥 spec instead of double-printing it — req 1a550210)
    *   - ems__Task + status=Doing → "🔄 " (CONDITIONAL, priority 50 — the existing 🔄-Doing)
    * Plus the ems__Effort_status property def (so a conditional matchPath UID-form resolves
    * its frontmatter key via the second hop).
@@ -112,7 +114,7 @@ describe("DisplayNameResolver — multi-class membership [req 83be3f2f]", () => 
           exo__Instance_class: ["[[4d5437c9-788e-4a6d-9be0-4af3a84554f4|exo__PrintedLiteral]]"],
           exo__DisplayNamePart_of: "[[spec-meeting-done]]",
           exo__DisplayNamePart_order: 0,
-          exo__PrintedLiteral_literal: "✅👥 ",
+          exo__PrintedLiteral_literal: "✅ 👥 ",
         },
       },
       {
@@ -208,30 +210,34 @@ describe("DisplayNameResolver — multi-class membership [req 83be3f2f]", () => 
     expect(meetingFirst).toBe("👥 Weekly sync");
   });
 
-  it("the highest-priority participating spec across ALL classes wins — a Done Task-first meeting gets the composed ✅👥", () => {
+  it("@req:1a550210-f07e-4cbc-8707-6d4b428bba11 composition de-dups a re-baked marker — a Done Task-first meeting stays '✅ 👥' (NOT '✅ 👥 👥'), guarding the combined-spec regression", () => {
     const resolver = buildResolver(meetingClassSpecVault());
-    // Done: the composed ems__Meeting+Done ✅👥 spec (priority 60) beats the unconditional
-    // ems__Meeting 👥 (priority 10); the ems__Task 🔄-Doing conditional is skipped (not Doing).
+    // Done: BOTH the combined ems__Meeting+Done "✅ 👥" spec (priority 60) AND the unconditional
+    // ems__Meeting "👥" spec (priority 10) participate; the ems__Task 🔄-Doing conditional is
+    // skipped (not Doing). Prefix composition (req 1a550210) would naively print "✅ 👥 👥", but the
+    // combined spec already carries 👥, so the marker de-dup drops the second 👥 → "✅ 👥".
+    // (This is exactly why the shipped 248f104c combined spec at priority 200 must not double 👥.)
     const done = resolver.resolve({
       metadata: multiClassMeeting(["[[ems__Task]]", "[[ems__Meeting]]"], DONE_UID),
       basename: "meeting-note",
     });
-    expect(done).toBe("✅👥 Weekly sync");
+    expect(done).toBe("✅ 👥 Weekly sync");
+    expect(done).not.toContain("👥 👥"); // no double 👥 — the combined-spec no-regression guard
   });
 
-  it("two distinct-prefix specs simultaneously applicable → exactly ONE wins (composition out of scope)", () => {
+  it("@req:1a550210-f07e-4cbc-8707-6d4b428bba11 two DISTINCT-prefix specs across classes COMPOSE — a Doing multi-class note shows BOTH 🔄 and 👥 (prefix composition, supersedes the single-winner 'out of scope' note of req 83be3f2f)", () => {
     const resolver = buildResolver(meetingClassSpecVault());
-    // Doing: BOTH the ems__Task 🔄-Doing spec (priority 50) AND the ems__Meeting 👥 spec
-    // (priority 10) participate. The single-winning-template model picks ONE — the highest
-    // priority (🔄). It does NOT compose into "🔄👥" (prefix composition is a further design,
-    // explicitly out of scope for req 83be3f2f).
+    // Doing: the ems__Task 🔄-Doing spec (priority 50) AND the ems__Meeting 👥 spec (priority 10)
+    // both participate with DISTINCT markers. Prefix composition (req 1a550210) now composes them —
+    // priority-DESC → status 🔄 before class 👥 — instead of the old single-winner picking only 🔄.
     const doing = resolver.resolve({
       metadata: multiClassMeeting(["[[ems__Task]]", "[[ems__Meeting]]"], DOING_UID),
       basename: "meeting-note",
     });
-    expect(doing).toBe("🔄 Weekly sync");
-    // Non-vacuity: exactly one prefix, not both, not the other.
-    expect(doing).not.toContain("👥");
+    expect(doing).toBe("🔄 👥 Weekly sync");
+    // Non-vacuity: BOTH markers present, in the declared (priority-DESC) order.
+    expect(doing).toContain("🔄");
+    expect(doing).toContain("👥");
   });
 
   it("no-regression: a single-class ems__Meeting note is byte-identical (still 👥), both before and after the membership change", () => {

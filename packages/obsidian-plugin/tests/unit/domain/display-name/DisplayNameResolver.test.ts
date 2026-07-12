@@ -184,11 +184,16 @@ describe("DisplayNameResolver", () => {
 
   describe("with PrintNameRuleService", () => {
     it("should use dynamic rule template over settings template", () => {
+      // The resolver now composes the PARTICIPATING specs (req 1a550210): a single participating
+      // rule composes to itself (byte-identical to the old single-winning-template path).
       const mockRuleService = {
-        getTemplateForClass: jest.fn().mockReturnValue({
-          template: "{{exo__Asset_label}} (DynamicRule)",
-          priority: 100,
-        }),
+        getParticipatingRules: jest.fn().mockReturnValue([
+          {
+            template: "{{exo__Asset_label}} (DynamicRule)",
+            priority: 100,
+            sourceFile: "spec-dynamic",
+          },
+        ]),
         createMetadataResolver: jest.fn().mockReturnValue(null),
       };
 
@@ -206,9 +211,9 @@ describe("DisplayNameResolver", () => {
       });
 
       expect(result).toBe("My Task (DynamicRule)");
-      // The resolver now forwards the instance metadata so a conditional spec
-      // (matchPath/matchValue) can be evaluated per-render (req ed4201d1).
-      expect(mockRuleService.getTemplateForClass).toHaveBeenCalledWith(
+      // The resolver forwards the instance metadata so a conditional spec
+      // (matchPath/matchValue/matchHostFunction) can be evaluated per-render (req ed4201d1/d6cd2371).
+      expect(mockRuleService.getParticipatingRules).toHaveBeenCalledWith(
         "ems__Task",
         expect.objectContaining({ exo__Asset_label: "My Task" }),
       );
@@ -216,7 +221,7 @@ describe("DisplayNameResolver", () => {
 
     it("should fall back to settings when no dynamic rule exists", () => {
       const mockRuleService = {
-        getTemplateForClass: jest.fn().mockReturnValue(null),
+        getParticipatingRules: jest.fn().mockReturnValue([]),
         createMetadataResolver: jest.fn().mockReturnValue(null),
       };
 
@@ -255,10 +260,13 @@ describe("DisplayNameResolver", () => {
         exo__Asset_label: "Parent Project",
       });
       const mockRuleService = {
-        getTemplateForClass: jest.fn().mockReturnValue({
-          template: "{{exo__Asset_label}} / {{ems__Effort_project.exo__Asset_label}}",
-          priority: 50,
-        }),
+        getParticipatingRules: jest.fn().mockReturnValue([
+          {
+            template: "{{exo__Asset_label}} / {{ems__Effort_project.exo__Asset_label}}",
+            priority: 50,
+            sourceFile: "spec-cross-asset",
+          },
+        ]),
         createMetadataResolver: jest.fn().mockReturnValue(mockMetadataResolver),
       };
 

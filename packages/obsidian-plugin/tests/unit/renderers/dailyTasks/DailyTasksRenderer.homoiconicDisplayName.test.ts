@@ -258,3 +258,48 @@ describe("DailyTasksRenderer — homoiconic displayName (req a577316f)", () => {
     expect(getDisplayName(tasks[0])).toBe("🔄 Write the report");
   });
 });
+
+describe("getDisplayName — 🚩 residual REMOVED, blocked marker is homoiconic [req 1a550210]", () => {
+  /** Minimal DailyTask shape getDisplayName reads (displayName / label / title / path / isBlocked). */
+  const task = (over: Partial<DailyTask>): DailyTask =>
+    ({
+      file: { path: "t.md", basename: "t" },
+      path: "t.md",
+      title: "Ship it",
+      label: "Ship it",
+      startTime: "09:00",
+      endTime: "10:00",
+      status: "Doing",
+      metadata: {},
+      isDoing: true,
+      isBlocked: false,
+      ...over,
+    }) as DailyTask;
+
+  it("@req:1a550210-f07e-4cbc-8707-6d4b428bba11 does NOT re-add a 🚩 residual — the 🚩 comes from the composed displayName only, so a blocked task is NOT double-🚩 [revert-verify anchor]", () => {
+    // The resolver now composes 🚩 into displayName (via the live isEffortBlocked spec). The
+    // DailyNote renderer residual (blockerIcon) is REMOVED. Revert-verify RED anchor: re-adding the
+    // residual (`blockerIcon = task.isBlocked ? "🚩 " : ""`) makes this "🚩 🚩 🔄 Ship it" → RED;
+    // restore → "🚩 🔄 Ship it".
+    const blockedDoing = task({ displayName: "🚩 🔄 Ship it", isBlocked: true });
+    expect(getDisplayName(blockedDoing)).toBe("🚩 🔄 Ship it");
+    expect(getDisplayName(blockedDoing)).not.toContain("🚩 🚩");
+  });
+
+  it("@req:1a550210-f07e-4cbc-8707-6d4b428bba11 a blocked NON-Doing row shows a single 🚩 (from displayName), not the old renderer-doubled 🚩", () => {
+    // The blocked, non-Doing task's resolved displayName is "🚩 <label>". With the residual removed,
+    // the row shows exactly one 🚩 (re-adding the residual would double it → "🚩 🚩 ...").
+    const blockedBacklog = task({
+      displayName: "🚩 Ship it",
+      isBlocked: true,
+      isDoing: false,
+    });
+    expect(getDisplayName(blockedBacklog)).toBe("🚩 Ship it");
+    expect(getDisplayName(blockedBacklog)).not.toContain("🚩 🚩");
+  });
+
+  it("@req:1a550210-f07e-4cbc-8707-6d4b428bba11 an unblocked task keeps its plain composed displayName (no phantom 🚩)", () => {
+    const unblocked = task({ displayName: "🔄 Ship it", isBlocked: false });
+    expect(getDisplayName(unblocked)).toBe("🔄 Ship it");
+  });
+});

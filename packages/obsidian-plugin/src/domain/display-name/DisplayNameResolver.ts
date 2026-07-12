@@ -1,6 +1,6 @@
 import { DisplayNameTemplateEngine } from "./DisplayNameTemplateEngine";
 import type { MetadataResolver } from "./DisplayNameTemplateEngine";
-import type { PrintNameRuleService } from "./PrintNameRuleService";
+import type { PrintNameRuleService, ParticipatingRule } from "./PrintNameRuleService";
 import type { DisplayNameSettings } from "@plugin/domain/settings/ExocortexSettings";
 
 export interface DisplayNameContext {
@@ -37,32 +37,46 @@ export class DisplayNameResolver {
   }
 
   /**
-   * Select the winning template across ALL of a note's classes (class-membership,
-   * req 83be3f2f). For each class the ruleService yields its best `{template, priority}`
-   * (direct rules + ancestor-inheritance walk + the per-render conditional matcher of
-   * req ed4201d1); the highest-priority PARTICIPATING result across every class wins — so a
-   * class-level spec participates whenever its class is present among the note's classes,
-   * regardless of which one is listed first. Ties keep the earliest (first-listed) class,
-   * so a single-class note is byte-identical to the pre-membership `[0]` path. Falls back to
-   * the first class's TS classTemplate seed, then the default template — exactly as before.
-   * The single-winning-template model still picks ONE template (no prefix composition —
-   * out of scope, see req 83be3f2f).
+   * COMPOSE the displayName template across ALL of a note's classes (PREFIX COMPOSITION,
+   * req 1a550210). This supersedes the single-winning-template model (req 83be3f2f): instead of
+   * picking the one highest-priority participating spec, EVERY participating spec across the note's
+   * classes (direct + ancestor-inheritance walk + the per-render matcher of req ed4201d1/d6cd2371)
+   * contributes its PREFIX, composed in a deterministic order into `<composed prefixes><base label>`.
+   *
+   *  - a blocked Doing task composes 🚩 (isEffortBlocked host-function spec) + 🔄 (status=Doing spec)
+   *    → "🚩 🔄 <label>" — the same on native links AND every plugin table (previously only DailyNote
+   *    faked the 🚩 renderer-side; that residual is now removed).
+   *  - de-dup guards the pre-existing "combined" specs (e.g. the Meeting ✅ 👥-Done spec that re-bakes
+   *    👥) from double-printing a marker already present → a Done Meeting stays "✅ 👥 <label>".
+   *  - a SINGLE participating spec composes to itself → byte-identical, no regression; NO participating
+   *    spec falls back to the first class's TS classTemplate seed, then the default template — as before.
    */
   getTemplateForClasses(
     assetClasses: string[],
     metadata?: Record<string, unknown>,
   ): string {
     if (this.ruleService && assetClasses.length > 0) {
-      let best: { template: string; priority: number } | null = null;
+      // Gather EVERY participating spec across all of the note's classes, de-duped by spec UID so a
+      // spec that applies to more than one of the note's classes contributes at most one prefix.
+      const gathered: ParticipatingRule[] = [];
+      const seenSpecs = new Set<string>();
       for (const assetClass of assetClasses) {
-        const rule = this.ruleService.getTemplateForClass(assetClass, metadata);
-        // Strictly-greater keeps the earliest class on a priority tie (deterministic,
-        // and byte-identical to the single-class path).
-        if (rule && (best === null || rule.priority > best.priority)) {
-          best = rule;
+        for (const rule of this.ruleService.getParticipatingRules(assetClass, metadata)) {
+          if (seenSpecs.has(rule.sourceFile)) continue;
+          seenSpecs.add(rule.sourceFile);
+          gathered.push(rule);
         }
       }
-      if (best) return best.template;
+      if (gathered.length > 0) {
+        // Deterministic compose order = priority DESC (the vault-declared compose-order field),
+        // tiebreak by spec UID for full determinism. One spec → its template unchanged (byte-identical).
+        gathered.sort(
+          (a, b) => b.priority - a.priority || a.sourceFile.localeCompare(b.sourceFile),
+        );
+        return gathered.length === 1
+          ? gathered[0].template
+          : this.composeTemplates(gathered);
+      }
     }
 
     const firstClass = assetClasses[0];
@@ -71,6 +85,43 @@ export class DisplayNameResolver {
     }
 
     return this.settings.defaultTemplate;
+  }
+
+  /**
+   * Compose ≥2 participating specs (already priority-DESC) into one template:
+   * `<composed prefixes><base label>`. Each spec's PREFIX is the text before its first
+   * {{placeholder}}; the base (the placeholder part = the printed label) is taken ONCE, from the
+   * highest-priority spec that carries one. Prefix markers are de-duplicated by whitespace token, so
+   * a spec that re-bakes a marker already present does not double it (req 1a550210, Option B —
+   * e.g. the Meeting "✅ 👥"-Done spec over the plain "👥" spec composes to "✅ 👥", not "✅ 👥 👥").
+   * NOTE: composition treats a prefix as space-separated marker tokens — the shipped combined specs
+   * (e.g. "✅ 👥 ") space their markers, so re-baked markers de-dup correctly.
+   */
+  private composeTemplates(rules: ParticipatingRule[]): string {
+    const seen = new Set<string>();
+    const markers: string[] = [];
+    let base: string | null = null;
+    for (const rule of rules) {
+      const { prefix, rest } = this.splitAtPlaceholder(rule.template);
+      // Base label = the first (highest-priority) spec that carries a {{placeholder}} part.
+      if (base === null && rest.trim() !== "") base = rest;
+      for (const token of prefix.trim().split(/\s+/)) {
+        if (!token || seen.has(token)) continue;
+        seen.add(token);
+        markers.push(token);
+      }
+    }
+    // Degenerate: no spec carried a base placeholder — fall back to the top spec's (possibly empty) rest.
+    if (base === null) base = this.splitAtPlaceholder(rules[0].template).rest;
+    const composedPrefix = markers.map((m) => `${m} `).join("");
+    return `${composedPrefix}${base}`;
+  }
+
+  /** Split a template at its first {{placeholder}} → prefix (leading literals) + rest (base label + suffix). */
+  private splitAtPlaceholder(template: string): { prefix: string; rest: string } {
+    const idx = template.indexOf("{{");
+    if (idx === -1) return { prefix: template, rest: "" };
+    return { prefix: template.slice(0, idx), rest: template.slice(idx) };
   }
 
   /**

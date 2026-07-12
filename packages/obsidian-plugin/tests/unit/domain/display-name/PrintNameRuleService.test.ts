@@ -545,10 +545,11 @@ describe("PrintNameRuleService — conditional exo__DisplayNameSpec (v2 slice, p
     ).toBe("Fix the parser");
   });
 
-  it("a matched conditional spec BEATS a lower-priority unconditional spec; an unmatched conditional yields to it", () => {
-    // Two specs on ems__Task: a HIGH-priority conditional 🔄-Doing + a LOW-priority
-    // unconditional "[TASK] <label>". Doing → conditional wins; non-Doing → conditional
-    // is skipped and the unconditional wins.
+  it("a matched conditional spec COMPOSES with a lower-priority unconditional spec (priority sets order); an unmatched conditional yields to it alone [req 1a550210]", () => {
+    // Two specs on ems__Task: a HIGH-priority conditional 🔄-Doing (prio 80) + a LOW-priority
+    // unconditional "[TASK] <label>" (prio 1). Doing → BOTH participate → prefix composition prints
+    // them priority-DESC ("🔄 [TASK] <label>"); non-Doing → the conditional is skipped and only the
+    // unconditional participates.
     const app = createMockApp([
       // conditional (priority 80)
       {
@@ -628,11 +629,11 @@ describe("PrintNameRuleService — conditional exo__DisplayNameSpec (v2 slice, p
       service,
     );
 
-    // Doing → high-priority conditional wins.
+    // Doing → BOTH participate → composition prints 🔄 (prio 80) before [TASK] (prio 1).
     expect(resolver.resolve({ metadata: taskMeta(`[[${DOING_UID}]]`), basename: "t" })).toBe(
-      "🔄 Fix the parser",
+      "🔄 [TASK] Fix the parser",
     );
-    // Done → conditional skipped → unconditional "[TASK] <label>" wins (not the fallback label).
+    // Done → conditional skipped → only the unconditional "[TASK] <label>" participates.
     expect(resolver.resolve({ metadata: taskMeta(`[[${DONE_UID}]]`), basename: "t" })).toBe(
       "[TASK] Fix the parser",
     );
@@ -827,7 +828,7 @@ describe("PrintNameRuleService — host-function exo__DisplayNameSpec (v2 comput
     expect(resolver.resolve({ metadata: meta, basename: "t" })).toBe("🚩 Ship the release");
   });
 
-  it("a matched host-function spec BEATS a lower-priority unconditional spec; an unmatched one yields to it (selection stays priority-based)", () => {
+  it("a matched host-function spec COMPOSES with a lower-priority unconditional spec (priority sets order); an unmatched one yields to it alone [req 1a550210]", () => {
     const { resolver } = blockedHostFnVault({
       priority: 80, // host-function spec
       blockerStatus: "[[ems__EffortStatusDoing]]",
@@ -864,11 +865,12 @@ describe("PrintNameRuleService — host-function exo__DisplayNameSpec (v2 comput
       ],
     });
 
-    // blocked → high-priority host-function spec wins.
+    // blocked → BOTH participate → prefix composition prints them in priority-DESC order:
+    // 🚩 (host-fn, prio 80) before [TASK] (unconditional, prio 1) → "🚩 [TASK] <label>" (req 1a550210).
     expect(
       resolver.resolve({ metadata: taskMeta({ blocker: `[[${BLOCKER_BASENAME}]]` }), basename: "t" }),
-    ).toBe("🚩 Ship the release");
-    // not blocked → host-function skipped → unconditional "[TASK] <label>" wins (not the bare label).
+    ).toBe("🚩 [TASK] Ship the release");
+    // not blocked → host-function skipped → only the unconditional "[TASK] <label>" participates.
     expect(resolver.resolve({ metadata: taskMeta(), basename: "t" })).toBe(
       "[TASK] Ship the release",
     );

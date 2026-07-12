@@ -342,12 +342,18 @@ test.describe("DailyTasksTable", () => {
     await expect(component.locator('thead th:has-text("Status")')).toContainText("↑");
   });
 
-  test("should display blocker icon when task is blocked", async ({ mount }) => {
+  test("should display the 🚩 blocker marker carried by the homoiconic displayName", async ({
+    mount,
+  }) => {
+    // 🚩 is now HOMOICONIC (req 1a550210): the resolver composes it into `displayName` (via the live
+    // isEffortBlocked exo__DisplayNameSpec) — the DailyNote renderer no longer prepends a residual 🚩.
     const blockedTask: DailyTask = {
       file: { path: "blocked-task.md", basename: "blocked-task" },
       path: "blocked-task.md",
       title: "Blocked Task",
       label: "Blocked Task",
+      // What the resolver hands the row: the 🚩 prefix comes from vault data, not renderer hardcode.
+      displayName: "🚩 Blocked Task",
       startTime: "09:00",
       endTime: "10:00",
       status: "ems__EffortStatusInProgress",
@@ -366,6 +372,9 @@ test.describe("DailyTasksTable", () => {
     );
     await expect(taskName).toContainText("🚩");
     await expect(taskName).toContainText("Blocked Task");
+    // No double 🚩: the renderer residual is removed, so the single displayName 🚩 is not doubled.
+    const text = (await taskName.textContent()) ?? "";
+    expect(text).not.toContain("🚩 🚩");
   });
 
   test("should not display blocker icon when task is not blocked", async ({
