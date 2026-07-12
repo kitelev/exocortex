@@ -235,6 +235,11 @@ export {
 
 // Utilities exports
 export { FrontmatterService } from "./utilities/FrontmatterService";
+// serializeYamlScalar — quote-when-needed YAML scalar serializer (issue #3748/#3750).
+// Exposed so CLI-side mutation primitives (e.g. `set-property`, issue #3795) can
+// pre-format values the same way the create / property_set paths do before
+// handing them to FrontmatterService.updateProperty (which writes verbatim).
+export { serializeYamlScalar } from "./utilities/yamlScalar";
 export { DateFormatter } from "./utilities/DateFormatter";
 export { WikiLinkHelpers } from "./utilities/WikiLinkHelpers";
 export { MetadataHelpers } from "./utilities/MetadataHelpers";
