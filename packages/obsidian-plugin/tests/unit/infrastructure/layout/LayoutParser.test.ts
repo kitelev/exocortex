@@ -308,6 +308,70 @@ describe("LayoutParser", () => {
       });
     });
 
+    describe("LayoutActions structural flag (#3654 Part 2 / #3777)", () => {
+      it("flags a command as structural when it declares exocmd__Command_grounding, and NOT when it only has the legacy raw exo__Command_grounding [@req:28731c06-b393-419b-b8ee-453ca6225b17]", async () => {
+        const files = new Map<string, IFrontmatter>([
+          [
+            "layouts/ActionTable.md",
+            {
+              exo__Asset_uid: "layout-act",
+              exo__Asset_label: "Action Table",
+              exo__Instance_class: ["[[exo__TableLayout]]"],
+              exo__Layout_targetClass: "[[ems__Task]]",
+              exo__Layout_actions: "[[layout-actions]]",
+            },
+          ],
+          [
+            "actions/layout-actions.md",
+            {
+              exo__Asset_uid: "actions-1",
+              exo__Asset_label: "Row Actions",
+              exo__Instance_class: ["[[exo__LayoutActions]]"],
+              exo__LayoutActions_commands: ["[[struct-cmd]]", "[[raw-cmd]]"],
+              exo__LayoutActions_position: "column",
+            },
+          ],
+          [
+            "commands/struct-cmd.md",
+            {
+              exo__Asset_uid: "struct-cmd-uid",
+              exo__Asset_label: "Structural Command",
+              exo__Instance_class: ["[[exocmd__Command]]"],
+              // Structural: a typed grounding resolvable by CommandResolver.
+              exocmd__Command_grounding: "[[some-typed-grounding]]",
+            },
+          ],
+          [
+            "commands/raw-cmd.md",
+            {
+              exo__Asset_uid: "raw-cmd-uid",
+              exo__Asset_label: "Raw Command",
+              exo__Instance_class: ["[[exocmd__Command]]"],
+              // Legacy raw-SPARQL model — NOT structural.
+              exo__Command_grounding: "[[some-raw-grounding]]",
+            },
+          ],
+        ]);
+        mockVaultAdapter = createMockVaultAdapter(files);
+        parser = new LayoutParser(mockVaultAdapter);
+
+        const result = await parser.parseFromFile(
+          createMockFile("layouts/ActionTable.md"),
+        );
+
+        expect(result.success).toBe(true);
+        const layout = result.layout as {
+          actions?: { commands: Array<{ uid: string; structural?: boolean }> };
+        };
+        const commands = layout.actions?.commands ?? [];
+        const struct = commands.find((c) => c.uid === "struct-cmd-uid");
+        const raw = commands.find((c) => c.uid === "raw-cmd-uid");
+
+        expect(struct?.structural).toBe(true);
+        expect(raw?.structural).toBeFalsy();
+      });
+    });
+
     describe("GraphLayout", () => {
       it("should parse GraphLayout with optional properties", async () => {
         const file = createMockFile("layouts/TaskGraph.md");

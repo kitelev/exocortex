@@ -698,12 +698,23 @@ export class LayoutParser {
       groundingSparql = await this.loadGroundingSparql(groundingLink, options);
     }
 
+    // #3654 Part 2 (#3777) — a command is STRUCTURAL when it declares
+    // `exocmd__Command_grounding` (a typed grounding resolvable by
+    // `CommandResolver.loadCommand`). Structural commands execute through the
+    // existing `CommandExecutionFlow` → `GroundingExecutor` pipeline and are
+    // precondition-gated by their own `exocmd__Command_precondition`. The
+    // legacy raw-SPARQL model (`exo__Command_grounding` above) has no execution
+    // engine (raw-SPARQL-UPDATE rejected in #3777). We only detect presence
+    // here — the processor resolves + runs it via the plugin's CommandResolver.
+    const structural = frontmatter["exocmd__Command_grounding"] !== undefined;
+
     return {
       uid: partial.uid,
       label: partial.label,
       icon: partial.icon,
       preconditionSparql,
       groundingSparql,
+      structural,
     };
   }
 
