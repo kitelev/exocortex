@@ -8,6 +8,7 @@ import { validateCommand } from "./commands/validate.js";
 import { classesCommand } from "./commands/classes.js";
 import { runQueryCommand } from "./commands/run-query.js";
 import { createCommand } from "./commands/create.js";
+import { setPropertyCommand } from "./commands/set-property.js";
 import { recoverCommand } from "./commands/recover.js";
 import { findCommand } from "./commands/find.js";
 import { applyCommand } from "./commands/apply.js";
@@ -64,6 +65,12 @@ export function createProgram(version?: string): Command {
   // assets).
   program.addCommand(runQueryCommand());
   program.addCommand(createCommand());
+  // Issues #3795 / #3848 — generic guarded mutation primitive: set an arbitrary
+  // non-guarded frontmatter property (incl. exo__Asset_isDefinedBy repoint) on an
+  // existing asset via the CLI, closing the "raw-Edit a property" dogfooding gap.
+  // Refuses state-machine-guarded properties (status/zone/parent/label/…) so their
+  // dedicated `apply` commands are not bypassed.
+  program.addCommand(setPropertyCommand());
   // recover — retained: live launchd consumer (com.exocortex.aitask-recover
   // hourly job calls `exocortex-cli recover --apply`). RFC 7c7859d1 reclassifies
   // it from W0 cheap-remove to migration-first (retire/port that consumer first).

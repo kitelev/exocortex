@@ -208,9 +208,14 @@ export class FrontmatterService {
         `${this.escapeRegex(property)}:.*(?:\n {2}- .*)*`,
         "m",
       );
+      // Function-replacer (not a string) so `$`-patterns in the value
+      // (`$&`, `$1`-`$9`, `` $` ``, `$'`, `$$`) are NOT interpreted by
+      // String.prototype.replace — an ordinary value like a price `$1` would
+      // otherwise splice a capture-group / duplicate the match into the
+      // frontmatter (data-loss, #3748 family / #3795 review H1).
       updatedFrontmatter = updatedFrontmatter.replace(
         propertyRegex,
-        serialized,
+        () => serialized,
       );
     } else {
       // Property doesn't exist - append to frontmatter
@@ -219,10 +224,12 @@ export class FrontmatterService {
       updatedFrontmatter += `${separator}${serialized}`;
     }
 
-    // Replace frontmatter block in original content
+    // Replace frontmatter block in original content. Function-replacer so a
+    // `$`-bearing value spliced into `updatedFrontmatter` is not re-interpreted
+    // as a String.replace pattern (#3748 family / #3795 review H1).
     return content.replace(
       FrontmatterService.FRONTMATTER_REGEX,
-      `---\n${updatedFrontmatter}\n---`,
+      () => `---\n${updatedFrontmatter}\n---`,
     );
   }
 
@@ -275,10 +282,12 @@ export class FrontmatterService {
     );
     const updatedFrontmatter = parsed.content.replace(propertyLineRegex, "");
 
-    // Replace frontmatter block in original content
+    // Replace frontmatter block in original content. Function-replacer so a
+    // surviving `$`-bearing value in `updatedFrontmatter` is not re-interpreted
+    // as a String.replace pattern (#3748 family / #3795 review H1).
     return content.replace(
       FrontmatterService.FRONTMATTER_REGEX,
-      `---\n${updatedFrontmatter}\n---`,
+      () => `---\n${updatedFrontmatter}\n---`,
     );
   }
 
