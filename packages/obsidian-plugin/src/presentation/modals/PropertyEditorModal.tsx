@@ -22,6 +22,7 @@ import type { AssetRefCandidate } from '@plugin/presentation/builders/button-gro
 import {
   getReifiedRelations,
   predicateKeyFromLabelObjects,
+  reifiedPredicateFrontmatterKey,
   type ReifiedRelation,
 } from '@plugin/presentation/renderers/layout/getReifiedRelations';
 import {
@@ -215,8 +216,14 @@ export class PropertyEditorModal extends Modal {
     // Enrich the reified rows with the frontmatter key they map back to (so
     // de-reify writes the restored relation under the right key without guessing).
     this.reifiedRows = reifiedToRows(reified).map((r) => {
-      const defUid = uidFromIri(r.predicateKey);
-      const key = defUid ? this.keyByPredicateDefUid.get(defUid) : undefined;
+      // The reified predicate is stored as a symbolic IRI for clean-prefix
+      // predicates (dual-IRI) → recover the key directly; only fall back to the
+      // def-UID reverse map for path-form (hyphen-prefix) predicates (#3904).
+      const key = reifiedPredicateFrontmatterKey(
+        r.predicateKey,
+        uidFromIri,
+        this.keyByPredicateDefUid,
+      );
       return key ? { ...r, predicateFrontmatterKey: key } : r;
     });
     // Incoming reified rows (A is the object) — read-only, object-side (Task 3.3).
