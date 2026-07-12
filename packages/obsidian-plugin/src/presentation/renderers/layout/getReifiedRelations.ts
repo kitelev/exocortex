@@ -127,8 +127,9 @@ export function labelToSymbolicIRI(label: string | null | undefined): IRI | null
  * consumer that maps a property-definition asset's label back to its
  * frontmatter key (the reify predicate-def resolution) MUST accept this form,
  * else it silently drops every clean-prefix predicate (`exo__*`, `ems__*`,
- * `concept__*`, …). Round-trips:
- * `symbolicIriToPropertyKey(labelToSymbolicIRI(key)!.value) === key`.
+ * `concept__*`, …). Round-trips for a clean `prefix__LocalName` key:
+ * `symbolicIriToPropertyKey(labelToSymbolicIRI(key)!.value) === key` (a local
+ * name containing `#`/`/` is rejected here — such keys are not valid anyway).
  */
 export function symbolicIriToPropertyKey(iri: string): string | null {
   const base = Namespace.EXOCORTEX_ONTOLOGY_BASE;
