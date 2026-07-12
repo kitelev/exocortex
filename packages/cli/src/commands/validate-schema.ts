@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { resolve, relative, join } from "path";
 import { execSync } from "child_process";
+import yaml from "js-yaml";
 import {
   InMemoryTripleStore,
   ExoQLParser,
@@ -415,6 +416,25 @@ export async function loadDeclaredProperties(
 }
 
 /**
+ * Detect frontmatter that a STRICT YAML parser rejects — most notably a
+ * duplicated mapping key (#3800). Such files are invisible to
+ * SPARQL/preconditions (an adapter falls back to `{}` → 0 triples) yet the
+ * regex-based {@link extractFrontmatter} above still key-extracts them, so
+ * `validate schema` used to skip them silently. Returns a one-line reason, or
+ * null when the frontmatter parses strictly (or there is no frontmatter block).
+ */
+export function detectUnparseableFrontmatter(content: string): string | null {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return null;
+  try {
+    yaml.load(match[1]);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message.split("\n")[0] : String(error);
+  }
+}
+
+/**
  * Validate a single file's frontmatter against the declared properties set.
  */
 export function validateFile(
@@ -431,8 +451,20 @@ export function validateFile(
     return [];
   }
 
+  // #3800: surface frontmatter a strict YAML parser rejects (e.g. a duplicated
+  // mapping key) — otherwise the file is invisible to SPARQL/preconditions AND
+  // to this validator. Reported so the user can fix it via `repair-frontmatter`.
+  const parseError = detectUnparseableFrontmatter(content);
+  if (parseError) {
+    violations.push({
+      file: relativePath,
+      property: "(frontmatter)",
+      reason: `Unparseable YAML frontmatter (${parseError}) — invisible to SPARQL/preconditions; repair with: exocortex repair-frontmatter "${relativePath}"`,
+    });
+  }
+
   const frontmatter = extractFrontmatter(content);
-  if (!frontmatter) return [];
+  if (!frontmatter) return violations;
 
   const keys = Object.keys(frontmatter);
   const { toValidate, unknownPrefix } = classifyKeys(keys);

@@ -1,7 +1,13 @@
 import fs from "fs-extra";
 import path from "path";
 import yaml from "js-yaml";
-import { IVaultAdapter, IFile, IFolder, IFrontmatter } from "@kitelev/exocortex-core";
+import {
+  IVaultAdapter,
+  IFile,
+  IFolder,
+  IFrontmatter,
+  parseYamlFrontmatterTolerant,
+} from "@kitelev/exocortex-core";
 import { rewriteInboundWikilinks } from "../utils/wikilinkRewriter.js";
 
 /** UUID v4 pattern for wikilink resolution */
@@ -363,14 +369,9 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
       return null;
     }
 
-    try {
-      const parsed = yaml.load(match[1]);
-      return typeof parsed === "object" && parsed !== null
-        ? (parsed as IFrontmatter)
-        : null;
-    } catch (error) {
-      return null;
-    }
+    // #3800: tolerant parse — a duplicated mapping key would otherwise throw
+    // and collapse the asset to `null` (0 triples → invisible & unrepairable).
+    return parseYamlFrontmatterTolerant(match[1]) as IFrontmatter | null;
   }
 
   private replaceFrontmatter(

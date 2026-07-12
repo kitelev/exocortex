@@ -9,6 +9,7 @@ import { classesCommand } from "./commands/classes.js";
 import { runQueryCommand } from "./commands/run-query.js";
 import { createCommand } from "./commands/create.js";
 import { setPropertyCommand } from "./commands/set-property.js";
+import { repairFrontmatterCommand } from "./commands/repair-frontmatter.js";
 import { recoverCommand } from "./commands/recover.js";
 import { findCommand } from "./commands/find.js";
 import { applyCommand } from "./commands/apply.js";
@@ -71,6 +72,10 @@ export function createProgram(version?: string): Command {
   // Refuses state-machine-guarded properties (status/zone/parent/label/…) so their
   // dedicated `apply` commands are not bypassed.
   program.addCommand(setPropertyCommand());
+  // repair-frontmatter — raw-text dedupe of duplicated top-level YAML keys
+  // (keep-last). The dogfood-clean repair for the invisible/unrepairable
+  // duplicate-key class (#3800): fixes a file the parser itself cannot read.
+  program.addCommand(repairFrontmatterCommand());
   // recover — retained: live launchd consumer (com.exocortex.aitask-recover
   // hourly job calls `exocortex-cli recover --apply`). RFC 7c7859d1 reclassifies
   // it from W0 cheap-remove to migration-first (retire/port that consumer first).

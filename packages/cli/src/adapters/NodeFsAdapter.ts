@@ -1,11 +1,11 @@
 import fs from "fs-extra";
 import path from "path";
 import * as glob from "glob";
-import yaml from "js-yaml";
 import {
   IFileSystemAdapter,
   FileNotFoundError,
   FileAlreadyExistsError,
+  parseYamlFrontmatterTolerant,
 } from "@kitelev/exocortex-core";
 
 export class NodeFsAdapter implements IFileSystemAdapter {
@@ -203,14 +203,9 @@ export class NodeFsAdapter implements IFileSystemAdapter {
       return {};
     }
 
-    try {
-      const parsed = yaml.load(match[1]);
-      return typeof parsed === "object" && parsed !== null
-        ? (parsed as Record<string, any>)
-        : {};
-    } catch (error) {
-      return {};
-    }
+    // #3800: tolerant parse — a duplicated mapping key would otherwise throw
+    // and collapse the asset to `{}` (0 triples → invisible & unrepairable).
+    return parseYamlFrontmatterTolerant(match[1]) ?? {};
   }
 
   private matchesQuery(

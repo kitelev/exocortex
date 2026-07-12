@@ -240,6 +240,10 @@ export { FrontmatterService } from "./utilities/FrontmatterService";
 // pre-format values the same way the create / property_set paths do before
 // handing them to FrontmatterService.updateProperty (which writes verbatim).
 export { serializeYamlScalar } from "./utilities/yamlScalar";
+// Tolerant YAML frontmatter parse (#3800) — bare yaml.load throws on a
+// duplicated mapping key → the whole asset collapses to {} at every read
+// (invisible & unrepairable). Retries `{ json: true }` (last-wins) on throw.
+export { parseYamlFrontmatterTolerant } from "./utilities/parseYamlFrontmatter";
 export { DateFormatter } from "./utilities/DateFormatter";
 export { WikiLinkHelpers } from "./utilities/WikiLinkHelpers";
 export { MetadataHelpers } from "./utilities/MetadataHelpers";

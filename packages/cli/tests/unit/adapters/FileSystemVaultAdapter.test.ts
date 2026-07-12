@@ -1,6 +1,10 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "fs-extra";
 import path from "path";
+// #3800: FileSystemVaultAdapter.extractFrontmatter delegates to core's tolerant
+// parser — the barrel mock must provide the REAL implementation (not a stub);
+// imported straight from source so it is not intercepted by the mock.
+import { parseYamlFrontmatterTolerant } from "../../../../core/src/utilities/parseYamlFrontmatter.js";
 
 // Mock exocortex module before import
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
@@ -8,6 +12,7 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   IFile: class {},
   IFolder: class {},
   IFrontmatter: class {},
+  parseYamlFrontmatterTolerant,
 }));
 
 const { FileSystemVaultAdapter } = await import("../../../src/adapters/FileSystemVaultAdapter.js");

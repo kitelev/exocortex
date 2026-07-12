@@ -1,5 +1,10 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "fs-extra";
+// #3800: NodeFsAdapter.extractFrontmatter delegates to core's tolerant parser.
+// The barrel mock below must provide the REAL implementation (not a stub) or
+// frontmatter extraction returns `{}`; imported straight from source so it is
+// not intercepted by the `@kitelev/exocortex-core` mock.
+import { parseYamlFrontmatterTolerant } from "../../../../core/src/utilities/parseYamlFrontmatter.js";
 
 // Create mock for glob
 const mockGlob = jest.fn();
@@ -23,6 +28,7 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
     }
   },
   IFileSystemAdapter: class {},
+  parseYamlFrontmatterTolerant,
 }));
 
 const { NodeFsAdapter } = await import("../../../src/adapters/NodeFsAdapter.js");
