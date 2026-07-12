@@ -119,11 +119,13 @@ const KNOWN_SUBSTITUTION_RESOLVER_IDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Marker for context-dependent SubstitutionToken resolvers — executor
+ * Marker for execute-time SubstitutionToken resolvers — the executor
  * substitutes at runtime when the click target IRI / file path / userInput /
- * Grounding metadata are known. Context-independent resolvers (today,
- * todayStart, nowDate, nowYear, nowMonth, nowTimestamp, randomUUIDv4) are
- * resolved at parse time and never produce this marker.
+ * Grounding metadata are known, OR when the value must be fresh per execution
+ * (`nowTimestamp` — second precision; `randomUUIDv4`), so it is NOT baked at
+ * parse time. The DAY-granularity date resolvers (today, tomorrow, todayStart,
+ * nowDate, nowYear, nowMonth) ARE resolved at parse time and never produce this
+ * marker — see {@link PARSE_TIME_RESOLVERS}.
  *
  * Shape: `__SUBSTITUTE__<resolver-id>__<token-uid>__`
  *
@@ -165,13 +167,22 @@ const UNIVERSAL_DEFAULT_TEMPLATE_CLASS_UID =
 const UNIVERSAL_DEFAULT_TEMPLATE_CTX = "universal-default-template";
 
 /**
- * RFC 727572d2 — context-independent date/time resolvers safely baked at
- * parse time. Matches the existing behaviour for `today` / `todayStart`
- * (resolved when CommandResolver parses Groundings; cached for session).
+ * RFC 727572d2 — context-independent DAY-granularity date resolvers safely
+ * baked at parse time. Matches the existing behaviour for `today` / `todayStart`
+ * (resolved when CommandResolver parses Groundings; cached for session — a
+ * session rarely crosses local midnight, so a baked calendar day is tolerable).
  *
  * `randomUUIDv4` is intentionally NOT here: parse-time UUID baking would
  * produce the same UUID for every click on a cached Grounding until cache
  * invalidates — unsafe. It emits a marker for runtime resolution instead.
+ *
+ * `nowTimestamp` is intentionally NOT here for the SAME reason (bug
+ * 33d362e5): it is a SECOND-precision timestamp used for `exo__Asset_createdAt`
+ * / `exo__Asset_updatedAt`. Parse-time baking + session cache froze every
+ * instance created in one Obsidian session to the SAME launch-time timestamp
+ * (the plugin process is long-lived; the CLI is not, so CLI was unaffected).
+ * It emits a marker resolved fresh per-execution by the live registry
+ * resolver instead.
  */
 const PARSE_TIME_RESOLVERS: ReadonlySet<string> = new Set([
   "today",
@@ -179,7 +190,6 @@ const PARSE_TIME_RESOLVERS: ReadonlySet<string> = new Set([
   // time exactly like `$today` (same session-cache semantics).
   "tomorrow",
   "todayStart",
-  "nowTimestamp",
   "nowDate",
   "nowYear",
   "nowMonth",
@@ -2673,8 +2683,10 @@ export class CommandResolver {
         // UTC Z-instant (`...T00:00:00.000Z`) — same instant, different string
         // shape that disagreed with the executor form.
         return DateFormatter.getTodayStartTimestamp();
-      case "nowTimestamp":
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      // `nowTimestamp` (second-precision, used for createdAt/updatedAt) is
+      // deliberately NOT parse-time (bug 33d362e5) — it resolves at execute
+      // time via the live registry resolver so it is never frozen to the
+      // session's launch instant. See PARSE_TIME_RESOLVERS.
       case "nowDate":
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
       case "nowYear":
