@@ -49,6 +49,14 @@ import type {
 
 const BACKLOG_STATUS_UID = "753a44d5-846c-4b82-9196-4fd9a4d48777";
 const PARENT_PROTOTYPE_KEY = "ems__EffortPrototype_parentEffortPrototype";
+// The `exo__Class` metaclass — an asset is a CLASS DEFINITION iff its
+// `exo__Instance_class` is this metaclass. Used to resolve an instance-class
+// LABEL (e.g. «ems__Project») back to the class asset's UID so the written
+// `exo__Instance_class` ref is the canonical UID-alias form `[[uid|label]]`
+// (what `apply create-task` writes) rather than a DANGLING symbolic-label
+// `[[ems__Project]]` (class files are UID-named, so `ems__Project.md` does not
+// exist → Obsidian shows a broken link). Issue #3908.
+const CLASS_METACLASS_UID = "8619c4fc-64f1-4869-b17e-e34186cacca9";
 
 interface IndexEntry {
   file: IFile;
@@ -122,6 +130,25 @@ export function createInstantiatePrototypeSubtreeService(
         if (!ref) return undefined;
         const entry = byUid.get(ref);
         return entry ? plainScalar(entry.fm.exo__Asset_label) : ref;
+      };
+
+      // Resolve an instance-class LABEL (e.g. «ems__Project») to the UID of its
+      // class-DEFINITION asset — the UID-named file whose `exo__Asset_label` is
+      // that label AND whose `exo__Instance_class` is the `exo__Class` metaclass.
+      // Strict: only a genuine class definition qualifies (never a same-labelled
+      // instance), so a miss means a genuinely absent class → fail-loud below.
+      // The class def is always co-mounted with the prototype it clones (the M1
+      // pre-pass already resolves the prototype's own bare-UID class ref via the
+      // same TBox).
+      const classUidByLabel = (label: string): string | undefined => {
+        for (const [uid, entry] of byUid) {
+          if (plainScalar(entry.fm.exo__Asset_label) !== label) continue;
+          const isClassDef =
+            extractAssetReference(firstValue(entry.fm.exo__Instance_class)) ===
+            CLASS_METACLASS_UID;
+          if (isClassDef) return uid;
+        }
+        return undefined;
       };
 
       // 2. Resolve the root prototype.
@@ -217,12 +244,17 @@ export function createInstantiatePrototypeSubtreeService(
         }
       }
 
-      // M1 fail-loud pre-pass (issue #3896): validate every node's instance class
-      // resolves to a non-empty label BEFORE any write, so a malformed subtree (a
-      // node whose `exo__Instance_class` is missing/unresolvable) aborts the whole
-      // deployment instead of silently writing `exo__Instance_class: [[undefined]]`
-      // (a dangling wikilink that reddens SHACL later). No-null for a domain
-      // output; atomic — zero partial state on abort.
+      // M1 fail-loud pre-pass (issue #3896, extended #3908): resolve every node's
+      // canonical instance-class ref BEFORE any write, so a malformed subtree (a
+      // node whose `exo__Instance_class` is missing/unresolvable) OR an absent
+      // class definition aborts the whole deployment instead of silently writing
+      // a dangling class wikilink. Two dangling forms are prevented:
+      //   (a) `[[undefined]]` — the prototype's own class is unresolvable;
+      //   (b) `[[ems__Project]]` — the derived instance-class LABEL cannot be
+      //       resolved to its UID-named class file (#3908). Both are dangling in
+      //       Obsidian. The map caches `[[uid|label]]` per node for the write
+      //       loop. No-null for a domain output; atomic — zero partial state.
+      const instClassRef = new Map<string, string>();
       for (const protoUid of subtree) {
         const entry = byUid.get(protoUid);
         if (!entry) continue;
@@ -236,6 +268,13 @@ export function createInstantiatePrototypeSubtreeService(
             `instantiatePrototypeSubtree: cannot resolve instance class for subtree node ${protoUid} (${entry.file.path}) — its exo__Instance_class is missing or unresolvable. Aborting so no asset is written with a dangling [[undefined]] class.`,
           );
         }
+        const classUid = classUidByLabel(instClassLabel);
+        if (!classUid) {
+          throw new Error(
+            `instantiatePrototypeSubtree: cannot resolve class UID for instance class «${instClassLabel}» (subtree node ${protoUid}, ${entry.file.path}) — no class-definition asset with that label is loaded. Aborting so no asset is written with a dangling [[${instClassLabel}]] class wikilink.`,
+          );
+        }
+        instClassRef.set(protoUid, `[[${classUid}|${instClassLabel}]]`);
       }
 
       // 6. Write each instance. Co-locate in the prototype node's folder.
@@ -248,11 +287,9 @@ export function createInstantiatePrototypeSubtreeService(
         const { file, fm } = entry;
         const newUid = instUid.get(protoUid) as string;
 
-        const protoClassLabel = classLabel(fm.exo__Instance_class);
-        const instClassLabel =
-          protoClassLabel && protoClassLabel.endsWith("Prototype")
-            ? protoClassLabel.slice(0, -"Prototype".length)
-            : protoClassLabel;
+        // Canonical `[[uid|label]]` class ref, resolved + validated in the M1
+        // pre-pass (#3908) — never a dangling `[[label]]` symbolic ref.
+        const classRef = instClassRef.get(protoUid) as string;
 
         const label = substitute(plainScalar(fm.exo__Asset_label));
 
@@ -266,7 +303,7 @@ export function createInstantiatePrototypeSubtreeService(
           `exo__Asset_createdAt: ${createdAt}`,
           `exo__Asset_updatedAt: ${createdAt}`,
           "exo__Instance_class:",
-          `  - "[[${instClassLabel}]]"`,
+          `  - "${classRef}"`,
           `exo__Asset_label: ${JSON.stringify(label)}`,
           "aliases:",
           `  - ${JSON.stringify(label)}`,
