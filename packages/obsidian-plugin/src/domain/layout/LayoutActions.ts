@@ -48,6 +48,25 @@ export interface CommandRef {
    * Uses $target for the asset URI and $now for current timestamp.
    */
   groundingSparql?: string;
+
+  /**
+   * True when the referenced command is a STRUCTURAL exocmd command — it
+   * declares `exocmd__Command_grounding` (a typed grounding resolvable by
+   * `CommandResolver.loadCommand`) and therefore executes through the existing
+   * `CommandExecutionFlow` → `GroundingExecutor` pipeline (#3654 Part 2 /
+   * #3777). A command WITHOUT this flag is the legacy raw-SPARQL model
+   * (`exo__Command_grounding` → raw `exo__Grounding_sparql`), which has no
+   * execution engine — the parallel raw-SPARQL-UPDATE engine was explicitly
+   * rejected in #3777 as duplicating `GroundingExecutor` semantics.
+   *
+   * Drives two behaviours: (1) a structural command's visibility is gated by
+   * its own `exocmd__Command_precondition` via `PreconditionEvaluator` (the
+   * same path the structural inline buttons use), unified with the Part-1 raw
+   * `exo__Precondition_sparql` ASK gate; (2) clicking a structural command
+   * resolves + runs it through `CommandExecutionFlow`, whereas a raw-only
+   * command surfaces an honest "no structural command" notice (#3628-aligned).
+   */
+  structural?: boolean;
 }
 
 /**

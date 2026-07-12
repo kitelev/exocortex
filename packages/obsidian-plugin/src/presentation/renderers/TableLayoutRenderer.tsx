@@ -14,7 +14,7 @@
 import React, { useState, useMemo, useCallback, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
-import type { TableLayout, LayoutColumn } from "../../domain/layout";
+import type { TableLayout, LayoutColumn, CommandRef } from "../../domain/layout";
 import { getDefaultColumnHeader } from "../../domain/layout";
 import type {
   TableRow,
@@ -67,21 +67,33 @@ export interface TableLayoutRendererProps {
   className?: string;
 
   /**
-   * Callback to check if a command precondition is satisfied.
-   * Used for action buttons visibility.
-   * @param sparql - The SPARQL ASK query with $target placeholder
-   * @param assetUri - The URI to substitute for $target
-   * @returns true if the command should be visible/enabled
+   * Callback to check if a command's precondition is satisfied for a row.
+   * Used for action buttons visibility (command-oriented, #3654 Part 2).
+   * @param cmd - The command reference (uid, structural flag, raw sparql)
+   * @param assetUri - The row asset's real store subject IRI
+   * @param assetPath - The row asset's vault path
+   * @returns true if the command should be visible
    */
-  onCheckPrecondition?: (sparql: string, assetUri: string) => Promise<boolean>;
+  onCheckPrecondition?: (
+    cmd: CommandRef,
+    assetUri: string,
+    assetPath?: string,
+  ) => Promise<boolean>;
 
   /**
-   * Callback to execute a command grounding.
-   * Used when action buttons are clicked.
-   * @param sparql - The SPARQL UPDATE query with $target and $now placeholders
-   * @param assetUri - The URI to substitute for $target
+   * Callback to execute a command when an action button is clicked
+   * (command-oriented, #3654 Part 2). A structural exocmd command is resolved
+   * and run through `CommandExecutionFlow`; a raw-only command surfaces a
+   * notice (raw-SPARQL-UPDATE engine rejected in #3777).
+   * @param cmd - The command reference (uid, structural flag, raw sparql)
+   * @param assetUri - The row asset's real store subject IRI (targetIRI)
+   * @param assetPath - The row asset's vault path (filePath)
    */
-  onExecuteCommand?: (sparql: string, assetUri: string) => Promise<void>;
+  onExecuteCommand?: (
+    cmd: CommandRef,
+    assetUri: string,
+    assetPath?: string,
+  ) => Promise<void>;
 
   /**
    * Optional function to resolve asset labels for wikilinks without aliases.
