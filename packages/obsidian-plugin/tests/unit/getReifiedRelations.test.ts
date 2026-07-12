@@ -314,15 +314,18 @@ describe("predicateKeyFromLabelObjects (label→key, both emitted forms)", () =>
  * "symbolic-IRI predicate" case return undefined (de-reify then throws).
  */
 describe("reifiedPredicateFrontmatterKey (de-reify key resolution)", () => {
-  // Mirrors PropertyEditorModal.uidFromIri: `#`->localname, path->basename-uid.
+  // Faithful mirror of PropertyEditorModal.uidFromIri (trim + `#`->localname +
+  // path->decodeURIComponent(basename-uid)) so the fallback double can't drift.
   const uidOf = (iri: string): string | null => {
-    const hash = iri.lastIndexOf("#");
-    if (hash >= 0 && hash < iri.length - 1) return iri.slice(hash + 1);
-    if (iri.includes("/")) {
-      const last = iri.split("/").pop();
-      return last ? last.replace(/\.md$/i, "") : null;
+    const trimmed = iri.trim();
+    const hash = trimmed.lastIndexOf("#");
+    if (hash >= 0 && hash < trimmed.length - 1) return trimmed.slice(hash + 1);
+    if (trimmed.includes("/")) {
+      const last = trimmed.split("/").pop();
+      if (!last) return null;
+      return decodeURIComponent(last.replace(/\.md$/i, ""));
     }
-    return iri.length > 0 ? iri : null;
+    return trimmed.length > 0 ? trimmed : null;
   };
 
   it("recovers the key from a symbolic-IRI predicate (the bug) — no def-UID needed", () => {
