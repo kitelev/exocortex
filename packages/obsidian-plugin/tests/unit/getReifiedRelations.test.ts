@@ -10,6 +10,7 @@ import {
   getReifiedRelations,
   labelToSymbolicIRI,
   predicateKeyFromLabelObjects,
+  reifiedPredicateFrontmatterKey,
   symbolicIriToPropertyKey,
   ReifiedRelation,
 } from "../../src/presentation/renderers/layout/getReifiedRelations";
@@ -301,5 +302,75 @@ describe("predicateKeyFromLabelObjects (label→key, both emitted forms)", () =>
     ).toBeNull();
     expect(predicateKeyFromLabelObjects([new Literal("   ")])).toBeNull();
     expect(predicateKeyFromLabelObjects([])).toBeNull();
+  });
+});
+
+/**
+ * ems__Bug `f68bf750` / #3904 — de-reify mapped the reified predicate back to a
+ * frontmatter key via `uidFromIri(predicate) -> keyByDefUid`, which misses for a
+ * clean-prefix predicate (its stored form is a symbolic IRI, so uidFromIri gives
+ * the LOCAL NAME, not the def UID). `reifiedPredicateFrontmatterKey` tries the
+ * symbolic form first. Revert-verify: removing the symbolic branch makes the
+ * "symbolic-IRI predicate" case return undefined (de-reify then throws).
+ */
+describe("reifiedPredicateFrontmatterKey (de-reify key resolution)", () => {
+  // Faithful mirror of PropertyEditorModal.uidFromIri (trim + `#`->localname +
+  // path->decodeURIComponent(basename-uid)) so the fallback double can't drift.
+  const uidOf = (iri: string): string | null => {
+    const trimmed = iri.trim();
+    const hash = trimmed.lastIndexOf("#");
+    if (hash >= 0 && hash < trimmed.length - 1) return trimmed.slice(hash + 1);
+    if (trimmed.includes("/")) {
+      const last = trimmed.split("/").pop();
+      if (!last) return null;
+      return decodeURIComponent(last.replace(/\.md$/i, ""));
+    }
+    return trimmed.length > 0 ? trimmed : null;
+  };
+
+  it("recovers the key from a symbolic-IRI predicate (the bug) — no def-UID needed", () => {
+    // Clean-prefix predicate: stored as a symbolic IRI, keyByDefUid is empty for
+    // it (it is keyed by def UID, not local name) — exactly the failing shape.
+    expect(
+      reifiedPredicateFrontmatterKey(
+        "https://exocortex.my/ontology/exo#Asset_relates",
+        uidOf,
+        new Map(),
+      ),
+    ).toBe("exo__Asset_relates");
+  });
+
+  it("falls back to the def-UID reverse map for a path-form predicate", () => {
+    // Hyphen-prefix def label stays a Literal → predicate stored as path-form IRI.
+    const keyByDefUid = new Map([
+      ["0967a771-c5cf-4fee-9707-9837104977f3", "adapter-exo-ims__relatesToConcept"],
+    ]);
+    expect(
+      reifiedPredicateFrontmatterKey(
+        "obsidian://vault/assetspaces/x/0967a771-c5cf-4fee-9707-9837104977f3.md",
+        uidOf,
+        keyByDefUid,
+      ),
+    ).toBe("adapter-exo-ims__relatesToConcept");
+  });
+
+  it("prefers the symbolic form even when the reverse map would also miss", () => {
+    expect(
+      reifiedPredicateFrontmatterKey(
+        "https://exocortex.my/ontology/ems#Effort_area",
+        uidOf,
+        new Map([["Effort_area", "WRONG"]]),
+      ),
+    ).toBe("ems__Effort_area");
+  });
+
+  it("returns undefined when neither form yields a key", () => {
+    expect(
+      reifiedPredicateFrontmatterKey(
+        "obsidian://vault/x/unknown-uid.md",
+        uidOf,
+        new Map(),
+      ),
+    ).toBeUndefined();
   });
 });

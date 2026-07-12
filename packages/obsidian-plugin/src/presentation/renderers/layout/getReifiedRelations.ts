@@ -176,6 +176,36 @@ export function predicateKeyFromLabelObjects(
 }
 
 /**
+ * The frontmatter predicate KEY (`<prefix>__<LocalName>`) that a reified row's
+ * predicate IRI maps back to — used by de-reify to restore the inline relation
+ * under the right key (RFC §C3 Task 3.2; ems__Bug `f68bf750` / #3904).
+ *
+ * The predicate slot of an `exo__Statement` (`exo__Statement_predicate → [[uid]]`)
+ * resolves to one of two IRI forms (dual-IRI — `sparql-iri-form-pre-verify`):
+ *  - a **symbolic** IRI (`…/exo#Asset_relates`) when the predicate-def's label
+ *    is a clean `prefix__LocalName` → recover the key directly via
+ *    {@link symbolicIriToPropertyKey} (the def UID is not even needed);
+ *  - a **path-form** IRI (`obsidian://…/<uid>.md`) when the def label stays a
+ *    Literal (hyphen-prefix, e.g. `adapter-exo-ims__relatesToConcept`) → resolve
+ *    the def UID and look it up in the reverse map.
+ *
+ * A symbolic-only OR UID-only lookup silently drops half the predicates: keying
+ * `keyByDefUid` by def UID means the symbolic form (whose `uidOf` yields the
+ * LOCAL NAME, not the UID) never matches → de-reify fails with "could not be
+ * mapped back to a frontmatter key". Trying the symbolic form first fixes that.
+ */
+export function reifiedPredicateFrontmatterKey(
+  predicateIri: string,
+  uidOf: (iri: string) => string | null,
+  keyByDefUid: ReadonlyMap<string, string>,
+): string | undefined {
+  const symbolic = symbolicIriToPropertyKey(predicateIri);
+  if (symbolic) return symbolic;
+  const defUid = uidOf(predicateIri);
+  return defUid ? keyByDefUid.get(defUid) : undefined;
+}
+
+/**
  * The union of all IRI forms under which A may appear as a statement's
  * subject/object (R5 dual-IRI):
  *  1. path-form `obsidian://vault/<prefix><path>` via the injected `notePathToIRI`;
