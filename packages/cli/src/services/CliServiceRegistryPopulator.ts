@@ -27,6 +27,7 @@ import {
   createUpdatePropertyService,
   createRemovePropertyService,
   createSetStatusService,
+  createInstantiatePrototypeSubtreeService,
   type IPathResolver,
 } from "@kitelev/exocortex-services";
 
@@ -202,6 +203,7 @@ export {
   createUpdatePropertyService,
   createRemovePropertyService,
   createSetStatusService,
+  createInstantiatePrototypeSubtreeService,
 };
 
 /**
@@ -306,6 +308,17 @@ export function populateCliServiceRegistry(
           deps.vaultAdapter,
           deps.fsAdapter,
           createCliClassResolver(deps.vaultAdapter),
+        ),
+      );
+
+      // Issue #3881 (Gap 3) — one-shot WBS prototype-subtree instantiation.
+      // Needs vaultAdapter (getAllFiles + getFrontmatter for discovery) and
+      // fsAdapter (createFile for the clones); stub remains when fsAdapter absent.
+      registry.register(
+        "instantiatePrototypeSubtree",
+        createInstantiatePrototypeSubtreeService(
+          deps.vaultAdapter,
+          deps.fsAdapter,
         ),
       );
     }
