@@ -6233,6 +6233,27 @@
   color: var(--text-muted);
 }
 
+/* req 838c65d4 — clickable reified statement-link icon in the Asset Relations
+   block. Replaces the former grey `reified · <AS>` text marker: a native lucide
+   `link` glyph (via setIcon) that opens the backing exo__Statement asset. */
+.exocortex-reified-statement-link {
+  margin-left: 0.4em;
+  color: var(--text-muted);
+  cursor: pointer;
+  vertical-align: middle;
+}
+.exocortex-reified-statement-link:hover {
+  color: var(--text-accent);
+}
+.exocortex-reified-statement-link-icon {
+  display: inline-flex;
+  align-items: center;
+}
+.exocortex-reified-statement-link-icon svg {
+  width: 0.9em;
+  height: 0.9em;
+}
+
 /* RFC 93a0b2ee Task 3.1 — property editor Relations section. */
 .property-editor-relations-list {
   list-style: none;
