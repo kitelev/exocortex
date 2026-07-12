@@ -40,6 +40,9 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   KNOWN_CHECK_IDS: new Set<string>(),
   extractAssetReference: jest.fn(),
   readEnabledCheckIds: jest.fn(() => []),
+  // #3800: NodeFsAdapter (pulled via validate-vault → CachingNodeFsAdapter) now
+  // imports this — must be a named export or the mocked-core ESM link fails.
+  parseYamlFrontmatterTolerant: jest.fn(),
 }));
 
 // Mock fs-extra (CacheManager dependency)

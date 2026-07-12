@@ -33,6 +33,11 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   KNOWN_CHECK_IDS: new Set<string>(),
   extractAssetReference: jest.fn(),
   readEnabledCheckIds: jest.fn(() => []),
+  // #3800: NodeFsAdapter (pulled into the graph via validate-vault →
+  // CachingNodeFsAdapter) now imports this — must be a named export or the
+  // mocked-core ESM link fails. Not exercised here (validateFile uses the
+  // regex extractFrontmatter + real js-yaml detectUnparseableFrontmatter).
+  parseYamlFrontmatterTolerant: jest.fn(),
 }));
 
 // Mock fs-extra (CacheManager dependency)
@@ -66,6 +71,7 @@ const {
   uriToKey,
   classifyKeys,
   validateFile,
+  detectUnparseableFrontmatter,
   extractPropertyNameFromURI,
   TripleClassHierarchy,
   labelToOntologyIRI,
@@ -357,6 +363,44 @@ aliases:
         declaredProperties
       );
       expect(violations).toHaveLength(0);
+    });
+
+    // #3800 (c) — surface files a strict YAML parser rejects (dup key) instead
+    // of silently skipping them (previously found only by an external scan).
+    it("should report a duplicated-key (unparseable) frontmatter file", () => {
+      writeFileSync(
+        `${TMP_DIR}/dupkey.md`,
+        `---
+exo__Asset_uid: some-uuid
+exo__Asset_label: A
+exo__Asset_label: B
+---
+# Content`
+      );
+
+      const violations = validateFile(
+        `${TMP_DIR}/dupkey.md`,
+        "dupkey.md",
+        declaredProperties
+      );
+
+      const parseViolation = violations.find(
+        (v) => v.property === "(frontmatter)"
+      );
+      expect(parseViolation).toBeDefined();
+      expect(parseViolation!.reason).toContain("Unparseable YAML frontmatter");
+      expect(parseViolation!.reason).toContain("duplicated mapping key");
+      expect(parseViolation!.reason).toContain("repair-frontmatter");
+    });
+
+    it("detectUnparseableFrontmatter: dup key → reason; clean → null; no-fm → null", () => {
+      expect(
+        detectUnparseableFrontmatter("---\na: 1\na: 2\n---\nbody")
+      ).toContain("duplicated mapping key");
+      expect(
+        detectUnparseableFrontmatter("---\na: 1\nb: 2\n---\nbody")
+      ).toBeNull();
+      expect(detectUnparseableFrontmatter("no frontmatter here")).toBeNull();
     });
 
     it("should report undeclared properties with known prefix", () => {

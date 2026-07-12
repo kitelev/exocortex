@@ -1,9 +1,9 @@
 import { Vault, TFolder } from "obsidian";
-import yaml from "js-yaml";
 import {
   IFileSystemAdapter,
   FileNotFoundError,
   FileAlreadyExistsError,
+  parseYamlFrontmatterTolerant,
 } from "@kitelev/exocortex-core";
 
 export class ObsidianFileSystemAdapter implements IFileSystemAdapter {
@@ -115,14 +115,9 @@ export class ObsidianFileSystemAdapter implements IFileSystemAdapter {
     if (!match) {
       return {};
     }
-    try {
-      const parsed = yaml.load(match[1]);
-      return typeof parsed === "object" && parsed !== null
-        ? (parsed as Record<string, unknown>)
-        : {};
-    } catch {
-      return {};
-    }
+    // #3800: tolerant parse — a duplicated mapping key would otherwise throw
+    // and collapse the asset to `{}` (0 triples → invisible & unrepairable).
+    return parseYamlFrontmatterTolerant(match[1]) ?? {};
   }
 
   private matchesQuery(

@@ -54,6 +54,9 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
       size: 0,
     })),
   },
+  // #3800: NodeFsAdapter (in the graph) now imports this. Not exercised here
+  // (only option registration) → a stub satisfies the ESM named-import binding.
+  parseYamlFrontmatterTolerant: jest.fn(),
 }));
 
 // Mock fs-extra (NodeFsAdapter dependency)
