@@ -3701,6 +3701,36 @@ export class SyncEngine {
             continue;
           }
         }
+        // #3835 phantom-watermark guard: a cross-path remote DELETE whose path
+        // exists NOWHERE currently — not the local asset's own path, not the
+        // local rename base, absent from the local disk, and (being a delete)
+        // absent from the remote head — is a stale watermark base-entry for a
+        // dead tmp/transient path, not a live divergence. It only shares the uid
+        // with the real change (which is grouped alongside it). Grouping it
+        // inflates `remotes` to length ≥2 → the merge layer raises "ambiguous
+        // conflict: local change overlaps N remote changes" and pins the group
+        // to re-derive WITHOUT registering it in `quarantine list` — an
+        // unresolvable loop (every sync re-defers the same phantom). Dropping
+        // it collapses the group to the single real change, which then converges
+        // (keep-local push) or surfaces as a normal single-remote quarantine.
+        // Genuine deletes are unaffected: a delete of the asset's own path
+        // (`r.path === local.path`) or its rename base (`r.path === local.basePath`)
+        // fails the guard, and a delete of a path the local still holds on disk
+        // (`disk.has(r.path)`) is a real delete-vs-keep conflict. The
+        // `headTreeByPath` clause is belt-and-suspenders: a `delete` RemoteChange
+        // already has its path absent from the head tree (`diffTrees` only emits a
+        // delete for a base path missing from head), so it only ever makes the
+        // guard MORE conservative (declines to sweep a still-in-head path).
+        if (
+          r.kind === "delete" &&
+          r.path !== local.path &&
+          r.path !== local.basePath &&
+          !disk.has(r.path) &&
+          headTreeByPath?.has(r.path) !== true
+        ) {
+          consumed.add(r); // phantom base-entry — dead on both sides, not a divergence
+          continue;
+        }
         conflicting.push(r);
         consumed.add(r); // conflicting remote is owned by the merge layer
       }
