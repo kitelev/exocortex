@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useLayoutEffect, useCallback, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { setIcon } from "obsidian";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -111,10 +112,18 @@ export interface AssetRelation {
   displayName?: string;
   /**
    * RFC `93a0b2ee` Task 2 (C2) — the AssetSpace (`exoas-<name>`) the backing
-   * statement asset lives in, for the factual "reified · <AS>" marker text.
-   * `undefined` → a `reified` relation shows a bare "reified".
+   * statement asset lives in. req `838c65d4` — surfaced in the reified
+   * statement-link's tooltip. `undefined` → the tooltip reads a bare "reified".
    */
   assetSpace?: string;
+  /**
+   * req `838c65d4` — the vault path of the backing `exo__Statement` asset for a
+   * `provenance: "reified"` relation (carried through by
+   * `RelationsRenderer.mergeReifiedRelations`, typed in `layout/types.ts`). When
+   * present, {@link renderRow} renders a clickable lucide `link` icon that opens
+   * this statement via `onAssetClick`. `undefined` → no icon (nothing to open).
+   */
+  statementPath?: string;
 }
 
 /**
@@ -171,11 +180,13 @@ export function getRelationSortLabel(relation: AssetRelation): string {
  *
  * Returns `"reified · <AS>"` (or a bare `"reified"` when the AssetSpace is not
  * derivable) for a relation backed by an `exo__Statement` asset; `null` for an
- * inline relation (the default — no marker). The marker is purely FACTUAL: it
- * states WHERE the backing statement lives, NEVER a privacy promise. Privacy
- * depends on whether that AssetSpace is shared, which is not a queryable RDF
- * fact (RFC §C2 decision H; `exo__AssetSpace_visibility` is an out-of-MVP
- * follow-up). Honest-marker metric: 0 unverifiable statements.
+ * inline relation (the default). req `838c65d4` — the former inline TEXT marker
+ * was replaced by a clickable {@link ReifiedStatementLink} icon; this helper now
+ * feeds that icon's factual tooltip (via {@link reifiedStatementTooltip}). It
+ * remains purely FACTUAL: it states WHERE the backing statement lives, NEVER a
+ * privacy promise. Privacy depends on whether that AssetSpace is shared, which
+ * is not a queryable RDF fact (RFC §C2 decision H; `exo__AssetSpace_visibility`
+ * is an out-of-MVP follow-up). Honest-marker metric: 0 unverifiable statements.
  */
 export function reifiedMarkerText(relation: AssetRelation): string | null {
   if (relation.provenance !== "reified") return null;
@@ -184,29 +195,79 @@ export function reifiedMarkerText(relation: AssetRelation): string | null {
 }
 
 /**
- * RFC `93a0b2ee` Task 2 (C2) — the accessible/title explanation of the marker.
- * Factual only (no privacy promise). Used for `title` (desktop hover) and
- * `aria-label`; the persistent on-screen explanation is {@link ReifiedLegend}
- * (the mobile/tap channel — hover is unavailable there).
+ * req `838c65d4` — the factual hover/aria tooltip for the reified statement-link
+ * icon. Combines an "open the statement" hint with {@link reifiedMarkerText} so
+ * the AssetSpace (`reified · <AS>`) is preserved on hover. Factual only — no
+ * privacy promise (decision H). `null` for a non-reified relation.
  */
-function reifiedMarkerExplanation(relation: AssetRelation): string {
-  const where = relation.assetSpace?.trim()
-    ? `в AssetSpace ${relation.assetSpace.trim()}`
-    : "в отдельном statement-ассете";
-  return `Связь вынесена ${where} (фактически — где лежит statement). Приватность зависит от того, шарится ли этот AssetSpace.`;
+export function reifiedStatementTooltip(relation: AssetRelation): string | null {
+  const marker = reifiedMarkerText(relation);
+  if (marker === null) return null;
+  return `Открыть связь · ${marker}`;
 }
 
 /**
- * RFC `93a0b2ee` Task 2 (C2) — persistent explanation of the `reified · <AS>`
- * marker, rendered below the table whenever a reified relation is present.
- * Persistent (always visible — NOT hover-only) so the marker is explained on
- * mobile where hover is unavailable. Factual only — no privacy promise.
+ * req `838c65d4` — a clickable lucide `link` icon opening the backing
+ * `exo__Statement` asset of a reified relation. Rendered in the name cell in
+ * place of the former grey `reified · <AS>` text marker. The Obsidian
+ * `setIcon(host, "link")` helper writes the bundled lucide SVG into the icon
+ * host from a `useEffect` (cleanup empties the host before unmount / StrictMode
+ * re-render) — the React/Obsidian boundary is explicit: Obsidian mutates the
+ * DOM, React owns the container ref. Click opens the statement via the SAME
+ * `onAssetClick` handler used for asset links (current pane; Cmd/Ctrl-click →
+ * new pane, resolved upstream in `RelationsRenderer`).
+ */
+const ReifiedStatementLink: React.FC<{
+  statementPath: string;
+  tooltip: string;
+  onAssetClick?: (path: string, event: React.MouseEvent) => void;
+}> = ({ statementPath, tooltip, onAssetClick }) => {
+  const iconRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    const host = iconRef.current;
+    if (host === null) return;
+    setIcon(host, "link");
+    return () => {
+      while (host.firstChild) host.removeChild(host.firstChild);
+    };
+  }, []);
+
+  return (
+    <a
+      className="exocortex-reified-statement-link"
+      data-href={statementPath}
+      title={tooltip}
+      aria-label={tooltip}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onAssetClick?.(statementPath, e);
+      }}
+      style={{ cursor: "pointer" }}
+    >
+      <span
+        ref={iconRef}
+        className="exocortex-reified-statement-link-icon"
+        aria-hidden="true"
+      />
+    </a>
+  );
+};
+
+/**
+ * req `838c65d4` — persistent explanation of the reified statement-link icon,
+ * rendered below the table whenever a reified relation WITH a statement path is
+ * present (i.e. whenever ≥1 icon is shown). Persistent (always visible — NOT
+ * hover-only) so the icon is explained on mobile where hover is unavailable.
+ * Factual only — states WHERE the statement lives, no privacy promise.
  */
 const ReifiedLegend: React.FC = () => (
   <p className="exocortex-reified-legend" role="note">
-    «reified · &lt;AS&gt;» — связь вынесена в statement-ассет в этом AssetSpace
-    (фактически, где лежит). Приватность зависит от того, шарится ли этот
-    AssetSpace.
+    Иконка-ссылка рядом со связью открывает statement-ассет, в который вынесена
+    реифицированная связь; AssetSpace, где он лежит, показан во всплывающей
+    подсказке (фактически — где лежит statement). Приватность зависит от того,
+    шарится ли этот AssetSpace.
   </p>
 );
 
@@ -587,17 +648,23 @@ const SingleTable: React.FC<SingleTableProps> = ({
             {getDisplayLabel(relation)}
           </a>
           {(() => {
-            const marker = reifiedMarkerText(relation);
-            if (!marker) return null;
-            const explanation = reifiedMarkerExplanation(relation);
+            // req `838c65d4` — a clickable lucide `link` icon (opens the backing
+            // exo__Statement) replaces the former grey `reified · <AS>` text
+            // marker. Rendered ONLY for a reified relation WITH a resolvable
+            // statementPath (nothing to open otherwise); the AssetSpace moves
+            // into the icon tooltip. Keys strictly off provenance + statementPath
+            // so inline/legacy rows never get an icon.
+            if (relation.provenance !== "reified" || !relation.statementPath) {
+              return null;
+            }
+            const tooltip = reifiedStatementTooltip(relation);
+            if (tooltip === null) return null;
             return (
-              <span
-                className="exocortex-reified-marker"
-                title={explanation}
-                aria-label={explanation}
-              >
-                {marker}
-              </span>
+              <ReifiedStatementLink
+                statementPath={relation.statementPath}
+                tooltip={tooltip}
+                onAssetClick={onAssetClick}
+              />
             );
           })()}
         </td>
@@ -793,10 +860,14 @@ export const AssetRelationsTable: React.FC<AssetRelationsTableProps> = ({
     </button>
   ) : null;
 
-  // RFC `93a0b2ee` Task 2 (C2) — show the persistent reified-marker legend iff
-  // at least one rendered relation is reified (mobile-safe explanation channel).
+  // req `838c65d4` — show the persistent icon-link legend iff ≥1 icon is
+  // rendered, i.e. a reified relation WITH a resolvable statementPath
+  // (mobile-safe explanation channel; RFC 93a0b2ee C2→C3).
   const hasReified = useMemo(
-    () => relations.some((r) => r.provenance === "reified"),
+    () =>
+      relations.some(
+        (r) => r.provenance === "reified" && Boolean(r.statementPath),
+      ),
     [relations],
   );
 
