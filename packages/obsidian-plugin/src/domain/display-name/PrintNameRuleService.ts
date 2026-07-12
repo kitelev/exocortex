@@ -74,6 +74,19 @@ export interface PrintNameRule {
   matcher?: DisplayNameMatcher;
 }
 
+/**
+ * A single participating spec exposed to the DisplayNameResolver for PREFIX COMPOSITION
+ * (req 1a550210): its compiled template, its priority (the vault-declared compose-order field),
+ * and the spec UID it came from (sourceFile) so the resolver can de-duplicate a spec that applies
+ * to several of the note's classes. This is the multi-rule sibling of getTemplateForClass's single
+ * `{ template, priority }` — the resolver composes a LIST of these instead of picking one.
+ */
+export interface ParticipatingRule {
+  template: string;
+  priority: number;
+  sourceFile: string;
+}
+
 type MetadataResolver = (wikilinkTarget: string) => Record<string, unknown> | null;
 
 // --- exo__DisplayNameSpec (structured-RDF displayName specs, v1 thin) ---
@@ -154,11 +167,35 @@ export class PrintNameRuleService {
   }
 
   /**
-   * Pick the highest-priority PARTICIPATING rule from a priority-sorted list. A rule
-   * participates if it is unconditional (no matcher) OR its matcher is satisfied by the
-   * instance metadata. A matched conditional rule beats an unconditional one purely by
-   * priority (the list is already sorted descending), so a conditional spec authored with
-   * a higher priority wins over the fallback; an unmatched conditional is skipped.
+   * Return ALL participating rules for a class — the list the DisplayNameResolver composes into a
+   * multi-prefix displayName (PREFIX COMPOSITION, req 1a550210). Mirrors getTemplateForClass's
+   * direct-shadows-ancestor precedence: if ANY direct rule participates, EVERY participating direct
+   * rule is returned (priority-DESC, already sorted); otherwise the participating rules of the first
+   * ancestor level that has any. Each entry carries its spec sourceFile so the resolver can de-dup a
+   * spec that applies to several of the note's classes. Empty when no rule participates (the resolver
+   * then falls back to classTemplates / the default label). getTemplateForClass (single winner) is
+   * retained for direct callers and byte-identical to `getParticipatingRules(...)[0]`.
+   */
+  getParticipatingRules(
+    className: string,
+    metadata?: Record<string, unknown>,
+  ): ParticipatingRule[] {
+    if (!this.initialized) return [];
+
+    const direct = this.participatingOf(this.rules.get(className), metadata);
+    if (direct.length > 0) return direct;
+
+    for (const ancestor of this.getAncestorClasses(className)) {
+      const inherited = this.participatingOf(this.rules.get(ancestor), metadata);
+      if (inherited.length > 0) return inherited;
+    }
+    return [];
+  }
+
+  /**
+   * Pick the highest-priority PARTICIPATING rule from a priority-sorted list — the single-winner
+   * accessor still used by getTemplateForClass and direct tests. A rule participates if it is
+   * unconditional (no matcher) OR its matcher is satisfied by the instance metadata (ruleParticipates).
    */
   private selectRule(
     rules: PrintNameRule[] | undefined,
@@ -166,10 +203,42 @@ export class PrintNameRuleService {
   ): PrintNameRule | null {
     if (!rules || rules.length === 0) return null;
     for (const rule of rules) {
-      if (!rule.matcher) return rule; // unconditional — always participates
-      if (metadata && this.matcherSatisfied(rule.matcher, metadata)) return rule;
+      if (this.ruleParticipates(rule, metadata)) return rule;
     }
     return null;
+  }
+
+  /** Every participating rule from a (priority-sorted) list — the multi-rule sibling of selectRule. */
+  private participatingOf(
+    rules: PrintNameRule[] | undefined,
+    metadata?: Record<string, unknown>,
+  ): ParticipatingRule[] {
+    if (!rules || rules.length === 0) return [];
+    const out: ParticipatingRule[] = [];
+    for (const rule of rules) {
+      if (this.ruleParticipates(rule, metadata)) {
+        out.push({
+          template: rule.template,
+          priority: rule.priority,
+          sourceFile: rule.sourceFile,
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * True when a rule participates in selection: unconditional (no matcher — v1 path, always
+   * participates) OR its matcher is satisfied by the rendered instance metadata (per-render). When
+   * `metadata` is omitted a conditional rule cannot be tested, so it is skipped.
+   */
+  private ruleParticipates(
+    rule: PrintNameRule,
+    metadata?: Record<string, unknown>,
+  ): boolean {
+    if (!rule.matcher) return true;
+    if (!metadata) return false; // conditional rule but no instance to test → skipped
+    return this.matcherSatisfied(rule.matcher, metadata);
   }
 
   /**

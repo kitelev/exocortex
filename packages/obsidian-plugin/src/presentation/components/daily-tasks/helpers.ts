@@ -126,29 +126,28 @@ export const formatTimeEstimate = (minutes: number | null | undefined): string =
 /**
  * Compose the DailyNote task-cell label.
  *
- * The status/class prefix (\uD83D\uDD04 Doing, \u2705 Done, \u274C Trashed, \uD83D\uDC65 Meeting) is HOMOICONIC \u2014 it is
- * carried by `task.displayName`, resolved by DailyTasksRenderer through the vault
- * `exo__DisplayNameSpec` system (single source of truth, same as native Obsidian links). This
- * helper no longer re-implements a hardcoded emoji map (Issue: req a577316f).
+ * EVERY prefix marker (\uD83D\uDD04 Doing, \u2705 Done, \u274C Trashed, \uD83D\uDC65 Meeting, AND \uD83D\uDEA9 blocked) is now
+ * HOMOICONIC \u2014 it is carried by `task.displayName`, resolved by DailyTasksRenderer through the vault
+ * `exo__DisplayNameSpec` system (single source of truth, same as native Obsidian links). The \uD83D\uDEA9
+ * blocked marker used to be RE-ADDED renderer-side here (`blockerIcon`) because the resolver picked a
+ * single winning template and could not COMPOSE \uD83D\uDEA9 with the status prefix; with prefix composition
+ * (req 1a550210) the resolver emits "\uD83D\uDEA9 \uD83D\uDD04 <label>" itself, on ALL surfaces, so that residual is
+ * REMOVED (removing it also closes the double-\uD83D\uDEA9 window it caused once the live \uD83D\uDEA9 spec ships). This
+ * helper no longer re-implements ANY hardcoded emoji \u2014 all prefixes come from vault data (req a577316f).
  *
- * The \uD83D\uDEA9 blocked marker is RETAINED renderer-side: it is a computed predicate over the
- * referenced blocker asset's status, which the current single-value exo__DisplayNameSpec
- * matcher cannot express \u2014 tracked as a separate engine-extension follow-up.
- *
- * When `task.displayName` is unavailable (empty slots, or no printNameRuleService in tests)
- * the old label path is used: a custom `getAssetLabel(path)` wins over `task.label`.
+ * When `task.displayName` is unavailable (empty slots, or no printNameRuleService in tests) the old
+ * label path is used: a custom `getAssetLabel(path)` wins over `task.label` \u2014 with no prefix (there
+ * is no resolver to supply the homoiconic markers, consistent with how \uD83D\uDD04/\u2705 also vanish then).
  */
 export const getDisplayName = (
   task: DailyTask,
   getAssetLabel?: (path: string) => string | null,
 ): string => {
-  const blockerIcon = task.isBlocked ? "\uD83D\uDEA9 " : "";
-
   if (task.displayName != null && task.displayName !== "") {
-    return blockerIcon + task.displayName;
+    return task.displayName;
   }
 
-  // Fallback: no resolver-driven name \u2192 old label path (no status/class prefix).
+  // Fallback: no resolver-driven name \u2192 old label path (no homoiconic prefixes).
   let displayText = task.label || task.title;
 
   if (typeof getAssetLabel === "function") {
@@ -162,7 +161,7 @@ export const getDisplayName = (
     }
   }
 
-  return blockerIcon + displayText;
+  return displayText;
 };
 
 export const getEffortAreaDisplayText = (
