@@ -254,7 +254,7 @@ export function createLayoutBlockFromFrontmatter(
     );
     if (partition === null) {
       warn(
-        `DailyEffortsByClassBlock ${base.uid}: exo__DailyEffortsByClassBlock_partition must be one of actions|tasks|projects (${options.sourcePath})`,
+        `DailyEffortsByClassBlock ${base.uid}: exo__DailyEffortsByClassBlock_partition must be one of actions|tasks|projects|closed (${options.sourcePath})`,
       );
       return null;
     }
