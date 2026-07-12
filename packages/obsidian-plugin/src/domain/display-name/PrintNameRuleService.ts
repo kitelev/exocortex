@@ -268,14 +268,17 @@ export class PrintNameRuleService {
   }
 
   /**
-   * Resolve exo__DisplayNameSpec_matchValue into ALL identity forms of the single
-   * accepted value — the raw wikilink form(s) PLUS, via one compile-time second hop, the
-   * referenced asset's UID and label. This closes the dual-IRI gap fully: a matchValue
-   * authored UID-canon `[[<uid>]]` still matches an instance whose value is stored as the
-   * bare label `[[<label>]]` (and vice versa), because both the UID and the label end up
-   * in the accepted set. The hop runs once per spec at scanVault — no per-render cost.
+   * Resolve a wikilink-valued field into ALL identity forms of the referenced asset — the
+   * raw wikilink form(s) via extractClassKeys PLUS, via one compile-time second hop, the
+   * referenced asset's exo__Asset_uid AND exo__Asset_label. This closes the dual-IRI gap
+   * fully: a field authored UID-canon `[[<uid>]]` still matches a value stored as the bare
+   * label `[[<label>]]` (and vice versa), because both the UID and the label end up in the
+   * set. Used symmetrically for BOTH exo__DisplayNameSpec_matchValue (an enum value) AND
+   * exo__DisplayNameSpec_appliesToClass (a class) — see resolveMatchValues + the
+   * appliesToClass registration in collectDisplayNameSpec (#3838 part 2). The hop runs once
+   * per spec at scanVault — no per-render cost (the existing docstring promise).
    */
-  private resolveMatchValues(value: unknown): string[] {
+  private resolveIdentityForms(value: unknown): string[] {
     const raw = this.extractClassKeys(value);
     if (raw.length === 0) return [];
     const forms = new Set<string>(raw);
@@ -291,6 +294,14 @@ export class PrintNameRuleService {
       if (typeof label === "string" && label.trim()) forms.add(label.trim());
     }
     return [...forms];
+  }
+
+  /**
+   * Resolve exo__DisplayNameSpec_matchValue into ALL identity forms of the single accepted
+   * value (the shared dual-IRI second hop — see resolveIdentityForms).
+   */
+  private resolveMatchValues(value: unknown): string[] {
+    return this.resolveIdentityForms(value);
   }
 
   /**
@@ -396,7 +407,12 @@ export class PrintNameRuleService {
     const uid = typeof fm.exo__Asset_uid === "string" ? fm.exo__Asset_uid.trim() : "";
     if (!uid) return;
 
-    const classKeys = this.extractClassKeys(fm.exo__DisplayNameSpec_appliesToClass);
+    // appliesToClass second-hop symmetry (#3838 part 2): resolveIdentityForms (not the raw
+    // extractClassKeys) so a spec authored bare-UID `[[<uid>]]` or bare-label `[[<label>]]`
+    // still registers under BOTH the class UID AND its label — closing the same dual-IRI gap
+    // matchValue already closed. Byte-identical for shipped specs (all author `[[uid|label]]`,
+    // which extractClassKeys already expands to both forms — the hop adds nothing for them).
+    const classKeys = this.resolveIdentityForms(fm.exo__DisplayNameSpec_appliesToClass);
     if (classKeys.length === 0) return;
 
     const rawPriority = fm.exo__DisplayNameSpec_priority;

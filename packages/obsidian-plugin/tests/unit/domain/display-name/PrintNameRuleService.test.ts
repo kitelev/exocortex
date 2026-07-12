@@ -923,3 +923,278 @@ describe("PrintNameRuleService — host-function exo__DisplayNameSpec (v2 comput
     ).toBe("PROJECT");
   });
 });
+
+describe("PrintNameRuleService — full-homoiconic seed removal (#3838 part 3)", () => {
+  const TASK_PROTO_UID = "df7e579d-02d4-4f3a-971f-3d1d785b689b";
+  const LABEL_PROP_UID = "12a6151b-801f-4be2-bd6e-a787eedd56ae";
+  const SPEC_UID = "e20fda38-shaped-taskproto-spec";
+
+  // Production-shape vault mirroring the SHIPPED unconditional TaskPrototype spec
+  // (e20fda38 on kitelev/exoas-exo): appliesToClass=ems__TaskPrototype, priority 100,
+  // UNCONDITIONAL → PrintedProperty(label) order 1 + PrintedLiteral(" (TaskPrototype)") order 2.
+  function taskProtoSpecFiles(): Array<{ path: string; frontmatter: Record<string, unknown> }> {
+    return [
+      {
+        path: `${SPEC_UID}.md`,
+        frontmatter: {
+          exo__Asset_uid: SPEC_UID,
+          exo__Instance_class: ["[[07eab746-0874-4676-9d98-dbaad1bc6fb8|exo__DisplayNameSpec]]"],
+          exo__DisplayNameSpec_appliesToClass: `[[${TASK_PROTO_UID}|ems__TaskPrototype]]`,
+          exo__DisplayNameSpec_priority: 100,
+        },
+      },
+      {
+        path: "e20-prop.md",
+        frontmatter: {
+          exo__Asset_uid: "e20-prop",
+          exo__Instance_class: ["[[7d58de40-d941-4a66-88e2-13afc4fdc41d|exo__PrintedProperty]]"],
+          exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+          exo__DisplayNamePart_order: 1,
+          exo__PrintedProperty_property: `[[${LABEL_PROP_UID}|exo__Asset_label]]`,
+        },
+      },
+      {
+        path: "e20-literal.md",
+        frontmatter: {
+          exo__Asset_uid: "e20-literal",
+          exo__Instance_class: ["[[4d5437c9-788e-4a6d-9be0-4af3a84554f4|exo__PrintedLiteral]]"],
+          exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+          exo__DisplayNamePart_order: 2,
+          exo__PrintedLiteral_literal: " (TaskPrototype)",
+        },
+      },
+    ];
+  }
+
+  it("the vault spec (not a TS classTemplate seed) provides the TaskPrototype suffix with EMPTY classTemplates", () => {
+    // GREEN: the shipped-shape spec is present in the vault → an ems__TaskPrototype instance
+    // gets " (TaskPrototype)" through the real scanVault→compile→resolve pipeline, with the TS
+    // classTemplates seeds REMOVED (classTemplates: {}). This proves the suffix is vault-sourced.
+    const app = createMockApp(taskProtoSpecFiles());
+    const service = new PrintNameRuleService(app);
+    service.initialize();
+
+    const resolver = new DisplayNameResolver(
+      { defaultTemplate: "{{exo__Asset_label}}", classTemplates: {} },
+      service,
+    );
+    // prototype keyed by the REAL class UID (how real instances reference exo__Instance_class)
+    expect(
+      resolver.resolve({
+        metadata: {
+          exo__Instance_class: [`[[${TASK_PROTO_UID}]]`],
+          exo__Asset_label: "Measure HRV",
+        },
+        basename: TASK_PROTO_UID,
+      }),
+    ).toBe("Measure HRV (TaskPrototype)");
+  });
+
+  it("REVERT-VERIFY: without the vault spec, the same prototype instance falls to the plain label (proves the spec — not a seed — drives the suffix)", () => {
+    // RED direction executable: remove the exo__DisplayNameSpec from the fixture vault → the
+    // service finds no rule → the resolver falls to the (empty) classTemplates → defaultTemplate
+    // → plain label. If a TS classTemplate seed still existed, this would STILL be suffixed.
+    const app = createMockApp([]); // no spec in the vault
+    const service = new PrintNameRuleService(app);
+    service.initialize();
+
+    const resolver = new DisplayNameResolver(
+      { defaultTemplate: "{{exo__Asset_label}}", classTemplates: {} },
+      service,
+    );
+    expect(
+      resolver.resolve({
+        metadata: {
+          exo__Instance_class: [`[[${TASK_PROTO_UID}]]`],
+          exo__Asset_label: "Measure HRV",
+        },
+        basename: TASK_PROTO_UID,
+      }),
+    ).toBe("Measure HRV");
+  });
+
+  it("no regression: EMPTY classTemplates leaves a plain non-prototype class at the plain label", () => {
+    // A class with NO spec + empty classTemplates → plain label (unchanged from the seeded world,
+    // where the pure-label classes had already been dropped as byte-identical to the default).
+    const app = createMockApp(taskProtoSpecFiles());
+    const service = new PrintNameRuleService(app);
+    service.initialize();
+
+    const resolver = new DisplayNameResolver(
+      { defaultTemplate: "{{exo__Asset_label}}", classTemplates: {} },
+      service,
+    );
+    expect(
+      resolver.resolve({
+        metadata: {
+          exo__Instance_class: ["[[ems__Task]]"],
+          exo__Asset_label: "Fix bug",
+        },
+        basename: "fix-bug",
+      }),
+    ).toBe("Fix bug");
+  });
+});
+
+describe("PrintNameRuleService — appliesToClass second-hop symmetry (#3838 part 2)", () => {
+  const TASK_PROTO_UID = "df7e579d-02d4-4f3a-971f-3d1d785b689b";
+  const LABEL_PROP_UID = "12a6151b-801f-4be2-bd6e-a787eedd56ae";
+  const SPEC_UID = "bare-uid-appliesto-spec";
+
+  // A spec authored appliesToClass in the UID-canon strip-alias form `[[<uid>]]` (NO alias),
+  // plus the TaskPrototype CLASS asset (so the compile-time second hop can read its uid + label),
+  // plus its two ordered parts. With the second-hop symmetry (resolveIdentityForms), the spec
+  // registers under BOTH df7e579d AND ems__TaskPrototype.
+  function bareUidAppliesToFiles(
+    opts: { includeClassAsset?: boolean } = { includeClassAsset: true },
+  ): Array<{ path: string; frontmatter: Record<string, unknown> }> {
+    const files: Array<{ path: string; frontmatter: Record<string, unknown> }> = [];
+    if (opts.includeClassAsset) {
+      files.push({
+        // the class def asset — second hop reads its exo__Asset_uid + exo__Asset_label
+        path: `${TASK_PROTO_UID}.md`,
+        frontmatter: {
+          exo__Asset_uid: TASK_PROTO_UID,
+          exo__Instance_class: ["[[8619c4fc-64f1-4869-b17e-e34186cacca9|exo__Class]]"],
+          exo__Asset_label: "ems__TaskPrototype",
+        },
+      });
+    }
+    files.push(
+      {
+        path: `${SPEC_UID}.md`,
+        frontmatter: {
+          exo__Asset_uid: SPEC_UID,
+          exo__Instance_class: ["[[07eab746-0874-4676-9d98-dbaad1bc6fb8|exo__DisplayNameSpec]]"],
+          // BARE UID — no `|label` alias. Without the second hop only df7e579d is indexed.
+          exo__DisplayNameSpec_appliesToClass: `[[${TASK_PROTO_UID}]]`,
+          exo__DisplayNameSpec_priority: 100,
+        },
+      },
+      {
+        path: "p2-prop.md",
+        frontmatter: {
+          exo__Asset_uid: "p2-prop",
+          exo__Instance_class: ["[[7d58de40-d941-4a66-88e2-13afc4fdc41d|exo__PrintedProperty]]"],
+          exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+          exo__DisplayNamePart_order: 1,
+          exo__PrintedProperty_property: `[[${LABEL_PROP_UID}|exo__Asset_label]]`,
+        },
+      },
+      {
+        path: "p2-literal.md",
+        frontmatter: {
+          exo__Asset_uid: "p2-literal",
+          exo__Instance_class: ["[[4d5437c9-788e-4a6d-9be0-4af3a84554f4|exo__PrintedLiteral]]"],
+          exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+          exo__DisplayNamePart_order: 2,
+          exo__PrintedLiteral_literal: " (TaskPrototype)",
+        },
+      },
+    );
+    return files;
+  }
+
+  it("a bare-UID-authored appliesToClass matches a LABEL-keyed instance via the second hop", () => {
+    // GREEN: appliesToClass `[[df7e579d]]` (bare UID) + the class asset present → the second hop
+    // reads the class asset's exo__Asset_label (ems__TaskPrototype) and registers the spec under
+    // BOTH df7e579d AND ems__TaskPrototype. An instance keying exo__Instance_class by the LABEL
+    // form `[[ems__TaskPrototype]]` therefore matches and gets the suffix.
+    const app = createMockApp(bareUidAppliesToFiles());
+    const service = new PrintNameRuleService(app);
+    service.initialize();
+
+    // registered under BOTH forms:
+    expect(service.getTemplateForClass(TASK_PROTO_UID)!.template).toBe(
+      "{{exo__Asset_label}} (TaskPrototype)",
+    );
+    expect(service.getTemplateForClass("ems__TaskPrototype")!.template).toBe(
+      "{{exo__Asset_label}} (TaskPrototype)",
+    );
+
+    const resolver = new DisplayNameResolver(
+      { defaultTemplate: "{{exo__Asset_label}}", classTemplates: {} },
+      service,
+    );
+    // instance keyed by the LABEL form (the form NOT literally present in appliesToClass).
+    expect(
+      resolver.resolve({
+        metadata: {
+          exo__Instance_class: ["[[ems__TaskPrototype]]"],
+          exo__Asset_label: "Morning routine",
+        },
+        basename: "morning-routine",
+      }),
+    ).toBe("Morning routine (TaskPrototype)");
+    // and the UID form still matches (both indexed).
+    expect(
+      resolver.resolve({
+        metadata: {
+          exo__Instance_class: [`[[${TASK_PROTO_UID}]]`],
+          exo__Asset_label: "Morning routine",
+        },
+        basename: "morning-routine",
+      }),
+    ).toBe("Morning routine (TaskPrototype)");
+  });
+
+  it("REVERT-VERIFY (data control): without the class asset the second hop finds no label → the LABEL-keyed instance does NOT match", () => {
+    // The second hop DEPENDS on reading the referenced class asset's label. Remove the class
+    // asset → resolveIdentityForms('[[df7e579d]]') yields only df7e579d → the LABEL-keyed
+    // instance falls through to the plain label. (This is also exactly the behaviour the OLD
+    // plain-extractClassKeys code produced for a bare-UID appliesToClass — a functional RED.)
+    const app = createMockApp(bareUidAppliesToFiles({ includeClassAsset: false }));
+    const service = new PrintNameRuleService(app);
+    service.initialize();
+
+    // only the bare UID is indexed now:
+    expect(service.getTemplateForClass(TASK_PROTO_UID)!.template).toBe(
+      "{{exo__Asset_label}} (TaskPrototype)",
+    );
+    expect(service.getTemplateForClass("ems__TaskPrototype")).toBeNull();
+
+    const resolver = new DisplayNameResolver(
+      { defaultTemplate: "{{exo__Asset_label}}", classTemplates: {} },
+      service,
+    );
+    expect(
+      resolver.resolve({
+        metadata: {
+          exo__Instance_class: ["[[ems__TaskPrototype]]"],
+          exo__Asset_label: "Morning routine",
+        },
+        basename: "morning-routine",
+      }),
+    ).toBe("Morning routine");
+  });
+
+  it("byte-identical for shipped alias-form appliesToClass — `[[uid|label]]` still registers under both forms (the hop adds nothing)", () => {
+    // The shipped specs author appliesToClass `[[uid|label]]`; extractClassKeys already returns
+    // both forms, so resolveIdentityForms is a no-op superset → no behavioural change for them.
+    const app = createMockApp([
+      {
+        path: `${SPEC_UID}.md`,
+        frontmatter: {
+          exo__Asset_uid: SPEC_UID,
+          exo__Instance_class: ["[[07eab746-0874-4676-9d98-dbaad1bc6fb8|exo__DisplayNameSpec]]"],
+          exo__DisplayNameSpec_appliesToClass: `[[${TASK_PROTO_UID}|ems__TaskPrototype]]`,
+          exo__DisplayNameSpec_priority: 100,
+        },
+      },
+      {
+        path: "p2-literal.md",
+        frontmatter: {
+          exo__Asset_uid: "p2-literal",
+          exo__Instance_class: ["[[4d5437c9-788e-4a6d-9be0-4af3a84554f4|exo__PrintedLiteral]]"],
+          exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+          exo__DisplayNamePart_order: 1,
+          exo__PrintedLiteral_literal: "PROTO",
+        },
+      },
+    ]);
+    const service = new PrintNameRuleService(app);
+    service.initialize();
+    expect(service.getTemplateForClass(TASK_PROTO_UID)!.template).toBe("PROTO");
+    expect(service.getTemplateForClass("ems__TaskPrototype")!.template).toBe("PROTO");
+  });
+});

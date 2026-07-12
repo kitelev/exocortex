@@ -12,30 +12,28 @@ export interface DisplayNameSettings {
 /**
  * Default display name configuration
  *
- * The defaultTemplate applies to ALL asset types not explicitly listed in classTemplates.
- * Shows only the label — classes that need a suffix (e.g. TaskPrototype) have explicit entries.
+ * FULL HOMOICONIC (#3838 part 3): classTemplates is EMPTY. Every per-class displayName
+ * (the TaskPrototype/MeetingPrototype suffixes, the status/blocked prefixes, the DailyNote
+ * basename) is now sourced ENTIRELY from vault exo__DisplayNameSpec assets read by
+ * PrintNameRuleService (PMBOK project 47d57acf, req b4ee3caa) — no TS cold-start seed.
+ *
+ * Why the seeds were removable (orchestrator-verified via the live 8-surface Phase-6 smoke
+ * on v16.183.0 + revert-verified tests): vault specs already WIN over any classTemplate
+ * (compileDisplayNameSpecs registers them as HIGH-priority PrintNameRules), so the seeds were
+ * dead-overridden once the vault scanned. Coverage lives in the vault — the unconditional
+ * TaskPrototype spec e20fda38 and the MeetingPrototype spec d7bdca33 render the " (…Prototype)"
+ * suffix; the pn__DailyNote seed was already DEAD (real DailyNotes key exo__Instance_class by
+ * the bare UID [[b04e7a3e]], never the label pn__DailyNote — dn-2110 sweep). The only remaining
+ * difference is a brief cold-start window before the vault scan — identical eventual-consistency
+ * to the status emojis, which are also vault-served and already re-render on store-settle. No
+ * steady-state user-visible change.
+ *
+ * `defaultTemplate` is the base fallback (a plain label), NOT a homoiconic seed — kept.
  */
 export const DEFAULT_DISPLAY_NAME_SETTINGS: DisplayNameSettings = {
   defaultTemplate: "{{exo__Asset_label}}",
 
-  classTemplates: {
-    // Suffix classes: the homoiconic source is the vault exo__DisplayNameSpec
-    // (PMBOK project 47d57acf, req b4ee3caa) read by PrintNameRuleService; these TS
-    // entries are the cold-start SEED that prevents a raw→suffixed flicker before the
-    // vault specs index. Keyed by BOTH the class UID (real instances reference
-    // exo__Instance_class as `[[<class-uid>]]`) AND the label form. Adding the real
-    // class UIDs (df7e579d / 7ab483c7) fixes a pre-existing gap where UID-keyed
-    // prototype instances rendered with no suffix (only label/instance-UID keys matched).
-    ems__TaskPrototype: "{{exo__Asset_label}} (TaskPrototype)",
-    "df7e579d-02d4-4f3a-971f-3d1d785b689b": "{{exo__Asset_label}} (TaskPrototype)",
-    ems__MeetingPrototype: "{{exo__Asset_label}} (MeetingPrototype)",
-    "7ab483c7-aafc-4ac8-8aca-0de52db34a93": "{{exo__Asset_label}} (MeetingPrototype)",
-    // DailyNote uses the basename (date) as its display name since it typically doesn't have a label
-    pn__DailyNote: "{{_basename}}",
-    // Pure-label classes (Task/Project/Area/Meeting) removed — they equalled defaultTemplate
-    // ("{{exo__Asset_label}}") so they now fall through to it unchanged (byte-identical).
-    // The buggy instance-UID key 75302770 (Issue #2110) is dropped — no asset references it.
-  },
+  classTemplates: {},
 };
 
 /**

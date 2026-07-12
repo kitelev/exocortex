@@ -295,28 +295,36 @@ describe("DisplayNameResolver", () => {
       expect(DEFAULT_DISPLAY_NAME_SETTINGS.defaultTemplate).toBe("{{exo__Asset_label}}");
     });
 
-    it("has explicit templates only for suffix classes (label + real class UID) + DailyNote; pure-label classes use the default", () => {
-      // Suffix classes — cold-start seed keyed by BOTH label AND real class UID (req b4ee3caa, #2110).
-      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__TaskPrototype"]).toBeDefined();
+    it("full homoiconic (#3838 part 3): classTemplates is EMPTY — every per-class displayName is vault-sourced", () => {
+      // The TS cold-start seeds were removed: the suffixes/prefixes/basename now come ENTIRELY
+      // from vault exo__DisplayNameSpec assets (see PrintNameRuleService.test.ts revert-verify),
+      // which already win over any classTemplate once the vault scans.
+      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates).toEqual({});
+      // The removed prototype seeds (label AND real class UID forms) are gone.
+      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__TaskPrototype"]).toBeUndefined();
       expect(
         DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["df7e579d-02d4-4f3a-971f-3d1d785b689b"],
-      ).toBeDefined();
-      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__MeetingPrototype"]).toBeDefined();
+      ).toBeUndefined();
+      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__MeetingPrototype"]).toBeUndefined();
       expect(
         DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["7ab483c7-aafc-4ac8-8aca-0de52db34a93"],
-      ).toBeDefined();
-      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["pn__DailyNote"]).toBeDefined();
-      // Pure-label classes equalled the default template → removed (they fall through unchanged).
+      ).toBeUndefined();
+      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["pn__DailyNote"]).toBeUndefined();
+      // Pure-label classes were already absent (they equalled the default template).
       expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__Task"]).toBeUndefined();
       expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__Project"]).toBeUndefined();
       expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__Area"]).toBeUndefined();
       expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__Meeting"]).toBeUndefined();
     });
 
-    it("should work correctly with resolver", () => {
+    it("with EMPTY classTemplates (no ruleService) every class falls to the plain label — the suffix now comes from the vault, not a TS seed", () => {
+      // #3838 part 3: with the cold-start seeds removed AND no PrintNameRuleService wired,
+      // a prototype instance resolves to the plain label — the " (TaskPrototype)" suffix is
+      // now provided by the vault exo__DisplayNameSpec (proven in PrintNameRuleService.test.ts),
+      // NOT by DEFAULT_DISPLAY_NAME_SETTINGS. Task/Project are byte-identical (always plain label).
       const resolver = new DisplayNameResolver(DEFAULT_DISPLAY_NAME_SETTINGS);
 
-      // Task
+      // Task — plain label (unchanged).
       const taskResult = resolver.resolve({
         metadata: {
           exo__Asset_label: "Fix bug",
@@ -326,7 +334,7 @@ describe("DisplayNameResolver", () => {
       });
       expect(taskResult).toBe("Fix bug");
 
-      // TaskPrototype
+      // TaskPrototype (label-keyed) — no seed, no ruleService → plain label.
       const prototypeResult = resolver.resolve({
         metadata: {
           exo__Asset_label: "Morning routine",
@@ -334,11 +342,9 @@ describe("DisplayNameResolver", () => {
         },
         basename: "morning-routine",
       });
-      expect(prototypeResult).toBe("Morning routine (TaskPrototype)");
+      expect(prototypeResult).toBe("Morning routine");
 
-      // FIX (req b4ee3caa): a TaskPrototype instance keyed by the REAL class UID
-      // (how real instances reference exo__Instance_class) now gets the suffix via
-      // the cold-start seed — previously it fell through to the label-only default.
+      // TaskPrototype (real-class-UID-keyed) — likewise plain label without the vault spec.
       const uidKeyedPrototype = resolver.resolve({
         metadata: {
           exo__Asset_label: "Measure HRV",
@@ -346,9 +352,9 @@ describe("DisplayNameResolver", () => {
         },
         basename: "measure-hrv",
       });
-      expect(uidKeyedPrototype).toBe("Measure HRV (TaskPrototype)");
+      expect(uidKeyedPrototype).toBe("Measure HRV");
 
-      // Pure-label class (Project) — byte-identical after its redundant classTemplate removal.
+      // Pure-label class (Project) — byte-identical (always plain label).
       const projectResult = resolver.resolve({
         metadata: {
           exo__Asset_label: "Q3 Roadmap",
@@ -400,17 +406,21 @@ describe("DisplayNameResolver", () => {
       expect(noClassResult).toBe("Asset Without Class");
     });
 
-    it("should use basename template for pn__DailyNote class", () => {
+    it("a label-less pn__DailyNote resolves to null (caller falls back to the basename) — the {{_basename}} seed is removed (#3838 part 3)", () => {
       const resolver = new DisplayNameResolver(DEFAULT_DISPLAY_NAME_SETTINGS);
 
-      // DailyNote uses basename (the date) since it typically has no label
+      // The pn__DailyNote → {{_basename}} seed is gone. A label-less DailyNote now falls to the
+      // defaultTemplate ({{exo__Asset_label}}) → empty → resolve() returns null, and the RENDERER
+      // (not the resolver) falls back to the basename — byte-identical for the user. In production
+      // the seed was already DEAD anyway: real DailyNotes key exo__Instance_class by the bare UID
+      // [[b04e7a3e]], not the label pn__DailyNote (dn-2110 sweep), so this key never matched.
       const dailyNoteResult = resolver.resolve({
         metadata: {
           exo__Instance_class: ["[[pn__DailyNote]]"],
         },
         basename: "2025-10-15",
       });
-      expect(dailyNoteResult).toBe("2025-10-15");
+      expect(dailyNoteResult).toBeNull();
     });
   });
 });
