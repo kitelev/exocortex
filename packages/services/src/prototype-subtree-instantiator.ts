@@ -55,7 +55,7 @@ const PARENT_PROTOTYPE_KEY = "ems__EffortPrototype_parentEffortPrototype";
 // `exo__Instance_class` ref is the canonical UID-alias form `[[uid|label]]`
 // (what `apply create-task` writes) rather than a DANGLING symbolic-label
 // `[[ems__Project]]` (class files are UID-named, so `ems__Project.md` does not
-// exist → Obsidian shows a broken link). Issue #3906.
+// exist → Obsidian shows a broken link). Issue #3908.
 const CLASS_METACLASS_UID = "8619c4fc-64f1-4869-b17e-e34186cacca9";
 
 interface IndexEntry {
@@ -245,14 +245,14 @@ export function createInstantiatePrototypeSubtreeService(
         }
       }
 
-      // M1 fail-loud pre-pass (issue #3896, extended #3906): resolve every node's
+      // M1 fail-loud pre-pass (issue #3896, extended #3908): resolve every node's
       // canonical instance-class ref BEFORE any write, so a malformed subtree (a
       // node whose `exo__Instance_class` is missing/unresolvable) OR an absent
       // class definition aborts the whole deployment instead of silently writing
       // a dangling class wikilink. Two dangling forms are prevented:
       //   (a) `[[undefined]]` — the prototype's own class is unresolvable;
       //   (b) `[[ems__Project]]` — the derived instance-class LABEL cannot be
-      //       resolved to its UID-named class file (#3906). Both are dangling in
+      //       resolved to its UID-named class file (#3908). Both are dangling in
       //       Obsidian. The map caches `[[uid|label]]` per node for the write
       //       loop. No-null for a domain output; atomic — zero partial state.
       const instClassRef = new Map<string, string>();
@@ -289,7 +289,7 @@ export function createInstantiatePrototypeSubtreeService(
         const newUid = instUid.get(protoUid) as string;
 
         // Canonical `[[uid|label]]` class ref, resolved + validated in the M1
-        // pre-pass (#3906) — never a dangling `[[label]]` symbolic ref.
+        // pre-pass (#3908) — never a dangling `[[label]]` symbolic ref.
         const classRef = instClassRef.get(protoUid) as string;
 
         const label = substitute(plainScalar(fm.exo__Asset_label));

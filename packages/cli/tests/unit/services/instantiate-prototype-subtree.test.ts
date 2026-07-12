@@ -39,7 +39,7 @@ const EXO_CLASS_METACLASS = "8619c4fc-64f1-4869-b17e-e34186cacca9";
 const EMS_PROJECT_CLS = "7db5eeff-718a-49b0-8d2b-39b084a356e3";
 const EMS_TASK_CLS = "1b20a8f0-d745-4e93-91db-4531b3df120e";
 const EMS_WCT_CLS = "47dac51c-6332-467a-abb6-84498755a91e";
-// instance-class label → canonical UID-alias ref the service must write (#3906).
+// instance-class label → canonical UID-alias ref the service must write (#3908).
 const CLASS_UID_BY_LABEL: Record<string, string> = {
   ems__Project: EMS_PROJECT_CLS,
   ems__Task: EMS_TASK_CLS,
@@ -66,7 +66,7 @@ function mkFile(uid: string, folder = "efforts"): FakeFile {
 function fixtures(): Record<string, string> {
   return {
     // Class definitions (UID-named class files) — needed so the derived instance
-    // class resolves to its canonical UID-alias ref (#3906). Metaclass-typed.
+    // class resolves to its canonical UID-alias ref (#3908). Metaclass-typed.
     [EMS_PROJECT_CLS]: `---\nexo__Asset_uid: ${EMS_PROJECT_CLS}\nexo__Instance_class:\n  - "[[${EXO_CLASS_METACLASS}]]"\nexo__Class_superClass:\n  - "[[086f71fa-dd30-4284-90cf-e609f2a6c461]]"\nexo__Asset_label: ems__Project\n---\n`,
     [EMS_TASK_CLS]: `---\nexo__Asset_uid: ${EMS_TASK_CLS}\nexo__Instance_class:\n  - "[[${EXO_CLASS_METACLASS}]]"\nexo__Class_superClass:\n  - "[[086f71fa-dd30-4284-90cf-e609f2a6c461]]"\nexo__Asset_label: ems__Task\n---\n`,
     [EMS_WCT_CLS]: `---\nexo__Asset_uid: ${EMS_WCT_CLS}\nexo__Instance_class:\n  - "[[${EXO_CLASS_METACLASS}]]"\nexo__Class_superClass:\n  - "[[${EMS_TASK_CLS}]]"\nexo__Asset_label: ems__WaitingCheckTask\n---\n`,
@@ -172,7 +172,7 @@ describe("instantiatePrototypeSubtree (issue #3881 Gap 3)", () => {
       "Поручить n.rudopas заполнить Q3-26",
     );
 
-    // (revert-verify anchor #3906) instance-class derivation (Prototype-suffix
+    // (revert-verify anchor #3908) instance-class derivation (Prototype-suffix
     // strip) written as the CANONICAL UID-alias `[[uid|label]]` — never a
     // dangling symbolic `[[label]]` (class files are UID-named). Reverting the
     // fix (writing `[[${instClassLabel}]]`) flips these RED.
@@ -231,7 +231,7 @@ describe("instantiatePrototypeSubtree (issue #3881 Gap 3)", () => {
     );
   });
 
-  it("writes CANONICAL UID-alias class refs `[[uid|label]]`, never dangling symbolic `[[label]]` (#3906)", async () => {
+  it("writes CANONICAL UID-alias class refs `[[uid|label]]`, never dangling symbolic `[[label]]` (#3908)", async () => {
     const { vaultAdapter, fsAdapter, writes, fm } = makeAdapterAndWriter();
     const service = createInstantiatePrototypeSubtreeService(
       vaultAdapter,
@@ -248,7 +248,7 @@ describe("instantiatePrototypeSubtree (issue #3881 Gap 3)", () => {
     expect(nodes.length).toBeGreaterThan(0);
     for (const n of nodes) {
       const ref = unq((n.fm.exo__Instance_class as string[])[0]);
-      // (revert-verify anchor #3906) MUST be `[[uid|label]]`, not `[[label]]`.
+      // (revert-verify anchor #3908) MUST be `[[uid|label]]`, not `[[label]]`.
       // Reverting the fix writes a bare symbolic `[[ems__Project]]` → the alias
       // regex fails to match → this assertion flips RED.
       const m = ref.match(/^\[\[([^|\]]+)\|([^\]]+)\]\]$/);
