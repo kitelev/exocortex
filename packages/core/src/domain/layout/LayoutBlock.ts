@@ -53,15 +53,28 @@ export interface BacklinksTableBlock extends LayoutBlockBase {
 }
 
 /**
- * Which class-partition of the day's efforts a `daily-efforts-by-class` block
- * shows (RL#4b / VL#4, RFC pn__DailyNote toggles):
+ * Which partition of the day's efforts a `daily-efforts-by-class` block shows
+ * (RL#4b / VL#4, RFC pn__DailyNote toggles; `closed` axis added by req
+ * b2a33efc / issue #3781):
  *   - `actions`  — `ems__Action` instances of the day.
  *   - `tasks`    — the day's efforts EXCEPT Action and Project (so meetings /
  *                  `ems__Meeting` and any other Effort subclass stay here —
  *                  RL#1 inclusive carve-out).
  *   - `projects` — `ems__Project` instances of the day.
+ *   - `closed`   — efforts CLOSED on the note's day: those whose
+ *                  `ems__Effort_resolutionTimestamp` (or `ems__Effort_endTimestamp`
+ *                  fallback) falls on the day. This is an ORTHOGONAL axis to the
+ *                  class buckets above — a closed effort can also appear in its
+ *                  class bucket (Done tasks) or ONLY here (Trashed-only closures,
+ *                  which carry no start/end/planned timestamp so are absent from
+ *                  the class buckets). The date-match is computed local-tz by the
+ *                  renderer's provider, NOT by this partition function.
  */
-export type DailyEffortsPartition = "actions" | "tasks" | "projects";
+export type DailyEffortsPartition =
+  | "actions"
+  | "tasks"
+  | "projects"
+  | "closed";
 
 export interface DailyEffortsByClassBlock extends LayoutBlockBase {
   readonly kind: "daily-efforts-by-class";
@@ -86,6 +99,7 @@ const DAILY_EFFORTS_PARTITIONS: readonly DailyEffortsPartition[] = [
   "actions",
   "tasks",
   "projects",
+  "closed",
 ];
 
 function parseDailyEffortsPartition(
@@ -240,7 +254,7 @@ export function createLayoutBlockFromFrontmatter(
     );
     if (partition === null) {
       warn(
-        `DailyEffortsByClassBlock ${base.uid}: exo__DailyEffortsByClassBlock_partition must be one of actions|tasks|projects (${options.sourcePath})`,
+        `DailyEffortsByClassBlock ${base.uid}: exo__DailyEffortsByClassBlock_partition must be one of actions|tasks|projects|closed (${options.sourcePath})`,
       );
       return null;
     }
