@@ -3685,19 +3685,33 @@ export class SyncEngine {
           r.path === local.basePath
         ) {
           // Convergent rename (A2 deferred MEDIUM): both sides renamed
-          // basePath → path. The remote delete of the OLD path is only
-          // convergent when the remote also carries the SAME content at the
-          // NEW path — anything weaker (a genuine remote delete, or a rename
-          // with an edit) must keep conflicting: silently consuming it would
-          // let the next sync push the renamed copy and resurrect a
-          // remotely-deleted asset.
+          // basePath → path. The remote delete of the OLD path is convergent
+          // whenever the remote also carries the SAME asset at the NEW path —
+          // either byte-identical content (`blobSha === local.blobSha`), OR the
+          // same uid with a content divergence (#3835). In BOTH cases the asset
+          // exists at the new path on both sides, so the old-path delete is the
+          // rename's own convergent old-path drop, NOT a delete-of-the-asset —
+          // consuming it cannot resurrect anything. The content divergence at
+          // the new path (if any) then stands as the SINGLE real conflict, which
+          // converges (keep-local push) or registers a normal single-remote
+          // quarantine. The strict `blobSha === local.blobSha`-only guard left a
+          // rename-with-conflicting-edit's old-path delete conflicting →
+          // `group.remotes.length === 2` → "ambiguous conflict: local change
+          // overlaps 2 remote changes" pinned WITHOUT registering in
+          // `quarantine list` — the unresolvable #3835 loop. Resurrection is
+          // still barred: a GENUINE remote delete-of-the-asset carries NO change
+          // at the new path (`remoteAtNewPath === undefined`) or a DIFFERENT uid
+          // there, so neither branch below fires and the old-path delete keeps
+          // conflicting (surfaced for the merge/quarantine layer to arbitrate).
           const remoteAtNewPath = remoteByPath.get(local.path);
           if (
             remoteAtNewPath !== undefined &&
             remoteAtNewPath.kind === "change" &&
-            remoteAtNewPath.blobSha === local.blobSha
+            (remoteAtNewPath.blobSha === local.blobSha ||
+              (remoteAtNewPath.uid !== undefined &&
+                remoteAtNewPath.uid === local.uid))
           ) {
-            consumed.add(r); // old path gone on both sides
+            consumed.add(r); // old path gone on both sides — asset moved on both
             continue;
           }
         }
