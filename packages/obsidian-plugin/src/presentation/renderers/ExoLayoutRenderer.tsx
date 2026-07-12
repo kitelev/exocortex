@@ -50,13 +50,24 @@ import {
 /**
  * A day-scoped effort surfaced to a `daily-efforts-by-class` block. The
  * provider (wired in `UniversalLayoutRenderer`) scans the vault for efforts
- * whose timestamps fall in the note's day (`isEffortInDay`) and returns this
- * minimal shape; the renderer partitions it by class once per render.
+ * relevant to the note's day and returns this minimal shape; the renderer
+ * partitions it once per render.
+ *
+ * The provider stamps two orthogonal relevance flags (req b2a33efc / issue
+ * #3781): `inDay` (matched `isEffortInDay` — start/end/planned; feeds the
+ * Actions/Tasks/Projects class buckets) and `closedInDay` (matched
+ * `isEffortClosedInDay` — resolution/end on the day; feeds the "closed" axis).
+ * Both are optional for back-compat: a legacy/test item without flags is
+ * treated as `inDay` (in the class buckets) and not closed.
  */
 export interface DailyEffortItem {
   readonly path: string;
   readonly title: string;
   readonly metadata: Record<string, unknown>;
+  /** Whether the effort matched `isEffortInDay` (feeds the class buckets). */
+  readonly inDay?: boolean;
+  /** Whether the effort was closed on the day (feeds the "closed" axis). */
+  readonly closedInDay?: boolean;
 }
 
 export interface ExoLayoutRendererDeps {
@@ -148,7 +159,15 @@ export class ExoLayoutRenderer {
     });
     if (!hasDailyBlock) return null;
     const efforts = this.deps.dailyEffortsProvider(file) ?? [];
-    return partitionDailyEffortsByClass(efforts);
+    // Class buckets (Actions/Tasks/Projects) are computed ONLY over the `inDay`
+    // subset → byte-identical to req a38ac95b (a Trashed-only closure, inDay
+    // false, is excluded from the class buckets). The "closed" axis (req
+    // b2a33efc / issue #3781) is the `closedInDay` subset — orthogonal to the
+    // class buckets, may overlap them (a Done task appears in both). Items
+    // without the flags (legacy/test shape) default to inDay + not-closed.
+    const inDayEfforts = efforts.filter((e) => e.inDay !== false);
+    const closed = efforts.filter((e) => e.closedInDay === true);
+    return { ...partitionDailyEffortsByClass(inDayEfforts), closed };
   }
 
   private isBlockVisible(

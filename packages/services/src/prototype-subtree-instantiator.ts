@@ -1,4 +1,4 @@
-import { DateFormatter } from "@kitelev/exocortex-core";
+import { DateFormatter, extractAssetReference } from "@kitelev/exocortex-core";
 import type {
   IGroundingService,
   IVaultAdapter,
@@ -56,20 +56,13 @@ interface IndexEntry {
   uid: string;
 }
 
-/** Strip surrounding quotes + `[[ ]]` + optional `|alias`, return the target UID/ref. */
-function extractRef(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  let v = value.trim();
-  if (
-    (v.startsWith('"') && v.endsWith('"')) ||
-    (v.startsWith("'") && v.endsWith("'"))
-  ) {
-    v = v.slice(1, -1).trim();
-  }
-  const m = v.match(/^\[\[([^\]|]+)(?:\|[^\]]*)?\]\]$/);
-  if (m) return m[1].trim();
-  return v || undefined;
-}
+// The local `extractRef` was a 4th re-implementation of the canonical
+// `extractAssetReference` (`packages/core/src/utilities/extractAssetReference.ts`,
+// created specifically to de-triplicate this exact helper — audit #3384 finding
+// H4). De-duplicated per issue #3896 (M4): import the canonical one instead of
+// maintaining a divergent copy. (It returns `string | null` where the local one
+// returned `string | undefined` — semantically identical at every guarded
+// callsite here.)
 
 /** The alias part of `[[uid|alias]]`, if present. */
 function extractAlias(value: unknown): string | undefined {
@@ -125,7 +118,7 @@ export function createInstantiatePrototypeSubtreeService(
       const classLabel = (classRef: unknown): string | undefined => {
         const alias = extractAlias(firstValue(classRef));
         if (alias) return alias;
-        const ref = extractRef(firstValue(classRef));
+        const ref = extractAssetReference(firstValue(classRef));
         if (!ref) return undefined;
         const entry = byUid.get(ref);
         return entry ? plainScalar(entry.fm.exo__Asset_label) : ref;
@@ -147,7 +140,7 @@ export function createInstantiatePrototypeSubtreeService(
         grew = false;
         for (const [uid, entry] of byUid) {
           if (subtree.has(uid)) continue;
-          const parentUid = extractRef(firstValue(entry.fm[PARENT_PROTOTYPE_KEY]));
+          const parentUid = extractAssetReference(firstValue(entry.fm[PARENT_PROTOTYPE_KEY]));
           if (parentUid && subtree.has(parentUid)) {
             subtree.add(uid);
             grew = true;
@@ -168,7 +161,7 @@ export function createInstantiatePrototypeSubtreeService(
       for (const [key, raw] of Object.entries(userInput ?? {})) {
         if (raw == null) continue;
         if (key === "label" || key === "body") continue;
-        const refUid = extractRef(firstValue(raw));
+        const refUid = extractAssetReference(firstValue(raw));
         const target = refUid ? byUid.get(refUid) : undefined;
         if (target) {
           const targetLabel = target.fm.exo__Asset_label
@@ -177,7 +170,7 @@ export function createInstantiatePrototypeSubtreeService(
           substitutions[key] = targetLabel ?? String(raw);
           const clsLabel = classLabel(target.fm.exo__Instance_class) ?? "";
           if (clsLabel.includes("Project")) {
-            if (!parentEffortRef) parentEffortRef = refUid;
+            if (!parentEffortRef) parentEffortRef = refUid ?? undefined;
           } else {
             relatesRefs.push(refUid as string);
           }
@@ -194,6 +187,56 @@ export function createInstantiatePrototypeSubtreeService(
         }
         return s;
       };
+
+      // M2 idempotency guard (issue #3896): refuse to re-deploy the same subtree.
+      // A prior deployment is an existing instance whose `exo__Asset_prototype` is
+      // this root prototype AND whose `exo__Asset_relates` set equals the current
+      // ref-params (person + quarter + any non-Project ref). An accidental
+      // double-click therefore aborts with an explicit error instead of silently
+      // generating a second full N-node subgraph. A different ref-param set (a
+      // different employee/quarter) is NOT blocked.
+      const relatesSet = new Set(relatesRefs);
+      for (const entry of byUid.values()) {
+        const protoRef = extractAssetReference(
+          firstValue(entry.fm.exo__Asset_prototype),
+        );
+        if (protoRef !== rootUid) continue;
+        const rel = entry.fm.exo__Asset_relates;
+        const existingRelates = new Set(
+          (Array.isArray(rel) ? rel : rel != null ? [rel] : [])
+            .map((r) => extractAssetReference(r))
+            .filter((r): r is string => r != null),
+        );
+        if (
+          existingRelates.size === relatesSet.size &&
+          [...relatesSet].every((r) => existingRelates.has(r))
+        ) {
+          throw new Error(
+            `instantiatePrototypeSubtree: already deployed — an instance of prototype ${rootUid} with the same ref-params [${[...relatesSet].join(", ")}] already exists (${entry.file.path}). Refusing to duplicate the subgraph.`,
+          );
+        }
+      }
+
+      // M1 fail-loud pre-pass (issue #3896): validate every node's instance class
+      // resolves to a non-empty label BEFORE any write, so a malformed subtree (a
+      // node whose `exo__Instance_class` is missing/unresolvable) aborts the whole
+      // deployment instead of silently writing `exo__Instance_class: [[undefined]]`
+      // (a dangling wikilink that reddens SHACL later). No-null for a domain
+      // output; atomic — zero partial state on abort.
+      for (const protoUid of subtree) {
+        const entry = byUid.get(protoUid);
+        if (!entry) continue;
+        const protoClassLabel = classLabel(entry.fm.exo__Instance_class);
+        const instClassLabel =
+          protoClassLabel && protoClassLabel.endsWith("Prototype")
+            ? protoClassLabel.slice(0, -"Prototype".length)
+            : protoClassLabel;
+        if (!instClassLabel) {
+          throw new Error(
+            `instantiatePrototypeSubtree: cannot resolve instance class for subtree node ${protoUid} (${entry.file.path}) — its exo__Instance_class is missing or unresolvable. Aborting so no asset is written with a dangling [[undefined]] class.`,
+          );
+        }
+      }
 
       // 6. Write each instance. Co-locate in the prototype node's folder.
       const createdAt = DateFormatter.toISOTimestamp(new Date());
@@ -216,7 +259,7 @@ export function createInstantiatePrototypeSubtreeService(
         const lines: string[] = ["---", `exo__Asset_uid: ${newUid}`];
         if (fm.exo__Asset_isDefinedBy) {
           lines.push(
-            `exo__Asset_isDefinedBy: "[[${extractRef(firstValue(fm.exo__Asset_isDefinedBy))}]]"`,
+            `exo__Asset_isDefinedBy: "[[${extractAssetReference(firstValue(fm.exo__Asset_isDefinedBy))}]]"`,
           );
         }
         lines.push(
@@ -233,7 +276,7 @@ export function createInstantiatePrototypeSubtreeService(
 
         // Blocker re-map onto the cloned sibling (fall back to original if the
         // blocker target is outside the subtree).
-        const blockerUid = extractRef(firstValue(fm.ems__Effort_blocker));
+        const blockerUid = extractAssetReference(firstValue(fm.ems__Effort_blocker));
         if (blockerUid) {
           const mapped = instUid.get(blockerUid) ?? blockerUid;
           lines.push(`ems__Effort_blocker: "[[${mapped}]]"`);
