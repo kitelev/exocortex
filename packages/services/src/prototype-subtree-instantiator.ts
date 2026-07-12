@@ -86,7 +86,7 @@ function extractAlias(value: unknown): string | undefined {
  */
 function plainScalar(value: unknown): string {
   const raw = String(firstValue(value) ?? "");
-  const m = raw.match(/^"(.*)"$|^'(.*)'$/s);
+  const m = raw.match(/^"(.*)"$|^'(.*)'$/);
   return m ? (m[1] ?? m[2] ?? "") : raw;
 }
 

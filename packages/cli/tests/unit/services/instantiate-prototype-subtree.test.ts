@@ -97,7 +97,7 @@ function makeAdapterAndWriter(extraParams?: Record<string, string>) {
  * (the quoted-wikilink write format is the established `createCreateAssetService`
  * convention — required so colon-containing labels like «На 1-2-1: …» stay valid YAML).
  */
-const unq = (s: unknown): string => String(s ?? "").replace(/^"(.*)"$/s, "$1");
+const unq = (s: unknown): string => String(s ?? "").replace(/^"(.*)"$/, "$1");
 
 /** Parse a created instance's frontmatter + identify its source prototype. */
 function parseWrites(
