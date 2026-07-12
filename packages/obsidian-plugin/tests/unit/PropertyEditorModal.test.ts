@@ -1,6 +1,14 @@
 import {
   PropertyEditorModal,
 } from "../../src/presentation/modals/PropertyEditorModal";
+import {
+  InMemoryTripleStore,
+  IRI,
+  Literal,
+  Namespace,
+  Triple,
+  vaultPathToIRI,
+} from "@kitelev/exocortex-core";
 import { App, TFile } from "obsidian";
 import type { ExocortexPluginInterface } from "@plugin/types";
 import { ReactRenderer } from "@plugin/presentation/utils/ReactRenderer";
@@ -328,6 +336,58 @@ describe("PropertyEditorModal", () => {
       await Promise.all([save1, save2]);
 
       expect(mockApp.vault.read).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  /**
+   * ems__Bug `dcb9ed83` — the reify predicate-def map is built from each property-
+   * definition's `exo__Asset_label`, but the converter emits a clean
+   * `prefix__LocalName` label as a symbolic IRI (dual-IRI), not a Literal. This
+   * drives the REAL private `buildPredicateRangeMap` over a REAL InMemoryTripleStore
+   * seeded exactly as the store holds it (label object = symbolic IRI).
+   * Revert-verify: dropping the IRI branch of `predicateKeyFromLabelObjects` leaves
+   * `predicateDefUidByKey` without the `exo__Asset_relates` key → the assertion RED
+   * (reify then throws "no predicate-definition asset was found").
+   */
+  describe("buildPredicateRangeMap — reify predicate-def resolution (dual-IRI label)", () => {
+    const EXO_PROPERTY_RANGE = Namespace.EXO.term("Property_range");
+    const EXO_ASSET_LABEL = Namespace.EXO.term("Asset_label");
+    const defIri = (uid: string): IRI =>
+      new IRI(vaultPathToIRI(`assetspaces/kitelev/exoas-exo/exo/${uid}.md`));
+
+    it("resolves a clean-prefix key whose label is a symbolic IRI (the bug)", async () => {
+      const store = new InMemoryTripleStore();
+      const relatesDef = defIri("e3a71d16-14b3-4aff-adf7-c9eccd1077b4");
+      // Real store shape: Property_range subject = the def's path IRI; its
+      // exo__Asset_label object = the symbolic IRI (NOT a Literal).
+      await store.add(new Triple(relatesDef, EXO_PROPERTY_RANGE, Namespace.EXO.term("Asset")));
+      await store.add(new Triple(relatesDef, EXO_ASSET_LABEL, Namespace.EXO.term("Asset_relates")));
+
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter, mockNotifier);
+      await (modal as any).buildPredicateRangeMap(store);
+
+      expect((modal as any).predicateDefUidByKey.get("exo__Asset_relates")).toBe(
+        "e3a71d16-14b3-4aff-adf7-c9eccd1077b4",
+      );
+      expect((modal as any).keyByPredicateDefUid.get("e3a71d16-14b3-4aff-adf7-c9eccd1077b4")).toBe(
+        "exo__Asset_relates",
+      );
+    });
+
+    it("still resolves a hyphen-prefix key whose label stays a Literal", async () => {
+      const store = new InMemoryTripleStore();
+      const relatesToConceptDef = defIri("0967a771-c5cf-4fee-9707-9837104977f3");
+      await store.add(new Triple(relatesToConceptDef, EXO_PROPERTY_RANGE, Namespace.EXO.term("Asset")));
+      await store.add(
+        new Triple(relatesToConceptDef, EXO_ASSET_LABEL, new Literal("adapter-exo-ims__relatesToConcept")),
+      );
+
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter, mockNotifier);
+      await (modal as any).buildPredicateRangeMap(store);
+
+      expect(
+        (modal as any).predicateDefUidByKey.get("adapter-exo-ims__relatesToConcept"),
+      ).toBe("0967a771-c5cf-4fee-9707-9837104977f3");
     });
   });
 });
