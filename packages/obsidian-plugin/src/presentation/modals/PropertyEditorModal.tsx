@@ -5,7 +5,6 @@ import {
   INotificationService,
   ITripleStore,
   IRI,
-  Literal,
   Namespace,
 } from "@kitelev/exocortex-core";
 import { ExocortexPluginInterface } from '@plugin/types';
@@ -22,6 +21,7 @@ import { findAssetRefCandidates } from '@plugin/presentation/utils/assetRefCandi
 import type { AssetRefCandidate } from '@plugin/presentation/builders/button-groups/DynamicCommandButtonGroupBuilder';
 import {
   getReifiedRelations,
+  predicateKeyFromLabelObjects,
   type ReifiedRelation,
 } from '@plugin/presentation/renderers/layout/getReifiedRelations';
 import {
@@ -334,13 +334,12 @@ export class PropertyEditorModal extends Modal {
         Namespace.EXO.term("Asset_label"),
         undefined,
       );
-      let key: string | null = null;
-      for (const lt of labels) {
-        if (lt.object instanceof Literal && lt.object.value.trim().length > 0) {
-          key = lt.object.value.trim();
-          break;
-        }
-      }
+      // A property-definition's `exo__Asset_label` IS the frontmatter key, but
+      // the converter emits a `prefix__LocalName` label as a symbolic IRI (not a
+      // Literal) — a Literal-only check silently drops every clean-prefix
+      // predicate (exo__*, ems__*, …) → reify then fails with "no predicate-
+      // definition asset". Accept both forms (dual-IRI, sparql-iri-form-pre-verify).
+      const key = predicateKeyFromLabelObjects(labels.map((lt) => lt.object));
       if (key) {
         map.set(key, rangeUid);
         if (defUid) {

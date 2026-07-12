@@ -117,6 +117,65 @@ export function labelToSymbolicIRI(label: string | null | undefined): IRI | null
 }
 
 /**
+ * Inverse of {@link labelToSymbolicIRI}: recover the frontmatter predicate KEY
+ * (`<prefix>__<LocalName>`) from an ontology symbolic IRI
+ * (`<EXOCORTEX_ONTOLOGY_BASE><prefix>#<LocalName>`). Returns `null` for a
+ * non-ontology IRI (a path-form `obsidian://…/<uid>.md` ref, an arbitrary IRI).
+ *
+ * The RDF converter emits a `prefix__LocalName`-shaped `exo__Asset_label` as a
+ * symbolic IRI, NOT a Literal (dual-IRI — `sparql-iri-form-pre-verify`). Any
+ * consumer that maps a property-definition asset's label back to its
+ * frontmatter key (the reify predicate-def resolution) MUST accept this form,
+ * else it silently drops every clean-prefix predicate (`exo__*`, `ems__*`,
+ * `concept__*`, …). Round-trips for a clean `prefix__LocalName` key:
+ * `symbolicIriToPropertyKey(labelToSymbolicIRI(key)!.value) === key` (a local
+ * name containing `#`/`/` is rejected here — such keys are not valid anyway).
+ */
+export function symbolicIriToPropertyKey(iri: string): string | null {
+  const base = Namespace.EXOCORTEX_ONTOLOGY_BASE;
+  if (typeof iri !== "string" || !iri.startsWith(base)) return null;
+  const rest = iri.slice(base.length); // "<prefix>#<LocalName>"
+  const hash = rest.indexOf("#");
+  if (hash <= 0 || hash >= rest.length - 1) return null;
+  const prefix = rest.slice(0, hash);
+  const localName = rest.slice(hash + 1);
+  // Same prefix shape guard as `Namespace.forPrefix`.
+  if (!/^[a-z][a-zA-Z0-9]*$/.test(prefix)) return null;
+  // A further `#` / `/` means this is not a clean `ns#Local` term.
+  if (localName.includes("#") || localName.includes("/")) return null;
+  return `${prefix}__${localName}`;
+}
+
+/**
+ * The frontmatter predicate KEY (`<prefix>__<LocalName>`) that a property-
+ * definition asset's `exo__Asset_label` triple objects denote — accepting BOTH
+ * emitted forms:
+ *  - a `Literal` label (plain / hyphen-prefixed names the converter does NOT
+ *    turn into an IRI, e.g. `adapter-exo-ims__relatesToConcept`) → the literal;
+ *  - a symbolic `IRI` label (a clean `prefix__LocalName`, e.g.
+ *    `exo__Asset_relates`, emitted as `…/exo#Asset_relates`) → recovered via
+ *    {@link symbolicIriToPropertyKey}.
+ *
+ * Returns `null` when no object yields a key (non-ontology IRI / empty literal).
+ * This is the single source of truth for label→key so a Literal-only check can
+ * never re-introduce the dual-IRI drop (the reify predicate-def bug).
+ */
+export function predicateKeyFromLabelObjects(
+  labelObjects: readonly object[],
+): string | null {
+  for (const obj of labelObjects) {
+    if (obj instanceof Literal && obj.value.trim().length > 0) {
+      return obj.value.trim();
+    }
+    if (obj instanceof IRI) {
+      const recovered = symbolicIriToPropertyKey(obj.value);
+      if (recovered) return recovered;
+    }
+  }
+  return null;
+}
+
+/**
  * The union of all IRI forms under which A may appear as a statement's
  * subject/object (R5 dual-IRI):
  *  1. path-form `obsidian://vault/<prefix><path>` via the injected `notePathToIRI`;

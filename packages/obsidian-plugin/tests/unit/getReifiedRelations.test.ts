@@ -8,6 +8,9 @@ import {
 } from "@kitelev/exocortex-core";
 import {
   getReifiedRelations,
+  labelToSymbolicIRI,
+  predicateKeyFromLabelObjects,
+  symbolicIriToPropertyKey,
   ReifiedRelation,
 } from "../../src/presentation/renderers/layout/getReifiedRelations";
 
@@ -224,5 +227,79 @@ describe("getReifiedRelations (Task 1.1 — read-path from exo__Statement instan
     });
 
     expect(relations).toEqual([]);
+  });
+});
+
+/**
+ * ems__Bug `dcb9ed83` — reify predicate-def resolution dropped every clean-prefix
+ * predicate because a property-definition's `exo__Asset_label` is emitted by the
+ * converter as a symbolic IRI (dual-IRI), not a Literal. These functions recover
+ * the frontmatter key from BOTH forms. Revert-verify: removing the IRI branch of
+ * `predicateKeyFromLabelObjects` makes the "IRI-form label" cases below go RED
+ * (the exact production shape — `exo__Asset_relates` reify then fails).
+ */
+describe("symbolicIriToPropertyKey (inverse of labelToSymbolicIRI)", () => {
+  it("recovers <prefix>__<LocalName> from an ontology symbolic IRI", () => {
+    expect(
+      symbolicIriToPropertyKey("https://exocortex.my/ontology/exo#Asset_relates"),
+    ).toBe("exo__Asset_relates");
+    expect(
+      symbolicIriToPropertyKey("https://exocortex.my/ontology/ems#Effort_area"),
+    ).toBe("ems__Effort_area");
+    expect(
+      symbolicIriToPropertyKey("https://exocortex.my/ontology/concept#Concept_broader"),
+    ).toBe("concept__Concept_broader");
+  });
+
+  it("round-trips with labelToSymbolicIRI for clean-prefix keys", () => {
+    for (const key of [
+      "exo__Asset_relates",
+      "ems__Effort_area",
+      "aiKnow__Memory_aboutConcept",
+    ]) {
+      const iri = labelToSymbolicIRI(key);
+      expect(iri).not.toBeNull();
+      expect(symbolicIriToPropertyKey(iri!.value)).toBe(key);
+    }
+  });
+
+  it("returns null for a non-ontology IRI (path-form ref, w3.org, empty)", () => {
+    expect(
+      symbolicIriToPropertyKey("obsidian://vault/assetspaces/x/1234.md"),
+    ).toBeNull();
+    expect(symbolicIriToPropertyKey("http://www.w3.org/2002/07/owl#sameAs")).toBeNull();
+    expect(symbolicIriToPropertyKey("https://exocortex.my/ontology/exo#")).toBeNull();
+    expect(symbolicIriToPropertyKey("")).toBeNull();
+  });
+});
+
+describe("predicateKeyFromLabelObjects (label→key, both emitted forms)", () => {
+  it("recovers the key from a symbolic-IRI label (the reify bug — clean prefix)", () => {
+    // Exactly how NoteToRDFConverter emits `exo__Asset_label: exo__Asset_relates`.
+    const iriLabel = Namespace.EXO.term("Asset_relates");
+    expect(predicateKeyFromLabelObjects([iriLabel])).toBe("exo__Asset_relates");
+  });
+
+  it("keeps the Literal-label path (hyphen-prefix labels stay literals)", () => {
+    expect(
+      predicateKeyFromLabelObjects([new Literal("adapter-exo-ims__relatesToConcept")]),
+    ).toBe("adapter-exo-ims__relatesToConcept");
+  });
+
+  it("prefers a Literal when both a Literal and IRI are present", () => {
+    expect(
+      predicateKeyFromLabelObjects([
+        new Literal("adapter-exo-ims__relatesToConcept"),
+        Namespace.EXO.term("Asset_relates"),
+      ]),
+    ).toBe("adapter-exo-ims__relatesToConcept");
+  });
+
+  it("returns null for a non-ontology IRI label / empty literal / no labels", () => {
+    expect(
+      predicateKeyFromLabelObjects([new IRI("obsidian://vault/x/1234.md")]),
+    ).toBeNull();
+    expect(predicateKeyFromLabelObjects([new Literal("   ")])).toBeNull();
+    expect(predicateKeyFromLabelObjects([])).toBeNull();
   });
 });
