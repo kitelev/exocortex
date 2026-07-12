@@ -103,6 +103,26 @@ describe("#3800 (b) dedupeFrontmatterKeys (pure)", () => {
     expect(r.content).not.toContain("a: 2");
   });
 
+  it("does NOT corrupt `$`-sequences in surviving values (M1: no string-replace $ interpretation)", () => {
+    // A string `content.replace(match[0], newBlock)` would interpret `$$`, `$&`,
+    // `$1`, `` $` `` in the frontmatter VALUES → silent corruption. A repair tool
+    // must keep every surviving value byte-identical.
+    const dollarValue = 'label: "cost $$100 & $& and $1 ref plus $`tail"';
+    const content = ["---", "a: 1", dollarValue, "a: 2", "---", "body"].join(
+      "\n",
+    );
+
+    const r = dedupeFrontmatterKeys(content);
+
+    expect(r.changed).toBe(true);
+    // The `a` key deduped (keep-last), the $-laden label untouched.
+    expect(r.content).toContain(dollarValue);
+    expect(r.content).toContain("a: 2");
+    expect(r.content).not.toContain("a: 1");
+    // Nothing from the regex machinery leaked into the value.
+    expect(r.content).not.toContain("---\n---\n"); // no group/whole-match splice
+  });
+
   it("preserves CRLF line endings", () => {
     const content = ["---", "a: 1", "a: 2", "---", "body"].join("\r\n");
     const r = dedupeFrontmatterKeys(content);

@@ -96,7 +96,13 @@ export function dedupeFrontmatterKeys(content: string): DedupeResult {
   }
 
   const newBlock = kept.map((s) => s.lines.join(eol)).join(eol);
-  const newContent = content.replace(match[0], `${open}${newBlock}${close}`);
+  // Splice by index rather than `content.replace(match[0], replacement)` — a
+  // string replacement interprets `$$` / `$&` / `$1` / `` $` `` in the frontmatter
+  // VALUES as special patterns and would silently corrupt them (a repair tool
+  // must never mangle content; same class as #3795 H1). The block is `^`-anchored
+  // so it always sits at index 0; the rest of the file follows it verbatim.
+  const newContent =
+    `${open}${newBlock}${close}` + content.slice(match[0].length);
   return {
     changed: true,
     content: newContent,
@@ -127,11 +133,10 @@ export function repairFrontmatterCommand(): Command {
         }
 
         // Resolve + guard the target path (must be inside the vault). Mirrors
-        // set-property / apply's vault-relative canonicalisation (#3788).
+        // set-property / apply's vault-relative canonicalisation (#3788). This is
+        // a pure path computation (no filesystem poll), so it does not create a
+        // check-then-use TOCTOU race (js/file-system-race).
         const targetPath = resolve(vaultPath, pathArg);
-        if (!existsSync(targetPath)) {
-          throw new Error(`Target file not found: ${pathArg}`);
-        }
         const vaultRelative = relative(vaultPath, targetPath);
         if (
           vaultRelative === ".." ||
@@ -143,7 +148,17 @@ export function repairFrontmatterCommand(): Command {
           );
         }
 
-        const original = readFileSync(targetPath, "utf-8");
+        // Read directly and surface a friendly not-found on ENOENT — avoids an
+        // `existsSync` check-then-read/write pair (js/file-system-race).
+        let original: string;
+        try {
+          original = readFileSync(targetPath, "utf-8");
+        } catch (readError) {
+          if ((readError as NodeJS.ErrnoException).code === "ENOENT") {
+            throw new Error(`Target file not found: ${pathArg}`);
+          }
+          throw readError;
+        }
         const result = dedupeFrontmatterKeys(original);
 
         if (!result.changed) {
