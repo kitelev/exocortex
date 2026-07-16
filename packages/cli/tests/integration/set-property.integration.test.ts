@@ -411,4 +411,38 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
     // File is byte-identical — nothing written.
     expect(out.content).toBe(before);
   });
+
+  // ── Nonexistent target (#3907 — read-directly, ENOENT→friendly, no TOCTOU) ──
+
+  it("a missing target file surfaces a friendly 'Target file not found' via the ENOENT read path (no existsSync check-then-write race) @req:3800d995-2bae-401f-a23a-dac914505e9d", async () => {
+    // A target that does not exist on disk. The `run` helper reads the file
+    // back afterwards (which would itself throw for a missing file), so drive
+    // the command directly and inspect the error log / exit codes.
+    const missingRel = `${MOVIES_DIR}/00000000-0000-4000-8000-000000000000.md`;
+    expect(fs.existsSync(path.join(vault, missingRel))).toBe(false);
+
+    const cmd = setPropertyCommand();
+    await cmd.parseAsync(
+      [
+        missingRel,
+        "--vault",
+        vault,
+        "--frozen-clock",
+        FROZEN_CLOCK,
+        "--input",
+        '{"property":"concept__Movie_watched","value":true}',
+      ],
+      { from: "user" },
+    );
+    const errorLog = errorSpy.mock.calls.flat().join("\n");
+
+    // Non-zero exit + the FRIENDLY not-found message, mapped from ENOENT — NOT
+    // a raw `ENOENT: no such file or directory` leak. Removing the `existsSync`
+    // check WITHOUT the ENOENT→friendly mapping reddens both assertions (the raw
+    // readFileSync error surfaces): this is the revert-verify axis for the
+    // read-directly refactor that closed the js/file-system-race (#3907).
+    expect(exitCodes).not.toContain(0);
+    expect(errorLog).toMatch(/Target file not found/);
+    expect(errorLog).not.toMatch(/no such file or directory/i);
+  });
 });
