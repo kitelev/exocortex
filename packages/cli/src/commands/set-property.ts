@@ -291,9 +291,6 @@ export function setPropertyCommand(): Command {
         // Resolve + guard the target path (must be inside the vault). Mirrors
         // `apply`'s vault-relative canonicalisation (issue #3788).
         const targetPath = resolve(vaultPath, pathArg);
-        if (!existsSync(targetPath)) {
-          throw new Error(`Target file not found: ${pathArg}`);
-        }
         const vaultRelative = relative(vaultPath, targetPath);
         if (
           vaultRelative === ".." ||
@@ -305,7 +302,19 @@ export function setPropertyCommand(): Command {
           );
         }
 
-        const original = readFileSync(targetPath, "utf-8");
+        // Read directly and surface a friendly not-found on ENOENT — avoids an
+        // `existsSync` check-then-read/write pair (js/file-system-race, #3907):
+        // the file could change between the check and the later write. Mirrors
+        // the same fix already applied in `repair-frontmatter.ts`.
+        let original: string;
+        try {
+          original = readFileSync(targetPath, "utf-8");
+        } catch (readError) {
+          if ((readError as NodeJS.ErrnoException).code === "ENOENT") {
+            throw new Error(`Target file not found: ${pathArg}`);
+          }
+          throw readError;
+        }
         // Only mutate a real asset (has an exo__Asset_uid). Refuse a bare
         // markdown file so `set-property` never silently mutates a non-asset.
         if (!/^\s*exo__Asset_uid:/m.test(original)) {
