@@ -529,8 +529,10 @@ export default class ExocortexPlugin extends Plugin {
       this.printNameRuleService.initialize();
 
       this.registerEvent(
+        // Debounced: a sync burst fires many "changed" events; scheduleRefresh() collapses
+        // them into ONE scanVault instead of a full O(N) walk per event (iPhone crash-loop fix).
         this.app.metadataCache.on("changed", () => {
-          this.printNameRuleService.refresh();
+          this.printNameRuleService.scheduleRefresh();
         }),
       );
 

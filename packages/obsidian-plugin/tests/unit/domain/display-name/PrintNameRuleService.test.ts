@@ -1198,3 +1198,41 @@ describe("PrintNameRuleService — appliesToClass second-hop symmetry (#3838 par
     expect(service.getTemplateForClass("ems__TaskPrototype")!.template).toBe("PROTO");
   });
 });
+
+describe("PrintNameRuleService — scheduleRefresh() debounce (iPhone crash-loop fix, ems__Bug 98df110e)", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("collapses a burst of scheduleRefresh() calls into ONE scanVault (was one full O(N) walk per 'changed' event)", () => {
+    jest.useFakeTimers();
+    const app = createMockApp([]);
+    const service = new PrintNameRuleService(app);
+    // getMarkdownFiles() is called exactly once per scanVault() → a proxy for scan-count.
+    const scan = app.vault.getMarkdownFiles as jest.Mock;
+
+    // Simulate a sync burst: many metadataCache "changed" events in quick succession.
+    for (let i = 0; i < 8; i++) service.scheduleRefresh();
+
+    // Debounced: NO full walk yet. The un-debounced bug did 8 walks here → the O(K·N) storm
+    // that triggered iOS Jetsam. This assertion is RED if scheduleRefresh scans immediately.
+    expect(scan).not.toHaveBeenCalled();
+
+    // After the debounce window, exactly ONE scanVault runs for the whole burst.
+    jest.advanceTimersByTime(PRINT_NAME_RESCAN_DEBOUNCE_MS);
+    expect(scan).toHaveBeenCalledTimes(1);
+  });
+
+  it("still performs the scan eventually — does not swallow the refresh", () => {
+    jest.useFakeTimers();
+    const app = createMockApp([]);
+    const service = new PrintNameRuleService(app);
+    const scan = app.vault.getMarkdownFiles as jest.Mock;
+
+    service.scheduleRefresh();
+    jest.advanceTimersByTime(PRINT_NAME_RESCAN_DEBOUNCE_MS);
+    expect(scan).toHaveBeenCalledTimes(1);
+  });
+});
+
+const PRINT_NAME_RESCAN_DEBOUNCE_MS = 300;
