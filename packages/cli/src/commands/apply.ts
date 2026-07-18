@@ -56,6 +56,34 @@ export interface ApplyOptions {
   input?: string;
   seed?: string;
   frozenClock?: string;
+  // Issue #3906 — emit a machine-readable JSON envelope describing what the
+  // apply invocation created, symmetric with `create`'s structured output and
+  // `query --format json`. When set, stdout is a single JSON object and the
+  // human-readable ✅/📊 notices are suppressed so the object parses cleanly.
+  json?: boolean;
+}
+
+/**
+ * Issue #3906 — a single asset written to disk by an apply run, mirroring the
+ * `create` command's `{uuid,path,label}` output shape. `uuid` is the created
+ * file's `exo__Asset_uid` (its UUID-canon basename), `path` is the file's
+ * vault-relative path, `label` its `exo__Asset_label`.
+ */
+interface CreatedAsset {
+  uuid: string;
+  path: string;
+  label: string;
+}
+
+/**
+ * Issue #3906 — per-target execution outcome: the success flag PLUS the assets
+ * created on disk (for `--json` / the human path-append). `executeOnTarget`
+ * returns this instead of a bare boolean so the action handler can aggregate a
+ * `created` array across a multi-target (stdin-piped) run.
+ */
+interface TargetResult {
+  ok: boolean;
+  created: CreatedAsset[];
 }
 
 const UUID_RE =
@@ -157,11 +185,13 @@ async function executeOnTarget(
   options: ApplyOptions,
   clock: IClock,
   uidGen: IUidGenerator,
-): Promise<boolean> {
+): Promise<TargetResult> {
+  // Issue #3906 — a failed target contributes no created assets.
+  const failed: TargetResult = { ok: false, created: [] };
   const targetPath = resolve(vaultPath, targetRelative);
   if (!existsSync(targetPath)) {
     console.error(`❌ Target file not found: ${targetRelative}`);
-    return false;
+    return failed;
   }
 
   // Issue #3788 — canonicalise the target to a vault-relative path before
@@ -191,7 +221,7 @@ async function executeOnTarget(
     console.error(
       `❌ Target is outside the vault: ${targetRelative} (vault: ${vaultPath})`,
     );
-    return false;
+    return failed;
   }
 
   const resolver = new CommandResolver(tripleStore);
@@ -199,7 +229,7 @@ async function executeOnTarget(
 
   if (!command) {
     console.error(`❌ Command with UID "${commandUid}" not found.`);
-    return false;
+    return failed;
   }
 
   // Destructive safety guard (T1.6)
@@ -209,7 +239,7 @@ async function executeOnTarget(
       `❌ Command "${command.name}" is marked destructive. ` +
         `Add --dry-run to preview, or --yes to apply.`,
     );
-    return false;
+    return failed;
   }
 
   const targetIRI = vaultPathToIRI(vaultRelative);
@@ -272,15 +302,19 @@ async function executeOnTarget(
     console.error(
       `❌ Precondition not satisfied for "${command.name}" on "${vaultRelative}".`,
     );
-    return false;
+    return failed;
   }
 
   // Dry-run
   if (options.dryRun) {
-    console.log(
-      `🔍 Dry-run: would apply "${command.name}" to "${vaultRelative}" (precondition passed).`,
-    );
-    return true;
+    // Issue #3906 — keep stdout clean in --json mode (the envelope is emitted
+    // once by the action handler); a dry-run creates nothing → empty `created`.
+    if (!options.json) {
+      console.log(
+        `🔍 Dry-run: would apply "${command.name}" to "${vaultRelative}" (precondition passed).`,
+      );
+    }
+    return { ok: true, created: [] };
   }
 
   // Execute grounding
@@ -377,7 +411,7 @@ async function executeOnTarget(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`❌ --input: invalid JSON object (${msg})`);
-      return false;
+      return failed;
     }
   }
 
@@ -389,16 +423,51 @@ async function executeOnTarget(
   );
 
   if (result.success) {
-    const msg =
-      command.successMessage ??
-      `Applied "${command.name}" to "${vaultRelative}".`;
-    console.log(`✅ ${msg}`);
-    return true;
+    // Issue #3906 — surface the created asset's identity. The grounding executor
+    // already threads the created path (`ExecutionResult.openPath`) — a direct
+    // create_instance grounding (e.g. create-task-instance) sets it. Read the
+    // created file FRESH from disk (getAbstractFileByPath = statSync,
+    // getFrontmatter = readFileSync — no stale index) for its uuid + label.
+    const created: CreatedAsset[] = [];
+    if (result.openPath) {
+      const createdNode = vaultAdapter.getAbstractFileByPath(result.openPath);
+      const createdFile =
+        createdNode !== null && "basename" in createdNode
+          ? (createdNode as IFile)
+          : null;
+      const createdFm = createdFile
+        ? vaultAdapter.getFrontmatter(createdFile)
+        : null;
+      const labelRaw =
+        createdFm && typeof createdFm === "object"
+          ? (createdFm as Record<string, unknown>).exo__Asset_label
+          : undefined;
+      created.push({
+        // UUID-canon: the file is written as `<uid>.md`, so its basename IS the
+        // uuid (mirrors `create`'s `uuid = file.basename`). Fall back to the
+        // path tail if the adapter could not stat the just-written file.
+        uuid:
+          createdFile?.basename ??
+          result.openPath.replace(/^.*\//, "").replace(/\.md$/, ""),
+        path: result.openPath,
+        label: typeof labelRaw === "string" ? labelRaw : "",
+      });
+    }
+    if (!options.json) {
+      const msg =
+        command.successMessage ??
+        `Applied "${command.name}" to "${vaultRelative}".`;
+      // Optionally append the created path for convenience (Issue #3906) — no
+      // suffix when the command created nothing, so existing output is unchanged.
+      const suffix = result.openPath ? ` → ${result.openPath}` : "";
+      console.log(`✅ ${msg}${suffix}`);
+    }
+    return { ok: true, created };
   } else {
     console.error(
       `❌ "${command.name}" failed on "${vaultRelative}": ${result.error}`,
     );
-    return false;
+    return failed;
   }
 }
 
@@ -431,6 +500,10 @@ export function applyCommand(): Command {
     .option(
       "--frozen-clock <iso>",
       "Freeze clock to ISO timestamp for test/replay (uses frozenClock)",
+    )
+    .option(
+      "--json",
+      "Emit a machine-readable JSON result ({command,target,created:[{uuid,path,label}]}) instead of human-readable output",
     )
     .action(
       async (
@@ -502,8 +575,11 @@ export function applyCommand(): Command {
           // Continue-on-error semantics
           let successCount = 0;
           let failCount = 0;
+          // Issue #3906 — aggregate the assets created across all targets for
+          // the `--json` envelope.
+          const allCreated: CreatedAsset[] = [];
           for (const target of targets) {
-            const ok = await executeOnTarget(
+            const targetResult = await executeOnTarget(
               vaultPath,
               tripleStore,
               workflowResolver,
@@ -513,14 +589,32 @@ export function applyCommand(): Command {
               clock,
               uidGen,
             );
-            if (ok) successCount++;
+            if (targetResult.ok) successCount++;
             else failCount++;
+            allCreated.push(...targetResult.created);
           }
 
-          if (targets.length > 1) {
+          // Issue #3906 — in --json mode the multi-target summary is suppressed
+          // so stdout stays a single valid JSON document.
+          if (targets.length > 1 && !options.json) {
             console.log(
               `\n📊 Applied to ${successCount}/${targets.length} target(s) (${failCount} failed).`,
             );
+          }
+
+          // Issue #3906 — emit the machine-readable envelope once for the whole
+          // invocation (after the loop, before the exit-code decision, so a
+          // partially-failing run still reports what it created + exits non-zero).
+          if (options.json) {
+            const envelope: Record<string, unknown> = {
+              command: cmdArg,
+              created: allCreated,
+            };
+            // `target` (singular) for a single explicit path arg; `targets`
+            // (array) for a stdin-piped batch — matches the issue's example.
+            if (pathArg) envelope.target = pathArg;
+            else envelope.targets = targets;
+            process.stdout.write(JSON.stringify(envelope) + "\n");
           }
 
           if (failCount > 0) {
