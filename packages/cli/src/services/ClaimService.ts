@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import yaml from "js-yaml";
+import { parseYamlFrontmatterTolerant } from "@kitelev/exocortex-core";
 import {
   atomicUpdateFrontmatter,
   AtomicUpdateOptions,
@@ -83,7 +83,11 @@ function readFrontmatter(filePath: string): Record<string, unknown> | null {
   const content = fs.readFileSync(filePath, "utf8");
   const match = content.match(FRONTMATTER_RE);
   if (!match) return null;
-  const parsed = yaml.load(match[1]);
+  // Tolerant parse (#3901 / #3800): a duplicated YAML key resolves last-wins
+  // instead of throwing — the bare `yaml.load` here had NO try/catch, so a
+  // dup-key claim file would CRASH claimTask; tolerant returns the mapping
+  // (or null on genuine malformed). Non-dup input is byte-identical.
+  const parsed = parseYamlFrontmatterTolerant(match[1], filePath);
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
   }

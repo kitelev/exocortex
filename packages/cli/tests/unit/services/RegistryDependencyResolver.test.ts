@@ -132,6 +132,27 @@ describe("RegistryDependencyResolver", () => {
       expect(descs.has(UID_EXO)).toBe(true);
     });
 
+    it("resolves a descriptor whose frontmatter has a duplicated YAML key (tolerant last-wins) (#3901)", async () => {
+      // A bare `yaml.load` THROWS on a dup key → the descriptor was silently
+      // skipped (caught → null). Tolerant resolves last-wins → discovered.
+      // REVERT-VERIFY: revert tryReadFrontmatter to bare yaml.load → dup throws
+      // → descs.has(UID_EXO) is false → RED.
+      const dir = path.join(tmp, "registry");
+      await fs.ensureDir(dir);
+      await fs.writeFile(
+        path.join(dir, `${UID_EXO}.md`),
+        `---\nexo__Asset_uid: ${UID_EXO}\n` +
+          `exo__Instance_class:\n  - "[[${ASSET_SPACE_CLASS_UID}]]"\n` +
+          `exo__AssetSpace_namespace: first\nexo__AssetSpace_namespace: exo\n` +
+          `exo__AssetSpace_source: "https://github.com/kitelev/exoas-exo"\n---\n`,
+        "utf-8",
+      );
+      const resolver = new RegistryDependencyResolver();
+      const descs = await resolver.scanRegistry(dir);
+      expect(descs.has(UID_EXO)).toBe(true);
+      expect(descs.get(UID_EXO)?.namespace).toBe("exo"); // last-wins
+    });
+
     it("returns an empty map (with a warn) for a non-existent registry path", async () => {
       const warnings: string[] = [];
       const resolver = new RegistryDependencyResolver({ warn: (m) => warnings.push(m) });

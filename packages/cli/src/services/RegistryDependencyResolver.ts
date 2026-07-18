@@ -25,9 +25,12 @@
 
 import fs from "fs-extra";
 import path from "path";
-import yaml from "js-yaml";
 
-import { transitiveDependsOnClosure, derivePath } from "@kitelev/exocortex-core";
+import {
+  transitiveDependsOnClosure,
+  derivePath,
+  parseYamlFrontmatterTolerant,
+} from "@kitelev/exocortex-core";
 
 import {
   ASSET_SPACE_CLASS_UID,
@@ -304,7 +307,10 @@ export class RegistryDependencyResolver {
     const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
     if (match === null) return null;
     try {
-      const parsed = yaml.load(match[1]);
+      // Tolerant parse (#3901 / #3800): a duplicated YAML key resolves last-wins
+      // instead of throwing (which the bare `yaml.load` did → caught → null),
+      // so a dup-key descriptor still resolves. Non-dup input is byte-identical.
+      const parsed = parseYamlFrontmatterTolerant(match[1], filePath);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         return parsed as Record<string, unknown>;
       }

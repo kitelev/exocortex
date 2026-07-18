@@ -8,6 +8,7 @@ import {
 import path from "path";
 import { randomBytes } from "crypto";
 import yaml from "js-yaml";
+import { parseYamlFrontmatterTolerant } from "@kitelev/exocortex-core";
 
 export type AtomicUpdateFailureReason =
   | "verify-mismatch"
@@ -48,7 +49,23 @@ function parseFile(content: string): ParsedFile | null {
   const match = content.match(FRONTMATTER_RE);
   if (!match) return null;
   const [, fm, body = ""] = match;
-  const parsed = yaml.load(fm);
+  // Read-modify-WRITE path — try the strict parse first (empty & non-dup files
+  // stay byte-identical). A duplicated YAML key makes `yaml.load` THROW; recover
+  // it last-wins via the tolerant parser (#3901 / #3800) so an atomic update
+  // self-heals a dup-key file instead of aborting. But a GENUINELY malformed
+  // block must still fail-loud (→ parse-error → NO write) so we never overwrite a
+  // broken file with empty frontmatter — the tolerant parser returns null for
+  // BOTH empty and malformed, but only a throw reaches this branch, so a null
+  // here means malformed → re-throw.
+  let parsed: unknown;
+  try {
+    parsed = yaml.load(fm);
+  } catch {
+    parsed = parseYamlFrontmatterTolerant(fm, "AtomicFrontmatterService");
+    if (parsed === null) {
+      throw new Error("frontmatter is not a YAML mapping");
+    }
+  }
   if (parsed === null || parsed === undefined) {
     return { frontmatter: {}, body };
   }
