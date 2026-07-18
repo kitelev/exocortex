@@ -223,7 +223,14 @@ jobs:
           key: archgate-${{ runner.os }}
 
       - name: Install Archgate
-        run: npm install -g archgate
+        # Pinned: archgate 0.49.0 (2026-07-16) tightened the rule-file import
+        # security scanner to allow only node:* imports, which blocks the repo's
+        # own `.archgate/adrs/*.rules.ts` helpers (e.g. MOBILE-004 →
+        # `../lint/desktopOnlyCommandGate`) → archgate check fails on every run
+        # once `npm install -g archgate` (unpinned) resolves 0.49.0. Pin to the
+        # last-known-good 0.48.4 for determinism; upgrade + adapt the rule files
+        # to 0.49.0's stricter policy deliberately as a follow-up.
+        run: npm install -g archgate@0.48.4
 
       - name: Run ADR compliance checks
         run: archgate check --ci
