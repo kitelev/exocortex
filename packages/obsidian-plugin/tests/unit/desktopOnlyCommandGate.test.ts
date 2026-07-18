@@ -1,9 +1,13 @@
 import { readFileSync } from "fs";
 import { resolve } from "path";
+// Single source of truth: the scanner functions are inlined in the archgate
+// MOBILE-004 rule file (archgate v0.50.0 forbids rule files importing local
+// modules) and re-exported for this test — no drift between the CI gate and its
+// test.
 import {
   findDesktopOnlyGatedAddCommands,
   isDesktopOnlyCondition,
-} from "../../../../.archgate/lint/desktopOnlyCommandGate";
+} from "../../../../.archgate/adrs/MOBILE-004-no-desktop-only-gated-addcommand.rules";
 
 /**
  * Revert-verify for the MOBILE-004 archgate rule (Desktop↔Mobile Command
