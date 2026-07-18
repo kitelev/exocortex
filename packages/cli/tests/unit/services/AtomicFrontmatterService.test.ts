@@ -59,6 +59,46 @@ describe("AtomicFrontmatterService", () => {
     expect(r.reason).toBe("parse-error");
   });
 
+  // ── #3901: tolerant dup-key rescue + preserved malformed-abort (no data loss) ──
+
+  it("self-heals a duplicated YAML key (last-wins) instead of aborting parse-error (#3901)", () => {
+    // A bare `yaml.load` THROWS on a duplicated mapping key → the old code
+    // returned parse-error (the atomic update aborted). The tolerant parser
+    // resolves last-wins, so the update proceeds and rewrites the file deduped.
+    // REVERT-VERIFY: revert parseFile to a bare `yaml.load(fm)` → dup-key throws
+    // → r.success is false (parse-error) → RED. With the guarded tolerant route
+    // → GREEN.
+    writeFileSync(
+      target,
+      "---\nexo__Asset_uid: uuid-1\ndup: first\ndup: second\n---\n# Body\n",
+    );
+
+    const r = atomicUpdateFrontmatter(target, { aiTask__Task_claimedBy: "99999" });
+
+    expect(r.success).toBe(true);
+    const parsed = yaml.load(
+      readFileSync(target, "utf8").split("---")[1],
+    ) as Record<string, unknown>;
+    expect(parsed["dup"]).toBe("second"); // last-wins
+    expect(parsed["aiTask__Task_claimedBy"]).toBe("99999");
+    expect(parsed["exo__Asset_uid"]).toBe("uuid-1");
+  });
+
+  it("still aborts (parse-error, file byte-identical) for GENUINELY malformed YAML — the write path must never overwrite a broken file with empty frontmatter (#3901 negative control)", () => {
+    // Unterminated flow sequence → `yaml.load` throws even in JSON-compat mode,
+    // so the tolerant parser returns null → parseFile re-throws → parse-error.
+    // This proves the dup-key rescue did NOT weaken the malformed-abort safety:
+    // the atomic update aborts BEFORE any write, leaving the file untouched.
+    const original = "---\nkey: [unterminated\n---\noriginal body\n";
+    writeFileSync(target, original);
+
+    const r = atomicUpdateFrontmatter(target, { foo: "bar" });
+
+    expect(r.success).toBe(false);
+    expect(r.reason).toBe("parse-error");
+    expect(readFileSync(target, "utf8")).toBe(original); // no data loss
+  });
+
   it("returns fs-error when target file is missing", () => {
     const r = atomicUpdateFrontmatter(path.join(dir, "missing.md"), { foo: 1 });
     expect(r.success).toBe(false);

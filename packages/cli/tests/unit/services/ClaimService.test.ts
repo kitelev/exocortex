@@ -83,4 +83,17 @@ describe("ClaimService", () => {
     await claimTask(target, 333);
     expect(existsSync(tmpLockDir)).toBe(true);
   });
+
+  it("claims a task whose frontmatter has a duplicated YAML key (tolerant parse, no crash) (#3901)", async () => {
+    // `readFrontmatter` had a bare `yaml.load` with NO try/catch → a dup key
+    // THREW and claimTask rejected. The tolerant parser resolves last-wins so
+    // the claim proceeds. REVERT-VERIFY: revert readFrontmatter to bare
+    // yaml.load → this rejects/returns false → RED.
+    writeFileSync(
+      target,
+      "---\nexo__Asset_uid: dup-uuid\nems__Effort_status: A\nems__Effort_status: B\n---\n",
+    );
+    const claimed = await claimTask(target, 2001);
+    expect(claimed).toBe(true);
+  });
 });

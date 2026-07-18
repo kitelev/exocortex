@@ -170,6 +170,28 @@ describe("CliProfileResolver", () => {
       }
     });
 
+    it("resolves a profile whose frontmatter has a duplicated YAML key (tolerant last-wins) (#3901)", async () => {
+      await makeVault(tmpRoot, [
+        asAssetSpace(AS_EXO_UID, "exo"),
+        asProfile(PROFILE_BASE_UID, { label: "base" }),
+      ]);
+      // Overwrite the profile with a raw duplicated-key frontmatter. A bare
+      // `yaml.load` THROWS → tryReadFrontmatter returns null → the profile reads
+      // as not-a-profile → missing-profile. Tolerant resolves last-wins →
+      // engaged. REVERT-VERIFY: revert tryReadFrontmatter to bare yaml.load →
+      // out.outcome !== "engaged" → RED.
+      await fs.writeFile(
+        path.join(tmpRoot, "profiles", `${PROFILE_BASE_UID}.md`),
+        `---\nexo__Asset_uid: ${PROFILE_BASE_UID}\n` +
+          `exo__Instance_class:\n  - "[[${PROFILE_CLASS_UID}|exo__Profile]]"\n` +
+          `exo__Asset_label: first\nexo__Asset_label: base\n---\n`,
+        "utf-8",
+      );
+      const resolver = new CliProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter(PROFILE_BASE_UID);
+      expect(out.outcome).toBe("engaged");
+    });
+
     it("resolves declared AS UIDs against the folder map (RFC 01a83de8 Phase 2)", async () => {
       await makeVault(tmpRoot, [
         asAssetSpace(AS_EXO_UID, "exo"),

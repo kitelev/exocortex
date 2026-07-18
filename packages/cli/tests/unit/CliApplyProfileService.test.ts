@@ -94,4 +94,26 @@ describe("CliApplyProfileService.scanVault", () => {
     const svc = new CliApplyProfileService({ vaultPath: root });
     expect(svc.scanVault().infos).toHaveLength(0);
   });
+
+  it("scans a descriptor whose frontmatter has a duplicated YAML key (tolerant last-wins) (#3901)", () => {
+    // A bare `yaml.load` THROWS on a dup key → the descriptor was silently
+    // skipped (caught → null → 0 infos). Tolerant resolves last-wins → scanned.
+    // REVERT-VERIFY: revert readFrontmatter to bare yaml.load → infos length 0
+    // → RED.
+    const uid = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+    const dir = path.join(root, "assetspaces", "_registry");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, `${uid}.md`),
+      `---\nexo__Asset_uid: ${uid}\n` +
+        `exo__Instance_class:\n  - "[[${ASSET_SPACE_CLASS_UID}]]"\n` +
+        `exo__AssetSpace_source: "https://github.com/kitelev/exoas-dup"\n` +
+        `exo__AssetSpace_source: "https://github.com/kitelev/exoas-testlib"\n---\n`,
+    );
+    const svc = new CliApplyProfileService({ vaultPath: root });
+    const { infos } = svc.scanVault();
+    expect(infos).toHaveLength(1);
+    expect(infos[0].uid).toBe(uid);
+    expect(infos[0].folderName).toBe("assetspaces/kitelev/exoas-testlib"); // last-wins source
+  });
 });
