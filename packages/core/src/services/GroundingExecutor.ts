@@ -100,6 +100,21 @@ export interface ExecutionResult {
   readonly error?: string;
   readonly openPath?: string;
   /**
+   * Issue #3918 — vault-relative paths of assets created as a SIDE EFFECT by a
+   * `composite` grounding (a composite whose steps include one or more
+   * `create_instance` steps, plus any created by nested composite steps). Set
+   * by `executeComposite`; consumed by `apply --json` to surface a `created`
+   * entry (uuid/path/label) per composite-created file.
+   *
+   * Deliberately DISTINCT from `openPath`: `openPath` is the single path the
+   * presentation layer (`CommandExecutionFlow`) opens in a new tab, so a
+   * composite leaves `openPath` UNSET and reports its creations via
+   * `createdPaths` instead — surfacing-only, no automatic tab-open. Omitted
+   * (undefined) when the composite created nothing → today's `{ success: true }`
+   * output is byte-identical.
+   */
+  readonly createdPaths?: readonly string[];
+  /**
    * Marks an unsuccessful result as a benign "not applicable" outcome rather
    * than a hard failure. Set by `workflow_transition` when the target asset's
    * class has no applicable status workflow (e.g. `ems__Action`, which has its
@@ -725,6 +740,13 @@ export class GroundingExecutor {
     // asset (link-back), and the just-created asset is not yet in the store.
     let lastCreatedPath: string | undefined;
 
+    // Issue #3918 — every asset written to disk by a create_instance step (and
+    // by any nested composite step), collected purely for surfacing via
+    // `apply --json`. Independent of `lastCreatedPath` (which drives step
+    // targeting) — this is the read-only "what did the composite create?"
+    // channel and does NOT set `openPath` (so plugin tab-open is unchanged).
+    const createdPaths: string[] = [];
+
     try {
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
@@ -751,10 +773,19 @@ export class GroundingExecutor {
         // create_instance returns the new file's path — thread it to a later
         // body_template step.
         if (result.openPath) lastCreatedPath = result.openPath;
+        // Issue #3918 — record it (and any nested-composite creations) for
+        // surfacing. Additive only: the threading above is untouched.
+        if (result.openPath) createdPaths.push(result.openPath);
+        if (result.createdPaths && result.createdPaths.length > 0) {
+          createdPaths.push(...result.createdPaths);
+        }
         completedSteps.push(i);
       }
 
-      return { success: true };
+      return {
+        success: true,
+        ...(createdPaths.length > 0 ? { createdPaths } : {}),
+      };
     } catch (error) {
       await this.rollback(originalContent, filePath, completedSteps);
       return {
