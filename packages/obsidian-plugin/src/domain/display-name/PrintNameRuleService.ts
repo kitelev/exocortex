@@ -119,10 +119,19 @@ interface RawDisplayNamePart {
   literal?: string; // static text for exo__PrintedLiteral
 }
 
+/**
+ * Trailing debounce for scheduleRefresh() — collapses a burst of metadataCache "changed"
+ * events into ONE scanVault. Fixes the iPhone crash-loop: the "changed" handler used to call
+ * refresh() (full O(N) vault walk) on EVERY file change with no debounce → O(K·N) storm during
+ * a sync burst → iOS Jetsam. 300ms is imperceptible for displayName updates.
+ */
+const PRINT_NAME_RESCAN_DEBOUNCE_MS = 300;
+
 export class PrintNameRuleService {
   private rules: Map<string, PrintNameRule[]> = new Map();
   private classHierarchy: Map<string, string[]> = new Map();
   private initialized = false;
+  private scanDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * @param hostFunctions Registry of display-matcher host functions (name → predicate),
@@ -351,6 +360,23 @@ export class PrintNameRuleService {
 
   refresh(): void {
     this.scanVault();
+  }
+
+  /**
+   * Debounced refresh for high-frequency callers (the metadataCache "changed" handler).
+   * A burst of K change events (e.g. during a sync pull) collapses into ONE scanVault
+   * ~300ms after the last event, instead of K full O(N) vault walks. This is the fix for
+   * the iPhone crash-loop (iOS Jetsam kills Obsidian under the O(K·N) scan storm). The
+   * immediate refresh() is retained for the rare cold-start "resolved" rebuild.
+   */
+  scheduleRefresh(): void {
+    if (this.scanDebounceTimer !== null) {
+      clearTimeout(this.scanDebounceTimer);
+    }
+    this.scanDebounceTimer = setTimeout(() => {
+      this.scanDebounceTimer = null;
+      this.scanVault();
+    }, PRINT_NAME_RESCAN_DEBOUNCE_MS);
   }
 
   private scanVault(): void {
