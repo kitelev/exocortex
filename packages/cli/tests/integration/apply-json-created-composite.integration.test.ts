@@ -52,6 +52,10 @@ const PSET_COMP_GROUNDING_UID = "bbbb0007-0000-0000-0000-000000000007";
 const STEP_PSET_ONLY_UID = "bbbb0008-0000-0000-0000-000000000008";
 // --- DIRECT create_instance command (#3906 preservation) reusing STEP_CREATE ---
 const DIRECT_CMD_UID = "bbbb0009-0000-0000-0000-000000000009";
+// --- composite that creates TWO assets (>1 create_instance step) ---
+const MULTI_COMP_CMD_UID = "bbbb000a-0000-0000-0000-00000000000a";
+const MULTI_COMP_GROUNDING_UID = "bbbb000b-0000-0000-0000-00000000000b";
+const STEP_CREATE2_UID = "bbbb000c-0000-0000-0000-00000000000c";
 
 const INPUT_LABEL = "Composite child task";
 
@@ -183,6 +187,52 @@ const DIRECT_CMD_MD = [
   "",
 ].join("\n");
 
+// A second create_instance step (distinct grounding) — targets a separate
+// folder so a 2-create composite writes two distinct files.
+const STEP_CREATE2_MD = [
+  "---",
+  `exo__Asset_uid: ${STEP_CREATE2_UID}`,
+  `exo__Asset_label: "Create second child task step"`,
+  `exo__Asset_isDefinedBy: "[[!kitelev]]"`,
+  `exo__Instance_class:`,
+  `  - "[[exocmd__Grounding]]"`,
+  `exocmd__Grounding_type: "[[${GT_CREATE_INSTANCE}]]"`,
+  `exocmd__Grounding_targetClass: "ems__Task"`,
+  `exocmd__Grounding_targetFolder: "Inbox2"`,
+  "---",
+  "",
+].join("\n");
+
+const MULTI_COMP_CMD_MD = [
+  "---",
+  `exo__Asset_uid: ${MULTI_COMP_CMD_UID}`,
+  `exo__Asset_label: "Create two children (multi-create composite json-test)"`,
+  `exo__Asset_isDefinedBy: "[[!kitelev]]"`,
+  `exo__Instance_class:`,
+  `  - "[[exocmd__Command]]"`,
+  `exocmd__Command_grounding: "[[${MULTI_COMP_GROUNDING_UID}|Multi-create composite grounding]]"`,
+  `exocmd__Command_successMessage: "Two children created"`,
+  "---",
+  "",
+].join("\n");
+
+// A composite with TWO create_instance steps → the `createdPaths` array must
+// collect BOTH → apply --json emits two `created` entries (#3918 multi-create).
+const MULTI_COMP_GROUNDING_MD = [
+  "---",
+  `exo__Asset_uid: ${MULTI_COMP_GROUNDING_UID}`,
+  `exo__Asset_label: "Multi-create composite grounding"`,
+  `exo__Asset_isDefinedBy: "[[!kitelev]]"`,
+  `exo__Instance_class:`,
+  `  - "[[exocmd__Grounding]]"`,
+  `exocmd__Grounding_type: "[[${GT_COMPOSITE}]]"`,
+  `exocmd__Grounding_steps:`,
+  `  - "[[${STEP_CREATE_UID}|Create step 1]]"`,
+  `  - "[[${STEP_CREATE2_UID}|Create step 2]]"`,
+  "---",
+  "",
+].join("\n");
+
 interface VaultLayout {
   root: string;
   protoRelPath: string;
@@ -202,7 +252,11 @@ function buildVault(): VaultLayout {
   write(PSET_COMP_GROUNDING_UID, PSET_COMP_GROUNDING_MD);
   write(STEP_PSET_ONLY_UID, STEP_PSET_ONLY_MD);
   write(DIRECT_CMD_UID, DIRECT_CMD_MD);
+  write(MULTI_COMP_CMD_UID, MULTI_COMP_CMD_MD);
+  write(MULTI_COMP_GROUNDING_UID, MULTI_COMP_GROUNDING_MD);
+  write(STEP_CREATE2_UID, STEP_CREATE2_MD);
   fs.mkdirSync(path.join(root, "Inbox"), { recursive: true });
+  fs.mkdirSync(path.join(root, "Inbox2"), { recursive: true });
   return {
     root,
     protoRelPath: `${PROTO_UID}.md`,
@@ -348,6 +402,29 @@ describe("Issue #3918: apply --json surfaces composite create-as-side-effect ass
       "utf-8",
     );
     expect(protoContent).not.toContain("test__CompositeRan");
+  });
+
+  it("@req:8eaae6a9-3a11-42cd-a549-c988dae2073b --json on a composite with TWO create_instance steps emits TWO created entries (multi-create)", async () => {
+    await runApply(MULTI_COMP_CMD_UID, ["--json"]);
+
+    const parsed = JSON.parse(stdoutChunks.join(""));
+    expect(parsed.command).toBe(MULTI_COMP_CMD_UID);
+    expect(Array.isArray(parsed.created)).toBe(true);
+    // both create_instance steps ran → createdPaths collected both → two entries
+    expect(parsed.created).toHaveLength(2);
+
+    // each entry resolves to a distinct real file (one per target folder)
+    const paths = parsed.created.map((c: { path: string }) => c.path).sort();
+    expect(new Set(paths).size).toBe(2);
+    for (const entry of parsed.created) {
+      const abs = path.join(vault.root, entry.path);
+      expect(fs.existsSync(abs)).toBe(true);
+      expect(entry.uuid).toBe(path.basename(entry.path, ".md"));
+      expect(entry.label).toBe(INPUT_LABEL);
+    }
+    // one file landed in each step's target folder (Inbox + Inbox2)
+    expect(paths.some((p: string) => p.startsWith(`Inbox${path.sep}`))).toBe(true);
+    expect(paths.some((p: string) => p.startsWith(`Inbox2${path.sep}`))).toBe(true);
   });
 
   it("without --json a composite create surfaces the created path in the human message + emits NO stdout JSON", async () => {
