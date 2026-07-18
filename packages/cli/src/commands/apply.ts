@@ -86,6 +86,39 @@ interface TargetResult {
   created: CreatedAsset[];
 }
 
+/**
+ * Issue #3906/#3918 — build the `{uuid,path,label}` entry for a just-created
+ * file, reading it FRESH from disk (getAbstractFileByPath = statSync,
+ * getFrontmatter = readFileSync — no stale index). `uuid` is the created file's
+ * UUID-canon basename (mirrors `create`'s `uuid = file.basename`), falling back
+ * to the path tail if the adapter could not stat the just-written file; `label`
+ * is read fresh from the created file's `exo__Asset_label`.
+ */
+function buildCreatedAsset(
+  vaultAdapter: FileSystemVaultAdapter,
+  createdPath: string,
+): CreatedAsset {
+  const createdNode = vaultAdapter.getAbstractFileByPath(createdPath);
+  const createdFile =
+    createdNode !== null && "basename" in createdNode
+      ? (createdNode as IFile)
+      : null;
+  const createdFm = createdFile
+    ? vaultAdapter.getFrontmatter(createdFile)
+    : null;
+  const labelRaw =
+    createdFm && typeof createdFm === "object"
+      ? (createdFm as Record<string, unknown>).exo__Asset_label
+      : undefined;
+  return {
+    uuid:
+      createdFile?.basename ??
+      createdPath.replace(/^.*\//, "").replace(/\.md$/, ""),
+    path: createdPath,
+    label: typeof labelRaw === "string" ? labelRaw : "",
+  };
+}
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -423,43 +456,32 @@ async function executeOnTarget(
   );
 
   if (result.success) {
-    // Issue #3906 — surface the created asset's identity. The grounding executor
-    // already threads the created path (`ExecutionResult.openPath`) — a direct
-    // create_instance grounding (e.g. create-task-instance) sets it. Read the
+    // Issue #3906/#3918 — surface the asset(s) this apply created. The grounding
+    // executor already tracked the created path(s): a DIRECT create_instance
+    // grounding reports its single created path via `result.openPath` (#3906); a
+    // `composite` grounding reports its side-effect creations via
+    // `result.createdPaths` (#3918, one per create_instance step). Read each
     // created file FRESH from disk (getAbstractFileByPath = statSync,
     // getFrontmatter = readFileSync — no stale index) for its uuid + label.
+    const createdPaths: string[] = [];
+    if (result.openPath) createdPaths.push(result.openPath);
+    if (result.createdPaths) createdPaths.push(...result.createdPaths);
     const created: CreatedAsset[] = [];
-    if (result.openPath) {
-      const createdNode = vaultAdapter.getAbstractFileByPath(result.openPath);
-      const createdFile =
-        createdNode !== null && "basename" in createdNode
-          ? (createdNode as IFile)
-          : null;
-      const createdFm = createdFile
-        ? vaultAdapter.getFrontmatter(createdFile)
-        : null;
-      const labelRaw =
-        createdFm && typeof createdFm === "object"
-          ? (createdFm as Record<string, unknown>).exo__Asset_label
-          : undefined;
-      created.push({
-        // UUID-canon: the file is written as `<uid>.md`, so its basename IS the
-        // uuid (mirrors `create`'s `uuid = file.basename`). Fall back to the
-        // path tail if the adapter could not stat the just-written file.
-        uuid:
-          createdFile?.basename ??
-          result.openPath.replace(/^.*\//, "").replace(/\.md$/, ""),
-        path: result.openPath,
-        label: typeof labelRaw === "string" ? labelRaw : "",
-      });
+    const seen = new Set<string>();
+    for (const createdPath of createdPaths) {
+      if (seen.has(createdPath)) continue; // dedup (openPath vs createdPaths overlap)
+      seen.add(createdPath);
+      created.push(buildCreatedAsset(vaultAdapter, createdPath));
     }
     if (!options.json) {
       const msg =
         command.successMessage ??
         `Applied "${command.name}" to "${vaultRelative}".`;
-      // Optionally append the created path for convenience (Issue #3906) — no
-      // suffix when the command created nothing, so existing output is unchanged.
-      const suffix = result.openPath ? ` → ${result.openPath}` : "";
+      // Optionally append the (first) created path for convenience (#3906/#3918)
+      // — no suffix when the command created nothing, so existing output is
+      // unchanged.
+      const firstPath = result.openPath ?? result.createdPaths?.[0];
+      const suffix = firstPath ? ` → ${firstPath}` : "";
       console.log(`✅ ${msg}${suffix}`);
     }
     return { ok: true, created };
