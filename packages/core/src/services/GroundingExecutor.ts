@@ -763,8 +763,15 @@ export class GroundingExecutor {
           depth + 1,
         );
         if (!result.success) {
-          // Rollback completed steps by restoring original file content
-          await this.rollback(originalContent, filePath, completedSteps);
+          // Rollback completed steps: restore the click-target source content
+          // AND (Issue #3921) delete any assets an earlier create_instance step
+          // already wrote to disk, so a failing later step leaves no orphans.
+          await this.rollback(
+            originalContent,
+            filePath,
+            completedSteps,
+            createdPaths,
+          );
           return {
             success: false,
             error: `Composite step ${i} failed: ${result.error}`,
@@ -787,7 +794,14 @@ export class GroundingExecutor {
         ...(createdPaths.length > 0 ? { createdPaths } : {}),
       };
     } catch (error) {
-      await this.rollback(originalContent, filePath, completedSteps);
+      // Issue #3921 — pass createdPaths so a mid-composite throw after an
+      // earlier create_instance also cleans up the orphaned created asset.
+      await this.rollback(
+        originalContent,
+        filePath,
+        completedSteps,
+        createdPaths,
+      );
       return {
         success: false,
         error: `Composite execution failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -2026,17 +2040,42 @@ export class GroundingExecutor {
     originalContent: string | undefined,
     filePath: string,
     _completedSteps: number[],
+    createdPaths: readonly string[] = [],
   ): Promise<void> {
-    if (originalContent === undefined) return;
+    // Restore the click-target source file to its pre-composite content.
+    // Skipped when there was nothing on disk to begin with (e.g. service_call-
+    // only composites where filePath never existed).
+    if (originalContent !== undefined) {
+      try {
+        await this.fileWriter.updateFile(filePath, originalContent);
+      } catch (rollbackError) {
+        // Log rollback failure but do not throw — prevents masking the original error
+        LoggingService.error(
+          `[GroundingExecutor] Rollback failed for ${filePath}`,
+          rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError)),
+        );
+      }
+    }
 
-    try {
-      await this.fileWriter.updateFile(filePath, originalContent);
-    } catch (rollbackError) {
-      // Log rollback failure but do not throw — prevents masking the original error
-      LoggingService.error(
-        `[GroundingExecutor] Rollback failed for ${filePath}`,
-        rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError)),
-      );
+    // Issue #3921 — best-effort remove any assets a successful EARLIER
+    // create_instance step wrote to disk before a later step failed. Without
+    // this the created files are orphaned (partial-composite artifacts). Each
+    // delete is fail-soft: a failure is logged and swallowed so it never masks
+    // the original step error nor blocks the source-restore above. `createdPaths`
+    // only ever holds newly-created instance paths (each a fresh-UID
+    // `<folder>/<uid>.md` from executeCreateInstance) — never the click-target
+    // `filePath` — so this cannot delete the source asset. Runs regardless of
+    // whether `originalContent` was defined, so created files are cleaned up
+    // even when the click-target had no on-disk content.
+    for (const createdPath of createdPaths) {
+      try {
+        await this.fileWriter.deleteFile(createdPath);
+      } catch (deleteError) {
+        LoggingService.error(
+          `[GroundingExecutor] Rollback: failed to delete orphaned created asset ${createdPath}`,
+          deleteError instanceof Error ? deleteError : new Error(String(deleteError)),
+        );
+      }
     }
   }
 
