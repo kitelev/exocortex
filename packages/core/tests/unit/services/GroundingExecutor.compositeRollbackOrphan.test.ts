@@ -249,6 +249,53 @@ describe("GroundingExecutor — composite rollback deletes orphaned created asse
     expect(files.get(CLICK_TARGET_PATH)).toBe(CLICK_TARGET_SEED);
   });
 
+  it("catch-branch: a composite step that THROWS also deletes the created file (revert-locks the L799 rollback call)", async () => {
+    const { files, reader, writer } = makeFs({
+      [CLICK_TARGET_PATH]: CLICK_TARGET_SEED,
+    });
+    const exec = new GroundingExecutor(reader, writer, new ServiceRegistry());
+
+    // executeComposite has TWO rollback call sites: the step-returned-
+    // {success:false} branch (covered by the cases above) AND the catch branch
+    // (a genuine throw in the loop body). `execute()` wraps every step throw
+    // into {success:false} (→ the step-failure branch), so the ONLY way to
+    // reach the catch branch is a real throw from executeStep. Force the SECOND
+    // step to throw; the FIRST (create_instance) runs for real so createdPaths
+    // is populated before the throw. This locks the catch-branch rollback so a
+    // future revert of its `createdPaths` argument fails RED.
+    type WithStep = {
+      executeStep: (...args: unknown[]) => Promise<unknown>;
+    };
+    const realStep = (exec as unknown as WithStep).executeStep.bind(exec);
+    let stepCall = 0;
+    (exec as unknown as WithStep).executeStep = async (...args: unknown[]) => {
+      stepCall += 1;
+      if (stepCall === 1) return realStep(...args); // real create_instance
+      throw new Error("boom: composite step 2 threw");
+    };
+
+    const composite = gnd({
+      type: GroundingType.COMPOSITE,
+      steps: [createInstanceStep(), failingServiceCallStep()],
+    });
+
+    const res = await exec.execute(
+      composite,
+      CLICK_TARGET_IRI,
+      CLICK_TARGET_PATH,
+    );
+
+    expect(res.success).toBe(false);
+    // Proves we hit the catch branch (L799), not the step-failure branch (L769).
+    expect(res.error).toContain("Composite execution failed");
+
+    const createdPath = firstCreatedPath(writer);
+    expect(writer.deleteFile).toHaveBeenCalledWith(createdPath);
+    expect(files.has(createdPath)).toBe(false);
+    // Source-restore still ran on the catch path.
+    expect(files.get(CLICK_TARGET_PATH)).toBe(CLICK_TARGET_SEED);
+  });
+
   it("success case is byte-identical: no delete, createdPaths still surfaced for apply --json #3918 (regression-lock)", async () => {
     const { files, reader, writer } = makeFs({
       [CLICK_TARGET_PATH]: CLICK_TARGET_SEED,
