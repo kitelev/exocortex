@@ -95,14 +95,33 @@ const RDFS_BASE: string = Namespace.RDFS.iri.value;
 const OWL_BASE: string = Namespace.OWL.iri.value;
 /**
  * `exo#` local-name prefixes that are purely TBox-structural / reification-plumbing
- * — never user-data relations (`Instance_class`, `Class_superClass`, the three
- * `Statement_` slots). Safe to drop wholesale by prefix.
+ * — never user-data relations (`Instance_class`, the three `Statement_` slots).
+ * Safe to drop wholesale by prefix.
+ *
+ * ⛔ `Class_` is deliberately NOT a wholesale prefix here (ems__Bug `2c7b99a3`):
+ * the `exo#Class_*` family, like `exo#Asset_*`, mixes LITERAL definition metadata
+ * with genuine OBJECT relations — `Class_superClass` is an `exo#ObjectProperty`
+ * modelling a real class-to-class edge. Dropping the whole prefix made a manually
+ * reified `Class_superClass` statement invisible EVERYWHERE: the raw backlink is
+ * suppressed as reification plumbing (see {@link REIFICATION_PLUMBING_KEYS}) in
+ * the expectation that the reified path renders the logical edge — and the
+ * reified path then discarded it here. Only the literal / definition-metadata
+ * `Class_*` properties are dropped, mirroring the `Asset_*` treatment below.
  */
-const EXO_NON_RELATION_LOCALNAME_PREFIXES = [
-  "Instance_",
-  "Class_",
-  "Statement_",
-];
+const EXO_NON_RELATION_LOCALNAME_PREFIXES = ["Instance_", "Statement_"];
+/**
+ * The LITERAL / definition-metadata `exo#Class_*` properties — dropped explicitly.
+ * The OBJECT relation `Class_superClass` is intentionally ABSENT so it passes as a
+ * relation (ems__Bug `2c7b99a3`): a hand-authored `exo__Statement` reifying it is a
+ * deliberate user act of surfacing that edge. Note this denylist gates ONLY the
+ * reified path ({@link getReifiedRelationsGated}) — inline frontmatter
+ * `exo__Class_superClass` is unaffected and still yields no relation-block noise.
+ */
+const EXO_NON_RELATION_CLASS_LOCALNAMES: ReadonlySet<string> = new Set([
+  "Class_name",
+  "Class_description",
+  "Class_ontology",
+]);
 /**
  * The LITERAL `exo#Asset_*` metadata properties (string / datetime / boolean
  * values) — dropped explicitly. The OBJECT `exo:Asset_*` relations
@@ -131,6 +150,7 @@ export function isNonRelationPredicate(predicateIri: string): boolean {
   if (predicateIri.startsWith(EXO_BASE)) {
     const localName = predicateIri.slice(EXO_BASE.length);
     if (EXO_NON_RELATION_ASSET_LOCALNAMES.has(localName)) return true;
+    if (EXO_NON_RELATION_CLASS_LOCALNAMES.has(localName)) return true;
     return EXO_NON_RELATION_LOCALNAME_PREFIXES.some((p) =>
       localName.startsWith(p),
     );
