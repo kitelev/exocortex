@@ -71,9 +71,9 @@ const REIFICATION_PLUMBING_KEYS: ReadonlySet<string> = new Set([
  * object properties such as `ems#Effort_area`, `exo-ims#relatesToConcept`); a
  * statement whose `_predicate` is a SYSTEM / metadata / plumbing predicate
  * (`rdf:type`, the literal `exo:Asset_*` frontmatter metadata, the TBox-structural
- * `exo:Instance_*` / `exo:Class_*`, or the `exo:Statement_*` reification slots
- * themselves) is noise, not a relation, and must be dropped. RDFS / OWL schema
- * predicates (inferred noise) are likewise excluded.
+ * `exo:Instance_*` and the literal `exo:Class_*` subset, or the `exo:Statement_*`
+ * reification slots themselves) is noise, not a relation, and must be dropped.
+ * RDFS / OWL schema predicates (inferred noise) are likewise excluded.
  *
  * The exclusion is deliberately a CLOSED, narrow set — NOT a coarse `exo#Asset_`
  * prefix. The `exo:Asset_*` family contains genuine OBJECT relations the inline
@@ -94,9 +94,14 @@ const EXO_BASE: string = Namespace.EXO.iri.value;
 const RDFS_BASE: string = Namespace.RDFS.iri.value;
 const OWL_BASE: string = Namespace.OWL.iri.value;
 /**
- * `exo#` local-name prefixes that are purely TBox-structural / reification-plumbing
- * — never user-data relations (`Instance_class`, the three `Statement_` slots).
- * Safe to drop wholesale by prefix.
+ * `exo#` local-name prefixes dropped WHOLESALE from the reified path.
+ *
+ * Note `Instance_class` / `Instance_prototype` are themselves `exo#ObjectProperty`
+ * — so `Instance_` is kept wholesale NOT on the "its members are literals" grounds
+ * that motivate the enumerated `Class_*` set below, but on VOLUME grounds: every
+ * instance of a class backlinks to it, and those class-membership / prototype edges
+ * are already surfaced by the inline path at a scale that would swamp the block.
+ * The `Statement_` slots are pure reification plumbing.
  *
  * ⛔ `Class_` is deliberately NOT a wholesale prefix here (ems__Bug `2c7b99a3`):
  * the `exo#Class_*` family, like `exo#Asset_*`, mixes LITERAL definition metadata
@@ -113,9 +118,18 @@ const EXO_NON_RELATION_LOCALNAME_PREFIXES = ["Instance_", "Statement_"];
  * The LITERAL / definition-metadata `exo#Class_*` properties — dropped explicitly.
  * The OBJECT relation `Class_superClass` is intentionally ABSENT so it passes as a
  * relation (ems__Bug `2c7b99a3`): a hand-authored `exo__Statement` reifying it is a
- * deliberate user act of surfacing that edge. Note this denylist gates ONLY the
- * reified path ({@link getReifiedRelationsGated}) — inline frontmatter
- * `exo__Class_superClass` is unaffected and still yields no relation-block noise.
+ * deliberate user act of surfacing that edge.
+ *
+ * This denylist gates ONLY the reified path ({@link getReifiedRelationsGated}) —
+ * the inline backlink path applies no predicate denylist at all, so an inline
+ * `exo__Class_superClass` is surfaced there regardless of this set.
+ *
+ * `Class_ontology` is denied on a "TBD-semantics stub → deny until defined" basis,
+ * NOT because it is literal: in the live TBox it is an auto-generated ABox stub with
+ * no declared range. Were its semantics defined as a class→ontology OBJECT relation
+ * it would be the analogue of `exo:Asset_isDefinedBy` (allowed below) and should move
+ * out of this set. `Class_name` / `Class_description` are literal-valued, so a real
+ * reified statement of them is dropped by the `objectIsLiteral` guard anyway.
  */
 const EXO_NON_RELATION_CLASS_LOCALNAMES: ReadonlySet<string> = new Set([
   "Class_name",

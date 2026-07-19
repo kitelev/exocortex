@@ -1835,6 +1835,11 @@ describe("RelationsRenderer", () => {
       expect(result[0].title).toBe("ztlk__Note");
     });
 
+    // Deliberate isolation: a REAL `Class_description` statement carries a Literal
+    // object and is already dropped by the `objectIsLiteral` guard regardless of the
+    // denylist. Seeding an IRI object bypasses that guard so this test is sensitive to
+    // EXO_NON_RELATION_CLASS_LOCALNAMES specifically (mutation-verified: removing the
+    // set-check turns it RED). It does NOT cover literal-object reification end-to-end.
     it("keeps a reified LITERAL Class_* definition property out of the relations block", async () => {
       const store = new InMemoryTripleStore();
       const CLASS_DESCRIPTION = Namespace.EXO.term("Class_description");
