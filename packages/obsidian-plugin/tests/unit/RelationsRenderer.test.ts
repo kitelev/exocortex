@@ -1623,10 +1623,17 @@ describe("RelationsRenderer", () => {
           isNonRelationPredicate(Namespace.EXO.term("Instance_class").value),
         ).toBe(true);
         expect(
-          isNonRelationPredicate(Namespace.EXO.term("Class_superClass").value),
+          isNonRelationPredicate(Namespace.EXO.term("Statement_subject").value),
+        ).toBe(true);
+        // LITERAL / definition-metadata exo:Class_* properties stay filtered.
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Class_name").value),
         ).toBe(true);
         expect(
-          isNonRelationPredicate(Namespace.EXO.term("Statement_subject").value),
+          isNonRelationPredicate(Namespace.EXO.term("Class_description").value),
+        ).toBe(true);
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Class_ontology").value),
         ).toBe(true);
         expect(
           isNonRelationPredicate(Namespace.RDFS.term("label").value),
@@ -1649,6 +1656,15 @@ describe("RelationsRenderer", () => {
         ).toBe(false);
         expect(
           isNonRelationPredicate(Namespace.EXO.term("Asset_isDefinedBy").value),
+        ).toBe(false);
+        // ems__Bug `2c7b99a3` — `Class_superClass` is an exo#ObjectProperty (a real
+        // class-to-class edge), so a hand-authored reified statement of it MUST
+        // pass. Filtering the whole `Class_` prefix made such a statement invisible
+        // everywhere: the raw backlink is suppressed as reification plumbing in the
+        // expectation that the reified path renders it, and the reified path then
+        // dropped it here.
+        expect(
+          isNonRelationPredicate(Namespace.EXO.term("Class_superClass").value),
         ).toBe(false);
       });
     });
@@ -1762,6 +1778,101 @@ describe("RelationsRenderer", () => {
       // predicate rendered in frontmatter-key form (handles the dash prefix).
       expect(result[0].propertyName).toBe("exo-ims__relatesToConcept");
       expect(result[0].isBodyLink).toBe(false);
+    });
+
+    // ems__Bug `2c7b99a3` — a hand-authored `exo__Statement` reifying
+    // `exo__Class_superClass` (a mixin edge between two class assets) rendered
+    // NOWHERE: the raw `exo__Statement_object` backlink is suppressed as
+    // reification plumbing in the expectation that the reified path surfaces the
+    // logical edge, and the reified path then discarded it because the whole
+    // `Class_` local-name prefix was denylisted as TBox-structural.
+    //
+    // Mirrors the real vault shape (`8a2136de`: ztlk__Note --superClass--> mm__Resource):
+    // BOTH ends are class assets whose `prefix__LocalName` labels the converter emits
+    // as SYMBOLIC IRIs (dual-IRI), never as path-form IRIs.
+    //
+    //   Revert-verified: restoring "Class_" to EXO_NON_RELATION_LOCALNAME_PREFIXES
+    //   drops the relation → `toHaveLength(1)` RED; removed → GREEN.
+    it("surfaces a reified Class_superClass edge between two symbolic-IRI class assets", async () => {
+      const store = new InMemoryTripleStore();
+      const CLASS_SUPER_CLASS = Namespace.EXO.term("Class_superClass");
+      const ZTLK_NOTE = Namespace.forPrefix("ztlk").term("Note"); // subject class
+      const MM_RESOURCE = Namespace.forPrefix("mm").term("Resource"); // object class = open asset
+      const RESOURCE_PATH =
+        "assetspaces/kitelev/exoas-my/my-mixins/f9bc503f-0000-0000-0000-000000000001.md";
+      const RESOURCE_UID = "f9bc503f-0000-0000-0000-000000000001";
+      const STMT_PATH =
+        "assetspaces/kitelev/exoas-my/my-mixins/8a2136de-0000-0000-0000-000000000002.md";
+
+      await seedStatement(
+        store,
+        STMT_PATH,
+        ZTLK_NOTE,
+        CLASS_SUPER_CLASS,
+        MM_RESOURCE,
+      );
+      mockBacklinksCacheManager.getBacklinks.mockReturnValue([]); // plumbing backlink suppressed
+      registerFiles(
+        {
+          [RESOURCE_PATH]: {
+            exo__Asset_uid: RESOURCE_UID,
+            exo__Asset_label: "mm__Resource",
+          },
+        },
+        { [RESOURCE_PATH]: "mm__Resource" },
+      );
+
+      const result = await makeRenderer(store).getAssetRelations(
+        createTestTFile(RESOURCE_PATH),
+        {},
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0].provenance).toBe("reified");
+      expect(result[0].statementPath).toBe(STMT_PATH);
+      expect(result[0].propertyName).toBe("exo__Class_superClass");
+      // incoming (the open asset is the OBJECT) → the related asset is the SUBJECT.
+      expect(result[0].title).toBe("ztlk__Note");
+    });
+
+    // Deliberate isolation: a REAL `Class_description` statement carries a Literal
+    // object and is already dropped by the `objectIsLiteral` guard regardless of the
+    // denylist. Seeding an IRI object bypasses that guard so this test is sensitive to
+    // EXO_NON_RELATION_CLASS_LOCALNAMES specifically (mutation-verified: removing the
+    // set-check turns it RED). It does NOT cover literal-object reification end-to-end.
+    it("keeps a reified LITERAL Class_* definition property out of the relations block", async () => {
+      const store = new InMemoryTripleStore();
+      const CLASS_DESCRIPTION = Namespace.EXO.term("Class_description");
+      const MM_RESOURCE = Namespace.forPrefix("mm").term("Resource");
+      const RESOURCE_PATH =
+        "assetspaces/kitelev/exoas-my/my-mixins/f9bc503f-0000-0000-0000-000000000001.md";
+      const STMT_PATH =
+        "assetspaces/kitelev/exoas-my/my-mixins/cccccccc-0000-0000-0000-000000000003.md";
+
+      await seedStatement(
+        store,
+        STMT_PATH,
+        Namespace.forPrefix("ztlk").term("Note"),
+        CLASS_DESCRIPTION,
+        MM_RESOURCE,
+      );
+      mockBacklinksCacheManager.getBacklinks.mockReturnValue([]);
+      registerFiles(
+        {
+          [RESOURCE_PATH]: {
+            exo__Asset_uid: "f9bc503f-0000-0000-0000-000000000001",
+            exo__Asset_label: "mm__Resource",
+          },
+        },
+        { [RESOURCE_PATH]: "mm__Resource" },
+      );
+
+      const result = await makeRenderer(store).getAssetRelations(
+        createTestTFile(RESOURCE_PATH),
+        {},
+      );
+
+      expect(result).toEqual([]);
     });
 
     it("renders an incoming reified relation with the SUBJECT as the related asset", async () => {
