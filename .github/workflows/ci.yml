@@ -8,6 +8,15 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - main
+  # Manual re-trigger lever (Issue #3925). GitHub intermittently accepts a push
+  # to `main` WITHOUT emitting the push event to Actions: the commit lands, but
+  # no workflow run and no check-suite are ever created (3rd observed occurrence,
+  # merge `b11f8cb5`). Because `auto-release.yml` is reachable ONLY via
+  # `workflow_run: workflows: ["CI"]`, such a commit is stranded unreleased until
+  # some later, unrelated push happens to fire CI. On a PR branch the recovery
+  # levers are `update-branch` / close+reopen; on `main` there was NO lever at
+  # all. This gives one: `gh workflow run ci.yml --ref main`.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -33,7 +42,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 1
     outputs:
-      code: ${{ steps.filter.outputs.code }}
+      # A manual `workflow_dispatch` is the recovery lever for a stranded `main`
+      # commit (Issue #3925), so it must behave like push-to-main: run EVERYTHING,
+      # never a docs-only subset. `dorny/paths-filter` has no meaningful base to
+      # diff against on a dispatch, so the filter step is skipped and `code` is
+      # forced to `true` instead of relying on its (undefined) output.
+      code: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.code }}
       force: ${{ steps.force.outputs.force }}
 
     steps:
@@ -42,6 +56,7 @@ jobs:
 
       - name: Detect code changes
         id: filter
+        if: github.event_name != 'workflow_dispatch'
         uses: dorny/paths-filter@v3
         with:
           filters: |
