@@ -10,8 +10,10 @@
  *   (B) auto-stamps `ems__Effort_plannedStartTimestamp` (and `_plannedEnd...`
  *       when endTime present) = chosenDate + that time, a FULL timezone-naive
  *       local dateTime "YYYY-MM-DDTHH:MM:SS".
- * When the prototype declares no time-of-day → unchanged (no planned timestamps,
- * no date prompt) — zero regression.
+ * A prototype with ONLY `_endTime` (an ems__ActionPrototype point-in-time БАД
+ * intake) stamps just `_plannedEndTimestamp` (#3929). When the prototype
+ * declares no time-of-day at all → unchanged (no planned timestamps, no date
+ * prompt) — zero regression.
  *
  * Exercises the real `create_instance` pipeline through GroundingExecutor with
  * an in-memory file system (executor logic NOT mocked) + a frozen clock for a
@@ -127,6 +129,23 @@ const PROTO_ONLY_START = [
   "",
 ].join("\n");
 
+/**
+ * Prototype with ONLY an end time and NO start time — an `ems__ActionPrototype`
+ * point-in-time intake (Выпить Зодак 08:15). #3929: the earlier
+ * `if (!startTime) return` dropped this entirely; it must stamp `_plannedEnd`.
+ */
+const PROTO_ONLY_END = [
+  "---",
+  'exo__Asset_uid: "proto-zodak-uid"',
+  'exo__Asset_label: "Выпить Зодак"',
+  "exo__Instance_class:",
+  '  - "[[93d74dfd-1994-4673-853c-65f1fde80df3]]"',
+  'ems__EffortPrototype_endTime: "08:15"',
+  "---",
+  "",
+].join("\n");
+const PROTO_ONLY_END_PATH = "/vault/zodak-proto.md";
+
 /** Prototype declaring NO time-of-day (control — no-op expected). */
 const PROTO_WITHOUT_TIME = [
   "---",
@@ -201,6 +220,7 @@ describe(`Integration: create_instance prototype-time propagation (ec15f83e) ${R
     fs = new InMemoryFileSystem();
     await fs.createFile(PROTO_PATH, PROTO_WITH_TIMES);
     await fs.createFile(PROTO_NO_END_PATH, PROTO_ONLY_START);
+    await fs.createFile(PROTO_ONLY_END_PATH, PROTO_ONLY_END);
     await fs.createFile(PROTO_NO_TIME_PATH, PROTO_WITHOUT_TIME);
     await fs.createFile(PROTO_BAD_TIME_PATH, PROTO_BAD_TIME);
     const serviceRegistry = new ServiceRegistry();
@@ -214,6 +234,7 @@ describe(`Integration: create_instance prototype-time propagation (ec15f83e) ${R
     const protos = new Set([
       PROTO_PATH,
       PROTO_NO_END_PATH,
+      PROTO_ONLY_END_PATH,
       PROTO_NO_TIME_PATH,
       PROTO_BAD_TIME_PATH,
     ]);
@@ -290,6 +311,24 @@ describe(`Integration: create_instance prototype-time propagation (ec15f83e) ${R
       /ems__Effort_plannedStartTimestamp:\s*"?2026-07-02T20:00:00"?/,
     );
     expect(fm).not.toContain("ems__Effort_plannedEndTimestamp");
+  });
+
+  // Scenario (#3929): prototype (ems__ActionPrototype — point-in-time БАД/med
+  // intake) declares ONLY an endTime and NO startTime → instance gets only
+  // plannedEnd. The earlier `if (!startTime) return` dropped it entirely.
+  it(`${REQ} prototype with only endTime → instance gets only plannedEnd (#3929)`, async () => {
+    await groundingExecutor.execute(
+      GROUNDING,
+      "https://exocortex.my/assets/zodak-proto",
+      PROTO_ONLY_END_PATH,
+      { plannedDate: "2026-07-03" },
+    );
+    const { fm } = splitFrontmatterAndBody(createdContent());
+
+    expect(fm).toMatch(
+      /ems__Effort_plannedEndTimestamp:\s*"?2026-07-03T08:15:00"?/,
+    );
+    expect(fm).not.toContain("ems__Effort_plannedStartTimestamp");
   });
 
   // Scenario: prototype declares NO time-of-day → unchanged (no-op, no regression).
