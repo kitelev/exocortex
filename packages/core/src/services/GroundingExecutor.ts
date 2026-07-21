@@ -1316,10 +1316,12 @@ export class GroundingExecutor {
    * dateTime `"YYYY-MM-DDTHH:MM:SS"` (Asia/Almaty convention — matches the
    * existing `ems__Effort_plannedStartTimestamp` frontmatter shape).
    *
-   * No-op when the prototype declares no `startTime` → zero regression for
-   * prototypes / create flows without a time-of-day. Never overwrites a planned
-   * timestamp that an explicit `userInput` already wrote into `properties` (the
-   * prototype time is a default, not an override).
+   * No-op only when the prototype declares NO time-of-day at all (neither
+   * `startTime` nor `endTime`) → zero regression for create flows without a
+   * time. A prototype with only `_endTime` (e.g. an `ems__ActionPrototype`
+   * point-in-time intake) stamps just `_plannedEndTimestamp` (#3929). Never
+   * overwrites a planned timestamp that an explicit `userInput` already wrote
+   * into `properties` (the prototype time is a default, not an override).
    *
    * Reads from `targetFm`, which is only populated when `needsTargetRead` is
    * true (InheritanceRule / `__SUBSTITUTE` PropertyDefault / `$target.`
@@ -1336,9 +1338,20 @@ export class GroundingExecutor {
     const startTime = GroundingExecutor.firstScalar(
       targetFm["ems__EffortPrototype_startTime"],
     );
-    if (!startTime) return; // prototype declares no time-of-day → no-op
+    const endTime = GroundingExecutor.firstScalar(
+      targetFm["ems__EffortPrototype_endTime"],
+    );
+    // No-op only when the prototype declares NO time-of-day at all. A prototype
+    // with only `_endTime` and no `_startTime` (e.g. an ems__ActionPrototype —
+    // a point-in-time БАД/med intake at its `_endTime`) must still stamp its
+    // planned end timestamp; the earlier `if (!startTime) return` dropped it
+    // entirely (#3929).
+    if (!startTime && !endTime) return;
     const instanceDate = this.resolveInstanceDate(userInput);
-    if (properties["ems__Effort_plannedStartTimestamp"] === undefined) {
+    if (
+      startTime &&
+      properties["ems__Effort_plannedStartTimestamp"] === undefined
+    ) {
       const startTs = GroundingExecutor.combineDateAndTime(
         instanceDate,
         startTime,
@@ -1351,9 +1364,6 @@ export class GroundingExecutor {
         );
       }
     }
-    const endTime = GroundingExecutor.firstScalar(
-      targetFm["ems__EffortPrototype_endTime"],
-    );
     if (endTime && properties["ems__Effort_plannedEndTimestamp"] === undefined) {
       const endTs = GroundingExecutor.combineDateAndTime(instanceDate, endTime);
       if (endTs !== null) {
