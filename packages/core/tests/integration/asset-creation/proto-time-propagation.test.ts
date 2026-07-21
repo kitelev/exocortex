@@ -170,6 +170,19 @@ const PROTO_BAD_TIME = [
 ].join("\n");
 const PROTO_BAD_TIME_PATH = "/vault/broken-proto.md";
 
+/** Prototype with ONLY a MALFORMED end time (no start) → must be skipped (#3929 edge). */
+const PROTO_BAD_END = [
+  "---",
+  'exo__Asset_uid: "proto-badend-uid"',
+  'exo__Asset_label: "Broken intake"',
+  "exo__Instance_class:",
+  '  - "[[93d74dfd-1994-4673-853c-65f1fde80df3]]"',
+  'ems__EffortPrototype_endTime: "25:99"',
+  "---",
+  "",
+].join("\n");
+const PROTO_BAD_END_PATH = "/vault/broken-end-proto.md";
+
 // create-task-instance-shaped grounding: InheritanceRule writes the prototype
 // backlink (so needsTargetRead → targetFm is the prototype frontmatter), and a
 // labelTemplate uses $today so we can assert the label denotes the chosen date.
@@ -223,6 +236,7 @@ describe(`Integration: create_instance prototype-time propagation (ec15f83e) ${R
     await fs.createFile(PROTO_ONLY_END_PATH, PROTO_ONLY_END);
     await fs.createFile(PROTO_NO_TIME_PATH, PROTO_WITHOUT_TIME);
     await fs.createFile(PROTO_BAD_TIME_PATH, PROTO_BAD_TIME);
+    await fs.createFile(PROTO_BAD_END_PATH, PROTO_BAD_END);
     const serviceRegistry = new ServiceRegistry();
     groundingExecutor = new GroundingExecutor(fs, fs, serviceRegistry, undefined, {
       clock: frozenClock(`${FROZEN_TODAY}T12:00:00Z`),
@@ -237,6 +251,7 @@ describe(`Integration: create_instance prototype-time propagation (ec15f83e) ${R
       PROTO_ONLY_END_PATH,
       PROTO_NO_TIME_PATH,
       PROTO_BAD_TIME_PATH,
+      PROTO_BAD_END_PATH,
     ]);
     const path = fs.getAllPaths().find((p) => !protos.has(p));
     if (!path) throw new Error("No created file");
@@ -383,6 +398,23 @@ describe(`Integration: create_instance prototype-time propagation (ec15f83e) ${R
     expect(result.success).toBe(true);
 
     const content = createdContent();
+    expect(content).not.toContain("ems__Effort_plannedStartTimestamp");
+    expect(content).not.toContain("25:99");
+  });
+
+  // Hardening (code-reviewer LOW, #3929 edge): a malformed END-only time must be
+  // skipped too — the new endTime-only path relies on combineDateAndTime → null.
+  it(`${REQ} malformed end-only prototype time is skipped, not written as garbage (#3929)`, async () => {
+    const result = await groundingExecutor.execute(
+      GROUNDING,
+      "https://exocortex.my/assets/broken-end-proto",
+      PROTO_BAD_END_PATH,
+      undefined,
+    );
+    expect(result.success).toBe(true);
+
+    const content = createdContent();
+    expect(content).not.toContain("ems__Effort_plannedEndTimestamp");
     expect(content).not.toContain("ems__Effort_plannedStartTimestamp");
     expect(content).not.toContain("25:99");
   });
