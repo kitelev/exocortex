@@ -120,3 +120,110 @@ export async function resolveCoLocationFolder(
   const dir = path.dirname(ontologyPath);
   return dir === "." ? "" : dir;
 }
+
+/**
+ * Resolve the co-location target folder for a NEW instance-asset by
+ * CLASS-neighbour (issue #3934) — the fail-open successor to
+ * {@link resolveCoLocationFolder} for the case where the asset's
+ * `exo__Asset_isDefinedBy` yields no folder (bang-anchor `[[!kitelev]]` /
+ * `[[!aiKnow]]`, empty, or unresolvable). Places the new asset next to its
+ * EXISTING sibling instances of the same class, deriving the folder from where
+ * instances already live — data-driven, with NO hardcoded class→folder map, so
+ * the product obeys the co-location invariant itself rather than requiring an
+ * explicit `--folder` (Andrey's design decision, #3934).
+ *
+ * A file is a sibling instance iff any value of its `exo__Instance_class`
+ * (a string OR a YAML list) resolves via {@link extractAssetReference} (the
+ * wikilink *target*) to the created asset's class UID OR its short-name label —
+ * matching bare-uid `[[uid]]`, alias `[[uid|label]]`, and label `[[label]]`
+ * forms uniformly. (The class-def file itself references the `exo__Class`
+ * metaclass, never this class UID, so it is never a false sibling.)
+ *
+ * Returns the vault-relative folder holding the MOST sibling instances (the
+ * canonical home; deterministic lexicographic tie-break), or `null` when the
+ * class has no existing instances anywhere in the vault. A root-level majority
+ * (`path.dirname` → ".") returns "" so the caller — whose truthiness check
+ * mirrors {@link resolveCoLocationFolder} — keeps its `01 Inbox` default rather
+ * than writing a brand-new asset to the vault root.
+ *
+ * This performs one full-vault frontmatter scan; it runs ONLY in the fail-open
+ * branch (isDefinedBy already failed to resolve a folder), i.e. the rare
+ * bang-anchor RFC/aiKnow create, so the cost is bounded to that path.
+ */
+/**
+ * Resolve the wikilink *target* of one `exo__Instance_class` reference to a
+ * comparable token, robust to how YAML parsed it. A QUOTED wikilink
+ * (`"[[uid|label]]"`) parses to a string and goes straight through
+ * {@link extractAssetReference}. An UNQUOTED wikilink (`[[uid]]` /
+ * `- [[uid]]`) is treated by YAML as a nested flow-sequence and parses to a
+ * nested array (`["uid"]` / `[["uid"]]`) whose innermost string is the
+ * already-bracket-stripped linkpath — so descend to that string first, then run
+ * the same extractor (which also strips a `|alias` suffix). Returns null for
+ * anything that doesn't reduce to a string.
+ */
+function classRefTarget(ref: unknown): string | null {
+  let cur: unknown = ref;
+  while (Array.isArray(cur)) {
+    if (cur.length === 0) {
+      return null;
+    }
+    cur = cur[0];
+  }
+  return extractAssetReference(cur);
+}
+
+export async function resolveNeighbourFolderByClass(
+  fsAdapter: NodeFsAdapter,
+  classUid: string,
+  classLabel: string,
+): Promise<string | null> {
+  const targets = new Set<string>();
+  if (classUid) targets.add(classUid);
+  if (classLabel) targets.add(classLabel);
+  if (targets.size === 0) {
+    return null;
+  }
+
+  const allFiles = await fsAdapter.getMarkdownFiles();
+  const folderCounts = new Map<string, number>();
+
+  for (const file of allFiles) {
+    let metadata: Record<string, unknown>;
+    try {
+      metadata = await fsAdapter.getFileMetadata(file);
+    } catch {
+      continue;
+    }
+    const rawClass = metadata["exo__Instance_class"];
+    const refs = Array.isArray(rawClass) ? rawClass : [rawClass];
+    const isSibling = refs.some((ref) => {
+      const target = classRefTarget(ref);
+      return target !== null && targets.has(target);
+    });
+    if (!isSibling) {
+      continue;
+    }
+    const dir = path.dirname(file);
+    const folder = dir === "." ? "" : dir;
+    folderCounts.set(folder, (folderCounts.get(folder) ?? 0) + 1);
+  }
+
+  if (folderCounts.size === 0) {
+    return null;
+  }
+
+  // Canonical home = the folder with the most sibling instances. Iterate in a
+  // lexicographically-sorted order so ties resolve deterministically.
+  let best: string | null = null;
+  let bestCount = -1;
+  const sorted = Array.from(folderCounts.entries()).sort((a, b) =>
+    a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0,
+  );
+  for (const [folder, count] of sorted) {
+    if (count > bestCount) {
+      best = folder;
+      bestCount = count;
+    }
+  }
+  return best;
+}

@@ -16,7 +16,10 @@ import { EffortStatusResolver } from "../services/EffortStatusResolver.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
-import { resolveCoLocationFolder } from "../executors/folderRepairHelpers.js";
+import {
+  resolveCoLocationFolder,
+  resolveNeighbourFolderByClass,
+} from "../executors/folderRepairHelpers.js";
 
 /**
  * Fallback folder for new assets whose `exo__Asset_isDefinedBy` cannot be
@@ -362,6 +365,28 @@ export function createCommand(): Command {
           // live under assetspaces/<ns>/).
           if (coLocatedFolder) {
             folderPath = coLocatedFolder;
+          }
+        }
+
+        // Priority 2 (issue #3934): when isDefinedBy did NOT resolve a folder
+        // (bang-anchor `[[!kitelev]]` / `[[!aiKnow]]`, empty, or unresolvable —
+        // folderPath is still the inbox default), co-locate the new asset next
+        // to existing sibling instances of the SAME class, deriving the folder
+        // from where those instances already live. Data-driven neighbour
+        // co-location (no hardcoded class→folder map): the product obeys the
+        // co-location invariant itself instead of requiring an explicit
+        // `--folder`. Fail-open to the inbox default when the class has no
+        // existing instances. `options.class` may be a UID or a short-name; it
+        // is matched (alongside the resolved classUid) against each instance's
+        // `exo__Instance_class` wikilink target in any of its forms.
+        if (folderPath === DEFAULT_INBOX_FOLDER) {
+          const neighbourFolder = await resolveNeighbourFolderByClass(
+            fsAdapter,
+            classUid,
+            options.class,
+          );
+          if (neighbourFolder) {
+            folderPath = neighbourFolder;
           }
         }
 
