@@ -1279,6 +1279,19 @@ export class NoteToRDFConverter {
    * within-call dedup guard keeps a malformed `A ⊑ B ⊑ A` class-def from
    * producing a self-loop; the SPARQL property-path executor is independently
    * visited-set cycle-safe for the transitive `*` walk.
+   *
+   * KNOWN LIMITATION (incremental live-edit re-index): the plugin's
+   * `VaultRDFIndexer.removeFileTriples` purges only triples whose SUBJECT is the
+   * edited file's FILE IRI, so live-editing a class-def's `exo__Class_superClass`
+   * leaves the OLD symbolic edge in the store beside the new one until the next
+   * FULL refresh (plugin reload / profile apply / FileSpace change — all
+   * `clear()`+rebuild). Self-heals on any full refresh; consistent with the
+   * pre-existing non-file-IRI-subject emissions (the reified-statement
+   * materialized edge and enum `rdf:type` triples have the same latent
+   * behaviour). A2 is Phase-0 groundwork with no live consumer of the pure-SPARQL
+   * hierarchy walk yet, so the blast radius is currently nil; the uniform fix
+   * (purge non-file-IRI emissions on incremental re-index) is tracked in #3936
+   * and should land with the first live consumer of the native walk.
    */
   private emitSymbolicSuperClassEdges(
     classIRI: IRI,
