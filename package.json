@@ -50,6 +50,9 @@
   ],
   "author": "A. Kitelev",
   "license": "MIT",
+  "overrides": {
+    "qs": "^6.15.3"
+  },
   "devDependencies": {
     "@babel/core": "^7.28.5",
     "@babel/preset-env": "^7.28.5",
@@ -106,6 +109,6 @@
     "react-dom": "^19.2.3",
     "reflect-metadata": "^0.2.2",
     "tsyringe": "^4.10.0",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.1"
   }
 }
