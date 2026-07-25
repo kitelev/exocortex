@@ -401,6 +401,31 @@ export class NoteToRDFConverter {
       triples.push(new Triple(subject, exoAssetLabel, labelLiteral));
     }
 
+    // A2 (RFC 78572fa9 Phase 0, req 0cf3f6ed): when THIS note is a class-def
+    // (declares `exo__Class_superClass`), mirror its superclass edges onto its
+    // own SYMBOLIC class IRI. The class file's FILE-IRI subject already gets the
+    // Class_superClass edges from the frontmatter loop above; this completes the
+    // parallel SYMBOLIC shadow node so a pure-SPARQL transitive walk
+    // `?c exo:Class_superClass* <X>` is native for the ~99.8% of assets whose
+    // `exo__Instance_class` object is the symbolic class IRI (#3805 dual-IRI seam).
+    // Hooked at class-def conversion (not at enum-reference) so a LEAF class —
+    // the direct class of an instance, never itself referenced as a superClass —
+    // still gets its own symbolic superclass edge (the instance's Instance_class
+    // reference does NOT trigger the enum-instance path). Emitted once per
+    // class-def (each file is converted once by convertVault). Additive (new
+    // triples on a symbolic subject, never a second object on a single-valued
+    // predicate) → cannot create a SHACL violation; reversible (drop this block).
+    if (frontmatter["exo__Class_superClass"] != null) {
+      const ownSymbolicIRI =
+        this.expandClassValue(file.basename) ??
+        (typeof rawLabel === "string"
+          ? this.expandClassValue(rawLabel)
+          : null);
+      if (ownSymbolicIRI) {
+        this.emitSymbolicSuperClassEdges(ownSymbolicIRI, frontmatter);
+      }
+    }
+
     // Flush rdf:type triples emitted by valueToRDFObject for enum instance IRIs (Fix #ff3858e5)
     triples.push(...this.pendingExtraTriples);
     this.pendingExtraTriples = [];
@@ -1223,6 +1248,70 @@ export class NoteToRDFConverter {
       this.pendingExtraTriples.push(
         new Triple(classIRI, Namespace.EXO.term("Instance_class"), parentClassIRI)
       );
+    }
+  }
+
+  /**
+   * A2 (RFC 78572fa9 Phase 0 — "structural symbolic-space completion"): mirror a
+   * class's `exo__Class_superClass` edges onto its SYMBOLIC class IRI, so that a
+   * pure-SPARQL transitive walk `?c exo:Class_superClass* <X>` is native for the
+   * ~99.8% of assets whose `exo__Instance_class` object is the symbolic class IRI.
+   * Without this the structural `exo__Class_superClass` triples exist only on the
+   * class file's FILE-IRI subject, so TS consumers (`CommandResolver`,
+   * `TripleClassHierarchy`) bridge the seam internally but vault-declared
+   * pure-SPARQL preconditions / Competency Queries / analytics cannot (#3805).
+   *
+   * Emits `<symbolic-class> exo:Class_superClass <symbolic-parent>` (+ the #871
+   * `rdfs:subClassOf` mirror, identical to what the file-IRI subject receives in
+   * the main frontmatter loop) for each superclass declared in the class file's
+   * `exo__Class_superClass`, resolved via {@link valueToClassURI} to the parent's
+   * own class IRI. Purely ADDITIVE (new triples on a symbolic subject — never a
+   * second object on a single-valued predicate) → cannot create a SHACL violation
+   * (only widens `isSubClassOf`). Reversible (drop this call → baseline).
+   *
+   * Called from `convertLegacyNote` once per class-def file (each markdown file
+   * is converted exactly once by `convertVault`), so each symbolic edge is
+   * emitted once — structurally, without relying on store dedup. Hooking here
+   * (not at enum-reference resolution) is what makes a LEAF class — the direct
+   * class of an instance, itself never referenced as a `Class_superClass` — get
+   * its own symbolic superclass edge; the instance's `exo__Instance_class`
+   * reference does NOT trigger the enum-instance path. A no-self-edge +
+   * within-call dedup guard keeps a malformed `A ⊑ B ⊑ A` class-def from
+   * producing a self-loop; the SPARQL property-path executor is independently
+   * visited-set cycle-safe for the transitive `*` walk.
+   */
+  private emitSymbolicSuperClassEdges(
+    classIRI: IRI,
+    classFm: Record<string, unknown>,
+  ): void {
+    const raw = classFm["exo__Class_superClass"];
+    if (raw == null) return;
+    const refs = Array.isArray(raw) ? raw : [raw];
+    const superClassPredicate = Namespace.EXO.term("Class_superClass");
+    const hasRdfsMirror = this.vocabularyMapper.hasMappingFor(
+      "exo__Class_superClass",
+    );
+    const seen = new Set<string>();
+    for (const ref of refs) {
+      if (typeof ref !== "string") continue;
+      const parentIRI = this.valueToClassURI(ref);
+      if (!(parentIRI instanceof IRI)) continue;
+      if (parentIRI.value === classIRI.value) continue; // no self-edge (cycle guard)
+      if (seen.has(parentIRI.value)) continue; // within-call dedup
+      seen.add(parentIRI.value);
+      this.pendingExtraTriples.push(
+        new Triple(classIRI, superClassPredicate, parentIRI)
+      );
+      // #871 rdfs:subClassOf mirror — same standard-RDFS edge the class file's
+      // FILE-IRI subject gets in the main loop, so standard-RDFS walks work too.
+      if (hasRdfsMirror) {
+        const mapped = this.vocabularyMapper.generateMappedTriple(
+          classIRI,
+          "exo__Class_superClass",
+          parentIRI,
+        );
+        if (mapped) this.pendingExtraTriples.push(mapped);
+      }
     }
   }
 
