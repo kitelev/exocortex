@@ -53,13 +53,18 @@ function md(frontmatter: Record<string, string | string[]>): string {
 }
 
 /** Write a sibling instance of CLASS_UID at `dir/<uid>.md`, referencing the
- *  class by the given wikilink form(s). */
+ *  class by the given wikilink form(s). By default the class ref is QUOTED
+ *  (the product's own `create` output form); pass `{ quoted: false }` to write
+ *  the UNQUOTED form (common in hand-authored / raw-Write RFC/aiKnow assets). */
 function writeSibling(
   vault: string,
   dir: string,
   uid: string,
   classRef: string | string[],
+  opts: { quoted?: boolean } = {},
 ): void {
+  const quoted = opts.quoted !== false;
+  const q = (r: string): string => (quoted ? `"${r}"` : r);
   const abs = path.join(vault, dir);
   fs.mkdirSync(abs, { recursive: true });
   fs.writeFileSync(
@@ -68,8 +73,8 @@ function writeSibling(
       exo__Asset_uid: uid,
       exo__Asset_isDefinedBy: '"[[!kitelev]]"',
       exo__Instance_class: Array.isArray(classRef)
-        ? classRef.map((r) => `"${r}"`)
-        : `"${classRef}"`,
+        ? classRef.map(q)
+        : q(classRef),
       exo__Asset_label: `sibling ${uid}`,
     }),
   );
@@ -224,6 +229,42 @@ describe("Issue #3934: `cli create` co-locates by class-neighbour for bang-ancho
 
     expect(result.path).toBe(`${SIBLING_DIR}/${result.uuid}.md`);
     expect(result.path.startsWith(MINORITY_DIR)).toBe(false);
+  });
+
+  it("class-neighbour matches the UNQUOTED `- [[uid]]` list form (hand-authored assets)", async () => {
+    // Hand-authored / raw-Write RFC/aiKnow assets frequently write the class
+    // ref UNQUOTED, which YAML parses as a nested flow-sequence. The neighbour
+    // scan must still match it (the feature's own target population).
+    writeSibling(
+      vault,
+      SIBLING_DIR,
+      "aaaaaaaa-0000-0000-0000-000000000009",
+      `[[${CLASS_UID}]]`,
+      { quoted: false },
+    );
+
+    const result = await runCreate(CLASS_UID, [
+      "--property",
+      "exo__Asset_isDefinedBy=[[!kitelev]]",
+    ]);
+
+    expect(result.path).toBe(`${SIBLING_DIR}/${result.uuid}.md`);
+    expect(result.path.startsWith("01 Inbox/")).toBe(false);
+  });
+
+  it("tie-break: equal sibling counts across folders → lexicographically-smallest folder wins", async () => {
+    // 1 sibling each in MINORITY_DIR (…/misc) and SIBLING_DIR (…/inbox) →
+    // deterministic lexicographic tie-break picks "…/inbox" (< "…/misc").
+    writeSibling(vault, SIBLING_DIR, "aaaaaaaa-0000-0000-0000-00000000000a", `[[${CLASS_UID}]]`);
+    writeSibling(vault, MINORITY_DIR, "aaaaaaaa-0000-0000-0000-00000000000b", `[[${CLASS_UID}]]`);
+
+    const result = await runCreate(CLASS_UID, [
+      "--property",
+      "exo__Asset_isDefinedBy=[[!kitelev]]",
+    ]);
+
+    // "assetspaces/kitelev/exoas-exodev/inbox" < "…/misc" lexicographically.
+    expect(result.path).toBe(`${SIBLING_DIR}/${result.uuid}.md`);
   });
 
   it("class-neighbour matches the LABEL-form class ref via the short-name (classLabel branch)", async () => {

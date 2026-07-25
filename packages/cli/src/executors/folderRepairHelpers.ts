@@ -150,6 +150,28 @@ export async function resolveCoLocationFolder(
  * branch (isDefinedBy already failed to resolve a folder), i.e. the rare
  * bang-anchor RFC/aiKnow create, so the cost is bounded to that path.
  */
+/**
+ * Resolve the wikilink *target* of one `exo__Instance_class` reference to a
+ * comparable token, robust to how YAML parsed it. A QUOTED wikilink
+ * (`"[[uid|label]]"`) parses to a string and goes straight through
+ * {@link extractAssetReference}. An UNQUOTED wikilink (`[[uid]]` /
+ * `- [[uid]]`) is treated by YAML as a nested flow-sequence and parses to a
+ * nested array (`["uid"]` / `[["uid"]]`) whose innermost string is the
+ * already-bracket-stripped linkpath — so descend to that string first, then run
+ * the same extractor (which also strips a `|alias` suffix). Returns null for
+ * anything that doesn't reduce to a string.
+ */
+function classRefTarget(ref: unknown): string | null {
+  let cur: unknown = ref;
+  while (Array.isArray(cur)) {
+    if (cur.length === 0) {
+      return null;
+    }
+    cur = cur[0];
+  }
+  return extractAssetReference(cur);
+}
+
 export async function resolveNeighbourFolderByClass(
   fsAdapter: NodeFsAdapter,
   classUid: string,
@@ -175,7 +197,7 @@ export async function resolveNeighbourFolderByClass(
     const rawClass = metadata["exo__Instance_class"];
     const refs = Array.isArray(rawClass) ? rawClass : [rawClass];
     const isSibling = refs.some((ref) => {
-      const target = extractAssetReference(ref);
+      const target = classRefTarget(ref);
       return target !== null && targets.has(target);
     });
     if (!isSibling) {
