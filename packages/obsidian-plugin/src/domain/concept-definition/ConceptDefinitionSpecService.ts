@@ -66,7 +66,11 @@ export class ConceptDefinitionSpecService {
     const rawSpecs = new Map<string, RawSpec>();
     const rawParts: RawPart[] = [];
 
-    const files = this.app.vault.getMarkdownFiles();
+    let files: TFile[] = [];
+    if (typeof this.app.vault.getMarkdownFiles === "function") {
+      const result = this.app.vault.getMarkdownFiles();
+      if (Array.isArray(result)) files = result;
+    }
     for (const file of files) {
       const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
       if (!fm) continue;

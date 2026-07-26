@@ -108,4 +108,13 @@ describe("ConceptDefinitionSpecService (req eb18a3a4)", () => {
     const svc = new ConceptDefinitionSpecService(app([spec(), prop(0, "concept__Concept_genus")]));
     expect(svc.getTemplate("concept__Concept")).toBeNull();
   });
+
+  it("tolerates a vault mock without a working getMarkdownFiles (does not throw)", () => {
+    // The plugin's own test harness mock vault may not return an array — initialize() must not
+    // throw "files is not iterable" (regression guard).
+    const bare = { vault: {}, metadataCache: {} } as unknown as App;
+    const svc = new ConceptDefinitionSpecService(bare);
+    expect(() => svc.initialize()).not.toThrow();
+    expect(svc.getTemplate("concept__Concept")).toBeNull();
+  });
 });
