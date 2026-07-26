@@ -22,8 +22,21 @@ export type MetadataResolver = (wikilinkTarget: string) => Record<string, unknow
 export class DisplayNameTemplateEngine {
   private static readonly PLACEHOLDER_PATTERN = /\{\{([^}]+)\}\}/g;
   private static readonly WIKILINK_PATTERN = /^\[\[|\]\]$/g;
+  private static readonly UUID_PATTERN =
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
-  constructor(private readonly template: string) {}
+  /**
+   * @param options.joinArrayValues OPT-IN (default false). When true, a `{{key}}` placeholder
+   *   resolving to an ARRAY renders ALL its values joined by a space (dropping any value that
+   *   resolves only to a bare UID — fail-closed) instead of first-only. Used by the concept
+   *   definition composition (a multi-valued `concept__Concept_differentia` renders all
+   *   adjectives). Default (false) is first-only — so the displayName path (which renders the
+   *   multi-valued `{{exo__Instance_class}}` in the default classSuffix template) is UNCHANGED.
+   */
+  constructor(
+    private readonly template: string,
+    private readonly options: { joinArrayValues?: boolean } = {},
+  ) {}
 
   /**
    * Render the template with provided metadata
@@ -222,10 +235,22 @@ export class DisplayNameTemplateEngine {
     }
 
     if (Array.isArray(value)) {
-      // For arrays, use the first value
       if (value.length === 0) {
         return "";
       }
+      if (this.options.joinArrayValues) {
+        // Opt-in (definition composition): render ALL values joined by a space, dropping any
+        // value that resolves only to a bare UID (fail-closed). The default path is first-only.
+        const parts: string[] = [];
+        for (const item of value) {
+          const formatted = this.formatValue(item, metadataResolver);
+          if (formatted && !DisplayNameTemplateEngine.UUID_PATTERN.test(formatted)) {
+            parts.push(formatted);
+          }
+        }
+        return parts.join(" ");
+      }
+      // For arrays, use the first value (default — displayName path, unchanged).
       return this.formatValue(value[0], metadataResolver);
     }
 

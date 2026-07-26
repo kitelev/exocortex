@@ -3,6 +3,7 @@ import {
   ConceptDefinitionResolver,
   type MetadataResolver,
 } from "@plugin/domain/concept-definition/ConceptDefinitionResolver";
+import { ConceptDefinitionSpecService } from "@plugin/domain/concept-definition/ConceptDefinitionSpecService";
 
 /**
  * PropertiesDefinitionValuePatch — renders a concept's `concept__Concept_definition` as a
@@ -59,17 +60,20 @@ export class PropertiesDefinitionValuePatch {
   private enabled = false;
   private patched: PatchRecord[] = [];
   private resolver: ConceptDefinitionResolver;
+  private specService: ConceptDefinitionSpecService;
 
   constructor(plugin: Plugin) {
     this.plugin = plugin;
     this.app = plugin.app;
     this.resolver = new ConceptDefinitionResolver(this.buildMetadataResolver());
+    this.specService = new ConceptDefinitionSpecService(this.app);
   }
 
   enable(): void {
     if (this.enabled) return;
     this.enabled = true;
 
+    this.specService.initialize(); // load the vault-declared composition template(s)
     this.patchAllPropertiesBlocks();
     this.setupObserver();
 
@@ -79,6 +83,7 @@ export class PropertiesDefinitionValuePatch {
     // restore + re-patch to guarantee a fresh value.
     this.plugin.registerEvent(
       this.app.metadataCache.on("changed", () => {
+        this.specService.refresh();
         this.restoreAll();
         this.patchAllPropertiesBlocks();
       }),
@@ -89,6 +94,7 @@ export class PropertiesDefinitionValuePatch {
     // genus/differentia targets resolve to null labels on first render.
     this.plugin.registerEvent(
       this.app.metadataCache.on("resolved", () => {
+        this.specService.refresh();
         this.restoreAll();
         this.patchAllPropertiesBlocks();
       }),
@@ -177,9 +183,10 @@ export class PropertiesDefinitionValuePatch {
     const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
     if (!frontmatter) return;
 
-    // Only override when a COMPUTED value exists (genus present). A concept without genus
-    // keeps its native stored value (materialized) — no patch.
-    const computed = this.resolver.resolveComputed(frontmatter);
+    // Only override when a COMPUTED value exists: a vault-declared composition template applies to
+    // the concept's class AND genus is present. Otherwise the native stored value shows (no patch).
+    const template = this.templateForConcept(frontmatter);
+    const computed = this.resolver.resolveComputed(frontmatter, template);
     if (!computed) return;
 
     const properties = metadataContainer.querySelectorAll<HTMLElement>(".metadata-property");
@@ -215,6 +222,37 @@ export class PropertiesDefinitionValuePatch {
 
     propertyEl.setAttribute(PATCHED_ATTR, "true");
     this.patched.push({ propertyEl, valueEl, displaySpan, originalNodes });
+  }
+
+  /** The vault-declared definition template applying to any of the concept's instance_class keys, or null. */
+  private templateForConcept(frontmatter: Record<string, unknown>): string | null {
+    const instanceClass = frontmatter.exo__Instance_class;
+    const raw = Array.isArray(instanceClass)
+      ? instanceClass
+      : instanceClass === undefined || instanceClass === null
+        ? []
+        : [instanceClass];
+    for (const value of raw) {
+      for (const key of this.classKeys(value)) {
+        const template = this.specService.getTemplate(key);
+        if (template) return template;
+      }
+    }
+    return null;
+  }
+
+  /** Both the link-target (UID) and the alias/label of a class wikilink. */
+  private classKeys(value: unknown): string[] {
+    if (typeof value !== "string") return [];
+    const cleaned = value.replace(/^\[\[|\]\]$/g, "").replace(/^"|"$/g, "").trim();
+    if (!cleaned) return [];
+    if (cleaned.includes("|")) {
+      const [target, label] = cleaned.split("|");
+      return [target.trim().replace(/\.md$/, ""), label.trim()].filter(
+        (k): k is string => Boolean(k),
+      );
+    }
+    return [cleaned.replace(/\.md$/, "")];
   }
 
   private extractPredicate(propertyEl: HTMLElement): string | null {

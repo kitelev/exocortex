@@ -14,6 +14,10 @@ import { PropertiesDefinitionValuePatch } from "@plugin/presentation/properties/
  */
 
 const CONCEPT_CLASS_UID = "dda12c48-40f3-4f1a-9f5b-8c1e2d3a4b5c";
+const CONCEPT_DEFINITION_SPEC_CLASS_UID = "26358178-cf0e-4e5f-b92a-f59c6ac71908";
+const PRINTED_PROPERTY_UID = "7d58de40-d941-4a66-88e2-13afc4fdc41d";
+const PRINTED_LITERAL_UID = "4d5437c9-788e-4a6d-9be0-4af3a84554f4";
+const SPEC_UID = "e8e8475c-2e58-44a6-9f77-f907569e156e";
 const OKR_UID = "0a11c0de-0000-4000-8000-000000000001";
 const QUARTERLY_UID = "0a11c0de-0000-4000-8000-000000000002";
 const CONCEPT_PATH = "concept-under-test.md";
@@ -24,7 +28,53 @@ interface FrontmatterFile {
   frontmatter: Record<string, unknown>;
 }
 
-/** Build a fake App whose metadataCache resolves the genus/differentia targets to their labels. */
+/** The vault-declared composition spec + parts (so the patch's spec service compiles a template). */
+function specFiles(): FrontmatterFile[] {
+  return [
+    {
+      file: mkFile(`${SPEC_UID}.md`),
+      frontmatter: {
+        exo__Asset_uid: SPEC_UID,
+        exo__Instance_class: [
+          `[[${CONCEPT_DEFINITION_SPEC_CLASS_UID}|concept__ConceptDefinitionSpec]]`,
+        ],
+        concept__ConceptDefinitionSpec_appliesToClass: `[[${CONCEPT_CLASS_UID}|concept__Concept]]`,
+      },
+    },
+    {
+      file: mkFile("part-differentia.md"),
+      frontmatter: {
+        exo__Asset_uid: "part-diff",
+        exo__Instance_class: [`[[${PRINTED_PROPERTY_UID}|exo__PrintedProperty]]`],
+        exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+        exo__DisplayNamePart_order: 0,
+        exo__PrintedProperty_property: "[[dp|concept__Concept_differentia]]",
+      },
+    },
+    {
+      file: mkFile("part-literal.md"),
+      frontmatter: {
+        exo__Asset_uid: "part-lit",
+        exo__Instance_class: [`[[${PRINTED_LITERAL_UID}|exo__PrintedLiteral]]`],
+        exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+        exo__DisplayNamePart_order: 1,
+        exo__PrintedLiteral_literal: " ",
+      },
+    },
+    {
+      file: mkFile("part-genus.md"),
+      frontmatter: {
+        exo__Asset_uid: "part-genus",
+        exo__Instance_class: [`[[${PRINTED_PROPERTY_UID}|exo__PrintedProperty]]`],
+        exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+        exo__DisplayNamePart_order: 2,
+        exo__PrintedProperty_property: "[[gp|concept__Concept_genus]]",
+      },
+    },
+  ];
+}
+
+/** Build a fake App whose vault carries the spec + parts and resolves genus/differentia to labels. */
 function buildApp(
   activeFrontmatter: Record<string, unknown>,
 ): { app: App; conceptFile: TFile } {
@@ -40,11 +90,13 @@ function buildApp(
   ];
   const conceptFile = mkFile(CONCEPT_PATH);
   const all: FrontmatterFile[] = [
+    ...specFiles(),
     ...targets,
     { file: conceptFile, frontmatter: activeFrontmatter },
   ];
 
   const app = {
+    vault: { getMarkdownFiles: jest.fn().mockReturnValue(all.map((x) => x.file)) },
     metadataCache: {
       getFileCache: jest.fn().mockImplementation((f: TFile) => {
         const found = all.find((x) => x.file.path === f.path);

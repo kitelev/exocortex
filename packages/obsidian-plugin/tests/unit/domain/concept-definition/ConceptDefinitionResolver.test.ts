@@ -1,38 +1,37 @@
 import { TFile } from "obsidian";
 import type { App, CachedMetadata } from "obsidian";
 import { ConceptDefinitionResolver } from "@plugin/domain/concept-definition/ConceptDefinitionResolver";
+import { ConceptDefinitionSpecService } from "@plugin/domain/concept-definition/ConceptDefinitionSpecService";
 import { PrintNameRuleService } from "@plugin/domain/display-name/PrintNameRuleService";
 
 /**
  * Delta-2 of concept-typization (req eb18a3a4): a concept's concept__Concept_definition is a
- * COMPUTED VIEW from its genus + differentia. Production-shape: the resolver runs over a REAL
- * PrintNameRuleService.createMetadataResolver() (the same 1-hop label resolution the native
- * displayName patches use) against an in-memory vault carrying SYNTHETIC typed concepts — no
- * hand-injected label, no stubbed resolver (test-fixture-realism).
+ * HOMOICONIC COMPUTED VIEW — the composition template ("<differentia> <genus>", order, separators)
+ * is VAULT-DECLARED (a concept__ConceptDefinitionSpec + ordered exo__PrintedProperty/PrintedLiteral
+ * parts), loaded by ConceptDefinitionSpecService and rendered by ConceptDefinitionResolver over the
+ * reused DisplayNameTemplateEngine. Production-shape: the spec + parts live in an in-memory vault,
+ * compiled by the REAL spec service, resolved through a REAL metadataResolver — no hand-injected
+ * template, no stubbed resolver (test-fixture-realism).
  *
- * Revert-verify axes (recorded in the PR body):
- *  - Break the composition (drop the differentia OR the genus from compose) → the
- *    "quarterly OKR" assertions go RED; restore → GREEN.
- *  - Negative controls (no genus → stored free-text; neither → null) stay GREEN both ways.
+ * ⛤ Homoiconicity revert-verify (axis-1) — the composition changes when the VAULT SPEC changes
+ * (same concept data): the spec is the single source of truth, no hardcoded compose() in TS.
  */
 
-// Canonical concept-typization UIDs (Delta-1 TBox, verified in-vault this session).
-const CONCEPT_CLASS_UID = "dda12c48-40f3-4f1a-9f5b-8c1e2d3a4b5c"; // concept__Concept (label-form used below)
+const CONCEPT_DEFINITION_SPEC_CLASS_UID = "26358178-cf0e-4e5f-b92a-f59c6ac71908";
+const CONCEPT_CLASS_UID = "dda12c48-40f3-4f1a-9f5b-8c1e2d3a4b5c";
+const PRINTED_PROPERTY_UID = "7d58de40-d941-4a66-88e2-13afc4fdc41d";
+const PRINTED_LITERAL_UID = "4d5437c9-788e-4a6d-9be0-4af3a84554f4";
+const DIFF_PROP_UID = "5cc92949-0000-4000-8000-000000000001";
+const GENUS_PROP_UID = "06d389ff-0000-4000-8000-000000000002";
+
+const SPEC_UID = "e8e8475c-2e58-44a6-9f77-f907569e156e";
 const OKR_UID = "0a11c0de-0000-4000-8000-000000000001";
 const QUARTERLY_UID = "0a11c0de-0000-4000-8000-000000000002";
 const RECURRING_UID = "0a11c0de-0000-4000-8000-000000000003";
-const PROFESSION_UID = "0a11c0de-0000-4000-8000-000000000004";
-const ROLE_UID = "0a11c0de-0000-4000-8000-000000000005";
-const PM_UID = "0a11c0de-0000-4000-8000-000000000006";
 
-/**
- * In-memory vault mock exposing the surface PrintNameRuleService.createMetadataResolver reads
- * (getFirstLinkpathDest + getFileCache). The concept targets carry real exo__Asset_label so the
- * 1-hop resolution is exercised end-to-end.
- */
-function createConceptVaultApp(
-  files: Array<{ path: string; frontmatter: Record<string, unknown> }>,
-): App {
+type Fm = { path: string; frontmatter: Record<string, unknown> };
+
+function createVaultApp(files: Fm[]): App {
   const fileCache = new Map<string, CachedMetadata>();
   const mockFiles: TFile[] = [];
   for (const f of files) {
@@ -45,9 +44,7 @@ function createConceptVaultApp(
   return {
     vault: { getMarkdownFiles: jest.fn().mockReturnValue(mockFiles) },
     metadataCache: {
-      getFileCache: jest
-        .fn()
-        .mockImplementation((file: TFile) => fileCache.get(file.path) ?? null),
+      getFileCache: jest.fn().mockImplementation((file: TFile) => fileCache.get(file.path) ?? null),
       getFirstLinkpathDest: jest.fn().mockImplementation((path: string) => {
         const clean = path.endsWith(".md") ? path : path + ".md";
         return mockFiles.find((f) => f.path === clean) ?? null;
@@ -56,126 +53,180 @@ function createConceptVaultApp(
   } as unknown as App;
 }
 
-/** Concept target assets (genus/differentia values point at these) carrying their labels. */
-function conceptTargetFiles(): Array<{ path: string; frontmatter: Record<string, unknown> }> {
-  const concept = (uid: string, label: string) => ({
-    path: `${uid}.md`,
-    frontmatter: {
-      exo__Asset_uid: uid,
-      exo__Instance_class: [`[[${CONCEPT_CLASS_UID}|concept__Concept]]`],
-      exo__Asset_label: label,
+const conceptTarget = (uid: string, label: string): Fm => ({
+  path: `${uid}.md`,
+  frontmatter: {
+    exo__Asset_uid: uid,
+    exo__Instance_class: [`[[${CONCEPT_CLASS_UID}|concept__Concept]]`],
+    exo__Asset_label: label,
+  },
+});
+
+/** The VAULT-DECLARED composition spec + parts. `includeGenusPart` drives revert-verify axis-1. */
+function specFiles(includeGenusPart = true): Fm[] {
+  const parts: Fm[] = [
+    {
+      path: "part-differentia.md",
+      frontmatter: {
+        exo__Asset_uid: "part-diff",
+        exo__Instance_class: [`[[${PRINTED_PROPERTY_UID}|exo__PrintedProperty]]`],
+        exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+        exo__DisplayNamePart_order: 0,
+        exo__PrintedProperty_property: `[[${DIFF_PROP_UID}|concept__Concept_differentia]]`,
+      },
     },
-  });
+    {
+      path: "part-literal.md",
+      frontmatter: {
+        exo__Asset_uid: "part-lit",
+        exo__Instance_class: [`[[${PRINTED_LITERAL_UID}|exo__PrintedLiteral]]`],
+        exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+        exo__DisplayNamePart_order: 1,
+        exo__PrintedLiteral_literal: " ",
+      },
+    },
+  ];
+  if (includeGenusPart) {
+    parts.push({
+      path: "part-genus.md",
+      frontmatter: {
+        exo__Asset_uid: "part-genus",
+        exo__Instance_class: [`[[${PRINTED_PROPERTY_UID}|exo__PrintedProperty]]`],
+        exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+        exo__DisplayNamePart_order: 2,
+        exo__PrintedProperty_property: `[[${GENUS_PROP_UID}|concept__Concept_genus]]`,
+      },
+    });
+  }
   return [
-    concept(OKR_UID, "OKR"),
-    concept(QUARTERLY_UID, "quarterly"),
-    concept(RECURRING_UID, "recurring"),
-    concept(PROFESSION_UID, "Profession"),
-    concept(ROLE_UID, "Project Role"),
-    concept(PM_UID, "Project Manager"),
+    {
+      path: `${SPEC_UID}.md`,
+      frontmatter: {
+        exo__Asset_uid: SPEC_UID,
+        exo__Instance_class: [
+          `[[${CONCEPT_DEFINITION_SPEC_CLASS_UID}|concept__ConceptDefinitionSpec]]`,
+        ],
+        concept__ConceptDefinitionSpec_appliesToClass: `[[${CONCEPT_CLASS_UID}|concept__Concept]]`,
+        exo__Asset_label: "concept definition composition — <differentia> <genus>",
+      },
+    },
+    ...parts,
+    conceptTarget(OKR_UID, "OKR"),
+    conceptTarget(QUARTERLY_UID, "quarterly"),
+    conceptTarget(RECURRING_UID, "recurring"),
   ];
 }
 
-/** Build a ConceptDefinitionResolver wired to a REAL PrintNameRuleService metadataResolver. */
-function resolverOverVault(): ConceptDefinitionResolver {
-  const app = createConceptVaultApp(conceptTargetFiles());
-  const printNameRuleService = new PrintNameRuleService(app);
-  return new ConceptDefinitionResolver(printNameRuleService.createMetadataResolver());
+/** Build (specService, resolver) over an in-memory vault carrying the spec + parts + targets. */
+function harness(includeGenusPart = true): {
+  template: string | null;
+  resolver: ConceptDefinitionResolver;
+} {
+  const app = createVaultApp(specFiles(includeGenusPart));
+  const specService = new ConceptDefinitionSpecService(app);
+  specService.initialize(); // REAL scanVault — compiles the vault-declared template
+  const template = specService.getTemplate("concept__Concept");
+  const printName = new PrintNameRuleService(app);
+  const resolver = new ConceptDefinitionResolver(printName.createMetadataResolver());
+  return { template, resolver };
 }
 
-describe("ConceptDefinitionResolver — computed view from genus + differentia (req eb18a3a4)", () => {
-  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da computes '<differentia> <genus>' from genus + one differentia, resolving each 1-hop to its exo__Asset_label", () => {
-    const resolver = resolverOverVault();
-    const definition = resolver.resolve({
-      exo__Instance_class: [`[[${CONCEPT_CLASS_UID}|concept__Concept]]`],
-      concept__Concept_genus: `[[${OKR_UID}]]`,
-      concept__Concept_differentia: [`[[${QUARTERLY_UID}]]`],
-    });
-    // "quarterly OKR" — labels resolved through the REAL metadataResolver, NOT any stored text.
+describe("ConceptDefinitionResolver — vault-declared composition (req eb18a3a4)", () => {
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da compiles the vault spec to the composition template", () => {
+    const { template } = harness();
+    expect(template).toBe("{{concept__Concept_differentia}} {{concept__Concept_genus}}");
+  });
+
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da renders '<differentia> <genus>' from the vault template + a concept's genus/differentia (1-hop labels)", () => {
+    const { template, resolver } = harness();
+    const definition = resolver.resolve(
+      {
+        concept__Concept_genus: `[[${OKR_UID}]]`,
+        concept__Concept_differentia: [`[[${QUARTERLY_UID}]]`],
+      },
+      template,
+    );
     expect(definition).toBe("quarterly OKR");
   });
 
-  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da joins multiple differentia as space-separated adjectives before the genus (authored order)", () => {
-    const resolver = resolverOverVault();
-    const definition = resolver.resolve({
-      concept__Concept_genus: `[[${OKR_UID}]]`,
-      concept__Concept_differentia: [`[[${RECURRING_UID}]]`, `[[${QUARTERLY_UID}]]`],
-    });
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da joins multiple differentia (authored order) via the engine's opt-in array-join", () => {
+    const { template, resolver } = harness();
+    const definition = resolver.resolve(
+      {
+        concept__Concept_genus: `[[${OKR_UID}]]`,
+        concept__Concept_differentia: [`[[${RECURRING_UID}]]`, `[[${QUARTERLY_UID}]]`],
+      },
+      template,
+    );
     expect(definition).toBe("recurring quarterly OKR");
   });
 
-  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da renders the rare conjunctive upper-ontology genus as '<differentia> [genus1 ∧ genus2]'", () => {
-    const resolver = resolverOverVault();
-    const definition = resolver.resolve({
-      concept__Concept_genus: [`[[${PROFESSION_UID}]]`, `[[${ROLE_UID}]]`],
-      concept__Concept_differentia: [`[[${PM_UID}]]`],
-    });
-    expect(definition).toBe("Project Manager [Profession ∧ Project Role]");
-  });
-
-  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da resolves the [[uid|alias]] genus form via the alias (no hop)", () => {
-    const resolver = resolverOverVault();
-    const definition = resolver.resolve({
-      concept__Concept_genus: `[[${OKR_UID}|OKR]]`,
-      concept__Concept_differentia: [`[[${QUARTERLY_UID}|quarterly]]`],
-    });
-    expect(definition).toBe("quarterly OKR");
-  });
-
-  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da a genus with NO differentia renders just the genus label", () => {
-    const resolver = resolverOverVault();
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da resolves the [[uid|alias]] forms via the alias", () => {
+    const { template, resolver } = harness();
     expect(
-      resolver.resolve({ concept__Concept_genus: `[[${OKR_UID}]]` }),
-    ).toBe("OKR");
+      resolver.resolve(
+        {
+          concept__Concept_genus: `[[${OKR_UID}|OKR]]`,
+          concept__Concept_differentia: [`[[${QUARTERLY_UID}|quarterly]]`],
+        },
+        template,
+      ),
+    ).toBe("quarterly OKR");
+  });
+
+  // ⛤ HOMOICONICITY REVERT-VERIFY (axis-1): the composition is the VAULT SPEC, not TS.
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da REVERT-VERIFY axis-1: editing the vault spec (dropping the genus part) changes the composition for the SAME concept — the spec is the source of truth", () => {
+    const concept = {
+      concept__Concept_genus: `[[${OKR_UID}]]`,
+      concept__Concept_differentia: [`[[${QUARTERLY_UID}]]`],
+    };
+    // Spec WITH the genus part → "quarterly OKR".
+    const withGenus = harness(true);
+    expect(withGenus.resolver.resolve(concept, withGenus.template)).toBe("quarterly OKR");
+    // Spec WITHOUT the genus part (same concept data) → the genus drops out of the composition.
+    const withoutGenus = harness(false);
+    expect(withoutGenus.template).toBe("{{concept__Concept_differentia}} ");
+    expect(withoutGenus.resolver.resolve(concept, withoutGenus.template)).toBe("quarterly");
   });
 
   // --- Negative controls (materialized-OR-computed + fail-closed) ---
 
-  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da genus ABSENT → the stored free-text is returned unchanged (materialized), and resolveComputed is null", () => {
-    const resolver = resolverOverVault();
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da genus ABSENT → the stored free-text is returned unchanged (materialized), resolveComputed null", () => {
+    const { template, resolver } = harness();
     const stored = "A branch of inquiry into the fundamental nature of being, knowledge, and value.";
     const metadata = { concept__Concept_definition: stored };
-    expect(resolver.resolve(metadata)).toBe(stored);
-    // resolveComputed distinguishes computed from stored → null (no genus) so the patch does NOT override.
-    expect(resolver.resolveComputed(metadata)).toBeNull();
+    expect(resolver.resolve(metadata, template)).toBe(stored);
+    expect(resolver.resolveComputed(metadata, template)).toBeNull();
   });
 
-  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da fail-closed: neither genus nor stored free-text → null (never fabricated)", () => {
-    const resolver = resolverOverVault();
-    expect(resolver.resolve({ exo__Asset_label: "orphan concept" })).toBeNull();
-    expect(resolver.resolveComputed({ exo__Asset_label: "orphan concept" })).toBeNull();
-    // empty stored text is also fail-closed
-    expect(resolver.resolve({ concept__Concept_definition: "   " })).toBeNull();
-  });
-
-  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da FAIL-CLOSED on an UNRESOLVABLE genus: genus=[[deleted-uid]] + stored text → renders the STORED text (never a raw UID), resolveComputed null", () => {
-    const resolver = resolverOverVault();
-    const DELETED_UID = "deadbeef-0000-4000-8000-00000000dead"; // not in the vault → no label
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da FAIL-CLOSED on an UNRESOLVABLE genus: genus=[[deleted-uid]] + stored text → renders STORED (never a raw UID), resolveComputed null", () => {
+    const { template, resolver } = harness();
     const stored = "the human-written definition that must be preserved";
     const metadata = {
-      concept__Concept_genus: `[[${DELETED_UID}]]`,
+      concept__Concept_genus: "[[deadbeef-0000-4000-8000-00000000dead]]",
       concept__Concept_definition: stored,
     };
-    // A genus that resolves ONLY to a raw UID is not a usable token → fall through to STORED.
-    expect(resolver.resolve(metadata)).toBe(stored);
-    expect(resolver.resolveComputed(metadata)).toBeNull();
+    expect(resolver.resolve(metadata, template)).toBe(stored);
+    expect(resolver.resolveComputed(metadata, template)).toBeNull();
   });
 
-  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da an unresolvable genus with NO stored text → null (never renders the raw UID)", () => {
-    const resolver = resolverOverVault();
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da NO vault spec authored (template null) → stored fallback / null (fail-closed)", () => {
+    const { resolver } = harness();
     expect(
-      resolver.resolve({ concept__Concept_genus: "[[deadbeef-0000-4000-8000-00000000dead]]" }),
+      resolver.resolve({ concept__Concept_genus: `[[${OKR_UID}]]` }, null),
     ).toBeNull();
+    const stored = "kept narrative";
+    expect(
+      resolver.resolve(
+        { concept__Concept_genus: `[[${OKR_UID}]]`, concept__Concept_definition: stored },
+        null,
+      ),
+    ).toBe(stored);
   });
 
-  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da genus present + stored text → the COMPUTED value wins (materialized-OR-computed)", () => {
-    const resolver = resolverOverVault();
-    const metadata = {
-      concept__Concept_genus: `[[${OKR_UID}]]`,
-      concept__Concept_differentia: [`[[${QUARTERLY_UID}]]`],
-      concept__Concept_definition: "an outdated hand-written definition",
-    };
-    expect(resolver.resolve(metadata)).toBe("quarterly OKR");
-    expect(resolver.resolveComputed(metadata)).toBe("quarterly OKR");
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da fail-closed: neither genus nor stored → null (never fabricated)", () => {
+    const { template, resolver } = harness();
+    expect(resolver.resolve({ exo__Asset_label: "orphan concept" }, template)).toBeNull();
+    expect(resolver.resolve({ concept__Concept_definition: "   " }, template)).toBeNull();
   });
 });
