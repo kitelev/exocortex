@@ -109,6 +109,25 @@ describe("ConceptDefinitionSpecService (req eb18a3a4)", () => {
     expect(svc.getTemplate("concept__Concept")).toBeNull();
   });
 
+  it("scheduleRefresh() DEBOUNCES a burst of changes into ONE scanVault (iPhone-Jetsam crash-loop guard)", () => {
+    jest.useFakeTimers();
+    const a = app([spec(), prop(0, "concept__Concept_genus")]);
+    const getMarkdownFiles = (a.vault as unknown as { getMarkdownFiles: jest.Mock })
+      .getMarkdownFiles;
+    const svc = new ConceptDefinitionSpecService(a);
+    svc.initialize(); // 1 immediate scan
+    getMarkdownFiles.mockClear();
+
+    // A burst of 20 "changed" events → 20 scheduleRefresh() calls.
+    for (let i = 0; i < 20; i++) svc.scheduleRefresh();
+    expect(getMarkdownFiles).not.toHaveBeenCalled(); // debounced — no O(N) scan per change
+
+    jest.advanceTimersByTime(300);
+    expect(getMarkdownFiles).toHaveBeenCalledTimes(1); // ONE scan for the whole burst
+    expect(svc.getTemplate("concept__Concept")).toBe("{{concept__Concept_genus}}");
+    jest.useRealTimers();
+  });
+
   it("tolerates a vault mock without a working getMarkdownFiles (does not throw)", () => {
     // The plugin's own test harness mock vault may not return an array — initialize() must not
     // throw "files is not iterable" (regression guard).

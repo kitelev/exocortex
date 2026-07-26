@@ -83,7 +83,10 @@ export class PropertiesDefinitionValuePatch {
     // restore + re-patch to guarantee a fresh value.
     this.plugin.registerEvent(
       this.app.metadataCache.on("changed", () => {
-        this.specService.refresh();
+        // DEBOUNCED scan (the spec ~4 assets rarely change) — an un-debounced full-vault scan on
+        // EVERY change is the iPhone-Jetsam crash-loop root cause under a sync burst. The DOM
+        // re-patch below is O(open leaves), not O(vault), so it stays immediate.
+        this.specService.scheduleRefresh();
         this.restoreAll();
         this.patchAllPropertiesBlocks();
       }),

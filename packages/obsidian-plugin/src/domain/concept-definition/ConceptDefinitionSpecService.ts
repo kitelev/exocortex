@@ -39,9 +39,18 @@ interface RawPart {
   literal?: string; // exo__PrintedLiteral
 }
 
+/**
+ * Trailing debounce for scheduleRefresh() — collapses a burst of metadataCache "changed" events
+ * into ONE scanVault. Same fix as PrintNameRuleService: an un-debounced full O(N) vault walk on
+ * EVERY file change is the documented iPhone-Jetsam crash-loop root cause under a sync burst
+ * (O(K·N)). The definition spec is ~4 assets and rarely changes, so 300ms trailing is imperceptible.
+ */
+const SPEC_RESCAN_DEBOUNCE_MS = 300;
+
 export class ConceptDefinitionSpecService {
   private templates: Map<string, string> = new Map(); // appliesToClass key → compiled template
   private initialized = false;
+  private scanDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly app: App) {}
 
@@ -50,8 +59,25 @@ export class ConceptDefinitionSpecService {
     this.initialized = true;
   }
 
+  /** Immediate rescan — for the rare cold-start ("resolved") rebuild, not the high-frequency path. */
   refresh(): void {
     this.scanVault();
+  }
+
+  /**
+   * Debounced rescan for the high-frequency metadataCache "changed" handler. A burst of K change
+   * events (e.g. a sync pull) collapses into ONE scanVault ~300ms after the last event, instead of
+   * K full O(N) vault walks (the crash-loop fix — mirrors PrintNameRuleService.scheduleRefresh).
+   */
+  scheduleRefresh(): void {
+    if (this.scanDebounceTimer !== null) {
+      clearTimeout(this.scanDebounceTimer);
+    }
+    this.scanDebounceTimer = setTimeout(() => {
+      this.scanDebounceTimer = null;
+      this.scanVault();
+      this.initialized = true;
+    }, SPEC_RESCAN_DEBOUNCE_MS);
   }
 
   /** The compiled definition-composition template for a concept class, or null if no spec applies. */
