@@ -5647,6 +5647,14 @@
   text-decoration: underline;
 }
 
+/* PropertiesDefinitionValuePatch — computed concept definition display (Reading Mode) */
+.metadata-property-value .exo-definition-display {
+  /* match native .metadata-property-value text metrics (read-only computed view) */
+  font: inherit;
+  color: var(--text-normal);
+  white-space: pre-wrap;
+}
+
 /* FileExplorerLabelPatch — span overlay for UUID-named Exocortex assets (#2802) */
 .nav-file-title-content.exo-file-explorer-label-hidden {
   font-size: 0 !important;
