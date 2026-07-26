@@ -80,6 +80,7 @@ function mkFile(path: string): TFile {
 function mountPropertiesBlock(
   app: App,
   file: TFile,
+  mode: "preview" | "source" = "preview",
 ): { valueEl: HTMLElement; containerEl: HTMLElement } {
   const containerEl = document.createElement("div");
   const metadataContainer = document.createElement("div");
@@ -106,7 +107,7 @@ function mountPropertiesBlock(
   document.body.appendChild(containerEl);
 
   (app.workspace.getLeavesOfType as jest.Mock).mockReturnValue([
-    { view: { containerEl, file } },
+    { view: { containerEl, file, getMode: () => mode } },
   ]);
 
   return { valueEl, containerEl };
@@ -164,13 +165,13 @@ describe("PropertiesDefinitionValuePatch — Properties-panel computed definitio
     patch.disable();
   });
 
-  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da hides the native editable value control and shows the computed value when the value row carries an input", () => {
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da does NOT override an EDITABLE value control (no edit-override — the editable definition stays editable)", () => {
     const { app, conceptFile } = buildApp({
       concept__Concept_genus: `[[${OKR_UID}]]`,
       concept__Concept_differentia: [`[[${QUARTERLY_UID}]]`],
     });
     const { valueEl } = mountPropertiesBlock(app, conceptFile);
-    // Replace the text value with an editable input (Live-Preview-leak shape).
+    // The value row carries an editable input (edit-mode shape).
     valueEl.textContent = "";
     const valueInput = document.createElement("input");
     valueInput.value = STORED_TEXT;
@@ -179,14 +180,27 @@ describe("PropertiesDefinitionValuePatch — Properties-panel computed definitio
     const patch = new PropertiesDefinitionValuePatch(makePlugin(app));
     patch.enable();
 
-    const span = valueEl.querySelector<HTMLElement>(".exo-definition-display");
-    expect(span?.textContent).toBe("quarterly OKR");
-    // The native input is hidden (never mutated) and the stored value is preserved on it.
-    expect(valueInput.classList.contains("exo-definition-hidden")).toBe(true);
-    expect(valueInput.value).toBe(STORED_TEXT);
-
-    patch.disable();
-    expect(valueInput.classList.contains("exo-definition-hidden")).toBe(false);
+    // Reading-mode display ONLY → the editable input is left untouched, no computed span injected.
     expect(valueEl.querySelector(".exo-definition-display")).toBeNull();
+    expect(valueInput.value).toBe(STORED_TEXT);
+    expect(valueEl.contains(valueInput)).toBe(true);
+    patch.disable();
+  });
+
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da does NOT patch when the view is in EDIT (source) mode (reading-mode only)", () => {
+    const { app, conceptFile } = buildApp({
+      concept__Concept_genus: `[[${OKR_UID}]]`,
+      concept__Concept_differentia: [`[[${QUARTERLY_UID}]]`],
+      concept__Concept_definition: STORED_TEXT,
+    });
+    const { valueEl } = mountPropertiesBlock(app, conceptFile, "source");
+
+    const patch = new PropertiesDefinitionValuePatch(makePlugin(app));
+    patch.enable();
+
+    // Source (edit) mode → no override; native stored value untouched.
+    expect(valueEl.textContent).toBe(STORED_TEXT);
+    expect(valueEl.querySelector(".exo-definition-display")).toBeNull();
+    patch.disable();
   });
 });

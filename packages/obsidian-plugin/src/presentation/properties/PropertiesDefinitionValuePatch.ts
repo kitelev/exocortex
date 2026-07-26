@@ -21,10 +21,12 @@ import {
  * NO custom render site in the plugin — it is displayed only by the native Properties panel,
  * so THAT is the surface this patches.
  *
- * READING MODE only, display-side ONLY — the stored frontmatter value is never mutated
- * (no edit-override), so there is no corruption risk (contrast PropertiesLabelPatch's note
- * about not writing input.value). Follows the MutationObserver + layout-change re-patch
- * pattern established by PropertiesLabelPatch / PropertiesLinkPatch / PropertiesUidCopyPatch.
+ * READING MODE only, display-side ONLY (like the sibling PropertiesLabelPatch): the patch runs
+ * only when the markdown view is in preview (reading) mode AND the definition value is displayed
+ * as read-only text — it NEVER hides or replaces an editable value control (input / textarea /
+ * contenteditable), so the stored `concept__Concept_definition` stays editable and is never
+ * mutated (no edit-override → no corruption risk). Follows the MutationObserver + layout-change
+ * re-patch pattern established by PropertiesLabelPatch / PropertiesLinkPatch / PropertiesUidCopyPatch.
  *
  * Dormant until Delta-3 by design: with 0 typed concept instances the patch is a no-op
  * (resolveComputed returns null for a concept with no genus, so nothing is overridden).
@@ -38,7 +40,6 @@ import {
 const DEFINITION_KEY = "concept__Concept_definition";
 const PATCHED_ATTR = "data-exo-definition-patched";
 const DISPLAY_SPAN_CLASS = "exo-definition-display";
-const HIDDEN_CLASS = "exo-definition-hidden";
 // Obsidian inserts zero-width spaces (U+200B) in property-key text; built at runtime to
 // avoid a literal invisible char in source.
 const ZERO_WIDTH_SPACE = String.fromCharCode(0x200b);
@@ -46,10 +47,9 @@ const ZERO_WIDTH_SPACE = String.fromCharCode(0x200b);
 interface PatchRecord {
   propertyEl: HTMLElement;
   valueEl: HTMLElement;
-  input: HTMLElement | null;
   displaySpan: HTMLSpanElement;
-  /** Original child nodes detached before the display span was shown (non-input path), for restore. */
-  originalNodes: Node[] | null;
+  /** Original child nodes detached before the display span was shown, for restore. */
+  originalNodes: Node[];
 }
 
 export class PropertiesDefinitionValuePatch {
@@ -152,7 +152,16 @@ export class PropertiesDefinitionValuePatch {
     if (!Array.isArray(leaves)) return;
 
     for (const leaf of leaves) {
-      const view = leaf.view as { containerEl?: HTMLElement; file?: TFile | null };
+      const view = leaf.view as {
+        containerEl?: HTMLElement;
+        file?: TFile | null;
+        getMode?: () => string;
+      };
+      // Reading-mode only (matches sibling PropertiesLabelPatch's scope): if the view exposes a
+      // mode and it is NOT preview (reading), skip — the editable value stays untouched.
+      const mode = typeof view?.getMode === "function" ? view.getMode() : undefined;
+      if (mode !== undefined && mode !== "preview") continue;
+
       const container = view?.containerEl;
       const file = view?.file ?? null;
       if (container && file instanceof TFile) {
@@ -188,28 +197,24 @@ export class PropertiesDefinitionValuePatch {
     const valueEl = propertyEl.querySelector<HTMLElement>(".metadata-property-value");
     if (!valueEl) return;
 
+    // Reading-mode display ONLY — never override an EDITABLE value control (that would be an
+    // edit-override, hiding the user's editable definition). If the value carries an
+    // input/textarea/contenteditable (edit mode), leave it untouched.
+    if (valueEl.querySelector("input, textarea, [contenteditable]")) return;
+
     const displaySpan = document.createElement("span");
     displaySpan.className = DISPLAY_SPAN_CLASS;
     displaySpan.textContent = computed;
     displaySpan.setAttribute("data-exo-computed-definition", "true");
 
-    const input = valueEl.querySelector<HTMLElement>("input, textarea, [contenteditable]");
-    let originalNodes: Node[] | null = null;
-
-    if (input) {
-      // Hide the native (editable) value control and show the computed value beside it.
-      input.classList.add(HIDDEN_CLASS);
-      input.parentNode?.insertBefore(displaySpan, input);
-    } else {
-      // Reading-Mode text value — detach the native content (kept for restore) and show the
-      // computed phrase. Node detach (not innerHTML) keeps this security-lint-clean.
-      originalNodes = Array.from(valueEl.childNodes);
-      for (const node of originalNodes) valueEl.removeChild(node);
-      valueEl.appendChild(displaySpan);
-    }
+    // Read-only text value — detach the native content (kept for restore) and show the computed
+    // phrase. Node detach (not innerHTML) keeps this security-lint-clean.
+    const originalNodes = Array.from(valueEl.childNodes);
+    for (const node of originalNodes) valueEl.removeChild(node);
+    valueEl.appendChild(displaySpan);
 
     propertyEl.setAttribute(PATCHED_ATTR, "true");
-    this.patched.push({ propertyEl, valueEl, input, displaySpan, originalNodes });
+    this.patched.push({ propertyEl, valueEl, displaySpan, originalNodes });
   }
 
   private extractPredicate(propertyEl: HTMLElement): string | null {
@@ -254,11 +259,7 @@ export class PropertiesDefinitionValuePatch {
     for (const record of this.patched) {
       try {
         record.displaySpan.remove();
-        if (record.input) {
-          record.input.classList.remove(HIDDEN_CLASS);
-        } else if (record.originalNodes !== null) {
-          for (const node of record.originalNodes) record.valueEl.appendChild(node);
-        }
+        for (const node of record.originalNodes) record.valueEl.appendChild(node);
         record.propertyEl.removeAttribute(PATCHED_ATTR);
       } catch {
         // best-effort restore

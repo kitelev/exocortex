@@ -35,6 +35,12 @@ const DEFINITION_KEY = "concept__Concept_definition";
 // Conjunction glyph for the rare multi-genus (upper-ontology) case: "<diff> [g₁ ∧ g₂]".
 const CONJUNCTION = " ∧ ";
 
+// A UID-shaped value is NOT a usable definition token — a genus/differentia that resolves ONLY
+// to a raw UID (target deleted/renamed, or metadataCache lag) must fail closed (fall through to
+// the stored narrative), never render the 36-char UID over a good stored definition.
+const UUID_REGEX =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
 export class ConceptDefinitionResolver {
   constructor(private readonly metadataResolver?: MetadataResolver | null) {}
 
@@ -101,11 +107,13 @@ export class ConceptDefinitionResolver {
 
   /**
    * Resolve one wikilink value to a display label (mirrors
-   * DisplayNameTemplateEngine.formatWikilinkValue):
+   * DisplayNameTemplateEngine.formatWikilinkValue, plus a FAIL-CLOSED guard):
    *  - "[[target|alias]]"        → alias
    *  - "[[target]]" + resolver   → the referenced asset's exo__Asset_label
-   *  - "[[target]]" no resolver  → target (brackets stripped)
-   *  - a non-wikilink string     → the string itself (partial brackets stripped)
+   *  - "[[<uid>]]" with no label  → null (FAIL-CLOSED — a raw UID is never a definition token,
+   *                                 so resolveComputed falls through to the stored narrative)
+   *  - "[[target]]" non-UID bare  → target (a symbolic label, kept)
+   *  - a non-wikilink string     → the string itself (a literal label; a bare UID → null)
    */
   private resolveWikilinkLabel(value: unknown): string | null {
     if (typeof value !== "string") return null;
@@ -114,9 +122,10 @@ export class ConceptDefinitionResolver {
 
     const match = trimmed.match(/^\[\[([^\]|]+?)(?:\|([^\]]+))?\]\]$/);
     if (!match) {
-      // Not a wikilink — strip any partial bracket syntax and use the bare text.
+      // Not a wikilink — a literal label. A bare UID is not a usable token (fail-closed).
       const bare = trimmed.replace(/^\[\[|\]\]$/g, "").trim();
-      return bare || null;
+      if (!bare) return null;
+      return UUID_REGEX.test(bare) ? null : bare;
     }
 
     const target = match[1].trim();
@@ -129,6 +138,9 @@ export class ConceptDefinitionResolver {
       if (typeof label === "string" && label.trim()) return label.trim();
     }
 
-    return target || null;
+    // No alias, no resolvable label: a bare UID fails closed (null → fall through to stored);
+    // a non-UID symbolic target is kept as its own label.
+    if (!target) return null;
+    return UUID_REGEX.test(target) ? null : target;
   }
 }

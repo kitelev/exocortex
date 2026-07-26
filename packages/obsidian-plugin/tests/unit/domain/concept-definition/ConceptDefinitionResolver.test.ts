@@ -148,21 +148,34 @@ describe("ConceptDefinitionResolver — computed view from genus + differentia (
     expect(resolver.resolve({ concept__Concept_definition: "   " })).toBeNull();
   });
 
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da FAIL-CLOSED on an UNRESOLVABLE genus: genus=[[deleted-uid]] + stored text → renders the STORED text (never a raw UID), resolveComputed null", () => {
+    const resolver = resolverOverVault();
+    const DELETED_UID = "deadbeef-0000-4000-8000-00000000dead"; // not in the vault → no label
+    const stored = "the human-written definition that must be preserved";
+    const metadata = {
+      concept__Concept_genus: `[[${DELETED_UID}]]`,
+      concept__Concept_definition: stored,
+    };
+    // A genus that resolves ONLY to a raw UID is not a usable token → fall through to STORED.
+    expect(resolver.resolve(metadata)).toBe(stored);
+    expect(resolver.resolveComputed(metadata)).toBeNull();
+  });
+
+  it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da an unresolvable genus with NO stored text → null (never renders the raw UID)", () => {
+    const resolver = resolverOverVault();
+    expect(
+      resolver.resolve({ concept__Concept_genus: "[[deadbeef-0000-4000-8000-00000000dead]]" }),
+    ).toBeNull();
+  });
+
   it("@req:eb18a3a4-42b0-47d3-98a7-16b31c5ba6da genus present + stored text → the COMPUTED value wins (materialized-OR-computed)", () => {
     const resolver = resolverOverVault();
-    const definition = resolver.resolve({
+    const metadata = {
       concept__Concept_genus: `[[${OKR_UID}]]`,
       concept__Concept_differentia: [`[[${QUARTERLY_UID}]]`],
       concept__Concept_definition: "an outdated hand-written definition",
-    });
-    expect(definition).toBe("quarterly OKR");
-    expect(resolver.resolveComputed).toBeDefined();
-    expect(
-      resolver.resolveComputed({
-        concept__Concept_genus: `[[${OKR_UID}]]`,
-        concept__Concept_differentia: [`[[${QUARTERLY_UID}]]`],
-        concept__Concept_definition: "an outdated hand-written definition",
-      }),
-    ).toBe("quarterly OKR");
+    };
+    expect(resolver.resolve(metadata)).toBe("quarterly OKR");
+    expect(resolver.resolveComputed(metadata)).toBe("quarterly OKR");
   });
 });

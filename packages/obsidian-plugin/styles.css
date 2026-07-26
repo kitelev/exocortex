@@ -5647,11 +5647,7 @@
   text-decoration: underline;
 }
 
-/* PropertiesDefinitionValuePatch — computed concept definition display + hidden native value */
-.metadata-property-value .exo-definition-hidden {
-  display: none !important;
-}
-
+/* PropertiesDefinitionValuePatch — computed concept definition display (Reading Mode) */
 .metadata-property-value .exo-definition-display {
   /* match native .metadata-property-value text metrics (read-only computed view) */
   font: inherit;
