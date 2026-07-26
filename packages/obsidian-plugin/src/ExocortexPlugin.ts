@@ -127,6 +127,7 @@ import { InlineTitlePatch } from "./presentation/tab-titles/InlineTitlePatch";
 import { PropertiesLinkPatch } from "./presentation/properties/PropertiesLinkPatch";
 import { PropertiesUidCopyPatch } from "./presentation/properties/PropertiesUidCopyPatch";
 import { PropertiesLabelPatch } from "./presentation/properties/PropertiesLabelPatch";
+import { PropertiesDefinitionValuePatch } from "./presentation/properties/PropertiesDefinitionValuePatch";
 import { FileExplorerLabelPatch } from "./presentation/fileexplorer/FileExplorerLabelPatch";
 import { FileExplorerIconPatch } from "./presentation/fileexplorer/FileExplorerIconPatch";
 import { IconizeDetector } from "./presentation/fileexplorer/IconizeDetector";
@@ -379,6 +380,7 @@ export default class ExocortexPlugin extends Plugin {
   private bodyLinkPatch!: BodyLinkPatch;
   private propertiesUidCopyPatch!: PropertiesUidCopyPatch;
   private propertiesLabelPatch!: PropertiesLabelPatch;
+  private propertiesDefinitionValuePatch!: PropertiesDefinitionValuePatch;
   private fileExplorerLabelPatch!: FileExplorerLabelPatch;
   private fileExplorerIconPatch!: FileExplorerIconPatch;
   private readingModeEnforcer!: ReadingModeEnforcer;
@@ -1818,6 +1820,21 @@ export default class ExocortexPlugin extends Plugin {
         500,
       );
 
+      // Initialize Properties concept-definition value patch (Delta-2 of concept-typization,
+      // req eb18a3a4). Renders a concept's concept__Concept_definition as a COMPUTED VIEW
+      // "<differentia> <genus>" in the native Properties block (Reading Mode) where genus is
+      // present; the stored free-text is left untouched where genus is absent
+      // (materialized-OR-computed). Always enabled — a no-op until a concept declares a genus
+      // (dormant until the Delta-3 instance migration produces typed concepts).
+      this.propertiesDefinitionValuePatch = new PropertiesDefinitionValuePatch(this);
+      this.timerManager.setTimeout(
+        "properties-definition-value-patch",
+        () => {
+          this.propertiesDefinitionValuePatch.enable();
+        },
+        500,
+      );
+
       // Initialize File Explorer readable-label patch (always enabled).
       // Replaces UUID filenames in the sidebar with `exo__Asset_label`.
       // Finding: Ваня Холькин UX audit 2026-04-12 09:32 — «Структура уродская»;
@@ -1989,6 +2006,11 @@ export default class ExocortexPlugin extends Plugin {
     // Cleanup Properties readable-label patch
     if (this.propertiesLabelPatch) {
       this.propertiesLabelPatch.cleanup();
+    }
+
+    // Cleanup Properties concept-definition value patch (Delta-2)
+    if (this.propertiesDefinitionValuePatch) {
+      this.propertiesDefinitionValuePatch.cleanup();
     }
 
     // Cleanup File Explorer readable-label patch
