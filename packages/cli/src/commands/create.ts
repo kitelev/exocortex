@@ -371,19 +371,25 @@ export function createCommand(): Command {
         // Priority 2 (issue #3934): when isDefinedBy did NOT resolve a folder
         // (bang-anchor `[[!kitelev]]` / `[[!aiKnow]]`, empty, or unresolvable —
         // folderPath is still the inbox default), co-locate the new asset next
-        // to existing sibling instances of the SAME class, deriving the folder
-        // from where those instances already live. Data-driven neighbour
-        // co-location (no hardcoded class→folder map): the product obeys the
-        // co-location invariant itself instead of requiring an explicit
-        // `--folder`. Fail-open to the inbox default when the class has no
-        // existing instances. `options.class` may be a UID or a short-name; it
-        // is matched (alongside the resolved classUid) against each instance's
+        // to existing sibling instances that share BOTH the SAME class AND the
+        // SAME isDefinedBy anchor, deriving the folder from where those siblings
+        // already live. Data-driven neighbour co-location (no hardcoded
+        // class→folder map): the product obeys the co-location invariant itself
+        // instead of requiring an explicit `--folder`. Matching on the anchor
+        // too (not class alone) is required because one class can span homes —
+        // e.g. `inbox__ExoAssistantKnowledge` is used for RFCs (`[[!kitelev]]` →
+        // exodev/inbox) AND for ExoAssistant infra knowledge (resolvable
+        // isDefinedBy → exoass); class alone would let the latter outvote the
+        // RFCs. Fail-open to the inbox default when no class+anchor sibling
+        // exists. `options.class` may be a UID or a short-name; it is matched
+        // (alongside the resolved classUid) against each instance's
         // `exo__Instance_class` wikilink target in any of its forms.
         if (folderPath === DEFAULT_INBOX_FOLDER) {
           const neighbourFolder = await resolveNeighbourFolderByClass(
             fsAdapter,
             classUid,
             options.class,
+            isDefinedBy,
           );
           if (neighbourFolder) {
             folderPath = neighbourFolder;

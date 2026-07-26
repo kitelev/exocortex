@@ -54,24 +54,27 @@ function md(frontmatter: Record<string, string | string[]>): string {
 
 /** Write a sibling instance of CLASS_UID at `dir/<uid>.md`, referencing the
  *  class by the given wikilink form(s). By default the class ref is QUOTED
- *  (the product's own `create` output form); pass `{ quoted: false }` to write
- *  the UNQUOTED form (common in hand-authored / raw-Write RFC/aiKnow assets). */
+ *  (the product's own `create` output form) and the isDefinedBy anchor is
+ *  `[[!kitelev]]`; pass `{ quoted: false }` to write the UNQUOTED class-ref form
+ *  (common in hand-authored / raw-Write RFC/aiKnow assets), or `{ isDefinedBy }`
+ *  to give the sibling a different anchor. */
 function writeSibling(
   vault: string,
   dir: string,
   uid: string,
   classRef: string | string[],
-  opts: { quoted?: boolean } = {},
+  opts: { quoted?: boolean; isDefinedBy?: string } = {},
 ): void {
   const quoted = opts.quoted !== false;
   const q = (r: string): string => (quoted ? `"${r}"` : r);
+  const anchor = opts.isDefinedBy ?? "[[!kitelev]]";
   const abs = path.join(vault, dir);
   fs.mkdirSync(abs, { recursive: true });
   fs.writeFileSync(
     path.join(abs, `${uid}.md`),
     md({
       exo__Asset_uid: uid,
-      exo__Asset_isDefinedBy: '"[[!kitelev]]"',
+      exo__Asset_isDefinedBy: `"${anchor}"`,
       exo__Instance_class: Array.isArray(classRef)
         ? classRef.map(q)
         : q(classRef),
@@ -227,6 +230,33 @@ describe("Issue #3934: `cli create` co-locates by class-neighbour for bang-ancho
       "exo__Asset_isDefinedBy=[[!kitelev]]",
     ]);
 
+    expect(result.path).toBe(`${SIBLING_DIR}/${result.uuid}.md`);
+    expect(result.path.startsWith(MINORITY_DIR)).toBe(false);
+  });
+
+  it("anchor-discrimination: only siblings sharing the SAME isDefinedBy anchor count (a class can span homes) @req:cec6af2c-420e-4a09-a5d3-6ecaf4c5413e", async () => {
+    // Reproduces the real vault shape for inbox__ExoAssistantKnowledge: the SAME
+    // class C is used both for RFCs anchored [[!kitelev]] (few, in SIBLING_DIR)
+    // AND for infra assets with a DIFFERENT (resolvable-style) anchor (MANY, in
+    // MINORITY_DIR). Class-alone majority would pick the MANY (wrong folder);
+    // matching class AND the same [[!kitelev]] anchor must pick SIBLING_DIR.
+    // 1 same-anchor sibling in SIBLING_DIR:
+    writeSibling(vault, SIBLING_DIR, "aaaaaaaa-0000-0000-0000-0000000000c1", `[[${CLASS_UID}]]`, {
+      isDefinedBy: "[[!kitelev]]",
+    });
+    // 3 DIFFERENT-anchor siblings of the same class in MINORITY_DIR (outnumber):
+    for (const n of ["c2", "c3", "c4"]) {
+      writeSibling(vault, MINORITY_DIR, `aaaaaaaa-0000-0000-0000-0000000000${n}`, `[[${CLASS_UID}]]`, {
+        isDefinedBy: "[[32d2374c-aaaa-bbbb-cccc-000000000000]]",
+      });
+    }
+
+    const result = await runCreate(CLASS_UID, [
+      "--property",
+      "exo__Asset_isDefinedBy=[[!kitelev]]",
+    ]);
+
+    // The lone [[!kitelev]] sibling wins over the 3 differently-anchored ones.
     expect(result.path).toBe(`${SIBLING_DIR}/${result.uuid}.md`);
     expect(result.path.startsWith(MINORITY_DIR)).toBe(false);
   });

@@ -122,46 +122,18 @@ export async function resolveCoLocationFolder(
 }
 
 /**
- * Resolve the co-location target folder for a NEW instance-asset by
- * CLASS-neighbour (issue #3934) — the fail-open successor to
- * {@link resolveCoLocationFolder} for the case where the asset's
- * `exo__Asset_isDefinedBy` yields no folder (bang-anchor `[[!kitelev]]` /
- * `[[!aiKnow]]`, empty, or unresolvable). Places the new asset next to its
- * EXISTING sibling instances of the same class, deriving the folder from where
- * instances already live — data-driven, with NO hardcoded class→folder map, so
- * the product obeys the co-location invariant itself rather than requiring an
- * explicit `--folder` (Andrey's design decision, #3934).
- *
- * A file is a sibling instance iff any value of its `exo__Instance_class`
- * (a string OR a YAML list) resolves via {@link extractAssetReference} (the
- * wikilink *target*) to the created asset's class UID OR its short-name label —
- * matching bare-uid `[[uid]]`, alias `[[uid|label]]`, and label `[[label]]`
- * forms uniformly. (The class-def file itself references the `exo__Class`
- * metaclass, never this class UID, so it is never a false sibling.)
- *
- * Returns the vault-relative folder holding the MOST sibling instances (the
- * canonical home; deterministic lexicographic tie-break), or `null` when the
- * class has no existing instances anywhere in the vault. A root-level majority
- * (`path.dirname` → ".") returns "" so the caller — whose truthiness check
- * mirrors {@link resolveCoLocationFolder} — keeps its `01 Inbox` default rather
- * than writing a brand-new asset to the vault root.
- *
- * This performs one full-vault frontmatter scan; it runs ONLY in the fail-open
- * branch (isDefinedBy already failed to resolve a folder), i.e. the rare
- * bang-anchor RFC/aiKnow create, so the cost is bounded to that path.
- */
-/**
- * Resolve the wikilink *target* of one `exo__Instance_class` reference to a
+ * Resolve the wikilink *target* of a single frontmatter reference to a
  * comparable token, robust to how YAML parsed it. A QUOTED wikilink
  * (`"[[uid|label]]"`) parses to a string and goes straight through
- * {@link extractAssetReference}. An UNQUOTED wikilink (`[[uid]]` /
- * `- [[uid]]`) is treated by YAML as a nested flow-sequence and parses to a
- * nested array (`["uid"]` / `[["uid"]]`) whose innermost string is the
- * already-bracket-stripped linkpath — so descend to that string first, then run
- * the same extractor (which also strips a `|alias` suffix). Returns null for
- * anything that doesn't reduce to a string.
+ * {@link extractAssetReference}. An UNQUOTED wikilink (`[[uid]]` / `- [[uid]]`)
+ * is treated by YAML as a nested flow-sequence and parses to a nested array
+ * (`["uid"]` / `[["uid"]]`) whose innermost string is the already-bracket-
+ * stripped linkpath — so descend to that string first, then run the same
+ * extractor (which also strips a `|alias` suffix). Returns null for anything
+ * that doesn't reduce to a string. Used for both `exo__Instance_class` refs and
+ * the `exo__Asset_isDefinedBy` anchor.
  */
-function classRefTarget(ref: unknown): string | null {
+function wikilinkTarget(ref: unknown): string | null {
   let cur: unknown = ref;
   while (Array.isArray(cur)) {
     if (cur.length === 0) {
@@ -172,10 +144,53 @@ function classRefTarget(ref: unknown): string | null {
   return extractAssetReference(cur);
 }
 
+/**
+ * Resolve the co-location target folder for a NEW instance-asset by
+ * CLASS-and-ANCHOR neighbour (issue #3934) — the fail-open successor to
+ * {@link resolveCoLocationFolder} for the case where the asset's
+ * `exo__Asset_isDefinedBy` yields no folder (bang-anchor `[[!kitelev]]` /
+ * `[[!aiKnow]]`, empty, or unresolvable). Places the new asset next to its
+ * EXISTING sibling instances, deriving the folder from where they already live —
+ * data-driven, with NO hardcoded class→folder map, so the product obeys the
+ * co-location invariant itself rather than requiring an explicit `--folder`
+ * (Andrey's design decision, #3934).
+ *
+ * A file is a sibling iff BOTH:
+ *   1. any value of its `exo__Instance_class` (a string OR a YAML list) resolves
+ *      via {@link wikilinkTarget} to the created asset's class UID OR its
+ *      short-name label — matching bare-uid `[[uid]]`, alias `[[uid|label]]`,
+ *      and label `[[label]]` forms uniformly (the class-def file references the
+ *      `exo__Class` metaclass, never this class UID, so it is never a false
+ *      sibling); AND
+ *   2. its `exo__Asset_isDefinedBy` resolves to the SAME anchor as the new
+ *      asset's (`newAnchor` = {@link wikilinkTarget} of the new isDefinedBy,
+ *      e.g. `!kitelev` / `!aiKnow`, or null for an empty isDefinedBy).
+ *
+ * The anchor is the audience/home signal: a single class can span multiple
+ * homes (e.g. `inbox__ExoAssistantKnowledge` is used both for RFCs anchored
+ * `[[!kitelev]]` living in `exoas-exodev/inbox/` AND for ExoAssistant infra
+ * knowledge anchored to the resolvable `$exoass` ontology living in
+ * `exoas-exoass/exoass/`). Matching class ALONE would let the larger, differently-
+ * anchored population outvote the true neighbours; matching class AND the same
+ * anchor selects exactly the assets whose placement was governed by the same
+ * (unresolvable/bang) anchor as the new one. The resolvable-isDefinedBy assets
+ * co-located via priority-1 never share a bang anchor, so they are excluded.
+ *
+ * Returns the vault-relative folder holding the MOST such siblings (canonical
+ * home; deterministic lexicographic tie-break), or `null` when no class+anchor
+ * sibling exists. A root-level majority (`path.dirname` → ".") returns "" so the
+ * caller — whose truthiness check mirrors {@link resolveCoLocationFolder} —
+ * keeps its `01 Inbox` default rather than writing to the vault root.
+ *
+ * One full-vault frontmatter scan; runs ONLY in the fail-open branch
+ * (isDefinedBy already failed to resolve a folder), so the cost is bounded to
+ * the rare bang-anchor RFC/aiKnow create.
+ */
 export async function resolveNeighbourFolderByClass(
   fsAdapter: NodeFsAdapter,
   classUid: string,
   classLabel: string,
+  isDefinedBy: unknown,
 ): Promise<string | null> {
   const targets = new Set<string>();
   if (classUid) targets.add(classUid);
@@ -183,6 +198,9 @@ export async function resolveNeighbourFolderByClass(
   if (targets.size === 0) {
     return null;
   }
+  // The new asset's audience anchor (`!kitelev` / `!aiKnow` / an unresolvable
+  // uid, or null for empty). Only siblings sharing this exact anchor count.
+  const newAnchor = wikilinkTarget(isDefinedBy);
 
   const allFiles = await fsAdapter.getMarkdownFiles();
   const folderCounts = new Map<string, number>();
@@ -194,10 +212,15 @@ export async function resolveNeighbourFolderByClass(
     } catch {
       continue;
     }
+    // 2. same isDefinedBy anchor as the new asset.
+    if (wikilinkTarget(metadata["exo__Asset_isDefinedBy"]) !== newAnchor) {
+      continue;
+    }
+    // 1. class matches (any wikilink form, list-aware).
     const rawClass = metadata["exo__Instance_class"];
     const refs = Array.isArray(rawClass) ? rawClass : [rawClass];
     const isSibling = refs.some((ref) => {
-      const target = classRefTarget(ref);
+      const target = wikilinkTarget(ref);
       return target !== null && targets.has(target);
     });
     if (!isSibling) {
@@ -212,7 +235,7 @@ export async function resolveNeighbourFolderByClass(
     return null;
   }
 
-  // Canonical home = the folder with the most sibling instances. Iterate in a
+  // Canonical home = the folder with the most siblings. Iterate in a
   // lexicographically-sorted order so ties resolve deterministically.
   let best: string | null = null;
   let bestCount = -1;
