@@ -378,43 +378,13 @@ export default class ExocortexPlugin extends Plugin {
 }
 ```
 
-#### CLI Container
-
-**Location**: `packages/cli/src/infrastructure/di/CLIContainer.ts`
-
-```typescript
-import "reflect-metadata";
-import { container } from "tsyringe";
-import { DI_TOKENS } from "@kitelev/exocortex-core";
-import { NodeLogger } from "./NodeLogger";
-import { NodeEventBus } from "./NodeEventBus";
-import { NodeConfiguration } from "./NodeConfiguration";
-import { NodeNotificationService } from "./NodeNotificationService";
-
-export class CLIContainer {
-  static setup(): void {
-    container.register(DI_TOKENS.ILogger, {
-      useFactory: () => new NodeLogger("@kitelev/exocortex-cli"),
-    });
-
-    container.register(DI_TOKENS.IEventBus, {
-      useValue: new NodeEventBus(),
-    });
-
-    container.register(DI_TOKENS.IConfiguration, {
-      useValue: new NodeConfiguration(),
-    });
-
-    container.register(DI_TOKENS.INotificationService, {
-      useValue: new NodeNotificationService(),
-    });
-  }
-
-  static reset(): void {
-    container.clearInstances();
-  }
-}
-```
+> **Note:** the CLI does **not** use a tsyringe container. Its composition
+> root (`packages/cli/src/commands/apply.ts`) constructs its service graph by
+> hand (`new CommandResolver(...)`, `new FileSystemVaultAdapter(...)`, …). The
+> former `CLIContainer` + `Node*` adapter set was never wired into any command
+> and was removed as dead code (Issue #3962). `reflect-metadata` is still
+> imported at the CLI entry (`program.ts`) as the polyfill for the core
+> package's `@injectable()`/`@inject()` decorators.
 
 ### Service Migration Pattern
 
@@ -586,7 +556,7 @@ describe("PropertyCleanupService with DI", () => {
 - Symbol-based DI_TOKENS created
 - 4 Obsidian adapters implemented
 - 4 CLI adapters implemented
-- PluginContainer and CLIContainer created
+- PluginContainer created
 - TypeScript decorator support enabled
 - PropertyCleanupService refactored as proof-of-concept
 - DI initialization added to ExocortexPlugin.ts
@@ -1103,8 +1073,9 @@ this.registerEvent(
 
 ### 6. Dependency Injection
 
-Cross-cutting concerns are injected via **TSyringe** containers
-(`PluginContainer.ts` in the plugin, `CLIContainer.ts` in the CLI); core
+Cross-cutting concerns are injected via a **TSyringe** container
+(`PluginContainer.ts` in the plugin; the CLI hand-constructs its graph in
+`apply.ts` instead); core
 services depend on platform-agnostic interfaces (`IVaultAdapter`,
 `IFileSystemAdapter`, `ILogger`, …) rather than Obsidian or Node APIs. See the
 [Dependency Injection](#dependency-injection) section for details.
