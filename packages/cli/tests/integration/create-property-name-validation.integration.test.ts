@@ -49,6 +49,13 @@ const VALID_TARGET = "cafe0000-0000-0000-0000-000000000001";
 
 const OBJECT_PROPERTY_UID = "9a1cf31c-9d41-4ef3-9023-584a8d087d16";
 const DATATYPE_PROPERTY_UID = "ae56ca4c-b610-42a4-a25d-058c23673296";
+const PROPERTY_UID = "38277bfa-d7f9-4a75-b856-b23276ab0db3";
+const CLASS_METACLASS_UID = "8619c4fc-64f1-4869-b17e-e34186cacca9"; // exo__Class
+// Real subclass-metaclass UIDs (#3955): `ems__Effort_plannedStartTimestamp`'s
+// instance_class is `exo__TimestampProperty` (⊂ exo__DatatypeProperty) +
+// `exo__NonInheritableProperty` (⊂ exo__Property) — NOT a base metaclass.
+const TIMESTAMP_PROPERTY_UID = "ae986e9f-c03a-4f85-a945-7ba67200526b";
+const NONINHERITABLE_PROPERTY_UID = "a1f9bca8-6580-458c-bfdb-08579fe357e0";
 
 function md(frontmatter: Record<string, string | string[]>): string {
   const lines = ["---"];
@@ -69,18 +76,47 @@ function writeProp(
   vault: string,
   uid: string,
   label: string,
-  metaclassRef: string,
+  metaclassRef: string | string[],
   extra: Record<string, string | string[]> = {},
 ): void {
   const dir = path.join(vault, "assetspaces/kitelev/exoas-exo/exo");
   fs.mkdirSync(dir, { recursive: true });
+  const instanceClass = Array.isArray(metaclassRef)
+    ? metaclassRef.map((r) => `"${r}"`)
+    : `"${metaclassRef}"`;
   fs.writeFileSync(
     path.join(dir, `${uid}.md`),
     md({
       exo__Asset_uid: uid,
-      exo__Instance_class: `"${metaclassRef}"`,
+      exo__Instance_class: instanceClass,
       exo__Asset_label: label,
       ...extra,
+    }),
+  );
+}
+
+/**
+ * Write a class-def file — a class whose `exo__Instance_class` is the `exo__Class`
+ * metaclass and whose `exo__Class_superClass` names its parent metaclass. Feeds
+ * the property-metaclass closure (#3955 subClass-closure).
+ */
+function writeClass(
+  vault: string,
+  fileUid: string,
+  assetUid: string,
+  classMetaclassRef: string,
+  label: string,
+  superClassRef: string,
+): void {
+  const dir = path.join(vault, "assetspaces/kitelev/exoas-exo/exo");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, `${fileUid}.md`),
+    md({
+      exo__Asset_uid: assetUid,
+      exo__Instance_class: `"${classMetaclassRef}"`,
+      exo__Asset_label: label,
+      exo__Class_superClass: `"${superClassRef}"`,
     }),
   );
 }
@@ -115,6 +151,34 @@ function buildFixtureVault(vault: string): void {
   );
   writeProp(vault, "0000-prop-4", "exo__Asset_isDefinedBy", "[[exo__ObjectProperty]]");
   writeProp(vault, "0000-prop-5", "exo__Asset_relates", "[[exo__ObjectProperty]]");
+
+  // ── #3955 subClass-closure fixture ──────────────────────────────────────
+  // Two subclass metaclasses (the real hierarchy) + a property-def that points
+  // at them, mirroring `ems__Effort_plannedStartTimestamp` (7f773e3e) exactly:
+  //   exo__TimestampProperty     ⊂ exo__DatatypeProperty (UID-form superClass)
+  //   exo__NonInheritableProperty ⊂ exo__Property        (bare-UID superClass)
+  //   ems__Effort_plannedStartTimestamp : instance_class = BOTH subclasses.
+  // Pre-fix (direct-metaclass-only) this name is NOT indexed → create rejects.
+  writeClass(
+    vault,
+    "0000-class-ts",
+    TIMESTAMP_PROPERTY_UID,
+    `[[${CLASS_METACLASS_UID}|exo__Class]]`,
+    "exo__TimestampProperty",
+    `[[${DATATYPE_PROPERTY_UID}|exo__DatatypeProperty]]`,
+  );
+  writeClass(
+    vault,
+    "0000-class-ni",
+    NONINHERITABLE_PROPERTY_UID,
+    `[[${CLASS_METACLASS_UID}]]`,
+    "exo__NonInheritableProperty",
+    `[[${PROPERTY_UID}]]`,
+  );
+  writeProp(vault, "0000-prop-6", "ems__Effort_plannedStartTimestamp", [
+    `[[${TIMESTAMP_PROPERTY_UID}]]`,
+    `[[${NONINHERITABLE_PROPERTY_UID}]]`,
+  ]);
 }
 
 describe("RFC 430e84f1: `cli create` validates property NAMES against the mounted TBox", () => {
@@ -183,7 +247,7 @@ describe("RFC 430e84f1: `cli create` validates property NAMES against the mounte
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, e.name);
         if (e.isDirectory()) n += walk(full);
-        else if (e.name.endsWith(".md") && !e.name.startsWith("0000-prop-")) n++;
+        else if (e.name.endsWith(".md") && !e.name.startsWith("0000-")) n++;
       }
       return n;
     };
@@ -236,7 +300,34 @@ describe("RFC 430e84f1: `cli create` validates property NAMES against the mounte
     expect(exitCodes).not.toContain(2);
   });
 
+  it(`a SUBCLASS-METACLASS property name passes — regression #3955 @req:${REQ}`, async () => {
+    // `ems__Effort_plannedStartTimestamp` (instance_class = exo__TimestampProperty
+    // ⊂ exo__DatatypeProperty + exo__NonInheritableProperty ⊂ exo__Property) is
+    // a legit declared property; pre-fix (direct-metaclass-only) `create` rejected
+    // it "not in the mounted TBox". With the subClass-closure it is indexed → pass.
+    await runCreate([
+      "--property",
+      `ems__Effort_plannedStartTimestamp=2026-07-30T20:00:00`,
+    ]);
+
+    expect(exitCodes).toContain(0);
+    expect(exitCodes).not.toContain(2);
+    expect(createdAssetCount()).toBe(1);
+  });
+
   // ── Service-level assertions (real collector over the real fixture files) ──
+
+  it(`subclass-metaclass property passes at service level; unknown still rejected — #3955 @req:${REQ}`, async () => {
+    const validator = new PropertyNameValidator(vault);
+    // The subClass-closure indexes the subclass-metaclass property...
+    await expect(
+      validator.validate(["ems__Effort_plannedStartTimestamp"]),
+    ).resolves.toBeUndefined();
+    // ...without weakening the guarantee — a genuinely unknown name still throws.
+    await expect(
+      validator.validate(["ems__Effort_bogusUnknownProp"]),
+    ).rejects.toBeInstanceOf(UnknownPropertyError);
+  });
 
   it(`structured error carries a machine-readable { unknown, suggestions } @req:${REQ}`, async () => {
     const validator = new PropertyNameValidator(vault);
