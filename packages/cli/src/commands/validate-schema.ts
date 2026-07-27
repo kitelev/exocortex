@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { resolve, relative, join } from "path";
 import { execSync } from "child_process";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import {
   InMemoryTripleStore,
   ExoQLParser,

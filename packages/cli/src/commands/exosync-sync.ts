@@ -37,7 +37,7 @@ import { webcrypto } from "node:crypto";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import * as path from "node:path";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import {
   CONFLICT_CACHE_STORE_FILENAME,
   FileLocalManifestStore,

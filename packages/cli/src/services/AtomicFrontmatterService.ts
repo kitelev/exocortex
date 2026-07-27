@@ -7,7 +7,7 @@ import {
 } from "fs";
 import path from "path";
 import { randomBytes } from "crypto";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import { parseYamlFrontmatterTolerant } from "@kitelev/exocortex-core";
 
 export type AtomicUpdateFailureReason =

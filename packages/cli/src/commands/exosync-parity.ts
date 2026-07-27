@@ -24,7 +24,7 @@ import { Command } from "commander";
 import { promises as fsp, existsSync } from "node:fs";
 import { webcrypto } from "node:crypto";
 import * as path from "node:path";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import {
   FileWatermarkStore,
   ParityValidator,
