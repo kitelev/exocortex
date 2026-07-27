@@ -36,6 +36,10 @@ const { UnknownPropertyError } = await import(
 );
 
 const REQ = "40a9a81b-729e-4dc1-9bc1-53295515a4b2";
+// requirements-trace binds ONLY via a literal `@req:<uid>` token — the
+// `@req:${REQ}` interpolation in the it() titles below is not statically
+// resolvable, so declare the binding as a literal here:
+// @req:40a9a81b-729e-4dc1-9bc1-53295515a4b2
 
 // Full-UUID class → `--class <uid>` pass-through fires without a class-def file.
 const CLASS_UID = "1b20a8f0-d745-4e93-91db-4531b3df120e"; // ems__Task
