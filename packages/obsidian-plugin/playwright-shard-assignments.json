@@ -18,7 +18,8 @@
       "featured-binding-promotion.spec.ts",
       "create-fleeting-note-palette.spec.ts",
       "focus-profile-picker.spec.ts",
-      "command-capability-inheritance.spec.ts"
+      "command-capability-inheritance.spec.ts",
+      "settings-live-mirror.spec.ts"
     ],
     [
       "area-tree-collapsible.spec.ts",

@@ -25,6 +25,40 @@ The TypeScript binding table
 is pinned to the graph by a parity unit test — adding a settings field
 without deciding its homoiconization fails CI.
 
+## Two-way live sync (the live-mirror)
+
+When settings homoiconization is on, your settings and their vault
+`exo__Setting` assets stay in **continuous two-way sync on this device**
+(req `4425f655`):
+
+- **UI → asset:** change a setting in the plugin's Settings tab and the
+  new value is auto-written (a moment later — the write is debounced)
+  into that setting's `exo__Setting` asset. Nothing to remember, nothing
+  to click.
+- **asset → UI:** edit the `exo__Setting` asset directly (in source mode),
+  or receive it from another device via ExoSync, and the change is applied
+  back to the live setting (and its side-effects re-run) without a reload.
+
+So your settings become real, editable, syncable vault data — the same
+uniform way everything else in Exocortex is.
+
+### Enabling it
+
+Two-way sync is **opt-in and off by default.** Turn on
+**«Homoiconize plugin settings»** (`settingsHomoiconizationEnabled`) in the
+plugin settings, then reload Obsidian (the switch is read once on load).
+When it is off, the plugin behaves exactly as before — settings live only
+in `data.json`, and no `exo__Setting` assets are created or written.
+
+### Relationship to «Exocortex: Export settings»
+
+The live-mirror is **continuous**. The **«Exocortex: Export settings»**
+command is a separate, **manual one-shot snapshot** of your settings into a
+chosen ontology — the two coexist. Use the live-mirror for everyday two-way
+sync; use «Export settings» when you want to deliberately publish a settings
+snapshot (e.g. to distribute to a fresh vault). «Export settings» is always
+available and is not gated by the homoiconization switch.
+
 ## Architecture: data.json as write-through mirror
 
 - **Boot:** `loadSettings()` reads `data.json` exactly as before —

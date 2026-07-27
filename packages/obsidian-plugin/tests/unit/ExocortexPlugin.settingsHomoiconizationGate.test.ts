@@ -147,5 +147,22 @@ describe("ExocortexPlugin.initVaultSettings — #3539 master-switch gate", () =>
       expect(vaultOn).toHaveBeenCalledWith("rename", expect.any(Function));
       expect(registerEvent).toHaveBeenCalledTimes(3);
     });
+
+    it("@req:4425f655-e034-44b8-9258-db1650dd8b12 constructs the store with the bidirectional live-mirror outbound write ENABLED (UI→asset auto-write active, not read-only)", async () => {
+      // req 4425f655 — when settings-homoiconization is on, initVaultSettings
+      // must wire the store with outboundWriteEnabled:true so a UI change is
+      // auto-mirrored into its exo__Setting vault asset (two-way sync). Revert:
+      // removing `outboundWriteEnabled: true` from initVaultSettings → this
+      // assertion goes RED (the store falls back to the read-only default).
+      const { plugin } = makePlugin(true);
+
+      await plugin.initVaultSettings();
+
+      const store = plugin.vaultSettingsStore as unknown as {
+        outboundWriteEnabled: boolean;
+      } | null;
+      expect(store).not.toBeNull();
+      expect(store!.outboundWriteEnabled).toBe(true);
+    });
   });
 });
