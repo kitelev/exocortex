@@ -59,6 +59,11 @@ COPY packages/core/package*.json ./packages/core/
 COPY packages/obsidian-plugin/package*.json ./packages/obsidian-plugin/
 COPY packages/cli/package*.json ./packages/cli/
 COPY packages/test-utils/package*.json ./packages/test-utils/
+# packages/cli declares a `postinstall` (node ./scripts/postinstall.cjs) that
+# npm runs during `npm ci`. The manifest-only copy above does not include that
+# script, so `npm ci` fails with MODULE_NOT_FOUND. Copy it before the install
+# (it is idempotent and no-ops when packages/cli/bin is absent, as it is here).
+COPY packages/cli/scripts/ ./packages/cli/scripts/
 RUN npm ci --prefer-offline --no-audit --no-fund
 
 ENV DISPLAY=:99
