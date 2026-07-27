@@ -12,6 +12,28 @@ interface PropertyNameSet {
 }
 
 /**
+ * A class definition captured during the walk, feeding the property-metaclass
+ * closure (#3955). `superRefs` are the wikilink ref-halves of its
+ * `exo__Class_superClass` (UID and/or label).
+ */
+interface ClassDefRecord {
+  uid: string | null;
+  label: string | null;
+  superRefs: string[];
+}
+
+/**
+ * A `prefix__Name`-labelled instance — a property-def iff its class is (a
+ * subclass of) a property metaclass, decided against the closure (#3955).
+ */
+interface PropertyDefCandidate {
+  /** `exo__Instance_class` wikilink ref-halves (UID and/or label). */
+  classRefs: string[];
+  /** The `prefix__Name` property label. */
+  name: string;
+}
+
+/**
  * Validates that `--property KEY=value` KEYS name a property that exists in the
  * MOUNTED TBox (RFC 430e84f1, P1). `create` already rejects a dangling wikilink
  * VALUE (`WikilinkValidator`); this closes the twin fail-silent hole on the KEY
@@ -19,13 +41,19 @@ interface PropertyNameSet {
  * used to land a DEAD property no query/layout/graph-relation reads.
  *
  * Design (verify-before-assert, 2026-07-27):
- *  - The set is collected in ONE pass over the mounted vault, matching ALL three
+ *  - The set is collected over the mounted vault, matching the three base
  *    property metaclasses — `exo__Property`, `exo__ObjectProperty`,
- *    `exo__DatatypeProperty`. `ShapeLoader` (the existing introspection) is NOT
- *    reused because it is domain-filtered (`if domain.length===0 return`) and
- *    never matches `exo__DatatypeProperty`, so it would false-reject valid
- *    domainless / datatype properties. Empirically the dedicated collector found
- *    256 names in real vault-my with every structural/ems property present.
+ *    `exo__DatatypeProperty` — AND every class that (transitively) subclasses
+ *    one of them (`exo__TimestampProperty`, `exo__DateProperty`,
+ *    `exo__StringProperty`, `exo__NonInheritableProperty`, …). Recognising only
+ *    the 3 base metaclasses (the #3949 regression) dropped 108 of 369 real
+ *    property-defs on vault-my — including `ems__Effort_plannedStartTimestamp`,
+ *    whose `exo__Instance_class` is `exo__TimestampProperty` (⊂
+ *    `exo__DatatypeProperty`), not a base metaclass (#3955, subClass-closure —
+ *    the class-membership pattern from verify-before-assert). `ShapeLoader` is
+ *    NOT reused because it is domain-filtered (`if domain.length===0 return`)
+ *    and never matches `exo__DatatypeProperty`, so it would false-reject valid
+ *    domainless / datatype properties.
  *  - The NAME is read from `exo__Asset_label` (the `prefix__Name` label form),
  *    and the `--property` KEY is also `prefix__Name`, so matching is direct
  *    string equality on the label. The symbolic↔UID dual-IRI налог
@@ -61,6 +89,11 @@ export class PropertyNameValidator {
     "exo__DatatypeProperty",
   ];
 
+  /** The `exo__Class` metaclass — identifies a class-def among mounted assets. */
+  private static readonly CLASS_METACLASS_UID =
+    "8619c4fc-64f1-4869-b17e-e34186cacca9";
+  private static readonly CLASS_METACLASS_LABEL = "exo__Class";
+
   private cache: PropertyNameSet | null = null;
 
   constructor(private readonly vaultPath: string) {}
@@ -91,15 +124,25 @@ export class PropertyNameValidator {
     }
   }
 
-  /** Collect the known property-name set from the mounted vault (cached). */
+  /**
+   * Collect the known property-name set from the mounted vault (cached).
+   *
+   * subClass-closure (#3955): a property-def's `exo__Instance_class` may point
+   * not at a BASE metaclass but at a SUBCLASS of one (`exo__TimestampProperty`,
+   * `exo__DateProperty`, `exo__NonInheritableProperty`, …). Recognising only the
+   * 3 base metaclasses dropped 108/369 real property-defs on vault-my. So we
+   * walk once, gathering (a) class-defs with their `exo__Class_superClass` refs
+   * and (b) property-def candidates, then compute the transitive property-
+   * metaclass closure and harvest every candidate whose class is in it.
+   */
   async collect(): Promise<PropertyNameSet> {
     if (this.cache) return this.cache;
 
     // eslint-disable-next-line import/no-nodejs-modules
     const { readdir, readFile } = await import("fs/promises");
 
-    const names = new Set<string>();
-    const prefixes = new Set<string>();
+    const classDefs: ClassDefRecord[] = [];
+    const candidates: PropertyDefCandidate[] = [];
 
     const walk = async (dir: string): Promise<void> => {
       let entries: import("fs").Dirent[];
@@ -119,62 +162,131 @@ export class PropertyNameValidator {
           } catch {
             continue;
           }
-          PropertyNameValidator.harvest(content, names, prefixes);
+          PropertyNameValidator.scan(content, classDefs, candidates);
         }
       }
     };
 
     await walk(this.vaultPath);
+
+    const metaKeys =
+      PropertyNameValidator.buildPropertyMetaclassClosure(classDefs);
+
+    const names = new Set<string>();
+    const prefixes = new Set<string>();
+    for (const cand of candidates) {
+      if (!cand.classRefs.some((r) => metaKeys.has(r))) continue;
+      names.add(cand.name);
+      const m = PropertyNameValidator.KEY_SHAPE.exec(cand.name);
+      if (m) prefixes.add(m[1]);
+    }
+
     this.cache = { names, prefixes };
     return this.cache;
   }
 
-  /** If `content` is a property definition, add its name + prefix to the sets. */
-  private static harvest(
+  /**
+   * Classify one file during the walk: record a class-def (feeding the metaclass
+   * closure) or a `prefix__Name` property-def candidate. A class-def is an asset
+   * whose `exo__Instance_class` references the `exo__Class` metaclass; whether a
+   * candidate is actually a property is decided against the closure later
+   * (#3955 subClass-closure).
+   */
+  private static scan(
     content: string,
-    names: Set<string>,
-    prefixes: Set<string>,
+    classDefs: ClassDefRecord[],
+    candidates: PropertyDefCandidate[],
   ): void {
     const fm = PropertyNameValidator.parseFrontmatter(content);
     if (!fm) return;
 
-    const classes = PropertyNameValidator.asArray(fm["exo__Instance_class"]);
-    if (!classes.some((c) => PropertyNameValidator.isPropertyMetaclass(c))) {
+    const instanceClassRefs = PropertyNameValidator.asArray(
+      fm["exo__Instance_class"],
+    ).flatMap((v) => PropertyNameValidator.refHalves(v));
+    if (instanceClassRefs.length === 0) return;
+
+    const label = PropertyNameValidator.cleanLabel(fm["exo__Asset_label"]);
+
+    // Class-def → feed the metaclass closure (NOT a property-def candidate).
+    if (
+      instanceClassRefs.some((r) => PropertyNameValidator.isClassMetaclass(r))
+    ) {
+      const uidRaw = fm["exo__Asset_uid"];
+      const uid = typeof uidRaw === "string" ? uidRaw.trim() : null;
+      const superRefs = PropertyNameValidator.asArray(
+        fm["exo__Class_superClass"],
+      ).flatMap((v) => PropertyNameValidator.refHalves(v));
+      classDefs.push({ uid, label, superRefs });
       return;
     }
 
-    const labelRaw = fm["exo__Asset_label"];
-    if (typeof labelRaw !== "string") return;
-    const label = labelRaw.replace(/^["']|["']$/g, "").trim();
-    if (!PropertyNameValidator.KEY_SHAPE.test(label)) return;
-
-    names.add(label);
-    const m = PropertyNameValidator.KEY_SHAPE.exec(label);
-    if (m) prefixes.add(m[1]);
+    // Property-def candidate: a `prefix__Name`-labelled instance.
+    if (label === null || !PropertyNameValidator.KEY_SHAPE.test(label)) return;
+    candidates.push({ classRefs: instanceClassRefs, name: label });
   }
 
-  /** True when a wikilink value references any property metaclass. */
-  private static isPropertyMetaclass(value: string): boolean {
-    const ref = PropertyNameValidator.extractWikilinkRef(value);
-    if (!ref) return false;
-    // ref may be `<uid>`, `<label>`, or `<uid>|<alias>` — check every half.
-    const halves = ref.split("|").map((h) => h.trim());
-    for (const half of halves) {
-      if (PropertyNameValidator.PROPERTY_METACLASS_LABELS.includes(half)) {
-        return true;
-      }
-      if (PropertyNameValidator.PROPERTY_METACLASS_UIDS.includes(half)) {
-        return true;
+  /**
+   * Transitive property-metaclass identifier set: the 3 base metaclasses plus
+   * every class whose `exo__Class_superClass` chain reaches one of them
+   * (`exo__TimestampProperty` ⊂ `exo__DatatypeProperty`, …). Returned as a set
+   * of BOTH UID and label keys, so a candidate's `exo__Instance_class` ref (in
+   * any wikilink form) matches by direct membership. Fixpoint over the class-
+   * defs — a few hundred entries, converges in a handful of passes.
+   */
+  private static buildPropertyMetaclassClosure(
+    classDefs: ReadonlyArray<ClassDefRecord>,
+  ): Set<string> {
+    const meta = new Set<string>([
+      ...PropertyNameValidator.PROPERTY_METACLASS_UIDS,
+      ...PropertyNameValidator.PROPERTY_METACLASS_LABELS,
+    ]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const cd of classDefs) {
+        const alreadyIn =
+          (cd.uid !== null && meta.has(cd.uid)) ||
+          (cd.label !== null && meta.has(cd.label));
+        if (alreadyIn) continue;
+        if (cd.superRefs.some((r) => meta.has(r))) {
+          if (cd.uid !== null) meta.add(cd.uid);
+          if (cd.label !== null) meta.add(cd.label);
+          changed = true;
+        }
       }
     }
-    return false;
+    return meta;
   }
 
-  /** Extract the inner ref of `[[ref]]` / `[[ref|alias]]`, stripping quotes. */
-  private static extractWikilinkRef(value: string): string | null {
-    const clean = String(value).replace(/^["']|["']$/g, "").trim();
+  /** True when a wikilink ref-half names the `exo__Class` metaclass. */
+  private static isClassMetaclass(ref: string): boolean {
+    return (
+      ref === PropertyNameValidator.CLASS_METACLASS_UID ||
+      ref === PropertyNameValidator.CLASS_METACLASS_LABEL
+    );
+  }
+
+  /**
+   * Every identifier half of a wikilink value: `[[uid]]` → `[uid]`,
+   * `[[uid|label]]` → `[uid, label]`, bare `label` → `[label]`. Quotes stripped.
+   */
+  private static refHalves(value: string): string[] {
+    const clean = String(value)
+      .replace(/^["']|["']$/g, "")
+      .trim();
     const m = /\[\[([^\]]+)\]\]/.exec(clean);
-    return m ? m[1] : clean;
+    const inner = m ? m[1] : clean;
+    return inner
+      .split("|")
+      .map((h) => h.trim())
+      .filter((h) => h.length > 0);
+  }
+
+  /** Frontmatter label as a trimmed, unquoted non-empty string, or null. */
+  private static cleanLabel(raw: unknown): string | null {
+    if (typeof raw !== "string") return null;
+    const label = raw.replace(/^["']|["']$/g, "").trim();
+    return label.length > 0 ? label : null;
   }
 
   private static asArray(v: unknown): string[] {
