@@ -32,6 +32,15 @@ export interface ResolverContext {
   readonly targetFilePath?: string;
   /** Click-target asset's parsed frontmatter (read once per executeCreateInstance). */
   readonly targetFm?: Record<string, unknown>;
+  /**
+   * req c03f9e3e — pre-resolved SECOND-hop frontmatter, keyed by the refKey the
+   * executor dereferenced. For each `refKey` referenced by a `targetRefProperty`
+   * marker, the executor reads `targetFm[refKey]` (a bare ref), resolves THAT
+   * asset's frontmatter (async, via the injected `refToFrontmatter`), and stores
+   * it here as `targetRefFm[refKey]`. `null` when the ref could not be resolved.
+   * The async second hop is done up front so the resolver chain stays SYNC.
+   */
+  readonly targetRefFm?: Record<string, Record<string, unknown> | null>;
   /** UID-canon class ref baked into the active Grounding (already resolved by executor). */
   readonly groundingTargetClassUid?: string;
 }
@@ -438,6 +447,41 @@ export function installDefaultResolvers(): void {
     const v = ctx.targetFm[parameter];
     if (v === undefined || v === null) return null;
     if (Array.isArray(v)) return v.map(String);
+    return String(v);
+  });
+
+  // req c03f9e3e — per-ontology efforts routing (TWO-HOP dereference).
+  //
+  // `targetRefProperty(refKey|propKey)` reads a property off the asset that the
+  // click-target's OWN frontmatter points at — the second hop `targetProperty`
+  // cannot make. Parameter is `<refKey>|<propKey>`:
+  //   1. the executor read `ctx.targetFm[refKey]` (a bare ref, e.g. the clicked
+  //      area's `exo__Asset_isDefinedBy` → the area-ontology O),
+  //   2. resolved THAT ontology's frontmatter (async, via the injected
+  //      `refToFrontmatter`) into `ctx.targetRefFm[refKey]`,
+  //   3. this resolver reads `propKey` off it (e.g. `exo__Ontology_effortsOntology`
+  //      → the target efforts-ontology E).
+  //
+  // The async second hop happens in the executor BEFORE the (synchronous)
+  // resolver chain runs, so this resolver just reads the pre-resolved map. `null`
+  // when: no parameter, malformed parameter, the ref was not pre-resolved (no
+  // `refToFrontmatter` wired / ref not found), or the property is absent — in
+  // which case the PropertyDefault is skipped, isDefinedBy is not routed, and the
+  // instance co-locates with the click-target (opt-in / no regression). A single
+  // wikilink (isDefinedBy is single-valued) is returned verbatim, mirroring
+  // `targetProperty`.
+  registerResolver("targetRefProperty", (ctx, parameter) => {
+    if (!parameter) return null;
+    const sep = parameter.indexOf("|");
+    if (sep < 0) return null;
+    const refKey = parameter.slice(0, sep);
+    const propKey = parameter.slice(sep + 1);
+    if (!refKey || !propKey) return null;
+    const refFm = ctx.targetRefFm?.[refKey];
+    if (!refFm) return null;
+    const v = refFm[propKey];
+    if (v === undefined || v === null) return null;
+    if (Array.isArray(v)) return v.length > 0 ? String(v[0]) : null;
     return String(v);
   });
 

@@ -25,7 +25,7 @@ describe("SubstitutionResolverRegistry — RFC 727572d2 Phase A2 vocabulary", ()
     installDefaultResolvers();
   });
 
-  it("registers all 19 expected resolver-ids (4 legacy + 10 new + targetClassSelf + 4 date-modifier tokens Веха 5)", () => {
+  it("registers all 20 expected resolver-ids (4 legacy + 10 new + targetClassSelf + targetRefProperty + 4 date-modifier tokens Веха 5)", () => {
     const ids = getRegisteredResolverIds().sort();
     expect(ids).toEqual(
       [
@@ -40,6 +40,8 @@ describe("SubstitutionResolverRegistry — RFC 727572d2 Phase A2 vocabulary", ()
         "targetClassSelf",
         "targetFolder",
         "targetProperty",
+        // req c03f9e3e — per-ontology efforts routing (two-hop dereference)
+        "targetRefProperty",
         "today",
         "todayStart",
         "userInput",

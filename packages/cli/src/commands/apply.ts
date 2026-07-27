@@ -22,6 +22,7 @@ import {
   stripTemplateFrontmatter,
   createVaultFrontmatterClassLabelResolver,
   createVaultFrontmatterRefToFolderResolver,
+  createVaultFrontmatterRefToFrontmatterResolver,
   registerDefaultHostFunctions,
   vaultPathToIRI,
   IRI,
@@ -426,6 +427,11 @@ async function executeOnTarget(
       // their chosen ontology's folder via `$isDefinedByFolder` (UI/CLI parity,
       // Issue #3417). Mirrors the plugin's createObsidianRefToFolderResolver.
       refToFolder: createVaultFrontmatterRefToFolderResolver(nodeFsAdapter),
+      // req c03f9e3e — per-ontology efforts routing: resolve the SECOND hop
+      // (area's isDefinedBy ontology → its exo__Ontology_effortsOntology) for the
+      // `targetRefProperty` token (UI/CLI parity, Issue #3417). Mirrors the
+      // plugin's createObsidianRefToFrontmatterResolver.
+      refToFrontmatter: createVaultFrontmatterRefToFrontmatterResolver(nodeFsAdapter),
     },
   );
 

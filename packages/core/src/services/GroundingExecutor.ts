@@ -202,6 +202,24 @@ export type RefToFolderResolver = (
   ref: string,
 ) => string | null | Promise<string | null>;
 
+/**
+ * req c03f9e3e — per-ontology efforts routing. Resolves a bare asset reference
+ * (a UID, after the executor strips quotes / `[[ ]]` / `|alias`) to that asset's
+ * parsed frontmatter, so the executor can make a SECOND hop from the click-target
+ * (area → the area's `exo__Asset_isDefinedBy` ontology → that ontology's
+ * `exo__Ontology_effortsOntology`). Sibling of {@link RefToFolderResolver}: the
+ * core executor is storage-agnostic, so the host injects a metadata-cache (plugin)
+ * or filesystem (CLI) backed implementation. A `null` return — no resolver wired,
+ * ref not found — makes the two-hop resolver yield nothing, so the create is not
+ * routed and co-locates with the click-target (opt-in / no failure on a gap).
+ */
+export type RefToFrontmatterResolver = (
+  ref: string,
+) =>
+  | Record<string, unknown>
+  | null
+  | Promise<Record<string, unknown> | null>;
+
 /** UUID-v4 sniff used to skip resolution for already-canonical class refs. */
 const UUID_V4_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -343,6 +361,7 @@ export class GroundingExecutor {
   private readonly serviceRegistry: ServiceRegistry;
   private readonly classLabelToUid?: ClassLabelToUidResolver;
   private readonly refToFolder?: RefToFolderResolver;
+  private readonly refToFrontmatter?: RefToFrontmatterResolver;
   private readonly workflowResolver?: WorkflowResolverPort;
   private readonly groundingLoader?: GroundingLoaderPort;
   private readonly templateLoader?: TemplateLoaderPort;
@@ -376,6 +395,10 @@ export class GroundingExecutor {
       // target-folder token to the chosen ontology's folder. When absent,
       // create_instance falls back to the host folder (never fails).
       refToFolder?: RefToFolderResolver;
+      // req c03f9e3e — per-ontology efforts routing. Resolve a bare ref to that
+      // asset's frontmatter for the SECOND hop of `targetRefProperty`. When
+      // absent, the two-hop resolver yields nothing (no routing, no failure).
+      refToFrontmatter?: RefToFrontmatterResolver;
     },
   ) {
     this.frontmatterService = new FrontmatterService();
@@ -384,6 +407,7 @@ export class GroundingExecutor {
     this.serviceRegistry = serviceRegistry;
     this.classLabelToUid = classLabelToUid;
     this.refToFolder = options?.refToFolder;
+    this.refToFrontmatter = options?.refToFrontmatter;
     this.workflowResolver = options?.workflowResolver;
     this.groundingLoader = options?.groundingLoader;
     this.templateLoader = options?.templateLoader;
@@ -1126,11 +1150,21 @@ export class GroundingExecutor {
     // AT ALL (no Universal singleton in vault + no Grounding entries), fall
     // back to the legacy hardcoded primitives with a loud warn — protects
     // cold-start race on mobile boot paths from creating empty/invalid assets.
+    // req c03f9e3e — per-ontology efforts routing. The resolver chain is
+    // synchronous, so the SECOND hop (dereference an asset the click-target
+    // points at and read a property off it) is pre-resolved here, up front,
+    // into targetRefFm before applyPropertyDefaultStep. No-op (undefined) when
+    // no `targetRefProperty` marker is present or no `refToFrontmatter` is wired.
+    const targetRefFm = await this.preResolveTargetRefs(
+      grounding.propertyDefault,
+      targetFm,
+    );
     const ctx: ResolverContext = {
       userInput,
       targetIRI,
       targetFilePath,
       targetFm: targetFm ?? undefined,
+      targetRefFm,
       groundingTargetClassUid,
     };
     if (grounding.propertyDefault && grounding.propertyDefault.length > 0) {
@@ -1469,6 +1503,74 @@ export class GroundingExecutor {
     if (pipeIdx >= 0) ref = ref.slice(0, pipeIdx);
     ref = ref.trim();
     return ref.length > 0 ? ref : null;
+  }
+
+  /**
+   * req c03f9e3e — per-ontology efforts routing. Pre-resolve the SECOND hop for
+   * every `targetRefProperty(<refKey>|<propKey>)` marker in the grounding's
+   * PropertyDefaults. The resolver chain runs synchronously (see
+   * {@link resolveSubstitutionMarker}), so a dereference of another asset — which
+   * needs an async vault lookup — cannot happen inside a resolver. Instead this
+   * runs up front: for each distinct `refKey` referenced by a `targetRefProperty`
+   * marker, read the bare ref out of the click-target's own frontmatter
+   * (`targetFm[refKey]`), resolve THAT asset's frontmatter via the injected
+   * {@link RefToFrontmatterResolver}, and return a map `refKey → frontmatter`
+   * placed into {@link ResolverContext.targetRefFm}.
+   *
+   * Returns `undefined` (no async work, no context field) when there are no such
+   * markers, no `refToFrontmatter` resolver is wired, or no target frontmatter was
+   * read — the two-hop resolver then yields nothing and the create is not routed
+   * (opt-in / zero regression for unconfigured groundings). A resolution failure
+   * for one refKey is logged and stored as `null` rather than failing the create.
+   */
+  private async preResolveTargetRefs(
+    propertyDefault: ReadonlyArray<PropertyDefaultResolved> | undefined,
+    targetFm: Record<string, string | string[]> | null,
+  ): Promise<Record<string, Record<string, unknown> | null> | undefined> {
+    if (!propertyDefault || !this.refToFrontmatter || !targetFm) return undefined;
+    const refKeys = new Set<string>();
+    for (const { value } of propertyDefault) {
+      if (typeof value !== "string") continue;
+      const refKey = GroundingExecutor.extractTargetRefPropertyRefKey(value);
+      if (refKey) refKeys.add(refKey);
+    }
+    if (refKeys.size === 0) return undefined;
+
+    const map: Record<string, Record<string, unknown> | null> = {};
+    for (const refKey of refKeys) {
+      const ref = GroundingExecutor.extractBareRef(targetFm[refKey]);
+      if (!ref) {
+        map[refKey] = null;
+        continue;
+      }
+      try {
+        map[refKey] = await this.refToFrontmatter(ref);
+      } catch (error) {
+        LoggingService.error(
+          `[GroundingExecutor] targetRefProperty second-hop resolution failed for ref "${ref}" (refKey "${refKey}") — routing skipped, instance co-locates with the click-target.`,
+          error instanceof Error ? error : new Error(String(error)),
+        );
+        map[refKey] = null;
+      }
+    }
+    return map;
+  }
+
+  /**
+   * req c03f9e3e — when `value` is a parameterised `targetRefProperty` marker,
+   * decode its `<refKey>|<propKey>` parameter and return the `refKey` (the part
+   * before the first `|`); otherwise `null`. Used by {@link preResolveTargetRefs}
+   * to discover which of the click-target's own frontmatter refs must be
+   * dereferenced for the second hop.
+   */
+  private static extractTargetRefPropertyRefKey(value: string): string | null {
+    const m = value.match(PARAMETERISED_MARKER_RE);
+    if (!m || m[1] !== "targetRefProperty") return null;
+    const parameter = GroundingExecutor.decodeBase64UrlSafe(m[2]);
+    const sep = parameter.indexOf("|");
+    if (sep < 0) return null;
+    const refKey = parameter.slice(0, sep);
+    return refKey.length > 0 ? refKey : null;
   }
 
   /**

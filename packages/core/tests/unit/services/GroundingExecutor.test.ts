@@ -1112,6 +1112,180 @@ describe("GroundingExecutor", () => {
       });
     });
 
+    // -- req c03f9e3e "per-ontology efforts routing" (TWO-HOP) --
+    //
+    // When an Effort (task/project) is created from an AREA via a homoiconic
+    // Create button, its `exo__Asset_isDefinedBy` is auto-derived TWO-HOP:
+    //   area A → A's own `exo__Asset_isDefinedBy` (the area-ontology O)
+    //          → O's `exo__Ontology_effortsOntology` (the target efforts-ontology E)
+    // and the new Effort co-locates in E's folder (co-location invariant). This
+    // drives the REAL executeCreateInstance + the new `targetRefProperty` resolver
+    // + the injected `refToFrontmatter` second-hop (async pre-resolution).
+    describe("req c03f9e3e per-ontology efforts routing (two-hop)", () => {
+      const AREA_PATH =
+        "assetspaces/kitelev/exoas-my/my-areas/aaaaaaaa-1111-2222-3333-444444444444.md";
+      const AREA_IRI =
+        "obsidian://vault/aaaaaaaa-1111-2222-3333-444444444444.md";
+      const AREA_FOLDER = "assetspaces/kitelev/exoas-my/my-areas";
+      const AREA_ONTOLOGY = "bbbbbbbb-1111-2222-3333-444444444444"; // O
+      const EFFORTS_ONTOLOGY = "cccccccc-1111-2222-3333-444444444444"; // E
+      const EFFORTS_FOLDER = "assetspaces/kitelev/exoas-my/my-efforts";
+      const EFFORT_CLASS = "1b20a8f0-d745-4e93-91db-4531b3df120e"; // ems__Task
+
+      // Two-hop resolver marker. Parameter is `<refKey>|<propKey>` — the executor
+      // reads targetFm[refKey] (area's isDefinedBy → O), resolves O's frontmatter,
+      // and this resolver reads propKey (O's effortsOntology → E). Encoded exactly
+      // as CommandResolver.buildParameterisedMarker would (url-safe base64, no pad).
+      const REF_PROP_PARAM =
+        "exo__Asset_isDefinedBy|exo__Ontology_effortsOntology";
+      const REF_PROP_MARKER = `__SUBSTITUTE_P__targetRefProperty__22222222-2222-2222-2222-222222222222__${Buffer.from(
+        REF_PROP_PARAM,
+        "utf8",
+      ).toString("base64url")}__`;
+      // Non-parameterised marker for exo__Instance_class (host baked class).
+      const CLASS_MARKER =
+        "__SUBSTITUTE__groundingTargetClass__33333333-3333-3333-3333-333333333333__";
+
+      beforeEach(() => {
+        clearResolvers();
+        installDefaultResolvers();
+      });
+
+      function makeEffortGrounding(): GroundingDefinition {
+        return makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: EFFORT_CLASS,
+          targetFolder: "$isDefinedByFolder",
+          propertyDefault: [
+            { propertyName: "exo__Asset_isDefinedBy", value: REF_PROP_MARKER },
+            { propertyName: "exo__Instance_class", value: CLASS_MARKER },
+          ],
+        });
+      }
+
+      it("@req:c03f9e3e-b47d-4a57-af9c-009ead5b9b34 routes the new Effort to the area-ontology's effortsOntology folder (two-hop)", async () => {
+        // Area A's own frontmatter: isDefinedBy → the area-ontology O.
+        reader.readFile.mockResolvedValue(
+          `---\nexo__Asset_isDefinedBy: "[[${AREA_ONTOLOGY}]]"\n---\n`,
+        );
+        // Second hop: O's frontmatter carries effortsOntology = E.
+        const refToFrontmatter = jest.fn(async (ref: string) =>
+          ref === AREA_ONTOLOGY
+            ? { exo__Ontology_effortsOntology: `"[[${EFFORTS_ONTOLOGY}]]"` }
+            : null,
+        );
+        // Folder resolution: routed isDefinedBy (E) → E's folder; O → area folder.
+        const refToFolder = jest.fn(async (ref: string) =>
+          ref === EFFORTS_ONTOLOGY
+            ? EFFORTS_FOLDER
+            : ref === AREA_ONTOLOGY
+              ? AREA_FOLDER
+              : null,
+        );
+        executor = new GroundingExecutor(reader, writer, registry, undefined, {
+          refToFolder,
+          refToFrontmatter,
+        });
+
+        const result = await executor.execute(
+          makeEffortGrounding(),
+          AREA_IRI,
+          AREA_PATH,
+          { label: "My Task" },
+        );
+
+        expect(result.success).toBe(true);
+        const [path, content] = writer.createFile.mock.calls[0];
+        // isDefinedBy auto-set to E (read two-hop A → O → O.effortsOntology).
+        expect(content).toContain(
+          `exo__Asset_isDefinedBy: "[[${EFFORTS_ONTOLOGY}]]"`,
+        );
+        // File co-located in E's folder, NOT the area folder.
+        expect(path.startsWith(`${EFFORTS_FOLDER}/`)).toBe(true);
+        expect(path.startsWith(`${AREA_FOLDER}/`)).toBe(false);
+        // First hop consulted the area-ontology; folder resolved for E (routed).
+        expect(refToFrontmatter).toHaveBeenCalledWith(AREA_ONTOLOGY);
+        expect(refToFolder).toHaveBeenCalledWith(EFFORTS_ONTOLOGY);
+      });
+
+      it("@req:c03f9e3e-b47d-4a57-af9c-009ead5b9b34 routes per-ontology: O1→E1 folder, O2→E2 folder", async () => {
+        const O1 = "d1111111-1111-2222-3333-444444444444";
+        const O2 = "d2222222-1111-2222-3333-444444444444";
+        const E1 = "e1111111-1111-2222-3333-444444444444";
+        const E2 = "e2222222-1111-2222-3333-444444444444";
+        const E1_FOLDER = "assetspaces/kitelev/exoas-my/my-efforts";
+        const E2_FOLDER = "assetspaces/kitelev/exoas-tbank/work-efforts";
+        const refToFrontmatter = jest.fn(async (ref: string) => {
+          if (ref === O1)
+            return { exo__Ontology_effortsOntology: `"[[${E1}]]"` };
+          if (ref === O2)
+            return { exo__Ontology_effortsOntology: `"[[${E2}]]"` };
+          return null;
+        });
+        const refToFolder = jest.fn(async (ref: string) => {
+          if (ref === E1) return E1_FOLDER;
+          if (ref === E2) return E2_FOLDER;
+          return null;
+        });
+        executor = new GroundingExecutor(reader, writer, registry, undefined, {
+          refToFolder,
+          refToFrontmatter,
+        });
+
+        // Effort from an area under O1.
+        reader.readFile.mockResolvedValue(
+          `---\nexo__Asset_isDefinedBy: "[[${O1}]]"\n---\n`,
+        );
+        await executor.execute(makeEffortGrounding(), AREA_IRI, AREA_PATH, {
+          label: "A1",
+        });
+        const path1 = writer.createFile.mock.calls[0][0];
+
+        // Effort from an area under O2.
+        reader.readFile.mockResolvedValue(
+          `---\nexo__Asset_isDefinedBy: "[[${O2}]]"\n---\n`,
+        );
+        await executor.execute(makeEffortGrounding(), AREA_IRI, AREA_PATH, {
+          label: "A2",
+        });
+        const path2 = writer.createFile.mock.calls[1][0];
+
+        expect(path1.startsWith(`${E1_FOLDER}/`)).toBe(true);
+        expect(path2.startsWith(`${E2_FOLDER}/`)).toBe(true);
+        expect(path1.startsWith(E2_FOLDER)).toBe(false);
+      });
+
+      it("@req:c03f9e3e-b47d-4a57-af9c-009ead5b9b34 negative control: area-ontology WITHOUT effortsOntology → no routing, Effort co-locates with the area", async () => {
+        reader.readFile.mockResolvedValue(
+          `---\nexo__Asset_isDefinedBy: "[[${AREA_ONTOLOGY}]]"\n---\n`,
+        );
+        // O exists but declares NO effortsOntology → second hop yields nothing.
+        const refToFrontmatter = jest.fn(async (ref: string) =>
+          ref === AREA_ONTOLOGY ? { exo__Ontology_url: "https://x/o#" } : null,
+        );
+        // isDefinedBy unrouted → resolveIsDefinedByFolder has no ref → host folder.
+        const refToFolder = jest.fn(async () => null);
+        executor = new GroundingExecutor(reader, writer, registry, undefined, {
+          refToFolder,
+          refToFrontmatter,
+        });
+
+        const result = await executor.execute(
+          makeEffortGrounding(),
+          AREA_IRI,
+          AREA_PATH,
+          { label: "Unrouted" },
+        );
+
+        expect(result.success).toBe(true);
+        const [path, content] = writer.createFile.mock.calls[0];
+        // No isDefinedBy written (routing yielded nothing — opt-in).
+        expect(content).not.toContain("exo__Asset_isDefinedBy:");
+        // Effort co-locates with the area (host folder = parent of AREA_PATH).
+        expect(path.startsWith(`${AREA_FOLDER}/`)).toBe(true);
+      });
+    });
+
     // -- W3 "Create Class" homoiconic button (project 85150d63) --
     //
     // Mirror of T1 Create Instance, but the host page IS an `exo__Ontology`
