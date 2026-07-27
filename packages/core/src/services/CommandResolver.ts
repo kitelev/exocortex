@@ -109,6 +109,14 @@ const KNOWN_SUBSTITUTION_RESOLVER_IDS: ReadonlySet<string> = new Set([
   "userInputLabel",
   "userInput",
   "targetProperty",
+  // req c03f9e3e — per-ontology efforts routing (TWO-HOP). A parameterised
+  // `<refKey>|<propKey>` resolver: reads a property off the asset the click-
+  // target's own frontmatter points at (area → area-ontology → that ontology's
+  // `exo__Ontology_effortsOntology`). Whitelisted here so a vault TokenInvocation
+  // referencing it emits a parameterised marker instead of a wikilink fallback;
+  // resolved at execute time by GroundingExecutor after it pre-resolves the
+  // second-hop frontmatter into ResolverContext.targetRefFm.
+  "targetRefProperty",
   "labelAsArray",
   "groundingTargetClass",
   // T1 "Create Instance" homoiconic button (project bbe40f8c): host page IS
