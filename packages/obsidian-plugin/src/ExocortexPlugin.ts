@@ -158,8 +158,6 @@ import { buildProfileChoice } from "./infrastructure/adapters/profileChoiceFacto
 import { lookupAssetSpaceUidByFolder } from "./infrastructure/adapters/AssetSpaceLookupHelper";
 import { createAssetSpacePusher } from "./infrastructure/adapters/AssetSpacePusherFactory";
 import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
-import { SwitchCacheLayer } from "./infrastructure/adapters/SwitchCacheLayer";
-import { ClearSwitchCacheConfirmModal } from "./infrastructure/adapters/ClearSwitchCacheConfirmModal";
 import {
   parseGitHubURL,
   type AssetSpaceInfo,
@@ -3671,17 +3669,6 @@ export default class ExocortexPlugin extends Plugin {
     // vault.adapter.write, no Node fs / git).
     this.registerRegisterForSyncCommand();
 
-    // RFC 22b50a17 Decision #6 — wipe-all switch cache clearing. RFC 0002 §3.2
-    // (P3/P4) — de-jargon + destructive flag: «Clear switch cache (wipe-all)» →
-    // «Reset profile cache (advanced)». Name sourced from the grooming contract.
-    this.addCommand({
-      id: "clear-switch-cache",
-      name: GROOMED_COMMAND_NAMES["clear-switch-cache"],
-      callback: () => {
-        void this.invokeClearSwitchCache();
-      },
-    });
-
     // RFC 13da049f Phase 6.2/6.3 — Bootstrap vault + Add AssetSpace by URL.
     // Desktop reuses the Phase 5 apply deps (AssetSpaceManager REST pull +
     // GitSubmoduleOps staging move / .gitmodules). Mobile (#3535) reuses the
@@ -4442,47 +4429,6 @@ export default class ExocortexPlugin extends Plugin {
     });
   }
 
-  /**
-   * Handler for the «Exocortex: Clear switch cache» palette command
-   * (RFC 22b50a17 Decision #6 — wipe-all semantics).
-   *
-   * Flow:
-   *   1. Read current cache stats synchronously (count + totalSize).
-   *   2. If empty → surface a Notice and return.
-   *   3. Otherwise open `ClearSwitchCacheConfirmModal` — user must explicitly
-   *      click «Clear» to commit.
-   *   4. On commit, invoke `SwitchCacheLayer.clear()` and surface result.
-   *
-   * Errors from `clear()` surface as a user-facing error Notice — the
-   * cache directory is best-effort writable; partial clear is acceptable.
-   */
-  private async invokeClearSwitchCache(): Promise<void> {
-    const cache = new SwitchCacheLayer();
-    const stats = cache.getCacheStats();
-
-    if (stats.count === 0) {
-      this.notifier.info("Switch cache is already empty.");
-      return;
-    }
-
-    const confirmed = await new Promise<boolean>((resolve) => {
-      const modal = new ClearSwitchCacheConfirmModal(
-        this.app,
-        { entryCount: stats.count, totalSize: stats.totalSize },
-        resolve,
-      );
-      modal.open();
-    });
-    if (!confirmed) return;
-
-    try {
-      const result = await cache.clear();
-      this.notifier.info(`Cleared ${result.entriesRemoved} cache entries.`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.notifier.error(`Clear switch cache failed: ${msg}`);
-    }
-  }
 
   /**
    * «Insert template token» (homoiconic templating MVP, project 17f58ebe).

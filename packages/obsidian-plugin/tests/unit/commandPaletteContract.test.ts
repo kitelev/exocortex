@@ -30,7 +30,6 @@ describe("commandPaletteContract — RFC 0002 §3.2 palette grooming", () => {
         [
           "add-assetspace",
           "bootstrap-vault",
-          "clear-switch-cache",
           "edit-properties",
           "exosync-parity-report",
           "push-current-assetspace",

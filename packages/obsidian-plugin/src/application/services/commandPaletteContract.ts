@@ -45,7 +45,6 @@ export const GROOMED_COMMAND_NAMES = {
   // — Destructive, flagged with the «(advanced)» text marker (P4/P16:
   //   never an emoji glyph alone — assistive-tech reliable) —
   "unmount-assetspace": "Remove knowledge pack (advanced)",
-  "clear-switch-cache": "Reset profile cache (advanced)",
 } as const;
 
 export type GroomedCommandId = keyof typeof GROOMED_COMMAND_NAMES;
@@ -57,7 +56,6 @@ export type GroomedCommandId = keyof typeof GROOMED_COMMAND_NAMES;
  */
 export const DESTRUCTIVE_COMMAND_IDS: readonly GroomedCommandId[] = [
   "unmount-assetspace",
-  "clear-switch-cache",
 ];
 
 /**
