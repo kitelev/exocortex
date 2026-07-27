@@ -30,6 +30,11 @@ const { PropertyNameValidator } = await import(
   "../../src/services/PropertyNameValidator.js"
 );
 
+// requirements-trace binds ONLY on a literal `@req:<uuid>` token — the
+// `@req:${REQ}` interpolation in the it() titles below is not statically
+// resolvable, so declare the binding as a literal here (archgate REQ-001
+// no-template-literal-only-req-binding):
+// @req:c616a289-8870-4426-86d3-2b30e7c37f5e
 const REQ = "c616a289-8870-4426-86d3-2b30e7c37f5e";
 const VALID_TARGET = "cafe0000-0000-0000-0000-000000000002";
 const OBJECT_PROPERTY_UID = "9a1cf31c-9d41-4ef3-9023-584a8d087d16";
