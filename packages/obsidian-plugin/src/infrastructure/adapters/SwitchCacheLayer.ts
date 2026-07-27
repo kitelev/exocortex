@@ -6,8 +6,8 @@
 // top-level node:* import would crash the whole bundle on mobile load
 // (Issue #3464). Mobile is guarded by `Platform.isMobile` throw at every
 // public entry point (getCacheStats returns zeros) — Phase 5 apply is
-// desktop-only, but the CLASS is constructed on mobile too (Settings tab
-// render + clear-switch-cache command), so the ctor must not touch Node.
+// desktop-only, but the CLASS is constructed on mobile too (e.g. the
+// apply-profile flow / crash recovery), so the ctor must not touch Node.
 import {
   nodeCrypto,
   nodeFs,
@@ -101,8 +101,8 @@ export class SwitchCacheLayer implements ICacheLayer {
 
   constructor(options: SwitchCacheLayerOptions = {}) {
     // No Node access here — the class is constructed on mobile too
-    // (ExocortexSettingTab.renderProfileSections + invokeClearSwitchCache),
-    // where only the mobile-safe getCacheStats() zeros-path runs.
+    // (e.g. the apply-profile flow / crash recovery), where only the
+    // mobile-safe getCacheStats() zeros-path runs.
     this.cacheDirOverride = options.cacheDir ?? null;
   }
 
