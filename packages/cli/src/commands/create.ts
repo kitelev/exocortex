@@ -12,6 +12,7 @@ import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { ClassResolverService } from "../services/ClassResolverService.js";
 import { WikilinkValidator } from "../services/WikilinkValidator.js";
+import { PropertyNameValidator } from "../services/PropertyNameValidator.js";
 import { EffortStatusResolver } from "../services/EffortStatusResolver.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
@@ -268,6 +269,20 @@ export function createCommand(): Command {
         // status default can be injected (issue #3849) before `propertyValues`
         // is finalised below.
         const properties = parseProperties(options.property);
+
+        // Validate property NAMES against the mounted TBox (RFC 430e84f1, P1).
+        // `create` already rejects a dangling wikilink VALUE (WikilinkValidator);
+        // this closes the twin fail-silent hole on the KEY — a `--property` key
+        // whose name does not exist in the mounted TBox is rejected fail-loud
+        // with a fuzzy suggestion + a machine-readable `{ unknown, suggestions }`
+        // structured error, so an LLM agent's typo (`ems__Effort_parentEffort`)
+        // cannot silently land a DEAD property. There is deliberately NO skip
+        // flag — the guarantee has no bot-accessible escape-hatch (must-have #6);
+        // validation is fail-open when NO property definitions are mounted
+        // (degenerate/partial profile). Validates the raw USER keys only (the
+        // CLI injects its own well-known keys downstream).
+        const propertyNameValidator = new PropertyNameValidator(vaultPath);
+        await propertyNameValidator.validate(Object.keys(properties));
 
         // Resolve body content and parse escape sequences
         let body = await resolveBody(options);
