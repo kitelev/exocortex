@@ -13,6 +13,7 @@ import {
 } from "@kitelev/exocortex-core";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { WikilinkValidator } from "../services/WikilinkValidator.js";
+import { PropertyNameValidator } from "../services/PropertyNameValidator.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import {
   VaultNotFoundError,
@@ -341,6 +342,19 @@ export function setPropertyCommand(): Command {
             `Refusing to set "${property}" via set-property — it has a dedicated guarded command so the state machine / precondition is not bypassed. Use:  exocortex ${guardedCommand} --vault <v>`,
           );
         }
+
+        // Validate the property NAME against the mounted TBox (RFC 430e84f1, P2 —
+        // parity with `create`). A NON-guarded key whose name does not exist in
+        // the mounted TBox is rejected fail-loud with a fuzzy suggestion + a
+        // machine-readable `{ unknown, suggestions }` structured error, so an LLM
+        // agent's typo (`ems__Effort_parentEffort`) cannot silently write a DEAD
+        // property. Runs AFTER the guard checks above (guarded/immutable props are
+        // REAL names routed to dedicated commands — validation only sees the
+        // "everything else" non-guarded class). Reuses the P1 collector: one-pass
+        // mounted-TBox scan, fail-open when NO property defs are mounted
+        // (degenerate/partial profile). No skip flag — no bot escape-hatch (#6).
+        const propertyNameValidator = new PropertyNameValidator(vaultPath);
+        await propertyNameValidator.validate([property]);
 
         // Reject a non-scalar / non-scalar-array value (fail-loud, #3795 review M1).
         assertScalarOrScalarArray(value);
