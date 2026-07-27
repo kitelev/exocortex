@@ -51,7 +51,8 @@
   "author": "A. Kitelev",
   "license": "MIT",
   "overrides": {
-    "qs": "^6.15.3"
+    "qs": "^6.15.3",
+    "brace-expansion@5.x": "5.0.8"
   },
   "devDependencies": {
     "@babel/core": "^7.28.5",
