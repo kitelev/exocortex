@@ -64,11 +64,6 @@ Makefile.bak.*
 reports/
 reports/
 
-# Mutation testing (Stryker)
-.stryker-tmp/
-mutation-report.html
-mutation-report.json
-
 playwright-report-e2e/
 test-results-e2e/
 # Compiled output
