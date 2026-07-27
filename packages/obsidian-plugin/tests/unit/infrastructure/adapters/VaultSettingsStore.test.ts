@@ -160,8 +160,8 @@ function makeStore(
   overrides: {
     baseline?: Record<string, unknown>;
     applyRemote?: jest.Mock;
-    // RFC f402002b M2.3 — opt into the legacy/deprecated outbound UI→asset
-    // auto-write (default false = read-only transitional watcher).
+    // req 4425f655 — enable the bidirectional outbound UI→asset auto-write
+    // (default false = read-only mode; production passes true).
     outboundWriteEnabled?: boolean;
     logger?: { warn: jest.Mock } & Record<string, jest.Mock>;
   } = {},
@@ -254,7 +254,7 @@ describe("VaultSettingsStore", () => {
       settings.showArchivedAssets = true; // user toggled pre-scan
       const { store, applyRemote } = makeStore(fake, settings, {
         baseline,
-        outboundWriteEnabled: true, // M2.3: this test asserts the deprecated dirty-field push
+        outboundWriteEnabled: true, // req 4425f655: asserts the dirty-field outbound push
       });
 
       await store.applyScan(store.scanAll());
@@ -493,8 +493,9 @@ describe("VaultSettingsStore", () => {
     async function setupMigrated() {
       const fake = new FakeApp();
       const settings = freshSettings();
-      // M2.3: these blocks exercise the (now-deprecated) outbound UI→asset
-      // auto-write path → opt in explicitly.
+      // req 4425f655 — these blocks exercise the bidirectional live-mirror
+      // outbound UI→asset auto-write path → construct with it enabled (as
+      // production does when settings-homoiconization is on).
       const { store, applyRemote } = makeStore(fake, settings, {
         outboundWriteEnabled: true,
       });
@@ -503,7 +504,7 @@ describe("VaultSettingsStore", () => {
       return { fake, settings, store, applyRemote };
     }
 
-    it("pushChangedFields writes the changed field to the asset", async () => {
+    it("@req:4425f655-e034-44b8-9258-db1650dd8b12 pushChangedFields writes the changed UI field to its exo__Setting vault asset (bidirectional live-mirror outbound write)", async () => {
       const { fake, settings, store } = await setupMigrated();
       const d = descriptorByField("enableShaclValidation")!;
 
@@ -532,7 +533,7 @@ describe("VaultSettingsStore", () => {
       const fake = new FakeApp();
       const settings = freshSettings();
       const { store } = makeStore(fake, settings, {
-        outboundWriteEnabled: true, // M2.3: exercises the deprecated push path
+        outboundWriteEnabled: true, // req 4425f655: exercises the outbound push path
       });
       store.scanAll(); // no assets at all, no migration
 
@@ -558,13 +559,12 @@ describe("VaultSettingsStore", () => {
     });
   });
 
-  // @req:5c08b7ad-0e82-4dfa-b258-316a2d21c143
-  describe("read-only transitional deprecation (M2.3, RFC f402002b §6 R2)", () => {
-    async function setupReadOnly(logger?: { warn: jest.Mock } & Record<string, jest.Mock>) {
+  describe("read-only mode (outboundWriteEnabled false — the no-outbound-write opt-out / test default)", () => {
+    async function setupReadOnly() {
       const fake = new FakeApp();
       const settings = freshSettings();
       // Default makeStore = read-only (outboundWriteEnabled defaults false).
-      const { store, applyRemote } = makeStore(fake, settings, { logger });
+      const { store, applyRemote } = makeStore(fake, settings);
       store.scanAll();
       await store.migrateMissing();
       return { fake, settings, store, applyRemote };
@@ -590,28 +590,6 @@ describe("VaultSettingsStore", () => {
       expect(fake.processCalls.length).toBe(processCallsBefore);
     });
 
-    it("logs the deprecation notice at most once across many UI saves", async () => {
-      const logger = {
-        debug: jest.fn(),
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-      };
-      const { settings, store } = await setupReadOnly(logger);
-      logger.warn.mockClear(); // ignore any scan/migrate warnings
-
-      settings.enableShaclValidation = true;
-      store.pushChangedFields();
-      settings.showArchivedAssets = true;
-      store.pushChangedFields();
-      store.pushChangedFields();
-
-      const deprecationWarns = logger.warn.mock.calls.filter((c) =>
-        String(c[0]).includes("deprecated"),
-      );
-      expect(deprecationWarns).toHaveLength(1);
-    });
-
     it("KEEPS the asset→UI inbound watcher (read-only): a synced asset change still applies", async () => {
       const { fake, settings, store, applyRemote } = await setupReadOnly();
       const d = descriptorByField("showArchivedAssets")!;
@@ -635,10 +613,9 @@ describe("VaultSettingsStore", () => {
       await store.applyScan(store.scanAll());
       await store.flushWrites();
 
-      // No overlay (UI keeps the user's value during the session) and — the
-      // M2.3 invariant — NO outbound write: the asset is untouched. (canonical
-      // = RDF: the un-Exported UI value is not durable; a later asset change
-      // applies via the inbound watcher, covered above.)
+      // No overlay (UI keeps the user's value during the session) and — in
+      // read-only mode — NO outbound write: the asset is untouched. (A later
+      // asset change applies via the inbound watcher, covered above.)
       expect(applyRemote).not.toHaveBeenCalled();
       expect(settings.showArchivedAssets).toBe(true);
       expect(fake.files.get(path)!.frontmatter!.exo__Setting_value).toBe(false);
@@ -650,8 +627,8 @@ describe("VaultSettingsStore", () => {
     async function setupMigrated() {
       const fake = new FakeApp();
       const settings = freshSettings();
-      // M2.3: these blocks exercise the (now-deprecated) outbound UI→asset
-      // auto-write path → opt in explicitly.
+      // req 4425f655 — these blocks exercise the bidirectional outbound
+      // UI→asset auto-write + echo suppression → construct with it enabled.
       const { store, applyRemote } = makeStore(fake, settings, {
         outboundWriteEnabled: true,
       });

@@ -2115,14 +2115,11 @@ export default class ExocortexPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
-    // RFC f402002b M2.3 — the live-mirror UI→asset auto-write is DEPRECATED in
-    // favour of the explicit «Exocortex: Export settings» command. The store is
-    // constructed read-only (outboundWriteEnabled defaults false), so this call
-    // is now a no-op that logs a one-time deprecation notice (the asset→UI
-    // watcher stays read-only; the RDF asset is canonical, data.json a derived
-    // cache). The call is kept here (rather than removed) so the deprecation
-    // notice fires from the single saveSettings() funnel; the whole store is
-    // scheduled for removal ≥1 release after the deprecation window.
+    // req 4425f655 — the live-mirror is bidirectional: when homoiconic settings
+    // are enabled the store auto-writes changed registry fields into their
+    // exo__Setting vault assets (trailing-debounced, own-echo-swallowed). This
+    // is the single funnel for that UI→asset mirror. When homoiconization is
+    // off, vaultSettingsStore is null and this is a no-op (optional-chained).
     this.vaultSettingsStore?.pushChangedFields();
   }
 
@@ -2156,20 +2153,26 @@ export default class ExocortexPlugin extends Plugin {
       return;
     }
 
-    // RFC f402002b M2.3 — read-only transitional: the store keeps the asset→UI
-    // inbound watcher + load-overlay + one-shot migrate, but the continuous
-    // UI→asset auto-write is deprecated (outboundWriteEnabled defaults false).
-    // Canonical authority = the RDF asset; data.json = derived cache. Persist UI
-    // changes to assets via «Exocortex: Export settings».
+    // req 4425f655 — the live-mirror is a fully BIDIRECTIONAL feature: with the
+    // master switch on, the store keeps the asset→UI inbound watcher +
+    // load-overlay + one-shot migrate AND continuously auto-writes UI changes
+    // back into their exo__Setting vault assets (outboundWriteEnabled: true),
+    // so settings stay in two-way sync within a device (data.json remains a
+    // write-through boot cache). «Exocortex: Export settings» coexists as a
+    // manual full-snapshot distribution path.
     this.logger.info(
-      "[D2] vault-settings live-mirror is read-only (RFC f402002b M2.3 deprecation) — " +
-        "asset→UI inbound only; use «Export settings» to persist UI changes to assets",
+      "[D2] vault-settings live-mirror is bidirectional (req 4425f655) — " +
+        "asset→UI inbound + UI→asset auto-write; settings stay two-way in sync",
     );
     const store = new VaultSettingsStore({
       app: this.app,
       logger: this.logger,
       getSettings: () => this.settings as Record<string, unknown>,
       baseline: this.settingsBaseline,
+      // req 4425f655 — enable the continuous UI→asset auto-write (the live-mirror
+      // outbound half). Gated at the layer level by settingsHomoiconizationEnabled
+      // (checked above); default users (switch off) never construct this store.
+      outboundWriteEnabled: true,
       applyRemote: async (field, value) => {
         (this.settings as Record<string, unknown>)[field] = value;
         this.applySettingSideEffect(field, value);
@@ -3658,8 +3661,9 @@ export default class ExocortexPlugin extends Plugin {
 
     // RFC f402002b M2.1 — «Export/Import settings», registered on
     // BOTH desktop AND mobile (Desktop↔Mobile Command Parity). Additive
-    // snapshot/restore via the generic Settings Distribution engine — does NOT
-    // touch the live-mirror (VaultSettingsStore); M2.3 deprecates that.
+    // snapshot/restore via the generic Settings Distribution engine — a manual
+    // full-snapshot path that COEXISTS with the bidirectional live-mirror
+    // (VaultSettingsStore, req 4425f655); it does not touch that store.
     this.registerSettingsDistributionCommands();
 
     // Issue #3707 — «Register for sync»: write an exo__AssetSpace descriptor into
@@ -4218,8 +4222,9 @@ export default class ExocortexPlugin extends Plugin {
    * Settings Distribution engine. Both commands register UNCONDITIONALLY
    * (Desktop↔Mobile Command Parity — Export writes via vault.adapter, Import
    * reads the warm metadataCache; no Platform.isMobile gate). Additive:
-   * an explicit, frictionless snapshot/restore that does not touch the
-   * live-mirror (VaultSettingsStore) — M2.3 deprecates that.
+   * an explicit, frictionless snapshot/restore that COEXISTS with the
+   * bidirectional live-mirror (VaultSettingsStore, req 4425f655) — it does not
+   * touch that store.
    *
    * NOT gated by `settingsHomoiconizationEnabled` (#3539) by design: that
    * master switch gates the AUTOMATIC live-mirror (background watcher +
