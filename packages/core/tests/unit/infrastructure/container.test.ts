@@ -27,7 +27,7 @@ describe("container", () => {
       registerCoreServices();
 
       // Verify some registered services can be resolved
-      expect(container.isRegistered(DI_TOKENS.AreaCreationService)).toBe(true);
+      expect(container.isRegistered(DI_TOKENS.ClassCreationService)).toBe(true);
       expect(container.isRegistered(DI_TOKENS.GenericAssetCreationService)).toBe(true);
     });
 
@@ -42,8 +42,8 @@ describe("container", () => {
 
       registerCoreServices(child);
 
-      expect(child.isRegistered(DI_TOKENS.DynamicFrontmatterGenerator)).toBe(true);
-      expect(child.isRegistered(DI_TOKENS.AlgorithmExtractor)).toBe(true);
+      expect(child.isRegistered(DI_TOKENS.TaskStatusService)).toBe(true);
+      expect(child.isRegistered(DI_TOKENS.NoteToRDFConverter)).toBe(true);
     });
   });
 

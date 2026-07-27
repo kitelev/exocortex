@@ -341,7 +341,7 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     // Match Obsidian TFile semantics: `basename` is the name WITHOUT extension
     // and `name` is the full filename. Shared services in `packages/core`
     // (GenericAssetCreationService.inheritParentContext, NoteToRDFConverter,
-    // AreaHierarchyBuilder, AssetConversionService) rely on this contract.
+    // AreaHierarchyBuilder) rely on this contract.
     const name = path.basename(filePath);
     const basename = path.basename(filePath, path.extname(filePath));
     const parentPath = path.dirname(filePath);

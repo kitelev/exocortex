@@ -206,11 +206,10 @@ export function populateServiceRegistry(
       effortStatusWorkflow,
       statusTimestampService,
     );
-    // EffortVotingService is no longer constructed here — Issue #3134 migrated
-    // the only `service_call` consumer (grounding 506f031e-…) to the
-    // declarative `property_increment` grounding type. The palette command
-    // `VoteOnEffortCommand` instantiates EffortVotingService directly via DI,
-    // not through this registry.
+    // Effort voting is no longer served here — Issue #3134 migrated the only
+    // `service_call` consumer (grounding 506f031e-…) to the declarative
+    // `property_increment` grounding type; the `EffortVotingService` class and
+    // its `VoteOnEffortCommand` were subsequently removed entirely (#3961).
     //
     // LabelToAliasService was removed entirely — Issue #3132 migrated the only
     // `service_call` consumer (grounding a85668fa-…) to the declarative
@@ -259,9 +258,9 @@ export function populateServiceRegistry(
     // `18407cb2-9554-4897-9213-17321f9dd434` Path B). The legacy palette
     // commands (`ShiftDayForwardCommand`, `ShiftDayBackwardCommand`) and
     // their `TaskStatusService.shiftDay{Forward,Backward}` methods were
-    // subsequently deleted in Phase 4 PR-A (RFC 31c1a0be).
-    // `VoteOnEffortCommand` → `effortVotingService.incrementEffortVotes(file)`
-    // is still wired via direct DI (out of Phase 4 PR-A scope).
+    // subsequently deleted in Phase 4 PR-A (RFC 31c1a0be). The
+    // `EffortVotingService` class + `VoteOnEffortCommand` were then removed
+    // entirely in #3961 — no remaining service or command path.
 
     // `copyLabelToAliases` service registration removed in Issue #3132 —
     // the sole grounding consumer (a85668fa-17b7-45d0-aa7f-935e2502dff0) was

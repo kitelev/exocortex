@@ -27,15 +27,9 @@ export const DI_TOKENS = {
   INotificationService: Symbol.for("INotificationService"),
 
   // Creation services
-  AreaCreationService: Symbol.for("AreaCreationService"),
   ClassCreationService: Symbol.for("ClassCreationService"),
   ConceptCreationService: Symbol.for("ConceptCreationService"),
-  SupervisionCreationService: Symbol.for("SupervisionCreationService"),
   GenericAssetCreationService: Symbol.for("GenericAssetCreationService"),
-
-  // Frontmatter services
-  DynamicFrontmatterGenerator: Symbol.for("DynamicFrontmatterGenerator"),
-  AlgorithmExtractor: Symbol.for("AlgorithmExtractor"),
 
   // Status services
   TaskStatusService: Symbol.for("TaskStatusService"),
@@ -46,13 +40,8 @@ export const DI_TOKENS = {
   PropertyCleanupService: Symbol.for("PropertyCleanupService"),
   FolderRepairService: Symbol.for("FolderRepairService"),
   RenameToUidService: Symbol.for("RenameToUidService"),
-  PlanningService: Symbol.for("PlanningService"),
-  EffortVotingService: Symbol.for("EffortVotingService"),
-  SessionEventService: Symbol.for("SessionEventService"),
-  CriticalityZoneService: Symbol.for("CriticalityZoneService"),
 
   // Conversion services
-  AssetConversionService: Symbol.for("AssetConversionService"),
   NoteToRDFConverter: Symbol.for("NoteToRDFConverter"),
 
   // Vault settings
@@ -60,7 +49,6 @@ export const DI_TOKENS = {
 
   // Query services
   AreaHierarchyBuilder: Symbol.for("AreaHierarchyBuilder"),
-  URIConstructionService: Symbol.for("URIConstructionService"),
   ClassHierarchyResolver: Symbol.for("ClassHierarchyResolver"),
 
 } as const;

@@ -17,9 +17,9 @@ export interface IVaultSettings {
   getDefaultInboxFolder(): string;
 
   /**
-   * Returns the UID of the ztlk__FleetingNote class asset.
-   * Used by SupervisionCreationService to populate exo__Instance_class
-   * frontmatter. (FleetingNoteCreationService removed in RFC 1429fcd0
+   * Returns the UID of the ztlk__FleetingNote class asset, used to populate
+   * `exo__Instance_class` frontmatter on created fleeting notes.
+   * (FleetingNoteCreationService removed in RFC 1429fcd0
    * PR-3 — the create-fleeting-note command is now driven by the vault
    * exocmd asset 692aa011-... via ExocmdCommandPaletteRegistrar.)
    */
