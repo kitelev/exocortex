@@ -36,8 +36,6 @@
     "test:all": "npm test && npm run test:e2e:docker",
     "test:perf": "jest --config packages/obsidian-plugin/jest.config.js --testPathPatterns='performance.*\\.test\\.ts$'",
     "test:perf:component": "cd packages/obsidian-plugin && npx playwright test -c playwright-ct.config.ts RenderingPerformance && cd ../..",
-    "test:mutation:core": "stryker run stryker.config.mjs",
-    "test:mutation:cli": "NODE_OPTIONS=--experimental-vm-modules stryker run stryker.cli.config.mjs",
     "docs:validate": "node scripts/validate-docs-properties.js"
   },
   "keywords": [
@@ -61,8 +59,6 @@
     "@playwright/experimental-ct-react": "^1.56.1",
     "@playwright/test": "^1.56.1",
     "@preact/compat": "^18.3.1",
-    "@stryker-mutator/core": "^9.6.1",
-    "@stryker-mutator/jest-runner": "^9.6.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
