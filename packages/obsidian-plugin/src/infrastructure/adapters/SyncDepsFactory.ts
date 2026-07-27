@@ -1,5 +1,5 @@
 import type { App, DataAdapter } from "obsidian";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import {
   CONFLICT_CACHE_STORE_FILENAME,
   FileLocalManifestStore,
