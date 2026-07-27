@@ -80,7 +80,7 @@ BASELINE_VACUOUS_LENGTH="${BASELINE_VACUOUS_LENGTH:-21}"
 # Legacy non-canon core service-test dir. Canon for NEW tests is
 # packages/core/tests/unit/services/. This grandfathers the existing files and
 # bans growth (see header item 3). Ratchet DOWN if legacy files are removed.
-BASELINE_NONCANON_SERVICE_DIR="${BASELINE_NONCANON_SERVICE_DIR:-24}"
+BASELINE_NONCANON_SERVICE_DIR="${BASELINE_NONCANON_SERVICE_DIR:-19}"
 # Over-mock pass-through service-wrappers (header item 4). Baseline 0 — the
 # canonical over-mock was lifted to an integration suite, so no pure pass-through
 # over-mock file exists today. Bans introducing one.

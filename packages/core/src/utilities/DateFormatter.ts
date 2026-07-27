@@ -78,8 +78,8 @@ export class DateFormatter {
    * - `ems__Effort_plannedStartTimestamp` / `plannedEndTimestamp`
    *   (written by `TaskStatusService.planForEvening` and starter-kit
    *   property_set groundings using `$todayStart`)
-   * - `exo__Asset_createdAt` (written by `GenericAssetCreationService` /
-   *   `AreaCreationService` and other `*CreationService` classes)
+   * - `exo__Asset_createdAt` (written by `GenericAssetCreationService` and
+   *   other `*CreationService` classes)
    *
    * Starter-kit composite groundings produce the same shape via the
    * `$nowLocal` variable in `GroundingExecutor.substituteVariables`, so

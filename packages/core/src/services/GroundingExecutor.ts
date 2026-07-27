@@ -824,10 +824,10 @@ export class GroundingExecutor {
     // RFC-028 Finding 5: built-in Project→Task conversion. Vault grounding
     // `abdbdf09` ("Convert to task") dispatches serviceId="convertToTask".
     // The conversion only needs the target file and the frontmatter pipeline
-    // already injected into this executor, so it is wired here rather than
-    // requiring the plugin populator to bridge AssetConversionService through
-    // a wrapper. Keeps starter-kit groundings functional with a bare core
-    // ServiceRegistry (e.g. CLI usage, tests).
+    // already injected into this executor, so it is wired here inline rather
+    // than through a separate conversion-service wrapper. Keeps starter-kit
+    // groundings functional with a bare core ServiceRegistry (e.g. CLI usage,
+    // tests).
     if (serviceId === "convertToTask") {
       return await this.executeConvertToTask(filePath);
     }

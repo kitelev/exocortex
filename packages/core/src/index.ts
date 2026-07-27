@@ -129,7 +129,6 @@ export {
   type RequiredPropertyFieldType,
 } from "./services/RequiredPropertyResolver";
 export { TaskStatusService } from "./services/TaskStatusService";
-export { AreaCreationService } from "./services/AreaCreationService";
 export {
   AreaHierarchyBuilder,
   type AssetRelation,
@@ -168,18 +167,12 @@ export type {
   WorkflowStateDefinition,
   WorkflowTransitionDefinition,
 } from "./domain/models/WorkflowDefinition";
-export { EffortVotingService } from "./services/EffortVotingService";
 export { FolderRepairService } from "./services/FolderRepairService";
 export { extractAssetReference } from "./utilities/extractAssetReference";
 export { LoggingService } from "./services/LoggingService";
 export { PropertyCleanupService } from "./services/PropertyCleanupService";
 export { RenameToUidService } from "./services/RenameToUidService";
 export { StatusTimestampService } from "./services/StatusTimestampService";
-export { SupervisionCreationService } from "./services/SupervisionCreationService";
-export {
-  DynamicFrontmatterGenerator,
-  type FrontmatterPropertyDefinition,
-} from "./services/DynamicFrontmatterGenerator";
 export {
   type FrontmatterOrderSpec,
   type OrderSpecLoader,
@@ -188,8 +181,6 @@ export {
   loadDefaultSpec,
   orderProperties,
 } from "./services/OrderSpecResolver";
-export { AlgorithmExtractor } from "./services/AlgorithmExtractor";
-export { PlanningService } from "./services/PlanningService";
 export {
   PropertySchemaResolver,
   type PropertySchema,
@@ -202,9 +193,6 @@ export {
   EnumValueResolver,
   type EnumValue,
 } from "./services/EnumValueResolver";
-export { AssetConversionService } from "./services/AssetConversionService";
-export { SessionEventService } from "./services/SessionEventService";
-export { URIConstructionService } from "./services/URIConstructionService";
 export {
   GenericAssetCreationService,
   type GenericAssetCreationConfig,
@@ -214,10 +202,6 @@ export {
 } from "./services/GenericAssetCreationService";
 export { ArchiveAssetService } from "./services/ArchiveAssetService";
 export { FixMissingLabelService } from "./services/FixMissingLabelService";
-export type {
-  URIConstructionOptions,
-  AssetMetadata,
-} from "./services/URIConstructionService";
 export {
   GraphQueryService,
   type GraphQueryServiceConfig,
@@ -227,11 +211,6 @@ export {
   type TypeRegistryConfig,
 } from "./services/TypeRegistry";
 export { SPARQL_PREFIXES } from "./services/SparqlPrefixes";
-export {
-  CriticalityZoneService,
-  CriticalityZoneUUIDs,
-  type CriticalityZone,
-} from "./services/CriticalityZoneService";
 
 // Utilities exports
 export { FrontmatterService } from "./utilities/FrontmatterService";
