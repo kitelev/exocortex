@@ -18,3 +18,4 @@ export { InvalidStateTransitionError } from "./InvalidStateTransitionError.js";
 export { OperationFailedError } from "./OperationFailedError.js";
 export { PermissionDeniedError } from "./PermissionDeniedError.js";
 export { QueryTimeoutError } from "./QueryTimeoutError.js";
+export { UnknownPropertyError } from "./UnknownPropertyError.js";
