@@ -1538,7 +1538,12 @@ export class GroundingExecutor {
 
     const map: Record<string, Record<string, unknown> | null> = {};
     for (const refKey of refKeys) {
-      const ref = GroundingExecutor.extractBareRef(targetFm[refKey]);
+      // First hop reads the click-target's own ref. isDefinedBy is single-valued
+      // per the co-location invariant, but tolerate a single-item YAML-list form
+      // (["[[O]]"]) — mirror the second-hop resolver's array unwrap for symmetry.
+      const raw = targetFm[refKey];
+      const refVal = Array.isArray(raw) ? raw[0] : raw;
+      const ref = GroundingExecutor.extractBareRef(refVal);
       if (!ref) {
         map[refKey] = null;
         continue;

@@ -1284,6 +1284,44 @@ describe("GroundingExecutor", () => {
         // Effort co-locates with the area (host folder = parent of AREA_PATH).
         expect(path.startsWith(`${AREA_FOLDER}/`)).toBe(true);
       });
+
+      it("@req:c03f9e3e-b47d-4a57-af9c-009ead5b9b34 routes when the ontology's effortsOntology is a BARE wikilink (realistic YAML-parsed shape)", async () => {
+        // Production `refToFrontmatter` (plugin metadataCache + CLI YAML parse)
+        // returns the value with outer YAML quotes stripped, i.e. the bare string
+        // `[[E]]` rather than `"[[E]]"`. Lock that realistic shape too — it must
+        // still serialize to a valid quoted isDefinedBy and route to E's folder.
+        reader.readFile.mockResolvedValue(
+          `---\nexo__Asset_isDefinedBy: "[[${AREA_ONTOLOGY}]]"\n---\n`,
+        );
+        const refToFrontmatter = jest.fn(async (ref: string) =>
+          ref === AREA_ONTOLOGY
+            ? { exo__Ontology_effortsOntology: `[[${EFFORTS_ONTOLOGY}]]` } // bare, no quotes
+            : null,
+        );
+        const refToFolder = jest.fn(async (ref: string) =>
+          ref === EFFORTS_ONTOLOGY ? EFFORTS_FOLDER : null,
+        );
+        executor = new GroundingExecutor(reader, writer, registry, undefined, {
+          refToFolder,
+          refToFrontmatter,
+        });
+
+        const result = await executor.execute(
+          makeEffortGrounding(),
+          AREA_IRI,
+          AREA_PATH,
+          { label: "Bare" },
+        );
+
+        expect(result.success).toBe(true);
+        const [path, content] = writer.createFile.mock.calls[0];
+        // Bare `[[E]]` still serializes to the quoted, valid isDefinedBy.
+        expect(content).toContain(
+          `exo__Asset_isDefinedBy: "[[${EFFORTS_ONTOLOGY}]]"`,
+        );
+        expect(path.startsWith(`${EFFORTS_FOLDER}/`)).toBe(true);
+        expect(refToFolder).toHaveBeenCalledWith(EFFORTS_ONTOLOGY);
+      });
     });
 
     // -- W3 "Create Class" homoiconic button (project 85150d63) --
