@@ -25,6 +25,14 @@
  *     `redact` param below is a defence-in-depth pass over this core's own
  *     structural error strings (which never embed a PAT, but are redacted
  *     anyway for parity with the plugin original).
+ *   - Rate-limit signalling (RFC 6a1a6518 A): the response `headers` are NOT
+ *     part of {@link RestCommitResponse} (this core reads only `json`). On a
+ *     non-2xx rate-limited response the transport reads the response headers
+ *     and ATTACHES `Retry-After` / `x-ratelimit-*` to the thrown Error as
+ *     own-properties (preserving `.message`) via
+ *     `rateLimitHeaders.enrichRateLimitError`, so `withRateLimitBackoff` can
+ *     honor the exact wait. This core never sees those errors (it only ever
+ *     observes successful responses).
  *
  * Partial-failure contract (unchanged from the plugin original): if steps 1-3
  * succeed but step 4 (PATCH ref) fails (network glitch, 422 non-fast-forward,

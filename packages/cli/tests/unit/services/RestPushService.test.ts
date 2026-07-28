@@ -24,6 +24,16 @@ function res(status: number, body: unknown): Response {
   } as unknown as Response;
 }
 
+/** Response with rate-limit headers (fetch `Headers` is case-insensitive). */
+function resH(status: number, body: string, headers: Record<string, string>): Response {
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    text: () => Promise.resolve(body),
+    headers: new Headers(headers),
+  } as unknown as Response;
+}
+
 function happyFetch(): jest.Mock {
   return jest
     .fn()
@@ -120,6 +130,46 @@ describe("RestPushService", () => {
       expect(svc.redact({ toString: () => `x ${FAKE_PAT} y` })).toContain(
         "***REDACTED***",
       );
+    });
+  });
+
+  // RFC 6a1a6518 A — the transport attaches rate-limit headers to the thrown
+  // error (own-props), preserving .message so isRateLimitError/isAuthError/
+  // isNonFastForwardError still classify it. @req:0fd4c819-0a48-43e5-9e4b-2a1cc3eef1c2
+  describe("rate-limit header enrichment (Retry-After)", () => {
+    async function capture(response: Response): Promise<Error> {
+      const svc = new RestPushService({
+        token: FAKE_PAT,
+        fetchImpl: jest.fn().mockResolvedValueOnce(response) as unknown as typeof fetch,
+      });
+      try {
+        await svc.transport()({ method: "GET", url: "https://api.github.com/x" });
+      } catch (e) {
+        return e as Error;
+      }
+      throw new Error("expected the transport to throw");
+    }
+
+    it("attaches retryAfterMs / rateLimitReset while preserving .message byte-for-byte", async () => {
+      const err = (await capture(
+        resH(403, "You have exceeded a secondary rate limit", {
+          "Retry-After": "120",
+          "X-RateLimit-Reset": "1700000000",
+          "X-RateLimit-Remaining": "0",
+        }),
+      )) as Error & { retryAfterMs?: number; rateLimitReset?: number };
+      expect(err.retryAfterMs).toBe(120_000);
+      expect(err.rateLimitReset).toBe(1700000000);
+      // .message is the unchanged production shape the parsers key off.
+      expect(err.message).toMatch(/HTTP 403: You have exceeded a secondary rate limit/);
+    });
+
+    it("attaches nothing (and does not throw) when there are no rate-limit headers", async () => {
+      const err = (await capture(resH(404, "Not Found", {})) as Error & {
+        retryAfterMs?: number;
+      });
+      expect(err.retryAfterMs).toBeUndefined();
+      expect(err.message).toMatch(/HTTP 404/);
     });
   });
 

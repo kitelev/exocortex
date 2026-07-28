@@ -81,7 +81,12 @@ import {
 } from "./LocalOutboxStore";
 import { isAuthError } from "./CredentialStore";
 import { scanForSecrets } from "./secretScan";
-import { withRateLimitBackoff, type BackoffOptions } from "./transportBackoff";
+import {
+  withRateLimitBackoff,
+  createRateLimitBudget,
+  type BackoffOptions,
+  type RateLimitBudget,
+} from "./transportBackoff";
 import {
   DEFAULT_MAX_FILE_BYTES,
   contentEquals,
@@ -110,6 +115,17 @@ import {
 
 /** D16: retries after the first non-fast-forward failure. */
 export const DEFAULT_MAX_PUSH_RETRIES = 3;
+
+/**
+ * RFC 6a1a6518 A — default GLOBAL per-sync rate-limit wait budget (ms). Bounds
+ * the TOTAL time one top-level `syncAll`/`sync` may sleep on rate-limit backoff
+ * across ALL repos + requests. Sequential single-flight means without this cap
+ * one locked repo could stall the whole 18-repo run for tens of minutes; when
+ * it is spent the backoff warn-defers (rethrows) instead of sleeping again.
+ * ~5 min: enough for a couple of full Retry-After waits, bounded so it can't
+ * run away. Override via `deps.backoff.maxTotalRateLimitWaitMs`.
+ */
+export const DEFAULT_MAX_TOTAL_RATELIMIT_WAIT_MS = 300_000;
 
 /**
  * Zero-loss safety valve for the mtime-manifest (perf, ExoSync Phase 1).
@@ -690,12 +706,26 @@ export class SyncEngine {
   } | null = null;
   /** D11 — one sync/apply operation at a time. */
   private opInProgress = false;
+  /**
+   * RFC 6a1a6518 A — the GLOBAL per-sync rate-limit wait budget. Shared by the
+   * per-request backoff decorator; reset at the start of every top-level
+   * `syncAll`/`sync` so one sync's rate-limit waiting can't bleed into the next.
+   */
+  private readonly rateLimitBudget: RateLimitBudget;
 
   constructor(deps: SyncEngineDeps) {
     this.deps = deps;
     this.now = deps.now ?? ((): number => Date.now());
+    this.rateLimitBudget = createRateLimitBudget(
+      deps.backoff?.maxTotalRateLimitWaitMs ??
+        DEFAULT_MAX_TOTAL_RATELIMIT_WAIT_MS,
+    );
     this.transport = this.instrumentTransport(
-      withRateLimitBackoff(deps.transport, deps.backoff),
+      withRateLimitBackoff(deps.transport, {
+        ...deps.backoff,
+        budget: this.rateLimitBudget,
+        now: this.now,
+      }),
     );
     this.sha1 = this.instrumentSha1(deps.sha1);
   }
@@ -900,6 +930,8 @@ export class SyncEngine {
   ): Promise<RepoSyncResult[]> {
     if (this.opInProgress) return specs.map((spec) => this.busyResult(spec));
     this.opInProgress = true;
+    // RFC 6a1a6518 A — fresh rate-limit wait budget per top-level sync.
+    this.rateLimitBudget.reset();
     try {
       const results: RepoSyncResult[] = [];
       for (const spec of specs) {
@@ -919,6 +951,8 @@ export class SyncEngine {
   ): Promise<RepoSyncResult> {
     if (this.opInProgress) return this.busyResult(spec);
     this.opInProgress = true;
+    // RFC 6a1a6518 A — fresh rate-limit wait budget per top-level sync.
+    this.rateLimitBudget.reset();
     try {
       return await this.syncLocked(spec, direction, onProgress);
     } finally {
