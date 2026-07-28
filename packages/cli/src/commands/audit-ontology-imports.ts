@@ -38,9 +38,9 @@ export const ONTOLOGY_CLASS_UID = "829b9b3b-6fc3-4276-be6a-27d3398c012e";
  */
 export const ASSOCIATIVE_PREDICATES: readonly string[] = [
   "exo__Asset_relates",
-  "ims__Concept_related",
-  "ims__Concept_broader",
-  "ims__Concept_synonym",
+  "concept__Concept_related",
+  "concept__Concept_broader",
+  "concept__Concept_synonym",
   "exo__Asset_createdBy",
 ];
 
@@ -1059,7 +1059,7 @@ export function auditOntologyImportsCommand(): Command {
     )
     .option(
       "--structural-only",
-      "Exclude curated associative predicates (exo__Asset_relates, ims__Concept_related/broader/synonym, exo__Asset_createdBy) from edge extraction to measure the structural backbone import-DAG (EKA Phase B, Vision VL#30). Default: every wikilink counts.",
+      "Exclude curated associative predicates (exo__Asset_relates, concept__Concept_related/broader/synonym, exo__Asset_createdBy) from edge extraction to measure the structural backbone import-DAG (EKA Phase B, Vision VL#30). Default: every wikilink counts.",
     )
     .option(
       "--exclude-predicate <name>",

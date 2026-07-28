@@ -640,6 +640,20 @@ describe("audit ontology-imports — structural-only predicate exclusion (VL#30)
     expect(r.excludedPredicates).toBeUndefined();
   });
 
+  it("ASSOCIATIVE_PREDICATES tracks the post-rename concept predicate names (F5 — no stale ims__Concept_*)", () => {
+    // After the ims__Concept_* → concept__Concept_* rename (KSD Phase 1), the
+    // curated set must exclude the LIVE associative predicate keys; a stale
+    // ims__ key matches 0 frontmatter → --structural-only would silently fail to
+    // exclude the associative Zettelkasten layer it is designed to isolate.
+    expect(ASSOCIATIVE_PREDICATES).toContain("concept__Concept_related");
+    expect(ASSOCIATIVE_PREDICATES).toContain("concept__Concept_broader");
+    expect(ASSOCIATIVE_PREDICATES).toContain("concept__Concept_synonym");
+    expect(ASSOCIATIVE_PREDICATES.some((p) => p.startsWith("ims__"))).toBe(false);
+    // definitional/structural predicates must NOT be excluded.
+    expect(ASSOCIATIVE_PREDICATES).not.toContain("concept__Concept_genus");
+    expect(ASSOCIATIVE_PREDICATES).not.toContain("concept__Concept_differentia");
+  });
+
   it("drops the associative relates edge under --structural-only, keeps the structural body edge", async () => {
     buildAssociativeViolationVault();
     const r = await scanVaultForOntologyImports(vault, {
