@@ -2,7 +2,12 @@ import type { App, RequestUrlParam, RequestUrlResponse } from "obsidian";
 import { requestUrl } from "obsidian";
 import { parseTarGzip } from "nanotar";
 import type { TarFileItem } from "nanotar";
-import { restCreateCommit, type RestCommitTransport } from "@kitelev/exocortex-core";
+import {
+  restCreateCommit,
+  enrichRateLimitError,
+  caseInsensitiveHeaderGetter,
+  type RestCommitTransport,
+} from "@kitelev/exocortex-core";
 
 export interface GitHubRestClientOptions {
   pat: string;
@@ -467,11 +472,18 @@ export class GitHubRestClient {
       // Redact BEFORE truncating so a PAT near the 256-char boundary cannot
       // be sliced mid-token (which would shorten it below the regex floor
       // and escape redaction).
-      throw new Error(
-        truncate(
-          this.redact(`GitHub request ${param.method ?? "GET"} ${param.url} → HTTP ${resp.status}: ${body}`),
-          512,
+      // RFC 6a1a6518 A: attach Retry-After / x-ratelimit-* (own-props,
+      // .message preserved) so the backoff can honor the exact wait. Obsidian
+      // `requestUrl().headers` is a Record with platform-varying casing → a
+      // case-insensitive getter is required (iOS parity).
+      throw enrichRateLimitError(
+        new Error(
+          truncate(
+            this.redact(`GitHub request ${param.method ?? "GET"} ${param.url} → HTTP ${resp.status}: ${body}`),
+            512,
+          ),
         ),
+        caseInsensitiveHeaderGetter(resp.headers),
       );
     }
     return resp;

@@ -785,4 +785,48 @@ describe("GitHubRestClient", () => {
       await expect(c.getRepoHead("o", "r")).resolves.toEqual({ sha: "z" });
     });
   });
+
+  // ─── rate-limit header enrichment — iOS parity (RFC 6a1a6518 A) ────────────
+  // Obsidian `requestUrl().headers` is a Record<string,string> whose casing
+  // varies by platform (desktop vs iOS). The plugin transport did NOT read
+  // `.headers` before — the case-insensitive getter must resolve Retry-After
+  // regardless of casing so the backoff can honor it on iOS.
+  // @req:0fd4c819-0a48-43e5-9e4b-2a1cc3eef1c2
+  describe("rate-limit header enrichment (iOS parity)", () => {
+    async function captureVia403(headers: Record<string, string>): Promise<Error> {
+      requestUrlMock.mockResolvedValue(
+        ok({
+          status: 403,
+          text: "You have exceeded a secondary rate limit",
+          headers,
+        }),
+      );
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      try {
+        await c.restTransport()({ method: "GET", url: "https://api.github.com/x" });
+      } catch (e) {
+        return e as Error;
+      }
+      throw new Error("expected the transport to throw on 403");
+    }
+
+    it.each([
+      ["lowercase", "retry-after"],
+      ["Header-Case", "Retry-After"],
+      ["UPPERCASE", "RETRY-AFTER"],
+    ])("resolves Retry-After from %s casing", async (_label, key) => {
+      const err = (await captureVia403({ [key]: "90" })) as Error & {
+        retryAfterMs?: number;
+      };
+      expect(err.retryAfterMs).toBe(90_000);
+      // .message keeps the production shape the string parsers key off.
+      expect(err.message).toMatch(/HTTP 403: You have exceeded a secondary rate limit/);
+    });
+
+    it("attaches nothing when there are no rate-limit headers", async () => {
+      const err = (await captureVia403({})) as Error & { retryAfterMs?: number };
+      expect(err.retryAfterMs).toBeUndefined();
+      expect(err.message).toMatch(/HTTP 403/);
+    });
+  });
 });

@@ -18,8 +18,10 @@
 import { execFileSync } from "node:child_process";
 import {
   restCreateCommit,
+  enrichRateLimitError,
   type RestCommitTransport,
   type RestCommitResponse,
+  type HeaderGetter,
 } from "@kitelev/exocortex-core";
 
 export interface RestPushServiceOptions {
@@ -163,13 +165,21 @@ export class RestPushService {
       }
       const text = await resp.text().catch(() => "");
       if (resp.status < 200 || resp.status >= 300) {
-        throw new Error(
-          truncate(
-            redact(
-              `GitHub request ${req.method} ${req.url} → HTTP ${resp.status}: ${text}`,
+        // RFC 6a1a6518 A: attach Retry-After / x-ratelimit-* (own-props,
+        // .message preserved) so the backoff can honor the exact wait. `fetch`
+        // `Headers.get()` is already case-insensitive; tolerate a headerless
+        // response (some test fakes omit it).
+        const get: HeaderGetter = (name) => resp.headers?.get?.(name) ?? undefined;
+        throw enrichRateLimitError(
+          new Error(
+            truncate(
+              redact(
+                `GitHub request ${req.method} ${req.url} → HTTP ${resp.status}: ${text}`,
+              ),
+              512,
             ),
-            512,
           ),
+          get,
         );
       }
       let json: unknown;

@@ -759,8 +759,25 @@ export {
 export {
   isRateLimitError,
   withRateLimitBackoff,
+  createRateLimitBudget,
+  MIN_RATE_LIMIT_WAIT_MS,
+  DEFAULT_MAX_RETRIES,
   type BackoffOptions,
+  type RateLimitBudget,
 } from "./services/sync/transportBackoff";
+// RFC 6a1a6518 A — GitHub rate-limit header extraction + error enrichment
+// (both transports attach Retry-After / x-ratelimit-* to the thrown error,
+// preserving .message; the backoff honors the exact wait).
+export {
+  caseInsensitiveHeaderGetter,
+  parseRetryAfterMs,
+  extractRateLimitFields,
+  getRateLimitFields,
+  attachRateLimitFields,
+  enrichRateLimitError,
+  type RateLimitErrorFields,
+  type HeaderGetter,
+} from "./infrastructure/github/rateLimitHeaders";
 export {
   redactSecrets,
   scanForSecrets,
