@@ -345,6 +345,18 @@ const BLOB_PROGRESS_MIN_TOTAL = 25;
 /** Emit a `fetching-blobs` tick every N blobs fetched. */
 const BLOB_PROGRESS_STEP = 10;
 /**
+ * Bounded blob-fetch concurrency on pull (RFC 6a1a6518 / C). A big remote delta
+ * fetched one blob at a time (~0.4s each) makes the sync look hung; a small pool
+ * cuts the wall-clock. Cap 6 is ~20× under GitHub's 100-concurrent ceiling —
+ * safe ONLY because Phase 1 / A already ships solid Retry-After backoff + a
+ * global per-sync time-budget, so a concurrency-induced secondary limit is
+ * honored, not ignored. Note the per-sync rate-limit budget is now SHARED across
+ * these concurrent waiters (it can drain up to `cap`× faster on a genuine
+ * secondary burst) — still safe: the outcome is fail-fast + warn-defer, never a
+ * silent bad apply. A fixed const (the RFC fixes the cap at 4-6), not a dep.
+ */
+const BLOB_FETCH_CONCURRENCY = 6;
+/**
  * Local-IO progress throttle. Reads are many + fast per file (a cold snapshot
  * hashes thousands at ~1-2ms each), writes are fewer + slower (a pull-apply
  * writes hundreds at tens of ms each) — so the two phases tick at different
@@ -3550,9 +3562,20 @@ export class SyncEngine {
         total: totalBlobs,
       });
     }
+    // Bounded-concurrency blob fetch (RFC 6a1a6518 / C). INDEXED WRITE-BACK —
+    // each result lands at its position in the `changed` order (NOT completion
+    // order), so `changes[]` is byte-identical to the old sequential loop; the
+    // order-sensitive consumer `matchLocalVsRemote` (rename-pairs / duplicate
+    // uids) must see a deterministic array. FAIL-FAST — the first blob error
+    // stops the pool from scheduling any new fetch and is rethrown, so the whole
+    // pull rejects BEFORE `matchLocalVsRemote`/apply → ZERO partial apply.
+    const changeResults: RemoteChange[] = new Array<RemoteChange>(
+      changed.length,
+    );
+    let nextIdx = 0;
     let fetched = 0;
-    const changes: RemoteChange[] = [];
-    for (const c of changed) {
+    let firstError: unknown;
+    const fetchOne = async (c: RemoteTreeEntry): Promise<RemoteChange> => {
       if (mode.fileMode) {
         // Opaque blobs: byte-exact fetch, no uid identity (D18).
         const bytes = await getBlobBytes(
@@ -3562,40 +3585,61 @@ export class SyncEngine {
           c.blobSha,
           this.deps.baseURL,
         );
-        changes.push({
-          path: c.path,
-          kind: "change",
-          blobSha: c.blobSha,
-          content: bytes,
-        });
-      } else {
-        const content = await getBlobText(
-          this.transport,
-          spec.owner,
-          spec.repo,
-          c.blobSha,
-          this.deps.baseURL,
-        );
-        changes.push({
-          path: c.path,
-          kind: "change",
-          blobSha: c.blobSha,
-          content,
-          uid: extractAssetUid(content),
-        });
+        return { path: c.path, kind: "change", blobSha: c.blobSha, content: bytes };
       }
-      fetched += 1;
-      if (
-        totalBlobs >= BLOB_PROGRESS_MIN_TOTAL &&
-        fetched % BLOB_PROGRESS_STEP === 0 &&
-        fetched < totalBlobs
-      ) {
-        this.emitProgress(onProgress, spec.repoKey, "fetching-blobs", {
-          done: fetched,
-          total: totalBlobs,
-        });
+      const content = await getBlobText(
+        this.transport,
+        spec.owner,
+        spec.repo,
+        c.blobSha,
+        this.deps.baseURL,
+      );
+      return {
+        path: c.path,
+        kind: "change",
+        blobSha: c.blobSha,
+        content,
+        uid: extractAssetUid(content),
+      };
+    };
+    const worker = async (): Promise<void> => {
+      // Single-threaded JS: `nextIdx++` / `fetched += 1` are atomic between
+      // awaits — no lock needed. A set `firstError` stops scheduling new work.
+      for (;;) {
+        if (firstError !== undefined) return;
+        const i = nextIdx++;
+        if (i >= changed.length) return;
+        try {
+          changeResults[i] = await fetchOne(changed[i]);
+        } catch (err) {
+          if (firstError === undefined) firstError = err;
+          return;
+        }
+        fetched += 1;
+        if (
+          totalBlobs >= BLOB_PROGRESS_MIN_TOTAL &&
+          fetched % BLOB_PROGRESS_STEP === 0 &&
+          fetched < totalBlobs
+        ) {
+          this.emitProgress(onProgress, spec.repoKey, "fetching-blobs", {
+            done: fetched,
+            total: totalBlobs,
+          });
+        }
       }
+    };
+    const poolSize = Math.min(BLOB_FETCH_CONCURRENCY, changed.length);
+    await Promise.all(Array.from({ length: poolSize }, () => worker()));
+    // Fail-fast: one failed blob → reject the whole pull (no partial apply).
+    // The transport always throws an Error (httpError / malformed-blob guard),
+    // so this re-throw preserves the original error; the wrap is a type-safety
+    // guard for a hypothetical non-Error throw.
+    if (firstError !== undefined) {
+      throw firstError instanceof Error
+        ? firstError
+        : new Error(String(firstError));
     }
+    const changes: RemoteChange[] = changeResults;
     for (const d of deleted) {
       changes.push({ path: d.path, kind: "delete", uid: d.uid });
     }
