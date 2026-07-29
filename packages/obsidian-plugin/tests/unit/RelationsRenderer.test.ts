@@ -1935,6 +1935,97 @@ describe("RelationsRenderer", () => {
       expect(result.filter((r) => r.provenance === "reified")).toHaveLength(0);
     });
 
+    // ems__Bug #3924 — inline+reified dedup for a `Class_superClass` edge whose
+    // OTHER endpoint (the statement subject) is a SYMBOLIC-IRI class asset. The
+    // existing dedup test above uses a plain-labeled note ("Заметка X"), so the
+    // reified subject is a PATH-form IRI and canonicalises to `uid:` fine. Here
+    // both ends are `prefix__LocalName` class assets — the converter emits their
+    // labels as symbolic IRIs (dual-IRI), so the reified subject is a SYMBOLIC
+    // IRI. Before the fix `tokenFor` resolved only the open asset's own symbolic
+    // form + path-form IRIs → the OTHER end's symbolic IRI fell through to
+    // `iri:<symbolic>`, never matching the inline `uid:` seed → the edge rendered
+    // twice. Reachable since PR #3923 let `exo__Class_superClass` through the
+    // reified path (both-ends-symbolic case).
+    //
+    //   Revert-verified: dropping the symbolic→uid `store.match(⊥,Asset_label,…)`
+    //   branch in `tokenFor` makes this show 2 rows (RED); restored → GREEN.
+    it("dedups an inline+reified Class_superClass edge whose other endpoint is a symbolic-IRI class asset (inline-wins) — #3924", async () => {
+      const store = new InMemoryTripleStore();
+      const CLASS_SUPER_CLASS = Namespace.EXO.term("Class_superClass");
+      const EXO_ASSET_LABEL = Namespace.EXO.term("Asset_label");
+      const EXO_ASSET_UID = Namespace.EXO.term("Asset_uid");
+      // The OTHER end (statement subject) — a symbolic-IRI class asset.
+      const ZTLK_NOTE = Namespace.forPrefix("ztlk").term("Note");
+      // The open asset A — also a symbolic-IRI class asset (statement object).
+      const MM_RESOURCE = Namespace.forPrefix("mm").term("Resource");
+      const RESOURCE_PATH =
+        "assetspaces/kitelev/exoas-my/my-mixins/f9bc503f-0000-0000-0000-000000000001.md";
+      const RESOURCE_UID = "f9bc503f-0000-0000-0000-000000000001";
+      const NOTE_PATH =
+        "assetspaces/kitelev/exoas-public/ztlk/dddddddd-0000-0000-0000-000000000004.md";
+      const NOTE_UID = "dddddddd-0000-0000-0000-000000000004";
+      const STMT_PATH =
+        "assetspaces/kitelev/exoas-my/my-mixins/8a2136de-0000-0000-0000-000000000002.md";
+
+      // Reified: ztlk__Note --superClass--> mm__Resource, BOTH ends as SYMBOLIC IRIs.
+      await seedStatement(
+        store,
+        STMT_PATH,
+        ZTLK_NOTE,
+        CLASS_SUPER_CLASS,
+        MM_RESOURCE,
+      );
+      // Dual-IRI: the class assets' `prefix__LocalName` labels are emitted as
+      // SYMBOLIC-IRI `exo:Asset_label` objects (never Literal), so the
+      // symbolic→uid reverse lookup must go through these — mirrors
+      // NoteToRDFConverter's prefix-label emission.
+      await store.add(
+        new Triple(notePathToIRI(NOTE_PATH), EXO_ASSET_LABEL, ZTLK_NOTE),
+      );
+      await store.add(
+        new Triple(
+          notePathToIRI(NOTE_PATH),
+          EXO_ASSET_UID,
+          new Literal(NOTE_UID),
+        ),
+      );
+      await store.add(
+        new Triple(notePathToIRI(RESOURCE_PATH), EXO_ASSET_LABEL, MM_RESOURCE),
+      );
+
+      // Inline: ztlk__Note references mm__Resource via the SAME predicate key.
+      mockBacklinksCacheManager.getBacklinks.mockReturnValue([NOTE_PATH]);
+      registerFiles(
+        {
+          [RESOURCE_PATH]: {
+            exo__Asset_uid: RESOURCE_UID,
+            exo__Asset_label: "mm__Resource",
+          },
+          [NOTE_PATH]: {
+            exo__Asset_uid: NOTE_UID,
+            exo__Asset_label: "ztlk__Note",
+            exo__Class_superClass: `[[${RESOURCE_UID}]]`,
+          },
+        },
+        { [RESOURCE_PATH]: "mm__Resource", [NOTE_PATH]: "ztlk__Note" },
+      );
+      MetadataHelpers.findAllReferencingProperties.mockReturnValue([
+        "exo__Class_superClass",
+      ]);
+
+      const result = await makeRenderer(store).getAssetRelations(
+        createTestTFile(RESOURCE_PATH),
+        {},
+      );
+
+      // ONE row — inline-wins; the reified duplicate (symbolic-IRI endpoint) is
+      // deduped instead of rendering twice.
+      expect(result).toHaveLength(1);
+      expect(result[0].provenance).toBe("inline");
+      expect(result[0].path).toBe(NOTE_PATH);
+      expect(result.filter((r) => r.provenance === "reified")).toHaveLength(0);
+    });
+
     it("does NOT dedup a reified edge that has no inline counterpart (additive)", async () => {
       const store = new InMemoryTripleStore();
       // Inline: X --relatesTo--> A. Reified: A --relatesTo--> B (a DIFFERENT,
