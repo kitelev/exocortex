@@ -7,8 +7,10 @@
  * ems__Task/Project/Area/Meeting/Session — NOT exo__Asset, NOT a prototype
  * class, NOT a class metaclass) carries a command-level
  * `exocmd__Command_precondition` whose precondition tree ENFORCES the canonical
- * not-a-prototype clause
- * (`FILTER NOT EXISTS { … exo:Instance_class … STRENDS(…, "Prototype") … }`).
+ * not-a-prototype clause — the native transitive super-class walk
+ * (`FILTER NOT EXISTS { … exo:Instance_class … exo:Class_superClass* … exo:Prototype }`),
+ * de-hacked from the earlier STRENDS name-suffix check (req 5579ffa1 + resolver
+ * req 9fddda62).
  *
  * The clause may live on the direct precondition's flat `exocmd__Precondition_sparqlAsk`
  * OR nested inside a `exocmd__AllPrecondition_preconditions` / `exocmd__AnyPrecondition_preconditions`
@@ -48,9 +50,10 @@ const LIFECYCLE_TARGET_CLASSES = new Set([
 ]);
 const UNIVERSAL_TARGET_CLASSES = new Set(["exo__Asset"]);
 
-// STRENDS not-a-prototype clause (suffix check on the symbolic instance_class IRI).
+// Native not-a-prototype clause: a NOT-EXISTS over the transitive super-class walk
+// from the target's instance_class up to exo:Prototype (de-hacked from STRENDS).
 const NOT_A_PROTOTYPE_CLAUSE_RE =
-  /FILTER\s+NOT\s+EXISTS\s*\{[^}]*Instance_class[^}]*STRENDS\s*\(\s*STR\s*\(\s*\?\w+\s*\)\s*,\s*["']Prototype["']\s*\)[^}]*\}/i;
+  /FILTER\s+NOT\s+EXISTS\s*\{[^}]*Instance_class[^}]*Class_superClass[^}]*Prototype[^}]*\}/i;
 
 interface Asset {
   uid: string;
@@ -157,34 +160,36 @@ const IS_PROTOTYPE_ATOMIC_UIDS = new Set([
   "011eb4d6-c95d-4a22-b08d-29961e056961", // "Is prototype"
 ]);
 
-// Positive "is a prototype" check — the STRENDS suffix on the instance_class IRI
-// WITHOUT the `FILTER NOT EXISTS` wrapper. Shape FALLBACK for a hypothetical future
-// pure-IsPrototype atomic whose UID is not yet in IS_PROTOTYPE_ATOMIC_UIDS.
-const IS_PROTOTYPE_STRENDS_RE =
-  /Instance_class[\s\S]*?STRENDS\s*\(\s*STR\s*\(\s*\?\w+\s*\)\s*,\s*["']Prototype["']\s*\)/i;
+// Positive "is a prototype" check — the transitive super-class walk from
+// instance_class up to exo:Prototype, WITHOUT the `FILTER NOT EXISTS` wrapper.
+// Shape FALLBACK for a hypothetical future pure-IsPrototype atomic whose UID is
+// not yet in IS_PROTOTYPE_ATOMIC_UIDS.
+const IS_PROTOTYPE_WALK_RE =
+  /Instance_class[\s\S]*?Class_superClass[\s\S]*?Prototype/i;
 
 /**
- * True iff the ask is a PURE positive "target IS a prototype" check: the STRENDS
- * suffix, no `NOT EXISTS` wrapper, no `UNION` branch, and no ADDITIONAL narrowing
- * `FILTER` beyond the prototype one. A narrowed check (`… STRENDS "Prototype" …
- * FILTER(?extra)`) matches a strict *subset* of prototypes, so negating it (`¬child`)
- * would NOT guarantee not-a-prototype — rejecting a second `FILTER` closes that hole.
- * The SOUND recognition path is UID-identity (`IS_PROTOTYPE_ATOMIC_UIDS`); this shape
- * check is only the fallback for a future canonical atomic with a new UID.
+ * True iff the ask is a PURE positive "target IS a prototype" check: the
+ * `exo:Class_superClass*` walk reaching exo:Prototype, no `NOT EXISTS` wrapper, no
+ * `UNION` branch, and NO narrowing `FILTER`. A narrowed check (`… Class_superClass*
+ * exo:Prototype … FILTER(?extra)`) matches a strict *subset* of prototypes, so
+ * negating it (`¬child`) would NOT guarantee not-a-prototype — rejecting any FILTER
+ * closes that hole. The SOUND recognition path is UID-identity
+ * (`IS_PROTOTYPE_ATOMIC_UIDS`); this shape check is only the fallback for a future
+ * canonical atomic with a new UID.
  */
 function askIsPositivePrototypeCheck(ask: string): boolean {
-  if (!IS_PROTOTYPE_STRENDS_RE.test(ask)) return false;
+  if (!IS_PROTOTYPE_WALK_RE.test(ask)) return false;
   if (/NOT\s+EXISTS/i.test(ask) || /\bUNION\b/i.test(ask)) return false;
-  // A pure IsPrototype has exactly ONE FILTER (the STRENDS one); any extra FILTER
-  // narrows the match to a subset of prototypes → not sound to negate.
+  // A pure IsPrototype walk has NO FILTER; any FILTER narrows the match to a
+  // subset of prototypes → not sound to negate.
   const filterCount = (ask.match(/FILTER\s*\(/gi) || []).length;
-  return filterCount <= 1;
+  return filterCount === 0;
 }
 
 /**
  * True iff a flat ask ENFORCES not-a-prototype: it carries the canonical
- * `FILTER NOT EXISTS { … STRENDS "Prototype" … }` clause AND is not defeated by a
- * sibling `UNION` branch a prototype could satisfy.
+ * `FILTER NOT EXISTS { … exo:Class_superClass* … exo:Prototype }` clause AND is not
+ * defeated by a sibling `UNION` branch a prototype could satisfy.
  */
 function askEnforcesNotPrototypeFlat(ask: string): boolean {
   return NOT_A_PROTOTYPE_CLAUSE_RE.test(ask) && !/\bUNION\b/i.test(ask);
@@ -349,7 +354,7 @@ describe("prototype precondition — forget-leak guard (exoas-exocmd submodule) 
 // ---------------------------------------------------------------------------
 describe("enforcesNotPrototype — AND/OR composite detection semantics", () => {
   const CLAUSE =
-    'PREFIX exo: <https://exocortex.my/ontology/exo#> ASK { FILTER NOT EXISTS { $target exo:Instance_class ?p . FILTER(STRENDS(STR(?p), "Prototype")) } }';
+    'PREFIX exo: <https://exocortex.my/ontology/exo#> ASK { FILTER NOT EXISTS { $target exo:Instance_class ?p . ?p exo:Class_superClass* exo:Prototype } }';
   const PLAIN =
     "PREFIX exo: <https://exocortex.my/ontology/exo#> ASK { $target exo:Instance_class ?c . FILTER(?c != <x>) }";
 
@@ -439,7 +444,7 @@ describe("enforcesNotPrototype — AND/OR composite detection semantics", () => 
 
   // NotPrecondition(IsPrototype) — the composable not-a-prototype form (5b49ef19 → 011eb4d6).
   const IS_PROTO =
-    'ASK { $target <https://exocortex.my/ontology/exo#Instance_class> ?p . FILTER(STRENDS(STR(?p), "Prototype")) }';
+    'ASK { $target <https://exocortex.my/ontology/exo#Instance_class> ?p . ?p <https://exocortex.my/ontology/exo#Class_superClass>* <https://exocortex.my/ontology/exo#Prototype> }';
   const notWrap = (uid: string, child: string): Asset => ({
     uid,
     label: uid,
@@ -473,9 +478,9 @@ describe("enforcesNotPrototype — AND/OR composite detection semantics", () => 
   // Hardening (LOW#1): a clause defeated by a sibling UNION branch a prototype
   // could satisfy must NOT read as enforcing.
   const CLAUSE_UNION =
-    'ASK { { FILTER NOT EXISTS { $target exo:Instance_class ?p . FILTER(STRENDS(STR(?p), "Prototype")) } } UNION { $target exo:Instance_class ?anything } }';
+    'ASK { { FILTER NOT EXISTS { $target exo:Instance_class ?p . ?p exo:Class_superClass* exo:Prototype } } UNION { $target exo:Instance_class ?anything } }';
   const IS_PROTO_UNION =
-    'ASK { { $target exo:Instance_class ?p . FILTER(STRENDS(STR(?p), "Prototype")) } UNION { $target exo:Instance_class ?q } }';
+    'ASK { { $target exo:Instance_class ?p . ?p exo:Class_superClass* exo:Prototype } UNION { $target exo:Instance_class ?q } }';
 
   it("flat clause defeated by a sibling UNION → NOT enforced", () => {
     expect(enforcesNotPrototype(A, resolveOf([leaf(A, CLAUSE_UNION)]))).toBe(
@@ -495,7 +500,7 @@ describe("enforcesNotPrototype — AND/OR composite detection semantics", () => 
   // UID-identity (sound) — NotPrecondition(canonical IsPrototype atomic).
   const CANON_IS_PROTO = "011eb4d6-c95d-4a22-b08d-29961e056961";
   const IS_PROTO_NARROWED =
-    'ASK { $target exo:Instance_class ?p . FILTER(STRENDS(STR(?p), "Prototype")) FILTER(?p != <x>) }';
+    'ASK { $target exo:Instance_class ?p . ?p exo:Class_superClass* exo:Prototype FILTER(?p != <x>) }';
 
   it("NotPrecondition(canonical IsPrototype UID) → enforced BY IDENTITY (even with unresolvable/empty ask)", () => {
     // No asset for the canonical UID in the map — identity alone must suffice.
