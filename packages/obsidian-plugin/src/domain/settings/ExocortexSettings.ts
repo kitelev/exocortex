@@ -7,6 +7,17 @@ export interface DisplayNameSettings {
 
   /** Per-class template overrides (key = class name like "ems__Task") */
   classTemplates: Record<string, string>;
+
+  /**
+   * TBox naming display-projection (RFC 78572fa9 Candidate B Phase 2). When ON (default),
+   * a TBox class/property definition displays as its COMPUTED symbolic projection
+   * `prefix#slug` (e.g. `ems#TaskPrototype`) — composing the namespace ontology's
+   * `exo__Ontology_shortName` with the entity's `exo__Slugable_slug` (with a label-derived
+   * fallback) — instead of its raw `exo__Asset_label`. Never stored; computed per-render.
+   * OFF restores the raw-label display (the revert-verify axis + a user escape hatch).
+   * Optional so a persisted settings object without it defaults ON (backward-compatible).
+   */
+  projectTBoxNames?: boolean;
 }
 
 /**
@@ -34,6 +45,8 @@ export const DEFAULT_DISPLAY_NAME_SETTINGS: DisplayNameSettings = {
   defaultTemplate: "{{exo__Asset_label}}",
 
   classTemplates: {},
+
+  projectTBoxNames: true,
 };
 
 /**
