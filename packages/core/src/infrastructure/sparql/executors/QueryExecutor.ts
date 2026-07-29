@@ -34,6 +34,7 @@ import { AggregateExecutor } from "./AggregateExecutor";
 import { ConstructExecutor } from "./ConstructExecutor";
 import { ServiceExecutor, ServiceExecutorConfig } from "./ServiceExecutor";
 import { GraphExecutor } from "./GraphExecutor";
+import { ClassHierarchyResolvingStore } from "../ClassHierarchyResolvingStore";
 import { SPARQLGenerator } from "../algebra/SPARQLGenerator";
 import { IRI } from "../../../domain/models/rdf/IRI";
 import { Literal } from "../../../domain/models/rdf/Literal";
@@ -79,6 +80,20 @@ export interface QueryExecutorConfig {
    * Configuration for the ServiceExecutor (federated queries).
    */
   serviceConfig?: ServiceExecutorConfig;
+
+  /**
+   * Query-time class-hierarchy resolution (RFC 78572fa9 Candidate B Phase 0,
+   * req `9fddda62`). When enabled (the default), the triple store is wrapped in a
+   * {@link ClassHierarchyResolvingStore} decorator that bridges the symbolic↔file
+   * IRI seam for `exo__Class_superClass` / `rdfs:subClassOf` at match-time, so a
+   * pure-SPARQL transitive walk `?c exo:Class_superClass* <X>` resolves for the
+   * ~99.8% of instances whose `exo__Instance_class` object is the symbolic class
+   * IRI — with zero store growth (nothing is materialized).
+   *
+   * Set to `false` to disable the decorator entirely and restore the baseline
+   * behaviour (the reversibility / revert-verify axis).
+   */
+  resolveClassHierarchy?: boolean;
 }
 
 export class ExoQLQueryExecutor {
@@ -99,8 +114,19 @@ export class ExoQLQueryExecutor {
   private currentGraphContext?: IRI;
 
   constructor(tripleStore: ITripleStore, config: QueryExecutorConfig = {}) {
-    this.tripleStore = tripleStore;
-    this.bgpExecutor = new BGPExecutor(tripleStore);
+    // Query-time class-hierarchy resolution (req 9fddda62): wrap the store ONCE,
+    // at the very top of the ctor, so every sub-executor below (BGP →
+    // PropertyPath, Graph, Filter's UUID lookup) inherits the decorated store and
+    // both the ASK-precondition and SELECT surfaces are fixed by one mechanism.
+    // Predicate-scoped pass-through → byte-identical for every non-hierarchy query.
+    // Disabled via `resolveClassHierarchy: false` (baseline / revert-verify axis).
+    const store =
+      config.resolveClassHierarchy === false
+        ? tripleStore
+        : new ClassHierarchyResolvingStore(tripleStore);
+
+    this.tripleStore = store;
+    this.bgpExecutor = new BGPExecutor(store);
     this.filterExecutor = new FilterExecutor();
     this.optionalExecutor = new OptionalExecutor();
     this.unionExecutor = new UnionExecutor();
@@ -109,7 +135,7 @@ export class ExoQLQueryExecutor {
     this.aggregateExecutor = new AggregateExecutor();
     this.constructExecutor = new ConstructExecutor();
     this.serviceExecutor = new ServiceExecutor(config.serviceConfig);
-    this.graphExecutor = new GraphExecutor(tripleStore);
+    this.graphExecutor = new GraphExecutor(store);
     this.sparqlGenerator = new SPARQLGenerator();
 
     // Set up EXISTS evaluator for FilterExecutor
@@ -118,7 +144,7 @@ export class ExoQLQueryExecutor {
     });
 
     // Set up triple store for UUID lookup functions (exo:byUUID)
-    this.filterExecutor.setTripleStore(tripleStore);
+    this.filterExecutor.setTripleStore(store);
   }
 
   /**
