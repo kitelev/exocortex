@@ -248,7 +248,7 @@ export class DisplayNameResolver {
     metadata: Record<string, unknown>,
   ): string | null {
     if (this.settings.projectTBoxNames === false) return null;
-    if (!this.isTBoxNamingEntity(assetClasses, metadata)) return null;
+    if (!this.isTBoxNamingEntity(assetClasses)) return null;
 
     // A participating exo__DisplayNameSpec is an explicit author override → let it win.
     if (this.ruleService) {
@@ -281,21 +281,15 @@ export class DisplayNameResolver {
 
   /**
    * True when a note is a TBox naming entity — its exo__Instance_class is one of the
-   * exo__Slugable-mixin metaclasses (class / property metaclasses), OR it carries a non-empty
-   * exo__Slugable_slug (forward-compat for any Slugable entity even before its metaclass is
-   * recognized). Detection is population-independent so the projection fires (with a
-   * label-derived fallback) even for an entity whose slug/shortName are not yet materialized.
+   * exo__Slugable-mixin metaclasses (class / property metaclasses). Detection is by the
+   * METACLASS ONLY, deliberately NOT by the mere presence of exo__Slugable_slug: the slug is a
+   * TBox concern (RFC 78572fa9 v3 points 8/11 — free-form ABox instances keep their label and
+   * never carry a slug), so keying detection on the metaclass is (a) population-independent — it
+   * fires for every one of the 762 Phase-1-populated defs AND every unpopulated one (with a
+   * label-derived fallback), and (b) cannot hijack the display of an ABox instance that happens
+   * to carry a slug field (an ABox instance is never a Slugable metaclass instance).
    */
-  private isTBoxNamingEntity(
-    assetClasses: string[],
-    metadata: Record<string, unknown>,
-  ): boolean {
-    if (
-      typeof metadata.exo__Slugable_slug === "string" &&
-      metadata.exo__Slugable_slug.trim()
-    ) {
-      return true;
-    }
+  private isTBoxNamingEntity(assetClasses: string[]): boolean {
     return assetClasses.some((c) => SLUGABLE_METACLASS_KEYS.has(c));
   }
 

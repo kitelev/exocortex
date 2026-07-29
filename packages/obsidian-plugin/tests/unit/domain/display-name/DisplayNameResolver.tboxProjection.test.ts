@@ -88,6 +88,14 @@ const TASK_FM = {
   exo__Asset_label: "Купить молоко",
   exo__Instance_class: ["[[ems__Task]]"],
 };
+// ABox instance that DEFENSIVELY carries a slug field — detection is metaclass-only, so it must
+// NOT be hijacked into a prefix#slug projection (RFC v3 points 8/11: slug is a TBox concern).
+const ABOX_WITH_SLUG_FM = {
+  exo__Asset_uid: "ffff8888-0000-4000-8000-000000000008",
+  exo__Asset_label: "Some Free-Form Label",
+  exo__Instance_class: ["[[ems__Task]]"],
+  exo__Slugable_slug: "ShouldNotProject",
+};
 
 const ONTOLOGY_FILES = [
   {
@@ -99,8 +107,13 @@ const ONTOLOGY_FILES = [
     },
   },
   {
+    // Mirrors today's PRODUCTION anchor shape: exo__Ontology_url present, NO shortName yet.
     path: `${NOSN_ONTO}.md`,
-    frontmatter: { exo__Asset_uid: NOSN_ONTO, exo__Asset_label: "$nosn" },
+    frontmatter: {
+      exo__Asset_uid: NOSN_ONTO,
+      exo__Asset_label: "$nosn",
+      exo__Ontology_url: "https://exocortex.my/ontology/nosn#",
+    },
   },
 ];
 
@@ -112,6 +125,7 @@ function namingVault(): App {
     { path: "wcheck.md", frontmatter: WCHECK_FM },
     { path: "okr.md", frontmatter: OKR_FM },
     { path: "task.md", frontmatter: TASK_FM },
+    { path: "abox-slug.md", frontmatter: ABOX_WITH_SLUG_FM },
   ]);
 }
 
@@ -181,6 +195,14 @@ describe("DisplayNameResolver — TBox naming projection prefix#slug (RFC 78572f
     expect(render(off, TASK_FM, "eeee5555-0000-4000-8000-000000000005")).toBe(
       "Купить молоко",
     );
+  });
+
+  it("@req:318af6a2-2c56-4db4-900e-dd0d0e36362b DETECTION is metaclass-only: an ABox instance that carries a slug field is NOT hijacked into a projection", () => {
+    const r = makeResolver(namingVault(), true);
+    // ems__Task is not a Slugable metaclass → the projection never fires, even with a slug field present.
+    expect(
+      render(r, ABOX_WITH_SLUG_FM, "ffff8888-0000-4000-8000-000000000008"),
+    ).toBe("Some Free-Form Label");
   });
 
   it("@req:318af6a2-2c56-4db4-900e-dd0d0e36362b PRECEDENCE: a participating exo__DisplayNameSpec wins over the projection", () => {
