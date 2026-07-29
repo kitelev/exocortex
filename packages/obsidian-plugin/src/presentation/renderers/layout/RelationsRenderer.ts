@@ -19,6 +19,7 @@ import { AssetRelation } from "./types";
 import {
   getReifiedRelations,
   labelToSymbolicIRI,
+  symbolicIriToPropertyKey,
   ReifiedRelation,
 } from "./getReifiedRelations";
 import { BlockerHelpers } from '@plugin/presentation/utils/BlockerHelpers';
@@ -534,18 +535,53 @@ export class RelationsRenderer {
       (aFm?.exo__Asset_label as string | undefined) ??
       null;
     const aSymbolic = labelToSymbolicIRI(aLabel)?.value;
+    const exoAssetLabel = Namespace.EXO.term("Asset_label");
 
-    const tokenFor = (iri: string): string => {
-      if (iri === aSymbolic) return aToken;
+    // Resolve a path-form (`obsidian://vault/…/<uid>.md`) IRI to a canonical
+    // dedup token via the referenced asset's vault frontmatter uid — the SAME
+    // source the inline seed reads (`rel.metadata.exo__Asset_uid`), so the two
+    // are guaranteed to canonicalise identically. `null` when `iri` is not a
+    // vault path IRI (e.g. a symbolic ontology IRI).
+    const pathIriToToken = (iri: string): string | null => {
       const path = iriToVaultPath(iri);
+      if (!path) return null;
       if (path === file.path) return aToken;
-      if (path) {
-        const f = this.vaultAdapter.getAbstractFileByPath(path);
-        const uid = f
-          ? this.vaultAdapter.getFrontmatter(f as IFile)?.exo__Asset_uid
-          : undefined;
-        if (typeof uid === "string" && uid) return `uid:${uid}`;
-        return `path:${path}`;
+      const f = this.vaultAdapter.getAbstractFileByPath(path);
+      const uid = f
+        ? this.vaultAdapter.getFrontmatter(f as IFile)?.exo__Asset_uid
+        : undefined;
+      return typeof uid === "string" && uid ? `uid:${uid}` : `path:${path}`;
+    };
+
+    const tokenFor = async (iri: string): Promise<string> => {
+      if (iri === aSymbolic) return aToken;
+      const pathToken = pathIriToToken(iri);
+      if (pathToken !== null) return pathToken;
+      // ems__Bug `2c7b99a3` sibling (#3924) — a symbolic ontology IRI (a
+      // class / property def whose label is a `prefix__LocalName` reference)
+      // belonging to the OTHER end of the edge. The inline seed keys that same
+      // endpoint as a `uid:` / `path:` token, so resolve the symbolic form back
+      // to its vault asset (the inverse of `labelToSymbolicIRI`: the RDF
+      // converter emits such a label as a SYMBOLIC-IRI `exo:Asset_label` object,
+      // dual-IRI — `sparql-iri-form-pre-verify`) so both forms canonicalise to
+      // the SAME `uid:` token and the inline-wins collision rule fires. Without
+      // this the symbolic endpoint falls through to `iri:<symbolic>` and never
+      // matches the inline `uid:` seed → the edge renders twice (display-only,
+      // but a duplicate row). Only attempted for a clean symbolic ontology IRI
+      // (guarded by `symbolicIriToPropertyKey`) so arbitrary non-vault IRIs
+      // don't trigger a pointless store scan.
+      if (this.store && symbolicIriToPropertyKey(iri)) {
+        const labelHits = await this.store.match(
+          undefined,
+          exoAssetLabel,
+          new IRI(iri),
+        );
+        for (const t of labelHits) {
+          if (t.subject instanceof IRI) {
+            const token = pathIriToToken(t.subject.value);
+            if (token !== null) return token;
+          }
+        }
       }
       return `iri:${iri}`;
     };
@@ -572,7 +608,9 @@ export class RelationsRenderer {
       // Literal object = a property value, not a relation (RFC R6).
       if (r.objectIsLiteral) continue;
 
-      const key = `${tokenFor(r.subject)}|${predicateIriToKey(r.predicate)}|${tokenFor(r.object)}`;
+      const subjToken = await tokenFor(r.subject);
+      const objToken = await tokenFor(r.object);
+      const key = `${subjToken}|${predicateIriToKey(r.predicate)}|${objToken}`;
       if (seenKeys.has(key)) continue; // inline-wins + reified-vs-reified dedup
       seenKeys.add(key);
 
