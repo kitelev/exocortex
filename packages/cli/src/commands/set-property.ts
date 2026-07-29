@@ -10,7 +10,6 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import {
   FrontmatterService,
   serializeYamlScalar,
-  UNPREFIXED_ASSET_FIELDS,
 } from "@kitelev/exocortex-core";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { WikilinkValidator } from "../services/WikilinkValidator.js";
@@ -21,112 +20,17 @@ import {
   InvalidArgumentsError,
 } from "../utils/errors/index.js";
 import { resolveCoLocationFolder } from "../executors/folderRepairHelpers.js";
+import {
+  DEFAULT_TIMEZONE,
+  UPDATED_AT_KEY,
+  GUARDED_PROPERTIES,
+  IMMUTABLE_PROPERTIES,
+  canonicalYamlKey,
+  guardedReason,
+  stampTimestamp,
+} from "./propertyMutationShared.js";
 
-/**
- * Default timezone for the `exo__Asset_updatedAt` bump. Matches `cli create`'s
- * Asia/Almaty default; overridable with `--timezone`.
- */
-const DEFAULT_TIMEZONE = "Asia/Almaty";
-
-const UPDATED_AT_KEY = "exo__Asset_updatedAt";
 const ISDEFINEDBY_KEY = "exo__Asset_isDefinedBy";
-
-/** `exo__Asset_<field>` shape; group 1 = the bare field name. */
-const ASSET_PREFIXED_SHAPE = /^exo__Asset_(.+)$/;
-
-/**
- * Map an RDF property name to the canonical Obsidian YAML frontmatter KEY it
- * must be WRITTEN under (issue #3944). Most properties write under their own
- * name, but the `UNPREFIXED_ASSET_FIELDS` whitelist (`aliases`, `draft`,
- * `pinned`, `archived`) is stored under the BARE key `<field>:` — the same key
- * `NoteToRDFConverter` reads back as `exo:Asset_<field>`. Without this mapping,
- * `set-property exo__Asset_aliases` wrote a literal `exo__Asset_aliases:` key
- * ALONGSIDE the canonical `aliases:`, producing a duplicate/dead declaration
- * (Obsidian recognises aliases only via `aliases:`).
- *
- * The property NAME guards + TBox validation still run on the RDF/prefixed form
- * (unchanged); only the write key is canonicalised here. A bare `aliases` (no
- * `exo__Asset_` prefix) passes through unchanged — already the canonical key,
- * no regression (AC-2). `archived` is routed to a dedicated command by the
- * guard before reaching this point, so in practice this only affects the
- * non-guarded fields (`aliases`, `draft`, `pinned`).
- */
-function canonicalYamlKey(property: string): string {
-  const m = ASSET_PREFIXED_SHAPE.exec(property);
-  if (m && UNPREFIXED_ASSET_FIELDS.has(m[1])) return m[1];
-  return property;
-}
-
-/**
- * Properties `set-property` REFUSES because a dedicated guarded `exocmd__Command`
- * owns them — each enforces a state-machine transition or a precondition guard,
- * so setting the property directly would bypass that guard. The value is the
- * dedicated command to use instead. This is a SUPERSET of the `dogfood-cli-mutation`
- * hook's routing table: every property that has a dedicated command is refused
- * here and routed to that command, so `set-property` only ever handles the
- * "everything else" class the hook leaves to it.
- *
- * NOT guarded (so `set-property` handles them): `exo__Asset_isDefinedBy` (issue
- * #3848 — allowed, with a co-location warning), and any other scalar / boolean /
- * enum / wikilink property with no dedicated command.
- *
- * Looked up via {@link guardedReason} (own-key `hasOwnProperty` check) so a
- * user-supplied property name like `toString` / `constructor` never matches an
- * inherited Object.prototype key (#3795 review M2).
- */
-const GUARDED_PROPERTIES: Record<string, string> = {
-  // Status state machine (transitions carry preconditions).
-  ems__Effort_status:
-    "apply mark-done|move-to-backlog|move-to-todo|start-effort|set-draft-status <path>",
-  // Criticality zone (not-a-prototype precondition guard).
-  ems__Task_zone: "apply set-criticality-high|medium|low <path>",
-  // Parent / label — dedicated guarded commands (#3779).
-  ems__Effort_parent: 'apply set-parent <path> --input \'{"parent":"<uid>"}\'',
-  exo__Asset_label: 'apply set-label <path> --input \'{"label":"<text>"}\'',
-  // Reclassing — dedicated Convert commands (raw set desyncs class vs co-location).
-  exo__Instance_class:
-    "apply convert-to-task|convert-to-project <path>  (reclassing is a semantic operation with a precondition)",
-  // Status-transition FACT timestamps (set only as status-transition side effects).
-  ems__Effort_startTimestamp:
-    "apply start-effort <path>  (or apply remove-start-timestamp <path>)",
-  ems__Effort_endTimestamp:
-    "apply mark-done <path>  (or apply remove-end-timestamp <path>)",
-  ems__Effort_resolutionTimestamp: "apply mark-done <path>",
-  // Plan / schedule dates — dedicated commands.
-  ems__Effort_plannedStartTimestamp:
-    "apply set-planned-start|plan-on-today|plan-for-evening|shift-day-forward|shift-day-backward <path>",
-  ems__Effort_plannedEndTimestamp: "apply set-planned-end <path>",
-  ems__Effort_scheduledDate: "apply set-scheduled-date <path>",
-  // Votes — dedicated command.
-  ems__Effort_votes: "apply vote-on-effort <path>",
-  // Archive flag (bare `archived:` in frontmatter; `exo__Asset_archived` when
-  // prefixed) — dedicated archive/un-archive commands (un-archive has a Done
-  // precondition).
-  archived: "apply archive-completed|archive-ontologically|un-archive <path>",
-  exo__Asset_archived:
-    "apply archive-completed|archive-ontologically|un-archive <path>",
-};
-
-/**
- * Properties `set-property` REFUSES as immutable identity / self-managed. The
- * value is the reason surfaced to the user.
- */
-const IMMUTABLE_PROPERTIES: Record<string, string> = {
-  exo__Asset_uid:
-    "the asset identity — changing it breaks UID-canon filenames and every inbound [[uid]] wikilink",
-  [UPDATED_AT_KEY]:
-    "auto-managed by set-property (bumped on every mutation)",
-};
-
-/** Own-key lookup on a denylist that never matches inherited Object.prototype keys. */
-function guardedReason(
-  denylist: Record<string, string>,
-  property: string,
-): string | undefined {
-  return Object.prototype.hasOwnProperty.call(denylist, property)
-    ? denylist[property]
-    : undefined;
-}
 
 /**
  * A settable value must be a scalar (string / number / boolean) or an array of
@@ -160,29 +64,6 @@ interface SetPropertyOptions {
   frozenClock?: string;
   dryRun?: boolean;
   yes?: boolean;
-}
-
-/**
- * Render `YYYY-MM-DDTHH:MM:SS` for the given instant in `timezone`. Uses
- * `Intl.DateTimeFormat` with an explicit `timeZone`, so the result is
- * deterministic regardless of the runner's local timezone (mirrors
- * `GenericAssetCreationService.generateTimestampInTimezone`).
- */
-function stampTimestamp(now: Date, timezone: string): string {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-  const parts = formatter.formatToParts(now);
-  const get = (type: string): string =>
-    parts.find((p) => p.type === type)?.value ?? "00";
-  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}`;
 }
 
 /**
