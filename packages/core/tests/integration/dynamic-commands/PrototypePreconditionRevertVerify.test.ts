@@ -8,13 +8,16 @@
  *     (`https://exocortex.my/ontology/ems#TaskPrototype`);
  *   - `exo:Class_superClass` triples live under the class FILE IRI
  *     (`obsidian://vault/<uid>.md`), NOT on the symbolic IRI.
- * These two representations are unconnected in SPARQL (the resolver bridges them
- * in code). The earlier transitive form
- * `$target exo:Instance_class/exo:Class_superClass* exo:Prototype` false-passed a
- * synthetic store that (wrongly) put superClass on the symbolic IRI; on the real
- * shape it never fires. The shipped precondition uses a STRENDS suffix check on
- * the symbolic instance_class IRI instead. A guard test below asserts the
- * transitive form would NOT hide on this real shape (documenting the gotcha).
+ * These two representations were unconnected in raw SPARQL. The shipped
+ * precondition now uses the SEMANTIC native walk
+ * `FILTER NOT EXISTS { $target exo:Instance_class ?c . ?c exo:Class_superClass* exo:Prototype }`
+ * — DE-HACKED (req 5579ffa1) from the interim STRENDS name-suffix check. It fires
+ * because the query-time class-hierarchy resolver (`ClassHierarchyResolvingStore`,
+ * req 9fddda62, default ON in `ExoQLQueryExecutor` / `PreconditionEvaluator`) heals
+ * the symbolic↔file-IRI seam at match-time, so the transitive super-class walk
+ * resolves for symbolic-form instances (see class-hierarchy-resolver.test.ts). The
+ * fixture therefore carries `TaskPrototype-file → exo:Prototype` (a real superClass
+ * edge on the class FILE IRI) so the walk reaches exo:Prototype exactly as in prod.
  *
  * Both layers run against the REAL `exoas-exocmd` submodule precondition strings.
  *
@@ -38,9 +41,11 @@ const SUBMODULE_EXOCMD = path.resolve(__dirname, "../../../../exoas-exocmd/exocm
 const START_EFFORT_PRECONDITION_UID = "575404fc"; // augmented status gate
 const STANDALONE_PRECONDITION_UID = "847c37e0"; // "Target is not a prototype"
 
-// The shipped STRENDS not-a-prototype clause (suffix check on the symbolic IRI).
+// The shipped native not-a-prototype clause: a transitive exo:Class_superClass*
+// walk from the target's instance_class up to exo:Prototype (de-hacked from the
+// STRENDS suffix check). Requires `Class_superClass` in the NOT-EXISTS block.
 const NOT_A_PROTOTYPE_CLAUSE_RE =
-  /FILTER\s+NOT\s+EXISTS\s*\{[^}]*Instance_class[^}]*STRENDS\s*\(\s*STR\s*\(\s*\?\w+\s*\)\s*,\s*["']Prototype["']\s*\)[^}]*\}\s*/i;
+  /FILTER\s+NOT\s+EXISTS\s*\{[^}]*Instance_class[^}]*Class_superClass[^}]*Prototype[^}]*\}\s*/i;
 
 const PROTO_ASSET = "obsidian://vault/my-task-template.md";
 const CONCRETE_ASSET = "obsidian://vault/buy-milk.md";
@@ -59,10 +64,11 @@ function readSparqlAsk(uidPrefix: string): string {
 
 /**
  * Production-shape store. ABox instance_class → SYMBOLIC class IRI. The
- * TaskPrototype CLASS file (file IRI) carries Asset_label/uid + a file-IRI
- * `Class_superClass` → symbolic `ems#Task` so the resolver's code-side
- * subclass-closure expands `ems__TaskPrototype` → `ems__Task` (matching the
- * lifecycle binding) — exactly as in production.
+ * TaskPrototype CLASS file (file IRI) carries Asset_label/uid + file-IRI
+ * `Class_superClass` edges → symbolic `ems#Task` (so the resolver's subclass-closure
+ * expands `ems__TaskPrototype` → `ems__Task` for the lifecycle binding) AND →
+ * `exo#Prototype` (so the native not-a-prototype walk reaches it) — exactly the
+ * multi-valued superClass shape of the real ems__TaskPrototype class.
  */
 function buildRealStore(): InMemoryTripleStore {
   const store = new InMemoryTripleStore();
@@ -72,10 +78,12 @@ function buildRealStore(): InMemoryTripleStore {
   const status = I(`${EMS}Effort_status`);
 
   // TaskPrototype class FILE (the resolver seeds the hierarchy walk from here,
-  // resolved via label→uid→file). superClass object is the SYMBOLIC ems#Task.
+  // resolved via label→uid→file). superClass objects are the SYMBOLIC ems#Task
+  // (lifecycle binding) AND exo#Prototype (not-a-prototype walk target).
   store.add(new Triple(I(TASK_PROTOTYPE_FILE), Namespace.EXO.term("Asset_uid"), new Literal("tp-uid")));
   store.add(new Triple(I(TASK_PROTOTYPE_FILE), Namespace.EXO.term("Asset_label"), new Literal("ems__TaskPrototype")));
   store.add(new Triple(I(TASK_PROTOTYPE_FILE), superClass, I(`${EMS}Task`)));
+  store.add(new Triple(I(TASK_PROTOTYPE_FILE), superClass, I(`${EXO}Prototype`)));
 
   // Prototype-TEMPLATE asset — instance_class is the SYMBOLIC prototype IRI.
   // Status set so a status gate would otherwise pass; the not-a-prototype clause
@@ -91,9 +99,12 @@ function buildRealStore(): InMemoryTripleStore {
 
 describe("prototype precondition — revert-verify on REAL store shape (@req:5579ffa1-a829-4fcf-b93d-4fb664b02d62)", () => {
   describe("A. PreconditionEvaluator on real augmented submodule strings", () => {
-    it("the shipped preconditions carry the STRENDS not-a-prototype clause (suffix form)", () => {
+    it("the shipped preconditions carry the native exo:Class_superClass* not-a-prototype clause (de-hacked from STRENDS)", () => {
       expect(readSparqlAsk(START_EFFORT_PRECONDITION_UID)).toMatch(NOT_A_PROTOTYPE_CLAUSE_RE);
       expect(readSparqlAsk(STANDALONE_PRECONDITION_UID)).toMatch(NOT_A_PROTOTYPE_CLAUSE_RE);
+      // The interim STRENDS suffix hack is gone from the shipped sparqlAsk.
+      expect(readSparqlAsk(START_EFFORT_PRECONDITION_UID)).not.toMatch(/STRENDS/i);
+      expect(readSparqlAsk(STANDALONE_PRECONDITION_UID)).not.toMatch(/STRENDS/i);
     });
 
     it("GREEN: augmented Start-Effort precondition HIDES on a status-bearing prototype-template", async () => {
@@ -118,13 +129,16 @@ describe("prototype precondition — revert-verify on REAL store shape (@req:557
       expect(await ev.evaluate({ id: "x", label: "x", sparqlAsk: reverted }, PROTO_ASSET)).toBe(true);
     });
 
-    it("GOTCHA guard: the OLD transitive form would NOT hide on the real dual-IRI shape", async () => {
-      // Documents why STRENDS replaced the transitive walk: on the real store,
-      // superClass lives on the file IRI, so the symbolic instance_class never
-      // reaches exo:Prototype → the transitive clause fails to hide.
+    it("DE-HACK: the native exo:Class_superClass* walk HIDES the prototype and SHOWS the concrete (resolver 9fddda62 bridges symbolic↔file)", async () => {
+      // The de-hack: on the real dual-IRI store, the query-time class-hierarchy
+      // resolver (default ON in PreconditionEvaluator's ExoQLQueryExecutor) heals
+      // the symbolic↔file seam so the transitive super-class walk fires. The
+      // two-triple form (matching the shipped preconditions) reaches exo:Prototype
+      // via the TaskPrototype-file's superClass edge → the template is hidden.
       const ev = new PreconditionEvaluator(buildRealStore());
-      const transitive = `PREFIX exo: <${EXO}> ASK { FILTER NOT EXISTS { $target exo:Instance_class/exo:Class_superClass* exo:Prototype } }`;
-      expect(await ev.evaluate({ id: "x", label: "x", sparqlAsk: transitive }, PROTO_ASSET)).toBe(true); // (would-be) leak
+      const walk = `ASK { FILTER NOT EXISTS { $target <${EXO}Instance_class> ?c . ?c <${EXO}Class_superClass>* <${EXO}Prototype> } }`;
+      expect(await ev.evaluate({ id: "x", label: "x", sparqlAsk: walk }, PROTO_ASSET)).toBe(false); // hidden
+      expect(await ev.evaluate({ id: "x", label: "x", sparqlAsk: walk }, CONCRETE_ASSET)).toBe(true); // shown
     });
   });
 
