@@ -9,6 +9,26 @@ export interface DisplayNameContext {
   createdDate?: Date;
 }
 
+/**
+ * The exo__Slugable-mixin metaclasses. A note whose exo__Instance_class is one of these
+ * (matched by UID OR label form) is a TBox naming entity that displays as `prefix#slug`
+ * (RFC 78572fa9 Candidate B Phase 2). exo__Class + exo__Property carry the exo__Slugable
+ * mixin directly; the three concrete property metaclasses inherit it via exo__Property.
+ * Verified against the live TBox (vault-my exoas-exo, 2026-07-29).
+ */
+const SLUGABLE_METACLASS_KEYS: ReadonlySet<string> = new Set<string>([
+  "8619c4fc-64f1-4869-b17e-e34186cacca9",
+  "exo__Class",
+  "38277bfa-d7f9-4a75-b856-b23276ab0db3",
+  "exo__Property",
+  "9a1cf31c-9d41-4ef3-9023-584a8d087d16",
+  "exo__ObjectProperty",
+  "ae56ca4c-b610-42a4-a25d-058c23673296",
+  "exo__DatatypeProperty",
+  "84756998-3b4e-4989-91cc-a5d5c23664d4",
+  "exo__URLProperty",
+]);
+
 export class DisplayNameResolver {
   constructor(
     private readonly settings: DisplayNameSettings,
@@ -25,6 +45,15 @@ export class DisplayNameResolver {
     // conditional spec (matchPath/matchValue) is evaluated per-render — the specialized
     // displayName tracks the instance's state.
     const assetClasses = this.extractAssetClasses(metadata);
+
+    // TBox naming display-projection (RFC 78572fa9 Candidate B Phase 2, req 318af6a2): a
+    // class-def / property-def displays as its COMPUTED `prefix#slug` (e.g. ems#TaskPrototype)
+    // instead of the raw exo__Asset_label. Subordinate to a participating exo__DisplayNameSpec
+    // and disabled by projectTBoxNames=false; never fires for ABox instances. Returns null to
+    // fall through to the normal template path.
+    const projection = this.computeTBoxNamingProjection(assetClasses, metadata);
+    if (projection !== null) return projection;
+
     const template = this.getTemplateForClasses(assetClasses, metadata);
     const engine = new DisplayNameTemplateEngine(template);
 
@@ -195,6 +224,126 @@ export class DisplayNameResolver {
     }
 
     return cleaned || null;
+  }
+
+  /**
+   * TBox naming display-projection (RFC 78572fa9 Candidate B Phase 2). A TBox naming entity —
+   * a class-def or property-def — displays as its COMPUTED symbolic projection `prefix#slug`
+   * (e.g. `ems#TaskPrototype`, `ems#Effort_status`) instead of its raw exo__Asset_label
+   * (`ems__TaskPrototype`). NEVER stored — composed per-render from the naming fields:
+   *
+   *   slug    = exo__Slugable_slug ?? <label local-name>  (the part after the label's first `__`)
+   *   prefix  = <isDefinedBy ontology>.exo__Ontology_shortName ?? <label prefix>  (before `__`)
+   *   display = prefix ? `${prefix}#${slug}` : slug
+   *
+   * Returns null (→ the normal template path) when: the projection is disabled
+   * (settings.projectTBoxNames === false); the note is not a TBox naming entity; a participating
+   * exo__DisplayNameSpec exists (an explicit author override wins); or no slug can be resolved.
+   * ABox instances never match the detection, so their displayName is byte-identical. The
+   * fallback chain covers entities/ontologies missing the Phase-1 naming fields (RFC v4: the 22
+   * orphan-namespace prefixes with no ontology anchor display via the label-prefix fallback).
+   */
+  private computeTBoxNamingProjection(
+    assetClasses: string[],
+    metadata: Record<string, unknown>,
+  ): string | null {
+    if (this.settings.projectTBoxNames === false) return null;
+    if (!this.isTBoxNamingEntity(assetClasses, metadata)) return null;
+
+    // A participating exo__DisplayNameSpec is an explicit author override → let it win.
+    if (this.ruleService) {
+      for (const assetClass of assetClasses) {
+        if (
+          this.ruleService.getParticipatingRules(assetClass, metadata).length >
+          0
+        ) {
+          return null;
+        }
+      }
+    }
+
+    const label =
+      typeof metadata.exo__Asset_label === "string"
+        ? metadata.exo__Asset_label.trim()
+        : "";
+    const [labelPrefix, labelLocal] = this.splitPrefixedLabel(label);
+
+    const slugField =
+      typeof metadata.exo__Slugable_slug === "string"
+        ? metadata.exo__Slugable_slug.trim()
+        : "";
+    const slug = slugField || labelLocal;
+    if (!slug) return null; // no slug field AND the label is not `prefix__Local` → cannot project.
+
+    const prefix = this.resolveOntologyShortName(metadata) ?? labelPrefix;
+    return prefix ? `${prefix}#${slug}` : slug;
+  }
+
+  /**
+   * True when a note is a TBox naming entity — its exo__Instance_class is one of the
+   * exo__Slugable-mixin metaclasses (class / property metaclasses), OR it carries a non-empty
+   * exo__Slugable_slug (forward-compat for any Slugable entity even before its metaclass is
+   * recognized). Detection is population-independent so the projection fires (with a
+   * label-derived fallback) even for an entity whose slug/shortName are not yet materialized.
+   */
+  private isTBoxNamingEntity(
+    assetClasses: string[],
+    metadata: Record<string, unknown>,
+  ): boolean {
+    if (
+      typeof metadata.exo__Slugable_slug === "string" &&
+      metadata.exo__Slugable_slug.trim()
+    ) {
+      return true;
+    }
+    return assetClasses.some((c) => SLUGABLE_METACLASS_KEYS.has(c));
+  }
+
+  /**
+   * Resolve the note's namespace ontology (exo__Asset_isDefinedBy → ontology frontmatter, via
+   * the metadataResolver two-hop) and return its exo__Ontology_shortName (trimmed) — the
+   * canonical prefix. null when there is no metadataResolver, no isDefinedBy, or the ontology
+   * carries no shortName (→ the caller falls back to the label-derived prefix). This reads the
+   * SAME field the future query-input name-resolver (Candidate E) will use, so DISPLAY and
+   * QUERY stay symmetric.
+   */
+  private resolveOntologyShortName(
+    metadata: Record<string, unknown>,
+  ): string | null {
+    if (!this.metadataResolver) return null;
+    const isDefinedBy = this.firstString(metadata.exo__Asset_isDefinedBy);
+    if (!isDefinedBy) return null;
+    const ontologyFm = this.metadataResolver(isDefinedBy);
+    const shortName = ontologyFm?.exo__Ontology_shortName;
+    return typeof shortName === "string" && shortName.trim()
+      ? shortName.trim()
+      : null;
+  }
+
+  /**
+   * Split a `prefix__LocalName` label into [prefix, localName] on the FIRST `__` separator
+   * (the prefix may itself contain single underscores, e.g. `ztlk_v2__X`; `__` is the
+   * separator). Returns [null, null] when the label has no `__` separator or an empty part.
+   */
+  private splitPrefixedLabel(label: string): [string | null, string | null] {
+    const idx = label.indexOf("__");
+    if (idx <= 0) return [null, null];
+    const prefix = label.slice(0, idx);
+    const local = label.slice(idx + 2);
+    if (!local) return [null, null];
+    return [prefix, local];
+  }
+
+  /** First trimmed non-empty string of a scalar-or-array value, else null. */
+  private firstString(value: unknown): string | null {
+    let raw = value;
+    if (Array.isArray(raw)) {
+      if (raw.length === 0) return null;
+      raw = raw[0];
+    }
+    if (typeof raw !== "string") return null;
+    const trimmed = raw.trim();
+    return trimmed || null;
   }
 
   getConfiguredClasses(): string[] {
