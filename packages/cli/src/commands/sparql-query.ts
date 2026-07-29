@@ -28,6 +28,7 @@ import { ResponseBuilder, ErrorCode, type QueryResult, type ConstructResult } fr
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { CacheManager } from "../cache/CacheManager.js";
 import { QueryResultCache } from "../cache/QueryResultCache.js";
+import { computeVaultSignature } from "../cache/vaultSignature.js";
 import { ProgressIndicator } from "../utils/ProgressIndicator.js";
 import { QueryAnalyzer } from "../utils/QueryAnalyzer.js";
 import { TemplateRegistry } from "../templates/TemplateRegistry.js";
@@ -324,10 +325,19 @@ export function sparqlQueryCommand(): Command {
 
         const vaultPath = resolve(options.vault);
 
+        // Issue #3983: coarse vault content signature for cache invalidation.
+        // Computed once (a stat-only walk, no file reads) and used for BOTH the
+        // get (detect a vault change since caching) and the set (record current
+        // state). Only when the result cache is in play. null on failure → the
+        // cache falls back to TTL-only invalidation.
+        const vaultSignature = useQueryResultCache
+          ? await computeVaultSignature(vaultPath)
+          : null;
+
         // Check query result cache first (before vault loading)
         if (useQueryResultCache) {
           const queryResultCache = new QueryResultCache();
-          const cachedResult = await queryResultCache.get(cacheKeyQuery, cacheTtlSeconds);
+          const cachedResult = await queryResultCache.get(cacheKeyQuery, cacheTtlSeconds, vaultSignature);
 
           if (cachedResult !== null) {
             const totalDuration = Date.now() - startTime;
@@ -531,7 +541,7 @@ export function sparqlQueryCommand(): Command {
               triples: JSON.parse(triplesFormatter.formatJson(resultTriples)),
             };
             const queryResultCache = new QueryResultCache();
-            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds);
+            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds, vaultSignature);
           }
 
           if (outputFormat === "json") {
@@ -598,7 +608,7 @@ export function sparqlQueryCommand(): Command {
               bindings,
             };
             const queryResultCache = new QueryResultCache();
-            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds);
+            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds, vaultSignature);
           }
 
           if (outputFormat === "json") {

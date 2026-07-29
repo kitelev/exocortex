@@ -42,6 +42,14 @@ interface CachedData {
   timestamp: number;
   /** The cached query result */
   result: unknown;
+  /**
+   * Coarse vault content signature at cache time (Issue #3983). When present and
+   * a signature is supplied to {@link QueryResultCache.get}, a mismatch means the
+   * vault changed since caching → the entry is treated as stale. Absent on
+   * entries written before this feature (and when the caller supplies no
+   * signature) → falls back to TTL-only invalidation (prior behaviour).
+   */
+  vaultSignature?: string;
 }
 
 /**
@@ -114,9 +122,17 @@ export class QueryResultCache {
    *
    * @param query - The SPARQL query string
    * @param ttlSeconds - Time-to-live in seconds
-   * @returns The cached result, or null if not found or expired
+   * @param vaultSignature - Optional coarse vault content signature (Issue #3983).
+   *   When both this and the stored signature are present and differ, the vault
+   *   changed since caching → the entry is stale (removed, cache miss). Omit (or
+   *   pass null) to keep TTL-only invalidation.
+   * @returns The cached result, or null if not found, expired, or stale
    */
-  async get(query: string, ttlSeconds: number): Promise<unknown | null> {
+  async get(
+    query: string,
+    ttlSeconds: number,
+    vaultSignature?: string | null,
+  ): Promise<unknown | null> {
     const cacheKey = this.getCacheKey(query);
     const cachePath = this.getCachePath(cacheKey);
 
@@ -137,6 +153,19 @@ export class QueryResultCache {
         return null;
       }
 
+      // Issue #3983: vault-mtime-aware invalidation. If the caller supplied a
+      // signature and the entry was cached with one, a mismatch means the vault
+      // changed since caching (e.g. a set-property / apply mutation) → stale.
+      // When either signature is absent, fall back to TTL-only (prior behaviour).
+      if (
+        vaultSignature &&
+        cached.vaultSignature &&
+        cached.vaultSignature !== vaultSignature
+      ) {
+        await fs.remove(cachePath);
+        return null;
+      }
+
       return cached.result;
     } catch {
       // If any error occurs reading cache, treat as cache miss
@@ -152,8 +181,16 @@ export class QueryResultCache {
    * @param query - The SPARQL query string
    * @param result - The query result to cache
    * @param ttlSeconds - Time-to-live in seconds (stored for reference)
+   * @param vaultSignature - Optional coarse vault content signature (Issue #3983)
+   *   captured at cache time, used by {@link QueryResultCache.get} to detect a
+   *   vault change. Omit (or pass null) to store a TTL-only entry.
    */
-  async set(query: string, result: unknown, ttlSeconds: number): Promise<void> {
+  async set(
+    query: string,
+    result: unknown,
+    ttlSeconds: number,
+    vaultSignature?: string | null,
+  ): Promise<void> {
     const cacheKey = this.getCacheKey(query);
     const cachePath = this.getCachePath(cacheKey);
 
@@ -163,6 +200,7 @@ export class QueryResultCache {
     const data: CachedData = {
       timestamp: Date.now(),
       result,
+      ...(vaultSignature ? { vaultSignature } : {}),
     };
 
     // Write atomically to prevent corruption
