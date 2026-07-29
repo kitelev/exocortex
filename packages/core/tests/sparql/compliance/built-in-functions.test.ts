@@ -674,9 +674,10 @@ describe("SPARQL 1.1 Compliance - Built-in Functions", () => {
     });
 
     describe("HOURS / MINUTES / SECONDS", () => {
-      // HOURS returns local timezone-adjusted value instead of UTC value
-      // Expected "14" (UTC), got "19" (UTC+5)
-      it.skip("should extract time components from dateTime", async () => {
+      // #3941 fix: HOURS/MINUTES/SECONDS now return the lexical component in the
+      // value's own representation (tz-agnostic) instead of the host-local shift,
+      // so this is machine-timezone-independent (previously got "19" on UTC+5).
+      it("should extract time components from dateTime", async () => {
         const query = `
           PREFIX ex: <http://example.org/>
           SELECT (HOURS(?dt) AS ?h) (MINUTES(?dt) AS ?m) (SECONDS(?dt) AS ?s) WHERE {

@@ -15,7 +15,9 @@ import type {
   Ordering,
   Variable as SparqljsVariable,
 } from "../SparqljsTypes";
-import { isVariableExpression } from "../SparqljsTypes";
+import { isVariableExpression, isFunctionCallExpression } from "../SparqljsTypes";
+import { CustomAggregateRegistry } from "../aggregates/CustomAggregateRegistry";
+import { BUILT_IN_AGGREGATES } from "../aggregates/BuiltInAggregates";
 
 /**
  * Translates SPARQL aggregate-related constructs from the sparqljs AST
@@ -70,7 +72,16 @@ export class AggregateTranslator {
         });
         aggregateVarMap.set(v.expression, v.variable.value);
       } else {
-        this.collectNestedAggregates(v.expression, aggregates, aggregateVarMap);
+        const customIri = this.customAggregateIri(v.expression);
+        if (customIri) {
+          aggregates.push({
+            variable: v.variable.value,
+            expression: this.translateCustomAggregateFunctionCall(v.expression, customIri),
+          });
+          aggregateVarMap.set(v.expression, v.variable.value);
+        } else {
+          this.collectNestedAggregates(v.expression, aggregates, aggregateVarMap);
+        }
       }
     }
 
@@ -237,6 +248,57 @@ export class AggregateTranslator {
   }
 
   /**
+   * If `expr` is a function-call to a registered custom aggregate, return its IRI.
+   *
+   * sparqljs only tags the built-in SPARQL aggregates (COUNT/SUM/AVG/MIN/MAX/
+   * GROUP_CONCAT/SAMPLE) as `type:"aggregate"`. A prefixed IRI call such as
+   * `agg:median(?x)` is parsed as a plain `functionCall`, so without this bridge it
+   * never reaches the aggregate path and its projection variable is silently dropped
+   * (issue #3942). The `agg:median`/`agg:stddev`/`agg:variance`/`agg:mode`/
+   * `agg:percentileNN` implementations already exist in BUILT_IN_AGGREGATES and the
+   * AggregateExecutor computes them — this recognizes the call so they are reachable.
+   *
+   * @returns the aggregate IRI if the call targets a registered custom aggregate
+   *          (built-in or user-registered), else null.
+   */
+  private customAggregateIri(expr: SparqljsExpression): string | null {
+    if (!isFunctionCallExpression(expr)) return null;
+    const fn = (expr as { function?: unknown }).function;
+    let iri: string | null = null;
+    if (typeof fn === "string") {
+      iri = fn;
+    } else if (fn && typeof fn === "object" && "value" in fn) {
+      iri = String((fn as { value: unknown }).value);
+    }
+    if (!iri) return null;
+    const registered =
+      iri in BUILT_IN_AGGREGATES ||
+      CustomAggregateRegistry.getInstance().get(iri) !== undefined;
+    return registered ? iri : null;
+  }
+
+  /**
+   * Translate a `functionCall` node targeting a registered custom aggregate into an
+   * aggregate expression (mirrors the IRI branch of translateAggregateExpression).
+   */
+  private translateCustomAggregateFunctionCall(
+    expr: SparqljsExpression,
+    iri: string
+  ): AggregateExpression {
+    const fc = expr as unknown as {
+      args?: SparqljsExpression[];
+      distinct?: boolean;
+    };
+    const arg = fc.args && fc.args.length > 0 ? fc.args[0] : undefined;
+    return {
+      type: "aggregate",
+      aggregation: { type: "custom", iri },
+      expression: arg ? this.translateExpressionFn(arg) : undefined,
+      distinct: fc.distinct || false,
+    };
+  }
+
+  /**
    * Recursively collect all aggregate expressions nested within an expression tree.
    */
   private collectNestedAggregates(
@@ -253,7 +315,21 @@ export class AggregateTranslator {
         expression: this.translateAggregateExpression(expr as SparqljsAggregateExpression),
       });
       aggregateVarMap.set(expr, varName);
-    } else if ("type" in expr && expr.type === "operation" && "args" in expr) {
+      return;
+    }
+
+    const customIri = this.customAggregateIri(expr);
+    if (customIri) {
+      const varName = `__agg${this.aggregateCounter++}`;
+      aggregates.push({
+        variable: varName,
+        expression: this.translateCustomAggregateFunctionCall(expr, customIri),
+      });
+      aggregateVarMap.set(expr, varName);
+      return;
+    }
+
+    if ("type" in expr && expr.type === "operation" && "args" in expr) {
       const opExpr = expr as OperationExpression;
       for (const arg of opExpr.args) {
         if (!Array.isArray(arg) && "type" in arg && !("patterns" in arg)) {
