@@ -11,6 +11,10 @@ import {
   isAssetSpaceFrontmatter,
 } from "@kitelev/exocortex-core";
 
+import {
+  detectUnmountedClosureMembers,
+  formatClosureGapWarning,
+} from "../../domain/profile/closureGap";
 import { PluginLockManager } from "./PluginLockManager";
 import { nodeFsPromises } from "./lazyNodeModules";
 import type { AssetSpaceManager, AssetSpaceInfo } from "./AssetSpaceManager";
@@ -925,10 +929,8 @@ export class ProfileApplyManager {
     // declared (closure) set — NOT resolveEffectiveSet — so the floor URIs it
     // would inject don't mask a profile that legitimately omits a floor AS.
     const allInfos = this.listAllAssetSpaceInfos();
-    const { effectiveAsUids } = await this.resolveDeclaredAndEffective(
-      targetProfileUid,
-      allInfos,
-    );
+    const { declaredAsUids, effectiveAsUids } =
+      await this.resolveDeclaredAndEffective(targetProfileUid, allInfos);
 
     // Compute toDestroy / toMaterialize via .gitmodules ∩ filesystem presence.
     // Phase 6 Vision Lock #9 amendment: `.gitmodules` entries persist post-destroy
@@ -1090,6 +1092,14 @@ export class ProfileApplyManager {
       targetProfileLabel,
       () => this.clearStuckLocalState(deps.localDataStore),
       this.computeApplyDeadlineMs(toDestroy.length + toMaterialize.length),
+    );
+    // #3956 belt-and-suspenders — WARN on any dependsOn-closure member the
+    // profile declares but apply could not materialize (no scanned descriptor).
+    this.emitClosureGapWarning(
+      declaredAsUids,
+      allInfos,
+      effectiveAsUids,
+      `Profile "${targetProfileLabel}"`,
     );
   }
 
@@ -1575,10 +1585,8 @@ export class ProfileApplyManager {
     // R24 floor (UID OR namespace). Uses the declared (closure) set — NOT
     // resolveEffectiveSet — which would silently inject floor ontologies.
     const allInfos = this.listAllAssetSpaceInfos();
-    const { effectiveAsUids } = await this.resolveDeclaredAndEffective(
-      targetProfileUid,
-      allInfos,
-    );
+    const { declaredAsUids, effectiveAsUids } =
+      await this.resolveDeclaredAndEffective(targetProfileUid, allInfos);
 
     // 2. Diff: materialised == folder exists on disk (mount-state, derivePath).
     const infoBySubmodulePath = new Map<string, AssetSpaceInfo>();
@@ -1728,6 +1736,14 @@ export class ProfileApplyManager {
       targetProfileLabel,
       () => this.clearStuckLocalState(localDataStore),
       this.computeApplyDeadlineMs(toDestroy.length + toMaterialize.length),
+    );
+    // #3956 belt-and-suspenders — WARN on any dependsOn-closure member the
+    // profile declares but apply could not materialize (no scanned descriptor).
+    this.emitClosureGapWarning(
+      declaredAsUids,
+      allInfos,
+      effectiveAsUids,
+      `Profile "${targetProfileLabel}"`,
     );
   }
 
@@ -2479,6 +2495,56 @@ export class ProfileApplyManager {
    * TS-floor) for the mount-state diff. Shared by the desktop + REST apply paths
    * to keep the resolution logic identical (parity invariant).
    */
+  /**
+   * issue #3956 — the inputs a dependsOn-closure completeness check needs: the
+   * scanned AssetSpace catalogue (`dependsOn` edges) + the UIDs currently
+   * materialized on disk (their folder exists). Cross-platform (folder presence,
+   * not `.gitmodules`). Exposed so the plugin's `Add AssetSpace by URL` command
+   * can detect an incomplete mount-closure at add time (the exact subset-add gap
+   * that left the alpha tester's homoiconic commands silently dead).
+   */
+  public async getClosureCheckInputs(): Promise<{
+    infos: AssetSpaceInfo[];
+    materializedUids: Set<string>;
+  }> {
+    const infos = this.listAllAssetSpaceInfos();
+    const materializedUids = new Set<string>();
+    for (const info of infos) {
+      if (await this.app.vault.adapter.exists(info.folderName)) {
+        materializedUids.add(info.uid);
+      }
+    }
+    return { infos, materializedUids };
+  }
+
+  /**
+   * issue #3956 — belt-and-suspenders: after an apply materializes, WARN (via
+   * `notify`) for any `exo__AssetSpace_dependsOn`-closure member of `roots` left
+   * unmaterialized (`materializedUids` is the set apply intended to mount — a
+   * closure member with no scanned descriptor is silently dropped by
+   * {@link resolveDeclaredAndEffective} and can never be materialized). Non-fatal
+   * + best-effort: never changes the apply outcome. NO warning when the closure
+   * is complete (no false-positive).
+   */
+  private emitClosureGapWarning(
+    roots: Iterable<string>,
+    allInfos: ReadonlyArray<AssetSpaceInfo>,
+    materializedUids: ReadonlySet<string>,
+    contextLabel: string,
+  ): void {
+    try {
+      const missing = detectUnmountedClosureMembers(
+        roots,
+        allInfos,
+        materializedUids,
+      );
+      const warning = formatClosureGapWarning(missing, contextLabel);
+      if (warning !== null) this.notify(warning);
+    } catch {
+      // Best-effort diagnostic — never let a closure-gap check fail the apply.
+    }
+  }
+
   private async resolveDeclaredAndEffective(
     targetProfileUid: string,
     allInfos: ReadonlyArray<AssetSpaceInfo>,

@@ -44,6 +44,11 @@
  */
 
 import { derivePath } from "@kitelev/exocortex-core";
+import {
+  detectUnmountedClosureMembers,
+  formatClosureGapWarning,
+} from "../../domain/profile/closureGap";
+import type { AssetSpaceInfo } from "./AssetSpaceManager";
 
 /** Subset of {@link AssetSpaceManager} used here (REST tarball pull). */
 export interface IAssetSpacePuller {
@@ -248,6 +253,19 @@ export interface BootstrapAssetSpaceCommandsDeps {
    * re-index the freshly added assets. Failures are swallowed (best-effort).
    */
   onMaterialized?: () => Promise<void>;
+  /**
+   * issue #3956 — the inputs for a dependsOn-closure completeness check: the
+   * scanned AssetSpace catalogue (with `exo__AssetSpace_dependsOn` edges) + the
+   * UIDs currently materialised on disk. Wired in production to delegate to
+   * `ProfileApplyManager.getClosureCheckInputs`. When present, `Add AssetSpace
+   * by URL` warns specifically (naming the missing member[s]) instead of the
+   * generic "dependencies are not auto-resolved" advisory; when absent (or the
+   * added AssetSpace has no scanned descriptor), the generic advisory is kept.
+   */
+  getClosureCheckInputs?: () => Promise<{
+    infos: AssetSpaceInfo[];
+    materializedUids: Set<string>;
+  }>;
   /** Branch ref to pull from. Default `"main"`. */
   ref?: string;
 }
@@ -427,9 +445,18 @@ export class BootstrapAssetSpaceCommands {
 
     try {
       const m = await this.materialize(res.url, submodulePath, isGit);
+      // #3956 — detect an INCOMPLETE dependsOn-closure at add time and warn
+      // SPECIFICALLY (naming the missing member[s] + flagging TBox-providers).
+      // This is the exact subset-add gap that left the alpha tester's homoiconic
+      // command system silently dead: `exoas-public` mounted, its dependsOn
+      // `exoas-exocmd` class-TBox never mounted → `CommandResolver.loadCommand`
+      // fails on every command. Falls back to the generic advisory when the
+      // closure-inputs dep is unwired or the added AssetSpace has no gap.
+      const gapNote = await this.closureGapNote(res.url, m.folderName);
       this.d.notify(
-        `AssetSpace added — ${m.folderName}@${m.sha} ← ${res.url}. ` +
-          "Add any AssetSpaces it depends on manually — dependencies are not auto-resolved.",
+        `AssetSpace added — ${m.folderName}@${m.sha} ← ${res.url}.` +
+          (gapNote ??
+            " Add any AssetSpaces it depends on manually — dependencies are not auto-resolved."),
       );
     } catch (e) {
       this.d.notify(`Add AssetSpace failed: ${this.msg(e)}`);
@@ -438,6 +465,41 @@ export class BootstrapAssetSpaceCommands {
       return;
     }
     await this.runOnMaterialized();
+  }
+
+  /**
+   * issue #3956 — the SPECIFIC dependsOn-closure gap warning for the AssetSpace
+   * just added (`url` / `folderName`), or `null` to fall back to the generic
+   * advisory. Locates the added AssetSpace's scanned descriptor (by source URL,
+   * then folder), computes its `exo__AssetSpace_dependsOn` closure, and warns for
+   * every closure member not currently materialised. Best-effort + non-fatal —
+   * any failure returns `null` (the add already succeeded).
+   */
+  private async closureGapNote(
+    url: string,
+    folderName: string,
+  ): Promise<string | null> {
+    const getInputs = this.d.getClosureCheckInputs;
+    if (getInputs === undefined) return null;
+    try {
+      const { infos, materializedUids } = await getInputs();
+      const added = infos.find(
+        (i) => i.git === url || i.folderName === folderName,
+      );
+      if (added === undefined) return null; // no scanned descriptor → generic
+      const missing = detectUnmountedClosureMembers(
+        [added.uid],
+        infos,
+        materializedUids,
+      );
+      const warning = formatClosureGapWarning(
+        missing,
+        added.namespace.length > 0 ? added.namespace : "The added AssetSpace",
+      );
+      return warning === null ? null : ` ${warning}`;
+    } catch {
+      return null; // best-effort — never fail the add on a diagnostic
+    }
   }
 
   // ─────────────────────────── internal ───────────────────────────
