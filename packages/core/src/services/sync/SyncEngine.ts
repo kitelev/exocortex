@@ -350,7 +350,10 @@ const BLOB_PROGRESS_STEP = 10;
  * cuts the wall-clock. Cap 6 is ~20× under GitHub's 100-concurrent ceiling —
  * safe ONLY because Phase 1 / A already ships solid Retry-After backoff + a
  * global per-sync time-budget, so a concurrency-induced secondary limit is
- * honored, not ignored. A fixed const (the RFC fixes the cap at 4-6), not a dep.
+ * honored, not ignored. Note the per-sync rate-limit budget is now SHARED across
+ * these concurrent waiters (it can drain up to `cap`× faster on a genuine
+ * secondary burst) — still safe: the outcome is fail-fast + warn-defer, never a
+ * silent bad apply. A fixed const (the RFC fixes the cap at 4-6), not a dep.
  */
 const BLOB_FETCH_CONCURRENCY = 6;
 /**
