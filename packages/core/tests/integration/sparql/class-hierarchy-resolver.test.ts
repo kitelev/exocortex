@@ -50,11 +50,12 @@ function makeFile(uid: string): IFile {
 }
 
 /**
- * Build a real store from fixture notes through NoteToRDFConverter — the
+ * Convert fixture notes to triples through the real NoteToRDFConverter — the
  * production emission path (converts each note's frontmatter + resolves its
- * wikilinks via the mock vault, then aggregates into an InMemoryTripleStore).
+ * wikilinks via a mock vault). The mock resolves ANY of `notes` (so a class ref
+ * from one note resolves to its target note).
  */
-async function buildStore(notes: FixtureNote[]): Promise<InMemoryTripleStore> {
+async function convertNotes(notes: FixtureNote[]) {
   const files = notes.map((n) => makeFile(n.uid));
   const fmByPath = new Map<string, IFrontmatter>();
   const fileByBasename = new Map<string, IFile>();
@@ -84,11 +85,20 @@ async function buildStore(notes: FixtureNote[]): Promise<InMemoryTripleStore> {
   } as unknown as jest.Mocked<IVaultAdapter>;
 
   const converter = new NoteToRDFConverter(mockVault);
-  const store = new InMemoryTripleStore();
+  const out = [];
   for (const file of files) {
-    const triples = await converter.convertNote(file);
-    await store.addAll(triples);
+    out.push(...(await converter.convertNote(file)));
   }
+  return out;
+}
+
+/**
+ * Build a real store from fixture notes (aggregate `convertNotes` into an
+ * InMemoryTripleStore).
+ */
+async function buildStore(notes: FixtureNote[]): Promise<InMemoryTripleStore> {
+  const store = new InMemoryTripleStore();
+  await store.addAll(await convertNotes(notes));
   return store;
 }
 
@@ -294,6 +304,50 @@ describe("query-time class-hierarchy resolver (req 9fddda62)", () => {
         }`;
       expect(await runSelect(store, outside, "s", true)).toEqual([]);
       void [CY_A]; // referenced for symmetry / documentation
+    });
+  });
+
+  describe("index invalidates on store mutation — a LONG-LIVED executor survives a reindex", () => {
+    // The plugin's SPARQLQueryService constructs the executor ONCE and mutates the
+    // SAME store in place on reindex (clear/removeAll + addAll). A class added after
+    // the first hierarchy match (which builds the index) MUST become visible without
+    // reconstructing the executor — the store-scoped, count-invalidated index cache.
+    it("@req:9fddda62-be7f-453f-9f69-94f7d6835f1c a class added to the store after the index was built resolves through the SAME executor", async () => {
+      const store = await buildStore(HIERARCHY_NOTES);
+      // ONE long-lived executor, reused across queries (the SPARQLQueryService shape).
+      const executor = new ExoQLQueryExecutor(store, { resolveClassHierarchy: true });
+      const cq = translator.translate(
+        parser.parse(`${PREFIX}
+          SELECT ?s WHERE {
+            ?s exo:Instance_class ?c .
+            ?c exo:Class_superClass* <${C3}> .
+          }`),
+      );
+      const values = async () =>
+        (await executor.executeAll(cq))
+          .map((s) => (s.get("s") instanceof IRI ? (s.get("s") as IRI).value : undefined))
+          .filter((v): v is string => v !== undefined);
+
+      // First query builds the index (count = N).
+      expect(await values()).toContain("obsidian://vault/aaaa0000-0000-4000-8000-000000000000.md");
+      const A0 = "obsidian://vault/a0000000-0000-4000-8000-000000000000.md";
+      expect(await values()).not.toContain(A0);
+
+      // Mid-session reindex-add: a NEW class C0 ⊑ C1 + instance A0 → C0, mutated into
+      // the SAME store (count changes). The C1 note is included only so C0's parent
+      // ref resolves (its triples dedup on addAll).
+      const delta = await convertNotes([
+        HIERARCHY_NOTES[2], // C1 (for resolution; dedup)
+        { uid: "c0000000-0000-4000-8000-000000000000", frontmatter: { exo__Asset_uid: "c0000000-0000-4000-8000-000000000000", exo__Asset_label: "test__C0", exo__Class_superClass: "[[c1000000-0000-4000-8000-000000000000]]" } },
+        { uid: "a0000000-0000-4000-8000-000000000000", frontmatter: { exo__Asset_uid: "a0000000-0000-4000-8000-000000000000", exo__Asset_label: "Instance A0", exo__Instance_class: "[[c0000000-0000-4000-8000-000000000000]]" } },
+      ]);
+      await store.addAll(delta);
+
+      // The SAME executor now resolves A0 (index rebuilt because count changed).
+      // Without count-invalidation the stale index would omit C0 → A0 missing (RED).
+      expect(await values()).toContain(A0);
+      // ...and the original instance A still resolves.
+      expect(await values()).toContain("obsidian://vault/aaaa0000-0000-4000-8000-000000000000.md");
     });
   });
 });

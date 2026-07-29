@@ -52,7 +52,12 @@ import { Namespace } from "../../domain/models/rdf/Namespace";
  * consistent across the bridge).
  *
  * - **Predicate-scoped** — non-hierarchy queries are byte-identical pass-through
- *   → zero behaviour change for the rest of the engine.
+ *   → zero behaviour change for the rest of the engine. Only the DEFAULT-graph,
+ *   FORWARD transitive walk is bridged: `GRAPH { … }` named-graph hierarchy walks
+ *   (they route through `matchInGraph`, a pass-through here) and inverse
+ *   `^exo:Class_superClass` (find-subclasses; `match(undefined, pred, start)` →
+ *   variable subject → pass-through) are out of scope — the RFC targets the
+ *   default-graph forward walk.
  * - **Symmetric** — a file-IRI subject with native edges short-circuits (its first
  *   hop is direct); only symbolic subjects are bridged. So it heals BOTH the
  *   symbolic-form and the file-IRI-form instances (whose first hop is native and
@@ -63,15 +68,27 @@ import { Namespace } from "../../domain/models/rdf/Namespace";
  * - **Reversible** — the `resolveClassHierarchy` config toggle on
  *   `ExoQLQueryExecutor` disables the decorator entirely → baseline behaviour.
  *
- * ## Index lifecycle
+ * ## Index lifecycle (store-scoped, count-invalidated)
  *
  * The `symbolic → file-IRI` index is built lazily on the first hierarchy match and
- * memoized for the decorator's lifetime (one build per store-instance, O(number of
- * classes ≈ hundreds), then per-hop O(1) lookup + the same `match` the walk already
- * does). Because the decorator is constructed inside `ExoQLQueryExecutor`, its
- * lifetime equals the executor's; callers that reindex the underlying store
- * construct a fresh executor (the existing pattern), so the cache never goes stale
- * under a live reindex.
+ * cached in a process-wide `WeakMap` keyed on the WRAPPED STORE INSTANCE (not the
+ * decorator / executor), tagged with the store's triple count at build time. This
+ * matters because `ExoQLQueryExecutor` — hence this decorator — can outlive a
+ * reindex: the plugin's `SPARQLQueryService` constructs the executor ONCE and holds
+ * it for the whole session while `VaultRDFIndexer.refresh()` / `updateFile()` /
+ * `reindexPathsFromDisk()` mutate the SAME `InMemoryTripleStore` in place
+ * (`clear()`/`removeAll()` + `addAll()`). Keying on the store instance + its count:
+ *   - a reindex that adds/removes triples (class created/deleted, any file change)
+ *     changes `count()` → the next hierarchy match rebuilds the index (no staleness);
+ *   - all executors over the SAME store (e.g. `PreconditionEvaluator`'s fresh
+ *     per-evaluation executor) share the one built index → no per-evaluation
+ *     O(#classes) rebuild.
+ *
+ * Cost: one O(#classes) build per store-content change, then per-hop O(1) lookup +
+ * one cheap `count()` per hierarchy match. Known limit (rare): a mutation that keeps
+ * the triple count IDENTICAL (e.g. relabelling a class in place) is not detected
+ * until the next count-changing edit or a plugin reload — `count()` is the store's
+ * only cheap content fingerprint (no mutation/version signal is exposed).
  */
 export class ClassHierarchyResolvingStore implements ITripleStore {
   private static readonly EXO_CLASS_SUPER_CLASS =
@@ -88,11 +105,17 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
   ]);
 
   /**
-   * Memoized `symbolic class IRI value → class file IRI` map, built lazily on the
-   * first hierarchy match. The promise (not the resolved map) is memoized so that
-   * concurrent hierarchy matches trigger exactly one build.
+   * Store-scoped, count-invalidated cache of the `symbolic class IRI value → class
+   * file IRI` map. Keyed on the WRAPPED store instance (so every decorator/executor
+   * over the same store shares one build) and tagged with the store's triple count
+   * at build time (so an in-place reindex that changes the count triggers a rebuild
+   * — see the class doc's "Index lifecycle"). A `WeakMap` never leaks: an entry is
+   * collected with its store.
    */
-  private indexPromise: Promise<Map<string, IRI>> | null = null;
+  private static readonly INDEX_CACHE = new WeakMap<
+    ITripleStore,
+    { count: number; index: Map<string, IRI> }
+  >();
 
   // ===== Optional ITripleStore surface — mirrored from the wrapped store =====
   // Declared optional and assigned in the constructor only when the underlying
@@ -152,7 +175,11 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
     // A subject with native hierarchy edges (a class queried by its FILE IRI —
     // the file-IRI-form instances' first hop) resolves directly; no bridge needed.
     // This is what makes the decorator symmetric: file-IRI first hop is native,
-    // subsequent symbolic ancestor hops are bridged below.
+    // subsequent symbolic ancestor hops are bridged below. Load-bearing invariant:
+    // the converter NEVER emits a symbolic class IRI as a hierarchy-triple SUBJECT
+    // (Class_superClass subjects are always the class FILE IRI), so `direct` is
+    // empty for a symbolic subject — the short-circuit only fires for file-IRI
+    // subjects and never suppresses a needed bridge.
     const direct = await this.real.match(subject, predicate, object);
     if (direct.length > 0) {
       return direct;
@@ -185,11 +212,22 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
     return index.get(symbolicValue) ?? null;
   }
 
-  private getIndex(): Promise<Map<string, IRI>> {
-    if (this.indexPromise === null) {
-      this.indexPromise = this.buildIndex();
+  /**
+   * Return the store-scoped index, rebuilding it when the wrapped store's triple
+   * count has changed since the cached build (an in-place reindex). Concurrent
+   * misses may both build — the result is identical, so the redundant build is
+   * harmless; within a single query the count is stable, so exactly one build runs
+   * and every later hierarchy hop hits the cache.
+   */
+  private async getIndex(): Promise<Map<string, IRI>> {
+    const count = await this.real.count();
+    const cached = ClassHierarchyResolvingStore.INDEX_CACHE.get(this.real);
+    if (cached && cached.count === count) {
+      return cached.index;
     }
-    return this.indexPromise;
+    const index = await this.buildIndex();
+    ClassHierarchyResolvingStore.INDEX_CACHE.set(this.real, { count, index });
+    return index;
   }
 
   /**
