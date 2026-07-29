@@ -4,11 +4,34 @@ import os from "os";
 import fs from "fs-extra";
 
 /**
+ * Default eviction caps (Issue #3981). When either the entry count or the
+ * total size of the query-results cache exceeds its cap after a `set`, the
+ * oldest entries are pruned until both are back under the cap. These prevent
+ * the unbounded growth observed pre-#3979 (18,094 files / 191 MB on a real
+ * machine — distinct queries each write one file and were never proactively
+ * evicted). Cached SPARQL results are freely regenerable, so pruning is safe.
+ */
+export const DEFAULT_MAX_ENTRIES = 500;
+export const DEFAULT_MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+
+/**
  * Options for QueryResultCache constructor
  */
 export interface QueryResultCacheOptions {
   /** Custom cache directory. Defaults to ~/.exocortex/cache/query-results */
   cacheDir?: string;
+  /**
+   * Maximum number of cache entries before oldest-first eviction kicks in on
+   * `set`. Defaults to {@link DEFAULT_MAX_ENTRIES}. A non-positive / non-finite
+   * value disables the count cap.
+   */
+  maxEntries?: number;
+  /**
+   * Maximum total cache size in bytes before oldest-first eviction kicks in on
+   * `set`. Defaults to {@link DEFAULT_MAX_SIZE_BYTES}. A non-positive /
+   * non-finite value disables the size cap.
+   */
+  maxSizeBytes?: number;
 }
 
 /**
@@ -53,10 +76,14 @@ export interface QueryCacheStats {
  */
 export class QueryResultCache {
   private readonly cacheDir: string;
+  private readonly maxEntries: number;
+  private readonly maxSizeBytes: number;
 
   constructor(options: QueryResultCacheOptions = {}) {
     this.cacheDir = options.cacheDir ??
       path.join(os.homedir(), ".exocortex", "cache", "query-results");
+    this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
+    this.maxSizeBytes = options.maxSizeBytes ?? DEFAULT_MAX_SIZE_BYTES;
   }
 
   /**
@@ -141,6 +168,89 @@ export class QueryResultCache {
     // Write atomically to prevent corruption
     // fs-extra's writeJson creates a temp file and renames it
     await fs.writeJson(cachePath, data, { spaces: 0 });
+
+    // Issue #3981 — enforce size/count caps with oldest-first eviction so the
+    // cache directory does not grow unbounded from distinct queries. Best-effort:
+    // never let a prune failure fail the write we just committed, and never evict
+    // the entry we just wrote.
+    await this.prune(cacheKey);
+  }
+
+  /**
+   * Enforces the entry-count and total-size caps by evicting the oldest cache
+   * entries (by file mtime) until both are back within their caps. Expired
+   * entries — being the oldest writes — are naturally evicted first.
+   *
+   * Best-effort: swallows all errors (a prune failure must never fail the
+   * `set` that triggered it) and never evicts the just-written entry.
+   *
+   * @param keepKey - Cache key of the just-written entry to preserve.
+   */
+  private async prune(keepKey: string): Promise<void> {
+    try {
+      const countCapped = Number.isFinite(this.maxEntries) && this.maxEntries > 0;
+      const sizeCapped = Number.isFinite(this.maxSizeBytes) && this.maxSizeBytes > 0;
+      if (!countCapped && !sizeCapped) {
+        return;
+      }
+
+      const files = await fs.readdir(this.cacheDir);
+      const jsonFiles = files.filter(f => f.endsWith(".json"));
+
+      const entries: { path: string; mtimeMs: number; size: number }[] = [];
+      let totalSizeBytes = 0;
+      const keepFile = `${keepKey}.json`;
+      for (const file of jsonFiles) {
+        if (file === keepFile) {
+          // The just-written entry always counts toward totals but is never a
+          // prune candidate.
+          try {
+            const stat = await fs.stat(path.join(this.cacheDir, file));
+            totalSizeBytes += stat.size;
+          } catch {
+            // File vanished (concurrent prune) — ignore.
+          }
+          continue;
+        }
+        try {
+          const filePath = path.join(this.cacheDir, file);
+          const stat = await fs.stat(filePath);
+          entries.push({ path: filePath, mtimeMs: stat.mtimeMs, size: stat.size });
+          totalSizeBytes += stat.size;
+        } catch {
+          // File vanished between readdir and stat — ignore.
+        }
+      }
+
+      // +1 for the always-kept just-written entry (excluded from `entries`).
+      let entryCount = entries.length + 1;
+
+      const overCap = () =>
+        (countCapped && entryCount > this.maxEntries) ||
+        (sizeCapped && totalSizeBytes > this.maxSizeBytes);
+
+      if (!overCap()) {
+        return;
+      }
+
+      // Oldest first (smallest mtime). Expired entries sort to the front.
+      entries.sort((a, b) => a.mtimeMs - b.mtimeMs);
+
+      for (const entry of entries) {
+        if (!overCap()) {
+          break;
+        }
+        try {
+          await fs.remove(entry.path);
+          entryCount--;
+          totalSizeBytes -= entry.size;
+        } catch {
+          // Ignore — another process may have removed it.
+        }
+      }
+    } catch {
+      // Prune is best-effort — never fail the caller's `set`.
+    }
   }
 
   /**
