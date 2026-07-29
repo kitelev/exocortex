@@ -10,6 +10,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import {
   FrontmatterService,
   serializeYamlScalar,
+  UNPREFIXED_ASSET_FIELDS,
 } from "@kitelev/exocortex-core";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { WikilinkValidator } from "../services/WikilinkValidator.js";
@@ -29,6 +30,32 @@ const DEFAULT_TIMEZONE = "Asia/Almaty";
 
 const UPDATED_AT_KEY = "exo__Asset_updatedAt";
 const ISDEFINEDBY_KEY = "exo__Asset_isDefinedBy";
+
+/** `exo__Asset_<field>` shape; group 1 = the bare field name. */
+const ASSET_PREFIXED_SHAPE = /^exo__Asset_(.+)$/;
+
+/**
+ * Map an RDF property name to the canonical Obsidian YAML frontmatter KEY it
+ * must be WRITTEN under (issue #3944). Most properties write under their own
+ * name, but the `UNPREFIXED_ASSET_FIELDS` whitelist (`aliases`, `draft`,
+ * `pinned`, `archived`) is stored under the BARE key `<field>:` — the same key
+ * `NoteToRDFConverter` reads back as `exo:Asset_<field>`. Without this mapping,
+ * `set-property exo__Asset_aliases` wrote a literal `exo__Asset_aliases:` key
+ * ALONGSIDE the canonical `aliases:`, producing a duplicate/dead declaration
+ * (Obsidian recognises aliases only via `aliases:`).
+ *
+ * The property NAME guards + TBox validation still run on the RDF/prefixed form
+ * (unchanged); only the write key is canonicalised here. A bare `aliases` (no
+ * `exo__Asset_` prefix) passes through unchanged — already the canonical key,
+ * no regression (AC-2). `archived` is routed to a dedicated command by the
+ * guard before reaching this point, so in practice this only affects the
+ * non-guarded fields (`aliases`, `draft`, `pinned`).
+ */
+function canonicalYamlKey(property: string): string {
+  const m = ASSET_PREFIXED_SHAPE.exec(property);
+  if (m && UNPREFIXED_ASSET_FIELDS.has(m[1])) return m[1];
+  return property;
+}
 
 /**
  * Properties `set-property` REFUSES because a dedicated guarded `exocmd__Command`
@@ -379,9 +406,12 @@ export function setPropertyCommand(): Command {
         const timezone = options.timezone ?? DEFAULT_TIMEZONE;
         const updatedAt = stampTimestamp(now, timezone);
 
+        // Write under the CANONICAL YAML key (issue #3944): `exo__Asset_aliases`
+        // maps to the bare `aliases:` key so we update it in place rather than
+        // adding a duplicate literal `exo__Asset_aliases:` alongside it.
         let updated = fm.updateProperty(
           original,
-          property,
+          canonicalYamlKey(property),
           serializeForWrite(value),
         );
         updated = fm.updateProperty(updated, UPDATED_AT_KEY, updatedAt);
