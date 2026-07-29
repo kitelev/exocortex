@@ -22,6 +22,7 @@ import { resolveDepsCommand } from "./commands/resolve-deps.js";
 import { exosyncParityCommand } from "./commands/exosync-parity.js";
 import { exosyncCommand } from "./commands/exosync-sync.js";
 import { requirementsCommand } from "./commands/requirements.js";
+import { cacheCommand } from "./commands/cache.js";
 
 // Version injected at build time by esbuild (see esbuild.config.mjs)
 declare const __CLI_VERSION__: string;
@@ -101,6 +102,10 @@ export function createProgram(version?: string): Command {
 
   // RFC 0003 (requirements management) P1 — traceability checker
   program.addCommand(requirementsCommand());
+
+  // Issue #3981 — SPARQL query-result cache maintenance (clear / stats).
+  // Complements the automatic size/count-cap eviction in QueryResultCache.set.
+  program.addCommand(cacheCommand());
 
   return program;
 }
