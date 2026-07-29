@@ -139,8 +139,8 @@ function edge(subs: AlgebraTriple[], childUuid: string, parentLocalName: string)
     : null;
 }
 
-describe("exo naming-capability TBox layer — exo__Slugable metaclass mixin (@req:ec019a32)", () => {
-  it("@req:ec019a32 exo__Class subsumes exo__Slugable via the metaclass-level superClass mixin", async () => {
+describe("exo naming-capability TBox layer — exo__Slugable metaclass mixin (@req:ec019a32-4116-4709-a652-fab3842fb5c1)", () => {
+  it("@req:ec019a32-4116-4709-a652-fab3842fb5c1 exo__Class subsumes exo__Slugable via the metaclass-level superClass mixin", async () => {
     const triples = await convertNotes([
       classNote(SLUGABLE, "exo__Slugable", [ASSET]),
       classNote(CLASS, "exo__Class", [ASSET, SLUGABLE]), // ← the mixin
@@ -153,7 +153,7 @@ describe("exo naming-capability TBox layer — exo__Slugable metaclass mixin (@r
     expect(h.isSubClassOf(e!.child, e!.parent)).toBe(true);
   });
 
-  it("@req:ec019a32 exo__Property subsumes exo__Slugable via the metaclass-level superClass mixin", async () => {
+  it("@req:ec019a32-4116-4709-a652-fab3842fb5c1 exo__Property subsumes exo__Slugable via the metaclass-level superClass mixin", async () => {
     const triples = await convertNotes([
       classNote(SLUGABLE, "exo__Slugable", [ASSET]),
       classNote(PROPERTY, "exo__Property", [ASSET, SLUGABLE]), // ← the mixin
@@ -166,7 +166,7 @@ describe("exo naming-capability TBox layer — exo__Slugable metaclass mixin (@r
     expect(h.isSubClassOf(e!.child, e!.parent)).toBe(true);
   });
 
-  it("@req:ec019a32 REVERT-VERIFY: without the mixin, exo__Class has NO superClass edge to exo__Slugable", async () => {
+  it("@req:ec019a32-4116-4709-a652-fab3842fb5c1 REVERT-VERIFY: without the mixin, exo__Class has NO superClass edge to exo__Slugable", async () => {
     // Same fixture MINUS the exo__Class → exo__Slugable superClass link.
     const triples = await convertNotes([
       classNote(SLUGABLE, "exo__Slugable", [ASSET]),
