@@ -14,10 +14,66 @@ export class DateTimeAccessors {
   // =========================================================================
 
   /**
+   * Extract the lexical date/time components of an ISO 8601 date or dateTime
+   * string WITHOUT any timezone conversion.
+   *
+   * SPARQL 1.1 §17.4.5 accessors (YEAR/MONTH/DAY/HOURS/MINUTES/SECONDS) return the
+   * components of the value's OWN lexical representation: a naive-local timestamp
+   * yields its wall-clock components, a tz-annotated timestamp yields the
+   * components in its stated timezone. Neither is normalized to UTC nor to the
+   * host machine's local timezone.
+   *
+   * Going through `new Date(str).getHours()` instead re-interprets the instant
+   * against the host's timezone and double-shifts UTC-labeled naive-local values
+   * (issue #3941: a naive-local "11:36", surfaced as "…11:36:12Z", returned
+   * HOURS=16 on a UTC+5 host — the offset was applied twice).
+   *
+   * @returns lexical components, or null if the string is not a valid ISO 8601
+   *          date / dateTime (caller falls back to `new Date` for legacy formats).
+   */
+  private static lexicalComponents(dateStr: string): {
+    year: number;
+    month: number;
+    day: number;
+    hours: number;
+    minutes: number;
+    seconds: number;
+  } | null {
+    // YYYY-MM-DD[(T| )HH:MM:SS[.fff]][Z|±HH[:]MM] — a trailing tz designator is
+    // matched but deliberately ignored (lexical components are tz-agnostic).
+    const m = dateStr.match(
+      /^(-?\d{4,})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?)?(?:Z|[+-]\d{2}:?\d{2})?$/,
+    );
+    if (!m) return null;
+
+    const year = parseInt(m[1], 10);
+    const month = parseInt(m[2], 10);
+    const day = parseInt(m[3], 10);
+    const hours = m[4] !== undefined ? parseInt(m[4], 10) : 0;
+    const minutes = m[5] !== undefined ? parseInt(m[5], 10) : 0;
+    const wholeSeconds = m[6] !== undefined ? parseInt(m[6], 10) : 0;
+    const seconds = m[7] ? wholeSeconds + parseFloat(`0.${m[7]}`) : wholeSeconds;
+
+    // Reject out-of-range components (e.g. "2025-13-45") so the caller's
+    // `new Date` fallback raises the same "invalid date string" error as before.
+    if (
+      month < 1 || month > 12 ||
+      day < 1 || day > 31 ||
+      hours > 24 || minutes > 59 || wholeSeconds > 60
+    ) {
+      return null;
+    }
+
+    return { year, month, day, hours, minutes, seconds };
+  }
+
+  /**
    * SPARQL 1.1 YEAR function.
-   * Returns the year component of a dateTime value.
+   * Returns the year component of a dateTime value (lexical, tz-agnostic).
    */
   static year(dateStr: string): number {
+    const c = DateTimeAccessors.lexicalComponents(dateStr);
+    if (c) return c.year;
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) {
       throw new Error(`YEAR: invalid date string '${dateStr}'`);
@@ -27,9 +83,11 @@ export class DateTimeAccessors {
 
   /**
    * SPARQL 1.1 MONTH function.
-   * Returns the month component of a dateTime value (1-12).
+   * Returns the month component of a dateTime value (1-12, lexical, tz-agnostic).
    */
   static month(dateStr: string): number {
+    const c = DateTimeAccessors.lexicalComponents(dateStr);
+    if (c) return c.month;
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) {
       throw new Error(`MONTH: invalid date string '${dateStr}'`);
@@ -39,9 +97,11 @@ export class DateTimeAccessors {
 
   /**
    * SPARQL 1.1 DAY function.
-   * Returns the day component of a dateTime value (1-31).
+   * Returns the day component of a dateTime value (1-31, lexical, tz-agnostic).
    */
   static day(dateStr: string): number {
+    const c = DateTimeAccessors.lexicalComponents(dateStr);
+    if (c) return c.day;
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) {
       throw new Error(`DAY: invalid date string '${dateStr}'`);
@@ -51,9 +111,11 @@ export class DateTimeAccessors {
 
   /**
    * SPARQL 1.1 HOURS function.
-   * Returns the hours component of a dateTime value (0-23).
+   * Returns the hours component of a dateTime value (0-23, lexical, tz-agnostic).
    */
   static hours(dateStr: string): number {
+    const c = DateTimeAccessors.lexicalComponents(dateStr);
+    if (c) return c.hours;
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) {
       throw new Error(`HOURS: invalid date string '${dateStr}'`);
@@ -63,9 +125,11 @@ export class DateTimeAccessors {
 
   /**
    * SPARQL 1.1 MINUTES function.
-   * Returns the minutes component of a dateTime value (0-59).
+   * Returns the minutes component of a dateTime value (0-59, lexical, tz-agnostic).
    */
   static minutes(dateStr: string): number {
+    const c = DateTimeAccessors.lexicalComponents(dateStr);
+    if (c) return c.minutes;
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) {
       throw new Error(`MINUTES: invalid date string '${dateStr}'`);
@@ -75,9 +139,12 @@ export class DateTimeAccessors {
 
   /**
    * SPARQL 1.1 SECONDS function.
-   * Returns the seconds component of a dateTime value (0-59, may include decimal).
+   * Returns the seconds component of a dateTime value (0-59, may include a
+   * fractional part; lexical, tz-agnostic).
    */
   static seconds(dateStr: string): number {
+    const c = DateTimeAccessors.lexicalComponents(dateStr);
+    if (c) return c.seconds;
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) {
       throw new Error(`SECONDS: invalid date string '${dateStr}'`);
