@@ -305,6 +305,17 @@ export function sparqlQueryCommand(): Command {
           );
         }
 
+        // Issue #3979: fix the write-only result cache. The cache key MUST be
+        // computed from the RAW query (as loaded here), BEFORE the later
+        // shorthand + PREFIX-injection mutations of `queryString` (see
+        // transformShorthandNotation / injectExocortexPrefixes below). Using
+        // `queryString` for both get and set silently keyed the READ on the raw
+        // query but the WRITE on the prefix-injected query → different sha256 →
+        // permanent miss + a fresh cache file every run. Capture the key once
+        // and use `cacheKeyQuery` for BOTH get and set (below). The executed
+        // query is unchanged — only the cache key is fixed.
+        const cacheKeyQuery = queryString;
+
         // Dry-run mode: validate syntax only, no vault loading
         if (options.dryRun) {
           await executeDryRun(queryString, options, outputFormat);
@@ -316,7 +327,7 @@ export function sparqlQueryCommand(): Command {
         // Check query result cache first (before vault loading)
         if (useQueryResultCache) {
           const queryResultCache = new QueryResultCache();
-          const cachedResult = await queryResultCache.get(queryString, cacheTtlSeconds);
+          const cachedResult = await queryResultCache.get(cacheKeyQuery, cacheTtlSeconds);
 
           if (cachedResult !== null) {
             const totalDuration = Date.now() - startTime;
@@ -520,7 +531,7 @@ export function sparqlQueryCommand(): Command {
               triples: JSON.parse(triplesFormatter.formatJson(resultTriples)),
             };
             const queryResultCache = new QueryResultCache();
-            await queryResultCache.set(queryString, cacheableResult, cacheTtlSeconds);
+            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds);
           }
 
           if (outputFormat === "json") {
@@ -587,7 +598,7 @@ export function sparqlQueryCommand(): Command {
               bindings,
             };
             const queryResultCache = new QueryResultCache();
-            await queryResultCache.set(queryString, cacheableResult, cacheTtlSeconds);
+            await queryResultCache.set(cacheKeyQuery, cacheableResult, cacheTtlSeconds);
           }
 
           if (outputFormat === "json") {
