@@ -46,8 +46,13 @@ export interface ExocortexInvariantViolation {
  * frontmatter keys that index as `exo:Asset_<key>` triples. The whitelist is
  * intentionally narrow — extending it requires an explicit decision because
  * every entry trades indexer simplicity for triple-graph growth.
+ *
+ * Exported so consumers that WRITE these properties (e.g. CLI `set-property`,
+ * issue #3944) can map the RDF property name `exo__Asset_<field>` back to its
+ * canonical bare YAML key `<field>` — the same mapping this converter applies
+ * when READING `<field>:` → `exo:Asset_<field>`.
  */
-const UNPREFIXED_ASSET_FIELDS: ReadonlySet<string> = new Set([
+export const UNPREFIXED_ASSET_FIELDS: ReadonlySet<string> = new Set([
   "archived",
   "draft",
   "pinned",
