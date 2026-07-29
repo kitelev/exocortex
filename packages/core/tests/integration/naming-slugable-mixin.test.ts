@@ -2,16 +2,24 @@
  * Production-shape integration test for the exo naming-capability TBox layer
  * (RFC 78572fa9 Candidate B Phase 1, req ec019a32).
  *
- * The store is built by the REAL {@link NoteToRDFConverter} over a fixture exo-TBox
- * (NOT hand-authored triples), so the `exo__Class_superClass` → `exo__Slugable`
- * metaclass-level mixin is converted exactly as it is in production (dual-IRI seam
- * included). The subsumption is then resolved by the real {@link ClassHierarchy}
- * (the same BFS `audit ontology-membership` uses).
+ * The store is built by the REAL {@link NoteToRDFConverter} over a **UID-canon-faithful**
+ * fixture exo-TBox (NOT hand-authored triples): class files are UUID-named (the real UIDs
+ * of the shipped `exoas-exo` assets), labels carry the symbolic name, and `exo__Class_superClass`
+ * uses `[[<uuid>]]` wikilinks — so the converter takes the exact production `isUUID=true`
+ * branch (`valueToRDFObject` → UUID lookup → label → symbolic `.../ontology/exo#<Local>`).
+ * The `exo__Class`/`exo__Property` → `exo__Slugable` metaclass-level mixin is thus emitted
+ * with the real dual-IRI seam (file-IRI subject ← rdfs:subClassOf → symbolic-IRI object).
+ * The subsumption is then resolved by the real {@link ClassHierarchy} (the same BFS
+ * `audit ontology-membership` uses).
  *
  * Revert-verify axis = the mixin edge itself (a fixture WITHOUT the
  * `exo__Class → exo__Slugable` superClass link): with the mixin the subsumption
  * reaches exo__Slugable (GREEN); without it, no such edge exists (RED).
  * See ~/dotfiles/.claude/rules/integration-test-revert-verify.md.
+ *
+ * Scope note: this guards the CODE mechanism (converter + hierarchy) over the mixin's
+ * triple shape — the actual mixin edge in the `exoas-exo` vault data has its own
+ * SHACL / co-location / ontology-membership gating (the code-repo/data-repo split).
  */
 
 import "reflect-metadata";
@@ -72,18 +80,20 @@ async function convertNotes(notes: FixtureNote[]): Promise<Triple[]> {
   return out;
 }
 
-// UID-named class files (TBox convention); labels parse as prefix__Local → symbolic IRIs.
-const ASSET = "exo__Asset";
-const SLUGABLE = "exo__Slugable";
-const CLASS = "exo__Class";
-const PROPERTY = "exo__Property";
+// UID-canon TBox: class files are UUID-named; label carries the symbolic name; superClass
+// references are `[[<uuid>]]` wikilinks (the real production shape). UIDs are the real
+// shipped exoas-exo asset UIDs so the fixture mirrors the vault exactly.
+const ASSET = "493c2ae2-de56-47ec-954d-2eb8cb49bff7"; // exo__Asset
+const SLUGABLE = "eaa291e7-80e9-4c53-857e-93ab61ea0025"; // exo__Slugable (new metaclass)
+const CLASS = "8619c4fc-64f1-4869-b17e-e34186cacca9"; // exo__Class metaclass
+const PROPERTY = "38277bfa-d7f9-4a75-b856-b23276ab0db3"; // exo__Property metaclass
 
 function classNote(uid: string, label: string, superClasses: string[]): FixtureNote {
   return {
     uid,
     frontmatter: {
       exo__Asset_label: label,
-      exo__Instance_class: [`[[${CLASS}]]`], // every class-def is an instance of exo__Class
+      exo__Instance_class: [`[[${CLASS}]]`], // every class-def is an instance of the exo__Class metaclass
       ...(superClasses.length ? { exo__Class_superClass: superClasses.map((s) => `[[${s}]]`) } : {}),
     } as unknown as IFrontmatter,
   };
@@ -114,13 +124,15 @@ function subclassAlgebraTriples(triples: Triple[]): AlgebraTriple[] {
 
 // Resolve the ACTUAL subject/object IRIs the converter emitted for a given class file's
 // superClass edge to `parentLocalName` — production-shape (don't hardcode the dual-IRI form).
-function edge(subs: AlgebraTriple[], childBasename: string, parentLocalName: string): { child: string; parent: string } | null {
+// `childUuid` is a full UUID (collision-safe substring of the file-IRI subject); the parent
+// object is always the symbolic IRI (label→`...#<Local>`), matched by exact suffix.
+function edge(subs: AlgebraTriple[], childUuid: string, parentLocalName: string): { child: string; parent: string } | null {
   const t = subs.find(
     (x) =>
       x.subject.type === "iri" &&
       x.object.type === "iri" &&
-      x.subject.value.includes(childBasename) &&
-      (x.object.value.endsWith(`#${parentLocalName}`) || x.object.value.includes(parentLocalName)),
+      x.subject.value.includes(childUuid) &&
+      x.object.value.endsWith(`#${parentLocalName}`),
   );
   return t && t.subject.type === "iri" && t.object.type === "iri"
     ? { child: t.subject.value, parent: t.object.value }
