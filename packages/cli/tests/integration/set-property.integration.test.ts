@@ -207,6 +207,67 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
     );
   });
 
+  // ── #3944: exo__Asset_aliases maps to the canonical bare `aliases:` YAML key ──
+  // (revert axis: neutralise canonicalYamlKey → set-property writes a literal
+  //  `exo__Asset_aliases:` alongside `aliases:` → the AC assertions RED).
+
+  const ALIASED_UID = "e1e1e1e1-0000-4000-8000-000000000006";
+  const aliasedRel = `${OTHER_DIR}/${ALIASED_UID}.md`;
+
+  /** Write an asset that already carries a single-value `aliases:` list. */
+  function writeAliasedAsset(): void {
+    fs.writeFileSync(
+      path.join(vault, aliasedRel),
+      [
+        "---",
+        `exo__Asset_uid: ${ALIASED_UID}`,
+        'exo__Asset_label: "Dreyfus model"',
+        "aliases:",
+        '  - "Модель Дрейфуса"',
+        `exo__Asset_updatedAt: ${STALE_UPDATED_AT}`,
+        "---",
+        "body",
+        "",
+      ].join("\n"),
+    );
+  }
+
+  it("set-property exo__Asset_aliases updates the canonical `aliases:` key in place — NO literal exo__Asset_aliases: key (#3944)", async () => {
+    writeAliasedAsset();
+    const out = await run(aliasedRel, [
+      "--input",
+      '{"property":"exo__Asset_aliases","value":["Dreyfus Model","Модель Дрейфуса","Dreyfus Hum Model"]}',
+    ]);
+
+    expect(out.exit).toContain(0);
+    expect(out.exit).not.toContain(1);
+    // Canonical bare `aliases:` key updated in place with all 3 values.
+    expect(out.content).toContain("aliases:");
+    expect(out.content).toContain("  - Dreyfus Model");
+    expect(out.content).toContain("  - Модель Дрейфуса");
+    expect(out.content).toContain("  - Dreyfus Hum Model");
+    // ⛔ The bug: a literal `exo__Asset_aliases:` key MUST NOT appear.
+    expect(out.content).not.toMatch(/^exo__Asset_aliases:/m);
+    // updatedAt bumped (write happened via the canonical key).
+    expect(out.content).toContain(`exo__Asset_updatedAt: ${EXPECTED_UPDATED_AT}`);
+  });
+
+  it("bare `aliases` property updates the canonical `aliases:` key (no regression, AC-2) (#3944)", async () => {
+    writeAliasedAsset();
+    const out = await run(aliasedRel, [
+      "--input",
+      '{"property":"aliases","value":["Alpha","Beta"]}',
+    ]);
+
+    expect(out.exit).toContain(0);
+    expect(out.content).toContain("aliases:");
+    expect(out.content).toContain("  - Alpha");
+    expect(out.content).toContain("  - Beta");
+    // The stale single value is replaced, not appended.
+    expect(out.content).not.toContain("Модель Дрейфуса");
+    expect(out.content).not.toMatch(/^exo__Asset_aliases:/m);
+  });
+
   // ── Guard: state-machine / precondition-guarded properties (revert axis: guard) ──
 
   it("REFUSES ems__Effort_status, naming the dedicated command, leaving the file unchanged @req:3800d995-2bae-401f-a23a-dac914505e9d", async () => {

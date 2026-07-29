@@ -285,6 +285,7 @@ export {
   NoteToRDFConverter,
   normaliseExcludedFolders,
   isPathExcluded,
+  UNPREFIXED_ASSET_FIELDS,
   type ExocortexInvariantCode,
   type ExocortexInvariantViolation,
 } from "./services/NoteToRDFConverter";
