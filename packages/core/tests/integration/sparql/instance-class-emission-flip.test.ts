@@ -262,6 +262,17 @@ describe(`Instance_class emission flip + query-time resolver (${REQ})`, () => {
       const ask = `${PREFIX} ASK { <${F(UID_WIDGET)}> exo:Instance_class exo:Prototype }`;
       expect(await runAsk(store, ask, true)).toBe(false);
     });
+
+    it(`${REQ} the co-emitted rdf:type membership ALSO bridges (the converter emits rdf:type from the same flag-gated object) — ON GREEN, OFF RED`, async () => {
+      // NoteToRDFConverter.convertLegacyNote emits `<s> rdf:type <classObject>` from
+      // the SAME valueToClassURI object as exo:Instance_class, so the flip couples
+      // them. The RDF-standard membership query must keep working.
+      const store = await buildStore(BASE_NOTES, true);
+      const ask = (t: string) =>
+        `PREFIX exo: <${EXO}> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ASK { <${t}> rdf:type exo:Class }`;
+      expect(await runAsk(store, ask(F(UID_WIDGET)), true)).toBe(true);
+      expect(await runAsk(store, ask(F(UID_WIDGET)), false)).toBe(false);
+    });
   });
 
   describe("byte-identical when it should be (predicate/object-shape scoped)", () => {

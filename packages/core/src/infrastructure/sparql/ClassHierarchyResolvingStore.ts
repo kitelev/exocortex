@@ -21,6 +21,18 @@ import { Namespace } from "../../domain/models/rdf/Namespace";
  * the author disambiguates (by uid, or by narrowing the ontology). Verified zero
  * collisions on the real vaults today — this guards against future authored
  * collisions.
+ *
+ * ⚠ Scope of the throw: raised inside `resolveSymbolicToFileIri`, which is shared by
+ * BOTH the class-hierarchy SUBJECT path (pre-existing, req 9fddda62) and the new
+ * membership OBJECT path — so an ambiguous collision changes BOTH (a hierarchy walk
+ * over an ambiguous symbolic subject, which previously resolved last-write-wins, now
+ * throws too). This is contingent on the empty-ambiguous-set invariant; while it
+ * holds, both paths stay byte-identical.
+ *
+ * ⚠ Where the hint reaches: a SELECT / a direct `executeAsk` caller receives the
+ * error. A vault SPARQL PRECONDITION does NOT — `PreconditionEvaluator` swallows an
+ * ASK error into `false` (fail-CLOSED: an unevaluable gate hides the command), so the
+ * disambiguation hint is not user-visible for the precondition surface.
  */
 export class SymbolicClassAmbiguityError extends Error {
   constructor(public readonly symbolic: string) {
@@ -139,27 +151,36 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
   private static readonly EXO_ASSET_LABEL =
     Namespace.EXO.term("Asset_label").value;
 
-  /**
-   * RFC 78572fa9 Phase 3 stage-1 — the `exo__Instance_class` predicate. When the
-   * emission flip makes an asset's Instance_class OBJECT a file IRI (uid), a query
-   * that references the class by its readable SYMBOLIC name is bridged object-side
-   * (see {@link matchInstanceClassObject}).
-   */
   private static readonly EXO_INSTANCE_CLASS =
     Namespace.EXO.term("Instance_class").value;
 
+  private static readonly RDF_TYPE = Namespace.RDF.term("type").value;
+
   /**
    * Symbolic ontology IRI base (`https://exocortex.my/ontology/`). A class reference
-   * in the Instance_class object position is a symbolic class IRI iff it starts with
-   * this base (a `<prefix>#<Local>` form). A file-IRI object
-   * (`obsidian://vault/<uid>.md`) or a W3C IRI is never bridged — it matches the
-   * store directly / is not an exocortex class ref.
+   * in a membership OBJECT position is a symbolic class IRI iff it starts with this
+   * base (a `<prefix>#<Local>` form). A file-IRI object (`obsidian://vault/<uid>.md`)
+   * or a W3C IRI is never bridged — it matches the store directly / is not an
+   * exocortex class ref.
    */
   private static readonly ONTOLOGY_BASE = "https://exocortex.my/ontology/";
 
   private static readonly HIERARCHY_PREDICATES: ReadonlySet<string> = new Set([
     ClassHierarchyResolvingStore.EXO_CLASS_SUPER_CLASS,
     ClassHierarchyResolvingStore.RDFS_SUBCLASS_OF,
+  ]);
+
+  /**
+   * RFC 78572fa9 Phase 3 stage-1 — the class-MEMBERSHIP predicates whose symbolic
+   * class OBJECT is bridged when the emission flip stores the class file IRI (uid)
+   * there. `NoteToRDFConverter.convertLegacyNote` emits BOTH `exo__Instance_class`
+   * AND `rdf:type` from the SAME flag-gated `valueToClassURI` object, so the flip
+   * couples them — bridging both keeps `?s exo:Instance_class <X>` and the RDF-standard
+   * `?s rdf:type <X>` membership queries working (see {@link matchMembershipObject}).
+   */
+  private static readonly MEMBERSHIP_PREDICATES: ReadonlySet<string> = new Set([
+    ClassHierarchyResolvingStore.EXO_INSTANCE_CLASS,
+    ClassHierarchyResolvingStore.RDF_TYPE,
   ]);
 
   /**
@@ -241,19 +262,21 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
       return this.matchHierarchySubject(subject, predicate, object);
     }
 
-    // Branch 2 — Instance_class OBJECT-position bridge (RFC 78572fa9 Phase 3
+    // Branch 2 — class-MEMBERSHIP OBJECT-position bridge (RFC 78572fa9 Phase 3
     // stage-1): a direct-membership query `?s exo:Instance_class <symbolic-class-IRI>`
-    // whose OBJECT is a symbolic class IRI. Once the emission flip makes an asset's
-    // Instance_class object the class FILE IRI, a query written by the readable
-    // symbolic name is bridged object-side. Byte-identical when the store still holds
-    // symbolic objects (flag OFF) — the bridge's file-IRI match is empty then and the
-    // union collapses to the direct symbolic match.
+    // (or the co-emitted `?s rdf:type <symbolic-class-IRI>`) whose OBJECT is a symbolic
+    // class IRI. Once the emission flip makes an asset's membership object the class
+    // FILE IRI, a query written by the readable symbolic name is bridged object-side.
+    // Byte-identical when the store still holds symbolic objects (flag OFF) — the
+    // bridge's file-IRI match is empty then and the union collapses to the direct
+    // symbolic match.
     if (
-      predicate?.value === ClassHierarchyResolvingStore.EXO_INSTANCE_CLASS &&
+      predicate &&
+      ClassHierarchyResolvingStore.MEMBERSHIP_PREDICATES.has(predicate.value) &&
       object instanceof IRI &&
       object.value.startsWith(ClassHierarchyResolvingStore.ONTOLOGY_BASE)
     ) {
-      return this.matchInstanceClassObject(subject, predicate, object);
+      return this.matchMembershipObject(subject, predicate, object);
     }
 
     // Everything else — wildcard-predicate scans, non-hierarchy / non-membership
@@ -303,10 +326,10 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
   }
 
   /**
-   * Instance_class OBJECT-position bridge (RFC 78572fa9 Phase 3 stage-1). A query
-   * `match(subject, exo:Instance_class, <symbolic-class-IRI>)` — direct membership by
-   * the class's readable symbolic name. After the emission flip the store holds the
-   * class FILE IRI as the Instance_class object, so:
+   * Class-MEMBERSHIP OBJECT-position bridge (RFC 78572fa9 Phase 3 stage-1). A query
+   * `match(subject, <exo:Instance_class | rdf:type>, <symbolic-class-IRI>)` — direct
+   * membership by the class's readable symbolic name. After the emission flip the
+   * store holds the class FILE IRI as the membership object, so:
    *   - resolve the queried symbolic class IRI → its class FILE IRI (uid);
    *   - UNION the direct symbolic-form matches (residual entries a MIXED store may
    *     still hold — unresolved-ref instances keep symbolic) with the bridged
@@ -317,7 +340,7 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
    * match is empty then → the union collapses to the direct symbolic match. Zero
    * store growth. An ambiguous symbolic form throws (error-with-hint).
    */
-  private async matchInstanceClassObject(
+  private async matchMembershipObject(
     subject: Subject | undefined,
     predicate: Predicate,
     object: IRI,

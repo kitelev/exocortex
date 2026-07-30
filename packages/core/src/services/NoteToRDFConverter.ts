@@ -375,6 +375,12 @@ export class NoteToRDFConverter {
 
       if (key === "exo__Instance_class") {
         for (const val of values) {
+          // `classNode` is the SAME object valueToClassURI produced above — so the
+          // RFC 78572fa9 Phase 3 stage-1 emission flip (uid vs symbolic) applies to
+          // this co-emitted `rdf:type` triple too. The query-time
+          // ClassHierarchyResolvingStore bridges BOTH `exo:Instance_class` AND
+          // `rdf:type` membership objects (its MEMBERSHIP_PREDICATES set) so both
+          // stay queryable by the symbolic name post-flip — keep them in lockstep.
           const classNode = this.valueToClassURI(val);
           if (classNode instanceof IRI) {
             const rdfType = Namespace.RDF.term("type");
