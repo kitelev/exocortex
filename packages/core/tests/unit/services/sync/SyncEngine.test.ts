@@ -1833,10 +1833,11 @@ describe("SyncEngine — A3: D11 one-operation guard, R8 auth, R5 secret-scan", 
     expect(result.status).toBe("synced"); // bootstrap survived the throttle
   });
 
-  it("a push payload containing a PAT is refused outright (R5) — secret never leaves the device", async () => {
+  it("a push payload whose ONLY file carries a PAT skips that file (R5) — secret never leaves the device, no whole-repo error (#3976)", async () => {
     const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
     const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
-    const { engine } = makeEngine(gh, local);
+    const quarantine = new InMemoryQuarantineStore();
+    const { engine } = makeEngine(gh, local, { quarantine });
     await bootstrap(engine, gh.spec());
     const headBefore = gh.headSha();
 
@@ -1844,11 +1845,90 @@ describe("SyncEngine — A3: D11 one-operation guard, R8 auth, R5 secret-scan", 
     local.files.set(FILE_A, mdAsset("u1", `oops, pasted a token: ${pat}`));
     const result = await engine.sync(gh.spec());
 
-    expect(result.status).toBe("error");
-    expect(result.detail).toMatch(/secret-scan/);
-    expect(result.detail).toMatch(/github-token/);
-    expect(result.detail).not.toContain(pat); // path+kind only, never the secret
-    expect(gh.headSha()).toBe(headBefore); // nothing pushed
+    // The only file was secret-bearing → nothing ships, but the repo does NOT
+    // error out — it syncs with a skip warning (the secret never left).
+    expect(result.status).toBe("synced");
+    expect(gh.headSha()).toBe(headBefore); // nothing pushed (the file was skipped)
+    const warned = result.warnings.join(" ");
+    expect(warned).toMatch(/secret-scan/);
+    expect(warned).toMatch(/github-token/);
+    expect(warned).not.toContain(pat); // path+kind only, never the secret
+    // A redacted copy is quarantined for the user's security decision.
+    const entry = quarantine.entries.find((e) => e.path === FILE_A);
+    expect(entry?.localContent).toContain("[REDACTED:github-token]");
+    expect(entry?.localContent).not.toContain(pat);
+  });
+
+  it("R5 per-file skip: a PAT-bearing file is skipped+quarantined (redacted) while the clean files still ship (#3976) @req:526fc6a8-b6c9-4fca-b30f-7439b4ab304b", async () => {
+    const gh = new FakeGitHubRepo({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const local = new FakeLocalFiles({
+      [FILE_A]: mdAsset("u1"),
+      [FILE_B]: mdAsset("u2"),
+    });
+    const quarantine = new InMemoryQuarantineStore();
+    const { engine } = makeEngine(gh, local, { quarantine });
+    await bootstrap(engine, gh.spec());
+    const bBefore = gh.headFiles().get(FILE_B);
+
+    const pat = `ghp_${"a1B2".repeat(10)}`;
+    const cleanEdit = mdAsset("u1", "a clean edit that must ship");
+    local.files.set(FILE_A, cleanEdit);
+    local.files.set(FILE_B, mdAsset("u2", `oops, pasted a token: ${pat}`));
+
+    const result = await engine.sync(gh.spec());
+
+    // The repo SYNCS — no whole-repo refusal. The clean file A ships.
+    expect(result.status).toBe("synced");
+    expect(gh.headFiles().get(FILE_A)).toBe(cleanEdit);
+    // B is NOT shipped — the raw PAT reached NOTHING on the remote (the floor).
+    expect(gh.headFiles().get(FILE_B)).toBe(bBefore);
+    for (const c of gh.headFiles().values()) expect(c).not.toContain(pat);
+    // The skip is surfaced to the user (path + kind, never the secret).
+    const warned = result.warnings.join(" ");
+    expect(warned).toMatch(/secret-scan/);
+    expect(warned).toMatch(/github-token/);
+    expect(warned).not.toContain(pat);
+    // A redacted copy of B is quarantined for the user's security decision.
+    const entry = quarantine.entries.find((e) => e.path === FILE_B);
+    expect(entry).toBeDefined();
+    expect(entry?.localContent).toContain("[REDACTED:github-token]");
+    expect(entry?.localContent).not.toContain(pat);
+  });
+
+  it("R5 per-file skip preserves rename atomicity: a rename whose TARGET carries a PAT ships NEITHER half (#3976, code-reviewer MEDIUM)", async () => {
+    const OLD_R = "assets/old-rename.md";
+    const NEW_R = "assets/new-rename.md";
+    const gh = new FakeGitHubRepo({ [OLD_R]: mdAsset("u-ren", "content") });
+    const local = new FakeLocalFiles({ [OLD_R]: mdAsset("u-ren", "content") });
+    const quarantine = new InMemoryQuarantineStore();
+    const { engine } = makeEngine(gh, local, { quarantine });
+    await bootstrap(engine, gh.spec());
+    const headBefore = gh.headSha();
+
+    const pat = `ghp_${"a1B2".repeat(10)}`;
+    // Rename OLD_R → NEW_R (unique uid ⇒ ChangeDetector infers basePath), and
+    // the NEW path carries a pasted PAT.
+    local.files.delete(OLD_R);
+    local.files.set(NEW_R, mdAsset("u-ren", `renamed, oops a token: ${pat}`));
+
+    const result = await engine.sync(gh.spec());
+
+    // The repo syncs (no whole-repo error) but NEITHER half of the rename
+    // ships — atomicity preserved: the add-half is R5-skipped and the
+    // delete-half of OLD (owned by the skipped NEW) is withheld with it.
+    expect(result.status).toBe("synced");
+    expect(gh.headSha()).toBe(headBefore); // nothing pushed at all
+    expect(gh.headFiles().has(NEW_R)).toBe(false); // add-half withheld
+    expect(gh.headFiles().has(OLD_R)).toBe(true); // ⛤ delete-half withheld — OLD not deleted
+    expect(result.pushedDeletes ?? []).not.toContain(OLD_R);
+    for (const c of gh.headFiles().values()) expect(c).not.toContain(pat);
+    // NEW_R quarantined redacted for the user's security decision.
+    const entry = quarantine.entries.find((e) => e.path === NEW_R);
+    expect(entry?.localContent).toContain("[REDACTED:github-token]");
+    expect(entry?.localContent).not.toContain(pat);
   });
 });
 

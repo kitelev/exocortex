@@ -80,7 +80,7 @@ import {
   type OutboxStorePort,
 } from "./LocalOutboxStore";
 import { isAuthError } from "./CredentialStore";
-import { scanForSecrets } from "./secretScan";
+import { redactSecrets, scanForSecrets } from "./secretScan";
 import {
   withRateLimitBackoff,
   createRateLimitBudget,
@@ -596,7 +596,6 @@ type PushLoopOutcome =
       /** Last iteration's merge resolution — its quarantine entries must not be lost. */
       merge: MergeResolution;
     }
-  | { kind: "secret-detected"; detail: string }
   | {
       kind: "done";
       examinedHead: string;
@@ -641,6 +640,13 @@ type PushLoopOutcome =
        * the D16 retry loop would duplicate them per attempt).
        */
       deferredWarnings: string[];
+      /**
+       * R5 secret-scan (#3976): files skipped from the push because they
+       * matched a secret shape — each carrying a REDACTED copy. The caller
+       * flushes them via a SEPARATE flushQuarantine (decoupled from the merge
+       * flush's D18 gate). Empty on a clean push.
+       */
+      secretQuarantineEntries: QuarantineEntry[];
     };
 
 /**
@@ -1486,9 +1492,6 @@ export class SyncEngine {
       if (loop.kind === "conflict") {
         return result("conflict", { detail: loop.detail });
       }
-      if (loop.kind === "secret-detected") {
-        return result("error", { detail: loop.detail });
-      }
       if (loop.kind === "retry-exhausted") {
         // D16 terminal-quarantine: the contended files of the last attempt
         // PLUS any pending merge-quarantine entries (they would otherwise be
@@ -1542,6 +1545,15 @@ export class SyncEngine {
         [...merge.quarantineEntries, ...merge.resolvedQuarantineEntries],
         warnings,
       );
+
+      // #3976: R5 secret-skipped files flush via a SEPARATE call — decoupled
+      // from `flushed` so a secret-entry flush failure does NOT gate the D18
+      // resolved-remote-wins withhold below. The security floor already holds
+      // (the secret file was dropped from the push); a failed flush only loses
+      // the redacted-copy record (warned), the file stays untouched on disk.
+      if (loop.secretQuarantineEntries.length > 0) {
+        await this.flushQuarantine(loop.secretQuarantineEntries, warnings);
+      }
 
       // Reviewer CRITICAL (AC2): the remote-wins apply DESTROYS the local
       // version, whose only surviving copy is the quarantine entry — when
@@ -2321,6 +2333,21 @@ export class SyncEngine {
     let deferredRemoteChanges: RemoteChange[] = [];
     let deferredWarnings: string[] = [];
     const remoteOversized = new Set<string>();
+    // #3976: R5 secret-scan per-file skip. Files matching a secret shape are
+    // dropped from the push (the secret NEVER ships) and quarantined with a
+    // REDACTED copy. Accumulated across the D16 retry loop (which rebuilds
+    // pushFiles from pushFilesAll each attempt) — re-skipped every iteration
+    // but quarantined once per path via `handledSecretPaths`.
+    //
+    // These are threaded out ONLY on the `done` outcome (flushed by the
+    // caller). On a `conflict` / `retry-exhausted` early-return the redacted
+    // record is not persisted this cycle — but the skipped file is untouched
+    // on disk and un-pushed, so it re-derives and re-quarantines on a later
+    // sync (self-healing; code-reviewer LOW1). The prod LocalConflictCacheStore
+    // upserts by (repoKey, path), so a re-quarantine refreshes the record
+    // rather than duplicating it (code-reviewer LOW2).
+    const secretQuarantineEntries: QuarantineEntry[] = [];
+    const handledSecretPaths = new Set<string>();
 
     for (;;) {
       // Reuse the head pre-fetched in syncLocked on the FIRST attempt — but
@@ -2600,8 +2627,13 @@ export class SyncEngine {
       }
       if (pushFiles.size === 0 && pushDeletions.size === 0) break;
 
-      // R5 secret-scan — refuse the WHOLE push (a partial set could ship an
-      // inconsistent asset graph). Findings carry path+kind, never the
+      // R5 secret-scan (#3976) — SKIP only the offending file(s), never the
+      // whole repo. A file matching a secret shape is removed from the commit
+      // (the secret is NEVER shipped — the security floor holds regardless of
+      // quarantine) and quarantined with a REDACTED copy for the user's
+      // security decision; the rest of the changeset ships. Previously ANY
+      // finding refused the entire repo push (`pushed 0`), blocking every
+      // clean file in the changeset. Findings carry path+kind, never the
       // secret. File mode: UTF-8-decodable contents (plain notes inside a
       // FileSpace) still scan; true binary (non-UTF-8) is skipped — secret
       // patterns are text-shaped (R5 residual, documented).
@@ -2616,12 +2648,62 @@ export class SyncEngine {
       }
       const findings = scanForSecrets(scannable);
       if (findings.length > 0) {
-        return {
-          kind: "secret-detected",
-          detail: `secret-scan: refusing to push — ${findings
-            .map((f) => `${f.path} (${f.kind})`)
-            .join(", ")} (R5); remove the secret and re-sync`,
-        };
+        const kindsByPath = new Map<string, string[]>();
+        for (const f of findings) {
+          const kinds = kindsByPath.get(f.path);
+          if (kinds === undefined) kindsByPath.set(f.path, [f.kind]);
+          else if (!kinds.includes(f.kind)) kinds.push(f.kind);
+        }
+        for (const [path, kinds] of kindsByPath) {
+          if (!handledSecretPaths.has(path)) {
+            handledSecretPaths.add(path);
+            // scannable.get(path) is the exact UTF-8 text that matched (every
+            // finding comes from `scannable`); redact it for the durable copy.
+            const scanned = scannable.get(path);
+            const redacted =
+              scanned !== undefined ? redactSecrets(scanned) : undefined;
+            const uid =
+              redacted !== undefined ? extractAssetUid(redacted) : undefined;
+            secretQuarantineEntries.push({
+              repoKey: spec.repoKey,
+              path,
+              ...(uid !== undefined ? { uid } : {}),
+              reason: `secret-scan (R5): detected ${kinds.join(
+                ", ",
+              )} — skipped from the push (the secret is NEVER shipped); a redacted copy is quarantined. REVOKE the credential, then re-sync once it is removed.`,
+              ...(redacted !== undefined ? { localContent: redacted } : {}),
+            });
+          }
+          // Re-skip every iteration: the D16 retry rebuilds pushFiles.
+          pushFiles.delete(path);
+        }
+        warnings.push(
+          `secret-scan (R5): skipped ${kindsByPath.size} file(s) with a detected secret from the push — the rest of the changeset shipped; REVOKE the credential(s): ${[
+            ...kindsByPath,
+          ]
+            .map(([p, k]) => `${p} (${k.join(", ")})`)
+            .join(", ")}`,
+        );
+        // Rename atomicity (code-reviewer MEDIUM): a rename old→new whose NEW
+        // path carries the secret has its add-half skipped above, but the
+        // delete-half of `old` (owner=new in pushDeletionsAll) was already
+        // derived into `pushDeletions` BEFORE the R5 scan. Shipping it alone
+        // would delete `old` on the remote while `new` is withheld → the
+        // renamed file transiently vanishes AND the delete propagates to
+        // other devices (the exact atomicity the old whole-repo-defer kept).
+        // Withhold any deletion owned by a skipped path (mirror of the
+        // convergedPushPaths withhold) so BOTH halves defer and re-derive
+        // together once the secret is removed.
+        for (const [delPath, owner] of pushDeletionsAll) {
+          if (handledSecretPaths.has(owner) && pushDeletions.has(delPath)) {
+            pushDeletions.delete(delPath);
+            withheldDeletions.push(delPath);
+          }
+        }
+        // Nothing left to push (all files were secret-bearing) — the repo
+        // still syncs, carrying only the skip warning; the skipped files
+        // re-derive on a later sync once the secret is removed.
+        if (pushFiles.size === 0 && pushDeletions.size === 0) break;
       }
 
       try {
@@ -2676,6 +2758,7 @@ export class SyncEngine {
       deferredPaths,
       deferredRemoteChanges,
       deferredWarnings,
+      secretQuarantineEntries,
     };
   }
 
