@@ -297,6 +297,28 @@ export class VaultRDFIndexer {
       return;
     }
 
+    // Issue #3936: a reified `exo__Statement` note emits a materialized LOGICAL
+    // EDGE `<subject> <predicate> <object>` (convertLegacyNote, EKA D5) whose
+    // SUBJECT is the statement's referent — NOT this file's IRI. So the
+    // incremental path below (`removeFileTriples` is subject-scoped to the file
+    // IRI) cannot purge the OLD edge on re-index, leaving it stale alongside the
+    // freshly-emitted one after any edit to the statement's subject/predicate/
+    // object. A graph edit is graph-wide; mirror the FileSpace-declaration
+    // branch above and do a full `refresh()` (clear + rebuild), which purges the
+    // stale edge. Detected from the CURRENT (pre-edit) store state — the file is
+    // still typed `exo#Statement` there — so this also covers the removal case
+    // (edited to no longer be a statement, whose old edge would otherwise
+    // linger). Reified statements are rare, so the full-refresh cost is
+    // acceptable (same trade-off as the FileSpace branch). (Enum `rdf:type`
+    // shadow triples are NOT covered here on purpose: they are globally-true,
+    // idempotent facts about the enum instance, never stale-divergent. The A2
+    // symbolic superclass edges the issue also cited do not exist on this
+    // branch — their PR #3935 was closed, not merged.)
+    if (await this.wasReifiedStatement(file.path)) {
+      await this.refresh();
+      return;
+    }
+
     await this.errorHandler.executeWithRetry(
       async () => {
         const fileIRI = new IRI(`obsidian://vault/${encodeURI(file.path)}`);
@@ -320,6 +342,26 @@ export class VaultRDFIndexer {
     return instances.length > 0;
   }
 
+  /**
+   * Issue #3936: is `path` CURRENTLY indexed as a reified `exo__Statement`
+   * (i.e. the store holds `<fileIRI> rdf:type exo#Statement`, emitted by the
+   * converter for a note whose `exo__Instance_class` is `exo__Statement`)?
+   *
+   * A reified statement emits an extra materialized edge on a NON-file-IRI
+   * subject that the subject-scoped `removeFileTriples` cannot evict, so an
+   * incremental re-index leaves the OLD edge stale. Callers route such a file
+   * to a full `refresh()` instead. Reading the PRE-mutation store state means
+   * this also fires when a statement is edited to no longer BE a statement (its
+   * old edge must still be purged) and when a statement is deleted.
+   */
+  private async wasReifiedStatement(path: string): Promise<boolean> {
+    const fileIRI = new IRI(`obsidian://vault/${encodeURI(path)}`);
+    const rdfType = Namespace.RDF.term("type");
+    const statementClass = Namespace.EXO.term("Statement");
+    const typed = await this.tripleStore.match(fileIRI, rdfType, statementClass);
+    return typed.length > 0;
+  }
+
   async removeFile(file: TFile): Promise<void> {
     if (this.refreshInFlight !== null) {
       await this.refreshInFlight;
@@ -332,6 +374,14 @@ export class VaultRDFIndexer {
         await this.refresh();
         return;
       }
+    }
+    // Issue #3936: deleting a reified exo__Statement leaves its materialized
+    // logical edge (non-file-IRI subject) stale — subject-scoped
+    // removeFileTriples cannot evict it. Full refresh purges it (same rationale
+    // as updateFile).
+    if (await this.wasReifiedStatement(file.path)) {
+      await this.refresh();
+      return;
     }
     await this.errorHandler.executeWithRetry(
       async () => this.removeFileTriples(file.path),
