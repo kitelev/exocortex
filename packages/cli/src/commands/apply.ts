@@ -520,7 +520,10 @@ export function applyCommand(): Command {
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
     .option("--dry-run", "Preview without writing")
     .option("--yes", "Skip destructive-command confirmation")
-    .option("--input <json>", "JSON userInput for service_call groundings")
+    .option(
+      "--input <json>",
+      `JSON userInput for a grounding. Value-setting commands need a value key, e.g. set-planned-start / set-scheduled-date: --input '{"value":"<ISO>"}'; set-label: --input '{"value":"New label"}'. The required key is named in the error if omitted.`,
+    )
     .option(
       "--seed <uuid>",
       "Deterministic UID seed for test/replay (uses seededUidGenerator)",

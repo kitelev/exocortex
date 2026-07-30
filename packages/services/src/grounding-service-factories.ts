@@ -538,10 +538,14 @@ export function createUpdatePropertyService(
       const property = userInput?.property as string | undefined;
       const value = userInput?.value;
       if (!property) {
-        throw new Error("updateProperty requires userInput.property");
+        throw new Error(
+          `updateProperty requires userInput.property — pass it via --input '{"property":"<name>","value":"<value>"}'`,
+        );
       }
       if (value === undefined) {
-        throw new Error("updateProperty requires userInput.value");
+        throw new Error(
+          `updateProperty requires userInput.value — pass it via --input '{"value":"<value>"}' (e.g. set-planned-start: --input '{"value":"2026-07-25T09:00:00"}')`,
+        );
       }
       const filePath = await pathResolver.resolveTargetPath(targetIRI);
       const content = await fsAdapter.readFile(filePath);
