@@ -1,0 +1,13 @@
+{
+  "//": "ESLint-only TS project. Extends the root build tsconfig.json but RE-INCLUDES test files, which the build tsconfig excludes (`packages/**/tests/**/*`). Type-aware @typescript-eslint rules require every linted file to belong to a `parserOptions.project`; without this, `eslint packages/core/tests/**` fails 'file was not found in any of the provided project(s)' and the whole test corpus is un-lintable (task d7f89d46). This config is referenced ONLY by eslint.config.mjs — the build/typecheck path (`tsc --noEmit`, `npm run build`) still uses tsconfig.json and never compiles tests into dist.",
+  "extends": "./tsconfig.json",
+  "include": ["packages/**/*.ts", "packages/**/*.tsx"],
+  "exclude": [
+    "node_modules",
+    "features/**/*",
+    "packages/**/dist/**/*",
+    "packages/cli/**/*",
+    "wdio.conf*.ts",
+    "playwright.config.ts"
+  ]
+}
