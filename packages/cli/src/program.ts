@@ -10,6 +10,7 @@ import { runQueryCommand } from "./commands/run-query.js";
 import { createCommand } from "./commands/create.js";
 import { setPropertyCommand } from "./commands/set-property.js";
 import { removePropertyCommand } from "./commands/remove-property.js";
+import { setBodyCommand } from "./commands/set-body.js";
 import { repairFrontmatterCommand } from "./commands/repair-frontmatter.js";
 import { findCommand } from "./commands/find.js";
 import { applyCommand } from "./commands/apply.js";
@@ -76,6 +77,10 @@ export function createProgram(version?: string): Command {
   // remove-property — the DELETE-side counterpart of set-property (#3926):
   // deletes a non-guarded frontmatter property, sharing the same guard denylists.
   program.addCommand(removePropertyCommand());
+  // set-body — overwrite the markdown BODY of an existing asset (#3943): the
+  // body-rewrite counterpart of set-property (frontmatter) / create --body-file
+  // (new asset). Closes the "raw backup→rm→Write to rewrite a body" dogfood gap.
+  program.addCommand(setBodyCommand());
   // repair-frontmatter — raw-text dedupe of duplicated top-level YAML keys
   // (keep-last). The dogfood-clean repair for the invisible/unrepairable
   // duplicate-key class (#3800): fixes a file the parser itself cannot read.
