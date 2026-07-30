@@ -13,9 +13,47 @@ import { IRI } from "../../domain/models/rdf/IRI";
 import { Namespace } from "../../domain/models/rdf/Namespace";
 
 /**
- * Query-time class-hierarchy resolver (RFC 78572fa9 Candidate B Phase 0,
- * req `9fddda62`) — the QUERY-TIME replacement for the abandoned A2
- * store-materialization approach.
+ * Thrown when a symbolic `prefix#Local` class reference in a query resolves
+ * AMBIGUOUSLY — two or more DISTINCT class files derive the same symbolic form (a
+ * cross-ontology prefix collision; RFC 78572fa9 v3 point 9: a prefix is a per-user
+ * alias, not identity, so identity is the uid and the prefix may collide). Rather
+ * than silently resolve to one, the query-time resolver surfaces the ambiguity so
+ * the author disambiguates (by uid, or by narrowing the ontology). Verified zero
+ * collisions on the real vaults today — this guards against future authored
+ * collisions.
+ *
+ * ⚠ Scope of the throw: raised inside `resolveSymbolicToFileIri`, which is shared by
+ * BOTH the class-hierarchy SUBJECT path (pre-existing, req 9fddda62) and the new
+ * membership OBJECT path — so an ambiguous collision changes BOTH (a hierarchy walk
+ * over an ambiguous symbolic subject, which previously resolved last-write-wins, now
+ * throws too). This is contingent on the empty-ambiguous-set invariant; while it
+ * holds, both paths stay byte-identical.
+ *
+ * ⚠ Where the hint reaches: a SELECT / a direct `executeAsk` caller receives the
+ * error. A vault SPARQL PRECONDITION does NOT — `PreconditionEvaluator` swallows an
+ * ASK error into `false` (fail-CLOSED: an unevaluable gate hides the command), so the
+ * disambiguation hint is not user-visible for the precondition surface.
+ */
+export class SymbolicClassAmbiguityError extends Error {
+  constructor(public readonly symbolic: string) {
+    super(
+      `Ambiguous class reference '${symbolic}' — two or more class files derive ` +
+        `this symbolic form (a prefix collision). The prefix is an alias, not ` +
+        `identity: reference the class by its uid, or narrow the ontology.`,
+    );
+    this.name = "SymbolicClassAmbiguityError";
+  }
+}
+
+/**
+ * Query-time class-reference resolver (RFC 78572fa9 Candidate B) — the QUERY-TIME
+ * replacement for the abandoned A2 store-materialization approach. Started as the
+ * Phase-0 class-HIERARCHY-walk bridge (req `9fddda62`); generalized in Phase 3
+ * stage-1 (req `c359e3d2`) to ALSO resolve the `exo__Instance_class` OBJECT position
+ * so a direct-membership query written by the readable symbolic name keeps matching
+ * once the converter emits the class uid (file IRI) there. Despite the historical
+ * name, it now resolves class references at two positions (hierarchy subject +
+ * Instance_class object).
  *
  * ## The dual-IRI seam it heals
  *
@@ -42,14 +80,28 @@ import { Namespace } from "../../domain/models/rdf/Namespace";
  * single `store.match` call) inherit it — ASK preconditions AND SELECT analytics
  * are fixed by one mechanism.
  *
- * `match(subject, predicate, object)` is a **pure pass-through** for every
- * predicate except `exo__Class_superClass` and its `rdfs:subClassOf` mirror
- * (RFC 871 vocabulary map). For a hierarchy predicate queried with a symbolic
- * class subject that has no direct edges, it lazily builds a memoized
- * `symbolic-IRI → file-IRI` class index, delegates to the underlying store using
- * the file IRI, and rewrites the returned triples' subject back to the symbolic
- * form the caller queried (so `PropertyPathExecutor`'s per-node visited-set stays
- * consistent across the bridge).
+ * `match(subject, predicate, object)` is a **pure pass-through** for every query
+ * except two bridged positions, both keyed off the same memoized `symbolic-IRI →
+ * file-IRI` class index (built lazily, once per store-content change):
+ *
+ * 1. **Hierarchy SUBJECT position** (req `9fddda62`) — `exo__Class_superClass` / its
+ *    `rdfs:subClassOf` mirror (RFC 871) queried with a symbolic class subject that
+ *    has no direct edges: resolve subject → file IRI, delegate, rewrite the returned
+ *    triples' SUBJECT back to the symbolic form (so `PropertyPathExecutor`'s per-node
+ *    visited-set stays consistent across the transitive walk).
+ * 2. **Instance_class OBJECT position** (RFC 78572fa9 Phase 3 stage-1, req
+ *    `c359e3d2`) — `exo__Instance_class` queried with a symbolic class OBJECT: once
+ *    the emission flip stores the class uid there, resolve the queried symbolic
+ *    object → file IRI, UNION the direct symbolic-form matches (a MIXED store may
+ *    still hold residual symbolic entries) with the bridged file-IRI-form matches,
+ *    and rewrite each bridged triple's OBJECT back to the queried symbolic form.
+ *    Byte-identical when the store still holds symbolic objects (flip OFF).
+ *
+ * The index is COMPREHENSIVE over TBox (every `prefix__Local` label, not just
+ * hierarchy-edge subjects) so metaclasses (`exo__Class`) resolve for position 2.
+ * A symbolic form to which two DISTINCT class files map (a prefix collision) is
+ * ambiguous → a lookup throws {@link SymbolicClassAmbiguityError} (error-with-hint,
+ * RFC v3 point 9) rather than silently resolving to one.
  *
  * - **Predicate-scoped** — non-hierarchy queries are byte-identical pass-through
  *   → zero behaviour change for the rest of the engine. Only the DEFAULT-graph,
@@ -99,9 +151,36 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
   private static readonly EXO_ASSET_LABEL =
     Namespace.EXO.term("Asset_label").value;
 
+  private static readonly EXO_INSTANCE_CLASS =
+    Namespace.EXO.term("Instance_class").value;
+
+  private static readonly RDF_TYPE = Namespace.RDF.term("type").value;
+
+  /**
+   * Symbolic ontology IRI base (`https://exocortex.my/ontology/`). A class reference
+   * in a membership OBJECT position is a symbolic class IRI iff it starts with this
+   * base (a `<prefix>#<Local>` form). A file-IRI object (`obsidian://vault/<uid>.md`)
+   * or a W3C IRI is never bridged — it matches the store directly / is not an
+   * exocortex class ref.
+   */
+  private static readonly ONTOLOGY_BASE = "https://exocortex.my/ontology/";
+
   private static readonly HIERARCHY_PREDICATES: ReadonlySet<string> = new Set([
     ClassHierarchyResolvingStore.EXO_CLASS_SUPER_CLASS,
     ClassHierarchyResolvingStore.RDFS_SUBCLASS_OF,
+  ]);
+
+  /**
+   * RFC 78572fa9 Phase 3 stage-1 — the class-MEMBERSHIP predicates whose symbolic
+   * class OBJECT is bridged when the emission flip stores the class file IRI (uid)
+   * there. `NoteToRDFConverter.convertLegacyNote` emits BOTH `exo__Instance_class`
+   * AND `rdf:type` from the SAME flag-gated `valueToClassURI` object, so the flip
+   * couples them — bridging both keeps `?s exo:Instance_class <X>` and the RDF-standard
+   * `?s rdf:type <X>` membership queries working (see {@link matchMembershipObject}).
+   */
+  private static readonly MEMBERSHIP_PREDICATES: ReadonlySet<string> = new Set([
+    ClassHierarchyResolvingStore.EXO_INSTANCE_CLASS,
+    ClassHierarchyResolvingStore.RDF_TYPE,
   ]);
 
   /**
@@ -114,7 +193,19 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
    */
   private static readonly INDEX_CACHE = new WeakMap<
     ITripleStore,
-    { count: number; index: Map<string, IRI> }
+    {
+      count: number;
+      index: Map<string, IRI>;
+      /**
+       * Symbolic class forms that resolve AMBIGUOUSLY — two or more distinct class
+       * files derive the same `prefix#Local` (a cross-ontology prefix collision, RFC
+       * v3 point 9: prefixes are aliases, not identity). A lookup of an ambiguous
+       * form throws {@link SymbolicClassAmbiguityError} (error-with-hint) rather than
+       * silently resolving to one. Verified empty on the real vaults today; this is
+       * safe future-proofing for when prefix collisions are authored.
+       */
+      ambiguous: Set<string>;
+    }
   >();
 
   // ===== Optional ITripleStore surface — mirrored from the wrapped store =====
@@ -153,33 +244,62 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
     this.countInGraph = real.countInGraph?.bind(real);
   }
 
-  // ===== The one intercepted method =====
+  // ===== The intercepted method =====
 
   async match(
     subject?: Subject,
     predicate?: Predicate,
     object?: RDFObject,
   ): Promise<Triple[]> {
-    // Predicate-scoped early-out: only intercept the class-hierarchy predicates
-    // with a concrete IRI subject. Everything else — wildcard-predicate scans,
-    // non-hierarchy predicates, variable/blank/quoted subjects — is a byte-identical
-    // pass-through (the decorator is invisible to the rest of the engine).
+    // Branch 1 — class-HIERARCHY SUBJECT-position bridge (req 9fddda62): a hierarchy
+    // predicate (`Class_superClass` / `rdfs:subClassOf`) queried with a concrete IRI
+    // subject. The symbolic-subject climb of a transitive walk is bridged file-side.
     if (
-      !predicate ||
-      !ClassHierarchyResolvingStore.HIERARCHY_PREDICATES.has(predicate.value) ||
-      !(subject instanceof IRI)
+      predicate &&
+      ClassHierarchyResolvingStore.HIERARCHY_PREDICATES.has(predicate.value) &&
+      subject instanceof IRI
     ) {
-      return this.real.match(subject, predicate, object);
+      return this.matchHierarchySubject(subject, predicate, object);
     }
 
-    // A subject with native hierarchy edges (a class queried by its FILE IRI —
-    // the file-IRI-form instances' first hop) resolves directly; no bridge needed.
-    // This is what makes the decorator symmetric: file-IRI first hop is native,
-    // subsequent symbolic ancestor hops are bridged below. Load-bearing invariant:
-    // the converter NEVER emits a symbolic class IRI as a hierarchy-triple SUBJECT
-    // (Class_superClass subjects are always the class FILE IRI), so `direct` is
-    // empty for a symbolic subject — the short-circuit only fires for file-IRI
-    // subjects and never suppresses a needed bridge.
+    // Branch 2 — class-MEMBERSHIP OBJECT-position bridge (RFC 78572fa9 Phase 3
+    // stage-1): a direct-membership query `?s exo:Instance_class <symbolic-class-IRI>`
+    // (or the co-emitted `?s rdf:type <symbolic-class-IRI>`) whose OBJECT is a symbolic
+    // class IRI. Once the emission flip makes an asset's membership object the class
+    // FILE IRI, a query written by the readable symbolic name is bridged object-side.
+    // Byte-identical when the store still holds symbolic objects (flag OFF) — the
+    // bridge's file-IRI match is empty then and the union collapses to the direct
+    // symbolic match.
+    if (
+      predicate &&
+      ClassHierarchyResolvingStore.MEMBERSHIP_PREDICATES.has(predicate.value) &&
+      object instanceof IRI &&
+      object.value.startsWith(ClassHierarchyResolvingStore.ONTOLOGY_BASE)
+    ) {
+      return this.matchMembershipObject(subject, predicate, object);
+    }
+
+    // Everything else — wildcard-predicate scans, non-hierarchy / non-membership
+    // predicates, variable/blank/quoted subjects, file-IRI or W3C objects — is a
+    // byte-identical pass-through (the decorator is invisible to the rest of the
+    // engine).
+    return this.real.match(subject, predicate, object);
+  }
+
+  /**
+   * Class-hierarchy SUBJECT-position bridge (req 9fddda62). A subject with native
+   * hierarchy edges (a class queried by its FILE IRI — the file-IRI-form instances'
+   * first hop) resolves directly; no bridge needed. Load-bearing invariant: the
+   * converter NEVER emits a symbolic class IRI as a hierarchy-triple SUBJECT
+   * (`Class_superClass` subjects are always the class FILE IRI), so `direct` is empty
+   * for a symbolic subject — the short-circuit only fires for file-IRI subjects and
+   * never suppresses a needed bridge.
+   */
+  private async matchHierarchySubject(
+    subject: IRI,
+    predicate: Predicate,
+    object?: RDFObject,
+  ): Promise<Triple[]> {
     const direct = await this.real.match(subject, predicate, object);
     if (direct.length > 0) {
       return direct;
@@ -198,17 +318,95 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
       return bridged;
     }
 
-    // Rewrite each bridged triple's subject back to the symbolic form the caller
+    // Rewrite each bridged triple's SUBJECT back to the symbolic form the caller
     // queried, so PropertyPathExecutor's per-node identity (visited-set keyed on
     // `node.toString()`) stays consistent as the transitive walk climbs symbolic
     // nodes. The predicate and object (the symbolic parent class) are preserved.
     return bridged.map((t) => new Triple(subject, t.predicate, t.object));
   }
 
+  /**
+   * Class-MEMBERSHIP OBJECT-position bridge (RFC 78572fa9 Phase 3 stage-1). A query
+   * `match(subject, <exo:Instance_class | rdf:type>, <symbolic-class-IRI>)` — direct
+   * membership by the class's readable symbolic name. After the emission flip the
+   * store holds the class FILE IRI as the membership object, so:
+   *   - resolve the queried symbolic class IRI → its class FILE IRI (uid);
+   *   - UNION the direct symbolic-form matches (residual entries a MIXED store may
+   *     still hold — unresolved-ref instances keep symbolic) with the bridged
+   *     file-IRI-form matches, rewriting each bridged triple's OBJECT back to the
+   *     symbolic form the caller queried (so downstream comparisons / a SELECT ?c see
+   *     the readable form; identity stays uid, the readable form is computed).
+   * Byte-identical when the store holds symbolic objects (flag OFF): the file-IRI
+   * match is empty then → the union collapses to the direct symbolic match. Zero
+   * store growth. An ambiguous symbolic form throws (error-with-hint).
+   */
+  private async matchMembershipObject(
+    subject: Subject | undefined,
+    predicate: Predicate,
+    object: IRI,
+  ): Promise<Triple[]> {
+    const fileIri = await this.resolveSymbolicToFileIri(object.value);
+    const direct = await this.real.match(subject, predicate, object);
+    // Not a known symbolic class (e.g. a symbolic PROPERTY IRI, or a class not in the
+    // store) → only the direct result stands (usually empty).
+    if (!fileIri) {
+      return direct;
+    }
+    const bridged = await this.real.match(subject, predicate, fileIri);
+    if (bridged.length === 0) {
+      return direct;
+    }
+    // Rewrite each bridged triple's OBJECT back to the queried symbolic class IRI.
+    const rewritten = bridged.map(
+      (t) => new Triple(t.subject, t.predicate, object),
+    );
+    return ClassHierarchyResolvingStore.dedupTriples([...direct, ...rewritten]);
+  }
+
+  /**
+   * Dedup a union of matched triples by (subject, predicate, object) value. The
+   * direct + bridged sets are disjoint in the common case; this guards the rare
+   * MIXED-store edge where one asset references the same class both by a RESOLVED
+   * ref (file-IRI) and an UNRESOLVED prefix__Local ref (symbolic) — both forms then
+   * surface as the same rewritten triple.
+   */
+  private static dedupTriples(triples: Triple[]): Triple[] {
+    const seen = new Set<string>();
+    const out: Triple[] = [];
+    for (const t of triples) {
+      const key = `${ClassHierarchyResolvingStore.termKey(t.subject)} ${ClassHierarchyResolvingStore.termKey(
+        t.predicate,
+      )} ${ClassHierarchyResolvingStore.termKey(t.object)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(t);
+    }
+    return out;
+  }
+
+  private static termKey(term: unknown): string {
+    if (term instanceof IRI) return `I:${term.value}`;
+    if (term && typeof term === "object" && "value" in term) {
+      const v = (term as { value: unknown }).value;
+      const dt = (term as { datatype?: { value?: string } }).datatype?.value ?? "";
+      return `L:${String(v)}^${dt}`;
+    }
+    return `?:${String(term)}`;
+  }
+
+  /**
+   * Resolve a symbolic `prefix#Local` class IRI to its class FILE IRI via the
+   * memoized index. Throws {@link SymbolicClassAmbiguityError} when the symbolic
+   * form is ambiguous (a prefix collision); returns null when it is not a known
+   * class.
+   */
   private async resolveSymbolicToFileIri(
     symbolicValue: string,
   ): Promise<IRI | null> {
-    const index = await this.getIndex();
+    const { index, ambiguous } = await this.getIndex();
+    if (ambiguous.has(symbolicValue)) {
+      throw new SymbolicClassAmbiguityError(symbolicValue);
+    }
     return index.get(symbolicValue) ?? null;
   }
 
@@ -219,84 +417,80 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
    * harmless; within a single query the count is stable, so exactly one build runs
    * and every later hierarchy hop hits the cache.
    */
-  private async getIndex(): Promise<Map<string, IRI>> {
+  private async getIndex(): Promise<{
+    index: Map<string, IRI>;
+    ambiguous: Set<string>;
+  }> {
     const count = await this.real.count();
     const cached = ClassHierarchyResolvingStore.INDEX_CACHE.get(this.real);
     if (cached && cached.count === count) {
-      return cached.index;
+      return { index: cached.index, ambiguous: cached.ambiguous };
     }
-    const index = await this.buildIndex();
-    ClassHierarchyResolvingStore.INDEX_CACHE.set(this.real, { count, index });
-    return index;
+    const { index, ambiguous } = await this.buildIndex();
+    ClassHierarchyResolvingStore.INDEX_CACHE.set(this.real, {
+      count,
+      index,
+      ambiguous,
+    });
+    return { index, ambiguous };
   }
 
   /**
-   * Build the `symbolic class IRI value → class file IRI` index by scanning the
-   * store's hierarchy triples for class file-IRI subjects, then deriving each
-   * class's symbolic form from its label — mirroring exactly what
-   * `NoteToRDFConverter.expandClassValue` emits for the instance/superclass
-   * references the walk queries.
+   * Build the `symbolic class IRI value → class file IRI` index (+ the ambiguous
+   * set) by scanning EVERY subject's label (`exo__Asset_label` + its `rdfs:label`
+   * mirror) and deriving its symbolic `prefix#Local` form — mirroring exactly what
+   * `NoteToRDFConverter.expandClassValue` emits for a class reference.
+   *
+   * COMPREHENSIVE over TBox (broader than the hierarchy-edge-subject set the
+   * hierarchy bridge alone needs) so a class WITHOUT an outgoing superClass edge —
+   * a metaclass like `exo__Class`, a root marker like `exo__Prototype` — still
+   * resolves for the Instance_class OBJECT bridge (RFC 78572fa9 Phase 3 stage-1). It
+   * remains a SUPERSET of the hierarchy-subject set, so the hierarchy bridge's
+   * lookups are unaffected. Free-form ABox labels (not `prefix__Local`) yield null
+   * from `labelToSymbolicIRI` → excluded. One scan, memoized per store-instance.
+   *
+   * Two DISTINCT class files deriving the same `prefix#Local` (a cross-ontology
+   * prefix collision, RFC v3 point 9) are recorded as ambiguous → a lookup throws.
    */
-  private async buildIndex(): Promise<Map<string, IRI>> {
+  private async buildIndex(): Promise<{
+    index: Map<string, IRI>;
+    ambiguous: Set<string>;
+  }> {
     const index = new Map<string, IRI>();
+    const ambiguous = new Set<string>();
 
-    const superPred = new IRI(ClassHierarchyResolvingStore.EXO_CLASS_SUPER_CLASS);
-    const subClassPred = new IRI(ClassHierarchyResolvingStore.RDFS_SUBCLASS_OF);
-    const hierarchyTriples = [
-      ...(await this.real.match(undefined, superPred, undefined)),
-      ...(await this.real.match(undefined, subClassPred, undefined)),
-    ];
-
-    // Class file IRIs = the subjects of hierarchy edges (a class with an OUTGOING
-    // superclass edge is the only kind of node the transitive walk ever needs to
-    // bridge — a leaf ancestor with no outgoing edge is reached as an object and
-    // never re-queried as a subject).
-    const classFileIris = new Set<string>();
-    for (const t of hierarchyTriples) {
-      if (t.subject instanceof IRI) {
-        classFileIris.add(t.subject.value);
-      }
-    }
-
-    for (const fileIriValue of classFileIris) {
-      const fileIri = new IRI(fileIriValue);
-      const symbolic = await this.deriveSymbolicForm(fileIri);
-      if (symbolic) {
-        index.set(symbolic, fileIri);
-      }
-    }
-
-    return index;
-  }
-
-  /**
-   * Derive the symbolic ontology IRI for a class file IRI from its label
-   * (`rdfs:label` preferred, `exo__Asset_label` fallback — both emitted by the
-   * converter for a class asset). Uses the SAME `prefix__Local → base/prefix#Local`
-   * rule as `NoteToRDFConverter.expandClassValue`, so the derived key exactly
-   * equals the symbolic form the walk queries.
-   */
-  private async deriveSymbolicForm(fileIri: IRI): Promise<string | null> {
     const labelTriples = [
       ...(await this.real.match(
-        fileIri,
-        new IRI(ClassHierarchyResolvingStore.RDFS_LABEL),
+        undefined,
+        new IRI(ClassHierarchyResolvingStore.EXO_ASSET_LABEL),
         undefined,
       )),
       ...(await this.real.match(
-        fileIri,
-        new IRI(ClassHierarchyResolvingStore.EXO_ASSET_LABEL),
+        undefined,
+        new IRI(ClassHierarchyResolvingStore.RDFS_LABEL),
         undefined,
       )),
     ];
 
     for (const t of labelTriples) {
-      const value = ClassHierarchyResolvingStore.literalValue(t.object);
-      if (value === null) continue;
-      const symbolic = ClassHierarchyResolvingStore.labelToSymbolicIRI(value);
-      if (symbolic) return symbolic;
+      if (!(t.subject instanceof IRI)) continue;
+      const labelValue = ClassHierarchyResolvingStore.literalValue(t.object);
+      if (labelValue === null) continue;
+      const symbolic =
+        ClassHierarchyResolvingStore.labelToSymbolicIRI(labelValue);
+      if (!symbolic) continue;
+      const existing = index.get(symbolic);
+      if (!existing) {
+        index.set(symbolic, t.subject);
+      } else if (existing.value !== t.subject.value) {
+        // Two DIFFERENT class files derive the same symbolic form → ambiguous. Same
+        // subject via both label predicates (Asset_label + its rdfs:label mirror) is
+        // NOT a collision (existing.value === subject.value → no-op).
+        ambiguous.add(symbolic);
+      }
     }
-    return null;
+
+    return { index, ambiguous };
   }
 
   private static literalValue(object: RDFObject): string | null {

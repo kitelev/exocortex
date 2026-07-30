@@ -168,13 +168,30 @@ export class NoteToRDFConverter {
    */
   private readonly subjectIriPrefix: string;
 
+  /**
+   * RFC 78572fa9 Phase 3 stage-1 (Andrey design-interview §v6, F1/F4) — DEFAULT-OFF
+   * migration flag. When enabled, {@link valueToClassURI} (the `exo__Instance_class`
+   * emission path) emits an asset's `exo__Instance_class` OBJECT (a resolved class
+   * reference) as the class FILE IRI (uid) instead of the SYMBOLIC class IRI. Staged
+   * per-predicate: this flag covers
+   * ONLY the Instance_class object position (status/value and domain/range are later
+   * F1 stages). Default OFF ⇒ byte-identical to the historical symbolic emission, so
+   * merging is a no-op behaviour change; existing pure-SPARQL queries/preconditions
+   * that reference a class by its readable symbolic name keep working via the
+   * query-time `ClassHierarchyResolvingStore` (generalized to this position). An
+   * unresolved ref (no class-def in the store) keeps emitting symbolic — no uid can
+   * be synthesized — so a mixed store is possible and the resolver unions both forms.
+   */
+  private readonly emitInstanceClassAsUid: boolean;
+
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private readonly vault: IVaultAdapter,
     @inject(DI_TOKENS.ILogger) private readonly logger: ILogger = NullLogger,
-    options: { subjectIriPrefix?: string } = {},
+    options: { subjectIriPrefix?: string; emitInstanceClassAsUid?: boolean } = {},
   ) {
     this.vocabularyMapper = new RDFVocabularyMapper();
     this.subjectIriPrefix = normaliseSubjectIriPrefix(options.subjectIriPrefix);
+    this.emitInstanceClassAsUid = options.emitInstanceClassAsUid ?? false;
   }
 
   /**
@@ -358,6 +375,12 @@ export class NoteToRDFConverter {
 
       if (key === "exo__Instance_class") {
         for (const val of values) {
+          // `classNode` is the SAME object valueToClassURI produced above — so the
+          // RFC 78572fa9 Phase 3 stage-1 emission flip (uid vs symbolic) applies to
+          // this co-emitted `rdf:type` triple too. The query-time
+          // ClassHierarchyResolvingStore bridges BOTH `exo:Instance_class` AND
+          // `rdf:type` membership objects (its MEMBERSHIP_PREDICATES set) so both
+          // stay queryable by the symbolic name post-flip — keep them in lockstep.
           const classNode = this.valueToClassURI(val);
           if (classNode instanceof IRI) {
             const rdfType = Namespace.RDF.term("type");
@@ -1610,15 +1633,32 @@ export class NoteToRDFConverter {
     if (this.isUUID(classRef)) {
       const resolvedFile = this.vault.getFirstLinkpathDest(classRef, "");
       if (resolvedFile) {
+        // RFC 78572fa9 Phase 3 stage-1 (`valueToClassURI` is called ONLY for
+        // `exo__Instance_class`): when `emitInstanceClassAsUid` is on, emit the class
+        // FILE IRI (uid) instead of the symbolic class IRI for a RESOLVED class ref
+        // (the canonical UID-canon form `exo__Instance_class: "[[<class-uid>]]"`). The
+        // file IRI is the class-def subject and is graph-traversable via
+        // `exo__Class_superClass`; the query-time `ClassHierarchyResolvingStore`
+        // bridges a symbolic-name query back to it. A label-form / unresolved ref
+        // above keeps emitting symbolic (no uid to synthesize) and the resolver unions
+        // both forms.
         const basenameIRI = this.expandClassValue(resolvedFile.basename);
-        if (basenameIRI) return basenameIRI;
+        if (basenameIRI) {
+          return this.emitInstanceClassAsUid
+            ? this.notePathToIRI(resolvedFile.path)
+            : basenameIRI;
+        }
 
         const fm = this.vault.getFrontmatter(resolvedFile);
         if (fm) {
           const label = fm["exo__Asset_label"];
           if (typeof label === "string") {
             const labelIRI = this.expandClassValue(label);
-            if (labelIRI) return labelIRI;
+            if (labelIRI) {
+              return this.emitInstanceClassAsUid
+                ? this.notePathToIRI(resolvedFile.path)
+                : labelIRI;
+            }
           }
         }
 
