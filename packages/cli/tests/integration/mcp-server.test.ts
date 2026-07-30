@@ -8,6 +8,8 @@ import {
   MCP_PROTOCOL_VERSION,
   JSON_RPC_METHOD_NOT_FOUND,
   JSON_RPC_PARSE_ERROR,
+  JSON_RPC_INVALID_REQUEST,
+  JSON_RPC_INTERNAL_ERROR,
   type JsonRpcResponse,
   type McpToolResult,
 } from "../../src/mcp/McpServer.js";
@@ -169,6 +171,70 @@ describe("exocortex-cli mcp — MCP stdio server", () => {
     expect(args).toContain("p__x=value with $ and ` and (parens)");
   });
 
+  it("@req:264ccef6-4737-4076-95d8-053326c9ee1d a flag-shaped alias cannot inject a CLI option into the create invocation", async () => {
+    const { server, calls } = makeServer();
+
+    await callTool(server, "create_asset", {
+      vault: "/legit",
+      class: "ems__Task",
+      label: "L",
+      // A hostile alias array: without one `--aliases` per value, Commander's
+      // variadic parsing would treat these as REAL flags and redirect the write
+      // to another vault while disabling wikilink validation.
+      aliases: [
+        "RealAlias",
+        "--vault",
+        "/attacker",
+        "--skip-wikilink-validation",
+      ],
+    });
+
+    const args = calls[0].args;
+
+    // The only `--vault` that Commander can read as a FLAG is the caller's, in
+    // the fixed head position; the vault is never redirected.
+    expect(args.slice(0, 3)).toEqual(["create", "--vault", "/legit"]);
+
+    // Every hostile token sits in the absorbed-first-token slot of its OWN
+    // `--aliases`, so Commander parses it as a value, never as an option.
+    for (const hostile of [
+      "--vault",
+      "/attacker",
+      "--skip-wikilink-validation",
+    ]) {
+      const at = args.lastIndexOf(hostile);
+      expect(at).toBeGreaterThan(0);
+      expect(args[at - 1]).toBe("--aliases");
+    }
+    expect(args.filter((a) => a === "--aliases")).toHaveLength(4);
+  });
+
+  it("@req:264ccef6-4737-4076-95d8-053326c9ee1d malformed argument shapes are refused instead of corrupting the asset", async () => {
+    const { server, calls } = makeServer();
+
+    // Would otherwise serialise as `--property o=[object Object]`.
+    const badProperty = await callTool(server, "create_asset", {
+      vault: "/v",
+      class: "ems__Task",
+      label: "L",
+      properties: { o: { nested: 1 } },
+    });
+    expect(badProperty.isError).toBe(true);
+    expect(badProperty.content[0].text).toContain("`o`");
+
+    // Would otherwise spread one argv element PER CHARACTER.
+    const badAliases = await callTool(server, "create_asset", {
+      vault: "/v",
+      class: "ems__Task",
+      label: "L",
+      aliases: "notanarray",
+    });
+    expect(badAliases.isError).toBe(true);
+    expect(badAliases.content[0].text).toContain("aliases");
+
+    expect(calls).toHaveLength(0);
+  });
+
   it("@req:264ccef6-4737-4076-95d8-053326c9ee1d create_asset enables inline-SHACL by default and omits it only when validate is false", async () => {
     const withDefault = makeServer();
     await callTool(withDefault.server, "create_asset", {
@@ -294,6 +360,47 @@ describe("exocortex-cli mcp — MCP stdio server", () => {
       MCP_PROTOCOL_VERSION,
     );
     expect(JSON.parse(written[1]).error.code).toBe(JSON_RPC_PARSE_ERROR);
+  });
+
+  it("@req:264ccef6-4737-4076-95d8-053326c9ee1d the long-lived loop survives a null line and a throwing runner, still serving later messages", async () => {
+    const exploding = new McpServer({
+      runCli: async () => {
+        throw new Error("spawn exploded");
+      },
+      version: "1.2.3",
+    });
+    const written: string[] = [];
+
+    await runStdioServer(
+      exploding,
+      Readable.from([
+        // Valid JSON, but not an object — property access on it would throw and
+        // terminate the whole server.
+        "null\n",
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: {
+            name: "create_asset",
+            arguments: { vault: "/v", class: "c", label: "l" },
+          },
+        }) + "\n",
+        // The session must still be alive to answer this.
+        JSON.stringify({ jsonrpc: "2.0", id: 3, method: "ping" }) + "\n",
+      ]),
+      (line) => written.push(line),
+    );
+
+    expect(written).toHaveLength(3);
+    expect(JSON.parse(written[0]).error.code).toBe(JSON_RPC_INVALID_REQUEST);
+    expect(JSON.parse(written[1]).error.code).toBe(JSON_RPC_INTERNAL_ERROR);
+    // Proof the loop was never killed.
+    expect(JSON.parse(written[2])).toEqual({
+      jsonrpc: "2.0",
+      id: 3,
+      result: {},
+    });
   });
 });
 

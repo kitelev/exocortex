@@ -3,6 +3,7 @@ import {
   MCP_TOOLS,
   buildCreateAssetArgs,
   buildCreateEffortArgs,
+  invalidCreateAssetShape,
   type CreateAssetInput,
   type CreateEffortInput,
 } from "./tools.js";
@@ -17,6 +18,7 @@ export const MCP_PROTOCOL_VERSION = "2024-11-05";
 export const JSON_RPC_PARSE_ERROR = -32700;
 export const JSON_RPC_INVALID_REQUEST = -32600;
 export const JSON_RPC_METHOD_NOT_FOUND = -32601;
+export const JSON_RPC_INTERNAL_ERROR = -32603;
 
 /** A decoded incoming JSON-RPC message (request OR notification). */
 export interface JsonRpcMessage {
@@ -108,6 +110,25 @@ export class McpServer {
    *   notification (JSON-RPC forbids answering those).
    */
   async handle(message: JsonRpcMessage): Promise<JsonRpcResponse | null> {
+    // A bare `null` / scalar / array line is valid JSON, so it survives the
+    // transport's parse guard and reaches here. Property access on it would
+    // throw and — since the stdio loop is long-lived — take the whole server
+    // down with one malformed line.
+    if (
+      typeof message !== "object" ||
+      message === null ||
+      Array.isArray(message)
+    ) {
+      return {
+        jsonrpc: "2.0",
+        id: null,
+        error: {
+          code: JSON_RPC_INVALID_REQUEST,
+          message: "Invalid request: expected a JSON-RPC object",
+        },
+      };
+    }
+
     const id = message.id;
     const isNotification = id === undefined;
 
@@ -190,6 +211,10 @@ export class McpServer {
           `create_asset: missing required argument(s): ${missing.join(", ")}`,
           true,
         );
+      }
+      const badShape = invalidCreateAssetShape(args);
+      if (badShape !== null) {
+        return textResult(`create_asset: ${badShape}`, true);
       }
       argv = buildCreateAssetArgs(args as unknown as CreateAssetInput);
     } else if (name === "create_effort") {

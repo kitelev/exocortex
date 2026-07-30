@@ -40,6 +40,48 @@ export interface CreateEffortInput {
 }
 
 /**
+ * Reject `create_asset` arguments whose SHAPE the schema forbids.
+ *
+ * Without this, a non-string property value stringifies into the vault as
+ * `[object Object]`, and a bare string passed as `aliases` spreads one argv
+ * element PER CHARACTER. Both are silent corruption, so they fail loud with a
+ * message naming the offending field.
+ *
+ * @returns an error message, or `null` when the shape is acceptable.
+ */
+export function invalidCreateAssetShape(
+  args: Record<string, unknown>,
+): string | null {
+  const aliases = args.aliases;
+  if (aliases !== undefined) {
+    if (!Array.isArray(aliases) || aliases.some((a) => typeof a !== "string")) {
+      return "`aliases` must be an array of strings";
+    }
+  }
+
+  const properties = args.properties;
+  if (properties !== undefined) {
+    if (
+      typeof properties !== "object" ||
+      properties === null ||
+      Array.isArray(properties)
+    ) {
+      return "`properties` must be an object";
+    }
+    for (const [key, value] of Object.entries(
+      properties as Record<string, unknown>,
+    )) {
+      const values = Array.isArray(value) ? value : [value];
+      if (values.some((single) => typeof single !== "string")) {
+        return `property \`${key}\` must be a string or an array of strings`;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Build the argv for `create_asset` → the generic `create` verb.
  *
  * Every caller-supplied value becomes its OWN argv element, so no character in
@@ -56,10 +98,16 @@ export function buildCreateAssetArgs(input: CreateAssetInput): string[] {
     input.label,
   ];
 
-  if (input.aliases && input.aliases.length > 0) {
-    // `--aliases <names...>` is variadic; Commander stops collecting at the next
-    // `--flag`, and every following token we emit is one.
-    args.push("--aliases", ...input.aliases);
+  // `--aliases <names...>` is VARIADIC: Commander consumes the first token
+  // unconditionally but parses every subsequent `--`-prefixed token as a real
+  // flag. Emitting the whole array after one `--aliases` would therefore let a
+  // caller-supplied alias inject CLI options (`--vault`, `--body-file`,
+  // `--skip-wikilink-validation`, …) — argument injection into the CLI's own
+  // parser, a second interpretation layer that `execFile` does not close.
+  // One `--aliases` per value keeps each alias in the absorbed-first-token slot,
+  // exactly as the `--property` loop below already does.
+  for (const alias of input.aliases ?? []) {
+    args.push("--aliases", alias);
   }
 
   for (const [key, value] of Object.entries(input.properties ?? {})) {

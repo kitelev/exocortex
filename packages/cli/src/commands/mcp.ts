@@ -3,6 +3,7 @@ import { createInterface } from "readline";
 import {
   McpServer,
   JSON_RPC_PARSE_ERROR,
+  JSON_RPC_INTERNAL_ERROR,
   type JsonRpcMessage,
   type JsonRpcResponse,
 } from "../mcp/McpServer.js";
@@ -47,7 +48,26 @@ export async function runStdioServer(
       continue;
     }
 
-    const response = await server.handle(message);
+    // The server is long-lived: no single message may terminate it. Any
+    // unexpected throw (a hostile payload shape, a runner that rejects) becomes
+    // an internal-error response instead of escaping the loop.
+    let response: JsonRpcResponse | null;
+    try {
+      response = await server.handle(message);
+    } catch (error) {
+      response = {
+        jsonrpc: "2.0",
+        id:
+          typeof message?.id === "string" || typeof message?.id === "number"
+            ? message.id
+            : null,
+        error: {
+          code: JSON_RPC_INTERNAL_ERROR,
+          message: `Internal error: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      };
+    }
+
     if (response !== null) {
       write(JSON.stringify(response) + "\n");
     }
