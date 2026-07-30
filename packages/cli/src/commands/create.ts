@@ -6,6 +6,8 @@ import {
   ShapeLoader,
   ShapeRegistry,
   GenericAssetCreationService,
+  liveClock,
+  liveUidGenerator,
   type GenericAssetCreationConfig,
 } from "@kitelev/exocortex-core";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
@@ -15,7 +17,10 @@ import { WikilinkValidator } from "../services/WikilinkValidator.js";
 import { PropertyNameValidator } from "../services/PropertyNameValidator.js";
 import { EffortStatusResolver } from "../services/EffortStatusResolver.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
-import { VaultNotFoundError } from "../utils/errors/index.js";
+import {
+  ShaclConformanceError,
+  VaultNotFoundError,
+} from "../utils/errors/index.js";
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
 import {
   resolveCoLocationFolder,
@@ -76,6 +81,11 @@ interface CreateCommandOptions {
   yes?: boolean;
   timezone?: string;
   skipWikilinkValidation?: boolean;
+  /**
+   * Opt-in SHACL-lite conformance gate (project 38800c80 W3). Default OFF —
+   * without it `create` is byte-identical (no vault load, no extra output).
+   */
+  validate?: boolean;
 }
 
 /**
@@ -252,6 +262,10 @@ export function createCommand(): Command {
     .option("--yes", "Accepted for symmetry with the apply subcommands (create is non-interactive; no-op)")
     .option("--timezone <tz>", "Timezone for timestamps (defaults to Asia/Almaty)")
     .option("--skip-wikilink-validation", "Skip wikilink existence validation")
+    .option(
+      "--validate",
+      "Run SHACL-lite conformance validation on the new asset BEFORE writing it; a non-conformant asset is refused and no file is created (same shapes as `validate schema --shapes-mode`). Opt-in: omit the flag and create behaves exactly as before.",
+    )
     .action(async (options: CreateCommandOptions) => {
       try {
         const vaultPath = resolve(options.vault);
@@ -467,6 +481,58 @@ export function createCommand(): Command {
           propertyValues,
           shapeRegistry,
         };
+
+        // Opt-in SHACL-lite conformance gate (project 38800c80 W3) — the last
+        // hook-gap of the CLI creation path. A CLI `create` runs through Bash,
+        // so the PreToolUse Write hook `validate-asset.sh` (which gives the
+        // Write path this guarantee via `validate schema --shapes-mode`) never
+        // fires. `--validate` runs the SAME shapes pipeline BEFORE the write,
+        // scoped to this candidate, and refuses a non-conformant asset so
+        // nothing lands on disk.
+        //
+        // Determinism is pinned FIRST so the bytes validated here are the exact
+        // bytes written below: `buildAsset` mints a fresh uid and stamps the
+        // timestamps from the clock on EVERY call, so without pinning the
+        // validated candidate and the written asset would differ
+        // (dry-run-preview-not-real-output). The generators are the same live
+        // ones the service uses by default — only their values are frozen for
+        // this invocation, and only when `--validate` is passed (the default
+        // path is untouched and byte-identical).
+        if (options.validate) {
+          const pinnedUid = liveUidGenerator().next();
+          const pinnedNow = liveClock().now();
+          creationService.withDeterminism({
+            uidGenerator: { next: () => pinnedUid },
+            clock: { now: () => new Date(pinnedNow.getTime()) },
+          });
+
+          const candidate = creationService.buildAsset(config);
+          // Lazily imported: the validator pulls in the whole shapes/SPARQL
+          // module graph, and the flag is opt-in — the DEFAULT `create` path
+          // must not pay that load cost (nor widen its module graph).
+          const { CandidateShaclValidator } = await import(
+            "../services/CandidateShaclValidator.js"
+          );
+          const shaclValidator = new CandidateShaclValidator(vaultPath);
+          const { violations, warnings } =
+            await shaclValidator.validateCandidate(
+              candidate.path,
+              candidate.content,
+            );
+
+          // Warnings never gate (open-world: unresolvable / cross-vault /
+          // symbolic refs, issue #3488) — same exit-code semantics shapes-mode
+          // applies. Reported on stderr so stdout stays a single JSON document.
+          for (const warning of warnings) {
+            process.stderr.write(
+              `⚠ SHACL warning on ${warning.propertyPath} (${warning.constraint}): ${warning.message}\n`,
+            );
+          }
+
+          if (violations.length > 0) {
+            throw new ShaclConformanceError(candidate.path, violations);
+          }
+        }
 
         let uuid: string;
         let path: string;

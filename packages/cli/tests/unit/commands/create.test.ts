@@ -57,6 +57,12 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   // #3800: NodeFsAdapter (in the graph) now imports this. Not exercised here
   // (only option registration) → a stub satisfies the ESM named-import binding.
   parseYamlFrontmatterTolerant: jest.fn(),
+  // W3 (`create --validate`): create.ts pins the uid + clock before the
+  // pre-write SHACL gate so the validated bytes are the written bytes. Never
+  // invoked here (no `--validate` in these option-registration tests) → a
+  // shape-stub satisfies the ESM named-import binding.
+  liveClock: jest.fn(() => ({ now: () => new Date(0) })),
+  liveUidGenerator: jest.fn(() => ({ next: () => "00000000-0000-0000-0000-000000000000" })),
 }));
 
 // Mock fs-extra (NodeFsAdapter dependency)
@@ -212,8 +218,16 @@ describe("Issue #2333: create command", () => {
     expect(option!.mandatory).toBeFalsy();
   });
 
-  it("should register exactly 14 options", () => {
+  it("should register exactly 15 options", () => {
     const cmd = createCommand();
-    expect(cmd.options).toHaveLength(14);
+    // 15th = `--validate` (W3: opt-in pre-write SHACL-lite conformance gate).
+    expect(cmd.options).toHaveLength(15);
+  });
+
+  it("should register --validate as an optional opt-in flag", () => {
+    const cmd = createCommand();
+    const option = cmd.options.find((o) => o.long === "--validate");
+    expect(option).toBeDefined();
+    expect(option!.mandatory).toBeFalsy();
   });
 });
