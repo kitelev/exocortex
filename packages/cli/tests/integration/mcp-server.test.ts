@@ -232,7 +232,37 @@ describe("exocortex-cli mcp — MCP stdio server", () => {
     expect(badAliases.isError).toBe(true);
     expect(badAliases.content[0].text).toContain("aliases");
 
-    expect(calls).toHaveLength(0);
+    // Would otherwise be string-coerced by execFile into `[object Object]` and
+    // written into the vault as the asset's body.
+    const badBody = await callTool(server, "create_asset", {
+      vault: "/v",
+      class: "ems__Task",
+      label: "L",
+      body: { a: 1 },
+    });
+    expect(badBody.isError).toBe(true);
+    expect(badBody.content[0].text).toContain("body");
+
+    // Would otherwise match neither builder branch and be SILENTLY dropped.
+    const badStatus = await callTool(server, "create_asset", {
+      vault: "/v",
+      class: "ems__Task",
+      label: "L",
+      status: 42,
+    });
+    expect(badStatus.isError).toBe(true);
+    expect(badStatus.content[0].text).toContain("status");
+
+    // `status: false` remains legitimate (→ --no-status).
+    const okStatus = await callTool(server, "create_asset", {
+      vault: "/v",
+      class: "ems__Task",
+      label: "L",
+      status: false,
+    });
+    expect(okStatus.isError).toBeUndefined();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].args).toContain("--no-status");
   });
 
   it("@req:264ccef6-4737-4076-95d8-053326c9ee1d create_asset enables inline-SHACL by default and omits it only when validate is false", async () => {

@@ -59,6 +59,21 @@ export function invalidCreateAssetShape(
     }
   }
 
+  // A non-string `body` is string-coerced by execFile and lands in the vault as
+  // `[object Object]`; a non-string, non-`false` `status` matches neither branch
+  // of the builder and is SILENTLY dropped (the asset quietly gets the default).
+  // Both are the same silent-corruption class as the checks below.
+  if (args.body !== undefined && typeof args.body !== "string") {
+    return "`body` must be a string";
+  }
+  if (
+    args.status !== undefined &&
+    typeof args.status !== "string" &&
+    args.status !== false
+  ) {
+    return "`status` must be a status name or false";
+  }
+
   const properties = args.properties;
   if (properties !== undefined) {
     if (
