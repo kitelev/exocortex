@@ -152,6 +152,14 @@ describe("VaultRDFIndexer — excludedFolders plumbing", () => {
     (Namespace as any).EXO = {
       term: jest.fn().mockReturnValue(mockPrototypePredicate),
     };
+    // #3936: updateFile now probes Namespace.RDF.term("type") +
+    // Namespace.EXO.term("Statement") to detect a reified statement (store
+    // match returns [] here → not a statement → incremental path preserved).
+    (Namespace as any).RDF = {
+      term: jest
+        .fn()
+        .mockReturnValue({ value: "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" }),
+    };
   });
 
   describe("initialize", () => {
