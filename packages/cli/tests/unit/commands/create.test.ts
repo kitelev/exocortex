@@ -212,8 +212,8 @@ describe("Issue #2333: create command", () => {
     expect(option!.mandatory).toBeFalsy();
   });
 
-  it("should register exactly 13 options", () => {
+  it("should register exactly 14 options", () => {
     const cmd = createCommand();
-    expect(cmd.options).toHaveLength(13);
+    expect(cmd.options).toHaveLength(14);
   });
 });
