@@ -42,6 +42,14 @@ const CLASS_UID = "1b20a8f0-d745-4e93-91db-4531b3df120e";
 const COUNT_PROP_UID = "bbb22222-2222-2222-2222-222222222222";
 /** A PRE-EXISTING asset that already violates the shape (never our candidate). */
 const PREEXISTING_BAD_UID = "22222222-bbbb-2222-bbbb-222222222222";
+/**
+ * A DOMAINLESS property-def: it adds a known property NAME (so the
+ * RFC-430e84f1 name guard passes) but NO shape (ShapeLoader skips a domainless
+ * property), and it is one of the converter's OPTIONAL-non-empty invariants —
+ * so an EMPTY value makes the candidate unindexable without adding a
+ * SHACL constraint.
+ */
+const STATUS_PROP_UID = "ccc33333-3333-3333-3333-333333333333";
 /** `exo__Property` metaclass — makes `ems__Task_count` a known property NAME. */
 const PROPERTY_METACLASS_UID = "38277bfa-d7f9-4a75-b856-b23276ab0db3";
 /** `exo__Class` metaclass — for the `ems__Task` class-def. */
@@ -51,6 +59,7 @@ const CLASS_METACLASS_UID = "8619c4fc-64f1-4869-b17e-e34186cacca9";
 const FIXTURE_BASENAMES = new Set([
   `${CLASS_UID}.md`,
   `${COUNT_PROP_UID}.md`,
+  `${STATUS_PROP_UID}.md`,
   `${PREEXISTING_BAD_UID}.md`,
 ]);
 
@@ -105,6 +114,18 @@ function buildFixtureVault(vault: string): void {
       exo__Property_domain: '"[[ems__Task]]"',
       exo__Property_range: "http://www.w3.org/2001/XMLSchema#integer",
       exo__Property_severity: "sh:Violation",
+    }),
+  );
+
+  // Domainless property-def → a KNOWN name, but no shape (ShapeLoader skips a
+  // domainless property), so an empty value trips the converter's
+  // EMPTY_OPTIONAL_PROPERTY invariant rather than any SHACL constraint.
+  fs.writeFileSync(
+    path.join(tbox, `${STATUS_PROP_UID}.md`),
+    md({
+      exo__Asset_uid: STATUS_PROP_UID,
+      exo__Instance_class: `"[[${PROPERTY_METACLASS_UID}|exo__Property]]"`,
+      exo__Asset_label: "ems__Effort_status",
     }),
   );
 
@@ -255,6 +276,24 @@ describe("W3: `cli create --validate` — opt-in pre-write SHACL-lite conformanc
     expect(json.uuid).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
+  });
+
+  it(`--validate reports an UNINDEXABLE candidate as a structured violation, not a raw crash @req:${REQ}`, async () => {
+    // An empty optional property makes `convertVault` SKIP the file entirely
+    // (#2997 two-phase commit) → zero triples → invisible to every query /
+    // layout / graph relation. Calling the converter directly would instead
+    // throw a raw `Literal value cannot be empty`. The gate must surface a
+    // structured, machine-readable verdict and write nothing.
+    await runCreate(["--property", "ems__Effort_status=", "--validate"]);
+
+    expect(exitCodes).not.toContain(0);
+    const stderr = errorSpy.mock.calls.flat().join("\n");
+    expect(stderr).toContain("SHACL-lite validation failed");
+    expect(stderr).toContain("ems__Effort_status");
+    expect(stderr).toContain("SKIPPED by the indexer");
+    expect(stderr).not.toContain("Literal value cannot be empty");
+    expect(createdAssetCount()).toBe(0);
+    expect(stdoutChunks.join("")).toBe("");
   });
 
   it(`the validated bytes are the bytes written — uid + timestamps are pinned across the gate @req:${REQ}`, async () => {

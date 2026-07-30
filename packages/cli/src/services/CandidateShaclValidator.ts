@@ -86,16 +86,66 @@ export class CandidateShaclValidator {
   ): Promise<CandidateConformanceResult> {
     const adapter = new FileSystemVaultAdapter(this.vaultPath);
     const converter = new NoteToRDFConverter(adapter);
+    const file = syntheticFile(relPath);
+    const frontmatter = extractFrontmatter(content);
+
+    // Parity with `convertVault`'s two-phase commit (#2997 Phase 2): it
+    // validates file-level invariants BEFORE converting, and SKIPS any file
+    // that fails one (or throws mid-conversion) so a malformed asset cannot
+    // leak partial triples. Calling `convertNoteFromFrontmatter` directly would
+    // bypass that gate — an empty `ems__Effort_status` would surface as a raw
+    // `Literal value cannot be empty` crash instead of a structured verdict.
+    //
+    // For a PRE-WRITE gate an unindexable candidate is a WORSE outcome than a
+    // shape violation: it contributes ZERO triples, so the asset would be
+    // invisible to every query / layout / graph relation — the exact
+    // "silently dead asset" class this workstream exists to prevent. So it is
+    // reported as a gate failure (fail-closed, structured), not passed. Checked
+    // FIRST so a malformed candidate fails fast, before the vault-wide load.
+    const invariant = frontmatter
+      ? converter.validateExocortexAsset(frontmatter, file.basename)
+      : null;
+    if (invariant) {
+      return {
+        violations: [
+          {
+            propertyPath: invariant.property,
+            propertyIri: invariant.property,
+            constraint: invariant.code,
+            message: `${invariant.message} — the asset would be SKIPPED by the indexer (no triples emitted), making it invisible to every query, layout and graph relation.`,
+          },
+        ],
+        warnings: [],
+      };
+    }
 
     // Vault context: the shapes (TBox) plus every existing asset, so `sh:class`
     // range checks can resolve the candidate's references.
     const vaultTriples = (await converter.convertVault()) as DomainTriple[];
 
     // Candidate triples from the assembled bytes — no temp file, no disk write.
-    const candidateTriples = (await converter.convertNoteFromFrontmatter(
-      syntheticFile(relPath),
-      extractFrontmatter(content),
-    )) as DomainTriple[];
+    // The try/catch is the backstop half of the parity above: `convertVault`
+    // discards the buffer and skips the file on ANY conversion throw, so a
+    // throw here means the same thing — unindexable, hence a gate failure.
+    let candidateTriples: DomainTriple[];
+    try {
+      candidateTriples = (await converter.convertNoteFromFrontmatter(
+        file,
+        frontmatter,
+      )) as DomainTriple[];
+    } catch (error) {
+      return {
+        violations: [
+          {
+            propertyPath: relPath,
+            propertyIri: relPath,
+            constraint: "indexability",
+            message: `The asset could not be converted to RDF (${error instanceof Error ? error.message : String(error)}) — the indexer would SKIP it, making it invisible to every query, layout and graph relation.`,
+          },
+        ],
+        warnings: [],
+      };
+    }
 
     const allTriples = [...vaultTriples, ...candidateTriples];
     const rawReport = await runShapesValidation(this.vaultPath, allTriples);
@@ -160,10 +210,13 @@ function syntheticFile(relPath: string): IFile {
 
 /**
  * Parse the candidate's frontmatter with the SAME tolerant parser
- * `FileSystemVaultAdapter.getFrontmatter` applies when reading a real file back,
- * so the candidate's triples equal the ones a post-write `convertVault` would
- * emit. Returns `null` when the content has no frontmatter block (the converter
- * then yields no triples — nothing to validate).
+ * `FileSystemVaultAdapter.getFrontmatter` applies when reading a real file back
+ * (byte-identical block regex + `parseYamlFrontmatterTolerant`), so the
+ * candidate's triples equal the ones a post-write `convertVault` would emit —
+ * with the deliberate exception of the SKIP case: where `convertVault` silently
+ * drops an unindexable file, the gate reports it as a violation (see
+ * `validateCandidate`). Returns `null` when the content has no frontmatter block
+ * (the converter then yields no triples — nothing to validate).
  */
 function extractFrontmatter(content: string): Record<string, unknown> | null {
   const match = content.match(FRONTMATTER_REGEX);
