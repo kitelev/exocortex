@@ -4095,6 +4095,14 @@ export default class ExocortexPlugin extends Plugin {
               : void bootstrapCommands.invokeAddAssetSpace(),
         }).open(),
       onMaterialized: () => this.refreshAndInjectAssetSpaceMaterialization(),
+      // #3956 — delegate the dependsOn-closure completeness check to the mount
+      // authority so «Add AssetSpace by URL» warns specifically when the added
+      // AssetSpace's dependsOn (esp. the exocmd class-TBox) is left unmounted.
+      // Lazily reads `this.profileApplyManager` (set later in onload); null-safe
+      // (an unwired manager → empty inputs → the generic advisory).
+      getClosureCheckInputs: () =>
+        this.profileApplyManager?.getClosureCheckInputs() ??
+        Promise.resolve({ infos: [], materializedUids: new Set<string>() }),
     });
 
     // RFC 0002 §3.2 (P3) — de-jargon: «Bootstrap vault» → «Set up the engine»
