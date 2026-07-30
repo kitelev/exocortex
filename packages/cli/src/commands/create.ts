@@ -70,7 +70,9 @@ interface CreateCommandOptions {
   bodyFile?: string;
   dryRun?: boolean;
   createdBy?: string;
-  status?: string;
+  // `--status <name>` → string; `--no-status` → false (Commander pairs the
+  // `--no-` flag with the `status` key; issue #3928); neither → undefined.
+  status?: string | boolean;
   yes?: boolean;
   timezone?: string;
   skipWikilinkValidation?: boolean;
@@ -246,6 +248,7 @@ export function createCommand(): Command {
     .option("--dry-run", "Preview frontmatter without writing file")
     .option("--created-by <uuid>", "Creator UUID (defaults to ExoAssistant)")
     .option("--status <name>", "ems__Effort_status for status-bearing classes (default: Backlog; e.g. Draft, Doing, Done). Errors for non-status-bearing classes.")
+    .option("--no-status", "For a status-bearing class, do NOT inject the default ems__Effort_status — create a status-less prototype/template (issue #3928). No-op for a non-status-bearing class. Mutually exclusive with --status / --property ems__Effort_status.")
     .option("--yes", "Accepted for symmetry with the apply subcommands (create is non-interactive; no-op)")
     .option("--timezone <tz>", "Timezone for timestamps (defaults to Asia/Almaty)")
     .option("--skip-wikilink-validation", "Skip wikilink existence validation")
@@ -306,27 +309,41 @@ export function createCommand(): Command {
         // `set-draft-status → move-to-backlog` chain. A non-status-bearing
         // class never gets a status. An explicit `--property
         // ems__Effort_status=...` always wins (and conflicts with --status).
+        //
+        // `--no-status` (issue #3928) is the explicit opt-out: for a
+        // status-bearing class it SUPPRESSES the default injection so a
+        // recurring/template prototype is created without a status (matching
+        // its status-less siblings) — a no-op for a non-status-bearing class
+        // (none was injected anyway). Commander pairs `--no-status` with the
+        // `status` key → `options.status === false`; `--status <name>` → a
+        // string; neither → undefined.
         const statusResolver = new EffortStatusResolver(fsAdapter);
+        const noStatus = options.status === false;
+        const statusName =
+          typeof options.status === "string" ? options.status : undefined;
         const explicitStatus = EFFORT_STATUS_KEY in properties;
-        if (options.status && explicitStatus) {
+        if (noStatus && explicitStatus) {
+          throw new Error(
+            `Cannot pass both --no-status and --property ${EFFORT_STATUS_KEY}=... (ambiguous — cannot both suppress and set the status). Use one.`,
+          );
+        }
+        if (statusName && explicitStatus) {
           throw new Error(
             `Cannot pass both --status and --property ${EFFORT_STATUS_KEY}=... (ambiguous). Use one.`,
           );
         }
-        if (!explicitStatus) {
+        if (!explicitStatus && !noStatus) {
           const statusBearing = await statusResolver.isStatusBearing(classUid);
-          if (options.status) {
+          if (statusName) {
             if (!statusBearing) {
               throw new Error(
                 `--status only applies to status-bearing classes (ems__Effort subclasses); '${options.class}' is not one.`,
               );
             }
-            const statusUid = await statusResolver.resolveStatusUid(
-              options.status,
-            );
+            const statusUid = await statusResolver.resolveStatusUid(statusName);
             if (!statusUid) {
               throw new Error(
-                `Unknown status '${options.status}' — no matching ems__EffortStatus<Name> enum asset found in the vault.`,
+                `Unknown status '${statusName}' — no matching ems__EffortStatus<Name> enum asset found in the vault.`,
               );
             }
             properties[EFFORT_STATUS_KEY] = `[[${statusUid}]]`;
