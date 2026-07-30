@@ -1897,6 +1897,39 @@ describe("SyncEngine — A3: D11 one-operation guard, R8 auth, R5 secret-scan", 
     expect(entry?.localContent).toContain("[REDACTED:github-token]");
     expect(entry?.localContent).not.toContain(pat);
   });
+
+  it("R5 per-file skip preserves rename atomicity: a rename whose TARGET carries a PAT ships NEITHER half (#3976, code-reviewer MEDIUM)", async () => {
+    const OLD_R = "assets/old-rename.md";
+    const NEW_R = "assets/new-rename.md";
+    const gh = new FakeGitHubRepo({ [OLD_R]: mdAsset("u-ren", "content") });
+    const local = new FakeLocalFiles({ [OLD_R]: mdAsset("u-ren", "content") });
+    const quarantine = new InMemoryQuarantineStore();
+    const { engine } = makeEngine(gh, local, { quarantine });
+    await bootstrap(engine, gh.spec());
+    const headBefore = gh.headSha();
+
+    const pat = `ghp_${"a1B2".repeat(10)}`;
+    // Rename OLD_R → NEW_R (unique uid ⇒ ChangeDetector infers basePath), and
+    // the NEW path carries a pasted PAT.
+    local.files.delete(OLD_R);
+    local.files.set(NEW_R, mdAsset("u-ren", `renamed, oops a token: ${pat}`));
+
+    const result = await engine.sync(gh.spec());
+
+    // The repo syncs (no whole-repo error) but NEITHER half of the rename
+    // ships — atomicity preserved: the add-half is R5-skipped and the
+    // delete-half of OLD (owned by the skipped NEW) is withheld with it.
+    expect(result.status).toBe("synced");
+    expect(gh.headSha()).toBe(headBefore); // nothing pushed at all
+    expect(gh.headFiles().has(NEW_R)).toBe(false); // add-half withheld
+    expect(gh.headFiles().has(OLD_R)).toBe(true); // ⛤ delete-half withheld — OLD not deleted
+    expect(result.pushedDeletes ?? []).not.toContain(OLD_R);
+    for (const c of gh.headFiles().values()) expect(c).not.toContain(pat);
+    // NEW_R quarantined redacted for the user's security decision.
+    const entry = quarantine.entries.find((e) => e.path === NEW_R);
+    expect(entry?.localContent).toContain("[REDACTED:github-token]");
+    expect(entry?.localContent).not.toContain(pat);
+  });
 });
 
 describe("SyncEngine — #3475 phantom/empty commits (detected content already in HEAD)", () => {

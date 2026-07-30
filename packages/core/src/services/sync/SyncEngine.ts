@@ -2338,6 +2338,14 @@ export class SyncEngine {
     // REDACTED copy. Accumulated across the D16 retry loop (which rebuilds
     // pushFiles from pushFilesAll each attempt) — re-skipped every iteration
     // but quarantined once per path via `handledSecretPaths`.
+    //
+    // These are threaded out ONLY on the `done` outcome (flushed by the
+    // caller). On a `conflict` / `retry-exhausted` early-return the redacted
+    // record is not persisted this cycle — but the skipped file is untouched
+    // on disk and un-pushed, so it re-derives and re-quarantines on a later
+    // sync (self-healing; code-reviewer LOW1). The prod LocalConflictCacheStore
+    // upserts by (repoKey, path), so a re-quarantine refreshes the record
+    // rather than duplicating it (code-reviewer LOW2).
     const secretQuarantineEntries: QuarantineEntry[] = [];
     const handledSecretPaths = new Set<string>();
 
@@ -2676,6 +2684,22 @@ export class SyncEngine {
             .map(([p, k]) => `${p} (${k.join(", ")})`)
             .join(", ")}`,
         );
+        // Rename atomicity (code-reviewer MEDIUM): a rename old→new whose NEW
+        // path carries the secret has its add-half skipped above, but the
+        // delete-half of `old` (owner=new in pushDeletionsAll) was already
+        // derived into `pushDeletions` BEFORE the R5 scan. Shipping it alone
+        // would delete `old` on the remote while `new` is withheld → the
+        // renamed file transiently vanishes AND the delete propagates to
+        // other devices (the exact atomicity the old whole-repo-defer kept).
+        // Withhold any deletion owned by a skipped path (mirror of the
+        // convergedPushPaths withhold) so BOTH halves defer and re-derive
+        // together once the secret is removed.
+        for (const [delPath, owner] of pushDeletionsAll) {
+          if (handledSecretPaths.has(owner) && pushDeletions.has(delPath)) {
+            pushDeletions.delete(delPath);
+            withheldDeletions.push(delPath);
+          }
+        }
         // Nothing left to push (all files were secret-bearing) — the repo
         // still syncs, carrying only the skip warning; the skipped files
         // re-derive on a later sync once the secret is removed.
