@@ -14,7 +14,12 @@ export default tseslint.config(
       parserOptions: {
         ecmaVersion: 2022,
         sourceType: 'module',
-        project: './tsconfig.json',
+        // ESLint-only TS project that re-includes test files (build tsconfig.json
+        // excludes packages/**/tests/**/*). Enables type-aware linting of the test
+        // corpus — `eslint packages/core/tests/**` otherwise errors 'file not found
+        // in provided project(s)'. Build/typecheck (tsc --noEmit) still uses
+        // tsconfig.json and never compiles tests. See task d7f89d46.
+        project: './tsconfig.eslint.json',
       },
     },
     rules: {
