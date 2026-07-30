@@ -25,6 +25,7 @@ import { exosyncParityCommand } from "./commands/exosync-parity.js";
 import { exosyncCommand } from "./commands/exosync-sync.js";
 import { requirementsCommand } from "./commands/requirements.js";
 import { cacheCommand } from "./commands/cache.js";
+import { mcpCommand } from "./commands/mcp.js";
 
 // Version injected at build time by esbuild (see esbuild.config.mjs)
 declare const __CLI_VERSION__: string;
@@ -115,6 +116,12 @@ export function createProgram(version?: string): Command {
   // Issue #3981 — SPARQL query-result cache maintenance (clear / stats).
   // Complements the automatic size/count-cap eviction in QueryResultCache.set.
   program.addCommand(cacheCommand());
+
+  // Project 38800c80 W6 / req 264ccef6 — MCP stdio server (TRANSPORT entry-point,
+  // not a domain verb): exposes create_asset / create_effort tools that re-invoke
+  // this CLI with an argument VECTOR, so agent-supplied labels, bodies and
+  // property values are never reinterpreted by a shell.
+  program.addCommand(mcpCommand(version ?? __CLI_VERSION__));
 
   return program;
 }
