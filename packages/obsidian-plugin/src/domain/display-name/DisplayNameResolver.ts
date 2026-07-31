@@ -54,8 +54,11 @@ export class DisplayNameResolver {
     const projection = this.computeTBoxNamingProjection(assetClasses, metadata);
     if (projection !== null) return projection;
 
-    const template = this.getTemplateForClasses(assetClasses, metadata);
-    const engine = new DisplayNameTemplateEngine(template);
+    const { template, separator } = this.resolveRenderSpec(assetClasses, metadata);
+    const engine = new DisplayNameTemplateEngine(
+      template,
+      separator ? { separator } : {},
+    );
 
     return engine.render(
       metadata,
@@ -84,6 +87,22 @@ export class DisplayNameResolver {
     assetClasses: string[],
     metadata?: Record<string, unknown>,
   ): string {
+    return this.resolveRenderSpec(assetClasses, metadata).template;
+  }
+
+  /**
+   * The template PLUS its vault-declared separator (issue #4012). The separator must travel as
+   * METADATA beside the template, never inside it: composeTemplates collapses N specs into ONE
+   * string, after which an embedded separator would be indistinguishable from an ordinary
+   * literal. When several specs compose, the separator is taken from the spec that contributed
+   * the CORE (the highest-priority participating spec carrying a placeholder) — deterministic.
+   * getTemplateForClasses stays a string-returning wrapper, so every existing caller is
+   * untouched.
+   */
+  private resolveRenderSpec(
+    assetClasses: string[],
+    metadata?: Record<string, unknown>,
+  ): { template: string; separator?: string } {
     if (this.ruleService && assetClasses.length > 0) {
       // Gather EVERY participating spec across all of the note's classes, de-duped by spec UID so a
       // spec that applies to more than one of the note's classes contributes at most one prefix.
@@ -103,17 +122,20 @@ export class DisplayNameResolver {
           (a, b) => b.priority - a.priority || a.sourceFile.localeCompare(b.sourceFile),
         );
         return gathered.length === 1
-          ? gathered[0].template
+          ? {
+              template: gathered[0].template,
+              ...(gathered[0].separator ? { separator: gathered[0].separator } : {}),
+            }
           : this.composeTemplates(gathered);
       }
     }
 
     const firstClass = assetClasses[0];
     if (firstClass && this.settings.classTemplates[firstClass]) {
-      return this.settings.classTemplates[firstClass];
+      return { template: this.settings.classTemplates[firstClass] };
     }
 
-    return this.settings.defaultTemplate;
+    return { template: this.settings.defaultTemplate };
   }
 
   /**
@@ -129,12 +151,17 @@ export class DisplayNameResolver {
    * NOTE: composition treats each side as space-separated marker tokens — the shipped combined specs
    * (e.g. "✅ 👥 ") space their markers, so re-baked markers de-dup correctly.
    */
-  private composeTemplates(rules: ParticipatingRule[]): string {
+  private composeTemplates(rules: ParticipatingRule[]): {
+    template: string;
+    separator?: string;
+  } {
     const seenPrefix = new Set<string>();
     const seenSuffix = new Set<string>();
     const prefixMarkers: string[] = [];
     const suffixMarkers: string[] = [];
     let core: string | null = null;
+    // The separator belongs to whichever spec contributes the CORE (issue #4012).
+    let coreSeparator: string | undefined;
     const collect = (raw: string, seen: Set<string>, into: string[]) => {
       for (const token of raw.trim().split(/\s+/)) {
         if (!token || seen.has(token)) continue;
@@ -145,7 +172,10 @@ export class DisplayNameResolver {
     for (const rule of rules) {
       const { prefix, core: ruleCore, suffix } = this.splitTemplate(rule.template);
       // Core (the label placeholder) = the first (highest-priority) spec that carries one.
-      if (core === null && ruleCore !== "") core = ruleCore;
+      if (core === null && ruleCore !== "") {
+        core = ruleCore;
+        coreSeparator = rule.separator;
+      }
       collect(prefix, seenPrefix, prefixMarkers);
       collect(suffix, seenSuffix, suffixMarkers);
     }
@@ -153,7 +183,10 @@ export class DisplayNameResolver {
     const composedCore = core ?? "";
     const composedPrefix = prefixMarkers.map((m) => `${m} `).join("");
     const composedSuffix = suffixMarkers.length ? ` ${suffixMarkers.join(" ")}` : "";
-    return `${composedPrefix}${composedCore}${composedSuffix}`;
+    return {
+      template: `${composedPrefix}${composedCore}${composedSuffix}`,
+      ...(coreSeparator ? { separator: coreSeparator } : {}),
+    };
   }
 
   /**
