@@ -32,10 +32,16 @@ export class DisplayNameTemplateEngine {
    *   definition composition (a multi-valued `concept__Concept_differentia` renders all
    *   adjectives). Default (false) is first-only — so the displayName path (which renders the
    *   multi-valued `{{exo__Instance_class}}` in the default classSuffix template) is UNCHANGED.
+   * @param options.separator OPT-IN (default undefined). The vault-declared
+   *   `exo__DisplayNameSpec_separator`. When a non-empty string, the template renders in
+   *   SEPARATOR MODE: it is split into FIELDS on this literal separator, each field is rendered
+   *   and cleaned INDEPENDENTLY, a field that renders empty is DROPPED together with its
+   *   adjacent separator, and the survivors are re-joined by the separator. Absent → the
+   *   original single-pass path, byte-identical (onto-RFC 0ba349ed, issue #4012).
    */
   constructor(
     private readonly template: string,
-    private readonly options: { joinArrayValues?: boolean } = {},
+    private readonly options: { joinArrayValues?: boolean; separator?: string } = {},
   ) {}
 
   /**
@@ -56,12 +62,23 @@ export class DisplayNameTemplateEngine {
       return null;
     }
 
-    const result = this.template.replace(
-      DisplayNameTemplateEngine.PLACEHOLDER_PATTERN,
-      (_, key: string) => {
-        const trimmedKey = key.trim();
-        return this.resolveValue(trimmedKey, metadata, basename, createdDate, metadataResolver);
-      }
+    const separator = this.options.separator;
+    if (separator) {
+      return this.renderWithSeparator(
+        separator,
+        metadata,
+        basename,
+        createdDate,
+        metadataResolver,
+      );
+    }
+
+    const result = this.renderSegment(
+      this.template,
+      metadata,
+      basename,
+      createdDate,
+      metadataResolver,
     );
 
     // Clean up the result to handle edge cases from missing values
@@ -73,6 +90,94 @@ export class DisplayNameTemplateEngine {
     }
 
     return cleanedResult;
+  }
+
+  /** Substitute every {{placeholder}} in a template segment. */
+  private renderSegment(
+    segment: string,
+    metadata: Record<string, unknown>,
+    basename: string,
+    createdDate?: Date,
+    metadataResolver?: MetadataResolver,
+  ): string {
+    return segment.replace(
+      DisplayNameTemplateEngine.PLACEHOLDER_PATTERN,
+      (_, key: string) => {
+        const trimmedKey = key.trim();
+        return this.resolveValue(trimmedKey, metadata, basename, createdDate, metadataResolver);
+      },
+    );
+  }
+
+  /**
+   * SEPARATOR MODE (opt-in, `exo__DisplayNameSpec_separator`): join the NON-EMPTY fields.
+   *
+   * The split happens on the TEMPLATE — deliberately BEFORE substitution — so a rendered VALUE
+   * that itself contains the separator (a dish called "Кофе · Латте") is never cut into pieces.
+   * Each field is cleaned with the SAME cleanupResult as the default path, so a field is
+   * considered empty when its cleaned render is "" (value missing OR whitespace-only). Survivors
+   * are re-joined by the separator verbatim, so a hanging separator around a dropped field is
+   * structurally impossible.
+   *
+   * Only the CORE region is split into fields — the leading literal (before the first
+   * placeholder) and the trailing literal (after the last placeholder) are AFFIXES, not fields.
+   * That is what keeps a composed prefix marker attached to the name rather than becoming a
+   * field of its own: composing a "🍽 " prefix spec over a separator-bearing core must render
+   * "🍽 Тирамису · Teplo", never "🍽 · Тирамису · Teplo" (req 1a6525eb, AC-D).
+   */
+  private renderWithSeparator(
+    separator: string,
+    metadata: Record<string, unknown>,
+    basename: string,
+    createdDate?: Date,
+    metadataResolver?: MetadataResolver,
+  ): string | null {
+    const first = this.template.indexOf("{{");
+    const last = this.template.lastIndexOf("}}");
+    if (first === -1 || last === -1 || last < first) {
+      // No placeholder at all → nothing to collapse; fall back to the default single pass.
+      const cleaned = this.cleanupResult(
+        this.renderSegment(this.template, metadata, basename, createdDate, metadataResolver),
+      );
+      return cleaned === "" ? null : cleaned;
+    }
+
+    const prefix = this.template.slice(0, first);
+    const core = this.template.slice(first, last + 2);
+    const suffix = this.template.slice(last + 2);
+
+    const rendered: string[] = [];
+    for (const field of core.split(separator)) {
+      const cleaned = this.cleanupResult(
+        this.renderSegment(field, metadata, basename, createdDate, metadataResolver),
+      );
+      if (cleaned !== "") {
+        rendered.push(cleaned);
+      }
+    }
+
+    // Every field empty → the affixes alone are not a name; fall back (null) to label/basename.
+    if (rendered.length === 0) {
+      return null;
+    }
+
+    const renderedPrefix = this.renderSegment(
+      prefix,
+      metadata,
+      basename,
+      createdDate,
+      metadataResolver,
+    );
+    const renderedSuffix = this.renderSegment(
+      suffix,
+      metadata,
+      basename,
+      createdDate,
+      metadataResolver,
+    );
+
+    const joined = `${renderedPrefix}${rendered.join(separator)}${renderedSuffix}`.trim();
+    return joined === "" ? null : joined;
   }
 
   /**
@@ -142,9 +247,112 @@ export class DisplayNameTemplateEngine {
       return "";
     }
 
+    // Optional per-part value format (`exo__PrintedProperty_format`), compiled into the
+    // placeholder as `{{key::FORMAT}}`. The format MUST travel with the placeholder because it
+    // is declared per PART, while the compiled artifact is ONE template string per spec.
+    // `::` is a reserved sequence of the template micro-syntax: frontmatter keys have the shape
+    // `prefix__Name` and never contain it. Split on the FIRST `::`; a trailing empty format is
+    // ignored (the key is then used verbatim).
+    const { path, format } = DisplayNameTemplateEngine.splitKeyAndFormat(key);
+
     // Handle dot notation for nested fields (with cross-asset resolution)
-    const value = this.getNestedValue(metadata, key, metadataResolver);
+    const value = this.getNestedValue(metadata, path, metadataResolver);
+
+    if (format) {
+      // Format the RAW value — BEFORE formatValue, which would JSON.stringify a Date into
+      // `"2026-01-24T13:50:17.000Z"` (quotes included) and lose the literal digits.
+      const formatted = DisplayNameTemplateEngine.applyValueFormat(value, format);
+      if (formatted !== null) {
+        return formatted;
+      }
+      // Fail-open: unrecognised value → fall through and print it as usual.
+    }
+
     return this.formatValue(value, metadataResolver);
+  }
+
+  /** Split a placeholder key into its frontmatter path and its optional value format. */
+  private static splitKeyAndFormat(key: string): { path: string; format?: string } {
+    const idx = key.indexOf("::");
+    if (idx <= 0) return { path: key };
+    const path = key.slice(0, idx).trim();
+    const format = key.slice(idx + 2).trim();
+    if (!path || !format) return { path: key };
+    return { path, format };
+  }
+
+  /**
+   * Apply a vault-declared value format (`exo__PrintedProperty_format`) to a raw frontmatter
+   * value. v1 vocabulary — date/time only: YYYY, YY, MM, DD, HH, mm, ss (every other character
+   * of the format is a literal, so "DD.MM" → "31.07").
+   *
+   * The components are taken LITERALLY from the stored value — a regex over the ISO string, and
+   * UTC getters for a Date (YAML reads a zone-less timestamp as UTC). No local-time conversion,
+   * so the printed digits equal the digits written in the file and the result does not depend on
+   * the machine's timezone.
+   *
+   * Returns null (→ the caller prints the value unchanged, FAIL-OPEN) when the value is not a
+   * recognisable date/time, OR when any token of the format cannot be filled from it — the
+   * engine never fabricates zeros for missing components.
+   */
+  private static applyValueFormat(value: unknown, format: string): string | null {
+    let raw = value;
+    if (Array.isArray(raw)) {
+      if (raw.length === 0) return null;
+      raw = raw[0];
+    }
+
+    let year: string, month: string, day: string;
+    let hours: string | undefined, minutes: string | undefined, seconds: string | undefined;
+
+    if (raw instanceof Date) {
+      if (Number.isNaN(raw.getTime())) return null;
+      const pad = (n: number) => String(n).padStart(2, "0");
+      year = String(raw.getUTCFullYear()).padStart(4, "0");
+      month = pad(raw.getUTCMonth() + 1);
+      day = pad(raw.getUTCDate());
+      hours = pad(raw.getUTCHours());
+      minutes = pad(raw.getUTCMinutes());
+      seconds = pad(raw.getUTCSeconds());
+    } else if (typeof raw === "string") {
+      const m = /^\s*(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(raw);
+      if (!m) return null;
+      year = m[1];
+      month = m[2];
+      day = m[3];
+      hours = m[4];
+      minutes = m[5];
+      seconds = m[6];
+    } else {
+      return null;
+    }
+
+    let unfillable = false;
+    const out = format.replace(/YYYY|YY|MM|DD|HH|mm|ss/g, (token) => {
+      switch (token) {
+        case "YYYY":
+          return year;
+        case "YY":
+          return year.slice(-2);
+        case "MM":
+          return month;
+        case "DD":
+          return day;
+        case "HH":
+          if (hours === undefined) unfillable = true;
+          return hours ?? "";
+        case "mm":
+          if (minutes === undefined) unfillable = true;
+          return minutes ?? "";
+        case "ss":
+          if (seconds === undefined) unfillable = true;
+          return seconds ?? "";
+        default:
+          return token;
+      }
+    });
+
+    return unfillable ? null : out;
   }
 
   /**

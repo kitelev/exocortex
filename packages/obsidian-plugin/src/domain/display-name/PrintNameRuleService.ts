@@ -72,6 +72,12 @@ export interface PrintNameRule {
    * unconditional (v1 path).
    */
   matcher?: DisplayNameMatcher;
+  /**
+   * Present iff the spec declared `exo__DisplayNameSpec_separator` — the vault-declared string
+   * joining this name's NON-EMPTY parts (a part rendering empty drops together with its adjacent
+   * separator). Absent = the v1 `join("")` path, byte-identical (onto-RFC 0ba349ed, issue #4012).
+   */
+  separator?: string;
 }
 
 /**
@@ -85,6 +91,8 @@ export interface ParticipatingRule {
   template: string;
   priority: number;
   sourceFile: string;
+  /** The spec's vault-declared separator, if any — see PrintNameRule.separator. */
+  separator?: string;
 }
 
 type MetadataResolver = (wikilinkTarget: string) => Record<string, unknown> | null;
@@ -110,12 +118,14 @@ interface RawDisplayNameSpec {
   matchValues?: string[]; // accepted identities (UID + label) from exo__DisplayNameSpec_matchValue
   // Host-function specialization (v2 slice — RFC 92b91345, req d6cd2371).
   hostFunction?: string; // registered host-function name from exo__DisplayNameSpec_matchHostFunction
+  separator?: string; // verbatim exo__DisplayNameSpec_separator (issue #4012)
 }
 
 interface RawDisplayNamePart {
   specUid: string;
   order: number;
   propertyKey?: string; // frontmatter key for exo__PrintedProperty
+  format?: string; // exo__PrintedProperty_format — value format applied before substitution
   literal?: string; // static text for exo__PrintedLiteral
 }
 
@@ -230,6 +240,7 @@ export class PrintNameRuleService {
           template: rule.template,
           priority: rule.priority,
           sourceFile: rule.sourceFile,
+          ...(rule.separator ? { separator: rule.separator } : {}),
         });
       }
     }
@@ -463,12 +474,19 @@ export class PrintNameRuleService {
     // spec stays unconditional (v1 path).
     const hostFunction = this.resolveHostFunctionName(fm.exo__DisplayNameSpec_matchHostFunction);
 
+    // Separator (issue #4012). Taken VERBATIM — the surrounding spaces of " · " are
+    // meaningful. Absent/empty → the v1 join("") path, byte-identical.
+    const rawSeparator = fm.exo__DisplayNameSpec_separator;
+    const separator =
+      typeof rawSeparator === "string" && rawSeparator !== "" ? rawSeparator : undefined;
+
     rawSpecs.set(uid, {
       uid,
       classKeys,
       priority: Number.isFinite(priority) ? priority : 0,
       ...(hasValueMatcher ? { matchKey: matchKey ?? undefined, matchValues } : {}),
       ...(hostFunction ? { hostFunction } : {}),
+      ...(separator ? { separator } : {}),
     });
   }
 
@@ -494,8 +512,13 @@ export class PrintNameRuleService {
     const rawLiteral = fm.exo__PrintedLiteral_literal;
     const literal = typeof rawLiteral === "string" ? rawLiteral : undefined;
 
+    // Per-part value format (issue #4012) — only meaningful for a printed PROPERTY.
+    const rawFormat = fm.exo__PrintedProperty_format;
+    const format =
+      typeof rawFormat === "string" && rawFormat.trim() !== "" ? rawFormat.trim() : undefined;
+
     if (propertyKey) {
-      rawParts.push({ specUid, order, propertyKey });
+      rawParts.push({ specUid, order, propertyKey, ...(format ? { format } : {}) });
     } else if (literal !== undefined) {
       rawParts.push({ specUid, order, literal });
     }
@@ -522,8 +545,13 @@ export class PrintNameRuleService {
       if (parts.length === 0) continue;
 
       const template = parts
-        .map((p) => (p.propertyKey ? `{{${p.propertyKey}}}` : (p.literal ?? "")))
-        .join("");
+        .map((p) => {
+          if (!p.propertyKey) return p.literal ?? "";
+          // A declared format rides INSIDE the placeholder (`{{key::FORMAT}}`) because it is a
+          // per-PART setting while the compiled artifact is one string per spec.
+          return p.format ? `{{${p.propertyKey}::${p.format}}}` : `{{${p.propertyKey}}}`;
+        })
+        .join(spec.separator ?? "");
       if (!template.trim()) continue;
 
       const priority = DISPLAY_NAME_SPEC_BASE_PRIORITY + spec.priority;
@@ -547,6 +575,7 @@ export class PrintNameRuleService {
           priority,
           sourceFile: spec.uid,
           ...(matcher ? { matcher } : {}),
+          ...(spec.separator ? { separator: spec.separator } : {}),
         };
         const existing = this.rules.get(classKey);
         if (existing) {
