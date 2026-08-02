@@ -29,8 +29,15 @@ export interface UnmountedClosureMember {
  * grounding-type enums that `CommandResolver.loadCommand` matches `rdf:type`
  * against. Their absence is the exact gap that left the alpha tester's entire
  * homoiconic command system silently dead (RFC 430e84f1 P3).
+ *
+ * Exported so the REVERSE check (`unmountSafety.ts`, req `d5bc68f6` — "who
+ * still needs the pack I am about to remove?") shares this single source of
+ * truth with the forward check below, instead of duplicating the list.
  */
-const TBOX_PROVIDER_NAMESPACES: ReadonlySet<string> = new Set(["exo", "exocmd"]);
+export const TBOX_PROVIDER_NAMESPACES: ReadonlySet<string> = new Set([
+  "exo",
+  "exocmd",
+]);
 
 /**
  * issue #3956 — the transitive `exo__AssetSpace_dependsOn` closure members of

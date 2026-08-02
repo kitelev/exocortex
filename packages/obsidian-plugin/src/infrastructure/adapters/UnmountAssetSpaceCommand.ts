@@ -74,6 +74,18 @@ export interface UnmountAssetSpaceCommandDeps {
   confirm: (message: string) => Promise<boolean>;
   /** Unmount the AssetSpace — `RestAssetSpaceMount.unmount` (git-free). */
   unmount: (submodulePath: string) => Promise<void>;
+  /**
+   * req `d5bc68f6` — OPTIONAL read-only blast-radius assessment for the picked
+   * AssetSpace, rendered ABOVE the destructive confirmation: which still-mounted
+   * packs declare a dependency on it, and how many links from the notes that
+   * stay behind would be left dangling (see `domain/profile/unmountSafety.ts`).
+   *
+   * Returns `null` when nothing is at risk — the confirmation then reads exactly
+   * as it did before this requirement (structural zero-regression). Optional and
+   * best-effort by design: unwired or throwing, the removal stays possible with
+   * the unchanged wording. It informs the destructive gate; it never refuses.
+   */
+  assessRisk?: (chosen: UnmountableAssetSpace) => Promise<string | null>;
   /** User-facing Notice. */
   notify: (message: string) => void;
   /**
@@ -179,9 +191,15 @@ export class UnmountAssetSpaceCommand {
       return;
     }
 
-    const ok = await this.d.confirm(
+    // req d5bc68f6 — state the blast radius ABOVE the destructive wording, so it
+    // is the first thing read. `null` (nothing at risk / unwired / threw) keeps
+    // the message byte-identical to the pre-requirement wording.
+    const baseMessage =
       `Unmount «${chosen.label}» (${chosen.submodulePath})? ` +
-        "This strips its .gitmodules entry and deletes the folder from the vault.",
+      "This strips its .gitmodules entry and deletes the folder from the vault.";
+    const warning = await this.assessRiskSafely(chosen);
+    const ok = await this.d.confirm(
+      warning === null ? baseMessage : `${warning}\n\n${baseMessage}`,
     );
     if (!ok) return; // user declined
 
@@ -197,6 +215,22 @@ export class UnmountAssetSpaceCommand {
         "Reload Obsidian if the removed assets still appear.",
     );
     await this.runOnUnmounted();
+  }
+
+  /**
+   * req `d5bc68f6` — run the optional blast-radius assessment. Never throws: an
+   * assessment failure degrades to the unchanged confirmation rather than
+   * blocking a removal the user is entitled to make.
+   */
+  private async assessRiskSafely(
+    chosen: UnmountableAssetSpace,
+  ): Promise<string | null> {
+    if (this.d.assessRisk === undefined) return null;
+    try {
+      return await this.d.assessRisk(chosen);
+    } catch {
+      return null;
+    }
   }
 
   private async runOnUnmounted(): Promise<void> {

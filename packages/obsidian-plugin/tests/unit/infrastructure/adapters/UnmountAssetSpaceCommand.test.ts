@@ -49,6 +49,10 @@ function makeHarness(opts: {
   pickPath?: string | null;
   confirm?: boolean;
   unmountThrows?: boolean;
+  /** req d5bc68f6 — omit to leave `assessRisk` UNWIRED (pre-requirement path). */
+  riskWarning?: string | null;
+  /** req d5bc68f6 — the assessment itself blows up. */
+  riskThrows?: boolean;
 }): Harness {
   const notices: string[] = [];
   const unmountCalls: string[] = [];
@@ -85,6 +89,16 @@ function makeHarness(opts: {
       state.onUnmountedCalls++;
     },
   };
+
+  // req d5bc68f6 — wired ONLY when the scenario asks for it, so the other tests
+  // keep exercising the unwired (pre-requirement) path.
+  if (opts.riskThrows === true) {
+    deps.assessRisk = async () => {
+      throw new Error("assessment boom");
+    };
+  } else if (opts.riskWarning !== undefined) {
+    deps.assessRisk = async () => opts.riskWarning ?? null;
+  }
 
   return {
     cmd: new UnmountAssetSpaceCommand(deps),
@@ -265,5 +279,94 @@ describe("buildUnmountableList — .gitmodules ∩ descriptor join + dual floor 
     );
     expect(orphan.isFloor).toBe(false);
     expect(orphan.label).toBe("exoas-orphan");
+  });
+});
+
+/**
+ * req d5bc68f6 — the blast-radius warning is prepended to the destructive
+ * confirmation, and its ABSENCE leaves that confirmation byte-identical to the
+ * wording shipped before this requirement.
+ *
+ * The exact pre-requirement string is pinned as a constant here on purpose: it
+ * is what the zero-regression claim MEANS, so a future edit to the wording has
+ * to be a deliberate act rather than an accident.
+ */
+const PRE_REQ_CONFIRM =
+  "Unmount «pmbok» (assetspaces/kitelev/exoas-pmbok-ontology)? " +
+  "This strips its .gitmodules entry and deletes the folder from the vault.";
+
+describe("UnmountAssetSpaceCommand — removal blast radius", () => {
+  it("@req:d5bc68f6-c4ed-45a4-8eab-a4bd77798fdf warning is prepended above the destructive confirmation", async () => {
+    const h = makeHarness({
+      mounted: [PMBOK],
+      pickPath: PMBOK.submodulePath,
+      riskWarning: "⚠ Removing «pmbok» is not isolated: exo is still mounted.",
+      confirm: false,
+    });
+
+    await h.cmd.invokeUnmount();
+
+    expect(h.confirmCalls).toHaveLength(1);
+    const [message] = h.confirmCalls;
+    expect(message).toContain("⚠ Removing «pmbok» is not isolated");
+    // The warning must come FIRST — it is the reason to reconsider.
+    expect(message.indexOf("⚠")).toBeLessThan(message.indexOf("Unmount «pmbok»"));
+    // …and the destructive wording is preserved underneath it, unedited.
+    expect(message.endsWith(PRE_REQ_CONFIRM)).toBe(true);
+  });
+
+  it("@req:d5bc68f6-c4ed-45a4-8eab-a4bd77798fdf nothing at risk → confirmation byte-identical to the pre-requirement wording", async () => {
+    const h = makeHarness({
+      mounted: [PMBOK],
+      pickPath: PMBOK.submodulePath,
+      riskWarning: null,
+      confirm: false,
+    });
+
+    await h.cmd.invokeUnmount();
+
+    expect(h.confirmCalls).toEqual([PRE_REQ_CONFIRM]);
+  });
+
+  it("@req:d5bc68f6-c4ed-45a4-8eab-a4bd77798fdf assessment throws → wording unchanged and the removal still proceeds", async () => {
+    const h = makeHarness({
+      mounted: [PMBOK],
+      pickPath: PMBOK.submodulePath,
+      riskThrows: true,
+      confirm: true,
+    });
+
+    await h.cmd.invokeUnmount();
+
+    expect(h.confirmCalls).toEqual([PRE_REQ_CONFIRM]);
+    expect(h.unmountCalls).toEqual([PMBOK.submodulePath]);
+  });
+
+  it("a floor pick is refused before any assessment or confirmation", async () => {
+    // The assessment sits between the floor refusal and the confirm, so "no
+    // confirm was raised" is exactly "the refusal short-circuited first".
+    const h = makeHarness({
+      mounted: [EXO],
+      pickPath: EXO.submodulePath,
+      riskWarning: "⚠ should never be rendered",
+    });
+
+    await h.cmd.invokeUnmount();
+
+    expect(h.confirmCalls).toEqual([]);
+    expect(h.unmountCalls).toEqual([]);
+    expect(h.notices.some((n) => n.includes("Unmount refused"))).toBe(true);
+  });
+
+  it("unwired assessment (dep omitted) → confirmation byte-identical", async () => {
+    const h = makeHarness({
+      mounted: [PMBOK],
+      pickPath: PMBOK.submodulePath,
+      confirm: false,
+    });
+
+    await h.cmd.invokeUnmount();
+
+    expect(h.confirmCalls).toEqual([PRE_REQ_CONFIRM]);
   });
 });
