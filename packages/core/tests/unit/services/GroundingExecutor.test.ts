@@ -12,11 +12,46 @@ import { GroundingDefinition } from "../../../src/domain/models/CommandDefinitio
 // -- Mocks --
 
 function createMockReader(content?: string) {
-  const defaultContent = content || "---\nfoo: bar\n---\nBody";
+  // req 0bb06beb — the default click-target is a prototype-instance, which is
+  // what the create_instance suites have always meant by "$target" (see the
+  // Issue #3195 describe: "UUID-named prototype-instance targets"). Making the
+  // fixture say so keeps those assertions meaningful now that the legacy
+  // backlink top-up refuses to invent a prototype link for a non-prototype.
+  const defaultContent =
+    content ||
+    `---\nfoo: bar\nexo__Instance_class:\n  - "[[${PROTOTYPE_CLASS_UID}]]"\n---\nBody`;
   return {
     readFile: jest.fn().mockResolvedValue(defaultContent),
     fileExists: jest.fn().mockResolvedValue(true),
     getMarkdownFiles: jest.fn().mockResolvedValue([]),
+  };
+}
+
+// req 0bb06beb — the legacy `exo__Asset_prototype` top-up now fires only when
+// the click-target really is a prototype, so a fixture that expects the backlink
+// must say so. These helpers make the target's frontmatter carry a class whose
+// `exo__Class_superClass` chain reaches `exo__Prototype` (the shape live vaults
+// have: `ems__TaskPrototype` → … → `exo__Prototype`) and wire the
+// `refToFrontmatter` port the executor dereferences that class through — which
+// production always injects (cli/apply.ts, ExocortexPlugin.ts).
+const PROTOTYPE_CLASS_UID = "df7e579d-02d4-4f3a-971f-3d1d785b689b";
+
+function prototypeTargetContent(uid = "target-uid"): string {
+  return `---\nexo__Asset_uid: ${uid}\nexo__Instance_class:\n  - "[[${PROTOTYPE_CLASS_UID}]]"\n---\nBody`;
+}
+
+/** Resolves the prototype class above; anything else is unknown. */
+async function prototypeClassResolver(
+  ref: string,
+): Promise<Record<string, unknown> | null> {
+  // The suites use two spellings of the same prototype class: the real UID and
+  // the legacy readable stand-in inside PROTOTYPE_INSTANCE_FM.
+  if (ref !== PROTOTYPE_CLASS_UID && ref !== "df7e579d-classid-emsTaskPrototype") {
+    return null;
+  }
+  return {
+    exo__Asset_label: "ems__TaskPrototype",
+    exo__Class_superClass: ['"[[exo__Prototype]]"'],
   };
 }
 
@@ -53,7 +88,9 @@ describe("GroundingExecutor", () => {
     reader = createMockReader();
     writer = createMockWriter();
     registry = new ServiceRegistry();
-    executor = new GroundingExecutor(reader, writer, registry);
+    executor = new GroundingExecutor(reader, writer, registry, undefined, {
+      refToFrontmatter: prototypeClassResolver,
+    });
   });
 
   // -- property_set --
@@ -2144,7 +2181,7 @@ describe("GroundingExecutor", () => {
       });
 
       it("falls back to exo__Asset_prototype when linkBackProperty is absent (Issue #3184 B2)", async () => {
-        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
+        reader.readFile.mockResolvedValue(prototypeTargetContent());
 
         const grounding = makeGrounding({
           type: GroundingType.CREATE_INSTANCE,
@@ -2156,7 +2193,7 @@ describe("GroundingExecutor", () => {
 
         const [, content] = writer.createFile.mock.calls[0];
         expect(content).toContain(
-          'exo__Asset_prototype: "[[vault/test-asset]]"',
+          'exo__Asset_prototype: "[[target-uid]]"',
         );
         expect(content).not.toContain("exo__Asset_source:");
         expect(content).not.toContain("ems__Effort_prevIteration:");
@@ -2233,7 +2270,7 @@ describe("GroundingExecutor", () => {
       } as const;
 
       it("vault grounding without linkBackProperty defaults to exo__Asset_prototype", async () => {
-        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\nBody");
+        reader.readFile.mockResolvedValue(prototypeTargetContent());
 
         const grounding = makeGrounding({ ...LEGACY_MEETING_GROUNDING });
 
@@ -2244,7 +2281,7 @@ describe("GroundingExecutor", () => {
         expect(result.success).toBe(true);
         const [, content] = writer.createFile.mock.calls[0];
         expect(content).toContain(
-          'exo__Asset_prototype: "[[vault/test-asset]]"',
+          'exo__Asset_prototype: "[[target-uid]]"',
         );
         expect(content).not.toContain("exo__Asset_source:");
         expect(content).not.toMatch(/ems__Effort_parent: "\[\[https/);
@@ -2252,7 +2289,7 @@ describe("GroundingExecutor", () => {
       });
 
       it("grounding with targetClass only (no prototype, no linkBackProperty) defaults to exo__Asset_prototype", async () => {
-        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
+        reader.readFile.mockResolvedValue(prototypeTargetContent());
 
         const grounding = makeGrounding({
           type: GroundingType.CREATE_INSTANCE,
@@ -2266,7 +2303,7 @@ describe("GroundingExecutor", () => {
         const [, content] = writer.createFile.mock.calls[0];
         expect(content).toContain('exo__Instance_class:\n  - "[[ems__Task]]"');
         expect(content).toContain(
-          'exo__Asset_prototype: "[[vault/test-asset]]"',
+          'exo__Asset_prototype: "[[target-uid]]"',
         );
         expect(content).not.toContain("exo__Asset_source:");
       });
@@ -2293,7 +2330,7 @@ describe("GroundingExecutor", () => {
       });
 
       it("grounding with linkBackProperty=undefined still uses the new default (no fallback drift)", async () => {
-        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
+        reader.readFile.mockResolvedValue(prototypeTargetContent());
 
         const grounding = makeGrounding({
           type: GroundingType.CREATE_INSTANCE,
@@ -2307,7 +2344,7 @@ describe("GroundingExecutor", () => {
         expect(result.success).toBe(true);
         const [, content] = writer.createFile.mock.calls[0];
         expect(content).toContain(
-          'exo__Asset_prototype: "[[vault/test-asset]]"',
+          'exo__Asset_prototype: "[[target-uid]]"',
         );
         expect(content).not.toContain("exo__Asset_source:");
       });
@@ -2357,7 +2394,7 @@ describe("GroundingExecutor", () => {
         expect(result.success).toBe(true);
         const [, content] = writer.createFile.mock.calls[0];
         expect(content).toContain(
-          'exo__Asset_prototype: "[[vault/test-asset]]"',
+          'exo__Asset_prototype: "[[4b571141-5fc3-4ddd-8f07-ca681fc8410a]]"',
         );
         expect(content).not.toContain("df7e579d-classid-emsTaskPrototype");
       });
@@ -2567,7 +2604,9 @@ describe("substituteVariables — $input/$value user-input resolution (Findings 
     reader = createMockReader();
     writer = createMockWriter();
     registry = new ServiceRegistry();
-    executor = new GroundingExecutor(reader, writer, registry);
+    executor = new GroundingExecutor(reader, writer, registry, undefined, {
+      refToFrontmatter: prototypeClassResolver,
+    });
   });
 
   it("resolves $input placeholder to user-provided value, not literal (Set Planned Start, Finding 3)", async () => {
@@ -2774,7 +2813,9 @@ describe("Convert to Task grounding — end-to-end wiring (Finding 5)", () => {
     reader = createMockReader();
     writer = createMockWriter();
     registry = new ServiceRegistry();
-    executor = new GroundingExecutor(reader, writer, registry);
+    executor = new GroundingExecutor(reader, writer, registry, undefined, {
+      refToFrontmatter: prototypeClassResolver,
+    });
   });
 
   it("clicking Convert to Task on ems__Project flips exo__Instance_class to [[ems__Task]] via grounding path", async () => {
@@ -2909,7 +2950,9 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
       reader = createConvertReader("ems__Project");
       writer = createWriter();
       registry = new ServiceRegistry();
-      executor = new GroundingExecutor(reader, writer, registry);
+      executor = new GroundingExecutor(reader, writer, registry, undefined, {
+      refToFrontmatter: prototypeClassResolver,
+    });
     });
 
     it("flips class to ems__Task when serviceId=updateProperty + targetValue=ems__Task", async () => {
@@ -2964,7 +3007,9 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
       reader = createConvertReader("ems__Task");
       writer = createWriter();
       registry = new ServiceRegistry();
-      executor = new GroundingExecutor(reader, writer, registry);
+      executor = new GroundingExecutor(reader, writer, registry, undefined, {
+      refToFrontmatter: prototypeClassResolver,
+    });
     });
 
     it("flips class to ems__Project when serviceId=updateProperty + targetValue=ems__Project", async () => {
@@ -3016,7 +3061,9 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
       reader = createConvertReader("ems__Task");
       writer = createWriter();
       registry = new ServiceRegistry();
-      executor = new GroundingExecutor(reader, writer, registry);
+      executor = new GroundingExecutor(reader, writer, registry, undefined, {
+      refToFrontmatter: prototypeClassResolver,
+    });
     });
 
     it("dispatches to registered updateProperty service when targetProperty !== exo__Instance_class", async () => {
@@ -3266,7 +3313,9 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
     reader = createMockReader();
     writer = createMockWriter();
     registry = new ServiceRegistry();
-    executor = new GroundingExecutor(reader, writer, registry);
+    executor = new GroundingExecutor(reader, writer, registry, undefined, {
+      refToFrontmatter: prototypeClassResolver,
+    });
   });
 
   // -- Test fixtures --
@@ -4591,9 +4640,11 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
       errorSpy.mockRestore();
     });
 
-    it("regression: genuine degraded mode (no IR, nothing links to target) STILL writes legacy exo__Asset_prototype + error", async () => {
-      // No inheritanceRule → no backlink established → the degraded-mode safety
-      // net must remain intact (the asset would otherwise be orphaned).
+    it("@req:0bb06beb-9d7f-448a-bfa3-fd3ab1c3476b — degraded mode on a NON-prototype target writes NO backlink and logs nothing", async () => {
+      // No inheritanceRule → nothing established a backlink. The net used to
+      // write `exo__Asset_prototype: [[<area>]]` here, asserting that a Task is
+      // an instance of the Area — which is simply false. An absent backlink is
+      // a normal state; an invented one is a lie the graph then carries.
       reader.readFile.mockResolvedValue(AREA_TARGET_FM);
       const errorSpy = spyOnError();
 
@@ -4612,9 +4663,42 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
 
       expect(result.success).toBe(true);
       const [, content] = writer.createFile.mock.calls[0];
-      expect(content).toContain(`exo__Asset_prototype: "[[${AREA_UID}]]"`);
+      // The create still succeeds — only the invented link is gone.
+      expect(content).not.toContain("exo__Asset_prototype:");
+      expect(content).toContain("exo__Asset_label: Orphan");
       const calls = errorSpy.mock.calls.flat().map(String);
-      expect(calls.some((s) => s.includes("No backlink rule fired"))).toBe(true);
+      expect(calls.some((s) => s.includes("No backlink rule fired"))).toBe(false);
+
+      errorSpy.mockRestore();
+    });
+
+    // req 0bb06beb — the other half: the net is KEPT where it is truthful. A
+    // real prototype whose Universal InheritanceRules are absent still gets its
+    // prototype link, and in UID-canon form (never a vault path).
+    it("@req:0bb06beb-9d7f-448a-bfa3-fd3ab1c3476b — degraded mode on a PROTOTYPE target still writes the backlink, by UID", async () => {
+      reader.readFile.mockResolvedValue(prototypeTargetContent("proto-uid-42"));
+      const errorSpy = spyOnError();
+
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        "assetspaces/kitelev/exoas-my/my-efforts/proto-uid-42.md",
+        { label: "Lunch instance" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain('exo__Asset_prototype: "[[proto-uid-42]]"');
+      // UID-canon: the vault path must never leak into the reference.
+      expect(content).not.toContain("assetspaces/kitelev");
+      const calls = errorSpy.mock.calls.flat().map(String);
+      expect(calls.some((s) => s.includes("the target is a prototype"))).toBe(true);
 
       errorSpy.mockRestore();
     });

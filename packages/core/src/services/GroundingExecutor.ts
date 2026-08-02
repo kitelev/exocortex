@@ -1235,7 +1235,13 @@ export class GroundingExecutor {
     // linkBackProperty. Safety-net for degraded mode where Universal singleton
     // is fully absent (IRs missing → no rule wrote backlink). Bug #5 returns
     // here, but a corrupt asset is preferable to creation failure.
-    this.applyMissingBacklinkTopUp(properties, grounding, targetIRI, targetFilePath);
+    await this.applyMissingBacklinkTopUp(
+      properties,
+      grounding,
+      targetIRI,
+      targetFilePath,
+      targetFm,
+    );
 
     // Per-Grounding explicit linkBackProperty (legacy escape hatch) — still
     // honoured when set. Universal IRs handle the default case; per-Grounding
@@ -1783,15 +1789,24 @@ export class GroundingExecutor {
    *     key (exo__Asset_prototype, ems__Effort_parent)
    *
    * This guards the safety net from double-writing backlink when the IR step
-   * already produced one. When it does fire, Bug #5 returns (Project gets
-   * the wrong key), but a corrupt asset is preferable to creation failure.
+   * already produced one.
+   *
+   * req 0bb06beb — and it fires ONLY when the target IS a prototype. The old
+   * comment framed the choice as «a corrupt asset is preferable to creation
+   * failure»; that dilemma was false, because writing NOTHING was never on the
+   * table. A missing backlink is a normal state, while an invented one is a lie
+   * the graph then carries — measured at 112 assets across the three vaults,
+   * each asserting `exo__Asset_prototype` toward a daily note / area / any class
+   * without a backlink rule. The net is kept where it is truthful: a real
+   * prototype whose Universal InheritanceRules are absent still gets its link.
    */
-  private applyMissingBacklinkTopUp(
+  private async applyMissingBacklinkTopUp(
     properties: Record<string, unknown>,
     grounding: GroundingDefinition,
     targetIRI: string,
     targetFilePath: string,
-  ): void {
+    targetFm?: Record<string, string | string[]> | null,
+  ): Promise<void> {
     if (!targetIRI || grounding.linkBackProperty) return;
     if (
       properties.exo__Asset_prototype !== undefined ||
@@ -1819,10 +1834,130 @@ export class GroundingExecutor {
     if (GroundingExecutor.propertiesReferenceTarget(properties, backLinkTarget)) {
       return;
     }
-    properties.exo__Asset_prototype = `"[[${backLinkTarget}]]"`;
+    // req 0bb06beb — the gate. `exo__Asset_prototype` means «this asset was
+    // instantiated from that prototype», so writing it toward a non-prototype
+    // is false by definition. `targetFm` is only pre-read when the grounding
+    // needed it (inheritanceRule / $target tokens / cloneTargetBody), and the
+    // degraded path this net exists for is exactly the one where it was NOT —
+    // so read the target here rather than defaulting to a guess. Unreadable or
+    // unresolvable target → write nothing: an absent backlink is recoverable,
+    // an invented one silently corrupts the graph.
+    const fm =
+      targetFm ?? (await this.readTargetFrontmatter(targetIRI, targetFilePath));
+    if (!(await this.targetIsPrototype(fm))) return;
+    // req 0bb06beb — UID-canon reference. `extractBacklinkTarget` falls back to
+    // the full vault path for a label-named target, which breaks the moment the
+    // target is renamed or moved. The asset's own uid is stable, so prefer it.
+    // The raw value may still carry YAML quoting (`exo__Asset_uid: "<uid>"`),
+    // which would nest inside the wikilink and corrupt the reference.
+    const rawUid = fm?.["exo__Asset_uid"];
+    const uid =
+      typeof rawUid === "string" ? rawUid.trim().replace(/^"+|"+$/g, "").trim() : "";
+    const canonicalTarget = uid.length > 0 ? uid : backLinkTarget;
+    properties.exo__Asset_prototype = `"[[${canonicalTarget}]]"`;
     LoggingService.error(
-      "[GroundingExecutor] No backlink rule fired (Universal IRs absent or no class match). Falling back to legacy exo__Asset_prototype default. Bug #5 may surface if target is not a prototype-instance.",
+      "[GroundingExecutor] No backlink rule fired (Universal IRs absent or no class match). Falling back to legacy exo__Asset_prototype default — the target is a prototype, so the link is valid.",
     );
+  }
+
+  /**
+   * req 0bb06beb — read the click-target's frontmatter on the degraded backlink
+   * path, where `executeCreateInstance` had no reason to read it earlier. Any
+   * failure yields `null`, which the caller treats as «cannot confirm» and so
+   * writes no backlink at all.
+   */
+  private async readTargetFrontmatter(
+    targetIRI: string,
+    targetFilePath: string,
+  ): Promise<Record<string, string | string[]> | null> {
+    // Prefer the caller's path verbatim — `resolveTargetPath` normalises it for
+    // wikilink use (strips a leading slash and the `.md`), which is exactly what
+    // a file reader must NOT receive. Fall back to deriving it from the IRI so
+    // the IRI-only call shape (Issue #3195's fallback branch) is covered too.
+    let path = targetFilePath;
+    if (!path) {
+      const base = GroundingExecutor.resolveTargetPath(targetIRI, "");
+      if (!base) return null;
+      path = /\.md$/i.test(base) ? base : `${base}.md`;
+    }
+    try {
+      const content = await this.fileReader.readFile(path);
+      return this.frontmatterService.parseObject(content) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * req 0bb06beb — true when the click-target is a prototype, i.e. one of its
+   * `exo__Instance_class` refs is `exo__Prototype` or reaches it through
+   * `exo__Class_superClass`.
+   *
+   * The walk (rather than a `*Prototype` name-suffix test) is deliberate: the
+   * suffix heuristic is exactly what req 5579ffa1 de-hacked, because a prototype
+   * subclass need not be named `…Prototype`. Class refs are UID-form under
+   * UID-canon (`[[<uid>]]` — verified on live prototypes), so the label is not
+   * available inline and the class asset has to be dereferenced.
+   */
+  private async targetIsPrototype(
+    targetFm: Record<string, string | string[]> | null | undefined,
+  ): Promise<boolean> {
+    if (!targetFm) return false;
+    const refs = this.resolveClassRefsFromFrontmatter(targetFm);
+    const seen = new Set<string>();
+    for (const ref of refs) {
+      if (await this.classRefReachesPrototype(ref, 0, seen)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * req 0bb06beb — depth- and cycle-bounded `exo__Class_superClass` walk looking
+   * for `exo__Prototype`. Without a wired {@link RefToFrontmatterResolver} only
+   * the inline label form can be judged, and an unresolvable class yields
+   * `false` (fail-closed — see {@link applyMissingBacklinkTopUp}).
+   */
+  private async classRefReachesPrototype(
+    ref: string,
+    depth: number,
+    seen: Set<string>,
+  ): Promise<boolean> {
+    if (depth > GroundingExecutor.MAX_PROTOTYPE_CLASS_WALK_DEPTH) return false;
+    const trimmed = ref.trim();
+    if (!trimmed || seen.has(trimmed)) return false;
+    seen.add(trimmed);
+    // `<uid>|<label>` and bare `<label>` both carry the label inline.
+    const parts = trimmed.split("|");
+    const key = parts[0].trim();
+    const inlineLabel = (parts[1] ?? parts[0]).trim();
+    if (inlineLabel === GroundingExecutor.PROTOTYPE_CLASS_LABEL) return true;
+    if (!this.refToFrontmatter || !key) return false;
+    let classFm: Record<string, unknown> | null;
+    try {
+      classFm = await this.refToFrontmatter(key);
+    } catch {
+      return false;
+    }
+    if (!classFm) return false;
+    if (
+      String(classFm["exo__Asset_label"] ?? "").trim() ===
+      GroundingExecutor.PROTOTYPE_CLASS_LABEL
+    ) {
+      return true;
+    }
+    const supers = classFm["exo__Class_superClass"];
+    const list = Array.isArray(supers)
+      ? supers
+      : supers === undefined || supers === null
+        ? []
+        : [supers];
+    for (const parent of list) {
+      const inner = this.extractWikilinkInner(String(parent));
+      if (inner && (await this.classRefReachesPrototype(inner, depth + 1, seen))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -2863,6 +2998,16 @@ export class GroundingExecutor {
    */
   private static readonly UUID_BASENAME_RE =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  /** req 0bb06beb — root prototype class the backlink gate walks toward. */
+  private static readonly PROTOTYPE_CLASS_LABEL = "exo__Prototype";
+
+  /**
+   * req 0bb06beb — bound on the `exo__Class_superClass` walk. Real chains are
+   * shallow (`ems__TaskPrototype` reaches `exo__Prototype` in one hop); the cap
+   * plus the visited-set keeps a malformed or cyclic hierarchy from spinning.
+   */
+  private static readonly MAX_PROTOTYPE_CLASS_WALK_DEPTH = 6;
 
   /**
    * Derive a stable wikilink target (vault-relative path, no `.md` suffix) for

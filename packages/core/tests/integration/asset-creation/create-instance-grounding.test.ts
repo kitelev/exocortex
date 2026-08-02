@@ -297,7 +297,20 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
     await fs.createFile(PARENT_FILE_PATH, PARENT_FILE_CONTENT);
     vaultAdapter = new InMemoryVaultAdapter(fs);
     const serviceRegistry = new ServiceRegistry();
-    groundingExecutor = new GroundingExecutor(fs, fs, serviceRegistry);
+    // req 0bb06beb — the legacy `exo__Asset_prototype` top-up fires only for a
+    // target that really is a prototype, which the executor establishes by
+    // dereferencing the target's class through `refToFrontmatter`. Production
+    // always injects this port (cli/apply.ts, ExocortexPlugin.ts); the fixture
+    // parent above IS a prototype-instance, so wire it here too.
+    groundingExecutor = new GroundingExecutor(fs, fs, serviceRegistry, undefined, {
+      refToFrontmatter: async (ref: string) =>
+        ref === "ems__TaskPrototype"
+          ? {
+              exo__Asset_label: "ems__TaskPrototype",
+              exo__Class_superClass: ['"[[exo__Prototype]]"'],
+            }
+          : null,
+    });
     converter = new NoteToRDFConverter(vaultAdapter);
   });
 
@@ -545,7 +558,10 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
       const allPaths = createdPaths;
 
       const content = fs.getContent(allPaths[0])!;
-      expect(content).toContain('exo__Asset_prototype: "[[vault/parent]]"');
+      // req 0bb06beb — the reference is the target's own uid (UID-canon), not
+      // the vault path it used to emit.
+      expect(content).toContain('exo__Asset_prototype: "[[parent-uid]]"');
+      expect(content).not.toContain("[[vault/parent]]");
       // Issue #3184 B2: legacy `exo__Asset_source` default no longer
       // applied for create_instance.
       expect(content).not.toContain("exo__Asset_source:");
