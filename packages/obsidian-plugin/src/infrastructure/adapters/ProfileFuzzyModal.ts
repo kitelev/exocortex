@@ -160,6 +160,16 @@ export class ProfileFuzzyModal extends FuzzySuggestModal<ProfileChoice> {
         text: item.description,
       });
     }
+
+    // req 6171f443 — what mounting this row COSTS, in files, over the transitive
+    // dependsOn CLOSURE. Its own muted line so it never competes with the
+    // description. Absent ⇒ nothing rendered (the zero-regression guarantee).
+    if (item.indexCost !== undefined && item.indexCost.length > 0) {
+      el.createDiv({
+        cls: "exocortex-profile-suggestion__cost",
+        text: item.indexCost,
+      });
+    }
   }
 
   onChooseItem(item: ProfileChoice): void {

@@ -472,6 +472,13 @@ export class ProfileApplyManager {
   private readonly onPhase: (entry: SwitchJournalEntry) => void;
   private readonly onProgress: (event: ApplyProgressEvent) => void;
 
+  /**
+   * req 6171f443 — memoized per-AssetSpace file counts backing the index-cost
+   * preview (see {@link getIndexCostInputs}). `null` = not yet walked. Dropped
+   * by {@link invalidateIndexCostCache} after any mount-state mutation.
+   */
+  private indexCostCache: Map<string, number> | null = null;
+
   // Apply dependencies (may be undefined when only reindex wired).
   private readonly assetSpaceManager?: AssetSpaceManager;
   private readonly cacheLayer?: ICacheLayer;
@@ -866,6 +873,10 @@ export class ProfileApplyManager {
     if (typeof targetProfileUid !== "string" || targetProfileUid.length === 0) {
       throw new Error("applyProfile: targetProfileUid is required");
     }
+    // req 6171f443 — an apply is precisely the operation that invalidates the
+    // memoized per-AssetSpace file counts (it changes what is mounted), so drop
+    // them here: the next picker open re-walks instead of pricing a stale set.
+    this.invalidateIndexCostCache();
     // ExoSync D11 composition (RFC 4e4dc453 Phase B): refuse to start a
     // destructive mount-state switch while a sync run is reading/writing the
     // same folders. The sync side vetoes on `_switchInProgress` symmetrically.
@@ -2515,6 +2526,52 @@ export class ProfileApplyManager {
       }
     }
     return { infos, materializedUids };
+  }
+
+  /**
+   * req 6171f443 — the inputs an index-cost preview needs: the scanned
+   * AssetSpace catalogue (`dependsOn` edges) + a per-AssetSpace file count for
+   * every AssetSpace currently materialized on disk.
+   *
+   * The counts are **runtime-derived** from `vault.adapter` (exactly like
+   * `exo__AssetSpace_materialized`) and never persisted to frontmatter, so a
+   * manual `rm`/`cp` of an assetspaces directory cannot create stale state.
+   * Counting uses only `vault.adapter.exists` + `vault.adapter.list` — the same
+   * walk `applyProfile` already relies on — so it works unchanged on iOS where
+   * `node:fs` does not exist (Desktop↔Mobile parity invariant).
+   *
+   * A non-materialized AssetSpace is simply ABSENT from the map: its files
+   * cannot be walked, so its cost is unknown rather than zero. Callers surface
+   * that as an explicit lower bound instead of silently under-reporting.
+   *
+   * Cached for the plugin session (the walk is the vault-wide one) and
+   * invalidated by {@link invalidateIndexCostCache} after a mount changes.
+   */
+  public async getIndexCostInputs(): Promise<{
+    infos: AssetSpaceInfo[];
+    fileCountByUid: Map<string, number>;
+  }> {
+    const infos = this.listAllAssetSpaceInfos();
+    if (this.indexCostCache !== null) {
+      return { infos, fileCountByUid: this.indexCostCache };
+    }
+    const fileCountByUid = new Map<string, number>();
+    for (const info of infos) {
+      if (!(await this.app.vault.adapter.exists(info.folderName))) continue;
+      const files = await this.enumerateFilesUnder(info.folderName);
+      fileCountByUid.set(info.uid, files.length);
+    }
+    this.indexCostCache = fileCountByUid;
+    return { infos, fileCountByUid };
+  }
+
+  /**
+   * req 6171f443 — drop the memoized per-AssetSpace file counts so the next
+   * preview re-walks. Called after any mount-state mutation (apply / unmount),
+   * whose whole purpose is to change what those counts measure.
+   */
+  public invalidateIndexCostCache(): void {
+    this.indexCostCache = null;
   }
 
   /**

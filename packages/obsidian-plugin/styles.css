@@ -2037,6 +2037,21 @@
   text-overflow: ellipsis;
 }
 
+/*
+ * req 6171f443 — the index-cost line (files this row costs to mount, over the
+ * transitive dependsOn closure). Muted like `__desc` so it never competes with
+ * the human label; slightly fainter still, since it is a secondary figure.
+ */
+.exocortex-profile-suggestion__cost {
+  font-size: 0.8em;
+  color: var(--text-faint);
+  margin-top: 2px;
+  /* Single-line truncate — ellipsis needs nowrap to take effect. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .exocortex-profile-suggestion--show-all .exocortex-profile-suggestion__title {
   color: var(--text-faint);
   font-style: italic;

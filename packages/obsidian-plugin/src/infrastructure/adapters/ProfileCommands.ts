@@ -95,6 +95,15 @@ export interface ProfileChoice {
    * rather than applying anything.
    */
   kind?: "show-all";
+  /**
+   * req 6171f443 — one muted line stating what mounting this row COSTS, in
+   * files, measured over the transitive `exo__AssetSpace_dependsOn` closure
+   * (see `domain/profile/indexCost.ts` for why the closure and not the
+   * AssetSpace's own size). Runtime-derived from `vault.adapter`, never
+   * persisted. Absent ⇒ nothing is rendered and the row is byte-identical to
+   * the pre-feature behaviour — that is the zero-regression guarantee.
+   */
+  indexCost?: string;
 }
 
 export interface ProfileCommandsDeps {
