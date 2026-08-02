@@ -102,7 +102,8 @@ export function computeClosureIndexCost(
 
 /** Group digits so a five-figure file count stays readable (`8 738`). */
 function formatFileCount(files: number): string {
-  return files.toLocaleString("en-US").replace(/,/g, " ");
+  const grouped = files.toLocaleString("en-US").replace(/,/g, " ");
+  return `${grouped} ${files === 1 ? "file" : "files"}`;
 }
 
 /**
@@ -122,7 +123,7 @@ export function formatIndexCost(cost: IndexCost): string | null {
   const files = formatFileCount(cost.files);
   const bound = cost.uncountedAssetSpaces > 0 ? "≥ " : "";
   const packs = cost.closureSize === 1 ? "assetspace" : "assetspaces";
-  const base = `${bound}${files} files · ${cost.closureSize} ${packs}`;
+  const base = `${bound}${files} · ${cost.closureSize} ${packs}`;
   if (cost.uncountedAssetSpaces === 0) return base;
   return `${base} (${cost.uncountedAssetSpaces} not mounted, uncounted)`;
 }
@@ -142,7 +143,7 @@ export function formatAssetSpaceIndexCost(
   closure: IndexCost,
 ): string | null {
   if (ownFiles === undefined) return formatIndexCost(closure);
-  const own = `${formatFileCount(ownFiles)} files`;
+  const own = formatFileCount(ownFiles);
   if (closure.closureSize <= 1) return own;
   const closureLine = formatIndexCost(closure);
   if (closureLine === null) return own;

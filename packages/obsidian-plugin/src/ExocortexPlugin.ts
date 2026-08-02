@@ -4129,7 +4129,12 @@ export default class ExocortexPlugin extends Plugin {
               ? void bootstrapCommands.invokeBootstrap()
               : void bootstrapCommands.invokeAddAssetSpace(),
         }).open(),
-      onMaterialized: () => this.refreshAndInjectAssetSpaceMaterialization(),
+      onMaterialized: () => {
+        // req 6171f443 — bootstrap / add-assetspace mount new AssetSpaces, so
+        // the memoized per-AssetSpace file counts no longer describe the vault.
+        this.profileApplyManager?.invalidateIndexCostCache();
+        return this.refreshAndInjectAssetSpaceMaterialization();
+      },
       // #3956 — delegate the dependsOn-closure completeness check to the mount
       // authority so «Add AssetSpace by URL» warns specifically when the added
       // AssetSpace's dependsOn (esp. the exocmd class-TBox) is left unmounted.
@@ -4399,7 +4404,12 @@ export default class ExocortexPlugin extends Plugin {
       writeDescriptor: (mountPath, fileName, content) =>
         this.app.vault.adapter.write(`${mountPath}/${fileName}`, content),
       notify: (message) => this.notifier.info(message),
-      onMaterialized: () => this.refreshAndInjectAssetSpaceMaterialization(),
+      onMaterialized: () => {
+        // req 6171f443 — registering an AssetSpace for sync materializes it, so
+        // the memoized per-AssetSpace file counts no longer describe the vault.
+        this.profileApplyManager?.invalidateIndexCostCache();
+        return this.refreshAndInjectAssetSpaceMaterialization();
+      },
     });
 
     this.addCommand({

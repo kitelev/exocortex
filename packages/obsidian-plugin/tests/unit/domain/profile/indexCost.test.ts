@@ -101,7 +101,8 @@ describe("computeClosureIndexCost (req 6171f443)", () => {
     const cost = computeClosureIndexCost([EXO], CATALOGUE, ALL_COUNTED);
 
     expect(cost.closureSize).toBe(1);
-    expect(formatIndexCost(cost)).toBe("1 files · 1 assetspace");
+    // Both units are pluralised — a lone AssetSpace reads `1 file · 1 assetspace`.
+    expect(formatIndexCost(cost)).toBe("1 file · 1 assetspace");
   });
 });
 
@@ -122,7 +123,7 @@ describe("formatAssetSpaceIndexCost (req 6171f443)", () => {
       computeClosureIndexCost([EXO], CATALOGUE, ALL_COUNTED),
     );
 
-    expect(line).toBe("1 files");
+    expect(line).toBe("1 file");
   });
 
   it("renders nothing when the pack is uncountable and so is its closure", () => {
