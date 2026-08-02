@@ -56,6 +56,17 @@ describe("CLI surface — W0 removed commands (RFC 7c7859d1)", () => {
     expect(topLevelNames()).not.toContain("recover");
   });
 
+  // W-req (RFC 7c7859d1) — `requirements` was NOT a cheap-remove: its `audit`
+  // subcommand had a LIVE CI consumer (the `requirements-trace` job + the
+  // always-on active-requirement gate). Migration-first: the checker was
+  // extracted to `packages/req-audit` (repo-internal dev tooling — a CI gate for
+  // THIS repo has no business occupying a verb of the published product CLI),
+  // and ci.yml + ADR REQ-001 were switched to it BEFORE this removal.
+  // Surface 18 -> 17.
+  it("does NOT register the removed 'requirements' command", () => {
+    expect(topLevelNames()).not.toContain("requirements");
+  });
+
   it("still registers the retained core/platform commands (sanity)", () => {
     const names = topLevelNames();
     for (const kept of [

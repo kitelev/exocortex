@@ -7,7 +7,7 @@ import { loadMarkdownAssets } from "./assets.js";
 /**
  * RFC 0003 (requirements management) P1 — traceability checker.
  *
- * `exocortex requirements audit` is the executable mechanism behind the
+ * The `requirements-audit` tool is the executable mechanism behind the
  * spec→test traceability model. It loads the functional `req__Requirement`
  * assets, greps the test corpus for the `@req:<uid>` tokens that bind tests to
  * requirements, and reports:

@@ -112,6 +112,10 @@ export async function main(): Promise<void> {
   }
 
   try {
+    // `--output` / `--gate` are passed through unvalidated ON PURPOSE — this
+    // mirrors the Commander behaviour of the CLI subcommand this replaced
+    // (`gate === "hard" ? "hard" : "soft"`, any other `--output` renders text),
+    // so a typo degrades to the soft/text default exactly as it did before.
     process.exitCode = await runAudit({
       reqs: parsed.reqs,
       tests: parsed.tests,

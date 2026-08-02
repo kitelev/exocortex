@@ -85,8 +85,17 @@ export function extractFrontmatter(
  * `dot: false`, and vendored trees are filtered by the caller
  * (`loadRequirements` skips `node_modules` / `.git` path segments).
  *
- * A file that cannot be read is skipped rather than aborting the walk — the
- * adapter's per-file `try/catch` had the same fail-open semantics.
+ * Two DELIBERATE divergences from the adapter, both verdict-neutral:
+ *
+ *  1. The result is **sorted**. The adapter returned raw glob order, so findings
+ *     came out in an unspecified order; sorting makes the report stable
+ *     run-to-run (`scanTestTags` already sorts its file list for the same
+ *     reason). Set-equality with the adapter's output is unaffected — only the
+ *     order within `orphans` / `floorViolations` / … changes.
+ *  2. A file that cannot be read is **skipped**; the adapter pushed it with `{}`
+ *     metadata. Verdict-equivalent: the sole consumer (`loadRequirements`)
+ *     drops any asset whose `req__Requirement_status` is undefined, which a `{}`
+ *     asset always is — so neither variant can make a requirement vanish.
  */
 export async function loadMarkdownAssets(
   rootPath: string,

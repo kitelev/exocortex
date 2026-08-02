@@ -23,7 +23,6 @@ import { assetSpaceRemoveCommand } from "./commands/assetspace-remove.js";
 import { resolveDepsCommand } from "./commands/resolve-deps.js";
 import { exosyncParityCommand } from "./commands/exosync-parity.js";
 import { exosyncCommand } from "./commands/exosync-sync.js";
-import { requirementsCommand } from "./commands/requirements.js";
 import { cacheCommand } from "./commands/cache.js";
 import { mcpCommand } from "./commands/mcp.js";
 
@@ -109,9 +108,6 @@ export function createProgram(version?: string): Command {
 
   // RFC 4e4dc453 Phase B parity (EKA M3.7) — ExoSync sync/pull/push from the CLI
   program.addCommand(exosyncCommand());
-
-  // RFC 0003 (requirements management) P1 — traceability checker
-  program.addCommand(requirementsCommand());
 
   // Issue #3981 — SPARQL query-result cache maintenance (clear / stats).
   // Complements the automatic size/count-cap eviction in QueryResultCache.set.
