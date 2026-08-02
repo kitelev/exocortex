@@ -164,6 +164,10 @@ import {
   formatAssetSpaceIndexCost,
   formatIndexCost,
 } from "./domain/profile/indexCost";
+import {
+  assessUnmountRisk,
+  formatUnmountRiskWarning,
+} from "./domain/profile/unmountSafety";
 import { lookupAssetSpaceUidByFolder } from "./infrastructure/adapters/AssetSpaceLookupHelper";
 import { createAssetSpacePusher } from "./infrastructure/adapters/AssetSpacePusherFactory";
 import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
@@ -4496,6 +4500,28 @@ export default class ExocortexPlugin extends Plugin {
             resolve,
           ).open();
         }),
+      // req d5bc68f6 — read-only blast radius for the pick, shown above the
+      // destructive confirm. Both axes are cheap: the dependent-mount check
+      // reuses the already-scanned catalogue + the shared closure helper, and
+      // the dangling-link count reads Obsidian's already-computed
+      // `metadataCache.resolvedLinks` (no vault walk, no node:fs → identical on
+      // iOS). Returns null when nothing is at risk → wording unchanged.
+      assessRisk: async (chosen) => {
+        const infos = switchMgr.listAllAssetSpaceInfos();
+        const mountedUids = (await restMount.listMountedAssetSpaces()).flatMap(
+          (e) => {
+            const info = infos.find((i) => i.folderName === e.submodulePath);
+            return info === undefined ? [] : [info.uid];
+          },
+        );
+        const risk = assessUnmountRisk(
+          chosen,
+          mountedUids,
+          infos,
+          this.app.metadataCache.resolvedLinks,
+        );
+        return formatUnmountRiskWarning(risk, chosen.label);
+      },
       unmount: (submodulePath) => restMount.unmount(submodulePath),
       // #3540 follow-up — toast auto-records into the activity log via notifier.
       notify: (message) => this.notifier.info(message),
