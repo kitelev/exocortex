@@ -419,6 +419,18 @@ describe("isHardFail — soft/hard exit-code contract (P3 flip)", () => {
       dangling: [],
       duplicates: [],
       floorViolations: [],
+      // Fields added after this helper was first written; omitting them made the
+      // literal rely on `...over` to satisfy TraceabilityReport, which typechecks
+      // only while nothing type-checks the tests. The CLI tsconfig excluded
+      // `tests/**`, so the drift stayed invisible until the move; the new
+      // package's tsconfig includes them, so it is spelled out here.
+      // `isHardFail` reads only clean/orphans/rampReady — these are inert for it.
+      danglingEvidence: [],
+      uiAcceptanceTotal: 0,
+      uiAcceptanceEvidenced: 0,
+      uiAcceptanceAutomated: 0,
+      uiAcceptanceManual: 0,
+      uiAcceptanceMissingEvidence: 0,
       unknownPriority: 0,
       clean: true,
       activeTotal: 0,
