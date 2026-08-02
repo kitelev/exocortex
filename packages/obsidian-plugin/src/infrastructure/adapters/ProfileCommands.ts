@@ -31,6 +31,7 @@
 
 import { isAuthError } from "@kitelev/exocortex-core";
 
+import { orderProfilesForQuickSwitch } from "../../domain/profile/quickSwitch";
 import type { ProfileApplyManager } from "./ProfileApplyManager";
 import {
   ApplyAbortedByUser,
@@ -406,6 +407,14 @@ export class ProfileCommands {
    * The fuzzy-pick wrapper is the {@link ProfileFuzzyModal}, which carries the
    * picker-selection fix (#3561 — record-in-choose, resolve-in-close-microtask);
    * this method only chooses which list to hand it.
+   *
+   * req 38e2fdd5 — the list is then passed through
+   * {@link orderProfilesForQuickSwitch}, which promotes the profile that was
+   * active BEFORE the current one to the first row: profiles are used as a
+   * two-context ping-pong, so that is nearly always the switch-back target, and
+   * `FuzzySuggestModal` shows `getItems()` in order while the query box is
+   * empty — the state the picker opens in. With no previous profile recorded
+   * the order is returned untouched (structural zero-regression).
    */
   private async pickProfileScoped(
     profiles: ProfileChoice[],
@@ -417,15 +426,25 @@ export class ProfileCommands {
     const scoped = relevant.length > 0 ? relevant : profiles;
     const hasHidden = scoped.length < profiles.length;
 
-    const firstList = hasHidden
-      ? [...scoped, ProfileCommands.showAllEntry(profiles.length - scoped.length)]
-      : scoped;
+    const previousUid = this.getPreviousProfileUid();
+    const firstList = orderProfilesForQuickSwitch(
+      hasHidden
+        ? [
+            ...scoped,
+            ProfileCommands.showAllEntry(profiles.length - scoped.length),
+          ]
+        : scoped,
+      previousUid,
+    );
 
     const first = await this.fuzzyPick(firstList, "Apply profile", initialQuery);
     if (first === null) return null;
     if (first.kind === "show-all") {
       // User broadened the list — re-open unscoped (no pre-narrow query).
-      const all = await this.fuzzyPick(profiles, "Apply profile");
+      const all = await this.fuzzyPick(
+        orderProfilesForQuickSwitch(profiles, previousUid),
+        "Apply profile",
+      );
       // A nested «show-all» is impossible (the full list contains no sentinel),
       // but guard against accidental re-selection so it never reaches apply.
       return all !== null && all.kind === "show-all" ? null : all;
