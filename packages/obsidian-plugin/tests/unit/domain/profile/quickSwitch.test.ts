@@ -289,6 +289,76 @@ describe("ProfileIndicator — the two surfaces", () => {
     expect(s.statusEl.textContent).not.toContain("Personal");
   });
 
+  it("re-resolves once the vault is indexed — a cold cache at load must not strand the label", async () => {
+    // Caught by the CI e2e: at plugin load the metadata cache is cold, so the
+    // lister finds no profiles and the first paint can only say "Unknown".
+    // Nothing else re-resolved it, so the indicator stayed wrong until the user
+    // happened to apply a profile.
+    const s = makeSurfaces();
+    let cacheWarm = false;
+    const indicator = new ProfileIndicator({
+      getActiveProfileUid: () => PERSONAL.uid,
+      listProfiles: async () => (cacheWarm ? profiles : []),
+      openSwitcher: () => undefined,
+      addRibbonIcon: s.addRibbonIcon,
+      addStatusBarItem: s.addStatusBarItem,
+    });
+
+    indicator.mount();
+    await indicator.refresh(); // load — cache cold
+    expect(s.statusEl.textContent).toContain(UNRESOLVED_PROFILE_TEXT);
+
+    cacheWarm = true; // metadataCache "resolved"
+    await indicator.refreshIfUnsettled();
+    expect(s.statusEl.textContent).toContain("Personal");
+  });
+
+  it("stops re-resolving once the label has settled — the cache event must not carry a repeated vault walk", async () => {
+    const s = makeSurfaces();
+    let listCalls = 0;
+    const indicator = new ProfileIndicator({
+      getActiveProfileUid: () => PERSONAL.uid,
+      listProfiles: async () => {
+        listCalls += 1;
+        return profiles;
+      },
+      openSwitcher: () => undefined,
+      addRibbonIcon: s.addRibbonIcon,
+      addStatusBarItem: s.addStatusBarItem,
+    });
+
+    indicator.mount();
+    await indicator.refresh(); // resolves "Personal" → settled
+    expect(listCalls).toBe(1);
+
+    // Several further cache-resolution events.
+    await indicator.refreshIfUnsettled();
+    await indicator.refreshIfUnsettled();
+    expect(listCalls).toBe(1);
+  });
+
+  it("an unset profile counts as settled — «no profile» is a final answer, not a pending one", async () => {
+    const s = makeSurfaces();
+    let listCalls = 0;
+    const indicator = new ProfileIndicator({
+      getActiveProfileUid: () => null,
+      listProfiles: async () => {
+        listCalls += 1;
+        return profiles;
+      },
+      openSwitcher: () => undefined,
+      addRibbonIcon: s.addRibbonIcon,
+      addStatusBarItem: s.addStatusBarItem,
+    });
+
+    indicator.mount();
+    await indicator.refresh();
+    await indicator.refreshIfUnsettled();
+
+    expect(s.statusEl.textContent).toContain(NO_ACTIVE_PROFILE_TEXT);
+    expect(listCalls).toBe(0); // never even listed — no UID to resolve
+  });
+
   it("mount is idempotent — a second call cannot stack duplicate surfaces", () => {
     const s = makeSurfaces();
     const indicator = new ProfileIndicator({

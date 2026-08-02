@@ -3691,9 +3691,27 @@ export default class ExocortexPlugin extends Plugin {
       // registered on both platforms and is the mobile affordance.
       this.profileIndicator = new ProfileIndicator({
         getActiveProfileUid: () => localDataStore.getActiveProfileUid(),
-        // The SAME lister the picker uses, so the indicator can never disagree
-        // with the switcher about a profile's label.
-        listProfiles: profileLister,
+        // A LIGHT lister — the indicator needs only uid→label, so it reads the
+        // profile files' frontmatter and skips the two extra vault walks the
+        // picker's lister does (index-cost pricing + the present-UID set).
+        // It resolves the label from the same fields `buildProfileChoice` uses,
+        // so the indicator and the switcher can never disagree about a name.
+        listProfiles: async () =>
+          resolver.listProfileFiles().flatMap((file) => {
+            const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+              | Record<string, unknown>
+              | undefined;
+            if (fm === undefined) return [];
+            const uid = fm["exo__Asset_uid"];
+            if (typeof uid !== "string" || uid.length === 0) return [];
+            const label = fm["exo__Asset_label"];
+            return [
+              {
+                uid,
+                label: typeof label === "string" ? label : file.basename,
+              },
+            ];
+          }),
         openSwitcher: () => {
           refreshIndicatorAfter(commandsHandler.invokeApplyProfile());
         },
@@ -3707,6 +3725,17 @@ export default class ExocortexPlugin extends Plugin {
       });
       this.profileIndicator.mount();
       void this.profileIndicator.refresh();
+
+      // At load the metadata cache is typically cold, so the first refresh
+      // cannot name the profile yet and would sit on "Unknown profile" until
+      // the user happened to apply one. Re-resolve when the vault reports
+      // itself indexed. `refreshIfUnsettled` is a no-op once the label has
+      // settled, so this hot event never carries a repeated vault walk.
+      this.registerEvent(
+        this.app.metadataCache.on("resolved", () => {
+          void this.profileIndicator?.refreshIfUnsettled();
+        }),
+      );
 
       // RFC 0002 §3.10 (resolves P15) — «Undo last profile apply»: revert to the
       // profile active before the most recent apply in one click. Gated like

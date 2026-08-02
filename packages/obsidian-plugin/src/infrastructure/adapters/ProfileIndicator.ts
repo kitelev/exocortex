@@ -70,6 +70,13 @@ export class ProfileIndicator {
    * leave the indicator naming a context the device is no longer in.
    */
   private refreshGeneration = 0;
+  /**
+   * Whether the last paint produced a FINAL answer — a real profile label, or
+   * an honest "nothing applied yet". False while the active UID is recorded but
+   * unnameable (typically a cold metadata cache at load), which is what
+   * {@link refreshIfUnsettled} listens for.
+   */
+  private labelSettled = false;
 
   constructor(private readonly deps: ProfileIndicatorDeps) {}
 
@@ -109,10 +116,11 @@ export class ProfileIndicator {
    */
   async refresh(): Promise<void> {
     const generation = ++this.refreshGeneration;
-    const label = await this.resolveActiveLabel();
+    const { label, settled } = await this.resolveActive();
     // A newer refresh started while this one was resolving — it will paint the
     // fresher label, so this (now stale) result must not overwrite it.
     if (generation !== this.refreshGeneration) return;
+    this.labelSettled = settled;
 
     const text = formatActiveProfileIndicator(label);
     const tooltip = formatActiveProfileTooltip(label);
@@ -130,25 +138,59 @@ export class ProfileIndicator {
   }
 
   /**
-   * `null` ⇒ nothing applied yet. A recorded UID with no matching asset yields
-   * {@link UNRESOLVED_PROFILE_TEXT} rather than the raw UID or a misleading
-   * "No profile".
+   * Repaint ONLY while the label is still unresolved.
+   *
+   * At plugin load the metadata cache is usually cold, so the profile lister
+   * finds nothing and the first {@link refresh} can only paint "Unknown
+   * profile". Nothing else would ever re-resolve it — the indicator would sit
+   * wrong until the user happened to apply a profile. This is the hook the
+   * plugin drives from `metadataCache.on("resolved")`, i.e. "the vault finished
+   * indexing".
+   *
+   * It is a no-op once the label HAS settled, because listing profiles walks
+   * the vault: an unconditional repaint on every cache-resolution event would
+   * put an O(vault) scan on a hot Obsidian event, which is the shape that
+   * caused the documented iPhone index-storm. Settled means either a real
+   * label or an honest "no profile applied"; only the genuinely-unresolvable
+   * case (a recorded UID whose asset is missing) keeps listening, and that
+   * self-heals on the next apply.
    */
-  private async resolveActiveLabel(): Promise<string | null> {
+  async refreshIfUnsettled(): Promise<void> {
+    if (this.labelSettled) return;
+    await this.refresh();
+  }
+
+  /**
+   * `label: null` ⇒ nothing applied yet. A recorded UID with no matching asset
+   * yields {@link UNRESOLVED_PROFILE_TEXT} rather than the raw UID or a
+   * misleading "No profile".
+   *
+   * `settled` reports whether this answer is final: `false` means the lookup
+   * could not name the profile (cold cache, unmounted AssetSpace, deleted
+   * asset) and is worth retrying when the vault reports itself indexed.
+   */
+  private async resolveActive(): Promise<{
+    label: string | null;
+    settled: boolean;
+  }> {
     let uid: string | null;
     try {
       uid = this.deps.getActiveProfileUid();
     } catch {
-      return UNRESOLVED_PROFILE_TEXT;
+      return { label: UNRESOLVED_PROFILE_TEXT, settled: false };
     }
-    if (uid === null || uid.length === 0) return null;
+    if (uid === null || uid.length === 0) {
+      return { label: null, settled: true };
+    }
 
     try {
       const profiles = await this.deps.listProfiles();
       const match = profiles.find((p) => p.uid === uid);
-      return match !== undefined ? match.label : UNRESOLVED_PROFILE_TEXT;
+      return match !== undefined
+        ? { label: match.label, settled: true }
+        : { label: UNRESOLVED_PROFILE_TEXT, settled: false };
     } catch {
-      return UNRESOLVED_PROFILE_TEXT;
+      return { label: UNRESOLVED_PROFILE_TEXT, settled: false };
     }
   }
 }

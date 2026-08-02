@@ -184,8 +184,17 @@ test.describe("EKA GUI — profile quick-switch (req 38e2fdd5)", () => {
       "the profile indicator must be registered in the status bar on desktop",
     ).toBeVisible({ timeout: 60_000 });
 
-    // The label resolves asynchronously (the lister walks the vault), so poll
-    // for the resolved name rather than asserting the initial placeholder.
+    // Log what it says BEFORE polling: if the poll ever times out, this line is
+    // the difference between "the device-local store was not read" (reads
+    // "No profile") and "the profile list was not resolvable yet" (reads
+    // "Unknown profile"). The first run of this spec timed out here and that
+    // distinction was exactly what was missing.
+    log(`status bar (pre-poll): ${(await statusBar.textContent()) ?? "<null>"}`);
+
+    // The label resolves asynchronously, and the FIRST attempt happens at
+    // plugin load with a cold metadata cache — which is why the indicator
+    // re-resolves on `metadataCache.on("resolved")`. Poll for the resolved
+    // name rather than asserting the initial placeholder.
     await pollUntil(
       "status bar resolves the active profile label",
       async () =>
