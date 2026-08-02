@@ -3667,14 +3667,12 @@ export default class ExocortexPlugin extends Plugin {
     // the command stays hidden.
     if (applyDeps !== null || (Platform.isMobile && restMount !== null)) {
       // req 38e2fdd5 — repaint the indicator once the flow settles, whichever
-      // way it settles (cancel / refuse / applied). Two-argument `then` rather
-      // than `finally` so the root tsconfig's ES6 lib suffices, and so a
-      // rejection can never leave the indicator stale or unhandled.
+      // way it settles (cancel / refuse / applied), so a rejection can never
+      // leave the indicator naming a context the device is no longer in.
       const refreshIndicatorAfter = (flow: Promise<void>): void => {
-        const repaint = (): void => {
+        void flow.finally(() => {
           void this.profileIndicator?.refresh();
-        };
-        void flow.then(repaint, repaint);
+        });
       };
 
       this.addCommand({

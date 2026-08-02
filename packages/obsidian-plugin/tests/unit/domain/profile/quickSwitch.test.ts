@@ -21,6 +21,7 @@ import {
   NO_ACTIVE_PROFILE_TEXT,
   UNRESOLVED_PROFILE_TEXT,
 } from "../../../../src/domain/profile/quickSwitch";
+import { SHOW_ALL_PROFILES_UID } from "../../../../src/infrastructure/adapters/ProfileCommands";
 import {
   ProfileIndicator,
   PROFILE_RIBBON_ICON,
@@ -31,8 +32,8 @@ import {
 const PERSONAL = { uid: "uid-personal", label: "Personal" };
 const WORK = { uid: "uid-work", label: "Work" };
 const READING = { uid: "uid-reading", label: "Reading" };
-/** Mirrors `SHOW_ALL_PROFILES_UID` — the synthetic expander row. */
-const SHOW_ALL = { uid: "__exocortex_show_all_profiles__", label: "Show all…" };
+/** The synthetic expander row — the real constant, so a rename cannot pass. */
+const SHOW_ALL = { uid: SHOW_ALL_PROFILES_UID, label: "Show all…" };
 
 describe("quickSwitch — switcher ordering", () => {
   it("@req:38e2fdd5-8768-4354-8cb8-f1c77856ddb8 AC2: offers the context you came FROM first, keeping every other row's relative order", () => {
@@ -256,6 +257,36 @@ describe("ProfileIndicator — the two surfaces", () => {
     indicator.mount();
     await expect(indicator.refresh()).resolves.toBeUndefined();
     expect(s.statusEl.textContent).toContain(UNRESOLVED_PROFILE_TEXT);
+  });
+
+  it("a slow refresh started BEFORE a switch cannot overwrite the newer label", async () => {
+    // The lister walks the vault, so refresh latency varies; a refresh fired at
+    // load can still be resolving when the post-apply refresh runs. Painting in
+    // completion order would leave the indicator naming the previous context.
+    const s = makeSurfaces();
+    let active = PERSONAL.uid;
+    let delayMs = 30;
+    const indicator = new ProfileIndicator({
+      getActiveProfileUid: () => active,
+      listProfiles: async () => {
+        const wait = delayMs;
+        await new Promise((r) => setTimeout(r, wait));
+        return profiles;
+      },
+      openSwitcher: () => undefined,
+      addRibbonIcon: s.addRibbonIcon,
+      addStatusBarItem: s.addStatusBarItem,
+    });
+    indicator.mount();
+
+    const slow = indicator.refresh(); // reads "Personal", resolves last
+    active = WORK.uid; // an apply completes
+    delayMs = 0;
+    const fast = indicator.refresh(); // reads "Work", resolves first
+    await Promise.all([fast, slow]);
+
+    expect(s.statusEl.textContent).toContain("Work");
+    expect(s.statusEl.textContent).not.toContain("Personal");
   });
 
   it("mount is idempotent — a second call cannot stack duplicate surfaces", () => {

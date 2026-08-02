@@ -61,6 +61,15 @@ export interface ProfileIndicatorDeps {
 export class ProfileIndicator {
   private statusBarEl: HTMLElement | null = null;
   private ribbonEl: HTMLElement | null = null;
+  /**
+   * Monotonic refresh token. {@link refresh} resolves the label asynchronously
+   * (the lister walks the vault, so its latency varies), and refreshes overlap:
+   * one fires at load and one after every apply/undo settles. Without this
+   * guard the two would paint in COMPLETION order rather than call order, so a
+   * slow refresh started BEFORE a switch could overwrite the newer label and
+   * leave the indicator naming a context the device is no longer in.
+   */
+  private refreshGeneration = 0;
 
   constructor(private readonly deps: ProfileIndicatorDeps) {}
 
@@ -99,7 +108,12 @@ export class ProfileIndicator {
    * reports without a plugin reload.
    */
   async refresh(): Promise<void> {
+    const generation = ++this.refreshGeneration;
     const label = await this.resolveActiveLabel();
+    // A newer refresh started while this one was resolving — it will paint the
+    // fresher label, so this (now stale) result must not overwrite it.
+    if (generation !== this.refreshGeneration) return;
+
     const text = formatActiveProfileIndicator(label);
     const tooltip = formatActiveProfileTooltip(label);
 
