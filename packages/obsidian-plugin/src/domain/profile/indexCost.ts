@@ -77,11 +77,7 @@ export function computeClosureIndexCost(
       dependsOnMap.set(info.uid, info.dependsOn);
     }
   }
-  // TEMP-REVERT (revert-verify of the e2e gate — restored in the next commit):
-  // price only the DECLARED roots, i.e. drop the transitive dependsOn walk.
-  const closure = new Set(roots);
-  void dependsOnMap;
-  void transitiveDependsOnClosure;
+  const closure = transitiveDependsOnClosure(new Set(roots), dependsOnMap);
 
   let files = 0;
   let countedAssetSpaces = 0;
