@@ -1,16 +1,13 @@
-import { Command } from "commander";
 import { existsSync, statSync } from "fs";
-import fs from "fs-extra";
+import { readFile } from "fs/promises";
 import { dirname, resolve } from "path";
 import * as glob from "glob";
-import { CachingNodeFsAdapter } from "../adapters/CachingNodeFsAdapter.js";
-import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
-import { VaultNotFoundError } from "../utils/errors/index.js";
+import { loadMarkdownAssets } from "./assets.js";
 
 /**
  * RFC 0003 (requirements management) P1 — traceability checker.
  *
- * `exocortex requirements audit` is the executable mechanism behind the
+ * The `requirements-audit` tool is the executable mechanism behind the
  * spec→test traceability model. It loads the functional `req__Requirement`
  * assets, greps the test corpus for the `@req:<uid>` tokens that bind tests to
  * requirements, and reports:
@@ -383,8 +380,7 @@ export function parseEvidence(value: unknown): string[] {
 export async function loadRequirements(
   reqsPath: string,
 ): Promise<RequirementRecord[]> {
-  const adapter = new CachingNodeFsAdapter(reqsPath);
-  const assets = await adapter.indexedAssets();
+  const assets = await loadMarkdownAssets(reqsPath);
   const requirements: RequirementRecord[] = [];
   // Resolve evidence paths against the committed reqs tree. An evidence path
   // counts as resolving ONLY when it points to an existing file INSIDE the reqs
@@ -481,7 +477,7 @@ export async function scanTestTags(
 
   const occurrences: TagOccurrence[] = [];
   for (const file of files) {
-    const content = await fs.readFile(file, "utf-8");
+    const content = await readFile(file, "utf-8");
     // Cheap pre-filter — skip files with no tag at all.
     if (!content.includes("@req:")) continue;
     occurrences.push(...extractReqTags(file, content));
@@ -849,6 +845,9 @@ export function isHardFail(
   );
 }
 
+/** Report format: human-readable text or machine-readable JSON. */
+export type OutputFormat = "text" | "json";
+
 export interface RequirementsAuditOptions {
   reqs: string;
   tests?: string;
@@ -860,68 +859,43 @@ export interface RequirementsAuditOptions {
 }
 
 /**
- * RFC 0003 P1/P3 — `exocortex requirements audit --reqs <dir> --tests <dir>`.
+ * RFC 0003 P1/P3 — the audit run (IO + report + exit-code contract), shared by
+ * the `bin.ts` entrypoint and the tests.
  *
  * Soft by default (`--gate soft`); the `requirements-trace` CI job runs it
  * `continue-on-error`, so a red report never blocks a merge in Phases 1–2. The
- * CLI sets a meaningful exit code in every mode so the P3 hard-gate flip is a
+ * tool sets a meaningful exit code in every mode so the P3 hard-gate flip is a
  * one-flag CI-config change (`--gate soft` → `--gate hard`, drop
  * `continue-on-error`, add to required checks), not a code change.
+ *
+ * @returns the process exit code (0 = no hard findings, 1 = hard fail).
  */
-export function requirementsAuditCommand(): Command {
-  return new Command("audit")
-    .description(
-      "Audit requirement↔test traceability: orphans, dangling @req tags, duplicate bindings, binding-class floor, coverage, P0 ramp-readiness",
-    )
-    .requiredOption(
-      "--reqs <path>",
-      "Directory tree containing req__Requirement assets (a vault or a reqs assetspace clone)",
-    )
-    .option(
-      "--tests <path>",
-      "Test-corpus root scanned for @req:<uid> tags",
-      ".",
-    )
-    .option("--output <type>", "Response format: text|json", "text")
-    .option("--strict", "Also exit 1 on orphan requirements", false)
-    .option(
-      "--gate <mode>",
-      "Gate mode: soft (warn only on hard findings) | hard (also block when the P0 checklist is not ramp-ready)",
-      "soft",
-    )
-    .action(async (options: RequirementsAuditOptions) => {
-      const outputFormat = (options.output ?? "text") as OutputFormat;
-      ErrorHandler.setFormat(outputFormat);
+export async function runAudit(
+  options: RequirementsAuditOptions,
+): Promise<number> {
+  const outputFormat = (options.output ?? "text") as OutputFormat;
+  const gate: GateMode = options.gate === "hard" ? "hard" : "soft";
 
-      const gate: GateMode = options.gate === "hard" ? "hard" : "soft";
+  const reqsPath = resolve(options.reqs);
+  if (!existsSync(reqsPath) || !statSync(reqsPath).isDirectory()) {
+    throw new Error(`Vault not found: ${reqsPath}`);
+  }
+  const testsPath = resolve(options.tests ?? ".");
+  if (!existsSync(testsPath) || !statSync(testsPath).isDirectory()) {
+    throw new Error(`Vault not found: ${testsPath}`);
+  }
 
-      try {
-        const reqsPath = resolve(options.reqs);
-        if (!existsSync(reqsPath) || !statSync(reqsPath).isDirectory()) {
-          throw new VaultNotFoundError(reqsPath);
-        }
-        const testsPath = resolve(options.tests ?? ".");
-        if (!existsSync(testsPath) || !statSync(testsPath).isDirectory()) {
-          throw new VaultNotFoundError(testsPath);
-        }
+  const [requirements, tags] = await Promise.all([
+    loadRequirements(reqsPath),
+    scanTestTags(testsPath),
+  ]);
+  const report = auditTraceability(requirements, tags);
 
-        const [requirements, tags] = await Promise.all([
-          loadRequirements(reqsPath),
-          scanTestTags(testsPath),
-        ]);
-        const report = auditTraceability(requirements, tags);
+  if (outputFormat === "json") {
+    console.log(JSON.stringify({ ...report, gate }, null, 2));
+  } else {
+    renderText(report, gate);
+  }
 
-        if (outputFormat === "json") {
-          console.log(JSON.stringify({ ...report, gate }, null, 2));
-        } else {
-          renderText(report, gate);
-        }
-
-        if (isHardFail(report, gate, options.strict === true)) {
-          process.exitCode = 1;
-        }
-      } catch (error) {
-        ErrorHandler.handle(error as Error);
-      }
-    });
+  return isHardFail(report, gate, options.strict === true) ? 1 : 0;
 }

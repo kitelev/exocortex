@@ -7,12 +7,11 @@ import {
   extractReqTags,
   auditTraceability,
   isHardFail,
-  requirementsAuditCommand,
   type RequirementRecord,
   type TagOccurrence,
   type TraceabilityReport,
-} from "../../../src/commands/requirements-audit.js";
-import { requirementsCommand } from "../../../src/commands/requirements.js";
+} from "../../src/audit.js";
+import { parseArgs } from "../../src/bin.js";
 
 const UID_A = "449f29ce-cbd5-4ac8-94d4-28aa56a013c2";
 const UID_B = "830ef788-0631-42cf-8b78-481ec6cfdeac";
@@ -49,28 +48,45 @@ function guiTag(
   return { uid, file, line };
 }
 
-describe("requirements — Commander wiring", () => {
-  it("registers 'audit' under the 'requirements' parent command", () => {
-    const parent = requirementsCommand();
-    expect(parent.name()).toBe("requirements");
-    const sub = parent.commands.find((c) => c.name() === "audit");
-    expect(sub).toBeDefined();
+/**
+ * The flag surface the `requirements-trace` CI job invokes. Pinned here (it was
+ * pinned against the Commander tree while the checker lived in the CLI) so the
+ * P3 hard-gate flip stays a one-flag CI-config change: the job passes
+ * `--reqs/--tests/--gate/--output`, and `--gate` must keep defaulting to `soft`.
+ */
+describe("requirements-audit — argv surface", () => {
+  it("parses the flags the requirements-trace CI job passes", () => {
+    const parsed = parseArgs([
+      "--reqs",
+      "/tmp/reqs",
+      "--tests",
+      ".",
+      "--gate",
+      "hard",
+      "--output",
+      "json",
+      "--strict",
+    ]);
+    expect(parsed.reqs).toBe("/tmp/reqs");
+    expect(parsed.tests).toBe(".");
+    expect(parsed.gate).toBe("hard");
+    expect(parsed.output).toBe("json");
+    expect(parsed.strict).toBe(true);
   });
 
-  it("audit subcommand declares --reqs (required) + --tests + --output + --strict + --gate", () => {
-    const sub = requirementsAuditCommand();
-    expect(sub.name()).toBe("audit");
-    const opts = sub.options.map((o) => o.long);
-    expect(opts).toContain("--reqs");
-    expect(opts).toContain("--tests");
-    expect(opts).toContain("--output");
-    expect(opts).toContain("--strict");
-    expect(opts).toContain("--gate");
-    const reqsOpt = sub.options.find((o) => o.long === "--reqs");
-    expect(reqsOpt?.required).toBe(true);
-    // --gate defaults to "soft" so the CI flip is a one-flag change.
-    const gateOpt = sub.options.find((o) => o.long === "--gate");
-    expect(gateOpt?.defaultValue).toBe("soft");
+  it("defaults --tests/--output/--gate/--strict to the soft-gate contract", () => {
+    const parsed = parseArgs(["--reqs", "/tmp/reqs"]);
+    expect(parsed.reqs).toBe("/tmp/reqs");
+    // Unset here; `runAudit` applies "." / "text" / "soft" (see runAudit tests).
+    expect(parsed.tests).toBeUndefined();
+    expect(parsed.output).toBeUndefined();
+    expect(parsed.gate).toBeUndefined();
+    expect(parsed.strict).toBe(false);
+  });
+
+  it("rejects an unknown option and a value-less flag (fail-loud, not silent)", () => {
+    expect(() => parseArgs(["--nope"])).toThrow(/Unknown option: --nope/);
+    expect(() => parseArgs(["--reqs"])).toThrow(/Missing value for --reqs/);
   });
 });
 
@@ -403,6 +419,18 @@ describe("isHardFail — soft/hard exit-code contract (P3 flip)", () => {
       dangling: [],
       duplicates: [],
       floorViolations: [],
+      // Fields added after this helper was first written; omitting them made the
+      // literal rely on `...over` to satisfy TraceabilityReport, which typechecks
+      // only while nothing type-checks the tests. The CLI tsconfig excluded
+      // `tests/**`, so the drift stayed invisible until the move; the new
+      // package's tsconfig includes them, so it is spelled out here.
+      // `isHardFail` reads only clean/orphans/rampReady — these are inert for it.
+      danglingEvidence: [],
+      uiAcceptanceTotal: 0,
+      uiAcceptanceEvidenced: 0,
+      uiAcceptanceAutomated: 0,
+      uiAcceptanceManual: 0,
+      uiAcceptanceMissingEvidence: 0,
       unknownPriority: 0,
       clean: true,
       activeTotal: 0,

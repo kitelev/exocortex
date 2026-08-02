@@ -6,7 +6,7 @@ import {
   loadRequirements,
   scanTestTags,
   auditTraceability,
-} from "../../../src/commands/requirements-audit.js";
+} from "../../src/audit.js";
 
 const REQ_CLASS_UID = "8c5af681-3413-4219-8636-0ac229d1b253";
 const UID_P0_INT = "449f29ce-cbd5-4ac8-94d4-28aa56a013c2";

@@ -267,7 +267,7 @@ jobs:
   # Currently runs in SOFT mode (`REQ_GATE: soft` + `continue-on-error` on the
   # audit step + NOT in branch-protection required checks), so a red report can
   # never block a merge during the P1/P2 ramp (RFC 0003 §3.7). It clones the
-  # public reqs assetspaces, runs `exocortex requirements audit` against the
+  # public reqs assetspaces, runs the `requirements-audit` tool against the
   # repo's test corpus, and surfaces the report — coverage, P0 checklist,
   # ramp-readiness — as a step-summary + sticky PR comment (the "read-surface
   # carrot"). It is the home of the diff-aware traceability checks (archgate has
@@ -287,6 +287,12 @@ jobs:
   # SOFT-GATE EXPIRY (RFC 0003 §3.7): the gate MUST flip hard at M3-closure.
   # Staying soft past M3-closure is permitted only with an explicit, documented
   # user dispensation — the gate is not allowed to silently remain advisory.
+  #
+  # TOOL (RFC 7c7859d1 W-req, migration-first): the checker is `packages/req-audit`
+  # — repo-internal dev tooling, NOT a verb of the published `@kitelev/exocortex-cli`
+  # (it was `exocortex requirements audit` until the extraction). It is
+  # self-contained (no core/services/CLI build in this job) and runs straight from
+  # source via `tsx`.
   requirements-trace:
     runs-on: ubuntu-latest
     timeout-minutes: 8
@@ -305,11 +311,14 @@ jobs:
       - name: Setup Node & install deps
         uses: ./.github/actions/setup-node-pnpm
 
-      - name: Build core + services + CLI
+      # The checker's own suites (moved with it out of packages/cli). They are
+      # NOT covered by any test-coverage-* job, so they are gated here — the job
+      # that owns the tool. A red suite fails this job, which reds the CI
+      # workflow_run and therefore blocks Auto Release.
+      - name: Test the requirements-audit tool
         run: |
-          npm run build -w @kitelev/exocortex-core
-          npm run build -w @kitelev/exocortex-services
-          npm run build -w @kitelev/exocortex-cli
+          node --experimental-vm-modules ./node_modules/jest/bin/jest.js \
+            --config packages/req-audit/jest.config.js
 
       - name: Clone reqs assetspaces (public)
         # The audit walks `$RUNNER_TEMP/reqs` recursively, so each per-module
@@ -335,12 +344,12 @@ jobs:
           # flip (drop continue-on-error) blocks robustly regardless of the
           # human-readable run.
           rc=0
-          node packages/cli/dist/index.js requirements audit \
+          npx tsx packages/req-audit/src/cli.ts \
             --reqs "$RUNNER_TEMP/reqs" --tests . --gate "$REQ_GATE" --output json \
             > "$RUNNER_TEMP/req-report.json" || rc=$?
           cat "$RUNNER_TEMP/req-report.json"
           echo "--- human-readable (gate=$REQ_GATE) ---"
-          node packages/cli/dist/index.js requirements audit \
+          npx tsx packages/req-audit/src/cli.ts \
             --reqs "$RUNNER_TEMP/reqs" --tests . --gate "$REQ_GATE" --output text || true
           exit $rc
 

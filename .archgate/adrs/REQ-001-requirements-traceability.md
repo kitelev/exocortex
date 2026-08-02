@@ -19,9 +19,9 @@ files:
 RFC 0003 (requirements management) binds a functional `req__Requirement` vault
 asset to an **already-existing real test** by placing a `@req:<uid>` token
 inside that test's `it(...)` / `test(...)` title — so the binding travels with
-the assertion across refactors. The `exocortex requirements audit` CLI checker
-resolves those tags against the requirement graph (orphans / dangling /
-duplicates / coverage / binding-class floor).
+the assertion across refactors. The `requirements-audit` checker
+(`packages/req-audit`) resolves those tags against the requirement graph
+(orphans / dangling / duplicates / coverage / binding-class floor).
 
 The full resolution — _does this tag point at an existing requirement?_ —
 requires the vault graph, which `archgate` cannot see (its `RuleContext` is
@@ -106,6 +106,9 @@ long as one literal token anchors the binding.
 
 - [RFC 0003 — requirements management](../../docs/rfc/0003-requirements-management.md) §3.6, §3.7
 - [Authoring functional requirements](../../docs/requirements-authoring.md)
-- `exocortex requirements audit` — the graph-aware traceability checker (CLI)
+- `packages/req-audit` — the graph-aware traceability checker (repo-internal dev
+  tool; run by the `requirements-trace` CI job. Extracted out of
+  `@kitelev/exocortex-cli`, where it was `exocortex requirements audit`, by
+  RFC 7c7859d1 W-req)
 - Incident #3949/#3951 — a template-literal-only binding (`@req:${REQ}`) went
   active and red `requirements-trace` repo-wide; #3953 added the preventive rule.

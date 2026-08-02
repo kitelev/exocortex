@@ -1,7 +1,7 @@
 # Authoring functional requirements (`req__Requirement`)
 
 > **Status:** P1–P3 mechanism live (RFC 0003) — the traceability checker
-> (`exocortex requirements audit`), the **soft** `requirements-trace` CI gate,
+> (`packages/req-audit`), the **soft** `requirements-trace` CI gate,
 > and the **hard-gate capability** (`--gate hard` + `rampReady`) are all built.
 > The gate still runs **soft**; it flips hard at M3-closure (see
 > [The soft→hard gate](#the-softhard-gate-rfc-0003-37)). This guide documents the
@@ -91,14 +91,14 @@ it("@req:449f29ce-cbd5-4ac8-94d4-28aa56a013c2 inherits area from prototype when 
 });
 ```
 
-The `exocortex requirements audit` checker greps test titles for `@req:<uid>`,
+The `requirements-audit` checker greps test titles for `@req:<uid>`,
 derives `req__Requirement_verifiedBy`, and reports **orphans** (req with no
 binding), **dangling tags** (tag → missing req), **duplicate bindings** (one uid
 claimed by >1 test), the **P0 binding-class floor**, and **coverage**. Run it
 locally against the reqs assetspace (or your vault) + the repo test corpus:
 
 ```bash
-npx @kitelev/exocortex-cli requirements audit \
+npx tsx packages/req-audit/src/cli.ts \
   --reqs <path-to-exoas-exo-reqs-or-vault> --tests . --output text
 # JSON for tooling/CI: --output json   ·   --strict also fails on orphans
 # Gate mode: --gate soft (default, warn) | --gate hard (block when not ramp-ready)
@@ -214,7 +214,7 @@ gate is not permitted to silently remain advisory (this is the discipline
 
 ```bash
 # preview the hard-gate verdict locally before the flip
-npx @kitelev/exocortex-cli requirements audit \
+npx tsx packages/req-audit/src/cli.ts \
   --reqs <reqs-dir> --tests . --gate hard --output text
 # exit 1 if not ramp-ready; the text/JSON report shows the P0 checklist + rampReady
 ```

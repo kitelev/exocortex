@@ -92,12 +92,15 @@
     "typescript-eslint": "^8.49.0"
   },
   "lint-staged": {
-    "packages/!(cli)/src/**/*.{ts,tsx}": [
+    "packages/!(cli|req-audit)/src/**/*.{ts,tsx}": [
       "eslint --fix --max-warnings=0",
       "jest --bail --passWithNoTests --findRelatedTests --config packages/obsidian-plugin/jest.config.js"
     ],
     "packages/cli/src/**/*.ts": [
       "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --bail --passWithNoTests --findRelatedTests --config packages/cli/jest.config.js"
+    ],
+    "packages/req-audit/src/**/*.ts": [
+      "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --bail --passWithNoTests --findRelatedTests --config packages/req-audit/jest.config.js"
     ],
     "*.{json,md}": "prettier --write --ignore-unknown"
   },
