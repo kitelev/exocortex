@@ -287,7 +287,11 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
     'exo__Asset_uid: "parent-uid"',
     'exo__Asset_label: "Parent prototype"',
     "exo__Instance_class:",
-    '  - "[[ems__TaskPrototype]]"',
+    // UID-canon class ref — this is the form real vault assets carry, and it is
+    // the ONLY form the production `refToFrontmatter` resolvers can dereference
+    // (both are UID keyed). A label-form ref here would exercise a lookup that
+    // cannot happen in production.
+    '  - "[[df7e579d-02d4-4f3a-971f-3d1d785b689b]]"',
     "---",
     "Body",
   ].join("\n");
@@ -304,7 +308,7 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
     // parent above IS a prototype-instance, so wire it here too.
     groundingExecutor = new GroundingExecutor(fs, fs, serviceRegistry, undefined, {
       refToFrontmatter: async (ref: string) =>
-        ref === "ems__TaskPrototype"
+        ref === "df7e579d-02d4-4f3a-971f-3d1d785b689b"
           ? {
               exo__Asset_label: "ems__TaskPrototype",
               exo__Class_superClass: ['"[[exo__Prototype]]"'],

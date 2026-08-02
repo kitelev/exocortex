@@ -4604,6 +4604,59 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
       errorSpy.mockRestore();
     });
 
+    // The #3561 dedup (`propertiesReferenceTarget`) is the ONLY thing standing
+    // between an IR-written backlink and a duplicate legacy one — but every
+    // other test here uses a non-prototype target, where req 0bb06beb's class
+    // gate already blocks the top-up and thus SHADOWS the dedup. This case is
+    // the one configuration where the dedup must carry the weight alone: the
+    // target IS a prototype (gate passes) AND an InheritanceRule already linked
+    // it. Neutralising `propertiesReferenceTarget` must red THIS test.
+    // NB the IR key must sit OUTSIDE the two named early-exit checks
+    // (`exo__Asset_prototype`, `ems__Effort_parent`) — otherwise that earlier
+    // guard returns first and shunts the value-based dedup, which is exactly
+    // the stale-key-list bug class #3561 replaced.
+    it("prototype target whose IR already linked it: dedup alone suppresses the legacy backlink (Issue #3561)", async () => {
+      // UID-canon shape: a UUID basename makes the backlink target and the
+      // IR-written value the same string, which is what lets the dedup see the
+      // existing reference (a non-UUID name would emit a path and silently miss).
+      const PROTO_UID = "4b571141-5fc3-4ddd-8f07-ca681fc8410a";
+      reader.readFile.mockResolvedValue(prototypeTargetContent(PROTO_UID));
+      const errorSpy = spyOnError();
+
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "exo__Asset_relates",
+            targetClassCondition: PROTOTYPE_CLASS_UID,
+            targetClassExclusion: [],
+            priority: 100,
+          },
+        ],
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        `assetspaces/kitelev/exoas-my/my-efforts/${PROTO_UID}.md`,
+        { label: "Instance of a prototype" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // The IR's relationship is the one that survives …
+      expect(content).toContain(`exo__Asset_relates: "[[${PROTO_UID}]]"`);
+      // … and the legacy key is NOT written a second time alongside it.
+      expect(content).not.toContain("exo__Asset_prototype:");
+      const calls = errorSpy.mock.calls.flat().map(String);
+      expect(calls.some((s) => s.includes("No backlink rule fired"))).toBe(false);
+
+      errorSpy.mockRestore();
+    });
+
     it("child Area created on an Area: ems__Area_parent IR fires → NO exo__Asset_prototype, NO error", async () => {
       reader.readFile.mockResolvedValue(AREA_TARGET_FM);
       const errorSpy = spyOnError();

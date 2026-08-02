@@ -1852,7 +1852,12 @@ export class GroundingExecutor {
     // which would nest inside the wikilink and corrupt the reference.
     const rawUid = fm?.["exo__Asset_uid"];
     const uid =
-      typeof rawUid === "string" ? rawUid.trim().replace(/^"+|"+$/g, "").trim() : "";
+      typeof rawUid === "string"
+        ? rawUid
+            .trim()
+            .replace(/^['"]+|['"]+$/g, "")
+            .trim()
+        : "";
     const canonicalTarget = uid.length > 0 ? uid : backLinkTarget;
     properties.exo__Asset_prototype = `"[[${canonicalTarget}]]"`;
     LoggingService.error(
