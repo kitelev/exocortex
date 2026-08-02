@@ -2057,6 +2057,13 @@
   font-style: italic;
 }
 
+/* req 38e2fdd5 — the status-bar item naming the active profile (mount
+   context). Desktop only; on mobile Obsidian has no status bar and the ribbon
+   entry carries the same affordance. Clickable, so it reads as an action. */
+.exocortex-profile-indicator {
+  cursor: pointer;
+}
+
 /* «Insert template token» picker rows (homoiconic templating MVP) — mirrors
    the profile-suggestion layout: a title line and a muted description line. */
 .exocortex-token-suggestion__title {

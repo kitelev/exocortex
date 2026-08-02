@@ -155,6 +155,7 @@ import { PluginSettingsStoreAdapter } from "./infrastructure/adapters/PluginSett
 import { PluginLocalDataStore } from "./infrastructure/adapters/PluginLocalDataStore";
 import { StagingDirTracker } from "./infrastructure/adapters/StagingDirTracker";
 import { ProfileFuzzyModal } from "./infrastructure/adapters/ProfileFuzzyModal";
+import { ProfileIndicator } from "./infrastructure/adapters/ProfileIndicator";
 import {
   buildProfileChoice,
   extractIncludeUids,
@@ -407,6 +408,10 @@ export default class ExocortexPlugin extends Plugin {
   // forbids `new Notice()` outside ObsidianNotificationService).
   notifier!: ObsidianNotificationService;
   private shaclStatusBar: HTMLElement | null = null;
+  // req 38e2fdd5 — names the active profile (mount context) and opens the
+  // switcher in one tap. Null until the apply path is wired (same gate as the
+  // «Apply profile» command — no indicator where switching cannot happen).
+  private profileIndicator: ProfileIndicator | null = null;
   // #3705 — the currently-open first-run onboarding panel (or null). Lets the
   // bootstrap-result modal's next-step CTA mark the matching panel step done
   // across the modal boundary; cleared when the panel closes.
@@ -3661,13 +3666,49 @@ export default class ExocortexPlugin extends Plugin {
     // on mobile). Without either, the filesystem materialisation can't run, so
     // the command stays hidden.
     if (applyDeps !== null || (Platform.isMobile && restMount !== null)) {
+      // req 38e2fdd5 — repaint the indicator once the flow settles, whichever
+      // way it settles (cancel / refuse / applied). Two-argument `then` rather
+      // than `finally` so the root tsconfig's ES6 lib suffices, and so a
+      // rejection can never leave the indicator stale or unhandled.
+      const refreshIndicatorAfter = (flow: Promise<void>): void => {
+        const repaint = (): void => {
+          void this.profileIndicator?.refresh();
+        };
+        void flow.then(repaint, repaint);
+      };
+
       this.addCommand({
         id: "apply-profile",
         name: "Apply profile",
         callback: () => {
-          void commandsHandler.invokeApplyProfile();
+          refreshIndicatorAfter(commandsHandler.invokeApplyProfile());
         },
       });
+
+      // req 38e2fdd5 — the always-visible "which context am I in" affordance
+      // that opens the switcher in one tap. Registered under the SAME gate as
+      // «Apply profile»: where switching cannot happen there is nothing to
+      // offer. `addStatusBarItem` is passed only off-mobile — the Obsidian API
+      // documents it as "Not available on mobile" — while the ribbon entry is
+      // registered on both platforms and is the mobile affordance.
+      this.profileIndicator = new ProfileIndicator({
+        getActiveProfileUid: () => localDataStore.getActiveProfileUid(),
+        // The SAME lister the picker uses, so the indicator can never disagree
+        // with the switcher about a profile's label.
+        listProfiles: profileLister,
+        openSwitcher: () => {
+          refreshIndicatorAfter(commandsHandler.invokeApplyProfile());
+        },
+        addRibbonIcon: (icon, title, callback) =>
+          this.addRibbonIcon(icon, title, () => {
+            callback();
+          }),
+        addStatusBarItem: Platform.isMobile
+          ? undefined
+          : () => this.addStatusBarItem(),
+      });
+      this.profileIndicator.mount();
+      void this.profileIndicator.refresh();
 
       // RFC 0002 §3.10 (resolves P15) — «Undo last profile apply»: revert to the
       // profile active before the most recent apply in one click. Gated like
@@ -3682,7 +3723,9 @@ export default class ExocortexPlugin extends Plugin {
           const hasUndoTarget = localDataStore.getPreviousProfileUid() !== null;
           if (checking) return hasUndoTarget;
           if (!hasUndoTarget) return false;
-          void commandsHandler.invokeUndoLastApply();
+          // req 38e2fdd5 — an undo also changes the active profile, so the
+          // indicator must follow it.
+          refreshIndicatorAfter(commandsHandler.invokeUndoLastApply());
           return true;
         },
       });

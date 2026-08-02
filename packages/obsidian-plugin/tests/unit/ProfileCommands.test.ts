@@ -560,6 +560,10 @@ describe("ProfileCommands.invokeApplyProfile (Apply profile)", () => {
 function makeScopedHarness(
   profiles: ProfileChoice[],
   pickResults: (ProfileChoice | null)[],
+  // req 38e2fdd5 — the quick-switch target (the profile active BEFORE the
+  // current one). Defaults to null so every pre-existing caller keeps the
+  // untouched, alphabetical picker order.
+  previousProfileUid: string | null = null,
 ): {
   switchMgr: FakeSwitchMgr;
   notices: string[];
@@ -584,7 +588,7 @@ function makeScopedHarness(
     },
     getActiveFilePath: () => null,
     getActiveProfileUid: () => null,
-      getPreviousProfileUid: () => null,
+    getPreviousProfileUid: () => previousProfileUid,
     notify: (m) => notices.push(m),
   });
   return { switchMgr, notices, pickCalls, cmd };
@@ -671,6 +675,83 @@ describe("ProfileCommands.invokeApplyProfile — user-scope (P7b)", () => {
     expect(opts.some((o) => o.kind === "show-all")).toBe(false);
     expect(opts.map((o) => o.uid)).toEqual(["hid"]);
     expect(h.switchMgr.applyCalls).toEqual(["hid"]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// req 38e2fdd5 — quick-switch ordering IS WIRED into the picker
+//
+// The pure helper is unit-tested in domain/profile/quickSwitch.test.ts; these
+// drive the REAL invokeApplyProfile so the ordering cannot ship inert.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("ProfileCommands.invokeApplyProfile — quick-switch ordering (req 38e2fdd5)", () => {
+  const PERSONAL: ProfileChoice = { uid: "personal", label: "Personal" };
+  const READING: ProfileChoice = { uid: "reading", label: "Reading" };
+  const WORK: ProfileChoice = { uid: "work", label: "Work" };
+
+  it("@req:38e2fdd5-8768-4354-8cb8-f1c77856ddb8 offers the profile you came FROM as the picker's first row", async () => {
+    const h = makeHarness({
+      profiles: [PERSONAL, READING, WORK],
+      pickResult: null, // cancel — we only care about what was OFFERED
+      activeProfileUid: "personal",
+      previousProfileUid: "work",
+    });
+    await h.cmd.invokeApplyProfile();
+
+    expect(h.pickCalls[0].options.map((o) => o.uid)).toEqual([
+      "work", // ← the switch-back target, one tap away
+      "personal",
+      "reading",
+    ]);
+  });
+
+  it("zero-regression: with no previous profile the picker order is untouched", async () => {
+    const h = makeHarness({
+      profiles: [PERSONAL, READING, WORK],
+      pickResult: null,
+      activeProfileUid: "personal",
+      previousProfileUid: null,
+    });
+    await h.cmd.invokeApplyProfile();
+
+    expect(h.pickCalls[0].options.map((o) => o.uid)).toEqual([
+      "personal",
+      "reading",
+      "work",
+    ]);
+  });
+
+  it("the unscoped «Show all» re-open is ordered too, and the sentinel is never promoted", async () => {
+    const relevant: ProfileChoice = {
+      uid: "personal",
+      label: "Personal",
+      isLocallyRelevant: true,
+    };
+    const hidden: ProfileChoice = {
+      uid: "work",
+      label: "Work",
+      isLocallyRelevant: false,
+    };
+    const showAll: ProfileChoice = {
+      uid: SHOW_ALL_PROFILES_UID,
+      label: "Show all profiles… (1 more)",
+      kind: "show-all",
+    };
+    const h = makeScopedHarness([relevant, hidden], [showAll, null], "work");
+    await h.cmd.invokeApplyProfile();
+
+    // First (scoped) view: the previous profile is hidden here, so the order
+    // stands and the sentinel keeps its appended position.
+    expect(h.pickCalls[0].options[0]?.uid).toBe("personal");
+    expect(
+      h.pickCalls[0].options[h.pickCalls[0].options.length - 1]?.kind,
+    ).toBe("show-all");
+    // Second (unscoped) view: the previous profile is now present → promoted.
+    expect(h.pickCalls[1].options.map((o) => o.uid)).toEqual([
+      "work",
+      "personal",
+    ]);
   });
 });
 
