@@ -62,7 +62,9 @@ describe("CLI surface — W0 removed commands (RFC 7c7859d1)", () => {
   // extracted to `packages/req-audit` (repo-internal dev tooling — a CI gate for
   // THIS repo has no business occupying a verb of the published product CLI),
   // and ci.yml + ADR REQ-001 were switched to it BEFORE this removal.
-  // Surface 18 -> 17.
+  // Surface: the real registry goes 26 -> 25 top-level commands (measured via
+  // `createProgram().commands`). The RFC's "18 -> 17" is its own nominal
+  // numbering of the 22 commands it classified, not the live registry count.
   it("does NOT register the removed 'requirements' command", () => {
     expect(topLevelNames()).not.toContain("requirements");
   });
