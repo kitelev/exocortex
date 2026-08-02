@@ -155,7 +155,15 @@ import { PluginSettingsStoreAdapter } from "./infrastructure/adapters/PluginSett
 import { PluginLocalDataStore } from "./infrastructure/adapters/PluginLocalDataStore";
 import { StagingDirTracker } from "./infrastructure/adapters/StagingDirTracker";
 import { ProfileFuzzyModal } from "./infrastructure/adapters/ProfileFuzzyModal";
-import { buildProfileChoice } from "./infrastructure/adapters/profileChoiceFactory";
+import {
+  buildProfileChoice,
+  extractIncludeUids,
+} from "./infrastructure/adapters/profileChoiceFactory";
+import {
+  computeClosureIndexCost,
+  formatAssetSpaceIndexCost,
+  formatIndexCost,
+} from "./domain/profile/indexCost";
 import { lookupAssetSpaceUidByFolder } from "./infrastructure/adapters/AssetSpaceLookupHelper";
 import { createAssetSpacePusher } from "./infrastructure/adapters/AssetSpacePusherFactory";
 import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
@@ -3455,6 +3463,9 @@ export default class ExocortexPlugin extends Plugin {
       files: TFile[],
       activeUid: string | null,
       presentUids: Set<string>,
+      // req 6171f443 — resolve one profile's index cost from its declared
+      // `exo__Profile_includes`. Omitted (or returning undefined) ⇒ no cost line.
+      indexCostFor?: (includeUids: string[]) => string | undefined,
     ): ProfileChoice[] => {
       const choices: ProfileChoice[] = [];
       for (const file of files) {
@@ -3467,7 +3478,13 @@ export default class ExocortexPlugin extends Plugin {
           activeUid,
           presentUids,
         );
-        if (choice !== null) choices.push(choice);
+        if (choice !== null) {
+          const cost = indexCostFor?.(
+            extractIncludeUids(fm["exo__Profile_includes"]),
+          );
+          if (cost !== undefined) choice.indexCost = cost;
+          choices.push(choice);
+        }
       }
       // Sort alphabetically by label so picker order is stable across
       // vault scans (vault.getMarkdownFiles() is filesystem-order, not
@@ -3479,12 +3496,30 @@ export default class ExocortexPlugin extends Plugin {
     // RFC 0a0791c1 Phase 5 T2 — single `exo__Profile` picker (the former dual
     // soft/Knowledge listers collapsed into one). `activeProfileUid` is the
     // last-applied selection; Item #3 — device-local store (no Sync replication).
-    const profileLister: () => Promise<ProfileChoice[]> = async () =>
-      buildProfileChoices(
+    const profileLister: () => Promise<ProfileChoice[]> = async () => {
+      // req 6171f443 — derive the per-AssetSpace file counts ONCE per picker
+      // open, then price every profile against them. Best-effort: any failure
+      // leaves `indexCostFor` undefined, so the rows render exactly as they did
+      // before this feature (the zero-regression path).
+      let indexCostFor:
+        | ((includeUids: string[]) => string | undefined)
+        | undefined;
+      try {
+        const { infos, fileCountByUid } = await switchMgr.getIndexCostInputs();
+        indexCostFor = (includeUids) =>
+          formatIndexCost(
+            computeClosureIndexCost(includeUids, infos, fileCountByUid),
+          ) ?? undefined;
+      } catch {
+        // Preview only — never let costing break the picker.
+      }
+      return buildProfileChoices(
         resolver.listProfileFiles(),
         localDataStore.getActiveProfileUid(),
         this.collectPresentAssetUids(),
+        indexCostFor,
       );
+    };
 
     // Issue #3320 — share the same lister с Settings UI so its dropdown
     // matches the Cmd+P fuzzy-pick ordering exactly.
@@ -4397,11 +4432,32 @@ export default class ExocortexPlugin extends Plugin {
       },
       // Reuse the shared ProfileFuzzyModal (keyed by submodulePath) — floor
       // entries are decorated so the user sees why they cannot be removed.
-      fuzzyPick: (items, title) =>
-        new Promise<UnmountableAssetSpace | null>((resolve) => {
+      fuzzyPick: async (items, title) => {
+        // req 6171f443 — price each pack: its OWN size plus what its transitive
+        // dependsOn closure costs, so removing it reads honestly (the own size
+        // alone is the misleading number — see domain/profile/indexCost.ts).
+        // Best-effort: on failure no cost is attached and rows render as before.
+        let costOf: (m: UnmountableAssetSpace) => string | undefined = () =>
+          undefined;
+        try {
+          const { infos, fileCountByUid } = await switchMgr.getIndexCostInputs();
+          costOf = (m) => {
+            if (m.uid.length === 0) return undefined;
+            return (
+              formatAssetSpaceIndexCost(
+                fileCountByUid.get(m.uid),
+                computeClosureIndexCost([m.uid], infos, fileCountByUid),
+              ) ?? undefined
+            );
+          };
+        } catch {
+          // Preview only — never let costing break the picker.
+        }
+        return new Promise<UnmountableAssetSpace | null>((resolve) => {
           const choices: ProfileChoice[] = items.map((m) => ({
             uid: m.submodulePath,
             label: m.isFloor ? `${m.label} ✕ floor (protected)` : m.label,
+            indexCost: costOf(m),
           }));
           const byPath = new Map(items.map((m) => [m.submodulePath, m]));
           const modal = new ProfileFuzzyModal(
@@ -4414,7 +4470,8 @@ export default class ExocortexPlugin extends Plugin {
               ),
           );
           modal.open();
-        }),
+        });
+      },
       confirm: (message) =>
         new Promise<boolean>((resolve) => {
           new SimpleConfirmModal(
@@ -4432,7 +4489,12 @@ export default class ExocortexPlugin extends Plugin {
       unmount: (submodulePath) => restMount.unmount(submodulePath),
       // #3540 follow-up — toast auto-records into the activity log via notifier.
       notify: (message) => this.notifier.info(message),
-      onUnmounted: () => this.refreshAndInjectAssetSpaceMaterialization(),
+      onUnmounted: () => {
+        // req 6171f443 — an unmount changes what is mounted, so the memoized
+        // per-AssetSpace file counts no longer describe the vault.
+        switchMgr.invalidateIndexCostCache();
+        return this.refreshAndInjectAssetSpaceMaterialization();
+      },
     });
 
     // RFC 0002 §3.2 (P3/P4) — de-jargon + destructive flag: «Unmount assetspace»
