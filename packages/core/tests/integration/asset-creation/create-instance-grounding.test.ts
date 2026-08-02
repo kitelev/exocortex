@@ -287,7 +287,11 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
     'exo__Asset_uid: "parent-uid"',
     'exo__Asset_label: "Parent prototype"',
     "exo__Instance_class:",
-    '  - "[[ems__TaskPrototype]]"',
+    // UID-canon class ref — this is the form real vault assets carry, and it is
+    // the ONLY form the production `refToFrontmatter` resolvers can dereference
+    // (both are UID keyed). A label-form ref here would exercise a lookup that
+    // cannot happen in production.
+    '  - "[[df7e579d-02d4-4f3a-971f-3d1d785b689b]]"',
     "---",
     "Body",
   ].join("\n");
@@ -297,7 +301,20 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
     await fs.createFile(PARENT_FILE_PATH, PARENT_FILE_CONTENT);
     vaultAdapter = new InMemoryVaultAdapter(fs);
     const serviceRegistry = new ServiceRegistry();
-    groundingExecutor = new GroundingExecutor(fs, fs, serviceRegistry);
+    // req 0bb06beb — the legacy `exo__Asset_prototype` top-up fires only for a
+    // target that really is a prototype, which the executor establishes by
+    // dereferencing the target's class through `refToFrontmatter`. Production
+    // always injects this port (cli/apply.ts, ExocortexPlugin.ts); the fixture
+    // parent above IS a prototype-instance, so wire it here too.
+    groundingExecutor = new GroundingExecutor(fs, fs, serviceRegistry, undefined, {
+      refToFrontmatter: async (ref: string) =>
+        ref === "df7e579d-02d4-4f3a-971f-3d1d785b689b"
+          ? {
+              exo__Asset_label: "ems__TaskPrototype",
+              exo__Class_superClass: ['"[[exo__Prototype]]"'],
+            }
+          : null,
+    });
     converter = new NoteToRDFConverter(vaultAdapter);
   });
 
@@ -545,7 +562,10 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
       const allPaths = createdPaths;
 
       const content = fs.getContent(allPaths[0])!;
-      expect(content).toContain('exo__Asset_prototype: "[[vault/parent]]"');
+      // req 0bb06beb — the reference is the target's own uid (UID-canon), not
+      // the vault path it used to emit.
+      expect(content).toContain('exo__Asset_prototype: "[[parent-uid]]"');
+      expect(content).not.toContain("[[vault/parent]]");
       // Issue #3184 B2: legacy `exo__Asset_source` default no longer
       // applied for create_instance.
       expect(content).not.toContain("exo__Asset_source:");
