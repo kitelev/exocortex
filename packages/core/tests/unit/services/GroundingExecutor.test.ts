@@ -406,10 +406,20 @@ describe("GroundingExecutor", () => {
      * `namespace_`, which is not valid YAML at all: the whole frontmatter block
      * stops parsing and the asset disappears from Obsidian AND the RDF graph.
      *
-     * This is not hypothetical — `218ed4dd-…` in `exoas-shared-identities`
-     * carries `namespace_aliases` and is mounted in all three vaults. No prior
-     * fixture had a colliding neighbour, which is exactly why eight otherwise
-     * green revert-verify axes could not see it.
+     * ⚠ Stated precisely: the collision is STRUCTURALLY reachable, not a
+     * demonstrated live corruption. An earlier draft of this docstring cited
+     * `218ed4dd-…` as proof; checking it showed `namespace_aliases` sits in that
+     * asset's BODY (inside a ```yaml fence), and these primitives only ever see
+     * `parse().content` — i.e. the frontmatter — so that occurrence is
+     * unreachable through them. What IS reachable: the searched name comes from
+     * vault data (`grounding.targetProperty`), CLI flags and user-edited
+     * property rows, so it is not a closed set, and canonicalisation shortened
+     * it to one of four ordinary English words. Both colliding SHAPES exist in
+     * shipped frontmatter — see `FrontmatterService.keyAnchoring.test.ts`, which
+     * covers the three anchors this axis cannot reach.
+     *
+     * No prior fixture had a colliding neighbour, which is exactly why eight
+     * otherwise-green revert-verify axes could not see this.
      */
     it("does NOT touch a neighbouring key that merely ENDS with the canonical name @req:869561bf-ae02-4028-bc6a-b32cfabda1ed", async () => {
       reader.readFile.mockResolvedValue(

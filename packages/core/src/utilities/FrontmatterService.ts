@@ -280,9 +280,13 @@ export class FrontmatterService {
 
     // Remove property line and any following array items (lines starting with "  - ")
     // `(?:\n|^)` rather than a bare `^`: the key must start a line (see
-    // `hasProperty`), AND the preceding newline is consumed with it so removal
-    // leaves no blank line — which the previous unanchored `\n?` prefix did by
-    // accident while also matching mid-line.
+    // `hasProperty`), AND the preceding newline is consumed with it, so removing
+    // a middle or last key leaves no blank line.
+    // ⚠ Not an invariant for the FIRST key — there is no preceding newline, `^`
+    // matches empty, and the trailing one survives as a blank line. That is
+    // byte-identical to the previous `\n?` behaviour (verified across
+    // first/middle/last/only × ±array items), so this anchoring changes WHERE a
+    // match may start, not what the removal leaves behind.
     const propertyLineRegex = new RegExp(
       `(?:\n|^)${this.escapeRegex(property)}:.*(?:\n {2}- .*)*`,
       "g",
