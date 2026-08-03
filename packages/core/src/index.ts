@@ -220,7 +220,10 @@ export { FrontmatterService } from "./utilities/FrontmatterService";
 // Exposed so CLI-side mutation primitives (e.g. `set-property`, issue #3795) can
 // pre-format values the same way the create / property_set paths do before
 // handing them to FrontmatterService.updateProperty (which writes verbatim).
-export { serializeYamlScalar } from "./utilities/yamlScalar";
+export {
+  serializeYamlScalar,
+  STRING_SCALAR_PROPERTIES,
+} from "./utilities/yamlScalar";
 // Tolerant YAML frontmatter parse (#3800) — bare yaml.load throws on a
 // duplicated mapping key → the whole asset collapses to {} at every read
 // (invisible & unrepairable). Retries `{ json: true }` (last-wins) on throw.
