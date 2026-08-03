@@ -184,7 +184,11 @@ describe("GroundingExecutor", () => {
       const grounding = makeGrounding({
         type: GroundingType.PROPERTY_SET,
         targetProperty: "exo__Asset_isDefinedBy",
-        targetValueLiteral: "[[some-anchor]]",
+        // req 29e0d1b6 — the reference is spelled in its QUOTED form (the quotes
+        // are part of the value). A bare `[[some-anchor]]` would be written
+        // verbatim and read back by YAML as a flow sequence, so it is now
+        // refused. Immaterial to THIS test, whose axis is the write KEY.
+        targetValueLiteral: '"[[some-anchor]]"',
       });
 
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
