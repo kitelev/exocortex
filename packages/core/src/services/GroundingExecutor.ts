@@ -21,6 +21,7 @@ import {
   serializeYamlScalar,
   STRING_SCALAR_PROPERTIES,
 } from "../utilities/yamlScalar";
+import { canonicalYamlKey } from "./NoteToRDFConverter";
 import type { NamedQueryRunnerPort } from "./NamedQueryRunner";
 import { iriToVaultPath } from "../infrastructure/vault/iri";
 import { DateFormatter } from "../utilities/DateFormatter";
@@ -646,12 +647,30 @@ export class GroundingExecutor {
     // Non-string-scalar properties (timestamps, refs) are untouched. The
     // property name is normalized to prefixed form first so a full-IRI-shaped
     // `targetProperty` still matches the string-scalar set (#3779 review LOW).
+    // ⛤ Both the string-scalar lookup AND the physical write key must use the
+    // CANONICAL key (req 869561bf): `STRING_SCALAR_PROPERTIES` holds `aliases`,
+    // not `exo__Asset_aliases`, and Obsidian reads aliases only from `aliases:`.
+    // Before this, the lookup ran on the merely-normalized name (missing the
+    // string semantics for the prefixed spelling) and `updateProperty` received
+    // the RAW `grounding.targetProperty` (writing a literal, dead key).
     const normalizedTargetProperty = FrontmatterService.normalizeIRI(
       grounding.targetProperty,
     );
-    const valueToWrite = STRING_SCALAR_PROPERTIES.has(normalizedTargetProperty)
+    const canonicalTargetProperty = canonicalYamlKey(normalizedTargetProperty);
+    const valueToWrite = STRING_SCALAR_PROPERTIES.has(canonicalTargetProperty)
       ? serializeYamlScalar(substitutedValue, true)
       : substitutedValue;
+
+    // Strictly additive: the write key changes ONLY for the four
+    // `UNPREFIXED_ASSET_FIELDS`, where canonicalisation is not the identity.
+    // For every other property the raw `grounding.targetProperty` is preserved
+    // verbatim, so a full-IRI-shaped targetProperty keeps writing exactly the
+    // key it wrote before — normalisation stays confined to the lookup, which
+    // is what #3779 introduced it for.
+    const writeKey =
+      canonicalTargetProperty === normalizedTargetProperty
+        ? grounding.targetProperty
+        : canonicalTargetProperty;
 
     // req faf269bf Scenarios 1+3 — resolve WHICH asset this step writes into.
     // Absent `targetQuery` (every existing grounding) keeps `filePath` exactly
@@ -672,7 +691,7 @@ export class GroundingExecutor {
     const content = await this.fileReader.readFile(effectiveFilePath);
     const updated = this.frontmatterService.updateProperty(
       content,
-      grounding.targetProperty,
+      writeKey,
       valueToWrite,
     );
     await this.fileWriter.updateFile(effectiveFilePath, updated);

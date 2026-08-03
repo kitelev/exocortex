@@ -289,6 +289,7 @@ export {
   normaliseExcludedFolders,
   isPathExcluded,
   UNPREFIXED_ASSET_FIELDS,
+  canonicalYamlKey,
   type ExocortexInvariantCode,
   type ExocortexInvariantViolation,
 } from "./services/NoteToRDFConverter";

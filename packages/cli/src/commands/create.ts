@@ -8,6 +8,7 @@ import {
   GenericAssetCreationService,
   liveClock,
   liveUidGenerator,
+  canonicalYamlKey,
   type GenericAssetCreationConfig,
 } from "@kitelev/exocortex-core";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
@@ -105,6 +106,27 @@ interface CreateCommandOptions {
  * parseProperties(["exo__Asset_relates=[[A]]", "exo__Asset_relates=[[B]]"])
  * // => { "exo__Asset_relates": ["[[A]]", "[[B]]"] }
  */
+/**
+ * Fields `create` populates itself, keyed by their CANONICAL YAML key, mapped to
+ * the dedicated flag a caller should use instead. Passing them through
+ * `--property` cannot work: the creation service skips them (it derives them
+ * from `--label` / `--aliases` / the generated identity), so the value would be
+ * dropped without a word. Refusing at parse time turns that silent loss into an
+ * actionable message (req 869561bf).
+ *
+ * ⚠ Keyed on the canonical key deliberately, so BOTH spellings are caught —
+ * `aliases` and `exo__Asset_aliases` canonicalise to the same entry.
+ *
+ * Deliberately holds ONLY `aliases`, which is what req 869561bf specifies. The
+ * other self-managed fields (`exo__Asset_label`, `exo__Instance_class`) are
+ * dropped just as silently today, but refusing them is a behaviour change no
+ * requirement states — widening this table without one would make the shipped
+ * behaviour exceed its spec. Tracked as a follow-up on `ems__Bug` 43e41c8f.
+ */
+const CREATE_SELF_MANAGED_FLAGS: Record<string, string> = {
+  aliases: "--aliases <a,b>",
+};
+
 function parseProperties(
   propertyArgs: string[] | undefined,
 ): Record<string, string | string[]> {
@@ -128,6 +150,19 @@ function parseProperties(
     if (!key) {
       throw new Error(
         `Invalid property format: "${prop}". Key cannot be empty.`,
+      );
+    }
+
+    // ⛤ Refuse the spellings whose CANONICAL key collides with something
+    // `create` manages itself (req 869561bf). Canonicalisation alone would send
+    // them into the self-managed skip-list and the value would vanish SILENTLY
+    // — strictly worse than today's dead literal key, because nothing tells the
+    // caller their input was ignored. Refusing mirrors how `set-property`
+    // rejects guarded properties: name the dedicated flag instead.
+    const dedicatedFlag = CREATE_SELF_MANAGED_FLAGS[canonicalYamlKey(key)];
+    if (dedicatedFlag !== undefined) {
+      throw new Error(
+        `Refusing to set "${key}" via --property — create manages this field itself. Use:  ${dedicatedFlag}`,
       );
     }
 

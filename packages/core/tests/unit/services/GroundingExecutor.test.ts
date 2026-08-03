@@ -113,6 +113,49 @@ describe("GroundingExecutor", () => {
       expect(writtenContent).toContain("ems__status: Done");
     });
 
+    // req 869561bf — the canonical-YAML-key rule now lives in core, so EVERY
+    // frontmatter writer consults it. Both halves of this executor were broken:
+    // it wrote the RAW `targetProperty` (a literal, dead `exo__Asset_aliases:`
+    // key that Obsidian ignores) and looked the string-scalar set up on the
+    // merely-normalized name (so the prefixed spelling lost its quoting).
+    it("writes exo__Asset_aliases under the canonical aliases key AND keeps string semantics @req:869561bf-ae02-4028-bc6a-b32cfabda1ed", async () => {
+      reader.readFile.mockResolvedValue("---\nfoo: bar\n---\nBody");
+
+      const grounding = makeGrounding({
+        type: GroundingType.PROPERTY_SET,
+        targetProperty: "exo__Asset_aliases",
+        targetValueLiteral: "2026-01-15",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(true);
+      const written = writer.updateFile.mock.calls[0][1];
+      // canonical key — the one Obsidian actually reads
+      expect(written).toContain('aliases: "2026-01-15"');
+      // and NOT the literal prefixed key
+      expect(written).not.toContain("exo__Asset_aliases:");
+    });
+
+    // Negative control for the axis above: a PREFIXED property whose field is
+    // NOT in UNPREFIXED_ASSET_FIELDS must keep its key verbatim. Proves the
+    // canonicalisation did not start rewriting keys indiscriminately.
+    it("leaves a prefixed property outside the whitelist untouched @req:869561bf-ae02-4028-bc6a-b32cfabda1ed", async () => {
+      reader.readFile.mockResolvedValue("---\nfoo: bar\n---\nBody");
+
+      const grounding = makeGrounding({
+        type: GroundingType.PROPERTY_SET,
+        targetProperty: "exo__Asset_isDefinedBy",
+        targetValueLiteral: "[[some-anchor]]",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(true);
+      const written = writer.updateFile.mock.calls[0][1];
+      expect(written).toContain("exo__Asset_isDefinedBy:");
+    });
+
     it("should substitute $now with ISO timestamp", async () => {
       reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
 

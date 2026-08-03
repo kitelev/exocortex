@@ -3,6 +3,7 @@ import { DateFormatter } from "../utilities/DateFormatter";
 import { MetadataHelpers } from "../utilities/MetadataHelpers";
 import { WikiLinkHelpers } from "../utilities/WikiLinkHelpers";
 import { Namespace } from "../domain/models/rdf/Namespace";
+import { canonicalYamlKey } from "./NoteToRDFConverter";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import { DI_TOKENS } from "../interfaces/tokens";
 import { PropertyFieldType } from "../domain/types/PropertyFieldType";
@@ -346,7 +347,19 @@ export class GenericAssetCreationService {
 
     // Process additional property values
     if (config.propertyValues) {
-      for (const [propertyName, value] of Object.entries(config.propertyValues)) {
+      for (const [rawPropertyName, value] of Object.entries(
+        config.propertyValues,
+      )) {
+        // ⛤ Canonicalise the physical YAML key BEFORE anything else (req
+        // 869561bf): `exo__Asset_aliases` is stored under the bare `aliases:`
+        // key that Obsidian actually reads. Doing it here — rather than only in
+        // the CLI mutation verbs — is the point of the requirement: every
+        // frontmatter writer consults ONE source in core. It also makes the
+        // self-managed skip-list below see the canonical spelling, so a
+        // prefixed `exo__Asset_aliases` is skipped instead of landing as a
+        // literal, dead key alongside the real `aliases:`.
+        const propertyName = canonicalYamlKey(rawPropertyName);
+
         // Skip system properties already set
         if (
           propertyName === "exo__Asset_uid" ||
