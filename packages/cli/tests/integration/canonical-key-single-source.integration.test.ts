@@ -206,6 +206,43 @@ describe("req 869561bf: one canonical-key source in core, used by every writer",
     expect(refusalOutput()).toMatch(/--aliases/);
   });
 
+  // ── axis: create's asset-building path (GenericAssetCreationService) ──
+
+  /**
+   * The second wired core writer. `create` refuses only the fields it manages
+   * ITSELF (`aliases`); the other three `UNPREFIXED_ASSET_FIELDS` are ordinary
+   * `--property` input and must land under their canonical key. Without this
+   * axis the `GenericAssetCreationService` edit ships unverified — its own 101
+   * tests stay green under a neutralised canonicaliser.
+   */
+  it("create writes exo__Asset_archived under the canonical archived key @req:869561bf-ae02-4028-bc6a-b32cfabda1ed", async () => {
+    await run(createCommand(), [
+      "--class",
+      CLASS_UID,
+      "--label",
+      "Archived probe",
+      "--property",
+      "exo__Asset_archived=true",
+    ]);
+
+    // `create` places the asset by co-location (isDefinedBy), which this probe
+    // does not pin — so locate it by content across the temp vault rather than
+    // assuming a folder.
+    const walk = (d: string): string[] =>
+      fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+        const p = path.join(d, e.name);
+        return e.isDirectory() ? walk(p) : p.endsWith(".md") ? [p] : [];
+      });
+    const created = walk(vault).filter((p) =>
+      fs.readFileSync(p, "utf-8").includes("Archived probe"),
+    );
+    expect(created).toHaveLength(1);
+
+    const content = fs.readFileSync(created[0], "utf-8");
+    expect(content).not.toContain("exo__Asset_archived:");
+    expect(parseFrontmatter(content).archived).toBe(true);
+  });
+
   // ── negative controls: must stay GREEN in every state ──
 
   it("leaves a prefixed property outside the whitelist untouched @req:869561bf-ae02-4028-bc6a-b32cfabda1ed", async () => {

@@ -358,6 +358,21 @@ export class GenericAssetCreationService {
         // self-managed skip-list below see the canonical spelling, so a
         // prefixed `exo__Asset_aliases` is skipped instead of landing as a
         // literal, dead key alongside the real `aliases:`.
+        //
+        // ⚠ Two consequences worth naming, both deliberate:
+        //  1. The downstream `propertyTypeMap` / `shouldEmitAsArray` lookups now
+        //     receive the BARE name, so `Namespace.fromPropertyKey("archived")`
+        //     returns null and a shape declared under `exo#Asset_archived` no
+        //     longer resolves. Benign for the four whitelisted fields (booleans
+        //     and `aliases`; `shouldEmitAsArray` only matters for `[[…]]`
+        //     values) — but it IS a coupling, not an accident.
+        //  2. Skipping is silent. `create.ts` therefore REFUSES
+        //     `--property exo__Asset_aliases` up front rather than letting the
+        //     value vanish here. That refusal is CLI-only: another caller
+        //     reaching this service directly (e.g. the plugin's asset-creation
+        //     modal) still hits the silent skip. Moving the refusal into the
+        //     service would change plugin UX and is out of this requirement's
+        //     scope — tracked on ems__Bug 43e41c8f.
         const propertyName = canonicalYamlKey(rawPropertyName);
 
         // Skip system properties already set

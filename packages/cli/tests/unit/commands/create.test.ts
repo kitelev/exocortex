@@ -1,6 +1,14 @@
 import { jest } from "@jest/globals";
 import { Command } from "commander";
 
+// req 869561bf — pull the REAL canonicaliser in by its deep path. Only the
+// package specifier `@kitelev/exocortex-core` is mocked below, so this import
+// reaches the actual module and the mock stays honest (see the comment at the
+// `canonicalYamlKey` entry).
+const { canonicalYamlKey: realCanonicalYamlKey } = await import(
+  "../../../../core/src/services/NoteToRDFConverter.js"
+);
+
 // Mock uuid (transitively a GenericAssetCreationService dependency)
 jest.unstable_mockModule("uuid", () => ({
   v4: jest.fn(() => "mock-uuid"),
@@ -14,6 +22,18 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   MetadataHelpers: { buildFileContent: jest.fn(() => "---\n---\n") },
   GenericAssetCreationService: class GenericAssetCreationService {},
   ShapeRegistry: class ShapeRegistry {},
+  /**
+   * req 869561bf — `create.ts` consults the SINGLE canonical-key source in core
+   * to decide whether a `--property` names a field `create` manages itself.
+   *
+   * ⛤ The REAL function is wired in, not a hand-written mirror. A mirror would
+   * be a third copy of the very rule this requirement exists to de-duplicate:
+   * add a fifth entry to `UNPREFIXED_ASSET_FIELDS` and the copy diverges
+   * silently, so the suite would keep passing against a rule the product no
+   * longer has. Only the package specifier is mocked — the deep path resolves
+   * to the actual module.
+   */
+  canonicalYamlKey: realCanonicalYamlKey,
   // Transitively required: create.ts → folderRepairHelpers.ts imports this.
   extractAssetReference: jest.fn((v: unknown) =>
     typeof v === "string"

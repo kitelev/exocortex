@@ -6,6 +6,7 @@ import {
   clearResolvers,
   installDefaultResolvers,
 } from "../../../src/services/SubstitutionResolverRegistry";
+import * as yaml from "js-yaml";
 import { GroundingType } from "../../../src/domain/constants/GroundingType";
 import { GroundingDefinition } from "../../../src/domain/models/CommandDefinition";
 
@@ -135,6 +136,18 @@ describe("GroundingExecutor", () => {
       expect(written).toContain('aliases: "2026-01-15"');
       // and NOT the literal prefixed key
       expect(written).not.toContain("exo__Asset_aliases:");
+
+      // ⛤ Assert the GUARANTEE (#3750 MEDIUM-3), not its current spelling: run
+      // the emitted frontmatter through a real YAML parser and check the TYPE.
+      // `2026-01-15` unquoted parses as a Date; quoted, it stays a string. A
+      // `toContain` on characters would keep passing if the quoting moved or
+      // the serializer changed shape — the parsed type cannot.
+      const fm = yaml.load(
+        /^---\n([\s\S]*?)\n---/.exec(written)![1],
+      ) as Record<string, unknown>;
+      expect(fm.aliases).toBe("2026-01-15");
+      expect(typeof fm.aliases).toBe("string");
+      expect(fm["exo__Asset_aliases"]).toBeUndefined();
     });
 
     // Negative control for the axis above: a PREFIXED property whose field is
@@ -318,6 +331,38 @@ describe("GroundingExecutor", () => {
       const writtenContent = writer.updateFile.mock.calls[0][1];
       expect(writtenContent).not.toContain("ems__Effort_startTimestamp");
       expect(writtenContent).toContain("foo: bar");
+    });
+
+    /**
+     * req 869561bf — the SET/DELETE symmetry axis.
+     *
+     * ⛤ This is the axis that decided WHERE the rule had to live. Wiring
+     * canonicalisation into `property_set` alone would have made a grounding
+     * able to WRITE an alias via the prefixed spelling but never REMOVE it:
+     * `removeProperty` would look for a key that no longer exists, and return
+     * the content unchanged — a silent no-op. That asymmetry did not exist
+     * before (both halves were consistently broken), so a per-call-site fix
+     * would have introduced a NEW inconsistency while claiming to remove one.
+     * Canonicalising inside the FrontmatterService primitives keeps the two
+     * halves in step by construction.
+     */
+    it("removes the canonical aliases key when given the PREFIXED spelling @req:869561bf-ae02-4028-bc6a-b32cfabda1ed", async () => {
+      reader.readFile.mockResolvedValue(
+        '---\nfoo: bar\naliases:\n  - "Existing"\n---\nBody',
+      );
+
+      const grounding = makeGrounding({
+        type: GroundingType.PROPERTY_DELETE,
+        targetProperty: "exo__Asset_aliases",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(true);
+      const written = writer.updateFile.mock.calls[0][1];
+      expect(written).not.toContain("aliases:");
+      expect(written).not.toContain("Existing");
+      expect(written).toContain("foo: bar");
     });
 
     it("should succeed when property does not exist (no-op)", async () => {

@@ -661,16 +661,16 @@ export class GroundingExecutor {
       ? serializeYamlScalar(substitutedValue, true)
       : substitutedValue;
 
-    // Strictly additive: the write key changes ONLY for the four
-    // `UNPREFIXED_ASSET_FIELDS`, where canonicalisation is not the identity.
-    // For every other property the raw `grounding.targetProperty` is preserved
-    // verbatim, so a full-IRI-shaped targetProperty keeps writing exactly the
-    // key it wrote before — normalisation stays confined to the lookup, which
-    // is what #3779 introduced it for.
-    const writeKey =
-      canonicalTargetProperty === normalizedTargetProperty
-        ? grounding.targetProperty
-        : canonicalTargetProperty;
+    // ⛤ The WRITE KEY is not decided here. `FrontmatterService.updateProperty`
+    // canonicalises on entry, so every writer that reaches the primitive — this
+    // step, its `property_delete` / `property_append` / `property_increment` /
+    // `property_shift` siblings, the `service_call` twins in
+    // `packages/services`, and the plugin — gets the same key without each
+    // call site repeating the rule. Deciding it per-call-site is exactly the
+    // shape of defect this requirement removes. The canonical name is still
+    // needed HERE, but only for the `STRING_SCALAR_PROPERTIES` lookup above:
+    // `updateProperty` serialises without `quoteScalars`, so the string
+    // semantics for `aliases` have to be applied by the caller.
 
     // req faf269bf Scenarios 1+3 — resolve WHICH asset this step writes into.
     // Absent `targetQuery` (every existing grounding) keeps `filePath` exactly
@@ -691,7 +691,7 @@ export class GroundingExecutor {
     const content = await this.fileReader.readFile(effectiveFilePath);
     const updated = this.frontmatterService.updateProperty(
       content,
-      writeKey,
+      grounding.targetProperty,
       valueToWrite,
     );
     await this.fileWriter.updateFile(effectiveFilePath, updated);
