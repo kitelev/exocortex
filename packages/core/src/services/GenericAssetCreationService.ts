@@ -3,6 +3,7 @@ import { DateFormatter } from "../utilities/DateFormatter";
 import { MetadataHelpers } from "../utilities/MetadataHelpers";
 import { WikiLinkHelpers } from "../utilities/WikiLinkHelpers";
 import { Namespace } from "../domain/models/rdf/Namespace";
+import { canonicalYamlKey } from "./NoteToRDFConverter";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import { DI_TOKENS } from "../interfaces/tokens";
 import { PropertyFieldType } from "../domain/types/PropertyFieldType";
@@ -346,7 +347,34 @@ export class GenericAssetCreationService {
 
     // Process additional property values
     if (config.propertyValues) {
-      for (const [propertyName, value] of Object.entries(config.propertyValues)) {
+      for (const [rawPropertyName, value] of Object.entries(
+        config.propertyValues,
+      )) {
+        // ⛤ Canonicalise the physical YAML key BEFORE anything else (req
+        // 869561bf): `exo__Asset_aliases` is stored under the bare `aliases:`
+        // key that Obsidian actually reads. Doing it here — rather than only in
+        // the CLI mutation verbs — is the point of the requirement: every
+        // frontmatter writer consults ONE source in core. It also makes the
+        // self-managed skip-list below see the canonical spelling, so a
+        // prefixed `exo__Asset_aliases` is skipped instead of landing as a
+        // literal, dead key alongside the real `aliases:`.
+        //
+        // ⚠ Two consequences worth naming, both deliberate:
+        //  1. The downstream `propertyTypeMap` / `shouldEmitAsArray` lookups now
+        //     receive the BARE name, so `Namespace.fromPropertyKey("archived")`
+        //     returns null and a shape declared under `exo#Asset_archived` no
+        //     longer resolves. Benign for the four whitelisted fields (booleans
+        //     and `aliases`; `shouldEmitAsArray` only matters for `[[…]]`
+        //     values) — but it IS a coupling, not an accident.
+        //  2. Skipping is silent. `create.ts` therefore REFUSES
+        //     `--property exo__Asset_aliases` up front rather than letting the
+        //     value vanish here. That refusal is CLI-only: another caller
+        //     reaching this service directly (e.g. the plugin's asset-creation
+        //     modal) still hits the silent skip. Moving the refusal into the
+        //     service would change plugin UX and is out of this requirement's
+        //     scope — tracked on ems__Bug 43e41c8f.
+        const propertyName = canonicalYamlKey(rawPropertyName);
+
         // Skip system properties already set
         if (
           propertyName === "exo__Asset_uid" ||

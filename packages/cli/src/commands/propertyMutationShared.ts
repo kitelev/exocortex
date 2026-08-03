@@ -1,4 +1,4 @@
-import { UNPREFIXED_ASSET_FIELDS } from "@kitelev/exocortex-core";
+import { canonicalYamlKey } from "@kitelev/exocortex-core";
 
 /**
  * Shared guards + helpers for the generic frontmatter-mutation CLI verbs
@@ -16,31 +16,18 @@ export const DEFAULT_TIMEZONE = "Asia/Almaty";
 
 export const UPDATED_AT_KEY = "exo__Asset_updatedAt";
 
-/** `exo__Asset_<field>` shape; group 1 = the bare field name. */
-const ASSET_PREFIXED_SHAPE = /^exo__Asset_(.+)$/;
-
 /**
- * Map an RDF property name to the canonical Obsidian YAML frontmatter KEY it is
- * stored under (issue #3944). Most properties use their own name, but the
- * `UNPREFIXED_ASSET_FIELDS` whitelist (`aliases`, `draft`, `pinned`, `archived`)
- * is stored under the BARE key `<field>:` — the same key `NoteToRDFConverter`
- * reads back as `exo:Asset_<field>`. Without this mapping, a mutation of
- * `exo__Asset_aliases` would write/delete a literal `exo__Asset_aliases:` key
- * instead of the canonical `aliases:` (Obsidian recognises aliases only via
- * `aliases:`).
+ * Canonical-YAML-key mapping (issue #3944) — re-exported from core, where it now
+ * lives next to the `UNPREFIXED_ASSET_FIELDS` whitelist it consults.
  *
- * Property NAME guards + TBox validation still run on the RDF/prefixed form
- * (unchanged); only the physical YAML key is canonicalised here. A bare
- * `aliases` (no `exo__Asset_` prefix) passes through unchanged — already the
- * canonical key, no regression. `archived` is routed to a dedicated command by
- * the guard before reaching this point, so in practice this only affects the
- * non-guarded fields (`aliases`, `draft`, `pinned`).
+ * ⛤ It used to be DEFINED here, and that was the defect: a rule every writer of
+ * frontmatter must obey sat inside one package's command folder, so the
+ * core-side writers (`GroundingExecutor`, `GenericAssetCreationService`) could
+ * not reach it and wrote raw keys instead. The re-export keeps this module's
+ * public surface unchanged for `set-property` / `remove-property` while making
+ * core the single source (req 869561bf).
  */
-export function canonicalYamlKey(property: string): string {
-  const m = ASSET_PREFIXED_SHAPE.exec(property);
-  if (m && UNPREFIXED_ASSET_FIELDS.has(m[1])) return m[1];
-  return property;
-}
+export { canonicalYamlKey };
 
 /**
  * Properties the generic mutation primitives REFUSE because a dedicated guarded

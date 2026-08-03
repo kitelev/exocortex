@@ -1,4 +1,5 @@
 import { loadDefaultSpec, orderProperties } from "../services/OrderSpecResolver";
+import { canonicalYamlKey } from "../services/NoteToRDFConverter";
 import {
   serializeYamlScalar,
   STRING_SCALAR_PROPERTIES,
@@ -147,7 +148,17 @@ export class MetadataHelpers {
     frontmatter: Record<string, unknown>,
     bodyContent?: string,
   ): string {
-    const ordered = orderProperties(frontmatter, loadDefaultSpec());
+    // req 869561bf — the asset-creation twin of
+    // `FrontmatterService.createFrontmatter`; canonicalise on the same terms so
+    // a caller passing `exo__Asset_aliases` gets the live `aliases:` key AND the
+    // `STRING_SCALAR_PROPERTIES` lookup below (which keys off the emitted name)
+    // keeps a scalar-looking alias a string instead of letting YAML coerce it
+    // to a Date — the #3750 MEDIUM-3 guarantee.
+    const canonical: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(frontmatter)) {
+      canonical[canonicalYamlKey(key)] = value;
+    }
+    const ordered = orderProperties(canonical, loadDefaultSpec());
     const frontmatterLines = Object.entries(ordered)
       .map(([key, value]) => {
         // #3750 MEDIUM-1: route through serializeYamlScalar so scalars with
