@@ -62,7 +62,14 @@ describe("NamedQueryRunner.runScalar", () => {
 
     const scalar = await runner.runScalar("q1", { currentAsset: ASSET });
 
-    expect(scalar).toEqual({ value: "9f1c0b2a-archive", kind: "iri" });
+    // req faf269bf — `value`/`kind` are unchanged (the `targetValueQuery`
+    // value-source reads only those); `iri` is the additive raw term the
+    // `targetQuery` TARGET-source needs to recover a vault path from.
+    expect(scalar).toEqual({
+      value: "9f1c0b2a-archive",
+      kind: "iri",
+      iri: ARCHIVE_ONTO_FILE,
+    });
   });
 
   it("returns literal scalar with its lexical value", async () => {
@@ -110,7 +117,7 @@ describe("NamedQueryRunner.runScalar", () => {
       currentClass: CLASS,
     });
 
-    expect(scalar).toEqual({ value: "asset-1", kind: "iri" });
+    expect(scalar).toEqual({ value: "asset-1", kind: "iri", iri: ASSET });
   });
 
   it("substitutes explicit IRI params (controlled <iri> form)", async () => {
@@ -124,7 +131,11 @@ describe("NamedQueryRunner.runScalar", () => {
       params: { srcOnto: { value: SRC_ONTO, kind: "iri" } },
     });
 
-    expect(scalar).toEqual({ value: "9f1c0b2a-archive", kind: "iri" });
+    expect(scalar).toEqual({
+      value: "9f1c0b2a-archive",
+      kind: "iri",
+      iri: ARCHIVE_ONTO_FILE,
+    });
   });
 
   it("returns null when the SELECT produces no rows", async () => {

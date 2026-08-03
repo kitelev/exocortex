@@ -22,6 +22,7 @@ import {
   STRING_SCALAR_PROPERTIES,
 } from "../utilities/yamlScalar";
 import type { NamedQueryRunnerPort } from "./NamedQueryRunner";
+import { iriToVaultPath } from "../infrastructure/vault/iri";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { DateTimeParsing } from "../infrastructure/sparql/filters/functions/DateTimeParsing";
 import { LoggingService } from "./LoggingService";
@@ -541,6 +542,22 @@ export class GroundingExecutor {
       return { success: false, error: "property_set requires targetProperty" };
     }
 
+    // req faf269bf Scenario 2 — the two TARGET addressings are mutually
+    // exclusive. `targetsCreatedInstance` says "write into the asset the
+    // previous step created"; `targetQuery` says "write into the asset this
+    // query finds". Both set = an ambiguity the engine must NOT arbitrate
+    // silently, so refuse before doing any work (nothing is written).
+    if (
+      grounding.targetQuery !== undefined &&
+      grounding.targetsCreatedInstance === true
+    ) {
+      return {
+        success: false,
+        error:
+          "property_set: targetQuery and targetsCreatedInstance are mutually exclusive (both address the step's TARGET — pick one).",
+      };
+    }
+
     // RFC 31c1a0be Phase 5a — typed predicates only.
     // Multiple typed predicates simultaneously = fail-loud (RFC §4 cardinality).
     // RFC 78c2b7d0 C4 — `targetValueQuery` joins the mutually-exclusive set as a
@@ -636,15 +653,98 @@ export class GroundingExecutor {
       ? serializeYamlScalar(substitutedValue, true)
       : substitutedValue;
 
-    const content = await this.fileReader.readFile(filePath);
+    // req faf269bf Scenarios 1+3 — resolve WHICH asset this step writes into.
+    // Absent `targetQuery` (every existing grounding) keeps `filePath` exactly
+    // as handed in — click-target, or the created instance when the composite
+    // threaded it — so prior behaviour is byte-identical (Scenario 4).
+    let effectiveFilePath = filePath;
+    if (grounding.targetQuery !== undefined) {
+      const targetPathResult = await this.resolveTargetQuery(
+        grounding.targetQuery,
+        targetIRI,
+      );
+      if (!targetPathResult.success) {
+        return targetPathResult;
+      }
+      effectiveFilePath = targetPathResult.path;
+    }
+
+    const content = await this.fileReader.readFile(effectiveFilePath);
     const updated = this.frontmatterService.updateProperty(
       content,
       grounding.targetProperty,
       valueToWrite,
     );
-    await this.fileWriter.updateFile(filePath, updated);
+    await this.fileWriter.updateFile(effectiveFilePath, updated);
 
     return { success: true };
+  }
+
+  /**
+   * req faf269bf — resolve a `property_set` `targetQuery` to the vault-relative
+   * path of the asset the step must write INTO, via the read-side
+   * {@link NamedQueryRunner}. Auto-injects `$currentAsset` = the click-target
+   * IRI, so a reified link is found FROM one of its ends.
+   *
+   * Fail-loud on every degraded path, and — critically — the click-target is
+   * NEVER a fallback (Scenario 3): a query that matches nothing means the
+   * intended target does not exist, and writing to the click-target instead
+   * would silently put the value on the wrong asset.
+   *
+   * Mirrors {@link resolveTargetValueQuery}'s structure; the difference is what
+   * is extracted — the RAW `iri` (converted to a path) rather than the
+   * reverse-mapped display name, because a basename cannot address a file.
+   */
+  private async resolveTargetQuery(
+    queryUid: string,
+    targetIRI: string,
+  ): Promise<
+    { success: true; path: string } | { success: false; error: string }
+  > {
+    if (!this.namedQueryRunner) {
+      return {
+        success: false,
+        error:
+          "property_set targetQuery requires NamedQueryRunner injection (options.namedQueryRunner). Wire the plugin/CLI before using this target-source.",
+      };
+    }
+    let scalar;
+    try {
+      scalar = await this.namedQueryRunner.runScalar(queryUid, {
+        currentAsset: targetIRI,
+      });
+    } catch (error) {
+      return {
+        success: false,
+        error: `property_set targetQuery: NamedQuery '${queryUid}' failed — ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    if (scalar === null) {
+      return {
+        success: false,
+        error: `property_set targetQuery: NamedQuery '${queryUid}' matched no asset (empty result set) — refusing to fall back to the click-target.`,
+      };
+    }
+    if (scalar.kind !== "iri") {
+      return {
+        success: false,
+        error: `property_set targetQuery: NamedQuery '${queryUid}' returned a literal ('${scalar.value}'), not an asset reference — a target must be an asset.`,
+      };
+    }
+    if (scalar.iri === undefined) {
+      return {
+        success: false,
+        error: `property_set targetQuery: NamedQuery '${queryUid}' returned an asset reference without its source IRI, so its file path cannot be resolved.`,
+      };
+    }
+    const path = iriToVaultPath(scalar.iri);
+    if (path === null) {
+      return {
+        success: false,
+        error: `property_set targetQuery: NamedQuery '${queryUid}' matched '${scalar.iri}', which is not a vault asset IRI (no resolvable file path).`,
+      };
+    }
+    return { success: true, path };
   }
 
   /**

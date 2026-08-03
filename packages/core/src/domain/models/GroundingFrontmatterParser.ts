@@ -128,6 +128,16 @@ export function parseGroundingDefinitionFromFrontmatter(
   const targetsCreatedInstance =
     rawTargetsCreatedInstance === true || rawTargetsCreatedInstance === "true";
 
+  // req faf269bf — TARGET-side NamedQuery ref (which asset the step writes
+  // INTO). Wikilink → bare UID, same normalization as `templateRef`, mirroring
+  // the production loader's `getObsidianName` unwrap.
+  const rawTargetQuery = fm["exocmd__Grounding_targetQuery"] as
+    | string
+    | undefined;
+  const targetQuery = rawTargetQuery
+    ? normalizeGroundingRef(rawTargetQuery)
+    : undefined;
+
   return {
     id: uid,
     label: (fm["exo__Asset_label"] as string) ?? "",
@@ -160,6 +170,7 @@ export function parseGroundingDefinitionFromFrontmatter(
     templateRef,
     cloneTargetBody,
     targetsCreatedInstance,
+    targetQuery,
     steps,
   };
 }
