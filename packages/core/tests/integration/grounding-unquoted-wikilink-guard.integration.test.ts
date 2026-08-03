@@ -82,7 +82,7 @@ describe("req 29e0d1b6 — property_set rejects an unquoted wikilink value", () 
       targetValueSubstitution: "$input.ontology",
     });
 
-  it("Scenario 1: @req:29e0d1b6 refuses the bare [[uid]] form and writes nothing", async () => {
+  it("Scenario 1: @req:29e0d1b6-3863-4af3-8807-02e546b0817a refuses the bare [[uid]] form and writes nothing", async () => {
     const result = await executor.execute(
       substitutionGrounding(),
       TARGET_IRI,
@@ -98,7 +98,7 @@ describe("req 29e0d1b6 — property_set rejects an unquoted wikilink value", () 
     expect(writer.updateFile).not.toHaveBeenCalled();
   });
 
-  it('Scenario 2: @req:29e0d1b6 accepts the quoted "[[uid]]" form and YAML reads it as a string', async () => {
+  it('Scenario 2: @req:29e0d1b6-3863-4af3-8807-02e546b0817a accepts the quoted "[[uid]]" form and YAML reads it as a string', async () => {
     const result = await executor.execute(
       substitutionGrounding(),
       TARGET_IRI,
@@ -117,7 +117,7 @@ describe("req 29e0d1b6 — property_set rejects an unquoted wikilink value", () 
     expect(fm.exo__Asset_isDefinedBy).toBe(`[[${ONTOLOGY_UID}]]`);
   });
 
-  it("Scenario 3: @req:29e0d1b6 the sibling targetValueRef contract (bare uid) is unaffected", async () => {
+  it("Scenario 3: @req:29e0d1b6-3863-4af3-8807-02e546b0817a the sibling targetValueRef contract (bare uid) is unaffected", async () => {
     const result = await executor.execute(
       makeGrounding({
         targetProperty: "exo__Asset_isDefinedBy",
@@ -134,7 +134,7 @@ describe("req 29e0d1b6 — property_set rejects an unquoted wikilink value", () 
     expect(fm.exo__Asset_isDefinedBy).toBe(`[[${ONTOLOGY_UID}]]`);
   });
 
-  it("Scenario 4: @req:29e0d1b6 non-reference substituted values are unaffected", async () => {
+  it("Scenario 4: @req:29e0d1b6-3863-4af3-8807-02e546b0817a non-reference substituted values are unaffected", async () => {
     // (a) a plain label on a string-scalar property — quoted by
     //     serializeYamlScalar BEFORE the guard, so it must still pass.
     const labelResult = await executor.execute(
