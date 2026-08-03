@@ -213,6 +213,84 @@ describe("PrintNameRuleService — 📍 ongoing life__Episode via the isEpisodeO
     expect(junkStart).not.toContain("📍");
   });
 
+  it("@req:8a47ff93-4909-4b3a-89f5-4a39c15131fa a malformed END is NOT ongoing (fail-closed) — an unreadable period must not claim to be happening", () => {
+    const { resolver } = episodeVault();
+    const junkEnd = resolver.resolve({
+      metadata: episodeMeta({ start: "2026-07-01", end: "не дата" }),
+      basename: "junk-end",
+    });
+    expect(junkEnd).not.toContain("📍");
+  });
+
+  it("@req:8a47ff93-4909-4b3a-89f5-4a39c15131fa a well-SHAPED but nonexistent calendar date is NOT ongoing (month 13, Feb 31)", () => {
+    // "2026-13-45" satisfies the YYYY-MM-DD shape, so a regex-only check would accept it and
+    // compare lexicographically — an end of "2026-13-45" would sort after every real today and
+    // mark the episode ongoing forever. Reachable when the value is QUOTED (an unquoted typo is
+    // rolled over into a Date by YAML instead).
+    const { resolver } = episodeVault();
+    const month13 = resolver.resolve({
+      metadata: episodeMeta({ start: "2026-07-01", end: "2026-13-45" }),
+      basename: "month-13",
+    });
+    const feb31 = resolver.resolve({
+      metadata: episodeMeta({ start: "2026-02-31", end: "2026-12-31" }),
+      basename: "feb-31",
+    });
+    expect(month13).not.toContain("📍");
+    expect(feb31).not.toContain("📍");
+  });
+
+  it("@req:8a47ff93-4909-4b3a-89f5-4a39c15131fa the PRODUCTION frontmatter shape — an UNQUOTED YAML date arrives as a Date object, not a string", () => {
+    // Every real life__Episode writes `life__Episode_start: 2026-04-02` unquoted, which YAML
+    // parses as a timestamp → js-yaml hands the plugin a Date. A string-only implementation
+    // returns false for 100% of real episodes while a string-fixture suite stays green, so
+    // this case is the one that keeps the feature alive. Zone-less YAML timestamps are UTC
+    // midnight, hence the UTC reading in toDayKey.
+    const { resolver } = episodeVault();
+    const ongoing = resolver.resolve({
+      metadata: {
+        exo__Instance_class: [`[[${EPISODE_UID}]]`],
+        exo__Asset_label: "Отпуск",
+        life__Episode_start: new Date("2026-08-01"),
+        life__Episode_end: new Date("2026-08-10"),
+      },
+      basename: "date-shaped-ongoing",
+    });
+    const past = resolver.resolve({
+      metadata: {
+        exo__Instance_class: [`[[${EPISODE_UID}]]`],
+        exo__Asset_label: "Отпуск",
+        life__Episode_start: new Date("2026-07-20"),
+        life__Episode_end: new Date("2026-08-03"), // local yesterday, UTC today
+      },
+      basename: "date-shaped-past",
+    });
+    const openEnded = resolver.resolve({
+      metadata: {
+        exo__Instance_class: [`[[${EPISODE_UID}]]`],
+        exo__Asset_label: "Отпуск",
+        life__Episode_start: new Date("2026-07-23"),
+      },
+      basename: "date-shaped-open",
+    });
+    expect(ongoing).toContain("📍");
+    expect(past).not.toContain("📍");
+    expect(openEnded).toContain("📍");
+  });
+
+  it("@req:8a47ff93-4909-4b3a-89f5-4a39c15131fa an INVALID Date object is NOT ongoing (fail-closed)", () => {
+    const { resolver } = episodeVault();
+    const rendered = resolver.resolve({
+      metadata: {
+        exo__Instance_class: [`[[${EPISODE_UID}]]`],
+        exo__Asset_label: "Отпуск",
+        life__Episode_start: new Date("not-a-date"),
+      },
+      basename: "invalid-date",
+    });
+    expect(rendered).not.toContain("📍");
+  });
+
   it("@req:8a47ff93-4909-4b3a-89f5-4a39c15131fa a value carrying a TIME component compares by its calendar day", () => {
     const { resolver } = episodeVault();
     const rendered = resolver.resolve({

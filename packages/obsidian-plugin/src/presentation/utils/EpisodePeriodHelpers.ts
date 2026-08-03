@@ -30,10 +30,18 @@ export class EpisodePeriodHelpers {
 
   /**
    * Normalise a frontmatter date value to its `YYYY-MM-DD` calendar-day key, or null
-   * when it is absent, empty or not a well-formed date. Takes the first element of an
-   * array and strips wikilink brackets / quotes defensively, mirroring
-   * `PrintNameRuleService.resolveHostFunctionName`. A value carrying a time component
-   * (`2026-07-23T10:00:00`) therefore compares by its calendar day.
+   * when it is absent, empty or not a well-formed date.
+   *
+   * ⚠ An UNQUOTED `life__Episode_start: 2026-04-02` — which is how every real episode
+   * stores it — is a YAML **timestamp**, so the parser hands us a `Date`, not a string.
+   * Handling only strings makes this predicate return false for 100% of production
+   * assets while string-fixture tests stay green. A zone-less YAML timestamp is parsed
+   * as UTC midnight, so the calendar day comes from the UTC getters — the same reading
+   * `DisplayNameTemplateEngine.applyValueFormat` uses for frontmatter dates.
+   *
+   * A quoted value arrives as a string; a value carrying a time component
+   * (`2026-07-23T10:00:00`) compares by its calendar day. The array unwrap and
+   * bracket/quote stripping mirror `PrintNameRuleService.resolveHostFunctionName`.
    */
   private static toDayKey(value: unknown): string | null {
     let raw = value;
@@ -41,14 +49,33 @@ export class EpisodePeriodHelpers {
       if (raw.length === 0) return null;
       raw = raw[0];
     }
-    if (typeof raw !== "string" && typeof raw !== "number") return null;
 
-    const cleaned = String(raw)
+    if (raw instanceof Date) {
+      if (Number.isNaN(raw.getTime())) return null;
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${String(raw.getUTCFullYear()).padStart(4, "0")}-${pad(raw.getUTCMonth() + 1)}-${pad(raw.getUTCDate())}`;
+    }
+    if (typeof raw !== "string") return null;
+
+    const cleaned = raw
       .replace(/^\[\[|\]\]$/g, "")
       .replace(/^"|"$/g, "")
       .trim();
     const key = cleaned.slice(0, DAY_KEY_LENGTH);
-    return DAY_KEY_RE.test(key) ? key : null;
+    if (!DAY_KEY_RE.test(key)) return null;
+    // The regex checks SHAPE only — "2026-13-45" and "2026-02-31" match it. Round-tripping
+    // through Date.UTC rejects them, so "malformed → not ongoing" holds for quoted values
+    // too (an unquoted typo never reaches here: YAML rolls it over into a Date).
+    const [year, month, day] = key.split("-").map(Number);
+    const probe = new Date(Date.UTC(year, month - 1, day));
+    if (
+      probe.getUTCFullYear() !== year ||
+      probe.getUTCMonth() !== month - 1 ||
+      probe.getUTCDate() !== day
+    ) {
+      return null;
+    }
+    return key;
   }
 
   /**
