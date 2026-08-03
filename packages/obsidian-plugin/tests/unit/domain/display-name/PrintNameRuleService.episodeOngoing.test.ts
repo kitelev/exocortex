@@ -316,7 +316,7 @@ describe("PrintNameRuleService — 📍 ongoing life__Episode via the isEpisodeO
     expect(finished).toBe("Прошёл · 2026-06-01 · 2026-06-10");
   });
 
-  it("@req:8a47ff93-4909-4b3a-89f5-4a39c15131fa a NON-episode asset is untouched (negative control — stays GREEN under both reverts)", () => {
+  it("@req:8a47ff93-4909-4b3a-89f5-4a39c15131fa a NON-episode asset is untouched (negative control — stays GREEN under every revert)", () => {
     const { resolver } = episodeVault();
     const rendered = resolver.resolve({
       metadata: {
@@ -328,5 +328,43 @@ describe("PrintNameRuleService — 📍 ongoing life__Episode via the isEpisodeO
     });
     expect(rendered).toBe("Ship the release");
     expect(rendered).not.toContain("📍");
+  });
+});
+
+describe("PrintNameRuleService — 📍 ongoing episode WEST of UTC [req 8a47ff93]", () => {
+  // The suite above runs at UTC+5, where reading a UTC-midnight Date with local getters
+  // happens to name the same day — so it cannot see whether toDayKey reads the value as
+  // written (UTC) or through the runner's zone. CI runs in UTC, where the two are
+  // identical by definition. Only a NEGATIVE offset separates them, and there the
+  // difference is user-visible: an episode would lose its marker on its own final day.
+  let restoreDate: () => void;
+
+  // local day 2026-08-02 (18:00Z − 7h = 11:00 local); the episode's end sits at UTC
+  // midnight of that same day, which local getters would misread as 2026-08-01.
+  beforeEach(() => {
+    restoreDate = installFakeOffsetDate(-7, "2026-08-02T18:00:00Z");
+    expect(new Date().getDate()).toBe(2); // guard: the simulated western zone is active
+    expect(new Date().getHours()).toBe(11);
+  });
+
+  afterEach(() => restoreDate());
+
+  // Only the END boundary discriminates. Reading a UTC-midnight Date with local getters
+  // shifts every key one day EARLIER, which at the end boundary drops the marker (visible)
+  // but at the start boundary merely admits the episode a day early (invisible). A
+  // "starts today" case here would pass with and without the bug, so it is deliberately
+  // absent rather than kept as reassurance.
+  it("@req:8a47ff93-4909-4b3a-89f5-4a39c15131fa an episode whose LAST day is today still shows 📍 west of UTC — the day key comes from the value as written", () => {
+    const { resolver } = episodeVault();
+    const rendered = resolver.resolve({
+      metadata: {
+        exo__Instance_class: [`[[${EPISODE_UID}]]`],
+        exo__Asset_label: "Отпуск",
+        life__Episode_start: new Date("2026-07-20"),
+        life__Episode_end: new Date("2026-08-02"),
+      },
+      basename: "west-last-day",
+    });
+    expect(rendered).toContain("📍");
   });
 });
