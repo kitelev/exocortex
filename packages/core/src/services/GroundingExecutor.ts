@@ -285,6 +285,36 @@ export class ServiceRegistry {
 const MAX_COMPOSITE_DEPTH = 20;
 
 /**
+ * req 29e0d1b6 — is this about-to-be-written frontmatter value a BARE (unquoted)
+ * wikilink?
+ *
+ * `[[uid]]` written without surrounding quotes is a YAML flow SEQUENCE, not a
+ * string, so the RDF converter emits a literal and the reference is lost. The
+ * quoted form (`"[[uid]]"`, quotes part of the value) is the correct shape and
+ * is deliberately NOT matched here.
+ *
+ * Scope: the value must be ENTIRELY bracketed (after trimming) — so `[[a]]`, but
+ * also `[[a]] and [[b]]` / `[[a]]\n[[b]]`, which are just as flow-sequence-shaped
+ * and just as lossy; refusing them is intended. A wikilink embedded in
+ * surrounding prose (`see [[a]] for details`) is a string either way, carries no
+ * silent-literal risk, and passes.
+ *
+ * ⛤ Live `targetValueSubstitution` groundings DO carry a wikilink literally
+ * (`"[[8bc0c038-…]]"` → the `$nowLocal` token; 5 occurrences in the pinned
+ * exocmd assetspace). They never reach this guard in that shape because
+ * `CommandResolver` dereferences the wikilink to the target's label first, so
+ * the executor sees `$nowLocal`. That safety is a property of the RESOLVER, not
+ * of the data: were that dereference to stop, those groundings would start
+ * failing here — loudly, which is the correct failure, but the coupling is worth
+ * knowing.
+ */
+function isUnquotedWikilink(value: string): boolean {
+  // `[\s\S]` rather than `.` + the `s` flag: the root tsconfig targets ES6 and
+  // the dotAll flag is ES2018+ (`TS1501` in CI typecheck).
+  return /^\[\[[\s\S]*\]\]$/.test(value.trim());
+}
+
+/**
  * Executes grounding actions for dynamic commands (RFC-009 §5.4).
  *
  * The "write side" of the Dynamic Command System. Once a precondition passes,
@@ -671,6 +701,40 @@ export class GroundingExecutor {
     // needed HERE, but only for the `STRING_SCALAR_PROPERTIES` lookup above:
     // `updateProperty` serialises without `quoteScalars`, so the string
     // semantics for `aliases` have to be applied by the caller.
+
+    // req 29e0d1b6 — refuse an UNQUOTED wikilink instead of writing it.
+    //
+    // `updateProperty` writes the value VERBATIM, so a bare `[[uid]]` lands in
+    // the frontmatter unquoted — which YAML parses as a flow SEQUENCE, not a
+    // string. `NoteToRDFConverter` then emits the object as a LITERAL, and the
+    // asset silently drops out of every join on that property. Nothing fails:
+    // the command reports success and `repairFolder` (whose resolver tolerates
+    // both shapes) even relocates the file, so the two parsers disagree with no
+    // error surfacing anywhere. That silent literal is the worst of the three
+    // possible outcomes, and today it is the only one that LOOKS like success.
+    //
+    // We refuse loudly rather than normalize: normalizing (accepting `[[uid]]`,
+    // `"[[uid]]"` and a bare uid alike) would fix the symptom while HIDING the
+    // asymmetry between the two value-source contracts —
+    //   - `targetValueSubstitution` writes the substituted value verbatim, so a
+    //     reference must arrive ALREADY quoted (`"\"[[uid]]\""` from the CLI;
+    //     the plugin's ReferencePicker commits exactly that via
+    //     `toReferenceWikilink`), and
+    //   - `targetValueRef` takes a BARE uid because the executor wraps it here.
+    // The asymmetry is the actual source of confusion; a loud refusal teaches
+    // it. String-scalar properties (label/aliases) are unaffected — they go
+    // through `serializeYamlScalar`, which quotes them before this check.
+    if (isUnquotedWikilink(valueToWrite)) {
+      return {
+        success: false,
+        error:
+          `property_set: value ${valueToWrite} is an UNQUOTED wikilink — YAML reads it as a flow ` +
+          `sequence, so the graph would receive a literal instead of a link (silent data loss). ` +
+          `Pass the QUOTED form for a substituted reference (the quotes are part of the string, ` +
+          `e.g. --input '{"<key>":"\\"[[<uid>]]\\""}'), or use targetValueRef, which takes a BARE ` +
+          `uid and wraps it itself.`,
+      };
+    }
 
     // req faf269bf Scenarios 1+3 — resolve WHICH asset this step writes into.
     // Absent `targetQuery` (every existing grounding) keeps `filePath` exactly
