@@ -207,6 +207,26 @@ describe("ems__Bug 34b0a52c: set-property decides scalar quoting per property", 
     expect(typeof out.parsed.exo__DisplayNamePart_order).toBe("number");
   });
 
+  // ── the --input JSON *string* path DOES change, and that is intended ──
+  //
+  // A JSON string is a string, so it shares the serializer with `--value` and
+  // takes the same per-property branch. This is the third revert axis: unlike
+  // the two assertions above (a free-text value is not ambiguous, a JSON number
+  // is not a string — neither consults the flag in either state), this one is
+  // flag-sensitive and reds when the constant `true` is restored.
+  it("applies the same per-property rule to an --input JSON STRING value @req:21ceea14-50dd-4cf8-bd3b-5a50b7c97105", async () => {
+    const out = await setProp(episodePath, [
+      "--input",
+      '{"property":"exo__DisplayNamePart_order","value":"007"}',
+    ]);
+
+    expect(out.exit).not.toContain(1);
+    expect(out.content).toContain("exo__DisplayNamePart_order: 007");
+    expect(out.content).not.toContain('exo__DisplayNamePart_order: "007"');
+    expect(typeof out.parsed.exo__DisplayNamePart_order).toBe("number");
+    expect(out.parsed.exo__DisplayNamePart_order).toBe(7);
+  });
+
   // ── the user-facing point: create and set-property agree ──
 
   it("emits the same YAML form as `create` for the same property and value @req:21ceea14-50dd-4cf8-bd3b-5a50b7c97105", async () => {

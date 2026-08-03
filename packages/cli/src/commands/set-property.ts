@@ -144,12 +144,17 @@ function resolvePropertyAndValue(options: SetPropertyOptions): {
  * ⛤ The lookup uses the CANONICAL yaml key (#3944), not the raw `--property`
  * value: `exo__Asset_aliases` is stored under the bare `aliases:` key, and
  * `aliases` is the member of `STRING_SCALAR_PROPERTIES` — keying on the raw name
- * would drop the quoting guarantee for that spelling. `exo__Asset_label` is not
- * in `UNPREFIXED_ASSET_FIELDS`, so its canonical key is itself and it matches
- * directly.
+ * would drop the quoting guarantee for that spelling. `exo__Asset_label` is the
+ * other member of the set, but it is guarded to `apply set-label` and never
+ * reaches this function — `aliases` is the only reachable member here.
  *
- * The `--input` JSON path is unaffected: a JSON number/boolean is not a string,
- * so `serializeYamlScalar` emits it bare regardless of this flag.
+ * The `--input` JSON path is unaffected for a NUMBER or BOOLEAN value: it is not
+ * a string, so `serializeYamlScalar` emits it bare regardless of this flag. A
+ * JSON STRING shares this serializer with `--value` and therefore behaves
+ * identically to it — by design, since the rule is per-property, not
+ * per-input-form. A caller that needs a scalar-shaped value to survive as a
+ * string on a non-string-semantic property pre-wraps it (`"value": "\"007\""`);
+ * `serializeYamlScalar` passes an already-double-quoted scalar through verbatim.
  */
 function serializeForWrite(value: unknown, yamlKey: string): unknown {
   const quoteAmbiguous = STRING_SCALAR_PROPERTIES.has(yamlKey);
