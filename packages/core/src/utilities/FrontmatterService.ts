@@ -205,8 +205,9 @@ export class FrontmatterService {
 
     // Property already exists - replace value (including multi-line array items)
     if (this.hasProperty(updatedFrontmatter, property)) {
+      // `^` + `m`: match the key only at LINE START — see `hasProperty`.
       const propertyRegex = new RegExp(
-        `${this.escapeRegex(property)}:.*(?:\n {2}- .*)*`,
+        `^${this.escapeRegex(property)}:.*(?:\n {2}- .*)*`,
         "m",
       );
       // Function-replacer (not a string) so `$`-patterns in the value
@@ -278,9 +279,13 @@ export class FrontmatterService {
     }
 
     // Remove property line and any following array items (lines starting with "  - ")
+    // `(?:\n|^)` rather than a bare `^`: the key must start a line (see
+    // `hasProperty`), AND the preceding newline is consumed with it so removal
+    // leaves no blank line — which the previous unanchored `\n?` prefix did by
+    // accident while also matching mid-line.
     const propertyLineRegex = new RegExp(
-      `\n?${this.escapeRegex(property)}:.*(?:\n {2}- .*)*`,
-      "gm",
+      `(?:\n|^)${this.escapeRegex(property)}:.*(?:\n {2}- .*)*`,
+      "g",
     );
     const updatedFrontmatter = parsed.content.replace(propertyLineRegex, "");
 
@@ -307,7 +312,15 @@ export class FrontmatterService {
    * ```
    */
   hasProperty(frontmatterContent: string, property: string): boolean {
-    return frontmatterContent.includes(`${property}:`);
+    // ⛤ Anchored to LINE START. An unanchored `includes(\`${property}:\`)`
+    // reports a hit on any key that merely ENDS with the searched name —
+    // `namespace_aliases:` answers a search for `aliases:` — and the callers act
+    // on that hit by rewriting or deleting the neighbour's line. Canonicalising
+    // (req 869561bf) makes the searched key SHORTER, which turned that latent
+    // collision into a likely one; anchoring closes it for both spellings.
+    return new RegExp(`^${this.escapeRegex(property)}:`, "m").test(
+      frontmatterContent,
+    );
   }
 
   /** Namespace IRI → Obsidian property name prefix map */
@@ -417,8 +430,10 @@ export class FrontmatterService {
     frontmatterContent: string,
     property: string,
   ): string | null {
+    // Anchored for the same reason as the write paths: an unanchored match
+    // would return the NEIGHBOUR's value for any key ending in this name.
     const propertyRegex = new RegExp(
-      `${this.escapeRegex(property)}:\\s*(.*)$`,
+      `^${this.escapeRegex(property)}:\\s*(.*)$`,
       "m",
     );
     const match = frontmatterContent.match(propertyRegex);

@@ -1867,7 +1867,17 @@ export class GroundingExecutor {
       const finalLabel =
         label !== undefined && label.trim().length > 0 ? label : "Untitled";
       properties.exo__Asset_label = finalLabel;
-      if (finalLabel !== "Untitled" && properties.aliases === undefined) {
+      // ⛤ Test the CANONICAL spelling, not just the bare one. `createFrontmatter`
+      // collapses `exo__Asset_aliases` onto `aliases` (req 869561bf), but that
+      // happens LATER — so a template / propertyDefault / inheritance-rule
+      // supplying the prefixed key would leave `properties.aliases` undefined
+      // here, this guard would add the label-derived aliases anyway, and the
+      // collapse would then keep whichever landed last. On origin/main both keys
+      // survived (ugly, half-dead); silently dropping one would be worse.
+      const aliasesAlreadySet = Object.keys(properties).some(
+        (k) => canonicalYamlKey(k) === "aliases",
+      );
+      if (finalLabel !== "Untitled" && !aliasesAlreadySet) {
         properties.aliases = [finalLabel];
       }
       // Only the genuine degraded fallthrough ("Untitled") is an
