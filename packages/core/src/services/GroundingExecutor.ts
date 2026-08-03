@@ -21,6 +21,7 @@ import {
   serializeYamlScalar,
   STRING_SCALAR_PROPERTIES,
 } from "../utilities/yamlScalar";
+import { canonicalYamlKey } from "./NoteToRDFConverter";
 import type { NamedQueryRunnerPort } from "./NamedQueryRunner";
 import { iriToVaultPath } from "../infrastructure/vault/iri";
 import { DateFormatter } from "../utilities/DateFormatter";
@@ -646,12 +647,30 @@ export class GroundingExecutor {
     // Non-string-scalar properties (timestamps, refs) are untouched. The
     // property name is normalized to prefixed form first so a full-IRI-shaped
     // `targetProperty` still matches the string-scalar set (#3779 review LOW).
+    // ⛤ Both the string-scalar lookup AND the physical write key must use the
+    // CANONICAL key (req 869561bf): `STRING_SCALAR_PROPERTIES` holds `aliases`,
+    // not `exo__Asset_aliases`, and Obsidian reads aliases only from `aliases:`.
+    // Before this, the lookup ran on the merely-normalized name (missing the
+    // string semantics for the prefixed spelling) and `updateProperty` received
+    // the RAW `grounding.targetProperty` (writing a literal, dead key).
     const normalizedTargetProperty = FrontmatterService.normalizeIRI(
       grounding.targetProperty,
     );
-    const valueToWrite = STRING_SCALAR_PROPERTIES.has(normalizedTargetProperty)
+    const canonicalTargetProperty = canonicalYamlKey(normalizedTargetProperty);
+    const valueToWrite = STRING_SCALAR_PROPERTIES.has(canonicalTargetProperty)
       ? serializeYamlScalar(substitutedValue, true)
       : substitutedValue;
+
+    // ⛤ The WRITE KEY is not decided here. `FrontmatterService.updateProperty`
+    // canonicalises on entry, so every writer that reaches the primitive — this
+    // step, its `property_delete` / `property_append` / `property_increment` /
+    // `property_shift` siblings, the `service_call` twins in
+    // `packages/services`, and the plugin — gets the same key without each
+    // call site repeating the rule. Deciding it per-call-site is exactly the
+    // shape of defect this requirement removes. The canonical name is still
+    // needed HERE, but only for the `STRING_SCALAR_PROPERTIES` lookup above:
+    // `updateProperty` serialises without `quoteScalars`, so the string
+    // semantics for `aliases` have to be applied by the caller.
 
     // req faf269bf Scenarios 1+3 — resolve WHICH asset this step writes into.
     // Absent `targetQuery` (every existing grounding) keeps `filePath` exactly
@@ -1848,7 +1867,17 @@ export class GroundingExecutor {
       const finalLabel =
         label !== undefined && label.trim().length > 0 ? label : "Untitled";
       properties.exo__Asset_label = finalLabel;
-      if (finalLabel !== "Untitled" && properties.aliases === undefined) {
+      // ⛤ Test the CANONICAL spelling, not just the bare one. `createFrontmatter`
+      // collapses `exo__Asset_aliases` onto `aliases` (req 869561bf), but that
+      // happens LATER — so a template / propertyDefault / inheritance-rule
+      // supplying the prefixed key would leave `properties.aliases` undefined
+      // here, this guard would add the label-derived aliases anyway, and the
+      // collapse would then keep whichever landed last. On origin/main both keys
+      // survived (ugly, half-dead); silently dropping one would be worse.
+      const aliasesAlreadySet = Object.keys(properties).some(
+        (k) => canonicalYamlKey(k) === "aliases",
+      );
+      if (finalLabel !== "Untitled" && !aliasesAlreadySet) {
         properties.aliases = [finalLabel];
       }
       // Only the genuine degraded fallthrough ("Untitled") is an

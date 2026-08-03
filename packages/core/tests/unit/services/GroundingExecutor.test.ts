@@ -6,6 +6,7 @@ import {
   clearResolvers,
   installDefaultResolvers,
 } from "../../../src/services/SubstitutionResolverRegistry";
+import * as yaml from "js-yaml";
 import { GroundingType } from "../../../src/domain/constants/GroundingType";
 import { GroundingDefinition } from "../../../src/domain/models/CommandDefinition";
 
@@ -111,6 +112,86 @@ describe("GroundingExecutor", () => {
       expect(writer.updateFile).toHaveBeenCalledTimes(1);
       const writtenContent = writer.updateFile.mock.calls[0][1];
       expect(writtenContent).toContain("ems__status: Done");
+    });
+
+    // req 869561bf — the canonical-YAML-key rule now lives in core, so EVERY
+    // frontmatter writer consults it. Both halves of this executor were broken:
+    // it wrote the RAW `targetProperty` (a literal, dead `exo__Asset_aliases:`
+    // key that Obsidian ignores) and looked the string-scalar set up on the
+    // merely-normalized name (so the prefixed spelling lost its quoting).
+    it("writes exo__Asset_aliases under the canonical aliases key AND keeps string semantics @req:869561bf-ae02-4028-bc6a-b32cfabda1ed", async () => {
+      reader.readFile.mockResolvedValue("---\nfoo: bar\n---\nBody");
+
+      const grounding = makeGrounding({
+        type: GroundingType.PROPERTY_SET,
+        targetProperty: "exo__Asset_aliases",
+        targetValueLiteral: "2026-01-15",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(true);
+      const written = writer.updateFile.mock.calls[0][1];
+      // canonical key — the one Obsidian actually reads
+      expect(written).toContain('aliases: "2026-01-15"');
+      // and NOT the literal prefixed key
+      expect(written).not.toContain("exo__Asset_aliases:");
+
+      // ⛤ Assert the GUARANTEE (#3750 MEDIUM-3), not its current spelling: run
+      // the emitted frontmatter through a real YAML parser and check the TYPE.
+      // `2026-01-15` unquoted parses as a Date; quoted, it stays a string. A
+      // `toContain` on characters would keep passing if the quoting moved or
+      // the serializer changed shape — the parsed type cannot.
+      const fm = yaml.load(
+        /^---\n([\s\S]*?)\n---/.exec(written)![1],
+      ) as Record<string, unknown>;
+      expect(fm.aliases).toBe("2026-01-15");
+      expect(typeof fm.aliases).toBe("string");
+      expect(fm["exo__Asset_aliases"]).toBeUndefined();
+    });
+
+    // Write-side twin of the collision axis in `property_delete`: the same
+    // unanchored match let `updateProperty` OVERWRITE the neighbour's value
+    // (`namespace_aliases: "X"`, list destroyed) instead of adding its own key.
+    it("adds its own key without overwriting a neighbour that ENDS with the canonical name @req:869561bf-ae02-4028-bc6a-b32cfabda1ed", async () => {
+      reader.readFile.mockResolvedValue(
+        '---\nfoo: bar\nnamespace_aliases:\n  - "ims"\n---\nBody',
+      );
+
+      const grounding = makeGrounding({
+        type: GroundingType.PROPERTY_SET,
+        targetProperty: "exo__Asset_aliases",
+        targetValueLiteral: "Mine",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+      expect(result.success).toBe(true);
+
+      const written = writer.updateFile.mock.calls[0][1];
+      const fm = yaml.load(
+        /^---\n([\s\S]*?)\n---/.exec(written)![1],
+      ) as Record<string, unknown>;
+      expect(fm.namespace_aliases).toEqual(["ims"]); // untouched
+      expect(fm.aliases).toBe("Mine"); // own key added
+    });
+
+    // Negative control for the axis above: a PREFIXED property whose field is
+    // NOT in UNPREFIXED_ASSET_FIELDS must keep its key verbatim. Proves the
+    // canonicalisation did not start rewriting keys indiscriminately.
+    it("leaves a prefixed property outside the whitelist untouched @req:869561bf-ae02-4028-bc6a-b32cfabda1ed", async () => {
+      reader.readFile.mockResolvedValue("---\nfoo: bar\n---\nBody");
+
+      const grounding = makeGrounding({
+        type: GroundingType.PROPERTY_SET,
+        targetProperty: "exo__Asset_isDefinedBy",
+        targetValueLiteral: "[[some-anchor]]",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(true);
+      const written = writer.updateFile.mock.calls[0][1];
+      expect(written).toContain("exo__Asset_isDefinedBy:");
     });
 
     it("should substitute $now with ISO timestamp", async () => {
@@ -275,6 +356,97 @@ describe("GroundingExecutor", () => {
       const writtenContent = writer.updateFile.mock.calls[0][1];
       expect(writtenContent).not.toContain("ems__Effort_startTimestamp");
       expect(writtenContent).toContain("foo: bar");
+    });
+
+    /**
+     * req 869561bf — the SET/DELETE symmetry axis.
+     *
+     * ⛤ This is the axis that decided WHERE the rule had to live. Wiring
+     * canonicalisation into `property_set` alone would have made a grounding
+     * able to WRITE an alias via the prefixed spelling but never REMOVE it:
+     * `removeProperty` would look for a key that no longer exists, and return
+     * the content unchanged — a silent no-op. That asymmetry did not exist
+     * before (both halves were consistently broken), so a per-call-site fix
+     * would have introduced a NEW inconsistency while claiming to remove one.
+     * Canonicalising inside the FrontmatterService primitives keeps the two
+     * halves in step for PREFIXED spellings.
+     *
+     * ⚠ Scope, stated honestly: it does NOT put them in step for FULL-IRI
+     * input. `updateProperty` runs `normalizeIRI`, `removeProperty` does not —
+     * so an IRI-shaped `targetProperty` still sets but does not delete. That
+     * asymmetry predates this requirement (origin/main behaves identically) and
+     * is tracked on ems__Bug 43e41c8f rather than silently widened here:
+     * adding `normalizeIRI` to `removeProperty` would also turn today's silent
+     * no-op into a real delete for non-whitelisted IRI input.
+     */
+    it("removes the canonical aliases key when given the PREFIXED spelling @req:869561bf-ae02-4028-bc6a-b32cfabda1ed", async () => {
+      reader.readFile.mockResolvedValue(
+        '---\nfoo: bar\naliases:\n  - "Existing"\n---\nBody',
+      );
+
+      const grounding = makeGrounding({
+        type: GroundingType.PROPERTY_DELETE,
+        targetProperty: "exo__Asset_aliases",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(true);
+      const written = writer.updateFile.mock.calls[0][1];
+      expect(written).not.toContain("aliases:");
+      expect(written).not.toContain("Existing");
+      expect(written).toContain("foo: bar");
+    });
+
+    /**
+     * ⛔ The collision axis. Canonicalisation makes the searched key SHORTER
+     * (`exo__Asset_aliases` → `aliases`), and the primitives matched keys by
+     * UNANCHORED substring — so `aliases:` began answering for a neighbouring
+     * `namespace_aliases:`. Deleting then truncated that neighbour to a bare
+     * `namespace_`, which is not valid YAML at all: the whole frontmatter block
+     * stops parsing and the asset disappears from Obsidian AND the RDF graph.
+     *
+     * ⚠ Stated precisely: the collision is STRUCTURALLY reachable, not a
+     * demonstrated live corruption. An earlier draft of this docstring cited
+     * `218ed4dd-…` as proof; checking it showed `namespace_aliases` sits in that
+     * asset's BODY (inside a ```yaml fence), and these primitives only ever see
+     * `parse().content` — i.e. the frontmatter — so that occurrence is
+     * unreachable through them. What IS reachable: the searched name comes from
+     * vault data (`grounding.targetProperty`), CLI flags and user-edited
+     * property rows, so it is not a closed set, and canonicalisation shortened
+     * it to one of four ordinary English words. Both colliding SHAPES exist in
+     * shipped frontmatter — see `FrontmatterService.keyAnchoring.test.ts`, which
+     * covers the three anchors this axis cannot reach.
+     *
+     * No prior fixture had a colliding neighbour, which is exactly why eight
+     * otherwise-green revert-verify axes could not see this.
+     */
+    it("does NOT touch a neighbouring key that merely ENDS with the canonical name @req:869561bf-ae02-4028-bc6a-b32cfabda1ed", async () => {
+      reader.readFile.mockResolvedValue(
+        '---\nfoo: bar\nnamespace_aliases:\n  - "ims"\n  - "concept"\n---\nBody',
+      );
+
+      const grounding = makeGrounding({
+        type: GroundingType.PROPERTY_DELETE,
+        targetProperty: "exo__Asset_aliases",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+      expect(result.success).toBe(true);
+
+      // nothing to delete → the file must come back byte-identical
+      const written =
+        writer.updateFile.mock.calls.length > 0
+          ? (writer.updateFile.mock.calls[0][1] as string)
+          : '---\nfoo: bar\nnamespace_aliases:\n  - "ims"\n  - "concept"\n---\nBody';
+
+      // the neighbour survives WHOLE — key and both items
+      expect(written).toContain("namespace_aliases:");
+      expect(written).not.toContain("namespace_\n");
+      const fm = yaml.load(
+        /^---\n([\s\S]*?)\n---/.exec(written)![1],
+      ) as Record<string, unknown>;
+      expect(fm.namespace_aliases).toEqual(["ims", "concept"]);
     });
 
     it("should succeed when property does not exist (no-op)", async () => {

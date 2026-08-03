@@ -10,6 +10,7 @@
 
 import { loadDefaultSpec, orderProperties } from "../services/OrderSpecResolver";
 import { serializeYamlScalar, STRING_SCALAR_PROPERTIES } from "./yamlScalar";
+import { canonicalYamlKey } from "../services/NoteToRDFConverter";
 
 /**
  * Result of frontmatter parsing operation
@@ -187,7 +188,7 @@ export class FrontmatterService {
    * ```
    */
   updateProperty(content: string, property: string, value: unknown): string {
-    property = FrontmatterService.normalizeIRI(property);
+    property = canonicalYamlKey(FrontmatterService.normalizeIRI(property));
     if (typeof value === "string") {
       value = FrontmatterService.normalizeIRIValue(value);
     }
@@ -204,8 +205,9 @@ export class FrontmatterService {
 
     // Property already exists - replace value (including multi-line array items)
     if (this.hasProperty(updatedFrontmatter, property)) {
+      // `^` + `m`: match the key only at LINE START — see `hasProperty`.
       const propertyRegex = new RegExp(
-        `${this.escapeRegex(property)}:.*(?:\n {2}- .*)*`,
+        `^${this.escapeRegex(property)}:.*(?:\n {2}- .*)*`,
         "m",
       );
       // Function-replacer (not a string) so `$`-patterns in the value
@@ -268,6 +270,7 @@ export class FrontmatterService {
    * ```
    */
   removeProperty(content: string, property: string): string {
+    property = canonicalYamlKey(property);
     const parsed = this.parse(content);
 
     // No frontmatter or property doesn't exist - return unchanged
@@ -276,9 +279,17 @@ export class FrontmatterService {
     }
 
     // Remove property line and any following array items (lines starting with "  - ")
+    // `(?:\n|^)` rather than a bare `^`: the key must start a line (see
+    // `hasProperty`), AND the preceding newline is consumed with it, so removing
+    // a middle or last key leaves no blank line.
+    // ⚠ Not an invariant for the FIRST key — there is no preceding newline, `^`
+    // matches empty, and the trailing one survives as a blank line. That is
+    // byte-identical to the previous `\n?` behaviour (verified across
+    // first/middle/last/only × ±array items), so this anchoring changes WHERE a
+    // match may start, not what the removal leaves behind.
     const propertyLineRegex = new RegExp(
-      `\n?${this.escapeRegex(property)}:.*(?:\n {2}- .*)*`,
-      "gm",
+      `(?:\n|^)${this.escapeRegex(property)}:.*(?:\n {2}- .*)*`,
+      "g",
     );
     const updatedFrontmatter = parsed.content.replace(propertyLineRegex, "");
 
@@ -305,7 +316,15 @@ export class FrontmatterService {
    * ```
    */
   hasProperty(frontmatterContent: string, property: string): boolean {
-    return frontmatterContent.includes(`${property}:`);
+    // ⛤ Anchored to LINE START. An unanchored `includes(\`${property}:\`)`
+    // reports a hit on any key that merely ENDS with the searched name —
+    // `namespace_aliases:` answers a search for `aliases:` — and the callers act
+    // on that hit by rewriting or deleting the neighbour's line. Canonicalising
+    // (req 869561bf) makes the searched key SHORTER, which turned that latent
+    // collision into a likely one; anchoring closes it for both spellings.
+    return new RegExp(`^${this.escapeRegex(property)}:`, "m").test(
+      frontmatterContent,
+    );
   }
 
   /** Namespace IRI → Obsidian property name prefix map */
@@ -371,7 +390,17 @@ export class FrontmatterService {
    * ```
    */
   createFrontmatter(content: string, properties: Record<string, unknown>): string {
-    const ordered = orderProperties(properties, loadDefaultSpec());
+    // req 869561bf — canonicalise BEFORE ordering, so the order spec and the
+    // `STRING_SCALAR_PROPERTIES` lookup inside `serializeValue` both see the key
+    // the file will actually carry. Doing it per-entry during the map instead
+    // would let `exo__Asset_aliases` and `aliases` both survive into the output
+    // as duplicate YAML keys; collapsing them here makes last-write-wins
+    // explicit and keeps the emitted document parseable.
+    const canonical: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(properties)) {
+      canonical[canonicalYamlKey(key)] = value;
+    }
+    const ordered = orderProperties(canonical, loadDefaultSpec());
     // Issue #3748: quote scalars on new-asset writes so a label / alias
     // containing `: ` (or another YAML indicator) stays valid YAML.
     const frontmatterLines = Object.entries(ordered).map(
@@ -405,8 +434,10 @@ export class FrontmatterService {
     frontmatterContent: string,
     property: string,
   ): string | null {
+    // Anchored for the same reason as the write paths: an unanchored match
+    // would return the NEIGHBOUR's value for any key ending in this name.
     const propertyRegex = new RegExp(
-      `${this.escapeRegex(property)}:\\s*(.*)$`,
+      `^${this.escapeRegex(property)}:\\s*(.*)$`,
       "m",
     );
     const match = frontmatterContent.match(propertyRegex);

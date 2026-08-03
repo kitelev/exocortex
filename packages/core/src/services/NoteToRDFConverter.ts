@@ -59,6 +59,36 @@ export const UNPREFIXED_ASSET_FIELDS: ReadonlySet<string> = new Set([
   "aliases",
 ]);
 
+/** `exo__Asset_<field>` shape; group 1 = the bare field name. */
+const ASSET_PREFIXED_SHAPE = /^exo__Asset_(.+)$/;
+
+/**
+ * Map an RDF property name to the canonical Obsidian YAML frontmatter KEY it is
+ * stored under (issue #3944). Most properties use their own name, but the
+ * {@link UNPREFIXED_ASSET_FIELDS} whitelist is stored under the BARE key
+ * `<field>:` — the same key this converter reads back as `exo:Asset_<field>`.
+ * Without this mapping a write of `exo__Asset_aliases` lands on a literal
+ * `exo__Asset_aliases:` key that Obsidian ignores (it recognises aliases only
+ * via `aliases:`) and that the converter never links to `exo:Asset_aliases`.
+ *
+ * ⛤ Lives HERE, next to the whitelist it consults, because **every** writer of
+ * frontmatter must reach it — not only the CLI verbs. It previously sat in
+ * `packages/cli/src/commands/propertyMutationShared.ts`, which made it
+ * unreachable from the core-side writers (`GroundingExecutor`,
+ * `GenericAssetCreationService`); they consequently wrote raw keys and diverged
+ * from `set-property` / `remove-property`. The divergence was not carelessness
+ * but *unreachability* — hence the move rather than a patch of the call sites.
+ *
+ * Property NAME guards and TBox validation still run on the RDF/prefixed form;
+ * only the physical YAML key is canonicalised here. A bare `aliases` (already
+ * canonical) passes through unchanged.
+ */
+export function canonicalYamlKey(property: string): string {
+  const m = ASSET_PREFIXED_SHAPE.exec(property);
+  if (m && UNPREFIXED_ASSET_FIELDS.has(m[1])) return m[1];
+  return property;
+}
+
 /**
  * Normalise a user-supplied list of folder-exclusion prefixes:
  *   - Treat `undefined` / non-array as empty.
