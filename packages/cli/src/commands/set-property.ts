@@ -10,6 +10,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import {
   FrontmatterService,
   serializeYamlScalar,
+  STRING_SCALAR_PROPERTIES,
 } from "@kitelev/exocortex-core";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { WikilinkValidator } from "../services/WikilinkValidator.js";
@@ -127,16 +128,40 @@ function resolvePropertyAndValue(options: SetPropertyOptions): {
 /**
  * Pre-format a value for `FrontmatterService.updateProperty` (which writes
  * verbatim — callers pre-format, mirroring `GroundingExecutor.executePropertySet`
- * and the create path). `serializeYamlScalar(v, true)` keeps booleans/numbers
- * bare, keeps ISO datetimes bare (native date type), quotes wikilinks (`[[uid]]`
- * → `"[[uid]]"`) and any YAML-unsafe / ambiguous scalar string so a JSON string
- * round-trips as a string.
+ * and the create path). `serializeYamlScalar` keeps booleans/numbers bare, keeps
+ * ISO datetimes bare (native date type), and quotes wikilinks (`[[uid]]` →
+ * `"[[uid]]"`) plus any YAML-unsafe value.
+ *
+ * The second argument (`quoteAmbiguousScalars`) is decided PER PROPERTY, exactly
+ * as the create path does it (`MetadataHelpers` → `STRING_SCALAR_PROPERTIES.has(key)`).
+ * Passing a constant `true` — as this function used to — applied the
+ * string-semantic rule to EVERY property, so a scalar-shaped `--value` string
+ * (`2026-08-09`, `3`, `true`) was quoted and parsed back as a STRING on
+ * properties that should keep their native YAML type. The same property written
+ * by `create` stayed bare, so one property carried two types across the vault
+ * depending on which command touched it last (ems__Bug 34b0a52c).
+ *
+ * ⛤ The lookup uses the CANONICAL yaml key (#3944), not the raw `--property`
+ * value: `exo__Asset_aliases` is stored under the bare `aliases:` key, and
+ * `aliases` is the member of `STRING_SCALAR_PROPERTIES` — keying on the raw name
+ * would drop the quoting guarantee for that spelling. `exo__Asset_label` is the
+ * other member of the set, but it is guarded to `apply set-label` and never
+ * reaches this function — `aliases` is the only reachable member here.
+ *
+ * The `--input` JSON path is unaffected for a NUMBER or BOOLEAN value: it is not
+ * a string, so `serializeYamlScalar` emits it bare regardless of this flag. A
+ * JSON STRING shares this serializer with `--value` and therefore behaves
+ * identically to it — by design, since the rule is per-property, not
+ * per-input-form. A caller that needs a scalar-shaped value to survive as a
+ * string on a non-string-semantic property pre-wraps it (`"value": "\"007\""`);
+ * `serializeYamlScalar` passes an already-double-quoted scalar through verbatim.
  */
-function serializeForWrite(value: unknown): unknown {
+function serializeForWrite(value: unknown, yamlKey: string): unknown {
+  const quoteAmbiguous = STRING_SCALAR_PROPERTIES.has(yamlKey);
   if (Array.isArray(value)) {
-    return value.map((v) => serializeYamlScalar(v, true));
+    return value.map((v) => serializeYamlScalar(v, quoteAmbiguous));
   }
-  return serializeYamlScalar(value, true);
+  return serializeYamlScalar(value, quoteAmbiguous);
 }
 
 /**
@@ -290,10 +315,11 @@ export function setPropertyCommand(): Command {
         // Write under the CANONICAL YAML key (issue #3944): `exo__Asset_aliases`
         // maps to the bare `aliases:` key so we update it in place rather than
         // adding a duplicate literal `exo__Asset_aliases:` alongside it.
+        const yamlKey = canonicalYamlKey(property);
         let updated = fm.updateProperty(
           original,
-          canonicalYamlKey(property),
-          serializeForWrite(value),
+          yamlKey,
+          serializeForWrite(value, yamlKey),
         );
         updated = fm.updateProperty(updated, UPDATED_AT_KEY, updatedAt);
 
