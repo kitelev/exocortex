@@ -292,9 +292,20 @@ const MAX_COMPOSITE_DEPTH = 20;
  * quoted form (`"[[uid]]"`, quotes part of the value) is the correct shape and
  * is deliberately NOT matched here.
  *
- * Deliberately narrow: it matches only a value that is ENTIRELY a wikilink
- * (after trimming). A prose value that merely CONTAINS a wikilink is left alone
- * — it is a string either way, so it carries no silent-literal risk.
+ * Scope: the value must be ENTIRELY bracketed (after trimming) — so `[[a]]`, but
+ * also `[[a]] and [[b]]` / `[[a]]\n[[b]]`, which are just as flow-sequence-shaped
+ * and just as lossy; refusing them is intended. A wikilink embedded in
+ * surrounding prose (`see [[a]] for details`) is a string either way, carries no
+ * silent-literal risk, and passes.
+ *
+ * ⛤ Live `targetValueSubstitution` groundings DO carry a wikilink literally
+ * (`"[[8bc0c038-…]]"` → the `$nowLocal` token; 5 occurrences in the pinned
+ * exocmd assetspace). They never reach this guard in that shape because
+ * `CommandResolver` dereferences the wikilink to the target's label first, so
+ * the executor sees `$nowLocal`. That safety is a property of the RESOLVER, not
+ * of the data: were that dereference to stop, those groundings would start
+ * failing here — loudly, which is the correct failure, but the coupling is worth
+ * knowing.
  */
 function isUnquotedWikilink(value: string): boolean {
   // `[\s\S]` rather than `.` + the `s` flag: the root tsconfig targets ES6 and
