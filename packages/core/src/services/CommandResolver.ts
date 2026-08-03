@@ -1786,6 +1786,15 @@ export class CommandResolver {
       subject,
       Namespace.EXOCMD.term("Grounding_targetValueQuery"),
     );
+    // req faf269bf — `targetQuery` TARGET-source: wikilink ref to a
+    // `query__NamedQuery` whose first projection identifies the asset the step
+    // writes INTO (vs `targetValueQuery` above, which computes the VALUE).
+    // Same `getObsidianName` unwrap to the bare UID the executor hands to the
+    // NamedQueryRunner.
+    const targetQuery = await this.getObsidianName(
+      subject,
+      Namespace.EXOCMD.term("Grounding_targetQuery"),
+    );
     // RFC 918a2b65 Phase 1 typed predicates for service_call + property_append.
     // Plain string literals (JSON config / substitution expression); resolution
     // is identical to `targetValueLiteral`. Phase 4 (#3242) removed the legacy
@@ -2036,6 +2045,7 @@ export class CommandResolver {
       targetValueLiteral: targetValueLiteral ?? undefined,
       targetValueSubstitution: targetValueSubstitution ?? undefined,
       targetValueQuery: targetValueQuery ?? undefined,
+      targetQuery: targetQuery ?? undefined,
       serviceCallPayload: serviceCallPayload ?? undefined,
       appendExpression: appendExpression ?? undefined,
       sparqlUpdate: sparqlUpdate ?? undefined,

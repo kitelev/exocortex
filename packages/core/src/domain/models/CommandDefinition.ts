@@ -181,6 +181,28 @@ export interface GroundingDefinition {
    *  `exocmd__Grounding_targetValueQuery` (wikilink → bare UID). Generic /
    *  reusable; C5 (ontological archive) is the first consumer. */
   readonly targetValueQuery?: string;
+  /**
+   * req faf269bf — TARGET-side NamedQuery: UUID of a `query__NamedQuery` asset
+   * whose first projection identifies the asset this `property_set` step writes
+   * INTO. Orthogonal to `targetValueQuery` (which computes the VALUE): this one
+   * answers "which asset", not "which value", so the two compose freely.
+   *
+   * The query runs read-only with `$currentAsset` auto-injected = the
+   * click-target IRI, so a reified link can be found FROM one of its ends —
+   * the gap this closes. A reified statement is neither the click-target nor an
+   * asset a previous step created, so before this field it was unaddressable.
+   *
+   * Absent (every existing grounding) → the step targets the click-target, or
+   * the created instance when `targetsCreatedInstance` is set: byte-identical
+   * prior behaviour. Mutually exclusive with `targetsCreatedInstance` — two
+   * incompatible addressings must never be silently arbitrated. A query that
+   * matches nothing is fail-loud: the click-target is NEVER a fallback, since
+   * writing to it would put the value on the wrong asset.
+   *
+   * Authored as the `exocmd__Grounding_targetQuery` RDF triple (wikilink → bare
+   * UID, resolved by `CommandResolver.loadGroundingDefinition`).
+   */
+  readonly targetQuery?: string;
   /** RFC 918a2b65 Phase 1: Opaque JSON config payload for `service_call`
    *  groundings. Resolved through `substituteVariables` before `JSON.parse`;
    *  merged into `userInput` defaults at `GroundingExecutor.executeServiceCall`.

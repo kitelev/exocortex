@@ -70,6 +70,21 @@ export interface NamedQueryContext {
 export interface NamedQueryScalar {
   readonly value: string;
   readonly kind: "iri" | "literal";
+  /**
+   * req faf269bf — the RAW IRI term, verbatim, present only when
+   * `kind === "iri"`. Purely additive: `value` and `kind` are unchanged, so the
+   * `targetValueQuery` value-source (the only other consumer) is untouched.
+   *
+   * Why it is needed: `value` comes from {@link iriToObsidianName}, which
+   * collapses a vault file IRI to its BASENAME — the folder is discarded. That
+   * is exactly right for building a `"[[<name>]]"` wikilink, but insufficient to
+   * ADDRESS the asset (a target needs a vault-relative path). Keeping the raw
+   * IRI lets `targetQuery` recover that path via `iriToVaultPath` — the exact
+   * inverse of the `vaultPathToIRI` the converter used to mint this subject —
+   * so addressing works for ANY asset, including the two label-named classes
+   * (`pn__DailyNote`, `period__Week`) whose basename is NOT their UID.
+   */
+  readonly iri?: string;
 }
 
 /**
@@ -156,7 +171,9 @@ export class NamedQueryRunner implements NamedQueryRunnerPort {
 
     if (term instanceof IRI) {
       const name = iriToObsidianName(term.value) ?? term.value;
-      return { value: name, kind: "iri" };
+      // `iri` is additive (req faf269bf) — `value`/`kind` keep their exact
+      // prior semantics for the `targetValueQuery` value-source.
+      return { value: name, kind: "iri", iri: term.value };
     }
     if (term instanceof Literal) {
       return { value: term.value, kind: "literal" };
