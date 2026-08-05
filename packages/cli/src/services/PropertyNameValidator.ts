@@ -125,6 +125,27 @@ export class PropertyNameValidator {
   }
 
   /**
+   * NON-BLOCKING counterpart of {@link validate}: is this KEY `prefix__Name`-shaped
+   * yet ABSENT from the mounted TBox?
+   *
+   * The DELETE side (`remove-property`) deliberately ACCEPTS an undeclared
+   * property — a property outside the TBox has no consumers and is not
+   * SHACL-validated, i.e. it is garbage by construction and precisely the class
+   * that command exists to remove (req 59220c17). But a typo there is then
+   * indistinguishable from a legitimate idempotent no-op, so the caller uses
+   * this to emit a HINT (never a refusal) when nothing was removed.
+   *
+   * Same rules as {@link validate}, minus the throw: a bare YAML key
+   * (aliases/tags/title) is not judged, and an empty mounted set fails OPEN.
+   */
+  async isUnknownName(key: string): Promise<boolean> {
+    const { names } = await this.collect();
+    if (names.size === 0) return false; // fail-open (must-have #7)
+    if (!PropertyNameValidator.KEY_SHAPE.test(key)) return false;
+    return !names.has(key);
+  }
+
+  /**
    * Collect the known property-name set from the mounted vault (cached).
    *
    * subClass-closure (#3955): a property-def's `exo__Instance_class` may point
