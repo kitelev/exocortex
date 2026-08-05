@@ -86,8 +86,11 @@ function resolveProperty(options: RemovePropertyOptions): string {
  * "I had to raw-Edit / Bash-strip a frontmatter line" dogfooding gap (issue
  * #3926) — a Bash strip bypasses the PreToolUse hook-coverage + SHACL floor.
  *
- * It shares `set-property`'s guard denylists, canonical-YAML-key mapping (#3944)
- * and mounted-TBox property-name validation (RFC 430e84f1): a state-machine /
+ * It shares `set-property`'s guard denylists and canonical-YAML-key mapping
+ * (#3944), but NOT its mounted-TBox property-name validation (RFC 430e84f1) —
+ * that guard is deliberately ASYMMETRIC: the delete side ACCEPTS an undeclared
+ * property (req 59220c17; rationale at the call site) and surfaces an unknown
+ * name as a non-blocking hint instead. A state-machine /
  * precondition-guarded property (status/zone/parent/label/reclass/fact-timestamps/
  * plan-dates/votes/archive) is REFUSED (naming its dedicated `apply` command) so
  * the guard is not bypassed; the immutable identity properties (exo__Asset_uid,
@@ -183,13 +186,19 @@ export function removePropertyCommand(): Command {
           );
         }
 
-        // Validate the property NAME against the mounted TBox (RFC 430e84f1 —
-        // parity with set-property / create). A NON-guarded `prefix__Name` key
-        // that does not exist in the mounted TBox is rejected fail-loud with a
-        // fuzzy suggestion; a bare YAML key (aliases/tags) is skipped; fail-open
-        // when NO property defs are mounted (degenerate/partial profile).
-        const propertyNameValidator = new PropertyNameValidator(vaultPath);
-        await propertyNameValidator.validate([property]);
+        // ⛤ The property NAME is deliberately NOT validated against the mounted
+        // TBox here (req 59220c17) — the guard that `set-property` / `create`
+        // apply (reqs c616a289 / 40a9a81b) is INVERTED on the delete side. It
+        // exists against WRITE typos: a mistyped key would land a DEAD property
+        // nothing reads. On DELETE the same input is the opposite case — a
+        // property absent from the TBox has no consumers and is not
+        // SHACL-validated, i.e. it is garbage by construction and precisely what
+        // this command exists to remove; refusing it pushed the operation OUT of
+        // the product (a raw Bash strip that bypasses the PreToolUse hooks +
+        // SHACL floor), which is the very gap issue #3926 closed. A delete-side
+        // typo is bounded by construction: `removeProperty` on an absent key is
+        // an idempotent no-op and the output reports `removed: false` — so the
+        // unknown-name signal is emitted as a non-blocking HINT below instead.
 
         // Remove under the CANONICAL YAML key (issue #3944): removing
         // `exo__Asset_aliases` deletes the bare `aliases:` key, not a literal
@@ -213,6 +222,20 @@ export function removePropertyCommand(): Command {
           const timezone = options.timezone ?? DEFAULT_TIMEZONE;
           updatedAt = stampTimestamp(now, timezone);
           updated = fm.updateProperty(afterRemove, UPDATED_AT_KEY, updatedAt);
+        }
+
+        // Nothing was removed → distinguish a legitimate idempotent no-op from a
+        // TYPO by hinting when the name is also absent from the mounted TBox.
+        // LAZY on purpose: the mounted-set walk runs ONLY on this branch, so the
+        // success path no longer pays the vault scan the blocking guard took on
+        // EVERY invocation. Never fatal (rc stays 0) — see the note above.
+        if (!changed) {
+          const nameHinter = new PropertyNameValidator(vaultPath);
+          if (await nameHinter.isUnknownName(property)) {
+            process.stderr.write(
+              `⚠️  Nothing was removed, and "${property}" is not a property in the mounted TBox — check the spelling (an undeclared property is removable, so this is a hint, not a refusal).\n`,
+            );
+          }
         }
 
         if (options.dryRun) {
