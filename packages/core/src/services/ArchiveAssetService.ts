@@ -14,6 +14,20 @@ import { FrontmatterService } from "../utilities/FrontmatterService";
  * (StatusCommandExecutor): in-place frontmatter mutation, no physical
  * file move. Batch cross-vault archival remains the separate domain of
  * `ArchiveService` / `cli archive`.
+ *
+ * ⛔ TERMINAL AND IRREVERSIBLE — do not reuse for reversible archiving.
+ * The `aliases` removal above is DESTRUCTIVE: the values are dropped, not
+ * stashed anywhere, so nothing can restore them. There is deliberately no
+ * `unarchive` service in this codebase; the similarly-named
+ * "Un-archive Ontologically" command reverses a DIFFERENT operation
+ * ("Archive Ontologically" — isDefinedBy re-anchor + folder relocate) and
+ * is not this service's counterpart. Name adjacency in the command palette
+ * makes that easy to misread.
+ *
+ * For archiving that must be undoable (e.g. an `ems__Area` that can become
+ * active again once efforts appear under it), use a plain
+ * `property_set archived="true"` grounding instead — it leaves `aliases`
+ * untouched, so the round-trip diff is a single `updatedAt` line.
  */
 @injectable()
 export class ArchiveAssetService {
