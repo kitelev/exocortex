@@ -120,6 +120,10 @@ describe("collectSyncRepoSpecs", () => {
       // `o/live` stays materialized — it makes the mount walk actually run and
       // doubles as an inline control: exclusion must be selective, not blanket.
       adapter.mkdirAll("assetspaces/o/live");
+      // `o/adhoc` is mounted but NOT declared. It gives the FINDING-3 assertion
+      // below a POSITIVE expected value: an empty `mountedNotDeclared` would
+      // otherwise be indistinguishable from a dead `enumerateMountFolders`.
+      adapter.mkdirAll("assetspaces/o/adhoc");
       const app = makeApp({
         adapter,
         mdFiles: [{ path: "parked.md" }, { path: "live.md" }],
@@ -140,8 +144,10 @@ describe("collectSyncRepoSpecs", () => {
         spec({ repo: "live", repoKey: `o/live#${SYNC_BRANCH}`, localPath: "assetspaces/o/live" }),
       ]);
       // …and the parked copy is not mistaken for an ad-hoc mount either
-      // (FINDING-3 walks `assetspaces/` only).
-      expect(result.mountedNotDeclared).toEqual([]);
+      // (FINDING-3 walks `assetspaces/` only). The expected value is the REAL
+      // ad-hoc mount, not `[]`: that keeps the assertion discriminating — it
+      // reds both when the parked copy leaks in AND when the mount walk dies.
+      expect(result.mountedNotDeclared).toEqual(["assetspaces/o/adhoc"]);
       expect(result.warnings).toEqual([]);
     });
 
