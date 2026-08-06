@@ -12,6 +12,7 @@ import {
 } from "@kitelev/exocortex-core";
 
 import {
+  assertHardDependenciesSatisfied,
   detectUnmountedClosureMembers,
   formatClosureGapWarning,
 } from "../../domain/profile/closureGap";
@@ -2658,6 +2659,18 @@ export class ProfileApplyManager {
       declaredAsUids,
       namespaceByUid,
     );
+    // req 18ecf16f — REFUSE before any mutation when the effective set omits a
+    // HARD-edge closure member (a class / command-definition provider). Runs
+    // AFTER the floor reconcile so it judges the set apply will actually mount,
+    // and beside assertTsFloor so both pre-mutation invariants live at one gate.
+    // The closure is passed in (not recomputed) so the gate and the apply can
+    // never disagree; a closure member with no scanned descriptor is exactly the
+    // silent-drop path `declaredAsUids` filters out above, and counts as hard.
+    assertHardDependenciesSatisfied(
+      declaredOntologySet,
+      effectiveAsUids,
+      allInfos,
+    );
     return { declaredAsUids, declaredNamespaces, effectiveAsUids };
   }
 
@@ -2742,13 +2755,25 @@ export class ProfileApplyManager {
       // EKA Alpha D18 dependsOn DAG (issue #3511) — transitive-dep edges so a
       // leaf-only profile can be expanded to its closure.
       const dependsOn = parseDependsOnWikilinks(fm["exo__AssetSpace_dependsOn"]);
+      // req 18ecf16f — kept RAW; `resolveDependencyKind` interprets every form
+      // the value can arrive in and defaults absent/unrecognised to HARD.
+      const rawKind = fm["exo__AssetSpace_dependsOnKind"];
+      const dependsOnKind = typeof rawKind === "string" ? rawKind : undefined;
       // RFC 01a83de8 Phase 1b T3 — folder = derived mount path
       // (`assetspaces/<owner>/<repo>`), not the descriptor's parent folder
       // (post-migration the descriptor lives in the registry). parentFolderOf
       // is a defensive fallback for unresolvable sources.
       const folderName = derivePath(git) ?? parentFolderOf(file.path);
       seen.add(uid);
-      out.push({ uid, git, namespace, folderName, lastPulledSha, dependsOn });
+      out.push({
+        uid,
+        git,
+        namespace,
+        folderName,
+        lastPulledSha,
+        dependsOn,
+        dependsOnKind,
+      });
     }
     return out;
   }

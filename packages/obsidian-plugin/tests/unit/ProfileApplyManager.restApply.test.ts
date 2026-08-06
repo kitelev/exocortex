@@ -36,6 +36,7 @@ import {
   type ProfileResolution,
   type SwitchSettings,
 } from "../../src/infrastructure/adapters/ProfileApplyManager";
+import { OmittedHardDependencyError } from "../../src/domain/profile/closureGap";
 import { PluginLockManager } from "../../src/infrastructure/adapters/PluginLockManager";
 import {
   TS_FLOOR_AS_UID_EXO,
@@ -540,6 +541,111 @@ describe("ProfileApplyManager.applyProfileViaRest — central-registry (#3511)",
     );
     expect(restMount.mounted).toEqual([]);
     expect(restMount.unmounted).toEqual([]);
+  });
+});
+
+// ─── req 18ecf16f — the hard-dependency guard is WIRED into apply ────────────
+//
+// The unit tests for `assertHardDependenciesSatisfied` prove the guard refuses;
+// they say nothing about it being CALLED. Neutralising the call site in
+// `resolveDeclaredAndEffective` reddened zero tests before this block existed —
+// a guard nobody invokes is indistinguishable from a guard that does not exist.
+//
+// The reachable shape at this call site is the SILENT-DROP path: the closure is
+// computed from the registry's `dependsOn` edges, but only members that HAVE a
+// scanned descriptor survive into the effective set (`folderMapValues.has`).
+// A member whose descriptor is absent therefore vanished without a word — and
+// with no descriptor there is no kind to read, so it defaults to hard. That is
+// exactly the P5 shape: the profile resolves, apply proceeds, and assets are
+// left without a resolvable type (two `sh:class` violations).
+describe("ProfileApplyManager.applyProfileViaRest — hard-dependency guard (req 18ecf16f)", () => {
+  const AS_LEAF = "leaf-uid-0000-0000-0000-000000000000";
+  const AS_EXO_EKA = "e5c47526-e72f-42e3-8535-3d243dd2db94";
+  const AS_GHOST = "9999aaaa-0000-0000-0000-0000000000gg";
+  const MOUNT_EXO = "assetspaces/kitelev/exoas-exo";
+
+  /** @param leafDeps UIDs the leaf declares as `dependsOn`. */
+  function build(leafDeps: string[]) {
+    const files: FakeFile[] = [
+      {
+        path: "assetspaces/kitelev/exoas-profiles/profiles/p-leaf.md",
+        basename: "p-leaf",
+        frontmatter: {
+          exo__Asset_uid: "p-leaf",
+          exo__Asset_label: "$$leaf",
+          exo__Instance_class: ["[[exo__Profile]]"],
+        },
+      },
+      {
+        path: "assetspaces/kitelev/exoas-registry/registry/leaf.md",
+        basename: "leaf",
+        frontmatter: {
+          exo__Asset_uid: AS_LEAF,
+          exo__Asset_label: "kitelev/leaf",
+          exo__Instance_class: ["[[exo__AssetSpace]]"],
+          exo__AssetSpace_source: "https://github.com/kitelev/exoas-leaf",
+          exo__AssetSpace_namespace: "leaf",
+          exo__AssetSpace_dependsOn: leafDeps,
+        },
+      },
+      {
+        path: "assetspaces/kitelev/exoas-registry/registry/exo.md",
+        basename: "exo",
+        frontmatter: {
+          exo__Asset_uid: AS_EXO_EKA,
+          exo__Asset_label: "kitelev/exo",
+          exo__Instance_class: ["[[exo__AssetSpace]]"],
+          exo__AssetSpace_source: "https://github.com/kitelev/exoas-exo",
+          exo__AssetSpace_namespace: "exo",
+        },
+      },
+      // NOTE: no descriptor for AS_GHOST — that absence IS the scenario.
+    ];
+    const { app, fsFolders } = makeFakeApp(files);
+    fsFolders.set(MOUNT_EXO, { files: [`${MOUNT_EXO}/f.md`], folders: [] });
+    const restMount = new FakeRestMount();
+    const mgr = new ProfileApplyManager({
+      app,
+      lockMgr: new PluginLockManager({ app }),
+      resolver: new FakeResolver(
+        new Map<string, ProfileResolution>([
+          ["p-leaf", { uid: "p-leaf", includes: [AS_LEAF], label: "$$leaf" }],
+        ]),
+      ),
+      rdfIndexer: new FakeIndexer(),
+      settingsStore: new FakeSettingsStore(),
+      notify: () => {},
+      confirmGate: new FakeConfirmGate(),
+      localDataStore:
+        new FakeLocalDataStore() as unknown as ConstructorParameters<
+          typeof ProfileApplyManager
+        >[0]["localDataStore"],
+      restMount: restMount as unknown as ConstructorParameters<
+        typeof ProfileApplyManager
+      >[0]["restMount"],
+    });
+    return { mgr, restMount };
+  }
+
+  it("REFUSES before any mount/unmount when the closure loses a hard member @req:18ecf16f-a163-4b78-9bee-605db7e75f8e", async () => {
+    const { mgr, restMount } = build([
+      `[[${AS_EXO_EKA}|exoas-exo]]`,
+      `[[${AS_GHOST}|exoas-ghost]]`,
+    ]);
+
+    await expect(mgr.applyProfileViaRest("p-leaf")).rejects.toThrow(
+      OmittedHardDependencyError,
+    );
+    // Pre-mutation, like the TS-floor guard beside it.
+    expect(restMount.mounted).toEqual([]);
+    expect(restMount.unmounted).toEqual([]);
+  });
+
+  it("control: the SAME profile applies once nothing is omitted @req:18ecf16f-a163-4b78-9bee-605db7e75f8e", async () => {
+    // Non-vacuity: the refusal above is caused by the omitted member, not by
+    // the fixture. Drop the ghost edge and the identical apply succeeds.
+    const { mgr } = build([`[[${AS_EXO_EKA}|exoas-exo]]`]);
+    await expect(mgr.applyProfileViaRest("p-leaf")).resolves.toBeUndefined();
   });
 });
 

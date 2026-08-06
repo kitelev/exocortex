@@ -1,4 +1,8 @@
 import {
+  DEPENDENCY_KIND_REFERENCE_UID,
+  DEPENDENCY_KIND_TBOX_UID,
+} from "../../../../src/domain/profile/dependencyKind";
+import {
   assessUnmountRisk,
   countIncomingLinks,
   findDependentMountedAssetSpaces,
@@ -14,7 +18,7 @@ import type { AssetSpaceInfo } from "../../../../src/infrastructure/adapters/Ass
  * The catalogue below mirrors the REAL vault-my `dependsOn` graph measured by
  * the project's falsification gate (task 8b8466bb, 2026-08-02):
  *
- *   my → shared-private, shared-identities
+ *   my → shared-private, shared-identities, shared-kalashnikova
  *   shared-private → public
  *   shared-identities → public
  *   public → exo, exocmd
@@ -32,12 +36,14 @@ const UID = {
   exocmd: "10000000-0000-0000-0000-000000000005",
   exo: "10000000-0000-0000-0000-000000000006",
   detached: "10000000-0000-0000-0000-000000000007",
+  collab: "10000000-0000-0000-0000-000000000008",
 } as const;
 
 function info(
   uid: string,
   namespace: string,
   dependsOn?: string[],
+  dependsOnKind?: string,
 ): AssetSpaceInfo {
   return {
     uid,
@@ -45,17 +51,30 @@ function info(
     namespace,
     folderName: `assetspaces/kitelev/exoas-${namespace}`,
     ...(dependsOn === undefined ? {} : { dependsOn }),
+    ...(dependsOnKind === undefined ? {} : { dependsOnKind }),
   };
 }
 
+/**
+ * req 18ecf16f — the kinds below are the ones actually marked on the live
+ * registry 2026-08-06, by measured cross-boundary class-definition supply:
+ * public/exo/exocmd/shared-private/shared-identities are HARD (13478 / 3625 /
+ * 268 / 954 / 652 cross-boundary references respectively); a seed-empty
+ * collaborator space supplies none and is SOFT. `my` is nobody's dependency, so
+ * it carries no kind — and therefore defaults to HARD.
+ */
+const HARD = `[[${DEPENDENCY_KIND_TBOX_UID}]]`;
+const SOFT = `[[${DEPENDENCY_KIND_REFERENCE_UID}]]`;
+
 const CATALOGUE: AssetSpaceInfo[] = [
-  info(UID.my, "my", [UID.sharedPrivate, UID.sharedIdentities]),
-  info(UID.sharedPrivate, "shared-private", [UID.public]),
-  info(UID.sharedIdentities, "shared-identities", [UID.public]),
-  info(UID.public, "public", [UID.exo, UID.exocmd]),
-  info(UID.exocmd, "exocmd", [UID.exo]),
-  info(UID.exo, "exo"),
-  info(UID.detached, "detached"),
+  info(UID.my, "my", [UID.sharedPrivate, UID.sharedIdentities, UID.collab]),
+  info(UID.sharedPrivate, "shared-private", [UID.public], HARD),
+  info(UID.sharedIdentities, "shared-identities", [UID.public], HARD),
+  info(UID.public, "public", [UID.exo, UID.exocmd], HARD),
+  info(UID.exocmd, "exocmd", [UID.exo], HARD),
+  info(UID.exo, "exo", undefined, HARD),
+  info(UID.collab, "shared-kalashnikova", undefined, SOFT),
+  info(UID.detached, "detached", undefined, SOFT),
 ];
 
 const ALL_MOUNTED = Object.values(UID);
@@ -204,12 +223,42 @@ describe("assessUnmountRisk + formatUnmountRiskWarning", () => {
     ]);
     expect(risk.incomingLinks).toBe(2);
     expect(risk.linkingFiles).toBe(1);
-    expect(risk.providesTBox).toBe(false);
+    // req 18ecf16f — DELIBERATE flip from `false`. Under the removed namespace
+    // allow-list `{exo, exocmd}` this could only ever be false; the graph says
+    // `public` IS a provider (13478 cross-boundary class references, the largest
+    // supplier in the registry), and the graph is now authoritative.
+    expect(risk.providesTBox).toBe(true);
 
     const warning = formatUnmountRiskWarning(risk, "public");
     expect(warning).toContain("my, shared-identities, shared-private");
     expect(warning).toContain("are still mounted and declare a dependency");
     expect(warning).toContain("2 links from 1 file outside it");
+    expect(warning).toContain("class / command TBox");
+  });
+
+  it("omits the TBox note for a SOFT pack that is still at risk @req:18ecf16f-a163-4b78-9bee-605db7e75f8e", () => {
+    // The coverage the flip above moved off `public`: risk WITHOUT the TBox note.
+    // A seed-empty collaborator pack supplies no class definitions, so removing
+    // it costs reachability (dependents + dangling links) but never types — and
+    // the warning must not claim otherwise.
+    const links: ResolvedLinks = {
+      "assetspaces/kitelev/exoas-my/a.md": {
+        "assetspaces/kitelev/exoas-shared-kalashnikova/c.md": 2,
+      },
+    };
+    const risk = assessUnmountRisk(
+      target(UID.collab, "shared-kalashnikova"),
+      ALL_MOUNTED,
+      CATALOGUE,
+      links,
+    );
+
+    expect(risk.dependents).toEqual(["my"]);
+    expect(risk.incomingLinks).toBe(2);
+    expect(risk.providesTBox).toBe(false);
+
+    const warning = formatUnmountRiskWarning(risk, "shared-kalashnikova");
+    expect(warning).toContain("my is still mounted and declares a dependency");
     expect(warning).not.toContain("class / command TBox");
   });
 

@@ -1,6 +1,6 @@
 import { transitiveDependsOnClosure } from "@kitelev/exocortex-core";
 import type { AssetSpaceInfo } from "../../infrastructure/adapters/AssetSpaceManager";
-import { TBOX_PROVIDER_NAMESPACES } from "./closureGap";
+import { resolveDependencyKind } from "./dependencyKind";
 
 /**
  * req `d5bc68f6` — the blast radius of REMOVING a knowledge pack, assessed
@@ -52,9 +52,14 @@ export interface UnmountRisk {
   /** Distinct files outside the pack that contain those links. */
   linkingFiles: number;
   /**
-   * The pack supplies the class / command-binding-resolution TBox
-   * ({@link TBOX_PROVIDER_NAMESPACES}) — removing it breaks homoiconic commands
-   * and validation silently rather than loudly.
+   * The pack supplies the class / command-binding-resolution TBox — removing it
+   * breaks homoiconic commands and validation silently rather than loudly.
+   *
+   * req `18ecf16f` — resolved from the graph (`exo__AssetSpace_dependsOnKind` on
+   * the pack's own registry descriptor) via {@link resolveDependencyKind}, not
+   * from a hardcoded namespace list. A pack with no scanned descriptor, or with
+   * no kind recorded, counts as a provider — the safe direction for a
+   * DESTRUCTIVE operation.
    */
   providesTBox: boolean;
 }
@@ -155,6 +160,10 @@ export function assessUnmountRisk(
     target.submodulePath,
     resolvedLinks,
   );
+  // req 18ecf16f — the kind lives on the pack's own descriptor, so it is looked
+  // up in the catalogue this function already receives; `UnmountTarget` keeps
+  // its shape (the pick sites need not learn about the kind).
+  const kindRaw = allInfos.find((i) => i.uid === target.uid)?.dependsOnKind;
   return {
     dependents: findDependentMountedAssetSpaces(
       target.uid,
@@ -163,7 +172,7 @@ export function assessUnmountRisk(
     ),
     incomingLinks: links,
     linkingFiles: files,
-    providesTBox: TBOX_PROVIDER_NAMESPACES.has(target.namespace),
+    providesTBox: resolveDependencyKind(kindRaw) === "tbox",
   };
 }
 
