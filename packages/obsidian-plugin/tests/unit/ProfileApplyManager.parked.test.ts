@@ -186,6 +186,8 @@ class MountSpy {
    */
   constructor(
     private readonly fsFolders: Map<string, { files: string[]; folders: string[] }>,
+    /** Simulates a crash/failure INSIDE the move, for the journal-ordering axis. */
+    private readonly failPark = false,
   ) {}
   private move(from: string, to: string) {
     const entry = this.fsFolders.get(from);
@@ -205,6 +207,7 @@ class MountSpy {
     this.fsFolders.delete(submodulePath);
   }
   async park(submodulePath: string): Promise<void> {
+    if (this.failPark) throw new Error("simulated crash during park");
     this.parked.push(submodulePath);
     this.move(submodulePath, parkedPathFor(submodulePath));
   }
@@ -251,6 +254,8 @@ interface SetupOpts {
   activeProfileUid?: string;
   /** Declares of the second profile (`"other"`), for round-trip applies. */
   otherIncludes?: string[];
+  /** Makes `mount.park()` throw — drives the journal-ordering axis. */
+  failPark?: boolean;
 }
 
 function setup(opts: SetupOpts) {
@@ -321,7 +326,7 @@ function setup(opts: SetupOpts) {
   const indexer = new FakeIndexer();
   const localDataStore = new FakeLocalDataStore();
   const confirmGate = new FakeConfirmGate();
-  const mount = new MountSpy(fsFolders);
+  const mount = new MountSpy(fsFolders, opts.failPark ?? false);
   const notifyCalls: string[] = [];
   if (opts.activeProfileUid !== undefined) {
     void localDataStore.save({
@@ -489,6 +494,33 @@ describe("@req:d4ccc901-83a4-4495-a4bb-43d1305dfd00 ProfileApplyManager — park
     expect(phases).toContain("phase2-parked");
     expect(phases).not.toContain("phase2-destroy-cached");
     expect(phases).not.toContain("phase2-destroyed");
+  });
+
+  /**
+   * AXIS E2 — journal BEFORE the move, mirroring the git destroy path's F2
+   * ordering. The bytes are never at risk (a park is a rename; the classifier
+   * probes DISK via `isParkedOnDisk`, not the journal, so the next apply
+   * reconciles either way) — what the opposite ordering loses is ROLLBACK:
+   * `recoverIncompleteSwitch` restores the pre-apply mount-state from
+   * `interrupted.parked`, so an unjournalled park would leave that AssetSpace
+   * parked while its siblings are restored — the half-applied state recovery
+   * exists to prevent.
+   *
+   * The discriminator has to be a FAILING move: on the happy path both orderings
+   * produce the same journal, so only a crash-in-between separates them.
+   */
+  it("journals phase2-parked BEFORE moving, so an interrupted park is still rolled back", async () => {
+    const { mgr, journal } = setup({
+      targetIncludes: FLOOR_UIDS,
+      materialized: [...FLOOR_UIDS, SOFT.uid],
+      failPark: true,
+    });
+
+    await expect(mgr.applyProfileViaRest("target")).rejects.toThrow(/simulated crash/);
+
+    // Journal-after would leave NOTHING here — recovery would never learn the
+    // park was attempted, and `interrupted.parked` would come back empty.
+    expect((await journal()).map((e) => e.phase)).toContain("phase2-parked");
   });
 
   it("journals phase2-unparked on the way back", async () => {

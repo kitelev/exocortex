@@ -2066,13 +2066,25 @@ export class ProfileApplyManager {
           index: i + 1,
           total: toPark.length,
         });
-        await this.parkAssetSpace(target.submodulePath);
+        // Journal BEFORE the move, mirroring the git destroy path's F2 ordering
+        // (`phase2-destroy-cached` precedes `rm -rf`). A crash in the opposite
+        // ordering would not lose bytes — a park is a rename, the folder sits
+        // intact under `.exocortex/parked/`, and the classifier probes DISK
+        // (`isParkedOnDisk`), not the journal, so the next apply reconciles it.
+        // What it would lose is ROLLBACK: `recoverIncompleteSwitch` restores the
+        // pre-apply mount-state from `interrupted.parked`, so an unjournalled
+        // park leaves that one AssetSpace parked while its siblings are restored
+        // — a half-applied state, which is exactly what recovery promises not to
+        // leave. The inverse window is benign and self-announcing: if the move
+        // then fails, recovery's `unpark` finds nothing parked, throws, and the
+        // catch journals the error (same trade the destroy path already makes).
         await this.appendJournal({
           phase: "phase2-parked",
           targetUid: targetProfileUid,
           as: target.asUid,
           ts: this.now().toISOString(),
         });
+        await this.parkAssetSpace(target.submodulePath);
       }
 
       // Persist the applied profile as last-applied cache + clear in-progress,
