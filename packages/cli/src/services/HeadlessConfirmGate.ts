@@ -54,6 +54,27 @@ export class HeadlessConfirmGate implements IConfirmGate {
       this.log(
         `[apply-profile] ${totalFiles} files to remove, ${plan.assetSpacesBeingTornDown.length} AS to tear down, ${plan.assetSpacesBeingMaterialized.length} AS to materialize`,
       );
+      // req `d4ccc901` — parking gets its OWN line rather than being folded into
+      // the removal counts. `filesToDestroy` already excludes parked
+      // AssetSpaces, so the line above stays truthful; but without this line a
+      // park would be entirely INVISIBLE on the surface the user reads before
+      // typing `--yes`, and an unannounced mutation is no better than a
+      // mis-announced one. Emitted only when non-empty, so the common no-park
+      // apply reads exactly as it did before.
+      if (plan.assetSpacesBeingParked.length > 0) {
+        const parkedFiles = plan.assetSpacesBeingParked.reduce(
+          (sum, as) => sum + as.fileCount,
+          0,
+        );
+        this.log(
+          `[apply-profile] ${parkedFiles} files to park (moved to .exocortex/parked, NOT removed), ${plan.assetSpacesBeingParked.length} AS to park`,
+        );
+      }
+      if (plan.assetSpacesBeingUnparked.length > 0) {
+        this.log(
+          `[apply-profile] ${plan.assetSpacesBeingUnparked.length} AS to unpark (restored from .exocortex/parked, no download)`,
+        );
+      }
     }
 
     if (!this.yes) {

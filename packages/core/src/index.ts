@@ -68,6 +68,20 @@ export {
 } from "./domain/profile/TsFloorGuard";
 export type { FloorIdentity } from "./domain/profile/TsFloorGuard";
 export { transitiveDependsOnClosure } from "./domain/profile/AssetSpaceDependsOn";
+export {
+  DEPENDENCY_KIND_TBOX_UID,
+  DEPENDENCY_KIND_REFERENCE_UID,
+  PARKED_ROOT,
+  classifyMountTransition,
+  parkedPathFor,
+  resolveDependencyKind,
+} from "./domain/profile/ParkedMountState";
+export type {
+  DependencyKind,
+  MountState,
+  MountTransition,
+  MountTransitionInput,
+} from "./domain/profile/ParkedMountState";
 export type { IPropertyValidationService, ValidationResult } from "./domain/services/IPropertyValidationService";
 
 // Property definition types

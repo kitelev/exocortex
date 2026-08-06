@@ -96,6 +96,13 @@ describe("journalEntryToActivity", () => {
       "phase2-destroyed",
       "phase2-materializing",
       "phase2-materialized",
+      // req `d4ccc901` — the two park stages belong in this enumeration too.
+      // ⛔ A hand-written list is exactly the surface that goes a layer stale:
+      // it stayed green through the whole park change because a MISSING entry
+      // is invisible to it, which is why the semantic axes below assert on the
+      // label CONTENT rather than on the list's completeness.
+      "phase2-parked",
+      "phase2-unparked",
       "phase2-done",
       "git-commit-done",
       "apply-completed",
@@ -110,6 +117,62 @@ describe("journalEntryToActivity", () => {
       // phase string should not leak raw unless intentionally unmapped
       expect(r.message).not.toBe(phase);
     }
+  });
+
+  /**
+   * @req:d4ccc901-83a4-4495-a4bb-43d1305dfd00
+   *
+   * req `d4ccc901` — the activity log is the SECOND carrier of the claim "these
+   * files are gone" (the switch-journal is the first). A park logged as an
+   * unmount is not cosmetic: this log is where a user looks AFTER the fact to
+   * answer "where did my files go", and "Unmounted" sends them hunting a
+   * re-download instead of the one-rename return.
+   *
+   * ⛔ The compiler cannot guard this. `PHASE_LABELS` / `PROGRESS_VERBS` are
+   * plain maps: delete the `park` entry and the lookup silently falls back
+   * (`?? entry.phase` here, `?? op` in the verb path) or — worse — someone
+   * "simplifies" it by pointing park at the unmount label. Both compile. Only an
+   * assertion on the label's MEANING reddens.
+   *
+   * Mutant per axis: point `park` at the `unmount`/`phase2-destroyed` label →
+   * exactly these reden; every other test in this file stays green.
+   */
+  it("a PARKED stage never says removed/unmounted — it says the bytes stayed", () => {
+    const r = journalEntryToActivity({
+      ...base,
+      phase: "phase2-parked",
+      as: "abcd1234-5678-90ab-cdef-1234567890ab",
+    });
+    expect(r.category).toBe("mount");
+    expect(r.level).toBe("info");
+    // ⛔ The claim it must NOT make.
+    expect(r.message).not.toMatch(/unmount|destroy|remov|delet/i);
+    // …and the claim it MUST make: still on this device.
+    expect(r.message).toMatch(/park/i);
+    expect(r.message).toMatch(/device/i);
+    expect(r.message).toContain("abcd1234");
+  });
+
+  it("an UNPARKED stage never reads as a fresh download", () => {
+    const r = journalEntryToActivity({
+      ...base,
+      phase: "phase2-unparked",
+      as: "abcd1234-5678-90ab-cdef-1234567890ab",
+    });
+    expect(r.category).toBe("mount");
+    // "Mounted"/"Pulling" would hide that nothing crossed the network.
+    expect(r.message).not.toMatch(/mounted|pull|download|fetch/i);
+    expect(r.message).toMatch(/restored/i);
+    expect(r.message).toMatch(/device/i);
+  });
+
+  it("park and destroy are DISTINGUISHABLE in the log (negative control)", () => {
+    // The pairing is the point: a reader scanning the log must be able to tell
+    // the two apart. If a future edit collapses park onto the destroy label this
+    // is the assertion that notices, even if both individually "look fine".
+    const parked = journalEntryToActivity({ ...base, phase: "phase2-parked", as: "aaaa1111" });
+    const destroyed = journalEntryToActivity({ ...base, phase: "phase2-destroyed", as: "aaaa1111" });
+    expect(parked.message).not.toBe(destroyed.message);
   });
 });
 
@@ -147,8 +210,34 @@ describe("progressToActivity (live materialize progress feed)", () => {
     );
   });
 
+  /**
+   * @req:d4ccc901-83a4-4495-a4bb-43d1305dfd00
+   *
+   * req `d4ccc901` — the live-feed half of the same claim. `PROGRESS_VERBS` is a
+   * `Record`, so the compiler forces the two new ops to HAVE an entry — it
+   * cannot force that entry to mean the right thing. Mutant: point `park` at
+   * `"Unmounting"` (or drop the entry so the `?? op` fallback fires) → only
+   * these two reden.
+   */
+  it("park → its OWN verb, never 'Unmounting'", () => {
+    const m = progressToActivity(evt({ op: "park", label: "public" })).message;
+    expect(m).toBe("Parking public 1b20a8f0 (1 of 3)");
+    expect(m).not.toMatch(/unmount|remov|delet/i);
+    // The fallback would print the raw op name — catch that too.
+    expect(m).not.toContain("park 1b20a8f0");
+  });
+
+  it("unpark → its OWN verb, never 'Mounting' (nothing crosses the network)", () => {
+    const m = progressToActivity(evt({ op: "unpark", label: "public" })).message;
+    expect(m).toMatch(/restoring/i);
+    expect(m).toMatch(/device/i);
+    expect(m).not.toMatch(/mounting|pulling|download/i);
+  });
+
   it("progress is ALWAYS category 'progress' (never toasted — distinct from journal feed)", () => {
-    for (const op of ["pull", "mount", "unmount"] as const) {
+    // req `d4ccc901` — the two new ops ride the same rule (a park must not
+    // start toasting where an unmount does not).
+    for (const op of ["pull", "mount", "unmount", "park", "unpark"] as const) {
       expect(progressToActivity(evt({ op })).category).toBe("progress");
     }
   });

@@ -8,6 +8,7 @@ import {
 import {
   mountAssetSpaceFiles,
   stripGitmodulesEntry,
+  parkedPathFor,
   deriveUrl,
   SYNC_BRANCH,
   type FileSystemPort,
@@ -201,6 +202,78 @@ export class RestAssetSpaceMount {
     await this.removeGitmodulesEntry(safePath);
     if (await this.adapter.exists(safePath)) {
       await this.adapter.rmdir(safePath, true);
+    }
+  }
+
+  /**
+   * req `d4ccc901` — PARK an AssetSpace: strip its `.gitmodules` entry, then
+   * MOVE its folder to `.exocortex/parked/<owner>/<repo>` instead of removing
+   * it. The AssetSpace leaves the vault (so Obsidian stops indexing it and
+   * ExoSync stops enumerating it — req `4eca4900`) while its bytes stay on the
+   * device, making the return a rename rather than a download.
+   *
+   * ⛔ Deliberately NOT routed through the desktop `SwitchCacheLayer`
+   * tar-then-destroy sequence: taring the folder before moving it would put a
+   * second full copy on disk and turn a ~23 ms rename into seconds of archiving
+   * — the exact cost parking exists to avoid. The cache keeps its own job
+   * (`absent`-state restores + destroy-path crash recovery); parking bypasses it
+   * and carries its own journal stages so recovery routes to a rename-back
+   * rather than a cache lookup that would miss.
+   *
+   * Stanza-first ordering mirrors {@link unmount}: an interrupted park leaves
+   * either a stanza-less mount or a completed park, both of which a re-run of
+   * Apply reconciles.
+   *
+   * Idempotent when nothing is mounted. REFUSES when a parked copy already
+   * exists — two copies of one AssetSpace is a crash artefact, and picking a
+   * winner silently could discard whichever holds unpushed edits.
+   */
+  public async park(submodulePath: string): Promise<void> {
+    const safePath = validateVaultPathArg(submodulePath);
+    const parkedPath = validateVaultPathArg(parkedPathFor(safePath));
+    if (!(await this.adapter.exists(safePath))) return;
+    if (await this.adapter.exists(parkedPath)) {
+      throw new Error(
+        `park: refusing to park "${safePath}" — a parked copy already exists at "${parkedPath}". Resolve by hand: one of the two holds work the other does not.`,
+      );
+    }
+    await this.removeGitmodulesEntry(safePath);
+    await this.ensureParentDir(parkedPath);
+    await this.adapter.rename(safePath, parkedPath);
+  }
+
+  /**
+   * req `d4ccc901` — UNPARK: move the folder back from `.exocortex/parked/` onto
+   * its mount path.
+   *
+   * Deliberately does NOT re-add the `.gitmodules` stanza: the caller does that
+   * through the SAME registration step a network mount uses, so both ways of
+   * arriving at `active` share one piece of bookkeeping and cannot drift.
+   *
+   * @throws if nothing is parked (caller's plan was stale) or the mount path is
+   *   already occupied (would clobber a live mount).
+   */
+  public async unpark(submodulePath: string): Promise<void> {
+    const safePath = validateVaultPathArg(submodulePath);
+    const parkedPath = validateVaultPathArg(parkedPathFor(safePath));
+    if (!(await this.adapter.exists(parkedPath))) {
+      throw new Error(`unpark: nothing parked at "${parkedPath}" for "${safePath}"`);
+    }
+    if (await this.adapter.exists(safePath)) {
+      throw new Error(`unpark: refusing to unpark onto existing mount "${safePath}"`);
+    }
+    await this.ensureParentDir(safePath);
+    await this.adapter.rename(parkedPath, safePath);
+  }
+
+  /** Create the parent chain of a vault-relative path (rename needs it present). */
+  private async ensureParentDir(vaultRelPath: string): Promise<void> {
+    const segments = vaultRelPath.split("/");
+    segments.pop();
+    let acc = "";
+    for (const seg of segments) {
+      acc = acc.length === 0 ? seg : `${acc}/${seg}`;
+      if (!(await this.adapter.exists(acc))) await this.adapter.mkdir(acc);
     }
   }
 

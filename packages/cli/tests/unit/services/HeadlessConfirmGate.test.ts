@@ -20,6 +20,15 @@ function makePlan(overrides: Partial<ApplyPlan> = {}): ApplyPlan {
     assetSpacesBeingMaterialized: [
       { asUid: "as-work", asLabel: "work" },
     ],
+    // req `d4ccc901` — empty, and the pre-existing "2 files to remove" assertion
+    // below stays CORRECT rather than being grandfathered. The park/destroy
+    // partition happens in the PRODUCERS (`buildDiff` / the REST classification
+    // loop), which put an AssetSpace in `toDestroy` XOR `toPark`; this gate is a
+    // renderer and prints the plan it is handed. A fixture that hands it two
+    // files under `filesToDestroy` is by definition describing a destroy, so the
+    // count it must print is still 2. The park path gets its own fixture.
+    assetSpacesBeingParked: [],
+    assetSpacesBeingUnparked: [],
     ...overrides,
   };
 }
@@ -85,5 +94,59 @@ describe("HeadlessConfirmGate", () => {
     const gate = new HeadlessConfirmGate({ yes: true, log });
     await gate.confirmApply(makePlan());
     expect(log).not.toHaveBeenCalled();
+  });
+
+  /**
+   * @req:d4ccc901-83a4-4495-a4bb-43d1305dfd00
+   *
+   * req `d4ccc901` — the CLI half of "the plan a human approves must describe
+   * the mechanism". The compiler already forces this renderer to ACKNOWLEDGE the
+   * new fields (they are required on `ApplyPlan`); it cannot force it to PRINT
+   * them. So the mutant these guard against is not "field missing from the type"
+   * — it is deleting the `log(...)` call while keeping the field read. That
+   * compiles, and only these assertions redden.
+   */
+  describe("@req:d4ccc901-83a4-4495-a4bb-43d1305dfd00 parked / unparked lines", () => {
+    it("PRINTS a park line, and says the files are not removed", async () => {
+      const log = jest.fn<(m: string) => void>();
+      const gate = new HeadlessConfirmGate({ yes: true, verbose: true, log });
+      await gate.confirmApply(
+        makePlan({
+          filesToDestroy: new Map(),
+          assetSpacesBeingTornDown: [],
+          assetSpacesBeingParked: [
+            { asUid: "as-soft", asLabel: "soft", fileCount: 42 },
+          ],
+        }),
+      );
+      const joined = log.mock.calls.map((args) => args[0]).join("\n");
+      expect(joined).toContain("42 files to park");
+      expect(joined).toContain("1 AS to park");
+      // The whole point of the partition: the same 42 files must NOT also be
+      // announced as removals.
+      expect(joined).toContain("0 files to remove");
+    });
+
+    it("PRINTS an unpark line saying no download is involved", async () => {
+      const log = jest.fn<(m: string) => void>();
+      const gate = new HeadlessConfirmGate({ yes: true, verbose: true, log });
+      await gate.confirmApply(
+        makePlan({
+          assetSpacesBeingUnparked: [{ asUid: "as-soft", asLabel: "soft" }],
+        }),
+      );
+      const joined = log.mock.calls.map((args) => args[0]).join("\n");
+      expect(joined).toContain("1 AS to unpark");
+      expect(joined).toContain("no download");
+    });
+
+    it("stays SILENT about parking when nothing is parked (no noise on the common path)", async () => {
+      const log = jest.fn<(m: string) => void>();
+      const gate = new HeadlessConfirmGate({ yes: true, verbose: true, log });
+      await gate.confirmApply(makePlan());
+      const joined = log.mock.calls.map((args) => args[0]).join("\n");
+      expect(joined).not.toContain("to park");
+      expect(joined).not.toContain("to unpark");
+    });
   });
 });

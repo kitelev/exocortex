@@ -34,6 +34,9 @@ import {
   CATALOG_KEEP_NAMESPACES,
   TsFloorViolationError,
   parseYamlFrontmatterTolerant,
+  classifyMountTransition,
+  parkedPathFor,
+  type MountState,
 } from "@kitelev/exocortex-core";
 
 import {
@@ -76,6 +79,13 @@ export interface AssetSpaceInfo {
    * matches by namespace as well as by legacy UID.
    */
   namespace: string;
+  /**
+   * req `18ecf16f` / `d4ccc901` — RAW `exo__AssetSpace_dependsOnKind`: what
+   * depending on THIS AssetSpace means. Kept uninterpreted so
+   * `resolveDependencyKind`'s safe default (`tbox`) applies to every unreadable
+   * form. Decides park vs destroy when this AssetSpace leaves the effective set.
+   */
+  dependsOnKind?: string;
 }
 
 /** A single AssetSpace scheduled for tear-down. */
@@ -93,11 +103,24 @@ export interface MaterializeTarget {
   /** HTTPS GitHub URL used for the tarball pull (normalised from `git`). */
   httpsUrl: string;
   label: string;
+  /**
+   * req `d4ccc901` — how the bytes arrive. `"unpark"` = local rename back from
+   * `.exocortex/parked/` (offline, no download); `"pull"` = GitHub tarball.
+   * Both reach the SAME destination state through the same bookkeeping; this
+   * discriminates the acquisition step only.
+   */
+  source: "pull" | "unpark";
 }
 
 /** Result of {@link CliApplyProfileService.buildDiff}. */
 export interface ApplyProfileDiff {
   toDestroy: TearDownTarget[];
+  /**
+   * req `d4ccc901` — AssetSpaces leaving the effective set over a SOFT edge:
+   * moved aside, not deleted. Disjoint from {@link ApplyProfileDiff.toDestroy}
+   * by construction (one classification per AssetSpace).
+   */
+  toPark: TearDownTarget[];
   toMaterialize: MaterializeTarget[];
   plan: ApplyPlan;
 }
@@ -105,6 +128,9 @@ export interface ApplyProfileDiff {
 /** Result of {@link CliApplyProfileService.execute}. */
 export interface ApplyProfileExecResult {
   destroyed: string[];
+  /** req `d4ccc901` — moved to `.exocortex/parked/`, NOT deleted. */
+  parked: string[];
+  /** Includes unparked AssetSpaces — they reach `active` through this path. */
   materialized: string[];
 }
 
@@ -228,8 +254,15 @@ export class CliApplyProfileService {
               : "";
           const label =
             namespace || lastSegment(folderName) || uid.slice(0, 8);
+          const rawKind = fm["exo__AssetSpace_dependsOnKind"];
+          const dependsOnKind =
+            typeof rawKind === "string"
+              ? rawKind
+              : Array.isArray(rawKind) && typeof rawKind[0] === "string"
+                ? (rawKind[0] as string)
+                : undefined;
           seen.add(uid);
-          infos.push({ uid, git, folderName, label, namespace });
+          infos.push({ uid, git, folderName, label, namespace, dependsOnKind });
         }
 
         if (classes.includes(PROFILE_CLASS_UID)) {
@@ -316,13 +349,24 @@ export class CliApplyProfileService {
     // regardless).
     const effective = new Set<string>([...result.effective, ...declaredAsUids]);
 
-    // Mount-state: an AssetSpace is materialised iff its derived folder exists.
-    const materializedUids = new Set<string>();
+    // req `d4ccc901` — mount-state is now THREE-valued. `active` keeps its
+    // historical definition (the derived folder exists); `parked` means the
+    // folder was moved under `.exocortex/parked/` and the bytes are still on
+    // this device; `absent` means neither. `active` wins if both paths somehow
+    // exist — the live mount is the copy in use, and `parkAssetSpace` refuses
+    // that collision rather than resolving it silently.
+    const stateByUid = new Map<string, MountState>();
     for (const info of infos) {
-      if (existsSync(join(this.vaultPath, info.folderName))) {
-        materializedUids.add(info.uid);
-      }
+      const state: MountState = existsSync(join(this.vaultPath, info.folderName))
+        ? "active"
+        : existsSync(join(this.vaultPath, parkedPathFor(info.folderName)))
+          ? "parked"
+          : "absent";
+      stateByUid.set(info.uid, state);
     }
+    const materializedUids = new Set<string>(
+      [...stateByUid].filter(([, s]) => s === "active").map(([uid]) => uid),
+    );
 
     // EKA Alpha (issue #3511) — never tear down the catalog AssetSpaces
     // (central registry + profiles) that supply descriptors/profiles for
@@ -338,35 +382,65 @@ export class CliApplyProfileService {
       }
     }
 
+    // req `d4ccc901` — one classification pass over every known AssetSpace.
+    // Departures PARTITION: an AssetSpace goes to `toDestroy` XOR `toPark`,
+    // never both, because parking moves the whole mount folder. That partition
+    // is what keeps the confirm-gate honest — `filesToDestroy` is derived from
+    // `toDestroy` alone, so a parked AssetSpace's files are absent from the
+    // "N files to remove" count instead of being reported twice under two
+    // different verbs.
     const toDestroy: TearDownTarget[] = [];
-    for (const info of infos) {
-      if (!materializedUids.has(info.uid)) continue;
-      if (effective.has(info.uid)) continue;
-      toDestroy.push({
-        asUid: info.uid,
-        folderName: info.folderName,
-        label: info.label,
-        files: this.enumerateFilesUnder(info.folderName),
-      });
-    }
-
+    const toPark: TearDownTarget[] = [];
     const toMaterialize: MaterializeTarget[] = [];
-    for (const asUid of effective) {
-      if (materializedUids.has(asUid)) continue;
-      const info = infoByUid.get(asUid);
-      // AssetSpace in effective set but no descriptor (or no git URL) — cannot
-      // materialise; skip (matches plugin's `info === undefined` skip).
-      if (info === undefined) continue;
-      toMaterialize.push({
-        asUid: info.uid,
-        folderName: info.folderName,
-        httpsUrl: toHttpsGitHubUrl(info.git),
-        label: info.label,
+
+    for (const info of infos) {
+      const transition = classifyMountTransition({
+        state: stateByUid.get(info.uid) ?? "absent",
+        inEffectiveSet: effective.has(info.uid),
+        dependsOnKind: info.dependsOnKind,
       });
+      switch (transition) {
+        case "none":
+          break;
+        case "destroy":
+          toDestroy.push({
+            asUid: info.uid,
+            folderName: info.folderName,
+            label: info.label,
+            files: this.enumerateFilesUnder(info.folderName),
+          });
+          break;
+        case "park":
+          toPark.push({
+            asUid: info.uid,
+            folderName: info.folderName,
+            label: info.label,
+            files: this.enumerateFilesUnder(info.folderName),
+          });
+          break;
+        // `unpark` and `materialize` are the same destination — `active` — and
+        // travel one list so they share the post-acquisition bookkeeping
+        // (`.gitmodules` registration). Only `source` differs, and it decides
+        // one thing: whether the bytes come off this device or the network.
+        case "unpark":
+        case "materialize":
+          toMaterialize.push({
+            asUid: info.uid,
+            folderName: info.folderName,
+            httpsUrl: toHttpsGitHubUrl(info.git),
+            label: info.label,
+            source: transition === "unpark" ? "unpark" : "pull",
+          });
+          break;
+      }
     }
 
     const filesToDestroy = new Map<string, string[]>();
     for (const t of toDestroy) filesToDestroy.set(t.asUid, t.files);
+
+    const unparkedUids = new Set(
+      toMaterialize.filter((t) => t.source === "unpark").map((t) => t.asUid),
+    );
 
     const plan: ApplyPlan = {
       targetProfileUid,
@@ -379,13 +453,21 @@ export class CliApplyProfileService {
         asLabel: t.label,
         fileCount: t.files.length,
       })),
+      assetSpacesBeingParked: toPark.map((t) => ({
+        asUid: t.asUid,
+        asLabel: t.label,
+        fileCount: t.files.length,
+      })),
       assetSpacesBeingMaterialized: toMaterialize.map((t) => ({
         asUid: t.asUid,
         asLabel: t.label,
       })),
+      assetSpacesBeingUnparked: toMaterialize
+        .filter((t) => unparkedUids.has(t.asUid))
+        .map((t) => ({ asUid: t.asUid, asLabel: t.label })),
     };
 
-    return { toDestroy, toMaterialize, plan };
+    return { toDestroy, toPark, toMaterialize, plan };
   }
 
   /**
@@ -399,6 +481,7 @@ export class CliApplyProfileService {
    */
   async execute(diff: ApplyProfileDiff): Promise<ApplyProfileExecResult> {
     const destroyed: string[] = [];
+    const parked: string[] = [];
     const materialized: string[] = [];
 
     for (const target of diff.toDestroy) {
@@ -406,9 +489,24 @@ export class CliApplyProfileService {
       destroyed.push(target.asUid);
     }
 
+    // req `d4ccc901` — parking runs with the other departures, before any
+    // arrival, so a mount folder is always vacated before it could be claimed.
+    for (const target of diff.toPark) {
+      this.mount.parkAssetSpace(this.vaultPath, target.folderName);
+      parked.push(target.asUid);
+    }
+
     for (const target of diff.toMaterialize) {
-      const absTarget = join(this.vaultPath, target.folderName);
-      await this.mount.pullAssetSpace(target.httpsUrl, this.ref, absTarget);
+      // req `d4ccc901` — ONE arrival path. `source` selects how the bytes are
+      // acquired and nothing else: the `.gitmodules` registration and the
+      // `materialized` bookkeeping below are shared, so an unparked AssetSpace
+      // cannot end up in a half-registered state that a pulled one avoids.
+      if (target.source === "unpark") {
+        this.mount.unparkAssetSpace(this.vaultPath, target.folderName);
+      } else {
+        const absTarget = join(this.vaultPath, target.folderName);
+        await this.mount.pullAssetSpace(target.httpsUrl, this.ref, absTarget);
+      }
       this.mount.ensureGitmodulesEntry(
         this.vaultPath,
         target.folderName,
@@ -417,7 +515,7 @@ export class CliApplyProfileService {
       materialized.push(target.asUid);
     }
 
-    return { destroyed, materialized };
+    return { destroyed, parked, materialized };
   }
 
   // ───────────────────────────── internals ─────────────────────────────

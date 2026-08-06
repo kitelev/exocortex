@@ -37,12 +37,21 @@ export interface ApplyPlan {
    * Files about to be deleted, grouped by owning assetspace UID. Values are
    * vault-relative paths. The map is read-only to prevent adapters from
    * accidentally rewriting the plan during confirmation rendering.
+   *
+   * req `d4ccc901` — a PARKED assetspace is deliberately absent here. Its files
+   * are not deleted, only moved, so counting them as "files to remove" would
+   * make the approval card describe a reversible local move as a destruction —
+   * at the exact moment consent is given, and unfalsifiably afterwards (the
+   * files are still there).
    */
   filesToDestroy: ReadonlyMap<string /* asUid */, ReadonlyArray<string /* relative path */>>;
   /**
    * Assetspaces being torn down — UID, label, file count. Distinct from
    * `filesToDestroy.keys()` because the modal shows assetspace cardinality
    * (one bullet per AS) separately from the per-file list.
+   *
+   * req `d4ccc901` — DESTRUCTION only. Parked assetspaces live in
+   * {@link ApplyPlan.assetSpacesBeingParked}.
    */
   assetSpacesBeingTornDown: ReadonlyArray<{
     asUid: string;
@@ -50,10 +59,43 @@ export interface ApplyPlan {
     fileCount: number;
   }>;
   /**
+   * req `d4ccc901` — assetspaces leaving the effective set via a SOFT
+   * (`exo__DependencyKindReference`) edge: their mount is moved to
+   * `.exocortex/parked/<owner>/<repo>` rather than removed, so the bytes stay on
+   * the device and returning is a local move instead of a network pull.
+   *
+   * Required, not optional, on purpose: an optional field is one a renderer can
+   * forget, and the failure mode of forgetting is a gate that says "N files to
+   * remove" while a park happens. Making it required turns that into a compile
+   * error at every construction and rendering site.
+   */
+  assetSpacesBeingParked: ReadonlyArray<{
+    asUid: string;
+    asLabel: string;
+    fileCount: number;
+  }>;
+  /**
    * Assetspaces being materialized (cache-restored or GitHub-pulled). The
    * Phase 3 orchestrator computes this; Phase 1b only renders it.
+   *
+   * req `d4ccc901` — includes assetspaces returning FROM the parked state: they
+   * reach `active` through the same materialise bookkeeping, differing only in
+   * how the bytes arrive (local move vs network pull). See
+   * {@link ApplyPlan.assetSpacesBeingUnparked} for the subset that costs no
+   * network.
    */
   assetSpacesBeingMaterialized: ReadonlyArray<{
+    asUid: string;
+    asLabel: string;
+  }>;
+  /**
+   * req `d4ccc901` — the subset of {@link ApplyPlan.assetSpacesBeingMaterialized}
+   * restored from `.exocortex/parked/` rather than pulled over the network.
+   *
+   * Rendered separately so the user can tell a free, offline restore from a
+   * download before approving — the two look identical in the count alone.
+   */
+  assetSpacesBeingUnparked: ReadonlyArray<{
     asUid: string;
     asLabel: string;
   }>;

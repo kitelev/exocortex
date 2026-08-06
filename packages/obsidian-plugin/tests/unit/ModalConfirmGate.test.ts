@@ -71,6 +71,12 @@ function makePlan(overrides: Partial<ApplyPlan> = {}): ApplyPlan {
     assetSpacesBeingMaterialized: [
       { asUid: "as-work", asLabel: "work" },
     ],
+    // req `d4ccc901` — the baseline plan is a plain destroy+materialize apply,
+    // so both park lists are empty. Empty is the honest default rather than a
+    // filler: it keeps every pre-existing assertion in this suite testing what it
+    // was written to test, and makes the park cases below opt in explicitly.
+    assetSpacesBeingParked: [],
+    assetSpacesBeingUnparked: [],
     ...overrides,
   };
 }
@@ -279,6 +285,90 @@ describe("ModalConfirmGate", () => {
 
       findButton("Cancel")?.click();
       await promise;
+    });
+  });
+
+  /**
+   * @req:d4ccc901-83a4-4495-a4bb-43d1305dfd00
+   *
+   * req `d4ccc901` — the plugin half of "the plan a human approves must describe
+   * the mechanism". Required fields make the compiler force this renderer to
+   * ACKNOWLEDGE parking; only these assertions force it to SHOW it. The mutant
+   * is deleting the `createEl` block while keeping the field read — that
+   * compiles and reddens nothing else.
+   */
+  describe("@req:d4ccc901-83a4-4495-a4bb-43d1305dfd00 parked / unparked rendering", () => {
+    it("RENDERS a park section that says kept, not removed", async () => {
+      const gate = new ModalConfirmGate(fakeApp);
+      const promise = gate.confirmApply(
+        makePlan({
+          filesToDestroy: new Map(),
+          assetSpacesBeingTornDown: [],
+          assetSpacesBeingParked: [
+            { asUid: "as-soft", asLabel: "soft", fileCount: 42 },
+          ],
+        }),
+      );
+
+      const park = document.querySelector(".apply-confirm-park-section");
+      expect(park).not.toBeNull();
+      const text = park!.textContent ?? "";
+      expect(text).toContain("42 files");
+      expect(text).toContain("soft");
+      // The user-facing consequence, not the internal verb: bytes stay.
+      expect(text).toMatch(/not deleted/i);
+      expect(text).toContain(".exocortex/parked");
+
+      findButton("Cancel")?.click();
+      await promise;
+    });
+
+    it("does NOT render a park section when nothing is parked (a no-park apply looks unchanged)", async () => {
+      const gate = new ModalConfirmGate(fakeApp);
+      const promise = gate.confirmApply(makePlan());
+      expect(document.querySelector(".apply-confirm-park-section")).toBeNull();
+      findButton("Cancel")?.click();
+      await promise;
+    });
+
+    it("marks an UNPARK inside the materialize list so it does not read as a download", async () => {
+      const gate = new ModalConfirmGate(fakeApp);
+      const promise = gate.confirmApply(
+        makePlan({
+          assetSpacesBeingMaterialized: [
+            { asUid: "as-work", asLabel: "work" },
+            { asUid: "as-soft", asLabel: "soft" },
+          ],
+          assetSpacesBeingUnparked: [{ asUid: "as-soft", asLabel: "soft" }],
+        }),
+      );
+
+      const items = Array.from(
+        document.querySelectorAll(".apply-confirm-mat-section li"),
+      ).map((li) => li.textContent ?? "");
+      // The unparked one is annotated…
+      expect(items.some((t) => t.includes("soft") && /no download/i.test(t))).toBe(
+        true,
+      );
+      // …and the genuinely-pulled one is NOT — otherwise the annotation would be
+      // decoration rather than information.
+      expect(items.some((t) => t === "work")).toBe(true);
+
+      findButton("Cancel")?.click();
+      await promise;
+    });
+
+    it("keeps the pre-existing section classes the e2e leg asserts on", () => {
+      // `eka-obsidian-leg.spec.ts` drives the REAL modal and locates
+      // `.apply-confirm-tear-section` / `.apply-confirm-mat-section`. That suite
+      // runs in its own workflow, OUTSIDE the 13 required checks, so breaking it
+      // would not redden this PR — it would silently skip the release. This
+      // assertion brings that breakage forward into the required gate.
+      const gate = new ModalConfirmGate(fakeApp);
+      void gate.confirmApply(makePlan());
+      expect(document.querySelector(".apply-confirm-tear-section")).not.toBeNull();
+      expect(document.querySelector(".apply-confirm-mat-section")).not.toBeNull();
+      findButton("Cancel")?.click();
     });
   });
 });

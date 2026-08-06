@@ -125,6 +125,33 @@ class InMemoryAdapter {
     }
   }
 
+  /**
+   * Obsidian DataAdapter.rename — MOVES the path and everything under it.
+   * req `d4ccc901`: parking IS a rename, so this has to be a real move. A fake
+   * that copied instead would let "the bytes stayed on the device" pass while
+   * the source folder was never actually relinquished.
+   */
+  async rename(from: string, to: string): Promise<void> {
+    if (!(await this.exists(from))) throw new Error(`ENOENT: ${from}`);
+    const move = <T>(m: Map<string, T>): void => {
+      for (const k of [...m.keys()]) {
+        if (k === from || k.startsWith(from + "/")) {
+          const v = m.get(k) as T;
+          m.delete(k);
+          m.set(to + k.slice(from.length), v);
+        }
+      }
+    };
+    move(this.files);
+    move(this.textFiles);
+    for (const d of [...this.dirs]) {
+      if (d === from || d.startsWith(from + "/")) {
+        this.dirs.delete(d);
+        this.dirs.add(to + d.slice(from.length));
+      }
+    }
+  }
+
   /** Obsidian DataAdapter.list — immediate children as full vault paths. */
   async list(dir: string): Promise<{ files: string[]; folders: string[] }> {
     const prefix = dir === "" ? "" : dir.replace(/\/+$/, "") + "/";
@@ -471,5 +498,118 @@ describe("RestAssetSpaceMount.listMountedAssetSpaces (RFC 0005 Phase 1 — files
     await expect(mount.listMountedAssetSpaces()).resolves.toEqual([
       { submodulePath: PATH_OK, url: URL_OK },
     ]);
+  });
+});
+
+/**
+ * @req:d4ccc901-83a4-4495-a4bb-43d1305dfd00
+ *
+ * req `d4ccc901` — park / unpark. Unmounting a SOFT-edge AssetSpace moves its
+ * folder to `.exocortex/parked/<owner>/<repo>` instead of deleting it; coming
+ * back moves it home. Measured ≈23 ms / 0 bytes vs ≈2.5 s / 0.7 MB for a REST
+ * re-materialisation — and it works offline.
+ *
+ * The two refusals below are the guards that make this safe to run twice:
+ * neither side may silently clobber a folder that already holds work.
+ */
+describe("@req:d4ccc901-83a4-4495-a4bb-43d1305dfd00 RestAssetSpaceMount.park / unpark", () => {
+  const PARKED = ".exocortex/parked/kitelev/exoas-ems";
+
+  async function mounted(): Promise<{
+    adapter: InMemoryAdapter;
+    mount: RestAssetSpaceMount;
+  }> {
+    const adapter = new InMemoryAdapter();
+    const tarball = await makeTarball("kitelev-exoas-ems-abc1234", [
+      { name: "README.md", data: new TextEncoder().encode("# EMS\n") },
+      { name: "ontology/Task.md", data: new TextEncoder().encode("task body") },
+    ]);
+    const mount = makeMount(adapter, makeFakeClient(tarball));
+    await mount.mount(URL_OK, PATH_OK, "main");
+    return { adapter, mount };
+  }
+
+  it("park MOVES the folder under .exocortex/parked — nothing is deleted", async () => {
+    const { adapter, mount } = await mounted();
+    expect(await adapter.exists(`${PATH_OK}/README.md`)).toBe(true);
+
+    await mount.park(PATH_OK);
+
+    // Gone from the mount point (so it stops being indexed)…
+    expect(await adapter.exists(PATH_OK)).toBe(false);
+    // …but present, byte-for-byte, on the device.
+    expect(await adapter.read(`${PARKED}/README.md`)).toBe("# EMS\n");
+    expect(await adapter.read(`${PARKED}/ontology/Task.md`)).toBe("task body");
+    // ⛔ NOT under the plugin dir: BRAT overwrites that on every update.
+    expect(PARKED.startsWith(".exocortex/")).toBe(true);
+  });
+
+  it("unpark MOVES it home — a rename, no fetch", async () => {
+    const { adapter, mount } = await mounted();
+    await mount.park(PATH_OK);
+
+    await mount.unpark(PATH_OK);
+
+    expect(await adapter.read(`${PATH_OK}/README.md`)).toBe("# EMS\n");
+    expect(await adapter.read(`${PATH_OK}/ontology/Task.md`)).toBe("task body");
+    expect(await adapter.exists(PARKED)).toBe(false);
+  });
+
+  it("round-trips content unchanged (park → unpark is identity)", async () => {
+    const { adapter, mount } = await mounted();
+    const before = await adapter.list(PATH_OK);
+
+    await mount.park(PATH_OK);
+    await mount.unpark(PATH_OK);
+
+    await expect(adapter.list(PATH_OK)).resolves.toEqual(before);
+  });
+
+  /**
+   * GUARD — park refuses to overwrite an existing parked copy.
+   * Mutant: drop the `exists(parkedPath)` check → this reddens alone.
+   * Without it a second park silently destroys whichever copy loses; the two
+   * copies are exactly the case where a human must decide, because one of them
+   * holds work the other does not.
+   */
+  it("park REFUSES when a parked copy already exists (never clobbers)", async () => {
+    const { adapter, mount } = await mounted();
+    await mount.park(PATH_OK);
+    // Re-mount, then try to park on top of the existing parked copy.
+    await mount.mount(URL_OK, PATH_OK, "main");
+
+    await expect(mount.park(PATH_OK)).rejects.toThrow(
+      /parked copy already exists/,
+    );
+    // Neither side was touched by the refusal.
+    expect(await adapter.exists(`${PARKED}/README.md`)).toBe(true);
+    expect(await adapter.exists(`${PATH_OK}/README.md`)).toBe(true);
+  });
+
+  /**
+   * GUARD — unpark refuses when there is nothing parked (a stale plan), and
+   * refuses to unpark ONTO a live mount. Mutant: drop either `exists` check →
+   * this reddens alone.
+   */
+  it("unpark REFUSES when nothing is parked (stale plan fails loud)", async () => {
+    const { mount } = await mounted();
+    await expect(mount.unpark(PATH_OK)).rejects.toThrow(/nothing parked/);
+  });
+
+  it("unpark REFUSES to overwrite a live mount", async () => {
+    const { adapter, mount } = await mounted();
+    await mount.park(PATH_OK);
+    await mount.mount(URL_OK, PATH_OK, "main"); // mount point occupied again
+
+    await expect(mount.unpark(PATH_OK)).rejects.toThrow(
+      /refusing to unpark onto existing mount/,
+    );
+    expect(await adapter.exists(`${PARKED}/README.md`)).toBe(true);
+  });
+
+  it("refuses a traversal path rather than moving a directory elsewhere", async () => {
+    const { mount } = await mounted();
+    await expect(mount.park("assetspaces/../../etc")).rejects.toThrow();
+    await expect(mount.unpark("assetspaces/../../etc")).rejects.toThrow();
   });
 });

@@ -120,7 +120,38 @@ class ApplyConfirmModal extends Modal {
       }
     }
 
-    // Section 3 — Assetspaces being materialized
+    // Section 3 — req `d4ccc901` — Assetspaces being PARKED (kept on device).
+    //
+    // Its own section, above "to materialize" and below the removal sections,
+    // because parking is the operation most easily mistaken for removal: the
+    // AssetSpace disappears from the vault either way. `filesToDestroy` already
+    // excludes parked AssetSpaces, so the counts above are truthful — but a
+    // park with no section of its own would be an entirely UNANNOUNCED
+    // mutation on the one surface the user reads before approving. Rendered
+    // only when non-empty, so a no-park apply looks exactly as it did.
+    if (this.plan.assetSpacesBeingParked.length > 0) {
+      const parkSection = contentEl.createEl("div", {
+        cls: "apply-confirm-park-section",
+      });
+      const parkedFiles = this.plan.assetSpacesBeingParked.reduce(
+        (sum, as) => sum + as.fileCount,
+        0,
+      );
+      parkSection.createEl("h3", {
+        text: `Assetspaces to park — kept on this device (${parkedFiles} files)`,
+      });
+      parkSection.createEl("p", {
+        text: "Moved to .exocortex/parked, not deleted. Returning to them is a local move — no download.",
+      });
+      const parkList = parkSection.createEl("ul");
+      for (const as of this.plan.assetSpacesBeingParked) {
+        parkList.createEl("li", {
+          text: `${as.asLabel} (${as.fileCount} files)`,
+        });
+      }
+    }
+
+    // Section 4 — Assetspaces being materialized
     const matSection = contentEl.createEl("div", {
       cls: "apply-confirm-mat-section",
     });
@@ -128,9 +159,18 @@ class ApplyConfirmModal extends Modal {
     if (this.plan.assetSpacesBeingMaterialized.length === 0) {
       matSection.createEl("p", { text: "(none)" });
     } else {
+      // req `d4ccc901` — mark the ones restored from `.exocortex/parked`: they
+      // cost no network and work offline, which the bare label cannot convey.
+      const unparkedUids = new Set(
+        this.plan.assetSpacesBeingUnparked.map((as) => as.asUid),
+      );
       const matList = matSection.createEl("ul");
       for (const as of this.plan.assetSpacesBeingMaterialized) {
-        matList.createEl("li", { text: as.asLabel });
+        matList.createEl("li", {
+          text: unparkedUids.has(as.asUid)
+            ? `${as.asLabel} (unpark — restored from this device, no download)`
+            : as.asLabel,
+        });
       }
     }
 
