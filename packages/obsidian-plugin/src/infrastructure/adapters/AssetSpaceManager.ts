@@ -46,6 +46,14 @@ export interface AssetSpaceInfo {
    * Empty/absent when the descriptor declares no dependencies.
    */
   dependsOn?: string[];
+  /**
+   * req `18ecf16f` — RAW `exo__AssetSpace_dependsOnKind` value: what depending
+   * on THIS AssetSpace means (`exo__DependencyKindTBox` = hard, supplies class /
+   * command definitions; `exo__DependencyKindReference` = soft, content only).
+   * Kept raw and interpreted by `resolveDependencyKind`, which treats absent and
+   * unrecognised alike as HARD — the safe default.
+   */
+  dependsOnKind?: string;
 }
 
 export interface AssetSpaceManagerOptions {
