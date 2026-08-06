@@ -90,6 +90,85 @@ describe("collectSyncRepoSpecs", () => {
     expect(result.specs).toEqual([]);
   });
 
+  /**
+   * Parking safety (T3a — AC5 of task d8371554).
+   *
+   * Moving a mount out of the DERIVED path `assetspaces/<owner>/<repo>` and
+   * into `.exocortex/parked/<owner>/<repo>` must be INERT for ExoSync: the
+   * AssetSpace must not be enumerated as a sync unit, so its deletion set is
+   * never computed and `push` never deletes its files on the remote.
+   *
+   * The guard locked here is the `adapter.exists` gate in
+   * `collectSyncRepoSpecs`, which sits BETWEEN `offer()` and `commit()`. Its
+   * sibling — the CLI's `existsSync` gate in `collectVaultSpecs` — is a
+   * different function in a different package using a different primitive, so
+   * it is locked by its own check in
+   * `packages/cli/tests/unit/commands/exosync-parity.test.ts`; green here says
+   * nothing about green there.
+   *
+   * `assetSpaceFm` declares only `exo__AssetSpace_source` — `localPath` is
+   * DERIVED by `AssetSpacePathDeriver` inside `classifySpaceDeclaration`, so a
+   * dead deriver cannot leave this check green.
+   */
+  describe("parking is invisible to enumeration @req:4eca4900-fd1f-42d2-a111-46f90a35d6f4", () => {
+    const PARKED = ".exocortex/parked/o/r";
+
+    it("excludes a parked AssetSpace while still enumerating a live one", async () => {
+      const adapter = new InMemoryAdapter();
+      // `o/r` is PARKED: a full copy on disk, outside `assetspaces/`.
+      adapter.seedFile(`${PARKED}/assets/a.md`, "---\nexo__Asset_uid: u-a\n---\n");
+      // `o/live` stays materialized — it makes the mount walk actually run and
+      // doubles as an inline control: exclusion must be selective, not blanket.
+      adapter.mkdirAll("assetspaces/o/live");
+      // `o/adhoc` is mounted but NOT declared. It gives the FINDING-3 assertion
+      // below a POSITIVE expected value: an empty `mountedNotDeclared` would
+      // otherwise be indistinguishable from a dead `enumerateMountFolders`.
+      adapter.mkdirAll("assetspaces/o/adhoc");
+      const app = makeApp({
+        adapter,
+        mdFiles: [{ path: "parked.md" }, { path: "live.md" }],
+        frontmatters: new Map([
+          ["parked.md", assetSpaceFm("uid-parked", "https://github.com/o/r")],
+          ["live.md", assetSpaceFm("uid-live", "https://github.com/o/live")],
+        ]),
+      });
+
+      // Precondition — the parked copy really is on disk, just not at the
+      // derived path. Without this the assertions below would be vacuous.
+      expect(await adapter.exists(PARKED)).toBe(true);
+      expect(await adapter.exists("assetspaces/o/r")).toBe(false);
+
+      const result = await collectSyncRepoSpecs(app as unknown as App);
+
+      expect(result.specs).toEqual([
+        spec({ repo: "live", repoKey: `o/live#${SYNC_BRANCH}`, localPath: "assetspaces/o/live" }),
+      ]);
+      // …and the parked copy is not mistaken for an ad-hoc mount either
+      // (FINDING-3 walks `assetspaces/` only). The expected value is the REAL
+      // ad-hoc mount, not `[]`: that keeps the assertion discriminating — it
+      // reds both when the parked copy leaks in AND when the mount walk dies.
+      expect(result.mountedNotDeclared).toEqual(["assetspaces/o/adhoc"]);
+      expect(result.warnings).toEqual([]);
+    });
+
+    it("negative control — the same declaration IS enumerated at the derived path", async () => {
+      const adapter = new InMemoryAdapter();
+      adapter.seedFile(`${PARKED}/assets/a.md`, "---\nexo__Asset_uid: u-a\n---\n");
+      adapter.mkdirAll("assetspaces/o/r"); // now materialized as well
+      const app = makeApp({
+        adapter,
+        mdFiles: [{ path: "as1.md" }],
+        frontmatters: new Map([
+          ["as1.md", assetSpaceFm("uid-1", "https://github.com/o/r")],
+        ]),
+      });
+
+      const result = await collectSyncRepoSpecs(app as unknown as App);
+
+      expect(result.specs).toEqual([spec()]);
+    });
+  });
+
   it("skips non-GitHub sources with a warning", async () => {
     const adapter = new InMemoryAdapter();
     const app = makeApp({

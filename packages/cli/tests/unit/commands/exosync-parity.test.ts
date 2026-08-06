@@ -6,7 +6,13 @@
  * vault on the real node fs + an injected fake GitHub transport — no
  * network, no process.exit.
  */
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  existsSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import * as path from "node:path";
@@ -29,6 +35,9 @@ function gitBlobShaSync(content: string): string {
     .update(Buffer.concat([Buffer.from(`blob ${body.byteLength}\0`), body]))
     .digest("hex");
 }
+
+/** Where a parked mount is moved to — deliberately OUTSIDE `assetspaces/`. */
+const PARKED = `.exocortex/parked/${OWNER}/${REPO}`;
 
 const FILE_A = "assets/a.md";
 const CONTENT_A = `---\nexo__Asset_uid: u-a\n---\n\nbody A\n`;
@@ -93,6 +102,8 @@ interface VaultFixture {
 
 function makeVault(opts: {
   mountFiles?: Record<string, string>;
+  /** Same files, but under {@link PARKED} instead of {@link MOUNT}. */
+  parkedFiles?: Record<string, string>;
   watermarkFiles?: Record<string, string>;
   declaration?: boolean;
 }): VaultFixture {
@@ -105,6 +116,11 @@ function makeVault(opts: {
   }
   for (const [rel, content] of Object.entries(opts.mountFiles ?? {})) {
     const full = path.join(vault, MOUNT, rel);
+    mkdirSync(path.dirname(full), { recursive: true });
+    writeFileSync(full, content);
+  }
+  for (const [rel, content] of Object.entries(opts.parkedFiles ?? {})) {
+    const full = path.join(vault, PARKED, rel);
     mkdirSync(path.dirname(full), { recursive: true });
     writeFileSync(full, content);
   }
@@ -169,6 +185,74 @@ describe("collectVaultSpecs", () => {
     const fx = makeVault({});
     try {
       expect(collectVaultSpecs(fx.vault).specs).toEqual([]);
+    } finally {
+      fx.cleanup();
+    }
+  });
+});
+
+/**
+ * Parking safety (T3a — AC5 of task d8371554).
+ *
+ * Moving a mount out of the DERIVED path `assetspaces/<owner>/<repo>` and into
+ * `.exocortex/parked/<owner>/<repo>` must be INERT for ExoSync: the AssetSpace
+ * must not be enumerated as a sync unit, so its deletion set is never computed
+ * and `push` never deletes its files on the remote.
+ *
+ * The guard being locked here is the `existsSync` gate in `collectVaultSpecs`,
+ * which sits BETWEEN `offer()` and `commit()`. Its sibling — the plugin's
+ * `adapter.exists` gate in `SyncDepsFactory.collectSyncRepoSpecs` — is a
+ * different function using a different primitive, so it is locked by its own
+ * check in `packages/obsidian-plugin/tests/unit/sync/SyncDepsFactory.test.ts`;
+ * green here says nothing about green there.
+ *
+ * The fixture declares only `exo__AssetSpace_source`; `localPath` is DERIVED by
+ * `AssetSpacePathDeriver` inside `classifySpaceDeclaration`. A hand-written
+ * `localPath` would keep this suite green against a dead deriver.
+ */
+describe("parking is invisible to sync-unit enumeration @req:4eca4900-fd1f-42d2-a111-46f90a35d6f4", () => {
+  it("does not enumerate an AssetSpace whose mount was parked out of the derived path", () => {
+    const fx = makeVault({ parkedFiles: { [FILE_A]: CONTENT_A } });
+    try {
+      // Precondition — the copy really is on disk, just not where the derived
+      // path points. Without this the assertion below would be vacuous.
+      expect(existsSync(path.join(fx.vault, PARKED, FILE_A))).toBe(true);
+      expect(existsSync(path.join(fx.vault, MOUNT))).toBe(false);
+
+      expect(collectVaultSpecs(fx.vault).specs).toEqual([]);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("negative control — the same declaration IS enumerated at the derived path", () => {
+    const fx = makeVault({ mountFiles: { [FILE_A]: CONTENT_A } });
+    try {
+      expect(collectVaultSpecs(fx.vault).specs).toEqual([
+        {
+          owner: OWNER,
+          repo: REPO,
+          branch: "main",
+          repoKey: `${OWNER}/${REPO}#main`,
+          localPath: MOUNT,
+        },
+      ]);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("a parked copy does not resurrect enumeration when the mount is also absent", () => {
+    // Both shapes at once: the declaration is present, a full copy of the mount
+    // sits in the park, and NOTHING is materialized — so `push` for this repo is
+    // never even considered, let alone given a deletion set.
+    const fx = makeVault({
+      parkedFiles: { [FILE_A]: CONTENT_A, "assets/b.md": CONTENT_A },
+    });
+    try {
+      const { specs, warnings } = collectVaultSpecs(fx.vault);
+      expect(specs).toEqual([]);
+      expect(warnings).toEqual([]); // parking is silent, not a warning
     } finally {
       fx.cleanup();
     }
