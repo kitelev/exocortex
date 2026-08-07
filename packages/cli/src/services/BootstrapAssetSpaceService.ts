@@ -40,6 +40,7 @@ import {
   mountAssetSpaceFiles,
   appendGitmodulesEntry,
   stripGitmodulesEntry as coreStripGitmodulesEntry,
+  parkedPathFor,
   SYNC_BRANCH,
   type FileSystemPort,
   type AssetSpaceHttpClient,
@@ -420,26 +421,144 @@ export class BootstrapAssetSpaceService {
    *   under `assetspaces/`, or resolves outside the vault root.
    */
   unmountAssetSpace(vaultPath: string, submodulePath: string): void {
-    const segments = submodulePath.split("/");
-    if (
-      submodulePath.length === 0 ||
-      !submodulePath.startsWith("assetspaces/") ||
-      segments.some((s) => s.length === 0 || s === "." || s === "..")
-    ) {
-      throw new Error(
-        `unmountAssetSpace: refusing unsafe submodulePath "${submodulePath}"`,
-      );
-    }
-    const root = resolve(vaultPath);
-    const target = resolve(root, submodulePath);
-    if (target === root || !target.startsWith(root + sep)) {
-      throw new Error(
-        `unmountAssetSpace: target "${target}" escapes vault root "${root}"`,
-      );
-    }
+    const target = this.assertSafeVaultTarget(
+      vaultPath,
+      submodulePath,
+      "unmountAssetSpace",
+    );
     this.removeGitmodulesEntry(vaultPath, submodulePath);
     if (existsSync(target)) {
       rmSync(target, { recursive: true, force: true });
     }
+  }
+
+  /**
+   * req `d4ccc901` — PARK an AssetSpace: strip its `.gitmodules` stanza, then
+   * MOVE its mount folder to `.exocortex/parked/<owner>/<repo>` instead of
+   * removing it. The bytes stay on the device, so returning is a local rename
+   * rather than a network pull ({@link unparkAssetSpace}).
+   *
+   * Reserved for SOFT (`exo__DependencyKindReference`) edges — the park/destroy
+   * decision belongs to `classifyMountTransition`, not to this primitive.
+   *
+   * Ordering mirrors {@link unmountAssetSpace} (stanza-first) so both departures
+   * from the mounted state leave the same partial state if interrupted.
+   *
+   * The parked root lives INSIDE the vault deliberately: `renameSync` across a
+   * filesystem boundary raises `EXDEV`, and the "no download, works offline"
+   * property is the whole point. `.obsidian/plugins/exocortex/` would be the
+   * other in-vault candidate and is rejected — BRAT overwrites that tree on
+   * plugin update, which would silently delete parked content.
+   *
+   * Idempotent when nothing is mounted (no-op). REFUSES — rather than
+   * overwriting — when a parked copy already exists: two copies of one
+   * AssetSpace is a state a crash can produce, and picking a winner silently
+   * would discard whichever holds unpushed local edits.
+   *
+   * @throws if `submodulePath` fails the traversal guard, if either resolved
+   *   path escapes the vault root, or if a parked copy already exists.
+   */
+  parkAssetSpace(vaultPath: string, submodulePath: string): void {
+    const target = this.assertSafeVaultTarget(
+      vaultPath,
+      submodulePath,
+      "parkAssetSpace",
+    );
+    const parkedRel = parkedPathFor(submodulePath);
+    const parked = this.assertSafeVaultTarget(
+      vaultPath,
+      parkedRel,
+      "parkAssetSpace",
+      { requireAssetspacesRoot: false },
+    );
+    if (!existsSync(target)) return;
+    if (existsSync(parked)) {
+      throw new Error(
+        `parkAssetSpace: refusing to park "${submodulePath}" — a parked copy already exists at "${parkedRel}". Resolve by hand: one of the two holds work the other does not.`,
+      );
+    }
+    this.removeGitmodulesEntry(vaultPath, submodulePath);
+    mkdirSync(dirname(parked), { recursive: true });
+    renameSync(target, parked);
+  }
+
+  /**
+   * req `d4ccc901` — UNPARK an AssetSpace: move it back from
+   * `.exocortex/parked/<owner>/<repo>` onto its mount folder.
+   *
+   * Deliberately does NOT touch `.gitmodules`: the caller re-registers the
+   * stanza through the SAME `ensureGitmodulesEntry` call a network pull uses, so
+   * an unparked AssetSpace reaches `active` through one code path with one piece
+   * of bookkeeping. Doing it here would fork that path and let the two forms of
+   * materialisation drift.
+   *
+   * @throws if nothing is parked (the caller's plan was stale), or if the mount
+   *   folder is already occupied (would clobber a live mount).
+   */
+  unparkAssetSpace(vaultPath: string, submodulePath: string): void {
+    const target = this.assertSafeVaultTarget(
+      vaultPath,
+      submodulePath,
+      "unparkAssetSpace",
+    );
+    const parkedRel = parkedPathFor(submodulePath);
+    const parked = this.assertSafeVaultTarget(
+      vaultPath,
+      parkedRel,
+      "unparkAssetSpace",
+      { requireAssetspacesRoot: false },
+    );
+    if (!existsSync(parked)) {
+      throw new Error(
+        `unparkAssetSpace: nothing parked at "${parkedRel}" for "${submodulePath}"`,
+      );
+    }
+    if (existsSync(target)) {
+      throw new Error(
+        `unparkAssetSpace: refusing to unpark onto existing mount "${submodulePath}"`,
+      );
+    }
+    mkdirSync(dirname(target), { recursive: true });
+    renameSync(parked, target);
+  }
+
+  /**
+   * Shared traversal guard for every vault-relative path this service mutates
+   * (`rmSync` / `renameSync` are recursive and force, so a bad path could escape
+   * to the vault root or an unrelated directory). Validates BEFORE any mutation,
+   * including the `.gitmodules` edit.
+   *
+   * Extracted from {@link unmountAssetSpace} when park/unpark arrived — three
+   * copies of a destructive-path guard is how one of them ends up subtly weaker
+   * than the others.
+   *
+   * @param opName caller name, so the thrown message names the real operation.
+   * @param requireAssetspacesRoot `false` for the parked root, which lives under
+   *   `.exocortex/` rather than `assetspaces/`; the traversal + escape checks
+   *   still apply.
+   */
+  private assertSafeVaultTarget(
+    vaultPath: string,
+    relPath: string,
+    opName: string,
+    opts: { requireAssetspacesRoot?: boolean } = {},
+  ): string {
+    const requireAssetspacesRoot = opts.requireAssetspacesRoot ?? true;
+    const segments = relPath.split("/");
+    if (
+      relPath.length === 0 ||
+      (requireAssetspacesRoot && !relPath.startsWith("assetspaces/")) ||
+      segments.some((s) => s.length === 0 || s === "." || s === "..")
+    ) {
+      throw new Error(`${opName}: refusing unsafe submodulePath "${relPath}"`);
+    }
+    const root = resolve(vaultPath);
+    const target = resolve(root, relPath);
+    if (target === root || !target.startsWith(root + sep)) {
+      throw new Error(
+        `${opName}: target "${target}" escapes vault root "${root}"`,
+      );
+    }
+    return target;
   }
 }

@@ -2,6 +2,16 @@
  * req `18ecf16f` — the KIND of an `exo__AssetSpace_dependsOn` dependency, read
  * from the graph instead of a hardcoded namespace list.
  *
+ * ## Where the implementation lives (and why it moved)
+ *
+ * req `d4ccc901` — the CLI apply path needs the SAME reading to decide park vs
+ * destroy, so the implementation moved to
+ * `@kitelev/exocortex-core` (`domain/profile/ParkedMountState`). Duplicating it
+ * per package would let the two runtimes disagree about which AssetSpaces are
+ * parkable — the exact class of CLI/plugin divergence this subsystem keeps
+ * getting bitten by. This module stays as the plugin-local name so existing
+ * importers (`closureGap`, `unmountSafety`) are unaffected.
+ *
  * ## Why this is a property of the TARGET node, not of the edge
  *
  * `exo__AssetSpace_dependsOn` is 0..N while `exo__AssetSpace_dependsOnKind` is
@@ -30,54 +40,9 @@
  * `PRINTED_PROPERTY_CLASS_UID`). That is Q3 (core processing), not Q1.
  */
 
-/** `exo__DependencyKindTBox` — hard edge: supplies definitions, cannot be parked. */
-export const DEPENDENCY_KIND_TBOX_UID = "e1d7fb5c-d334-448d-935b-953b7b033e78";
-
-/** `exo__DependencyKindReference` — soft edge: content only, parkable. */
-export const DEPENDENCY_KIND_REFERENCE_UID =
-  "fe529085-5370-4ac0-bbe4-1c7351242dee";
-
-/**
- * `"tbox"` — depending on this AssetSpace means depending on its class /
- * command definitions; unmounting it silently breaks type resolution.
- * `"reference"` — content only; unmounting it costs reachability, not types.
- */
-export type DependencyKind = "tbox" | "reference";
-
-/** Lower-cased symbolic local name the RDF converter emits for the soft value. */
-const REFERENCE_LOCAL_NAME = "dependencykindreference";
-
-/**
- * req `18ecf16f` — resolve `exo__AssetSpace_dependsOnKind` from raw frontmatter.
- *
- * **The safe default is structural, not a fallback branch:** `"reference"` is
- * returned ONLY on a positive match of the known soft value. Absent, empty,
- * unrecognised, wrong-typed — every other input yields `"tbox"`. A wrong
- * `"reference"` silently loses a class type at runtime; a wrong `"tbox"` only
- * costs an extra refusal, so the unsafe outcome is the one made to require
- * evidence.
- *
- * Accepts every form the value can reach the plugin in, because the plugin reads
- * FRONTMATTER (`metadataCache`) while the graph emits the same value as a
- * symbolic IRI (its label parses as `prefix__Local`, so the converter substitutes
- * it) — an author or a migration may legitimately produce either:
- * `[[<uid>]]`, `[[<uid>|exo__DependencyKindReference]]`, a bare UID,
- * `exo__DependencyKindReference`, or the full `…/exo#DependencyKindReference` IRI.
- * A one-element array is unwrapped (`Single` cardinality, but `metadataCache`
- * hands back a list when the author writes YAML list syntax).
- *
- * When BOTH a known UID and a conflicting symbolic name are present (a
- * mismatched alias such as `[[<tbox-uid>|exo__DependencyKindReference]]`), the
- * UID wins — it is the link target, i.e. what the graph actually resolves.
- */
-export function resolveDependencyKind(raw: unknown): DependencyKind {
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  if (typeof value !== "string") return "tbox";
-  const normalized = value.toLowerCase();
-  // UID first: it is the link target and therefore authoritative over an alias.
-  if (normalized.includes(DEPENDENCY_KIND_TBOX_UID)) return "tbox";
-  if (normalized.includes(DEPENDENCY_KIND_REFERENCE_UID)) return "reference";
-  // No known UID — fall back to the symbolic form the RDF converter emits.
-  if (normalized.includes(REFERENCE_LOCAL_NAME)) return "reference";
-  return "tbox";
-}
+export {
+  DEPENDENCY_KIND_TBOX_UID,
+  DEPENDENCY_KIND_REFERENCE_UID,
+  resolveDependencyKind,
+} from "@kitelev/exocortex-core";
+export type { DependencyKind } from "@kitelev/exocortex-core";

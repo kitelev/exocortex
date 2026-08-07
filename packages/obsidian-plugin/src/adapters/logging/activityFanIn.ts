@@ -23,6 +23,11 @@ const PHASE_LABELS: Record<SwitchJournalEntry["phase"], string> = {
   "phase2-start": "Materialization started (phase 2)",
   "phase2-destroy-cached": "Cached before unmount",
   "phase2-destroyed": "Unmounted",
+  // req `d4ccc901` — parking is a distinct outcome from unmounting, and the
+  // journal is the artefact recovery reads. Reusing the destroy labels here
+  // would make an interrupted apply look like it deleted what it moved.
+  "phase2-parked": "Parked (kept on this device)",
+  "phase2-unparked": "Restored from this device",
   "phase2-materializing": "Materializing",
   "phase2-materialized": "Mounted",
   "phase2-done": "Materialization complete (phase 2)",
@@ -69,10 +74,20 @@ export function journalEntryToActivity(
 }
 
 /** Present-tense verbs for the live per-AssetSpace progress feed. */
-const PROGRESS_VERBS: Record<"pull" | "mount" | "unmount", string> = {
+const PROGRESS_VERBS: Record<
+  "pull" | "mount" | "unmount" | "park" | "unpark",
+  string
+> = {
   pull: "Pulling",
   mount: "Mounting",
   unmount: "Unmounting",
+  // req `d4ccc901` — a park must never read as an unmount here. The activity log
+  // is where a user looks AFTER the fact to answer "where did my files go"; a
+  // park logged as "Unmounting" would send them hunting a re-download instead of
+  // the one-rename return, and an unpark logged as "Mounting" would hide that
+  // the bytes never left the device.
+  park: "Parking",
+  unpark: "Restoring from device",
 };
 
 /**

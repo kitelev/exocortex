@@ -1,5 +1,10 @@
 import type { App } from "obsidian";
-import type { ApplyPlan, IConfirmGate, MountProgressPhase } from "@kitelev/exocortex-core";
+import type {
+  ApplyPlan,
+  IConfirmGate,
+  MountProgressPhase,
+  MountState,
+} from "@kitelev/exocortex-core";
 import {
   derivePath,
   deriveLegacyFlatPath,
@@ -9,6 +14,8 @@ import {
   transitiveDependsOnClosure,
   TsFloorViolationError,
   isAssetSpaceFrontmatter,
+  classifyMountTransition,
+  parkedPathFor,
 } from "@kitelev/exocortex-core";
 
 import {
@@ -153,6 +160,16 @@ export interface SwitchJournalEntry {
     | "phase2-destroyed"
     | "phase2-materializing"
     | "phase2-materialized"
+    // req `d4ccc901` — parking gets its OWN stages rather than reusing
+    // `phase2-destroy-cached` / `phase2-destroyed`. Not hygiene: the crash
+    // classifier below reads `phase2-destroy-cached` as "this AssetSpace is in
+    // the SwitchCacheLayer" and recovery answers it with `cacheLayer.restore()`.
+    // A park writes no cache entry, so borrowing that stage would make recovery
+    // look for an archive that does not exist and report the AssetSpace as
+    // unrecoverable — while its bytes sit intact in `.exocortex/parked/`.
+    // Data present, declared lost. These stages route to a rename-back instead.
+    | "phase2-parked"
+    | "phase2-unparked"
     | "phase2-done"
     | "git-commit-done"
     | "apply-completed"
@@ -188,8 +205,17 @@ export interface SwitchJournalEntry {
  */
 export type ApplyProgressEvent =
   | {
-      /** Which per-AssetSpace operation is about to start / progressing. */
-      op: "pull" | "mount" | "unmount";
+      /**
+       * Which per-AssetSpace operation is about to start / progressing.
+       *
+       * req `d4ccc901` — `park` / `unpark` are distinct from `unmount` / `mount`
+       * on purpose: they are the ops that DON'T touch the network and DON'T
+       * delete anything, and the activity log is where a user sees which of the
+       * two actually happened. Folding them into the existing verbs would make a
+       * ~23 ms local rename indistinguishable from a multi-second download or a
+       * deletion in the only running commentary the apply produces.
+       */
+      op: "pull" | "mount" | "unmount" | "park" | "unpark";
       /**
        * Optional sub-phase WITHIN the per-AS op (#al-activitylog-progress).
        * Absent = the 4b2bc60f baseline "starting op N of M" marker (emitted
@@ -392,12 +418,16 @@ interface RestApplyMutationContext {
   targetProfileLabel: string;
   startedAt: number;
   toDestroy: Array<{ asUid: string; submodulePath: string; label: string }>;
+  /** req `d4ccc901` — soft-edge departures: moved aside, not deleted. */
+  toPark: Array<{ asUid: string; submodulePath: string; label: string }>;
   toMaterialize: Array<{
     asUid: string;
     submodulePath: string;
     gitUrl: string;
     label: string;
     ref: string;
+    /** req `d4ccc901` — acquisition only; the destination state is identical. */
+    source: "pull" | "unpark";
   }>;
   restMount: RestAssetSpaceMount;
   localDataStore: PluginLocalDataStore;
@@ -682,10 +712,18 @@ export class ProfileApplyManager {
     targetUid: string | null;
     destroyed: Set<string>;
     materialized: Set<string>;
+    parked: Set<string>;
   }> {
     // Git-only journal phases — present iff the desktop-git mutation ran. The
     // REST mutation emits ONLY `apply-starting` / `phase2-materialized` /
     // `phase2-destroyed`, so any of these uniquely marks the git path.
+    //
+    // req `d4ccc901` — ⛔ `phase2-parked` / `phase2-unparked` are deliberately
+    // NOT in this set. Both apply paths emit them, so treating them as a git
+    // marker would misroute an interrupted REST apply into git recovery (whose
+    // repair is a cache-restore that would find nothing). The git path stays
+    // correctly identified regardless: it always emits `phase2-start` before its
+    // loops, so `gitMutation` is already true by the time any park is recorded.
     const GIT_ONLY_PHASES = new Set([
       "phase1-done",
       "phase2-start",
@@ -702,6 +740,7 @@ export class ProfileApplyManager {
     let targetUid: string | null = null;
     const destroyed = new Set<string>();
     const materialized = new Set<string>();
+    const parked = new Set<string>();
     for (const e of events) {
       if (e.phase === "apply-completed" || e.phase === "recovery-completed") {
         // Terminal — anything before was a finished/recovered switch; reset.
@@ -709,6 +748,7 @@ export class ProfileApplyManager {
         targetUid = null;
         destroyed.clear();
         materialized.clear();
+        parked.clear();
         continue;
       }
       if (GIT_ONLY_PHASES.has(e.phase)) {
@@ -736,25 +776,39 @@ export class ProfileApplyManager {
           restMutation = true;
           if (typeof e.targetUid === "string") targetUid = e.targetUid;
           break;
+        // req `d4ccc901` — record parks so recovery can undo them by RENAMING
+        // BACK. Not added to `destroyed`: that set feeds `cacheLayer.restore()`,
+        // and a parked AssetSpace has no cache entry to restore from.
+        case "phase2-parked":
+          if (typeof e.as === "string") parked.add(e.as);
+          if (typeof e.targetUid === "string") targetUid = e.targetUid;
+          break;
+        // A park that was already reversed within the same apply (rollback)
+        // needs no undo — drop it back out of the set.
+        case "phase2-unparked":
+          if (typeof e.as === "string") parked.delete(e.as);
+          if (typeof e.targetUid === "string") targetUid = e.targetUid;
+          break;
         default:
           break;
       }
     }
-    if (targetUid === null) return { kind: "none", targetUid: null, destroyed, materialized };
-    if (gitMutation) return { kind: "git-apply", targetUid, destroyed, materialized };
+    if (targetUid === null)
+      return { kind: "none", targetUid: null, destroyed, materialized, parked };
+    if (gitMutation) return { kind: "git-apply", targetUid, destroyed, materialized, parked };
     // An apply that started (with or without a recorded mount yet) but emitted
     // no git-only phase is the REST path when the REST mount is wired (the
     // production routing since #3567). `restMutation` covers the case where the
     // first mount already landed; `applyStarted` covers a crash before it.
     if ((applyStarted || restMutation) && this.restWired()) {
-      return { kind: "rest-apply", targetUid, destroyed, materialized };
+      return { kind: "rest-apply", targetUid, destroyed, materialized, parked };
     }
     if (applyStarted || restMutation) {
       // Apply interrupted but REST not wired — legacy desktop-git fallback.
-      return { kind: "git-apply", targetUid, destroyed, materialized };
+      return { kind: "git-apply", targetUid, destroyed, materialized, parked };
     }
-    if (reindexStarted) return { kind: "reindex", targetUid, destroyed, materialized };
-    return { kind: "none", targetUid: null, destroyed, materialized };
+    if (reindexStarted) return { kind: "reindex", targetUid, destroyed, materialized, parked };
+    return { kind: "none", targetUid: null, destroyed, materialized, parked };
   }
 
   /**
@@ -1033,6 +1087,18 @@ export class ProfileApplyManager {
         asUid: t.asUid,
         asLabel: t.label,
       })),
+      // req `d4ccc901` — the git path plans NO parks, deliberately and honestly.
+      // Since #3410 the REST path is wired on BOTH platforms (see the branch at
+      // the top of `applyProfile`: it delegates whenever a rest mount or its
+      // factory exists), so this git branch is unreachable in production and
+      // duplicating the park machinery here would add a second, untested copy of
+      // it. Empty is the CORRECT value rather than a stub: this path genuinely
+      // cannot park, so planning one would make the approval card promise "kept
+      // on this device" while the folder was deleted — the surface describing the
+      // opposite of the mechanism, which is precisely what `canPark` exists to
+      // prevent (see `classifyMountTransition`).
+      assetSpacesBeingParked: [],
+      assetSpacesBeingUnparked: [],
     };
     const approved = await deps.confirmGate.confirmApply(plan);
     if (!approved) throw new ApplyAbortedByUser();
@@ -1612,30 +1678,59 @@ export class ProfileApplyManager {
     this.keepMaterializedCatalog(effectiveAsUids, allInfos, currentAsUids);
 
     const toDestroy: Array<{ asUid: string; submodulePath: string; label: string }> = [];
+    const toPark: Array<{ asUid: string; submodulePath: string; label: string }> = [];
     const toMaterialize: Array<{
       asUid: string;
       submodulePath: string;
       gitUrl: string;
       label: string;
       ref: string;
+      /** req `d4ccc901` — `unpark` = local rename back, `pull` = network mount. */
+      source: "pull" | "unpark";
     }> = [];
     // Iterate ALL declared AS (vs the desktop path's `currentAsUids` for the
     // destroy loop) — equivalent because `materialised` implies presence in
     // `currentAsUids`; this single loop also covers the materialise side.
+    //
+    // req `d4ccc901` — mount-state is three-valued now: `active` (folder on
+    // disk), `parked` (folder under `.exocortex/parked/`), `absent`. Departures
+    // PARTITION into destroy XOR park, so a parked AssetSpace's files never
+    // reach `filesToDestroy` and the confirm card's "files to remove" count
+    // stays literally true.
+    const canPark = this.canPark();
     for (const info of allInfos) {
-      const materialised = currentAsUids.has(info.uid);
-      const inEffective = effectiveAsUids.has(info.uid);
+      const state: MountState = currentAsUids.has(info.uid)
+        ? "active"
+        : (await this.isParkedOnDisk(info.folderName))
+          ? "parked"
+          : "absent";
       const label = info.namespace || info.uid.slice(0, 8);
-      if (materialised && !inEffective) {
-        toDestroy.push({ asUid: info.uid, submodulePath: info.folderName, label });
-      } else if (!materialised && inEffective) {
-        toMaterialize.push({
-          asUid: info.uid,
-          submodulePath: info.folderName,
-          gitUrl: info.git,
-          label,
-          ref: "main",
-        });
+      const transition = classifyMountTransition({
+        state,
+        inEffectiveSet: effectiveAsUids.has(info.uid),
+        dependsOnKind: info.dependsOnKind,
+        canPark,
+      });
+      switch (transition) {
+        case "none":
+          break;
+        case "destroy":
+          toDestroy.push({ asUid: info.uid, submodulePath: info.folderName, label });
+          break;
+        case "park":
+          toPark.push({ asUid: info.uid, submodulePath: info.folderName, label });
+          break;
+        case "unpark":
+        case "materialize":
+          toMaterialize.push({
+            asUid: info.uid,
+            submodulePath: info.folderName,
+            gitUrl: info.git,
+            label,
+            ref: "main",
+            source: transition === "unpark" ? "unpark" : "pull",
+          });
+          break;
       }
     }
 
@@ -1686,6 +1781,16 @@ export class ProfileApplyManager {
         await this.enumerateFilesUnder(target.submodulePath),
       );
     }
+    // req `d4ccc901` — park file counts are gathered the same way (the folder is
+    // still mounted at plan time) but into a SEPARATE bucket, so the same files
+    // are never reported twice under two different verbs.
+    const parkedFileCounts = new Map<string, number>();
+    for (const target of toPark) {
+      parkedFileCounts.set(
+        target.asUid,
+        (await this.enumerateFilesUnder(target.submodulePath)).length,
+      );
+    }
     const plan: ApplyPlan = {
       targetProfileUid,
       targetProfileLabel,
@@ -1697,10 +1802,18 @@ export class ProfileApplyManager {
         asLabel: t.label,
         fileCount: filesToDestroyMap.get(t.asUid)?.length ?? 0,
       })),
+      assetSpacesBeingParked: toPark.map((t) => ({
+        asUid: t.asUid,
+        asLabel: t.label,
+        fileCount: parkedFileCounts.get(t.asUid) ?? 0,
+      })),
       assetSpacesBeingMaterialized: toMaterialize.map((t) => ({
         asUid: t.asUid,
         asLabel: t.label,
       })),
+      assetSpacesBeingUnparked: toMaterialize
+        .filter((t) => t.source === "unpark")
+        .map((t) => ({ asUid: t.asUid, asLabel: t.label })),
     };
     // #1d1bcde0 — the onload crash-recovery resume passes `skipConfirm` because
     // the user ALREADY approved this apply before the reload; re-prompting on a
@@ -1713,7 +1826,9 @@ export class ProfileApplyManager {
 
     // No-op early exit — mount-state already matches the target. Re-index +
     // record the selection (reindex-only path; already watchdog-wrapped).
-    if (toDestroy.length === 0 && toMaterialize.length === 0) {
+    // req `d4ccc901` — `toPark` counts as work: an apply whose only change is a
+    // park must still run, or a soft-edge departure would silently no-op.
+    if (toDestroy.length === 0 && toPark.length === 0 && toMaterialize.length === 0) {
       await this.reindexMountState(
         targetProfileUid,
         this.noChangeNotice(targetProfileLabel, currentAsUids.size),
@@ -1741,13 +1856,19 @@ export class ProfileApplyManager {
           targetProfileLabel,
           startedAt,
           toDestroy,
+          toPark,
           toMaterialize,
           restMount,
           localDataStore,
         }),
       targetProfileLabel,
       () => this.clearStuckLocalState(localDataStore),
-      this.computeApplyDeadlineMs(toDestroy.length + toMaterialize.length),
+      // Parks are local renames (~23 ms), but they are still per-AS work items
+      // in the critical section — count them so the deadline scales with the
+      // real op count rather than under-budgeting a park-heavy apply.
+      this.computeApplyDeadlineMs(
+        toDestroy.length + toPark.length + toMaterialize.length,
+      ),
     );
     // #3956 belt-and-suspenders — WARN on any dependsOn-closure member the
     // profile declares but apply could not materialize (no scanned descriptor).
@@ -1774,6 +1895,7 @@ export class ProfileApplyManager {
       targetProfileLabel,
       startedAt,
       toDestroy,
+      toPark,
       toMaterialize,
       restMount,
       localDataStore,
@@ -1829,12 +1951,37 @@ export class ProfileApplyManager {
         // Live progress BEFORE the mount so a long apply shows "Mounting X
         // (2 of 5)" as it runs — the journal entry below only fires AFTER.
         this.emitProgress({
-          op: "mount",
+          op: target.source === "unpark" ? "unpark" : "mount",
           as: target.asUid,
           label: target.label,
           index: i + 1,
           total: toMaterialize.length,
         });
+        // req `d4ccc901` — ONE arrival loop. An unpark differs only in how the
+        // bytes are acquired (local rename vs tarball); everything downstream —
+        // the rollback bookkeeping below, the journal entry, `mountedThisRun` —
+        // is shared, so an unparked AssetSpace cannot end up in a half-tracked
+        // state that a mounted one avoids.
+        if (target.source === "unpark") {
+          try {
+            await this.unparkAssetSpace(target.submodulePath);
+          } catch (unparkErr) {
+            await this.rollbackRestMounts(
+              restMount,
+              [...mountedThisRun, { asUid: target.asUid, submodulePath: target.submodulePath }],
+              targetProfileUid,
+            );
+            throw unparkErr;
+          }
+          mountedThisRun.push({ asUid: target.asUid, submodulePath: target.submodulePath });
+          await this.appendJournal({
+            phase: "phase2-unparked",
+            targetUid: targetProfileUid,
+            as: target.asUid,
+            ts: this.now().toISOString(),
+          });
+          continue;
+        }
         try {
           // Finer within-AS progress (#al-activitylog-progress) — the mount core
           // reports fetch → extract → materialize so a slow mount shows its
@@ -1902,6 +2049,43 @@ export class ProfileApplyManager {
           ts: this.now().toISOString(),
         });
       }
+      // req `d4ccc901` — park the soft-edge departures. Deliberately NOT routed
+      // through the destroy sequence above: a park is a local rename (≈23 ms, 0
+      // bytes), and entering `cache → phase2-destroy-cached → rm -rf` would both
+      // pay a full tarball copy for bytes that never leave the device AND write a
+      // journal stage whose recovery restores FROM THAT CACHE — so a crash would
+      // send recovery hunting an archive that was never written while the folder
+      // sat safe under `.exocortex/parked/`. `phase2-parked` carries its own
+      // recovery branch (rename back), which is why it is a separate stage.
+      for (let i = 0; i < toPark.length; i++) {
+        const target = toPark[i];
+        this.emitProgress({
+          op: "park",
+          as: target.asUid,
+          label: target.label,
+          index: i + 1,
+          total: toPark.length,
+        });
+        // Journal BEFORE the move, mirroring the git destroy path's F2 ordering
+        // (`phase2-destroy-cached` precedes `rm -rf`). A crash in the opposite
+        // ordering would not lose bytes — a park is a rename, the folder sits
+        // intact under `.exocortex/parked/`, and the classifier probes DISK
+        // (`isParkedOnDisk`), not the journal, so the next apply reconciles it.
+        // What it would lose is ROLLBACK: `recoverIncompleteSwitch` restores the
+        // pre-apply mount-state from `interrupted.parked`, so an unjournalled
+        // park leaves that one AssetSpace parked while its siblings are restored
+        // — a half-applied state, which is exactly what recovery promises not to
+        // leave. The inverse window is benign and self-announcing: if the move
+        // then fails, recovery's `unpark` finds nothing parked, throws, and the
+        // catch journals the error (same trade the destroy path already makes).
+        await this.appendJournal({
+          phase: "phase2-parked",
+          targetUid: targetProfileUid,
+          as: target.asUid,
+          ts: this.now().toISOString(),
+        });
+        await this.parkAssetSpace(target.submodulePath);
+      }
 
       // Persist the applied profile as last-applied cache + clear in-progress,
       // and record the pre-apply profile as the undo target (RFC 0002 §3.10)
@@ -1931,8 +2115,14 @@ export class ProfileApplyManager {
         ts: this.now().toISOString(),
         elapsedMs,
       });
+      // req `d4ccc901` — the parked count is appended ONLY when non-zero, so the
+      // pre-existing message stays byte-identical on every apply that parks
+      // nothing. An always-on ", 0 parked" would be noise on the common path and
+      // would churn assertions that have nothing to do with this feature.
+      const parkedSuffix =
+        toPark.length > 0 ? `, ${toPark.length} parked` : "";
       this.notify(
-        `Applied "${targetProfileLabel}": ${toMaterialize.length} mounted, ${toDestroy.length} unmounted (${elapsedMs}ms, REST).`,
+        `Applied "${targetProfileLabel}": ${toMaterialize.length} mounted, ${toDestroy.length} unmounted${parkedSuffix} (${elapsedMs}ms, REST).`,
       );
     } catch (e) {
       await this.appendJournal({
@@ -2237,6 +2427,48 @@ export class ProfileApplyManager {
       }
     }
 
+    // req `d4ccc901` — undo interrupted PARKS by renaming back, symmetric to the
+    // cache-restore above and for the same reason: an apply that never completed
+    // should leave the user on the pre-apply mount-state, not half-way.
+    //
+    // ⛔ This is a SEPARATE loop, not an extension of `destroyedAsUids`. Parking
+    // writes no `SwitchCacheLayer` archive, so routing a parked AssetSpace
+    // through `cacheLayer.restore()` would miss and report it unrecoverable
+    // while its bytes sit intact under `.exocortex/parked/`. The repair for a
+    // move is a move.
+    //
+    // No intersect with `materialized` is needed (unlike the destroy loop): park
+    // and unpark are mutually exclusive transitions for one AssetSpace within
+    // one apply, and a same-apply reversal already removed it from the set.
+    const unparked: string[] = [];
+    for (const asUid of interrupted.parked) {
+      const info = this.listAllAssetSpaceInfos().find((i) => i.uid === asUid);
+      // Without a descriptor we cannot derive the mount path — and unlike the
+      // destroy loop there is no safe diagnostic fallback, because renaming onto
+      // a guessed path could clobber an unrelated folder. Leave it parked: the
+      // bytes are intact and a later apply with the descriptor present will
+      // reconcile it.
+      if (info === undefined) continue;
+      try {
+        await this.appendJournal({
+          phase: "phase2-unparked",
+          targetUid: asUid,
+          as: asUid,
+          ts: this.now().toISOString(),
+        });
+        await this.unparkAssetSpace(info.folderName);
+        unparked.push(asUid);
+      } catch (err) {
+        await this.appendJournal({
+          phase: "phase2-unparked",
+          targetUid: asUid,
+          as: asUid,
+          ts: this.now().toISOString(),
+          error: this.redactError(String(err)),
+        });
+      }
+    }
+
     // Clear stuck _switchInProgress flag.
     const snapshot = localDataStore.snapshot();
     await localDataStore.save({
@@ -2251,7 +2483,82 @@ export class ProfileApplyManager {
     if (restored.length > 0) {
       this.notify(`Recovered ${restored.length} AssetSpace(s) from cache after interrupted switch`);
     }
+    if (unparked.length > 0) {
+      this.notify(`Restored ${unparked.length} parked AssetSpace(s) after interrupted switch`);
+    }
     return { restored, resumed: false, resumedTo: null };
+  }
+
+  /**
+   * req `d4ccc901` — park/unpark helpers routed through the ONE implementation
+   * ({@link RestAssetSpaceMount}), which owns both the vault adapter and the
+   * `.gitmodules` writer. Both apply paths and crash recovery call these, so
+   * there is a single place where "move aside" is defined.
+   *
+   * Returns `false` when no REST mount is reachable — the caller must then not
+   * have PLANNED a park in the first place (see `canPark` in the classifier
+   * input): planning a park and executing a destroy would make the approval card
+   * describe an operation the user did not get.
+   *
+   * ⛔ Resolves the FACTORY when the eager field is absent, for the same reason
+   * `canPark` uses {@link restWired}: production wires only the factory, so an
+   * eager-field-only read would return `false` on the live path.
+   */
+  private async resolveRestMount(): Promise<RestAssetSpaceMount | undefined> {
+    if (this.restMount !== undefined) return this.restMount;
+    if (this.restMountFactory === undefined) return undefined;
+    return await this.restMountFactory();
+  }
+
+  private async parkAssetSpace(submodulePath: string): Promise<boolean> {
+    const mount = await this.resolveRestMount();
+    if (mount === undefined) return false;
+    await mount.park(submodulePath);
+    return true;
+  }
+
+  private async unparkAssetSpace(submodulePath: string): Promise<boolean> {
+    const mount = await this.resolveRestMount();
+    if (mount === undefined) return false;
+    await mount.unpark(submodulePath);
+    return true;
+  }
+
+  /**
+   * Whether this manager can park at all (a REST mount is reachable).
+   *
+   * ⛔ Must be {@link restWired}, NOT `this.restMount !== undefined`. Production
+   * wires only `restMountFactory` (ExocortexPlugin passes a lazy closure so a PAT
+   * set after onload is honoured without a reload); `this.restMount` is
+   * `undefined` there and the real mount is resolved from the factory inside
+   * `applyProfileViaRest`. Reading the eager field would answer "cannot park" on
+   * the ONE path that actually runs — parking would plan zero parks forever,
+   * while every test that wires `restMount` directly stayed green. Same predicate
+   * as the delegation branch in `applyProfile`, deliberately.
+   */
+  private canPark(): boolean {
+    return this.restWired();
+  }
+
+  /**
+   * req `d4ccc901` — is a parked copy of this mount folder on disk?
+   *
+   * Wraps {@link parkedPathFor}, which THROWS on a malformed mount folder. That
+   * throw is right at the mutation site (moving a directory to an
+   * attacker-chosen path must fail loud), and wrong here: this runs while
+   * BUILDING a plan, across every descriptor in the vault, so one malformed
+   * folder would take down the whole apply — including the descriptors that are
+   * fine. Answering `false` degrades that AssetSpace to `absent`, i.e. exactly
+   * the pre-existing two-state behaviour, which is the safe direction.
+   */
+  private async isParkedOnDisk(folderName: string): Promise<boolean> {
+    let parkedPath: string;
+    try {
+      parkedPath = parkedPathFor(folderName);
+    } catch {
+      return false;
+    }
+    return await this.app.vault.adapter.exists(parkedPath);
   }
 
   /**
@@ -2404,6 +2711,26 @@ export class ProfileApplyManager {
       asUid: uid,
       asLabel: infoByUid.get(uid)?.namespace ?? uid.slice(0, 8),
     }));
+    // req `d4ccc901` — the DELETION half of AC2 needs no branch here and is not
+    // one: `extra` is derived from `materializedAsUids`, which is mount-folder
+    // existence on disk, so a parked AssetSpace (folder moved under
+    // `.exocortex/parked/`) is not materialized, cannot appear in `extra`, and
+    // therefore never has a deletion computed for it. Structural, not a special
+    // case — which is why nothing above needed changing.
+    //
+    // The ARRIVAL half does need marking. A parked AssetSpace the active profile
+    // still expects DOES land in `missing`, and reconcile's whole job is to warn
+    // the user before it acts. Announcing it under "materialize" alone would tell
+    // a user on a metered connection to expect a download for what is a local
+    // rename — the plan describing a mechanism it doesn't use.
+    const unparked: Array<{ asUid: string; asLabel: string }> = [];
+    for (const uid of missing) {
+      const info = infoByUid.get(uid);
+      if (info === undefined) continue;
+      if (await this.isParkedOnDisk(info.folderName)) {
+        unparked.push({ asUid: uid, asLabel: info.namespace || uid.slice(0, 8) });
+      }
+    }
     return {
       targetProfileUid: activeProfileUid,
       targetProfileLabel: `${targetLabel} (cross-device reconcile)`,
@@ -2412,6 +2739,10 @@ export class ProfileApplyManager {
       filesToDestroy,
       assetSpacesBeingTornDown: tornDown,
       assetSpacesBeingMaterialized: materialized,
+      // Reconcile itself never parks — it only ever adds back what the active
+      // profile expects — so the park list is empty by construction, not stubbed.
+      assetSpacesBeingParked: [],
+      assetSpacesBeingUnparked: unparked,
     };
   }
 
