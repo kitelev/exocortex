@@ -177,13 +177,16 @@ describe("collectSyncRepoSpecs", () => {
    *   B2 — `if (!(await adapter.exists(root))) return out;`   (absent-root fast path)
    *   C  — the outer `catch` that swallows any listing failure
    *
-   * Measured on a hardlink copy of origin/main@0cc49ef2, this suite:
+   * Measured by mutating a hardlink copy of origin/main@0cc49ef2 and running
+   * this suite against it — one mutation per guard, exact-literal anchor, with
+   * the replacement count asserted so a mutation that fails to apply cannot
+   * pass for green:
    *
-   *   | mutation        | red |
-   *   |-----------------|-----|
-   *   | B2 alone        |  0  |
-   *   | C  alone        |  0  |
-   *   | B2 + C together |  3  |
+   *   | mutation        | red before | red after |
+   *   |-----------------|------------|-----------|
+   *   | B2 alone        |     0      |     0     |
+   *   | C  alone        |     0      |     1     |
+   *   | B2 + C together |     3      |     5     |
    *
    * ⛔ Zero-red-alone means the contract is held TWICE, NOT that it is
    * untested — neither guard may be deleted as «uncovered»
@@ -192,20 +195,36 @@ describe("collectSyncRepoSpecs", () => {
    * locked only as a PAIR. C, by contrast, IS isolable — a root that exists
    * but cannot be listed reaches C and nothing else.
    *
-   * Until these two checks the pair was locked only INCIDENTALLY, by three
-   * tests whose subject is something else entirely («skips non-GitHub
-   * sources», «warns on a FileSpace without a source», «excludes AssetSpaces
-   * whose mount folder is absent») — each green merely because its fixture
-   * happens to omit `assetspaces/`. The first fixture to add that folder would
-   * have unlocked the pair silently.
+   * The two checks below do DIFFERENT jobs, and only the first adds coverage:
+   *
+   *  - «isolates the outer swallow» moves C from 0 to 1 red — it is the only
+   *    red under `C alone`.
+   *  - «pair axis …» adds NO coverage: the pair already reds 4× without it.
+   *    The pair WAS locked before this commit, but only INCIDENTALLY — by
+   *    three tests whose subject is something else entirely («skips non-GitHub
+   *    sources», «warns on a FileSpace without a source», «excludes
+   *    AssetSpaces whose mount folder is absent»), each green merely because
+   *    its fixture happens to omit `assetspaces/`. Adding that folder to any
+   *    of them would unlock the pair silently. This check exists to state the
+   *    contract by NAME on a fixture whose root-absence is deliberate rather
+   *    than incidental — intent, not coverage.
    */
   describe("the FINDING-3 mount walk never throws into the sync path", () => {
-    /** Root present but unlistable (EACCES / iOS sandbox) — reaches only C. */
+    /**
+     * Root present but unlistable (EACCES / iOS sandbox) — reaches only C.
+     *
+     * Denies the subtree, not just the root: a real permission-denied folder
+     * denies its children too, and only `list` is denied — `exists` still
+     * answers, which is what keeps the B2 fast path from firing and lets the
+     * declared AssetSpace pass its own materialization gate.
+     */
     class UnreadableRootAdapter extends InMemoryAdapter {
       override async list(
         dir: string,
       ): Promise<{ files: string[]; folders: string[] }> {
-        if (dir === "assetspaces") throw new Error("EACCES: permission denied");
+        if (dir === "assetspaces" || dir.startsWith("assetspaces/")) {
+          throw new Error("EACCES: permission denied");
+        }
         return super.list(dir);
       }
     }
