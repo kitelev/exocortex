@@ -169,6 +169,93 @@ describe("collectSyncRepoSpecs", () => {
     });
   });
 
+  /**
+   * Mount-walk resilience — `enumerateMountFolders` carries TWO guards for the
+   * single contract stated in its docstring: «a detection helper must never
+   * throw into the sync path».
+   *
+   *   B2 — `if (!(await adapter.exists(root))) return out;`   (absent-root fast path)
+   *   C  — the outer `catch` that swallows any listing failure
+   *
+   * Measured on a hardlink copy of origin/main@0cc49ef2, this suite:
+   *
+   *   | mutation        | red |
+   *   |-----------------|-----|
+   *   | B2 alone        |  0  |
+   *   | C  alone        |  0  |
+   *   | B2 + C together |  3  |
+   *
+   * ⛔ Zero-red-alone means the contract is held TWICE, NOT that it is
+   * untested — neither guard may be deleted as «uncovered»
+   * (integration-test-revert-verify §ДУБЛИРУЮЩИЕ гварды). B2 is a pure fast
+   * path: C covers the very same input, so B2 has no isolable behaviour and is
+   * locked only as a PAIR. C, by contrast, IS isolable — a root that exists
+   * but cannot be listed reaches C and nothing else.
+   *
+   * Until these two checks the pair was locked only INCIDENTALLY, by three
+   * tests whose subject is something else entirely («skips non-GitHub
+   * sources», «warns on a FileSpace without a source», «excludes AssetSpaces
+   * whose mount folder is absent») — each green merely because its fixture
+   * happens to omit `assetspaces/`. The first fixture to add that folder would
+   * have unlocked the pair silently.
+   */
+  describe("the FINDING-3 mount walk never throws into the sync path", () => {
+    /** Root present but unlistable (EACCES / iOS sandbox) — reaches only C. */
+    class UnreadableRootAdapter extends InMemoryAdapter {
+      override async list(
+        dir: string,
+      ): Promise<{ files: string[]; folders: string[] }> {
+        if (dir === "assetspaces") throw new Error("EACCES: permission denied");
+        return super.list(dir);
+      }
+    }
+
+    it("isolates the outer swallow — an unlistable mount root degrades to []", async () => {
+      const adapter = new UnreadableRootAdapter();
+      adapter.mkdirAll("assetspaces/o/r");
+      const app = makeApp({
+        adapter,
+        mdFiles: [{ path: "as1.md" }],
+        frontmatters: new Map([
+          ["as1.md", assetSpaceFm("uid-1", "https://github.com/o/r")],
+        ]),
+      });
+
+      // Preconditions — the root EXISTS (so the B2 fast path cannot fire) and
+      // listing it really does fail. Without both, the assertion is vacuous.
+      expect(await adapter.exists("assetspaces")).toBe(true);
+      await expect(adapter.list("assetspaces")).rejects.toThrow(/EACCES/);
+
+      const result = await collectSyncRepoSpecs(app as unknown as App);
+
+      // Positive expected value: the sync unit is STILL enumerated, so the
+      // walk failure is contained rather than fatal. An empty `specs` here
+      // would let the check pass for the wrong reason.
+      expect(result.specs).toEqual([spec()]);
+      expect(result.mountedNotDeclared).toEqual([]);
+    });
+
+    it("pair axis for the absent-root fast path — no `assetspaces` folder at all", async () => {
+      const adapter = new InMemoryAdapter();
+      const app = makeApp({
+        adapter,
+        mdFiles: [{ path: "as1.md" }],
+        frontmatters: new Map([
+          ["as1.md", assetSpaceFm("uid-1", "https://github.com/o/r")],
+        ]),
+      });
+
+      expect(await adapter.exists("assetspaces")).toBe(false);
+
+      // The discriminator is the ABSENCE of a throw: with both guards gone the
+      // adapter's ENOENT escapes `collectSyncRepoSpecs` and reds this await.
+      const result = await collectSyncRepoSpecs(app as unknown as App);
+
+      expect(result.mountedNotDeclared).toEqual([]);
+      expect(result.specs).toEqual([]);
+    });
+  });
+
   it("skips non-GitHub sources with a warning", async () => {
     const adapter = new InMemoryAdapter();
     const app = makeApp({
