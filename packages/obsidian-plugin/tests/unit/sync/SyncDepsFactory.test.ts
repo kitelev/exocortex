@@ -229,7 +229,7 @@ describe("collectSyncRepoSpecs", () => {
       }
     }
 
-    it("isolates the outer swallow — an unlistable mount root degrades to []", async () => {
+    it("isolates the outer swallow — an unlistable mount root degrades to [] @req:ccae1563-ae89-4c45-ad1b-1645405870d6", async () => {
       const adapter = new UnreadableRootAdapter();
       adapter.mkdirAll("assetspaces/o/r");
       const app = makeApp({
@@ -254,7 +254,7 @@ describe("collectSyncRepoSpecs", () => {
       expect(result.mountedNotDeclared).toEqual([]);
     });
 
-    it("pair axis for the absent-root fast path — no `assetspaces` folder at all", async () => {
+    it("pair axis for the absent-root fast path — no `assetspaces` folder at all @req:ccae1563-ae89-4c45-ad1b-1645405870d6", async () => {
       const adapter = new InMemoryAdapter();
       const app = makeApp({
         adapter,
