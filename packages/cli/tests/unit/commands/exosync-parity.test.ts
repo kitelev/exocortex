@@ -105,6 +105,12 @@ function makeVault(opts: {
   /** Same files, but under {@link PARKED} instead of {@link MOUNT}. */
   parkedFiles?: Record<string, string>;
   watermarkFiles?: Record<string, string>;
+  /**
+   * The commit this device last synced. Defaults to the fake remote's head, so
+   * a test must opt IN to a drifted device copy — the freshness verdict is then
+   * driven by the fixture, not by a coincidence of two hard-coded constants.
+   */
+  watermarkSha?: string;
   declaration?: boolean;
 }): VaultFixture {
   const vault = mkdtempSync(path.join(tmpdir(), "exosync-parity-test-"));
@@ -128,7 +134,7 @@ function makeVault(opts: {
     const wmDir = path.join(vault, ".obsidian", "plugins", "exocortex");
     mkdirSync(wmDir, { recursive: true });
     const record = {
-      lastSyncedSha: "a".repeat(40),
+      lastSyncedSha: opts.watermarkSha ?? "a".repeat(40),
       rootTreeSha: "b".repeat(40),
       files: Object.entries(opts.watermarkFiles).map(([p, c]) => ({
         path: p,
@@ -150,16 +156,32 @@ function run(
   vault: string,
   remoteFiles: Record<string, string>,
   over: Partial<ExosyncParityOptions> = {},
+  transport?: RestCommitTransport,
 ): Promise<{ code: number; lines: string[] }> {
   const lines: string[] = [];
   return runExosyncParity(
     { vault, token: FAKE_PAT, ...over },
     {
-      transportFactory: () => fakeTransport(remoteFiles),
+      transportFactory: () => transport ?? fakeTransport(remoteFiles),
       out: (l) => lines.push(l),
       env: {},
     },
   ).then((code) => ({ code, lines }));
+}
+
+/** Wraps a transport to count the `GET git/refs/heads/*` calls it sees. */
+function countingRefs(inner: RestCommitTransport): {
+  transport: RestCommitTransport;
+  refsCalls: () => number;
+} {
+  let calls = 0;
+  return {
+    transport: async (req) => {
+      if (req.method === "GET" && /\/git\/refs\/heads\//.test(req.url)) calls++;
+      return inner(req);
+    },
+    refsCalls: () => calls,
+  };
 }
 
 describe("collectVaultSpecs", () => {
@@ -253,6 +275,177 @@ describe("parking is invisible to sync-unit enumeration @req:4eca4900-fd1f-42d2-
       const { specs, warnings } = collectVaultSpecs(fx.vault);
       expect(specs).toEqual([]);
       expect(warnings).toEqual([]); // parking is silent, not a warning
+    } finally {
+      fx.cleanup();
+    }
+  });
+});
+
+/**
+ * Visibility of a parked AssetSpace's staleness (req 75dba148).
+ *
+ * Sibling req `4eca4900` (above) locks the *silence*: a parked mount must never
+ * become a sync unit. This block locks the *signal* that silence made necessary —
+ * a frozen copy converges never, so the one explicit "am I in sync?" probe has
+ * to say how far it drifted, while an ACTIVE repo gets no such verdict at all.
+ *
+ * Everything runs through the real exported `collectVaultSpecs` /
+ * `runExosyncParity` over a real temp vault on the real node fs; only the GitHub
+ * transport is faked, which is what makes the refs-call budget countable.
+ */
+describe("parked AssetSpaces report their staleness @req:75dba148-15c4-401e-a7b5-be2392557c58", () => {
+  it("enumerates a parked declaration into `parked`, never into the sync units", () => {
+    const fx = makeVault({ parkedFiles: { [FILE_A]: CONTENT_A } });
+    try {
+      // Precondition — the copy is on disk, just not where the derived path
+      // points. Without it the assertions below could pass vacuously.
+      expect(existsSync(path.join(fx.vault, PARKED, FILE_A))).toBe(true);
+      expect(existsSync(path.join(fx.vault, MOUNT))).toBe(false);
+
+      const { specs, parked, warnings } = collectVaultSpecs(fx.vault);
+      expect(specs).toEqual([]); // still not a sync unit — req 4eca4900 holds
+      expect(parked).toEqual([
+        {
+          owner: OWNER,
+          repo: REPO,
+          branch: "main",
+          repoKey: `${OWNER}/${REPO}#main`,
+          localPath: MOUNT,
+        },
+      ]);
+      expect(warnings).toEqual([]); // parking is a state, not a warning
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("negative control — an ACTIVE declaration is a sync unit and is absent from `parked`", () => {
+    const fx = makeVault({ mountFiles: { [FILE_A]: CONTENT_A } });
+    try {
+      const { specs, parked } = collectVaultSpecs(fx.vault);
+      expect(specs).toHaveLength(1);
+      expect(parked).toEqual([]);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("reports BEHIND with both SHAs when the remote moved past the parked copy", async () => {
+    const fx = makeVault({
+      parkedFiles: { [FILE_A]: CONTENT_A },
+      watermarkFiles: {},
+      watermarkSha: "d".repeat(40), // the remote head is "a"×40 → drifted
+    });
+    try {
+      const { lines } = await run(fx.vault, { [FILE_A]: CONTENT_A });
+      const text = lines.join("\n");
+      expect(text).toMatch(/Parked AssetSpaces \(frozen on this device/);
+      expect(text).toMatch(
+        new RegExp(`${OWNER}/${REPO}#main: BEHIND — parked at ddddddd, remote head is aaaaaaa`),
+      );
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("reports current when the parked copy still is the remote head", async () => {
+    const fx = makeVault({
+      parkedFiles: { [FILE_A]: CONTENT_A },
+      watermarkFiles: {}, // watermark sha defaults to the fake remote head
+    });
+    try {
+      const { lines } = await run(fx.vault, { [FILE_A]: CONTENT_A });
+      expect(lines.join("\n")).toMatch(
+        new RegExp(`${OWNER}/${REPO}#main: current — parked at aaaaaaa`),
+      );
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("canary — an unreachable remote reports unknown, NEVER current", async () => {
+    const fx = makeVault({
+      parkedFiles: { [FILE_A]: CONTENT_A },
+      watermarkFiles: {},
+    });
+    try {
+      const offline: RestCommitTransport = async () => {
+        throw new Error("getaddrinfo ENOTFOUND api.github.com");
+      };
+      const { lines } = await run(fx.vault, {}, {}, offline);
+      const text = lines.join("\n");
+      expect(text).toMatch(
+        new RegExp(`${OWNER}/${REPO}#main: unknown — remote unreachable`),
+      );
+      // The whole point of the third value: silence must not read as freshness.
+      expect(text).not.toMatch(/: current —/);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("costs exactly ONE refs call per parked repo, and still exits 2 with no sync units", async () => {
+    const fx = makeVault({
+      parkedFiles: { [FILE_A]: CONTENT_A },
+      watermarkFiles: {},
+      watermarkSha: "d".repeat(40),
+    });
+    try {
+      // No materialized mount ⇒ no parity round ⇒ every refs call observed here
+      // was made on the parked repo's behalf. That is what makes the budget
+      // countable instead of inferred.
+      const counted = countingRefs(fakeTransport({ [FILE_A]: CONTENT_A }));
+      const { code, lines } = await run(fx.vault, {}, {}, counted.transport);
+
+      expect(counted.refsCalls()).toBe(1);
+      expect(code).toBe(2); // staleness is informational — the exit contract is untouched
+      const text = lines.join("\n");
+      expect(text).toMatch(/BEHIND — parked at ddddddd/);
+      expect(text).toMatch(/Nothing to check/); // …and the old message still stands
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("negative control — an ACTIVE repo gets no staleness verdict at all", async () => {
+    const fx = makeVault({
+      mountFiles: { [FILE_A]: CONTENT_A },
+      watermarkFiles: { [FILE_A]: CONTENT_A },
+      watermarkSha: "d".repeat(40), // drifted — yet it must still say nothing
+    });
+    try {
+      const { lines } = await run(fx.vault, { [FILE_A]: CONTENT_A });
+      const text = lines.join("\n");
+      // A drifted ACTIVE repo is the parity round's business; it converges on the
+      // next sync, so a staleness verdict here would be noise, not signal.
+      expect(text).not.toMatch(/Parked AssetSpaces/);
+      expect(text).not.toMatch(/BEHIND — parked at/);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("--json carries the parked verdicts on the all-parked path too", async () => {
+    const fx = makeVault({
+      parkedFiles: { [FILE_A]: CONTENT_A },
+      watermarkFiles: {},
+      watermarkSha: "d".repeat(40),
+    });
+    try {
+      const { code, lines } = await run(
+        fx.vault,
+        { [FILE_A]: CONTENT_A },
+        { json: true },
+      );
+      expect(code).toBe(2);
+      const json = JSON.parse(
+        lines.filter((l) => l.startsWith("{")).join("\n"),
+      ) as { parked: { repoKey: string; freshness: string }[] };
+      expect(json.parked).toHaveLength(1);
+      expect(json.parked[0]).toMatchObject({
+        repoKey: `${OWNER}/${REPO}#main`,
+        freshness: "behind",
+      });
     } finally {
       fx.cleanup();
     }

@@ -656,6 +656,16 @@ export {
   type RemoteCommitInfo,
   type RemoteTreeEntry,
 } from "./services/sync/githubRepoReader";
+// Staleness of a PARKED AssetSpace (req 75dba148): a frozen mount never
+// converges, so the one explicit «am I in sync?» probe has to say how far it
+// drifted. Platform-free on purpose — the CLI consumes it today, a plugin
+// surface can consume the SAME verdict later without duplicating the logic.
+export {
+  checkParkedStaleness,
+  type ParkedFreshness,
+  type ParkedStalenessDeps,
+  type ParkedStalenessVerdict,
+} from "./services/sync/parkedStaleness";
 export {
   DEFAULT_MAX_PUSH_RETRIES,
   DEFAULT_LOCAL_MANIFEST_REHASH_MS,
