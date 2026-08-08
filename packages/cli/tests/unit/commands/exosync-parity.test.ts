@@ -112,6 +112,12 @@ function makeVault(opts: {
    */
   watermarkSha?: string;
   declaration?: boolean;
+  /**
+   * A SECOND declaration, materialized at its derived path — i.e. an ACTIVE
+   * AssetSpace living in the same vault as the parked one. Lets a single run
+   * observe both branches at once instead of inferring one from the other.
+   */
+  activeRepo?: string;
 }): VaultFixture {
   const vault = mkdtempSync(path.join(tmpdir(), "exosync-parity-test-"));
   if (opts.declaration !== false) {
@@ -119,6 +125,15 @@ function makeVault(opts: {
       path.join(vault, "space-decl.md"),
       `---\nexo__Asset_uid: decl-uid\nexo__Instance_class:\n  - "[[${ASSET_SPACE_CLASS_UID}]]"\nexo__AssetSpace_source: https://github.com/${OWNER}/${REPO}\n---\n\nDeclaration\n`,
     );
+  }
+  if (opts.activeRepo !== undefined) {
+    writeFileSync(
+      path.join(vault, "space-decl-active.md"),
+      `---\nexo__Asset_uid: decl-uid-active\nexo__Instance_class:\n  - "[[${ASSET_SPACE_CLASS_UID}]]"\nexo__AssetSpace_source: https://github.com/${OWNER}/${opts.activeRepo}\n---\n\nActive declaration\n`,
+    );
+    const full = path.join(vault, "assetspaces", OWNER, opts.activeRepo, FILE_A);
+    mkdirSync(path.dirname(full), { recursive: true });
+    writeFileSync(full, CONTENT_A);
   }
   for (const [rel, content] of Object.entries(opts.mountFiles ?? {})) {
     const full = path.join(vault, MOUNT, rel);
@@ -169,18 +184,29 @@ function run(
   ).then((code) => ({ code, lines }));
 }
 
-/** Wraps a transport to count the `GET git/refs/heads/*` calls it sees. */
+/**
+ * Wraps a transport to count the `GET git/refs/heads/*` calls it sees, both in
+ * total and PER REPO — the per-repo tally is what makes "no extra call on behalf
+ * of an active repo" a measurement rather than an inference.
+ */
 function countingRefs(inner: RestCommitTransport): {
   transport: RestCommitTransport;
   refsCalls: () => number;
+  refsFor: (repo: string) => number;
 } {
   let calls = 0;
+  const byRepo = new Map<string, number>();
   return {
     transport: async (req) => {
-      if (req.method === "GET" && /\/git\/refs\/heads\//.test(req.url)) calls++;
+      const m = /\/repos\/[^/]+\/([^/]+)\/git\/refs\/heads\//.exec(req.url);
+      if (req.method === "GET" && m !== null) {
+        calls++;
+        byRepo.set(m[1], (byRepo.get(m[1]) ?? 0) + 1);
+      }
       return inner(req);
     },
     refsCalls: () => calls,
+    refsFor: (repo) => byRepo.get(repo) ?? 0,
   };
 }
 
@@ -420,6 +446,49 @@ describe("parked AssetSpaces report their staleness @req:75dba148-15c4-401e-a7b5
       // next sync, so a staleness verdict here would be noise, not signal.
       expect(text).not.toMatch(/Parked AssetSpaces/);
       expect(text).not.toMatch(/BEHIND — parked at/);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("mixed vault — the parked repo costs ONE refs call and the ACTIVE one costs no extra", async () => {
+    const ACTIVE_REPO = "exoas-active";
+    const fx = makeVault({
+      parkedFiles: { [FILE_A]: CONTENT_A },
+      watermarkFiles: {},
+      watermarkSha: "d".repeat(40),
+      activeRepo: ACTIVE_REPO,
+    });
+    try {
+      // One vault, both branches, one run — so the discrimination is observed
+      // rather than inferred from two separately-shaped fixtures.
+      const counted = countingRefs(fakeTransport({ [FILE_A]: CONTENT_A }));
+      const { lines } = await run(fx.vault, {}, {}, counted.transport);
+
+      // The parked repo: exactly the one staleness call (it is not a sync unit,
+      // so the parity round never touches it).
+      expect(counted.refsFor(REPO)).toBe(1);
+      // The active repo: exactly the parity round's own head read — the parked
+      // feature adds nothing on its behalf.
+      expect(counted.refsFor(ACTIVE_REPO)).toBe(1);
+
+      const text = lines.join("\n");
+      expect(text).toMatch(new RegExp(`${OWNER}/${REPO}#main: BEHIND`));
+      expect(text).not.toMatch(new RegExp(`${OWNER}/${ACTIVE_REPO}#main: (BEHIND|current|unknown) —`));
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  it("--json stays byte-identical to the old empty-vault path when nothing is parked", async () => {
+    // Locks the `parkedVerdicts.length > 0` guard: without it this path would
+    // start emitting `{"parked": []}`, which the pre-parked CLI never printed.
+    const fx = makeVault({ declaration: false });
+    try {
+      const { code, lines } = await run(fx.vault, {}, { json: true });
+      expect(code).toBe(2);
+      expect(lines.filter((l) => l.startsWith("{"))).toEqual([]);
+      expect(lines.join("\n")).toMatch(/Nothing to check/);
     } finally {
       fx.cleanup();
     }

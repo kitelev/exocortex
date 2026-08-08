@@ -168,6 +168,12 @@ interface CollectedSpecs {
  * must never move bytes to a path it cannot reason about. Here the same throw
  * would abort enumeration of every OTHER declaration in the vault, so it degrades
  * to "not parked" instead.
+ *
+ * Today that catch is defence in depth, not a live path: `localPath` only ever
+ * comes from `AssetSpacePathDeriver`, whose charset guard already rejects empty
+ * and traversal segments, so no derived value can be refused. It stays because
+ * the day that stops being true, one malformed declaration must not blind the
+ * probe to the whole vault.
  */
 function isParked(vaultPath: string, localPath: string): boolean {
   let parkedRel: string;
