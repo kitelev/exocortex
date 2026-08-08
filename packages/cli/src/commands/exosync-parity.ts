@@ -30,10 +30,13 @@ import {
   ParityValidator,
   SpaceSpecAccumulator,
   WATERMARK_STORE_FILENAME,
+  checkParkedStaleness,
   classifySpaceDeclaration,
+  parkedPathFor,
   summarizeParityRound,
   type LocalFilesPort,
   type ParityRoundRecord,
+  type ParkedStalenessVerdict,
   type RestCommitTransport,
   type Sha1Fn,
   type SyncRepoSpec,
@@ -147,7 +150,39 @@ function nodeLocalFilesPort(root: string): LocalFilesPort {
 
 interface CollectedSpecs {
   specs: SyncRepoSpec[];
+  /**
+   * Declarations whose DERIVED mount is absent while a copy sits in the park.
+   * Kept strictly apart from {@link CollectedSpecs.specs}: a parked repo is not
+   * a sync unit and must never reach the parity round (req 4eca4900).
+   */
+  parked: SyncRepoSpec[];
   warnings: string[];
+}
+
+/**
+ * A declaration is PARKED when its derived mount is gone but a copy lives under
+ * `.exocortex/parked/<owner>/<repo>`.
+ *
+ * `parkedPathFor` THROWS on a mount folder it refuses to map (a legacy flat path,
+ * a traversal segment) — a deliberate fail-loud for the parking command, which
+ * must never move bytes to a path it cannot reason about. Here the same throw
+ * would abort enumeration of every OTHER declaration in the vault, so it degrades
+ * to "not parked" instead.
+ *
+ * Today that catch is defence in depth, not a live path: `localPath` only ever
+ * comes from `AssetSpacePathDeriver`, whose charset guard already rejects empty
+ * and traversal segments, so no derived value can be refused. It stays because
+ * the day that stops being true, one malformed declaration must not blind the
+ * probe to the whole vault.
+ */
+function isParked(vaultPath: string, localPath: string): boolean {
+  let parkedRel: string;
+  try {
+    parkedRel = parkedPathFor(localPath);
+  } catch {
+    return false;
+  }
+  return existsSync(path.join(vaultPath, parkedRel));
 }
 
 /**
@@ -155,10 +190,16 @@ interface CollectedSpecs {
  * classification core the plugin's `collectSyncRepoSpecs` delegates to
  * (one parser, no drift); only the walk (node fs) and the existence check
  * differ.
+ *
+ * Parked declarations are collected ALONGSIDE, never into `specs`: `commit()` is
+ * still reached only for a materialized mount, so the parity round, its
+ * `ok`/`vacuous` flags and the process exit code stay byte-identical. Parking
+ * also stays silent — it is a state, not a warning.
  */
 export function collectVaultSpecs(vaultPath: string): CollectedSpecs {
   const adapter = new FileSystemVaultAdapter(vaultPath);
   const acc = new SpaceSpecAccumulator();
+  const parked: SyncRepoSpec[] = [];
   for (const file of adapter.getAllFiles()) {
     const fm = adapter.getFrontmatter(file) as Record<string, unknown> | null;
     if (!fm) continue;
@@ -168,10 +209,13 @@ export function collectVaultSpecs(vaultPath: string): CollectedSpecs {
     if (verdict.kind === "skip") continue;
     const spec = acc.offer(verdict.candidate);
     if (spec === null) continue;
-    if (!existsSync(path.join(vaultPath, spec.localPath))) continue;
+    if (!existsSync(path.join(vaultPath, spec.localPath))) {
+      if (isParked(vaultPath, spec.localPath)) parked.push(spec);
+      continue;
+    }
     acc.commit(verdict.candidate);
   }
-  return { specs: acc.specs, warnings: acc.warnings };
+  return { specs: acc.specs, parked, warnings: acc.warnings };
 }
 
 function printHumanReport(
@@ -195,6 +239,44 @@ function printHumanReport(
   out(summarizeParityRound(record));
 }
 
+/**
+ * Report how far each PARKED AssetSpace has drifted (req 75dba148).
+ *
+ * Printed even when there is no parity round to run: a vault whose AssetSpaces
+ * are ALL parked is exactly the case where "Nothing to check" would otherwise be
+ * the whole answer.
+ */
+function printParkedSection(
+  verdicts: ParkedStalenessVerdict[],
+  out: (line: string) => void,
+): void {
+  if (verdicts.length === 0) return;
+  out(
+    `Parked AssetSpaces (frozen on this device, not synced): ${verdicts.length}`,
+  );
+  for (const v of verdicts) {
+    const synced =
+      v.lastSyncedSha !== null ? v.lastSyncedSha.slice(0, 7) : "never";
+    const head =
+      v.remoteHeadSha !== null ? v.remoteHeadSha.slice(0, 7) : "unread";
+    switch (v.freshness) {
+      case "behind":
+        out(
+          `  ${v.repoKey}: BEHIND — parked at ${synced}, remote head is ${head}`,
+        );
+        break;
+      case "current":
+        out(
+          `  ${v.repoKey}: current — parked at ${synced}, matches the remote head`,
+        );
+        break;
+      case "unknown":
+        out(`  ${v.repoKey}: unknown — ${v.reason ?? "no verdict"}`);
+        break;
+    }
+  }
+}
+
 /** Core flow, exported for tests. Returns the intended exit code. */
 export async function runExosyncParity(
   opts: ExosyncParityOptions,
@@ -214,14 +296,8 @@ export async function runExosyncParity(
   const transport =
     deps.transportFactory?.(token, opts.apiBase) ?? pushService.transport();
 
-  const { specs, warnings } = collectVaultSpecs(vaultPath);
+  const { specs, parked, warnings } = collectVaultSpecs(vaultPath);
   for (const w of warnings) out(`warn: ${w}`);
-  if (specs.length === 0) {
-    out(
-      "Nothing to check — no materialized AssetSpaces with a GitHub source found in this vault.",
-    );
-    return 2;
-  }
 
   const configDir = opts.configDir ?? ".obsidian";
   const watermarkPath = path.join(
@@ -246,6 +322,32 @@ export async function runExosyncParity(
     },
   });
 
+  // Parked staleness (req 75dba148) — ONE refs call per parked repo, none on
+  // behalf of an active one (they never enter this loop). Sequential so the
+  // report order is deterministic and the call budget is countable.
+  const parkedVerdicts: ParkedStalenessVerdict[] = [];
+  for (const spec of parked) {
+    parkedVerdicts.push(
+      await checkParkedStaleness(spec, {
+        transport,
+        watermarks: { get: (repoKey) => watermarks.get(repoKey) },
+        redact: (m) => pushService.redact(m),
+        ...(opts.apiBase !== undefined ? { baseURL: opts.apiBase } : {}),
+      }),
+    );
+  }
+  if (opts.json !== true) printParkedSection(parkedVerdicts, out);
+
+  if (specs.length === 0) {
+    if (opts.json === true && parkedVerdicts.length > 0) {
+      out(JSON.stringify({ parked: parkedVerdicts }, null, 2));
+    }
+    out(
+      "Nothing to check — no materialized AssetSpaces with a GitHub source found in this vault.",
+    );
+    return 2;
+  }
+
   const validator = new ParityValidator({
     transport,
     sha1: nodeSha1,
@@ -263,7 +365,9 @@ export async function runExosyncParity(
   const record = await validator.runRound(specs, { trigger: "standalone" });
 
   if (opts.json === true) {
-    out(JSON.stringify(record, null, 2));
+    // Additive key — the round record's own shape is untouched, so existing
+    // consumers keep reading `version`/`ok`/`repos` exactly as before.
+    out(JSON.stringify({ ...record, parked: parkedVerdicts }, null, 2));
   } else {
     printHumanReport(record, out);
   }
