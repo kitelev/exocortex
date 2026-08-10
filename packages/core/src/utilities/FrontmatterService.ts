@@ -267,8 +267,7 @@ export class FrontmatterService {
     property = canonicalYamlKey(property);
     const parsed = this.parse(content);
 
-    // No frontmatter or property doesn't exist - return unchanged
-    if (!parsed.exists || !this.hasProperty(parsed.content, property)) {
+    if (!parsed.exists) {
       return content;
     }
 
@@ -283,7 +282,18 @@ export class FrontmatterService {
     // byte-identical behaviour of the previous `(?:\n|^)`-anchored regex, whose
     // `^` matched empty at position 0 so the trailing newline survived.
     // Middle/last keys are deleted outright, leaving no blank line.
+    //
+    // ⛤ Existence is decided by `findPropertyLineSpan` itself, NOT by a separate
+    // `hasProperty` pre-check. The two disagree on what a line is — `hasProperty`
+    // is a `/m`-flagged regex (JS `^` also matches after a lone CR, U+2028, U+2029)
+    // while the span splits on "\n" — so a `hasProperty`-gated early return could
+    // pass while the loop found nothing, leaving the file rewritten unchanged and
+    // the command still reporting `removed: true`. One source of truth for "where
+    // does this key live" removes that class by construction.
     const lines = parsed.content.split("\n");
+    if (FrontmatterService.findPropertyLineSpan(lines, property) === null) {
+      return content; // absent → byte-identical passthrough, no frontmatter rebuild
+    }
     for (;;) {
       const span = FrontmatterService.findPropertyLineSpan(lines, property);
       if (!span) break;
