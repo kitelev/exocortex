@@ -203,22 +203,16 @@ export class FrontmatterService {
     // Frontmatter exists - update or add property
     let updatedFrontmatter = parsed.content;
 
-    // Property already exists - replace value (including multi-line array items)
-    if (this.hasProperty(updatedFrontmatter, property)) {
-      // `^` + `m`: match the key only at LINE START — see `hasProperty`.
-      const propertyRegex = new RegExp(
-        `^${this.escapeRegex(property)}:.*(?:\n {2}- .*)*`,
-        "m",
-      );
-      // Function-replacer (not a string) so `$`-patterns in the value
-      // (`$&`, `$1`-`$9`, `` $` ``, `$'`, `$$`) are NOT interpreted by
-      // String.prototype.replace — an ordinary value like a price `$1` would
-      // otherwise splice a capture-group / duplicate the match into the
-      // frontmatter (data-loss, #3748 family / #3795 review H1).
-      updatedFrontmatter = updatedFrontmatter.replace(
-        propertyRegex,
-        () => serialized,
-      );
+    // Property already exists - replace the WHOLE value, including every
+    // continuation line it owns (list items AND block-scalar bodies).
+    const lines = updatedFrontmatter.split("\n");
+    const span = FrontmatterService.findPropertyLineSpan(lines, property);
+    if (span) {
+      // Splice on LINES rather than String.replace: a `$`-pattern in the value
+      // (`$&`, `$1`-`$9`, `` $` ``, `$'`, `$$`) is inserted verbatim, so it is
+      // not re-interpreted as a replacement pattern (#3748 family / #3795 H1).
+      lines.splice(span.start, span.end - span.start, ...serialized.split("\n"));
+      updatedFrontmatter = lines.join("\n");
     } else {
       // Property doesn't exist - append to frontmatter
       // Add newline separator only if frontmatter is not empty
@@ -278,20 +272,28 @@ export class FrontmatterService {
       return content;
     }
 
-    // Remove property line and any following array items (lines starting with "  - ")
-    // `(?:\n|^)` rather than a bare `^`: the key must start a line (see
-    // `hasProperty`), AND the preceding newline is consumed with it, so removing
-    // a middle or last key leaves no blank line.
-    // ⚠ Not an invariant for the FIRST key — there is no preceding newline, `^`
-    // matches empty, and the trailing one survives as a blank line. That is
-    // byte-identical to the previous `\n?` behaviour (verified across
-    // first/middle/last/only × ±array items), so this anchoring changes WHERE a
-    // match may start, not what the removal leaves behind.
-    const propertyLineRegex = new RegExp(
-      `(?:\n|^)${this.escapeRegex(property)}:.*(?:\n {2}- .*)*`,
-      "g",
-    );
-    const updatedFrontmatter = parsed.content.replace(propertyLineRegex, "");
+    // Remove the key line and EVERY continuation line it owns (list items AND
+    // block-scalar bodies) — see `findPropertyLineSpan`.
+    //
+    // The loop replaces the former `g` flag: ALL occurrences of a duplicated key
+    // are removed, not just the first.
+    //
+    // ⚠ Removing the FIRST key leaves a blank line where it stood (the span is
+    // replaced by an empty line instead of being deleted). That is the
+    // byte-identical behaviour of the previous `(?:\n|^)`-anchored regex, whose
+    // `^` matched empty at position 0 so the trailing newline survived.
+    // Middle/last keys are deleted outright, leaving no blank line.
+    const lines = parsed.content.split("\n");
+    for (;;) {
+      const span = FrontmatterService.findPropertyLineSpan(lines, property);
+      if (!span) break;
+      if (span.start === 0) {
+        lines.splice(0, span.end, "");
+      } else {
+        lines.splice(span.start, span.end - span.start);
+      }
+    }
+    const updatedFrontmatter = lines.join("\n");
 
     // Replace frontmatter block in original content. Function-replacer so a
     // surviving `$`-bearing value in `updatedFrontmatter` is not re-interpreted
@@ -494,5 +496,60 @@ export class FrontmatterService {
 
   private escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  /**
+   * Line span `[start, end)` that a top-level frontmatter key OWNS.
+   *
+   * ⛤ A key owns its own line PLUS every following line that is INDENTED,
+   * because in a YAML block mapping a top-level key ends exactly where the next
+   * column-0 line begins. That covers both continuation shapes:
+   *
+   * - list items — `  - value`
+   * - **block scalars** — `key: |-` / `key: |` / `key: >` followed by an
+   *   indented body (any indentation, not just two spaces)
+   *
+   * The previous implementation matched `(?:\n {2}- .*)*`, i.e. list items ONLY.
+   * A block scalar's body therefore survived the rewrite as dangling indented
+   * lines under the new value, which makes the whole frontmatter unparseable —
+   * so the asset drops out of the graph entirely (not just that one property)
+   * while the command still reports success (ems__Bug 94fe70ac).
+   *
+   * A BLANK line is only absorbed when an indented line follows it (blank lines
+   * are legal inside a block scalar). A blank line that trails the value is left
+   * where it is, so removal/rewrite never eats the separator before the next key.
+   *
+   * @param lines - Frontmatter content split on "\n" (without --- delimiters)
+   * @param property - Canonical YAML key to locate
+   * @returns The owned span, or null when the key is absent
+   */
+  private static findPropertyLineSpan(
+    lines: readonly string[],
+    property: string,
+  ): { start: number; end: number } | null {
+    // Anchored to LINE START, mirroring `hasProperty` — a key that merely ENDS
+    // with the searched name (`namespace_aliases:` vs `aliases:`) is not a hit.
+    const keyPrefix = `${property}:`;
+    const start = lines.findIndex((line) => line.startsWith(keyPrefix));
+    if (start === -1) {
+      return null;
+    }
+
+    let end = start + 1;
+    for (let i = start + 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^[ \t]/.test(line)) {
+        // Indented → owned by this key. Absorbs any blank lines skipped above.
+        end = i + 1;
+        continue;
+      }
+      if (line.trim() === "") {
+        // Blank — may sit INSIDE a block scalar; only absorbed if an indented
+        // line follows (handled by the branch above on a later iteration).
+        continue;
+      }
+      break;
+    }
+    return { start, end };
   }
 }

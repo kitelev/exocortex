@@ -30,6 +30,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import yaml from "js-yaml";
 
 const { setPropertyCommand } = await import("../../src/commands/set-property.js");
 
@@ -42,11 +43,26 @@ const ANCHOR_OTHER = "a2a2a2a2-0000-4000-8000-000000000002";
 const MOVIE_UID = "b1b1b1b1-0000-4000-8000-000000000003";
 const TASK_UID = "c1c1c1c1-0000-4000-8000-000000000004";
 const PARENT_UID = "d1d1d1d1-0000-4000-8000-000000000005";
+const BLOCK_UID = "e1e1e1e1-0000-4000-8000-000000000006";
 const STALE_UPDATED_AT = "2020-01-01T00:00:00";
 
 /** Frozen-clock instant → 2026-07-12T15:00:00 rendered in Asia/Almaty (UTC+5). */
 const FROZEN_CLOCK = "2026-07-12T10:00:00Z";
 const EXPECTED_UPDATED_AT = "2026-07-12T15:00:00";
+
+/**
+ * Parse the frontmatter of a written file with the REAL YAML parser.
+ *
+ * ⛤ This is the authoritative post-condition for a write command: the command's
+ * own JSON echo reports the value it INTENDED to write, which is precisely what
+ * was misleading in ems__Bug 94fe70ac (echo correct, file unparseable).
+ * Throws when the frontmatter is not valid YAML.
+ */
+function parseFrontmatter(content: string): Record<string, unknown> {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) throw new Error("no frontmatter block");
+  return (yaml.load(match[1]) ?? {}) as Record<string, unknown>;
+}
 
 function md(frontmatter: Record<string, string>): string {
   const lines = ["---"];
@@ -354,6 +370,75 @@ describe("Issues #3795 / #3848: `cli set-property` generic guarded mutation prim
     // Exactly one frontmatter block — no duplicated `---` and no injected content.
     expect((out.content.match(/^---$/gm) ?? []).length).toBe(2);
     expect(out.content).toContain("concept__Movie_price: $1 & $& deal");
+  });
+
+  // ── ems__Bug 94fe70ac — a BLOCK-SCALAR value must be replaced WHOLE ──
+  //
+  // The key line alone used to be rewritten while the block body survived as
+  // dangling indented lines, making the frontmatter unparseable — so the asset
+  // dropped out of the graph ENTIRELY (every edge, not just this property)
+  // while the command still reported success.
+
+  it("replaces a BLOCK-SCALAR value whole — frontmatter stays parseable, no dangling body @req:3800d995-2bae-401f-a23a-dac914505e9d", async () => {
+    const blockPath = `${MOVIES_DIR}/${BLOCK_UID}.md`;
+    fs.writeFileSync(
+      path.join(vault, blockPath),
+      md({
+        exo__Asset_uid: BLOCK_UID,
+        // Block scalar sits in the MIDDLE: the key AFTER it must survive intact,
+        // proving the span stops at the next column-0 line (no over-consumption).
+        concept__Movie_synopsis: "|-\n  Dangling first line\n  Dangling second line",
+        exo__Asset_label: '"Blocky"',
+        exo__Asset_updatedAt: STALE_UPDATED_AT,
+      }),
+    );
+
+    const out = await run(blockPath, [
+      "--property",
+      "concept__Movie_synopsis",
+      "--value",
+      "one-line replacement",
+    ]);
+
+    expect(out.exit).toContain(0);
+    // ⛤ Authoritative check is the PARSE of the written file — the command's own
+    // JSON echo is exactly what lies in this bug.
+    const parsed = parseFrontmatter(out.content);
+    expect(parsed.concept__Movie_synopsis).toBe("one-line replacement");
+    // The block body is gone (not left dangling under the new value)…
+    expect(out.content).not.toContain("Dangling first line");
+    expect(out.content).not.toContain("Dangling second line");
+    // …and the key that FOLLOWED the block scalar was not swallowed with it.
+    expect(parsed.exo__Asset_label).toBe("Blocky");
+    // Asserted on the raw line: an unquoted timestamp parses to a Date, not a
+    // string ([[test-fixture-realism]] §Addendum 2026-08-03).
+    expect(out.content).toContain(`exo__Asset_updatedAt: ${EXPECTED_UPDATED_AT}`);
+  });
+
+  it("replaces a FOLDED block scalar (>) whose body is indented deeper than 2 spaces @req:3800d995-2bae-401f-a23a-dac914505e9d", async () => {
+    const blockPath = `${MOVIES_DIR}/${BLOCK_UID}.md`;
+    fs.writeFileSync(
+      path.join(vault, blockPath),
+      md({
+        exo__Asset_uid: BLOCK_UID,
+        exocmd__Precondition_sparqlAsk:
+          ">\n    PREFIX exo: <https://exocortex.my/ontology/exo#>\n    ASK {\n      $target exo:Instance_class exo:Class .\n    }",
+        exo__Asset_label: '"Folded"',
+      }),
+    );
+
+    const out = await run(blockPath, [
+      "--property",
+      "exocmd__Precondition_sparqlAsk",
+      "--value",
+      "ASK { ?s ?p ?o }",
+    ]);
+
+    expect(out.exit).toContain(0);
+    const parsed = parseFrontmatter(out.content);
+    expect(parsed.exocmd__Precondition_sparqlAsk).toBe("ASK { ?s ?p ?o }");
+    expect(out.content).not.toContain("PREFIX exo:");
+    expect(parsed.exo__Asset_label).toBe("Folded");
   });
 
   // ── #3795 review M1 — a non-scalar / non-scalar-array value is rejected ──
