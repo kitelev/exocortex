@@ -17,7 +17,9 @@
  * - "[{{exo__Instance_class}}] {{exo__Asset_label}}" - Class prefix
  * - "{{_basename}} - {{exo__Asset_label}}" - Filename with label
  */
-export type MetadataResolver = (wikilinkTarget: string) => Record<string, unknown> | null;
+import { resolveKeyPath, type MetadataResolver } from "./keyPathResolver";
+
+export type { MetadataResolver };
 
 export class DisplayNameTemplateEngine {
   private static readonly PLACEHOLDER_PATTERN = /\{\{([^}]+)\}\}/g;
@@ -356,40 +358,17 @@ export class DisplayNameTemplateEngine {
   }
 
   /**
-   * Get nested value from object using dot notation
+   * Get nested value from object using dot notation.
+   *
+   * Delegates to the shared `resolveKeyPath` so a `{{a.b}}` template placeholder and an
+   * `exo__DisplayNameSpec_matchPath` dot-path (req fedeaa6e) resolve by the SAME rules.
    */
   private getNestedValue(
     obj: Record<string, unknown>,
     path: string,
     metadataResolver?: MetadataResolver
   ): unknown {
-    const parts = path.split(".");
-    let current: unknown = obj;
-
-    for (const part of parts) {
-      if (current === null || current === undefined) {
-        return undefined;
-      }
-
-      if (typeof current !== "object") {
-        if (typeof current === "string" && metadataResolver && this.isWikilink(current)) {
-          const resolved = metadataResolver(current);
-          if (resolved) {
-            current = (resolved as Record<string, unknown>)[part];
-            continue;
-          }
-        }
-        return undefined;
-      }
-
-      current = (current as Record<string, unknown>)[part];
-    }
-
-    return current;
-  }
-
-  private isWikilink(value: string): boolean {
-    return value.startsWith("[[") && value.endsWith("]]");
+    return resolveKeyPath(obj, path, metadataResolver);
   }
 
   /**
