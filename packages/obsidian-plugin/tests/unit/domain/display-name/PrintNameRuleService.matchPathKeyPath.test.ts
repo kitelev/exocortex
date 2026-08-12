@@ -300,6 +300,56 @@ describe("PrintNameRuleService — matchPath dot-notation key-path [req fedeaa6e
     );
     expect(rendered).toBe("Weekly sync (prototype)");
   });
+
+  it("@req:fedeaa6e-1619-4a2c-8b45-86fdc9ffaf03 the first-element LIST hop also reaches TEMPLATE dot-paths (second shared-code effect)", () => {
+    // resolveKeyPath is shared, so the list hop added for the matcher ALSO changes template
+    // rendering: `{{a.b}}` over a LIST-valued reference used to yield undefined (an empty
+    // render, because `typeof [] === "object"` sent it to plain indexing) and now
+    // dereferences the first element. Same direction as the scalar/aliased forms — the
+    // rendered value is the referenced asset's, not a new invention — but it is a genuine
+    // behaviour change on a surface the requirement does not mention, so it is pinned here
+    // rather than left to be discovered later.
+    const service = new PrintNameRuleService(meetingKeyPathVault());
+    service.initialize();
+    const engine = new DisplayNameTemplateEngine(
+      "{{exo__Asset_prototype.exo__Asset_label}}",
+    );
+
+    // bare list element
+    expect(
+      engine.render(
+        { exo__Asset_prototype: [`[[${MEETING_PROTO_ASSET}]]`] },
+        "basename",
+        undefined,
+        service.createMetadataResolver(),
+      ),
+    ).toBe("Weekly sync (prototype)");
+
+    // list + alias — both fixes compose on the template surface too
+    expect(
+      engine.render(
+        {
+          exo__Asset_prototype: [
+            `[[${MEETING_PROTO_ASSET}|Weekly sync (prototype)]]`,
+          ],
+        },
+        "basename",
+        undefined,
+        service.createMetadataResolver(),
+      ),
+    ).toBe("Weekly sync (prototype)");
+
+    // NEGATIVE CONTROL — a list whose first element is NOT a wikilink keeps the previous
+    // meaning (plain indexing), so the hop cannot be "fixing" everything indiscriminately.
+    expect(
+      engine.render(
+        { exo__Asset_prototype: ["plain string, not a link"] },
+        "basename",
+        undefined,
+        service.createMetadataResolver(),
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("PrintNameRuleService — single-component matchPath is byte-identical [req fedeaa6e scenario 4]", () => {
