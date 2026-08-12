@@ -44,6 +44,27 @@ export function resolveKeyPath(
       return undefined;
     }
 
+    // A reference authored as a YAML LIST hops via its FIRST element — the same
+    // first-element convention `PrintNameRuleService.extractClassKeys` /
+    // `resolvePropertyKey` / `resolveIdentityForms` already apply to a multi-valued
+    // frontmatter value. Without this an array falls into the plain-object branch below
+    // (`typeof [] === "object"`), where `arr["exo__Instance_class"]` is `undefined` — a
+    // SILENT non-match. Both forms are live: 545 scalar / 68 list across the vaults
+    // (189 / 11 for ems__Meeting), so the list form is 5.5% of the req's own trigger class.
+    // A list whose first element is NOT a resolvable wikilink falls through unchanged, so
+    // plain index access (e.g. a numeric segment) keeps its previous meaning.
+    if (Array.isArray(current)) {
+      const first = current[0];
+      if (typeof first === "string" && metadataResolver && isWikilink(first)) {
+        const resolved = metadataResolver(first);
+        if (resolved) {
+          current = (resolved as Record<string, unknown>)[part];
+          continue;
+        }
+        return undefined;
+      }
+    }
+
     if (typeof current !== "object") {
       if (
         typeof current === "string" &&

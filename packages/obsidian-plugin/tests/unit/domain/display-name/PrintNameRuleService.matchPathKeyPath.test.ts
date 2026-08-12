@@ -1,5 +1,6 @@
 import { PrintNameRuleService } from "@plugin/domain/display-name/PrintNameRuleService";
 import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
+import { DisplayNameTemplateEngine } from "@plugin/domain/display-name/DisplayNameTemplateEngine";
 import { TFile } from "obsidian";
 import type { App, CachedMetadata } from "obsidian";
 
@@ -15,10 +16,13 @@ import type { App, CachedMetadata } from "obsidian";
  * pattern (verified: `jest --listTests` yields 0 files there), so a @req binding parked
  * there would satisfy the requirements-trace grep while never executing.
  *
- * Fixture shapes mirror the live vault (verified against vault-my):
- *   exo__Asset_prototype: "[[<uid>]]"        — a SCALAR string (so the walk's step 1 takes
- *                                              the wikilink-hop branch)
- *   exo__Instance_class:  ["[[<uid>]]"]      — an ARRAY (reduced by extractClassKeys)
+ * Fixture shapes mirror the live vault — MEASURED over all three vaults (29 574 files),
+ * not inferred from one sample:
+ *   exo__Asset_prototype  545 scalar "[[<uid>]]" / 68 YAML list  — BOTH forms are live;
+ *                         for ems__Meeting (the req's trigger class) 189 / 11, i.e. the
+ *                         list form is 5.5% of it. Scenario 5 covers the list form; without
+ *                         the first-element hop it fails SILENTLY.
+ *   exo__Instance_class   a list (reduced by extractClassKeys' first-element convention)
  */
 function createMockApp(
   files: Array<{ path: string; frontmatter: Record<string, unknown> }>,
@@ -136,8 +140,9 @@ describe("PrintNameRuleService — matchPath dot-notation key-path [req fedeaa6e
     ]);
   }
 
+  /** `prototypeValue` takes BOTH live authoring forms: a scalar wikilink or a YAML list. */
   function meetingMeta(
-    prototypeValue?: string,
+    prototypeValue?: string | string[],
     label = "Sync 2026-08-12",
   ): Record<string, unknown> {
     return {
@@ -231,6 +236,69 @@ describe("PrintNameRuleService — matchPath dot-notation key-path [req fedeaa6e
         basename: "m7",
       }),
     ).toBe("Sync 2026-08-12");
+  });
+
+  it("@req:fedeaa6e-1619-4a2c-8b45-86fdc9ffaf03 scenario 5 — a reference authored as a YAML LIST resolves like the scalar form", () => {
+    const resolver = keyPathResolverUnderTest();
+
+    // 68 of 613 exo__Asset_prototype values across the vaults are YAML lists (11 of 200
+    // ems__Meeting instances — the req's own trigger class). Before the first-element hop
+    // an array fell into the plain-object branch and silently failed to match, which would
+    // have made the Job Story's "ONE spec covers ALL prototypes" false for 5.5% of meetings.
+    //
+    // Revert-verify axis 3 (RED anchor): remove the Array.isArray hop in resolveKeyPath →
+    // ONLY this scenario goes RED; scenarios 1/3 (scalar + aliased scalar) stay GREEN.
+    expect(
+      resolver.resolve({
+        metadata: meetingMeta([`[[${MEETING_PROTO_ASSET}]]`]),
+        basename: "m8",
+      }),
+    ).toBe("📅 Sync 2026-08-12");
+
+    // the list form must honour the alias strip too (both fixes compose)
+    expect(
+      resolver.resolve({
+        metadata: meetingMeta([
+          `[[${MEETING_PROTO_ASSET}|Weekly sync (prototype)]]`,
+        ]),
+        basename: "m9",
+      }),
+    ).toBe("📅 Sync 2026-08-12");
+
+    // negative control — a list pointing at the WRONG class must still not match
+    expect(
+      resolver.resolve({
+        metadata: meetingMeta([`[[${TASK_PROTO_ASSET}]]`]),
+        basename: "m10",
+      }),
+    ).toBe("Sync 2026-08-12");
+
+    // negative control — an EMPTY list is fail-closed, not a crash
+    expect(
+      resolver.resolve({ metadata: meetingMeta([]), basename: "m11" }),
+    ).toBe("Sync 2026-08-12");
+  });
+
+  it("@req:fedeaa6e-1619-4a2c-8b45-86fdc9ffaf03 the |alias strip also reaches TEMPLATE dot-paths (shared resolver — documented blast radius)", () => {
+    // createMetadataResolver is shared with DisplayNameTemplateEngine's {{a.b}} walk, so the
+    // alias strip changes template rendering too: an intermediate reference authored
+    // [[uid|label]] used to resolve to null (empty render) and now dereferences. The req
+    // itself cites this authoring form, so the effect is intended — this pins it.
+    const service = new PrintNameRuleService(meetingKeyPathVault());
+    service.initialize();
+    const engine = new DisplayNameTemplateEngine(
+      "{{exo__Asset_prototype.exo__Asset_label}}",
+    );
+
+    const rendered = engine.render(
+      {
+        exo__Asset_prototype: `[[${MEETING_PROTO_ASSET}|Weekly sync (prototype)]]`,
+      },
+      "basename",
+      undefined,
+      service.createMetadataResolver(),
+    );
+    expect(rendered).toBe("Weekly sync (prototype)");
   });
 });
 
