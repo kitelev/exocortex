@@ -76,8 +76,9 @@ export type ReqEvidenceOutputConfig = Pick<FullConfig, "rootDir"> & {
 export function resolveOutputPath(config: ReqEvidenceOutputConfig): string {
   const envOverride = process.env.EKA_GUI_REQ_EVIDENCE_OUTPUT;
   if (envOverride) return envOverride;
-  // ⛔ NOT `config.rootDir`: Playwright derives rootDir from `testDir`
-  // (`./tests/e2e/eka-gui`), so writing there put the manifest at
+  // ⛔ NOT `config.rootDir`: Playwright sets it to the resolved `testDir`
+  // (`rootDir: pathResolve(configDir, userConfig.testDir) || configDir`), i.e.
+  // `./tests/e2e/eka-gui` here — so writing there put the manifest at
   // packages/obsidian-plugin/tests/e2e/eka-gui/test-results-eka-gui/ — outside
   // the Docker volume mount AND outside the `upload-artifact` path, i.e. it
   // never reached the eka-gui-req-evidence artifact.
@@ -88,6 +89,14 @@ export function resolveOutputPath(config: ReqEvidenceOutputConfig): string {
   // (-v $PWD/eka-gui-results:/app/packages/obsidian-plugin/test-results-eka-gui)
   // and the uploaded path, so writing there is what puts the manifest in the
   // CI artifact.
+  //
+  // `projects[0]` is unambiguous here, and that is a property of the config, not
+  // a guess: playwright-eka-gui.config.ts declares NO `projects` array, and
+  // Playwright then synthesises exactly one project from the top level
+  // (`projectConfigs = cliOverrides.projects || userConfig.projects || [{...userConfig}]`
+  // in playwright/lib/common/config.js, v1.56). If this suite ever grows a real
+  // `projects` array with differing outputDirs, revisit — the first project's
+  // directory would then be pinned for every scenario.
   const projectOutputDir = config.projects[0]?.outputDir;
   if (projectOutputDir) return path.join(projectOutputDir, "req-evidence.json");
   // Defensive fallback (a loaded config always has ≥1 project): the config
