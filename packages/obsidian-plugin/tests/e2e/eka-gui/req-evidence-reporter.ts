@@ -1,5 +1,6 @@
 import type {
   FullConfig,
+  FullProject,
   Reporter,
   TestCase,
   TestResult,
@@ -62,21 +63,49 @@ export function extractReqUids(title: string): string[] {
   return uids;
 }
 
-function resolveOutputPath(rootDir: string): string {
+/**
+ * The subset of `FullConfig` the output-path resolution reads. Declared
+ * structurally so a unit test can exercise the resolution without building a
+ * whole `FullConfig`; a real `FullConfig` satisfies it.
+ */
+export type ReqEvidenceOutputConfig = Pick<FullConfig, "rootDir"> & {
+  configFile?: string;
+  projects: readonly Pick<FullProject, "outputDir">[];
+};
+
+export function resolveOutputPath(config: ReqEvidenceOutputConfig): string {
   const envOverride = process.env.EKA_GUI_REQ_EVIDENCE_OUTPUT;
   if (envOverride) return envOverride;
-  // `outputDir: "test-results-eka-gui"` (playwright-eka-gui.config.ts) is the
-  // Docker volume mount (-v $PWD/eka-gui-results:/app/.../test-results-eka-gui),
-  // so writing here ensures the manifest is picked up as a CI artifact.
-  return path.join(rootDir, "test-results-eka-gui", "req-evidence.json");
+  // ⛔ NOT `config.rootDir`: Playwright derives rootDir from `testDir`
+  // (`./tests/e2e/eka-gui`), so writing there put the manifest at
+  // packages/obsidian-plugin/tests/e2e/eka-gui/test-results-eka-gui/ — outside
+  // the Docker volume mount AND outside the `upload-artifact` path, i.e. it
+  // never reached the eka-gui-req-evidence artifact.
+  //
+  // `outputDir: "test-results-eka-gui"` (playwright-eka-gui.config.ts) is
+  // resolved by Playwright against the CONFIG directory and surfaced already
+  // absolute on each project. That resolved directory IS the mount
+  // (-v $PWD/eka-gui-results:/app/packages/obsidian-plugin/test-results-eka-gui)
+  // and the uploaded path, so writing there is what puts the manifest in the
+  // CI artifact.
+  const projectOutputDir = config.projects[0]?.outputDir;
+  if (projectOutputDir) return path.join(projectOutputDir, "req-evidence.json");
+  // Defensive fallback (a loaded config always has ≥1 project): the config
+  // directory, which is what `outputDir` would have been resolved against.
+  const base = config.configFile
+    ? path.dirname(config.configFile)
+    : config.rootDir;
+  return path.join(base, "test-results-eka-gui", "req-evidence.json");
 }
 
 export default class ReqEvidenceReporter implements Reporter {
   private rootDir: string = process.cwd();
+  private outPath: string = path.join(process.cwd(), "req-evidence.json");
   private entries: ReqEvidenceEntry[] = [];
 
   onBegin(config: FullConfig): void {
     this.rootDir = config.rootDir || process.cwd();
+    this.outPath = resolveOutputPath(config);
   }
 
   onTestEnd(test: TestCase, result: TestResult): void {
@@ -107,12 +136,12 @@ export default class ReqEvidenceReporter implements Reporter {
         reqUids: [...new Set(this.entries.map((e) => e.reqUid))].sort(),
         entries: this.entries,
       };
-      const outPath = resolveOutputPath(this.rootDir);
+      const outPath = this.outPath;
       fs.mkdirSync(path.dirname(outPath), { recursive: true });
       fs.writeFileSync(outPath, JSON.stringify(manifest, null, 2), "utf-8");
       console.log(
         `[req-evidence-reporter] ${manifest.totalReqScenarios} @req scenario(s) for ` +
-          `${manifest.reqUids.length} requirement(s) → ${path.relative(this.rootDir, outPath)}`,
+          `${manifest.reqUids.length} requirement(s) → ${path.relative(process.cwd(), outPath)}`,
       );
     } catch (err) {
       console.warn("[req-evidence-reporter] manifest write failed:", err);
