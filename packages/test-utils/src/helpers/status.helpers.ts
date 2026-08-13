@@ -15,9 +15,8 @@ import type { EffortStatus, EffortStatusName } from "../types";
 export const STATUS_MAP: Record<EffortStatusName, EffortStatus> = {
   Draft: "ems__EffortStatusDraft",
   Backlog: "ems__EffortStatusBacklog",
-  Analysis: "ems__EffortStatusAnalysis",
-  "To Do": "ems__EffortStatusToDo",
   Doing: "ems__EffortStatusDoing",
+  Waiting: "ems__EffortStatusWaiting",
   Done: "ems__EffortStatusDone",
   Trashed: "ems__EffortStatusTrashed",
 };

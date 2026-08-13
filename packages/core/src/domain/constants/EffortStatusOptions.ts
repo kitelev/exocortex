@@ -26,6 +26,11 @@
  *
  * Sole production consumer: `StatusSelectPropertyField`
  * (`packages/obsidian-plugin/src/presentation/components/property-fields/StatusSelectPropertyField.ts`).
+ *
+ * Every entry is written verbatim into user frontmatter, so the list MUST
+ * mirror the shared ontology (req `fcbde537-f09a-410e-8bee-d3d607a70302`):
+ * `Analysis` / `To Do` were removed when their TBox instances were deleted
+ * (`exoas-public@c35a660d`), `Waiting` added in their place.
  */
 export const EFFORT_STATUS_OPTIONS: ReadonlyArray<{
   readonly value: string;
@@ -33,9 +38,8 @@ export const EFFORT_STATUS_OPTIONS: ReadonlyArray<{
 }> = [
   { value: "[[ems__EffortStatusDraft]]", label: "Draft" },
   { value: "[[ems__EffortStatusBacklog]]", label: "Backlog" },
-  { value: "[[ems__EffortStatusAnalysis]]", label: "Analysis" },
-  { value: "[[ems__EffortStatusToDo]]", label: "To Do" },
   { value: "[[ems__EffortStatusDoing]]", label: "Doing" },
+  { value: "[[ems__EffortStatusWaiting]]", label: "Waiting" },
   { value: "[[ems__EffortStatusDone]]", label: "Done" },
   { value: "[[ems__EffortStatusTrashed]]", label: "Trashed" },
 ] as const;

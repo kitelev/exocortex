@@ -202,8 +202,8 @@ Commands and options documented in [CLI_API_REFERENCE.md](docs/CLI_API_REFERENCE
 | `exocortex command trash`            | **Stable** |
 | `exocortex command archive`          | **Stable** |
 | `exocortex command move-to-backlog`  | **Stable** |
-| `exocortex command move-to-analysis` | **Stable** |
-| `exocortex command move-to-todo`     | **Stable** |
+| `exocortex command move-to-analysis` | **Removed** |
+| `exocortex command move-to-todo`     | **Removed** |
 | `exocortex command create-task`      | **Stable** |
 | `exocortex command create-meeting`   | **Stable** |
 | `exocortex command create-project`   | **Stable** |

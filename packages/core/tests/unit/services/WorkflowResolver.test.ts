@@ -159,23 +159,33 @@ describe("WorkflowResolver", () => {
   });
 
   describe("getHardcodedFallback", () => {
-    it("should return Project fallback with Analysis and ToDo states", () => {
+    it("should return Project fallback with the ontology-backed states only", () => {
       const workflow = resolver.getHardcodedFallback(AssetClass.PROJECT);
 
       expect(workflow.targetClass).toBe(AssetClass.PROJECT);
       expect(workflow.initialState).toBe(EffortStatus.DRAFT);
       expect(workflow.terminalStates).toContain(EffortStatus.DONE);
       expect(workflow.terminalStates).toContain(EffortStatus.TRASHED);
-      expect(workflow.states.map((s) => s.status)).toContain(EffortStatus.ANALYSIS);
-      expect(workflow.states.map((s) => s.status)).toContain(EffortStatus.TODO);
+      expect(workflow.states.map((s) => s.status)).toEqual([
+        EffortStatus.DRAFT,
+        EffortStatus.BACKLOG,
+        EffortStatus.DOING,
+        EffortStatus.DONE,
+        EffortStatus.TRASHED,
+      ]);
     });
 
-    it("should return Task fallback without Analysis and ToDo", () => {
+    it("should return the same state set for the Task fallback", () => {
       const workflow = resolver.getHardcodedFallback(AssetClass.TASK);
 
       expect(workflow.targetClass).toBe(AssetClass.TASK);
-      expect(workflow.states.map((s) => s.status)).not.toContain(EffortStatus.ANALYSIS);
-      expect(workflow.states.map((s) => s.status)).not.toContain(EffortStatus.TODO);
+      expect(workflow.states.map((s) => s.status)).toEqual([
+        EffortStatus.DRAFT,
+        EffortStatus.BACKLOG,
+        EffortStatus.DOING,
+        EffortStatus.DONE,
+        EffortStatus.TRASHED,
+      ]);
     });
 
     it("should include timestamp properties on Doing and Done states", () => {
@@ -195,12 +205,12 @@ describe("WorkflowResolver", () => {
       expect(rollbacks.length).toBeGreaterThan(0);
     });
 
-    it("should have Project DOING rollback to ToDo (not Backlog)", () => {
+    it("should have Project DOING rollback to Backlog", () => {
       const workflow = resolver.getHardcodedFallback(AssetClass.PROJECT);
       const doingRollback = workflow.transitions.find(
         (t) => t.from === EffortStatus.DOING && t.isRollback,
       );
-      expect(doingRollback?.to).toBe(EffortStatus.TODO);
+      expect(doingRollback?.to).toBe(EffortStatus.BACKLOG);
     });
 
     it("should have Task DOING rollback to Backlog", () => {
@@ -403,7 +413,7 @@ describe("WorkflowResolver", () => {
 
       await addWorkflowState(store, {
         workflowSubject,
-        status: EffortStatus.ANALYSIS,
+        status: EffortStatus.WAITING,
         order: 2,
         optional: true,
       });
@@ -417,7 +427,7 @@ describe("WorkflowResolver", () => {
 
       const workflow = await resolver.resolveForClass(AssetClass.PROJECT);
 
-      const analysisState = workflow.states.find((s) => s.status === EffortStatus.ANALYSIS);
+      const analysisState = workflow.states.find((s) => s.status === EffortStatus.WAITING);
       expect(analysisState?.optional).toBe(true);
 
       const draftState = workflow.states.find((s) => s.status === EffortStatus.DRAFT);

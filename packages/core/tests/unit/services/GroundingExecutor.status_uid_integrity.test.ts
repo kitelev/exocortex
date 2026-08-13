@@ -53,9 +53,9 @@ describe("RFC 36347daf Phase 2 — STATUS_UID_BY_ENUM integrity", () => {
     }
   });
 
-  it("7 unique UIDs (no collisions)", () => {
+  it("6 unique UIDs (no collisions)", () => {
     const uids = Object.values(STATUS_UID_BY_ENUM);
-    expect(new Set(uids).size).toBe(7);
+    expect(new Set(uids).size).toBe(6);
   });
 
   it("pins the known status UIDs (drift catches when this fixture lies)", () => {
@@ -69,14 +69,11 @@ describe("RFC 36347daf Phase 2 — STATUS_UID_BY_ENUM integrity", () => {
     expect(STATUS_UID_BY_ENUM[EffortStatus.BACKLOG]).toBe(
       "753a44d5-846c-4b82-9196-4fd9a4d48777",
     );
-    expect(STATUS_UID_BY_ENUM[EffortStatus.ANALYSIS]).toBe(
-      "cde3525c-57ea-4efc-b477-2e7e7ccd3a1e",
-    );
-    expect(STATUS_UID_BY_ENUM[EffortStatus.TODO]).toBe(
-      "6a0e933a-6653-46f4-95ae-ed7508177c73",
-    );
     expect(STATUS_UID_BY_ENUM[EffortStatus.DOING]).toBe(
       "027e78f4-6e16-4b36-b8fb-5510507d5745",
+    );
+    expect(STATUS_UID_BY_ENUM[EffortStatus.WAITING]).toBe(
+      "0610947c-6a62-41c8-9d44-7863d3ba3a8e",
     );
     expect(STATUS_UID_BY_ENUM[EffortStatus.DONE]).toBe(
       "7b9b3116-7c3c-438c-9618-94fe301320a6",
