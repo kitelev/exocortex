@@ -81,9 +81,12 @@ import {
  * the hit, with no completion-order guarantee between two concurrent reads.
  * `data-parked-checked` cannot close that gap either: it is set BEFORE the
  * lookup, so it proves the decorator was REACHED, not that it finished.
- * Therefore the snapshot is taken only once the DOM has stopped changing, which
- * makes "all five verdicts read from one settled render" true by construction
- * rather than by argument.
+ * Therefore the snapshot is taken only once the matched set has been
+ * byte-identical across a full poll interval (≥2 s). ⛔ That is a QUIESCENCE
+ * argument, not a construction-level proof: both reads are issued together
+ * after the shared walk over two tiny local files, so a verdict still pending
+ * after 2 s is not credible — but nothing in the DOM marks a lookup as
+ * FINISHED, so no stronger guarantee is available without a production change.
  *
  * Render-only: nothing is applied, no profile is switched, and the ephemeral
  * vault is deleted in `afterAll`.
@@ -268,14 +271,18 @@ function linkFor(links: RenderedLink[], href: string): RenderedLink {
 
 /**
  * Poll until `ready` holds AND the matched set has stopped changing, then
- * return that settled snapshot.
+ * return the very observation that was proven stable.
  *
  * ⛔ The stability half is load-bearing, not belt-and-braces. `ready` fires the
  * moment the parked HIT decorates, but one negative control (the non-asset
  * file) is rejected only after its OWN `adapter.read()`, at the same async
  * depth as the hit — so a snapshot taken on `ready` alone could read that
- * control before its verdict exists. Requiring two identical consecutive
- * observations closes that window by construction.
+ * control before its verdict exists. Two identical consecutive observations
+ * narrow that window to "nothing changed for a full ≥2 s interval". ⛔ Say what
+ * that is: a QUIESCENCE argument, not a proof. Nothing in the DOM marks a
+ * lookup as finished, so a construction-level guarantee would need a
+ * production change; a verdict still pending after 2 s over two tiny local
+ * files is simply not credible.
  *
  * ⛤ On timeout it dumps WHAT THE DOM ACTUALLY HELD before rethrowing. The
  * suite's first CI run timed out carrying zero diagnostics, because the dump
@@ -291,6 +298,10 @@ async function pollForLinks(
   ready: (links: RenderedLink[]) => boolean,
 ): Promise<RenderedLink[]> {
   let previous = "";
+  // ⛤ The observation that satisfied the predicate, returned verbatim. Reading
+  // the DOM a THIRD time after the loop would hand back a snapshot that was
+  // never the one proven stable — equal in practice, but not the same claim.
+  let settledLinks: RenderedLink[] = [];
   try {
     await pollUntil(
       `${label} (and settled)`,
@@ -299,7 +310,11 @@ async function pollForLinks(
         const snapshot = JSON.stringify(links);
         const settled = snapshot === previous;
         previous = snapshot;
-        return ready(links) && settled;
+        if (ready(links) && settled) {
+          settledLinks = links;
+          return true;
+        }
+        return false;
       },
       120_000,
       2_000,
@@ -336,7 +351,7 @@ async function pollForLinks(
     log(`TIMEOUT "${label}" — DOM: ${JSON.stringify(markup)}`);
     throw err;
   }
-  return collectLinks(window, selector);
+  return settledLinks;
 }
 
 test.describe.configure({ mode: "default" });
@@ -384,8 +399,8 @@ test.describe("EKA GUI — parked-link placeholder (req c171e24d)", () => {
     test.setTimeout(300_000);
 
     // ⛤ CANARY for negative control #4. "The walk skips nested dot-folders"
-    // is only a real property if the adapter SHOWS the adapter that folder in
-    // the first place. If `list()` filtered dot-entries itself, the skip-guard
+    // is only a real property if the adapter SHOWS THE WALK that folder in the
+    // first place. If `list()` filtered dot-entries itself, the skip-guard
     // would be dead code and control #4 would be tautologically green — the
     // same class of vacuity the controls exist to prevent. Assert the adapter
     // sees `.git` before drawing any conclusion from the decoy staying broken.
@@ -492,10 +507,15 @@ test.describe("EKA GUI — parked-link placeholder (req c171e24d)", () => {
     await openAssetAndRender(window, NOTE_FM_REL);
 
     // ⛔ NOT `a[data-href]`. In the Properties block Obsidian renders a
-    // wikilink value as a plain clickable element, NOT an anchor — verified on
-    // the DOM snapshot of a real run. `PropertiesLinkPatch` selects
-    // `.internal-link` with no tag constraint for exactly that reason, and it
-    // requires `data-href` before it will decorate, so either half matches.
+    // wikilink value as a plain clickable element, NOT an anchor — measured on
+    // a real run: `metadata-link-inner internal-link is-unresolved`.
+    // `PropertiesLinkPatch` selects `.internal-link` with no tag constraint for
+    // exactly that reason, and refuses to decorate anything lacking
+    // `data-href`. The first half is what actually matches today; the second is
+    // a deliberately WIDER net than production's own third selector
+    // (`a[data-href]:not(.internal-link)`), which can only add noise or trip
+    // the exactly-one assertion — never manufacture a pass, since every
+    // assertion keys on a class only the patch sets.
     const fmSelector =
       ".metadata-container .internal-link, .metadata-container [data-href]";
 
