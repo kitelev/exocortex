@@ -82,6 +82,11 @@ export type {
   MountTransition,
   MountTransitionInput,
 } from "./domain/profile/ParkedMountState";
+export { ParkedAssetIndex } from "./domain/profile/ParkedAssetIndex";
+export type {
+  ParkedAssetHit,
+  ParkedVaultReader,
+} from "./domain/profile/ParkedAssetIndex";
 export type { IPropertyValidationService, ValidationResult } from "./domain/services/IPropertyValidationService";
 
 // Property definition types
