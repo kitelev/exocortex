@@ -322,7 +322,7 @@ parity); sync and apply use a REST/tarball transport instead of `git`.
 1. **Check Status Format**: Must be wiki-link format
 
    ```yaml
-   ems__Effort_status: "[[ems__EffortStatusToDo]]"  # Correct
+   ems__Effort_status: "[[ems__EffortStatusBacklog]]"  # Correct
    ems__Effort_status: "ToDo"  # Wrong
    ```
 

@@ -357,7 +357,7 @@ exo__Instance_class:
   - "[[ems__Task]]"
 exo__Asset_label: "Implement login form"
 ems__Effort_team: "[[Frontend Team]]"
-ems__Effort_status: "[[ems__EffortStatusToDo]]"
+ems__Effort_status: "[[ems__EffortStatusBacklog]]"
 ---
 ```
 

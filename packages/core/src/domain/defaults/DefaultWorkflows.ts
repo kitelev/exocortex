@@ -12,8 +12,18 @@ import { MetadataHelpers } from "../../utilities/MetadataHelpers";
 /**
  * Default workflow definition for ems__Project assets.
  *
- * States: Draft -> Backlog -> Analysis -> ToDo -> Doing -> Done | Trashed
+ * States: Draft -> Backlog -> Doing -> Done | Trashed
  * Issue #2363
+ *
+ * The intermediate `Analysis` / `ToDo` states were dropped with req
+ * `fcbde537-f09a-410e-8bee-d3d607a70302`: their TBox instances were deleted
+ * from the shared ontology (`exoas-public@c35a660d`, 2026-08-13), so every
+ * transition into them wrote a dangling wikilink. `Waiting` (the parking
+ * status that replaced them) is deliberately NOT a state here — the workflow
+ * engine keys transitions on `(from, isRollback)`, so a state can offer at
+ * most one forward and one rollback target; parking is a side branch reached
+ * by the vault-declared `park-waiting` command (a `property_set`), not a
+ * workflow transition.
  */
 export const PROJECT_DEFAULT_WORKFLOW: WorkflowDefinition = {
   id: "a1b2c3d4-1111-4000-a000-000000000001",
@@ -25,22 +35,16 @@ export const PROJECT_DEFAULT_WORKFLOW: WorkflowDefinition = {
   states: [
     { status: EffortStatus.DRAFT, order: 1, optional: false, timestampOnEnter: [] },
     { status: EffortStatus.BACKLOG, order: 2, optional: false, timestampOnEnter: [] },
-    { status: EffortStatus.ANALYSIS, order: 3, optional: true, timestampOnEnter: [] },
-    { status: EffortStatus.TODO, order: 4, optional: true, timestampOnEnter: [] },
-    { status: EffortStatus.DOING, order: 5, optional: false, timestampOnEnter: ["ems__Effort_startTimestamp"] },
-    { status: EffortStatus.DONE, order: 6, optional: false, timestampOnEnter: ["ems__Effort_endTimestamp", "ems__Effort_resolutionTimestamp"] },
-    { status: EffortStatus.TRASHED, order: 7, optional: false, timestampOnEnter: ["ems__Effort_resolutionTimestamp"] },
+    { status: EffortStatus.DOING, order: 3, optional: false, timestampOnEnter: ["ems__Effort_startTimestamp"] },
+    { status: EffortStatus.DONE, order: 4, optional: false, timestampOnEnter: ["ems__Effort_endTimestamp", "ems__Effort_resolutionTimestamp"] },
+    { status: EffortStatus.TRASHED, order: 5, optional: false, timestampOnEnter: ["ems__Effort_resolutionTimestamp"] },
   ],
   transitions: [
     { from: EffortStatus.DRAFT, to: EffortStatus.BACKLOG, label: "\u2192 Backlog", isRollback: false },
-    { from: EffortStatus.BACKLOG, to: EffortStatus.ANALYSIS, label: "\u2192 Analysis", isRollback: false },
-    { from: EffortStatus.ANALYSIS, to: EffortStatus.TODO, label: "\u2192 ToDo", isRollback: false },
-    { from: EffortStatus.TODO, to: EffortStatus.DOING, label: "\u25B6 Start", isRollback: false },
+    { from: EffortStatus.BACKLOG, to: EffortStatus.DOING, label: "\u25B6 Start", isRollback: false },
     { from: EffortStatus.DOING, to: EffortStatus.DONE, label: "\u2713 Done", isRollback: false },
     { from: EffortStatus.BACKLOG, to: EffortStatus.DRAFT, label: "\u2190 Draft", isRollback: true },
-    { from: EffortStatus.ANALYSIS, to: EffortStatus.BACKLOG, label: "\u2190 Backlog", isRollback: true },
-    { from: EffortStatus.TODO, to: EffortStatus.ANALYSIS, label: "\u2190 Analysis", isRollback: true },
-    { from: EffortStatus.DOING, to: EffortStatus.TODO, label: "\u2190 ToDo", isRollback: true },
+    { from: EffortStatus.DOING, to: EffortStatus.BACKLOG, label: "\u2190 Backlog", isRollback: true },
     { from: EffortStatus.DONE, to: EffortStatus.DOING, label: "\u2190 Doing", isRollback: true },
   ],
 };

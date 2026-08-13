@@ -548,48 +548,6 @@ describe("CommandExecutor", () => {
     });
   });
 
-  describe("executeMoveToAnalysis()", () => {
-    beforeEach(() => {
-      mockPathResolverInstance.resolve.mockReturnValue("/test/vault/project.md");
-      mockFsAdapterInstance.readFile.mockResolvedValue("---\nexo__Asset_label: My Project\n---\n# Content");
-    });
-
-    it("should transition to Analysis status", async () => {
-      await executor.executeMoveToAnalysis("project.md");
-
-      expect(processExitSpy).toHaveBeenCalledWith(0);
-      expect(mockFsAdapterInstance.updateFile).toHaveBeenCalled();
-    });
-
-    it("should display status confirmation", async () => {
-      await executor.executeMoveToAnalysis("project.md");
-
-      expect(processExitSpy).toHaveBeenCalledWith(0);
-      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Moved to Analysis:"));
-    });
-  });
-
-  describe("executeMoveToToDo()", () => {
-    beforeEach(() => {
-      mockPathResolverInstance.resolve.mockReturnValue("/test/vault/task.md");
-      mockFsAdapterInstance.readFile.mockResolvedValue("---\nexo__Asset_label: My Task\n---\n# Content");
-    });
-
-    it("should transition to ToDo status", async () => {
-      await executor.executeMoveToToDo("task.md");
-
-      expect(processExitSpy).toHaveBeenCalledWith(0);
-      expect(mockFsAdapterInstance.updateFile).toHaveBeenCalled();
-    });
-
-    it("should display status confirmation", async () => {
-      await executor.executeMoveToToDo("task.md");
-
-      expect(processExitSpy).toHaveBeenCalledWith(0);
-      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Moved to ToDo:"));
-    });
-  });
-
   describe("executeCreateTask()", () => {
     beforeEach(() => {
       mockPathResolverInstance.resolve.mockReturnValue("/test/vault/task.md");

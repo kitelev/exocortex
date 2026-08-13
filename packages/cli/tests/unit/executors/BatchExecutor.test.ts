@@ -449,36 +449,20 @@ describe("BatchExecutor", () => {
       });
     });
 
-    describe("move-to-analysis command", () => {
-      it("should update status to Analysis", async () => {
-        const result = await executor.executeBatch([
-          { command: "move-to-analysis", filepath: "task.md" },
-        ]);
+    // `move-to-analysis` / `move-to-todo` were removed with req
+    // fcbde537-f09a-410e-8bee-d3d607a70302 — both wrote a status whose TBox
+    // instance no longer exists. They now fall through to the unknown-command
+    // branch instead of silently writing a dangling wikilink.
+    describe("removed dead-status commands", () => {
+      it.each(["move-to-analysis", "move-to-todo"])(
+        "@req:fcbde537-f09a-410e-8bee-d3d607a70302 %s is rejected as unknown",
+        async (command) => {
+          const result = await executor.executeBatch([{ command, filepath: "task.md" }]);
 
-        expect(result.results[0].success).toBe(true);
-        expect(result.results[0].action).toBe("Moved to analysis");
-        expect(mockFrontmatterService.updateProperty).toHaveBeenCalledWith(
-          expect.any(String),
-          "ems__Effort_status",
-          '"[[ems__EffortStatusAnalysis]]"',
-        );
-      });
-    });
-
-    describe("move-to-todo command", () => {
-      it("should update status to ToDo", async () => {
-        const result = await executor.executeBatch([
-          { command: "move-to-todo", filepath: "task.md" },
-        ]);
-
-        expect(result.results[0].success).toBe(true);
-        expect(result.results[0].action).toBe("Moved to todo");
-        expect(mockFrontmatterService.updateProperty).toHaveBeenCalledWith(
-          expect.any(String),
-          "ems__Effort_status",
-          '"[[ems__EffortStatusToDo]]"',
-        );
-      });
+          expect(result.results[0].success).toBe(false);
+          expect(mockFrontmatterService.updateProperty).not.toHaveBeenCalled();
+        },
+      );
     });
 
     describe("update-label command", () => {
