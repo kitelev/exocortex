@@ -318,6 +318,49 @@ describe("ParkedAssetIndex", () => {
     );
   });
 
+  it("@req:c171e24d-15d3-4073-a34b-f6e78d3bc15f still shares ONE re-walk between concurrent lookups when an invalidation interrupts them", async () => {
+    // The existing single-walk test never invalidates, so it cannot see this:
+    // concurrent waiters resume in separate microtasks, and a naive slot-clear
+    // lets the second waiter wipe the re-walk the first had already started.
+    // The herd lands in exactly the apply-profile window this feature cares about.
+    const visible: Record<string, string> = {
+      [`${PARKED_ROOT}/kitelev/exoas-other/ns/decoy.md`]:
+        "---\nexo__Asset_uid: decoy\n---\n",
+    };
+    let releaseWalk: (() => void) | null = null;
+    const held = new Promise<void>((resolve) => {
+      releaseWalk = resolve;
+    });
+    const base = makeReader(visible);
+    let suspended = false;
+    let rootWalks = 0;
+    const slow: ParkedVaultReader = {
+      exists: base.exists.bind(base),
+      read: base.read.bind(base),
+      list: async (path) => {
+        if (path === PARKED_ROOT) rootWalks += 1;
+        const result = await base.list(path);
+        if (!suspended && path.endsWith("/ns")) {
+          suspended = true;
+          await held;
+        }
+        return result;
+      },
+    };
+    const index = new ParkedAssetIndex(slow);
+
+    const a = index.lookup(PARKED_UID);
+    const b = index.lookup("decoy");
+    while (!suspended) await new Promise((r) => setTimeout(r, 0));
+
+    index.invalidate();
+    (releaseWalk as unknown as () => void)();
+    await Promise.all([a, b]);
+
+    // One walk before the invalidation, one after — not one per waiter.
+    expect(rootWalks).toBe(2);
+  });
+
   it("@req:c171e24d-15d3-4073-a34b-f6e78d3bc15f walks the parked root only once for concurrent lookups", async () => {
     const reader = makeReader(PARKED_FILES);
     let listCalls = 0;

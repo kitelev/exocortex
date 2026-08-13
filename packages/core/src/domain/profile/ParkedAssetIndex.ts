@@ -223,7 +223,15 @@ export class ParkedAssetIndex {
     if (this.building === null) {
       this.building = this.buildIndex();
     }
-    const built = await this.building;
+    // ⛔ Hold onto the promise WE awaited. Clearing `this.building`
+    // unconditionally below would let a second waiter, resuming one microtask
+    // later, wipe the slot a first waiter had already refilled — so every
+    // concurrent lookup would start its OWN re-walk. That herd lands exactly in
+    // the apply-profile window (invalidate fires while many links re-render),
+    // over a serial walk of a whole parked AssetSpace, on the device parking
+    // exists for.
+    const mine = this.building;
+    const built = await mine;
     // ⛔ Load-bearing: `invalidate()` cannot cancel a walk already in flight, and
     // an apply-profile takes SECONDS (it moves files, which churns
     // metadataCache, which re-renders open notes, which look links up again).
@@ -232,11 +240,11 @@ export class ParkedAssetIndex {
     // asset would keep resolving as parked, which is exactly what the
     // invalidation hook exists to prevent.
     if (generation !== this.generation) {
-      this.building = null;
+      if (this.building === mine) this.building = null;
       return this.ensureIndex();
     }
     this.index = built;
-    this.building = null;
+    if (this.building === mine) this.building = null;
     return built;
   }
 
