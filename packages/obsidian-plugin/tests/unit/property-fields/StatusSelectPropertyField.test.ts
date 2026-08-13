@@ -100,9 +100,8 @@ describe("StatusSelectPropertyField", () => {
       const expectedLabels = [
         "Draft",
         "Backlog",
-        "Analysis",
-        "To Do",
         "Doing",
+        "Waiting",
         "Done",
         "Trashed",
       ];
@@ -155,8 +154,8 @@ describe("StatusSelectPropertyField", () => {
       ) as HTMLSelectElement | null;
       const options = select!.querySelectorAll("option");
 
-      // "Not specified" + 7 status options = 8 total
-      expect(options.length).toBe(8);
+      // "Not specified" + 6 status options = 7 total
+      expect(options.length).toBe(7);
       expect(options[0].textContent).toBe("Not specified");
     });
 

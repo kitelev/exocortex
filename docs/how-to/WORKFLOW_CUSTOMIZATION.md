@@ -337,8 +337,7 @@ Validation checks:
 
 - `ems__EffortStatusDraft`
 - `ems__EffortStatusBacklog`
-- `ems__EffortStatusAnalysis`
-- `ems__EffortStatusToDo`
+- `ems__EffortStatusWaiting`
 - `ems__EffortStatusDoing`
 - `ems__EffortStatusDone`
 - `ems__EffortStatusTrashed`

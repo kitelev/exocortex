@@ -129,19 +129,38 @@ describe("PropertySchemas", () => {
   });
 
   describe("FALLBACK_EFFORT_STATUS_VALUES", () => {
-    it("should have 7 status values", () => {
-      expect(FALLBACK_EFFORT_STATUS_VALUES).toHaveLength(7);
+    it("should have 6 status values", () => {
+      expect(FALLBACK_EFFORT_STATUS_VALUES).toHaveLength(6);
     });
 
     it("should have all required status values", () => {
       const labels = FALLBACK_EFFORT_STATUS_VALUES.map((s) => s.label);
       expect(labels).toContain("Draft");
       expect(labels).toContain("Backlog");
-      expect(labels).toContain("Analysis");
-      expect(labels).toContain("To Do");
       expect(labels).toContain("Doing");
+      expect(labels).toContain("Waiting");
       expect(labels).toContain("Done");
       expect(labels).toContain("Trashed");
+    });
+
+    // @req:fcbde537-f09a-410e-8bee-d3d607a70302 — this fallback writes the raw
+    // UUID into user frontmatter, so a UUID whose TBox asset was deleted
+    // (exoas-public@c35a660d, 2026-08-13) becomes a dangling wikilink. Grepping
+    // the symbolic `EffortStatusToDo` name does NOT find these — they are
+    // UUID-form only, which is why this axis is asserted separately.
+    it("@req:fcbde537-f09a-410e-8bee-d3d607a70302 offers no status whose TBox asset was deleted", () => {
+      const serialized = JSON.stringify(FALLBACK_EFFORT_STATUS_VALUES);
+      for (const deadUid of [
+        "6a0e933a-6653-46f4-95ae-ed7508177c73", // ems__EffortStatusToDo
+        "cde3525c-57ea-4efc-b477-2e7e7ccd3a1e", // ems__EffortStatusAnalysis
+      ]) {
+        expect(serialized).not.toContain(deadUid);
+      }
+    });
+
+    it("@req:fcbde537-f09a-410e-8bee-d3d607a70302 offers the Waiting status that replaced them", () => {
+      const waiting = FALLBACK_EFFORT_STATUS_VALUES.find((s) => s.label === "Waiting");
+      expect(waiting?.value).toBe("[[0610947c-6a62-41c8-9d44-7863d3ba3a8e]]");
     });
 
     it("should have UUID-form wikilink values (RFC 31c1a0be Phase 4 PR-C)", () => {
@@ -175,7 +194,7 @@ describe("PropertySchemas", () => {
 
   describe("EFFORT_STATUS_VALUES (mutable, initially equals fallback)", () => {
     it("should initially contain fallback values", () => {
-      expect(EFFORT_STATUS_VALUES).toHaveLength(7);
+      expect(EFFORT_STATUS_VALUES).toHaveLength(6);
       expect(EFFORT_STATUS_VALUES.map((s) => s.label)).toContain("Doing");
     });
   });
@@ -256,7 +275,7 @@ describe("PropertySchemas", () => {
   describe("refreshEnumValues", () => {
     it("should do nothing when no enum resolver is set", async () => {
       await refreshEnumValues();
-      expect(EFFORT_STATUS_VALUES).toHaveLength(7);
+      expect(EFFORT_STATUS_VALUES).toHaveLength(6);
       expect(TASK_SIZE_VALUES).toHaveLength(6);
     });
 
@@ -584,26 +603,25 @@ describe("PropertySchemas", () => {
       expect(getStatusLabel("ems__EffortStatusTrashed")).toBe("Trashed");
       expect(getStatusLabel("ems__EffortStatusDraft")).toBe("Draft");
       expect(getStatusLabel("ems__EffortStatusBacklog")).toBe("Backlog");
-      expect(getStatusLabel("ems__EffortStatusAnalysis")).toBe("Analysis");
-      expect(getStatusLabel("ems__EffortStatusToDo")).toBe("To Do");
+      expect(getStatusLabel("ems__EffortStatusWaiting")).toBe("Waiting");
     });
 
     it("should return human-readable label for wiki-link wrapped URI", () => {
       expect(getStatusLabel("[[ems__EffortStatusDoing]]")).toBe("Doing");
       expect(getStatusLabel("[[ems__EffortStatusDone]]")).toBe("Done");
-      expect(getStatusLabel("[[ems__EffortStatusToDo]]")).toBe("To Do");
+      expect(getStatusLabel("[[ems__EffortStatusWaiting]]")).toBe("Waiting");
     });
 
     it("should return the label as-is if already human-readable", () => {
       expect(getStatusLabel("Doing")).toBe("Doing");
       expect(getStatusLabel("Done")).toBe("Done");
-      expect(getStatusLabel("To Do")).toBe("To Do");
+      expect(getStatusLabel("Waiting")).toBe("Waiting");
     });
 
     it("should handle case-insensitive label matching", () => {
       expect(getStatusLabel("doing")).toBe("Doing");
       expect(getStatusLabel("DONE")).toBe("Done");
-      expect(getStatusLabel("to do")).toBe("To Do");
+      expect(getStatusLabel("waiting")).toBe("Waiting");
     });
 
     it("should return dash for null or undefined", () => {

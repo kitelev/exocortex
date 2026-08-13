@@ -28,13 +28,21 @@
  *
  * New code should not introduce additional dependencies on this enum.
  * Resolve UUIDs at runtime via the TBox lookup instead.
+ *
+ * **This enum MIRRORS the shared ontology — a member without a TBox instance
+ * is a defect** (req `fcbde537-f09a-410e-8bee-d3d607a70302`). `ToDo`
+ * (`6a0e933a-…`) and `Analysis` (`cde3525c-…`) were deleted from
+ * `exoas-public` on 2026-08-13 (commit `c35a660d`) and removed here; the
+ * parking status `Waiting` (`0610947c-…`) shipped in their place. Before
+ * adding a member, resolve its `ems__EffortStatus<Name>` asset on disk —
+ * every value below is written into user frontmatter, so a value with no
+ * asset becomes a dangling wikilink no workflow can express.
  */
 export enum EffortStatus {
   DRAFT = "ems__EffortStatusDraft",
   BACKLOG = "ems__EffortStatusBacklog",
-  ANALYSIS = "ems__EffortStatusAnalysis",
-  TODO = "ems__EffortStatusToDo",
   DOING = "ems__EffortStatusDoing",
+  WAITING = "ems__EffortStatusWaiting",
   DONE = "ems__EffortStatusDone",
   TRASHED = "ems__EffortStatusTrashed",
 }

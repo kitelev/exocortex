@@ -23,16 +23,16 @@ describe("VisibilityGenerator", () => {
       gen = new VisibilityGenerator(getProjectEngine());
     });
 
-    it("should return Analysis as forward command from Backlog", () => {
+    it("should return Doing as forward command from Backlog", () => {
       const cmds = gen.getForwardCommands(EffortStatus.BACKLOG);
       const targets = cmds.map(c => c.targetStatus);
-      expect(targets).toContain(EffortStatus.ANALYSIS);
+      expect(targets).toContain(EffortStatus.DOING);
     });
 
-    it("should return ToDo as rollback command from Doing", () => {
+    it("should return Backlog as rollback command from Doing", () => {
       const cmds = gen.getRollbackCommands(EffortStatus.DOING);
       const targets = cmds.map(c => c.targetStatus);
-      expect(targets).toContain(EffortStatus.TODO);
+      expect(targets).toContain(EffortStatus.BACKLOG);
     });
 
     it("should include both forward and rollback in getVisibleCommands", () => {
@@ -50,11 +50,10 @@ describe("VisibilityGenerator", () => {
       gen = new VisibilityGenerator(getTaskEngine());
     });
 
-    it("should return Doing as forward command from Backlog (no Analysis)", () => {
+    it("should return Doing as the only forward command from Backlog", () => {
       const cmds = gen.getForwardCommands(EffortStatus.BACKLOG);
       const targets = cmds.map(c => c.targetStatus);
-      expect(targets).toContain(EffortStatus.DOING);
-      expect(targets).not.toContain(EffortStatus.ANALYSIS);
+      expect(targets).toEqual([EffortStatus.DOING]);
     });
 
     it("should return Backlog as rollback from Doing", () => {

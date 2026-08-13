@@ -57,9 +57,8 @@ import { LoggingService } from "./LoggingService";
 export const STATUS_UID_BY_ENUM: Readonly<Record<EffortStatus, string>> = {
   [EffortStatus.DRAFT]:    "c42245d0-01de-4c35-bfcf-d910445ea28e",
   [EffortStatus.BACKLOG]:  "753a44d5-846c-4b82-9196-4fd9a4d48777",
-  [EffortStatus.ANALYSIS]: "cde3525c-57ea-4efc-b477-2e7e7ccd3a1e",
-  [EffortStatus.TODO]:     "6a0e933a-6653-46f4-95ae-ed7508177c73",
   [EffortStatus.DOING]:    "027e78f4-6e16-4b36-b8fb-5510507d5745",
+  [EffortStatus.WAITING]:  "0610947c-6a62-41c8-9d44-7863d3ba3a8e",
   [EffortStatus.DONE]:     "7b9b3116-7c3c-438c-9618-94fe301320a6",
   [EffortStatus.TRASHED]:  "5d14f18d-db2b-4847-9ac1-144cb93b2541",
 };
