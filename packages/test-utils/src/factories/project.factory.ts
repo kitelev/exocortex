@@ -95,17 +95,10 @@ export const ProjectFactory = {
   },
 
   /**
-   * Create an Analysis project.
+   * Create a Waiting (parked) project.
    */
-  analysis(overrides: Partial<ProjectFixture> = {}): ProjectFixture {
-    return ProjectFactory.create({ status: "Analysis", ...overrides });
-  },
-
-  /**
-   * Create a To Do project.
-   */
-  todo(overrides: Partial<ProjectFixture> = {}): ProjectFixture {
-    return ProjectFactory.create({ status: "To Do", ...overrides });
+  waiting(overrides: Partial<ProjectFixture> = {}): ProjectFixture {
+    return ProjectFactory.create({ status: "Waiting", ...overrides });
   },
 
   /**

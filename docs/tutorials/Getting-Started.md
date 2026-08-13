@@ -277,7 +277,7 @@ REST API for the mobile app.
 
 ### Available Status Values
 
-EMS ships a status lifecycle — `Draft → Backlog → Analysis → ToDo → Doing → Done` (plus `Trashed`). The individual status values (`ems__EffortStatusBacklog`, `ems__EffortStatusToDo`, …) and their exact meaning are part of the **EMS domain model**, documented in the **[EMS AssetSpace README](https://github.com/kitelev/exoas-public)** — kept there (not duplicated here) so the two never drift.
+EMS ships a status lifecycle — `Draft → Backlog → Doing → Done` (plus `Trashed`). The individual status values (`ems__EffortStatusBacklog`, `ems__EffortStatusDoing`, …) and their exact meaning are part of the **EMS domain model**, documented in the **[EMS AssetSpace README](https://github.com/kitelev/exoas-public)** — kept there (not duplicated here) so the two never drift.
 
 ### What You'll See
 
@@ -308,7 +308,7 @@ exo__Instance_class:
 exo__Asset_label: Set up Express server
 ems__Effort_area: "[[Development]]"
 ems__Effort_parent: "[[Build API Server]]"
-ems__Effort_status: "[[ems__EffortStatusToDo]]"
+ems__Effort_status: "[[ems__EffortStatusBacklog]]"
 ---
 # Set up Express server
 
@@ -608,7 +608,7 @@ This is usually enough to identify the root cause on the first pass.
 | `exo__Asset_label`                  | Display name        | `"Build API Server"`                                      |
 | `ems__Effort_area`                  | Parent area         | `"[[Development]]"`                                       |
 | `ems__Effort_parent`                | Parent project/task | `"[[Build API Server]]"`                                  |
-| `ems__Effort_status`                | Workflow status     | `"[[ems__EffortStatusToDo]]"`                             |
+| `ems__Effort_status`                | Workflow status     | `"[[ems__EffortStatusBacklog]]"`                             |
 | `ems__Effort_plannedStartTimestamp` | Planned start date  | `"2025-11-10"`                                            |
 | `pn__DailyNote_day`                 | Daily note date     | `"2025-11-10"`                                            |
 

@@ -306,21 +306,10 @@ export class BatchExecutor {
             "Moved to backlog",
           );
 
-        case "move-to-analysis":
-          return await this.executeStatusUpdate(
-            relativePath,
-            operation,
-            "ems__EffortStatusAnalysis",
-            "Moved to analysis",
-          );
-
-        case "move-to-todo":
-          return await this.executeStatusUpdate(
-            relativePath,
-            operation,
-            "ems__EffortStatusToDo",
-            "Moved to todo",
-          );
+        // `move-to-analysis` / `move-to-todo` removed — see the note in
+        // `commands/StatusCommandExecutor.ts`
+        // (req fcbde537-f09a-410e-8bee-d3d607a70302). They now fall through
+        // to the `default` branch and report an unknown command.
 
         case "update-label":
           return await this.executeUpdateLabel(relativePath, operation);

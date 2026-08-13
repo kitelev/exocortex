@@ -435,8 +435,7 @@ SELECT ?area ?label ?parent WHERE {
 |--------|-----|-------------------|
 | Draft | `ems:EffortStatusDraft` | `ems__EffortStatusDraft` |
 | Backlog | `ems:EffortStatusBacklog` | `ems__EffortStatusBacklog` |
-| Analysis | `ems:EffortStatusAnalysis` | `ems__EffortStatusAnalysis` |
-| ToDo | `ems:EffortStatusToDo` | `ems__EffortStatusToDo` |
+| Waiting | `ems:EffortStatusWaiting` | `ems__EffortStatusWaiting` |
 | Doing | `ems:EffortStatusDoing` | `ems__EffortStatusDoing` |
 | Done | `ems:EffortStatusDone` | `ems__EffortStatusDone` |
 | Trashed | `ems:EffortStatusTrashed` | `ems__EffortStatusTrashed` |

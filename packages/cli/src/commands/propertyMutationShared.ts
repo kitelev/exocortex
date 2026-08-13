@@ -49,7 +49,7 @@ export { canonicalYamlKey };
 export const GUARDED_PROPERTIES: Record<string, string> = {
   // Status state machine (transitions carry preconditions).
   ems__Effort_status:
-    "apply mark-done|move-to-backlog|move-to-todo|start-effort|set-draft-status <path>",
+    "apply mark-done|move-to-backlog|rollback-to-backlog|start-effort|set-draft-status <path>",
   // Criticality zone (not-a-prototype precondition guard).
   ems__Task_zone: "apply set-criticality-high|medium|low <path>",
   // Parent / label — dedicated guarded commands (#3779).

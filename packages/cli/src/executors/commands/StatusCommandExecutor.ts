@@ -183,29 +183,13 @@ export class StatusCommandExecutor extends BaseCommandExecutor {
     }
   }
 
-  /**
-   * Transitions project to Analysis status.
-   */
-  async executeMoveToAnalysis(filepath: string): Promise<void> {
-    try {
-      await this.updateStatus(filepath, "ems__EffortStatusAnalysis", "Analysis");
-      process.exit(ExitCodes.SUCCESS);
-    } catch (error) {
-      ErrorHandler.handle(error as Error);
-    }
-  }
-
-  /**
-   * Transitions task/project to ToDo status.
-   */
-  async executeMoveToToDo(filepath: string): Promise<void> {
-    try {
-      await this.updateStatus(filepath, "ems__EffortStatusToDo", "ToDo");
-      process.exit(ExitCodes.SUCCESS);
-    } catch (error) {
-      ErrorHandler.handle(error as Error);
-    }
-  }
+  // `executeMoveToAnalysis` / `executeMoveToToDo` removed with req
+  // fcbde537-f09a-410e-8bee-d3d607a70302: both wrote a status whose TBox
+  // instance was deleted from the shared ontology (exoas-public@c35a660d),
+  // i.e. a dangling wikilink no workflow can express. Neither was reachable
+  // from the CLI — the `command` and `batch` entrypoints were retired earlier
+  // (see the note in `program.ts`) — so this is not a breaking change.
+  // `move-to-backlog` is the live equivalent.
 
   /**
    * Helper method to update status

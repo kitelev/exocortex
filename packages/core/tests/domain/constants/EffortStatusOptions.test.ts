@@ -1,8 +1,8 @@
 import { EFFORT_STATUS_OPTIONS } from "../../../src/domain/constants";
 
 describe("EFFORT_STATUS_OPTIONS (RFC 31c1a0be Phase 4 PR-D, #3194)", () => {
-  it("should expose 7 options with value and label", () => {
-    expect(EFFORT_STATUS_OPTIONS).toHaveLength(7);
+  it("should expose 6 options with value and label", () => {
+    expect(EFFORT_STATUS_OPTIONS).toHaveLength(6);
     for (const opt of EFFORT_STATUS_OPTIONS) {
       expect(opt.value).toMatch(/^\[\[ems__EffortStatus\w+\]\]$/);
       expect(opt.label).toBeTruthy();

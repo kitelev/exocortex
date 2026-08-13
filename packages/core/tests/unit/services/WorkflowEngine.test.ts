@@ -48,19 +48,14 @@ describe("WorkflowEngine", () => {
       engine = new WorkflowEngine(getProjectWorkflow());
     });
 
-    it("should return Analysis as next state from Backlog", () => {
+    it("should return Doing as next state from Backlog", () => {
       const next = engine.getNextStates(EffortStatus.BACKLOG);
-      expect(next).toContain(EffortStatus.ANALYSIS);
-    });
-
-    it("should return ToDo as next state from Analysis", () => {
-      const next = engine.getNextStates(EffortStatus.ANALYSIS);
-      expect(next).toContain(EffortStatus.TODO);
-    });
-
-    it("should return Doing as next state from ToDo", () => {
-      const next = engine.getNextStates(EffortStatus.TODO);
       expect(next).toContain(EffortStatus.DOING);
+    });
+
+    it("should return Done as next state from Doing", () => {
+      const next = engine.getNextStates(EffortStatus.DOING);
+      expect(next).toContain(EffortStatus.DONE);
     });
 
     it("should allow transition from Draft to Backlog", () => {
@@ -71,9 +66,9 @@ describe("WorkflowEngine", () => {
       expect(engine.canTransition(EffortStatus.DRAFT, EffortStatus.DOING)).toBe(false);
     });
 
-    it("should rollback DOING to ToDo (not Backlog)", () => {
+    it("should rollback DOING to Backlog", () => {
       const prev = engine.getPreviousStatus(EffortStatus.DOING);
-      expect(prev).toBe(EffortStatus.TODO);
+      expect(prev).toBe(EffortStatus.BACKLOG);
     });
 
     it("should rollback DONE to DOING", () => {
@@ -114,13 +109,12 @@ describe("WorkflowEngine", () => {
       engine = new WorkflowEngine(getTaskWorkflow());
     });
 
-    it("should skip Analysis — Backlog goes directly to Doing", () => {
+    it("should go from Backlog directly to Doing", () => {
       const next = engine.getNextStates(EffortStatus.BACKLOG);
-      expect(next).toContain(EffortStatus.DOING);
-      expect(next).not.toContain(EffortStatus.ANALYSIS);
+      expect(next).toEqual([EffortStatus.DOING]);
     });
 
-    it("should rollback DOING to Backlog (not ToDo)", () => {
+    it("should rollback DOING to Backlog", () => {
       expect(engine.getPreviousStatus(EffortStatus.DOING)).toBe(EffortStatus.BACKLOG);
     });
 
@@ -182,7 +176,7 @@ describe("WorkflowEngine", () => {
 
     it("should return empty array for unknown status", () => {
       const engine = new WorkflowEngine(buildMinimalWorkflow());
-      expect(engine.getTimestampsForStatus(EffortStatus.ANALYSIS)).toHaveLength(0);
+      expect(engine.getTimestampsForStatus(EffortStatus.WAITING)).toHaveLength(0);
     });
   });
 
@@ -212,7 +206,7 @@ describe("WorkflowEngine", () => {
 
     it("should fail when initial state not in states list", () => {
       const engine = new WorkflowEngine(
-        buildMinimalWorkflow({ initialState: EffortStatus.ANALYSIS }),
+        buildMinimalWorkflow({ initialState: EffortStatus.WAITING }),
       );
       const result = engine.validate();
       expect(result.valid).toBe(false);
@@ -232,7 +226,7 @@ describe("WorkflowEngine", () => {
       const engine = new WorkflowEngine(
         buildMinimalWorkflow({
           transitions: [
-            { from: EffortStatus.DRAFT, to: EffortStatus.ANALYSIS, label: "bad", isRollback: false },
+            { from: EffortStatus.DRAFT, to: EffortStatus.WAITING, label: "bad", isRollback: false },
           ],
         }),
       );

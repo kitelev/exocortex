@@ -12,12 +12,12 @@ describe("DefaultWorkflows", () => {
       expect(PROJECT_DEFAULT_WORKFLOW.targetClass).toBe(AssetClass.PROJECT);
     });
 
-    it("should have 7 states", () => {
-      expect(PROJECT_DEFAULT_WORKFLOW.states).toHaveLength(7);
+    it("should have 5 states", () => {
+      expect(PROJECT_DEFAULT_WORKFLOW.states).toHaveLength(5);
     });
 
-    it("should have 10 transitions", () => {
-      expect(PROJECT_DEFAULT_WORKFLOW.transitions).toHaveLength(10);
+    it("should have 6 transitions", () => {
+      expect(PROJECT_DEFAULT_WORKFLOW.transitions).toHaveLength(6);
     });
 
     it("should have DRAFT as initial state", () => {
@@ -37,14 +37,14 @@ describe("DefaultWorkflows", () => {
 
     it("should have states in correct order", () => {
       const orders = PROJECT_DEFAULT_WORKFLOW.states.map((s) => s.order);
-      expect(orders).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      expect(orders).toEqual([1, 2, 3, 4, 5]);
     });
 
-    it("should have Analysis and ToDo as optional states", () => {
+    it("should have no optional states (Analysis/ToDo dropped with req fcbde537)", () => {
       const optionalStates = PROJECT_DEFAULT_WORKFLOW.states
         .filter((s) => s.optional)
         .map((s) => s.status);
-      expect(optionalStates).toEqual([EffortStatus.ANALYSIS, EffortStatus.TODO]);
+      expect(optionalStates).toEqual([]);
     });
 
     it("should set startTimestamp when entering DOING", () => {
@@ -62,11 +62,11 @@ describe("DefaultWorkflows", () => {
       expect(doneState?.timestampOnEnter).toContain("ems__Effort_resolutionTimestamp");
     });
 
-    it("should have 5 forward and 5 rollback transitions", () => {
+    it("should have 3 forward and 3 rollback transitions", () => {
       const forward = PROJECT_DEFAULT_WORKFLOW.transitions.filter((t) => !t.isRollback);
       const rollback = PROJECT_DEFAULT_WORKFLOW.transitions.filter((t) => t.isRollback);
-      expect(forward).toHaveLength(5);
-      expect(rollback).toHaveLength(5);
+      expect(forward).toHaveLength(3);
+      expect(rollback).toHaveLength(3);
     });
   });
 
@@ -119,8 +119,8 @@ describe("DefaultWorkflows", () => {
   describe("buildWorkflowAssetContent", () => {
     it("should generate correct number of files for project workflow", () => {
       const files = buildWorkflowAssetContent(PROJECT_DEFAULT_WORKFLOW);
-      // 1 workflow + 7 states + 10 transitions = 18
-      expect(files).toHaveLength(18);
+      // 1 workflow + 5 states + 6 transitions = 12
+      expect(files).toHaveLength(12);
     });
 
     it("should generate correct number of files for task workflow", () => {

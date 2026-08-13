@@ -18,7 +18,7 @@ function createMinimalWorkflow(
     isDefault: true,
     states: [
       { status: EffortStatus.BACKLOG, order: 0, optional: false, timestampOnEnter: [] },
-      { status: EffortStatus.TODO, order: 1, optional: false, timestampOnEnter: [] },
+      { status: EffortStatus.WAITING, order: 1, optional: false, timestampOnEnter: [] },
       {
         status: EffortStatus.DOING,
         order: 2,
@@ -34,10 +34,10 @@ function createMinimalWorkflow(
       { status: EffortStatus.TRASHED, order: 4, optional: false, timestampOnEnter: [] },
     ],
     transitions: [
-      { from: EffortStatus.BACKLOG, to: EffortStatus.TODO, label: "→ Todo", isRollback: false },
-      { from: EffortStatus.TODO, to: EffortStatus.DOING, label: "▶ Start", icon: "play", isRollback: false },
+      { from: EffortStatus.BACKLOG, to: EffortStatus.WAITING, label: "→ Todo", isRollback: false },
+      { from: EffortStatus.WAITING, to: EffortStatus.DOING, label: "▶ Start", icon: "play", isRollback: false },
       { from: EffortStatus.DOING, to: EffortStatus.DONE, label: "✓ Done", icon: "check", isRollback: false },
-      { from: EffortStatus.DOING, to: EffortStatus.TODO, label: "← Back", icon: "undo", isRollback: true },
+      { from: EffortStatus.DOING, to: EffortStatus.WAITING, label: "← Back", icon: "undo", isRollback: true },
       { from: EffortStatus.BACKLOG, to: EffortStatus.TRASHED, label: "🗑 Trash", icon: "trash", isRollback: false },
     ],
     ...overrides,
@@ -82,25 +82,25 @@ describe("WorkflowCommandAdapter", () => {
     it("should generate deterministic command IDs", () => {
       const commands = adapter.adaptTransitions(EffortStatus.BACKLOG);
 
-      expect(commands[0].id).toBe("workflow-backlog-to-todo");
+      expect(commands[0].id).toBe("workflow-backlog-to-waiting");
       expect(commands[1].id).toBe("workflow-backlog-to-trashed");
     });
 
     it("should preserve transition label as command name", () => {
-      const commands = adapter.adaptTransitions(EffortStatus.TODO);
+      const commands = adapter.adaptTransitions(EffortStatus.WAITING);
 
       expect(commands[0].name).toBe("▶ Start");
     });
 
     it("should preserve transition icon", () => {
-      const commands = adapter.adaptTransitions(EffortStatus.TODO);
+      const commands = adapter.adaptTransitions(EffortStatus.WAITING);
 
       expect(commands[0].icon).toBe("play");
     });
 
     it("should handle transitions without icon", () => {
       const commands = adapter.adaptTransitions(EffortStatus.BACKLOG);
-      const todoCmd = commands.find((c) => c.id === "workflow-backlog-to-todo");
+      const todoCmd = commands.find((c) => c.id === "workflow-backlog-to-waiting");
 
       expect(todoCmd?.icon).toBeUndefined();
     });
@@ -110,19 +110,19 @@ describe("WorkflowCommandAdapter", () => {
 
   describe("preconditions", () => {
     it("should build precondition with SPARQL ASK checking from-status", () => {
-      const commands = adapter.adaptTransitions(EffortStatus.TODO);
+      const commands = adapter.adaptTransitions(EffortStatus.WAITING);
       const precondition = commands[0].precondition;
 
       expect(precondition).toBeDefined();
-      expect(precondition!.id).toBe("precond-workflow-todo-to-doing");
-      expect(precondition!.sparqlAsk).toContain(EffortStatus.TODO);
+      expect(precondition!.id).toBe("precond-workflow-waiting-to-doing");
+      expect(precondition!.sparqlAsk).toContain(EffortStatus.WAITING);
       expect(precondition!.sparqlAsk).toContain("$target");
     });
 
     it("should include human-readable label in precondition", () => {
-      const commands = adapter.adaptTransitions(EffortStatus.TODO);
+      const commands = adapter.adaptTransitions(EffortStatus.WAITING);
 
-      expect(commands[0].precondition!.label).toContain("todo");
+      expect(commands[0].precondition!.label).toContain("waiting");
     });
   });
 
@@ -130,7 +130,7 @@ describe("WorkflowCommandAdapter", () => {
 
   describe("grounding", () => {
     it("should build composite grounding with status + timestamps", () => {
-      const commands = adapter.adaptTransitions(EffortStatus.TODO);
+      const commands = adapter.adaptTransitions(EffortStatus.WAITING);
       const startCmd = commands[0]; // Todo → Doing
 
       // Doing has timestampOnEnter: ["ems__Effort_startTimestamp"]
@@ -139,7 +139,7 @@ describe("WorkflowCommandAdapter", () => {
     });
 
     it("should set status property as first grounding step", () => {
-      const commands = adapter.adaptTransitions(EffortStatus.TODO);
+      const commands = adapter.adaptTransitions(EffortStatus.WAITING);
       const steps = commands[0].grounding.steps!;
 
       // RFC 31c1a0be Phase 1 + RFC 918a2b65 Phase 4: status emitted via
@@ -150,7 +150,7 @@ describe("WorkflowCommandAdapter", () => {
     });
 
     it("should set timestamps as subsequent grounding steps", () => {
-      const commands = adapter.adaptTransitions(EffortStatus.TODO);
+      const commands = adapter.adaptTransitions(EffortStatus.WAITING);
       const steps = commands[0].grounding.steps!;
 
       // Timestamp emitted via typed `targetValueSubstitution` ($now token).
@@ -161,12 +161,12 @@ describe("WorkflowCommandAdapter", () => {
 
     it("should return simple grounding when no timestamps", () => {
       const commands = adapter.adaptTransitions(EffortStatus.BACKLOG);
-      const todoCmd = commands.find((c) => c.id === "workflow-backlog-to-todo");
+      const todoCmd = commands.find((c) => c.id === "workflow-backlog-to-waiting");
 
       // Todo has no timestampOnEnter → single property_set, not composite
       expect(todoCmd!.grounding.type).toBe(GroundingType.PROPERTY_SET);
       expect(todoCmd!.grounding.targetProperty).toBe("ems__Effort_status");
-      expect(todoCmd!.grounding.targetValueRef).toBe(EffortStatus.TODO);
+      expect(todoCmd!.grounding.targetValueRef).toBe(EffortStatus.WAITING);
       expect(todoCmd!.grounding.steps).toBeUndefined();
     });
 
@@ -206,7 +206,7 @@ describe("WorkflowCommandAdapter", () => {
 
   describe("category", () => {
     it("should set category to 'workflow' for forward transitions", () => {
-      const commands = adapter.adaptTransitions(EffortStatus.TODO);
+      const commands = adapter.adaptTransitions(EffortStatus.WAITING);
 
       expect(commands[0].category).toBe("workflow");
     });
@@ -216,7 +216,7 @@ describe("WorkflowCommandAdapter", () => {
       const rollbackCmd = commands.find((c) => c.category === "rollback");
 
       expect(rollbackCmd).toBeDefined();
-      expect(rollbackCmd!.id).toBe("workflow-doing-to-todo");
+      expect(rollbackCmd!.id).toBe("workflow-doing-to-waiting");
     });
   });
 
@@ -228,17 +228,17 @@ describe("WorkflowCommandAdapter", () => {
       const rollbackCmd = commands.find((c) => c.category === "rollback");
 
       expect(rollbackCmd!.confirmMessage).toContain("Rollback");
-      expect(rollbackCmd!.confirmMessage).toContain("todo");
+      expect(rollbackCmd!.confirmMessage).toContain("waiting");
     });
 
     it("should not set confirmMessage for forward transitions", () => {
-      const commands = adapter.adaptTransitions(EffortStatus.TODO);
+      const commands = adapter.adaptTransitions(EffortStatus.WAITING);
 
       expect(commands[0].confirmMessage).toBeUndefined();
     });
 
     it("should set successMessage for all transitions", () => {
-      const commands = adapter.adaptTransitions(EffortStatus.TODO);
+      const commands = adapter.adaptTransitions(EffortStatus.WAITING);
 
       expect(commands[0].successMessage).toContain("doing");
     });
@@ -262,7 +262,7 @@ describe("WorkflowCommandAdapter", () => {
 
       expect(commands).toHaveLength(1);
       expect(commands[0].category).toBe("rollback");
-      expect(commands[0].id).toBe("workflow-doing-to-todo");
+      expect(commands[0].id).toBe("workflow-doing-to-waiting");
     });
 
     it("should return empty when no rollback available", () => {
@@ -278,7 +278,7 @@ describe("WorkflowCommandAdapter", () => {
     it("should expose the underlying WorkflowEngine", () => {
       const engine = adapter.getEngine();
 
-      expect(engine.canTransition(EffortStatus.BACKLOG, EffortStatus.TODO)).toBe(true);
+      expect(engine.canTransition(EffortStatus.BACKLOG, EffortStatus.WAITING)).toBe(true);
     });
   });
 
@@ -307,7 +307,7 @@ describe("WorkflowCommandAdapter", () => {
     it("should match VisibilityGenerator command ID format", () => {
       // VisibilityGenerator uses: workflow-{fromShort}-to-{toShort}
       // where fromShort = t.from.replace("ems__EffortStatus", "").toLowerCase()
-      const commands = adapter.adaptTransitions(EffortStatus.TODO);
+      const commands = adapter.adaptTransitions(EffortStatus.WAITING);
 
       expect(commands[0].id).toMatch(/^workflow-[a-z]+-to-[a-z]+$/);
     });

@@ -9,16 +9,12 @@ describe("EffortStatus", () => {
     expect(EffortStatus.BACKLOG).toBe("ems__EffortStatusBacklog");
   });
 
-  it("should have ANALYSIS constant", () => {
-    expect(EffortStatus.ANALYSIS).toBe("ems__EffortStatusAnalysis");
-  });
-
-  it("should have TODO constant", () => {
-    expect(EffortStatus.TODO).toBe("ems__EffortStatusToDo");
-  });
-
   it("should have DOING constant", () => {
     expect(EffortStatus.DOING).toBe("ems__EffortStatusDoing");
+  });
+
+  it("should have WAITING constant", () => {
+    expect(EffortStatus.WAITING).toBe("ems__EffortStatusWaiting");
   });
 
   it("should have DONE constant", () => {
@@ -29,8 +25,8 @@ describe("EffortStatus", () => {
     expect(EffortStatus.TRASHED).toBe("ems__EffortStatusTrashed");
   });
 
-  it("should have exactly 7 statuses", () => {
+  it("should have exactly 6 statuses", () => {
     const values = Object.values(EffortStatus);
-    expect(values).toHaveLength(7);
+    expect(values).toHaveLength(6);
   });
 });
