@@ -97,22 +97,58 @@ function normalizeLinkTarget(linkTarget: string): string {
  * create` and `apply set-label` both write it that way — and an unreadable
  * label degrades to `null`, which the caller already handles.
  */
-function extractLabel(content: string): string | null {
+/** Frontmatter block of a markdown file, or `null` when it carries none. */
+function frontmatterOf(content: string): string | null {
   const fence = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (fence === null) return null;
+  return fence === null ? null : fence[1];
+}
+
+/**
+ * Positive evidence that a parked FILE is an Exocortex ASSET.
+ *
+ * Every asset carries `exo__Asset_uid` (it is what UID-canon filenames are
+ * derived from); a README, a licence or a stray note does not.
+ */
+function hasAssetUid(content: string): boolean {
+  const fm = frontmatterOf(content);
+  if (fm === null) return false;
+  const match = fm.match(/^exo__Asset_uid:[ \t]*(.+)$/m);
+  return match !== null && match[1].trim().length > 0;
+}
+
+function extractLabel(content: string): string | null {
+  const fm = frontmatterOf(content);
+  if (fm === null) return null;
   // ⛔ `[ \t]*`, never `\s*`: `\s` matches `\n`, so on a multi-line (list) value
   // the match would spill past the newline and capture the first list item.
-  const match = fence[1].match(/^exo__Asset_label:[ \t]*(.+)$/m);
-  if (match === undefined || match === null) return null;
+  const match = fm.match(/^exo__Asset_label:[ \t]*(.+)$/m);
+  if (match === null) return null;
   const raw = match[1].trim();
-  if (raw.length === 0) return null;
-  // Strip the quoting `create` adds for scalars that would otherwise be ambiguous.
-  const unquoted =
-    (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2) ||
-    (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2)
-      ? raw.slice(1, -1)
-      : raw;
-  return unquoted.length === 0 ? null : unquoted;
+  if (raw.length < 1) return null;
+
+  // Undo the quoting `create` adds for scalars that would otherwise be
+  // ambiguous. The two YAML quoting styles unescape DIFFERENTLY, and getting
+  // this wrong is visible to the user: measured against a real corpus of 22 971
+  // assets, a naive quote-strip renders 18 labels with literal backslashes
+  // (`Issue \"под ключ\" = merged PR`).
+  if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
+    return orNull(
+      raw
+        .slice(1, -1)
+        .replace(/\\(["\\ntr])/g, (_m, c: string) =>
+          c === "n" ? "\n" : c === "t" ? "\t" : c === "r" ? "\r" : c,
+        ),
+    );
+  }
+  if (raw.length >= 2 && raw.startsWith("'") && raw.endsWith("'")) {
+    // Single-quoted YAML has exactly ONE escape: a doubled quote.
+    return orNull(raw.slice(1, -1).replace(/''/g, "'"));
+  }
+  return orNull(raw);
+}
+
+function orNull(value: string): string | null {
+  return value.length === 0 ? null : value;
 }
 
 /**
@@ -127,6 +163,12 @@ export class ParkedAssetIndex {
   /** basename (no `.md`) → vault-relative path. First occurrence wins. */
   private index: Map<string, string> | null = null;
   private building: Promise<Map<string, string>> | null = null;
+  /**
+   * Bumped by {@link invalidate}. A walk that started BEFORE an invalidation
+   * describes a world that no longer exists, so its result must be discarded
+   * rather than installed.
+   */
+  private generation = 0;
 
   constructor(reader: ParkedVaultReader) {
     this.reader = reader;
@@ -136,6 +178,7 @@ export class ParkedAssetIndex {
   invalidate(): void {
     this.index = null;
     this.building = null;
+    this.generation += 1;
   }
 
   /**
@@ -153,24 +196,45 @@ export class ParkedAssetIndex {
     const assetSpace = assetSpaceOf(path);
     if (assetSpace === null) return null;
 
-    let label: string | null = null;
+    let content: string;
     try {
-      label = extractLabel(await this.reader.read(path));
+      content = await this.reader.read(path);
     } catch {
-      // The file was listed a moment ago; if it cannot be read now, the asset is
-      // still parked — only its name is unavailable.
-      label = null;
+      // No evidence read, no hit. Silence is not proof that the file is an asset.
+      return null;
     }
-    return { path, assetSpace, label };
+
+    // ⛔ A markdown FILE under the parked root is not automatically an ASSET.
+    // Real data: 22 `README.md` live inside assetspaces across this device's
+    // vaults, despite the co-location canon saying they should not. Indexing
+    // those would make a genuinely broken `[[README]]` render as a placeholder
+    // offering to activate an AssetSpace — the placeholder swallowing exactly
+    // the broken link it must leave alone. `exo__Asset_uid` is the positive
+    // evidence that a file IS an asset.
+    if (!hasAssetUid(content)) return null;
+
+    return { path, assetSpace, label: extractLabel(content) };
   }
 
   private async ensureIndex(): Promise<Map<string, string>> {
     if (this.index !== null) return this.index;
     // Concurrent unresolved links on one page all miss at once; share one walk.
+    const generation = this.generation;
     if (this.building === null) {
       this.building = this.buildIndex();
     }
     const built = await this.building;
+    // ⛔ Load-bearing: `invalidate()` cannot cancel a walk already in flight, and
+    // an apply-profile takes SECONDS (it moves files, which churns
+    // metadataCache, which re-renders open notes, which look links up again).
+    // Installing this snapshot unconditionally would therefore write the
+    // PRE-invalidation world back over the invalidation — i.e. a just-activated
+    // asset would keep resolving as parked, which is exactly what the
+    // invalidation hook exists to prevent.
+    if (generation !== this.generation) {
+      this.building = null;
+      return this.ensureIndex();
+    }
     this.index = built;
     this.building = null;
     return built;

@@ -134,7 +134,7 @@ describe("ParkedAssetIndex", () => {
     const index = new ParkedAssetIndex(
       makeReader({
         [`${PARKED_ROOT}/kitelev/exoas-x/ns/${uid}.md`]:
-          `---\nexo__Asset_label: "Курс: БАД"\n---\n`,
+          `---\nexo__Asset_uid: ${uid}\nexo__Asset_label: "Курс: БАД"\n---\n`,
       }),
     );
 
@@ -147,6 +147,7 @@ describe("ParkedAssetIndex", () => {
       makeReader({
         [`${PARKED_ROOT}/kitelev/exoas-x/ns/${uid}.md`]: [
           "---",
+          `exo__Asset_uid: ${uid}`,
           "exo__Asset_label:",
           "  - first",
           "  - second",
@@ -174,26 +175,147 @@ describe("ParkedAssetIndex", () => {
     const uid = "aaaaaaaa-0000-0000-0000-000000000005";
     const index = new ParkedAssetIndex(
       makeReader({
-        [`${PARKED_ROOT}/${uid}.md`]: `---\nexo__Asset_label: Stray\n---\n`,
+        [`${PARKED_ROOT}/${uid}.md`]:
+          `---\nexo__Asset_uid: ${uid}\nexo__Asset_label: Stray\n---\n`,
       }),
     );
 
     await expect(index.lookup(uid)).resolves.toBeNull();
   });
 
-  it("@req:c171e24d-15d3-4073-a34b-f6e78d3bc15f re-walks after invalidate, so an asset activated by apply-profile stops reading as parked", async () => {
-    const files = { ...PARKED_FILES };
+  it("@req:c171e24d-15d3-4073-a34b-f6e78d3bc15f re-walks after invalidate, so an AssetSpace parked by apply-profile becomes visible", async () => {
+    // The ADD direction is the discriminating one. In the REMOVE direction a
+    // stale index is indistinguishable from a fresh one — the file it points at
+    // is gone, so the read fails and the lookup returns null either way.
+    const files: Record<string, string> = {};
     const index = new ParkedAssetIndex(makeReader(files));
 
-    expect(await index.lookup(PARKED_UID)).not.toBeNull();
+    expect(await index.lookup(PARKED_UID)).toBeNull();
 
-    // Simulate the unpark: the file is no longer under the parked root. Without
-    // invalidation the cached directory listing would still report it.
-    delete files[PARKED_PATH];
-    expect(await index.lookup(PARKED_UID)).not.toBeNull();
+    // apply-profile parks the AssetSpace: its files appear under the parked root.
+    files[PARKED_PATH] = PARKED_FILES[PARKED_PATH];
+    expect(await index.lookup(PARKED_UID)).toBeNull(); // still the cached listing
 
     index.invalidate();
-    expect(await index.lookup(PARKED_UID)).toBeNull();
+    expect(await index.lookup(PARKED_UID)).not.toBeNull();
+  });
+
+  it("@req:c171e24d-15d3-4073-a34b-f6e78d3bc15f discards a walk that STARTED BEFORE an invalidation instead of installing the stale world", async () => {
+    // The window this closes is wide, not a hairline race: an apply flow takes
+    // seconds, churns metadataCache, re-renders open notes and therefore calls
+    // lookup() again — all while the first walk is still running.
+    // ⛔ The ADD direction is the only discriminating one: in the REMOVE
+    // direction a stale index is indistinguishable from a fresh one, because the
+    // file it points at is gone and the read fails either way.
+    const DECOY = `${PARKED_ROOT}/kitelev/exoas-other/ns/decoy.md`;
+    const visible: Record<string, string> = {
+      // Keeps the parked root non-empty, so walk #1 actually walks.
+      [DECOY]: "---\nexo__Asset_uid: decoy\n---\n",
+    };
+    let releaseWalk: (() => void) | null = null;
+    const held = new Promise<void>((resolve) => {
+      releaseWalk = resolve;
+    });
+    const base = makeReader(visible);
+    let suspended = false;
+    const slow: ParkedVaultReader = {
+      exists: base.exists.bind(base),
+      read: base.read.bind(base),
+      list: async (path) => {
+        const result = await base.list(path);
+        // Suspend walk #1 at its DEEPEST listing — by then it has already
+        // enumerated the whole old world, so making the new AssetSpace appear
+        // cannot leak into it. That is what makes this test discriminating
+        // rather than a coin flip on listing order.
+        if (!suspended && path.endsWith("/ns")) {
+          suspended = true;
+          await held;
+        }
+        return result;
+      },
+    };
+    const index = new ParkedAssetIndex(slow);
+
+    const inFlight = index.lookup(PARKED_UID);
+    // ⛔ Wait for the ACTUAL suspension, never a fixed number of ticks: the walk
+    // is four levels deep with several awaits per level, so releasing early lets
+    // walk #1 observe the new world and the axis becomes vacuous (verified — it
+    // stayed green with the guard removed until this loop replaced a single
+    // `await Promise.resolve()`).
+    while (!suspended) await new Promise((r) => setTimeout(r, 0));
+
+    // The apply parks a NEW AssetSpace and invalidates — while walk #1 is still
+    // in flight, holding a listing that predates both.
+    visible[PARKED_PATH] = PARKED_FILES[PARKED_PATH];
+    index.invalidate();
+    (releaseWalk as unknown as () => void)();
+    await inFlight;
+
+    // Installing walk #1's result would hide the freshly parked asset forever.
+    expect(await index.lookup(PARKED_UID)).not.toBeNull();
+  });
+
+  it("@req:c171e24d-15d3-4073-a34b-f6e78d3bc15f NEGATIVE CONTROL — a non-asset markdown file under the parked root is not a hit", async () => {
+    // Real data: 22 README.md live inside assetspaces across this device's
+    // vaults. Indexing them would decorate a genuinely broken [[README]] link.
+    const index = new ParkedAssetIndex(
+      makeReader({
+        [`${PARKED_ROOT}/kitelev/exoas-public/README.md`]:
+          "# exoas-public\n\nA knowledge pack.\n",
+      }),
+    );
+
+    await expect(index.lookup("README")).resolves.toBeNull();
+  });
+
+  it("@req:c171e24d-15d3-4073-a34b-f6e78d3bc15f NEGATIVE CONTROL — an unreadable file is not evidence of an asset", async () => {
+    const uid = "aaaaaaaa-0000-0000-0000-000000000006";
+    const base = makeReader({
+      [`${PARKED_ROOT}/kitelev/exoas-x/ns/${uid}.md`]: `---\nexo__Asset_uid: ${uid}\n---\n`,
+    });
+    const index = new ParkedAssetIndex({
+      exists: base.exists.bind(base),
+      list: base.list.bind(base),
+      read: () => Promise.reject(new Error("EACCES")),
+    });
+
+    await expect(index.lookup(uid)).resolves.toBeNull();
+  });
+
+  it("@req:c171e24d-15d3-4073-a34b-f6e78d3bc15f unescapes a double-quoted label instead of showing literal backslashes", async () => {
+    const uid = "aaaaaaaa-0000-0000-0000-000000000007";
+    const index = new ParkedAssetIndex(
+      makeReader({
+        [`${PARKED_ROOT}/kitelev/exoas-x/ns/${uid}.md`]: [
+          "---",
+          `exo__Asset_uid: ${uid}`,
+          String.raw`exo__Asset_label: "Issue \"под ключ\" = merged PR"`,
+          "---",
+        ].join("\n"),
+      }),
+    );
+
+    expect((await index.lookup(uid))?.label).toBe(
+      'Issue "под ключ" = merged PR',
+    );
+  });
+
+  it("@req:c171e24d-15d3-4073-a34b-f6e78d3bc15f unescapes a single-quoted label by YAML's own rule (doubled quote), not the double-quoted one", async () => {
+    const uid = "aaaaaaaa-0000-0000-0000-000000000008";
+    const index = new ParkedAssetIndex(
+      makeReader({
+        [`${PARKED_ROOT}/kitelev/exoas-x/ns/${uid}.md`]: [
+          "---",
+          `exo__Asset_uid: ${uid}`,
+          String.raw`exo__Asset_label: 'it''s a path C:\n not a newline'`,
+          "---",
+        ].join("\n"),
+      }),
+    );
+
+    expect((await index.lookup(uid))?.label).toBe(
+      String.raw`it's a path C:\n not a newline`,
+    );
   });
 
   it("@req:c171e24d-15d3-4073-a34b-f6e78d3bc15f walks the parked root only once for concurrent lookups", async () => {

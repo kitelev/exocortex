@@ -119,7 +119,11 @@ export class ParkedLinkPlaceholder {
         event.stopPropagation();
         this.deps.activate(hit);
       },
-      // Capture: Obsidian's own handler sits on an ancestor.
+      // ⛔ Capture, and per-element on purpose: Obsidian's own handler sits on an
+      // ancestor, so only a capture-phase listener ON the link runs first. Do
+      // NOT "tidy" this into one delegated ancestor handler — that loses the
+      // ordering this depends on. The listener is not a leak: it lives on the
+      // element, dies with it, and is attached only on a positive hit.
       true,
     );
   }
