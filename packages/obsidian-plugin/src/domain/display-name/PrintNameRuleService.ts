@@ -1,5 +1,6 @@
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
+import { resolveKeyPath, type MetadataResolver } from "./keyPathResolver";
 
 /**
  * A per-render VALUE-EQUALITY condition compiled from an exo__DisplayNameSpec's
@@ -95,7 +96,6 @@ export interface ParticipatingRule {
   separator?: string;
 }
 
-type MetadataResolver = (wikilinkTarget: string) => Record<string, unknown> | null;
 
 // --- exo__DisplayNameSpec (structured-RDF displayName specs, v1 thin) ---
 // TBox: PMBOK project 47d57acf, onto-RFC 92b91345, req b4ee3caa. Match a spec/part
@@ -282,7 +282,15 @@ export class PrintNameRuleService {
       if (!fn) return false;
       return fn(this.app, metadata);
     }
-    const instanceForms = this.extractClassKeys(metadata[matcher.matchKey]);
+    // A matchKey CONTAINING a dot is a cross-asset key-path (req fedeaa6e): walk it with
+    // the shared resolveKeyPath, hopping across the wikilink reference(s) it crosses. The
+    // resolver is built LAZILY — only a dot-path pays for it. A single-component key takes
+    // the flat read below, byte-for-byte the pre-fedeaa6e line, so the no-dot path cannot
+    // regress structurally.
+    const raw = matcher.matchKey.includes(".")
+      ? resolveKeyPath(metadata, matcher.matchKey, this.createMetadataResolver())
+      : metadata[matcher.matchKey];
+    const instanceForms = this.extractClassKeys(raw);
     if (instanceForms.length === 0) return false;
     return instanceForms.some((form) => matcher.matchValues.includes(form));
   }
@@ -348,10 +356,18 @@ export class PrintNameRuleService {
 
   createMetadataResolver(): MetadataResolver {
     return (wikilinkTarget: string): Record<string, unknown> | null => {
-      const cleaned = wikilinkTarget
+      const unwrapped = wikilinkTarget
         .replace(/^\[\[|\]\]$/g, "")
         .replace(/^"|"$/g, "")
         .trim();
+
+      // Strip a display alias: `[[<uid>|<label>]]` points at <uid> exactly as `[[<uid>]]`
+      // does, but getFirstLinkpathDest("<uid>|<label>") never resolves — so before this the
+      // aliased form produced a SILENT non-match (req fedeaa6e scenario 3). Both wikilink
+      // forms must resolve identically; that is the dual-IRI floor the corpus mandates.
+      const cleaned = unwrapped.includes("|")
+        ? (unwrapped.split("|")[0]?.trim() ?? "")
+        : unwrapped;
 
       if (!cleaned) return null;
 
