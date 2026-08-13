@@ -3,6 +3,7 @@ import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameReso
 import { DEFAULT_DISPLAY_NAME_TEMPLATE } from "@plugin/domain/display-name/DisplayNameTemplateEngine";
 import type { PrintNameRuleService } from "@plugin/domain/display-name/PrintNameRuleService";
 import type { ExocortexSettings, DisplayNameSettings } from "@plugin/domain/settings/ExocortexSettings";
+import type { ParkedLinkPlaceholder } from "@plugin/presentation/parked/ParkedLinkPlaceholder";
 
 /**
  * BodyLinkPatch - Patches markdown body content to show display names for asset links
@@ -24,6 +25,12 @@ import type { ExocortexSettings, DisplayNameSettings } from "@plugin/domain/sett
 interface PluginWithSettings extends Plugin {
   settings: ExocortexSettings;
   printNameRuleService?: PrintNameRuleService;
+  /**
+   * req `c171e24d` — renders a link into a PARKED AssetSpace as a placeholder
+   * instead of a broken link. Optional: absent (unwired) leaves every
+   * unresolved link exactly as Obsidian rendered it.
+   */
+  parkedLinkPlaceholder?: ParkedLinkPlaceholder;
 }
 
 export class BodyLinkPatch {
@@ -203,7 +210,14 @@ export class BodyLinkPatch {
 
     // Try to find the linked file
     const file = this.resolveFile(dataHref);
-    if (!file) return;
+    if (!file) {
+      // req `c171e24d` — the link is unresolved. It may still point at an asset
+      // that IS on this device, parked under a dot-folder Obsidian does not
+      // index; the placeholder checks that via `vault.adapter` and leaves a
+      // genuinely broken link untouched.
+      this.plugin.parkedLinkPlaceholder?.decorate(linkEl, dataHref);
+      return;
+    }
 
     // Clean the data-href to get what Obsidian would show for a bare wikilink
     const cleanedDataHref = dataHref

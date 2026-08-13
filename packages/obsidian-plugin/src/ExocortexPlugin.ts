@@ -169,6 +169,8 @@ import {
   assessUnmountRisk,
   formatUnmountRiskWarning,
 } from "./domain/profile/unmountSafety";
+import { ParkedAssetIndex } from "@kitelev/exocortex-core";
+import { ParkedLinkPlaceholder } from "./presentation/parked/ParkedLinkPlaceholder";
 import { lookupAssetSpaceUidByFolder } from "./infrastructure/adapters/AssetSpaceLookupHelper";
 import { createAssetSpacePusher } from "./infrastructure/adapters/AssetSpacePusherFactory";
 import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
@@ -440,6 +442,15 @@ export default class ExocortexPlugin extends Plugin {
    * call succeeds.
    */
   public profileApplyManager: ProfileApplyManager | null = null;
+  /**
+   * req `c171e24d` — basename → parked-file index over `.exocortex/parked`,
+   * read through `vault.adapter` (the parked root is a dot-folder Obsidian does
+   * not index). Invalidated after every apply flow, which is what parks and
+   * unparks mounts.
+   */
+  public parkedAssetIndex: ParkedAssetIndex | null = null;
+  /** req `c171e24d` — read by `BodyLinkPatch` / `PropertiesLinkPatch`. */
+  public parkedLinkPlaceholder: ParkedLinkPlaceholder | null = null;
 
   /**
    * Issue #3320 — profile choice lister hoisted alongside the switch
@@ -3567,6 +3578,36 @@ export default class ExocortexPlugin extends Plugin {
       notify: (message) => this.notifier.info(message),
     });
 
+    // req `c171e24d` — a link into a PARKED AssetSpace renders as
+    // "<label> ⏸ / activate" instead of a broken link.
+    //
+    // The lookup is deliberately built on `this.app.vault.adapter`: the parked
+    // root is a DOT-folder, so `getMarkdownFiles()` / `metadataCache` cannot see
+    // it, and an index-backed lookup would make the placeholder unreachable by
+    // construction. The same asymmetry already carries a production feature
+    // (`OperationsLogReader` reads `.exocortex/switch-journal.jsonl`).
+    const parkedAssetIndex = new ParkedAssetIndex({
+      exists: (path) => this.app.vault.adapter.exists(path),
+      list: (path) => this.app.vault.adapter.list(path),
+      read: (path) => this.app.vault.adapter.read(path),
+    });
+    this.parkedAssetIndex = parkedAssetIndex;
+    this.parkedLinkPlaceholder = new ParkedLinkPlaceholder({
+      lookup: (linkTarget) => parkedAssetIndex.lookup(linkTarget),
+      activate: (hit) => {
+        // ⛔ The AssetSpace name travels on the TAP, never on a tooltip — a
+        // touch device generates no hover, so a tooltip would hide it exactly
+        // on the iPhone parking exists for.
+        this.notifier.info(
+          `«${hit.label ?? hit.assetSpace}» is parked in ${this.describeAssetSpace(hit.assetSpace)}. Pick a profile that includes it to activate.`,
+        );
+        // Activation goes through the ONE existing apply path, never a private
+        // copy of unpark logic: apply-profile owns the transition table, the
+        // TS-floor assertion and the crash-recovery journal.
+        void commandsHandler.invokeApplyProfile();
+      },
+    });
+
     // RFC 0002 §3.2 (P3) — de-jargon: «Push current assetspace» → «Push current
     // knowledge pack». Name sourced from the palette grooming contract.
     this.addCommand({
@@ -3672,6 +3713,11 @@ export default class ExocortexPlugin extends Plugin {
       const refreshIndicatorAfter = (flow: Promise<void>): void => {
         void flow.finally(() => {
           void this.profileIndicator?.refresh();
+          // req `c171e24d` — an apply is the ONLY thing that parks or unparks a
+          // mount, so it is the exact moment the parked directory index goes
+          // stale. Dropping it here is what keeps a just-activated asset from
+          // still rendering as a placeholder.
+          this.parkedAssetIndex?.invalidate();
         });
       };
 
@@ -4690,6 +4736,29 @@ export default class ExocortexPlugin extends Plugin {
    * This split lets the Switch command remain fully operational regardless
    * of PAT presence, while the Push command degrades gracefully.
    */
+  /**
+   * req `c171e24d` — human name of a parked AssetSpace for the activate action.
+   *
+   * Prefers the descriptor's `exo__AssetSpace_namespace` (the short name the
+   * user sees everywhere else) and falls back to the repo segment, so the action
+   * always names SOMETHING even when the registry descriptor is unreachable.
+   */
+  private describeAssetSpace(assetSpace: string): string {
+    const repo = assetSpace.split("/").pop() ?? assetSpace;
+    try {
+      const infos = this.profileApplyManager?.listAllAssetSpaceInfos() ?? [];
+      const match = infos.find(
+        (info) => info.folderName === `assetspaces/${assetSpace}`,
+      );
+      const namespace = match?.namespace;
+      return namespace !== undefined && namespace.length > 0
+        ? namespace
+        : repo;
+    } catch {
+      return repo;
+    }
+  }
+
   private async buildAssetSpacePusher(): Promise<IAssetSpacePusher> {
     const secretsStore = new LocalSecretsStore({ app: this.app });
     const pat = await secretsStore.getSecret("pat");
