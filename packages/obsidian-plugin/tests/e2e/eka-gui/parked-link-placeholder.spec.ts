@@ -39,8 +39,11 @@ import {
  *     smoke because a live vault's cache is always warm
  *     (rules/obsidian-plugin-indicator-surface-and-cold-resolve.md);
  *   - the reading-mode markdown render + MutationObserver are Obsidian's, not
- *     jsdom's — whether a `[[uid]]` even BECOMES an `a.internal-link` carrying
- *     `data-href` is Obsidian's decision;
+ *     jsdom's — whether a `[[uid]]` even BECOMES a `.internal-link` carrying
+ *     `data-href`, and what ELEMENT that is, is Obsidian's decision. Measured
+ *     on a real run: in the body it is an `<a>`, in the Properties block it is
+ *     NOT. Both selectors below are therefore tag-agnostic, exactly like the
+ *     production patches' own.
  *   - the parked lookup reads a REAL dot-folder through the REAL
  *     `vault.adapter`. The unit test's fake reader models the
  *     `getMarkdownFiles()`-vs-adapter asymmetry that IS the whole mechanism;
@@ -248,6 +251,65 @@ function linkFor(links: RenderedLink[], href: string): RenderedLink {
   return hit as RenderedLink;
 }
 
+/**
+ * Poll until `ready` holds over the links matched by `selector`, then return
+ * the final snapshot.
+ *
+ * ⛤ On timeout it dumps WHAT THE DOM ACTUALLY HELD before rethrowing. The
+ * suite's first CI run timed out carrying zero diagnostics, because the dump
+ * sat AFTER the poll and was therefore never reached — a whole run spent
+ * learning only "it did not appear". A timeout here now says which elements
+ * the selector matched and what the surrounding markup looked like, so one run
+ * is decisive.
+ */
+async function pollForLinks(
+  window: Page,
+  selector: string,
+  label: string,
+  ready: (links: RenderedLink[]) => boolean,
+): Promise<RenderedLink[]> {
+  try {
+    await pollUntil(
+      label,
+      async () => ready(await collectLinks(window, selector)),
+      120_000,
+      2_000,
+    );
+  } catch (err) {
+    const found = await collectLinks(window, selector).catch(
+      () => [] as RenderedLink[],
+    );
+    log(
+      `TIMEOUT "${label}" — selector matched ${found.length}: ${JSON.stringify(found)}`,
+    );
+    const markup = await window
+      .evaluate(() => {
+        const meta = document.querySelector(".metadata-container");
+        const preview = document.querySelector(".markdown-preview-view");
+        const host = meta ?? preview;
+        return {
+          where: meta
+            ? ".metadata-container"
+            : preview
+              ? ".markdown-preview-view"
+              : "(neither)",
+          internalLinks: document.querySelectorAll(".internal-link").length,
+          dataHrefs: document.querySelectorAll("[data-href]").length,
+          html: (host?.innerHTML ?? "").slice(0, 3000),
+        };
+      })
+      .catch(() => ({
+        where: "(evaluate failed)",
+        internalLinks: -1,
+        dataHrefs: -1,
+        html: "",
+      }));
+    log(`TIMEOUT "${label}" — DOM: ${JSON.stringify(markup)}`);
+    throw err;
+  }
+  return collectLinks(window, selector);
+}
+
 test.describe.configure({ mode: "default" });
 
 test.describe("EKA GUI — parked-link placeholder (req c171e24d)", () => {
@@ -294,23 +356,24 @@ test.describe("EKA GUI — parked-link placeholder (req c171e24d)", () => {
 
     await openAssetAndRender(window, NOTE_BODY_REL);
 
+    // Element-AGNOSTIC, mirroring `BodyLinkPatch`'s own selector: the patch
+    // matches `.internal-link` with no tag constraint, and Obsidian does not
+    // guarantee the element is an `<a>` (in the Properties block it is not —
+    // see the frontmatter scenario). `.metadata-container` sits INSIDE the
+    // preview, so excluding it is what keeps the two channels disjoint.
     const bodySelector =
-      ".markdown-preview-view a.internal-link:not(.metadata-container a.internal-link)";
+      ".markdown-preview-view .internal-link:not(.metadata-container .internal-link)";
 
-    await pollUntil(
+    const links = await pollForLinks(
+      window,
+      bodySelector,
       "parked placeholder rendered in the note body",
-      async () => {
-        const links = await collectLinks(window, bodySelector);
-        const parked = links.find((l) =>
-          (l.href ?? "").includes(PARKED_BODY_UID),
-        );
-        return (parked?.className ?? "").includes(PLACEHOLDER_CLASS);
-      },
-      120_000,
-      2_000,
+      (found) =>
+        (
+          found.find((l) => (l.href ?? "").includes(PARKED_BODY_UID))
+            ?.className ?? ""
+        ).includes(PLACEHOLDER_CLASS),
     );
-
-    const links = await collectLinks(window, bodySelector);
     log(`body links: ${JSON.stringify(links)}`);
 
     // 1. THE claim: the link now reads the ASSET's own label plus the glyph.
@@ -379,22 +442,24 @@ test.describe("EKA GUI — parked-link placeholder (req c171e24d)", () => {
 
     await openAssetAndRender(window, NOTE_FM_REL);
 
-    const fmSelector = ".metadata-container a[data-href]";
+    // ⛔ NOT `a[data-href]`. In the Properties block Obsidian renders a
+    // wikilink value as a plain clickable element, NOT an anchor — verified on
+    // the DOM snapshot of a real run. `PropertiesLinkPatch` selects
+    // `.internal-link` with no tag constraint for exactly that reason, and it
+    // requires `data-href` before it will decorate, so either half matches.
+    const fmSelector =
+      ".metadata-container .internal-link, .metadata-container [data-href]";
 
-    await pollUntil(
+    const links = await pollForLinks(
+      window,
+      fmSelector,
       "parked placeholder rendered in the Properties block",
-      async () => {
-        const links = await collectLinks(window, fmSelector);
-        const parked = links.find((l) =>
-          (l.href ?? "").includes(PARKED_FM_UID),
-        );
-        return (parked?.className ?? "").includes(PLACEHOLDER_CLASS);
-      },
-      120_000,
-      2_000,
+      (found) =>
+        (
+          found.find((l) => (l.href ?? "").includes(PARKED_FM_UID))
+            ?.className ?? ""
+        ).includes(PLACEHOLDER_CLASS),
     );
-
-    const links = await collectLinks(window, fmSelector);
     log(`frontmatter links: ${JSON.stringify(links)}`);
 
     const parked = linkFor(links, PARKED_FM_UID);
