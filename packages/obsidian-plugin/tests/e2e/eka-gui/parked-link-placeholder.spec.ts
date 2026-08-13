@@ -73,10 +73,17 @@ import {
  * plus 5. a RESOLVED link, which must never be checked at all — the placeholder
  * is only reachable from the `if (!file)` seam.
  *
- * Ordering note for the negatives: every link on the page awaits the SAME
- * `ensureIndex()` walk; a miss then returns on a map lookup, while the hit does
- * one further `read()`. So once the placeholder is on the page, the misses have
- * already resolved — polling for the hit is sufficient to read all five.
+ * ⛔ Ordering note — and its LIMIT. Every link on the page awaits the SAME
+ * `ensureIndex()` walk. Controls 2 and 4 then return on a map MISS, so they
+ * settle before the hit. Control 3 does NOT: the non-asset file IS indexed (it
+ * sits two segments under the parked root, so `assetSpaceOf` succeeds) and is
+ * rejected only AFTER its own `await read()` — i.e. at the same async depth as
+ * the hit, with no completion-order guarantee between two concurrent reads.
+ * `data-parked-checked` cannot close that gap either: it is set BEFORE the
+ * lookup, so it proves the decorator was REACHED, not that it finished.
+ * Therefore the snapshot is taken only once the DOM has stopped changing, which
+ * makes "all five verdicts read from one settled render" true by construction
+ * rather than by argument.
  *
  * Render-only: nothing is applied, no profile is switched, and the ephemeral
  * vault is deleted in `afterAll`.
@@ -242,18 +249,33 @@ async function collectLinks(
   }, scope);
 }
 
+/**
+ * The ONE rendered link whose `data-href` carries `href`.
+ *
+ * Exactly one, not first-wins: `collectLinks` queries the whole document and
+ * `openAssetAndRender` opens each note in a NEW leaf, so an earlier note's
+ * links stay mounted. The fixture identifiers share no substrings today — this
+ * makes a future duplicate fail loudly instead of silently picking one.
+ */
 function linkFor(links: RenderedLink[], href: string): RenderedLink {
-  const hit = links.find((l) => (l.href ?? "").includes(href));
+  const hits = links.filter((l) => (l.href ?? "").includes(href));
   expect(
-    hit,
-    `no rendered link for "${href}". Rendered: ${JSON.stringify(links)}`,
-  ).toBeDefined();
-  return hit as RenderedLink;
+    hits,
+    `expected exactly one rendered link for "${href}". Rendered: ${JSON.stringify(links)}`,
+  ).toHaveLength(1);
+  return hits[0];
 }
 
 /**
- * Poll until `ready` holds over the links matched by `selector`, then return
- * the final snapshot.
+ * Poll until `ready` holds AND the matched set has stopped changing, then
+ * return that settled snapshot.
+ *
+ * ⛔ The stability half is load-bearing, not belt-and-braces. `ready` fires the
+ * moment the parked HIT decorates, but one negative control (the non-asset
+ * file) is rejected only after its OWN `adapter.read()`, at the same async
+ * depth as the hit — so a snapshot taken on `ready` alone could read that
+ * control before its verdict exists. Requiring two identical consecutive
+ * observations closes that window by construction.
  *
  * ⛤ On timeout it dumps WHAT THE DOM ACTUALLY HELD before rethrowing. The
  * suite's first CI run timed out carrying zero diagnostics, because the dump
@@ -268,10 +290,17 @@ async function pollForLinks(
   label: string,
   ready: (links: RenderedLink[]) => boolean,
 ): Promise<RenderedLink[]> {
+  let previous = "";
   try {
     await pollUntil(
-      label,
-      async () => ready(await collectLinks(window, selector)),
+      `${label} (and settled)`,
+      async () => {
+        const links = await collectLinks(window, selector);
+        const snapshot = JSON.stringify(links);
+        const settled = snapshot === previous;
+        previous = snapshot;
+        return ready(links) && settled;
+      },
       120_000,
       2_000,
     );
@@ -354,6 +383,25 @@ test.describe("EKA GUI — parked-link placeholder (req c171e24d)", () => {
   test("@req:c171e24d-15d3-4073-a34b-f6e78d3bc15f body channel — a parked link renders as «<label> ⏸» while every non-parked link stays broken", async () => {
     test.setTimeout(300_000);
 
+    // ⛤ CANARY for negative control #4. "The walk skips nested dot-folders"
+    // is only a real property if the adapter SHOWS the adapter that folder in
+    // the first place. If `list()` filtered dot-entries itself, the skip-guard
+    // would be dead code and control #4 would be tautologically green — the
+    // same class of vacuity the controls exist to prevent. Assert the adapter
+    // sees `.git` before drawing any conclusion from the decoy staying broken.
+    const parkedListing: { files: string[]; folders: string[] } =
+      await window.evaluate(
+        (p: string) =>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (window as any).app.vault.adapter.list(p),
+        `${PARKED_ROOT}/${PARKED_ASSETSPACE}`,
+      );
+    log(`parked mount listing: ${JSON.stringify(parkedListing)}`);
+    expect(
+      parkedListing.folders.some((f) => f.endsWith("/.git")),
+      "the adapter must SEE the nested dot-folder, else the skip-guard control is vacuous",
+    ).toBe(true);
+
     await openAssetAndRender(window, NOTE_BODY_REL);
 
     // Element-AGNOSTIC, mirroring `BodyLinkPatch`'s own selector: the patch
@@ -391,12 +439,13 @@ test.describe("EKA GUI — parked-link placeholder (req c171e24d)", () => {
       "the AssetSpace name must not be reachable only via hover",
     ).not.toContain(PARKED_ASSETSPACE);
 
-    // 2. NEGATIVE CONTROL — a UID that exists nowhere. It was LOOKED UP (so the
-    //    verdict is a real miss, not an unreached code path) and left broken.
+    // 2. NEGATIVE CONTROL — a UID that exists nowhere. The decorator REACHED
+    //    it (so "still broken" is a real verdict, not an unreached code path),
+    //    and the settled snapshot is what makes that verdict final.
     const nowhere = linkFor(links, NOWHERE_UID);
     expect(
       nowhere.checked,
-      "the nowhere-link must have been looked up, else 'still broken' is vacuous",
+      "the nowhere-link must have been reached by the decorator, else 'still broken' is vacuous",
     ).toBe("true");
     expect(
       nowhere.className,
