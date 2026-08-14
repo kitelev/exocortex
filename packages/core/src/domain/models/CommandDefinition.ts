@@ -368,6 +368,15 @@ export interface GroundingDefinition {
    * substitution still resolves to the source asset for link-back, and because
    * the just-created asset is not yet indexed in the triple store).
    *
+   * Issue #4046 — `service_call` steps needed one extra hop for the same
+   * guarantee: a service resolves its file from the IRI it is handed
+   * (`IGroundingService.execute` has no file-path channel), so a re-pointed
+   * `filePath` alone left the service operating on the click-target and
+   * "succeeding" silently. `GroundingExecutor.executeServiceCall` therefore
+   * hands the service `vaultPathToIRI(filePath)` — and ONLY when this flag is
+   * set. `$target` substitution inside `serviceCallPayload` is unaffected and
+   * still uses the click-target `targetIRI`.
+   *
    * Absent/`false` (the default) → the step operates on the click-target
    * exactly as today. Existing composites whose `property_set` steps
    * intentionally close the CURRENT click-target (e.g. `ems__WaitingCheckTask`

@@ -23,7 +23,7 @@ import {
 } from "../utilities/yamlScalar";
 import { canonicalYamlKey } from "./NoteToRDFConverter";
 import type { NamedQueryRunnerPort } from "./NamedQueryRunner";
-import { iriToVaultPath } from "../infrastructure/vault/iri";
+import { iriToVaultPath, vaultPathToIRI } from "../infrastructure/vault/iri";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { DateTimeParsing } from "../infrastructure/sparql/filters/functions/DateTimeParsing";
 import { LoggingService } from "./LoggingService";
@@ -1118,7 +1118,37 @@ export class GroundingExecutor {
       }
     }
 
-    await service.execute(targetIRI, mergedInput);
+    // Issue #4046 — a service_call step that opted into
+    // `exocmd__Grounding_targetsCreatedInstance` must make the SERVICE act on
+    // the just-created asset, not on the composite click-target.
+    //
+    // `executeComposite` already re-points `stepPath` (→ `filePath` here) to
+    // `lastCreatedPath` for such a step, but every registered service resolves
+    // its file from the IRI it is handed — `IGroundingService.execute` has no
+    // file-path channel — so the flag was silently ignored for `service_call`
+    // and the step "succeeded" while operating on the click-target.
+    //
+    // Re-expressing `filePath` as an `obsidian://vault/<path>` IRI is the
+    // dialect BOTH target resolvers already accept: the CLI's
+    // `createPathBasedTargetResolver` strips it via `iriToVaultPath`, and the
+    // plugin's `createObsidianTargetResolver` decodes it and looks the path up
+    // in `app.vault` (which — unlike `metadataCache` — registers a newly
+    // created TFile synchronously). A bare vault-relative path would NOT work:
+    // the plugin resolver treats a non-`obsidian://` input as a uid/@id and
+    // falls into a metadataCache scan that cannot match a file path.
+    //
+    // Scoped to the opt-in flag on purpose: with the flag absent this is
+    // `targetIRI` byte-for-byte, so every existing grounding is unaffected.
+    // With the flag set but NO prior create_instance, `executeComposite` leaves
+    // `stepPath === filePath` (the click-target), so the step still targets the
+    // click-target. `$target` substitution above deliberately keeps using the
+    // source `targetIRI` (link-back semantics, see executeComposite).
+    const serviceTargetIRI =
+      grounding.targetsCreatedInstance === true && filePath
+        ? vaultPathToIRI(filePath)
+        : targetIRI;
+
+    await service.execute(serviceTargetIRI, mergedInput);
     return { success: true };
   }
 
