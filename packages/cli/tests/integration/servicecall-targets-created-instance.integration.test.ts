@@ -19,11 +19,17 @@
  * axis; the rest stay GREEN, which is what makes them non-vacuous):
  *   - drop the `targetsCreatedInstance` branch in `executeServiceCall`
  *     (back to `service.execute(targetIRI, …)`) → axes 1 and 4 RED;
- *   - drop the `targetQuery` × `targetsCreatedInstance` guard → axis 5 RED;
- *   - re-point `ObsidianFileSystemAdapter.createFile` at `vault.adapter.write`
- *     → the plugin-package unit axis ("must NOT use the raw adapter.write") RED.
- *     Axis 6 here characterises that runtime rather than pinning it: it models
- *     the pre-fix writer and shows the two semantics are distinguishable.
+ *   - drop the `targetQuery` × `targetsCreatedInstance` guard → axis 5 RED.
+ *
+ * The fake below registers a created file in `getAbstractFileByPath`
+ * immediately, which is faithful to BOTH runtimes: the CLI has no index at all,
+ * and in the plugin `FileSystemAdapter.write` awaits `reconcileInternalFile` in
+ * a `finally` → `Vault.onChange("file-created")` → `fileMap[path]`, so the
+ * `TFile` is registered before the write resolves (measured in Obsidian 1.13.7
+ * `app.js`; `Vault.create` adds no registration of its own — it delegates to
+ * that same `adapter.write`). What DOES lag in the plugin is `metadataCache`,
+ * and `createRepairFolderService` already reads frontmatter fresh from disk for
+ * exactly that reason (req 8efc003c) — so this fake models the real split.
  */
 import { describe, it, expect } from "@jest/globals";
 import {
@@ -306,7 +312,7 @@ describe("service_call honours targetsCreatedInstance (Issue #4046)", () => {
 
     const result = await executor.execute(
       composite([createStep(), repairStep(true)]),
-      TARGET_PATH,
+      TARGET_IRI,
       TARGET_PATH,
     );
     expect(result.success).toBe(true);
@@ -411,65 +417,6 @@ describe("service_call honours targetsCreatedInstance (Issue #4046)", () => {
     expect(result.error).toContain("mutually exclusive");
     // The service was never reached, and the composite rolled the creation back.
     expect(seen).toEqual([]);
-    const seeded = new Set([TARGET_PATH, SRC_ONTO_PATH, ARCHIVE_ONTO_PATH]);
-    expect([...vault.disk.keys()].filter((p) => !seeded.has(p))).toEqual([]);
-  });
-
-  /**
-   * Characterisation of the PLUGIN's storage split — the axis whose absence let
-   * the first version of this fix look correct.
-   *
-   * Before Issue #4046's second half, `ObsidianFileSystemAdapter.createFile`
-   * wrote through `vault.adapter.write`: bytes on disk, but NO `TFile` in the
-   * Vault index. `createObsidianTargetResolver` resolves exclusively through
-   * that index, so the flagged `service_call` could not see the just-created
-   * asset at all — the step threw and `executeComposite`'s rollback DELETED the
-   * creation, which is strictly worse than the bug being fixed.
-   *
-   * `FakeVault` above models the FIXED adapter (`Vault.create` → registered).
-   * This test models the OLD one, and pins that the two are distinguishable:
-   * if creation stops registering, the composite fails loudly and leaves
-   * nothing behind. The production guarantee itself is pinned by
-   * `packages/obsidian-plugin/tests/unit/ObsidianFileSystemAdapter.test.ts`
-   * ("must NOT use the raw adapter.write").
-   */
-  it("models the pre-fix plugin writer: an UNREGISTERED created file makes the flagged step fail loudly (and rollback removes it)", async () => {
-    const { vault, executor, registry } = setup();
-    const vaultAdapter = vault.vaultAdapter();
-    // Index that never learns about files created during this composite —
-    // exactly `vault.adapter.write` semantics.
-    const frozenIndex = new Set(vault.disk.keys());
-    registry.register(
-      "repairFolder",
-      createRepairFolderService(
-        {
-          ...vaultAdapter,
-          getAbstractFileByPath: (path: string) =>
-            frozenIndex.has(path) || vault.folders.has(path)
-              ? vaultAdapter.getAbstractFileByPath(path)
-              : null,
-        },
-        new FolderRepairService(vaultAdapter),
-        createPathBasedTargetResolver({
-          ...vaultAdapter,
-          getAbstractFileByPath: (path: string) =>
-            frozenIndex.has(path)
-              ? vaultAdapter.getAbstractFileByPath(path)
-              : null,
-        }),
-      ),
-    );
-
-    const result = await executor.execute(
-      composite([createStep(), repairStep(true)]),
-      TARGET_IRI,
-      TARGET_PATH,
-    );
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("Cannot resolve target file");
-    // Rollback removed the created asset — the failure mode this fix's plugin
-    // half exists to prevent.
     const seeded = new Set([TARGET_PATH, SRC_ONTO_PATH, ARCHIVE_ONTO_PATH]);
     expect([...vault.disk.keys()].filter((p) => !seeded.has(p))).toEqual([]);
   });

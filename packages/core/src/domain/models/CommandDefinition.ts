@@ -375,11 +375,11 @@ export interface GroundingDefinition {
    * "succeeding" silently. `GroundingExecutor.executeServiceCall` therefore
    * hands the service `vaultPathToIRI(filePath)` — and ONLY when this flag is
    * set. `$target` substitution inside `serviceCallPayload` is unaffected and
-   * still uses the click-target `targetIRI`. In the plugin this relies on
-   * `ObsidianFileSystemAdapter.createFile` creating through `Vault.create`
-   * (which registers the `TFile`); with the raw `vault.adapter.write` the
-   * created path is absent from the Vault index, the resolver throws, and
-   * `executeComposite`'s rollback deletes the just-created asset.
+   * still uses the click-target `targetIRI`. The plugin resolver can find the
+   * just-created asset because `FileSystemAdapter.write` awaits
+   * `reconcileInternalFile` in a `finally` (→ `Vault.onChange("file-created")`
+   * → `fileMap[path]`), so the `TFile` is registered before the write resolves
+   * — measured in Obsidian 1.13.7, not assumed.
    *
    * Absent/`false` (the default) → the step operates on the click-target
    * exactly as today. Existing composites whose `property_set` steps

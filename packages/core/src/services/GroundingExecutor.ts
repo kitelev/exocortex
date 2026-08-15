@@ -1153,13 +1153,16 @@ export class GroundingExecutor {
     // resolver treats a non-`obsidian://` input as a uid/@id and falls into a
     // metadataCache scan that cannot match a file path.
     //
-    // ⛔ The plugin half of that only holds because `create_instance`'s writer
-    // now creates through `Vault.create` (which registers the `TFile`) rather
-    // than the raw `vault.adapter.write` — see
-    // `ObsidianFileSystemAdapter.createFile`. With the raw write the new path
-    // is absent from the Vault index, the resolver THROWS, and
-    // `executeComposite`'s rollback deletes the just-created asset. The two
-    // changes ship together on purpose; splitting them re-opens that hole.
+    // ⛤ Why the plugin lookup finds an asset a previous `create_instance` step
+    // has only just written — measured in the shipped runtime (Obsidian 1.13.7
+    // `app.js`), NOT assumed: `FileSystemAdapter.write` awaits
+    // `reconcileInternalFile` in a `finally`, which reaches
+    // `Vault.onChange("file-created")` → `fileMap[path] = new TFile(...)`. So the
+    // `TFile` exists in the Vault index before `adapter.write` resolves — and
+    // `Vault.create` itself adds no registration, it delegates to that very
+    // `adapter.write` and then calls `getAbstractFileByPath`. Frontmatter is a
+    // separate matter: `metadataCache` DOES lag, which is why
+    // `createRepairFolderService` reads it fresh from disk (req 8efc003c).
     //
     // Scoped to the opt-in flag on purpose: with the flag absent this is
     // `targetIRI` byte-for-byte, so every existing grounding is unaffected.
