@@ -31,25 +31,22 @@ const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
  * True iff the effort is blocked by another effort — i.e. it carries `ems__Effort_blocker`
  * pointing at an asset whose own status is neither DONE nor TRASHED.
  *
- * ⛔ MOVED VERBATIM, INCLUDING A LIVE DEFECT — deliberately, because parity is the point of
- * req 5cd9fffe and "correct here, wrong in the plugin" would be worse than "identical in both".
- * The comparison below is against the SYMBOLIC status label (`ems__EffortStatusDone`), but
- * `exocortex-cli` writes the status as a bare `[[<uid>]]`; stripping the brackets then leaves a
- * UID, no branch matches, and a FINISHED blocker is reported as still blocking. Measured
- * 2026-08-15 on live data: 49 of 58 single-valued blockers store the bare-UID form, and 8
- * efforts currently carry a 🚩 they should not. That is the dual-IRI class, fixed by matching
- * BOTH forms — and it gets its own requirement, because the fix changes what the user sees.
- * Landing that fix HERE, once, now repairs both surfaces at once: this move is its precondition.
+ * ⛤ The dual-IRI defect this function shipped with is FIXED here (req d6cd2371 conformance):
+ * the status is normalised to its symbolic label first, so all three legal wikilink forms compare
+ * identically. Req 5cd9fffe moved the predicate to core verbatim, defect included, precisely so
+ * that this one fix would repair BOTH surfaces at once — the plugin and the CLI now change
+ * together, which is what "one implementation" was for. See `resolveStatusLabel` for the measured
+ * incidence (49 of 58 blockers, 8 efforts with a wrong 🚩) and for why the lookup goes through the
+ * vault rather than a UID table.
  *
- * ⛔ Likewise verbatim: a multi-valued `ems__Effort_blocker` (16 of the 74 measured) is flattened
- * by `String(...)` into a comma-joined string that resolves to nothing, so the predicate answers
- * "not blocked". Same reasoning — a behaviour change needs its own req. Characterised by test.
+ * ⛔ Still verbatim, and still deferred: a multi-valued `ems__Effort_blocker` (16 of the 74
+ * measured) is flattened by `String(...)` into a comma-joined string that resolves to nothing, so
+ * the predicate answers "not blocked". Characterised by test; its own fix, its own req.
  *
- * ⚠ ONE delta is NOT verbatim and is accepted deliberately: the port retries the linkpath with a
+ * ⚠ ONE delta is not verbatim and is accepted deliberately: the port retries the linkpath with a
  * `.md` suffix, which the inline original did not. It can only turn a previously UNRESOLVABLE
- * blocker into a resolvable one — i.e. strictly more links resolve — and it is the same retry the
- * engine has always done, so the two callers now agree rather than differ. The alternative was a
- * second port method whose only purpose is to resolve links WORSE.
+ * blocker into a resolvable one, and it is the same retry the engine has always done, so the two
+ * callers now agree rather than differ.
  */
 export function isEffortBlocked(
   vault: VaultMetadataPort,
@@ -69,13 +66,110 @@ export function isEffortBlocked(
     return false;
   }
 
-  const blockerStatus = blockerMetadata.ems__Effort_status || "";
-  const blockerStatusStr = String(blockerStatus).replace(/^\[\[|\]\]$/g, "");
+  const label = resolveStatusLabel(vault, blockerMetadata.ems__Effort_status);
 
-  return (
-    blockerStatusStr !== EffortStatus.DONE &&
-    blockerStatusStr !== EffortStatus.TRASHED
-  );
+  return label !== EffortStatus.DONE && label !== EffortStatus.TRASHED;
+}
+
+/**
+ * The exact shape of a symbolic status label. Deliberately the SAME regex the sibling normaliser
+ * uses (`GroundingExecutor.resolveStatusFromFrontmatter`) rather than a looser
+ * `startsWith("ems__")`: the loose test short-circuits the vault lookup for forms that are not
+ * labels at all, e.g. the documented `ems__EffortStatusDone <uuid>` shape.
+ *
+ * ⚠ The OTHER sibling (`getStatusLabel` in PropertySchemas) does NOT use this regex — it
+ * lowercases and looks the value up in `SYMBOLIC_STATUS_LABEL_FALLBACK` / `EFFORT_STATUS_VALUES`.
+ * Naming both here would be the same over-claim this file already made once about alias forms.
+ */
+const SYMBOLIC_STATUS_RE = /^ems__EffortStatus[A-Za-z]+$/;
+const TRAILING_UUID_RE =
+  /\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Normalise `ems__Effort_status` to its SYMBOLIC label (`ems__EffortStatusDone`), whichever legal
+ * shape it was written in (req d6cd2371 conformance).
+ *
+ * ⛔ This is the dual-IRI fix. The predicate always compared against the symbolic label, but the
+ * value is written several ways and only one survived a bare bracket strip:
+ *
+ *   `[[ems__EffortStatusDone]]`      → matched
+ *   `[[<uid>]]`                      → left a UID; NEVER matched
+ *   `[[<uid>|ems__…Done]]`           → left `<uid>|ems__…Done`; NEVER matched
+ *
+ * Measured 2026-08-15 across all three vaults: of the 49 blockers carrying a status, **49 use the
+ * bare-UID form and zero use symbolic or alias** — i.e. broken for 100% of real blockers. It
+ * stayed invisible only because a blocker is rarely finished.
+ *
+ * ⛔ An ALIAS is arbitrary display text, not an identifier — `[[<uid>|Done]]` is legal and says
+ * nothing about the status. It is therefore honoured ONLY when it is itself a symbolic label;
+ * otherwise the UID before the pipe is resolved. That is the port's own documented floor
+ * ({@link VaultMetadataPort.resolveLinkpathFrontmatter}: "`[[uid|label]]` must resolve identically
+ * to `[[uid]]`") and it matches both in-repo precedents, which key on the target rather than on
+ * the alias.
+ *
+ * ⛤ Resolved through the vault rather than against a UID table. That table already exists TWICE —
+ * `STATUS_UID_BY_ENUM` (`GroundingExecutor`) and `FALLBACK_EFFORT_STATUS_VALUES`
+ * (`PropertySchemas`) — and BOTH had to be hand-edited when `ToDo`/`Analysis` were deleted on
+ * 2026-08-13 (both cite req `fcbde537`). A third copy would be a third proven drift point, and
+ * importing either into `domain/` would invert the layering.
+ *
+ * ⛔ That is a TRADE, not a strict improvement, and the next reader should not conclude otherwise:
+ * a UID table rots when a status UID changes; this lookup rots when the status asset's
+ * `exo__Asset_label` stops being exactly the enum string. Relabel it to `"Done"` and every blocker
+ * reads as blocking — fail-safe and loud, but wrong. No test here can catch it: the ems submodule
+ * is not mounted in this repo, which is why `GroundingExecutor.status_uid_integrity.test.ts`
+ * asserts only the map's internal shape. The guarantee is the vault's, not the suite's.
+ *
+ * @see GroundingExecutor.resolveStatusFromFrontmatter — the same vocabulary, UID-table based
+ * @see getStatusLabel in PropertySchemas — the same vocabulary again, for the property editor
+ *
+ * ⚠ Fail-safe: an unresolvable status returns the raw target, which matches neither terminal
+ * label ⇒ "unknown status ⇒ still blocking". Note the deliberate ASYMMETRY with the caller — an
+ * unresolvable BLOCKER yields `false` (not blocked), an unresolvable STATUS yields `true`. That
+ * is not an oversight to be harmonised: the port distinguishes "no such asset" (`null`) from
+ * "asset with nothing in it" (`{}`), and a blocker that does not exist cannot block, whereas a
+ * blocker whose state is unknown must not be assumed finished.
+ */
+function resolveStatusLabel(vault: VaultMetadataPort, rawStatus: unknown): string {
+  let raw = rawStatus;
+  if (raw === undefined || raw === null) return "";
+  // Cardinality is 1 per schema. Tolerate a 1-element list (some YAML printers emit it) and treat
+  // a multi-element one as unknown rather than picking an arbitrary first — same call the sibling
+  // normaliser makes, and it keeps the fail-safe direction.
+  if (Array.isArray(raw)) {
+    if (raw.length !== 1) return "";
+    raw = raw[0];
+  }
+
+  const inside = String(raw)
+    .trim()
+    .replace(/^["']/, "")
+    .replace(/["']$/, "")
+    .replace(/^\[\[/, "")
+    .replace(/\]\]$/, "")
+    .replace(/\.md$/, "")
+    .trim();
+  if (inside === "") return "";
+
+  if (SYMBOLIC_STATUS_RE.test(inside)) return inside;
+
+  const pipe = inside.indexOf("|");
+  const target = pipe === -1 ? inside : inside.slice(0, pipe).trim();
+  if (pipe !== -1) {
+    const alias = inside.slice(pipe + 1).trim();
+    if (SYMBOLIC_STATUS_RE.test(alias)) return alias;
+    // Otherwise the alias is just display text — fall through and resolve `target`.
+  }
+
+  // `ems__EffortStatusDone <uuid>` — the class-name+UUID shape PropertySchemas documents as
+  // occurring after certain status transitions.
+  const spaceForm = target.replace(TRAILING_UUID_RE, "").trim();
+  if (SYMBOLIC_STATUS_RE.test(spaceForm)) return spaceForm;
+
+  const fm = vault.resolveLinkpathFrontmatter(target);
+  let label = fm?.exo__Asset_label;
+  if (Array.isArray(label)) label = label[0];
+  return typeof label === "string" && label.trim() ? label.trim() : target;
 }
 
 /**
