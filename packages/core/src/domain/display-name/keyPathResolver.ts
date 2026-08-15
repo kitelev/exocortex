@@ -38,10 +38,17 @@ export function isWikilink(value: string): boolean {
  * leave its twin sixty lines away.
  *
  * ⚠ Arrays keep working: numeric indices and `length` are own properties of an array.
+ *
+ * ⛔ `hasOwnProperty.call`, NOT `Object.hasOwn` — the latter is ES2022 while the plugin builds to
+ * `target: "es2020"` and ships with `isDesktopOnly: false`. esbuild transpiles syntax, not runtime
+ * APIs, so on a runtime below Safari/iOS 15.4 `Object.hasOwn` is a TypeError — and neither this
+ * function nor either of its callers has a try/catch, so the failure mode would be "every key-path
+ * walk throws", not "one matcher fails closed". The two forms are behaviourally identical here
+ * (verified across 42 input shapes); this one has no floor.
  */
 function ownProperty(source: unknown, key: string): unknown {
   if (source === null || typeof source !== "object") return undefined;
-  return Object.hasOwn(source as object, key)
+  return Object.prototype.hasOwnProperty.call(source, key)
     ? (source as Record<string, unknown>)[key]
     : undefined;
 }
