@@ -28,10 +28,6 @@ export function isWikilink(value: string): boolean {
 }
 
 /**
- * Walk `path` (dot-separated) through `obj`, hopping across wikilink references via
- * `metadataResolver`. Returns `undefined` when any segment is missing or unresolvable.
- */
-/**
  * Read a key-path segment as an OWN property only (req 4a2e6b80; the twin closed by 5cd9fffe).
  *
  * ⛔ Segments come from `exo__DisplayNameSpec_matchKey` / part definitions — i.e. from user
@@ -50,6 +46,10 @@ function ownProperty(source: unknown, key: string): unknown {
     : undefined;
 }
 
+/**
+ * Walk `path` (dot-separated) through `obj`, hopping across wikilink references via
+ * `metadataResolver`. Returns `undefined` when any segment is missing or unresolvable.
+ */
 export function resolveKeyPath(
   obj: Record<string, unknown>,
   path: string,
