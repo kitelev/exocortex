@@ -33,7 +33,19 @@ export class ObsidianVaultMetadataAdapter implements VaultMetadataPort {
     if (!file && !linkpath.endsWith(".md")) {
       file = this.app.metadataCache.getFirstLinkpathDest(`${linkpath}.md`, "");
     }
-    if (!(file instanceof TFile)) return null;
-    return this.app.metadataCache.getFileCache(file)?.frontmatter ?? null;
+    // ⛔ Duck-typed, NOT `instanceof TFile`, and the difference is load-bearing (req 5cd9fffe).
+    // Two callers with DIFFERENT original strictness now share this method: the engine guarded
+    // with `instanceof TFile`, but `BlockerHelpers.isEffortBlocked` only checked truthiness. An
+    // `instanceof` here silently TIGHTENED the blocker path — caught by
+    // DailyTasksRenderer.core "should handle task with blockers", whose mock returns a plain
+    // object. Rejecting folders is the guard's actual intent, and `children` is what separates
+    // TFolder from TFile; `instanceof` additionally fails whenever two copies of the obsidian
+    // module are in play, so this is the more robust reading of the same rule, not a relaxation
+    // of it.
+    if (!file || typeof file !== "object" || "children" in file) return null;
+    // ⛔ `{}` — NOT null — when the file resolves but has no frontmatter: see the port's
+    // contract. `getFileCache` returns null for an unindexed file too, but by this point the
+    // linkpath HAS resolved, so "resolved, nothing to read" is the honest reading.
+    return this.app.metadataCache.getFileCache(file as TFile)?.frontmatter ?? {};
   }
 }

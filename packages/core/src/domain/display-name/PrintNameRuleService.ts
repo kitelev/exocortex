@@ -287,8 +287,15 @@ export class PrintNameRuleService {
     metadata: Record<string, unknown>,
   ): boolean {
     if (matcher.kind === "hostFunction") {
+      // ⛔ `Object.hasOwn`, not a bare index: the name comes from USER FRONTMATTER, so a spec
+      // naming `toString` or `constructor` would otherwise pick an Object.prototype member —
+      // truthy, hence CALLED (a wrongly-applied spec), while `valueOf`/`hasOwnProperty` throw
+      // TypeError uncaught and break naming for every asset of that class. Verified by
+      // execution, not reasoning. Pre-existing since the `{}` default; it becomes load-bearing
+      // now that req 5cd9fffe ships a registry and a test asserting fail-closed.
+      if (!Object.hasOwn(this.hostFunctions, matcher.hostFunction)) return false;
       const fn = this.hostFunctions[matcher.hostFunction];
-      if (!fn) return false;
+      if (typeof fn !== "function") return false;
       return fn(this.host, metadata);
     }
     // A matchKey CONTAINING a dot is a cross-asset key-path (req fedeaa6e): walk it with

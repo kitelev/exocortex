@@ -5,6 +5,7 @@ import {
   PrintNameRuleService,
   DisplayNameResolver,
   DEFAULT_DISPLAY_NAME_SETTINGS,
+  createDisplayMatcherHostFunctions,
   type IFile,
 } from "@kitelev/exocortex-core";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
@@ -100,11 +101,21 @@ export async function resolveDisplayName(
   const vaultAdapter = new FileSystemVaultAdapter(resolvedVault);
 
   // Scan the vault for exo__DisplayNameSpec assets — the same scan the plugin runs on load.
-  // ⛔ No host functions are registered: their predicates are platform-specific (the plugin
-  // seeds isEffortBlocked/isEpisodeOngoing). The engine is fail-closed, so a spec naming an
-  // unregistered function simply never participates — the CLI under-reports such a spec rather
-  // than guessing at it. Surfacing host functions to the CLI is deliberately a separate step.
-  const ruleService = new PrintNameRuleService(new FsVaultMetadataAdapter(vaultAdapter));
+  //
+  // ⛤ The built-in host functions ARE registered (req 5cd9fffe). Until they moved to core, this
+  // command passed no registry at all, and since the engine is fail-closed a spec naming
+  // isEffortBlocked/isEpisodeOngoing simply never participated: the CLI under-reported 2 of the
+  // 35 specs, silently, over the 83 assets carrying the properties they read. Registering them
+  // here is what makes this an oracle for EVERY spec rather than for most of them.
+  //
+  // The port doubles as the registry's vault handle: these predicates close over it rather than
+  // reading the engine's opaque `host`, so this command needs no `host` argument — there is no
+  // `App` on this side to pass.
+  const port = new FsVaultMetadataAdapter(vaultAdapter);
+  const ruleService = new PrintNameRuleService(
+    port,
+    createDisplayMatcherHostFunctions(port),
+  );
   ruleService.initialize();
 
   const resolver = new DisplayNameResolver(
