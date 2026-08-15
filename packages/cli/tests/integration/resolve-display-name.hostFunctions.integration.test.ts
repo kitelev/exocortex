@@ -363,4 +363,91 @@ describe("resolve-display-name — host-function specs (req 5cd9fffe)", () => {
 
     expect(r.displayName).not.toContain("EF-9001");
   });
+  it(`${REQ_BLOCKED} a NON-symbolic alias is display text — the UID before the pipe decides`, async () => {
+    // ⛔ The axis the first version of this fix was missing. An Obsidian alias is arbitrary
+    // display text: `[[uid|Done]]` says nothing about the status. Trusting it made a FINISHED
+    // blocker read as blocking again — the same bug, one layer up. The port's own contract says
+    // `[[uid|label]]` must resolve identically to `[[uid]]`, and both in-repo precedents key on
+    // the target. The shipped alias case used `[[uid|ems__EffortStatusDone]]`, the one alias that
+    // happens to work, so the gap was invisible to the suite.
+    write(`assetspaces/t/${BLOCKER}.md`, {
+      exo__Asset_uid: BLOCKER,
+      exo__Asset_label: "the blocker",
+      ems__Effort_status: `[[${DONE_UID}|Done]]`,
+    });
+    write(`assetspaces/t/${TARGET}.md`, {
+      exo__Asset_uid: TARGET,
+      exo__Instance_class: [`[[${EFFORT_CLASS}]]`],
+      ems__Effort_blocker: `[[${BLOCKER}]]`,
+      t__Effort_serial: "EF-9001",
+    });
+
+    const r = await resolveDisplayName(vault, `assetspaces/t/${TARGET}.md`);
+
+    expect(r.displayName).not.toContain("EF-9001");
+  });
+
+  it(`${REQ_BLOCKED} the class-name + trailing-UUID shape resolves without a lookup`, async () => {
+    rmSync(path.join(vault, `assetspaces/t/${DONE_UID}.md`), { force: true });
+    // The shape PropertySchemas documents as occurring "after certain status transitions".
+    // A loose startsWith("ems__") accepted it verbatim and short-circuited the lookup, so it
+    // never matched a terminal label; the precise regex + trailing-UUID strip resolve it.
+    // TBox removed on purpose: this form must need no vault at all.
+    write(`assetspaces/t/${BLOCKER}.md`, {
+      exo__Asset_uid: BLOCKER,
+      exo__Asset_label: "the blocker",
+      ems__Effort_status: `[[ems__EffortStatusDone ${DONE_UID}]]`,
+    });
+    write(`assetspaces/t/${TARGET}.md`, {
+      exo__Asset_uid: TARGET,
+      exo__Instance_class: [`[[${EFFORT_CLASS}]]`],
+      ems__Effort_blocker: `[[${BLOCKER}]]`,
+      t__Effort_serial: "EF-9001",
+    });
+
+    const r = await resolveDisplayName(vault, `assetspaces/t/${TARGET}.md`);
+
+    expect(r.displayName).not.toContain("EF-9001");
+  });
+
+  it(`${REQ_BLOCKED} wrapping quotes do not defeat the comparison`, async () => {
+    // Every sibling normaliser strips wrapping quotes; this one did not, so a quoted value fell
+    // through to the raw string and read as blocking.
+    write(`assetspaces/t/${BLOCKER}.md`, {
+      exo__Asset_uid: BLOCKER,
+      exo__Asset_label: "the blocker",
+      ems__Effort_status: `"[[${DONE_UID}]]"`,
+    });
+    write(`assetspaces/t/${TARGET}.md`, {
+      exo__Asset_uid: TARGET,
+      exo__Instance_class: [`[[${EFFORT_CLASS}]]`],
+      ems__Effort_blocker: `[[${BLOCKER}]]`,
+      t__Effort_serial: "EF-9001",
+    });
+
+    const r = await resolveDisplayName(vault, `assetspaces/t/${TARGET}.md`);
+
+    expect(r.displayName).not.toContain("EF-9001");
+  });
+
+  it(`${REQ_BLOCKED} a MULTI-element status list is treated as unknown, not as its first element`, async () => {
+    // Cardinality is 1 per schema. Picking an arbitrary first element would silently contradict
+    // whatever the UI shows, so a multi-valued status is unknown ⇒ still blocking (fail-safe),
+    // mirroring the call GroundingExecutor.resolveStatusFromFrontmatter makes.
+    write(`assetspaces/t/${BLOCKER}.md`, {
+      exo__Asset_uid: BLOCKER,
+      exo__Asset_label: "the blocker",
+      ems__Effort_status: [`[[${DONE_UID}]]`, "[[some-other]]"],
+    });
+    write(`assetspaces/t/${TARGET}.md`, {
+      exo__Asset_uid: TARGET,
+      exo__Instance_class: [`[[${EFFORT_CLASS}]]`],
+      ems__Effort_blocker: `[[${BLOCKER}]]`,
+      t__Effort_serial: "EF-9001",
+    });
+
+    const r = await resolveDisplayName(vault, `assetspaces/t/${TARGET}.md`);
+
+    expect(r.displayName).toContain("EF-9001");
+  });
 });

@@ -3203,6 +3203,14 @@ export class GroundingExecutor {
    * and resolves to the symbolic EffortStatus enum value (which is what
    * WorkflowTransition.from comparison expects).
    */
+  /**
+   * ⛤ THIRD of three readers of the same `ems__Effort_status` vocabulary. They disagree on edge
+   * shapes, so a change to the status forms has to visit all three (multi-parser-predicate-
+   * migration): this one is UID-table based and rejects a multi-element list loudly.
+   *
+   * @see resolveStatusLabel in domain/display-name/hostFunctions — vault-lookup based
+   * @see getStatusLabel in PropertySchemas (obsidian-plugin) — for the property editor
+   */
   private resolveStatusFromFrontmatter(
     fm: Record<string, unknown>,
   ): string | null {
