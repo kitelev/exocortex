@@ -39,6 +39,9 @@ describe("ObsidianFileSystemAdapter", () => {
       adapter: mockDataAdapter,
       getMarkdownFiles: jest.fn().mockReturnValue([]),
       getAbstractFileByPath: jest.fn(),
+      // Issue #4046 — creation must go through the INDEXING API so the new
+      // path is registered as a TFile (see ObsidianFileSystemAdapter.createFile).
+      create: jest.fn(),
     } as unknown as jest.Mocked<Vault>;
 
     adapter = new ObsidianFileSystemAdapter(mockVault);
@@ -156,7 +159,7 @@ describe("ObsidianFileSystemAdapter", () => {
     describe("createFile", () => {
       it("should create file and return path", async () => {
         mockDataAdapter.exists.mockResolvedValue(false);
-        mockDataAdapter.write.mockResolvedValue(undefined);
+        (mockVault.create as jest.Mock).mockResolvedValue({} as TFile);
 
         const path = await adapter.createFile(
           "new/file.md",
@@ -164,10 +167,29 @@ describe("ObsidianFileSystemAdapter", () => {
         );
 
         expect(path).toBe("new/file.md");
-        expect(mockDataAdapter.write).toHaveBeenCalledWith(
+        expect(mockVault.create).toHaveBeenCalledWith(
           "new/file.md",
           "initial content",
         );
+      });
+
+      // Issue #4046 — REGRESSION GUARD. `vault.adapter.write` puts bytes on
+      // disk without firing a vault event, so Obsidian registers no TFile for
+      // the new path until its watcher catches up. Every plugin consumer of a
+      // freshly-created asset goes through the Vault INDEX
+      // (`getAbstractFileByPath` in createObsidianTargetResolver, `toObsidianFile`
+      // in ObsidianVaultAdapter, `fileManager.renameFile`), so a composite of
+      // the shape `[create_instance, <touch the created asset>]` failed in the
+      // plugin while passing in the CLI. Asserting the ABSENCE of the raw write
+      // is what pins the fix: `create` alone would still pass if someone
+      // re-added `adapter.write` beside it.
+      it("must NOT use the raw adapter.write (no TFile registered → invisible to the Vault index)", async () => {
+        mockDataAdapter.exists.mockResolvedValue(false);
+        (mockVault.create as jest.Mock).mockResolvedValue({} as TFile);
+
+        await adapter.createFile("new/file.md", "initial content");
+
+        expect(mockDataAdapter.write).not.toHaveBeenCalled();
       });
 
       it("should throw FileAlreadyExistsError when file exists", async () => {

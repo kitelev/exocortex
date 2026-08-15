@@ -15,11 +15,15 @@
  * against an in-memory vault, so it exercises the exact production seam
  * (executor → IRI → resolver → FolderRepairService).
  *
- * Revert-verify: dropping the `targetsCreatedInstance` branch in
- * `executeServiceCall` (i.e. going back to `service.execute(targetIRI, …)`)
- * turns axis 1 RED — the created asset stays in the source folder — while
- * axes 2-4 stay GREEN (they assert the click-target path, which the fix must
- * not disturb).
+ * Revert-verify, per production guarantee (each mutation drops exactly its own
+ * axis; the rest stay GREEN, which is what makes them non-vacuous):
+ *   - drop the `targetsCreatedInstance` branch in `executeServiceCall`
+ *     (back to `service.execute(targetIRI, …)`) → axes 1 and 4 RED;
+ *   - drop the `targetQuery` × `targetsCreatedInstance` guard → axis 5 RED;
+ *   - re-point `ObsidianFileSystemAdapter.createFile` at `vault.adapter.write`
+ *     → the plugin-package unit axis ("must NOT use the raw adapter.write") RED.
+ *     Axis 6 here characterises that runtime rather than pinning it: it models
+ *     the pre-fix writer and shows the two semantics are distinguishable.
  */
 import { describe, it, expect } from "@jest/globals";
 import {
@@ -34,6 +38,7 @@ import {
   type IFile,
   type IFolder,
   type IFrontmatter,
+  vaultPathToIRI,
 } from "@kitelev/exocortex-core";
 import {
   createRepairFolderService,
@@ -222,7 +227,11 @@ function composite(steps: GroundingDefinition[]): GroundingDefinition {
   };
 }
 
-function setup(): { vault: FakeVault; executor: GroundingExecutor } {
+function setup(): {
+  vault: FakeVault;
+  executor: GroundingExecutor;
+  registry: ServiceRegistry;
+} {
   const vault = new FakeVault();
   vault.seed(TARGET_PATH, TARGET_INITIAL);
   vault.seed(
@@ -263,7 +272,24 @@ function setup(): { vault: FakeVault; executor: GroundingExecutor } {
     vault.fileWriter,
     registry,
   );
-  return { vault, executor };
+  return { vault, executor, registry };
+}
+
+/**
+ * Production shape of the click-target IRI. BOTH runtimes build it this way —
+ * CLI `apply.ts` (`vaultPathToIRI(vaultRelative)`) and the plugin's
+ * `DynamicCommandButtonGroupBuilder` (`"obsidian://vault/" + encodeURI(file.path)`)
+ * — so asserting against a bare path would assert a shape production never emits.
+ */
+const TARGET_IRI = vaultPathToIRI(TARGET_PATH);
+
+/** Probe service recording the IRI the executor hands to a `service_call`. */
+function probe(registry: ServiceRegistry, seen: string[]): void {
+  registry.register("repairFolder", {
+    async execute(iri: string): Promise<void> {
+      seen.push(iri);
+    },
+  } satisfies IGroundingService);
 }
 
 /** The single asset the composite created (everything except the seeds). */
@@ -300,69 +326,55 @@ describe("service_call honours targetsCreatedInstance (Issue #4046)", () => {
     );
   });
 
-  it("without the flag the service still targets the click-target (no regression)", async () => {
-    const { vault, executor } = setup();
+  it("without the flag the service still receives the click-target IRI (byte-for-byte, no regression)", async () => {
+    const { vault, executor, registry } = setup();
     const seen: string[] = [];
-    // Swap in a probe service so the assertion is on the IRI the executor hands
-    // to the service — the exact seam the fix touches.
-    const registryProbe: IGroundingService = {
-      async execute(iri: string): Promise<void> {
-        seen.push(iri);
-      },
-    };
-    (
-      executor as unknown as { serviceRegistry: ServiceRegistry }
-    ).serviceRegistry.register("repairFolder", registryProbe);
+    // Probe service so the assertion is on the IRI the executor hands to the
+    // service — the exact seam the fix touches.
+    probe(registry, seen);
 
     const result = await executor.execute(
       composite([createStep(), repairStep(/* flag absent */)]),
-      TARGET_PATH,
+      TARGET_IRI,
       TARGET_PATH,
     );
     expect(result.success).toBe(true);
-    expect(seen).toEqual([TARGET_PATH]);
+    // Identity, not merely "resolves to the same file": with the flag absent the
+    // executor must pass `targetIRI` through untouched.
+    expect(seen).toEqual([TARGET_IRI]);
     // The created asset was NOT relocated by anyone.
     expect(parentPath(createdPathOf(vault))).toBe(SPACE);
   });
 
   it("negative control: flag set but no prior create_instance still targets the click-target", async () => {
-    const { vault, executor } = setup();
+    const { vault, executor, registry } = setup();
     const seen: string[] = [];
-    (
-      executor as unknown as { serviceRegistry: ServiceRegistry }
-    ).serviceRegistry.register("repairFolder", {
-      async execute(iri: string): Promise<void> {
-        seen.push(iri);
-      },
-    } satisfies IGroundingService);
+    probe(registry, seen);
 
     const result = await executor.execute(
       composite([repairStep(true)]),
-      TARGET_PATH,
+      TARGET_IRI,
       TARGET_PATH,
     );
     expect(result.success).toBe(true);
     // `stepPath` falls back to the click-target, so the service receives an IRI
     // that resolves to the click-target — not to some other asset.
     expect(seen).toHaveLength(1);
-    expect(seen[0]).toContain(encodeURI(TARGET_PATH));
+    expect(
+      createPathBasedTargetResolver(vault.vaultAdapter()).resolveFile(seen[0])
+        .path,
+    ).toBe(TARGET_PATH);
     expect(vault.disk.has(TARGET_PATH)).toBe(true);
   });
 
   it("the IRI handed to a flagged service resolves to the created file via the production resolver", async () => {
-    const { vault, executor } = setup();
+    const { vault, executor, registry } = setup();
     const seen: string[] = [];
-    (
-      executor as unknown as { serviceRegistry: ServiceRegistry }
-    ).serviceRegistry.register("repairFolder", {
-      async execute(iri: string): Promise<void> {
-        seen.push(iri);
-      },
-    } satisfies IGroundingService);
+    probe(registry, seen);
 
     const result = await executor.execute(
       composite([createStep(), repairStep(true)]),
-      TARGET_PATH,
+      TARGET_IRI,
       TARGET_PATH,
     );
     expect(result.success).toBe(true);
@@ -371,10 +383,94 @@ describe("service_call honours targetsCreatedInstance (Issue #4046)", () => {
     expect(seen).toHaveLength(1);
     // Not the click-target — and the production resolver maps it back to the
     // created file (this is what makes every path-based service work).
-    expect(seen[0]).not.toBe(TARGET_PATH);
+    expect(seen[0]).not.toBe(TARGET_IRI);
     const resolved = createPathBasedTargetResolver(
       vault.vaultAdapter(),
     ).resolveFile(seen[0]);
     expect(resolved.path).toBe(created);
+  });
+
+  it("refuses a step carrying BOTH targetQuery and targetsCreatedInstance (mirrors the property_set guard)", async () => {
+    const { vault, executor, registry } = setup();
+    const seen: string[] = [];
+    probe(registry, seen);
+
+    const conflicted: GroundingDefinition = {
+      ...repairStep(true),
+      targetQuery: "some-named-query-uid",
+    };
+    const result = await executor.execute(
+      composite([createStep(), conflicted]),
+      TARGET_IRI,
+      TARGET_PATH,
+    );
+
+    // Fail-loud, not silent arbitration: `targetQuery` is resolved ONLY inside
+    // executePropertySet, so without the guard it would be dropped without a word.
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("mutually exclusive");
+    // The service was never reached, and the composite rolled the creation back.
+    expect(seen).toEqual([]);
+    const seeded = new Set([TARGET_PATH, SRC_ONTO_PATH, ARCHIVE_ONTO_PATH]);
+    expect([...vault.disk.keys()].filter((p) => !seeded.has(p))).toEqual([]);
+  });
+
+  /**
+   * Characterisation of the PLUGIN's storage split — the axis whose absence let
+   * the first version of this fix look correct.
+   *
+   * Before Issue #4046's second half, `ObsidianFileSystemAdapter.createFile`
+   * wrote through `vault.adapter.write`: bytes on disk, but NO `TFile` in the
+   * Vault index. `createObsidianTargetResolver` resolves exclusively through
+   * that index, so the flagged `service_call` could not see the just-created
+   * asset at all — the step threw and `executeComposite`'s rollback DELETED the
+   * creation, which is strictly worse than the bug being fixed.
+   *
+   * `FakeVault` above models the FIXED adapter (`Vault.create` → registered).
+   * This test models the OLD one, and pins that the two are distinguishable:
+   * if creation stops registering, the composite fails loudly and leaves
+   * nothing behind. The production guarantee itself is pinned by
+   * `packages/obsidian-plugin/tests/unit/ObsidianFileSystemAdapter.test.ts`
+   * ("must NOT use the raw adapter.write").
+   */
+  it("models the pre-fix plugin writer: an UNREGISTERED created file makes the flagged step fail loudly (and rollback removes it)", async () => {
+    const { vault, executor, registry } = setup();
+    const vaultAdapter = vault.vaultAdapter();
+    // Index that never learns about files created during this composite —
+    // exactly `vault.adapter.write` semantics.
+    const frozenIndex = new Set(vault.disk.keys());
+    registry.register(
+      "repairFolder",
+      createRepairFolderService(
+        {
+          ...vaultAdapter,
+          getAbstractFileByPath: (path: string) =>
+            frozenIndex.has(path) || vault.folders.has(path)
+              ? vaultAdapter.getAbstractFileByPath(path)
+              : null,
+        },
+        new FolderRepairService(vaultAdapter),
+        createPathBasedTargetResolver({
+          ...vaultAdapter,
+          getAbstractFileByPath: (path: string) =>
+            frozenIndex.has(path)
+              ? vaultAdapter.getAbstractFileByPath(path)
+              : null,
+        }),
+      ),
+    );
+
+    const result = await executor.execute(
+      composite([createStep(), repairStep(true)]),
+      TARGET_IRI,
+      TARGET_PATH,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Cannot resolve target file");
+    // Rollback removed the created asset — the failure mode this fix's plugin
+    // half exists to prevent.
+    const seeded = new Set([TARGET_PATH, SRC_ONTO_PATH, ARCHIVE_ONTO_PATH]);
+    expect([...vault.disk.keys()].filter((p) => !seeded.has(p))).toEqual([]);
   });
 });

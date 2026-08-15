@@ -31,12 +31,39 @@ export class ObsidianFileSystemAdapter implements IFileSystemAdapter {
     return paths;
   }
 
+  /**
+   * Issue #4046 — creation goes through `Vault.create`, NOT
+   * `vault.adapter.write`.
+   *
+   * `adapter.write` is the raw `DataAdapter`: it puts bytes on disk but fires
+   * no vault event, so Obsidian does not register a `TFile` for the new path
+   * until its own filesystem watcher happens to catch up. Everything the
+   * plugin does with a file afterwards goes through the Vault INDEX —
+   * `createObsidianTargetResolver` (`vault.getAbstractFileByPath`),
+   * `ObsidianVaultAdapter.toObsidianFile`, `fileManager.renameFile` — so a
+   * file created this way is unreachable to all of them for an unbounded,
+   * racy window.
+   *
+   * That made any composite of the shape `[create_instance, <anything that
+   * touches the created asset through the Vault API>]` fail in the plugin
+   * while working in the CLI (whose `FileSystemVaultAdapter` has no index at
+   * all). `Vault.create` returns the registered `TFile`, closing the window
+   * synchronously.
+   *
+   * ⛔ Not interchangeable with the deliberate `adapter.write` calls in
+   * ExoSync (`SyncCommands`, `VaultRDFIndexer`): those bypass the vault event
+   * ON PURPOSE, to avoid re-entrant re-indexing during a sync round. This
+   * adapter is the executor's writer — it wants the event.
+   *
+   * `updateFile` below deliberately stays on `adapter.write`: the path is
+   * already registered, so re-routing it would only add an index lookup.
+   */
   async createFile(path: string, content: string): Promise<string> {
     const exists = await this.vault.adapter.exists(path);
     if (exists) {
       throw new FileAlreadyExistsError(path);
     }
-    await this.vault.adapter.write(path, content);
+    await this.vault.create(path, content);
     return path;
   }
 
