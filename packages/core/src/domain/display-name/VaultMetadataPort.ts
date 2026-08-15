@@ -34,8 +34,7 @@ export interface VaultMetadataPort {
    * resolve identically to `[[uid]]`). What remains for the adapter is the Obsidian-flavoured
    * part: a bare uid/basename that may or may not carry a `.md` suffix. **The adapter owns
    * that retry** — the engine does not call twice.
-   */
-  /**
+   *
    * ⛔ The two empty outcomes are DISTINCT and callers rely on the difference (req 5cd9fffe):
    *   `null` — the linkpath did not resolve to a file at all;
    *   `{}`   — it resolved, but that file carries no frontmatter.
