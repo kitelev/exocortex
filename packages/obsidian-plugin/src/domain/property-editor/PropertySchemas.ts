@@ -237,6 +237,14 @@ const SYMBOLIC_STATUS_LABEL_FALLBACK: Record<string, string> = {
   emseffortstatustrashed: "Trashed",
 };
 
+/**
+ * ⛤ One of THREE readers of the same `ems__Effort_status` vocabulary; they disagree on edge
+ * shapes, so a change to the status forms has to visit all three (multi-parser-predicate-
+ * migration). This one is UID-table based, via FALLBACK_EFFORT_STATUS_VALUES.
+ *
+ * @see GroundingExecutor.resolveStatusFromFrontmatter (core) — also UID-table based
+ * @see resolveStatusLabel in core domain/display-name/hostFunctions — vault-lookup based
+ */
 export function getStatusLabel(statusUri: string | null | undefined): string {
   if (!statusUri || statusUri.trim() === "") return "-";
   // Strip wikilink brackets and optional `|alias` suffix.

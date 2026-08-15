@@ -922,3 +922,12 @@ export {
 export type { DisplayNamePresetKey } from "./domain/display-name/DisplayNameTemplateEngine";
 export { resolveKeyPath, isWikilink } from "./domain/display-name/keyPathResolver";
 export type { MetadataResolver } from "./domain/display-name/keyPathResolver";
+// The built-in display-matcher host functions (req 5cd9fffe). They live here rather than in the
+// plugin so the CLI oracle stops silently skipping the specs that name them — the engine is
+// fail-closed, so an unregistered name means such a spec never participates at all.
+export {
+  isEffortBlocked,
+  isEpisodeOngoing,
+  localToday,
+  createDisplayMatcherHostFunctions,
+} from "./domain/display-name/hostFunctions";

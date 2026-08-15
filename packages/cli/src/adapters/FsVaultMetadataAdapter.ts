@@ -40,6 +40,8 @@ export class FsVaultMetadataAdapter implements VaultMetadataPort {
       file = this.vault.getFirstLinkpathDest(`${linkpath}.md`, "", noAlias);
     }
     if (!file) return null;
-    return (this.vault.getFrontmatter(file) as Record<string, unknown> | null) ?? null;
+    // ⛔ `{}` — NOT null — per the port contract: the linkpath resolved, so the caller must be
+    // able to tell "no such file" from "file with nothing in it". Mirrors the Obsidian half.
+    return (this.vault.getFrontmatter(file) as Record<string, unknown> | null) ?? {};
   }
 }

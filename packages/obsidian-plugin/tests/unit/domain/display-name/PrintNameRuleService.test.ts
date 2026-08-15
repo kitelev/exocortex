@@ -812,6 +812,40 @@ describe("PrintNameRuleService — host-function exo__DisplayNameSpec (v2 comput
     ).toBe("Ship the release");
   });
 
+  it("@req:d6cd2371-bdf2-460e-840e-841480273869 a BARE-UID Done status also unblocks — the form the vault actually stores", () => {
+    // ⛔ The axis this surface was missing entirely. Every other fixture here writes the status
+    // SYMBOLICALLY (`[[ems__EffortStatusDone]]`), which short-circuits before the status-form
+    // normalisation runs — so all of these tests passed identically with and WITHOUT the dual-IRI
+    // fix, on the very surface where the wrongly-flagged efforts live. Measured 2026-08-15: 49 of
+    // 49 blockers carrying a status use this bare-UID form and zero use symbolic, i.e. the shape
+    // exercised below is the ONLY one that occurs in production.
+    const DONE_UID = "7b9b3116-7c3c-438c-9618-94fe301320a6";
+    const { resolver } = blockedHostFnVault({
+      blockerStatus: `[[${DONE_UID}]]`,
+      // The status TBox must be present, exactly as it is in a real vault: the fix resolves the
+      // UID through the vault rather than against a hardcoded table, so omitting it would send
+      // the predicate down its "unknown ⇒ still blocking" fallback and hide the fix.
+      extraFiles: [
+        {
+          path: `${DONE_UID}.md`,
+          frontmatter: {
+            exo__Asset_uid: DONE_UID,
+            exo__Asset_label: "ems__EffortStatusDone",
+          },
+        },
+      ],
+    });
+
+    const notBlocked = resolver.resolve({
+      metadata: taskMeta({ blocker: `[[${BLOCKER_BASENAME}]]` }),
+      basename: "t1",
+    });
+
+    // Pre-fix this rendered "🚩 Ship the release": the bracket strip left a UID, which matched
+    // neither terminal label, so a FINISHED blocker read as active.
+    expect(notBlocked).toBe("Ship the release");
+  });
+
   it("evaluates the condition PER-RENDER — the SAME loaded spec flips 🚩 on/off as the referenced BLOCKER's status changes (cross-asset, no re-scan)", () => {
     const { resolver, setBlockerStatus } = blockedHostFnVault({
       blockerStatus: "[[ems__EffortStatusDoing]]",
