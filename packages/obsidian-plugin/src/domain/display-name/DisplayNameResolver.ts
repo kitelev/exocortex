@@ -4,4 +4,8 @@
 // logic here — a second implementation is exactly what the move exists to prevent.
 
 export { DisplayNameResolver, createDefaultResolver } from "@kitelev/exocortex-core";
-export type { DisplayNameContext } from "@kitelev/exocortex-core";
+export type {
+  DisplayNameContext,
+  DisplayNameProvenance,
+  ResolvedDisplayName,
+} from "@kitelev/exocortex-core";

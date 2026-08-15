@@ -37,14 +37,25 @@ export interface ResolveDisplayNameOptions {
   json?: boolean;
 }
 
-/** Where the printed name came from — the half that makes the output diagnostic, not just a string. */
+/**
+ * Where the printed name came from — the half that makes the output diagnostic, not just a string.
+ *
+ * ⛤ Reported BY THE ENGINE (`resolveWithProvenance`), never inferred by comparing the output to
+ * the raw label. That inference inverts in a reachable case — a spec composing to exactly the
+ * filename stem would read as `basename`, i.e. as the very "no spec covers this asset" alarm this
+ * command exists to raise — so provenance has to come from the code that decides it.
+ */
 export type DisplayNameSource =
-  /** An `exo__DisplayNameSpec` (or the TBox `prefix#slug` projection) composed it. */
+  /** A vault `exo__DisplayNameSpec` participated. */
   | "spec"
-  /** No spec participated; the raw `exo__Asset_label` is the name. */
+  /** The TBox `prefix#slug` projection fired (a class/property definition). */
+  | "tboxProjection"
+  /** A settings-level `classTemplates` entry matched (empty under CLI defaults). */
+  | "classTemplate"
+  /** Nothing matched; the default template rendered the asset's own `exo__Asset_label`. */
   | "label"
-  /** Neither — the engine fell back to the filename stem. For a UID-canon vault that means a
-   *  bare UID is showing, which is the signal that a label-less asset has NO spec covering it. */
+  /** Nothing matched AND there is no label — a bare filename stem is showing. In a UID-canon
+   *  vault that is a bare UID: the signal that a label-less asset has NO spec covering it. */
   | "basename";
 
 export interface ResolveDisplayNameResult {
@@ -107,25 +118,24 @@ export async function resolveDisplayName(
   const metadata = (file ? vaultAdapter.getFrontmatter(file) : null) ?? {};
   const basename = pathBasename(vaultRelative).replace(/\.md$/, "");
 
-  const composed = resolver.resolve({
+  const resolved = resolver.resolveWithProvenance({
     metadata: metadata as Record<string, unknown>,
     basename,
   });
-  const displayName = composed ?? basename;
+  const displayName = resolved.displayName ?? basename;
 
   const rawLabel = (metadata as Record<string, unknown>).exo__Asset_label;
   const hasLabel = typeof rawLabel === "string" && rawLabel.trim().length > 0;
 
-  // `source` is DERIVED from the engine's own inputs and output — never by re-deciding which
-  // spec applies. Re-implementing that choice here is exactly the drift this command exists to
-  // make impossible.
-  const source: DisplayNameSource = hasLabel
-    ? displayName === (rawLabel as string)
-      ? "label"
-      : "spec"
-    : displayName === basename
-      ? "basename"
-      : "spec";
+  // The engine says WHY; the only thing decided here is the split of its "default" verdict into
+  // label-vs-basename, which is a property of the asset (does it carry a label at all?) and not
+  // of the naming logic — so no naming decision is re-made on this side.
+  const source: DisplayNameSource =
+    resolved.provenance === "default"
+      ? hasLabel
+        ? "label"
+        : "basename"
+      : resolved.provenance;
 
   const uid = (metadata as Record<string, unknown>).exo__Asset_uid;
 

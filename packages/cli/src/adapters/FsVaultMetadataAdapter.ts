@@ -28,9 +28,16 @@ export class FsVaultMetadataAdapter implements VaultMetadataPort {
   resolveLinkpathFrontmatter(linkpath: string): Record<string, unknown> | null {
     // The `.md` retry is the adapter's business (see the port docstring): the engine hands
     // over an unwrapped, alias-stripped target and asks exactly once.
-    let file = this.vault.getFirstLinkpathDest(linkpath, "");
+    // ⛔ allowAliasFallback:false is load-bearing, not tidiness. FileSystemVaultAdapter resolves
+    // a linkpath that matches only a frontmatter `aliases` entry; Obsidian's metadataCache does
+    // NOT (DevTools-verified). Leaving it on would let the CLI resolve a link the plugin cannot
+    // — and since this method feeds matcher identity, cross-asset key-paths and the printed-
+    // property label hop, the two surfaces would compose DIFFERENT names. That divergence is
+    // exactly what this class's docstring promises cannot happen.
+    const noAlias = { allowAliasFallback: false };
+    let file = this.vault.getFirstLinkpathDest(linkpath, "", noAlias);
     if (!file && !linkpath.endsWith(".md")) {
-      file = this.vault.getFirstLinkpathDest(`${linkpath}.md`, "");
+      file = this.vault.getFirstLinkpathDest(`${linkpath}.md`, "", noAlias);
     }
     if (!file) return null;
     return (this.vault.getFrontmatter(file) as Record<string, unknown> | null) ?? null;

@@ -139,7 +139,19 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     await fs.ensureDir(fullPath);
   }
 
-  getFirstLinkpathDest(linkpath: string, sourcePath: string): IFile | null {
+  /**
+   * @param options.allowAliasFallback Resolve a linkpath that matches only a frontmatter
+   *   `aliases` entry. Defaults to TRUE — every pre-existing caller keeps today's behaviour.
+   *   ⛔ Obsidian's `metadataCache.getFirstLinkpathDest` does NOT resolve aliases (verified in
+   *   DevTools: `getFirstLinkpathDest('ems__Task','')` → null), so any CLI surface that must
+   *   MATCH the plugin — the displayName oracle in particular — passes `false`. Leaving it on
+   *   there would let the CLI resolve a link the plugin cannot, and compose a different name.
+   */
+  getFirstLinkpathDest(
+    linkpath: string,
+    sourcePath: string,
+    options?: { allowAliasFallback?: boolean },
+  ): IFile | null {
     // Step 1: Strip wikilink alias if present: "uuid|label" → "uuid"
     const cleanLinkpath = linkpath.split("|")[0].trim();
 
@@ -185,9 +197,8 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
       return this.createFileObject(relativePath);
     }
 
-    // Step 4: Fall back to basename / frontmatter-alias index lookup so
-    // wikilinks like [[ems__EffortStatusBacklog]] resolve to the file that
-    // declares it as a basename or alias, matching Obsidian's behavior.
+    // Step 4: basename lookup (matches Obsidian) and, unless opted out, a frontmatter-alias
+    // lookup (does NOT — Obsidian resolves basenames only). See getFirstLinkpathDest's docstring.
     if (this.basenameIndex === null || this.aliasIndex === null) {
       this.buildLinkpathIndex();
     }
@@ -198,9 +209,12 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
       return this.createFileObject(basenameMatch);
     }
 
-    const aliasMatch = this.aliasIndex!.get(linkKey);
-    if (aliasMatch) {
-      return this.createFileObject(aliasMatch);
+    // Basename above mirrors Obsidian; the alias hop below does NOT (see the options docstring).
+    if (options?.allowAliasFallback !== false) {
+      const aliasMatch = this.aliasIndex!.get(linkKey);
+      if (aliasMatch) {
+        return this.createFileObject(aliasMatch);
+      }
     }
 
     return null;

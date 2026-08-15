@@ -11,6 +11,30 @@ export interface DisplayNameContext {
 }
 
 /**
+ * WHY the rendered name looks the way it does — reported by the engine rather than inferred by
+ * a caller comparing the output against the raw label (req f17f7c57).
+ *
+ * The inference is not merely imprecise, it INVERTS in a reachable case: a spec that composes to
+ * exactly the filename stem (easy in a UID-canon vault — a spec printing exo__Asset_uid) reads as
+ * "nothing composed this", which is the opposite of the truth and happens to be the very alarm
+ * the CLI oracle exists to raise. Only the engine knows whether a rule participated.
+ */
+export type DisplayNameProvenance =
+  /** ≥1 vault exo__DisplayNameSpec participated (incl. per-render matchers). */
+  | "spec"
+  /** The TBox `prefix#slug` projection fired (a class/property definition). */
+  | "tboxProjection"
+  /** No vault spec; a settings-level classTemplates entry matched. */
+  | "classTemplate"
+  /** Nothing matched — settings.defaultTemplate rendered it. */
+  | "default";
+
+export interface ResolvedDisplayName {
+  displayName: string | null;
+  provenance: DisplayNameProvenance;
+}
+
+/**
  * The exo__Slugable-mixin metaclasses. A note whose exo__Instance_class is one of these
  * (matched by UID OR label form) is a TBox naming entity that displays as `prefix#slug`
  * (RFC 78572fa9 Candidate B Phase 2). exo__Class + exo__Property carry the exo__Slugable
@@ -37,7 +61,16 @@ export class DisplayNameResolver {
     private readonly metadataResolver?: MetadataResolver | null,
   ) {}
 
+  /** Unchanged public shape — every existing caller keeps `string | null`. */
   resolve(context: DisplayNameContext): string | null {
+    return this.resolveWithProvenance(context).displayName;
+  }
+
+  /**
+   * Same rendering, plus WHY. Additive: `resolve` delegates here, so there is one code path and
+   * the provenance cannot drift from the name it explains.
+   */
+  resolveWithProvenance(context: DisplayNameContext): ResolvedDisplayName {
     const { metadata, basename, createdDate } = context;
 
     // Consider EVERY class the note carries (class-MEMBERSHIP), not only the first — so a
@@ -53,20 +86,23 @@ export class DisplayNameResolver {
     // and disabled by projectTBoxNames=false; never fires for ABox instances. Returns null to
     // fall through to the normal template path.
     const projection = this.computeTBoxNamingProjection(assetClasses, metadata);
-    if (projection !== null) return projection;
+    if (projection !== null) return { displayName: projection, provenance: "tboxProjection" };
 
-    const { template, separator } = this.resolveRenderSpec(assetClasses, metadata);
+    const { template, separator, provenance } = this.resolveRenderSpec(assetClasses, metadata);
     const engine = new DisplayNameTemplateEngine(
       template,
       separator ? { separator } : {},
     );
 
-    return engine.render(
-      metadata,
-      basename,
-      createdDate,
-      this.metadataResolver ?? undefined,
-    );
+    return {
+      displayName: engine.render(
+        metadata,
+        basename,
+        createdDate,
+        this.metadataResolver ?? undefined,
+      ),
+      provenance,
+    };
   }
 
   /**
@@ -103,7 +139,7 @@ export class DisplayNameResolver {
   private resolveRenderSpec(
     assetClasses: string[],
     metadata?: Record<string, unknown>,
-  ): { template: string; separator?: string } {
+  ): { template: string; separator?: string; provenance: DisplayNameProvenance } {
     if (this.ruleService && assetClasses.length > 0) {
       // Gather EVERY participating spec across all of the note's classes, de-duped by spec UID so a
       // spec that applies to more than one of the note's classes contributes at most one prefix.
@@ -126,17 +162,21 @@ export class DisplayNameResolver {
           ? {
               template: gathered[0].template,
               ...(gathered[0].separator ? { separator: gathered[0].separator } : {}),
+              provenance: "spec",
             }
-          : this.composeTemplates(gathered);
+          : { ...this.composeTemplates(gathered), provenance: "spec" };
       }
     }
 
     const firstClass = assetClasses[0];
     if (firstClass && this.settings.classTemplates[firstClass]) {
-      return { template: this.settings.classTemplates[firstClass] };
+      return {
+        template: this.settings.classTemplates[firstClass],
+        provenance: "classTemplate",
+      };
     }
 
-    return { template: this.settings.defaultTemplate };
+    return { template: this.settings.defaultTemplate, provenance: "default" };
   }
 
   /**

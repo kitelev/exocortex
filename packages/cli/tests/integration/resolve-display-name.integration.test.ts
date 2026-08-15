@@ -15,6 +15,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import { resolveDisplayName } from "../../src/commands/resolve-display-name.js";
+import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
+import { FsVaultMetadataAdapter } from "../../src/adapters/FsVaultMetadataAdapter.js";
 
 const REQ = "@req:f17f7c57-d3b6-42d3-916e-8d59bc8447c5";
 
@@ -163,5 +165,51 @@ describe("resolve-display-name — the naming oracle outside Obsidian", () => {
     } finally {
       rmSync(outside, { force: true });
     }
+  });
+  it(`${REQ} a spec composing to exactly the basename still reports source=spec (provenance, not string-compare)`, async () => {
+    // The case that INVERTS under string-comparison: the composed name equals the filename stem,
+    // so "displayName === basename" would read as "nothing composed this" — i.e. as the very
+    // no-spec-covers-this alarm the oracle exists to raise. Provenance comes from the engine, so
+    // this is source=spec. ⛤ The part prints exo__Asset_uid, which in a UID-canon vault IS the stem.
+    write(`assetspaces/t/${LABELLESS_UID}.md`, {
+      exo__Asset_uid: LABELLESS_UID,
+      exo__Instance_class: [`[[${CLASS_UID}]]`],
+    });
+    write(`assetspaces/t/${PART_UID}.md`, {
+      exo__Asset_uid: PART_UID,
+      exo__Asset_label: "part: uid",
+      exo__Instance_class: ["[[exo__PrintedProperty]]"],
+      exo__DisplayNamePart_of: `[[${SPEC_UID}]]`,
+      exo__DisplayNamePart_order: 1,
+      exo__PrintedProperty_property: "exo__Asset_uid",
+    });
+
+    const r = await resolveDisplayName(vault, `assetspaces/t/${LABELLESS_UID}.md`);
+
+    expect(r.displayName).toBe(LABELLESS_UID); // identical to the basename …
+    expect(r.source).toBe("spec");             // … yet a spec produced it
+  });
+
+  it(`${REQ} the naming port does NOT resolve a frontmatter-alias linkpath — Obsidian parity`, async () => {
+    // Obsidian's metadataCache.getFirstLinkpathDest resolves basenames, NOT frontmatter aliases
+    // (DevTools-verified). FileSystemVaultAdapter DOES resolve aliases for its other consumers, so
+    // the naming path opts out — otherwise the CLI would resolve a link the plugin cannot and the
+    // two surfaces would compose different names, which is the one divergence this design forbids.
+    write(`assetspaces/t/${LABELLED_UID}.md`, {
+      exo__Asset_uid: LABELLED_UID,
+      exo__Asset_label: "Aliased Widget",
+      aliases: ["t__AliasOnlyName"],
+    });
+
+    const port = new FsVaultMetadataAdapter(new FileSystemVaultAdapter(vault));
+
+    // Basename form resolves (Obsidian does this too) — proves the probe is not vacuously null.
+    expect(port.resolveLinkpathFrontmatter(LABELLED_UID)).not.toBeNull();
+    // Alias-only form must NOT resolve through the naming path.
+    expect(port.resolveLinkpathFrontmatter("t__AliasOnlyName")).toBeNull();
+    // …while the underlying adapter still resolves it for every other CLI consumer.
+    expect(
+      new FileSystemVaultAdapter(vault).getFirstLinkpathDest("t__AliasOnlyName", ""),
+    ).not.toBeNull();
   });
 });

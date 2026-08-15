@@ -909,7 +909,11 @@ export type {
   ParticipatingRule,
 } from "./domain/display-name/PrintNameRuleService";
 export { DisplayNameResolver, createDefaultResolver } from "./domain/display-name/DisplayNameResolver";
-export type { DisplayNameContext } from "./domain/display-name/DisplayNameResolver";
+export type {
+  DisplayNameContext,
+  DisplayNameProvenance,
+  ResolvedDisplayName,
+} from "./domain/display-name/DisplayNameResolver";
 export {
   DisplayNameTemplateEngine,
   DISPLAY_NAME_PRESETS,
