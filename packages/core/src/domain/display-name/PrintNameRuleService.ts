@@ -319,9 +319,12 @@ export class PrintNameRuleService {
     // rejects a non-string, so the matcher returns false either way. But it is fail-closed BY
     // ACCIDENT of that downstream guard rather than by decision here, and this branch is the one
     // carrying live traffic (all 16 `matchPath` values in the vault are single-component).
-    // Deliberately NOT changed under req 4a2e6b80, whose non-goals exclude this file: locking the
-    // wiring needs a call-site fixture (a helper-level axis stays green if the wiring is reverted,
-    // i.e. decoration), which is its own unit of work. Tracked in issue #4059.
+    // Deliberately NOT changed under req 4a2e6b80, whose non-goals exclude this file. ⛤ The
+    // reason is NOT scaffolding cost — the fixture is one line over the existing createMockApp.
+    // It is that the ONLY input separating the two versions is an inherited STRING, i.e.
+    // prototype-chained frontmatter, a shape no parser here can emit. So the axis would be a
+    // synthetic guard over an impossible input; whether that is worth having is a design
+    // question, and that is what makes it its own unit of work. Tracked in issue #4059.
     const raw = matcher.matchKey.includes(".")
       ? resolveKeyPath(metadata, matcher.matchKey, this.createMetadataResolver())
       : metadata[matcher.matchKey];
