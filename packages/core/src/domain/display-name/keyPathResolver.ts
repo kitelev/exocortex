@@ -31,6 +31,25 @@ export function isWikilink(value: string): boolean {
  * Walk `path` (dot-separated) through `obj`, hopping across wikilink references via
  * `metadataResolver`. Returns `undefined` when any segment is missing or unresolvable.
  */
+/**
+ * Read a key-path segment as an OWN property only (req 4a2e6b80; the twin closed by 5cd9fffe).
+ *
+ * ⛔ Segments come from `exo__DisplayNameSpec_matchKey` / part definitions — i.e. from user
+ * frontmatter — so a plain `obj[part]` reaches Object.prototype: a segment named `toString` or
+ * `constructor` yields a FUNCTION and the walk continues over it instead of stopping. Verified by
+ * execution, not reasoning; it is the same reachable-by-data hole closed in
+ * `PrintNameRuleService.matcherSatisfied`, and fixing only the one I happened to notice would
+ * leave its twin sixty lines away.
+ *
+ * ⚠ Arrays keep working: numeric indices and `length` are own properties of an array.
+ */
+function ownProperty(source: unknown, key: string): unknown {
+  if (source === null || typeof source !== "object") return undefined;
+  return Object.hasOwn(source as object, key)
+    ? (source as Record<string, unknown>)[key]
+    : undefined;
+}
+
 export function resolveKeyPath(
   obj: Record<string, unknown>,
   path: string,
@@ -58,7 +77,7 @@ export function resolveKeyPath(
       if (typeof first === "string" && metadataResolver && isWikilink(first)) {
         const resolved = metadataResolver(first);
         if (resolved) {
-          current = (resolved as Record<string, unknown>)[part];
+          current = ownProperty(resolved, part);
           continue;
         }
         return undefined;
@@ -73,14 +92,14 @@ export function resolveKeyPath(
       ) {
         const resolved = metadataResolver(current);
         if (resolved) {
-          current = (resolved as Record<string, unknown>)[part];
+          current = ownProperty(resolved, part);
           continue;
         }
       }
       return undefined;
     }
 
-    current = (current as Record<string, unknown>)[part];
+    current = ownProperty(current, part);
   }
 
   return current;
