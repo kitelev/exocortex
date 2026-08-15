@@ -524,7 +524,7 @@ export class PrintNameRuleService {
     if (!Number.isFinite(order)) return;
 
     // exo__PrintedProperty → resolve the referenced property's frontmatter key (all wikilink forms).
-    const propertyKey = this.resolvePropertyKey(fm.exo__PrintedProperty_property);
+    const propertyKey = this.resolvePropertyKeyList(fm.exo__PrintedProperty_property);
     const rawLiteral = fm.exo__PrintedLiteral_literal;
     const literal = typeof rawLiteral === "string" ? rawLiteral : undefined;
 
@@ -605,7 +605,7 @@ export class PrintNameRuleService {
   }
 
   /**
-   * Resolve an exo__PrintedProperty_property reference to the frontmatter KEY it prints.
+   * Resolve a property reference to the ONE frontmatter KEY it names.
    * Handles every wikilink form so a spec authored either way works:
    *  - `[[uid|label]]` → the alias is the key (fast path, no hop);
    *  - `[[exo__Asset_label]]` → the bare target is already the key;
@@ -613,11 +613,48 @@ export class PrintNameRuleService {
    *    asset's exo__Asset_label (which equals its frontmatter key).
    */
   private resolvePropertyKey(value: unknown): string | null {
-    let raw = value;
-    if (Array.isArray(raw)) {
-      if (raw.length === 0) return null;
-      raw = raw[0];
+    // ⛔ SINGLE-key resolution — do NOT give this the preference-list semantics of
+    // `resolvePropertyKeyList` below. Its caller is `exo__DisplayNameSpec_matchPath`,
+    // whose matcher (`matcherSatisfied`) looks the resolved key up in the note's
+    // frontmatter: a joined `a|b` string is not a frontmatter key, so the lookup
+    // would yield `undefined` → `extractClassKeys([])` → the matcher NEVER fires and
+    // the conditional spec silently drops out of `getParticipatingRules`. A
+    // multi-value input therefore keeps the pre-list behaviour (take the first).
+    if (Array.isArray(value)) {
+      if (value.length === 0) return null;
+      return this.resolveSinglePropertyKey(value[0]);
     }
+    return this.resolveSinglePropertyKey(value);
+  }
+
+  /**
+   * Resolve an `exo__PrintedProperty_property` reference to the frontmatter key(s)
+   * the part prints.
+   *
+   * A MULTI-VALUE property is an ORDERED PREFERENCE LIST, not a set: "print the
+   * first of these that has a value". Compiled into the placeholder as `a|b|c`;
+   * `DisplayNameTemplateEngine.resolveValue` walks the candidates in order and
+   * returns the first non-empty render.
+   *
+   * WHY a list and not N parts: N parts would print EVERY candidate that is set
+   * (an effort carrying both an end and a start timestamp would render both dates),
+   * which is a concatenation, not a preference.
+   *
+   * Single-value input delegates to `resolvePropertyKey` and is byte-identical to
+   * the pre-list implementation.
+   */
+  private resolvePropertyKeyList(value: unknown): string | null {
+    if (Array.isArray(value) && value.length > 1) {
+      const keys = value
+        .map((v) => this.resolveSinglePropertyKey(v))
+        .filter((k): k is string => k !== null && k.length > 0);
+      return keys.length > 0 ? keys.join("|") : null;
+    }
+    return this.resolvePropertyKey(value);
+  }
+
+  /** Resolve ONE `exo__PrintedProperty_property` reference to its frontmatter key. */
+  private resolveSinglePropertyKey(raw: unknown): string | null {
     if (typeof raw !== "string") return null;
 
     const cleaned = raw
