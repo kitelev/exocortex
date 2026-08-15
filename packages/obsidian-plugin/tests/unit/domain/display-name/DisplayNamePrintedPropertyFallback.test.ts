@@ -370,3 +370,104 @@ describe("printName — exo__PrintedProperty_property as an ordered preference l
     ).toBe(PROTO_LABEL);
   });
 });
+
+/**
+ * The SECOND consumer of the key resolver: `exo__DisplayNameSpec_matchPath`.
+ *
+ * `resolvePropertyKey` is shared, and the preference-list semantics must NOT leak
+ * into it: `matcherSatisfied` looks the resolved key up in the note's frontmatter,
+ * so a joined `a|b` string is not a key, the lookup yields `undefined`, and the
+ * conditional spec silently stops matching — a behaviour regression with NO error,
+ * NO type change and no coverage from the list axes above (they never build a
+ * conditional spec). Hence a dedicated axis, on its own class so exactly one spec
+ * participates and the assertion has a single cause.
+ */
+describe("printName — matchPath keeps SINGLE-key semantics (list-resolution must not leak)", () => {
+  const COND_CLASS_UID = "6a99d2ca-d402-4734-a10b-33f5f1a1aa43";
+  const COND_SPEC_UID = "dddddddd-0000-4000-8000-000000000003";
+  const PROP_STATUS = "eeeeeeee-0000-4000-8000-00000000000f";
+  const STATUS_DOING = "cccccccc-0000-4000-8000-000000000001";
+
+  function condFixtures(matchPath: string | string[]): Fixture[] {
+    return [
+      propertyDef(PROP_STATUS, "ems__Effort_status"),
+      {
+        path: `${STATUS_DOING}.md`,
+        frontmatter: {
+          exo__Asset_uid: STATUS_DOING,
+          exo__Asset_label: "ems__EffortStatusDoing",
+        },
+      },
+      {
+        path: `${COND_SPEC_UID}.md`,
+        frontmatter: {
+          exo__Asset_uid: COND_SPEC_UID,
+          exo__Instance_class: [`[[${DISPLAY_NAME_SPEC_UID}]]`],
+          exo__DisplayNameSpec_appliesToClass: `[[${COND_CLASS_UID}|ems__CondAction]]`,
+          exo__DisplayNameSpec_priority: 400,
+          exo__DisplayNameSpec_separator: " ",
+          exo__DisplayNameSpec_matchPath: matchPath,
+          exo__DisplayNameSpec_matchValue: `[[${STATUS_DOING}|ems__EffortStatusDoing]]`,
+        },
+      },
+      printedProperty(
+        "ffffffff-0000-4000-8000-000000000021",
+        COND_SPEC_UID,
+        1,
+        [`[[${PROP_PROTOTYPE}]]`],
+      ),
+      printedProperty(
+        "ffffffff-0000-4000-8000-000000000022",
+        COND_SPEC_UID,
+        2,
+        `[[${PROP_END}]]`,
+        "YYYY",
+      ),
+    ];
+  }
+
+  /** Doing-status note of the conditional class; falls back to its raw label if unmatched. */
+  function condNote(): Record<string, unknown> {
+    return {
+      exo__Instance_class: [`[[${COND_CLASS_UID}|ems__CondAction]]`],
+      exo__Asset_prototype: `[[${PROTOTYPE_UID}]]`,
+      exo__Asset_label: "RAW LABEL",
+      ems__Effort_status: `[[${STATUS_DOING}|ems__EffortStatusDoing]]`,
+      ems__Effort_endTimestamp: "2026-08-14T17:23:18",
+    };
+  }
+
+  it("a MULTI-VALUE matchPath still matches on its FIRST element (pre-list behaviour)", () => {
+    const r = resolverFor([
+      ...baseFixtures(),
+      prototypeAsset(),
+      ...condFixtures([`[[${PROP_STATUS}]]`, `[[${PROP_END}]]`]),
+    ]);
+    // Giving matchPath the list semantics compiles matchKey to
+    // "ems__Effort_status|ems__Effort_endTimestamp", which is not a frontmatter
+    // key → matcher never fires → this renders "RAW LABEL" instead.
+    expect(r.resolve({ metadata: condNote(), basename: "x" })).toBe(
+      `${PROTO_LABEL} 2026`,
+    );
+  });
+
+  it("control: a SINGLE-value matchPath matches, and a non-matching value does not", () => {
+    const r = resolverFor([
+      ...baseFixtures(),
+      prototypeAsset(),
+      ...condFixtures(`[[${PROP_STATUS}]]`),
+    ]);
+    expect(r.resolve({ metadata: condNote(), basename: "x" })).toBe(
+      `${PROTO_LABEL} 2026`,
+    );
+    expect(
+      r.resolve({
+        metadata: {
+          ...condNote(),
+          ems__Effort_status: "[[something-else|ems__EffortStatusDone]]",
+        },
+        basename: "x",
+      }),
+    ).toBe("RAW LABEL");
+  });
+});

@@ -191,11 +191,19 @@ export class DisplayNameTemplateEngine {
    *
    * A plain `core.split(separator)` cuts the TEMPLATE, and a placeholder can
    * legitimately contain the separator inside its per-part value format:
-   * `{{ems__Effort_endTimestamp::YYYY-MM-DD HH:mm}}` under the (very common)
+   * `{{ems__Effort_endTimestamp::YYYY-MM-DD HH:mm}}` under
    * `exo__DisplayNameSpec_separator: " "`. The naive split produced
    * `{{…::YYYY-MM-DD` and `HH:mm}}`, neither of which is a placeholder, so the
    * raw template text leaked into the rendered name — silently, and only for
    * specs whose format happens to contain the separator character.
+   *
+   * Reach, measured over all three canonical vaults on 2026-08-15 (the specs
+   * live in shared assetspaces, so the three vaults agree): 3 specs declare a
+   * separator — `06606775` uses `" "`, `b836acf7` and `4ee3522b` use `" · "` —
+   * and BOTH shipped space-bearing formats (`DD.MM.YYYY HH:mm`, on `e8ded318`
+   * and `e910fa27`) belong to `" · "` specs. So the naive split never cut a
+   * name shipped to date; the defect goes live with the first spec that pairs
+   * `separator: " "` with a time-bearing format. Prospective, not current.
    *
    * Splitting outside placeholders is byte-identical for every template whose
    * placeholders do NOT contain the separator (i.e. every spec authored before
