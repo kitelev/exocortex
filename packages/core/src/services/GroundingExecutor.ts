@@ -1984,33 +1984,56 @@ export class GroundingExecutor {
       // blank resolved label as absent → "Untitled" fallback (which is then
       // flagged below). The labelTemplate path already guards blank at its
       // substitution site, so only the userInput.label === "" path reaches here.
-      const finalLabel =
-        label !== undefined && label.trim().length > 0 ? label : "Untitled";
-      properties.exo__Asset_label = finalLabel;
-      // ⛤ Test the CANONICAL spelling, not just the bare one. `createFrontmatter`
-      // collapses `exo__Asset_aliases` onto `aliases` (req 869561bf), but that
-      // happens LATER — so a template / propertyDefault / inheritance-rule
-      // supplying the prefixed key would leave `properties.aliases` undefined
-      // here, this guard would add the label-derived aliases anyway, and the
-      // collapse would then keep whichever landed last. On origin/main both keys
-      // survived (ugly, half-dead); silently dropping one would be worse.
-      const aliasesAlreadySet = Object.keys(properties).some(
-        (k) => canonicalYamlKey(k) === "aliases",
-      );
-      if (finalLabel !== "Untitled" && !aliasesAlreadySet) {
-        properties.aliases = [finalLabel];
-      }
-      // Only the genuine degraded fallthrough ("Untitled") is an
-      // unhealthy-state signal. Reaching this block is NORMAL for the one-click
-      // / CLI flow: Universal Default Template PD #3 (`exo__Asset_label =
-      // $userInputLabel`) writes an empty literal when no input modal supplies
-      // a label, and the labelTemplate / userInput path above is the *designed*
-      // completion — not a TS-fallback rescue. Pushing "exo__Asset_label" to
-      // `missing[]` unconditionally falsely tripped the "Vault may be in an
-      // unhealthy state" ERROR on every healthy labelTemplate-driven create
-      // (bug-fix: false-alarm log). Flag only the real "Untitled" fallback.
-      if (finalLabel === "Untitled") {
-        missing.push("exo__Asset_label");
+      // `omitLabel` opt-in: for a class whose display name is DERIVED at render
+      // time from an `exo__DisplayNameSpec`, an absent label is the intended end
+      // state — a stored one would be duplicated, stale-prone data sitting next to
+      // a spec that recomputes the name on every render. Honoured ONLY when
+      // nothing resolved a label, so an explicit `userInput.label` (or a
+      // `labelTemplate` that substitutes non-blank) still wins and takes the
+      // normal path below. DELETE rather than leave the key: an upstream
+      // PropertyDefault may have written a blank literal, and `exo__Asset_label: ""`
+      // on disk is worse than either a name or no key at all. No label-derived
+      // `aliases`, and no `missing[]` entry — the unhealthy-vault ERROR must not
+      // fire for a designed outcome. Absent/`false` → byte-identical to before.
+      //
+      // ⛔ Branch, do NOT early-return: the `exo__Instance_class` top-up and the
+      // `missing[]` report both live BELOW this block, and returning here would
+      // silently skip them for every omit-label create.
+      const omitLabelWins =
+        grounding?.omitLabel === true &&
+        (label === undefined || label.trim().length === 0);
+
+      if (omitLabelWins) {
+        delete properties.exo__Asset_label;
+      } else {
+        const finalLabel =
+          label !== undefined && label.trim().length > 0 ? label : "Untitled";
+        properties.exo__Asset_label = finalLabel;
+        // ⛤ Test the CANONICAL spelling, not just the bare one. `createFrontmatter`
+        // collapses `exo__Asset_aliases` onto `aliases` (req 869561bf), but that
+        // happens LATER — so a template / propertyDefault / inheritance-rule
+        // supplying the prefixed key would leave `properties.aliases` undefined
+        // here, this guard would add the label-derived aliases anyway, and the
+        // collapse would then keep whichever landed last. On origin/main both keys
+        // survived (ugly, half-dead); silently dropping one would be worse.
+        const aliasesAlreadySet = Object.keys(properties).some(
+          (k) => canonicalYamlKey(k) === "aliases",
+        );
+        if (finalLabel !== "Untitled" && !aliasesAlreadySet) {
+          properties.aliases = [finalLabel];
+        }
+        // Only the genuine degraded fallthrough ("Untitled") is an
+        // unhealthy-state signal. Reaching this block is NORMAL for the one-click
+        // / CLI flow: Universal Default Template PD #3 (`exo__Asset_label =
+        // $userInputLabel`) writes an empty literal when no input modal supplies
+        // a label, and the labelTemplate / userInput path above is the *designed*
+        // completion — not a TS-fallback rescue. Pushing "exo__Asset_label" to
+        // `missing[]` unconditionally falsely tripped the "Vault may be in an
+        // unhealthy state" ERROR on every healthy labelTemplate-driven create
+        // (bug-fix: false-alarm log). Flag only the real "Untitled" fallback.
+        if (finalLabel === "Untitled") {
+          missing.push("exo__Asset_label");
+        }
       }
     }
 

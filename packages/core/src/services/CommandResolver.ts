@@ -2036,6 +2036,21 @@ export class CommandResolver {
       targetsCreatedInstanceRaw !== null &&
       String(targetsCreatedInstanceRaw).trim().toLowerCase() === "true";
 
+    // create_instance opt-in: an absent label is INTENDED (the class derives its
+    // display name from an exo__DisplayNameSpec), so the executor must omit
+    // `exo__Asset_label` instead of writing "Untitled" + flagging an unhealthy
+    // vault. Boolean coercion mirrors `targetsCreatedInstance`. MUST be read HERE
+    // (the production loader — plugin button + CLI both go through
+    // CommandResolver.loadCommand); the sibling GroundingFrontmatterParser has no
+    // production consumers, so reading it only there leaves the flag inert.
+    const omitLabelRaw = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_omitLabel"),
+    );
+    const omitLabel =
+      omitLabelRaw !== null &&
+      String(omitLabelRaw).trim().toLowerCase() === "true";
+
     const grounding: GroundingDefinition = {
       id: uid,
       label,
@@ -2066,6 +2081,7 @@ export class CommandResolver {
       templateRef: templateRef ?? undefined,
       cloneTargetBody: cloneTargetBody || undefined,
       targetsCreatedInstance: targetsCreatedInstance || undefined,
+      omitLabel: omitLabel || undefined,
     };
 
     if (inputSchema) {
