@@ -890,3 +890,31 @@ export * from "./services/validation";
 // Export/Import of a domain's declared setting keys ↔ `setting__Setting` assets,
 // allowlist-by-construction. Pure (I/O injected by the caller).
 export * from "./services/settings";
+
+// ── displayName engine (req f17f7c57) ──────────────────────────────────────────
+// Lives in core so BOTH the plugin and the CLI compose names through ONE implementation
+// (UI/CLI parity #3417). The Obsidian coupling is isolated behind VaultMetadataPort; the
+// plugin supplies an Obsidian adapter, the CLI a filesystem one.
+export type { VaultMetadataPort } from "./domain/display-name/VaultMetadataPort";
+export type { DisplayNameSettings } from "./domain/display-name/DisplayNameSettings";
+export { DEFAULT_DISPLAY_NAME_SETTINGS } from "./domain/display-name/DisplayNameSettings";
+export { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService";
+export type {
+  ValueEqualityMatcher,
+  HostFunctionMatcher,
+  DisplayNameMatcher,
+  DisplayMatcherHostFunction,
+  DisplayMatcherHostFunctionRegistry,
+  PrintNameRule,
+  ParticipatingRule,
+} from "./domain/display-name/PrintNameRuleService";
+export { DisplayNameResolver, createDefaultResolver } from "./domain/display-name/DisplayNameResolver";
+export type { DisplayNameContext } from "./domain/display-name/DisplayNameResolver";
+export {
+  DisplayNameTemplateEngine,
+  DISPLAY_NAME_PRESETS,
+  DEFAULT_DISPLAY_NAME_TEMPLATE,
+} from "./domain/display-name/DisplayNameTemplateEngine";
+export type { DisplayNamePresetKey } from "./domain/display-name/DisplayNameTemplateEngine";
+export { resolveKeyPath, isWikilink } from "./domain/display-name/keyPathResolver";
+export type { MetadataResolver } from "./domain/display-name/keyPathResolver";
