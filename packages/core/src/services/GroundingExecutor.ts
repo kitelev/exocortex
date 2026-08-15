@@ -23,7 +23,7 @@ import {
 } from "../utilities/yamlScalar";
 import { canonicalYamlKey } from "./NoteToRDFConverter";
 import type { NamedQueryRunnerPort } from "./NamedQueryRunner";
-import { iriToVaultPath } from "../infrastructure/vault/iri";
+import { iriToVaultPath, vaultPathToIRI } from "../infrastructure/vault/iri";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { DateTimeParsing } from "../infrastructure/sparql/filters/functions/DateTimeParsing";
 import { LoggingService } from "./LoggingService";
@@ -1027,6 +1027,23 @@ export class GroundingExecutor {
       return { success: false, error: "service_call requires targetProperty as serviceId" };
     }
 
+    // Issue #4046 — mirror of the `executePropertySet` guard above. Both fields
+    // address the step's TARGET, so both set = an ambiguity the engine must NOT
+    // arbitrate silently. Before this fix `targetsCreatedInstance` was inert for
+    // service_call, so the pair could not conflict; now that it re-points the
+    // service's file, `targetQuery` (resolved ONLY inside executePropertySet)
+    // would be silently dropped. Refuse before doing any work.
+    if (
+      grounding.targetQuery !== undefined &&
+      grounding.targetsCreatedInstance === true
+    ) {
+      return {
+        success: false,
+        error:
+          "service_call: targetQuery and targetsCreatedInstance are mutually exclusive (both address the step's TARGET — pick one).",
+      };
+    }
+
     // RFC-028 Finding 5: built-in Project→Task conversion. Vault grounding
     // `abdbdf09` ("Convert to task") dispatches serviceId="convertToTask".
     // The conversion only needs the target file and the frontmatter pipeline
@@ -1118,7 +1135,47 @@ export class GroundingExecutor {
       }
     }
 
-    await service.execute(targetIRI, mergedInput);
+    // Issue #4046 — a service_call step that opted into
+    // `exocmd__Grounding_targetsCreatedInstance` must make the SERVICE act on
+    // the just-created asset, not on the composite click-target.
+    //
+    // `executeComposite` already re-points `stepPath` (→ `filePath` here) to
+    // `lastCreatedPath` for such a step, but every registered service resolves
+    // its file from the IRI it is handed — `IGroundingService.execute` has no
+    // file-path channel — so the flag was silently ignored for `service_call`
+    // and the step "succeeded" while operating on the click-target.
+    //
+    // Re-expressing `filePath` as an `obsidian://vault/<path>` IRI is the
+    // dialect BOTH target resolvers already accept: the CLI's
+    // `createPathBasedTargetResolver` strips it via `iriToVaultPath`, and the
+    // plugin's `createObsidianTargetResolver` decodes it and looks the path up
+    // in `app.vault`. A bare vault-relative path would NOT work: the plugin
+    // resolver treats a non-`obsidian://` input as a uid/@id and falls into a
+    // metadataCache scan that cannot match a file path.
+    //
+    // ⛤ Why the plugin lookup finds an asset a previous `create_instance` step
+    // has only just written — measured in the shipped runtime (Obsidian 1.13.7
+    // `app.js`), NOT assumed: `FileSystemAdapter.write` awaits
+    // `reconcileInternalFile` in a `finally`, which reaches
+    // `Vault.onChange("file-created")` → `fileMap[path] = new TFile(...)`. So the
+    // `TFile` exists in the Vault index before `adapter.write` resolves — and
+    // `Vault.create` itself adds no registration, it delegates to that very
+    // `adapter.write` and then calls `getAbstractFileByPath`. Frontmatter is a
+    // separate matter: `metadataCache` DOES lag, which is why
+    // `createRepairFolderService` reads it fresh from disk (req 8efc003c).
+    //
+    // Scoped to the opt-in flag on purpose: with the flag absent this is
+    // `targetIRI` byte-for-byte, so every existing grounding is unaffected.
+    // With the flag set but NO prior create_instance, `executeComposite` leaves
+    // `stepPath === filePath` (the click-target), so the step still targets the
+    // click-target. `$target` substitution above deliberately keeps using the
+    // source `targetIRI` (link-back semantics, see executeComposite).
+    const serviceTargetIRI =
+      grounding.targetsCreatedInstance === true && filePath
+        ? vaultPathToIRI(filePath)
+        : targetIRI;
+
+    await service.execute(serviceTargetIRI, mergedInput);
     return { success: true };
   }
 
