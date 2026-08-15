@@ -203,7 +203,8 @@ describe("resolve-display-name — the naming oracle outside Obsidian", () => {
 
     const port = new FsVaultMetadataAdapter(new FileSystemVaultAdapter(vault));
 
-    // Basename form resolves (Obsidian does this too) — proves the probe is not vacuously null.
+    // UUID form resolves (via the adapter's uuid index, step 2) — proves the probe is not
+    // vacuously null. ⛔ NOT the basename index: this filename IS a UUID, so step 2 answers first.
     expect(port.resolveLinkpathFrontmatter(LABELLED_UID)).not.toBeNull();
     // Alias-only form must NOT resolve through the naming path.
     expect(port.resolveLinkpathFrontmatter("t__AliasOnlyName")).toBeNull();
@@ -211,5 +212,23 @@ describe("resolve-display-name — the naming oracle outside Obsidian", () => {
     expect(
       new FileSystemVaultAdapter(vault).getFirstLinkpathDest("t__AliasOnlyName", ""),
     ).not.toBeNull();
+  });
+
+  it(`${REQ} a spec that participates but renders NOTHING reports source=basename, not spec`, async () => {
+    // The mirror of the string-comparison inversion — and the reason `source` cannot key on
+    // provenance alone. The spec participates, but its printed property is absent on the instance,
+    // so the engine renders null ("the affixes alone are not a name") and the filename stem is what
+    // the user sees. Reporting "spec" here would announce a working spec over a bare UID: exactly
+    // the alarm this command exists to raise, silenced.
+    write(`assetspaces/t/${LABELLESS_UID}.md`, {
+      exo__Asset_uid: LABELLESS_UID,
+      exo__Instance_class: [`[[${CLASS_UID}]]`],
+      // NOTE: t__Widget_serial — the property the spec's part prints — is deliberately absent.
+    });
+
+    const r = await resolveDisplayName(vault, `assetspaces/t/${LABELLESS_UID}.md`);
+
+    expect(r.displayName).toBe(r.basename); // a bare UID is showing …
+    expect(r.source).toBe("basename");      // … so say so, whatever the provenance was
   });
 });

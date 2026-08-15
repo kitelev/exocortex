@@ -127,15 +127,25 @@ export async function resolveDisplayName(
   const rawLabel = (metadata as Record<string, unknown>).exo__Asset_label;
   const hasLabel = typeof rawLabel === "string" && rawLabel.trim().length > 0;
 
-  // The engine says WHY; the only thing decided here is the split of its "default" verdict into
-  // label-vs-basename, which is a property of the asset (does it carry a label at all?) and not
-  // of the naming logic — so no naming decision is re-made on this side.
+  // ⛔ The null check comes FIRST, and it is not defensive tidiness. `render()` can return null
+  // even when a spec participated — the engine documents one such path ("every field empty → the
+  // affixes alone are not a name") and it is reachable in exactly the omitLabel shape this command
+  // was built for: a spec whose printed property is absent on the instance. Then the stem is what
+  // gets shown, so the stem is what `source` must report. Trusting provenance alone here would
+  // announce "a spec named this" over a bare UID — i.e. it would MISS the alarm, which is the same
+  // inversion the string-comparison version had, pointing the other way.
+  //
+  // Otherwise the engine says WHY, and the only thing decided here is the split of its "default"
+  // verdict into label-vs-basename — a property of the ASSET (does it carry a label?), not of the
+  // naming logic, so no naming decision is re-made on this side.
   const source: DisplayNameSource =
-    resolved.provenance === "default"
-      ? hasLabel
-        ? "label"
-        : "basename"
-      : resolved.provenance;
+    resolved.displayName === null
+      ? "basename"
+      : resolved.provenance === "default"
+        ? hasLabel
+          ? "label"
+          : "basename"
+        : resolved.provenance;
 
   const uid = (metadata as Record<string, unknown>).exo__Asset_uid;
 
