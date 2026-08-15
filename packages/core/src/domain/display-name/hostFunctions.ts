@@ -31,25 +31,22 @@ const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
  * True iff the effort is blocked by another effort — i.e. it carries `ems__Effort_blocker`
  * pointing at an asset whose own status is neither DONE nor TRASHED.
  *
- * ⛔ MOVED VERBATIM, INCLUDING A LIVE DEFECT — deliberately, because parity is the point of
- * req 5cd9fffe and "correct here, wrong in the plugin" would be worse than "identical in both".
- * The comparison below is against the SYMBOLIC status label (`ems__EffortStatusDone`), but
- * `exocortex-cli` writes the status as a bare `[[<uid>]]`; stripping the brackets then leaves a
- * UID, no branch matches, and a FINISHED blocker is reported as still blocking. Measured
- * 2026-08-15 on live data: 49 of 58 single-valued blockers store the bare-UID form, and 8
- * efforts currently carry a 🚩 they should not. That is the dual-IRI class, fixed by matching
- * BOTH forms — and it gets its own requirement, because the fix changes what the user sees.
- * Landing that fix HERE, once, now repairs both surfaces at once: this move is its precondition.
+ * ⛤ The dual-IRI defect this function shipped with is FIXED here (req d6cd2371 conformance):
+ * the status is normalised to its symbolic label first, so all three legal wikilink forms compare
+ * identically. Req 5cd9fffe moved the predicate to core verbatim, defect included, precisely so
+ * that this one fix would repair BOTH surfaces at once — the plugin and the CLI now change
+ * together, which is what "one implementation" was for. See `resolveStatusLabel` for the measured
+ * incidence (49 of 58 blockers, 8 efforts with a wrong 🚩) and for why the lookup goes through the
+ * vault rather than a UID table.
  *
- * ⛔ Likewise verbatim: a multi-valued `ems__Effort_blocker` (16 of the 74 measured) is flattened
- * by `String(...)` into a comma-joined string that resolves to nothing, so the predicate answers
- * "not blocked". Same reasoning — a behaviour change needs its own req. Characterised by test.
+ * ⛔ Still verbatim, and still deferred: a multi-valued `ems__Effort_blocker` (16 of the 74
+ * measured) is flattened by `String(...)` into a comma-joined string that resolves to nothing, so
+ * the predicate answers "not blocked". Characterised by test; its own fix, its own req.
  *
- * ⚠ ONE delta is NOT verbatim and is accepted deliberately: the port retries the linkpath with a
+ * ⚠ ONE delta is not verbatim and is accepted deliberately: the port retries the linkpath with a
  * `.md` suffix, which the inline original did not. It can only turn a previously UNRESOLVABLE
- * blocker into a resolvable one — i.e. strictly more links resolve — and it is the same retry the
- * engine has always done, so the two callers now agree rather than differ. The alternative was a
- * second port method whose only purpose is to resolve links WORSE.
+ * blocker into a resolvable one, and it is the same retry the engine has always done, so the two
+ * callers now agree rather than differ.
  */
 export function isEffortBlocked(
   vault: VaultMetadataPort,
@@ -69,13 +66,54 @@ export function isEffortBlocked(
     return false;
   }
 
-  const blockerStatus = blockerMetadata.ems__Effort_status || "";
-  const blockerStatusStr = String(blockerStatus).replace(/^\[\[|\]\]$/g, "");
+  const label = resolveStatusLabel(vault, blockerMetadata.ems__Effort_status);
 
-  return (
-    blockerStatusStr !== EffortStatus.DONE &&
-    blockerStatusStr !== EffortStatus.TRASHED
-  );
+  return label !== EffortStatus.DONE && label !== EffortStatus.TRASHED;
+}
+
+/**
+ * Normalise `ems__Effort_status` to its SYMBOLIC label (`ems__EffortStatusDone`), whichever of the
+ * three legal wikilink forms it was written in (req d6cd2371 conformance).
+ *
+ * ⛔ This is the dual-IRI fix. The predicate always compared against the symbolic label, but the
+ * value is written three ways and only ONE of them survived the bracket strip:
+ *
+ *   `[[ems__EffortStatusDone]]`   → `ems__EffortStatusDone`                    matched
+ *   `[[<uid>]]`                   → `<uid>`                                    NEVER matched
+ *   `[[<uid>|ems__…Done]]`        → `<uid>|ems__…Done`                         NEVER matched
+ *
+ * The bare-UID form is what `exocortex-cli` writes, so it is the COMMON one: measured 2026-08-15
+ * across all three vaults, 49 of 58 single-valued blockers stored it, and 8 efforts were showing a
+ * 🚩 whose blocker was finished. `BlockerHelpers.isEffortBlocked`'s own docstring already promised
+ * "status that is not DONE or TRASHED", and req d6cd2371 promised it "checks ITS status" — the
+ * code simply did not implement either for two forms out of three.
+ *
+ * ⛤ Resolved through the vault rather than against a UID table: `EffortStatus`'s own docstring
+ * says new code should "resolve UUIDs at runtime via the TBox lookup instead", and a hardcoded
+ * table would be a third copy of UIDs that already exist in `STATUS_UID_BY_ENUM` — one that
+ * silently rots if a status asset is ever renamed. The hop costs one metadataCache read (plugin)
+ * or one file read (CLI), and only for efforts that actually carry a blocker.
+ *
+ * ⚠ Fail-safe preserved: if the status asset cannot be resolved (its assetspace not mounted, a
+ * dangling link), the raw value is returned unchanged and therefore matches neither terminal
+ * label — i.e. "unknown status ⇒ still blocking", exactly the direction the pre-fix code took
+ * for an absent frontmatter. An effort that cannot be judged must not silently look unblocked.
+ */
+function resolveStatusLabel(vault: VaultMetadataPort, rawStatus: unknown): string {
+  const stripped = String(rawStatus ?? "").replace(/^\[\[|\]\]$/g, "");
+  if (stripped === "") return "";
+
+  // Alias form: the label after `|` is authoritative and needs no lookup.
+  if (stripped.includes("|")) {
+    return stripped.slice(stripped.indexOf("|") + 1).trim();
+  }
+  // Already symbolic — the form the enum is written in.
+  if (stripped.startsWith("ems__")) return stripped;
+
+  // Bare UID (or basename): ask the vault what that asset calls itself.
+  const fm = vault.resolveLinkpathFrontmatter(stripped);
+  const label = fm?.exo__Asset_label;
+  return typeof label === "string" && label.trim() ? label.trim() : stripped;
 }
 
 /**
