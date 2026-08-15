@@ -43,7 +43,13 @@ const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
  *
  * ⛔ Likewise verbatim: a multi-valued `ems__Effort_blocker` (16 of the 74 measured) is flattened
  * by `String(...)` into a comma-joined string that resolves to nothing, so the predicate answers
- * "not blocked". Same reasoning — a behaviour change needs its own req.
+ * "not blocked". Same reasoning — a behaviour change needs its own req. Characterised by test.
+ *
+ * ⚠ ONE delta is NOT verbatim and is accepted deliberately: the port retries the linkpath with a
+ * `.md` suffix, which the inline original did not. It can only turn a previously UNRESOLVABLE
+ * blocker into a resolvable one — i.e. strictly more links resolve — and it is the same retry the
+ * engine has always done, so the two callers now agree rather than differ. The alternative was a
+ * second port method whose only purpose is to resolve links WORSE.
  */
 export function isEffortBlocked(
   vault: VaultMetadataPort,

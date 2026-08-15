@@ -29,6 +29,13 @@ const GHOST_CLASS = "c1111111-1111-4222-8333-444444444444";
 const GHOST_SPEC = "c2222222-1111-4222-8333-444444444444";
 const GHOST_PART = "c3333333-1111-4222-8333-444444444444";
 
+const PROTO_CLASS = "e1111111-1111-4222-8333-444444444444";
+const PROTO_SPEC = "e2222222-1111-4222-8333-444444444444";
+const PROTO_PART = "e3333333-1111-4222-8333-444444444444";
+const THROW_CLASS = "f1111111-1111-4222-8333-444444444444";
+const THROW_SPEC = "f2222222-1111-4222-8333-444444444444";
+const THROW_PART = "f3333333-1111-4222-8333-444444444444";
+
 const TARGET = "d0000000-1111-4222-8333-444444444444";
 const BLOCKER = "d0000001-1111-4222-8333-444444444444";
 
@@ -88,12 +95,23 @@ function writeSpecTriple(
   });
 }
 
+/** A file with NO frontmatter at all — not even empty delimiters. */
+function writeRaw(rel: string, body: string): void {
+  const full = path.join(vault, rel);
+  mkdirSync(path.dirname(full), { recursive: true });
+  writeFileSync(full, body, "utf8");
+}
+
 beforeEach(() => {
   vault = mkdtempSync(path.join(tmpdir(), "exo-rdn-hf-"));
   writeSpecTriple(EFFORT_CLASS, "t__Effort", EFFORT_SPEC, EFFORT_PART, "isEffortBlocked", "t__Effort_serial");
   writeSpecTriple(PERIOD_CLASS, "t__Period", PERIOD_SPEC, PERIOD_PART, "isEpisodeOngoing", "t__Period_serial");
-  // Names an function that is registered NOWHERE — the fail-closed control.
+  // Names a function that is registered NOWHERE — the fail-closed control.
   writeSpecTriple(GHOST_CLASS, "t__Ghost", GHOST_SPEC, GHOST_PART, "thisFunctionDoesNotExist", "t__Ghost_serial");
+  // Names inherited from Object.prototype — the registry is indexed by a string that comes
+  // straight out of user frontmatter, so these are reachable, not hypothetical.
+  writeSpecTriple(PROTO_CLASS, "t__Proto", PROTO_SPEC, PROTO_PART, "toString", "t__Proto_serial");
+  writeSpecTriple(THROW_CLASS, "t__Throw", THROW_SPEC, THROW_PART, "valueOf", "t__Throw_serial");
 });
 
 afterEach(() => {
@@ -211,5 +229,75 @@ describe("resolve-display-name — host-function specs (req 5cd9fffe)", () => {
 
     expect(r.displayName).not.toContain("GH-0001");
     expect(r.uid).toBe(TARGET);
+  });
+  it(`${REQ} treats a blocker with NO frontmatter as still blocking (conservative, as before)`, async () => {
+    // The pre-move code did `getFileCache(f)?.frontmatter || {}` → status "" → neither DONE nor
+    // TRASHED → blocked. Routing through a port that returned null for BOTH "no such file" and
+    // "file with nothing in it" flipped that fail-safe into a fail-open. The port contract now
+    // distinguishes them; this axis is what keeps it distinguished.
+    writeRaw(`assetspaces/t/${BLOCKER}.md`, "just prose, no frontmatter at all\n");
+    write(`assetspaces/t/${TARGET}.md`, {
+      exo__Asset_uid: TARGET,
+      exo__Instance_class: [`[[${EFFORT_CLASS}]]`],
+      ems__Effort_blocker: `[[${BLOCKER}]]`,
+      t__Effort_serial: "EF-9001",
+    });
+
+    const r = await resolveDisplayName(vault, `assetspaces/t/${TARGET}.md`);
+
+    expect(r.displayName).toContain("EF-9001");
+    expect(r.source).toBe("spec");
+  });
+
+  it(`${REQ} is fail-closed for an Object.prototype name that RESOLVES (toString)`, async () => {
+    // A bare `registry[name]` lookup finds Object.prototype.toString — truthy, so the engine
+    // would CALL it and apply the spec. Verified by execution before fixing.
+    write(`assetspaces/t/${TARGET}.md`, {
+      exo__Asset_uid: TARGET,
+      exo__Instance_class: [`[[${PROTO_CLASS}]]`],
+      t__Proto_serial: "PR-0001",
+    });
+
+    const r = await resolveDisplayName(vault, `assetspaces/t/${TARGET}.md`);
+
+    expect(r.displayName).not.toContain("PR-0001");
+  });
+
+  it(`${REQ} is fail-closed for an Object.prototype name that THROWS (valueOf)`, async () => {
+    // `Object.prototype.valueOf(host, metadata)` throws TypeError, uncaught by matcherSatisfied —
+    // one stale spec would break naming for every asset of its class, which is exactly what the
+    // fail-closed control below claims cannot happen.
+    write(`assetspaces/t/${TARGET}.md`, {
+      exo__Asset_uid: TARGET,
+      exo__Instance_class: [`[[${THROW_CLASS}]]`],
+      t__Throw_serial: "TH-0001",
+    });
+
+    const r = await resolveDisplayName(vault, `assetspaces/t/${TARGET}.md`);
+
+    expect(r.displayName).not.toContain("TH-0001");
+    expect(r.uid).toBe(TARGET);
+  });
+
+  it(`${REQ} CHARACTERISES the multi-valued blocker: String(...) flattening means "not blocked"`, async () => {
+    // 16 of the 74 measured efforts carry an array here. `String([a,b])` joins with a comma, the
+    // linkpath never resolves, and the effort reads as unblocked. Carried over verbatim like the
+    // dual-IRI defect; locked so a future refactor cannot change it silently, and so its own fix
+    // has a revert-verify anchor.
+    write(`assetspaces/t/${BLOCKER}.md`, {
+      exo__Asset_uid: BLOCKER,
+      exo__Asset_label: "the blocker",
+      ems__Effort_status: "[[ems__EffortStatusBacklog]]",
+    });
+    write(`assetspaces/t/${TARGET}.md`, {
+      exo__Asset_uid: TARGET,
+      exo__Instance_class: [`[[${EFFORT_CLASS}]]`],
+      ems__Effort_blocker: [`[[${BLOCKER}]]`, "[[some-other-uid]]"],
+      t__Effort_serial: "EF-9001",
+    });
+
+    const r = await resolveDisplayName(vault, `assetspaces/t/${TARGET}.md`);
+
+    expect(r.displayName).not.toContain("EF-9001"); // ⛔ wrong in the domain, locked as parity
   });
 });

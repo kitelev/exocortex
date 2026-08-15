@@ -43,6 +43,9 @@ export class ObsidianVaultMetadataAdapter implements VaultMetadataPort {
     // module are in play, so this is the more robust reading of the same rule, not a relaxation
     // of it.
     if (!file || typeof file !== "object" || "children" in file) return null;
-    return this.app.metadataCache.getFileCache(file as TFile)?.frontmatter ?? null;
+    // ⛔ `{}` — NOT null — when the file resolves but has no frontmatter: see the port's
+    // contract. `getFileCache` returns null for an unindexed file too, but by this point the
+    // linkpath HAS resolved, so "resolved, nothing to read" is the honest reading.
+    return this.app.metadataCache.getFileCache(file as TFile)?.frontmatter ?? {};
   }
 }

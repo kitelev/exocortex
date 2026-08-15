@@ -35,5 +35,12 @@ export interface VaultMetadataPort {
    * part: a bare uid/basename that may or may not carry a `.md` suffix. **The adapter owns
    * that retry** — the engine does not call twice.
    */
+  /**
+   * ⛔ The two empty outcomes are DISTINCT and callers rely on the difference (req 5cd9fffe):
+   *   `null` — the linkpath did not resolve to a file at all;
+   *   `{}`   — it resolved, but that file carries no frontmatter.
+   * Collapsing them turned `isEffortBlocked`'s conservative "unknown status ⇒ still blocking"
+   * into a fail-open "not blocking", which is the wrong direction for a blocked marker.
+   */
   resolveLinkpathFrontmatter(linkpath: string): Record<string, unknown> | null;
 }
