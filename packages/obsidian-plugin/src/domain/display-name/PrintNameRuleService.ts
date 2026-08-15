@@ -613,11 +613,32 @@ export class PrintNameRuleService {
    *    asset's exo__Asset_label (which equals its frontmatter key).
    */
   private resolvePropertyKey(value: unknown): string | null {
-    let raw = value;
-    if (Array.isArray(raw)) {
-      if (raw.length === 0) return null;
-      raw = raw[0];
+    // A MULTI-VALUE `exo__PrintedProperty_property` is an ORDERED PREFERENCE
+    // LIST, not a set: "print the first of these that has a value". Compiled
+    // into the placeholder as `a|b|c`; `DisplayNameTemplateEngine.resolveValue`
+    // walks the candidates and returns the first non-empty render.
+    //
+    // WHY a list and not N parts: N parts would print EVERY candidate that is
+    // set (an effort carrying both an end and a start timestamp would render
+    // both), which is a concatenation, not a preference.
+    //
+    // Single-value input takes the `length === 1` path below and behaves
+    // byte-identically to the pre-list implementation.
+    if (Array.isArray(value)) {
+      if (value.length === 0) return null;
+      if (value.length > 1) {
+        const keys = value
+          .map((v) => this.resolveSinglePropertyKey(v))
+          .filter((k): k is string => k !== null && k.length > 0);
+        return keys.length > 0 ? keys.join("|") : null;
+      }
+      return this.resolveSinglePropertyKey(value[0]);
     }
+    return this.resolveSinglePropertyKey(value);
+  }
+
+  /** Resolve ONE `exo__PrintedProperty_property` reference to its frontmatter key. */
+  private resolveSinglePropertyKey(raw: unknown): string | null {
     if (typeof raw !== "string") return null;
 
     const cleaned = raw

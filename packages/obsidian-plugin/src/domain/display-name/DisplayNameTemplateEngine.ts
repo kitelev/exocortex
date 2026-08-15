@@ -149,7 +149,10 @@ export class DisplayNameTemplateEngine {
     const suffix = this.template.slice(last + 2);
 
     const rendered: string[] = [];
-    for (const field of core.split(separator)) {
+    for (const field of DisplayNameTemplateEngine.splitOutsidePlaceholders(
+      core,
+      separator,
+    )) {
       const cleaned = this.cleanupResult(
         this.renderSegment(field, metadata, basename, createdDate, metadataResolver),
       );
@@ -180,6 +183,57 @@ export class DisplayNameTemplateEngine {
 
     const joined = `${renderedPrefix}${rendered.join(separator)}${renderedSuffix}`.trim();
     return joined === "" ? null : joined;
+  }
+
+  /**
+   * Split the core into fields on `separator`, but NEVER inside a `{{…}}`
+   * placeholder.
+   *
+   * A plain `core.split(separator)` cuts the TEMPLATE, and a placeholder can
+   * legitimately contain the separator inside its per-part value format:
+   * `{{ems__Effort_endTimestamp::YYYY-MM-DD HH:mm}}` under the (very common)
+   * `exo__DisplayNameSpec_separator: " "`. The naive split produced
+   * `{{…::YYYY-MM-DD` and `HH:mm}}`, neither of which is a placeholder, so the
+   * raw template text leaked into the rendered name — silently, and only for
+   * specs whose format happens to contain the separator character.
+   *
+   * Splitting outside placeholders is byte-identical for every template whose
+   * placeholders do NOT contain the separator (i.e. every spec authored before
+   * a space-bearing format existed), so this is a strict widening.
+   *
+   * An unterminated `{{` (malformed template) is treated as literal text — the
+   * scan falls through to the character-by-character branch rather than
+   * swallowing the remainder of the core.
+   */
+  private static splitOutsidePlaceholders(
+    core: string,
+    separator: string,
+  ): string[] {
+    if (separator.length === 0) return [core];
+
+    const fields: string[] = [];
+    let buffer = "";
+    let i = 0;
+    while (i < core.length) {
+      if (core.startsWith("{{", i)) {
+        const end = core.indexOf("}}", i + 2);
+        if (end !== -1) {
+          buffer += core.slice(i, end + 2);
+          i = end + 2;
+          continue;
+        }
+      }
+      if (core.startsWith(separator, i)) {
+        fields.push(buffer);
+        buffer = "";
+        i += separator.length;
+        continue;
+      }
+      buffer += core[i];
+      i += 1;
+    }
+    fields.push(buffer);
+    return fields;
   }
 
   /**
@@ -257,20 +311,50 @@ export class DisplayNameTemplateEngine {
     // ignored (the key is then used verbatim).
     const { path, format } = DisplayNameTemplateEngine.splitKeyAndFormat(key);
 
-    // Handle dot notation for nested fields (with cross-asset resolution)
-    const value = this.getNestedValue(metadata, path, metadataResolver);
+    // A part may declare an ORDERED PREFERENCE LIST rather than one key —
+    // `exo__PrintedProperty_property` as a multi-value wikilink list, compiled
+    // into `{{a|b|c::FORMAT}}` by PrintNameRuleService. Semantics: FIRST
+    // NON-EMPTY wins; the shared `format` applies to whichever candidate won.
+    //
+    // WHY a list and not N parts: N separate parts would print EVERY candidate
+    // that happens to be set (an effort with both an end and a start timestamp
+    // would render both), which is not a preference — it is a concatenation.
+    //
+    // `|` is safe as the separator for the same reason `::` is: a frontmatter
+    // key has the shape `prefix__Name` and a dot-path `a.b` — neither can
+    // contain it. A single-candidate path (every template authored before this)
+    // takes the loop's first iteration and behaves byte-identically.
+    const candidates = path.includes("|")
+      ? path
+          .split("|")
+          .map((c) => c.trim())
+          .filter((c) => c.length > 0)
+      : [path];
 
-    if (format) {
-      // Format the RAW value — BEFORE formatValue, which would JSON.stringify a Date into
-      // `"2026-01-24T13:50:17.000Z"` (quotes included) and lose the literal digits.
-      const formatted = DisplayNameTemplateEngine.applyValueFormat(value, format);
-      if (formatted !== null) {
-        return formatted;
+    let lastRendered = "";
+    for (const candidate of candidates) {
+      // Handle dot notation for nested fields (with cross-asset resolution)
+      const value = this.getNestedValue(metadata, candidate, metadataResolver);
+
+      let rendered: string;
+      if (format) {
+        // Format the RAW value — BEFORE formatValue, which would JSON.stringify a Date into
+        // `"2026-01-24T13:50:17.000Z"` (quotes included) and lose the literal digits.
+        const formatted = DisplayNameTemplateEngine.applyValueFormat(value, format);
+        // Fail-open: unrecognised value → print it as usual.
+        rendered = formatted !== null ? formatted : this.formatValue(value, metadataResolver);
+      } else {
+        rendered = this.formatValue(value, metadataResolver);
       }
-      // Fail-open: unrecognised value → fall through and print it as usual.
+
+      if (rendered !== "") return rendered;
+      lastRendered = rendered;
     }
 
-    return this.formatValue(value, metadataResolver);
+    // Every candidate resolved empty — return the empty string so the
+    // separator-mode join drops the field together with its separator, exactly
+    // as a single absent property already did.
+    return lastRendered;
   }
 
   /** Split a placeholder key into its frontmatter path and its optional value format. */
