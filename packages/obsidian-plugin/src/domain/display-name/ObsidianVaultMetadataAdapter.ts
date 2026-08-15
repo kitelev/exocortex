@@ -1,0 +1,39 @@
+import { TFile } from "obsidian";
+import type { App } from "obsidian";
+import type { VaultMetadataPort } from "@kitelev/exocortex-core";
+
+/**
+ * The Obsidian half of {@link VaultMetadataPort} (req f17f7c57).
+ *
+ * This is the ONLY place the displayName engine still touches Obsidian. Everything the engine
+ * used to call `this.app.*` for now arrives through these two methods — which is what lets the
+ * exact same engine run under the CLI's filesystem adapter and keeps `packages/core` free of an
+ * `obsidian` dependency.
+ *
+ * Behaviourally identical to the code it replaces: same `getMarkdownFiles` walk, same
+ * `getFileCache(...)?.frontmatter` read, same `getFirstLinkpathDest` call — including the
+ * `.md`-suffix retry, which lives here because it is an Obsidian linkpath quirk rather than a
+ * naming rule (the engine asks once; see the port's docstring).
+ */
+export class ObsidianVaultMetadataAdapter implements VaultMetadataPort {
+  constructor(private readonly app: App) {}
+
+  *listFrontmatter(): Iterable<Record<string, unknown>> {
+    // A generator, so a large vault is streamed rather than materialised — the scanner
+    // consumes it exactly once. Files without frontmatter are skipped here, matching the
+    // `if (!fm) continue` the scanner used to do itself.
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (fm) yield fm;
+    }
+  }
+
+  resolveLinkpathFrontmatter(linkpath: string): Record<string, unknown> | null {
+    let file = this.app.metadataCache.getFirstLinkpathDest(linkpath, "");
+    if (!file && !linkpath.endsWith(".md")) {
+      file = this.app.metadataCache.getFirstLinkpathDest(`${linkpath}.md`, "");
+    }
+    if (!(file instanceof TFile)) return null;
+    return this.app.metadataCache.getFileCache(file)?.frontmatter ?? null;
+  }
+}
