@@ -293,7 +293,16 @@ export class PrintNameRuleService {
       // TypeError uncaught and break naming for every asset of that class. Verified by
       // execution, not reasoning. Pre-existing since the `{}` default; it becomes load-bearing
       // now that req 5cd9fffe ships a registry and a test asserting fail-closed.
-      if (!Object.hasOwn(this.hostFunctions, matcher.hostFunction)) return false;
+      // ⛔ `hasOwnProperty.call`, not `Object.hasOwn` (ES2022) — the plugin builds to `es2020`
+      // and ships `isDesktopOnly: false`; esbuild transpiles syntax, not runtime APIs. Same
+      // predicate, no runtime floor. See the note on `ownProperty` in keyPathResolver.
+      if (
+        !Object.prototype.hasOwnProperty.call(
+          this.hostFunctions,
+          matcher.hostFunction,
+        )
+      )
+        return false;
       const fn = this.hostFunctions[matcher.hostFunction];
       if (typeof fn !== "function") return false;
       return fn(this.host, metadata);
@@ -303,6 +312,19 @@ export class PrintNameRuleService {
     // resolver is built LAZILY — only a dot-path pays for it. A single-component key takes
     // the flat read below, byte-for-byte the pre-fedeaa6e line, so the no-dot path cannot
     // regress structurally.
+    //
+    // ⚠ That flat read is a bare index, so a one-component matchKey named after an
+    // Object.prototype member reads off the prototype — the same class req 4a2e6b80 closes in
+    // the walk. It is inert today: a prototype member is a function and `extractClassKeys`
+    // rejects a non-string, so the matcher returns false either way. But it is fail-closed BY
+    // ACCIDENT of that downstream guard rather than by decision here, and this branch is the one
+    // carrying live traffic (all 16 `matchPath` values in the vault are single-component).
+    // Deliberately NOT changed under req 4a2e6b80, whose non-goals exclude this file. ⛤ The
+    // reason is NOT scaffolding cost — the fixture is one line over the existing createMockApp.
+    // It is that the ONLY input separating the two versions is an inherited STRING, i.e.
+    // prototype-chained frontmatter, a shape no parser here can emit. So the axis would be a
+    // synthetic guard over an impossible input; whether that is worth having is a design
+    // question, and that is what makes it its own unit of work. Tracked in issue #4059.
     const raw = matcher.matchKey.includes(".")
       ? resolveKeyPath(metadata, matcher.matchKey, this.createMetadataResolver())
       : metadata[matcher.matchKey];

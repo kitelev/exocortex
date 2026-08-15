@@ -28,6 +28,32 @@ export function isWikilink(value: string): boolean {
 }
 
 /**
+ * Read a key-path segment as an OWN property only (req 4a2e6b80; the twin closed by 5cd9fffe).
+ *
+ * ⛔ Segments come from `exo__DisplayNameSpec_matchKey` / part definitions — i.e. from user
+ * frontmatter — so a plain `obj[part]` reaches Object.prototype: a segment named `toString` or
+ * `constructor` yields a FUNCTION and the walk continues over it instead of stopping. Verified by
+ * execution, not reasoning; it is the same reachable-by-data hole closed in
+ * `PrintNameRuleService.matcherSatisfied`, and fixing only the one I happened to notice would
+ * leave its twin sixty lines away.
+ *
+ * ⚠ Arrays keep working: numeric indices and `length` are own properties of an array.
+ *
+ * ⛔ `hasOwnProperty.call`, NOT `Object.hasOwn` — the latter is ES2022 while the plugin builds to
+ * `target: "es2020"` and ships with `isDesktopOnly: false`. esbuild transpiles syntax, not runtime
+ * APIs, so on a runtime below Safari/iOS 15.4 `Object.hasOwn` is a TypeError — and neither this
+ * function nor either of its callers has a try/catch, so the failure mode would be "every key-path
+ * walk throws", not "one matcher fails closed". The two forms are behaviourally identical here
+ * (verified across 42 input shapes); this one has no floor.
+ */
+function ownProperty(source: unknown, key: string): unknown {
+  if (source === null || typeof source !== "object") return undefined;
+  return Object.prototype.hasOwnProperty.call(source, key)
+    ? (source as Record<string, unknown>)[key]
+    : undefined;
+}
+
+/**
  * Walk `path` (dot-separated) through `obj`, hopping across wikilink references via
  * `metadataResolver`. Returns `undefined` when any segment is missing or unresolvable.
  */
@@ -58,7 +84,7 @@ export function resolveKeyPath(
       if (typeof first === "string" && metadataResolver && isWikilink(first)) {
         const resolved = metadataResolver(first);
         if (resolved) {
-          current = (resolved as Record<string, unknown>)[part];
+          current = ownProperty(resolved, part);
           continue;
         }
         return undefined;
@@ -73,14 +99,14 @@ export function resolveKeyPath(
       ) {
         const resolved = metadataResolver(current);
         if (resolved) {
-          current = (resolved as Record<string, unknown>)[part];
+          current = ownProperty(resolved, part);
           continue;
         }
       }
       return undefined;
     }
 
-    current = (current as Record<string, unknown>)[part];
+    current = ownProperty(current, part);
   }
 
   return current;
