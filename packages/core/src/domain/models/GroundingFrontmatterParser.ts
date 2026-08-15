@@ -128,6 +128,13 @@ export function parseGroundingDefinitionFromFrontmatter(
   const targetsCreatedInstance =
     rawTargetsCreatedInstance === true || rawTargetsCreatedInstance === "true";
 
+  // create_instance opt-in: an absent `exo__Asset_label` is INTENDED (the class
+  // derives its display name from an exo__DisplayNameSpec), so the executor omits
+  // the key instead of writing "Untitled". Same boolean-tolerant coercion.
+  // (Parity with CommandResolver — the production loader.)
+  const rawOmitLabel = fm["exocmd__Grounding_omitLabel"];
+  const omitLabel = rawOmitLabel === true || rawOmitLabel === "true";
+
   // req faf269bf — TARGET-side NamedQuery ref (which asset the step writes
   // INTO). Wikilink → bare UID, same normalization as `templateRef`, mirroring
   // the production loader's `getObsidianName` unwrap.
@@ -170,6 +177,7 @@ export function parseGroundingDefinitionFromFrontmatter(
     templateRef,
     cloneTargetBody,
     targetsCreatedInstance,
+    omitLabel,
     targetQuery,
     steps,
   };
