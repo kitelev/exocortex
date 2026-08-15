@@ -72,10 +72,14 @@ export function isEffortBlocked(
 }
 
 /**
- * The exact shape of a symbolic status label. Deliberately the SAME regex the two sibling
- * normalisers use (`GroundingExecutor.resolveStatusFromFrontmatter`) rather than a looser
+ * The exact shape of a symbolic status label. Deliberately the SAME regex the sibling normaliser
+ * uses (`GroundingExecutor.resolveStatusFromFrontmatter`) rather than a looser
  * `startsWith("ems__")`: the loose test short-circuits the vault lookup for forms that are not
  * labels at all, e.g. the documented `ems__EffortStatusDone <uuid>` shape.
+ *
+ * ⚠ The OTHER sibling (`getStatusLabel` in PropertySchemas) does NOT use this regex — it
+ * lowercases and looks the value up in `SYMBOLIC_STATUS_LABEL_FALLBACK` / `EFFORT_STATUS_VALUES`.
+ * Naming both here would be the same over-claim this file already made once about alias forms.
  */
 const SYMBOLIC_STATUS_RE = /^ems__EffortStatus[A-Za-z]+$/;
 const TRAILING_UUID_RE =
@@ -108,6 +112,13 @@ const TRAILING_UUID_RE =
  * (`PropertySchemas`) — and BOTH had to be hand-edited when `ToDo`/`Analysis` were deleted on
  * 2026-08-13 (both cite req `fcbde537`). A third copy would be a third proven drift point, and
  * importing either into `domain/` would invert the layering.
+ *
+ * ⛔ That is a TRADE, not a strict improvement, and the next reader should not conclude otherwise:
+ * a UID table rots when a status UID changes; this lookup rots when the status asset's
+ * `exo__Asset_label` stops being exactly the enum string. Relabel it to `"Done"` and every blocker
+ * reads as blocking — fail-safe and loud, but wrong. No test here can catch it: the ems submodule
+ * is not mounted in this repo, which is why `GroundingExecutor.status_uid_integrity.test.ts`
+ * asserts only the map's internal shape. The guarantee is the vault's, not the suite's.
  *
  * @see GroundingExecutor.resolveStatusFromFrontmatter — the same vocabulary, UID-table based
  * @see getStatusLabel in PropertySchemas — the same vocabulary again, for the property editor

@@ -3202,8 +3202,7 @@ export class GroundingExecutor {
    * `"[[<UID>|ems__EffortStatusDoing]]"` or `"[[ems__EffortStatusDoing]]"`)
    * and resolves to the symbolic EffortStatus enum value (which is what
    * WorkflowTransition.from comparison expects).
-   */
-  /**
+   *
    * ⛤ THIRD of three readers of the same `ems__Effort_status` vocabulary. They disagree on edge
    * shapes, so a change to the status forms has to visit all three (multi-parser-predicate-
    * migration): this one is UID-table based and rejects a multi-element list loudly.
