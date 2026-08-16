@@ -2,7 +2,7 @@ import { existsSync, statSync } from "fs";
 import { readFile } from "fs/promises";
 import { dirname, resolve } from "path";
 import * as glob from "glob";
-import { loadMarkdownAssets } from "./assets.js";
+import { scanMarkdownAssets, type DroppedAsset } from "./assets.js";
 
 /**
  * RFC 0003 (requirements management) P1 — traceability checker.
@@ -46,6 +46,37 @@ const DEFAULT_TEST_GLOBS = [
 ];
 
 const TEST_GLOB_IGNORE = ["**/node_modules/**", "**/dist/**", "**/.git/**"];
+
+/**
+ * The reqs assetspaces the corpus is DECLARED to consist of — the population
+ * floor for the always-on active-gate (issue #4066, req
+ * `bba7bd2b-de7a-4043-bfb8-df56bd3d2a0a`). Each name is a top-level directory
+ * under `--reqs`, i.e. a clone destination of the `Clone reqs assetspaces` step
+ * in `.github/workflows/ci.yml`.
+ *
+ * ⛔ DECLARED, deliberately — NOT derived by listing the directories that
+ * happen to be on disk. A population read off the observed input cannot detect
+ * that one of its own members went missing: the measured failure (a corpus
+ * where `exoas-ems-reqs` is absent entirely → 163 requirements / 154 active →
+ * `BLOCKING GATE EXIT: 0`) leaves no directory to enumerate. `git clone` of an
+ * emptied or renamed repo exits 0, so the clone step does not fail either — the
+ * loss is silent in every other channel.
+ *
+ * Kept in sync with the workflow by a test that extracts the clone destinations
+ * out of the shipped `ci.yml` and compares the two sets (the two carriers
+ * cannot be collapsed into one without moving the clone step into a loop, so
+ * the drift is pinned by an executable check instead).
+ */
+export const DECLARED_REQS_ASSETSPACES: readonly string[] = [
+  "exoas-exo-reqs",
+  "exoas-ems-reqs",
+];
+
+/** Top-level segment of a corpus-relative path — the assetspace it came from. */
+function assetspaceOf(relPath: string): string {
+  const slash = relPath.indexOf("/");
+  return slash === -1 ? "(root)" : relPath.slice(0, slash);
+}
 
 /**
  * Maps a `req__RequirementBindingClass<Token>` capture (the local-name suffix of
@@ -229,6 +260,36 @@ export interface DanglingEvidenceFinding {
   missing: string[];
 }
 
+/**
+ * Per-assetspace corpus size — the INPUT size reported next to the finding
+ * count, so "0 violations" can never be read without knowing what was scanned
+ * (issue #4066). Carries an entry for every DECLARED assetspace even when it
+ * contributed nothing (`requirements: 0`), which is exactly the case the
+ * population floor exists to make loud.
+ */
+export interface AssetspaceCorpusCount {
+  /** Top-level directory under `--reqs` (a reqs assetspace clone destination). */
+  assetspace: string;
+  /** Requirements loaded from it. */
+  requirements: number;
+  /** Of those, how many are `active`. */
+  active: number;
+  /** True iff this assetspace is in {@link DECLARED_REQS_ASSETSPACES}. */
+  declared: boolean;
+}
+
+/** Options for {@link auditTraceability} — inputs the pure audit cannot discover itself. */
+export interface AuditOptions {
+  /**
+   * Assetspaces that MUST each contribute ≥1 requirement. Empty/omitted
+   * disables the per-assetspace floor (the pure function stays usable for a
+   * partial corpus, e.g. a fixture that models a single assetspace).
+   */
+  expectedAssetspaces?: readonly string[];
+  /** Assets the loader could not classify (unreadable / unparseable frontmatter). */
+  droppedAssets?: readonly DroppedAsset[];
+}
+
 export interface TraceabilityReport {
   requirementCount: number;
   tagCount: number;
@@ -289,8 +350,21 @@ export interface TraceabilityReport {
    */
   activeViolations: ActiveViolationFinding[];
   /**
-   * Population floor for the always-on active-gate: non-null iff `activeTotal`
-   * is 0, i.e. the gate has NOTHING to enforce (req `99e06488-2da6-48fe-bd64-30c1e20bca0f`).
+   * Corpus size broken down by assetspace — the INPUT size reported next to the
+   * finding count (issue #4066). Sorted by name; includes declared-but-absent
+   * assetspaces with `requirements: 0`.
+   */
+  corpusByAssetspace: AssetspaceCorpusCount[];
+  /**
+   * Assets found on disk but never classified — unreadable, or a frontmatter
+   * fence that does not parse. A requirement that cannot be read is BROKEN, not
+   * absent; these feed `inputIntegrityViolation` (issue #4066).
+   */
+  droppedAssets: DroppedAsset[];
+  /**
+   * Population floor for the always-on active-gate: non-null iff the gate's
+   * INPUT is broken (req `99e06488-2da6-48fe-bd64-30c1e20bca0f` for the total
+   * loss, req `bba7bd2b-de7a-4043-bfb8-df56bd3d2a0a` for the partial one).
    *
    * `activeViolations` alone cannot distinguish "no violations" from "the corpus
    * never arrived": a requirement is detected purely by the PRESENCE of a
@@ -397,10 +471,30 @@ export function parseEvidence(value: unknown): string[] {
  * frontmatter property (namespace-unambiguous: the assetspace anchor and TBox
  * enum assets do not have it).
  */
-export async function loadRequirements(
-  reqsPath: string,
-): Promise<RequirementRecord[]> {
-  const assets = await loadMarkdownAssets(reqsPath);
+export interface CorpusScan {
+  requirements: RequirementRecord[];
+  /**
+   * Assets that never reached classification (unreadable / unparseable
+   * frontmatter), with the vendored dirs filtered out exactly as the
+   * requirement walk filters them.
+   */
+  dropped: DroppedAsset[];
+}
+
+/** True for a corpus-relative path inside a vendored / VCS directory. */
+function isVendoredPath(relPath: string): boolean {
+  const segments = relPath.split("/");
+  return segments.includes("node_modules") || segments.includes(".git");
+}
+
+/**
+ * Load the requirements corpus AND the assets that were dropped on the way —
+ * one disk pass (issue #4066).
+ *
+ * {@link loadRequirements} is the requirements-only view of this.
+ */
+export async function loadCorpus(reqsPath: string): Promise<CorpusScan> {
+  const { assets, dropped } = await scanMarkdownAssets(reqsPath);
   const requirements: RequirementRecord[] = [];
   // Resolve evidence paths against the committed reqs tree. An evidence path
   // counts as resolving ONLY when it points to an existing file INSIDE the reqs
@@ -415,8 +509,7 @@ export async function loadRequirements(
   for (const { path: relPath, metadata } of assets) {
     // Skip vendored / VCS dirs — each per-module reqs clone carries its own
     // `.git/` when the CI job clones several into one parent (RFC 0003 §3.2).
-    const segments = relPath.split("/");
-    if (segments.includes("node_modules") || segments.includes(".git")) continue;
+    if (isVendoredPath(relPath)) continue;
     if (metadata["req__Requirement_status"] === undefined) continue;
 
     const uid =
@@ -458,7 +551,20 @@ export async function loadRequirements(
     });
   }
 
-  return requirements;
+  return {
+    requirements,
+    dropped: dropped.filter((d) => !isVendoredPath(d.path)),
+  };
+}
+
+/**
+ * The requirements-only view of {@link loadCorpus} — the historical entry point,
+ * kept so every caller that does not care about dropped assets is unaffected.
+ */
+export async function loadRequirements(
+  reqsPath: string,
+): Promise<RequirementRecord[]> {
+  return (await loadCorpus(reqsPath)).requirements;
 }
 
 /**
@@ -512,6 +618,7 @@ export async function scanTestTags(
 export function auditTraceability(
   requirements: RequirementRecord[],
   tags: TagOccurrence[],
+  options: AuditOptions = {},
 ): TraceabilityReport {
   const reqByUid = new Map<string, RequirementRecord>();
   for (const r of requirements) reqByUid.set(r.uid.toLowerCase(), r);
@@ -693,15 +800,76 @@ export function auditTraceability(
     activeViolations.length === 0 &&
     danglingEvidence.length === 0;
 
-  // Population floor for the always-on active-gate (req 99e06488-2da6-48fe-bd64-30c1e20bca0f).
-  // `activeTotal === 0` makes the blocking gate vacuous, and vacuous reads as
-  // GREEN — so it must be reported as a broken INPUT, never as "no findings".
-  // Deliberately NOT folded into `clean` / the exit code: `--gate soft|hard`
-  // semantics stay byte-identical; only the blocking CI step consumes this.
-  const inputIntegrityViolation =
-    activeTotal > 0
-      ? null
-      : requirementCount === 0
+  // Corpus size per assetspace — the INPUT size reported next to the finding
+  // count (issue #4066). Declared assetspaces always get an entry, so one that
+  // contributed nothing shows up as a 0 instead of simply being absent.
+  const declared = options.expectedAssetspaces ?? [];
+  const declaredSet = new Set(declared);
+  const perAssetspace = new Map<string, { requirements: number; active: number }>();
+  for (const name of declared) {
+    perAssetspace.set(name, { requirements: 0, active: 0 });
+  }
+  for (const r of requirements) {
+    const name = assetspaceOf(r.path);
+    const entry = perAssetspace.get(name) ?? { requirements: 0, active: 0 };
+    entry.requirements += 1;
+    if (r.status?.toLowerCase() === "active") entry.active += 1;
+    perAssetspace.set(name, entry);
+  }
+  const corpusByAssetspace: AssetspaceCorpusCount[] = [...perAssetspace.entries()]
+    .map(([assetspace, counts]) => ({
+      assetspace,
+      requirements: counts.requirements,
+      active: counts.active,
+      declared: declaredSet.has(assetspace),
+    }))
+    .sort((a, b) => a.assetspace.localeCompare(b.assetspace));
+
+  // A DECLARED assetspace that contributed nothing = the partial corpus loss
+  // (issue #4066): the surviving assetspaces still produce a plausible active
+  // count, so `activeViolations` stays empty and the gate reads GREEN.
+  const emptyDeclared = declared.filter(
+    (name) => (perAssetspace.get(name)?.requirements ?? 0) === 0,
+  );
+  const droppedAssets = [...(options.droppedAssets ?? [])];
+
+  // Population floor for the always-on active-gate (reqs 99e06488-2da6-48fe-bd64-30c1e20bca0f
+  // + bba7bd2b-de7a-4043-bfb8-df56bd3d2a0a). A broken INPUT makes the blocking
+  // gate vacuous, and vacuous reads as GREEN — so it must be reported as a
+  // broken INPUT, never as "no findings". Deliberately NOT folded into `clean` /
+  // the exit code: `--gate soft|hard` semantics stay byte-identical; only the
+  // blocking CI step consumes this. Reasons are joined so several broken inputs
+  // are all named at once (the missing assetspace is the root, a zero active
+  // count is usually its symptom).
+  const integrityReasons: string[] = [];
+  if (emptyDeclared.length > 0) {
+    integrityReasons.push(
+      `the declared requirements assetspace(s) [${emptyDeclared.join(", ")}] ` +
+        "contributed NO requirement. The gate's INPUT is broken, not clean: a " +
+        "declared assetspace that yields nothing means either its clone never " +
+        "arrived (an emptied or renamed repo still exits 0, so the clone step " +
+        "does not fail) or its assets stopped carrying `req__Requirement_status`. " +
+        "The surviving assetspaces still produce a plausible active count, so " +
+        "the invariant check has nothing to notice.",
+    );
+  }
+  if (droppedAssets.length > 0) {
+    const listed = droppedAssets
+      .slice(0, 5)
+      .map((d) => `${d.path} (${d.reason})`)
+      .join("; ");
+    const more =
+      droppedAssets.length > 5 ? ` … and ${droppedAssets.length - 5} more` : "";
+    integrityReasons.push(
+      `${droppedAssets.length} asset(s) were dropped before the audit could ` +
+        `classify them: ${listed}${more}. A requirement that cannot be read or ` +
+        "whose frontmatter does not parse is BROKEN, not absent — skipping it " +
+        "silently is indistinguishable from it never having existed.",
+    );
+  }
+  if (activeTotal === 0) {
+    integrityReasons.push(
+      requirementCount === 0
         ? "the requirements corpus is EMPTY — not one asset carries a " +
           "`req__Requirement_status` predicate. The gate's INPUT is broken, not clean: " +
           "a renamed status predicate, requirements moved out of the `exoas-*-reqs` " +
@@ -711,7 +879,11 @@ export function auditTraceability(
           "`active` — the always-on active-requirement invariant has nothing to " +
           "enforce. The gate's INPUT is broken, not clean: either every requirement " +
           "was deliberately withdrawn to Deprecated, or the status values stopped " +
-          "parsing (renamed enum / changed wikilink form).";
+          "parsing (renamed enum / changed wikilink form).",
+    );
+  }
+  const inputIntegrityViolation =
+    integrityReasons.length > 0 ? integrityReasons.join("\n") : null;
 
   // The auto-flip criterion: every enumerated P0 req bound, all P0 floors met,
   // no dangling tags. Requires p0Total > 0 so `--gate hard` fails-safe (blocks)
@@ -742,6 +914,8 @@ export function auditTraceability(
     clean,
     activeTotal,
     activeViolations,
+    corpusByAssetspace,
+    droppedAssets,
     inputIntegrityViolation,
     p0Total,
     p0Bound,
@@ -768,6 +942,21 @@ function renderText(report: TraceabilityReport, gate: GateMode = "soft"): void {
   console.log(
     `Active requirements: ${report.activeTotal} | ` +
       `invariant violations: ${report.activeViolations.length}`,
+  );
+  // The INPUT size, printed next to the finding counts — "0 violations" must
+  // never be readable without knowing what was actually scanned (issue #4066).
+  console.log(
+    `Corpus: ${report.corpusByAssetspace
+      .map(
+        (c) =>
+          `${c.assetspace}=${c.requirements}/${c.active} active` +
+          (c.declared ? "" : " (undeclared)"),
+      )
+      .join(" | ")}${
+      report.droppedAssets.length > 0
+        ? ` | dropped: ${report.droppedAssets.length}`
+        : ""
+    }`,
   );
   console.log(
     `ui-acceptance: ${report.uiAcceptanceTotal} | ` +
@@ -905,6 +1094,12 @@ export interface RequirementsAuditOptions {
   strict?: boolean;
   /** Gate mode: `soft` (default) | `hard`. RFC 0003 §3.7. */
   gate?: GateMode;
+  /**
+   * Assetspaces that MUST each contribute ≥1 requirement. Defaults to
+   * {@link DECLARED_REQS_ASSETSPACES} — the declared corpus of THIS repo's CI
+   * job. Override when auditing a different corpus (e.g. a single assetspace).
+   */
+  expectAssetspaces?: readonly string[];
 }
 
 /**
@@ -934,11 +1129,14 @@ export async function runAudit(
     throw new Error(`Vault not found: ${testsPath}`);
   }
 
-  const [requirements, tags] = await Promise.all([
-    loadRequirements(reqsPath),
+  const [corpus, tags] = await Promise.all([
+    loadCorpus(reqsPath),
     scanTestTags(testsPath),
   ]);
-  const report = auditTraceability(requirements, tags);
+  const report = auditTraceability(corpus.requirements, tags, {
+    expectedAssetspaces: options.expectAssetspaces ?? DECLARED_REQS_ASSETSPACES,
+    droppedAssets: corpus.dropped,
+  });
 
   if (outputFormat === "json") {
     console.log(JSON.stringify({ ...report, gate }, null, 2));
