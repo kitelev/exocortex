@@ -94,4 +94,33 @@ describe("DisplayNameResolver — classTemplates is read own-only [req 1da8e1bf 
 
     expect(resolver.resolve(assetWithClassAlias("ems__Task"))).toBe("Ship the release");
   });
+
+  it(`${REQ} an OWN entry holding an EMPTY STRING falls through to the default, name AND provenance`, () => {
+    // ⛤ Locks the `&& classTemplate` sub-clause, which review showed was carrying real behaviour
+    // while no axis observed it: dropping only that clause reds NOTHING, yet an empty per-class
+    // template then reaches the engine and `displayName` becomes **null** — the name vanishes
+    // entirely — while provenance wrongly reports "classTemplate" to the CLI naming oracle.
+    //
+    // ⛔ Assert the PAIR, not just the name: provenance is the half that would still be wrong if
+    // someone "simplified" this to `typeof classTemplate === "string"` and the engine happened to
+    // fall back on its own.
+    const resolver = new DisplayNameResolver(settingsWith({ ems__Task: "" }));
+
+    expect(resolver.resolveWithProvenance(assetWithClassAlias("ems__Task"))).toEqual({
+      displayName: "Ship the release",
+      provenance: "default",
+    });
+  });
+
+  it(`${REQ} the CONFIGURED-CLASS counters agree with what actually renders`, () => {
+    // Tightening the render path to "a NON-EMPTY STRING applies" would otherwise leave
+    // `hasClassTemplates()` counting by `Object.keys` — true while nothing renders. Same predicate
+    // both places, so the two cannot drift.
+    const resolver = new DisplayNameResolver(
+      settingsWith({ ems__Task: "", ems__Project: { not: "a string" } }),
+    );
+
+    expect(resolver.hasClassTemplates()).toBe(false);
+    expect(resolver.getConfiguredClasses()).toEqual([]);
+  });
 });
