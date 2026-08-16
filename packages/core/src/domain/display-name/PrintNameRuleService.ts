@@ -1,5 +1,9 @@
 import type { VaultMetadataPort } from "./VaultMetadataPort";
-import { resolveKeyPath, type MetadataResolver } from "./keyPathResolver";
+import {
+  ownProperty,
+  resolveKeyPath,
+  type MetadataResolver,
+} from "./keyPathResolver";
 
 /**
  * A per-render VALUE-EQUALITY condition compiled from an exo__DisplayNameSpec's
@@ -313,21 +317,20 @@ export class PrintNameRuleService {
     // the flat read below, byte-for-byte the pre-fedeaa6e line, so the no-dot path cannot
     // regress structurally.
     //
-    // ⚠ That flat read is a bare index, so a one-component matchKey named after an
-    // Object.prototype member reads off the prototype — the same class req 4a2e6b80 closes in
-    // the walk. It is inert today: a prototype member is a function and `extractClassKeys`
-    // rejects a non-string, so the matcher returns false either way. But it is fail-closed BY
-    // ACCIDENT of that downstream guard rather than by decision here, and this branch is the one
-    // carrying live traffic (all 16 `matchPath` values in the vault are single-component).
-    // Deliberately NOT changed under req 4a2e6b80, whose non-goals exclude this file. ⛤ The
-    // reason is NOT scaffolding cost — the fixture is one line over the existing createMockApp.
-    // It is that the ONLY input separating the two versions is an inherited STRING, i.e.
-    // prototype-chained frontmatter, a shape no parser here can emit. So the axis would be a
-    // synthetic guard over an impossible input; whether that is worth having is a design
-    // question, and that is what makes it its own unit of work. Tracked in issue #4059.
+    // ⛤ BOTH branches read own-only (req 4a2e6b80, closed for this one by issue #4059). A
+    // one-component matchKey is a segment too — it comes from the same `matchPath` frontmatter —
+    // so a bare index put `toString`/`constructor` on the Object.prototype path exactly as the
+    // walk did. It read fail-closed only BY ACCIDENT of a downstream guard (`extractClassKeys`
+    // rejects a non-string), not by decision here, and the two branches disagreed about the same
+    // input. ⛤ This is also the branch that carries the traffic: all 16 `matchPath` values in
+    // the vault are single-component, so the walk hardened in #4058 has no live users yet.
+    //
+    // ⛔ The discriminating input is an inherited STRING, not a prototype function — a function
+    // is rejected downstream either way. See the call-site axis in
+    // keyPathResolver.ownProperty.test.ts; a helper-level assertion cannot observe this wiring.
     const raw = matcher.matchKey.includes(".")
       ? resolveKeyPath(metadata, matcher.matchKey, this.createMetadataResolver())
-      : metadata[matcher.matchKey];
+      : ownProperty(metadata, matcher.matchKey);
     const instanceForms = this.extractClassKeys(raw);
     if (instanceForms.length === 0) return false;
     return instanceForms.some((form) => matcher.matchValues.includes(form));
