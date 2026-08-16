@@ -846,6 +846,59 @@ describe("PrintNameRuleService — host-function exo__DisplayNameSpec (v2 comput
     expect(notBlocked).toBe("Ship the release");
   });
 
+  it("@req:d6cd2371-bdf2-460e-840e-841480273869 an ALIASED blocker link still blocks — the link form must not decide the answer (issue #4057)", () => {
+    // ⛤ The discriminating axis. Pre-fix `isEffortBlocked` stripped BRACKETS only, so
+    // `[[<basename>|display text]]` reached the port as `<basename>|display text`, which resolves
+    // to nothing → "no such blocker" → fail-OPEN (no 🚩) on a genuinely blocked task.
+    //
+    // ⛔ This fixture is faithful precisely because `getFirstLinkpathDest` above does NOT strip the
+    // alias — that mirrors Obsidian. The CLI adapter DOES strip it
+    // (`FileSystemVaultAdapter.getFirstLinkpathDest` → `linkpath.split("|")[0]`), which is why the
+    // defect was surface-ASYMMETRIC: the same vault rendered 🚩 through the CLI naming oracle and
+    // not in the plugin. A fake that stripped the alias would be green both ways — decoration.
+    //
+    // ⚠ Inert as of 2026-08-16: 0 of 74 live blockers carry an alias (counted from RAW frontmatter,
+    // since SPARQL discards the alias and is structurally blind to this question). The reason to
+    // close it is the divergence, not the incidence — stated rather than implied.
+    const { resolver } = blockedHostFnVault({ blockerStatus: "[[ems__EffortStatusDoing]]" });
+
+    expect(
+      resolver.resolve({
+        metadata: taskMeta({ blocker: `[[${BLOCKER_BASENAME}|Some display text]]` }),
+        basename: "t1",
+      }),
+    ).toBe("🚩 Ship the release");
+  });
+
+  it("@req:d6cd2371-bdf2-460e-840e-841480273869 CONTROL — an ALIASED blocker that is DONE still unblocks, so the fix is not 'always blocked'", () => {
+    // Same aliased form, terminal blocker. Green both ways — pre-fix because the link did not
+    // resolve, post-fix because it resolves and reads Done. Recorded so that a future "simplify"
+    // cannot reduce the pair to this case, which discriminates nothing on its own.
+    const { resolver } = blockedHostFnVault({ blockerStatus: "[[ems__EffortStatusDone]]" });
+
+    expect(
+      resolver.resolve({
+        metadata: taskMeta({ blocker: `[[${BLOCKER_BASENAME}|Some display text]]` }),
+        basename: "t1",
+      }),
+    ).toBe("Ship the release");
+  });
+
+  it("@req:d6cd2371-bdf2-460e-840e-841480273869 CONTROL — an aliased link to a NON-EXISTENT blocker stays fail-safe (no 🚩)", () => {
+    // The asymmetry documented on `resolveStatusLabel` must survive the fix: an unresolvable
+    // BLOCKER yields "not blocked" (a blocker that does not exist cannot block), whereas an
+    // unresolvable STATUS yields "still blocking". Stripping the alias must not turn the first
+    // into the second by accident.
+    const { resolver } = blockedHostFnVault({ blockerStatus: "[[ems__EffortStatusDoing]]" });
+
+    expect(
+      resolver.resolve({
+        metadata: taskMeta({ blocker: "[[no-such-asset|Some display text]]" }),
+        basename: "t1",
+      }),
+    ).toBe("Ship the release");
+  });
+
   it("evaluates the condition PER-RENDER — the SAME loaded spec flips 🚩 on/off as the referenced BLOCKER's status changes (cross-asset, no re-scan)", () => {
     const { resolver, setBlockerStatus } = blockedHostFnVault({
       blockerStatus: "[[ems__EffortStatusDoing]]",
