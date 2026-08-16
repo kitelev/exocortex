@@ -39,6 +39,19 @@ const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
  * incidence (49 of 58 blockers, 8 efforts with a wrong 🚩) and for why the lookup goes through the
  * vault rather than a UID table.
  *
+ * ⛤ The ALIAS defect is fixed here too (issue #4057, same req-d6cd2371 conformance): the blocker
+ * link is now unwrapped AND alias-stripped before the port sees it. It is inert today — measured
+ * 2026-08-16, **0 of 74** live blockers carry an alias — but the reason to fix it is not the count,
+ * it is that the surfaces DISAGREED: the CLI adapter strips the alias itself
+ * (`FileSystemVaultAdapter.getFirstLinkpathDest` → `linkpath.split("|")[0]`) while Obsidian's
+ * `metadataCache.getFirstLinkpathDest` does not, so `[[<uid>|label]]` resolved on one surface and
+ * failed open on the other. That divergence is precisely what `FsVaultMetadataAdapter`'s docstring
+ * promises cannot happen, and one implementation in core is what makes the promise keepable.
+ *
+ * ⛔ Count that incidence from RAW FRONTMATTER, never from SPARQL: the store emits the wikilink
+ * TARGET and DISCARDS the alias, so a SPARQL count of "how many blockers are aliased" is
+ * structurally blind and answers zero regardless of the data.
+ *
  * ⛔ Still verbatim, and still deferred: a multi-valued `ems__Effort_blocker` (16 of the 74
  * measured) is flattened by `String(...)` into a comma-joined string that resolves to nothing, so
  * the predicate answers "not blocked". Characterised by test; its own fix, its own req.
@@ -57,7 +70,11 @@ export function isEffortBlocked(
     return false;
   }
 
-  const blockerPath = String(effortBlocker).replace(/^\[\[|\]\]$/g, "");
+  // ⛔ The ALIAS must come off before the port sees it. This is the port's own documented input
+  // contract ({@link VaultMetadataPort.resolveLinkpathFrontmatter}: the engine hands over an
+  // "unwrapped, alias-stripped target"), and the predicate was the one caller breaking it —
+  // it stripped brackets only, so `[[<uid>|label]]` reached the adapter as `<uid>|label`.
+  const blockerPath = unwrapWikilink(String(effortBlocker)).split("|")[0].trim();
   // The two Obsidian calls this replaces — getFirstLinkpathDest, then
   // getFileCache(...)?.frontmatter — are exactly what this port method does, on both adapters.
   const blockerMetadata = vault.resolveLinkpathFrontmatter(blockerPath);
@@ -69,6 +86,32 @@ export function isEffortBlocked(
   const label = resolveStatusLabel(vault, blockerMetadata.ems__Effort_status);
 
   return label !== EffortStatus.DONE && label !== EffortStatus.TRASHED;
+}
+
+/**
+ * Unwrap a frontmatter wikilink into the string the port expects: quotes off, `[[ ]]` off, a
+ * trailing `.md` off, trimmed.
+ *
+ * ⛔ Deliberately does NOT split the alias, because the two callers disagree about what an alias
+ * MEANS: for a status, `[[<uid>|ems__EffortStatusDone]]` may itself be the answer (an alias that
+ * is a symbolic label is honoured); for a blocker it is display text and nothing else. Sharing the
+ * split would have to pick one of those, so the split stays at each call site and only the
+ * unwrapping — where the two agree exactly — is shared.
+ *
+ * ⛤ Shared rather than copied on purpose: this is the third site in the display-name path that
+ * needs it (`resolveStatusLabel` here, `createMetadataResolver` in PrintNameRuleService), and a
+ * third inline copy is how the dual-IRI defect survived in the first place — each copy is only
+ * ever checked by its own caller's tests.
+ */
+function unwrapWikilink(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^["']/, "")
+    .replace(/["']$/, "")
+    .replace(/^\[\[/, "")
+    .replace(/\]\]$/, "")
+    .replace(/\.md$/, "")
+    .trim();
 }
 
 /**
@@ -141,14 +184,7 @@ function resolveStatusLabel(vault: VaultMetadataPort, rawStatus: unknown): strin
     raw = raw[0];
   }
 
-  const inside = String(raw)
-    .trim()
-    .replace(/^["']/, "")
-    .replace(/["']$/, "")
-    .replace(/^\[\[/, "")
-    .replace(/\]\]$/, "")
-    .replace(/\.md$/, "")
-    .trim();
+  const inside = unwrapWikilink(String(raw));
   if (inside === "") return "";
 
   if (SYMBOLIC_STATUS_RE.test(inside)) return inside;
