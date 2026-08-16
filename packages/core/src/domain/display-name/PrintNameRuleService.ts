@@ -322,12 +322,22 @@ export class PrintNameRuleService {
     // so a bare index put `toString`/`constructor` on the Object.prototype path exactly as the
     // walk did. It read fail-closed only BY ACCIDENT of a downstream guard (`extractClassKeys`
     // rejects a non-string), not by decision here, and the two branches disagreed about the same
-    // input. ⛤ This is also the branch that carries the traffic: all 16 `matchPath` values in
-    // the vault are single-component, so the walk hardened in #4058 has no live users yet.
+    // input. ⛤ This is also the branch that carries most of the traffic: 14 of the 16 `matchPath`
+    // values in vault-my are single-component (tbank 8 of 9, exodev 14 of 16). The remaining 2 ARE
+    // dot-paths (`exo__Asset_prototype.exo__Instance_class`), so #4058's walk has live users too —
+    // do not read this branch's majority as a reason to weaken that one.
+    //
+    // ⛔ Count `matchPath` shapes from RAW FRONTMATTER, never from SPARQL: the store emits the
+    // wikilink TARGET IRI and DISCARDS the alias, while `resolveSinglePropertyKey` reads the key
+    // from `split("|").pop()` — the alias. Every dot here lives in the alias, so a SPARQL count is
+    // structurally blind to the very thing it is counting and reports "zero dot-paths". Both the
+    // author and the reviewer of #4060 hit exactly that before catching it.
     //
     // ⛔ The discriminating input is an inherited STRING, not a prototype function — a function
     // is rejected downstream either way. See the call-site axis in
-    // keyPathResolver.ownProperty.test.ts; a helper-level assertion cannot observe this wiring.
+    // matcherSatisfied.noDotOwnProperty.test.ts; the helper-level axes in
+    // keyPathResolver.ownProperty.test.ts cannot observe THIS wiring, which is the whole reason
+    // that suite exists separately.
     const raw = matcher.matchKey.includes(".")
       ? resolveKeyPath(metadata, matcher.matchKey, this.createMetadataResolver())
       : ownProperty(metadata, matcher.matchKey);

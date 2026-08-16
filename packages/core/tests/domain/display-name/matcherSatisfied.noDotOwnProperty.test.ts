@@ -100,12 +100,20 @@ describe("PrintNameRuleService.matcherSatisfied — the no-dot branch reads own-
     expect(serviceUnderTest().getTemplateForClass("ems__Task", inherited)).toBeNull();
   });
 
-  it(`${REQ} CONTROL — a prototype FUNCTION was already fail-closed, so it does NOT discriminate`, () => {
-    // Recorded deliberately: `toString` gives the same answer before and after the fix
-    // (extractClassKeys rejects a non-string). Anyone tempted to "simplify" this suite down to
-    // a toString case would produce an axis that is green both ways.
-    const svc = new PrintNameRuleService(vaultWithNoDotSpec());
-    svc.initialize();
-    expect(svc.getTemplateForClass("ems__Task", {} as Record<string, unknown>)).toBeNull();
+  it(`${REQ} CONTROL — an inherited FUNCTION does NOT discriminate, so it could not have found this`, () => {
+    // The deliberate sibling of the axis above, and the reason that one uses a STRING. Here the
+    // prototype carries the SAME key holding a function: pre-fix the bare index walks up and reads
+    // it, post-fix `ownProperty` returns undefined — and BOTH answers are null, because
+    // `extractClassKeys` rejects a non-string downstream. So the pair isolates the cause: what
+    // discriminates is the value's STRING-ness, not the fact of inheritance.
+    //
+    // ⛔ Its first form passed `{}` while matchKey was `ems__Effort_status` — that never touched a
+    // prototype member at all (own-absent → undefined), so it locked "absent key ⇒ no match" while
+    // claiming to record the prototype-function case. Found in review of #4060; the claim was true,
+    // the test simply did not demonstrate it.
+    const inheritedFn = Object.create({
+      ems__Effort_status: () => `[[${DOING_UID}]]`,
+    }) as Record<string, unknown>;
+    expect(serviceUnderTest().getTemplateForClass("ems__Task", inheritedFn)).toBeNull();
   });
 });
