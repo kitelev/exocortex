@@ -1,4 +1,5 @@
 import { DisplayNameTemplateEngine } from "./DisplayNameTemplateEngine";
+import { ownProperty } from "./keyPathResolver";
 import type { MetadataResolver } from "./DisplayNameTemplateEngine";
 import type { PrintNameRuleService, ParticipatingRule } from "./PrintNameRuleService";
 import type { DisplayNameSettings } from "./DisplayNameSettings";
@@ -168,10 +169,29 @@ export class DisplayNameResolver {
       }
     }
 
+    // ⛔ OWN property only, and a string (req 1da8e1bf). `firstClass` comes from the asset's
+    // `exo__Instance_class` via `cleanClassValue`, which returns the ALIAS after "|" — so the key
+    // is fully user-authored. `classTemplates` is a plain object literal ({} by default since
+    // #3838 part 3), and a bare index therefore walks up to `Object.prototype`: `toString` is
+    // TRUTHY, so the old guard PASSED and returned a FUNCTION as `template`, which
+    // `DisplayNameTemplateEngine` then called `.trim()` on → uncaught TypeError.
+    //
+    // ⛤ This is the FIFTH read of the same class and the only one that THREW rather than failing
+    // closed — its four siblings (`5cd9fffe` registry, `4a2e6b80` key-path walk, #4060 flat
+    // matcher read, #4062 blocker link) are all rescued downstream by a non-string being dropped.
+    // Neither `BodyLinkPatch` nor `GraphViewPatch` wraps `resolve()` in try/catch, so an uncaught
+    // throw here breaks naming wholesale rather than spoiling one name.
+    //
+    // ⚠ The `typeof` check is NOT redundant with the own-property one: `classTemplates` is typed
+    // `Record<string, string>`, and that type is a claim about data the USER writes. An own key
+    // holding a non-string satisfies the first guard and would still reach the engine.
     const firstClass = assetClasses[0];
-    if (firstClass && this.settings.classTemplates[firstClass]) {
+    const classTemplate = firstClass
+      ? ownProperty(this.settings.classTemplates, firstClass)
+      : undefined;
+    if (typeof classTemplate === "string" && classTemplate) {
       return {
-        template: this.settings.classTemplates[firstClass],
+        template: classTemplate,
         provenance: "classTemplate",
       };
     }
@@ -414,12 +434,30 @@ export class DisplayNameResolver {
     return trimmed || null;
   }
 
+  /**
+   * ⛤ Same predicate as the render path above, deliberately. `Object.keys` is already own-only, so
+   * these were never exposed to the prototype hazard — but tightening `:192` to "a NON-EMPTY STRING
+   * applies" made a counting-by-`Object.keys` answer drift from it: an own key holding `""` or a
+   * non-string used to make `hasClassTemplates()` true while nothing would actually render. Closing
+   * the drift the change itself introduced, rather than leaving the two to disagree.
+   *
+   * ⚠ Both currently have ZERO consumers in this repo (verified across core / obsidian-plugin /
+   * cli src and tests). Left in place rather than deleted: removing a published method is an API
+   * change and does not belong in a bug-fix PR.
+   */
+  private configuredClassEntries(): Array<[string, string]> {
+    return Object.entries(this.settings.classTemplates).filter(
+      (entry): entry is [string, string] =>
+        typeof entry[1] === "string" && entry[1].length > 0,
+    );
+  }
+
   getConfiguredClasses(): string[] {
-    return Object.keys(this.settings.classTemplates);
+    return this.configuredClassEntries().map(([key]) => key);
   }
 
   hasClassTemplates(): boolean {
-    return Object.keys(this.settings.classTemplates).length > 0;
+    return this.configuredClassEntries().length > 0;
   }
 }
 
