@@ -378,6 +378,26 @@ jobs:
               );
               process.exit(1);
             }
+            // Population floor FIRST (req 99e06488-2da6-48fe-bd64-30c1e20bca0f):
+            // `activeViolations` is necessarily empty when the corpus never
+            // arrived, so checking it first would print "OK" on a broken input.
+            // A requirement is detected purely by the PRESENCE of a
+            // `req__Requirement_status` predicate — so a renamed predicate, a
+            // reqs assetspace moved elsewhere, or a failed clone turn THIS
+            // blocking gate GREEN. The reason string is produced by the audit
+            // (production-owned + unit-tested), printed verbatim here.
+            if (r.inputIntegrityViolation) {
+              console.error(
+                "❌ Active-gate INPUT integrity failure — " +
+                  r.inputIntegrityViolation,
+              );
+              console.error(
+                "Fix: restore the requirements corpus (the `req__Requirement_status` " +
+                  "predicate + the `exoas-*-reqs` clones in the step above), OR — if every " +
+                  "requirement really was withdrawn — retire this gate deliberately.",
+              );
+              process.exit(1);
+            }
             const v = r.activeViolations || [];
             if (v.length > 0) {
               console.error(

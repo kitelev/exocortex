@@ -288,6 +288,25 @@ export interface TraceabilityReport {
    */
   activeViolations: ActiveViolationFinding[];
   /**
+   * Population floor for the always-on active-gate: non-null iff `activeTotal`
+   * is 0, i.e. the gate has NOTHING to enforce (req `99e06488-2da6-48fe-bd64-30c1e20bca0f`).
+   *
+   * `activeViolations` alone cannot distinguish "no violations" from "the corpus
+   * never arrived": a requirement is detected purely by the PRESENCE of a
+   * `req__Requirement_status` predicate (see the `continue` in `loadRequirements`),
+   * so a renamed predicate, a reqs assetspace moved out of `exoas-*-reqs`, or a
+   * failed clone all collapse to `requirementCount = 0 → activeTotal = 0 →
+   * activeViolations = []` — the blocking gate's GREENEST possible input. The
+   * mirror of `rampReady`'s `p0Total > 0` fail-safe, which already guards the
+   * soft→hard ramp against exactly this vacuity.
+   *
+   * The string is the human-readable REASON, and it is deliberately phrased as a
+   * broken INPUT rather than an absence of findings — the blocking CI step prints
+   * it verbatim, so the wording is production-owned (and therefore testable).
+   * Purely additive: `clean` and the `--gate soft|hard` exit code are untouched.
+   */
+  inputIntegrityViolation: string | null;
+  /**
    * Enumerated P0 checklist — total P0-priority requirements (the set that arms
    * the hard-gate flip, RFC 0003 §3.7).
    */
@@ -673,6 +692,26 @@ export function auditTraceability(
     activeViolations.length === 0 &&
     danglingEvidence.length === 0;
 
+  // Population floor for the always-on active-gate (req 99e06488-2da6-48fe-bd64-30c1e20bca0f).
+  // `activeTotal === 0` makes the blocking gate vacuous, and vacuous reads as
+  // GREEN — so it must be reported as a broken INPUT, never as "no findings".
+  // Deliberately NOT folded into `clean` / the exit code: `--gate soft|hard`
+  // semantics stay byte-identical; only the blocking CI step consumes this.
+  const inputIntegrityViolation =
+    activeTotal > 0
+      ? null
+      : requirementCount === 0
+        ? "the requirements corpus is EMPTY — not one asset carries a " +
+          "`req__Requirement_status` predicate. The gate's INPUT is broken, not clean: " +
+          "a renamed status predicate, requirements moved out of the `exoas-*-reqs` " +
+          "assetspaces, or a failed clone all look exactly like this, and are " +
+          "indistinguishable from 'no violations'."
+        : `the corpus loaded ${requirementCount} requirement(s), but NOT ONE is ` +
+          "`active` — the always-on active-requirement invariant has nothing to " +
+          "enforce. The gate's INPUT is broken, not clean: either every requirement " +
+          "was deliberately withdrawn to Deprecated, or the status values stopped " +
+          "parsing (renamed enum / changed wikilink form).";
+
   // The auto-flip criterion: every enumerated P0 req bound, all P0 floors met,
   // no dangling tags. Requires p0Total > 0 so `--gate hard` fails-safe (blocks)
   // on an empty / failed-to-clone reqs set rather than passing vacuously.
@@ -702,6 +741,7 @@ export function auditTraceability(
     clean,
     activeTotal,
     activeViolations,
+    inputIntegrityViolation,
     p0Total,
     p0Bound,
     p0Orphans,
@@ -734,6 +774,12 @@ function renderText(report: TraceabilityReport, gate: GateMode = "soft"): void {
       `manual (committed evidence): ${report.uiAcceptanceManual} | ` +
       `missing evidence: ${report.uiAcceptanceMissingEvidence}`,
   );
+
+  if (report.inputIntegrityViolation !== null) {
+    console.error(
+      `\nActive-gate INPUT integrity (HARD, always blocks) — ${report.inputIntegrityViolation}`,
+    );
+  }
 
   if (report.activeViolations.length > 0) {
     console.error(
