@@ -13,11 +13,18 @@
  * the assertions read the emitted triples.
  *
  * The stakes: `RDFVocabularyMapper` ALREADY emits `exo__Class_superClass` as the
- * canonical `rdfs:subClassOf` predicate (319 uses in vault-my, measured
- * 2026-08-16). Before this change the ASSET DEFINING that term emitted
- * `https://exocortex.my/ontology/rdfs#subClassOf` — definition and usage sat under
- * two IRIs that never joined. The `subClassOf` case below asserts exactly that
- * join.
+ * canonical `rdfs:subClassOf` predicate — measured 2026-08-16 at **319 uses in
+ * vault-my** (and 293 / 378 in vault-tbank / vault-exodev respectively, so the
+ * phenomenon is not vault-my-specific). Before this change the ASSET DEFINING
+ * that term emitted `https://exocortex.my/ontology/rdfs#subClassOf` — definition
+ * and usage sat under two IRIs that never joined. The `subClassOf` case below
+ * asserts exactly that join.
+ *
+ * SECOND EMISSION SURFACE: `exo__Asset_aliases` runs through the same
+ * `expandClassValue` path as the label (`NoteToRDFConverter:1648`), so alias
+ * values flip form too — 19 alias triples per vault currently carry the ad-hoc
+ * W3C form. Same mechanism, same fix; named here so the blast radius is stated
+ * rather than implied.
  *
  * @req:aceaa2cc-15b6-4e1c-bf63-72c7c209de51
  */
@@ -30,6 +37,7 @@ import type {
   IFrontmatter,
 } from "../../../src/interfaces/IVaultAdapter";
 import { Namespace } from "../../../src/domain/models/rdf/Namespace";
+import { iriToObsidianName } from "../../../src/utilities/iriToObsidianName";
 
 const REQ = "@req:aceaa2cc-15b6-4e1c-bf63-72c7c209de51";
 
@@ -217,6 +225,82 @@ describe(`W3C vocabulary prefixes emit canonical IRIs (${REQ})`, () => {
         "https://exocortex.my/ontology/aiKnow#",
       );
       expect(parsed!.localName).toBe("Memory_aboutConcept");
+    });
+  });
+
+  /**
+   * C. THE ROUND-TRIP INVARIANT.
+   *
+   * Registering a vocabulary FORWARD-ONLY makes the emitter produce IRIs that its
+   * own inverse cannot read. That failure is invisible to axes A and B (both test
+   * the forward direction) and to the whole core suite — it surfaces only in
+   * consumers that map a term IRI back to a frontmatter key: reified-predicate
+   * de-reification (`ems__Bug f68bf750` / #3904) and wikilink naming.
+   *
+   * The axis is therefore stated over EVERY registered namespace, enumerated from
+   * `Namespace.knownNamespaces()` rather than a literal list — a vocabulary added
+   * later is covered automatically, which is the property that would have caught
+   * the gap this section was written for.
+   */
+  describe("C. round-trip — every registered namespace survives forward→inverse", () => {
+    it(`${REQ} fromTermIRI inverts term() for EVERY registered namespace`, () => {
+      const namespaces = Namespace.knownNamespaces();
+      expect(namespaces.length).toBeGreaterThan(0); // canary: an empty list would pass vacuously
+
+      for (const ns of namespaces) {
+        const iri = ns.term("SomeLocalName").value;
+        const back = Namespace.fromTermIRI(iri);
+
+        expect(back).not.toBeNull();
+        // Reference equality — the canonical singleton, not an equal-valued clone.
+        expect(back!.namespace).toBe(ns);
+        expect(back!.localName).toBe("SomeLocalName");
+      }
+    });
+
+    it(`${REQ} iriToObsidianName inverts label emission for EVERY registered namespace`, async () => {
+      const namespaces = Namespace.knownNamespaces();
+      expect(namespaces.length).toBeGreaterThan(0);
+
+      for (const ns of namespaces) {
+        const key = `${ns.prefix}__RoundTripProbe`;
+        // Forward: exactly what the converter derives from a label.
+        const parsed = Namespace.fromPropertyKey(key);
+        expect(parsed).not.toBeNull();
+        const emitted = parsed!.namespace.term(parsed!.localName).value;
+
+        // Inverse: must recover the original key.
+        expect(iriToObsidianName(emitted)).toBe(key);
+      }
+    });
+
+    it(`${REQ} the live case: owl__sameAs survives the round trip (reified predicate-def, present in all vaults)`, () => {
+      const emitted =
+        Namespace.fromPropertyKey("owl__sameAs")!.namespace.term(
+          "sameAs",
+        ).value;
+
+      expect(emitted).toBe("http://www.w3.org/2002/07/owl#sameAs");
+      expect(iriToObsidianName(emitted)).toBe("owl__sameAs");
+      expect(Namespace.fromTermIRI(emitted)!.namespace).toBe(Namespace.OWL);
+    });
+
+    it(`${REQ} ad-hoc user namespaces still round-trip (backward compatibility)`, () => {
+      const emitted =
+        "https://exocortex.my/ontology/aiKnow#Memory_aboutConcept";
+
+      expect(iriToObsidianName(emitted)).toBe("aiKnow__Memory_aboutConcept");
+      expect(Namespace.fromTermIRI(emitted)!.localName).toBe(
+        "Memory_aboutConcept",
+      );
+    });
+
+    it(`${REQ} NEGATIVE CONTROL: a path-form vault IRI is not mistaken for a term`, () => {
+      const path = "obsidian://vault/assetspaces/kitelev/exo/abc123.md";
+
+      expect(Namespace.fromTermIRI(path)).toBeNull();
+      // iriToObsidianName still handles it via its second shape (basename).
+      expect(iriToObsidianName(path)).toBe("abc123");
     });
   });
 });

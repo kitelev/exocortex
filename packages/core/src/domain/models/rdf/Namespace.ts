@@ -155,4 +155,69 @@ export class Namespace {
     if (!namespace) return null;
     return { namespace, localName: match[2] };
   }
+
+  /**
+   * INVERSE of {@link fromPropertyKey} + {@link Namespace.term}: recover the
+   * namespace + local name from a term IRI.
+   *
+   * Resolution order mirrors {@link forPrefix} exactly — the whitelist first
+   * (so an external W3C IRI such as `http://www.w3.org/2000/01/rdf-schema#subClassOf`
+   * resolves to {@link RDFS}), then the ad-hoc `EXOCORTEX_ONTOLOGY_BASE` convention
+   * (so `https://exocortex.my/ontology/aiKnow#Memory` still resolves).
+   *
+   * ⛔ Both directions MUST be derived from the SAME `KNOWN_NAMESPACES` array.
+   * A second literal list of bases is how the two drift apart: registering a
+   * vocabulary forward-only makes the emitter produce IRIs its own inverse
+   * cannot read, which silently breaks every consumer that maps a term IRI back
+   * to a frontmatter key (reified-predicate de-reification, wikilink naming).
+   * See req `aceaa2cc-15b6-4e1c-bf63-72c7c209de51`.
+   *
+   * Returns `null` when the IRI belongs to no known/derivable namespace, or when
+   * the local name is empty or itself contains `#`/`/` (not a clean `ns#Local`
+   * term — a path-form `obsidian://…/<uid>.md` ref lands here).
+   */
+  static fromTermIRI(
+    iri: string,
+  ): { namespace: Namespace; localName: string } | null {
+    if (typeof iri !== "string" || iri.length === 0) return null;
+
+    const cleanLocal = (localName: string): string | null =>
+      localName.length > 0 &&
+      !localName.includes("#") &&
+      !localName.includes("/")
+        ? localName
+        : null;
+
+    // 1. Registered namespaces (both exocortex.my and external W3C vocabularies).
+    for (const ns of Namespace.KNOWN_NAMESPACES) {
+      const base = ns.iri.value;
+      if (iri.startsWith(base)) {
+        const localName = cleanLocal(iri.slice(base.length));
+        if (localName === null) return null;
+        return { namespace: ns, localName };
+      }
+    }
+
+    // 2. Ad-hoc `EXOCORTEX_ONTOLOGY_BASE<prefix>#<LocalName>` convention.
+    if (!iri.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)) return null;
+    const rest = iri.slice(Namespace.EXOCORTEX_ONTOLOGY_BASE.length);
+    const hash = rest.indexOf("#");
+    if (hash <= 0) return null;
+    const prefix = rest.slice(0, hash);
+    if (!/^[a-z][a-zA-Z0-9]*$/.test(prefix)) return null;
+    const localName = cleanLocal(rest.slice(hash + 1));
+    if (localName === null) return null;
+    const namespace = Namespace.forPrefix(prefix);
+    if (!namespace) return null;
+    return { namespace, localName };
+  }
+
+  /**
+   * The registered namespaces, for consumers that must enumerate them (e.g. a
+   * round-trip invariant test). Exposed read-only so the single source of truth
+   * stays {@link KNOWN_NAMESPACES}.
+   */
+  static knownNamespaces(): ReadonlyArray<Namespace> {
+    return Namespace.KNOWN_NAMESPACES;
+  }
 }
