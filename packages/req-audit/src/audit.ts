@@ -201,9 +201,10 @@ export interface FloorViolationFinding {
  * itself (the bound test runs in CI; if the behavior breaks, that test goes
  * red). Together: an active requirement whose behavior is broken turns CI red,
  * unless it is explicitly moved to `Deprecated`. This is an ALWAYS-ON hard
- * finding (independent of the soft→hard P0 ramp): it is vacuous while zero
- * requirements are `active`, and arms per-requirement the moment one is flipped
- * to `active`.
+ * finding (independent of the soft→hard P0 ramp): it arms per-requirement the
+ * moment one is flipped to `active`. ⛔ It is NO LONGER vacuous while zero
+ * requirements are `active` — zero active requirements is now an INPUT-integrity
+ * failure (req 99e06488-2da6-48fe-bd64-30c1e20bca0f), not a vacuous pass.
  */
 export interface ActiveViolationFinding {
   uid: string;
@@ -287,6 +288,25 @@ export interface TraceabilityReport {
    * until the first requirement is flipped to `active`.
    */
   activeViolations: ActiveViolationFinding[];
+  /**
+   * Population floor for the always-on active-gate: non-null iff `activeTotal`
+   * is 0, i.e. the gate has NOTHING to enforce (req `99e06488-2da6-48fe-bd64-30c1e20bca0f`).
+   *
+   * `activeViolations` alone cannot distinguish "no violations" from "the corpus
+   * never arrived": a requirement is detected purely by the PRESENCE of a
+   * `req__Requirement_status` predicate (see the `continue` in `loadRequirements`),
+   * so a renamed predicate, a reqs assetspace moved out of `exoas-*-reqs`, or a
+   * failed clone all collapse to `requirementCount = 0 → activeTotal = 0 →
+   * activeViolations = []` — the blocking gate's GREENEST possible input. The
+   * mirror of `rampReady`'s `p0Total > 0` fail-safe, which already guards the
+   * soft→hard ramp against exactly this vacuity.
+   *
+   * The string is the human-readable REASON, and it is deliberately phrased as a
+   * broken INPUT rather than an absence of findings — the blocking CI step prints
+   * it verbatim, so the wording is production-owned (and therefore testable).
+   * Purely additive: `clean` and the `--gate soft|hard` exit code are untouched.
+   */
+  inputIntegrityViolation: string | null;
   /**
    * Enumerated P0 checklist — total P0-priority requirements (the set that arms
    * the hard-gate flip, RFC 0003 §3.7).
@@ -673,6 +693,26 @@ export function auditTraceability(
     activeViolations.length === 0 &&
     danglingEvidence.length === 0;
 
+  // Population floor for the always-on active-gate (req 99e06488-2da6-48fe-bd64-30c1e20bca0f).
+  // `activeTotal === 0` makes the blocking gate vacuous, and vacuous reads as
+  // GREEN — so it must be reported as a broken INPUT, never as "no findings".
+  // Deliberately NOT folded into `clean` / the exit code: `--gate soft|hard`
+  // semantics stay byte-identical; only the blocking CI step consumes this.
+  const inputIntegrityViolation =
+    activeTotal > 0
+      ? null
+      : requirementCount === 0
+        ? "the requirements corpus is EMPTY — not one asset carries a " +
+          "`req__Requirement_status` predicate. The gate's INPUT is broken, not clean: " +
+          "a renamed status predicate, requirements moved out of the `exoas-*-reqs` " +
+          "assetspaces, or a failed clone all look exactly like this, and are " +
+          "indistinguishable from 'no violations'."
+        : `the corpus loaded ${requirementCount} requirement(s), but NOT ONE is ` +
+          "`active` — the always-on active-requirement invariant has nothing to " +
+          "enforce. The gate's INPUT is broken, not clean: either every requirement " +
+          "was deliberately withdrawn to Deprecated, or the status values stopped " +
+          "parsing (renamed enum / changed wikilink form).";
+
   // The auto-flip criterion: every enumerated P0 req bound, all P0 floors met,
   // no dangling tags. Requires p0Total > 0 so `--gate hard` fails-safe (blocks)
   // on an empty / failed-to-clone reqs set rather than passing vacuously.
@@ -702,6 +742,7 @@ export function auditTraceability(
     clean,
     activeTotal,
     activeViolations,
+    inputIntegrityViolation,
     p0Total,
     p0Bound,
     p0Orphans,
@@ -734,6 +775,12 @@ function renderText(report: TraceabilityReport, gate: GateMode = "soft"): void {
       `manual (committed evidence): ${report.uiAcceptanceManual} | ` +
       `missing evidence: ${report.uiAcceptanceMissingEvidence}`,
   );
+
+  if (report.inputIntegrityViolation !== null) {
+    console.error(
+      `\nActive-gate INPUT integrity (HARD, always blocks) — ${report.inputIntegrityViolation}`,
+    );
+  }
 
   if (report.activeViolations.length > 0) {
     console.error(
@@ -820,7 +867,9 @@ function renderText(report: TraceabilityReport, gate: GateMode = "soft"): void {
  *    `requirements-trace` CI job's `continue-on-error` (Phase-1/2); the
  *    **active-requirement invariant** is enforced by a SEPARATE blocking CI
  *    step (no `continue-on-error`) so an unbound `active` requirement blocks a
- *    merge in any phase (always-on, vacuous at zero active reqs).
+ *    merge in any phase (always-on). ⛔ NOT "vacuous at zero active reqs" any
+ *    more: zero active requirements is an INPUT-integrity failure (req
+ *    99e06488-2da6-48fe-bd64-30c1e20bca0f), not a vacuous pass.
  *  - `hard`: additionally exit 1 when the report is **not ramp-ready** (any
  *    enumerated P0 requirement unbound). This is the Phase-3 gate — at the
  *    M3-closure flip the CI job switches to `--gate hard`, drops

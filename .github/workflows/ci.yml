@@ -357,7 +357,9 @@ jobs:
         if: always()
         # ⛔ NO continue-on-error. This is the ALWAYS-ON invariant (Andrey,
         # 2026-06-21): an `active` requirement MUST carry a verification binding,
-        # else CI is red. Vacuous while zero requirements are `active`; arms
+        # else CI is red. ⛔ "Vacuous while zero requirements are `active`" — NO
+        # LONGER TRUE: zero active requirements is now an INPUT-integrity failure
+        # (req 99e06488-2da6-48fe-bd64-30c1e20bca0f), not a vacuous pass. Arms
         # per-requirement the moment one is flipped to `active`. The bound test
         # being GREEN is enforced by the test suite itself (the bound test runs
         # in CI); THIS step enforces the binding EXISTS (anti-orphan/dangling for
@@ -375,6 +377,34 @@ jobs:
             } catch (e) {
               console.error(
                 "Active-gate: no traceability report produced (checker failed to run) — failing closed.",
+              );
+              process.exit(1);
+            }
+            // Population floor FIRST (req 99e06488-2da6-48fe-bd64-30c1e20bca0f):
+            // `activeViolations` is necessarily empty when the corpus never
+            // arrived, so checking it first would print "OK" on a broken input.
+            // A requirement is detected purely by the PRESENCE of a
+            // `req__Requirement_status` predicate — so a renamed predicate, a
+            // reqs assetspace moved elsewhere, or a failed clone turn THIS
+            // blocking gate GREEN. The reason string is produced by the audit
+            // (production-owned + unit-tested), printed verbatim here.
+            if (!("inputIntegrityViolation" in r)) {
+              console.error(
+                "Active-gate: the report carries no `inputIntegrityViolation` field — " +
+                  "it predates the population floor, so the floor was NOT evaluated. " +
+                  "Failing closed rather than silently reverting to the pre-floor behaviour.",
+              );
+              process.exit(1);
+            }
+            if (r.inputIntegrityViolation) {
+              console.error(
+                "❌ Active-gate INPUT integrity failure — " +
+                  r.inputIntegrityViolation,
+              );
+              console.error(
+                "Fix: restore the requirements corpus (the `req__Requirement_status` " +
+                  "predicate + the `exoas-*-reqs` clones in the step above), OR — if every " +
+                  "requirement really was withdrawn — retire this gate deliberately.",
               );
               process.exit(1);
             }
