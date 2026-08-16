@@ -52,9 +52,16 @@ const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
  * TARGET and DISCARDS the alias, so a SPARQL count of "how many blockers are aliased" is
  * structurally blind and answers zero regardless of the data.
  *
- * ⛔ Still verbatim, and still deferred: a multi-valued `ems__Effort_blocker` (16 of the 74
- * measured) is flattened by `String(...)` into a comma-joined string that resolves to nothing, so
- * the predicate answers "not blocked". Characterised by test; its own fix, its own req.
+ * ⛔ Still verbatim, and still deferred: a multi-valued `ems__Effort_blocker` is flattened by
+ * `String(...)` into a comma-joined string that resolves to nothing, so the predicate answers
+ * "not blocked". Characterised by test; its own fix, its own req.
+ *
+ * ⛔ Its incidence was recorded here as "16 of the 74" and that does NOT reproduce. Re-measured
+ * 2026-08-16 across the three canonical vaults: **2** assets of the 70 carrying the property are
+ * genuinely multi-valued (6 of the 74 values). 13 use YAML-list syntax, but 11 of those hold a
+ * single item, and a one-element list flattens harmlessly. Corrected rather than quietly dropped:
+ * the wrong number sat on the same line as a denominator that WAS verified, which is what made
+ * the whole claim read as measured.
  *
  * ⚠ ONE delta is not verbatim and is accepted deliberately: the port retries the linkpath with a
  * `.md` suffix, which the inline original did not. It can only turn a previously UNRESOLVABLE
@@ -75,6 +82,14 @@ export function isEffortBlocked(
   // "unwrapped, alias-stripped target"), and the predicate was the one caller breaking it —
   // it stripped brackets only, so `[[<uid>|label]]` reached the adapter as `<uid>|label`.
   const blockerPath = unwrapWikilink(String(effortBlocker)).split("|")[0].trim();
+  // ⛤ Both siblings guard the empty target (`resolveStatusLabel`: `if (inside === "") return ""`;
+  // `createMetadataResolver`: `if (!cleaned) return null`) and this one did not. The truthiness
+  // check above does NOT cover it: `"   "`, `"[[]]"`, `'""'`, `"[[.md]]"`, `"[[|label]]"` are all
+  // truthy and all normalise to "". Harmless today — both adapters return null for an empty
+  // linkpath — so this is consistency, not a fix, and it keeps the three callers reading alike.
+  if (!blockerPath) {
+    return false;
+  }
   // The two Obsidian calls this replaces — getFirstLinkpathDest, then
   // getFileCache(...)?.frontmatter — are exactly what this port method does, on both adapters.
   const blockerMetadata = vault.resolveLinkpathFrontmatter(blockerPath);
@@ -98,10 +113,19 @@ export function isEffortBlocked(
  * split would have to pick one of those, so the split stays at each call site and only the
  * unwrapping — where the two agree exactly — is shared.
  *
- * ⛤ Shared rather than copied on purpose: this is the third site in the display-name path that
- * needs it (`resolveStatusLabel` here, `createMetadataResolver` in PrintNameRuleService), and a
- * third inline copy is how the dual-IRI defect survived in the first place — each copy is only
- * ever checked by its own caller's tests.
+ * ⛤ Shared by the TWO callers in this file (`isEffortBlocked` and `resolveStatusLabel`) rather
+ * than copied a third time, because a third inline copy is how the dual-IRI defect survived in
+ * the first place — each copy is only ever checked by its own caller's tests.
+ *
+ * ⛔ It does NOT serve the whole display-name path, and unifying the rest is NOT a tidy-up.
+ * Seven other inline unwrap chains remain (`toDayKey` below in this file;
+ * `PrintNameRuleService` ×5; `DisplayNameResolver` ×1), and they are **deliberately** left alone:
+ * measured over 36 inputs, this helper and the `PrintNameRuleService` chain disagree on **11** —
+ * the copies strip brackets BEFORE quotes (so `[["weird"]]` → `weird` here but `"weird"` there),
+ * this one also accepts `'`, and this one strips a trailing `.md` (`[[Note.md]]` → `Note` vs
+ * `Note.md`). Replacing them with this helper would silently change matcher identity, key-path
+ * resolution and the printed-property label hop. That is a behaviour change and needs its own req
+ * — see #4056 for the sibling consolidation question.
  */
 function unwrapWikilink(raw: string): string {
   return raw
