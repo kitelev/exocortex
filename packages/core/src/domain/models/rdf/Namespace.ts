@@ -56,6 +56,8 @@ export class Namespace {
     "http://www.w3.org/2001/XMLSchema#"
   );
 
+  static readonly SHACL = new Namespace("sh", "http://www.w3.org/ns/shacl#");
+
   static readonly EXO = new Namespace("exo", "https://exocortex.my/ontology/exo#");
 
   static readonly EMS = new Namespace("ems", "https://exocortex.my/ontology/ems#");
@@ -90,6 +92,20 @@ export class Namespace {
    * the canonical {@link Namespace} singletons (so reference equality and
    * prefix display remain stable), falling back to a derived namespace for
    * any other lowercase-leading prefix.
+   *
+   * The list has two groups:
+   *
+   * 1. **Exocortex namespaces** — resolve to `EXOCORTEX_ONTOLOGY_BASE` anyway;
+   *    listed so that the canonical singleton (not a fresh equal-valued object)
+   *    is returned.
+   * 2. **External W3C vocabularies** (`rdf`, `rdfs`, `owl`, `xsd`, `sh`) — these
+   *    MUST be listed, because their canonical IRIs are NOT derivable from
+   *    `EXOCORTEX_ONTOLOGY_BASE`. Without them a vault asset labelled
+   *    `rdfs__subClassOf` would emit `https://exocortex.my/ontology/rdfs#subClassOf`,
+   *    while {@link RDFVocabularyMapper} already emits the very same term as a
+   *    PREDICATE under `http://www.w3.org/2000/01/rdf-schema#subClassOf` — so the
+   *    asset DEFINING a term and the usages OF that term would sit under two
+   *    different IRIs and never join. See req `aceaa2cc-15b6-4e1c-bf63-72c7c209de51`.
    */
   private static readonly KNOWN_NAMESPACES: ReadonlyArray<Namespace> = [
     Namespace.EXO,
@@ -101,6 +117,12 @@ export class Namespace {
     Namespace.LIT,
     Namespace.INBOX,
     Namespace.PMBOK,
+    // External W3C vocabularies — canonical IRIs, not exocortex.my-derivable.
+    Namespace.RDF,
+    Namespace.RDFS,
+    Namespace.OWL,
+    Namespace.XSD,
+    Namespace.SHACL,
   ];
 
   /**
