@@ -104,7 +104,16 @@ function extractGateScript(): string {
   return js[1];
 }
 
-/** Run the REAL blocking gate over a report; returns its exit code + output. */
+/**
+ * Run the REAL blocking gate over a report; returns its exit code + output.
+ *
+ * Driven through `bash -e -c "node -e '<js>'"` — the SAME surface the workflow
+ * uses (`run: |` executes under `bash -e`, and the payload is single-quoted).
+ * Handing the payload to `execFile("node", ["-e", js])` instead would pass it as
+ * an argv element, i.e. through a DIFFERENT interpretation layer than production:
+ * a lone apostrophe added to any message would terminate the shell string and
+ * break CI while an argv-based test stayed green.
+ */
 function runBlockingGate(report: unknown): {
   code: number;
   stdout: string;
@@ -118,11 +127,15 @@ function runBlockingGate(report: unknown): {
     "utf-8",
   );
   try {
-    const stdout = execFileSync("node", ["-e", extractGateScript()], {
-      env: { ...process.env, RUNNER_TEMP: runnerTemp },
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const stdout = execFileSync(
+      "bash",
+      ["-e", "-c", `node -e '${extractGateScript()}'`],
+      {
+        env: { ...process.env, RUNNER_TEMP: runnerTemp },
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
     return { code: 0, stdout, stderr: "" };
   } catch (e) {
     const err = e as { status?: number; stdout?: string; stderr?: string };
@@ -172,7 +185,26 @@ describe("active-gate input integrity — the corpus must actually arrive", () =
     expect(reason).toMatch(/INPUT is broken, not clean/);
     expect(reason).toMatch(/EMPTY/); // root #1: the corpus is empty
     expect(reason).toMatch(/req__Requirement_status/); // root #2: predicate not found
-    expect(reason).not.toMatch(/no violations found/i);
+    // Negate the COMPETING shipped wording, not a phrase nobody would write:
+    // the OK line this refusal replaces starts with "✅ Active-gate OK".
+    expect(reason).not.toMatch(/^\s*(OK|clean)\b/i);
+  });
+
+  it("@req:99e06488-2da6-48fe-bd64-30c1e20bca0f the gate payload stays single-quote-safe — an apostrophe would break the shell in production", () => {
+    // The workflow embeds this script as `node -e '<js>'` under `bash -e`, so a
+    // lone apostrophe anywhere in it (easiest to introduce via a message edit —
+    // "gate's input") terminates the string and breaks CI. Locked here because
+    // the failure is in the SHELL layer, not in any behaviour the other axes see.
+    expect(extractGateScript()).not.toContain("'");
+  });
+
+  it("@req:99e06488-2da6-48fe-bd64-30c1e20bca0f a report predating the floor fails CLOSED, not open", () => {
+    // A report with no `inputIntegrityViolation` field means the floor was never
+    // evaluated. Treating that as "no violation" would silently restore exactly
+    // the pre-floor behaviour this requirement removes.
+    const gate = runBlockingGate({ activeTotal: 0, activeViolations: [] });
+    expect(gate.code).toBe(1);
+    expect(gate.stderr).toMatch(/predates the population floor/);
   });
 
   it("@req:99e06488-2da6-48fe-bd64-30c1e20bca0f a RENAMED status predicate empties the corpus — the very failure the floor exists for", async () => {

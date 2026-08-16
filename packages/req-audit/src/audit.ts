@@ -201,9 +201,10 @@ export interface FloorViolationFinding {
  * itself (the bound test runs in CI; if the behavior breaks, that test goes
  * red). Together: an active requirement whose behavior is broken turns CI red,
  * unless it is explicitly moved to `Deprecated`. This is an ALWAYS-ON hard
- * finding (independent of the soft→hard P0 ramp): it is vacuous while zero
- * requirements are `active`, and arms per-requirement the moment one is flipped
- * to `active`.
+ * finding (independent of the soft→hard P0 ramp): it arms per-requirement the
+ * moment one is flipped to `active`. ⛔ It is NO LONGER vacuous while zero
+ * requirements are `active` — zero active requirements is now an INPUT-integrity
+ * failure (req 99e06488-2da6-48fe-bd64-30c1e20bca0f), not a vacuous pass.
  */
 export interface ActiveViolationFinding {
   uid: string;
@@ -866,7 +867,9 @@ function renderText(report: TraceabilityReport, gate: GateMode = "soft"): void {
  *    `requirements-trace` CI job's `continue-on-error` (Phase-1/2); the
  *    **active-requirement invariant** is enforced by a SEPARATE blocking CI
  *    step (no `continue-on-error`) so an unbound `active` requirement blocks a
- *    merge in any phase (always-on, vacuous at zero active reqs).
+ *    merge in any phase (always-on). ⛔ NOT "vacuous at zero active reqs" any
+ *    more: zero active requirements is an INPUT-integrity failure (req
+ *    99e06488-2da6-48fe-bd64-30c1e20bca0f), not a vacuous pass.
  *  - `hard`: additionally exit 1 when the report is **not ramp-ready** (any
  *    enumerated P0 requirement unbound). This is the Phase-3 gate — at the
  *    M3-closure flip the CI job switches to `--gate hard`, drops
