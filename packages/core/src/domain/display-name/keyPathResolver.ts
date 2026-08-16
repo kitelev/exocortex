@@ -45,8 +45,12 @@ export function isWikilink(value: string): boolean {
  * function nor either of its callers has a try/catch, so the failure mode would be "every key-path
  * walk throws", not "one matcher fails closed". The two forms are behaviourally identical here
  * (verified across 42 input shapes); this one has no floor.
+ *
+ * ⛤ EXPORTED for `PrintNameRuleService.matcherSatisfied`'s no-dot branch (issue #4059): a
+ * one-component matchKey is a segment too, and it must not read differently from a dotted one.
+ * Keep it exported — a second copy there is exactly what this function exists to prevent.
  */
-function ownProperty(source: unknown, key: string): unknown {
+export function ownProperty(source: unknown, key: string): unknown {
   if (source === null || typeof source !== "object") return undefined;
   return Object.prototype.hasOwnProperty.call(source, key)
     ? (source as Record<string, unknown>)[key]
