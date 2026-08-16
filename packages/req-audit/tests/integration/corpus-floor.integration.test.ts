@@ -217,15 +217,43 @@ describe("corpus floor — every declared assetspace must actually contribute", 
     });
   });
 
-  it("@req:bba7bd2b-de7a-4043-bfb8-df56bd3d2a0a the declared set matches what CI actually clones — the two carriers cannot drift apart silently", () => {
-    // The floor's population is DECLARED in code; the clone destinations live
-    // in the workflow. Neither can be derived from the other, so the agreement
-    // is pinned here — a clone line added/removed without updating the constant
-    // (or vice versa) reds this test.
-    const cloned = [
-      ...readWorkflow().matchAll(/"\$RUNNER_TEMP\/reqs\/([\w.-]+)"/g),
-    ].map((m) => m[1]);
-    expect(cloned.length).toBeGreaterThan(0); // canary: the step is still there
-    expect([...cloned].sort()).toEqual([...DECLARED_REQS_ASSETSPACES].sort());
+  it("@req:bba7bd2b-de7a-4043-bfb8-df56bd3d2a0a CI enumerates its reqs assetspaces ONCE — the clone loop and the corpus floor read the same variable", () => {
+    // What the floor requires must be, by construction, what CI clones. The
+    // workflow therefore carries ONE enumeration (`REQS_ASSETSPACES`) that
+    // drives both; a second list would only have to agree, and "must agree" is
+    // the very shape this feature exists to remove. Asserted structurally, so
+    // re-typing a name anywhere in the job reds this test rather than waiting
+    // for a corpus to go missing in production.
+    const yaml = readWorkflow();
+    const job = yaml.slice(yaml.indexOf("  requirements-trace:"));
+    const jobEnd = job.indexOf("\n  living-docs:");
+    const scope = jobEnd === -1 ? job : job.slice(0, jobEnd);
+
+    const declaredInWorkflow = /REQS_ASSETSPACES:\s*([\w.,-]+)/.exec(scope);
+    expect(declaredInWorkflow).not.toBeNull(); // canary: the enumeration exists
+    const names = (declaredInWorkflow?.[1] ?? "").split(",");
+
+    // The audit's built-in default is the fallback for a non-CI invocation; it
+    // must still agree with what CI declares, or a local run audits a corpus
+    // the pipeline does not have.
+    expect([...names].sort()).toEqual([...DECLARED_REQS_ASSETSPACES].sort());
+
+    // Structural half: nothing else in the job re-types an assetspace name —
+    // the clone loop and both audit invocations go through the variable.
+    const reTyped = [...scope.matchAll(/exoas-[\w-]*reqs/g)].map((m) => m[0]);
+    expect(reTyped).toEqual(names); // exactly once: the declaration itself
+    expect(scope).toContain('"$RUNNER_TEMP/reqs/$name"'); // the clone loop
+
+    // EVERY audit invocation carries the floor — counted, not merely "present
+    // somewhere": the JSON run is the authoritative gate signal (its report is
+    // what the blocking step reads), so `--expect` going missing from THAT one
+    // while the advisory text run keeps it would disable the floor in
+    // production under a green check.
+    const invocations = [...scope.matchAll(/req-audit\/src\/cli\.ts/g)].length;
+    const withFloor = [
+      ...scope.matchAll(/--expect "\$REQS_ASSETSPACES"/g),
+    ].length;
+    expect(invocations).toBeGreaterThan(0); // canary: the audit still runs here
+    expect(withFloor).toBe(invocations);
   });
 });

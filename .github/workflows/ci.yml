@@ -304,6 +304,12 @@ jobs:
       # M3-closure (see the block above). `soft` = warn only; `hard` = also
       # block when the P0 checklist is not ramp-ready.
       REQ_GATE: soft
+      # The reqs assetspaces this job's corpus consists of — the SINGLE
+      # enumeration, driving BOTH the clone loop below AND the audit's corpus
+      # floor (`--expect`). Adding a module = one name here, nowhere else: the
+      # set the floor requires is definitionally the set CI clones, so the two
+      # cannot drift apart (issue #4066).
+      REQS_ASSETSPACES: exoas-exo-reqs,exoas-ems-reqs
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -322,15 +328,16 @@ jobs:
 
       - name: Clone reqs assetspaces (public)
         # The audit walks `$RUNNER_TEMP/reqs` recursively, so each per-module
-        # reqs assetspace (RFC 0003 §3.2) is just one more clone line here.
+        # reqs assetspace (RFC 0003 §3.2) is one more name in REQS_ASSETSPACES —
+        # ⛔ do NOT add a clone line here, and do NOT repeat the name anywhere
+        # else in this job: that env var is what the corpus floor requires.
         run: |
           mkdir -p "$RUNNER_TEMP/reqs"
-          git clone --depth 1 \
-            https://github.com/kitelev/exoas-exo-reqs.git \
-            "$RUNNER_TEMP/reqs/exoas-exo-reqs"
-          git clone --depth 1 \
-            https://github.com/kitelev/exoas-ems-reqs.git \
-            "$RUNNER_TEMP/reqs/exoas-ems-reqs"
+          for name in ${REQS_ASSETSPACES//,/ }; do
+            git clone --depth 1 \
+              "https://github.com/kitelev/$name.git" \
+              "$RUNNER_TEMP/reqs/$name"
+          done
 
       - name: Run traceability audit (soft — never blocks until the P3 flip)
         id: audit
@@ -346,11 +353,13 @@ jobs:
           rc=0
           npx tsx packages/req-audit/src/cli.ts \
             --reqs "$RUNNER_TEMP/reqs" --tests . --gate "$REQ_GATE" --output json \
+            --expect "$REQS_ASSETSPACES" \
             > "$RUNNER_TEMP/req-report.json" || rc=$?
           cat "$RUNNER_TEMP/req-report.json"
           echo "--- human-readable (gate=$REQ_GATE) ---"
           npx tsx packages/req-audit/src/cli.ts \
-            --reqs "$RUNNER_TEMP/reqs" --tests . --gate "$REQ_GATE" --output text || true
+            --reqs "$RUNNER_TEMP/reqs" --tests . --gate "$REQ_GATE" --output text \
+            --expect "$REQS_ASSETSPACES" || true
           exit $rc
 
       - name: Active-requirement gate (BLOCKING — SDD feature-lifecycle invariant)
