@@ -80,9 +80,18 @@ export const NAMESPACE_PREFIX_MAP: ReadonlyMap<string, string> = new Map([
   ["place__", "https://exocortex.my/ontology/place#"],
   ["pn__", "https://exocortex.my/ontology/pn#"],
   ["period__", "https://exocortex.my/ontology/period#"],
+  // External W3C vocabularies — canonical bases, matching core's
+  // Namespace.KNOWN_NAMESPACES (req aceaa2cc-15b6-4e1c-bf63-72c7c209de51).
+  // `xsd__`/`sh__` were absent while rdf/rdfs/owl were already canonical here;
+  // once core emits all five canonically, a missing entry means this map builds
+  // subClassOf edges under a DIFFERENT IRI than the converter emits, so
+  // isSubClassOf returns false → false `sh:class` violations (the `person__`
+  // incident documented at labelToOntologyIRI below).
   ["rdf__", "http://www.w3.org/1999/02/22-rdf-syntax-ns#"],
   ["rdfs__", "http://www.w3.org/2000/01/rdf-schema#"],
   ["owl__", "http://www.w3.org/2002/07/owl#"],
+  ["xsd__", "http://www.w3.org/2001/XMLSchema#"],
+  ["sh__", "http://www.w3.org/ns/shacl#"],
 ]);
 
 export type ShapesFormat = "text" | "json" | "earl";

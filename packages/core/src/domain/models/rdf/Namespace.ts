@@ -56,6 +56,8 @@ export class Namespace {
     "http://www.w3.org/2001/XMLSchema#"
   );
 
+  static readonly SHACL = new Namespace("sh", "http://www.w3.org/ns/shacl#");
+
   static readonly EXO = new Namespace("exo", "https://exocortex.my/ontology/exo#");
 
   static readonly EMS = new Namespace("ems", "https://exocortex.my/ontology/ems#");
@@ -90,6 +92,20 @@ export class Namespace {
    * the canonical {@link Namespace} singletons (so reference equality and
    * prefix display remain stable), falling back to a derived namespace for
    * any other lowercase-leading prefix.
+   *
+   * The list has two groups:
+   *
+   * 1. **Exocortex namespaces** — resolve to `EXOCORTEX_ONTOLOGY_BASE` anyway;
+   *    listed so that the canonical singleton (not a fresh equal-valued object)
+   *    is returned.
+   * 2. **External W3C vocabularies** (`rdf`, `rdfs`, `owl`, `xsd`, `sh`) — these
+   *    MUST be listed, because their canonical IRIs are NOT derivable from
+   *    `EXOCORTEX_ONTOLOGY_BASE`. Without them a vault asset labelled
+   *    `rdfs__subClassOf` would emit `https://exocortex.my/ontology/rdfs#subClassOf`,
+   *    while {@link RDFVocabularyMapper} already emits the very same term as a
+   *    PREDICATE under `http://www.w3.org/2000/01/rdf-schema#subClassOf` — so the
+   *    asset DEFINING a term and the usages OF that term would sit under two
+   *    different IRIs and never join. See req `aceaa2cc-15b6-4e1c-bf63-72c7c209de51`.
    */
   private static readonly KNOWN_NAMESPACES: ReadonlyArray<Namespace> = [
     Namespace.EXO,
@@ -101,6 +117,12 @@ export class Namespace {
     Namespace.LIT,
     Namespace.INBOX,
     Namespace.PMBOK,
+    // External W3C vocabularies — canonical IRIs, not exocortex.my-derivable.
+    Namespace.RDF,
+    Namespace.RDFS,
+    Namespace.OWL,
+    Namespace.XSD,
+    Namespace.SHACL,
   ];
 
   /**
@@ -132,5 +154,82 @@ export class Namespace {
     const namespace = Namespace.forPrefix(match[1]);
     if (!namespace) return null;
     return { namespace, localName: match[2] };
+  }
+
+  /**
+   * INVERSE of {@link fromPropertyKey} + {@link Namespace.term}: recover the
+   * namespace + local name from a term IRI.
+   *
+   * Resolution order mirrors {@link forPrefix} exactly — the whitelist first
+   * (so an external W3C IRI such as `http://www.w3.org/2000/01/rdf-schema#subClassOf`
+   * resolves to {@link RDFS}), then the ad-hoc `EXOCORTEX_ONTOLOGY_BASE` convention
+   * (so `https://exocortex.my/ontology/aiKnow#Memory` still resolves).
+   *
+   * ⛔ Both directions MUST be derived from the SAME `KNOWN_NAMESPACES` array.
+   * A second literal list of bases is how the two drift apart: registering a
+   * vocabulary forward-only makes the emitter produce IRIs its own inverse
+   * cannot read, which silently breaks every consumer that maps a term IRI back
+   * to a frontmatter key (reified-predicate de-reification, wikilink naming).
+   * See req `aceaa2cc-15b6-4e1c-bf63-72c7c209de51`.
+   *
+   * Returns `null` when the IRI belongs to no known/derivable namespace, or when
+   * the local name is empty or itself contains `#`/`/` (not a clean `ns#Local`
+   * term — a path-form `obsidian://…/<uid>.md` ref lands here).
+   *
+   * ⛤ The `/`-rejection DELIBERATELY NARROWS one of the two call sites this
+   * replaced. `iriToObsidianName`'s hand-rolled regex ended in `([^#]+)$`, which
+   * permitted a slash (`…/ontology/exo#Asset/Sub` → `exo__Asset/Sub`); the
+   * plugin's `symbolicIriToPropertyKey` rejected it. Unifying them adopts the
+   * STRICTER of the two prior semantics on purpose: a slash-bearing local name is
+   * not a `prefix__LocalName` frontmatter key, and treating it as one produced a
+   * property key no reader could resolve. `Namespace.term()` can still MINT such
+   * an IRI (the IRI ctor rejects spaces, not slashes), so the narrowing is
+   * reachable by construction — but a sweep of all three vaults found 40 distinct
+   * slash-bearing ontology-base values and ZERO that the old regex resolved (each
+   * is an `exo__Ontology_url` literal ending in `#`, e.g. `…/ems/docs#`).
+   */
+  static fromTermIRI(
+    iri: string,
+  ): { namespace: Namespace; localName: string } | null {
+    if (typeof iri !== "string" || iri.length === 0) return null;
+
+    const cleanLocal = (localName: string): string | null =>
+      localName.length > 0 &&
+      !localName.includes("#") &&
+      !localName.includes("/")
+        ? localName
+        : null;
+
+    // 1. Registered namespaces (both exocortex.my and external W3C vocabularies).
+    for (const ns of Namespace.KNOWN_NAMESPACES) {
+      const base = ns.iri.value;
+      if (iri.startsWith(base)) {
+        const localName = cleanLocal(iri.slice(base.length));
+        if (localName === null) return null;
+        return { namespace: ns, localName };
+      }
+    }
+
+    // 2. Ad-hoc `EXOCORTEX_ONTOLOGY_BASE<prefix>#<LocalName>` convention.
+    if (!iri.startsWith(Namespace.EXOCORTEX_ONTOLOGY_BASE)) return null;
+    const rest = iri.slice(Namespace.EXOCORTEX_ONTOLOGY_BASE.length);
+    const hash = rest.indexOf("#");
+    if (hash <= 0) return null;
+    const prefix = rest.slice(0, hash);
+    if (!/^[a-z][a-zA-Z0-9]*$/.test(prefix)) return null;
+    const localName = cleanLocal(rest.slice(hash + 1));
+    if (localName === null) return null;
+    const namespace = Namespace.forPrefix(prefix);
+    if (!namespace) return null;
+    return { namespace, localName };
+  }
+
+  /**
+   * The registered namespaces, for consumers that must enumerate them (e.g. a
+   * round-trip invariant test). Exposed read-only so the single source of truth
+   * stays {@link KNOWN_NAMESPACES}.
+   */
+  static knownNamespaces(): ReadonlyArray<Namespace> {
+    return Namespace.KNOWN_NAMESPACES;
   }
 }

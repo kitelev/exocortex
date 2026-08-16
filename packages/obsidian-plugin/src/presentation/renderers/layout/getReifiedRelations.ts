@@ -118,9 +118,11 @@ export function labelToSymbolicIRI(label: string | null | undefined): IRI | null
 
 /**
  * Inverse of {@link labelToSymbolicIRI}: recover the frontmatter predicate KEY
- * (`<prefix>__<LocalName>`) from an ontology symbolic IRI
- * (`<EXOCORTEX_ONTOLOGY_BASE><prefix>#<LocalName>`). Returns `null` for a
- * non-ontology IRI (a path-form `obsidian://…/<uid>.md` ref, an arbitrary IRI).
+ * (`<prefix>__<LocalName>`) from an ontology symbolic IRI — either the ad-hoc
+ * `<EXOCORTEX_ONTOLOGY_BASE><prefix>#<LocalName>` form or a registered external
+ * vocabulary's canonical form (`http://www.w3.org/2000/01/rdf-schema#subClassOf`
+ * → `rdfs__subClassOf`). Returns `null` for a non-ontology IRI (a path-form
+ * `obsidian://…/<uid>.md` ref, an arbitrary IRI).
  *
  * The RDF converter emits a `prefix__LocalName`-shaped `exo__Asset_label` as a
  * symbolic IRI, NOT a Literal (dual-IRI — `sparql-iri-form-pre-verify`). Any
@@ -132,18 +134,16 @@ export function labelToSymbolicIRI(label: string | null | undefined): IRI | null
  * name containing `#`/`/` is rejected here — such keys are not valid anyway).
  */
 export function symbolicIriToPropertyKey(iri: string): string | null {
-  const base = Namespace.EXOCORTEX_ONTOLOGY_BASE;
-  if (typeof iri !== "string" || !iri.startsWith(base)) return null;
-  const rest = iri.slice(base.length); // "<prefix>#<LocalName>"
-  const hash = rest.indexOf("#");
-  if (hash <= 0 || hash >= rest.length - 1) return null;
-  const prefix = rest.slice(0, hash);
-  const localName = rest.slice(hash + 1);
-  // Same prefix shape guard as `Namespace.forPrefix`.
-  if (!/^[a-z][a-zA-Z0-9]*$/.test(prefix)) return null;
-  // A further `#` / `/` means this is not a clean `ns#Local` term.
-  if (localName.includes("#") || localName.includes("/")) return null;
-  return `${prefix}__${localName}`;
+  // Delegates to the SHARED inverse so this direction cannot drift from the
+  // forward path: `Namespace.fromTermIRI` resolves the registered namespaces
+  // (incl. the external W3C vocabularies, whose canonical bases are NOT under
+  // EXOCORTEX_ONTOLOGY_BASE) before falling back to the ad-hoc convention.
+  // Anchoring on EXOCORTEX_ONTOLOGY_BASE alone silently dropped every
+  // W3C-prefixed predicate-def (e.g. `owl__sameAs`, live in all three vaults),
+  // re-opening the de-reify failure ems__Bug f68bf750 / #3904.
+  const term = Namespace.fromTermIRI(iri);
+  if (!term) return null;
+  return `${term.namespace.prefix}__${term.localName}`;
 }
 
 /**
