@@ -264,7 +264,7 @@ describe("symbolicIriToPropertyKey (inverse of labelToSymbolicIRI)", () => {
     }
   });
 
-  it("returns null for a non-ontology IRI (path-form ref, unregistered host, empty)", () => {
+  it("returns null for a non-ontology IRI (path-form ref, unregistered vocabulary, empty)", () => {
     expect(
       symbolicIriToPropertyKey("obsidian://vault/assetspaces/x/1234.md"),
     ).toBeNull();

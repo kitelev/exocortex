@@ -175,6 +175,18 @@ export class Namespace {
    * Returns `null` when the IRI belongs to no known/derivable namespace, or when
    * the local name is empty or itself contains `#`/`/` (not a clean `ns#Local`
    * term — a path-form `obsidian://…/<uid>.md` ref lands here).
+   *
+   * ⛤ The `/`-rejection DELIBERATELY NARROWS one of the two call sites this
+   * replaced. `iriToObsidianName`'s hand-rolled regex ended in `([^#]+)$`, which
+   * permitted a slash (`…/ontology/exo#Asset/Sub` → `exo__Asset/Sub`); the
+   * plugin's `symbolicIriToPropertyKey` rejected it. Unifying them adopts the
+   * STRICTER of the two prior semantics on purpose: a slash-bearing local name is
+   * not a `prefix__LocalName` frontmatter key, and treating it as one produced a
+   * property key no reader could resolve. `Namespace.term()` can still MINT such
+   * an IRI (the IRI ctor rejects spaces, not slashes), so the narrowing is
+   * reachable by construction — but a sweep of all three vaults found 40 distinct
+   * slash-bearing ontology-base values and ZERO that the old regex resolved (each
+   * is an `exo__Ontology_url` literal ending in `#`, e.g. `…/ems/docs#`).
    */
   static fromTermIRI(
     iri: string,

@@ -258,6 +258,37 @@ describe(`W3C vocabulary prefixes emit canonical IRIs (${REQ})`, () => {
       }
     });
 
+    /**
+     * `fromTermIRI` walks KNOWN_NAMESPACES first-match-wins, so a base that is a
+     * string PREFIX of another shadows it: the earlier entry claims the IRI and
+     * returns a local name still carrying the rest of the later base. No pair
+     * shadows today, but that holds because every base ends in `#` — a property
+     * of the CURRENT data, not of the code.
+     *
+     * ⛤ This axis adds NO coverage — measured, not assumed. Simulating the three
+     * shadowing shapes (hash-terminated, slash-terminated `http://purl.org/dc/`
+     * vs `…/dc/terms/`, and a no-hash inner base) shows the round-trip axes above
+     * catch all three: two resolve to `null`, the third to the WRONG namespace.
+     * What this axis adds is a READABLE failure — it names the offending pair,
+     * where round-trip only reports "expected namespace to be <X>" on whichever
+     * vocabulary happened to be registered second. Keeping it is a diagnostics
+     * ratchet, not a second line of defence; do not cite it as one.
+     */
+    it(`${REQ} no registered namespace base is a prefix of another (first-match-wins is safe)`, () => {
+      const bases = Namespace.knownNamespaces().map((ns) => ns.iri.value);
+      expect(bases.length).toBeGreaterThan(0); // canary
+
+      const shadowing: string[] = [];
+      for (const outer of bases) {
+        for (const inner of bases) {
+          if (outer !== inner && inner.startsWith(outer)) {
+            shadowing.push(`${outer} shadows ${inner}`);
+          }
+        }
+      }
+      expect(shadowing).toEqual([]);
+    });
+
     it(`${REQ} iriToObsidianName inverts label emission for EVERY registered namespace`, async () => {
       const namespaces = Namespace.knownNamespaces();
       expect(namespaces.length).toBeGreaterThan(0);
