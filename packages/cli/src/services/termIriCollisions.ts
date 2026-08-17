@@ -1,4 +1,5 @@
 import {
+  DomainBlankNode,
   DomainIRI,
   Namespace,
   type Triple,
@@ -83,8 +84,16 @@ export function detectTermIriCollisions(
     // (vault-exodev). The guard is therefore justified by that one IRI's measured
     // 0 predicate uses, not by an invariant about file IRIs.
     // `Namespace.fromTermIRI` is the documented inverse of the forward path
-    // `fromPropertyKey` → `term`, so it accepts exactly the IRIs that path can
-    // produce and nothing else.
+    // `fromPropertyKey` → `term`. ⛔ It is NOT an exact inverse, and claiming so
+    // here was false (review round 3, probe P3): `Namespace.term()` will mint an
+    // IRI for a local name containing `/` or `#` (label `exo__Asset/Sub` →
+    // `…/exo#Asset/Sub`), while `fromTermIRI` rejects those by design — its own
+    // docstring says the narrowing "is reachable by construction". So this guard
+    // has a small FALSE-NEGATIVE class: a collision on such a label goes
+    // unreported. Accepted deliberately — widening the inverse to admit `/` and
+    // `#` would make the local-name boundary ambiguous, which is the reason the
+    // narrowing exists. What the guard does guarantee is the direction that
+    // matters here: nothing it accepts is a file IRI or a literal.
     if (Namespace.fromTermIRI(triple.object.value) === null) continue;
 
     const iri = triple.object.value;
@@ -93,15 +102,33 @@ export function detectTermIriCollisions(
       subjects = new Set<string>();
       emitters.set(iri, subjects);
     }
-    // `Subject` is IRI | BlankNode. A blank node is kept in the COUNT (it is a
-    // genuine second emitter and its presence is what makes the term ambiguous)
-    // but cannot be a focusNode a reader could open — it is skipped at render
-    // time below. Filtering it here instead would suppress the report for the
-    // addressable half too.
+    // `Subject` is IRI | BlankNode | QuotedTriple, and the three carry their
+    // identity under DIFFERENT accessors: `IRI.value`, `BlankNode.id`,
+    // `QuotedTriple.toString()`. ⛔ Reading `.value` off the non-IRI branch (as
+    // this did until review round 3) type-errors AND collapses every blank
+    // emitter to one key, so N distinct blank nodes rendered as a single
+    // `_:blank` and the reported emitter count was wrong. The fixture hid it by
+    // faking the node as `{ value }` — a shape the real class does not have
+    // (test-fixture-realism). The axis below now uses a real `BlankNode`.
+    //
+    // A blank node is kept in the COUNT (it is a genuine second emitter and its
+    // presence is what makes the term ambiguous) but cannot be a focusNode a
+    // reader could open — it is skipped at render time below. Filtering it here
+    // instead would suppress the report for the addressable half too.
+    // ⚠ The third branch (QuotedTriple, RDF-star) has NO axis, and cannot have
+    // one from this package: `QuotedTriple` is not re-exported from the core
+    // barrel (verified — `grep QuotedTriple packages/core/src/index.ts` is
+    // empty), so a test here cannot construct one. It is handled rather than
+    // dropped because the `Subject` union admits it; `toString()` is its only
+    // stable identity. Stated explicitly so a later reader reads this as a
+    // measured gap, not a forgotten axis.
+    const subject = triple.subject;
     subjects.add(
-      triple.subject instanceof DomainIRI
-        ? triple.subject.value
-        : `_:${String(triple.subject.value ?? "blank")}`,
+      subject instanceof DomainIRI
+        ? subject.value
+        : subject instanceof DomainBlankNode
+          ? `_:${subject.id}`
+          : `<<${String(subject)}>>`,
     );
   }
 
@@ -110,8 +137,9 @@ export function detectTermIriCollisions(
     if (subjects.size < 2) continue;
     const sorted = [...subjects].sort();
     for (const focusNode of sorted) {
-      // Blank nodes are counted above but cannot anchor a report entry.
-      if (focusNode.startsWith("_:")) continue;
+      // Blank nodes and quoted triples are counted above but cannot anchor a
+      // report entry — a reader cannot open them.
+      if (focusNode.startsWith("_:") || focusNode.startsWith("<<")) continue;
       const others = sorted.filter((s) => s !== focusNode);
       violations.push({
         focusNode,

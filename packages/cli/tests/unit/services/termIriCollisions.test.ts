@@ -1,4 +1,5 @@
 import {
+  DomainBlankNode as BlankNode,
   DomainIRI as IRI,
   DomainLiteral as Literal,
   Namespace,
@@ -104,11 +105,17 @@ describe("detectTermIriCollisions", () => {
   });
 
   /**
-   * ⛔ NEGATIVE CONTROL, and the reason the `instanceof IRI` filter exists.
-   * Plain literal labels repeat legitimately and en masse — the live measurement
-   * found 214 distinct literal labels shared by more than one asset. If this axis
-   * ever goes green while the detector reports literals, the check has become
-   * noise rather than a signal.
+   * ⛔ NEGATIVE CONTROL. Plain literal labels repeat legitimately and en masse —
+   * the live measurement found 214 distinct literal labels shared by more than
+   * one asset. If this axis ever goes green while the detector reports literals,
+   * the check has become noise rather than a signal.
+   *
+   * ⚠ This axis is DEFENCE IN DEPTH, not the pin for `instanceof IRI` — the
+   * claim that it was (asserted here until review round 3) is false: it stays
+   * green under BOTH mutants, because either guard alone rejects a literal. The
+   * pin for `instanceof` is the "literal text that LOOKS like a term IRI" axis
+   * below; the pin for `fromTermIRI` is the file-IRI axis. Measured: dropping
+   * `instanceof` reds exactly one axis, and it is not this one.
    */
   it(`${REQ} does NOT report duplicated PLAIN labels (214 such labels exist live)`, () => {
     const found = detectTermIriCollisions([
@@ -197,17 +204,69 @@ describe("detectTermIriCollisions", () => {
    * but it cannot anchor an entry a reader could open. Filtering it out before
    * counting (the earlier shape) suppressed the report for the addressable asset
    * too, which is the half that is actionable.
+   *
+   * ⛔ Uses a REAL `BlankNode`. The earlier fixture faked it as
+   * `{ value: "b0" } as unknown as IRI` — a shape the real class does not have
+   * (`BlankNode` exposes `.id`, not `.value`), so the axis could not observe
+   * production behaviour and the detector's `.value` read shipped through two
+   * review rounds: every blank emitter collapsed to the single key `_:blank`.
+   * TWO blank nodes below, deliberately — one cannot distinguish "keyed by id"
+   * from "all blanks share one key" (test-fixture-realism).
    */
-  it(`${REQ} counts a blank-node co-emitter but reports only the addressable one`, () => {
-    const blank = { value: "b0" } as unknown as IRI; // not a DomainIRI instance
+  it(`${REQ} counts blank-node co-emitters DISTINCTLY but reports only the addressable one`, () => {
     const found = detectTermIriCollisions([
       labelledWithIri("addressable", OWL_SAME_AS),
-      new Triple(blank, new IRI(LABEL), new IRI(OWL_SAME_AS)),
+      new Triple(new BlankNode("b1"), new IRI(LABEL), new IRI(OWL_SAME_AS)),
+      new Triple(new BlankNode("b2"), new IRI(LABEL), new IRI(OWL_SAME_AS)),
     ]);
 
     expect(found).toHaveLength(1);
     expect(found[0]!.focusNode).toBe(asset("addressable").value);
-    expect(found[0]!.message).toContain("2 assets");
+    // 3 emitters, not 2: keying both blanks as one `_:blank` was the bug.
+    expect(found[0]!.message).toContain("3 assets");
+    expect(found[0]!.message).toContain("_:b1");
+    expect(found[0]!.message).toContain("_:b2");
+  });
+
+  /**
+   * Two blank nodes alone still collide — nothing addressable to anchor an entry,
+   * so the detector must report NOTHING rather than fabricate a focusNode a
+   * reader cannot open. Pins the render-time skip independently of the count.
+   */
+  it(`${REQ} reports nothing when every emitter is a blank node`, () => {
+    const found = detectTermIriCollisions([
+      new Triple(new BlankNode("b1"), new IRI(LABEL), new IRI(OWL_SAME_AS)),
+      new Triple(new BlankNode("b2"), new IRI(LABEL), new IRI(OWL_SAME_AS)),
+    ]);
+
+    expect(found).toEqual([]);
+  });
+
+  /**
+   * ⚠ `.sort()` on the emitter list had NO axis until review round 3 measured a
+   * mutant (`.sort()` → `.reverse()`) surviving the whole suite. Order is not
+   * cosmetic: the `Also emitted by:` text is read across runs, and `Set`
+   * iteration order follows insertion, i.e. triple order — filesystem-dependent.
+   *
+   * ⛔ Insertion order here is `bbb, aaa, ccc`, NOT reverse-alphabetical. The
+   * first version of this axis used `ccc, bbb, aaa` and the `.reverse()` mutant
+   * SURVIVED it: reversing a reverse-sorted list yields the sorted list, so the
+   * fixture made the two implementations indistinguishable. With `bbb, aaa, ccc`
+   * sort gives `aaa,bbb,ccc` while reverse gives `ccc,aaa,bbb` — the axis can
+   * now tell them apart, which is the only reason it is worth having.
+   */
+  it(`${REQ} names co-emitters in a stable (sorted) order regardless of triple order`, () => {
+    const found = detectTermIriCollisions([
+      labelledWithIri("bbb", OWL_SAME_AS),
+      labelledWithIri("aaa", OWL_SAME_AS),
+      labelledWithIri("ccc", OWL_SAME_AS),
+    ]);
+
+    const forAaa = found.find((v) => v.focusNode === asset("aaa").value);
+    expect(forAaa).toBeDefined();
+    expect(forAaa!.message).toContain(
+      `Also emitted by: ${asset("bbb").value}, ${asset("ccc").value}`,
+    );
   });
 });
 

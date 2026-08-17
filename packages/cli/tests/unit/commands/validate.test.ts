@@ -31,8 +31,15 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   // link needs this export too (see the note above about named exports).
   Namespace: {
     EXO: { term: (local: string) => ({ value: `https://exocortex.my/ontology/exo#${local}` }) },
+    // ⛔ See the sibling note in validate-schema.test.ts: termIriCollisions calls
+    // `fromTermIRI` as well as `EXO.term`, and omitting it fails far from cause.
+    fromTermIRI: (iri: string) => {
+      const m = /^(https?:\/\/[^#]*[#/])([^#/]+)$/.exec(iri);
+      return m ? { namespace: { iri: { value: m[1] } }, localName: m[2] } : null;
+    },
   },
   DomainIRI: class { constructor(public value: string) {} },
+  DomainBlankNode: class { constructor(public id: string) {} },
   DomainLiteral: class { constructor(public value: string) {} },
   DomainTriple: jest.fn(),
   // M1.5: the `validate vault` subcommand pulls validate-vault.ts →
