@@ -82,6 +82,98 @@ for (const line of raw.split("\n")) {
   found.set(key, (found.get(key) ?? 0) + 1);
 }
 
+/**
+ * Refuse to draw any conclusion from a run that did not actually examine
+ * packages/cli. Called from BOTH the read path and `--update` — the writer needs
+ * it more, because a bad baseline is silent forever while a bad read is loud once.
+ */
+function assertRunIsMeaningful(found, raw) {
+  // ⛔ Zero parsed diagnostics is NOT "the code is clean": tsc reports config
+  // failures WITHOUT a file position (`TS5058: The specified path does not
+  // exist`, `TS18003: No inputs were found`), and the line parser drops those,
+  // leaving `found` empty. Review measured the consequence: a missing
+  // packages/cli/tsconfig.json fell through to the stale-baseline branch, which
+  // printed "run --update" — and obeying that instruction wrote an EMPTY
+  // baseline, leaving the gate green forever. The tool talked the operator into
+  // disarming it.
+  //
+  // ⚠ An earlier draft rejected a position-less-error guard as "redundant with
+  // the scope guard, it never fired either". That was wrong, and measurably so:
+  // the two cover DISJOINT breakages. Invalid JSON / bad `extends` → tsc falls
+  // back to defaults and compiles the tree → SCOPE fires. Missing tsconfig /
+  // empty `include` → nothing is compiled at all → only THIS fires. Rejecting it
+  // on "it didn't fire in my one experiment" generalised from a single case.
+  if (found.size === 0) {
+    console.error(
+      "❌ check-cli-types: zero diagnostics parsed — the check did not examine\n" +
+        "   packages/cli. tsc prints config failures without a file position, so an\n" +
+        "   empty result means 'could not run', NOT 'nothing to report'.\n" +
+        "   ⛔ Do NOT run --update to make this go away: that writes an empty\n" +
+        "   baseline and disables the gate permanently. Fix the invocation.\n" +
+        (raw.trim().length > 0
+          ? "   tsc said:\n" +
+            raw
+              .split("\n")
+              .filter((l) => l.trim().length > 0)
+              .slice(0, 5)
+              .map((l) => `      ${l.trim()}`)
+              .join("\n")
+          : "   (tsc produced no output at all)"),
+    );
+    process.exit(2);
+  }
+
+  // ⛔ Imports not resolving means the run describes a resolution cascade, not
+  // the package's type health. packages/cli/tsconfig.json declares `paths` for
+  // @kitelev/exocortex-{core,services}, but they are DEAD — it inherits
+  // `baseUrl: "."` from the root config, so `../core/src` resolves relative to
+  // the REPO ROOT, outside the repo. Resolution falls through to node_modules →
+  // `types: dist/index.d.ts`, absent until the package is built. This is not
+  // hypothetical: the first CI run of this ratchet reported 174 diagnostics /
+  // 95 pairs, ~79 of them "NEW", for exactly this reason.
+  const unresolved = [...found.keys()].filter((k) => k.endsWith("|TS2307"));
+  if (unresolved.length > 0) {
+    console.error(
+      `❌ check-cli-types: ${unresolved.length} file(s) cannot resolve their imports (TS2307).\n` +
+        "   The workspace dependencies are not built, so this run says nothing about\n" +
+        "   the cli package's own type health. Build them first:\n" +
+        "      npm run build -w @kitelev/exocortex-core\n" +
+        "      npm run build -w @kitelev/exocortex-services\n" +
+        "   (~3.5s combined; the CI step does this.)",
+    );
+    process.exit(2);
+  }
+
+  // A correctly configured run touches ONLY packages/cli. Anything outside means
+  // a different compilation than the one being ratcheted.
+  //
+  // Measured, because the obvious assumption is wrong: corrupting
+  // packages/cli/tsconfig.json does NOT make tsc fail loudly. It ignores the
+  // file, falls back to defaults, compiles the whole tree and emits hundreds of
+  // well-formed diagnostics from node_modules, exiting 2 — the same code it
+  // returns for ordinary errors. Scope is the signal; the exit code is not.
+  const outside = [...found.keys()]
+    .map((k) => k.split("|")[0])
+    .filter((f) => !f.replace(/\\/g, "/").includes("packages/cli/"));
+  if (outside.length > 0) {
+    console.error(
+      `❌ check-cli-types: ${outside.length} diagnostic file(s) lie OUTSIDE packages/cli —\n` +
+        "   tsc compiled a different file set than intended, so this run says nothing\n" +
+        "   about the cli package. Usually a broken/ignored packages/cli/tsconfig.json\n" +
+        "   (tsc silently falls back to defaults rather than failing); a SYNTAX error\n" +
+        "   inside a workspace .d.ts does it too, since parse errors escape\n" +
+        "   skipLibCheck. Examples:\n" +
+        outside
+          .slice(0, 3)
+          .map((f) => `      ${f}`)
+          .join("\n"),
+    );
+    process.exit(2);
+  }
+}
+
+assertRunIsMeaningful(found, raw);
+
 if (UPDATE) {
   const entries = [...found.entries()]
     .map(([key, count]) => {
@@ -104,7 +196,25 @@ try {
   process.exit(2);
 }
 
+if (!Array.isArray(baseline?.entries)) {
+  console.error(
+    `❌ check-cli-types: ${BASELINE} parsed but has no \`entries\` array — the\n` +
+      "   baseline is unusable, so the check cannot run (rc=2, not a finding).",
+  );
+  process.exit(2);
+}
+
 const known = new Set(baseline.entries.map((e) => `${e.file}|${e.code}`));
+// ⛔ Compare COUNTS per pair, not just the key set. The file has always stored
+// `count`; nothing read it, so a SECOND instance of an already-baselined pair
+// was absorbed silently — measured: adding one more unused local to a file that
+// already carries TS6133 took the run from 24 to 25 diagnostics and stayed
+// green. Realistic today: sparql-query.ts holds TS6133 ×3 and
+// exosync-quarantine.ts holds TS2554 ×3, so a 4th/6th instance would vanish.
+const baseCount = new Map(baseline.entries.map((e) => [`${e.file}|${e.code}`, e.count ?? 0]));
+const grown = [...found.entries()]
+  .filter(([key, count]) => known.has(key) && count > (baseCount.get(key) ?? 0))
+  .sort();
 
 // ⛔ "Did the check actually run?" is decided by the SCOPE of what tsc compiled,
 // not by its exit code and not by whether the output parses.
@@ -121,53 +231,11 @@ const known = new Set(baseline.entries.map((e) => `${e.file}|${e.code}`));
 //
 // A run configured correctly touches ONLY packages/cli. Anything outside it
 // means we are looking at a different compilation than the one being ratcheted.
-// ⛔ SECOND way the run can be meaningless, and it is the one that actually
-// happened in CI on the first attempt: the workspace dependencies are not built.
-// `packages/cli/tsconfig.json` declares `paths` for @kitelev/exocortex-{core,
-// services}, but they are DEAD — it inherits `baseUrl: "."` from the root config,
-// so `../core/src` resolves relative to the REPO ROOT, i.e. outside the repo.
-// Resolution therefore falls through to node_modules → `types: dist/index.d.ts`,
-// which does not exist until the package is built. Result: 174 diagnostics in 95
-// pairs instead of 24 in 18, almost all of them a TS2307 cascade — and the
-// ratchet dutifully reported them as "79 NEW type errors".
-//
-// ⚠ This also invalidated my first baseline: it was captured on a machine where
-// node_modules symlinked to a SIBLING worktree that happened to have a built
-// core. A baseline is only meaningful if it is captured under the same
-// conditions the gate runs in.
-const unresolved = [...found.keys()].filter((k) => k.endsWith("|TS2307"));
-if (unresolved.length > 0) {
-  console.error(
-    `❌ check-cli-types: ${unresolved.length} file(s) cannot resolve their imports (TS2307).\n` +
-      "   The workspace dependencies are not built, so this run says nothing about\n" +
-      "   the cli package's own type health — the errors you would see are a\n" +
-      "   resolution cascade, not real findings. Build them first:\n" +
-      "      npm run build -w @kitelev/exocortex-core\n" +
-      "      npm run build -w @kitelev/exocortex-services\n" +
-      "   (~3.6s combined; the CI step does this.)",
-  );
-  process.exit(2);
-}
-
-const outside = [...found.keys()]
-  .map((k) => k.split("|")[0])
-  .filter((f) => !f.replace(/\\/g, "/").includes("packages/cli/"));
-if (outside.length > 0) {
-  console.error(
-    `❌ check-cli-types: ${outside.length} diagnostic file(s) lie OUTSIDE packages/cli —\n` +
-      "   tsc compiled a different file set than intended, so this run says nothing\n" +
-      "   about the cli package. Usually a broken/ignored packages/cli/tsconfig.json\n" +
-      "   (tsc silently falls back to defaults rather than failing). Examples:\n" +
-      outside
-        .slice(0, 3)
-        .map((f) => `      ${f}`)
-        .join("\n"),
-  );
-  process.exit(2);
-}
-
 const newPairs = [...found.keys()].filter((k) => !known.has(k)).sort();
 const gonePairs = [...known].filter((k) => !found.has(k)).sort();
+const shrunk = [...found.entries()]
+  .filter(([key, count]) => known.has(key) && count < (baseCount.get(key) ?? 0))
+  .sort();
 
 // Report the INPUT SIZE beside the findings: "0 new" is indistinguishable from
 // "tsc emitted nothing at all" without it.
@@ -196,9 +264,22 @@ if (newPairs.length > 0) {
   process.exit(1);
 }
 
-if (gonePairs.length > 0) {
+if (grown.length > 0) {
+  console.error(`\n❌ ${grown.length} baselined pair(s) grew — new instances of known debt:\n`);
+  for (const [key, count] of grown) {
+    const [file, code] = key.split("|");
+    console.error(`   ${file} — ${code}: ${baseCount.get(key)} → ${count}`);
+  }
   console.error(
-    `\n❌ ${gonePairs.length} baselined error(s) no longer occur — the baseline is stale:\n`,
+    "\n   The baseline freezes the debt at its measured size; adding to an existing\n" +
+      "   pair is still adding. Fix the new instance.",
+  );
+  process.exit(1);
+}
+
+if (gonePairs.length > 0 || shrunk.length > 0) {
+  console.error(
+    `\n❌ ${gonePairs.length + shrunk.length} baselined entr(y/ies) no longer match — the baseline is stale:\n`,
   );
   for (const key of gonePairs) {
     const [file, code] = key.split("|");
