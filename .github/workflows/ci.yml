@@ -194,7 +194,9 @@ jobs:
       # just quietly excludes the file, and silence reads as "no matches". It had
       # already accumulated in SIX files across cli/core/sync/plugin and produced a
       # false code-review finding before anyone noticed, which is exactly why this
-      # needs a machine guard rather than review attention.
+      # needs a machine guard rather than review attention. (The byte comes from a
+      # tool normalizing an escape into a codepoint, NOT from typing `\0` by hand —
+      # the script's header has the measurement.)
       - name: No NUL bytes in tracked source
         run: node scripts/check-no-nul-bytes.mjs
 

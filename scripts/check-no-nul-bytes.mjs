@@ -16,10 +16,27 @@
  * Five recurrences, none noticed. That is the signature of a defect that review
  * cannot catch and only a guard can.
  *
- * The byte gets into source when a literal escape is written into a string:
- * `\0` in the source text IS the byte. Build it at runtime instead —
- * `String.fromCharCode(0)` for a separator, `Buffer.from([0])` for fixture
- * content — and the key value is unchanged while the source stays text.
+ * ⛤ HOW THE BYTE GETS IN — and the answer is NOT "someone typed an escape".
+ * Measured: a source file containing the two-character escape `\0` is `ASCII
+ * text`, holds zero NUL bytes, greps fine, and `"\0" === String.fromCharCode(0)`
+ * is true. Hand-writing the escape is SAFE. The byte arrives when an escape is
+ * written through a tool that NORMALIZES escape sequences into codepoints —
+ * Claude Code's Edit/Write does exactly this, so the escape never survives as
+ * text and a raw 0x00 lands in the file (documented since 2026-07-04 in
+ * `edit-tool-unicode-escape-becomes-codepoint`). This distinction is load-
+ * bearing for whoever trips this guard: searching your diff for `\0` will find
+ * NOTHING, because the tool already ate it. Search for the BYTE.
+ *
+ * The fix is to construct the byte at runtime, where there is no escape for a
+ * tool to normalize, and the value is identical:
+ *   const KEY_SEP = String.fromCharCode(0);   // separators, sentinels
+ *   Buffer.from([0, 0])                       // binary fixture content
+ *
+ * An earlier version of this very file asserted the opposite mechanism ("a
+ * literal `\0` in the source becomes a raw NUL byte") in seven places. Review
+ * refuted it by measurement. Left recorded here because a guard that explains
+ * itself wrongly sends the next reader looking for the wrong thing — which is
+ * the same failure this guard exists to end.
  */
 
 import { execFileSync } from "node:child_process";
@@ -32,11 +49,22 @@ import { readFileSync } from "node:fs";
 const BINARY_EXT =
   /\.(png|jpe?g|gif|ico|webp|svgz|woff2?|ttf|otf|eot|gz|zip|tar|pdf|mp4|webm|wasm|node|jar|class|so|dylib|dll)$/i;
 
+function runGit() {
+  try {
+    return execFileSync("git", ["ls-files", "-z"], {
+      encoding: "buffer",
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  } catch (err) {
+    console.error(
+      `❌ check-no-nul-bytes: git ls-files failed — the guard did not run: ${String(err)}`,
+    );
+    process.exit(2);
+  }
+}
+
 function tracked() {
-  const out = execFileSync("git", ["ls-files", "-z"], {
-    encoding: "buffer",
-    maxBuffer: 64 * 1024 * 1024,
-  });
+  const out = runGit();
   // ⛤ `git ls-files -z` separates paths with NUL, so this guard must split on
   // the very byte it bans. Writing that literal here would make the guard itself
   // `data` and it would flag its own source. Built at runtime instead — which is
@@ -89,8 +117,12 @@ if (offenders.length > 0) {
   }
   console.error(
     "\n   A NUL in source makes file(1) report `data`, so plain `grep` skips the\n" +
-      "   file SILENTLY. It almost always comes from a literal escape in a string.\n" +
-      "   Build the byte at runtime instead — the value is identical:\n" +
+      "   file SILENTLY — which is why nobody noticed the previous six.\n" +
+      "   ⛔ Do NOT go looking for a literal \\0 in your diff: a hand-written escape\n" +
+      "   is harmless (it stays text). The byte gets in when an escape is written\n" +
+      "   through a tool that normalizes escapes into codepoints — Claude's\n" +
+      "   Edit/Write does. Search for the BYTE, not the escape.\n" +
+      "   Build it at runtime instead; the value is identical:\n" +
       "     const KEY_SEP = String.fromCharCode(0);   // separators, sentinels\n" +
       "     Buffer.from([0, 0])                       // binary fixture content\n" +
       "   See issue #4071.",

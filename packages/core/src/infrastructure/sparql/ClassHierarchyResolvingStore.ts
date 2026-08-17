@@ -13,13 +13,9 @@ import { IRI } from "../../domain/models/rdf/IRI";
 import { Namespace } from "../../domain/models/rdf/Namespace";
 
 /**
- * Separator for composite keys, built at RUNTIME rather than written as a
- * literal escape. ⛔ A literal `\0` in the source becomes a raw NUL BYTE, and
- * `file(1)` then classifies the whole file as `data` — which makes plain `grep`
- * skip it SILENTLY (exit != 0, no output), while `git grep` and `rg` still match.
- * That already produced a false code-review finding (issue #4071): a reviewer
- * searched this file, got nothing, and concluded the string existed nowhere in
- * the repo. A `lint`-job guard now fails on any NUL byte in tracked sources.
+ * Composite-key separator, built at runtime. The byte must not appear as a
+ * literal in this file — see scripts/check-no-nul-bytes.mjs for why, and issue
+ * #4071 for what it cost.
  */
 const KEY_SEP = String.fromCharCode(0);
 
