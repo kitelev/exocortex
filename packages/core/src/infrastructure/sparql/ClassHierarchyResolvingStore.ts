@@ -13,6 +13,17 @@ import { IRI } from "../../domain/models/rdf/IRI";
 import { Namespace } from "../../domain/models/rdf/Namespace";
 
 /**
+ * Separator for composite keys, built at RUNTIME rather than written as a
+ * literal escape. ⛔ A literal `\0` in the source becomes a raw NUL BYTE, and
+ * `file(1)` then classifies the whole file as `data` — which makes plain `grep`
+ * skip it SILENTLY (exit != 0, no output), while `git grep` and `rg` still match.
+ * That already produced a false code-review finding (issue #4071): a reviewer
+ * searched this file, got nothing, and concluded the string existed nowhere in
+ * the repo. A `lint`-job guard now fails on any NUL byte in tracked sources.
+ */
+const KEY_SEP = String.fromCharCode(0);
+
+/**
  * Thrown when a symbolic `prefix#Local` class reference in a query resolves
  * AMBIGUOUSLY — two or more DISTINCT class files derive the same symbolic form (a
  * cross-ontology prefix collision; RFC 78572fa9 v3 point 9: a prefix is a per-user
@@ -374,9 +385,9 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
     const seen = new Set<string>();
     const out: Triple[] = [];
     for (const t of triples) {
-      const key = `${ClassHierarchyResolvingStore.termKey(t.subject)} ${ClassHierarchyResolvingStore.termKey(
+      const key = `${ClassHierarchyResolvingStore.termKey(t.subject)}${KEY_SEP}${ClassHierarchyResolvingStore.termKey(
         t.predicate,
-      )} ${ClassHierarchyResolvingStore.termKey(t.object)}`;
+      )}${KEY_SEP}${ClassHierarchyResolvingStore.termKey(t.object)}`;
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(t);

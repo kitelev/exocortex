@@ -364,7 +364,7 @@ describe("BootstrapAssetSpaceService", () => {
       // dotfiles. Re-derive folder OR clear it manually to re-mount.)
       const target = path.join(tempBase, "assetspaces", "exo");
       mkdirSync(target, { recursive: true });
-      writeFileSync(path.join(target, ".DS_Store"), "  ");
+      writeFileSync(path.join(target, ".DS_Store"), Buffer.from([0, 0]));
       const svc = new BootstrapAssetSpaceService({ fetchImpl: fakeFetch(new Uint8Array()) });
 
       await expect(

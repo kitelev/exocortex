@@ -1,6 +1,17 @@
 import type { ReifiedRelation } from "@plugin/presentation/renderers/layout/getReifiedRelations";
 
 /**
+ * Separator for composite keys, built at RUNTIME rather than written as a
+ * literal escape. ⛔ A literal `\0` in the source becomes a raw NUL BYTE, and
+ * `file(1)` then classifies the whole file as `data` — which makes plain `grep`
+ * skip it SILENTLY (exit != 0, no output), while `git grep` and `rg` still match.
+ * That already produced a false code-review finding (issue #4071): a reviewer
+ * searched this file, got nothing, and concluded the string existed nowhere in
+ * the repo. A `lint`-job guard now fails on any NUL byte in tracked sources.
+ */
+const KEY_SEP = String.fromCharCode(0);
+
+/**
  * RFC `93a0b2ee` Phase 3 / Task 3.1 — pure model for the property editor's
  * Relations section. This module is deliberately UI-free (no React, no Obsidian,
  * no triple store) so the dedup / extraction / canonicalisation logic is
@@ -247,7 +258,7 @@ function dedupKey(row: RelationRow): string {
         ? `uid:${row.objectUid.replace(/\.md$/i, "")}`
         : `raw:${row.inlineRawValue ?? ""}`
       : `uid:${(row.objectUid ?? "").replace(/\.md$/i, "")}`;
-  return `${pred} ${obj}`;
+  return `${pred}${KEY_SEP}${obj}`;
 }
 
 /**

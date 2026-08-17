@@ -22,6 +22,17 @@ import {
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 
+/**
+ * Separator for composite keys, built at RUNTIME rather than written as a
+ * literal escape. ⛔ A literal `\0` in the source becomes a raw NUL BYTE, and
+ * `file(1)` then classifies the whole file as `data` — which makes plain `grep`
+ * skip it SILENTLY (exit != 0, no output), while `git grep` and `rg` still match.
+ * That already produced a false code-review finding (issue #4071): a reviewer
+ * searched this file, got nothing, and concluded the string existed nowhere in
+ * the repo. A `lint`-job guard now fails on any NUL byte in tracked sources.
+ */
+const KEY_SEP = String.fromCharCode(0);
+
 /** `exo__Ontology` class UID — an ontology is any asset instancing it. */
 export const ONTOLOGY_CLASS_UID = "829b9b3b-6fc3-4276-be6a-27d3398c012e";
 
@@ -535,7 +546,7 @@ export async function scanVaultForOntologyImports(
       }
 
       const valid = closure.get(sourceOntology)?.has(targetOntology) ?? false;
-      const edgeKey = `${sourceOntology} ${targetOntology}`;
+      const edgeKey = `${sourceOntology}${KEY_SEP}${targetOntology}`;
       const edge = derivedEdgeMap.get(edgeKey);
       if (edge) {
         edge.occurrences++;

@@ -188,6 +188,16 @@ jobs:
       - name: Validate e2e shard assignments
         run: node scripts/validate-shard-assignments.mjs
 
+      # Issue #4071: a NUL byte in tracked source makes file(1) report `data`, so
+      # plain `grep` skips that file SILENTLY (exit != 0, no output) while git grep
+      # and rg still match it. The failure mode leaves no trace — a repo-wide search
+      # just quietly excludes the file, and silence reads as "no matches". It had
+      # already accumulated in SIX files across cli/core/sync/plugin and produced a
+      # false code-review finding before anyone noticed, which is exactly why this
+      # needs a machine guard rather than review attention.
+      - name: No NUL bytes in tracked source
+        run: node scripts/check-no-nul-bytes.mjs
+
       # Test-quality audit 2026-06-22 (recommendation P4): ratchet guard against
       # low-value test anti-patterns (method-exists `.toBe("function")` asserts +
       # vacuous `toBeGreaterThanOrEqual(0)` length asserts). Fails if their count

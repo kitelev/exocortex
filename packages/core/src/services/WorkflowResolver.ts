@@ -20,6 +20,17 @@ import { iriToObsidianName } from "../utilities/iriToObsidianName";
 import { LoggingService } from "./LoggingService";
 
 /**
+ * Separator for composite keys, built at RUNTIME rather than written as a
+ * literal escape. ⛔ A literal `\0` in the source becomes a raw NUL BYTE, and
+ * `file(1)` then classifies the whole file as `data` — which makes plain `grep`
+ * skip it SILENTLY (exit != 0, no output), while `git grep` and `rg` still match.
+ * That already produced a false code-review finding (issue #4071): a reviewer
+ * searched such a file, got nothing, and concluded the string existed nowhere in
+ * the repo. A `lint`-job guard now fails on any NUL byte in tracked sources.
+ */
+const KEY_SEP = String.fromCharCode(0);
+
+/**
  * Resolves WorkflowDefinitions from vault assets stored in an ITripleStore.
  *
  * Resolution priority:
@@ -201,7 +212,7 @@ export class WorkflowResolver {
   private async findBuiltInWorkflowByAncestry(
     classRefs: readonly string[],
   ): Promise<WorkflowDefinition | null> {
-    const cacheKey = `ancestry:${[...classRefs].sort().join(" ")}`;
+    const cacheKey = `ancestry:${[...classRefs].sort().join(KEY_SEP)}`;
     const cached = this.ancestryCache.get(cacheKey);
     if (cached !== undefined) return cached; // memoised positive OR negative
     let result: WorkflowDefinition | null = null;
