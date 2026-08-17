@@ -23,6 +23,7 @@ import {
 } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
+import { detectTermIriCollisions } from "../services/termIriCollisions.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder } from "../responses/index.js";
 import { CacheManager } from "../cache/CacheManager.js";
@@ -1067,10 +1068,7 @@ export async function runShapesModeAction(
     }
 
     const rawReport = await runShapesValidation(vaultPath, triples);
-    let report = applyLegacyExceptionFilter(triples, rawReport);
-    if (stagedFilter) {
-      report = filterReportToStagedFocusNodes(report, stagedFilter);
-    }
+    const report = assembleShapesReport(rawReport, triples, stagedFilter);
 
     const qualifyNode = (focusNode: string): string => focusNode;
 
@@ -1081,6 +1079,10 @@ export async function runShapesModeAction(
     const errorResults = report.violations.filter((v) => v.severity === "sh:Violation");
     const warningResults = report.violations.filter((v) => v.severity !== "sh:Violation");
     const crossVaultRefWarnings = warningResults.filter((v) => v.constraint === "class").length;
+    const collisionWarningCount = warningResults.filter((v) => v.constraint === "term-iri-collision").length;
+    const collidingIris = new Set(
+      warningResults.filter((v) => v.constraint === "term-iri-collision").map((v) => v.actualValue ?? ""),
+    );
 
     if (fmt === "earl") {
       const earl = buildEARLReport(vaultPath, report);
@@ -1096,6 +1098,7 @@ export async function runShapesModeAction(
         violationCount: errorResults.length,
         warningCount: warningResults.length,
         crossVaultRefWarnings,
+        termIriCollisionWarnings: collisionWarningCount,
         violations: errorResults.map(annotate),
         warnings: warningResults.map(annotate),
       });
@@ -1127,6 +1130,21 @@ export async function runShapesModeAction(
               : "") +
             ` — these do not affect the exit code.`,
         );
+        // req 00e8079e — name the colliding IRIs here. The point of the check is
+        // that the condition was previously INVISIBLE; reporting it only as a few
+        // extra units inside a several-hundred-warning aggregate would leave it
+        // just as invisible on the default surface. Detail lines above are printed
+        // for errors only, so warnings need their own breakdown.
+        if (collisionWarningCount > 0) {
+          console.log(
+            `   ⚠️  ${collidingIris.size} term-IRI collision(s) — one IRI emitted by several assets ` +
+              `(${collisionWarningCount} entr${collisionWarningCount === 1 ? "y" : "ies"}):`,
+          );
+          for (const iri of [...collidingIris].sort()) {
+            console.log(`      • ${iri}`);
+          }
+          console.log(`   Run with --format json for the emitting assets.`);
+        }
       }
     }
 
@@ -1136,6 +1154,56 @@ export async function runShapesModeAction(
   } catch (error) {
     ErrorHandler.handle(error as Error);
   }
+}
+
+/**
+ * Assemble the final shapes report: shape-engine findings PLUS term-IRI collisions,
+ * then both report filters.
+ *
+ * ⛔ Ordering is the whole point of extracting this, and it is asserted by tests.
+ * Collisions are folded in BEFORE `applyLegacyExceptionFilter` and the staged
+ * filter, deliberately:
+ *   • the legacy-exception filter must be able to exempt a collision like any other
+ *     finding on that asset;
+ *   • `--staged` must scope collisions too. The per-emitter fan-out is what makes
+ *     that correct — a commit INTRODUCING a collision still surfaces (the staged
+ *     file is itself an emitter), while pre-existing collisions among untouched
+ *     files fall away, which is exactly what `--staged` advertises. Appending
+ *     AFTER the filters (the shape review measured this) made every commit in a
+ *     vault with old collisions carry warnings about unrelated files.
+ *
+ * ⛔ Why folding in early cannot flip `conforms` — and the trap in the obvious
+ * explanation. It is NOT that "both filters recompute conforms": with no
+ * exemptions `applyLegacyExceptionFilter` returns the report object untouched
+ * (see its `exemptNodes.size === 0` early return), and the staged filter only
+ * runs under `--staged`, so on the DEFAULT path nothing recomputes it — `conforms`
+ * is a passthrough from `rawReport`. Collisions are safe for two separate reasons,
+ * one per path: on the default path we never touch `conforms`, and on the paths
+ * that DO recompute it the predicate is
+ * `violations.every(v => v.severity !== "sh:Violation")`, which warnings satisfy.
+ * ⚠ Consequence for anyone extending this: folding a `sh:Violation`-severity
+ * finding in here would NOT flip `conforms` on the default path — it would ship a
+ * silent exit 0. Such a finding must set `conforms` explicitly.
+ * (Measured 2026-08-17 by review round 3, probe P4.)
+ *
+ * req `00e8079e-fb36-4ce3-b33f-abb18c212143`
+ */
+export function assembleShapesReport(
+  rawReport: ValidationReport,
+  triples: DomainTriple[],
+  stagedFilter: ReadonlySet<string> | null,
+): ValidationReport {
+  const collisionWarnings = detectTermIriCollisions(triples);
+  const withCollisions =
+    collisionWarnings.length > 0
+      ? { ...rawReport, violations: [...rawReport.violations, ...collisionWarnings] }
+      : rawReport;
+
+  let report = applyLegacyExceptionFilter(triples, withCollisions);
+  if (stagedFilter) {
+    report = filterReportToStagedFocusNodes(report, stagedFilter);
+  }
+  return report;
 }
 
 /**
