@@ -3,6 +3,7 @@ import {
   DomainIRI as IRI,
   DomainLiteral as Literal,
   Namespace,
+  QuotedTriple,
   DomainTriple as Triple,
   type Violation,
 } from "@kitelev/exocortex-core";
@@ -226,6 +227,42 @@ describe("detectTermIriCollisions", () => {
     expect(found[0]!.message).toContain("3 assets");
     expect(found[0]!.message).toContain("_:b1");
     expect(found[0]!.message).toContain("_:b2");
+  });
+
+  /**
+   * ⛔ The axis a comment here once declared impossible. It claimed a QuotedTriple
+   * emitter could not be exercised from this package because `QuotedTriple` is
+   * "not re-exported from the core barrel" — justified by grepping
+   * `packages/core/src/index.ts`, which is true and measures the wrong thing:
+   * that barrel does `export * from "./domain/models/rdf"`. Importing and
+   * constructing one worked on the first attempt.
+   *
+   * Pins two things at once: the quoted subject is keyed by its own `toString()`
+   * (so two DIFFERENT quoted triples count as two emitters, not one), and the
+   * render skip covers `<<` as well as `_:` — the report must not anchor an
+   * entry on a node a reader cannot open. Also pins the rendered form itself:
+   * `toString()` already yields `<< … >>`, so wrapping it again (as the first
+   * fix did) would produce `<<<< … >>>>`.
+   */
+  it(`${REQ} counts QuotedTriple emitters distinctly but never anchors an entry on one`, () => {
+    const quoted = (n: string) =>
+      new QuotedTriple(
+        new IRI(`obsidian://vault/s-${n}.md`),
+        new IRI("http://example.org/p"),
+        new IRI(`obsidian://vault/o-${n}.md`),
+      );
+    const found = detectTermIriCollisions([
+      labelledWithIri("addressable", OWL_SAME_AS),
+      new Triple(quoted("one"), new IRI(LABEL), new IRI(OWL_SAME_AS)),
+      new Triple(quoted("two"), new IRI(LABEL), new IRI(OWL_SAME_AS)),
+    ]);
+
+    expect(found).toHaveLength(1);
+    expect(found[0]!.focusNode).toBe(asset("addressable").value);
+    expect(found[0]!.message).toContain("3 assets");
+    // `<< …` not `<<<< …` — the class stringifies itself, we must not re-wrap.
+    expect(found[0]!.message).toContain("<< <obsidian://vault/s-one.md>");
+    expect(found[0]!.message).not.toContain("<<<<");
   });
 
   /**

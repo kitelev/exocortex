@@ -1,5 +1,4 @@
 import {
-  DomainBlankNode,
   DomainIRI,
   Namespace,
   type Triple,
@@ -115,21 +114,27 @@ export function detectTermIriCollisions(
     // presence is what makes the term ambiguous) but cannot be a focusNode a
     // reader could open — it is skipped at render time below. Filtering it here
     // instead would suppress the report for the addressable half too.
-    // ⚠ The third branch (QuotedTriple, RDF-star) has NO axis, and cannot have
-    // one from this package: `QuotedTriple` is not re-exported from the core
-    // barrel (verified — `grep QuotedTriple packages/core/src/index.ts` is
-    // empty), so a test here cannot construct one. It is handled rather than
-    // dropped because the `Subject` union admits it; `toString()` is its only
-    // stable identity. Stated explicitly so a later reader reads this as a
-    // measured gap, not a forgotten axis.
+    // Non-IRI subjects key on `toString()`, which each class already defines in
+    // its canonical form: `BlankNode` → `_:${id}`, `QuotedTriple` → `<< … >>`
+    // (both measured by execution, not read). That is why two branches suffice
+    // and no per-class accessor is needed.
+    //
+    // ⛔ History, because both mistakes are instructive. (1) This read
+    // `subject.value` on the non-IRI branch — a property `BlankNode` does not
+    // have — so every blank emitter collapsed to one key and the reported count
+    // was wrong; the fixture hid it by faking the node as `{ value }`. (2) The
+    // replacement then hand-rolled `_:${id}` and wrapped the quoted form in
+    // literal `<<…>>` — but `QuotedTriple.toString()` ALREADY returns `<< … >>`,
+    // so that produced `<<<< … >>>>`. Alongside it stood the claim that a
+    // QuotedTriple axis "cannot exist in this package because QuotedTriple is
+    // not re-exported from the core barrel", justified by a grep of
+    // `packages/core/src/index.ts`. The grep was true and measured the wrong
+    // thing: that barrel does `export * from "./domain/models/rdf"`, which
+    // re-exports it. A probe imported and constructed one in this package on the
+    // first try. ⇒ before writing "X cannot be done", RUN the thing that would
+    // do X. The axis that claim said was impossible is now below.
     const subject = triple.subject;
-    subjects.add(
-      subject instanceof DomainIRI
-        ? subject.value
-        : subject instanceof DomainBlankNode
-          ? `_:${subject.id}`
-          : `<<${String(subject)}>>`,
-    );
+    subjects.add(subject instanceof DomainIRI ? subject.value : String(subject));
   }
 
   const violations: Violation[] = [];
