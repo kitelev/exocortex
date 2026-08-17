@@ -206,6 +206,18 @@ jobs:
       # `BlankNode.value` read that shipped through two review rounds of #4070
       # while the compiler had been flagging it the whole time. This ratchets the
       # existing debt (baseline of (file, code) pairs) and fails on anything new.
+      # ⛔ The workspace deps must be BUILT first. packages/cli/tsconfig.json
+      # declares `paths` for them, but those paths are dead: it inherits
+      # `baseUrl: "."` from the root config, so `../core/src` resolves relative to
+      # the repo root — outside the repo. Resolution falls through to node_modules
+      # → `types: dist/index.d.ts`, absent until built. Without this step the
+      # check reports a 174-diagnostic TS2307 cascade instead of the package's
+      # own 24. ~3.6s combined; the guard exits 2 if it is skipped.
+      - name: Build workspace deps for the cli typecheck
+        run: |
+          npm run build -w @kitelev/exocortex-core
+          npm run build -w @kitelev/exocortex-services
+
       - name: No new type errors in packages/cli
         run: node scripts/check-cli-types.mjs
 

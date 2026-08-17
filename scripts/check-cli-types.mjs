@@ -121,6 +121,34 @@ const known = new Set(baseline.entries.map((e) => `${e.file}|${e.code}`));
 //
 // A run configured correctly touches ONLY packages/cli. Anything outside it
 // means we are looking at a different compilation than the one being ratcheted.
+// ⛔ SECOND way the run can be meaningless, and it is the one that actually
+// happened in CI on the first attempt: the workspace dependencies are not built.
+// `packages/cli/tsconfig.json` declares `paths` for @kitelev/exocortex-{core,
+// services}, but they are DEAD — it inherits `baseUrl: "."` from the root config,
+// so `../core/src` resolves relative to the REPO ROOT, i.e. outside the repo.
+// Resolution therefore falls through to node_modules → `types: dist/index.d.ts`,
+// which does not exist until the package is built. Result: 174 diagnostics in 95
+// pairs instead of 24 in 18, almost all of them a TS2307 cascade — and the
+// ratchet dutifully reported them as "79 NEW type errors".
+//
+// ⚠ This also invalidated my first baseline: it was captured on a machine where
+// node_modules symlinked to a SIBLING worktree that happened to have a built
+// core. A baseline is only meaningful if it is captured under the same
+// conditions the gate runs in.
+const unresolved = [...found.keys()].filter((k) => k.endsWith("|TS2307"));
+if (unresolved.length > 0) {
+  console.error(
+    `❌ check-cli-types: ${unresolved.length} file(s) cannot resolve their imports (TS2307).\n` +
+      "   The workspace dependencies are not built, so this run says nothing about\n" +
+      "   the cli package's own type health — the errors you would see are a\n" +
+      "   resolution cascade, not real findings. Build them first:\n" +
+      "      npm run build -w @kitelev/exocortex-core\n" +
+      "      npm run build -w @kitelev/exocortex-services\n" +
+      "   (~3.6s combined; the CI step does this.)",
+  );
+  process.exit(2);
+}
+
 const outside = [...found.keys()]
   .map((k) => k.split("|")[0])
   .filter((f) => !f.replace(/\\/g, "/").includes("packages/cli/"));
