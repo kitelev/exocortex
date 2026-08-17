@@ -2573,14 +2573,17 @@ export class CommandResolver {
       // Asset not in store yet (cold-start race / pruned vault) — emit
       // wikilink anyway; downstream UI / executor renders it as a dead link.
       //
-      // ⛔ This branch is a KNOWN corruption source when the value ref is a
-      // SubstitutionToken: the created asset gets the literal `[[<uid>]]`
-      // where the substituted value belonged (e.g. `exo__Asset_label` shows a
-      // link to `$userInputLabel` instead of what the user typed). Because the
-      // command definition is cached per session, ONE cold start poisons every
-      // instance created in that session. It used to be silent, which made the
-      // class undiagnosable — the log line below is what makes the next
-      // occurrence self-identifying (defect 0310aa28).
+      // ⛔ CANDIDATE cause of defect 0310aa28 — narrowed by ELIMINATION, not
+      // measured. Observed: assets whose `exo__Asset_label` holds the literal
+      // `[[<token-uid>]]` while the user's input survives only in `aliases`.
+      // Of the five sites that emit this shape, the two in
+      // `dispatchSubstitutionToken` were ruled out by reading the live token
+      // asset (it has a `_resolver`, and that id IS whitelisted); this branch
+      // and the `!isSubstitutionToken` one below are the two that remain — and
+      // both were silent, which is why the root could not be measured at all.
+      // The corruption clusters per SESSION (command definitions are cached),
+      // consistent with a cold start, but that is inference. This log line is
+      // what turns the next occurrence into a measurement.
       this.logger.warn(
         `Grounding ${groundingUid}: PropertyDefault '${propertyName}' references asset '${valueRefUid}' which is NOT in the store (cold-start race / pruned vault) — falling back to wikilink form. If '${valueRefUid}' is a SubstitutionToken, the written value will be a link instead of the substituted value.`,
       );
@@ -2607,12 +2610,13 @@ export class CommandResolver {
       // Plain asset ref (not a token) — a wikilink IS the intended value here,
       // so this is the common, correct path and must stay quiet by default.
       //
-      // ⛔ It doubles as the SECOND known corruption source: when the ref DOES
-      // point at a SubstitutionToken whose `exo__Instance_class` failed to
-      // resolve (cold-start race), the class check answers "not a token" and we
-      // silently emit the link instead of the substituted value. `debug` keeps
-      // the happy path quiet while making that case recoverable from a verbose
-      // log (defect 0310aa28).
+      // ⛔ It is also the SECOND surviving candidate for defect 0310aa28 (see
+      // the sibling comment above): IF the ref does point at a token whose
+      // `exo__Instance_class` failed to resolve, this check answers "not a
+      // token" and emits the link instead of the substituted value. Not
+      // measured — the class-resolution failure has never been observed
+      // directly, only inferred from the corruption shape. `debug` keeps the
+      // common path quiet while making that case recoverable from a verbose log.
       this.logger.debug(
         `Grounding ${groundingUid}: PropertyDefault '${propertyName}' value '${valueRefUid}' is not a SubstitutionToken — emitting wikilink form.`,
       );
