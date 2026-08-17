@@ -200,6 +200,15 @@ jobs:
       - name: No NUL bytes in tracked source
         run: node scripts/check-no-nul-bytes.mjs
 
+      # packages/cli is excluded from the root tsconfig AND built with esbuild
+      # (which does not type-check), so `npm run check:types` — the typecheck job —
+      # never looks at it. 24 errors had accumulated there unseen, including a
+      # `BlankNode.value` read that shipped through two review rounds of #4070
+      # while the compiler had been flagging it the whole time. This ratchets the
+      # existing debt (baseline of (file, code) pairs) and fails on anything new.
+      - name: No new type errors in packages/cli
+        run: node scripts/check-cli-types.mjs
+
       # Test-quality audit 2026-06-22 (recommendation P4): ratchet guard against
       # low-value test anti-patterns (method-exists `.toBe("function")` asserts +
       # vacuous `toBeGreaterThanOrEqual(0)` length asserts). Fails if their count

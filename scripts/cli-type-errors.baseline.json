@@ -1,0 +1,94 @@
+{
+  "entries": [
+    {
+      "file": "packages/cli/src/cache/CacheManager.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/src/cache/QueryResultCache.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/src/cache/tripleSerialization.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/src/commands/exosync-parity.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/src/commands/exosync-parity.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/src/commands/exosync-parity.ts",
+      "code": "TS2367",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/src/commands/exosync-parity.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/src/commands/exosync-quarantine.ts",
+      "code": "TS2554",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/src/commands/exosync-sync.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/src/commands/exosync-sync.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/src/commands/exosync-sync.ts",
+      "code": "TS2367",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/src/commands/exosync-sync.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/src/commands/exosync-sync.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/src/commands/sparql-query.ts",
+      "code": "TS2339",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/src/commands/sparql-query.ts",
+      "code": "TS6133",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/src/services/ClassResolverService.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/src/services/WikilinkValidator.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/src/utils/SPARQLErrorEnhancer.ts",
+      "code": "TS6133",
+      "count": 2
+    }
+  ]
+}
