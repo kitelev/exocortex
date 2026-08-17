@@ -13,6 +13,13 @@ import { IRI } from "../../domain/models/rdf/IRI";
 import { Namespace } from "../../domain/models/rdf/Namespace";
 
 /**
+ * Composite-key separator, built at runtime. The byte must not appear as a
+ * literal in this file — see scripts/check-no-nul-bytes.mjs for why, and issue
+ * #4071 for what it cost.
+ */
+const KEY_SEP = String.fromCharCode(0);
+
+/**
  * Thrown when a symbolic `prefix#Local` class reference in a query resolves
  * AMBIGUOUSLY — two or more DISTINCT class files derive the same symbolic form (a
  * cross-ontology prefix collision; RFC 78572fa9 v3 point 9: a prefix is a per-user
@@ -374,9 +381,9 @@ export class ClassHierarchyResolvingStore implements ITripleStore {
     const seen = new Set<string>();
     const out: Triple[] = [];
     for (const t of triples) {
-      const key = `${ClassHierarchyResolvingStore.termKey(t.subject)} ${ClassHierarchyResolvingStore.termKey(
+      const key = `${ClassHierarchyResolvingStore.termKey(t.subject)}${KEY_SEP}${ClassHierarchyResolvingStore.termKey(
         t.predicate,
-      )} ${ClassHierarchyResolvingStore.termKey(t.object)}`;
+      )}${KEY_SEP}${ClassHierarchyResolvingStore.termKey(t.object)}`;
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(t);
