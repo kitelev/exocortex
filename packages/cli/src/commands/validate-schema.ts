@@ -200,7 +200,9 @@ export interface SchemaValidationResult {
  * Extract frontmatter from a .md file's raw content.
  * Returns null if no valid frontmatter block is found.
  */
-export function extractFrontmatter(content: string): Record<string, unknown> | null {
+export function extractFrontmatter(
+  content: string,
+): Record<string, unknown> | null {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) {
     // Handle empty frontmatter: ---\n---
@@ -268,9 +270,10 @@ export function uriToKey(uri: string): string | null {
  * Keys without a known prefix that are NOT in the whitelist are flagged
  * with reason "unknown_prefix".
  */
-export function classifyKeys(
-  keys: string[],
-): { toValidate: string[]; unknownPrefix: string[] } {
+export function classifyKeys(keys: string[]): {
+  toValidate: string[];
+  unknownPrefix: string[];
+} {
   const toValidate: string[] = [];
   const unknownPrefix: string[] = [];
 
@@ -388,7 +391,7 @@ export async function loadDeclaredProperties(
         FILTER(!CONTAINS(STR(?class), "PropertyCardinality"))
       }
       OPTIONAL { ?s exo:Asset_label ?label }
-    }`
+    }`,
   );
 
   const ast = parser.parse(queryString);
@@ -417,7 +420,10 @@ export async function loadDeclaredProperties(
 
     // Source 2: IRI labels (full ontology URIs stored as exo:Asset_label)
     const label = json.label;
-    if (typeof label === "string" && label.startsWith("https://exocortex.my/ontology/")) {
+    if (
+      typeof label === "string" &&
+      label.startsWith("https://exocortex.my/ontology/")
+    ) {
       declaredProperties.add(label);
     }
   }
@@ -440,7 +446,9 @@ export function detectUnparseableFrontmatter(content: string): string | null {
     yaml.load(match[1]);
     return null;
   } catch (error) {
-    return error instanceof Error ? error.message.split("\n")[0] : String(error);
+    return error instanceof Error
+      ? error.message.split("\n")[0]
+      : String(error);
   }
 }
 
@@ -504,7 +512,8 @@ export function validateFile(
 }
 
 const RDFS_SUBCLASS_OF = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
-const EXO_CLASS_SUPER_CLASS = "https://exocortex.my/ontology/exo#Class_superClass";
+const EXO_CLASS_SUPER_CLASS =
+  "https://exocortex.my/ontology/exo#Class_superClass";
 const RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label";
 
 /**
@@ -569,7 +578,12 @@ function fileIriToOntologyURIFromFilename(fileIri: string): string | null {
 }
 
 type AlgebraIRI = { type: "iri"; value: string };
-type AlgebraLiteral = { type: "literal"; value: string; datatype?: string; language?: string };
+type AlgebraLiteral = {
+  type: "literal";
+  value: string;
+  datatype?: string;
+  language?: string;
+};
 type AlgebraBlank = { type: "blank"; value: string };
 type AlgebraNode = AlgebraIRI | AlgebraLiteral | AlgebraBlank;
 
@@ -583,7 +597,9 @@ interface AlgebraStyleTriple {
  * Converts domain Triple[] (class-based) to algebra-compatible Triple[] (interface-based).
  * Required because ShaclLiteValidator.validate() expects algebra Triple types.
  */
-export function domainToAlgebraTriples(triples: DomainTriple[]): AlgebraStyleTriple[] {
+export function domainToAlgebraTriples(
+  triples: DomainTriple[],
+): AlgebraStyleTriple[] {
   const mapNode = (node: unknown): AlgebraNode | null => {
     if (node instanceof DomainIRI) return { type: "iri", value: node.value };
     if (node instanceof DomainLiteral) {
@@ -848,7 +864,10 @@ export interface EARLReport {
 /**
  * Formats a ValidationReport as W3C EARL JSON-LD.
  */
-export function buildEARLReport(vaultPath: string, report: ValidationReport): EARLReport {
+export function buildEARLReport(
+  vaultPath: string,
+  report: ValidationReport,
+): EARLReport {
   const subjectId = `file://${vaultPath}`;
   const assertorId = "https://exocortex.my/cli/shacl-validator";
 
@@ -906,7 +925,8 @@ export function buildEARLReport(vaultPath: string, report: ValidationReport): EA
   return { "@context": context, "@graph": graph };
 }
 
-const LEGACY_EXCEPTION_IRI = "https://exocortex.my/ontology/exo#Asset_legacyValidationException";
+const LEGACY_EXCEPTION_IRI =
+  "https://exocortex.my/ontology/exo#Asset_legacyValidationException";
 
 /**
  * P4.3: Filters out violations for assets marked with exo__Asset_legacyValidationException.
@@ -918,14 +938,20 @@ export function applyLegacyExceptionFilter(
 ): ValidationReport {
   const exemptNodes = new Set<string>(
     triples
-      .filter(t => t.predicate instanceof DomainIRI && t.predicate.value === LEGACY_EXCEPTION_IRI)
-      .map(t => (t.subject instanceof DomainIRI ? t.subject.value : null))
+      .filter(
+        (t) =>
+          t.predicate instanceof DomainIRI &&
+          t.predicate.value === LEGACY_EXCEPTION_IRI,
+      )
+      .map((t) => (t.subject instanceof DomainIRI ? t.subject.value : null))
       .filter((v): v is string => v !== null),
   );
   if (exemptNodes.size === 0) return report;
-  const violations = report.violations.filter(v => !exemptNodes.has(v.focusNode));
+  const violations = report.violations.filter(
+    (v) => !exemptNodes.has(v.focusNode),
+  );
   return {
-    conforms: violations.every(v => v.severity !== "sh:Violation"),
+    conforms: violations.every((v) => v.severity !== "sh:Violation"),
     violations,
   };
 }
@@ -1068,24 +1094,7 @@ export async function runShapesModeAction(
     }
 
     const rawReport = await runShapesValidation(vaultPath, triples);
-    let report = applyLegacyExceptionFilter(triples, rawReport);
-    if (stagedFilter) {
-      report = filterReportToStagedFocusNodes(report, stagedFilter);
-    }
-
-    // req 00e8079e — term-IRI collisions are a GLOBAL graph invariant, not a
-    // per-node shape: two assets whose labels parse as `<prefix>__<LocalName>`
-    // emit the same term IRI, and a join "predicate → definition" then returns
-    // both. The shape engine cannot see this (it validates one focus node at a
-    // time), so the check runs over the loaded triples and its results are folded
-    // in as warnings — they raise warningCount but never flip `conforms`.
-    const collisionWarnings = detectTermIriCollisions(triples);
-    if (collisionWarnings.length > 0) {
-      report = {
-        ...report,
-        violations: [...report.violations, ...collisionWarnings],
-      };
-    }
+    const report = assembleShapesReport(rawReport, triples, stagedFilter);
 
     const qualifyNode = (focusNode: string): string => focusNode;
 
@@ -1093,9 +1102,23 @@ export async function runShapesModeAction(
     // (errors); `sh:Warning` are unresolvable cross-vault / symbolic / external
     // references that cannot be hard-failed under open-world semantics. Warnings
     // are reported with a dedicated counter but do NOT break the exit code.
-    const errorResults = report.violations.filter((v) => v.severity === "sh:Violation");
-    const warningResults = report.violations.filter((v) => v.severity !== "sh:Violation");
-    const crossVaultRefWarnings = warningResults.filter((v) => v.constraint === "class").length;
+    const errorResults = report.violations.filter(
+      (v) => v.severity === "sh:Violation",
+    );
+    const warningResults = report.violations.filter(
+      (v) => v.severity !== "sh:Violation",
+    );
+    const crossVaultRefWarnings = warningResults.filter(
+      (v) => v.constraint === "class",
+    ).length;
+    const collisionWarningCount = warningResults.filter(
+      (v) => v.constraint === "term-iri-collision",
+    ).length;
+    const collidingIris = new Set(
+      warningResults
+        .filter((v) => v.constraint === "term-iri-collision")
+        .map((v) => v.actualValue ?? ""),
+    );
 
     if (fmt === "earl") {
       const earl = buildEARLReport(vaultPath, report);
@@ -1111,6 +1134,7 @@ export async function runShapesModeAction(
         violationCount: errorResults.length,
         warningCount: warningResults.length,
         crossVaultRefWarnings,
+        termIriCollisionWarnings: collisionWarningCount,
         violations: errorResults.map(annotate),
         warnings: warningResults.map(annotate),
       });
@@ -1123,7 +1147,9 @@ export async function runShapesModeAction(
           existing.push(v);
           byNode.set(v.focusNode, existing);
         }
-        console.log(`⚠️  Found ${errorResults.length} SHACL violation(s) in ${byNode.size} node(s):\n`);
+        console.log(
+          `⚠️  Found ${errorResults.length} SHACL violation(s) in ${byNode.size} node(s):\n`,
+        );
         for (const [node, violations] of byNode) {
           console.log(`   ❌ ${node}`);
           for (const v of violations) {
@@ -1142,6 +1168,21 @@ export async function runShapesModeAction(
               : "") +
             ` — these do not affect the exit code.`,
         );
+        // req 00e8079e — name the colliding IRIs here. The point of the check is
+        // that the condition was previously INVISIBLE; reporting it only as a few
+        // extra units inside a several-hundred-warning aggregate would leave it
+        // just as invisible on the default surface. Detail lines above are printed
+        // for errors only, so warnings need their own breakdown.
+        if (collisionWarningCount > 0) {
+          console.log(
+            `   ⚠️  ${collidingIris.size} term-IRI collision(s) — one IRI emitted by several assets ` +
+              `(${collisionWarningCount} entr${collisionWarningCount === 1 ? "y" : "ies"}):`,
+          );
+          for (const iri of [...collidingIris].sort()) {
+            console.log(`      • ${iri}`);
+          }
+          console.log(`   Run with --format json for the emitting assets.`);
+        }
       }
     }
 
@@ -1159,16 +1200,76 @@ export async function runShapesModeAction(
  *
  * Issue #2713: Schema linter for frontmatter properties.
  */
+/**
+ * Assemble the final shapes report: shape-engine findings PLUS term-IRI collisions,
+ * then both report filters.
+ *
+ * ⛔ Ordering is the whole point of extracting this, and it is asserted by tests.
+ * Collisions are folded in BEFORE `applyLegacyExceptionFilter` and the staged
+ * filter, deliberately:
+ *   • the legacy-exception filter must be able to exempt a collision like any other
+ *     finding on that asset;
+ *   • `--staged` must scope collisions too. The per-emitter fan-out is what makes
+ *     that correct — a commit INTRODUCING a collision still surfaces (the staged
+ *     file is itself an emitter), while pre-existing collisions among untouched
+ *     files fall away, which is exactly what `--staged` advertises. Appending
+ *     AFTER the filters (the shape review measured this) made every commit in a
+ *     vault with old collisions carry warnings about unrelated files.
+ *
+ * Folding in early cannot flip `conforms`: both filters recompute it as
+ * `violations.every(v => v.severity !== "sh:Violation")`, and collisions are always
+ * `sh:Warning`.
+ *
+ * req `00e8079e-fb36-4ce3-b33f-abb18c212143`
+ */
+export function assembleShapesReport(
+  rawReport: ValidationReport,
+  triples: DomainTriple[],
+  stagedFilter: ReadonlySet<string> | null,
+): ValidationReport {
+  const collisionWarnings = detectTermIriCollisions(triples);
+  const withCollisions =
+    collisionWarnings.length > 0
+      ? {
+          ...rawReport,
+          violations: [...rawReport.violations, ...collisionWarnings],
+        }
+      : rawReport;
+
+  let report = applyLegacyExceptionFilter(triples, withCollisions);
+  if (stagedFilter) {
+    report = filterReportToStagedFocusNodes(report, stagedFilter);
+  }
+  return report;
+}
+
 export function validateSchemaCommand(): Command {
   return new Command("schema")
     .description("Check frontmatter properties against ontology (Issue #2713)")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
-    .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
-    .option("--staged", "Only validate git-staged .md files (for pre-commit hooks)")
+    .option(
+      "--output <type>",
+      "Response format: text|json (for MCP tools)",
+      "text",
+    )
+    .option(
+      "--staged",
+      "Only validate git-staged .md files (for pre-commit hooks)",
+    )
     .option("--use-cache", "Use persistent triple cache (faster vault loading)")
-    .option("--shapes-mode", "Run SHACL-lite shapes validation instead of schema linting")
-    .option("--format <type>", "Output format for shapes-mode: text|json|earl", "text")
-    .option("--class <iri>", "Only validate assets whose exo__Instance_class matches this IRI/slug (RFC 8e83442b T1.4)")
+    .option(
+      "--shapes-mode",
+      "Run SHACL-lite shapes validation instead of schema linting",
+    )
+    .option(
+      "--format <type>",
+      "Output format for shapes-mode: text|json|earl",
+      "text",
+    )
+    .option(
+      "--class <iri>",
+      "Only validate assets whose exo__Instance_class matches this IRI/slug (RFC 8e83442b T1.4)",
+    )
     .action(async (options: ValidateSchemaOptions) => {
       const outputFormat = (options.output || "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
@@ -1211,7 +1312,10 @@ export function validateSchemaCommand(): Command {
           const classFilter = options.class;
           targetFiles = targetFiles.filter((relPath) => {
             try {
-              const content = readFileSync(resolve(vaultPath, relPath), "utf-8");
+              const content = readFileSync(
+                resolve(vaultPath, relPath),
+                "utf-8",
+              );
               const fm = extractFrontmatter(content);
               return frontmatterMatchesClass(fm, classFilter);
             } catch {
@@ -1225,10 +1329,8 @@ export function validateSchemaCommand(): Command {
           console.log(`📦 Loading vault: ${vaultPath}...`);
         }
 
-        const { triples: loadedTriples, cacheHit } = await loadTriplesFromAllVaults(
-          vaultPath,
-          Boolean(options.useCache),
-        );
+        const { triples: loadedTriples, cacheHit } =
+          await loadTriplesFromAllVaults(vaultPath, Boolean(options.useCache));
         const triples: Triple[] = loadedTriples as Triple[];
         if (outputFormat === "text" && cacheHit) {
           console.log("🚀 Cache hit! Loading from persistent cache...");
@@ -1243,7 +1345,9 @@ export function validateSchemaCommand(): Command {
         const declaredPropertyURIs = await loadDeclaredProperties(triples);
 
         if (outputFormat === "text") {
-          console.log(`📋 Found ${declaredPropertyURIs.size} declared properties in ontology`);
+          console.log(
+            `📋 Found ${declaredPropertyURIs.size} declared properties in ontology`,
+          );
           console.log(`🔍 Validating ${targetFiles.length} file(s)...\n`);
         }
 
@@ -1251,7 +1355,11 @@ export function validateSchemaCommand(): Command {
         const allViolations: SchemaViolation[] = [];
         for (const relPath of targetFiles) {
           const fullPath = resolve(vaultPath, relPath);
-          const violations = validateFile(fullPath, relPath, declaredPropertyURIs);
+          const violations = validateFile(
+            fullPath,
+            relPath,
+            declaredPropertyURIs,
+          );
           allViolations.push(...violations);
         }
 
@@ -1268,7 +1376,9 @@ export function validateSchemaCommand(): Command {
           console.log(JSON.stringify(response, null, 2));
         } else {
           if (allViolations.length === 0) {
-            console.log(`✅ All ${targetFiles.length} file(s) pass schema validation.`);
+            console.log(
+              `✅ All ${targetFiles.length} file(s) pass schema validation.`,
+            );
           } else {
             // Group violations by file
             const byFile = new Map<string, SchemaViolation[]>();
@@ -1278,7 +1388,9 @@ export function validateSchemaCommand(): Command {
               byFile.set(v.file, existing);
             }
 
-            console.log(`⚠️  Found ${allViolations.length} schema violation(s) in ${byFile.size} file(s):\n`);
+            console.log(
+              `⚠️  Found ${allViolations.length} schema violation(s) in ${byFile.size} file(s):\n`,
+            );
             for (const [file, violations] of byFile) {
               console.log(`   ❌ ${file}`);
               for (const v of violations) {
@@ -1287,7 +1399,9 @@ export function validateSchemaCommand(): Command {
             }
             console.log("\n📝 To fix these issues:");
             console.log("   - Remove undeclared properties from frontmatter");
-            console.log("   - Or declare them in the ontology as Property instances");
+            console.log(
+              "   - Or declare them in the ontology as Property instances",
+            );
           }
         }
 
