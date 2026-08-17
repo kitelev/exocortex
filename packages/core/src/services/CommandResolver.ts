@@ -2572,6 +2572,18 @@ export class CommandResolver {
     if (!valueSubject) {
       // Asset not in store yet (cold-start race / pruned vault) — emit
       // wikilink anyway; downstream UI / executor renders it as a dead link.
+      //
+      // ⛔ This branch is a KNOWN corruption source when the value ref is a
+      // SubstitutionToken: the created asset gets the literal `[[<uid>]]`
+      // where the substituted value belonged (e.g. `exo__Asset_label` shows a
+      // link to `$userInputLabel` instead of what the user typed). Because the
+      // command definition is cached per session, ONE cold start poisons every
+      // instance created in that session. It used to be silent, which made the
+      // class undiagnosable — the log line below is what makes the next
+      // occurrence self-identifying (defect 0310aa28).
+      this.logger.warn(
+        `Grounding ${groundingUid}: PropertyDefault '${propertyName}' references asset '${valueRefUid}' which is NOT in the store (cold-start race / pruned vault) — falling back to wikilink form. If '${valueRefUid}' is a SubstitutionToken, the written value will be a link instead of the substituted value.`,
+      );
       return `"[[${valueRefUid}]]"`;
     }
 
@@ -2592,6 +2604,18 @@ export class CommandResolver {
     const isSubstitutionToken =
       await this.assetIsSubstitutionToken(valueSubject);
     if (!isSubstitutionToken) {
+      // Plain asset ref (not a token) — a wikilink IS the intended value here,
+      // so this is the common, correct path and must stay quiet by default.
+      //
+      // ⛔ It doubles as the SECOND known corruption source: when the ref DOES
+      // point at a SubstitutionToken whose `exo__Instance_class` failed to
+      // resolve (cold-start race), the class check answers "not a token" and we
+      // silently emit the link instead of the substituted value. `debug` keeps
+      // the happy path quiet while making that case recoverable from a verbose
+      // log (defect 0310aa28).
+      this.logger.debug(
+        `Grounding ${groundingUid}: PropertyDefault '${propertyName}' value '${valueRefUid}' is not a SubstitutionToken — emitting wikilink form.`,
+      );
       return `"[[${valueRefUid}]]"`;
     }
 

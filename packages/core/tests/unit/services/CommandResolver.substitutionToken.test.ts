@@ -34,18 +34,29 @@ import {
 
 interface RecordingLogger extends ILogger {
   readonly warnings: string[];
+  /**
+   * Recorded separately from `warnings` because the level is load-bearing:
+   * a plain (non-token) asset ref is the COMMON, correct path, so it must not
+   * warn — otherwise every `assetRef` field would emit noise and devalue the
+   * genuine cold-start warning next to it (req b354316b).
+   */
+  readonly debugs: string[];
 }
 
 function makeRecordingLogger(): RecordingLogger {
   const warnings: string[] = [];
+  const debugs: string[] = [];
   return {
-    debug() {},
+    debug(message: string) {
+      debugs.push(message);
+    },
     info() {},
     warn(message: string) {
       warnings.push(message);
     },
     error() {},
     warnings,
+    debugs,
   };
 }
 
@@ -173,6 +184,12 @@ const TOKEN_TARGET_FOLDER_UID = "33333333-3333-4333-8333-333333333333";
 const TOKEN_UNKNOWN_UID       = "44444444-4444-4444-8444-444444444444";
 const TOKEN_TODAY_START_UID   = "66666666-6666-4666-8666-666666666666";
 const TOKEN_NOW_TIMESTAMP_UID = "77777777-7777-4777-8777-777777777777";
+// Deliberately never seeded — models the cold-start race (value asset absent).
+// MUST be valid UUID-v4 shape, otherwise `looksLikeUUID` short-circuits into
+// the legacy-symbolic branch and the test would exercise the wrong fallback.
+const TOKEN_ABSENT_UID        = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+// An ordinary asset (not a SubstitutionToken) — the common, correct path.
+const PLAIN_ASSET_UID         = "99999999-9999-4999-8999-999999999999";
 
 const PD_UID  = "55555555-5555-4555-8555-555555555555";
 
@@ -406,5 +423,110 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
           /unknown resolver-id/.test(w),
       ),
     ).toBe(true);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // The two fallbacks that used to be SILENT. Both emit `"[[<uid>]]"` — the
+  // exact shape observed corrupting `exo__Asset_label` in the live vault
+  // (defect 0310aa28) — and neither logged anything, which made the class
+  // undiagnosable: the root had to be narrowed by ELIMINATION rather than
+  // measured. These lock the diagnostics, not the corruption itself.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  it("@req:b354316b-3b26-478b-a8c0-18606da8e6ec warns when the PropertyDefault value asset is absent from the store (cold-start race)", async () => {
+    // NOTE: the value ref is deliberately NOT seeded — this models the
+    // cold-start race where the command definition is parsed before the token
+    // asset has been indexed. Production then bakes the wikilink into a
+    // session-cached command template, poisoning every instance created in
+    // that session.
+    // GUARD: prove the UID is genuinely unseeded. Without it, a fixture-UID
+    // collision (this test first used the same constant as GROUNDING_UID)
+    // silently routes to the OTHER fallback and the assertion below measures
+    // the wrong branch while still looking plausible.
+    expect(
+      [PROP_UID, PD_UID, GROUNDING_UID, COMMAND_UID, TOKEN_TODAY_UID,
+       TOKEN_TARGET_FOLDER_UID, TOKEN_UNKNOWN_UID, TOKEN_TODAY_START_UID,
+       TOKEN_NOW_TIMESTAMP_UID, PLAIN_ASSET_UID],
+    ).not.toContain(TOKEN_ABSENT_UID);
+    await addPropertyDefault(store, {
+      uid: PD_UID,
+      propertyRefUid: PROP_UID,
+      valueRefUid: TOKEN_ABSENT_UID,
+    });
+    await addGrounding(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding whose token asset is not in the store",
+      propertyDefaultRefs: [PD_UID],
+    });
+    await addCommand(store, COMMAND_UID, GROUNDING_UID);
+
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+
+    expect(cmd!.grounding.propertyDefault![0].value).toBe(
+      `"[[${TOKEN_ABSENT_UID}]]"`,
+    );
+    // The warning is the whole deliverable: it must name the value uid (what
+    // to look for), the property (where the damage lands) and the grounding
+    // (which command) — enough to identify the case without a repro.
+    const hit = logger.warnings.find((w) => w.includes(TOKEN_ABSENT_UID));
+    expect(hit).toBeDefined();
+    expect(hit).toContain(GROUNDING_UID);
+    expect(hit).toMatch(/NOT in the store/);
+  });
+
+  it("@req:b354316b-3b26-478b-a8c0-18606da8e6ec logs at debug (never warn) when the PropertyDefault value is a plain asset, not a token", async () => {
+    // A plain asset ref is the COMMON, correct path: a wikilink IS the intended
+    // value. Warning here would fire on every assetRef field and drown the
+    // cold-start warning above — the level is part of the spec, not taste.
+    await addLabelledAsset(store, PLAIN_ASSET_UID, "Some ordinary asset");
+    await addPropertyDefault(store, {
+      uid: PD_UID,
+      propertyRefUid: PROP_UID,
+      valueRefUid: PLAIN_ASSET_UID,
+    });
+    await addGrounding(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding with a plain asset ref",
+      propertyDefaultRefs: [PD_UID],
+    });
+    await addCommand(store, COMMAND_UID, GROUNDING_UID);
+
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+
+    expect(cmd!.grounding.propertyDefault![0].value).toBe(
+      `"[[${PLAIN_ASSET_UID}]]"`,
+    );
+    expect(logger.warnings).toHaveLength(0);
+    expect(
+      logger.debugs.some((d) => d.includes(PLAIN_ASSET_UID)),
+    ).toBe(true);
+  });
+
+  it("@req:b354316b-3b26-478b-a8c0-18606da8e6ec stays silent on the happy path (valid token resolves, no fallback taken)", async () => {
+    // Non-vacuity control: without this, both assertions above could pass on a
+    // build that logs unconditionally.
+    await addSubstitutionToken(store, {
+      uid: TOKEN_TODAY_UID,
+      label: "$today",
+      resolverId: "today",
+    });
+    await addPropertyDefault(store, {
+      uid: PD_UID,
+      propertyRefUid: PROP_UID,
+      valueRefUid: TOKEN_TODAY_UID,
+    });
+    await addGrounding(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding with a valid token",
+      propertyDefaultRefs: [PD_UID],
+    });
+    await addCommand(store, COMMAND_UID, GROUNDING_UID);
+
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+
+    // Marker, not a wikilink — no fallback was taken.
+    expect(cmd!.grounding.propertyDefault![0].value).toContain("__SUBSTITUTE__");
+    expect(logger.warnings).toHaveLength(0);
+    expect(logger.debugs.some((d) => d.includes(TOKEN_TODAY_UID))).toBe(false);
   });
 });
