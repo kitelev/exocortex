@@ -314,3 +314,71 @@ describe("assembleShapesReport ordering", () => {
     expect(staged.conforms).toBe(true);
   });
 });
+
+/**
+ * Two axes closing mutants that survived the round-2 review.
+ *
+ * ⛔ Both existed as CLAIMS before they existed as tests, which is the failure mode
+ * this file is supposed to prevent: the docstring asserted "dropping either half has
+ * its own reddening axis" while dropping `instanceof DomainIRI` reddened nothing, and
+ * the ordering axis pinned only the staged filter, so moving the append BETWEEN the
+ * two filters passed the whole suite while live-reproducing half the original bug.
+ */
+describe("guards that were asserted before they were tested", () => {
+  const REQ4 = "@req:00e8079e-fb36-4ce3-b33f-abb18c212143";
+  const OWL = "http://www.w3.org/2002/07/owl#sameAs";
+  const LEGACY_EXCEPTION =
+    "https://exocortex.my/ontology/exo#Asset_legacyValidationException";
+
+  /**
+   * `instanceof DomainIRI` is load-bearing SEPARATELY from `fromTermIRI`: a literal
+   * whose TEXT happens to be a term IRI must not be reported — a literal never
+   * participates in a "predicate → definition" join. Live exposure is zero today
+   * (no IRI-shaped literal labels in either vault), which is exactly why it needs a
+   * fixture rather than a live measurement.
+   */
+  it(`${REQ4} does NOT report LITERAL labels whose text looks like a term IRI`, () => {
+    const found = detectTermIriCollisions([
+      labelledWithLiteral("p", "https://exocortex.my/ontology/lit#WebPage_url"),
+      labelledWithLiteral("q", "https://exocortex.my/ontology/lit#WebPage_url"),
+    ]);
+
+    expect(found).toEqual([]);
+  });
+
+  /**
+   * The ordering axis above pins the STAGED filter only. Moving the append to sit
+   * between the two filters keeps collisions flowing into the staged filter and so
+   * stays green there — while a legacy-exempted asset starts being reported again.
+   * Verified live by review: that one-line move yields 2 emitters where HEAD yields 1.
+   */
+  it(`${REQ4} collisions go THROUGH the legacy-exception filter too`, async () => {
+    const { assembleShapesReport } =
+      await import("../../../src/commands/validate-schema.js");
+    const triples = [
+      labelledWithIri("A", OWL),
+      labelledWithIri("B", OWL),
+      // A is grandfathered — its findings, collisions included, must be dropped
+      new Triple(asset("A"), new IRI(LEGACY_EXCEPTION), new Literal("true")),
+    ];
+
+    const assembled = assembleShapesReport(
+      { conforms: true, violations: [] },
+      triples,
+      null,
+    );
+    const collisions = assembled.violations.filter(
+      (v: Violation) => v.constraint === "term-iri-collision",
+    );
+
+    // canary: without the exemption both emitters are reported
+    const both = detectTermIriCollisions([
+      labelledWithIri("A", OWL),
+      labelledWithIri("B", OWL),
+    ]);
+    expect(both).toHaveLength(2);
+
+    expect(collisions).toHaveLength(1);
+    expect(collisions[0]!.focusNode).toContain("B.md");
+  });
+});

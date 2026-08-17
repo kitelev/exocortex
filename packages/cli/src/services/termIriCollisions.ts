@@ -30,8 +30,11 @@ import {
  * by more than one asset (`Initiative`, `Idea`, `Area`, `Bug`, `OKR`, …). Reporting
  * those would bury the real collisions under 214 lines of noise. ⛔ But `instanceof
  * DomainIRI` alone is NOT sufficient (see the comment at the filter): the actual
- * discriminator is `Namespace.fromTermIRI`, and both halves are load-bearing —
- * dropping either has its own reddening axis.
+ * discriminator is `Namespace.fromTermIRI`. Both halves are load-bearing and each
+ * now HAS its own reddening axis — the literal-text-that-looks-like-an-IRI fixture
+ * pins `instanceof`, the file-IRI fixtures pin `fromTermIRI`. ⚠ That sentence was
+ * asserted here before either axis existed, and review measured that dropping
+ * `instanceof` reddened nothing; the fixture was added in response.
  *
  * Severity is `sh:Warning`, never `sh:Violation`: three collisions already exist in
  * the live vaults and must not turn `conforms` false the moment this ships
@@ -70,11 +73,18 @@ export function detectTermIriCollisions(
     // ⛔ `instanceof DomainIRI` is NOT the "is a term IRI" test. A label written
     // as a wikilink (`exo__Asset_label: "[[<uid>]]"`) is emitted by the converter
     // as the TARGET'S FILE IRI (`obsidian://vault/…/<uid>.md`) — also a DomainIRI,
-    // and three assets in the live vault do exactly this. Such an IRI is never a
-    // predicate, so the message below ("a join from a predicate to its definition
-    // resolves to all of them") would be false for them. `Namespace.fromTermIRI`
-    // is the documented inverse of the forward path `fromPropertyKey` → `term`,
-    // so it accepts exactly the IRIs that path can produce and nothing else.
+    // and three assets in the live vault do exactly this. That particular IRI is
+    // used as a predicate 0 times, so the message below ("a join from a predicate
+    // to its definition resolves to all of them") would be false for it.
+    // ⚠ Do NOT generalise that to "file IRIs are never predicates" — they can be.
+    // Measured: `adapter-exo-ims__relatesToConcept` has a hyphenated prefix, which
+    // `Namespace.forPrefix` rejects (`^[a-z][a-zA-Z0-9]*$`), so it never gets a term
+    // IRI and is used by FILE IRI in the predicate slot 64× (vault-my) / 102×
+    // (vault-exodev). The guard is therefore justified by that one IRI's measured
+    // 0 predicate uses, not by an invariant about file IRIs.
+    // `Namespace.fromTermIRI` is the documented inverse of the forward path
+    // `fromPropertyKey` → `term`, so it accepts exactly the IRIs that path can
+    // produce and nothing else.
     if (Namespace.fromTermIRI(triple.object.value) === null) continue;
 
     const iri = triple.object.value;
