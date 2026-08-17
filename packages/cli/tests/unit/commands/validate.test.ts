@@ -26,6 +26,12 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   ShapeLoader: { loadFromVaultFS: jest.fn().mockResolvedValue({ getAll: jest.fn().mockReturnValue([]) }) },
   ShaclShapeRegistry: jest.fn().mockImplementation(() => ({})),
   shaclValidate: jest.fn().mockReturnValue({ conforms: true, violations: [] }),
+  // req 00e8079e — termIriCollisions (reached via validate-schema) resolves the
+  // label predicate through Namespace rather than hardcoding the IRI, so the ESM
+  // link needs this export too (see the note above about named exports).
+  Namespace: {
+    EXO: { term: (local: string) => ({ value: `https://exocortex.my/ontology/exo#${local}` }) },
+  },
   DomainIRI: class { constructor(public value: string) {} },
   DomainLiteral: class { constructor(public value: string) {} },
   DomainTriple: jest.fn(),

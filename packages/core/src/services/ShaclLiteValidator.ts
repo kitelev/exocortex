@@ -18,7 +18,12 @@ export type ViolationConstraint =
   | 'maxCount'
   | 'class'
   | 'datatype'
-  | 'unknown-property';
+  | 'unknown-property'
+  // Two or more assets emit the SAME term IRI (their `exo__Asset_label` parses as
+  // `<prefix>__<LocalName>`), so a join "predicate → its definition" resolves to
+  // all of them. Reported as sh:Warning by `validate schema`; not produced by the
+  // shape engine itself. req `00e8079e-fb36-4ce3-b33f-abb18c212143`.
+  | 'term-iri-collision';
 
 export interface Violation {
   focusNode: string;

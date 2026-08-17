@@ -23,6 +23,7 @@ import {
 } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
+import { detectTermIriCollisions } from "../services/termIriCollisions.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder } from "../responses/index.js";
 import { CacheManager } from "../cache/CacheManager.js";
@@ -1070,6 +1071,20 @@ export async function runShapesModeAction(
     let report = applyLegacyExceptionFilter(triples, rawReport);
     if (stagedFilter) {
       report = filterReportToStagedFocusNodes(report, stagedFilter);
+    }
+
+    // req 00e8079e — term-IRI collisions are a GLOBAL graph invariant, not a
+    // per-node shape: two assets whose labels parse as `<prefix>__<LocalName>`
+    // emit the same term IRI, and a join "predicate → definition" then returns
+    // both. The shape engine cannot see this (it validates one focus node at a
+    // time), so the check runs over the loaded triples and its results are folded
+    // in as warnings — they raise warningCount but never flip `conforms`.
+    const collisionWarnings = detectTermIriCollisions(triples);
+    if (collisionWarnings.length > 0) {
+      report = {
+        ...report,
+        violations: [...report.violations, ...collisionWarnings],
+      };
     }
 
     const qualifyNode = (focusNode: string): string => focusNode;
