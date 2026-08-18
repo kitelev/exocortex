@@ -2807,6 +2807,57 @@ export class CommandResolver {
         if (unwrapped === TOKEN_INVOCATION_CLASS_UID) return true;
       }
     }
+
+    // ⛔ Secondary tell — the invocation's OWN `_token` property.
+    //
+    // This is the SECOND door to defect 0310aa28, and the earlier one: this
+    // method runs before `assetIsSubstitutionToken` (see
+    // `resolvePropertyDefaultValue`). When the class triple has not loaded, a
+    // real TokenInvocation is classified "not an invocation", falls through to
+    // the SubstitutionToken check — which cannot catch it either, because an
+    // invocation carries no `_resolver` — and the ref is emitted as
+    // `"[[<uid>]]"` where the substituted value belonged. The first door was
+    // closed by `@req:ef825945…`; without this one the corruption survives.
+    //
+    // The tie cannot be broken by the class triple: its absence IS the failure.
+    // `exocmd__TokenInvocation_token` breaks it — on the pinned
+    // `packages/exoas-exocmd@829e06bc` the relation is biconditional: both
+    // frontmatter carriers are TokenInvocation, and both TokenInvocation
+    // instances carry it.
+    //
+    // ⚠ Re-measuring by grep finds 3 extra files that mention the key where it
+    // emits no triple with this predicate — `NoteToRDFConverter` iterates
+    // frontmatter KEYS only:
+    //   `606df367` — a SubstitutionToken instance; prose mention in the body
+    //   `3f28af98` — the TokenInvocation class def itself
+    //   `2f5fe019` — this property's own def; the key sits inside
+    //                `exo__Property_description`, i.e. a frontmatter VALUE
+    //
+    // ⛔ Order, as in the sibling method, is NOT a performance choice: both are
+    // `match(subject, <predicate>, undefined)` — the same `matchSP` walk of the
+    // same `spo` index. It keeps the debug line below honest, since that line
+    // asserts the class was absent.
+    const tokenTriples = await this.tripleStore.match(
+      subject,
+      Namespace.EXOCMD.term("TokenInvocation_token"),
+      undefined,
+    );
+    if (tokenTriples.length > 0) {
+      // `debug`, not `warn`: this path RECOVERS — the invocation is dispatched
+      // and no corrupt value is written. A warn here would be a user-facing
+      // toast on every render for a condition the engine just handled.
+      //
+      // Naming the invocation explicitly also removes a mis-attribution: before
+      // this tell, such an asset fell through to the SubstitutionToken branch,
+      // whose log line says "is not a SubstitutionToken" — literally true, and
+      // it sends the reader to look for a `_resolver` an invocation can never
+      // have.
+      this.logger.debug(
+        `Asset ${subject.value} classified as TokenInvocation via its exocmd__TokenInvocation_token property; exo__Instance_class was absent or unresolved.`,
+      );
+      return true;
+    }
+
     return false;
   }
 
