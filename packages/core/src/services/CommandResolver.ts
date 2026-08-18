@@ -18,8 +18,6 @@ import {
   type StyleSource,
 } from "../domain/constants/CommandBindingStyleEnums";
 import {
-  clearUniversalDefault,
-  loadUniversalDefault,
   mergePropertyDefaults,
   mergeInheritanceRules,
   type UniversalDefaultTemplate,
@@ -238,11 +236,11 @@ export class CommandResolver {
   private readonly _fallbackWarnedKeys = new Set<string>();
 
   /**
-   * RFC 727572d2 — Universal Default Template singleton cache. Loaded once
-   * per CommandResolver instance via {@link getUniversalCache}. Vault file
-   * change adapters may externally call
-   * {@link clearUniversalDefault} (UniversalDefaultTemplateResolver) AND
-   * recreate the CommandResolver to fully invalidate.
+   * RFC 727572d2 — Universal Default Template singleton cache. Resolved once
+   * per CommandResolver instance via {@link getUniversalCache} and dropped by
+   * {@link invalidateCache} / {@link clearUniversalCache}. This instance field
+   * is the ONLY cache of the singleton — the module-level loader cache that
+   * used to sit beside it was removed with its unregistered loader (#4083).
    */
   private _universalCacheReady = false;
   private _universalCacheValue: UniversalDefaultTemplate | null = null;
@@ -253,13 +251,11 @@ export class CommandResolver {
    * this when the singleton ABox asset (62907ff4) or any referenced
    * PropertyDefault / InheritanceRule changes on disk, then either
    * re-create the CommandResolver or simply rely on lazy re-load on next
-   * `resolvePropertyDefaults` invocation. Also clears the module-level
-   * loader cache so external loader sources stay aligned.
+   * `resolvePropertyDefaults` invocation.
    */
   clearUniversalCache(): void {
     this._universalCacheReady = false;
     this._universalCacheValue = null;
-    clearUniversalDefault();
   }
 
   /**
@@ -824,11 +820,11 @@ export class CommandResolver {
    * docstring; clearing warn-suppression on every save reinstates the toast
    * storm of #3186. Different field, different rationale.
    *
-   * ⚠ Scope note: {@link clearUniversalCache} also clears the MODULE-level
-   * loader cache (`clearUniversalDefault`), so this method is no longer purely
-   * instance-scoped. Moot today — no host calls `registerUniversalDefaultLoader`
-   * (issue #4083), so `loadUniversalDefault()` always returns null — but a host
-   * that wires one must expect it to be re-asked after every `.md` save.
+   * ⛤ Scope note (resolved by #4083): this method IS purely instance-scoped
+   * again. The previous note warned that {@link clearUniversalCache} also wiped
+   * a MODULE-level loader cache — that cache, and the loader registry it served,
+   * were removed once the measurement showed no host had ever registered a
+   * loader. Nothing outside this instance is touched here.
    */
   invalidateCache(): void {
     this.cache.clear();
@@ -2288,14 +2284,17 @@ export class CommandResolver {
   }
 
   /**
-   * RFC 727572d2 — Universal Default Template singleton lazy loader. Returns
-   * the cached UniversalDefaultTemplate or null when:
-   *   - Singleton asset not in vault (cold-start race or absent)
-   *   - Loader threw (logged once, falls back to null)
+   * RFC 727572d2 — Universal Default Template singleton lazy resolver. Returns
+   * the cached UniversalDefaultTemplate, or null when the singleton asset is
+   * not in the store (cold-start race, or a vault that genuinely has none).
    *
-   * The session-level cache is populated on first call; vault file-watcher
-   * adapters may call {@link clearUniversalDefault} to invalidate after a
-   * Universal Template asset change.
+   * The instance-level cache is populated on first call and dropped by
+   * {@link invalidateCache} / {@link clearUniversalCache}.
+   *
+   * ⛔ There is no host-loader short-circuit here any more. It existed, was
+   * awaited on every call, and always returned null because no host ever
+   * registered a loader (#4083) — one path is cheaper than two, and a path
+   * that cannot be exercised cannot be tested.
    *
    * Universal singleton lookup is in-band — finds first asset whose
    * `exo__Instance_class` includes the UniversalDefaultTemplate class UID
@@ -2306,15 +2305,6 @@ export class CommandResolver {
     if (this._universalCacheReady) return this._universalCacheValue;
     this._universalCacheReady = true;
 
-    // External loader takes precedence (lets host wire a cheaper lookup
-    // path, e.g. via metadataCache rather than triple-store scan).
-    const external = await loadUniversalDefault();
-    if (external) {
-      this._universalCacheValue = external;
-      return external;
-    }
-
-    // In-store fallback: scan triple store for the singleton.
     const singletonIRI = await this.findUniversalSingleton();
     if (!singletonIRI) {
       // req f3193399 — this branch used to be entirely silent, so a `null`

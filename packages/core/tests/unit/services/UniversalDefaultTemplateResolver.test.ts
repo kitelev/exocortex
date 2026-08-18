@@ -2,12 +2,17 @@
  * Unit tests — UniversalDefaultTemplateResolver (RFC 727572d2 Phase C).
  *
  * Covers:
- * - registerUniversalDefaultLoader / loadUniversalDefault lifecycle
- * - Loader returning null → cached null, no double-invoke
- * - Loader throwing → warn-once + null fallback
  * - mergePropertyDefaults: Grounding overrides Universal by propertyName
  * - mergeInheritanceRules: Grounding overrides Universal by targetPropertyName
  * - Order preservation: overridden entries stay in Universal position
+ *
+ * ⛔ The "loader lifecycle" block that used to open this file is GONE with the
+ * loader itself (#4083). It specified «IF a loader is registered, it is used»
+ * and was green for the entire life of the feature — while no host registered
+ * one, so the branch it covered returned null on every production call. A test
+ * whose premise production never satisfies is not coverage; deleting the branch
+ * deletes its test with it. Singleton resolution is exercised where it actually
+ * happens: CommandResolver.universalDefaultTemplate.test.ts.
  */
 
 import type {
@@ -15,77 +20,9 @@ import type {
   PropertyDefaultResolved,
 } from "../../../src/domain/models/CommandDefinition";
 import {
-  clearUniversalDefault,
-  clearUniversalDefaultLoader,
-  loadUniversalDefault,
   mergeInheritanceRules,
   mergePropertyDefaults,
-  registerUniversalDefaultLoader,
 } from "../../../src/services/UniversalDefaultTemplateResolver";
-
-describe("UniversalDefaultTemplateResolver — loader lifecycle", () => {
-  beforeEach(() => {
-    clearUniversalDefaultLoader();
-  });
-
-  it("returns null when no loader registered", async () => {
-    const result = await loadUniversalDefault();
-    expect(result).toBeNull();
-  });
-
-  it("caches loader result across calls", async () => {
-    const loader = jest.fn(() => ({
-      propertyDefaults: [],
-      inheritanceRules: [],
-    }));
-    registerUniversalDefaultLoader(loader);
-    await loadUniversalDefault();
-    await loadUniversalDefault();
-    await loadUniversalDefault();
-    expect(loader).toHaveBeenCalledTimes(1);
-  });
-
-  it("clearUniversalDefault invalidates cache", async () => {
-    const loader = jest.fn(() => ({
-      propertyDefaults: [],
-      inheritanceRules: [],
-    }));
-    registerUniversalDefaultLoader(loader);
-    await loadUniversalDefault();
-    clearUniversalDefault();
-    await loadUniversalDefault();
-    expect(loader).toHaveBeenCalledTimes(2);
-  });
-
-  it("loader throwing → null fallback + warn once", async () => {
-    const loader = jest.fn(() => {
-      throw new Error("simulated load failure");
-    });
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation();
-    registerUniversalDefaultLoader(loader);
-    const result = await loadUniversalDefault();
-    expect(result).toBeNull();
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    warnSpy.mockRestore();
-  });
-
-  it("loader returning null → returns null (no error)", async () => {
-    registerUniversalDefaultLoader(() => null);
-    const result = await loadUniversalDefault();
-    expect(result).toBeNull();
-  });
-
-  it("async loader is awaited", async () => {
-    registerUniversalDefaultLoader(async () => ({
-      propertyDefaults: [{ propertyName: "x", value: "v" }],
-      inheritanceRules: [],
-    }));
-    const result = await loadUniversalDefault();
-    expect(result?.propertyDefaults).toEqual([
-      { propertyName: "x", value: "v" },
-    ]);
-  });
-});
 
 describe("mergePropertyDefaults", () => {
   it("appends Grounding entries that don't conflict with Universal", () => {
