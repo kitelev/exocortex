@@ -100,6 +100,27 @@ async function addSubstitutionToken(
   ]);
 }
 
+/**
+ * A SubstitutionToken whose `exo__Instance_class` triple did NOT load — the
+ * cold-start shape behind defect 0310aa28. Everything else about the asset is
+ * intact, including its resolver property.
+ */
+async function addTokenWithoutClassTriple(
+  store: InMemoryTripleStore,
+  opts: { uid: string; label: string; resolverId: string },
+): Promise<void> {
+  const subject = new IRI(`obsidian://vault/${opts.uid}.md`);
+  await store.addAll([
+    new Triple(subject, Namespace.EXO.term("Asset_uid"), new Literal(opts.uid)),
+    new Triple(subject, Namespace.EXO.term("Asset_label"), new Literal(opts.label)),
+    new Triple(
+      subject,
+      Namespace.EXOCMD.term("SubstitutionToken_resolver"),
+      new Literal(opts.resolverId),
+    ),
+  ]);
+}
+
 async function addPropertyDefault(
   store: InMemoryTripleStore,
   opts: { uid: string; propertyRefUid: string; valueRefUid: string },
@@ -432,6 +453,78 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
   // undiagnosable: the root had to be narrowed by ELIMINATION rather than
   // measured. These lock the diagnostics, not the corruption itself.
   // ──────────────────────────────────────────────────────────────────────────
+
+  it("@req:ef825945-62a8-4a9d-b5ea-5992903d3bff dispatches a token whose exo__Instance_class did not load, instead of writing a link into the value", async () => {
+    // THE defect: with the class triple missing, the token was classified
+    // "not a token" and its ref was emitted as `"[[<uid>]]"` — landing in
+    // exo__Asset_label where the substituted value belonged. The resolver
+    // property breaks the tie; it is exclusive to the class (measured 17/17 on
+    // both live vaults), so plain asset refs are unaffected.
+    await addTokenWithoutClassTriple(store, {
+      uid: TOKEN_TODAY_UID,
+      label: "$today",
+      resolverId: "today",
+    });
+    await addPropertyDefault(store, {
+      uid: PD_UID,
+      propertyRefUid: PROP_UID,
+      valueRefUid: TOKEN_TODAY_UID,
+    });
+    await addGrounding(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding whose token lost its class triple",
+      propertyDefaultRefs: [PD_UID],
+    });
+    await addCommand(store, COMMAND_UID, GROUNDING_UID);
+
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+    const value = cmd!.grounding.propertyDefault![0].value;
+
+    // Dispatched — a marker, NOT the corrupting wikilink.
+    expect(value).toContain("__SUBSTITUTE__");
+    expect(value).not.toContain(`[[${TOKEN_TODAY_UID}]]`);
+    // Recovery is quiet on the warn channel: nothing was damaged.
+    expect(logger.warnings).toHaveLength(0);
+  });
+
+  it("@req:ef825945-62a8-4a9d-b5ea-5992903d3bff still emits a wikilink for a plain asset that merely lacks a class triple", async () => {
+    // Non-vacuity control for the tie-breaker: the fallback must key on the
+    // RESOLVER property, not merely on "class triple missing" — otherwise every
+    // unindexed plain ref would be mis-dispatched as a token.
+    //
+    // ⛔ The emitted VALUE alone cannot prove this, and asserting only that was
+    // this test's first, vacuous form: a mis-dispatched plain asset reaches
+    // `dispatchSubstitutionToken`, finds no `_resolver`, and falls back to the
+    // SAME `"[[<uid>]]"` string. The discriminator is the WARN it emits on that
+    // path — proven by the mutant that makes the tie-breaker fire on any
+    // class-less asset.
+    await store.addAll([
+      new Triple(
+        new IRI(`obsidian://vault/${PLAIN_ASSET_UID}.md`),
+        Namespace.EXO.term("Asset_uid"),
+        new Literal(PLAIN_ASSET_UID),
+      ),
+    ]);
+    await addPropertyDefault(store, {
+      uid: PD_UID,
+      propertyRefUid: PROP_UID,
+      valueRefUid: PLAIN_ASSET_UID,
+    });
+    await addGrounding(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding with a class-less plain asset ref",
+      propertyDefaultRefs: [PD_UID],
+    });
+    await addCommand(store, COMMAND_UID, GROUNDING_UID);
+
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+
+    expect(cmd!.grounding.propertyDefault![0].value).toBe(
+      `"[[${PLAIN_ASSET_UID}]]"`,
+    );
+    // Never entered token dispatch: that path warns about the missing resolver.
+    expect(logger.warnings).toHaveLength(0);
+  });
 
   it("@req:b354316b-3b26-478b-a8c0-18606da8e6ec warns when the PropertyDefault value asset is absent from the store (cold-start race)", async () => {
     // NOTE: the value ref is deliberately NOT seeded — this models the

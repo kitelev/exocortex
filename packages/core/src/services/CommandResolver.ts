@@ -2842,6 +2842,73 @@ export class CommandResolver {
         if (unwrapped === SUBSTITUTION_TOKEN_CLASS_UID) return true;
       }
     }
+
+    // ⛔ Secondary tell — the token's OWN resolver property.
+    //
+    // EITHER signal suffices — this is a disjunction, not a precedence chain.
+    // The class loop above can only return true; it never exits false, so on
+    // the (today non-existent) input where the class resolves to something else
+    // while the resolver property is present, the resolver wins.
+    //
+    // ⛔ The order is NOT a performance choice, and reordering is NOT free:
+    //   - it is not cheaper — both are `match(subject, <predicate>, undefined)`,
+    //     i.e. the same `matchSP` walk of the same `spo` index; the class branch
+    //     then does strictly MORE work (iterate + unwrapWikilink per triple);
+    //   - it does not short-circuit the common case — the common case is a PLAIN
+    //     asset ref (see the call-site comment on the `!isSubstitutionToken`
+    //     branch), which falls through the class loop and runs BOTH lookups
+    //     whatever the order.
+    //
+    // What the order DOES buy is the honesty of the debug line below, which
+    // asserts `exo__Instance_class was absent or unresolved`. Every valid token
+    // carries the resolver property (16/16 on the pinned corpus), so running the
+    // resolver check first would fire that line on EVERY correctly-classified
+    // token — making it a lie. VERIFIED BY PERMUTATION, not argued: moving this
+    // block above the class loop reddens exactly one axis, `@req:b354316b… stays
+    // silent on the happy path` (1 failed / 16 passed).
+    //
+    // The class triple is precisely what is missing in the failure this guards:
+    // when it has not loaded, a real SubstitutionToken is classified "not a
+    // token", its ref is emitted as `"[[<uid>]]"`, and that literal lands where
+    // the substituted value belonged — the shape that corrupted
+    // `exo__Asset_label` on six live assets (defect 0310aa28; the user's typed
+    // text survived only in `aliases`). The ambiguity cannot be resolved by the
+    // class triple, because the class triple is the thing that is absent.
+    //
+    // `exocmd__SubstitutionToken_resolver` breaks the tie: on the pinned
+    // `packages/exoas-exocmd@829e06bc` the relation is biconditional — all 16
+    // frontmatter carriers are SubstitutionToken, and all 16 SubstitutionToken
+    // instances carry it. The 7 `exocmd__SubstitutionTokenLegacy` instances
+    // (class referenced BY UID `[[660e7539…]]`, not by symbolic name — searching
+    // for the name yields a false zero) carry none.
+    //
+    // ⚠ Re-measuring by grep: anchored (`^exocmd__SubstitutionToken_resolver:`)
+    // reads 17, unanchored reads 19 — neither is a hole. The extras mention the
+    // key where it emits no triple with this predicate:
+    //   `ac573e5d` — this property's own def; key inside a ```yaml fence in the BODY
+    //   `08cec529` — the SubstitutionToken class def; prose bullet in the body
+    //   `2f5fe019` — `TokenInvocation_token` def; key inside `Property_description`,
+    //                i.e. a frontmatter VALUE, not a frontmatter key
+    // `NoteToRDFConverter` iterates frontmatter KEYS only
+    // (`Object.entries(frontmatter)`); the body contributes just `Asset_bodyLink`.
+    //
+    // A plain asset ref never carries the property, so a wikilink-valued
+    // PropertyDefault keeps resolving to a wikilink exactly as before.
+    const resolverTriples = await this.tripleStore.match(
+      subject,
+      Namespace.EXOCMD.term("SubstitutionToken_resolver"),
+      undefined,
+    );
+    if (resolverTriples.length > 0) {
+      // `debug`, not `warn`: this path RECOVERS — dispatch proceeds and no
+      // corrupt value is written. A warn here would be a user-facing toast on
+      // every render for a condition the engine just handled.
+      this.logger.debug(
+        `Asset ${subject.value} classified as SubstitutionToken via its resolver property; exo__Instance_class was absent or unresolved.`,
+      );
+      return true;
+    }
+
     return false;
   }
 
