@@ -528,8 +528,13 @@ describe("CommandResolver — req f3193399: UniversalDefaultTemplate cache inval
  * OPPOSITE directions:
  *   - it is not taken       → the O(vault) scan runs on every save (the cost
  *                             the wiring would otherwise introduce);
- *   - it REPLACES the scan  → a singleton written in wikilink-literal form
- *                             (dual-IRI) stops resolving, silently.
+ *   - it REPLACES the walk  → a singleton whose class object is NOT the
+ *                             symbolic IRI (cold-cache file IRI, or an
+ *                             unresolved-uid literal) stops resolving, silently.
+ *                             ⛔ NOT "the label form": that spelling is emitted
+ *                             symbolic and takes the fast path — see the
+ *                             premise axes at the bottom of this file, which
+ *                             observe the emission instead of assuming it.
  * A single axis cannot see both.
  * --------------------------------------------------------------------- */
 
@@ -635,19 +640,27 @@ describe("CommandResolver — req f3193399: indexed singleton lookup", () => {
       await addUniversalSingletonInFallbackForm(store, form, [PD_UID_UNIVERSAL_UID]);
       await addGroundingWithPDRefs(store, []);
 
+      const before = store.unboundClassScans;
       const cmd = await resolver.loadCommand(COMMAND_UID);
 
       // Фолбэк ОБЯЗАН оставаться живым: связать объект для этих форм нельзя.
       expect((cmd!.grounding.propertyDefault ?? []).map((p) => p.propertyName)).toEqual([
         "exo__Asset_uid",
       ]);
-      expect(store.unboundClassScans).toBeGreaterThan(0);
+      // ⛤ Симметрично оси выше — от baseline, не от абсолютного нуля: «0 после
+      // setup» сегодня верно (addAll не зовёт match), но это НЕзаписанный
+      // инвариант, и в день, когда хелпер setup'а прочитает store, абсолютная
+      // форма пройдёт вакуумно.
+      expect(store.unboundClassScans).toBeGreaterThan(before);
     },
   );
 });
 
 describe("NoteToRDFConverter — посылка, на которой держится фолбэк выше", () => {
-  const CLASS_UID = "29e2c8f8-2d27-4e58-b467-2e85d46f8122";
+  // ⛔ НЕ переобъявлять литерал: ось-посылка обязана доказывать механизм для
+  // ТОГО ЖЕ класса, который ловит фолбэк выше, иначе они разъедутся молча и
+  // обе останутся зелёными (механизм класс-агностичен).
+  const CLASS_UID = UNIVERSAL_DEFAULT_TEMPLATE_CLASS_UID;
   const singletonFile: IFile = {
     path: `exocmd/${UNIVERSAL_SINGLETON_UID}.md`,
     basename: UNIVERSAL_SINGLETON_UID,
@@ -682,7 +695,7 @@ describe("NoteToRDFConverter — посылка, на которой держи�
       process: async () => "",
       updateLinks: async () => {},
       getDefaultNewFileParent: () => null,
-    } as unknown as IVaultAdapter;
+    } as IVaultAdapter;
   }
 
   async function emittedClassObject(fm: IFrontmatter | null) {

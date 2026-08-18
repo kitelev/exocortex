@@ -806,17 +806,19 @@ export class CommandResolver {
    * so the template — and, worse, a `null` verdict latched against a not-yet-
    * warm store — survived until the plugin was restarted.
    *
-   * ⛤ On COST, since {@link findUniversalSingleton} is O(vault) (it walks every
-   * `exo__Instance_class` triple; the object cannot be bound because it arrives
-   * in both IRI and wikilink-literal form): this method ALREADY clears `cache`
-   * and `multiCache`, which forces the next render to re-load every visible
-   * command together with its grounding, property-defaults and inheritance
-   * rules — dozens of store queries. The one extra in-memory walk runs ONCE per
-   * invalidation (the latch re-arms on the first call) and is dominated by that.
+   * ⛤ On COST: {@link findUniversalSingleton} takes an INDEXED path first
+   * (bound object → `matchPO` → O(matches)), so this call is cheap on a healthy
+   * vault. It degrades to an O(vault) walk only when the singleton's class
+   * object is not the symbolic IRI — read the comment on that method for which
+   * forms those are and why the walk must stay. The walk, when taken, runs ONCE
+   * per invalidation (the latch re-arms on the first call).
    *
-   * ⛔ NOT the `scanVault`-per-change shape that caused the iPhone Jetsam storm:
-   * that walk read FILES; this one walks an already-materialised in-memory
-   * index. Different cost class — see the PR for the measured numbers.
+   * ⛔ Do NOT re-derive the cost from "invalidateCache reloads everything
+   * anyway, so one more walk drowns in it" — that was measured and is FALSE
+   * (PR #4082): the unbound walk was 57 % / 90 % / 96 % of a post-invalidation
+   * `loadCommand` at 2k / 10k / 30k triples, i.e. it dominated and grew with the
+   * vault. The indexed path is what makes clearing here affordable; removing it
+   * re-introduces O(vault) work on every `.md` save.
    *
    * ⛔ `_fallbackWarnedKeys` stays deliberately un-cleared here — see its own
    * docstring; clearing warn-suppression on every save reinstates the toast
@@ -2361,8 +2363,9 @@ export class CommandResolver {
     // this lookup into `invalidateCache()`, it runs after EVERY `.md` save
     // instead of once per session — and the unbound-object scan below walks
     // every `exo__Instance_class` triple in the vault, so its cost grows with
-    // the vault while everything else in a command reload does not. It
-    // DOMINATES that reload rather than drowning in it.
+    // the vault while everything else in a command reload does not, so on a
+    // large vault it dominates that reload rather than drowning in it (figures
+    // in PR #4082).
     //
     // `matchPO` goes through the `pos` index (see `InMemoryTripleStore`), so
     // binding the object turns O(vault) into O(matches) on the healthy path.
@@ -2382,19 +2385,29 @@ export class CommandResolver {
     //      COLD `metadataCache`. ⛤ That is this requirement's OWN subject: the
     //      warm-up window is exactly when a `null` verdict used to latch. The
     //      fallback is the branch that catches the singleton in that window.
-    //   2. `emitInstanceClassAsUid: true` (RFC 78572fa9 stage-1) → file IRI.
+    //   2. `emitInstanceClassAsUid: true` (RFC 78572fa9 stage-1) → file IRI —
+    //      but only for the uid spelling: the label spelling returns symbolic
+    //      before the flag is ever consulted.
     //   3. the uid does not resolve to a file → `Literal("[[<uid>]]")`.
     // Cases 1-2 land in the `includes(UNIVERSAL_DEFAULT_TEMPLATE_CLASS_UID)`
-    // branch, case 3 in the Literal branch. All three are covered by axes.
+    // branch, case 3 in the Literal branch — i.e. three causes collapse into
+    // TWO store shapes, and both shapes have a resolver axis. ⚠ Only case 1 has
+    // a converter axis proving the shape is really emitted; 2 and 3 are read off
+    // `valueToClassURI`, not observed.
     //
     // ⛔ The early return below deliberately does NOT union the forms: once a
     // symbolic candidate exists the other spellings are not considered, so the
     // "multiple singletons" warn keys on the symbolic form alone. Unioning
-    // would mean always paying the scan — i.e. undoing this block. In a
-    // steady-state vault every singleton is symbolic, so the warn still fires;
-    // it is only suppressed in the mixed-form warm-up window, where the pick
-    // may differ from the pre-change lexicographic one (both are valid
-    // singletons).
+    // would mean always paying the walk — i.e. undoing this block.
+    //
+    // ⚠ Be precise about what that costs, because the enumeration above already
+    // refutes the comfortable version: only case 1 is a warm-up window. Cases 2
+    // and 3 are PERSISTENT states, so a vault holding one symbolic singleton
+    // plus one dangling-uid singleton keeps the duplicate warn suppressed
+    // FOREVER, not just during indexing. Accepted deliberately: the resolved
+    // value is still a valid singleton, and the alternative is paying O(vault)
+    // on every `.md` save. If the duplicate warn ever needs to be reliable,
+    // that is a separate change — key it on the union count, not on this path.
     const indexed = await this.tripleStore.match(
       undefined,
       Namespace.EXO.term("Instance_class"),
@@ -2431,7 +2444,7 @@ export class CommandResolver {
   /**
    * Shared tail of {@link findUniversalSingleton}: deterministic selection when
    * a vault carries more than one singleton. Extracted so the indexed fast path
-   * and the dual-IRI fallback cannot drift apart on the multi-singleton rule.
+   * and the non-symbolic fallback cannot drift apart on the multi-singleton rule.
    */
   private pickUniversalSingleton(candidates: IRI[]): IRI | null {
     if (candidates.length === 0) return null;
