@@ -2847,9 +2847,25 @@ export class CommandResolver {
     //
     // EITHER signal suffices — this is a disjunction, not a precedence chain.
     // The class loop above can only return true; it never exits false, so on
-    // the (today non-existent) input where the class says "not a token" while
-    // the resolver property is present, the resolver wins. The class check
-    // merely runs first because it is the cheaper and more common one.
+    // the (today non-existent) input where the class resolves to something else
+    // while the resolver property is present, the resolver wins.
+    //
+    // ⛔ The order is NOT a performance choice, and reordering is NOT free:
+    //   - it is not cheaper — both are `match(subject, <predicate>, undefined)`,
+    //     i.e. the same `matchSP` walk of the same `spo` index; the class branch
+    //     then does strictly MORE work (iterate + unwrapWikilink per triple);
+    //   - it does not short-circuit the common case — the common case is a PLAIN
+    //     asset ref (see the call-site comment on the `!isSubstitutionToken`
+    //     branch), which falls through the class loop and runs BOTH lookups
+    //     whatever the order.
+    //
+    // What the order DOES buy is the honesty of the debug line below, which
+    // asserts `exo__Instance_class was absent or unresolved`. Every valid token
+    // carries the resolver property (16/16 on the pinned corpus), so running the
+    // resolver check first would fire that line on EVERY correctly-classified
+    // token — making it a lie. VERIFIED BY PERMUTATION, not argued: moving this
+    // block above the class loop reddens exactly one axis, `@req:b354316b… stays
+    // silent on the happy path` (1 failed / 16 passed).
     //
     // The class triple is precisely what is missing in the failure this guards:
     // when it has not loaded, a real SubstitutionToken is classified "not a
@@ -2859,18 +2875,22 @@ export class CommandResolver {
     // text survived only in `aliases`). The ambiguity cannot be resolved by the
     // class triple, because the class triple is the thing that is absent.
     //
-    // `exocmd__SubstitutionToken_resolver` breaks the tie: it is exclusive to
-    // the class. MEASURED, not assumed, on three corpora — the two live vaults
-    // (17/17 emitted triples each) and, reproducibly for any reviewer, the
-    // pinned `packages/exoas-exocmd` submodule (16/16 frontmatter carriers are
-    // SubstitutionToken; the 7 `SubstitutionTokenLegacy` instances carry none).
+    // `exocmd__SubstitutionToken_resolver` breaks the tie: on the pinned
+    // `packages/exoas-exocmd@829e06bc` the relation is biconditional — all 16
+    // frontmatter carriers are SubstitutionToken, and all 16 SubstitutionToken
+    // instances carry it. The 7 `exocmd__SubstitutionTokenLegacy` instances
+    // (class referenced BY UID `[[660e7539…]]`, not by symbolic name — searching
+    // for the name yields a false zero) carry none.
     //
-    // ⚠ Re-measuring by grep alone reads as 16/17 and looks like a hole: a
-    // 17th file (`ac573e5d`, a property definition) mentions the key inside a
-    // ```yaml fence in its BODY. That emits no triple — `NoteToRDFConverter`
-    // iterates frontmatter only (`Object.entries(frontmatter)`), and the body
-    // contributes just `Asset_bodyLink`. Discriminate frontmatter from body
-    // before concluding the premise leaks.
+    // ⚠ Re-measuring by grep: anchored (`^exocmd__SubstitutionToken_resolver:`)
+    // reads 17, unanchored reads 19 — neither is a hole. The extras mention the
+    // key where it emits no triple with this predicate:
+    //   `ac573e5d` — this property's own def; key inside a ```yaml fence in the BODY
+    //   `08cec529` — the SubstitutionToken class def; prose bullet in the body
+    //   `2f5fe019` — `TokenInvocation_token` def; key inside `Property_description`,
+    //                i.e. a frontmatter VALUE, not a frontmatter key
+    // `NoteToRDFConverter` iterates frontmatter KEYS only
+    // (`Object.entries(frontmatter)`); the body contributes just `Asset_bodyLink`.
     //
     // A plain asset ref never carries the property, so a wikilink-valued
     // PropertyDefault keeps resolving to a wikilink exactly as before.
