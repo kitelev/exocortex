@@ -374,3 +374,243 @@ async function addValueAssetForOverride(store: InMemoryTripleStore): Promise<voi
     new Triple(s, Namespace.EXO.term("Asset_label"), new Literal("Override")),
   ]);
 }
+
+/* ------------------------------------------------------------------------
+ * req f3193399 — invalidation of the UniversalDefaultTemplate cache.
+ *
+ * Before this requirement `clearUniversalCache()` had ZERO production call
+ * sites, so the template — and, worse, a `null` verdict latched against a
+ * not-yet-warm store — survived until the plugin was restarted. The latch is
+ * armed BEFORE the lookup (`_universalCacheReady = true` precedes
+ * `findUniversalSingleton()`), which is why the `null` case latches too.
+ *
+ * The axes below are ISOLATING: each one is red for exactly one guard.
+ *
+ *   - «правка шаблона действует…»  ← `this.clearUniversalCache()` in invalidateCache
+ *   - «вердикт „шаблона нет“…»     ← the same call, exercised on the null branch
+ *   - «отсутствие диагностируемо»  ← the `logger.debug` on the null branch
+ *
+ * ⛤ Why `invalidateCache()` and not a direct `clearUniversalCache()` call in
+ * the test: the requirement is about the WIRING, not the primitive. The
+ * primitive already had a green test («clearUniversalDefault invalidates
+ * cache», UniversalDefaultTemplateResolver.test.ts) — and it stayed green for
+ * the whole time the feature was broken, because nobody called it. Asserting
+ * through the wiring is the only form that can go red here.
+ * --------------------------------------------------------------------- */
+
+interface FullRecordingLogger extends ILogger {
+  readonly warnings: string[];
+  readonly debugs: string[];
+}
+
+/**
+ * The file-level `makeRecordingLogger` drops `debug` on the floor, so it is
+ * structurally blind to the diagnosability axis. This one records both.
+ */
+function makeFullRecordingLogger(): FullRecordingLogger {
+  const warnings: string[] = [];
+  const debugs: string[] = [];
+  return {
+    debug(msg: string) {
+      debugs.push(msg);
+    },
+    info() {},
+    warn(msg: string) {
+      warnings.push(msg);
+    },
+    error() {},
+    warnings,
+    debugs,
+  };
+}
+
+/** Attach one more PropertyDefault ref to the already-present singleton. */
+async function attachPdToSingleton(
+  store: InMemoryTripleStore,
+  pdUid: string,
+): Promise<void> {
+  await store.addAll([
+    new Triple(
+      new IRI(`obsidian://vault/${UNIVERSAL_SINGLETON_UID}.md`),
+      Namespace.EXOCMD.term("Template_propertyDefault"),
+      new IRI(`obsidian://vault/${pdUid}.md`),
+    ),
+  ]);
+}
+
+async function pdNamesOf(
+  resolver: CommandResolver,
+): Promise<string[]> {
+  const cmd = await resolver.loadCommand(COMMAND_UID);
+  return (cmd!.grounding.propertyDefault ?? []).map((p) => p.propertyName).sort();
+}
+
+describe("CommandResolver — req f3193399: UniversalDefaultTemplate cache invalidation", () => {
+  let store: InMemoryTripleStore;
+  let logger: FullRecordingLogger;
+  let resolver: CommandResolver;
+
+  beforeEach(async () => {
+    clearUniversalDefaultLoader();
+    store = new InMemoryTripleStore();
+    logger = makeFullRecordingLogger();
+    resolver = new CommandResolver(store, logger);
+    await setupCommonTBox(store);
+  });
+
+  it("@req:f3193399-ae33-44cf-a20f-d0e59edf8b81 — правка шаблона действует после invalidateCache, без пересоздания резолвера", async () => {
+    await addUniversalDefaultTemplateSingleton(store, [PD_UID_UNIVERSAL_UID]);
+    await addGroundingWithPDRefs(store, []);
+
+    expect(await pdNamesOf(resolver)).toEqual(["exo__Asset_uid"]);
+
+    // The user edits the template: one more PropertyDefault is attached.
+    await attachPdToSingleton(store, PD_UID_UNIVERSAL_LABEL);
+
+    // The host reports the vault change the only way it knows how.
+    resolver.invalidateCache();
+
+    // ⛔ Without the wiring the command cache clears but the universal cache
+    // does not, so the second PD stays invisible for the rest of the session.
+    expect(await pdNamesOf(resolver)).toEqual([
+      "exo__Asset_label",
+      "exo__Asset_uid",
+    ]);
+  });
+
+  it("@req:f3193399-ae33-44cf-a20f-d0e59edf8b81 — вердикт «шаблона нет» не латчится на сессию", async () => {
+    // Cold store: the singleton's `exo__Instance_class` triple has not landed
+    // yet. This is the shape that silently strips createdAt/updatedAt from
+    // every asset created afterwards.
+    await addGroundingWithPDRefs(store, []);
+    expect(await pdNamesOf(resolver)).toEqual([]);
+
+    // The store finishes warming up.
+    await addUniversalDefaultTemplateSingleton(store, [PD_UID_UNIVERSAL_UID]);
+    resolver.invalidateCache();
+
+    expect(await pdNamesOf(resolver)).toEqual(["exo__Asset_uid"]);
+  });
+
+  it("@req:f3193399-ae33-44cf-a20f-d0e59edf8b81 — отсутствие шаблона диагностируемо: debug есть, warn нет", async () => {
+    await addGroundingWithPDRefs(store, []);
+    await resolver.loadCommand(COMMAND_UID);
+
+    const hit = logger.debugs.filter((m) =>
+      m.includes("No exocmd__UniversalDefaultTemplate instance found"),
+    );
+    expect(hit).toHaveLength(1);
+    // The message must name the consequence, not merely the fact — otherwise
+    // it does not answer the question a reader arrives with.
+    expect(hit[0]).toMatch(/invalidateCache\(\)/);
+
+    // Negative control: a vault without a template is a LEGITIMATE state, and
+    // `warn` is routed to a user-facing toast by DEFAULT_LOG_CHANNELS. Raising
+    // the severity here would toast every such user on every render.
+    expect(logger.warnings).toHaveLength(0);
+  });
+});
+
+/* ------------------------------------------------------------------------
+ * req f3193399 — the indexed fast path in findUniversalSingleton.
+ *
+ * Two axes, because the fast path has two ways to be wrong and they fail in
+ * OPPOSITE directions:
+ *   - it is not taken       → the O(vault) scan runs on every save (the cost
+ *                             the wiring would otherwise introduce);
+ *   - it REPLACES the scan  → a singleton written in wikilink-literal form
+ *                             (dual-IRI) stops resolving, silently.
+ * A single axis cannot see both.
+ * --------------------------------------------------------------------- */
+
+/** Counts unbound-object `Instance_class` scans made through the store. */
+class ScanCountingStore extends InMemoryTripleStore {
+  public unboundClassScans = 0;
+  override async match(
+    s?: Parameters<InMemoryTripleStore["match"]>[0],
+    p?: Parameters<InMemoryTripleStore["match"]>[1],
+    o?: Parameters<InMemoryTripleStore["match"]>[2],
+  ): ReturnType<InMemoryTripleStore["match"]> {
+    if (
+      s === undefined &&
+      o === undefined &&
+      p !== undefined &&
+      p.value === Namespace.EXO.term("Instance_class").value
+    ) {
+      this.unboundClassScans += 1;
+    }
+    return super.match(s, p, o);
+  }
+}
+
+/** Singleton whose `Instance_class` is a wikilink LITERAL, not an IRI. */
+async function addUniversalSingletonAsWikilinkLiteral(
+  store: InMemoryTripleStore,
+  pdRefs: string[],
+): Promise<void> {
+  const s = new IRI(`obsidian://vault/${UNIVERSAL_SINGLETON_UID}.md`);
+  const triples: Triple[] = [
+    new Triple(
+      s,
+      Namespace.EXO.term("Instance_class"),
+      new Literal("[[exocmd__UniversalDefaultTemplate]]"),
+    ),
+    new Triple(
+      s,
+      Namespace.EXO.term("Asset_uid"),
+      new Literal(UNIVERSAL_SINGLETON_UID),
+    ),
+  ];
+  for (const pd of pdRefs) {
+    triples.push(
+      new Triple(
+        s,
+        Namespace.EXOCMD.term("Template_propertyDefault"),
+        new IRI(`obsidian://vault/${pd}.md`),
+      ),
+    );
+  }
+  await store.addAll(triples);
+}
+
+describe("CommandResolver — req f3193399: indexed singleton lookup", () => {
+  beforeEach(() => {
+    clearUniversalDefaultLoader();
+  });
+
+  it("@req:f3193399-ae33-44cf-a20f-d0e59edf8b81 — IRI-форма резолвится БЕЗ обхода всех Instance_class", async () => {
+    const store = new ScanCountingStore();
+    const resolver = new CommandResolver(store, makeFullRecordingLogger());
+    await setupCommonTBox(store);
+    await addUniversalDefaultTemplateSingleton(store, [PD_UID_UNIVERSAL_UID]);
+    await addGroundingWithPDRefs(store, []);
+
+    const before = store.unboundClassScans;
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+
+    // Ловится сам эффект: дефолт применён…
+    expect((cmd!.grounding.propertyDefault ?? []).map((p) => p.propertyName)).toEqual([
+      "exo__Asset_uid",
+    ]);
+    // …и при этом ни одного обхода с несвязанным объектом не понадобилось.
+    // ⛔ Именно этот счётчик, а не тайминг: тайминг флачет под нагрузкой
+    // раннера, а число обходов детерминировано.
+    expect(store.unboundClassScans).toBe(before);
+  });
+
+  it("@req:f3193399-ae33-44cf-a20f-d0e59edf8b81 — wikilink-литеральная форма (dual-IRI) резолвится через фолбэк", async () => {
+    const store = new ScanCountingStore();
+    const resolver = new CommandResolver(store, makeFullRecordingLogger());
+    await setupCommonTBox(store);
+    await addUniversalSingletonAsWikilinkLiteral(store, [PD_UID_UNIVERSAL_UID]);
+    await addGroundingWithPDRefs(store, []);
+
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+
+    // Фолбэк ОБЯЗАН оставаться живым: связать объект для этой формы нельзя.
+    expect((cmd!.grounding.propertyDefault ?? []).map((p) => p.propertyName)).toEqual([
+      "exo__Asset_uid",
+    ]);
+    expect(store.unboundClassScans).toBeGreaterThan(0);
+  });
+});

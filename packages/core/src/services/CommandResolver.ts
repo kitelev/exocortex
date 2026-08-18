@@ -800,11 +800,33 @@ export class CommandResolver {
   /**
    * Invalidate all cached command resolutions.
    * Call when vault files change.
+   *
+   * Includes the Universal Default Template cache (req f3193399). Before that
+   * requirement {@link clearUniversalCache} had ZERO call sites in production,
+   * so the template — and, worse, a `null` verdict latched against a not-yet-
+   * warm store — survived until the plugin was restarted.
+   *
+   * ⛤ On COST, since {@link findUniversalSingleton} is O(vault) (it walks every
+   * `exo__Instance_class` triple; the object cannot be bound because it arrives
+   * in both IRI and wikilink-literal form): this method ALREADY clears `cache`
+   * and `multiCache`, which forces the next render to re-load every visible
+   * command together with its grounding, property-defaults and inheritance
+   * rules — dozens of store queries. The one extra in-memory walk runs ONCE per
+   * invalidation (the latch re-arms on the first call) and is dominated by that.
+   *
+   * ⛔ NOT the `scanVault`-per-change shape that caused the iPhone Jetsam storm:
+   * that walk read FILES; this one walks an already-materialised in-memory
+   * index. Different cost class — see the PR for the measured numbers.
+   *
+   * ⛔ `_fallbackWarnedKeys` stays deliberately un-cleared here — see its own
+   * docstring; clearing warn-suppression on every save reinstates the toast
+   * storm of #3186. Different field, different rationale.
    */
   invalidateCache(): void {
     this.cache.clear();
     this.multiCache.clear();
     this._ancestorDepthCache.clear();
+    this.clearUniversalCache();
   }
 
   /**
@@ -2287,6 +2309,17 @@ export class CommandResolver {
     // In-store fallback: scan triple store for the singleton.
     const singletonIRI = await this.findUniversalSingleton();
     if (!singletonIRI) {
+      // req f3193399 — this branch used to be entirely silent, so a `null`
+      // latched against a not-yet-warm store was indistinguishable from a vault
+      // that genuinely has no template: every asset created afterwards simply
+      // came out without `createdAt`/`updatedAt`, with nothing in the log.
+      //
+      // `debug`, NOT `warn`: a vault without a UniversalDefaultTemplate is a
+      // legitimate state, and `warn` is routed to a user-facing toast by
+      // DEFAULT_LOG_CHANNELS (see `_fallbackWarnedKeys` for that precedent).
+      this.logger.debug(
+        `[CommandResolver] No exocmd__UniversalDefaultTemplate instance found in the store; universal property-defaults and inheritance-rules will not be applied. This verdict is cached until invalidateCache() is called — if the store was still warming up, the next invalidation re-resolves it.`,
+      );
       this._universalCacheValue = null;
       return null;
     }
@@ -2313,9 +2346,36 @@ export class CommandResolver {
    * lexicographically smallest UID when multiple are found.
    */
   private async findUniversalSingleton(): Promise<IRI | null> {
-    const templateClassIRI = Namespace.EXOCMD.term(
-      "UniversalDefaultTemplate",
-    ).value;
+    const templateClassTerm = Namespace.EXOCMD.term("UniversalDefaultTemplate");
+    const templateClassIRI = templateClassTerm.value;
+
+    // req f3193399 — indexed fast path FIRST.
+    //
+    // ⛤ Load-bearing, not micro-optimisation. Since that requirement wired
+    // this lookup into `invalidateCache()`, it runs after EVERY `.md` save
+    // instead of once per session — and the unbound-object scan below walks
+    // every `exo__Instance_class` triple in the vault. Measured share of a
+    // post-invalidation `loadCommand`, unbound scan only:
+    //   2 000 triples → 57 %   10 000 → 90 %   30 000 → 96 %
+    // i.e. it DOMINATES the reload rather than drowning in it, and the cost
+    // grows with the vault. `matchPO` goes through the `pos` index, so binding
+    // the object turns O(vault) into O(matches) on the healthy path.
+    //
+    // ⛔ The scan below is still REQUIRED and is not dead: `Instance_class` is
+    // emitted in two forms (bare `[[uid]]` → symbolic IRI, `[[label]]` →
+    // wikilink literal — the dual-IRI split), and only the IRI form can be
+    // bound here. A vault whose singleton is written label-first resolves
+    // solely through the fallback.
+    const indexed = await this.tripleStore.match(
+      undefined,
+      Namespace.EXO.term("Instance_class"),
+      templateClassTerm,
+    );
+    const fast = indexed
+      .map((t) => t.subject)
+      .filter((s): s is IRI => s instanceof IRI);
+    if (fast.length > 0) return this.pickUniversalSingleton(fast);
+
     const classTriples = await this.tripleStore.match(
       undefined,
       Namespace.EXO.term("Instance_class"),
@@ -2336,13 +2396,22 @@ export class CommandResolver {
       }
       if (match && t.subject instanceof IRI) candidates.push(t.subject);
     }
+    return this.pickUniversalSingleton(candidates);
+  }
+
+  /**
+   * Shared tail of {@link findUniversalSingleton}: deterministic selection when
+   * a vault carries more than one singleton. Extracted so the indexed fast path
+   * and the dual-IRI fallback cannot drift apart on the multi-singleton rule.
+   */
+  private pickUniversalSingleton(candidates: IRI[]): IRI | null {
     if (candidates.length === 0) return null;
     if (candidates.length === 1) return candidates[0];
-    candidates.sort((a, b) => a.value.localeCompare(b.value));
+    const sorted = [...candidates].sort((a, b) => a.value.localeCompare(b.value));
     this.logger.warn(
-      `Multiple UniversalDefaultTemplate singletons found (${candidates.length}); selecting deterministically by lexicographic UID order: ${candidates[0].value}`,
+      `Multiple UniversalDefaultTemplate singletons found (${sorted.length}); selecting deterministically by lexicographic UID order: ${sorted[0].value}`,
     );
-    return candidates[0];
+    return sorted[0];
   }
 
   /**
