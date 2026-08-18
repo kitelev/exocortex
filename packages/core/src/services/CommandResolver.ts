@@ -821,6 +821,12 @@ export class CommandResolver {
    * ⛔ `_fallbackWarnedKeys` stays deliberately un-cleared here — see its own
    * docstring; clearing warn-suppression on every save reinstates the toast
    * storm of #3186. Different field, different rationale.
+   *
+   * ⚠ Scope note: {@link clearUniversalCache} also clears the MODULE-level
+   * loader cache (`clearUniversalDefault`), so this method is no longer purely
+   * instance-scoped. Moot today — no host calls `registerUniversalDefaultLoader`
+   * (issue #4083), so `loadUniversalDefault()` always returns null — but a host
+   * that wires one must expect it to be re-asked after every `.md` save.
    */
   invalidateCache(): void {
     this.cache.clear();
@@ -2354,18 +2360,41 @@ export class CommandResolver {
     // ⛤ Load-bearing, not micro-optimisation. Since that requirement wired
     // this lookup into `invalidateCache()`, it runs after EVERY `.md` save
     // instead of once per session — and the unbound-object scan below walks
-    // every `exo__Instance_class` triple in the vault. Measured share of a
-    // post-invalidation `loadCommand`, unbound scan only:
-    //   2 000 triples → 57 %   10 000 → 90 %   30 000 → 96 %
-    // i.e. it DOMINATES the reload rather than drowning in it, and the cost
-    // grows with the vault. `matchPO` goes through the `pos` index, so binding
-    // the object turns O(vault) into O(matches) on the healthy path.
+    // every `exo__Instance_class` triple in the vault, so its cost grows with
+    // the vault while everything else in a command reload does not. It
+    // DOMINATES that reload rather than drowning in it.
     //
-    // ⛔ The scan below is still REQUIRED and is not dead: `Instance_class` is
-    // emitted in two forms (bare `[[uid]]` → symbolic IRI, `[[label]]` →
-    // wikilink literal — the dual-IRI split), and only the IRI form can be
-    // bound here. A vault whose singleton is written label-first resolves
-    // solely through the fallback.
+    // `matchPO` goes through the `pos` index (see `InMemoryTripleStore`), so
+    // binding the object turns O(vault) into O(matches) on the healthy path.
+    // That is the durable argument; the share-of-reload figures that motivated
+    // it are a point measurement and live in the PR (#4082), not here — they
+    // would go stale, and the mechanism above does not.
+    //
+    // ⛔ The scan below is REQUIRED, and the reason is NOT "the label form".
+    // Read `NoteToRDFConverter.valueToClassURI` before touching it: BOTH
+    // canonical spellings end up symbolic, i.e. on the fast path —
+    //   `[[exocmd__UniversalDefaultTemplate]]` → `expandClassValue` is a pure
+    //      prefix parse, no vault access → symbolic IRI;
+    //   `[[<class-uid>]]`                     → file resolves, basename is a
+    //      UUID, so the class file's `exo__Asset_label` is read → symbolic IRI.
+    // What actually reaches the fallback is a FILE IRI or a Literal:
+    //   1. the class file resolves but `getFrontmatter` returns null — i.e. a
+    //      COLD `metadataCache`. ⛤ That is this requirement's OWN subject: the
+    //      warm-up window is exactly when a `null` verdict used to latch. The
+    //      fallback is the branch that catches the singleton in that window.
+    //   2. `emitInstanceClassAsUid: true` (RFC 78572fa9 stage-1) → file IRI.
+    //   3. the uid does not resolve to a file → `Literal("[[<uid>]]")`.
+    // Cases 1-2 land in the `includes(UNIVERSAL_DEFAULT_TEMPLATE_CLASS_UID)`
+    // branch, case 3 in the Literal branch. All three are covered by axes.
+    //
+    // ⛔ The early return below deliberately does NOT union the forms: once a
+    // symbolic candidate exists the other spellings are not considered, so the
+    // "multiple singletons" warn keys on the symbolic form alone. Unioning
+    // would mean always paying the scan — i.e. undoing this block. In a
+    // steady-state vault every singleton is symbolic, so the warn still fires;
+    // it is only suppressed in the mixed-form warm-up window, where the pick
+    // may differ from the pre-change lexicographic one (both are valid
+    // singletons).
     const indexed = await this.tripleStore.match(
       undefined,
       Namespace.EXO.term("Instance_class"),

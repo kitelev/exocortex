@@ -23,6 +23,12 @@ import { Literal } from "../../../src/domain/models/rdf/Literal";
 import { Namespace } from "../../../src/domain/models/rdf/Namespace";
 import { ILogger } from "../../../src/interfaces/ILogger";
 import { clearUniversalDefaultLoader } from "../../../src/services/UniversalDefaultTemplateResolver";
+import { NoteToRDFConverter } from "../../../src/services/NoteToRDFConverter";
+import {
+  IVaultAdapter,
+  IFile,
+  IFrontmatter,
+} from "../../../src/interfaces/IVaultAdapter";
 
 interface RecordingLogger extends ILogger {
   readonly warnings: string[];
@@ -384,7 +390,11 @@ async function addValueAssetForOverride(store: InMemoryTripleStore): Promise<voi
  * armed BEFORE the lookup (`_universalCacheReady = true` precedes
  * `findUniversalSingleton()`), which is why the `null` case latches too.
  *
- * The axes below are ISOLATING: each one is red for exactly one guard.
+ * The axes below are ISOLATING per GUARD, not per axis: the first two share
+ * one guard (the `clearUniversalCache()` call) but assert different
+ * behaviours — visibility of an edit vs. the latched `null`. No guard can be
+ * removed without reddening at least one axis, and no axis reddens for a
+ * guard it does not name.
  *
  *   - «правка шаблона действует…»  ← `this.clearUniversalCache()` in invalidateCache
  *   - «вердикт „шаблона нет“…»     ← the same call, exercised on the null branch
@@ -543,18 +553,33 @@ class ScanCountingStore extends InMemoryTripleStore {
   }
 }
 
-/** Singleton whose `Instance_class` is a wikilink LITERAL, not an IRI. */
-async function addUniversalSingletonAsWikilinkLiteral(
+/**
+ * Singleton whose `Instance_class` object is one of the NON-symbolic forms the
+ * converter actually emits — i.e. the ones only the fallback can catch.
+ *
+ * ⛔ Do NOT "simplify" this to `Literal("[[exocmd__UniversalDefaultTemplate]]")`.
+ * That spelling never reaches the store: `NoteToRDFConverter.expandClassValue`
+ * is a pure prefix parse, so the label form is emitted as a SYMBOLIC IRI and
+ * takes the fast path. Guarding a form the converter cannot produce is a green
+ * axis over a dead input — the premise axis below proves which form is real.
+ */
+async function addUniversalSingletonInFallbackForm(
   store: InMemoryTripleStore,
+  form: "file-iri" | "unresolved-literal",
   pdRefs: string[],
 ): Promise<void> {
   const s = new IRI(`obsidian://vault/${UNIVERSAL_SINGLETON_UID}.md`);
+  const classObject =
+    form === "file-iri"
+      ? // cold metadataCache (`getFrontmatter` → null) and the
+        // `emitInstanceClassAsUid` stage-1 flag both emit the class FILE IRI
+        new IRI(
+          `obsidian://vault/exocmd/${UNIVERSAL_DEFAULT_TEMPLATE_CLASS_UID}.md`,
+        )
+      : // the class uid does not resolve to a file at all
+        new Literal(`[[${UNIVERSAL_DEFAULT_TEMPLATE_CLASS_UID}]]`);
   const triples: Triple[] = [
-    new Triple(
-      s,
-      Namespace.EXO.term("Instance_class"),
-      new Literal("[[exocmd__UniversalDefaultTemplate]]"),
-    ),
+    new Triple(s, Namespace.EXO.term("Instance_class"), classObject),
     new Triple(
       s,
       Namespace.EXO.term("Asset_uid"),
@@ -598,19 +623,93 @@ describe("CommandResolver — req f3193399: indexed singleton lookup", () => {
     expect(store.unboundClassScans).toBe(before);
   });
 
-  it("@req:f3193399-ae33-44cf-a20f-d0e59edf8b81 — wikilink-литеральная форма (dual-IRI) резолвится через фолбэк", async () => {
-    const store = new ScanCountingStore();
-    const resolver = new CommandResolver(store, makeFullRecordingLogger());
-    await setupCommonTBox(store);
-    await addUniversalSingletonAsWikilinkLiteral(store, [PD_UID_UNIVERSAL_UID]);
-    await addGroundingWithPDRefs(store, []);
+  it.each([
+    ["file-iri" as const, "холодный metadataCache / emitInstanceClassAsUid"],
+    ["unresolved-literal" as const, "class-uid не резолвится в файл"],
+  ])(
+    "@req:f3193399-ae33-44cf-a20f-d0e59edf8b81 — не-symbolic форма (%s: %s) резолвится через фолбэк",
+    async (form, _why) => {
+      const store = new ScanCountingStore();
+      const resolver = new CommandResolver(store, makeFullRecordingLogger());
+      await setupCommonTBox(store);
+      await addUniversalSingletonInFallbackForm(store, form, [PD_UID_UNIVERSAL_UID]);
+      await addGroundingWithPDRefs(store, []);
 
-    const cmd = await resolver.loadCommand(COMMAND_UID);
+      const cmd = await resolver.loadCommand(COMMAND_UID);
 
-    // Фолбэк ОБЯЗАН оставаться живым: связать объект для этой формы нельзя.
-    expect((cmd!.grounding.propertyDefault ?? []).map((p) => p.propertyName)).toEqual([
-      "exo__Asset_uid",
-    ]);
-    expect(store.unboundClassScans).toBeGreaterThan(0);
+      // Фолбэк ОБЯЗАН оставаться живым: связать объект для этих форм нельзя.
+      expect((cmd!.grounding.propertyDefault ?? []).map((p) => p.propertyName)).toEqual([
+        "exo__Asset_uid",
+      ]);
+      expect(store.unboundClassScans).toBeGreaterThan(0);
+    },
+  );
+});
+
+describe("NoteToRDFConverter — посылка, на которой держится фолбэк выше", () => {
+  const CLASS_UID = "29e2c8f8-2d27-4e58-b467-2e85d46f8122";
+  const singletonFile: IFile = {
+    path: `exocmd/${UNIVERSAL_SINGLETON_UID}.md`,
+    basename: UNIVERSAL_SINGLETON_UID,
+    name: `${UNIVERSAL_SINGLETON_UID}.md`,
+    parent: null,
+  };
+  const classFile: IFile = {
+    path: `exocmd/${CLASS_UID}.md`,
+    basename: CLASS_UID,
+    name: `${CLASS_UID}.md`,
+    parent: null,
+  };
+
+  function makeVault(classFrontmatter: IFrontmatter | null): IVaultAdapter {
+    return {
+      getFrontmatter: (f: IFile) =>
+        f.path === singletonFile.path
+          ? ({ exo__Instance_class: `[[${CLASS_UID}]]` } as IFrontmatter)
+          : classFrontmatter,
+      getFirstLinkpathDest: (linkpath: string) =>
+        linkpath === CLASS_UID ? classFile : null,
+      read: async () => "",
+      getAllFiles: () => [],
+      create: async () => singletonFile,
+      modify: async () => {},
+      delete: async () => {},
+      exists: async () => true,
+      getAbstractFileByPath: () => null,
+      updateFrontmatter: async () => {},
+      rename: async () => {},
+      createFolder: async () => {},
+      process: async () => "",
+      updateLinks: async () => {},
+      getDefaultNewFileParent: () => null,
+    } as unknown as IVaultAdapter;
+  }
+
+  async function emittedClassObject(fm: IFrontmatter | null) {
+    const triples = await new NoteToRDFConverter(makeVault(fm)).convertNote(
+      singletonFile,
+    );
+    return triples.find((t) =>
+      (t.predicate as IRI).value.endsWith("#Instance_class"),
+    )?.object;
+  }
+
+  it("@req:f3193399-ae33-44cf-a20f-d0e59edf8b81 — при ХОЛОДНОМ metadataCache класс эмитится FILE-IRI, а не symbolic", async () => {
+    // ⛤ Эта ось — не про CommandResolver. Она доказывает ПОСЫЛКУ, на которой
+    // держится фолбэк: что форма, которую он ловит, вообще возникает. Первая
+    // редакция этого PR утверждала другую форму («label-first»), и утверждение
+    // было ЛОЖНЫМ — потому что форму предположили, а не наблюдали.
+    const obj = await emittedClassObject(null); // getFrontmatter класса → null
+    expect(obj).toBeInstanceOf(IRI);
+    expect((obj as IRI).value).toContain(CLASS_UID);
+    expect((obj as IRI).value).not.toContain("ontology/exocmd#");
+  });
+
+  it("@req:f3193399-ae33-44cf-a20f-d0e59edf8b81 — при ПРОГРЕТОМ metadataCache класс эмитится symbolic ⇒ идёт быстрым путём", async () => {
+    const obj = await emittedClassObject({
+      exo__Asset_label: "exocmd__UniversalDefaultTemplate",
+    } as IFrontmatter);
+    expect(obj).toBeInstanceOf(IRI);
+    expect((obj as IRI).value).toContain("ontology/exocmd#UniversalDefaultTemplate");
   });
 });
