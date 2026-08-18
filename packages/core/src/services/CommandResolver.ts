@@ -219,6 +219,25 @@ export class CommandResolver {
   private readonly _legacyPropertyDefaultsWarnedGroundings = new Set<string>();
 
   /**
+   * Once-per-session suppression for the PropertyDefault wikilink-fallback
+   * warning, keyed `<groundingUid>|<valueRefUid>`. Mirrors
+   * {@link _legacyPropertyDefaultsWarnedGroundings} above.
+   *
+   * ⛔ Load-bearing, not tidiness. `warn` is routed to `notice: true` by
+   * DEFAULT_LOG_CHANNELS, i.e. a user-facing Obsidian toast, AND persisted to
+   * the log file; and this branch is re-evaluated on every button render —
+   * `invalidateCache()` fires on each `.md` save. Undeduped, ONE dangling
+   * PropertyDefault ref would toast the user on every render and grow the log
+   * file (precedent: #3186, ~6 MB / 54k lines in two days).
+   *
+   * ⛤ Deliberately NOT cleared by `invalidateCache()`: that fires on every
+   * save, so clearing it there would reinstate exactly the storm this
+   * prevents. Fixing the underlying ref stops the warning by construction —
+   * the branch simply stops being taken.
+   */
+  private readonly _fallbackWarnedKeys = new Set<string>();
+
+  /**
    * RFC 727572d2 — Universal Default Template singleton cache. Loaded once
    * per CommandResolver instance via {@link getUniversalCache}. Vault file
    * change adapters may externally call
@@ -2576,17 +2595,39 @@ export class CommandResolver {
       // ⛔ CANDIDATE cause of defect 0310aa28 — narrowed by ELIMINATION, not
       // measured. Observed: assets whose `exo__Asset_label` holds the literal
       // `[[<token-uid>]]` while the user's input survives only in `aliases`.
-      // Of the five sites that emit this shape, the two in
-      // `dispatchSubstitutionToken` were ruled out by reading the live token
-      // asset (it has a `_resolver`, and that id IS whitelisted); this branch
-      // and the `!isSubstitutionToken` one below are the two that remain — and
-      // both were silent, which is why the root could not be measured at all.
-      // The corruption clusters per SESSION (command definitions are cached),
-      // consistent with a cold start, but that is inference. This log line is
-      // what turns the next occurrence into a measurement.
-      this.logger.warn(
-        `Grounding ${groundingUid}: PropertyDefault '${propertyName}' references asset '${valueRefUid}' which is NOT in the store (cold-start race / pruned vault) — falling back to wikilink form. If '${valueRefUid}' is a SubstitutionToken, the written value will be a link instead of the substituted value.`,
-      );
+      // Five sites emit this shape. The first (`!looksLikeUUID`, above) cannot
+      // produce it — a non-UUID ref yields a symbolic wikilink, not
+      // `[[<uuid>]]`. Two more, in `dispatchSubstitutionToken`, were ruled out
+      // by reading the live token asset (it HAS a `_resolver`, and that id IS
+      // whitelisted). That leaves this branch and the `!isSubstitutionToken`
+      // one below — and both were silent, which is why the root could not be
+      // measured at all. The corruption clusters per SESSION (command
+      // definitions are cached), which is consistent with a cold start, but
+      // that is inference. This log line turns the next occurrence into a
+      // measurement.
+      //
+      // The message states only what is OBSERVED (the asset is not in the
+      // store). Candidate causes — cold-start race, pruned vault, a plain
+      // dangling ref — belong here, not in a user-facing toast that would
+      // present one of them as established.
+      //
+      // ⚠ PLUGIN-ONLY today. `packages/cli` builds `new CommandResolver(store)`
+      // with no logger (apply.ts:261, resolve-buttons.ts:283), so the default
+      // NullLogger swallows both lines — including on `resolve-buttons`, the
+      // authoritative resolution oracle and the cheapest reproduction path.
+      // Wiring a CLI logger is deliberately NOT done here: it changes the CLI
+      // output contract (`resolve-buttons --json` must keep stdout pure JSON,
+      // so it would have to be stderr-only) and needs its own axes. Tracked
+      // separately — do not read CLI silence as absence of the problem.
+      const fallbackKey = `${groundingUid}|${valueRefUid}`;
+      if (!this._fallbackWarnedKeys.has(fallbackKey)) {
+        this._fallbackWarnedKeys.add(fallbackKey);
+        this.logger.warn(
+          this.capWarning(
+            `Grounding ${groundingUid}: PropertyDefault '${propertyName}' → value asset ${valueRefUid} not in store; emitting wikilink (a link, not the substituted value).`,
+          ),
+        );
+      }
       return `"[[${valueRefUid}]]"`;
     }
 

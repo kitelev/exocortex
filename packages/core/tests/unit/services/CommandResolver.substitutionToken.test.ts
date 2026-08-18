@@ -439,15 +439,18 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
     // asset has been indexed. Production then bakes the wikilink into a
     // session-cached command template, poisoning every instance created in
     // that session.
-    // GUARD: prove the UID is genuinely unseeded. Without it, a fixture-UID
-    // collision (this test first used the same constant as GROUNDING_UID)
-    // silently routes to the OTHER fallback and the assertion below measures
-    // the wrong branch while still looking plausible.
-    expect(
-      [PROP_UID, PD_UID, GROUNDING_UID, COMMAND_UID, TOKEN_TODAY_UID,
-       TOKEN_TARGET_FOLDER_UID, TOKEN_UNKNOWN_UID, TOKEN_TODAY_START_UID,
-       TOKEN_NOW_TIMESTAMP_UID, PLAIN_ASSET_UID],
-    ).not.toContain(TOKEN_ABSENT_UID);
+    // GUARD: ask the STORE whether the UID is seeded, rather than diffing
+    // against a hand-listed set of fixture constants. The enumeration form
+    // silently stops covering fixtures added later; this asks the same
+    // question `findSubjectByUID` asks. (This test first used the same
+    // constant as GROUNDING_UID and so measured the OTHER fallback while
+    // still looking plausible.)
+    const seeded = (
+      await store.match(undefined, Namespace.EXO.term("Asset_uid"), undefined)
+    ).filter(
+      (tr) => tr.object instanceof Literal && tr.object.value === TOKEN_ABSENT_UID,
+    );
+    expect(seeded).toHaveLength(0);
     await addPropertyDefault(store, {
       uid: PD_UID,
       propertyRefUid: PROP_UID,
@@ -471,7 +474,38 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
     const hit = logger.warnings.find((w) => w.includes(TOKEN_ABSENT_UID));
     expect(hit).toBeDefined();
     expect(hit).toContain(GROUNDING_UID);
-    expect(hit).toMatch(/NOT in the store/);
+    expect(hit).toMatch(/not in store/);
+    // The user-facing string must NOT assert a cause the PR itself calls
+    // unmeasured — candidate causes live in the code comment.
+    expect(hit).not.toMatch(/cold-start|pruned vault/);
+  });
+
+  it("@req:b354316b-3b26-478b-a8c0-18606da8e6ec warns ONCE per (grounding, value) even across cache invalidation", async () => {
+    // `warn` is routed to a user-facing Obsidian toast AND the log file, and
+    // this branch re-runs on every button render — `invalidateCache()` fires on
+    // each `.md` save. Undeduped, one dangling ref would toast on every render
+    // (precedent: #3186, ~6 MB of log in two days). invalidateCache() models the
+    // production trigger exactly.
+    await addPropertyDefault(store, {
+      uid: PD_UID,
+      propertyRefUid: PROP_UID,
+      valueRefUid: TOKEN_ABSENT_UID,
+    });
+    await addGrounding(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding re-resolved after invalidation",
+      propertyDefaultRefs: [PD_UID],
+    });
+    await addCommand(store, COMMAND_UID, GROUNDING_UID);
+
+    await resolver.loadCommand(COMMAND_UID);
+    const afterFirst = logger.warnings.length;
+    expect(afterFirst).toBe(1);
+
+    resolver.invalidateCache();
+    await resolver.loadCommand(COMMAND_UID);
+
+    expect(logger.warnings).toHaveLength(afterFirst);
   });
 
   it("@req:b354316b-3b26-478b-a8c0-18606da8e6ec logs at debug (never warn) when the PropertyDefault value is a plain asset, not a token", async () => {
