@@ -1,15 +1,32 @@
 /**
- * UniversalDefaultTemplateResolver — lazy-loaded reference to the RFC 727572d2
- * `exocmd__UniversalDefaultTemplate` singleton ABox instance.
- *
- * Loader pattern mirrors {@link OrderSpecResolver}: callers (CLI / Obsidian
- * plugin) register a `UniversalDefaultLoader` at startup. The loader returns
- * the singleton's contents (or null if the asset is absent). Result is cached;
- * vault updates may call {@link clearUniversalDefault} to invalidate.
+ * UniversalDefaultTemplateResolver — the shape of the RFC 727572d2
+ * `exocmd__UniversalDefaultTemplate` singleton, plus the merge semantics that
+ * fold it into each Grounding.
  *
  * Engine-side (CommandResolver) merges Universal entries into each Grounding's
  * propertyDefault / inheritanceRule lists at parse time; Grounding entries
  * override Universal entries by propertyName / targetPropertyName key.
+ *
+ * ⛔ This module deliberately has NO host-loader registry. It used to expose
+ * one — `registerUniversalDefaultLoader` / `clearUniversalDefaultLoader` /
+ * `loadUniversalDefault` / `clearUniversalDefault`, mirroring OrderSpecResolver
+ * — and its docstring described hosts registering a loader at startup. No host
+ * ever did: the measurement in issue #4083 found ZERO production callers of
+ * `registerUniversalDefaultLoader` on `origin/main`, so `loadUniversalDefault()`
+ * returned null on every single call while `CommandResolver.getUniversalCache`
+ * awaited it. The description of intent read like a description of behaviour —
+ * the same defect class as issue #4080 (`clearUniversalCache`, zero callers,
+ * green test, no wiring), found in the same subsystem one issue apart.
+ *
+ * The singleton is resolved where it is actually used: `CommandResolver`
+ * queries the triple store directly (indexed `Instance_class` match, PR #4082),
+ * caches the verdict on the instance, and drops it in `invalidateCache()`.
+ * One path, and it is the one the tests exercise.
+ *
+ * ⚠ If a host-side fast path is ever wanted again, do NOT restore this registry
+ * as-is: a plugin loader would read `metadataCache`, which is COLD at startup,
+ * so a cached null verdict would strip `createdAt`/`updatedAt` from every asset
+ * created afterwards — see rules/obsidian-plugin-indicator-surface-and-cold-resolve.
  *
  * RFC 727572d2-194b-4a4d-8a5a-585a1d3bac8e.
  */
@@ -33,71 +50,6 @@ import type {
 export interface UniversalDefaultTemplate {
   readonly propertyDefaults: ReadonlyArray<PropertyDefaultResolved>;
   readonly inheritanceRules: ReadonlyArray<InheritanceRuleResolved>;
-}
-
-export type UniversalDefaultLoader = () =>
-  | UniversalDefaultTemplate
-  | null
-  | Promise<UniversalDefaultTemplate | null>;
-
-let _loader: UniversalDefaultLoader | null = null;
-let _cached: UniversalDefaultTemplate | null | undefined = undefined;
-let _warnedMissing = false;
-
-export function registerUniversalDefaultLoader(
-  loader: UniversalDefaultLoader,
-): void {
-  _loader = loader;
-  _cached = undefined;
-  _warnedMissing = false;
-}
-
-export function clearUniversalDefaultLoader(): void {
-  _loader = null;
-  _cached = undefined;
-  _warnedMissing = false;
-}
-
-/** Invalidate the cache; loader will be re-invoked on next access. */
-export function clearUniversalDefault(): void {
-  _cached = undefined;
-  _warnedMissing = false;
-}
-
-/**
- * Fetch the Universal Default Template singleton contents.
- *
- * Returns `null` when:
- *   - No loader registered (test/CLI harnesses that intentionally bypass)
- *   - Loader returned null (singleton absent from vault → safety-net fallback)
- *   - Loader threw (warn once, fall back to null)
- *
- * Callers (GroundingExecutor) treat `null` as a signal to fall back to legacy
- * TS primitives WITH a loud warn log — the RFC 727572d2 design intentionally
- * leaves this safety net active because Universal singleton can race with
- * cold-start file-watcher debounce on mobile boot paths.
- */
-export async function loadUniversalDefault(): Promise<UniversalDefaultTemplate | null> {
-  if (_cached !== undefined) return _cached;
-  if (!_loader) {
-    _cached = null;
-    return null;
-  }
-  try {
-    const result = await _loader();
-    _cached = result ?? null;
-  } catch (e) {
-    if (!_warnedMissing) {
-       
-      console.warn(
-        "[UniversalDefaultTemplateResolver] loader threw, falling back to legacy primitives:",
-        e,
-      );
-      _warnedMissing = true;
-    }
-    _cached = null;
-  }
-  return _cached;
 }
 
 /**

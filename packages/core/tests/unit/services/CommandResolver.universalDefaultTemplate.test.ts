@@ -22,7 +22,6 @@ import { IRI } from "../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../src/domain/models/rdf/Literal";
 import { Namespace } from "../../../src/domain/models/rdf/Namespace";
 import { ILogger } from "../../../src/interfaces/ILogger";
-import { clearUniversalDefaultLoader } from "../../../src/services/UniversalDefaultTemplateResolver";
 import { NoteToRDFConverter } from "../../../src/services/NoteToRDFConverter";
 import {
   IVaultAdapter,
@@ -267,7 +266,6 @@ describe("CommandResolver — RFC 727572d2 UniversalDefaultTemplate merge", () =
   let resolver: CommandResolver;
 
   beforeEach(async () => {
-    clearUniversalDefaultLoader();
     store = new InMemoryTripleStore();
     logger = makeRecordingLogger();
     resolver = new CommandResolver(store, logger);
@@ -403,9 +401,10 @@ async function addValueAssetForOverride(store: InMemoryTripleStore): Promise<voi
  * ⛤ Why `invalidateCache()` and not a direct `clearUniversalCache()` call in
  * the test: the requirement is about the WIRING, not the primitive. The
  * primitive already had a green test («clearUniversalDefault invalidates
- * cache», UniversalDefaultTemplateResolver.test.ts) — and it stayed green for
- * the whole time the feature was broken, because nobody called it. Asserting
- * through the wiring is the only form that can go red here.
+ * cache») — and it stayed green for the whole time the feature was broken,
+ * because nobody called it. Asserting through the wiring is the only form that
+ * can go red here. (That test is gone: #4083 deleted the loader registry it
+ * covered, since no host had ever registered a loader either.)
  * --------------------------------------------------------------------- */
 
 interface FullRecordingLogger extends ILogger {
@@ -461,7 +460,6 @@ describe("CommandResolver — req f3193399: UniversalDefaultTemplate cache inval
   let resolver: CommandResolver;
 
   beforeEach(async () => {
-    clearUniversalDefaultLoader();
     store = new InMemoryTripleStore();
     logger = makeFullRecordingLogger();
     resolver = new CommandResolver(store, logger);
@@ -604,10 +602,6 @@ async function addUniversalSingletonInFallbackForm(
 }
 
 describe("CommandResolver — req f3193399: indexed singleton lookup", () => {
-  beforeEach(() => {
-    clearUniversalDefaultLoader();
-  });
-
   it("@req:f3193399-ae33-44cf-a20f-d0e59edf8b81 — IRI-форма резолвится БЕЗ обхода всех Instance_class", async () => {
     const store = new ScanCountingStore();
     const resolver = new CommandResolver(store, makeFullRecordingLogger());
