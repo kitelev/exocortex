@@ -121,6 +121,65 @@ async function addTokenWithoutClassTriple(
   ]);
 }
 
+/**
+ * A TokenInvocation whose `exo__Instance_class` triple did NOT load — the SECOND
+ * door to defect 0310aa28, and the earlier one: `assetIsTokenInvocation` runs
+ * before `assetIsSubstitutionToken`. Shape mirrors the canonical invocation
+ * fixture (`CommandResolver.universalDefaultTemplate.test.ts`) minus the class
+ * triple: `_token` is an IRI ref, `_parameter` a literal.
+ */
+/**
+ * A well-formed TokenInvocation — class triple PRESENT. Shape mirrors the
+ * canonical fixture in `CommandResolver.universalDefaultTemplate.test.ts`.
+ * Exists so the happy path can be asserted against a RECORDING logger: that
+ * suite's logger is a no-op stub (`debug() {}`) and is structurally unable to
+ * assert silence.
+ */
+async function addTokenInvocation(
+  store: InMemoryTripleStore,
+  opts: { uid: string; tokenRefUid: string; parameter: string },
+): Promise<void> {
+  const subject = new IRI(`obsidian://vault/${opts.uid}.md`);
+  await store.addAll([
+    new Triple(subject, Namespace.EXO.term("Asset_uid"), new Literal(opts.uid)),
+    new Triple(
+      subject,
+      Namespace.EXO.term("Instance_class"),
+      Namespace.EXOCMD.term("TokenInvocation"),
+    ),
+    new Triple(
+      subject,
+      Namespace.EXOCMD.term("TokenInvocation_token"),
+      new IRI(`obsidian://vault/${opts.tokenRefUid}.md`),
+    ),
+    new Triple(
+      subject,
+      Namespace.EXOCMD.term("TokenInvocation_parameter"),
+      new Literal(opts.parameter),
+    ),
+  ]);
+}
+
+async function addInvocationWithoutClassTriple(
+  store: InMemoryTripleStore,
+  opts: { uid: string; tokenRefUid: string; parameter: string },
+): Promise<void> {
+  const subject = new IRI(`obsidian://vault/${opts.uid}.md`);
+  await store.addAll([
+    new Triple(subject, Namespace.EXO.term("Asset_uid"), new Literal(opts.uid)),
+    new Triple(
+      subject,
+      Namespace.EXOCMD.term("TokenInvocation_token"),
+      new IRI(`obsidian://vault/${opts.tokenRefUid}.md`),
+    ),
+    new Triple(
+      subject,
+      Namespace.EXOCMD.term("TokenInvocation_parameter"),
+      new Literal(opts.parameter),
+    ),
+  ]);
+}
+
 async function addPropertyDefault(
   store: InMemoryTripleStore,
   opts: { uid: string; propertyRefUid: string; valueRefUid: string },
@@ -211,6 +270,13 @@ const TOKEN_NOW_TIMESTAMP_UID = "77777777-7777-4777-8777-777777777777";
 const TOKEN_ABSENT_UID        = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 // An ordinary asset (not a SubstitutionToken) — the common, correct path.
 const PLAIN_ASSET_UID         = "99999999-9999-4999-8999-999999999999";
+// @req:81d2e07e — an invocation whose class triple never loaded. Distinct UID:
+// reusing an existing fixture constant is exactly how the earlier axis silently
+// measured the wrong branch (see the guard in the TOKEN_ABSENT_UID test).
+const INVOCATION_NO_CLASS_UID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+// …and its well-formed twin: class triple PRESENT. Locks the ORDER of the two
+// checks, which nothing else does.
+const INVOCATION_OK_UID       = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
 const PD_UID  = "55555555-5555-4555-8555-555555555555";
 
@@ -667,5 +733,192 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
     expect(cmd!.grounding.propertyDefault![0].value).toContain("__SUBSTITUTE__");
     expect(logger.warnings).toHaveLength(0);
     expect(logger.debugs.some((d) => d.includes(TOKEN_TODAY_UID))).toBe(false);
+  });
+
+  it("@req:81d2e07e-413e-4e40-9159-83ccdb813561 dispatches an invocation whose exo__Instance_class did not load", async () => {
+    // The SECOND door to defect 0310aa28, and the one reached FIRST:
+    // `assetIsTokenInvocation` runs before `assetIsSubstitutionToken`. Without
+    // the `_token` tell, a class-less invocation is judged "not an invocation",
+    // falls through to the SubstitutionToken check — which cannot catch it
+    // either (an invocation carries no `_resolver`) — and the ref is emitted as
+    // a wikilink where the substituted value belonged.
+    await addSubstitutionToken(store, {
+      uid: TOKEN_TODAY_UID,
+      label: "$today",
+      resolverId: "today",
+    });
+    await addInvocationWithoutClassTriple(store, {
+      uid: INVOCATION_NO_CLASS_UID,
+      tokenRefUid: TOKEN_TODAY_UID,
+      parameter: "+1d",
+    });
+    await addPropertyDefault(store, {
+      uid: PD_UID,
+      propertyRefUid: PROP_UID,
+      valueRefUid: INVOCATION_NO_CLASS_UID,
+    });
+    await addGrounding(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding whose value is an invocation with no class triple",
+      propertyDefaultRefs: [PD_UID],
+    });
+    await addCommand(store, COMMAND_UID, GROUNDING_UID);
+
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+
+    const value = cmd!.grounding.propertyDefault![0].value;
+    // Assert BOTH: that the corruption shape is gone AND that the invocation
+    // actually dispatched. The first alone would pass on a build that emits any
+    // non-wikilink string; the second alone would pass if the wikilink form
+    // happened to contain a marker.
+    expect(value).not.toBe(`"[[${INVOCATION_NO_CLASS_UID}]]"`);
+    // `_P` is the PARAMETERISED marker — the bare-token path emits
+    // `__SUBSTITUTE__` without it, so this suffix alone proves the INVOCATION
+    // branch ran rather than a plain token dispatch.
+    expect(value).toContain("__SUBSTITUTE_P__");
+    expect(value).toContain(TOKEN_TODAY_UID);
+    // The parameter travels base64-encoded: "+1d" -> "KzFk". Asserted as the
+    // literal rather than re-deriving it in the test, so a change to the
+    // encoding surfaces here instead of being tracked silently.
+    expect(value).toContain("KzFk");
+
+    const hit = logger.debugs.find((d) => d.includes(INVOCATION_NO_CLASS_UID));
+    expect(hit).toBeDefined();
+    expect(hit).toMatch(/TokenInvocation/);
+  });
+
+  it("@req:81d2e07e-413e-4e40-9159-83ccdb813561 does not mis-attribute the invocation to the SubstitutionToken branch", async () => {
+    // Before the tell, this asset reached the `!isSubstitutionToken` branch,
+    // whose line reads "is not a SubstitutionToken" — literally true, and it
+    // sends the reader hunting for a `_resolver` an invocation can never carry.
+    // The diagnostic must name the door that was actually taken.
+    await addSubstitutionToken(store, {
+      uid: TOKEN_TODAY_UID,
+      label: "$today",
+      resolverId: "today",
+    });
+    await addInvocationWithoutClassTriple(store, {
+      uid: INVOCATION_NO_CLASS_UID,
+      tokenRefUid: TOKEN_TODAY_UID,
+      parameter: "+1d",
+    });
+    await addPropertyDefault(store, {
+      uid: PD_UID,
+      propertyRefUid: PROP_UID,
+      valueRefUid: INVOCATION_NO_CLASS_UID,
+    });
+    await addGrounding(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding whose value is an invocation with no class triple",
+      propertyDefaultRefs: [PD_UID],
+    });
+    await addCommand(store, COMMAND_UID, GROUNDING_UID);
+
+    await resolver.loadCommand(COMMAND_UID);
+
+    const about = logger.debugs.filter((d) =>
+      d.includes(INVOCATION_NO_CLASS_UID),
+    );
+    expect(about.length).toBeGreaterThan(0);
+    expect(
+      about.some((d) => /is not a SubstitutionToken/.test(d)),
+    ).toBe(false);
+  });
+
+  it("@req:81d2e07e-413e-4e40-9159-83ccdb813561 leaves a plain class-less asset as a wikilink (tell keys on _token, not on 'class missing')", async () => {
+    // Non-vacuity control, and the one that matters most here: a tell that fired
+    // on ANY asset lacking a class triple would mis-dispatch every unindexed
+    // plain ref. Seeded WITHOUT a class triple on purpose — that is the input a
+    // too-broad tell would swallow.
+    const subject = new IRI(`obsidian://vault/${PLAIN_ASSET_UID}.md`);
+    await store.addAll([
+      new Triple(
+        subject,
+        Namespace.EXO.term("Asset_uid"),
+        new Literal(PLAIN_ASSET_UID),
+      ),
+      new Triple(
+        subject,
+        Namespace.EXO.term("Asset_label"),
+        new Literal("Ordinary asset, no class triple, no _token"),
+      ),
+    ]);
+    await addPropertyDefault(store, {
+      uid: PD_UID,
+      propertyRefUid: PROP_UID,
+      valueRefUid: PLAIN_ASSET_UID,
+    });
+    await addGrounding(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding with a class-less plain asset ref",
+      propertyDefaultRefs: [PD_UID],
+    });
+    await addCommand(store, COMMAND_UID, GROUNDING_UID);
+
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+
+    expect(cmd!.grounding.propertyDefault![0].value).toBe(
+      `"[[${PLAIN_ASSET_UID}]]"`,
+    );
+    // Value alone is a weak assertion — a mis-dispatched plain asset falls back
+    // to the SAME string further down. Assert the classification never claimed
+    // TokenInvocation, and that nothing escalated to a user-facing toast.
+    expect(
+      logger.debugs.some(
+        (d) => d.includes(PLAIN_ASSET_UID) && /TokenInvocation/.test(d),
+      ),
+    ).toBe(false);
+    expect(logger.warnings).toHaveLength(0);
+  });
+
+  it("@req:81d2e07e-413e-4e40-9159-83ccdb813561 stays silent for a well-formed invocation (class present) — locks the ORDER of the two checks", async () => {
+    // This axis exists because the ordering rationale in the source comment was
+    // otherwise ARGUED, not locked: permuting the two checks left the whole
+    // suite green, so nothing would have caught it.
+    //
+    // Every well-formed invocation carries BOTH signals. Run the `_token` check
+    // first and the debug line — which asserts `exo__Instance_class was absent
+    // or unresolved` — fires on an invocation whose class is right there,
+    // i.e. it starts lying. The order is what keeps that line honest, and this
+    // test is what keeps the order.
+    //
+    // ⛤ The sibling suite has a happy-path invocation fixture already, but its
+    // logger is a no-op stub (`debug() {}`) — structurally unable to assert
+    // silence. Hence the fixture is rebuilt here against the recording logger.
+    await addSubstitutionToken(store, {
+      uid: TOKEN_TODAY_UID,
+      label: "$today",
+      resolverId: "today",
+    });
+    await addTokenInvocation(store, {
+      uid: INVOCATION_OK_UID,
+      tokenRefUid: TOKEN_TODAY_UID,
+      parameter: "+1d",
+    });
+    await addPropertyDefault(store, {
+      uid: PD_UID,
+      propertyRefUid: PROP_UID,
+      valueRefUid: INVOCATION_OK_UID,
+    });
+    await addGrounding(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding with a well-formed invocation",
+      propertyDefaultRefs: [PD_UID],
+    });
+    await addCommand(store, COMMAND_UID, GROUNDING_UID);
+
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+
+    // Dispatched normally — proves the fixture really exercises the happy path
+    // rather than silently failing somewhere before the diagnostic.
+    expect(cmd!.grounding.propertyDefault![0].value).toContain(
+      "__SUBSTITUTE_P__",
+    );
+    expect(logger.warnings).toHaveLength(0);
+    // The claim under lock: no line may assert the class was absent, because
+    // it is present.
+    expect(
+      logger.debugs.some((d) => /was absent or unresolved/.test(d)),
+    ).toBe(false);
   });
 });
