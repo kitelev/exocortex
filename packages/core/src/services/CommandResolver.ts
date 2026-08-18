@@ -2595,7 +2595,10 @@ export class CommandResolver {
       // ⛔ CANDIDATE cause of defect 0310aa28 — narrowed by ELIMINATION, not
       // measured. Observed: assets whose `exo__Asset_label` holds the literal
       // `[[<token-uid>]]` while the user's input survives only in `aliases`.
-      // Five sites emit this shape. The first (`!looksLikeUUID`, above) cannot
+      // Five sites ON THE PropertyDefault VALUE PATH emit this shape (a sixth,
+      // `getObsidianWikilinkValue`, serves grounding target values — a
+      // different predicate family — so a whole-file grep returns six).
+      // The first (`!looksLikeUUID`, above) cannot
       // produce it — a non-UUID ref yields a symbolic wikilink, not
       // `[[<uuid>]]`. Two more, in `dispatchSubstitutionToken`, were ruled out
       // by reading the live token asset (it HAS a `_resolver`, and that id IS
@@ -2619,6 +2622,19 @@ export class CommandResolver {
       // output contract (`resolve-buttons --json` must keep stdout pure JSON,
       // so it would have to be stderr-only) and needs its own axes. Tracked
       // separately — do not read CLI silence as absence of the problem.
+      // ⛤ Key is per (grounding, value-ref) and deliberately NOT per property:
+      // two PropertyDefaults in one grounding pointing at the same missing
+      // value (say startTimestamp + endTimestamp → one absent token) warn once,
+      // naming whichever property was resolved first. The actionable unit is
+      // the ref — fixing it fixes both — so a second, near-identical toast
+      // would add noise without adding a decision.
+      //
+      // ⚠ `capWarning` caps at 200 chars, and with two 36-char UIDs the
+      // template is already 186 before `propertyName`, so realistic labels
+      // (`ems__Effort_status`, `exo__Asset_createdAt`) DO truncate. That is
+      // acceptable by construction, not by luck: both UIDs and "not in store"
+      // sit inside the first 197 chars and survive; only the trailing
+      // parenthetical is cut.
       const fallbackKey = `${groundingUid}|${valueRefUid}`;
       if (!this._fallbackWarnedKeys.has(fallbackKey)) {
         this._fallbackWarnedKeys.add(fallbackKey);

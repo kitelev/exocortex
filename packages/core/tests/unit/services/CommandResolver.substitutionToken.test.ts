@@ -451,6 +451,13 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
       (tr) => tr.object instanceof Literal && tr.object.value === TOKEN_ABSENT_UID,
     );
     expect(seeded).toHaveLength(0);
+    // …and the index `findSubjectByUID` consults FIRST: it keys on the UUID
+    // inside the SUBJECT IRI, not on Asset_uid triples. Asserting only the
+    // Asset_uid scan would pass for a fixture seeded as
+    // `obsidian://vault/<uid>.md` with no Asset_uid triple — routing this test
+    // to the OTHER fallback while the guard still reported "unseeded", which is
+    // verbatim the failure the guard exists to prevent.
+    expect(await store.findSubjectsByUUID(TOKEN_ABSENT_UID)).toHaveLength(0);
     await addPropertyDefault(store, {
       uid: PD_UID,
       propertyRefUid: PROP_UID,
@@ -480,12 +487,18 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
     expect(hit).not.toMatch(/cold-start|pruned vault/);
   });
 
-  it("@req:b354316b-3b26-478b-a8c0-18606da8e6ec warns ONCE per (grounding, value) even across cache invalidation", async () => {
+  it("@req:b354316b-3b26-478b-a8c0-18606da8e6ec warns ONCE per (grounding, value) across repeated resolves", async () => {
     // `warn` is routed to a user-facing Obsidian toast AND the log file, and
-    // this branch re-runs on every button render — `invalidateCache()` fires on
-    // each `.md` save. Undeduped, one dangling ref would toast on every render
-    // (precedent: #3186, ~6 MB of log in two days). invalidateCache() models the
-    // production trigger exactly.
+    // this branch re-runs on every button render. Undeduped, one dangling ref
+    // would toast on every render (precedent: #3186, ~6 MB of log in two days).
+    //
+    // ⛤ The production re-entry chain is: `.md` save → reindex +
+    // `invalidateCache()` (ExocortexPlugin.ts:2867) → next render misses the
+    // `resolveForAsset` caches → `loadCommand` → here. `loadCommand` itself is
+    // UNCACHED, so two direct loads reproduce the repetition exactly; an
+    // `invalidateCache()` call in this test would be INERT (proven: removing it
+    // left the suite green), and asserting otherwise would be one more comment
+    // claiming a mechanism it does not have.
     await addPropertyDefault(store, {
       uid: PD_UID,
       propertyRefUid: PROP_UID,
@@ -502,7 +515,6 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
     const afterFirst = logger.warnings.length;
     expect(afterFirst).toBe(1);
 
-    resolver.invalidateCache();
     await resolver.loadCommand(COMMAND_UID);
 
     expect(logger.warnings).toHaveLength(afterFirst);
