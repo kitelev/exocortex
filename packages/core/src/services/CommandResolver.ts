@@ -804,10 +804,13 @@ export class CommandResolver {
    *
    * ⛤ On COST: {@link findUniversalSingleton} takes an INDEXED path first
    * (bound object → `matchPO` → O(matches)), so this call is cheap on a healthy
-   * vault. It degrades to an O(vault) walk only when the singleton's class
-   * object is not the symbolic IRI — read the comment on that method for which
-   * forms those are and why the walk must stay. The walk, when taken, runs ONCE
-   * per invalidation (the latch re-arms on the first call).
+   * vault. It degrades to an O(vault) walk on ANY empty indexed result — which
+   * is TWO distinct situations, not one: the singleton's class object is not the
+   * symbolic IRI (read that method's comment for which forms and why the walk
+   * must stay), **or there is no singleton in the vault at all**. The second is
+   * a legitimate state (see {@link getUniversalCache}), and it is the cheaper
+   * way to end up paying the walk. The walk, when taken, runs ONCE per
+   * invalidation (the latch re-arms on the first call).
    *
    * ⛔ Do NOT re-derive the cost from "invalidateCache reloads everything
    * anyway, so one more walk drowns in it" — that was measured and is FALSE
@@ -2296,10 +2299,19 @@ export class CommandResolver {
    * registered a loader (#4083) — one path is cheaper than two, and a path
    * that cannot be exercised cannot be tested.
    *
-   * Universal singleton lookup is in-band — finds first asset whose
-   * `exo__Instance_class` includes the UniversalDefaultTemplate class UID
-   * (29e2c8f8) or IRI form. Multiple singletons → deterministic selection by
-   * lexicographic UID order with a warn.
+   * Universal singleton lookup is in-band, and it is TWO paths in order, not
+   * one — see {@link findUniversalSingleton} for the authoritative description:
+   * an indexed `matchPO` on the symbolic class term runs FIRST and early-returns
+   * on any hit; the substring criterion (`exo__Instance_class` *includes* the
+   * class UID 29e2c8f8 or IRI form) is the FALLBACK, taken only when the indexed
+   * lookup is empty.
+   *
+   * ⚠ Multiple singletons → deterministic selection by lexicographic UID order,
+   * but the accompanying warn fires only for duplicates found WITHIN one path's
+   * result set; the two sets are never unioned, so a duplicate split across the
+   * fast and fallback forms warns about neither. That is a known, deliberate
+   * consequence of the early return — `findUniversalSingleton`'s own ⛔ note
+   * spells it out. Do not read the sentence above as an unconditional warn.
    */
   private async getUniversalCache(): Promise<UniversalDefaultTemplate | null> {
     if (this._universalCacheReady) return this._universalCacheValue;
@@ -2341,9 +2353,12 @@ export class CommandResolver {
   /**
    * RFC 727572d2 — locate the UniversalDefaultTemplate singleton ABox
    * instance via an INDEXED `matchPO` lookup on the bound class term
-   * (O(matches), PR #4082), degrading to an unbound scan only for the
-   * non-symbolic class forms that index cannot reach. Returns first match;
-   * warns and picks lexicographically smallest UID when multiple are found.
+   * (O(matches), PR #4082), degrading to an unbound scan whenever that lookup
+   * comes back empty — i.e. for the non-symbolic class forms the index cannot
+   * reach, **or when the vault has no singleton at all**. Returns first match;
+   * warns and picks lexicographically smallest UID when multiple are found
+   * WITHIN the set it was handed (see the ⛔ note below on why that keeps the
+   * duplicate warn suppressed on the fast path).
    *
    * ⛤ The previous wording said plainly "via triple store scan", which had
    * contradicted {@link invalidateCache}'s own docstring ever since #4082 made
