@@ -602,9 +602,6 @@ async function addUniversalSingletonInFallbackForm(
 }
 
 describe("CommandResolver — req f3193399: indexed singleton lookup", () => {
-  beforeEach(() => {
-  });
-
   it("@req:f3193399-ae33-44cf-a20f-d0e59edf8b81 — IRI-форма резолвится БЕЗ обхода всех Instance_class", async () => {
     const store = new ScanCountingStore();
     const resolver = new CommandResolver(store, makeFullRecordingLogger());

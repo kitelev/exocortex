@@ -2340,8 +2340,14 @@ export class CommandResolver {
 
   /**
    * RFC 727572d2 — locate the UniversalDefaultTemplate singleton ABox
-   * instance via triple store scan. Returns first match; warns and picks
-   * lexicographically smallest UID when multiple are found.
+   * instance via an INDEXED `matchPO` lookup on the bound class term
+   * (O(matches), PR #4082), degrading to an unbound scan only for the
+   * non-symbolic class forms that index cannot reach. Returns first match;
+   * warns and picks lexicographically smallest UID when multiple are found.
+   *
+   * ⛤ The previous wording said plainly "via triple store scan", which had
+   * contradicted {@link invalidateCache}'s own docstring ever since #4082 made
+   * the fast path the default — two docstrings about one method disagreeing.
    */
   private async findUniversalSingleton(): Promise<IRI | null> {
     const templateClassTerm = Namespace.EXOCMD.term("UniversalDefaultTemplate");
