@@ -2825,18 +2825,28 @@ export class CommandResolver {
     // frontmatter carriers are TokenInvocation, and both TokenInvocation
     // instances carry it.
     //
-    // ⚠ Re-measuring by grep finds 3 extra files that mention the key where it
+    // ⚠ Re-measuring by grep finds 3 extra files that mention the name where it
     // emits no triple with this predicate — `NoteToRDFConverter` iterates
-    // frontmatter KEYS only:
-    //   `606df367` — a SubstitutionToken instance; prose mention in the body
-    //   `3f28af98` — the TokenInvocation class def itself
-    //   `2f5fe019` — this property's own def; the key sits inside
-    //                `exo__Property_description`, i.e. a frontmatter VALUE
+    // frontmatter KEYS only, and in none of the three is it a key:
+    //   `606df367` — a SubstitutionToken instance; prose sentence in the body
+    //   `3f28af98` — the TokenInvocation class def; two prose bullets in the body
+    //   `2f5fe019` — this property's OWN definition, so its name is its
+    //                `exo__Asset_label` and an alias (frontmatter VALUES), plus a
+    //                heading and a key inside a ```yaml fence in the BODY
+    //                (frontmatter closes above it)
     //
-    // ⛔ Order, as in the sibling method, is NOT a performance choice: both are
+    // ⛔ The order is NOT a performance choice: both lookups are
     // `match(subject, <predicate>, undefined)` — the same `matchSP` walk of the
-    // same `spo` index. It keeps the debug line below honest, since that line
-    // asserts the class was absent.
+    // same `spo` index, and the class branch then does strictly MORE work
+    // (iterate + unwrapWikilink per triple).
+    //
+    // What it buys is the honesty of the debug line below, which asserts
+    // `exo__Instance_class was absent or unresolved`. EVERY well-formed
+    // invocation carries both signals, so checking `_token` first would fire
+    // that line on an invocation whose class is right there — a lie.
+    // VERIFIED BY PERMUTATION, not argued: moving this block above the class
+    // loop reddens exactly one axis, `@req:81d2e07e… stays silent for a
+    // well-formed invocation` (1 failed / 20 passed).
     const tokenTriples = await this.tripleStore.match(
       subject,
       Namespace.EXOCMD.term("TokenInvocation_token"),
