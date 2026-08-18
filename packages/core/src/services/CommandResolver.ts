@@ -2838,12 +2838,15 @@ export class CommandResolver {
     // ⛔ The order is NOT a performance choice: both lookups are
     // `match(subject, <predicate>, undefined)` — the same `matchSP` walk of the
     // same `spo` index, and the class branch then does strictly MORE work
-    // (iterate + unwrapWikilink per triple).
+    // (iterate, unwrapping wikilinks on Literal objects).
     //
     // What it buys is the honesty of the debug line below, which asserts
-    // `exo__Instance_class was absent or unresolved`. EVERY well-formed
-    // invocation carries both signals, so checking `_token` first would fire
-    // that line on an invocation whose class is right there — a lie.
+    // `exo__Instance_class was absent or unresolved`. A well-formed invocation
+    // carries both signals — 2/2 on the pin, and `_token` is declared
+    // Required/cardinality-1 on `2f5fe019`, though in `exo__Property_description`
+    // prose, not as `exo__Property_cardinality`/`_minCount`, so SHACL does not
+    // enforce it. Checking `_token` first would therefore fire that line on an
+    // invocation whose class is right there — a lie.
     // VERIFIED BY PERMUTATION, not argued: moving this block above the class
     // loop reddens exactly one axis, `@req:81d2e07e… stays silent for a
     // well-formed invocation` (1 failed / 20 passed).
