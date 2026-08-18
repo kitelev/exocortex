@@ -2842,6 +2842,38 @@ export class CommandResolver {
         if (unwrapped === SUBSTITUTION_TOKEN_CLASS_UID) return true;
       }
     }
+
+    // ⛔ Secondary tell — the token's OWN resolver property.
+    //
+    // `Instance_class` is the primary discriminator, and it is precisely what
+    // is missing in the failure this guards: when the class triple has not
+    // loaded, a real SubstitutionToken is classified "not a token", its ref is
+    // emitted as `"[[<uid>]]"`, and that literal lands where the substituted
+    // value belonged — the shape that corrupted `exo__Asset_label` on six live
+    // assets (defect 0310aa28; the user's typed text survived only in
+    // `aliases`). The ambiguity cannot be resolved by the class triple, because
+    // the class triple is the thing that is absent.
+    //
+    // `exocmd__SubstitutionToken_resolver` breaks the tie: it is exclusive to
+    // the class. MEASURED, not assumed — on both live vaults every carrier is a
+    // SubstitutionToken (17/17 in vault-my, 17/17 in vault-exodev). A plain
+    // asset ref never carries it, so a wikilink-valued PropertyDefault keeps
+    // resolving to a wikilink exactly as before.
+    const resolverTriples = await this.tripleStore.match(
+      subject,
+      Namespace.EXOCMD.term("SubstitutionToken_resolver"),
+      undefined,
+    );
+    if (resolverTriples.length > 0) {
+      // `debug`, not `warn`: this path RECOVERS — dispatch proceeds and no
+      // corrupt value is written. A warn here would be a user-facing toast on
+      // every render for a condition the engine just handled.
+      this.logger.debug(
+        `Asset ${subject.value} classified as SubstitutionToken via its resolver property; exo__Instance_class was absent or unresolved.`,
+      );
+      return true;
+    }
+
     return false;
   }
 
