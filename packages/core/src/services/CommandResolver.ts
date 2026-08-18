@@ -2845,20 +2845,35 @@ export class CommandResolver {
 
     // ⛔ Secondary tell — the token's OWN resolver property.
     //
-    // `Instance_class` is the primary discriminator, and it is precisely what
-    // is missing in the failure this guards: when the class triple has not
-    // loaded, a real SubstitutionToken is classified "not a token", its ref is
-    // emitted as `"[[<uid>]]"`, and that literal lands where the substituted
-    // value belonged — the shape that corrupted `exo__Asset_label` on six live
-    // assets (defect 0310aa28; the user's typed text survived only in
-    // `aliases`). The ambiguity cannot be resolved by the class triple, because
-    // the class triple is the thing that is absent.
+    // EITHER signal suffices — this is a disjunction, not a precedence chain.
+    // The class loop above can only return true; it never exits false, so on
+    // the (today non-existent) input where the class says "not a token" while
+    // the resolver property is present, the resolver wins. The class check
+    // merely runs first because it is the cheaper and more common one.
+    //
+    // The class triple is precisely what is missing in the failure this guards:
+    // when it has not loaded, a real SubstitutionToken is classified "not a
+    // token", its ref is emitted as `"[[<uid>]]"`, and that literal lands where
+    // the substituted value belonged — the shape that corrupted
+    // `exo__Asset_label` on six live assets (defect 0310aa28; the user's typed
+    // text survived only in `aliases`). The ambiguity cannot be resolved by the
+    // class triple, because the class triple is the thing that is absent.
     //
     // `exocmd__SubstitutionToken_resolver` breaks the tie: it is exclusive to
-    // the class. MEASURED, not assumed — on both live vaults every carrier is a
-    // SubstitutionToken (17/17 in vault-my, 17/17 in vault-exodev). A plain
-    // asset ref never carries it, so a wikilink-valued PropertyDefault keeps
-    // resolving to a wikilink exactly as before.
+    // the class. MEASURED, not assumed, on three corpora — the two live vaults
+    // (17/17 emitted triples each) and, reproducibly for any reviewer, the
+    // pinned `packages/exoas-exocmd` submodule (16/16 frontmatter carriers are
+    // SubstitutionToken; the 7 `SubstitutionTokenLegacy` instances carry none).
+    //
+    // ⚠ Re-measuring by grep alone reads as 16/17 and looks like a hole: a
+    // 17th file (`ac573e5d`, a property definition) mentions the key inside a
+    // ```yaml fence in its BODY. That emits no triple — `NoteToRDFConverter`
+    // iterates frontmatter only (`Object.entries(frontmatter)`), and the body
+    // contributes just `Asset_bodyLink`. Discriminate frontmatter from body
+    // before concluding the premise leaks.
+    //
+    // A plain asset ref never carries the property, so a wikilink-valued
+    // PropertyDefault keeps resolving to a wikilink exactly as before.
     const resolverTriples = await this.tripleStore.match(
       subject,
       Namespace.EXOCMD.term("SubstitutionToken_resolver"),
