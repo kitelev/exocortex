@@ -270,7 +270,12 @@ const TOKEN_NOW_TIMESTAMP_UID = "77777777-7777-4777-8777-777777777777";
 const TOKEN_ABSENT_UID        = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 // An ordinary asset (not a SubstitutionToken) — the common, correct path.
 const PLAIN_ASSET_UID         = "99999999-9999-4999-8999-999999999999";
-// @req:81d2e07e — an invocation whose class triple never loaded. Distinct UID:
+// req 81d2e07e — an invocation whose class triple never loaded. Distinct UID:
+// ⛤ Deliberately NOT written `@req:<8 chars>`: that is the BINDING syntax, and
+// a truncated one is malformed — `requirements-audit` matches full UUIDs only,
+// so it would be an orphan tag, while archgate REQ-001 flags it as a warning
+// (non-blocking, hence invisible in a green CI). The four real bindings for
+// this requirement are the `it(...)` titles below.
 // reusing an existing fixture constant is exactly how the earlier axis silently
 // measured the wrong branch (see the guard in the TOKEN_ABSENT_UID test).
 const INVOCATION_NO_CLASS_UID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";

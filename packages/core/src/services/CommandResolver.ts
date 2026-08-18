@@ -800,11 +800,41 @@ export class CommandResolver {
   /**
    * Invalidate all cached command resolutions.
    * Call when vault files change.
+   *
+   * Includes the Universal Default Template cache (req f3193399). Before that
+   * requirement {@link clearUniversalCache} had ZERO call sites in production,
+   * so the template — and, worse, a `null` verdict latched against a not-yet-
+   * warm store — survived until the plugin was restarted.
+   *
+   * ⛤ On COST: {@link findUniversalSingleton} takes an INDEXED path first
+   * (bound object → `matchPO` → O(matches)), so this call is cheap on a healthy
+   * vault. It degrades to an O(vault) walk only when the singleton's class
+   * object is not the symbolic IRI — read the comment on that method for which
+   * forms those are and why the walk must stay. The walk, when taken, runs ONCE
+   * per invalidation (the latch re-arms on the first call).
+   *
+   * ⛔ Do NOT re-derive the cost from "invalidateCache reloads everything
+   * anyway, so one more walk drowns in it" — that was measured and is FALSE
+   * (PR #4082): the unbound walk was 57 % / 90 % / 96 % of a post-invalidation
+   * `loadCommand` at 2k / 10k / 30k triples, i.e. it dominated and grew with the
+   * vault. The indexed path is what makes clearing here affordable; removing it
+   * re-introduces O(vault) work on every `.md` save.
+   *
+   * ⛔ `_fallbackWarnedKeys` stays deliberately un-cleared here — see its own
+   * docstring; clearing warn-suppression on every save reinstates the toast
+   * storm of #3186. Different field, different rationale.
+   *
+   * ⚠ Scope note: {@link clearUniversalCache} also clears the MODULE-level
+   * loader cache (`clearUniversalDefault`), so this method is no longer purely
+   * instance-scoped. Moot today — no host calls `registerUniversalDefaultLoader`
+   * (issue #4083), so `loadUniversalDefault()` always returns null — but a host
+   * that wires one must expect it to be re-asked after every `.md` save.
    */
   invalidateCache(): void {
     this.cache.clear();
     this.multiCache.clear();
     this._ancestorDepthCache.clear();
+    this.clearUniversalCache();
   }
 
   /**
@@ -2287,6 +2317,17 @@ export class CommandResolver {
     // In-store fallback: scan triple store for the singleton.
     const singletonIRI = await this.findUniversalSingleton();
     if (!singletonIRI) {
+      // req f3193399 — this branch used to be entirely silent, so a `null`
+      // latched against a not-yet-warm store was indistinguishable from a vault
+      // that genuinely has no template: every asset created afterwards simply
+      // came out without `createdAt`/`updatedAt`, with nothing in the log.
+      //
+      // `debug`, NOT `warn`: a vault without a UniversalDefaultTemplate is a
+      // legitimate state, and `warn` is routed to a user-facing toast by
+      // DEFAULT_LOG_CHANNELS (see `_fallbackWarnedKeys` for that precedent).
+      this.logger.debug(
+        `[CommandResolver] No exocmd__UniversalDefaultTemplate instance found in the store; universal property-defaults and inheritance-rules will not be applied. This verdict is cached until invalidateCache() is called — if the store was still warming up, the next invalidation re-resolves it.`,
+      );
       this._universalCacheValue = null;
       return null;
     }
@@ -2313,9 +2354,70 @@ export class CommandResolver {
    * lexicographically smallest UID when multiple are found.
    */
   private async findUniversalSingleton(): Promise<IRI | null> {
-    const templateClassIRI = Namespace.EXOCMD.term(
-      "UniversalDefaultTemplate",
-    ).value;
+    const templateClassTerm = Namespace.EXOCMD.term("UniversalDefaultTemplate");
+    const templateClassIRI = templateClassTerm.value;
+
+    // req f3193399 — indexed fast path FIRST.
+    //
+    // ⛤ Load-bearing, not micro-optimisation. Since that requirement wired
+    // this lookup into `invalidateCache()`, it runs after EVERY `.md` save
+    // instead of once per session — and the unbound-object scan below walks
+    // every `exo__Instance_class` triple in the vault, so its cost grows with
+    // the vault while everything else in a command reload does not, so on a
+    // large vault it dominates that reload rather than drowning in it (figures
+    // in PR #4082).
+    //
+    // `matchPO` goes through the `pos` index (see `InMemoryTripleStore`), so
+    // binding the object turns O(vault) into O(matches) on the healthy path.
+    // That is the durable argument; the share-of-reload figures that motivated
+    // it are a point measurement and live in the PR (#4082), not here — they
+    // would go stale, and the mechanism above does not.
+    //
+    // ⛔ The scan below is REQUIRED, and the reason is NOT "the label form".
+    // Read `NoteToRDFConverter.valueToClassURI` before touching it: BOTH
+    // canonical spellings end up symbolic, i.e. on the fast path —
+    //   `[[exocmd__UniversalDefaultTemplate]]` → `expandClassValue` is a pure
+    //      prefix parse, no vault access → symbolic IRI;
+    //   `[[<class-uid>]]`                     → file resolves, basename is a
+    //      UUID, so the class file's `exo__Asset_label` is read → symbolic IRI.
+    // What actually reaches the fallback is a FILE IRI or a Literal:
+    //   1. the class file resolves but `getFrontmatter` returns null — i.e. a
+    //      COLD `metadataCache`. ⛤ That is this requirement's OWN subject: the
+    //      warm-up window is exactly when a `null` verdict used to latch. The
+    //      fallback is the branch that catches the singleton in that window.
+    //   2. `emitInstanceClassAsUid: true` (RFC 78572fa9 stage-1) → file IRI —
+    //      but only for the uid spelling: the label spelling returns symbolic
+    //      before the flag is ever consulted.
+    //   3. the uid does not resolve to a file → `Literal("[[<uid>]]")`.
+    // Cases 1-2 land in the `includes(UNIVERSAL_DEFAULT_TEMPLATE_CLASS_UID)`
+    // branch, case 3 in the Literal branch — i.e. three causes collapse into
+    // TWO store shapes, and both shapes have a resolver axis. ⚠ Only case 1 has
+    // a converter axis proving the shape is really emitted; 2 and 3 are read off
+    // `valueToClassURI`, not observed.
+    //
+    // ⛔ The early return below deliberately does NOT union the forms: once a
+    // symbolic candidate exists the other spellings are not considered, so the
+    // "multiple singletons" warn keys on the symbolic form alone. Unioning
+    // would mean always paying the walk — i.e. undoing this block.
+    //
+    // ⚠ Be precise about what that costs, because the enumeration above already
+    // refutes the comfortable version: only case 1 is a warm-up window. Cases 2
+    // and 3 are PERSISTENT states, so a vault holding one symbolic singleton
+    // plus one dangling-uid singleton keeps the duplicate warn suppressed
+    // FOREVER, not just during indexing. Accepted deliberately: the resolved
+    // value is still a valid singleton, and the alternative is paying O(vault)
+    // on every `.md` save. If the duplicate warn ever needs to be reliable,
+    // that is a separate change — key it on the union count, not on this path.
+    const indexed = await this.tripleStore.match(
+      undefined,
+      Namespace.EXO.term("Instance_class"),
+      templateClassTerm,
+    );
+    const fast = indexed
+      .map((t) => t.subject)
+      .filter((s): s is IRI => s instanceof IRI);
+    if (fast.length > 0) return this.pickUniversalSingleton(fast);
+
     const classTriples = await this.tripleStore.match(
       undefined,
       Namespace.EXO.term("Instance_class"),
@@ -2336,13 +2438,22 @@ export class CommandResolver {
       }
       if (match && t.subject instanceof IRI) candidates.push(t.subject);
     }
+    return this.pickUniversalSingleton(candidates);
+  }
+
+  /**
+   * Shared tail of {@link findUniversalSingleton}: deterministic selection when
+   * a vault carries more than one singleton. Extracted so the indexed fast path
+   * and the non-symbolic fallback cannot drift apart on the multi-singleton rule.
+   */
+  private pickUniversalSingleton(candidates: IRI[]): IRI | null {
     if (candidates.length === 0) return null;
     if (candidates.length === 1) return candidates[0];
-    candidates.sort((a, b) => a.value.localeCompare(b.value));
+    const sorted = [...candidates].sort((a, b) => a.value.localeCompare(b.value));
     this.logger.warn(
-      `Multiple UniversalDefaultTemplate singletons found (${candidates.length}); selecting deterministically by lexicographic UID order: ${candidates[0].value}`,
+      `Multiple UniversalDefaultTemplate singletons found (${sorted.length}); selecting deterministically by lexicographic UID order: ${sorted[0].value}`,
     );
-    return candidates[0];
+    return sorted[0];
   }
 
   /**
