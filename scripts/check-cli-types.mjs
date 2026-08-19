@@ -36,7 +36,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -66,7 +66,12 @@ const LINE_RE = /^(.+?)\((\d+),(\d+)\): error (TS\d+):/;
 function runTsc() {
   const args = ["tsc", "--noEmit", "--listFiles", "-p", "packages/cli/tsconfig.json"];
   // --listFiles prints one line per file in the program (lib.d.ts + node_modules types
-  // included), so the default 1 MB stdout buffer is not enough.
+  // included). MEASURED for THIS package 2026-08-19: 104,288 bytes — 10x UNDER Node's
+  // 1 MB default, so the buffer is headroom for growth here, not a present necessity.
+  // ⚠ The comment ported from scripts/check-test-types.mjs said "the default is not
+  // enough"; that is true THERE (measured 1,089,745 bytes, 4% over the default) and was
+  // carried into a context where it does not hold. Restated so the next person tuning
+  // this number reads a measurement of this package rather than of its sibling.
   const opts = {
     cwd: ROOT,
     encoding: "utf8",
@@ -81,6 +86,24 @@ function runTsc() {
     // tsc exits non-zero WHEN IT FINDS ERRORS — that is the normal path here.
     // Distinguish that from "tsc could not run at all": the former still prints
     // parseable diagnostics on stdout, the latter does not.
+    // ⛔ maxBuffer overflow is NOT a normal error run, and it must be keyed on err.code —
+    // NOT on whether stdout looks empty or short.
+    //
+    // Measured on Node v24.14.0 (14,830 bytes through a 512-byte maxBuffer):
+    // `err.code === "ENOBUFS"` and `err.stdout.length === 14830` — the capture came back
+    // COMPLETE, because a single pipe read delivered it all before the limit was noticed.
+    // A larger overflow arriving in many chunks truncates instead. So the two overflow
+    // shapes are opposite (partial data vs complete data carrying only a flag), and the
+    // emptiness test below distinguishes NEITHER: the pre-fix code returned this capture
+    // and reported a verdict on 114 files from a run Node had already rejected.
+    // Keying on the code covers both shapes; keying on the payload covers neither.
+    if (err.code === "ENOBUFS") {
+      console.error(
+        "❌ check-cli-types: tsc output exceeded maxBuffer — the capture is truncated and\n" +
+          "   any verdict drawn from it would be partial. Raise maxBuffer in runTsc().",
+      );
+      process.exit(2);
+    }
     const out = String(err.stdout ?? "");
     if (out.trim().length === 0) {
       console.error(
@@ -109,8 +132,44 @@ const compiledSrcFiles = raw
     return p.includes("/packages/cli/src/") && !p.includes("/node_modules/");
   });
 
-/** Below this many compiled cli sources the run is not describing this package. 114 exist. */
-const MIN_COMPILED_SRC_FILES = 40;
+/**
+ * How many `.ts`/`.tsx` files exist on disk under packages/cli/src — the floor is DERIVED
+ * from this, never hardcoded.
+ *
+ * ⛤ Why derivation is exact here rather than approximate: the package's tsconfig declares
+ * `include: ["src/**\/*"]` and an `exclude` of only `node_modules`/`dist` (neither under
+ * src), so every source file is a ROOT of the program and MUST appear in --listFiles.
+ * Measured 2026-08-19: 114 on disk == 114 listed, 0 `.d.ts`, 0 test files. Any shortfall
+ * is therefore a real collapse of the program, not slack in the model.
+ *
+ * ⛔ A CONSTANT floor cannot express that. The first draft of this guard used 40 against a
+ * measured 114, and review proved on a stubbed tsc that `45 files + 0 diagnostics` yields
+ * output BYTE-IDENTICAL to `114 + 0` — "the baseline is stale … Run --update". Obeying
+ * that writes an empty baseline while 69 of 114 files have dropped out of the program.
+ * The floor must move WITH the package, which also removes the false rc=2 a legitimate
+ * shrink would otherwise produce.
+ */
+function countSourceFilesOnDisk(dir) {
+  let n = 0;
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return 0; // missing/renamed dir — the caller treats 0 as "the deriver is broken"
+  }
+  for (const e of entries) {
+    if (e.name === "node_modules") continue;
+    if (e.isDirectory()) n += countSourceFilesOnDisk(join(dir, e.name));
+    // ⛤ NO .d.ts exclusion, deliberately: the listing filter above accepts any `.tsx?`,
+    // and a declaration file under src IS a program root under `include: src/**\/*`.
+    // Excluding it here would count it on one side only and make the floor leniently
+    // wrong by exactly the number of such files. Both sides must count the same set.
+    else if (/\.tsx?$/.test(e.name)) n += 1;
+  }
+  return n;
+}
+
+const EXPECTED_SRC_FILES = countSourceFilesOnDisk(join(ROOT, "packages", "cli", "src"));
 
 const found = new Map(); // "file|code" -> count
 let diagnostics = 0;
@@ -127,15 +186,26 @@ for (const line of raw.split("\n")) {
  * packages/cli. Called from BOTH the read path and `--update` — the writer needs
  * it more, because a bad baseline is silent forever while a bad read is loud once.
  */
-function assertRunIsMeaningful(found, raw) {
-  // ⛤ POSITIVE scope proof, from --listFiles. Holds whether or not any diagnostic
-  // exists, so unlike the two guards below it survives the debt being fully paid.
-  // It also subsumes both of their failure modes, but they are kept: each names a
-  // DIFFERENT breakage in its message, and a precise error message is the product.
-  if (compiledSrcFiles.length < MIN_COMPILED_SRC_FILES) {
+function assertRunIsMeaningful() {
+  // ⛔ The DERIVER itself can be the broken thing, and then a floor derived from it is
+  // zero — i.e. the guard would disarm exactly when the package went missing. Never take
+  // the expected input size from a source that may be broken without checking it first.
+  if (EXPECTED_SRC_FILES === 0) {
     console.error(
-      `❌ check-cli-types: tsc compiled ${compiledSrcFiles.length} file(s) under\n` +
-        `   packages/cli/src — expected at least ${MIN_COMPILED_SRC_FILES}. The run is NOT\n` +
+      "❌ check-cli-types: found 0 source files on disk under packages/cli/src, so the\n" +
+        "   expected program size cannot be derived and this run has no floor to check\n" +
+        "   against. The package directory is missing or renamed — fix that, do NOT run\n" +
+        "   --update (it would write a baseline from an unbounded run).",
+    );
+    process.exit(2);
+  }
+
+  // ⛤ POSITIVE scope proof, from --listFiles. Holds whether or not any diagnostic
+  // exists, so unlike the guard below it survives the debt being fully paid.
+  if (compiledSrcFiles.length < EXPECTED_SRC_FILES) {
+    console.error(
+      `❌ check-cli-types: tsc compiled ${compiledSrcFiles.length} of the ${EXPECTED_SRC_FILES}\n` +
+        "   source file(s) that exist on disk under packages/cli/src. The run is NOT\n" +
         "   describing this package, so it has no verdict to give.\n" +
         "   ⛔ Do NOT run --update to make this go away: it would write a baseline derived\n" +
         "   from this same empty run — an empty baseline — and every later run would exit 0\n" +
@@ -167,10 +237,14 @@ function assertRunIsMeaningful(found, raw) {
   // zero diagnostics): rc=2 "the check did not examine packages/cli", which is false —
   // it examined all 114 and found nothing.
   //
-  // The POSITIVE floor above subsumes its real cases: nothing compiled ⇒ the floor
-  // fires; something compiled but the wrong tree ⇒ the SCOPE guard below fires; all 114
-  // compiled and clean ⇒ neither fires and the stale-baseline branch correctly says
-  // "debt paid, run --update". Positive evidence is what survives the debt reaching zero.
+  // ⛔ This is a deliberate TRADE, not a subsumption — an earlier draft of this comment
+  // claimed the floor "subsumes its real cases", and that claim was false. What the floor
+  // covers: nothing compiled, or fewer files compiled than exist on disk. What NO floor can
+  // cover: files compiled but not CHECKED — `"noCheck": true` is available on the TypeScript
+  // version in use (5.9.3), and under it the listing is complete while every diagnostic
+  // disappears, which is indistinguishable from a clean run. The zero-diagnostics guard did
+  // refuse that input, at the price of refusing the success path too. Refusing success
+  // permanently is the worse failure, so it is accepted knowingly.
 
   // ⛔ TS2307 is TWO different things, and this guard used to conflate them.
   //   (a) ENVIRONMENT — a BARE `@kitelev/exocortex-*` specifier unresolved ⇒ the workspace
@@ -180,16 +254,18 @@ function assertRunIsMeaningful(found, raw) {
   // Treating (b) as (a) tells the author "build the deps" when there is nothing to build,
   // and hides the finding. Discriminator: the trailing quote keeps deep subpaths
   // (`@kitelev/exocortex-core/domain/errors`) OUT of the environment bucket.
-  // Symmetric with the same split in scripts/check-test-types.mjs (#4084).
+  // ⛔ Match on the MESSAGE, not on the error code. An earlier draft required
+  // `|TS2307`, and review proved that the same bare specifier reported as TS2792
+  // ("Cannot find module … Did you mean to set 'moduleResolution'…") then fell through to
+  // rc=1 and would be FROZEN INTO THE BASELINE by --update — an environment failure
+  // recorded as permanent debt. The discriminator that matters lives in the regex (the
+  // trailing quote keeps deep subpaths out), so dropping the code test loses nothing and
+  // covers every code TypeScript may pick. Identical to scripts/check-test-types.mjs.
   const WORKSPACE_BARE = /Cannot find module '@kitelev\/exocortex-[a-z-]+'/;
-  const unresolved = [...found.keys()].filter(
-    (k) =>
-      k.endsWith("|TS2307") &&
-      raw.split("\n").some((l) => l.includes(k.split("|")[0]) && WORKSPACE_BARE.test(l)),
-  );
-  if (unresolved.length > 0) {
+  const envLines = raw.split("\n").filter((l) => WORKSPACE_BARE.test(l));
+  if (envLines.length > 0) {
     console.error(
-      `❌ check-cli-types: ${unresolved.length} file(s) cannot resolve their imports (TS2307).\n` +
+      `❌ check-cli-types: ${envLines.length} unresolved bare workspace import(s).\n` +
         "   The workspace dependencies are not built, so this run says nothing about\n" +
         "   the cli package's own type health. Build them first:\n" +
         "      npm run build -w @kitelev/exocortex-core\n" +
@@ -227,7 +303,7 @@ function assertRunIsMeaningful(found, raw) {
   }
 }
 
-assertRunIsMeaningful(found, raw);
+assertRunIsMeaningful();
 
 if (UPDATE) {
   const entries = [...found.entries()]
