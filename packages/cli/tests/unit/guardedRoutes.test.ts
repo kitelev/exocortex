@@ -29,8 +29,6 @@ import {
   renderGuardedRoute,
 } from "../../src/commands/propertyMutationShared";
 
-const REQ = "3800d995-2bae-401f-a23a-dac914505e9d";
-
 /**
  * Names that were shipped in the message but exist in NO live registry.
  * Verified 2026-08-19 against 76 `exocmd__Command_cliName` across the mounted
@@ -44,14 +42,14 @@ const PHANTOM_NAMES = [
 ];
 
 describe(`guard message is DERIVED from the routing table (bug 8f35fec0)`, () => {
-  it(`the routing table is non-empty (canary: an empty table makes every axis below vacuous) @req:${REQ}`, () => {
+  it("the routing table is non-empty (canary: an empty table makes every axis below vacuous) @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
     expect(Object.keys(GUARDED_ROUTES).length).toBeGreaterThan(0);
     expect(Object.keys(GUARDED_PROPERTIES)).toEqual(
       Object.keys(GUARDED_ROUTES),
     );
   });
 
-  it(`every rendered message names EXACTLY the cliNames its route lists @req:${REQ}`, () => {
+  it("every rendered message names EXACTLY the cliNames its route lists @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
     const mismatches: string[] = [];
     for (const [property, route] of Object.entries(GUARDED_ROUTES)) {
       const message = GUARDED_PROPERTIES[property];
@@ -74,7 +72,7 @@ describe(`guard message is DERIVED from the routing table (bug 8f35fec0)`, () =>
     expect(mismatches).toEqual([]);
   });
 
-  it(`no route recommends a command that exists in NO live registry @req:${REQ}`, () => {
+  it("no route recommends a command that exists in NO live registry @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
     const offenders: string[] = [];
     for (const [property, route] of Object.entries(GUARDED_ROUTES)) {
       for (const name of route.commands) {
@@ -86,7 +84,7 @@ describe(`guard message is DERIVED from the routing table (bug 8f35fec0)`, () =>
     expect(offenders).toEqual([]);
   });
 
-  it(`no phantom name survives anywhere in a rendered message (incl. prose/notes) @req:${REQ}`, () => {
+  it("no phantom name survives anywhere in a rendered message (incl. prose/notes) @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
     const offenders: string[] = [];
     for (const [property, message] of Object.entries(GUARDED_PROPERTIES)) {
       for (const phantom of PHANTOM_NAMES) {
@@ -97,7 +95,7 @@ describe(`guard message is DERIVED from the routing table (bug 8f35fec0)`, () =>
     expect(offenders).toEqual([]);
   });
 
-  it(`every cliName is a well-formed, non-duplicated kebab-case token @req:${REQ}`, () => {
+  it("every cliName is a well-formed, non-duplicated kebab-case token @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
     const malformed: string[] = [];
     for (const [property, route] of Object.entries(GUARDED_ROUTES)) {
       expect(route.commands.length).toBeGreaterThan(0);
@@ -142,7 +140,7 @@ describe(`guard message is DERIVED from the routing table (bug 8f35fec0)`, () =>
     "not a",
   ];
 
-  it(`guard messages do not collide with the exit-code classifier @req:${REQ}`, () => {
+  it("guard messages do not collide with the exit-code classifier @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
     const collisions: string[] = [];
     for (const [property, message] of Object.entries(GUARDED_PROPERTIES)) {
       const lowered = message.toLowerCase();
@@ -155,7 +153,7 @@ describe(`guard message is DERIVED from the routing table (bug 8f35fec0)`, () =>
     expect(collisions).toEqual([]);
   });
 
-  it(`renderGuardedRoute places argSuffix after <path> and note in parentheses @req:${REQ}`, () => {
+  it("renderGuardedRoute places argSuffix after <path> and note in parentheses @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
     expect(renderGuardedRoute({ commands: ["a", "b"] })).toBe(
       "apply a|b <path>",
     );
