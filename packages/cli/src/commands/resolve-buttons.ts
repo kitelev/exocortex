@@ -23,6 +23,7 @@ import { ExitCodes } from "../utils/ExitCodes.js";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { createIsInWrongFolderHostFunction } from "../precondition/createIsInWrongFolderHostFunction.js";
 import { createHasEmptyPropertiesHostFunction } from "../precondition/createHasEmptyPropertiesHostFunction.js";
+import { StderrLogger } from "../infrastructure/StderrLogger";
 
 /**
  * Issue #3833 — `resolve-inline-buttons <target>` prints the command button-set the
@@ -280,7 +281,7 @@ export async function resolveButtons(
 
   // Layer A — binding-match via class hierarchy (nearest-wins, sorted by the
   // resolver's (priority, depth, order); this ordering IS the button order).
-  const resolver = new CommandResolver(tripleStore);
+  const resolver = new CommandResolver(tripleStore, StderrLogger);
   const resolved: ResolvedCommand[] = await resolver.resolveForAssetMulti(
     subjectIRI,
     assetClasses,

@@ -48,6 +48,7 @@ import { createHasEmptyPropertiesHostFunction } from "../precondition/createHasE
 import { populateCliServiceRegistry } from "../services/CliServiceRegistryPopulator.js";
 import { FsQueryBodyResolver } from "../services/FsQueryBodyResolver.js";
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
+import { StderrLogger } from "../infrastructure/StderrLogger";
 
 export interface ApplyOptions {
   vault: string;
@@ -258,7 +259,7 @@ async function executeOnTarget(
     return failed;
   }
 
-  const resolver = new CommandResolver(tripleStore);
+  const resolver = new CommandResolver(tripleStore, StderrLogger);
   const command = await resolver.loadCommand(commandUid);
 
   if (!command) {

@@ -319,6 +319,87 @@ describe("@req:960a7ba7-3470-42ba-afdc-f6766c3c3126 resolve-buttons — binding-
   //        human text, `console.log` stays empty → JSON.parse throws.
   //   GREEN (setFormat honours --json): the structured `{ success:false, error }`
   //        response is printed to `console.log` → parses.
+  // ⛔ Issue #4077 — the CLI built its resolver with no logger, so `NullLogger`
+  // swallowed every substitution-fallback diagnostic. It hurt worst HERE:
+  // resolve-buttons is documented as the authoritative resolution oracle and the
+  // cheapest reproduction path, so anyone investigating a corrupted asset through it
+  // met the same silence that forced defect 0310aa28 to be narrowed by elimination
+  // instead of measured — and CLI silence is indistinguishable from "no problem".
+  //
+  // The fix was blocked on an OUTPUT CONTRACT, not on size: `--json` must keep stdout
+  // pure JSON, so the logger may only write to stderr. This axis pins both halves at
+  // once — drop the logger argument at the construction site and the stderr assertion
+  // goes RED; route the logger to stdout and the JSON.parse assertion goes RED.
+  it("@req:960a7ba7-3470-42ba-afdc-f6766c3c3126 --json: an absent PropertyDefault value warns on STDERR while stdout stays valid JSON", async () => {
+    const PD_MISSING = "3833aaab-0000-0000-0000-000000000001";
+    const PROP_LABEL = "3833aaab-0000-0000-0000-000000000002";
+    // Deliberately NEVER written — this is what makes the resolver fall back and warn.
+    const VALUE_ABSENT = "3833aaab-0000-0000-0000-0000000000ff";
+
+    fs.writeFileSync(
+      path.join(root, `${PROP_LABEL}.md`),
+      fm([
+        `exo__Asset_uid: ${PROP_LABEL}`,
+        `exo__Asset_label: exo__Asset_label`,
+        `exo__Instance_class: ["[[exo__Property]]"]`,
+      ]),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(root, `${PD_MISSING}.md`),
+      fm([
+        `exo__Asset_uid: ${PD_MISSING}`,
+        `exo__Asset_label: "PD with an absent value"`,
+        `exo__Instance_class: ["[[exocmd__PropertyDefault]]"]`,
+        `exocmd__PropertyDefault_property: "[[${PROP_LABEL}]]"`,
+        `exocmd__PropertyDefault_value: "[[${VALUE_ABSENT}]]"`,
+      ]),
+      "utf-8",
+    );
+    // Re-write the ALWAYS grounding with the PropertyDefault attached.
+    fs.writeFileSync(
+      path.join(root, `${GND_ALWAYS}.md`),
+      fm([
+        `exo__Asset_uid: ${GND_ALWAYS}`,
+        `exo__Asset_label: "g-always"`,
+        `exo__Instance_class: ["[[exocmd__Grounding]]"]`,
+        `exocmd__Grounding_type: "[[${GT_SERVICE_CALL}]]"`,
+        `exocmd__Grounding_serviceId: "noop"`,
+        `exocmd__Grounding_propertyDefault: "[[${PD_MISSING}]]"`,
+      ]),
+      "utf-8",
+    );
+
+    const out: string[] = [];
+    const err: string[] = [];
+    const logSpy = jest
+      .spyOn(console, "log")
+      .mockImplementation((...args: unknown[]) => {
+        out.push(args.map(String).join(" "));
+      });
+    const errSpy = jest
+      .spyOn(process.stderr, "write")
+      .mockImplementation(((chunk: unknown) => {
+        err.push(String(chunk));
+        return true;
+      }) as never);
+    try {
+      await resolveButtonsCommand().parseAsync(
+        [`${TARGET_CONCRETE}.md`, "--vault", root, "--json"],
+        { from: "user" },
+      );
+    } finally {
+      logSpy.mockRestore();
+      errSpy.mockRestore();
+    }
+
+    // The contract that blocked this fix: stdout is still a parseable document.
+    expect(() => JSON.parse(out.join(""))).not.toThrow();
+    // …and the diagnostic that used to vanish now reaches the operator.
+    expect(err.join("")).toContain("not in store");
+    expect(err.join("")).toContain(VALUE_ABSENT);
+  });
+
   it("@req:960a7ba7-3470-42ba-afdc-f6766c3c3126 CLI --json error path emits a structured JSON error, not human text (LOW#4)", async () => {
     const logs: string[] = [];
     const errs: string[] = [];
@@ -375,6 +456,33 @@ describe("@req:960a7ba7-3470-42ba-afdc-f6766c3c3126 resolve-buttons — binding-
 // inline-button scope; the command palette is a separate path). `resolve-buttons`
 // is kept as a back-compat alias so existing scripts + the homoiconic-rule oracle
 // references (`resolve-buttons <target> --json`) keep resolving.
+describe("issue #4077 — every CLI resolver construction site passes a logger", () => {
+  // ⛔ The behavioural axis above covers resolve-buttons only. `apply` constructs its
+  // own resolver and would regress silently: its diagnostics have no stdout contract to
+  // break, so nothing would go red — the failure mode is once again SILENCE.
+  //
+  // This is the invariant that belongs to NEITHER command's own suite, so it is owned
+  // here explicitly. Counted, not searched: `toContain` is satisfied by one wired site
+  // while the other stays bare.
+  it("neither apply nor resolve-buttons builds CommandResolver without a logger", () => {
+    // ⛤ ESM: no __dirname. Resolved from this module's own URL so the axis does not
+    // depend on the caller's cwd (jest may be invoked from the repo root or the package).
+    const here = path.dirname(new URL(import.meta.url).pathname);
+    const srcDir = path.join(here, "..", "..", "src", "commands");
+    const files = ["apply.ts", "resolve-buttons.ts"];
+    let constructions = 0;
+    let wired = 0;
+    for (const f of files) {
+      const text = fs.readFileSync(path.join(srcDir, f), "utf-8");
+      constructions += [...text.matchAll(/new CommandResolver\(/g)].length;
+      wired += [...text.matchAll(/new CommandResolver\([^)]*,\s*\w*Logger\)/g)].length;
+    }
+    // Canary: zero constructions would make the equality below vacuously true.
+    expect(constructions).toBeGreaterThan(0);
+    expect(wired).toBe(constructions);
+  });
+});
+
 describe("resolve-inline-buttons rename + back-compat alias", () => {
   it("has primary name resolve-inline-buttons and a resolve-buttons alias", () => {
     const cmd = resolveButtonsCommand();
