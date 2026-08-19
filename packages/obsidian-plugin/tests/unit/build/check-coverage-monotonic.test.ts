@@ -100,4 +100,49 @@ describe("check-coverage-monotonic.mjs — coverage-threshold monotonicity (P5.1
     const r = runGuard();
     expect(r.status).toBe(0);
   });
+
+  // ── Population floor (#4090) ──────────────────────────────────────────────────
+  //
+  // The three cases above all vary a threshold NUMBER, so every one of them enters the
+  // per-entry loop. None of them can reach the failure this section covers: the loop
+  // iterates Object.entries(baseline), so an EMPTY baseline never enters it, collects no
+  // violation, and the guard printed "✅ … 0 threshold(s)" with exit 0 — satisfied by an
+  // empty input. Measured on origin/main before the fix: exit 0.
+  it("FAILS (exit 1) on an EMPTY baseline instead of passing with 0 thresholds", () => {
+    writeConfig(63);
+    writeFileSync(baselinePath, JSON.stringify({ thresholds: {} }));
+    const r = runGuard();
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("declare a");
+    expect(r.stderr).toContain("NOT in the baseline");
+  });
+
+  // The complement, and the reason the check is a POSITIVE scope proof rather than a
+  // non-emptiness test: a baseline can be non-empty and still not cover a config that
+  // declares thresholds. Pre-fix that config was simply never visited — its thresholds
+  // could fall to zero and the success line would just print a smaller count.
+  it("FAILS (exit 1) when a config declares thresholds but is absent from the baseline", () => {
+    writeConfig(63);
+    mkdirSync(path.join(fixtureRoot, "packages/bar"), { recursive: true });
+    writeFileSync(
+      path.join(fixtureRoot, "packages/bar/jest.config.js"),
+      "module.exports = { coverageThreshold: { global: { branches: 10 } } };\n",
+    );
+    const r = runGuard();
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("packages/bar/jest.config.js");
+  });
+
+  // A package WITHOUT thresholds must not be demanded in the baseline — otherwise the
+  // check would red on every package that simply does not measure coverage.
+  it("PASSES (exit 0) when a package has a jest config but declares no thresholds", () => {
+    writeConfig(63);
+    mkdirSync(path.join(fixtureRoot, "packages/baz"), { recursive: true });
+    writeFileSync(
+      path.join(fixtureRoot, "packages/baz/jest.config.js"),
+      "module.exports = { testEnvironment: 'node' };\n",
+    );
+    const r = runGuard();
+    expect(r.status).toBe(0);
+  });
 });

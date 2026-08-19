@@ -39,6 +39,14 @@ describe("check-test-antipatterns.sh — over-mock pass-through ratchet (P2, @re
     BASELINE_VACUOUS_LENGTH: "999",
     BASELINE_NONCANON_SERVICE_DIR: "999",
     BASELINE_OVERMOCK: "0",
+    // ⛤ The fixture corpus is a handful of files, so the POPULATION baseline has to be
+    // sized to it exactly as the four debt baselines above are. The guard refuses a run
+    // whose scan collapsed (that is the point of the floor — an empty scan used to exit
+    // 0 while printing "method-exists=0/55", which reads as success); a fixture corpus
+    // is indistinguishable from a collapse unless the expected size is declared here.
+    // ⛔ Deliberately NOT solved by having the guard skip its floor when
+    // ANTIPATTERN_SCAN_DIR is set: that would make the floor disarmable by an env var.
+    BASELINE_SCANNED: "1",
   };
 
   let scanDir: string;

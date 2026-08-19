@@ -28,7 +28,7 @@
 //   COVERAGE_BASELINE  — path to the baseline JSON (default: <root>/scripts/coverage-thresholds-baseline.json)
 //   COVERAGE_ROOT      — root that config paths in the baseline resolve against (default: repo root)
 
-import { readFileSync } from "fs";
+import { readdirSync, readFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 
@@ -73,6 +73,40 @@ function loadBaseline(path) {
   return parsed.thresholds ?? parsed;
 }
 
+/**
+ * Every jest config that DECLARES a coverageThreshold — the independent oracle for
+ * "is the baseline complete?".
+ *
+ * ⛔ Without this the guard proves only "the configs I happen to track did not regress",
+ * never "every config that carries thresholds is tracked". Those are different claims,
+ * and the gap between them is silent: a new package that gains a coverageThreshold is
+ * simply absent from the baseline, the loop never visits it, and the success line just
+ * prints a smaller count that nobody has an expected value for. Three packages
+ * (req-audit, services, test-utils) have jest configs WITHOUT thresholds today — the
+ * day any of them gains one, that is exactly this hole.
+ */
+function findConfigsWithThresholds(packagesDir) {
+  const out = [];
+  let pkgs;
+  try {
+    pkgs = readdirSync(packagesDir, { withFileTypes: true });
+  } catch {
+    return out; // caller treats an empty result as "the deriver is broken"
+  }
+  for (const p of pkgs) {
+    if (!p.isDirectory()) continue;
+    const rel = `packages/${p.name}/jest.config.js`;
+    try {
+      if (readFileSync(resolve(packagesDir, p.name, "jest.config.js"), "utf8").includes("coverageThreshold")) {
+        out.push(rel);
+      }
+    } catch {
+      /* no jest config in this package — not an error */
+    }
+  }
+  return out;
+}
+
 function main() {
   let baseline;
   try {
@@ -80,6 +114,35 @@ function main() {
   } catch (e) {
     console.error(
       `❌ coverage-monotonic guard: could not read baseline ${baselinePath}: ${e.message}`,
+    );
+    process.exit(1);
+  }
+
+  // ⛤ POSITIVE scope proof, BEFORE the per-entry loop. The loop below iterates
+  // Object.entries(baseline); an empty baseline therefore never enters it, collects no
+  // violation, and prints "✅ … 0 threshold(s)" with rc=0 — the gate satisfied by an
+  // empty input. Both halves are checked: the baseline must be non-empty, and it must
+  // cover every config that actually declares thresholds.
+  const declaring = findConfigsWithThresholds(resolve(configRoot, "packages"));
+  if (declaring.length === 0) {
+    console.error(
+      "❌ coverage-monotonic guard: found no jest config declaring a coverageThreshold\n" +
+        `   under ${resolve(configRoot, "packages")}. The expected set cannot be derived,\n` +
+        "   so this run has nothing to check the baseline against — the packages directory\n" +
+        "   is missing or renamed. Fix that; do NOT trim the baseline to match.",
+    );
+    process.exit(1);
+  }
+  const untracked = declaring.filter((c) => !(c in baseline));
+  if (untracked.length > 0) {
+    console.error(
+      `❌ coverage-monotonic guard: ${untracked.length} jest config(s) declare a\n` +
+        "   coverageThreshold but are NOT in the baseline, so their thresholds could drop\n" +
+        "   to zero unnoticed:",
+    );
+    for (const c of untracked) console.error(`   ${c}`);
+    console.error(
+      "\n   Add them to scripts/coverage-thresholds-baseline.json at their CURRENT values.",
     );
     process.exit(1);
   }
@@ -137,7 +200,8 @@ function main() {
   }
 
   console.log(
-    `✅ coverage-monotonic guard OK — ${summary.length} threshold(s) at or above baseline (no downward drift).`,
+    `✅ coverage-monotonic guard OK — ${summary.length} threshold(s) across ` +
+      `${declaring.length} config(s) at or above baseline (no downward drift).`,
   );
 }
 
