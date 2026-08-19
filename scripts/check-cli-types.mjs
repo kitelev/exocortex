@@ -36,7 +36,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -47,18 +47,63 @@ const UPDATE = process.argv.includes("--update");
 /** `path/file.ts(12,34): error TS2339: msg` → { file, code } */
 const LINE_RE = /^(.+?)\((\d+),(\d+)\): error (TS\d+):/;
 
+/**
+ * ⛤ `--listFiles` turns the scope proof POSITIVE, and that is why it is here.
+ *
+ * Both guards below derive "did this run examine packages/cli?" from the DIAGNOSTICS.
+ * That is negative evidence: it only works while errors exist. One state breaks it, and
+ * it is the state we are working toward — the 18 baselined pairs get FIXED, tsc exits 0,
+ * `found` is empty, and the zero-diagnostics guard fires rc=2 forever. The reward for
+ * paying down the debt would be a permanently red gate whose obvious "fix" (`--update`)
+ * writes an EMPTY baseline and disarms it — the exact disarm this file's own docstring
+ * warns about, reached from the success path instead of the failure path.
+ *
+ * `--listFiles` names every file in the program regardless of whether any error exists,
+ * so "N files under packages/cli/src were compiled" is an assertion about the RUN, not
+ * about its findings. Ported from scripts/check-test-types.mjs (#4084), where the same
+ * hole was found by review; see issue #4087.
+ */
 function runTsc() {
+  const args = ["tsc", "--noEmit", "--listFiles", "-p", "packages/cli/tsconfig.json"];
+  // --listFiles prints one line per file in the program (lib.d.ts + node_modules types
+  // included). MEASURED for THIS package 2026-08-19: 104,288 bytes — 10x UNDER Node's
+  // 1 MB default, so the buffer is headroom for growth here, not a present necessity.
+  // ⚠ The comment ported from scripts/check-test-types.mjs said "the default is not
+  // enough"; that is true THERE (measured 1,089,745 bytes, 4% over the default) and was
+  // carried into a context where it does not hold. Restated so the next person tuning
+  // this number reads a measurement of this package rather than of its sibling.
+  const opts = {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 64 * 1024 * 1024,
+  };
   try {
-    execFileSync(
-      "npx",
-      ["tsc", "--noEmit", "-p", "packages/cli/tsconfig.json"],
-      { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-    );
-    return ""; // exit 0 → no diagnostics
+    // rc=0 — no diagnostics. NOT "nothing to check": the file listing still arrives, and
+    // it is the only thing that distinguishes "clean" from "compiled nothing".
+    return String(execFileSync("npx", args, opts) ?? "");
   } catch (err) {
     // tsc exits non-zero WHEN IT FINDS ERRORS — that is the normal path here.
     // Distinguish that from "tsc could not run at all": the former still prints
     // parseable diagnostics on stdout, the latter does not.
+    // ⛔ maxBuffer overflow is NOT a normal error run, and it must be keyed on err.code —
+    // NOT on whether stdout looks empty or short.
+    //
+    // Measured on Node v24.14.0 (14,830 bytes through a 512-byte maxBuffer):
+    // `err.code === "ENOBUFS"` and `err.stdout.length === 14830` — the capture came back
+    // COMPLETE, because a single pipe read delivered it all before the limit was noticed.
+    // A larger overflow arriving in many chunks truncates instead. So the two overflow
+    // shapes are opposite (partial data vs complete data carrying only a flag), and the
+    // emptiness test below distinguishes NEITHER: the pre-fix code returned this capture
+    // and reported a verdict on 114 files from a run Node had already rejected.
+    // Keying on the code covers both shapes; keying on the payload covers neither.
+    if (err.code === "ENOBUFS") {
+      console.error(
+        "❌ check-cli-types: tsc output exceeded maxBuffer — the capture is truncated and\n" +
+          "   any verdict drawn from it would be partial. Raise maxBuffer in runTsc().",
+      );
+      process.exit(2);
+    }
     const out = String(err.stdout ?? "");
     if (out.trim().length === 0) {
       console.error(
@@ -72,6 +117,64 @@ function runTsc() {
 }
 
 const raw = runTsc();
+
+/**
+ * Files tsc actually put in the program (from --listFiles). A listing line is a bare
+ * path; a diagnostic line carries `(line,col): error TSxxxx`. Narrow to this package's
+ * own sources — node_modules and lib.d.ts say nothing about whether cli was compiled.
+ */
+const compiledSrcFiles = raw
+  .split("\n")
+  .map((l) => l.trim())
+  .filter((l) => l.length > 0 && !LINE_RE.test(l) && /\.tsx?$/.test(l))
+  .filter((l) => {
+    const p = l.replace(/\\/g, "/");
+    return p.includes("/packages/cli/src/") && !p.includes("/node_modules/");
+  });
+
+/**
+ * How many `.ts`/`.tsx` files exist on disk under packages/cli/src — the floor is DERIVED
+ * from this, never hardcoded.
+ *
+ * ⛤ Why derivation is exact here rather than approximate: the package's tsconfig declares
+ * `include: ["src/**\/*"]` and an `exclude` of only `node_modules`/`dist` (neither under
+ * src), so every source file is a ROOT of the program and MUST appear in --listFiles.
+ * Measured 2026-08-19: 114 on disk == 114 listed, 0 `.d.ts`, 0 test files. Any shortfall
+ * is therefore a real collapse of the program, not slack in the model.
+ *
+ * ⛔ A CONSTANT floor cannot express that. The first draft of this guard used 40 against a
+ * measured 114, and review proved on a stubbed tsc that `45 files + 0 diagnostics` yields
+ * output BYTE-IDENTICAL to `114 + 0` — "the baseline is stale … Run --update". Obeying
+ * that writes an empty baseline while 69 of 114 files have dropped out of the program.
+ * The floor must move WITH the package, which also removes the false rc=2 a legitimate
+ * shrink would otherwise produce.
+ */
+function countSourceFilesOnDisk(dir) {
+  let n = 0;
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return 0; // missing/renamed dir — the caller treats 0 as "the deriver is broken"
+  }
+  for (const e of entries) {
+    // ⛤ Mirror the tsconfig `exclude` EXACTLY (["node_modules","dist"]). The floor is an
+    // equality, so anything counted here that tsc would not put in the program produces a
+    // FALSE rc=2 — and `lint` is a required check, so a false rc=2 blocks every PR in the
+    // repo. Symmetry with the config is what makes strict equality safe rather than brittle.
+    if (e.name === "node_modules" || e.name === "dist") continue;
+    if (e.isDirectory()) n += countSourceFilesOnDisk(join(dir, e.name));
+    // ⛤ NO .d.ts exclusion, deliberately: the listing filter above accepts any `.tsx?`,
+    // and a declaration file under src IS a program root under `include: src/**\/*`.
+    // Excluding it here would count it on one side only and make the floor leniently
+    // wrong by exactly the number of such files. Both sides must count the same set.
+    else if (/\.tsx?$/.test(e.name)) n += 1;
+  }
+  return n;
+}
+
+const EXPECTED_SRC_FILES = countSourceFilesOnDisk(join(ROOT, "packages", "cli", "src"));
+
 const found = new Map(); // "file|code" -> count
 let diagnostics = 0;
 for (const line of raw.split("\n")) {
@@ -87,34 +190,37 @@ for (const line of raw.split("\n")) {
  * packages/cli. Called from BOTH the read path and `--update` — the writer needs
  * it more, because a bad baseline is silent forever while a bad read is loud once.
  */
-function assertRunIsMeaningful(found, raw) {
-  // ⛔ Zero parsed diagnostics is NOT "the code is clean": tsc reports config
-  // failures WITHOUT a file position (`TS5058: The specified path does not
-  // exist`, `TS18003: No inputs were found`), and the line parser drops those,
-  // leaving `found` empty. Review measured the consequence: a missing
-  // packages/cli/tsconfig.json fell through to the stale-baseline branch, which
-  // printed "run --update" — and obeying that instruction wrote an EMPTY
-  // baseline, leaving the gate green forever. The tool talked the operator into
-  // disarming it.
-  //
-  // ⚠ An earlier draft rejected a position-less-error guard as "redundant with
-  // the scope guard, it never fired either". That was wrong, and measurably so:
-  // the two cover DISJOINT breakages. Invalid JSON / bad `extends` → tsc falls
-  // back to defaults and compiles the tree → SCOPE fires. Missing tsconfig /
-  // empty `include` → nothing is compiled at all → only THIS fires. Rejecting it
-  // on "it didn't fire in my one experiment" generalised from a single case.
-  if (found.size === 0) {
+function assertRunIsMeaningful() {
+  // ⛔ The DERIVER itself can be the broken thing, and then a floor derived from it is
+  // zero — i.e. the guard would disarm exactly when the package went missing. Never take
+  // the expected input size from a source that may be broken without checking it first.
+  if (EXPECTED_SRC_FILES === 0) {
     console.error(
-      "❌ check-cli-types: zero diagnostics parsed — the check did not examine\n" +
-        "   packages/cli. tsc prints config failures without a file position, so an\n" +
-        "   empty result means 'could not run', NOT 'nothing to report'.\n" +
-        "   ⛔ Do NOT run --update to make this go away: that writes an empty\n" +
-        "   baseline and disables the gate permanently. Fix the invocation.\n" +
+      "❌ check-cli-types: found 0 source files on disk under packages/cli/src, so the\n" +
+        "   expected program size cannot be derived and this run has no floor to check\n" +
+        "   against. The package directory is missing or renamed — fix that, do NOT run\n" +
+        "   --update (it would write a baseline from an unbounded run).",
+    );
+    process.exit(2);
+  }
+
+  // ⛤ POSITIVE scope proof, from --listFiles. Holds whether or not any diagnostic
+  // exists, so unlike the guard below it survives the debt being fully paid.
+  if (compiledSrcFiles.length < EXPECTED_SRC_FILES) {
+    console.error(
+      `❌ check-cli-types: tsc compiled ${compiledSrcFiles.length} of the ${EXPECTED_SRC_FILES}\n` +
+        "   source file(s) that exist on disk under packages/cli/src. The run is NOT\n" +
+        "   describing this package, so it has no verdict to give.\n" +
+        "   ⛔ Do NOT run --update to make this go away: it would write a baseline derived\n" +
+        "   from this same empty run — an empty baseline — and every later run would exit 0\n" +
+        "   green while compiling nothing. Fix the invocation instead.\n" +
+        "   Likely causes: unparseable/renamed tsconfig, an `include` matching nothing,\n" +
+        "   a bad `extends`, or tsc not resolving at all.\n" +
         (raw.trim().length > 0
           ? "   tsc said:\n" +
             raw
               .split("\n")
-              .filter((l) => l.trim().length > 0)
+              .filter((l) => l.trim().length > 0 && !/\.tsx?$/.test(l.trim()))
               .slice(0, 5)
               .map((l) => `      ${l.trim()}`)
               .join("\n")
@@ -123,18 +229,47 @@ function assertRunIsMeaningful(found, raw) {
     process.exit(2);
   }
 
-  // ⛔ Imports not resolving means the run describes a resolution cascade, not
-  // the package's type health. packages/cli/tsconfig.json declares `paths` for
-  // @kitelev/exocortex-{core,services}, but they are DEAD — it inherits
-  // `baseUrl: "."` from the root config, so `../core/src` resolves relative to
-  // the REPO ROOT, outside the repo. Resolution falls through to node_modules →
-  // `types: dist/index.d.ts`, absent until the package is built. This is not
-  // hypothetical: the first CI run of this ratchet reported 174 diagnostics /
-  // 95 pairs, ~79 of them "NEW", for exactly this reason.
-  const unresolved = [...found.keys()].filter((k) => k.endsWith("|TS2307"));
-  if (unresolved.length > 0) {
+  // ⛤ The zero-diagnostics guard that used to live here has been REMOVED, and the
+  // reason matters more than the removal.
+  //
+  // Its docstring was right that a position-less-error guard and the SCOPE guard cover
+  // DISJOINT breakages — both are negative evidence, derived from the diagnostics, and
+  // neither implies the other. What neither of them could cover is the SUCCESS path:
+  // when the 18 baselined pairs are finally fixed, tsc exits 0, `found` is empty, and
+  // the zero-guard fired rc=2 — permanently, with the only obvious remedy (`--update`)
+  // writing an empty baseline. Measured 2026-08-19 on a stubbed tsc (114 files listed,
+  // zero diagnostics): rc=2 "the check did not examine packages/cli", which is false —
+  // it examined all 114 and found nothing.
+  //
+  // ⛔ This is a deliberate TRADE, not a subsumption — an earlier draft of this comment
+  // claimed the floor "subsumes its real cases", and that claim was false. What the floor
+  // covers: nothing compiled, or fewer files compiled than exist on disk. What NO floor can
+  // cover: files compiled but not CHECKED — `"noCheck": true` is available on the TypeScript
+  // version in use (5.9.3), and under it the listing is complete while every diagnostic
+  // disappears, which is indistinguishable from a clean run. The zero-diagnostics guard did
+  // refuse that input, at the price of refusing the success path too. Refusing success
+  // permanently is the worse failure, so it is accepted knowingly.
+
+  // ⛔ TS2307 is TWO different things, and this guard used to conflate them.
+  //   (a) ENVIRONMENT — a BARE `@kitelev/exocortex-*` specifier unresolved ⇒ the workspace
+  //       deps are not built ⇒ the run is a resolution cascade ⇒ rc=2, as described below.
+  //   (b) REAL DEBT — a RELATIVE or deep-subpath import of a module that MOVED. That is the
+  //       most valuable thing a type gate finds, and it must be BASELINED, never rc=2.
+  // Treating (b) as (a) tells the author "build the deps" when there is nothing to build,
+  // and hides the finding. Discriminator: the trailing quote keeps deep subpaths
+  // (`@kitelev/exocortex-core/domain/errors`) OUT of the environment bucket.
+  // ⛔ Match on the MESSAGE, not on the error code. An earlier draft required
+  // `|TS2307`, and review proved that the same bare specifier reported as TS2792
+  // ("Cannot find module … Did you mean to set 'moduleResolution'…") then fell through to
+  // rc=1 and would be FROZEN INTO THE BASELINE by --update — an environment failure
+  // recorded as permanent debt. The discriminator that matters lives in the regex (the
+  // trailing quote keeps deep subpaths out), so dropping the code test loses nothing and
+  // covers every code TypeScript may pick. Identical to scripts/check-test-types.mjs.
+  const WORKSPACE_BARE = /Cannot find module '@kitelev\/exocortex-[a-z-]+'/;
+  const envLines = raw.split("\n").filter((l) => WORKSPACE_BARE.test(l));
+  if (envLines.length > 0) {
     console.error(
-      `❌ check-cli-types: ${unresolved.length} file(s) cannot resolve their imports (TS2307).\n` +
+      `❌ check-cli-types: ${envLines.length} unresolved bare workspace import(s).\n` +
         "   The workspace dependencies are not built, so this run says nothing about\n" +
         "   the cli package's own type health. Build them first:\n" +
         "      npm run build -w @kitelev/exocortex-core\n" +
@@ -172,7 +307,7 @@ function assertRunIsMeaningful(found, raw) {
   }
 }
 
-assertRunIsMeaningful(found, raw);
+assertRunIsMeaningful();
 
 if (UPDATE) {
   const entries = [...found.entries()]
@@ -240,7 +375,8 @@ const shrunk = [...found.entries()]
 // Report the INPUT SIZE beside the findings: "0 new" is indistinguishable from
 // "tsc emitted nothing at all" without it.
 console.log(
-  `check-cli-types: ${diagnostics} diagnostic(s) in ${found.size} (file, code) pair(s); ` +
+  `check-cli-types: compiled ${compiledSrcFiles.length} src file(s); ` +
+    `${diagnostics} diagnostic(s) in ${found.size} (file, code) pair(s); ` +
     `baseline has ${known.size}`,
 );
 
@@ -284,6 +420,13 @@ if (gonePairs.length > 0 || shrunk.length > 0) {
   for (const key of gonePairs) {
     const [file, code] = key.split("|");
     console.error(`   ${file} — ${code}  (fixed — thank you)`);
+  }
+  // ⛔ `shrunk` was counted in the total above but never printed, so a PARTIALLY fixed
+  // pair produced a number with no matching line and the reader could not tell which
+  // entry it referred to. Ported from scripts/check-test-types.mjs (#4084 / #4087).
+  for (const [key, count] of shrunk) {
+    const [file, code] = key.split("|");
+    console.error(`   ${file} — ${code}: ${baseCount.get(key)} → ${count}  (partly fixed)`);
   }
   console.error("\n   Run: node scripts/check-cli-types.mjs --update");
   process.exit(1);
