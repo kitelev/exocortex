@@ -2762,11 +2762,31 @@ export class CommandResolver {
         this._fallbackWarnedKeys.add(fallbackKey);
         this.logger.warn(
           this.capWarning(
-            `Grounding ${groundingUid}: PropertyDefault '${propertyName}' → value asset ${valueRefUid} not in store; emitting wikilink (a link, not the substituted value).`,
+            `Grounding ${groundingUid}: PropertyDefault '${propertyName}' → value asset ${valueRefUid} not in store; SKIPPING the property (the executor's own default applies). Previously this emitted a wikilink, i.e. a link written where a value belongs.`,
           ),
         );
       }
-      return `"[[${valueRefUid}]]"`;
+      // ⛔ SKIP the entry — do NOT write a link into a VALUE slot.
+      //
+      // This branch used to `return "[[<uid>]]"`, and its own warning said what was
+      // wrong with that: "emitting wikilink (a link, not the substituted value)".
+      // A link in exo__Asset_label is never a valid outcome — it is silent, it reaches
+      // the vault, and the user's typed string survives only in `aliases`.
+      //
+      // `null` is this function's OWN documented signal for "skip this entry" (see the
+      // docstring), and the caller already honours it with `continue`. So the property
+      // is simply not set, and GroundingExecutor's existing degradation chain takes
+      // over — `labelTemplate` if the grounding declares one, else "Untitled". That
+      // path is built and tested; the wikilink fallback was bypassing it.
+      //
+      // ⚠ The causal link to the four corrupted assets (defect 0310aa28) remains
+      // narrowed by ELIMINATION, not measured — reproducing it needs a store missing
+      // the token on the creating device. The change does not rest on that: writing a
+      // link where a value belongs is wrong on this function's own contract.
+      //
+      // ⛤ NOT touched: the non-UUID (legacy symbolic) pass-through above, where a
+      // wikilink IS the intended value.
+      return null;
     }
 
     // RFC 727572d2 — TokenInvocation wrapper detection. When the value asset

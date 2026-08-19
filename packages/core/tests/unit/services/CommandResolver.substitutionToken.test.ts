@@ -636,9 +636,18 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
 
     const cmd = await resolver.loadCommand(COMMAND_UID);
 
-    expect(cmd!.grounding.propertyDefault![0].value).toBe(
-      `"[[${TOKEN_ABSENT_UID}]]"`,
-    );
+    // ⛔ The entry is SKIPPED, not baked as a wikilink. The comment above still
+    // describes the damage this used to cause ("poisoning every instance created in
+    // that session") — that is exactly what stopped: a link written where a value
+    // belongs never reaches the vault, and GroundingExecutor's own degradation chain
+    // (labelTemplate → "Untitled") takes over.
+    //
+    // The req's deliverable — the warning — is unchanged and still asserted below.
+    expect(
+      (cmd!.grounding.propertyDefault ?? []).some(
+        (pd) => pd.value === `"[[${TOKEN_ABSENT_UID}]]"`,
+      ),
+    ).toBe(false);
     // The warning is the whole deliverable: it must name the value uid (what
     // to look for), the property (where the damage lands) and the grounding
     // (which command) — enough to identify the case without a repro.
