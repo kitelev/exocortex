@@ -156,10 +156,25 @@ export class ExoQLQueryExecutor {
     pattern: AlgebraOperation,
     solution: SolutionMapping
   ): Promise<boolean> {
-    // Execute the pattern and check if any result is found
-    // The pattern is evaluated against the full triple store,
-    // but we need to join with current bindings
-    for await (const result of this.execute(pattern)) {
+    // SPARQL 1.1 §8.1.1: EXISTS is evaluated by SUBSTITUTING the current
+    // solution into the pattern, then asking whether the result is non-empty.
+    //
+    // ⛔ Executing the bare pattern and merging afterwards is NOT equivalent.
+    // It happens to work for a plain BGP — `merge` discards the incompatible
+    // rows after the fact — but not for anything that READS an outer variable
+    // while the pattern runs. A nested `FILTER(?score > ?limit)` sees `?limit`
+    // unbound, drops every row, EXISTS is false, and `NOT EXISTS` becomes
+    // unconditionally TRUE. Measured on a live vault: 519 of 519 rows survived
+    // a filter that should have kept 116.
+    //
+    // Substituting first is the same bind-join mechanism `executeJoin` already
+    // uses, and `substituteInOperation` deliberately recurses into filter
+    // expressions ("handles EXISTS/NOT EXISTS patterns") for exactly this.
+    const boundPattern = this.substituteVariables(pattern, solution);
+
+    // The post-substitution merge is KEPT: substitution rewrites the variables
+    // it can see, and the merge still guards the rows it cannot.
+    for await (const result of this.execute(boundPattern)) {
       // Check if result is compatible with current solution
       const merged = solution.merge(result);
       if (merged !== null) {
@@ -691,6 +706,28 @@ export class ExoQLQueryExecutor {
       expr.pattern = this.substituteInOperation(expr.pattern as AlgebraOperation, bindings);
     }
 
+    // ⛔ A variable REFERENCE inside an expression was never replaced — this
+    // method only recursed. Recursion alone is enough for a bind join (the
+    // BGP triples carry the correlation), but not for EXISTS: SPARQL 1.1
+    // §8.1.1 evaluates EXISTS by substituting the outer solution INTO the
+    // pattern, and an inner `FILTER(?score > ?limit)` reads `?limit` while
+    // that pattern runs. Unsubstituted, it is unbound, the filter drops every
+    // row, EXISTS is false and NOT EXISTS becomes unconditionally TRUE.
+    //
+    // Expression position stores the name in `.name` (triple position uses
+    // `.value`), so the node is rewritten in place into the literal/iri it is
+    // bound to. Unbound variables are LEFT ALONE — they must stay variables so
+    // the inner pattern can still bind them itself.
+    if (expr.type === 'variable' && typeof expr.name === 'string') {
+      const asTerm = this.termToAlgebraNode(bindings.get(expr.name));
+      if (asTerm !== null) {
+        delete expr.name;
+        for (const [key, val] of Object.entries(asTerm)) {
+          expr[key] = val;
+        }
+      }
+    }
+
     // Recurse into sub-expressions
     if (expr.left) this.substituteInExpression(expr.left as Record<string, unknown>, bindings);
     if (expr.right) this.substituteInExpression(expr.right as Record<string, unknown>, bindings);
@@ -730,25 +767,41 @@ export class ExoQLQueryExecutor {
    */
   private substituteInTripleElement(element: Record<string, unknown>, bindings: SolutionMapping): unknown {
     if (element && element.type === 'variable') {
-      const value = bindings.get(element.value as string);
-      if (value != null) {
-        const valueRecord = value as unknown as Record<string, unknown>;
-        // Convert RDF term to algebra representation
-        if (value instanceof IRI || valueRecord.termType === 'NamedNode') {
-          return { type: 'iri', value: (value as { value: string }).value };
-        }
-        // Handle Literal
-        if (valueRecord.termType === 'Literal' || typeof valueRecord.value === 'string') {
-          return {
-            type: 'literal',
-            value: valueRecord.value,
-            datatype: (valueRecord.datatype as Record<string, unknown>)?.value ?? (valueRecord._datatype as Record<string, unknown>)?.value,
-            language: valueRecord.language ?? valueRecord._language,
-          };
-        }
+      // In TRIPLE position the variable name lives in `.value`; in EXPRESSION
+      // position it lives in `.name` (see substituteInExpression).
+      const asTerm = this.termToAlgebraNode(bindings.get(element.value as string));
+      if (asTerm !== null) {
+        return asTerm;
       }
     }
     return element;
+  }
+
+  /**
+   * Convert a bound RDF term into its algebra node, or null if there is no
+   * usable binding. Shared by triple-position and expression-position
+   * substitution so the two can never drift on datatype/language handling.
+   */
+  private termToAlgebraNode(value: unknown): Record<string, unknown> | null {
+    if (value == null) {
+      return null;
+    }
+    const valueRecord = value as unknown as Record<string, unknown>;
+
+    if (value instanceof IRI || valueRecord.termType === 'NamedNode') {
+      return { type: 'iri', value: (value as { value: string }).value };
+    }
+
+    if (valueRecord.termType === 'Literal' || typeof valueRecord.value === 'string') {
+      return {
+        type: 'literal',
+        value: valueRecord.value,
+        datatype: (valueRecord.datatype as Record<string, unknown>)?.value ?? (valueRecord._datatype as Record<string, unknown>)?.value,
+        language: valueRecord.language ?? valueRecord._language,
+      };
+    }
+
+    return null;
   }
 
   /**
