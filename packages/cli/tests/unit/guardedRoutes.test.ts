@@ -26,6 +26,7 @@
 import {
   GUARDED_PROPERTIES,
   GUARDED_ROUTES,
+  IMMUTABLE_PROPERTIES,
   renderGuardedRoute,
   renderGuardRefusal,
 } from "../../src/commands/propertyMutationShared";
@@ -167,6 +168,102 @@ describe(`guard message is DERIVED from the routing table (bug 8f35fec0)`, () =>
     expect(classifyMessage(poisoned).exitCode).not.toBe(
       ExitCodes.GENERAL_ERROR,
     );
+  });
+
+  /**
+   * MEDIUM-A from review: the `resolutionTimestamp` fix (adding `re-open`) was
+   * correct but UNPROTECTED — dropping it again left every axis green, because
+   * the integration assertion is a loose `/mark-done/` that both forms satisfy.
+   *
+   * ⛔ The obvious guard — "these three routes must list these commands" — would be
+   * CIRCULAR: asserting route content against a copy of route content. This axis
+   * instead checks the route against ITSELF for internal consistency: a `note` that
+   * claims something CLEARS the property is a claim about the `commands` array, so
+   * the two must agree. Removing `re-open` while leaving the note reddens this;
+   * removing both is a deliberate semantic edit, not a silent regression.
+   */
+  it("a route whose note claims a command CLEARS the property lists more than one command @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
+    const inconsistent: string[] = [];
+    for (const [property, route] of Object.entries(GUARDED_ROUTES)) {
+      const claimsClearing = /clears? it/i.test(route.note ?? "");
+      if (claimsClearing && route.commands.length < 2) {
+        inconsistent.push(
+          `${property}: note claims a clearing command but lists only [${route.commands.join(", ")}]`,
+        );
+      }
+    }
+    expect(inconsistent).toEqual([]);
+  });
+
+  /**
+   * The fact timestamps are SET as a status-transition side effect and CLEARED by
+   * the reverse transition (`ems__WorkflowTransition_postActions`). Measured on the
+   * live graph: `← Doing` (re-open) carries BOTH `2c53ea68` "Delete end timestamp"
+   * and `d08d588c` "Delete resolution timestamp", in the Task AND Project workflows.
+   *
+   * So a route for one of them that offers only a SETTING command sends the user to
+   * a command that writes the value they are removing — the defect this file exists
+   * to prevent, one notch softer.
+   */
+  it("every fact-timestamp route offers a way to CLEAR, not only to set @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
+    const FACT_TIMESTAMPS = [
+      "ems__Effort_startTimestamp",
+      "ems__Effort_endTimestamp",
+      "ems__Effort_resolutionTimestamp",
+    ];
+    const setOnly: string[] = [];
+    for (const property of FACT_TIMESTAMPS) {
+      const route = GUARDED_ROUTES[property];
+      expect(route).toBeDefined(); // canary: a renamed property must not silently skip
+      if (!/clears? it/i.test(route.note ?? "")) {
+        setOnly.push(
+          `${property}: no note describing how the value is cleared`,
+        );
+      }
+    }
+    expect(setOnly).toEqual([]);
+  });
+
+  /**
+   * `classifyMessage` mixes two operands ON PURPOSE: `transition` / `transaction` /
+   * `concurrent` / `modified` match the LOWERCASED message, while `Invalid` /
+   * `Not a` / `ENOENT` / `EACCES` match the RAW one. Extracting the function
+   * preserved that exactly — but review showed nothing ENFORCED it: lowercasing the
+   * `Invalid` branch left the whole 359-test error suite green, and a user-supplied
+   * property name containing "invalid" would then newly route to exit 2.
+   *
+   * Pre-existing, and more exposed now that the function is exported — so pin it.
+   */
+  it("classifyMessage keeps the case-SENSITIVE branches case-sensitive @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
+    // Capitalised → the Invalid branch.
+    expect(classifyMessage("Invalid file path").exitCode).toBe(
+      ExitCodes.INVALID_ARGUMENTS,
+    );
+    // Lower-cased → must NOT hit it (a property name is user-supplied text).
+    expect(
+      classifyMessage('Refusing to set "x__invalid_field" — no.').exitCode,
+    ).toBe(ExitCodes.GENERAL_ERROR);
+    // The lowercase-matched family behaves the opposite way, by design.
+    expect(classifyMessage("TRANSITION not allowed").exitCode).toBe(
+      ExitCodes.INVALID_STATE_TRANSITION,
+    );
+  });
+
+  /**
+   * `IMMUTABLE_PROPERTIES` refusals share the classifier exposure but take a
+   * different sentence, so the axis above does not reach them (review LOW).
+   */
+  it("immutable-property refusals also classify as GENERAL_ERROR @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
+    const misrouted: string[] = [];
+    for (const [property, reason] of Object.entries(IMMUTABLE_PROPERTIES)) {
+      for (const verb of ["set", "remove"]) {
+        const message = `Refusing to ${verb} "${property}" — ${reason}.`;
+        if (classifyMessage(message).exitCode !== ExitCodes.GENERAL_ERROR) {
+          misrouted.push(`${property}: "${message}"`);
+        }
+      }
+    }
+    expect(misrouted).toEqual([]);
   });
 
   it("renderGuardedRoute places argSuffix after <path> and note in parentheses @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {

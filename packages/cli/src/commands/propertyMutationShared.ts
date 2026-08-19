@@ -204,12 +204,18 @@ export const IMMUTABLE_PROPERTIES: Record<string, string> = {
  * Render the refusal a generic mutation primitive surfaces when a property is
  * owned by a dedicated command.
  *
- * ⛤ Shared by BOTH call sites (and by the axis in
+ * ⛤ Shared by both GUARDED-PROPERTY call sites (and by the axis in
  * `tests/unit/guardedRoutes.test.ts`) so the sentence exists in ONE place. It has
  * to: the whole string — wrapper included — is the input of
  * `classifyMessage`, which picks the process exit code by SUBSTRING. When the
  * wrapper was an inline literal per command, a trigger word introduced there was
  * invisible to any test asserting on the routing fragment alone.
+ *
+ * ⚠ Scope: "both call sites" means the two GENERIC mutation primitives. Two other
+ * refusal surfaces share the classifier exposure and are NOT routed through here —
+ * `create.ts`'s self-managed-field guard (a different concern: it guards `create`'s
+ * own fields, not a `GUARDED_ROUTES` route) and the `IMMUTABLE_PROPERTIES` refusals
+ * (a different sentence). The latter IS covered by the axis; the former is not.
  *
  * @param verb - the primitive's own verb, e.g. `set` / `remove`
  * @param command - the CLI name of that primitive, e.g. `set-property`
