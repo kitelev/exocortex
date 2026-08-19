@@ -133,6 +133,38 @@ describe("check-coverage-monotonic.mjs — coverage-threshold monotonicity (P5.1
     expect(r.stderr).toContain("packages/bar/jest.config.js");
   });
 
+  // The carrier is a SHAPE, not one filename. packages/obsidian-plugin/jest.ui.config.js
+  // exists today in the very package this baseline gates; when the enumeration was
+  // `jest.config.js` alone, a threshold added there — and in .mjs/.ts/.cjs siblings —
+  // was invisible, which is a false GREEN on the check meant to prove completeness.
+  it.each(["jest.ui.config.js", "jest.config.mjs", "jest.config.ts", "jest.config.cjs"])(
+    "FAILS (exit 1) when %s declares thresholds but is absent from the baseline",
+    (fileName) => {
+      writeConfig(63);
+      mkdirSync(path.join(fixtureRoot, "packages/bar"), { recursive: true });
+      writeFileSync(
+        path.join(fixtureRoot, "packages/bar", fileName),
+        "module.exports = { coverageThreshold: { global: { branches: 10 } } };\n",
+      );
+      const r = runGuard();
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain(`packages/bar/${fileName}`);
+    },
+  );
+
+  // Structural, not a substring: the word appearing in a COMMENT used to red a REQUIRED
+  // check, and the remedy it printed would have written a vacuous `{}` baseline entry.
+  it("PASSES (exit 0) when a config only MENTIONS coverageThreshold in a comment", () => {
+    writeConfig(63);
+    mkdirSync(path.join(fixtureRoot, "packages/qux"), { recursive: true });
+    writeFileSync(
+      path.join(fixtureRoot, "packages/qux/jest.config.js"),
+      "// no coverageThreshold here on purpose\nmodule.exports = { testEnvironment: 'node' };\n",
+    );
+    const r = runGuard();
+    expect(r.status).toBe(0);
+  });
+
   // A package WITHOUT thresholds must not be demanded in the baseline — otherwise the
   // check would red on every package that simply does not measure coverage.
   it("PASSES (exit 0) when a package has a jest config but declares no thresholds", () => {

@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import * as path from "path";
 import { spawnSync } from "child_process";
@@ -84,6 +84,81 @@ describe("check-test-antipatterns.sh — population floor (#4090)", () => {
     const r = runGuard({ BASELINE_SCANNED: "3" });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("scanned 3 test file(s)");
+  });
+
+  // ── The DERIVED floor (git ls-files) ────────────────────────────────────────────
+  //
+  // The proportional fallback exercised above accepts a large partial loss: measured on
+  // the real corpus (core 375, obsidian-plugin 359, cli 160, req-audit 5, test-utils 3,
+  // services 1) a half-floor of 451 lets ANY SINGLE package vanish — dropping
+  // packages/core leaves 528. That is a repeat of the M5a rename this guard cites as its
+  // own motivation, un-caught. git declares the TRACKED corpus while the counters grep
+  // the WORKING TREE, so comparing them is a derivation across two artefacts, and it is
+  // exact: measured 903 == 903 with identical file lists.
+  //
+  // ⛤ The fixture is a COPY of the guard inside a temp git repo, not the real script run
+  // with a different cwd. The script does `ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd
+  // "$ROOT"` at the top, so it always runs from ITS OWN repo root and the caller's cwd is
+  // irrelevant BY CONSTRUCTION — which is also precisely why `git ls-files` resolves in
+  // the real repository for a real run, and returns nothing for a tmpdir SCAN_DIR
+  // (routing every case above into the fallback).
+  describe("derived floor — git tracks the corpus", () => {
+    let repoDir: string;
+
+    const gitRun = (...args: string[]) =>
+      spawnSync("git", args, { cwd: repoDir, encoding: "utf8" });
+
+    const runInRepo = () =>
+      spawnSync("bash", [path.join(repoDir, "scripts/check-test-antipatterns.sh")], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          ANTIPATTERN_SCAN_DIR: "corpus",
+          ANTIPATTERN_NONCANON_DIR: "__no_such_dir__",
+          BASELINE_METHOD_EXISTS: "999",
+          BASELINE_VACUOUS_LENGTH: "999",
+          BASELINE_NONCANON_SERVICE_DIR: "999",
+          BASELINE_OVERMOCK: "0",
+          // Deliberately generous: floor 0. If the derived branch did NOT fire, the
+          // fallback would pass, so a RED below can only come from the derivation.
+          BASELINE_SCANNED: "1",
+        },
+      });
+
+    beforeEach(() => {
+      repoDir = mkdtempSync(path.join(tmpdir(), "antipatterns-git-"));
+      mkdirSync(path.join(repoDir, "scripts"), { recursive: true });
+      mkdirSync(path.join(repoDir, "corpus"), { recursive: true });
+      copyFileSync(
+        path.join(repoRoot, "scripts/check-test-antipatterns.sh"),
+        path.join(repoDir, "scripts/check-test-antipatterns.sh"),
+      );
+      for (let i = 0; i < 3; i += 1) {
+        writeFileSync(path.join(repoDir, `corpus/t${i}.test.ts`), "it('x', () => {});\n");
+      }
+      gitRun("init", "-q");
+      gitRun("config", "user.email", "t@example.com");
+      gitRun("config", "user.name", "t");
+      gitRun("add", "-A");
+      gitRun("commit", "-q", "-m", "corpus");
+    });
+
+    afterEach(() => {
+      rmSync(repoDir, { recursive: true, force: true });
+    });
+
+    it("PASSES (exit 0) when the working tree holds every file git tracks", () => {
+      const r = runInRepo();
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("scanned 3 test file(s)");
+    });
+
+    it("FAILS (exit 1) on a loss the proportional fallback would have accepted", () => {
+      rmSync(path.join(repoDir, "corpus/t0.test.ts")); // tracked, gone from the tree
+      const r = runInRepo();
+      expect(r.status).toBe(1);
+      expect(r.stdout + r.stderr).toContain("scanned 2 of the 3 test file(s)");
+    });
   });
 
   it("prints the corpus size on the SUCCESS path — it is the only figure with no expected value", () => {

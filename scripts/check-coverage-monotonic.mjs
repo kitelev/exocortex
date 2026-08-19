@@ -74,8 +74,21 @@ function loadBaseline(path) {
 }
 
 /**
- * Every jest config that DECLARES a coverageThreshold — the independent oracle for
- * "is the baseline complete?".
+ * Every `packages/<pkg>/jest*.config.{js,cjs,mjs,ts}` whose `coverageThreshold.global`
+ * block actually parses — the independent oracle for "is the baseline complete?".
+ *
+ * ⛔ The scope is stated precisely because an earlier draft of this comment claimed
+ * "every jest config that declares a coverageThreshold", and that was literally false:
+ * the enumeration was `packages/*\/jest.config.js` alone. Review probed six carriers that
+ * genuinely declare thresholds and every one exited 0 — `jest.ui.config.js`,
+ * `jest.config.mjs`, `jest.config.ts`, a `package.json` `jest` key, a nested
+ * `config/jest.config.js`, and thresholds carried by a shared preset. The first of those
+ * is NOT hypothetical: packages/obsidian-plugin/jest.ui.config.js exists today, in the
+ * very package this baseline gates. It carries no threshold yet.
+ *
+ * ⚠ Two carriers remain out of reach of a text scan and are named rather than pretended
+ * away: a `jest` key inside package.json, and thresholds inherited from a preset. Both
+ * fail in the SILENT direction, which is why the limit is written here.
  *
  * ⛔ Without this the guard proves only "the configs I happen to track did not regress",
  * never "every config that carries thresholds is tracked". Those are different claims,
@@ -95,13 +108,29 @@ function findConfigsWithThresholds(packagesDir) {
   }
   for (const p of pkgs) {
     if (!p.isDirectory()) continue;
-    const rel = `packages/${p.name}/jest.config.js`;
+    let entries;
     try {
-      if (readFileSync(resolve(packagesDir, p.name, "jest.config.js"), "utf8").includes("coverageThreshold")) {
-        out.push(rel);
-      }
+      entries = readdirSync(resolve(packagesDir, p.name), { withFileTypes: true });
     } catch {
-      /* no jest config in this package — not an error */
+      continue;
+    }
+    for (const f of entries) {
+      if (!f.isFile() || !/^jest.*\.config\.(js|cjs|mjs|ts)$/.test(f.name)) continue;
+      let text;
+      try {
+        text = readFileSync(resolve(packagesDir, p.name, f.name), "utf8");
+      } catch {
+        continue;
+      }
+      // ⛤ STRUCTURAL, not a substring. `.includes("coverageThreshold")` matched the word
+      // in a COMMENT — probed: a config saying "// no coverageThreshold here on purpose"
+      // exited 1, reddening a REQUIRED check, and the remedy it printed ("add it at its
+      // current values") would have written a `{}` entry that looks tracked and tracks
+      // nothing. Reusing extractThresholds also collapses two predicates into one, so
+      // "what counts as declaring" can never drift from "what gets compared".
+      if (Object.keys(extractThresholds(text)).length > 0) {
+        out.push(`packages/${p.name}/${f.name}`);
+      }
     }
   }
   return out;

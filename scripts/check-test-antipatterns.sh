@@ -147,6 +147,80 @@ OVERMOCK_COUNT="$(overmock_files | sed '/^$/d' | wc -l | tr -d ' ')"
 # Size of the corpus the four counters above were computed over.
 SCANNED_COUNT="$(grep -rl . "$SCAN_DIR" --include='*.test.ts' --include='*.test.tsx' 2>/dev/null | wc -l | tr -d ' ')"
 
+# ── POSITIVE proof that the run examined a corpus at all ──────────────────────────
+#
+# ⛔ Demonstrated 2026-08-19, and the reason this block exists: point the scan at an
+# empty directory and the guard printed
+#
+#     ✅ test anti-pattern guard OK — method-exists=0/55, vacuous-length=0/21, …
+#     ℹ️  method-exists dropped to 0 (baseline 55) — ratchet BASELINE_METHOD_EXISTS down…
+#
+# and exited 0. Two things are wrong at once: `0/55` READS AS AN ACHIEVEMENT ("we fixed
+# everything") rather than as "the scan found nothing", and the guard then INVITES the
+# operator to ratchet the baselines to 0 — after which it is green forever no matter how
+# many anti-patterns are added. The failure arrives through the SUCCESS path.
+#
+# ⚠ ANTIPATTERN_NONCANON_DIR defaults to a path INSIDE a package
+# (packages/core/tests/services), and this repo has already renamed a package
+# (packages/exocortex -> packages/core, M5a). That rename would have zeroed that counter
+# silently. This is not a hypothetical — and see the DERIVED floor below for why a
+# proportional floor would not have caught a repeat of it either.
+#
+# ⛤ Placed ABOVE the --update-baseline branch deliberately: that branch used to run
+# first, so an operator on a collapsed scan could still print (and commit) 0/0/0/0.
+if [ "$SCANNED_COUNT" -eq 0 ]; then
+  echo "❌ test anti-pattern guard: scanned 0 test files under '$SCAN_DIR'."
+  echo "   All four counters are \`grep | wc -l\`, so they are 0 because NOTHING WAS"
+  echo "   READ — not because the debt was paid. This run has no verdict to give."
+  echo "   ⛔ Do NOT run --update-baseline: it would write 0/0/0/0 and the guard would"
+  echo "   pass forever regardless of how many anti-patterns are introduced."
+  echo "   Fix the scan root (ANTIPATTERN_SCAN_DIR / the SCAN_DIR default) instead."
+  exit 1
+fi
+
+# Second layer: a PARTIAL collapse drives the counters down proportionally and is
+# invisible to the check above.
+#
+# ⛤ DERIVED, not proportional. An earlier draft used BASELINE_SCANNED/2, and review
+# measured what that accepts: with the corpus at core=375, obsidian-plugin=359, cli=160,
+# req-audit=5, test-utils=3, services=1, a floor of 451 lets the loss of ANY SINGLE
+# package pass silently — dropping packages/core leaves 528. That is a repeat of the very
+# M5a rename cited above, un-caught, which made the proportional floor the same defect it
+# was written to close, one notch narrower.
+#
+# git declares the TRACKED corpus while the counters grep the WORKING TREE — two
+# different artefacts, so this is a derivation and not a self-check. Measured 2026-08-19:
+# both yield 903 and their file LISTS are identical (diff: 0 lines).
+#
+# `git ls-files` returns nothing for a path outside the repo (the guard's own fixture
+# corpus lives in a tmpdir), so the ratchet below is the fallback for exactly that case —
+# and only that case.
+#
+# ⛔ `|| true`, not `|| echo 0`: grep -c exits 1 on zero matches, and the echo form would
+# emit "0\n0" and break the arithmetic (bash-loop-eval-pitfalls Г3e).
+EXPECTED_SCANNED="$(git ls-files -- "$SCAN_DIR" 2>/dev/null | grep -cE '\.test\.tsx?$' || true)"
+EXPECTED_SCANNED=$((EXPECTED_SCANNED))
+if [ "$EXPECTED_SCANNED" -gt 0 ]; then
+  if [ "$SCANNED_COUNT" -lt "$EXPECTED_SCANNED" ]; then
+    echo "❌ test anti-pattern guard: scanned $SCANNED_COUNT of the $EXPECTED_SCANNED test file(s)"
+    echo "   git tracks under '$SCAN_DIR'. The corpus collapsed rather than the debt"
+    echo "   shrinking, so the four counters below mean nothing."
+    echo "   A tracked test file that the scan cannot read is the failure this guards."
+    exit 1
+  fi
+else
+  # Not a git path (fixture corpus): fall back to the recorded population.
+  SCANNED_FLOOR=$((BASELINE_SCANNED / 2))
+  if [ "$SCANNED_COUNT" -lt "$SCANNED_FLOOR" ]; then
+    echo "❌ test anti-pattern guard: scanned $SCANNED_COUNT test file(s), less than half of"
+    echo "   the $BASELINE_SCANNED recorded in BASELINE_SCANNED, and git tracks nothing under"
+    echo "   '$SCAN_DIR' to derive an exact expectation from."
+    echo "   If the shrink is legitimate, re-run with --update-baseline and commit the new"
+    echo "   BASELINE_SCANNED together with the new counter baselines."
+    exit 1
+  fi
+fi
+
 if [ "${1:-}" = "--update-baseline" ]; then
   echo "Current counts (paste into this script's BASELINE_* values):"
   echo "  BASELINE_METHOD_EXISTS=$ME_COUNT"
@@ -159,54 +233,6 @@ fi
 
 fail=0
 
-# ── POSITIVE proof that the run examined a corpus at all ──────────────────────────
-#
-# ⛔ Demonstrated 2026-08-19, and the reason this block exists: point the scan at an
-# empty directory and the guard prints
-#
-#     ✅ test anti-pattern guard OK — method-exists=0/55, vacuous-length=0/21, …
-#     ℹ️  method-exists dropped to 0 (baseline 55) — ratchet BASELINE_METHOD_EXISTS down…
-#
-# and exits 0. Two things are wrong at once: `0/55` READS AS AN ACHIEVEMENT ("we fixed
-# everything") rather than as "the scan found nothing, so all four counters collapsed",
-# and the guard then INVITES the operator to ratchet the baselines to 0 — after which it
-# is green forever no matter how many anti-patterns are added. The failure arrives
-# through the SUCCESS path, so no amount of care reading a red build would catch it.
-#
-# ⚠ ANTIPATTERN_NONCANON_DIR defaults to a path INSIDE a package
-# (packages/core/tests/services), and this repo has already renamed a package
-# (packages/exocortex -> packages/core, M5a). That rename would have zeroed that counter
-# silently. This is not a hypothetical.
-if [ "$SCANNED_COUNT" -eq 0 ]; then
-  echo "❌ test anti-pattern guard: scanned 0 test files under '$SCAN_DIR'."
-  echo "   All four counters are \`grep | wc -l\`, so they are 0 because NOTHING WAS"
-  echo "   READ — not because the debt was paid. This run has no verdict to give."
-  echo "   ⛔ Do NOT run --update-baseline: it would write 0/0/0/0 and the guard would"
-  echo "   pass forever regardless of how many anti-patterns are introduced."
-  echo "   Fix the scan root (ANTIPATTERN_SCAN_DIR / the SCAN_DIR default) instead."
-  exit 1
-fi
-
-# Second layer: a PARTIAL collapse (scan finds a fraction of the corpus) drives the
-# counters down proportionally and is invisible to the check above.
-#
-# ⛤ Unlike scripts/check-cli-types.mjs — where tsconfig `include` independently declares
-# what the program must contain, so the floor is DERIVED and exact — nothing in this repo
-# declares how many test files ought to exist. The previous measurement, committed above,
-# is the only available reference, which is why this layer is a ratchet like the rest of
-# the file rather than a derivation. Half is deliberately generous: it catches collapse,
-# NOT drift. Drift stays visible because SCANNED_COUNT is printed on every run, pass or
-# fail — a number nobody has an expected value for is the thing this whole guard is about.
-SCANNED_FLOOR=$((BASELINE_SCANNED / 2))
-if [ "$SCANNED_COUNT" -lt "$SCANNED_FLOOR" ]; then
-  echo "❌ test anti-pattern guard: scanned $SCANNED_COUNT test file(s), less than half of"
-  echo "   the $BASELINE_SCANNED recorded in BASELINE_SCANNED. The corpus collapsed rather"
-  echo "   than the debt shrinking, so the four counters below mean nothing."
-  echo "   If the shrink is legitimate, re-run with --update-baseline and commit the new"
-  echo "   BASELINE_SCANNED together with the new counter baselines — deliberately, in one"
-  echo "   reviewed act."
-  exit 1
-fi
 
 if [ "$ME_COUNT" -gt "$BASELINE_METHOD_EXISTS" ]; then
   echo "❌ method-exists asserts increased: $ME_COUNT > baseline $BASELINE_METHOD_EXISTS"
