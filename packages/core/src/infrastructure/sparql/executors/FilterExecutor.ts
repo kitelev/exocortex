@@ -274,6 +274,24 @@ export class FilterExecutor {
   /**
    * Evaluate logical expression asynchronously to handle nested EXISTS.
    */
+  /**
+   * SPARQL 1.1 §17.4.1.5 — `||` and `&&` are ERROR-TOLERANT.
+   *
+   *   ||:  true ∨ error = true   |  false ∨ error = error  |  error ∨ error = error
+   *   &&:  false ∧ error = false |  true ∧ error = error   |  error ∧ error = error
+   *
+   * ⛔ Evaluating every operand eagerly and only THEN combining (what this used to do)
+   *    lets an operand's throw escape past a decision the other operand had already made,
+   *    so the whole solution is dropped. Measured 2026-08-20 on the live graph:
+   *      FILTER(true)                     → 1185 rows
+   *      FILTER(true || (STR(?e) >= "a")) →  226 rows   ⛔ 959 lost, silently
+   *    with `?e` bound by an OPTIONAL. Every "the interval is not closed yet" query
+   *    therefore drops exactly the rows it asks for.
+   *
+   * ⛤ NOT short-circuit: the spec is order-INDEPENDENT, so `error || true` must be `true`
+   *    just as `true || error` is. Left-to-right short-circuiting would pass one and fail
+   *    the other. Hence: evaluate all operands, capturing errors, then apply the table.
+   */
   private async evaluateLogicalAsync(expr: import("../algebra/AlgebraOperation").LogicalExpression, solution: SolutionMapping): Promise<boolean> {
     if (expr.operator === "!") {
       const operand = await this.evaluateExpressionAsync(expr.operands[0], solution);
@@ -281,16 +299,24 @@ export class FilterExecutor {
     }
 
     const results: boolean[] = [];
+    let errored = false;
     for (const op of expr.operands) {
-      const result = await this.evaluateExpressionAsync(op, solution);
-      results.push(result as boolean);
+      try {
+        results.push((await this.evaluateExpressionAsync(op, solution)) as boolean);
+      } catch {
+        errored = true;
+      }
     }
 
     if (expr.operator === "&&") {
+      if (results.some((r) => r === false)) return false; // a false absorbs the error
+      if (errored) throw new FilterExecutorError("&& operand raised and no false absorbed it");
       return BuiltInFunctions.logicalAnd(results);
     }
 
     if (expr.operator === "||") {
+      if (results.some((r) => r === true)) return true; // a true absorbs the error
+      if (errored) throw new FilterExecutorError("|| operand raised and no true absorbed it");
       return BuiltInFunctions.logicalOr(results);
     }
 
@@ -396,16 +422,25 @@ export class FilterExecutor {
       return BuiltInFunctions.logicalNot(operand as boolean);
     }
 
-    const results = expr.operands.map((op: Expression) => {
-      const result = this.evaluateExpression(op, solution);
-      return result as boolean;
-    });
+    const results: boolean[] = [];
+    let errored = false;
+    for (const op of expr.operands) {
+      try {
+        results.push(this.evaluateExpression(op, solution) as boolean);
+      } catch {
+        errored = true;
+      }
+    }
 
     if (expr.operator === "&&") {
+      if (results.some((r) => r === false)) return false; // a false absorbs the error
+      if (errored) throw new FilterExecutorError("&& operand raised and no false absorbed it");
       return BuiltInFunctions.logicalAnd(results);
     }
 
     if (expr.operator === "||") {
+      if (results.some((r) => r === true)) return true; // a true absorbs the error
+      if (errored) throw new FilterExecutorError("|| operand raised and no true absorbed it");
       return BuiltInFunctions.logicalOr(results);
     }
 
