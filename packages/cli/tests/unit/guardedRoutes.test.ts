@@ -27,7 +27,10 @@ import {
   GUARDED_PROPERTIES,
   GUARDED_ROUTES,
   renderGuardedRoute,
+  renderGuardRefusal,
 } from "../../src/commands/propertyMutationShared";
+import { classifyMessage } from "../../src/utils/ErrorHandler";
+import { ExitCodes } from "../../src/utils/ExitCodes";
 
 /**
  * Names that were shipped in the message but exist in NO live registry.
@@ -113,44 +116,57 @@ describe(`guard message is DERIVED from the routing table (bug 8f35fec0)`, () =>
   });
 
   /**
-   * `ErrorHandler.classifyError` picks the process EXIT CODE by scanning the
-   * error message for substrings. The guard message is part of that error, so a
-   * word chosen for readability silently re-routes the exit code a scripted
-   * consumer branches on.
+   * The guard sentence is ALSO the input of the exit-code classifier, which picks
+   * the process exit code by SUBSTRING. A word chosen for readability silently
+   * re-routes the code a scripted consumer branches on.
    *
    * Measured: an early draft of the timestamp notes read "as a transition side
-   * effect" → `message.includes("transition")` → exit 6
-   * (INVALID_STATE_TRANSITION) instead of 1 (GENERAL_ERROR), and the existing
-   * `set-property` guard tests caught it only as a bare `expect(exit).toContain(1)`
-   * failure with no hint at the cause.
+   * effect" → `message.includes("transition")` → exit 6 (INVALID_STATE_TRANSITION)
+   * instead of 1 (GENERAL_ERROR). The existing `set-property` tests caught it only
+   * as a bare `expect(exit).toContain(1)` failure with no hint at the cause.
    *
-   * Kept in sync with ErrorHandler.classifyError (packages/cli/src/utils/).
+   * ⛔ This axis asserts on the FULL rendered error, not on the `GUARDED_PROPERTIES`
+   * fragment: the call sites wrap the fragment in ~25 more words, and those are
+   * classified too. An earlier version of this axis read only the fragment and was
+   * therefore blind to a trigger word introduced in the wrapper — demonstrated by
+   * review, which injected "Invalid" into the wrapper and left this file green
+   * while the integration suite went red with the very `toContain(1)` failure this
+   * axis exists to diagnose.
+   *
+   * ⛤ And it asserts BEHAVIOUR (`classifyMessage`), not a copied trigger list: a
+   * hand-maintained list drifts the moment a branch is added to the classifier.
    */
-  const CLASSIFIER_TRIGGERS = [
-    "transition",
-    "transaction",
-    "concurrent",
-    "modified",
-    "not found",
-    "enoent",
-    "eacces",
-    "permission denied",
-    "invalid",
-    "outside vault",
-    "not a",
+  /** The SAME renderer both primitives use — no copy to drift. */
+  const SURFACES: ReadonlyArray<readonly [string, string]> = [
+    ["set", "set-property"],
+    ["remove", "remove-property"],
   ];
 
-  it("guard messages do not collide with the exit-code classifier @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
-    const collisions: string[] = [];
-    for (const [property, message] of Object.entries(GUARDED_PROPERTIES)) {
-      const lowered = message.toLowerCase();
-      for (const trigger of CLASSIFIER_TRIGGERS) {
-        if (lowered.includes(trigger)) {
-          collisions.push(`${property}: "${trigger}" in "${message}"`);
+  it("every guard refusal classifies as GENERAL_ERROR, on the FULL rendered message @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
+    const misrouted: string[] = [];
+    for (const [property, fragment] of Object.entries(GUARDED_PROPERTIES)) {
+      for (const [verb, command] of SURFACES) {
+        const message = renderGuardRefusal(verb, command, property, fragment);
+        const { exitCode } = classifyMessage(message);
+        if (exitCode !== ExitCodes.GENERAL_ERROR) {
+          misrouted.push(`${property}: exit ${exitCode} — "${message}"`);
         }
       }
     }
-    expect(collisions).toEqual([]);
+    expect(misrouted).toEqual([]);
+  });
+
+  it("the classifier axis is not vacuous — a trigger word IS detected @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {
+    // Negative control: if this ever stops failing, the axis above proves nothing.
+    const poisoned = renderGuardRefusal(
+      "set",
+      "set-property",
+      "ems__Effort_startTimestamp",
+      "apply start-effort <path>  (cleared as a transition side effect)",
+    );
+    expect(classifyMessage(poisoned).exitCode).not.toBe(
+      ExitCodes.GENERAL_ERROR,
+    );
   });
 
   it("renderGuardedRoute places argSuffix after <path> and note in parentheses @req:3800d995-2bae-401f-a23a-dac914505e9d", () => {

@@ -1,11 +1,5 @@
 import { Command } from "commander";
-import {
-  resolve,
-  relative,
-  dirname,
-  isAbsolute,
-  sep as pathSep,
-} from "path";
+import { resolve, relative, dirname, isAbsolute, sep as pathSep } from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import {
   FrontmatterService,
@@ -25,6 +19,7 @@ import {
   DEFAULT_TIMEZONE,
   UPDATED_AT_KEY,
   GUARDED_PROPERTIES,
+  renderGuardRefusal,
   IMMUTABLE_PROPERTIES,
   canonicalYamlKey,
   guardedReason,
@@ -94,7 +89,11 @@ function resolvePropertyAndValue(options: SetPropertyOptions): {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`--input: invalid JSON (${msg})`);
     }
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
       throw new Error(
         `--input must be a JSON object of the form {"property":"<name>","value":<v>}`,
       );
@@ -116,7 +115,10 @@ function resolvePropertyAndValue(options: SetPropertyOptions): {
         `--property requires --value (or use --input for a typed/array value)`,
       );
     }
-    return { property: (options.property as string).trim(), value: options.value };
+    return {
+      property: (options.property as string).trim(),
+      value: options.value,
+    };
   }
 
   throw new InvalidArgumentsError(
@@ -257,7 +259,8 @@ export function setPropertyCommand(): Command {
           );
         }
 
-        const { property: rawProperty, value } = resolvePropertyAndValue(options);
+        const { property: rawProperty, value } =
+          resolvePropertyAndValue(options);
         // Normalise a full-IRI-shaped property to prefixed form so the guard
         // denylists (prefixed keys) still match (mirrors executePropertySet).
         const property = FrontmatterService.normalizeIRI(rawProperty);
@@ -272,7 +275,7 @@ export function setPropertyCommand(): Command {
         const guardedCommand = guardedReason(GUARDED_PROPERTIES, property);
         if (guardedCommand !== undefined) {
           throw new Error(
-            `Refusing to set "${property}" via set-property — it has a dedicated guarded command so the state machine / precondition is not bypassed. Use:  exocortex ${guardedCommand} --vault <v>`,
+            renderGuardRefusal("set", "set-property", property, guardedCommand),
           );
         }
 

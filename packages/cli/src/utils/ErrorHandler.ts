@@ -131,71 +131,7 @@ export class ErrorHandler {
     exitCode: ExitCodes;
     errorCode: ErrorCode;
   } {
-    const message = error.message.toLowerCase();
-
-    // State transition errors (check before "Invalid")
-    if (message.includes("transition")) {
-      return {
-        exitCode: ExitCodes.INVALID_STATE_TRANSITION,
-        errorCode: ErrorCode.STATE_INVALID_TRANSITION,
-      };
-    }
-
-    // Transaction errors (check before generic errors)
-    if (message.includes("transaction")) {
-      return {
-        exitCode: ExitCodes.TRANSACTION_FAILED,
-        errorCode: ErrorCode.INTERNAL_TRANSACTION_FAILED,
-      };
-    }
-
-    // Concurrent modification
-    if (message.includes("concurrent") || message.includes("modified")) {
-      return {
-        exitCode: ExitCodes.CONCURRENT_MODIFICATION,
-        errorCode: ErrorCode.STATE_CONCURRENT_MODIFICATION,
-      };
-    }
-
-    // File not found errors
-    if (
-      error.message.includes("not found") ||
-      error.message.includes("ENOENT")
-    ) {
-      return {
-        exitCode: ExitCodes.FILE_NOT_FOUND,
-        errorCode: ErrorCode.VALIDATION_FILE_NOT_FOUND,
-      };
-    }
-
-    // Permission errors
-    if (
-      error.message.includes("EACCES") ||
-      error.message.includes("permission denied")
-    ) {
-      return {
-        exitCode: ExitCodes.PERMISSION_DENIED,
-        errorCode: ErrorCode.PERMISSION_DENIED,
-      };
-    }
-
-    // Invalid arguments (validation errors) - check last as "Invalid" is broad
-    if (
-      error.message.includes("Invalid") ||
-      error.message.includes("outside vault") ||
-      error.message.includes("Not a")
-    ) {
-      return {
-        exitCode: ExitCodes.INVALID_ARGUMENTS,
-        errorCode: ErrorCode.VALIDATION_INVALID_ARGUMENTS,
-      };
-    }
-
-    // Generic error (catch-all)
-    return {
-      exitCode: ExitCodes.GENERAL_ERROR,
-      errorCode: ErrorCode.INTERNAL_UNKNOWN,
-    };
+    return classifyMessage(error.message);
   }
 
   /**
@@ -216,14 +152,16 @@ export class ErrorHandler {
   /**
    * Gets recovery hint for an error code
    */
-  private static getRecoveryHint(
-    errorCode: ErrorCode,
-  ): { message: string; suggestion?: string } {
+  private static getRecoveryHint(errorCode: ErrorCode): {
+    message: string;
+    suggestion?: string;
+  } {
     switch (errorCode) {
       case ErrorCode.VALIDATION_FILE_NOT_FOUND:
         return {
           message: "Verify the file path is correct and the file exists",
-          suggestion: "Check file path spelling and ensure the file is in the vault",
+          suggestion:
+            "Check file path spelling and ensure the file is in the vault",
         };
 
       case ErrorCode.VALIDATION_VAULT_NOT_FOUND:
@@ -269,4 +207,84 @@ export class ErrorHandler {
         };
     }
   }
+}
+
+/**
+ * Classify an error MESSAGE into its exit code / error code.
+ *
+ * ⛤ Exported as a PURE function so a caller can ask "what exit code will this
+ * message produce?" without constructing an Error and without the process-exiting
+ * side effects of {@link ErrorHandler.handle}. `ErrorHandler.classifyError`
+ * delegates here, so there is ONE implementation, not a copy.
+ *
+ * This matters because classification is by SUBSTRING: a message worded for
+ * readability silently re-routes the exit code a scripted consumer branches on.
+ * The `set-property` / `remove-property` guard sentences are asserted against THIS
+ * function in `tests/unit/guardedRoutes.test.ts` — testing the real mechanism on
+ * the FULL rendered message, rather than a hand-maintained copy of the trigger
+ * list checked against a fragment. A copy can drift; this cannot.
+ */
+export function classifyMessage(raw: string): {
+  exitCode: ExitCodes;
+  errorCode: ErrorCode;
+} {
+  const message = raw.toLowerCase();
+
+  // State transition errors (check before "Invalid")
+  if (message.includes("transition")) {
+    return {
+      exitCode: ExitCodes.INVALID_STATE_TRANSITION,
+      errorCode: ErrorCode.STATE_INVALID_TRANSITION,
+    };
+  }
+
+  // Transaction errors (check before generic errors)
+  if (message.includes("transaction")) {
+    return {
+      exitCode: ExitCodes.TRANSACTION_FAILED,
+      errorCode: ErrorCode.INTERNAL_TRANSACTION_FAILED,
+    };
+  }
+
+  // Concurrent modification
+  if (message.includes("concurrent") || message.includes("modified")) {
+    return {
+      exitCode: ExitCodes.CONCURRENT_MODIFICATION,
+      errorCode: ErrorCode.STATE_CONCURRENT_MODIFICATION,
+    };
+  }
+
+  // File not found errors
+  if (raw.includes("not found") || raw.includes("ENOENT")) {
+    return {
+      exitCode: ExitCodes.FILE_NOT_FOUND,
+      errorCode: ErrorCode.VALIDATION_FILE_NOT_FOUND,
+    };
+  }
+
+  // Permission errors
+  if (raw.includes("EACCES") || raw.includes("permission denied")) {
+    return {
+      exitCode: ExitCodes.PERMISSION_DENIED,
+      errorCode: ErrorCode.PERMISSION_DENIED,
+    };
+  }
+
+  // Invalid arguments (validation errors) - check last as "Invalid" is broad
+  if (
+    raw.includes("Invalid") ||
+    raw.includes("outside vault") ||
+    raw.includes("Not a")
+  ) {
+    return {
+      exitCode: ExitCodes.INVALID_ARGUMENTS,
+      errorCode: ErrorCode.VALIDATION_INVALID_ARGUMENTS,
+    };
+  }
+
+  // Generic error (catch-all)
+  return {
+    exitCode: ExitCodes.GENERAL_ERROR,
+    errorCode: ErrorCode.INTERNAL_UNKNOWN,
+  };
 }

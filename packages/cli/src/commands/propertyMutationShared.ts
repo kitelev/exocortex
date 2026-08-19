@@ -30,23 +30,6 @@ export const UPDATED_AT_KEY = "exo__Asset_updatedAt";
 export { canonicalYamlKey };
 
 /**
- * Properties the generic mutation primitives REFUSE because a dedicated guarded
- * `exocmd__Command` owns them — each enforces a state-machine transition or a
- * precondition guard, so mutating the property directly would bypass that guard.
- * The value is the dedicated command to use instead. This is a SUPERSET of the
- * `dogfood-cli-mutation` hook's routing table: every property that has a
- * dedicated command is refused here and routed to that command, so the generic
- * primitives only ever handle the "everything else" class the hook leaves to them.
- *
- * NOT guarded (so the primitives handle them): `exo__Asset_isDefinedBy` (issue
- * #3848 — set-property allows it with a co-location warning), and any other
- * scalar / boolean / enum / wikilink property with no dedicated command.
- *
- * Looked up via {@link guardedReason} (own-key `hasOwnProperty` check) so a
- * user-supplied property name like `toString` / `constructor` never matches an
- * inherited Object.prototype key (#3795 review M2).
- */
-/**
  * A guarded property's ROUTE: the cliNames of the dedicated `exocmd__Command`s
  * that own it, plus optional prose. This is the MACHINE-READABLE half — the
  * human message in {@link GUARDED_PROPERTIES} is DERIVED from it.
@@ -56,10 +39,16 @@ export { canonicalYamlKey };
  * three of its names (`remove-start-timestamp`, `remove-end-timestamp`,
  * `archive-completed`) never existed in any live registry, so the guard refused
  * the mutation and then pointed the user at a command that does not resolve.
- * `remove-start-timestamp` exists only as an e2e TEST FIXTURE
- * (`tests/e2e/test-vault/03 Knowledge/commands/cmd-remove-start-timestamp.md`),
- * which is where the false name came from. Deriving the sentence from this array
- * makes "the message names a command not listed here" impossible by construction.
+ * ⛤ The three had DIFFERENT causes, and only one was prose-drift:
+ *   `remove-start-timestamp` / `remove-end-timestamp` — never existed anywhere but
+ *     an e2e TEST FIXTURE (`tests/e2e/test-vault/03 Knowledge/commands/
+ *     cmd-remove-start-timestamp.md`), i.e. a fixture name leaked into prose;
+ *   `archive-completed` — WAS a real command, renamed to `archive` upstream. It is
+ *     still PRESENT in the pinned `exoas-exocmd` submodule. So the mechanism there
+ *     is "upstream rename + stale pin", not invention — and that is the cause that
+ *     will recur.
+ * Deriving the sentence from this array makes "the message names a command not
+ * listed here" impossible by construction; it does NOT stop an upstream rename.
  *
  * ⛔ The rendered sentence is ALSO the INPUT of `ErrorHandler.classifyError`,
  * which picks the process exit code by SUBSTRING (`transition` → 6,
@@ -137,7 +126,10 @@ export const GUARDED_ROUTES: Record<string, GuardedRoute> = {
     commands: ["mark-done", "re-open"],
     note: "mark-done sets it; re-open clears it as a side effect of the status change",
   },
-  ems__Effort_resolutionTimestamp: { commands: ["mark-done"] },
+  ems__Effort_resolutionTimestamp: {
+    commands: ["mark-done", "re-open"],
+    note: "mark-done sets it; re-open clears it as a side effect of the status change",
+  },
   // Plan / schedule dates — dedicated commands.
   ems__Effort_plannedStartTimestamp: {
     commands: [
@@ -207,6 +199,33 @@ export const IMMUTABLE_PROPERTIES: Record<string, string> = {
     "the asset identity — changing it breaks UID-canon filenames and every inbound [[uid]] wikilink",
   [UPDATED_AT_KEY]: "auto-managed (bumped on every mutation)",
 };
+
+/**
+ * Render the refusal a generic mutation primitive surfaces when a property is
+ * owned by a dedicated command.
+ *
+ * ⛤ Shared by BOTH call sites (and by the axis in
+ * `tests/unit/guardedRoutes.test.ts`) so the sentence exists in ONE place. It has
+ * to: the whole string — wrapper included — is the input of
+ * `classifyMessage`, which picks the process exit code by SUBSTRING. When the
+ * wrapper was an inline literal per command, a trigger word introduced there was
+ * invisible to any test asserting on the routing fragment alone.
+ *
+ * @param verb - the primitive's own verb, e.g. `set` / `remove`
+ * @param command - the CLI name of that primitive, e.g. `set-property`
+ */
+export function renderGuardRefusal(
+  verb: string,
+  command: string,
+  property: string,
+  routeFragment: string,
+): string {
+  return (
+    `Refusing to ${verb} "${property}" via ${command} — it has a dedicated guarded ` +
+    `command so the state machine / precondition is not bypassed. ` +
+    `Use:  exocortex ${routeFragment} --vault <v>`
+  );
+}
 
 /** Own-key lookup on a denylist that never matches inherited Object.prototype keys. */
 export function guardedReason(
