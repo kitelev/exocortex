@@ -75,21 +75,17 @@ cd "$ROOT"
 # Env-overridable so the guard's own @req binding test can force a RED/GREEN
 # verdict against a fixture corpus without touching the real tree (the defaults
 # are the committed baselines used in CI).
-BASELINE_METHOD_EXISTS="${BASELINE_METHOD_EXISTS:-55}"
-BASELINE_VACUOUS_LENGTH="${BASELINE_VACUOUS_LENGTH:-21}"
-# Legacy non-canon core service-test dir. Canon for NEW tests is
-# packages/core/tests/unit/services/. This grandfathers the existing files and
-# bans growth (see header item 3). Ratchet DOWN if legacy files are removed.
-BASELINE_NONCANON_SERVICE_DIR="${BASELINE_NONCANON_SERVICE_DIR:-19}"
-# Over-mock pass-through service-wrappers (header item 4). Baseline 0 — the
-# canonical over-mock was lifted to an integration suite, so no pure pass-through
-# over-mock file exists today. Bans introducing one.
-BASELINE_OVERMOCK="${BASELINE_OVERMOCK:-0}"
+# ⛤ The four per-category TOTALS are DERIVED from the pair-set baseline below, not
+# declared here. They exist only for the human-readable summary line; the verdict comes
+# from the pairs. Two sources for one number is how a total and its set drift apart.
+# (Env overrides were removed with them: a fixture drives the guard via
+# ANTIPATTERN_BASELINE_FILE, which sets both the pairs and the totals at once.)
 # ⛤ POPULATION baseline — how many test files the counters above were computed OVER.
 # Not a debt figure: it is the SIZE OF THE INPUT, and it is here because every counter
 # in this guard is `grep … | wc -l`, so an empty or moved SCAN_DIR drives all four to 0
-# and every `0 <= baseline` comparison passes. Measured 2026-08-19: 903 (901 before this change added two guard tests).
-BASELINE_SCANNED="${BASELINE_SCANNED:-903}"
+# and every `0 <= baseline` comparison passes. Measured 2026-08-19: 904. ⛤ Only reachable when git cannot answer (a fixture corpus
+# outside the repo); inside the repo the DERIVED comparison below supersedes it.
+BASELINE_SCANNED="${BASELINE_SCANNED:-904}"
 
 # Scan root (default: the whole monorepo packages tree). Overridable for the
 # guard's revert-verify test (points at a fixture corpus).
@@ -123,6 +119,60 @@ list_files() {
   grep -rlE "$1" "$SCAN_DIR" --include='*.test.ts' --include='*.test.tsx' 2>/dev/null | sed 's/^/     /'
 }
 
+# ── (category, file, count) PAIR SET ──────────────────────────────────────────────
+#
+# ⛔ A TOTAL is satisfied by a SWAP. `method-exists=55/55` is green whether those 55
+# occurrences are the grandfathered ones or 54 old plus a brand-new one somebody just
+# added — the ratchet cannot tell, because subtraction is commutative and the number is
+# all it has. Both sibling ratchets in this repo (check-cli-types.mjs, check-test-types.mjs)
+# key on a SET of (file, code) pairs for exactly this reason; this guard was the last one
+# still comparing totals.
+#
+# The baseline is a TSV rather than JSON because this stays a bash guard: `join` over two
+# sorted streams is POSIX, needs no parser, and diffs one line per moved occurrence in
+# review. ⛔ bash 3.2 (macOS) has no associative arrays, so streams are the portable form.
+# ⛔ LC_ALL=C on every sort: `join` requires both inputs collated identically, and the
+# default collation differs between macOS and the ubuntu runner.
+BASELINE_FILE="${ANTIPATTERN_BASELINE_FILE:-$ROOT/scripts/test-antipattern-baseline.tsv}"
+TAB="$(printf '\t')"
+
+# Emits "<file><TAB><count>" for one category, sorted. Files with zero matches are
+# dropped: a file that no longer carries the pattern is absence, not a zero entry.
+current_pairs() {
+  case "$1" in
+    method-exists)
+      grep -rcE "$ME_PATTERN" "$SCAN_DIR" --include='*.test.ts' --include='*.test.tsx' 2>/dev/null \
+        | grep -v ':0$' | tr ':' "$TAB" ;;
+    vacuous-length)
+      grep -rcE "$VL_PATTERN" "$SCAN_DIR" --include='*.test.ts' --include='*.test.tsx' 2>/dev/null \
+        | grep -v ':0$' | tr ':' "$TAB" ;;
+    non-canon-service-dir)
+      find "$NONCANON_SERVICE_DIR" -maxdepth 1 -name '*.test.ts' 2>/dev/null | sed "s/\$/${TAB}1/" ;;
+    over-mock)
+      overmock_files | sed '/^$/d' | sed "s/\$/${TAB}1/" ;;
+  esac | LC_ALL=C sort
+}
+
+baseline_pairs() {
+  grep -v '^#' "$BASELINE_FILE" 2>/dev/null \
+    | awk -F"$TAB" -v c="$1" '$1==c {print $2 "\t" $3}' | LC_ALL=C sort
+}
+
+# Pairs that are NEW or GREW: the only two states that mean debt was ADDED.
+# `-a1` keeps files absent from the baseline; `-e 0` gives them a baseline count of 0,
+# so a brand-new file is "grew from 0" and needs no separate branch.
+grown_pairs() {
+  join -t"$TAB" -a1 -e 0 -o 0,1.2,2.2 <(current_pairs "$1") <(baseline_pairs "$1") \
+    | awk -F"$TAB" '$2 > $3 { printf "     %s  %s -> %s\n", $1, $3, $2 }'
+}
+
+# Pairs that shrank or disappeared — never fatal, but the baseline should follow so the
+# guard keeps its teeth.
+shrunk_pairs() {
+  join -t"$TAB" -a2 -e 0 -o 0,1.2,2.2 <(current_pairs "$1") <(baseline_pairs "$1") \
+    | awk -F"$TAB" '$2 < $3 { printf "     %s  %s -> %s\n", $1, $3, $2 }'
+}
+
 # Count test files that are over-mock pass-through service-wrappers: wholesale
 # mock a central collaborator AND assert delegation (toHaveBeenCalled) AND have
 # NO output-value assertion anywhere in the file. Emits one path per match on
@@ -138,6 +188,14 @@ overmock_files() {
       echo "$f"
     done
 }
+
+baseline_total() {
+  grep -v '^#' "$BASELINE_FILE" 2>/dev/null | awk -F"$TAB" -v c="$1" '$1==c {s+=$3} END {print s+0}'
+}
+BASELINE_METHOD_EXISTS="$(baseline_total method-exists)"
+BASELINE_VACUOUS_LENGTH="$(baseline_total vacuous-length)"
+BASELINE_NONCANON_SERVICE_DIR="$(baseline_total non-canon-service-dir)"
+BASELINE_OVERMOCK="$(baseline_total over-mock)"
 
 ME_COUNT="$(count "$ME_PATTERN")"
 VL_COUNT="$(count "$VL_PATTERN")"
@@ -222,47 +280,55 @@ else
 fi
 
 if [ "${1:-}" = "--update-baseline" ]; then
-  echo "Current counts (paste into this script's BASELINE_* values):"
-  echo "  BASELINE_METHOD_EXISTS=$ME_COUNT"
-  echo "  BASELINE_VACUOUS_LENGTH=$VL_COUNT"
-  echo "  BASELINE_NONCANON_SERVICE_DIR=$NONCANON_COUNT"
-  echo "  BASELINE_OVERMOCK=$OVERMOCK_COUNT"
-  echo "  BASELINE_SCANNED=$SCANNED_COUNT"
+  # Emits the regenerated TSV on stdout — redirect it over the baseline file. Printing
+  # rather than writing in place keeps the guard read-only by default, so a broken run
+  # cannot silently rewrite its own reference.
+  printf '# test-antipattern baseline — (category, file, count) SET, not a total.\n'
+  printf '# A total is satisfied by a SWAP: fix one occurrence, add another elsewhere, and\n'
+  printf '# the number is unchanged while the debt moved. Regenerate: bash scripts/check-test-antipatterns.sh --update-baseline\n'
+  for _cat in method-exists vacuous-length non-canon-service-dir over-mock; do
+    current_pairs "$_cat" | sed "s/^/${_cat}${TAB}/"
+  done
   exit 0
 fi
 
 fail=0
 
 
-if [ "$ME_COUNT" -gt "$BASELINE_METHOD_EXISTS" ]; then
-  echo "❌ method-exists asserts increased: $ME_COUNT > baseline $BASELINE_METHOD_EXISTS"
-  echo "   A new \`expect(typeof x).toBe(\"function\")\` assert was added. It verifies"
-  echo "   nothing TypeScript doesn't already (a method rename is a compile error)."
-  echo "   Test the method's BEHAVIOUR instead, or remove the assert."
-  echo "   Files with this pattern:"
-  list_files "$ME_PATTERN"
+GROWN_ME="$(grown_pairs method-exists)"
+if [ -n "$GROWN_ME" ]; then
+  echo "❌ method-exists asserts ADDED — file(s) that are new or grew (baseline -> now):"
+  echo "$GROWN_ME"
+  echo "   A \`expect(typeof x).toBe(\"function\")\` assert verifies nothing TypeScript"
+  echo "   doesn't already (a method rename is a compile error). Test the method's"
+  echo "   BEHAVIOUR instead, or remove the assert."
   fail=1
 fi
 
-if [ "$VL_COUNT" -gt "$BASELINE_VACUOUS_LENGTH" ]; then
-  echo "❌ vacuous length asserts increased: $VL_COUNT > baseline $BASELINE_VACUOUS_LENGTH"
-  echo "   A new \`expect(x.length).toBeGreaterThanOrEqual(0)\` assert was added — it is"
-  echo "   always true and verifies nothing. Assert the real length/shape, or drop it."
-  echo "   Files with this pattern:"
-  list_files "$VL_PATTERN"
+GROWN_VL="$(grown_pairs vacuous-length)"
+if [ -n "$GROWN_VL" ]; then
+  echo "❌ vacuous length asserts ADDED — file(s) that are new or grew (baseline -> now):"
+  echo "$GROWN_VL"
+  echo "   \`expect(x.length).toBeGreaterThanOrEqual(0)\` is always true and verifies"
+  echo "   nothing. Assert the real length/shape, or drop it."
   fail=1
 fi
 
-if [ "$NONCANON_COUNT" -gt "$BASELINE_NONCANON_SERVICE_DIR" ]; then
-  echo "❌ legacy non-canon service-test dir grew: $NONCANON_COUNT > baseline $BASELINE_NONCANON_SERVICE_DIR"
-  echo "   A new test was added to $NONCANON_SERVICE_DIR/ — the canon location for"
-  echo "   NEW core service tests is packages/core/tests/unit/services/. Move the new"
-  echo "   file there. The existing $BASELINE_NONCANON_SERVICE_DIR legacy files are grandfathered (not moved)."
+GROWN_NC="$(grown_pairs non-canon-service-dir)"
+if [ -n "$GROWN_NC" ]; then
+  echo "❌ legacy non-canon service-test dir GREW — new file(s):"
+  echo "$GROWN_NC"
+  echo "   The canon location for NEW core service tests is"
+  echo "   packages/core/tests/unit/services/. Move the new file there; the existing"
+  echo "   legacy files are grandfathered by NAME in the baseline, not by count — so"
+  echo "   deleting one and adding another no longer nets out to green."
   fail=1
 fi
 
-if [ "$OVERMOCK_COUNT" -gt "$BASELINE_OVERMOCK" ]; then
-  echo "❌ over-mock pass-through service-wrappers increased: $OVERMOCK_COUNT > baseline $BASELINE_OVERMOCK"
+GROWN_OM="$(grown_pairs over-mock)"
+if [ -n "$GROWN_OM" ]; then
+  echo "❌ over-mock pass-through service-wrapper(s) ADDED:"
+  echo "$GROWN_OM"
   echo "   A new test file wholesale-mocks a central collaborator"
   echo "   (@kitelev/exocortex-core/-services, or /services//adapters//infrastructure/,"
   echo "   VaultRDFIndexer) and asserts ONLY delegation (toHaveBeenCalled*) with no"
@@ -270,8 +336,6 @@ if [ "$OVERMOCK_COUNT" -gt "$BASELINE_OVERMOCK" ]; then
   echo "   exercises real behaviour. Lift it to a *.integration.test.ts that drives"
   echo "   the real collaborator and faking only the Obsidian boundary (see"
   echo "   TESTING.md §\"Lift over-mock service-wrappers to integration\")."
-  echo "   Files with this pattern:"
-  overmock_files | sed 's/^/     /'
   fail=1
 fi
 
@@ -290,17 +354,17 @@ fi
 # above passed, so a counter that dropped really did drop against a corpus that was
 # really read. The same sentence printed after a collapsed scan was an invitation to
 # write a 0 baseline and disarm the guard permanently.
-if [ "$ME_COUNT" -lt "$BASELINE_METHOD_EXISTS" ]; then
-  echo "ℹ️  method-exists dropped to $ME_COUNT (baseline $BASELINE_METHOD_EXISTS) — ratchet BASELINE_METHOD_EXISTS down via --update-baseline."
-fi
-if [ "$VL_COUNT" -lt "$BASELINE_VACUOUS_LENGTH" ]; then
-  echo "ℹ️  vacuous-length dropped to $VL_COUNT (baseline $BASELINE_VACUOUS_LENGTH) — ratchet BASELINE_VACUOUS_LENGTH down via --update-baseline."
-fi
-if [ "$NONCANON_COUNT" -lt "$BASELINE_NONCANON_SERVICE_DIR" ]; then
-  echo "ℹ️  non-canon service-dir dropped to $NONCANON_COUNT (baseline $BASELINE_NONCANON_SERVICE_DIR) — ratchet BASELINE_NONCANON_SERVICE_DIR down via --update-baseline."
-fi
-if [ "$OVERMOCK_COUNT" -lt "$BASELINE_OVERMOCK" ]; then
-  echo "ℹ️  over-mock dropped to $OVERMOCK_COUNT (baseline $BASELINE_OVERMOCK) — ratchet BASELINE_OVERMOCK down via --update-baseline."
+SHRUNK_ALL=""
+for _cat in method-exists vacuous-length non-canon-service-dir over-mock; do
+  _sh="$(shrunk_pairs "$_cat")"
+  [ -n "$_sh" ] && SHRUNK_ALL="${SHRUNK_ALL}   $_cat:
+$_sh
+"
+done
+if [ -n "$SHRUNK_ALL" ]; then
+  echo "ℹ️  Debt shrank — ratchet the baseline down so the guard keeps its teeth:"
+  printf '%s' "$SHRUNK_ALL"
+  echo "   bash scripts/check-test-antipatterns.sh --update-baseline > scripts/test-antipattern-baseline.tsv"
 fi
 
 exit $fail
