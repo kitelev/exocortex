@@ -158,7 +158,11 @@ function countSourceFilesOnDisk(dir) {
     return 0; // missing/renamed dir — the caller treats 0 as "the deriver is broken"
   }
   for (const e of entries) {
-    if (e.name === "node_modules") continue;
+    // ⛤ Mirror the tsconfig `exclude` EXACTLY (["node_modules","dist"]). The floor is an
+    // equality, so anything counted here that tsc would not put in the program produces a
+    // FALSE rc=2 — and `lint` is a required check, so a false rc=2 blocks every PR in the
+    // repo. Symmetry with the config is what makes strict equality safe rather than brittle.
+    if (e.name === "node_modules" || e.name === "dist") continue;
     if (e.isDirectory()) n += countSourceFilesOnDisk(join(dir, e.name));
     // ⛤ NO .d.ts exclusion, deliberately: the listing filter above accepts any `.tsx?`,
     // and a declaration file under src IS a program root under `include: src/**\/*`.
