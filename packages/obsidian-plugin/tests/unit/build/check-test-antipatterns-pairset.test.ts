@@ -96,12 +96,27 @@ describe("check-test-antipatterns.sh — pair-set baseline (#4090)", () => {
     expect(r.stdout).toContain("2 -> 3");
   });
 
-  it("PASSES (exit 0) with a nudge when the debt SHRINKS", () => {
+  // ⛔ The SECOND direction of the ratchet, and the one an earlier draft left as a
+  // friendly notice. Both sibling guards exit 1 here and say why: a baseline nobody
+  // prunes stops describing the code, and then it is licence rather than a ratchet.
+  // Concretely — under a notice, clearing 16 of PluginContainer's 17 occurrences buys
+  // the silent right to re-add 16. Flip this back to exit 0 and that window reopens.
+  it("FAILS (exit 1) when the debt SHRINKS — a stale baseline is licence, not a ratchet", () => {
     writeFiles(1, 0);
     const r = run();
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("Debt shrank");
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("the baseline is STALE");
     expect(r.stdout).toContain("2 -> 1");
+  });
+
+  // Same output, two different facts — which is exactly why a notice could not be trusted
+  // to be read: "the assert was fixed" and "the file left the corpus" are indistinguishable
+  // from the guard's side, so it must hand the decision to a human rather than absorb it.
+  it("FAILS (exit 1) when a baselined FILE disappears from the corpus entirely", () => {
+    writeFiles(0, 0);
+    const r = run();
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain("the baseline is STALE");
   });
 
   // The regenerated baseline must be what the guard would then accept — otherwise the

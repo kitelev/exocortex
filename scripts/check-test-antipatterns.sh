@@ -62,9 +62,14 @@
 # Testability (the @req binding test drives the guard against a fixture tree):
 #   ANTIPATTERN_SCAN_DIR    — test-corpus root to scan (default: packages)
 #   ANTIPATTERN_NONCANON_DIR— legacy non-canon service dir (default: packages/core/tests/services)
-#   BASELINE_METHOD_EXISTS / BASELINE_VACUOUS_LENGTH /
-#   BASELINE_NONCANON_SERVICE_DIR / BASELINE_OVERMOCK — override the committed
-#   baselines (used by the guard's own revert-verify test, never in CI).
+#   ANTIPATTERN_BASELINE_FILE — path to the (category, file, count) TSV baseline.
+#     This is how a fixture drives the guard to a chosen RED/GREEN verdict: it sets the
+#     pairs AND the per-category totals at once, because the totals are derived from it.
+#   ⛔ The four BASELINE_METHOD_EXISTS / _VACUOUS_LENGTH / _NONCANON_SERVICE_DIR /
+#     _OVERMOCK variables are GONE. They are not deprecated-but-honoured — they are read
+#     by nothing, so setting one is a SILENT no-op and a fixture that relies on it for
+#     isolation quietly has none. Use ANTIPATTERN_BASELINE_FILE.
+#   BASELINE_SCANNED — population fallback, only when git cannot enumerate the corpus.
 
 set -u
 
@@ -72,9 +77,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 # --- Baselines (grandfathered existing occurrences). Ratchet DOWN as cleaned. ---
-# Env-overridable so the guard's own @req binding test can force a RED/GREEN
-# verdict against a fixture corpus without touching the real tree (the defaults
-# are the committed baselines used in CI).
+# ⛤ A fixture forces a RED/GREEN verdict through ANTIPATTERN_BASELINE_FILE (see the
+# Testability block in the header), NOT through per-category env overrides — those were
+# removed together with the totals they overrode.
 # ⛤ The four per-category TOTALS are DERIVED from the pair-set baseline below, not
 # declared here. They exist only for the human-readable summary line; the verdict comes
 # from the pairs. Two sources for one number is how a total and its set drift apart.
@@ -113,10 +118,6 @@ count() {
   # the trailing `| wc -l` makes the pipeline's exit status wc's (0), and we
   # avoid `set -e`/pipefail so a zero count never aborts the script.
   grep -rnE "$1" "$SCAN_DIR" --include='*.test.ts' --include='*.test.tsx' 2>/dev/null | wc -l | tr -d ' '
-}
-
-list_files() {
-  grep -rlE "$1" "$SCAN_DIR" --include='*.test.ts' --include='*.test.tsx' 2>/dev/null | sed 's/^/     /'
 }
 
 # ── (category, file, count) PAIR SET ──────────────────────────────────────────────
@@ -162,14 +163,14 @@ baseline_pairs() {
 # `-a1` keeps files absent from the baseline; `-e 0` gives them a baseline count of 0,
 # so a brand-new file is "grew from 0" and needs no separate branch.
 grown_pairs() {
-  join -t"$TAB" -a1 -e 0 -o 0,1.2,2.2 <(current_pairs "$1") <(baseline_pairs "$1") \
+  LC_ALL=C join -t"$TAB" -a1 -e 0 -o 0,1.2,2.2 <(current_pairs "$1") <(baseline_pairs "$1") \
     | awk -F"$TAB" '$2 > $3 { printf "     %s  %s -> %s\n", $1, $3, $2 }'
 }
 
 # Pairs that shrank or disappeared — never fatal, but the baseline should follow so the
 # guard keeps its teeth.
 shrunk_pairs() {
-  join -t"$TAB" -a2 -e 0 -o 0,1.2,2.2 <(current_pairs "$1") <(baseline_pairs "$1") \
+  LC_ALL=C join -t"$TAB" -a2 -e 0 -o 0,1.2,2.2 <(current_pairs "$1") <(baseline_pairs "$1") \
     | awk -F"$TAB" '$2 < $3 { printf "     %s  %s -> %s\n", $1, $3, $2 }'
 }
 
@@ -248,7 +249,7 @@ fi
 #
 # git declares the TRACKED corpus while the counters grep the WORKING TREE — two
 # different artefacts, so this is a derivation and not a self-check. Measured 2026-08-19:
-# both yield 903 and their file LISTS are identical (diff: 0 lines).
+# both yield 904 and their file LISTS are identical (diff: 0 lines).
 #
 # `git ls-files` returns nothing for a path outside the repo (the guard's own fixture
 # corpus lives in a tmpdir), so the ratchet below is the fallback for exactly that case —
@@ -273,8 +274,10 @@ else
     echo "❌ test anti-pattern guard: scanned $SCANNED_COUNT test file(s), less than half of"
     echo "   the $BASELINE_SCANNED recorded in BASELINE_SCANNED, and git tracks nothing under"
     echo "   '$SCAN_DIR' to derive an exact expectation from."
-    echo "   If the shrink is legitimate, re-run with --update-baseline and commit the new"
-    echo "   BASELINE_SCANNED together with the new counter baselines."
+    echo "   If the shrink is legitimate, edit the BASELINE_SCANNED default in this script."
+    echo "   ⛔ NOT --update-baseline: it emits only the pair-set TSV — no BASELINE_SCANNED —"
+    echo "   and this very check exits before that branch is reachable, so the advice would"
+    echo "   have named a command this check itself blocks, for a value it never prints."
     exit 1
   fi
 fi
@@ -302,6 +305,8 @@ if [ -n "$GROWN_ME" ]; then
   echo "   A \`expect(typeof x).toBe(\"function\")\` assert verifies nothing TypeScript"
   echo "   doesn't already (a method rename is a compile error). Test the method's"
   echo "   BEHAVIOUR instead, or remove the assert."
+  echo "   ⛤ If this IS a fixture for this guard, assemble the literal from parts rather"
+  echo "   than adding an exclusion — see check-test-antipatterns-pairset.test.ts."
   fail=1
 fi
 
@@ -361,10 +366,30 @@ for _cat in method-exists vacuous-length non-canon-service-dir over-mock; do
 $_sh
 "
 done
+# ⛔ FAIL-LOUD IN BOTH DIRECTIONS — the second half of the model this guard cites.
+#
+# An earlier draft adopted direction 1 (a pair that is new or grew => rc=1) and left
+# direction 2 (a baselined pair is GONE or shrank) as a friendly notice. Both siblings --
+# check-cli-types.mjs and check-test-types.mjs -- exit 1 on it, and their headers say why
+# in as many words: a baseline nobody prunes silently stops describing the code, and then
+# it is LICENCE rather than a ratchet.
+#
+# Concretely: PluginContainer.test.ts carries 17 occurrences. Under a notice, clearing 16
+# of them buys the right to re-add 16 later with the guard silent -- the swap window is
+# narrowed from repo-wide to file-wide, not closed. Failing here is what closes it over
+# time, because the baseline can then only be pruned deliberately.
+#
+# It also separates two states a notice cannot: "the antipattern was cleaned from this
+# file" and "this file left the corpus entirely" both print `a.test.ts 2 -> 0`, and only
+# the operator regenerating the baseline finds out which.
 if [ -n "$SHRUNK_ALL" ]; then
-  echo "ℹ️  Debt shrank — ratchet the baseline down so the guard keeps its teeth:"
+  echo "❌ baselined entr(y/ies) no longer match — the baseline is STALE:"
   printf '%s' "$SHRUNK_ALL"
-  echo "   bash scripts/check-test-antipatterns.sh --update-baseline > scripts/test-antipattern-baseline.tsv"
+  echo "   Debt shrank (or a file left the corpus). Regenerate so the guard keeps its teeth:"
+  echo "     bash scripts/check-test-antipatterns.sh --update-baseline > scripts/test-antipattern-baseline.tsv"
+  echo "   ⛤ Read the diff before committing it: a pair that vanished because the FILE"
+  echo "   vanished is a different fact from one that vanished because the assert was fixed."
+  fail=1
 fi
 
 exit $fail
