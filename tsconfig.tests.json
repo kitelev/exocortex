@@ -1,0 +1,75 @@
+{
+  // Type-check configuration for TEST files (issue #4084).
+  //
+  // ⛔ Why this file exists: NO tsconfig in the repo type-checks `packages/**/tests/**`.
+  //    Measured on origin/main 2026-08-19:
+  //      packages/core/tsconfig.json    include src/**/*   exclude [..., "tests"]
+  //      packages/cli/tsconfig.json     include src/**/*   (tests simply not included)
+  //      packages/obsidian-plugin/      no package tsconfig at all
+  //      tsconfig.json (root)           exclude packages/**/tests/**/*, packages/cli/**/*
+  //    => `npm run check:types` covers packages/<non-cli>/src and nothing else.
+  //    All 975 test files are type-checked ONLY by ts-jest at run time, where an error
+  //    surfaces as "Test suite failed to run / Tests: 0" — a shape easily read as green.
+  //
+  // `src` is included NOT to gate it (that is `check:types` + check-cli-types.mjs) but
+  // because the program cannot resolve test imports without it. scripts/check-test-types.mjs
+  // filters diagnostics down to `/tests/` paths.
+  //
+  // ⛔ rootDir MUST be the repo root: packages import each other's SOURCES (obsidian-plugin
+  //    → packages/core/src), so a package-scoped rootDir yields TS6059 for every such file
+  //    and tsc stops before checking anything. Measured: 277 TS6059 with rootDir=packages/obsidian-plugin.
+  //
+  // ⛔ declaration/declarationMap/composite are forced off: the inherited config sets
+  //    declarationMap, and `declarationMap` without `declaration`/`composite` is TS5069 —
+  //    a CONFIG error that aborts the run while still printing a positioned diagnostic
+  //    (it points at this file). See the scope guard in check-test-types.mjs.
+  //
+  // ⛔ target MUST be set explicitly, and it is NOT cosmetic. The root config says
+  //    `target: "ES6"`; every runtime that actually compiles these files says ES2020:
+  //      packages/obsidian-plugin/jest.config.js  ts-jest inline → target "es2020"
+  //      packages/cli/tsconfig.json               target "ES2020" (ts-jest's inline
+  //                                               {module,moduleResolution,esModuleInterop}
+  //                                               does not override it)
+  //      packages/core/tsconfig.json              target "ES2020"
+  //    Inheriting ES6 made this gate check a program NO runtime compiles, and it showed:
+  //    70 phantom `TS1378` pairs ("top-level await requires target es2017+"), all in cli,
+  //    that do not exist at run time. Measured 2026-08-19 — ES6: 505 pairs / 2502
+  //    diagnostics; ES2020: 433 / 2396, TS1378 = 0.
+  //    ⛤ The sibling check-cli-types.mjs does NOT have this problem because it runs the
+  //    PACKAGE's own tsconfig, which sets target itself. The hazard is created by
+  //    AGGREGATING several packages under one config: aggregation silently drops each
+  //    package's target and falls back to the root's. An aggregate tsconfig must state it.
+  // ⛤ `lib` is deliberately left INHERITED (`DOM,ES5,ES6,ES7,ESNext`), and this is a
+  //    MEASUREMENT, not an argument. The tempting argument — "a wider lib can only hide
+  //    an error, never invent one" — is NOT categorically true: a wider lib also adds
+  //    GLOBAL NAMES, which can collide with declarations in the checked code (TS2300 /
+  //    TS2451; the canonical case is lib.esnext's global `Iterator`). So it was measured
+  //    instead (2026-08-19, target ES2020 throughout, set-diff of (file,code) pairs):
+  //      inherited superset            433 pairs   —
+  //      lib: ["ES2020","DOM"]         433 pairs   0 added, 0 removed  ← controlled comparison
+  //      lib: ["ES2020"] (no DOM)      554 pairs   +220, −99
+  //    The superset is byte-identical in effect to the plugin's declared ["es2020","dom"],
+  //    so the redundant ES5/ES6/ES7/ESNext entries are a measured no-op here. Setting lib
+  //    explicitly buys nothing and adds a fourth knob to drift out of sync with three
+  //    jest configs.
+  //    ⚠ KNOWN BLIND SPOT, currently zero-exposure: DOM leaks into the node-side packages
+  //    (core/cli/services declare no DOM). Measured as zero TODAY — stripping DOM adds 220
+  //    pairs, ALL 220 in obsidian-plugin, none in core/cli/services/test-utils. A future
+  //    core test using `document`/`structuredClone` would be green here and red under
+  //    ts-jest. This is a point measurement of today's corpus, not an invariant.
+  //    ⛔ Do not read the third row as "a narrower lib invents errors": it also REMOVES 99
+  //    pairs, which is cascade suppression (once `document` fails to resolve, downstream
+  //    checks stop firing). Only the second row is a controlled comparison.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "target": "ES2020",
+    "declaration": false,
+    "declarationMap": false,
+    "composite": false,
+    "skipLibCheck": true
+  },
+  "include": ["packages/*/src/**/*", "packages/*/tests/**/*"],
+  "exclude": ["**/node_modules", "**/dist"]
+}
