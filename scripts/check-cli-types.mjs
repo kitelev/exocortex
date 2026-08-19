@@ -47,14 +47,36 @@ const UPDATE = process.argv.includes("--update");
 /** `path/file.ts(12,34): error TS2339: msg` → { file, code } */
 const LINE_RE = /^(.+?)\((\d+),(\d+)\): error (TS\d+):/;
 
+/**
+ * ⛤ `--listFiles` turns the scope proof POSITIVE, and that is why it is here.
+ *
+ * Both guards below derive "did this run examine packages/cli?" from the DIAGNOSTICS.
+ * That is negative evidence: it only works while errors exist. One state breaks it, and
+ * it is the state we are working toward — the 18 baselined pairs get FIXED, tsc exits 0,
+ * `found` is empty, and the zero-diagnostics guard fires rc=2 forever. The reward for
+ * paying down the debt would be a permanently red gate whose obvious "fix" (`--update`)
+ * writes an EMPTY baseline and disarms it — the exact disarm this file's own docstring
+ * warns about, reached from the success path instead of the failure path.
+ *
+ * `--listFiles` names every file in the program regardless of whether any error exists,
+ * so "N files under packages/cli/src were compiled" is an assertion about the RUN, not
+ * about its findings. Ported from scripts/check-test-types.mjs (#4084), where the same
+ * hole was found by review; see issue #4087.
+ */
 function runTsc() {
+  const args = ["tsc", "--noEmit", "--listFiles", "-p", "packages/cli/tsconfig.json"];
+  // --listFiles prints one line per file in the program (lib.d.ts + node_modules types
+  // included), so the default 1 MB stdout buffer is not enough.
+  const opts = {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 64 * 1024 * 1024,
+  };
   try {
-    execFileSync(
-      "npx",
-      ["tsc", "--noEmit", "-p", "packages/cli/tsconfig.json"],
-      { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-    );
-    return ""; // exit 0 → no diagnostics
+    // rc=0 — no diagnostics. NOT "nothing to check": the file listing still arrives, and
+    // it is the only thing that distinguishes "clean" from "compiled nothing".
+    return String(execFileSync("npx", args, opts) ?? "");
   } catch (err) {
     // tsc exits non-zero WHEN IT FINDS ERRORS — that is the normal path here.
     // Distinguish that from "tsc could not run at all": the former still prints
@@ -72,6 +94,24 @@ function runTsc() {
 }
 
 const raw = runTsc();
+
+/**
+ * Files tsc actually put in the program (from --listFiles). A listing line is a bare
+ * path; a diagnostic line carries `(line,col): error TSxxxx`. Narrow to this package's
+ * own sources — node_modules and lib.d.ts say nothing about whether cli was compiled.
+ */
+const compiledSrcFiles = raw
+  .split("\n")
+  .map((l) => l.trim())
+  .filter((l) => l.length > 0 && !LINE_RE.test(l) && /\.tsx?$/.test(l))
+  .filter((l) => {
+    const p = l.replace(/\\/g, "/");
+    return p.includes("/packages/cli/src/") && !p.includes("/node_modules/");
+  });
+
+/** Below this many compiled cli sources the run is not describing this package. 114 exist. */
+const MIN_COMPILED_SRC_FILES = 40;
+
 const found = new Map(); // "file|code" -> count
 let diagnostics = 0;
 for (const line of raw.split("\n")) {
@@ -88,33 +128,25 @@ for (const line of raw.split("\n")) {
  * it more, because a bad baseline is silent forever while a bad read is loud once.
  */
 function assertRunIsMeaningful(found, raw) {
-  // ⛔ Zero parsed diagnostics is NOT "the code is clean": tsc reports config
-  // failures WITHOUT a file position (`TS5058: The specified path does not
-  // exist`, `TS18003: No inputs were found`), and the line parser drops those,
-  // leaving `found` empty. Review measured the consequence: a missing
-  // packages/cli/tsconfig.json fell through to the stale-baseline branch, which
-  // printed "run --update" — and obeying that instruction wrote an EMPTY
-  // baseline, leaving the gate green forever. The tool talked the operator into
-  // disarming it.
-  //
-  // ⚠ An earlier draft rejected a position-less-error guard as "redundant with
-  // the scope guard, it never fired either". That was wrong, and measurably so:
-  // the two cover DISJOINT breakages. Invalid JSON / bad `extends` → tsc falls
-  // back to defaults and compiles the tree → SCOPE fires. Missing tsconfig /
-  // empty `include` → nothing is compiled at all → only THIS fires. Rejecting it
-  // on "it didn't fire in my one experiment" generalised from a single case.
-  if (found.size === 0) {
+  // ⛤ POSITIVE scope proof, from --listFiles. Holds whether or not any diagnostic
+  // exists, so unlike the two guards below it survives the debt being fully paid.
+  // It also subsumes both of their failure modes, but they are kept: each names a
+  // DIFFERENT breakage in its message, and a precise error message is the product.
+  if (compiledSrcFiles.length < MIN_COMPILED_SRC_FILES) {
     console.error(
-      "❌ check-cli-types: zero diagnostics parsed — the check did not examine\n" +
-        "   packages/cli. tsc prints config failures without a file position, so an\n" +
-        "   empty result means 'could not run', NOT 'nothing to report'.\n" +
-        "   ⛔ Do NOT run --update to make this go away: that writes an empty\n" +
-        "   baseline and disables the gate permanently. Fix the invocation.\n" +
+      `❌ check-cli-types: tsc compiled ${compiledSrcFiles.length} file(s) under\n` +
+        `   packages/cli/src — expected at least ${MIN_COMPILED_SRC_FILES}. The run is NOT\n` +
+        "   describing this package, so it has no verdict to give.\n" +
+        "   ⛔ Do NOT run --update to make this go away: it would write a baseline derived\n" +
+        "   from this same empty run — an empty baseline — and every later run would exit 0\n" +
+        "   green while compiling nothing. Fix the invocation instead.\n" +
+        "   Likely causes: unparseable/renamed tsconfig, an `include` matching nothing,\n" +
+        "   a bad `extends`, or tsc not resolving at all.\n" +
         (raw.trim().length > 0
           ? "   tsc said:\n" +
             raw
               .split("\n")
-              .filter((l) => l.trim().length > 0)
+              .filter((l) => l.trim().length > 0 && !/\.tsx?$/.test(l.trim()))
               .slice(0, 5)
               .map((l) => `      ${l.trim()}`)
               .join("\n")
@@ -123,15 +155,38 @@ function assertRunIsMeaningful(found, raw) {
     process.exit(2);
   }
 
-  // ⛔ Imports not resolving means the run describes a resolution cascade, not
-  // the package's type health. packages/cli/tsconfig.json declares `paths` for
-  // @kitelev/exocortex-{core,services}, but they are DEAD — it inherits
-  // `baseUrl: "."` from the root config, so `../core/src` resolves relative to
-  // the REPO ROOT, outside the repo. Resolution falls through to node_modules →
-  // `types: dist/index.d.ts`, absent until the package is built. This is not
-  // hypothetical: the first CI run of this ratchet reported 174 diagnostics /
-  // 95 pairs, ~79 of them "NEW", for exactly this reason.
-  const unresolved = [...found.keys()].filter((k) => k.endsWith("|TS2307"));
+  // ⛤ The zero-diagnostics guard that used to live here has been REMOVED, and the
+  // reason matters more than the removal.
+  //
+  // Its docstring was right that a position-less-error guard and the SCOPE guard cover
+  // DISJOINT breakages — both are negative evidence, derived from the diagnostics, and
+  // neither implies the other. What neither of them could cover is the SUCCESS path:
+  // when the 18 baselined pairs are finally fixed, tsc exits 0, `found` is empty, and
+  // the zero-guard fired rc=2 — permanently, with the only obvious remedy (`--update`)
+  // writing an empty baseline. Measured 2026-08-19 on a stubbed tsc (114 files listed,
+  // zero diagnostics): rc=2 "the check did not examine packages/cli", which is false —
+  // it examined all 114 and found nothing.
+  //
+  // The POSITIVE floor above subsumes its real cases: nothing compiled ⇒ the floor
+  // fires; something compiled but the wrong tree ⇒ the SCOPE guard below fires; all 114
+  // compiled and clean ⇒ neither fires and the stale-baseline branch correctly says
+  // "debt paid, run --update". Positive evidence is what survives the debt reaching zero.
+
+  // ⛔ TS2307 is TWO different things, and this guard used to conflate them.
+  //   (a) ENVIRONMENT — a BARE `@kitelev/exocortex-*` specifier unresolved ⇒ the workspace
+  //       deps are not built ⇒ the run is a resolution cascade ⇒ rc=2, as described below.
+  //   (b) REAL DEBT — a RELATIVE or deep-subpath import of a module that MOVED. That is the
+  //       most valuable thing a type gate finds, and it must be BASELINED, never rc=2.
+  // Treating (b) as (a) tells the author "build the deps" when there is nothing to build,
+  // and hides the finding. Discriminator: the trailing quote keeps deep subpaths
+  // (`@kitelev/exocortex-core/domain/errors`) OUT of the environment bucket.
+  // Symmetric with the same split in scripts/check-test-types.mjs (#4084).
+  const WORKSPACE_BARE = /Cannot find module '@kitelev\/exocortex-[a-z-]+'/;
+  const unresolved = [...found.keys()].filter(
+    (k) =>
+      k.endsWith("|TS2307") &&
+      raw.split("\n").some((l) => l.includes(k.split("|")[0]) && WORKSPACE_BARE.test(l)),
+  );
   if (unresolved.length > 0) {
     console.error(
       `❌ check-cli-types: ${unresolved.length} file(s) cannot resolve their imports (TS2307).\n` +
@@ -240,7 +295,8 @@ const shrunk = [...found.entries()]
 // Report the INPUT SIZE beside the findings: "0 new" is indistinguishable from
 // "tsc emitted nothing at all" without it.
 console.log(
-  `check-cli-types: ${diagnostics} diagnostic(s) in ${found.size} (file, code) pair(s); ` +
+  `check-cli-types: compiled ${compiledSrcFiles.length} src file(s); ` +
+    `${diagnostics} diagnostic(s) in ${found.size} (file, code) pair(s); ` +
     `baseline has ${known.size}`,
 );
 
@@ -284,6 +340,13 @@ if (gonePairs.length > 0 || shrunk.length > 0) {
   for (const key of gonePairs) {
     const [file, code] = key.split("|");
     console.error(`   ${file} — ${code}  (fixed — thank you)`);
+  }
+  // ⛔ `shrunk` was counted in the total above but never printed, so a PARTIALLY fixed
+  // pair produced a number with no matching line and the reader could not tell which
+  // entry it referred to. Ported from scripts/check-test-types.mjs (#4084 / #4087).
+  for (const [key, count] of shrunk) {
+    const [file, code] = key.split("|");
+    console.error(`   ${file} — ${code}: ${baseCount.get(key)} → ${count}  (partly fixed)`);
   }
   console.error("\n   Run: node scripts/check-cli-types.mjs --update");
   process.exit(1);
