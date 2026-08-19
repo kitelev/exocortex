@@ -184,6 +184,32 @@ describe("Issue #3943: `cli set-body` overwrites the markdown body of an existin
     expect(stderrLog).toMatch(/not a vault asset/i);
   });
 
+  // ⛔ The body MUST be multi-byte. With ASCII, String.length === Buffer.byteLength, so
+  // this axis would pass under BOTH the broken and the fixed implementation — vacuous,
+  // and vacuous in the direction that reads as coverage. Cyrillic makes the two disagree
+  // by ~1.5x, which is exactly the ratio that made the field look like data loss in the
+  // first place (a 31,007-byte body was reported as 19,980).
+  it("reports bodyBytes in BYTES, not UTF-16 code units @req:664123d3-5b91-4793-8085-485d48471546", async () => {
+    const body = "Тело на кириллице\nвторая строка\n";
+    const bodyFile = path.join(vault, "cyrillic-body.md");
+    fs.writeFileSync(bodyFile, body, "utf-8");
+
+    const out = await runSetBody(taskPath, ["--body-file", bodyFile]);
+    expect(out.exit).toContain(0);
+
+    const echo = JSON.parse(
+      stdoutChunks.join("").trim().split("\n").filter(Boolean).pop() as string,
+    );
+    const asBytes = Buffer.byteLength(body, "utf8");
+    const asCodeUnits = body.length;
+
+    // Guard the guard: if these ever coincide the assertion below proves nothing.
+    expect(asBytes).toBeGreaterThan(asCodeUnits);
+
+    expect(echo.bodyBytes).toBe(asBytes);
+    expect(echo.bodyBytes).not.toBe(asCodeUnits);
+  });
+
   it("--dry-run previews the result without writing @req:664123d3-5b91-4793-8085-485d48471546", async () => {
     const out = await runSetBody(taskPath, [
       "--body",
