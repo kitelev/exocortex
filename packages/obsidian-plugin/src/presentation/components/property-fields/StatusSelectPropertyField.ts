@@ -2,6 +2,7 @@ import { Setting } from "obsidian";
 import type { StatusSelectPropertyFieldProps, ValidationResult } from "./types";
 import { WikilinkLabelResolver } from "@plugin/presentation/utils/WikilinkLabelResolver";
 import { EFFORT_STATUS_OPTIONS } from "@kitelev/exocortex-core";
+import { getStatusLabel } from "@plugin/domain/property-editor/PropertySchemas";
 export { EFFORT_STATUS_OPTIONS };
 
 /**
@@ -166,6 +167,16 @@ export class StatusSelectPropertyField {
       if (cleanOption === cleanValue) {
         return option.label;
       }
+    }
+
+    // A status that is no longer OFFERED can still be PRESENT in an older
+    // asset (`Analysis` / `To Do` lost their TBox instances on 2026-08-13 —
+    // req fcbde537-f09a-410e-8bee-d3d607a70302). `EFFORT_STATUS_OPTIONS` is a
+    // write-path list, so it must not carry them; rendering, however, should
+    // still show a human label rather than the raw URI.
+    const legacyLabel = getStatusLabel(cleanValue);
+    if (legacyLabel !== "-" && legacyLabel !== cleanValue) {
+      return legacyLabel;
     }
 
     return value;

@@ -9,9 +9,8 @@
 export type EffortStatus =
   | "ems__EffortStatusDraft"
   | "ems__EffortStatusBacklog"
-  | "ems__EffortStatusAnalysis"
-  | "ems__EffortStatusToDo"
   | "ems__EffortStatusDoing"
+  | "ems__EffortStatusWaiting"
   | "ems__EffortStatusDone"
   | "ems__EffortStatusTrashed";
 
@@ -21,9 +20,8 @@ export type EffortStatus =
 export type EffortStatusName =
   | "Draft"
   | "Backlog"
-  | "Analysis"
-  | "To Do"
   | "Doing"
+  | "Waiting"
   | "Done"
   | "Trashed";
 

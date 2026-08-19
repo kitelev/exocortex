@@ -100,13 +100,8 @@ export class CommandExecutor {
     return this.statusExecutor.executeMoveToBacklog(filepath);
   }
 
-  async executeMoveToAnalysis(filepath: string): Promise<void> {
-    return this.statusExecutor.executeMoveToAnalysis(filepath);
-  }
-
-  async executeMoveToToDo(filepath: string): Promise<void> {
-    return this.statusExecutor.executeMoveToToDo(filepath);
-  }
+  // `executeMoveToAnalysis` / `executeMoveToToDo` removed — see the note in
+  // `commands/StatusCommandExecutor.ts` (req fcbde537-f09a-410e-8bee-d3d607a70302).
 
   // Asset creation commands
   async executeCreateTask(

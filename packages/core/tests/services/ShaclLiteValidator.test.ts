@@ -1218,7 +1218,11 @@ describe('validate — external ontology IRI allowlist', () => {
   });
 
   it('T-EXT-05: Exocortex ad-hoc xsd IRI (xsd__ prefix) as superClass → no violation', () => {
-    // Produced by Namespace.forPrefix('xsd') when xsd is not in KNOWN_NAMESPACES
+    // LEGACY form: produced by Namespace.forPrefix('xsd') BEFORE req
+    // aceaa2cc-15b6-4e1c-bf63-72c7c209de51 put xsd in KNOWN_NAMESPACES.
+    // Fresh emissions now use the canonical http://www.w3.org/2001/XMLSchema# base
+    // (covered by T-EXT-02); this case pins that a store still holding the old
+    // form stays exempt from sh:class checks.
     const XSD_ADHOC = 'https://exocortex.my/ontology/xsd#';
     const triples: Triple[] = [
       typeTriple('asset:LocalDate', exoClass),

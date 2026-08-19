@@ -4,6 +4,7 @@ import { sparqlQueryCommand } from "./commands/sparql-query.js";
 import { sparqlIndexCommand } from "./commands/sparql-index.js";
 import { resolveCommand } from "./commands/resolve.js";
 import { resolveButtonsCommand } from "./commands/resolve-buttons.js";
+import { resolveDisplayNameCommand } from "./commands/resolve-display-name.js";
 import { validateCommand } from "./commands/validate.js";
 import { classesCommand } from "./commands/classes.js";
 import { runQueryCommand } from "./commands/run-query.js";
@@ -61,6 +62,7 @@ export function createProgram(version?: string): Command {
   // (binding-match ∩ precondition-eval; strictly more complete than
   // `apply --dry-run`, which is precondition-only).
   program.addCommand(resolveButtonsCommand());
+  program.addCommand(resolveDisplayNameCommand());
   program.addCommand(classesCommand());
   // req 2678df55 — read axis: standalone verb to execute a query__NamedQuery
   // asset by UID (read-only). `classes`/`describe-class` consume the same

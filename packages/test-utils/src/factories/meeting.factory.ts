@@ -101,7 +101,7 @@ export const MeetingFactory = {
    */
   scheduled(scheduledAt: number, overrides: Partial<MeetingFixture> = {}): MeetingFixture {
     return MeetingFactory.create({
-      status: "To Do",
+      status: "Backlog",
       scheduledAt,
       ...overrides,
     });
@@ -187,10 +187,10 @@ export const MeetingFactory = {
     const id = generateId();
     const basename = overrides.file?.basename ?? id;
     const path = overrides.path ?? overrides.file?.path ?? `meetings/${basename}.md`;
-    const status = overrides.status ?? "ems__EffortStatusToDo";
+    const status = overrides.status ?? "ems__EffortStatusBacklog";
     const normalizedStatus = status.startsWith("ems__")
       ? status
-      : STATUS_MAP[status as EffortStatusName] ?? "ems__EffortStatusToDo";
+      : STATUS_MAP[status as EffortStatusName] ?? "ems__EffortStatusBacklog";
 
     return {
       file: {

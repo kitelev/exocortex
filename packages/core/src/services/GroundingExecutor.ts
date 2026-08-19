@@ -23,7 +23,7 @@ import {
 } from "../utilities/yamlScalar";
 import { canonicalYamlKey } from "./NoteToRDFConverter";
 import type { NamedQueryRunnerPort } from "./NamedQueryRunner";
-import { iriToVaultPath } from "../infrastructure/vault/iri";
+import { iriToVaultPath, vaultPathToIRI } from "../infrastructure/vault/iri";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { DateTimeParsing } from "../infrastructure/sparql/filters/functions/DateTimeParsing";
 import { LoggingService } from "./LoggingService";
@@ -57,9 +57,8 @@ import { LoggingService } from "./LoggingService";
 export const STATUS_UID_BY_ENUM: Readonly<Record<EffortStatus, string>> = {
   [EffortStatus.DRAFT]:    "c42245d0-01de-4c35-bfcf-d910445ea28e",
   [EffortStatus.BACKLOG]:  "753a44d5-846c-4b82-9196-4fd9a4d48777",
-  [EffortStatus.ANALYSIS]: "cde3525c-57ea-4efc-b477-2e7e7ccd3a1e",
-  [EffortStatus.TODO]:     "6a0e933a-6653-46f4-95ae-ed7508177c73",
   [EffortStatus.DOING]:    "027e78f4-6e16-4b36-b8fb-5510507d5745",
+  [EffortStatus.WAITING]:  "0610947c-6a62-41c8-9d44-7863d3ba3a8e",
   [EffortStatus.DONE]:     "7b9b3116-7c3c-438c-9618-94fe301320a6",
   [EffortStatus.TRASHED]:  "5d14f18d-db2b-4847-9ac1-144cb93b2541",
 };
@@ -1028,6 +1027,23 @@ export class GroundingExecutor {
       return { success: false, error: "service_call requires targetProperty as serviceId" };
     }
 
+    // Issue #4046 — mirror of the `executePropertySet` guard above. Both fields
+    // address the step's TARGET, so both set = an ambiguity the engine must NOT
+    // arbitrate silently. Before this fix `targetsCreatedInstance` was inert for
+    // service_call, so the pair could not conflict; now that it re-points the
+    // service's file, `targetQuery` (resolved ONLY inside executePropertySet)
+    // would be silently dropped. Refuse before doing any work.
+    if (
+      grounding.targetQuery !== undefined &&
+      grounding.targetsCreatedInstance === true
+    ) {
+      return {
+        success: false,
+        error:
+          "service_call: targetQuery and targetsCreatedInstance are mutually exclusive (both address the step's TARGET — pick one).",
+      };
+    }
+
     // RFC-028 Finding 5: built-in Project→Task conversion. Vault grounding
     // `abdbdf09` ("Convert to task") dispatches serviceId="convertToTask".
     // The conversion only needs the target file and the frontmatter pipeline
@@ -1119,7 +1135,47 @@ export class GroundingExecutor {
       }
     }
 
-    await service.execute(targetIRI, mergedInput);
+    // Issue #4046 — a service_call step that opted into
+    // `exocmd__Grounding_targetsCreatedInstance` must make the SERVICE act on
+    // the just-created asset, not on the composite click-target.
+    //
+    // `executeComposite` already re-points `stepPath` (→ `filePath` here) to
+    // `lastCreatedPath` for such a step, but every registered service resolves
+    // its file from the IRI it is handed — `IGroundingService.execute` has no
+    // file-path channel — so the flag was silently ignored for `service_call`
+    // and the step "succeeded" while operating on the click-target.
+    //
+    // Re-expressing `filePath` as an `obsidian://vault/<path>` IRI is the
+    // dialect BOTH target resolvers already accept: the CLI's
+    // `createPathBasedTargetResolver` strips it via `iriToVaultPath`, and the
+    // plugin's `createObsidianTargetResolver` decodes it and looks the path up
+    // in `app.vault`. A bare vault-relative path would NOT work: the plugin
+    // resolver treats a non-`obsidian://` input as a uid/@id and falls into a
+    // metadataCache scan that cannot match a file path.
+    //
+    // ⛤ Why the plugin lookup finds an asset a previous `create_instance` step
+    // has only just written — measured in the shipped runtime (Obsidian 1.13.7
+    // `app.js`), NOT assumed: `FileSystemAdapter.write` awaits
+    // `reconcileInternalFile` in a `finally`, which reaches
+    // `Vault.onChange("file-created")` → `fileMap[path] = new TFile(...)`. So the
+    // `TFile` exists in the Vault index before `adapter.write` resolves — and
+    // `Vault.create` itself adds no registration, it delegates to that very
+    // `adapter.write` and then calls `getAbstractFileByPath`. Frontmatter is a
+    // separate matter: `metadataCache` DOES lag, which is why
+    // `createRepairFolderService` reads it fresh from disk (req 8efc003c).
+    //
+    // Scoped to the opt-in flag on purpose: with the flag absent this is
+    // `targetIRI` byte-for-byte, so every existing grounding is unaffected.
+    // With the flag set but NO prior create_instance, `executeComposite` leaves
+    // `stepPath === filePath` (the click-target), so the step still targets the
+    // click-target. `$target` substitution above deliberately keeps using the
+    // source `targetIRI` (link-back semantics, see executeComposite).
+    const serviceTargetIRI =
+      grounding.targetsCreatedInstance === true && filePath
+        ? vaultPathToIRI(filePath)
+        : targetIRI;
+
+    await service.execute(serviceTargetIRI, mergedInput);
     return { success: true };
   }
 
@@ -1928,33 +1984,56 @@ export class GroundingExecutor {
       // blank resolved label as absent → "Untitled" fallback (which is then
       // flagged below). The labelTemplate path already guards blank at its
       // substitution site, so only the userInput.label === "" path reaches here.
-      const finalLabel =
-        label !== undefined && label.trim().length > 0 ? label : "Untitled";
-      properties.exo__Asset_label = finalLabel;
-      // ⛤ Test the CANONICAL spelling, not just the bare one. `createFrontmatter`
-      // collapses `exo__Asset_aliases` onto `aliases` (req 869561bf), but that
-      // happens LATER — so a template / propertyDefault / inheritance-rule
-      // supplying the prefixed key would leave `properties.aliases` undefined
-      // here, this guard would add the label-derived aliases anyway, and the
-      // collapse would then keep whichever landed last. On origin/main both keys
-      // survived (ugly, half-dead); silently dropping one would be worse.
-      const aliasesAlreadySet = Object.keys(properties).some(
-        (k) => canonicalYamlKey(k) === "aliases",
-      );
-      if (finalLabel !== "Untitled" && !aliasesAlreadySet) {
-        properties.aliases = [finalLabel];
-      }
-      // Only the genuine degraded fallthrough ("Untitled") is an
-      // unhealthy-state signal. Reaching this block is NORMAL for the one-click
-      // / CLI flow: Universal Default Template PD #3 (`exo__Asset_label =
-      // $userInputLabel`) writes an empty literal when no input modal supplies
-      // a label, and the labelTemplate / userInput path above is the *designed*
-      // completion — not a TS-fallback rescue. Pushing "exo__Asset_label" to
-      // `missing[]` unconditionally falsely tripped the "Vault may be in an
-      // unhealthy state" ERROR on every healthy labelTemplate-driven create
-      // (bug-fix: false-alarm log). Flag only the real "Untitled" fallback.
-      if (finalLabel === "Untitled") {
-        missing.push("exo__Asset_label");
+      // `omitLabel` opt-in: for a class whose display name is DERIVED at render
+      // time from an `exo__DisplayNameSpec`, an absent label is the intended end
+      // state — a stored one would be duplicated, stale-prone data sitting next to
+      // a spec that recomputes the name on every render. Honoured ONLY when
+      // nothing resolved a label, so an explicit `userInput.label` (or a
+      // `labelTemplate` that substitutes non-blank) still wins and takes the
+      // normal path below. DELETE rather than leave the key: an upstream
+      // PropertyDefault may have written a blank literal, and `exo__Asset_label: ""`
+      // on disk is worse than either a name or no key at all. No label-derived
+      // `aliases`, and no `missing[]` entry — the unhealthy-vault ERROR must not
+      // fire for a designed outcome. Absent/`false` → byte-identical to before.
+      //
+      // ⛔ Branch, do NOT early-return: the `exo__Instance_class` top-up and the
+      // `missing[]` report both live BELOW this block, and returning here would
+      // silently skip them for every omit-label create.
+      const omitLabelWins =
+        grounding?.omitLabel === true &&
+        (label === undefined || label.trim().length === 0);
+
+      if (omitLabelWins) {
+        delete properties.exo__Asset_label;
+      } else {
+        const finalLabel =
+          label !== undefined && label.trim().length > 0 ? label : "Untitled";
+        properties.exo__Asset_label = finalLabel;
+        // ⛤ Test the CANONICAL spelling, not just the bare one. `createFrontmatter`
+        // collapses `exo__Asset_aliases` onto `aliases` (req 869561bf), but that
+        // happens LATER — so a template / propertyDefault / inheritance-rule
+        // supplying the prefixed key would leave `properties.aliases` undefined
+        // here, this guard would add the label-derived aliases anyway, and the
+        // collapse would then keep whichever landed last. On origin/main both keys
+        // survived (ugly, half-dead); silently dropping one would be worse.
+        const aliasesAlreadySet = Object.keys(properties).some(
+          (k) => canonicalYamlKey(k) === "aliases",
+        );
+        if (finalLabel !== "Untitled" && !aliasesAlreadySet) {
+          properties.aliases = [finalLabel];
+        }
+        // Only the genuine degraded fallthrough ("Untitled") is an
+        // unhealthy-state signal. Reaching this block is NORMAL for the one-click
+        // / CLI flow: Universal Default Template PD #3 (`exo__Asset_label =
+        // $userInputLabel`) writes an empty literal when no input modal supplies
+        // a label, and the labelTemplate / userInput path above is the *designed*
+        // completion — not a TS-fallback rescue. Pushing "exo__Asset_label" to
+        // `missing[]` unconditionally falsely tripped the "Vault may be in an
+        // unhealthy state" ERROR on every healthy labelTemplate-driven create
+        // (bug-fix: false-alarm log). Flag only the real "Untitled" fallback.
+        if (finalLabel === "Untitled") {
+          missing.push("exo__Asset_label");
+        }
       }
     }
 
@@ -3123,6 +3202,13 @@ export class GroundingExecutor {
    * `"[[<UID>|ems__EffortStatusDoing]]"` or `"[[ems__EffortStatusDoing]]"`)
    * and resolves to the symbolic EffortStatus enum value (which is what
    * WorkflowTransition.from comparison expects).
+   *
+   * ⛤ THIRD of three readers of the same `ems__Effort_status` vocabulary. They disagree on edge
+   * shapes, so a change to the status forms has to visit all three (multi-parser-predicate-
+   * migration): this one is UID-table based and rejects a multi-element list loudly.
+   *
+   * @see resolveStatusLabel in domain/display-name/hostFunctions — vault-lookup based
+   * @see getStatusLabel in PropertySchemas (obsidian-plugin) — for the property editor
    */
   private resolveStatusFromFrontmatter(
     fm: Record<string, unknown>,

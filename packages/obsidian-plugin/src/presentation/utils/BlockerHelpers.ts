@@ -1,6 +1,21 @@
-import { EffortStatus } from "@kitelev/exocortex-core";
-import { ObsidianApp } from '@plugin/types';
+import type { App } from "obsidian";
+import { isEffortBlocked as coreIsEffortBlocked } from "@kitelev/exocortex-core";
+import { ObsidianVaultMetadataAdapter } from "@plugin/domain/display-name/ObsidianVaultMetadataAdapter";
+import { ObsidianApp } from "@plugin/types";
 
+/**
+ * Obsidian-side wrapper over the core `isEffortBlocked` predicate (req 5cd9fffe).
+ *
+ * The logic moved to `packages/core` so the CLI naming oracle runs the SAME predicate instead of
+ * silently skipping the spec that names it. This class stays — with its original
+ * `(app, metadata)` signature — precisely so its four consumers (ExocortexAPI, DailyTasksRenderer,
+ * RelationsRenderer, AssetMetadataService) and their tests need no change at all: it is the
+ * adapter boundary, not a re-export.
+ *
+ * ⛔ Do not reintroduce the predicate here. If the two surfaces ever disagree about whether an
+ * effort is blocked, the cause is a divergence between the Obsidian and filesystem adapters —
+ * not two implementations drifting apart, because there is only one.
+ */
 export class BlockerHelpers {
   /**
    * Checks if an effort is blocked by another effort.
@@ -16,29 +31,11 @@ export class BlockerHelpers {
     app: ObsidianApp,
     metadata: Record<string, unknown>,
   ): boolean {
-    const effortBlocker = metadata.ems__Effort_blocker;
-    if (!effortBlocker) {
-      return false;
-    }
-
-    const blockerPath = String(effortBlocker).replace(/^\[\[|\]\]$/g, "");
-    const blockerFile = app.metadataCache.getFirstLinkpathDest(
-      blockerPath,
-      "",
-    );
-
-    if (!blockerFile) {
-      return false;
-    }
-
-    const blockerCache = app.metadataCache.getFileCache(blockerFile);
-    const blockerMetadata = blockerCache?.frontmatter || {};
-    const blockerStatus = blockerMetadata.ems__Effort_status || "";
-    const blockerStatusStr = String(blockerStatus).replace(/^\[\[|\]\]$/g, "");
-
-    return (
-      blockerStatusStr !== EffortStatus.DONE &&
-      blockerStatusStr !== EffortStatus.TRASHED
+    // Constructing the adapter per call is free — it only captures the app reference — which is
+    // why the four existing consumers keep their signature instead of threading a port through.
+    return coreIsEffortBlocked(
+      new ObsidianVaultMetadataAdapter(app as unknown as App),
+      metadata,
     );
   }
 }

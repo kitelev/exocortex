@@ -3,7 +3,7 @@
  *
  * Audits dry-run contract across all `command` subcommands that mutate fs/frontmatter:
  * rename-to-uid, update-label, start, complete, trash, archive,
- * move-to-backlog, move-to-analysis, move-to-todo, schedule, set-deadline,
+ * move-to-backlog, schedule, set-deadline,
  * create-task, create-meeting, create-project, create-area.
  *
  * Uses real filesystem (temp dir), not mocks — to guarantee fs contract.
@@ -126,8 +126,6 @@ describe("Issue #3111: `command --dry-run` filesystem contract", () => {
       ["trash", (e) => e.executeTrash("task.md")],
       ["archive", (e) => e.executeArchive("task.md")],
       ["move-to-backlog", (e) => e.executeMoveToBacklog("task.md")],
-      ["move-to-analysis", (e) => e.executeMoveToAnalysis("task.md")],
-      ["move-to-todo", (e) => e.executeMoveToToDo("task.md")],
     ];
 
     it.each(cases)("%s does not mutate file", async (_name, fn) => {

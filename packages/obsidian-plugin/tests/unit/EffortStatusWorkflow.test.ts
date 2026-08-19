@@ -26,20 +26,16 @@ describe("EffortStatusWorkflow", () => {
       expect(result).toBe('"[[ems__EffortStatusDraft]]"');
     });
 
-    it("should return Backlog for Analysis status", () => {
-      const result = workflow.getPreviousStatus(
-        '"[[ems__EffortStatusAnalysis]]"',
-        null,
-      );
-      expect(result).toBe('"[[ems__EffortStatusBacklog]]"');
-    });
-
-    it("should return Analysis for ToDo status", () => {
-      const result = workflow.getPreviousStatus(
-        '"[[ems__EffortStatusToDo]]"',
-        null,
-      );
-      expect(result).toBe('"[[ems__EffortStatusAnalysis]]"');
+    // `Analysis` / `ToDo` lost their TBox instances on 2026-08-13 and were
+    // dropped from the default workflows (req fcbde537-f09a-410e-8bee-d3d607a70302),
+    // so they are no longer states: a rollback from them is undefined.
+    it("should return undefined for a status that is no longer a workflow state", () => {
+      expect(
+        workflow.getPreviousStatus('"[[ems__EffortStatusAnalysis]]"', null),
+      ).toBeUndefined();
+      expect(
+        workflow.getPreviousStatus('"[[ems__EffortStatusToDo]]"', null),
+      ).toBeUndefined();
     });
 
     it("should return Backlog for Doing status when Task", () => {
@@ -50,12 +46,12 @@ describe("EffortStatusWorkflow", () => {
       expect(result).toBe('"[[ems__EffortStatusBacklog]]"');
     });
 
-    it("should return ToDo for Doing status when Project", () => {
+    it("should return Backlog for Doing status when Project", () => {
       const result = workflow.getPreviousStatus(
         '"[[ems__EffortStatusDoing]]"',
         '"[[ems__Project]]"',
       );
-      expect(result).toBe('"[[ems__EffortStatusToDo]]"');
+      expect(result).toBe('"[[ems__EffortStatusBacklog]]"');
     });
 
     it("should return Doing for Done status", () => {
@@ -79,7 +75,7 @@ describe("EffortStatusWorkflow", () => {
         '"[[ems__EffortStatusDoing]]"',
         ['"[[ems__Project]]"', '"[[ems__Effort]]"'],
       );
-      expect(result).toBe('"[[ems__EffortStatusToDo]]"');
+      expect(result).toBe('"[[ems__EffortStatusBacklog]]"');
     });
 
     it("should handle array of instance classes for Task", () => {

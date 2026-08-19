@@ -29,6 +29,10 @@ Options:
   --output <type>   Response format: text|json (default: "text")
   --gate <mode>     soft (warn only on hard findings) | hard (also block when
                     the P0 checklist is not ramp-ready) (default: "soft")
+  --expect <names>  Comma-separated reqs assetspaces (top-level dirs under
+                    --reqs) that MUST each contribute >=1 requirement — the
+                    corpus population floor. Defaults to this repo's declared
+                    set; pass an explicit list to audit a different corpus.
   --strict          Also exit 1 on orphan requirements
   -h, --help        Show this help
 
@@ -39,6 +43,8 @@ interface ParsedArgs {
   tests?: string;
   output?: string;
   gate?: string;
+  /** Explicit corpus floor; undefined = the declared default. */
+  expect?: string[];
   strict: boolean;
   help: boolean;
 }
@@ -71,6 +77,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
         break;
       case "--gate":
         out.gate = takeValue(arg);
+        break;
+      case "--expect":
+        out.expect = takeValue(arg)
+          .split(",")
+          .map((name) => name.trim())
+          .filter((name) => name.length > 0);
         break;
       case "--strict":
         out.strict = true;
@@ -122,6 +134,7 @@ export async function main(): Promise<void> {
       output: parsed.output as OutputFormat | undefined,
       gate: parsed.gate as GateMode | undefined,
       strict: parsed.strict,
+      expectAssetspaces: parsed.expect,
     });
   } catch (error) {
     console.error(`❌ ${(error as Error).message}`);

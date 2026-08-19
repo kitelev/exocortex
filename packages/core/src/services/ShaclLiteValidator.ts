@@ -18,7 +18,12 @@ export type ViolationConstraint =
   | 'maxCount'
   | 'class'
   | 'datatype'
-  | 'unknown-property';
+  | 'unknown-property'
+  // Two or more assets emit the SAME term IRI (their `exo__Asset_label` parses as
+  // `<prefix>__<LocalName>`), so a join "predicate → its definition" resolves to
+  // all of them. Reported as sh:Warning by `validate schema`; not produced by the
+  // shape engine itself. req `00e8079e-fb36-4ce3-b33f-abb18c212143`.
+  | 'term-iri-collision';
 
 export interface Violation {
   focusNode: string;
@@ -89,8 +94,12 @@ const RDF_TYPE_IRI = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
  *
  * 2. **Exocortex ad-hoc IRIs** — when `Namespace.forPrefix` falls back to the ad-hoc
  *    convention `https://exocortex.my/ontology/<prefix>#` for prefixes that are not in
- *    the static whitelist (`KNOWN_NAMESPACES` in Namespace.ts). This currently affects
- *    `xsd__`, `rdf__`, `rdfs__`, `owl__` keys in vault frontmatter:
+ *    the static whitelist (`KNOWN_NAMESPACES` in Namespace.ts).
+ *
+ *    ⛤ As of req `aceaa2cc-15b6-4e1c-bf63-72c7c209de51` the five W3C prefixes
+ *    (`rdf`, `rdfs`, `owl`, `xsd`, `sh`) ARE whitelisted, so freshly-emitted
+ *    triples use form 1. The ad-hoc entries below remain for LEGACY data — a
+ *    store built before that change, or a serialized graph persisted then:
  *      • `xsd__Date`  → `https://exocortex.my/ontology/xsd#Date`
  *      • `rdf__Statement` → `https://exocortex.my/ontology/rdf#Statement`
  *      • `rdfs__Resource` → `https://exocortex.my/ontology/rdfs#Resource`
@@ -108,6 +117,7 @@ const EXTERNAL_ONTOLOGY_IRI_PREFIXES: readonly string[] = [
   'http://www.w3.org/1999/02/22-rdf-syntax-ns#',  // rdf (canonical)
   'http://www.w3.org/2000/01/rdf-schema#',         // rdfs (canonical)
   'http://www.w3.org/2002/07/owl#',                // owl (canonical)
+  'http://www.w3.org/ns/shacl#',                   // sh (canonical)
   'http://www.w3.org/2004/02/skos/core#',          // skos
   'http://purl.org/dc/elements/1.1/',              // dc
   'http://purl.org/dc/terms/',                     // dcterms

@@ -1,6 +1,13 @@
 import type { ReifiedRelation } from "@plugin/presentation/renderers/layout/getReifiedRelations";
 
 /**
+ * Composite-key separator, built at runtime. The byte must not appear as a
+ * literal in this file — see scripts/check-no-nul-bytes.mjs for why, and issue
+ * #4071 for what it cost.
+ */
+const KEY_SEP = String.fromCharCode(0);
+
+/**
  * RFC `93a0b2ee` Phase 3 / Task 3.1 — pure model for the property editor's
  * Relations section. This module is deliberately UI-free (no React, no Obsidian,
  * no triple store) so the dedup / extraction / canonicalisation logic is
@@ -247,7 +254,7 @@ function dedupKey(row: RelationRow): string {
         ? `uid:${row.objectUid.replace(/\.md$/i, "")}`
         : `raw:${row.inlineRawValue ?? ""}`
       : `uid:${(row.objectUid ?? "").replace(/\.md$/i, "")}`;
-  return `${pred} ${obj}`;
+  return `${pred}${KEY_SEP}${obj}`;
 }
 
 /**

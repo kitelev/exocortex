@@ -435,6 +435,12 @@ describe("isHardFail — soft/hard exit-code contract (P3 flip)", () => {
       clean: true,
       activeTotal: 0,
       activeViolations: [],
+      corpusByAssetspace: [],
+      droppedAssets: [],
+      // Pre-existing gap on origin/main (the field landed with the 99e06488
+      // floor and was never added here); surfaced — not introduced — by the
+      // two fields above, and spelled out for the same reason as the block.
+      inputIntegrityViolation: null,
       p0Total: 1,
       p0Bound: 1,
       p0Orphans: 0,

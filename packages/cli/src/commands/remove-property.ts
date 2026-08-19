@@ -12,6 +12,7 @@ import {
   DEFAULT_TIMEZONE,
   UPDATED_AT_KEY,
   GUARDED_PROPERTIES,
+  renderGuardRefusal,
   IMMUTABLE_PROPERTIES,
   canonicalYamlKey,
   guardedReason,
@@ -53,7 +54,11 @@ function resolveProperty(options: RemovePropertyOptions): string {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`--input: invalid JSON (${msg})`);
     }
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
       throw new Error(
         `--input must be a JSON object of the form {"property":"<name>"}`,
       );
@@ -182,7 +187,12 @@ export function removePropertyCommand(): Command {
         const guardedCommand = guardedReason(GUARDED_PROPERTIES, property);
         if (guardedCommand !== undefined) {
           throw new Error(
-            `Refusing to remove "${property}" via remove-property — it has a dedicated guarded command so the state machine / precondition is not bypassed. Use:  exocortex ${guardedCommand} --vault <v>`,
+            renderGuardRefusal(
+              "remove",
+              "remove-property",
+              property,
+              guardedCommand,
+            ),
           );
         }
 
