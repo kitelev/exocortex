@@ -29,6 +29,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import yaml from "js-yaml";
 
 const { removePropertyCommand } = await import(
   "../../src/commands/remove-property.js"
@@ -42,11 +43,26 @@ const TASKS_DIR = "assetspaces/kitelev/exoas-my/tasks";
 const PROTO_UID = "b1b1b1b1-0000-4000-8000-000000000003";
 const TASK_UID = "c1c1c1c1-0000-4000-8000-000000000004";
 const ALIASED_UID = "e1e1e1e1-0000-4000-8000-000000000006";
+const BLOCK_UID = "f1f1f1f1-0000-4000-8000-000000000007";
+const BLOCK_SEP_UID = "f1f1f1f1-0000-4000-8000-000000000008";
 const STALE_UPDATED_AT = "2020-01-01T00:00:00";
 
 /** Frozen-clock instant → 2026-07-12T15:00:00 rendered in Asia/Almaty (UTC+5). */
 const FROZEN_CLOCK = "2026-07-12T10:00:00Z";
 const EXPECTED_UPDATED_AT = "2026-07-12T15:00:00";
+
+/**
+ * Parse the frontmatter of a written file with the REAL YAML parser.
+ *
+ * ⛤ The authoritative post-condition for a write command: its own JSON echo
+ * reports the INTENDED outcome, which is precisely what was misleading in
+ * ems__Bug 94fe70ac (echo `removed:true`, file unparseable).
+ */
+function parseFrontmatter(content: string): Record<string, unknown> {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) throw new Error("no frontmatter block");
+  return (yaml.load(match[1]) ?? {}) as Record<string, unknown>;
+}
 
 describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter property", () => {
   let vault: string;
@@ -312,6 +328,89 @@ describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter p
     expect(out.content).toBe(before);
     expect(out.stderr).toContain("DRY RUN PREVIEW");
     expect(out.stderr).not.toContain("ems__EffortPrototype_startTime");
+  });
+
+  // ── ems__Bug 94fe70ac — a BLOCK-SCALAR value must be removed WHOLE ──
+  //
+  // Only the key line used to be deleted; the block body survived as dangling
+  // indented lines, making the frontmatter unparseable — the asset then dropped
+  // out of the graph ENTIRELY while the command reported `removed: true`.
+
+  it(`removes a BLOCK-SCALAR property whole — frontmatter stays parseable, no dangling body ${REQ}`, async () => {
+    const blockPath = `${PROTOS_DIR}/${BLOCK_UID}.md`;
+    fs.writeFileSync(
+      path.join(vault, blockPath),
+      [
+        "---",
+        `exo__Asset_uid: ${BLOCK_UID}`,
+        // Block scalar in the MIDDLE: the key AFTER it must survive, proving the
+        // span stops at the next column-0 line (no over-consumption).
+        "concept__Concept_definition: |-",
+        "  Dangling first line",
+        "  Dangling second line",
+        'exo__Asset_label: "Blocky"',
+        `exo__Asset_updatedAt: ${STALE_UPDATED_AT}`,
+        "---",
+        "body",
+        "",
+      ].join("\n"),
+    );
+
+    const out = await run(blockPath, [
+      "--property",
+      "concept__Concept_definition",
+    ]);
+
+    expect(out.exit).toContain(0);
+    // ⛤ Authoritative post-condition is the PARSE, not the `removed:true` echo —
+    // the echo is exactly what lied in this bug.
+    const parsed = parseFrontmatter(out.content);
+    expect(parsed.concept__Concept_definition).toBeUndefined();
+    expect(out.content).not.toContain("Dangling first line");
+    expect(out.content).not.toContain("Dangling second line");
+    // The key that FOLLOWED the block scalar was not swallowed with it.
+    expect(parsed.exo__Asset_label).toBe("Blocky");
+    // ⛤ The key BEFORE it is intact too. This is the QUIETER half of the bug: an
+    // orphaned body after a PLAIN scalar does not break the parse at all — YAML
+    // folds the dangling lines into the PRECEDING key's value. Pre-fix, this very
+    // shape parsed "successfully" with exo__Asset_uid silently rewritten to
+    // "<uid> Dangling first line Dangling second line", so nothing ever complained.
+    expect(parsed.exo__Asset_uid).toBe(BLOCK_UID);
+    expect(out.content).toContain(`exo__Asset_updatedAt: ${EXPECTED_UPDATED_AT}`);
+  });
+
+  it(`removing a BLOCK-SCALAR key leaves the blank separator before the next key ${REQ}`, async () => {
+    // ⛤ Locks a guarantee the docstring states ("a blank line that trails the value
+    // is left where it is, so removal never eats the separator before the next
+    // key"). Without this axis the claim is unguarded: flipping the span's blank-line
+    // branch to absorb unconditionally reddens NOTHING in the whole repo, so the
+    // comment would be a claim rather than a fact.
+    const sepPath = `${PROTOS_DIR}/${BLOCK_SEP_UID}.md`;
+    fs.writeFileSync(
+      path.join(vault, sepPath),
+      [
+        "---",
+        `exo__Asset_uid: ${BLOCK_SEP_UID}`,
+        "concept__Concept_definition: |-",
+        "  Body line",
+        "", // ← the separator under test
+        'exo__Asset_label: "Spaced"',
+        `exo__Asset_updatedAt: ${STALE_UPDATED_AT}`,
+        "---",
+        "body",
+        "",
+      ].join("\n"),
+    );
+
+    const out = await run(sepPath, ["--property", "concept__Concept_definition"]);
+
+    expect(out.exit).toContain(0);
+    const parsed = parseFrontmatter(out.content);
+    expect(parsed.concept__Concept_definition).toBeUndefined();
+    expect(out.content).not.toContain("Body line");
+    expect(parsed.exo__Asset_label).toBe("Spaced");
+    // The blank line survives: the key after it is still preceded by an empty line.
+    expect(out.content).toContain('\n\nexo__Asset_label: "Spaced"');
   });
 
   it(`refuses a bare markdown file with no exo__Asset_uid ${REQ}`, async () => {
