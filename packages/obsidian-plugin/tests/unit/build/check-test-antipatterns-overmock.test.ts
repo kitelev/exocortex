@@ -39,6 +39,21 @@ describe("check-test-antipatterns.sh — over-mock pass-through ratchet (P2, @re
     BASELINE_VACUOUS_LENGTH: "999",
     BASELINE_NONCANON_SERVICE_DIR: "999",
     BASELINE_OVERMOCK: "0",
+    // ⛤ The fixture corpus is a handful of files, so the POPULATION baseline is sized to
+    // it exactly as the four debt baselines above are. The fixture lives in a tmpdir, so
+    // `git ls-files` returns nothing for it and the guard falls back to this recorded
+    // number — which is precisely the case the fallback exists for.
+    //
+    // ⛔ An earlier version of this comment claimed the alternative was rejected because
+    // it "would make the floor disarmable by an env var". That reason is false in this
+    // very file: BASELINE_SCANNED IS an env var, and "1" makes the fallback floor 0. The
+    // real reason stands and is narrower — layer 1 (`scanned == 0`) reads no baseline at
+    // all and therefore STAYS ARMED here, whereas skipping the floor whenever
+    // ANTIPATTERN_SCAN_DIR is set would have disarmed BOTH layers.
+    //
+    // "1" is right rather than 0: beforeEach calls writeCleanFile() unconditionally, so
+    // every case in this suite writes at least one file.
+    BASELINE_SCANNED: "1",
   };
 
   let scanDir: string;
