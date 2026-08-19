@@ -636,6 +636,9 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
 
     const cmd = await resolver.loadCommand(COMMAND_UID);
 
+    // ⛤ PROP_UID is `ems__Effort_plannedStartTimestamp` — an OBJECT-valued property,
+    // where `"[[<uid>]]"` IS the value. The wikilink is correct here and must survive;
+    // the paired axis below covers the string-valued case where it is not.
     expect(cmd!.grounding.propertyDefault![0].value).toBe(
       `"[[${TOKEN_ABSENT_UID}]]"`,
     );
@@ -649,6 +652,44 @@ describe("CommandResolver — RFC v2 Phase 3a SubstitutionToken dispatch", () =>
     // The user-facing string must NOT assert a cause the PR itself calls
     // unmeasured — candidate causes live in the code comment.
     expect(hit).not.toMatch(/cold-start|pruned vault/);
+  });
+
+  // ⛔ The discriminator is the TARGET PROPERTY, not store presence. An earlier attempt
+  // skipped the entry whenever the value asset was missing and broke the object case:
+  // two integration axes (req 2d1ffced, req 87361a62) lost `ems__Effort_status` on the
+  // spawned iteration, because for a status enum the link IS the value.
+  //
+  // `exo__Asset_label` is in STRING_SCALAR_PROPERTIES: its value is a NAME, never a
+  // reference, so a wikilink there is wrong under any origin — and that is the shape
+  // observed in defect 0310aa28 (label holding a link to the token definition while the
+  // user's typed string survived only in `aliases`).
+  it("@req:b354316b-3b26-478b-a8c0-18606da8e6ec SKIPS the entry — never writes a link — when the absent value targets a string-valued property", async () => {
+    const LABEL_PROP_UID = "22222222-2222-4222-8222-222222222222";
+    await addLabelledAsset(store, LABEL_PROP_UID, "exo__Asset_label");
+    expect(await store.findSubjectsByUUID(TOKEN_ABSENT_UID)).toHaveLength(0);
+    await addPropertyDefault(store, {
+      uid: PD_UID,
+      propertyRefUid: LABEL_PROP_UID,
+      valueRefUid: TOKEN_ABSENT_UID,
+    });
+    await addGrounding(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding whose label token is not in the store",
+      propertyDefaultRefs: [PD_UID],
+    });
+    await addCommand(store, COMMAND_UID, GROUNDING_UID);
+
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+
+    // No entry at all — GroundingExecutor's own chain (labelTemplate → "Untitled")
+    // takes over, instead of a link reaching the vault as the asset's name.
+    expect(
+      (cmd!.grounding.propertyDefault ?? []).some(
+        (pd) => pd.value === `"[[${TOKEN_ABSENT_UID}]]"`,
+      ),
+    ).toBe(false);
+    // The warning still fires — it is the req's deliverable.
+    expect(logger.warnings.find((w) => w.includes(TOKEN_ABSENT_UID))).toBeDefined();
   });
 
   it("@req:b354316b-3b26-478b-a8c0-18606da8e6ec warns ONCE per (grounding, value) across repeated resolves", async () => {
