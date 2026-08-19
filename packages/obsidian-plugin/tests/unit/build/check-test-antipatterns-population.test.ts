@@ -26,6 +26,7 @@ describe("check-test-antipatterns.sh — population floor (#4090)", () => {
   const scriptPath = path.join(repoRoot, "scripts/check-test-antipatterns.sh");
 
   let scanDir: string;
+  let baselineFile: string;
 
   const runGuard = (extraEnv: Record<string, string>) =>
     spawnSync("bash", [scriptPath], {
@@ -35,16 +36,24 @@ describe("check-test-antipatterns.sh — population floor (#4090)", () => {
         ...process.env,
         ANTIPATTERN_SCAN_DIR: scanDir,
         ANTIPATTERN_NONCANON_DIR: path.join(scanDir, "__no_such_dir__"),
-        BASELINE_METHOD_EXISTS: "999",
-        BASELINE_VACUOUS_LENGTH: "999",
-        BASELINE_NONCANON_SERVICE_DIR: "999",
-        BASELINE_OVERMOCK: "0",
+        // ⛔ ISOLATION IS LOAD-BEARING, not cosmetic. These axes are about the POPULATION
+        // floor, so the fixture corpus must contribute no pairs AND the baseline must
+        // claim none. Pointing at the committed baseline would make its 56 pairs all
+        // "shrank to 0" against this clean tmpdir — and the guard now exits 1 on a stale
+        // baseline, so every green axis below would red for a reason it does not test.
+        //
+        // The four BASELINE_METHOD_EXISTS / _VACUOUS_LENGTH / _NONCANON_SERVICE_DIR /
+        // _OVERMOCK variables that used to sit here were read by NOTHING once the totals
+        // became derived from the TSV: a silent no-op wearing the shape of isolation.
+        ANTIPATTERN_BASELINE_FILE: baselineFile,
         ...extraEnv,
       },
     });
 
   beforeEach(() => {
     scanDir = mkdtempSync(path.join(tmpdir(), "antipatterns-pop-"));
+    baselineFile = path.join(scanDir, "baseline.tsv");
+    writeFileSync(baselineFile, "# empty fixture baseline — no pairs claimed\n");
   });
 
   afterEach(() => {
@@ -67,9 +76,14 @@ describe("check-test-antipatterns.sh — population floor (#4090)", () => {
     const r = runGuard({ BASELINE_SCANNED: "901" });
     const out = r.stdout + r.stderr;
     expect(out).toContain("Do NOT run --update-baseline");
-    // The pre-fix invitation must NOT appear: it is the sentence that turned a broken
-    // scan into a permanent green.
-    expect(out).not.toContain("ratchet BASELINE_METHOD_EXISTS down");
+    // ⛤ Pinned on BEHAVIOUR, not on wording. The earlier form of this assertion named a
+    // string ("ratchet BASELINE_METHOD_EXISTS down") that the rewrite deleted, so it
+    // could no longer fail — while the invitation it guarded came back under new words
+    // in the stale-baseline branch. What actually must hold is ORDERING: the population
+    // floor exits before the pair comparison, so the shrink remedy is unreachable on a
+    // broken scan. Move the floor below that comparison and these two lines go red.
+    expect(out).not.toContain("ratchet the baseline down");
+    expect(out).not.toContain("--update-baseline > scripts/test-antipattern-baseline.tsv");
   });
 
   it("FAILS (exit 1) on a PARTIAL collapse — the counters shrink proportionally and look clean", () => {
@@ -115,10 +129,9 @@ describe("check-test-antipatterns.sh — population floor (#4090)", () => {
           ...process.env,
           ANTIPATTERN_SCAN_DIR: "corpus",
           ANTIPATTERN_NONCANON_DIR: "__no_such_dir__",
-          BASELINE_METHOD_EXISTS: "999",
-          BASELINE_VACUOUS_LENGTH: "999",
-          BASELINE_NONCANON_SERVICE_DIR: "999",
-          BASELINE_OVERMOCK: "0",
+          // The copied guard resolves its baseline next to itself, and beforeEach writes an
+          // empty one there. Without it the fixture's isolation would be ACCIDENTAL — it
+          // would hold only while the corpus happens to carry no antipattern.
           // Deliberately generous: floor 0. If the derived branch did NOT fire, the
           // fallback would pass, so a RED below can only come from the derivation.
           BASELINE_SCANNED: "1",
@@ -132,6 +145,10 @@ describe("check-test-antipatterns.sh — population floor (#4090)", () => {
       copyFileSync(
         path.join(repoRoot, "scripts/check-test-antipatterns.sh"),
         path.join(repoDir, "scripts/check-test-antipatterns.sh"),
+      );
+      writeFileSync(
+        path.join(repoDir, "scripts/test-antipattern-baseline.tsv"),
+        "# empty fixture baseline — no pairs claimed\n",
       );
       for (let i = 0; i < 3; i += 1) {
         writeFileSync(path.join(repoDir, `corpus/t${i}.test.ts`), "it('x', () => {});\n");
