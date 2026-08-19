@@ -203,7 +203,13 @@ export function setBodyCommand(): Command {
         const output = {
           path: vaultRelative,
           updatedAt,
-          bodyBytes: bodyPart.length,
+          // ⛔ Buffer.byteLength, NOT String.length. `.length` counts UTF-16 code
+          // units, and the field is named bodyBytes — on Cyrillic prose the two
+          // disagree by ~1.5x (measured: a 31,007-byte body reported as 19,980).
+          // The failure is silent and reads as data loss: an operator who checks
+          // the echo against the file size concludes half the body did not arrive
+          // and re-runs a write that was already correct.
+          bodyBytes: Buffer.byteLength(bodyPart, "utf8"),
         };
         process.stdout.write(JSON.stringify(output) + "\n");
 
