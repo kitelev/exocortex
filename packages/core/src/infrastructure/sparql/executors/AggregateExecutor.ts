@@ -349,11 +349,48 @@ export class AggregateExecutor {
     return nums.reduce((acc, n) => acc + n, 0) / nums.length;
   }
 
+  /**
+   * Strict numeric coercion for MIN/MAX.
+   *
+   * ⛔ `parseFloat` takes the NUMERIC PREFIX of a string, so every ISO-8601 timestamp
+   *    parsed as its year and MIN/MAX silently answered `"2026"^^xsd:decimal` instead of
+   *    the timestamp (task 0c24668f, measured on the live graph):
+   *
+   *      parseFloat("2026-08-02T20:07:15")  →  2026   (isNaN: false)   ⛔
+   *      Number("2026-08-02T20:07:15")      →  NaN                     ✅
+   *
+   * ⛤ `Number()` requires the WHOLE string to be numeric, which is exactly the question
+   *    being asked. Its one quirk — `Number("") === 0` — is excluded explicitly, otherwise
+   *    an empty binding would join the numeric branch as a zero.
+   *
+   * ⛔ Returns null unless EVERY value is numeric. A single number among timestamps used to
+   *    flip the whole set into the numeric branch, collapsing the dates to years AND dropping
+   *    the non-numeric ones through the `isNaN` filter — the aggregate then answered over a
+   *    subset nobody asked for. Mixed sets therefore fall through to lexical comparison,
+   *    which for ISO-8601 coincides with chronological order (the same property that makes
+   *    `ORDER BY DESC(?dateTime)` correct today).
+   */
+  private asAllNumeric(values: unknown[]): number[] | null {
+    const nums: number[] = [];
+    for (const v of values) {
+      if (typeof v === "number") {
+        nums.push(v);
+        continue;
+      }
+      const text = String(v).trim();
+      if (text === "") return null;
+      const n = Number(text);
+      if (Number.isNaN(n)) return null;
+      nums.push(n);
+    }
+    return nums.length > 0 ? nums : null;
+  }
+
   private computeMin(values: unknown[]): unknown {
     if (values.length === 0) return undefined;
 
-    const nums = values.map((v) => parseFloat(String(v))).filter((n) => !isNaN(n));
-    if (nums.length > 0) {
+    const nums = this.asAllNumeric(values);
+    if (nums) {
       return Math.min(...nums);
     }
 
@@ -364,8 +401,10 @@ export class AggregateExecutor {
   private computeMax(values: unknown[]): unknown {
     if (values.length === 0) return undefined;
 
-    const nums = values.map((v) => parseFloat(String(v))).filter((n) => !isNaN(n));
-    if (nums.length > 0) {
+    // ⛤ Same strict coercion as computeMin — see asAllNumeric. MIN and MAX are
+    //    byte-identical in shape, so fixing only one leaves the sibling broken.
+    const nums = this.asAllNumeric(values);
+    if (nums) {
       return Math.max(...nums);
     }
 
