@@ -329,11 +329,14 @@ describe("AlgebraTranslator", () => {
 
       expect(algebra.type).toBe("project");
       const input = (algebra as any).input;
-      expect(input.type).toBe("join");
+      // ⛔ This asserted "join" until 2026-08-20, codifying the defect:
+      // `Join(P, Minus(∅, Q))` left MINUS subtracting from nothing, so the
+      // query returned ALL tasks including the done ones. The operator has to
+      // BE the top node with P as its left operand.
+      expect(input.type).toBe("minus");
 
-      const minusOp = input.right;
-      expect(minusOp.type).toBe("minus");
-      expect(minusOp.right.type).toBe("bgp");
+      expect(input.left.type).toBe("bgp");
+      expect(input.right.type).toBe("bgp");
     });
 
     it("translates MINUS with multiple patterns", () => {
@@ -353,12 +356,11 @@ describe("AlgebraTranslator", () => {
 
       expect(algebra.type).toBe("project");
       const input = (algebra as any).input;
-      expect(input.type).toBe("join");
+      expect(input.type).toBe("minus");
 
-      const minusOp = input.right;
-      expect(minusOp.type).toBe("minus");
+      expect(input.left.type).toBe("bgp");
       // The right side should be a BGP with 2 triples or a join of BGPs
-      expect(minusOp.right).toBeDefined();
+      expect(input.right).toBeDefined();
     });
 
     it("translates MINUS combined with OPTIONAL", () => {
@@ -375,9 +377,11 @@ describe("AlgebraTranslator", () => {
       const algebra = translator.translate(ast);
 
       expect(algebra.type).toBe("project");
-      // Should have join of (join(bgp, leftjoin)), minus)
+      // Minus(LeftJoin(bgp, opt), Q) — MINUS subtracts from EVERYTHING that
+      // precedes it, which here includes the OPTIONAL group.
       const input = (algebra as any).input;
-      expect(input.type).toBe("join");
+      expect(input.type).toBe("minus");
+      expect(input.left.type).toBe("leftjoin");
     });
   });
 

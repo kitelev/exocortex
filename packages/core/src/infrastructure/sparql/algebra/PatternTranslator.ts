@@ -123,6 +123,24 @@ export class PatternTranslator {
             right: this.translateWhere(rightPattern.patterns),
             expression: rightOptExpr ? this.translateExpressionFn(rightOptExpr) : undefined,
           } as LeftJoinOperation;
+        } else if (rightPattern.type === "minus") {
+          // MINUS subtracts from the group that PRECEDES it (SPARQL 1.1
+          // §8.3.2 / §18.5: `{ P } MINUS { Q }` = Diff(eval(P), eval(Q))).
+          //
+          // ⛔ Falling through to the generic `join` below produced
+          // `Join(P, Minus(∅, Q))`, which is NOT the same operation:
+          // `Minus(∅, Q)` shares no variables with Q, so it removes nothing and
+          // yields the single empty solution; joining P with that returns P
+          // unchanged. MINUS degraded to a silent no-op in every query that had
+          // anything before it — i.e. in every real query.
+          //
+          // Mirrors the OPTIONAL branch above, which already threads `result`
+          // as its left operand for exactly the same reason.
+          result = {
+            type: "minus",
+            left: result,
+            right: this.translateWhere(rightPattern.patterns),
+          } as MinusOperation;
         } else {
           const right = this.translatePattern(rightPattern);
           result = { type: "join", left: result, right };
