@@ -2,6 +2,7 @@ import { injectable } from "tsyringe";
 import type { ITripleStore } from "../interfaces/ITripleStore";
 import type { ILogger } from "../interfaces/ILogger";
 import { NullLogger } from "../infrastructure/NullLogger";
+import { STRING_SCALAR_PROPERTIES } from "../utilities/yamlScalar";
 import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
 import { Namespace } from "../domain/models/rdf/Namespace";
@@ -2766,27 +2767,35 @@ export class CommandResolver {
           ),
         );
       }
-      // ⛔ SKIP the entry — do NOT write a link into a VALUE slot.
+      // ⛔ SKIP the entry ONLY for a property whose value is a STRING.
       //
-      // This branch used to `return "[[<uid>]]"`, and its own warning said what was
-      // wrong with that: "emitting wikilink (a link, not the substituted value)".
-      // A link in exo__Asset_label is never a valid outcome — it is silent, it reaches
-      // the vault, and the user's typed string survives only in `aliases`.
+      // This branch used to `return "[[<uid>]]"` unconditionally, and its own warning
+      // said what was wrong with that: "a link, not the substituted value". But the
+      // branch serves TWO cases that are indistinguishable once the asset is missing
+      // from the store:
       //
-      // `null` is this function's OWN documented signal for "skip this entry" (see the
-      // docstring), and the caller already honours it with `continue`. So the property
-      // is simply not set, and GroundingExecutor's existing degradation chain takes
-      // over — `labelTemplate` if the grounding declares one, else "Untitled". That
-      // path is built and tested; the wikilink fallback was bypassing it.
+      //   • value is a SubstitutionToken  → the link points at a TOKEN DEFINITION and
+      //     is garbage: the user's typed string survives only in `aliases`.
+      //   • value is a plain asset ref (a status enum, a class, a person)
+      //     → the link IS the value, and emitting it is correct.
       //
-      // ⚠ The causal link to the four corrupted assets (defect 0310aa28) remains
-      // narrowed by ELIMINATION, not measured — reproducing it needs a store missing
-      // the token on the creating device. The change does not rest on that: writing a
-      // link where a value belongs is wrong on this function's own contract.
+      // A first attempt skipped both and broke the second: two integration axes
+      // (req 2d1ffced, req 87361a62) lost `ems__Effort_status: "[[753a44d5-…]]"` on the
+      // spawned iteration. So the discriminator cannot be store presence — it has to be
+      // the TARGET PROPERTY.
       //
-      // ⛤ NOT touched: the non-UUID (legacy symbolic) pass-through above, where a
-      // wikilink IS the intended value.
-      return null;
+      // `STRING_SCALAR_PROPERTIES` (exo__Asset_label, aliases) is exactly the set whose
+      // value is a name, never a reference. A wikilink there is wrong under any origin,
+      // so skipping is safe: GroundingExecutor's existing chain takes over
+      // (`labelTemplate` → "Untitled"), a path that is built and tested and which this
+      // fallback was bypassing. Object-valued properties keep the old behaviour.
+      //
+      // ⚠ The causal link to the four corrupted assets (defect 0310aa28 / issue #4097)
+      // stays narrowed by ELIMINATION, not measured.
+      if (STRING_SCALAR_PROPERTIES.has(propertyName)) {
+        return null;
+      }
+      return `"[[${valueRefUid}]]"`;
     }
 
     // RFC 727572d2 — TokenInvocation wrapper detection. When the value asset
