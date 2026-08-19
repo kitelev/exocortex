@@ -222,12 +222,14 @@ jobs:
         run: node scripts/check-cli-types.mjs
 
       # Issue #4084 — the OTHER half of the same hole. No tsconfig in the repo includes
-      # packages/**/tests/**, so all 975 test files are type-checked only by ts-jest at
-      # run time, where a failure reads as "Test suite failed to run / Tests: 0". Measured
-      # 2026-08-19: 505 (file, code) pairs / 2502 diagnostics of pre-existing debt —
-      # including tests that import a module which MOVED packages and still pass green,
-      # because the import is type-only and ts-jest erases it without resolving (the
-      # annotation silently degrades to `any`). Reuses the build step above.
+      # packages/**/tests/**, so no standalone tsc run covers the 975 test files. This is a
+      # STRICTER SUPERSET of what ts-jest checks, NOT a reproduction of it: main is green
+      # today with all 2396 baselined diagnostics present, so a red here does not imply a
+      # failing suite. What it uniquely covers: tests/component/** (Playwright CT — type-
+      # checked by nothing), and tests importing a module that MOVED packages while still
+      # passing green, because the import is type-only and ts-jest erases it without
+      # resolving (the annotation silently degrades to `any`). Measured 2026-08-19:
+      # 433 (file, code) pairs / 2396 diagnostics. Reuses the build step above.
       - name: No new type errors in test files
         run: node scripts/check-test-types.mjs
 

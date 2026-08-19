@@ -10,26 +10,47 @@
  *   packages/cli/tsconfig.json      include src/**\/*   (tests not included)
  *   packages/obsidian-plugin/       has no package tsconfig at all
  *   tsconfig.json (root)            exclude packages/**\/tests/**\/*, packages/cli/**\/*
- * So all 975 test files are type-checked ONLY by ts-jest at run time.
+ * So no standalone `tsc` run covers the 975 test files.
  *
- * That is not equivalent, and the difference is the point: a type error in a test
- * surfaces as `● Test suite failed to run` + `Tests: 0` — a shape that reads as
- * "nothing failed" (see rules/integration-test-revert-verify.md §A3). It also makes
- * "typecheck rc=0" in a PR report a FALSE guarantee whenever the PR's main artifact
- * is a test file. Observed on PR #4082: the report said `typecheck core rc=0` while
- * the test file it shipped was type-checked by nothing; a round-2 review caught it,
- * not a gate.
+ * ⛔ What this gate is, precisely: a STRICTER SUPERSET program, not a reproduction of
+ * what ts-jest checks. Do not claim equivalence — it is measurably false. ExocortexAPI
+ * .test.ts carries 4 baselined diagnostics (TS2345 ×3, TS2554 ×1) and runs 28/28 GREEN;
+ * CI is green on main today with all 2396 of them present. So a NEW pair here does NOT
+ * imply a suite that fails at run time, and the failure text must not say it does — an
+ * author who reads "your suite is broken" goes hunting a runtime failure that does not
+ * exist, and concludes the gate is noise.
  *
- * ⛤ Why a RATCHET, not turning the check on: the debt is ~3.1K diagnostics across
- * ~386 files, wildly uneven by package (measured 2026-08-19, workspace deps built):
- *   core            379 test files →     2   ← nearly clean despite being the largest suite
- *   services          1              →     9
- *   test-utils        3              →     9
- *   cli             161              →   654
- *   obsidian-plugin ~431             → ~2475
+ * The coverage the gate genuinely adds, in descending order of value:
+ *   - packages/obsidian-plugin/tests/component/** (22 pairs) runs under Playwright CT
+ *     (bundler transpile) — type-checked by NOTHING otherwise.
+ *   - type-only imports of MOVED modules: ts-jest erases them without resolving, so the
+ *     annotation degrades to `any` and the suite passes green while its type safety is
+ *     fiction. 13 × TS2307 in the baseline are exactly this.
+ *   - it makes "typecheck rc=0" in a PR report stop being a false guarantee when the
+ *     PR's main artifact is a test file. Observed on PR #4082: the report said
+ *     `typecheck core rc=0` while the test it shipped was type-checked by nothing; a
+ *     round-2 review caught that, not a gate.
+ * (A type error CAN also surface through jest as `● Test suite failed to run` + `Tests: 0`
+ *  — a shape that reads as "nothing failed", rules/integration-test-revert-verify.md §A3
+ *  — but that is a possible symptom, not the mechanism, and most of this debt is silent.)
+ *
+ * ⛤ Why a RATCHET, not turning the check on. Measured 2026-08-19 through THIS config
+ * (tsconfig.tests.json, target ES2020, workspace deps built) — 433 (file, code) pairs /
+ * 2396 diagnostics, wildly uneven by package:
+ *   obsidian-plugin  326 pairs
+ *   cli               69
+ *   core              37   ← nearly clean despite holding the largest suite
+ *   test-utils         1
  * An always-red gate gets ignored, which is worse than no gate (the rationale
  * check-cli-types.mjs already documents). The ratchet freezes the debt and makes it
  * impossible to GROW.
+ *
+ * ⚠ An earlier draft of this docstring quoted a DIFFERENT measurement here (per-package
+ * configs, one tsc run each: core 2, cli 654, obsidian-plugin ~2475). Those numbers are
+ * not wrong, they answer a different question — a separate program per package resolves
+ * cross-package imports differently, so its counts do not transfer. Numbers in a gate's
+ * docstring must say WHICH program produced them, or the next reader compares two scales
+ * and "explains" the gap. The figures above are from the config this script actually runs.
  *
  * ⛤ Per-package baselines are NOT needed even though the debt is uneven: the baseline
  * is a set of (file, code) PAIRS, so a new error in core is a new pair regardless of
@@ -62,14 +83,34 @@ const LINE_RE = /^(.+?)\((\d+),(\d+)\): error (TS\d+):/;
 /** Only test files are ratcheted; src is present purely for import resolution. */
 const isTestPath = (f) => f.replace(/\\/g, "/").includes("/tests/");
 
+/**
+ * ⛤ `--listFiles` is what makes the scope proof POSITIVE, and that is the whole point.
+ *
+ * Deriving "did the run examine the tests?" from the DIAGNOSTICS is negative evidence:
+ * it works only while errors exist. Two states break it, and both end in the same trap —
+ * the stale-baseline branch tells the operator to run `--update`, and obeying that writes
+ * an EMPTY baseline that greens the gate forever (check-cli-types.mjs calls this "the tool
+ * talked the operator into disarming it"; reproduced here on a stubbed tsc, probes E→F→G):
+ *
+ *   (1) the config breaks in a way that yields a POSITION-LESS error (TS18003 "No inputs
+ *       were found", TS5058 "The specified path does not exist") → nothing parses at all;
+ *   (2) the debt is fully PAID → tsc exits 0 → no diagnostics at all. The reward for
+ *       fixing every error would be a silently disarmed gate.
+ *
+ * `--listFiles` names every file in the program regardless of whether any error exists,
+ * so "N test files were compiled" is an assertion about the RUN, not about its findings.
+ * That is the same discipline this script already applies to diagnostics ("report the
+ * INPUT SIZE beside the findings" — a bare 0 is indistinguishable from a dead run).
+ */
 function runTsc() {
+  const args = ["tsc", "--noEmit", "--listFiles", "-p", CONFIG];
+  // --listFiles adds one line per file in the program (lib.d.ts + node_modules types
+  // included), so the default 1 MB stdout buffer is not enough.
+  const opts = { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 };
   try {
-    execFileSync("npx", ["tsc", "--noEmit", "-p", CONFIG], {
-      cwd: ROOT,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return "";
+    // rc=0 — no diagnostics. NOT "nothing to check": the file listing still arrives, and
+    // it is the only thing that distinguishes "clean" from "compiled nothing".
+    return String(execFileSync("npx", args, opts) ?? "");
   } catch (err) {
     const out = String(err.stdout ?? "");
     if (out.trim().length === 0) {
@@ -84,6 +125,16 @@ function runTsc() {
 }
 
 const raw = runTsc();
+
+/**
+ * Files tsc actually put in the program (from --listFiles). A listing line is a bare path;
+ * a diagnostic line carries `(line,col): error TSxxxx`. Filter to the repo's own tests.
+ */
+const compiledTestFiles = raw
+  .split("\n")
+  .map((l) => l.trim())
+  .filter((l) => l.length > 0 && !LINE_RE.test(l) && /\.tsx?$/.test(l))
+  .filter((l) => isTestPath(l) && !l.includes("/node_modules/"));
 const all = new Map(); // "file|code" -> count, EVERY diagnostic (src included)
 const found = new Map(); // "file|code" -> count, tests only
 let diagnostics = 0;
@@ -111,7 +162,38 @@ for (const line of raw.split("\n")) {
  * leaving `found` empty and the run looking like "no test errors". The only signal
  * that survives is SCOPE: a real run names files under packages/**\/tests/.
  */
+/** Below this many compiled test files the run is not describing this repo. ~975 exist. */
+const MIN_COMPILED_TEST_FILES = 200;
+
 function assertRunIsMeaningful() {
+  // ⛤ POSITIVE scope proof, from --listFiles. Holds whether or not any error exists, so
+  // it survives both a broken config (nothing compiled) and a fully-paid debt (rc=0).
+  if (compiledTestFiles.length < MIN_COMPILED_TEST_FILES) {
+    console.error(
+      `❌ check-test-types: tsc compiled ${compiledTestFiles.length} file(s) under\n` +
+        `   packages/**/tests/ — expected at least ${MIN_COMPILED_TEST_FILES}. The run is\n` +
+        "   NOT describing this repository's tests, so it has no verdict to give.\n" +
+        "   ⛔ Do NOT run --update to make this go away. --update would write a baseline\n" +
+        "   derived from this same empty run — i.e. an empty baseline — and every later\n" +
+        "   run would exit 0 green while compiling nothing. Fix the invocation instead.\n" +
+        "   Likely causes: unparseable/renamed tsconfig, an `include` that matches nothing,\n" +
+        "   a bad `extends`, or tsc not resolving at all.\n" +
+        (raw.trim().length > 0
+          ? "   tsc said:\n" +
+            raw
+              .split("\n")
+              .filter((l) => l.trim().length > 0 && !/\.tsx?$/.test(l.trim()))
+              .slice(0, 5)
+              .map((l) => `      ${l.trim()}`)
+              .join("\n")
+          : "   (tsc produced no output at all)"),
+    );
+    process.exit(2);
+  }
+
+  // Kept as a second, cheaper signal with its own message: the program DID include tests,
+  // yet every diagnostic names something else. Subsumed by the floor above in practice,
+  // but it names a different failure and costs nothing.
   const compiledFiles = new Set([...all.keys()].map((k) => k.split("|")[0]));
   const testFiles = [...compiledFiles].filter(isTestPath);
 
@@ -151,7 +233,11 @@ function assertRunIsMeaningful() {
   //
   // Discriminator: (a) is a BARE workspace-package specifier; (b) is a relative path
   // or a deep subpath. Only (a) aborts the run.
-  const WORKSPACE_BARE = /Cannot find module '@kitelev\/exocortex-(core|services)'/;
+  // ⛤ Matches ANY bare @kitelev/exocortex-* specifier, not a hardcoded two-name list: a
+  // future workspace package that needs building would otherwise be diagnosed as "fix the
+  // error" instead of "build the dep". The trailing quote is load-bearing — it keeps DEEP
+  // SUBPATHS (`@kitelev/exocortex-core/domain/errors`) out, so those stay real debt (b).
+  const WORKSPACE_BARE = /Cannot find module '@kitelev\/exocortex-[a-z-]+'/;
   const envUnresolved = raw.split("\n").filter((l) => WORKSPACE_BARE.test(l));
   const unresolved = envUnresolved.length > 0 ? [...new Set(envUnresolved)] : [];
   if (unresolved.length > 0) {
@@ -181,6 +267,31 @@ if (UPDATE) {
     })
     .sort((a, b) => a.file.localeCompare(b.file) || a.code.localeCompare(b.code));
   writeFileSync(BASELINE, JSON.stringify({ entries }, null, 2) + "\n", "utf8");
+
+  // ⛤ Print the SHAPE of what was just frozen, not only its size. The generated baseline
+  // is the most reviewable artifact in a PR like this, and nothing else surfaces its
+  // distribution — so a config artifact hides in it as a plain "N pairs". Concretely:
+  // the first draft of this gate inherited target ES6 and baked in 70 × TS1378
+  // ("top-level await requires es2017+"), 14% of the baseline, 100% of it in one package.
+  // A per-code histogram makes that anomaly announce itself; a total never can.
+  const byCode = new Map();
+  const byPkg = new Map();
+  for (const e of entries) {
+    byCode.set(e.code, (byCode.get(e.code) ?? 0) + 1);
+    const pkg = /^packages\/([^/]+)\//.exec(e.file.replace(/\\/g, "/"))?.[1] ?? "?";
+    byPkg.set(pkg, (byPkg.get(pkg) ?? 0) + 1);
+  }
+  const fmt = (m) =>
+    [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`);
+  console.log(`   by package: ${fmt(byPkg).join(", ")}`);
+  console.log(`   by code:    ${fmt(byCode).slice(0, 10).join(", ")}${byCode.size > 10 ? `, … (${byCode.size} codes)` : ""}`);
+  const [topCode, topN] = [...byCode.entries()].sort((a, b) => b[1] - a[1])[0] ?? [];
+  if (topN && topN / entries.length >= 0.1) {
+    console.log(
+      `   ⚠ ${topCode} is ${Math.round((topN / entries.length) * 100)}% of the baseline — ` +
+        "check it is real debt and not a config artifact before committing.",
+    );
+  }
   console.log(
     `✅ baseline written: ${entries.length} (file, code) pair(s), ${diagnostics} diagnostic(s)`,
   );
@@ -217,8 +328,9 @@ const shrunk = [...found.entries()]
 // Report the INPUT SIZE beside the findings: "0 new" is indistinguishable from
 // "tsc emitted nothing at all" without it.
 console.log(
-  `check-test-types: ${diagnostics} diagnostic(s) in ${found.size} (file, code) pair(s) ` +
-    `across test files; baseline has ${known.size}`,
+  `check-test-types: compiled ${compiledTestFiles.length} test file(s); ` +
+    `${diagnostics} diagnostic(s) in ${found.size} (file, code) pair(s) ` +
+    `across them; baseline has ${known.size}`,
 );
 
 if (newPairs.length > 0) {
@@ -231,10 +343,15 @@ if (newPairs.length > 0) {
     }
   }
   console.error(
-    "\n   Nothing else type-checks test files — ts-jest only reports them at run time,\n" +
-      "   where the failure looks like 'Test suite failed to run / Tests: 0'. Fix the\n" +
-      "   error — do NOT add it to the baseline. The baseline freezes the EXISTING debt,\n" +
-      "   it is not a place to put new debt (that is how a ratchet becomes a licence).",
+    "\n   Fix the error — do NOT add it to the baseline. The baseline freezes the EXISTING\n" +
+      "   debt; it is not a place to put new debt (that is how a ratchet becomes a licence).\n" +
+      "\n" +
+      "   ⚠ This gate is a STRICTER SUPERSET of what ts-jest checks, so a red here does NOT\n" +
+      "   mean your suite fails at run time — it may well pass. Measured: ExocortexAPI.test.ts\n" +
+      "   carries 4 baselined diagnostics and runs 28/28 green. Do not go hunting a runtime\n" +
+      "   failure; the compiler is telling you something jest is not configured to tell you.\n" +
+      "   That gap is the point — packages/obsidian-plugin/tests/component/** runs under\n" +
+      "   Playwright CT (bundler transpile), where nothing type-checks it at all.",
   );
   process.exit(1);
 }

@@ -42,12 +42,15 @@ So a green `typecheck` says **nothing** about:
   one of which — a `BlankNode.value` read — shipped through two review rounds of #4070 while
   the compiler had been flagging it the whole time.
 - **`packages/**/tests/**`** — all 975 test files. Gated separately by
-  `scripts/check-test-types.mjs` (ratchet, issue #4084; baseline 505 `(file, code)` pairs /
-  2502 diagnostics at introduction). Their only other type-checking is ts-jest **at run
-  time**, where a type error surfaces as `Test suite failed to run / Tests: 0` — a shape that
-  reads as "nothing failed". ⛔ Worse, a **type-only** import is *erased* by ts-jest without
-  ever being resolved, so a test importing a module that has since MOVED still passes green
-  while its annotation silently degrades to `any`.
+  `scripts/check-test-types.mjs` (ratchet, issue #4084; baseline 433 `(file, code)` pairs /
+  2396 diagnostics at introduction).
+
+  ⛔ That gate is a **stricter superset** of what ts-jest checks, not a reproduction of it —
+  `main` is green today with all 2396 diagnostics present, so a red there does **not** mean a
+  suite fails at run time. What it uniquely covers: `tests/component/**` runs under Playwright
+  CT (bundler transpile) and is type-checked by **nothing** otherwise; and a **type-only**
+  import is *erased* by ts-jest without ever being resolved, so a test importing a module that
+  has since MOVED still passes green while its annotation silently degrades to `any`.
 
 ⇒ When reporting gate results on a PR, state **what the run covered**, not just its exit
 code: `typecheck rc=0 (⚠ does not cover test files or packages/cli)`. A bare "typecheck
