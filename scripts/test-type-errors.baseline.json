@@ -1,0 +1,2529 @@
+{
+  "entries": [
+    {
+      "file": "packages/cli/tests/integration/apply-absolute-path-precondition.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/apply-class-resolver.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/apply-clean-properties-precondition.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/apply-determinism.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/apply-json-created-composite.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/apply-json-created.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/apply-mutation-parity.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/apply-ontological-archive.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/apply-ontological-unarchive.integration.test.ts",
+      "code": "TS1378",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/integration/apply-targetvaluequery.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/apply-workflow-transition.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/cache-eviction-and-clear-3981.integration.test.ts",
+      "code": "TS1378",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/integration/cache-eviction-and-clear-3981.integration.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/canonical-key-single-source.integration.test.ts",
+      "code": "TS1378",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/tests/integration/cli-plugin-triple-parity.integration.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/command-dry-run.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/command-dry-run.integration.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/commands/apply-profile.integration.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/commands/apply-profile.integration.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/commands/audit-ontology-url.integration.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/commands/audit-ontology-url.integration.test.ts",
+      "code": "TS7006",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/tests/integration/commands/validate-vault.integration.test.ts",
+      "code": "TS2322",
+      "count": 5
+    },
+    {
+      "file": "packages/cli/tests/integration/create-cardinality.integration.test.ts",
+      "code": "TS1378",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/integration/create-co-location.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/create-multivalue.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/create-neighbour-co-location.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/create-no-status.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/create-property-name-validation.integration.test.ts",
+      "code": "TS1378",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/tests/integration/create-status-defaults.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/create-validate-shacl.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/cross-runtime-parity.test.ts",
+      "code": "TS1378",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/tests/integration/dupkey-invisible-asset.integration.test.ts",
+      "code": "TS1378",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/integration/remove-property-unknown-name.integration.test.ts",
+      "code": "TS1378",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/integration/remove-property.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/rename-to-uid-update-inbound-links.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/repair-frontmatter.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/resolve-buttons.integration.test.ts",
+      "code": "TS1378",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/integration/run-query-namedquery.integration.test.ts",
+      "code": "TS1378",
+      "count": 4
+    },
+    {
+      "file": "packages/cli/tests/integration/set-body.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/set-property-name-validation.integration.test.ts",
+      "code": "TS1378",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/integration/set-property.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/set-property.scalar-typing.integration.test.ts",
+      "code": "TS1378",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/integration/sparql-result-cache-key-3979.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/validate-schema-labelless-class.integration.test.ts",
+      "code": "TS1378",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/tests/integration/validate-schema-metaclass-inference.integration.test.ts",
+      "code": "TS1378",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/tests/integration/validate-schema-namedquery-range.integration.test.ts",
+      "code": "TS1378",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/tests/integration/validate-schema-person-subclass.integration.test.ts",
+      "code": "TS1378",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/tests/integration/validate-schema-shapes-iri-false-positives.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/validate-schema-shapes-iri-false-positives.integration.test.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/validate-schema-shapes-staged.integration.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/validate-schema-shapes-staged.integration.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/integration/validate-schema-shapes-staged.integration.test.ts",
+      "code": "TS2741",
+      "count": 5
+    },
+    {
+      "file": "packages/cli/tests/integration/validate-schema-shapes.integration.test.ts",
+      "code": "TS1378",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/tests/integration/validate-schema.integration.test.ts",
+      "code": "TS1378",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/tests/integration/validate-schema.integration.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/adapters/FileSystemVaultAdapter.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/adapters/FileSystemVaultAdapter.test.ts",
+      "code": "TS2345",
+      "count": 19
+    },
+    {
+      "file": "packages/cli/tests/unit/adapters/FileSystemVaultAdapter.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/adapters/NodeFsAdapter.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/adapters/NodeFsAdapter.test.ts",
+      "code": "TS2345",
+      "count": 75
+    },
+    {
+      "file": "packages/cli/tests/unit/adapters/NodeFsAdapter.test.ts",
+      "code": "TS2554",
+      "count": 13
+    },
+    {
+      "file": "packages/cli/tests/unit/BootstrapAssetSpaceService.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/cache/CacheManager.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/cache/CacheManager.test.ts",
+      "code": "TS2345",
+      "count": 4
+    },
+    {
+      "file": "packages/cli/tests/unit/cache/QueryResultCache.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/cache/QueryResultCache.vaultSignature.test.ts",
+      "code": "TS1378",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/CliApplyProfileService.parked.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/audit-co-location.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/audit-co-location.test.ts",
+      "code": "TS7006",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/classes.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/classes.test.ts",
+      "code": "TS2345",
+      "count": 8
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/classes.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/create.test.ts",
+      "code": "TS1378",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/create.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/exosync-parity.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/exosync-sync.test.ts",
+      "code": "TS2353",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/resolve.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/resolve.test.ts",
+      "code": "TS2551",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/resolve.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/sparql-index-strict.test.ts",
+      "code": "TS2554",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/sparql-index.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/sparql-index.test.ts",
+      "code": "TS2345",
+      "count": 15
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/sparql-query-debug.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/sparql-query-debug.test.ts",
+      "code": "TS2345",
+      "count": 11
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/sparql-query-debug.test.ts",
+      "code": "TS6133",
+      "count": 4
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/sparql-query-timeout.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/sparql-query-timeout.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/sparql-query.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/sparql-query.test.ts",
+      "code": "TS2345",
+      "count": 8
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/sparql-query.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/validate-schema.test.ts",
+      "code": "TS1378",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/validate-schema.test.ts",
+      "code": "TS2345",
+      "count": 19
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/validate-schema.test.ts",
+      "code": "TS2741",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/validate-schema.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/validate.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/commands/validate.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/AssetCreationExecutor.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/AssetCreationExecutor.test.ts",
+      "code": "TS2345",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/AssetCreationExecutor.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/BatchExecutor.repair-folder.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/BatchExecutor.repair-folder.test.ts",
+      "code": "TS2345",
+      "count": 45
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/BatchExecutor.repair-folder.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/BatchExecutor.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/BatchExecutor.test.ts",
+      "code": "TS2345",
+      "count": 15
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/BatchExecutor.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/CommandExecutor.error.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/CommandExecutor.error.test.ts",
+      "code": "TS2345",
+      "count": 27
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/CommandExecutor.error.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/CommandExecutor.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/CommandExecutor.test.ts",
+      "code": "TS2345",
+      "count": 72
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/CommandExecutor.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/FolderRepairExecutor.test.ts",
+      "code": "TS1378",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/FolderRepairExecutor.test.ts",
+      "code": "TS2345",
+      "count": 61
+    },
+    {
+      "file": "packages/cli/tests/unit/executors/FolderRepairExecutor.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/formatters/CsvFormatter.test.ts",
+      "code": "TS6133",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/tests/unit/index/UUIDIndex.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/services/ClassResolverService.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/services/CliProfileResolver.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/services/instantiate-prototype-subtree.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/services/registerOrderSpec.test.ts",
+      "code": "TS1378",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/services/registerOrderSpec.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/services/RestPushService.test.ts",
+      "code": "TS18046",
+      "count": 8
+    },
+    {
+      "file": "packages/cli/tests/unit/services/RestPushService.test.ts",
+      "code": "TS2322",
+      "count": 7
+    },
+    {
+      "file": "packages/cli/tests/unit/services/RestPushService.test.ts",
+      "code": "TS2345",
+      "count": 8
+    },
+    {
+      "file": "packages/cli/tests/unit/services/SpawnService.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/services/WikilinkValidator.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/utils/ErrorHandler.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/utils/ErrorHandler.test.ts",
+      "code": "TS2554",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/utils/ErrorHandler.test.ts",
+      "code": "TS2694",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/tests/unit/utils/ProgressIndicator.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/utils/ProgressIndicator.test.ts",
+      "code": "TS2322",
+      "count": 2
+    },
+    {
+      "file": "packages/cli/tests/unit/utils/ProgressIndicator.test.ts",
+      "code": "TS6133",
+      "count": 3
+    },
+    {
+      "file": "packages/cli/tests/unit/utils/QueryAnalyzer.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/utils/QueryAnalyzer.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/utils/SPARQLErrorEnhancer.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/utils/SPARQLErrorEnhancer.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/utils/TransactionManager.test.ts",
+      "code": "TS1378",
+      "count": 1
+    },
+    {
+      "file": "packages/cli/tests/unit/utils/TransactionManager.test.ts",
+      "code": "TS2345",
+      "count": 33
+    },
+    {
+      "file": "packages/cli/tests/unit/utils/TransactionManager.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/integration/sparql/critical-paths.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/integration/sparql/instance-class-emission-flip.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/core/tests/integration/sparql/sparql-1.2-directional.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/integration/sync/syncEngine.retry-after.integration.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/services/PropertySchemaResolver.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/services/RenameToUidService.test.ts",
+      "code": "TS6133",
+      "count": 27
+    },
+    {
+      "file": "packages/core/tests/services/ShaclLiteValidator.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/core/tests/sparql/compliance/aggregates.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/sparql/compliance/built-in-functions.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/core/tests/sparql/compliance/query-forms.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/sparql/compliance/solution-modifiers.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/domain/defaults/DefaultWorkflows.branch.test.ts",
+      "code": "TS6196",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/domain/models/GraphData.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/core/tests/unit/infrastructure/rdf/RDFSInferenceEngine.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/infrastructure/sparql/aggregates/CustomAggregateIntegration.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/infrastructure/sparql/aggregates/CustomAggregateIntegration.test.ts",
+      "code": "TS6196",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/infrastructure/sparql/algebra/AggregateTranslator.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/core/tests/unit/infrastructure/sparql/algebra/ExpressionTranslator.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/infrastructure/sparql/algebra/ExpressionTranslator.test.ts",
+      "code": "TS6196",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/infrastructure/sparql/algebra/PatternTranslator.test.ts",
+      "code": "TS6133",
+      "count": 3
+    },
+    {
+      "file": "packages/core/tests/unit/infrastructure/sparql/AlgebraTranslator.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/core/tests/unit/infrastructure/sparql/DescribeOptionsTransformer.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/infrastructure/sparql/executors/BGPExecutor.branch.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/infrastructure/sparql/executors/QueryExecutor.branch.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/core/tests/unit/infrastructure/sparql/executors/QueryExecutor.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/infrastructure/sparql/executors/ServiceExecutor.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/core/tests/unit/services/CommandResolver.universalDefaultTemplate.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/services/EnumValueResolver.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/services/FolderRepairService.test.ts",
+      "code": "TS6196",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/services/GenericAssetCreationService.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/services/GraphQueryService.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/services/InstantiationRuleResolver.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/services/NoteToRDFConverter.rfc-31c1a0be-grounding-ref.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/services/PrototypeChainMaterializer.test.ts",
+      "code": "TS6133",
+      "count": 5
+    },
+    {
+      "file": "packages/core/tests/unit/services/sync/ParityValidator.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/unit/sparql/subquery-acceptance.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/core/tests/utilities/FrontmatterService.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/__mocks__/obsidian.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/__mocks__/obsidian.ts",
+      "code": "TS2345",
+      "count": 6
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/__mocks__/obsidian.ts",
+      "code": "TS2367",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/__mocks__/obsidian.ts",
+      "code": "TS2687",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/__mocks__/obsidian.ts",
+      "code": "TS2722",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/__mocks__/obsidian.ts",
+      "code": "TS6133",
+      "count": 48
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/AreaHierarchyTree.spec.tsx",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/AreaHierarchyTree.spec.tsx",
+      "code": "TS2686",
+      "count": 16
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/AssetRelationsTable.spec.tsx",
+      "code": "TS2686",
+      "count": 41
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/AssetRelationsTable.spec.tsx",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/DailyTasksTable.spec.tsx",
+      "code": "TS2739",
+      "count": 18
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/DailyTasksTable.visual.spec.tsx",
+      "code": "TS2739",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/ErrorBoundary.test.tsx",
+      "code": "TS2307",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/ErrorBoundary.test.tsx",
+      "code": "TS6133",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/ErrorBoundary.testHelpers.tsx",
+      "code": "TS2307",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/exo-layout-docs-renders.spec.tsx",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/properties/DateTimePropertyField.spec.tsx",
+      "code": "TS2686",
+      "count": 21
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/properties/TextPropertyField.spec.tsx",
+      "code": "TS2686",
+      "count": 11
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/property-editor/fields/BooleanField.spec.tsx",
+      "code": "TS2686",
+      "count": 16
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/property-editor/fields/NumberField.spec.tsx",
+      "code": "TS2686",
+      "count": 18
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/property-editor/fields/SelectField.spec.tsx",
+      "code": "TS2686",
+      "count": 17
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/property-editor/fields/TextField.spec.tsx",
+      "code": "TS2686",
+      "count": 16
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/property-editor/fields/TimestampField.spec.tsx",
+      "code": "TS2686",
+      "count": 13
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/property-editor/fields/WikiLinkField.spec.tsx",
+      "code": "TS2686",
+      "count": 21
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/RenderingPerformance.spec.tsx",
+      "code": "TS6133",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/ResponsiveLayout.spec.tsx",
+      "code": "TS2345",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/ResponsiveLayout.spec.tsx",
+      "code": "TS2686",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/component/ResponsiveLayout.spec.tsx",
+      "code": "TS2739",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/e2e/eka/eka-obsidian-leg.spec.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/e2e/specs/area-tree-collapsible.spec.ts",
+      "code": "TS18047",
+      "count": 8
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/e2e/specs/brat-installation-compatibility.spec.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/e2e/specs/exo-layout-smoke.spec.ts",
+      "code": "TS18047",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/e2e/specs/exo-layout-smoke.spec.ts",
+      "code": "TS2353",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/e2e/specs/file-explorer-icons.spec.ts",
+      "code": "TS2353",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/e2e/specs/layout-overflow-styling.spec.ts",
+      "code": "TS2339",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/e2e/specs/settings-live-mirror.spec.ts",
+      "code": "TS2538",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/e2e/specs/table-virtualization-large-datasets.spec.ts",
+      "code": "TS2339",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/e2e/specs/table-virtualization-large-datasets.spec.ts",
+      "code": "TS2352",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/e2e/specs/wikilink-label-parity.spec.ts",
+      "code": "TS2353",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/e2e/utils/obsidian-launcher.ts",
+      "code": "TS6133",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/infrastructure/caching/BacklinksCacheManager.test.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/infrastructure/services/FrontmatterService.test.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/infrastructure/utilities/DateFormatter.test.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/infrastructure/utilities/EffortSortingHelpers.test.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/infrastructure/utilities/MetadataExtractor.test.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/infrastructure/utilities/MetadataHelpers.test.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/infrastructure/utilities/WikiLinkHelpers.test.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/integration/display-name/wikilink-resolution.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/integration/layout-parsing.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/ui/ActionButtonsLayout.ui.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/ui/ActionButtonsLayout.ui.test.ts",
+      "code": "TS6133",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/ui/UniversalLayoutRenderer.ui.test.ts",
+      "code": "TS18049",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/ui/UniversalLayoutRenderer.ui.test.ts",
+      "code": "TS2304",
+      "count": 51
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/ui/UniversalLayoutRenderer.ui.test.ts",
+      "code": "TS2345",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/ui/UniversalLayoutRenderer.ui.test.ts",
+      "code": "TS2352",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/ui/UniversalLayoutRenderer.ui.test.ts",
+      "code": "TS2554",
+      "count": 70
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/ui/UniversalLayoutRenderer.ui.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/adapters/logging/activityLog.integration.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/adapters/logging/activityLog.integration.test.ts",
+      "code": "TS2683",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/api/ExocortexAPI.test.ts",
+      "code": "TS2345",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/api/ExocortexAPI.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/api/ExocortexAPI.test.ts",
+      "code": "TS2739",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/api/ExocortexAPI.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/api/SPARQLApi.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/application/layout/LayoutQueryBuilder.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/application/layout/LayoutService.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/application/layout/LayoutService.test.ts",
+      "code": "TS2345",
+      "count": 34
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/application/layout/LayoutService.test.ts",
+      "code": "TS2739",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/application/layout/LayoutService.test.ts",
+      "code": "TS6196",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/application/processors/LayoutActionExecution.integration.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/application/processors/LayoutActionPreconditionGating.integration.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/application/processors/LayoutCodeBlockProcessor.homoiconicDisplayName.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/application/processors/LayoutCodeBlockProcessor.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/AreaHierarchyBuilder.test.ts",
+      "code": "TS2339",
+      "count": 32
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/AreaHierarchyBuilder.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/builders/buttonGroups/ButtonGroupsBuilder.build.test.ts",
+      "code": "TS2322",
+      "count": 7
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/builders/buttonGroups/ButtonGroupsBuilder.build.test.ts",
+      "code": "TS2353",
+      "count": 8
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/builders/buttonGroups/ButtonGroupsBuilder.build.test.ts",
+      "code": "TS2739",
+      "count": 6
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/builders/buttonGroups/ButtonGroupsBuilder.dynamicCommands.test.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/builders/buttonGroups/ButtonGroupsBuilder.dynamicCommands.test.ts",
+      "code": "TS6133",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/builders/buttonGroups/ButtonGroupsBuilder.fixtures.ts",
+      "code": "TS1205",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/builders/buttonGroups/ButtonGroupsBuilder.fixtures.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/builders/buttonGroups/ButtonGroupsBuilder.fixtures.ts",
+      "code": "TS2740",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/builders/buttonGroups/ButtonGroupsBuilder.handlers.test.ts",
+      "code": "TS2322",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/builders/buttonGroups/ButtonGroupsBuilder.handlers.test.ts",
+      "code": "TS2353",
+      "count": 5
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/builders/buttonGroups/ButtonGroupsBuilder.handlers.test.ts",
+      "code": "TS2739",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ClassCreationService.test.ts",
+      "code": "TS2352",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/CommandHelpers.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/commands-index.test.ts",
+      "code": "TS7053",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/commands/manager/CommandManager.fixtures.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/domain/concept-definition/ConceptDefinitionResolver.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/domain/concept-definition/ConceptDefinitionSpecService.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/domain/display-name/DisplayNamePrintedPropertyFallback.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/domain/display-name/DisplayNameResolver.composition.test.ts",
+      "code": "TS2554",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/domain/display-name/DisplayNameResolver.multiClass.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/domain/display-name/DisplayNameResolver.tboxProjection.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/domain/display-name/DisplayNameResolver.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/domain/display-name/DisplayNameSeparatorAndFormat.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/domain/display-name/PrintNameRuleService.episodeOngoing.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/domain/display-name/PrintNameRuleService.matchPathKeyPath.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/domain/display-name/PrintNameRuleService.test.ts",
+      "code": "TS2554",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/domain/layout/Layout.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/domain/layout/LayoutGroup.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/domain/layout/LayoutSort.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/EditPropertiesCommand.test.ts",
+      "code": "TS2352",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/EditPropertiesCommand.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/error-handling.test.ts",
+      "code": "TS2353",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/error-handling.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/error-handling/error-scenarios.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/error-handling/ObsidianVaultAdapter.error.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ErrorBoundary.test.ts",
+      "code": "TS18046",
+      "count": 17
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ErrorBoundary.test.ts",
+      "code": "TS2322",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ErrorBoundary.test.ts",
+      "code": "TS6133",
+      "count": 5
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/EventListenerManager.test.ts",
+      "code": "TS2345",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ExocortexPlugin.test.ts",
+      "code": "TS2345",
+      "count": 6
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ExocortexPlugin.test.ts",
+      "code": "TS7006",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ExocortexSettingTab.informationArchitecture.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/FolderRepairService.test.ts",
+      "code": "TS2339",
+      "count": 13
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/GitHubRestClient.test.ts",
+      "code": "TS2503",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/helpers/TestFixtureBuilder.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/helpers/TestFixtureBuilder.ts",
+      "code": "TS2352",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/helpers/testHelpers.ts",
+      "code": "TS2352",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/helpers/testHelpers.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/IncrementalUpdateHandler.test.ts",
+      "code": "TS2345",
+      "count": 13
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/adapters/AssetSpaceManager.pullAssetSpace.test.ts",
+      "code": "TS2345",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/adapters/BootstrapAssetSpaceCommands.test.ts",
+      "code": "TS2352",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/adapters/RestAssetSpaceMount.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/adapters/VaultSettingsStore.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/di/ObsidianNotificationService.test.ts",
+      "code": "TS2345",
+      "count": 5
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/di/ObsidianNotificationService.test.ts",
+      "code": "TS2352",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/di/ObsidianNotificationService.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/di/PluginContainer.test.ts",
+      "code": "TS18046",
+      "count": 22
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/layout/LayoutParser.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/precondition/createHasEmptyPropertiesHostFunction.test.ts",
+      "code": "TS2554",
+      "count": 7
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/precondition/createIsInWrongFolderHostFunction.test.ts",
+      "code": "TS2554",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/repositories/ExoLayoutRepository.test.ts",
+      "code": "TS2559",
+      "count": 8
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/repositories/ObsidianExoLayoutAdapter.test.ts",
+      "code": "TS2554",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/VaultRDFIndexer.excluded-folders.test.ts",
+      "code": "TS6196",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/VaultRDFIndexer.test.ts",
+      "code": "TS2322",
+      "count": 8
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/infrastructure/VaultRDFIndexer.test.ts",
+      "code": "TS2739",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/integration/ApplyEndToEnd.integration.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/integration/AssetSpaceManager.integration.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/integration/BootstrapAssetSpace.integration.test.ts",
+      "code": "TS2353",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/integration/BootstrapAssetSpaceMobile.integration.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/integration/sparql-critical-paths.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/integration/wikilink-resolution.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/LayoutErrorFallback.test.tsx",
+      "code": "TS18046",
+      "count": 6
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/LayoutErrorFallback.test.tsx",
+      "code": "TS2339",
+      "count": 33
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/LoggerFactory.test.ts",
+      "code": "TS2576",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ModalConfirmGate.test.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ModalConfirmGate.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ModalConfirmGate.test.ts",
+      "code": "TS2683",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ObsidianFileOpener.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ObsidianVaultAdapter.test.ts",
+      "code": "TS6133",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/OntologySchemaService.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/asset-space/AssetSpaceStatusIconPatch.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/asset-space/AssetSpaceStatusIconPatch.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/body/BodyLinkPatch.test.ts",
+      "code": "TS2345",
+      "count": 55
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/builders/DynamicCommandButtonGroupBuilder.test.ts",
+      "code": "TS2304",
+      "count": 21
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/AreaHierarchyTree.test.tsx",
+      "code": "TS18046",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/AreaHierarchyTree.test.tsx",
+      "code": "TS2339",
+      "count": 9
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/AreaHierarchyTree.test.tsx",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/AssetRelationsTable.accent.test.tsx",
+      "code": "TS18046",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/AssetRelationsTable.accent.test.tsx",
+      "code": "TS2339",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/AssetRelationsTable.accent.test.tsx",
+      "code": "TS2344",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/AssetRelationsTable.accent.test.tsx",
+      "code": "TS2571",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/AssetRelationsTable.edit-affordance.test.tsx",
+      "code": "TS2344",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/AssetRelationsTable.edit-affordance.test.tsx",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/AssetRelationsTable.edit-affordance.test.tsx",
+      "code": "TS2571",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/AssetRelationsTable.reified-marker.test.tsx",
+      "code": "TS2339",
+      "count": 10
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/AssetRelationsTable.reified-marker.test.tsx",
+      "code": "TS2344",
+      "count": 8
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/AssetRelationsTable.reified-marker.test.tsx",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/AssetRelationsTable.reified-marker.test.tsx",
+      "code": "TS2571",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/DynamicForm.test.tsx",
+      "code": "TS2345",
+      "count": 35
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/PropertyEditorForm.relations.test.tsx",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/ReferencePicker.test.tsx",
+      "code": "TS2345",
+      "count": 15
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/components/RelationsSection.test.tsx",
+      "code": "TS2345",
+      "count": 12
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/fileexplorer/FileExplorerIconPatch.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/fileexplorer/FileExplorerIconPatch.test.ts",
+      "code": "TS2344",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/fileexplorer/FileExplorerIconPatch.test.ts",
+      "code": "TS2345",
+      "count": 19
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/fileexplorer/FileExplorerLabelPatch.test.ts",
+      "code": "TS2339",
+      "count": 10
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/fileexplorer/FileExplorerLabelPatch.test.ts",
+      "code": "TS2344",
+      "count": 8
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/fileexplorer/FileExplorerLabelPatch.test.ts",
+      "code": "TS2345",
+      "count": 16
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/fileexplorer/FileExplorerLabelPatch.test.ts",
+      "code": "TS2749",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/graph-view/GraphViewPatch.test.ts",
+      "code": "TS2739",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/graph-view/GraphViewPatch.test.ts",
+      "code": "TS2741",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/ActivityLogModal.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/ActivityLogModal.test.ts",
+      "code": "TS2683",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/AddAssetSpaceModal.a11y.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/AddAssetSpaceModal.a11y.test.ts",
+      "code": "TS2352",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/AddAssetSpaceModal.a11y.test.ts",
+      "code": "TS2683",
+      "count": 5
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/BootstrapModals.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/BootstrapModals.test.ts",
+      "code": "TS2352",
+      "count": 5
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/BootstrapModals.test.ts",
+      "code": "TS2683",
+      "count": 5
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/BootstrapVaultModal.a11y.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/BootstrapVaultModal.a11y.test.ts",
+      "code": "TS2352",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/BootstrapVaultModal.a11y.test.ts",
+      "code": "TS2683",
+      "count": 5
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/FirstRunOnboardingModal.test.ts",
+      "code": "TS2322",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/FirstRunOnboardingModal.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/FirstRunOnboardingModal.test.ts",
+      "code": "TS2352",
+      "count": 6
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/FirstRunOnboardingModal.test.ts",
+      "code": "TS2683",
+      "count": 5
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/LogFileModal.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/LogFileModal.test.ts",
+      "code": "TS2683",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/OnboardingResultStepSync.test.ts",
+      "code": "TS18046",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/OnboardingResultStepSync.test.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/OnboardingResultStepSync.test.ts",
+      "code": "TS2344",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/OnboardingResultStepSync.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/OnboardingResultStepSync.test.ts",
+      "code": "TS2683",
+      "count": 5
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/OnboardingResultStepSync.test.ts",
+      "code": "TS2740",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/SimpleConfirmModal.test.ts",
+      "code": "TS2339",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/SimpleConfirmModal.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/modals/SimpleConfirmModal.test.ts",
+      "code": "TS2683",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/parked/ParkedLinkPlaceholder.test.ts",
+      "code": "TS2345",
+      "count": 16
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/properties/PropertiesDefinitionValuePatch.test.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/properties/PropertiesDefinitionValuePatch.test.ts",
+      "code": "TS2344",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/properties/PropertiesDefinitionValuePatch.test.ts",
+      "code": "TS2345",
+      "count": 8
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/properties/PropertiesDefinitionValuePatch.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/properties/PropertiesLabelPatch.test.ts",
+      "code": "TS2339",
+      "count": 39
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/properties/PropertiesLabelPatch.test.ts",
+      "code": "TS2344",
+      "count": 34
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/properties/PropertiesLabelPatch.test.ts",
+      "code": "TS2345",
+      "count": 41
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/properties/PropertiesLinkPatch.test.ts",
+      "code": "TS2345",
+      "count": 16
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/properties/PropertiesUidCopyPatch.test.ts",
+      "code": "TS2345",
+      "count": 36
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/properties/PropertiesUidCopyPatch.test.ts",
+      "code": "TS2352",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/reading-mode/ReadingModeEnforcer.test.ts",
+      "code": "TS2345",
+      "count": 7
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/reading-mode/ReadingModeEnforcer.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/calendar/CalendarEvent.test.tsx",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/calendar/CalendarEvent.test.tsx",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/calendar/CalendarLayoutRenderer.test.tsx",
+      "code": "TS2345",
+      "count": 8
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/calendar/CalendarLayoutRenderer.test.tsx",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/cell-renderers/ActionsRenderer.test.tsx",
+      "code": "TS2345",
+      "count": 8
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/cell-renderers/ActionsRenderer.test.tsx",
+      "code": "TS2743",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/cell-renderers/ActionsRenderer.test.tsx",
+      "code": "TS6196",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/cell-renderers/BadgeRenderer.test.tsx",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/cell-renderers/BooleanRenderer.test.tsx",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/cell-renderers/DateTimeRenderer.test.tsx",
+      "code": "TS2352",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/cell-renderers/LinkRenderer.test.tsx",
+      "code": "TS2345",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/cell-renderers/LinkRenderer.test.tsx",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/cell-renderers/NumberRenderer.test.tsx",
+      "code": "TS2345",
+      "count": 7
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/cell-renderers/ProgressRenderer.test.tsx",
+      "code": "TS2352",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/cell-renderers/TagsRenderer.test.tsx",
+      "code": "TS2322",
+      "count": 14
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/cell-renderers/TagsRenderer.test.tsx",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/ExoLayoutRenderer.dailyEfforts.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/ExoLayoutRenderer.dailyEfforts.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/ExoLayoutRenderer.dailyEfforts.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/ExoLayoutRenderer.dailyEffortsClosed.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/ExoLayoutRenderer.dailyEffortsClosed.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/ExoLayoutRenderer.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/ExoLayoutRenderer.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/ExoLayoutRenderer.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/TableLayoutRenderer.test.tsx",
+      "code": "TS2345",
+      "count": 10
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/TableLayoutRenderer.test.tsx",
+      "code": "TS2556",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/renderers/UniversalLayoutRenderer.dailyEffortsSuppression.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/settings/patSetupHelper.test.ts",
+      "code": "TS2352",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/settings/patSetupHelper.test.ts",
+      "code": "TS2683",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/tab-titles/InlineTitlePatch.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/tab-titles/InlineTitlePatch.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/presentation/tab-titles/TabTitlePatch.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ProfileApplyManager.apply.test.ts",
+      "code": "TS1501",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ProfileApplyManager.apply.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ProfileApplyManager.apply.test.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ProfileApplyManager.apply.test.ts",
+      "code": "TS2493",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ProfileApplyManager.restAtomicity.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ProfileApplyManager.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/property-editor/EditPropertiesCommand.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/property-fields/BooleanPropertyField.test.ts",
+      "code": "TS2345",
+      "count": 7
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/property-fields/DatePropertyField.test.ts",
+      "code": "TS2345",
+      "count": 7
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/property-fields/DateTimePropertyField.test.ts",
+      "code": "TS2345",
+      "count": 7
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/property-fields/EnumPropertyField.test.ts",
+      "code": "TS2345",
+      "count": 8
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/property-fields/NumberPropertyField.test.ts",
+      "code": "TS2345",
+      "count": 7
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/property-fields/PropertyFieldFactory.test.ts",
+      "code": "TS2345",
+      "count": 11
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/property-fields/ReferencePropertyField.test.ts",
+      "code": "TS2345",
+      "count": 7
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/property-fields/ReferencePropertyField.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/property-fields/SizeSelectPropertyField.test.ts",
+      "code": "TS2345",
+      "count": 8
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/property-fields/StatusSelectPropertyField.test.ts",
+      "code": "TS2345",
+      "count": 8
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/property-fields/TextPropertyField.test.ts",
+      "code": "TS2345",
+      "count": 8
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/property-fields/TextPropertyField.test.ts",
+      "code": "TS2352",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/property-fields/TimestampPropertyField.test.ts",
+      "code": "TS2345",
+      "count": 6
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/property-fields/WikilinkPropertyField.test.ts",
+      "code": "TS2345",
+      "count": 7
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/PropertyCleanupService.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/PropertyValidationService.test.ts",
+      "code": "TS2740",
+      "count": 17
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ReactRenderer.test.tsx",
+      "code": "TS2339",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ReactRenderer.test.tsx",
+      "code": "TS2352",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ReactRenderer.test.tsx",
+      "code": "TS4114",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/RelationsRenderer.test.ts",
+      "code": "TS2531",
+      "count": 6
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/RelationsRenderer.test.ts",
+      "code": "TS7006",
+      "count": 17
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/RenameToUidService.test.ts",
+      "code": "TS2339",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/RenameToUidService.test.ts",
+      "code": "TS6133",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/dailyTasks/DailyTasksRenderer.callbacks.test.ts",
+      "code": "TS2571",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/dailyTasks/DailyTasksRenderer.core.test.ts",
+      "code": "TS2571",
+      "count": 8
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/dailyTasks/DailyTasksRenderer.edgeCases.test.ts",
+      "code": "TS2571",
+      "count": 5
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/dailyTasks/DailyTasksRenderer.fixtures.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/dailyTasks/DailyTasksRenderer.fixtures.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/dailyTasks/DailyTasksRenderer.helpers.test.ts",
+      "code": "TS18046",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/dailyTasks/DailyTasksRenderer.helpers.test.ts",
+      "code": "TS2571",
+      "count": 11
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/dailyTasks/DailyTasksRenderer.homoiconicDisplayName.test.ts",
+      "code": "TS2307",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/dailyTasks/DailyTasksRenderer.homoiconicDisplayName.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/dailyTasks/DailyTasksRenderer.homoiconicDisplayName.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/dailyTasks/DailyTasksRenderer.properties.test.ts",
+      "code": "TS2571",
+      "count": 7
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/dailyTasks/DailyTasksRenderer.timeEstimate.test.ts",
+      "code": "TS2571",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/helpers/DailyNavigationRenderer.test.ts",
+      "code": "TS2345",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/helpers/DailyNavigationRenderer.test.ts",
+      "code": "TS2352",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/helpers/SectionStateManager.test.ts",
+      "code": "TS2345",
+      "count": 9
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/helpers/SectionStateManager.test.ts",
+      "code": "TS2352",
+      "count": 4
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/helpers/SectionStateManager.test.ts",
+      "code": "TS2683",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/renderers/layout/RelationsRenderer.homoiconicDisplayName.test.ts",
+      "code": "TS2554",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/services/AliasSyncService.test.ts",
+      "code": "TS6133",
+      "count": 9
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/services/ClassDiscoveryService.test.ts",
+      "code": "TS2345",
+      "count": 9
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/services/ClassDiscoveryService.test.ts",
+      "code": "TS2769",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/services/OntologySchemaService.test.ts",
+      "code": "TS1501",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/services/OntologySchemaService.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/services/OntologySchemaService.test.ts",
+      "code": "TS2740",
+      "count": 44
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/services/PropertyUpdateService.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/services/SPARQLQueryService.integration.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/stores/tableSortStore.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/stores/uiStore.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/sync/ExoSyncPostSyncReindex.test.ts",
+      "code": "TS2554",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/sync/QuarantineResolverModal.test.ts",
+      "code": "TS2339",
+      "count": 7
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/sync/QuarantineResolverModal.test.ts",
+      "code": "TS2344",
+      "count": 13
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/sync/QuarantineResolverModal.test.ts",
+      "code": "TS2488",
+      "count": 11
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/sync/QuarantineResolverModal.test.ts",
+      "code": "TS2571",
+      "count": 3
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/TarExtractor.test.ts",
+      "code": "TS2345",
+      "count": 2
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ToggleArchivedAssetsCommand.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ToggleArchivedAssetsCommand.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/ToggleLayoutVisibilityCommand.test.ts",
+      "code": "TS6133",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/UniversalLayoutRenderer.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/UniversalLayoutRenderer.test.ts",
+      "code": "TS2352",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/wiring/BootstrapPatRefresh.integration.test.ts",
+      "code": "TS2322",
+      "count": 1
+    },
+    {
+      "file": "packages/obsidian-plugin/tests/unit/wiring/BootstrapPatRefresh.integration.test.ts",
+      "code": "TS2345",
+      "count": 1
+    },
+    {
+      "file": "packages/test-utils/tests/reporters/flaky-reporter.test.ts",
+      "code": "TS2345",
+      "count": 9
+    }
+  ]
+}

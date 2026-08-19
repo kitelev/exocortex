@@ -1,0 +1,37 @@
+{
+  // Type-check configuration for TEST files (issue #4084).
+  //
+  // ⛔ Why this file exists: NO tsconfig in the repo type-checks `packages/**/tests/**`.
+  //    Measured on origin/main 2026-08-19:
+  //      packages/core/tsconfig.json    include src/**/*   exclude [..., "tests"]
+  //      packages/cli/tsconfig.json     include src/**/*   (tests simply not included)
+  //      packages/obsidian-plugin/      no package tsconfig at all
+  //      tsconfig.json (root)           exclude packages/**/tests/**/*, packages/cli/**/*
+  //    => `npm run check:types` covers packages/<non-cli>/src and nothing else.
+  //    All 975 test files are type-checked ONLY by ts-jest at run time, where an error
+  //    surfaces as "Test suite failed to run / Tests: 0" — a shape easily read as green.
+  //
+  // `src` is included NOT to gate it (that is `check:types` + check-cli-types.mjs) but
+  // because the program cannot resolve test imports without it. scripts/check-test-types.mjs
+  // filters diagnostics down to `/tests/` paths.
+  //
+  // ⛔ rootDir MUST be the repo root: packages import each other's SOURCES (obsidian-plugin
+  //    → packages/core/src), so a package-scoped rootDir yields TS6059 for every such file
+  //    and tsc stops before checking anything. Measured: 277 TS6059 with rootDir=packages/obsidian-plugin.
+  //
+  // ⛔ declaration/declarationMap/composite are forced off: the inherited config sets
+  //    declarationMap, and `declarationMap` without `declaration`/`composite` is TS5069 —
+  //    a CONFIG error that aborts the run while still printing a positioned diagnostic
+  //    (it points at this file). See the scope guard in check-test-types.mjs.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "declaration": false,
+    "declarationMap": false,
+    "composite": false,
+    "skipLibCheck": true
+  },
+  "include": ["packages/*/src/**/*", "packages/*/tests/**/*"],
+  "exclude": ["**/node_modules", "**/dist"]
+}

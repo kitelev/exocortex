@@ -221,6 +221,16 @@ jobs:
       - name: No new type errors in packages/cli
         run: node scripts/check-cli-types.mjs
 
+      # Issue #4084 — the OTHER half of the same hole. No tsconfig in the repo includes
+      # packages/**/tests/**, so all 975 test files are type-checked only by ts-jest at
+      # run time, where a failure reads as "Test suite failed to run / Tests: 0". Measured
+      # 2026-08-19: 505 (file, code) pairs / 2502 diagnostics of pre-existing debt —
+      # including tests that import a module which MOVED packages and still pass green,
+      # because the import is type-only and ts-jest erases it without resolving (the
+      # annotation silently degrades to `any`). Reuses the build step above.
+      - name: No new type errors in test files
+        run: node scripts/check-test-types.mjs
+
       # Test-quality audit 2026-06-22 (recommendation P4): ratchet guard against
       # low-value test anti-patterns (method-exists `.toBe("function")` asserts +
       # vacuous `toBeGreaterThanOrEqual(0)` length asserts). Fails if their count

@@ -22,6 +22,38 @@ gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks \
 
 If this page and the API disagree, the API wins — update this page.
 
+## ⛔ What `typecheck` actually covers (it is narrower than the name)
+
+`typecheck` runs `npm run check:types` → `tsc --noEmit -p tsconfig.json` (root). Measured
+2026-08-19 against `origin/main`, that config covers **`packages/<non-cli>/src` and nothing
+else**:
+
+| tsconfig | `include` | `exclude` |
+|---|---|---|
+| root `tsconfig.json` | `packages/**/*.ts(x)` | `packages/**/tests/**/*`, **`packages/cli/**/*`**, `packages/*/dist` |
+| `packages/core/tsconfig.json` | `src/**/*` | `node_modules`, `dist`, **`tests`** |
+| `packages/cli/tsconfig.json` | `src/**/*` | (tests simply not included) |
+| `packages/obsidian-plugin/` | — | *(no package tsconfig at all)* |
+
+So a green `typecheck` says **nothing** about:
+
+- **`packages/cli/src`** — excluded from the root config. Gated separately by
+  `scripts/check-cli-types.mjs` (ratchet, issue #4074). It had accumulated 24 unseen errors,
+  one of which — a `BlankNode.value` read — shipped through two review rounds of #4070 while
+  the compiler had been flagging it the whole time.
+- **`packages/**/tests/**`** — all 975 test files. Gated separately by
+  `scripts/check-test-types.mjs` (ratchet, issue #4084; baseline 505 `(file, code)` pairs /
+  2502 diagnostics at introduction). Their only other type-checking is ts-jest **at run
+  time**, where a type error surfaces as `Test suite failed to run / Tests: 0` — a shape that
+  reads as "nothing failed". ⛔ Worse, a **type-only** import is *erased* by ts-jest without
+  ever being resolved, so a test importing a module that has since MOVED still passes green
+  while its annotation silently degrades to `any`.
+
+⇒ When reporting gate results on a PR, state **what the run covered**, not just its exit
+code: `typecheck rc=0 (⚠ does not cover test files or packages/cli)`. A bare "typecheck
+green" reads as "the whole diff was checked" and is false for any PR whose main artefact is
+a test.
+
 ## Gotchas
 
 - **Matrix contexts use the parenthesised form** `<job> (<shard>)` (e.g. `e2e-shard (4)`).
