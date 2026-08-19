@@ -6403,3 +6403,37 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* ==========================================================================
+   Parked-link placeholder (req c171e24d)
+   ==========================================================================
+   A link into a PARKED AssetSpace stays an UNRESOLVED link as far as Obsidian
+   is concerned, so it keeps `.is-unresolved` and its "this is broken" colour.
+   That colour is exactly the claim the placeholder exists to deny: the asset is
+   on this device, it is simply not active.
+
+   ⛔ The rule therefore has to out-specify `.internal-link.is-unresolved` (0,2,0),
+   which is why the second selector carries BOTH classes (0,3,0) rather than the
+   placeholder class alone — alone it only TIES and wins on source order. The
+   first selector is the harmless fallback should Obsidian ever drop the state
+   class. Colour comes from theme variables, never a literal, so the placeholder
+   follows the reader's theme.
+
+   ⚠ This out-specifies OBSIDIAN's own rule, not every theme's: a theme rule such
+   as `.markdown-preview-view .internal-link.is-unresolved` is also (0,3,0) and
+   theme CSS loads after plugin CSS, so it would win. Tightening that is a
+   deliberate escalation, not an oversight. */
+.internal-link.exocortex-parked-link,
+.internal-link.is-unresolved.exocortex-parked-link {
+  color: var(--text-muted);
+  opacity: 1;
+  text-decoration: none;
+  border-bottom: 1px dashed var(--text-faint);
+  cursor: pointer;
+}
+
+.internal-link.exocortex-parked-link:hover,
+.internal-link.is-unresolved.exocortex-parked-link:hover {
+  color: var(--text-normal);
+  border-bottom-color: var(--text-muted);
+}

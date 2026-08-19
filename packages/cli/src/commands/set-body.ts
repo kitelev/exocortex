@@ -42,24 +42,32 @@ function readStdin(timeoutMs: number): Promise<string> {
 }
 
 /**
+ * Where the body text came from. Returned ALONGSIDE the text because the caller
+ * must treat the three sources differently and cannot re-derive this safely:
+ * only the `inline` form needs `\n` escapes expanded (issue #2288), and doing it
+ * to the other two silently CORRUPTS prose — see the call site.
+ */
+type BodySource = "file" | "stdin" | "inline";
+
+/**
  * Resolve the new body content from `--body-file` / `--body` / `--body -`
  * (stdin). `--body-file` takes precedence. Returns undefined when neither is
  * given (the caller rejects that).
  */
 async function resolveNewBody(
   options: SetBodyOptions,
-): Promise<string | undefined> {
+): Promise<{ text: string; source: BodySource } | undefined> {
   if (options.bodyFile) {
     if (!existsSync(options.bodyFile)) {
       throw new Error(`Body file not found: ${options.bodyFile}`);
     }
-    return readFileSync(options.bodyFile, "utf-8");
+    return { text: readFileSync(options.bodyFile, "utf-8"), source: "file" };
   }
   if (options.body === "-") {
-    return readStdin(30_000);
+    return { text: await readStdin(30_000), source: "stdin" };
   }
   if (options.body !== undefined) {
-    return options.body;
+    return { text: options.body, source: "inline" };
   }
   return undefined;
 }
@@ -161,9 +169,21 @@ export function setBodyCommand(): Command {
         // FRONTMATTER_REGEX's match: `---\n<yaml>\n---`).
         const frontmatterBlock = `---\n${parsed.content}\n---`;
 
-        // Resolve + normalise the new body (parse `\n` escapes like create).
-        let newBody = (await resolveNewBody(options)) ?? "";
-        newBody = newBody.replace(/\\n/g, "\n");
+        // Resolve the new body. `\n` escapes are expanded ONLY for the inline
+        // `--body "a\nb"` form, which is what issue #2288 asked for: a single shell
+        // argument has no way to carry a real newline.
+        //
+        // ⛔ NOT for --body-file or stdin. Those already carry real newlines, so any
+        // backslash-n in them is text the author typed — a regex in prose, a Windows
+        // path. Expanding it silently CORRUPTS the document and nothing reports it:
+        // measured on a 2-line body containing `\n` and `C:\new`, the write produced
+        // 4 lines and 0 backslashes. This code expanded unconditionally because the
+        // call site could not see the source; the resolver now returns it.
+        const resolved = await resolveNewBody(options);
+        let newBody = resolved?.text ?? "";
+        if (resolved?.source === "inline") {
+          newBody = newBody.replace(/\\n/g, "\n");
+        }
 
         // Validate wikilinks in the NEW body (the CLI/Bash write bypasses the
         // PreToolUse validate-wikilinks hook — validate here like create /
@@ -203,7 +223,13 @@ export function setBodyCommand(): Command {
         const output = {
           path: vaultRelative,
           updatedAt,
-          bodyBytes: bodyPart.length,
+          // ⛔ Buffer.byteLength, NOT String.length. `.length` counts UTF-16 code
+          // units, and the field is named bodyBytes — on Cyrillic prose the two
+          // disagree by ~1.5x (measured: a 31,007-byte body reported as 19,980).
+          // The failure is silent and reads as data loss: an operator who checks
+          // the echo against the file size concludes half the body did not arrive
+          // and re-runs a write that was already correct.
+          bodyBytes: Buffer.byteLength(bodyPart, "utf8"),
         };
         process.stdout.write(JSON.stringify(output) + "\n");
 

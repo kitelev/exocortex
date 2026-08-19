@@ -30,12 +30,12 @@ describe("TaskFactory", () => {
     it("should create a task with custom values", () => {
       const task = TaskFactory.create({
         label: "Custom Task",
-        status: "To Do",
+        status: "Waiting",
         votes: 5,
       });
 
       expect(task.label).toBe("Custom Task");
-      expect(task.status).toBe("ems__EffortStatusToDo");
+      expect(task.status).toBe("ems__EffortStatusWaiting");
       expect(task.votes).toBe(5);
     });
 
@@ -80,14 +80,9 @@ describe("TaskFactory", () => {
       expect(task.status).toBe("ems__EffortStatusBacklog");
     });
 
-    it("should create analysis task", () => {
-      const task = TaskFactory.analysis();
-      expect(task.status).toBe("ems__EffortStatusAnalysis");
-    });
-
-    it("should create todo task", () => {
-      const task = TaskFactory.todo();
-      expect(task.status).toBe("ems__EffortStatusToDo");
+    it("should create waiting task", () => {
+      const task = TaskFactory.waiting();
+      expect(task.status).toBe("ems__EffortStatusWaiting");
     });
 
     it("should create doing task with startTimestamp", () => {
@@ -180,7 +175,7 @@ describe("TaskFactory", () => {
     it("should convert task fixture to metadata format", () => {
       const task = TaskFactory.create({
         label: "Test",
-        status: "To Do",
+        status: "Waiting",
         votes: 3,
         size: "M",
         area: "work-area",
@@ -191,7 +186,7 @@ describe("TaskFactory", () => {
 
       expect(metadata.exo__Instance_class).toBe("[[ems__Task]]");
       expect(metadata.exo__Asset_label).toBe("Test");
-      expect(metadata.ems__Effort_status).toBe("[[ems__EffortStatusToDo]]");
+      expect(metadata.ems__Effort_status).toBe("[[ems__EffortStatusWaiting]]");
       expect(metadata.ems__Effort_votes).toBe(3);
       expect(metadata.ems__Task_size).toBe("[[ems__TaskSize_M]]");
       expect(metadata.ems__Effort_area).toBe("[[work-area]]");
@@ -308,7 +303,7 @@ describe("MeetingFactory", () => {
     const scheduledAt = Date.now() + 86400000; // tomorrow
     const meeting = MeetingFactory.scheduled(scheduledAt);
 
-    expect(meeting.status).toBe("ems__EffortStatusToDo");
+    expect(meeting.status).toBe("ems__EffortStatusBacklog");
     expect(meeting.scheduledAt).toBe(scheduledAt);
   });
 

@@ -2,6 +2,7 @@ import { injectable } from "tsyringe";
 import type { ITripleStore } from "../interfaces/ITripleStore";
 import type { ILogger } from "../interfaces/ILogger";
 import { NullLogger } from "../infrastructure/NullLogger";
+import { STRING_SCALAR_PROPERTIES } from "../utilities/yamlScalar";
 import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
 import { Namespace } from "../domain/models/rdf/Namespace";
@@ -18,8 +19,6 @@ import {
   type StyleSource,
 } from "../domain/constants/CommandBindingStyleEnums";
 import {
-  clearUniversalDefault,
-  loadUniversalDefault,
   mergePropertyDefaults,
   mergeInheritanceRules,
   type UniversalDefaultTemplate,
@@ -219,11 +218,30 @@ export class CommandResolver {
   private readonly _legacyPropertyDefaultsWarnedGroundings = new Set<string>();
 
   /**
-   * RFC 727572d2 — Universal Default Template singleton cache. Loaded once
-   * per CommandResolver instance via {@link getUniversalCache}. Vault file
-   * change adapters may externally call
-   * {@link clearUniversalDefault} (UniversalDefaultTemplateResolver) AND
-   * recreate the CommandResolver to fully invalidate.
+   * Once-per-session suppression for the PropertyDefault wikilink-fallback
+   * warning, keyed `<groundingUid>|<valueRefUid>`. Mirrors
+   * {@link _legacyPropertyDefaultsWarnedGroundings} above.
+   *
+   * ⛔ Load-bearing, not tidiness. `warn` is routed to `notice: true` by
+   * DEFAULT_LOG_CHANNELS, i.e. a user-facing Obsidian toast, AND persisted to
+   * the log file; and this branch is re-evaluated on every button render —
+   * `invalidateCache()` fires on each `.md` save. Undeduped, ONE dangling
+   * PropertyDefault ref would toast the user on every render and grow the log
+   * file (precedent: #3186, ~6 MB / 54k lines in two days).
+   *
+   * ⛤ Deliberately NOT cleared by `invalidateCache()`: that fires on every
+   * save, so clearing it there would reinstate exactly the storm this
+   * prevents. Fixing the underlying ref stops the warning by construction —
+   * the branch simply stops being taken.
+   */
+  private readonly _fallbackWarnedKeys = new Set<string>();
+
+  /**
+   * RFC 727572d2 — Universal Default Template singleton cache. Resolved once
+   * per CommandResolver instance via {@link getUniversalCache} and dropped by
+   * {@link invalidateCache} / {@link clearUniversalCache}. This instance field
+   * is the ONLY cache of the singleton — the module-level loader cache that
+   * used to sit beside it was removed with its unregistered loader (#4083).
    */
   private _universalCacheReady = false;
   private _universalCacheValue: UniversalDefaultTemplate | null = null;
@@ -234,13 +252,11 @@ export class CommandResolver {
    * this when the singleton ABox asset (62907ff4) or any referenced
    * PropertyDefault / InheritanceRule changes on disk, then either
    * re-create the CommandResolver or simply rely on lazy re-load on next
-   * `resolvePropertyDefaults` invocation. Also clears the module-level
-   * loader cache so external loader sources stay aligned.
+   * `resolvePropertyDefaults` invocation.
    */
   clearUniversalCache(): void {
     this._universalCacheReady = false;
     this._universalCacheValue = null;
-    clearUniversalDefault();
   }
 
   /**
@@ -781,11 +797,44 @@ export class CommandResolver {
   /**
    * Invalidate all cached command resolutions.
    * Call when vault files change.
+   *
+   * Includes the Universal Default Template cache (req f3193399). Before that
+   * requirement {@link clearUniversalCache} had ZERO call sites in production,
+   * so the template — and, worse, a `null` verdict latched against a not-yet-
+   * warm store — survived until the plugin was restarted.
+   *
+   * ⛤ On COST: {@link findUniversalSingleton} takes an INDEXED path first
+   * (bound object → `matchPO` → O(matches)), so this call is cheap on a healthy
+   * vault. It degrades to an O(vault) walk on ANY empty indexed result — which
+   * is TWO distinct situations, not one: the singleton's class object is not the
+   * symbolic IRI (read that method's comment for which forms and why the walk
+   * must stay), **or there is no singleton in the vault at all**. The second is
+   * a legitimate state (see {@link getUniversalCache}), and it is the cheaper
+   * way to end up paying the walk. The walk, when taken, runs ONCE per
+   * invalidation (the latch re-arms on the first call).
+   *
+   * ⛔ Do NOT re-derive the cost from "invalidateCache reloads everything
+   * anyway, so one more walk drowns in it" — that was measured and is FALSE
+   * (PR #4082): the unbound walk was 57 % / 90 % / 96 % of a post-invalidation
+   * `loadCommand` at 2k / 10k / 30k triples, i.e. it dominated and grew with the
+   * vault. The indexed path is what makes clearing here affordable; removing it
+   * re-introduces O(vault) work on every `.md` save.
+   *
+   * ⛔ `_fallbackWarnedKeys` stays deliberately un-cleared here — see its own
+   * docstring; clearing warn-suppression on every save reinstates the toast
+   * storm of #3186. Different field, different rationale.
+   *
+   * ⛤ Scope note (resolved by #4083): this method IS purely instance-scoped
+   * again. The previous note warned that {@link clearUniversalCache} also wiped
+   * a MODULE-level loader cache — that cache, and the loader registry it served,
+   * were removed once the measurement showed no host had ever registered a
+   * loader. Nothing outside this instance is touched here.
    */
   invalidateCache(): void {
     this.cache.clear();
     this.multiCache.clear();
     this._ancestorDepthCache.clear();
+    this.clearUniversalCache();
   }
 
   /**
@@ -2036,6 +2085,21 @@ export class CommandResolver {
       targetsCreatedInstanceRaw !== null &&
       String(targetsCreatedInstanceRaw).trim().toLowerCase() === "true";
 
+    // create_instance opt-in: an absent label is INTENDED (the class derives its
+    // display name from an exo__DisplayNameSpec), so the executor must omit
+    // `exo__Asset_label` instead of writing "Untitled" + flagging an unhealthy
+    // vault. Boolean coercion mirrors `targetsCreatedInstance`. MUST be read HERE
+    // (the production loader — plugin button + CLI both go through
+    // CommandResolver.loadCommand); the sibling GroundingFrontmatterParser has no
+    // production consumers, so reading it only there leaves the flag inert.
+    const omitLabelRaw = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_omitLabel"),
+    );
+    const omitLabel =
+      omitLabelRaw !== null &&
+      String(omitLabelRaw).trim().toLowerCase() === "true";
+
     const grounding: GroundingDefinition = {
       id: uid,
       label,
@@ -2066,6 +2130,7 @@ export class CommandResolver {
       templateRef: templateRef ?? undefined,
       cloneTargetBody: cloneTargetBody || undefined,
       targetsCreatedInstance: targetsCreatedInstance || undefined,
+      omitLabel: omitLabel || undefined,
     };
 
     if (inputSchema) {
@@ -2223,35 +2288,49 @@ export class CommandResolver {
   }
 
   /**
-   * RFC 727572d2 — Universal Default Template singleton lazy loader. Returns
-   * the cached UniversalDefaultTemplate or null when:
-   *   - Singleton asset not in vault (cold-start race or absent)
-   *   - Loader threw (logged once, falls back to null)
+   * RFC 727572d2 — Universal Default Template singleton lazy resolver. Returns
+   * the cached UniversalDefaultTemplate, or null when the singleton asset is
+   * not in the store (cold-start race, or a vault that genuinely has none).
    *
-   * The session-level cache is populated on first call; vault file-watcher
-   * adapters may call {@link clearUniversalDefault} to invalidate after a
-   * Universal Template asset change.
+   * The instance-level cache is populated on first call and dropped by
+   * {@link invalidateCache} / {@link clearUniversalCache}.
    *
-   * Universal singleton lookup is in-band — finds first asset whose
-   * `exo__Instance_class` includes the UniversalDefaultTemplate class UID
-   * (29e2c8f8) or IRI form. Multiple singletons → deterministic selection by
-   * lexicographic UID order with a warn.
+   * ⛔ There is no host-loader short-circuit here any more. It existed, was
+   * awaited on every call, and always returned null because no host ever
+   * registered a loader (#4083) — one path is cheaper than two, and a path
+   * that cannot be exercised cannot be tested.
+   *
+   * Universal singleton lookup is in-band, and it is TWO paths in order, not
+   * one — see {@link findUniversalSingleton} for the authoritative description:
+   * an indexed `matchPO` on the symbolic class term runs FIRST and early-returns
+   * on any hit; the substring criterion (`exo__Instance_class` *includes* the
+   * class UID 29e2c8f8 or IRI form) is the FALLBACK, taken only when the indexed
+   * lookup is empty.
+   *
+   * ⚠ Multiple singletons → deterministic selection by lexicographic UID order,
+   * but the accompanying warn fires only for duplicates found WITHIN one path's
+   * result set; the two sets are never unioned, so a duplicate split across the
+   * fast and fallback forms warns about neither. That is a known, deliberate
+   * consequence of the early return — `findUniversalSingleton`'s own ⛔ note
+   * spells it out. Do not read the sentence above as an unconditional warn.
    */
   private async getUniversalCache(): Promise<UniversalDefaultTemplate | null> {
     if (this._universalCacheReady) return this._universalCacheValue;
     this._universalCacheReady = true;
 
-    // External loader takes precedence (lets host wire a cheaper lookup
-    // path, e.g. via metadataCache rather than triple-store scan).
-    const external = await loadUniversalDefault();
-    if (external) {
-      this._universalCacheValue = external;
-      return external;
-    }
-
-    // In-store fallback: scan triple store for the singleton.
     const singletonIRI = await this.findUniversalSingleton();
     if (!singletonIRI) {
+      // req f3193399 — this branch used to be entirely silent, so a `null`
+      // latched against a not-yet-warm store was indistinguishable from a vault
+      // that genuinely has no template: every asset created afterwards simply
+      // came out without `createdAt`/`updatedAt`, with nothing in the log.
+      //
+      // `debug`, NOT `warn`: a vault without a UniversalDefaultTemplate is a
+      // legitimate state, and `warn` is routed to a user-facing toast by
+      // DEFAULT_LOG_CHANNELS (see `_fallbackWarnedKeys` for that precedent).
+      this.logger.debug(
+        `[CommandResolver] No exocmd__UniversalDefaultTemplate instance found in the store; universal property-defaults and inheritance-rules will not be applied. This verdict is cached until invalidateCache() is called — if the store was still warming up, the next invalidation re-resolves it.`,
+      );
       this._universalCacheValue = null;
       return null;
     }
@@ -2274,13 +2353,83 @@ export class CommandResolver {
 
   /**
    * RFC 727572d2 — locate the UniversalDefaultTemplate singleton ABox
-   * instance via triple store scan. Returns first match; warns and picks
-   * lexicographically smallest UID when multiple are found.
+   * instance via an INDEXED `matchPO` lookup on the bound class term
+   * (O(matches), PR #4082), degrading to an unbound scan whenever that lookup
+   * comes back empty — i.e. for the non-symbolic class forms the index cannot
+   * reach, **or when the vault has no singleton at all**. Returns first match;
+   * warns and picks lexicographically smallest UID when multiple are found
+   * WITHIN the set it was handed (see the ⛔ note below on why that keeps the
+   * duplicate warn suppressed on the fast path).
+   *
+   * ⛤ The previous wording said plainly "via triple store scan", which had
+   * contradicted {@link invalidateCache}'s own docstring ever since #4082 made
+   * the fast path the default — two docstrings about one method disagreeing.
    */
   private async findUniversalSingleton(): Promise<IRI | null> {
-    const templateClassIRI = Namespace.EXOCMD.term(
-      "UniversalDefaultTemplate",
-    ).value;
+    const templateClassTerm = Namespace.EXOCMD.term("UniversalDefaultTemplate");
+    const templateClassIRI = templateClassTerm.value;
+
+    // req f3193399 — indexed fast path FIRST.
+    //
+    // ⛤ Load-bearing, not micro-optimisation. Since that requirement wired
+    // this lookup into `invalidateCache()`, it runs after EVERY `.md` save
+    // instead of once per session — and the unbound-object scan below walks
+    // every `exo__Instance_class` triple in the vault, so its cost grows with
+    // the vault while everything else in a command reload does not, so on a
+    // large vault it dominates that reload rather than drowning in it (figures
+    // in PR #4082).
+    //
+    // `matchPO` goes through the `pos` index (see `InMemoryTripleStore`), so
+    // binding the object turns O(vault) into O(matches) on the healthy path.
+    // That is the durable argument; the share-of-reload figures that motivated
+    // it are a point measurement and live in the PR (#4082), not here — they
+    // would go stale, and the mechanism above does not.
+    //
+    // ⛔ The scan below is REQUIRED, and the reason is NOT "the label form".
+    // Read `NoteToRDFConverter.valueToClassURI` before touching it: BOTH
+    // canonical spellings end up symbolic, i.e. on the fast path —
+    //   `[[exocmd__UniversalDefaultTemplate]]` → `expandClassValue` is a pure
+    //      prefix parse, no vault access → symbolic IRI;
+    //   `[[<class-uid>]]`                     → file resolves, basename is a
+    //      UUID, so the class file's `exo__Asset_label` is read → symbolic IRI.
+    // What actually reaches the fallback is a FILE IRI or a Literal:
+    //   1. the class file resolves but `getFrontmatter` returns null — i.e. a
+    //      COLD `metadataCache`. ⛤ That is this requirement's OWN subject: the
+    //      warm-up window is exactly when a `null` verdict used to latch. The
+    //      fallback is the branch that catches the singleton in that window.
+    //   2. `emitInstanceClassAsUid: true` (RFC 78572fa9 stage-1) → file IRI —
+    //      but only for the uid spelling: the label spelling returns symbolic
+    //      before the flag is ever consulted.
+    //   3. the uid does not resolve to a file → `Literal("[[<uid>]]")`.
+    // Cases 1-2 land in the `includes(UNIVERSAL_DEFAULT_TEMPLATE_CLASS_UID)`
+    // branch, case 3 in the Literal branch — i.e. three causes collapse into
+    // TWO store shapes, and both shapes have a resolver axis. ⚠ Only case 1 has
+    // a converter axis proving the shape is really emitted; 2 and 3 are read off
+    // `valueToClassURI`, not observed.
+    //
+    // ⛔ The early return below deliberately does NOT union the forms: once a
+    // symbolic candidate exists the other spellings are not considered, so the
+    // "multiple singletons" warn keys on the symbolic form alone. Unioning
+    // would mean always paying the walk — i.e. undoing this block.
+    //
+    // ⚠ Be precise about what that costs, because the enumeration above already
+    // refutes the comfortable version: only case 1 is a warm-up window. Cases 2
+    // and 3 are PERSISTENT states, so a vault holding one symbolic singleton
+    // plus one dangling-uid singleton keeps the duplicate warn suppressed
+    // FOREVER, not just during indexing. Accepted deliberately: the resolved
+    // value is still a valid singleton, and the alternative is paying O(vault)
+    // on every `.md` save. If the duplicate warn ever needs to be reliable,
+    // that is a separate change — key it on the union count, not on this path.
+    const indexed = await this.tripleStore.match(
+      undefined,
+      Namespace.EXO.term("Instance_class"),
+      templateClassTerm,
+    );
+    const fast = indexed
+      .map((t) => t.subject)
+      .filter((s): s is IRI => s instanceof IRI);
+    if (fast.length > 0) return this.pickUniversalSingleton(fast);
+
     const classTriples = await this.tripleStore.match(
       undefined,
       Namespace.EXO.term("Instance_class"),
@@ -2301,13 +2450,22 @@ export class CommandResolver {
       }
       if (match && t.subject instanceof IRI) candidates.push(t.subject);
     }
+    return this.pickUniversalSingleton(candidates);
+  }
+
+  /**
+   * Shared tail of {@link findUniversalSingleton}: deterministic selection when
+   * a vault carries more than one singleton. Extracted so the indexed fast path
+   * and the non-symbolic fallback cannot drift apart on the multi-singleton rule.
+   */
+  private pickUniversalSingleton(candidates: IRI[]): IRI | null {
     if (candidates.length === 0) return null;
     if (candidates.length === 1) return candidates[0];
-    candidates.sort((a, b) => a.value.localeCompare(b.value));
+    const sorted = [...candidates].sort((a, b) => a.value.localeCompare(b.value));
     this.logger.warn(
-      `Multiple UniversalDefaultTemplate singletons found (${candidates.length}); selecting deterministically by lexicographic UID order: ${candidates[0].value}`,
+      `Multiple UniversalDefaultTemplate singletons found (${sorted.length}); selecting deterministically by lexicographic UID order: ${sorted[0].value}`,
     );
-    return candidates[0];
+    return sorted[0];
   }
 
   /**
@@ -2556,6 +2714,87 @@ export class CommandResolver {
     if (!valueSubject) {
       // Asset not in store yet (cold-start race / pruned vault) — emit
       // wikilink anyway; downstream UI / executor renders it as a dead link.
+      //
+      // ⛔ CANDIDATE cause of defect 0310aa28 — narrowed by ELIMINATION, not
+      // measured. Observed: assets whose `exo__Asset_label` holds the literal
+      // `[[<token-uid>]]` while the user's input survives only in `aliases`.
+      // Five sites ON THE PropertyDefault VALUE PATH emit this shape (a sixth,
+      // `getObsidianWikilinkValue`, serves grounding target values — a
+      // different predicate family — so a whole-file grep returns six).
+      // The first (`!looksLikeUUID`, above) cannot
+      // produce it — a non-UUID ref yields a symbolic wikilink, not
+      // `[[<uuid>]]`. Two more, in `dispatchSubstitutionToken`, were ruled out
+      // by reading the live token asset (it HAS a `_resolver`, and that id IS
+      // whitelisted). That leaves this branch and the `!isSubstitutionToken`
+      // one below — and both were silent, which is why the root could not be
+      // measured at all. The corruption clusters per SESSION (command
+      // definitions are cached), which is consistent with a cold start, but
+      // that is inference. This log line turns the next occurrence into a
+      // measurement.
+      //
+      // The message states only what is OBSERVED (the asset is not in the
+      // store). Candidate causes — cold-start race, pruned vault, a plain
+      // dangling ref — belong here, not in a user-facing toast that would
+      // present one of them as established.
+      //
+      // ⚠ PLUGIN-ONLY today. `packages/cli` builds `new CommandResolver(store)`
+      // with no logger (apply.ts:261, resolve-buttons.ts:283), so the default
+      // NullLogger swallows both lines — including on `resolve-buttons`, the
+      // authoritative resolution oracle and the cheapest reproduction path.
+      // Wiring a CLI logger is deliberately NOT done here: it changes the CLI
+      // output contract (`resolve-buttons --json` must keep stdout pure JSON,
+      // so it would have to be stderr-only) and needs its own axes. Tracked
+      // separately — do not read CLI silence as absence of the problem.
+      // ⛤ Key is per (grounding, value-ref) and deliberately NOT per property:
+      // two PropertyDefaults in one grounding pointing at the same missing
+      // value (say startTimestamp + endTimestamp → one absent token) warn once,
+      // naming whichever property was resolved first. The actionable unit is
+      // the ref — fixing it fixes both — so a second, near-identical toast
+      // would add noise without adding a decision.
+      //
+      // ⚠ `capWarning` caps at 200 chars, and with two 36-char UIDs the
+      // template is already 186 before `propertyName`, so realistic labels
+      // (`ems__Effort_status`, `exo__Asset_createdAt`) DO truncate. That is
+      // acceptable by construction, not by luck: both UIDs and "not in store"
+      // sit inside the first 197 chars and survive; only the trailing
+      // parenthetical is cut.
+      const fallbackKey = `${groundingUid}|${valueRefUid}`;
+      if (!this._fallbackWarnedKeys.has(fallbackKey)) {
+        this._fallbackWarnedKeys.add(fallbackKey);
+        this.logger.warn(
+          this.capWarning(
+            `Grounding ${groundingUid}: PropertyDefault '${propertyName}' → value asset ${valueRefUid} not in store; SKIPPING the property (the executor's own default applies). Previously this emitted a wikilink, i.e. a link written where a value belongs.`,
+          ),
+        );
+      }
+      // ⛔ SKIP the entry ONLY for a property whose value is a STRING.
+      //
+      // This branch used to `return "[[<uid>]]"` unconditionally, and its own warning
+      // said what was wrong with that: "a link, not the substituted value". But the
+      // branch serves TWO cases that are indistinguishable once the asset is missing
+      // from the store:
+      //
+      //   • value is a SubstitutionToken  → the link points at a TOKEN DEFINITION and
+      //     is garbage: the user's typed string survives only in `aliases`.
+      //   • value is a plain asset ref (a status enum, a class, a person)
+      //     → the link IS the value, and emitting it is correct.
+      //
+      // A first attempt skipped both and broke the second: two integration axes
+      // (req 2d1ffced, req 87361a62) lost `ems__Effort_status: "[[753a44d5-…]]"` on the
+      // spawned iteration. So the discriminator cannot be store presence — it has to be
+      // the TARGET PROPERTY.
+      //
+      // `STRING_SCALAR_PROPERTIES` (exo__Asset_label, aliases) is exactly the set whose
+      // value is a name, never a reference. A wikilink there is wrong under any origin,
+      // so skipping is safe: GroundingExecutor's existing chain takes over
+      // (`labelTemplate` → "Untitled"), a path that is built and tested and which this
+      // fallback was bypassing. Object-valued properties keep the old behaviour.
+      //
+      // ⚠ The causal link to the four corrupted assets (defect 0310aa28 / issue #4097)
+      // stays narrowed by ELIMINATION, not measured.
+      if (STRING_SCALAR_PROPERTIES.has(propertyName)) {
+        return null;
+      }
       return `"[[${valueRefUid}]]"`;
     }
 
@@ -2576,6 +2815,19 @@ export class CommandResolver {
     const isSubstitutionToken =
       await this.assetIsSubstitutionToken(valueSubject);
     if (!isSubstitutionToken) {
+      // Plain asset ref (not a token) — a wikilink IS the intended value here,
+      // so this is the common, correct path and must stay quiet by default.
+      //
+      // ⛔ It is also the SECOND surviving candidate for defect 0310aa28 (see
+      // the sibling comment above): IF the ref does point at a token whose
+      // `exo__Instance_class` failed to resolve, this check answers "not a
+      // token" and emits the link instead of the substituted value. Not
+      // measured — the class-resolution failure has never been observed
+      // directly, only inferred from the corruption shape. `debug` keeps the
+      // common path quiet while making that case recoverable from a verbose log.
+      this.logger.debug(
+        `Grounding ${groundingUid}: PropertyDefault '${propertyName}' value '${valueRefUid}' is not a SubstitutionToken — emitting wikilink form.`,
+      );
       return `"[[${valueRefUid}]]"`;
     }
 
@@ -2706,6 +2958,70 @@ export class CommandResolver {
         if (unwrapped === TOKEN_INVOCATION_CLASS_UID) return true;
       }
     }
+
+    // ⛔ Secondary tell — the invocation's OWN `_token` property.
+    //
+    // This is the SECOND door to defect 0310aa28, and the earlier one: this
+    // method runs before `assetIsSubstitutionToken` (see
+    // `resolvePropertyDefaultValue`). When the class triple has not loaded, a
+    // real TokenInvocation is classified "not an invocation", falls through to
+    // the SubstitutionToken check — which cannot catch it either, because an
+    // invocation carries no `_resolver` — and the ref is emitted as
+    // `"[[<uid>]]"` where the substituted value belonged. The first door was
+    // closed by `@req:ef825945…`; without this one the corruption survives.
+    //
+    // The tie cannot be broken by the class triple: its absence IS the failure.
+    // `exocmd__TokenInvocation_token` breaks it — on the pinned
+    // `packages/exoas-exocmd@829e06bc` the relation is biconditional: both
+    // frontmatter carriers are TokenInvocation, and both TokenInvocation
+    // instances carry it.
+    //
+    // ⚠ Re-measuring by grep finds 3 extra files that mention the name where it
+    // emits no triple with this predicate — `NoteToRDFConverter` iterates
+    // frontmatter KEYS only, and in none of the three is it a key:
+    //   `606df367` — a SubstitutionToken instance; prose sentence in the body
+    //   `3f28af98` — the TokenInvocation class def; two prose bullets in the body
+    //   `2f5fe019` — this property's OWN definition, so its name is its
+    //                `exo__Asset_label` and an alias (frontmatter VALUES), plus a
+    //                heading and a key inside a ```yaml fence in the BODY
+    //                (frontmatter closes above it)
+    //
+    // ⛔ The order is NOT a performance choice: both lookups are
+    // `match(subject, <predicate>, undefined)` — the same `matchSP` walk of the
+    // same `spo` index, and the class branch then does strictly MORE work
+    // (iterate, unwrapping wikilinks on Literal objects).
+    //
+    // What it buys is the honesty of the debug line below, which asserts
+    // `exo__Instance_class was absent or unresolved`. A well-formed invocation
+    // carries both signals — 2/2 on the pin, and `_token` is declared
+    // Required/cardinality-1 on `2f5fe019`, though in `exo__Property_description`
+    // prose, not as `exo__Property_cardinality`/`_minCount`, so SHACL does not
+    // enforce it. Checking `_token` first would therefore fire that line on an
+    // invocation whose class is right there — a lie.
+    // VERIFIED BY PERMUTATION, not argued: moving this block above the class
+    // loop reddens exactly one axis, `@req:81d2e07e… stays silent for a
+    // well-formed invocation` (1 failed / 20 passed).
+    const tokenTriples = await this.tripleStore.match(
+      subject,
+      Namespace.EXOCMD.term("TokenInvocation_token"),
+      undefined,
+    );
+    if (tokenTriples.length > 0) {
+      // `debug`, not `warn`: this path RECOVERS — the invocation is dispatched
+      // and no corrupt value is written. A warn here would be a user-facing
+      // toast on every render for a condition the engine just handled.
+      //
+      // Naming the invocation explicitly also removes a mis-attribution: before
+      // this tell, such an asset fell through to the SubstitutionToken branch,
+      // whose log line says "is not a SubstitutionToken" — literally true, and
+      // it sends the reader to look for a `_resolver` an invocation can never
+      // have.
+      this.logger.debug(
+        `Asset ${subject.value} classified as TokenInvocation via its exocmd__TokenInvocation_token property; exo__Instance_class was absent or unresolved.`,
+      );
+      return true;
+    }
+
     return false;
   }
 
@@ -2741,6 +3057,73 @@ export class CommandResolver {
         if (unwrapped === SUBSTITUTION_TOKEN_CLASS_UID) return true;
       }
     }
+
+    // ⛔ Secondary tell — the token's OWN resolver property.
+    //
+    // EITHER signal suffices — this is a disjunction, not a precedence chain.
+    // The class loop above can only return true; it never exits false, so on
+    // the (today non-existent) input where the class resolves to something else
+    // while the resolver property is present, the resolver wins.
+    //
+    // ⛔ The order is NOT a performance choice, and reordering is NOT free:
+    //   - it is not cheaper — both are `match(subject, <predicate>, undefined)`,
+    //     i.e. the same `matchSP` walk of the same `spo` index; the class branch
+    //     then does strictly MORE work (iterate + unwrapWikilink per triple);
+    //   - it does not short-circuit the common case — the common case is a PLAIN
+    //     asset ref (see the call-site comment on the `!isSubstitutionToken`
+    //     branch), which falls through the class loop and runs BOTH lookups
+    //     whatever the order.
+    //
+    // What the order DOES buy is the honesty of the debug line below, which
+    // asserts `exo__Instance_class was absent or unresolved`. Every valid token
+    // carries the resolver property (16/16 on the pinned corpus), so running the
+    // resolver check first would fire that line on EVERY correctly-classified
+    // token — making it a lie. VERIFIED BY PERMUTATION, not argued: moving this
+    // block above the class loop reddens exactly one axis, `@req:b354316b… stays
+    // silent on the happy path` (1 failed / 16 passed).
+    //
+    // The class triple is precisely what is missing in the failure this guards:
+    // when it has not loaded, a real SubstitutionToken is classified "not a
+    // token", its ref is emitted as `"[[<uid>]]"`, and that literal lands where
+    // the substituted value belonged — the shape that corrupted
+    // `exo__Asset_label` on six live assets (defect 0310aa28; the user's typed
+    // text survived only in `aliases`). The ambiguity cannot be resolved by the
+    // class triple, because the class triple is the thing that is absent.
+    //
+    // `exocmd__SubstitutionToken_resolver` breaks the tie: on the pinned
+    // `packages/exoas-exocmd@829e06bc` the relation is biconditional — all 16
+    // frontmatter carriers are SubstitutionToken, and all 16 SubstitutionToken
+    // instances carry it. The 7 `exocmd__SubstitutionTokenLegacy` instances
+    // (class referenced BY UID `[[660e7539…]]`, not by symbolic name — searching
+    // for the name yields a false zero) carry none.
+    //
+    // ⚠ Re-measuring by grep: anchored (`^exocmd__SubstitutionToken_resolver:`)
+    // reads 17, unanchored reads 19 — neither is a hole. The extras mention the
+    // key where it emits no triple with this predicate:
+    //   `ac573e5d` — this property's own def; key inside a ```yaml fence in the BODY
+    //   `08cec529` — the SubstitutionToken class def; prose bullet in the body
+    //   `2f5fe019` — `TokenInvocation_token` def; key inside `Property_description`,
+    //                i.e. a frontmatter VALUE, not a frontmatter key
+    // `NoteToRDFConverter` iterates frontmatter KEYS only
+    // (`Object.entries(frontmatter)`); the body contributes just `Asset_bodyLink`.
+    //
+    // A plain asset ref never carries the property, so a wikilink-valued
+    // PropertyDefault keeps resolving to a wikilink exactly as before.
+    const resolverTriples = await this.tripleStore.match(
+      subject,
+      Namespace.EXOCMD.term("SubstitutionToken_resolver"),
+      undefined,
+    );
+    if (resolverTriples.length > 0) {
+      // `debug`, not `warn`: this path RECOVERS — dispatch proceeds and no
+      // corrupt value is written. A warn here would be a user-facing toast on
+      // every render for a condition the engine just handled.
+      this.logger.debug(
+        `Asset ${subject.value} classified as SubstitutionToken via its resolver property; exo__Instance_class was absent or unresolved.`,
+      );
+      return true;
+    }
+
     return false;
   }
 

@@ -35,13 +35,26 @@ describe("check-test-antipatterns.sh — over-mock pass-through ratchet (P2, @re
   // High baselines for the unrelated ratchets so ONLY the over-mock check can
   // drive the verdict against the fixture; over-mock baseline pinned at 0.
   const isolatingEnv = {
-    BASELINE_METHOD_EXISTS: "999",
-    BASELINE_VACUOUS_LENGTH: "999",
-    BASELINE_NONCANON_SERVICE_DIR: "999",
-    BASELINE_OVERMOCK: "0",
+    // ⛤ The fixture corpus is a handful of files, so the POPULATION baseline is sized to
+    // it exactly as the four debt baselines above are. The fixture lives in a tmpdir, so
+    // `git ls-files` returns nothing for it and the guard falls back to this recorded
+    // number — which is precisely the case the fallback exists for.
+    //
+    // ⛔ An earlier version of this comment claimed the alternative was rejected because
+    // it "would make the floor disarmable by an env var". That reason is false in this
+    // very file: BASELINE_SCANNED IS an env var, and "1" makes the fallback floor 0. The
+    // real reason stands and is narrower — layer 1 (`scanned == 0`) reads no baseline at
+    // all and therefore STAYS ARMED here, whereas skipping the floor whenever
+    // ANTIPATTERN_SCAN_DIR is set would have disarmed BOTH layers.
+    //
+    // "1" is right rather than 0: beforeEach calls writeCleanFile() unconditionally, so
+    // every case in this suite writes at least one file.
+    BASELINE_SCANNED: "1",
   };
 
   let scanDir: string;
+
+  let baselinePath: string;
 
   const runGuard = (extraEnv: Record<string, string>) =>
     spawnSync("bash", [scriptPath], {
@@ -50,6 +63,18 @@ describe("check-test-antipatterns.sh — over-mock pass-through ratchet (P2, @re
       env: {
         ...process.env,
         ...isolatingEnv,
+        // ⛤ Assigned HERE, not in isolatingEnv: that object is a module-level const
+        // evaluated at import time, before beforeEach runs, so referencing baselinePath
+        // there throws a TDZ ReferenceError and the whole SUITE fails to run — which
+        // jest reports as "Tests: 0 total", i.e. as if there were nothing to run rather
+        // than as a failure.
+        //
+        // The four per-category totals are no longer env vars: the verdict now comes from
+        // a (category, file, count) PAIR SET, and a total is satisfied by a SWAP. The
+        // fixture therefore needs its OWN baseline file — pointing at the committed one
+        // would make every fixture file a NEW pair and red every case, including the ones
+        // that assert the guard stays quiet.
+        ANTIPATTERN_BASELINE_FILE: baselinePath,
         ANTIPATTERN_SCAN_DIR: scanDir,
         ANTIPATTERN_NONCANON_DIR: path.join(scanDir, "__no_such_dir__"),
         ...extraEnv,
@@ -90,6 +115,10 @@ describe("check-test-antipatterns.sh — over-mock pass-through ratchet (P2, @re
   beforeEach(() => {
     scanDir = mkdtempSync(path.join(tmpdir(), "antipattern-overmock-"));
     mkdirSync(path.join(scanDir, "pkg/tests"), { recursive: true });
+    // Empty pair-set baseline: this suite asserts what the guard does with files it has
+    // never seen, so "never seen" has to be the starting state.
+    baselinePath = path.join(scanDir, "baseline.tsv");
+    writeFileSync(baselinePath, "# fixture baseline — intentionally empty\n");
     writeCleanFile();
   });
 
@@ -101,7 +130,10 @@ describe("check-test-antipatterns.sh — over-mock pass-through ratchet (P2, @re
     writeOverMockFile();
     const r = runGuard({});
     expect(r.status).toBe(1);
-    expect(r.stdout).toContain("over-mock pass-through service-wrappers increased");
+    // The message names the FILE and its transition now, because the verdict comes from
+    // a pair set: "increased" was a claim about a total, which a swap keeps constant.
+    expect(r.stdout).toContain("over-mock pass-through service-wrapper(s) ADDED");
+    expect(r.stdout).toContain("0 -> 1");
     expect(r.stdout).toContain("overmock.test.ts");
   });
 

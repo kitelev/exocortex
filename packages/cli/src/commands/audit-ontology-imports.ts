@@ -22,6 +22,13 @@ import {
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 
+/**
+ * Composite-key separator, built at runtime. The byte must not appear as a
+ * literal in this file — see scripts/check-no-nul-bytes.mjs for why, and issue
+ * #4071 for what it cost.
+ */
+const KEY_SEP = String.fromCharCode(0);
+
 /** `exo__Ontology` class UID — an ontology is any asset instancing it. */
 export const ONTOLOGY_CLASS_UID = "829b9b3b-6fc3-4276-be6a-27d3398c012e";
 
@@ -535,7 +542,7 @@ export async function scanVaultForOntologyImports(
       }
 
       const valid = closure.get(sourceOntology)?.has(targetOntology) ?? false;
-      const edgeKey = `${sourceOntology} ${targetOntology}`;
+      const edgeKey = `${sourceOntology}${KEY_SEP}${targetOntology}`;
       const edge = derivedEdgeMap.get(edgeKey);
       if (edge) {
         edge.occurrences++;

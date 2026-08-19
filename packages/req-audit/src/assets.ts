@@ -18,6 +18,30 @@ export interface MarkdownAsset {
 }
 
 /**
+ * A markdown file the walk could NOT classify — it was found on disk but its
+ * frontmatter never reached the audit.
+ *
+ * A requirement whose frontmatter cannot be read or parsed is **broken**, not
+ * absent; skipping it silently makes it indistinguishable from a requirement
+ * that never existed (issue #4066, second road to the same silence). Reporting
+ * the drop is what lets the caller refuse instead of guess.
+ */
+export interface DroppedAsset {
+  path: string;
+  /** Why the asset never made it into the corpus (human-readable, printed verbatim). */
+  reason: string;
+}
+
+/** Result of one disk pass: the classified assets plus the ones that were dropped. */
+export interface MarkdownScan {
+  assets: MarkdownAsset[];
+  dropped: DroppedAsset[];
+}
+
+/** The `---`-fenced frontmatter mapping at the very start of a document. */
+const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/;
+
+/**
  * Tolerantly parse a YAML frontmatter block.
  *
  * ⚠ **Deliberate copy** of `parseYamlFrontmatterTolerant`
@@ -70,7 +94,7 @@ export function extractFrontmatter(
   content: string,
   context?: string,
 ): Record<string, unknown> {
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  const match = FRONTMATTER_RE.exec(content);
   if (!match) return {};
   return parseYamlFrontmatterTolerant(match[1], context) ?? {};
 }
@@ -92,27 +116,69 @@ export function extractFrontmatter(
  *     run-to-run (`scanTestTags` already sorts its file list for the same
  *     reason). Set-equality with the adapter's output is unaffected — only the
  *     order within `orphans` / `floorViolations` / … changes.
- *  2. A file that cannot be read is **skipped**; the adapter pushed it with `{}`
- *     metadata. Verdict-equivalent: the sole consumer (`loadRequirements`)
- *     drops any asset whose `req__Requirement_status` is undefined, which a `{}`
- *     asset always is — so neither variant can make a requirement vanish.
+ *  2. A file that cannot be read (or whose frontmatter fence does not parse) is
+ *     **reported as dropped** instead of being pushed with `{}` metadata. The
+ *     asset list stays verdict-equivalent — the sole consumer
+ *     (`loadRequirements`) drops any asset whose `req__Requirement_status` is
+ *     undefined, which a `{}` asset always is — but the drop is no longer
+ *     silent: a requirement that cannot be read is broken, not absent, and the
+ *     caller can refuse rather than under-count (issue #4066).
+ *
+ * A file with NO frontmatter fence at all is NOT a drop — that is an ordinary
+ * markdown document (a README next to the assets), and it keeps its historical
+ * `{}` entry.
  */
-export async function loadMarkdownAssets(
+export async function scanMarkdownAssets(
   rootPath: string,
-): Promise<MarkdownAsset[]> {
+): Promise<MarkdownScan> {
   const files = await glob.glob(join(rootPath, "**/*.md"), { nodir: true });
   files.sort();
 
   const assets: MarkdownAsset[] = [];
+  const dropped: DroppedAsset[] = [];
   for (const abs of files) {
     const rel = relative(rootPath, abs);
-    let metadata: Record<string, unknown> = {};
+    let content: string;
     try {
-      metadata = extractFrontmatter(await readFile(abs, "utf-8"), rel);
-    } catch {
+      content = await readFile(abs, "utf-8");
+    } catch (error) {
+      dropped.push({
+        path: rel,
+        reason: `could not be read (${
+          error instanceof Error ? error.message.split("\n")[0] : String(error)
+        })`,
+      });
+      continue;
+    }
+    const match = FRONTMATTER_RE.exec(content);
+    if (match === null) {
+      // No fence — an ordinary markdown document, not a broken asset.
+      assets.push({ path: rel, metadata: {} });
+      continue;
+    }
+    const metadata = parseYamlFrontmatterTolerant(match[1], rel);
+    if (metadata === null) {
+      dropped.push({
+        path: rel,
+        reason:
+          "has a frontmatter fence whose YAML does not parse (even in tolerant mode)",
+      });
       continue;
     }
     assets.push({ path: rel, metadata });
   }
-  return assets;
+  return { assets, dropped };
+}
+
+/**
+ * The assets-only view of {@link scanMarkdownAssets}.
+ *
+ * Kept as the historical entry point: callers that only classify assets (and
+ * every test that pins the walk's ordering / dot-dir / no-frontmatter
+ * behaviour) are unaffected by the drop-reporting added for issue #4066.
+ */
+export async function loadMarkdownAssets(
+  rootPath: string,
+): Promise<MarkdownAsset[]> {
+  return (await scanMarkdownAssets(rootPath)).assets;
 }

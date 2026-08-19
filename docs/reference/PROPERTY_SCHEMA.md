@@ -333,8 +333,7 @@ Draft → Backlog → Analysis → ToDo → Doing → Done
 
 - `ems__EffortStatusDraft` - Initial state
 - `ems__EffortStatusBacklog` - Queued for future
-- `ems__EffortStatusAnalysis` - Being analyzed/planned
-- `ems__EffortStatusToDo` - Ready to start
+- `ems__EffortStatusWaiting` - Parked, waiting on someone or something
 - `ems__EffortStatusDoing` - Currently active
 - `ems__EffortStatusDone` - Completed
 - `ems__EffortStatusTrashed` - Cancelled/deleted
@@ -1386,7 +1385,7 @@ exo__Asset_createdAt: 2025-10-20T10:00:00
 exo__Asset_isDefinedBy: "[[f6e01f7a-d727-494a-82a3-815597d33e86]]" # $ems ontology asset
 exo__Instance_class:
   - "[[7db5eeff-718a-49b0-8d2b-39b084a356e3]]" # ems__Project
-ems__Effort_status: "[[ems__EffortStatusToDo]]"
+ems__Effort_status: "[[ems__EffortStatusBacklog]]"
 ems__Effort_area: "[[Work]]"
 ems__Effort_votes: 8
 aliases:

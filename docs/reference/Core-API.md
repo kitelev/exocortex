@@ -89,7 +89,7 @@ const file = await service.createAsset({
   className: "ems__Task",
   label: "Build API endpoint",
   propertyValues: {
-    ems__Effort_status: '"[[ems__EffortStatusToDo]]"',
+    ems__Effort_status: '"[[ems__EffortStatusBacklog]]"',
   },
 });
 
@@ -760,8 +760,7 @@ import { EffortStatus } from "@kitelev/exocortex-core";
 enum EffortStatus {
   DRAFT = "ems__EffortStatusDraft",
   BACKLOG = "ems__EffortStatusBacklog",
-  ANALYSIS = "ems__EffortStatusAnalysis",
-  TODO = "ems__EffortStatusToDo",
+  WAITING = "ems__EffortStatusWaiting",
   DOING = "ems__EffortStatusDoing",
   DONE = "ems__EffortStatusDone",
   TRASHED = "ems__EffortStatusTrashed",

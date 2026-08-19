@@ -132,8 +132,23 @@ export class PropertiesDefinitionValuePatch {
     this.disable();
   }
 
-  /** A 1-hop wikilink → frontmatter resolver over the vault metadataCache (mirrors
-   * PrintNameRuleService.createMetadataResolver — kept inline so the patch is self-contained). */
+  /**
+   * A 1-hop wikilink → frontmatter resolver over the vault metadataCache, kept inline so the
+   * patch stays self-contained (it deliberately does not depend on PrintNameRuleService).
+   *
+   * ⚠ It is NO LONGER a mirror of `PrintNameRuleService.createMetadataResolver`, and the
+   * divergence is deliberate rather than an oversight: that one strips a display alias
+   * (`[[uid|label]]` → `uid`, req fedeaa6e), this copy does not. Consequence — a
+   * concept-definition dot-path over an ALIASED intermediate reference keeps the older
+   * silent non-match, while the same authoring form resolves on the matcher and
+   * display-name template surfaces. The shared `resolveKeyPath` (and therefore the
+   * first-element list hop) IS reached from here, so the two changes land on a different
+   * number of surfaces — three vs two.
+   *
+   * Unifying the two would change concept-definition RENDERING, a consumer req fedeaa6e
+   * does not cover, so it needs its own requirement + revert-verify rather than a drive-by
+   * edit: tracked in https://github.com/kitelev/exocortex/issues/4041.
+   */
   private buildMetadataResolver(): MetadataResolver {
     return (wikilinkTarget: string): Record<string, unknown> | null => {
       const cleaned = wikilinkTarget

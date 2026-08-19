@@ -82,6 +82,11 @@ export type {
   MountTransition,
   MountTransitionInput,
 } from "./domain/profile/ParkedMountState";
+export { ParkedAssetIndex } from "./domain/profile/ParkedAssetIndex";
+export type {
+  ParkedAssetHit,
+  ParkedVaultReader,
+} from "./domain/profile/ParkedAssetIndex";
 export type { IPropertyValidationService, ValidationResult } from "./domain/services/IPropertyValidationService";
 
 // Property definition types
@@ -885,3 +890,44 @@ export * from "./services/validation";
 // Export/Import of a domain's declared setting keys ↔ `setting__Setting` assets,
 // allowlist-by-construction. Pure (I/O injected by the caller).
 export * from "./services/settings";
+
+// ── displayName engine (req f17f7c57) ──────────────────────────────────────────
+// Lives in core so BOTH the plugin and the CLI compose names through ONE implementation
+// (UI/CLI parity #3417). The Obsidian coupling is isolated behind VaultMetadataPort; the
+// plugin supplies an Obsidian adapter, the CLI a filesystem one.
+export type { VaultMetadataPort } from "./domain/display-name/VaultMetadataPort";
+export type { DisplayNameSettings } from "./domain/display-name/DisplayNameSettings";
+export { DEFAULT_DISPLAY_NAME_SETTINGS } from "./domain/display-name/DisplayNameSettings";
+export { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService";
+export type {
+  ValueEqualityMatcher,
+  HostFunctionMatcher,
+  DisplayNameMatcher,
+  DisplayMatcherHostFunction,
+  DisplayMatcherHostFunctionRegistry,
+  PrintNameRule,
+  ParticipatingRule,
+} from "./domain/display-name/PrintNameRuleService";
+export { DisplayNameResolver, createDefaultResolver } from "./domain/display-name/DisplayNameResolver";
+export type {
+  DisplayNameContext,
+  DisplayNameProvenance,
+  ResolvedDisplayName,
+} from "./domain/display-name/DisplayNameResolver";
+export {
+  DisplayNameTemplateEngine,
+  DISPLAY_NAME_PRESETS,
+  DEFAULT_DISPLAY_NAME_TEMPLATE,
+} from "./domain/display-name/DisplayNameTemplateEngine";
+export type { DisplayNamePresetKey } from "./domain/display-name/DisplayNameTemplateEngine";
+export { resolveKeyPath, isWikilink } from "./domain/display-name/keyPathResolver";
+export type { MetadataResolver } from "./domain/display-name/keyPathResolver";
+// The built-in display-matcher host functions (req 5cd9fffe). They live here rather than in the
+// plugin so the CLI oracle stops silently skipping the specs that name them — the engine is
+// fail-closed, so an unregistered name means such a spec never participates at all.
+export {
+  isEffortBlocked,
+  isEpisodeOngoing,
+  localToday,
+  createDisplayMatcherHostFunctions,
+} from "./domain/display-name/hostFunctions";

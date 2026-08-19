@@ -20,6 +20,13 @@ import { iriToObsidianName } from "../utilities/iriToObsidianName";
 import { LoggingService } from "./LoggingService";
 
 /**
+ * Composite-key separator, built at runtime. The byte must not appear as a
+ * literal in this file — see scripts/check-no-nul-bytes.mjs for why, and issue
+ * #4071 for what it cost.
+ */
+const KEY_SEP = String.fromCharCode(0);
+
+/**
  * Resolves WorkflowDefinitions from vault assets stored in an ITripleStore.
  *
  * Resolution priority:
@@ -201,7 +208,7 @@ export class WorkflowResolver {
   private async findBuiltInWorkflowByAncestry(
     classRefs: readonly string[],
   ): Promise<WorkflowDefinition | null> {
-    const cacheKey = `ancestry:${[...classRefs].sort().join(" ")}`;
+    const cacheKey = `ancestry:${[...classRefs].sort().join(KEY_SEP)}`;
     const cached = this.ancestryCache.get(cacheKey);
     if (cached !== undefined) return cached; // memoised positive OR negative
     let result: WorkflowDefinition | null = null;

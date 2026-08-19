@@ -1141,7 +1141,7 @@ services depend on platform-agnostic interfaces (`IVaultAdapter`,
    ```
 4. **Update Status**:
    ```typescript
-   ems__Effort_status: "[[ems__EffortStatusToDo]]";
+   ems__Effort_status: "[[ems__EffortStatusBacklog]]";
    ```
 5. **No Timestamp**: ToDo doesn't trigger timestamps
 6. **Save**: `Vault.modify(file, updatedContent)`

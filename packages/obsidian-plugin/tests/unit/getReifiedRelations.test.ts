@@ -264,13 +264,59 @@ describe("symbolicIriToPropertyKey (inverse of labelToSymbolicIRI)", () => {
     }
   });
 
-  it("returns null for a non-ontology IRI (path-form ref, w3.org, empty)", () => {
+  it("returns null for a non-ontology IRI (path-form ref, unregistered vocabulary, empty)", () => {
     expect(
       symbolicIriToPropertyKey("obsidian://vault/assetspaces/x/1234.md"),
     ).toBeNull();
-    expect(symbolicIriToPropertyKey("http://www.w3.org/2002/07/owl#sameAs")).toBeNull();
+    // An UNREGISTERED external vocabulary still yields null (SKOS is not in
+    // KNOWN_NAMESPACES) — the exemption is per-registered-namespace, not
+    // "anything on w3.org".
+    expect(
+      symbolicIriToPropertyKey("http://www.w3.org/2004/02/skos/core#broader"),
+    ).toBeNull();
     expect(symbolicIriToPropertyKey("https://exocortex.my/ontology/exo#")).toBeNull();
     expect(symbolicIriToPropertyKey("")).toBeNull();
+  });
+
+  /**
+   * @req:aceaa2cc-15b6-4e1c-bf63-72c7c209de51
+   *
+   * INTENDED BEHAVIOUR CHANGE. This case previously asserted
+   * `symbolicIriToPropertyKey("http://www.w3.org/2002/07/owl#sameAs") === null`,
+   * pinning the state where the five W3C prefixes were NOT registered.
+   *
+   * Once the forward path emits `owl__sameAs` as the canonical
+   * `http://www.w3.org/2002/07/owl#sameAs`, a null here means the de-reify
+   * resolution loses every W3C-prefixed predicate-def — re-opening
+   * `ems__Bug f68bf750` / #3904 ("could not be mapped back to a frontmatter key"),
+   * which this very function exists to fix. The IRI below is not hypothetical:
+   * `exo__Statement_predicate → owl#sameAs` is present in vault-my, vault-tbank
+   * and vault-exodev.
+   */
+  it("@req:aceaa2cc-15b6-4e1c-bf63-72c7c209de51 recovers the key from a REGISTERED external vocabulary IRI (de-reify must not lose W3C predicates)", () => {
+    expect(
+      symbolicIriToPropertyKey("http://www.w3.org/2002/07/owl#sameAs"),
+    ).toBe("owl__sameAs");
+    expect(
+      symbolicIriToPropertyKey(
+        "http://www.w3.org/2000/01/rdf-schema#subClassOf",
+      ),
+    ).toBe("rdfs__subClassOf");
+  });
+
+  it("@req:aceaa2cc-15b6-4e1c-bf63-72c7c209de51 round-trips for W3C-prefixed keys, upholding the invariant this function documents", () => {
+    for (const key of [
+      "owl__sameAs",
+      "rdfs__subClassOf",
+      "rdf__type",
+      "xsd__date",
+      "sh__severity",
+    ]) {
+      const iri = labelToSymbolicIRI(key);
+      expect(iri).not.toBeNull();
+      // The documented invariant: symbolicIriToPropertyKey(labelToSymbolicIRI(k)) === k
+      expect(symbolicIriToPropertyKey(iri!.value)).toBe(key);
+    }
   });
 });
 

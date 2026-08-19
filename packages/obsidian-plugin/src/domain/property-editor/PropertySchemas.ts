@@ -40,11 +40,17 @@ export interface SizeEnumValue {
 // load). Resolved path (EnumValueResolver) still emits symbolic-form short
 // names — Stage 5 will migrate that. UUID-form `value` ensures property
 // writes from this fallback are UUID-canon even when the resolver fails.
+//
+// Because the UUIDs are written into user frontmatter verbatim, a UUID whose
+// TBox asset no longer exists becomes a dangling wikilink. Analysis
+// (cde3525c-…) and To Do (6a0e933a-…) were deleted from the shared ontology
+// (exoas-public@c35a660d, 2026-08-13) and dropped here; Waiting (0610947c-…)
+// took their place — req fcbde537-f09a-410e-8bee-d3d607a70302. Resolve any
+// new UUID on disk before adding it.
 const FALLBACK_EFFORT_STATUS_VALUES: StatusEnumValue[] = [
   { value: "[[753a44d5-846c-4b82-9196-4fd9a4d48777]]", wikilink: "[[753a44d5-846c-4b82-9196-4fd9a4d48777|Backlog]]", label: "Backlog" },
-  { value: "[[cde3525c-57ea-4efc-b477-2e7e7ccd3a1e]]", wikilink: "[[cde3525c-57ea-4efc-b477-2e7e7ccd3a1e|Analysis]]", label: "Analysis" },
-  { value: "[[6a0e933a-6653-46f4-95ae-ed7508177c73]]", wikilink: "[[6a0e933a-6653-46f4-95ae-ed7508177c73|To Do]]", label: "To Do" },
   { value: "[[027e78f4-6e16-4b36-b8fb-5510507d5745]]", wikilink: "[[027e78f4-6e16-4b36-b8fb-5510507d5745|Doing]]", label: "Doing" },
+  { value: "[[0610947c-6a62-41c8-9d44-7863d3ba3a8e]]", wikilink: "[[0610947c-6a62-41c8-9d44-7863d3ba3a8e|Waiting]]", label: "Waiting" },
   { value: "[[7b9b3116-7c3c-438c-9618-94fe301320a6]]", wikilink: "[[7b9b3116-7c3c-438c-9618-94fe301320a6|Done]]", label: "Done" },
   { value: "[[5d14f18d-db2b-4847-9ac1-144cb93b2541]]", wikilink: "[[5d14f18d-db2b-4847-9ac1-144cb93b2541|Trashed]]", label: "Trashed" },
   { value: "[[c42245d0-01de-4c35-bfcf-d910445ea28e]]", wikilink: "[[c42245d0-01de-4c35-bfcf-d910445ea28e|Draft]]", label: "Draft" },
@@ -215,16 +221,30 @@ export function getPropertyByName(
 // values written before the UUID-canon migration; this preserves the
 // human-readable label for both forms. Stage 5 will remove this map alongside
 // the `EffortStatus` enum deletion.
+// This map is READ-only (rendering), never a write path, so it deliberately
+// KEEPS `analysis` / `todo` even though those TBox instances were deleted
+// (req fcbde537-f09a-410e-8bee-d3d607a70302): assets written before the
+// 2026-08-13 migration may still carry those values, and rendering "To Do"
+// beats rendering a raw URI. Do not prune them — add new statuses instead.
 const SYMBOLIC_STATUS_LABEL_FALLBACK: Record<string, string> = {
   emseffortstatusdraft: "Draft",
   emseffortstatusbacklog: "Backlog",
   emseffortstatusanalysis: "Analysis",
   emseffortstatustodo: "To Do",
   emseffortstatusdoing: "Doing",
+  emseffortstatuswaiting: "Waiting",
   emseffortstatusdone: "Done",
   emseffortstatustrashed: "Trashed",
 };
 
+/**
+ * ⛤ One of THREE readers of the same `ems__Effort_status` vocabulary; they disagree on edge
+ * shapes, so a change to the status forms has to visit all three (multi-parser-predicate-
+ * migration). This one is UID-table based, via FALLBACK_EFFORT_STATUS_VALUES.
+ *
+ * @see GroundingExecutor.resolveStatusFromFrontmatter (core) — also UID-table based
+ * @see resolveStatusLabel in core domain/display-name/hostFunctions — vault-lookup based
+ */
 export function getStatusLabel(statusUri: string | null | undefined): string {
   if (!statusUri || statusUri.trim() === "") return "-";
   // Strip wikilink brackets and optional `|alias` suffix.

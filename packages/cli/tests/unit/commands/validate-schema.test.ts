@@ -16,7 +16,24 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   ShapeLoader: { loadFromVaultFS: jest.fn().mockResolvedValue({ getAll: jest.fn().mockReturnValue([]) }) },
   ShaclShapeRegistry: jest.fn().mockImplementation(() => ({})),
   shaclValidate: jest.fn().mockReturnValue({ conforms: true, violations: [] }),
+  // req 00e8079e — termIriCollisions (reached via validate-schema) resolves the
+  // label predicate through Namespace rather than hardcoding the IRI, so the ESM
+  // link needs this export too (see the note above about named exports).
+  Namespace: {
+    EXO: { term: (local: string) => ({ value: `https://exocortex.my/ontology/exo#${local}` }) },
+    // ⛔ `fromTermIRI` is stubbed too, not just `EXO.term`: termIriCollisions
+    // calls BOTH. Omitting it (the shape until review round 3) is latent only
+    // while no fixture here feeds an IRI-valued `exo__Asset_label` — the first
+    // one that does fails with `Namespace.fromTermIRI is not a function`, far
+    // from its cause. Mirrors the real contract's DIRECTION: term IRIs in,
+    // file IRIs and other schemes out.
+    fromTermIRI: (iri: string) => {
+      const m = /^(https?:\/\/[^#]*[#/])([^#/]+)$/.exec(iri);
+      return m ? { namespace: { iri: { value: m[1] } }, localName: m[2] } : null;
+    },
+  },
   DomainIRI: class { constructor(public value: string) {} },
+  DomainBlankNode: class { constructor(public id: string) {} },
   DomainLiteral: class { constructor(public value: string) {} },
   DomainTriple: class {
     constructor(public subject: unknown, public predicate: unknown, public object: unknown) {}

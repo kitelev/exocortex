@@ -302,13 +302,13 @@ describe("WorkflowResolver — per-project workflow override (ems__Effort_workfl
       isDefault: false,
       states: [
         { status: EffortStatus.BACKLOG, order: 1 },
-        { status: EffortStatus.TODO, order: 2 },
+        { status: EffortStatus.WAITING, order: 2 },
         { status: EffortStatus.DOING, order: 3 },
         { status: EffortStatus.DONE, order: 4 },
       ],
       transitions: [
-        { from: EffortStatus.BACKLOG, to: EffortStatus.TODO, label: "Refine" },
-        { from: EffortStatus.TODO, to: EffortStatus.DOING, label: "Start" },
+        { from: EffortStatus.BACKLOG, to: EffortStatus.WAITING, label: "Refine" },
+        { from: EffortStatus.WAITING, to: EffortStatus.DOING, label: "Start" },
         { from: EffortStatus.DOING, to: EffortStatus.DONE, label: "Complete" },
       ],
     });

@@ -188,6 +188,51 @@ jobs:
       - name: Validate e2e shard assignments
         run: node scripts/validate-shard-assignments.mjs
 
+      # Issue #4071: a NUL byte in tracked source makes file(1) report `data`, so
+      # plain `grep` skips that file SILENTLY (exit != 0, no output) while git grep
+      # and rg still match it. The failure mode leaves no trace — a repo-wide search
+      # just quietly excludes the file, and silence reads as "no matches". It had
+      # already accumulated in SIX files across cli/core/sync/plugin and produced a
+      # false code-review finding before anyone noticed, which is exactly why this
+      # needs a machine guard rather than review attention. (The byte comes from a
+      # tool normalizing an escape into a codepoint, NOT from typing `\0` by hand —
+      # the script's header has the measurement.)
+      - name: No NUL bytes in tracked source
+        run: node scripts/check-no-nul-bytes.mjs
+
+      # packages/cli is excluded from the root tsconfig AND built with esbuild
+      # (which does not type-check), so `npm run check:types` — the typecheck job —
+      # never looks at it. 24 errors had accumulated there unseen, including a
+      # `BlankNode.value` read that shipped through two review rounds of #4070
+      # while the compiler had been flagging it the whole time. This ratchets the
+      # existing debt (baseline of (file, code) pairs) and fails on anything new.
+      # ⛔ The workspace deps must be BUILT first. packages/cli/tsconfig.json
+      # declares `paths` for them, but those paths are dead: it inherits
+      # `baseUrl: "."` from the root config, so `../core/src` resolves relative to
+      # the repo root — outside the repo. Resolution falls through to node_modules
+      # → `types: dist/index.d.ts`, absent until built. Without this step the
+      # check reports a 174-diagnostic TS2307 cascade instead of the package's
+      # own 24. ~3.6s combined; the guard exits 2 if it is skipped.
+      - name: Build workspace deps for the cli typecheck
+        run: |
+          npm run build -w @kitelev/exocortex-core
+          npm run build -w @kitelev/exocortex-services
+
+      - name: No new type errors in packages/cli
+        run: node scripts/check-cli-types.mjs
+
+      # Issue #4084 — the OTHER half of the same hole. No tsconfig in the repo includes
+      # packages/**/tests/**, so no standalone tsc run covers the 975 test files. This is a
+      # STRICTER SUPERSET of what ts-jest checks, NOT a reproduction of it: main is green
+      # today with all 2396 baselined diagnostics present, so a red here does not imply a
+      # failing suite. What it uniquely covers: tests/component/** (Playwright CT — type-
+      # checked by nothing), and tests importing a module that MOVED packages while still
+      # passing green, because the import is type-only and ts-jest erases it without
+      # resolving (the annotation silently degrades to `any`). Measured 2026-08-19:
+      # 433 (file, code) pairs / 2396 diagnostics. Reuses the build step above.
+      - name: No new type errors in test files
+        run: node scripts/check-test-types.mjs
+
       # Test-quality audit 2026-06-22 (recommendation P4): ratchet guard against
       # low-value test anti-patterns (method-exists `.toBe("function")` asserts +
       # vacuous `toBeGreaterThanOrEqual(0)` length asserts). Fails if their count
@@ -304,6 +349,12 @@ jobs:
       # M3-closure (see the block above). `soft` = warn only; `hard` = also
       # block when the P0 checklist is not ramp-ready.
       REQ_GATE: soft
+      # The reqs assetspaces this job's corpus consists of — the SINGLE
+      # enumeration, driving BOTH the clone loop below AND the audit's corpus
+      # floor (`--expect`). Adding a module = one name here, nowhere else: the
+      # set the floor requires is definitionally the set CI clones, so the two
+      # cannot drift apart (issue #4066).
+      REQS_ASSETSPACES: exoas-exo-reqs,exoas-ems-reqs
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -322,15 +373,16 @@ jobs:
 
       - name: Clone reqs assetspaces (public)
         # The audit walks `$RUNNER_TEMP/reqs` recursively, so each per-module
-        # reqs assetspace (RFC 0003 §3.2) is just one more clone line here.
+        # reqs assetspace (RFC 0003 §3.2) is one more name in REQS_ASSETSPACES —
+        # ⛔ do NOT add a clone line here, and do NOT repeat the name anywhere
+        # else in this job: that env var is what the corpus floor requires.
         run: |
           mkdir -p "$RUNNER_TEMP/reqs"
-          git clone --depth 1 \
-            https://github.com/kitelev/exoas-exo-reqs.git \
-            "$RUNNER_TEMP/reqs/exoas-exo-reqs"
-          git clone --depth 1 \
-            https://github.com/kitelev/exoas-ems-reqs.git \
-            "$RUNNER_TEMP/reqs/exoas-ems-reqs"
+          for name in ${REQS_ASSETSPACES//,/ }; do
+            git clone --depth 1 \
+              "https://github.com/kitelev/$name.git" \
+              "$RUNNER_TEMP/reqs/$name"
+          done
 
       - name: Run traceability audit (soft — never blocks until the P3 flip)
         id: audit
@@ -346,18 +398,22 @@ jobs:
           rc=0
           npx tsx packages/req-audit/src/cli.ts \
             --reqs "$RUNNER_TEMP/reqs" --tests . --gate "$REQ_GATE" --output json \
+            --expect "$REQS_ASSETSPACES" \
             > "$RUNNER_TEMP/req-report.json" || rc=$?
           cat "$RUNNER_TEMP/req-report.json"
           echo "--- human-readable (gate=$REQ_GATE) ---"
           npx tsx packages/req-audit/src/cli.ts \
-            --reqs "$RUNNER_TEMP/reqs" --tests . --gate "$REQ_GATE" --output text || true
+            --reqs "$RUNNER_TEMP/reqs" --tests . --gate "$REQ_GATE" --output text \
+            --expect "$REQS_ASSETSPACES" || true
           exit $rc
 
       - name: Active-requirement gate (BLOCKING — SDD feature-lifecycle invariant)
         if: always()
         # ⛔ NO continue-on-error. This is the ALWAYS-ON invariant (Andrey,
         # 2026-06-21): an `active` requirement MUST carry a verification binding,
-        # else CI is red. Vacuous while zero requirements are `active`; arms
+        # else CI is red. ⛔ "Vacuous while zero requirements are `active`" — NO
+        # LONGER TRUE: zero active requirements is now an INPUT-integrity failure
+        # (req 99e06488-2da6-48fe-bd64-30c1e20bca0f), not a vacuous pass. Arms
         # per-requirement the moment one is flipped to `active`. The bound test
         # being GREEN is enforced by the test suite itself (the bound test runs
         # in CI); THIS step enforces the binding EXISTS (anti-orphan/dangling for
@@ -375,6 +431,34 @@ jobs:
             } catch (e) {
               console.error(
                 "Active-gate: no traceability report produced (checker failed to run) — failing closed.",
+              );
+              process.exit(1);
+            }
+            // Population floor FIRST (req 99e06488-2da6-48fe-bd64-30c1e20bca0f):
+            // `activeViolations` is necessarily empty when the corpus never
+            // arrived, so checking it first would print "OK" on a broken input.
+            // A requirement is detected purely by the PRESENCE of a
+            // `req__Requirement_status` predicate — so a renamed predicate, a
+            // reqs assetspace moved elsewhere, or a failed clone turn THIS
+            // blocking gate GREEN. The reason string is produced by the audit
+            // (production-owned + unit-tested), printed verbatim here.
+            if (!("inputIntegrityViolation" in r)) {
+              console.error(
+                "Active-gate: the report carries no `inputIntegrityViolation` field — " +
+                  "it predates the population floor, so the floor was NOT evaluated. " +
+                  "Failing closed rather than silently reverting to the pre-floor behaviour.",
+              );
+              process.exit(1);
+            }
+            if (r.inputIntegrityViolation) {
+              console.error(
+                "❌ Active-gate INPUT integrity failure — " +
+                  r.inputIntegrityViolation,
+              );
+              console.error(
+                "Fix: restore the requirements corpus (the `req__Requirement_status` " +
+                  "predicate + the `exoas-*-reqs` clones in the step above), OR — if every " +
+                  "requirement really was withdrawn — retire this gate deliberately.",
               );
               process.exit(1);
             }

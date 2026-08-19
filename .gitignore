@@ -20,6 +20,7 @@ playwright-report/
 playwright-report-ct/
 playwright-report-ct*/
 test-results/
+test-results-eka-gui/
 playwright/.cache/
 build-meta.json
 flaky-report.json

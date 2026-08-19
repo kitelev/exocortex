@@ -11,7 +11,7 @@
  * // Task with custom properties
  * const customTask = TaskFactory.create({
  *   label: "Custom Task",
- *   status: "To Do",
+ *   status: "Backlog",
  *   votes: 5,
  * });
  *
@@ -134,17 +134,10 @@ export const TaskFactory = {
   },
 
   /**
-   * Create an Analysis task.
+   * Create a Waiting (parked) task.
    */
-  analysis(overrides: Partial<TaskFixture> = {}): TaskFixture {
-    return TaskFactory.create({ status: "Analysis", ...overrides });
-  },
-
-  /**
-   * Create a To Do task.
-   */
-  todo(overrides: Partial<TaskFixture> = {}): TaskFixture {
-    return TaskFactory.create({ status: "To Do", ...overrides });
+  waiting(overrides: Partial<TaskFixture> = {}): TaskFixture {
+    return TaskFactory.create({ status: "Waiting", ...overrides });
   },
 
   /**

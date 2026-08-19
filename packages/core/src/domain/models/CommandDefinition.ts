@@ -368,6 +368,19 @@ export interface GroundingDefinition {
    * substitution still resolves to the source asset for link-back, and because
    * the just-created asset is not yet indexed in the triple store).
    *
+   * Issue #4046 — `service_call` steps needed one extra hop for the same
+   * guarantee: a service resolves its file from the IRI it is handed
+   * (`IGroundingService.execute` has no file-path channel), so a re-pointed
+   * `filePath` alone left the service operating on the click-target and
+   * "succeeding" silently. `GroundingExecutor.executeServiceCall` therefore
+   * hands the service `vaultPathToIRI(filePath)` — and ONLY when this flag is
+   * set. `$target` substitution inside `serviceCallPayload` is unaffected and
+   * still uses the click-target `targetIRI`. The plugin resolver can find the
+   * just-created asset because `FileSystemAdapter.write` awaits
+   * `reconcileInternalFile` in a `finally` (→ `Vault.onChange("file-created")`
+   * → `fileMap[path]`), so the `TFile` is registered before the write resolves
+   * — measured in Obsidian 1.13.7, not assumed.
+   *
    * Absent/`false` (the default) → the step operates on the click-target
    * exactly as today. Existing composites whose `property_set` steps
    * intentionally close the CURRENT click-target (e.g. `ems__WaitingCheckTask`
@@ -381,6 +394,44 @@ export interface GroundingDefinition {
    * (xsd:boolean — `true`/`false`; absent → click-target).
    */
   readonly targetsCreatedInstance?: boolean;
+  /**
+   * Opt-in for `create_instance`: an ABSENT `exo__Asset_label` is the INTENDED
+   * end state, not a degraded fallback.
+   *
+   * By default, when nothing supplies a label (no `userInput.label`, no
+   * `labelTemplate`, or a template that substitutes to blank), the executor
+   * writes the literal `"Untitled"`, derives `aliases: ["Untitled"]`-free but
+   * flags `exo__Asset_label` in `missing[]`, which logs "Vault may be in an
+   * unhealthy state". That default is right for an ACCIDENTAL blank and stays
+   * unchanged.
+   *
+   * It is wrong for a class whose name is DERIVED at render time from an
+   * `exo__DisplayNameSpec` (e.g. `ems__Action`, whose display name composes the
+   * prototype's label with the action's timestamp). There a stored label is not
+   * missing data — it is duplicated, stale-prone data: the asset would carry a
+   * frozen string next to a spec that recomputes the name on every render, and
+   * the two would disagree the moment either side changes.
+   *
+   * When `true` AND nothing resolved a label, the executor:
+   *   - REMOVES `exo__Asset_label` from the written frontmatter (rather than
+   *     writing `"Untitled"` or an empty literal — an empty literal is worse
+   *     than either, see the blank-substitution guard);
+   *   - writes no label-derived `aliases`;
+   *   - does NOT push `exo__Asset_label` to `missing[]`, so the unhealthy-vault
+   *     ERROR is not raised for a designed outcome.
+   *
+   * A label that IS supplied still wins: `userInput.label` and a
+   * `labelTemplate` that substitutes non-blank both take the normal path, so
+   * this flag only ever changes the FALLBACK, never an explicit name. Absent /
+   * `false` (the default) → byte-identical to prior behaviour.
+   *
+   * ⛔ Only meaningful for `create_instance`; other grounding types never reach
+   * the label top-up.
+   *
+   * Authored as the `exocmd__Grounding_omitLabel` RDF triple
+   * (xsd:boolean — `true`/`false`; absent → the `"Untitled"` fallback).
+   */
+  readonly omitLabel?: boolean;
 }
 
 /**

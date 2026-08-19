@@ -184,7 +184,7 @@ export interface QuarantineResolverDeps {
 }
 
 /** Sentinel for "this version is absent" in SHA comparisons (a delete). */
-const ABSENT = " absent";
+const ABSENT = `${String.fromCharCode(0)}absent`;
 
 export class QuarantineResolver {
   private readonly deps: QuarantineResolverDeps;

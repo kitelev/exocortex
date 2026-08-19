@@ -42,6 +42,7 @@ const KNOWN_EXCEPTIONS = new Set([
 
 function extractPropertiesFromDocs() {
   const properties = new Map(); // property -> [{file, line}]
+  let filesScanned = 0;
 
   function scanFile(filePath) {
     const content = fs.readFileSync(filePath, "utf-8");
@@ -84,13 +85,14 @@ function extractPropertiesFromDocs() {
       if (entry.isDirectory()) {
         scanDir(fullPath);
       } else if (entry.name.endsWith(".md")) {
+        filesScanned += 1;
         scanFile(fullPath);
       }
     }
   }
 
   scanDir(DOCS_DIR);
-  return properties;
+  return { properties, filesScanned };
 }
 
 function propertyExistsInCode(propertyName) {
@@ -108,7 +110,38 @@ function propertyExistsInCode(propertyName) {
 function main() {
   console.log("Validating documentation property names...\n");
 
-  const docProperties = extractPropertiesFromDocs();
+  const { properties: docProperties, filesScanned } = extractPropertiesFromDocs();
+
+  // ⛤ POSITIVE proof of coverage, from the SCAN rather than from its findings.
+  //
+  // ⛔ Without it this gate is satisfied by an empty input: `Found 0 unique property
+  // names` -> `0 missing` -> rc=0, which reads as "docs are clean" and is
+  // indistinguishable from "the scan found nothing". The two halves below are checked
+  // separately because they fail for DIFFERENT reasons and the split is itself the
+  // oracle — no magic number is involved:
+  //   filesScanned === 0            -> the CORPUS is gone (docs/ moved or emptied)
+  //   filesScanned > 0, props === 0 -> the EXTRACTOR is broken (N files parsed, nothing
+  //                                    recognised), which no count of files could reveal
+  // Measured 2026-08-19 on the unchanged tree: 67 properties across the docs corpus.
+  if (filesScanned === 0) {
+    console.error(
+      `VALIDATION ABORTED: no .md files under ${DOCS_DIR}.\n` +
+        "  The documentation corpus is missing or renamed, so this run examined nothing\n" +
+        "  and has no verdict to give. Fix the path — a green result here would mean\n" +
+        "  'nothing was checked', not 'nothing is wrong'.",
+    );
+    process.exit(1);
+  }
+  if (docProperties.size === 0) {
+    console.error(
+      `VALIDATION ABORTED: scanned ${filesScanned} .md file(s) and recognised NO property\n` +
+        "  names at all. The corpus is present, so this is the EXTRACTOR failing, not an\n" +
+        "  empty corpus — the mention format in docs/ changed, or the frontmatter/YAML\n" +
+        "  detection stopped matching. Every property would pass vacuously until fixed.",
+    );
+    process.exit(1);
+  }
+
   const errors = [];
 
   for (const [prop, locations] of docProperties) {
@@ -119,7 +152,9 @@ function main() {
     }
   }
 
-  console.log(`Found ${docProperties.size} unique property names in docs/`);
+  console.log(
+    `Found ${docProperties.size} unique property names in ${filesScanned} docs/ file(s)`,
+  );
   console.log(
     `Checked against packages/ source code (${errors.length} missing)\n`,
   );

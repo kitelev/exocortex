@@ -192,22 +192,24 @@ function parseProperties(
  *
  * @returns Body content string, or undefined if no body source specified
  */
-async function resolveBody(options: CreateCommandOptions): Promise<string | undefined> {
+async function resolveBody(
+  options: CreateCommandOptions,
+): Promise<{ text: string; source: "file" | "stdin" | "inline" } | undefined> {
   // --body-file takes precedence if both specified
   if (options.bodyFile) {
     if (!existsSync(options.bodyFile)) {
       throw new Error(`Body file not found: ${options.bodyFile}`);
     }
-    return readFileSync(options.bodyFile, "utf-8");
+    return { text: readFileSync(options.bodyFile, "utf-8"), source: "file" };
   }
 
   if (options.body === "-") {
     // Read from stdin with timeout
-    return readStdin(30_000);
+    return { text: await readStdin(30_000), source: "stdin" };
   }
 
   if (options.body) {
-    return options.body;
+    return { text: options.body, source: "inline" };
   }
 
   return undefined;
@@ -336,9 +338,17 @@ export function createCommand(): Command {
         const propertyNameValidator = new PropertyNameValidator(vaultPath);
         await propertyNameValidator.validate(Object.keys(properties));
 
-        // Resolve body content and parse escape sequences
-        let body = await resolveBody(options);
-        if (body) {
+        // Resolve body content. `\n` escapes are expanded ONLY for the inline
+        // `--body "a\nb"` form — that is exactly what issue #2288 asked for ("Given
+        // --body \"Line1\\n\\nLine2\"), because a single shell argument cannot carry a
+        // real newline.
+        //
+        // ⛔ NOT for --body-file or stdin: those already carry real newlines, so a
+        // backslash-n in them is authored text (a regex, a Windows path) and expanding
+        // it silently corrupts the document.
+        const resolvedBody = await resolveBody(options);
+        let body = resolvedBody?.text;
+        if (body !== undefined && resolvedBody?.source === "inline") {
           body = body.replace(/\\n/g, "\n");
         }
 
