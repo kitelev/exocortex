@@ -42,6 +42,7 @@ docs kept at root) is in **[TAXONOMY.md](TAXONOMY.md)**.
 
 - [PROPERTY_SCHEMA.md](reference/PROPERTY_SCHEMA.md) — full frontmatter property vocabulary
 - [Core-API.md](reference/Core-API.md) — `exocortex` core programmatic API
+- [ExoQL-Aggregates.md](reference/ExoQL-Aggregates.md) — statistical aggregates (`agg:median`, `agg:corr`, …) available in SPARQL/ExoQL queries
 - [SHACL_LITE_MAPPING.md](reference/SHACL_LITE_MAPPING.md) — SHACL-lite shape mapping
 - [templating.md](reference/templating.md) — templating commands, `exotemplate__Template` class, `body_template` grounding, substitution tokens
 - [ExoRDF-Mapping.md](explanation/ExoRDF-Mapping.md) — vault ↔ RDF triple mapping
