@@ -3,6 +3,7 @@
     "baseUrl": ".",
     "paths": {
       "@kitelev/exocortex-core": ["./packages/core/src/index.ts"],
+      "@kitelev/exocortex-core/*": ["./packages/core/src/*"],
       "@kitelev/exocortex-services": ["./packages/services/src/index.ts"],
       "@plugin/types": ["./packages/obsidian-plugin/src/types/index.ts"],
       "@plugin/types/*": ["./packages/obsidian-plugin/src/types/*"],
