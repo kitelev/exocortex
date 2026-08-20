@@ -1147,7 +1147,7 @@ jobs:
       # only needs to COPY plugin artifacts (~5s instead of ~80s cold).
       - name: Log in to GHCR
         if: env.RUN_E2E == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -1191,7 +1191,7 @@ jobs:
         # That's acceptable here because the Dockerfile.e2e build is now a
         # thin app layer (~5s); heavy caching happens at the base-image
         # level in GHCR instead.
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: packages/obsidian-plugin/Dockerfile.e2e
