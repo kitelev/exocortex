@@ -11,11 +11,6 @@
       "count": 1
     },
     {
-      "file": "packages/cli/src/cache/tripleSerialization.ts",
-      "code": "TS2339",
-      "count": 1
-    },
-    {
       "file": "packages/cli/src/commands/exosync-parity.ts",
       "code": "TS2322",
       "count": 1
