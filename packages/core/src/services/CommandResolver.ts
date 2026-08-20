@@ -10,6 +10,14 @@ import { GroundingType } from "../domain/constants/GroundingType";
 import { resolveGroundingTypeFromIRI } from "../domain/constants/GroundingTypeUIDs";
 import { utf8ToBase64 } from "../utilities/base64";
 import { iriToObsidianName } from "../utilities/iriToObsidianName";
+
+/**
+ * Absolute-IRI shape (`scheme://…`). Gates the label fold-back in
+ * {@link CommandResolver.resolveLabelByUID}: only a value that IS an IRI is
+ * handed to `iriToObsidianName`, whose vault-URL shape would otherwise strip a
+ * trailing `.md` off an ordinary label.
+ */
+const LOOKS_LIKE_IRI = /^[a-z][a-z0-9+.-]*:\/\//i;
 import {
   COMMAND_VARIANT_VALUES,
   LABEL_CLASS_VALUES,
@@ -3341,7 +3349,25 @@ export class CommandResolver {
   async resolveLabelByUID(uid: string): Promise<string | null> {
     const subject = await this.findSubjectByUID(uid);
     if (!subject) return null;
-    return this.getLiteralValue(subject, Namespace.EXO.term("Asset_label"));
+    const raw = await this.getLiteralValue(
+      subject,
+      Namespace.EXO.term("Asset_label"),
+    );
+    if (raw === null) return null;
+    // ⛔ A label that itself parses as `prefix__LocalName` — which EVERY property
+    // definition's label does (`ems__Effort_area`) — is emitted by the converter
+    // as a term IRI, not a Literal, so `getLiteralValue` hands back
+    // `https://exocortex.my/ontology/ems#Effort_area`. Callers want the label;
+    // an InheritanceRule that took this verbatim wrote the raw IRI as the
+    // frontmatter KEY, and `apply start-effort` then failed to find
+    // `ems__Effort_status` and appended a SECOND status (issue #4007).
+    //
+    // Folded back through the shared inverse of the forward emission path, so
+    // this cannot drift from it and covers every registered namespace — an
+    // explicit prefix list is what silently dropped the ad-hoc ones before
+    // (#3274). Guarded on IRI shape so an ordinary label ending in `.md` is not
+    // mistaken for a vault URL by that helper's second shape.
+    return LOOKS_LIKE_IRI.test(raw) ? (iriToObsidianName(raw) ?? raw) : raw;
   }
 
   /**
