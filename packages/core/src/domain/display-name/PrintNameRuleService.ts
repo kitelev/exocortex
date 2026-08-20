@@ -1,5 +1,6 @@
 import type { VaultMetadataPort } from "./VaultMetadataPort";
 import { resolvePreferenceList } from "./preferenceList";
+import { unwrapLinkTarget } from "./linkTarget";
 import {
   ownProperty,
   resolveKeyPath,
@@ -405,23 +406,15 @@ export class PrintNameRuleService {
 
   createMetadataResolver(): MetadataResolver {
     return (wikilinkTarget: string): Record<string, unknown> | null => {
-      const unwrapped = wikilinkTarget
-        .replace(/^\[\[|\]\]$/g, "")
-        .replace(/^"|"$/g, "")
-        .trim();
-
-      // Strip a display alias: `[[<uid>|<label>]]` points at <uid> exactly as `[[<uid>]]`
-      // does, but getFirstLinkpathDest("<uid>|<label>") never resolves — so before this the
-      // aliased form produced a SILENT non-match (req fedeaa6e scenario 3). Both wikilink
-      // forms must resolve identically; that is the dual-IRI floor the corpus mandates.
-      const cleaned = unwrapped.includes("|")
-        ? (unwrapped.split("|")[0]?.trim() ?? "")
-        : unwrapped;
-
+      // ⛤ The unwrap — brackets, quotes, and the display ALIAS — is shared with
+      // `PropertiesDefinitionValuePatch`, which resolves the same authored value
+      // through a different adapter. Letting each keep its own copy is how they
+      // drifted after req fedeaa6e (#4041); the HOP stays each caller's own.
+      const cleaned = unwrapLinkTarget(wikilinkTarget);
       if (!cleaned) return null;
-
-      // The `.md`-suffix retry is the adapter's business (see VaultMetadataPort) — the
-      // engine hands over an already-unwrapped, alias-stripped target and asks once.
+  
+      // The `.md`-suffix retry is the adapter's business (see VaultMetadataPort) —
+      // the engine hands over an already-unwrapped target and asks once.
       const fm = this.vault.resolveLinkpathFrontmatter(cleaned);
       return fm ? { ...fm } : null;
     };
