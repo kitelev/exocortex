@@ -1,6 +1,5 @@
 import { PrintNameRuleService } from "@plugin/domain/display-name/PrintNameRuleService";
 import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
-import { DEFAULT_DISPLAY_MATCHER_HOST_FUNCTIONS } from "@plugin/presentation/utils/displayMatcherHostFunctions";
 import { TFile } from "obsidian";
 import type { App, CachedMetadata } from "obsidian";
 import { installFakeOffsetDate } from "../../../../../core/tests/helpers/installFakeOffsetDate";
@@ -104,7 +103,7 @@ function episodeVault(): { service: PrintNameRuleService; resolver: DisplayNameR
     },
   } as unknown as App;
 
-  const service = new PrintNameRuleService(app, DEFAULT_DISPLAY_MATCHER_HOST_FUNCTIONS);
+  const service = new PrintNameRuleService(app);
   service.initialize();
   const resolver = new DisplayNameResolver(
     { defaultTemplate: "{{exo__Asset_label}}", classTemplates: {} },
