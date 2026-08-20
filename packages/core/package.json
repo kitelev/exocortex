@@ -47,7 +47,7 @@
   "dependencies": {
     "nanotar": "0.3.0",
     "reflect-metadata": "^0.2.2",
-    "sparqljs": "^3.7.3",
+    "sparqljs": "^3.7.4",
     "tsyringe": "^4.10.0",
     "uuid": "^11.1.0"
   },
