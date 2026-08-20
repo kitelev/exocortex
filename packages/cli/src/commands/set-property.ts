@@ -18,13 +18,15 @@ import { resolveCoLocationFolder } from "../executors/folderRepairHelpers.js";
 import {
   DEFAULT_TIMEZONE,
   UPDATED_AT_KEY,
-  GUARDED_PROPERTIES,
+  guardedRouteFor,
+  renderGuardedRouteResolved,
   renderGuardRefusal,
   IMMUTABLE_PROPERTIES,
   canonicalYamlKey,
   guardedReason,
   stampTimestamp,
 } from "./propertyMutationShared.js";
+import { CommandNameRegistry } from "../services/CommandNameRegistry.js";
 
 const ISDEFINEDBY_KEY = "exo__Asset_isDefinedBy";
 
@@ -272,10 +274,20 @@ export function setPropertyCommand(): Command {
             `Refusing to set "${property}" — ${immutableReason}.`,
           );
         }
-        const guardedCommand = guardedReason(GUARDED_PROPERTIES, property);
-        if (guardedCommand !== undefined) {
+        // Render the route against the LIVE vault: a listed cliName that `apply`
+        // cannot resolve is not a sanctioned path, and offering it as one is how
+        // three phantoms left users with no path at all (req 72419d3c, issue #4103).
+        // An empty registry fails OPEN — see renderGuardedRouteResolved.
+        const guardedRoute = guardedRouteFor(property);
+        if (guardedRoute !== undefined) {
+          const known = await new CommandNameRegistry(vaultPath).collect();
           throw new Error(
-            renderGuardRefusal("set", "set-property", property, guardedCommand),
+            renderGuardRefusal(
+              "set",
+              "set-property",
+              property,
+              renderGuardedRouteResolved(guardedRoute, known),
+            ),
           );
         }
 
