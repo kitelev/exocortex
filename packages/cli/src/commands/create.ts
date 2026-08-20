@@ -145,7 +145,16 @@ function parseProperties(
     }
 
     const key = prop.substring(0, eqIndex).trim();
-    const value = prop.substring(eqIndex + 1).trim();
+    // ⛔ The value is taken VERBATIM — no .trim(). Edge whitespace is meaningful
+    // for display properties (a ` · ` separator, an indent, a prefix), and this
+    // was the only thing losing it: the serializer downstream already quotes a
+    // value whose edges differ from its trimmed form, so ` X ` round-trips as
+    // `" X "` once it survives parsing (issue #4014).
+    //
+    // The KEY is still trimmed, so `--property "k = v"` yields key `k` and
+    // value ` v`. Asymmetric on purpose: whitespace around a key is never
+    // meaningful, whitespace inside a value can be.
+    const value = prop.substring(eqIndex + 1);
 
     if (!key) {
       throw new Error(
