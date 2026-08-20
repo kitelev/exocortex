@@ -3,6 +3,7 @@ import {
   ConceptDefinitionResolver,
   type MetadataResolver,
 } from "@plugin/domain/concept-definition/ConceptDefinitionResolver";
+import { unwrapLinkTarget } from "@kitelev/exocortex-core";
 import { ConceptDefinitionSpecService } from "@plugin/domain/concept-definition/ConceptDefinitionSpecService";
 
 /**
@@ -151,18 +152,22 @@ export class PropertiesDefinitionValuePatch {
    */
   private buildMetadataResolver(): MetadataResolver {
     return (wikilinkTarget: string): Record<string, unknown> | null => {
-      const cleaned = wikilinkTarget
-        .replace(/^\[\[|\]\]$/g, "")
-        .replace(/^"|"$/g, "")
-        .trim();
+      // ⛤ The unwrap is now the SHARED one (#4041) — the copy here had stopped
+      // stripping the display alias after req fedeaa6e changed the canonical
+      // resolver, so a dot-path over an ALIASED intermediate reference kept a
+      // silent non-match on this surface while resolving on the other three.
+      // The HOP stays inline: the patch deliberately does not depend on
+      // PrintNameRuleService, and going through metadataCache rather than a
+      // VaultMetadataPort is not what diverged.
+      const cleaned = unwrapLinkTarget(wikilinkTarget);
       if (!cleaned) return null;
-
+  
       let file = this.app.metadataCache.getFirstLinkpathDest(cleaned, "");
       if (!file && !cleaned.endsWith(".md")) {
         file = this.app.metadataCache.getFirstLinkpathDest(cleaned + ".md", "");
       }
       if (!(file instanceof TFile)) return null;
-
+  
       const cache = this.app.metadataCache.getFileCache(file);
       return cache?.frontmatter ? { ...cache.frontmatter } : null;
     };
