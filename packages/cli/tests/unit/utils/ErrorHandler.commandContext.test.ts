@@ -24,18 +24,34 @@ import { ErrorHandler } from "../../../src/utils/ErrorHandler";
  * everyone; those axes pin that it does not.
  */
 describe("ErrorHandler — command context", () => {
-  let consoleErrorSpy: jest.SpyInstance;
-  let consoleLogSpy: jest.SpyInstance;
-  let processExitSpy: jest.SpyInstance;
+  // ⛔ NOT `jest.SpyInstance` — that member does not exist in this jest's types
+  // (TS2694). The neighbouring ErrorHandler.test.ts uses it and passes only
+  // because its errors are grandfathered into the check-test-types baseline;
+  // copying the shape from a file whose debt is FROZEN reproduces the debt in a
+  // file that has none. Deriving the type from the factory keeps it honest and
+  // moves with jest.
+  const spyOnConsole = (method: "error" | "log") =>
+    jest.spyOn(console, method).mockImplementation(() => {});
+
+  let consoleErrorSpy: ReturnType<typeof spyOnConsole>;
+  let consoleLogSpy: ReturnType<typeof spyOnConsole>;
+  // Same factory trick: `jest.spyOn` is overloaded, so naming its return type
+  // directly does not resolve (TS2344/TS2635). Deriving it from a call does.
+  const spyOnExit = () =>
+    jest.spyOn(process, "exit").mockImplementation(((
+      code?: string | number | null
+    ): never => {
+      // The real signature is (code?: string | number | null); narrowing it to
+      // number is what TS2345 was reporting.
+      throw new Error(`process.exit(${code})`);
+    }) as typeof process.exit);
+
+  let processExitSpy: ReturnType<typeof spyOnExit>;
 
   beforeEach(() => {
-    consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
-    consoleLogSpy = jest.spyOn(console, "log").mockImplementation();
-    processExitSpy = jest
-      .spyOn(process, "exit")
-      .mockImplementation((code?: number) => {
-        throw new Error(`process.exit(${code})`);
-      }) as never;
+    consoleErrorSpy = spyOnConsole("error");
+    consoleLogSpy = spyOnConsole("log");
+    processExitSpy = spyOnExit();
     ErrorHandler.setFormat("text");
   });
 
@@ -52,7 +68,7 @@ describe("ErrorHandler — command context", () => {
     } catch {
       // process.exit is mocked to throw
     }
-    return consoleErrorSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    return consoleErrorSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("\n");
   }
 
   /** The parsed JSON object this call printed to stdout. */
@@ -62,7 +78,7 @@ describe("ErrorHandler — command context", () => {
     } catch {
       // process.exit is mocked to throw
     }
-    const raw = consoleLogSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    const raw = consoleLogSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("\n");
     return JSON.parse(raw) as Record<string, unknown>;
   }
 
