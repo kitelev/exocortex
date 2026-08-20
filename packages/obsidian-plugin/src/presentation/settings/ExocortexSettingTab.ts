@@ -36,7 +36,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
-  display(): void {
+  override display(): void {
     const { containerEl } = this;
 
     containerEl.empty();
@@ -358,6 +358,11 @@ export class ExocortexSettingTab extends PluginSettingTab {
           };
           await this.plugin.saveSettings();
           this.plugin.applyDisplayNameTemplate();
+          // obsidian 1.13.0 депрекировал PluginSettingTab.display() в пользу
+          // getSettingDefinitions(). Пока вкладка построена на императивном
+          // display(), пере-рендер после сброса делается им же — миграция на
+          // новый декларативный API отдельной задачей.
+          // eslint-disable-next-line @typescript-eslint/no-deprecated
           this.display(); // Refresh UI
         }),
       );
