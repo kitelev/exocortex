@@ -26,7 +26,7 @@ import { STATUS_UID_BY_ENUM } from "../../../../src/services/GroundingExecutor";
 
 const DONE_UID = "7b9b3116-7c3c-438c-9618-94fe301320a6";
 
-describe("Issue #4056: the effort-status canon", () => {
+describe("@req:355d9379-ed7b-4241-9ce7-0af955653127 Issue #4056: the effort-status canon", () => {
   describe("one source", () => {
     it("the workflow table IS the canon, not a copy of it", () => {
       // The DoD axis. A literal re-declaration in GroundingExecutor makes this
