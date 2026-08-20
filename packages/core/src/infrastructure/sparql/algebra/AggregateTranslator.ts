@@ -17,7 +17,7 @@ import type {
 } from "../SparqljsTypes";
 import { isVariableExpression, isFunctionCallExpression } from "../SparqljsTypes";
 import { CustomAggregateRegistry } from "../aggregates/CustomAggregateRegistry";
-import { BUILT_IN_AGGREGATES } from "../aggregates/BuiltInAggregates";
+import { BUILT_IN_AGGREGATES, EXO_AGGREGATE_NS } from "../aggregates/BuiltInAggregates";
 
 /**
  * Translates SPARQL aggregate-related constructs from the sparqljs AST
@@ -274,7 +274,29 @@ export class AggregateTranslator {
     const registered =
       iri in BUILT_IN_AGGREGATES ||
       CustomAggregateRegistry.getInstance().get(iri) !== undefined;
-    return registered ? iri : null;
+    if (registered) return iri;
+
+    // Polarity is INVERTED on purpose: inside the `agg:` namespace we enumerate what
+    // is SAFE (registered) and treat everything else as an error, rather than listing
+    // known-bad names. A typo (`agg:medain`) used to fall through to `null` here, be
+    // re-read as an ordinary function call, and therefore never aggregate at all — the
+    // query then returned one empty solution per row (`[{},{},{}…]`), which reads as
+    // data, not as a failure. Outside the namespace nothing changes: a non-`agg:` IRI
+    // is a normal function call and must keep flowing to collectNestedAggregates.
+    if (iri.startsWith(EXO_AGGREGATE_NS)) {
+      const known = [
+        ...Object.keys(BUILT_IN_AGGREGATES),
+        ...CustomAggregateRegistry.getInstance().getRegisteredIris(),
+      ]
+        .filter((k) => k.startsWith(EXO_AGGREGATE_NS))
+        .map((k) => k.slice(EXO_AGGREGATE_NS.length))
+        .sort();
+      throw new Error(
+        `Unknown aggregate agg:${iri.slice(EXO_AGGREGATE_NS.length)}. ` +
+          `Registered: ${known.length > 0 ? known.map((k) => `agg:${k}`).join(", ") : "(none)"}.`,
+      );
+    }
+    return null;
   }
 
   /**
@@ -289,7 +311,23 @@ export class AggregateTranslator {
       args?: SparqljsExpression[];
       distinct?: boolean;
     };
-    const arg = fc.args && fc.args.length > 0 ? fc.args[0] : undefined;
+    // Every registered aggregate accumulates ONE value per solution, so a call with
+    // more arguments cannot mean what it looks like. Before this guard the extra
+    // arguments were silently dropped and `agg:median(?x, ?y)` returned the median of
+    // ?x alone — indistinguishable from a working two-column statistic. That is the
+    // exact shape a user writes for `agg:corr(?x, ?y)` (#3994), so the failure had to
+    // become loud BEFORE the two-column aggregates land, not after.
+    const argc = fc.args?.length ?? 0;
+    if (argc > 1) {
+      const local = iri.startsWith(EXO_AGGREGATE_NS)
+        ? `agg:${iri.slice(EXO_AGGREGATE_NS.length)}`
+        : iri;
+      throw new Error(
+        `${local} takes exactly 1 argument, got ${argc}. ` +
+          `Two-column aggregates (corr/slope/intercept) are not implemented — see issue #3994.`,
+      );
+    }
+    const arg = argc > 0 ? fc.args?.[0] : undefined;
     return {
       type: "aggregate",
       aggregation: { type: "custom", iri },
