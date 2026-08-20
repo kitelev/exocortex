@@ -38,23 +38,51 @@ updates:
         exclude-patterns:
           - "@types/*"
           - "eslint*"
+          # ⛔ @typescript-eslint/* НЕ покрывается ни `eslint*` (начинается с @),
+          # ни `typescript` (точное совпадение) — без этой строки пакет попал бы
+          # и в production-группу, и в linters.
+          - "@typescript-eslint/*"
           - "prettier*"
           - "jest*"
           - "@jest/*"
+          # ⛔ ts-jest не покрывается `jest*` — он начинается с `ts-`.
+          - "ts-jest"
           - "typescript"
           - "@playwright/*"
           - "playwright*"
         update-types: ["minor", "patch"]
-      dev-dependencies:
+      # ⛤ Dev-инструменты РАЗВЕДЕНЫ по семействам, а не свалены в одну группу.
+      # Причина замерена на PR #4138: единая dev-группа притащила jest 30.4.2
+      # ВМЕСТЕ с jest-environment-jsdom 30.4.1 — разъехавшийся лок-степ внутри
+      # семейства дал `TypeError: this._moduleMocker.clearMocksOnScope is not a
+      # function`, и в том же PR ехали @playwright/* 1.57→1.62 и
+      # eslint-plugin-obsidianmd 0.1.9→0.4.1. Разобрать такой PR нельзя — в нём
+      # смешаны несвязанные причины отказа.
+      #
+      # ⛔ jest и jest-environment-* обязаны двигаться ОДНИМ PR (общий jest-mock),
+      # поэтому они в одной группе — но отдельно от всего прочего.
+      jest:
         patterns:
-          - "@types/*"
-          - "eslint*"
-          - "prettier*"
-          - "jest*"
+          - "jest"
+          - "jest-*"
           - "@jest/*"
-          - "typescript"
+          - "ts-jest"
+        update-types: ["minor", "patch"]
+      playwright:
+        patterns:
           - "@playwright/*"
           - "playwright*"
+        update-types: ["minor", "patch"]
+      linters:
+        patterns:
+          - "eslint*"
+          - "@typescript-eslint/*"
+          - "prettier*"
+        update-types: ["minor", "patch"]
+      types-and-tsc:
+        patterns:
+          - "@types/*"
+          - "typescript"
         update-types: ["minor", "patch"]
     # major-версии этих трёх ломают рантайм плагина — только вручную, с прогоном e2e
     ignore:
@@ -65,23 +93,19 @@ updates:
       - dependency-name: "react-dom"
         update-types: ["version-update:semver-major"]
 
-  # ── npm: packages/core (вход npm-audit гейта; дрейфовал от корневого) ──────
-  - package-ecosystem: "npm"
-    directory: "/packages/core"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "UTC"
-    open-pull-requests-limit: 2
-    labels:
-      - "dependencies"
-    commit-message:
-      prefix: "chore(deps)"
-    groups:
-      core-lock:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
+  # ⛔ Записи для /packages/core здесь НЕТ, и это осознанно (проверено замером
+  # 2026-08-20, PR #4129 → #4143). `packages/core` — workspace-ЧЛЕН, его зависимости
+  # живут в КОРНЕВОМ локе, и корневая запись выше обновляет их правильно: PR #4139
+  # тронул package-lock.json + манифесты core/cli/plugin/req-audit синхронно.
+  #
+  # Отдельная запись `directory: "/packages/core"` обновляет ТОЛЬКО манифест члена
+  # и его лок — корневой остаётся прежним, и `npm ci` в корне падает
+  # `Missing: <pkg> from lock file` (так упал PR #4140, job NPM Security Audit).
+  #
+  # ⚠ Остаток: packages/core/package-lock.json продолжает дрейфовать от корневого
+  # (js-yaml 3.14.2 против 3.15.1). Он не источник установки — только
+  # cache-dependency-path и вход `npm audit --omit=dev` job-а npm-audit-exocortex.
+  # Лечится не здесь; см. #4128.
 
   # ── npm: docs-site (вне workspaces корня) ─────────────────────────────────
   - package-ecosystem: "npm"

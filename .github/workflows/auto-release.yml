@@ -276,14 +276,24 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Verify npm auth
-        if: steps.commits.outputs.has_commits == 'true' && steps.check_tag.outputs.tag_exists == 'false'
-        run: |
-          echo "🔑 Verifying npm authentication..."
-          npm whoami --registry https://registry.npmjs.org
-          echo "✅ npm auth verified"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # ⛔ Здесь НЕ должно быть предварительной проверки npm-аутентификации
+      # (`npm whoami`). Такой шаг стоял тут до 2026-08-20 и был снят (#4126):
+      #
+      #   1. он добавлял СВОЙ способ отказа сверх того, которым и так падает
+      #      `npm publish` — а тот падает громко и с точной ошибкой (E401/ENEEDAUTH);
+      #   2. `npm whoami` и `npm publish` требуют РАЗНЫХ прав: granular access-токен
+      #      способен публиковать и при этом отдавать 401 на whoami ⇒ гейт валил
+      #      релиз при полностью исправном токене;
+      #   3. он стоял ПОСЛЕ `Create git tag` + `Create GitHub Release`, поэтому его
+      #      срабатывание гарантированно оставляло расхождение «тег есть, пакета
+      #      нет» — ровно оно наблюдалось в #4088 (теги дошли до v16.230.0,
+      #      npm стоял на 16.224.7);
+      #   4. он делил `if:` с publish-шагами, поэтому перезапуск на теге без новых
+      #      коммитов пропускал и гейт, и публикацию — «зелёный» такого прогона
+      #      не отличим от «гейт прошёл» и ничего не доказывал.
+      #
+      # ⚠ Остаётся неатомарность: если упадёт сам `npm publish`, GitHub-релиз уже
+      # создан. Это отдельный вопрос — снятие гейта его не решает и не ухудшает.
 
       - name: Update CLI package version
         if: steps.commits.outputs.has_commits == 'true' && steps.check_tag.outputs.tag_exists == 'false'
