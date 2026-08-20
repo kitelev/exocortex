@@ -27,6 +27,12 @@ module.exports = {
     "!**/tests/**",
   ],
   moduleNameMapper: {
+    // `test-utils` is a private workspace package with no build step; tests
+    // resolve it straight from source. Mapped to the helper FILE rather than the
+    // package index on purpose — the index also re-exports Obsidian mocks and
+    // the flaky reporter, which these suites have no business loading.
+    '^@kitelev/exocortex-test-utils$':
+      '<rootDir>/../test-utils/src/helpers/frontmatter.helpers.ts',
     // Подпуть ДО точного: moduleNameMapper берёт первый совпавший паттерн.
     "^@kitelev/exocortex-core/(.*)$": "<rootDir>/../core/src/$1",
     "^@kitelev/exocortex-core$": "<rootDir>/../core/src/index.ts",

@@ -27,7 +27,6 @@ import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import fs from "fs-extra";
 import path from "path";
 import os from "os";
-import * as yaml from "js-yaml";
 import {
   NoteToRDFConverter,
   InMemoryTripleStore,
@@ -38,6 +37,7 @@ import {
   type Triple,
 } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
+import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
 
 /**
  * Independent reference implementation of Obsidian's
@@ -92,7 +92,7 @@ class OracleVaultAdapter implements IVaultAdapter {
     const match = content.match(/^---\n([\s\S]*?)\n---/);
     if (!match) return null;
     try {
-      const parsed = yaml.load(match[1]);
+      const parsed = parseFrontmatterAsReader(content);
       return typeof parsed === "object" && parsed !== null
         ? (parsed as IFrontmatter)
         : null;

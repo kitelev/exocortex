@@ -28,7 +28,7 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import * as yaml from "js-yaml";
+import { parseYamlAsReader } from "@kitelev/exocortex-test-utils";
 
 const { createCommand } = await import("../../src/commands/create.js");
 
@@ -106,7 +106,7 @@ describe("Issue #4014: cli create --property keeps the value verbatim", () => {
       );
     const out = JSON.parse(stdout);
     const content = fs.readFileSync(path.join(vault, out.path), "utf-8");
-    const frontmatter = yaml.load(content.split("---\n")[1]) as Record<
+    const frontmatter = parseYamlAsReader(content.split("---\n")[1]) as Record<
       string,
       unknown
     >;

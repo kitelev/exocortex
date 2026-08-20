@@ -7,7 +7,6 @@
  * real allowlist/denylist (no NON_HOMOICONIZABLE field is exportable) and that a
  * full round-trip restores the snapshot.
  */
-import * as yaml from "js-yaml";
 import {
   exportSettings,
   importSettings,
@@ -18,11 +17,12 @@ import {
   NON_HOMOICONIZABLE_FIELDS,
   VAULT_SETTINGS_REGISTRY,
 } from "@plugin/domain/settings/VaultSettingsRegistry";
+import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
 
 function parseAsset(content: string, path: string): ImportableSettingAsset {
   const m = content.match(/^---\n([\s\S]*?)\n---/);
   if (!m) throw new Error(`no frontmatter in ${path}`);
-  return { path, frontmatter: yaml.load(m[1]) as Record<string, unknown> };
+  return { path, frontmatter: parseFrontmatterAsReader(content) as Record<string, unknown> };
 }
 
 describe("ExocortexSettingsSource (production-shape over the real registry)", () => {

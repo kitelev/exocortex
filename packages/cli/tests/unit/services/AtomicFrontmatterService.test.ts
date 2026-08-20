@@ -5,6 +5,7 @@ import path from "path";
 import * as yaml from "js-yaml";
 
 import { atomicUpdateFrontmatter } from "../../../src/services/AtomicFrontmatterService.js";
+import { parseYamlAsReader } from "@kitelev/exocortex-test-utils";
 
 function buildMd(fm: Record<string, unknown>, body = ""): string {
   return `---\n${yaml.dump(fm)}---\n${body}`;
@@ -37,7 +38,7 @@ describe("AtomicFrontmatterService", () => {
     expect(r.verified).toBe(true);
 
     const after = readFileSync(target, "utf8");
-    const parsed = yaml.load(after.split("---")[1]) as Record<string, unknown>;
+    const parsed = parseYamlAsReader(after.split("---")[1]) as Record<string, unknown>;
     expect(parsed["ems__Effort_status"]).toBe("[[ems__EffortStatusDoing]]");
     expect(parsed["existing"]).toBe("keep");
     expect(parsed["exo__Asset_uid"]).toBe("uuid-1");
@@ -76,9 +77,9 @@ describe("AtomicFrontmatterService", () => {
     const r = atomicUpdateFrontmatter(target, { aiTask__Task_claimedBy: "99999" });
 
     expect(r.success).toBe(true);
-    const parsed = yaml.load(
+    const parsed = parseYamlAsReader(
       readFileSync(target, "utf8").split("---")[1],
-    ) as Record<string, unknown>;
+    );
     expect(parsed["dup"]).toBe("second"); // last-wins
     expect(parsed["aiTask__Task_claimedBy"]).toBe("99999");
     expect(parsed["exo__Asset_uid"]).toBe("uuid-1");
@@ -157,7 +158,7 @@ describe("AtomicFrontmatterService", () => {
     }
 
     const finalContent = readFileSync(target, "utf8");
-    const fm = yaml.load(finalContent.split("---")[1]) as Record<string, unknown>;
+    const fm = parseYamlAsReader(finalContent.split("---")[1]) as Record<string, unknown>;
     expect(fm["counter"]).toBe(100);
     expect(fm["exo__Asset_uid"]).toBe("uuid-1");
   });

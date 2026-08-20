@@ -30,7 +30,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import * as yaml from "js-yaml";
+import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
 
 const { setPropertyCommand } = await import("../../src/commands/set-property.js");
 
@@ -61,7 +61,7 @@ const EXPECTED_UPDATED_AT = "2026-07-12T15:00:00";
 function parseFrontmatter(content: string): Record<string, unknown> {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) throw new Error("no frontmatter block");
-  return (yaml.load(match[1]) ?? {}) as Record<string, unknown>;
+  return (parseFrontmatterAsReader(content) ?? {}) as Record<string, unknown>;
 }
 
 function md(frontmatter: Record<string, string>): string {

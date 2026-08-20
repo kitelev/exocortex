@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "fs-extra";
 import path from "path";
 import os from "os";
-import * as yaml from "js-yaml";
 import {
   ArchiveAssetService,
   EffortStatusWorkflow,
@@ -21,6 +20,7 @@ import {
   populateCliServiceRegistry,
   CliServiceNotImplementedError,
 } from "../../../src/services/CliServiceRegistryPopulator.js";
+import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
 
 type Frontmatter = Record<string, unknown>;
 
@@ -28,7 +28,7 @@ function readFrontmatter(filePath: string): Frontmatter {
   const content = fs.readFileSync(filePath, "utf-8");
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) throw new Error(`No frontmatter in ${filePath}`);
-  return yaml.load(match[1]) as Frontmatter;
+  return parseFrontmatterAsReader(content) as Frontmatter;
 }
 
 function writeRaw(vaultRoot: string, relPath: string, content: string): string {
