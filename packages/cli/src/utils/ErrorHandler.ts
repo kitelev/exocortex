@@ -19,8 +19,34 @@ export type OutputFormat = "text" | "json";
  * - Structured JSON responses for MCP tools (json mode)
  * - Proper Unix exit codes for scripting integration
  */
+/**
+ * Optional context describing WHERE an error came from.
+ *
+ * ⛔ Five ExoSync call sites passed `{ command }` for months while
+ * `handle(error: Error)` took one argument, so it was silently discarded and a
+ * failed 24-repo sync round did not name the command that produced it. The code
+ * stated an intent it did not deliver — worse than no context, because the five
+ * sites read as working plumbing and invited a sixth. Issue #4075, defect 3.
+ */
+export interface ErrorContext {
+  /** The CLI command that was running, e.g. "exosync push". */
+  command?: string;
+}
+
 export class ErrorHandler {
   private static outputFormat: OutputFormat = "text";
+
+  /**
+   * Attach the command to a structured response without touching what is
+   * already there. Consumers parse this object, so existing fields keep their
+   * names and shapes; only a new optional one appears.
+   */
+  private static withCommand(
+    response: StructuredErrorResponse,
+    command: string | undefined
+  ): StructuredErrorResponse | (StructuredErrorResponse & { command: string }) {
+    return command ? { ...response, command } : response;
+  }
 
   /**
    * Sets the output format for error messages
@@ -56,13 +82,22 @@ export class ErrorHandler {
    *   ErrorHandler.handle(error as Error);
    * }
    */
-  static handle(error: Error): never {
+  static handle(error: Error, context?: ErrorContext): never {
+    const command = context?.command;
+
     // Handle typed CLI errors with full structured information
     if (error instanceof CLIError) {
       if (ErrorHandler.outputFormat === "json") {
         const response = error.toStructuredResponse(ErrorHandler.isDebugMode());
-        console.log(JSON.stringify(response, null, 2));
+        console.log(
+          JSON.stringify(ErrorHandler.withCommand(response, command), null, 2)
+        );
       } else {
+        // The command is ADDED to the structured formatting, not substituted for
+        // it — CLIError.format() carries hint/fix text the caller still needs.
+        if (command) {
+          console.error(`❌ Command failed: ${command}`);
+        }
         console.error(error.format());
 
         // Show stack trace in development for debugging
@@ -85,8 +120,16 @@ export class ErrorHandler {
         exitCode,
         ErrorHandler.isDebugMode() ? error.stack : undefined,
       );
-      console.log(JSON.stringify(response, null, 2));
+      console.log(
+        JSON.stringify(ErrorHandler.withCommand(response, command), null, 2)
+      );
     } else {
+      // ⛤ Prefix rather than interpolation: the message line stays byte-identical
+      // to what ~40 context-less call sites already print, so their output does
+      // not move and log greps keyed on it keep working.
+      if (command) {
+        console.error(`❌ Command failed: ${command}`);
+      }
       console.error(`❌ Error: ${error.message}`);
 
       // Show stack trace in development for debugging
