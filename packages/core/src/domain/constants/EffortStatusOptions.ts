@@ -19,6 +19,8 @@
  * for fixture factories.
  */
 
+import { EFFORT_STATUS_UID } from "./EffortStatusCanon";
+
 /**
  * Effort status values with label and wikilink, for UI dropdowns and selects.
  *
@@ -31,15 +33,31 @@
  * mirror the shared ontology (req `fcbde537-f09a-410e-8bee-d3d607a70302`):
  * `Analysis` / `To Do` were removed when their TBox instances were deleted
  * (`exoas-public@c35a660d`), `Waiting` added in their place.
+ *
+ * ⛤ DERIVED from {@link EFFORT_STATUS_UID} (issue #4121), not authored here.
+ * That deletion had to be hand-applied to FOUR holders of the same vocabulary;
+ * #4056 folded two of them into the canon and named this one as the remaining
+ * write-side list. Deriving closes it: a status added or removed in one place
+ * cannot leave this dropdown behind.
+ *
+ * ⛔ The values stay SYMBOLIC (`[[ems__EffortStatusDoing]]`) — deriving does NOT
+ * migrate them to UUID-canon. The canon is keyed BY symbol, so the mapping only
+ * needs its keys; the coordinated `NoteToRDFConverter` + starter-kit ASK
+ * migration the file header defers is untouched.
+ *
+ * ⚠ The label is the symbol's tail (`ems__EffortStatusBacklog` → `Backlog`),
+ * which reproduces every label this table carried by hand — measured, not
+ * assumed. A future status whose human label is NOT its tail (a space, as the
+ * deleted `To Do` had) would need its own mapping rather than this one.
  */
 export const EFFORT_STATUS_OPTIONS: ReadonlyArray<{
   readonly value: string;
   readonly label: string;
-}> = [
-  { value: "[[ems__EffortStatusDraft]]", label: "Draft" },
-  { value: "[[ems__EffortStatusBacklog]]", label: "Backlog" },
-  { value: "[[ems__EffortStatusDoing]]", label: "Doing" },
-  { value: "[[ems__EffortStatusWaiting]]", label: "Waiting" },
-  { value: "[[ems__EffortStatusDone]]", label: "Done" },
-  { value: "[[ems__EffortStatusTrashed]]", label: "Trashed" },
-] as const;
+}> = Object.freeze(
+  Object.keys(EFFORT_STATUS_UID).map((symbol) =>
+    Object.freeze({
+      value: `[[${symbol}]]`,
+      label: symbol.replace(/^ems__EffortStatus/, ""),
+    }),
+  ),
+);
