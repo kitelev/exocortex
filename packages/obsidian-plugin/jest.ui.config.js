@@ -26,6 +26,7 @@ module.exports = {
           isolatedModules: true,
           paths: {
             "@kitelev/exocortex-core": ["<rootDir>/../core/src/index.ts"],
+            "@kitelev/exocortex-core/*": ["<rootDir>/../core/src/*"],
             "@plugin/types": ["<rootDir>/src/types/index.ts"],
             "@plugin/types/*": ["<rootDir>/src/types/*"],
             "@plugin/adapters/*": ["<rootDir>/src/adapters/*"],
@@ -41,6 +42,8 @@ module.exports = {
   },
   transformIgnorePatterns: ["node_modules/(?!(react|react-dom)/)"],
   moduleNameMapper: {
+    // Подпуть ДО точного: moduleNameMapper берёт первый совпавший паттерн.
+    "^@kitelev/exocortex-core/(.*)$": "<rootDir>/../core/src/$1",
     "^@kitelev/exocortex-core$": "<rootDir>/../core/src/index.ts",
     "^@plugin/types$": "<rootDir>/src/types/index.ts",
     "^@plugin/types/(.*)$": "<rootDir>/src/types/$1",

@@ -13,6 +13,11 @@
       "import": "./dist/index.js",
       "require": "./dist/index.js"
     },
+    "./domain/constants": {
+      "types": "./dist/domain/constants/index.d.ts",
+      "import": "./dist/domain/constants/index.js",
+      "require": "./dist/domain/constants/index.js"
+    },
     "./domain/errors": {
       "types": "./dist/domain/errors/index.d.ts",
       "import": "./dist/domain/errors/index.js",

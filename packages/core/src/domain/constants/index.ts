@@ -1,5 +1,9 @@
 export { AssetClass } from "./AssetClass";
 export { EffortStatus } from "./EffortStatus";
+// ⛤ Канон экспортируется ИЗ ПОДПУТИ намеренно: плагинные потребители (например
+// PropertySchemas в ct-графе) не могут импортировать значение из корневого barrel —
+// он тянет CommandResolver → tsyringe, а reflect-metadata там нет.
+export { EFFORT_STATUS_UID, EFFORT_STATUS_BY_UID, normalizeEffortStatus } from "./EffortStatusCanon";
 export { EFFORT_STATUS_OPTIONS } from "./EffortStatusOptions";
 export { GroundingType } from "./GroundingType";
 export {

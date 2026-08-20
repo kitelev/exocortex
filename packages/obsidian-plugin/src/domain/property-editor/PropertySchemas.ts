@@ -1,4 +1,5 @@
 import type { PropertySchemaResolver, ClassHierarchyResolver, EnumValueResolver, EnumValue } from "@kitelev/exocortex-core";
+import { EFFORT_STATUS_UID, EffortStatus } from "@kitelev/exocortex-core/domain/constants";
 import { PropertySchemaService } from "./PropertySchemaService";
 
 export type PropertyFieldType =
@@ -47,14 +48,39 @@ export interface SizeEnumValue {
 // (exoas-public@c35a660d, 2026-08-13) and dropped here; Waiting (0610947c-…)
 // took their place — req fcbde537-f09a-410e-8bee-d3d607a70302. Resolve any
 // new UUID on disk before adding it.
-const FALLBACK_EFFORT_STATUS_VALUES: StatusEnumValue[] = [
-  { value: "[[753a44d5-846c-4b82-9196-4fd9a4d48777]]", wikilink: "[[753a44d5-846c-4b82-9196-4fd9a4d48777|Backlog]]", label: "Backlog" },
-  { value: "[[027e78f4-6e16-4b36-b8fb-5510507d5745]]", wikilink: "[[027e78f4-6e16-4b36-b8fb-5510507d5745|Doing]]", label: "Doing" },
-  { value: "[[0610947c-6a62-41c8-9d44-7863d3ba3a8e]]", wikilink: "[[0610947c-6a62-41c8-9d44-7863d3ba3a8e|Waiting]]", label: "Waiting" },
-  { value: "[[7b9b3116-7c3c-438c-9618-94fe301320a6]]", wikilink: "[[7b9b3116-7c3c-438c-9618-94fe301320a6|Done]]", label: "Done" },
-  { value: "[[5d14f18d-db2b-4847-9ac1-144cb93b2541]]", wikilink: "[[5d14f18d-db2b-4847-9ac1-144cb93b2541|Trashed]]", label: "Trashed" },
-  { value: "[[c42245d0-01de-4c35-bfcf-d910445ea28e]]", wikilink: "[[c42245d0-01de-4c35-bfcf-d910445ea28e|Draft]]", label: "Draft" },
+/**
+ * Порядок ВЫПАДАЮЩЕГО СПИСКА — не порядок канона, и это намеренно.
+ *
+ * `EFFORT_STATUS_UID` перечисляет статусы по жизненному циклу
+ * (`Draft → Backlog → Doing → Waiting → Done → Trashed`), а список показывает
+ * сперва рабочие статусы и уводит `Draft` в конец. Это два разных решения:
+ * канон — про модель, порядок ниже — про UX. Поэтому он объявлен ЯВНО, а из
+ * канона берутся только UID.
+ *
+ * ⛔ Не заменять на `Object.keys(EFFORT_STATUS_UID)` — это молча переставит
+ * `Draft` на первую позицию.
+ */
+const FALLBACK_STATUS_ORDER: readonly EffortStatus[] = [
+  EffortStatus.BACKLOG,
+  EffortStatus.DOING,
+  EffortStatus.WAITING,
+  EffortStatus.DONE,
+  EffortStatus.TRASHED,
+  EffortStatus.DRAFT,
 ];
+
+/**
+ * Выведено из канона: UID больше не дублируются здесь литералами. До этого
+ * шесть UID жили копией, и расхождение с `EFFORT_STATUS_UID` прошло бы молча —
+ * ни один тест не сравнивал два списка.
+ */
+const FALLBACK_EFFORT_STATUS_VALUES: StatusEnumValue[] = FALLBACK_STATUS_ORDER.map(
+  (symbol) => {
+    const uid = EFFORT_STATUS_UID[symbol];
+    const label = symbol.replace(/^ems__EffortStatus/, "");
+    return { value: `[[${uid}]]`, wikilink: `[[${uid}|${label}]]`, label };
+  },
+);
 
 const FALLBACK_TASK_SIZE_VALUES: SizeEnumValue[] = [
   { value: "[[ems__TaskSize_XXS]]", label: "XXS" },
