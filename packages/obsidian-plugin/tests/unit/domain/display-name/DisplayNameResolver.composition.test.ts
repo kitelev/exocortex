@@ -1,6 +1,5 @@
 import { PrintNameRuleService } from "@plugin/domain/display-name/PrintNameRuleService";
 import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
-import { DEFAULT_DISPLAY_MATCHER_HOST_FUNCTIONS } from "@plugin/presentation/utils/displayMatcherHostFunctions";
 import { TFile } from "obsidian";
 import type { App, CachedMetadata } from "obsidian";
 
@@ -8,7 +7,7 @@ import type { App, CachedMetadata } from "obsidian";
  * PREFIX COMPOSITION (req 1a550210) — the displayName resolver COMPOSES the prefixes of ALL
  * participating exo__DisplayNameSpec specs into "<composed prefixes> + <base label>", instead of
  * selecting a single winning template. Production-shape: a REAL PrintNameRuleService.scanVault
- * compiles the vault specs, the REAL DEFAULT_DISPLAY_MATCHER_HOST_FUNCTIONS registry runs the REAL
+ * compiles the vault specs, the REAL the built-in registry registry runs the REAL
  * BlockerHelpers.isEffortBlocked (a cross-asset predicate over the referenced blocker's status), and
  * DisplayNameResolver.resolve drives selection end-to-end — NO hand-injected rule or matcher result.
  *
@@ -128,7 +127,7 @@ function compositionVault(
   } as unknown as App;
 
   // Wire the REAL host-function registry (isEffortBlocked → BlockerHelpers.isEffortBlocked).
-  const service = new PrintNameRuleService(app, DEFAULT_DISPLAY_MATCHER_HOST_FUNCTIONS);
+  const service = new PrintNameRuleService(app);
   service.initialize(); // real scanVault → compileDisplayNameSpecs
   // EMPTY classTemplates prove the VAULT specs (not TS hardcodes) drive every prefix.
   const resolver = new DisplayNameResolver(

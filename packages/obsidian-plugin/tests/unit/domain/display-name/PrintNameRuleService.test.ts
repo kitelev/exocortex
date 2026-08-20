@@ -1,6 +1,5 @@
 import { PrintNameRuleService } from "@plugin/domain/display-name/PrintNameRuleService";
 import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
-import { DEFAULT_DISPLAY_MATCHER_HOST_FUNCTIONS } from "@plugin/presentation/utils/displayMatcherHostFunctions";
 import { TFile } from "obsidian";
 import type { App, CachedMetadata } from "obsidian";
 
@@ -686,7 +685,7 @@ describe("PrintNameRuleService — host-function exo__DisplayNameSpec (v2 comput
   // Production-shape vault: a 🚩-blocked exo__DisplayNameSpec for ems__Task whose matcher is a
   // HOST FUNCTION (matchHostFunction=isEffortBlocked) + its two ordered parts + a BLOCKER asset
   // the task's ems__Effort_blocker resolves to. The service is wired with the REAL registry
-  // (DEFAULT_DISPLAY_MATCHER_HOST_FUNCTIONS) so the REAL BlockerHelpers.isEffortBlocked runs —
+  // (the built-in registry) so the REAL BlockerHelpers.isEffortBlocked runs —
   // NO hand-injected matcher result. `setBlockerStatus` mutates the SAME blocker cache so a
   // per-render test can flip the CROSS-ASSET condition without a re-scan.
   function blockedHostFnVault(
@@ -759,7 +758,7 @@ describe("PrintNameRuleService — host-function exo__DisplayNameSpec (v2 comput
     } as unknown as App;
 
     // Wire the REAL registry (isEffortBlocked → BlockerHelpers.isEffortBlocked).
-    const service = new PrintNameRuleService(app, DEFAULT_DISPLAY_MATCHER_HOST_FUNCTIONS);
+    const service = new PrintNameRuleService(app);
     service.initialize();
     const resolver = new DisplayNameResolver(
       { defaultTemplate: "{{exo__Asset_label}}", classTemplates: {} },
@@ -998,7 +997,7 @@ describe("PrintNameRuleService — host-function exo__DisplayNameSpec (v2 comput
         },
       },
     ]);
-    const service = new PrintNameRuleService(app, DEFAULT_DISPLAY_MATCHER_HOST_FUNCTIONS);
+    const service = new PrintNameRuleService(app);
     service.initialize();
     // v1 call shape (no metadata) still returns the unconditional rule.
     expect(service.getTemplateForClass("ems__Project")!.template).toBe("PROJECT");

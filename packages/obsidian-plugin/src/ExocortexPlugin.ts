@@ -130,7 +130,6 @@ import { ReadingModeEnforcer } from "./presentation/reading-mode/ReadingModeEnfo
 import { BodyLinkPatch } from "./presentation/body/BodyLinkPatch";
 import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
 import { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService";
-import { DEFAULT_DISPLAY_MATCHER_HOST_FUNCTIONS } from "./presentation/utils/displayMatcherHostFunctions";
 import { ObsidianFileSystemAdapter } from "./adapters/ObsidianFileSystemAdapter";
 import { populateServiceRegistry } from "./infrastructure/services/ServiceRegistryPopulator";
 import { ObsidianFileOpener } from "./infrastructure/services/ObsidianFileOpener";
@@ -546,10 +545,10 @@ export default class ExocortexPlugin extends Plugin {
       await this.fileLogChannel.ensureFileExists();
       this.configureLogChannels();
 
-      this.printNameRuleService = new PrintNameRuleService(
-        this.app,
-        DEFAULT_DISPLAY_MATCHER_HOST_FUNCTIONS,
-      );
+      // No registry argument: the built-in display-matcher host functions now
+      // come from the core factory via the shim, so this surface cannot fall
+      // behind the CLI's (issue #4054).
+      this.printNameRuleService = new PrintNameRuleService(this.app);
       this.printNameRuleService.initialize();
 
       this.registerEvent(
