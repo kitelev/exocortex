@@ -47,11 +47,6 @@
     },
     {
       "file": "packages/cli/src/commands/sparql-query.ts",
-      "code": "TS2339",
-      "count": 2
-    },
-    {
-      "file": "packages/cli/src/commands/sparql-query.ts",
       "code": "TS6133",
       "count": 3
     },
