@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync, readdirSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 
 import { atomicUpdateFrontmatter } from "../../../src/services/AtomicFrontmatterService.js";
 

@@ -27,7 +27,7 @@ import {
   type WatermarkRecord,
   type YamlCodec,
 } from "../../../../src";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import {
   FakeGitHubRepo,
   FakeLocalFiles,

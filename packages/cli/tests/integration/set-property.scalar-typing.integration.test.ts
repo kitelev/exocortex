@@ -55,11 +55,25 @@ function md(frontmatter: Record<string, string>): string {
   return lines.join("\n");
 }
 
-/** Parse the written file the way the production reader (metadataCache) does. */
+/**
+ * Parse the written file the way the production reader (metadataCache) does.
+ *
+ * ⛤ The schema is named explicitly and must STAY named. This helper stands in
+ * for Obsidian's reader, which resolves a bare date-like scalar to a `Date` —
+ * that is the whole contract this suite guards (`set-property` must emit the
+ * value BARE so the reader types it as a Date, not as a string).
+ *
+ * Obsidian does NOT upgrade when our `js-yaml` dependency does. js-yaml 5 made
+ * CORE_SCHEMA the default, where a bare date is just a string; parsing with the
+ * ambient default would therefore simulate a reader that does not exist, and
+ * this suite would assert against the wrong contract. `YAML11_SCHEMA` is
+ * js-yaml 4's DEFAULT_SCHEMA — i.e. the semantics the real reader still has.
+ */
 function parseFrontmatter(content: string): Record<string, unknown> {
   const m = /^---\n([\s\S]*?)\n---/.exec(content);
   if (!m) throw new Error("no frontmatter in written file");
-  return (yaml.load(m[1]) ?? {}) as Record<string, unknown>;
+  return (yaml.load(m[1], { schema: yaml.YAML11_SCHEMA }) ??
+    {}) as Record<string, unknown>;
 }
 
 describe("ems__Bug 34b0a52c: set-property decides scalar quoting per property", () => {

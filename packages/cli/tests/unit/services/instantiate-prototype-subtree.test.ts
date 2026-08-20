@@ -1,5 +1,5 @@
 import { describe, it, expect } from "@jest/globals";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import { createInstantiatePrototypeSubtreeService } from "@kitelev/exocortex-services";
 import { FrontmatterService } from "@kitelev/exocortex-core";
 

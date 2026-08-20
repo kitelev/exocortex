@@ -437,7 +437,7 @@ export function detectUnparseableFrontmatter(content: string): string | null {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return null;
   try {
-    yaml.load(match[1]);
+    yaml.load(match[1], { schema: yaml.YAML11_SCHEMA });
     return null;
   } catch (error) {
     return error instanceof Error ? error.message.split("\n")[0] : String(error);
