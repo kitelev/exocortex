@@ -202,6 +202,9 @@ export class ObsidianLauncher {
     console.log("[ObsidianLauncher] Waiting for vault to finish indexing...");
     await this.waitForVaultReady();
 
+    console.log("[ObsidianLauncher] Waiting for the exocortex plugin to load...");
+    await this.waitForPluginReady();
+
     console.log("[ObsidianLauncher] Obsidian ready!");
   }
 
@@ -296,6 +299,62 @@ export class ObsidianLauncher {
         "[ObsidianLauncher] No trust dialog found or error handling it:",
         error,
       );
+    }
+  }
+
+  /**
+   * Wait until the exocortex plugin object is actually reachable.
+   *
+   * ⛤ WHY THIS LIVES HERE, not in the specs. `waitForVaultReady` waits for the
+   * VAULT (markdown files indexed) — it says nothing about the PLUGIN. Specs then
+   * used to spin their own `for (let i = 0; i < 20; i++) { …500ms }` loop, i.e. a
+   * hard 10s ceiling — while the launcher grants 45s for the CDP port, 30s for the
+   * window and 30s for the vault. Under a loaded CI runner (the e2e image runs
+   * amd64) 10s is simply not enough, and the spec then fails as
+   * `expect(result.pluginLoaded).toBe(true)` — a message that names the SYMPTOM and
+   * hides the cause. Measured on `origin/main`: e2e-shard (1)/(3)/(5) each flaked
+   * ~5% of attempts, the aggregate `e2e-tests` 15%, and EVERY sampled failure log
+   * carried `pluginLoaded`.
+   *
+   * Two fixes in one place: (a) the ceiling becomes consistent with its
+   * neighbours, (b) a timeout now reports what WAS loaded, so a red run carries
+   * evidence instead of a bare boolean.
+   */
+  private async waitForPluginReady(): Promise<void> {
+    if (!this.window) {
+      throw new Error("Window not available");
+    }
+
+    const maxWaitTime = 30000;
+    const checkInterval = 500;
+    const startTime = Date.now();
+
+    for (;;) {
+      const status = await this.window.evaluate(() => {
+        const app = (window as any).app;
+        return {
+          loaded: !!app?.plugins?.plugins?.exocortex,
+          enabled: Object.keys(app?.plugins?.plugins ?? {}),
+        };
+      });
+
+      if (status.loaded) {
+        console.log(
+          `[ObsidianLauncher] Plugin ready after ${Date.now() - startTime}ms`,
+        );
+        return;
+      }
+
+      if (Date.now() - startTime >= maxWaitTime) {
+        // ⛤ fail LOUD and with evidence: the plugin list is the one datum that
+        // distinguishes "still loading" from "failed to load / not installed".
+        throw new Error(
+          `[ObsidianLauncher] exocortex plugin did not load within ${maxWaitTime}ms. ` +
+            `Loaded plugins: [${status.enabled.join(", ") || "none"}]`,
+        );
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, checkInterval));
     }
   }
 
