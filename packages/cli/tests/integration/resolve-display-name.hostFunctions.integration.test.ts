@@ -43,6 +43,7 @@ const BLOCKER = "d0000001-1111-4222-8333-444444444444";
 
 /** The UID the real vault uses for ems__EffortStatusDone — the bare form the CLI writes. */
 const DONE_UID = "7b9b3116-7c3c-438c-9618-94fe301320a6";
+const UNKNOWN_STATUS_UID = "d0000009-1111-4222-8333-444444444444";
 
 /**
  * ⛔ The status TBox has to EXIST in the fixture, because the dual-IRI fix resolves a bare-UID
@@ -320,11 +321,35 @@ describe("resolve-display-name — host-function specs (req 5cd9fffe)", () => {
 
     expect(r.displayName).not.toContain("EF-9001"); // ⛔ wrong in the domain, locked as parity
   });
-  it(`${REQ_BLOCKED} falls back to "still blocking" when the status asset cannot be resolved`, async () => {
-    // The boundary the vault lookup introduces: with `exoas-public` unmounted there is nothing to
-    // resolve the bare UID against. The predicate must NOT silently report "not blocked" — an
-    // effort that cannot be judged keeps its 🚩. Same direction the pre-fix code took for an
-    // absent frontmatter, so the fail-safe is preserved rather than newly invented.
+  it(`${REQ_BLOCKED} falls back to "still blocking" when the status is unreadable`, async () => {
+    // The fail-safe: a status value neither the canon nor the vault can read must NOT report
+    // "not blocked" — an effort that cannot be judged keeps its 🚩. Same direction the pre-fix
+    // code took for an absent frontmatter, so the fail-safe is preserved rather than invented.
+    // ⛤ The UID here is deliberately NOT one of the six the canon knows (issue #4056): a canon
+    // UID is now readable WITHOUT a vault, which is the sibling axis below.
+    write(`assetspaces/t/${BLOCKER}.md`, {
+      exo__Asset_uid: BLOCKER,
+      exo__Asset_label: "the blocker",
+      ems__Effort_status: `[[${UNKNOWN_STATUS_UID}]]`,
+    });
+    write(`assetspaces/t/${TARGET}.md`, {
+      exo__Asset_uid: TARGET,
+      exo__Instance_class: [`[[${EFFORT_CLASS}]]`],
+      ems__Effort_blocker: `[[${BLOCKER}]]`,
+      t__Effort_serial: "EF-9001",
+    });
+
+    const r = await resolveDisplayName(vault, `assetspaces/t/${TARGET}.md`);
+
+    expect(r.displayName).toContain("EF-9001");
+  });
+
+  it(`${REQ_BLOCKED} a canon Done UID reads as FINISHED even with exoas-public UNMOUNTED`, async () => {
+    // What the shared canon buys (issue #4056): the six status UIDs are TBox facts, so the verdict
+    // no longer depends on whether the assetspace that defines them happens to be mounted. This
+    // axis USED to assert the opposite — it characterised the old lookup's limitation, which the
+    // canon removed. req d6cd2371 asks for "blocker done ⇒ no 🚩"; deciding that correctly with the
+    // asset absent honours the requirement rather than bending it.
     rmSync(path.join(vault, `assetspaces/t/${DONE_UID}.md`), { force: true });
     write(`assetspaces/t/${BLOCKER}.md`, {
       exo__Asset_uid: BLOCKER,
@@ -340,7 +365,10 @@ describe("resolve-display-name — host-function specs (req 5cd9fffe)", () => {
 
     const r = await resolveDisplayName(vault, `assetspaces/t/${TARGET}.md`);
 
-    expect(r.displayName).toContain("EF-9001");
+    // ⛤ The discriminator is the SERIAL, not the 🚩 glyph: the spec that carries the serial is the
+    // one gated on isEffortBlocked, and this fixture's class has no 🚩 spec at all — asserting on
+    // the glyph would be green whatever the predicate answered.
+    expect(r.displayName).not.toContain("EF-9001");
   });
 
   it(`${REQ_BLOCKED} reads the ALIAS form without any lookup at all`, async () => {
