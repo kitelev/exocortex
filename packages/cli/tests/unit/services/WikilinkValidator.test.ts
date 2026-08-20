@@ -17,6 +17,7 @@ const mockFsAdapter = {
   findFileByUID: jest.fn<(uid: string) => Promise<string | null>>(),
   findFileByUidFilename:
     jest.fn<(uid: string) => Promise<string | null>>(),
+  findFileByLinkpath: jest.fn<(target: string) => Promise<string | null>>(),
 };
 
 jest.unstable_mockModule("../../../src/adapters/NodeFsAdapter.js", () => ({
@@ -105,18 +106,30 @@ describe("WikilinkValidator", () => {
       ).rejects.toThrow(WikilinkNotFoundError);
     });
 
-    it("should skip non-UUID wikilinks (e.g., date references)", async () => {
-      // Date wikilinks like [[2025-01-01]] should be skipped
+    it("resolves a date wikilink as a linkpath, not as a UUID", async () => {
+      // ⛔ This asserted that non-UUID links were SKIPPED — the very gap #4068
+      // reports. A date link is now resolved like any other linkpath: the daily
+      // note exists, so it passes; if it does not, --skip-wikilink-validation
+      // is the deliberate way to reference forward.
+      mockFsAdapter.findFileByLinkpath.mockResolvedValue("Daily/2025-01-01.md");
+
       await expect(
         validator.validatePropertyValues({
           "ems__Effort_day": "[[2025-01-01]]",
         }),
       ).resolves.toBeUndefined();
 
+      // Still NOT routed through the UID lookup — that part was always correct.
       expect(mockFsAdapter.findFileByUidFilename).not.toHaveBeenCalled();
+      expect(mockFsAdapter.findFileByLinkpath).toHaveBeenCalledWith("2025-01-01");
     });
 
-    it("should skip non-UUID wikilinks like class names", async () => {
+    it("resolves a class-name wikilink as a linkpath", async () => {
+      // ⛔ Also asserted the skip. A class reference is exactly the case that
+      // MUST resolve: it is the joinable form, and a typo in it used to become
+      // a bare literal that nothing reported.
+      mockFsAdapter.findFileByLinkpath.mockResolvedValue("assetspaces/ems/Task.md");
+
       await expect(
         validator.validatePropertyValues({
           "exo__Instance_class": "[[ems__Task]]",
@@ -124,6 +137,7 @@ describe("WikilinkValidator", () => {
       ).resolves.toBeUndefined();
 
       expect(mockFsAdapter.findFileByUidFilename).not.toHaveBeenCalled();
+      expect(mockFsAdapter.findFileByLinkpath).toHaveBeenCalledWith("ems__Task");
     });
 
     it("should validate across multiple properties", async () => {

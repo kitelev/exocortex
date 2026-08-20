@@ -132,6 +132,93 @@ export class NodeFsAdapter implements IFileSystemAdapter {
    *
    * @returns vault-relative path of the first match, or null.
    */
+  /**
+   * Resolve a LABEL-FORM linkpath — `[[ems__Task]]` — to a vault file.
+   *
+   * Obsidian resolves a linkpath by basename first, then by the target's
+   * `exo__Asset_label` / `aliases`. This mirrors that order, and the order is
+   * load-bearing for cost: the basename walk is a directory scan, while the
+   * metadata pass has to READ every markdown file. Most links hit the walk.
+   *
+   * ⛤ Exists because `WikilinkValidator` had no way to check a non-UUID link
+   * and therefore skipped every one of them (#4068). Label-form is the shape a
+   * joinable reference REQUIRES — a bare UUID emits a symbolic IRI carrying
+   * none of the target's predicates — so the only working form was also the
+   * only unvalidated one.
+   *
+   * @returns vault-relative path of the first match, or null.
+   */
+  async findFileByLinkpath(target: string): Promise<string | null> {
+    const wanted = target.trim();
+    if (wanted.length === 0) {
+      return null;
+    }
+
+    // 1. Basename: <target>.md anywhere in the vault.
+    const byBasename = await this.findFileByBasename(`${wanted}.md`);
+    if (byBasename) {
+      return byBasename;
+    }
+
+    // 2. Label or alias. One pass, both fields — two passes would double the
+    //    cost of the expensive branch for no gain.
+    const allFiles = await this.getMarkdownFiles();
+    for (const file of allFiles) {
+      let metadata: Record<string, unknown>;
+      try {
+        metadata = (await this.getFileMetadata(file)) as Record<string, unknown>;
+      } catch {
+        // Malformed frontmatter: unreadable, not a match. The basename walk
+        // above already covers such files when they are named after the link.
+        continue;
+      }
+
+      if (metadata["exo__Asset_label"] === wanted) {
+        return file;
+      }
+
+      const aliases = metadata["aliases"];
+      if (Array.isArray(aliases) && aliases.some((a) => a === wanted)) {
+        return file;
+      }
+      if (typeof aliases === "string" && aliases === wanted) {
+        return file;
+      }
+    }
+
+    return null;
+  }
+
+  /** Recursive basename lookup, sharing the walk shape of findFileByUidFilename. */
+  private async findFileByBasename(basename: string): Promise<string | null> {
+    const walk = async (dir: string): Promise<string | null> => {
+      let entries;
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true });
+      } catch {
+        return null;
+      }
+
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+
+        if (entry.isDirectory()) {
+          if (entry.name.startsWith(".") || entry.name === "node_modules") {
+            continue;
+          }
+          const found = await walk(fullPath);
+          if (found) return found;
+        } else if (entry.isFile() && entry.name === basename) {
+          return path.relative(this.rootPath, fullPath);
+        }
+      }
+
+      return null;
+    };
+
+    return walk(this.rootPath);
+  }
+
   async findFileByUidFilename(uid: string): Promise<string | null> {
     const uidLower = uid.toLowerCase();
 
