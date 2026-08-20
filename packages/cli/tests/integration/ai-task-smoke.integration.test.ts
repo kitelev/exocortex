@@ -14,6 +14,7 @@ import * as yaml from "js-yaml";
 import { spawnSession } from "../../src/services/SpawnService.js";
 import type { ExecFn, SpawnDeps } from "../../src/services/SpawnService.js";
 import { atomicUpdateFrontmatter } from "../../src/services/AtomicFrontmatterService.js";
+import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -38,7 +39,7 @@ function parseFrontmatter(filePath: string): Record<string, unknown> {
   const content = readFileSync(filePath, "utf8");
   const match = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/);
   if (!match) throw new Error("No frontmatter in " + filePath);
-  const parsed = yaml.load(match[1]);
+  const parsed = parseFrontmatterAsReader(content);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("Invalid frontmatter");
   }

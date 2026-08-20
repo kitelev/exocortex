@@ -1,7 +1,7 @@
 import { describe, it, expect } from "@jest/globals";
-import * as yaml from "js-yaml";
 import { createInstantiatePrototypeSubtreeService } from "@kitelev/exocortex-services";
 import { FrontmatterService } from "@kitelev/exocortex-core";
+import { parseYamlAsReader } from "@kitelev/exocortex-test-utils";
 
 /**
  * Production-shape revert-verify test for the `instantiatePrototypeSubtree`
@@ -221,7 +221,7 @@ describe("instantiatePrototypeSubtree (issue #3881 Gap 3)", () => {
       w.content.includes(`exo__Asset_prototype: "[[${ROOT}]]"`),
     )!;
     const fmBlock = rootWrite.content.split("---")[1];
-    const y = yaml.load(fmBlock) as Record<string, unknown>;
+    const y = parseYamlAsReader(fmBlock) as Record<string, unknown>;
     expect(y.exo__Asset_label).toBe("Ревьюшница n.rudopas Q3-26"); // js-yaml strips quotes
     expect(y.exo__Instance_class).toEqual([
       `[[${EMS_PROJECT_CLS}|ems__Project]]`,

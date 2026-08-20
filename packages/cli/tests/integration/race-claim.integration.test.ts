@@ -12,11 +12,11 @@ import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import * as yaml from "js-yaml";
 import {
   claimTask,
   releaseClaimLock,
 } from "../../src/services/ClaimService.js";
+import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -41,7 +41,7 @@ function parseFrontmatter(filePath: string): Record<string, unknown> | null {
   const content = fs.readFileSync(filePath, "utf8");
   const match = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return null;
-  const parsed = yaml.load(match[1]);
+  const parsed = parseFrontmatterAsReader(content);
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
   }

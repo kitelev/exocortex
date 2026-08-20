@@ -26,7 +26,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import * as yaml from "js-yaml";
+import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
 
 const { setPropertyCommand } = await import("../../src/commands/set-property.js");
 const { removePropertyCommand } = await import(
@@ -50,7 +50,7 @@ function md(frontmatter: Record<string, string>): string {
 function parseFrontmatter(content: string): Record<string, unknown> {
   const m = /^---\n([\s\S]*?)\n---/.exec(content);
   if (!m) throw new Error("no frontmatter in written file");
-  return (yaml.load(m[1]) ?? {}) as Record<string, unknown>;
+  return (parseFrontmatterAsReader(content) ?? {}) as Record<string, unknown>;
 }
 
 describe("req 869561bf: one canonical-key source in core, used by every writer", () => {

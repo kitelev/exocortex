@@ -21,6 +21,7 @@ import {
   populateCliServiceRegistry,
   CliServiceNotImplementedError,
 } from "../../../src/services/CliServiceRegistryPopulator.js";
+import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
 
 /**
  * Phase 3.5 (Issue #3164) — registry-level integration tests for the new
@@ -41,7 +42,7 @@ function readFrontmatter(filePath: string): Frontmatter {
   const content = fs.readFileSync(filePath, "utf-8");
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) throw new Error(`No frontmatter in ${filePath}`);
-  return yaml.load(match[1]) as Frontmatter;
+  return parseFrontmatterAsReader(content) as Frontmatter;
 }
 
 function writeAsset(
