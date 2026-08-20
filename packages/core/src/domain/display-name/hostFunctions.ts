@@ -1,4 +1,5 @@
 import { EffortStatus } from "../constants/EffortStatus";
+import { normalizeEffortStatus } from "../constants/EffortStatusCanon";
 import type { DisplayMatcherHostFunctionRegistry } from "./PrintNameRuleService";
 import type { VaultMetadataPort } from "./VaultMetadataPort";
 
@@ -139,20 +140,6 @@ function unwrapWikilink(raw: string): string {
 }
 
 /**
- * The exact shape of a symbolic status label. Deliberately the SAME regex the sibling normaliser
- * uses (`GroundingExecutor.resolveStatusFromFrontmatter`) rather than a looser
- * `startsWith("ems__")`: the loose test short-circuits the vault lookup for forms that are not
- * labels at all, e.g. the documented `ems__EffortStatusDone <uuid>` shape.
- *
- * ⚠ The OTHER sibling (`getStatusLabel` in PropertySchemas) does NOT use this regex — it
- * lowercases and looks the value up in `SYMBOLIC_STATUS_LABEL_FALLBACK` / `EFFORT_STATUS_VALUES`.
- * Naming both here would be the same over-claim this file already made once about alias forms.
- */
-const SYMBOLIC_STATUS_RE = /^ems__EffortStatus[A-Za-z]+$/;
-const TRAILING_UUID_RE =
-  /\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
  * Normalise `ems__Effort_status` to its SYMBOLIC label (`ems__EffortStatusDone`), whichever legal
  * shape it was written in (req d6cd2371 conformance).
  *
@@ -198,11 +185,20 @@ const TRAILING_UUID_RE =
  * blocker whose state is unknown must not be assumed finished.
  */
 function resolveStatusLabel(vault: VaultMetadataPort, rawStatus: unknown): string {
+  // ⛤ The parse is the ONE normaliser now (issue #4056); only the vault
+  // fallback below is this caller's own — and it is the reason this reader
+  // exists separately at all: `domain/` has no vault, so the shared function
+  // stops at the UID table and hands the rest back here.
+  const symbolic = normalizeEffortStatus(rawStatus);
+  if (symbolic !== null) return symbolic;
+
+  // Everything below is the fail-safe tail: a value the canon cannot read is
+  // resolved THROUGH THE VAULT rather than declared unknown, because an
+  // unresolvable status must not read as finished (see the caller's asymmetry
+  // note). A multi-element list, however, stays unknown — the normaliser
+  // returns null for it and there is no single target to resolve.
   let raw = rawStatus;
   if (raw === undefined || raw === null) return "";
-  // Cardinality is 1 per schema. Tolerate a 1-element list (some YAML printers emit it) and treat
-  // a multi-element one as unknown rather than picking an arbitrary first — same call the sibling
-  // normaliser makes, and it keeps the fail-safe direction.
   if (Array.isArray(raw)) {
     if (raw.length !== 1) return "";
     raw = raw[0];
@@ -210,21 +206,8 @@ function resolveStatusLabel(vault: VaultMetadataPort, rawStatus: unknown): strin
 
   const inside = unwrapWikilink(String(raw));
   if (inside === "") return "";
-
-  if (SYMBOLIC_STATUS_RE.test(inside)) return inside;
-
   const pipe = inside.indexOf("|");
   const target = pipe === -1 ? inside : inside.slice(0, pipe).trim();
-  if (pipe !== -1) {
-    const alias = inside.slice(pipe + 1).trim();
-    if (SYMBOLIC_STATUS_RE.test(alias)) return alias;
-    // Otherwise the alias is just display text — fall through and resolve `target`.
-  }
-
-  // `ems__EffortStatusDone <uuid>` — the class-name+UUID shape PropertySchemas documents as
-  // occurring after certain status transitions.
-  const spaceForm = target.replace(TRAILING_UUID_RE, "").trim();
-  if (SYMBOLIC_STATUS_RE.test(spaceForm)) return spaceForm;
 
   const fm = vault.resolveLinkpathFrontmatter(target);
   let label = fm?.exo__Asset_label;

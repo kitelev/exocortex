@@ -14,6 +14,10 @@ import { GroundingType } from "../domain/constants/GroundingType";
 import { resolveTemplateBody } from "./TemplateBodyResolver";
 import { base64ToUtf8 } from "../utilities/base64";
 import { EffortStatus } from "../domain/constants/EffortStatus";
+import {
+  EFFORT_STATUS_UID,
+  normalizeEffortStatus,
+} from "../domain/constants/EffortStatusCanon";
 import { IRI } from "../domain/models/rdf/IRI";
 import type { WorkflowDefinition } from "../domain/models/WorkflowDefinition";
 import { FrontmatterService } from "../utilities/FrontmatterService";
@@ -54,22 +58,15 @@ import { LoggingService } from "./LoggingService";
  * error). Renaming a vault TBox status file requires manually editing this
  * map to the new UID + bumping the submodule pointer.
  */
-export const STATUS_UID_BY_ENUM: Readonly<Record<EffortStatus, string>> = {
-  [EffortStatus.DRAFT]:    "c42245d0-01de-4c35-bfcf-d910445ea28e",
-  [EffortStatus.BACKLOG]:  "753a44d5-846c-4b82-9196-4fd9a4d48777",
-  [EffortStatus.DOING]:    "027e78f4-6e16-4b36-b8fb-5510507d5745",
-  [EffortStatus.WAITING]:  "0610947c-6a62-41c8-9d44-7863d3ba3a8e",
-  [EffortStatus.DONE]:     "7b9b3116-7c3c-438c-9618-94fe301320a6",
-  [EffortStatus.TRASHED]:  "5d14f18d-db2b-4847-9ac1-144cb93b2541",
-};
+/**
+ * ⛤ DERIVED from the canon in `domain/constants/EffortStatusCanon`, not authored
+ * here (issue #4056). This table and the plugin's `FALLBACK_EFFORT_STATUS_VALUES`
+ * held the same six UIDs in two shapes, and BOTH had to be hand-edited when
+ * `ToDo`/`Analysis` were deleted on 2026-08-13 — the drift point had already
+ * fired once. The re-export keeps every existing importer unchanged.
+ */
+export const STATUS_UID_BY_ENUM = EFFORT_STATUS_UID;
 
-const STATUS_ENUM_BY_UID: Readonly<Record<string, EffortStatus>> = Object.freeze(
-  Object.fromEntries(
-    (Object.entries(STATUS_UID_BY_ENUM) as [EffortStatus, string][]).map(
-      ([k, v]) => [v, k],
-    ),
-  ) as Record<string, EffortStatus>,
-);
 
 // RFC 36347daf Phase 2 — UID → AssetClass label map for the built-in status
 // workflows (Task/Project/Meeting). Extracted to a shared constant so the
@@ -3213,40 +3210,16 @@ export class GroundingExecutor {
   private resolveStatusFromFrontmatter(
     fm: Record<string, unknown>,
   ): string | null {
-    let raw = fm["ems__Effort_status"];
-    if (raw === undefined || raw === null) return null;
-    // ems__Effort_status is cardinality 1 per schema. Tolerate a 1-element
-    // array (some YAML pretty-printers may emit list-form) but reject
-    // multi-element arrays loudly — a workflow_transition that picked an
-    // arbitrary "first" status from a multi-valued frontmatter would silently
-    // contradict whichever the UI displays.
-    if (Array.isArray(raw)) {
-      if (raw.length !== 1) return null;
-      raw = raw[0];
-    }
-    const str = String(raw).trim();
-    // Strip wrapping quotes + wikilink brackets.
-    const inside = str
-      .replace(/^["']/, "")
-      .replace(/["']$/, "")
-      .replace(/^\[\[/, "")
-      .replace(/\]\]$/, "");
-    // Symbolic form direct: `ems__EffortStatusDoing`
-    if (/^ems__EffortStatus[A-Za-z]+$/.test(inside)) return inside;
-    // Alias form `<uid>|ems__EffortStatusDoing`
-    if (inside.includes("|")) {
-      const alias = inside.split("|")[1].trim();
-      if (/^ems__EffortStatus[A-Za-z]+$/.test(alias)) return alias;
-    }
-    // UID-form: map UID → symbolic.
-    const uuidMatch = inside.match(
-      /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
-    );
-    if (uuidMatch) {
-      const symbolic = STATUS_ENUM_BY_UID[uuidMatch[1].toLowerCase()];
-      if (symbolic) return symbolic;
-    }
-    return null;
+    // ⛤ Delegated to the ONE normaliser (issue #4056). Two behaviours are
+    // preserved verbatim: a multi-element list still yields null (a transition
+    // that guessed a first status would silently contradict the UI), and an
+    // unknown value still yields null, which the caller reports loudly.
+    //
+    // ⚠ ONE behaviour changes DELIBERATELY: `[[ems__EffortStatusDone <uuid>]]`
+    // — the space-form some transitions leave behind — used to be REJECTED here
+    // while both sibling readers handled it. Refusing a legal shape was the
+    // defect; a transition on such an asset now proceeds instead of erroring.
+    return normalizeEffortStatus(fm["ems__Effort_status"]);
   }
 
   /**
