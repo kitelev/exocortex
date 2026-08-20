@@ -100,7 +100,19 @@ export default {
         };
         const lockPackages = lock.packages ?? {};
 
-        for (const manifestPath of await ctx.glob("packages/*/package.json")) {
+        // The ROOT manifest is included deliberately. It is a workspace root and
+        // is not published — but that is only true because it says
+        // `private: true`, and the rule should learn that from the FLAG rather
+        // than from a glob that happens not to reach it. Measured when this was
+        // added: the root declares 5 runtime dependencies (react, react-dom,
+        // reflect-metadata, tsyringe, uuid) whose floors all sit below its own,
+        // so including it costs nothing today and guards the day the flag goes.
+        const manifests = [
+          "package.json",
+          ...(await ctx.glob("packages/*/package.json")),
+        ];
+        
+        for (const manifestPath of manifests) {
           const manifest = JSON.parse(
             await ctx.readFile(manifestPath),
           ) as Manifest;
