@@ -66,7 +66,7 @@ function resolverOf(): (t: string) => Record<string, unknown> | null {
   ).buildMetadataResolver();
 }
 
-describe("Issue #4041: the patch's resolver strips a display alias too", () => {
+describe("@req:7405c664-826e-40af-a1df-395534530eb2 Issue #4041: the patch's resolver strips a display alias too", () => {
   it("resolves an ALIASED reference exactly as the bare one", () => {
     // The defect: `getFirstLinkpathDest("<uid>|<label>")` never resolves, so this
     // returned null — a silent non-match with no diagnostic.
