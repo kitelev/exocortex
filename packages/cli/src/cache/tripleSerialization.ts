@@ -45,7 +45,17 @@ export function serializeNode(
   }
 
   if (node instanceof BlankNode) {
-    return { type: "BlankNode", value: node.value };
+    // ⛔ `.id`, NOT `.value` — BlankNode has no `value` member. Reading it gave
+    // `undefined`, JSON.stringify then DROPPED the key, and deserialising the
+    // record called `new BlankNode(undefined)` → TypeError on `.trim()`. The
+    // poisoned record persists in .exocortex/cache/triples.json and breaks the
+    // five commands fed by loadOrBuild() until the file is deleted by hand.
+    //
+    // packages/cli/src is type-checked nowhere (root tsconfig excludes it,
+    // esbuild does not check types), so the compiler never saw the missing
+    // member. Surfaced by the ratchet in #4074; same class as the collision
+    // detector fixed in #4070.
+    return { type: "BlankNode", value: node.id };
   }
 
   // Fallback for QuotedTriple or unknown types
