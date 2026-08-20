@@ -154,6 +154,54 @@ export const GUARDED_ROUTES: Record<string, GuardedRoute> = {
 };
 
 /** Render a route as the sentence the guard surfaces to the user. */
+/**
+ * The route for a guarded property, or `undefined` when the property is not
+ * guarded. Own-key lookup, so `toString` / `constructor` never match an
+ * inherited `Object.prototype` key (#3795 review M2) — same guard as
+ * {@link guardedReason}, which this complements: that one returns the rendered
+ * SENTENCE, this one the structured route the live-vault filter needs.
+ */
+export function guardedRouteFor(property: string): GuardedRoute | undefined {
+  return Object.prototype.hasOwnProperty.call(GUARDED_ROUTES, property)
+    ? GUARDED_ROUTES[property]
+    : undefined;
+}
+
+/**
+ * {@link renderGuardedRoute}, but naming only commands that RESOLVE in the
+ * user's vault (req `72419d3c`).
+ *
+ * ⛔ `known` EMPTY means "nothing mounted", NOT "nothing resolves": the route is
+ * rendered unfiltered, exactly as today. A partial or degenerate mount must
+ * never turn a correct refusal into a false one — the same must-have the
+ * sibling property-name validator carries.
+ *
+ * When SOME names resolve, only those are offered: a name `apply` cannot
+ * resolve is not a path, and printing it as one is what left the user with no
+ * sanctioned route at all.
+ *
+ * When NONE do (non-empty registry, no overlap), the sentence says so rather
+ * than presenting the list as an instruction. The wording deliberately avoids
+ * the classifier's trigger substrings (`transaction`, `concurrent`, `modified`,
+ * `not found`, `Invalid`) so the exit code a scripted consumer branches on is
+ * unchanged — the axis in `guardedRoutes.test.ts` locks that for every route.
+ */
+export function renderGuardedRouteResolved(
+  route: GuardedRoute,
+  known: ReadonlySet<string>,
+): string {
+  if (known.size === 0) return renderGuardedRoute(route);
+
+  const resolving = route.commands.filter((c) => known.has(c));
+  if (resolving.length === 0) {
+    return (
+      `apply ${route.commands.join("|")} <path>  ` +
+      `(⛔ none of these resolve in this vault — the owning assetspace looks unmounted)`
+    );
+  }
+  return renderGuardedRoute({ ...route, commands: resolving });
+}
+
 export function renderGuardedRoute(route: GuardedRoute): string {
   const invocation = `apply ${route.commands.join("|")} <path>`;
   const withArg = route.argSuffix
