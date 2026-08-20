@@ -359,7 +359,7 @@ export default class ExocortexPlugin extends Plugin {
    * Accessible via `app.plugins.getPlugin('exocortex').api`
    */
   api!: ExocortexAPI;
-  settings!: ExocortexSettings;
+  override settings!: ExocortexSettings;
   printNameRuleService!: PrintNameRuleService;
   commandResolver!: CommandResolver;
   preconditionEvaluator!: PreconditionEvaluator;
