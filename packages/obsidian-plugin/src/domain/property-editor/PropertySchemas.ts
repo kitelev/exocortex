@@ -1,3 +1,4 @@
+import { EFFORT_STATUS_UID } from "@kitelev/exocortex-core";
 import type { PropertySchemaResolver, ClassHierarchyResolver, EnumValueResolver, EnumValue } from "@kitelev/exocortex-core";
 import { PropertySchemaService } from "./PropertySchemaService";
 
@@ -47,14 +48,31 @@ export interface SizeEnumValue {
 // (exoas-public@c35a660d, 2026-08-13) and dropped here; Waiting (0610947c-…)
 // took their place — req fcbde537-f09a-410e-8bee-d3d607a70302. Resolve any
 // new UUID on disk before adding it.
-const FALLBACK_EFFORT_STATUS_VALUES: StatusEnumValue[] = [
-  { value: "[[753a44d5-846c-4b82-9196-4fd9a4d48777]]", wikilink: "[[753a44d5-846c-4b82-9196-4fd9a4d48777|Backlog]]", label: "Backlog" },
-  { value: "[[027e78f4-6e16-4b36-b8fb-5510507d5745]]", wikilink: "[[027e78f4-6e16-4b36-b8fb-5510507d5745|Doing]]", label: "Doing" },
-  { value: "[[0610947c-6a62-41c8-9d44-7863d3ba3a8e]]", wikilink: "[[0610947c-6a62-41c8-9d44-7863d3ba3a8e|Waiting]]", label: "Waiting" },
-  { value: "[[7b9b3116-7c3c-438c-9618-94fe301320a6]]", wikilink: "[[7b9b3116-7c3c-438c-9618-94fe301320a6|Done]]", label: "Done" },
-  { value: "[[5d14f18d-db2b-4847-9ac1-144cb93b2541]]", wikilink: "[[5d14f18d-db2b-4847-9ac1-144cb93b2541|Trashed]]", label: "Trashed" },
-  { value: "[[c42245d0-01de-4c35-bfcf-d910445ea28e]]", wikilink: "[[c42245d0-01de-4c35-bfcf-d910445ea28e|Draft]]", label: "Draft" },
-];
+/**
+ * ⛤ DERIVED from the canon in core (issue #4056), not authored here. This list
+ * and `STATUS_UID_BY_ENUM` in `GroundingExecutor` held the SAME six UIDs in two
+ * shapes, and both had to be hand-edited when `ToDo`/`Analysis` were deleted on
+ * 2026-08-13 — the drift point had already fired once. Deriving makes a status
+ * added in one place appear in both without a second edit.
+ *
+ * ⚠ The ORDER is the dropdown's, and it is deliberately the canon's declaration
+ * order rather than alphabetical: Draft → Backlog → Doing → Waiting → Done →
+ * Trashed reads as the lifecycle it is.
+ *
+ * The human label is the symbol's tail with spaces before capitals
+ * (`ems__EffortStatusBacklog` → `Backlog`), which reproduces every label this
+ * table carried by hand.
+ */
+const FALLBACK_EFFORT_STATUS_VALUES: StatusEnumValue[] = Object.entries(
+  EFFORT_STATUS_UID,
+).map(([symbol, uid]) => {
+  const label = symbol.replace(/^ems__EffortStatus/, "");
+  return {
+    value: `[[${uid}]]`,
+    wikilink: `[[${uid}|${label}]]`,
+    label,
+  };
+});
 
 const FALLBACK_TASK_SIZE_VALUES: SizeEnumValue[] = [
   { value: "[[ems__TaskSize_XXS]]", label: "XXS" },

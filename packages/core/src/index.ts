@@ -901,6 +901,13 @@ export type { VaultMetadataPort } from "./domain/display-name/VaultMetadataPort"
 export { resolvePreferenceList } from "./domain/display-name/preferenceList";
 // The ONE way an authored wikilink becomes a linkpath — alias included (#4041).
 export { unwrapLinkTarget } from "./domain/display-name/linkTarget";
+// The ONE canon of the ems__Effort_status vocabulary — UID table plus the single
+// normaliser its three readers share (#4056).
+export {
+  EFFORT_STATUS_UID,
+  EFFORT_STATUS_BY_UID,
+  normalizeEffortStatus,
+} from "./domain/constants/EffortStatusCanon";
 export type { DisplayNameSettings } from "./domain/display-name/DisplayNameSettings";
 export { DEFAULT_DISPLAY_NAME_SETTINGS } from "./domain/display-name/DisplayNameSettings";
 export { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService";
