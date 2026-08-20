@@ -553,6 +553,30 @@ export class RelationsRenderer {
       return typeof uid === "string" && uid ? `uid:${uid}` : `path:${path}`;
     };
 
+    // The frontmatter KEY a reified predicate stands for. `predicateIriToKey`
+    // canonicalises ontology-base IRIs and returns anything else verbatim —
+    // correct for a pure function, but `exo__Statement_predicate` resolves to a
+    // PATH-form IRI whenever the predicate definition's own label is not itself
+    // parseable as `prefix__Local`, which a DASH-bearing prefix
+    // (`adapter-exo-ims__relatesToConcept`) is not. The raw IRI then reached both
+    // the group heading AND the dedup key, so such a relation showed its IRI as a
+    // heading and could never match its inline twin (issue #4011).
+    //
+    // The second hop mirrors `pathIriToToken` directly above — same adapter, same
+    // source of truth, one field over. Fail-open: an unresolvable definition
+    // keeps the raw IRI, so the relation still surfaces.
+    const predicateKey = (iri: string): string => {
+      const canonical = predicateIriToKey(iri);
+      if (canonical !== iri) return canonical;
+      const path = iriToVaultPath(iri);
+      if (!path) return iri;
+      const f = this.vaultAdapter.getAbstractFileByPath(path);
+      const label = f
+        ? this.vaultAdapter.getFrontmatter(f as IFile)?.exo__Asset_label
+        : undefined;
+      return typeof label === "string" && label.trim() ? label.trim() : iri;
+    };
+
     const tokenFor = async (iri: string): Promise<string> => {
       if (iri === aSymbolic) return aToken;
       const pathToken = pathIriToToken(iri);
@@ -610,7 +634,7 @@ export class RelationsRenderer {
 
       const subjToken = await tokenFor(r.subject);
       const objToken = await tokenFor(r.object);
-      const key = `${subjToken}|${predicateIriToKey(r.predicate)}|${objToken}`;
+      const key = `${subjToken}|${predicateKey(r.predicate)}|${objToken}`;
       if (seenKeys.has(key)) continue; // inline-wins + reified-vs-reified dedup
       seenKeys.add(key);
 
@@ -647,7 +671,7 @@ export class RelationsRenderer {
         path: otherPath ?? otherIri,
         title,
         metadata,
-        propertyName: predicateIriToKey(r.predicate),
+        propertyName: predicateKey(r.predicate),
         isBodyLink: false,
         isArchived: MetadataHelpers.isAssetArchived(metadata),
         isBlocked: BlockerHelpers.isEffortBlocked(this.app, metadata),
