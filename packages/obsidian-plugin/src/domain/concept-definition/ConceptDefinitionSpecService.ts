@@ -1,4 +1,5 @@
 import { TFile } from "obsidian";
+import { resolvePreferenceList } from "@kitelev/exocortex-core";
 import type { App } from "obsidian";
 
 /**
@@ -185,11 +186,21 @@ export class ConceptDefinitionSpecService {
    * → second-hop the referenced property asset's exo__Asset_label; else the bare target.
    */
   private resolvePropertyKey(value: unknown): string | null {
-    let raw = value;
-    if (Array.isArray(raw)) {
-      if (raw.length === 0) return null;
-      raw = raw[0];
-    }
+    // ⛤ A MULTI-VALUE property is an ordered PREFERENCE LIST, exactly as it is
+    // for display-name — one vault predicate, one semantics (#4050). This used
+    // to take `value[0]` and drop the rest silently: an author writing a
+    // 4-candidate list here got the first printed unconditionally, with no
+    // diagnostic, while the same shape worked in display-name.
+    //
+    // The compiled `a|b|c` needs nothing further downstream: parts render
+    // through the SAME `DisplayNameTemplateEngine`, which already walks the
+    // candidates and returns the first non-empty one.
+    return resolvePreferenceList(value, (v) => this.resolveOnePropertyKey(v));
+  }
+
+  /** Resolve ONE reference to its frontmatter key, through Obsidian's metadataCache. */
+  private resolveOnePropertyKey(value: unknown): string | null {
+    const raw = value;
     if (typeof raw !== "string") return null;
 
     const cleaned = raw
