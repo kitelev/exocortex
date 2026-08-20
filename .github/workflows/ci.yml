@@ -1191,7 +1191,7 @@ jobs:
         # That's acceptable here because the Dockerfile.e2e build is now a
         # thin app layer (~5s); heavy caching happens at the base-image
         # level in GHCR instead.
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: packages/obsidian-plugin/Dockerfile.e2e
