@@ -46,6 +46,11 @@ export class ObsidianVaultMetadataAdapter implements VaultMetadataPort {
     // ⛔ `{}` — NOT null — when the file resolves but has no frontmatter: see the port's
     // contract. `getFileCache` returns null for an unindexed file too, but by this point the
     // linkpath HAS resolved, so "resolved, nothing to read" is the honest reading.
+    // ⛤ Сужение УЖЕ сделано строкой выше (`children in file`), и оно duck-typed
+    // НАМЕРЕННО: `instanceof TFile` молча ужесточает blocker-путь (req 5cd9fffe) и
+    // ломается при двух копиях модуля obsidian. Правило справедливо в общем случае;
+    // здесь его требование опровергнуто тестом, а не проигнорировано.
+    // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
     return this.app.metadataCache.getFileCache(file as TFile)?.frontmatter ?? {};
   }
 }
