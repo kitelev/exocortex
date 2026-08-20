@@ -15,13 +15,13 @@
  * FAIL (js-yaml throws "bad indentation of a mapping entry"). With the fix they
  * PASS. Empirically verified FAILS pre-fix / PASSES post-fix.
  */
-import * as yaml from "js-yaml";
 import { FrontmatterService } from "../../src/utilities/FrontmatterService";
+import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
 
 function parseFrontmatter(created: string): Record<string, unknown> {
   const match = created.match(/^---\n([\s\S]*?)\n---/);
   if (!match) throw new Error(`No frontmatter block in: ${created}`);
-  return yaml.load(match[1]) as Record<string, unknown>;
+  return parseFrontmatterAsReader(created);
 }
 
 describe("FrontmatterService — YAML-safe scalar quoting (#3748)", () => {

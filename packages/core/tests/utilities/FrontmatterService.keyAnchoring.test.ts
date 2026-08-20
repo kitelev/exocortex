@@ -30,8 +30,8 @@
  * GroundingExecutor axes.
  */
 import { describe, it, expect } from "@jest/globals";
-import * as yaml from "js-yaml";
 import { FrontmatterService } from "../../src/utilities/FrontmatterService";
+import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
 
 /** Neighbour FIRST, so the gate passes on the real key and the inner matchers run. */
 const NEIGHBOUR_THEN_REAL = [
@@ -49,7 +49,7 @@ const NEIGHBOUR_THEN_REAL = [
 function frontmatterOf(content: string): Record<string, unknown> {
   const m = /^---\n([\s\S]*?)\n---/.exec(content);
   if (!m) throw new Error("no frontmatter");
-  return (yaml.load(m[1]) ?? {}) as Record<string, unknown>;
+  return parseFrontmatterAsReader(content);
 }
 
 describe("FrontmatterService — key matching is anchored to line start (req 869561bf)", () => {

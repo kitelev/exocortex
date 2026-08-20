@@ -15,13 +15,13 @@
  * colon-space scalar + array-item cases throw "bad indentation of a mapping
  * entry" in js-yaml.
  */
-import * as yaml from "js-yaml";
 import { MetadataHelpers } from "../../src/utilities/MetadataHelpers";
+import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
 
 function parseFrontmatter(content: string): Record<string, unknown> {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) throw new Error(`No frontmatter block in: ${content}`);
-  return yaml.load(match[1]) as Record<string, unknown>;
+  return parseFrontmatterAsReader(content);
 }
 
 describe("MetadataHelpers.buildFileContent — YAML-safe scalar quoting (#3750)", () => {

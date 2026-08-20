@@ -3,6 +3,15 @@ module.exports = {
   testEnvironment: 'node',
   setupFiles: ['reflect-metadata'],
   roots: ['<rootDir>/tests'],
+  moduleNameMapper: {
+    // `test-utils` is a private workspace package with no build step; tests
+    // resolve it straight from source. Mapped to the helper FILE rather than the
+    // package index on purpose — the index also re-exports Obsidian mocks and
+    // the flaky reporter, which a node-environment core test has no business
+    // loading.
+    '^@kitelev/exocortex-test-utils$':
+      '<rootDir>/../test-utils/src/helpers/frontmatter.helpers.ts',
+  },
   testMatch: ['**/?(*.)+(spec|test).ts'],
   collectCoverageFrom: [
     'src/**/*.ts',
