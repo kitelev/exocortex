@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write # npm provenance (OIDC) — publishConfig.provenance в packages/cli/package.json
 
 jobs:
   publish:

@@ -9,6 +9,13 @@
 # churn (rare), so steady-state cache-hit rate is high.
 FROM mcr.microsoft.com/playwright:v1.55.1-jammy
 
+# OCI-лейблы: закрепляют линк пакет→репо ЯВНО. Авто-линк ghcr работает только
+# пока пуш идёт GITHUB_TOKEN'ом из Actions этого репо; source-лейбл переживает
+# смену способа пуша и рендерится как «Source» на странице пакета.
+LABEL org.opencontainers.image.source="https://github.com/kitelev/exocortex" \
+      org.opencontainers.image.description="Pre-built CI base image for Exocortex e2e: Playwright + Obsidian + xvfb + node_modules" \
+      org.opencontainers.image.licenses="MIT"
+
 # xvfb + window manager + Obsidian runtime deps (matches Dockerfile.e2e
 # Stage 1 verbatim so the two image layers stay binary-compatible).
 RUN apt-get update && apt-get install -y \
