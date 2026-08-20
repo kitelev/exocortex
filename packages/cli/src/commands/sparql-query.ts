@@ -509,10 +509,18 @@ export function sparqlQueryCommand(): Command {
         const execStartTime = Date.now();
         const executor = new ExoQLQueryExecutor(tripleStore);
 
-        // Set query timeout if the executor supports it
-        if (typeof executor.setTimeout === "function") {
-          executor.setTimeout(timeoutMs);
-        }
+        // ⛔ There is NO in-executor cancellation. `ExoQLQueryExecutor` has no
+        // `setTimeout`, and a `typeof … === "function"` guard around a method
+        // that does not exist is worse than either alternative: it reads as
+        // "supported when available" while being permanently dead, so nobody
+        // goes looking for the missing capability (#4075, defect 2).
+        //
+        // The user-facing timeout DOES fire — `executeWithTimeout` races the
+        // query against a timer and wraps all three execution paths (update,
+        // construct, select). What is missing is COOPERATIVE cancellation:
+        // after the race rejects, the query keeps running in the background
+        // until it finishes on its own. That is a wall-clock timeout, not an
+        // abort, and it is stated here rather than imitated by a dead branch.
 
         // Progress indicator for long-running query execution (TTY mode only)
         const progressIndicator = outputFormat === "text"
