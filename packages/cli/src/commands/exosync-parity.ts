@@ -398,7 +398,7 @@ export function exosyncParityCommand(): Command {
       try {
         process.exitCode = await runExosyncParity(options);
       } catch (error) {
-        ErrorHandler.handle(error, { command: "exosync-parity" });
+        ErrorHandler.handle(error as Error, { command: "exosync-parity" });
         process.exitCode = 1;
       }
     });

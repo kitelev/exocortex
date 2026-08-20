@@ -571,7 +571,7 @@ function makeDirectionAction(direction: SyncDirection) {
     try {
       process.exitCode = await runExosyncSync(direction, options);
     } catch (error) {
-      ErrorHandler.handle(error, { command: `exosync ${direction}` });
+      ErrorHandler.handle(error as Error, { command: `exosync ${direction}` });
       process.exitCode = 1;
     }
   };

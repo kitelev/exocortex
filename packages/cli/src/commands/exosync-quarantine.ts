@@ -550,7 +550,7 @@ export function registerQuarantineCommands(exosync: Command): void {
     try {
       process.exitCode = await runQuarantineList(options);
     } catch (error) {
-      ErrorHandler.handle(error, { command: "exosync quarantine list" });
+      ErrorHandler.handle(error as Error, { command: "exosync quarantine list" });
       process.exitCode = 1;
     }
   });
@@ -568,7 +568,7 @@ export function registerQuarantineCommands(exosync: Command): void {
     try {
       process.exitCode = await runQuarantineResolve(conflictPath, options);
     } catch (error) {
-      ErrorHandler.handle(error, { command: "exosync quarantine resolve" });
+      ErrorHandler.handle(error as Error, { command: "exosync quarantine resolve" });
       process.exitCode = 1;
     }
   });
@@ -601,7 +601,7 @@ export function registerQuarantineCommands(exosync: Command): void {
       try {
         process.exitCode = await runDedupUids(options);
       } catch (error) {
-        ErrorHandler.handle(error, { command: "exosync dedup-uids" });
+        ErrorHandler.handle(error as Error, { command: "exosync dedup-uids" });
         process.exitCode = 1;
       }
     },
