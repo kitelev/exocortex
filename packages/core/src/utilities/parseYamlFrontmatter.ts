@@ -26,6 +26,55 @@ import * as yaml from "js-yaml";
  * @returns the parsed mapping, or `null` when it is not a non-null object or is
  *          genuinely unparseable even in tolerant mode
  */
+/**
+ * Keys that YAML may resolve to something other than a string.
+ *
+ * Cheap pre-filter for a hot path: `parseYamlFrontmatterTolerant` runs on every
+ * asset read, and re-parsing all ~260k keys of a real vault would be absurd. A
+ * key only needs the exact check when it LOOKS like a non-string scalar —
+ * empty, a null/bool literal, or numeric-ish. Everything else (a property name
+ * like `exo__Asset_uid`) is a string by construction and skips the parse.
+ */
+const AMBIGUOUS_KEY_RE =
+  /^(?:|~|null|true|false|y|n|yes|no|on|off|[+-]?[\d.][\d._eE+-]*|0[xXbBoO][\dA-Fa-f_]+)$/i;
+
+/**
+ * True when every top-level key came from a STRING scalar.
+ *
+ * ⛔ js-yaml 5 relaxed the parser: `  : : :` THREW in js-yaml 4 (verified on
+ * 4.1.1: "incomplete explicit mapping pair") and in 5 parses to
+ * `{ null: { null: { null: null } } }` under EVERY schema — CORE, YAML11 and the
+ * default alike. So this is a strictness change, not a schema one, and no load
+ * option restores the old behaviour (`LoadOptions` in 5.3.0 offers only
+ * filename, maxDepth, source, schema, json, maxTotalMergeKeys, maxAliases).
+ *
+ * Frontmatter keys are property names — always strings. A key that YAML itself
+ * resolves to null/bool/number therefore did not come from a property name, and
+ * the block is malformed, which is exactly what js-yaml 4 said by throwing.
+ *
+ * ⛤ Measured before choosing this predicate, because it could in principle
+ * reject a legitimate key (`on`, `y` and `12` are non-strings in YAML 1.1):
+ * across vault-exodev + vault-my — 26,572 files, 260,914 top-level keys — the
+ * count of keys resolving to a non-string is ZERO. The predicate costs nothing
+ * real and rejects nothing real.
+ */
+function keysAreStrings(
+  parsed: Record<string, unknown>,
+  schema: unknown,
+): boolean {
+  for (const key of Object.keys(parsed)) {
+    if (!AMBIGUOUS_KEY_RE.test(key)) continue;
+    let resolved: unknown;
+    try {
+      resolved = yaml.load(key, { schema } as Parameters<typeof yaml.load>[1]);
+    } catch {
+      return false; // a key that will not parse at all is not a property name
+    }
+    if (typeof resolved !== "string") return false;
+  }
+  return true;
+}
+
 export function parseYamlFrontmatterTolerant(
   yamlBlock: string,
   context?: string,
@@ -52,7 +101,12 @@ export function parseYamlFrontmatterTolerant(
       } — resolving last-wins: ${detail}`,
     );
   }
-  return typeof parsed === "object" && parsed !== null
-    ? (parsed as Record<string, unknown>)
-    : null;
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return null;
+  }
+  const mapping = parsed as Record<string, unknown>;
+  // js-yaml 5 accepts input js-yaml 4 rejected (see keysAreStrings). A block
+  // whose keys are not property names is malformed; returning null keeps the
+  // caller's historical `{}` rather than handing it `{ null: { null: … } }`.
+  return keysAreStrings(mapping, yaml.YAML11_SCHEMA) ? mapping : null;
 }

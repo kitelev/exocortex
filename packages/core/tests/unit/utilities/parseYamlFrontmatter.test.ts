@@ -165,3 +165,59 @@ describe("parseYamlFrontmatterTolerant — js-yaml 4 dual date typing (YAML11_SC
     });
   });
 });
+
+/**
+ * Locks the STRICTNESS half, which the schema does not cover.
+ *
+ * js-yaml 5 relaxed the parser: `  : : :` THREW in 4.1.1 ("incomplete explicit
+ * mapping pair") and parses in 5 to `{ null: { null: { null: null } } }` — under
+ * CORE, under YAML11 and under the default alike. So no schema argument restores
+ * it, and `LoadOptions` in 5.3.0 exposes no strictness switch (filename,
+ * maxDepth, source, schema, json, maxTotalMergeKeys, maxAliases).
+ *
+ * Without a guard the bump would silently change production behaviour: every
+ * caller of this helper — 11 of them, including the Obsidian adapter's
+ * `getFileMetadata` — would receive a mapping keyed `"null"` where it used to
+ * receive `{}`. Frontmatter keys are property names, so a key YAML itself
+ * resolves to null/bool/number did not come from one.
+ *
+ * ⛤ The predicate was measured before being chosen, because in YAML 1.1 `on`,
+ * `y` and `12` are legitimately non-strings: across vault-exodev + vault-my
+ * (26,572 files, 260,914 top-level keys) the number of keys resolving to a
+ * non-string is ZERO. It rejects nothing real.
+ */
+describe("parseYamlFrontmatterTolerant — malformed blocks stay rejected (js-yaml 5 strictness)", () => {
+  it("rejects a block whose keys are not property names", () => {
+    // The exact input the Obsidian adapter suite feeds: js-yaml 4 threw here.
+    expect(parseYamlFrontmatterTolerant("  : : :")).toBeNull();
+  });
+
+  it("canary: the parser itself now ACCEPTS that block — the rejection is ours", () => {
+    // ⛤ Without this, the axis above could pass because js-yaml still throws,
+    // i.e. for a reason that has nothing to do with the guard being present.
+    expect(yaml.load("  : : :", { schema: yaml.YAML11_SCHEMA })).toEqual({
+      null: { null: { null: null } },
+    });
+  });
+
+  it("keeps accepting ordinary frontmatter, including keys that merely look odd", () => {
+    const parsed = parseYamlFrontmatterTolerant(
+      'exo__Asset_uid: u1\naliases:\n  - "a"\ntags: [alpha, beta]\n',
+    );
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.exo__Asset_uid).toBe("u1");
+    expect(parsed?.tags).toEqual(["alpha", "beta"]);
+    expect(parsed?.aliases).toEqual(["a"]);
+  });
+  it("bare y/n/on/off in a VALUE are booleans — YAML 1.1, unchanged by the bump", () => {
+    // ⛤ Found by this suite's own control axis: `tags: [x, y]` parses to
+    // `["x", true]`, not `["x", "y"]`. That is YAML 1.1 and was equally true
+    // under js-yaml 4's default schema, so it is NOT a migration regression —
+    // but it is worth pinning, because the guard above deliberately does NOT
+    // extend to values: rejecting those would reject real assets.
+    expect(
+      parseYamlFrontmatterTolerant("tags: [x, y]\nflag: on\n"),
+    ).toEqual({ tags: ["x", true], flag: true });
+  });
+});
