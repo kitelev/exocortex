@@ -846,6 +846,27 @@ export interface EARLReport {
 }
 
 /**
+ * Maps a SHACL severity onto an EARL outcome.
+ *
+ * EARL has no "warning" outcome — its vocabulary offers passed / failed /
+ * cantTell / inapplicable / untested. `earl:cantTell` is the one that means
+ * "the assertion was made, but the result is neither a pass nor a fail",
+ * which is exactly what an sh:Warning (or sh:Info) is here: the CLI keeps
+ * `conforms` true and exits 0 for them, so reporting them as `earl:failed`
+ * made the EARL surface contradict the other two.
+ *
+ * The set enumerates the NON-failing severities rather than the failing one
+ * on purpose: an unrecognised severity then lands on `earl:failed`, so an
+ * EARL consumer gating on failures errs towards a false alarm rather than
+ * towards silence.
+ */
+const NON_FAILING_SEVERITIES = new Set(["sh:Warning", "sh:Info"]);
+
+function earlOutcomeFor(severity: string): string {
+  return NON_FAILING_SEVERITIES.has(severity) ? "earl:cantTell" : "earl:failed";
+}
+
+/**
  * Formats a ValidationReport as W3C EARL JSON-LD.
  */
 export function buildEARLReport(vaultPath: string, report: ValidationReport): EARLReport {
@@ -892,7 +913,7 @@ export function buildEARLReport(vaultPath: string, report: ValidationReport): EA
         "earl:test": { "@id": v.propertyPath },
         "earl:result": {
           "@type": "earl:TestResult",
-          "earl:outcome": { "@id": "earl:failed" },
+          "earl:outcome": { "@id": earlOutcomeFor(v.severity) },
           "dc:description": v.message,
           "sh:focusNode": v.focusNode,
           "sh:resultPath": v.propertyPath,
