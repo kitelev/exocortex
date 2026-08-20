@@ -126,7 +126,7 @@ jobs:
       # carries the trace/video for debugging via `if: always()`).
       - name: Upload EKA GUI req-evidence + artifacts
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: eka-gui-req-evidence
           path: eka-gui-results
