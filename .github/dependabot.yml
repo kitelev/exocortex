@@ -92,6 +92,16 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "react-dom"
         update-types: ["version-update:semver-major"]
+      # ⛤ @types/node описывает РАНТАЙМ, а рантайм здесь — Node 22 (8 воркфлоу
+      # `node-version: "22"`, один на 20). Типы 26 принимают API, которых в этом
+      # рантайме нет: замер 2026-08-20 на `packages/core` (lib ES2020/ES2022, БЕЗ
+      # DOM) — `new URLPattern(...)` (глобал с Node 24) даёт ошибку под типами 22
+      # и компилируется под 26. То есть major-бамп типов открывает окно
+      # «tsc принял → Node бросил ReferenceError», причём при зелёном CI.
+      # ⇒ снимать этот ignore ВМЕСТЕ с подъёмом `node-version` в .github/workflows,
+      #   а не раньше; условие проверяется одним grep-ом по воркфлоу.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   # ⛔ Записи для /packages/core здесь НЕТ, и это осознанно (проверено замером
   # 2026-08-20, PR #4129 → #4143). `packages/core` — workspace-ЧЛЕН, его зависимости
