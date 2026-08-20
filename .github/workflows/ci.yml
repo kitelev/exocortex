@@ -877,7 +877,7 @@ jobs:
         uses: ./.github/actions/setup-node-pnpm
 
       - name: Download obsidian-plugin shard coverage
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: coverage-shard-*
           path: coverage-shards
@@ -1123,7 +1123,7 @@ jobs:
 
       - name: Download built plugin
         if: env.RUN_E2E == 'true'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: plugin-build
           path: .
@@ -1358,7 +1358,7 @@ jobs:
 
       - name: Download all blob reports
         if: env.RUN_E2E == 'true'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: e2e-blob-report-*
           path: all-blob-reports
@@ -1366,7 +1366,7 @@ jobs:
 
       - name: Download all test artifacts (videos, screenshots, traces)
         if: env.RUN_E2E == 'true'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: e2e-test-artifacts-*
           path: all-test-artifacts
@@ -1382,7 +1382,7 @@ jobs:
       # single PR-level "this PR's e2e was retried: <count>" annotation.
       - name: Download retry-summary artifacts
         if: always() && env.RUN_E2E == 'true'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: retry-summary-shard-*
           path: all-retry-summaries
