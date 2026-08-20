@@ -6,9 +6,9 @@ import {
   clearResolvers,
   installDefaultResolvers,
 } from "../../../src/services/SubstitutionResolverRegistry";
-import * as yaml from "js-yaml";
 import { GroundingType } from "../../../src/domain/constants/GroundingType";
 import { GroundingDefinition } from "../../../src/domain/models/CommandDefinition";
+import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
 
 // -- Mocks --
 
@@ -142,9 +142,7 @@ describe("GroundingExecutor", () => {
       // `2026-01-15` unquoted parses as a Date; quoted, it stays a string. A
       // `toContain` on characters would keep passing if the quoting moved or
       // the serializer changed shape — the parsed type cannot.
-      const fm = yaml.load(
-        /^---\n([\s\S]*?)\n---/.exec(written)![1],
-      ) as Record<string, unknown>;
+      const fm = parseFrontmatterAsReader(written);
       expect(fm.aliases).toBe("2026-01-15");
       expect(typeof fm.aliases).toBe("string");
       expect(fm["exo__Asset_aliases"]).toBeUndefined();
@@ -168,9 +166,7 @@ describe("GroundingExecutor", () => {
       expect(result.success).toBe(true);
 
       const written = writer.updateFile.mock.calls[0][1];
-      const fm = yaml.load(
-        /^---\n([\s\S]*?)\n---/.exec(written)![1],
-      ) as Record<string, unknown>;
+      const fm = parseFrontmatterAsReader(written);
       expect(fm.namespace_aliases).toEqual(["ims"]); // untouched
       expect(fm.aliases).toBe("Mine"); // own key added
     });
@@ -447,9 +443,7 @@ describe("GroundingExecutor", () => {
       // the neighbour survives WHOLE — key and both items
       expect(written).toContain("namespace_aliases:");
       expect(written).not.toContain("namespace_\n");
-      const fm = yaml.load(
-        /^---\n([\s\S]*?)\n---/.exec(written)![1],
-      ) as Record<string, unknown>;
+      const fm = parseFrontmatterAsReader(written);
       expect(fm.namespace_aliases).toEqual(["ims", "concept"]);
     });
 

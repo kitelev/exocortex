@@ -7,7 +7,6 @@
  * markdown and re-parses it (production-shape: the import reads exactly what the
  * export wrote), not handcrafted frontmatter.
  */
-import * as yaml from "js-yaml";
 import {
   exportSettings,
   importSettings,
@@ -15,6 +14,7 @@ import {
   type SettingKeySpec,
   type SettingsSource,
 } from "../../../../src/services/settings";
+import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
 
 const CLASS_UID = "11111111-1111-1111-1111-111111111111";
 const ONTOLOGY_UID = "22222222-2222-2222-2222-222222222222";
@@ -59,7 +59,7 @@ function makeSource(live: Record<string, unknown>): SettingsSource {
 function parseAsset(content: string, path: string): ImportableSettingAsset {
   const m = content.match(/^---\n([\s\S]*?)\n---/);
   if (!m) throw new Error(`no frontmatter in ${path}`);
-  const frontmatter = yaml.load(m[1]) as Record<string, unknown>;
+  const frontmatter = parseFrontmatterAsReader(content);
   return { path, frontmatter };
 }
 

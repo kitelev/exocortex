@@ -9,7 +9,6 @@
  * the converter emits a literal and the reference is lost) that no assertion on
  * the raw string could honestly demonstrate.
  */
-import * as yaml from "js-yaml";
 
 import {
   GroundingExecutor,
@@ -17,6 +16,7 @@ import {
 } from "../../src/services/GroundingExecutor";
 import { GroundingType } from "../../src/domain/constants/GroundingType";
 import { GroundingDefinition } from "../../src/domain/models/CommandDefinition";
+import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
 
 const TARGET_IRI = "obsidian://vault/assetspaces/kitelev/exoas-my/task.md";
 const FILE_PATH = "assetspaces/kitelev/exoas-my/task.md";
@@ -62,7 +62,7 @@ function makeGrounding(overrides: Record<string, unknown>): GroundingDefinition 
 function parseFrontmatter(written: string): Record<string, unknown> {
   const match = /^---\n([\s\S]*?)\n---/.exec(written);
   expect(match).not.toBeNull();
-  return yaml.load((match as RegExpExecArray)[1]) as Record<string, unknown>;
+  return parseFrontmatterAsReader(written);
 }
 
 describe("req 29e0d1b6 — property_set rejects an unquoted wikilink value", () => {

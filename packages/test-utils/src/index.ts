@@ -108,6 +108,15 @@ export {
   type RetryOptions,
 } from "./helpers/async.helpers";
 
+export {
+  // Frontmatter parsing with the PRODUCTION reader's schema (js-yaml 4
+  // semantics). Use these instead of a local `yaml.load(match[1])`: the bare
+  // call inherits whatever js-yaml defaults to, which changed in v5 and
+  // silently reshaped bare dates from Date to string.
+  parseFrontmatterAsReader,
+  parseYamlAsReader,
+} from "./helpers/frontmatter.helpers";
+
 // Reporters and Flaky Test Detection
 export {
   FlakyReporter,
