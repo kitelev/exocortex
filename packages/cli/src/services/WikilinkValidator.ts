@@ -94,8 +94,28 @@ export class WikilinkValidator {
    * @throws WikilinkNotFoundError if file not found
    */
   private async validateWikilink(uuid: string, label?: string): Promise<void> {
-    // Skip non-UUID references (e.g., date wikilinks like [[2025-01-01]])
+    // ⛔ This used to `return` for every non-UUID reference — the comment said
+    // "skip date wikilinks like [[2025-01-01]]", the code said "skip anything
+    // that is not a UUID". So a label-form linkpath was NEVER checked, and a
+    // typo in it produced a bare literal instead of a file-IRI: the join dies,
+    // SHACL stays green (a literal is not a dangling ref), and the defect
+    // surfaces much later as "the query returns nothing" (#4068).
+    //
+    // ⛤ The asymmetry pointed the wrong way. Label-form is the shape a JOINABLE
+    // reference requires — a bare UUID emits a symbolic IRI that carries none of
+    // the target's predicates — so the only working form was the unvalidated one.
+    //
+    // Label-form now goes through the same "does the target exist" question,
+    // resolved the way Obsidian resolves a linkpath: basename, then label,
+    // then aliases. A genuinely forward reference (a daily note not yet
+    // created) stays expressible via --skip-wikilink-validation, which `create`
+    // already has; enumerating exceptions like "except dates" would be a
+    // whitelist that goes stale on the first new naming scheme.
     if (!this.looksLikeUUID(uuid)) {
+      const resolved = await this.fsAdapter.findFileByLinkpath(uuid);
+      if (!resolved) {
+        throw new WikilinkNotFoundError(uuid, label);
+      }
       return;
     }
 
