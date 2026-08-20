@@ -256,7 +256,16 @@ export class AggregateExecutor {
 
       // For DISTINCT, we'd need to track seen values
       // For now, custom aggregates handle DISTINCT internally if needed
-      aggregate.step(state, value);
+      // Second column for a two-argument aggregate. Evaluated per solution like the
+      // first, and left undefined when the aggregate takes one column — so every
+      // existing aggregate sees exactly the call it saw before #3994.
+      let value2: Term | undefined = undefined;
+      if (expr.expression2) {
+        const evaluated2 = this.evaluateExpression(expr.expression2, solution);
+        value2 = evaluated2 === undefined ? null : (evaluated2 as Term);
+      }
+
+      aggregate.step(state, value, value2);
     }
 
     // Finalize and return result

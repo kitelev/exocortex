@@ -374,6 +374,117 @@ export function createPercentileAggregate(percentile: number): CustomAggregate {
 }
 
 /**
+ * Accumulator shared by the three two-column statistics.
+ *
+ * One pass, six running sums — no pair is retained, so memory is O(1) in the group
+ * size (unlike `median`, which must keep every value). A pair is counted ONLY when
+ * both columns are numeric: an unbound or non-numeric ?y must not silently shift the
+ * ?x-only statistics, which is precisely how a partially-bound join would corrupt a
+ * correlation without ever raising.
+ */
+interface BivariateState extends AggregateState {
+  n: number;
+  sx: number;
+  sy: number;
+  sxx: number;
+  syy: number;
+  sxy: number;
+}
+
+function bivariateInit(): BivariateState {
+  return { n: 0, sx: 0, sy: 0, sxx: 0, syy: 0, sxy: 0 };
+}
+
+function bivariateStep(state: AggregateState, value: Term, value2?: Term): void {
+  const st = state as BivariateState;
+  const x = getNumericValue(value);
+  const y = getNumericValue(value2 as Term);
+  if (isNaN(x) || isNaN(y)) return;
+  st.n += 1;
+  st.sx += x;
+  st.sy += y;
+  st.sxx += x * x;
+  st.syy += y * y;
+  st.sxy += x * y;
+}
+
+/**
+ * Pearson correlation r = Σ(x-x̄)(y-ȳ) / √(Σ(x-x̄)² · Σ(y-ȳ)²), computed from the
+ * running sums.
+ *
+ * ⛔ Returns `NaN`^^xsd:double rather than 0 when r is undefined — n < 2, or either
+ * column is constant (zero variance ⇒ division by zero). `0` would read as "measured,
+ * no correlation", which is a different and false claim: a constant column means the
+ * question cannot be answered, not that the answer is zero.
+ *
+ * ⚠ This deliberately DIVERGES from the convention of the single-column aggregates in
+ * this file, which return 0 on empty input (`medianAggregate`, `varianceAggregate`).
+ * For a median 0 is merely arbitrary; for a correlation it is a specific, WRONG
+ * finding a reader would act on. A truly unbound result is not expressible here —
+ * `finalize` must return a Literal and an empty one throws ("Literal value cannot be
+ * empty") — so `NaN` is the honest encoding available: standard for xsd:double, and
+ * distinguishable from every real value of r.
+ *
+ * ⛤ Both guards below are DEFENSIVE, not load-bearing, and a test cannot tell them
+ * apart from the arithmetic: at n < 2 the variance is 0, and when a column is constant
+ * the covariance numerator is 0 as well (Σxy = c·Σy and Σx = n·c cancel exactly), so
+ * the expression evaluates to 0/0 = NaN on its own. They are kept because relying on
+ * IEEE-754 to produce NaN — rather than ±Infinity, which a differently-shaped numerator
+ * WOULD yield — is a fragile contract to leave implicit. What the tests pin is the
+ * observable decision (NaN rather than 0), not these two lines.
+ */
+export const corrAggregate: CustomAggregate = {
+  arity: 2,
+  init: bivariateInit,
+  step: bivariateStep,
+  finalize(state: AggregateState): Literal {
+    const { n, sx, sy, sxx, syy, sxy } = state as BivariateState;
+    if (n < 2) return new Literal("NaN", XSD_DOUBLE);
+    const cov = n * sxy - sx * sy;
+    const vx = n * sxx - sx * sx;
+    const vy = n * syy - sy * sy;
+    if (vx <= 0 || vy <= 0) return new Literal("NaN", XSD_DOUBLE);
+    return new Literal(String(cov / Math.sqrt(vx * vy)), XSD_DECIMAL);
+  },
+};
+
+/**
+ * Least-squares slope b in y = a + b·x. Undefined (unbound) when n < 2 or ?x is
+ * constant — a vertical line has no finite slope, and reporting 0 would invert the
+ * meaning (0 = horizontal).
+ */
+export const slopeAggregate: CustomAggregate = {
+  arity: 2,
+  init: bivariateInit,
+  step: bivariateStep,
+  finalize(state: AggregateState): Literal {
+    const { n, sx, sy, sxx, sxy } = state as BivariateState;
+    if (n < 2) return new Literal("NaN", XSD_DOUBLE);
+    const vx = n * sxx - sx * sx;
+    if (vx <= 0) return new Literal("NaN", XSD_DOUBLE);
+    return new Literal(String((n * sxy - sx * sy) / vx), XSD_DECIMAL);
+  },
+};
+
+/**
+ * Least-squares intercept a in y = a + b·x. Shares slope's guards, since a is
+ * derived from b.
+ */
+export const interceptAggregate: CustomAggregate = {
+  arity: 2,
+  init: bivariateInit,
+  step: bivariateStep,
+  finalize(state: AggregateState): Literal {
+    const { n, sx, sy, sxx, sxy } = state as BivariateState;
+    if (n < 2) return new Literal("NaN", XSD_DOUBLE);
+    const vx = n * sxx - sx * sx;
+    if (vx <= 0) return new Literal("NaN", XSD_DOUBLE);
+    const b = (n * sxy - sx * sy) / vx;
+    return new Literal(String((sy - b * sx) / n), XSD_DECIMAL);
+  },
+};
+
+/**
  * Map of built-in aggregate IRIs to their implementations.
  */
 export const BUILT_IN_AGGREGATES: Record<string, CustomAggregate> = {
@@ -387,4 +498,7 @@ export const BUILT_IN_AGGREGATES: Record<string, CustomAggregate> = {
   [`${EXO_AGGREGATE_NS}percentile90`]: createPercentileAggregate(90),
   [`${EXO_AGGREGATE_NS}percentile95`]: createPercentileAggregate(95),
   [`${EXO_AGGREGATE_NS}percentile99`]: createPercentileAggregate(99),
+  [`${EXO_AGGREGATE_NS}corr`]: corrAggregate,
+  [`${EXO_AGGREGATE_NS}slope`]: slopeAggregate,
+  [`${EXO_AGGREGATE_NS}intercept`]: interceptAggregate,
 };
