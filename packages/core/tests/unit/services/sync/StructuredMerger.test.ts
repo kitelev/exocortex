@@ -261,7 +261,12 @@ describe("StructuredMerger — multi-valued set-union with tombstones (D20)", ()
     // Dates as equal (both have zero enumerable keys) — that would silently
     // collapse divergent timestamps into one side.
     const defaultSchemaMerger = new StructuredMerger({
-      parse: (text) => yaml.load(text), // DEFAULT_SCHEMA → Date objects
+      // YAML11_SCHEMA is what js-yaml 4 used as its DEFAULT_SCHEMA: bare
+      // date-like scalars become Date objects. js-yaml 5 made CORE_SCHEMA the
+      // default, so the violating codec has to ask for the old schema by name
+      // — otherwise this axis silently degrades to comparing two strings and
+      // stops exercising the deepEqual-on-Date path it exists for.
+      parse: (text) => yaml.load(text, { schema: yaml.YAML11_SCHEMA }),
       stringify: (value) => yaml.dump(value, { lineWidth: -1 }),
     });
     const doc = (ts: string): string =>

@@ -59,7 +59,7 @@ function parseFile(content: string): ParsedFile | null {
   // here means malformed → re-throw.
   let parsed: unknown;
   try {
-    parsed = yaml.load(fm);
+    parsed = yaml.load(fm, { schema: yaml.YAML11_SCHEMA });
   } catch {
     parsed = parseYamlFrontmatterTolerant(fm, "AtomicFrontmatterService");
     if (parsed === null) {
@@ -78,7 +78,7 @@ function parseFile(content: string): ParsedFile | null {
 function serializeFile(fm: Record<string, unknown>, body: string): string {
   const dumped = yaml.dump(fm, {
     lineWidth: -1,
-    quotingType: '"',
+    quoteStyle: "double",
     forceQuotes: false,
     noRefs: true,
   });

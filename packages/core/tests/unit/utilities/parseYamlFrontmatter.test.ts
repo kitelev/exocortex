@@ -1,5 +1,5 @@
 import { describe, it, expect, jest, afterEach } from "@jest/globals";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import { parseYamlFrontmatterTolerant } from "../../../src/utilities/parseYamlFrontmatter";
 
 /**
@@ -85,5 +85,83 @@ describe("#3800 parseYamlFrontmatterTolerant", () => {
     // "object" && parsed !== null`. An empty block / null scalar → null.
     expect(parseYamlFrontmatterTolerant("")).toBeNull();
     expect(parseYamlFrontmatterTolerant("null")).toBeNull();
+  });
+});
+
+/**
+ * Locks the SCHEMA half of the parse, which nothing else covered.
+ *
+ * js-yaml 4's DEFAULT_SCHEMA gave frontmatter a **dual typing** the vault has
+ * relied on since the beginning: a BARE date-like scalar (`2026-08-19`) loads as
+ * a `Date`, a QUOTED one (`"2026-08-19"`) stays a `string`. Four production
+ * modules branch on exactly that — `NoteToRDFConverter`, `GenericAssetCreation‌Service`,
+ * `DisplayNameTemplateEngine`, `display-name/hostFunctions` — and both writers
+ * emit both forms (`create` writes bare, `set-property` quotes string-semantic
+ * properties), so BOTH types coexist in every real vault.
+ *
+ * js-yaml 5 changed the default to CORE_SCHEMA, where a bare date is just a
+ * string. That is a silent, vault-wide type flip: no parse error, no test
+ * failure — a measured ZERO tests asserted `instanceof Date` before this block.
+ * `parseYamlFrontmatterTolerant` therefore asks for `YAML11_SCHEMA` by name,
+ * which reproduces js-yaml 4's default exactly.
+ *
+ * Both `yaml.load` call sites are covered on purpose: the strict path AND the
+ * tolerant (duplicate-key) retry. Dropping the schema from either one alone
+ * must turn one of these axes red — otherwise the guard only covers the call
+ * site that happened to be exercised.
+ */
+describe("parseYamlFrontmatterTolerant — js-yaml 4 dual date typing (YAML11_SCHEMA)", () => {
+  it("STRICT path: a bare date-like scalar loads as Date, a quoted one stays a string", () => {
+    const parsed = parseYamlFrontmatterTolerant(
+      'exo__Asset_createdAt: 2026-08-19\nexo__Asset_label: "2026-08-19"\n',
+    );
+
+    expect(parsed?.exo__Asset_createdAt).toBeInstanceOf(Date);
+    expect(parsed?.exo__Asset_label).toBe("2026-08-19");
+    // ⛤ Not just "is a Date" — the INSTANT must be right, otherwise a schema
+    // that parses dates differently (offset/locale) would pass this axis.
+    expect((parsed?.exo__Asset_createdAt as Date).toISOString()).toBe(
+      "2026-08-19T00:00:00.000Z",
+    );
+  });
+
+  it("STRICT path: a bare datetime keeps its time component", () => {
+    const parsed = parseYamlFrontmatterTolerant(
+      "ems__Effort_startTimestamp: 2026-08-19T14:30:45Z\n",
+    );
+
+    expect(parsed?.ems__Effort_startTimestamp).toBeInstanceOf(Date);
+    expect((parsed?.ems__Effort_startTimestamp as Date).toISOString()).toBe(
+      "2026-08-19T14:30:45.000Z",
+    );
+  });
+
+  it("TOLERANT path: the duplicate-key retry keeps the same dual typing", () => {
+    // A duplicated key makes the strict parse throw, so this asset can ONLY be
+    // read through the `{ json: true }` retry — a second `yaml.load` with its
+    // own schema argument. Without this axis, dropping the schema there would
+    // silently degrade every malformed-but-rescued asset to string dates.
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    const parsed = parseYamlFrontmatterTolerant(
+      'exo__Asset_uid: u1\nexo__Asset_createdAt: 2026-08-19\nexo__Asset_label: "2026-08-19"\nexo__Asset_uid: u2\n',
+    );
+
+    expect(parsed?.exo__Asset_uid).toBe("u2"); // proves the tolerant path ran
+    expect(parsed?.exo__Asset_createdAt).toBeInstanceOf(Date);
+    expect(parsed?.exo__Asset_label).toBe("2026-08-19");
+
+    warn.mockRestore();
+  });
+
+  it("the helper's schema is the one that produces this typing, not the ambient default", () => {
+    // ⛤ Canary against a vacuous suite: if the js-yaml DEFAULT ever produced
+    // Dates again, every axis above would pass no matter what the helper asks
+    // for. Pinning the default's behaviour makes the axes above meaningful —
+    // they only hold BECAUSE the helper names YAML11_SCHEMA explicitly.
+    expect(yaml.load("d: 2026-08-19")).toEqual({ d: "2026-08-19" });
+    expect(yaml.load("d: 2026-08-19", { schema: yaml.YAML11_SCHEMA })).toEqual({
+      d: new Date("2026-08-19T00:00:00.000Z"),
+    });
   });
 });

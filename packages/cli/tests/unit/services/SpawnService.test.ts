@@ -13,7 +13,7 @@ import type { AtomicUpdateResult } from "../../../src/services/AtomicFrontmatter
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir, homedir } from "os";
 import path from "path";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 
 // Minimal frontmatter for a valid task file
 function buildMd(fm: Record<string, unknown>): string {
