@@ -3,6 +3,8 @@ import { Command } from "commander";
 import { mkdirSync, writeFileSync } from "fs";
 
 // Mock exocortex (heavy dependency)
+import type { Severity, Violation } from "@kitelev/exocortex-core";
+
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   InMemoryTripleStore: jest.fn(),
   ExoQLParser: jest.fn(),
@@ -981,6 +983,68 @@ describe("P1.6 buildEARLReport", () => {
     const failed = report["@graph"].find((n: any) => n["earl:result"]?.["earl:outcome"]?.["@id"] === "earl:failed");
     expect(failed).toBeDefined();
     expect((failed as any)["earl:result"]["dc:description"]).toBe("Missing required property");
+  });
+
+  // @req:cef65fd5-8bf0-4082-afcc-9d0fb3fe68ac
+  //
+  // The three surfaces of one check must agree. `conforms` and the exit code
+  // already treat sh:Warning as a non-failure; EARL was the outlier, mapping
+  // every finding to earl:failed regardless of severity — while reading that
+  // same severity one line below, for sh:resultSeverity.
+  const outcomes = (report: any): string[] =>
+    report["@graph"]
+      .filter((n: any) => n["earl:result"])
+      .map((n: any) => n["earl:result"]["earl:outcome"]["@id"]);
+
+  const finding = (severity: Severity, message: string): Violation => ({
+    focusNode: `https://node.com/${message}`,
+    propertyPath: "https://prop.com/p1",
+    severity,
+    message,
+    constraint: "minCount",
+  });
+
+  it("does not report a warning as a failure", () => {
+    // conforms stays true for warnings — the CLI exits 0 — so EARL must not
+    // say "failed". Pre-fix this returned earl:failed for both entries.
+    const report = buildEARLReport("/vault", {
+      conforms: true,
+      violations: [
+        finding("sh:Warning", "unresolvable ref"),
+        finding("sh:Warning", "second ref"),
+      ],
+    });
+    expect(outcomes(report)).toEqual(["earl:cantTell", "earl:cantTell"]);
+  });
+
+  it("still reports a violation as a failure", () => {
+    // Canary: ~every existing EARL consumer gates on earl:failed. Green in
+    // BOTH states — the fix must not have bought warnings at its expense.
+    const report = buildEARLReport("/vault", {
+      conforms: false,
+      violations: [finding("sh:Violation", "missing property")],
+    });
+    expect(outcomes(report)).toEqual(["earl:failed"]);
+  });
+
+  it("distinguishes the two within one report", () => {
+    // The load-bearing axis. A fix mapping EVERYTHING onto one outcome would
+    // pass a violations-only axis or a warnings-only axis, but not this one.
+    const report = buildEARLReport("/vault", {
+      conforms: false,
+      violations: [
+        finding("sh:Violation", "hard"),
+        finding("sh:Warning", "soft"),
+      ],
+    });
+    expect(outcomes(report)).toEqual(["earl:failed", "earl:cantTell"]);
+  });
+
+  it("leaves a clean vault untouched", () => {
+    // Canary: green in BOTH states.
+    expect(
+      outcomes(buildEARLReport("/vault", { conforms: true, violations: [] })),
+    ).toEqual(["earl:passed"]);
   });
 });
 
