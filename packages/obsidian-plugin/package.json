@@ -34,8 +34,8 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "@playwright/experimental-ct-react": "^1.55.1",
-    "@playwright/test": "^1.55.1",
+    "@playwright/experimental-ct-react": "^1.62.1",
+    "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@types/js-yaml": "^4.0.0",
     "@types/react": "^19.2.18",
