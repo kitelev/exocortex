@@ -108,7 +108,7 @@ jobs:
           run-build: "true"
 
       - name: Upload built plugin
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: plugin-build
           path: |
@@ -672,7 +672,7 @@ jobs:
 
       - name: Upload shard coverage
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-shard-${{ matrix.shard }}
           path: packages/obsidian-plugin/coverage/coverage-final.json
@@ -759,7 +759,7 @@ jobs:
 
       - name: Upload CLI coverage
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-cli
           path: packages/cli/coverage/
@@ -952,7 +952,7 @@ jobs:
 
       - name: Upload coverage reports
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-reports
           path: |
@@ -1018,7 +1018,7 @@ jobs:
 
       - name: Upload component test report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: component-test-report
           path: playwright-report-ct/
@@ -1027,7 +1027,7 @@ jobs:
 
       - name: Upload component test results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: component-test-results
           path: test-results/
@@ -1036,7 +1036,7 @@ jobs:
 
       - name: Upload visual diff artifacts
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: visual-diff
           path: |
@@ -1047,7 +1047,7 @@ jobs:
 
       - name: Upload Linux baseline snapshots
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: linux-visual-snapshots
           path: packages/obsidian-plugin/tests/component/__snapshots__/**/*-linux.png
@@ -1077,7 +1077,7 @@ jobs:
 
       - name: Upload Flaky Test Report (Component)
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: flaky-test-report-component
           path: packages/obsidian-plugin/flaky-report-playwright.json
@@ -1240,7 +1240,7 @@ jobs:
 
       - name: Upload retry-summary JSON for shard ${{ matrix.shard }}
         if: always() && env.RUN_E2E == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: retry-summary-shard-${{ matrix.shard }}
           path: test-results-e2e/retry-summary.json
@@ -1249,7 +1249,7 @@ jobs:
 
       - name: Upload blob report for shard ${{ matrix.shard }}
         if: always() && env.RUN_E2E == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-blob-report-${{ matrix.shard }}
           path: blob-report/
@@ -1258,7 +1258,7 @@ jobs:
 
       - name: Upload E2E test artifacts (videos, screenshots, traces) for shard ${{ matrix.shard }}
         if: always() && env.RUN_E2E == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-test-artifacts-${{ matrix.shard }}
           path: test-results-e2e/
@@ -1273,7 +1273,7 @@ jobs:
       # gate only fires on observed samples.
       - name: Upload PLUGIN_WAIT_MS log for shard ${{ matrix.shard }}
         if: always() && env.RUN_E2E == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: plugin-wait-ms-shard-${{ matrix.shard }}
           path: plugin-wait-ms/shard-${{ matrix.shard }}.jsonl
@@ -1440,7 +1440,7 @@ jobs:
 
       - name: Upload merged E2E test report
         if: env.RUN_E2E == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-test-report
           path: playwright-report/
@@ -1449,7 +1449,7 @@ jobs:
 
       - name: Upload merged test artifacts (videos, screenshots, traces)
         if: env.RUN_E2E == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-test-artifacts
           path: all-test-artifacts/
@@ -1519,7 +1519,7 @@ jobs:
 
       - name: Upload Performance Report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: performance-test-report
           path: performance-summary.md
@@ -1528,7 +1528,7 @@ jobs:
 
       - name: Upload Component Performance Report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: component-performance-report
           path: playwright-report-ct/
