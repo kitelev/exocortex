@@ -27,6 +27,8 @@ module.exports = {
     "!**/tests/**",
   ],
   moduleNameMapper: {
+    // Подпуть ДО точного: moduleNameMapper берёт первый совпавший паттерн.
+    "^@kitelev/exocortex-core/(.*)$": "<rootDir>/../core/src/$1",
     "^@kitelev/exocortex-core$": "<rootDir>/../core/src/index.ts",
     "^@kitelev/exocortex-services$": "<rootDir>/../services/src/index.ts",
     "^@plugin/types$": "<rootDir>/src/types/index.ts",
@@ -116,6 +118,7 @@ module.exports = {
           isolatedModules: true,
           paths: {
             "@kitelev/exocortex-core": ["<rootDir>/../core/src/index.ts"],
+            "@kitelev/exocortex-core/*": ["<rootDir>/../core/src/*"],
             "@kitelev/exocortex-services": ["<rootDir>/../services/src/index.ts"],
             "@plugin/types": ["<rootDir>/src/types/index.ts"],
             "@plugin/types/*": ["<rootDir>/src/types/*"],
