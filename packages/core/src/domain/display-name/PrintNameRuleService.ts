@@ -1,4 +1,5 @@
 import type { VaultMetadataPort } from "./VaultMetadataPort";
+import { resolvePreferenceList } from "./preferenceList";
 import {
   ownProperty,
   resolveKeyPath,
@@ -682,13 +683,12 @@ export class PrintNameRuleService {
    * the pre-list implementation.
    */
   private resolvePropertyKeyList(value: unknown): string | null {
-    if (Array.isArray(value) && value.length > 1) {
-      const keys = value
-        .map((v) => this.resolveSinglePropertyKey(v))
-        .filter((k): k is string => k !== null && k.length > 0);
-      return keys.length > 0 ? keys.join("|") : null;
-    }
-    return this.resolvePropertyKey(value);
+    // ⛤ The multiplicity SEMANTICS live in core's `resolvePreferenceList` so the
+    // other consumer of this predicate (`ConceptDefinitionSpecService`) cannot
+    // drift from them (#4050). Per-reference resolution stays here, because the
+    // two subsystems resolve ONE reference through different adapters by
+    // construction — that difference is not the divergence.
+    return resolvePreferenceList(value, (v) => this.resolveSinglePropertyKey(v));
   }
 
   /** Resolve ONE `exo__PrintedProperty_property` reference to its frontmatter key. */

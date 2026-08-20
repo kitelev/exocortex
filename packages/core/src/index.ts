@@ -896,6 +896,9 @@ export * from "./services/settings";
 // (UI/CLI parity #3417). The Obsidian coupling is isolated behind VaultMetadataPort; the
 // plugin supplies an Obsidian adapter, the CLI a filesystem one.
 export type { VaultMetadataPort } from "./domain/display-name/VaultMetadataPort";
+// The ONE definition of what a multi-value exo__PrintedProperty_property means
+// (an ordered preference list), shared by both subsystems that compile it (#4050).
+export { resolvePreferenceList } from "./domain/display-name/preferenceList";
 export type { DisplayNameSettings } from "./domain/display-name/DisplayNameSettings";
 export { DEFAULT_DISPLAY_NAME_SETTINGS } from "./domain/display-name/DisplayNameSettings";
 export { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService";
