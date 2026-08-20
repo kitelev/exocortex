@@ -15,7 +15,6 @@
  * colon-space scalar + array-item cases throw "bad indentation of a mapping
  * entry" in js-yaml.
  */
-import * as yaml from "js-yaml";
 import { MetadataHelpers } from "../../src/utilities/MetadataHelpers";
 import { parseFrontmatterAsReader } from "@kitelev/exocortex-test-utils";
 
