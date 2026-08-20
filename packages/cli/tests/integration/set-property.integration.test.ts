@@ -30,7 +30,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 
 const { setPropertyCommand } = await import("../../src/commands/set-property.js");
 

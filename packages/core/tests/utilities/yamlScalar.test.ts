@@ -19,7 +19,14 @@ import { serializeYamlScalar } from "../../src/utilities/yamlScalar";
 /** Emit a scalar, parse it back in a real `key: value` mapping. */
 function roundTrip(value: unknown, quoteAmbiguous = false): unknown {
   const line = `v: ${serializeYamlScalar(value, quoteAmbiguous)}`;
-  const parsed = yaml.load(line) as Record<string, unknown>;
+  // js-yaml 5 made CORE_SCHEMA the default (dates → strings). The production
+  // read path (parseYamlFrontmatter) asks for YAML11_SCHEMA to keep js-yaml 4's
+  // dual typing — bare date → Date, quoted → string — so this round-trip must
+  // parse the same way, otherwise it checks a parser the product never uses.
+  const parsed = yaml.load(line, { schema: yaml.YAML11_SCHEMA }) as Record<
+    string,
+    unknown
+  >;
   return parsed.v;
 }
 

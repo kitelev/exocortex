@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "fs-extra";
 import path from "path";
 import os from "os";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import {
   ArchiveAssetService,
   EffortStatusWorkflow,
@@ -34,7 +34,7 @@ function readFrontmatter(filePath: string): Frontmatter {
 function writeAsset(vaultRoot: string, relPath: string, frontmatter: Frontmatter): string {
   const fullPath = path.join(vaultRoot, relPath);
   fs.ensureDirSync(path.dirname(fullPath));
-  const yamlBody = yaml.dump(frontmatter, { quotingType: '"', lineWidth: -1 });
+  const yamlBody = yaml.dump(frontmatter, { quoteStyle: "double", lineWidth: -1 });
   fs.writeFileSync(fullPath, `---\n${yamlBody.trim()}\n---\n`, "utf-8");
   return fullPath;
 }

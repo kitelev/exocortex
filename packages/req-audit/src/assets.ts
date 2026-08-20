@@ -65,10 +65,10 @@ export function parseYamlFrontmatterTolerant(
 ): Record<string, unknown> | null {
   let parsed: unknown;
   try {
-    parsed = yaml.load(yamlBlock);
+    parsed = yaml.load(yamlBlock, { schema: yaml.YAML11_SCHEMA });
   } catch (strictError) {
     try {
-      parsed = yaml.load(yamlBlock, { json: true });
+      parsed = yaml.load(yamlBlock, { json: true, schema: yaml.YAML11_SCHEMA });
     } catch {
       // Not a mere duplicate-key issue — genuinely malformed. Preserve the
       // historical throw→null/`{}` fallback rather than crash the caller.

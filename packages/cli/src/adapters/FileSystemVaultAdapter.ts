@@ -395,7 +395,7 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     const frontmatterYaml = yaml.dump(frontmatter, {
       lineWidth: -1,
       noRefs: true,
-      quotingType: '"',
+      quoteStyle: "double",
     });
 
     const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
