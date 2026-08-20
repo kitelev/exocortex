@@ -1,0 +1,122 @@
+# Restored 2026-08-20 (issue #4128). Файл был снесён ПОБОЧНО 2025-12-14 коммитом
+# 4e42ceaa «refactor: rename packages» (512 файлов) — плановых обновлений не было
+# восемь месяцев. Security-updates при этом работали (они включаются в настройках
+# репо, а не здесь), и живые security-PR маскировали мёртвый плановый канал.
+#
+# ⛔ Три npm-записи — это НЕ дубль. В репо три package-lock.json, и корневой
+# покрывает только workspaces (`packages/*`):
+#   /               — корневой лок, весь workspace-граф
+#   /packages/core  — СВОЙ лок; он вход `npm audit` job-а npm-audit-exocortex
+#                     (ci.yml: working-directory: packages/core) и его
+#                     cache-dependency-path. Без этой записи он дрейфует от
+#                     корневого — что и наблюдалось: js-yaml 3.14.2 против 3.15.1.
+#   /docs-site      — ВНЕ workspaces корня, поэтому корневая запись его не видит.
+#
+# ⛤ `reviewers:` из прежней версии убран — ключ deprecated в схеме Dependabot.
+# CODEOWNERS в репо нет, PR и так приходят владельцу.
+version: 2
+
+updates:
+  # ── npm: корневой лок (весь workspace-граф) ────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    # ⛤ 3, а не прежние 10: после восьми месяцев тишины накопленная дельта
+    # выльется залпом. Поднять, когда первая волна разгребена.
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      production-dependencies:
+        patterns: ["*"]
+        exclude-patterns:
+          - "@types/*"
+          - "eslint*"
+          - "prettier*"
+          - "jest*"
+          - "@jest/*"
+          - "typescript"
+          - "@playwright/*"
+          - "playwright*"
+        update-types: ["minor", "patch"]
+      dev-dependencies:
+        patterns:
+          - "@types/*"
+          - "eslint*"
+          - "prettier*"
+          - "jest*"
+          - "@jest/*"
+          - "typescript"
+          - "@playwright/*"
+          - "playwright*"
+        update-types: ["minor", "patch"]
+    # major-версии этих трёх ломают рантайм плагина — только вручную, с прогоном e2e
+    ignore:
+      - dependency-name: "obsidian"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+
+  # ── npm: packages/core (вход npm-audit гейта; дрейфовал от корневого) ──────
+  - package-ecosystem: "npm"
+    directory: "/packages/core"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 2
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      core-lock:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # ── npm: docs-site (вне workspaces корня) ─────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/docs-site"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 2
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      docs-site:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # ── GitHub Actions ────────────────────────────────────────────────────────
+  # Дрейф уже наблюдаем: actions/checkout@v4 и @v6 сосуществуют в одном репо.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci(deps)"
+    groups:
+      github-actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
