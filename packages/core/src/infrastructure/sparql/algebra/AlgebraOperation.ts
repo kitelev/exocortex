@@ -428,6 +428,14 @@ export interface AggregateExpression {
    */
   aggregation: StandardAggregation | CustomAggregation;
   expression?: Expression;
+  /**
+   * Second column for a two-argument custom aggregate (`agg:corr(?x, ?y)`).
+   *
+   * Only ever set for custom aggregates declaring `arity: 2`; standard SPARQL
+   * aggregates and every single-column custom one leave it undefined, so the
+   * execution path for them is byte-identical to before this field existed.
+   */
+  expression2?: Expression;
   distinct: boolean;
   separator?: string;
 }

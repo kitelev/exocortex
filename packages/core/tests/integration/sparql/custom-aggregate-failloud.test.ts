@@ -78,16 +78,11 @@ describe("agg: custom aggregates fail loudly instead of degrading silently", () 
       `),
     ).rejects.toThrow(/agg:median/);
 
-    // `agg:corr` is the name a user reaches for after reading #3994. It is caught by
-    // THIS guard (unregistered name), not by the arity guard — asserted here so each
-    // mutant below drops exactly one axis.
-    await expect(
-      run(`
-        PREFIX ex: <${EX}>
-        PREFIX agg: <${AGG}>
-        SELECT (agg:corr(?v, ?v) AS ?r) WHERE { ?s ex:val ?v }
-      `),
-    ).rejects.toThrow(/Unknown aggregate agg:corr/);
+    // ⛤ `agg:corr` USED to be asserted here as an unknown name. #3994 registered it,
+    // so that assertion became stale — it pinned the absence of a feature, not the
+    // guard. Coverage of "unknown name raises" is unchanged (agg:bogusZzz above);
+    // corr is now covered as a VALID two-column aggregate in
+    // bivariate-aggregates.test.ts, including its arity refusal.
   });
 
   it("axis 2 — a function OUTSIDE the agg: namespace is untouched (non-vacuity control)", async () => {

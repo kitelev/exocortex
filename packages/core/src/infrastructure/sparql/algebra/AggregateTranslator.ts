@@ -317,21 +317,28 @@ export class AggregateTranslator {
     // ?x alone — indistinguishable from a working two-column statistic. That is the
     // exact shape a user writes for `agg:corr(?x, ?y)` (#3994), so the failure had to
     // become loud BEFORE the two-column aggregates land, not after.
+    // Arity is a property of the AGGREGATE, not a constant: `agg:median` consumes one
+    // column, `agg:corr` two. Before #3994 the check was a hard `> 1` because nothing
+    // took two; keeping it that way would now reject the very aggregates being added.
+    const definition =
+      CustomAggregateRegistry.getInstance().get(iri) ?? BUILT_IN_AGGREGATES[iri];
+    const arity = definition?.arity ?? 1;
     const argc = fc.args?.length ?? 0;
-    if (argc > 1) {
+    if (argc !== arity) {
       const local = iri.startsWith(EXO_AGGREGATE_NS)
         ? `agg:${iri.slice(EXO_AGGREGATE_NS.length)}`
         : iri;
       throw new Error(
-        `${local} takes exactly 1 argument, got ${argc}. ` +
-          `Two-column aggregates (corr/slope/intercept) are not implemented — see issue #3994.`,
+        `${local} takes exactly ${arity} argument${arity === 1 ? "" : "s"}, got ${argc}.`,
       );
     }
     const arg = argc > 0 ? fc.args?.[0] : undefined;
+    const arg2 = arity === 2 ? fc.args?.[1] : undefined;
     return {
       type: "aggregate",
       aggregation: { type: "custom", iri },
       expression: arg ? this.translateExpressionFn(arg) : undefined,
+      expression2: arg2 ? this.translateExpressionFn(arg2) : undefined,
       distinct: fc.distinct || false,
     };
   }

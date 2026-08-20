@@ -39,6 +39,15 @@ export type Term = Literal | IRI | string | number | boolean | null | undefined;
  */
 export interface CustomAggregate {
   /**
+   * How many columns the aggregate consumes. Omitted means 1.
+   *
+   * The translator refuses a call whose argument count differs from this, so a
+   * two-column statistic can never silently collapse to its first column — the
+   * failure mode that made `agg:median(?x, ?y)` answer with the median of ?x.
+   */
+  arity?: 1 | 2;
+
+  /**
    * Initialize the accumulator state for a new group.
    * Called once at the start of processing each group.
    *
@@ -53,7 +62,7 @@ export interface CustomAggregate {
    * @param state - Current accumulator state
    * @param value - The term to accumulate (may be null/undefined for unbound)
    */
-  step(state: AggregateState, value: Term): void;
+  step(state: AggregateState, value: Term, value2?: Term): void;
 
   /**
    * Compute the final aggregate result from accumulated state.
