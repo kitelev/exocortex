@@ -38,23 +38,51 @@ updates:
         exclude-patterns:
           - "@types/*"
           - "eslint*"
+          # ⛔ @typescript-eslint/* НЕ покрывается ни `eslint*` (начинается с @),
+          # ни `typescript` (точное совпадение) — без этой строки пакет попал бы
+          # и в production-группу, и в linters.
+          - "@typescript-eslint/*"
           - "prettier*"
           - "jest*"
           - "@jest/*"
+          # ⛔ ts-jest не покрывается `jest*` — он начинается с `ts-`.
+          - "ts-jest"
           - "typescript"
           - "@playwright/*"
           - "playwright*"
         update-types: ["minor", "patch"]
-      dev-dependencies:
+      # ⛤ Dev-инструменты РАЗВЕДЕНЫ по семействам, а не свалены в одну группу.
+      # Причина замерена на PR #4138: единая dev-группа притащила jest 30.4.2
+      # ВМЕСТЕ с jest-environment-jsdom 30.4.1 — разъехавшийся лок-степ внутри
+      # семейства дал `TypeError: this._moduleMocker.clearMocksOnScope is not a
+      # function`, и в том же PR ехали @playwright/* 1.57→1.62 и
+      # eslint-plugin-obsidianmd 0.1.9→0.4.1. Разобрать такой PR нельзя — в нём
+      # смешаны несвязанные причины отказа.
+      #
+      # ⛔ jest и jest-environment-* обязаны двигаться ОДНИМ PR (общий jest-mock),
+      # поэтому они в одной группе — но отдельно от всего прочего.
+      jest:
         patterns:
-          - "@types/*"
-          - "eslint*"
-          - "prettier*"
-          - "jest*"
+          - "jest"
+          - "jest-*"
           - "@jest/*"
-          - "typescript"
+          - "ts-jest"
+        update-types: ["minor", "patch"]
+      playwright:
+        patterns:
           - "@playwright/*"
           - "playwright*"
+        update-types: ["minor", "patch"]
+      linters:
+        patterns:
+          - "eslint*"
+          - "@typescript-eslint/*"
+          - "prettier*"
+        update-types: ["minor", "patch"]
+      types-and-tsc:
+        patterns:
+          - "@types/*"
+          - "typescript"
         update-types: ["minor", "patch"]
     # major-версии этих трёх ломают рантайм плагина — только вручную, с прогоном e2e
     ignore:
