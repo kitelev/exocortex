@@ -23,7 +23,19 @@ import { EffortStatus } from "./EffortStatus";
  * ⛤ A FOURTH holder mirrors this vocabulary in symbolic form for the UI
  * dropdown — `EFFORT_STATUS_OPTIONS` in `EffortStatusOptions.ts`. It is a
  * write-side option list rather than a parser, so it is deliberately out of
- * scope here; the next edit to the vocabulary must still visit it.
+ * scope here; the next edit to the vocabulary must still visit it (issue #4121).
+ *
+ * ⛔ A FIFTH holder sits in the plugin — `FALLBACK_EFFORT_STATUS_VALUES` in
+ * `PropertySchemas.ts` — and it CANNOT be derived from here today, for a
+ * structural reason worth recording. That file is loaded by the Playwright
+ * component-test graph, where a RUNTIME import of this package pulls the core
+ * barrel, which reaches `CommandResolver` and its `tsyringe` decorators, and
+ * `reflect-metadata` is not present in that context. It imports core TYPES only
+ * (erased at compile time) precisely for that reason. Deriving it needs a
+ * barrel-free subpath, which resolves in NONE of the three layers that map this
+ * package (jest `moduleNameMapper`, the root `tsconfig` paths and the plugin's
+ * own — all anchor on the exact name). Adding one is its own unit of work with
+ * its own revert-verify; issue #4122.
  */
 export const EFFORT_STATUS_UID: Readonly<Record<EffortStatus, string>> = {
   [EffortStatus.DRAFT]: "c42245d0-01de-4c35-bfcf-d910445ea28e",
