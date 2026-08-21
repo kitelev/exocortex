@@ -41,6 +41,11 @@ function buildVault(vault: string, withCommands: boolean): void {
       "exo__Asset_uid: cafe0000-0000-0000-0000-000000000001",
       "exo__Asset_label: target",
       'ems__Effort_status: "[[753a44d5-846c-4b82-9196-4fd9a4d48777]]"',
+      // ⛤ req 148ce5a4: the remove-side axis below needs a property that HAS a
+      // clearing command — `ems__Effort_status` no longer renders a route at all
+      // (all five of its commands set a value). `endTimestamp` is cleared by
+      // `re-open`, so it still exercises the live-registry filter this file locks.
+      "ems__Effort_endTimestamp: 2026-08-21T10:00:00",
       "---",
       "",
     ].join("\n"),
@@ -50,11 +55,13 @@ function buildVault(vault: string, withCommands: boolean): void {
 
   const cmdDir = path.join(vault, "assetspaces/kitelev/exoas-exocmd/exocmd");
   fs.mkdirSync(cmdDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(cmdDir, "mark-done.md"),
-    ["---", "exocmd__Command_cliName: mark-done", "---", ""].join("\n"),
-    "utf-8",
-  );
+  for (const name of ["mark-done", "re-open"]) {
+    fs.writeFileSync(
+      path.join(cmdDir, `${name}.md`),
+      ["---", `exocmd__Command_cliName: ${name}`, "---", ""].join("\n"),
+      "utf-8",
+    );
+  }
 }
 
 describe("guarded-route resolution reaches the user @req:72419d3c-b425-4a0e-ad42-346853efc9cf", () => {
@@ -123,13 +130,16 @@ describe("guarded-route resolution reaches the user @req:72419d3c-b425-4a0e-ad42
     spies();
 
     await removePropertyCommand().parseAsync(
-      [TARGET_REL, "--property", "ems__Effort_status", "--vault", vault],
+      [TARGET_REL, "--property", "ems__Effort_endTimestamp", "--vault", vault],
       { from: "user" },
     );
 
     const out = stderrText();
-    expect(out).toContain("mark-done");
-    expect(out).not.toContain("move-to-backlog");
+    // `re-open` clears the property AND resolves in this vault → it is offered.
+    expect(out).toContain("re-open");
+    // `mark-done` resolves here too, but it SETS the property — the narrowed
+    // route withholds it (req 148ce5a4). Both filters are exercised at once.
+    expect(out).not.toContain("mark-done");
   });
 
   it(`⛔ an UNMOUNTED registry keeps today's full sentence — fail-open @req:${REQ}`, async () => {

@@ -247,7 +247,11 @@ describe("req 59220c17: remove-property accepts an undeclared property (set-prop
     const r = await runRemove("--property", "ems__Effort_status");
 
     expect(r.exit).not.toContain(0);
-    expect(r.errorLog).toContain("dedicated guarded command");
+    // ⛤ req 148ce5a4 changed WHAT the refusal can offer, not WHETHER it refuses:
+    // `ems__Effort_status` has no clearing command, so the sentence says so
+    // instead of naming setters. The contrast this axis draws — undeclared is
+    // accepted, guarded is not — is unchanged.
+    expect(r.errorLog).toContain("no dedicated command clears it");
     expect(r.content).toBe(before);
   });
 });
