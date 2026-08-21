@@ -54,7 +54,11 @@ function buildVault(vault: string): void {
   }
 }
 
-describe(`remove-property clearing discriminator @req:${REQ}`, () => {
+// ⛔ The describe title carries the binding as a LITERAL: `@req:${REQ}` in a
+// template is not statically resolvable, so `requirements audit` (and archgate
+// REQ-001) cannot see it — the requirement would read as unbound. Same shape,
+// same reason, as the sibling guarded-route-resolution file.
+describe("remove-property clearing discriminator @req:148ce5a4-f9b8-4544-9897-e5bd9755981a", () => {
   let vault: string;
   let errorSpy: ReturnType<typeof jest.spyOn>;
   let exitSpy: ReturnType<typeof jest.spyOn>;
