@@ -269,17 +269,20 @@ describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter p
     expect(out.exit).toContain(1);
     expect(out.exit).not.toContain(0);
     expect(out.errorLog).toMatch(/Refusing to remove "ems__Effort_status"/);
-    expect(out.errorLog).toMatch(/mark-done|move-to-backlog|start-effort/);
+    // ⛤ req 148ce5a4: the setters are no longer named. All five commands routed
+    // for this property are TRANSITIONS — they assign a value, none removes the
+    // key, so offering them sent the user down a path that does not exist.
+    expect(out.errorLog).toMatch(/no dedicated command clears it/);
+    expect(out.errorLog).not.toMatch(/mark-done|move-to-backlog|start-effort/);
     // File byte-identical — the guard did not delete anything.
     expect(out.content).toBe(before);
   });
 
+  // ⛤ req 148ce5a4 split this table in two. The guarantee is unchanged for both
+  // halves — refuse, leave the file byte-identical — but WHAT the refusal can
+  // offer is not: only a property with a CLEARING command has a path to name.
   it.each([
-    ["exo__Asset_label", /set-label/],
-    ["ems__Effort_parent", /set-parent/],
-    ["ems__Task_zone", /set-criticality/],
-    ["ems__Effort_plannedStartTimestamp", /set-planned-start/],
-    ["archived", /archive-completed|un-archive/],
+    ["archived", /un-archive/],
   ])(
     `REFUSES guarded property %s → dedicated command, file unchanged ${REQ}`,
     async (prop, expectedCommand) => {
@@ -290,6 +293,25 @@ describe("Issue #3926: `cli remove-property` deletes a non-guarded frontmatter p
         new RegExp(`Refusing to remove "${prop}"`),
       );
       expect(out.errorLog).toMatch(expectedCommand);
+      expect(out.content).toBe(before);
+    },
+  );
+
+  it.each([
+    ["exo__Asset_label"],
+    ["ems__Effort_parent"],
+    ["ems__Task_zone"],
+    ["ems__Effort_plannedStartTimestamp"],
+  ])(
+    `REFUSES guarded property %s with no clearing command, file unchanged ${REQ}`,
+    async (prop) => {
+      const before = fs.readFileSync(path.join(vault, taskPath), "utf-8");
+      const out = await run(taskPath, ["--property", prop]);
+      expect(out.exit).toContain(1);
+      expect(out.errorLog).toMatch(
+        new RegExp(`Refusing to remove "${prop}"`),
+      );
+      expect(out.errorLog).toMatch(/no dedicated command clears it/);
       expect(out.content).toBe(before);
     },
   );

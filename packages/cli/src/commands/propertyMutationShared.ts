@@ -72,6 +72,20 @@ export interface GuardedRoute {
   readonly argSuffix?: string;
   /** Rendered in parentheses after the invocation. */
   readonly note?: string;
+  /**
+   * The subset of {@link commands} that CLEARS the property (as opposed to
+   * setting it). Empty/absent means no sanctioned way to remove it exists.
+   *
+   * ⛤ Why this is a FIELD and not prose: the distinction was already stated —
+   * in `note`, in English, on three of thirteen routes ("start-effort sets it;
+   * the others clear it"). Prose cannot be consulted by the delete-side guard,
+   * so `remove-property` answered BOTH cases identically and, for a property
+   * with no clearing command, named commands that cannot help: they set a
+   * different value, they do not remove the key. The operation then left the
+   * product entirely (a raw Bash strip past the PreToolUse hooks) — the same
+   * failure mode issue #3926 closed for unknown properties (req 148ce5a4).
+   */
+  readonly clearedBy?: readonly string[];
 }
 
 /**
@@ -120,14 +134,17 @@ export const GUARDED_ROUTES: Record<string, GuardedRoute> = {
   // so the commands below both SET and CLEAR depending on direction.
   ems__Effort_startTimestamp: {
     commands: ["start-effort", "rollback-to-backlog", "park-waiting"],
+    clearedBy: ["rollback-to-backlog", "park-waiting"],
     note: "start-effort sets it; the others clear it as a side effect of the status change",
   },
   ems__Effort_endTimestamp: {
     commands: ["mark-done", "re-open"],
+    clearedBy: ["re-open"],
     note: "mark-done sets it; re-open clears it as a side effect of the status change",
   },
   ems__Effort_resolutionTimestamp: {
     commands: ["mark-done", "re-open"],
+    clearedBy: ["re-open"],
     note: "mark-done sets it; re-open clears it as a side effect of the status change",
   },
   // Plan / schedule dates — dedicated commands.
@@ -147,9 +164,13 @@ export const GUARDED_ROUTES: Record<string, GuardedRoute> = {
   // Archive flag (bare `archived:` in frontmatter; `exo__Asset_archived` when
   // prefixed) — dedicated archive/un-archive commands (un-archive has a Done
   // precondition).
-  archived: { commands: ["archive", "archive-ontologically", "un-archive"] },
+  archived: {
+    commands: ["archive", "archive-ontologically", "un-archive"],
+    clearedBy: ["un-archive"],
+  },
   exo__Asset_archived: {
     commands: ["archive", "archive-ontologically", "un-archive"],
+    clearedBy: ["un-archive"],
   },
 };
 
@@ -268,6 +289,49 @@ export const IMMUTABLE_PROPERTIES: Record<string, string> = {
  * @param verb - the primitive's own verb, e.g. `set` / `remove`
  * @param command - the CLI name of that primitive, e.g. `set-property`
  */
+/**
+ * The route restricted to its CLEARING commands, or `undefined` when the
+ * property has no sanctioned removal path at all.
+ *
+ * ⛔ Returning `undefined` is NOT "not guarded" — the property stays guarded on
+ * the SET side. It means the delete-side guard has nothing to route the user
+ * to, which is the case `remove-property --force` exists for (req 148ce5a4).
+ */
+export function clearingRouteFor(property: string): GuardedRoute | undefined {
+  const route = guardedRouteFor(property);
+  if (route === undefined) return undefined;
+  const clearing = route.clearedBy ?? [];
+  if (clearing.length === 0) return undefined;
+  // ⛔ `note` is dropped on purpose: it explains the FULL route ("mark-done sets
+  // it; re-open clears it"), so carrying it into a narrowed one re-introduces
+  // exactly the setter this narrowing exists to withhold — and does it in prose,
+  // where the caller's `not.toContain` reads it as a real offer.
+  const { note: _fullRouteNote, ...rest } = route;
+  return { ...rest, commands: clearing };
+}
+
+/**
+ * The refusal for a guarded property whose route contains NO clearing command.
+ *
+ * ⛤ Deliberately does NOT list `route.commands`: every one of them SETS a
+ * value, so naming them answers a question the user did not ask and reads as
+ * "here is your path" when there is none.
+ *
+ * ⛔ Wording is constrained by {@link ErrorHandler.classifyError}, which picks
+ * the exit code by SUBSTRING — "transition"/"transaction"/"concurrent"/
+ * "modified"/"not found"/"Invalid" all reroute it. The
+ * `guard messages do not collide with the exit-code classifier` axis in
+ * `tests/unit/guardedRoutes.test.ts` locks this for the whole family.
+ */
+export function renderNoClearingPathRefusal(property: string): string {
+  return (
+    `Refusing to remove "${property}" via remove-property — it is guarded, and ` +
+    `no dedicated command clears it (the ones that own it assign a value). ` +
+    `If dropping the facet is intended, say so explicitly:  ` +
+    `--force --reason "<why>"`
+  );
+}
+
 export function renderGuardRefusal(
   verb: string,
   command: string,

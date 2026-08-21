@@ -11,8 +11,10 @@ import {
 import {
   DEFAULT_TIMEZONE,
   UPDATED_AT_KEY,
+  clearingRouteFor,
   guardedRouteFor,
   renderGuardedRouteResolved,
+  renderNoClearingPathRefusal,
   renderGuardRefusal,
   IMMUTABLE_PROPERTIES,
   canonicalYamlKey,
@@ -29,6 +31,8 @@ interface RemovePropertyOptions {
   frozenClock?: string;
   dryRun?: boolean;
   yes?: boolean;
+  force?: boolean;
+  reason?: string;
 }
 
 /**
@@ -130,6 +134,14 @@ export function removePropertyCommand(): Command {
       "--frozen-clock <iso>",
       "Freeze the updatedAt clock to an ISO timestamp for test/replay",
     )
+    .option(
+      "--force",
+      "Remove a guarded property that has NO clearing command (requires --reason). Refused when a clearing command exists — see req 148ce5a4.",
+    )
+    .option(
+      "--reason <text>",
+      "Why the guarded property is being dropped; recorded on stderr as the audit trail of a deliberate bypass",
+    )
     .option("--dry-run", "Preview the resulting frontmatter without writing")
     .option(
       "--yes",
@@ -190,16 +202,38 @@ export function removePropertyCommand(): Command {
         // cannot resolve is not a sanctioned path, and offering it as one is how
         // three phantoms left users with no path at all (req 72419d3c, issue #4103).
         // An empty registry fails OPEN — see renderGuardedRouteResolved.
+        // ⛤ Two cases the old guard answered identically (req 148ce5a4):
+        //   (a) a CLEARING command exists  → refuse, naming ONLY the clearers;
+        //   (b) none does                  → refuse, saying so, and offer the
+        //       audited --force path. Naming the setters here is worse than
+        //       naming nothing: they cannot remove the key, so the user is sent
+        //       down a path that does not exist and ends up stripping the key
+        //       with raw Bash — past the PreToolUse hooks and the SHACL floor.
+        // ⛔ --force does NOT override case (a): a bypass that also covers the
+        //   properties WITH a sanctioned path would not widen the guard, it
+        //   would repeal it.
         const guardedRoute = guardedRouteFor(property);
         if (guardedRoute !== undefined) {
-          const known = await new CommandNameRegistry(vaultPath).collect();
-          throw new Error(
-            renderGuardRefusal(
-              "remove",
-              "remove-property",
-              property,
-              renderGuardedRouteResolved(guardedRoute, known),
-            ),
+          const clearingRoute = clearingRouteFor(property);
+          if (clearingRoute !== undefined) {
+            const known = await new CommandNameRegistry(vaultPath).collect();
+            throw new Error(
+              renderGuardRefusal(
+                "remove",
+                "remove-property",
+                property,
+                renderGuardedRouteResolved(clearingRoute, known),
+              ),
+            );
+          }
+          const reason =
+            typeof options.reason === "string" ? options.reason.trim() : "";
+          if (options.force !== true || reason.length === 0) {
+            throw new Error(renderNoClearingPathRefusal(property));
+          }
+          // The bypass is deliberate — leave a trail that says so.
+          console.error(
+            `[guard-bypass] remove-property "${property}" on ${vaultRelative} — reason: ${reason}`,
           );
         }
 
