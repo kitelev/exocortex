@@ -52,6 +52,36 @@ function assertScalarOrScalarArray(value: unknown): void {
   );
 }
 
+/**
+ * An EMPTY value is refused fail-loud (req 501cdf2c): writing `prop: ""` creates
+ * a junk key that LOOKS like a successful clear, and a consumer branching on
+ * "does the property exist" starts seeing it as present-with-an-empty-value.
+ * Clearing has its own command (`remove-property`), which the message names.
+ *
+ * ⛔ The predicate is STRICT (`=== ""`), NOT `String(value).trim() === ""`.
+ * A whitespace-ONLY value is legitimate and live: a measurement of all three
+ * canonical vaults (34 327 files / 331 263 keys, 2026-08-23) found **0** carriers
+ * of `key: ""` but **15** of `key: " "` — `exo__PrintedLiteral_literal` (9) and
+ * `exo__DisplayNameSpec_separator` (6). `create --property k=<value>` strips the
+ * surrounding spaces, so `set-property --value ' · '` is the ONLY documented way
+ * to write them: a `trim()` predicate would make those two properties unwritable
+ * by any command. Symmetry with the property-NAME check is restored in SPIRIT
+ * (both sides are validated) but deliberately NOT in the letter of the predicate.
+ *
+ * ⛤ Wording is chosen against `classifyMessage` (ErrorHandler), which picks the
+ * process exit code by SUBSTRING — "modified" would route to
+ * CONCURRENT_MODIFICATION, "Invalid" to INVALID_ARGUMENTS. This message carries
+ * none of those, so it classifies as GENERAL_ERROR, exactly like the sibling
+ * name-check and guarded-route refusals.
+ */
+function assertNonEmptyValue(property: string, value: unknown): void {
+  if (value !== "") return;
+  throw new Error(
+    `Refusing to set "${property}" to an EMPTY value — an empty string writes a junk key (${property}: "") ` +
+      `rather than clearing the property. To delete it use:  exocortex remove-property <path> --property ${property} --vault <v>`,
+  );
+}
+
 interface SetPropertyOptions {
   vault: string;
   input?: string;
@@ -306,6 +336,17 @@ export function setPropertyCommand(): Command {
 
         // Reject a non-scalar / non-scalar-array value (fail-loud, #3795 review M1).
         assertScalarOrScalarArray(value);
+
+        // Reject an EMPTY value (req 501cdf2c). Runs HERE — with the other VALUE
+        // checks, AFTER every NAME guard — not inside `resolvePropertyAndValue`.
+        // Measured 2026-08-23 on the published CLI: `--property ems__Effort_status
+        // --value ""` currently refuses with the dedicated-command route, and that
+        // is the correct answer for a guarded property (the name is real, only the
+        // route is wrong). Validating the value earlier would hijack it into
+        // "empty value" and REGRESS a behavior the ticket records as correct.
+        // Placing it here also covers BOTH doors (`--input` and `--property/--value`)
+        // by construction, since both branches of `resolvePropertyAndValue` land here.
+        assertNonEmptyValue(rawProperty, value);
 
         // Wikilink existence validation — the CLI/Bash write path bypasses the
         // PreToolUse validate-wikilinks hook, so validate here like `create`.
