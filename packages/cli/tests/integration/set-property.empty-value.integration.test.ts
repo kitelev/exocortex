@@ -239,21 +239,41 @@ describe(`req 501cdf2c: \`set-property\` refuses an EMPTY value (junk \`prop: ""
   // a `trim()`-widened predicate; only this one reddens.
 
   it(`--value " " (whitespace-only) is NOT empty and IS written, quoted ${REQ}`, async () => {
+    // ⛤ The fixture value is a SINGLE SPACE, not " · ": all 15 live carriers
+    // measured 2026-08-23 hold exactly `" "` (exo__PrintedLiteral_literal 9,
+    // exo__DisplayNameSpec_separator 6). A " · " fixture would NOT redden a
+    // trim()-widened predicate (" · ".trim() === "·"), making this axis vacuous
+    // — the mutant proved exactly that before the value was corrected.
     const out = await run([
       "--property",
       "exo__DisplayNameSpec_separator",
       "--value",
-      " · ",
+      " ",
     ]);
 
     expect(out.exit).toContain(0);
     expect(out.exit).not.toContain(1);
 
-    // Round-trips through the real YAML reader with the spaces intact.
+    // Round-trips through the real YAML reader with the space intact.
     const fm = parseFrontmatter(out.content);
-    expect(fm.exo__DisplayNameSpec_separator).toBe(" · ");
+    expect(fm.exo__DisplayNameSpec_separator).toBe(" ");
     // Significant whitespace MUST be quoted or YAML eats it.
-    expect(out.content).toContain('exo__DisplayNameSpec_separator: " · "');
+    expect(out.content).toContain('exo__DisplayNameSpec_separator: " "');
+  });
+
+  it(`--value " · " (separator with padding) is written verbatim ${REQ}`, async () => {
+    // The other live shape of the same class: `create --property k=' · '` strips
+    // the padding, so set-property is its only writer.
+    const out = await run([
+      "--property",
+      "exo__PrintedLiteral_literal",
+      "--value",
+      " · ",
+    ]);
+
+    expect(out.exit).toContain(0);
+    const fm = parseFrontmatter(out.content);
+    expect(fm.exo__PrintedLiteral_literal).toBe(" · ");
   });
 
   // ── AXIS 5 — guard ORDER: a guarded property keeps its dedicated-command refusal ──
