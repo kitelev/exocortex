@@ -158,7 +158,7 @@ export class ButtonGroupsBuilder {
 
     // Resolve whether the asset's class is a prototype (Issue #2261)
     // This handles UUID-based instanceClass refs like [[64e14e5e-...|ztlk__FleetingNotePrototype]]
-    const classIsPrototype = this.resolveClassIsPrototype(instanceClass);
+    const classIsPrototype = await this.resolveClassIsPrototype(instanceClass);
 
     const visibilityContext: CommandVisibilityContext = {
       instanceClass,
@@ -210,9 +210,21 @@ export class ButtonGroupsBuilder {
    * Check if any of the asset's instance classes is a prototype.
    * Resolves UUID-based class references by looking up the class file's metadata.
    */
-  private resolveClassIsPrototype(instanceClass: string | string[] | null): boolean {
+  private async resolveClassIsPrototype(
+    instanceClass: string | string[] | null,
+  ): Promise<boolean> {
     if (!instanceClass) return false;
-    if (!this.app.metadataCache?.getFirstLinkpathDest) return false;
+
+    // req c3072a80: BOTH cache reads below fail on a cold metadataCache, and the
+    // fall-through yields `false` — so a prototype silently renders the ORDINARY
+    // button set. Route them through the vault adapter, which resolves a class
+    // file from the file registry (req 7d00a60b, Tier 2) and reads frontmatter
+    // with a disk fallback.
+    //
+    // Degrades to the raw cache path when no adapter is wired (test doubles),
+    // so behaviour is unchanged wherever the adapter is absent.
+    const adapter = this.plugin?.vaultAdapter;
+    if (!adapter && !this.app.metadataCache?.getFirstLinkpathDest) return false;
 
     const classes = Array.isArray(instanceClass) ? instanceClass : [instanceClass];
 
@@ -220,12 +232,24 @@ export class ButtonGroupsBuilder {
       const normalized = WikiLinkHelpers.normalize(cls);
       if (!normalized) continue;
 
-      // Try to resolve the class file
-      const classFile = this.app.metadataCache.getFirstLinkpathDest(normalized, "");
+      const classFile = adapter
+        ? adapter.getFirstLinkpathDest(normalized, "")
+        : this.app.metadataCache.getFirstLinkpathDest(normalized, "");
       if (!classFile) continue;
 
-      const classCache = this.app.metadataCache.getFileCache(classFile);
-      const classMeta = classCache?.frontmatter;
+      // `getFrontmatterWithFallback` is an optional platform capability: present
+      // on the Obsidian adapter (cache -> disk), absent on adapters that already
+      // read the filesystem and on in-memory test doubles.
+      let classMeta: Record<string, unknown> | null | undefined;
+      if (adapter) {
+        classMeta = adapter.getFrontmatterWithFallback
+          ? await adapter.getFrontmatterWithFallback(classFile as never)
+          : adapter.getFrontmatter(classFile as never);
+      } else {
+        classMeta = this.app.metadataCache.getFileCache(
+          classFile as never,
+        )?.frontmatter;
+      }
       if (!classMeta) continue;
 
       // Check if the class file has exo__Prototype in its instanceClass

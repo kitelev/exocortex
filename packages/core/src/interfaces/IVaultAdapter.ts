@@ -70,6 +70,17 @@ export interface IVaultFolderManager {
  */
 export interface IVaultFrontmatterManager {
   getFrontmatter(file: IFile): IFrontmatter | null;
+  /**
+   * Frontmatter with a disk fallback for when the platform's metadata cache is
+   * cold (a reset index, a fresh device, a large re-sync).
+   *
+   * OPTIONAL because it is a platform capability, not a universal contract: an
+   * adapter that already reads the filesystem directly (the CLI one) has no
+   * second tier to fall back to, and the 15 in-memory test adapters have no
+   * disk at all. Callers therefore feature-detect and degrade to the cached
+   * `getFrontmatter` when it is absent.
+   */
+  getFrontmatterWithFallback?(file: IFile): Promise<IFrontmatter | null>;
   updateFrontmatter(
     file: IFile,
     updater: (current: IFrontmatter) => IFrontmatter,
