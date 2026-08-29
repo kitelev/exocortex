@@ -240,10 +240,20 @@ export class NoteToRDFConverter {
    * ```
    */
   async convertNote(file: IFile): Promise<Triple[]> {
-    return this.convertNoteFromFrontmatter(
-      file,
-      this.vault.getFrontmatter(file),
-    );
+    // Tier 1 of RFC 8f93ff95 (req 7d00a60b): the asset's OWN frontmatter must not
+    // be gated on Obsidian's metadataCache. On a cold cache getFrontmatter()
+    // returns null, convertNoteFromFrontmatter short-circuits to [], and the whole
+    // vault sweep (VaultRDFIndexer) yields an EMPTY store -> no exocmd bindings
+    // match -> the dynamic inline buttons vanish. Measured live on desktop
+    // 2026-08-29 (plugin 16.235.1): 4 of 7 buttons gone until the cache warmed.
+    //
+    // Feature-detected, not required: the capability is optional on IVaultAdapter
+    // because CLI adapters already read from disk and the in-memory test doubles
+    // have no disk at all. Mirrors the same guard used in ButtonGroupsBuilder.
+    const frontmatter = this.vault.getFrontmatterWithFallback
+      ? await this.vault.getFrontmatterWithFallback(file)
+      : this.vault.getFrontmatter(file);
+    return this.convertNoteFromFrontmatter(file, frontmatter);
   }
 
   /**
