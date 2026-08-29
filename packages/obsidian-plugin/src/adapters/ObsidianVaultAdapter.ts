@@ -1,8 +1,25 @@
 import { Vault, TFile, TFolder, MetadataCache, App, parseYaml } from "obsidian";
 import { IVaultAdapter, IFile, IFolder, IFrontmatter, FrontmatterService } from "@kitelev/exocortex-core";
 
+/** A linkpath body that is exactly a uuid — the `uid-bare` wikilink form. */
+const UUID_LINKPATH =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A UID-CANON filename: the uuid is the basename (optionally with a suffix). */
+const UUID_BASENAME =
+  /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+
 export class ObsidianVaultAdapter implements IVaultAdapter {
   private fileCache: WeakMap<IFile, TFile> = new WeakMap();
+
+  /**
+   * uuid -> vault path, built from the FILE REGISTRY (see
+   * {@link resolveUuidFromRegistry}). Paths, not `IFile`s: a path is re-resolved
+   * through the registry on read, so a since-deleted file yields `null` instead
+   * of a stale object.
+   */
+  private uuidRegistry: Map<string, string> | null = null;
+  /** File count the registry was built from — its cheap invalidation key. */
+  private uuidRegistryCount = -1;
 
   constructor(
     private vault: Vault,
@@ -159,8 +176,60 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
 
   getFirstLinkpathDest(linkpath: string, sourcePath: string): IFile | null {
     const file = this.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
-    if (!file) return null;
-    return this.fromObsidianFile(file);
+    if (file) return this.fromObsidianFile(file);
+    // Tier 2 (req 7d00a60b): metadataCache is cold (reset index, fresh device,
+    // large re-sync) — fall back to the file registry so class references keep
+    // resolving and rdf:type-gated command buttons still render.
+    return this.resolveUuidFromRegistry(linkpath);
+  }
+
+  /**
+   * Resolve a `uid-bare` linkpath WITHOUT metadataCache (req 7d00a60b, Tier 2).
+   *
+   * `vault.getMarkdownFiles()` is the file REGISTRY — synchronous and separate
+   * from the metadata cache, so it is populated while Obsidian is still
+   * re-indexing. Under the UID-CANON TBox invariant a class file's basename IS
+   * its uuid, so the index is built from NAMES ALONE: no file is read, which is
+   * what makes this affordable on a phone (contrast the CLI's basename/alias
+   * index, which reads every file).
+   *
+   * Scope is deliberately the uuid form only. Measured over 40 656
+   * `exo__Instance_class` values (2026-08-29): `uid-bare` 94.2 % — the ONLY form
+   * that reaches a vault lookup; `uid+alias` 5.4 % and `label-bare` 0.4 %
+   * already resolve upstream in `NoteToRDFConverter.valueToClassURI` (layers 1-2)
+   * without touching the vault at all. Resolving them here would add cost for
+   * callers that never arrive.
+   *
+   * The alias half of `[[uuid|label]]` is stripped first, mirroring the CLI
+   * adapter's `linkpath.split("|")[0]`, so both wikilink spellings land here
+   * identically if a caller ever passes the raw form.
+   */
+  private resolveUuidFromRegistry(linkpath: string): IFile | null {
+    const head = linkpath.split("|")[0].trim();
+    if (!UUID_LINKPATH.test(head)) return null;
+
+    const files = this.vault.getMarkdownFiles();
+    // Rebuild when the file count moved. A rename that keeps the count is not
+    // covered — by then metadataCache has normally caught up and the fallback
+    // is not reached; a stale entry still fails safe, because the path is
+    // re-resolved through the registry below and yields null when it is gone.
+    if (this.uuidRegistry === null || this.uuidRegistryCount !== files.length) {
+      const index = new Map<string, string>();
+      for (const f of files) {
+        const match = UUID_BASENAME.exec(f.basename);
+        // First-write-wins on a duplicate uuid, matching the CLI adapter.
+        if (match && !index.has(match[1].toLowerCase())) {
+          index.set(match[1].toLowerCase(), f.path);
+        }
+      }
+      this.uuidRegistry = index;
+      this.uuidRegistryCount = files.length;
+    }
+
+    const path = this.uuidRegistry.get(head.toLowerCase());
+    if (path === undefined) return null;
+    const resolved = this.vault.getAbstractFileByPath(path);
+    return resolved instanceof TFile ? this.fromObsidianFile(resolved) : null;
   }
 
   async process(file: IFile, fn: (content: string) => string): Promise<string> {

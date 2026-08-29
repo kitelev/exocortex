@@ -704,6 +704,119 @@ nested:
     });
   });
 
+  // @req:7d00a60b-5ca3-457e-a160-5bf955e8c195
+  // Tier 2 — a cold metadataCache must not yield ZERO command buttons.
+  // The break it guards: cache cold -> getFirstLinkpathDest null -> the class
+  // wikilink stays a Literal -> walkClassAndPrototypeRelations drops it -> no
+  // rdf:type -> findPaletteEnabledCommands matches nothing.
+  describe("getFirstLinkpathDest — cold metadataCache (Tier 2, req 7d00a60b)", () => {
+    const CLASS_UUID = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+
+    /** A UID-CANON class file: its basename IS the uuid. */
+    function classFile(uuid: string, suffix = "") {
+      const f = Object.create(TFile.prototype);
+      Object.assign(f, {
+        path: `assetspaces/kitelev/exoas-public/ems/${uuid}${suffix}.md`,
+        basename: `${uuid}${suffix}`,
+        name: `${uuid}${suffix}.md`,
+        parent: null,
+      });
+      return f;
+    }
+
+    it("resolves a uid-bare linkpath from the file registry when the cache is cold", () => {
+      const target = classFile(CLASS_UUID);
+      mockMetadataCache.getFirstLinkpathDest.mockReturnValue(null); // cold
+      mockVault.getMarkdownFiles.mockReturnValue([target]);
+      mockVault.getAbstractFileByPath.mockReturnValue(target);
+
+      const result = adapter.getFirstLinkpathDest(CLASS_UUID, "note.md");
+
+      expect(result).not.toBeNull();
+      expect(result!.path).toBe(target.path);
+      expect(result!.basename).toBe(CLASS_UUID);
+    });
+
+    it("does NOT touch the registry when the cache resolves (already-working path untouched)", () => {
+      const cached = classFile(CLASS_UUID);
+      mockMetadataCache.getFirstLinkpathDest.mockReturnValue(cached);
+
+      const result = adapter.getFirstLinkpathDest(CLASS_UUID, "note.md");
+
+      expect(result!.path).toBe(cached.path);
+      // The whole point: a warm cache costs exactly what it cost before.
+      expect(mockVault.getMarkdownFiles).not.toHaveBeenCalled();
+    });
+
+    it("ignores a non-uuid linkpath without building the registry", () => {
+      mockMetadataCache.getFirstLinkpathDest.mockReturnValue(null);
+
+      const result = adapter.getFirstLinkpathDest("ems__Task", "note.md");
+
+      expect(result).toBeNull();
+      // Measured 2026-08-29: label-bare/uid+alias already resolve upstream in
+      // valueToClassURI, so they must not pay for an index they never read.
+      expect(mockVault.getMarkdownFiles).not.toHaveBeenCalled();
+    });
+
+    it("strips the alias half before matching (uuid|label)", () => {
+      const target = classFile(CLASS_UUID);
+      mockMetadataCache.getFirstLinkpathDest.mockReturnValue(null);
+      mockVault.getMarkdownFiles.mockReturnValue([target]);
+      mockVault.getAbstractFileByPath.mockReturnValue(target);
+
+      const result = adapter.getFirstLinkpathDest(
+        `${CLASS_UUID}|ems__Task`,
+        "note.md"
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.path).toBe(target.path);
+    });
+
+    it("matches a UID-CANON basename that carries a suffix", () => {
+      const target = classFile(CLASS_UUID, "-ems__Task");
+      mockMetadataCache.getFirstLinkpathDest.mockReturnValue(null);
+      mockVault.getMarkdownFiles.mockReturnValue([target]);
+      mockVault.getAbstractFileByPath.mockReturnValue(target);
+
+      const result = adapter.getFirstLinkpathDest(CLASS_UUID, "note.md");
+
+      expect(result!.path).toBe(target.path);
+    });
+
+    it("rebuilds the index when the file count changes", () => {
+      const first = classFile(CLASS_UUID);
+      const secondUuid = "7db5eeff-718a-49b0-8d2b-39b084a356e3";
+      const second = classFile(secondUuid);
+
+      mockMetadataCache.getFirstLinkpathDest.mockReturnValue(null);
+      mockVault.getMarkdownFiles.mockReturnValue([first]);
+      mockVault.getAbstractFileByPath.mockImplementation((p: string) =>
+        p === first.path ? first : p === second.path ? second : null
+      );
+
+      expect(adapter.getFirstLinkpathDest(secondUuid, "note.md")).toBeNull();
+
+      // A new class file lands (ExoSync pull, profile apply) — the count moves.
+      mockVault.getMarkdownFiles.mockReturnValue([first, second]);
+
+      const result = adapter.getFirstLinkpathDest(secondUuid, "note.md");
+      expect(result).not.toBeNull();
+      expect(result!.path).toBe(second.path);
+    });
+
+    it("fails safe when the indexed path no longer resolves", () => {
+      const target = classFile(CLASS_UUID);
+      mockMetadataCache.getFirstLinkpathDest.mockReturnValue(null);
+      mockVault.getMarkdownFiles.mockReturnValue([target]);
+      // The file was deleted after the index was built.
+      mockVault.getAbstractFileByPath.mockReturnValue(null);
+
+      expect(adapter.getFirstLinkpathDest(CLASS_UUID, "note.md")).toBeNull();
+    });
+  });
+
   describe("process", () => {
     it("should process file content", async () => {
       const file: IFile = {
