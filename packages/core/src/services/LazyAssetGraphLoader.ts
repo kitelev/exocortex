@@ -42,7 +42,8 @@ export interface INoteConverter {
  * 1. Call `INoteConverter.convertNote(file)` to obtain the file's
  *    triples; add them to the store.
  * 2. Inspect the loaded triples for `exo:Instance_class`,
- *    `exo:Class_superClass`, and `exo:Asset_prototype` objects.
+ *    `exo:Class_superClass`, `exo:Asset_prototype`, and
+ *    `exo:Asset_isDefinedBy` objects.
  * 3. For each IRI object referenced via those predicates, resolve it
  *    to an `IFile` via `IFileResolver.resolveByIRI`, then recursively
  *    ensure-load it.
@@ -77,10 +78,15 @@ export interface INoteConverter {
  * - **No TBox preload.** Phase 3 wires startup bootstrap of
  *   `assetspaces/{exo,ems,ims,exocmd}` by calling `ensureFileLoaded`
  *   on each ontology asset upfront.
- * - **No SPARQL-AST inspection for data-driven preconditions.** Phase 1
- *   audit (`9271ef44`) found zero data-driven preconditions in the
- *   in-scope vaults, so AST-walk-then-retry is deferred per RFC
- *   `c7da0bca` Q4 decision.
+ * - **Partial support for data-driven preconditions.** The Phase 1 audit
+ *   (`9271ef44`) reported ZERO data-driven preconditions and that premise
+ *   is now known to be WRONG: a 2026-08-29 desktop measurement found
+ *   `38ff3c61` walking `$target exo:Asset_isDefinedBy ?onto .
+ *   ?onto exo:Ontology_archiveOntology ?a` — two data hops — which kept
+ *   four command buttons hidden for the whole cold-start window.
+ *   `exo:Asset_isDefinedBy` was therefore added to the walk (step 2 above).
+ *   General AST-walk-then-retry remains deferred per RFC `c7da0bca` Q4:
+ *   this covers the ontology hop specifically, not arbitrary predicates.
  *
  * @see RFC c7da0bca, Phase 1 audit 9271ef44
  */
@@ -90,6 +96,7 @@ export class LazyAssetGraphLoader {
   private readonly instanceClassPredicate: IRI;
   private readonly superClassPredicate: IRI;
   private readonly prototypePredicate: IRI;
+  private readonly isDefinedByPredicate: IRI;
 
   constructor(
     private readonly converter: INoteConverter,
@@ -100,6 +107,7 @@ export class LazyAssetGraphLoader {
     this.instanceClassPredicate = Namespace.EXO.term("Instance_class");
     this.superClassPredicate = Namespace.EXO.term("Class_superClass");
     this.prototypePredicate = Namespace.EXO.term("Asset_prototype");
+    this.isDefinedByPredicate = Namespace.EXO.term("Asset_isDefinedBy");
   }
 
   /**
@@ -314,7 +322,30 @@ export class LazyAssetGraphLoader {
       if (
         predicateValue === this.instanceClassPredicate.value ||
         predicateValue === this.superClassPredicate.value ||
-        predicateValue === this.prototypePredicate.value
+        predicateValue === this.prototypePredicate.value ||
+        // exo:Asset_isDefinedBy — the asset's ONTOLOGY. Added 2026-08-29 after a
+        // live desktop measurement: data-driven preconditions DO exist in the
+        // production vaults, contradicting the Phase 1 audit (9271ef44) that this
+        // class's header cites as the reason to defer them.
+        //
+        // Concretely, precondition 38ff3c61 ("Source ontology declares an archive
+        // ontology") is
+        //     ASK { $target exo:Asset_isDefinedBy ?onto .
+        //           ?onto  exo:Ontology_archiveOntology ?a . }
+        // — two hops, the second one INSIDE the ontology asset. Without this
+        // predicate in the walk the ontology never enters the store on a render,
+        // so the ASK is false and the button stays hidden until the full
+        // convertVault() finishes (~25 s measured on desktop, 20-30 s on iPhone).
+        //
+        // The TBox bootstrap does not cover it either: lazyBootstrapFolders lists
+        // exo/ ems/ ems-commands/ ims/ exocmd/, and a personal ontology such as
+        // $my-efforts lives in assetspaces/<owner>/exoas-my/my-efforts/ — zero
+        // matches (measured on the live vault).
+        //
+        // Cost is bounded by the loadedIRIs cache: 8857 assets in vault-my point
+        // at only 145 distinct ontologies, so the added hop collapses to at most
+        // one extra file per ontology per session, not per asset.
+        predicateValue === this.isDefinedByPredicate.value
       ) {
         targets.push(t.object);
       }
