@@ -756,4 +756,63 @@ describe("LazyAssetGraphLoader", () => {
       expect(converter.callCounts.get("task.md")).toBe(2);
     });
   });
+
+  // @req:044a6890-414e-452f-9870-b6ed67b0bf92 — ontology hop (exo:Asset_isDefinedBy) in the lazy walk.
+  //
+  // Measured live on desktop 2026-08-29 (plugin 16.235.2): four command buttons
+  // stayed hidden for the whole cold-start window (~25 s) because precondition
+  // 38ff3c61 is `ASK { $target exo:Asset_isDefinedBy ?onto .
+  // ?onto exo:Ontology_archiveOntology ?a . }` and the ontology never reached
+  // the store — neither via this walk (the predicate was absent) nor via the
+  // TBox bootstrap (lazyBootstrapFolders lists exo/ ems/ ims/ exocmd/, while a
+  // personal ontology lives in assetspaces/<owner>/exoas-my/<ns>/ — zero match).
+  describe("ensureFileLoaded — ontology hop (isDefinedBy)", () => {
+    const isDefinedByPred = Namespace.EXO.term("Asset_isDefinedBy");
+    const archiveOntologyPred = Namespace.EXO.term("Ontology_archiveOntology");
+    const relatesPred = Namespace.EXO.term("Asset_relates");
+
+    it("walks exo:Asset_isDefinedBy so the ontology's own triples enter the store", async () => {
+      const asset = makeFile("my-efforts/asset.md");
+      const ontology = makeFile("my-efforts/ontology.md");
+      const assetIRI = pathToIRI(asset.path);
+      const ontologyIRI = pathToIRI(ontology.path);
+      const archiveIRI = pathToIRI("my-efforts/archived.md");
+
+      converter.registerFile(asset, [
+        new Triple(assetIRI, isDefinedByPred, ontologyIRI),
+      ]);
+      // The second hop of the ASK lives INSIDE the ontology asset.
+      converter.registerFile(ontology, [
+        new Triple(ontologyIRI, archiveOntologyPred, archiveIRI),
+      ]);
+      resolver.register(ontology);
+
+      await loader.ensureFileLoaded(asset);
+
+      // Proves the WIRING, not a helper: the ontology file was converted…
+      expect(converter.callCounts.get(ontology.path)).toBe(1);
+      // …and its own triple — the ASK's second hop — is queryable.
+      const hop2 = await store.match(ontologyIRI, archiveOntologyPred, undefined);
+      expect(hop2).toHaveLength(1);
+    });
+
+    it("control: a predicate outside the walk list does NOT pull its target", async () => {
+      const asset = makeFile("my-efforts/other.md");
+      const neighbour = makeFile("my-efforts/neighbour.md");
+
+      converter.registerFile(asset, [
+        new Triple(pathToIRI(asset.path), relatesPred, pathToIRI(neighbour.path)),
+      ]);
+      converter.registerFile(neighbour, []);
+      resolver.register(neighbour);
+
+      await loader.ensureFileLoaded(asset);
+
+      // The radius stays bounded — adding isDefinedBy must not turn the walk
+      // into "follow every IRI object".
+      expect(converter.callCounts.get(neighbour.path)).toBeUndefined();
+      expect(loader.loadedCount).toBe(1);
+    });
+  });
+
 });
