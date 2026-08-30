@@ -326,7 +326,7 @@ export class CommandResolver {
    *                      resolve identically.
    * @param prototypeIRI - Optional DIRECT prototype ref of the target
    *   (`exo__Asset_prototype`); expanded resolver-side into the transitive
-   *   prototype chain for `targetPrototype` matching (@req:5ad0d6b4)
+   *   prototype chain for `targetPrototype` matching (@req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec)
    * @returns Resolved commands sorted by `(priority, depth, order)`; deduped by
    *          binding.id; overridden bindings removed
    */
@@ -348,7 +348,7 @@ export class CommandResolver {
     if (cached) return cached;
 
     // 0. Expand the direct prototype ref into its transitive prototype chain
-    //    ONCE for the whole per-class loop (@req:5ad0d6b4).
+    //    ONCE for the whole per-class loop (@req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec).
     const prototypeChain = prototypeIRI
       ? await this.expandPrototypeChain(prototypeIRI)
       : undefined;
@@ -1280,7 +1280,7 @@ export class CommandResolver {
     }
 
     // targetPrototype: match ANY ancestor in the target's prototype chain
-    // (chain[0] = the direct prototype — @req:5ad0d6b4).
+    // (chain[0] = the direct prototype — @req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec).
     if (binding.targetPrototype && prototypeChain) {
       for (const prototypeRef of prototypeChain) {
         if (this.matchesReference(binding.targetPrototype, prototypeRef))
@@ -2976,7 +2976,7 @@ export class CommandResolver {
     // the SubstitutionToken check — which cannot catch it either, because an
     // invocation carries no `_resolver` — and the ref is emitted as
     // `"[[<uid>]]"` where the substituted value belonged. The first door was
-    // closed by `@req:ef825945…`; without this one the corruption survives.
+    // closed by `@req:ef825945-62a8-4a9d-b5ea-5992903d3bff…`; without this one the corruption survives.
     //
     // The tie cannot be broken by the class triple: its absence IS the failure.
     // `exocmd__TokenInvocation_token` breaks it — on the pinned
@@ -3007,7 +3007,7 @@ export class CommandResolver {
     // enforce it. Checking `_token` first would therefore fire that line on an
     // invocation whose class is right there — a lie.
     // VERIFIED BY PERMUTATION, not argued: moving this block above the class
-    // loop reddens exactly one axis, `@req:81d2e07e… stays silent for a
+    // loop reddens exactly one axis, `@req:81d2e07e-413e-4e40-9159-83ccdb813561… stays silent for a
     // well-formed invocation` (1 failed / 20 passed).
     const tokenTriples = await this.tripleStore.match(
       subject,
@@ -3087,7 +3087,7 @@ export class CommandResolver {
     // carries the resolver property (16/16 on the pinned corpus), so running the
     // resolver check first would fire that line on EVERY correctly-classified
     // token — making it a lie. VERIFIED BY PERMUTATION, not argued: moving this
-    // block above the class loop reddens exactly one axis, `@req:b354316b… stays
+    // block above the class loop reddens exactly one axis, `@req:b354316b-3b26-478b-a8c0-18606da8e6ec… stays
     // silent on the happy path` (1 failed / 16 passed).
     //
     // The class triple is precisely what is missing in the failure this guards:

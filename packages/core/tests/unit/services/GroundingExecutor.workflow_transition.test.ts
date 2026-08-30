@@ -295,7 +295,7 @@ describe("GroundingExecutor.workflow_transition (RFC 36347daf Phase 2)", () => {
   // dispatch is a graceful no-op (notApplicable), and when the class DOES have a
   // workflow (per-asset override / per-class ABox) the transition works.
 
-  it("@req:7489624f graceful no-op (notApplicable) when class has no applicable workflow — no crash", async () => {
+  it("@req:7489624f-c17f-47dd-8108-3571a5809f61 graceful no-op (notApplicable) when class has no applicable workflow — no crash", async () => {
     // resolveForAssetOrNull returns null → the class (e.g. ems__Action, ems__Idea,
     // exo__Asset) has no status workflow. Must NOT surface the old fail-loud
     // "no recognised ems__* class" error.
@@ -321,7 +321,7 @@ describe("GroundingExecutor.workflow_transition (RFC 36347daf Phase 2)", () => {
     expect(workflowResolver.resolveForAssetOrNull).toHaveBeenCalledTimes(1);
   });
 
-  it("@req:7489624f data-driven transition works for a NON-built-in class with a workflow", async () => {
+  it("@req:7489624f-c17f-47dd-8108-3571a5809f61 data-driven transition works for a NON-built-in class with a workflow", async () => {
     // A class outside Task/Project/Meeting (UID-canon form) whose asset has a
     // declared workflow (e.g. via ems__Effort_workflow) resolves and transitions
     // Doing→Backlog — proving the dispatch is no longer gated by a hardcoded

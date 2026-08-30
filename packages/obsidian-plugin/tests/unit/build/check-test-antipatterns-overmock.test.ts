@@ -28,7 +28,7 @@ import { spawnSync } from "child_process";
  *
  * @req:427530e2-6365-48ae-9bfc-513180333ecd
  */
-describe("check-test-antipatterns.sh — over-mock pass-through ratchet (P2, @req:427530e2)", () => {
+describe("check-test-antipatterns.sh — over-mock pass-through ratchet (P2, @req:427530e2-6365-48ae-9bfc-513180333ecd)", () => {
   const repoRoot = path.resolve(__dirname, "../../../../..");
   const scriptPath = path.join(repoRoot, "scripts/check-test-antipatterns.sh");
 

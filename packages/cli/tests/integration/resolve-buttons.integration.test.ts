@@ -131,7 +131,7 @@ function binding(
   ]);
 }
 
-/** Binding scoped by PROTOTYPE (not class) — @req:5ad0d6b4 shape. */
+/** Binding scoped by PROTOTYPE (not class) — @req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec shape. */
 function bindingToPrototype(
   uid: string,
   commandUid: string,
