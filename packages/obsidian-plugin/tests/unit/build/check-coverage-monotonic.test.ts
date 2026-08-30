@@ -22,7 +22,7 @@ import { spawnSync } from "child_process";
  *
  * @req:289f87f4-23c8-4106-8069-0823c45167fe
  */
-describe("check-coverage-monotonic.mjs — coverage-threshold monotonicity (P5.1, @req:289f87f4)", () => {
+describe("check-coverage-monotonic.mjs — coverage-threshold monotonicity (P5.1, @req:289f87f4-23c8-4106-8069-0823c45167fe)", () => {
   const repoRoot = path.resolve(__dirname, "../../../../..");
   const scriptPath = path.join(repoRoot, "scripts/check-coverage-monotonic.mjs");
 

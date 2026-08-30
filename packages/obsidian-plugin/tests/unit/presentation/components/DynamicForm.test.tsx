@@ -82,12 +82,12 @@ describe("DynamicForm", () => {
       jest.useRealTimers();
     });
 
-    it("@req:57b03ab3 resolves a date field's '$today' defaultValue to today's date", () => {
+    it("@req:57b03ab3-9666-4c5a-8f38-cf650e4f48d2 resolves a date field's '$today' defaultValue to today's date", () => {
       renderForm([{ name: "plannedDate", type: "date", defaultValue: "$today" }]);
       expect(screen.getByTestId("field-plannedDate")).toHaveValue("2026-06-28");
     });
 
-    it("@req:57b03ab3 submits the resolved today date as the field value", () => {
+    it("@req:57b03ab3-9666-4c5a-8f38-cf650e4f48d2 submits the resolved today date as the field value", () => {
       const { onSubmit } = renderForm([
         { name: "label", type: "text", defaultValue: "x" },
         { name: "plannedDate", type: "date", defaultValue: "$today" },
@@ -99,7 +99,7 @@ describe("DynamicForm", () => {
       });
     });
 
-    it("@req:57b03ab3 leaves a literal date and non-'$today' text defaultValue untouched", () => {
+    it("@req:57b03ab3-9666-4c5a-8f38-cf650e4f48d2 leaves a literal date and non-'$today' text defaultValue untouched", () => {
       renderForm([
         { name: "plannedDate", type: "date", defaultValue: "2026-01-15" },
         { name: "note", type: "text", defaultValue: "$todayish" },

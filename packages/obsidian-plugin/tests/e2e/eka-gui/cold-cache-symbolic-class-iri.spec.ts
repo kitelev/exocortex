@@ -43,7 +43,7 @@ const CLASS_LABEL = "ems__E2eColdClass";
 const EXPECTED_IRI = "https://exocortex.my/ontology/ems#E2eColdClass";
 
 const STATUS_UID = "0e2e0003-57a7-4575-8575-000000000003";
-/** Tier 4 (@req:f3ec4a75): an enum VALUE resolves through the SAME
+/** Tier 4 (@req:f3ec4a75-f49c-47db-9cd6-5c8d09fbf0e0): an enum VALUE resolves through the SAME
  *  label->symbolic lookup as the class position. */
 const STATUS_LABEL = "ems__E2eColdStatus";
 const STATUS_IRI = "https://exocortex.my/ontology/ems#E2eColdStatus";
