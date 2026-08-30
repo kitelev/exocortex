@@ -60,6 +60,16 @@ const GND_UNBOUND = "3833eeee-0000-0000-0000-000000000003";
 const TARGET_CONCRETE = "3833ffff-0000-0000-0000-000000000001";
 const TARGET_PROTO = "3833ffff-0000-0000-0000-000000000002";
 
+// @req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec fixture — `exo__Asset_prototype`
+// occurs in TWO shapes in production vaults (19.5% of bearers carry the list
+// form) and a prototype-scoped binding must match under BOTH.
+const CMD_PROTOSCOPED = "5ad0bbbb-0000-0000-0000-000000000001";
+const BIND_PROTOSCOPED = "5ad0cccc-0000-0000-0000-000000000001";
+const GND_PROTOSCOPED = "5ad0eeee-0000-0000-0000-000000000001";
+const PROTO_ASSET = "5ad0ffff-0000-0000-0000-000000000001";
+const TARGET_LIST_PROTO = "5ad0ffff-0000-0000-0000-000000000002";
+const TARGET_SCALAR_PROTO = "5ad0ffff-0000-0000-0000-000000000003";
+
 const fm = (lines: string[]): string => ["---", ...lines, "---", ""].join("\n");
 
 // The shipped "not-a-prototype" leaf uses a STRENDS suffix check on the SYMBOLIC
@@ -116,6 +126,24 @@ function binding(
     `exo__Instance_class: ["[[exocmd__CommandBinding]]"]`,
     `exocmd__CommandBinding_command: "[[${commandUid}]]"`,
     `exocmd__CommandBinding_targetClass: ${targetClass}`,
+    `exocmd__CommandBinding_position: inline`,
+    `exocmd__CommandBinding_order: ${order}`,
+  ]);
+}
+
+/** Binding scoped by PROTOTYPE (not class) — @req:5ad0d6b4 shape. */
+function bindingToPrototype(
+  uid: string,
+  commandUid: string,
+  prototypeUid: string,
+  order: number,
+): string {
+  return fm([
+    `exo__Asset_uid: ${uid}`,
+    `exo__Asset_label: "binding ${uid}"`,
+    `exo__Instance_class: ["[[exocmd__CommandBinding]]"]`,
+    `exocmd__CommandBinding_command: "[[${commandUid}]]"`,
+    `exocmd__CommandBinding_targetPrototype: "[[${prototypeUid}]]"`,
     `exocmd__CommandBinding_position: inline`,
     `exocmd__CommandBinding_order: ${order}`,
   ]);
@@ -204,6 +232,54 @@ function buildVault(): string {
       `exo__Asset_uid: ${TARGET_PROTO}`,
       `exo__Asset_label: "Widget template"`,
       `exo__Instance_class: ["[[${CLASS_WIDGET_PROTO}]]"]`,
+    ]),
+  );
+
+  // --- @req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec: scalar vs list prototype ---
+  // A prototype-scoped command, its prototype asset, and TWO instances that
+  // differ ONLY in how `exo__Asset_prototype` is written. `exocortex-cli create`
+  // emits the scalar; hand-authored / list-migrated assets carry the single-item
+  // YAML list. Both must resolve the same button-set.
+  write(GND_PROTOSCOPED, grounding(GND_PROTOSCOPED, "ProtoScoped grounding"));
+  write(
+    CMD_PROTOSCOPED,
+    command(
+      CMD_PROTOSCOPED,
+      "ProtoScoped",
+      "proto-scoped",
+      GND_PROTOSCOPED,
+    ),
+  );
+  write(
+    BIND_PROTOSCOPED,
+    bindingToPrototype(BIND_PROTOSCOPED, CMD_PROTOSCOPED, PROTO_ASSET, 40),
+  );
+  write(
+    PROTO_ASSET,
+    fm([
+      `exo__Asset_uid: ${PROTO_ASSET}`,
+      `exo__Asset_label: "Widget prototype asset"`,
+      `exo__Instance_class: ["[[${CLASS_WIDGET}]]"]`,
+    ]),
+  );
+  write(
+    TARGET_SCALAR_PROTO,
+    fm([
+      `exo__Asset_uid: ${TARGET_SCALAR_PROTO}`,
+      `exo__Asset_label: "Instance (scalar prototype)"`,
+      `exo__Instance_class: ["[[${CLASS_WIDGET}]]"]`,
+      `exo__Asset_prototype: "[[${PROTO_ASSET}]]"`,
+    ]),
+  );
+  write(
+    TARGET_LIST_PROTO,
+    fm([
+      `exo__Asset_uid: ${TARGET_LIST_PROTO}`,
+      `exo__Asset_label: "Instance (list prototype)"`,
+      `exo__Instance_class: ["[[${CLASS_WIDGET}]]"]`,
+      // Single-item YAML list — the shape `cleanRef` used to reject.
+      `exo__Asset_prototype:`,
+      `  - "[[${PROTO_ASSET}]]"`,
     ]),
   );
 
@@ -456,6 +532,48 @@ describe("@req:960a7ba7-3470-42ba-afdc-f6766c3c3126 resolve-buttons — binding-
 // inline-button scope; the command palette is a separate path). `resolve-buttons`
 // is kept as a back-compat alias so existing scripts + the homoiconic-rule oracle
 // references (`resolve-buttons <target> --json`) keep resolving.
+/**
+ * @req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec — the `I_direct` scenario ("the
+ * bound command is present — direct-hop match") did not hold for assets whose
+ * `exo__Asset_prototype` is written as a single-item YAML list: `cleanRef`
+ * returned null for a non-string, so `prototypeIRI` was undefined and EVERY
+ * prototype-scoped binding silently failed to match.
+ *
+ * REVERT-VERIFY anchor: drop the `Array.isArray(value) ? value[0] : value`
+ * unwrap in `cleanRef` (packages/cli/src/commands/resolve-buttons.ts) → the
+ * list-form axis goes RED (`visible` loses "ProtoScoped"), while the scalar
+ * axis stays GREEN — proving the axis discriminates the SHAPE, not the binding.
+ */
+describe("@req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec prototype ref: scalar AND single-item list resolve identically", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = buildVault();
+  });
+
+  afterEach(() => {
+    if (root) fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("@req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec SCALAR prototype → prototype-scoped command visible (pre-existing behavior, control)", async () => {
+    const result = await resolveButtons(root, `${TARGET_SCALAR_PROTO}.md`);
+    expect(result.visible.map((e) => e.label)).toContain("ProtoScoped");
+  });
+
+  it("@req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec LIST prototype → SAME command visible (the shape that used to yield null)", async () => {
+    const result = await resolveButtons(root, `${TARGET_LIST_PROTO}.md`);
+    expect(result.visible.map((e) => e.label)).toContain("ProtoScoped");
+  });
+
+  it("@req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec both shapes yield the same button-set (shape is not observable downstream)", async () => {
+    const scalar = await resolveButtons(root, `${TARGET_SCALAR_PROTO}.md`);
+    const list = await resolveButtons(root, `${TARGET_LIST_PROTO}.md`);
+    expect(list.visible.map((e) => e.label).sort()).toEqual(
+      scalar.visible.map((e) => e.label).sort(),
+    );
+  });
+});
+
 describe("issue #4077 — every CLI resolver construction site passes a logger", () => {
   // ⛔ The behavioural axis above covers resolve-buttons only. `apply` constructs its
   // own resolver and would regress silently: its diagnostics have no stdout contract to

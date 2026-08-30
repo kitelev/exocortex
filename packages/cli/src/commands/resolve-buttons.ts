@@ -103,8 +103,16 @@ const UUID_RE =
  * first `|` display alias). Returns `null` for non-string / empty values.
  */
 function cleanRef(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  let cleaned = value.replace(/["'[\]]/g, "").trim();
+  // A frontmatter ref may be written as a scalar (`exo__Asset_prototype:
+  // "[[uid]]"`) OR as a single-item YAML list (`exo__Asset_prototype:\n  -
+  // "[[uid]]"`). Both forms are produced in practice — `exocortex-cli create`
+  // writes the scalar, hand-authored / list-migrated assets carry the list —
+  // so unwrap the first item before normalising. Without this the list form
+  // yields `null` and every prototype-scoped CommandBinding silently fails to
+  // match (@req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec `I_direct` scenario).
+  const scalar = Array.isArray(value) ? value[0] : value;
+  if (typeof scalar !== "string") return null;
+  let cleaned = scalar.replace(/["'[\]]/g, "").trim();
   const pipe = cleaned.indexOf("|");
   if (pipe !== -1) cleaned = cleaned.slice(0, pipe).trim();
   return cleaned.length > 0 ? cleaned : null;

@@ -22,7 +22,11 @@ export interface AssetMetadata {
 
   ems__Effort_status?: string | string[];
   ems__Effort_votes?: number;
-  exo__Asset_prototype?: string;
+  // Scalar (`exo__Asset_prototype: "[[uid]]"`, written by `exocortex-cli
+  // create`) OR single-item YAML list (hand-authored / list-migrated assets).
+  // Both shapes occur in production vaults — readers MUST unwrap the array
+  // before normalising (@req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec).
+  exo__Asset_prototype?: string | string[];
   ems__Effort_startTimestamp?: string | number;
   ems__Effort_plannedStartTimestamp?: string | number;
   ems__Effort_endTimestamp?: string | number;

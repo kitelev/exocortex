@@ -540,7 +540,11 @@ export class ExocortexAPI {
   }
 
   private extractPrototype(frontmatter: Record<string, unknown>): string | null {
-    const prototype = frontmatter.exo__Asset_prototype;
+    // Scalar OR single-item YAML list — both shapes exist in production vaults
+    // (the sibling status extractor above already unwraps arrays; this one did
+    // not, so list-form assets reported "no prototype").
+    const raw = frontmatter.exo__Asset_prototype;
+    const prototype = Array.isArray(raw) ? raw[0] : raw;
     if (!prototype || typeof prototype !== 'string') {
       return null;
     }

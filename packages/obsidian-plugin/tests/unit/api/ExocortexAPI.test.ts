@@ -205,6 +205,29 @@ describe("ExocortexAPI", () => {
 
       expect(metadata!.prototype).toBe("my-prototype");
     });
+
+    // `exo__Asset_prototype` occurs BOTH as a scalar (written by
+    // `exocortex-cli create`) and as a single-item YAML list (hand-authored /
+    // list-migrated assets — 19.5% of bearers in the live personal vault).
+    // Before the unwrap, the list form failed the `typeof !== 'string'` guard
+    // and this API reported "no prototype" for a fifth of real assets.
+    //
+    // REVERT-VERIFY anchor: drop the `Array.isArray(raw) ? raw[0] : raw`
+    // unwrap in `extractPrototype` → this axis goes RED (prototype becomes
+    // null), while the scalar axis above stays GREEN.
+    it("should read the prototype when it is a single-item LIST (same as the scalar form)", () => {
+      const mockFile = createMockTFile("test.md");
+      mockVault.getAbstractFileByPath.mockReturnValue(mockFile);
+      mockMetadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_prototype: ["[[my-prototype]]"],
+        },
+      });
+
+      const metadata = api.getAssetMetadata("test.md");
+
+      expect(metadata!.prototype).toBe("my-prototype");
+    });
   });
 
   describe("getAssetRelations", () => {
