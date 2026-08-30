@@ -214,6 +214,24 @@ export class NoteToRDFConverter {
    */
   private readonly emitInstanceClassAsUid: boolean;
 
+  /**
+   * Tier 3 of RFC 8f93ff95 (req 7d00a60b): class-file frontmatter read FROM DISK
+   * ahead of the synchronous resolver.
+   *
+   * `valueToClassURI` is synchronous, and the corpus recipe for that shape is
+   * pre-resolution rather than an async cascade (making it async would ripple
+   * through every caller). So the class files a note references are resolved here,
+   * in the async entry point, and parked in this map for the sync resolver to read.
+   *
+   * Keyed by file path. Consulted ONLY after `getFrontmatter` returns null, i.e.
+   * only while the cache is cold — once Obsidian has re-indexed, the cache wins and
+   * this map is never read, so a stale entry cannot surface.
+   */
+  private readonly preResolvedClassFm = new Map<
+    string,
+    Record<string, unknown> | null
+  >();
+
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private readonly vault: IVaultAdapter,
     @inject(DI_TOKENS.ILogger) private readonly logger: ILogger = NullLogger,
@@ -282,6 +300,11 @@ export class NoteToRDFConverter {
     if (!frontmatter) {
       return [];
     }
+
+    // Tier 3 (req 7d00a60b): warm the class-frontmatter map from disk BEFORE the
+    // synchronous class resolution below. No-op when the cache is warm or when the
+    // adapter has no disk fallback (CLI / in-memory doubles).
+    await this.preResolveClassFrontmatter(frontmatter);
 
     // RFC 1ce2a226 Phase 3a: emit exo:Asset_filename for every parsed file.
     // `file.basename` is the disk basename without `.md` extension, already
@@ -1637,6 +1660,54 @@ export class NoteToRDFConverter {
    * valueToClassURI("[[SomeNote]]")   // → Literal("[[SomeNote]]") (not a class reference)
    * ```
    */
+  /**
+   * Tier 3 of RFC 8f93ff95 (req 7d00a60b) — pre-resolve class-file frontmatter.
+   *
+   * Reuses {@link valueToClassURI}'s OWN normalisation (`removeQuotes` ->
+   * `extractWikilink`) rather than re-parsing the value, so the two cannot drift.
+   *
+   * Scope is deliberately `exo__Instance_class` only: per req 7d00a60b's non-goals,
+   * that is the reference which gates `rdf:type` and therefore the buttons; widening
+   * to other wikilink positions needs its own measurement.
+   *
+   * Cost: one adapter read per DISTINCT cold class file (classes number in the tens,
+   * assets in the thousands), and zero once the cache is warm — the `getFrontmatter`
+   * probe below short-circuits before any read.
+   */
+  private async preResolveClassFrontmatter(
+    frontmatter: Record<string, unknown>,
+  ): Promise<void> {
+    const withFallback = this.vault.getFrontmatterWithFallback;
+    if (!withFallback) {
+      return; // CLI adapter / in-memory doubles: nothing to fall back to
+    }
+
+    const raw = frontmatter["exo__Instance_class"];
+    const values = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
+
+    for (const value of values) {
+      if (typeof value !== "string") {
+        continue;
+      }
+      const cleanValue = this.removeQuotes(value);
+      const classRef = this.extractWikilink(cleanValue) || cleanValue;
+      if (!this.isUUID(classRef)) {
+        continue; // label-form / uid+alias resolve without any lookup
+      }
+      const resolvedFile = this.vault.getFirstLinkpathDest(classRef, "");
+      if (!resolvedFile || this.preResolvedClassFm.has(resolvedFile.path)) {
+        continue;
+      }
+      if (this.vault.getFrontmatter(resolvedFile)) {
+        continue; // cache is warm for this class — the resolver will use it
+      }
+      this.preResolvedClassFm.set(
+        resolvedFile.path,
+        await withFallback.call(this.vault, resolvedFile),
+      );
+    }
+  }
+
   private valueToClassURI(value: unknown): IRI | Literal {
     if (typeof value !== "string") {
       return new Literal(String(value));
@@ -1689,7 +1760,14 @@ export class NoteToRDFConverter {
             : basenameIRI;
         }
 
-        const fm = this.vault.getFrontmatter(resolvedFile);
+        // Tier 3 (req 7d00a60b): cold cache => getFrontmatter is null => the label
+        // is never seen => the code used to fall through to notePathToIRI() and emit
+        // a FILE-IRI, silently breaking every ASK precondition that compares against
+        // the SYMBOLIC form (3 of 36 on vault-my, incl. "Is Prototype").
+        const fm =
+          this.vault.getFrontmatter(resolvedFile) ??
+          this.preResolvedClassFm.get(resolvedFile.path) ??
+          null;
         if (fm) {
           const label = fm["exo__Asset_label"];
           if (typeof label === "string") {
