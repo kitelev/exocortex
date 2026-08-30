@@ -659,9 +659,16 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
   private extractPrototypeIRI(
     metadata: Record<string, unknown>,
   ): string | undefined {
+    // Accept BOTH frontmatter shapes: scalar (`exo__Asset_prototype: "[[uid]]"`)
+    // and single-item YAML list (`exo__Asset_prototype:\n  - "[[uid]]"`). Both
+    // occur in production vaults; treating the list as "no prototype" made every
+    // prototype-scoped CommandBinding silently unmatched for those assets
+    // (@req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec — the resolver walks the chain,
+    // but only ever received the START of it from here).
     const raw = metadata["exo__Asset_prototype"];
-    if (typeof raw === "string") {
-      return raw.replace(/["'[\]]/g, "").trim();
+    const scalar = Array.isArray(raw) ? raw[0] : raw;
+    if (typeof scalar === "string") {
+      return scalar.replace(/["'[\]]/g, "").trim();
     }
     return undefined;
   }

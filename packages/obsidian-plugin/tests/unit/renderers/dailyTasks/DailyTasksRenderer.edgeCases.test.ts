@@ -264,4 +264,78 @@ describe("DailyTasksRenderer - edge cases and error handling", () => {
     // _prototypeClasses should be resolved from prototype's exo__Instance_class
     expect(tasks[0].metadata._prototypeClasses).toEqual(["[[ems__Task]]", "[[ems__Context]]"]);
   });
+
+  // Same as the test above, but the prototype ref is written as a single-item
+  // YAML list instead of a scalar. Both shapes occur in production vaults —
+  // `exocortex-cli create` emits the scalar, hand-authored / list-migrated
+  // assets carry the list (19.5% of bearers in the live personal vault).
+  // Before the unwrap, `resolvePrototypeClasses` failed the
+  // `typeof !== 'string'` guard and returned null, so overlap detection
+  // silently lost the prototype's classes for those tasks.
+  //
+  // REVERT-VERIFY anchor: drop the `Array.isArray(rawPrototype) ? ... : ...`
+  // unwrap in `resolvePrototypeClasses` → this axis goes RED
+  // (_prototypeClasses undefined), while the scalar axis above stays GREEN.
+  it("should resolve prototype classes when exo__Asset_prototype is a single-item LIST", async () => {
+    const mockFile = {
+      path: "test.md",
+      parent: { path: "DailyNotes" },
+      basename: "2025-10-20",
+    } as TFile;
+    const dailyNoteMetadata = {
+      exo__Instance_class: ["[[pn__DailyNote]]"],
+      pn__DailyNote_day: "[[2025-10-20]]",
+    };
+
+    const taskFile = { path: "task.md", basename: "task" } as TFile;
+    const prototypeFile = {
+      path: "fb3d12b2-9552-4866-a31e-2b5f65ea433c.md",
+      basename: "fb3d12b2-9552-4866-a31e-2b5f65ea433c",
+    } as TFile;
+
+    const taskMetadata = {
+      exo__Instance_class: ["[[ems__Task]]"],
+      ems__Effort_day: "[[2025-10-20]]",
+      ems__Effort_startTimestamp: "2025-10-20T09:00:00",
+      ems__Effort_status: "[[ems__EffortStatusDoing]]",
+      // Single-item YAML list — the shape that used to yield null.
+      exo__Asset_prototype: ["[[fb3d12b2-9552-4866-a31e-2b5f65ea433c]]"],
+    };
+
+    const prototypeMetadata = {
+      exo__Instance_class: ["[[ems__Task]]", "[[ems__Context]]"],
+    };
+
+    ctx.mockMetadataExtractor.extractMetadata.mockImplementation((file: any) => {
+      if (file.path === "test.md") return dailyNoteMetadata;
+      if (file.path === "task.md") return taskMetadata;
+      if (file.path === "fb3d12b2-9552-4866-a31e-2b5f65ea433c.md")
+        return prototypeMetadata;
+      return {};
+    });
+
+    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+      "[[pn__DailyNote]]",
+    );
+
+    ctx.mockVaultAdapter.getAllFiles.mockReturnValue([taskFile, prototypeFile]);
+
+    const mockEl = createMockElement();
+    await ctx.renderer.render(mockEl, mockFile);
+
+    expect(ctx.mockReactRenderer.render).toHaveBeenCalled();
+    // `mock.calls[0][1]` is `unknown` under the tests tsconfig; the sibling
+    // tests above carry that as baselined TS2571 debt — a new test must not
+    // add another instance (scripts/check-test-types.mjs ratchet).
+    const renderCall = ctx.mockReactRenderer.render.mock.calls[0] as unknown as [
+      unknown,
+      { props: { tasks: Array<{ metadata: Record<string, unknown> }> } },
+    ];
+    const tasks = renderCall[1].props.tasks;
+
+    expect(tasks[0].metadata._prototypeClasses).toEqual([
+      "[[ems__Task]]",
+      "[[ems__Context]]",
+    ]);
+  });
 });

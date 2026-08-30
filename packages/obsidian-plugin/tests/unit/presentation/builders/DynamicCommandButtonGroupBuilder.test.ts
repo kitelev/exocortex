@@ -293,6 +293,48 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       );
     });
 
+    // @req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec — `exo__Asset_prototype` is
+    // written BOTH as a scalar (`exocortex-cli create`) and as a single-item
+    // YAML list (hand-authored / list-migrated; 19.5% of bearers in vault-my).
+    // `extractPrototypeIRI` used to treat the list as "no prototype", so the
+    // resolver never received the START of the chain it walks — every
+    // prototype-scoped binding silently failed to match for those assets.
+    //
+    // REVERT-VERIFY anchor: drop the `Array.isArray(raw) ? raw[0] : raw` unwrap
+    // in `extractPrototypeIRI` → this axis goes RED (third argument becomes
+    // `undefined`), while the scalar axis above stays GREEN.
+    it("@req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec should pass the prototype when it is a single-item LIST (same as the scalar form)", async () => {
+      mockResolveForAssetMulti.mockResolvedValue([]);
+      const context = createContext({
+        exo__Asset_uid: "obsidian://vault/test/file.md",
+        exo__Instance_class: ["[[ems__Task]]"],
+        exo__Asset_prototype: ["proto-uid"],
+      });
+      await builder.build(context);
+
+      expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
+        "obsidian://vault/test/file.md",
+        ["ems__Task", "exo__Asset"],
+        "proto-uid",
+      );
+    });
+
+    it("@req:5ad0d6b4-2c9a-4375-bb5b-04e754861bec should strip wikilink brackets from a LIST-form prototype ref", async () => {
+      mockResolveForAssetMulti.mockResolvedValue([]);
+      const context = createContext({
+        exo__Asset_uid: "obsidian://vault/test/file.md",
+        exo__Instance_class: ["[[ems__Task]]"],
+        exo__Asset_prototype: ['"[[proto-uid]]"'],
+      });
+      await builder.build(context);
+
+      expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
+        "obsidian://vault/test/file.md",
+        ["ems__Task", "exo__Asset"],
+        "proto-uid",
+      );
+    });
+
     it("should handle array instance class — pass all classes plus universal exo__Asset (Issue #2958)", async () => {
       mockResolveForAssetMulti.mockResolvedValue([]);
       const context = createContext({

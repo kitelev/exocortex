@@ -326,7 +326,11 @@ export class DailyTasksRenderer {
     metadata: Record<string, unknown>,
     allFiles: IFile[],
   ): unknown {
-    const prototypeRef = metadata.exo__Asset_prototype;
+    // Scalar OR single-item YAML list — both shapes exist in production vaults.
+    const rawPrototype = metadata.exo__Asset_prototype;
+    const prototypeRef = Array.isArray(rawPrototype)
+      ? rawPrototype[0]
+      : rawPrototype;
     if (!prototypeRef || typeof prototypeRef !== 'string') {
       return null;
     }
