@@ -26,12 +26,14 @@ import {
   sha1Hex,
 } from "../../../../core/tests/unit/services/sync/fakeGitHub";
 import { gitBlobSha } from "@kitelev/exocortex-core";
+import { Command } from "commander";
 import {
   runQuarantineList,
   runQuarantineResolve,
   runDedupUids,
   planDedupGroup,
   normalizeForCompare,
+  registerQuarantineCommands,
 } from "../../../src/commands/exosync-quarantine";
 
 const ASSET_SPACE_CLASS_UID = "73bd00e4-ccc0-4f3f-b20d-c4388c4588fb";
@@ -140,6 +142,86 @@ describe("exosync quarantine list", () => {
       );
       expect(code).toBe(0);
       expect(lines.join("\n")).toMatch(/No open conflicts/);
+    } finally {
+      fx.cleanup();
+    }
+  });
+
+  // ── req 85630457: the hint must PARSE, not merely read well ────────────────
+  //
+  // ⛔ These axes derive the expectation from the LIVE command definition
+  //    (`registeredArguments` / `options`), never from a literal copy of the
+  //    hint. A literal expectation would pass while the command's real arity
+  //    drifts underneath it — exactly the divergence that produced #4206.
+
+  /** The real `exosync quarantine resolve` sub-command, as the CLI registers it. */
+  function liveResolveCommand(): Command {
+    const exosync = new Command("exosync");
+    registerQuarantineCommands(exosync);
+    const quarantine = exosync.commands.find((c) => c.name() === "quarantine");
+    const resolve = quarantine?.commands.find((c) => c.name() === "resolve");
+    if (resolve === undefined) {
+      throw new Error("BROKEN: sub-command `resolve` not registered");
+    }
+    return resolve;
+  }
+
+  /** Split the printed hint into its positional placeholders and its flags. */
+  function parseHint(lines: string[]): { positionals: string[]; flags: string[] } {
+    const hint = lines.find((l) => l.startsWith("Resolve with:"));
+    if (hint === undefined) {
+      throw new Error("BROKEN: hint line not printed");
+    }
+    const after = hint.split(/\s+/).slice(hint.split(/\s+/).indexOf("resolve") + 1);
+    const firstFlag = after.findIndex((t) => t.startsWith("--"));
+    const head = firstFlag === -1 ? after : after.slice(0, firstFlag);
+    return {
+      positionals: head.filter((t) => t.startsWith("<")),
+      flags: after.filter((t) => t.startsWith("--")),
+    };
+  }
+
+  async function hintLines(): Promise<string[]> {
+    const fx = await makeConflictVault({
+      base: mdAsset("uid-1", "base"),
+      local: mdAsset("uid-1", "LOCAL edit"),
+    });
+    const lines: string[] = [];
+    try {
+      await runQuarantineList({ vault: fx.vault, token: FAKE_PAT }, deps(fx.gh, lines));
+      return lines;
+    } finally {
+      fx.cleanup();
+    }
+  }
+
+  it("@req:85630457-1bda-4ea8-b0df-b3df6cf0a335 hint carries exactly the positionals `resolve` declares", async () => {
+    const { positionals } = parseHint(await hintLines());
+    // Derived from prod, not asserted as a constant: if `resolve` ever gains a
+    // second positional, this follows it instead of going stale.
+    expect(positionals).toHaveLength(liveResolveCommand().registeredArguments.length);
+  });
+
+  it("@req:85630457-1bda-4ea8-b0df-b3df6cf0a335 every flag the hint prints is declared on `resolve`", async () => {
+    const { flags } = parseHint(await hintLines());
+    const declared = liveResolveCommand().options.map((o) => o.long);
+    expect(flags.length).toBeGreaterThan(0);
+    expect(flags.filter((f) => !declared.includes(f))).toEqual([]);
+  });
+
+  it("@req:85630457-1bda-4ea8-b0df-b3df6cf0a335 the merge choice is spelled with its `--file` flag", async () => {
+    const text = (await hintLines()).join("\n");
+    expect(text).toMatch(/--take file[^\n]*--file <[^>]+>/);
+  });
+
+  it("@req:85630457-1bda-4ea8-b0df-b3df6cf0a335 prints no hint when there is nothing to resolve", async () => {
+    const same = mdAsset("uid-1", "converged");
+    const fx = await makeConflictVault({ base: mdAsset("uid-1", "old"), local: same });
+    fx.gh.commitDirect("main", { [CONFLICT]: same }, "converge");
+    const lines: string[] = [];
+    try {
+      await runQuarantineList({ vault: fx.vault, token: FAKE_PAT }, deps(fx.gh, lines));
+      expect(lines.some((l) => l.startsWith("Resolve with:"))).toBe(false);
     } finally {
       fx.cleanup();
     }

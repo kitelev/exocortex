@@ -161,9 +161,15 @@ export async function runQuarantineList(
     out(`  ${c.repoKey}  ${c.path}  [${sides}]${c.uid ? `  uid=${c.uid}` : ""}`);
   }
   out("");
+  // ⛔ The hint is COPIED VERBATIM by a user who has an open conflict, so it must
+  //    parse. `resolve` takes exactly ONE positional (the conflict path); the merged
+  //    file is the VALUE OF `--file`, never a second positional. The old wording
+  //    `--take local|remote|file <path>` read as "the third choice takes a positional"
+  //    and died with `too many arguments for 'resolve'`. Req 85630457, issue #4206.
   out(
-    "Resolve with: exosync quarantine resolve <path> --take local|remote|file <path> --vault <vault>",
+    "Resolve with: exosync quarantine resolve <path> --take local|remote|file --vault <vault> --token-from-gh",
   );
+  out("              (--take file also needs --file <merged-content-path>)");
   return 0;
 }
 
