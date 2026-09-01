@@ -172,8 +172,20 @@ describe("exosync quarantine list", () => {
    *
    * ⛔ Which flags swallow is read off the LIVE command, not guessed — otherwise
    *    the parser here would drift from the parser that actually rejects the
-   *    user's paste. Counting placeholders "up to the first flag" would MISS the
-   *    #4206 defect entirely: its stray `<path>` sat AFTER `--take`.
+   *    user's paste.
+   *
+   * ⛤ Measured, not assumed. Against the pre-fix hint the OLD parser (counting
+   *    placeholders "up to the first flag") went red on 1 of the 2 @req axes,
+   *    this one goes red on both:
+   *
+   *      old parser + pre-fix hint → 1 failed  (only "--file spelling")
+   *      this parser + pre-fix hint → 2 failed (+ "positionals `resolve` declares")
+   *
+   *    So the stray `<path>` after `--take` was HALF-covered, not uncovered — an
+   *    earlier draft of this comment claimed the old axis missed #4206 "entirely",
+   *    which the two runs above refute. The gain is the positional count itself:
+   *    without it a stray placeholder that happens to spell an existing flag's
+   *    value stays invisible.
    */
   function parseHint(
     lines: string[],
