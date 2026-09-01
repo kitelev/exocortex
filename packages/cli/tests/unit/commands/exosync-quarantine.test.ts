@@ -166,19 +166,40 @@ describe("exosync quarantine list", () => {
     return resolve;
   }
 
-  /** Split the printed hint into its positional placeholders and its flags. */
-  function parseHint(lines: string[]): { positionals: string[]; flags: string[] } {
+  /**
+   * Walk the printed hint the way Commander walks argv: a flag that DECLARES a
+   * value swallows the next token; everything else is a positional.
+   *
+   * ⛔ Which flags swallow is read off the LIVE command, not guessed — otherwise
+   *    the parser here would drift from the parser that actually rejects the
+   *    user's paste. Counting placeholders "up to the first flag" would MISS the
+   *    #4206 defect entirely: its stray `<path>` sat AFTER `--take`.
+   */
+  function parseHint(
+    lines: string[],
+    cmd: Command,
+  ): { positionals: string[]; flags: string[] } {
     const hint = lines.find((l) => l.startsWith("Resolve with:"));
     if (hint === undefined) {
       throw new Error("BROKEN: hint line not printed");
     }
-    const after = hint.split(/\s+/).slice(hint.split(/\s+/).indexOf("resolve") + 1);
-    const firstFlag = after.findIndex((t) => t.startsWith("--"));
-    const head = firstFlag === -1 ? after : after.slice(0, firstFlag);
-    return {
-      positionals: head.filter((t) => t.startsWith("<")),
-      flags: after.filter((t) => t.startsWith("--")),
-    };
+    const takesValue = new Map(
+      cmd.options.map((o) => [o.long, o.required || o.optional]),
+    );
+    const tokens = hint.split(/\s+/);
+    const after = tokens.slice(tokens.indexOf("resolve") + 1);
+    const positionals: string[] = [];
+    const flags: string[] = [];
+    for (let i = 0; i < after.length; i += 1) {
+      const token = after[i];
+      if (token.startsWith("--")) {
+        flags.push(token);
+        if (takesValue.get(token) === true) i += 1; // its value, not a positional
+        continue;
+      }
+      positionals.push(token);
+    }
+    return { positionals, flags };
   }
 
   async function hintLines(): Promise<string[]> {
@@ -196,15 +217,17 @@ describe("exosync quarantine list", () => {
   }
 
   it("@req:85630457-1bda-4ea8-b0df-b3df6cf0a335 hint carries exactly the positionals `resolve` declares", async () => {
-    const { positionals } = parseHint(await hintLines());
+    const resolveCmd = liveResolveCommand();
+    const { positionals } = parseHint(await hintLines(), resolveCmd);
     // Derived from prod, not asserted as a constant: if `resolve` ever gains a
     // second positional, this follows it instead of going stale.
-    expect(positionals).toHaveLength(liveResolveCommand().registeredArguments.length);
+    expect(positionals).toHaveLength(resolveCmd.registeredArguments.length);
   });
 
   it("@req:85630457-1bda-4ea8-b0df-b3df6cf0a335 every flag the hint prints is declared on `resolve`", async () => {
-    const { flags } = parseHint(await hintLines());
-    const declared = liveResolveCommand().options.map((o) => o.long);
+    const resolveCmd = liveResolveCommand();
+    const { flags } = parseHint(await hintLines(), resolveCmd);
+    const declared = resolveCmd.options.map((o) => o.long);
     expect(flags.length).toBeGreaterThan(0);
     expect(flags.filter((f) => !declared.includes(f))).toEqual([]);
   });
