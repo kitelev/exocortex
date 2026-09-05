@@ -65,6 +65,18 @@ When fixing a bug, still run the directly-affected suite locally for a fast loop
 npm test -- packages/core/tests/integration/<affected-suite>.test.ts
 ```
 
+⛔ **Pass the path positionally — `--testPathPatterns` silently does NOT filter.** With that flag
+jest runs the **whole** set (~390 suites, ~90s) while the invocation still looks filtered, so
+failures from suites your diff never touched read as consequences of your change. Tell: the run
+takes minutes instead of seconds, and the output names suites you did not open. When invoking jest
+directly — e.g. from a worktree whose `node_modules` lives in the sibling checkout — keep the path
+as a bare argument:
+
+```bash
+node --experimental-vm-modules ../../exocortex/node_modules/jest/bin/jest.js \
+  --config packages/core/jest.config.js packages/core/tests/unit/<path>.test.ts
+```
+
 **Reference (historical, allowlist era):** PR #3189 — `create-instance-grounding.test.ts` was silently red on `main` (12/12 fail, missing parent.md fixture) because the allowlist never included it. That failure mode is now closed by the full-config gate; the lesson (coverage gates measure file/line %, not "did this suite pass") remains why the allowlist was dropped.
 
 ## TypeScript Tooling
