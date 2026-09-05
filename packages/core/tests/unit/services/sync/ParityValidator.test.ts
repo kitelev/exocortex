@@ -18,6 +18,8 @@ import {
   type SyncRepoSpec,
   type YamlCodec,
 } from "../../../../src";
+import { EMPTY_TREE_SHA } from "../../../../src/services/sync/githubRepoReader";
+import type { RestCommitTransport } from "../../../../src/infrastructure/github/restCommit";
 import {
   FakeGitHubRepo,
   FakeLocalFiles,
@@ -736,5 +738,73 @@ describe("ParityValidator — file-mode repos (attachment sub-check)", () => {
       { path: "img/logo.png", cls: "pending-conflict" },
     ]);
     expect(diverged.repos[0].discrepancies[0].detail).toMatch(/binary/);
+  });
+});
+
+/**
+ * Issue #4184 — a repo whose branch head references the canonical git empty
+ * tree is healthy but unpopulated. GitHub answers 404 for that tree SHA, so
+ * parity used to report `error` and name two false causes (dead pointer, PAT
+ * allowlist). Worse, discrepancy counting is gated on `status === "checked"`,
+ * so local files stayed invisible — parity went quiet exactly when it should
+ * have proposed a first push.
+ */
+describe("ParityValidator — empty remote tree (@req:029c90ee-e10b-4398-909e-c2784fed7ac9)", () => {
+  /**
+   * Rewrites only the commit lookup so the head references the canonical empty
+   * tree. The 404 that follows is produced by the fake's real tree route (it
+   * holds no such tree) — exactly what GitHub returns for that SHA.
+   */
+  function withEmptyRemoteTree(
+    inner: RestCommitTransport,
+  ): RestCommitTransport {
+    return async (req) => {
+      const resp = await inner(req);
+      if (/\/git\/commits\//.test(req.url)) {
+        const json = (resp.json ?? {}) as Record<string, unknown>;
+        return { ...resp, json: { ...json, tree: { sha: EMPTY_TREE_SHA } } };
+      }
+      return resp;
+    };
+  }
+
+  function validatorOver(h: Harness): ParityValidator {
+    return new ParityValidator({
+      transport: withEmptyRemoteTree(h.gh.transport()),
+      sha1: sha1Hex,
+      localFilesFor: () => h.local,
+      watermarks: h.watermarks,
+      yaml: codec,
+      now: () => "2026-06-11T00:00:00.000Z",
+    });
+  }
+
+  it("B1: reports checked (not error) and counts the local asset as a pending add", async () => {
+    const h = makeHarness({});
+    await bootstrap(h);
+    h.local.files.set(FILE_A, mdAsset("u1"));
+
+    const round = await validatorOver(h).runRound([h.spec], {
+      trigger: "standalone",
+    });
+
+    expect(round.repos[0].status).toBe("checked");
+    expect(round.repos[0].warnings.join(" ")).not.toMatch(/fine-grained PAT/);
+    expect(round.repos[0].discrepancies).toMatchObject([
+      { path: FILE_A, cls: "pending-local-add" },
+    ]);
+  });
+
+  it("B2: an empty repo with no local files is clean, not an error", async () => {
+    const h = makeHarness({});
+    await bootstrap(h);
+
+    const round = await validatorOver(h).runRound([h.spec], {
+      trigger: "standalone",
+    });
+
+    expect(round.repos[0].status).toBe("checked");
+    expect(round.repos[0].discrepancies).toEqual([]);
+    expect(round.ok).toBe(true);
   });
 });
