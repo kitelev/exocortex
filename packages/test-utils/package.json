@@ -17,7 +17,7 @@
   "author": "A. Kitelev",
   "license": "MIT",
   "devDependencies": {
-    "js-yaml": "^5.3.0",
+    "js-yaml": "^5.4.1",
     "@types/jest": "^30.0.0",
     "jest": "^30.4.2",
     "ts-jest": "^29.4.12",
