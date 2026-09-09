@@ -186,17 +186,44 @@ function wikilinkTarget(ref: unknown): string | null {
  * (isDefinedBy already failed to resolve a folder), so the cost is bounded to
  * the rare bang-anchor RFC/aiKnow create.
  */
-export async function resolveNeighbourFolderByClass(
+export interface ClassNeighbourScan {
+  /**
+   * Folders holding siblings of the class that ALSO share the new asset's
+   * isDefinedBy anchor — the population priority-2 places by.
+   */
+  sameAnchor: Map<string, number>;
+  /**
+   * Folders holding siblings of the class under ANY anchor. Superset of
+   * {@link sameAnchor}; used ONLY for the fail-open diagnostic (a class whose
+   * instances demonstrably live somewhere, while THIS create lands in the
+   * inbox default, means the placement was decided by the absence of an
+   * anchor — not by the class having no home).
+   */
+  anyAnchor: Map<string, number>;
+}
+
+/**
+ * One full-vault frontmatter scan producing BOTH sibling populations
+ * (issue 3f8b640f). Split out of {@link resolveNeighbourFolderByClass} so the
+ * fail-open diagnostic is DERIVED from the same scan that decides placement
+ * rather than authored next to it — no second scan, no drift between the
+ * numbers printed and the numbers the decision used.
+ */
+export async function scanClassNeighbours(
   fsAdapter: NodeFsAdapter,
   classUid: string,
   classLabel: string,
   isDefinedBy: unknown,
-): Promise<string | null> {
+): Promise<ClassNeighbourScan> {
+  const empty: ClassNeighbourScan = {
+    sameAnchor: new Map(),
+    anyAnchor: new Map(),
+  };
   const targets = new Set<string>();
   if (classUid) targets.add(classUid);
   if (classLabel) targets.add(classLabel);
   if (targets.size === 0) {
-    return null;
+    return empty;
   }
   // The new asset's audience anchor (`!kitelev` / `!aiKnow` / an unresolvable
   // uid, or null for empty). Only siblings sharing this exact anchor count.
@@ -204,16 +231,13 @@ export async function resolveNeighbourFolderByClass(
 
   const allFiles = await fsAdapter.getMarkdownFiles();
   const folderCounts = new Map<string, number>();
+  const anyAnchorCounts = new Map<string, number>();
 
   for (const file of allFiles) {
     let metadata: Record<string, unknown>;
     try {
       metadata = await fsAdapter.getFileMetadata(file);
     } catch {
-      continue;
-    }
-    // 2. same isDefinedBy anchor as the new asset.
-    if (wikilinkTarget(metadata["exo__Asset_isDefinedBy"]) !== newAnchor) {
       continue;
     }
     // 1. class matches (any wikilink form, list-aware).
@@ -228,9 +252,24 @@ export async function resolveNeighbourFolderByClass(
     }
     const dir = path.dirname(file);
     const folder = dir === "." ? "" : dir;
+    anyAnchorCounts.set(folder, (anyAnchorCounts.get(folder) ?? 0) + 1);
+    // 2. same isDefinedBy anchor as the new asset.
+    if (wikilinkTarget(metadata["exo__Asset_isDefinedBy"]) !== newAnchor) {
+      continue;
+    }
     folderCounts.set(folder, (folderCounts.get(folder) ?? 0) + 1);
   }
 
+  return { sameAnchor: folderCounts, anyAnchor: anyAnchorCounts };
+}
+
+/**
+ * Canonical home = the folder with the most siblings; ties resolve
+ * lexicographically (deterministic). Returns null for an empty population.
+ */
+export function pickCanonicalHome(
+  folderCounts: Map<string, number>,
+): string | null {
   if (folderCounts.size === 0) {
     return null;
   }
@@ -249,4 +288,24 @@ export async function resolveNeighbourFolderByClass(
     }
   }
   return best;
+}
+
+/**
+ * Thin wrapper preserving the pre-3f8b640f contract (folder | null) for the
+ * placement decision. Kept exported so the call-site reads unchanged in
+ * intent; the scan it delegates to also feeds the fail-open diagnostic.
+ */
+export async function resolveNeighbourFolderByClass(
+  fsAdapter: NodeFsAdapter,
+  classUid: string,
+  classLabel: string,
+  isDefinedBy: unknown,
+): Promise<string | null> {
+  const { sameAnchor } = await scanClassNeighbours(
+    fsAdapter,
+    classUid,
+    classLabel,
+    isDefinedBy,
+  );
+  return pickCanonicalHome(sameAnchor);
 }
