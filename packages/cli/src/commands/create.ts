@@ -522,11 +522,22 @@ export function createCommand(): Command {
                 .join(", ");
               const more =
                 homes.length > 3 ? `, +${homes.length - 3} more` : "";
-              const anchorState = isDefinedBy
-                ? `exo__Asset_isDefinedBy=${String(isDefinedBy)} resolved no folder and no sibling shares that anchor`
-                : "exo__Asset_isDefinedBy is absent";
+              // `absent` and `empty` are distinguished on purpose: an
+              // `--property exo__Asset_isDefinedBy=` writes the key with an
+              // empty value, so "is absent" would be a false statement about
+              // the asset that is being created.
+              const anchorState =
+                isDefinedBy === undefined || isDefinedBy === null
+                  ? "exo__Asset_isDefinedBy is absent"
+                  : String(isDefinedBy).length === 0
+                    ? "exo__Asset_isDefinedBy is empty"
+                    : `exo__Asset_isDefinedBy=${String(isDefinedBy)} resolved no folder and no sibling shares that anchor`;
+              // "would land" rather than "lands": the write happens ~150 lines
+              // below and `--validate` can still refuse it, while `--dry-run`
+              // never writes at all — the placement is decided here, the file
+              // is not.
               process.stderr.write(
-                `⚠ co-location fail-open: this asset lands in \`${DEFAULT_INBOX_FOLDER}/\` — ${anchorState}.\n` +
+                `⚠ co-location fail-open: this asset would land in \`${DEFAULT_INBOX_FOLDER}/\` — ${anchorState}.\n` +
                   `  Existing homes of class ${options.class}: ${shown}${more}.\n` +
                   `  Set exo__Asset_isDefinedBy to the anchor used by the intended home ` +
                   `(a \`!\`-prefixed anchor needs --skip-wikilink-validation).\n`,

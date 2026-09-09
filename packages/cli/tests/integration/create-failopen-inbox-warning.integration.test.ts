@@ -269,4 +269,50 @@ describe("Ticket 3f8b640f: `cli create` fail-open into `01 Inbox/` is audible", 
     expect(result.path).toBe(`${INBOX}/${result.uuid}.md`);
     expect(stderr).not.toContain("co-location fail-open");
   });
+
+  it("@req:ec3e7b15-766f-4323-8c58-da7d34fb5fd9 W6 (boundary): the class's only home is the VAULT ROOT → not a home, stay SILENT", async () => {
+    // The emission filter drops "" (vault root) alongside the inbox default:
+    // a sibling lying loose at the root is not evidence of a canonical home,
+    // so pointing at it would be advice to move the asset nowhere. W5 locks
+    // the inbox half of that filter; without this axis the root half is
+    // unguarded (deleting `folder !== ""` reddens nothing).
+    writeSibling(
+      vault,
+      ".",
+      "6666aaaa-0000-0000-0000-000000000001",
+      CLASS_UID,
+      "[[!kitelev]]",
+    );
+
+    const { result, stderr } = await runCreate(CLASS_UID, []);
+
+    expect(result.path).toBe(`${INBOX}/${result.uuid}.md`);
+    expect(stderr).not.toContain("co-location fail-open");
+  });
+
+  it("@req:ec3e7b15-766f-4323-8c58-da7d34fb5fd9 W7 (subject, anchor present): isDefinedBy resolves no folder and no sibling shares it → warns, naming the ANCHOR that failed", async () => {
+    // The other arm of the anchor-state wording: priority-1 finds no ontology
+    // file for `[[!someoneelse]]` and priority-2 finds no sibling under that
+    // anchor, so the asset fail-opens even though isDefinedBy IS set. Without
+    // this axis the branch ships unlocked and a rewrite of the string (or an
+    // inversion of the ternary) would be silent.
+    writeSibling(
+      vault,
+      SIBLING_DIR,
+      "7777aaaa-0000-0000-0000-000000000001",
+      CLASS_UID,
+      "[[!kitelev]]",
+    );
+
+    const { result, stderr } = await runCreate(CLASS_UID, [
+      "--property",
+      "exo__Asset_isDefinedBy=[[!someoneelse]]",
+    ]);
+
+    expect(result.path).toBe(`${INBOX}/${result.uuid}.md`);
+    expect(stderr).toContain("co-location fail-open");
+    expect(stderr).toContain("exo__Asset_isDefinedBy=[[!someoneelse]]");
+    expect(stderr).toContain("no sibling shares that anchor");
+    expect(stderr).toContain(`${SIBLING_DIR} (1)`);
+  });
 });
