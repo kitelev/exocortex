@@ -25,7 +25,8 @@ import {
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
 import {
   resolveCoLocationFolder,
-  resolveNeighbourFolderByClass,
+  scanClassNeighbours,
+  pickCanonicalHome,
 } from "../executors/folderRepairHelpers.js";
 
 /**
@@ -485,14 +486,63 @@ export function createCommand(): Command {
         // (alongside the resolved classUid) against each instance's
         // `exo__Instance_class` wikilink target in any of its forms.
         if (folderPath === DEFAULT_INBOX_FOLDER) {
-          const neighbourFolder = await resolveNeighbourFolderByClass(
+          const scan = await scanClassNeighbours(
             fsAdapter,
             classUid,
             options.class,
             isDefinedBy,
           );
+          const neighbourFolder = pickCanonicalHome(scan.sameAnchor);
           if (neighbourFolder) {
             folderPath = neighbourFolder;
+          } else {
+            // Fail-open diagnostic (issue 3f8b640f, @req:ec3e7b15-766f-4323-8c58-da7d34fb5fd9):
+            // BOTH priorities declined, so the asset lands in `01 Inbox/` — a
+            // folder that need not even exist and that `audit co-location`
+            // skips by design (an empty isDefinedBy is a documented skip
+            // reason). rc stays 0 and the JSON stays a single stdout document;
+            // the only thing that changes is that the divergence stops being
+            // silent.
+            //
+            // The warning is emitted ONLY when the class demonstrably HAS a
+            // home elsewhere (`anyAnchor` holds a folder other than the inbox
+            // default / vault root). A class with no instances yet, or one
+            // whose instances legitimately live in the inbox, stays silent —
+            // the condition is derived from the same scan that made the
+            // placement decision, not authored beside it.
+            const homes = Array.from(scan.anyAnchor.entries())
+              .filter(
+                ([folder]) => folder !== "" && folder !== DEFAULT_INBOX_FOLDER,
+              )
+              .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+            if (homes.length > 0) {
+              const shown = homes
+                .slice(0, 3)
+                .map(([folder, count]) => `${folder} (${count})`)
+                .join(", ");
+              const more =
+                homes.length > 3 ? `, +${homes.length - 3} more` : "";
+              // `absent` and `empty` are distinguished on purpose: an
+              // `--property exo__Asset_isDefinedBy=` writes the key with an
+              // empty value, so "is absent" would be a false statement about
+              // the asset that is being created.
+              const anchorState =
+                isDefinedBy === undefined || isDefinedBy === null
+                  ? "exo__Asset_isDefinedBy is absent"
+                  : String(isDefinedBy).length === 0
+                    ? "exo__Asset_isDefinedBy is empty"
+                    : `exo__Asset_isDefinedBy=${String(isDefinedBy)} resolved no folder and no sibling shares that anchor`;
+              // "would land" rather than "lands": the write happens ~150 lines
+              // below and `--validate` can still refuse it, while `--dry-run`
+              // never writes at all — the placement is decided here, the file
+              // is not.
+              process.stderr.write(
+                `⚠ co-location fail-open: this asset would land in \`${DEFAULT_INBOX_FOLDER}/\` — ${anchorState}.\n` +
+                  `  Existing homes of class ${options.class}: ${shown}${more}.\n` +
+                  `  Set exo__Asset_isDefinedBy to the anchor used by the intended home ` +
+                  `(a \`!\`-prefixed anchor needs --skip-wikilink-validation).\n`,
+              );
+            }
           }
         }
 
