@@ -69,8 +69,8 @@ async function seedStatement(
 
 // Paths chosen so the AssetSpace segment is parseable for the provenance assert.
 const A_PATH = "assetspaces/kitelev/exoas-my/my/aaaaaaaa-0000-0000-0000-000000000001.md";
-const B_PATH = "assetspaces/kitelev/exoas-public/concept/bbbbbbbb-0000-0000-0000-000000000002.md";
-const C_PATH = "assetspaces/kitelev/exoas-public/concept/cccccccc-0000-0000-0000-000000000003.md";
+const B_PATH = "assetspaces/kitelev/exoas-concept/concept/bbbbbbbb-0000-0000-0000-000000000002.md";
+const C_PATH = "assetspaces/kitelev/exoas-concept/concept/cccccccc-0000-0000-0000-000000000003.md";
 const S1_PATH = "assetspaces/kitelev/exoas-class-relations/class-relations/11111111-0000-0000-0000-000000000011.md";
 const S2_PATH = "assetspaces/kitelev/exoas-shared-private/relations/22222222-0000-0000-0000-000000000022.md";
 

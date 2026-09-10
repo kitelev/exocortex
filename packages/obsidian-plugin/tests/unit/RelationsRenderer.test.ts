@@ -1429,7 +1429,7 @@ describe("RelationsRenderer", () => {
     const A_PATH =
       "assetspaces/kitelev/exoas-my/my/aaaaaaaa-0000-0000-0000-000000000001.md";
     const B_PATH =
-      "assetspaces/kitelev/exoas-public/concept/bbbbbbbb-0000-0000-0000-000000000002.md";
+      "assetspaces/kitelev/exoas-concept/concept/bbbbbbbb-0000-0000-0000-000000000002.md";
     const S1_PATH =
       "assetspaces/kitelev/exoas-class-relations/class-relations/11111111-0000-0000-0000-000000000011.md";
 
@@ -1695,7 +1695,7 @@ describe("RelationsRenderer", () => {
       "assetspaces/kitelev/exoas-my/my/aaaaaaaa-0000-0000-0000-000000000001.md";
     const A_UID = "aaaaaaaa-0000-0000-0000-000000000001";
     const B_PATH =
-      "assetspaces/kitelev/exoas-public/concept/bbbbbbbb-0000-0000-0000-000000000002.md";
+      "assetspaces/kitelev/exoas-concept/concept/bbbbbbbb-0000-0000-0000-000000000002.md";
     const B_UID = "bbbbbbbb-0000-0000-0000-000000000002";
     const X_PATH =
       "assetspaces/kitelev/exoas-my/my/xxxxxxxx-0000-0000-0000-000000000009.md";
