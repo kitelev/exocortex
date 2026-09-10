@@ -145,7 +145,7 @@ describe("ExocortexPlugin.filterTBoxFiles (RFC c7da0bca Phase 5)", () => {
       ).toEqual([]);
     });
 
-    it("EKA glob is scope-tight: does NOT pull leaf-ABox or unrelated exoas-public framework namespaces", () => {
+    it("EKA glob is scope-tight: does NOT pull leaf-ABox or unrelated framework namespaces", () => {
       const files = [
         // wanted (TBox namespaces)
         { path: "assetspaces/kitelev/exoas-public/ems/Area.md" },
@@ -154,9 +154,11 @@ describe("ExocortexPlugin.filterTBoxFiles (RFC c7da0bca Phase 5)", () => {
         { path: "assetspaces/kitelev/exoas-my/pn/2026-06-18.md" },
         { path: "assetspaces/kitelev/exoas-my/ztlk/note.md" },
         { path: "assetspaces/kitelev/exoas-tbank/og/secret.md" },
-        // NOT wanted: exoas-public framework namespaces unrelated to ems create-buttons
-        { path: "assetspaces/kitelev/exoas-public/concept/c.md" },
-        { path: "assetspaces/kitelev/exoas-public/person/p.md" },
+        // NOT wanted: framework namespaces unrelated to ems create-buttons.
+        // Post-EKA these live in their OWN assetspaces (`exoas-<ns>/<ns>/`);
+        // `ui` still sits in exoas-public — the glob must skip all three alike.
+        { path: "assetspaces/kitelev/exoas-concept/concept/c.md" },
+        { path: "assetspaces/kitelev/exoas-person/person/p.md" },
         { path: "assetspaces/kitelev/exoas-public/ui/layout.md" },
       ];
       const result = ExocortexPlugin.filterTBoxFiles(files, [
