@@ -338,7 +338,7 @@ describe("audit assetspace-depends — command action (exit code + text output)"
   let registry: string;
   let logSpy: ReturnType<typeof jest.spyOn>;
   let errSpy: ReturnType<typeof jest.spyOn>;
-  let prevExit: number | string | undefined;
+  let prevExit: typeof process.exitCode;
 
   beforeEach(() => {
     vault = join(
