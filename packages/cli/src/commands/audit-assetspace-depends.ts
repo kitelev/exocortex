@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { existsSync, statSync } from "fs";
+import { existsSync, readFileSync, statSync } from "fs";
 import { resolve } from "path";
 import {
   extractAssetReference,
@@ -19,7 +19,11 @@ import {
   isTemplatesPath,
 } from "../utils/vaultPathFilters.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
-import { VaultNotFoundError } from "../utils/errors/index.js";
+import {
+  FileNotFoundError,
+  InvalidArgumentsError,
+  VaultNotFoundError,
+} from "../utils/errors/index.js";
 
 /**
  * `exocortex audit assetspace-depends` — the AssetSpace dependency-declaration
@@ -62,6 +66,19 @@ import { VaultNotFoundError } from "../utils/errors/index.js";
  * edges whose source is self are judged, and a definition-tier reference from
  * self that resolves to NO asset in the (merged) vault counts as uncovered —
  * in the merged vault "target absent" ⟺ "not in the resolved closure".
+ * ⛤ That equivalence holds only when the merged vault is COMPLETE. When a
+ * declared dependency could not be materialised (private repo, no usable
+ * token — ticket fe1d3ef3, req 8d432214) the CI step names it via
+ * `--missing-dep <owner/repo>` / `--missing-deps-file <path>`; if at least one
+ * named dep lies in closure(self) \ {self}, the verdict DEGRADES explicitly:
+ * unresolved refs are EXCUSED into their own counter (never uncovered), the
+ * first line reads `OK (DEGRADED: declared deps absent from merged vault: …)`
+ * and the blind spot is printed — an excused ref MAY point into an undeclared
+ * absent AssetSpace, the verb cannot tell, so coverage is NOT proven for it.
+ * Refs that resolve to a PRESENT AssetSpace outside the closure, and
+ * ambiguous-uncovered refs, are never excused. `--strict-unresolved` restores
+ * the strict count; a named dep outside the closure excuses nothing (listed);
+ * without `--self` the inputs are refused (unresolved is fail-open there).
  * ⛔ Known N2 limitation, named here as the frame requires: a per-repo run
  * fires on the AssetSpace repo's push, so it cannot observe a declaration
  * being DELETED from the registry — that is the N1/N3 side.
@@ -211,9 +228,36 @@ export interface AssetSpaceDependsResult {
   };
   unresolved: {
     count: number;
-    /** true in `--self` mode: an absent target is an uncovered edge. */
+    /**
+     * true in `--self` mode WITHOUT active degradation: an absent target is an
+     * uncovered edge. false in vault mode (fail-open) and while degraded.
+     */
     countedAsUncovered: boolean;
+    /** Unresolved refs excused by active degradation (= count while active, else 0). */
+    excusedWhileDepsMissing: number;
     refs: UnresolvedRef[];
+  };
+  /**
+   * Explicit degradation (req 8d432214): the merged vault is known to be
+   * INCOMPLETE because a declared `dependsOn` target of self was not
+   * materialised. `active` ⟺ `--self` AND NOT `--strict-unresolved` AND at
+   * least one named missing dep ∈ closure(self) \ {self}. While active,
+   * unresolved refs are excused (`unresolvedExcused`) instead of counted —
+   * a blind spot, printed as such: an excused ref may point into an
+   * UNDECLARED absent AssetSpace, which the verb cannot distinguish.
+   */
+  degraded: {
+    active: boolean;
+    /** `--strict-unresolved` was passed: missing deps are recorded but excuse nothing. */
+    strict: boolean;
+    /** Normalised owner/repo of every named missing dep (self dropped, deduped, sorted). */
+    missingDeps: string[];
+    /** Named missing deps INSIDE closure(self) \ {self} — the ones that justify degradation. */
+    missingDepsInClosure: string[];
+    /** Named missing deps OUTSIDE closure(self) — listed, excuse nothing. */
+    missingDepsOutsideClosure: string[];
+    /** = unresolved.excusedWhileDepsMissing; coverage is NOT proven for these. */
+    unresolvedExcused: number;
   };
   /**
    * References with ≥2 distinct-UID candidates — never guessed. Covered ⟺ every
@@ -278,6 +322,16 @@ export interface ScanAssetSpaceDependsOptions {
   registry?: string;
   /** Per-repo mode: judge only fact edges whose source is this owner/repo. */
   self?: string;
+  /**
+   * Declared `dependsOn` targets that could NOT be materialised into the vault
+   * (any form {@link ownerRepoSlug} accepts: `owner/repo`, clone URL, `.git`,
+   * any case — the SAME normalisation as `self`, so a dep is never "outside
+   * the closure" by spelling alone). Only meaningful with `self`; refused
+   * otherwise (req 8d432214 scenario g).
+   */
+  missingDeps?: string[];
+  /** Count unresolved refs as uncovered even when missing deps are named. */
+  strictUnresolved?: boolean;
 }
 
 /** Resolution index over the vault (UID · exact path · label/alias · basename). */
@@ -570,6 +624,35 @@ export async function scanAssetSpaceDepends(
     return c;
   };
 
+  // ---- Declared-but-absent deps (explicit degradation, req 8d432214) ----
+  const rawMissing = options.missingDeps ?? [];
+  if (rawMissing.length > 0 && selfSlug === null) {
+    throw new InvalidArgumentsError(
+      "--missing-dep / --missing-deps-file require --self: in vault mode unresolved refs are already fail-open, so the inputs would be a silent no-op",
+      "Pass --self <owner/repo> (the per-repo CI mode) together with the missing deps",
+    );
+  }
+  // Same key derivation as `self` (ownerRepoSlug): URL / .git / case collapse
+  // to one owner/repo, so membership in the closure is decided by identity,
+  // never by spelling. Self itself is dropped — it is always present (or the
+  // run is BROKEN below), so it can never justify degradation.
+  const missingDeps = [
+    ...new Set(
+      rawMissing
+        .map((m) => ownerRepoSlug(m) ?? m.trim().toLowerCase())
+        .filter((m) => m.length > 0 && m !== selfSlug),
+    ),
+  ].sort();
+  const selfClosure =
+    selfSlug !== null ? closureOf(selfSlug) : new Set<string>();
+  const missingDepsInClosure = missingDeps.filter((m) => selfClosure.has(m));
+  const missingDepsOutsideClosure = missingDeps.filter(
+    (m) => !selfClosure.has(m),
+  );
+  const strict = options.strictUnresolved === true;
+  const degradedActive =
+    selfSlug !== null && !strict && missingDepsInClosure.length > 0;
+
   const edgeMap = new Map<string, FactEdge>();
   const unresolvedRefs: UnresolvedRef[] = [];
   let unresolvedCount = 0;
@@ -685,10 +768,17 @@ export async function scanAssetSpaceDepends(
   );
   const coveredByClosure = edges.filter((e) => e.coveredByClosure).length;
   const uncoveredDirect = edges.filter((e) => !e.coveredDirect).length;
-  const countedAsUncovered = selfSlug !== null;
+  // Ambiguous-uncovered refs are counted in --self mode ALWAYS (their target
+  // EXISTS, it just resolves outside the closure — degradation never excuses
+  // them). Unresolved refs are counted in --self mode UNLESS degradation is
+  // active: then they are excused into their own counter.
+  const ambiguousCounted = selfSlug !== null;
+  const unresolvedCounted = selfSlug !== null && !degradedActive;
+  const unresolvedExcused = degradedActive ? unresolvedCount : 0;
   const uncoveredByClosure =
     edges.filter((e) => !e.coveredByClosure).length +
-    (countedAsUncovered ? unresolvedCount + ambiguousUncovered : 0);
+    (ambiguousCounted ? ambiguousUncovered : 0) +
+    (unresolvedCounted ? unresolvedCount : 0);
 
   // ---- Declared without fact (one-sided: informational) ----
   const factKeys = new Set(edges.map((e) => `${e.source} ${e.target}`));
@@ -770,14 +860,23 @@ export async function scanAssetSpaceDepends(
     },
     unresolved: {
       count: unresolvedCount,
-      countedAsUncovered,
+      countedAsUncovered: unresolvedCounted,
+      excusedWhileDepsMissing: unresolvedExcused,
       refs: unresolvedRefs,
+    },
+    degraded: {
+      active: degradedActive,
+      strict,
+      missingDeps,
+      missingDepsInClosure,
+      missingDepsOutsideClosure,
+      unresolvedExcused,
     },
     ambiguous: {
       count: ambiguousCount,
       coveredByClosure: ambiguousCovered,
       uncovered: ambiguousUncovered,
-      countedAsUncovered,
+      countedAsUncovered: ambiguousCounted,
       refs: ambiguousRefs,
     },
     nonStringValues: { count: nonStringCount, sites: nonStringSites },
@@ -807,8 +906,11 @@ function printText(result: AssetSpaceDependsResult): void {
     result.vaultPath.replace(/\/+$/, "").split("/").pop() ?? result.vaultPath;
   const scopeLabel = `[${vaultName}${result.self ? `, self=${result.self}` : ""}, tier=definitions]`;
 
+  const degradedTag = result.degraded.active
+    ? ` (DEGRADED: declared deps absent from merged vault: ${result.degraded.missingDepsInClosure.join(", ")})`
+    : "";
   log(
-    `${result.verdict} ${result.vaultPath}: assetspace-depends audit ${scopeLabel} — ` +
+    `${result.verdict}${degradedTag} ${result.vaultPath}: assetspace-depends audit ${scopeLabel} — ` +
       `uncovered by CLOSURE: ${result.facts.uncoveredByClosure} (verdict), ` +
       `uncovered DIRECTLY: ${result.facts.uncoveredDirect} (informational, not a criterion), ` +
       `ambiguous refs: ${result.ambiguous.count} (covered ${result.ambiguous.coveredByClosure} / uncovered ${result.ambiguous.uncovered}` +
@@ -829,13 +931,30 @@ function printText(result: AssetSpaceDependsResult): void {
       `(sources ${result.facts.sources} → targets ${result.facts.targets}, scanned ${result.scannedSources} source asset(s)); ` +
       `canary covered-by-closure = ${result.facts.coveredByClosure}`,
   );
+  const unresolvedNote = result.degraded.active
+    ? `(--self, DEGRADED: NOT counted — declared deps absent from the merged vault: ${result.degraded.missingDepsInClosure.join(", ")})`
+    : result.unresolved.countedAsUncovered
+      ? result.degraded.strict && result.degraded.missingDeps.length > 0
+        ? `(--self --strict-unresolved: counted as uncovered despite declared missing deps ${result.degraded.missingDeps.join(", ")})`
+        : "(--self: counted as uncovered — target absent from the merged vault)"
+      : "(fail-open, listed, NOT counted — validate-wikilinks territory)";
   log(
-    `Unresolved definition-tier refs: ${result.unresolved.count} ` +
-      (result.unresolved.countedAsUncovered
-        ? "(--self: counted as uncovered — target absent from the merged vault)"
-        : "(fail-open, listed, NOT counted — validate-wikilinks territory)") +
+    `Unresolved definition-tier refs: ${result.unresolved.count} ${unresolvedNote}` +
       `; targets outside assetspaces/: ${result.targetsOutsideAssetspaces}`,
   );
+  if (result.degraded.active) {
+    // The blind spot, named on purpose (req 8d432214 scenario f): the verb
+    // cannot tell an excused ref into the absent DECLARED dep from one into an
+    // absent UNDECLARED AssetSpace — DEGRADED is not proven coverage.
+    log(
+      `⚠ unresolved refs excused: ${result.degraded.unresolvedExcused} — may include refs into undeclared absent AssetSpaces; coverage NOT proven for them (DEGRADED ≠ proven coverage)`,
+    );
+  }
+  if (result.degraded.missingDepsOutsideClosure.length > 0) {
+    log(
+      `⚠ --missing-dep outside closure(self) — excuses nothing: ${result.degraded.missingDepsOutsideClosure.join(", ")}`,
+    );
+  }
   log(
     `Declared without a definition-tier fact (one-sided, never a violation; Reference-kind targets excluded): ` +
       `${result.declaredWithoutFact.total} — TBox: ${result.declaredWithoutFact.byKind.TBox}, ` +
@@ -867,7 +986,9 @@ function printText(result: AssetSpaceDependsResult): void {
   }
   if (result.unresolved.refs.length > 0) {
     const w = result.unresolved.countedAsUncovered ? console.error : log;
-    w(`\nUnresolved definition-tier references (${result.unresolved.count}):`);
+    w(
+      `\nUnresolved definition-tier references (${result.unresolved.count}${result.degraded.active ? "; excused — DEGRADED, coverage NOT proven" : ""}):`,
+    );
     for (const u of result.unresolved.refs.slice(0, 50)) {
       w(
         `  ${u.source}: ${u.sourcePath} --${u.predicate}--> ${u.ref} (${u.reason})`,
@@ -925,7 +1046,28 @@ export interface AuditAssetSpaceDependsOptions {
   vault: string;
   registry?: string;
   self?: string;
+  missingDep?: string[];
+  missingDepsFile?: string;
+  strictUnresolved?: boolean;
   output?: OutputFormat;
+}
+
+/**
+ * `--missing-deps-file`: one missing dep per line, `#` comments and blank
+ * lines ignored. Written by the CI step from its failed clones (the SAME
+ * `resolve-deps` URLs it tried), so the slugs derive from the same source as
+ * `--self` / the closure.
+ */
+export function readMissingDepsFile(path: string): string[] {
+  const abs = resolve(path);
+  if (!existsSync(abs) || !statSync(abs).isFile())
+    throw new FileNotFoundError(abs);
+  const entries: string[] = [];
+  for (const line of readFileSync(abs, "utf-8").split(/\r?\n/)) {
+    const entry = line.replace(/#.*$/, "").trim();
+    if (entry.length > 0) entries.push(entry);
+  }
+  return entries;
 }
 
 function assertDirectory(p: string): string {
@@ -945,7 +1087,7 @@ function assertDirectory(p: string): string {
 export function auditAssetSpaceDependsCommand(): Command {
   return new Command("assetspace-depends")
     .description(
-      "Coverage gate for exo__AssetSpace_dependsOn (RFC 306dcb5c): every definition-tier cross-AssetSpace reference must have its target in the source AssetSpace's declared transitive closure. Prints uncovered-by-closure (verdict) AND uncovered-directly (informational); one-sided (declarations without facts are never violations); no cycle check on the declared graph; BROKEN (exit 2) on an empty population. --self <owner/repo> = per-repo CI mode (unresolvable targets count as uncovered).",
+      "Coverage gate for exo__AssetSpace_dependsOn (RFC 306dcb5c): every definition-tier cross-AssetSpace reference must have its target in the source AssetSpace's declared transitive closure. Prints uncovered-by-closure (verdict) AND uncovered-directly (informational); one-sided (declarations without facts are never violations); no cycle check on the declared graph; BROKEN (exit 2) on an empty population. --self <owner/repo> = per-repo CI mode (unresolvable targets count as uncovered — unless --missing-dep / --missing-deps-file name a declared dep absent from the merged vault, then they are EXCUSED into an OK (DEGRADED …) verdict with the blind spot printed; req 8d432214).",
     )
     .requiredOption(
       "--vault <path>",
@@ -957,7 +1099,21 @@ export function auditAssetSpaceDependsCommand(): Command {
     )
     .option(
       "--self <owner/repo>",
-      "Per-repo mode: judge only fact edges whose source is this AssetSpace (github.repository form); unresolvable definition-tier refs count as uncovered",
+      "Per-repo mode: judge only fact edges whose source is this AssetSpace (github.repository form); unresolvable definition-tier refs count as uncovered (unless a missing dep is named)",
+    )
+    .option(
+      "--missing-dep <owner/repo>",
+      "Declared dependsOn target that could NOT be materialised into the merged vault (repeatable; owner/repo or clone URL, keyed exactly like --self). With --self and the dep inside self's closure: unresolved refs are EXCUSED into an OK (DEGRADED …) verdict, exit 0, and the blind spot is printed. Requires --self.",
+      (value: string, previous: string[]) => [...previous, value],
+      [] as string[],
+    )
+    .option(
+      "--missing-deps-file <path>",
+      "File with one missing dep per line (# comments and blank lines ignored) — same semantics as --missing-dep; the CI step writes it from its failed clones. Requires --self.",
+    )
+    .option(
+      "--strict-unresolved",
+      "Count unresolved refs as uncovered even when missing deps are named (the strict --self behaviour of req 04208713)",
     )
     .option("--output <type>", "Response format: text|json", "text")
     .action(async (options: AuditAssetSpaceDependsOptions) => {
@@ -969,10 +1125,19 @@ export function auditAssetSpaceDependsCommand(): Command {
           ? assertDirectory(options.registry)
           : undefined;
 
+        const missingDeps = [
+          ...(options.missingDep ?? []),
+          ...(options.missingDepsFile
+            ? readMissingDepsFile(options.missingDepsFile)
+            : []),
+        ];
+
         const result = await scanAssetSpaceDepends({
           vault,
           registry,
           self: options.self,
+          missingDeps,
+          strictUnresolved: options.strictUnresolved === true,
         });
 
         if (outputFormat === "json") {

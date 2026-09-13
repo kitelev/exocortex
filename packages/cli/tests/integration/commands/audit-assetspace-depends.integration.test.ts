@@ -13,10 +13,12 @@ import {
   scanAssetSpaceDepends,
   auditAssetSpaceDependsCommand,
   assetspaceOfPath,
+  readMissingDepsFile,
   DEPENDENCY_KIND_TBOX_UID,
   DEPENDENCY_KIND_REFERENCE_UID,
 } from "../../../src/commands/audit-assetspace-depends.js";
 import { ASSET_SPACE_CLASS_UID } from "../../../src/services/CliProfileResolver.js";
+import { InvalidArgumentsError } from "../../../src/utils/errors/index.js";
 
 const DESC_A = "aaaaaaaa-0000-4000-8000-000000000001";
 const DESC_B = "bbbbbbbb-0000-4000-8000-000000000002";
@@ -491,5 +493,334 @@ describe("audit assetspace-depends — command action (exit code + text output)"
     expect(process.exitCode).toBe(2);
     expect(output()).toMatch(/^BROKEN /m);
     expect(output()).toMatch(/no exo__AssetSpace descriptor found/);
+  });
+});
+
+/**
+ * req 8d432214 (ticket fe1d3ef3): explicit DEGRADATION when a declared
+ * `dependsOn` target is absent from the merged vault. Fixture = the CI shape:
+ * self o/a declares dependsOn → o/b, but o/b was NOT cloned (its folder is
+ * absent), so a's `exo__Property_range → ASSET_B` resolves to nothing.
+ * Without `--missing-dep` that is uncovered (req 04208713, byte-identical);
+ * with `--missing-dep o/b` it is EXCUSED into `OK (DEGRADED …)`.
+ */
+describe("audit assetspace-depends — --self degrades explicitly on a declared-but-absent dep (req 8d432214)", () => {
+  let vault: string;
+  let registry: string;
+  const asA = () => join(vault, "assetspaces", "o", "a");
+  const asC = () => join(vault, "assetspaces", "o", "c");
+
+  beforeEach(() => {
+    vault = join(
+      tmpdir(),
+      `as-depends-degrade-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    registry = join(vault, "assetspaces", "o", "registry", "registry");
+    mkdirSync(vault, { recursive: true });
+    // a → b declared; b's content NOT materialised (the private-dep CI case).
+    writeAsset(asA(), ASSET_A, "a__Prop", [
+      `exo__Property_range: "[[${ASSET_B}]]"`,
+    ]);
+    writeAsset(asC(), ASSET_C, "c__Class");
+    writeDescriptor(registry, DESC_A, "o/a", [DESC_B]);
+    writeDescriptor(registry, DESC_B, "o/b", []);
+    writeDescriptor(registry, DESC_C, "o/c", []);
+  });
+
+  afterEach(() => {
+    rmSync(vault, { recursive: true, force: true });
+  });
+
+  it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (a) a missing dep inside closure(self) excuses the unresolved ref: OK (DEGRADED), excused counter, not uncovered", async () => {
+    const r = await scanAssetSpaceDepends({
+      vault,
+      self: "o/a",
+      missingDeps: ["o/b"],
+    });
+    expect(r.verdict).toBe("OK");
+    expect(r.degraded).toMatchObject({
+      active: true,
+      strict: false,
+      missingDeps: ["o/b"],
+      missingDepsInClosure: ["o/b"],
+      missingDepsOutsideClosure: [],
+      unresolvedExcused: 1,
+    });
+    expect(r.unresolved.count).toBe(1);
+    expect(r.unresolved.excusedWhileDepsMissing).toBe(1);
+    expect(r.unresolved.countedAsUncovered).toBe(false);
+    expect(r.facts.uncoveredByClosure).toBe(0);
+    // the excused ref is still LISTED (scenario f) — never hidden
+    expect(r.unresolved.refs[0]).toMatchObject({
+      source: "o/a",
+      predicate: "exo__Property_range",
+      ref: ASSET_B,
+    });
+  });
+
+  it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (b) without a missing-dep declaration the prior --self behaviour is unchanged: unresolved = uncovered, FAIL", async () => {
+    const r = await scanAssetSpaceDepends({ vault, self: "o/a" });
+    expect(r.verdict).toBe("FAIL");
+    expect(r.facts.uncoveredByClosure).toBe(1);
+    expect(r.unresolved.countedAsUncovered).toBe(true);
+    expect(r.unresolved.excusedWhileDepsMissing).toBe(0);
+    expect(r.degraded).toMatchObject({
+      active: false,
+      strict: false,
+      missingDeps: [],
+      unresolvedExcused: 0,
+    });
+  });
+
+  it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (c) --strict-unresolved restores the strict count even with the missing dep named", async () => {
+    const r = await scanAssetSpaceDepends({
+      vault,
+      self: "o/a",
+      missingDeps: ["o/b"],
+      strictUnresolved: true,
+    });
+    expect(r.verdict).toBe("FAIL");
+    expect(r.facts.uncoveredByClosure).toBe(1);
+    expect(r.unresolved.countedAsUncovered).toBe(true);
+    expect(r.degraded).toMatchObject({
+      active: false,
+      strict: true,
+      missingDeps: ["o/b"],
+      missingDepsInClosure: ["o/b"],
+      unresolvedExcused: 0,
+    });
+  });
+
+  it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (d) a ref into a PRESENT but UNDECLARED AssetSpace still FAILs while degraded", async () => {
+    // a additionally references c (present in the vault, NOT in a's closure).
+    writeAsset(asA(), ASSET_A, "a__Prop", [
+      `exo__Property_range: "[[${ASSET_B}]]"`,
+      `exo__Property_domain: "[[${ASSET_C}]]"`,
+    ]);
+    const r = await scanAssetSpaceDepends({
+      vault,
+      self: "o/a",
+      missingDeps: ["o/b"],
+    });
+    expect(r.degraded.active).toBe(true);
+    expect(r.unresolved.excusedWhileDepsMissing).toBe(1); // the b ref is excused …
+    expect(r.verdict).toBe("FAIL"); // … the c edge is not
+    expect(r.facts.uncoveredByClosure).toBe(1);
+    expect(r.facts.edges).toHaveLength(1);
+    expect(r.facts.edges[0]).toMatchObject({
+      source: "o/a",
+      target: "o/c",
+      coveredByClosure: false,
+    });
+  });
+
+  it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (e) a missing dep OUTSIDE closure(self) excuses nothing; URL/.git/case normalise like --self; self is ignored", async () => {
+    // o/z is not in a's closure (and not even registered) → listed, inert.
+    let r = await scanAssetSpaceDepends({
+      vault,
+      self: "o/a",
+      missingDeps: ["o/z"],
+    });
+    expect(r.verdict).toBe("FAIL");
+    expect(r.facts.uncoveredByClosure).toBe(1);
+    expect(r.degraded).toMatchObject({
+      active: false,
+      missingDeps: ["o/z"],
+      missingDepsInClosure: [],
+      missingDepsOutsideClosure: ["o/z"],
+    });
+
+    // Same descriptor spelled three ways (the resolve-deps URL form, .git,
+    // upper case) collapses to ONE key — the key --self uses — so a dep is
+    // never "outside the closure" by spelling alone.
+    r = await scanAssetSpaceDepends({
+      vault,
+      self: "https://github.com/O/A.git",
+      missingDeps: ["https://github.com/o/B.git", "O/B", "o/b"],
+    });
+    expect(r.self).toBe("o/a");
+    expect(r.degraded.missingDeps).toEqual(["o/b"]);
+    expect(r.degraded.active).toBe(true);
+    expect(r.verdict).toBe("OK");
+
+    // self named as a missing dep is dropped: it cannot justify degradation.
+    r = await scanAssetSpaceDepends({
+      vault,
+      self: "o/a",
+      missingDeps: ["o/a"],
+    });
+    expect(r.degraded.missingDeps).toEqual([]);
+    expect(r.degraded.active).toBe(false);
+    expect(r.verdict).toBe("FAIL");
+  });
+
+  it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (g) missing deps without --self are refused (vault mode is already fail-open)", async () => {
+    await expect(
+      scanAssetSpaceDepends({ vault, missingDeps: ["o/b"] }),
+    ).rejects.toBeInstanceOf(InvalidArgumentsError);
+    // control: the same vault-mode scan WITHOUT the inputs is fine and fail-open
+    const r = await scanAssetSpaceDepends({ vault });
+    expect(r.unresolved.countedAsUncovered).toBe(false);
+    expect(r.degraded.active).toBe(false);
+  });
+
+  it("readMissingDepsFile: one entry per line, # comments and blank lines ignored; a missing file is FileNotFoundError", () => {
+    const f = join(vault, "missing-deps.txt");
+    writeFileSync(
+      f,
+      "# written by the CI step from its failed clones\n\no/b   # private, no token\n  https://github.com/o/z.git\n\n",
+      "utf-8",
+    );
+    expect(readMissingDepsFile(f)).toEqual(["o/b", "https://github.com/o/z.git"]);
+    expect(() => readMissingDepsFile(join(vault, "nope.txt"))).toThrow(
+      /File not found/,
+    );
+  });
+});
+
+describe("audit assetspace-depends — DEGRADED command action (req 8d432214: exit code, text, json)", () => {
+  let vault: string;
+  let registry: string;
+  let logSpy: ReturnType<typeof jest.spyOn>;
+  let errSpy: ReturnType<typeof jest.spyOn>;
+  let prevExit: typeof process.exitCode;
+
+  beforeEach(() => {
+    vault = join(
+      tmpdir(),
+      `as-depends-degrade-action-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    registry = join(vault, "assetspaces", "o", "registry", "registry");
+    mkdirSync(vault, { recursive: true });
+    writeAsset(join(vault, "assetspaces", "o", "a"), ASSET_A, "a__Prop", [
+      `exo__Property_range: "[[${ASSET_B}]]"`,
+    ]);
+    writeDescriptor(registry, DESC_A, "o/a", [DESC_B]);
+    writeDescriptor(registry, DESC_B, "o/b", []);
+    logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    prevExit = process.exitCode;
+    process.exitCode = undefined;
+  });
+
+  afterEach(() => {
+    logSpy.mockRestore();
+    errSpy.mockRestore();
+    process.exitCode = prevExit;
+    rmSync(vault, { recursive: true, force: true });
+  });
+
+  const output = () =>
+    [...logSpy.mock.calls, ...errSpy.mock.calls]
+      .map((c) => c.join(" "))
+      .join("\n");
+
+  it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (a)(f) exit 0 + `OK (DEGRADED …)` first line + the blind-spot line + the excused ref listed", async () => {
+    await auditAssetSpaceDependsCommand().parseAsync(
+      ["--vault", vault, "--self", "o/a", "--missing-dep", "o/b"],
+      { from: "user" },
+    );
+    expect(process.exitCode).toBeFalsy();
+    const out = output();
+    expect(out).toMatch(
+      /^OK \(DEGRADED: declared deps absent from merged vault: o\/b\) .*uncovered by CLOSURE: 0 \(verdict\)/m,
+    );
+    expect(out).toMatch(
+      /Unresolved definition-tier refs: 1 \(--self, DEGRADED: NOT counted — declared deps absent from the merged vault: o\/b\)/,
+    );
+    // scenario (f): the blind spot is printed verbatim, never hidden
+    expect(out).toContain(
+      "unresolved refs excused: 1 — may include refs into undeclared absent AssetSpaces; coverage NOT proven for them",
+    );
+    expect(out).toMatch(
+      new RegExp(`o/a: assetspaces/o/a/${ASSET_A}\\.md --exo__Property_range--> ${ASSET_B} \\(not-found\\)`),
+    );
+  });
+
+  it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (a) --missing-deps-file is equivalent to --missing-dep; json carries degraded.unresolvedExcused", async () => {
+    const f = join(vault, "missing-deps.txt");
+    writeFileSync(f, "# from the CI clone loop\nhttps://github.com/o/b\n", "utf-8");
+    await auditAssetSpaceDependsCommand().parseAsync(
+      [
+        "--vault",
+        vault,
+        "--self",
+        "o/a",
+        "--missing-deps-file",
+        f,
+        "--output",
+        "json",
+      ],
+      { from: "user" },
+    );
+    expect(process.exitCode).toBeFalsy();
+    const parsed = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+      verdict: string;
+      facts: { uncoveredByClosure: number };
+      unresolved: { count: number; excusedWhileDepsMissing: number; countedAsUncovered: boolean };
+      degraded: { active: boolean; missingDepsInClosure: string[]; unresolvedExcused: number };
+    };
+    expect(parsed.verdict).toBe("OK");
+    expect(parsed.facts.uncoveredByClosure).toBe(0);
+    expect(parsed.unresolved).toMatchObject({
+      count: 1,
+      excusedWhileDepsMissing: 1,
+      countedAsUncovered: false,
+    });
+    expect(parsed.degraded).toMatchObject({
+      active: true,
+      missingDepsInClosure: ["o/b"],
+      unresolvedExcused: 1,
+    });
+  });
+
+  it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (b)(c) exit 1 + FAIL without the flag, and with --strict-unresolved despite the flag", async () => {
+    await auditAssetSpaceDependsCommand().parseAsync(
+      ["--vault", vault, "--self", "o/a"],
+      { from: "user" },
+    );
+    expect(process.exitCode).toBe(1);
+    expect(output()).toMatch(/^FAIL .*uncovered by CLOSURE: 1 \(verdict\)/m);
+    expect(output()).not.toContain("DEGRADED");
+
+    process.exitCode = undefined;
+    logSpy.mockClear();
+    errSpy.mockClear();
+    await auditAssetSpaceDependsCommand().parseAsync(
+      [
+        "--vault",
+        vault,
+        "--self",
+        "o/a",
+        "--missing-dep",
+        "o/b",
+        "--strict-unresolved",
+      ],
+      { from: "user" },
+    );
+    expect(process.exitCode).toBe(1);
+    expect(output()).toMatch(/^FAIL .*uncovered by CLOSURE: 1 \(verdict\)/m);
+    expect(output()).toMatch(
+      /--self --strict-unresolved: counted as uncovered despite declared missing deps o\/b/,
+    );
+  });
+
+  it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (g) --missing-dep without --self exits 2 (INVALID_ARGUMENTS) loudly", async () => {
+    const exitSpy = jest
+      .spyOn(process, "exit")
+      .mockImplementation(((code?: string | number | null): never => {
+        throw new Error(`process.exit(${code})`);
+      }) as typeof process.exit);
+    try {
+      await expect(
+        auditAssetSpaceDependsCommand().parseAsync(
+          ["--vault", vault, "--missing-dep", "o/b"],
+          { from: "user" },
+        ),
+      ).rejects.toThrow(/process\.exit\(2\)/);
+      expect(output()).toMatch(/require --self/);
+    } finally {
+      exitSpy.mockRestore();
+    }
   });
 });
