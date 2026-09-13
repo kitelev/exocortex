@@ -289,6 +289,68 @@ describe("audit assetspace-depends — revert→fail / restore→pass (integrati
     expect(r.verdict).toBe("OK");
   });
 
+  it("@req:04208713-cdd5-4438-b910-215c0cf52382 an AMBIGUOUS ref (≥2 distinct UIDs under one label) is covered only when EVERY candidate's AssetSpace is in closure(self) ∪ {self}; it has its own counter", async () => {
+    // Two distinct assets carry the same label `dup__Class`: one in o/b, one in o/c.
+    writeAsset(asB(), ASSET_B, "dup__Class");
+    writeAsset(asC(), ASSET_C, "dup__Class");
+    writeAsset(asA(), ASSET_A, "a__Prop", [
+      `exo__Property_range: "[[dup__Class]]"`, // by label → ambiguous {o/b, o/c}
+    ]);
+
+    // Both candidates inside closure(self) → covered, OK.
+    writeDescriptor(registry, DESC_A, "o/a", [DESC_B, DESC_C]);
+    let r = await scanAssetSpaceDepends({ vault, self: "o/a" });
+    expect(r.verdict).toBe("OK");
+    expect(r.ambiguous).toMatchObject({
+      count: 1,
+      coveredByClosure: 1,
+      uncovered: 0,
+      countedAsUncovered: true,
+    });
+    expect(r.ambiguous.refs[0]).toMatchObject({
+      source: "o/a",
+      predicate: "exo__Property_range",
+      ref: "dup__Class",
+      candidates: ["o/b", "o/c"],
+      coveredByClosure: true,
+    });
+    expect(r.unresolved.count).toBe(0); // ambiguity is NOT "not found"
+    expect(r.facts.edgeCount).toBe(0); // never guessed into an edge
+
+    // One candidate outside the closure → uncovered, counted (--self), FAIL.
+    writeDescriptor(registry, DESC_A, "o/a", [DESC_B]);
+    r = await scanAssetSpaceDepends({ vault, self: "o/a" });
+    expect(r.verdict).toBe("FAIL");
+    expect(r.facts.uncoveredByClosure).toBe(1);
+    expect(r.ambiguous).toMatchObject({ count: 1, uncovered: 1 });
+    expect(r.ambiguous.refs[0].coveredByClosure).toBe(false);
+
+    // Vault mode: listed, not counted (fail-open like not-found).
+    r = await scanAssetSpaceDepends({ vault });
+    expect(r.ambiguous).toMatchObject({
+      count: 1,
+      uncovered: 1,
+      countedAsUncovered: false,
+    });
+    expect(r.facts.uncoveredByClosure).toBe(0);
+  });
+
+  it("@req:04208713-cdd5-4438-b910-215c0cf52382 a NON-STRING value under a definition-tier predicate (unquoted [[uid]] → nested array) is counted and reported, never silently skipped; the verdict is unchanged", async () => {
+    writeDescriptor(registry, DESC_A, "o/a", [DESC_B]);
+    writeAsset(asA(), ASSET_A, "a__Prop", [
+      `exo__Property_range: "[[${ASSET_B}]]"`,
+      `exo__Property_domain: [[${ASSET_C}]]`, // unquoted → YAML nested array
+      "exo__Property_minCount: 1", // numeric by definition — NOT a non-string finding
+    ]);
+    const r = await scanAssetSpaceDepends({ vault, self: "o/a" });
+    expect(r.nonStringValues.count).toBe(1);
+    expect(r.nonStringValues.sites[0]).toMatchObject({
+      predicate: "exo__Property_domain",
+    });
+    expect(r.facts.edgeCount).toBe(1); // only the readable a→b edge
+    expect(r.verdict).toBe("OK"); // informational, not a criterion
+  });
+
   it("resolves the symbolic-label channel: a bare `prefix__Local` value is a reference", async () => {
     writeDescriptor(registry, DESC_A, "o/a", []);
     writeAsset(asA(), ASSET_A, "a__Prop", [
@@ -380,6 +442,13 @@ describe("audit assetspace-depends — command action (exit code + text output)"
     expect(out).toMatch(/^FAIL /m);
     expect(out).toMatch(/uncovered by CLOSURE: 1 \(verdict\)/);
     expect(out).toMatch(/uncovered DIRECTLY: 1 \(informational/);
+    // the two attribution counters ride on the same first line
+    expect(out).toMatch(
+      /ambiguous refs: 0 \(covered 0 \/ uncovered 0, listed only\)/,
+    );
+    expect(out).toMatch(
+      /non-string values under definition-tier predicates: 0 \(skipped, not judged\)/,
+    );
     // scope label = the measured vault's basename, tier named
     expect(out).toContain(`[${vault.split("/").pop()}, tier=definitions]`);
     expect(out).toMatch(/o\/a\s*→\s*o\/b/);

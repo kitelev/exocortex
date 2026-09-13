@@ -32,8 +32,14 @@ describe("audit assetspace-depends — Commander wiring", () => {
     expect(opts).toContain("--output");
     // vault = environment (RFC eacf04c0): there is no second-vault flag.
     expect(opts).not.toContain("--also");
+    // ⛔ `Option.required` means "the flag TAKES a value" (`<path>`), true for
+    // --registry/--self too — a vacuous check. Mandatory-ness is `.mandatory`
+    // (set by `.requiredOption`); mutating requiredOption → option must redden.
     const vaultOpt = sub.options.find((o) => o.long === "--vault");
-    expect(vaultOpt?.required).toBe(true);
+    expect(vaultOpt?.mandatory).toBe(true);
+    expect(sub.options.filter((o) => o.mandatory).map((o) => o.long)).toEqual([
+      "--vault",
+    ]);
   });
 
   it("--help names both numbers and the one-sided / no-cycle-check frame", () => {

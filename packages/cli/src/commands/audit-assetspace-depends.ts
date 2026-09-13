@@ -150,8 +150,19 @@ export interface UnresolvedRef {
   sourcePath: string;
   predicate: string;
   ref: string;
-  /** `ambiguous` = ≥2 distinct candidates (counted, never guessed). */
-  reason: "not-found" | "ambiguous";
+  reason: "not-found";
+}
+
+/** A reference that resolves to ≥2 DISTINCT UIDs (one label carried by several assets). */
+export interface AmbiguousRef {
+  source: string;
+  sourcePath: string;
+  predicate: string;
+  ref: string;
+  /** Distinct AssetSpaces of the candidates (sorted). */
+  candidates: string[];
+  /** true ⟺ EVERY candidate's AssetSpace ∈ closure(source) ∪ {source}. */
+  coveredByClosure: boolean;
 }
 
 export interface DeclaredEdge {
@@ -203,6 +214,32 @@ export interface AssetSpaceDependsResult {
     /** true in `--self` mode: an absent target is an uncovered edge. */
     countedAsUncovered: boolean;
     refs: UnresolvedRef[];
+  };
+  /**
+   * References with ≥2 distinct-UID candidates — never guessed. Covered ⟺ every
+   * candidate's AssetSpace is inside closure(source) ∪ {source} (whichever one
+   * it is, it is reachable); otherwise uncovered — counted in `--self` mode,
+   * listed in vault mode. Printed as its own counter so a FAIL is attributed.
+   */
+  ambiguous: {
+    count: number;
+    coveredByClosure: number;
+    uncovered: number;
+    /** true in `--self` mode: an uncovered ambiguous ref adds to the verdict. */
+    countedAsUncovered: boolean;
+    refs: AmbiguousRef[];
+  };
+  /**
+   * Items under a definition-tier predicate that are YAML STRUCTURES, not
+   * strings — the unquoted `[[uid]]` case, which YAML parses to a nested array
+   * and which `referencesOf` cannot read. Counted and printed (verdict
+   * unchanged) so the gate never reports a silent OK over a value it skipped.
+   * Numeric/boolean scalars are NOT counted: `exo__Property_minCount` is
+   * numeric by definition (36 live values, vault-exodev 2026-09-13).
+   */
+  nonStringValues: {
+    count: number;
+    sites: Array<{ sourcePath: string; predicate: string }>;
   };
   /** Definition-tier references whose target lives outside `assetspaces/` (skipped). */
   targetsOutsideAssetspaces: number;
@@ -283,35 +320,48 @@ class VaultIndex {
    * an ambiguity); ≥2 distinct UIDs = ambiguous, counted never guessed.
    */
   resolve(ref: string): string | "ambiguous" | null {
+    const c = this.candidates(ref);
+    if (c.length === 0) return null;
+    return c.length === 1 ? c[0] : "ambiguous";
+  }
+
+  /**
+   * Every distinct-UID candidate of the three-channel lookup (one path per
+   * UID); `[]` when nothing resolves. `resolve()` is this with the
+   * one/many/none collapse applied.
+   */
+  candidates(ref: string): string[] {
     let target = ref;
-    if (UUID_RE.test(target))
-      return this.uidToPath.get(target.toLowerCase()) ?? null;
+    if (UUID_RE.test(target)) {
+      const p = this.uidToPath.get(target.toLowerCase());
+      return p === undefined ? [] : [p];
+    }
     if (target.includes("/")) {
       const cleaned = target.replace(/^\//, "");
       const candidate = cleaned.endsWith(".md") ? cleaned : `${cleaned}.md`;
-      if (this.pathSet.has(candidate)) return candidate;
+      if (this.pathSet.has(candidate)) return [candidate];
       target = cleaned.slice(cleaned.lastIndexOf("/") + 1);
     }
     if (target.endsWith(".md")) target = target.slice(0, -3);
-    const byLabel = this.pick(this.labelToPaths.get(target));
-    if (byLabel !== null) return byLabel;
-    return this.pick(this.basenameToPaths.get(target));
+    const byLabel = this.distinctByUid(this.labelToPaths.get(target));
+    if (byLabel.length > 0) return byLabel;
+    return this.distinctByUid(this.basenameToPaths.get(target));
   }
 
-  private pick(paths: Set<string> | undefined): string | "ambiguous" | null {
-    if (!paths || paths.size === 0) return null;
-    if (paths.size === 1) return [...paths][0];
-    // De-dup by asset UID: a duplicate mount of the same asset is one target.
-    const uids = new Set<string>();
-    let first: string | null = null;
+  /** De-dup by asset UID: a duplicate mount of the same asset is ONE candidate. */
+  private distinctByUid(paths: Set<string> | undefined): string[] {
+    if (!paths || paths.size === 0) return [];
+    const seen = new Set<string>();
+    const out: string[] = [];
     for (const p of paths) {
       const asset = this.assets.find((a) => a.path === p);
       const u = asset ? asset.metadata["exo__Asset_uid"] : undefined;
       const key = typeof u === "string" ? u.trim().toLowerCase() : `path:${p}`;
-      uids.add(key);
-      if (first === null) first = p;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(p);
     }
-    return uids.size === 1 ? first : "ambiguous";
+    return out;
   }
 }
 
@@ -347,6 +397,18 @@ function kindOf(rawKind: unknown): DependencyKindLabel {
  * linkpath (alias + anchor stripped); a bare string is a reference only when
  * it is a symbolic label (`prefix__Local`) or UUID-shaped.
  */
+/**
+ * Items under a definition-tier predicate that `referencesOf` cannot read
+ * because they are YAML structures (nested array / map) — typically an
+ * unquoted `[[uid]]`. Scalars that are not strings (numbers, booleans) are
+ * NOT counted: `exo__Property_minCount` is numeric by definition.
+ */
+function countStructuredItems(value: unknown): number {
+  if (value === undefined || value === null) return 0;
+  const items = Array.isArray(value) ? value : [value];
+  return items.filter((v) => typeof v === "object" && v !== null).length;
+}
+
 function referencesOf(value: unknown): string[] {
   const raw = Array.isArray(value)
     ? value
@@ -511,6 +573,12 @@ export async function scanAssetSpaceDepends(
   const edgeMap = new Map<string, FactEdge>();
   const unresolvedRefs: UnresolvedRef[] = [];
   let unresolvedCount = 0;
+  const ambiguousRefs: AmbiguousRef[] = [];
+  let ambiguousCount = 0;
+  let ambiguousCovered = 0;
+  let ambiguousUncovered = 0;
+  const nonStringSites: Array<{ sourcePath: string; predicate: string }> = [];
+  let nonStringCount = 0;
   let targetsOutsideAssetspaces = 0;
   let scannedSources = 0;
   let occurrencesTotal = 0;
@@ -521,10 +589,17 @@ export async function scanAssetSpaceDepends(
     if (selfSlug !== null && sourceSlug !== selfSlug) continue;
     scannedSources++;
     for (const predicate of DEFINITION_TIER_PREDICATES) {
-      const refs = referencesOf(asset.metadata[predicate]);
+      const rawValue = asset.metadata[predicate];
+      const structured = countStructuredItems(rawValue);
+      if (structured > 0) {
+        nonStringCount += structured;
+        if (nonStringSites.length < MAX_LISTED)
+          nonStringSites.push({ sourcePath: asset.path, predicate });
+      }
+      const refs = referencesOf(rawValue);
       for (const ref of refs) {
-        const resolved = index.resolve(ref);
-        if (resolved === null || resolved === "ambiguous") {
+        const candidates = index.candidates(ref);
+        if (candidates.length === 0) {
           unresolvedCount++;
           if (unresolvedRefs.length < MAX_LISTED) {
             unresolvedRefs.push({
@@ -532,11 +607,44 @@ export async function scanAssetSpaceDepends(
               sourcePath: asset.path,
               predicate,
               ref,
-              reason: resolved === "ambiguous" ? "ambiguous" : "not-found",
+              reason: "not-found",
             });
           }
           continue;
         }
+        if (candidates.length > 1) {
+          // ≥2 distinct UIDs under one label — never guessed. The frame's
+          // "absent target" rule (p.6) does not apply: the target EXISTS, we
+          // just cannot tell which. Covered ⟺ every candidate's AssetSpace is
+          // inside closure(source) ∪ {source}; otherwise uncovered (counted in
+          // --self mode, listed in vault mode), attributed by its own counter.
+          const slugs = [
+            ...new Set(
+              candidates.map(
+                (c) => assetspaceOfPath(c) ?? "<outside assetspaces/>",
+              ),
+            ),
+          ].sort();
+          const closure = closureOf(sourceSlug);
+          const covered = slugs.every(
+            (t) => t === sourceSlug || closure.has(t),
+          );
+          ambiguousCount++;
+          if (covered) ambiguousCovered++;
+          else ambiguousUncovered++;
+          if (ambiguousRefs.length < MAX_LISTED) {
+            ambiguousRefs.push({
+              source: sourceSlug,
+              sourcePath: asset.path,
+              predicate,
+              ref,
+              candidates: slugs,
+              coveredByClosure: covered,
+            });
+          }
+          continue;
+        }
+        const resolved = candidates[0];
         const targetSlug = assetspaceOfPath(resolved);
         if (targetSlug === null) {
           targetsOutsideAssetspaces++;
@@ -580,7 +688,7 @@ export async function scanAssetSpaceDepends(
   const countedAsUncovered = selfSlug !== null;
   const uncoveredByClosure =
     edges.filter((e) => !e.coveredByClosure).length +
-    (countedAsUncovered ? unresolvedCount : 0);
+    (countedAsUncovered ? unresolvedCount + ambiguousUncovered : 0);
 
   // ---- Declared without fact (one-sided: informational) ----
   const factKeys = new Set(edges.map((e) => `${e.source} ${e.target}`));
@@ -665,6 +773,14 @@ export async function scanAssetSpaceDepends(
       countedAsUncovered,
       refs: unresolvedRefs,
     },
+    ambiguous: {
+      count: ambiguousCount,
+      coveredByClosure: ambiguousCovered,
+      uncovered: ambiguousUncovered,
+      countedAsUncovered,
+      refs: ambiguousRefs,
+    },
+    nonStringValues: { count: nonStringCount, sites: nonStringSites },
     targetsOutsideAssetspaces,
     scannedSources,
     declaredWithoutFact: {
@@ -694,7 +810,10 @@ function printText(result: AssetSpaceDependsResult): void {
   log(
     `${result.verdict} ${result.vaultPath}: assetspace-depends audit ${scopeLabel} — ` +
       `uncovered by CLOSURE: ${result.facts.uncoveredByClosure} (verdict), ` +
-      `uncovered DIRECTLY: ${result.facts.uncoveredDirect} (informational, not a criterion)`,
+      `uncovered DIRECTLY: ${result.facts.uncoveredDirect} (informational, not a criterion), ` +
+      `ambiguous refs: ${result.ambiguous.count} (covered ${result.ambiguous.coveredByClosure} / uncovered ${result.ambiguous.uncovered}` +
+      `${result.ambiguous.countedAsUncovered ? ", counted in the verdict" : ", listed only"}), ` +
+      `non-string values under definition-tier predicates: ${result.nonStringValues.count} (skipped, not judged)`,
   );
   if (result.brokenReason) log(`⛔ BROKEN: ${result.brokenReason}`);
   log(
@@ -756,6 +875,26 @@ function printText(result: AssetSpaceDependsResult): void {
     }
     if (result.unresolved.count > 50)
       w(`  … ${result.unresolved.count - 50} more`);
+  }
+  if (result.ambiguous.refs.length > 0) {
+    const w = result.ambiguous.countedAsUncovered ? console.error : log;
+    w(
+      `\nAmbiguous definition-tier references (${result.ambiguous.count}; ≥2 distinct UIDs under one label — covered only when EVERY candidate's AssetSpace is in the source's closure):`,
+    );
+    for (const a of result.ambiguous.refs.slice(0, 50)) {
+      w(
+        `  ${a.coveredByClosure ? "covered  " : "UNCOVERED"} ${a.source}: ${a.sourcePath} --${a.predicate}--> ${a.ref} → {${a.candidates.join(", ")}}`,
+      );
+    }
+    if (result.ambiguous.count > 50)
+      w(`  … ${result.ambiguous.count - 50} more`);
+  }
+  if (result.nonStringValues.sites.length > 0) {
+    log(
+      `\nNon-string values under definition-tier predicates (${result.nonStringValues.count}; unquoted [[uid]] parses to a nested array — not readable, not judged):`,
+    );
+    for (const n of result.nonStringValues.sites.slice(0, 50))
+      log(`  ${n.sourcePath} --${n.predicate}`);
   }
   const directOnly = result.facts.edges.filter(
     (e) => e.coveredByClosure && !e.coveredDirect,
