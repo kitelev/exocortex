@@ -614,6 +614,34 @@ describe("audit assetspace-depends — --self degrades explicitly on a declared-
     });
   });
 
+  it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (d) an AMBIGUOUS-uncovered ref (target EXISTS, ≥2 candidates outside the closure) is never excused while degraded", async () => {
+    // `dup__Class` lives in o/c AND o/d — both present, neither in a's closure.
+    writeAsset(asC(), ASSET_C, "dup__Class");
+    writeAsset(
+      join(vault, "assetspaces", "o", "d"),
+      "44444444-4444-4444-8444-444444444444",
+      "dup__Class",
+    );
+    writeAsset(asA(), ASSET_A, "a__Prop", [
+      `exo__Property_range: "[[${ASSET_B}]]"`,
+      `exo__Property_domain: "[[dup__Class]]"`,
+    ]);
+    const r = await scanAssetSpaceDepends({
+      vault,
+      self: "o/a",
+      missingDeps: ["o/b"],
+    });
+    expect(r.degraded.active).toBe(true);
+    expect(r.unresolved.excusedWhileDepsMissing).toBe(1); // the b ref is excused …
+    expect(r.ambiguous).toMatchObject({
+      count: 1,
+      uncovered: 1,
+      countedAsUncovered: true, // … the ambiguous one is NOT: its target exists
+    });
+    expect(r.facts.uncoveredByClosure).toBe(1);
+    expect(r.verdict).toBe("FAIL");
+  });
+
   it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (e) a missing dep OUTSIDE closure(self) excuses nothing; URL/.git/case normalise like --self; self is ignored", async () => {
     // o/z is not in a's closure (and not even registered) → listed, inert.
     let r = await scanAssetSpaceDepends({
