@@ -48,11 +48,9 @@ describe("audit assetspace-depends — Commander wiring", () => {
     expect(opts).toContain("--missing-dep");
     expect(opts).toContain("--missing-deps-file");
     expect(opts).toContain("--strict-unresolved");
-    expect(
-      sub.options
-        .filter((o) => o.mandatory)
-        .map((o) => o.long),
-    ).toEqual(["--vault"]);
+    expect(sub.options.filter((o) => o.mandatory).map((o) => o.long)).toEqual([
+      "--vault",
+    ]);
     // repeatable: the option's collector accumulates (the CI step may name
     // several deps). Exercised via the parser hook, not via parse() — parse()
     // would run the action against a non-existent vault and process.exit.

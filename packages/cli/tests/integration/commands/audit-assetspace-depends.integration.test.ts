@@ -723,7 +723,10 @@ describe("audit assetspace-depends — --self degrades explicitly on a declared-
       "# written by the CI step from its failed clones\n\no/b   # private, no token\n  https://github.com/o/z.git\n\n",
       "utf-8",
     );
-    expect(readMissingDepsFile(f)).toEqual(["o/b", "https://github.com/o/z.git"]);
+    expect(readMissingDepsFile(f)).toEqual([
+      "o/b",
+      "https://github.com/o/z.git",
+    ]);
     expect(() => readMissingDepsFile(join(vault, "nope.txt"))).toThrow(
       /File not found/,
     );
@@ -785,13 +788,19 @@ describe("audit assetspace-depends — DEGRADED command action (req 8d432214: ex
       "unresolved refs excused: 1 — may include refs into undeclared absent AssetSpaces; coverage NOT proven for them",
     );
     expect(out).toMatch(
-      new RegExp(`o/a: assetspaces/o/a/${ASSET_A}\\.md --exo__Property_range--> ${ASSET_B} \\(not-found\\)`),
+      new RegExp(
+        `o/a: assetspaces/o/a/${ASSET_A}\\.md --exo__Property_range--> ${ASSET_B} \\(not-found\\)`,
+      ),
     );
   });
 
   it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (a) --missing-deps-file is equivalent to --missing-dep; json carries degraded.unresolvedExcused", async () => {
     const f = join(vault, "missing-deps.txt");
-    writeFileSync(f, "# from the CI clone loop\nhttps://github.com/o/b\n", "utf-8");
+    writeFileSync(
+      f,
+      "# from the CI clone loop\nhttps://github.com/o/b\n",
+      "utf-8",
+    );
     await auditAssetSpaceDependsCommand().parseAsync(
       [
         "--vault",
@@ -809,8 +818,16 @@ describe("audit assetspace-depends — DEGRADED command action (req 8d432214: ex
     const parsed = JSON.parse(logSpy.mock.calls[0][0] as string) as {
       verdict: string;
       facts: { uncoveredByClosure: number };
-      unresolved: { count: number; excusedWhileDepsMissing: number; countedAsUncovered: boolean };
-      degraded: { active: boolean; missingDepsInClosure: string[]; unresolvedExcused: number };
+      unresolved: {
+        count: number;
+        excusedWhileDepsMissing: number;
+        countedAsUncovered: boolean;
+      };
+      degraded: {
+        active: boolean;
+        missingDepsInClosure: string[];
+        unresolvedExcused: number;
+      };
     };
     expect(parsed.verdict).toBe("OK");
     expect(parsed.facts.uncoveredByClosure).toBe(0);
@@ -858,11 +875,11 @@ describe("audit assetspace-depends — DEGRADED command action (req 8d432214: ex
   });
 
   it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (g) --missing-dep without --self exits 2 (INVALID_ARGUMENTS) loudly", async () => {
-    const exitSpy = jest
-      .spyOn(process, "exit")
-      .mockImplementation(((code?: string | number | null): never => {
-        throw new Error(`process.exit(${code})`);
-      }) as typeof process.exit);
+    const exitSpy = jest.spyOn(process, "exit").mockImplementation(((
+      code?: string | number | null,
+    ): never => {
+      throw new Error(`process.exit(${code})`);
+    }) as typeof process.exit);
     try {
       await expect(
         auditAssetSpaceDependsCommand().parseAsync(
