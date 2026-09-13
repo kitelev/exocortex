@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { auditAssetSpaceDependsCommand } from "./audit-assetspace-depends.js";
 import { auditCoLocationCommand } from "./audit-co-location.js";
 import { auditOntologyImportsCommand } from "./audit-ontology-imports.js";
 import { auditOntologyMembershipCommand } from "./audit-ontology-membership.js";
@@ -6,12 +7,14 @@ import { auditOntologyUrlCommand } from "./audit-ontology-url.js";
 
 /**
  * Creates the 'audit' parent command with regression-detection subcommands:
+ * - audit assetspace-depends — RFC 306dcb5c exo__AssetSpace_dependsOn coverage-by-closure gate (req 04208713).
  * - audit co-location — RFC 0b7a2fad asset–ontology co-location invariant.
  * - audit ontology-imports — RFC df39007b ontology imports DAG invariant (coupling-side ArchUnit).
  * - audit ontology-membership — KSD ArchUnit (req c23f6f50) ontology exo__Ontology_admits allow-list (cohesion-side).
  * - audit ontology-url — issue #3824 exo__Ontology_url trailing-# separator invariant.
  *
  * @example
+ * exocortex audit assetspace-depends --vault /path/to/vault [--registry <path>] [--self owner/repo]
  * exocortex audit co-location --vault /path/to/vault
  * exocortex audit ontology-imports --vault /path/to/vault
  * exocortex audit ontology-membership --vault /path/to/vault
@@ -22,6 +25,7 @@ export function auditCommand(): Command {
     "Audit vault for regression patterns (RFC cutover detectors)",
   );
 
+  cmd.addCommand(auditAssetSpaceDependsCommand());
   cmd.addCommand(auditCoLocationCommand());
   cmd.addCommand(auditOntologyImportsCommand());
   cmd.addCommand(auditOntologyMembershipCommand());
