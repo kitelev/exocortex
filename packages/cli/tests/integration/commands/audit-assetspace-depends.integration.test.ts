@@ -716,20 +716,28 @@ describe("audit assetspace-depends — --self degrades explicitly on a declared-
     expect(r.degraded.active).toBe(false);
   });
 
-  it("readMissingDepsFile: one entry per line, # comments and blank lines ignored; a missing file is FileNotFoundError", () => {
+  it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb readMissingDepsFile: one entry per line (LF and CRLF), # comments and blank lines ignored; a missing file / a directory is InvalidArgumentsError", () => {
     const f = join(vault, "missing-deps.txt");
+    // Mixed line endings on purpose: a Windows-authored file or a CRLF
+    // checkout must parse identically (split(/\r?\n/), not split("\n")).
     writeFileSync(
       f,
-      "# written by the CI step from its failed clones\n\no/b   # private, no token\n  https://github.com/o/z.git\n\n",
+      "# written by the CI step from its failed clones\r\n\r\no/b   # private, no token\r\n  https://github.com/o/z.git\n\n",
       "utf-8",
     );
     expect(readMissingDepsFile(f)).toEqual([
       "o/b",
       "https://github.com/o/z.git",
     ]);
+    // no existsSync/statSync pre-check (TOCTOU): the read is the check, and
+    // the error names the flag, not a vault .md file.
     expect(() => readMissingDepsFile(join(vault, "nope.txt"))).toThrow(
-      /File not found/,
+      InvalidArgumentsError,
     );
+    expect(() => readMissingDepsFile(join(vault, "nope.txt"))).toThrow(
+      /--missing-deps-file: not found or not a readable file/,
+    );
+    expect(() => readMissingDepsFile(vault)).toThrow(InvalidArgumentsError);
   });
 });
 
@@ -874,7 +882,7 @@ describe("audit assetspace-depends — DEGRADED command action (req 8d432214: ex
     );
   });
 
-  it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (g) --missing-dep without --self exits 2 (INVALID_ARGUMENTS) loudly", async () => {
+  it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (g) --missing-dep without --self exits 2 (INVALID_ARGUMENTS) loudly — and so does a comment-only --missing-deps-file (refusal keys on the FLAG, not on the resolved list)", async () => {
     const exitSpy = jest.spyOn(process, "exit").mockImplementation(((
       code?: string | number | null,
     ): never => {
@@ -884,6 +892,20 @@ describe("audit assetspace-depends — DEGRADED command action (req 8d432214: ex
       await expect(
         auditAssetSpaceDependsCommand().parseAsync(
           ["--vault", vault, "--missing-dep", "o/b"],
+          { from: "user" },
+        ),
+      ).rejects.toThrow(/process\.exit\(2\)/);
+      expect(output()).toMatch(/require --self/);
+
+      // A file that resolves to ZERO deps must still be refused without --self:
+      // otherwise the flag would be a silent no-op exactly where it is wrong.
+      logSpy.mockClear();
+      errSpy.mockClear();
+      const f = join(vault, "missing-deps.txt");
+      writeFileSync(f, "# nothing failed to clone\n\n", "utf-8");
+      await expect(
+        auditAssetSpaceDependsCommand().parseAsync(
+          ["--vault", vault, "--missing-deps-file", f],
           { from: "user" },
         ),
       ).rejects.toThrow(/process\.exit\(2\)/);

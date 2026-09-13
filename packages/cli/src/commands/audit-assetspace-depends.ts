@@ -20,7 +20,6 @@ import {
 } from "../utils/vaultPathFilters.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import {
-  FileNotFoundError,
   InvalidArgumentsError,
   VaultNotFoundError,
 } from "../utils/errors/index.js";
@@ -1085,10 +1084,26 @@ export interface AuditAssetSpaceDependsOptions {
  */
 export function readMissingDepsFile(path: string): string[] {
   const abs = resolve(path);
-  if (!existsSync(abs) || !statSync(abs).isFile())
-    throw new FileNotFoundError(abs);
+  let text: string;
+  try {
+    // Read directly — no existsSync/statSync pre-check: that pair is a
+    // TOCTOU race (CodeQL js/file-system-race); the read itself is the check.
+    text = readFileSync(abs, "utf-8");
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "EISDIR" || code === "ENOTDIR") {
+      // InvalidArgumentsError, not FileNotFoundError: the latter's guidance
+      // talks about vault files with a .md extension — false for this file.
+      throw new InvalidArgumentsError(
+        `--missing-deps-file: not found or not a readable file: ${abs}`,
+        "The CI step writes it to $RUNNER_TEMP/missing-deps.txt from its failed clones; pass an existing file (one owner/repo per line) or omit the flag",
+        { path: abs, code },
+      );
+    }
+    throw e;
+  }
   const entries: string[] = [];
-  for (const line of readFileSync(abs, "utf-8").split(/\r?\n/)) {
+  for (const line of text.split(/\r?\n/)) {
     const entry = line.replace(/#.*$/, "").trim();
     if (entry.length > 0) entries.push(entry);
   }
@@ -1150,6 +1165,19 @@ export function auditAssetSpaceDependsCommand(): Command {
           ? assertDirectory(options.registry)
           : undefined;
 
+        // Refuse on the FACT of the flag, before reading the file: an empty or
+        // comment-only --missing-deps-file without --self must not become a
+        // silent no-op (req 8d432214 scenario g). The scan repeats the check
+        // on the resolved list for library callers.
+        const missingDepsNamed =
+          (options.missingDep?.length ?? 0) > 0 ||
+          options.missingDepsFile !== undefined;
+        if (missingDepsNamed && options.self === undefined) {
+          throw new InvalidArgumentsError(
+            "--missing-dep / --missing-deps-file require --self: in vault mode unresolved refs are already fail-open, so the inputs would be a silent no-op",
+            "Pass --self <owner/repo> (the per-repo CI mode) together with the missing deps",
+          );
+        }
         const missingDeps = [
           ...(options.missingDep ?? []),
           ...(options.missingDepsFile
