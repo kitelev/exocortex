@@ -544,6 +544,7 @@ describe("audit assetspace-depends — --self degrades explicitly on a declared-
       missingDeps: ["o/b"],
       missingDepsInClosure: ["o/b"],
       missingDepsOutsideClosure: [],
+      missingDepsPresentInVault: [],
       unresolvedExcused: 1,
     });
     expect(r.unresolved.count).toBe(1);
@@ -680,6 +681,29 @@ describe("audit assetspace-depends — --self degrades explicitly on a declared-
     expect(r.degraded.missingDeps).toEqual([]);
     expect(r.degraded.active).toBe(false);
     expect(r.verdict).toBe("FAIL");
+  });
+
+  it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (e) a dep named missing but PRESENT in the vault is ignored — degradation derives from the vault, not from the claim", async () => {
+    // o/b IS materialised after all (the token worked) but the caller still
+    // names it missing: the vault contradicts the claim → no degradation, and
+    // the ref resolves normally (covered by closure).
+    writeAsset(join(vault, "assetspaces", "o", "b"), ASSET_B, "b__Class");
+    const r = await scanAssetSpaceDepends({
+      vault,
+      self: "o/a",
+      missingDeps: ["o/b"],
+    });
+    expect(r.degraded).toMatchObject({
+      active: false,
+      missingDeps: ["o/b"],
+      missingDepsInClosure: [],
+      missingDepsOutsideClosure: [],
+      missingDepsPresentInVault: ["o/b"],
+      unresolvedExcused: 0,
+    });
+    expect(r.verdict).toBe("OK");
+    expect(r.facts.coveredByClosure).toBe(1);
+    expect(r.unresolved.count).toBe(0);
   });
 
   it("@req:8d432214-e98e-4a3d-8cb5-d4345dd4bcbb (g) missing deps without --self are refused (vault mode is already fail-open)", async () => {

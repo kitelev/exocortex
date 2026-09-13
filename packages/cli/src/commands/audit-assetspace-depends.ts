@@ -256,6 +256,13 @@ export interface AssetSpaceDependsResult {
     missingDepsInClosure: string[];
     /** Named missing deps OUTSIDE closure(self) — listed, excuse nothing. */
     missingDepsOutsideClosure: string[];
+    /**
+     * Named missing deps that are in fact PRESENT in the vault (≥1 asset under
+     * `assetspaces/<owner>/<repo>/`) — the claim is contradicted by the vault,
+     * so they are ignored (listed, excuse nothing): degradation derives from
+     * what the vault holds, not from the caller's word alone.
+     */
+    missingDepsPresentInVault: string[];
     /** = unresolved.excusedWhileDepsMissing; coverage is NOT proven for these. */
     unresolvedExcused: number;
   };
@@ -645,9 +652,21 @@ export async function scanAssetSpaceDepends(
   ].sort();
   const selfClosure =
     selfSlug !== null ? closureOf(selfSlug) : new Set<string>();
-  const missingDepsInClosure = missingDeps.filter((m) => selfClosure.has(m));
+  // "Missing" is a claim about the vault — check it against the vault: a named
+  // dep with ≥1 asset under assetspaces/<owner>/<repo>/ is NOT missing.
+  const presentSlugs = new Set<string>();
+  for (const a of index.assets) {
+    const slug = assetspaceOfPath(a.path);
+    if (slug !== null) presentSlugs.add(slug);
+  }
+  const missingDepsPresentInVault = missingDeps.filter((m) =>
+    presentSlugs.has(m),
+  );
+  const missingDepsInClosure = missingDeps.filter(
+    (m) => selfClosure.has(m) && !presentSlugs.has(m),
+  );
   const missingDepsOutsideClosure = missingDeps.filter(
-    (m) => !selfClosure.has(m),
+    (m) => !selfClosure.has(m) && !presentSlugs.has(m),
   );
   const strict = options.strictUnresolved === true;
   const degradedActive =
@@ -870,6 +889,7 @@ export async function scanAssetSpaceDepends(
       missingDeps,
       missingDepsInClosure,
       missingDepsOutsideClosure,
+      missingDepsPresentInVault,
       unresolvedExcused,
     },
     ambiguous: {
@@ -953,6 +973,11 @@ function printText(result: AssetSpaceDependsResult): void {
   if (result.degraded.missingDepsOutsideClosure.length > 0) {
     log(
       `⚠ --missing-dep outside closure(self) — excuses nothing: ${result.degraded.missingDepsOutsideClosure.join(", ")}`,
+    );
+  }
+  if (result.degraded.missingDepsPresentInVault.length > 0) {
+    log(
+      `⚠ --missing-dep named but PRESENT in the vault (assets found under its assetspaces/ folder) — ignored, excuses nothing: ${result.degraded.missingDepsPresentInVault.join(", ")}`,
     );
   }
   log(
