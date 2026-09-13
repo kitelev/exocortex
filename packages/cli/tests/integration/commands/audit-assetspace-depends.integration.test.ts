@@ -1,9 +1,17 @@
-import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  jest,
+} from "@jest/globals";
 import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
   scanAssetSpaceDepends,
+  auditAssetSpaceDependsCommand,
   assetspaceOfPath,
   DEPENDENCY_KIND_TBOX_UID,
   DEPENDENCY_KIND_REFERENCE_UID,
@@ -317,5 +325,102 @@ describe("audit assetspace-depends — revert→fail / restore→pass (integrati
     );
     expect(assetspaceOfPath("01 Inbox/x.md")).toBeNull();
     expect(assetspaceOfPath("assetspaces/kitelev/x.md")).toBeNull();
+  });
+});
+
+/**
+ * Command-action axis: the SAME flip driven through the Commander action
+ * (`parseAsync`), so the exit code and the printed text are locked, not only
+ * the scan result. Every number is printed with its scope label (AC4).
+ */
+describe("audit assetspace-depends — command action (exit code + text output)", () => {
+  let vault: string;
+  let registry: string;
+  let logSpy: ReturnType<typeof jest.spyOn>;
+  let errSpy: ReturnType<typeof jest.spyOn>;
+  let prevExit: number | string | undefined;
+
+  beforeEach(() => {
+    vault = join(
+      tmpdir(),
+      `as-depends-action-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    registry = join(vault, "assetspaces", "o", "registry", "registry");
+    mkdirSync(vault, { recursive: true });
+    writeAsset(join(vault, "assetspaces", "o", "a"), ASSET_A, "a__Prop", [
+      `exo__Property_range: "[[${ASSET_B}]]"`,
+    ]);
+    writeAsset(join(vault, "assetspaces", "o", "b"), ASSET_B, "b__Class");
+    writeDescriptor(registry, DESC_B, "o/b", []);
+    logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    prevExit = process.exitCode;
+    process.exitCode = undefined;
+  });
+
+  afterEach(() => {
+    logSpy.mockRestore();
+    errSpy.mockRestore();
+    process.exitCode = prevExit;
+    rmSync(vault, { recursive: true, force: true });
+  });
+
+  const output = () =>
+    [...logSpy.mock.calls, ...errSpy.mock.calls]
+      .map((c) => c.join(" "))
+      .join("\n");
+
+  it("@req:04208713-cdd5-4438-b910-215c0cf52382 exit 1 + FAIL line naming BOTH numbers with the vault scope label when the fact is uncovered", async () => {
+    writeDescriptor(registry, DESC_A, "o/a", []);
+    await auditAssetSpaceDependsCommand().parseAsync(["--vault", vault], {
+      from: "user",
+    });
+    expect(process.exitCode).toBe(1);
+    const out = output();
+    expect(out).toMatch(/^FAIL /m);
+    expect(out).toMatch(/uncovered by CLOSURE: 1 \(verdict\)/);
+    expect(out).toMatch(/uncovered DIRECTLY: 1 \(informational/);
+    // scope label = the measured vault's basename, tier named
+    expect(out).toContain(`[${vault.split("/").pop()}, tier=definitions]`);
+    expect(out).toMatch(/o\/a\s*→\s*o\/b/);
+  });
+
+  it("exit 0 + OK line once the declaration covers the fact; json output carries the same two numbers", async () => {
+    writeDescriptor(registry, DESC_A, "o/a", [DESC_B]);
+    await auditAssetSpaceDependsCommand().parseAsync(["--vault", vault], {
+      from: "user",
+    });
+    expect(process.exitCode).toBeFalsy();
+    expect(output()).toMatch(
+      /^OK .*uncovered by CLOSURE: 0 \(verdict\), uncovered DIRECTLY: 0/m,
+    );
+
+    logSpy.mockClear();
+    errSpy.mockClear();
+    await auditAssetSpaceDependsCommand().parseAsync(
+      ["--vault", vault, "--output", "json"],
+      { from: "user" },
+    );
+    const parsed = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+      verdict: string;
+      vaultPath: string;
+      facts: { uncoveredByClosure: number; uncoveredDirect: number };
+    };
+    expect(parsed.verdict).toBe("OK");
+    expect(parsed.vaultPath).toBe(vault);
+    expect(parsed.facts).toMatchObject({
+      uncoveredByClosure: 0,
+      uncoveredDirect: 0,
+    });
+  });
+
+  it("exit 2 + BROKEN when there is no descriptor to judge against (never a clean zero)", async () => {
+    rmSync(registry, { recursive: true, force: true });
+    await auditAssetSpaceDependsCommand().parseAsync(["--vault", vault], {
+      from: "user",
+    });
+    expect(process.exitCode).toBe(2);
+    expect(output()).toMatch(/^BROKEN /m);
+    expect(output()).toMatch(/no exo__AssetSpace descriptor found/);
   });
 });
