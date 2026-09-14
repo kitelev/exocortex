@@ -65,6 +65,20 @@ export interface PatConnectionFailure {
 
 export type PatConnectionResult = PatConnectionOk | PatConnectionFailure;
 
+/**
+ * Short, NON-secret identifier for a token — its last 4 characters behind an
+ * ellipsis (`…aj0S`), the same tail GitHub shows in its own token list. Used to
+ * tell the user WHICH token a connection test exercised (#4231): the Settings
+ * test used to silently exercise the STORED token while the user had just
+ * pasted a fresh one into the field, and the status line never said so.
+ * Tokens too short to keep 4 chars private are fully masked.
+ */
+export function patTail(token: string): string {
+  const t = token.trim();
+  if (t.length <= 8) return "…****";
+  return `…${t.slice(-4)}`;
+}
+
 /** Extract a displayable message from an unknown thrown value. */
 function reasonFrom(error: unknown): string {
   if (error instanceof Error) return error.message;
