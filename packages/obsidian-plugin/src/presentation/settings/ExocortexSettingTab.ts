@@ -38,7 +38,9 @@ export class ExocortexSettingTab extends PluginSettingTab {
   }
 
   /**
-   * Obsidian < 1.13 entry point. obsidian 1.13.0 deprecated the imperative
+   * Framework entry point while `getSettingDefinitions()` is not implemented
+   * (Obsidian calls `display()` whenever the declarative list is empty, on any
+   * version). obsidian 1.13.0 deprecated the imperative
    * `display()` in favour of the declarative `getSettingDefinitions()`; the
    * tab is still rendered imperatively (migration tracked separately), so
    * `display()` stays as the framework hook and delegates to {@link render},
@@ -554,7 +556,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Folder prefixes")
-      .setDesc("One folder prefix per line (e.g. \"09 templates/\")")
+      .setDesc("One folder prefix per line (e.g. \"09 Templates/\")")
       .addTextArea((textArea) => {
         textArea
           .setPlaceholder("09 templates/\n10 drafts/")
@@ -735,7 +737,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
 
     const patDesc = containerEl.createDiv({ cls: "setting-item-description" });
     patDesc.appendText(
-      "Fine-grained Personal Access Token used to push AssetSpace " +
+      "Fine-grained personal access token used to push AssetSpace " +
         "submodules to GitHub. Stored in data.local.json (not data.json) so " +
         "Obsidian Sync never replicates it over the network. Required for the " +
         "«Push current assetspace» and «Apply profile» commands.",

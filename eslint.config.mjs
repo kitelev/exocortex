@@ -2,6 +2,14 @@ import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import obsidianPlugin from 'eslint-plugin-obsidianmd';
 import prettierConfig from 'eslint-config-prettier';
+// #4232 — `obsidianmd/ui/sentence-case` options REPLACE the plugin's default
+// brand/acronym lists (`options?.brands ?? DEFAULT_BRANDS`), they do not extend
+// them. Import the defaults (deep path — the package has no `exports` map) so
+// our additions come ON TOP of GitHub/Obsidian/macOS/HTTP/… A plugin upgrade that
+// moves these files fails config loading LOUDLY, which beats silently losing 120
+// default entries.
+import { DEFAULT_BRANDS } from 'eslint-plugin-obsidianmd/dist/lib/rules/ui/brands.js';
+import { DEFAULT_ACRONYMS } from 'eslint-plugin-obsidianmd/dist/lib/rules/ui/acronyms.js';
 
 export default tseslint.config(
   eslint.configs.recommended,
@@ -62,12 +70,18 @@ export default tseslint.config(
       // `eslint-disable` directives (eslint-plugin-obsidianmd 0.4.1 forbids
       // disabling any obsidianmd/* rule inline).
       'obsidianmd/ui/sentence-case': ['warn', {
-        brands: ['GitHub', 'Obsidian', 'Exocortex', 'ExoSync', 'BRAT', 'AssetSpace', 'EKA'],
-        acronyms: ['PAT', 'SHACL', 'SPARQL', 'RDF', 'URL', 'UID', 'UUID', 'API', 'CLI', 'JSON', 'YAML'],
+        // Defaults first (GitHub, Obsidian, macOS, …), then the product's own
+        // proper nouns. ⛔ Every addition changes what the rule DEMANDS elsewhere
+        // («Copy uid» would become «Copy UID» if UID were listed) — add only
+        // what a real UI string needs and re-run the whole-src config diff.
+        brands: [...DEFAULT_BRANDS, 'Exocortex', 'ExoSync', 'BRAT', 'AssetSpace', 'EKA'],
+        acronyms: [...DEFAULT_ACRONYMS, 'PAT', 'SHACL', 'SPARQL', 'RDF'],
         ignoreRegex: [
           '^github_pat_',          // literal token placeholder
-          '^\\d{2} \\w',            // vault folder placeholders («09 templates/\n10 drafts/»)
+          '^\\d{2} [^\\n]*/',        // vault folder placeholders («09 templates/\n10 drafts/»)
+          '"\\d{2} \\w+/"',          // quoted folder example inside prose («(e.g. "09 Templates/")»)
           '^assetspaces/',         // vault-relative path placeholders
+          '\\.exocortex/',           // literal `.exocortex/…` paths (the brand «Exocortex» must not re-case them)
           '^\\[\\[',                 // wikilink placeholders («[[Note name]]»)
           '^Step \\d+:',           // a11y step prefix in the onboarding panel
           '^✓',                    // decorative completion glyph
