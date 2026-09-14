@@ -1809,6 +1809,68 @@ describe("SyncEngine — A3: D11 one-operation guard, R8 auth, R5 secret-scan", 
     expect(result.detail).toMatch(/PAT/);
   });
 
+  // #4234 — an under-scoped fine-grained PAT gets `HTTP 403: Resource not
+  // accessible by personal access token` on the base-commit lookup
+  // (`git/commits/{watermark.lastSyncedSha}`). That is an AUTH failure, not
+  // «commit unknown»: it must surface as `auth-required` (R8), never as a
+  // phantom `full-conflict — base-mismatch` that sends the user to the
+  // merge/quarantine docs while the parity round on the same repo says
+  // `auth-required`. Requires a watermark (steady-state path) — the first-sync
+  // path never calls the base lookup.
+  it("HTTP 403 (under-scoped PAT) on the watermark base lookup → `auth-required`, not base-mismatch (#4234)", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const { engine, watermarks } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+
+    const transport: RestCommitTransport = async (req) => {
+      throw new Error(
+        `GitHub request ${req.method} ${req.url} → HTTP 403: {"message":"Resource not accessible by personal access token","status":"403"}`,
+      );
+    };
+    const { engine: scoped } = makeEngine(gh, local, {
+      transport,
+      watermarkStore: watermarks,
+    });
+    const result = await scoped.sync(gh.spec());
+
+    // Revert-verify anchor: pre-fix `resolveBaseTreeSha` swallowed the 403 into
+    // `null` → `full-conflict` / `base-mismatch`.
+    expect(result.status).toBe("auth-required");
+    expect(result.detail).toMatch(/PAT/);
+    expect(result.detail).not.toMatch(/base-mismatch/);
+    expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1")); // remote untouched
+  });
+
+  // #4234 — same lookup, transient failure: a 502 says nothing about the
+  // commit either → `error` with the transport detail, not base-mismatch.
+  it("transient HTTP 502 on the watermark base lookup → `error`, not base-mismatch (#4234)", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const { engine, watermarks } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+
+    const inner = gh.transport();
+    const transport: RestCommitTransport = async (req) => {
+      if (/\/git\/commits\//.test(req.url)) {
+        throw new Error(
+          `GitHub request ${req.method} ${req.url} → HTTP 502: Bad Gateway`,
+        );
+      }
+      return inner(req);
+    };
+    const { engine: flaky } = makeEngine(gh, local, {
+      transport,
+      watermarkStore: watermarks,
+    });
+    const result = await flaky.sync(gh.spec());
+
+    expect(result.status).toBe("error");
+    expect(result.detail).toMatch(/HTTP 502/);
+    expect(result.detail).not.toMatch(/base-mismatch/);
+    expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1")); // remote untouched
+  });
+
   it("rate-limited requests are retried transparently via the wrapped transport (R6)", async () => {
     const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
     const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });

@@ -492,6 +492,19 @@ function diffTrees(
   return { changed, deleted };
 }
 
+/**
+ * #4234 — «the remote does not know this object»: HTTP 404 (Not Found) or
+ * 422 (GitHub's «No commit found for SHA» / bad object state) over the
+ * transport error-message contract (`GitHub request {METHOD} {url} → HTTP
+ * {status}: {body}`). Deliberately NOT a catch-all: 401/403 are auth
+ * (`isAuthError`), 5xx / network are transient — neither says the commit is
+ * gone.
+ */
+function isCommitUnknownError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /HTTP (?:404|422)\b/.test(msg);
+}
+
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -2201,6 +2214,16 @@ export class SyncEngine {
   /**
    * D22 — resolve the ACTUAL base tree on the remote; never trust the stored
    * watermark blindly (R10). `null` = commit not resolvable (GC'd, rewritten).
+   *
+   * #4234 — ONLY «the remote does not know this commit» (HTTP 404 / 422)
+   * means «not resolvable». Every other failure — 401/403 from an expired or
+   * under-scoped PAT, 5xx, network, a malformed response — says nothing about
+   * the commit and MUST propagate so `sync()` classifies it (`auth-required`
+   * / `error`). The previous catch-all mapped an under-scoped fine-grained
+   * PAT's `HTTP 403: Resource not accessible by personal access token` to
+   * `null`, and ChangeDetector then reported a phantom «full-conflict —
+   * base-mismatch … must go through merge/quarantine» while the post-sync
+   * parity round on the same repo correctly said `auth-required`.
    */
   private async resolveBaseTreeSha(
     spec: SyncRepoSpec,
@@ -2216,8 +2239,9 @@ export class SyncEngine {
           this.deps.baseURL,
         )
       ).treeSha;
-    } catch {
-      return null;
+    } catch (err) {
+      if (isCommitUnknownError(err)) return null;
+      throw err;
     }
   }
 
