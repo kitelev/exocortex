@@ -238,11 +238,22 @@ loss and are visible cross-device. Design points:
   `deferredDeletes` warnings and re-surface on every sync. Remote deletes
   _are_ applied locally.
 - **`auth-required`** — HTTP 401, or 403 without rate-limit markers: the
-  PAT is expired, revoked or under-scoped; never treated as success. Known
-  blind spot: an under-scoped _fine-grained_ PAT gets **404** from GitHub
-  on private-repo refs (existence-hiding), which surfaces as a generic
-  error, not as `auth-required` — if a private repo "does not exist",
-  check the PAT's repository allowlist first.
+  PAT is expired, revoked or under-scoped; never treated as success. A
+  fine-grained PAT that _can_ see the repo but lacks the **Contents**
+  permission gets **403 «Resource not accessible by personal access
+  token»** → `auth-required` (also on the watermark base lookup, #4234).
+  Known blind spot: a fine-grained PAT whose _repository allowlist omits_
+  the private repo gets **404** from GitHub (existence-hiding), never
+  `auth-required`. On a first sync — and on a steady-state sync whose
+  head-ref lookup runs first (asset-mode repos with a warm mtime-manifest,
+  the common case) — it surfaces as a generic `error` («… git/refs/heads/…
+  → HTTP 404»); on a steady-state sync that resolves the base commit first
+  (file-mode repos, no manifest yet, or the periodic full re-hash) it
+  surfaces as `full-conflict — base-mismatch` (the base commit looks
+  «unknown»). Either way: if a private repo "does not exist" or its
+  watermark commit is "not resolvable", check the PAT's repository
+  allowlist before touching the watermark (#4236 tracks the
+  disambiguation).
 - **Rate limits** — every transport call is wrapped in exponential backoff
   with jitter (default 3 retries, 1 s base) on HTTP 429 / 403-rate-limit.
   After the retries the repo's cycle fails warn-not-block.
