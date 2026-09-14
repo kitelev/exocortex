@@ -354,7 +354,7 @@ describe("ExocortexSettingTab — RFC 0002 §3.6 information architecture", () =
   });
 
   it("places the GitHub PAT field in the top section, before «Display» (PAT not buried)", () => {
-    const patIdx = settingIndex("Personal Access Token");
+    const patIdx = settingIndex("Personal access token");
     const displayIdx = settingIndex("Display");
     expect(patIdx).toBeGreaterThanOrEqual(0);
     expect(displayIdx).toBeGreaterThan(patIdx);

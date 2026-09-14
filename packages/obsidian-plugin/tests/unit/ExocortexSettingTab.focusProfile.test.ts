@@ -126,6 +126,7 @@ describe("ExocortexSettingTab — Issue #3320 Profile sections", () => {
       (el as any).empty = jest.fn();
       (el as any).createEl = jest.fn().mockImplementation(() => createMockElement());
       (el as any).createDiv = jest.fn().mockImplementation(() => createMockElement());
+      (el as any).createSpan = jest.fn().mockImplementation(() => createMockElement());
       (el as any).appendText = jest.fn();
       createdEls.push(el);
       return el;
@@ -134,6 +135,7 @@ describe("ExocortexSettingTab — Issue #3320 Profile sections", () => {
       empty: jest.fn(),
       createEl: jest.fn().mockImplementation(() => createMockElement()),
       createDiv: jest.fn().mockImplementation(() => createMockElement()),
+      createSpan: jest.fn().mockImplementation(() => createMockElement()),
     };
 
     mockPlugin = createMockPlugin({
@@ -254,7 +256,7 @@ describe("ExocortexSettingTab — Issue #3320 Profile sections", () => {
   it("renders the PAT row with Save / Test connection buttons", () => {
     settingTab.display();
     const patRow = settingCalls.find(
-      (c) => c.name === "Personal Access Token",
+      (c) => c.name === "Personal access token",
     );
     expect(patRow).toBeDefined();
   });

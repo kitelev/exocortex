@@ -57,6 +57,22 @@ export default tseslint.config(
       'obsidianmd/platform': 'warn',
       'obsidianmd/regex-lookbehind': 'error',
       'obsidianmd/no-sample-code': 'warn',
+      // #4232 — brands / acronyms / literal placeholders that the sentence-case
+      // rule must preserve, configured ONCE here instead of per-call-site
+      // `eslint-disable` directives (eslint-plugin-obsidianmd 0.4.1 forbids
+      // disabling any obsidianmd/* rule inline).
+      'obsidianmd/ui/sentence-case': ['warn', {
+        brands: ['GitHub', 'Obsidian', 'Exocortex', 'ExoSync', 'BRAT', 'AssetSpace', 'EKA'],
+        acronyms: ['PAT', 'SHACL', 'SPARQL', 'RDF', 'URL', 'UID', 'UUID', 'API', 'CLI', 'JSON', 'YAML'],
+        ignoreRegex: [
+          '^github_pat_',          // literal token placeholder
+          '^\\d{2} \\w',            // vault folder placeholders («09 templates/\n10 drafts/»)
+          '^assetspaces/',         // vault-relative path placeholders
+          '^\\[\\[',                 // wikilink placeholders («[[Note name]]»)
+          '^Step \\d+:',           // a11y step prefix in the onboarding panel
+          '^✓',                    // decorative completion glyph
+        ],
+      }],
 
       'no-restricted-syntax': ['error', {
         selector: 'NewExpression[callee.name="Notice"]',
@@ -194,30 +210,31 @@ export default tseslint.config(
       '@typescript-eslint/only-throw-error': 'off',
     },
   },
-  // eslint-plugin-obsidianmd 0.4.1 (lock bump 2026-08-21) turned EVERY
-  // `eslint-disable obsidianmd/*` / `@typescript-eslint/no-deprecated` directive
-  // into an `eslint-comments/no-restricted-disable` ERROR and added the
-  // `settings-tab/prefer-setting-definitions` + `prefer-create-el` warnings.
-  // ExocortexSettingTab.ts carries 8 such directives (brand/acronym UI labels:
-  // "GitHub PAT", "ExoSync", "SHACL"; the deprecated `display` override) plus 3
-  // `createEl("span"|"div")` calls that pre-date the bump, and no commit has
-  // touched the file since — so the FIRST fix landing there (#4231) cannot pass
-  // lint-staged's `--max-warnings=0` on debt it did not create. `prefer-create-el`
-  // is off here for a second reason: its `--fix` rewrites those untouched calls
-  // to `createSpan`/`createDiv`, which the existing settings-tab test mocks do
-  // not implement (ExocortexSettingTab.focusProfile.test.ts → 9 red).
-  // Same shape as the M5a block above: suppress only the surfaced rules, only
-  // for this file. CI `npm run lint` is advisory (continue-on-error), so this
-  // changes no gate. ⛔ Do NOT extend — the proper fix is configuring
-  // `obsidianmd/ui/sentence-case` `brands`/`acronyms` + dropping the directives
-  // (follow-up issue #4232); remove this block with it.
+  // #4232 — `obsidianmd/settings-tab/prefer-setting-definitions` asks for the
+  // obsidian ≥ 1.13 declarative `getSettingDefinitions()` API. The settings
+  // tab is a ~950-line imperative `display()`; migrating it is a feature-size
+  // refactor tracked separately, not lint hygiene. Every other rule that the
+  // eslint-plugin-obsidianmd 0.4.1 bump surfaced for this file is now
+  // satisfied at the source (sentence-case configured above, directives
+  // removed, deprecated `display()` no longer called from code).
   {
     files: ['packages/obsidian-plugin/src/presentation/settings/ExocortexSettingTab.ts'],
     rules: {
-      'eslint-comments/no-restricted-disable': 'off',
-      'obsidianmd/ui/sentence-case': 'off',
       'obsidianmd/settings-tab/prefer-setting-definitions': 'off',
-      'obsidianmd/prefer-create-el': 'off',
+    },
+  },
+  // #4232 — the ONE deliberate deviation from `no-tfile-tfolder-cast`: the
+  // adapter narrows a resolved link target by duck-typing (`"children" in
+  // file`) instead of `instanceof TFile`, because `instanceof` silently
+  // tightens the blocker path (req 5cd9fffe — a test with a plain-object mock
+  // proves it) and breaks whenever two copies of the `obsidian` module are
+  // loaded. The rule is right in general; here its demand is refuted by a
+  // test, so the exception lives in config (inline `eslint-disable` of any
+  // obsidianmd/* rule is an error since eslint-plugin-obsidianmd 0.4.1).
+  {
+    files: ['packages/obsidian-plugin/src/domain/display-name/ObsidianVaultMetadataAdapter.ts'],
+    rules: {
+      'obsidianmd/no-tfile-tfolder-cast': 'off',
     },
   },
   {

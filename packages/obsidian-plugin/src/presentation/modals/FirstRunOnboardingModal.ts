@@ -152,7 +152,6 @@ export class FirstRunOnboardingModal extends Modal {
 
     contentEl.createEl("h2", {
       cls: "exocortex-onboarding-title",
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Exocortex" is the plugin's proper name (RFC 0002 §3.1 specifies this exact panel title)
       text: "Welcome to Exocortex",
     });
     contentEl.createEl("p", {
@@ -225,7 +224,7 @@ export class FirstRunOnboardingModal extends Modal {
 
     steps.forEach((step) => this.renderActionStep(list, step));
 
-    const footer = contentEl.createEl("div", {
+    const footer = contentEl.createDiv({
       cls: "modal-button-container exocortex-onboarding-footer",
     });
     const closeBtn = footer.createEl("button", {
@@ -258,16 +257,16 @@ export class FirstRunOnboardingModal extends Modal {
       cls: "exocortex-onboarding-step exocortex-onboarding-step-pat",
     });
 
-    const header = item.createEl("div", {
+    const header = item.createDiv({
       cls: "exocortex-onboarding-step-header",
     });
     // Register for cross-modal `markStepDoneByKey` (#3705).
     this.stepElements.set(ONBOARDING_STEP_KEYS.pat, { item, header });
-    header.createEl("span", {
+    header.createSpan({
       cls: "exocortex-onboarding-step-marker",
       text: "Step 1 — ",
     });
-    header.createEl("span", {
+    header.createSpan({
       cls: "exocortex-onboarding-step-title",
       text: "Add your GitHub token (optional)",
     });
@@ -285,13 +284,12 @@ export class FirstRunOnboardingModal extends Modal {
     // Settings PAT section (single source, no copy drift).
     renderPatSetupHelper(item);
 
-    const row = item.createEl("div", { cls: "exocortex-onboarding-pat-row" });
+    const row = item.createDiv({ cls: "exocortex-onboarding-pat-row" });
 
     const input = row.createEl("input", {
       cls: "exocortex-onboarding-pat-input",
     }) as HTMLInputElement;
     input.type = "password";
-    // eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder shows the literal PAT format (matches the Settings PAT field)
     input.placeholder = "github_pat_…";
     input.setAttribute("aria-label", "GitHub personal access token (optional)");
     this.firstFocusable = input;
@@ -321,7 +319,6 @@ export class FirstRunOnboardingModal extends Modal {
       cls: "mod-cta exocortex-onboarding-pat-save",
       text: "Save token",
     });
-    // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Step 1:" a11y prefix (matches the step-numbered aria-labels above) + "GitHub" proper noun
     saveBtn.setAttribute("aria-label", "Step 1: Save your GitHub token");
     saveBtn.addEventListener("click", () => {
       void this.actions
@@ -348,7 +345,6 @@ export class FirstRunOnboardingModal extends Modal {
         cls: "exocortex-onboarding-pat-test",
         text: "Test connection",
       });
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Step 1:" a11y prefix (matches the step-numbered aria-labels above) + "GitHub" proper noun
       testBtn.setAttribute("aria-label", "Step 1: Test the GitHub token connection");
 
       // Status line: role=status + aria-live=polite so assistive tech announces
@@ -393,16 +389,16 @@ export class FirstRunOnboardingModal extends Modal {
   private renderActionStep(list: HTMLElement, step: StepSpec): void {
     const item = list.createEl("li", { cls: "exocortex-onboarding-step" });
 
-    const header = item.createEl("div", {
+    const header = item.createDiv({
       cls: "exocortex-onboarding-step-header",
     });
     // Register for cross-modal `markStepDoneByKey` (#3705).
     this.stepElements.set(step.key, { item, header });
-    header.createEl("span", {
+    header.createSpan({
       cls: "exocortex-onboarding-step-marker",
       text: `${step.marker} — `,
     });
-    header.createEl("span", {
+    header.createSpan({
       cls: "exocortex-onboarding-step-title",
       text: step.title,
     });
@@ -444,9 +440,8 @@ export class FirstRunOnboardingModal extends Modal {
   private markStepDone(item: HTMLElement, header: HTMLElement): void {
     if (item.classList.contains("is-done")) return;
     item.classList.add("is-done");
-    const done = header.createEl("span", {
+    const done = header.createSpan({
       cls: "exocortex-onboarding-step-done",
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- decorative "✓" completion glyph precedes the status word "Done"; the word (never the glyph alone) carries the meaning per P16
       text: "✓ Done",
     });
     done.setAttribute("role", "status");
