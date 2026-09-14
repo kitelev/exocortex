@@ -79,7 +79,11 @@ import {
   OUTBOX_REMOTE_ABSENT,
   type OutboxStorePort,
 } from "./LocalOutboxStore";
-import { isAuthError } from "./CredentialStore";
+import {
+  isAuthError,
+  isRefNotFoundError,
+  REF_NOT_FOUND_HINT,
+} from "./CredentialStore";
 import { redactSecrets, scanForSecrets } from "./secretScan";
 import {
   withRateLimitBackoff,
@@ -510,26 +514,6 @@ function isCommitUnknownError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return /→ HTTP (?:404|422)\b/.test(msg);
 }
-
-/**
- * #4236 — HTTP 404 on the head-ref lookup (`git/refs/heads/{branch}`) over
- * the transport error-message contract. GitHub answers this both for a
- * private repo outside a fine-grained PAT's repository allowlist
- * (existence-hiding) and for a deleted/renamed repo; `sync()` appends the
- * allowlist hint so the user checks the token BEFORE touching anything.
- * Fires on every path that reaches the head ref — first sync, the cached
- * steady-state prefetch, and the base-lookup disambiguation probe.
- */
-function isRefNotFoundError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return /\/git\/refs\/heads\/\S* → HTTP 404\b/.test(msg);
-}
-
-/** #4236 — the hint appended to a head-ref 404 (single source of wording). */
-const REF_NOT_FOUND_HINT =
-  "GitHub answers 404 both for a private repo outside a fine-grained PAT's " +
-  "repository allowlist (existence-hiding) and for a deleted/renamed repo — " +
-  "check the token's repository allowlist first (R8)";
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);

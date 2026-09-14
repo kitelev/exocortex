@@ -1842,9 +1842,6 @@ describe("SyncEngine — A3: D11 one-operation guard, R8 auth, R5 secret-scan", 
     expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1")); // remote untouched
   });
 
-  // #4234 — the OTHER «commit unknown» shape: GitHub answers 422 for a
-  // malformed / bad-object SHA on `git/commits/{sha}`; like the fake's 404 it
-  // must stay `full-conflict / base-mismatch` (never auth-required / error).
   // #4236 — GitHub hides a private repo that lies OUTSIDE a fine-grained PAT's
   // repository allowlist behind 404 on EVERY Git Data endpoint. On the
   // non-cached steady-state path that 404 arrives first on `git/commits/{sha}`
@@ -1919,6 +1916,35 @@ describe("SyncEngine — A3: D11 one-operation guard, R8 auth, R5 secret-scan", 
     expect(result.detail).not.toMatch(/base-mismatch/);
   });
 
+  // #4236 — the most realistic mix on the probe: a fine-grained PAT that
+  // lists the repo but lacks Contents → 403 on the head probe → the auth
+  // classifier wins (`auth-required`), no allowlist hint, no base-mismatch.
+  it("HTTP 404 on git/commits but 403 (no Contents) on the head probe → `auth-required` (#4236)", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const { engine, watermarks } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+
+    const transport: RestCommitTransport = async (req) => {
+      if (/\/git\/commits\//.test(req.url)) {
+        throw new Error(`GitHub request ${req.method} ${req.url} → HTTP 404: {"message":"Not Found"}`);
+      }
+      throw new Error(
+        `GitHub request ${req.method} ${req.url} → HTTP 403: {"message":"Resource not accessible by personal access token"}`,
+      );
+    };
+    const { engine: scoped } = makeEngine(gh, local, {
+      transport,
+      watermarkStore: watermarks,
+    });
+    const result = await scoped.sync(gh.spec());
+
+    expect(result.status).toBe("auth-required");
+    expect(result.detail).toMatch(/PAT/);
+    expect(result.detail).not.toMatch(/allowlist/);
+    expect(result.detail).not.toMatch(/base-mismatch/);
+  });
+
   // #4236 — negative control for the probe: the repo IS visible (head ref
   // resolves) and only the base commit is unknown ⇒ genuine GC'd / rewritten
   // base ⇒ unchanged `full-conflict / base-mismatch`, and the probe costs
@@ -1947,6 +1973,9 @@ describe("SyncEngine — A3: D11 one-operation guard, R8 auth, R5 secret-scan", 
     expect(refReads).toBe(1);
   });
 
+  // #4234 — the OTHER «commit unknown» shape: GitHub answers 422 for a
+  // malformed / bad-object SHA on `git/commits/{sha}`; like the fake's 404 it
+  // must stay `full-conflict / base-mismatch` (never auth-required / error).
   it("HTTP 422 on the watermark base lookup → still full-conflict (base-mismatch) (#4234)", async () => {
     const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
     const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });

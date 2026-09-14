@@ -57,9 +57,11 @@ needs **no** PAT at all.
 3. **If a private repo "does not exist"** during Apply/Sync — or Sync reports
    `<owner>/<repo>@<branch> is not reachable … check the token's repository
    allowlist` — check the token's repository allowlist first; that is the most
-   common cause. A token that _can_ see the repo but lacks **Contents** access
-   fails with `auth-required` (HTTP 403 «Resource not accessible by personal
-   access token») instead.
+   common cause. The same 404 also comes from a repo that has no `main`
+   branch (ExoSync syncs `main` only — rename `master` → `main` on GitHub).
+   A token that _can_ see the repo but lacks **Contents** access fails with
+   `auth-required` (HTTP 403 «Resource not accessible by personal access
+   token») instead.
 
 The token is stored device-local in
 `.obsidian/plugins/exocortex/data.local.json` (key `pat`); the `.local.` infix

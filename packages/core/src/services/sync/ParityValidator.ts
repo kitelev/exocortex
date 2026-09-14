@@ -56,7 +56,11 @@ import {
   type RemoteTreeEntry,
 } from "./githubRepoReader";
 import { gitBlobSha } from "./gitBlobSha";
-import { isAuthError } from "./CredentialStore";
+import {
+  isAuthError,
+  isRefNotFoundError,
+  REF_NOT_FOUND_HINT,
+} from "./CredentialStore";
 import { withRateLimitBackoff, type BackoffOptions } from "./transportBackoff";
 import {
   DEFAULT_MAX_FILE_BYTES,
@@ -254,9 +258,6 @@ function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function isNotFoundError(err: unknown): boolean {
-  return /HTTP 404/.test(errMsg(err));
-}
 
 interface LocalSnapshot {
   /** path → blob SHA of every syncable, size-admitted local file. */
@@ -549,15 +550,16 @@ export class ParityValidator {
           ),
         });
       }
-      if (isNotFoundError(err)) {
-        // Dead repo pointer OR a fine-grained PAT whose allowlist omits this
-        // private repo (GitHub hides existence with 404) — documented blind
-        // spot; the hint keeps auth misconfiguration from masquerading as a
-        // missing repo indefinitely.
-        warnings.push(
-          `repo unreachable (HTTP 404): dead AssetSpace pointer, or the fine-grained PAT does not allowlist this repo — skipped`,
+      if (isRefNotFoundError(err)) {
+        // #4236 — same classifier + wording as SyncEngine (single source):
+        // dead repo pointer, allowlist-omitted private repo (GitHub hides
+        // existence with 404) or a repo without `main` — the hint keeps auth
+        // misconfiguration from masquerading as a missing repo indefinitely.
+        const detail = redact(
+          `${spec.owner}/${spec.repo}@${spec.branch} is not reachable: ${errMsg(err)} — ${REF_NOT_FOUND_HINT}`,
         );
-        return report("error", { detail: redact(errMsg(err)) });
+        warnings.push(`repo unreachable (HTTP 404) — skipped: ${detail}`);
+        return report("error", { detail });
       }
       warnings.push(`parity check failed: ${redact(errMsg(err))}`);
       return report("error", { detail: redact(errMsg(err)) });
