@@ -17,6 +17,8 @@
  */
 
 /** Per-device secure credential storage (VL#10). */
+import { SYNC_BRANCH } from "./spaceSpecCore";
+
 export interface CredentialStorePort {
   /** Resolve the PAT, or null when none is stored (→ prompt, R8). */
   getToken(): Promise<string | null>;
@@ -63,9 +65,14 @@ export function isRefNotFoundError(err: unknown): boolean {
   return /\/git\/refs\/heads\/\S* → HTTP 404\b/.test(msg);
 }
 
-/** #4236 — the hint appended to a head-ref 404 (single source of wording). */
+/**
+ * #4236 — the hint appended to a head-ref 404 (single source of wording).
+ * The branch name is DERIVED from `SYNC_BRANCH` (the one place every
+ * `SyncRepoSpec` gets its branch, `spaceSpecCore.ts`) so the hint can never
+ * drift from what the engine actually syncs.
+ */
 export const REF_NOT_FOUND_HINT =
   "GitHub answers 404 for a private repo outside a fine-grained PAT's " +
   "repository allowlist (existence-hiding), for a deleted/renamed repo, and " +
-  "for a visible repo that has no `main` branch (ExoSync syncs `main` only) — " +
-  "check the token's repository allowlist first (R8)";
+  `for a visible repo that has no \`${SYNC_BRANCH}\` branch (ExoSync syncs ` +
+  `\`${SYNC_BRANCH}\` only) — check the token's repository allowlist first (R8)`;

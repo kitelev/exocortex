@@ -558,7 +558,9 @@ export class ParityValidator {
         const detail = redact(
           `${spec.owner}/${spec.repo}@${spec.branch} is not reachable: ${errMsg(err)} — ${REF_NOT_FOUND_HINT}`,
         );
-        warnings.push(`repo unreachable (HTTP 404) — skipped: ${detail}`);
+        // Short warning; the hint travels in `detail` only (the plugin logs
+        // both, so embedding it here printed the ~300-char hint twice).
+        warnings.push("repo unreachable (HTTP 404) — skipped");
         return report("error", { detail });
       }
       warnings.push(`parity check failed: ${redact(errMsg(err))}`);
