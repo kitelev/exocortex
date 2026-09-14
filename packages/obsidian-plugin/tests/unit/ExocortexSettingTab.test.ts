@@ -65,6 +65,11 @@ jest.mock("../../src/infrastructure/adapters/LocalSecretsStore", () => ({
   },
 }));
 let mockRateLimitThrows = false;
+// #4231 — the rejection message is injectable so an axis can distinguish an
+// auth-shaped failure (401, the default) from a network/timeout failure.
+const DEFAULT_RATE_LIMIT_ERROR =
+  "GitHub request GET /rate_limit → HTTP 401: bad credentials";
+let mockRateLimitError: string | null = null;
 // #4231 — record the PAT each client was constructed with, so a test can
 // assert WHICH token the Test-connection handler actually exercised (entered
 // vs stored). Mirrors the real ctor contract (`{ pat, app }`).
@@ -76,9 +81,7 @@ jest.mock("../../src/infrastructure/adapters/GitHubRestClient", () => ({
     }
     async checkRateLimit(): Promise<{ remaining: number; resetAt: Date }> {
       if (mockRateLimitThrows) {
-        throw new Error(
-          "GitHub request GET /rate_limit → HTTP 401: bad credentials",
-        );
+        throw new Error(mockRateLimitError ?? DEFAULT_RATE_LIMIT_ERROR);
       }
       return { remaining: 4321, resetAt: new Date("2026-06-21T23:00:00.000Z") };
     }
@@ -103,6 +106,7 @@ describe("ExocortexSettingTab", () => {
     capture.buttons = [];
     mockStoredPat = "ghp_settings_default";
     mockRateLimitThrows = false;
+    mockRateLimitError = null;
     constructedClientPats.length = 0;
 
     // A recursive mock element that supports the Obsidian DOM helpers the
@@ -438,6 +442,30 @@ describe("ExocortexSettingTab", () => {
       const text = findPatStatusEl()!.textContent ?? "";
       expect(text).toMatch(/tested the entered token \(…same\)/);
       expect(text).not.toMatch(/Not saved yet/);
+    });
+
+    it("whitespace-only field → treated as empty: STORED token is tested", async () => {
+      mockStoredPat = "ghp_stored_only_token_wsp1";
+      settingTab.display();
+      typePat("   ");
+      await findButton("Test connection")!.onClick!();
+      // Revert-verify anchor: dropping the handler's trim classifies "   " as
+      // an entered token and testPatConnection then reports "No token entered".
+      expect(constructedClientPats).toEqual(["ghp_stored_only_token_wsp1"]);
+      expect(findPatStatusEl()!.textContent ?? "").toMatch(/tested the stored token \(…wsp1\)/);
+    });
+
+    it("stored token fails on a NETWORK error → no «paste a new token» hint (token not at fault)", async () => {
+      mockStoredPat = "ghp_stored_token_network_net1";
+      mockRateLimitThrows = true;
+      mockRateLimitError =
+        "GitHub request GET /rate_limit timed out after 120000ms (no response — stalled connection?)";
+      settingTab.display();
+      await findButton("Test connection")!.onClick!();
+      const text = findPatStatusEl()!.textContent ?? "";
+      expect(text).toMatch(/Test connection failed/i);
+      expect(text).toMatch(/tested the stored token \(…net1\)/);
+      expect(text).not.toMatch(/Paste a new token/);
     });
 
     it("field empty → falls back to the STORED token and names it", async () => {

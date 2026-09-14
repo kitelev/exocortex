@@ -215,7 +215,6 @@ export default tseslint.config(
     files: ['packages/obsidian-plugin/src/presentation/settings/ExocortexSettingTab.ts'],
     rules: {
       'eslint-comments/no-restricted-disable': 'off',
-      'eslint-comments/require-description': 'off',
       'obsidianmd/ui/sentence-case': 'off',
       'obsidianmd/settings-tab/prefer-setting-definitions': 'off',
       'obsidianmd/prefer-create-el': 'off',

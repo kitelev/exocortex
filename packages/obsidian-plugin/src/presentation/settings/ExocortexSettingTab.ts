@@ -363,7 +363,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
           // getSettingDefinitions(). Пока вкладка построена на императивном
           // display(), пере-рендер после сброса делается им же — миграция на
           // новый декларативный API отдельной задачей.
-          // eslint-disable-next-line @typescript-eslint/no-deprecated
+          // eslint-disable-next-line @typescript-eslint/no-deprecated -- obsidian 1.13 deprecates PluginSettingTab.display(); migration to getSettingDefinitions() tracked separately (#4232)
           this.display(); // Refresh UI
         }),
       );
@@ -661,13 +661,16 @@ export class ExocortexSettingTab extends PluginSettingTab {
    *     `plugin.profileApplyManager`.
    *
    *   - GitHubRestClient requires the PAT, so it cannot be a stable field;
-   *     constructed inside the Test-connection callback against the freshly
-   *     persisted secret (ensures Test reads the same byte sequence Push
-   *     will see after reload).
+   *     constructed inside the Test-connection callback. Test exercises the
+   *     ENTERED token whenever the field is non-empty (#4231 — parity with
+   *     the onboarding panel and BRAT; a freshly pasted token must be
+   *     testable BEFORE Save), and the persisted secret only for an empty
+   *     field (that path still reads the same bytes Push will see).
    *
    *   - PAT persistence uses an explicit Save button — not keystroke
-   *     onChange — to avoid persisting partial PAT bytes that Test could
-   *     then race against (advisor catch).
+   *     onChange — so partial PAT bytes are never written to disk (advisor
+   *     catch). Test reading the live field value is deliberate: both
+   *     writers trim, and the status line names which token was tested.
    *
    *   - buildAssetSpacePusher captures the PAT at onload time, so changing
    *     the PAT in this UI does not retroactively activate Push. Save flow
@@ -886,7 +889,14 @@ export class ExocortexSettingTab extends PluginSettingTab {
             let text = `${describePatConnection(result)} — tested the ${tested}`;
             if (source === "entered" && result.ok && pat !== stored) {
               text += ". Not saved yet — click Save PAT to store it.";
-            } else if (source === "stored" && !result.ok) {
+            } else if (
+              source === "stored" &&
+              !result.ok &&
+              /HTTP 401|Bad credentials/i.test(result.reason)
+            ) {
+              // Only an auth-shaped rejection means the stored token is at
+              // fault — a timeout / DNS failure must not steer the user into
+              // rotating a perfectly good PAT.
               text += ". Paste a new token into the field to test it instead.";
             }
             setStatus(text, result.ok ? "valid" : "invalid");
