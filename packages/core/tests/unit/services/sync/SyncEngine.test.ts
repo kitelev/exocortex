@@ -1845,6 +1845,108 @@ describe("SyncEngine — A3: D11 one-operation guard, R8 auth, R5 secret-scan", 
   // #4234 — the OTHER «commit unknown» shape: GitHub answers 422 for a
   // malformed / bad-object SHA on `git/commits/{sha}`; like the fake's 404 it
   // must stay `full-conflict / base-mismatch` (never auth-required / error).
+  // #4236 — GitHub hides a private repo that lies OUTSIDE a fine-grained PAT's
+  // repository allowlist behind 404 on EVERY Git Data endpoint. On the
+  // non-cached steady-state path that 404 arrives first on `git/commits/{sha}`
+  // and read as «commit unknown» → phantom base-mismatch. The engine must
+  // probe the head ref once and, when the repo itself is invisible, report an
+  // `error` that names the token's allowlist — never merge/quarantine advice.
+  it("HTTP 404 on BOTH git/commits and git/refs (allowlist-omitted repo) → `error` naming the PAT allowlist, not base-mismatch (#4236)", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const { engine, watermarks } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+
+    const transport: RestCommitTransport = async (req) => {
+      // Production shape: the same `Not Found` GitHub sends for an invisible repo.
+      throw new Error(`GitHub request ${req.method} ${req.url} → HTTP 404: {"message":"Not Found"}`);
+    };
+    const { engine: hidden } = makeEngine(gh, local, {
+      transport,
+      watermarkStore: watermarks,
+    });
+    const result = await hidden.sync(gh.spec());
+
+    // Revert-verify anchor: pre-fix → `full-conflict` / `base-mismatch`.
+    expect(result.status).toBe("error");
+    expect(result.detail).toMatch(/repository allowlist/);
+    expect(result.detail).toMatch(/HTTP 404/);
+    expect(result.detail).not.toMatch(/base-mismatch/);
+    expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1")); // remote untouched
+  });
+
+  // #4236 — first sync (no watermark yet) reaches the head ref directly; the
+  // same 404 must carry the allowlist hint there too (single classifier).
+  it("first sync: head-ref 404 (allowlist-omitted repo) → `error` naming the PAT allowlist (#4236)", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const transport: RestCommitTransport = async (req) => {
+      throw new Error(`GitHub request ${req.method} ${req.url} → HTTP 404: {"message":"Not Found"}`);
+    };
+    const { engine, watermarks } = makeEngine(gh, local, { transport });
+
+    const result = await engine.sync(gh.spec());
+
+    expect(result.status).toBe("error");
+    expect(result.detail).toMatch(/repository allowlist/);
+    expect(watermarks.records.size).toBe(0); // nothing seeded on failure
+  });
+
+  // #4236 — the disambiguating head probe itself failing TRANSIENTLY must not
+  // be dressed up as an allowlist problem: propagate the real cause → `error`
+  // with the 502 detail and no allowlist hint.
+  it("HTTP 404 on git/commits but 502 on the head probe → `error` with the 502, no allowlist hint (#4236)", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const { engine, watermarks } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+
+    const transport: RestCommitTransport = async (req) => {
+      if (/\/git\/commits\//.test(req.url)) {
+        throw new Error(`GitHub request ${req.method} ${req.url} → HTTP 404: {"message":"Not Found"}`);
+      }
+      throw new Error(`GitHub request ${req.method} ${req.url} → HTTP 502: Bad Gateway`);
+    };
+    const { engine: flaky } = makeEngine(gh, local, {
+      transport,
+      watermarkStore: watermarks,
+    });
+    const result = await flaky.sync(gh.spec());
+
+    expect(result.status).toBe("error");
+    expect(result.detail).toMatch(/HTTP 502/);
+    expect(result.detail).not.toMatch(/allowlist/);
+    expect(result.detail).not.toMatch(/base-mismatch/);
+  });
+
+  // #4236 — negative control for the probe: the repo IS visible (head ref
+  // resolves) and only the base commit is unknown ⇒ genuine GC'd / rewritten
+  // base ⇒ unchanged `full-conflict / base-mismatch`, and the probe costs
+  // exactly ONE extra head-ref GET on this branch.
+  it("HTTP 404 on git/commits only, head ref resolvable → base-mismatch, one head probe (#4236)", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const { engine, watermarks } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+
+    const record = watermarks.records.get(gh.spec().repoKey)!;
+    watermarks.records.set(gh.spec().repoKey, {
+      ...record,
+      lastSyncedSha: "deadbeef".repeat(5), // commit unknown to the remote (fake → 404)
+    });
+    let refReads = 0;
+    gh.onGetRef = (): void => {
+      refReads++;
+    };
+    const result = await engine.sync(gh.spec());
+    gh.onGetRef = undefined;
+
+    expect(result.status).toBe("full-conflict");
+    expect(result.detail).toMatch(/base-mismatch/);
+    expect(result.detail).not.toMatch(/allowlist/);
+    expect(refReads).toBe(1);
+  });
+
   it("HTTP 422 on the watermark base lookup → still full-conflict (base-mismatch) (#4234)", async () => {
     const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
     const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });

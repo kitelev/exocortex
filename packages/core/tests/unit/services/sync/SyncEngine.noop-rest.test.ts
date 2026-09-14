@@ -435,4 +435,35 @@ describe("SyncEngine — no-op REST halving (perf, zero-loss)", () => {
     const [caught] = await valveEngine.syncAll([gh.spec()], "sync");
     expect(caught.status).toBe("full-conflict"); // base-mismatch detected (D22)
   });
+
+  // #4236 — the CACHED steady-state path resolves the head ref FIRST. When a
+  // fine-grained PAT's repository allowlist omits the repo, GitHub hides it
+  // behind 404 there too; the single classifier in `sync()` must name the
+  // token's allowlist (never a bare «Not Found» that reads as a vanished repo).
+  it("cached path: head-ref 404 (allowlist-omitted repo) → `error` naming the PAT allowlist (#4236)", async () => {
+    const files = { [A]: mdAsset("u1") };
+    const gh = new FakeGitHubRepo(files);
+    const local = new StatLocalFiles(files);
+    const wm = new FakeWatermarkStore();
+    const manifest = new MemManifestStore();
+    const warm = makeEngine(gh.transport(), local, {
+      localManifestStore: manifest,
+      watermarkStore: wm,
+    });
+    await warmUp(warm, gh); // warm manifest ⇒ next sync takes the cached branch
+
+    const hidden: RestCommitTransport = async (req) => {
+      throw new Error(`GitHub request ${req.method} ${req.url} → HTTP 404: {"message":"Not Found"}`);
+    };
+    const engine = makeEngine(hidden, local, {
+      localManifestStore: manifest,
+      watermarkStore: wm,
+    });
+    const [r] = await engine.syncAll([gh.spec()], "sync");
+
+    expect(r.status).toBe("error");
+    expect(r.detail).toMatch(/git\/refs\/heads/); // the head prefetch is what 404'd
+    expect(r.detail).toMatch(/repository allowlist/);
+    expect(r.detail).not.toMatch(/base-mismatch/);
+  });
 });

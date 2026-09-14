@@ -54,8 +54,12 @@ needs **no** PAT at all.
 
 2. Click **Save PAT**, then **Test connection** to confirm it reaches GitHub
    before you rely on it.
-3. **If a private repo "does not exist"** during Apply/Sync, check the token's
-   repository allowlist first — that is the most common cause.
+3. **If a private repo "does not exist"** during Apply/Sync — or Sync reports
+   `<owner>/<repo>@<branch> is not reachable … check the token's repository
+   allowlist` — check the token's repository allowlist first; that is the most
+   common cause. A token that _can_ see the repo but lacks **Contents** access
+   fails with `auth-required` (HTTP 403 «Resource not accessible by personal
+   access token») instead.
 
 The token is stored device-local in
 `.obsidian/plugins/exocortex/data.local.json` (key `pat`); the `.local.` infix

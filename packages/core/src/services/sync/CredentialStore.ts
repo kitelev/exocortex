@@ -30,10 +30,12 @@ export interface CredentialStorePort {
  * HTTP 403 WITHOUT rate-limit markers (403 + "rate limit"/"abuse
  * detection" is throttling, not auth — see `isRateLimitError`).
  *
- * KNOWN BLIND SPOT: a fine-grained / under-scoped PAT gets **404** from
- * GitHub on private-repo refs (existence-hiding), indistinguishable from
- * repo-not-found — that misconfiguration surfaces as a generic error, not
- * `auth-required`. Document in user-facing troubleshooting (R8).
+ * KNOWN BLIND SPOT: a fine-grained PAT whose repository allowlist omits the
+ * repo gets **404** from GitHub on private-repo refs (existence-hiding),
+ * indistinguishable from repo-not-found — so it is NOT `auth-required`.
+ * `SyncEngine` recognises that head-ref 404 (`isRefNotFoundError`, #4236)
+ * and reports `error` with an explicit «check the token's repository
+ * allowlist» hint; documented in user-facing troubleshooting (R8).
  */
 export function isAuthError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
