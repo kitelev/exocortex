@@ -37,7 +37,21 @@ export class ExocortexSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  /**
+   * Framework entry point while `getSettingDefinitions()` is not implemented
+   * (Obsidian calls `display()` whenever the declarative list is empty, on any
+   * version). obsidian 1.13.0 deprecated the imperative
+   * `display()` in favour of the declarative `getSettingDefinitions()`; the
+   * tab is still rendered imperatively (migration tracked separately), so
+   * `display()` stays as the framework hook and delegates to {@link render},
+   * which is what in-tab re-renders (e.g. after «Reset») call — keeping the
+   * deprecated symbol out of our own call sites.
+   */
   override display(): void {
+    this.render();
+  }
+
+  private render(): void {
     const { containerEl } = this;
 
     containerEl.empty();
@@ -203,7 +217,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Auto reading mode for exocortex assets")
+      .setName("Auto reading mode for Exocortex assets")
       .setDesc(
         "When opening a note with the `exo__Instance_class` frontmatter property, automatically switch to reading mode so the exocortex layout (create / status / planning panels) is visible. Disable to keep obsidian's default view mode.",
       )
@@ -359,12 +373,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
           };
           await this.plugin.saveSettings();
           this.plugin.applyDisplayNameTemplate();
-          // obsidian 1.13.0 депрекировал PluginSettingTab.display() в пользу
-          // getSettingDefinitions(). Пока вкладка построена на императивном
-          // display(), пере-рендер после сброса делается им же — миграция на
-          // новый декларативный API отдельной задачей.
-          // eslint-disable-next-line @typescript-eslint/no-deprecated -- obsidian 1.13 deprecates PluginSettingTab.display(); migration to getSettingDefinitions() tracked separately (#4232)
-          this.display(); // Refresh UI
+          this.render(); // Refresh UI (not the deprecated display(), see render())
         }),
       );
 
@@ -610,12 +619,12 @@ export class ExocortexSettingTab extends PluginSettingTab {
     const header = containerEl.createDiv({
       cls: "exocortex-log-channel-header",
     });
-    header.createEl("span", {
+    header.createSpan({
       cls: "exocortex-log-channel-level-label",
       text: "Level",
     });
     for (const channel of channels) {
-      header.createEl("span", {
+      header.createSpan({
         cls: "exocortex-log-channel-col-label",
         text: channel.label,
       });
@@ -728,10 +737,10 @@ export class ExocortexSettingTab extends PluginSettingTab {
 
     const patDesc = containerEl.createDiv({ cls: "setting-item-description" });
     patDesc.appendText(
-      "Fine-grained Personal Access Token used to push AssetSpace " +
+      "Fine-grained personal access token used to push AssetSpace " +
         "submodules to GitHub. Stored in data.local.json (not data.json) so " +
         "Obsidian Sync never replicates it over the network. Required for the " +
-        "«Push current assetspace» and «Apply profile» commands.",
+        "«Push current knowledge pack» and «Apply profile» commands.",
     );
     // RFC 0002 §3.9 (P14) — mobile onboarding parity. Typing a long
     // fine-grained token on a phone keyboard is painful, so point users at the
@@ -762,7 +771,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
       "Recommended: fine-grained PAT with a per-repository allowlist scoped " +
       "to your exoas-* repos. Leave blank and click Save to clear.";
     const patSetting = new Setting(containerEl)
-      .setName("Personal Access Token")
+      .setName("Personal access token")
       .setDesc(patDescBase);
     // #4231 — the field is never pre-filled (not even masked), so nothing told
     // the user WHICH token was on disk. Append the stored token's non-secret
@@ -1054,7 +1063,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
           return;
         }
         for (const entry of entries) {
-          opsPre.createEl("div", {
+          opsPre.createDiv({
             text: OperationsLogReader.formatEntry(entry),
           });
         }

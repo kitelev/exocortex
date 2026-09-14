@@ -2,6 +2,14 @@ import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import obsidianPlugin from 'eslint-plugin-obsidianmd';
 import prettierConfig from 'eslint-config-prettier';
+// #4232 — `obsidianmd/ui/sentence-case` options REPLACE the plugin's default
+// brand/acronym lists (`options?.brands ?? DEFAULT_BRANDS`), they do not extend
+// them. Import the defaults (deep path — the package has no `exports` map) so
+// our additions come ON TOP of GitHub/Obsidian/macOS/HTTP/… A plugin upgrade that
+// moves these files fails config loading LOUDLY, which beats silently losing 120
+// default entries.
+import { DEFAULT_BRANDS } from 'eslint-plugin-obsidianmd/dist/lib/rules/ui/brands.js';
+import { DEFAULT_ACRONYMS } from 'eslint-plugin-obsidianmd/dist/lib/rules/ui/acronyms.js';
 
 export default tseslint.config(
   eslint.configs.recommended,
@@ -57,6 +65,32 @@ export default tseslint.config(
       'obsidianmd/platform': 'warn',
       'obsidianmd/regex-lookbehind': 'error',
       'obsidianmd/no-sample-code': 'warn',
+      // #4232 — brands / acronyms / literal placeholders that the sentence-case
+      // rule must preserve, configured ONCE here instead of per-call-site
+      // `eslint-disable` directives (eslint-plugin-obsidianmd 0.4.1 forbids
+      // disabling any obsidianmd/* rule inline).
+      'obsidianmd/ui/sentence-case': ['warn', {
+        // Defaults first (GitHub, Obsidian, macOS, …), then the product's own
+        // proper nouns. ⛔ Every addition changes what the rule DEMANDS elsewhere
+        // («Copy uid» would become «Copy UID» if UID were listed) — add only
+        // what a real UI string needs and re-run the whole-src config diff.
+        brands: [...DEFAULT_BRANDS, 'Exocortex', 'ExoSync', 'BRAT', 'AssetSpace', 'EKA'],
+        acronyms: [...DEFAULT_ACRONYMS, 'PAT', 'SHACL', 'SPARQL', 'RDF'],
+        // ⚠ A match ANYWHERE exempts the WHOLE string (plugin semantics) — the
+        // prose around a matched path is not checked. Accepted trade-off: the
+        // plugin cannot exempt a substring, and every current match is a bare
+        // placeholder or a path-bearing sentence already in sentence case.
+        ignoreRegex: [
+          '^github_pat_',          // literal token placeholder
+          '^\\d{2} [^\\n]*/',        // vault folder placeholders («09 templates/\n10 drafts/»)
+          '"\\d{2} \\w+/"',          // quoted folder example inside prose («(e.g. "09 Templates/")»)
+          '^assetspaces/',         // vault-relative path placeholders
+          '\\.exocortex/',           // literal `.exocortex/…` paths (the brand «Exocortex» must not re-case them)
+          '^\\[\\[',                 // wikilink placeholders («[[Note name]]»)
+          '^Step \\d+:',           // a11y step prefix in the onboarding panel
+          '^✓',                    // decorative completion glyph
+        ],
+      }],
 
       'no-restricted-syntax': ['error', {
         selector: 'NewExpression[callee.name="Notice"]',
@@ -194,30 +228,31 @@ export default tseslint.config(
       '@typescript-eslint/only-throw-error': 'off',
     },
   },
-  // eslint-plugin-obsidianmd 0.4.1 (lock bump 2026-08-21) turned EVERY
-  // `eslint-disable obsidianmd/*` / `@typescript-eslint/no-deprecated` directive
-  // into an `eslint-comments/no-restricted-disable` ERROR and added the
-  // `settings-tab/prefer-setting-definitions` + `prefer-create-el` warnings.
-  // ExocortexSettingTab.ts carries 8 such directives (brand/acronym UI labels:
-  // "GitHub PAT", "ExoSync", "SHACL"; the deprecated `display` override) plus 3
-  // `createEl("span"|"div")` calls that pre-date the bump, and no commit has
-  // touched the file since — so the FIRST fix landing there (#4231) cannot pass
-  // lint-staged's `--max-warnings=0` on debt it did not create. `prefer-create-el`
-  // is off here for a second reason: its `--fix` rewrites those untouched calls
-  // to `createSpan`/`createDiv`, which the existing settings-tab test mocks do
-  // not implement (ExocortexSettingTab.focusProfile.test.ts → 9 red).
-  // Same shape as the M5a block above: suppress only the surfaced rules, only
-  // for this file. CI `npm run lint` is advisory (continue-on-error), so this
-  // changes no gate. ⛔ Do NOT extend — the proper fix is configuring
-  // `obsidianmd/ui/sentence-case` `brands`/`acronyms` + dropping the directives
-  // (follow-up issue #4232); remove this block with it.
+  // #4232 — `obsidianmd/settings-tab/prefer-setting-definitions` asks for the
+  // obsidian ≥ 1.13 declarative `getSettingDefinitions()` API. The settings
+  // tab is a ~950-line imperative `display()`; migrating it is a feature-size
+  // refactor tracked separately, not lint hygiene. Every other rule that the
+  // eslint-plugin-obsidianmd 0.4.1 bump surfaced for this file is now
+  // satisfied at the source (sentence-case configured above, directives
+  // removed, deprecated `display()` no longer called from code).
   {
     files: ['packages/obsidian-plugin/src/presentation/settings/ExocortexSettingTab.ts'],
     rules: {
-      'eslint-comments/no-restricted-disable': 'off',
-      'obsidianmd/ui/sentence-case': 'off',
       'obsidianmd/settings-tab/prefer-setting-definitions': 'off',
-      'obsidianmd/prefer-create-el': 'off',
+    },
+  },
+  // #4232 — the ONE deliberate deviation from `no-tfile-tfolder-cast`: the
+  // adapter narrows a resolved link target by duck-typing (`"children" in
+  // file`) instead of `instanceof TFile`, because `instanceof` silently
+  // tightens the blocker path (req 5cd9fffe — a test with a plain-object mock
+  // proves it) and breaks whenever two copies of the `obsidian` module are
+  // loaded. The rule is right in general; here its demand is refuted by a
+  // test, so the exception lives in config (inline `eslint-disable` of any
+  // obsidianmd/* rule is an error since eslint-plugin-obsidianmd 0.4.1).
+  {
+    files: ['packages/obsidian-plugin/src/domain/display-name/ObsidianVaultMetadataAdapter.ts'],
+    rules: {
+      'obsidianmd/no-tfile-tfolder-cast': 'off',
     },
   },
   {

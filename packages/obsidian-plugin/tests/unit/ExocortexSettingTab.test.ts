@@ -410,7 +410,7 @@ describe("ExocortexSettingTab", () => {
     // Simulate the user typing/pasting into the PAT field through the real
     // `onChange` wiring (the same path the Paste button and keyboard use).
     const typePat = (value: string): void => {
-      const patSetting = findSetting("Personal Access Token");
+      const patSetting = findSetting("Personal access token");
       expect(patSetting).toBeDefined();
       const cb = patSetting!.texts[0]?.onChangeCb;
       expect(cb).toBeDefined();
@@ -506,9 +506,9 @@ describe("ExocortexSettingTab", () => {
       settingTab.display();
       // The hint is appended asynchronously (getSecret) right after render.
       await new Promise((r) => setTimeout(r, 0));
-      const patSetting = findSetting("Personal Access Token");
+      const patSetting = findSetting("Personal access token");
       const settingObj = MockSetting.mock.results.find(
-        (r: any) => r.value?.setName?.mock?.calls?.[0]?.[0] === "Personal Access Token",
+        (r: any) => r.value?.setName?.mock?.calls?.[0]?.[0] === "Personal access token",
       )?.value;
       expect(patSetting).toBeDefined();
       expect(settingObj).toBeDefined();
