@@ -12,10 +12,14 @@ interface CapturedToggle {
   setValueArg?: boolean;
   onChangeCb?: (value: boolean) => void | Promise<void>;
 }
+interface CapturedText {
+  onChangeCb?: (value: string) => void;
+}
 interface CapturedSetting {
   name?: string;
   heading: boolean;
   toggles: CapturedToggle[];
+  texts: CapturedText[];
 }
 
 interface CapturedButton {
@@ -61,13 +65,23 @@ jest.mock("../../src/infrastructure/adapters/LocalSecretsStore", () => ({
   },
 }));
 let mockRateLimitThrows = false;
+// #4231 — the rejection message is injectable so an axis can distinguish an
+// auth-shaped failure (401, the default) from a network/timeout failure.
+const DEFAULT_RATE_LIMIT_ERROR =
+  "GitHub request GET /rate_limit → HTTP 401: bad credentials";
+let mockRateLimitError: string | null = null;
+// #4231 — record the PAT each client was constructed with, so a test can
+// assert WHICH token the Test-connection handler actually exercised (entered
+// vs stored). Mirrors the real ctor contract (`{ pat, app }`).
+const constructedClientPats: string[] = [];
 jest.mock("../../src/infrastructure/adapters/GitHubRestClient", () => ({
   GitHubRestClient: class {
+    constructor(opts: { pat: string }) {
+      constructedClientPats.push(opts.pat);
+    }
     async checkRateLimit(): Promise<{ remaining: number; resetAt: Date }> {
       if (mockRateLimitThrows) {
-        throw new Error(
-          "GitHub request GET /rate_limit → HTTP 401: bad credentials",
-        );
+        throw new Error(mockRateLimitError ?? DEFAULT_RATE_LIMIT_ERROR);
       }
       return { remaining: 4321, resetAt: new Date("2026-06-21T23:00:00.000Z") };
     }
@@ -92,6 +106,8 @@ describe("ExocortexSettingTab", () => {
     capture.buttons = [];
     mockStoredPat = "ghp_settings_default";
     mockRateLimitThrows = false;
+    mockRateLimitError = null;
+    constructedClientPats.length = 0;
 
     // A recursive mock element that supports the Obsidian DOM helpers the
     // settings tab uses (createEl/createDiv/createSpan/appendText/empty).
@@ -174,7 +190,7 @@ describe("ExocortexSettingTab", () => {
 
     MockSetting = Setting as jest.Mock;
     MockSetting.mockImplementation((containerEl: any) => {
-      const record: CapturedSetting = { heading: false, toggles: [] };
+      const record: CapturedSetting = { heading: false, toggles: [], texts: [] };
       capture.settings.push(record);
       const setting: any = {
         containerEl,
@@ -213,12 +229,17 @@ describe("ExocortexSettingTab", () => {
           return setting;
         }),
         addText: jest.fn().mockImplementation((cb: any) => {
+          const captured: CapturedText = {};
           const text: any = {
             setPlaceholder: jest.fn(() => text),
             setValue: jest.fn(() => text),
-            onChange: jest.fn(() => text),
+            onChange: jest.fn((fn: any) => {
+              captured.onChangeCb = fn;
+              return text;
+            }),
             inputEl: { type: "" } as Record<string, unknown>,
           };
+          record.texts.push(captured);
           cb(text);
           return setting;
         }),
@@ -365,6 +386,136 @@ describe("ExocortexSettingTab", () => {
       await findButton("Test connection")!.onClick!();
       expect(statusEl!.textContent ?? "").toMatch(/Test connection failed/i);
       expect(statusEl!.classList.contains("is-invalid")).toBe(true);
+    });
+  });
+  // #4231 — pasting a NEW token and clicking «Test connection» before «Save
+  // PAT» used to test the STALE stored token (→ «401 Bad credentials» on a
+  // perfectly valid fresh token, while BRAT validated the same token fine).
+  // The handler must test the ENTERED token when the field is non-empty and
+  // must say WHICH token it exercised.
+  describe("PAT Test connection — entered token beats stored (#4231)", () => {
+    const findPatStatusEl = (): HTMLElement | undefined => {
+      const calls = (mockContainerEl.createEl as jest.Mock).mock.calls;
+      const results = (mockContainerEl.createEl as jest.Mock).mock.results;
+      for (let i = 0; i < calls.length; i++) {
+        const [tag, opts] = calls[i];
+        if (tag === "p" && opts?.cls === "exocortex-settings-pat-status") {
+          return results[i].value as HTMLElement;
+        }
+      }
+      return undefined;
+    };
+    const findButton = (text: string): CapturedButton | undefined =>
+      capture.buttons.find((b) => b.text === text);
+    // Simulate the user typing/pasting into the PAT field through the real
+    // `onChange` wiring (the same path the Paste button and keyboard use).
+    const typePat = (value: string): void => {
+      const patSetting = findSetting("Personal Access Token");
+      expect(patSetting).toBeDefined();
+      const cb = patSetting!.texts[0]?.onChangeCb;
+      expect(cb).toBeDefined();
+      cb!(value);
+    };
+
+    it("field non-empty → tests the ENTERED token, not the stale stored one", async () => {
+      mockStoredPat = "ghp_stale_stored_token_expired";
+      mockRateLimitThrows = false;
+      settingTab.display();
+      typePat("  ghp_fresh_entered_token_ok  ");
+      await findButton("Test connection")!.onClick!();
+      // Revert-verify anchor: pre-fix the client is built with the STORED token.
+      expect(constructedClientPats).toEqual(["ghp_fresh_entered_token_ok"]);
+      const text = findPatStatusEl()!.textContent ?? "";
+      expect(text).toMatch(/GitHub OK/);
+      expect(text).toMatch(/tested the entered token \(…n_ok\)/);
+      // The tested token is NOT the stored one → remind to save it.
+      expect(text).toMatch(/Not saved yet — click Save PAT/);
+      expect(findPatStatusEl()!.classList.contains("is-valid")).toBe(true);
+    });
+
+    it("field non-empty and equal to the stored token → no «not saved» reminder", async () => {
+      mockStoredPat = "ghp_already_saved_token_same";
+      settingTab.display();
+      typePat("ghp_already_saved_token_same");
+      await findButton("Test connection")!.onClick!();
+      expect(constructedClientPats).toEqual(["ghp_already_saved_token_same"]);
+      const text = findPatStatusEl()!.textContent ?? "";
+      expect(text).toMatch(/tested the entered token \(…same\)/);
+      expect(text).not.toMatch(/Not saved yet/);
+    });
+
+    it("whitespace-only field → treated as empty: STORED token is tested", async () => {
+      mockStoredPat = "ghp_stored_only_token_wsp1";
+      settingTab.display();
+      typePat("   ");
+      await findButton("Test connection")!.onClick!();
+      // Revert-verify anchor: dropping the handler's trim classifies "   " as
+      // an entered token and testPatConnection then reports "No token entered".
+      expect(constructedClientPats).toEqual(["ghp_stored_only_token_wsp1"]);
+      expect(findPatStatusEl()!.textContent ?? "").toMatch(/tested the stored token \(…wsp1\)/);
+    });
+
+    it("stored token fails on a NETWORK error → no «paste a new token» hint (token not at fault)", async () => {
+      mockStoredPat = "ghp_stored_token_network_net1";
+      mockRateLimitThrows = true;
+      mockRateLimitError =
+        "GitHub request GET /rate_limit timed out after 120000ms (no response — stalled connection?)";
+      settingTab.display();
+      await findButton("Test connection")!.onClick!();
+      const text = findPatStatusEl()!.textContent ?? "";
+      expect(text).toMatch(/Test connection failed/i);
+      expect(text).toMatch(/tested the stored token \(…net1\)/);
+      expect(text).not.toMatch(/Paste a new token/);
+    });
+
+    it("field empty → falls back to the STORED token and names it", async () => {
+      mockStoredPat = "ghp_stored_only_token_abcd";
+      settingTab.display();
+      await findButton("Test connection")!.onClick!();
+      expect(constructedClientPats).toEqual(["ghp_stored_only_token_abcd"]);
+      const text = findPatStatusEl()!.textContent ?? "";
+      expect(text).toMatch(/GitHub OK/);
+      expect(text).toMatch(/tested the stored token \(…abcd\)/);
+      expect(text).not.toMatch(/Not saved yet/);
+    });
+
+    it("stored token rejected → failure names the stored token and hints to paste a new one", async () => {
+      mockStoredPat = "ghp_stored_expired_token_dead";
+      mockRateLimitThrows = true;
+      settingTab.display();
+      await findButton("Test connection")!.onClick!();
+      const text = findPatStatusEl()!.textContent ?? "";
+      expect(text).toMatch(/Test connection failed/i);
+      expect(text).toMatch(/tested the stored token \(…dead\)/);
+      expect(text).toMatch(/Paste a new token into the field/);
+      expect(findPatStatusEl()!.classList.contains("is-invalid")).toBe(true);
+    });
+
+    it("field empty and nothing stored → prompt says a token can be tested before saving", async () => {
+      mockStoredPat = null;
+      settingTab.display();
+      await findButton("Test connection")!.onClick!();
+      expect(constructedClientPats).toEqual([]);
+      const text = findPatStatusEl()!.textContent ?? "";
+      expect(text).toMatch(/No PAT stored/i);
+      expect(text).toMatch(/test it before saving/i);
+    });
+
+    it("PAT row description shows the stored token's tail (never the token)", async () => {
+      mockStoredPat = "ghp_stored_token_for_hint_wxyz";
+      settingTab.display();
+      // The hint is appended asynchronously (getSecret) right after render.
+      await new Promise((r) => setTimeout(r, 0));
+      const patSetting = findSetting("Personal Access Token");
+      const settingObj = MockSetting.mock.results.find(
+        (r: any) => r.value?.setName?.mock?.calls?.[0]?.[0] === "Personal Access Token",
+      )?.value;
+      expect(patSetting).toBeDefined();
+      expect(settingObj).toBeDefined();
+      const descCalls = (settingObj.setDesc as jest.Mock).mock.calls.map((c: any[]) => c[0]);
+      const last = descCalls[descCalls.length - 1] as string;
+      expect(last).toMatch(/Stored: …wxyz\./);
+      expect(last).not.toContain("ghp_stored_token_for_hint_wxyz");
     });
   });
 });

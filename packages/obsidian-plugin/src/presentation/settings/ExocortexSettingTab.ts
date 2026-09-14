@@ -17,6 +17,7 @@ import { renderPatSetupHelper } from "@plugin/presentation/settings/patSetupHelp
 import {
   testPatConnection,
   describePatConnection,
+  patTail,
 } from "@plugin/presentation/settings/patConnectionTest";
 
 /**
@@ -362,7 +363,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
           // getSettingDefinitions(). Пока вкладка построена на императивном
           // display(), пере-рендер после сброса делается им же — миграция на
           // новый декларативный API отдельной задачей.
-          // eslint-disable-next-line @typescript-eslint/no-deprecated
+          // eslint-disable-next-line @typescript-eslint/no-deprecated -- obsidian 1.13 deprecates PluginSettingTab.display(); migration to getSettingDefinitions() tracked separately (#4232)
           this.display(); // Refresh UI
         }),
       );
@@ -436,7 +437,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "SHACL" is an established acronym
       .setName("Enable SHACL validation (experimental)")
       .setDesc(
         "When enabled, validates frontmatter properties against SHACL shapes " +
@@ -477,7 +477,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
       )
       .addTextArea((textarea) => {
         textarea
-          // eslint-disable-next-line obsidianmd/ui/sentence-case -- example shows literal vault-relative folder paths, not prose UI text
           .setPlaceholder("assetspaces/exo/\nassetspaces/ems/")
           .setValue((this.plugin.settings.lazyBootstrapFolders ?? []).join("\n"))
           .onChange(async (value) => {
@@ -662,13 +661,16 @@ export class ExocortexSettingTab extends PluginSettingTab {
    *     `plugin.profileApplyManager`.
    *
    *   - GitHubRestClient requires the PAT, so it cannot be a stable field;
-   *     constructed inside the Test-connection callback against the freshly
-   *     persisted secret (ensures Test reads the same byte sequence Push
-   *     will see after reload).
+   *     constructed inside the Test-connection callback. Test exercises the
+   *     ENTERED token whenever the field is non-empty (#4231 — parity with
+   *     the onboarding panel and BRAT; a freshly pasted token must be
+   *     testable BEFORE Save), and the persisted secret only for an empty
+   *     field (that path still reads the same bytes Push will see).
    *
    *   - PAT persistence uses an explicit Save button — not keystroke
-   *     onChange — to avoid persisting partial PAT bytes that Test could
-   *     then race against (advisor catch).
+   *     onChange — so partial PAT bytes are never written to disk (advisor
+   *     catch). Test reading the live field value is deliberate: both
+   *     writers trim, and the status line names which token was tested.
    *
    *   - buildAssetSpacePusher captures the PAT at onload time, so changing
    *     the PAT in this UI does not retroactively activate Push. Save flow
@@ -722,7 +724,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
     });
 
     // ─────── Section 1 — PAT (GitHub Personal Access Token) ───────
-    // eslint-disable-next-line obsidianmd/ui/sentence-case -- "GitHub" + "PAT" are proper noun + established acronym
     new Setting(containerEl).setName("Profile: GitHub PAT").setHeading();
 
     const patDesc = containerEl.createDiv({ cls: "setting-item-description" });
@@ -757,17 +758,29 @@ export class ExocortexSettingTab extends PluginSettingTab {
     // created after the Setting. Mirrors the onboarding panel's aria-live status
     // so the result survives instead of fading with a transient toast.
     const patTestStatus: { el?: HTMLElement } = {};
-    new Setting(containerEl)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "PAT" is an established acronym for Personal Access Token
+    const patDescBase =
+      "Recommended: fine-grained PAT with a per-repository allowlist scoped " +
+      "to your exoas-* repos. Leave blank and click Save to clear.";
+    const patSetting = new Setting(containerEl)
       .setName("Personal Access Token")
-      .setDesc(
-        "Recommended: fine-grained PAT with a per-repository allowlist scoped " +
-          "to your exoas-* repos. Leave blank and click Save to clear.",
-      )
+      .setDesc(patDescBase);
+    // #4231 — the field is never pre-filled (not even masked), so nothing told
+    // the user WHICH token was on disk. Append the stored token's non-secret
+    // tail (`Stored: …aj0S`) so a stale token is visible at a glance; refreshed
+    // after Save PAT so the hint tracks what is actually persisted.
+    const refreshStoredPatHint = async (): Promise<void> => {
+      const stored = await secretsStore.getSecret(PAT_SECRET_KEY);
+      patSetting.setDesc(
+        stored !== null && stored.length > 0
+          ? `${patDescBase} Stored: ${patTail(stored)}.`
+          : `${patDescBase} No token stored.`,
+      );
+    };
+    void refreshStoredPatHint();
+    patSetting
       .addText((text) => {
         patTextComponent = text;
         text.inputEl.type = "password";
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder shows literal PAT format
         text.setPlaceholder("github_pat_…");
         text.onChange((value) => {
           patInputValue = value;
@@ -804,7 +817,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
           }),
       )
       .addButton((button) =>
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "PAT" is an established acronym
         button.setButtonText("Save PAT").onClick(async () => {
           try {
             const trimmed = patInputValue.trim();
@@ -819,6 +831,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
             } else {
               notifier.info("PAT cleared.");
             }
+            void refreshStoredPatHint();
           } catch (error) {
             notifier.error(`Save PAT failed: ${errorMessage(error)}`);
           }
@@ -844,16 +857,28 @@ export class ExocortexSettingTab extends PluginSettingTab {
             }
             el.textContent = text;
           };
-          const pat = await secretsStore.getSecret(PAT_SECRET_KEY);
-          if (pat === null || pat.length === 0) {
+          // #4231 — test the token the user just ENTERED when the field is
+          // non-empty (the onboarding panel and BRAT both do); fall back to
+          // the stored one only for an empty field. Pre-fix this always read
+          // the stored secret, so a freshly-pasted valid token was reported
+          // as «401 Bad credentials» whenever the stale stored PAT had
+          // expired — and the status never said WHICH token it exercised.
+          const entered = patInputValue.trim();
+          const stored = await secretsStore.getSecret(PAT_SECRET_KEY);
+          const source: "entered" | "stored" =
+            entered.length > 0 ? "entered" : "stored";
+          const pat = source === "entered" ? entered : (stored ?? "");
+          if (pat.length === 0) {
             setStatus(
-              "No PAT stored. Enter a PAT and click Save first.",
+              "No PAT stored and the field is empty — paste a token first " +
+                "(you can test it before saving).",
               "invalid",
             );
             return;
           }
+          const tested = `${source} token (${patTail(pat)})`;
           button.setDisabled(true);
-          setStatus("Testing the connection…", "pending");
+          setStatus(`Testing the ${tested}…`, "pending");
           try {
             // Reuse the shared validate logic (single source — same sequence the
             // onboarding panel runs; no duplicated GitHub API calls).
@@ -861,10 +886,20 @@ export class ExocortexSettingTab extends PluginSettingTab {
               pat,
               (token) => new GitHubRestClient({ pat: token, app }),
             );
-            setStatus(
-              describePatConnection(result),
-              result.ok ? "valid" : "invalid",
-            );
+            let text = `${describePatConnection(result)} — tested the ${tested}`;
+            if (source === "entered" && result.ok && pat !== stored) {
+              text += ". Not saved yet — click Save PAT to store it.";
+            } else if (
+              source === "stored" &&
+              !result.ok &&
+              /HTTP 401|Bad credentials/i.test(result.reason)
+            ) {
+              // Only an auth-shaped rejection means the stored token is at
+              // fault — a timeout / DNS failure must not steer the user into
+              // rotating a perfectly good PAT.
+              text += ". Paste a new token into the field to test it instead.";
+            }
+            setStatus(text, result.ok ? "valid" : "invalid");
           } catch {
             // testPatConnection is contracted never to reject (it returns a
             // failure result), but guard so a wiring bug never leaves the status
@@ -887,7 +922,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
     patTestStatus.el.setAttribute("aria-live", "polite");
 
     // ─────── ExoSync (RFC 4e4dc453 Phase B) ───────
-    // eslint-disable-next-line obsidianmd/ui/sentence-case -- "ExoSync" is the feature's proper name
     new Setting(containerEl).setName("ExoSync").setHeading();
     // NB: the "Quarantine repo URL" setting was removed — the synced git-repo
     // quarantine store is retired; conflicts are preserved in the device-local
