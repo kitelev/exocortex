@@ -1842,6 +1842,34 @@ describe("SyncEngine — A3: D11 one-operation guard, R8 auth, R5 secret-scan", 
     expect(gh.headFiles().get(FILE_A)).toBe(mdAsset("u1")); // remote untouched
   });
 
+  // #4234 — the OTHER «commit unknown» shape: GitHub answers 422 for a
+  // malformed / bad-object SHA on `git/commits/{sha}`; like the fake's 404 it
+  // must stay `full-conflict / base-mismatch` (never auth-required / error).
+  it("HTTP 422 on the watermark base lookup → still full-conflict (base-mismatch) (#4234)", async () => {
+    const gh = new FakeGitHubRepo({ [FILE_A]: mdAsset("u1") });
+    const local = new FakeLocalFiles({ [FILE_A]: mdAsset("u1") });
+    const { engine, watermarks } = makeEngine(gh, local);
+    await bootstrap(engine, gh.spec());
+
+    const inner = gh.transport();
+    const transport: RestCommitTransport = async (req) => {
+      if (/\/git\/commits\//.test(req.url)) {
+        throw new Error(
+          `GitHub request ${req.method} ${req.url} → HTTP 422: {"message":"No commit found for SHA: deadbeef"}`,
+        );
+      }
+      return inner(req);
+    };
+    const { engine: unknown } = makeEngine(gh, local, {
+      transport,
+      watermarkStore: watermarks,
+    });
+    const result = await unknown.sync(gh.spec());
+
+    expect(result.status).toBe("full-conflict");
+    expect(result.detail).toMatch(/base-mismatch/);
+  });
+
   // #4234 — same lookup, transient failure: a 502 says nothing about the
   // commit either → `error` with the transport detail, not base-mismatch.
   it("transient HTTP 502 on the watermark base lookup → `error`, not base-mismatch (#4234)", async () => {

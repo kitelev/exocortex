@@ -493,16 +493,22 @@ function diffTrees(
 }
 
 /**
- * #4234 — «the remote does not know this object»: HTTP 404 (Not Found) or
- * 422 (GitHub's «No commit found for SHA» / bad object state) over the
- * transport error-message contract (`GitHub request {METHOD} {url} → HTTP
- * {status}: {body}`). Deliberately NOT a catch-all: 401/403 are auth
- * (`isAuthError`), 5xx / network are transient — neither says the commit is
- * gone.
+ * #4234 — «the remote does not know this object»: HTTP 404 (unknown object
+ * on the Git Data endpoint `git/commits/{sha}`) or 422 (malformed / bad
+ * object state) over the transport error-message contract
+ * (`GitHub request {METHOD} {url} → HTTP {status}: {body}`). Anchored on the
+ * contract's `→ HTTP` so a status literal inside a response BODY cannot
+ * match. Deliberately NOT a catch-all: 401/403 are auth (`isAuthError`),
+ * 5xx / network are transient — neither says the commit is gone.
+ *
+ * Known blind spot (docs/how-to/exosync.md): a fine-grained PAT whose
+ * repository allowlist omits a private repo gets a 404 (existence-hiding)
+ * rather than a 403, and on this path that still reads as «commit unknown»
+ * → `full-conflict / base-mismatch`. Disambiguation tracked in #4236.
  */
 function isCommitUnknownError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return /HTTP (?:404|422)\b/.test(msg);
+  return /→ HTTP (?:404|422)\b/.test(msg);
 }
 
 function errMsg(err: unknown): string {
