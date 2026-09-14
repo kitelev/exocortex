@@ -243,12 +243,17 @@ loss and are visible cross-device. Design points:
   permission gets **403 «Resource not accessible by personal access
   token»** → `auth-required` (also on the watermark base lookup, #4234).
   Known blind spot: a fine-grained PAT whose _repository allowlist omits_
-  the private repo gets **404** from GitHub (existence-hiding) — on a
-  first sync that surfaces as a generic error, on a steady-state sync as
-  `full-conflict — base-mismatch` (the base commit looks «unknown»), never
-  as `auth-required`. If a private repo "does not exist" or its watermark
-  commit is "not resolvable", check the PAT's repository allowlist before
-  touching the watermark.
+  the private repo gets **404** from GitHub (existence-hiding), never
+  `auth-required`. On a first sync — and on a steady-state sync whose
+  head-ref lookup runs first (asset-mode repos with a warm mtime-manifest,
+  the common case) — it surfaces as a generic `error` («… git/refs/heads/…
+  → HTTP 404»); on a steady-state sync that resolves the base commit first
+  (file-mode repos, no manifest yet, or the periodic full re-hash) it
+  surfaces as `full-conflict — base-mismatch` (the base commit looks
+  «unknown»). Either way: if a private repo "does not exist" or its
+  watermark commit is "not resolvable", check the PAT's repository
+  allowlist before touching the watermark (#4236 tracks the
+  disambiguation).
 - **Rate limits** — every transport call is wrapped in exponential backoff
   with jitter (default 3 retries, 1 s base) on HTTP 429 / 403-rate-limit.
   After the retries the repo's cycle fails warn-not-block.
