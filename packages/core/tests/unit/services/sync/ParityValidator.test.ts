@@ -311,7 +311,11 @@ describe("ParityValidator — repo statuses", () => {
     });
 
     expect(round.repos[0].status).toBe("error");
-    expect(round.repos[0].warnings.join(" ")).toMatch(/fine-grained PAT/);
+    // #4236 — the allowlist hint travels in `detail` (single source shared
+    // with SyncEngine); the warning stays a short one-liner.
+    expect(round.repos[0].detail).toMatch(/fine-grained PAT/);
+    expect(round.repos[0].detail).toMatch(/repository allowlist/);
+    expect(round.repos[0].warnings.join(" ")).toMatch(/repo unreachable \(HTTP 404\)/);
     expect(round.repos[1].status).toBe("checked");
     expect(round.checkedRepos).toBe(1);
     expect(round.ok).toBe(true); // dead pointer skipped, live repo clean
