@@ -48,6 +48,15 @@ jest.mock("obsidian", () => {
       augment(child);
       return child;
     }.bind(el);
+    // Obsidian's `createDiv` / `createSpan` are `createEl("div"|"span", …)`
+    // (#4232 — the `obsidianmd/prefer-create-el` autofix uses them).
+    const withEl = el as unknown as {
+      createEl: (tag: string, o?: CreateOpts) => HTMLElement;
+      createDiv: (o?: CreateOpts) => HTMLElement;
+      createSpan: (o?: CreateOpts) => HTMLElement;
+    };
+    withEl.createDiv = (o?: CreateOpts): HTMLElement => withEl.createEl("div", o);
+    withEl.createSpan = (o?: CreateOpts): HTMLElement => withEl.createEl("span", o);
     (el as unknown as { addClass: (c: string) => void }).addClass = function (
       c: string,
     ): void {
