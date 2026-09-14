@@ -76,6 +76,10 @@ export default tseslint.config(
         // what a real UI string needs and re-run the whole-src config diff.
         brands: [...DEFAULT_BRANDS, 'Exocortex', 'ExoSync', 'BRAT', 'AssetSpace', 'EKA'],
         acronyms: [...DEFAULT_ACRONYMS, 'PAT', 'SHACL', 'SPARQL', 'RDF'],
+        // ⚠ A match ANYWHERE exempts the WHOLE string (plugin semantics) — the
+        // prose around a matched path is not checked. Accepted trade-off: the
+        // plugin cannot exempt a substring, and every current match is a bare
+        // placeholder or a path-bearing sentence already in sentence case.
         ignoreRegex: [
           '^github_pat_',          // literal token placeholder
           '^\\d{2} [^\\n]*/',        // vault folder placeholders («09 templates/\n10 drafts/»)

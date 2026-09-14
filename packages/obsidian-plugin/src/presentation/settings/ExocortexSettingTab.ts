@@ -740,7 +740,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
       "Fine-grained personal access token used to push AssetSpace " +
         "submodules to GitHub. Stored in data.local.json (not data.json) so " +
         "Obsidian Sync never replicates it over the network. Required for the " +
-        "«Push current assetspace» and «Apply profile» commands.",
+        "«Push current knowledge pack» and «Apply profile» commands.",
     );
     // RFC 0002 §3.9 (P14) — mobile onboarding parity. Typing a long
     // fine-grained token on a phone keyboard is painful, so point users at the
