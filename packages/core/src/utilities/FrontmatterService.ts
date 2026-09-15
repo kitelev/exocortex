@@ -244,7 +244,7 @@ export class FrontmatterService {
       // (a key on the FIRST line is replaced by a blank line). A migrated
       // legacy key must not leave that blank line behind, so remember whether
       // the legacy key led the block and strip the blank line it becomes.
-      const ledTheBlock = new RegExp(`^---\r?\n${legacy}:`).test(result);
+      const ledTheBlock = new RegExp("^---\\r?\\n" + legacy + ":").test(result);
       result = this.removePhysicalKey(result, legacy);
       if (ledTheBlock) {
         result = result.replace(/^---(\r?\n)\1/, "---$1");
