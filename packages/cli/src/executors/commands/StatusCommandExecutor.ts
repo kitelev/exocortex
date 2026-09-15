@@ -141,7 +141,9 @@ export class StatusCommandExecutor extends BaseCommandExecutor {
   }
 
   /**
-   * Sets archived property to true and removes aliases.
+   * Sets `exo__Asset_archived: true` (the TBox-declared key — a legacy bare
+   * `archived:` on the asset is dropped by the same write, req 960d7a3f) and
+   * removes aliases.
    */
   async executeArchive(filepath: string): Promise<void> {
     try {
@@ -149,7 +151,7 @@ export class StatusCommandExecutor extends BaseCommandExecutor {
 
       if (this.dryRun) {
         console.log(`[dry-run] Would archive: ${filepath}`);
-        console.log(`[dry-run]   archived: true`);
+        console.log(`[dry-run]   exo__Asset_archived: true`);
         console.log(`[dry-run]   aliases: removed`);
         console.log(`\n💡 Run without --dry-run to apply changes`);
         process.exit(ExitCodes.SUCCESS);
@@ -157,7 +159,11 @@ export class StatusCommandExecutor extends BaseCommandExecutor {
 
       const content = await this.fsAdapter.readFile(relativePath);
 
-      let updated = this.frontmatterService.updateProperty(content, "archived", "true");
+      let updated = this.frontmatterService.updateProperty(
+        content,
+        "exo__Asset_archived",
+        "true",
+      );
       updated = this.frontmatterService.removeProperty(updated, "aliases");
 
       await this.fsAdapter.updateFile(relativePath, updated);

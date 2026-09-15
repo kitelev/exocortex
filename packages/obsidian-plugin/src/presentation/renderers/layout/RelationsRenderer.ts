@@ -149,6 +149,7 @@ const EXO_NON_RELATION_ASSET_LOCALNAMES: ReadonlySet<string> = new Set([
   "Asset_uid",
   "Asset_createdAt",
   "Asset_updatedAt",
+  "Asset_archived", // req 960d7a3f — canonical archive flag (literal, not a relation)
   "Asset_isArchived",
   "Asset_description",
 ]);
@@ -694,8 +695,13 @@ export class RelationsRenderer {
    * desktop AND mobile (Desktop↔Mobile Command Parity invariant).
    */
   private openRelationsEditor(): void {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const commands = (this.app as any).commands;
+    // `app.commands` is not in Obsidian's public typings — narrow structurally
+    // instead of disabling no-explicit-any (lint-staged debt fix, no behaviour change).
+    const commands = (
+      this.app as unknown as {
+        commands?: { executeCommandById?: (id: string) => unknown };
+      }
+    ).commands;
     if (typeof commands?.executeCommandById === "function") {
       commands.executeCommandById("exocortex:edit-properties");
     }

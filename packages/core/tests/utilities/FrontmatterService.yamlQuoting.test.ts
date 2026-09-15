@@ -94,13 +94,15 @@ describe("FrontmatterService — YAML-safe scalar quoting (#3748)", () => {
       effort: 42,
     });
 
-    expect(created).toContain("archived: true");
+    // req 960d7a3f: bare `archived` is written under its canonical key.
+    expect(created).toContain("exo__Asset_archived: true");
+    expect(created).not.toContain("\narchived: true");
     expect(created).toContain("draft: false");
     expect(created).toContain("priority: 1");
     expect(created).toContain("effort: 42");
 
     const parsed = parseFrontmatter(created);
-    expect(parsed.archived).toBe(true);
+    expect(parsed.exo__Asset_archived).toBe(true);
     expect(parsed.priority).toBe(1);
   });
 });

@@ -53,11 +53,42 @@ export interface ExocortexInvariantViolation {
  * when READING `<field>:` → `exo:Asset_<field>`.
  */
 export const UNPREFIXED_ASSET_FIELDS: ReadonlySet<string> = new Set([
-  "archived",
   "draft",
   "pinned",
   "aliases",
 ]);
+
+/**
+ * Bare frontmatter keys that are still READ as `exo:Asset_<key>` (same
+ * indexing as {@link UNPREFIXED_ASSET_FIELDS}) but are NO LONGER the canonical
+ * physical key — the canonical key is the prefixed `exo__Asset_<key>`, declared
+ * in the `exoas-exo` TBox. Writers never emit the bare form; readers accept it
+ * for every asset that has not been migrated yet.
+ *
+ * `archived` moved here 2026-09-15 (founder decision, ticket `da0f73a3`, req
+ * `960d7a3f`): `exo__Asset_archived` is declared as an `exo__DatatypeProperty`
+ * (domain `exo__Asset`), the ~1270 existing `archived: true` carriers keep
+ * indexing under the SAME predicate `exo:Asset_archived` until migrated with
+ * `repair-frontmatter --canonicalize-keys`, so the exocmd preconditions that
+ * test `exo:Asset_archived "true"` see both forms by construction.
+ */
+export const LEGACY_UNPREFIXED_ASSET_FIELDS: ReadonlySet<string> = new Set([
+  "archived",
+]);
+
+/**
+ * Legacy physical keys that a write to the canonical key must ALSO clear:
+ * `exo__Asset_archived` ← `archived`. Consulted by
+ * `FrontmatterService.updateProperty` / `removeProperty` so a single write
+ * migrates the carrier (never leaves both keys on disk) and a removal of the
+ * canonical key clears a legacy-only carrier (the `un-archive` grounding).
+ */
+export const LEGACY_YAML_KEYS: ReadonlyMap<string, readonly string[]> = new Map(
+  [...LEGACY_UNPREFIXED_ASSET_FIELDS].map((field) => [
+    `exo__Asset_${field}`,
+    [field] as readonly string[],
+  ]),
+);
 
 /** `exo__Asset_<field>` shape; group 1 = the bare field name. */
 const ASSET_PREFIXED_SHAPE = /^exo__Asset_(.+)$/;
@@ -82,10 +113,18 @@ const ASSET_PREFIXED_SHAPE = /^exo__Asset_(.+)$/;
  * Property NAME guards and TBox validation still run on the RDF/prefixed form;
  * only the physical YAML key is canonicalised here. A bare `aliases` (already
  * canonical) passes through unchanged.
+ *
+ * The {@link LEGACY_UNPREFIXED_ASSET_FIELDS} direction is the OPPOSITE: a bare
+ * `archived` handed to a writer is UPGRADED to `exo__Asset_archived` (req
+ * `960d7a3f`, Scenario C), and `exo__Asset_archived` stays prefixed — so every
+ * writer that reaches `FrontmatterService` (groundings whose `targetProperty`
+ * is still the bare name, `ArchiveAssetService`, the CLI `archive` executors)
+ * emits the declared key without each call site repeating the rule.
  */
 export function canonicalYamlKey(property: string): string {
   const m = ASSET_PREFIXED_SHAPE.exec(property);
   if (m && UNPREFIXED_ASSET_FIELDS.has(m[1])) return m[1];
+  if (LEGACY_UNPREFIXED_ASSET_FIELDS.has(property)) return `exo__Asset_${property}`;
   return property;
 }
 
@@ -359,9 +398,13 @@ export class NoteToRDFConverter {
       // `?s exo:Asset_archived true` can match assets that carry the bare
       // Obsidian-style flag in frontmatter (`archived: true`). Keys outside
       // the whitelist remain skipped to avoid uncontrolled triple growth.
-      const normalizedKey = UNPREFIXED_ASSET_FIELDS.has(key)
-        ? `exo__Asset_${key}`
-        : key;
+      // req 960d7a3f: the LEGACY set (`archived`) is read the same way — a
+      // not-yet-migrated `archived: true` and the canonical
+      // `exo__Asset_archived: true` both index as `exo:Asset_archived`.
+      const normalizedKey =
+        UNPREFIXED_ASSET_FIELDS.has(key) || LEGACY_UNPREFIXED_ASSET_FIELDS.has(key)
+          ? `exo__Asset_${key}`
+          : key;
       if (!this.isExocortexProperty(normalizedKey)) {
         continue;
       }
@@ -377,7 +420,9 @@ export class NoteToRDFConverter {
         // are NOT skipped — only null/undefined/blank-string. For exo__Asset_label
         // the basename fallback below still synthesises the label triple.
         if (
-          (key === "exo__Asset_label" || UNPREFIXED_ASSET_FIELDS.has(key)) &&
+          (key === "exo__Asset_label" ||
+            UNPREFIXED_ASSET_FIELDS.has(key) ||
+            LEGACY_UNPREFIXED_ASSET_FIELDS.has(key)) &&
           (val == null || (typeof val === "string" && val.trim() === ""))
         ) {
           continue;
@@ -1702,7 +1747,9 @@ export class NoteToRDFConverter {
   private async preResolveWikilinkTargets(
     frontmatter: Record<string, unknown>,
   ): Promise<void> {
-    const withFallback = this.vault.getFrontmatterWithFallback;
+    // Optional adapter capability — bound once (lint: unbound-method) so the
+    // absence check and the call below refer to the same method.
+    const withFallback = this.vault.getFrontmatterWithFallback?.bind(this.vault);
     if (!withFallback) {
       return; // CLI adapter / in-memory doubles: nothing to fall back to
     }
@@ -1731,7 +1778,7 @@ export class NoteToRDFConverter {
         }
         this.preResolvedTargetFm.set(
           resolvedFile.path,
-          await withFallback.call(this.vault, resolvedFile),
+          await withFallback(resolvedFile),
         );
       }
     }

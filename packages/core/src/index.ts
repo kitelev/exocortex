@@ -308,6 +308,8 @@ export {
   normaliseExcludedFolders,
   isPathExcluded,
   UNPREFIXED_ASSET_FIELDS,
+  LEGACY_UNPREFIXED_ASSET_FIELDS,
+  LEGACY_YAML_KEYS,
   canonicalYamlKey,
   type ExocortexInvariantCode,
   type ExocortexInvariantViolation,

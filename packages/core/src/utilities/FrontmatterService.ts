@@ -10,7 +10,7 @@
 
 import { loadDefaultSpec, orderProperties } from "../services/OrderSpecResolver";
 import { serializeYamlScalar, STRING_SCALAR_PROPERTIES } from "./yamlScalar";
-import { canonicalYamlKey } from "../services/NoteToRDFConverter";
+import { canonicalYamlKey, LEGACY_YAML_KEYS } from "../services/NoteToRDFConverter";
 
 /**
  * Result of frontmatter parsing operation
@@ -223,10 +223,26 @@ export class FrontmatterService {
     // Replace frontmatter block in original content. Function-replacer so a
     // `$`-bearing value spliced into `updatedFrontmatter` is not re-interpreted
     // as a String.replace pattern (#3748 family / #3795 review H1).
-    return content.replace(
+    const replaced = content.replace(
       FrontmatterService.FRONTMATTER_REGEX,
       () => `---\n${updatedFrontmatter}\n---`,
     );
+    // req 960d7a3f (Scenario C): a write to the canonical key also clears its
+    // LEGACY physical key(s) (`exo__Asset_archived` ← bare `archived`), so one
+    // write migrates the carrier and the file never carries both spellings.
+    return this.removeLegacyKeys(replaced, property);
+  }
+
+  /**
+   * Remove every legacy physical spelling of `canonicalKey` (see
+   * {@link LEGACY_YAML_KEYS}); a no-op for keys that have none.
+   */
+  private removeLegacyKeys(content: string, canonicalKey: string): string {
+    let result = content;
+    for (const legacy of LEGACY_YAML_KEYS.get(canonicalKey) ?? []) {
+      result = this.removePhysicalKey(result, legacy);
+    }
+    return result;
   }
 
   /**
@@ -265,6 +281,22 @@ export class FrontmatterService {
    */
   removeProperty(content: string, property: string): string {
     property = canonicalYamlKey(property);
+    // req 960d7a3f (Scenario D): removing the canonical key also clears its
+    // LEGACY spelling(s) — `un-archive` on a not-yet-migrated `archived: true`
+    // carrier must leave neither key behind.
+    return this.removeLegacyKeys(
+      this.removePhysicalKey(content, property),
+      property,
+    );
+  }
+
+  /**
+   * Remove ONE physical YAML key (no canonicalisation, no legacy expansion) —
+   * the primitive behind {@link removeProperty}. Kept separate so a legacy
+   * spelling can be removed without being re-canonicalised into the very key
+   * that was just written.
+   */
+  private removePhysicalKey(content: string, property: string): string {
     const parsed = this.parse(content);
 
     if (!parsed.exists) {

@@ -1,6 +1,10 @@
 import { NodeFsAdapter } from "../../adapters/NodeFsAdapter.js";
 import { PathResolver } from "../../utils/PathResolver.js";
-import { FrontmatterService, DateFormatter } from "@kitelev/exocortex-core";
+import {
+  FrontmatterService,
+  DateFormatter,
+  MetadataHelpers,
+} from "@kitelev/exocortex-core";
 
 /**
  * Context shared across command executors
@@ -47,33 +51,13 @@ export abstract class BaseCommandExecutor {
   }
 
   /**
-   * Check if asset is archived
+   * Check if asset is archived — delegates to the shared reader so the CLI
+   * executors accept the same three carrier spellings as core and the plugin
+   * (`exo__Asset_archived` → `exo__Asset_isArchived` → legacy bare `archived`;
+   * req 960d7a3f).
    */
   protected isAssetArchived(metadata: Record<string, any>): boolean {
-    if (metadata?.exo__Asset_isArchived === true) {
-      return true;
-    }
-
-    const archivedValue = metadata?.archived;
-
-    if (archivedValue === undefined || archivedValue === null) {
-      return false;
-    }
-
-    if (typeof archivedValue === "boolean") {
-      return archivedValue;
-    }
-
-    if (typeof archivedValue === "number") {
-      return archivedValue !== 0;
-    }
-
-    if (typeof archivedValue === "string") {
-      const normalized = archivedValue.toLowerCase().trim();
-      return normalized === "true" || normalized === "yes" || normalized === "1";
-    }
-
-    return false;
+    return MetadataHelpers.isAssetArchived(metadata);
   }
 
   /**

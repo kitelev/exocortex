@@ -4,6 +4,7 @@ import { AssetClass } from "../domain/constants";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import { DI_TOKENS } from "../interfaces/tokens";
 import { WikiLinkHelpers } from "../utilities/WikiLinkHelpers";
+import { MetadataHelpers } from "../utilities/MetadataHelpers";
 
 export interface AssetRelation {
   path: string;
@@ -101,16 +102,14 @@ export class AreaHierarchyBuilder {
     return WikiLinkHelpers.normalize(String(parentProperty));
   }
 
+  /**
+   * Shared reader (req 960d7a3f): accepts `exo__Asset_archived` (canonical),
+   * `exo__Asset_isArchived` (compat alias) and the legacy bare `archived` —
+   * the previous inline check read ONLY `exo__Asset_archived`, so every
+   * not-yet-migrated `archived: true` area rendered as active.
+   */
   private isArchived(metadata: Record<string, unknown>): boolean {
-    const archivedProp = metadata.exo__Asset_archived;
-    if (archivedProp === true || archivedProp === "true") {
-      return true;
-    }
-    if (Array.isArray(archivedProp) && archivedProp.length > 0) {
-      const first = archivedProp[0];
-      return first === true || first === "true";
-    }
-    return false;
+    return MetadataHelpers.isAssetArchived(metadata);
   }
 
   private buildTree(

@@ -621,8 +621,10 @@ describe("MetadataHelpers", () => {
       };
       const result = MetadataHelpers.buildFileContent(frontmatter);
 
+      // req 960d7a3f: bare `archived` is canonicalised to `exo__Asset_archived`
+      // (position unchanged — the key is not in the order spec's head).
       expect(result).toBe(
-        "---\ntitle: My Document\npriority: 1\narchived: true\ntags:\n  - tag1\n  - tag2\n---\n\n"
+        "---\ntitle: My Document\npriority: 1\nexo__Asset_archived: true\ntags:\n  - tag1\n  - tag2\n---\n\n"
       );
     });
 

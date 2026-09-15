@@ -421,9 +421,10 @@ describe("BatchExecutor", () => {
 
         expect(result.results[0].success).toBe(true);
         expect(result.results[0].action).toBe("Archived task");
+        // req 960d7a3f: the batch writer emits the TBox-declared key.
         expect(mockFrontmatterService.updateProperty).toHaveBeenCalledWith(
           expect.any(String),
-          "archived",
+          "exo__Asset_archived",
           "true",
         );
         expect(mockFrontmatterService.removeProperty).toHaveBeenCalledWith(

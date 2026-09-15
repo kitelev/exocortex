@@ -361,11 +361,14 @@ export class GenericAssetCreationService {
         //
         // ⚠ Two consequences worth naming, both deliberate:
         //  1. The downstream `propertyTypeMap` / `shouldEmitAsArray` lookups now
-        //     receive the BARE name, so `Namespace.fromPropertyKey("archived")`
-        //     returns null and a shape declared under `exo#Asset_archived` no
-        //     longer resolves. Benign for the four whitelisted fields (booleans
-        //     and `aliases`; `shouldEmitAsArray` only matters for `[[…]]`
-        //     values) — but it IS a coupling, not an accident.
+        //     receive the BARE name for the whitelisted fields (`draft`,
+        //     `pinned`, `aliases`), so `Namespace.fromPropertyKey("draft")`
+        //     returns null and a shape declared under `exo#Asset_draft` no
+        //     longer resolves. Benign for those fields (booleans and
+        //     `aliases`; `shouldEmitAsArray` only matters for `[[…]]` values)
+        //     — but it IS a coupling, not an accident. `archived` runs the
+        //     OTHER way since req 960d7a3f: a bare `archived` is upgraded to
+        //     `exo__Asset_archived`, so its TBox shape DOES resolve.
         //  2. Skipping is silent. `create.ts` therefore REFUSES
         //     `--property exo__Asset_aliases` up front rather than letting the
         //     value vanish here. That refusal is CLI-only: another caller
