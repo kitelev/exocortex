@@ -899,14 +899,14 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       );
     });
 
-    it("should set archived: true on target asset", async () => {
+    it("should set exo__Asset_archived: true on target asset (req 960d7a3f)", async () => {
       const service = registry.get("archiveAsset")!;
       await service.execute("test-uid-123");
 
       expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
       expect(deps.vaultAdapter!.modify).toHaveBeenCalledWith(
         mockIFile,
-        expect.stringMatching(/\narchived: true\n/),
+        expect.stringMatching(/\nexo__Asset_archived: true\n/),
       );
     });
 
@@ -919,13 +919,13 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
 
       const modifyCall = (deps.vaultAdapter!.modify as jest.Mock).mock.calls[0];
       const written = modifyCall[1] as string;
-      expect(written).toMatch(/\narchived: true\n/);
+      expect(written).toMatch(/\nexo__Asset_archived: true\n/);
       expect(written).not.toMatch(/\naliases:/);
     });
 
     it("should be a no-op when asset is already archived with no aliases", async () => {
       (deps.vaultAdapter!.read as jest.Mock).mockResolvedValue(
-        "---\nexo__Asset_uid: test-uid-123\narchived: true\n---\nBody",
+        "---\nexo__Asset_uid: test-uid-123\nexo__Asset_archived: true\n---\nBody",
       );
       const service = registry.get("archiveAsset")!;
       await service.execute("test-uid-123");
