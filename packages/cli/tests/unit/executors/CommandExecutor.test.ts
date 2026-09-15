@@ -57,6 +57,16 @@ const mockDateFormatter = {
 };
 
 const mockMetadataHelpers = {
+  // Faithful pure stub of MetadataHelpers.isAssetArchived (req 960d7a3f):
+  // canonical → compat alias → legacy bare, first key present decides.
+  isAssetArchived: jest.fn((metadata: Record<string, any>) => {
+    for (const key of ["exo__Asset_archived", "exo__Asset_isArchived", "archived"]) {
+      const v = metadata?.[key];
+      if (v === undefined || v === null) continue;
+      return v === true || v === 1 || String(v).toLowerCase().trim() === "true";
+    }
+    return false;
+  }),
   buildFileContent: jest.fn((frontmatter: Record<string, any>) => {
     const lines = ["---"];
     for (const [key, value] of Object.entries(frontmatter)) {

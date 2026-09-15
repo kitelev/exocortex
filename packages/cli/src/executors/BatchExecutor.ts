@@ -466,9 +466,12 @@ export class BatchExecutor {
   ): Promise<BatchOperationResult> {
     const content = await this.fsAdapter.readFile(relativePath);
 
+    // req 960d7a3f: the TBox-declared key; a legacy bare `archived:` on the
+    // asset is dropped by the same write. `changes.archived` below is the
+    // result-object flag (batch report contract), not the YAML key.
     let updated = this.frontmatterService.updateProperty(
       content,
-      "archived",
+      "exo__Asset_archived",
       "true",
     );
     updated = this.frontmatterService.removeProperty(updated, "aliases");

@@ -56,7 +56,7 @@ needs **no** PAT at all.
    before you rely on it.
 3. **If a private repo "does not exist"** during Apply/Sync — or Sync reports
    `<owner>/<repo>@<branch> is not reachable … check the token's repository
-   allowlist` — check the token's repository allowlist first; that is the most
+allowlist` — check the token's repository allowlist first; that is the most
    common cause. The same 404 also comes from a repo that has no `main`
    branch (ExoSync syncs `main` only — rename `master` → `main` on GitHub).
    A token that _can_ see the repo but lacks **Contents** access fails with
@@ -328,8 +328,8 @@ parity); sync and apply use a REST/tarball transport instead of `git`.
 1. **Check Status Format**: Must be wiki-link format
 
    ```yaml
-   ems__Effort_status: "[[ems__EffortStatusBacklog]]"  # Correct
-   ems__Effort_status: "ToDo"  # Wrong
+   ems__Effort_status: "[[ems__EffortStatusBacklog]]" # Correct
+   ems__Effort_status: "ToDo" # Wrong
    ```
 
 2. **Check Workflow Rules**: Some transitions not allowed (e.g., Draft → Done)
@@ -344,9 +344,9 @@ parity); sync and apply use a REST/tarball transport instead of `git`.
 
 **Solutions**:
 
-1. **Check Archived**: Look for `exo__Asset_archived: true`
+1. **Check Archived**: Look for `exo__Asset_archived: true` (or the legacy bare `archived: true` on assets archived before 2026-09-15)
    - Toggle "Show Archived" in daily note
-   - Remove property to un-archive
+   - Run the "Un-archive" command (clears both spellings) to un-archive
 
 2. **Check Folder**: Task may have moved
    - Use Quick Switcher (Cmd/Ctrl + O) to find

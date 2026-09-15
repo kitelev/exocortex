@@ -443,11 +443,16 @@ describe("MetadataHelpers", () => {
       expect(result).toBe(true);
     });
 
-    it("should handle archived: array (invalid type)", () => {
-      const metadata = { archived: ["true"] };
-      const result = MetadataHelpers.isAssetArchived(metadata);
-
-      expect(result).toBe(false);
+    it("should unwrap a SINGLE-element archived list and reject multi-element / empty lists", () => {
+      // req 960d7a3f: single-element list = the shape Obsidian's list-typed
+      // property editor produces (AreaHierarchyBuilder precedent); anything
+      // else is an invalid shape → not archived.
+      expect(MetadataHelpers.isAssetArchived({ archived: ["true"] })).toBe(true);
+      expect(MetadataHelpers.isAssetArchived({ archived: [true] })).toBe(true);
+      expect(MetadataHelpers.isAssetArchived({ exo__Asset_archived: [true] })).toBe(true);
+      expect(MetadataHelpers.isAssetArchived({ archived: [] })).toBe(false);
+      expect(MetadataHelpers.isAssetArchived({ archived: ["true", "false"] })).toBe(false);
+      expect(MetadataHelpers.isAssetArchived({ archived: [false] })).toBe(false);
     });
 
     it("should handle archived: object (invalid type)", () => {
@@ -621,8 +626,10 @@ describe("MetadataHelpers", () => {
       };
       const result = MetadataHelpers.buildFileContent(frontmatter);
 
+      // req 960d7a3f: bare `archived` is canonicalised to `exo__Asset_archived`
+      // (position unchanged — the key is not in the order spec's head).
       expect(result).toBe(
-        "---\ntitle: My Document\npriority: 1\narchived: true\ntags:\n  - tag1\n  - tag2\n---\n\n"
+        "---\ntitle: My Document\npriority: 1\nexo__Asset_archived: true\ntags:\n  - tag1\n  - tag2\n---\n\n"
       );
     });
 

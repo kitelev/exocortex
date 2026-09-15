@@ -262,8 +262,11 @@ describe("RenameToUidService", () => {
       mockVault.process.mockImplementation(async (file, fn) => {
         const content = "---\ntitle: Test\n---\nContent";
         const result = fn(content);
-        // Implementation adds aliases regardless of archived status
-        expect(result).toContain("aliases:");
+        // req 960d7a3f: the shared reader (MetadataHelpers.isAssetArchived)
+        // treats "true" as archived, so no alias is added — the previous
+        // inline check accepted only the boolean `true` (an inconsistency
+        // with core/plugin, now removed by delegation).
+        expect(result).not.toContain("aliases:");
         return result;
       });
 
@@ -299,8 +302,8 @@ describe("RenameToUidService", () => {
       mockVault.process.mockImplementation(async (file, fn) => {
         const content = "---\ntitle: Test\n---\nContent";
         const result = fn(content);
-        // Implementation adds aliases regardless of archived status
-        expect(result).toContain("aliases:");
+        // req 960d7a3f: shared reader — `1` is archived, no alias added.
+        expect(result).not.toContain("aliases:");
         return result;
       });
 

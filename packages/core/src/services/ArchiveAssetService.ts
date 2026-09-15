@@ -4,9 +4,10 @@ import { DI_TOKENS } from "../interfaces/tokens";
 import { FrontmatterService } from "../utilities/FrontmatterService";
 
 /**
- * Archive an Exocortex asset by marking it `archived: true` (top-level
- * frontmatter) and removing `aliases`. Idempotent: a second call on an
- * already-archived asset without aliases is a no-op.
+ * Archive an Exocortex asset by marking it `exo__Asset_archived: true` (the
+ * TBox-declared key, req 960d7a3f — a pre-existing legacy bare `archived:`
+ * is dropped by the same write) and removing `aliases`. Idempotent: a second
+ * call on an already-archived asset without aliases is a no-op.
  *
  * This is the shared (plugin + CLI) implementation behind the
  * `archiveAsset` grounding service (Issue #2867). Semantics mirror the
@@ -26,8 +27,8 @@ import { FrontmatterService } from "../utilities/FrontmatterService";
  *
  * For archiving that must be undoable (e.g. an `ems__Area` that can become
  * active again once efforts appear under it), use a plain
- * `property_set archived="true"` grounding instead — it leaves `aliases`
- * untouched, so the round-trip diff is a single `updatedAt` line.
+ * `property_set exo__Asset_archived="true"` grounding instead — it leaves
+ * `aliases` untouched, so the round-trip diff is a single `updatedAt` line.
  */
 @injectable()
 export class ArchiveAssetService {
@@ -41,7 +42,7 @@ export class ArchiveAssetService {
     const content = await this.vault.read(file);
     let updated = this.frontmatterService.updateProperty(
       content,
-      "archived",
+      "exo__Asset_archived",
       "true",
     );
     updated = this.frontmatterService.removeProperty(updated, "aliases");

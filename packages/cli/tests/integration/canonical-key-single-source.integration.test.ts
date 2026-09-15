@@ -210,19 +210,26 @@ describe("req 869561bf: one canonical-key source in core, used by every writer",
 
   /**
    * The second wired core writer. `create` refuses only the fields it manages
-   * ITSELF (`aliases`); the other three `UNPREFIXED_ASSET_FIELDS` are ordinary
-   * `--property` input and must land under their canonical key. Without this
-   * axis the `GenericAssetCreationService` edit ships unverified — its own 101
-   * tests stay green under a neutralised canonicaliser.
+   * ITSELF (`aliases`); the other two `UNPREFIXED_ASSET_FIELDS` (`draft`,
+   * `pinned`) are ordinary `--property` input and must land under their
+   * canonical BARE key. Without this axis the `GenericAssetCreationService`
+   * edit ships unverified — its own 101 tests stay green under a neutralised
+   * canonicaliser.
+   *
+   * ⛤ The probe field moved `archived` → `draft` on 2026-09-15 (req 960d7a3f):
+   * `archived` left the bare whitelist — its canonical key is now the
+   * TBox-declared `exo__Asset_archived` (see the sibling axis below). The
+   * clause under test here (ONE canonical-key source, prefixed → bare for the
+   * whitelisted fields) is unchanged.
    */
-  it("create writes exo__Asset_archived under the canonical archived key @req:869561bf-ae02-4028-bc6a-b32cfabda1ed", async () => {
+  it("create writes exo__Asset_draft under the canonical draft key @req:869561bf-ae02-4028-bc6a-b32cfabda1ed", async () => {
     await run(createCommand(), [
       "--class",
       CLASS_UID,
       "--label",
       "Archived probe",
       "--property",
-      "exo__Asset_archived=true",
+      "exo__Asset_draft=true",
     ]);
 
     // `create` places the asset by co-location (isDefinedBy), which this probe
@@ -239,8 +246,37 @@ describe("req 869561bf: one canonical-key source in core, used by every writer",
     expect(created).toHaveLength(1);
 
     const content = fs.readFileSync(created[0], "utf-8");
-    expect(content).not.toContain("exo__Asset_archived:");
-    expect(parseFrontmatter(content).archived).toBe(true);
+    expect(content).not.toContain("exo__Asset_draft:");
+    expect(parseFrontmatter(content).draft).toBe(true);
+  });
+
+  /**
+   * req 960d7a3f (ticket da0f73a3): `archived` is the LEGACY bare spelling —
+   * the canonical key is the TBox-declared `exo__Asset_archived`, so the same
+   * writer path keeps it PREFIXED and upgrades a bare `archived` input.
+   */
+  it("create writes exo__Asset_archived PREFIXED and upgrades a bare archived input @req:960d7a3f-c04c-461e-a7fa-1ba2d2572bee", async () => {
+    await run(createCommand(), [
+      "--class",
+      CLASS_UID,
+      "--label",
+      "Canonical archived probe",
+      "--property",
+      "archived=true",
+    ]);
+    const walk = (d: string): string[] =>
+      fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+        const p = path.join(d, e.name);
+        return e.isDirectory() ? walk(p) : p.endsWith(".md") ? [p] : [];
+      });
+    const created = walk(vault).filter((p) =>
+      fs.readFileSync(p, "utf-8").includes("Canonical archived probe"),
+    );
+    expect(created).toHaveLength(1);
+    const content = fs.readFileSync(created[0], "utf-8");
+    expect(content).toContain("exo__Asset_archived: true");
+    expect(content).not.toMatch(/\narchived:/);
+    expect(parseFrontmatter(content).exo__Asset_archived).toBe(true);
   });
 
   // ── negative controls: must stay GREEN in every state ──

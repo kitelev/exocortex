@@ -35,6 +35,10 @@ import { injectExocortexPrefixes } from "../utils/QueryPrefixInjector.js";
  */
 export const NON_ONTOLOGY_KEYS: ReadonlySet<string> = new Set([
   "aliases",
+  // Legacy bare archive flag — still READ by the indexer as `exo:Asset_archived`
+  // and whitelisted here for the transition period; the canonical key is the
+  // TBox-declared `exo__Asset_archived` (req 960d7a3f), which is validated
+  // against the ontology like any other prefixed property.
   "archived",
   "tags",
   "cssclasses",

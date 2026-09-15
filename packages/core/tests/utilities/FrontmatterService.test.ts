@@ -101,7 +101,9 @@ describe("FrontmatterService", () => {
       const content = "---\nfoo: bar\n---\nBody";
       const result = service.updateProperty(content, "archived", true);
 
-      expect(result).toBe("---\nfoo: bar\narchived: true\n---\nBody");
+      // req 960d7a3f: a bare `archived` handed to a writer is UPGRADED to the
+      // TBox-declared key; `draft`/`pinned` stay bare (see the sibling test).
+      expect(result).toBe("---\nfoo: bar\nexo__Asset_archived: true\n---\nBody");
     });
 
     it("should handle number values", () => {
@@ -337,7 +339,9 @@ Body`;
         draft: false,
       });
 
-      expect(result).toBe("---\narchived: true\ndraft: false\n---\nBody content");
+      // req 960d7a3f: bare `archived` canonicalises to `exo__Asset_archived`
+      // (ordered by the default spec; `draft` stays a bare whitelisted key).
+      expect(result).toBe("---\nexo__Asset_archived: true\ndraft: false\n---\nBody content");
     });
 
     it("should handle number values", () => {

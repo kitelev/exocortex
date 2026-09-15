@@ -913,14 +913,14 @@ See [docs/settings-homoiconization.md](docs/explanation/settings-homoiconization
 
 ### Core Properties (All Assets)
 
-| Property                 | Type           | Required | Format           | Purpose             |
-| ------------------------ | -------------- | -------- | ---------------- | ------------------- |
-| `exo__Asset_uid`         | String         | ✅ Yes   | UUID v4          | Unique identifier   |
-| `exo__Asset_label`       | String         | ✅ Yes   | Free text        | Human-readable name |
-| `exo__Asset_createdAt`   | String         | ✅ Yes   | ISO 8601         | Creation timestamp  |
-| `exo__Asset_isDefinedBy` | String         | ✅ Yes   | WikiLink         | Ontology reference  |
-| `exo__Instance_class`    | Array          | ✅ Yes   | WikiLink[]       | Asset type(s)       |
-| `exo__Asset_isArchived`  | Boolean/String | No       | `true`, `"true"` | Archive status      |
+| Property                 | Type           | Required | Format           | Purpose                                                           |
+| ------------------------ | -------------- | -------- | ---------------- | ----------------------------------------------------------------- |
+| `exo__Asset_uid`         | String         | ✅ Yes   | UUID v4          | Unique identifier                                                 |
+| `exo__Asset_label`       | String         | ✅ Yes   | Free text        | Human-readable name                                               |
+| `exo__Asset_createdAt`   | String         | ✅ Yes   | ISO 8601         | Creation timestamp                                                |
+| `exo__Asset_isDefinedBy` | String         | ✅ Yes   | WikiLink         | Ontology reference                                                |
+| `exo__Instance_class`    | Array          | ✅ Yes   | WikiLink[]       | Asset type(s)                                                     |
+| `exo__Asset_archived`    | Boolean/String | No       | `true`, `"true"` | Archive status (TBox-declared; legacy bare `archived` still read) |
 
 ### Effort Management Properties
 

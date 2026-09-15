@@ -77,46 +77,54 @@ export class MetadataHelpers {
     return false;
   }
 
+  /**
+   * Whether an asset is archived, reading the three carrier spellings in
+   * priority order (req 960d7a3f, ticket da0f73a3):
+   *
+   *   1. `exo__Asset_archived` — the CANONICAL key (declared in the exoas-exo
+   *      TBox, the only spelling writers emit since 2026-09-15);
+   *   2. `exo__Asset_isArchived` — read-only compatibility alias (never
+   *      written; 0 carriers measured across the three canonical vaults);
+   *   3. `archived` — the legacy bare Obsidian-style key, still carried by
+   *      not-yet-migrated assets.
+   *
+   * The FIRST spelling present decides (a `false` under a higher-priority key
+   * is not overridden by a `true` under a lower one). Accepted truthy forms:
+   * `true`, `1`, `"true"`, `"yes"`, `"1"` (case-insensitive, trimmed); a
+   * SINGLE-element YAML list is unwrapped (`archived:\n  - true` — the shape
+   * Obsidian's list-typed property editor produces; AreaHierarchyBuilder /
+   * AreaSelectionModal precedent); any other shape (multi-element list,
+   * object) is NOT archived.
+   */
   static isAssetArchived(metadata: Record<string, unknown>): boolean {
-    // Check exo__Asset_isArchived field with full truthy value support
-    const exoArchivedValue = metadata?.exo__Asset_isArchived;
-    if (exoArchivedValue !== undefined && exoArchivedValue !== null) {
-      if (exoArchivedValue === true || exoArchivedValue === 1) {
-        return true;
-      }
-      if (typeof exoArchivedValue === "string") {
-        const normalized = exoArchivedValue.toLowerCase().trim();
-        if (normalized === "true" || normalized === "yes" || normalized === "1") {
-          return true;
-        }
-      }
-      if (typeof exoArchivedValue === "boolean") {
-        return exoArchivedValue;
-      }
+    for (const key of MetadataHelpers.ARCHIVED_FLAG_KEYS) {
+      const raw = metadata?.[key];
+      if (raw === undefined || raw === null) continue;
+      return MetadataHelpers.isTruthyFlag(raw);
     }
+    return false;
+  }
 
-    // Fallback to legacy 'archived' field
-    const archivedValue = metadata?.archived;
+  /**
+   * Archive-flag carrier keys in priority order — canonical, compatibility
+   * alias, legacy bare. Exported so readers that key off the property NAME
+   * (plugin layout-section dependencies, relation-column filters) list the
+   * same spellings instead of re-deriving them.
+   */
+  static readonly ARCHIVED_FLAG_KEYS: readonly string[] = [
+    "exo__Asset_archived",
+    "exo__Asset_isArchived",
+    "archived",
+  ];
 
-    if (archivedValue === undefined || archivedValue === null) {
-      return false;
+  private static isTruthyFlag(raw: unknown): boolean {
+    const value = Array.isArray(raw) ? (raw.length === 1 ? raw[0] : undefined) : raw;
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    if (typeof value === "string") {
+      const normalized = value.toLowerCase().trim();
+      return normalized === "true" || normalized === "yes" || normalized === "1";
     }
-
-    if (typeof archivedValue === "boolean") {
-      return archivedValue;
-    }
-
-    if (typeof archivedValue === "number") {
-      return archivedValue !== 0;
-    }
-
-    if (typeof archivedValue === "string") {
-      const normalized = archivedValue.toLowerCase().trim();
-      return (
-        normalized === "true" || normalized === "yes" || normalized === "1"
-      );
-    }
-
     return false;
   }
 

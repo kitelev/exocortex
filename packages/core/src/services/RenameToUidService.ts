@@ -1,6 +1,7 @@
 import { injectable, inject } from "tsyringe";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import { DI_TOKENS } from "../interfaces/tokens";
+import { MetadataHelpers } from "../utilities/MetadataHelpers";
 
 @injectable()
 export class RenameToUidService {
@@ -148,32 +149,8 @@ export class RenameToUidService {
     );
   }
 
+  /** Shared reader — same three carrier spellings as every other consumer (req 960d7a3f). */
   private isAssetArchived(metadata: Record<string, unknown>): boolean {
-    if (metadata?.exo__Asset_isArchived === true) {
-      return true;
-    }
-
-    const archivedValue = metadata?.archived;
-
-    if (archivedValue === undefined || archivedValue === null) {
-      return false;
-    }
-
-    if (typeof archivedValue === "boolean") {
-      return archivedValue;
-    }
-
-    if (typeof archivedValue === "number") {
-      return archivedValue !== 0;
-    }
-
-    if (typeof archivedValue === "string") {
-      const normalized = archivedValue.toLowerCase().trim();
-      return (
-        normalized === "true" || normalized === "yes" || normalized === "1"
-      );
-    }
-
-    return false;
+    return MetadataHelpers.isAssetArchived(metadata);
   }
 }

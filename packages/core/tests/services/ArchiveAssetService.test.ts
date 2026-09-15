@@ -25,7 +25,7 @@ describe("ArchiveAssetService", () => {
     jest.clearAllMocks();
   });
 
-  it("sets archived: true on a Done task without prior archived property", async () => {
+  it("sets exo__Asset_archived: true on a Done task without prior archived property (req 960d7a3f)", async () => {
     const original = `---
 exo__Asset_uid: 05dc6377
 exo__Asset_label: Done Task
@@ -40,7 +40,8 @@ Body.
 
     expect(mockVault.modify).toHaveBeenCalledTimes(1);
     const [, written] = mockVault.modify.mock.calls[0];
-    expect(written).toMatch(/\narchived: true\n/);
+    expect(written).toMatch(/\nexo__Asset_archived: true\n/);
+    expect(written).not.toMatch(/\narchived: true\n/);
   });
 
   it("removes aliases property when archiving", async () => {
@@ -60,7 +61,7 @@ Body.
     await service.archiveAsset(mockFile);
 
     const [, written] = mockVault.modify.mock.calls[0];
-    expect(written).toMatch(/\narchived: true\n/);
+    expect(written).toMatch(/\nexo__Asset_archived: true\n/);
     expect(written).not.toMatch(/\naliases:/);
     expect(written).not.toMatch(/- "Done Task"/);
   });
@@ -69,7 +70,7 @@ Body.
     const original = `---
 exo__Asset_uid: 05dc6377
 exo__Asset_label: Done Task
-archived: true
+exo__Asset_archived: true
 ---
 
 Body.
@@ -82,6 +83,27 @@ Body.
   });
 
   it("still removes aliases when archived is already true (partial state)", async () => {
+    const original = `---
+exo__Asset_uid: 05dc6377
+exo__Asset_label: Done Task
+exo__Asset_archived: true
+aliases:
+  - "Stale alias"
+---
+
+Body.
+`;
+    mockVault.read.mockResolvedValue(original);
+
+    await service.archiveAsset(mockFile);
+
+    expect(mockVault.modify).toHaveBeenCalledTimes(1);
+    const [, written] = mockVault.modify.mock.calls[0];
+    expect(written).toMatch(/\nexo__Asset_archived: true\n/);
+    expect(written).not.toMatch(/\naliases:/);
+  });
+
+  it("migrates a LEGACY bare `archived: true` carrier: canonical key written, bare key dropped (req 960d7a3f Scenario C)", async () => {
     const original = `---
 exo__Asset_uid: 05dc6377
 exo__Asset_label: Done Task
@@ -98,8 +120,10 @@ Body.
 
     expect(mockVault.modify).toHaveBeenCalledTimes(1);
     const [, written] = mockVault.modify.mock.calls[0];
-    expect(written).toMatch(/\narchived: true\n/);
+    expect(written).toMatch(/\nexo__Asset_archived: true\n/);
+    expect(written).not.toMatch(/\narchived: true\n/);
     expect(written).not.toMatch(/\naliases:/);
+    expect(written).toMatch(/\nBody\.\n/);
   });
 
   it("preserves body content unchanged", async () => {

@@ -161,9 +161,10 @@ export const GUARDED_ROUTES: Record<string, GuardedRoute> = {
   ems__Effort_scheduledDate: { commands: ["set-scheduled-date"] },
   // Votes — dedicated command.
   ems__Effort_votes: { commands: ["vote-on-effort"] },
-  // Archive flag (bare `archived:` in frontmatter; `exo__Asset_archived` when
-  // prefixed) — dedicated archive/un-archive commands (un-archive has a Done
-  // precondition).
+  // Archive flag — canonical key `exo__Asset_archived` (TBox-declared, req
+  // 960d7a3f); the bare `archived:` spelling is the legacy carrier form (read,
+  // never written). Both route to the dedicated archive/un-archive commands
+  // (un-archive has a Done precondition).
   archived: {
     commands: ["archive", "archive-ontologically", "un-archive"],
     clearedBy: ["un-archive"],

@@ -266,40 +266,45 @@ exo__Instance_class:
 
 ---
 
-### exo\_\_Asset_isArchived
+### exo\_\_Asset_archived
 
-**Archive status flag**
+**Archive status flag** — TBox-declared (`exoas-exo` `79ca4e3e`, `exo__DatatypeProperty`, domain `exo__Asset`; founder decision 2026-09-15, ticket `da0f73a3`, req `960d7a3f`).
 
-| Attribute        | Value                                        |
-| ---------------- | -------------------------------------------- |
-| **Type**         | Boolean or String                            |
-| **Required**     | No (default: `false`)                        |
-| **Format**       | `true`, `1`, `"true"`, `"yes"` (any truthy)  |
-| **Purpose**      | Mark asset as archived/completed             |
-| **Generated**    | Manual or via "Archive" command              |
-| **Mutable**      | ✅ Yes                                       |
-| **Effect**       | Hides from active views (if toggle enabled)  |
-| **Alternatives** | `archived` (Obsidian standard, also checked) |
+| Attribute        | Value                                                                                                                       |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Type**         | Boolean or String                                                                                                           |
+| **Required**     | No (default: `false`)                                                                                                       |
+| **Format**       | `true`, `1`, `"true"`, `"yes"` (any truthy)                                                                                 |
+| **Purpose**      | Mark asset as archived/completed                                                                                            |
+| **Generated**    | "Archive" command (`archive` / `archive-ontologically` / batch archive)                                                     |
+| **Mutable**      | ✅ Yes (via the dedicated `archive` / `un-archive` commands)                                                                |
+| **Effect**       | Hides from active views (if toggle enabled); gates the archive commands                                                     |
+| **Graph**        | Indexed as `exo:Asset_archived "true"` — the predicate every exocmd precondition (`Not archived`, `Is archivable`, …) tests |
+| **Legacy forms** | `archived` (bare, pre-2026-09-15 carriers) and `exo__Asset_isArchived` (code-side alias) — **read, never written**          |
 
 **Example**:
 
 ```yaml
-exo__Asset_isArchived: true
-# Or
-archived: true
-# Or both
+exo__Asset_archived: true
 ```
 
-**Multi-Format Support**:
+**Multi-Format Support** (reader priority: `exo__Asset_archived` → `exo__Asset_isArchived` → `archived`; the first key present decides):
 
 ```typescript
 // All these are treated as archived:
-exo__Asset_isArchived: true;
-exo__Asset_isArchived: 1;
-exo__Asset_isArchived: "true";
-exo__Asset_isArchived: "yes";
-archived: true;
+exo__Asset_archived: true;
+exo__Asset_archived: 1;
+exo__Asset_archived: "true";
+exo__Asset_archived: "yes";
+exo__Asset_isArchived: true; // read-only compat alias (deprecated, 0 carriers)
+archived: true; // legacy bare carrier — migrate with `repair-frontmatter --canonicalize-keys`
 ```
+
+**Writers emit ONLY the canonical key.** Archiving an asset that still carries the bare `archived:` rewrites it to `exo__Asset_archived:` in the same write (no dual keys); removing `exo__Asset_archived` (the `un-archive` command) clears both spellings.
+
+### exo\_\_Asset_isArchived
+
+**Deprecated** read-only compatibility alias of `exo__Asset_archived` (above) (`exoas-exo` `7f632d25`, `exo__DeprecatedProperty` → use instead `exo__Asset_archived`). Indexed under a DIFFERENT predicate (`exo:Asset_isArchived`) that the archive preconditions do not test; no writer emits it and no vault carrier exists (measured 2026-09-15). Do not author it.
 
 ---
 
@@ -1158,17 +1163,17 @@ aliases:
 
 ### archived
 
-**Obsidian's native archive property**
+**Legacy bare archive flag** (Obsidian-style key; the carrier form of every asset archived before 2026-09-15)
 
-| Attribute        | Value                                   |
-| ---------------- | --------------------------------------- |
-| **Type**         | Boolean or String                       |
-| **Required**     | No                                      |
-| **Format**       | `true` or `"true"`                      |
-| **Purpose**      | Obsidian's standard archival system     |
-| **Also Checked** | As fallback for `exo__Asset_isArchived` |
+| Attribute    | Value                                                                                                                                                                                                                                                                                                                |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Type**     | Boolean or String                                                                                                                                                                                                                                                                                                    |
+| **Required** | No                                                                                                                                                                                                                                                                                                                   |
+| **Format**   | `true` or `"true"`                                                                                                                                                                                                                                                                                                   |
+| **Purpose**  | Legacy spelling of `exo__Asset_archived` (above)                                                                                                                                                                                                                                                                     |
+| **Status**   | **Read, never written** — still indexed as `exo:Asset_archived` (same predicate as the canonical key), still whitelisted by `validate schema`; writers rewrite it to the canonical key on the next archive/un-archive, and `exocortex-cli repair-frontmatter <path> --canonicalize-keys` migrates a carrier in place |
 
-**Example**:
+**Example** (legacy carrier — do not author new ones):
 
 ```yaml
 archived: true

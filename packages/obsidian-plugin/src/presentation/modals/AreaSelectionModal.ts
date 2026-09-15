@@ -1,5 +1,5 @@
 import { App, Modal } from "obsidian";
-import { MetadataExtractor } from "@kitelev/exocortex-core";
+import { MetadataExtractor, MetadataHelpers } from "@kitelev/exocortex-core";
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 import { AssetClass } from "@kitelev/exocortex-core";
 
@@ -98,7 +98,7 @@ export class AreaSelectionModal extends Modal {
     });
     cancelButton.addEventListener("click", () => this.cancel());
 
-    setTimeout(() => {
+    window.setTimeout(() => {
       this.selectEl?.focus();
     }, 50);
   }
@@ -151,16 +151,14 @@ export class AreaSelectionModal extends Modal {
     return rootAreas;
   }
 
+  /**
+   * Shared reader (req 960d7a3f): `exo__Asset_archived` (canonical) →
+   * `exo__Asset_isArchived` (compat alias) → legacy bare `archived`. The
+   * previous inline check read ONLY the alias, so every real carrier
+   * (bare `archived: true`) was offered as an active root area.
+   */
   private isArchivedAsset(metadata: Record<string, unknown>): boolean {
-    const archivedProp = metadata.exo__Asset_isArchived;
-    if (archivedProp === true || archivedProp === "true") {
-      return true;
-    }
-    if (Array.isArray(archivedProp) && archivedProp.length > 0) {
-      const first = archivedProp[0];
-      return first === true || first === "true";
-    }
-    return false;
+    return MetadataHelpers.isAssetArchived(metadata);
   }
 
   private submit(): void {

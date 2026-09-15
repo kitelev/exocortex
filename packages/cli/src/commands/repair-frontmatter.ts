@@ -1,13 +1,22 @@
 import { Command } from "commander";
 import { resolve, relative, isAbsolute, sep as pathSep } from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
+import { FrontmatterService, LEGACY_YAML_KEYS } from "@kitelev/exocortex-core";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
+import {
+  DEFAULT_TIMEZONE,
+  UPDATED_AT_KEY,
+  stampTimestamp,
+} from "./propertyMutationShared.js";
 
 interface RepairFrontmatterOptions {
   vault: string;
   dryRun?: boolean;
   yes?: boolean;
+  canonicalizeKeys?: boolean;
+  timezone?: string;
+  frozenClock?: string;
 }
 
 /** One deduplicated key + how many earlier occurrences were dropped. */
@@ -20,6 +29,61 @@ export interface DedupeResult {
   changed: boolean;
   content: string;
   removed: RemovedKey[];
+}
+
+/** One legacy physical key rewritten to its canonical spelling. */
+export interface CanonicalizedKey {
+  from: string;
+  to: string;
+}
+
+export interface CanonicalizeResult {
+  changed: boolean;
+  content: string;
+  canonicalized: CanonicalizedKey[];
+}
+
+/**
+ * Rewrite every LEGACY physical frontmatter key to its canonical spelling
+ * (req 960d7a3f, ticket da0f73a3): today that is the bare `archived:` →
+ * `exo__Asset_archived:` (see `LEGACY_YAML_KEYS` in core). The value is
+ * preserved verbatim; when BOTH spellings are present the canonical value wins
+ * and the legacy key is dropped. Idempotent: a file with no legacy key is
+ * returned byte-identical (`changed: false`).
+ *
+ * This is the per-file maintenance primitive behind the Phase-B data
+ * migration of ~1270 carriers across three vaults — deliberately NOT a
+ * user-facing command (no exocmd binding, no plugin surface), so the
+ * Desktop↔Mobile parity invariant does not apply.
+ */
+export function canonicalizeLegacyKeys(content: string): CanonicalizeResult {
+  const fm = new FrontmatterService();
+  const parsed = fm.parseObject(content);
+  if (!parsed) {
+    return { changed: false, content, canonicalized: [] };
+  }
+  let result = content;
+  const canonicalized: CanonicalizedKey[] = [];
+  for (const [canonical, legacies] of LEGACY_YAML_KEYS) {
+    const presentLegacy = legacies.find((legacy) =>
+      Object.prototype.hasOwnProperty.call(parsed, legacy),
+    );
+    if (presentLegacy === undefined) continue;
+    // Canonical value wins when both are present; otherwise carry the legacy
+    // value over verbatim (raw scalar text, so `true` stays `true`).
+    const value = Object.prototype.hasOwnProperty.call(parsed, canonical)
+      ? parsed[canonical]
+      : parsed[presentLegacy];
+    // `updateProperty` on the canonical key drops every legacy spelling
+    // (FrontmatterService, req 960d7a3f Scenario C) — one write, no dual keys.
+    result = fm.updateProperty(result, canonical, value);
+    canonicalized.push({ from: presentLegacy, to: canonical });
+  }
+  return {
+    changed: canonicalized.length > 0,
+    content: result,
+    canonicalized,
+  };
 }
 
 /**
@@ -113,14 +177,46 @@ export function dedupeFrontmatterKeys(content: string): DedupeResult {
   };
 }
 
+/**
+ * Minimal line diff of the frontmatter block (`-` removed / `+` added lines,
+ * in document order) for the `--dry-run` preview. Not a full LCS — the block
+ * is small and the reader only needs to see which keys move.
+ */
+export function frontmatterLineDiff(before: string, after: string): string[] {
+  const block = (text: string): string[] => {
+    const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    return m ? m[1].split(/\r?\n/) : [];
+  };
+  const a = block(before);
+  const b = block(after);
+  const bSet = new Set(b);
+  const aSet = new Set(a);
+  return [
+    ...a.filter((line) => !bSet.has(line)).map((line) => `- ${line}`),
+    ...b.filter((line) => !aSet.has(line)).map((line) => `+ ${line}`),
+  ];
+}
+
 export function repairFrontmatterCommand(): Command {
   return new Command("repair-frontmatter")
     .description(
-      "Remove duplicated top-level YAML frontmatter keys (keep-last) — the dogfood-clean repair for the invisible/unrepairable duplicate-key class (#3800). Operates on raw text, so it fixes a file the parser itself cannot read.",
+      "Remove duplicated top-level YAML frontmatter keys (keep-last) — the dogfood-clean repair for the invisible/unrepairable duplicate-key class (#3800). Operates on raw text, so it fixes a file the parser itself cannot read. With --canonicalize-keys also rewrites legacy physical keys to their TBox-declared spelling (bare `archived:` → `exo__Asset_archived:`, req 960d7a3f) and bumps exo__Asset_updatedAt.",
     )
     .argument("<path>", "Vault-relative path to the target asset")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
     .option("--dry-run", "Preview the dedupe diff without writing")
+    .option(
+      "--canonicalize-keys",
+      "Rewrite legacy physical keys to their canonical spelling (bare `archived:` → `exo__Asset_archived:`); value preserved, exo__Asset_updatedAt bumped; idempotent",
+    )
+    .option(
+      "--timezone <tz>",
+      "Timezone for the exo__Asset_updatedAt bump (defaults to Asia/Almaty)",
+    )
+    .option(
+      "--frozen-clock <iso>",
+      "Freeze the updatedAt clock to an ISO timestamp for test/replay",
+    )
     .option(
       "--yes",
       "Accepted for symmetry with the apply/create subcommands (repair-frontmatter is non-interactive; no-op)",
@@ -161,20 +257,44 @@ export function repairFrontmatterCommand(): Command {
         }
         const result = dedupeFrontmatterKeys(original);
 
-        if (!result.changed) {
+        // --canonicalize-keys runs AFTER dedupe (a deduped file is the input
+        // the key parser can read) and bumps updatedAt only when it changed
+        // something — an already-canonical file stays byte-identical.
+        let content = result.content;
+        let canonicalized: CanonicalizedKey[] = [];
+        let updatedAt: string | undefined;
+        if (options.canonicalizeKeys) {
+          const canon = canonicalizeLegacyKeys(content);
+          canonicalized = canon.canonicalized;
+          if (canon.changed) {
+            const now = options.frozenClock
+              ? new Date(options.frozenClock)
+              : new Date();
+            updatedAt = stampTimestamp(now, options.timezone ?? DEFAULT_TIMEZONE);
+            content = new FrontmatterService().updateProperty(
+              canon.content,
+              UPDATED_AT_KEY,
+              updatedAt,
+            );
+          }
+        }
+        const changed = result.changed || canonicalized.length > 0;
+
+        if (!changed) {
           process.stdout.write(
             JSON.stringify({
               path: vaultRelative,
               changed: false,
               dryRun: Boolean(options.dryRun),
               removed: [],
+              ...(options.canonicalizeKeys ? { canonicalized: [] } : {}),
             }) + "\n",
           );
           return;
         }
 
         if (!options.dryRun) {
-          writeFileSync(targetPath, result.content, "utf-8");
+          writeFileSync(targetPath, content, "utf-8");
         }
 
         process.stdout.write(
@@ -183,6 +303,11 @@ export function repairFrontmatterCommand(): Command {
             changed: true,
             dryRun: Boolean(options.dryRun),
             removed: result.removed,
+            ...(options.canonicalizeKeys ? { canonicalized } : {}),
+            ...(updatedAt ? { updatedAt } : {}),
+            // Dry-run preview: the line-level diff of the frontmatter block, so
+            // a caller can see exactly which keys move before writing.
+            ...(options.dryRun ? { diff: frontmatterLineDiff(original, content) } : {}),
           }) + "\n",
         );
       } catch (error) {

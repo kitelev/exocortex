@@ -78,7 +78,7 @@ describe("archiveAsset (CLI)", () => {
     fs.removeSync(vaultRoot);
   });
 
-  it("sets archived: true on a Done task", async () => {
+  it("sets exo__Asset_archived: true on a Done task (req 960d7a3f)", async () => {
     writeAsset(vaultRoot, "tasks/DoneTask.md", {
       exo__Asset_uid: "task-1",
       exo__Asset_label: "Done Task",
@@ -88,7 +88,8 @@ describe("archiveAsset (CLI)", () => {
     await service.execute("tasks/DoneTask");
 
     const fm = readFrontmatter(path.join(vaultRoot, "tasks/DoneTask.md"));
-    expect(fm.archived).toBe(true);
+    expect(fm.exo__Asset_archived).toBe(true);
+    expect(fm.archived).toBeUndefined();
   });
 
   it("removes aliases when archiving", async () => {
@@ -102,7 +103,8 @@ describe("archiveAsset (CLI)", () => {
     await service.execute("tasks/WithAliases");
 
     const fm = readFrontmatter(path.join(vaultRoot, "tasks/WithAliases.md"));
-    expect(fm.archived).toBe(true);
+    expect(fm.exo__Asset_archived).toBe(true);
+    expect(fm.archived).toBeUndefined();
     expect(fm.aliases).toBeUndefined();
   });
 
@@ -110,7 +112,7 @@ describe("archiveAsset (CLI)", () => {
     writeAsset(vaultRoot, "tasks/Already.md", {
       exo__Asset_uid: "task-3",
       exo__Asset_label: "Already",
-      archived: true,
+      exo__Asset_archived: true,
     });
     const before = fs.readFileSync(
       path.join(vaultRoot, "tasks/Already.md"),
@@ -145,7 +147,8 @@ describe("archiveAsset (CLI)", () => {
     );
     expect(content).toContain("## Notes\n- bullet one\n- bullet two\n");
     const fm = readFrontmatter(path.join(vaultRoot, "tasks/WithBody.md"));
-    expect(fm.archived).toBe(true);
+    expect(fm.exo__Asset_archived).toBe(true);
+    expect(fm.archived).toBeUndefined();
   });
 
   it("rejects when target file does not exist", async () => {
@@ -175,7 +178,8 @@ describe("archiveAsset (CLI)", () => {
     await expect(registered!.execute("tasks/Registered")).resolves.toBeUndefined();
 
     const fm = readFrontmatter(path.join(vaultRoot, "tasks/Registered.md"));
-    expect(fm.archived).toBe(true);
+    expect(fm.exo__Asset_archived).toBe(true);
+    expect(fm.archived).toBeUndefined();
   });
 
   it("registry integration: archiveAsset is NOT a CliServiceNotImplementedError stub when deps provided (#2867 regression guard)", async () => {

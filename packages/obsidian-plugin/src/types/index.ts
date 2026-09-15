@@ -17,6 +17,9 @@ export interface AssetMetadata {
   exo__Asset_label?: string;
   exo__Asset_createdAt?: string;
   exo__Asset_isDefinedBy?: string;
+  /** Canonical archive flag (TBox exo__Asset_archived, req 960d7a3f). */
+  exo__Asset_archived?: boolean | string | number;
+  /** Read-only compat alias — never written; prefer `exo__Asset_archived`. */
   exo__Asset_isArchived?: boolean | string | number;
   exo__Instance_class?: string | string[];
 
@@ -38,6 +41,7 @@ export interface AssetMetadata {
 
   pn__DailyNote_day?: string;
 
+  /** Legacy bare archive flag (pre-2026-09-15 carriers) — read, never written. */
   archived?: boolean | string | number;
 
   [key: string]: unknown;
