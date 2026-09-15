@@ -443,11 +443,16 @@ describe("MetadataHelpers", () => {
       expect(result).toBe(true);
     });
 
-    it("should handle archived: array (invalid type)", () => {
-      const metadata = { archived: ["true"] };
-      const result = MetadataHelpers.isAssetArchived(metadata);
-
-      expect(result).toBe(false);
+    it("should unwrap a SINGLE-element archived list and reject multi-element / empty lists", () => {
+      // req 960d7a3f: single-element list = the shape Obsidian's list-typed
+      // property editor produces (AreaHierarchyBuilder precedent); anything
+      // else is an invalid shape → not archived.
+      expect(MetadataHelpers.isAssetArchived({ archived: ["true"] })).toBe(true);
+      expect(MetadataHelpers.isAssetArchived({ archived: [true] })).toBe(true);
+      expect(MetadataHelpers.isAssetArchived({ exo__Asset_archived: [true] })).toBe(true);
+      expect(MetadataHelpers.isAssetArchived({ archived: [] })).toBe(false);
+      expect(MetadataHelpers.isAssetArchived({ archived: ["true", "false"] })).toBe(false);
+      expect(MetadataHelpers.isAssetArchived({ archived: [false] })).toBe(false);
     });
 
     it("should handle archived: object (invalid type)", () => {

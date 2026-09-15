@@ -90,8 +90,11 @@ export class MetadataHelpers {
    *
    * The FIRST spelling present decides (a `false` under a higher-priority key
    * is not overridden by a `true` under a lower one). Accepted truthy forms:
-   * `true`, `1`, `"true"`, `"yes"`, `"1"` (case-insensitive, trimmed); any
-   * other shape (list, object) is NOT archived.
+   * `true`, `1`, `"true"`, `"yes"`, `"1"` (case-insensitive, trimmed); a
+   * SINGLE-element YAML list is unwrapped (`archived:\n  - true` — the shape
+   * Obsidian's list-typed property editor produces; AreaHierarchyBuilder /
+   * AreaSelectionModal precedent); any other shape (multi-element list,
+   * object) is NOT archived.
    */
   static isAssetArchived(metadata: Record<string, unknown>): boolean {
     for (const key of MetadataHelpers.ARCHIVED_FLAG_KEYS) {
@@ -114,7 +117,8 @@ export class MetadataHelpers {
     "archived",
   ];
 
-  private static isTruthyFlag(value: unknown): boolean {
+  private static isTruthyFlag(raw: unknown): boolean {
+    const value = Array.isArray(raw) ? (raw.length === 1 ? raw[0] : undefined) : raw;
     if (typeof value === "boolean") return value;
     if (typeof value === "number") return value !== 0;
     if (typeof value === "string") {
