@@ -304,7 +304,7 @@ archived: true; // legacy bare carrier — migrate with `repair-frontmatter --ca
 
 ### exo\_\_Asset_isArchived
 
-**Deprecated** read-only compatibility alias of [`exo__Asset_archived`](#exo__asset_archived) (`exoas-exo` `7f632d25`, `exo__DeprecatedProperty` → use instead `exo__Asset_archived`). Indexed under a DIFFERENT predicate (`exo:Asset_isArchived`) that the archive preconditions do not test; no writer emits it and no vault carrier exists (measured 2026-09-15). Do not author it.
+**Deprecated** read-only compatibility alias of `exo__Asset_archived` (above) (`exoas-exo` `7f632d25`, `exo__DeprecatedProperty` → use instead `exo__Asset_archived`). Indexed under a DIFFERENT predicate (`exo:Asset_isArchived`) that the archive preconditions do not test; no writer emits it and no vault carrier exists (measured 2026-09-15). Do not author it.
 
 ---
 
@@ -1170,7 +1170,7 @@ aliases:
 | **Type**     | Boolean or String                                                                                                                                                                                                                                                                                                    |
 | **Required** | No                                                                                                                                                                                                                                                                                                                   |
 | **Format**   | `true` or `"true"`                                                                                                                                                                                                                                                                                                   |
-| **Purpose**  | Legacy spelling of [`exo__Asset_archived`](#exo__asset_archived)                                                                                                                                                                                                                                                     |
+| **Purpose**  | Legacy spelling of `exo__Asset_archived` (above)                                                                                                                                                                                                                                                                     |
 | **Status**   | **Read, never written** — still indexed as `exo:Asset_archived` (same predicate as the canonical key), still whitelisted by `validate schema`; writers rewrite it to the canonical key on the next archive/un-archive, and `exocortex-cli repair-frontmatter <path> --canonicalize-keys` migrates a carrier in place |
 
 **Example** (legacy carrier — do not author new ones):
