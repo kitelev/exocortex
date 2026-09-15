@@ -62,12 +62,18 @@ describe(`${REQ} canonicalizeLegacyKeys (pure)`, () => {
     expect(r.content).toContain("\nbody\n");
   });
 
-  it("canonical value wins when BOTH spellings are present; the bare key is dropped", () => {
+  it("canonical value wins when BOTH spellings are present; the bare key is dropped (exact bytes)", () => {
     const content = "---\narchived: true\nexo__Asset_archived: false\n---\n";
     const r = canonicalizeLegacyKeys(content);
     expect(r.changed).toBe(true);
-    expect(r.content).toMatch(/^exo__Asset_archived: false$/m);
-    expect(r.content).not.toMatch(/^archived:/m);
+    expect(r.content).toBe("---\nexo__Asset_archived: false\n---\n");
+  });
+
+  it("a legacy `archived` that LEADS the frontmatter migrates without a blank first line (exact bytes)", () => {
+    const content = "---\narchived: true\nexo__Asset_uid: abc\n---\nbody\n";
+    const r = canonicalizeLegacyKeys(content);
+    expect(r.changed).toBe(true);
+    expect(r.content).toBe("---\nexo__Asset_uid: abc\nexo__Asset_archived: true\n---\nbody\n");
   });
 
   it("is a no-op (byte-identical) when no legacy key is present", () => {

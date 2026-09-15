@@ -401,6 +401,17 @@ export class NoteToRDFConverter {
       // req 960d7a3f: the LEGACY set (`archived`) is read the same way — a
       // not-yet-migrated `archived: true` and the canonical
       // `exo__Asset_archived: true` both index as `exo:Asset_archived`.
+      // Canonical wins when BOTH spellings coexist (a state reachable only
+      // past the chokepoint: Obsidian's Properties panel, external tools):
+      // skip the legacy key so the graph carries exactly ONE
+      // `exo:Asset_archived` triple — the same priority as
+      // `MetadataHelpers.ARCHIVED_FLAG_KEYS`, so readers and preconditions agree.
+      if (
+        LEGACY_UNPREFIXED_ASSET_FIELDS.has(key) &&
+        Object.prototype.hasOwnProperty.call(frontmatter, `exo__Asset_${key}`)
+      ) {
+        continue;
+      }
       const normalizedKey =
         UNPREFIXED_ASSET_FIELDS.has(key) || LEGACY_UNPREFIXED_ASSET_FIELDS.has(key)
           ? `exo__Asset_${key}`

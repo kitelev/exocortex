@@ -29,6 +29,10 @@
  *       "removal clears the legacy carrier" RED.
  *  - R  reorder / drop a key in `MetadataHelpers.ARCHIVED_FLAG_KEYS` →
  *       the reader axis RED.
+ *  - M1 drop the "skip legacy when canonical present" guard in the converter
+ *       emission loop → "both keys, different values → ONE triple" RED.
+ *  - L2 drop the leading-blank-line strip in `removeLegacyKeys` → "legacy key
+ *       on the first line leaves no blank line" RED.
  */
 
 import "reflect-metadata";
@@ -228,6 +232,7 @@ const LEGACY_TASK = "b1b1b1b1-1111-4111-8111-111111111111"; // archived: true
 const CANONICAL_TASK = "b2b2b2b2-2222-4222-8222-222222222222"; // exo__Asset_archived: true
 const ALIAS_TASK = "b3b3b3b3-3333-4333-8333-333333333333"; // exo__Asset_isArchived: true (0 real carriers)
 const ACTIVE_TASK = "b4b4b4b4-4444-4444-8444-444444444444"; // no flag
+const BOTH_TASK = "b5b5b5b5-5555-4555-8555-555555555555"; // exo__Asset_archived: false + archived: true (past the chokepoint)
 
 const DIR = "assetspaces/my";
 const path = (uid: string): string => `${DIR}/${uid}.md`;
@@ -326,6 +331,12 @@ async function seedVault(fs: InMemoryFileSystem): Promise<void> {
       task(ALIAS_TASK, "Alias carrier", "exo__Asset_isArchived: true"),
     ],
     [path(ACTIVE_TASK), task(ACTIVE_TASK, "Active task")],
+    // Both spellings with DIFFERENT values — reachable only past the chokepoint
+    // (Obsidian Properties panel, external tools); canonical must win everywhere.
+    [
+      path(BOTH_TASK),
+      task(BOTH_TASK, "Both carrier", "exo__Asset_archived: false", "archived: true"),
+    ],
   ];
   for (const [p, content] of files) {
     await fs.createFile(p, content);
@@ -391,6 +402,35 @@ describe("Integration (req 960d7a3f): exo__Asset_archived is the canonical archi
     // The alias spelling is a DIFFERENT predicate — preconditions do not see it.
     expect(await archivedObjects(ALIAS_TASK, ARCHIVED_PRED)).toEqual([]);
     expect(await archivedObjects(ALIAS_TASK, IS_ARCHIVED_PRED)).toEqual(["true"]);
+  });
+
+  // ── M1: both spellings coexist → canonical wins in the GRAPH too ──
+  it("@req:960d7a3f-c04c-461e-a7fa-1ba2d2572bee both keys with DIFFERENT values emit exactly ONE exo:Asset_archived triple = the canonical value", async () => {
+    // Graph: one triple, the canonical `false` — the legacy `true` is skipped,
+    // mirroring MetadataHelpers.ARCHIVED_FLAG_KEYS priority so readers,
+    // exocmd preconditions and GraphQueryService agree.
+    expect(await archivedObjects(BOTH_TASK, ARCHIVED_PRED)).toEqual(["false"]);
+    // Reader agrees (canonical false is not overridden by legacy true).
+    const meta = vault.getFrontmatter(vault.makeFile(path(BOTH_TASK)))!;
+    expect(MetadataHelpers.isAssetArchived(meta)).toBe(false);
+    // Control: a legacy-only carrier still emits its own value (guard is scoped).
+    expect(await archivedObjects(LEGACY_TASK, ARCHIVED_PRED)).toEqual(["true"]);
+  });
+
+  // ── L2: migrating a legacy key that LEADS the frontmatter leaves no blank line ──
+  it("@req:960d7a3f-c04c-461e-a7fa-1ba2d2572bee a legacy `archived` on the first frontmatter line migrates without leaving a blank first line (exact bytes)", () => {
+    const fmService = new FrontmatterService();
+    const legacyFirst = "---\narchived: true\nfoo: bar\n---\nBody";
+    expect(fmService.updateProperty(legacyFirst, "exo__Asset_archived", "true")).toBe(
+      "---\nfoo: bar\nexo__Asset_archived: true\n---\nBody",
+    );
+    expect(fmService.removeProperty(legacyFirst, "exo__Asset_archived")).toBe(
+      "---\nfoo: bar\n---\nBody",
+    );
+    // A legacy key in the middle keeps the surrounding lines byte-identical.
+    expect(
+      fmService.updateProperty("---\nfoo: bar\narchived: true\nbaz: 1\n---\nBody", "exo__Asset_archived", "true"),
+    ).toBe("---\nfoo: bar\nbaz: 1\nexo__Asset_archived: true\n---\nBody");
   });
 
   // ── Reader (A + B + alias) ──

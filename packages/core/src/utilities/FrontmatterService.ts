@@ -240,7 +240,15 @@ export class FrontmatterService {
   private removeLegacyKeys(content: string, canonicalKey: string): string {
     let result = content;
     for (const legacy of LEGACY_YAML_KEYS.get(canonicalKey) ?? []) {
+      // `removePhysicalKey` keeps the historical byte-shape of `removeProperty`
+      // (a key on the FIRST line is replaced by a blank line). A migrated
+      // legacy key must not leave that blank line behind, so remember whether
+      // the legacy key led the block and strip the blank line it becomes.
+      const ledTheBlock = new RegExp(`^---\r?\n${legacy}:`).test(result);
       result = this.removePhysicalKey(result, legacy);
+      if (ledTheBlock) {
+        result = result.replace(/^---(\r?\n)\1/, "---$1");
+      }
     }
     return result;
   }
