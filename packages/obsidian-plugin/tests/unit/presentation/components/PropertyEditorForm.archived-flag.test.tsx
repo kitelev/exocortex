@@ -43,7 +43,10 @@ async function renderAndSave(
     />,
   );
   const checkbox = (await screen.findByLabelText(/Archived/)) as HTMLInputElement;
-  fireEvent.click(await screen.findByText("Save"));
+  // `as unknown as Element` — the repo's check-test-types ratchet compiles tests
+  // under a stricter DOM lib than ts-jest; HTMLElement from RTL is not assignable
+  // to fireEvent's Element there (TS2345).
+  fireEvent.click((await screen.findByText("Save")) as unknown as Element);
   await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
   return { payload: onSave.mock.calls[0][0] as Record<string, unknown>, checkbox };
 }
