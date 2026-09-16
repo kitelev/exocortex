@@ -307,6 +307,41 @@ describe("DynamicForm", () => {
     });
   });
 
+  // req c4adae42 (ticket efe33c5d) — CONSUMER CONTROLS: the field shape the
+  // loader now projects for `type: string` + `format: asset-reference`
+  // (`{ name, type: "assetRef", label, required }`, no targetClassUid) is
+  // rendered by the unchanged DynamicForm exactly as any other assetRef field.
+  // Mutant M2 (drop the assetRef branch in DynamicForm) → RED D1; D2 is green
+  // by construction (text → text). The plugin is not changed by that req.
+  describe("assetRef field projected from `format: asset-reference` (req c4adae42, consumer controls)", () => {
+    const LOADER_SHAPED: InputSchemaField = { name: "parent", type: "assetRef", label: "Parent", required: true };
+    // The test tsconfig sees two DOM type sets, so `fireEvent(HTMLElement)` is
+    // a baselined TS2345 in this file; the cast keeps these axes off that debt.
+    const asEl = (node: unknown): Element => node as Element;
+
+    it("D1 with candidates the reusable picker renders and commits the quoted [[uid]] into onSubmit @req:c4adae42-a109-4dd8-ae85-530a58a65869", () => {
+      const { onSubmit } = renderForm([LOADER_SHAPED], {
+        candidates: { parent: [{ uid: "uid-task-1", label: "Task one" }] },
+      });
+      const input = screen.getByTestId("field-parent");
+      expect(input).toHaveAttribute("role", "combobox");
+      fireEvent.focus(asEl(input));
+      fireEvent.mouseDown(asEl(screen.getByTestId("option-parent-uid-task-1")));
+      fireEvent.click(asEl(screen.getByText("OK")));
+      expect(onSubmit).toHaveBeenCalledWith({ parent: '"[[uid-task-1]]"' });
+    });
+
+    it("D2 without candidates and without targetClassUid it degrades to the plain text input and submits the typed uid verbatim @req:c4adae42-a109-4dd8-ae85-530a58a65869", () => {
+      const { onSubmit } = renderForm([LOADER_SHAPED]);
+      const input = screen.getByTestId("field-parent");
+      expect(input).not.toHaveAttribute("role");
+      expect(input).toHaveAttribute("placeholder", "asset reference...");
+      fireEvent.change(asEl(input), { target: { value: "3f1d005c-7a2e-4b8f-9c1d-5e6f7a8b9c0d" } });
+      fireEvent.click(asEl(screen.getByText("OK")));
+      expect(onSubmit).toHaveBeenCalledWith({ parent: "3f1d005c-7a2e-4b8f-9c1d-5e6f7a8b9c0d" });
+    });
+  });
+
   // T1 "Create Instance" (project bbe40f8c) — reusable fuzzy reference-picker.
   describe("assetRef fuzzy reference-picker (targetClassUid)", () => {
     const ONTOLOGY_FIELD: InputSchemaField = {
