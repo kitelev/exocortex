@@ -114,6 +114,7 @@ describe("findAssetRefCandidates (T1 fuzzy reference-picker)", () => {
     const PARENT_EFFORT = "17c5cf45-ce6a-4142-8d2a-65ac447f1168";
     const MEETING = "1b0a5e34-dd7f-4ead-b43a-6c7c5a5ecaca";
     const AREA_AWARE = "f3892308-7a8b-4b81-8a01-a088d4bad97b";
+    const ACTION = "6a99d2ca-d402-4734-a10b-33f5f1a1aa42";
     const AREA = "aaaaaaaa-0000-4000-8000-000000000001";
 
     const classFile = (uid: string, label: string, supers: string[]) => ({
@@ -127,6 +128,17 @@ describe("findAssetRefCandidates (T1 fuzzy reference-picker)", () => {
           : {}),
       },
     });
+    // `set-property --property/--value` writes a SCALAR `exo__Class_superClass`
+    // (a string, not a list) — the live form PR #4247 review LOW-3 asked to lock.
+    const classFileScalarSuper = (uid: string, label: string, sup: string) => ({
+      file: { basename: uid, path: `exoas-public/ems/${uid}.md` },
+      fm: {
+        exo__Asset_uid: uid,
+        exo__Asset_label: label,
+        exo__Instance_class: ['"[[8619c4fc-0000-4000-8000-000000000000]]"'],
+        exo__Class_superClass: `"[[${sup}]]"`,
+      },
+    });
     const hierarchy = [
       classFile(AREA_AWARE, "ems__AreaAware", []),
       classFile(EFFORT, "ems__Effort", [AREA_AWARE]),
@@ -135,6 +147,7 @@ describe("findAssetRefCandidates (T1 fuzzy reference-picker)", () => {
       classFile(TASK, "ems__Task", [EFFORT]),
       classFile(PROJECT, "ems__Project", [EFFORT, PARENT_EFFORT]),
       classFile(PARENT_EFFORT, "ems__ParentEffort", [EFFORT]),
+      classFileScalarSuper(ACTION, "ems__Action", EFFORT),
       classFile(AREA, "ems__Area", [AREA_AWARE]),
     ];
     const instances = [
@@ -158,11 +171,16 @@ describe("findAssetRefCandidates (T1 fuzzy reference-picker)", () => {
         file: { basename: "a1", path: "exoas-my/my-areas/a1.md" },
         fm: { exo__Asset_uid: "a1", exo__Asset_label: "Area one", exo__Instance_class: [`"[[${AREA}]]"`] },
       },
+      {
+        file: { basename: "ac1", path: "exoas-my/my-efforts/ac1.md" },
+        fm: { exo__Asset_uid: "ac1", exo__Asset_label: "Action one", exo__Instance_class: [`"[[${ACTION}]]"`] },
+      },
     ];
 
-    it("C1 targetClassUid = ems__Effort collects Task, Project, Meeting (two hops) and a symbolic-form Task, sorted by label, and not the Area @req:15f48fa1-a3a6-4df1-972e-efd639bfa344", () => {
+    it("C1 targetClassUid = ems__Effort collects Task, Project, Meeting (two hops), an Action (scalar superClass) and a symbolic-form Task, sorted by label, and not the Area @req:15f48fa1-a3a6-4df1-972e-efd639bfa344", () => {
       const app = makeApp([...hierarchy, ...instances]);
       expect(findAssetRefCandidates(app, EFFORT)).toEqual([
+        { uid: "ac1", label: "Action one" },
         { uid: "m1", label: "Meeting one" },
         { uid: "p1", label: "Project one" },
         { uid: "t2", label: "Symbolic task" },
@@ -181,8 +199,33 @@ describe("findAssetRefCandidates (T1 fuzzy reference-picker)", () => {
       // A sibling / ancestor of the target is never subsumed: AreaAware ⇒ nothing
       // is a direct instance, and its SUBclasses (Effort, Area) do count.
       expect(findAssetRefCandidates(app, AREA_AWARE).map((c) => c.uid).sort()).toEqual(
-        ["a1", "m1", "p1", "t1", "t2"],
+        ["a1", "ac1", "m1", "p1", "t1", "t2"],
       );
+    });
+
+    // PR #4247 review LOW-1: `classUid` may be a LABEL (`exo__Asset`,
+    // `exo__Ontology`) and a ROOT class declares no `exo__Class_superClass` —
+    // its definition must still be collected so its UID key joins the match
+    // set (UID-form instances and UID-form subclass edges resolve).
+    it("C3 target given by LABEL of a root class (no superClass) still collects its UID-form instances and its UID-form subclasses @req:15f48fa1-a3a6-4df1-972e-efd639bfa344", () => {
+      const ROOT = "bbbbbbbb-0000-4000-8000-000000000002";
+      const CHILD = "bbbbbbbb-0000-4000-8000-000000000003";
+      const app = makeApp([
+        classFile(ROOT, "exo__Asset", []),
+        classFile(CHILD, "custom__Child", [ROOT]),
+        {
+          file: { basename: "r1", path: "x/r1.md" },
+          fm: { exo__Asset_uid: "r1", exo__Asset_label: "Root instance", exo__Instance_class: [`"[[${ROOT}]]"`] },
+        },
+        {
+          file: { basename: "c1", path: "x/c1.md" },
+          fm: { exo__Asset_uid: "c1", exo__Asset_label: "Child instance", exo__Instance_class: [`"[[${CHILD}]]"`] },
+        },
+      ]);
+      expect(findAssetRefCandidates(app, "exo__Asset")).toEqual([
+        { uid: "c1", label: "Child instance" },
+        { uid: "r1", label: "Root instance" },
+      ]);
     });
   });
 

@@ -10,17 +10,25 @@
  * `exo__Class_superClass` chain reaches the target.
  *
  * Pure and store-free on purpose: the plugin feeds it the class definitions it
- * sees in the metadata cache, the CLI can feed it parsed frontmatter — the
- * closure is the same. The SPARQL-side walkers (`ClassHierarchyResolvingStore`,
- * `RequiredPropertyResolver`) key on triple-store IRIs and cannot serve a
- * metadata-cache consumer; the upward walkers (`GroundingExecutor`
- * prototype check, CLI `EffortStatusResolver`) answer the inverse question.
+ * sees in the metadata cache (today its only consumer; any frontmatter-shaped
+ * caller can feed it the same records). The SPARQL-side walkers
+ * (`ClassHierarchyResolvingStore`, `RequiredPropertyResolver`) key on
+ * triple-store IRIs and cannot serve a metadata-cache consumer; the upward
+ * walkers (`GroundingExecutor` prototype check, CLI `EffortStatusResolver`)
+ * answer the inverse question.
  *
  * Dual-IRI tolerance: a `superClass` / `Instance_class` ref may be
  * `[[<uid>]]`, `[[<uid>|<alias>]]`, `[[<label>]]` (quoted or not); the ref is
  * matched by its target (the part before `|`), which is either the class UID
  * or — legacy symbolic form — the class `exo__Asset_label`. Keys are
  * lower-cased so the match is case-insensitive.
+ *
+ * Deliberately NOT `WikiLinkHelpers.normalize`: that canonicaliser resolves
+ * `[[<uid>|<alias>]]` to the ALIAS (the display/class name), whereas here the
+ * target before `|` wins — under UID-canon the uid is the identity and a stale
+ * alias must not re-route a class ref (`sparql-iri-form-pre-verify` §A10).
+ * Both keys of every definition (uid AND label) are in the set, so a
+ * label-form ref still matches; only the alias-over-uid precedence differs.
  */
 
 /** A class definition as seen in frontmatter (one per `exo__Class` file). */

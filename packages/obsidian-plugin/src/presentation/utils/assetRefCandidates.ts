@@ -42,7 +42,9 @@ export function findAssetRefCandidates(
 
   // One pass: every asset's frontmatter + the class definitions it contains
   // (a file declaring `exo__Class_superClass`, or the target class file
-  // itself so its label joins the match keys even without a parent).
+  // itself — matched by UID, basename OR label, since `classUid` may be a
+  // label (`exo__Asset`) and a root class has no parent — so its second key
+  // joins the match set even without a superClass).
   const assets: Array<{ file: TFile; fm: Record<string, unknown> }> = [];
   const classDefs: ClassDefinitionLike[] = [];
   const targetKey = classUid.toLowerCase();
@@ -69,7 +71,8 @@ export function findAssetRefCandidates(
     if (
       superClassRefs.length > 0 ||
       uid.toLowerCase() === targetKey ||
-      file.basename.toLowerCase() === targetKey
+      file.basename.toLowerCase() === targetKey ||
+      (label !== null && label.toLowerCase() === targetKey)
     ) {
       classDefs.push({ uid, label, superClassRefs });
     }
