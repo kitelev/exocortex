@@ -105,4 +105,15 @@ describe("FrontmatterService.applyPatch — chokepoint key dialect over an objec
     expect(returned).toBe(live);
     expect(live).toEqual({ exo__Asset_uid: "u", exo__Asset_label: "L" });
   });
+
+  it(`H7 a patch value of undefined is "no opinion": the existing value survives and no legacy spelling is dropped (PR #4243 review) ${REQ}`, () => {
+    const target = FrontmatterService.applyPatch(
+      { exo__Asset_label: "L", archived: true },
+      { exo__Asset_label: undefined, exo__Asset_archived: undefined },
+    );
+    expect(target).toEqual({ exo__Asset_label: "L", archived: true });
+    expect(
+      Object.prototype.hasOwnProperty.call(target, "exo__Asset_archived"),
+    ).toBe(false);
+  });
 });

@@ -461,10 +461,18 @@ export class FrontmatterService {
    *    canonicalises every current key, which is what migrates a legacy
    *    carrier on any edit (req `de7131ae` Scenario E).
    *
+   * A patch value of `undefined` is "no opinion": the key is neither written
+   * nor legacy-dropped (the CLI dumper would otherwise delete it — a removal
+   * this path must not express).
+   *
    * Not covered (named, not changed — PR #4241 review LOW-3): the reverse
    * write of the UNPREFIXED direction. A literal `exo__Asset_aliases:` already
    * on disk is NOT removed here, because {@link LEGACY_YAML_KEYS} has no entry
-   * for it; the chokepoint behaves the same.
+   * for it; the chokepoint behaves the same. Known discrepancy (PR #4243
+   * review LOW, follow-up ticket): {@link normalizeIRIValue} returns the
+   * wikilink WITH surrounding quotes — a ready YAML scalar for the text path —
+   * so on this object path the quotes become part of the string and the disk
+   * byte-shape differs from `updateProperty`'s (graph readers strip them).
    *
    * @returns `target`, for callers that serialise the result.
    */
@@ -480,6 +488,13 @@ export class FrontmatterService {
         continue;
       }
       let value = patch[key];
+      if (value === undefined) {
+        // `undefined` is "no opinion", not a value: writing it would make the
+        // CLI's YAML dumper DROP the key (js-yaml skips undefined), i.e. a
+        // deletion the contract says this path cannot express — so neither
+        // the write nor the legacy-spelling drop happens (PR #4243 review).
+        continue;
+      }
       if (typeof value === "string") {
         value = FrontmatterService.normalizeIRIValue(value);
       }

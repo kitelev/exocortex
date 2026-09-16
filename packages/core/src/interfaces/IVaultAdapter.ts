@@ -105,6 +105,10 @@ export interface IVaultFrontmatterManager {
    *    one key resolved canonical-wins, and the legacy spelling of each
    *    written canonical key dropped from the file — so editing ANY key of a
    *    legacy `archived:` carrier migrates it.
+   *
+   * A file whose frontmatter block is present but not parseable is REFUSED
+   * (rejects, file untouched) rather than patched over — patching would drop
+   * every key the block held (PR #4243 review). A file with no block gets one.
    */
   updateFrontmatter(
     file: IFile,

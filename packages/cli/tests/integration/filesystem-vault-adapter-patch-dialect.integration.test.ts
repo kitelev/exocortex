@@ -146,4 +146,34 @@ describe("FileSystemVaultAdapter.updateFrontmatter — chokepoint key dialect vi
     );
     expect(String(fm.ems__Effort_status)).not.toContain("obsidian://");
   });
+
+  it(`C8 a block that is present but NOT parseable is refused — rejects, file byte-identical (PR #4243 review MEDIUM) ${REQ}`, async () => {
+    // A flow collection left open: both the strict and the json-compat parse
+    // throw, so the tolerant parser returns null exactly as for "no block".
+    const seed = "---\nfoo: [unclosed\nexo__Asset_uid: u\n---\nBody stays.\n";
+    await fs.outputFile(path.join(root, REL), seed, "utf-8");
+    const file = adapter.getAbstractFileByPath(REL);
+    if (!file || !("basename" in file))
+      throw new Error(`seed not found: ${REL}`);
+    await expect(
+      adapter.updateFrontmatter(file, () => ({ exo__Asset_label: "x" })),
+    ).rejects.toThrow(/not parseable/);
+    expect(await fs.readFile(path.join(root, REL), "utf-8")).toBe(seed);
+  });
+
+  it(`C9 a file with NO block gets one created from the patch (the "no block" outcome stays distinct from "unparseable") ${REQ}`, async () => {
+    const seed = "Body only.\n";
+    await fs.outputFile(path.join(root, REL), seed, "utf-8");
+    const file = adapter.getAbstractFileByPath(REL);
+    if (!file || !("basename" in file))
+      throw new Error(`seed not found: ${REL}`);
+    await adapter.updateFrontmatter(file, () => ({ archived: true }));
+    const raw = await fs.readFile(path.join(root, REL), "utf-8");
+    const block = /^---\n([\s\S]*?)\n---/.exec(raw)?.[1];
+    expect(block).toBeDefined();
+    expect(parseYamlFrontmatterTolerant(block as string)).toEqual({
+      exo__Asset_archived: true,
+    });
+    expect(raw.endsWith("---\nBody only.\n")).toBe(true);
+  });
 });
