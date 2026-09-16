@@ -1,5 +1,13 @@
 import { Vault, TFile, TFolder, MetadataCache, App, parseYaml, requireApiVersion } from "obsidian";
-import { IVaultAdapter, IFile, IFolder, IFrontmatter, FrontmatterService } from "@kitelev/exocortex-core";
+import {
+  IVaultAdapter,
+  IFile,
+  IFolder,
+  IFrontmatter,
+  FrontmatterService,
+  canonicalYamlKey,
+  LEGACY_YAML_KEYS,
+} from "@kitelev/exocortex-core";
 
 /** A linkpath body that is exactly a uuid — the `uid-bare` wikilink form. */
 const UUID_LINKPATH =
@@ -154,6 +162,28 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
     }
   }
 
+  /**
+   * Write the updater's result into the file's frontmatter through the SAME
+   * key dialect as the core chokepoint (`FrontmatterService.updateProperty`,
+   * req `960d7a3f` / `869561bf`) — req `de7131ae`:
+   *
+   * - every written key is mapped through `canonicalYamlKey(normalizeIRI(key))`
+   *   (`archived` → `exo__Asset_archived`, `exo__Asset_aliases` → `aliases`,
+   *   any other key → itself);
+   * - the legacy physical spelling(s) of a written canonical key are removed
+   *   from the live frontmatter (`LEGACY_YAML_KEYS`), so one write migrates a
+   *   legacy carrier and the file never carries both spellings;
+   * - a payload that carries BOTH spellings of one key resolves canonical-wins
+   *   (Scenario D): the legacy entry is skipped when the payload already holds
+   *   the canonical key — the same priority `NoteToRDFConverter` (guard M1)
+   *   and `MetadataHelpers.ARCHIVED_FLAG_KEYS` apply on the read side.
+   *
+   * The only production caller (`LayoutService.handleCellEdit`) re-emits every
+   * current key next to the edited one, so editing ANY cell of a legacy
+   * `archived:` carrier migrates the flag as a side effect (Scenario E) —
+   * graph-neutral (same predicate `exo:Asset_archived`), accepted by ORCH
+   * decision `eb07dc18`.
+   */
   async updateFrontmatter(
     file: IFile,
     updater: (current: IFrontmatter) => IFrontmatter,
@@ -166,12 +196,26 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
       obsidianFile,
       (frontmatter) => {
         Object.keys(newFrontmatter).forEach((key) => {
-          const normalizedKey = FrontmatterService.normalizeIRI(key);
+          const canonicalKey = canonicalYamlKey(
+            FrontmatterService.normalizeIRI(key),
+          );
+          if (
+            canonicalKey !== key &&
+            Object.prototype.hasOwnProperty.call(newFrontmatter, canonicalKey)
+          ) {
+            // Canonical-wins: the payload already carries the canonical
+            // spelling of this key; the legacy/prefixed alias must not
+            // overwrite it (req de7131ae, Scenario D).
+            return;
+          }
           let value = newFrontmatter[key];
           if (typeof value === "string") {
             value = FrontmatterService.normalizeIRIValue(value);
           }
-          frontmatter[normalizedKey] = value;
+          frontmatter[canonicalKey] = value;
+          for (const legacy of LEGACY_YAML_KEYS.get(canonicalKey) ?? []) {
+            delete frontmatter[legacy];
+          }
         });
       },
     );

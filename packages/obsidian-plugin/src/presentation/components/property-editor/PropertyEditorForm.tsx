@@ -13,6 +13,7 @@ import {
 import { RelationsSection, type PredicateOption } from "./RelationsSection";
 import type { RelationRow } from "./relationsEditorModel";
 import type { ReifyDestination } from "./reifyModel";
+import { MetadataHelpers } from "@kitelev/exocortex-core";
 
 /**
  * RFC `93a0b2ee` Phase 3 / Task 3.1 — dependencies for the embedded Relations
@@ -40,6 +41,47 @@ export interface RelationsFormDeps {
   resolveReifyDestinations?: () => ReifyDestination[];
   /** RFC §C3 Task 3.2 — de-reify a reified relation back to inline; resolves to refreshed rows. */
   deReifyRelation?: (row: RelationRow) => Promise<RelationRow[]>;
+}
+
+/** The canonical archive-flag key (req `960d7a3f`); the form edits ONLY this spelling. */
+const ARCHIVED_CANONICAL_KEY = "exo__Asset_archived";
+
+/**
+ * Seed the form's `exo__Asset_archived` field from a legacy / alias carrier
+ * (req `de7131ae`, Scenarios H-K).
+ *
+ * `MetadataHelpers.ARCHIVED_FLAG_KEYS` lists the spellings every reader accepts
+ * (`exo__Asset_archived` → `exo__Asset_isArchived` → `archived`); the form's
+ * boolean field reads the canonical key only, so an asset that still carries a
+ * legacy spelling rendered "not archived" while the rest of the plugin (and the
+ * CLI) treated it as archived.
+ *
+ * - canonical key present → untouched (canonical-wins, the readers' priority);
+ * - canonical key absent AND a legacy/alias carrier present → seed
+ *   `exo__Asset_archived = isAssetArchived(frontmatter)` and DROP the legacy
+ *   keys from the seed, so Save (which writes every key through
+ *   `FrontmatterService.updateProperty`) emits the canonical key only and the
+ *   chokepoint clears the bare spelling from disk;
+ * - no archive-flag key at all → untouched: Save must NOT stamp
+ *   `exo__Asset_archived: false` on every asset (Scenario J).
+ */
+export function seedArchivedFlag(
+  frontmatter: Record<string, unknown>,
+): Record<string, unknown> {
+  if (Object.prototype.hasOwnProperty.call(frontmatter, ARCHIVED_CANONICAL_KEY)) {
+    return frontmatter;
+  }
+  const legacyKeys = MetadataHelpers.ARCHIVED_FLAG_KEYS.filter(
+    (key) =>
+      key !== ARCHIVED_CANONICAL_KEY &&
+      frontmatter[key] !== undefined &&
+      frontmatter[key] !== null,
+  );
+  if (legacyKeys.length === 0) return frontmatter;
+  const seeded: Record<string, unknown> = { ...frontmatter };
+  for (const key of legacyKeys) delete seeded[key];
+  seeded[ARCHIVED_CANONICAL_KEY] = MetadataHelpers.isAssetArchived(frontmatter);
+  return seeded;
 }
 
 export interface PropertyEditorFormProps {
@@ -77,9 +119,9 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
     return () => { cancelled = true; };
   }, [instanceClass]);
 
-  const [formData, setFormData] = useState<Record<string, unknown>>(() => ({
-    ...frontmatter,
-  }));
+  const [formData, setFormData] = useState<Record<string, unknown>>(() =>
+    seedArchivedFlag({ ...frontmatter }),
+  );
   const [errors, setErrors] = useState<ValidationError[]>([]);
 
   const handleFieldChange = useCallback(
