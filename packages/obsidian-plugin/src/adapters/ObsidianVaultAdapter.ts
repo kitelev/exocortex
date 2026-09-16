@@ -170,9 +170,13 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
    * - every written key is mapped through `canonicalYamlKey(normalizeIRI(key))`
    *   (`archived` → `exo__Asset_archived`, `exo__Asset_aliases` → `aliases`,
    *   any other key → itself);
-   * - the legacy physical spelling(s) of a written canonical key are removed
-   *   from the live frontmatter (`LEGACY_YAML_KEYS`), so one write migrates a
-   *   legacy carrier and the file never carries both spellings;
+   * - the legacy physical spelling(s) listed in `LEGACY_YAML_KEYS` for a
+   *   written canonical key (today: bare `archived` for `exo__Asset_archived`)
+   *   are removed from the live frontmatter, so one write migrates such a
+   *   carrier. The UNPREFIXED direction (`exo__Asset_aliases` → `aliases`,
+   *   `draft`, `pinned`) has no reverse entry in that map: a literal
+   *   `exo__Asset_aliases:` already on disk is NOT removed here — parity with
+   *   `FrontmatterService.updateProperty`, which behaves the same;
    * - a payload that carries BOTH spellings of one key resolves canonical-wins
    *   (Scenario D): the legacy entry is skipped when the payload already holds
    *   the canonical key — the same priority `NoteToRDFConverter` (guard M1)

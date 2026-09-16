@@ -89,6 +89,22 @@ describe("PropertyEditorForm — Archived checkbox ↔ archive-flag chokepoint (
     });
     expect(checkbox.checked).toBe(false);
     expect(payload).toHaveProperty("exo__Asset_archived", false);
+    // PR #4241 review MEDIUM: the legacy key must NOT travel with the payload —
+    // handleSave writes keys in FILE order, and a re-emitted `archived: true`
+    // canonicalises into an exo__Asset_archived write that would overwrite the
+    // canonical `false` whenever it sits above the legacy key in the file.
+    expect(payload).not.toHaveProperty("archived");
+  });
+
+  it(`A16 (Scenario H, empty canonical) \`exo__Asset_archived:\` with no value + legacy \`archived: true\` reads as archived, like every other reader ${REQ}`, async () => {
+    const { payload, checkbox } = await renderAndSave({
+      ...base,
+      exo__Asset_archived: null,
+      archived: true,
+    });
+    expect(checkbox.checked).toBe(true);
+    expect(payload).toHaveProperty("exo__Asset_archived", true);
+    expect(payload).not.toHaveProperty("archived");
   });
 
   it(`A15 the compat alias exo__Asset_isArchived seeds the canonical key the same way (read-only alias, never re-emitted) ${REQ}`, async () => {

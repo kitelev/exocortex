@@ -56,31 +56,35 @@ const ARCHIVED_CANONICAL_KEY = "exo__Asset_archived";
  * legacy spelling rendered "not archived" while the rest of the plugin (and the
  * CLI) treated it as archived.
  *
- * - canonical key present → untouched (canonical-wins, the readers' priority);
- * - canonical key absent AND a legacy/alias carrier present → seed
- *   `exo__Asset_archived = isAssetArchived(frontmatter)` and DROP the legacy
- *   keys from the seed, so Save (which writes every key through
- *   `FrontmatterService.updateProperty`) emits the canonical key only and the
- *   chokepoint clears the bare spelling from disk;
- * - no archive-flag key at all → untouched: Save must NOT stamp
- *   `exo__Asset_archived: false` on every asset (Scenario J).
+ * - no legacy/alias carrier → untouched: Save must NOT stamp
+ *   `exo__Asset_archived: false` on every asset (Scenario J);
+ * - a legacy/alias carrier is present → it is DROPPED from the seed in every
+ *   case, so Save (which writes every payload key through
+ *   `FrontmatterService.updateProperty`, in file order) never re-emits it.
+ *   Re-emitting `archived: true` would canonicalise into a write of
+ *   `exo__Asset_archived` and — when the canonical key sits ABOVE the legacy
+ *   one in the file — silently overwrite a canonical `false` with the legacy
+ *   `true` (PR #4241 review MEDIUM). The canonical value itself is kept
+ *   (canonical-wins, the readers' priority, Scenario K);
+ * - canonical key absent — or present but EMPTY (`exo__Asset_archived:` with
+ *   no value → `null`, Obsidian's "Add property"; readers skip it exactly like
+ *   an absent key, `MetadataHelpers.isAssetArchived`) — → seed
+ *   `exo__Asset_archived = isAssetArchived(frontmatter)` (Scenario H), and the
+ *   chokepoint clears the bare spelling from disk on Save (Scenario I).
  */
 export function seedArchivedFlag(
   frontmatter: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (Object.prototype.hasOwnProperty.call(frontmatter, ARCHIVED_CANONICAL_KEY)) {
-    return frontmatter;
-  }
+  const isSet = (raw: unknown): boolean => raw !== undefined && raw !== null;
   const legacyKeys = MetadataHelpers.ARCHIVED_FLAG_KEYS.filter(
-    (key) =>
-      key !== ARCHIVED_CANONICAL_KEY &&
-      frontmatter[key] !== undefined &&
-      frontmatter[key] !== null,
+    (key) => key !== ARCHIVED_CANONICAL_KEY && isSet(frontmatter[key]),
   );
   if (legacyKeys.length === 0) return frontmatter;
   const seeded: Record<string, unknown> = { ...frontmatter };
   for (const key of legacyKeys) delete seeded[key];
-  seeded[ARCHIVED_CANONICAL_KEY] = MetadataHelpers.isAssetArchived(frontmatter);
+  if (!isSet(frontmatter[ARCHIVED_CANONICAL_KEY])) {
+    seeded[ARCHIVED_CANONICAL_KEY] = MetadataHelpers.isAssetArchived(frontmatter);
+  }
   return seeded;
 }
 
