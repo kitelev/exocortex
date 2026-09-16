@@ -137,7 +137,7 @@ describe("FileSystemVaultAdapter.updateFrontmatter — chokepoint key dialect vi
     expect(raw.endsWith("---\nBody stays.\n")).toBe(true);
   });
 
-  it(`C7 an IRI-form key and an obsidian:// value are normalised to the Obsidian dialect ${REQ}`, async () => {
+  it(`C7 an IRI-form key and an obsidian:// value are normalised to the Obsidian dialect ${REQ} @req:27fbe40b-080f-4928-b675-3c767223c875`, async () => {
     const { fm } = await write(
       {},
       {

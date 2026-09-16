@@ -434,7 +434,12 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
    *   (vault-exodev, 2026-09-16: 232 144 double- vs 244 single-quoted scalars)
    *   and the byte-form `FrontmatterService.updateProperty` writes for a
    *   reference (`key: "[[x]]"`). Load-bearing for that parity — locked by an
-   *   axis, not just by this comment.
+   *   axis, not just by this comment. The parity is per REFERENCE LINE only:
+   *   this method re-dumps the WHOLE block through js-yaml (pre-existing), so
+   *   other scalars can change shape on the way — an unquoted YAML 1.1
+   *   timestamp (`2026-05-17T19:40:11`) parses to a Date and is re-emitted in
+   *   its `.000Z` form, an empty value becomes `null`, a quoted plain word
+   *   loses its quotes. The text path touches one line and leaves the rest.
    * - the new block is spliced in with a FUNCTION replacer: a string replacer
    *   would re-interpret `$&` / `$1` / `` $` `` / `$'` / `$$` inside any dumped
    *   value as a replacement pattern (class #3748 / #3795).

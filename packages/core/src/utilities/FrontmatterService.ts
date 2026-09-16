@@ -486,9 +486,10 @@ export class FrontmatterService {
    *
    * Reference values are stored BARE (`[[x]]`, req `27fbe40b`): this is the
    * object path, so the serialiser quotes the string on disk — the CLI adapter
-   * with `quotingType: '"'` writes `key: "[[x]]"`, byte-identical to the text
-   * path {@link updateProperty}; pre-quoting (the pre-27fbe40b behaviour) made
-   * the quotes part of the value (`'"[[x]]"'` on disk).
+   * with `quoteStyle: "double"` (js-yaml 5) writes `key: "[[x]]"` for a
+   * reference string, the same line the text path {@link updateProperty}
+   * writes; pre-quoting (the pre-27fbe40b behaviour) made the quotes part of
+   * the value (`"\"[[x]]\""` on disk). Arrays are not normalised on either path.
    *
    * @returns `target`, for callers that serialise the result.
    */

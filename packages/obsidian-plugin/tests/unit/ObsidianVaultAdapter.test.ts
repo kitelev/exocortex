@@ -753,7 +753,7 @@ nested:
       });
     });
 
-    it("A7 an IRI-form key and an obsidian:// value are normalised to the Obsidian dialect @req:2a020489-00db-4fe9-b2ca-1481cb7da9b1", async () => {
+    it("A7 an IRI-form key and an obsidian:// value are normalised to the Obsidian dialect @req:2a020489-00db-4fe9-b2ca-1481cb7da9b1 @req:27fbe40b-080f-4928-b675-3c767223c875", async () => {
       const live = await write(
         {},
         {

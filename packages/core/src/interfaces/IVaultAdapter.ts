@@ -102,8 +102,11 @@ export interface IVaultFrontmatterManager {
    *    `LayoutService.handleCellEdit` produces) has EACH key mapped through
    *    `canonicalYamlKey(FrontmatterService.normalizeIRI(key))`, each string
    *    value through `FrontmatterService.normalizeIRIValue` in its BARE form
-   *    (`[[x]]` — the serialiser quotes it on disk, so the CLI adapter writes
-   *    `key: "[[x]]"` exactly as the text path does; req `27fbe40b`), both
+   *    (`[[x]]` — the serialiser quotes it on disk, so for a REFERENCE STRING
+   *    the CLI adapter writes the same `key: "[[x]]"` line the text path does;
+   *    req `27fbe40b`. Only that line is parity: the CLI adapter re-dumps the
+   *    WHOLE block, so other scalars may change shape — an unquoted YAML 1.1
+   *    timestamp is re-emitted as its Date form, an empty value as `null`), both
    *    spellings of one key resolved canonical-wins, and the legacy spelling
    *    of each written canonical key dropped from the file — so editing ANY
    *    key of a legacy `archived:` carrier migrates it.

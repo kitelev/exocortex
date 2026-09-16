@@ -719,14 +719,12 @@ export class LayoutService {
       return value.toISOString();
     }
 
-    // String value - check if it needs quoting
-    const stringValue = String(value);
-
-    // Wikilinks should be quoted
-    if (stringValue.startsWith("[[") && stringValue.endsWith("]]")) {
-      return `"${stringValue}"`;
-    }
-
-    return stringValue;
+    // String value — handed to the OBJECT path (`IVaultAdapter.updateFrontmatter`
+    // → `FrontmatterService.applyPatch`), which stores references BARE and lets
+    // Obsidian's `processFrontMatter` quote them on disk (req 27fbe40b,
+    // PR #4248 review MEDIUM). Pre-quoting a `[[x]]` here — the pre-27fbe40b
+    // behaviour — made the quotes part of the string value (`'"[[x]]"'` on
+    // disk), so it is deliberately NOT done any more.
+    return String(value);
   }
 }

@@ -73,7 +73,7 @@ describe("FrontmatterService.applyPatch — chokepoint key dialect over an objec
     });
   });
 
-  it(`H5 normalises an IRI-form key and an obsidian:// / ontology-IRI string value; non-string values pass through ${REQ}`, () => {
+  it(`H5 normalises an IRI-form key and an obsidian:// / ontology-IRI string value; non-string values pass through ${REQ} @req:27fbe40b-080f-4928-b675-3c767223c875`, () => {
     const target = FrontmatterService.applyPatch(
       {},
       {
