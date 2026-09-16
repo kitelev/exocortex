@@ -658,12 +658,6 @@ export class GroundingExecutor {
       };
     }
 
-    let substitutedValue = this.substituteVariables(
-      effectiveValue,
-      targetIRI,
-      userInput,
-    );
-
     // req b06129dc (ticket 52199c53) — a `targetValueRef` fed from the user's
     // input (`$input.parent`, `$input.blocker`) is a REFERENCE by contract: the
     // executor wraps it as `"[[<ref>]]"` itself (above), so an input that
@@ -674,31 +668,52 @@ export class GroundingExecutor {
     // a `[[` inside a targetValueRef input has exactly one possible meaning, so
     // it is normalised — through `extractAssetReference`, the SAME function
     // every reader uses to resolve a stored reference — rather than refused.
-    // Anything still carrying `[[`, `]]` or `|` after ONE unwrap (nested, or a
-    // link inside prose) is not a reference and is refused loudly. Runs AFTER
-    // the missing-input gate above: an absent `$input.<key>` keeps its own,
-    // more specific, refusal. Static refs (no `$…` token) are byte-identical.
-    if (
+    //
+    // The residue check runs on the value after ONE unwrap of the OUTER quotes
+    // and brackets but BEFORE the alias strip: `extractAssetReference` drops
+    // everything after the first `|`, so checking its output would let
+    // `[[uid|alias]] see also` and `[[uid|alias]] [[other]]` through as
+    // "[[uid]]" (PR #4242 review MEDIUM). Any `[[` / `]]` left at that point
+    // (nested brackets, a link inside prose) is not a reference and is refused
+    // loudly; so is an empty input (it used to be written as `"[[]]"`).
+    // Runs AFTER the missing-input gate above: the gate reads the TEMPLATE, so
+    // an absent `$input.<key>` keeps its own, more specific, refusal. Static
+    // refs (no `$…` token) take the generic path and are byte-identical.
+    const isInputRef =
       grounding.targetValueRef !== undefined &&
-      /\$/.test(grounding.targetValueRef)
-    ) {
+      /\$/.test(grounding.targetValueRef);
+    let substitutedValue: string;
+    if (isInputRef) {
       const resolvedRef = this.substituteVariables(
-        grounding.targetValueRef,
+        grounding.targetValueRef as string,
         targetIRI,
         userInput,
       );
-      const bareRef = extractAssetReference(resolvedRef);
-      if (bareRef === null || /\[\[|\]\]|\|/.test(bareRef)) {
+      const unwrapped = resolvedRef
+        .trim()
+        .replace(/^["']|["']$/g, "")
+        .replace(/^\[\[|\]\]$/g, "");
+      const bareRef = /\[\[|\]\]/.test(unwrapped)
+        ? null
+        : extractAssetReference(resolvedRef)?.trim() || null;
+      if (bareRef === null) {
         return {
           success: false,
           error:
             `property_set: asset-reference value ${JSON.stringify(resolvedRef)} for ` +
             `${grounding.targetProperty} is not a single reference — pass a BARE uid ` +
             `(or one [[uid]] / [[uid|alias]] wikilink, which is unwrapped); nested ` +
-            `brackets or a link inside prose would be written as a broken link.`,
+            `brackets, a link inside prose or an empty value would be written as a ` +
+            `broken link.`,
         };
       }
       substitutedValue = `"[[${bareRef}]]"`;
+    } else {
+      substitutedValue = this.substituteVariables(
+        effectiveValue,
+        targetIRI,
+        userInput,
+      );
     }
 
     // Issue #3779: for string-semantic properties (`exo__Asset_label`,

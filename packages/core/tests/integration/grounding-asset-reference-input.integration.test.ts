@@ -14,8 +14,10 @@
  *
  * Each axis is revert-verified by a mutant that removes ONE guarantee (table
  * in the PR body): B1-B3 red without the normaliser, B5 red without the
- * residue refusal, B7 red when the normaliser runs BEFORE the missing-input
- * gate.
+ * residue detection. B7 is a CONTROL of the pre-existing missing-input gate:
+ * the gate reads the TEMPLATE (`"[[$input.parent]]"`) before any substitution
+ * and the placeholder carries no brackets, so the order "gate first,
+ * normaliser second" is not observable by construction (no mutant; see PR).
  *
  * @req:b06129dc-a6da-40d1-90b5-1789fb927a63
  */
@@ -125,16 +127,38 @@ describe("req b06129dc — property_set targetValueRef fed from $input accepts a
     expect(fm.ems__Effort_parent).toBe(`[[${PARENT_UID}]]`);
   });
 
-  it(`B5 (Scenario 4) a residue after ONE unwrap (nested [[[[uid]]]] / a link inside prose) is refused loudly and nothing is written ${REQ}`, async () => {
-    for (const bad of [`[[[[${PARENT_UID}]]]]`, `[[${PARENT_UID}]] see also`]) {
-      writer.updateFile.mockClear();
-      const { result } = await setParent(bad);
-      expect(result.success).toBe(false);
-      expect(result.error).toMatch(/BARE uid/);
-      expect(result.error).toContain(PARENT_UID);
-      expect(result.error).toContain("ems__Effort_parent");
-      expect(writer.updateFile).not.toHaveBeenCalled();
-    }
+  // PR #4242 review MEDIUM: the residue is detected BEFORE the alias strip —
+  // `extractAssetReference` drops everything after the first `|`, so checking
+  // its output let `[[uid|alias]] see also` through as "[[uid]]". LOW-6: an
+  // empty input used to be written as "[[]]".
+  it.each([
+    ["nested [[[[uid]]]]", `[[[[${PARENT_UID}]]]]`],
+    ["link inside prose", `[[${PARENT_UID}]] see also`],
+    ["aliased link inside prose", `[[${PARENT_UID}|alias]] see also`],
+    ["aliased link followed by a second link", `[[${PARENT_UID}|alias]] [[other]]`],
+    ["aliased link with stray closing brackets", `[[${PARENT_UID}|a]]]]`],
+    ["bare uid with garbage and a link", `${PARENT_UID}|garbage [[x]]`],
+  ])(`B5 (Scenario 4) %s is refused loudly and nothing is written ${REQ}`, async (_label, bad) => {
+    const { result } = await setParent(bad);
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/BARE uid/);
+    expect(result.error).toContain(PARENT_UID);
+    expect(result.error).toContain("ems__Effort_parent");
+    expect(writer.updateFile).not.toHaveBeenCalled();
+  });
+
+  it(`B5e (Scenario 4) an EMPTY input is refused instead of being written as "[[]]" ${REQ}`, async () => {
+    const { result } = await setParent("");
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/BARE uid/);
+    expect(writer.updateFile).not.toHaveBeenCalled();
+  });
+
+  it(`B10 (Scenario 2) inner whitespace is trimmed: [[ uid ]] stores "[[uid]]" ${REQ}`, async () => {
+    const { result, written } = await setParent(`[[ ${PARENT_UID} ]]`);
+    expect(result.success).toBe(true);
+    const fm = parseFrontmatterAsReader(written);
+    expect(fm.ems__Effort_parent).toBe(`[[${PARENT_UID}]]`);
   });
 
   it(`B6 (Scenario 6, control) a STATIC targetValueRef (no $input token) is byte-identical to the pre-req path ${REQ}`, async () => {
@@ -151,7 +175,7 @@ describe("req b06129dc — property_set targetValueRef fed from $input accepts a
     expect(written).toContain(`ems__Effort_parent: "[[${PARENT_UID}]]"`);
   });
 
-  it(`B7 (Scenario 5) the missing-input gate stays FIRST — an absent $input.parent keeps its own refusal, not the reference one ${REQ}`, async () => {
+  it(`B7 (Scenario 5, control) an absent $input.parent — the missing-input refusal is returned unchanged, not the reference one ${REQ}`, async () => {
     const result = await executor.execute(setParentGrounding(), TARGET_IRI, FILE_PATH, {});
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/input that was not provided/);
