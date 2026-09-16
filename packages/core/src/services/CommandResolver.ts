@@ -1982,7 +1982,20 @@ export class CommandResolver {
             parsed.properties as Record<string, Record<string, unknown>>,
           ).map(([name, prop]) => {
             const rawType = prop.type;
-            const fieldType = rawType === "string" ? "text" : rawType;
+            // req c4adae42 (ticket efe33c5d): a string declared with the
+            // JSON-Schema `format: "asset-reference"` (the set-parent /
+            // link-to-parent shape) is a reference to a vault asset → project
+            // it as the `assetRef` form field so the plugin renders the
+            // reusable reference picker (text fallback without candidates).
+            // Exactly this one format, and only on `type: string` — any other
+            // format is decoration the loader keeps ignoring, and a non-string
+            // type is never rewritten by a format.
+            const fieldType =
+              rawType === "string"
+                ? prop.format === "asset-reference"
+                  ? "assetRef"
+                  : "text"
+                : rawType;
             const rawDefault =
               prop.defaultValue !== undefined
                 ? prop.defaultValue
