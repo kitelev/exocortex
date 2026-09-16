@@ -9,6 +9,9 @@ import * as os from "os";
 import { spawn, ChildProcess } from "child_process";
 
 export class ObsidianLauncher {
+  private static readonly TRUST_BUTTON_SELECTOR =
+    'button:has-text("Trust author and enable plugins")';
+
   private app: ElectronApplication | null = null;
   private window: Page | null = null;
   private vaultPath: string;
@@ -249,9 +252,6 @@ export class ObsidianLauncher {
     }
   }
 
-  private static readonly TRUST_BUTTON_SELECTOR =
-    'button:has-text("Trust author and enable plugins")';
-
   /**
    * One instantaneous look at the "Trust author and enable plugins" button;
    * click it if it is on screen. Returns whether a click happened.
@@ -269,11 +269,15 @@ export class ObsidianLauncher {
    * first look.
    */
   private async clickTrustDialogIfVisible(): Promise<boolean> {
-    if (!this.window) {
+    // ⛤ Captured ONCE: `close()` (afterAll) may null `this.window` between the
+    // awaits below; a second read would surface as a TypeError instead of
+    // Playwright's own "Target page … closed".
+    const window = this.window;
+    if (!window) {
       return false;
     }
 
-    const trustButton = this.window
+    const trustButton = window
       .locator(ObsidianLauncher.TRUST_BUTTON_SELECTOR)
       .first();
 
@@ -285,12 +289,25 @@ export class ObsidianLauncher {
     console.log(
       '[ObsidianLauncher] Trust dialog found! Clicking "Trust author and enable plugins" button...',
     );
-    await trustButton.click();
+    try {
+      // ⛤ Bounded: without `timeout` the click would wait for actionability
+      // under Playwright's 30 s default — the whole `waitForPluginReady`
+      // budget, bypassing its ceiling check and replacing the loud
+      // "plugin did not load" with a foreign TimeoutError. A refused click is
+      // reported as "not clicked" so the caller's next poll simply tries again.
+      await trustButton.click({ timeout: 5000 });
+    } catch (error) {
+      console.log(
+        "[ObsidianLauncher] Trust button click refused (will re-probe on the next poll):",
+        error,
+      );
+      return false;
+    }
     console.log(
       "[ObsidianLauncher] Trust button clicked, waiting for dialog to disappear...",
     );
 
-    await this.window
+    await window
       .waitForSelector(ObsidianLauncher.TRUST_BUTTON_SELECTOR, {
         state: "hidden",
         timeout: 5000,

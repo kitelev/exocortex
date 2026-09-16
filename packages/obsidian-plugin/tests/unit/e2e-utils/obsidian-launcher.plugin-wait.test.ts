@@ -179,8 +179,8 @@ describe(`ObsidianLauncher late trust dialog (${REQ})`, () => {
       enabled: clicked ? ["exocortex"] : [],
     }));
     const launcher = new ObsidianLauncher("/tmp/does-not-matter");
-    const window = makeWindow(evaluate, trustButton);
-    (launcher as unknown as { window: FakeWindow }).window = window;
+    const fakeWindow = makeWindow(evaluate, trustButton);
+    (launcher as unknown as { window: FakeWindow }).window = fakeWindow;
     const clock = stepClock();
     const log = jest.spyOn(console, "log").mockImplementation(() => {});
 
@@ -192,7 +192,7 @@ describe(`ObsidianLauncher late trust dialog (${REQ})`, () => {
     expect(evaluate).toHaveBeenCalledTimes(3);
     expect(trustButton.isVisible).toHaveBeenCalledTimes(2);
     // The click goes through the same post-click hidden-wait as the fast path.
-    expect(window.waitForSelector).toHaveBeenCalledWith(
+    expect(fakeWindow.waitForSelector).toHaveBeenCalledWith(
       'button:has-text("Trust author and enable plugins")',
       expect.objectContaining({ state: "hidden" }),
     );
@@ -250,6 +250,84 @@ describe(`ObsidianLauncher late trust dialog (${REQ})`, () => {
     expect(trustButton.isVisible).toHaveBeenCalledWith();
   });
 
+  it(`a refused click is bounded (5 s) and NOT latched — the next poll re-probes and clicks again ${REQ}`, async () => {
+    // LOW-2 (review): without `{ timeout }` click() waits for actionability
+    // under Playwright's 30 s default, eating the whole plugin-wait budget
+    // behind the ceiling check; without try/catch a refused click would
+    // reject the wait with a foreign TimeoutError. Here the first click is
+    // refused (element detached between snapshot and click), the second
+    // succeeds and the plugin loads.
+    let clicked = false;
+    const trustButton: FakeTrustButton = {
+      isVisible: jest.fn().mockResolvedValue(true),
+      click: jest
+        .fn()
+        .mockRejectedValueOnce(
+          new Error("locator.click: Timeout 5000ms exceeded"),
+        )
+        .mockImplementation(async () => {
+          clicked = true;
+        }),
+    };
+    const evaluate = jest.fn(async () => ({
+      loaded: clicked,
+      enabled: clicked ? ["exocortex"] : [],
+    }));
+    const launcher = new ObsidianLauncher("/tmp/does-not-matter");
+    (launcher as unknown as { window: FakeWindow }).window = makeWindow(
+      evaluate,
+      trustButton,
+    );
+    const clock = stepClock();
+    const log = jest.spyOn(console, "log").mockImplementation(() => {});
+
+    await expect(callWait(launcher)).resolves.toBeUndefined();
+
+    // poll 0: refused → not latched; poll 1: clicked; poll 2: loaded.
+    expect(trustButton.click).toHaveBeenCalledTimes(2);
+    expect(trustButton.click).toHaveBeenCalledWith({ timeout: 5000 });
+    expect(evaluate).toHaveBeenCalledTimes(3);
+    expect(
+      log.mock.calls.some((c) =>
+        String(c[0]).includes("Trust button click refused"),
+      ),
+    ).toBe(true);
+
+    clock.mockRestore();
+    log.mockRestore();
+  });
+
+  it(`the trust helper keeps using the window it captured when close() nulls this.window mid-click ${REQ}`, async () => {
+    // LOW-1 (review): the helper spans two awaits; if close() (afterAll) nulls
+    // this.window between them, a re-read of this.window would surface as
+    // TypeError (reading 'waitForSelector'). Capturing once means the helper
+    // finishes on the page it started on, and the LOOP then reports the
+    // explicit window-closed error on its next poll.
+    const launcher = new ObsidianLauncher("/tmp/does-not-matter");
+    const trustButton: FakeTrustButton = {
+      isVisible: jest.fn().mockResolvedValue(true),
+      click: jest.fn(async () => {
+        (launcher as unknown as { window: FakeWindow | null }).window = null;
+      }),
+    };
+    const evaluate = jest
+      .fn()
+      .mockResolvedValue({ loaded: false, enabled: [] });
+    const fakeWindow = makeWindow(evaluate, trustButton);
+    (launcher as unknown as { window: FakeWindow }).window = fakeWindow;
+    const clock = stepClock();
+    const log = jest.spyOn(console, "log").mockImplementation(() => {});
+
+    await expect(callWait(launcher)).rejects.toThrow(
+      /window closed during plugin wait/,
+    );
+    // The post-click hidden-wait ran on the captured page, not on `null`.
+    expect(fakeWindow.waitForSelector).toHaveBeenCalledTimes(1);
+
+    clock.mockRestore();
+    log.mockRestore();
+  });
+
   it(`fails with an explicit "window closed" error when close() nulls the window mid-wait ${REQ}`, async () => {
     // afterAll → close() → this.window = null while a retry's wait loop is
     // still polling (the 60 s beforeAll budget overflow). Before the fix this
@@ -285,14 +363,14 @@ describe(`ObsidianLauncher.handleTrustDialog fast path (${REQ})`, () => {
       click: jest.fn().mockResolvedValue(undefined),
     };
     const launcher = new ObsidianLauncher("/tmp/does-not-matter");
-    const window = makeWindow(jest.fn(), trustButton);
-    (launcher as unknown as { window: FakeWindow }).window = window;
+    const fakeWindow = makeWindow(jest.fn(), trustButton);
+    (launcher as unknown as { window: FakeWindow }).window = fakeWindow;
     const log = jest.spyOn(console, "log").mockImplementation(() => {});
 
     await callHandle(launcher);
 
     expect(trustButton.click).toHaveBeenCalledTimes(1);
-    expect(window.waitForSelector).toHaveBeenCalledWith(
+    expect(fakeWindow.waitForSelector).toHaveBeenCalledWith(
       'button:has-text("Trust author and enable plugins")',
       expect.objectContaining({ state: "hidden", timeout: 5000 }),
     );
@@ -310,14 +388,14 @@ describe(`ObsidianLauncher.handleTrustDialog fast path (${REQ})`, () => {
       click: jest.fn(),
     };
     const launcher = new ObsidianLauncher("/tmp/does-not-matter");
-    const window = makeWindow(jest.fn(), trustButton);
-    (launcher as unknown as { window: FakeWindow }).window = window;
+    const fakeWindow = makeWindow(jest.fn(), trustButton);
+    (launcher as unknown as { window: FakeWindow }).window = fakeWindow;
     const log = jest.spyOn(console, "log").mockImplementation(() => {});
 
     await callHandle(launcher);
 
     expect(trustButton.click).not.toHaveBeenCalled();
-    expect(window.waitForSelector).not.toHaveBeenCalled();
+    expect(fakeWindow.waitForSelector).not.toHaveBeenCalled();
     expect(
       log.mock.calls.some((c) =>
         String(c[0]).includes("Trust dialog not present"),
@@ -363,7 +441,7 @@ describe(`ObsidianLauncher.close termination timer (${REQ})`, () => {
   });
   afterEach(() => {
     jest.useRealTimers();
-    jest.restoreAllMocks();
+    // (spies are restored by jest.config `restoreMocks: true`)
   });
 
   it(`does not log "termination timeout" once the process has terminated ${REQ}`, async () => {
