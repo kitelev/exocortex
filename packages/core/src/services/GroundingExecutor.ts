@@ -26,6 +26,7 @@ import {
   STRING_SCALAR_PROPERTIES,
 } from "../utilities/yamlScalar";
 import { canonicalYamlKey } from "./NoteToRDFConverter";
+import { extractAssetReference } from "../utilities/extractAssetReference";
 import type { NamedQueryRunnerPort } from "./NamedQueryRunner";
 import { iriToVaultPath, vaultPathToIRI } from "../infrastructure/vault/iri";
 import { DateFormatter } from "../utilities/DateFormatter";
@@ -657,11 +658,48 @@ export class GroundingExecutor {
       };
     }
 
-    const substitutedValue = this.substituteVariables(
+    let substitutedValue = this.substituteVariables(
       effectiveValue,
       targetIRI,
       userInput,
     );
+
+    // req b06129dc (ticket 52199c53) — a `targetValueRef` fed from the user's
+    // input (`$input.parent`, `$input.blocker`) is a REFERENCE by contract: the
+    // executor wraps it as `"[[<ref>]]"` itself (above), so an input that
+    // arrives already wrapped — `[[uid]]`, `[[uid|alias]]`, `"[[uid]]"`, the
+    // form one copies out of another frontmatter — used to become the broken
+    // `"[[[[uid]]]]"` at rc 0. Unlike `targetValueSubstitution` (req 29e0d1b6,
+    // where the value may legitimately be free text and a `[[` is ambiguous),
+    // a `[[` inside a targetValueRef input has exactly one possible meaning, so
+    // it is normalised — through `extractAssetReference`, the SAME function
+    // every reader uses to resolve a stored reference — rather than refused.
+    // Anything still carrying `[[`, `]]` or `|` after ONE unwrap (nested, or a
+    // link inside prose) is not a reference and is refused loudly. Runs AFTER
+    // the missing-input gate above: an absent `$input.<key>` keeps its own,
+    // more specific, refusal. Static refs (no `$…` token) are byte-identical.
+    if (
+      grounding.targetValueRef !== undefined &&
+      /\$/.test(grounding.targetValueRef)
+    ) {
+      const resolvedRef = this.substituteVariables(
+        grounding.targetValueRef,
+        targetIRI,
+        userInput,
+      );
+      const bareRef = extractAssetReference(resolvedRef);
+      if (bareRef === null || /\[\[|\]\]|\|/.test(bareRef)) {
+        return {
+          success: false,
+          error:
+            `property_set: asset-reference value ${JSON.stringify(resolvedRef)} for ` +
+            `${grounding.targetProperty} is not a single reference — pass a BARE uid ` +
+            `(or one [[uid]] / [[uid|alias]] wikilink, which is unwrapped); nested ` +
+            `brackets or a link inside prose would be written as a broken link.`,
+        };
+      }
+      substitutedValue = `"[[${bareRef}]]"`;
+    }
 
     // Issue #3779: for string-semantic properties (`exo__Asset_label`,
     // `aliases`) a substitution-derived value (e.g. a relabel `$input.label`

@@ -21,6 +21,19 @@ describe("CLI v16 — apply command (RFC 8e83442b T1.2)", () => {
     expect(args[1].required).toBe(false);
   });
 
+  it("B9 --input help states the asset-reference contract: BARE uid, a copied [[uid]] is accepted and unwrapped @req:b06129dc-a6da-40d1-90b5-1789fb927a63", () => {
+    // req b06129dc (ticket 52199c53): set-parent / set-blocker take the
+    // reference through `$input.<key>`; the help is the only place a CLI user
+    // learns that `[[uid]]` (the form copied from another frontmatter) is
+    // unwrapped rather than double-wrapped. Dropping the sentence makes this RED.
+    const cmd = applyCommand();
+    const input = cmd.options.find((o) => o.long === "--input");
+    expect(input).toBeDefined();
+    expect(input!.description).toMatch(/set-parent: --input '\{"parent":"<uid>"\}'/);
+    expect(input!.description).toMatch(/BARE uid/);
+    expect(input!.description).toMatch(/\[\[uid\]\].*accepted and unwrapped/);
+  });
+
   it("declares --dry-run, --yes, --input, --vault options", () => {
     const cmd = applyCommand();
     const opts = cmd.options.map((o) => o.long);
