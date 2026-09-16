@@ -249,6 +249,65 @@ export class ObsidianLauncher {
     }
   }
 
+  private static readonly TRUST_BUTTON_SELECTOR =
+    'button:has-text("Trust author and enable plugins")';
+
+  /**
+   * One instantaneous look at the "Trust author and enable plugins" button;
+   * click it if it is on screen. Returns whether a click happened.
+   *
+   * ⛤ WHY "instantaneous" is load-bearing. `Locator.isVisible()` in
+   * `playwright-core@1.62.1` takes a single snapshot and returns at once — its
+   * `timeout` option is documented `@deprecated This option is ignored …
+   * returns immediately` (`types/types.d.ts`), and at runtime the client sends
+   * `channel.isVisible(…, kNoTimeout)` to a server-side `isVisibleInternal`
+   * that does one `callOnSelector` and no retry loop. So a `{ timeout }` here
+   * would be a fake wait: the probe fires at whatever moment it is called and
+   * sees only what is rendered at that moment. This helper is therefore
+   * deliberately option-less, and the CALLER is responsible for repeating it
+   * (see `waitForPluginReady`) whenever the dialog may render later than the
+   * first look.
+   */
+  private async clickTrustDialogIfVisible(): Promise<boolean> {
+    if (!this.window) {
+      return false;
+    }
+
+    const trustButton = this.window
+      .locator(ObsidianLauncher.TRUST_BUTTON_SELECTOR)
+      .first();
+
+    const isVisible = await trustButton.isVisible().catch(() => false);
+    if (!isVisible) {
+      return false;
+    }
+
+    await trustButton.click();
+    console.log(
+      "[ObsidianLauncher] Trust button clicked, waiting for dialog to disappear...",
+    );
+
+    await this.window
+      .waitForSelector(ObsidianLauncher.TRUST_BUTTON_SELECTOR, {
+        state: "hidden",
+        timeout: 5000,
+      })
+      .catch(() => {
+        console.log(
+          "[ObsidianLauncher] Trust dialog did not disappear, but continuing...",
+        );
+      });
+
+    return true;
+  }
+
+  /**
+   * Fast path: the dialog is usually either already on screen when
+   * `window.app` appears, or not needed at all (trust persisted from the
+   * previous launch of the same vault). One look is enough for BOTH of those
+   * cases — but "not visible" here also covers "not rendered YET", which is why
+   * `waitForPluginReady` keeps probing.
+   */
   private async handleTrustDialog(): Promise<void> {
     if (!this.window) {
       throw new Error("Window not available");
@@ -257,37 +316,9 @@ export class ObsidianLauncher {
     try {
       console.log("[ObsidianLauncher] Looking for trust dialog...");
 
-      const trustButton = await this.window
-        .locator('button:has-text("Trust author and enable plugins")')
-        .first();
+      const clicked = await this.clickTrustDialogIfVisible();
 
-      const isVisible = await trustButton
-        .isVisible({ timeout: 10000 })
-        .catch(() => false);
-
-      if (isVisible) {
-        console.log(
-          '[ObsidianLauncher] Trust dialog found! Clicking "Trust author and enable plugins" button...',
-        );
-        await trustButton.click();
-        console.log(
-          "[ObsidianLauncher] Trust button clicked, waiting for dialog to disappear...",
-        );
-
-        await this.window
-          .waitForSelector(
-            'button:has-text("Trust author and enable plugins")',
-            {
-              state: "hidden",
-              timeout: 5000,
-            },
-          )
-          .catch(() => {
-            console.log(
-              "[ObsidianLauncher] Trust dialog did not disappear, but continuing...",
-            );
-          });
-
+      if (clicked) {
         console.log("[ObsidianLauncher] Trust dialog handled successfully");
       } else {
         console.log(
@@ -319,6 +350,24 @@ export class ObsidianLauncher {
    * Two fixes in one place: (a) the ceiling becomes consistent with its
    * neighbours, (b) a timeout now reports what WAS loaded, so a red run carries
    * evidence instead of a bare boolean.
+   *
+   * ⛤ THE LATE TRUST DIALOG (e2e-shard 6, ticket be9e9b46). Twice in one day the
+   * SECOND launch of a shard (right after the SIGKILL of the first) logged
+   * `Trust dialog not present` at `App object found after 0 polls`, then zero
+   * renderer console lines and `Loaded plugins: [none]` for the full 30 s — the
+   * community-plugin layer never started, i.e. the vault sat in Restricted Mode
+   * behind a trust dialog that rendered AFTER `handleTrustDialog`'s single look
+   * (see `clickTrustDialogIfVisible` for why that look cannot wait). In 40 green
+   * launches the plugin was ready 9–33 ms into this wait, so "not loaded yet"
+   * here is not slowness — it is the dialog. Hence every poll below, while the
+   * plugin is still absent, takes one more instantaneous look and clicks the
+   * dialog if it has appeared in the meantime. No dialog → pure no-op.
+   *
+   * ⛤ `this.window` is re-read on every poll on purpose: when the 30 s ceiling
+   * plus cleanup plus a relaunch overflow a spec's 60 s `beforeAll`, Playwright
+   * runs `afterAll` → `close()` → `this.window = null` while this loop is still
+   * running. Naming that case beats the `TypeError … (reading 'evaluate')` it
+   * used to produce.
    */
   private async waitForPluginReady(): Promise<void> {
     if (!this.window) {
@@ -328,8 +377,15 @@ export class ObsidianLauncher {
     const maxWaitTime = 30000;
     const checkInterval = 500;
     const startTime = Date.now();
+    let trustClicked = false;
 
-    for (;;) {
+    for (let poll = 0; ; poll++) {
+      if (!this.window) {
+        throw new Error(
+          "[ObsidianLauncher] window closed during plugin wait (close() ran concurrently — the launch was abandoned by its caller)",
+        );
+      }
+
       const status = await this.window.evaluate(() => {
         const app = (window as any).app;
         return {
@@ -343,6 +399,13 @@ export class ObsidianLauncher {
           `[ObsidianLauncher] Plugin ready after ${Date.now() - startTime}ms`,
         );
         return;
+      }
+
+      if (!trustClicked && (await this.clickTrustDialogIfVisible())) {
+        trustClicked = true;
+        console.log(
+          `[ObsidianLauncher] Trust dialog appeared late (poll ${poll}) — clicked; plugins should load now`,
+        );
       }
 
       if (Date.now() - startTime >= maxWaitTime) {
@@ -652,13 +715,17 @@ export class ObsidianLauncher {
             } catch (e) {
               // Process doesn't exist anymore
               clearInterval(checkInterval);
+              clearTimeout(terminationTimeout);
               console.log(`[ObsidianLauncher] Process ${pid} terminated`);
               resolve();
             }
           }, 100);
 
-          // Timeout after 10 seconds (Docker Obsidian may take longer to terminate)
-          setTimeout(() => {
+          // Timeout after 10 seconds (Docker Obsidian may take longer to terminate).
+          // ⛤ Disarmed by the success path above: an armed timer used to print
+          // "termination timeout" 10 s AFTER "terminated", which reads as a race
+          // in every red log it lands in.
+          const terminationTimeout = setTimeout(() => {
             clearInterval(checkInterval);
             console.log(
               `[ObsidianLauncher] Process ${pid} termination timeout (continuing anyway)`,
