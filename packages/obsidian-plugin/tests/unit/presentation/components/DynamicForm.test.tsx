@@ -342,6 +342,37 @@ describe("DynamicForm", () => {
     });
   });
 
+  // req 15f48fa1 (ticket 8df9e6eb) — CONSUMER CONTROL: with `targetClassUid`
+  // declared (set-parent / set-blocker once the data commit lands) and the
+  // subsumed candidates the resolver now returns (Task ∪ Project for
+  // ems__Effort), the unchanged DynamicForm renders the combobox and the user
+  // can filter to the Project and commit its quoted [[uid]]. Mutant M6 (picker
+  // mode forced off) → RED D1.
+  describe("assetRef field with targetClassUid and subsumed candidates (req 15f48fa1, consumer control)", () => {
+    const EFFORT = "086f71fa-dd30-4284-90cf-e609f2a6c461";
+    const FIELD: InputSchemaField = { name: "parent", type: "assetRef", label: "Parent", required: true, targetClassUid: EFFORT };
+    const asEl = (node: unknown): Element => node as Element;
+
+    it("D1 renders the combobox, filters by the typed label and commits the picked Project's \"[[uid]]\" @req:15f48fa1-a3a6-4df1-972e-efd639bfa344", () => {
+      const { onSubmit } = renderForm([FIELD], {
+        candidates: {
+          parent: [
+            { uid: "p1", label: "Project one" },
+            { uid: "t1", label: "Task one" },
+          ],
+        },
+      });
+      const input = screen.getByTestId("field-parent");
+      expect(input).toHaveAttribute("role", "combobox");
+      fireEvent.change(asEl(input), { target: { value: "project" } });
+      expect(screen.getByTestId("option-parent-p1")).toBeInTheDocument();
+      expect(screen.queryByTestId("option-parent-t1")).toBeNull();
+      fireEvent.mouseDown(asEl(screen.getByTestId("option-parent-p1")));
+      fireEvent.click(asEl(screen.getByText("OK")));
+      expect(onSubmit).toHaveBeenCalledWith({ parent: '"[[p1]]"' });
+    });
+  });
+
   // T1 "Create Instance" (project bbe40f8c) — reusable fuzzy reference-picker.
   describe("assetRef fuzzy reference-picker (targetClassUid)", () => {
     const ONTOLOGY_FIELD: InputSchemaField = {

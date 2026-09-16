@@ -103,6 +103,89 @@ describe("findAssetRefCandidates (T1 fuzzy reference-picker)", () => {
     expect(findAssetRefCandidates({} as any, ONTOLOGY_CLASS_UID)).toEqual([]);
   });
 
+  // req 15f48fa1 (ticket 8df9e6eb) — SUBSUMPTION: a `targetClassUid` naming
+  // an abstract / parent class (ems__Effort has no direct instances) collects
+  // the instances of every class whose `exo__Class_superClass` chain reaches it.
+  // Fixture = the live exoas-public/ems hierarchy (2026-09-16).
+  describe("subsumption-aware resolution (req 15f48fa1)", () => {
+    const EFFORT = "086f71fa-dd30-4284-90cf-e609f2a6c461";
+    const TASK = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+    const PROJECT = "7db5eeff-718a-49b0-8d2b-39b084a356e3";
+    const PARENT_EFFORT = "17c5cf45-ce6a-4142-8d2a-65ac447f1168";
+    const MEETING = "1b0a5e34-dd7f-4ead-b43a-6c7c5a5ecaca";
+    const AREA_AWARE = "f3892308-7a8b-4b81-8a01-a088d4bad97b";
+    const AREA = "aaaaaaaa-0000-4000-8000-000000000001";
+
+    const classFile = (uid: string, label: string, supers: string[]) => ({
+      file: { basename: uid, path: `exoas-public/ems/${uid}.md` },
+      fm: {
+        exo__Asset_uid: uid,
+        exo__Asset_label: label,
+        exo__Instance_class: ['"[[8619c4fc-0000-4000-8000-000000000000]]"'],
+        ...(supers.length > 0
+          ? { exo__Class_superClass: supers.map((u) => `"[[${u}]]"`) }
+          : {}),
+      },
+    });
+    const hierarchy = [
+      classFile(AREA_AWARE, "ems__AreaAware", []),
+      classFile(EFFORT, "ems__Effort", [AREA_AWARE]),
+      // Meeting listed BEFORE its parent Task: only a fixpoint walk reaches it.
+      classFile(MEETING, "ems__Meeting", [TASK]),
+      classFile(TASK, "ems__Task", [EFFORT]),
+      classFile(PROJECT, "ems__Project", [EFFORT, PARENT_EFFORT]),
+      classFile(PARENT_EFFORT, "ems__ParentEffort", [EFFORT]),
+      classFile(AREA, "ems__Area", [AREA_AWARE]),
+    ];
+    const instances = [
+      {
+        file: { basename: "t1", path: "exoas-my/my-efforts/t1.md" },
+        fm: { exo__Asset_uid: "t1", exo__Asset_label: "Task one", exo__Instance_class: [`"[[${TASK}]]"`] },
+      },
+      {
+        file: { basename: "p1", path: "exoas-my/my-efforts/p1.md" },
+        fm: { exo__Asset_uid: "p1", exo__Asset_label: "Project one", exo__Instance_class: [`"[[${PROJECT}]]"`] },
+      },
+      {
+        file: { basename: "m1", path: "exoas-my/my-efforts/m1.md" },
+        fm: { exo__Asset_uid: "m1", exo__Asset_label: "Meeting one", exo__Instance_class: `"[[${MEETING}|ems__Meeting]]"` },
+      },
+      {
+        file: { basename: "t2", path: "legacy/t2.md" },
+        fm: { exo__Asset_uid: "t2", exo__Asset_label: "Symbolic task", exo__Instance_class: "[[ems__Task]]" },
+      },
+      {
+        file: { basename: "a1", path: "exoas-my/my-areas/a1.md" },
+        fm: { exo__Asset_uid: "a1", exo__Asset_label: "Area one", exo__Instance_class: [`"[[${AREA}]]"`] },
+      },
+    ];
+
+    it("C1 targetClassUid = ems__Effort collects Task, Project, Meeting (two hops) and a symbolic-form Task, sorted by label, and not the Area @req:15f48fa1-a3a6-4df1-972e-efd639bfa344", () => {
+      const app = makeApp([...hierarchy, ...instances]);
+      expect(findAssetRefCandidates(app, EFFORT)).toEqual([
+        { uid: "m1", label: "Meeting one" },
+        { uid: "p1", label: "Project one" },
+        { uid: "t2", label: "Symbolic task" },
+        { uid: "t1", label: "Task one" },
+      ]);
+    });
+
+    it("C1b a class outside the hierarchy yields only its own instances; a leaf class yields only its own (exact-class preserved) @req:15f48fa1-a3a6-4df1-972e-efd639bfa344", () => {
+      const app = makeApp([...hierarchy, ...instances]);
+      expect(findAssetRefCandidates(app, AREA)).toEqual([
+        { uid: "a1", label: "Area one" },
+      ]);
+      expect(findAssetRefCandidates(app, MEETING)).toEqual([
+        { uid: "m1", label: "Meeting one" },
+      ]);
+      // A sibling / ancestor of the target is never subsumed: AreaAware ⇒ nothing
+      // is a direct instance, and its SUBclasses (Effort, Area) do count.
+      expect(findAssetRefCandidates(app, AREA_AWARE).map((c) => c.uid).sort()).toEqual(
+        ["a1", "m1", "p1", "t1", "t2"],
+      );
+    });
+  });
+
   it("tolerates piped wikilinks in exo__Instance_class", () => {
     const app = makeApp([
       {

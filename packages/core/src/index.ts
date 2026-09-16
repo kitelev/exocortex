@@ -249,6 +249,14 @@ export {
 export { parseYamlFrontmatterTolerant } from "./utilities/parseYamlFrontmatter";
 export { DateFormatter } from "./utilities/DateFormatter";
 export { WikiLinkHelpers } from "./utilities/WikiLinkHelpers";
+// Class subsumption over frontmatter `exo__Class_superClass` edges (req
+// 15f48fa1) — the reference-picker candidate resolver's downward closure.
+export {
+  resolveSubsumedClassKeys,
+  instanceClassMatches,
+  extractClassRefTarget,
+  type ClassDefinitionLike,
+} from "./utilities/ClassSubsumption";
 export { MetadataHelpers } from "./utilities/MetadataHelpers";
 export { MetadataExtractor } from "./utilities/MetadataExtractor";
 export { EffortSortingHelpers } from "./utilities/EffortSortingHelpers";
