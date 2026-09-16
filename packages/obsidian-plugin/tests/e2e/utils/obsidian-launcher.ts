@@ -282,6 +282,9 @@ export class ObsidianLauncher {
       return false;
     }
 
+    console.log(
+      '[ObsidianLauncher] Trust dialog found! Clicking "Trust author and enable plugins" button...',
+    );
     await trustButton.click();
     console.log(
       "[ObsidianLauncher] Trust button clicked, waiting for dialog to disappear...",
