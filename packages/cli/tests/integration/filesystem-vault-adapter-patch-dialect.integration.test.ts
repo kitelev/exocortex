@@ -21,10 +21,15 @@ import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "fs-extra";
 import path from "path";
 import os from "os";
-import { parseYamlFrontmatterTolerant } from "@kitelev/exocortex-core";
+import {
+  parseYamlFrontmatterTolerant,
+  FrontmatterService,
+} from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
 
 const REQ = "@req:2a020489-00db-4fe9-b2ca-1481cb7da9b1";
+// req 27fbe40b (ticket 73b16cc4) — object-path form + CLI serialisation.
+const REQ_F = "@req:27fbe40b-080f-4928-b675-3c767223c875";
 const REL =
   "assetspaces/kitelev/exoas-my/my-efforts/c1000000-0000-4000-8000-0000000000c1.md";
 
@@ -132,7 +137,7 @@ describe("FileSystemVaultAdapter.updateFrontmatter — chokepoint key dialect vi
     expect(raw.endsWith("---\nBody stays.\n")).toBe(true);
   });
 
-  it(`C7 an IRI-form key and an obsidian:// value are normalised to the Obsidian dialect ${REQ}`, async () => {
+  it(`C7 an IRI-form key and an obsidian:// value are normalised to the Obsidian dialect ${REQ} @req:27fbe40b-080f-4928-b675-3c767223c875`, async () => {
     const { fm } = await write(
       {},
       {
@@ -141,10 +146,67 @@ describe("FileSystemVaultAdapter.updateFrontmatter — chokepoint key dialect vi
       },
     );
     expect(Object.keys(fm)).toEqual(["ems__Effort_status"]);
-    expect(String(fm.ems__Effort_status)).toContain(
-      "[[ems__EffortStatusDoing]]",
+    // Tightened from `toContain` to `toBe` by req 27fbe40b (object-path form
+    // decided: the parsed value is the bare wikilink, no embedded quotes).
+    expect(fm.ems__Effort_status).toBe("[[ems__EffortStatusDoing]]");
+  });
+
+  // req 27fbe40b — the CLI object path lands on disk exactly as the text path
+  // does. Mutant M1 (applyPatch pre-quotes) → RED (`"\"[[…]]\""` on disk, the
+  // pre-27fbe40b double wrap); mutant M2 (`quoteStyle: "single"` / option
+  // dropped — the js-yaml 5 default) → RED (`'[[…]]'`).
+  it(`F2 a reference written through updateFrontmatter lands as key: "[[x]]" — byte-identical to the line FrontmatterService.updateProperty writes for the same key and value ${REQ_F}`, async () => {
+    const { raw } = await write(
+      { exo__Asset_uid: "u" },
+      {
+        exo__Asset_uid: "u",
+        "https://exocortex.my/ontology/ems#Effort_status":
+          "obsidian://vault/x/ems__EffortStatusDoing.md",
+      },
     );
-    expect(String(fm.ems__Effort_status)).not.toContain("obsidian://");
+    const objectPathLine = raw
+      .split("\n")
+      .find((l) => l.startsWith("ems__Effort_status:"));
+    expect(objectPathLine).toBe('ems__Effort_status: "[[ems__EffortStatusDoing]]"');
+    expect(raw).not.toContain('\\"[['); // the pre-27fbe40b double wrap
+    expect(raw).not.toContain("'[[");
+
+    const textPath = new FrontmatterService().updateProperty(
+      "---\nexo__Asset_uid: u\n---\nBody stays.\n",
+      "https://exocortex.my/ontology/ems#Effort_status",
+      "obsidian://vault/x/ems__EffortStatusDoing.md",
+    );
+    const textPathLine = textPath
+      .split("\n")
+      .find((l) => l.startsWith("ems__Effort_status:"));
+    expect(objectPathLine).toBe(textPathLine);
+  });
+
+  it(`F3 values js-yaml must quote come out DOUBLE-quoted (quoteStyle "double" — the js-yaml 5 option this package resolves; the vault convention); plain values stay unquoted ${REQ_F}`, async () => {
+    const { raw, fm } = await write(
+      {},
+      {
+        exo__Asset_label: "has: colon",
+        ems__Effort_startTimestamp: "2026-09-16T10:00:00",
+        plain: "just text",
+      },
+    );
+    expect(raw).toContain('exo__Asset_label: "has: colon"');
+    expect(raw).toContain('ems__Effort_startTimestamp: "2026-09-16T10:00:00"');
+    expect(raw).toContain("plain: just text");
+    expect(raw).not.toContain("'");
+    expect(fm.exo__Asset_label).toBe("has: colon");
+    expect(fm.plain).toBe("just text");
+  });
+
+  // Mutant M3 (string replacer in replaceFrontmatter) → RED: `$&` splices the
+  // whole matched block into the value, `$1` the capture group.
+  it(`F4 replacement-pattern tokens inside a value survive the block splice byte-identically and the body is untouched ${REQ_F}`, async () => {
+    const hostile = "cost $& and $1 and $$ and $` and $' end";
+    const { raw, fm } = await write({ exo__Asset_uid: "u" }, { exo__Asset_uid: "u", note: hostile });
+    expect(fm.note).toBe(hostile);
+    expect(raw.split("---").length).toBe(3);
+    expect(raw.endsWith("---\nBody stays.\n")).toBe(true);
   });
 
   it(`C8 a block that is present but NOT parseable is refused — rejects, file byte-identical (PR #4243 review MEDIUM) ${REQ}`, async () => {

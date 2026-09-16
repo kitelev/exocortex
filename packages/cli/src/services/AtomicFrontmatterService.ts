@@ -76,6 +76,10 @@ function parseFile(content: string): ParsedFile | null {
 }
 
 function serializeFile(fm: Record<string, unknown>, body: string): string {
+  // `quoteStyle: "double"` is the js-yaml 5 option (this package resolves
+  // 5.3.0; `quotingType` is the js-yaml 4 spelling, ignored here): scalars
+  // js-yaml must quote come out double-quoted — the vault convention. Locked
+  // by an axis (req 27fbe40b), not just by this comment.
   const dumped = yaml.dump(fm, {
     lineWidth: -1,
     quoteStyle: "double",

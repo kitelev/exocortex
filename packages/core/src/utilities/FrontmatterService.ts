@@ -411,17 +411,31 @@ export class FrontmatterService {
    * Reverse-map an IRI value to wikilink format.
    * E.g. "obsidian://vault/ems/ems__EffortStatusDoing.md" → "\"[[ems__EffortStatusDoing]]\""
    * Non-IRI and non-obsidian:// values pass through unchanged.
+   *
+   * Two forms, one per write path (req `27fbe40b`, ticket 73b16cc4):
+   * - default — the QUOTED YAML scalar `"[[x]]"`, ready to be spliced into a
+   *   frontmatter block as text ({@link updateProperty} inserts it verbatim);
+   * - `{ bare: true }` — the bare `[[x]]`, for the OBJECT path
+   *   ({@link applyPatch}): the value becomes a property of the live object
+   *   and the serialiser (js-yaml on the CLI, Obsidian's `processFrontMatter`
+   *   in the plugin) quotes it on disk — pre-quoting would make the quotes
+   *   part of the string (`'"[[x]]"'`, the double-wrap PR #4243's review named).
    */
-  static normalizeIRIValue(value: string): string {
+  static normalizeIRIValue(
+    value: string,
+    options: { readonly bare?: boolean } = {},
+  ): string {
+    const wrap = (inner: string): string =>
+      options.bare ? `[[${inner}]]` : `"[[${inner}]]"`;
     // Handle obsidian:// vault URLs
     const obsMatch = value.match(/^obsidian:\/\/vault\/.*\/([^/]+)\.md$/);
     if (obsMatch) {
-      return `"[[${obsMatch[1]}]]"`;
+      return wrap(obsMatch[1]);
     }
     // Handle full ontology IRIs as values
     const normalized = FrontmatterService.normalizeIRI(value);
     if (normalized !== value) {
-      return `"[[${normalized}]]"`;
+      return wrap(normalized);
     }
     return value;
   }
@@ -468,11 +482,14 @@ export class FrontmatterService {
    * Not covered (named, not changed — PR #4241 review LOW-3): the reverse
    * write of the UNPREFIXED direction. A literal `exo__Asset_aliases:` already
    * on disk is NOT removed here, because {@link LEGACY_YAML_KEYS} has no entry
-   * for it; the chokepoint behaves the same. Known discrepancy (PR #4243
-   * review LOW, follow-up ticket): {@link normalizeIRIValue} returns the
-   * wikilink WITH surrounding quotes — a ready YAML scalar for the text path —
-   * so on this object path the quotes become part of the string and the disk
-   * byte-shape differs from `updateProperty`'s (graph readers strip them).
+   * for it; the chokepoint behaves the same.
+   *
+   * Reference values are stored BARE (`[[x]]`, req `27fbe40b`): this is the
+   * object path, so the serialiser quotes the string on disk — the CLI adapter
+   * with `quoteStyle: "double"` (js-yaml 5) writes `key: "[[x]]"` for a
+   * reference string, the same line the text path {@link updateProperty}
+   * writes; pre-quoting (the pre-27fbe40b behaviour) made the quotes part of
+   * the value (`"\"[[x]]\""` on disk). Arrays are not normalised on either path.
    *
    * @returns `target`, for callers that serialise the result.
    */
@@ -496,7 +513,7 @@ export class FrontmatterService {
         continue;
       }
       if (typeof value === "string") {
-        value = FrontmatterService.normalizeIRIValue(value);
+        value = FrontmatterService.normalizeIRIValue(value, { bare: true });
       }
       target[canonicalKey] = value;
       for (const legacy of LEGACY_YAML_KEYS.get(canonicalKey) ?? []) {
