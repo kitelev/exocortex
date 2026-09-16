@@ -1,5 +1,6 @@
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { Vault, TFile, TFolder, MetadataCache, App, FileManager } from "obsidian";
+import * as obsidian from "obsidian";
 import { IFile } from "@kitelev/exocortex-core";
 
 describe("ObsidianVaultAdapter", () => {
@@ -184,6 +185,23 @@ describe("ObsidianVaultAdapter", () => {
       await adapter.delete(file);
 
       expect(mockFileManager.trashFile).toHaveBeenCalledWith(mockTFile);
+    });
+
+    it("fails loud (not TypeError) on an Obsidian host older than 1.6.6, where FileManager.trashFile does not exist", async () => {
+      const file: IFile = {
+        path: "test/file.md",
+        basename: "file",
+        name: "file.md",
+        parent: null,
+      };
+      mockVault.getAbstractFileByPath.mockReturnValue(mockTFile);
+      const spy = jest.spyOn(obsidian, "requireApiVersion").mockReturnValue(false);
+      try {
+        await expect(adapter.delete(file)).rejects.toThrow(/Obsidian 1\.6\.6/);
+        expect(mockFileManager.trashFile).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
     });
 
     it("should throw error if file not found", async () => {

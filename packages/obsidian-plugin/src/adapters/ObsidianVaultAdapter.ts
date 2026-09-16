@@ -1,4 +1,4 @@
-import { Vault, TFile, TFolder, MetadataCache, App, parseYaml } from "obsidian";
+import { Vault, TFile, TFolder, MetadataCache, App, parseYaml, requireApiVersion } from "obsidian";
 import { IVaultAdapter, IFile, IFolder, IFrontmatter, FrontmatterService } from "@kitelev/exocortex-core";
 
 /** A linkpath body that is exactly a uuid — the `uid-bare` wikilink form. */
@@ -44,7 +44,19 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
 
   async delete(file: IFile): Promise<void> {
     const obsidianFile = this.toObsidianFile(file);
-    await this.app.fileManager.trashFile(obsidianFile);
+    // `FileManager.trashFile` (honours the user's "deleted files" setting)
+    // exists since Obsidian 1.6.6 while manifest `minAppVersion` is 1.5.0
+    // (obsidianmd/no-unsupported-api). Older hosts used to die here with a bare
+    // `TypeError: trashFile is not a function`; fail loud with the real reason
+    // instead. `Vault.trash`/`Vault.delete` are not used as a fallback on
+    // purpose — they bypass that user setting (obsidianmd/prefer-file-manager-trash-file).
+    if (requireApiVersion("1.6.6")) {
+      await this.app.fileManager.trashFile(obsidianFile);
+      return;
+    }
+    throw new Error(
+      `Deleting "${file.path}" requires Obsidian 1.6.6 or newer (FileManager.trashFile).`,
+    );
   }
 
   async exists(path: string): Promise<boolean> {
