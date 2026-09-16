@@ -1,5 +1,6 @@
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { Vault, TFile, TFolder, MetadataCache, App, FileManager } from "obsidian";
+import * as obsidian from "obsidian";
 import { IFile } from "@kitelev/exocortex-core";
 
 describe("ObsidianVaultAdapter", () => {
@@ -184,6 +185,23 @@ describe("ObsidianVaultAdapter", () => {
       await adapter.delete(file);
 
       expect(mockFileManager.trashFile).toHaveBeenCalledWith(mockTFile);
+    });
+
+    it("fails loud (not TypeError) on an Obsidian host older than 1.6.6, where FileManager.trashFile does not exist", async () => {
+      const file: IFile = {
+        path: "test/file.md",
+        basename: "file",
+        name: "file.md",
+        parent: null,
+      };
+      mockVault.getAbstractFileByPath.mockReturnValue(mockTFile);
+      const spy = jest.spyOn(obsidian, "requireApiVersion").mockReturnValue(false);
+      try {
+        await expect(adapter.delete(file)).rejects.toThrow(/Obsidian 1\.6\.6/);
+        expect(mockFileManager.trashFile).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
     });
 
     it("should throw error if file not found", async () => {
@@ -622,6 +640,76 @@ nested:
       expect(testFm).toEqual({
         title: "New Title",
         status: "draft",
+      });
+    });
+  });
+
+  // req de7131ae — the cell-edit writer speaks the chokepoint's key dialect
+  // (canonicalYamlKey + LEGACY_YAML_KEYS drop + canonical-wins). Each axis is
+  // revert-verified by a mutant that removes ONE guarantee (see PR body).
+  describe("updateFrontmatter — canonical key + legacy-drop (req de7131ae) [REVERT-VERIFY]", () => {
+    const file: IFile = {
+      path: "test/file.md",
+      basename: "file",
+      name: "file.md",
+      parent: null,
+    };
+
+    /** Drive the real adapter against a plain object standing in for Obsidian's live frontmatter. */
+    async function write(
+      live: Record<string, unknown>,
+      payload: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> {
+      mockVault.getAbstractFileByPath.mockReturnValue(mockTFile);
+      mockMetadataCache.getFileCache.mockReturnValue({ frontmatter: { ...live } } as any);
+      mockFileManager.processFrontMatter.mockImplementation(async (_f, processor) => {
+        processor(live);
+      });
+      await adapter.updateFrontmatter(file, () => payload);
+      return live;
+    }
+
+    it("A1 writes exo__Asset_archived and DROPS the legacy bare `archived` key on a legacy carrier @req:de7131ae-f9e5-4498-bf06-41ccbaadc7de", async () => {
+      const live = await write(
+        { archived: true, exo__Asset_uid: "u" },
+        { archived: true, exo__Asset_uid: "u", exo__Asset_archived: false },
+      );
+      expect(live.exo__Asset_archived).toBe(false);
+      expect(live).not.toHaveProperty("archived");
+      expect(Object.keys(live).filter((k) => k.toLowerCase().includes("archived"))).toEqual([
+        "exo__Asset_archived",
+      ]);
+    });
+
+    it("A2 upgrades a bare `archived` payload key to exo__Asset_archived (never writes the bare form) @req:de7131ae-f9e5-4498-bf06-41ccbaadc7de", async () => {
+      const live = await write({ archived: true }, { archived: true });
+      expect(live).toEqual({ exo__Asset_archived: true });
+    });
+
+    it("A3 writes the prefixed exo__Asset_aliases under the live `aliases:` key (869561bf §Scope remainder) @req:de7131ae-f9e5-4498-bf06-41ccbaadc7de", async () => {
+      const live = await write({}, { exo__Asset_aliases: ["x"] });
+      expect(live).toEqual({ aliases: ["x"] });
+      expect(live).not.toHaveProperty("exo__Asset_aliases");
+    });
+
+    it("A4 resolves a payload carrying BOTH spellings canonical-wins (NoteToRDFConverter M1 / ARCHIVED_FLAG_KEYS priority) @req:de7131ae-f9e5-4498-bf06-41ccbaadc7de", async () => {
+      // Legacy entry FIRST in insertion order — a last-write-wins rule would
+      // let the canonical value survive here by accident; flip the order too.
+      const a = await write({}, { archived: true, exo__Asset_archived: false });
+      expect(a).toEqual({ exo__Asset_archived: false });
+      const b = await write({}, { exo__Asset_archived: false, archived: true });
+      expect(b).toEqual({ exo__Asset_archived: false });
+    });
+
+    it("A5 (negative control) leaves keys outside the canonical-key rule untouched @req:de7131ae-f9e5-4498-bf06-41ccbaadc7de", async () => {
+      const live = await write(
+        {},
+        { exo__Asset_isDefinedBy: "[[x]]", ems__Effort_status: "[[y]]", aliases: ["a"] },
+      );
+      expect(live).toEqual({
+        exo__Asset_isDefinedBy: "[[x]]",
+        ems__Effort_status: "[[y]]",
+        aliases: ["a"],
       });
     });
   });

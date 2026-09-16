@@ -22,7 +22,7 @@ import type {
   ILogger,
   INotificationService,
 } from "@kitelev/exocortex-core";
-import { Literal, IRI } from "@kitelev/exocortex-core";
+import { Literal, IRI, FrontmatterService, canonicalYamlKey } from "@kitelev/exocortex-core";
 
 import type {
   Layout,
@@ -334,11 +334,22 @@ export class LayoutService {
       // Format the value for YAML frontmatter
       const formattedValue = this.formatValueForFrontmatter(newValue);
 
+      // req de7131ae (Scenario C): canonicalise the edited column's property
+      // name BEFORE building the payload (`archived` → `exo__Asset_archived`,
+      // `exo__Asset_aliases` → `aliases`, IRI → prefixed). The payload below
+      // re-emits every current key; on a carrier that already holds BOTH
+      // spellings the adapter resolves canonical-wins, so an edit that landed
+      // on the legacy name would lose to the stale canonical value — landing
+      // it on the canonical key keeps the edit under either spelling.
+      const targetKey = canonicalYamlKey(
+        FrontmatterService.normalizeIRI(propertyName),
+      );
+
       // Update frontmatter
       await this.vaultAdapter.updateFrontmatter(vaultFile, (current) => {
         return {
           ...current,
-          [propertyName]: formattedValue,
+          [targetKey]: formattedValue,
         };
       });
 

@@ -989,6 +989,12 @@ export class FileManager {
   }
 }
 
+// Obsidian's `requireApiVersion(version)` — the mock app is "latest", so every
+// guard passes; a test that exercises the pre-version branch spies on it.
+export function requireApiVersion(_version: string): boolean {
+  return true;
+}
+
 // Mock normalizePath function
 export function normalizePath(path: string): string {
   return path.replace(/\\/g, "/");

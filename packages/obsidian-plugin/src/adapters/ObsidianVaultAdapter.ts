@@ -1,5 +1,13 @@
-import { Vault, TFile, TFolder, MetadataCache, App, parseYaml } from "obsidian";
-import { IVaultAdapter, IFile, IFolder, IFrontmatter, FrontmatterService } from "@kitelev/exocortex-core";
+import { Vault, TFile, TFolder, MetadataCache, App, parseYaml, requireApiVersion } from "obsidian";
+import {
+  IVaultAdapter,
+  IFile,
+  IFolder,
+  IFrontmatter,
+  FrontmatterService,
+  canonicalYamlKey,
+  LEGACY_YAML_KEYS,
+} from "@kitelev/exocortex-core";
 
 /** A linkpath body that is exactly a uuid — the `uid-bare` wikilink form. */
 const UUID_LINKPATH =
@@ -44,7 +52,19 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
 
   async delete(file: IFile): Promise<void> {
     const obsidianFile = this.toObsidianFile(file);
-    await this.app.fileManager.trashFile(obsidianFile);
+    // `FileManager.trashFile` (honours the user's "deleted files" setting)
+    // exists since Obsidian 1.6.6 while manifest `minAppVersion` is 1.5.0
+    // (obsidianmd/no-unsupported-api). Older hosts used to die here with a bare
+    // `TypeError: trashFile is not a function`; fail loud with the real reason
+    // instead. `Vault.trash`/`Vault.delete` are not used as a fallback on
+    // purpose — they bypass that user setting (obsidianmd/prefer-file-manager-trash-file).
+    if (requireApiVersion("1.6.6")) {
+      await this.app.fileManager.trashFile(obsidianFile);
+      return;
+    }
+    throw new Error(
+      `Deleting "${file.path}" requires Obsidian 1.6.6 or newer (FileManager.trashFile).`,
+    );
   }
 
   async exists(path: string): Promise<boolean> {
@@ -142,6 +162,32 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
     }
   }
 
+  /**
+   * Write the updater's result into the file's frontmatter through the SAME
+   * key dialect as the core chokepoint (`FrontmatterService.updateProperty`,
+   * req `960d7a3f` / `869561bf`) — req `de7131ae`:
+   *
+   * - every written key is mapped through `canonicalYamlKey(normalizeIRI(key))`
+   *   (`archived` → `exo__Asset_archived`, `exo__Asset_aliases` → `aliases`,
+   *   any other key → itself);
+   * - the legacy physical spelling(s) listed in `LEGACY_YAML_KEYS` for a
+   *   written canonical key (today: bare `archived` for `exo__Asset_archived`)
+   *   are removed from the live frontmatter, so one write migrates such a
+   *   carrier. The UNPREFIXED direction (`exo__Asset_aliases` → `aliases`,
+   *   `draft`, `pinned`) has no reverse entry in that map: a literal
+   *   `exo__Asset_aliases:` already on disk is NOT removed here — parity with
+   *   `FrontmatterService.updateProperty`, which behaves the same;
+   * - a payload that carries BOTH spellings of one key resolves canonical-wins
+   *   (Scenario D): the legacy entry is skipped when the payload already holds
+   *   the canonical key — the same priority `NoteToRDFConverter` (guard M1)
+   *   and `MetadataHelpers.ARCHIVED_FLAG_KEYS` apply on the read side.
+   *
+   * The only production caller (`LayoutService.handleCellEdit`) re-emits every
+   * current key next to the edited one, so editing ANY cell of a legacy
+   * `archived:` carrier migrates the flag as a side effect (Scenario E) —
+   * graph-neutral (same predicate `exo:Asset_archived`), accepted by ORCH
+   * decision `eb07dc18`.
+   */
   async updateFrontmatter(
     file: IFile,
     updater: (current: IFrontmatter) => IFrontmatter,
@@ -154,12 +200,26 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
       obsidianFile,
       (frontmatter) => {
         Object.keys(newFrontmatter).forEach((key) => {
-          const normalizedKey = FrontmatterService.normalizeIRI(key);
+          const canonicalKey = canonicalYamlKey(
+            FrontmatterService.normalizeIRI(key),
+          );
+          if (
+            canonicalKey !== key &&
+            Object.prototype.hasOwnProperty.call(newFrontmatter, canonicalKey)
+          ) {
+            // Canonical-wins: the payload already carries the canonical
+            // spelling of this key; the legacy/prefixed alias must not
+            // overwrite it (req de7131ae, Scenario D).
+            return;
+          }
           let value = newFrontmatter[key];
           if (typeof value === "string") {
             value = FrontmatterService.normalizeIRIValue(value);
           }
-          frontmatter[normalizedKey] = value;
+          frontmatter[canonicalKey] = value;
+          for (const legacy of LEGACY_YAML_KEYS.get(canonicalKey) ?? []) {
+            delete frontmatter[legacy];
+          }
         });
       },
     );

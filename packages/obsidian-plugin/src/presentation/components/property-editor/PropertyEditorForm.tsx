@@ -13,6 +13,7 @@ import {
 import { RelationsSection, type PredicateOption } from "./RelationsSection";
 import type { RelationRow } from "./relationsEditorModel";
 import type { ReifyDestination } from "./reifyModel";
+import { MetadataHelpers } from "@kitelev/exocortex-core";
 
 /**
  * RFC `93a0b2ee` Phase 3 / Task 3.1 — dependencies for the embedded Relations
@@ -40,6 +41,51 @@ export interface RelationsFormDeps {
   resolveReifyDestinations?: () => ReifyDestination[];
   /** RFC §C3 Task 3.2 — de-reify a reified relation back to inline; resolves to refreshed rows. */
   deReifyRelation?: (row: RelationRow) => Promise<RelationRow[]>;
+}
+
+/** The canonical archive-flag key (req `960d7a3f`); the form edits ONLY this spelling. */
+const ARCHIVED_CANONICAL_KEY = "exo__Asset_archived";
+
+/**
+ * Seed the form's `exo__Asset_archived` field from a legacy / alias carrier
+ * (req `de7131ae`, Scenarios H-K).
+ *
+ * `MetadataHelpers.ARCHIVED_FLAG_KEYS` lists the spellings every reader accepts
+ * (`exo__Asset_archived` → `exo__Asset_isArchived` → `archived`); the form's
+ * boolean field reads the canonical key only, so an asset that still carries a
+ * legacy spelling rendered "not archived" while the rest of the plugin (and the
+ * CLI) treated it as archived.
+ *
+ * - no legacy/alias carrier → untouched: Save must NOT stamp
+ *   `exo__Asset_archived: false` on every asset (Scenario J);
+ * - a legacy/alias carrier is present → it is DROPPED from the seed in every
+ *   case, so Save (which writes every payload key through
+ *   `FrontmatterService.updateProperty`, in file order) never re-emits it.
+ *   Re-emitting `archived: true` would canonicalise into a write of
+ *   `exo__Asset_archived` and — when the canonical key sits ABOVE the legacy
+ *   one in the file — silently overwrite a canonical `false` with the legacy
+ *   `true` (PR #4241 review MEDIUM). The canonical value itself is kept
+ *   (canonical-wins, the readers' priority, Scenario K);
+ * - canonical key absent — or present but EMPTY (`exo__Asset_archived:` with
+ *   no value → `null`, Obsidian's "Add property"; readers skip it exactly like
+ *   an absent key, `MetadataHelpers.isAssetArchived`) — → seed
+ *   `exo__Asset_archived = isAssetArchived(frontmatter)` (Scenario H), and the
+ *   chokepoint clears the bare spelling from disk on Save (Scenario I).
+ */
+export function seedArchivedFlag(
+  frontmatter: Record<string, unknown>,
+): Record<string, unknown> {
+  const isSet = (raw: unknown): boolean => raw !== undefined && raw !== null;
+  const legacyKeys = MetadataHelpers.ARCHIVED_FLAG_KEYS.filter(
+    (key) => key !== ARCHIVED_CANONICAL_KEY && isSet(frontmatter[key]),
+  );
+  if (legacyKeys.length === 0) return frontmatter;
+  const seeded: Record<string, unknown> = { ...frontmatter };
+  for (const key of legacyKeys) delete seeded[key];
+  if (!isSet(frontmatter[ARCHIVED_CANONICAL_KEY])) {
+    seeded[ARCHIVED_CANONICAL_KEY] = MetadataHelpers.isAssetArchived(frontmatter);
+  }
+  return seeded;
 }
 
 export interface PropertyEditorFormProps {
@@ -77,9 +123,9 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
     return () => { cancelled = true; };
   }, [instanceClass]);
 
-  const [formData, setFormData] = useState<Record<string, unknown>>(() => ({
-    ...frontmatter,
-  }));
+  const [formData, setFormData] = useState<Record<string, unknown>>(() =>
+    seedArchivedFlag({ ...frontmatter }),
+  );
   const [errors, setErrors] = useState<ValidationError[]>([]);
 
   const handleFieldChange = useCallback(
