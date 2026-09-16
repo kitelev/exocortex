@@ -5,8 +5,6 @@ import {
   IFolder,
   IFrontmatter,
   FrontmatterService,
-  canonicalYamlKey,
-  LEGACY_YAML_KEYS,
 } from "@kitelev/exocortex-core";
 
 /** A linkpath body that is exactly a uuid — the `uid-bare` wikilink form. */
@@ -163,30 +161,21 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
   }
 
   /**
-   * Write the updater's result into the file's frontmatter through the SAME
-   * key dialect as the core chokepoint (`FrontmatterService.updateProperty`,
-   * req `960d7a3f` / `869561bf`) — req `de7131ae`:
-   *
-   * - every written key is mapped through `canonicalYamlKey(normalizeIRI(key))`
-   *   (`archived` → `exo__Asset_archived`, `exo__Asset_aliases` → `aliases`,
-   *   any other key → itself);
-   * - the legacy physical spelling(s) listed in `LEGACY_YAML_KEYS` for a
-   *   written canonical key (today: bare `archived` for `exo__Asset_archived`)
-   *   are removed from the live frontmatter, so one write migrates such a
-   *   carrier. The UNPREFIXED direction (`exo__Asset_aliases` → `aliases`,
-   *   `draft`, `pinned`) has no reverse entry in that map: a literal
-   *   `exo__Asset_aliases:` already on disk is NOT removed here — parity with
-   *   `FrontmatterService.updateProperty`, which behaves the same;
-   * - a payload that carries BOTH spellings of one key resolves canonical-wins
-   *   (Scenario D): the legacy entry is skipped when the payload already holds
-   *   the canonical key — the same priority `NoteToRDFConverter` (guard M1)
-   *   and `MetadataHelpers.ARCHIVED_FLAG_KEYS` apply on the read side.
+   * Write the updater's result into the file's frontmatter through the core
+   * carrier of the key dialect, `FrontmatterService.applyPatch` (req
+   * `2a020489`; the plugin-side guarantees are req `de7131ae`):
+   * `canonicalYamlKey(normalizeIRI(key))` per key, `normalizeIRIValue` per
+   * string value, canonical-wins on a dual payload, `LEGACY_YAML_KEYS` of each
+   * written canonical key removed, keys the updater does not return left in
+   * place (PATCH — Obsidian's `processFrontMatter` hands us the live object and
+   * the helper mutates it). Nothing of the rule lives here: the contract is on
+   * `IVaultFrontmatterManager.updateFrontmatter` and on the helper.
    *
    * The only production caller (`LayoutService.handleCellEdit`) re-emits every
    * current key next to the edited one, so editing ANY cell of a legacy
-   * `archived:` carrier migrates the flag as a side effect (Scenario E) —
-   * graph-neutral (same predicate `exo:Asset_archived`), accepted by ORCH
-   * decision `eb07dc18`.
+   * `archived:` carrier migrates the flag as a side effect (req `de7131ae`
+   * Scenario E) — graph-neutral (same predicate `exo:Asset_archived`),
+   * accepted by ORCH decision `eb07dc18`.
    */
   async updateFrontmatter(
     file: IFile,
@@ -199,28 +188,7 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
     await this.app.fileManager.processFrontMatter(
       obsidianFile,
       (frontmatter) => {
-        Object.keys(newFrontmatter).forEach((key) => {
-          const canonicalKey = canonicalYamlKey(
-            FrontmatterService.normalizeIRI(key),
-          );
-          if (
-            canonicalKey !== key &&
-            Object.prototype.hasOwnProperty.call(newFrontmatter, canonicalKey)
-          ) {
-            // Canonical-wins: the payload already carries the canonical
-            // spelling of this key; the legacy/prefixed alias must not
-            // overwrite it (req de7131ae, Scenario D).
-            return;
-          }
-          let value = newFrontmatter[key];
-          if (typeof value === "string") {
-            value = FrontmatterService.normalizeIRIValue(value);
-          }
-          frontmatter[canonicalKey] = value;
-          for (const legacy of LEGACY_YAML_KEYS.get(canonicalKey) ?? []) {
-            delete frontmatter[legacy];
-          }
-        });
+        FrontmatterService.applyPatch(frontmatter, newFrontmatter);
       },
     );
   }

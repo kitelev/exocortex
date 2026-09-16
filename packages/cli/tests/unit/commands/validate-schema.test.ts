@@ -57,6 +57,10 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   // mocked-core ESM link fails. Not exercised here (validateFile uses the
   // regex extractFrontmatter + real js-yaml detectUnparseableFrontmatter).
   parseYamlFrontmatterTolerant: jest.fn(),
+  // req 2a020489: FileSystemVaultAdapter (in the graph) now imports this for
+  // `updateFrontmatter`. Not exercised here → a shape-stub satisfies the ESM
+  // named-import binding.
+  FrontmatterService: { applyPatch: jest.fn() },
 }));
 
 // Mock fs-extra (CacheManager dependency)

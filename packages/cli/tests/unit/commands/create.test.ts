@@ -77,6 +77,10 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   // #3800: NodeFsAdapter (in the graph) now imports this. Not exercised here
   // (only option registration) → a stub satisfies the ESM named-import binding.
   parseYamlFrontmatterTolerant: jest.fn(),
+  // req 2a020489: FileSystemVaultAdapter (in the graph) now imports this for
+  // `updateFrontmatter`. Not exercised here → a shape-stub satisfies the ESM
+  // named-import binding.
+  FrontmatterService: { applyPatch: jest.fn() },
   // W3 (`create --validate`): create.ts pins the uid + clock before the
   // pre-write SHACL gate so the validated bytes are the written bytes. Never
   // invoked here (no `--validate` in these option-registration tests) → a

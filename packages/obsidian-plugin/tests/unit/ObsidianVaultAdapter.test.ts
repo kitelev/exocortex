@@ -714,6 +714,59 @@ nested:
     });
   });
 
+  // req 2a020489 — the port's contract beyond de7131ae, now that the dialect
+  // has ONE carrier (`FrontmatterService.applyPatch`) shared with the CLI
+  // adapter (mirror axes C6/C7 in packages/cli/tests/integration/
+  // filesystem-vault-adapter-patch-dialect.integration.test.ts). Mutant M1
+  // (replace the helper call with a plain key copy in THIS adapter) reddens
+  // A1-A4 + A7 and leaves every C-axis green; helper-body mutants redden both.
+  describe("updateFrontmatter — PATCH contract through the single carrier (req 2a020489) [REVERT-VERIFY]", () => {
+    const file: IFile = {
+      path: "test/file.md",
+      basename: "file",
+      name: "file.md",
+      parent: null,
+    };
+
+    async function write(
+      live: Record<string, unknown>,
+      payload: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> {
+      mockVault.getAbstractFileByPath.mockReturnValue(mockTFile);
+      mockMetadataCache.getFileCache.mockReturnValue({ frontmatter: { ...live } } as any);
+      mockFileManager.processFrontMatter.mockImplementation(async (_f, processor) => {
+        processor(live);
+      });
+      await adapter.updateFrontmatter(file, () => payload);
+      return live;
+    }
+
+    it("A6 PATCH: keys the updater does not return are preserved — omission is not deletion @req:2a020489-00db-4fe9-b2ca-1481cb7da9b1", async () => {
+      const live = await write(
+        { exo__Asset_uid: "u", exo__Asset_label: "L", ems__Effort_status: "[[s]]" },
+        { exo__Asset_label: "New" },
+      );
+      expect(live).toEqual({
+        exo__Asset_uid: "u",
+        exo__Asset_label: "New",
+        ems__Effort_status: "[[s]]",
+      });
+    });
+
+    it("A7 an IRI-form key and an obsidian:// value are normalised to the Obsidian dialect @req:2a020489-00db-4fe9-b2ca-1481cb7da9b1", async () => {
+      const live = await write(
+        {},
+        {
+          "https://exocortex.my/ontology/ems#Effort_status":
+            "obsidian://vault/x/ems__EffortStatusDoing.md",
+        },
+      );
+      expect(Object.keys(live)).toEqual(["ems__Effort_status"]);
+      expect(String(live.ems__Effort_status)).toContain("[[ems__EffortStatusDoing]]");
+      expect(String(live.ems__Effort_status)).not.toContain("obsidian://");
+    });
+  });
+
   describe("rename", () => {
     it("should rename file", async () => {
       const file: IFile = {

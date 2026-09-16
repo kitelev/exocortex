@@ -715,7 +715,8 @@ class FakeVault implements IVaultFileReader, IVaultFrontmatterManager {
     updater: (current: IFrontmatter) => IFrontmatter,
   ): Promise<void> {
     const current = this.frontmatters.get(file.path) ?? {};
-    this.frontmatters.set(file.path, updater(current));
+    // PATCH, not replace — keys the updater does not return are preserved (req 2a020489).
+    this.frontmatters.set(file.path, { ...current, ...updater(current) });
   }
 
   private toFile(path: string): IFile {

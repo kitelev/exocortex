@@ -6,6 +6,7 @@ import {
   IFile,
   IFolder,
   IFrontmatter,
+  FrontmatterService,
   parseYamlFrontmatterTolerant,
 } from "@kitelev/exocortex-core";
 import { rewriteInboundWikilinks } from "../utils/wikilinkRewriter.js";
@@ -111,14 +112,46 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     }
   }
 
+  /**
+   * PATCH the file's frontmatter block with the keys `updater` returns,
+   * through the core carrier of the key dialect `FrontmatterService.applyPatch`
+   * (req `2a020489`) — in parity with the plugin's `ObsidianVaultAdapter`:
+   * `canonicalYamlKey(normalizeIRI(key))` per key, `normalizeIRIValue` per
+   * string value, canonical-wins on a dual payload, `LEGACY_YAML_KEYS` of each
+   * written canonical key removed, keys the updater does not return preserved
+   * (before req `2a020489` this adapter replaced the whole block verbatim and
+   * applied none of the dialect). The block is then re-serialised by
+   * {@link replaceFrontmatter} exactly as before. Contract on
+   * `IVaultFrontmatterManager.updateFrontmatter`.
+   *
+   * Three outcomes of reading the current block, kept apart on purpose:
+   * no block → one is created from the patch; a block that parses → patched;
+   * a block that is present but does NOT parse (or is not a mapping) →
+   * `Error`, file untouched. Collapsing the last two into `{}` (PR #4243
+   * review MEDIUM) would let {@link replaceFrontmatter} overwrite the unreadable
+   * block with the patch's keys alone — silent data loss on malformed input,
+   * the opposite of the "unreturned keys are preserved" promise.
+   */
   async updateFrontmatter(
     file: IFile,
     updater: (current: IFrontmatter) => IFrontmatter,
   ): Promise<void> {
     const content = await this.read(file);
-    const currentFrontmatter = this.extractFrontmatter(content) || {};
-    const updatedFrontmatter = updater(currentFrontmatter);
-    const newContent = this.replaceFrontmatter(content, updatedFrontmatter);
+    const parsed = this.extractFrontmatter(content);
+    // An EMPTY block (`---\n\n---`) parses to nothing and is a legitimate
+    // "no keys yet"; only a block with a non-blank body that still yields no
+    // mapping is unreadable.
+    const blockBody = FileSystemVaultAdapter.FRONTMATTER_BLOCK.exec(content)?.[1];
+    if (parsed === null && blockBody !== undefined && blockBody.trim() !== "") {
+      throw new Error(
+        `updateFrontmatter: frontmatter of ${file.path} is not parseable — refusing to patch (would drop keys)`,
+      );
+    }
+    const target: IFrontmatter = parsed ?? {};
+    // The updater sees a COPY: mutating `current` must not bypass the dialect.
+    const patch = updater({ ...target });
+    FrontmatterService.applyPatch(target, patch);
+    const newContent = this.replaceFrontmatter(content, target);
     await this.modify(file, newContent);
   }
 
@@ -375,9 +408,11 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     };
   }
 
+  /** A leading `---` block; group 1 = its YAML body. Shared by the three block readers/writers below. */
+  private static readonly FRONTMATTER_BLOCK = /^---\n([\s\S]*?)\n---/;
+
   private extractFrontmatter(content: string): IFrontmatter | null {
-    const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
-    const match = content.match(frontmatterRegex);
+    const match = content.match(FileSystemVaultAdapter.FRONTMATTER_BLOCK);
 
     if (!match) {
       return null;
@@ -398,7 +433,7 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
       quoteStyle: "double",
     });
 
-    const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
+    const frontmatterRegex = FileSystemVaultAdapter.FRONTMATTER_BLOCK;
     const match = content.match(frontmatterRegex);
 
     if (match) {
