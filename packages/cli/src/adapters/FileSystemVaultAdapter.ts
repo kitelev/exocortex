@@ -6,6 +6,7 @@ import {
   IFile,
   IFolder,
   IFrontmatter,
+  FrontmatterService,
   parseYamlFrontmatterTolerant,
 } from "@kitelev/exocortex-core";
 import { rewriteInboundWikilinks } from "../utils/wikilinkRewriter.js";
@@ -111,14 +112,28 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     }
   }
 
+  /**
+   * PATCH the file's frontmatter block with the keys `updater` returns,
+   * through the core carrier of the key dialect `FrontmatterService.applyPatch`
+   * (req `2a020489`) — in parity with the plugin's `ObsidianVaultAdapter`:
+   * `canonicalYamlKey(normalizeIRI(key))` per key, `normalizeIRIValue` per
+   * string value, canonical-wins on a dual payload, `LEGACY_YAML_KEYS` of each
+   * written canonical key removed, keys the updater does not return preserved
+   * (before req `2a020489` this adapter replaced the whole block verbatim and
+   * applied none of the dialect). The block is then re-serialised by
+   * {@link replaceFrontmatter} exactly as before. Contract on
+   * `IVaultFrontmatterManager.updateFrontmatter`.
+   */
   async updateFrontmatter(
     file: IFile,
     updater: (current: IFrontmatter) => IFrontmatter,
   ): Promise<void> {
     const content = await this.read(file);
-    const currentFrontmatter = this.extractFrontmatter(content) || {};
-    const updatedFrontmatter = updater(currentFrontmatter);
-    const newContent = this.replaceFrontmatter(content, updatedFrontmatter);
+    const target: IFrontmatter = this.extractFrontmatter(content) || {};
+    // The updater sees a COPY: mutating `current` must not bypass the dialect.
+    const patch = updater({ ...target });
+    FrontmatterService.applyPatch(target, patch);
+    const newContent = this.replaceFrontmatter(content, target);
     await this.modify(file, newContent);
   }
 

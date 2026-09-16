@@ -81,6 +81,31 @@ export interface IVaultFrontmatterManager {
    * `getFrontmatter` when it is absent.
    */
   getFrontmatterWithFallback?(file: IFile): Promise<IFrontmatter | null>;
+  /**
+   * Write the keys `updater` returns into the file's frontmatter (req
+   * `2a020489`; the plugin half of the dialect is req `de7131ae`).
+   *
+   * Contract — the same for every production adapter, because both go through
+   * the single carrier `FrontmatterService.applyPatch` and re-implement none
+   * of it:
+   *
+   * 1. **PATCH, not REPLACE.** `updater` returns the keys to WRITE; every key
+   *    of the current frontmatter it does not return is preserved unchanged.
+   * 2. **Omission is not deletion.** This port never removes a key the caller
+   *    left out; the only keys it removes are the `LEGACY_YAML_KEYS`
+   *    spellings of a canonical key it has just written (bare `archived`
+   *    after a write of `exo__Asset_archived`). To remove a property use
+   *    `FrontmatterService.removeProperty` (the CLI `remove-property` verb /
+   *    the `un-archive` grounding are built on it).
+   * 3. **Every returned key goes through the chokepoint dialect.** A full
+   *    object returned as `{...current, [prop]: value}` (the shape
+   *    `LayoutService.handleCellEdit` produces) has EACH key mapped through
+   *    `canonicalYamlKey(FrontmatterService.normalizeIRI(key))`, each string
+   *    value through `FrontmatterService.normalizeIRIValue`, both spellings of
+   *    one key resolved canonical-wins, and the legacy spelling of each
+   *    written canonical key dropped from the file — so editing ANY key of a
+   *    legacy `archived:` carrier migrates it.
+   */
   updateFrontmatter(
     file: IFile,
     updater: (current: IFrontmatter) => IFrontmatter,

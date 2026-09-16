@@ -11,6 +11,7 @@
 import { loadDefaultSpec, orderProperties } from "../services/OrderSpecResolver";
 import { serializeYamlScalar, STRING_SCALAR_PROPERTIES } from "./yamlScalar";
 import { canonicalYamlKey, LEGACY_YAML_KEYS } from "../services/NoteToRDFConverter";
+import type { IFrontmatter } from "../interfaces/IVaultAdapter";
 
 /**
  * Result of frontmatter parsing operation
@@ -423,6 +424,71 @@ export class FrontmatterService {
       return `"[[${normalized}]]"`;
     }
     return value;
+  }
+
+  /**
+   * Apply `patch` to the live frontmatter OBJECT `target` in the chokepoint's
+   * key dialect — the single carrier of that dialect for the object-shaped
+   * write path (req `2a020489`; the text-shaped path is {@link updateProperty},
+   * which applies the same rule one property at a time).
+   *
+   * Both production `IVaultAdapter.updateFrontmatter` implementations call
+   * this and re-implement none of it: `ObsidianVaultAdapter` hands in the live
+   * object Obsidian's `processFrontMatter` gives it (which is why this mutates
+   * `target` in place rather than returning a copy), `FileSystemVaultAdapter`
+   * hands in the parsed YAML block it is about to serialise back.
+   *
+   * Contract (port JSDoc `IVaultFrontmatterManager.updateFrontmatter` says the
+   * same from the caller's side):
+   *
+   * 1. **PATCH, not REPLACE** — every key of `target` that `patch` does not
+   *    carry is left untouched.
+   * 2. **Omission is not deletion** — the only keys ever removed from `target`
+   *    are the {@link LEGACY_YAML_KEYS} spellings of a canonical key this call
+   *    has just written (bare `archived` after a write of
+   *    `exo__Asset_archived`); removing a property is {@link removeProperty}'s
+   *    job, not this one's.
+   * 3. **Every written key goes through the dialect** — each patch key is
+   *    mapped through `canonicalYamlKey(normalizeIRI(key))` (`archived` →
+   *    `exo__Asset_archived`, `exo__Asset_aliases` → `aliases`, an
+   *    `https://…#Local` IRI → `prefix__Local`, anything else → itself), each
+   *    string value through {@link normalizeIRIValue}, and a patch that carries
+   *    BOTH spellings of one key resolves canonical-wins (the legacy entry is
+   *    skipped when the patch already holds the canonical key — the same
+   *    priority `NoteToRDFConverter` guard M1 and
+   *    `MetadataHelpers.ARCHIVED_FLAG_KEYS` apply on the read side). A patch
+   *    that re-emits the full object (`{...current, [prop]: value}`) therefore
+   *    canonicalises every current key, which is what migrates a legacy
+   *    carrier on any edit (req `de7131ae` Scenario E).
+   *
+   * Not covered (named, not changed — PR #4241 review LOW-3): the reverse
+   * write of the UNPREFIXED direction. A literal `exo__Asset_aliases:` already
+   * on disk is NOT removed here, because {@link LEGACY_YAML_KEYS} has no entry
+   * for it; the chokepoint behaves the same.
+   *
+   * @returns `target`, for callers that serialise the result.
+   */
+  static applyPatch(target: IFrontmatter, patch: IFrontmatter): IFrontmatter {
+    for (const key of Object.keys(patch)) {
+      const canonicalKey = canonicalYamlKey(FrontmatterService.normalizeIRI(key));
+      if (
+        canonicalKey !== key &&
+        Object.prototype.hasOwnProperty.call(patch, canonicalKey)
+      ) {
+        // Canonical-wins: the patch already carries the canonical spelling of
+        // this key; the legacy/prefixed alias must not overwrite it.
+        continue;
+      }
+      let value = patch[key];
+      if (typeof value === "string") {
+        value = FrontmatterService.normalizeIRIValue(value);
+      }
+      target[canonicalKey] = value;
+      for (const legacy of LEGACY_YAML_KEYS.get(canonicalKey) ?? []) {
+        delete target[legacy];
+      }
+    }
+    return target;
   }
 
   /**

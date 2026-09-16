@@ -56,6 +56,10 @@ jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   // #3800: NodeFsAdapter (pulled via validate-vault → CachingNodeFsAdapter) now
   // imports this — must be a named export or the mocked-core ESM link fails.
   parseYamlFrontmatterTolerant: jest.fn(),
+  // req 2a020489: FileSystemVaultAdapter (in the graph) now imports this for
+  // `updateFrontmatter`. Not exercised here → a shape-stub satisfies the ESM
+  // named-import binding.
+  FrontmatterService: { applyPatch: jest.fn() },
 }));
 
 // Mock fs-extra (CacheManager dependency)
