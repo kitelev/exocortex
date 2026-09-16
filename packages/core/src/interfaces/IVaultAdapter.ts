@@ -101,10 +101,12 @@ export interface IVaultFrontmatterManager {
    *    object returned as `{...current, [prop]: value}` (the shape
    *    `LayoutService.handleCellEdit` produces) has EACH key mapped through
    *    `canonicalYamlKey(FrontmatterService.normalizeIRI(key))`, each string
-   *    value through `FrontmatterService.normalizeIRIValue`, both spellings of
-   *    one key resolved canonical-wins, and the legacy spelling of each
-   *    written canonical key dropped from the file — so editing ANY key of a
-   *    legacy `archived:` carrier migrates it.
+   *    value through `FrontmatterService.normalizeIRIValue` in its BARE form
+   *    (`[[x]]` — the serialiser quotes it on disk, so the CLI adapter writes
+   *    `key: "[[x]]"` exactly as the text path does; req `27fbe40b`), both
+   *    spellings of one key resolved canonical-wins, and the legacy spelling
+   *    of each written canonical key dropped from the file — so editing ANY
+   *    key of a legacy `archived:` carrier migrates it.
    *
    * A file whose frontmatter block is present but not parseable is REFUSED
    * (rejects, file untouched) rather than patched over — patching would drop

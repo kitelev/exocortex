@@ -762,8 +762,24 @@ nested:
         },
       );
       expect(Object.keys(live)).toEqual(["ems__Effort_status"]);
-      expect(String(live.ems__Effort_status)).toContain("[[ems__EffortStatusDoing]]");
-      expect(String(live.ems__Effort_status)).not.toContain("obsidian://");
+      // Tightened from `toContain` to `toBe` by req 27fbe40b (object-path form
+      // decided: the BARE wikilink is handed to processFrontMatter — Obsidian
+      // quotes it on disk; pre-quoting made the quotes part of the value).
+      expect(live.ems__Effort_status).toBe("[[ems__EffortStatusDoing]]");
+    });
+
+    it("E1 the live processFrontMatter object receives the BARE [[uid]] for an obsidian:// value — no embedded quotes @req:27fbe40b-080f-4928-b675-3c767223c875", async () => {
+      const live = await write(
+        { exo__Asset_uid: "u" },
+        {
+          exo__Asset_uid: "u",
+          ems__Effort_parent: "obsidian://vault/x/3f1d005c-7a2e-4b8f-9c1d-5e6f7a8b9c0d.md",
+          exo__Asset_isDefinedBy: "https://exocortex.my/ontology/exo#Asset",
+        },
+      );
+      expect(live.ems__Effort_parent).toBe("[[3f1d005c-7a2e-4b8f-9c1d-5e6f7a8b9c0d]]");
+      expect(live.exo__Asset_isDefinedBy).toBe("[[exo__Asset]]");
+      expect(live.exo__Asset_uid).toBe("u");
     });
   });
 

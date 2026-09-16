@@ -90,11 +90,51 @@ describe("FrontmatterService.applyPatch — chokepoint key dialect over an objec
         "exo__Asset_isDefinedBy",
       ].sort(),
     );
-    expect(String(target.ems__Effort_status)).toContain(
-      "[[ems__EffortStatusDoing]]",
-    );
-    expect(String(target.exo__Asset_isDefinedBy)).toContain("[[exo__Asset]]");
+    // Tightened from `toContain` to `toBe` by req 27fbe40b (object-path form
+    // decided: the BARE wikilink; see F1 below).
+    expect(target.ems__Effort_status).toBe("[[ems__EffortStatusDoing]]");
+    expect(target.exo__Asset_isDefinedBy).toBe("[[exo__Asset]]");
     expect(target.exo__Asset_archived).toBe(true);
+  });
+
+  // req 27fbe40b (ticket 73b16cc4) — the object-path FORM: `applyPatch` stores
+  // the BARE wikilink (the serialiser quotes it on disk), while the text path
+  // keeps emitting the quoted scalar. Mutant M1 (applyPatch pre-quotes, i.e.
+  // `normalizeIRIValue` without `{ bare: true }`) → RED here, H5, A7, C7, F2.
+  it("F1 applyPatch stores the BARE [[x]] for obsidian:// and ontology-IRI values while updateProperty still writes the quoted scalar line @req:27fbe40b-080f-4928-b675-3c767223c875", () => {
+    const target = FrontmatterService.applyPatch(
+      {},
+      {
+        "https://exocortex.my/ontology/ems#Effort_status":
+          "obsidian://vault/x/ems__EffortStatusDoing.md",
+        exo__Asset_isDefinedBy: "https://exocortex.my/ontology/exo#Asset",
+        plain: "just text",
+      },
+    );
+    expect(target.ems__Effort_status).toBe("[[ems__EffortStatusDoing]]");
+    expect(target.exo__Asset_isDefinedBy).toBe("[[exo__Asset]]");
+    expect(target.plain).toBe("just text");
+
+    // The helper's two forms, side by side.
+    expect(
+      FrontmatterService.normalizeIRIValue(
+        "obsidian://vault/x/ems__EffortStatusDoing.md",
+      ),
+    ).toBe('"[[ems__EffortStatusDoing]]"');
+    expect(
+      FrontmatterService.normalizeIRIValue(
+        "obsidian://vault/x/ems__EffortStatusDoing.md",
+        { bare: true },
+      ),
+    ).toBe("[[ems__EffortStatusDoing]]");
+
+    // Text path unchanged: the block line is the quoted scalar.
+    const text = new FrontmatterService().updateProperty(
+      "---\nexo__Asset_uid: u\n---\nBody\n",
+      "https://exocortex.my/ontology/ems#Effort_status",
+      "obsidian://vault/x/ems__EffortStatusDoing.md",
+    );
+    expect(text).toContain('\nems__Effort_status: "[[ems__EffortStatusDoing]]"\n');
   });
 
   it(`H6 mutates and returns the SAME object (the plugin hands in Obsidian's live processFrontMatter object) ${REQ}`, () => {
