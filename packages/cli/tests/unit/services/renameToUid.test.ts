@@ -256,11 +256,15 @@ describe("renameToUid (CLI)", () => {
     // ── Ticket 71f1ca37 (review of PR #4256): the inline FLOW sequence is read
     // by the YAML reader, not split on `,` over the raw text — a quoted item
     // that contains `,` or `]` is ONE item. Mutant matrix — copied from the
-    // driver output (mutants-71f1ca37.py, 2026-09-18):
-    //   M3 (raw split(",") instead of the YAML reader) → RED: ['Y11']
-    //   M4 (scan does not skip double-quoted runs)     → RED: ['Y11b']
-    //   M5 (scan does not skip single-quoted runs)     → RED: ['Y11b']
-    //   M6 (scan stops at end of line)                 → RED: ['Y11c']
+    // driver output (mutants-71f1ca37.py r2, 2026-09-18; control 61/40 green):
+    //   M3  (raw split(",") instead of the YAML reader)        → RED: ['Y11']
+    //   M4  (scan does not skip double-quoted runs)            → RED: ['Y11b', 'Y11f']
+    //   M5  (scan does not skip single-quoted runs)            → RED: ['Y11b']
+    //   M6  (scan stops at end of line)                        → RED: ['Y11c']
+    //   M7  (backslash escape inside "…" ignored)              → RED: ['Y11f']
+    //   M8  (head regex [ \t]*: next-line flow not recognised) → RED: ['Y11d']
+    //   M9  (quote opens a run anywhere, no atItemStart gate)  → RED: ['Y11e']
+    //   M10 (items read with YAML11 instead of FAILSAFE)       → RED: ['Y11g']
     it(`${REQ} Y11 a quoted inline item that CONTAINS a comma is one item for the dedup: the same basename is not appended twice, another basename is appended after it`, async () => {
       writeRaw(
         vaultRoot,
@@ -309,6 +313,59 @@ describe("renameToUid (CLI)", () => {
 
       const fm = readFrontmatter(path.join(vaultRoot, "tasks/y11d-uid.md"));
       expect(fm.aliases).toEqual(["old-one", "two, words", "fresh"]);
+    });
+
+    it(`${REQ} Y11d a flow sequence on the line AFTER the aliases key is the same sequence (not an empty aliases value): the basename is appended and the file stays parseable`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/third.md",
+        '---\nexo__Asset_uid: y11e-uid\nexo__Asset_label: Existing\naliases:\n  [alpha, beta]\n---\nBody\n',
+      );
+
+      await service.execute("tasks/third");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y11e-uid.md"));
+      expect(fm.aliases).toEqual(["alpha", "beta", "third"]);
+    });
+
+    it(`${REQ} Y11e an apostrophe INSIDE a plain flow item is an ordinary character (the scan opens a quoted run only at an item start): the sequence is recognised and the basename appended`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/mine.md",
+        "---\nexo__Asset_uid: y11f-uid\nexo__Asset_label: Existing\naliases: [it's, foo]\n---\nBody\n",
+      );
+
+      await service.execute("tasks/mine");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y11f-uid.md"));
+      expect(fm.aliases).toEqual(["it's", "foo", "mine"]);
+    });
+
+    it(`${REQ} Y11f an escaped double quote inside a double-quoted flow item does not end the quoted run: the item keeps its \\"]\\" and the basename is appended`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/esc.md",
+        '---\nexo__Asset_uid: y11g-uid\nexo__Asset_label: Existing\naliases: ["a\\"]b", plain]\n---\nBody\n',
+      );
+
+      await service.execute("tasks/esc");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y11g-uid.md"));
+      expect(fm.aliases).toEqual(['a"]b', "plain", "esc"]);
+    });
+
+    it(`${REQ} Y11g flow items are compared as the STRINGS they spell (FAILSAFE reader): a bare 'yes' item equals the basename 'yes' and is not appended twice`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/yes.md",
+        "---\nexo__Asset_uid: y11h-uid\nexo__Asset_label: Existing\naliases: [yes]\n---\nBody\n",
+      );
+
+      await service.execute("tasks/yes");
+
+      const raw = fs.readFileSync(path.join(vaultRoot, "tasks/y11h-uid.md"), "utf8");
+      expect(raw).toContain("aliases: [yes]\n");
+      expect(raw).not.toContain('"yes"');
     });
 
     it(`${REQ} Y6 an alias already stored QUOTED (the shape apply set-label writes) is recognised by the dedup and not appended a second time`, async () => {

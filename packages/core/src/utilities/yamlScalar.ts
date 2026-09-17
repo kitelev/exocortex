@@ -123,9 +123,8 @@ function looksLikeNonStringScalar(value: string): boolean {
  *   survive as strings (#3750 MEDIUM-3). Default false — number/bool/date-shaped
  *   values of OTHER properties keep their native YAML type. Datetime-shaped
  *   strings (`2026-01-15T10:00:00`) are deliberately NOT quoted even when true
- *   (#3750 MEDIUM-3 — axis `roundTrip(datetime, true)` = Date pins it); measured
- *   2026-09-18 across the three vaults: datetime-shaped labels / aliases 0 / 0 / 0
- *   (ticket 71f1ca37, known bound).
+ *   (#3750 MEDIUM-3 — axis `roundTrip(datetime, true)` = Date pins it; known
+ *   bound, ticket 71f1ca37).
  */
 export function needsYamlQuoting(
   value: string,

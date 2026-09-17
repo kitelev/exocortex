@@ -141,17 +141,23 @@ export class RenameToUidService {
     // Check for inline array format aliases: [value1, value2]. The flow
     // sequence is delimited by a quote-aware bracket scan, not by the first
     // `]`: a quoted item may itself contain `]` (req 2f642d6c, Y11b), and the
-    // sequence may span lines.
-    const inlineHead = /^aliases\s*:[ \t]*\[/m.exec(frontmatterContent);
-    const inlineEnd =
-      inlineHead === null
-        ? -1
-        : this.findFlowSequenceEnd(
-            frontmatterContent,
-            inlineHead.index + inlineHead[0].length,
-          );
+    // sequence may span lines. `\s*` after the colon: `aliases:\n  [a, b]` is
+    // the same flow sequence on the next line (Y11d).
+    const inlineHead = /^aliases\s*:\s*\[/m.exec(frontmatterContent);
 
-    if (inlineHead !== null && inlineEnd !== -1) {
+    if (inlineHead !== null) {
+      const inlineEnd = this.findFlowSequenceEnd(
+        frontmatterContent,
+        inlineHead.index + inlineHead[0].length,
+      );
+      if (inlineEnd === -1) {
+        // The frontmatter parsed, so the sequence IS balanced — reaching here
+        // means the scan and the reader disagree. Refuse loudly rather than
+        // fall through to the empty-aliases branch and lose the alias.
+        throw new Error(
+          "aliases flow sequence unbalanced — refusing to rewrite frontmatter",
+        );
+      }
       const start = inlineHead.index;
       const bodyStart = inlineHead.index + inlineHead[0].length;
       const inlineContent = frontmatterContent.slice(bodyStart, inlineEnd).trim();
@@ -190,28 +196,46 @@ export class RenameToUidService {
 
   /**
    * Index of the `]` that closes the flow sequence whose `[` sits just before
-   * `from`, skipping `"…"` (with `\"` escapes) and `'…'` runs and nested
-   * brackets; -1 when unbalanced. Quote-aware so a quoted item containing `]`
-   * does not end the sequence (req 2f642d6c, Y11b).
+   * `from`, skipping `"…"` (with `\"` escapes) and `'…'` (with `''` escapes)
+   * runs and nested brackets; -1 when unbalanced. Quote-aware so a quoted item
+   * containing `]` does not end the sequence (req 2f642d6c, Y11b). A quote is
+   * a quoted-run indicator ONLY at the start of an item (after `[` or `,` and
+   * whitespace) — inside a plain item (`it's`) it is an ordinary character,
+   * exactly as the YAML reader treats it (Y11e).
    */
   private findFlowSequenceEnd(text: string, from: number): number {
     let depth = 1;
+    let atItemStart = true;
     for (let i = from; i < text.length; i++) {
       const ch = text[i];
-      if (ch === '"') {
+      if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
+        continue;
+      }
+      if (atItemStart && ch === '"') {
         for (i++; i < text.length && text[i] !== '"'; i++) {
           if (text[i] === "\\") i++;
         }
-      } else if (ch === "'") {
-        for (i++; i < text.length && text[i] !== "'"; i++) {
-          /* single-quoted: no escapes */
+      } else if (atItemStart && ch === "'") {
+        for (i++; i < text.length; i++) {
+          if (text[i] !== "'") continue;
+          if (text[i + 1] === "'") {
+            i++; // `''` — an escaped quote inside the single-quoted run
+            continue;
+          }
+          break;
         }
       } else if (ch === "[") {
         depth++;
+        atItemStart = true;
+        continue;
       } else if (ch === "]") {
         depth--;
         if (depth === 0) return i;
+      } else if (ch === ",") {
+        atItemStart = true;
+        continue;
       }
+      atItemStart = false;
     }
     return -1;
   }
