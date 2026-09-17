@@ -6,6 +6,8 @@ import {
   beforeEach,
   afterEach,
 } from "@jest/globals";
+import { quoteYamlString } from "../../../../core/src/utilities/yamlScalar";
+import * as yaml from "js-yaml";
 
 // Mock dependencies before importing BatchExecutor
 const mockPathResolverInstance = {
@@ -75,6 +77,9 @@ jest.unstable_mockModule("../../../src/adapters/NodeFsAdapter.js", () => ({
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   FrontmatterService: jest.fn(() => mockFrontmatterService),
   DateFormatter: mockDateFormatter,
+  // The REAL escaper (ticket 77ffc37a): the update-label axes load the emitted
+  // scalar back through js-yaml, so a stub here would test nothing.
+  quoteYamlString,
   // Faithful pure stub mirroring exocortex's extractAssetReference (the
   // canonical shared helper consumed by BatchExecutor — audit #3384).
   extractAssetReference: (value: unknown): string | null => {
@@ -501,6 +506,58 @@ describe("BatchExecutor", () => {
 
         expect(result.results[0].success).toBe(false);
         expect(result.results[0].error).toContain("Missing required option");
+      });
+
+      // Ticket 77ffc37a — the label reaches updateProperty as ONE complete,
+      // escaped double-quoted scalar; the previous `"${label}"` wrap left an
+      // interior `"` / `\` bare and made the whole frontmatter unparseable.
+      // The emitted scalar is loaded back through the REAL js-yaml.
+      it.each([
+        ["interior double quote", 'say "hi" loudly'],
+        ["backslash", "back\\slash path"],
+        ["both", 'quote " and back\\slash'],
+      ])(
+        "@req:2f642d6c-a2c2-47c8-84fb-8285f0f65c44 Y1 update-label with %s writes one escaped double-quoted scalar that js-yaml loads back to the label",
+        async (_shape, label) => {
+          const result = await executor.executeBatch([
+            {
+              command: "update-label",
+              filepath: "task.md",
+              options: { label },
+            },
+          ]);
+
+          expect(result.results[0].success).toBe(true);
+          const calls = mockFrontmatterService.updateProperty.mock
+            .calls as unknown as Array<[string, string, string]>;
+          const labelCall = calls.find((c) => c[1] === "exo__Asset_label");
+          expect(labelCall).toBeDefined();
+          const emitted = labelCall![2];
+          // One complete double-quoted run (the closing quote is the LAST
+          // char, every interior `"` is escaped) …
+          expect(emitted.startsWith('"') && emitted.endsWith('"')).toBe(true);
+          expect(emitted.slice(1, -1).replace(/\\./g, "")).not.toContain('"');
+          // … that a real YAML parser reads back as the ORIGINAL label.
+          expect(yaml.load(`exo__Asset_label: ${emitted}`)).toEqual({
+            exo__Asset_label: label,
+          });
+        },
+      );
+
+      it("@req:2f642d6c-a2c2-47c8-84fb-8285f0f65c44 Y1b update-label with a safe label still emits the double-quoted form byte-for-byte (pair, no shape change)", async () => {
+        await executor.executeBatch([
+          {
+            command: "update-label",
+            filepath: "task.md",
+            options: { label: "  Plain safe label  " },
+          },
+        ]);
+
+        expect(mockFrontmatterService.updateProperty).toHaveBeenCalledWith(
+          expect.any(String),
+          "exo__Asset_label",
+          '"Plain safe label"',
+        );
       });
     });
 

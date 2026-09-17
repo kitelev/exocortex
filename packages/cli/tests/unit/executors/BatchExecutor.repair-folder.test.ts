@@ -6,6 +6,7 @@ import {
   beforeEach,
   afterEach,
 } from "@jest/globals";
+import { quoteYamlString } from "../../../../core/src/utilities/yamlScalar";
 
 // Mock dependencies before importing BatchExecutor
 const mockPathResolverInstance = {
@@ -68,6 +69,9 @@ jest.unstable_mockModule("../../../src/adapters/NodeFsAdapter.js", () => ({
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
   FrontmatterService: jest.fn(() => mockFrontmatterService),
   DateFormatter: mockDateFormatter,
+  // The REAL escaper (ticket 77ffc37a): the update-label axes load the emitted
+  // scalar back through js-yaml, so a stub here would test nothing.
+  quoteYamlString,
   // Faithful pure stub mirroring exocortex's extractAssetReference (the
   // canonical shared helper consumed by BatchExecutor — audit #3384).
   extractAssetReference: (value: unknown): string | null => {

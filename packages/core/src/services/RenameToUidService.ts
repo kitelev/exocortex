@@ -2,6 +2,12 @@ import { injectable, inject } from "tsyringe";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import { DI_TOKENS } from "../interfaces/tokens";
 import { MetadataHelpers } from "../utilities/MetadataHelpers";
+import {
+  decodeYamlQuotedScalar,
+  isCompleteDoubleQuotedScalar,
+  needsYamlQuoting,
+  quoteYamlString,
+} from "../utilities/yamlScalar";
 
 @injectable()
 export class RenameToUidService {
@@ -60,7 +66,7 @@ export class RenameToUidService {
       let frontmatterContent = match[1];
 
       if (opts.setLabel) {
-        frontmatterContent = `${frontmatterContent}\nexo__Asset_label: ${basename}`;
+        frontmatterContent = `${frontmatterContent}\nexo__Asset_label: ${this.yamlScalar(basename)}`;
       }
 
       if (opts.appendAlias) {
@@ -82,7 +88,7 @@ export class RenameToUidService {
     const aliasesExistPattern = /^aliases\s*:/m;
     if (!aliasesExistPattern.test(frontmatterContent)) {
       // No aliases property - add new one
-      return `${frontmatterContent}\naliases:\n  - ${label}`;
+      return `${frontmatterContent}\naliases:\n  - ${this.yamlScalar(label)}`;
     }
 
     // Check for existing non-empty aliases in list format (  - value)
@@ -100,14 +106,17 @@ export class RenameToUidService {
         .filter((line) => line.trim().startsWith("-"))
         .map((line) => line.replace(/^[ \t]*-[ \t]+/, "").trim());
 
-      // Check if label already exists in aliases (avoid duplicates)
-      if (existingAliases.includes(label)) {
+      // Check if label already exists in aliases (avoid duplicates). The
+      // items are the RAW list text; an alias stored quoted (`- "Foo"`, the
+      // shape `apply set-label` writes) is the same alias as the plain
+      // basename, so compare the DECODED value (ticket 77ffc37a).
+      if (existingAliases.map(decodeYamlQuotedScalar).includes(label)) {
         // Already exists - no change needed
         return frontmatterContent;
       }
 
       // Append new alias to existing block
-      const newAliasesBlock = `${existingAliasesBlock.trimEnd()}\n  - ${label}\n`;
+      const newAliasesBlock = `${existingAliasesBlock.trimEnd()}\n  - ${this.yamlScalar(label)}\n`;
       return frontmatterContent.replace(aliasesWithValuesMatch[1], newAliasesBlock);
     }
 
@@ -121,23 +130,26 @@ export class RenameToUidService {
         // Empty inline array - replace with list format
         return frontmatterContent.replace(
           inlineAliasesPattern,
-          `aliases:\n  - ${label}`,
+          `aliases:\n  - ${this.yamlScalar(label)}`,
         );
       }
 
       // Non-empty inline array - parse and check for duplicates
       const existingAliases = inlineContent
         .split(",")
-        .map((a) => a.trim().replace(/^["']|["']$/g, ""));
+        .map((a) => decodeYamlQuotedScalar(a.trim()));
 
       if (existingAliases.includes(label)) {
         return frontmatterContent;
       }
 
-      // Append new alias to inline array
+      // Append new alias to inline array. A plain scalar inside a FLOW
+      // sequence additionally reserves `,` `[` `]` `{` `}`, which the
+      // quote-when-needed predicate does not model, so this item is always
+      // emitted as a complete double-quoted scalar (ticket 77ffc37a).
       return frontmatterContent.replace(
         inlineAliasesPattern,
-        `aliases: [${inlineContent}, ${label}]`,
+        `aliases: [${inlineContent}, ${quoteYamlString(label)}]`,
       );
     }
 
@@ -145,8 +157,25 @@ export class RenameToUidService {
     const emptyAliasesPattern = /^aliases\s*:\s*(?:null|~)?\s*$/m;
     return frontmatterContent.replace(
       emptyAliasesPattern,
-      `aliases:\n  - ${label}`,
+      `aliases:\n  - ${this.yamlScalar(label)}`,
     );
+  }
+
+  /**
+   * ONE escaper for every basename this service writes into frontmatter
+   * (ticket 77ffc37a). Quote-when-needed keeps a safe basename in the plain
+   * form it has always had (`  - old-name`), so the rename produces no quote
+   * churn; a basename with a leading `-`, a `: `, a ` #`, a scalar-looking
+   * shape (`2026-01-15`, `123`) or a control character becomes an escaped
+   * double-quoted scalar via {@link quoteYamlString}. A basename that is
+   * itself a complete `"…"` run is quoted too: `serializeYamlScalar`'s
+   * pass-through exists for pre-wrapped wikilinks, and here the text IS the
+   * value — passing it through verbatim would make `aliases[0] !== basename`.
+   */
+  private yamlScalar(value: string): string {
+    return needsYamlQuoting(value, true) || isCompleteDoubleQuotedScalar(value)
+      ? quoteYamlString(value)
+      : value;
   }
 
   /** Shared reader — same three carrier spellings as every other consumer (req 960d7a3f). */
