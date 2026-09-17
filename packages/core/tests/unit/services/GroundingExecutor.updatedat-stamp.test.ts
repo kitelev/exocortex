@@ -23,6 +23,9 @@
  *   B7  a NO-OP write is byte-identical — the stamp does not manufacture a
  *       spurious ExoSync delta
  *   B8  a frontmatter-less body_template target gets no invented block
+ *   B9  the explicit-step guard under a TICKING clock: the step that writes
+ *       updatedAt itself consumes one clock call fewer than the same step on
+ *       another property — the executor stamp is skipped (review LOW-1)
  */
 
 import {
@@ -338,10 +341,84 @@ describe("@req:454ccedf-fefe-4cfe-bdf7-704f050c1f34 GroundingExecutor stamps exo
     expect((written.match(/^exo__Asset_updatedAt:/gm) ?? []).length).toBe(1);
     // $nowLocal and the executor stamp read the SAME injected clock.
     expect(updatedAtOf(written)).toBe(CLOCK_ISO);
-    // The explicit-step write happened AFTER the stamped steps and was not
-    // followed by a second, executor-authored write of the key.
-    const lastWrite = fs.writer.updateFile.mock.calls.at(-1)?.[1] as string;
-    expect(lastWrite).toBe(written);
+    // Four steps → four writes, and the LAST write (the explicit step) already
+    // carries the single key — there was no fifth, executor-authored write.
+    // (Review LOW-2: `lastWrite === written` was tautological — the in-memory
+    // fs stores the last updateFile argument — so the count is asserted.)
+    expect(fs.writer.updateFile).toHaveBeenCalledTimes(4);
+    const lastWrite = fs.writer.updateFile.mock.calls[3][1] as string;
+    expect((lastWrite.match(/^exo__Asset_updatedAt:/gm) ?? []).length).toBe(1);
+    expect(updatedAtOf(lastWrite)).toBe(CLOCK_ISO);
+  });
+
+  // ---------------------------------------------------------------------------
+  // B9 (review LOW-1) — under the frozen clock the `$nowLocal` substitution and
+  // an executor stamp produce the SAME string, so B3 cannot see whether the
+  // "branch owns the key" guard fires. A TICKING clock makes every clock call
+  // distinct: a step whose own target is exo__Asset_updatedAt must consume
+  // exactly ONE clock call fewer than an otherwise identical step on another
+  // property (the substitution only — no stamp call). The control run derives
+  // that count from the same machinery instead of pinning a magic number.
+  // ---------------------------------------------------------------------------
+  it("B9 explicit updatedAt step under a ticking clock: no stamp call after the substitution (one clock call fewer than the control step)", async () => {
+    const { toLocalTimestamp } =
+      await import("../../../src/utilities/DateFormatter").then(
+        (m) => m.DateFormatter,
+      );
+    const runComposite = async (explicitTarget: string) => {
+      const ticks: Date[] = [];
+      const ticking = {
+        now: () => {
+          const d = new Date(2026, 5, 20, 12, 0, ticks.length); // 12:00:00, :01, :02 …
+          ticks.push(d);
+          return d;
+        },
+      };
+      const fs = makeFs({ [FILE_PATH]: seedTask() });
+      const exec = makeExecutor(fs, { clock: ticking });
+      const composite = gnd({
+        type: GroundingType.COMPOSITE,
+        steps: [
+          gnd({
+            id: "s-label",
+            type: GroundingType.PROPERTY_SET,
+            targetProperty: "exo__Asset_label",
+            targetValueLiteral: "Relabelled",
+          }),
+          gnd({
+            id: "s-explicit",
+            type: GroundingType.PROPERTY_SET,
+            targetProperty: explicitTarget,
+            targetValueSubstitution: "$nowLocal",
+          }),
+        ],
+      });
+      const res = await exec.execute(composite, TARGET_IRI, FILE_PATH);
+      expect(res.success).toBe(true);
+      return { written: fs.files.get(FILE_PATH) as string, ticks };
+    };
+
+    // Control: the explicit step targets ANOTHER property → substitution tick,
+    // then the executor stamp consumes one more tick.
+    const ctrl = await runComposite("ems__Effort_endTimestamp");
+    const ctrlEnd = /^ems__Effort_endTimestamp: (\S+)$/m.exec(
+      ctrl.written,
+    )?.[1];
+    expect(ctrlEnd).toBe(toLocalTimestamp(ctrl.ticks.at(-2) as Date)); // substitution
+    expect(updatedAtOf(ctrl.written)).toBe(
+      toLocalTimestamp(ctrl.ticks.at(-1) as Date),
+    ); // stamp
+
+    // Guarded: the explicit step targets exo__Asset_updatedAt → substitution
+    // tick only; the key holds the substituted value and no stamp tick follows.
+    const own = await runComposite("exo__Asset_updatedAt");
+    expect(updatedAtOf(own.written)).toBe(
+      toLocalTimestamp(own.ticks.at(-1) as Date),
+    );
+    expect((own.written.match(/^exo__Asset_updatedAt:/gm) ?? []).length).toBe(
+      1,
+    );
+    expect(own.ticks.length).toBe(ctrl.ticks.length - 1);
   });
 
   // ---------------------------------------------------------------------------

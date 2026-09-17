@@ -579,7 +579,9 @@ export class GroundingExecutor {
    *     (property_set to the value already on disk, property_append of an
    *     alias already present, property_delete of an absent key). An idempotent
    *     re-apply must not manufacture a spurious ExoSync delta — the same rule
-   *     `remove-property` follows ("bumps only when a change occurs").
+   *     `remove-property` follows ("bumps only when a change occurs"). ⚠ The
+   *     predicate is on BYTES, not semantics: `votes: 3` re-set as `"3"`, or a
+   *     list re-serialised with different indentation, IS a change and stamps.
    *   - the branch's OWN target property is `exo__Asset_updatedAt` (the
    *     composite step `49e00287` writes `$nowLocal`): that explicit write IS
    *     the stamp; writing a second one would only risk a one-second skew
@@ -1393,6 +1395,13 @@ export class GroundingExecutor {
         error: `body_template: failed to read target file "${targetFilePath}": ${error instanceof Error ? error.message : String(error)}`,
       };
     }
+    // req 454ccedf — the stamp keys on the frontmatter of the CONTENT ABOUT TO
+    // BE WRITTEN, not of the original: a plain-markdown target stays plain
+    // (no invented block), while a template that itself opens with `---`
+    // turns the file INTO a frontmatter-bearing asset and is stamped like one
+    // — after this write the file HAS a frontmatter block, so the stamp lands
+    // where every later mutation will look for it (review nit-1, named
+    // rather than special-cased).
     const newContent = this.stampUpdatedAt(
       content,
       GroundingExecutor.replaceBody(content, resolved),
