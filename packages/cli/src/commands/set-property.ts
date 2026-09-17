@@ -216,7 +216,7 @@ function serializeForWrite(value: unknown, yamlKey: string): unknown {
 export function setPropertyCommand(): Command {
   return new Command("set-property")
     .description(
-      "Set an arbitrary non-guarded frontmatter property on an existing vault asset (bumps exo__Asset_updatedAt). Refuses state-machine-guarded properties (status/zone/parent/label/fact-timestamps) — those keep their dedicated `apply` commands. Issues #3795 / #3848.",
+      "Set an arbitrary non-guarded frontmatter property on an existing vault asset (bumps exo__Asset_updatedAt only when the value actually changed; a no-op leaves the file byte-identical). Refuses state-machine-guarded properties (status/zone/parent/label/fact-timestamps) — those keep their dedicated `apply` commands. Issues #3795 / #3848.",
     )
     .argument("<path>", "Vault-relative path to the target asset")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
@@ -360,24 +360,36 @@ export function setPropertyCommand(): Command {
           }
         }
 
-        // Apply the property, then bump exo__Asset_updatedAt.
+        // Apply the property, then bump exo__Asset_updatedAt — ONLY when the
+        // property write actually changed the file (ticket 6ffac10e).
         const fm = new FrontmatterService();
-        const now = options.frozenClock
-          ? new Date(options.frozenClock)
-          : new Date();
-        const timezone = options.timezone ?? DEFAULT_TIMEZONE;
-        const updatedAt = stampTimestamp(now, timezone);
 
         // Write under the CANONICAL YAML key (issue #3944): `exo__Asset_aliases`
         // maps to the bare `aliases:` key so we update it in place rather than
         // adding a duplicate literal `exo__Asset_aliases:` alongside it.
         const yamlKey = canonicalYamlKey(property);
-        let updated = fm.updateProperty(
+        const afterSet = fm.updateProperty(
           original,
           yamlKey,
           serializeForWrite(value, yamlKey),
         );
-        updated = fm.updateProperty(updated, UPDATED_AT_KEY, updatedAt);
+        // A no-op (the property already holds this value, serialised the same
+        // way) is NOT a modification: the file stays byte-identical, nothing is
+        // written and exo__Asset_updatedAt is left untouched — the same
+        // semantics as `remove-property` of an absent key and the executor's
+        // stampUpdatedAt. Compared against ORIGINAL (before any stamp): the
+        // stamp itself would always differ.
+        const changed = afterSet !== original;
+        let updated = afterSet;
+        let updatedAt: string | undefined;
+        if (changed) {
+          const now = options.frozenClock
+            ? new Date(options.frozenClock)
+            : new Date();
+          const timezone = options.timezone ?? DEFAULT_TIMEZONE;
+          updatedAt = stampTimestamp(now, timezone);
+          updated = fm.updateProperty(afterSet, UPDATED_AT_KEY, updatedAt);
+        }
 
         // Issue #3848 — co-location re-validation for an isDefinedBy repoint.
         // The repoint itself succeeds; we WARN (non-fatal) when the file was not
@@ -407,18 +419,26 @@ export function setPropertyCommand(): Command {
           process.stderr.write(
             `--- DRY RUN PREVIEW ---\n${updated}\n--- END PREVIEW ---\n`,
           );
-        } else {
+        } else if (changed) {
           writeFileSync(targetPath, updated, "utf-8");
+        }
+        if (!changed) {
+          process.stderr.write(
+            `ℹ no change: "${property}" already has this value — exo__Asset_updatedAt untouched\n`,
+          );
         }
         if (coLocationWarning) {
           process.stderr.write(coLocationWarning + "\n");
         }
 
+        // `changed` + the OPTIONAL `updatedAt` mirror remove-property's echo: on
+        // a no-op there is no stamp to report, so the field is omitted.
         const output = {
           path: vaultRelative,
           property,
           value,
-          updatedAt,
+          changed,
+          ...(updatedAt ? { updatedAt } : {}),
           ...(coLocationWarning ? { coLocationWarning: true } : {}),
         };
         process.stdout.write(JSON.stringify(output) + "\n");

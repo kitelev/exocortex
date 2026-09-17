@@ -75,7 +75,9 @@ async function resolveNewBody(
 /**
  * `set-body <path>` — OVERWRITE the markdown BODY (everything after the
  * frontmatter block) of an existing vault asset, leaving the frontmatter block
- * byte-identical EXCEPT bumping `exo__Asset_updatedAt`. The dogfood body-rewrite
+ * byte-identical EXCEPT bumping `exo__Asset_updatedAt` — and only when the body
+ * actually changed: a byte-identical body is a no-op (nothing written, no bump,
+ * ticket 6ffac10e). The dogfood body-rewrite
  * path (issue #3943): closes the gap where a body rewrite required a raw
  * `backup → rm → Write` (bypassing the PreToolUse hook-coverage + SHACL floor,
  * and — since the 2026-07-26 dogfood-cli-mutation hardening — needing an audited
@@ -91,7 +93,7 @@ async function resolveNewBody(
 export function setBodyCommand(): Command {
   return new Command("set-body")
     .description(
-      "Overwrite the markdown BODY of an existing vault asset (frontmatter untouched, exo__Asset_updatedAt bumped, new-body wikilinks validated). The dogfood body-rewrite path — no raw backup→rm→Write. Issue #3943.",
+      "Overwrite the markdown BODY of an existing vault asset (frontmatter untouched, exo__Asset_updatedAt bumped only when the body actually changed — a byte-identical body is a no-op, new-body wikilinks validated). The dogfood body-rewrite path — no raw backup→rm→Write. Issue #3943.",
     )
     .argument("<path>", "Vault-relative path to the asset to rewrite")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
@@ -194,8 +196,8 @@ export function setBodyCommand(): Command {
         }
 
         // Rebuild content: original frontmatter block + a single newline + the
-        // new body (ensure a trailing newline for a non-empty body). Then bump
-        // exo__Asset_updatedAt — updateProperty re-matches ONLY the frontmatter
+        // new body (ensure a trailing newline for a non-empty body). Then, if
+        // anything changed, bump exo__Asset_updatedAt — updateProperty re-matches ONLY the frontmatter
         // block, leaving the just-written body intact.
         const bodyPart =
           newBody.length > 0
@@ -205,24 +207,43 @@ export function setBodyCommand(): Command {
             : "";
         const rebuilt = `${frontmatterBlock}\n${bodyPart}`;
 
-        const now = options.frozenClock
-          ? new Date(options.frozenClock)
-          : new Date();
-        const timezone = options.timezone ?? DEFAULT_TIMEZONE;
-        const updatedAt = stampTimestamp(now, timezone);
-        const updated = fm.updateProperty(rebuilt, UPDATED_AT_KEY, updatedAt);
+        // A no-op (the rebuilt content is byte-identical to the file — same body
+        // INCLUDING the trailing newline set-body itself writes) is NOT a
+        // modification: nothing is written and exo__Asset_updatedAt is left
+        // untouched — the same semantics as `remove-property` of an absent key,
+        // set-property and the executor's stampUpdatedAt (ticket 6ffac10e).
+        // Compared against ORIGINAL, before the stamp: the stamp always differs.
+        const changed = rebuilt !== original;
+        let updated = rebuilt;
+        let updatedAt: string | undefined;
+        if (changed) {
+          const now = options.frozenClock
+            ? new Date(options.frozenClock)
+            : new Date();
+          const timezone = options.timezone ?? DEFAULT_TIMEZONE;
+          updatedAt = stampTimestamp(now, timezone);
+          updated = fm.updateProperty(rebuilt, UPDATED_AT_KEY, updatedAt);
+        }
 
         if (options.dryRun) {
           process.stderr.write(
             `--- DRY RUN PREVIEW ---\n${updated}\n--- END PREVIEW ---\n`,
           );
-        } else {
+        } else if (changed) {
           writeFileSync(targetPath, updated, "utf-8");
         }
+        if (!changed) {
+          process.stderr.write(
+            "ℹ no change: the body is byte-identical — exo__Asset_updatedAt untouched\n",
+          );
+        }
 
+        // `changed` + the OPTIONAL `updatedAt` mirror remove-property's echo: on
+        // a no-op there is no stamp to report, so the field is omitted.
         const output = {
           path: vaultRelative,
-          updatedAt,
+          changed,
+          ...(updatedAt ? { updatedAt } : {}),
           // ⛔ Buffer.byteLength, NOT String.length. `.length` counts UTF-16 code
           // units, and the field is named bodyBytes — on Cyrillic prose the two
           // disagree by ~1.5x (measured: a 31,007-byte body reported as 19,980).
