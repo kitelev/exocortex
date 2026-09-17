@@ -1286,8 +1286,109 @@ export class GroundingExecutor {
         ? vaultPathToIRI(filePath)
         : targetIRI;
 
+    // req 8d27f21d (ticket 8421b014, sibling of 454ccedf) — the last-modified
+    // invariant reaches the NINTH grounding type here. The service writes its
+    // target through channels this executor never sees (IVaultAdapter.modify /
+    // process / IFileSystemWriter.updateFile / vault.rename), so the stamp is
+    // decided by the target's BYTES: snapshot before the call, re-read after
+    // it returned, stamp only when they differ. See stampServiceCallTarget.
+    const before = await this.readServiceCallSnapshot(filePath);
     await service.execute(serviceTargetIRI, mergedInput);
+    await this.stampServiceCallTarget(filePath, before, mergedInput);
     return { success: true };
+  }
+
+  /**
+   * req 8d27f21d — bytes of the service_call target BEFORE `service.execute`,
+   * or `undefined` when there is nothing to compare against (no path, or the
+   * path does not exist yet — a satellite-creating step with no target).
+   */
+  private async readServiceCallSnapshot(
+    filePath: string,
+  ): Promise<string | undefined> {
+    if (!filePath) return undefined;
+    if (!(await this.fileReader.fileExists(filePath))) return undefined;
+    return this.fileReader.readFile(filePath);
+  }
+
+  /**
+   * req 8d27f21d (ticket 8421b014) — stamp `exo__Asset_updatedAt` on the
+   * service_call target the service just changed.
+   *
+   * Runs strictly on the success path, AFTER `service.execute` returned: a
+   * throwing service never reaches this point, so the target keeps whatever
+   * the service left and the result is `{ success: false }` (execute's catch);
+   * a failure while re-reading or writing the stamp surfaces the same way, with
+   * its own message — never a silent half-stamp.
+   *
+   * Why bytes and not a writer hook: the 17 service_call commands write through
+   * FOUR channels — `IVaultAdapter.modify` (TaskStatusService,
+   * PropertyCleanupService, FixMissingLabelService, ArchiveAssetService),
+   * `IVaultAdapter.process` + `rename` (RenameToUidService),
+   * `IFileSystemWriter.updateFile` (the updateProperty / removeProperty /
+   * setStatus factories) and the create channels of the satellite services —
+   * and `packages/services` calls `IVaultAdapter.updateFrontmatter` zero times.
+   * There is no single service-side write point; the single point is here.
+   *
+   * NON-stamps, same rules as `stampUpdatedAt` (req 454ccedf):
+   *   - byte-identical target — a no-op service, a satellite-only service
+   *     (create-note, duplicate-asset, create-related-*: the target is never
+   *     written), a move-only service (repair-folder). Nothing is written.
+   *   - the service was told to write `exo__Asset_updatedAt` itself
+   *     (updateProperty / removeProperty with `property = exo__Asset_updatedAt`)
+   *     — it owns the key; exactly one key line.
+   *   - a target without a frontmatter block.
+   *
+   * Re-locate: rename-to-uid rewrites the target AND renames it to
+   * `<same folder>/<exo__Asset_uid>.md` (UUID-canon — the same shape
+   * `executeCreateInstance` builds for a new instance). When the snapshot path
+   * is gone, the executor looks for the file there, using the uid it read
+   * BEFORE the call. A move to ANOTHER folder (repair-folder) does not resolve
+   * and is left alone — its content did not change anyway.
+   *
+   * Not governed (req 8d27f21d §Not governed): files the service changed
+   * BESIDES its target (rename-to-uid's `updateLinks` in other assets) and the
+   * satellite files themselves (their `updatedAt` is the create side).
+   */
+  private async stampServiceCallTarget(
+    filePath: string,
+    before: string | undefined,
+    mergedInput?: UserInput,
+  ): Promise<void> {
+    if (before === undefined) return;
+    const path = await this.locateServiceCallTarget(filePath, before);
+    if (path === undefined) return;
+    const after = await this.fileReader.readFile(path);
+    if (after === before) return;
+    const ownProperty =
+      typeof mergedInput?.property === "string"
+        ? mergedInput.property
+        : undefined;
+    const stamped = this.stampUpdatedAt(before, after, ownProperty);
+    if (stamped === after) return;
+    await this.fileWriter.updateFile(path, stamped);
+  }
+
+  /**
+   * req 8d27f21d — where the service_call target lives AFTER the service ran:
+   * the snapshot path when it still exists, else the UUID-canon path
+   * `<same folder>/<exo__Asset_uid>.md` (rename-to-uid), else nowhere.
+   */
+  private async locateServiceCallTarget(
+    filePath: string,
+    before: string,
+  ): Promise<string | undefined> {
+    if (await this.fileReader.fileExists(filePath)) return filePath;
+    const uidRaw = this.frontmatterService.parseObject(before)?.exo__Asset_uid;
+    const uid =
+      typeof uidRaw === "string" ? uidRaw.trim().replace(/^"|"$/g, "") : "";
+    if (!uid) return undefined;
+    const slash = filePath.lastIndexOf("/");
+    const folder = slash >= 0 ? filePath.slice(0, slash + 1) : "";
+    const canon = `${folder}${uid}.md`;
+    if (canon === filePath) return undefined;
+    if (await this.fileReader.fileExists(canon)) return canon;
+    return undefined;
   }
 
   private async executeConvertToTask(filePath: string): Promise<ExecutionResult> {
