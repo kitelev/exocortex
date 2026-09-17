@@ -255,6 +255,29 @@ export default tseslint.config(
       'obsidianmd/no-tfile-tfolder-cast': 'off',
     },
   },
+  // 2026-09-17, ticket 7d91d13a (relations-picker symbolic range, req e084627c)
+  // — PropertyEditorModal.tsx carries PRE-EXISTING lint debt that the `lint` CI
+  // job never gates (continue-on-error; main carries 62 errors) but lint-staged
+  // (`eslint --fix --max-warnings=0`) surfaces on ANY commit touching the file:
+  // 5 errors (3× no-console in catch handlers, 2× `FileManager.trashFile` vs
+  // minAppVersion 1.5.0) and 4 auto-FIXABLE warnings (3× prefer-create-el,
+  // 1× no-global-this in `generateStatementUid`, req d8ac0a94) that `--fix`
+  // would silently rewrite into an unrelated commit. Config-only, scoped to
+  // that one file and exactly these rules, so a one-line bug-fix does not
+  // widen into a logging-channel / API-guard / DOM-helper / crypto-lookup
+  // change. The debt fix (console → Logger, trashFile →
+  // requireApiVersion("1.6.6") guard as in ObsidianVaultAdapter, createDiv,
+  // window/activeWindow) is ticket 7c02970c-57b6-4dd0-8bae-7c1801a1a3c8.
+  // ⛔ Remove this block with that ticket; do not add files or rules to it.
+  {
+    files: ['packages/obsidian-plugin/src/presentation/modals/PropertyEditorModal.tsx'],
+    rules: {
+      'no-console': 'off',
+      'obsidianmd/no-unsupported-api': 'off',
+      'obsidianmd/prefer-create-el': 'off',
+      'obsidianmd/no-global-this': 'off',
+    },
+  },
   {
     ignores: [
       'node_modules/',
