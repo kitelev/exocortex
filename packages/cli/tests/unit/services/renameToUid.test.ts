@@ -253,6 +253,64 @@ describe("renameToUid (CLI)", () => {
       );
     });
 
+    // ── Ticket 71f1ca37 (review of PR #4256): the inline FLOW sequence is read
+    // by the YAML reader, not split on `,` over the raw text — a quoted item
+    // that contains `,` or `]` is ONE item. Mutant matrix — copied from the
+    // driver output (mutants-71f1ca37.py, 2026-09-18):
+    //   M3 (raw split(",") instead of the YAML reader) → RED: ['Y11']
+    //   M4 (scan does not skip double-quoted runs)     → RED: ['Y11b']
+    //   M5 (scan does not skip single-quoted runs)     → RED: ['Y11b']
+    //   M6 (scan stops at end of line)                 → RED: ['Y11c']
+    it(`${REQ} Y11 a quoted inline item that CONTAINS a comma is one item for the dedup: the same basename is not appended twice, another basename is appended after it`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/a, b.md",
+        '---\nexo__Asset_uid: y11-uid\nexo__Asset_label: Existing\naliases: [old-one, "a, b"]\n---\nBody\n',
+      );
+
+      await service.execute("tasks/a, b");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y11-uid.md"));
+      expect(fm.aliases).toEqual(["old-one", "a, b"]);
+
+      writeRaw(
+        vaultRoot,
+        "tasks/c.md",
+        '---\nexo__Asset_uid: y11b-uid\nexo__Asset_label: Existing\naliases: [old-one, "a, b"]\n---\nBody\n',
+      );
+
+      await service.execute("tasks/c");
+
+      const fm2 = readFrontmatter(path.join(vaultRoot, "tasks/y11b-uid.md"));
+      expect(fm2.aliases).toEqual(["old-one", "a, b", "c"]);
+    });
+
+    it(`${REQ} Y11b a double- or single-quoted inline item that CONTAINS a closing bracket is not cut by the flow-sequence match: the sequence stays intact and the basename is appended`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/new one.md",
+        '---\nexo__Asset_uid: y11c-uid\nexo__Asset_label: Existing\naliases: ["x]y", \'p]q\', plain]\n---\nBody\n',
+      );
+
+      await service.execute("tasks/new one");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y11c-uid.md"));
+      expect(fm.aliases).toEqual(["x]y", "p]q", "plain", "new one"]);
+    });
+
+    it(`${REQ} Y11c a flow sequence that spans two lines is still recognised (the bracket scan is not line-bound): the basename is appended and the file stays parseable`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/fresh.md",
+        '---\nexo__Asset_uid: y11d-uid\nexo__Asset_label: Existing\naliases: [old-one,\n  "two, words"]\n---\nBody\n',
+      );
+
+      await service.execute("tasks/fresh");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y11d-uid.md"));
+      expect(fm.aliases).toEqual(["old-one", "two, words", "fresh"]);
+    });
+
     it(`${REQ} Y6 an alias already stored QUOTED (the shape apply set-label writes) is recognised by the dedup and not appended a second time`, async () => {
       writeRaw(
         vaultRoot,

@@ -12,9 +12,23 @@
  *    `2026-01-15` round-trip to number/boolean/Date (not string).
  *  - LOW-4: revert the control-char escaping, and `\x07` throws
  *    ("non-printable characters") in js-yaml.
+ *
+ * Req 389d4e14 (ticket 71f1ca37) — the C1 range U+0080–U+009F joins the
+ * control class. Measured on js-yaml 5.3.0 / YAML11_SCHEMA: a bare C1 other
+ * than NEL (U+0085) throws "non-printable characters"; NEL loads bare, so
+ * C1c is the uniform-class control, not a repro. Mutant matrix — copied from
+ * the driver output (mutants-71f1ca37.py, 2026-09-18):
+ *   M1 (drop `\u007f-\u009f` from YAML_CONTROL_CHARS)  → RED: ['C1a', 'C1c']
+ *   M2 (drop the 0x80–0x9F branch of quoteYamlString)  → RED: ['C1b', 'C1c']
+ * C1a stays GREEN under M2 because js-yaml also loads a RAW C1 byte inside
+ * `"…"` (double guard: C1b/C1c pin the `\xNN` FORM, C1a the round-trip).
  */
 import * as yaml from "js-yaml";
-import { serializeYamlScalar } from "../../src/utilities/yamlScalar";
+import {
+  needsYamlQuoting,
+  quoteYamlString,
+  serializeYamlScalar,
+} from "../../src/utilities/yamlScalar";
 
 /** Emit a scalar, parse it back in a real `key: value` mapping. */
 function roundTrip(value: unknown, quoteAmbiguous = false): unknown {
@@ -130,6 +144,58 @@ describe("serializeYamlScalar (#3750)", () => {
       "escapes control chars in %j so js-yaml loads and round-trips it",
       (s) => {
         expect(() => roundTrip(s)).not.toThrow();
+        expect(roundTrip(s)).toBe(s);
+      },
+    );
+  });
+
+  describe("req 389d4e14 — C1 control characters (U+0080–U+009F) quoted and \\xNN-escaped", () => {
+    const REQ = "@req:389d4e14-7ee9-499a-bbc3-9ee6367104f0";
+    // Bytes built in code, never as literals (a raw C1 in the source would be
+    // the very defect under test).
+    const c1 = (code: number) => String.fromCharCode(code);
+
+    it.each(["0080", "008D", "009F"])(
+      `${REQ} C1a a value carrying U+%s is emitted quoted, loads under YAML11 and round-trips byte-for-byte`,
+      (hex) => {
+        const s = `pad${c1(parseInt(hex, 16))}char`;
+        // Repro "before": bare C1 → js-yaml throws "non-printable characters".
+        expect(() =>
+          yaml.load(`v: ${s}`, { schema: yaml.YAML11_SCHEMA }),
+        ).toThrow(/non-printable/);
+        expect(needsYamlQuoting(s)).toBe(true);
+        expect(serializeYamlScalar(s).startsWith('"')).toBe(true);
+        expect(() => roundTrip(s)).not.toThrow();
+        expect(roundTrip(s)).toBe(s);
+      },
+    );
+
+    it(`${REQ} C1b quoteYamlString emits the \\xNN escape form, never the raw C1 byte`, () => {
+      expect(quoteYamlString(`a${c1(0x80)}b`)).toBe('"a\\x80b"');
+      expect(quoteYamlString(`a${c1(0x9f)}b`)).toBe('"a\\x9Fb"');
+      const out = quoteYamlString(`a${c1(0x85)}b${c1(0x8d)}c`);
+      expect(out).toBe('"a\\x85b\\x8Dc"');
+      // eslint-disable-next-line no-control-regex -- the C1 class IS the assertion
+      expect(/[\u0080-\u009f]/.test(out)).toBe(false);
+    });
+
+    it(`${REQ} C1c NEL (U+0085) is quoted with its class even though YAML11 reads it bare (uniform control class)`, () => {
+      const s = `ab${c1(0x85)}cd`;
+      // NEL is the ONE C1 the reader accepts bare — this axis is the control
+      // that the class is quoted uniformly, not a defect repro.
+      expect(() =>
+        yaml.load(`v: ${s}`, { schema: yaml.YAML11_SCHEMA }),
+      ).not.toThrow();
+      expect(needsYamlQuoting(s)).toBe(true);
+      expect(serializeYamlScalar(s)).toBe('"ab\\x85cd"');
+      expect(roundTrip(s)).toBe(s);
+    });
+
+    it.each(["Plain Task Label", "Ünïcödé — тест ✓", "a/b/c path"])(
+      `${REQ} C1d a printable value %p keeps its bare on-disk form (no churn)`,
+      (s) => {
+        expect(needsYamlQuoting(s)).toBe(false);
+        expect(serializeYamlScalar(s)).toBe(s);
         expect(roundTrip(s)).toBe(s);
       },
     );
