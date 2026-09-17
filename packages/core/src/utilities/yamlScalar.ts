@@ -31,11 +31,13 @@
  * snapshot churn and over-quoting.
  */
 
+import * as yaml from "js-yaml";
+
 const YAML_LEADING_INDICATORS = /^[-!&*?|>%@`"'#,[\]{}]/;
 
 // Control characters (C0 range + DEL) that break a single-line plain scalar.
 // Covers `\t` `\n` `\r` plus `\x07` `\b` `\f` `\v` NUL etc. (#3750 LOW-4).
-// eslint-disable-next-line no-control-regex
+// eslint-disable-next-line no-control-regex -- the C0/DEL class IS the pattern's purpose (#3750 LOW-4)
 const YAML_CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 // Scalar tokens a real YAML parser (js-yaml DEFAULT_SCHEMA, used by Obsidian
@@ -72,7 +74,7 @@ export const STRING_SCALAR_PROPERTIES = new Set<string>([
  * unescaped interior `"`) and `"\"` (the closing quote is escaped), which must
  * be re-quoted instead of emitted as invalid YAML. (#3750 MEDIUM-2.)
  */
-function isCompleteDoubleQuotedScalar(value: string): boolean {
+export function isCompleteDoubleQuotedScalar(value: string): boolean {
   if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) {
     return false;
   }
@@ -179,6 +181,68 @@ export function quoteYamlString(value: string): string {
     }
   }
   return `"${out}"`;
+}
+
+/**
+ * Is the value a COMPLETE single-quoted YAML scalar (`'…'`)? Inside single
+ * quotes the only escape is `''` (a literal `'`), so the run is complete when
+ * every interior `'` is doubled.
+ */
+function isCompleteSingleQuotedScalar(value: string): boolean {
+  if (value.length < 2 || !value.startsWith("'") || !value.endsWith("'")) {
+    return false;
+  }
+  const inner = value.slice(1, -1);
+  for (let i = 0; i < inner.length; i++) {
+    if (inner[i] === "'") {
+      if (inner[i + 1] !== "'") return false; // lone interior quote
+      i++; // skip the doubled quote
+    }
+  }
+  return true;
+}
+
+/**
+ * Decode the RAW TEXT of a YAML scalar back to its string VALUE (ticket
+ * 4f226028) — the read-side counterpart of {@link quoteYamlString}.
+ *
+ * `FrontmatterService.parseObject` is a textual reader: it hands callers the
+ * scalar exactly as it sits on the line, quotes and escapes included. Every
+ * consumer that turns such a raw value back into a scalar (`$target.<prop>`
+ * substitution → `property_append` / `labelTemplate`, the append dedup) must
+ * therefore DECODE it first; stripping only the outer quotes leaves the
+ * interior escapes (`\"`, `\\`) in the text, and re-quoting that through
+ * {@link quoteYamlString} double-escapes them.
+ *
+ * ⛤ The decode is the REAL parser, not a hand-rolled table: the text on disk is
+ * written by several serialisers — `quoteYamlString` (`\\ \" \n \r \t \xNN`),
+ * but also js-yaml `dump` on the object-path writers (`FileSystemVaultAdapter`,
+ * `AtomicFrontmatterService`, Obsidian's `processFrontMatter`), which emits the
+ * full YAML 1.2 §5.7 set (`\_` NBSP, `\N \L \P`, `\0 \a \b \e \f \v`,
+ * `\UNNNNNNNN`, …). A table that knew only the first set silently turned
+ * `"foo\_bar"` into `foo_bar` (PR #4250 review MEDIUM). Delegating to
+ * `yaml.load` makes "what the decoder returns" identical to "what the parser
+ * reads from that line" by construction.
+ *
+ * - complete double-quoted / single-quoted scalar → `yaml.load(raw)`.
+ * - a quoted run js-yaml itself REJECTS (`"\q"`, `"\xZZ"`) → returned VERBATIM
+ *   (byte-lossless: re-quoting it round-trips the text, nothing is invented).
+ * - anything else (a plain scalar, an INCOMPLETE quoted run such as
+ *   `"a" and "b"`) → returned verbatim — it IS the value.
+ */
+export function decodeYamlQuotedScalar(raw: string): string {
+  if (
+    !isCompleteDoubleQuotedScalar(raw) &&
+    !isCompleteSingleQuotedScalar(raw)
+  ) {
+    return raw;
+  }
+  try {
+    const loaded: unknown = yaml.load(raw);
+    return typeof loaded === "string" ? loaded : raw;
+  } catch {
+    return raw;
+  }
 }
 
 /**

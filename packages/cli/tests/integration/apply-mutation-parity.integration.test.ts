@@ -31,6 +31,7 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import * as yaml from "js-yaml";
 
 const { applyCommand } = await import("../../src/commands/apply.js");
 
@@ -278,6 +279,13 @@ describe("Issue #3779 — CLI apply mutation parity (relabel + explicit parent)"
     return fs.readFileSync(path.join(root, rel), "utf-8");
   }
 
+  /** The frontmatter block parsed by the REAL js-yaml (ticket 4f226028). */
+  function loadFrontmatter(content: string): Record<string, unknown> {
+    const m = /^---\n([\s\S]*?)\n---/.exec(content);
+    if (!m) throw new Error("no frontmatter block");
+    return yaml.load(m[1]) as Record<string, unknown>;
+  }
+
   it("@req:f7790000-3779-4aaa-8aaa-000000000001 set-parent sets ems__Effort_parent to an explicit UID as a wikilink (Gap 2, real mutation)", async () => {
     const rel = writeTarget("aaaaaaaa-3779-4000-8000-000000000001", "Child Task");
     const parentUid = "99999999-3779-4000-8000-000000000009";
@@ -364,7 +372,41 @@ describe("Issue #3779 — CLI apply mutation parity (relabel + explicit parent)"
     expect(written).toContain(`- "Meeting: Q3 review"`);
     // #3798 — single canonical alias (the seeded "Old Label" alias is cleared).
     expect(written).not.toContain(`- "Old Label"`);
+    // ticket 4f226028 (I3) — "stays parseable" is asserted with the REAL parser.
+    const fm = loadFrontmatter(written);
+    expect(fm.exo__Asset_label).toBe("Meeting: Q3 review");
+    expect(fm.aliases).toEqual(["Meeting: Q3 review"]);
   });
+
+  // ---------------------------------------------------------------------------
+  // Ticket 4f226028 — the aliases entry is written by the SAME YAML escaper as
+  // the label. Before the fix `property_append` hand-wrapped the value in `"…"`
+  // without escaping, so a label carrying an interior `"` produced
+  // `  - "Label with "inner" quotes"` — js-yaml: `bad indentation of a mapping
+  // entry`, the whole frontmatter unparseable (req 27fbe40b broke
+  // `requirements-trace` on every PR) — and a `\` was silently swallowed
+  // (alias ≠ label, file still parseable). Each axis runs the REAL published
+  // composite shape through the real `apply` pipeline and parses the mutated
+  // file with js-yaml (the parser the CLI adapters and Obsidian use).
+  // ---------------------------------------------------------------------------
+  it.each([
+    ["I1 interior double quotes", 'Label with "inner" quotes'],
+    ["I2 hash + backslash", "Note #42 about \\ backslash"],
+    ["I2b colon-space + quoted wikilink", 'Key: value (x: "[[y]]", z)'],
+  ])(
+    "@req:f7790000-3779-4bbb-8bbb-000000000002 %s — set-label escapes the alias like the label: file parses, aliases deep-equals [label]",
+    async (_axis, label) => {
+      const rel = writeTarget("bbbbbbbb-3779-4000-8000-00000000004f", "Old Label");
+
+      await runApply("set-label", rel, JSON.stringify({ label }));
+
+      const written = read(rel);
+      const fm = loadFrontmatter(written); // throws on the pre-fix shape
+      expect(fm.exo__Asset_label).toBe(label);
+      expect(fm.aliases).toEqual([label]);
+      expect(written).not.toContain(`- "Old Label"`);
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // #3798 revert-verify (integration-test-revert-verify): the OLD 2-step
