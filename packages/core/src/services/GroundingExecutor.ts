@@ -161,6 +161,20 @@ function resolveClassFlipTarget(
 export type UserInput = Record<string, unknown>;
 
 /**
+ * req 8d27f21d — what `executeServiceCall` remembers about its target across
+ * `service.execute`: the bytes before the call and, for a target that is not
+ * yet UUID-canon-named, the path rename-to-uid would move it to.
+ */
+interface ServiceCallSnapshot {
+  bytes: string;
+  canon?: string;
+}
+
+/** Well-formed UUID (8-4-4-4-12 hex) — the only uid shape that may become a path. */
+const UUID_CANON_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
  * Issue #3220 — execution-time class-label → canonical-UID resolver.
  *
  * `create_instance` writes `exo__Instance_class` from `grounding.targetClass`.
@@ -1286,8 +1300,134 @@ export class GroundingExecutor {
         ? vaultPathToIRI(filePath)
         : targetIRI;
 
+    // req 8d27f21d (ticket 8421b014, sibling of 454ccedf) — the last-modified
+    // invariant reaches the NINTH grounding type here. The service writes its
+    // target through channels this executor never sees (IVaultAdapter.modify /
+    // process / IFileSystemWriter.updateFile / vault.rename), so the stamp is
+    // decided by the target's BYTES: snapshot before the call, re-read after
+    // it returned, stamp only when they differ. See stampServiceCallTarget.
+    const before = await this.readServiceCallSnapshot(filePath);
     await service.execute(serviceTargetIRI, mergedInput);
+    await this.stampServiceCallTarget(filePath, before, mergedInput);
     return { success: true };
+  }
+
+  /**
+   * req 8d27f21d — the service_call target BEFORE `service.execute`: its bytes
+   * and, when the target is NOT yet UUID-canon-named, the path it would move
+   * to under rename-to-uid (`<same folder>/<exo__Asset_uid>.md`). `undefined`
+   * when there is nothing to compare against (no path, or the path does not
+   * exist yet — a satellite-creating step with no target).
+   *
+   * The relocation candidate is decided HERE, before the call, on purpose:
+   *   - the uid comes from the target's frontmatter, i.e. from user data, and
+   *     becomes a write path — so it must be a well-formed UUID (review LOW-1);
+   *     anything else yields no candidate at all;
+   *   - a candidate that ALREADY exists before the call is not a rename target
+   *     but a neighbour (a duplicate uid in the folder): after a move-only
+   *     service the executor must not mistake it for the moved file and stamp a
+   *     file the service never touched (review observation) — so it is
+   *     dropped up front.
+   */
+  private async readServiceCallSnapshot(
+    filePath: string,
+  ): Promise<ServiceCallSnapshot | undefined> {
+    if (!filePath) return undefined;
+    if (!(await this.fileReader.fileExists(filePath))) return undefined;
+    const bytes = await this.fileReader.readFile(filePath);
+    const uidRaw = this.frontmatterService.parseObject(bytes)?.exo__Asset_uid;
+    const uid =
+      typeof uidRaw === "string" ? uidRaw.trim().replace(/^"|"$/g, "") : "";
+    if (!UUID_CANON_RE.test(uid)) return { bytes };
+    const slash = filePath.lastIndexOf("/");
+    const folder = slash >= 0 ? filePath.slice(0, slash + 1) : "";
+    const canon = `${folder}${uid}.md`;
+    if (canon === filePath) return { bytes };
+    if (await this.fileReader.fileExists(canon)) return { bytes };
+    return { bytes, canon };
+  }
+
+  /**
+   * req 8d27f21d (ticket 8421b014) — stamp `exo__Asset_updatedAt` on the
+   * service_call target the service just changed.
+   *
+   * Runs strictly on the success path, AFTER `service.execute` returned: a
+   * throwing service never reaches this point, so the target keeps whatever
+   * the service left and the result is `{ success: false }` (execute's catch);
+   * a failure while re-reading or writing the stamp surfaces the same way, with
+   * its own message — never a silent half-stamp.
+   *
+   * Why bytes and not a writer hook (measured @ d0216a8a, 2026-09-17): the 17
+   * service_call commands write through FOUR channels — `IVaultAdapter.modify`
+   * (TaskStatusService, PropertyCleanupService, FixMissingLabelService,
+   * ArchiveAssetService), `IVaultAdapter.process` + `rename`
+   * (RenameToUidService), `IFileSystemWriter.updateFile` (the updateProperty /
+   * removeProperty / setStatus factories) and the create channels of the
+   * satellite services — and `packages/services` called
+   * `IVaultAdapter.updateFrontmatter` zero times. There is no single
+   * service-side write point; the single point is here.
+   *
+   * NON-stamps, same rules as `stampUpdatedAt` (req 454ccedf):
+   *   - byte-identical target — a no-op service, a satellite-only service
+   *     (create-note, duplicate-asset, create-related-*: the target is never
+   *     written), a move-only service (repair-folder). Nothing is written.
+   *   - the service was told to write `exo__Asset_updatedAt` itself
+   *     (updateProperty / removeProperty with `property = exo__Asset_updatedAt`)
+   *     — it owns the key; exactly one key line.
+   *   - a target without a frontmatter block.
+   *
+   * Re-locate: rename-to-uid rewrites the target AND renames it to
+   * `<same folder>/<exo__Asset_uid>.md` (UUID-canon — the same shape
+   * `executeCreateInstance` builds for a new instance). When the snapshot path
+   * is gone, the executor looks for the file at the candidate the snapshot
+   * pre-computed BEFORE the call (well-formed UUID only, and only if nothing
+   * lived there yet — see readServiceCallSnapshot). A move to ANOTHER folder
+   * (repair-folder) does not resolve and is left alone — its content did not
+   * change anyway.
+   *
+   * Not governed (req 8d27f21d §Not governed): files the service changed
+   * BESIDES its target (rename-to-uid's `updateLinks` in other assets) and the
+   * satellite files themselves (their `updatedAt` is the create side).
+   */
+  private async stampServiceCallTarget(
+    filePath: string,
+    snapshot: ServiceCallSnapshot | undefined,
+    mergedInput?: UserInput,
+  ): Promise<void> {
+    if (snapshot === undefined) return;
+    const path = await this.locateServiceCallTarget(filePath, snapshot);
+    if (path === undefined) return;
+    const before = snapshot.bytes;
+    const after = await this.fileReader.readFile(path);
+    if (after === before) return;
+    const ownProperty =
+      typeof mergedInput?.property === "string"
+        ? mergedInput.property
+        : undefined;
+    const stamped = this.stampUpdatedAt(before, after, ownProperty);
+    if (stamped === after) return;
+    await this.fileWriter.updateFile(path, stamped);
+  }
+
+  /**
+   * req 8d27f21d — where the service_call target lives AFTER the service ran:
+   * the snapshot path when it still exists, else the UUID-canon candidate the
+   * snapshot pre-computed (rename-to-uid moved it there — the candidate did
+   * not exist before the call, see readServiceCallSnapshot), else nowhere
+   * (a move to another folder: content unchanged, nothing to stamp).
+   */
+  private async locateServiceCallTarget(
+    filePath: string,
+    snapshot: ServiceCallSnapshot,
+  ): Promise<string | undefined> {
+    if (await this.fileReader.fileExists(filePath)) return filePath;
+    if (
+      snapshot.canon !== undefined &&
+      (await this.fileReader.fileExists(snapshot.canon))
+    ) {
+      return snapshot.canon;
+    }
+    return undefined;
   }
 
   private async executeConvertToTask(filePath: string): Promise<ExecutionResult> {

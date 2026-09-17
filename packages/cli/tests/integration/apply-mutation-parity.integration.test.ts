@@ -70,6 +70,16 @@ const SET_LABEL_LEGACY_GROUNDING = "f7790001-0000-0000-0000-0000000000a2";
 const SET_PARENT_CMD = "f7790002-0000-0000-0000-000000000001";
 const SET_PARENT_GROUNDING = "f7790002-0000-0000-0000-000000000002";
 
+// --- service_call commands (req 8d27f21d, ticket 8421b014) -------------------
+// Mirrors the production groundings 85687461 (set-planned-start: serviceId
+// updateProperty + payload property) and f8893042 (plan-for-evening: serviceId
+// planForEvening) — the two write channels the executor never sees.
+const GT_SERVICE_CALL = "9bf9fc99-ac37-4e51-b9f5-bd920099947c";
+const SET_PLANNED_START_CMD = "f7790003-0000-0000-0000-000000000001";
+const SET_PLANNED_START_GROUNDING = "f7790003-0000-0000-0000-000000000002";
+const PLAN_FOR_EVENING_CMD = "f7790003-0000-0000-0000-000000000003";
+const PLAN_FOR_EVENING_GROUNDING = "f7790003-0000-0000-0000-000000000004";
+
 const fm = (lines: string[]): string => ["---", ...lines, "---", ""].join("\n");
 
 const SET_LABEL_CMD_MD = fm([
@@ -179,6 +189,40 @@ const SET_PARENT_GROUNDING_MD = fm([
   `exocmd__Grounding_targetValueRef: "$input.parent"`,
 ]);
 
+const SET_PLANNED_START_CMD_MD = fm([
+  `exo__Asset_uid: ${SET_PLANNED_START_CMD}`,
+  `exo__Asset_label: "Set Planned Start"`,
+  `exo__Instance_class: ["[[exocmd__Command]]"]`,
+  `exocmd__Command_grounding: "[[${SET_PLANNED_START_GROUNDING}|g]]"`,
+  `exocmd__Command_cliName: set-planned-start`,
+]);
+
+const SET_PLANNED_START_GROUNDING_MD = fm([
+  `exo__Asset_uid: ${SET_PLANNED_START_GROUNDING}`,
+  `exo__Asset_label: "Set planned start timestamp"`,
+  `exo__Instance_class: ["[[exocmd__Grounding]]"]`,
+  `exocmd__Grounding_type: "[[${GT_SERVICE_CALL}]]"`,
+  `exocmd__Grounding_serviceId: "updateProperty"`,
+  `exocmd__Grounding_serviceCallPayload: '{"property":"ems__Effort_plannedStartTimestamp"}'`,
+  `exocmd__Grounding_inputSchema: '{"type":"object","properties":{"value":{"type":"string","title":"Planned start (date)"}},"required":["value"]}'`,
+]);
+
+const PLAN_FOR_EVENING_CMD_MD = fm([
+  `exo__Asset_uid: ${PLAN_FOR_EVENING_CMD}`,
+  `exo__Asset_label: "Plan for Evening"`,
+  `exo__Instance_class: ["[[exocmd__Command]]"]`,
+  `exocmd__Command_grounding: "[[${PLAN_FOR_EVENING_GROUNDING}|g]]"`,
+  `exocmd__Command_cliName: plan-for-evening`,
+]);
+
+const PLAN_FOR_EVENING_GROUNDING_MD = fm([
+  `exo__Asset_uid: ${PLAN_FOR_EVENING_GROUNDING}`,
+  `exo__Asset_label: "Plan for evening via service"`,
+  `exo__Instance_class: ["[[exocmd__Grounding]]"]`,
+  `exocmd__Grounding_type: "[[${GT_SERVICE_CALL}]]"`,
+  `exocmd__Grounding_serviceId: "planForEvening"`,
+]);
+
 function targetMd(
   uid: string,
   label: string,
@@ -218,6 +262,10 @@ function buildVault(): { root: string } {
   write(SET_LABEL_LEGACY_GROUNDING, SET_LABEL_LEGACY_GROUNDING_MD);
   write(SET_PARENT_CMD, SET_PARENT_CMD_MD);
   write(SET_PARENT_GROUNDING, SET_PARENT_GROUNDING_MD);
+  write(SET_PLANNED_START_CMD, SET_PLANNED_START_CMD_MD); // req 8d27f21d
+  write(SET_PLANNED_START_GROUNDING, SET_PLANNED_START_GROUNDING_MD);
+  write(PLAN_FOR_EVENING_CMD, PLAN_FOR_EVENING_CMD_MD);
+  write(PLAN_FOR_EVENING_GROUNDING, PLAN_FOR_EVENING_GROUNDING_MD);
   return { root };
 }
 
@@ -352,6 +400,82 @@ describe("Issue #3779 — CLI apply mutation parity (relabel + explicit parent)"
     fs.writeFileSync(path.join(root, rel), frozen, "utf-8");
 
     await runApply("set-parent", rel, `{"parent":"${parentUid}"}`);
+
+    expect(read(rel)).toBe(frozen);
+  });
+
+  // ---------------------------------------------------------------------------
+  // req 8d27f21d (ticket 8421b014) — service_call groundings: the service
+  // writes past the executor's own write points (updateProperty →
+  // fsAdapter.updateFile; planForEvening → IVaultAdapter.modify); the executor
+  // stamps by comparing the target's bytes before/after the call.
+  // ---------------------------------------------------------------------------
+  it("@req:8d27f21d-4673-4490-866e-dfe4078c03a6 I1 set-planned-start (service_call updateProperty → fsAdapter.updateFile) stamps exo__Asset_updatedAt on the real apply path", async () => {
+    const rel = writeTarget(
+      "aaaaaaaa-8421-4000-8000-000000000001",
+      "Service Task",
+      true,
+      { updatedAt: "2020-01-01T00:00:00" },
+    );
+
+    await runApply("set-planned-start", rel, `{"value":"2026-07-25T09:00:00"}`);
+
+    const written = read(rel);
+    expect(written).toContain(
+      "ems__Effort_plannedStartTimestamp: 2026-07-25T09:00:00",
+    );
+    expect(written).not.toContain("exo__Asset_updatedAt: 2020-01-01T00:00:00");
+    expect(written).toMatch(
+      /^exo__Asset_updatedAt: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/m,
+    );
+    expect((written.match(/^exo__Asset_updatedAt:/gm) ?? []).length).toBe(1);
+    expect(
+      loadFrontmatter(written).ems__Effort_plannedStartTimestamp,
+    ).toBeDefined();
+  });
+
+  it("@req:8d27f21d-4673-4490-866e-dfe4078c03a6 I2 plan-for-evening (service_call planForEvening → IVaultAdapter.modify, a channel the executor never sees) stamps exo__Asset_updatedAt on the real apply path", async () => {
+    const rel = writeTarget(
+      "aaaaaaaa-8421-4000-8000-000000000002",
+      "Evening Task",
+      true,
+      { updatedAt: "2020-01-01T00:00:00" },
+    );
+
+    await runApply("plan-for-evening", rel);
+
+    const written = read(rel);
+    // TaskStatusService.planForEvening writes the planned-start timestamp.
+    expect(written).toMatch(/^ems__Effort_plannedStartTimestamp: /m);
+    expect(written).not.toContain("exo__Asset_updatedAt: 2020-01-01T00:00:00");
+    expect(written).toMatch(
+      /^exo__Asset_updatedAt: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/m,
+    );
+    expect((written.match(/^exo__Asset_updatedAt:/gm) ?? []).length).toBe(1);
+  });
+
+  it("@req:8d27f21d-4673-4490-866e-dfe4078c03a6 I3 re-applying set-planned-start with the SAME value is a no-op: file byte-identical, updatedAt not touched", async () => {
+    const rel = writeTarget(
+      "aaaaaaaa-8421-4000-8000-000000000003",
+      "Service Task",
+      true,
+      { updatedAt: "2020-01-01T00:00:00" },
+    );
+    await runApply("set-planned-start", rel, `{"value":"2026-07-25T09:00:00"}`);
+    const afterFirst = read(rel);
+    expect(afterFirst).not.toContain(
+      "exo__Asset_updatedAt: 2020-01-01T00:00:00",
+    );
+
+    // Freeze what the first apply wrote with a stale stamp the idempotent
+    // second apply must NOT overwrite (same shape as B7).
+    const frozen = afterFirst.replace(
+      /^exo__Asset_updatedAt: .*$/m,
+      "exo__Asset_updatedAt: 2021-02-03T04:05:06",
+    );
+    fs.writeFileSync(path.join(root, rel), frozen, "utf-8");
+
+    await runApply("set-planned-start", rel, `{"value":"2026-07-25T09:00:00"}`);
 
     expect(read(rel)).toBe(frozen);
   });
