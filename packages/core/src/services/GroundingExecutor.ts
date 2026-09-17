@@ -563,6 +563,57 @@ export class GroundingExecutor {
 
   // -- Private: Grounding Type Implementations --
 
+  /**
+   * req 454ccedf (ticket 533856e4) — the last-modified invariant is a property
+   * of the EXECUTOR, not of the data. Every mutating grounding branch passes
+   * the content it is about to write through here, so `exo__Asset_updatedAt`
+   * records the modification whether or not the command's grounding carries
+   * the data-side "Bump updatedAt" step (`49e00287`): 19 of the 74 cliName'd
+   * commands mutate through a single non-composite grounding and never bumped
+   * (`set-parent`, `set-criticality-*`, `archive`, `shift-day-*`, …). The
+   * plugin executes buttons through this same executor, so CLI/UI parity holds
+   * by construction.
+   *
+   * Four deliberate NON-stamps keep the stamp an invariant rather than noise:
+   *   - `updated === original` — the write would leave the file byte-identical
+   *     (property_set to the value already on disk, property_append of an
+   *     alias already present, property_delete of an absent key). An idempotent
+   *     re-apply must not manufacture a spurious ExoSync delta — the same rule
+   *     `remove-property` follows ("bumps only when a change occurs").
+   *   - the branch's OWN target property is `exo__Asset_updatedAt` (the
+   *     composite step `49e00287` writes `$nowLocal`): that explicit write IS
+   *     the stamp; writing a second one would only risk a one-second skew
+   *     between two writers of the same key.
+   *   - the mutated content has no frontmatter block (a plain-markdown
+   *     `body_template` target): the executor does not invent one.
+   *   - refusals return BEFORE any write and the composite rollback restores
+   *     the pre-composite bytes verbatim — neither reaches this helper.
+   *
+   * Value shape is `DateFormatter.toLocalTimestamp(clock.now())` —
+   * `YYYY-MM-DDTHH:mm:ss`, exactly what `$nowLocal` and `create_instance`
+   * write — from the injected clock, so tests pin it.
+   */
+  private stampUpdatedAt(
+    original: string,
+    updated: string,
+    targetProperty?: string,
+  ): string {
+    if (updated === original) return updated;
+    if (
+      targetProperty !== undefined &&
+      canonicalYamlKey(FrontmatterService.normalizeIRI(targetProperty)) ===
+        "exo__Asset_updatedAt"
+    ) {
+      return updated;
+    }
+    if (!this.frontmatterService.parse(updated).exists) return updated;
+    return this.frontmatterService.updateProperty(
+      updated,
+      "exo__Asset_updatedAt",
+      DateFormatter.toLocalTimestamp(this.clock.now()),
+    );
+  }
+
   private async executePropertySet(
     grounding: GroundingDefinition,
     targetIRI: string,
@@ -805,10 +856,14 @@ export class GroundingExecutor {
     }
 
     const content = await this.fileReader.readFile(effectiveFilePath);
-    const updated = this.frontmatterService.updateProperty(
+    const updated = this.stampUpdatedAt(
       content,
+      this.frontmatterService.updateProperty(
+        content,
+        grounding.targetProperty,
+        valueToWrite,
+      ),
       grounding.targetProperty,
-      valueToWrite,
     );
     await this.fileWriter.updateFile(effectiveFilePath, updated);
 
@@ -942,8 +997,9 @@ export class GroundingExecutor {
     }
 
     const content = await this.fileReader.readFile(filePath);
-    const updated = this.frontmatterService.removeProperty(
+    const updated = this.stampUpdatedAt(
       content,
+      this.frontmatterService.removeProperty(content, grounding.targetProperty),
       grounding.targetProperty,
     );
     await this.fileWriter.updateFile(filePath, updated);
@@ -1239,10 +1295,14 @@ export class GroundingExecutor {
     // exo__Instance_class is UUID-canon when a resolver is wired; falls back
     // to label-form for tests/CLI/headless. See resolveClassRefToUid.
     const classRef = await this.resolveClassRefToUid("ems__Task");
-    const updated = this.frontmatterService.updateProperty(
+    const updated = this.stampUpdatedAt(
       content,
+      this.frontmatterService.updateProperty(
+        content,
+        "exo__Instance_class",
+        `["[[${classRef}]]"]`,
+      ),
       "exo__Instance_class",
-      `["[[${classRef}]]"]`,
     );
     await this.fileWriter.updateFile(filePath, updated);
     return { success: true };
@@ -1252,10 +1312,14 @@ export class GroundingExecutor {
     const content = await this.fileReader.readFile(filePath);
     // Issue #3222: see executeConvertToTask — same UID-canon resolution.
     const classRef = await this.resolveClassRefToUid("ems__Project");
-    const updated = this.frontmatterService.updateProperty(
+    const updated = this.stampUpdatedAt(
       content,
+      this.frontmatterService.updateProperty(
+        content,
+        "exo__Instance_class",
+        `["[[${classRef}]]"]`,
+      ),
       "exo__Instance_class",
-      `["[[${classRef}]]"]`,
     );
     await this.fileWriter.updateFile(filePath, updated);
     return { success: true };
@@ -1329,7 +1393,10 @@ export class GroundingExecutor {
         error: `body_template: failed to read target file "${targetFilePath}": ${error instanceof Error ? error.message : String(error)}`,
       };
     }
-    const newContent = GroundingExecutor.replaceBody(content, resolved);
+    const newContent = this.stampUpdatedAt(
+      content,
+      GroundingExecutor.replaceBody(content, resolved),
+    );
     await this.fileWriter.updateFile(targetFilePath, newContent);
     return { success: true };
   }
@@ -2902,10 +2969,14 @@ export class GroundingExecutor {
       merged = [...existing, quoteYamlString(plain)];
     }
 
-    const updated = this.frontmatterService.updateProperty(
+    const updated = this.stampUpdatedAt(
       content,
+      this.frontmatterService.updateProperty(
+        content,
+        grounding.targetProperty,
+        merged,
+      ),
       grounding.targetProperty,
-      merged,
     );
     await this.fileWriter.updateFile(filePath, updated);
 
@@ -2973,10 +3044,14 @@ export class GroundingExecutor {
     }
 
     const next = current + delta;
-    const updated = this.frontmatterService.updateProperty(
+    const updated = this.stampUpdatedAt(
       content,
+      this.frontmatterService.updateProperty(
+        content,
+        grounding.targetProperty,
+        next,
+      ),
       grounding.targetProperty,
-      next,
     );
     await this.fileWriter.updateFile(filePath, updated);
     return { success: true };
@@ -3058,10 +3133,14 @@ export class GroundingExecutor {
     }
 
     const nextTimestamp = DateFormatter.toLocalTimestamp(shifted);
-    const updated = this.frontmatterService.updateProperty(
+    const updated = this.stampUpdatedAt(
       content,
+      this.frontmatterService.updateProperty(
+        content,
+        grounding.targetProperty,
+        nextTimestamp,
+      ),
       grounding.targetProperty,
-      nextTimestamp,
     );
     await this.fileWriter.updateFile(filePath, updated);
     return { success: true };

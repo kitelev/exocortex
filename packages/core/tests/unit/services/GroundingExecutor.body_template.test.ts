@@ -25,6 +25,15 @@ import {
 } from "../../../src/services/SubstitutionResolverRegistry";
 import { GroundingType } from "../../../src/domain/constants/GroundingType";
 import { GroundingDefinition } from "../../../src/domain/models/CommandDefinition";
+import { frozenClock } from "../../../src/services/IClock";
+
+// req 454ccedf — every mutating grounding write stamps `exo__Asset_updatedAt`
+// (local-timestamp shape) from the injected clock; a frozen clock makes the
+// exact-content assertions below deterministic. Frontmatter-less targets get
+// no invented block (see "writes the whole body when the target has no
+// frontmatter").
+const CLOCK = frozenClock("2026-06-20T12:00:00");
+const STAMP = "exo__Asset_updatedAt: 2026-06-20T12:00:00";
 
 /** In-memory fs that honours read-after-write (unlike the bare jest mocks). */
 function makeFs(seed: Record<string, string> = {}) {
@@ -77,7 +86,9 @@ describe("GroundingExecutor — body_template (Веха 3)", () => {
       const { files, reader, writer } = makeFs({
         "/vault/note.md": "---\nexo__Asset_uid: x\n---\nOLD BODY",
       });
-      const exec = new GroundingExecutor(reader, writer, new ServiceRegistry());
+      const exec = new GroundingExecutor(reader, writer, new ServiceRegistry(), undefined, {
+        clock: CLOCK,
+      });
       const res = await exec.execute(
         gnd({ type: GroundingType.BODY_TEMPLATE, bodyTemplate: "## Plan\n- step" }),
         TARGET_IRI,
@@ -85,7 +96,7 @@ describe("GroundingExecutor — body_template (Веха 3)", () => {
       );
       expect(res.success).toBe(true);
       expect(files.get("/vault/note.md")).toBe(
-        "---\nexo__Asset_uid: x\n---\n## Plan\n- step",
+        `---\nexo__Asset_uid: x\n${STAMP}\n---\n## Plan\n- step`,
       );
     });
 
@@ -94,7 +105,9 @@ describe("GroundingExecutor — body_template (Веха 3)", () => {
       const { files, reader, writer } = makeFs({
         "/vault/n.md": "---\na: b\n---\n",
       });
-      const exec = new GroundingExecutor(reader, writer, new ServiceRegistry());
+      const exec = new GroundingExecutor(reader, writer, new ServiceRegistry(), undefined, {
+        clock: CLOCK,
+      });
       await exec.execute(
         gnd({
           type: GroundingType.BODY_TEMPLATE,
@@ -104,7 +117,7 @@ describe("GroundingExecutor — body_template (Веха 3)", () => {
         "/vault/n.md",
       );
       expect(files.get("/vault/n.md")).toBe(
-        "---\na: b\n---\n## Log\n- opened 2026-06-20",
+        `---\na: b\n${STAMP}\n---\n## Log\n- opened 2026-06-20`,
       );
     });
 
@@ -131,6 +144,7 @@ describe("GroundingExecutor — body_template (Веха 3)", () => {
       });
       const exec = new GroundingExecutor(reader, writer, new ServiceRegistry(), undefined, {
         templateLoader: loader,
+        clock: CLOCK,
       });
       const res = await exec.execute(
         gnd({ type: GroundingType.BODY_TEMPLATE, templateRef: "tpl-1" }),
@@ -140,7 +154,7 @@ describe("GroundingExecutor — body_template (Веха 3)", () => {
       expect(res.success).toBe(true);
       expect(loader).toHaveBeenCalledWith("tpl-1");
       expect(files.get("/vault/n.md")).toBe(
-        "---\na: b\n---\n## From template\n- 2026-06-20",
+        `---\na: b\n${STAMP}\n---\n## From template\n- 2026-06-20`,
       );
     });
 
@@ -149,6 +163,7 @@ describe("GroundingExecutor — body_template (Веха 3)", () => {
       const { files, reader, writer } = makeFs({ "/vault/n.md": "---\na: b\n---\n" });
       const exec = new GroundingExecutor(reader, writer, new ServiceRegistry(), undefined, {
         templateLoader: loader,
+        clock: CLOCK,
       });
       await exec.execute(
         gnd({
@@ -159,12 +174,14 @@ describe("GroundingExecutor — body_template (Веха 3)", () => {
         TARGET_IRI,
         "/vault/n.md",
       );
-      expect(files.get("/vault/n.md")).toBe("---\na: b\n---\nFROM REF");
+      expect(files.get("/vault/n.md")).toBe(`---\na: b\n${STAMP}\n---\nFROM REF`);
     });
 
     it("falls back to inline bodyTemplate when templateRef is set but NO loader is wired", async () => {
       const { files, reader, writer } = makeFs({ "/vault/n.md": "---\na: b\n---\n" });
-      const exec = new GroundingExecutor(reader, writer, new ServiceRegistry());
+      const exec = new GroundingExecutor(reader, writer, new ServiceRegistry(), undefined, {
+        clock: CLOCK,
+      });
       const res = await exec.execute(
         gnd({
           type: GroundingType.BODY_TEMPLATE,
@@ -175,7 +192,7 @@ describe("GroundingExecutor — body_template (Веха 3)", () => {
         "/vault/n.md",
       );
       expect(res.success).toBe(true);
-      expect(files.get("/vault/n.md")).toBe("---\na: b\n---\nINLINE FALLBACK");
+      expect(files.get("/vault/n.md")).toBe(`---\na: b\n${STAMP}\n---\nINLINE FALLBACK`);
     });
 
     it("fails loud when templateRef set, no loader, and no inline fallback", async () => {
