@@ -35,7 +35,7 @@ const YAML_LEADING_INDICATORS = /^[-!&*?|>%@`"'#,[\]{}]/;
 
 // Control characters (C0 range + DEL) that break a single-line plain scalar.
 // Covers `\t` `\n` `\r` plus `\x07` `\b` `\f` `\v` NUL etc. (#3750 LOW-4).
-// eslint-disable-next-line no-control-regex
+// eslint-disable-next-line no-control-regex -- the C0/DEL class IS the pattern's purpose (#3750 LOW-4)
 const YAML_CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 // Scalar tokens a real YAML parser (js-yaml DEFAULT_SCHEMA, used by Obsidian
@@ -179,6 +179,81 @@ export function quoteYamlString(value: string): string {
     }
   }
   return `"${out}"`;
+}
+
+/**
+ * Is the value a COMPLETE single-quoted YAML scalar (`'…'`)? Inside single
+ * quotes the only escape is `''` (a literal `'`), so the run is complete when
+ * every interior `'` is doubled.
+ */
+function isCompleteSingleQuotedScalar(value: string): boolean {
+  if (value.length < 2 || !value.startsWith("'") || !value.endsWith("'")) {
+    return false;
+  }
+  const inner = value.slice(1, -1);
+  for (let i = 0; i < inner.length; i++) {
+    if (inner[i] === "'") {
+      if (inner[i + 1] !== "'") return false; // lone interior quote
+      i++; // skip the doubled quote
+    }
+  }
+  return true;
+}
+
+/**
+ * Decode the RAW TEXT of a YAML scalar back to its string VALUE — the inverse
+ * of {@link quoteYamlString} (ticket 4f226028).
+ *
+ * `FrontmatterService.parseObject` is a textual reader: it hands callers the
+ * scalar exactly as it sits on the line, quotes and escapes included. Every
+ * consumer that turns such a raw value back into a scalar (`$target.<prop>`
+ * substitution → `property_set` / `property_append` / `labelTemplate`) must
+ * therefore DECODE it first; stripping only the outer quotes leaves the
+ * interior escapes (`\"`, `\\`) in the text, and re-quoting that through
+ * {@link quoteYamlString} double-escapes them.
+ *
+ * - complete double-quoted scalar → unescape `\\` `\"` `\n` `\r` `\t` `\xNN`
+ *   `\uNNNN` (the forms {@link quoteYamlString} emits, plus `\u` which js-yaml
+ *   accepts); an unknown escape keeps its character.
+ * - complete single-quoted scalar → `''` → `'`.
+ * - anything else (a plain scalar, an INCOMPLETE quoted run such as
+ *   `"a" and "b"`) → returned verbatim — it IS the value.
+ */
+export function decodeYamlQuotedScalar(raw: string): string {
+  if (isCompleteDoubleQuotedScalar(raw)) {
+    const inner = raw.slice(1, -1);
+    let out = "";
+    for (let i = 0; i < inner.length; i++) {
+      const ch = inner[i];
+      if (ch !== "\\") {
+        out += ch;
+        continue;
+      }
+      const next = inner[i + 1];
+      if (next === "n") out += "\n";
+      else if (next === "r") out += "\r";
+      else if (next === "t") out += "\t";
+      else if (next === "x" && /^[0-9a-fA-F]{2}$/.test(inner.slice(i + 2, i + 4))) {
+        out += String.fromCharCode(parseInt(inner.slice(i + 2, i + 4), 16));
+        i += 2;
+      } else if (
+        next === "u" &&
+        /^[0-9a-fA-F]{4}$/.test(inner.slice(i + 2, i + 6))
+      ) {
+        out += String.fromCharCode(parseInt(inner.slice(i + 2, i + 6), 16));
+        i += 4;
+      } else {
+        // `\\`, `\"`, `\/` and any other escaped char → the char itself.
+        out += next;
+      }
+      i++; // consume the escape lead char
+    }
+    return out;
+  }
+  if (isCompleteSingleQuotedScalar(raw)) {
+    return raw.slice(1, -1).replace(/''/g, "'");
+  }
+  return raw;
 }
 
 /**

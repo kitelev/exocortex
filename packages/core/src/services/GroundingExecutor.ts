@@ -22,6 +22,8 @@ import { IRI } from "../domain/models/rdf/IRI";
 import type { WorkflowDefinition } from "../domain/models/WorkflowDefinition";
 import { FrontmatterService } from "../utilities/FrontmatterService";
 import {
+  decodeYamlQuotedScalar,
+  quoteYamlString,
   serializeYamlScalar,
   STRING_SCALAR_PROPERTIES,
 } from "../utilities/yamlScalar";
@@ -2750,8 +2752,13 @@ export class GroundingExecutor {
             `only scalar properties are supported for substitution`,
         );
       }
-      // Strip surrounding YAML quotes if present (parseObject preserves them).
-      return String(fmValue).replace(/^["'](.*)["']$/, "$1");
+      // `parseObject` is textual — the value arrives as the RAW scalar text,
+      // quotes and escapes included. Decode it to the string VALUE (ticket
+      // 4f226028): stripping only the outer quotes left interior escapes
+      // (`\"`, `\\`) in the substituted text, so every consumer that
+      // re-quotes the result (`property_set` / `property_append` /
+      // `labelTemplate` → `quoteYamlString`) double-escaped it.
+      return decodeYamlQuotedScalar(String(fmValue));
     });
 
     // $targetFolder is resolved BEFORE the generic `$target` substitution so
@@ -2864,19 +2871,27 @@ export class GroundingExecutor {
         ? [String(existingRaw)]
         : [];
 
-    // Set-based dedup. Compare against unquoted form so a stored
-    // `"Foo"` (with YAML quotes) does not duplicate a plain `Foo`.
-    const stripQuotes = (s: string): string =>
-      s.replace(/^["'](.*)["']$/, "$1");
-    const seen = new Set(existing.map(stripQuotes));
+    // The value to append is the string VALUE; `$target.<prop>` already
+    // arrives decoded, a caller-supplied pre-quoted `"[[uid]]"` (legacy
+    // `$input.class` shape) is decoded here. `existing` holds the RAW list
+    // items as they sit on disk (`parseObject` is textual), so the Set-based
+    // dedup compares DECODED forms: a stored `"Say \"hi\""` is the same alias
+    // as the plain `Say "hi"`.
+    const plain = decodeYamlQuotedScalar(resolvedValue);
+    const seen = new Set(existing.map(decodeYamlQuotedScalar));
     let merged: string[];
-    if (seen.has(stripQuotes(resolvedValue))) {
+    if (seen.has(plain)) {
       merged = existing;
     } else {
-      // Preserve YAML-quoted form for string values to round-trip safely
-      // through serializeValue (matches LabelToAliasService behavior).
-      const formatted = `"${stripQuotes(resolvedValue)}"`;
-      merged = [...existing, formatted];
+      // Ticket 4f226028 — ONE writer for label and aliases. `updateProperty`
+      // emits list items verbatim (no `quoteScalars` on that path), so the
+      // item must be a complete, correctly ESCAPED double-quoted scalar here.
+      // `quoteYamlString` is the same escaper `property_set` / the create path
+      // use (`serializeYamlScalar`); the previous hand-built `"${value}"`
+      // wrap left an interior `"` / `\` unescaped, which made the whole
+      // frontmatter unparseable (req 27fbe40b: `requirements-trace` red on
+      // every PR). Always-quoted keeps the on-disk alias shape (`- "Foo"`).
+      merged = [...existing, quoteYamlString(plain)];
     }
 
     const updated = this.frontmatterService.updateProperty(
