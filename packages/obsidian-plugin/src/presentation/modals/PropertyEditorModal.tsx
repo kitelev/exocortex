@@ -1,4 +1,4 @@
-import { Modal, App, TFile } from "obsidian";
+import { Modal, App, TFile, requireApiVersion } from "obsidian";
 import React from "react";
 import {
   FrontmatterService,
@@ -9,6 +9,7 @@ import {
 } from "@kitelev/exocortex-core";
 import { ExocortexPluginInterface } from '@plugin/types';
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
+import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 import {
   PropertyEditorForm,
   type RelationsFormDeps,
@@ -86,6 +87,12 @@ export class PropertyEditorModal extends Modal {
   private keyByPredicateDefUid: Map<string, string> = new Map();
   /** Guards a late async re-render after the modal has been closed. */
   private closed = false;
+  /**
+   * Ticket 7c02970c — the modal's own logger (channel-routed by the plugin's
+   * logChannels settings: console / notice / file), replacing the bare
+   * `console.error` calls that bypassed that routing.
+   */
+  private readonly logger = LoggerFactory.create("PropertyEditorModal");
 
   constructor(
     app: App,
@@ -111,13 +118,13 @@ export class PropertyEditorModal extends Modal {
     contentEl.empty();
     contentEl.addClass("property-editor-modal");
 
-    const titleEl = contentEl.createEl("div", { cls: "modal-title" });
+    const titleEl = contentEl.createDiv({ cls: "modal-title" });
     titleEl.textContent = "Edit properties";
 
-    const subtitleEl = contentEl.createEl("div", { cls: "property-editor-subtitle" });
+    const subtitleEl = contentEl.createDiv({ cls: "property-editor-subtitle" });
     subtitleEl.textContent = `${this.file.basename} (${this.instanceClass})`;
 
-    this.container = contentEl.createEl("div", { cls: "property-editor-container" });
+    this.container = contentEl.createDiv({ cls: "property-editor-container" });
 
     // Render the form immediately (relations undefined → opens instantly), then
     // build the Relations-section deps async (triple-store query + schema) and
@@ -131,8 +138,8 @@ export class PropertyEditorModal extends Modal {
         // mounting a React root into the emptied contentEl → leak).
         if (relations && !this.closed) this.renderForm(relations);
       })
-      .catch((error) => {
-        console.error("[Exocortex Property Editor] Relations init error:", error);
+      .catch((error: unknown) => {
+        this.logger.error("Relations init error", error);
       });
   }
 
@@ -151,8 +158,10 @@ export class PropertyEditorModal extends Modal {
             relations,
           }),
           onError: (error: Error) => {
-            console.error("[Exocortex Property Editor] Error:", error);
-            this.notificationService.error(`Error in property editor: ${error.message}`);
+            // One call, one toast: the Logger's notice channel (default ON,
+            // "✗ "-prefixed like notificationService.error) carries the user
+            // message — a second notificationService.error would double it.
+            this.logger.error(`Error in property editor: ${error.message}`, error);
           },
         },
       ),
@@ -456,6 +465,26 @@ export class PropertyEditorModal extends Modal {
     this.notificationService.success("Relation removed");
   }
 
+  /**
+   * The ONE place a statement file is moved to trash. `FileManager.trashFile`
+   * (honours the user's "deleted files" setting) exists since Obsidian 1.6.6
+   * while manifest `minAppVersion` is 1.5.0 (obsidianmd/no-unsupported-api):
+   * an older host used to die with a bare `TypeError: trashFile is not a
+   * function` — fail loud with the real reason instead, exactly as
+   * `ObsidianVaultAdapter.delete` does. `Vault.trash` / `Vault.delete` are NOT
+   * a fallback on purpose: they bypass that user setting
+   * (obsidianmd/prefer-file-manager-trash-file). Ticket 7c02970c.
+   */
+  private async trashStatementFile(file: TFile): Promise<void> {
+    if (requireApiVersion("1.6.6")) {
+      await this.app.fileManager.trashFile(file);
+      return;
+    }
+    throw new Error(
+      `Deleting "${file.path}" requires Obsidian 1.6.6 or newer (FileManager.trashFile).`,
+    );
+  }
+
   private async deleteReified(row: RelationRow): Promise<void> {
     const path = row.statementPath;
     if (!path) return;
@@ -463,7 +492,7 @@ export class PropertyEditorModal extends Modal {
     if (file instanceof TFile) {
       // trashFile (not vault.delete) respects the user's deletion preference and
       // is Desktop↔Mobile safe; the statement is recoverable from trash.
-      await this.app.fileManager.trashFile(file);
+      await this.trashStatementFile(file);
       // verify-after-write — the statement file must be gone (mutation of disk).
       if (this.app.vault.getAbstractFileByPath(path)) {
         throw new Error(`statement still present after delete: ${path}`);
@@ -500,7 +529,7 @@ export class PropertyEditorModal extends Modal {
         this.app.vault.getAbstractFileByPath(path) instanceof TFile,
       deleteStatement: async (path: string): Promise<void> => {
         const file = this.app.vault.getAbstractFileByPath(path);
-        if (file instanceof TFile) await this.app.fileManager.trashFile(file);
+        if (file instanceof TFile) await this.trashStatementFile(file);
       },
       removeInline: (predicateKey: string, rawValue: string): Promise<void> =>
         this.portRemoveInline(predicateKey, rawValue),
@@ -671,9 +700,9 @@ export class PropertyEditorModal extends Modal {
       this.close();
       this.plugin.refreshLayout?.();
     } catch (error) {
-      console.error("[Exocortex Property Editor] Save error:", error);
       const message = error instanceof Error ? error.message : String(error);
-      this.notificationService.error(`Failed to save properties: ${message}`);
+      // One call, one toast (see onError above).
+      this.logger.error(`Failed to save properties: ${message}`, error);
     }
   }
 
@@ -694,8 +723,10 @@ export class PropertyEditorModal extends Modal {
 
 /** A fresh lowercase UUID for a new statement asset (no `Date`/random in the pure model). */
 export function generateStatementUid(): string {
+  // `window` (not `globalThis`) for popout-window compatibility
+  // (obsidianmd/no-global-this); in Obsidian's renderer they are the same object.
   const c = (
-    globalThis as {
+    window as {
       crypto?: {
         randomUUID?: () => string;
         getRandomValues?: <T extends ArrayBufferView>(array: T) => T;
