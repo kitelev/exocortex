@@ -31,6 +31,8 @@
  * snapshot churn and over-quoting.
  */
 
+import * as yaml from "js-yaml";
+
 const YAML_LEADING_INDICATORS = /^[-!&*?|>%@`"'#,[\]{}]/;
 
 // Control characters (C0 range + DEL) that break a single-line plain scalar.
@@ -72,7 +74,7 @@ export const STRING_SCALAR_PROPERTIES = new Set<string>([
  * unescaped interior `"`) and `"\"` (the closing quote is escaped), which must
  * be re-quoted instead of emitted as invalid YAML. (#3750 MEDIUM-2.)
  */
-function isCompleteDoubleQuotedScalar(value: string): boolean {
+export function isCompleteDoubleQuotedScalar(value: string): boolean {
   if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) {
     return false;
   }
@@ -201,59 +203,46 @@ function isCompleteSingleQuotedScalar(value: string): boolean {
 }
 
 /**
- * Decode the RAW TEXT of a YAML scalar back to its string VALUE — the inverse
- * of {@link quoteYamlString} (ticket 4f226028).
+ * Decode the RAW TEXT of a YAML scalar back to its string VALUE (ticket
+ * 4f226028) — the read-side counterpart of {@link quoteYamlString}.
  *
  * `FrontmatterService.parseObject` is a textual reader: it hands callers the
  * scalar exactly as it sits on the line, quotes and escapes included. Every
  * consumer that turns such a raw value back into a scalar (`$target.<prop>`
- * substitution → `property_set` / `property_append` / `labelTemplate`) must
+ * substitution → `property_append` / `labelTemplate`, the append dedup) must
  * therefore DECODE it first; stripping only the outer quotes leaves the
  * interior escapes (`\"`, `\\`) in the text, and re-quoting that through
  * {@link quoteYamlString} double-escapes them.
  *
- * - complete double-quoted scalar → unescape `\\` `\"` `\n` `\r` `\t` `\xNN`
- *   `\uNNNN` (the forms {@link quoteYamlString} emits, plus `\u` which js-yaml
- *   accepts); an unknown escape keeps its character.
- * - complete single-quoted scalar → `''` → `'`.
+ * ⛤ The decode is the REAL parser, not a hand-rolled table: the text on disk is
+ * written by several serialisers — `quoteYamlString` (`\\ \" \n \r \t \xNN`),
+ * but also js-yaml `dump` on the object-path writers (`FileSystemVaultAdapter`,
+ * `AtomicFrontmatterService`, Obsidian's `processFrontMatter`), which emits the
+ * full YAML 1.2 §5.7 set (`\_` NBSP, `\N \L \P`, `\0 \a \b \e \f \v`,
+ * `\UNNNNNNNN`, …). A table that knew only the first set silently turned
+ * `"foo\_bar"` into `foo_bar` (PR #4250 review MEDIUM). Delegating to
+ * `yaml.load` makes "what the decoder returns" identical to "what the parser
+ * reads from that line" by construction.
+ *
+ * - complete double-quoted / single-quoted scalar → `yaml.load(raw)`.
+ * - a quoted run js-yaml itself REJECTS (`"\q"`, `"\xZZ"`) → returned VERBATIM
+ *   (byte-lossless: re-quoting it round-trips the text, nothing is invented).
  * - anything else (a plain scalar, an INCOMPLETE quoted run such as
  *   `"a" and "b"`) → returned verbatim — it IS the value.
  */
 export function decodeYamlQuotedScalar(raw: string): string {
-  if (isCompleteDoubleQuotedScalar(raw)) {
-    const inner = raw.slice(1, -1);
-    let out = "";
-    for (let i = 0; i < inner.length; i++) {
-      const ch = inner[i];
-      if (ch !== "\\") {
-        out += ch;
-        continue;
-      }
-      const next = inner[i + 1];
-      if (next === "n") out += "\n";
-      else if (next === "r") out += "\r";
-      else if (next === "t") out += "\t";
-      else if (next === "x" && /^[0-9a-fA-F]{2}$/.test(inner.slice(i + 2, i + 4))) {
-        out += String.fromCharCode(parseInt(inner.slice(i + 2, i + 4), 16));
-        i += 2;
-      } else if (
-        next === "u" &&
-        /^[0-9a-fA-F]{4}$/.test(inner.slice(i + 2, i + 6))
-      ) {
-        out += String.fromCharCode(parseInt(inner.slice(i + 2, i + 6), 16));
-        i += 4;
-      } else {
-        // `\\`, `\"`, `\/` and any other escaped char → the char itself.
-        out += next;
-      }
-      i++; // consume the escape lead char
-    }
-    return out;
+  if (
+    !isCompleteDoubleQuotedScalar(raw) &&
+    !isCompleteSingleQuotedScalar(raw)
+  ) {
+    return raw;
   }
-  if (isCompleteSingleQuotedScalar(raw)) {
-    return raw.slice(1, -1).replace(/''/g, "'");
+  try {
+    const loaded: unknown = yaml.load(raw);
+    return typeof loaded === "string" ? loaded : raw;
+  } catch {
+    return raw;
   }
-  return raw;
 }
 
 /**

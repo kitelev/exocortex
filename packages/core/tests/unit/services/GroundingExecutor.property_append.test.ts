@@ -344,6 +344,53 @@ describe("ticket 4f226028 — aliases entry goes through the YAML escaper (@req:
     expect(fm.exo__Asset_label).toBe('Key: "x" \\ y');
   });
 
+  it("U8 (PR #4250 review MEDIUM) a js-yaml-dumped label with a §5.7 named escape on disk (`\"foo\\_bar\"`, NBSP) copies to aliases equal to the label", async () => {
+    // GREEN on origin/main too (the old byte-preserving wrap kept `\\_`); the
+    // sign of this axis is REVERSED — it guards the decoder against regressing
+    // the non-`quoteYamlString` escapes the object-path writers emit.
+    const { executor, writer } = makeExecutor(
+      '---\nexo__Asset_label: "foo\\_bar"\n---\nBody',
+    );
+
+    const result = await executor.execute(TARGET_APPEND, TARGET_IRI, FILE_PATH);
+
+    expect(result.success).toBe(true);
+    const { fm } = loadWritten(writer);
+    expect(fm.exo__Asset_label).toBe("foo\u00a0bar");
+    expect(fm.aliases).toEqual([fm.exo__Asset_label]);
+  });
+
+  it("U9 (PR #4250 review LOW) a single-quoted $input.label `'Foo'` is a USER value: the alias mirrors the label property_set writes", async () => {
+    const { executor, writer } = makeExecutor(
+      "---\nexo__Asset_label: Old\n---\nBody",
+    );
+
+    await executor.execute(INPUT_APPEND, TARGET_IRI, FILE_PATH, {
+      label: "'Foo'",
+    });
+
+    const { fm } = loadWritten(writer);
+    expect(fm.aliases).toEqual(["'Foo'"]);
+
+    // …and that IS what the label step writes for the same input: the real
+    // set-label step f79e2d7d (property_set exo__Asset_label = $input.label)
+    // quotes `'Foo'` as a string (leading `'` indicator) — label === alias.
+    const { executor: setExec, writer: setWriter } = makeExecutor(
+      "---\nexo__Asset_label: Old\n---\nBody",
+    );
+    await setExec.execute(
+      makeGrounding({
+        type: GroundingType.PROPERTY_SET,
+        targetProperty: "exo__Asset_label",
+        targetValueLiteral: "$input.label",
+      }),
+      TARGET_IRI,
+      FILE_PATH,
+      { label: "'Foo'" },
+    );
+    expect(loadWritten(setWriter).fm.exo__Asset_label).toBe("'Foo'");
+  });
+
   it("U6b property_set with $target.<prop> still fails loud (no frontmatter context) — unchanged by the decode", async () => {
     const { executor, writer } = makeExecutor(
       '---\nems__Effort_parent: "[[99999999-4f22-4000-8000-000000000009]]"\n---\nBody',

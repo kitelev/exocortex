@@ -23,6 +23,7 @@ import type { WorkflowDefinition } from "../domain/models/WorkflowDefinition";
 import { FrontmatterService } from "../utilities/FrontmatterService";
 import {
   decodeYamlQuotedScalar,
+  isCompleteDoubleQuotedScalar,
   quoteYamlString,
   serializeYamlScalar,
   STRING_SCALAR_PROPERTIES,
@@ -2871,13 +2872,20 @@ export class GroundingExecutor {
         ? [String(existingRaw)]
         : [];
 
-    // The value to append is the string VALUE; `$target.<prop>` already
-    // arrives decoded, a caller-supplied pre-quoted `"[[uid]]"` (legacy
-    // `$input.class` shape) is decoded here. `existing` holds the RAW list
-    // items as they sit on disk (`parseObject` is textual), so the Set-based
-    // dedup compares DECODED forms: a stored `"Say \"hi\""` is the same alias
-    // as the plain `Say "hi"`.
-    const plain = decodeYamlQuotedScalar(resolvedValue);
+    // The value to append is the string VALUE. `$target.<prop>` already
+    // arrives decoded; a `$input.*` value is a USER value, not YAML text, and
+    // is treated exactly as `property_set` treats its substituted value:
+    // only a COMPLETE double-quoted scalar (the pre-wrapped `"[[uid]]"` the
+    // CLI / ReferencePicker commit) is unwrapped, everything else — including
+    // a single-quoted `'Foo'` — is the literal value (PR #4250 review LOW:
+    // decoding both here while the label step quotes `'Foo'` as a string
+    // would make alias ≠ label). `existing` holds the RAW list items as they
+    // sit on disk (`parseObject` is textual), so the Set-based dedup compares
+    // DECODED forms: a stored `"Say \"hi\""` is the same alias as the plain
+    // `Say "hi"`.
+    const plain = isCompleteDoubleQuotedScalar(resolvedValue)
+      ? decodeYamlQuotedScalar(resolvedValue)
+      : resolvedValue;
     const seen = new Set(existing.map(decodeYamlQuotedScalar));
     let merged: string[];
     if (seen.has(plain)) {
