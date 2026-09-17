@@ -3,10 +3,11 @@ import { extractAssetReference } from "@kitelev/exocortex-core";
 import type { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 
 /**
- * Shared CLI-side folder-repair helpers. Consumed by both
- * `FolderRepairExecutor` (single-file `repair-folder` command) and
- * `BatchExecutor` (batch `repair-folder` operation). Previously duplicated in
- * each executor (audit #3384 finding H4).
+ * Shared CLI-side folder-repair helpers. Consumed by `FolderRepairExecutor`
+ * (single-file `repair-folder` command) and the `audit-*` / `create` /
+ * `set-property` commands. Previously duplicated across executors (audit #3384
+ * finding H4; the batch `repair-folder` copy went with the dead `BatchExecutor`,
+ * ticket 99a904a9).
  *
  * These implement the CLI's Node-fs reference-resolution strategy, which is
  * deliberately distinct from the plugin/grounding path (core
@@ -44,9 +45,9 @@ export async function findReferencedFile(
 
   // Try 2: Same folder as source file. `path.dirname` returns "." for a
   // root-level source; both prior copies resolved identically here —
-  // FolderRepairExecutor produced "./<ref>.md" and BatchExecutor produced
-  // "<ref>.md", which `NodeFsAdapter.resolvePath` (path.join) and the
-  // downstream `path.dirname` collapse to the same value.
+  // FolderRepairExecutor produced "./<ref>.md" and the (since removed) batch
+  // copy produced "<ref>.md", which `NodeFsAdapter.resolvePath` (path.join)
+  // and the downstream `path.dirname` collapse to the same value.
   const sourceDir = path.dirname(sourceFilePath);
   const sameFolderPath =
     sourceDir !== "." ? `${sourceDir}/${normalizedRef}` : normalizedRef;
