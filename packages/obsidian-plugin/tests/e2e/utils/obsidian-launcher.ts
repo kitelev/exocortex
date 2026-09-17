@@ -17,46 +17,86 @@ export class ObsidianLauncher {
   private vaultPath: string;
   private electronProcess: ChildProcess | null = null;
   private cdpPort: number;
+  /** True for the whole duration of `launch()` (all attempts + backoffs). */
+  private launchInFlight = false;
+  /**
+   * Set by `close()` when it runs while a launch is in flight: the caller has
+   * walked away, so `launch()` must not start another attempt. Per-launch —
+   * cleared at the start of every `launch()`.
+   */
+  private abandoned = false;
 
   constructor(vaultPath?: string) {
     this.vaultPath = vaultPath || path.join(__dirname, "../test-vault");
     this.cdpPort = 9222;
   }
 
+  /**
+   * ⛤ A launch its caller has walked away from is NOT retried (req dad111a2).
+   * When a spec's `beforeAll` overflows its 60 s budget mid-attempt, Playwright
+   * runs `afterAll` → `close()` while the attempt is still waiting (window /
+   * vault / plugin). The attempt then fails — with the explicit "window closed
+   * during plugin wait" error (#4249) or with a `TypeError … null` from the
+   * older wait loops — and before this guard every such failure took the
+   * ordinary retry path: backoff, then `launchAttempt(N+1)` spawned a fresh
+   * Obsidian on CDP :9222 that nobody was waiting for, racing the next spec's
+   * own `beforeAll` for the same port. Abandonment is a fact about the CALLER
+   * (it called `close()` while we were in flight), not about the error text,
+   * so it is a flag set by `close()` and read here at the two points from
+   * which another attempt could start: after the per-attempt cleanup and
+   * after the backoff pause. `launch()`'s own cleanup goes through
+   * `teardown()` — never through `close()` — so it cannot mark itself.
+   */
   async launch(): Promise<void> {
     const maxRetries = 3;
+    this.abandoned = false;
+    this.launchInFlight = true;
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        await this.launchAttempt(attempt);
-        return;
-      } catch (error) {
-        console.log(
-          `[ObsidianLauncher] Launch attempt ${attempt}/${maxRetries} failed:`,
-          error,
-        );
-
-        // Clean up the failed attempt before retrying
-        await this.close().catch((closeErr) => {
+    try {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          await this.launchAttempt(attempt);
+          return;
+        } catch (error) {
           console.log(
-            "[ObsidianLauncher] Cleanup after failed attempt error:",
-            closeErr,
+            `[ObsidianLauncher] Launch attempt ${attempt}/${maxRetries} failed:`,
+            error,
           );
-        });
 
-        if (attempt === maxRetries) {
-          throw new Error(
-            `Obsidian failed to launch after ${maxRetries} attempts: ${error}`,
-          );
+          // Clean up the failed attempt before retrying
+          await this.teardown().catch((closeErr) => {
+            console.log(
+              "[ObsidianLauncher] Cleanup after failed attempt error:",
+              closeErr,
+            );
+          });
+
+          if (this.abandoned) {
+            throw new Error(
+              `[ObsidianLauncher] Launch attempt ${attempt} was abandoned by its caller (close() ran while it was in flight) — not retrying: ${error}`,
+            );
+          }
+
+          if (attempt === maxRetries) {
+            throw new Error(
+              `Obsidian failed to launch after ${maxRetries} attempts: ${error}`,
+            );
+          }
+
+          // Exponential backoff: 2s, 4s
+          const backoffMs = 2000 * attempt;
+          console.log(`[ObsidianLauncher] Retrying in ${backoffMs}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+
+          if (this.abandoned) {
+            throw new Error(
+              `[ObsidianLauncher] Launch was abandoned by its caller during the backoff after attempt ${attempt} (close() ran) — not retrying: ${error}`,
+            );
+          }
         }
-
-        // Exponential backoff: 2s, 4s
-        const backoffMs = 2000 * attempt;
-        console.log(
-          `[ObsidianLauncher] Retrying in ${backoffMs}ms...`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, backoffMs));
       }
+    } finally {
+      this.launchInFlight = false;
     }
   }
 
@@ -705,6 +745,24 @@ export class ObsidianLauncher {
   }
 
   async close(): Promise<void> {
+    if (this.launchInFlight) {
+      // afterAll → close() while launch() is still trying: tell launch() not
+      // to start another attempt (see the `launch()` docblock).
+      this.abandoned = true;
+      console.log(
+        "[ObsidianLauncher] close() called while a launch is in flight — marking the launch abandoned (no further attempts)",
+      );
+    }
+    await this.teardown();
+  }
+
+  /**
+   * The teardown proper (window, Electron process, CDP port). Shared by
+   * `close()` (the caller's exit) and by `launch()`'s per-attempt cleanup —
+   * the latter MUST call this and not `close()`, or it would mark its own
+   * launch abandoned.
+   */
+  private async teardown(): Promise<void> {
     console.log("[ObsidianLauncher] Starting cleanup...");
 
     if (this.window) {

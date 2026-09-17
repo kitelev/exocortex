@@ -483,3 +483,213 @@ describe(`ObsidianLauncher.close termination timer (${REQ})`, () => {
     expect(timeoutLogged(log)).toBe(true);
   });
 });
+
+/**
+ * Guards req dad111a2 (ticket 81977587, LOW-3 of the #4249 review): `launch()`
+ * does NOT retry a launch its caller has abandoned.
+ *
+ * `launch()` retries `launchAttempt` up to 3 times with a 2 s × attempt
+ * backoff on ANY failure. When a spec's `beforeAll` overflows its 60 s budget
+ * mid-attempt, Playwright runs `afterAll` → `close()` while the attempt is
+ * still waiting; the attempt then fails (the explicit "window closed during
+ * plugin wait" error of #4249, or the older `TypeError … null` forms) and,
+ * before the fix, took the ordinary retry path — `launchAttempt(N+1)` spawned
+ * an Obsidian on CDP :9222 that nobody was waiting for. Reproduced on
+ * e3d79024 with the C1 fixture: `launchAttempt` was called twice and
+ * `launch()` resolved. The fix is a per-launch `abandoned` flag set by
+ * `close()` while a launch is in flight and read by `launch()` after its
+ * per-attempt cleanup and after the backoff pause; `launch()`'s own cleanup
+ * goes through the private `teardown()`, never through `close()`.
+ */
+const REQ_ABANDON = "@req:dad111a2-d4b9-42e2-a1c7-2a9c0ea702ae";
+
+describe(`ObsidianLauncher.launch() after its caller abandoned it (${REQ_ABANDON})`, () => {
+  type LaunchInternals = {
+    launchAttempt: (attempt: number) => Promise<void>;
+    teardown: () => Promise<void>;
+  };
+
+  // Verbatim from waitForPluginReady — the error #4249 raises after close().
+  const WINDOW_CLOSED =
+    "[ObsidianLauncher] window closed during plugin wait (close() ran concurrently — the launch was abandoned by its caller)";
+
+  const makeLaunchable = (): {
+    launcher: ObsidianLauncher;
+    launchAttempt: jest.SpyInstance;
+    teardown: jest.SpyInstance;
+    log: jest.SpyInstance;
+  } => {
+    const launcher = new ObsidianLauncher("/tmp/does-not-matter");
+    const internals = launcher as unknown as LaunchInternals;
+    // The real teardown probes TCP :9222 and sleeps 1 s; these axes are about
+    // launch()'s DECISION, so the teardown is a counted no-op.
+    const teardown = jest
+      .spyOn(internals, "teardown")
+      .mockResolvedValue(undefined);
+    const launchAttempt = jest.spyOn(internals, "launchAttempt");
+    const log = jest.spyOn(console, "log").mockImplementation(() => {});
+    return { launcher, launchAttempt, teardown, log };
+  };
+
+  // afterAll → close() while the attempt is still waiting, then the attempt
+  // fails with `error` — the production ordering (close() nulls the window,
+  // the wait loop notices on its next poll).
+  const abandonedAttempt =
+    (launcher: ObsidianLauncher, error: Error) => async (): Promise<void> => {
+      await launcher.close();
+      throw error;
+    };
+
+  const abandonLogged = (log: jest.SpyInstance): boolean =>
+    log.mock.calls.some((c) =>
+      String(c[0]).includes("marking the launch abandoned"),
+    );
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it(`C1 close() during attempt 1 ⇒ one attempt, explicit abandonment error, no backoff armed ${REQ_ABANDON}`, async () => {
+    const { launcher, launchAttempt, teardown } = makeLaunchable();
+    launchAttempt
+      .mockImplementationOnce(
+        abandonedAttempt(launcher, new Error(WINDOW_CLOSED)),
+      )
+      .mockResolvedValue(undefined);
+
+    const launching = launcher.launch();
+    launching.catch(() => {});
+    await jest.advanceTimersByTimeAsync(0); // drain microtasks, no timer fires
+
+    // Discriminator vs the pre-fix loop: it armed the 2 s backoff timer here.
+    expect(jest.getTimerCount()).toBe(0);
+    await jest.advanceTimersByTimeAsync(20_000);
+    expect(launchAttempt).toHaveBeenCalledTimes(1);
+    await expect(launching).rejects.toThrow(
+      /abandoned by its caller \(close\(\) ran while it was in flight\) — not retrying/,
+    );
+    // The caller's close() and launch()'s own cleanup both tore down.
+    expect(teardown).toHaveBeenCalledTimes(2);
+  });
+
+  it(`C7 the un-named TypeError form (window-wait / vault-wait after close()) is not retried either ${REQ_ABANDON}`, async () => {
+    // Breadth control: abandonment is a fact about the caller, not about the
+    // error text — the older loops fail with a TypeError, not with #4249's
+    // explicit message.
+    const { launcher, launchAttempt } = makeLaunchable();
+    launchAttempt
+      .mockImplementationOnce(
+        abandonedAttempt(
+          launcher,
+          new TypeError("Cannot read properties of null (reading 'evaluate')"),
+        ),
+      )
+      .mockResolvedValue(undefined);
+
+    const launching = launcher.launch();
+    launching.catch(() => {});
+    await jest.advanceTimersByTimeAsync(0);
+
+    expect(jest.getTimerCount()).toBe(0); // no backoff armed
+    await jest.advanceTimersByTimeAsync(20_000);
+    expect(launchAttempt).toHaveBeenCalledTimes(1);
+    await expect(launching).rejects.toThrow(
+      /abandoned by its caller \(close\(\) ran while it was in flight\) — not retrying/,
+    );
+  });
+
+  it(`C2 an ordinary failure is still retried after the 2 s backoff (pair, behaviour unchanged) ${REQ_ABANDON}`, async () => {
+    const { launcher, launchAttempt, teardown } = makeLaunchable();
+    launchAttempt
+      .mockRejectedValueOnce(new Error("Obsidian not found at /nope"))
+      .mockResolvedValue(undefined);
+
+    const launching = launcher.launch();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(launchAttempt).toHaveBeenCalledTimes(1);
+    expect(teardown).toHaveBeenCalledTimes(1); // own cleanup, nobody closed
+
+    await jest.advanceTimersByTimeAsync(1_999); // still inside the backoff
+    expect(launchAttempt).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1); // 2 s × attempt 1 elapsed
+
+    await expect(launching).resolves.toBeUndefined();
+    expect(launchAttempt).toHaveBeenCalledTimes(2);
+    expect(launchAttempt).toHaveBeenNthCalledWith(2, 2);
+  });
+
+  it(`C4 close() during the backoff pause ⇒ no next attempt after the pause ${REQ_ABANDON}`, async () => {
+    const { launcher, launchAttempt } = makeLaunchable();
+    launchAttempt
+      .mockRejectedValueOnce(new Error("Obsidian not found at /nope"))
+      .mockResolvedValue(undefined);
+
+    const launching = launcher.launch();
+    launching.catch(() => {});
+    await jest.advanceTimersByTimeAsync(1_000); // mid-backoff
+    expect(launchAttempt).toHaveBeenCalledTimes(1);
+
+    await launcher.close(); // afterAll lands during the pause
+    await jest.advanceTimersByTimeAsync(20_000);
+
+    expect(launchAttempt).toHaveBeenCalledTimes(1);
+    await expect(launching).rejects.toThrow(
+      /abandoned by its caller during the backoff after attempt 1/,
+    );
+  });
+
+  it(`C5 a new launch() on the same instance after an abandoned one starts clean and retries normally ${REQ_ABANDON}`, async () => {
+    const { launcher, launchAttempt } = makeLaunchable();
+    launchAttempt
+      // launch №1: abandoned on attempt 1
+      .mockImplementationOnce(
+        abandonedAttempt(launcher, new Error(WINDOW_CLOSED)),
+      )
+      // launch №2: attempt 1 ordinary failure, attempt 2 succeeds
+      .mockRejectedValueOnce(new Error("Obsidian not found at /nope"))
+      .mockResolvedValue(undefined);
+
+    const first = launcher.launch();
+    first.catch(() => {});
+    await jest.advanceTimersByTimeAsync(20_000);
+    await expect(first).rejects.toThrow(/abandoned by its caller/);
+    expect(launchAttempt).toHaveBeenCalledTimes(1);
+
+    const second = launcher.launch();
+    await jest.advanceTimersByTimeAsync(2_000);
+    // A leaked flag would have turned the ordinary failure into an
+    // "abandoned … not retrying" rejection here.
+    await expect(second).resolves.toBeUndefined();
+    expect(launchAttempt).toHaveBeenCalledTimes(3);
+  });
+
+  it(`C6 close() after a completed launch is the plain teardown — no "abandoned" marking (control) ${REQ_ABANDON}`, async () => {
+    const { launcher, launchAttempt, teardown, log } = makeLaunchable();
+    launchAttempt.mockResolvedValue(undefined);
+
+    await launcher.launch();
+    await launcher.close();
+
+    expect(teardown).toHaveBeenCalledTimes(1);
+    expect(abandonLogged(log)).toBe(false);
+  });
+
+  it(`C1b the in-flight close() does log the abandonment (the C6 control's positive half) ${REQ_ABANDON}`, async () => {
+    const { launcher, launchAttempt, log } = makeLaunchable();
+    launchAttempt
+      .mockImplementationOnce(
+        abandonedAttempt(launcher, new Error(WINDOW_CLOSED)),
+      )
+      .mockResolvedValue(undefined);
+
+    const launching = launcher.launch();
+    launching.catch(() => {});
+    await jest.advanceTimersByTimeAsync(20_000);
+    await launching.catch(() => {}); // outcome is C1's axis, not this one's
+
+    expect(abandonLogged(log)).toBe(true);
+  });
+});
