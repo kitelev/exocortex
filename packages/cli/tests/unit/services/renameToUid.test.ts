@@ -139,6 +139,262 @@ describe("renameToUid (CLI)", () => {
     expect(fm.exo__Asset_label).toBe("Needs Label");
   });
 
+  // ── Ticket 77ffc37a / req 2f642d6c — the basename goes through the shared
+  // YAML escaper. Every axis writes a REAL file through FileSystemVaultAdapter
+  // and reads the result back with the real js-yaml (parseFrontmatterAsReader),
+  // i.e. exactly what the Obsidian metadataCache would see.
+  describe("YAML-significant basenames (@req:2f642d6c-a2c2-47c8-84fb-8285f0f65c44)", () => {
+    const REQ = "@req:2f642d6c-a2c2-47c8-84fb-8285f0f65c44";
+
+    it.each([
+      ["a leading dash", "- leading dash", "y2-dash-uid"],
+      ["a colon-space", "Note: colon space", "y2-colon-uid"],
+      ["a space-hash", "Tag #hash", "y2-hash-uid"],
+      ["an interior double quote", 'say "hi"', "y2-quote-uid"],
+      ["a backslash", "back\\slash", "y2-bslash-uid"],
+    ])(
+      `${REQ} Y2 rename-to-uid with %s in the basename (no label, no aliases) stays parseable and alias === label === basename`,
+      async (_shape, basename, uid) => {
+        writeRaw(
+          vaultRoot,
+          `tasks/${basename}.md`,
+          `---\nexo__Asset_uid: ${uid}\n---\nBody\n`,
+        );
+
+        await service.execute(`tasks/${basename}`);
+
+        const fm = readFrontmatter(path.join(vaultRoot, `tasks/${uid}.md`));
+        expect(fm.exo__Asset_label).toBe(basename);
+        expect(fm.aliases).toEqual([basename]);
+      },
+    );
+
+    it(`${REQ} Y2b a space-hash basename keeps the WHOLE alias (the pre-fix output silently truncated it to the text before the hash)`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/Tag #hash.md",
+        "---\nexo__Asset_uid: y2b-uid\nexo__Asset_label: Existing\n---\nBody\n",
+      );
+
+      await service.execute("tasks/Tag #hash");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y2b-uid.md"));
+      expect(fm.aliases).toEqual(["Tag #hash"]);
+      expect(fm.exo__Asset_label).toBe("Existing");
+    });
+
+    it(`${REQ} Y3 appending a colon-space basename to an existing block list keeps every item a string (the pre-fix output produced a nested mapping)`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/Note: colon.md",
+        "---\nexo__Asset_uid: y3-uid\nexo__Asset_label: Existing\naliases:\n  - old-one\n---\nBody\n",
+      );
+
+      await service.execute("tasks/Note: colon");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y3-uid.md"));
+      expect(fm.aliases).toEqual(["old-one", "Note: colon"]);
+    });
+
+    it(`${REQ} Y4 appending a comma basename to a non-empty inline array keeps it one string item`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/a, b.md",
+        "---\nexo__Asset_uid: y4-uid\nexo__Asset_label: Existing\naliases: [old-one]\n---\nBody\n",
+      );
+
+      await service.execute("tasks/a, b");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y4-uid.md"));
+      expect(fm.aliases).toEqual(["old-one", "a, b"]);
+    });
+
+    it(`${REQ} Y4b replacing an empty inline array with a leading-dash basename stays parseable`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/- dash.md",
+        "---\nexo__Asset_uid: y4b-uid\nexo__Asset_label: Existing\naliases: []\n---\nBody\n",
+      );
+
+      await service.execute("tasks/- dash");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y4b-uid.md"));
+      expect(fm.aliases).toEqual(["- dash"]);
+    });
+
+    it(`${REQ} Y4c replacing a null aliases (~) with a colon-space basename stays parseable`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/Note: tilde.md",
+        "---\nexo__Asset_uid: y4c-uid\nexo__Asset_label: Existing\naliases: ~\n---\nBody\n",
+      );
+
+      await service.execute("tasks/Note: tilde");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y4c-uid.md"));
+      expect(fm.aliases).toEqual(["Note: tilde"]);
+    });
+
+    it(`${REQ} Y5 a safe basename is written in the plain form, byte-identical to the pre-fix output (pair — no quote churn)`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/plain name.md",
+        "---\nexo__Asset_uid: y5-uid\n---\nBody\n",
+      );
+
+      await service.execute("tasks/plain name");
+
+      const text = fs.readFileSync(
+        path.join(vaultRoot, "tasks/y5-uid.md"),
+        "utf-8",
+      );
+      expect(text).toBe(
+        "---\nexo__Asset_uid: y5-uid\nexo__Asset_label: plain name\naliases:\n  - plain name\n---\nBody\n",
+      );
+    });
+
+    it(`${REQ} Y6 an alias already stored QUOTED (the shape apply set-label writes) is recognised by the dedup and not appended a second time`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/plain name.md",
+        '---\nexo__Asset_uid: y6-uid\nexo__Asset_label: Existing\naliases:\n  - "plain name"\n---\nBody\n',
+      );
+
+      await service.execute("tasks/plain name");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y6-uid.md"));
+      expect(fm.aliases).toEqual(["plain name"]);
+    });
+
+    it.each([
+      ["a date-shaped basename", "2026-01-15", "y7-date-uid"],
+      ["a number-shaped basename", "123", "y7-num-uid"],
+    ])(
+      `${REQ} Y7 %s stays a STRING under a real YAML parser (not a Date / number)`,
+      async (_shape, basename, uid) => {
+        writeRaw(
+          vaultRoot,
+          `tasks/${basename}.md`,
+          `---\nexo__Asset_uid: ${uid}\n---\nBody\n`,
+        );
+
+        await service.execute(`tasks/${basename}`);
+
+        const fm = readFrontmatter(path.join(vaultRoot, `tasks/${uid}.md`));
+        expect(fm.aliases).toEqual([basename]);
+        expect(typeof (fm.aliases as unknown[])[0]).toBe("string");
+        expect(fm.exo__Asset_label).toBe(basename);
+      },
+    );
+
+    // Round 2 (review MEDIUM): every `.replace(pattern, <string with basename>)`
+    // read `$1` / `$&` / `$$` in the basename as a REPLACEMENT pattern — a
+    // capture got spliced in, or `$$` collapsed to `$` — before the YAML escaper
+    // ever saw the text. Function replacers make the basename inert.
+    it.each([
+      ["a $<digit> capture reference", "Pay $100 invoice", "y9-cap-uid"],
+      ["a $& whole-match reference", "a $& b", "y9-amp-uid"],
+      ["a $$ escaped dollar", "Cost $$ total", "y9-dd-uid"],
+    ])(
+      `${REQ} Y9 %s in the basename is written literally (no label, no aliases): label and alias equal the basename byte-for-byte`,
+      async (_shape, basename, uid) => {
+        writeRaw(
+          vaultRoot,
+          `tasks/${basename}.md`,
+          `---\nexo__Asset_uid: ${uid}\n---\nBody\n`,
+        );
+
+        await service.execute(`tasks/${basename}`);
+
+        const fm = readFrontmatter(path.join(vaultRoot, `tasks/${uid}.md`));
+        expect(fm.exo__Asset_label).toBe(basename);
+        expect(fm.aliases).toEqual([basename]);
+      },
+    );
+
+    it(`${REQ} Y9b a $& basename appended to an existing block list lands literally`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/a $& b.md",
+        "---\nexo__Asset_uid: y9b-uid\nexo__Asset_label: Existing\naliases:\n  - old-one\n---\nBody\n",
+      );
+
+      await service.execute("tasks/a $& b");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y9b-uid.md"));
+      expect(fm.aliases).toEqual(["old-one", "a $& b"]);
+    });
+
+    // `$1` is inert on a pattern with NO capture group (JS leaves it literal),
+    // so the null-aliases case uses `$&` — the form every pattern expands.
+    it(`${REQ} Y9c a $1 basename appended to an inline array, and a $& basename replacing a null aliases, land literally`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/Pay $1 now.md",
+        "---\nexo__Asset_uid: y9c-uid\nexo__Asset_label: Existing\naliases: [old-one]\n---\nBody\n",
+      );
+      writeRaw(
+        vaultRoot,
+        "tasks/Pay $& later.md",
+        "---\nexo__Asset_uid: y9d-uid\nexo__Asset_label: Existing\naliases: ~\n---\nBody\n",
+      );
+
+      await service.execute("tasks/Pay $1 now");
+      await service.execute("tasks/Pay $& later");
+
+      expect(
+        readFrontmatter(path.join(vaultRoot, "tasks/y9c-uid.md")).aliases,
+      ).toEqual(["old-one", "Pay $1 now"]);
+      expect(
+        readFrontmatter(path.join(vaultRoot, "tasks/y9d-uid.md")).aliases,
+      ).toEqual(["Pay $& later"]);
+    });
+
+    it(`${REQ} Y9d a $$ basename replacing an empty inline array lands literally`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/Cost $$ total.md",
+        "---\nexo__Asset_uid: y9e-uid\nexo__Asset_label: Existing\naliases: []\n---\nBody\n",
+      );
+
+      await service.execute("tasks/Cost $$ total");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y9e-uid.md"));
+      expect(fm.aliases).toEqual(["Cost $$ total"]);
+    });
+
+    // Round 2 (review LOW-2): the block-list append replaced the FIRST
+    // occurrence of the block's text, so an identical list under an earlier
+    // key (`tags:`) was edited instead of `aliases:`.
+    it(`${REQ} Y10 a tags list identical to the aliases list and placed before it is left untouched; aliases gets the new item`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/Second.md",
+        "---\nexo__Asset_uid: y10-uid\nexo__Asset_label: Existing\ntags:\n  - old-one\naliases:\n  - old-one\n---\nBody\n",
+      );
+
+      await service.execute("tasks/Second");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y10-uid.md"));
+      expect(fm.tags).toEqual(["old-one"]);
+      expect(fm.aliases).toEqual(["old-one", "Second"]);
+    });
+
+    it(`${REQ} Y8 a basename that is itself a complete "…" run round-trips with its quotes (no pass-through as a pre-wrapped scalar)`, async () => {
+      writeRaw(
+        vaultRoot,
+        'tasks/"quoted".md',
+        "---\nexo__Asset_uid: y8-uid\n---\nBody\n",
+      );
+
+      await service.execute('tasks/"quoted"');
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y8-uid.md"));
+      expect(fm.aliases).toEqual(['"quoted"']);
+      expect(fm.exo__Asset_label).toBe('"quoted"');
+    });
+  });
+
   it("throws when exo__Asset_uid is missing", async () => {
     writeRaw(
       vaultRoot,

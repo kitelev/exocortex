@@ -5,6 +5,7 @@ import {
   FrontmatterService,
   DateFormatter,
   extractAssetReference,
+  quoteYamlString,
 } from "@kitelev/exocortex-core";
 import { findReferencedFile, normalizePath } from "./folderRepairHelpers.js";
 import { TransactionManager } from "../utils/TransactionManager.js";
@@ -536,10 +537,15 @@ export class BatchExecutor {
     const trimmedLabel = label.trim();
     const content = await this.fsAdapter.readFile(relativePath);
 
+    // Ticket 77ffc37a — the label is written as a complete, ESCAPED
+    // double-quoted scalar (the same escaper property_append uses, #4250);
+    // the previous hand-built `"${label}"` wrap left an interior `"` / `\`
+    // unescaped and made the whole frontmatter unparseable. `updateProperty`
+    // emits the value verbatim, so the quotes are not doubled.
     const updated = this.frontmatterService.updateProperty(
       content,
       "exo__Asset_label",
-      `"${trimmedLabel}"`,
+      quoteYamlString(trimmedLabel),
     );
 
     await this.fsAdapter.updateFile(relativePath, updated);
