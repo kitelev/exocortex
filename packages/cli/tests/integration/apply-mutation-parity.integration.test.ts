@@ -60,8 +60,9 @@ const SET_LABEL_STEP_DELETE = "f7790001-0000-0000-0000-000000000005";
 const SET_LABEL_STEP_UPDATED = "f7790001-0000-0000-0000-000000000006";
 
 // --- LEGACY (pre-#3798) 2-step set-label — used ONLY by the self-contained
-//     revert-verify test to prove the OLD grounding exhibits the bug
-//     (accumulates aliases, does not bump updatedAt). integration-test-revert-verify.
+//     revert-verify test to prove the OLD grounding exhibits the aliases bug
+//     (accumulates aliases). Its "does not bump updatedAt" half became the
+//     EXECUTOR's guarantee under req 454ccedf (ticket 533856e4) — see B6 below.
 const SET_LABEL_LEGACY_CMD = "f7790001-0000-0000-0000-0000000000a1";
 const SET_LABEL_LEGACY_GROUNDING = "f7790001-0000-0000-0000-0000000000a2";
 
@@ -299,6 +300,62 @@ describe("Issue #3779 — CLI apply mutation parity (relabel + explicit parent)"
     expect(written).not.toContain("$input.parent");
   });
 
+  // ---------------------------------------------------------------------------
+  // req 454ccedf (ticket 533856e4) — B1. `set-parent` is a SINGLE property_set
+  // grounding with no data-side "Bump updatedAt" step, and on the published CLI
+  // 16.240.4 it left exo__Asset_updatedAt untouched (repro n = 3 by execution:
+  // set-parent / set-criticality-low / rollback-to-backlog; control set-label
+  // — a composite carrying step 49e00287 — bumped). The stamp now lives in the
+  // executor, so this real `apply` over a temp vault observes it on disk.
+  // ---------------------------------------------------------------------------
+  it("@req:454ccedf-fefe-4cfe-bdf7-704f050c1f34 B1 set-parent (single property_set, no data-side bump step) stamps exo__Asset_updatedAt on the real apply path", async () => {
+    const rel = writeTarget(
+      "aaaaaaaa-3779-4000-8000-000000000011",
+      "Child Task",
+      true,
+      { updatedAt: "2020-01-01T00:00:00" },
+    );
+    const parentUid = "99999999-3779-4000-8000-000000000009";
+
+    await runApply("set-parent", rel, `{"parent":"${parentUid}"}`);
+
+    const written = read(rel);
+    expect(written).toContain(`ems__Effort_parent: "[[${parentUid}]]"`);
+    expect(written).not.toContain("exo__Asset_updatedAt: 2020-01-01T00:00:00");
+    expect(written).toMatch(
+      /^exo__Asset_updatedAt: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/m,
+    );
+    // exactly one key line — replaced, not duplicated
+    expect((written.match(/^exo__Asset_updatedAt:/gm) ?? []).length).toBe(1);
+    // the file stays parseable by the real parser
+    expect(loadFrontmatter(written).ems__Effort_parent).toBe(`[[${parentUid}]]`);
+  });
+
+  it("@req:454ccedf-fefe-4cfe-bdf7-704f050c1f34 B7 re-applying set-parent with the SAME parent is a no-op: file byte-identical, updatedAt not touched", async () => {
+    const rel = writeTarget(
+      "aaaaaaaa-3779-4000-8000-000000000012",
+      "Child Task",
+      true,
+      { updatedAt: "2020-01-01T00:00:00" },
+    );
+    const parentUid = "99999999-3779-4000-8000-000000000009";
+    await runApply("set-parent", rel, `{"parent":"${parentUid}"}`);
+    const afterFirst = read(rel);
+    expect(afterFirst).not.toContain("exo__Asset_updatedAt: 2020-01-01T00:00:00");
+
+    // Freeze what the first apply wrote by seeding it back with a stale stamp
+    // that the second (idempotent) apply must NOT overwrite.
+    const frozen = afterFirst.replace(
+      /^exo__Asset_updatedAt: .*$/m,
+      "exo__Asset_updatedAt: 2021-02-03T04:05:06",
+    );
+    fs.writeFileSync(path.join(root, rel), frozen, "utf-8");
+
+    await runApply("set-parent", rel, `{"parent":"${parentUid}"}`);
+
+    expect(read(rel)).toBe(frozen);
+  });
+
   it("@req:f7790000-3779-4aaa-8aaa-000000000001 set-parent fails loud (no write) when the named input key is missing", async () => {
     const rel = writeTarget("aaaaaaaa-3779-4000-8000-000000000002", "Child Task");
     const before = read(rel);
@@ -411,11 +468,18 @@ describe("Issue #3779 — CLI apply mutation parity (relabel + explicit parent)"
   // ---------------------------------------------------------------------------
   // #3798 revert-verify (integration-test-revert-verify): the OLD 2-step
   // composite (property_set label + property_append aliases — NO delete, NO
-  // updatedAt) must EXHIBIT the bug the 4-step fix removes. This runs the legacy
-  // grounding through the SAME real `apply` pipeline, proving the assertions
-  // above are non-vacuous (they would fail on the pre-fix grounding).
+  // updatedAt step) must EXHIBIT the DATA bug the 4-step fix removes (BUG 1,
+  // aliases accumulate). This runs the legacy grounding through the SAME real
+  // `apply` pipeline, proving the aliases assertions above are non-vacuous.
+  //
+  // req 454ccedf (ticket 533856e4) — B6: the former "BUG 2 — updatedAt is NOT
+  // bumped" half of this axis is INVERTED on purpose. The bump is no longer a
+  // property of the data (step 49e00287) but of the EXECUTOR: a grounding
+  // without the step still records the modification. What #3798 fixed in the
+  // data was the aliases mirror; the updatedAt half is now guaranteed one level
+  // below, for every mutating grounding, including this legacy one.
   // ---------------------------------------------------------------------------
-  it("@req:f7790000-3779-4bbb-8bbb-000000000002 REVERT-VERIFY: the legacy 2-step set-label ACCUMULATES aliases and does NOT bump updatedAt (the #3798 bug)", async () => {
+  it("@req:f7790000-3779-4bbb-8bbb-000000000002 @req:454ccedf-fefe-4cfe-bdf7-704f050c1f34 REVERT-VERIFY / B6: the legacy 2-step set-label still ACCUMULATES aliases (the #3798 data bug) but the executor bumps updatedAt even without the data step", async () => {
     const rel = writeTarget(
       "bbbbbbbb-3779-4000-8000-0000000000af",
       "Old Label",
@@ -432,7 +496,12 @@ describe("Issue #3779 — CLI apply mutation parity (relabel + explicit parent)"
     expect(written).toContain(`- "Stale Alias"`);
     expect(written).toContain(`- "New Label"`);
     expect((written.match(/^\s+- /gm) ?? []).length).toBeGreaterThan(1);
-    // BUG 2 — updatedAt is NOT bumped (stays the seeded 2020 value).
-    expect(written).toContain("exo__Asset_updatedAt: 2020-01-01T00:00:00");
+    // B6 — updatedAt IS bumped by the executor although the legacy composite
+    // carries no "Bump updatedAt" step (was: "BUG 2 — stays the seeded value").
+    expect(written).not.toContain("exo__Asset_updatedAt: 2020-01-01T00:00:00");
+    expect(written).toMatch(
+      /^exo__Asset_updatedAt: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/m,
+    );
+    expect((written.match(/^exo__Asset_updatedAt:/gm) ?? []).length).toBe(1);
   });
 });
