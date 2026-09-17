@@ -65,7 +65,7 @@ export class FolderRepairService {
     // path is an *absolute* filesystem path. `FileSystemVaultAdapter.resolvePath`
     // returns absolute paths verbatim, so `/<name>` would `fs.move` the asset to
     // the OS filesystem root — out of the vault entirely (lost). This mirrors the
-    // CLI `FolderRepairExecutor`/`BatchExecutor`, which already build
+    // CLI `FolderRepairExecutor`, which already builds
     // `expectedFolder ? \`${expectedFolder}/${fileName}\` : fileName`.
     const newPath = expectedFolder ? `${expectedFolder}/${file.name}` : file.name;
 
