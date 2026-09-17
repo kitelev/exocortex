@@ -17,7 +17,7 @@
  * file and left `exo__Asset_updatedAt` at the seeded value (published CLI
  * 16.240.10, n = 4).
  *
- * Axes (mutants M1–M6 in the PR body):
+ * Axes (mutants M1–M8 in the PR body):
  *   S1  a service writing the target THROUGH the executor's writer is stamped
  *   S1b a service writing through a channel the executor never sees (the
  *       in-memory fs directly = IVaultAdapter.modify shape) is stamped too
@@ -25,6 +25,11 @@
  *   S3  a satellite-only service: target byte-identical, satellite untouched
  *   S4  rename-to-uid shape (content changed + file renamed to <uid>.md):
  *       stamped at the NEW path, old path gone
+ *   S4b a uid that is not a well-formed UUID (`../../x`) never becomes a
+ *       re-locate path: nothing written (review LOW-1)
+ *   S4c the UUID-canon candidate ALREADY existed before the call (duplicate
+ *       uid in the folder) + a move-only service: the neighbour is not
+ *       mistaken for the moved file — no stamp on it (review observation)
  *   S5  move-only service (repair-folder shape): nothing written
  *   S6  a service that owns exo__Asset_updatedAt (updateProperty shape with
  *       property = exo__Asset_updatedAt): exactly one key, the service's value
@@ -356,6 +361,80 @@ describe(`${REQ} GroundingExecutor stamps exo__Asset_updatedAt after a service_c
     expect(updatedAtOf(written)).toBe(CLOCK_ISO);
     expect(fs.writer.updateFile).toHaveBeenCalledTimes(1);
     expect(fs.writer.updateFile.mock.calls[0][0]).toBe(FILE_PATH);
+  });
+
+  // ---------------------------------------------------------------------------
+  // S4b — the uid comes from user data and would become a WRITE path: only a
+  // well-formed UUID may (review LOW-1). A traversal-shaped uid yields no
+  // candidate at all, so even a file that happens to exist at the derived
+  // path is left alone.
+  // ---------------------------------------------------------------------------
+  it("S4b a uid that is not a well-formed UUID never becomes a re-locate path: nothing written", async () => {
+    const seed = seedTask(SEED_STAMP, "../../x", "Label Named Task");
+    const fs = makeFs({ [LABEL_PATH]: seed });
+    const DERIVED = "tasks/../../x.md";
+    const exec = makeExecutor(fs, {
+      renameToUid: {
+        async execute() {
+          // A rogue service: rewrites the content and "renames" the file to
+          // the traversal-shaped derived path.
+          const next = (fs.files.get(LABEL_PATH) as string).replace(
+            "exo__Asset_label: Label Named Task",
+            "exo__Asset_label: Renamed Task",
+          );
+          expect(next).not.toBe(fs.files.get(LABEL_PATH));
+          fs.files.delete(LABEL_PATH);
+          fs.files.set(DERIVED, next);
+        },
+      },
+    });
+
+    const res = await exec.execute(
+      serviceCall("renameToUid"),
+      LABEL_IRI,
+      LABEL_PATH,
+    );
+
+    expect(res).toEqual({ success: true });
+    expect(fs.files.get(DERIVED)).toContain("exo__Asset_label: Renamed Task");
+    expect(updatedAtOf(fs.files.get(DERIVED) as string)).toBe(SEED_STAMP);
+    expect(fs.writer.updateFile).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // S4c — the UUID-canon candidate is only a RENAME target if nothing lived
+  // there before the call. A duplicate uid in the folder + a move-only
+  // service (repair-folder) must not get the neighbour stamped (review
+  // observation).
+  // ---------------------------------------------------------------------------
+  it("S4c a UUID-canon candidate that ALREADY existed before the call is not mistaken for the moved file: no stamp on the neighbour", async () => {
+    const seed = seedTask(SEED_STAMP, ASSET_UID, "Label Named Task");
+    const neighbour = seedTask(
+      SEED_STAMP,
+      ASSET_UID,
+      "Neighbour with the same uid",
+    );
+    const fs = makeFs({ [LABEL_PATH]: seed, [FILE_PATH]: neighbour });
+    const MOVED = `archive/${ASSET_UID}.md`;
+    const exec = makeExecutor(fs, {
+      repairFolder: {
+        async execute() {
+          fs.files.delete(LABEL_PATH);
+          fs.files.set(MOVED, seed);
+        },
+      },
+    });
+
+    const res = await exec.execute(
+      serviceCall("repairFolder"),
+      LABEL_IRI,
+      LABEL_PATH,
+    );
+
+    expect(res).toEqual({ success: true });
+    expect(fs.files.get(FILE_PATH)).toBe(neighbour);
+    expect(fs.files.get(MOVED)).toBe(seed);
+    expect(fs.writer.updateFile).not.toHaveBeenCalled();
   });
 
   // ---------------------------------------------------------------------------
