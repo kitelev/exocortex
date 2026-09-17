@@ -35,10 +35,14 @@ import * as yaml from "js-yaml";
 
 const YAML_LEADING_INDICATORS = /^[-!&*?|>%@`"'#,[\]{}]/;
 
-// Control characters (C0 range + DEL) that break a single-line plain scalar.
-// Covers `\t` `\n` `\r` plus `\x07` `\b` `\f` `\v` NUL etc. (#3750 LOW-4).
-// eslint-disable-next-line no-control-regex -- the C0/DEL class IS the pattern's purpose (#3750 LOW-4)
-const YAML_CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+// Control characters that break a single-line plain scalar: the C0 range + DEL
+// (#3750 LOW-4 — `\t` `\n` `\r` plus `\x07` `\b` `\f` `\v` NUL etc.) and the C1
+// range U+0080–U+009F (req 389d4e14, ticket 71f1ca37). Measured on js-yaml 5.3.0
+// under YAML11_SCHEMA: a bare C1 character other than NEL (U+0085) makes the
+// reader throw "non-printable characters" for the WHOLE frontmatter; NEL loads
+// bare but is quoted uniformly with its class.
+// eslint-disable-next-line no-control-regex -- the C0/DEL/C1 class IS the pattern's purpose (#3750 LOW-4, req 389d4e14)
+const YAML_CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/;
 
 // Scalar tokens a real YAML parser (js-yaml DEFAULT_SCHEMA, used by Obsidian
 // metadataCache) coerces away from string. Replicated from js-yaml's resolvers
@@ -117,7 +121,10 @@ function looksLikeNonStringScalar(value: string): boolean {
  * @param quoteAmbiguousScalars — when true (string-semantic properties like
  *   `exo__Asset_label` / `aliases`), also quote scalar-looking strings so they
  *   survive as strings (#3750 MEDIUM-3). Default false — number/bool/date-shaped
- *   values of OTHER properties keep their native YAML type.
+ *   values of OTHER properties keep their native YAML type. Datetime-shaped
+ *   strings (`2026-01-15T10:00:00`) are deliberately NOT quoted even when true
+ *   (#3750 MEDIUM-3 — axis `roundTrip(datetime, true)` = Date pins it; known
+ *   bound, ticket 71f1ca37).
  */
 export function needsYamlQuoting(
   value: string,
@@ -162,7 +169,10 @@ export function needsYamlQuoting(
  * Wrap a string in a YAML double-quoted scalar with proper escaping.
  *
  * Escapes `\` `"` `\n` `\r` `\t` and any other control character (`\xNN`) so
- * the quoted form is itself valid and js-yaml can load it (#3750 LOW-4).
+ * the quoted form is itself valid and js-yaml can load it (#3750 LOW-4). The
+ * `\xNN` form covers C0 + DEL and the C1 range U+0080–U+009F (req 389d4e14):
+ * js-yaml loads a raw C1 byte inside `"…"` too, but the escape keeps the
+ * emitted text printable and the on-disk form explicit.
  */
 export function quoteYamlString(value: string): string {
   let out = "";
@@ -174,7 +184,7 @@ export function quoteYamlString(value: string): string {
     else if (ch === "\n") out += "\\n";
     else if (ch === "\r") out += "\\r";
     else if (ch === "\t") out += "\\t";
-    else if (code < 0x20 || code === 0x7f) {
+    else if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) {
       out += "\\x" + code.toString(16).toUpperCase().padStart(2, "0");
     } else {
       out += ch;

@@ -1,4 +1,5 @@
 import { injectable, inject } from "tsyringe";
+import * as yaml from "js-yaml";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import { DI_TOKENS } from "../interfaces/tokens";
 import { MetadataHelpers } from "../utilities/MetadataHelpers";
@@ -137,24 +138,42 @@ export class RenameToUidService {
       );
     }
 
-    // Check for inline array format aliases: [value1, value2]
-    const inlineAliasesPattern = /^aliases\s*:\s*\[([^\]]*)\]/m;
-    const inlineMatch = frontmatterContent.match(inlineAliasesPattern);
+    // Check for inline array format aliases: [value1, value2]. The flow
+    // sequence is delimited by a quote-aware bracket scan, not by the first
+    // `]`: a quoted item may itself contain `]` (req 2f642d6c, Y11b), and the
+    // sequence may span lines. `\s*` after the colon: `aliases:\n  [a, b]` is
+    // the same flow sequence on the next line (Y11d).
+    const inlineHead = /^aliases\s*:\s*\[/m.exec(frontmatterContent);
 
-    if (inlineMatch) {
-      const inlineContent = inlineMatch[1].trim();
-      if (inlineContent === "") {
-        // Empty inline array - replace with list format
-        return frontmatterContent.replace(
-          inlineAliasesPattern,
-          () => `aliases:\n  - ${this.yamlScalar(label)}`,
+    if (inlineHead !== null) {
+      const inlineEnd = this.findFlowSequenceEnd(
+        frontmatterContent,
+        inlineHead.index + inlineHead[0].length,
+      );
+      if (inlineEnd === -1) {
+        // The frontmatter parsed, so the sequence IS balanced — reaching here
+        // means the scan and the reader disagree. Refuse loudly rather than
+        // fall through to the empty-aliases branch and lose the alias.
+        throw new Error(
+          "aliases flow sequence unbalanced — refusing to rewrite frontmatter",
         );
       }
+      const start = inlineHead.index;
+      const bodyStart = inlineHead.index + inlineHead[0].length;
+      const inlineContent = frontmatterContent.slice(bodyStart, inlineEnd).trim();
+      const before = frontmatterContent.slice(0, start);
+      const after = frontmatterContent.slice(inlineEnd + 1);
+      if (inlineContent === "") {
+        // Empty inline array - replace with list format
+        return `${before}aliases:\n  - ${this.yamlScalar(label)}${after}`;
+      }
 
-      // Non-empty inline array - parse and check for duplicates
-      const existingAliases = inlineContent
-        .split(",")
-        .map((a) => decodeYamlQuotedScalar(a.trim()));
+      // Non-empty inline array - read the existing items with the YAML reader
+      // (the same js-yaml the frontmatter parser uses) so a quoted item that
+      // contains `,` or `]` is one item, not several (req 2f642d6c, Y11).
+      // The raw text is kept for the rebuild below — the surrounding shape is
+      // preserved, only the appended item is escaped.
+      const existingAliases = this.readInlineFlowItems(inlineContent);
 
       if (existingAliases.includes(label)) {
         return frontmatterContent;
@@ -164,10 +183,7 @@ export class RenameToUidService {
       // sequence additionally reserves `,` `[` `]` `{` `}`, which the
       // quote-when-needed predicate does not model, so this item is always
       // emitted as a complete double-quoted scalar (ticket 77ffc37a).
-      return frontmatterContent.replace(
-        inlineAliasesPattern,
-        () => `aliases: [${inlineContent}, ${quoteYamlString(label)}]`,
-      );
+      return `${before}aliases: [${inlineContent}, ${quoteYamlString(label)}]${after}`;
     }
 
     // Empty aliases property (aliases:, aliases: null, aliases: ~) - replace it
@@ -176,6 +192,66 @@ export class RenameToUidService {
       emptyAliasesPattern,
       () => `aliases:\n  - ${this.yamlScalar(label)}`,
     );
+  }
+
+  /**
+   * Index of the `]` that closes the flow sequence whose `[` sits just before
+   * `from`, skipping `"…"` (with `\"` escapes) and `'…'` (with `''` escapes)
+   * runs and nested brackets; -1 when unbalanced. Quote-aware so a quoted item
+   * containing `]` does not end the sequence (req 2f642d6c, Y11b). A quote is
+   * a quoted-run indicator ONLY at the start of an item (after `[` or `,` and
+   * whitespace) — inside a plain item (`it's`) it is an ordinary character,
+   * exactly as the YAML reader treats it (Y11e).
+   */
+  private findFlowSequenceEnd(text: string, from: number): number {
+    let depth = 1;
+    let atItemStart = true;
+    for (let i = from; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
+        continue;
+      }
+      if (atItemStart && ch === '"') {
+        for (i++; i < text.length && text[i] !== '"'; i++) {
+          if (text[i] === "\\") i++;
+        }
+      } else if (atItemStart && ch === "'") {
+        for (i++; i < text.length; i++) {
+          if (text[i] !== "'") continue;
+          if (text[i + 1] === "'") {
+            i++; // `''` — an escaped quote inside the single-quoted run
+            continue;
+          }
+          break;
+        }
+      } else if (ch === "[") {
+        depth++;
+        atItemStart = true;
+        continue;
+      } else if (ch === "]") {
+        depth--;
+        if (depth === 0) return i;
+      } else if (ch === ",") {
+        atItemStart = true;
+        continue;
+      }
+      atItemStart = false;
+    }
+    return -1;
+  }
+
+  /**
+   * Items of an inline `aliases: […]` flow sequence, read by js-yaml with the
+   * FAILSAFE schema: every item comes back as the STRING it spells (quotes
+   * decoded, escapes resolved, no bool/number/date coercion), which is the
+   * comparison the dedup needs — the label is text. The sequence was already
+   * parsed as part of the asset's frontmatter, so it is valid YAML here.
+   */
+  private readInlineFlowItems(inlineContent: string): string[] {
+    const parsed = yaml.load(`[${inlineContent}]`, {
+      schema: yaml.FAILSAFE_SCHEMA,
+    });
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
   }
 
   /**
