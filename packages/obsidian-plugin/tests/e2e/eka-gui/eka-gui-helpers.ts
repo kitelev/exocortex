@@ -317,7 +317,10 @@ export function launchObsidianWithPlugin(
   label: string,
   opts: Omit<LaunchWithPluginOptions, "log"> & { log?: LaunchLog } = {},
 ): Promise<ObsidianLauncher> {
-  return launchObsidianWithPluginShared(vaultPath, label, { log, ...opts });
+  return launchObsidianWithPluginShared(vaultPath, label, {
+    ...opts,
+    log: opts.log ?? log,
+  });
 }
 
 /** Force the triple store + metadataCache to settle so command discovery is complete. */

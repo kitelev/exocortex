@@ -77,12 +77,12 @@ import { launchObsidianWithPlugin } from "../../e2e/utils/launch-obsidian-with-p
  * launcher is returned the helper stops listening (the caller owns it).
  * Without a signal the loop is unchanged.
  *
- * Mutant matrix (driver `mutants-4abffc07.py`, 2026-09-17, copied from its output;
- * CONTROL plugin-unit=35 failed=0):
+ * Mutant matrix (driver `mutants-4abffc07.py`, round 2 2026-09-17, copied from its
+ * output; CONTROL plugin-unit=37 failed=0):
  *   M3a helper: no signal.aborted checks (loop relaunches after an abort) → RED: ['A3', 'A3b', 'A3d']
  *   M3b helper: abort does not close the in-flight launcher             → RED: ['A3', 'A3b']
  *   M3c helper: abort listener not removed once a launcher is returned  → RED: ['A3e']
- *   M0 semantic revert M1+M2+M3a+M3b → RED: ['A1', 'A2', 'A3', 'A3b', 'A3d']
+ *   M0 semantic revert M1+M2+M3a+M3b+M4+M6 → RED: ['A1', 'A1d', 'A1e', 'A2', 'A3', 'A3b', 'A3d']
  *   (A3c / A3f / A4 / A4b / A4c stay GREEN under every mutant)
  */
 const REQ = "@req:d6c2acd4-6993-4b3b-8305-dcf5b1ba6d8f";

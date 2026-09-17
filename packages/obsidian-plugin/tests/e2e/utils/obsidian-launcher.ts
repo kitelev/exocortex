@@ -64,6 +64,7 @@ export class ObsidianLauncher {
   async launch(): Promise<void> {
     const maxRetries = 3;
     this.abandoned = false;
+    this.abandonInFlightWait = null;
     this.launchInFlight = true;
 
     try {
@@ -570,7 +571,8 @@ export class ObsidianLauncher {
     return new Promise((resolve, reject) => {
       let poll: ReturnType<typeof setTimeout> | null = null;
       const settle = () => {
-        this.abandonInFlightWait = null;
+        // Compare-and-null: only this wait's own registration is cleared.
+        if (this.abandonInFlightWait === abandon) this.abandonInFlightWait = null;
         if (poll) clearTimeout(poll);
         poll = null;
       };
@@ -598,7 +600,10 @@ export class ObsidianLauncher {
             method: "GET",
           },
           (res) => {
-            if (this.abandoned) return; // abandoned while the probe was on the wire
+            // Defensive (not axis-locked: resolve() after the abandon's reject is
+            // a no-op anyway) — keeps a late 200 from logging "accepting
+            // connections" for a launch nobody is waiting for.
+            if (this.abandoned) return;
             if (res.statusCode === 200) {
               console.log(
                 `[ObsidianLauncher] Port ${port} is accepting connections`,

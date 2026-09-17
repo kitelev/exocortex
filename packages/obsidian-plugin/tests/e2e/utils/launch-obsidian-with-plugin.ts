@@ -36,6 +36,7 @@ export interface LaunchWithPluginOptions {
 type PluginManagerLike = {
   manifests?: Record<string, unknown>;
   plugins?: Record<string, unknown>;
+  enabledPlugins?: string[] | { has?: (id: string) => boolean };
   disablePlugin?: (id: string) => Promise<void>;
   enablePlugin?: (id: string) => Promise<void>;
 };
@@ -57,8 +58,14 @@ async function tryLoadPlugin(
 ): Promise<boolean> {
   const diag = await window.evaluate(() => {
     const pm = (window as unknown as ObsidianWindowLike).app?.plugins;
+    const enabledPlugins = pm?.enabledPlugins;
     return {
       hasManifest: !!pm?.manifests?.exocortex,
+      // Kept from the eka-obsidian-leg copy: distinguishes "enabled but onload
+      // never ran" from "not enabled at all" in the relaunch log.
+      enabled: Array.isArray(enabledPlugins)
+        ? enabledPlugins.includes("exocortex")
+        : (enabledPlugins?.has?.("exocortex") ?? null),
       loaded: !!pm?.plugins?.exocortex,
     };
   });

@@ -50,11 +50,13 @@ process.env.OBSIDIAN_PATH = __filename;
  * `connectOverCDP` once `abandoned` is set (defence in depth for the window
  * between the port coming up and the connect).
  *
- * Mutant matrix (driver `mutants-4abffc07.py`, 2026-09-17, copied from its output;
- * CONTROL plugin-unit=35 failed=0):
- *   M1 launcher: waitForPort does not register its cancel slot → RED: ['A1']
- *   M2 launcher: no `abandoned` check before connectOverCDP    → RED: ['A2']
- *   M0 semantic revert M1+M2+M3a+M3b → RED: ['A1', 'A2', 'A3', 'A3b', 'A3d']
+ * Mutant matrix (driver `mutants-4abffc07.py`, round 2 2026-09-17, copied from its
+ * output; CONTROL plugin-unit=37 failed=0):
+ *   M1 launcher: waitForPort does not register its cancel slot                → RED: ['A1', 'A1d']
+ *   M2 launcher: no `abandoned` check before connectOverCDP                   → RED: ['A2']
+ *   M4 launcher: retryCheck re-arms the poll after the abandon (late error)   → RED: ['A1d']
+ *   M6 launcher: no entry check in waitForPort (close() before registration)  → RED: ['A1e']
+ *   M0 semantic revert M1+M2+M3a+M3b+M4+M6 → RED: ['A1', 'A1d', 'A1e', 'A2', 'A3', 'A3b', 'A3d']
  *   (A1b / A1c / A2b and the C1–C7 axes of the sibling file stay GREEN under every mutant)
  */
 const REQ = "@req:d6c2acd4-6993-4b3b-8305-dcf5b1ba6d8f";
@@ -161,6 +163,53 @@ describe(`ObsidianLauncher: the in-flight port wait is cancelled by close() (${R
     expect(request.mock.calls.length).toBe(requestsBeforeClose);
     expect(connectOverCDP).not.toHaveBeenCalled();
     expect(teardown).toHaveBeenCalledTimes(1); // the caller's close(), nothing else
+  });
+
+  it(`A1d [reviewer] close() while a probe is ON THE WIRE ⇒ its late error does not re-arm the poll (retryCheck after abandon) ${REQ}`, async () => {
+    // Refused polls whose ECONNREFUSED arrives 100 ms after end(): probes go
+    // out at 0 / 600 / 1200 ms, so close() at t=1250 lands while probe #3 is
+    // ON THE WIRE (sent at 1200, its error lands at 1300 — after the abandon).
+    request = jest.fn((): FakeReq => {
+      const handlers: Record<string, (e: Error) => void> = {};
+      return {
+        on: jest.fn((event: string, cb: (e: Error) => void) => {
+          handlers[event] = cb;
+        }),
+        end: jest.fn(() => {
+          setTimeout(() => handlers.error?.(new Error("ECONNREFUSED")), 100);
+        }),
+      };
+    });
+    const { launcher } = attemptable();
+    const probe = settle(internals(launcher).launchAttempt(1));
+    await jest.advanceTimersByTimeAsync(1_250);
+    const requestsBeforeClose = request.mock.calls.length;
+    expect(requestsBeforeClose).toBe(3);
+    expect(jest.getTimerCount()).toBe(1); // probe #3's pending error, no poll armed
+    expect(probe.state).toBe("pending");
+
+    await launcher.close();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(probe.state).toBe("rejected");
+    // The in-flight probe's error lands at 1300 — it must NOT re-arm the 500 ms poll.
+    await jest.advanceTimersByTimeAsync(60_000);
+    expect(jest.getTimerCount()).toBe(0);
+    expect(request.mock.calls.length).toBe(requestsBeforeClose);
+  });
+
+  it(`A1e [reviewer] close() before the wait has registered (during the http import yield) ⇒ the wait rejects on entry, no probe is ever sent ${REQ}`, async () => {
+    const { launcher, teardown } = attemptable();
+    const probe = settle(internals(launcher).launchAttempt(1));
+    // No tick: launchAttempt is parked on `await import("http")`, the wait's
+    // executor has not run, the cancel slot is still null.
+    const closing = launcher.close();
+    await jest.advanceTimersByTimeAsync(0);
+    await closing;
+    expect(probe.state).toBe("rejected");
+    expect(String(probe.error)).toMatch(/launch already abandoned/);
+    expect(request).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+    expect(teardown).toHaveBeenCalledTimes(1);
   });
 
   it(`A1b without a close() the port wait is unchanged — still times out after 45 s of refused polls (control) ${REQ}`, async () => {
