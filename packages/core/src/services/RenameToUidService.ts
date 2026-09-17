@@ -73,7 +73,12 @@ export class RenameToUidService {
         frontmatterContent = this.updateAliases(frontmatterContent, basename);
       }
 
-      return content.replace(frontmatterRegex, `---\n${frontmatterContent}\n---`);
+      // Function replacer: the basename may contain `$1` / `$&` / `$$`, which a
+      // STRING replacement would read as a replacement pattern (review MEDIUM).
+      return content.replace(
+        frontmatterRegex,
+        () => `---\n${frontmatterContent}\n---`,
+      );
     });
   }
 
@@ -115,9 +120,21 @@ export class RenameToUidService {
         return frontmatterContent;
       }
 
-      // Append new alias to existing block
+      // Append new alias to existing block. Splice by the MATCH POSITION: a
+      // `replace(<block text>, …)` edited the FIRST occurrence of that text,
+      // which is an identical list under an earlier key (`tags:`) when one
+      // exists (review LOW-2), and it read `$…` in the basename as a
+      // replacement pattern (review MEDIUM).
       const newAliasesBlock = `${existingAliasesBlock.trimEnd()}\n  - ${this.yamlScalar(label)}\n`;
-      return frontmatterContent.replace(aliasesWithValuesMatch[1], newAliasesBlock);
+      const blockStart =
+        (aliasesWithValuesMatch.index ?? 0) +
+        aliasesWithValuesMatch[0].length -
+        existingAliasesBlock.length;
+      return (
+        frontmatterContent.slice(0, blockStart) +
+        newAliasesBlock +
+        frontmatterContent.slice(blockStart + existingAliasesBlock.length)
+      );
     }
 
     // Check for inline array format aliases: [value1, value2]
@@ -130,7 +147,7 @@ export class RenameToUidService {
         // Empty inline array - replace with list format
         return frontmatterContent.replace(
           inlineAliasesPattern,
-          `aliases:\n  - ${this.yamlScalar(label)}`,
+          () => `aliases:\n  - ${this.yamlScalar(label)}`,
         );
       }
 
@@ -149,7 +166,7 @@ export class RenameToUidService {
       // emitted as a complete double-quoted scalar (ticket 77ffc37a).
       return frontmatterContent.replace(
         inlineAliasesPattern,
-        `aliases: [${inlineContent}, ${quoteYamlString(label)}]`,
+        () => `aliases: [${inlineContent}, ${quoteYamlString(label)}]`,
       );
     }
 
@@ -157,7 +174,7 @@ export class RenameToUidService {
     const emptyAliasesPattern = /^aliases\s*:\s*(?:null|~)?\s*$/m;
     return frontmatterContent.replace(
       emptyAliasesPattern,
-      `aliases:\n  - ${this.yamlScalar(label)}`,
+      () => `aliases:\n  - ${this.yamlScalar(label)}`,
     );
   }
 

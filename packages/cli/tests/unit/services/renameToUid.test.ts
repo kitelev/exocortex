@@ -287,6 +287,99 @@ describe("renameToUid (CLI)", () => {
       },
     );
 
+    // Round 2 (review MEDIUM): every `.replace(pattern, <string with basename>)`
+    // read `$1` / `$&` / `$$` in the basename as a REPLACEMENT pattern — a
+    // capture got spliced in, or `$$` collapsed to `$` — before the YAML escaper
+    // ever saw the text. Function replacers make the basename inert.
+    it.each([
+      ["a $<digit> capture reference", "Pay $100 invoice", "y9-cap-uid"],
+      ["a $& whole-match reference", "a $& b", "y9-amp-uid"],
+      ["a $$ escaped dollar", "Cost $$ total", "y9-dd-uid"],
+    ])(
+      `${REQ} Y9 %s in the basename is written literally (no label, no aliases): label and alias equal the basename byte-for-byte`,
+      async (_shape, basename, uid) => {
+        writeRaw(
+          vaultRoot,
+          `tasks/${basename}.md`,
+          `---\nexo__Asset_uid: ${uid}\n---\nBody\n`,
+        );
+
+        await service.execute(`tasks/${basename}`);
+
+        const fm = readFrontmatter(path.join(vaultRoot, `tasks/${uid}.md`));
+        expect(fm.exo__Asset_label).toBe(basename);
+        expect(fm.aliases).toEqual([basename]);
+      },
+    );
+
+    it(`${REQ} Y9b a $& basename appended to an existing block list lands literally`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/a $& b.md",
+        "---\nexo__Asset_uid: y9b-uid\nexo__Asset_label: Existing\naliases:\n  - old-one\n---\nBody\n",
+      );
+
+      await service.execute("tasks/a $& b");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y9b-uid.md"));
+      expect(fm.aliases).toEqual(["old-one", "a $& b"]);
+    });
+
+    // `$1` is inert on a pattern with NO capture group (JS leaves it literal),
+    // so the null-aliases case uses `$&` — the form every pattern expands.
+    it(`${REQ} Y9c a $1 basename appended to an inline array, and a $& basename replacing a null aliases, land literally`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/Pay $1 now.md",
+        "---\nexo__Asset_uid: y9c-uid\nexo__Asset_label: Existing\naliases: [old-one]\n---\nBody\n",
+      );
+      writeRaw(
+        vaultRoot,
+        "tasks/Pay $& later.md",
+        "---\nexo__Asset_uid: y9d-uid\nexo__Asset_label: Existing\naliases: ~\n---\nBody\n",
+      );
+
+      await service.execute("tasks/Pay $1 now");
+      await service.execute("tasks/Pay $& later");
+
+      expect(
+        readFrontmatter(path.join(vaultRoot, "tasks/y9c-uid.md")).aliases,
+      ).toEqual(["old-one", "Pay $1 now"]);
+      expect(
+        readFrontmatter(path.join(vaultRoot, "tasks/y9d-uid.md")).aliases,
+      ).toEqual(["Pay $& later"]);
+    });
+
+    it(`${REQ} Y9d a $$ basename replacing an empty inline array lands literally`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/Cost $$ total.md",
+        "---\nexo__Asset_uid: y9e-uid\nexo__Asset_label: Existing\naliases: []\n---\nBody\n",
+      );
+
+      await service.execute("tasks/Cost $$ total");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y9e-uid.md"));
+      expect(fm.aliases).toEqual(["Cost $$ total"]);
+    });
+
+    // Round 2 (review LOW-2): the block-list append replaced the FIRST
+    // occurrence of the block's text, so an identical list under an earlier
+    // key (`tags:`) was edited instead of `aliases:`.
+    it(`${REQ} Y10 a tags list identical to the aliases list and placed before it is left untouched; aliases gets the new item`, async () => {
+      writeRaw(
+        vaultRoot,
+        "tasks/Second.md",
+        "---\nexo__Asset_uid: y10-uid\nexo__Asset_label: Existing\ntags:\n  - old-one\naliases:\n  - old-one\n---\nBody\n",
+      );
+
+      await service.execute("tasks/Second");
+
+      const fm = readFrontmatter(path.join(vaultRoot, "tasks/y10-uid.md"));
+      expect(fm.tags).toEqual(["old-one"]);
+      expect(fm.aliases).toEqual(["old-one", "Second"]);
+    });
+
     it(`${REQ} Y8 a basename that is itself a complete "…" run round-trips with its quotes (no pass-through as a pre-wrapped scalar)`, async () => {
       writeRaw(
         vaultRoot,
