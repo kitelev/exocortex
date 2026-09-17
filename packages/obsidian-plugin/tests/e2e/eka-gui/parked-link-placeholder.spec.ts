@@ -359,13 +359,18 @@ test.describe.configure({ mode: "default" });
 test.describe("EKA GUI — parked-link placeholder (req c171e24d)", () => {
   let vaultPath = "";
   let launcher: ObsidianLauncher | null = null;
+  const launchAbort = new AbortController();
   let window: Page;
 
   test.beforeAll(async () => {
     test.setTimeout(600_000);
     vaultPath = setupGuiVault();
     seedParkedFixture(vaultPath);
-    launcher = await launchObsidianWithPlugin(vaultPath, "eka-gui-parked-link");
+    launcher = await launchObsidianWithPlugin(
+      vaultPath,
+      "eka-gui-parked-link",
+      { signal: launchAbort.signal },
+    );
     window = await launcher.getWindow();
     await waitForStoreSettled(window);
 
@@ -388,6 +393,7 @@ test.describe("EKA GUI — parked-link placeholder (req c171e24d)", () => {
   });
 
   test.afterAll(async () => {
+    launchAbort.abort();
     if (launcher) await launcher.close().catch(() => undefined);
     if (vaultPath && fs.existsSync(vaultPath)) {
       fs.rmSync(vaultPath, { recursive: true, force: true });

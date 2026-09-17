@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { ObsidianLauncher } from "../utils/obsidian-launcher";
-import { waitForExocortexPluginViaPlaywright } from "../utils/waitForExocortexPlugin";
+import { launchObsidianWithPlugin } from "../utils/launch-obsidian-with-plugin";
 import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
@@ -328,96 +328,10 @@ async function waitForCommand(window: Page, id: string): Promise<void> {
     .toBe(true);
 }
 
-/**
- * Try to bring the exocortex plugin to `loaded` in the current Obsidian window.
- * Under QEMU-emulated amd64 the onload is both slower AND non-deterministic —
- * occasionally a launch leaves the plugin `enabled` but never runs onload. We
- * force a fresh load (disable → enable; a plain enable on an already-enabled
- * plugin is a no-op and can't recover that state) and wait. Returns whether the
- * plugin reached `loaded` within the ceiling (caller relaunches on false).
- */
-async function tryLoadPlugin(
-  window: Page,
-  label: string,
-  timeoutMs: number,
-): Promise<boolean> {
-  const diag = await window.evaluate(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const app = (window as any).app;
-    const pm = app?.plugins;
-    return {
-      hasManifest: !!pm?.manifests?.exocortex,
-      enabled: Array.isArray(pm?.enabledPlugins)
-        ? pm.enabledPlugins.includes?.("exocortex")
-        : pm?.enabledPlugins?.has?.("exocortex") ?? null,
-      loaded: !!pm?.plugins?.exocortex,
-    };
-  });
-  log(`[${label}] plugin state: ${JSON.stringify(diag)}`);
-
-  if (!diag.loaded) {
-    const r = await window.evaluate(async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const app = (window as any).app;
-      try {
-        if (app?.plugins?.plugins?.exocortex) return "already loaded";
-        await app?.plugins?.disablePlugin?.("exocortex").catch(() => undefined);
-        await app?.plugins?.enablePlugin?.("exocortex");
-        return "force-reloaded (disable→enable)";
-      } catch (e) {
-        return `reload error: ${String(e)}`;
-      }
-    });
-    log(`[${label}] ${r}`);
-  }
-
-  try {
-    await waitForExocortexPluginViaPlaywright(window, {
-      specName: label,
-      timeoutMs,
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Whole-launch retry budget + per-attempt plugin-load ceiling (emulation flake). */
-const MAX_LAUNCH_ATTEMPTS = 8;
-const PLUGIN_LOAD_WAIT_MS = 60000;
-
-/**
- * Launch Obsidian on `vaultPath` and ensure the plugin loads, retrying the WHOLE
- * launch (close + fresh Electron) up to {@link MAX_LAUNCH_ATTEMPTS} times. The
- * plugin-load flake is per-launch under QEMU-emulated amd64, so a relaunch
- * almost always recovers it. Returns the live launcher (caller owns close);
- * throws if every attempt fails.
- */
-async function launchObsidianWithPlugin(
-  vaultPath: string,
-  label: string,
-): Promise<ObsidianLauncher> {
-  let lastErr = "";
-  for (let attempt = 1; attempt <= MAX_LAUNCH_ATTEMPTS; attempt++) {
-    const launcher = new ObsidianLauncher(vaultPath);
-    try {
-      log(`${label}: launch attempt ${attempt}/${MAX_LAUNCH_ATTEMPTS}`);
-      await launcher.launch();
-      const window = await launcher.getWindow();
-      await launcher.waitForModalsToClose(10000);
-      if (await tryLoadPlugin(window, label, PLUGIN_LOAD_WAIT_MS)) return launcher;
-      lastErr = `plugin did not reach loaded within ${PLUGIN_LOAD_WAIT_MS / 1000}s`;
-    } catch (e) {
-      lastErr = String(e);
-      log(`${label}: launch attempt ${attempt} errored: ${lastErr}`);
-    }
-    log(`${label}: attempt ${attempt} failed (${lastErr}) — relaunching…`);
-    await launcher.close().catch(() => undefined);
-  }
-  throw new Error(
-    `${label}: Obsidian + plugin failed to load after ${MAX_LAUNCH_ATTEMPTS} attempts (${lastErr})`,
-  );
-}
+// Plugin-load with relaunch-retry: ONE implementation in
+// ../utils/launch-obsidian-with-plugin.ts (ticket 4abffc07, req d6c2acd4) — the
+// local copy of launchObsidianWithPlugin / tryLoadPlugin that used to live here
+// is gone; `launchAbort` below is what afterAll pulls on an in-flight attempt.
 
 // ---------------------------------------------------------------------------
 // The test
@@ -435,6 +349,7 @@ test.describe("EKA Obsidian leg — bootstrap → add → apply-profile → crea
 
   let vaultPath = "";
   let launcher: ObsidianLauncher | null = null;
+  const launchAbort = new AbortController();
 
   test.beforeAll(() => {
     configureGitCredentials();
@@ -443,6 +358,7 @@ test.describe("EKA Obsidian leg — bootstrap → add → apply-profile → crea
   });
 
   test.afterAll(async () => {
+    launchAbort.abort();
     if (launcher) await launcher.close().catch(() => undefined);
     // Cleanup: the ephemeral asset only ever existed in this tmpdir vault and
     // was never pushed to any live repo → no remote cleanup needed. Remove the
@@ -456,7 +372,10 @@ test.describe("EKA Obsidian leg — bootstrap → add → apply-profile → crea
   test("full alpha path materialises the private profile through the plugin", async () => {
     // ============== PHASE 1 — vault setup via plugin commands ==============
     log("launch #1 (empty vault)…");
-    launcher = await launchObsidianWithPlugin(vaultPath, "eka-leg-1");
+    launcher = await launchObsidianWithPlugin(vaultPath, "eka-leg-1", {
+      signal: launchAbort.signal,
+      log,
+    });
     let window = await launcher.getWindow();
 
     // ---- Step 1: Bootstrap vault (exo-only clean bootstrap, 2026-06-20) ----
@@ -548,7 +467,10 @@ test.describe("EKA Obsidian leg — bootstrap → add → apply-profile → crea
     // («Reload Obsidian if the new assets do not appear»).
     log("close #1 + relaunch #2 (full reindex)…");
     await launcher.close();
-    launcher = await launchObsidianWithPlugin(vaultPath, "eka-leg-2");
+    launcher = await launchObsidianWithPlugin(vaultPath, "eka-leg-2", {
+      signal: launchAbort.signal,
+      log,
+    });
     window = await launcher.getWindow();
     await waitForCommand(window, COMMAND.applyProfile);
 
@@ -964,7 +886,10 @@ test.describe("EKA Obsidian leg — bootstrap → add → apply-profile → crea
     const armed = { ...localData, _switchInProgress: true };
     fs.writeFileSync(localDataPath, JSON.stringify(armed, null, 2));
     await launcher.close();
-    launcher = await launchObsidianWithPlugin(vaultPath, "eka-leg-3-reload");
+    launcher = await launchObsidianWithPlugin(vaultPath, "eka-leg-3-reload", {
+      signal: launchAbort.signal,
+      log,
+    });
     window = await launcher.getWindow();
     await expect
       .poll(

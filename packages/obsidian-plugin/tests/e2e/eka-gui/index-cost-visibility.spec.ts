@@ -213,18 +213,22 @@ test.describe.configure({ mode: "default" });
 test.describe("EKA GUI — Apply-profile index cost (req 6171f443)", () => {
   let vaultPath = "";
   let launcher: ObsidianLauncher | null = null;
+  const launchAbort = new AbortController();
   let window: Page;
 
   test.beforeAll(async () => {
     test.setTimeout(600_000);
     vaultPath = setupGuiVault();
     seedIndexCostFixture(vaultPath);
-    launcher = await launchObsidianWithPlugin(vaultPath, "eka-gui-index-cost");
+    launcher = await launchObsidianWithPlugin(vaultPath, "eka-gui-index-cost", {
+      signal: launchAbort.signal,
+    });
     window = await launcher.getWindow();
     await waitForStoreSettled(window);
   });
 
   test.afterAll(async () => {
+    launchAbort.abort();
     if (launcher) await launcher.close().catch(() => undefined);
     if (vaultPath && fs.existsSync(vaultPath)) {
       fs.rmSync(vaultPath, { recursive: true, force: true });
