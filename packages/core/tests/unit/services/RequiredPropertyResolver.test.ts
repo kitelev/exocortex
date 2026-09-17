@@ -235,25 +235,21 @@ describe("createTripleStoreRequiredPropertyResolver", () => {
   /**
    * Ticket dc04eded (parent bbac67ce) — the converter emits a class range as a
    * SYMBOLIC IRI (`…/ontology/<ns>#<Local>`) for every class with a
-   * `prefix__LocalName` label: on vault-exodev ALL 22 required (`minCount > 0`)
-   * object-range properties are symbolic, 0 are path-form (2026-09-17). `uidFrom`
-   * only understands path-form / bare-UID values, so every such field reached the
-   * create-instance form as `assetRef` WITHOUT `targetClassUid` → the plugin's
-   * `DynamicFormModal.buildCandidates` skipped it → a plain text input instead of
-   * the reference picker (req c4adae42 consumer control). The same class of
-   * defect as ticket 7d91d13a (#4253), on the second consumer.
+   * `prefix__LocalName` label — on the live vaults nearly every required
+   * (`minCount > 0`) object range has that form (measured 2026-09-17, see
+   * PR #4254). `uidFrom` only understands path-form / bare-UID values, so every
+   * such field reached the create-instance form as `assetRef` WITHOUT
+   * `targetClassUid` → the plugin's `DynamicFormModal.buildCandidates` skipped
+   * it → a plain text input instead of the reference picker (req c4adae42
+   * consumer control). The same class of defect as ticket 7d91d13a (#4253), on
+   * the second consumer.
    *
-   * Fix: `fieldTypeFromRange` maps a symbolic range to its LABEL form
-   * `<ns>__<Local>` via `iriToObsidianName` → `Namespace.fromTermIRI` (the shared
-   * inverse — registered AND ad-hoc namespaces; NOT
-   * `FrontmatterService.IRI_PREFIX_MAP`, which misses 26 live namespaces);
-   * `findAssetRefCandidates` accepts a class LABEL as the key and closes
-   * subclasses from there (req 15f48fa1). Path-form → bare UID first, as before.
-   *
-   * Revert-verify (mutant driver, `RED: [...]` by axis name):
-   *  - M1 drop the symbolic branch (`uidFrom` alone)       → S1, S2 RED
-   *  - M2 registered-only inverse (KNOWN_NAMESPACES map)  → S2 RED
-   *  - M3 break the path-form branch                       → S3 RED
+   * Invariant under test: `fieldTypeFromRange` maps a symbolic range to its
+   * LABEL form `<ns>__<Local>` via `iriToObsidianName` → `Namespace.fromTermIRI`
+   * (the shared inverse — registered AND ad-hoc namespaces; NOT the static
+   * `FrontmatterService.IRI_PREFIX_MAP`); `findAssetRefCandidates` accepts a
+   * class LABEL as the key and closes subclasses from there (req 15f48fa1).
+   * Path-form → bare UID first, as before. Mutant matrix — PR #4254.
    */
   describe("symbolic Property_range → targetClassUid label form (ticket dc04eded)", () => {
     it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 S1 maps a symbolic range in a REGISTERED namespace (ems#Effort) to targetClassUid = ems__Effort", async () => {
@@ -276,7 +272,7 @@ describe("createTripleStoreRequiredPropertyResolver", () => {
     });
 
     it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 S2 maps a symbolic range in an AD-HOC namespace (sess#Session, not registered) to targetClassUid = sess__Session", async () => {
-      // `sess` is one of the 26 live namespaces outside every static prefix map.
+      // `sess` is a live namespace outside every static prefix map.
       expect(
         Namespace.knownNamespaces().some((ns) => ns.prefix === "sess"),
       ).toBe(false);

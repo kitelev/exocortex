@@ -108,11 +108,12 @@ function fieldTypeFromRange(
     if (r.iri) {
       // Path-form / bare UID → the class UID (as before). Otherwise the shared
       // inverse (`Namespace.fromTermIRI` — registered, ad-hoc AND W3C
-      // namespaces; NOT the 9-entry `FrontmatterService.IRI_PREFIX_MAP`, which
-      // misses 26 live namespaces) turns a symbolic range into the class LABEL
-      // `<prefix>__<LocalName>`, which the picker's candidate resolver matches
-      // by label (ticket dc04eded — on vault-exodev ALL 22 required object
-      // ranges are symbolic, so `uidFrom` alone left every picker empty).
+      // namespaces; NOT `FrontmatterService.IRI_PREFIX_MAP`, a static prefix
+      // map that misses most live namespaces) turns a symbolic range into the
+      // class LABEL `<prefix>__<LocalName>`, which the picker's candidate
+      // resolver matches by label. On the live vaults nearly every class range
+      // is symbolic, so `uidFrom` alone left the required-property picker empty
+      // (ticket dc04eded; measured 2026-09-17, see PR #4254).
       const key = uidFrom(value) ?? iriToObsidianName(value);
       return key
         ? { fieldType: "assetRef", targetClassUid: key }

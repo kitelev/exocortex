@@ -253,7 +253,8 @@ describe("DynamicFormModal", () => {
  * form's reference picker for a REQUIRED object property whose
  * `exo__Property_range` is a SYMBOLIC ontology term (`…/ontology/ems#Effort`,
  * the form the converter emits for every class with a `prefix__LocalName`
- * label — ALL 22 required object ranges on vault-exodev, 2026-09-17).
+ * label — nearly every required object range on the live vaults; measured
+ * 2026-09-17, see PR #4254).
  *
  * Chain under test, every link REAL: an `InMemoryTripleStore` seeded as the
  * converter emits it → `createTripleStoreRequiredPropertyResolver` →
@@ -264,9 +265,7 @@ describe("DynamicFormModal", () => {
  * `buildCandidates()` — the exact map the React form receives. Before the fix
  * the field arrived without `targetClassUid`, `buildCandidates` skipped it and
  * the picker degraded to a plain text input (req c4adae42 consumer control).
- *
- * Revert-verify (mutant driver on core `RequiredPropertyResolver.ts`):
- *  - M1 drop the symbolic branch (`uidFrom` alone) → S4 RED (no candidates)
+ * Mutant matrix — PR #4254.
  */
 describe("DynamicFormModal — required symbolic-range field gets picker candidates (ticket dc04eded)", () => {
   const HOST = "1b20a8f0-d745-4e93-91db-4531b3df120e"; // ems__Task (host class file)
