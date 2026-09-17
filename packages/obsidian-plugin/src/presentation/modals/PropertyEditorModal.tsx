@@ -23,6 +23,7 @@ import {
   getReifiedRelations,
   predicateKeyFromLabelObjects,
   reifiedPredicateFrontmatterKey,
+  symbolicIriToPropertyKey,
   type ReifiedRelation,
 } from '@plugin/presentation/renderers/layout/getReifiedRelations';
 import {
@@ -315,7 +316,16 @@ export class PropertyEditorModal extends Modal {
 
   /**
    * Map each object-property's frontmatter key → its `exo:Property_range` class
-   * UID. As a side effect, also fills the predicate-mapping maps (key ↔ the
+   * key, i.e. what `findAssetRefCandidates(app, classUidOrLabel)` accepts
+   * (ticket 7d91d13a): a symbolic range IRI (`…/ems#Effort` — the form the
+   * converter emits for every class with a `prefix__LocalName` label, 348 of the
+   * 350 object ranges in vault-exodev on 2026-09-17, across 33 namespaces) →
+   * the class LABEL `ems__Effort`; a path-form range (`obsidian://…/<uid>.md`)
+   * → the class UID. The candidate resolver matches a class definition by UID
+   * OR label and closes the subclass set from there (req 15f48fa1), so the
+   * label form is a usable key; the bare local name `Effort` that
+   * `uidFromIri` yields for a symbolic IRI matches nothing → an empty picker.
+   * As a side effect, also fills the predicate-mapping maps (key ↔ the
    * predicate-DEFINITION asset's UID) used by reify/de-reify (RFC §C3 Task 3.2) —
    * the range triple's subject IS that definition asset, and its label IS the key.
    */
@@ -333,7 +343,12 @@ export class PropertyEditorModal extends Modal {
     for (const t of rangeTriples) {
       if (!(t.subject instanceof IRI)) continue;
       if (!(t.object instanceof IRI)) continue;
-      const rangeUid = uidFromIri(t.object.value);
+      // Symbolic (ontology) IRI → label key via the shared inverse (all
+      // registered + ad-hoc namespaces, W3C too — NOT the 9-entry
+      // `FrontmatterService.IRI_PREFIX_MAP`, which misses 26 live namespaces);
+      // anything else (path-form) → UID, exactly as before.
+      const rangeUid =
+        symbolicIriToPropertyKey(t.object.value) ?? uidFromIri(t.object.value);
       if (!rangeUid) continue;
       const defUid = uidFromIri(t.subject.value);
       const labels = await store.match(
