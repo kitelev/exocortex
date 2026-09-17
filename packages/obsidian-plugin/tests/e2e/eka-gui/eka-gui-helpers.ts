@@ -1,7 +1,11 @@
 import { expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { ObsidianLauncher } from "../utils/obsidian-launcher";
-import { waitForExocortexPluginViaPlaywright } from "../utils/waitForExocortexPlugin";
+import {
+  launchObsidianWithPlugin as launchObsidianWithPluginShared,
+  type LaunchLog,
+  type LaunchWithPluginOptions,
+} from "../utils/launch-obsidian-with-plugin";
 import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
@@ -296,81 +300,24 @@ export async function pollUntil(
 }
 
 // ---------------------------------------------------------------------------
-//  Plugin-load with relaunch-retry (QEMU-emulation flake on Apple Silicon)
+//  Plugin-load with relaunch-retry — ONE implementation lives in
+//  ../utils/launch-obsidian-with-plugin.ts (ticket 4abffc07, req d6c2acd4).
+//  This wrapper only keeps the [eka-gui] log prefix and the specs' import.
 // ---------------------------------------------------------------------------
-const MAX_LAUNCH_ATTEMPTS = 8;
-const PLUGIN_LOAD_WAIT_MS = 60_000;
-
-async function tryLoadPlugin(
-  window: Page,
-  label: string,
-  timeoutMs: number,
-): Promise<boolean> {
-  const diag = await window.evaluate(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pm = (window as any).app?.plugins;
-    return {
-      hasManifest: !!pm?.manifests?.exocortex,
-      loaded: !!pm?.plugins?.exocortex,
-    };
-  });
-  log(`[${label}] plugin state: ${JSON.stringify(diag)}`);
-  if (!diag.loaded) {
-    const r = await window.evaluate(async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pm = (window as any).app?.plugins;
-      try {
-        if (pm?.plugins?.exocortex) return "already loaded";
-        await pm?.disablePlugin?.("exocortex").catch(() => undefined);
-        await pm?.enablePlugin?.("exocortex");
-        return "force-reloaded (disable→enable)";
-      } catch (e) {
-        return `reload error: ${String(e)}`;
-      }
-    });
-    log(`[${label}] ${r}`);
-  }
-  try {
-    await waitForExocortexPluginViaPlaywright(window, {
-      specName: label,
-      timeoutMs,
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Launch Obsidian on `vaultPath`, retrying the WHOLE launch (close + fresh
- * Electron) up to {@link MAX_LAUNCH_ATTEMPTS} times — the plugin-load flake is
- * per-launch under QEMU-emulated amd64; a relaunch almost always recovers it.
- * Returns the live launcher (caller owns close).
+ * Electron) until the plugin loads. Returns the live launcher (caller owns
+ * close). Pass `opts.signal` (an AbortController aborted first thing in
+ * `afterAll`) so an attempt still in flight when the spec is torn down is
+ * closed and not relaunched.
  */
-export async function launchObsidianWithPlugin(
+export function launchObsidianWithPlugin(
   vaultPath: string,
   label: string,
+  opts: Omit<LaunchWithPluginOptions, "log"> & { log?: LaunchLog } = {},
 ): Promise<ObsidianLauncher> {
-  let lastErr = "";
-  for (let attempt = 1; attempt <= MAX_LAUNCH_ATTEMPTS; attempt++) {
-    const launcher = new ObsidianLauncher(vaultPath);
-    try {
-      log(`${label}: launch attempt ${attempt}/${MAX_LAUNCH_ATTEMPTS}`);
-      await launcher.launch();
-      const window = await launcher.getWindow();
-      await launcher.waitForModalsToClose(10_000);
-      if (await tryLoadPlugin(window, label, PLUGIN_LOAD_WAIT_MS))
-        return launcher;
-      lastErr = `plugin did not reach loaded within ${PLUGIN_LOAD_WAIT_MS / 1000}s`;
-    } catch (e) {
-      lastErr = String(e);
-      log(`${label}: launch attempt ${attempt} errored: ${lastErr}`);
-    }
-    await launcher.close().catch(() => undefined);
-  }
-  throw new Error(
-    `${label}: Obsidian + plugin failed to load after ${MAX_LAUNCH_ATTEMPTS} attempts (${lastErr})`,
-  );
+  return launchObsidianWithPluginShared(vaultPath, label, { log, ...opts });
 }
 
 /** Force the triple store + metadataCache to settle so command discovery is complete. */

@@ -117,12 +117,15 @@ test.describe.configure({ mode: "default" });
 test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", () => {
   let vaultPath = "";
   let launcher: ObsidianLauncher | null = null;
+  const launchAbort = new AbortController();
   let window: Page;
 
   test.beforeAll(async () => {
     test.setTimeout(600_000);
     vaultPath = setupGuiVault();
-    launcher = await launchObsidianWithPlugin(vaultPath, "eka-gui");
+    launcher = await launchObsidianWithPlugin(vaultPath, "eka-gui", {
+      signal: launchAbort.signal,
+    });
     window = await launcher.getWindow();
     // Create commands with `confirmMessage` call native window.confirm() —
     // auto-accept it under CDP.
@@ -141,6 +144,7 @@ test.describe("EKA GUI — create-instance buttons (fresh real-content vault)", 
   });
 
   test.afterAll(async () => {
+    launchAbort.abort();
     if (launcher) await launcher.close().catch(() => undefined);
     if (vaultPath && fs.existsSync(vaultPath)) {
       fs.rmSync(vaultPath, { recursive: true, force: true });

@@ -113,6 +113,7 @@ test.describe("EKA GUI BDD — symbolic class IRI under a cold metadataCache", (
   let vaultPath: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let launcher: any;
+  const launchAbort = new AbortController();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let window: any;
 
@@ -120,12 +121,15 @@ test.describe("EKA GUI BDD — symbolic class IRI under a cold metadataCache", (
     vaultPath = setupGuiVault();
     writeSeeds(vaultPath);
     log(`cold-class-iri: vault ${vaultPath}`);
-    launcher = await launchObsidianWithPlugin(vaultPath, "cold-class-iri");
+    launcher = await launchObsidianWithPlugin(vaultPath, "cold-class-iri", {
+      signal: launchAbort.signal,
+    });
     window = await launcher.getWindow();
     await waitForStoreSettled(window);
   });
 
   test.afterAll(async () => {
+    launchAbort.abort();
     await launcher?.close().catch(() => undefined);
   });
 

@@ -25,6 +25,14 @@ export class ObsidianLauncher {
    * cleared at the start of every `launch()`.
    */
   private abandoned = false;
+  /**
+   * The wait that is currently blocking the in-flight attempt (`waitForPort`)
+   * registers here how to cancel itself; `close()` fires it when it abandons
+   * the launch, so the attempt ends on the abandon itself instead of on its
+   * own ceiling (ticket 4abffc07, req d6c2acd4). One slot: an attempt blocks on
+   * one wait at a time. Cleared by the wait when it settles.
+   */
+  private abandonInFlightWait: ((reason: Error) => void) | null = null;
 
   constructor(vaultPath?: string) {
     this.vaultPath = vaultPath || path.join(__dirname, "../test-vault");
@@ -46,6 +54,12 @@ export class ObsidianLauncher {
    * which another attempt could start: after the per-attempt cleanup and
    * after the backoff pause. `launch()`'s own cleanup goes through
    * `teardown()` — never through `close()` — so it cannot mark itself.
+   *
+   * ⛤ The attempt that is in flight at that moment is CANCELLED as well
+   * (ticket 4abffc07, req d6c2acd4): `close()` fires `abandonInFlightWait`, so
+   * `waitForPort` rejects at once instead of polling :9222 for up to 45 s (by
+   * then the NEXT spec's Obsidian may be answering there), and `launchAttempt`
+   * refuses `connectOverCDP` once `abandoned` is set.
    */
   async launch(): Promise<void> {
     const maxRetries = 3;
@@ -161,6 +175,16 @@ export class ObsidianLauncher {
 
     await this.waitForPort(this.cdpPort, 45000);
     console.log(`[ObsidianLauncher] CDP port ${this.cdpPort} is ready`);
+
+    // ⛤ Defence in depth for the window between the port coming up and the
+    // connect: the primary cancellation is the port wait rejecting on the
+    // abandon (above), but whatever answered on :9222 after our caller left
+    // is not ours to attach to (req d6c2acd4).
+    if (this.abandoned) {
+      throw new Error(
+        `[ObsidianLauncher] Launch attempt ${attempt} was abandoned by its caller (close() ran while the launch was in flight) — not connecting over CDP`,
+      );
+    }
 
     console.log("[ObsidianLauncher] Connecting to Electron via CDP...");
     const browser = await chromium.connectOverCDP(
@@ -530,11 +554,41 @@ export class ObsidianLauncher {
     );
   }
 
+  /**
+   * Polls `/json/version` on `port` every 500 ms until it answers 200 or
+   * `timeout` passes. ⛤ Cancellable by an abandon (req d6c2acd4): the wait
+   * registers itself in `abandonInFlightWait`, and `close()` fires that slot
+   * while a launch is in flight — the wait then rejects at once, disarms its
+   * poll timer and issues no further request. A probe already on the wire when
+   * the abandon lands is dropped on return (`abandoned` is read before any
+   * re-arm), so nothing keeps polling :9222 for a caller that has left.
+   */
   private async waitForPort(port: number, timeout: number): Promise<void> {
     const startTime = Date.now();
     const http = await import("http");
 
     return new Promise((resolve, reject) => {
+      let poll: ReturnType<typeof setTimeout> | null = null;
+      const settle = () => {
+        this.abandonInFlightWait = null;
+        if (poll) clearTimeout(poll);
+        poll = null;
+      };
+      const abandon = (reason: Error) => {
+        settle();
+        reject(
+          new Error(
+            `[ObsidianLauncher] waiting for port ${port} was abandoned by its caller (close() ran while the launch was in flight) — giving up after ${Date.now() - startTime}ms, not the ${timeout}ms ceiling: ${reason.message}`,
+          ),
+        );
+      };
+      if (this.abandoned) {
+        // close() landed before this wait even started.
+        abandon(new Error("launch already abandoned"));
+        return;
+      }
+      this.abandonInFlightWait = abandon;
+
       const checkPort = () => {
         const req = http.request(
           {
@@ -544,10 +598,12 @@ export class ObsidianLauncher {
             method: "GET",
           },
           (res) => {
+            if (this.abandoned) return; // abandoned while the probe was on the wire
             if (res.statusCode === 200) {
               console.log(
                 `[ObsidianLauncher] Port ${port} is accepting connections`,
               );
+              settle();
               resolve();
             } else {
               retryCheck();
@@ -563,12 +619,14 @@ export class ObsidianLauncher {
       };
 
       const retryCheck = () => {
+        if (this.abandoned) return; // the abandon path already rejected — never re-arm
         if (Date.now() - startTime > timeout) {
+          settle();
           reject(
             new Error(`Timeout waiting for port ${port} after ${timeout}ms`),
           );
         } else {
-          setTimeout(checkPort, 500);
+          poll = setTimeout(checkPort, 500);
         }
       };
 
@@ -747,10 +805,22 @@ export class ObsidianLauncher {
   async close(): Promise<void> {
     if (this.launchInFlight) {
       // afterAll → close() while launch() is still trying: tell launch() not
-      // to start another attempt (see the `launch()` docblock).
+      // to start another attempt (see the `launch()` docblock) …
       this.abandoned = true;
       console.log(
         "[ObsidianLauncher] close() called while a launch is in flight — marking the launch abandoned (no further attempts)",
+      );
+      // … and end the attempt that is running RIGHT NOW: the wait it is
+      // blocked on rejects immediately instead of on its own ceiling
+      // (waitForPort: 45 s of polling :9222, which by then may be answered by
+      // the NEXT spec's Obsidian — req d6c2acd4). Fired before the teardown
+      // so the attempt fails as "abandoned", not as a side effect of the kill.
+      const cancel = this.abandonInFlightWait;
+      this.abandonInFlightWait = null;
+      cancel?.(
+        new Error(
+          "[ObsidianLauncher] launch abandoned by its caller (close() ran while the launch was in flight)",
+        ),
       );
     }
     await this.teardown();

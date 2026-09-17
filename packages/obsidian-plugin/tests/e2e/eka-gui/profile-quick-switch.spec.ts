@@ -152,6 +152,7 @@ test.describe.configure({ mode: "default" });
 test.describe("EKA GUI — profile quick-switch (req 38e2fdd5)", () => {
   let vaultPath = "";
   let launcher: ObsidianLauncher | null = null;
+  const launchAbort = new AbortController();
   let window: Page;
 
   test.beforeAll(async () => {
@@ -161,12 +162,14 @@ test.describe("EKA GUI — profile quick-switch (req 38e2fdd5)", () => {
     launcher = await launchObsidianWithPlugin(
       vaultPath,
       "eka-gui-quick-switch",
+      { signal: launchAbort.signal },
     );
     window = await launcher.getWindow();
     await waitForStoreSettled(window);
   });
 
   test.afterAll(async () => {
+    launchAbort.abort();
     if (launcher) await launcher.close().catch(() => undefined);
     if (vaultPath && fs.existsSync(vaultPath)) {
       fs.rmSync(vaultPath, { recursive: true, force: true });
