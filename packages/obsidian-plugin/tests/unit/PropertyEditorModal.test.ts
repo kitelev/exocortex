@@ -10,6 +10,7 @@ import {
   vaultPathToIRI,
 } from "@kitelev/exocortex-core";
 import { App, TFile } from "obsidian";
+import * as obsidian from "obsidian";
 import type { ExocortexPluginInterface } from "@plugin/types";
 import { ReactRenderer } from "@plugin/presentation/utils/ReactRenderer";
 import { extractInstanceClass } from "@plugin/domain/property-editor/extractInstanceClass";
@@ -33,9 +34,26 @@ jest.mock("../../src/domain/property-editor/PropertySchemas", () => ({
 jest.mock("obsidian", () => {
   const actual = jest.requireActual("obsidian");
   return {
+    // Keep the ES-module flag the spread drops (it is non-enumerable on the
+    // compiled mock), so `import * as obsidian` yields THIS object instead of
+    // a non-configurable getter wrapper — required for the L2 axes to spy on
+    // `requireApiVersion` (ticket 7c02970c).
+    __esModule: true,
     ...actual,
   };
 });
+// Ticket 7c02970c — the modal logs through the channel-routed Logger; a shared
+// mock per test lets the L1 axes assert the (message, error) pairs.
+jest.mock("../../src/adapters/logging/LoggerFactory", () => ({
+  LoggerFactory: {
+    create: () => ({
+      debug: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+    }),
+  },
+}));
 
 describe("PropertyEditorModal", () => {
   let mockApp: App;
@@ -99,9 +117,14 @@ describe("PropertyEditorModal", () => {
         if (options?.cls) el.className = options.cls;
         return el;
       }),
-      createDiv: jest.fn().mockImplementation(() => ({
-        createEl: jest.fn(),
-      })),
+      // Ticket 7c02970c — the modal builds its chrome with `createDiv` (the
+      // obsidianmd/prefer-create-el form); mirror createEl's element factory.
+      createDiv: jest.fn().mockImplementation((options?: any) => {
+        const el = document.createElement("div");
+        if (options?.text) el.textContent = options.text;
+        if (options?.cls) el.className = options.cls;
+        return el;
+      }),
       empty: jest.fn(),
     };
   });
@@ -157,17 +180,17 @@ describe("PropertyEditorModal", () => {
 
     it("should create title element", () => {
       modal.onOpen();
-      expect(mockContentEl.createEl).toHaveBeenCalledWith("div", { cls: "modal-title" });
+      expect(mockContentEl.createDiv).toHaveBeenCalledWith({ cls: "modal-title" });
     });
 
     it("should create subtitle element", () => {
       modal.onOpen();
-      expect(mockContentEl.createEl).toHaveBeenCalledWith("div", { cls: "property-editor-subtitle" });
+      expect(mockContentEl.createDiv).toHaveBeenCalledWith({ cls: "property-editor-subtitle" });
     });
 
     it("should create container for React component", () => {
       modal.onOpen();
-      expect(mockContentEl.createEl).toHaveBeenCalledWith("div", { cls: "property-editor-container" });
+      expect(mockContentEl.createDiv).toHaveBeenCalledWith({ cls: "property-editor-container" });
     });
 
     it("should call ReactRenderer.render", () => {
@@ -618,6 +641,139 @@ describe("PropertyEditorModal", () => {
       expect((modal as any).keyByPredicateDefUid.get("6528ecfa-0000-4000-8000-000000000006")).toBe(
         "ems__Effort_parent",
       );
+    });
+  });
+
+  /**
+   * Ticket 7c02970c (parent bbac67ce) — the pre-existing lint debt of this modal
+   * was not cosmetic: three catch handlers logged with a bare `console.error`
+   * (bypassing the plugin's channel-routed Logger: console / notice / file
+   * toggles), and two call sites invoked `FileManager.trashFile` (Obsidian
+   * ≥ 1.6.6) on a plugin whose `minAppVersion` is 1.5.0 — an older host died
+   * with a bare `TypeError: trashFile is not a function`.
+   *
+   * L1 — every catch handler routes through the Logger with the message AND the
+   *      error object (mutant: revert to `console.error` → L1a/L1b/L1c RED).
+   * L2 — statement-file deletion is guarded by `requireApiVersion("1.6.6")`
+   *      through the ONE helper both call sites use (mutants: drop the guard →
+   *      L2a/L2c RED; bypass the helper at either call site → that axis RED).
+   */
+  describe("lint-debt removal — Logger routing + trashFile API guard (ticket 7c02970c)", () => {
+    const flushMicrotasks = async (): Promise<void> => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    const loggerOf = (m: PropertyEditorModal) =>
+      (m as unknown as { logger: { error: jest.Mock } }).logger;
+
+    beforeEach(() => {
+      modal = new PropertyEditorModal(
+        mockApp,
+        mockPlugin,
+        mockFile,
+        mockFrontmatter,
+        mockNotifier,
+      );
+      modal.contentEl = mockContentEl;
+      modal.close = jest.fn();
+    });
+
+    it("L1a a failing relations init is logged through the Logger with the error object", async () => {
+      const boom = new Error("store down");
+      jest.spyOn(modal as any, "buildRelationsDeps").mockRejectedValue(boom);
+      modal.onOpen();
+      await flushMicrotasks();
+      expect(loggerOf(modal).error).toHaveBeenCalledWith(
+        "Relations init error",
+        boom,
+      );
+    });
+
+    it("L1b the ErrorBoundary onError routes through the Logger AND notifies the user", () => {
+      modal.onOpen();
+      const boundaryProps = mockRender.mock.calls[0][1].props;
+      const boom = new Error("render exploded");
+      boundaryProps.onError(boom);
+      expect(loggerOf(modal).error).toHaveBeenCalledWith("Error", boom);
+      expect(mockNotifier.error).toHaveBeenCalledWith(
+        "Error in property editor: render exploded",
+      );
+    });
+
+    it("L1c a failing save is logged through the Logger with the error object AND notifies the user", async () => {
+      const boom = new Error("disk full");
+      (mockApp.vault.read as jest.Mock).mockRejectedValue(boom);
+      await (modal as any).handleSave({ key1: "value1" });
+      expect(loggerOf(modal).error).toHaveBeenCalledWith("Save error", boom);
+      expect(mockNotifier.error).toHaveBeenCalledWith(
+        "Failed to save properties: disk full",
+      );
+    });
+
+    const statementFile = (path: string): TFile =>
+      Object.assign(new TFile(), {
+        path,
+        basename: path.replace(/\.md$/, ""),
+        name: path,
+      });
+
+    it("L2a deleteReified refuses with the real reason on a host older than 1.6.6 and never calls trashFile", async () => {
+      const file = statementFile("statements/s-1.md");
+      const trashFile = jest.fn().mockResolvedValue(undefined);
+      (mockApp as any).vault.getAbstractFileByPath = jest
+        .fn()
+        .mockReturnValue(file);
+      (mockApp as any).fileManager = { trashFile };
+      const spy = jest
+        .spyOn(obsidian, "requireApiVersion")
+        .mockReturnValue(false);
+      try {
+        await expect(
+          (modal as any).deleteReified({ statementPath: "statements/s-1.md" }),
+        ).rejects.toThrow(/Obsidian 1\.6\.6/);
+        expect(trashFile).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("L2b deleteReified trashes the statement via FileManager.trashFile on a host ≥ 1.6.6 (control)", async () => {
+      const file = statementFile("statements/s-1.md");
+      const trashFile = jest.fn().mockResolvedValue(undefined);
+      (mockApp as any).vault.getAbstractFileByPath = jest
+        .fn()
+        .mockReturnValueOnce(file)
+        .mockReturnValueOnce(null); // verify-after-write: gone
+      (mockApp as any).fileManager = { trashFile };
+      await (modal as any).deleteReified({
+        statementPath: "statements/s-1.md",
+      });
+      expect(trashFile).toHaveBeenCalledWith(file);
+      expect(mockNotifier.success).toHaveBeenCalledWith(
+        "Reified relation removed",
+      );
+    });
+
+    it("L2c the reify port's deleteStatement is guarded the same way (second call site)", async () => {
+      const file = statementFile("statements/s-2.md");
+      const trashFile = jest.fn().mockResolvedValue(undefined);
+      (mockApp as any).vault.getAbstractFileByPath = jest
+        .fn()
+        .mockReturnValue(file);
+      (mockApp as any).fileManager = { trashFile };
+      const ports = (modal as any).reifyPorts("anchor-uid");
+      const spy = jest
+        .spyOn(obsidian, "requireApiVersion")
+        .mockReturnValue(false);
+      try {
+        await expect(
+          ports.deleteStatement("statements/s-2.md"),
+        ).rejects.toThrow(/Obsidian 1\.6\.6/);
+        expect(trashFile).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
+      await ports.deleteStatement("statements/s-2.md");
+      expect(trashFile).toHaveBeenCalledWith(file);
     });
   });
 });
