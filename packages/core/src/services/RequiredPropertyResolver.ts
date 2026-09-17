@@ -2,6 +2,7 @@ import type { ITripleStore } from "../interfaces/ITripleStore";
 import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
 import { Namespace } from "../domain/models/rdf/Namespace";
+import { iriToObsidianName } from "../utilities/iriToObsidianName";
 
 /**
  * T3 «Create Instance» (project bbe40f8c) — SHACL-shape-driven resolution of a
@@ -37,9 +38,14 @@ export interface RequiredPropertyField {
   /** Field renderer the form should use, derived from the property range. */
   readonly fieldType: RequiredPropertyFieldType;
   /**
-   * For object ranges (`fieldType === "assetRef"`) — the UID of the range class
-   * whose instances populate the reusable reference-picker. Absent for datatype
-   * ranges or when the range class UID is unresolvable.
+   * For object ranges (`fieldType === "assetRef"`) — the key of the range class
+   * whose instances populate the reusable reference-picker: the bare class UID
+   * for a path-form range (`obsidian://…/<uid>.md`) or the class LABEL
+   * (`<prefix>__<LocalName>`) for a symbolic ontology-term range
+   * (`https://exocortex.my/ontology/<ns>#<Local>` — the form the converter
+   * emits for every class with a `prefix__LocalName` label; ticket dc04eded).
+   * `findAssetRefCandidates` accepts either key (req 15f48fa1). Absent for
+   * datatype ranges or when the range IRI matches neither form.
    */
   readonly targetClassUid?: string;
 }
@@ -100,9 +106,17 @@ function fieldTypeFromRange(
     }
     // Non-xsd IRI range → an object (class) property → reference-picker.
     if (r.iri) {
-      const uid = uidFrom(value);
-      return uid
-        ? { fieldType: "assetRef", targetClassUid: uid }
+      // Path-form / bare UID → the class UID (as before). Otherwise the shared
+      // inverse (`Namespace.fromTermIRI` — registered, ad-hoc AND W3C
+      // namespaces; NOT `FrontmatterService.IRI_PREFIX_MAP`, a static prefix
+      // map that misses most live namespaces) turns a symbolic range into the
+      // class LABEL `<prefix>__<LocalName>`, which the picker's candidate
+      // resolver matches by label. On the live vaults nearly every class range
+      // is symbolic, so `uidFrom` alone left the required-property picker empty
+      // (ticket dc04eded; measured 2026-09-17, see PR #4254).
+      const key = uidFrom(value) ?? iriToObsidianName(value);
+      return key
+        ? { fieldType: "assetRef", targetClassUid: key }
         : { fieldType: "assetRef" };
     }
   }

@@ -95,11 +95,14 @@ export interface InputSchemaField {
   /** SPARQL SELECT query returning candidate asset IRIs for assetRef fields. */
   readonly filterQuery?: string;
   /**
-   * T1 "Create Instance" (project bbe40f8c) — for `assetRef` fields, the UID of
-   * the class whose instances populate the reusable fuzzy reference-picker.
-   * The form layer resolves candidate `{uid, label}` pairs of this class from
-   * the vault. Generic: parameterises the picker by class (ontology here;
-   * any range class for future commands).
+   * T1 "Create Instance" (project bbe40f8c) — for `assetRef` fields, the UID
+   * or the `exo__Asset_label` of the class whose instances populate the
+   * reusable fuzzy reference-picker (`findAssetRefCandidates` matches either;
+   * the required-property resolver emits the label form for a symbolic
+   * `exo__Property_range` — ticket dc04eded). The form layer resolves
+   * candidate `{uid, label}` pairs of this class from the vault. Generic:
+   * parameterises the picker by class (ontology here; any range class for
+   * future commands).
    */
   readonly targetClassUid?: string;
 }

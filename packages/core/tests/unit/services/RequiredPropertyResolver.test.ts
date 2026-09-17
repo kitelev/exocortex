@@ -232,4 +232,105 @@ describe("createTripleStoreRequiredPropertyResolver", () => {
       await createTripleStoreRequiredPropertyResolver(store)(SETTING);
     expect(fields.map((f) => f.propertyKey)).toEqual(["exo__Setting_value"]);
   });
+  /**
+   * Ticket dc04eded (parent bbac67ce) — the converter emits a class range as a
+   * SYMBOLIC IRI (`…/ontology/<ns>#<Local>`) for every class with a
+   * `prefix__LocalName` label — on the live vaults nearly every required
+   * (`minCount > 0`) object range has that form (measured 2026-09-17, see
+   * PR #4254). `uidFrom` only understands path-form / bare-UID values, so every
+   * such field reached the create-instance form as `assetRef` WITHOUT
+   * `targetClassUid` → the plugin's `DynamicFormModal.buildCandidates` skipped
+   * it → a plain text input instead of the reference picker (req c4adae42
+   * consumer control). The same class of defect as ticket 7d91d13a (#4253), on
+   * the second consumer.
+   *
+   * Invariant under test: `fieldTypeFromRange` maps a symbolic range to its
+   * LABEL form `<ns>__<Local>` via `iriToObsidianName` → `Namespace.fromTermIRI`
+   * (the shared inverse — registered AND ad-hoc namespaces; NOT the static
+   * `FrontmatterService.IRI_PREFIX_MAP`); `findAssetRefCandidates` accepts a
+   * class LABEL as the key and closes subclasses from there (req 15f48fa1).
+   * Path-form → bare UID first, as before. Mutant matrix — PR #4254.
+   */
+  describe("symbolic Property_range → targetClassUid label form (ticket dc04eded)", () => {
+    it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 S1 maps a symbolic range in a REGISTERED namespace (ems#Effort) to targetClassUid = ems__Effort", async () => {
+      const store = await seed([
+        {
+          key: "ems__Effort_parent",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeIRI: Namespace.EMS.term("Effort").value,
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields).toHaveLength(1);
+      expect(fields[0]).toMatchObject({
+        propertyKey: "ems__Effort_parent",
+        fieldType: "assetRef",
+        targetClassUid: "ems__Effort",
+      });
+    });
+
+    it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 S2 maps a symbolic range in an AD-HOC namespace (sess#Session, not registered) to targetClassUid = sess__Session", async () => {
+      // `sess` is a live namespace outside every static prefix map.
+      expect(
+        Namespace.knownNamespaces().some((ns) => ns.prefix === "sess"),
+      ).toBe(false);
+      const store = await seed([
+        {
+          key: "sess__LifecycleEvent_session",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeIRI: "https://exocortex.my/ontology/sess#Session",
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields[0]).toMatchObject({
+        fieldType: "assetRef",
+        targetClassUid: "sess__Session",
+      });
+    });
+
+    it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 S3 keeps mapping a path-form range (obsidian://…/<uid>.md and bare-uid form) to the bare class UID", async () => {
+      const store = await seed([
+        {
+          key: "exo__Setting_key",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeIRI: fileIRI(SETTINGKEY),
+        },
+        {
+          // Synthesized no-dir form with an UPPER-CASE hex uid in the filename:
+          // must normalise to the lower-case bare UID (not the raw basename).
+          key: "exo__Setting_kind",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeIRI: `obsidian://vault/${SETTINGKEY.toUpperCase()}.md`,
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      const byKey = Object.fromEntries(
+        fields.map((f) => [f.propertyKey, f.targetClassUid]),
+      );
+      expect(byKey["exo__Setting_key"]).toBe(SETTINGKEY);
+      expect(byKey["exo__Setting_kind"]).toBe(SETTINGKEY);
+    });
+
+    it("S5 does NOT turn a W3C datatype range (xsd:string as an IRI) into an assetRef", async () => {
+      const store = await seed([
+        {
+          key: "ex__C_text",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeIRI: `${XSD}string`,
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      expect(fields[0]).toMatchObject({ fieldType: "text" });
+      expect(fields[0].targetClassUid).toBeUndefined();
+    });
+  });
 });
