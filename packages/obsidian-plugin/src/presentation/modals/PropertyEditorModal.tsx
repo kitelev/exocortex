@@ -158,8 +158,10 @@ export class PropertyEditorModal extends Modal {
             relations,
           }),
           onError: (error: Error) => {
-            this.logger.error("Error", error);
-            this.notificationService.error(`Error in property editor: ${error.message}`);
+            // One call, one toast: the Logger's notice channel (default ON,
+            // "✗ "-prefixed like notificationService.error) carries the user
+            // message — a second notificationService.error would double it.
+            this.logger.error(`Error in property editor: ${error.message}`, error);
           },
         },
       ),
@@ -698,9 +700,9 @@ export class PropertyEditorModal extends Modal {
       this.close();
       this.plugin.refreshLayout?.();
     } catch (error) {
-      this.logger.error("Save error", error);
       const message = error instanceof Error ? error.message : String(error);
-      this.notificationService.error(`Failed to save properties: ${message}`);
+      // One call, one toast (see onError above).
+      this.logger.error(`Failed to save properties: ${message}`, error);
     }
   }
 

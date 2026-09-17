@@ -65,6 +65,9 @@ describe("PropertyEditorModal", () => {
   let mockRender: jest.Mock;
   let mockUnmount: jest.Mock;
   let mockNotifier: any;
+  /** The modal's (mocked) Logger `error` — ticket 7c02970c. */
+  const loggerErrorOf = (m: PropertyEditorModal): jest.Mock =>
+    (m as unknown as { logger: { error: jest.Mock } }).logger.error;
 
   beforeEach(() => {
     mockNotifier = {
@@ -245,8 +248,10 @@ describe("PropertyEditorModal", () => {
 
       await (modal as any).handleSave({ key1: "value1" });
 
-      expect(mockNotifier.error).toHaveBeenCalledWith(
+      // Ticket 7c02970c — the toast now comes from the Logger's notice channel.
+      expect(loggerErrorOf(modal)).toHaveBeenCalledWith(
         expect.stringContaining("Failed to save properties"),
+        expect.any(Error),
       );
     });
 
@@ -255,8 +260,9 @@ describe("PropertyEditorModal", () => {
 
       await (modal as any).handleSave({ key1: "value1" });
 
-      expect(mockNotifier.error).toHaveBeenCalledWith(
+      expect(loggerErrorOf(modal)).toHaveBeenCalledWith(
         expect.stringContaining("Failed to save properties"),
+        expect.any(Error),
       );
     });
 
@@ -265,8 +271,9 @@ describe("PropertyEditorModal", () => {
 
       await (modal as any).handleSave({ key1: "value1" });
 
-      expect(mockNotifier.error).toHaveBeenCalledWith(
+      expect(loggerErrorOf(modal)).toHaveBeenCalledWith(
         expect.stringContaining("string error"),
+        "string error",
       );
     });
 
@@ -688,25 +695,45 @@ describe("PropertyEditorModal", () => {
       );
     });
 
-    it("L1b the ErrorBoundary onError routes through the Logger AND notifies the user", () => {
+    it("L1b the ErrorBoundary onError routes the user message + error object through the Logger", () => {
       modal.onOpen();
       const boundaryProps = mockRender.mock.calls[0][1].props;
       const boom = new Error("render exploded");
       boundaryProps.onError(boom);
-      expect(loggerOf(modal).error).toHaveBeenCalledWith("Error", boom);
-      expect(mockNotifier.error).toHaveBeenCalledWith(
+      expect(loggerOf(modal).error).toHaveBeenCalledWith(
         "Error in property editor: render exploded",
+        boom,
       );
     });
 
-    it("L1c a failing save is logged through the Logger with the error object AND notifies the user", async () => {
+    it("L1c a failing save routes the user message + error object through the Logger", async () => {
       const boom = new Error("disk full");
       (mockApp.vault.read as jest.Mock).mockRejectedValue(boom);
       await (modal as any).handleSave({ key1: "value1" });
-      expect(loggerOf(modal).error).toHaveBeenCalledWith("Save error", boom);
-      expect(mockNotifier.error).toHaveBeenCalledWith(
+      expect(loggerOf(modal).error).toHaveBeenCalledWith(
+        "Failed to save properties: disk full",
+        boom,
+      );
+    });
+
+    it("L3a a failing save toasts ONCE — logger.error exactly once with the full text, notificationService.error never (no double Notice)", async () => {
+      (mockApp.vault.read as jest.Mock).mockRejectedValue(new Error("disk full"));
+      await (modal as any).handleSave({ key1: "value1" });
+      expect(loggerOf(modal).error).toHaveBeenCalledTimes(1);
+      expect(loggerOf(modal).error.mock.calls[0][0]).toBe(
         "Failed to save properties: disk full",
       );
+      expect(mockNotifier.error).not.toHaveBeenCalled();
+    });
+
+    it("L3b the ErrorBoundary onError toasts ONCE — logger.error exactly once with the full text, notificationService.error never", () => {
+      modal.onOpen();
+      mockRender.mock.calls[0][1].props.onError(new Error("render exploded"));
+      expect(loggerOf(modal).error).toHaveBeenCalledTimes(1);
+      expect(loggerOf(modal).error.mock.calls[0][0]).toBe(
+        "Error in property editor: render exploded",
+      );
+      expect(mockNotifier.error).not.toHaveBeenCalled();
     });
 
     const statementFile = (path: string): TFile =>
