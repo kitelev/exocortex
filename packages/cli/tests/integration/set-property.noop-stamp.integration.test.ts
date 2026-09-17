@@ -15,9 +15,11 @@
  * what the command itself serialises) and repeats under clock B.
  *
  * Revert-verify (~/dotfiles/.claude/rules/integration-test-revert-verify.md):
- *   M1 restore the unconditional bump (`changed = true`)      → N1, N3, N1d RED
- *   M3 compare against the stamped string instead of original → N1, N3 RED
- *   N2 / N3b are the changed-value controls (stay GREEN under M1/M3).
+ *   Driver output (mutants-6ffac10e.py, control 48/48 green, 2026-09-17):
+ *   M1 set-property: unconditional bump restored          RED: ['N1', 'N1d', 'N3']
+ *   M3 set-property: guard compares against the STAMPED  RED: ['N1', 'N1d', 'N3']
+ *   M4 set-property: write always (byte-identical rewrite) RED: ['N1', 'N3']
+ *   N2 / N3b are the changed-value controls (stay GREEN under M1/M3/M4).
  */
 import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import * as fs from "fs";
