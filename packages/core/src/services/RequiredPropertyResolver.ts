@@ -73,6 +73,22 @@ function uidFrom(value: string): string | null {
   return null;
 }
 
+/** CURIE prefix of the W3C XML-Schema datatype namespace (`xsd:dateTime`). */
+const XSD_CURIE_PREFIX = "xsd:";
+
+/**
+ * Lower-cased XSD local name of a datatype range value, or `null` when the
+ * value is not an XSD datatype at all. Accepts both the full namespace IRI
+ * (`http://www.w3.org/2001/XMLSchema#dateTime`) and the CURIE literal
+ * (`xsd:dateTime`); a foreign prefix (`ex:date`) is NOT a datatype.
+ */
+function xsdLocalName(value: string): string | null {
+  if (value.startsWith(XSD_NS)) return value.slice(XSD_NS.length).toLowerCase();
+  if (value.startsWith(XSD_CURIE_PREFIX))
+    return value.slice(XSD_CURIE_PREFIX.length).toLowerCase();
+  return null;
+}
+
 /** Map an `exo__Property_range` value to a form field type (+ picker class). */
 function fieldTypeFromRange(
   rangeValues: ReadonlyArray<{ iri: boolean; value: string }>,
@@ -82,8 +98,11 @@ function fieldTypeFromRange(
 } {
   for (const r of rangeValues) {
     const value = r.value;
-    if (value.startsWith(XSD_NS)) {
-      const local = value.slice(XSD_NS.length).toLowerCase();
+    // Datatype range: full W3C IRI (`http://www.w3.org/2001/XMLSchema#date`,
+    // as IRI or literal) OR the CURIE literal `xsd:<local>` — the form the
+    // live vaults actually carry (ticket 5380e7fd; measured in PR body).
+    const local = xsdLocalName(value);
+    if (local !== null) {
       if (local === "date" || local === "datetime")
         return { fieldType: "date" };
       if (local === "boolean") return { fieldType: "boolean" };

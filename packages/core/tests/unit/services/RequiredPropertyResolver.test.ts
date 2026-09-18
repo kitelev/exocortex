@@ -176,6 +176,99 @@ describe("createTripleStoreRequiredPropertyResolver", () => {
     expect(byKey["ex__C_norange"]).toBe("text");
   });
 
+  describe("CURIE-literal datatype range `xsd:<local>` (ticket 5380e7fd)", () => {
+    // On the live vaults every datatype range is the CURIE literal form
+    // `"xsd:<local>"`; not one carries the full `http://www.w3.org/2001/XMLSchema#`
+    // form the resolver used to require (measurement table in the PR body).
+    it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 C1 maps a CURIE-literal range (xsd:dateTime / xsd:integer / xsd:boolean / xsd:string) like the full XSD IRI", async () => {
+      const store = await seed([
+        {
+          key: "ems__Reminder_at",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: "xsd:dateTime",
+        },
+        {
+          key: "ex__C_count",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: "xsd:integer",
+        },
+        {
+          key: "ex__C_flag",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: "xsd:boolean",
+        },
+        {
+          key: "ems__Reminder_text",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: "xsd:string",
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      const byKey = Object.fromEntries(
+        fields.map((f) => [f.propertyKey, f.fieldType]),
+      );
+      expect(byKey["ems__Reminder_at"]).toBe("date");
+      expect(byKey["ex__C_count"]).toBe("number");
+      expect(byKey["ex__C_flag"]).toBe("boolean");
+      expect(byKey["ems__Reminder_text"]).toBe("text");
+      for (const f of fields) expect(f.targetClassUid).toBeUndefined();
+    });
+
+    it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 C2 keeps the full XSD IRI form (IRI and literal) mapping unchanged", async () => {
+      const store = await seed([
+        {
+          key: "ex__C_when",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeIRI: `${XSD}dateTime`,
+        },
+        {
+          key: "ex__C_flag",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: `${XSD}boolean`,
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      const byKey = Object.fromEntries(
+        fields.map((f) => [f.propertyKey, f.fieldType]),
+      );
+      expect(byKey["ex__C_when"]).toBe("date");
+      expect(byKey["ex__C_flag"]).toBe("boolean");
+    });
+
+    it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 C3 does NOT treat a foreign-prefix CURIE (ex:date), a bare `xsd:` or an unknown xsd local as a date/number/boolean", async () => {
+      const store = await seed([
+        {
+          key: "ex__C_foreign",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: "ex:date",
+        },
+        { key: "ex__C_bare", domainUid: SETTING, minCount: 1, rangeLiteral: "xsd:" },
+        {
+          key: "ex__C_gyear",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: "xsd:gYear",
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      for (const f of fields) {
+        expect(f.fieldType).toBe("text");
+        expect(f.targetClassUid).toBeUndefined();
+      }
+      expect(fields).toHaveLength(3);
+    });
+  });
+
   it("does NOT return required properties of a different class", async () => {
     const store = await seed([
       { key: "exo__Setting_value", domainUid: SETTING, minCount: 1 },
