@@ -78,9 +78,11 @@ const XSD_CURIE_PREFIX = "xsd:";
 
 /**
  * Lower-cased XSD local name of a datatype range value, or `null` when the
- * value is not an XSD datatype at all. Accepts both the full namespace IRI
- * (`http://www.w3.org/2001/XMLSchema#dateTime`) and the CURIE literal
- * (`xsd:dateTime`); a foreign prefix (`ex:date`) is NOT a datatype.
+ * value does not start with an XSD prefix at all. Accepts both the full
+ * namespace IRI (`http://www.w3.org/2001/XMLSchema#dateTime`) and the CURIE
+ * literal (`xsd:dateTime`); a foreign prefix (`ex:date`) is NOT a datatype.
+ * A bare prefix (`xsd:` / the namespace alone) yields an empty local name,
+ * which the caller maps to `text`.
  */
 function xsdLocalName(value: string): string | null {
   if (value.startsWith(XSD_NS)) return value.slice(XSD_NS.length).toLowerCase();
