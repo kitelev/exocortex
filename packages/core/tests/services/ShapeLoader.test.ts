@@ -926,3 +926,98 @@ describe("ShapeLoader.loadFromVaultFS — minCount and xsd: range", () => {
     expect(shape!.domain).toEqual([`${EXO_NS}Asset`]);
   });
 });
+
+// ── CURIE-literal datatype range in loadFromRDFGraph (ticket a9b55ead) ────────
+
+describe("ShapeLoader.loadFromRDFGraph — CURIE-literal datatype range xsd:<local> (@req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2)", () => {
+  const XSD_NS = "http://www.w3.org/2001/XMLSchema#";
+  const FILE_IRI = "obsidian://vault/pmi/pmi__Principle_number.md";
+  const RDF_TYPE = Namespace.RDF.term("type").value;
+  const RDFS_DOMAIN = Namespace.RDFS.term("domain").value;
+  const RDFS_RANGE = Namespace.RDFS.term("range").value;
+  const EXO_LABEL = Namespace.EXO.term("Asset_label").value;
+
+  function propertyTriples(rangeLiteral: string): Triple[] {
+    return [
+      makeTriple(FILE_IRI, RDF_TYPE, `${EXO}Property`),
+      makeTriple(FILE_IRI, RDFS_DOMAIN, `${EMS}Task`),
+      makeTriple(FILE_IRI, RDFS_RANGE, { literal: rangeLiteral }),
+      makeTriple(FILE_IRI, EXO_LABEL, { literal: "pmi__Principle_number" }),
+    ];
+  }
+
+  it("L1 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 CURIE literal range \"xsd:integer\" (the live-corpus form) resolves to the full XSD IRI, like wikilinkToIRI does", async () => {
+    const reg = await ShapeLoader.loadFromRDFGraph(makeStore(propertyTriples("xsd:integer")));
+    const shape = reg.get("https://exocortex.my/ontology/pmi#Principle_number");
+    expect(shape).toBeDefined();
+    expect(shape!.range).toEqual([`${XSD_NS}integer`]);
+  });
+
+  it("L2 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 full-IRI literal range keeps resolving (no regression of the http:// branch)", async () => {
+    const reg = await ShapeLoader.loadFromRDFGraph(
+      makeStore(propertyTriples(`${XSD_NS}integer`)),
+    );
+    expect(reg.get("https://exocortex.my/ontology/pmi#Principle_number")!.range).toEqual([
+      `${XSD_NS}integer`,
+    ]);
+  });
+
+  it("L3 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 a literal range that is neither a CURIE nor an IRI is still dropped (shape.range undefined)", async () => {
+    const reg = await ShapeLoader.loadFromRDFGraph(makeStore(propertyTriples("integer")));
+    expect(reg.get("https://exocortex.my/ontology/pmi#Principle_number")!.range).toBeUndefined();
+  });
+
+  it("L4 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 loader parity: the SAME frontmatter yields the SAME shape.range via loadFromRDFGraph (through NoteToRDFConverter) and via loadFromVaultFS", async () => {
+    const { NoteToRDFConverter } = await import("../../src/services/NoteToRDFConverter");
+    const { InMemoryTripleStore } = await import(
+      "../../src/infrastructure/rdf/InMemoryTripleStore"
+    );
+    const frontmatter = {
+      exo__Instance_class: ["[[exo__Property]]"],
+      exo__Asset_label: "pmi__Principle_number",
+      exo__Property_domain: ["[[ems__Task]]"],
+      exo__Property_range: "xsd:integer",
+    };
+    const mockVault = {
+      getFrontmatter: jest.fn().mockReturnValue(frontmatter),
+      getAllFiles: jest.fn().mockReturnValue([]),
+      read: jest.fn().mockResolvedValue(""),
+      getFirstLinkpathDest: jest.fn().mockReturnValue(null),
+    } as unknown as ConstructorParameters<typeof NoteToRDFConverter>[0];
+    const converter = new NoteToRDFConverter(mockVault);
+    const triples = await converter.convertNote({
+      path: "pmi/pmi__Principle_number.md",
+      basename: "pmi__Principle_number",
+      extension: "md",
+      name: "pmi__Principle_number.md",
+      parent: null,
+    } as Parameters<typeof converter.convertNote>[0]);
+    const store = new InMemoryTripleStore();
+    await store.addAll(triples);
+    const viaGraph = await ShapeLoader.loadFromRDFGraph(store);
+
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "shacl-parity-"));
+    try {
+      await fs.writeFile(
+        path.join(tmpDir, "pmi__Principle_number.md"),
+        [
+          "---",
+          "exo__Instance_class:",
+          '  - "[[exo__Property]]"',
+          "exo__Asset_label: pmi__Principle_number",
+          "exo__Property_domain:",
+          '  - "[[ems__Task]]"',
+          "exo__Property_range: xsd:integer",
+          "---",
+        ].join("\n"),
+        "utf-8",
+      );
+      const viaFS = await ShapeLoader.loadFromVaultFS(tmpDir);
+      const iri = "https://exocortex.my/ontology/pmi#Principle_number";
+      expect(viaFS.get(iri)!.range).toEqual([`${XSD_NS}integer`]);
+      expect(viaGraph.get(iri)?.range).toEqual(viaFS.get(iri)!.range);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
