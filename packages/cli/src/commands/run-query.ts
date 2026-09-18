@@ -3,21 +3,19 @@ import { existsSync } from "fs";
 import { resolve } from "path";
 import {
   InMemoryTripleStore,
-  NoteToRDFConverter,
   Triple,
   vaultPathToIRI,
   type NamedQueryContext,
   type NamedQueryParam,
   type ExoQLEvalResult,
 } from "@kitelev/exocortex-core";
-import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { TableFormatter } from "../formatters/TableFormatter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { ErrorCode } from "../responses/index.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder } from "../responses/index.js";
-import { CacheManager } from "../cache/CacheManager.js";
+import { loadVaultTriples } from "../cache/loadVaultTriples.js";
 import { buildNamedQueryRunner } from "../services/NamedQueryCliRunner.js";
 
 export interface RunQueryCommandOptions {
@@ -115,16 +113,10 @@ export function runQueryCommand(): Command {
           console.log(`📦 Loading vault: ${vaultPath}...`);
         }
 
-        let triples: Triple[];
-        if (options.useCache ?? false) {
-          const cacheResult = await new CacheManager(vaultPath).loadOrBuild();
-          triples = cacheResult.triples;
-        } else {
-          const converter = new NoteToRDFConverter(
-            new FileSystemVaultAdapter(vaultPath),
-          );
-          triples = await converter.convertVault();
-        }
+        // #4263: shared loader (cache hit / delta / rebuild, or full parse)
+        const { triples } = await loadVaultTriples(vaultPath, {
+          useCache: options.useCache ?? false,
+        });
         const tripleStore = new InMemoryTripleStore();
         await tripleStore.addAll(triples);
 

@@ -1,8 +1,8 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
 import { resolve } from "path";
-import { InMemoryTripleStore, RDFSInferenceEngine, NonInheritablePropertyRegistry, PropertyCardinalityRegistry, PrototypeChainMaterializer } from "@kitelev/exocortex-core";
 import { CacheManager } from "../cache/CacheManager.js";
+import { materializeInferredTriples } from "../cache/materializeInferred.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder, type CacheResult, type CacheStatsResult } from "../responses/index.js";
@@ -70,28 +70,19 @@ export function sparqlIndexCommand(): Command {
           strict: options.strict ?? false,
         });
 
-        // RDFS inference materialization (enabled by default)
+        // RDFS inference materialization (enabled by default).
+        // #4263: the pipeline lives in materializeInferredTriples (shared with
+        // CacheManager's delta refresh, which re-materializes the layer after
+        // splicing changed files) and the layer is persisted in its own cache
+        // bucket, separate from the per-file explicit triples.
         let inferredCount = 0;
         if (options.inference !== false) {
           const { triples } = await cacheManager.loadOrBuild();
-          const tripleStore = new InMemoryTripleStore();
-          await tripleStore.addAll(triples);
-
-          const engine = new RDFSInferenceEngine();
-          inferredCount = await engine.materialize(tripleStore);
-
-          // Prototype chain materialization (after RDFS inference)
-          const registry = new NonInheritablePropertyRegistry();
-          await registry.initialize(tripleStore);
-          const cardinalityRegistry = new PropertyCardinalityRegistry();
-          await cardinalityRegistry.initialize(tripleStore);
-          const protoMaterializer = new PrototypeChainMaterializer(registry, cardinalityRegistry);
-          const protoInferredCount = await protoMaterializer.materialize(tripleStore);
-          inferredCount += protoInferredCount;
+          const materialized = await materializeInferredTriples(triples);
+          inferredCount = materialized.inferredCount;
 
           if (inferredCount > 0) {
-            const allTriples = await tripleStore.match();
-            await cacheManager.saveTriples(allTriples);
+            await cacheManager.saveInferredTriples(materialized.inferred);
             result.tripleCount += inferredCount;
           }
 

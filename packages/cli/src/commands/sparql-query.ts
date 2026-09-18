@@ -9,7 +9,6 @@ import {
   AlgebraOptimizer,
   AlgebraSerializer,
   ExoQLQueryExecutor,
-  NoteToRDFConverter,
   Triple,
   UpdateExecutor,
   type UpdateResult,
@@ -17,7 +16,6 @@ import {
   type ConstructOperation,
   SPARQL_PREFIXES,
 } from "@kitelev/exocortex-core";
-import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { TableFormatter } from "../formatters/TableFormatter.js";
 import { JsonFormatter } from "../formatters/JsonFormatter.js";
 import { CsvFormatter } from "../formatters/CsvFormatter.js";
@@ -26,7 +24,7 @@ import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError, InvalidArgumentsError, QueryTimeoutError } from "../utils/errors/index.js";
 import { ResponseBuilder, ErrorCode, type QueryResult, type ConstructResult } from "../responses/index.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
-import { CacheManager } from "../cache/CacheManager.js";
+import { loadVaultTriples } from "../cache/loadVaultTriples.js";
 import { QueryResultCache } from "../cache/QueryResultCache.js";
 import { computeVaultSignature } from "../cache/vaultSignature.js";
 import { ProgressIndicator } from "../utils/ProgressIndicator.js";
@@ -381,21 +379,14 @@ export function sparqlQueryCommand(): Command {
         let triples: Triple[] = [];
         let cacheHit = false;
 
-        if (useCacheEffective) {
-          // Use the persistent single-vault triple cache for faster loading.
-          const cacheManager = new CacheManager(vaultPath);
-          const cacheResult = await cacheManager.loadOrBuild();
-          triples = cacheResult.triples;
-          cacheHit = cacheResult.cacheHit;
+        // #4263: one shared loader for every --use-cache command (see
+        // loadVaultTriples.ts); the cache path is hit / delta / rebuild.
+        const loaded = await loadVaultTriples(vaultPath, { useCache: useCacheEffective });
+        triples = loaded.triples;
+        cacheHit = loaded.cacheHit;
 
-          if (outputFormat === "text" && cacheHit) {
-            console.log(`🚀 Cache hit! Loading from persistent cache...`);
-          }
-        } else {
-          // Traditional single-vault loading.
-          const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
-          const converter = new NoteToRDFConverter(vaultAdapter);
-          triples = await converter.convertVault();
+        if (outputFormat === "text" && cacheHit) {
+          console.log(`🚀 Cache hit! Loading from persistent cache...`);
         }
 
         const tripleStore = new InMemoryTripleStore();

@@ -9,7 +9,7 @@ const mockGetCacheStats = jest.fn();
 const mockInvalidate = jest.fn();
 const mockGetCachePath = jest.fn();
 const mockLoadOrBuild = jest.fn();
-const mockSaveTriples = jest.fn();
+const mockSaveInferredTriples = jest.fn();
 
 jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
   CacheManager: jest.fn(() => ({
@@ -18,7 +18,7 @@ jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
     invalidate: mockInvalidate,
     getCachePath: mockGetCachePath,
     loadOrBuild: mockLoadOrBuild,
-    saveTriples: mockSaveTriples,
+    saveInferredTriples: mockSaveInferredTriples,
   })),
 }));
 
@@ -32,6 +32,12 @@ const mockProtoMaterialize = jest.fn();
 const mockCardinalityRegistryInitialize = jest.fn();
 
 jest.unstable_mockModule("@kitelev/exocortex-core", () => ({
+  // #4263: materializeInferredTriples splits the inferred layer from the
+  // explicit set by serialized triple identity, which walks these classes.
+  Triple: class {},
+  IRI: class {},
+  Literal: class {},
+  BlankNode: class {},
   InMemoryTripleStore: jest.fn(() => ({
     addAll: mockAddAll,
     match: mockMatch,
@@ -87,7 +93,7 @@ describe("sparqlIndexCommand", () => {
     });
     mockInvalidate.mockResolvedValue(undefined);
     mockLoadOrBuild.mockResolvedValue({ triples: [] });
-    mockSaveTriples.mockResolvedValue(undefined);
+    mockSaveInferredTriples.mockResolvedValue(undefined);
     mockAddAll.mockResolvedValue(undefined);
     mockMatch.mockResolvedValue([]);
     mockMaterialize.mockResolvedValue(0);
@@ -190,7 +196,7 @@ describe("sparqlIndexCommand", () => {
         "--vault", vaultPath,
       ]);
 
-      expect(mockSaveTriples).toHaveBeenCalled();
+      expect(mockSaveInferredTriples).toHaveBeenCalled();
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining("Materialized 5 inferred triples")
       );
@@ -207,7 +213,7 @@ describe("sparqlIndexCommand", () => {
         "--vault", vaultPath,
       ]);
 
-      expect(mockSaveTriples).toHaveBeenCalled();
+      expect(mockSaveInferredTriples).toHaveBeenCalled();
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining("Materialized 13 inferred triples")
       );

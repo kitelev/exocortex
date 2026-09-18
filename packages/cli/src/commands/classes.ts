@@ -3,20 +3,18 @@ import { existsSync } from "fs";
 import { resolve } from "path";
 import {
   InMemoryTripleStore,
-  NoteToRDFConverter,
   Triple,
   type NamedQueryRunner,
   type NamedQueryContext,
   type SolutionMapping,
   type ExoQLEvalResult,
 } from "@kitelev/exocortex-core";
-import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { ErrorCode } from "../responses/index.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder } from "../responses/index.js";
-import { CacheManager } from "../cache/CacheManager.js";
+import { loadVaultTriples } from "../cache/loadVaultTriples.js";
 import { buildNamedQueryRunner } from "../services/NamedQueryCliRunner.js";
 
 /**
@@ -88,19 +86,13 @@ export function classesCommand(): Command {
         let triples: Triple[];
         let cacheHit = false;
 
-        if (useCacheEffective) {
-          const cacheManager = new CacheManager(vaultPath);
-          const cacheResult = await cacheManager.loadOrBuild();
-          triples = cacheResult.triples;
-          cacheHit = cacheResult.cacheHit;
+        // #4263: shared loader (cache hit / delta / rebuild, or full parse)
+        const loaded = await loadVaultTriples(vaultPath, { useCache: useCacheEffective });
+        triples = loaded.triples;
+        cacheHit = loaded.cacheHit;
 
-          if (outputFormat === "text" && cacheHit) {
-            console.log(`🚀 Cache hit! Loading from persistent cache...`);
-          }
-        } else {
-          const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
-          const converter = new NoteToRDFConverter(vaultAdapter);
-          triples = await converter.convertVault();
+        if (outputFormat === "text" && cacheHit) {
+          console.log(`🚀 Cache hit! Loading from persistent cache...`);
         }
 
         const tripleStore = new InMemoryTripleStore();

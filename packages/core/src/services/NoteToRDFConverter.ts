@@ -945,6 +945,35 @@ export class NoteToRDFConverter {
        * notice), so tiny vaults stay quiet.
        */
       progressIntervalFiles?: number;
+      /**
+       * Restrict the walk to these files instead of `vault.getAllFiles()`
+       * (#4263 — CLI triple-cache delta refresh re-parses only the files whose
+       * mtime changed). Folder exclusions (`excludedFolders` + FileSpace
+       * prefixes) still apply to the subset; wikilink TARGET resolution still
+       * goes through the full vault adapter, so a subset conversion emits the
+       * same triples for a file as a full walk would. Omit → whole vault.
+       */
+      files?: IFile[];
+      /**
+       * Skip {@link discoverFileSpaceExclusions} (a `getFrontmatter` per vault
+       * file — the walk a delta pass exists to avoid) and use these
+       * previously-discovered FileSpace mount prefixes instead (#4263: the CLI
+       * cache persists `fileSpaces.prefixes` from its last full walk). Omit →
+       * discover from the vault as before. An empty array is honoured as
+       * "no FileSpaces" (no discovery).
+       */
+      fileSpacePrefixes?: string[];
+      /**
+       * Per-file commit observer (#4263): called once for every file whose
+       * candidate triples were committed to the result, with exactly the
+       * triples that file contributed (in commit order). Skipped / excluded
+       * files never reach it. Lets a caller keep file→triple provenance
+       * without re-deriving it from subject IRIs (reified statements, enum
+       * `rdf:type` side-triples and blank nodes do NOT carry the file's own
+       * subject). Best-effort: a throwing observer is isolated like
+       * `onProgress` and never aborts the walk.
+       */
+      onFileTriples?: (file: IFile, triples: Triple[]) => void;
     } = {}
   ): Promise<{
     triples: Triple[];
@@ -952,7 +981,7 @@ export class NoteToRDFConverter {
     summary: { total: number; indexed: number; skipped: number };
     fileSpaces: FileSpaceDiscoveryResult;
   }> {
-    const allFiles = this.vault.getAllFiles();
+    const allFiles = options.files ?? this.vault.getAllFiles();
     const allTriples: Triple[] = [];
     const skippedFiles: Array<{ path: string; reason: string }> = [];
     const strict = options.strict ?? false;
@@ -971,7 +1000,9 @@ export class NoteToRDFConverter {
     // user-configured `excludedFolders` below. The declarations themselves
     // are ordinary assets and keep indexing (convention: they live OUTSIDE
     // their mount folder — discovery warns otherwise).
-    const fileSpaces = discoverFileSpaceExclusions(this.vault);
+    const fileSpaces: FileSpaceDiscoveryResult = options.fileSpacePrefixes
+      ? { prefixes: options.fileSpacePrefixes, declarationPaths: [], warnings: [] }
+      : discoverFileSpaceExclusions(this.vault);
     for (const warning of fileSpaces.warnings) {
       this.logger.warn(`FileSpace discovery: ${warning}`);
     }
@@ -1062,6 +1093,14 @@ export class NoteToRDFConverter {
 
         const candidate = await this.convertNote(file);
         allTriples.push(...candidate);
+        if (options.onFileTriples) {
+          try {
+            options.onFileTriples(file, candidate);
+          } catch {
+            // Isolate observer failures — provenance is best-effort for the
+            // walk itself (the caller decides what a missing entry means).
+          }
+        }
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
 
