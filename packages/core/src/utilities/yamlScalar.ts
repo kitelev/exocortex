@@ -44,6 +44,18 @@ const YAML_LEADING_INDICATORS = /^[-!&*?|>%@`"'#,[\]{}]/;
 // eslint-disable-next-line no-control-regex -- the C0/DEL/C1 class IS the pattern's purpose (#3750 LOW-4, req 389d4e14)
 const YAML_CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/;
 
+// Non-printable positions js-yaml rejects OUTSIDE the control class above
+// (`PATTERN_NON_PRINTABLE`, js-yaml 5.3.0 dist/js-yaml.cjs.js:1812, applied by
+// `checkPrintable` to PLAIN scalars — inside `"…"` the raw unit loads, as with
+// C1): the non-characters
+// U+FFFE / U+FFFF and lone surrogate halves (a high D800–DBFF not followed by
+// a low DC00–DFFF, a low not preceded by a high). Copied verbatim minus the
+// C0/DEL/C1 part; deliberately NO `u` flag — the reader matches UTF-16 code
+// units, so must this predicate. A valid pair (astral char), U+FFFD and a BOM
+// inside a value are printable to the reader and stay bare (ticket 65ea50c4).
+const YAML_NON_PRINTABLE_CHARS =
+  /[\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/;
+
 // Scalar tokens a real YAML parser (js-yaml DEFAULT_SCHEMA, used by Obsidian
 // metadataCache) coerces away from string. Replicated from js-yaml's resolvers
 // (lib/type/{bool,null,int,float,timestamp}.js). (#3750 MEDIUM-3.)
@@ -156,6 +168,10 @@ export function needsYamlQuoting(
   // Control characters that break a single-line plain scalar (#3750 LOW-4).
   if (YAML_CONTROL_CHARS.test(value)) return true;
 
+  // Non-characters / lone surrogates: bare, the reader throws for the whole
+  // frontmatter; quoted, they are `\uNNNN`-escaped (ticket 65ea50c4).
+  if (YAML_NON_PRINTABLE_CHARS.test(value)) return true;
+
   // Scalar-looking strings coerced to non-string types by a real YAML parser
   // (#3750 MEDIUM-3) — quote so a semantically-string value round-trips. Gated
   // to string-semantic properties so timestamp/numeric properties keep their
@@ -173,6 +189,15 @@ export function needsYamlQuoting(
  * `\xNN` form covers C0 + DEL and the C1 range U+0080–U+009F (req 389d4e14):
  * js-yaml loads a raw C1 byte inside `"…"` too, but the escape keeps the
  * emitted text printable and the on-disk form explicit.
+ *
+ * The non-characters U+FFFE / U+FFFF and lone surrogate halves are emitted as
+ * `\uNNNN` (ticket 65ea50c4): js-yaml rejects them raw in a plain scalar but
+ * loads the raw unit inside `"…"` (like C1), so the quoting is what makes the
+ * frontmatter readable and the escape keeps the emitted text printable — and,
+ * for a lone half, survivable: a raw lone surrogate written as UTF-8 becomes
+ * U+FFFD, the escape reads back as the same unit (the form js-yaml's own
+ * `dump` emits). A valid surrogate pair is an ordinary printable character
+ * and is emitted raw, never split into two escapes.
  */
 export function quoteYamlString(value: string): string {
   let out = "";
@@ -186,6 +211,22 @@ export function quoteYamlString(value: string): string {
     else if (ch === "\t") out += "\\t";
     else if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) {
       out += "\\x" + code.toString(16).toUpperCase().padStart(2, "0");
+    } else if (code === 0xfffe || code === 0xffff) {
+      out += "\\u" + code.toString(16).toUpperCase();
+    } else if (
+      code >= 0xd800 &&
+      code <= 0xdbff &&
+      i + 1 < value.length &&
+      value.charCodeAt(i + 1) >= 0xdc00 &&
+      value.charCodeAt(i + 1) <= 0xdfff
+    ) {
+      // Valid pair — the astral character is printable; keep both units raw.
+      out += ch + value[i + 1];
+      i++;
+    } else if (code >= 0xd800 && code <= 0xdfff) {
+      // Lone half (e.g. a truncated emoji) — `\uNNNN` round-trips it faithfully;
+      // a raw UTF-8 file write would have turned it into U+FFFD instead.
+      out += "\\u" + code.toString(16).toUpperCase();
     } else {
       out += ch;
     }
