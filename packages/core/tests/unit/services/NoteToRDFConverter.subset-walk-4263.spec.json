@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for the #4263 core options (req 42812747): set `tree`/`subject` to YOUR checkout, then python3 -I ~/.claude/bin/mutant-driver.py <this file>. Recorded run 2026-09-18: control 0 red, 3/3 distinguish.",
+  "_doc": "Revert-verify mutants for the #4263 core options (req 42812747): set `tree`/`subject` to YOUR checkout, then python3 -I ~/.claude/bin/mutant-driver.py <this file>. Recorded run 2026-09-18: control 0 red, 4/4 distinguish.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/NoteToRDFConverter.ts",
   "symlink_node_modules": ["node_modules", "packages/core/node_modules"],
@@ -19,6 +19,11 @@
     "K3_onFileTriples_never_called": {
       "from": "        if (options.onFileTriples) {\n          try {\n            options.onFileTriples(file, candidate);",
       "to": "        if (options.onFileTriples && candidate.length < 0) {\n          try {\n            options.onFileTriples(file, candidate);",
+      "expect": ["C3"]
+    },
+    "K4_observer_throw_aborts_file": {
+      "from": "        if (options.onFileTriples) {\n          try {\n            options.onFileTriples(file, candidate);\n          } catch {\n            // Isolate observer failures — provenance is best-effort for the\n            // walk itself (the caller decides what a missing entry means).\n          }\n        }",
+      "to": "        if (options.onFileTriples) {\n          options.onFileTriples(file, candidate);\n        }",
       "expect": ["C3"]
     }
   }

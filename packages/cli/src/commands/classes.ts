@@ -92,7 +92,11 @@ export function classesCommand(): Command {
         cacheHit = loaded.cacheHit;
 
         if (outputFormat === "text" && cacheHit) {
-          console.log(`🚀 Cache hit! Loading from persistent cache...`);
+          console.log(
+            loaded.mode === "delta"
+              ? `♻️  Cache refreshed incrementally (${loaded.reparsedFiles} file(s) re-parsed)...`
+              : `🚀 Cache hit! Loading from persistent cache...`,
+          );
         }
 
         const tripleStore = new InMemoryTripleStore();

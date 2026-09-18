@@ -1,4 +1,5 @@
 import path from "path";
+import crypto from "crypto";
 import fs from "fs-extra";
 import {
   NoteToRDFConverter,
@@ -59,17 +60,43 @@ export interface CacheMetadata {
    * `NoteToRDFConverter.convertVaultWithValidation({ fileSpacePrefixes })`.
    */
   fileSpacePrefixes: string[];
+  /**
+   * Vault paths of the FileSpace DECLARATION assets found by the last full
+   * walk (`fileSpaces.declarationPaths`). A delta touching one of them
+   * (modified or removed) cannot know the new exclusion set without a
+   * discovery sweep, so it falls back to a full rebuild.
+   */
+  fileSpaceDeclarations: string[];
+  /**
+   * `true` once `index` persisted an inferred layer via `saveInferredTriples`
+   * (even an EMPTY one — a vault whose only prototype was deleted still has
+   * inference switched on). A delta re-materializes the layer iff this flag
+   * is set; a full rebuild resets it (the flag is a property of how the
+   * cache was built, not of the data — reading it off `inferred.length` would
+   * leave a cache without a layer forever once the layer happened to be empty).
+   */
+  inferenceEnabled: boolean;
 }
 
 /**
- * One walked `.md` file: its mtime at build time and the triples its
+ * One walked `.md` file: its stat stamp at build time and the triples its
  * conversion committed (empty for skipped / excluded files, which still
  * need an entry so that fixing them later counts as a change).
  */
 export interface CacheFileEntry {
   path: string;
   mtimeMs: number;
+  /** byte size at build time — a same-mtime rewrite (`touch -r`, `rsync -t`) still shows */
+  size: number;
   triples: SerializedTriple[];
+  /**
+   * The file's OWN `exo__Asset_label` (or basename) has the TBox form
+   * `prefix__Name`, so referrers emit SYMBOLIC IRIs derived from it. Persisted
+   * because for a file the converter SKIPPED (invariant violation → no
+   * triples) the label cannot be read back from `triples`, yet referrers
+   * read the target's frontmatter directly and still emit symbolically.
+   */
+  tboxLabel?: true;
 }
 
 /**
@@ -81,11 +108,17 @@ interface CacheData {
   inferred: SerializedTriple[];
 }
 
+/** Stat stamp of one walked file. */
+export interface FileStamp {
+  mtimeMs: number;
+  size: number;
+}
+
 /**
- * Vault-relative path → mtimeMs of every `.md` file the converter would walk.
- * Insertion order = `FileSystemVaultAdapter.getAllFiles()` order.
+ * Vault-relative path → stat stamp of every `.md` file the converter would
+ * walk. Insertion order = `FileSystemVaultAdapter.getAllFiles()` order.
  */
-export type FileManifest = Map<string, number>;
+export type FileManifest = Map<string, FileStamp>;
 
 /**
  * Difference between the persisted manifest and the vault's current one.
@@ -199,6 +232,24 @@ export const DELTA_REBUILD_RATIO = 0.5;
 const TBOX_FORM = /^[a-z][a-zA-Z0-9]*__\S+$/;
 
 const ASSET_LABEL_IRI_SUFFIX = "#Asset_label";
+const ASSET_ALIASES_IRI_SUFFIX = "#Asset_aliases";
+const ASSET_PROTOTYPE_IRI_SUFFIX = "#Asset_prototype";
+
+/**
+ * Predicates the two inference engines READ (`RDFSInferenceEngine`:
+ * `Instance_class` + `Class_superClass`; `PrototypeChainMaterializer`:
+ * `Asset_prototype` edges plus every own triple of a prototype / of an
+ * instance that has one). A delta whose changed files touch none of these —
+ * and are neither prototypes nor prototype-bearing instances — cannot change
+ * the inferred layer, so it is kept verbatim instead of being recomputed over
+ * the whole vault (see `inferenceInputsChanged`).
+ */
+const INFERENCE_PREDICATE_SUFFIXES = [
+  "#Instance_class",
+  "#Class_superClass",
+  "#type",
+  ASSET_PROTOTYPE_IRI_SUFFIX,
+];
 
 /**
  * Manages persistent triple cache for SPARQL queries.
@@ -386,7 +437,9 @@ export class CacheManager {
       for (const entry of raw.files) {
         if (
           typeof entry?.path !== "string" ||
+          !isSafeRelativePath(entry.path) ||
           typeof entry.mtimeMs !== "number" ||
+          typeof entry.size !== "number" ||
           !Array.isArray(entry.triples)
         ) {
           return null;
@@ -398,6 +451,13 @@ export class CacheManager {
           fileSpacePrefixes: Array.isArray(raw.metadata.fileSpacePrefixes)
             ? raw.metadata.fileSpacePrefixes
             : [],
+          fileSpaceDeclarations: Array.isArray(raw.metadata.fileSpaceDeclarations)
+            ? raw.metadata.fileSpaceDeclarations
+            : [],
+          inferenceEnabled:
+            typeof raw.metadata.inferenceEnabled === "boolean"
+              ? raw.metadata.inferenceEnabled
+              : raw.inferred.length > 0,
         },
         files: raw.files,
         inferred: raw.inferred,
@@ -420,7 +480,7 @@ export class CacheManager {
       for (const file of vault.getAllFiles()) {
         try {
           const stat = fs.statSync(path.join(this.vaultPath, file.path));
-          manifest.set(file.path, stat.mtimeMs);
+          manifest.set(file.path, { mtimeMs: stat.mtimeMs, size: stat.size });
         } catch {
           // vanished between readdir and stat — not part of this snapshot
         }
@@ -466,13 +526,17 @@ export class CacheManager {
     for (const entry of cached.files) {
       cachedByPath.set(entry.path, entry);
     }
+    const declarations = new Set(cached.metadata.fileSpaceDeclarations);
 
-    // Object IRIs / literal fragments whose presence in another file's
-    // triples marks that file as a referrer of a changed target.
+    // Object IRIs and (lower-cased) link targets whose presence in another
+    // file's triples marks that file as a referrer of a changed target.
     const referrerIris = new Set<string>();
-    const referrerLiteralNeedles: string[] = [];
+    const referrerNeedles = new Set<string>();
 
     for (const removed of diff.removed) {
+      if (declarations.has(removed)) {
+        return { reparse: [], rebuildReason: `FileSpace declaration removed: ${removed}` };
+      }
       if (isTBoxBasename(removed)) {
         return { reparse: [], rebuildReason: `TBox-form file removed: ${removed}` };
       }
@@ -486,13 +550,16 @@ export class CacheManager {
     }
 
     for (const changedPath of [...diff.added, ...diff.modified]) {
+      if (declarations.has(changedPath)) {
+        return { reparse: [], rebuildReason: `FileSpace declaration changed: ${changedPath}` };
+      }
       if (isTBoxBasename(changedPath)) {
         return { reparse: [], rebuildReason: `TBox-form file changed: ${changedPath}` };
       }
       const file = adapter.getAbstractFileByPath(changedPath);
       const frontmatter =
         file && isFile(file) ? adapter.getFrontmatter(file) : null;
-      if (frontmatter && frontmatterDeclaresFileSpace(frontmatter)) {
+      if (frontmatter && frontmatterDeclaresFileSpaceAnyForm(frontmatter)) {
         return {
           reparse: [],
           rebuildReason: `FileSpace declaration changed: ${changedPath}`,
@@ -509,27 +576,44 @@ export class CacheManager {
           rebuildReason: `asset lost its TBox-form label: ${changedPath}`,
         };
       }
+      // Alias resolution: `[[<alias>]]` links resolve through the target's
+      // frontmatter `aliases` (FileSystemVaultAdapter alias index, lower-cased),
+      // so a change to the alias set changes what the referrers emit — the
+      // ones that resolved through an old alias hold the file-IRI (re-parse by
+      // IRI), the ones that will resolve through a new alias hold the raw
+      // link (re-parse by needle).
+      const oldAliases = previous ? entryAliases(previous) : new Set<string>();
+      const newAliases = frontmatterAliases(frontmatter);
+      if (previous && !sameSet(oldAliases, newAliases)) {
+        referrerIris.add(vaultPathToIRI(changedPath));
+        for (const alias of oldAliases) if (!newAliases.has(alias)) referrerNeedles.add(alias);
+        for (const alias of newAliases) if (!oldAliases.has(alias)) referrerNeedles.add(alias);
+      }
+      if (!previous) {
+        for (const alias of newAliases) referrerNeedles.add(alias);
+      }
     }
 
     for (const added of diff.added) {
       // Referrers of a target that did not exist hold either the synthesized
-      // `obsidian://vault/<uid>.md` IRI (UUID linkpath) or the raw wikilink
-      // literal (any other linkpath); after the add they resolve to the real
-      // file-IRI. Both forms are keyed on the target's basename.
+      // `obsidian://vault/<uid>.md` IRI (UUID linkpath in frontmatter), the
+      // raw `[[…]]` literal (non-UUID frontmatter linkpath) or the bare
+      // linkpath literal (`exo:Asset_bodyLink` of an unresolved body link);
+      // after the add they resolve to the real file-IRI. All three are keyed
+      // on the target's basename (case-insensitive, like the adapter index).
       const basename = path.basename(added);
       referrerIris.add(vaultPathToIRI(basename));
-      const stem = path.basename(added, path.extname(added));
-      referrerLiteralNeedles.push(`[[${stem}]]`, `[[${stem}|`);
+      referrerNeedles.add(path.basename(added, path.extname(added)).toLowerCase());
     }
 
     const reparse = new Set<string>([...diff.added, ...diff.modified]);
     const removed = new Set(diff.removed);
-    if (referrerIris.size > 0 || referrerLiteralNeedles.length > 0) {
+    if (referrerIris.size > 0 || referrerNeedles.size > 0) {
       for (const entry of cached.files) {
         if (reparse.has(entry.path) || removed.has(entry.path)) {
           continue;
         }
-        if (entryRefersTo(entry, referrerIris, referrerLiteralNeedles)) {
+        if (entryRefersTo(entry, referrerIris, referrerNeedles)) {
           reparse.add(entry.path);
         }
       }
@@ -572,11 +656,8 @@ export class CacheManager {
 
     const reparsed = new Set(reparse);
     const removed = new Set(diff.removed);
-    const makeEntry = (relPath: string): CacheFileEntry => ({
-      path: relPath,
-      mtimeMs: manifest.get(relPath) ?? 0,
-      triples: (perFile.get(relPath) ?? []).map(this.serializeTriple),
-    });
+    const makeEntry = (relPath: string): CacheFileEntry =>
+      this.makeEntry(relPath, manifest, perFile.get(relPath) ?? [], adapter);
 
     const nextFiles: CacheFileEntry[] = [];
     for (const entry of cached.files) {
@@ -603,15 +684,61 @@ export class CacheManager {
     }
     let inferred: SerializedTriple[] = [];
     let inferredTriples: Triple[] = [];
-    if (cached.inferred.length > 0) {
-      const result = await materializeInferredTriples(explicit);
-      inferredTriples = result.inferred;
-      inferred = inferredTriples.map(this.serializeTriple);
+    if (cached.metadata.inferenceEnabled) {
+      const nextByPath = new Map<string, CacheFileEntry>();
+      for (const entry of nextFiles) nextByPath.set(entry.path, entry);
+      if (inferenceInputsChanged(cached, nextByPath, [...reparsed, ...removed])) {
+        const result = await materializeInferredTriples(explicit);
+        inferredTriples = result.inferred;
+        inferred = inferredTriples.map(this.serializeTriple);
+      } else {
+        // None of the changed files feeds either engine — the persisted
+        // layer is still exactly what a recomputation would yield.
+        inferred = cached.inferred;
+        inferredTriples = cached.inferred.map(this.deserializeTriple);
+      }
     }
 
-    const data = this.assembleCacheData(nextFiles, inferred, cached.metadata.fileSpacePrefixes);
+    const data = this.assembleCacheData(nextFiles, inferred, {
+      fileSpacePrefixes: cached.metadata.fileSpacePrefixes,
+      fileSpaceDeclarations: cached.metadata.fileSpaceDeclarations,
+      inferenceEnabled: cached.metadata.inferenceEnabled,
+    });
     await this.writeCacheData(data);
     return { data, triples: explicit.concat(inferredTriples) };
+  }
+
+  /**
+   * One per-file cache entry: stat stamp from the manifest (captured BEFORE
+   * the read), the committed triples, and the TBox-label marker — read from
+   * the own-label triple when there is one, from the frontmatter when the
+   * converter committed nothing (skipped by an invariant) so that a later
+   * removal still triggers the rebuild its symbolic referrers need.
+   */
+  private makeEntry(
+    relPath: string,
+    manifest: FileManifest,
+    triples: Triple[],
+    adapter: FileSystemVaultAdapter,
+  ): CacheFileEntry {
+    const stamp = manifest.get(relPath);
+    const entry: CacheFileEntry = {
+      path: relPath,
+      mtimeMs: stamp?.mtimeMs ?? 0,
+      size: stamp?.size ?? 0,
+      triples: triples.map(this.serializeTriple),
+    };
+    let tbox = entryHasTBoxLabel(entry);
+    if (!tbox && triples.length === 0) {
+      const file = adapter.getAbstractFileByPath(relPath);
+      const frontmatter = file && isFile(file) ? adapter.getFrontmatter(file) : null;
+      const label = frontmatter?.["exo__Asset_label"];
+      tbox = typeof label === "string" && TBOX_FORM.test(label);
+    }
+    if (tbox) {
+      entry.tboxLabel = true;
+    }
+    return entry;
   }
 
   /**
@@ -664,7 +791,8 @@ export class CacheManager {
     const manifest: FileManifest = new Map();
     for (const file of files) {
       try {
-        manifest.set(file.path, fs.statSync(path.join(this.vaultPath, file.path)).mtimeMs);
+        const stat = fs.statSync(path.join(this.vaultPath, file.path));
+        manifest.set(file.path, { mtimeMs: stat.mtimeMs, size: stat.size });
       } catch {
         // vanished between readdir and stat — the converter skips it too
       }
@@ -683,22 +811,17 @@ export class CacheManager {
 
     const entries: CacheFileEntry[] = [];
     for (const file of files) {
-      const mtimeMs = manifest.get(file.path);
-      if (mtimeMs === undefined) {
+      if (!manifest.has(file.path)) {
         continue;
       }
-      entries.push({
-        path: file.path,
-        mtimeMs,
-        triples: (perFile.get(file.path) ?? []).map(this.serializeTriple),
-      });
+      entries.push(this.makeEntry(file.path, manifest, perFile.get(file.path) ?? [], vaultAdapter));
     }
 
-    const data = this.assembleCacheData(
-      entries,
-      [],
-      validationResult.fileSpaces?.prefixes ?? [],
-    );
+    const data = this.assembleCacheData(entries, [], {
+      fileSpacePrefixes: validationResult.fileSpaces?.prefixes ?? [],
+      fileSpaceDeclarations: validationResult.fileSpaces?.declarationPaths ?? [],
+      inferenceEnabled: false,
+    });
     await this.writeCacheData(data);
 
     // Same concatenation the persisted entries yield on load: files in walk
@@ -797,18 +920,18 @@ export class CacheManager {
         `Cannot save inferred triples: no valid cache at ${this.cachePath} (build the cache first)`,
       );
     }
-    const data = this.assembleCacheData(
-      cached.files,
-      inferred.map(this.serializeTriple),
-      cached.metadata.fileSpacePrefixes,
-    );
+    const data = this.assembleCacheData(cached.files, inferred.map(this.serializeTriple), {
+      fileSpacePrefixes: cached.metadata.fileSpacePrefixes,
+      fileSpaceDeclarations: cached.metadata.fileSpaceDeclarations,
+      inferenceEnabled: true,
+    });
     await this.writeCacheData(data);
   }
 
   private assembleCacheData(
     files: CacheFileEntry[],
     inferred: SerializedTriple[],
-    fileSpacePrefixes: string[],
+    provenance: Pick<CacheMetadata, "fileSpacePrefixes" | "fileSpaceDeclarations" | "inferenceEnabled">,
   ): CacheData {
     let explicitCount = 0;
     for (const entry of files) {
@@ -823,16 +946,38 @@ export class CacheManager {
         formatVersion: CACHE_FORMAT_VERSION,
         fileCount: files.length,
         inferredCount: inferred.length,
-        fileSpacePrefixes,
+        fileSpacePrefixes: provenance.fileSpacePrefixes,
+        fileSpaceDeclarations: provenance.fileSpaceDeclarations,
+        inferenceEnabled: provenance.inferenceEnabled,
       },
       files,
       inferred,
     };
   }
 
+  /**
+   * Atomic write: serialize to a sibling temp file, then `rename` over the
+   * cache path. `loadOrBuild` now persists on EVERY `--use-cache` command that
+   * sees a change, and the bot loop runs several of them concurrently after
+   * one edit — an in-place `writeJson` (O_TRUNC) would let a reader parse a
+   * half-written ~100 MB file, read it as corrupt, and rebuild from scratch
+   * (all readers at once). With rename every reader sees either the previous
+   * complete file or the new complete one. No lock is needed: the manifest is
+   * captured BEFORE parsing, so the losing writer's snapshot is at worst
+   * older and self-corrects on the next check.
+   */
   private async writeCacheData(data: CacheData): Promise<void> {
     await fs.ensureDir(path.dirname(this.cachePath));
-    await fs.writeJson(this.cachePath, data, { spaces: 0 });
+    // pid + random: two CacheManager instances in ONE process (or two
+    // processes forked in the same ms) must not race on the same temp name.
+    const tmp = `${this.cachePath}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+    try {
+      await fs.writeJson(tmp, data, { spaces: 0 });
+      await fs.rename(tmp, this.cachePath);
+    } catch (error) {
+      await fs.remove(tmp).catch(() => undefined);
+      throw error;
+    }
   }
 
   /**
@@ -870,15 +1015,15 @@ export function diffManifest(cached: CacheFileEntry[], current: FileManifest): M
   const added: string[] = [];
   const modified: string[] = [];
   const removed: string[] = [];
-  const cachedByPath = new Map<string, number>();
+  const cachedByPath = new Map<string, FileStamp>();
   for (const entry of cached) {
-    cachedByPath.set(entry.path, entry.mtimeMs);
+    cachedByPath.set(entry.path, { mtimeMs: entry.mtimeMs, size: entry.size });
   }
-  for (const [relPath, mtimeMs] of current) {
+  for (const [relPath, stamp] of current) {
     const previous = cachedByPath.get(relPath);
     if (previous === undefined) {
       added.push(relPath);
-    } else if (previous !== mtimeMs) {
+    } else if (previous.mtimeMs !== stamp.mtimeMs || previous.size !== stamp.size) {
       modified.push(relPath);
     }
   }
@@ -899,21 +1044,32 @@ function isTBoxBasename(relPath: string): boolean {
 }
 
 /**
- * Did this file's OWN `exo__Asset_label` (as persisted in its triples) have
- * the TBox form? Only the file's own-subject label triple is consulted.
+ * Did this file's OWN `exo__Asset_label` have the TBox form? Sources, in
+ * order: the persisted marker (set at build time — also for files the
+ * converter skipped), then the own-subject label triple. ⛔ The converter
+ * emits a TBox-form label as a SYMBOLIC IRI object (`exo:Asset_label
+ * <ems#Project>`), not as a literal — so an IRI-typed label object IS the
+ * TBox form; the literal check covers the rare label the converter could not
+ * expand.
  */
 function entryHasTBoxLabel(entry: CacheFileEntry): boolean {
+  if (entry.tboxLabel) {
+    return true;
+  }
   const ownSubject = vaultPathToIRI(entry.path);
   for (const t of entry.triples) {
     if (
       t.subject.type === "IRI" &&
       t.subject.value === ownSubject &&
       t.predicate.type === "IRI" &&
-      t.predicate.value.endsWith(ASSET_LABEL_IRI_SUFFIX) &&
-      t.object.type === "Literal" &&
-      TBOX_FORM.test(t.object.value)
+      t.predicate.value.endsWith(ASSET_LABEL_IRI_SUFFIX)
     ) {
-      return true;
+      if (t.object.type === "IRI") {
+        return true;
+      }
+      if (t.object.type === "Literal" && TBOX_FORM.test(t.object.value)) {
+        return true;
+      }
     }
   }
   return false;
@@ -921,26 +1077,167 @@ function entryHasTBoxLabel(entry: CacheFileEntry): boolean {
 
 /**
  * Does any triple of this file point at one of the changed targets — by the
- * target's (resolved or synthesized) file-IRI, or by a raw wikilink literal
- * naming the target's basename?
+ * target's (resolved or synthesized) file-IRI, or by a link literal whose
+ * (lower-cased) linkpath is one of the needles? Literal forms the converter
+ * emits for an unresolved target: the raw `[[linkpath]]` / `[[linkpath|alias]]`
+ * frontmatter value, or the bare `linkpath` of a body link
+ * (`exo:Asset_bodyLink`). Each literal is normalised once and looked up in a
+ * Set, so the scan stays O(triples) whatever the size of the diff.
  */
 function entryRefersTo(
   entry: CacheFileEntry,
   iris: Set<string>,
-  literalNeedles: string[],
+  needles: Set<string>,
 ): boolean {
   for (const t of entry.triples) {
     if (t.object.type === "IRI") {
       if (iris.has(t.object.value)) {
         return true;
       }
-    } else if (t.object.type === "Literal" && literalNeedles.length > 0) {
-      const value = t.object.value;
-      for (const needle of literalNeedles) {
-        if (value.includes(needle)) {
-          return true;
-        }
+    } else if (t.object.type === "Literal" && needles.size > 0) {
+      if (needles.has(linkpathOf(t.object.value))) {
+        return true;
       }
+    }
+  }
+  return false;
+}
+
+/** `[[x|alias]]` → `x`, `[[x]]` → `x`, bare `x` → `x`; lower-cased, `.md` stripped. */
+function linkpathOf(literal: string): string {
+  let inner = literal.trim();
+  if (inner.startsWith("[[") && inner.endsWith("]]")) {
+    inner = inner.slice(2, -2);
+  }
+  const pipe = inner.indexOf("|");
+  if (pipe >= 0) {
+    inner = inner.slice(0, pipe);
+  }
+  inner = inner.trim().toLowerCase();
+  return inner.endsWith(".md") ? inner.slice(0, -3) : inner;
+}
+
+/** The file's own `exo:Asset_aliases` literals (lower-cased), from its cached triples. */
+function entryAliases(entry: CacheFileEntry): Set<string> {
+  const ownSubject = vaultPathToIRI(entry.path);
+  const out = new Set<string>();
+  for (const t of entry.triples) {
+    if (
+      t.subject.type === "IRI" &&
+      t.subject.value === ownSubject &&
+      t.predicate.type === "IRI" &&
+      t.predicate.value.endsWith(ASSET_ALIASES_IRI_SUFFIX) &&
+      t.object.type === "Literal"
+    ) {
+      out.add(t.object.value.trim().toLowerCase());
+    }
+  }
+  return out;
+}
+
+/** Frontmatter `aliases:` (string or list), lower-cased. */
+function frontmatterAliases(frontmatter: Record<string, unknown> | null): Set<string> {
+  const out = new Set<string>();
+  const raw = frontmatter?.["aliases"];
+  const list = Array.isArray(raw) ? raw : raw === undefined || raw === null ? [] : [raw];
+  for (const a of list) {
+    if (typeof a === "string" && a.trim() !== "") {
+      out.add(a.trim().toLowerCase());
+    }
+  }
+  return out;
+}
+
+function sameSet(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const x of a) if (!b.has(x)) return false;
+  return true;
+}
+
+/**
+ * `frontmatterDeclaresFileSpace` is the cheap UUID-only probe; the label form
+ * `[[exo__FileSpace]]` resolves through the vault in a full discovery walk.
+ * The guard here must catch BOTH, or a label-form declaration slips through
+ * the delta and its mount folder keeps being indexed.
+ */
+function frontmatterDeclaresFileSpaceAnyForm(frontmatter: Record<string, unknown>): boolean {
+  if (frontmatterDeclaresFileSpace(frontmatter)) {
+    return true;
+  }
+  const raw = frontmatter["exo__Instance_class"];
+  const candidates: unknown[] = Array.isArray(raw) ? raw : [raw];
+  return candidates.some(
+    (c) => typeof c === "string" && /\bexo__FileSpace\b/.test(c),
+  );
+}
+
+/** Reject absolute paths and `..` segments before they reach `getAbstractFileByPath`. */
+function isSafeRelativePath(relPath: string): boolean {
+  if (relPath.length === 0 || path.isAbsolute(relPath) || relPath.includes("\\")) {
+    return false;
+  }
+  return !relPath.split("/").some((seg) => seg === "..");
+}
+
+function isInferenceRelevant(t: SerializedTriple): boolean {
+  return (
+    t.predicate.type === "IRI" &&
+    INFERENCE_PREDICATE_SUFFIXES.some((suffix) => t.predicate.value.endsWith(suffix))
+  );
+}
+
+function hasPrototype(entry: CacheFileEntry | undefined): boolean {
+  return (
+    !!entry &&
+    entry.triples.some(
+      (t) => t.predicate.type === "IRI" && t.predicate.value.endsWith(ASSET_PROTOTYPE_IRI_SUFFIX),
+    )
+  );
+}
+
+/**
+ * Would re-running the inference engines over the merged explicit set change
+ * the persisted layer? `true` when any touched file (before OR after):
+ *   - contributes an inference-read predicate whose triple set changed
+ *     (`Instance_class` / `Class_superClass` / `rdf:type` / `Asset_prototype`);
+ *   - has an `Asset_prototype` (every own property of such an instance masks
+ *     an inherited one, so ANY change to it moves the layer);
+ *   - is the TARGET of somebody's `Asset_prototype` (its own properties are
+ *     what gets inherited).
+ * Everything else — the common bot turn: a status / label / timestamp edit
+ * on a plain asset — leaves both engines' inputs untouched.
+ */
+export function inferenceInputsChanged(
+  cached: CacheData,
+  next: Map<string, CacheFileEntry>,
+  touched: string[],
+): boolean {
+  const cachedByPath = new Map<string, CacheFileEntry>();
+  for (const entry of cached.files) cachedByPath.set(entry.path, entry);
+  const prototypeTargets = new Set<string>();
+  for (const entry of cached.files) {
+    for (const t of entry.triples) {
+      if (
+        t.object.type === "IRI" &&
+        t.predicate.type === "IRI" &&
+        t.predicate.value.endsWith(ASSET_PROTOTYPE_IRI_SUFFIX)
+      ) {
+        prototypeTargets.add(t.object.value);
+      }
+    }
+  }
+  for (const relPath of touched) {
+    const before = cachedByPath.get(relPath);
+    const after = next.get(relPath);
+    if (hasPrototype(before) || hasPrototype(after)) return true;
+    if (prototypeTargets.has(vaultPathToIRI(relPath))) return true;
+    const key = (t: SerializedTriple): string =>
+      `${t.subject.type}:${t.subject.value}|${t.predicate.value}|${t.object.type}:${t.object.value}`;
+    const relevantBefore = (before?.triples ?? []).filter(isInferenceRelevant).map(key).sort();
+    const relevantAfter = (after?.triples ?? []).filter(isInferenceRelevant).map(key).sort();
+    if (relevantBefore.length !== relevantAfter.length) return true;
+    for (let i = 0; i < relevantBefore.length; i++) {
+      if (relevantBefore[i] !== relevantAfter[i]) return true;
     }
   }
   return false;

@@ -109,6 +109,19 @@ describe(`CacheManager (#4263) ${REQ}`, () => {
               new Literal(content.trim()),
             ),
           ];
+          // `CLASS:<Name>` content also emits an Instance_class triple — an
+          // inference-engine INPUT (U7 uses it to force a re-materialization).
+          if (content.trim().startsWith("CLASS:")) {
+            own.push(
+              new Triple(
+                new IRI(vaultPathToIRI(file.path)),
+                new IRI("https://exocortex.my/ontology/exo#Instance_class"),
+                new IRI(
+                  `https://exocortex.my/ontology/ems#${content.trim().slice(6)}`,
+                ),
+              ),
+            );
+          }
           triples.push(...own);
           options.onFileTriples?.(file, own);
         }
@@ -320,17 +333,28 @@ describe(`CacheManager (#4263) ${REQ}`, () => {
       "https://exocortex.my/ontology/exo#Asset",
     );
 
-    // A delta re-materializes the layer from the merged explicit set: the
-    // fake converter emits only label triples, so the real engines infer
-    // nothing and the hand-seeded (now stale) triple must be gone — while a
-    // cache that never had a layer must not grow one.
+    // A label-only delta touches no engine input → the layer is kept
+    // verbatim (still 3 + 1) …
     await writeFile("a.md", "A2");
+    const kept = await cache.loadOrBuild();
+    expect(kept.mode).toBe("delta");
+    expect(kept.triples).toHaveLength(4);
+    expect(
+      (await fs.readJson(cache.getCachePath())).metadata.inferredCount,
+    ).toBe(1);
+    // … while a delta that changes an engine input (Instance_class) makes the
+    // cache re-run the real engines over the merged explicit set: they infer
+    // nothing from this fixture, so the hand-seeded (now stale) triple is gone.
+    await writeFile("a.md", "CLASS:Task");
     const delta = await cache.loadOrBuild();
     expect(delta.mode).toBe("delta");
-    expect(delta.triples).toHaveLength(3);
+    expect(delta.triples).toHaveLength(4); // 3 labels + 1 Instance_class, 0 inferred
     expect(
       (await fs.readJson(cache.getCachePath())).metadata.inferredCount,
     ).toBe(0);
+    expect(
+      (await fs.readJson(cache.getCachePath())).metadata.inferenceEnabled,
+    ).toBe(true);
   });
 
   it(`U8 a changed file that declares exo__FileSpace forces a full rebuild (exclusion prefixes must be re-discovered) ${REQ}`, async () => {
@@ -370,36 +394,141 @@ describe(`CacheManager (#4263) ${REQ}`, () => {
     expect(labelOf(fixed.triples, "nested/deep/broken.md")).toEqual(["FIXED"]);
   });
 
-  it(`U10 diffManifest classifies added / modified / removed ${REQ}`, () => {
+  it(`U10 diffManifest classifies added / modified (mtime OR size) / removed ${REQ}`, () => {
     const cached = [
-      { path: "a.md", mtimeMs: 1, triples: [] },
-      { path: "b.md", mtimeMs: 2, triples: [] },
-      { path: "c.md", mtimeMs: 3, triples: [] },
+      { path: "a.md", mtimeMs: 1, size: 10, triples: [] },
+      { path: "b.md", mtimeMs: 2, size: 10, triples: [] },
+      { path: "c.md", mtimeMs: 3, size: 10, triples: [] },
+      { path: "e.md", mtimeMs: 5, size: 10, triples: [] },
     ];
-    const current = new Map<string, number>([
-      ["a.md", 1],
-      ["b.md", 20],
-      ["d.md", 4],
+    const current = new Map([
+      ["a.md", { mtimeMs: 1, size: 10 }],
+      ["b.md", { mtimeMs: 20, size: 10 }], // mtime moved
+      ["e.md", { mtimeMs: 5, size: 11 }], // same mtime (touch -r / rsync -t), different size
+      ["d.md", { mtimeMs: 4, size: 10 }],
     ]);
     expect(diffManifest(cached, current)).toEqual({
       added: ["d.md"],
-      modified: ["b.md"],
+      modified: ["b.md", "e.md"],
       removed: ["c.md"],
     });
     expect(
       diffManifest(
         cached,
         new Map([
-          ["a.md", 1],
-          ["b.md", 2],
-          ["c.md", 3],
+          ["a.md", { mtimeMs: 1, size: 10 }],
+          ["b.md", { mtimeMs: 2, size: 10 }],
+          ["c.md", { mtimeMs: 3, size: 10 }],
+          ["e.md", { mtimeMs: 5, size: 10 }],
         ]),
       ),
-    ).toEqual({
-      added: [],
-      modified: [],
-      removed: [],
+    ).toEqual({ added: [], modified: [], removed: [] });
+  });
+
+  it(`U12 a v2-shaped cache with a foreign formatVersion, a malformed entry, or an unsafe path is invalid and rebuilt ${REQ}`, async () => {
+    const cache = new CacheManager(vaultPath);
+    const cachePath = cache.getCachePath();
+    await cache.loadOrBuild();
+    const good = await fs.readJson(cachePath);
+    expect(await cache.isCacheValid()).toBe(true);
+
+    // foreign formatVersion, otherwise identical
+    await fs.writeJson(cachePath, {
+      ...good,
+      metadata: { ...good.metadata, formatVersion: 1 },
     });
+    expect(await cache.isCacheValid()).toBe(false);
+    expect((await cache.loadOrBuild()).mode).toBe("rebuild");
+
+    // malformed entry (mtimeMs as a string)
+    const bad = await fs.readJson(cachePath);
+    bad.files[0].mtimeMs = String(bad.files[0].mtimeMs);
+    await fs.writeJson(cachePath, bad);
+    expect(await cache.isCacheValid()).toBe(false);
+    expect((await cache.loadOrBuild()).mode).toBe("rebuild");
+
+    // unsafe path (would escape the vault when resolved)
+    const evil = await fs.readJson(cachePath);
+    evil.files[0].path = "../outside.md";
+    await fs.writeJson(cachePath, evil);
+    expect(await cache.isCacheValid()).toBe(false);
+    expect((await cache.loadOrBuild()).mode).toBe("rebuild");
+    expect(await cache.isCacheValid()).toBe(true);
+  });
+
+  it(`U13 saveInferredTriples replaces the layer (index is idempotent) and flags inference on even for an empty layer ${REQ}`, async () => {
+    const cache = new CacheManager(vaultPath);
+    await cache.loadOrBuild();
+    expect(
+      (await fs.readJson(cache.getCachePath())).metadata.inferenceEnabled,
+    ).toBe(false);
+    const inferred = new Triple(
+      new IRI(vaultPathToIRI("a.md")),
+      new IRI("https://exocortex.my/ontology/exo#Instance_class"),
+      new IRI("https://exocortex.my/ontology/exo#Asset"),
+    );
+    await cache.saveInferredTriples([inferred]);
+    await cache.saveInferredTriples([inferred]); // second `index` run
+    const data = await fs.readJson(cache.getCachePath());
+    expect(data.inferred).toHaveLength(1);
+    expect(data.metadata.inferredCount).toBe(1);
+    expect(data.metadata.inferenceEnabled).toBe(true);
+    expect((await cache.loadOrBuild()).triples).toHaveLength(4);
+
+    await cache.saveInferredTriples([]);
+    const empty = await fs.readJson(cache.getCachePath());
+    expect(empty.metadata.inferredCount).toBe(0);
+    expect(empty.metadata.inferenceEnabled).toBe(true);
+
+    // a full rebuild switches inference off again (index re-enables it)
+    await cache.invalidate();
+    await cache.loadOrBuild();
+    expect(
+      (await fs.readJson(cache.getCachePath())).metadata.inferenceEnabled,
+    ).toBe(false);
+  });
+
+  it(`U14 the rebuild threshold is a strict "more than half": exactly 50 % is still a delta ${REQ}`, async () => {
+    const cache = new CacheManager(vaultPath);
+    await cache.loadOrBuild(); // 4 files
+    convertCalls.length = 0;
+    await writeFile("a.md", "A2");
+    await writeFile("nested/deep/b.md", "B2"); // 2 of 4 = 50 %
+    const half = await cache.loadOrBuild();
+    expect(half.mode).toBe("delta");
+    expect(convertCalls[0]?.files?.map((f) => f.path).sort()).toEqual([
+      "a.md",
+      "nested/deep/b.md",
+    ]);
+    convertCalls.length = 0;
+    await writeFile("a.md", "A3");
+    await writeFile("nested/deep/b.md", "B3");
+    await writeFile("nested/deep/c.md", "C3"); // 3 of 4 > 50 %
+    expect((await cache.loadOrBuild()).mode).toBe("rebuild");
+  });
+
+  it(`U15 a vault that cannot be walked is "not valid / no diff", never a null-manifest crash ${REQ}`, async () => {
+    const cache = new CacheManager(vaultPath);
+    await cache.loadOrBuild();
+    expect(await cache.isCacheValid()).toBe(true);
+    // A non-permission failure of the walk (the adapter re-throws anything
+    // but EPERM/EACCES — e.g. the vault root turned into a file, ENOTDIR).
+    const { FileSystemVaultAdapter } =
+      await import("../../../src/adapters/FileSystemVaultAdapter.js");
+    const walk = jest
+      .spyOn(FileSystemVaultAdapter.prototype, "getAllFiles")
+      .mockImplementation(() => {
+        throw Object.assign(new Error("ENOTDIR: not a directory"), {
+          code: "ENOTDIR",
+        });
+      });
+    try {
+      expect(await cache.computeManifestDiff()).toBeNull();
+      expect(await cache.isCacheValid()).toBe(false);
+    } finally {
+      walk.mockRestore();
+    }
+    expect(await cache.isCacheValid()).toBe(true);
   });
 
   it(`U11 invalidate() removes the cache file and a stats query on a missing cache returns null ${REQ}`, async () => {

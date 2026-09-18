@@ -15,6 +15,13 @@
  *   A6  legacy / corrupt cache and an over-threshold diff fall back to a full rebuild
  *   A7  the inferred layer is re-materialized after a delta (not stale, not dropped)
  *   A8  loadVaultTriples: no-cache path = plain convertVault (no cache file), cache path = same set
+ *   A9  body-link (bare literal) referrers of an added target are re-parsed          (review HIGH-1)
+ *   A10 alias change on a non-TBox target re-parses its alias-resolving referrers    (review MEDIUM-2)
+ *   A11 TBox guards: class removed / label-named file added+removed / label lost → rebuild
+ *   A12 a TBox-labelled file the converter skipped still forces a rebuild on removal (review MEDIUM-5)
+ *   A13 two concurrent loadOrBuild() after an edit — atomic write, no torn cache      (review HIGH-2)
+ *   A14 inference flag survives an empty layer; layer recomputed only on engine-input change (MEDIUM-3/4)
+ *   A15 FileSpace declaration removed / edited / added in label form → rebuild       (review MEDIUM-1)
  *
  * Revert-verify (mutants applied to a COPY of the tree by the driver spec
  * `tests/integration/cache-manifest-delta-4263.spec.json`): root-mtime validity → A1 RED;
@@ -46,6 +53,10 @@ import {
   serializeNode,
 } from "../../src/cache/CacheManager.js";
 import { loadVaultTriples } from "../../src/cache/loadVaultTriples.js";
+import {
+  materializeInferredTriples,
+  tripleKey,
+} from "../../src/cache/materializeInferred.js";
 
 const REQ = "@req:42812747-8b76-4525-aaaa-00857ea98599";
 
@@ -69,14 +80,7 @@ function fm(props: Record<string, string>): string {
 }
 
 function tripleKeys(triples: TripleT[]): string[] {
-  return triples
-    .map((t) => {
-      const s = serializeNode(t.subject);
-      const p = serializeNode(t.predicate);
-      const o = serializeNode(t.object);
-      return `${s.value} ${p.value} ${o.type}:${o.value}`;
-    })
-    .sort();
+  return triples.map(tripleKey).sort();
 }
 
 function objectsOf(triples: TripleT[], subjectRel: string): string[] {
@@ -177,6 +181,12 @@ describe(`CacheManager — per-file manifest, delta refresh, shared loader (#426
     const built = await cache.loadOrBuild();
     expect(built.mode).toBe("rebuild");
     expect(await cache.isCacheValid()).toBe(true);
+    // Pin the root dir mtime to an integer-second value and read it BACK
+    // through the FS: the float round-trip of a sub-ms stamp differs per
+    // platform (CI ext4 vs APFS), and the axis is about FILES, not about the
+    // root timestamp's precision.
+    const rootPinSeconds = Math.floor(clock / 1000) + 5;
+    await fs.utimes(vaultPath, rootPinSeconds, rootPinSeconds);
     const rootBefore = await rootMtime();
 
     // modify (nested, two directories below an assetspace)
@@ -191,7 +201,7 @@ describe(`CacheManager — per-file manifest, delta refresh, shared loader (#426
     );
     // keep the root dir mtime frozen (a nested write does not touch it on
     // any platform, but the fixture pins it so the axis is about FILES)
-    await fs.utimes(vaultPath, rootBefore / 1000, rootBefore / 1000);
+    await fs.utimes(vaultPath, rootPinSeconds, rootPinSeconds);
     expect(await rootMtime()).toBe(rootBefore);
 
     expect(await cache.isCacheValid()).toBe(false);
@@ -219,7 +229,8 @@ describe(`CacheManager — per-file manifest, delta refresh, shared loader (#426
         exo__Asset_label: '"Task D"',
       }),
     );
-    await fs.utimes(vaultPath, rootBefore / 1000, rootBefore / 1000);
+    await fs.utimes(vaultPath, rootPinSeconds, rootPinSeconds);
+    expect(await rootMtime()).toBe(rootBefore);
     expect(await cache.isCacheValid()).toBe(false);
     expect((await cache.computeManifestDiff())?.added).toEqual([
       `${TASKS_DIR}/${TASK_D}.md`,
@@ -229,7 +240,8 @@ describe(`CacheManager — per-file manifest, delta refresh, shared loader (#426
 
     // delete
     await fs.remove(path.join(vaultPath, `${TASKS_DIR}/${TASK_D}.md`));
-    await fs.utimes(vaultPath, rootBefore / 1000, rootBefore / 1000);
+    await fs.utimes(vaultPath, rootPinSeconds, rootPinSeconds);
+    expect(await rootMtime()).toBe(rootBefore);
     expect(await cache.isCacheValid()).toBe(false);
     expect((await cache.computeManifestDiff())?.removed).toEqual([
       `${TASKS_DIR}/${TASK_D}.md`,
@@ -512,17 +524,17 @@ describe(`CacheManager — per-file manifest, delta refresh, shared loader (#426
       `${inferredPredicate} -> ${inferredObject}`,
     );
 
-    // B changes → delta → the layer is recomputed by the SAME engines index
-    // runs. With this fixture's TBox (no exo__Class_superClass edges, no
-    // prototypes) the engines infer nothing, so the correct post-delta layer
-    // is EMPTY: the hand-seeded triple must be gone (it would be stale), the
-    // explicit triples must be intact, and a cache that never had a layer
-    // must not grow one.
+    // B's CLASS changes (an engine input) → delta → the layer is recomputed
+    // by the SAME engines index runs. With this fixture's TBox (no
+    // exo__Class_superClass edges, no prototypes) the engines infer nothing,
+    // so the correct post-delta layer is EMPTY: the hand-seeded triple must be
+    // gone (it would be stale), the explicit triples must be intact, and a
+    // cache that never had a layer must not grow one.
     await writeFile(
       bRel,
       fm({
         exo__Asset_uid: TASK_B,
-        exo__Instance_class: `"[[${CLASS_TASK}]]"`,
+        exo__Instance_class: `"[[${CLASS_PROJECT}]]"`,
         exo__Asset_label: '"Task B v2"',
       }),
     );
@@ -557,20 +569,31 @@ describe(`CacheManager — per-file manifest, delta refresh, shared loader (#426
         exo__Asset_prototype: `"[[${PROTO}]]"`,
       }),
     );
-    const withProto = await cache.loadOrBuild(); // add + modify → delta, no layer yet
+    // Inference stayed ENABLED through the empty layer above, and A now
+    // carries an Asset_prototype (an engine input) → the delta re-materializes
+    // and the inherited triple is already in what loadOrBuild returns.
+    const withProto = await cache.loadOrBuild();
     expect(withProto.mode).toBe("delta");
-    const { materializeInferredTriples } =
-      await import("../../src/cache/materializeInferred.js");
-    const materialized = await materializeInferredTriples(withProto.triples);
-    expect(materialized.inferredCount).toBeGreaterThan(0);
-    await cache.saveInferredTriples(materialized.inferred);
     const inheritedArea = `https://exocortex.my/ontology/ems#Effort_area -> ${vaultPathToIRI(`${PROJECTS_DIR}/${PROJECT_P}.md`)}`;
+    expect(objectsOf(withProto.triples, aRel)).toContain(inheritedArea);
+    const materialized = {
+      inferredCount: (await fs.readJson(cache.getCachePath())).metadata
+        .inferredCount as number,
+    };
+    expect(materialized.inferredCount).toBeGreaterThan(0);
+    // and it equals what index's materialization computes from the explicit set
+    const explicitOnly = withProto.triples.filter(
+      (t) => !objectsOf([t], aRel).includes(inheritedArea),
+    );
+    expect((await materializeInferredTriples(explicitOnly)).inferredCount).toBe(
+      materialized.inferredCount,
+    );
     expect(objectsOf((await cache.loadOrBuild()).triples, aRel)).toContain(
       inheritedArea,
     );
 
-    // A delta on Task C (unrelated to A) keeps A's inherited triple: the layer
-    // is recomputed, not dropped, and lands at the same size.
+    // A delta on Task C (unrelated to A, no engine input touched) keeps A's
+    // inherited triple: the layer is kept, not dropped, at the same size.
     const cRel = `${TASKS_DIR}/${TASK_C}.md`;
     await writeFile(
       cRel,
@@ -600,6 +623,357 @@ describe(`CacheManager — per-file manifest, delta refresh, shared loader (#426
     const delta3 = await cache.loadOrBuild();
     expect(delta3.mode).toBe("delta");
     expect(objectsOf(delta3.triples, aRel)).not.toContain(inheritedArea);
+  });
+
+  it(`A9 body-link referrers (bare linkpath literal) of an added target are re-parsed ${REQ}`, async () => {
+    // A links to D in its BODY; D does not exist → `exo:Asset_bodyLink "<uid>"`
+    // (a bare literal, not a wikilink) — HIGH-1 of the orchestrator review.
+    const aRel = `${TASKS_DIR}/${TASK_A}.md`;
+    const dRel = `${TASKS_DIR}/${TASK_D}.md`;
+    await writeFile(
+      aRel,
+      fm({
+        exo__Asset_uid: TASK_A,
+        exo__Instance_class: `"[[${CLASS_TASK}]]"`,
+        exo__Asset_label: '"Task A"',
+      }) + `See also [[${TASK_D}]] in the body.\n`,
+    );
+    const cache = new CacheManager(vaultPath);
+    const built = await cache.loadOrBuild();
+    const bodyLinks = objectsOf(built.triples, aRel).filter((x) =>
+      x.includes("#Asset_bodyLink"),
+    );
+    expect(bodyLinks).toEqual([
+      `https://exocortex.my/ontology/exo#Asset_bodyLink -> ${TASK_D}`,
+    ]);
+
+    await writeFile(
+      dRel,
+      fm({
+        exo__Asset_uid: TASK_D,
+        exo__Instance_class: `"[[${CLASS_TASK}]]"`,
+        exo__Asset_label: '"Task D"',
+      }),
+    );
+    const spy = jest.spyOn(NoteToRDFConverter.prototype, "convertNote");
+    const added = await cache.loadOrBuild();
+    const reparsed = spy.mock.calls
+      .map((c) => (c[0] as { path: string }).path)
+      .sort();
+    spy.mockRestore();
+    expect(added.mode).toBe("delta");
+    expect(reparsed).toEqual([aRel, dRel].sort());
+    expect(
+      objectsOf(added.triples, aRel).filter((x) =>
+        x.includes("#Asset_bodyLink"),
+      ),
+    ).toEqual([
+      `https://exocortex.my/ontology/exo#Asset_bodyLink -> ${vaultPathToIRI(dRel)}`,
+    ]);
+    expect(tripleKeys(added.triples)).toEqual(await fullRebuildKeys());
+  });
+
+  it(`A10 an alias change on a non-TBox target re-parses the referrers that resolve through it ${REQ}`, async () => {
+    // B links to P by ALIAS (frontmatter link, non-UUID linkpath) — MEDIUM-2.
+    const pRel = `${PROJECTS_DIR}/${PROJECT_P}.md`;
+    const bRel = `${TASKS_DIR}/${TASK_B}.md`;
+    const projectFm = (alias: string) =>
+      fm({
+        exo__Asset_uid: PROJECT_P,
+        exo__Instance_class: `"[[${CLASS_PROJECT}]]"`,
+        exo__Asset_label: '"Project P"',
+        aliases: `["${alias}"]`,
+      });
+    await writeFile(pRel, projectFm("Project Alpha"));
+    await writeFile(
+      bRel,
+      fm({
+        exo__Asset_uid: TASK_B,
+        exo__Instance_class: `"[[${CLASS_TASK}]]"`,
+        exo__Asset_label: '"Task B"',
+        ems__Effort_parent: '"[[Project Alpha]]"',
+      }),
+    );
+    const cache = new CacheManager(vaultPath);
+    const built = await cache.loadOrBuild();
+    const resolvedParent = `#Effort_parent -> ${vaultPathToIRI(pRel)}`;
+    expect(objectsOf(built.triples, bRel).join("\n")).toContain(resolvedParent);
+
+    // the alias is renamed → B's link no longer resolves → B must be re-parsed
+    await writeFile(pRel, projectFm("Project Beta"));
+    const spy = jest.spyOn(NoteToRDFConverter.prototype, "convertNote");
+    const renamed = await cache.loadOrBuild();
+    const reparsed = spy.mock.calls
+      .map((c) => (c[0] as { path: string }).path)
+      .sort();
+    spy.mockRestore();
+    expect(renamed.mode).toBe("delta");
+    // P itself + every file holding P's file-IRI (the cache cannot tell which
+    // of them resolved through the alias, so all of them — a superset — are
+    // re-parsed; B is the one whose emission actually changes)
+    expect(reparsed).toEqual(expect.arrayContaining([bRel, pRel]));
+    expect(reparsed).not.toContain(`${TBOX_DIR}/${CLASS_TASK}.md`);
+    expect(objectsOf(renamed.triples, bRel).join("\n")).not.toContain(
+      resolvedParent,
+    );
+    expect(tripleKeys(renamed.triples)).toEqual(await fullRebuildKeys());
+
+    // and back (case differs — the adapter's alias index is case-insensitive):
+    // B holds the raw link literal now and must be re-parsed by needle
+    await writeFile(pRel, projectFm("project alpha"));
+    const back = await cache.loadOrBuild();
+    expect(back.mode).toBe("delta");
+    expect(objectsOf(back.triples, bRel).join("\n")).toContain(resolvedParent);
+    expect(tripleKeys(back.triples)).toEqual(await fullRebuildKeys());
+  });
+
+  it(`A11 TBox guards on removal / basename / lost label each force a rebuild ${REQ}`, async () => {
+    const cache = new CacheManager(vaultPath);
+    await cache.loadOrBuild();
+
+    // (a) the UID-named class file (TBox label in its cached triples) is removed
+    await fs.remove(path.join(vaultPath, `${TBOX_DIR}/${CLASS_PROJECT}.md`));
+    const removedClass = await cache.loadOrBuild();
+    expect(removedClass.mode).toBe("rebuild");
+    expect(removedClass.rebuildReason).toMatch(/TBox-form asset removed/);
+    expect(tripleKeys(removedClass.triples)).toEqual(await fullRebuildKeys());
+
+    // (b) a label-NAMED TBox file (legacy basename form) is added, then removed
+    const legacyRel = `${TBOX_DIR}/ems__Area.md`;
+    await writeFile(
+      legacyRel,
+      fm({
+        exo__Asset_uid: "7f2f0a4b-0f2e-4a1c-9d1e-4263a0000099",
+        exo__Instance_class: '"[[exo__Class]]"',
+      }),
+    );
+    const addedLegacy = await cache.loadOrBuild();
+    expect(addedLegacy.mode).toBe("rebuild");
+    expect(addedLegacy.rebuildReason).toMatch(/TBox-form file changed/);
+    await fs.remove(path.join(vaultPath, legacyRel));
+    const removedLegacy = await cache.loadOrBuild();
+    expect(removedLegacy.mode).toBe("rebuild");
+    expect(removedLegacy.rebuildReason).toMatch(/TBox-form file removed/);
+
+    // (c) the task class file LOSES its TBox label (becomes a human label)
+    await writeFile(
+      `${TBOX_DIR}/${CLASS_TASK}.md`,
+      fm({
+        exo__Asset_uid: CLASS_TASK,
+        exo__Instance_class: '"[[exo__Class]]"',
+        exo__Asset_label: '"Task class"',
+      }),
+    );
+    const lost = await cache.loadOrBuild();
+    expect(lost.mode).toBe("rebuild");
+    expect(lost.rebuildReason).toMatch(/lost its TBox-form label/);
+    expect(tripleKeys(lost.triples)).toEqual(await fullRebuildKeys());
+  });
+
+  it(`A12 a TBox-labelled file the converter SKIPPED still forces a rebuild when removed ${REQ}`, async () => {
+    // MEDIUM-5: no triples were committed for it (invariant violation), yet
+    // referrers read its frontmatter directly and emit symbolically.
+    const skippedRel = `${TBOX_DIR}/7f2f0a4b-0f2e-4a1c-9d1e-4263a0000098.md`;
+    await writeFile(
+      skippedRel,
+      fm({
+        exo__Asset_uid: "7f2f0a4b-0f2e-4a1c-9d1e-4263a0000098",
+        exo__Instance_class: '""',
+        exo__Asset_label: "ems__Sprint",
+      }),
+    );
+    const cache = new CacheManager(vaultPath);
+    const built = await cache.loadOrBuild();
+    expect(objectsOf(built.triples, skippedRel)).toEqual([]);
+    const persisted = await fs.readJson(cache.getCachePath());
+    const entry = persisted.files.find(
+      (f: { path: string }) => f.path === skippedRel,
+    );
+    expect(entry.triples).toEqual([]);
+    expect(entry.tboxLabel).toBe(true);
+
+    await fs.remove(path.join(vaultPath, skippedRel));
+    const removed = await cache.loadOrBuild();
+    expect(removed.mode).toBe("rebuild");
+    expect(removed.rebuildReason).toMatch(/TBox-form asset removed/);
+  });
+
+  it(`A13 two concurrent loadOrBuild() calls after an edit both return a complete, parseable cache ${REQ}`, async () => {
+    // HIGH-2: the write is tmp+rename, so a reader never sees a half-written file.
+    const cache = new CacheManager(vaultPath);
+    await cache.loadOrBuild();
+    await writeFile(
+      `${TASKS_DIR}/${TASK_C}.md`,
+      fm({
+        exo__Asset_uid: TASK_C,
+        exo__Instance_class: `"[[${CLASS_TASK}]]"`,
+        exo__Asset_label: '"Task C v2"',
+      }),
+    );
+    // The write protocol itself: nothing is ever written IN PLACE — every
+    // JSON write targets a sibling temp file that is then renamed over the
+    // cache path (a reader can only ever see a complete file).
+    const writeJson = jest.spyOn(fs, "writeJson");
+    const rename = jest.spyOn(fs, "rename");
+    const [r1, r2] = await Promise.all([
+      new CacheManager(vaultPath).loadOrBuild(),
+      new CacheManager(vaultPath).loadOrBuild(),
+    ]);
+    const cachePath = cache.getCachePath();
+    const writeTargets = writeJson.mock.calls.map((c) => String(c[0]));
+    expect(writeTargets.length).toBeGreaterThan(0);
+    for (const target of writeTargets) {
+      expect(target).not.toBe(cachePath);
+      expect(path.dirname(target)).toBe(path.dirname(cachePath));
+      expect(target.endsWith(".tmp")).toBe(true);
+    }
+    const renamedOnto = rename.mock.calls.map((c) => String(c[1]));
+    expect(renamedOnto).toContain(cachePath);
+    writeJson.mockRestore();
+    rename.mockRestore();
+    expect(["delta", "hit"]).toContain(r1.mode);
+    expect(["delta", "hit"]).toContain(r2.mode);
+    const expected = await fullRebuildKeys();
+    expect(tripleKeys(r1.triples)).toEqual(expected);
+    expect(tripleKeys(r2.triples)).toEqual(expected);
+    const persisted = await fs.readJson(cache.getCachePath()); // parses → complete
+    expect(persisted.metadata.formatVersion).toBe(CACHE_FORMAT_VERSION);
+    expect(await cache.isCacheValid()).toBe(true);
+    const leftovers = (
+      await fs.readdir(path.dirname(cache.getCachePath()))
+    ).filter((f) => f.endsWith(".tmp"));
+    expect(leftovers).toEqual([]);
+  });
+
+  it(`A14 inference stays enabled across deltas: the layer is recomputed only when an engine input changed, and an emptied layer comes back ${REQ}`, async () => {
+    // MEDIUM-4 (flag, not `inferred.length`) + MEDIUM-3 (no recomputation
+    // when no engine input moved).
+    const protoRel = `${TASKS_DIR}/${PROTO}.md`;
+    const aRel = `${TASKS_DIR}/${TASK_A}.md`;
+    const cRel = `${TASKS_DIR}/${TASK_C}.md`;
+    const protoFm = (area: string) =>
+      fm({
+        exo__Asset_uid: PROTO,
+        exo__Instance_class: `"[[${CLASS_TASK}]]"`,
+        exo__Asset_label: '"Task prototype"',
+        ems__Effort_area: `"[[${area}]]"`,
+      });
+    const taskAFm = (withProto: boolean) =>
+      fm({
+        exo__Asset_uid: TASK_A,
+        exo__Instance_class: `"[[${CLASS_TASK}]]"`,
+        exo__Asset_label: '"Task A"',
+        ...(withProto ? { exo__Asset_prototype: `"[[${PROTO}]]"` } : {}),
+      });
+    await writeFile(protoRel, protoFm(PROJECT_P));
+    await writeFile(aRel, taskAFm(true));
+    const cache = new CacheManager(vaultPath);
+    const built = await cache.loadOrBuild();
+    const materialized = await materializeInferredTriples(built.triples);
+    expect(materialized.inferredCount).toBeGreaterThan(0);
+    await cache.saveInferredTriples(materialized.inferred);
+    const areaP = `https://exocortex.my/ontology/ems#Effort_area -> ${vaultPathToIRI(`${PROJECTS_DIR}/${PROJECT_P}.md`)}`;
+    const areaB = `https://exocortex.my/ontology/ems#Effort_area -> ${vaultPathToIRI(`${TASKS_DIR}/${TASK_B}.md`)}`;
+    expect(
+      (await fs.readJson(cache.getCachePath())).metadata.inferenceEnabled,
+    ).toBe(true);
+
+    // (1) a label edit on plain Task C touches no engine input → the layer is
+    // kept verbatim (no re-materialization) and still served
+    await writeFile(
+      cRel,
+      fm({
+        exo__Asset_uid: TASK_C,
+        exo__Instance_class: `"[[${CLASS_TASK}]]"`,
+        exo__Asset_label: '"Task C v2"',
+      }),
+    );
+    const d1 = await cache.loadOrBuild();
+    expect(d1.mode).toBe("delta");
+    expect(objectsOf(d1.triples, aRel)).toContain(areaP);
+
+    // (2) the prototype's own property changes → engine input → recomputed
+    await writeFile(protoRel, protoFm(TASK_B));
+    const d2 = await cache.loadOrBuild();
+    expect(d2.mode).toBe("delta");
+    expect(objectsOf(d2.triples, aRel)).not.toContain(areaP);
+    expect(objectsOf(d2.triples, aRel)).toContain(areaB);
+
+    // (3) the only prototype-bearing instance drops its prototype → the layer
+    // becomes EMPTY but inference stays enabled …
+    await writeFile(aRel, taskAFm(false));
+    const d3 = await cache.loadOrBuild();
+    expect(d3.mode).toBe("delta");
+    expect(objectsOf(d3.triples, aRel)).not.toContain(areaB);
+    const emptied = await fs.readJson(cache.getCachePath());
+    expect(emptied.metadata.inferredCount).toBe(0);
+    expect(emptied.metadata.inferenceEnabled).toBe(true);
+
+    // … and comes back when the prototype link returns (a length-based flag
+    // would have left the cache without a layer forever)
+    await writeFile(aRel, taskAFm(true));
+    const d4 = await cache.loadOrBuild();
+    expect(d4.mode).toBe("delta");
+    expect(objectsOf(d4.triples, aRel)).toContain(areaB);
+    expect(
+      (await fs.readJson(cache.getCachePath())).metadata.inferredCount,
+    ).toBeGreaterThan(0);
+  });
+
+  it(`A15 a FileSpace declaration removed or edited forces a rebuild, and a label-form declaration is detected ${REQ}`, async () => {
+    // MEDIUM-1. The declaration lives OUTSIDE its mount (convention); the
+    // mount is derived from exo__AssetSpace_source → assetspaces/owner/files-repo/.
+    const declRel = "spaces/files.md";
+    const blobRel = "assetspaces/owner/files-repo/blob.md";
+    const declFm = (classRef: string) =>
+      fm({
+        exo__Asset_uid: "7f2f0a4b-0f2e-4a1c-9d1e-4263a0000097",
+        exo__Instance_class: `"${classRef}"`,
+        exo__Asset_label: '"Attachments"',
+        exo__AssetSpace_source: "https://github.com/owner/files-repo",
+      });
+    await writeFile(
+      declRel,
+      declFm("[[aad8913e-5e9f-4047-879d-93cc46befd52|exo__FileSpace]]"),
+    );
+    await writeFile(
+      blobRel,
+      fm({
+        exo__Asset_uid: "7f2f0a4b-0f2e-4a1c-9d1e-4263a0000096",
+        exo__Instance_class: `"[[${CLASS_TASK}]]"`,
+        exo__Asset_label: '"Blob"',
+      }),
+    );
+    const cache = new CacheManager(vaultPath);
+    const built = await cache.loadOrBuild();
+    expect(objectsOf(built.triples, blobRel)).toEqual([]);
+    const persisted = await fs.readJson(cache.getCachePath());
+    expect(persisted.metadata.fileSpacePrefixes).toEqual([
+      "assetspaces/owner/files-repo/",
+    ]);
+    expect(persisted.metadata.fileSpaceDeclarations).toEqual([declRel]);
+
+    // remove the declaration → the mount must be indexed again → rebuild
+    await fs.remove(path.join(vaultPath, declRel));
+    const removed = await cache.loadOrBuild();
+    expect(removed.mode).toBe("rebuild");
+    expect(removed.rebuildReason).toMatch(/FileSpace declaration removed/);
+    expect(objectsOf(removed.triples, blobRel).join("\n")).toContain("Blob");
+
+    // a NEW declaration in LABEL form (not the UUID the cheap probe knows) → rebuild
+    await writeFile(declRel, declFm("[[exo__FileSpace]]"));
+    const labelForm = await cache.loadOrBuild();
+    expect(labelForm.mode).toBe("rebuild");
+    expect(labelForm.rebuildReason).toMatch(/FileSpace declaration changed/);
+
+    // editing the (persisted) declaration itself → rebuild too
+    await writeFile(
+      declRel,
+      declFm("[[aad8913e-5e9f-4047-879d-93cc46befd52|exo__FileSpace]]"),
+    );
+    const edited = await cache.loadOrBuild();
+    expect(edited.mode).toBe("rebuild");
+    expect(edited.rebuildReason).toMatch(/FileSpace declaration changed/);
   });
 
   it(`A8 loadVaultTriples: the no-cache path is a plain convertVault (no cache file) and the cache path yields the same set ${REQ}`, async () => {
