@@ -30,5 +30,23 @@
     "severity": "sh:Violation",
     "constraint": "maxCount",
     "message": "sh:maxCount violation: expected at most 1 value for <https://exocortex.my/ontology/ems#Task_name>, got 2"
+  },
+  {
+    "focusNode": "obsidian://vault/data/asset-e.md",
+    "propertyPath": "https://exocortex.my/ontology/ems#Task_weight",
+    "severity": "sh:Violation",
+    "constraint": "datatype",
+    "message": "sh:datatype violation: literal \"10.5\" has datatype <http://www.w3.org/2001/XMLSchema#decimal>, expected http://www.w3.org/2001/XMLSchema#integer",
+    "actualValue": "10.5",
+    "expectedRange": "http://www.w3.org/2001/XMLSchema#integer"
+  },
+  {
+    "focusNode": "obsidian://vault/data/asset-e.md",
+    "propertyPath": "https://exocortex.my/ontology/ems#Task_year",
+    "severity": "sh:Violation",
+    "constraint": "datatype",
+    "message": "sh:datatype violation: literal \"2026-05\" has datatype <http://www.w3.org/2001/XMLSchema#string>, expected http://www.w3.org/2001/XMLSchema#gYear",
+    "actualValue": "2026-05",
+    "expectedRange": "http://www.w3.org/2001/XMLSchema#gYear"
   }
 ]

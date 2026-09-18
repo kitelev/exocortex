@@ -39,9 +39,7 @@ export class ShapeLoader {
    * builds ShapeRegistry from their frontmatter.
    */
   static async loadFromVaultFS(vaultPath: string): Promise<ShapeRegistry> {
-    // eslint-disable-next-line import/no-nodejs-modules
     const { readdir, readFile } = await import("fs/promises");
-    // eslint-disable-next-line import/no-nodejs-modules
     const path = await import("path");
     const registry = new ShapeRegistry();
     await ShapeLoader.scanDir(vaultPath, registry, { readdir, readFile, path });
@@ -159,15 +157,13 @@ export class ShapeLoader {
             return await ShapeLoader.resolveClassIRI(t.object.value, graph, uidToClassIRI);
           }
           // Plain-string range values (e.g. `exo__Property_range:
-          // "http://www.w3.org/2001/XMLSchema#integer"`) arrive as Literals
-          // because NoteToRDFConverter only emits IRI objects for wikilink
-          // values. Accept any literal whose lexical form is itself a valid
-          // IRI — this covers xsd:* datatype ranges and explicit HTTP IRIs.
+          // "http://www.w3.org/2001/XMLSchema#integer"` or the live-corpus
+          // CURIE form `"xsd:integer"`) arrive as Literals because
+          // NoteToRDFConverter only emits IRI objects for wikilink values.
+          // Resolve them with the SAME helper loadFromVaultFS uses, so the
+          // two loaders agree on `shape.range` (ticket a9b55ead).
           if (t.object instanceof Literal) {
-            const raw = t.object.value;
-            if (raw.startsWith("http://") || raw.startsWith("https://")) {
-              return raw;
-            }
+            return ShapeLoader.datatypeRangeToIRI(t.object.value);
           }
           return null;
         }),
@@ -211,7 +207,6 @@ export class ShapeLoader {
    * Format: ShapeJSONCache — see RFC 82a72aca §"Cached shape format".
    */
   static async loadFromShapeJSON(jsonPath: string): Promise<ShapeRegistry> {
-    // eslint-disable-next-line import/no-nodejs-modules
     const { readFile } = await import("fs/promises");
     const raw = await readFile(jsonPath, "utf-8");
     const cache: ShapeJSONCache = JSON.parse(raw) as ShapeJSONCache;
@@ -572,13 +567,27 @@ export class ShapeLoader {
       if (iri) return iri;
     }
 
-    // Try as a full IRI
-    if (ref.startsWith("http")) return ref;
+    // Full http(s) IRI or CURIE `xsd:<local>` — shared with loadFromRDFGraph
+    const datatypeIRI = ShapeLoader.datatypeRangeToIRI(ref);
+    if (datatypeIRI) return datatypeIRI;
     // Try SHACL prefix
     if (ref.startsWith("sh:")) return SH_NS + ref.substring(3);
-    // Try XSD prefix
-    if (ref.startsWith("xsd:")) return XSD_NS + ref.substring(4);
 
+    return null;
+  }
+
+  /**
+   * Resolves a range value written as a plain string (no wikilink) to an IRI:
+   * a full `http://` / `https://` IRI is returned as-is, the CURIE `xsd:<local>`
+   * (the form `create --class DatatypeProperty` writes and 100 % of live
+   * datatype ranges use) expands to the W3C XSD namespace. Anything else is
+   * not a datatype range → null. One implementation for BOTH loaders
+   * (loadFromRDFGraph literal branch + loadFromVaultFS via wikilinkToIRI) so
+   * they cannot drift apart again (ticket a9b55ead).
+   */
+  static datatypeRangeToIRI(raw: string): string | null {
+    if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+    if (raw.startsWith("xsd:")) return XSD_NS + raw.substring(4);
     return null;
   }
 
