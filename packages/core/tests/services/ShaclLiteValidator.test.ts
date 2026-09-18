@@ -1427,6 +1427,35 @@ describe('validate — sh:datatype lexical conformance of converter-tagged liter
     expect(datatypeViolations(report('Principle_note', `${XSD}string`, '7', `${XSD}decimal`))).toHaveLength(1);
   });
 
+  // V10 — one conforming + one non-conforming decimal-tagged value per DECIMAL_TAG_LEXICAL
+  // row (review fold LOW-1). `gYear` is V3/V4; `decimal` is V11 (unreachable via the
+  // xsd:decimal tag — tag equality short-circuits before the table is consulted).
+  it.each([
+    ['integer', '7', '7.5'],
+    ['long', '7', '7.5'],
+    ['int', '7', '7.5'],
+    ['short', '7', '7.5'],
+    ['byte', '7', '7.5'],
+    ['nonNegativeInteger', '0', '-1'],
+    ['unsignedLong', '7', '-1'],
+    ['unsignedInt', '7', '-1'],
+    ['unsignedShort', '7', '-1'],
+    ['unsignedByte', '7', '-1'],
+    ['positiveInteger', '7', '0'],
+    ['nonPositiveInteger', '-3', '3'],
+    ['negativeInteger', '-3', '3'],
+    ['float', '1e3', 'abc'],
+    ['double', '-1.5E-2', 'abc'],
+  ])('V10 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 decimal-tagged literal under xsd:%s: %s conforms, %s violates', (local, ok, bad) => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}${local}`, ok, `${XSD}decimal`))).toHaveLength(0);
+    expect(datatypeViolations(report('Principle_number', `${XSD}${local}`, bad, `${XSD}decimal`))).toHaveLength(1);
+  });
+
+  it('V11 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 xsd:decimal range with a decimal-tagged literal conforms by tag equality — the `decimal` lexical row is never consulted (7.5 and 1e3 both conform)', () => {
+    expect(datatypeViolations(report('Principle_weight', `${XSD}decimal`, '7.5', `${XSD}decimal`))).toHaveLength(0);
+    expect(datatypeViolations(report('Principle_weight', `${XSD}decimal`, '1e3', `${XSD}decimal`))).toHaveLength(0);
+  });
+
   it('V9 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 the Exocortex ad-hoc xsd# prefix form of the range is judged by the same lexical table', () => {
     const adhoc = 'https://exocortex.my/ontology/xsd#integer';
     expect(datatypeViolations(report('Principle_number', adhoc, '7', `${XSD}decimal`))).toHaveLength(0);
