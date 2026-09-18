@@ -287,8 +287,10 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     expect(cacheNotices(d2)).toHaveLength(1);
 
     // apply --json (real mutation) — envelope + written file
-    const j1 = await runApply(plain, ["move-to-backlog-4264", REL.draftTask, "--json"]);
-    const j2 = await runApply(cached, ["move-to-backlog-4264", REL.draftTask, "--json", "--use-cache"]);
+    // --frozen-clock: the flip stamps exo__Asset_updatedAt, and the two vaults
+    // are compared byte for byte across a possible second boundary.
+    const j1 = await runApply(plain, ["move-to-backlog-4264", REL.draftTask, "--json", "--frozen-clock", FROZEN]);
+    const j2 = await runApply(cached, ["move-to-backlog-4264", REL.draftTask, "--json", "--frozen-clock", FROZEN, "--use-cache"]);
     expect(j2.stdout).toBe(j1.stdout);
     expect(JSON.parse(j2.stdout)).toEqual({ command: "move-to-backlog-4264", created: [], target: REL.draftTask });
     expect(fs.readFileSync(path.join(cached, REL.draftTask), "utf-8")).toBe(
@@ -434,13 +436,13 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     const created = createdPath(p1);
     expect(fs.readFileSync(path.join(cached, created), "utf-8")).toContain(`[[${STATUS_DRAFT}]]`);
 
-    const p2 = await runApply(cached, ["move-to-backlog-4264", created, "--json", "--use-cache"]);
+    const p2 = await runApply(cached, ["move-to-backlog-4264", created, "--json", "--frozen-clock", FROZEN, "--use-cache"]);
     expect(preconditionRefused(p2)).toBe(false);
     expect(p2.exitCode).toBeNull();
     expect(cacheNotices(p2)).toEqual(["⚡ triple cache: hit"]);
     expect(fs.readFileSync(path.join(cached, created), "utf-8")).toContain(`[[${STATUS_BACKLOG}]]`);
 
-    const p3 = await runApply(cached, ["start-effort-4264", created, "--json", "--use-cache"]);
+    const p3 = await runApply(cached, ["start-effort-4264", created, "--json", "--frozen-clock", FROZEN, "--use-cache"]);
     expect(preconditionRefused(p3)).toBe(false);
     expect(p3.exitCode).toBeNull();
     expect(cacheNotices(p3)).toEqual(["⚡ triple cache: hit"]);
@@ -463,8 +465,8 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     // --- the same chain without the flag on a twin vault ---
     const q1 = await runApply(plain, createArgs([]));
     expect(createdPath(q1)).toBe(created);
-    const q2 = await runApply(plain, ["move-to-backlog-4264", created, "--json"]);
-    const q3 = await runApply(plain, ["start-effort-4264", created, "--json"]);
+    const q2 = await runApply(plain, ["move-to-backlog-4264", created, "--json", "--frozen-clock", FROZEN]);
+    const q3 = await runApply(plain, ["start-effort-4264", created, "--json", "--frozen-clock", FROZEN]);
     expect(preconditionRefused(q2) || preconditionRefused(q3)).toBe(false);
     expect(fs.readFileSync(path.join(plain, created), "utf-8")).toBe(finalCached);
     expect([p1.stdout, p2.stdout, p3.stdout]).toEqual([q1.stdout, q2.stdout, q3.stdout]);

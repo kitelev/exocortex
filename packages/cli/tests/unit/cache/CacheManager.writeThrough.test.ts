@@ -219,8 +219,12 @@ describe(`CacheManager.refreshAfterWrite (#4264) ${REQ}`, () => {
 
     await writeFile("a.md", "A2");
     expect(await cache.refreshAfterWrite()).toEqual({ mode: "delta", reparsedFiles: 1 });
+    // The second write-through diffs against what the FIRST one published —
+    // in memory (no cache re-read) and with the first one's stamp.
+    const readJson = jest.spyOn(fs, "readJson");
     await writeFile("nested/b.md", "B2");
     expect(await cache.refreshAfterWrite()).toEqual({ mode: "delta", reparsedFiles: 1 });
+    expect(readJson).not.toHaveBeenCalled();
     expect(convertedPaths).toEqual([["a.md"], ["nested/b.md"]]);
     expect(await cache.refreshAfterWrite()).toEqual({ mode: "noop", reparsedFiles: 0 });
     expect(await persistedLabel("a.md")).toEqual(["A2"]);
@@ -254,6 +258,62 @@ describe(`CacheManager.refreshAfterWrite (#4264) ${REQ}`, () => {
     expect(convertedPaths).toEqual([["a.md"]]);
     expect(readJson).not.toHaveBeenCalled();
     expect((await new CacheManager(vaultPath).loadOrBuild()).mode).toBe("hit");
+  });
+
+  it(`U10 loaded state and its stamp move TOGETHER on every read: after a concurrent index and an intermediate isCacheValid(), the write-through folds into index's layer (stamp fresh ⇒ snapshot fresh) ${REQ}`, async () => {
+    const a = new CacheManager(vaultPath);
+    expect((await a.loadOrBuild()).mode).toBe("rebuild");
+    // Concurrent `index` persists an inferred layer (cache file only).
+    const marker = new Triple(
+      new IRI(vaultPathToIRI("a.md")),
+      new IRI("https://exocortex.my/ontology/exo#Instance_class"),
+      new IRI("https://exocortex.my/ontology/ems#Marker"),
+    );
+    await new CacheManager(vaultPath).saveInferredTriples([marker]);
+    // A re-reads for an unrelated reason (validity check) — the stamp is now
+    // the new file's; the snapshot MUST be the new content too.
+    expect(await a.isCacheValid()).toBe(true);
+    await writeFile("nested/b.md", "B2");
+    const readJson = jest.spyOn(fs, "readJson");
+    expect(await a.refreshAfterWrite()).toEqual({ mode: "delta", reparsedFiles: 1 });
+    expect(readJson).not.toHaveBeenCalled(); // trusted the (fresh) snapshot
+    const data = (await fs.readJson(a.getCachePath())) as {
+      metadata: { inferenceEnabled: boolean; inferredCount: number };
+      inferred: Array<{ object: { value: string } }>;
+    };
+    expect(data.metadata.inferenceEnabled).toBe(true);
+    expect(data.inferred.map((t) => t.object.value)).toEqual([
+      "https://exocortex.my/ontology/ems#Marker",
+    ]);
+    expect(await persistedLabel("nested/b.md")).toEqual(["B2"]);
+  });
+
+  it(`U11 a write-through after a concurrent index WITHOUT any intermediate read: the stamp guard drops the stale snapshot, re-reads once, keeps index's layer ${REQ}`, async () => {
+    const a = new CacheManager(vaultPath);
+    await a.loadOrBuild();
+    const marker = new Triple(
+      new IRI(vaultPathToIRI("a.md")),
+      new IRI("https://exocortex.my/ontology/exo#Instance_class"),
+      new IRI("https://exocortex.my/ontology/ems#Marker"),
+    );
+    await new CacheManager(vaultPath).saveInferredTriples([marker]);
+    await writeFile("nested/c.md", "C2");
+    const readJson = jest.spyOn(fs, "readJson");
+    expect(await a.refreshAfterWrite()).toEqual({ mode: "delta", reparsedFiles: 1 });
+    expect(readJson).toHaveBeenCalledTimes(1); // the fallback read, exactly once
+    const data = (await fs.readJson(a.getCachePath())) as {
+      metadata: { inferenceEnabled: boolean };
+      inferred: Array<{ object: { value: string } }>;
+    };
+    expect(data.metadata.inferenceEnabled).toBe(true);
+    expect(data.inferred).toHaveLength(1);
+    expect(await persistedLabel("nested/c.md")).toEqual(["C2"]);
+    // …and the re-read state is now the trusted snapshot for the next one
+    // (the two reads above are this test's own `fs.readJson` calls).
+    const readsSoFar = readJson.mock.calls.length;
+    await writeFile("a.md", "A2");
+    expect(await a.refreshAfterWrite()).toEqual({ mode: "delta", reparsedFiles: 1 });
+    expect(readJson.mock.calls.length).toBe(readsSoFar);
   });
 
   it(`U7 a persist failure propagates from refreshAfterWrite (the command layer turns it into a stderr warning) and leaves the previous cache file intact ${REQ}`, async () => {

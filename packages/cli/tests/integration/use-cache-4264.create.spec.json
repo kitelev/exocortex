@@ -7,8 +7,8 @@
     "packages/cli/node_modules",
     "packages/core/node_modules"
   ],
-  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/use-cache-apply-write-through-4264.integration.test.ts tests/unit/cache/CacheManager.writeThrough.test.ts 2>&1",
-  "red_re": "› ([AU]\\d+) ",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/use-cache-apply-write-through-4264.integration.test.ts tests/unit/cache/CacheManager.writeThrough.test.ts tests/unit/cache/loadVaultTriples.test.ts 2>&1",
+  "red_re": "› ([AULP]\\d+\\w*) ",
   "mutants": {
     "C1_cache_manager_constructed_without_the_flag": {
       "from": "        if (useCache) {\n          const { CacheManager: CacheManagerCtor } = await import(",

@@ -7,9 +7,19 @@
     "packages/cli/node_modules",
     "packages/core/node_modules"
   ],
-  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/use-cache-apply-write-through-4264.integration.test.ts tests/unit/cache/CacheManager.writeThrough.test.ts 2>&1",
-  "red_re": "› ([AU]\\d+) ",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/use-cache-apply-write-through-4264.integration.test.ts tests/unit/cache/CacheManager.writeThrough.test.ts tests/unit/cache/loadVaultTriples.test.ts 2>&1",
+  "red_re": "› ([AULP]\\d+\\w*) ",
   "mutants": {
+    "L5_caller_adapter_ignored_on_full_parse": {
+      "from": "  const vaultAdapter =\n    options.vaultAdapter ?? new FileSystemVaultAdapter(vaultPath);",
+      "to": "  const vaultAdapter = new FileSystemVaultAdapter(vaultPath);",
+      "expect": ["L1"]
+    },
+    "L6_vault_mismatch_guard_removed": {
+      "from": "    if (cacheManager.getCachePath() !== expectedCachePath) {",
+      "to": "    if (cacheManager.getCachePath() !== expectedCachePath && false) {",
+      "expect": ["L3"]
+    },
     "L1_write_through_failure_propagates_to_the_command": {
       "from": "  try {\n    return await cacheManager.refreshAfterWrite();\n  } catch (error) {\n    return {\n      mode: \"failed\",\n      reparsedFiles: 0,\n      reason: error instanceof Error ? error.message : String(error),\n    };\n  }",
       "to": "  return await cacheManager.refreshAfterWrite();",

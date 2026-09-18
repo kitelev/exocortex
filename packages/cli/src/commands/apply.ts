@@ -671,12 +671,8 @@ export function applyCommand(): Command {
           // the exit code and the stdout envelope below do not depend on it —
           // the mutation is already on disk, and a cache that could not be
           // persisted is simply refreshed by the next --use-cache process.
-          if (
-            useCacheEffective &&
-            !options.dryRun &&
-            anyExecuted &&
-            loaded.cacheManager
-          ) {
+          // (`--dry-run` never executes a grounding, so `anyExecuted` covers it.)
+          if (useCacheEffective && anyExecuted && loaded.cacheManager) {
             const outcome = await writeThroughCache(loaded.cacheManager);
             process.stderr.write(`${writeThroughNotice(outcome)}\n`);
           }

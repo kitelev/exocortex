@@ -329,10 +329,11 @@ export class CacheManager {
   private readonly cliVersion: string = "1.0.0"; // Will be replaced by actual version
   /**
    * #4264 — the cache state this instance last loaded or persisted
-   * (`loadOrBuild`: the hit's data / the delta's result / the rebuild's data;
-   * `refreshAfterWrite`: its own result). A write-through diffs the vault
-   * against THIS state instead of re-reading the ~100 MB file it just
-   * deserialized. `null` until the first load in this process.
+   * (every read via `readCacheData`, every persisted state via
+   * `writeCacheData` — always together with {@link loadedStamp}). A
+   * write-through diffs the vault against THIS state instead of re-reading
+   * the ~100 MB file it just deserialized. `null` until the first read in
+   * this process.
    */
   private loaded: CacheData | null = null;
   /**
@@ -410,7 +411,6 @@ export class CacheManager {
 
     const diff = diffManifest(cached.files, manifest);
     if (isEmptyDiff(diff)) {
-      this.loaded = cached;
       return {
         triples: this.materializeTriples(cached),
         cacheHit: true,
@@ -427,7 +427,6 @@ export class CacheManager {
     }
 
     const refreshed = await this.applyDelta(cached, manifest, diff, plan.reparse, adapter);
-    this.loaded = refreshed.data;
     return {
       triples: refreshed.triples,
       cacheHit: true,
@@ -499,14 +498,14 @@ export class CacheManager {
         reason: `rebuild needed (${plan.rebuildReason}) — left to the next reader`,
       };
     }
-    const refreshed = await this.applyDelta(base, manifest, diff, plan.reparse, adapter);
-    this.loaded = refreshed.data;
+    // applyDelta persisted the merged state — writeCacheData retained it (and
+    // its stamp) as the base for a further write-through in this process.
+    await this.applyDelta(base, manifest, diff, plan.reparse, adapter);
     return { mode: "delta", reparsedFiles: plan.reparse.length };
   }
 
   private async rebuild(startTime: number, reason: string): Promise<LoadOrBuildResult> {
     const built = await this.buildInternal({ strict: false });
-    this.loaded = built.data;
     return {
       triples: built.triples,
       cacheHit: false,
@@ -570,8 +569,7 @@ export class CacheManager {
           return null;
         }
       }
-      this.loadedStamp = stamp;
-      return {
+      const data: CacheData = {
         metadata: {
           ...raw.metadata,
           fileSpacePrefixes: Array.isArray(raw.metadata.fileSpacePrefixes)
@@ -588,6 +586,13 @@ export class CacheManager {
         files: raw.files,
         inferred: raw.inferred,
       };
+      // Retained TOGETHER with the stamp taken above: `loaded` and
+      // `loadedStamp` must always describe the same file content, whichever
+      // caller read it (`loadOrBuild`, `isCacheValid`, `getCacheStats`,
+      // `saveInferredTriples`, a write-through's fallback read).
+      this.loaded = data;
+      this.loadedStamp = stamp;
+      return data;
     } catch {
       return null;
     }
@@ -1187,6 +1192,9 @@ export class CacheManager {
       // after the rename it could already belong to a concurrent writer's file.
       const stat = await fs.stat(tmp);
       await fs.rename(tmp, this.cachePath);
+      // What this process just published is the state a later write-through
+      // in the same process diffs against (delta load / rebuild / previous
+      // write-through — every persist goes through here).
       this.loaded = data;
       this.loadedStamp = { mtimeMs: stat.mtimeMs, size: stat.size };
     } catch (error) {

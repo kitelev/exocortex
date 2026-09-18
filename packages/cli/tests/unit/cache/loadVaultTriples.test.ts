@@ -60,7 +60,11 @@ describe(`loadVaultTriples / write-through helpers (#4264) ${REQ}`, () => {
     const loaded = await loadVaultTriples(vaultPath, { useCache: false, vaultAdapter: adapter });
     expect(loaded.mode).toBe("full-parse");
     expect(loaded.cacheManager).toBeUndefined();
-    expect(seen).toEqual([adapter]); // the SAME instance — its indexes are shared, not rebuilt
+    // The SAME instance (identity, not deep equality — a fresh adapter for the
+    // same root is deep-equal and would pass a toEqual) — its indexes are
+    // shared, not rebuilt.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBe(adapter);
     expect(loadSpy).not.toHaveBeenCalled();
     expect(await fs.pathExists(path.join(vaultPath, ".exocortex"))).toBe(false);
   });

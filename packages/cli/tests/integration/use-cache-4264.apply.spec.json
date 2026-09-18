@@ -7,23 +7,28 @@
     "packages/cli/node_modules",
     "packages/core/node_modules"
   ],
-  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/use-cache-apply-write-through-4264.integration.test.ts tests/unit/cache/CacheManager.writeThrough.test.ts 2>&1",
-  "red_re": "› ([AU]\\d+) ",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/use-cache-apply-write-through-4264.integration.test.ts tests/unit/cache/CacheManager.writeThrough.test.ts tests/unit/cache/loadVaultTriples.test.ts 2>&1",
+  "red_re": "› ([AULP]\\d+\\w*) ",
   "mutants": {
+    "P5_write_through_only_after_success_(L1_regression)": {
+      "from": "            if (targetResult.executed) anyExecuted = true;",
+      "to": "            if (targetResult.ok) anyExecuted = true;",
+      "expect": ["A3c"]
+    },
+    "P6_dry_run_counts_as_executed": {
+      "from": "    return { ok: true, created: [], executed: false };",
+      "to": "    return { ok: true, created: [], executed: true };",
+      "expect": ["A9"]
+    },
     "P1_flag_ignored_full_parse": {
       "from": "          const loaded = await loadVaultTriples(vaultPath, {\n            useCache: useCacheEffective,\n          });",
       "to": "          const loaded = await loadVaultTriples(vaultPath, {\n            useCache: false,\n          });",
       "expect": ["A3", "A4", "A9"]
     },
     "P2_write_through_never_runs": {
-      "from": "            !options.dryRun &&\n            successCount > 0 &&\n            loaded.cacheManager",
-      "to": "            !options.dryRun &&\n            successCount < 0 &&\n            loaded.cacheManager",
-      "expect": ["A3", "A4"]
-    },
-    "P3_write_through_also_on_dry_run": {
-      "from": "            useCacheEffective &&\n            !options.dryRun &&\n            successCount > 0 &&",
-      "to": "            useCacheEffective &&\n            successCount > 0 &&",
-      "expect": ["A9"]
+      "from": "          if (useCacheEffective && anyExecuted && loaded.cacheManager) {",
+      "to": "          if (useCacheEffective && anyExecuted && !loaded.cacheManager) {",
+      "expect": ["A3", "A4", "A3b", "A3c"]
     },
     "P4_load_notice_on_stdout": {
       "from": "          if (useCacheEffective) {\n            process.stderr.write(`${cacheLoadNotice(loaded)}\\n`);\n          }",
