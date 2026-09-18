@@ -35,7 +35,9 @@ import {
   CacheManager,
   CACHE_FORMAT_VERSION,
   DELTA_REBUILD_RATIO,
+  STALE_TMP_MAX_AGE_MS,
   diffManifest,
+  isSafeRelativePath,
 } from "../../../src/cache/CacheManager.js";
 
 const REQ = "@req:42812747-8b76-4525-aaaa-00857ea98599";
@@ -454,6 +456,49 @@ describe(`CacheManager (#4263) ${REQ}`, () => {
     expect(await cache.isCacheValid()).toBe(false);
     expect((await cache.loadOrBuild()).mode).toBe("rebuild");
     expect(await cache.isCacheValid()).toBe(true);
+
+    // the validator treats BOTH separators as segment boundaries: a
+    // Windows-relative entry is safe (the adapter's path.relative yields
+    // backslashes there — rejecting them would mean "never valid"), while
+    // `..` and absolute forms are rejected whichever separator they use
+    expect(isSafeRelativePath("notes\\sub\\a.md")).toBe(true);
+    expect(isSafeRelativePath("notes/sub/a.md")).toBe(true);
+    expect(isSafeRelativePath("..\\outside.md")).toBe(false);
+    expect(isSafeRelativePath("notes\\..\\..\\outside.md")).toBe(false);
+    expect(isSafeRelativePath("C:\\vault\\a.md")).toBe(false);
+    expect(isSafeRelativePath("\\server\\share\\a.md")).toBe(false);
+    expect(isSafeRelativePath("/etc/passwd")).toBe(false);
+    expect(isSafeRelativePath("")).toBe(false);
+  });
+
+  it(`U16 orphaned temp files of a killed writer are swept on the next write and on invalidate(); a live writer's fresh temp file is left alone ${REQ}`, async () => {
+    const cache = new CacheManager(vaultPath);
+    const cachePath = cache.getCachePath();
+    await fs.ensureDir(path.dirname(cachePath));
+    const stale = `${cachePath}.111.deadbeef0001.tmp`;
+    const fresh = `${cachePath}.222.deadbeef0002.tmp`;
+    const unrelated = path.join(path.dirname(cachePath), "other.json.333.tmp");
+    for (const f of [stale, fresh, unrelated]) {
+      await fs.writeFile(f, "{}", "utf-8");
+    }
+    const old = (Date.now() - STALE_TMP_MAX_AGE_MS - 60_000) / 1000;
+    await fs.utimes(stale, old, old);
+    await fs.utimes(unrelated, old, old);
+
+    // first write (a build) sweeps the orphan, keeps the fresh one and
+    // ignores files that are not this cache's temp files
+    await cache.loadOrBuild();
+    expect(await fs.pathExists(stale)).toBe(false);
+    expect(await fs.pathExists(fresh)).toBe(true);
+    expect(await fs.pathExists(unrelated)).toBe(true);
+
+    // invalidate() sweeps too (index --force path)
+    await fs.writeFile(stale, "{}", "utf-8");
+    await fs.utimes(stale, old, old);
+    await cache.invalidate();
+    expect(await fs.pathExists(stale)).toBe(false);
+    expect(await fs.pathExists(fresh)).toBe(true);
+    await fs.remove(fresh);
   });
 
   it(`U13 saveInferredTriples replaces the layer (index is idempotent) and flags inference on even for an empty layer ${REQ}`, async () => {

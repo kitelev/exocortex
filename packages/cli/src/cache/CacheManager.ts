@@ -165,6 +165,12 @@ export interface LoadOrBuildResult {
   reparsedFiles: number;
   /** #4263 — why a rebuild was chosen (absent for hit / delta) */
   rebuildReason?: string;
+  /**
+   * #4263 — delta only: `true` when the inferred layer was re-materialized,
+   * `false` when the persisted layer was kept verbatim because no engine
+   * input changed (absent for hit / rebuild).
+   */
+  inferredRecomputed?: boolean;
 }
 
 /**
@@ -221,6 +227,13 @@ export interface BuildCacheOptions {
  * than raw speed. Half the vault is the documented cut-off.
  */
 export const DELTA_REBUILD_RATIO = 0.5;
+
+/**
+ * A `triples.json.<pid>.<rand>.tmp` older than this is an orphan (the writer
+ * was killed between `writeJson` and `rename`) and is removed before the next
+ * write / on invalidate; younger ones may belong to a live concurrent writer.
+ */
+export const STALE_TMP_MAX_AGE_MS = 10 * 60 * 1000;
 
 /**
  * `prefix__LocalName` — the label / basename form the converter turns into a
@@ -383,6 +396,7 @@ export class CacheManager {
       durationMs: Date.now() - startTime,
       mode: "delta",
       reparsedFiles: plan.reparse.length,
+      inferredRecomputed: refreshed.inferredRecomputed,
     };
   }
 
@@ -576,18 +590,38 @@ export class CacheManager {
           rebuildReason: `asset lost its TBox-form label: ${changedPath}`,
         };
       }
+      // A TBox-form ALIAS (`prefix__Name`) is emitted as a SYMBOLIC IRI, and a
+      // `[[prefix__Name]]` link resolving through it flips between the
+      // target's file-IRI (alias present) and that symbolic IRI (alias
+      // absent) — its referrers hold neither a literal needle nor, while the
+      // alias is absent, the file-IRI. Like a TBox-form label, it falls back
+      // to the full rebuild (review round 2, N1).
+      if (
+        frontmatterHasTBoxFormAlias(frontmatter) ||
+        (previous !== undefined && entryHasTBoxFormAlias(previous))
+      ) {
+        return { reparse: [], rebuildReason: `TBox-form alias: ${changedPath}` };
+      }
       // Alias resolution: `[[<alias>]]` links resolve through the target's
       // frontmatter `aliases` (FileSystemVaultAdapter alias index, lower-cased),
       // so a change to the alias set changes what the referrers emit — the
-      // ones that resolved through an old alias hold the file-IRI (re-parse by
-      // IRI), the ones that will resolve through a new alias hold the raw
-      // link (re-parse by needle).
+      // ones that resolved through a REMOVED alias hold the file-IRI (re-parse
+      // by IRI; a pure addition changes nothing for them), the ones that will
+      // resolve through a new alias hold the raw link (re-parse by needle).
       const oldAliases = previous ? entryAliases(previous) : new Set<string>();
       const newAliases = frontmatterAliases(frontmatter);
       if (previous && !sameSet(oldAliases, newAliases)) {
-        referrerIris.add(vaultPathToIRI(changedPath));
-        for (const alias of oldAliases) if (!newAliases.has(alias)) referrerNeedles.add(alias);
+        let aliasRemoved = false;
+        for (const alias of oldAliases) {
+          if (!newAliases.has(alias)) {
+            referrerNeedles.add(alias);
+            aliasRemoved = true;
+          }
+        }
         for (const alias of newAliases) if (!oldAliases.has(alias)) referrerNeedles.add(alias);
+        if (aliasRemoved) {
+          referrerIris.add(vaultPathToIRI(changedPath));
+        }
       }
       if (!previous) {
         for (const alias of newAliases) referrerNeedles.add(alias);
@@ -634,7 +668,7 @@ export class CacheManager {
     diff: ManifestDiff,
     reparse: string[],
     adapter: FileSystemVaultAdapter,
-  ): Promise<{ data: CacheData; triples: Triple[] }> {
+  ): Promise<{ data: CacheData; triples: Triple[]; inferredRecomputed: boolean }> {
     const files: IFile[] = [];
     for (const relPath of reparse) {
       const file = adapter.getAbstractFileByPath(relPath);
@@ -684,6 +718,7 @@ export class CacheManager {
     }
     let inferred: SerializedTriple[] = [];
     let inferredTriples: Triple[] = [];
+    let inferredRecomputed = false;
     if (cached.metadata.inferenceEnabled) {
       const nextByPath = new Map<string, CacheFileEntry>();
       for (const entry of nextFiles) nextByPath.set(entry.path, entry);
@@ -691,6 +726,7 @@ export class CacheManager {
         const result = await materializeInferredTriples(explicit);
         inferredTriples = result.inferred;
         inferred = inferredTriples.map(this.serializeTriple);
+        inferredRecomputed = true;
       } else {
         // None of the changed files feeds either engine — the persisted
         // layer is still exactly what a recomputation would yield.
@@ -705,7 +741,7 @@ export class CacheManager {
       inferenceEnabled: cached.metadata.inferenceEnabled,
     });
     await this.writeCacheData(data);
-    return { data, triples: explicit.concat(inferredTriples) };
+    return { data, triples: explicit.concat(inferredTriples), inferredRecomputed };
   }
 
   /**
@@ -866,6 +902,39 @@ export class CacheManager {
     if (await fs.pathExists(this.cachePath)) {
       await fs.remove(this.cachePath);
     }
+    await this.removeStaleTempFiles();
+  }
+
+  /**
+   * Remove `<cache>.*.tmp` siblings older than STALE_TMP_MAX_AGE_MS — orphans
+   * of a writer killed between `writeJson` and `rename` (each is a full copy
+   * of the cache). Younger ones are left alone: they may be a live concurrent
+   * writer's, and it will rename or remove them itself.
+   */
+  private async removeStaleTempFiles(): Promise<void> {
+    const dir = path.dirname(this.cachePath);
+    const prefix = `${path.basename(this.cachePath)}.`;
+    let names: string[];
+    try {
+      names = await fs.readdir(dir);
+    } catch {
+      return;
+    }
+    const cutoff = Date.now() - STALE_TMP_MAX_AGE_MS;
+    for (const name of names) {
+      if (!name.startsWith(prefix) || !name.endsWith(".tmp")) {
+        continue;
+      }
+      const full = path.join(dir, name);
+      try {
+        const stat = await fs.stat(full);
+        if (stat.mtimeMs < cutoff) {
+          await fs.remove(full);
+        }
+      } catch {
+        // renamed or removed by its writer between readdir and stat — fine
+      }
+    }
   }
 
   /**
@@ -968,6 +1037,7 @@ export class CacheManager {
    */
   private async writeCacheData(data: CacheData): Promise<void> {
     await fs.ensureDir(path.dirname(this.cachePath));
+    await this.removeStaleTempFiles();
     // pid + random: two CacheManager instances in ONE process (or two
     // processes forked in the same ms) must not race on the same temp name.
     const tmp = `${this.cachePath}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
@@ -1138,14 +1208,53 @@ function entryAliases(entry: CacheFileEntry): Set<string> {
 /** Frontmatter `aliases:` (string or list), lower-cased. */
 function frontmatterAliases(frontmatter: Record<string, unknown> | null): Set<string> {
   const out = new Set<string>();
+  for (const a of rawFrontmatterAliases(frontmatter)) {
+    out.add(a.toLowerCase());
+  }
+  return out;
+}
+
+/** Frontmatter `aliases:` as written (trimmed, non-empty), case preserved. */
+function rawFrontmatterAliases(frontmatter: Record<string, unknown> | null): string[] {
   const raw = frontmatter?.["aliases"];
   const list = Array.isArray(raw) ? raw : raw === undefined || raw === null ? [] : [raw];
+  const out: string[] = [];
   for (const a of list) {
     if (typeof a === "string" && a.trim() !== "") {
-      out.add(a.trim().toLowerCase());
+      out.push(a.trim());
     }
   }
   return out;
+}
+
+/** Does the frontmatter declare an alias of the TBox form `prefix__Name`? */
+function frontmatterHasTBoxFormAlias(frontmatter: Record<string, unknown> | null): boolean {
+  return rawFrontmatterAliases(frontmatter).some((a) => TBOX_FORM.test(a));
+}
+
+/**
+ * Did this file's cached `exo:Asset_aliases` carry a TBox-form value? The
+ * converter emits such a value as an IRI object (symbolic), so an IRI-typed
+ * alias object IS the marker; a literal in TBox form is accepted too.
+ */
+function entryHasTBoxFormAlias(entry: CacheFileEntry): boolean {
+  const ownSubject = vaultPathToIRI(entry.path);
+  for (const t of entry.triples) {
+    if (
+      t.subject.type === "IRI" &&
+      t.subject.value === ownSubject &&
+      t.predicate.type === "IRI" &&
+      t.predicate.value.endsWith(ASSET_ALIASES_IRI_SUFFIX)
+    ) {
+      if (t.object.type === "IRI") {
+        return true;
+      }
+      if (t.object.type === "Literal" && TBOX_FORM.test(t.object.value.trim())) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function sameSet(a: Set<string>, b: Set<string>): boolean {
@@ -1171,12 +1280,23 @@ function frontmatterDeclaresFileSpaceAnyForm(frontmatter: Record<string, unknown
   );
 }
 
-/** Reject absolute paths and `..` segments before they reach `getAbstractFileByPath`. */
-function isSafeRelativePath(relPath: string): boolean {
-  if (relPath.length === 0 || path.isAbsolute(relPath) || relPath.includes("\\")) {
+/**
+ * Reject absolute paths (POSIX, drive-letter or root-slash) and `..` segments
+ * before they reach `getAbstractFileByPath`. Both separators are segment
+ * boundaries: the adapter's `path.relative` yields backslashes on Windows, and
+ * rejecting them outright would make the cache never valid there (review
+ * round 2, N3).
+ */
+export function isSafeRelativePath(relPath: string): boolean {
+  if (
+    relPath.length === 0 ||
+    path.isAbsolute(relPath) ||
+    /^[a-zA-Z]:/.test(relPath) ||
+    /^[\\/]/.test(relPath)
+  ) {
     return false;
   }
-  return !relPath.split("/").some((seg) => seg === "..");
+  return !relPath.split(/[\\/]/).some((seg) => seg === "..");
 }
 
 function isInferenceRelevant(t: SerializedTriple): boolean {

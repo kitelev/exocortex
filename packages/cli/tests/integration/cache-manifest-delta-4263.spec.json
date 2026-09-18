@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for #4263 (req 42812747). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/cache-manifest-delta-4263.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's CacheManager.ts and runs the integration + unit suites; `expect` names the axes that MUST go red). Recorded runs: 2026-09-18 r1 control 0 red 9/9; r2 (after the orchestrator review) — see PR #4265 body. Deliberately WITHOUT a mutant: the engine-input gate in applyDelta (`inferenceInputsChanged` → always recompute) is a pure perf optimisation whose removal is observationally equivalent; its opposite (never recompute) is M18.",
+  "_doc": "Revert-verify mutants for #4263 (req 42812747). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/cache-manifest-delta-4263.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's CacheManager.ts and runs the integration + unit suites; `expect` names the axes that MUST go red). Recorded runs: 2026-09-18 r1 control 0 red 9/9; r2 (after the orchestrator review) — see PR #4265 body. Both directions of the engine-input gate in applyDelta are locked: M18 (never recompute) and M17 (always recompute — observable through LoadOrBuildResult.inferredRecomputed, review r2 N8). Review r2 (4ba1ea4c): M29/M30 (TBox-form alias, N1), M31 (Windows paths, N3), M32 (orphaned tmp sweep, N5), M33 (alias addition scope, N7).",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/CacheManager.ts",
   "symlink_node_modules": [
@@ -139,6 +139,36 @@
       "from": "      if (t.object.type === \"IRI\") {\n        return true;\n      }\n      if (t.object.type === \"Literal\" && TBOX_FORM.test(t.object.value)) {",
       "to": "      if (t.object.type === \"Literal\" && TBOX_FORM.test(t.object.value)) {",
       "expect": ["A11"]
+    },
+    "M17_inference_gate_always_recomputes": {
+      "from": "      if (inferenceInputsChanged(cached, nextByPath, [...reparsed, ...removed])) {",
+      "to": "      if (inferenceInputsChanged(cached, nextByPath, [...reparsed, ...removed]) || true) {",
+      "expect": ["A14"]
+    },
+    "M29_tbox_alias_frontmatter_probe_removed": {
+      "from": "        frontmatterHasTBoxFormAlias(frontmatter) ||\n        (previous !== undefined && entryHasTBoxFormAlias(previous))\n",
+      "to": "        (previous !== undefined && entryHasTBoxFormAlias(previous))\n",
+      "expect": ["A16"]
+    },
+    "M30_tbox_alias_entry_probe_removed": {
+      "from": "        frontmatterHasTBoxFormAlias(frontmatter) ||\n        (previous !== undefined && entryHasTBoxFormAlias(previous))\n",
+      "to": "        frontmatterHasTBoxFormAlias(frontmatter) ||\n        (previous !== undefined && entryHasTBoxFormAlias(previous) && false)\n",
+      "expect": ["A16"]
+    },
+    "M31_backslash_paths_rejected_again": {
+      "from": "  return !relPath.split(/[\\\\/]/).some((seg) => seg === \"..\");",
+      "to": "  return !relPath.includes(\"\\\\\") && !relPath.split(/[\\\\/]/).some((seg) => seg === \"..\");",
+      "expect": ["U12"]
+    },
+    "M32_stale_tmp_sweep_disabled": {
+      "from": "        if (stat.mtimeMs < cutoff) {\n          await fs.remove(full);\n        }",
+      "to": "        if (stat.mtimeMs < cutoff && false) {\n          await fs.remove(full);\n        }",
+      "expect": ["U16"]
+    },
+    "M33_alias_addition_reparses_all_iri_referrers": {
+      "from": "        if (aliasRemoved) {\n          referrerIris.add(vaultPathToIRI(changedPath));\n        }",
+      "to": "        if (aliasRemoved || true) {\n          referrerIris.add(vaultPathToIRI(changedPath));\n        }",
+      "expect": ["A17"]
     }
   }
 }

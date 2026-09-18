@@ -219,6 +219,21 @@ describe("sparqlIndexCommand", () => {
       );
     });
 
+    it("S1 persists the (empty) inferred layer even when nothing was inferred — the flag is what a later delta refresh keys on (#4263 review N4)", async () => {
+      // beforeEach defaults: RDFS 0, prototype chain 0, store.match → []
+      const cmd = sparqlIndexCommand();
+      await cmd.parseAsync([
+        "node", "test",
+        "--vault", vaultPath,
+      ]);
+
+      expect(mockSaveInferredTriples).toHaveBeenCalledTimes(1);
+      expect(mockSaveInferredTriples).toHaveBeenCalledWith([]);
+      expect(consoleLogSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining("Materialized 0 inferred triples")
+      );
+    });
+
     it("should not run prototype chain when --no-inference is set", async () => {
       const cmd = sparqlIndexCommand();
       await cmd.parseAsync([
@@ -229,6 +244,7 @@ describe("sparqlIndexCommand", () => {
 
       expect(mockRegistryInitialize).not.toHaveBeenCalled();
       expect(mockProtoMaterialize).not.toHaveBeenCalled();
+      expect(mockSaveInferredTriples).not.toHaveBeenCalled();
     });
   });
 

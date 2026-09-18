@@ -81,10 +81,12 @@ export function sparqlIndexCommand(): Command {
           const materialized = await materializeInferredTriples(triples);
           inferredCount = materialized.inferredCount;
 
-          if (inferredCount > 0) {
-            await cacheManager.saveInferredTriples(materialized.inferred);
-            result.tripleCount += inferredCount;
-          }
+          // Persist the layer EVEN WHEN EMPTY: saveInferredTriples flags
+          // `inferenceEnabled` on, which is what lets a later delta refresh
+          // materialize a prototype that did not exist at index time (review
+          // round 2, N4 — a length-gated save left such vaults without a layer).
+          await cacheManager.saveInferredTriples(materialized.inferred);
+          result.tripleCount += inferredCount;
 
           if (outputFormat === "text" && inferredCount > 0) {
             console.log(`🧠 Materialized ${inferredCount} inferred triples (RDFS + prototype chain)`);

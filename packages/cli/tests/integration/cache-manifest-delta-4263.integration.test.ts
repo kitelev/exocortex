@@ -22,6 +22,8 @@
  *   A13 two concurrent loadOrBuild() after an edit — atomic write, no torn cache      (review HIGH-2)
  *   A14 inference flag survives an empty layer; layer recomputed only on engine-input change (MEDIUM-3/4)
  *   A15 FileSpace declaration removed / edited / added in label form → rebuild       (review MEDIUM-1)
+ *   A16 a TBox-form ALIAS on a human-labelled target → rebuild in all three directions (review r2 N1)
+ *   A17 a pure alias ADDITION re-parses only needle referrers, not every IRI referrer (review r2 N7)
  *
  * Revert-verify (mutants applied to a COPY of the tree by the driver spec
  * `tests/integration/cache-manifest-delta-4263.spec.json`): root-mtime validity → A1 RED;
@@ -890,12 +892,14 @@ describe(`CacheManager — per-file manifest, delta refresh, shared loader (#426
     );
     const d1 = await cache.loadOrBuild();
     expect(d1.mode).toBe("delta");
+    expect(d1.inferredRecomputed).toBe(false);
     expect(objectsOf(d1.triples, aRel)).toContain(areaP);
 
     // (2) the prototype's own property changes → engine input → recomputed
     await writeFile(protoRel, protoFm(TASK_B));
     const d2 = await cache.loadOrBuild();
     expect(d2.mode).toBe("delta");
+    expect(d2.inferredRecomputed).toBe(true);
     expect(objectsOf(d2.triples, aRel)).not.toContain(areaP);
     expect(objectsOf(d2.triples, aRel)).toContain(areaB);
 
@@ -904,6 +908,7 @@ describe(`CacheManager — per-file manifest, delta refresh, shared loader (#426
     await writeFile(aRel, taskAFm(false));
     const d3 = await cache.loadOrBuild();
     expect(d3.mode).toBe("delta");
+    expect(d3.inferredRecomputed).toBe(true);
     expect(objectsOf(d3.triples, aRel)).not.toContain(areaB);
     const emptied = await fs.readJson(cache.getCachePath());
     expect(emptied.metadata.inferredCount).toBe(0);
@@ -914,10 +919,148 @@ describe(`CacheManager — per-file manifest, delta refresh, shared loader (#426
     await writeFile(aRel, taskAFm(true));
     const d4 = await cache.loadOrBuild();
     expect(d4.mode).toBe("delta");
+    expect(d4.inferredRecomputed).toBe(true);
     expect(objectsOf(d4.triples, aRel)).toContain(areaB);
     expect(
       (await fs.readJson(cache.getCachePath())).metadata.inferredCount,
     ).toBeGreaterThan(0);
+  });
+
+  it(`A16 a TBox-form alias on a human-labelled target forces a rebuild when the alias is added, removed, or arrives with a new file ${REQ}`, async () => {
+    // Review round 2, N1. P keeps its human label; the alias `ems__Sprint` is
+    // emitted as a SYMBOLIC IRI, and B's `[[ems__Sprint]]` link resolves to
+    // P's file-IRI while the alias exists and to the symbolic `ems#Sprint`
+    // while it does not — a flip no literal needle and no file-IRI scan can
+    // find, so the cache must rebuild.
+    const pRel = `${PROJECTS_DIR}/${PROJECT_P}.md`;
+    const bRel = `${TASKS_DIR}/${TASK_B}.md`;
+    const sRel = `${PROJECTS_DIR}/7f2f0a4b-0f2e-4a1c-9d1e-4263a0000016.md`;
+    const projectFm = (alias: string | null) =>
+      fm({
+        exo__Asset_uid: PROJECT_P,
+        exo__Instance_class: `"[[${CLASS_PROJECT}]]"`,
+        exo__Asset_label: '"Project P"',
+        ...(alias ? { aliases: `["${alias}"]` } : {}),
+      });
+    await writeFile(
+      bRel,
+      fm({
+        exo__Asset_uid: TASK_B,
+        exo__Instance_class: `"[[${CLASS_TASK}]]"`,
+        exo__Asset_label: '"Task B"',
+        ems__Effort_parent: '"[[ems__Sprint]]"',
+      }),
+    );
+    const symbolic =
+      "#Effort_parent -> https://exocortex.my/ontology/ems#Sprint";
+    const viaP = `#Effort_parent -> ${vaultPathToIRI(pRel)}`;
+    const viaS = `#Effort_parent -> ${vaultPathToIRI(sRel)}`;
+    const cache = new CacheManager(vaultPath);
+    const built = await cache.loadOrBuild();
+    expect(objectsOf(built.triples, bRel).join("\n")).toContain(symbolic);
+
+    // (c) alias ADDED to the existing P → B now resolves to P's file-IRI
+    await writeFile(pRel, projectFm("ems__Sprint"));
+    const added = await cache.loadOrBuild();
+    expect(added.mode).toBe("rebuild");
+    expect(added.rebuildReason).toContain("alias");
+    expect(objectsOf(added.triples, bRel).join("\n")).toContain(viaP);
+    expect(objectsOf(added.triples, bRel).join("\n")).not.toContain(symbolic);
+    expect(tripleKeys(added.triples)).toEqual(await fullRebuildKeys());
+
+    // (a) alias REMOVED from P → B falls back to the symbolic IRI. The old
+    // alias never was a literal in P's cached triples, so only the persisted
+    // IRI-typed alias object can tell the cache that P carried one.
+    await writeFile(pRel, projectFm(null));
+    const removed = await cache.loadOrBuild();
+    expect(removed.mode).toBe("rebuild");
+    expect(removed.rebuildReason).toContain("alias");
+    expect(objectsOf(removed.triples, bRel).join("\n")).toContain(symbolic);
+    expect(objectsOf(removed.triples, bRel).join("\n")).not.toContain(viaP);
+    expect(tripleKeys(removed.triples)).toEqual(await fullRebuildKeys());
+
+    // (b) a NEW file S arrives carrying the alias → B resolves to S
+    await writeFile(
+      sRel,
+      fm({
+        exo__Asset_uid: "7f2f0a4b-0f2e-4a1c-9d1e-4263a0000016",
+        exo__Instance_class: `"[[${CLASS_PROJECT}]]"`,
+        exo__Asset_label: '"Sprint (human label)"',
+        aliases: '["ems__Sprint"]',
+      }),
+    );
+    const arrived = await cache.loadOrBuild();
+    expect(arrived.mode).toBe("rebuild");
+    expect(arrived.rebuildReason).toContain("alias");
+    expect(objectsOf(arrived.triples, bRel).join("\n")).toContain(viaS);
+    expect(objectsOf(arrived.triples, bRel).join("\n")).not.toContain(symbolic);
+    expect(tripleKeys(arrived.triples)).toEqual(await fullRebuildKeys());
+
+    // control: a human-form alias on the same file stays on the delta path
+    await fs.remove(path.join(vaultPath, sRel));
+    await cache.loadOrBuild();
+    await writeFile(pRel, projectFm("Sprint P"));
+    const human = await cache.loadOrBuild();
+    expect(human.mode).toBe("delta");
+    expect(tripleKeys(human.triples)).toEqual(await fullRebuildKeys());
+  });
+
+  it(`A17 a pure alias addition re-parses the referrers that will resolve through the new alias, not every holder of the target's file-IRI ${REQ}`, async () => {
+    // Review round 2, N7. A links P by UID (holds P's file-IRI — unaffected
+    // by a NEW alias), B links P by the future alias (raw literal until the
+    // alias exists). Adding the alias must re-parse B, not A.
+    const pRel = `${PROJECTS_DIR}/${PROJECT_P}.md`;
+    const aRel = `${TASKS_DIR}/${TASK_A}.md`;
+    const bRel = `${TASKS_DIR}/${TASK_B}.md`;
+    const projectFm = (aliases: string[]) =>
+      fm({
+        exo__Asset_uid: PROJECT_P,
+        exo__Instance_class: `"[[${CLASS_PROJECT}]]"`,
+        exo__Asset_label: '"Project P"',
+        ...(aliases.length
+          ? { aliases: `[${aliases.map((a) => `"${a}"`).join(", ")}]` }
+          : {}),
+      });
+    await writeFile(
+      bRel,
+      fm({
+        exo__Asset_uid: TASK_B,
+        exo__Instance_class: `"[[${CLASS_TASK}]]"`,
+        exo__Asset_label: '"Task B"',
+        ems__Effort_parent: '"[[Project Alpha]]"',
+      }),
+    );
+    const cache = new CacheManager(vaultPath);
+    const built = await cache.loadOrBuild();
+    const viaP = `#Effort_parent -> ${vaultPathToIRI(pRel)}`;
+    expect(objectsOf(built.triples, aRel).join("\n")).toContain(viaP);
+    expect(objectsOf(built.triples, bRel).join("\n")).not.toContain(viaP);
+
+    // pure ADDITION (no alias existed before)
+    await writeFile(pRel, projectFm(["Project Alpha"]));
+    const spy = jest.spyOn(NoteToRDFConverter.prototype, "convertNote");
+    const withAlias = await cache.loadOrBuild();
+    const reparsed = spy.mock.calls
+      .map((c) => (c[0] as { path: string }).path)
+      .sort();
+    spy.mockRestore();
+    expect(withAlias.mode).toBe("delta");
+    expect(reparsed).toEqual([bRel, pRel].sort());
+    expect(reparsed).not.toContain(aRel);
+    expect(objectsOf(withAlias.triples, bRel).join("\n")).toContain(viaP);
+    expect(tripleKeys(withAlias.triples)).toEqual(await fullRebuildKeys());
+
+    // adding a SECOND alias (still no removal) — same rule
+    await writeFile(pRel, projectFm(["Project Alpha", "Project Alpha 2"]));
+    const spy2 = jest.spyOn(NoteToRDFConverter.prototype, "convertNote");
+    const second = await cache.loadOrBuild();
+    const reparsed2 = spy2.mock.calls
+      .map((c) => (c[0] as { path: string }).path)
+      .sort();
+    spy2.mockRestore();
+    expect(second.mode).toBe("delta");
+    expect(reparsed2).toEqual([pRel]);
+    expect(tripleKeys(second.triples)).toEqual(await fullRebuildKeys());
   });
 
   it(`A15 a FileSpace declaration removed or edited forces a rebuild, and a label-form declaration is detected ${REQ}`, async () => {

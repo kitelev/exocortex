@@ -13,19 +13,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `CacheManager` no longer validates `.exocortex/cache/triples.json` by the vault root
   directory's mtime (which a nested `assetspaces/**` edit never touched, so `--use-cache`
-  could serve stale triples). The cache now persists, per indexed `.md` file, its mtime and
-  the triples it contributed; validity is a stat-walk diff against that manifest.
-- A non-empty diff is refreshed incrementally: only changed files (plus files linking to an
-  added / removed target) are re-parsed via `NoteToRDFConverter.convertNote`, removed files'
-  triples are dropped, and the inferred layer `index` materialized (RDFS + prototype chain)
-  is re-materialized. A TBox-form asset change, a FileSpace declaration change, a legacy or
-  corrupt cache, a failed walk or a diff above 50 % of the vault falls back to a full rebuild.
-- Cache format v2 (`metadata.formatVersion = 2`, `files[]`, `inferred[]`). A pre-existing
-  cache is treated as invalid once and rebuilt; no migration.
+  could serve stale triples). The cache now persists, per indexed `.md` file, its
+  `{mtimeMs, size}` stamp and the triples it contributed; validity is a stat-walk diff
+  against that manifest.
+- A non-empty diff is refreshed incrementally: only the changed files — plus the files that
+  refer to an added / removed target or to a target whose `aliases:` changed (by file-IRI and
+  by lower-cased linkpath, which also matches the bare literal of an unresolved body
+  `[[uid]]`) — are re-parsed via `NoteToRDFConverter.convertNote`, removed files' triples
+  are dropped, and the inferred layer `index` materialized (RDFS + prototype chain) is
+  re-materialized when one of the touched files feeds an inference engine
+  (`exo__Instance_class` / `exo__Class_superClass` / `rdf:type` / `exo__Asset_prototype`),
+  otherwise kept verbatim. A change to a TBox-form asset (`prefix__Name` label or alias,
+  including a skipped zero-triple file), a FileSpace declaration added / edited / removed,
+  a legacy or corrupt cache, a failed walk or a diff above 50 % of the vault falls back to
+  a full rebuild.
+- The cache file is written atomically (`triples.json.<pid>.<rand>.tmp` + rename), so
+  concurrent `--use-cache` processes never read a torn file; orphaned temp files older than
+  10 minutes are swept on the next write and on `index --force`.
+- Cache format v2 (`metadata.formatVersion = 2`, `files[]`, `inferred[]`,
+  `metadata.inferenceEnabled`, `fileSpacePrefixes` / `fileSpaceDeclarations`). Entries with
+  an absolute / `..` path or a malformed stamp are rejected. A pre-existing cache is treated
+  as invalid once and rebuilt; no migration.
 - `query`, `classes`, `run-query` and `validate-schema` load the vault through one shared
-  `loadVaultTriples(vaultPath, { useCache })` helper (observable behaviour unchanged).
-- `index` persists only the inferred layer after materialization (`saveInferredTriples`)
-  instead of overwriting the whole cache with a flat, file-less triple list.
+  `loadVaultTriples(vaultPath, { useCache })` helper and report the mode: `query` / `classes`
+  print "♻️ Cache refreshed incrementally (N file(s) re-parsed)" on a delta instead of
+  "🚀 Cache hit!"; `meta.cacheHit` in the JSON output stays "full parse avoided" (true for
+  a hit and for a delta).
+- `index` persists only the inferred layer after materialization (`saveInferredTriples`,
+  also when the layer is empty — that is what enables the delta path to materialize a
+  prototype added later) instead of overwriting the whole cache with a flat, file-less
+  triple list.
+- Not incremental yet (follow-up #4267): the delta still rewrites the whole cache file and
+  the adapter rebuilds its linkpath index on the first non-UUID link.
 
 ### Added
 
