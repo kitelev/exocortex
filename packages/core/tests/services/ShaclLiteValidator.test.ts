@@ -1367,3 +1367,98 @@ describe('validate — cross-vault UUID-keyed subject resolution', () => {
     expect(report.violations[0].actualValue).toBe('node:B');
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Suite — sh:datatype by LEXICAL form where the tag is a converter artefact
+// (ticket a9b55ead, @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2). NoteToRDFConverter tags every
+// YAML number xsd:decimal and a YAML boolean as a plain literal; the declared
+// range is the source of truth (founder decision 2026-09-18).
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('validate — sh:datatype lexical conformance of converter-tagged literals (@req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2)', () => {
+  const PMI = 'https://exocortex.my/ontology/pmi#';
+  function pmiShape(prop: string, range: string): Shape {
+    return makeShape({ propertyIRI: `${PMI}${prop}`, domain: [`${PMI}Principle`], range: [range] });
+  }
+  function report(prop: string, range: string, value: string, tag?: string) {
+    const triples = [
+      typeTriple('node:A', `${PMI}Principle`),
+      litTriple('node:A', `${PMI}${prop}`, value, tag),
+    ];
+    return validate(triples, makeRegistry([pmiShape(prop, range)]), flatHierarchy);
+  }
+  const datatypeViolations = (r: ReturnType<typeof validate>) =>
+    r.violations.filter((v) => v.constraint === 'datatype');
+
+  it('V1 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 whole number tagged xsd:decimal (YAML `7`) conforms to range xsd:integer', () => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}integer`, '7', `${XSD}decimal`))).toHaveLength(0);
+  });
+
+  it('V2 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 fraction tagged xsd:decimal (YAML `7.5`) violates range xsd:integer', () => {
+    const v = datatypeViolations(report('Principle_number', `${XSD}integer`, '7.5', `${XSD}decimal`));
+    expect(v).toHaveLength(1);
+    expect(v[0].message).toContain('sh:datatype violation');
+    expect(v[0].actualValue).toBe('7.5');
+  });
+
+  it('V3 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 four-digit number tagged xsd:decimal (YAML `1987`) conforms to range xsd:gYear', () => {
+    expect(datatypeViolations(report('Model_originYear', `${XSD}gYear`, '1987', `${XSD}decimal`))).toHaveLength(0);
+  });
+
+  it('V4 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 non-year lexical form under range xsd:gYear violates (decimal `19.87`, string `not-a-year`)', () => {
+    expect(datatypeViolations(report('Model_originYear', `${XSD}gYear`, '19.87', `${XSD}decimal`))).toHaveLength(1);
+    expect(datatypeViolations(report('Model_originYear', `${XSD}gYear`, 'not-a-year', `${XSD}string`))).toHaveLength(1);
+  });
+
+  it('V5 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 explicit non-converter tag keeps STRICT equality: quoted "10" (xsd:string) violates range xsd:integer', () => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}integer`, '10', `${XSD}string`))).toHaveLength(1);
+  });
+
+  it('V6 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 a datatype outside the lexical table keeps strict equality: decimal-tagged `7` under xsd:anyURI violates', () => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}anyURI`, '7', `${XSD}decimal`))).toHaveLength(1);
+  });
+
+  it('V7 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 YAML boolean (plain literal `true`) conforms to range xsd:boolean; `yes` does not', () => {
+    expect(datatypeViolations(report('Principle_isCore', `${XSD}boolean`, 'true'))).toHaveLength(0);
+    expect(datatypeViolations(report('Principle_isCore', `${XSD}boolean`, 'yes'))).toHaveLength(1);
+  });
+
+  it('V8 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 a number under range xsd:string is NOT excused by lexical form (decimal-tagged `7` violates xsd:string)', () => {
+    expect(datatypeViolations(report('Principle_note', `${XSD}string`, '7', `${XSD}decimal`))).toHaveLength(1);
+  });
+
+  // V10 — one conforming + one non-conforming decimal-tagged value per DECIMAL_TAG_LEXICAL
+  // row (review fold LOW-1). `gYear` is V3/V4; `decimal` is V11 (unreachable via the
+  // xsd:decimal tag — tag equality short-circuits before the table is consulted).
+  it.each([
+    ['integer', '7', '7.5'],
+    ['long', '7', '7.5'],
+    ['int', '7', '7.5'],
+    ['short', '7', '7.5'],
+    ['byte', '7', '7.5'],
+    ['nonNegativeInteger', '0', '-1'],
+    ['unsignedLong', '7', '-1'],
+    ['unsignedInt', '7', '-1'],
+    ['unsignedShort', '7', '-1'],
+    ['unsignedByte', '7', '-1'],
+    ['positiveInteger', '7', '0'],
+    ['nonPositiveInteger', '-3', '3'],
+    ['negativeInteger', '-3', '3'],
+    ['float', '1e3', 'abc'],
+    ['double', '-1.5E-2', 'abc'],
+  ])('V10 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 decimal-tagged literal under xsd:%s: %s conforms, %s violates', (local, ok, bad) => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}${local}`, ok, `${XSD}decimal`))).toHaveLength(0);
+    expect(datatypeViolations(report('Principle_number', `${XSD}${local}`, bad, `${XSD}decimal`))).toHaveLength(1);
+  });
+
+  it('V11 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 xsd:decimal range with a decimal-tagged literal conforms by tag equality — the `decimal` lexical row is never consulted (7.5 and 1e3 both conform)', () => {
+    expect(datatypeViolations(report('Principle_weight', `${XSD}decimal`, '7.5', `${XSD}decimal`))).toHaveLength(0);
+    expect(datatypeViolations(report('Principle_weight', `${XSD}decimal`, '1e3', `${XSD}decimal`))).toHaveLength(0);
+  });
+
+  it('V9 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 the Exocortex ad-hoc xsd# prefix form of the range is judged by the same lexical table', () => {
+    const adhoc = 'https://exocortex.my/ontology/xsd#integer';
+    expect(datatypeViolations(report('Principle_number', adhoc, '7', `${XSD}decimal`))).toHaveLength(0);
+    expect(datatypeViolations(report('Principle_number', adhoc, '7.5', `${XSD}decimal`))).toHaveLength(1);
+  });
+});

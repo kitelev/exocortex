@@ -7,6 +7,10 @@
  * 1. Asset A — sh:maxCount violation (ems__Task_name Single cardinality, 2 values given)
  * 2. Asset B — sh:datatype violation (ems__Task_count expects xsd:integer, got string)
  * 3. Asset C — both violations simultaneously
+ * 4. Asset D — CONFORMS: CURIE-literal ranges `"xsd:integer"` / `xsd:gYear` (the live-corpus
+ *    form) reach sh:datatype, and converter-tagged numbers (xsd:decimal) conform by lexical
+ *    form (ticket a9b55ead, @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2)
+ * 5. Asset E — sh:datatype violations under the same CURIE ranges (10.5 vs integer, 2026-05 vs gYear)
  *
  * To regenerate the golden file:
  *   UPDATE_GOLDEN=1 npx jest validate-schema-shapes
@@ -98,6 +102,35 @@ describe("BDD: validate schema --shapes-mode (P1.7 — synthetic vault fixtures)
     expect(assetC.length).toBeGreaterThanOrEqual(2);
     expect(assetC.some((x) => x.message.includes("sh:maxCount violation"))).toBe(true);
     expect(assetC.some((x) => x.message.includes("sh:datatype violation"))).toBe(true);
+  });
+
+  it("I1 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 Scenario: asset-d.md — CURIE range xsd:integer / xsd:gYear: whole number 10 and year 1987 CONFORM (no violation)", () => {
+    const assetD = violations.filter((x) => x.focusNode.includes("asset-d.md"));
+    expect(assetD).toEqual([]);
+  });
+
+  it("I2 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 Scenario: asset-e.md — CURIE range \"xsd:integer\" reaches sh:datatype: 10.5 is a violation", () => {
+    const v = violations.find(
+      (x) =>
+        x.focusNode.includes("asset-e.md") &&
+        x.propertyPath.includes("Task_weight"),
+    );
+    expect(v).toBeDefined();
+    expect(v?.severity).toBe("sh:Violation");
+    expect(v?.constraint).toBe("datatype");
+    expect(v?.actualValue).toBe("10.5");
+    expect(v?.expectedRange).toBe("http://www.w3.org/2001/XMLSchema#integer");
+  });
+
+  it("I3 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 Scenario: asset-e.md — bare CURIE range xsd:gYear reaches sh:datatype: 2026-05 is a violation", () => {
+    const v = violations.find(
+      (x) =>
+        x.focusNode.includes("asset-e.md") &&
+        x.propertyPath.includes("Task_year"),
+    );
+    expect(v).toBeDefined();
+    expect(v?.constraint).toBe("datatype");
+    expect(v?.expectedRange).toBe("http://www.w3.org/2001/XMLSchema#gYear");
   });
 
   it("Scenario: golden file — violations match golden report byte-by-byte (canonical sort)", () => {

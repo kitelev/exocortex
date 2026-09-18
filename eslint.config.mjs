@@ -255,6 +255,20 @@ export default tseslint.config(
       'obsidianmd/no-tfile-tfolder-cast': 'off',
     },
   },
+  // Ticket a9b55ead — pre-existing debt surfaced by lint-staged (`--max-warnings=0`
+  // on the staged file), NOT introduced by the change: `ShapeLoader.loadFromVaultFS`
+  // is the documented Node.js-only loader (CLI path) and already reaches `fs/promises`
+  // / `path` through dynamic `await import()`; the same three lines exist on
+  // origin/main (1171e0ae:43,45,215). `packages/core` has no `Platform` to guard on
+  // and CI `lint` covers only packages/obsidian-plugin/src, so the warning was dormant.
+  // Suppress ONLY this rule for exactly this file; follow-up: an FS-free core
+  // (move loadFromVaultFS to the CLI package) removes the entry.
+  {
+    files: ['packages/core/src/services/ShapeLoader.ts'],
+    rules: {
+      'obsidianmd/no-nodejs-modules': 'off',
+    },
+  },
   {
     ignores: [
       'node_modules/',
