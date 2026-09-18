@@ -239,7 +239,7 @@ export { FrontmatterService } from "./utilities/FrontmatterService";
 // Exposed so CLI-side mutation primitives (e.g. `set-property`, issue #3795) can
 // pre-format values the same way the create / property_set paths do before
 // handing them to FrontmatterService.updateProperty (which writes verbatim).
-// quoteYamlString — the always-quoted, escaped form (`\" \\ \n \r \t \xNN`) that
+// quoteYamlString — the always-quoted, escaped form (`\" \\ \n \r \t \xNN \uNNNN`) that
 // property_append (#4250) and the RenameToUidService flow-array alias site
 // (ticket 77ffc37a) hand to FrontmatterService.updateProperty; the CLI batch
 // update-label writer went with the dead BatchExecutor (ticket 99a904a9).

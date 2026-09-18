@@ -22,9 +22,28 @@
  *   M2 (drop the 0x80–0x9F branch of quoteYamlString)  → RED: ['C1b', 'C1c']
  * C1a stays GREEN under M2 because js-yaml also loads a RAW C1 byte inside
  * `"…"` (double guard: C1b/C1c pin the `\xNN` FORM, C1a the round-trip).
+ *
+ * Req 7d76bbb4 (ticket 65ea50c4) — js-yaml 5.3.0 `PATTERN_NON_PRINTABLE`
+ * positions OUTSIDE C0/DEL/C1: U+FFFE / U+FFFF and lone surrogate halves.
+ * Measured: bare → "non-printable" throws (plain scalar); inside `"…"` the
+ * raw unit loads (as C1), so N1c/N1e/N1g pin the `\uNNNN` FORM and N1g the
+ * on-disk faithfulness (a raw lone half written as UTF-8 becomes U+FFFD).
+ * Mutant matrix — copied from the driver output (mutants-65ea50c4.py, 2026-09-18):
+ * M1 (needsYamlQuoting guard dead) → RED: ['N1a', 'N1b', 'N1g']
+ * M2 (FFFE/FFFF branch unreachable → raw) → RED: ['N1c']
+ * M3 (lone-surrogate branch unreachable → raw) → RED: ['N1c', 'N1e', 'N1g']
+ * M4 (pair lookahead disabled → pair split) → RED: ['N1e']
+ * M5 (regex high-surrogate lookahead dropped → pair quoted) → RED: ['N1d']
+ * M6 (hex lower-case, both branches) → RED: ['N1c', 'N1e', 'N1g']
+ * M7 (regex lone-LOW alternative dropped) → RED: ['N1b']
+ * M8 (regex FFFE/FFFF alternative dropped) → RED: ['N1a']
  */
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import * as yaml from "js-yaml";
 import {
+  decodeYamlQuotedScalar,
   needsYamlQuoting,
   quoteYamlString,
   serializeYamlScalar,
@@ -199,6 +218,121 @@ describe("serializeYamlScalar (#3750)", () => {
         expect(roundTrip(s)).toBe(s);
       },
     );
+  });
+
+  describe("req 7d76bbb4-a4b3-4191-8dbe-cac8b8675978 — js-yaml non-printable positions outside C0/DEL/C1 (U+FFFE/U+FFFF, lone surrogates) quoted and \\uNNNN-escaped", () => {
+    const REQ = "@req:7d76bbb4-a4b3-4191-8dbe-cac8b8675978";
+    // Every unit built in code, never as a literal (a raw non-character or lone
+    // surrogate in the source would be the defect under test — and a UTF-8 file
+    // cannot even carry a lone half).
+    const u = (code: number) => String.fromCharCode(code);
+    const emoji = String.fromCodePoint(0x1f600); // valid pair D83D DE00
+    const loadV = (line: string) =>
+      (
+        yaml.load(line, { schema: yaml.YAML11_SCHEMA }) as Record<
+          string,
+          unknown
+        >
+      ).v;
+
+    it.each(["FFFE", "FFFF"])(
+      `${REQ} N1a a value carrying non-character U+%s is emitted quoted, loads under YAML11 and round-trips byte-for-byte`,
+      (hex) => {
+        const s = `pad${u(parseInt(hex, 16))}char`;
+        // Repro "before": bare non-character → js-yaml throws for the whole stream.
+        expect(() => loadV(`v: ${s}`)).toThrow(/non-printable/);
+        expect(needsYamlQuoting(s)).toBe(true);
+        expect(serializeYamlScalar(s).startsWith('"')).toBe(true);
+        expect(() => roundTrip(s)).not.toThrow();
+        expect(roundTrip(s)).toBe(s);
+      },
+    );
+
+    it.each([
+      ["lone high U+D83D mid", `ab${u(0xd83d)}cd`],
+      ["lone low U+DC00 mid", `ab${u(0xdc00)}cd`],
+      ["lone low U+DFFF at start", `${u(0xdfff)}abcd`],
+      ["lone high U+D800 at end", `abcd${u(0xd800)}`],
+    ])(
+      `${REQ} N1b a value carrying a %s surrogate is emitted quoted, loads under YAML11 and round-trips byte-for-byte`,
+      (_name, s) => {
+        expect(() => loadV(`v: ${s}`)).toThrow(/non-printable/);
+        expect(needsYamlQuoting(s)).toBe(true);
+        expect(serializeYamlScalar(s).startsWith('"')).toBe(true);
+        expect(() => roundTrip(s)).not.toThrow();
+        expect(roundTrip(s)).toBe(s);
+      },
+    );
+
+    it(`${REQ} N1c quoteYamlString emits the upper-case \\uNNNN escape form, never the raw unit`, () => {
+      expect(quoteYamlString(`a${u(0xfffe)}b`)).toBe('"a\\uFFFEb"');
+      expect(quoteYamlString(`a${u(0xffff)}b`)).toBe('"a\\uFFFFb"');
+      expect(quoteYamlString(`a${u(0xd83d)}b`)).toBe('"a\\uD83Db"');
+      expect(quoteYamlString(`a${u(0xdc00)}b`)).toBe('"a\\uDC00b"');
+      const out = quoteYamlString(`${u(0xdfff)}a${u(0xfffe)}b${u(0xd800)}`);
+      expect(out).toBe('"\\uDFFFa\\uFFFEb\\uD800"');
+      // No raw non-printable unit survives in the emitted text.
+      expect(
+        /[\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/.test(
+          out,
+        ),
+      ).toBe(false);
+    });
+
+    it.each([
+      ["U+FFFD replacement", `a${u(0xfffd)}b`],
+      ["a valid surrogate pair (emoji)", `a${emoji}b`],
+      ["U+10FFFF (last astral)", `a${String.fromCodePoint(0x10ffff)}b`],
+      ["a BOM inside the value", `a${u(0xfeff)}b`],
+    ])(
+      `${REQ} N1d %s is printable to the reader and keeps its bare on-disk form (no churn)`,
+      (_name, s) => {
+        expect(() => loadV(`v: ${s}`)).not.toThrow();
+        expect(needsYamlQuoting(s)).toBe(false);
+        expect(serializeYamlScalar(s)).toBe(s);
+        expect(roundTrip(s)).toBe(s);
+      },
+    );
+
+    it(`${REQ} N1e a valid pair next to a lone half is emitted raw as a pair — never split into two \\u escapes`, () => {
+      const s = `${emoji}${u(0xd83d)}x${emoji}`;
+      const out = quoteYamlString(s);
+      expect(out).toBe(`"${emoji}\\uD83Dx${emoji}"`);
+      expect(out.split("\\u").length - 1).toBe(1);
+      expect(loadV(`v: ${out}`)).toBe(s);
+    });
+
+    it.each([
+      ["U+FFFE", `a${u(0xfffe)}b`],
+      ["lone high U+D83D", `a${u(0xd83d)}b`],
+    ])(
+      `${REQ} N1f decodeYamlQuotedScalar reads the \\uNNNN form back to the original %s (read-side counterpart)`,
+      (_name, s) => {
+        expect(decodeYamlQuotedScalar(quoteYamlString(s))).toBe(s);
+      },
+    );
+
+    it(`${REQ} N1g on disk: the quoted line written as UTF-8 and read back yields the original lone half (a bare write would have turned it into U+FFFD)`, () => {
+      const dir = fs.mkdtempSync(
+        path.join(os.tmpdir(), "yaml-scalar-65ea50c4-"),
+      );
+      try {
+        const s = `ab${u(0xd83d)}cd`;
+        const file = path.join(dir, "v.md");
+        fs.writeFileSync(file, `v: ${serializeYamlScalar(s)}\n`, "utf8");
+        const back = fs.readFileSync(file, "utf8");
+        // The file itself carries no replacement character and no raw half.
+        expect(back.includes(u(0xfffd))).toBe(false);
+        expect(back).toBe('v: "ab\\uD83Dcd"\n');
+        expect(loadV(back)).toBe(s);
+        // Contrast (the pre-fix on-disk form): a bare write is lossy.
+        const bareFile = path.join(dir, "bare.md");
+        fs.writeFileSync(bareFile, `v: ${s}\n`, "utf8");
+        expect(fs.readFileSync(bareFile, "utf8")).toBe(`v: ab${u(0xfffd)}cd\n`);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
   });
 
   describe("no gratuitous quoting / native types preserved", () => {
