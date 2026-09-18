@@ -46,8 +46,9 @@ const YAML_CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/;
 
 // Non-printable positions js-yaml rejects OUTSIDE the control class above
 // (`PATTERN_NON_PRINTABLE`, js-yaml 5.3.0 dist/js-yaml.cjs.js:1812, applied by
-// `checkPrintable` to PLAIN scalars — inside `"…"` the raw unit loads, as with
-// C1): the non-characters
+// `checkPrintable` to plain AND block scalars (readPlainScalar :2263,
+// readBlockScalar :2213) — inside `"…"` the raw unit loads, as with C1): the
+// non-characters
 // U+FFFE / U+FFFF and lone surrogate halves (a high D800–DBFF not followed by
 // a low DC00–DFFF, a low not preceded by a high). Copied verbatim minus the
 // C0/DEL/C1 part; deliberately NO `u` flag — the reader matches UTF-16 code
@@ -191,8 +192,8 @@ export function needsYamlQuoting(
  * emitted text printable and the on-disk form explicit.
  *
  * The non-characters U+FFFE / U+FFFF and lone surrogate halves are emitted as
- * `\uNNNN` (ticket 65ea50c4): js-yaml rejects them raw in a plain scalar but
- * loads the raw unit inside `"…"` (like C1), so the quoting is what makes the
+ * `\uNNNN` (ticket 65ea50c4): js-yaml rejects them raw in a plain or block
+ * scalar but loads the raw unit inside `"…"` (like C1), so the quoting is what makes the
  * frontmatter readable and the escape keeps the emitted text printable — and,
  * for a lone half, survivable: a raw lone surrogate written as UTF-8 becomes
  * U+FFFD, the escape reads back as the same unit (the form js-yaml's own
@@ -216,6 +217,8 @@ export function quoteYamlString(value: string): string {
     } else if (
       code >= 0xd800 &&
       code <= 0xdbff &&
+      // Defensive: past the end `charCodeAt` is NaN and both range checks
+      // below are false anyway; kept for readability, not reachability.
       i + 1 < value.length &&
       value.charCodeAt(i + 1) >= 0xdc00 &&
       value.charCodeAt(i + 1) <= 0xdfff
