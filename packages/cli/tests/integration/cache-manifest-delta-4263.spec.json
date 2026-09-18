@@ -1,0 +1,174 @@
+{
+  "_doc": "Revert-verify mutants for #4263 (req 42812747). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/cache-manifest-delta-4263.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's CacheManager.ts and runs the integration + unit suites; `expect` names the axes that MUST go red). Recorded runs: 2026-09-18 r1 control 0 red 9/9; r2 (after the orchestrator review) — see PR #4265 body. Both directions of the engine-input gate in applyDelta are locked: M18 (never recompute) and M17 (always recompute — observable through LoadOrBuildResult.inferredRecomputed, review r2 N8). Review r2 (4ba1ea4c): M29/M30 (TBox-form alias, N1), M31 (Windows paths, N3), M32 (orphaned tmp sweep, N5), M33 (alias addition scope, N7).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/CacheManager.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/cache-manifest-delta-4263.integration.test.ts tests/unit/cache/CacheManager.test.ts 2>&1",
+  "red_re": "› ([AU]\\d+) ",
+  "mutants": {
+    "M1_modified_files_invisible_(root-mtime-class)": {
+      "from": "    } else if (previous.mtimeMs !== stamp.mtimeMs || previous.size !== stamp.size) {\n      modified.push(relPath);",
+      "to": "    } else if ((previous.mtimeMs !== stamp.mtimeMs || previous.size !== stamp.size) && false) {\n      modified.push(relPath);",
+      "expect": ["A1", "U3"]
+    },
+    "M2_delta_reparses_whole_vault": {
+      "from": "      strict: false,\n      files,\n      fileSpacePrefixes: cached.metadata.fileSpacePrefixes,",
+      "to": "      strict: false,\n      files: adapter.getAllFiles(),\n      fileSpacePrefixes: cached.metadata.fileSpacePrefixes,",
+      "expect": ["A2", "U3"]
+    },
+    "M3_referrer_scan_removed": {
+      "from": "    if (referrerIris.size > 0 || referrerNeedles.size > 0) {",
+      "to": "    if (referrerIris.size > 99999 || referrerNeedles.size > 99999) {",
+      "expect": ["A4", "A9", "A10"]
+    },
+    "M4_tbox_guard_removed": {
+      "from": "const TBOX_FORM = /^[a-z][a-zA-Z0-9]*__\\S+$/;",
+      "to": "const TBOX_FORM = /^$/;",
+      "expect": ["A11", "A12"]
+    },
+    "M5_inferred_layer_dropped_on_delta": {
+      "from": "    if (cached.metadata.inferenceEnabled) {\n      const nextByPath",
+      "to": "    if (cached.metadata.inferenceEnabled && false) {\n      const nextByPath",
+      "expect": ["A7", "A14"]
+    },
+    "M6_inferred_layer_kept_stale_on_delta": {
+      "from": "        inferredTriples = result.inferred;\n        inferred = inferredTriples.map(this.serializeTriple);",
+      "to": "        inferred = cached.inferred; void result;\n        inferredTriples = cached.inferred.map(this.deserializeTriple);",
+      "expect": ["A7", "A14", "U7"]
+    },
+    "M7_threshold_removed": {
+      "from": "    if (changed > population * DELTA_REBUILD_RATIO) {",
+      "to": "    if (changed > population * 99) {",
+      "expect": ["A6", "U5"]
+    },
+    "M8_filespace_guard_removed": {
+      "from": "      if (frontmatter && frontmatterDeclaresFileSpaceAnyForm(frontmatter)) {",
+      "to": "      if (frontmatter && !frontmatterDeclaresFileSpaceAnyForm(frontmatter) && false) {",
+      "expect": ["U8", "A15"]
+    },
+    "M10_removed_entries_kept": {
+      "from": "      if (removed.has(entry.path)) {\n        continue;\n      }\n      nextFiles.push(",
+      "to": "      if (removed.has(entry.path) && false) {\n        continue;\n      }\n      nextFiles.push(",
+      "expect": ["A3", "U4"]
+    },
+    "M11_bare_bodylink_needle_removed": {
+      "from": "      if (needles.has(linkpathOf(t.object.value))) {",
+      "to": "      if (t.object.value.startsWith(\"[[\") && needles.has(linkpathOf(t.object.value))) {",
+      "expect": ["A9"]
+    },
+    "M12_write_in_place_not_atomic": {
+      "from": "      await fs.writeJson(tmp, data, { spaces: 0 });\n      await fs.rename(tmp, this.cachePath);",
+      "to": "      await fs.writeJson(this.cachePath, data, { spaces: 0 });\n      void tmp;",
+      "expect": ["A13"]
+    },
+    "M13_filespace_declaration_removal_guard_removed": {
+      "from": "      if (declarations.has(removed)) {",
+      "to": "      if (declarations.has(removed) && false) {",
+      "expect": ["A15"]
+    },
+    "M14_filespace_label_form_probe_removed": {
+      "from": "      if (frontmatter && frontmatterDeclaresFileSpaceAnyForm(frontmatter)) {",
+      "to": "      if (frontmatter && frontmatterDeclaresFileSpace(frontmatter)) {",
+      "expect": ["A15"]
+    },
+    "M15_alias_diff_removed": {
+      "from": "      if (previous && !sameSet(oldAliases, newAliases)) {",
+      "to": "      if (previous && !sameSet(oldAliases, newAliases) && false) {",
+      "expect": ["A10"]
+    },
+    "M16_inference_flag_replaced_by_length": {
+      "from": "    if (cached.metadata.inferenceEnabled) {",
+      "to": "    if (cached.inferred.length > 0) {",
+      "expect": ["A14"]
+    },
+    "M18_layer_never_recomputed": {
+      "from": "      if (inferenceInputsChanged(cached, nextByPath, [...reparsed, ...removed])) {",
+      "to": "      if (inferenceInputsChanged(cached, nextByPath, [...reparsed, ...removed]) && false) {",
+      "expect": ["A14", "A7"]
+    },
+    "M19_tbox_marker_not_set_for_skipped": {
+      "from": "    if (!tbox && triples.length === 0) {",
+      "to": "    if (!tbox && triples.length < 0) {",
+      "expect": ["A12"]
+    },
+    "M20_size_ignored_in_diff": {
+      "from": "    } else if (previous.mtimeMs !== stamp.mtimeMs || previous.size !== stamp.size) {",
+      "to": "    } else if (previous.mtimeMs !== stamp.mtimeMs) {",
+      "expect": ["U10"]
+    },
+    "M21_unsafe_path_accepted": {
+      "from": "          !isSafeRelativePath(entry.path) ||\n          typeof entry.mtimeMs !== \"number\" ||",
+      "to": "          typeof entry.mtimeMs !== \"number\" ||",
+      "expect": ["U12"]
+    },
+    "M22_entry_shape_check_removed": {
+      "from": "          typeof entry.mtimeMs !== \"number\" ||\n          typeof entry.size !== \"number\" ||",
+      "to": "          typeof entry.size !== \"number\" ||",
+      "expect": ["U12"]
+    },
+    "M23_format_version_check_removed": {
+      "from": "        raw.metadata.formatVersion !== CACHE_FORMAT_VERSION ||",
+      "to": "        false ||",
+      "expect": ["U12"]
+    },
+    "M24_save_inferred_without_cache_no_throw": {
+      "from": "    if (!cached) {\n      throw new Error(\n        `Cannot save inferred triples: no valid cache at ${this.cachePath} (build the cache first)`,\n      );\n    }",
+      "to": "    if (!cached) {\n      return;\n    }",
+      "expect": ["U7"]
+    },
+    "M25_stats_legacy_branch_removed": {
+      "from": "      if (!cacheData) {\n        // Present but legacy / corrupt: report it as an invalid cache rather",
+      "to": "      if (!cacheData && false) {\n        // Present but legacy / corrupt: report it as an invalid cache rather",
+      "expect": ["U6"]
+    },
+    "M26_threshold_boundary_inclusive": {
+      "from": "    if (changed > population * DELTA_REBUILD_RATIO) {",
+      "to": "    if (changed >= population * DELTA_REBUILD_RATIO) {",
+      "expect": ["U14"]
+    },
+    "M27_null_manifest_guard_removed": {
+      "from": "    const current = this.computeFileManifest();\n    if (!current) {\n      return null;\n    }",
+      "to": "    const current = this.computeFileManifest();\n    if (!current && false) {\n      return null;\n    }",
+      "expect": ["U15"]
+    },
+    "M28_tbox_iri_label_not_recognised": {
+      "from": "      if (t.object.type === \"IRI\") {\n        return true;\n      }\n      if (t.object.type === \"Literal\" && TBOX_FORM.test(t.object.value)) {",
+      "to": "      if (t.object.type === \"Literal\" && TBOX_FORM.test(t.object.value)) {",
+      "expect": ["A11"]
+    },
+    "M17_inference_gate_always_recomputes": {
+      "from": "      if (inferenceInputsChanged(cached, nextByPath, [...reparsed, ...removed])) {",
+      "to": "      if (inferenceInputsChanged(cached, nextByPath, [...reparsed, ...removed]) || true) {",
+      "expect": ["A14"]
+    },
+    "M29_tbox_alias_frontmatter_probe_removed": {
+      "from": "        frontmatterHasTBoxFormAlias(frontmatter) ||\n        (previous !== undefined && entryHasTBoxFormAlias(previous))\n",
+      "to": "        (previous !== undefined && entryHasTBoxFormAlias(previous))\n",
+      "expect": ["A16"]
+    },
+    "M30_tbox_alias_entry_probe_removed": {
+      "from": "        frontmatterHasTBoxFormAlias(frontmatter) ||\n        (previous !== undefined && entryHasTBoxFormAlias(previous))\n",
+      "to": "        frontmatterHasTBoxFormAlias(frontmatter) ||\n        (previous !== undefined && entryHasTBoxFormAlias(previous) && false)\n",
+      "expect": ["A16"]
+    },
+    "M31_backslash_paths_rejected_again": {
+      "from": "  return !relPath.split(/[\\\\/]/).some((seg) => seg === \"..\");",
+      "to": "  return !relPath.includes(\"\\\\\") && !relPath.split(/[\\\\/]/).some((seg) => seg === \"..\");",
+      "expect": ["U12"]
+    },
+    "M32_stale_tmp_sweep_disabled": {
+      "from": "        if (stat.mtimeMs < cutoff) {\n          await fs.remove(full);\n        }",
+      "to": "        if (stat.mtimeMs < cutoff && false) {\n          await fs.remove(full);\n        }",
+      "expect": ["U16"]
+    },
+    "M33_alias_addition_reparses_all_iri_referrers": {
+      "from": "        if (aliasRemoved) {\n          referrerIris.add(vaultPathToIRI(changedPath));\n        }",
+      "to": "        if (aliasRemoved || true) {\n          referrerIris.add(vaultPathToIRI(changedPath));\n        }",
+      "expect": ["A17"]
+    }
+  }
+}

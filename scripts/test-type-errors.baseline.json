@@ -86,11 +86,6 @@
       "count": 1
     },
     {
-      "file": "packages/cli/tests/unit/cache/CacheManager.test.ts",
-      "code": "TS2345",
-      "count": 4
-    },
-    {
       "file": "packages/cli/tests/unit/CliApplyProfileService.parked.test.ts",
       "code": "TS6133",
       "count": 2

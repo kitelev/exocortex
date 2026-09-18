@@ -9,7 +9,6 @@ import {
   ExoQLAlgebraTranslator,
   AlgebraOptimizer,
   ExoQLQueryExecutor,
-  NoteToRDFConverter,
   Triple,
   ShapeLoader,
   ShaclShapeRegistry,
@@ -21,12 +20,11 @@ import {
   type Violation,
   type ClassHierarchy,
 } from "@kitelev/exocortex-core";
-import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { detectTermIriCollisions } from "../services/termIriCollisions.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder } from "../responses/index.js";
-import { CacheManager } from "../cache/CacheManager.js";
+import { loadVaultTriples } from "../cache/loadVaultTriples.js";
 import { injectExocortexPrefixes } from "../utils/QueryPrefixInjector.js";
 
 /**
@@ -144,20 +142,9 @@ async function loadTriplesFromAllVaults(
   vaultPath: string,
   useCache: boolean,
 ): Promise<{ triples: DomainTriple[]; cacheHit: boolean }> {
-  let triples: DomainTriple[];
-  let cacheHit = false;
-  if (useCache) {
-    const cacheManager = new CacheManager(vaultPath);
-    const cacheResult = await cacheManager.loadOrBuild();
-    triples = cacheResult.triples as DomainTriple[];
-    cacheHit = cacheResult.cacheHit;
-  } else {
-    const adapter = new FileSystemVaultAdapter(vaultPath);
-    const converter = new NoteToRDFConverter(adapter);
-    triples = (await converter.convertVault()) as DomainTriple[];
-  }
-
-  return { triples, cacheHit };
+  // #4263: shared loader (cache hit / delta / rebuild, or full parse)
+  const loaded = await loadVaultTriples(vaultPath, { useCache });
+  return { triples: loaded.triples as DomainTriple[], cacheHit: loaded.cacheHit };
 }
 
 const RDF_TYPE_IRI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
