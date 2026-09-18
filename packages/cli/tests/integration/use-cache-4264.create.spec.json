@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for #4264 (req cb707868-356f-495d-825a-182e66ba8bcd), subject packages/cli/src/commands/create.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/use-cache-4264.create.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's subject and runs the two #4264 suites; `expect` names the axes that MUST go red). Six specs, one per subject file, because the driver mutates one file per spec. Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/use-cache-apply-write-through-4264.integration.test.ts tests/unit/cache/CacheManager.writeThrough.test.ts 2>&1",
+  "red_re": "› ([AU]\\d+) ",
+  "mutants": {
+    "C1_cache_manager_constructed_without_the_flag": {
+      "from": "        if (useCache) {\n          const { CacheManager: CacheManagerCtor } = await import(",
+      "to": "        if (useCache || !useCache) {\n          const { CacheManager: CacheManagerCtor } = await import(",
+      "expect": ["A1"]
+    },
+    "C2_validator_not_told_about_the_cache": {
+      "from": "          const shaclValidator = new CandidateShaclValidator(vaultPath, {\n            useCache,\n            cacheManager,\n            log: cacheLog,\n          });",
+      "to": "          const shaclValidator = new CandidateShaclValidator(vaultPath, {\n            useCache: false,\n            cacheManager,\n            log: cacheLog,\n          });",
+      "expect": ["A2", "A8", "A9"]
+    },
+    "C3_write_through_removed_from_create": {
+      "from": "          if (cacheManager) {\n            const { writeThroughCache, writeThroughNotice } = await import(",
+      "to": "          if (cacheManager && options.dryRun) {\n            const { writeThroughCache, writeThroughNotice } = await import(",
+      "expect": ["A8"]
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import path from "path";
 import { NoteToRDFConverter, type Triple } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import {
@@ -66,6 +67,19 @@ export async function loadVaultTriples(
   if (options.useCache) {
     // Use the persistent single-vault triple cache for faster loading.
     const cacheManager = options.cacheManager ?? new CacheManager(vaultPath);
+    // A caller-owned manager must be the one for THIS vault — otherwise the
+    // command would read one vault's cache as another vault's triples.
+    const expectedCachePath = path.join(
+      path.resolve(vaultPath),
+      ".exocortex",
+      "cache",
+      "triples.json",
+    );
+    if (cacheManager.getCachePath() !== expectedCachePath) {
+      throw new Error(
+        `loadVaultTriples: the given CacheManager belongs to ${cacheManager.getCachePath()}, not to vault ${vaultPath}`,
+      );
+    }
     const cacheResult = await cacheManager.loadOrBuild();
     return {
       triples: cacheResult.triples,

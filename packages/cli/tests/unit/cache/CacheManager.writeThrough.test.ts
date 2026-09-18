@@ -227,6 +227,35 @@ describe(`CacheManager.refreshAfterWrite (#4264) ${REQ}`, () => {
     expect(await persistedLabel("nested/b.md")).toEqual(["B2"]);
   });
 
+  it(`U8 after a DELTA load the write-through diffs against the refreshed state: only the file written afterwards is converted ${REQ}`, async () => {
+    await new CacheManager(vaultPath).loadOrBuild();
+    await writeFile("nested/b.md", "B2"); // makes the next load a delta
+    const cache = new CacheManager(vaultPath);
+    expect((await cache.loadOrBuild()).mode).toBe("delta");
+    convertedPaths.length = 0;
+    const readJson = jest.spyOn(fs, "readJson");
+
+    await writeFile("nested/c.md", "C2");
+    expect(await cache.refreshAfterWrite()).toEqual({ mode: "delta", reparsedFiles: 1 });
+    expect(convertedPaths).toEqual([["nested/c.md"]]);
+    expect(readJson).not.toHaveBeenCalled();
+    expect(await persistedLabel("nested/b.md")).toEqual(["B2"]);
+    expect(await persistedLabel("nested/c.md")).toEqual(["C2"]);
+  });
+
+  it(`U9 after a REBUILD in the same process the write-through uses the built state (no cache re-read) ${REQ}`, async () => {
+    const cache = new CacheManager(vaultPath);
+    expect((await cache.loadOrBuild()).mode).toBe("rebuild");
+    convertedPaths.length = 0;
+    const readJson = jest.spyOn(fs, "readJson");
+
+    await writeFile("a.md", "A2");
+    expect(await cache.refreshAfterWrite()).toEqual({ mode: "delta", reparsedFiles: 1 });
+    expect(convertedPaths).toEqual([["a.md"]]);
+    expect(readJson).not.toHaveBeenCalled();
+    expect((await new CacheManager(vaultPath).loadOrBuild()).mode).toBe("hit");
+  });
+
   it(`U7 a persist failure propagates from refreshAfterWrite (the command layer turns it into a stderr warning) and leaves the previous cache file intact ${REQ}`, async () => {
     const cache = new CacheManager(vaultPath);
     await cache.loadOrBuild();

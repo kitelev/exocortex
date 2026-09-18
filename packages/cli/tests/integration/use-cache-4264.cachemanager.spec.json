@@ -1,0 +1,59 @@
+{
+  "_doc": "Revert-verify mutants for #4264 (req cb707868-356f-495d-825a-182e66ba8bcd), subject packages/cli/src/cache/CacheManager.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/use-cache-4264.cachemanager.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's subject and runs the two #4264 suites; `expect` names the axes that MUST go red). Six specs, one per subject file, because the driver mutates one file per spec. Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/CacheManager.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/use-cache-apply-write-through-4264.integration.test.ts tests/unit/cache/CacheManager.writeThrough.test.ts 2>&1",
+  "red_re": "› ([AU]\\d+) ",
+  "mutants": {
+    "M1_loaded_state_not_kept_on_hit": {
+      "from": "    if (isEmptyDiff(diff)) {\n      this.loaded = cached;\n      return {",
+      "to": "    if (isEmptyDiff(diff)) {\n      this.loaded = null;\n      return {",
+      "expect": ["U2", "A8"]
+    },
+    "M2_loaded_state_not_kept_after_delta_load": {
+      "from": "    this.loaded = refreshed.data;\n    return {\n      triples: refreshed.triples,",
+      "to": "    this.loaded = null;\n    return {\n      triples: refreshed.triples,",
+      "expect": ["U8"]
+    },
+    "M3_loaded_state_not_kept_after_rebuild": {
+      "from": "    this.loaded = built.data;",
+      "to": "    this.loaded = null;",
+      "expect": ["U9"]
+    },
+    "M4_write_through_does_not_advance_loaded_state": {
+      "from": "    const refreshed = await this.applyDelta(base, manifest, diff, plan.reparse, adapter);\n    this.loaded = refreshed.data;",
+      "to": "    const refreshed = await this.applyDelta(base, manifest, diff, plan.reparse, adapter);\n    this.loaded = base;",
+      "expect": ["U6"]
+    },
+    "M5_absent_cache_gets_built_by_write_through": {
+      "from": "    if (!base) {\n      return { mode: \"skipped\", reparsedFiles: 0, reason: \"no cache to refresh\" };\n    }",
+      "to": "    if (!base) {\n      await this.buildInternal({ strict: false });\n      return { mode: \"noop\", reparsedFiles: 0 };\n    }",
+      "expect": ["U1", "A8"]
+    },
+    "M6_rebuild_class_change_rebuilt_inside_writer": {
+      "from": "    if (plan.rebuildReason) {\n      return {\n        mode: \"skipped\",\n        reparsedFiles: 0,\n        reason: `rebuild needed (${plan.rebuildReason}) — left to the next reader`,\n      };\n    }",
+      "to": "    if (plan.rebuildReason) {\n      await this.buildInternal({ strict: false });\n      return { mode: \"noop\", reparsedFiles: 0 };\n    }",
+      "expect": ["U5", "A6"]
+    },
+    "M7_noop_still_persists": {
+      "from": "    const diff = diffManifest(base.files, manifest);\n    if (isEmptyDiff(diff)) {\n      return { mode: \"noop\", reparsedFiles: 0 };\n    }",
+      "to": "    const diff = diffManifest(base.files, manifest);\n    if (isEmptyDiff(diff) && diff.added.length > 0) {\n      return { mode: \"noop\", reparsedFiles: 0 };\n    }",
+      "expect": ["U4"]
+    },
+    "M8_write_through_restamps_without_reparse": {
+      "from": "    const refreshed = await this.applyDelta(base, manifest, diff, plan.reparse, adapter);\n    this.loaded = refreshed.data;\n    return { mode: \"delta\", reparsedFiles: plan.reparse.length };",
+      "to": "    const refreshed = await this.applyDelta(base, manifest, diff, [], adapter);\n    this.loaded = refreshed.data;\n    return { mode: \"delta\", reparsedFiles: plan.reparse.length };",
+      "expect": ["A3", "A4"]
+    },
+    "M9_delta_entry_written_with_fresh_stamp_but_no_triples_(the_#3788_class)": {
+      "from": "      this.makeEntry(relPath, manifest, perFile.get(relPath) ?? [], adapter);",
+      "to": "      this.makeEntry(relPath, manifest, [], adapter);",
+      "expect": ["A3", "A4"]
+    }
+  }
+}

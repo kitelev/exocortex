@@ -335,6 +335,15 @@ export class CacheManager {
    * deserialized. `null` until the first load in this process.
    */
   private loaded: CacheData | null = null;
+  /**
+   * #4264 — stat stamp of the cache FILE that `loaded` was read from (or
+   * written as). `refreshAfterWrite` compares it with the file's current stamp
+   * before trusting `loaded`: a concurrent `index` (inferred layer +
+   * `inferenceEnabled`) or another process's delta changes the cache file
+   * without touching any vault file, so the manifest diff alone would let a
+   * write-through overwrite their result with this process's older snapshot.
+   */
+  private loadedStamp: FileStamp | null = null;
 
   constructor(vaultPath: string) {
     this.vaultPath = path.resolve(vaultPath);
@@ -441,9 +450,13 @@ export class CacheManager {
    * SAME `planDelta` / `applyDelta` a reading process would run, so the
    * persisted entries carry the changed files' NEW stamps AND their freshly
    * converted triples (a re-stamp without a re-parse would be a stale hit — the
-   * #3788 class). Because the diff is taken against the loaded state, a
-   * concurrent writer's change that landed in between is re-parsed too, never
-   * reverted.
+   * #3788 class). Two kinds of concurrent writer are covered: one that changed
+   * VAULT files shows up in the manifest diff and is re-parsed along with this
+   * process's own write; one that replaced the CACHE file without touching the
+   * vault (`index` persisting the inferred layer, another process's delta) is
+   * detected by the cache file's stat stamp — the in-memory snapshot is then
+   * dropped and the write is folded into a fresh read instead (review of
+   * 1e8e8204, HIGH). Neither is ever reverted.
    *
    * Deliberately NOT done here: a rebuild-class change (TBox-form asset,
    * FileSpace declaration, > {@link DELTA_REBUILD_RATIO}) — the mutating
@@ -457,7 +470,15 @@ export class CacheManager {
    * command result unchanged).
    */
   async refreshAfterWrite(): Promise<WriteThroughResult> {
-    const base = this.loaded ?? (await this.readCacheData());
+    // Trust the in-memory snapshot only while the cache FILE is still the one
+    // it came from; a concurrent `index` / delta replaced it → re-read, so
+    // their inferred layer / entries are the base this write is folded into.
+    // (Window that remains: a writer renaming between this stat and our own
+    // rename — the same window #4263's lock-free design already accepts; the
+    // next reader's manifest diff / `index` re-run self-corrects it.)
+    const base = (await this.loadedIsCurrent())
+      ? this.loaded
+      : await this.readCacheData();
     if (!base) {
       return { mode: "skipped", reparsedFiles: 0, reason: "no cache to refresh" };
     }
@@ -522,6 +543,12 @@ export class CacheManager {
       if (!(await fs.pathExists(this.cachePath))) {
         return null;
       }
+      // #4264 — stamp BEFORE the read: if a writer renames a new file over
+      // the path between this stat and the read, the stamp is older than the
+      // content and a later `refreshAfterWrite` re-reads once too often — the
+      // safe direction. (Stat after the read could pair a NEWER stamp with
+      // OLDER content and let a stale snapshot pass the guard.)
+      const stamp = await this.statCache();
       const raw = (await fs.readJson(this.cachePath)) as Partial<CacheData>;
       if (
         !raw.metadata ||
@@ -543,6 +570,7 @@ export class CacheManager {
           return null;
         }
       }
+      this.loadedStamp = stamp;
       return {
         metadata: {
           ...raw.metadata,
@@ -563,6 +591,33 @@ export class CacheManager {
     } catch {
       return null;
     }
+  }
+
+  /** `{mtimeMs,size}` of the cache file, or `null` when it is absent. */
+  private async statCache(): Promise<FileStamp | null> {
+    try {
+      const stat = await fs.stat(this.cachePath);
+      return { mtimeMs: stat.mtimeMs, size: stat.size };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * #4264 — `true` when the cache file on disk is still the one `loaded` came
+   * from (same stamp). `false` when another process replaced it since, or when
+   * nothing was loaded / the file is gone.
+   */
+  private async loadedIsCurrent(): Promise<boolean> {
+    if (!this.loaded || !this.loadedStamp) {
+      return false;
+    }
+    const current = await this.statCache();
+    return (
+      current !== null &&
+      current.mtimeMs === this.loadedStamp.mtimeMs &&
+      current.size === this.loadedStamp.size
+    );
   }
 
   /**
@@ -1127,7 +1182,13 @@ export class CacheManager {
     const tmp = `${this.cachePath}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
     try {
       await fs.writeJson(tmp, data, { spaces: 0 });
+      // #4264 — the stamp of what THIS process is about to publish, taken from
+      // the temp file (rename keeps the inode: mtime and size survive it). Read
+      // after the rename it could already belong to a concurrent writer's file.
+      const stat = await fs.stat(tmp);
       await fs.rename(tmp, this.cachePath);
+      this.loaded = data;
+      this.loadedStamp = { mtimeMs: stat.mtimeMs, size: stat.size };
     } catch (error) {
       await fs.remove(tmp).catch(() => undefined);
       throw error;

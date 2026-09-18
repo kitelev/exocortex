@@ -96,6 +96,14 @@ interface CreatedAsset {
 interface TargetResult {
   ok: boolean;
   created: CreatedAsset[];
+  /**
+   * #4264 — `true` once the grounding was EXECUTED for this target (it may
+   * still have failed part-way, e.g. a composite whose later step threw). A
+   * dry-run, a refused precondition or an early argument error never reach
+   * execution → `false`. Drives the write-through: anything that executed
+   * may have touched the vault, whatever `ok` says.
+   */
+  executed: boolean;
 }
 
 /**
@@ -232,7 +240,7 @@ async function executeOnTarget(
   uidGen: IUidGenerator,
 ): Promise<TargetResult> {
   // Issue #3906 — a failed target contributes no created assets.
-  const failed: TargetResult = { ok: false, created: [] };
+  const failed: TargetResult = { ok: false, created: [], executed: false };
   const targetPath = resolve(vaultPath, targetRelative);
   if (!existsSync(targetPath)) {
     console.error(`❌ Target file not found: ${targetRelative}`);
@@ -359,7 +367,7 @@ async function executeOnTarget(
         `🔍 Dry-run: would apply "${command.name}" to "${vaultRelative}" (precondition passed).`,
       );
     }
-    return { ok: true, created: [] };
+    return { ok: true, created: [], executed: false };
   }
 
   // Execute grounding
@@ -501,12 +509,12 @@ async function executeOnTarget(
       const suffix = firstPath ? ` → ${firstPath}` : "";
       console.log(`✅ ${msg}${suffix}`);
     }
-    return { ok: true, created };
+    return { ok: true, created, executed: true };
   } else {
     console.error(
       `❌ "${command.name}" failed on "${vaultRelative}": ${result.error}`,
     );
-    return failed;
+    return { ok: false, created: [], executed: true };
   }
 }
 
@@ -630,6 +638,9 @@ export function applyCommand(): Command {
           // Continue-on-error semantics
           let successCount = 0;
           let failCount = 0;
+          // #4264 — did ANY target reach grounding execution (and so possibly
+          // write)? Drives the write-through below.
+          let anyExecuted = false;
           // Issue #3906 — aggregate the assets created across all targets for
           // the `--json` envelope.
           const allCreated: CreatedAsset[] = [];
@@ -646,12 +657,16 @@ export function applyCommand(): Command {
             );
             if (targetResult.ok) successCount++;
             else failCount++;
+            if (targetResult.executed) anyExecuted = true;
             allCreated.push(...targetResult.created);
           }
 
-          // #4264 — write-through: a successful non-dry-run mutation is folded
-          // into the persisted cache (only the changed files + their referrers
-          // are re-parsed; a rebuild-class change is left to the next reader).
+          // #4264 — write-through: once ANY target's grounding executed (a
+          // dry-run and a refused precondition never do), whatever it wrote
+          // is folded into the persisted cache — a failed composite may have
+          // landed part of its files, so success is not the criterion (review
+          // of 1e8e8204, L1). Only the changed files + their referrers are
+          // re-parsed; a rebuild-class change is left to the next reader.
           // Best-effort by construction: `writeThroughCache` never throws, so
           // the exit code and the stdout envelope below do not depend on it —
           // the mutation is already on disk, and a cache that could not be
@@ -659,7 +674,7 @@ export function applyCommand(): Command {
           if (
             useCacheEffective &&
             !options.dryRun &&
-            successCount > 0 &&
+            anyExecuted &&
             loaded.cacheManager
           ) {
             const outcome = await writeThroughCache(loaded.cacheManager);

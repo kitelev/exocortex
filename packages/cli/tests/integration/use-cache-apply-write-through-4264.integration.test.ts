@@ -44,11 +44,13 @@ import {
   afterEach,
 } from "@jest/globals";
 import * as fs from "fs";
+import fsExtra from "fs-extra";
 import * as path from "path";
-import * as os from "os";
 import { createHash } from "crypto";
 import {
   NoteToRDFConverter,
+  Triple,
+  IRI,
   vaultPathToIRI,
 } from "@kitelev/exocortex-core";
 
@@ -57,6 +59,7 @@ const { resolveButtonsCommand } = await import(
   "../../src/commands/resolve-buttons.js"
 );
 const { createCommand } = await import("../../src/commands/create.js");
+const { sparqlIndexCommand } = await import("../../src/commands/sparql-index.js");
 const { CacheManager } = await import("../../src/cache/CacheManager.js");
 const { CandidateShaclValidator } = await import(
   "../../src/services/CandidateShaclValidator.js"
@@ -64,220 +67,46 @@ const { CandidateShaclValidator } = await import(
 
 const REQ = "@req:cb707868-356f-495d-825a-182e66ba8bcd";
 
-// Real UID-canon vocabulary so the converter resolves the status wikilinks to
-// the SAME symbolic IRIs the preconditions reference (`ems__<Local>` labels →
-// `ems#<Local>`), and the `CONTAINS(STR(?s), "<uid8>")` halves match too.
-const TASK_CLASS = "1b20a8f0-d745-4e93-91db-4531b3df120e"; // ems__Task
-const STATUS_DRAFT = "c42245d0-01de-4c35-bfcf-d910445ea28e"; // ems__EffortStatusDraft
-const STATUS_BACKLOG = "753a44d5-846c-4b82-9196-4fd9a4d48777"; // ems__EffortStatusBacklog
-const STATUS_DOING = "027e78f4-6e16-4b36-b8fb-5510507d5745"; // ems__EffortStatusDoing
-const PROP_STATUS = "44c6e9e3-955f-4afc-9ca5-b4bd70667051"; // ems__Effort_status (property def)
-
-// GroundingType catalog (packages/core/src/domain/constants/GroundingTypeUIDs.ts)
-const GT_CREATE_INSTANCE = "4367e2d6-6c92-450a-becb-abce1fb07682";
-const GT_PROPERTY_SET = "cf3bb923-f1f1-40be-b728-782844402426";
-
-// Fixture UIDs (local to this test).
-const PROTO = "42640000-0000-4000-8000-0000000000a1";
-const PROTO_CLASS = "42640000-0000-4000-8000-0000000000a2"; // ems__TaskPrototype
-const CMD_CREATE = "42640000-0000-4000-8000-0000000000b1";
-const GND_CREATE = "42640000-0000-4000-8000-0000000000b2";
-const PD_DRAFT = "42640000-0000-4000-8000-0000000000b3";
-const CMD_BACKLOG = "42640000-0000-4000-8000-0000000000c1";
-const PRE_BACKLOG = "42640000-0000-4000-8000-0000000000c2";
-const GND_BACKLOG = "42640000-0000-4000-8000-0000000000c3";
-const CMD_START = "42640000-0000-4000-8000-0000000000d1";
-const PRE_START = "42640000-0000-4000-8000-0000000000d2";
-const GND_START = "42640000-0000-4000-8000-0000000000d3";
-const TBOX_TASK = "42640000-0000-4000-8000-0000000000e1"; // a Draft task whose LABEL is TBox-form
-const BIND_START = "42640000-0000-4000-8000-0000000000f1";
-const BIND_BACKLOG = "42640000-0000-4000-8000-0000000000f2";
-const DRAFT_TASK = "42640000-0000-4000-8000-0000000000aa"; // a ready-made Draft task
-const OTHER_TASK = "42640000-0000-4000-8000-0000000000ab"; // the "file G" of A7
-
-const SEED = "42645eed-0000-4000-8000-000000000000";
-const FROZEN = "2026-09-18T10:00:00.000Z";
-const CHAIN_LABEL = "Chain task 4264";
-
-const fm = (lines: string[]): string => ["---", ...lines, "---", ""].join("\n");
-
-// Mirrors the shipped preconditions 8815fdc8 / 575404fc: not a prototype, and
-// the current status ∈ the allowed set (symbolic IRI OR uid8 substring).
-function statusAsk(allowedLocal: string, allowedUid: string): string {
-  return (
-    "PREFIX exo: <https://exocortex.my/ontology/exo#> " +
-    "PREFIX ems: <https://exocortex.my/ontology/ems#> " +
-    'ASK { FILTER NOT EXISTS { $target exo:Instance_class ?p . FILTER(STRENDS(STR(?p), "Prototype")) } ' +
-    "$target ems:Effort_status ?s . " +
-    `FILTER(?s IN (<https://exocortex.my/ontology/ems#${allowedLocal}>) || CONTAINS(STR(?s), "${allowedUid.slice(0, 8)}")) }`
-  );
-}
-
-function command(
-  uid: string,
-  label: string,
-  cliName: string,
-  groundingUid: string,
-  preconditionUid?: string,
-): string {
-  const lines = [
-    `exo__Asset_uid: ${uid}`,
-    `exo__Asset_label: "${label}"`,
-    `exo__Asset_isDefinedBy: "[[!kitelev]]"`,
-    `exo__Instance_class: ["[[exocmd__Command]]"]`,
-    `exocmd__Command_cliName: ${cliName}`,
-    `exocmd__Command_category: status`,
-    `exocmd__Command_grounding: "[[${groundingUid}|g]]"`,
-    `exocmd__Command_successMessage: "${label} done"`,
-  ];
-  if (preconditionUid) {
-    lines.push(`exocmd__Command_precondition: "[[${preconditionUid}|p]]"`);
-  }
-  return fm(lines);
-}
-
-function precondition(uid: string, label: string, ask: string): string {
-  return fm([
-    `exo__Asset_uid: ${uid}`,
-    `exo__Asset_label: "${label}"`,
-    `exo__Instance_class: ["[[exocmd__Precondition]]"]`,
-    `exocmd__Precondition_sparqlAsk: '${ask}'`,
-  ]);
-}
-
-function propertySet(uid: string, label: string, valueRef: string): string {
-  return fm([
-    `exo__Asset_uid: ${uid}`,
-    `exo__Asset_label: "${label}"`,
-    `exo__Instance_class: ["[[exocmd__Grounding]]"]`,
-    `exocmd__Grounding_type: "[[${GT_PROPERTY_SET}]]"`,
-    `exocmd__Grounding_targetProperty: "ems__Effort_status"`,
-    // targetValueRef wraps the constant UID as "[[<uid>]]" in the executor.
-    `exocmd__Grounding_targetValueRef: "${valueRef}"`,
-  ]);
-}
-
-function binding(
-  uid: string,
-  commandUid: string,
-  targetClass: string,
-  order: number,
-): string {
-  return fm([
-    `exo__Asset_uid: ${uid}`,
-    `exo__Asset_label: "binding ${uid}"`,
-    `exo__Instance_class: ["[[exocmd__CommandBinding]]"]`,
-    `exocmd__CommandBinding_command: "[[${commandUid}]]"`,
-    `exocmd__CommandBinding_targetClass: ${targetClass}`,
-    `exocmd__CommandBinding_position: inline`,
-    `exocmd__CommandBinding_order: ${order}`,
-  ]);
-}
-
-function taskMd(uid: string, label: string, statusUid: string): string {
-  return fm([
-    `exo__Asset_uid: ${uid}`,
-    `exo__Asset_label: "${label}"`,
-    `exo__Instance_class: ["[[${TASK_CLASS}]]"]`,
-    `ems__Effort_status: "[[${statusUid}]]"`,
-  ]);
-}
-
-/** Vault-relative paths of the fixture (nested like a real vault). */
-const REL = {
-  taskClass: `assetspaces/x/tbox/${TASK_CLASS}.md`,
-  protoClass: `assetspaces/x/tbox/${PROTO_CLASS}.md`,
-  draft: `assetspaces/x/tbox/${STATUS_DRAFT}.md`,
-  backlog: `assetspaces/x/tbox/${STATUS_BACKLOG}.md`,
-  doing: `assetspaces/x/tbox/${STATUS_DOING}.md`,
-  propStatus: `assetspaces/x/tbox/${PROP_STATUS}.md`,
-  proto: `assetspaces/x/efforts/${PROTO}.md`,
-  draftTask: `assetspaces/x/efforts/${DRAFT_TASK}.md`,
-  otherTask: `assetspaces/x/efforts/${OTHER_TASK}.md`,
-  tboxTask: `assetspaces/x/efforts/${TBOX_TASK}.md`,
-  cache: path.join(".exocortex", "cache", "triples.json"),
-};
-
-function buildVault(): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "exo-4264-"));
-  const write = (rel: string, md: string): void => {
-    const full = path.join(root, rel);
-    fs.mkdirSync(path.dirname(full), { recursive: true });
-    fs.writeFileSync(full, md, "utf-8");
-  };
-  // TBox / enums (UID-canon, labels in TBox form → symbolic emission).
-  write(REL.taskClass, fm([`exo__Asset_uid: ${TASK_CLASS}`, `exo__Asset_label: ems__Task`]));
-  write(
-    REL.protoClass,
-    fm([
-      `exo__Asset_uid: ${PROTO_CLASS}`,
-      `exo__Asset_label: ems__TaskPrototype`,
-      `exo__Class_superClass: "[[${TASK_CLASS}]]"`,
-    ]),
-  );
-  write(REL.draft, fm([`exo__Asset_uid: ${STATUS_DRAFT}`, `exo__Asset_label: ems__EffortStatusDraft`]));
-  write(REL.backlog, fm([`exo__Asset_uid: ${STATUS_BACKLOG}`, `exo__Asset_label: ems__EffortStatusBacklog`]));
-  write(REL.doing, fm([`exo__Asset_uid: ${STATUS_DOING}`, `exo__Asset_label: ems__EffortStatusDoing`]));
-  write(REL.propStatus, fm([`exo__Asset_uid: ${PROP_STATUS}`, `exo__Asset_label: ems__Effort_status`]));
-
-  // create-task-instance: create_instance of ems__Task in Inbox/, status
-  // defaulted to Draft through a PropertyDefault (the shipped command does the
-  // same through `exocmd__Grounding_propertyDefault`).
-  write(`cmd/${CMD_CREATE}.md`, command(CMD_CREATE, "Create task instance (4264)", "create-task-instance-4264", GND_CREATE));
-  write(
-    `cmd/${GND_CREATE}.md`,
-    fm([
-      `exo__Asset_uid: ${GND_CREATE}`,
-      `exo__Asset_label: "Create task instance grounding (4264)"`,
-      `exo__Instance_class: ["[[exocmd__Grounding]]"]`,
-      `exocmd__Grounding_type: "[[${GT_CREATE_INSTANCE}]]"`,
-      `exocmd__Grounding_targetClass: "ems__Task"`,
-      `exocmd__Grounding_targetFolder: "Inbox"`,
-      `exocmd__Grounding_propertyDefault: "[[${PD_DRAFT}]]"`,
-    ]),
-  );
-  write(
-    `cmd/${PD_DRAFT}.md`,
-    fm([
-      `exo__Asset_uid: ${PD_DRAFT}`,
-      `exo__Asset_label: "Default status Draft (4264)"`,
-      `exo__Instance_class: ["[[exocmd__PropertyDefault]]"]`,
-      `exocmd__PropertyDefault_property: "[[${PROP_STATUS}]]"`,
-      `exocmd__PropertyDefault_value: "[[${STATUS_DRAFT}]]"`,
-    ]),
-  );
-
-  // move-to-backlog: Draft → Backlog; start-effort: Backlog → Doing.
-  write(`cmd/${CMD_BACKLOG}.md`, command(CMD_BACKLOG, "Move to Backlog (4264)", "move-to-backlog-4264", GND_BACKLOG, PRE_BACKLOG));
-  write(`cmd/${PRE_BACKLOG}.md`, precondition(PRE_BACKLOG, "Allow Backlog from Draft (4264)", statusAsk("EffortStatusDraft", STATUS_DRAFT)));
-  write(`cmd/${GND_BACKLOG}.md`, propertySet(GND_BACKLOG, "Set status Backlog (4264)", STATUS_BACKLOG));
-  write(`cmd/${CMD_START}.md`, command(CMD_START, "Start Effort (4264)", "start-effort-4264", GND_START, PRE_START));
-  write(`cmd/${PRE_START}.md`, precondition(PRE_START, "Allow Doing from Backlog (4264)", statusAsk("EffortStatusBacklog", STATUS_BACKLOG)));
-  write(`cmd/${GND_START}.md`, propertySet(GND_START, "Set status Doing (4264)", STATUS_DOING));
-
-  // Bindings so `resolve-buttons` has a Layer-A button-set on a task.
-  write(`cmd/${BIND_START}.md`, binding(BIND_START, CMD_START, "ems__Task", 10));
-  write(`cmd/${BIND_BACKLOG}.md`, binding(BIND_BACKLOG, CMD_BACKLOG, "ems__Task", 20));
-
-  // Prototype (apply target of create-task-instance) + ready-made tasks.
-  write(
-    REL.proto,
-    fm([
-      `exo__Asset_uid: ${PROTO}`,
-      `exo__Asset_label: "Task prototype (4264)"`,
-      `exo__Instance_class: ["[[${PROTO_CLASS}]]"]`,
-    ]),
-  );
-  write(REL.draftTask, taskMd(DRAFT_TASK, "Draft task (4264)", STATUS_DRAFT));
-  write(REL.otherTask, taskMd(OTHER_TASK, "Other task (4264)", STATUS_BACKLOG));
-  // A6: a Draft task whose label has the TBox form `prefix__Name` — #4263
-  // classifies ANY change to such a file as rebuild-only (its referrers emit
-  // SYMBOLIC IRIs derived from that label), so a status flip on it is a
-  // mutation the delta cannot express.
-  write(REL.tboxTask, taskMd(TBOX_TASK, "zz__TboxTask4264", STATUS_DRAFT));
-  fs.mkdirSync(path.join(root, "Inbox"), { recursive: true });
-  return root;
-}
+import {
+  TASK_CLASS,
+  STATUS_DRAFT,
+  STATUS_BACKLOG,
+  STATUS_DOING,
+  PROTO,
+  PROTO_CLASS,
+  CMD_CREATE,
+  GND_CREATE,
+  PD_DRAFT,
+  CMD_BACKLOG,
+  PRE_BACKLOG,
+  GND_BACKLOG,
+  CMD_START,
+  PRE_START,
+  GND_START,
+  TBOX_TASK,
+  BIND_START,
+  BIND_BACKLOG,
+  DRAFT_TASK,
+  OTHER_TASK,
+  PROTO_INSTANCE,
+  CMD_INHERITED,
+  PRE_INHERITED,
+  GND_INHERITED,
+  BIND_INHERITED,
+  GT_SERVICE_CALL,
+  SEED,
+  FROZEN,
+  CHAIN_LABEL,
+  fm,
+  statusAsk,
+  command,
+  precondition,
+  propertySet,
+  binding,
+  taskMd,
+  REL,
+  buildVault,
+} from "./fixtures/use-cache-4264-vault.js";
 
 /** Build the cache once (full rebuild + persist) so later runs start warm. */
 async function warmCache(root: string): Promise<void> {
@@ -288,13 +117,19 @@ async function warmCache(root: string): Promise<void> {
 }
 
 interface CacheFile {
-  metadata: { fileCount: number; tripleCount: number };
+  metadata: {
+    fileCount: number;
+    tripleCount: number;
+    inferredCount: number;
+    inferenceEnabled: boolean;
+  };
   files: Array<{
     path: string;
     mtimeMs: number;
     size: number;
     triples: Array<{ object: { value: string } }>;
   }>;
+  inferred: Array<{ object: { value: string } }>;
 }
 
 function readCache(root: string): CacheFile {
@@ -441,6 +276,22 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     expect(refreshSpy).not.toHaveBeenCalled();
     expect(fs.existsSync(path.join(root, ".exocortex"))).toBe(false);
     expect(cacheNotices(a).concat(cacheNotices(r), cacheNotices(c))).toEqual([]);
+
+    // The same on a vault that already HAS a cache: a real write without the
+    // flag leaves the cache file byte-identical (no read, no write-through).
+    await warmCache(root);
+    loadSpy.mockClear();
+    const cacheBefore = sha(path.join(root, REL.cache));
+    const w = await runApply(root, ["start-effort-4264", REL.draftTask, "--json"]);
+    expect(w.exitCode).toBeNull();
+    expect(fs.readFileSync(path.join(root, REL.draftTask), "utf-8")).toContain(`[[${STATUS_DOING}]]`);
+    const cw = await runCreate(root, ["--class", TASK_CLASS, "--label", "A1 written", "--validate"]);
+    expect(cw.exitCode).toBe(0);
+    expect(fs.existsSync(path.join(root, (JSON.parse(cw.stdout) as { path: string }).path))).toBe(true);
+    expect(loadSpy).not.toHaveBeenCalled();
+    expect(refreshSpy).not.toHaveBeenCalled();
+    expect(sha(path.join(root, REL.cache))).toBe(cacheBefore);
+    expect(w.stderr + cw.stderr).not.toMatch(/triple cache/);
   });
 
   // -------------------------------------------------------------------------
@@ -485,7 +336,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     expect(r2.logs).toEqual(r1.logs);
     expect(r2.stdout).toBe(r1.stdout);
     const doc = JSON.parse(r1.logs.join("\n")) as { visible: unknown[]; hidden: unknown[] };
-    expect(doc.visible.length + doc.hidden.length).toBe(2); // both bindings resolved (Layer A)
+    expect(doc.visible.length + doc.hidden.length).toBe(3); // all three ems__Task bindings resolved (Layer A)
 
     // create --validate --dry-run: uid / timestamps are minted per run, so
     // the comparison masks them; everything else (path folder, label,
@@ -503,6 +354,53 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     expect(mask(v2.stderr.split("\n").filter((l) => !/triple cache/.test(l)).join("\n"))).toBe(
       mask(v1.stderr),
     );
+  });
+
+  // -------------------------------------------------------------------------
+  it(`A2b ${REQ} on an INDEX-built cache the flagged store additionally carries the inferred layer (documented divergence, same as query --use-cache): a command gated on an inherited property is hidden without the flag, visible with it; a cache the flag built itself has no layer and stays byte-identical; a write-through keeps the layer`, async () => {
+    const root = vault();
+    const runButtons = async (flag: boolean): Promise<{ visible: string[]; hidden: string[]; stdout: string }> => {
+      const r = await runResolve(root, [REL.protoInstance, "--json", "--show-hidden", ...(flag ? ["--use-cache"] : [])]);
+      const doc = JSON.parse(r.logs.join("\n")) as { visible: Array<{ id: string }>; hidden: Array<{ id: string }> };
+      return { visible: doc.visible.map((e) => e.id), hidden: doc.hidden.map((e) => e.id), stdout: r.logs.join("\n") };
+    };
+
+    // No flag: the explicit graph only — the inherited-owner command is hidden.
+    const plain = await runButtons(false);
+    expect(plain.hidden).toContain(CMD_INHERITED);
+    expect(plain.visible).not.toContain(CMD_INHERITED);
+
+    // Cache built by --use-cache itself (rebuild → no inferred layer): identical.
+    const built = await runButtons(true);
+    expect(built.stdout).toBe(plain.stdout);
+    expect(readCache(root).metadata.inferredCount).toBe(0);
+
+    // The real `index` (what the bot runs): persists the inferred layer.
+    const idx = await run(() =>
+      sparqlIndexCommand().parseAsync(["node", "index", "--vault", root, "--force"]),
+    );
+    expect(idx.logs.join("\n")).toMatch(/Materialized \d+ inferred triples/);
+    const indexed = readCache(root);
+    expect(indexed.metadata.inferenceEnabled).toBe(true);
+    expect(indexed.metadata.inferredCount).toBeGreaterThan(0);
+
+    // With the flag the store = explicit + inferred → the inherited owner is
+    // there and the command is VISIBLE; without the flag nothing changed.
+    const withLayer = await runButtons(true);
+    expect(withLayer.visible).toContain(CMD_INHERITED);
+    expect((await runButtons(false)).hidden).toContain(CMD_INHERITED);
+
+    // A write-through on the prototype-bearing instance re-materializes the
+    // layer (prototype-bearing file = engine input) instead of dropping it.
+    const w = await runApply(root, ["move-to-backlog-4264", REL.protoInstance, "--json", "--use-cache"]);
+    expect(preconditionRefused(w)).toBe(false);
+    expect(writeThroughNotices(w)).toEqual(["💾 triple cache: write-through persisted (1 file(s) re-parsed)"]);
+    const after = readCache(root);
+    expect(after.metadata.inferenceEnabled).toBe(true);
+    expect(after.metadata.inferredCount).toBeGreaterThan(0);
+    const still = await runButtons(true);
+    expect(still.visible).toContain(CMD_INHERITED);
+    expect((await new CacheManager(root).loadOrBuild()).mode).toBe("hit");
   });
 
   // -------------------------------------------------------------------------
@@ -668,7 +566,12 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     fs.writeFileSync(fPath, taskMd(DRAFT_TASK, "Draft task EDITED BY A", STATUS_DRAFT), "utf-8");
     const wt = await a.refreshAfterWrite();
     expect(wt.mode).toBe("delta");
-    expect(wt.reparsedFiles).toBe(2); // F and G — G because A's snapshot predates B's edit
+    // A's snapshot predates B's persist: the cache file's stamp changed, so A
+    // drops its snapshot, re-reads B's cache (fresh G already in it) and only
+    // its OWN write F needs a re-parse. (Without the stamp guard A would diff
+    // its stale snapshot: G re-parsed too, correct but paid twice — and the
+    // metadata B wrote, e.g. an inferred layer, would be lost: see A7b.)
+    expect(wt.reparsedFiles).toBe(1);
 
     const persisted = readCache(root);
     const labelOf = (rel: string): string[] =>
@@ -679,6 +582,54 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
 
     const next = await new CacheManager(root).loadOrBuild();
     expect(next.mode).toBe("hit");
+  });
+
+  it(`A7b ${REQ} a concurrent \`index\` (inferred layer + inferenceEnabled, no vault file touched) is never reverted: the write-through folds F into the cache index persisted, keeps its inferred layer and the flag`, async () => {
+    const root = vault();
+    await warmCache(root);
+
+    // Process A loads (hit) — the cache has no inferred layer yet.
+    const a = new CacheManager(root);
+    const loadedByA = await a.loadOrBuild();
+    expect(loadedByA.mode).toBe("hit");
+    expect(readCache(root).metadata.inferredCount).toBe(0);
+
+    // Meanwhile `index` materializes and persists the inferred layer — a
+    // change to the CACHE FILE only; no vault file's stamp moves.
+    const marker = new Triple(
+      new IRI(vaultPathToIRI(REL.proto)),
+      new IRI("https://exocortex.my/ontology/exo#Instance_class"),
+      new IRI("https://exocortex.my/ontology/ems#Task"),
+    );
+    await new CacheManager(root).saveInferredTriples([marker]);
+    const afterIndex = readCache(root);
+    expect(afterIndex.metadata.inferenceEnabled).toBe(true);
+    expect(afterIndex.metadata.inferredCount).toBe(1);
+
+    // A now writes F and writes through.
+    fs.writeFileSync(
+      path.join(root, REL.draftTask),
+      taskMd(DRAFT_TASK, "Draft task EDITED BY A", STATUS_DRAFT),
+      "utf-8",
+    );
+    const wt = await a.refreshAfterWrite();
+    expect(wt.mode).toBe("delta");
+    expect(wt.reparsedFiles).toBe(1);
+
+    const persisted = readCache(root);
+    expect(persisted.metadata.inferenceEnabled).toBe(true); // index's flag survived
+    // The edit touched no engine input, so #4263's gate keeps index's layer
+    // verbatim — the marker triple is still there, count unchanged.
+    expect(persisted.metadata.inferredCount).toBe(1);
+    expect(persisted.inferred.map((t) => t.object.value)).toEqual([
+      "https://exocortex.my/ontology/ems#Task",
+    ]);
+    expect(
+      persisted.files.find((e) => e.path === REL.draftTask)!.triples.map((t) => t.object.value),
+    ).toContain("Draft task EDITED BY A");
+    const next = await new CacheManager(root).loadOrBuild();
+    expect(next.mode).toBe("hit");
+    expect(next.triples.length).toBe(loadedByA.triples.length + 1); // + the inferred marker
   });
 
   // -------------------------------------------------------------------------
@@ -741,6 +692,25 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     expect(loadSpy).toHaveBeenCalledTimes(1);
     expect(lines).toEqual(["⚡ triple cache: hit"]);
     expect(cachedVerdict).toEqual(plainVerdict);
+
+    // (d) a REAL `create --validate --use-cache`: ONE cache load (the
+    //     validator's, a hit) and the write-through reuses that loaded state —
+    //     the cache file is read exactly once in the whole invocation.
+    loadSpy.mockClear();
+    convertNoteSpy.mockClear();
+    const readJson = jest.spyOn(fsExtra, "readJson");
+    const c2 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A8 third", "--validate", "--use-cache"]);
+    expect(c2.exitCode).toBe(0);
+    const third = JSON.parse(c2.stdout) as { path: string };
+    expect(cacheNotices(c2)).toEqual(["⚡ triple cache: hit"]);
+    expect(writeThroughNotices(c2)).toEqual([
+      "💾 triple cache: write-through persisted (1 file(s) re-parsed)",
+    ]);
+    expect(loadSpy).toHaveBeenCalledTimes(1);
+    expect(readJson).toHaveBeenCalledTimes(1);
+    expect(convertNoteSpy).toHaveBeenCalledTimes(1);
+    expect(readCache(root).files.some((e) => e.path === third.path)).toBe(true);
+    expect((await new CacheManager(root).loadOrBuild()).mode).toBe("hit");
   });
 
   // -------------------------------------------------------------------------
