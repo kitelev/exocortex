@@ -1,0 +1,25 @@
+{
+  "_doc": "Revert-verify mutants for the #4263 core options (req 42812747): set `tree`/`subject` to YOUR checkout, then python3 -I ~/.claude/bin/mutant-driver.py <this file>. Recorded run 2026-09-18: control 0 red, 3/3 distinguish.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/NoteToRDFConverter.ts",
+  "symlink_node_modules": ["node_modules", "packages/core/node_modules"],
+  "harness": "cd \"$(dirname {subject})/../../../..\" && npx jest --config packages/core/jest.config.js packages/core/tests/unit/services/NoteToRDFConverter.subset-walk-4263.test.ts 2>&1",
+  "red_re": "› (C\\d+) ",
+  "mutants": {
+    "K1_files_option_ignored": {
+      "from": "    const allFiles = options.files ?? this.vault.getAllFiles();",
+      "to": "    const allFiles = this.vault.getAllFiles(); void options.files;",
+      "expect": ["C1", "C2"]
+    },
+    "K2_fileSpacePrefixes_ignored": {
+      "from": "    const fileSpaces: FileSpaceDiscoveryResult = options.fileSpacePrefixes\n      ? { prefixes: options.fileSpacePrefixes, declarationPaths: [], warnings: [] }\n      : discoverFileSpaceExclusions(this.vault);",
+      "to": "    const fileSpaces: FileSpaceDiscoveryResult = discoverFileSpaceExclusions(this.vault); void options.fileSpacePrefixes;",
+      "expect": ["C2"]
+    },
+    "K3_onFileTriples_never_called": {
+      "from": "        if (options.onFileTriples) {\n          try {\n            options.onFileTriples(file, candidate);",
+      "to": "        if (options.onFileTriples && candidate.length < 0) {\n          try {\n            options.onFileTriples(file, candidate);",
+      "expect": ["C3"]
+    }
+  }
+}
