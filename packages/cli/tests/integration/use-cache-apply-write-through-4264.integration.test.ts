@@ -47,11 +47,14 @@ import * as fs from "fs";
 import fsExtra from "fs-extra";
 import * as path from "path";
 import { createHash } from "crypto";
+import { Readable } from "stream";
 import {
   NoteToRDFConverter,
+  GroundingExecutor,
   Triple,
   IRI,
   vaultPathToIRI,
+  seededUidGenerator,
 } from "@kitelev/exocortex-core";
 
 const { applyCommand } = await import("../../src/commands/apply.js");
@@ -72,37 +75,13 @@ import {
   STATUS_DRAFT,
   STATUS_BACKLOG,
   STATUS_DOING,
-  PROTO,
-  PROTO_CLASS,
-  CMD_CREATE,
-  GND_CREATE,
-  PD_DRAFT,
-  CMD_BACKLOG,
-  PRE_BACKLOG,
-  GND_BACKLOG,
-  CMD_START,
-  PRE_START,
-  GND_START,
-  TBOX_TASK,
-  BIND_START,
-  BIND_BACKLOG,
   DRAFT_TASK,
   OTHER_TASK,
-  PROTO_INSTANCE,
   CMD_INHERITED,
-  PRE_INHERITED,
-  GND_INHERITED,
-  BIND_INHERITED,
-  GT_SERVICE_CALL,
   SEED,
   FROZEN,
   CHAIN_LABEL,
   fm,
-  statusAsk,
-  command,
-  precondition,
-  propertySet,
-  binding,
   taskMd,
   REL,
   buildVault,
@@ -714,34 +693,162 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
   });
 
   // -------------------------------------------------------------------------
-  it(`A9 ${REQ} under --use-cache each command prints exactly one load notice on stderr (plus one write-through outcome for a mutating command) and nothing extra on stdout; without the flag it prints none`, async () => {
+  it(`A9 ${REQ} under --use-cache each command prints exactly ONE stderr line per cache phase — load (hit/delta/rebuild) and, only after a grounding executed / an asset was written, the write-through outcome — pinned per command × mode; stdout carries none; without the flag none at all`, async () => {
     const root = vault();
     await warmCache(root);
+    const allNotices = (r: Run): string[] =>
+      r.stderr.split("\n").filter((l) => /triple cache:/.test(l));
+    const expectLines = (r: Run, loads: number, writeThroughs: number): void => {
+      expect(cacheNotices(r)).toHaveLength(loads);
+      expect(writeThroughNotices(r)).toHaveLength(writeThroughs);
+      expect(allNotices(r)).toHaveLength(loads + writeThroughs);
+      expect(r.stdout).not.toMatch(/triple cache/);
+      expect(r.logs.join("\n")).not.toMatch(/triple cache/);
+    };
 
+    // apply — mutating (executed) / dry-run / precondition refused (not executed)
     const a = await runApply(root, ["move-to-backlog-4264", REL.draftTask, "--json", "--use-cache"]);
+    expectLines(a, 1, 1);
     expect(cacheNotices(a)).toEqual(["⚡ triple cache: hit"]);
-    expect(writeThroughNotices(a)).toHaveLength(1);
     expect(() => JSON.parse(a.stdout)).not.toThrow();
-    expect(a.stdout).not.toMatch(/triple cache/);
-
-    // dry-run: a load notice but NO write-through (nothing was written)
     const d = await runApply(root, ["start-effort-4264", REL.otherTask, "--dry-run", "--use-cache"]);
-    expect(cacheNotices(d)).toEqual(["⚡ triple cache: hit"]);
-    expect(writeThroughNotices(d)).toEqual([]);
+    expectLines(d, 1, 0);
+    const p = await runApply(root, ["start-effort-4264", REL.tboxTask, "--json", "--use-cache"]); // Draft → refused
+    expect(preconditionRefused(p)).toBe(true);
+    expect(p.exitCode).toBe(5); // ExitCodes.OPERATION_FAILED
+    expectLines(p, 1, 0);
 
+    // resolve-buttons — read-only: one load line, both output modes
     const r = await runResolve(root, [REL.otherTask, "--json", "--use-cache"]);
-    expect(cacheNotices(r)).toEqual(["⚡ triple cache: hit"]);
+    expectLines(r, 1, 0);
     expect(() => JSON.parse(r.logs.join("\n"))).not.toThrow();
-    expect(r.logs.join("\n")).not.toMatch(/triple cache/);
+    const rh = await runResolve(root, [REL.otherTask, "--use-cache"]);
+    expectLines(rh, 1, 0);
 
+    // create — --validate dry-run (load only) / --validate real (load + write-
+    // through) / bare real (write-through only: no triple-store load happens
+    // without --validate, so there is no load mode to report) / bare dry-run (0)
     const c = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 task", "--validate", "--dry-run", "--use-cache"]);
-    expect(cacheNotices(c)).toEqual(["⚡ triple cache: hit"]);
-    expect(writeThroughNotices(c)).toEqual([]); // dry-run writes nothing
+    expectLines(c, 1, 0);
     expect(() => JSON.parse(c.stdout)).not.toThrow();
+    const cv = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 validated", "--validate", "--use-cache"]);
+    expect(cv.exitCode).toBe(0);
+    expectLines(cv, 1, 1);
+    const cb = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 bare", "--use-cache"]);
+    expect(cb.exitCode).toBe(0);
+    expectLines(cb, 0, 1);
+    const cd = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 bare dry", "--dry-run", "--use-cache"]);
+    expect(cd.exitCode).toBe(0);
+    expectLines(cd, 0, 0);
 
+    // without the flag: nothing, on any of the three
     const a0 = await runApply(root, ["start-effort-4264", REL.otherTask, "--dry-run"]);
     const r0 = await runResolve(root, [REL.otherTask, "--json"]);
-    expect(cacheNotices(a0).concat(writeThroughNotices(a0), cacheNotices(r0))).toEqual([]);
+    const c0 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 plain", "--validate", "--dry-run"]);
+    expect(allNotices(a0).concat(allNotices(r0), allNotices(c0))).toEqual([]);
     expect(a0.stderr).toBe("");
+  });
+
+  // -------------------------------------------------------------------------
+  it(`A3b ${REQ} a multi-target (stdin) apply writes through ONCE after the batch: refreshAfterWrite runs a single time, both mutated files are in the cache, the next process is a hit`, async () => {
+    const root = vault();
+    await warmCache(root);
+    const refreshSpy = jest.spyOn(CacheManager.prototype, "refreshAfterWrite");
+    // Feed the two targets through stdin (what `find … | apply <cmd>` does).
+    const realStdin = Object.getOwnPropertyDescriptor(process, "stdin")!;
+    Object.defineProperty(process, "stdin", {
+      configurable: true,
+      value: Readable.from([Buffer.from(`${REL.draftTask}\n${REL.protoInstance}\n`)]),
+    });
+    let r: Run;
+    try {
+      r = await runApply(root, ["move-to-backlog-4264", "--json", "--use-cache"]);
+    } finally {
+      Object.defineProperty(process, "stdin", realStdin);
+    }
+    expect(r.exitCode).toBeNull();
+    expect(preconditionRefused(r)).toBe(false);
+    expect(JSON.parse(r.stdout)).toEqual({
+      command: "move-to-backlog-4264",
+      created: [],
+      targets: [REL.draftTask, REL.protoInstance],
+    });
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+    // Both targets changed → the single write-through re-parsed both (the
+    // prototype-bearing one re-materializes nothing: no inferred layer here).
+    expect(writeThroughNotices(r)).toEqual([
+      "💾 triple cache: write-through persisted (2 file(s) re-parsed)",
+    ]);
+    const backlogIri = "https://exocortex.my/ontology/ems#EffortStatusBacklog";
+    for (const rel of [REL.draftTask, REL.protoInstance]) {
+      const entry = readCache(root).files.find((e) => e.path === rel)!;
+      expect(entry.triples.map((t) => t.object.value)).toContain(backlogIri);
+      expect(entry.mtimeMs).toBe(fs.statSync(path.join(root, rel)).mtimeMs);
+    }
+    expect((await new CacheManager(root).loadOrBuild()).mode).toBe("hit");
+  });
+
+  // -------------------------------------------------------------------------
+  it(`A3c ${REQ} a grounding that EXECUTED but failed (a composite that landed part of its files) still writes through — success is not the criterion, execution is`, async () => {
+    const root = vault();
+    await warmCache(root);
+    // The executor is the mocked layer HERE (the guard under test is apply's
+    // "did a grounding execute" wiring, not the executor): it writes a file
+    // into the vault the way a partially-failed composite would, then fails.
+    const landed = "Inbox/42640000-0000-4000-8000-0000000000dd.md";
+    jest
+      .spyOn(GroundingExecutor.prototype, "execute")
+      .mockImplementation(async () => {
+        fs.writeFileSync(
+          path.join(root, landed),
+          taskMd("42640000-0000-4000-8000-0000000000dd", "Landed by a failed composite", STATUS_DRAFT),
+          "utf-8",
+        );
+        return { success: false, error: "step 2 failed (injected)" };
+      });
+
+    const r = await runApply(root, ["move-to-backlog-4264", REL.draftTask, "--json", "--use-cache"]);
+    expect(r.exitCode).toBe(5); // ExitCodes.OPERATION_FAILED — the command still reports the failure
+    expect(r.errors.some((e) => /step 2 failed \(injected\)/.test(e))).toBe(true);
+    expect(writeThroughNotices(r)).toEqual([
+      "💾 triple cache: write-through persisted (1 file(s) re-parsed)",
+    ]);
+    expect(readCache(root).files.some((e) => e.path === landed)).toBe(true);
+    expect((await new CacheManager(root).loadOrBuild()).mode).toBe("hit");
+  });
+
+  // -------------------------------------------------------------------------
+  it(`A3ref ${REQ} the write-through re-parses the REFERRERS of an asset the command created: a file that linked the (seed-deterministic) uid before it existed carries the real file-IRI afterwards`, async () => {
+    const root = vault();
+    const firstUid = seededUidGenerator(SEED).next(); // what --seed SEED will mint first
+    const referrerRel = `assetspaces/x/efforts/42640000-0000-4000-8000-0000000000ae.md`;
+    fs.writeFileSync(
+      path.join(root, referrerRel),
+      fm([
+        "exo__Asset_uid: 42640000-0000-4000-8000-0000000000ae",
+        'exo__Asset_label: "Referrer (4264)"',
+        `exo__Instance_class: ["[[${TASK_CLASS}]]"]`,
+        `ems__Effort_blocker: "[[${firstUid}]]"`,
+      ]),
+      "utf-8",
+    );
+    await warmCache(root);
+    const blockerOf = (): string[] =>
+      readCache(root)
+        .files.find((e) => e.path === referrerRel)!
+        .triples.map((t) => t.object.value)
+        .filter((v) => v.includes(firstUid));
+    // Before: the target does not exist → the synthesized (path-less) IRI.
+    expect(blockerOf()).toEqual([`obsidian://vault/${firstUid}.md`]);
+
+    const r = await runApply(root, createArgs(["--use-cache"]));
+    const created = createdPath(r);
+    expect(created).toBe(`Inbox/${firstUid}.md`);
+    expect(writeThroughNotices(r)).toEqual([
+      "💾 triple cache: write-through persisted (2 file(s) re-parsed)", // the new file + its referrer
+    ]);
+    // After: the referrer's object is the real file-IRI of the created asset.
+    expect(blockerOf()).toEqual([vaultPathToIRI(created)]);
+    expect((await new CacheManager(root).loadOrBuild()).mode).toBe("hit");
   });
 });
