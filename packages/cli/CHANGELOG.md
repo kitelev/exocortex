@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+**Persistent triple cache — per-file manifest validity + delta refresh (#4263, req 42812747)**
+
+- `CacheManager` no longer validates `.exocortex/cache/triples.json` by the vault root
+  directory's mtime (which a nested `assetspaces/**` edit never touched, so `--use-cache`
+  could serve stale triples). The cache now persists, per indexed `.md` file, its mtime and
+  the triples it contributed; validity is a stat-walk diff against that manifest.
+- A non-empty diff is refreshed incrementally: only changed files (plus files linking to an
+  added / removed target) are re-parsed via `NoteToRDFConverter.convertNote`, removed files'
+  triples are dropped, and the inferred layer `index` materialized (RDFS + prototype chain)
+  is re-materialized. A TBox-form asset change, a FileSpace declaration change, a legacy or
+  corrupt cache, a failed walk or a diff above 50 % of the vault falls back to a full rebuild.
+- Cache format v2 (`metadata.formatVersion = 2`, `files[]`, `inferred[]`). A pre-existing
+  cache is treated as invalid once and rebuilt; no migration.
+- `query`, `classes`, `run-query` and `validate-schema` load the vault through one shared
+  `loadVaultTriples(vaultPath, { useCache })` helper (observable behaviour unchanged).
+- `index` persists only the inferred layer after materialization (`saveInferredTriples`)
+  instead of overwriting the whole cache with a flat, file-less triple list.
+
 ### Added
 
 **RDF Convert / Vault Dump (#2832)**

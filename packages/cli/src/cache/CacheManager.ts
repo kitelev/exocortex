@@ -327,7 +327,7 @@ export class CacheManager {
 
     const refreshed = await this.applyDelta(cached, manifest, diff, plan.reparse, adapter);
     return {
-      triples: this.materializeTriples(refreshed),
+      triples: refreshed.triples,
       cacheHit: true,
       durationMs: Date.now() - startTime,
       mode: "delta",
@@ -336,15 +336,13 @@ export class CacheManager {
   }
 
   private async rebuild(startTime: number, reason: string): Promise<LoadOrBuildResult> {
-    await this.buildCache();
-    const built = await this.readCacheData();
-    const triples = built ? this.materializeTriples(built) : [];
+    const built = await this.buildInternal({ strict: false });
     return {
-      triples,
+      triples: built.triples,
       cacheHit: false,
       durationMs: Date.now() - startTime,
       mode: "rebuild",
-      reparsedFiles: built ? built.files.length : 0,
+      reparsedFiles: built.data.files.length,
       rebuildReason: reason,
     };
   }
@@ -552,7 +550,7 @@ export class CacheManager {
     diff: ManifestDiff,
     reparse: string[],
     adapter: FileSystemVaultAdapter,
-  ): Promise<CacheData> {
+  ): Promise<{ data: CacheData; triples: Triple[] }> {
     const files: IFile[] = [];
     for (const relPath of reparse) {
       const file = adapter.getAbstractFileByPath(relPath);
@@ -594,21 +592,26 @@ export class CacheManager {
       }
     }
 
-    let inferred: SerializedTriple[] = [];
-    if (cached.inferred.length > 0) {
-      const explicit: Triple[] = [];
-      for (const entry of nextFiles) {
-        for (const t of entry.triples) {
-          explicit.push(this.deserializeTriple(t));
-        }
+    // Explicit triples in file order — returned to the caller AND (when the
+    // cache carries an inferred layer) fed to the same engines `index` runs,
+    // so the layer is recomputed from the merged state instead of going stale.
+    const explicit: Triple[] = [];
+    for (const entry of nextFiles) {
+      for (const t of entry.triples) {
+        explicit.push(this.deserializeTriple(t));
       }
+    }
+    let inferred: SerializedTriple[] = [];
+    let inferredTriples: Triple[] = [];
+    if (cached.inferred.length > 0) {
       const result = await materializeInferredTriples(explicit);
-      inferred = result.inferred.map(this.serializeTriple);
+      inferredTriples = result.inferred;
+      inferred = inferredTriples.map(this.serializeTriple);
     }
 
     const data = this.assembleCacheData(nextFiles, inferred, cached.metadata.fileSpacePrefixes);
     await this.writeCacheData(data);
-    return data;
+    return { data, triples: explicit.concat(inferredTriples) };
   }
 
   /**
@@ -643,6 +646,17 @@ export class CacheManager {
   async buildCacheWithValidation(
     options: BuildCacheOptions = {}
   ): Promise<BuildCacheWithValidationResult> {
+    return (await this.buildInternal(options)).result;
+  }
+
+  /**
+   * Full walk + persist; also hands back the freshly converted triples so a
+   * rebuild inside `loadOrBuild` need not re-read and re-deserialize the file
+   * it just wrote (~100 MB on a 16 k-file vault).
+   */
+  private async buildInternal(
+    options: BuildCacheOptions,
+  ): Promise<{ result: BuildCacheWithValidationResult; data: CacheData; triples: Triple[] }> {
     const startTime = Date.now();
 
     const vaultAdapter = new FileSystemVaultAdapter(this.vaultPath);
@@ -687,11 +701,24 @@ export class CacheManager {
     );
     await this.writeCacheData(data);
 
+    // Same concatenation the persisted entries yield on load: files in walk
+    // order, each file's committed triples in commit order.
+    const triples: Triple[] = [];
+    for (const file of files) {
+      if (!manifest.has(file.path)) continue;
+      const own = perFile.get(file.path);
+      if (own) triples.push(...own);
+    }
+
     return {
-      tripleCount: validationResult.triples.length,
-      durationMs: Date.now() - startTime,
-      skippedFiles: validationResult.skippedFiles,
-      summary: validationResult.summary,
+      result: {
+        tripleCount: validationResult.triples.length,
+        durationMs: Date.now() - startTime,
+        skippedFiles: validationResult.skippedFiles,
+        summary: validationResult.summary,
+      },
+      data,
+      triples,
     };
   }
 

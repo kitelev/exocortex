@@ -1,0 +1,59 @@
+{
+  "_doc": "Revert-verify mutants for #4263 (req 42812747). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/cache-manifest-delta-4263.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's CacheManager.ts and runs the integration + unit suites; `expect` names the axes that MUST go red). Recorded run 2026-09-18: control 0 red, 9/9 distinguish (see PR #4263 body).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/CacheManager.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/cache-manifest-delta-4263.integration.test.ts tests/unit/cache/CacheManager.test.ts 2>&1",
+  "red_re": "› ([AU]\\d+) ",
+  "mutants": {
+    "M1_modified_files_invisible_(root-mtime-class)": {
+      "from": "    } else if (previous !== mtimeMs) {\n      modified.push(relPath);",
+      "to": "    } else if (previous !== mtimeMs && false) {\n      modified.push(relPath);",
+      "expect": ["A1", "U3"]
+    },
+    "M2_delta_reparses_whole_vault": {
+      "from": "      strict: false,\n      files,\n      fileSpacePrefixes: cached.metadata.fileSpacePrefixes,",
+      "to": "      strict: false,\n      files: adapter.getAllFiles(),\n      fileSpacePrefixes: cached.metadata.fileSpacePrefixes,",
+      "expect": ["A2", "U3"]
+    },
+    "M3_referrer_scan_removed": {
+      "from": "    if (referrerIris.size > 0 || referrerLiteralNeedles.length > 0) {",
+      "to": "    if (referrerIris.size > 99999 || referrerLiteralNeedles.length > 99999) {",
+      "expect": ["A4"]
+    },
+    "M4_tbox_guard_removed": {
+      "from": "const TBOX_FORM = /^[a-z][a-zA-Z0-9]*__\\S+$/;",
+      "to": "const TBOX_FORM = /^$/;",
+      "expect": ["A5"]
+    },
+    "M5_inferred_layer_dropped_on_delta": {
+      "from": "    if (cached.inferred.length > 0) {\n      const explicit: Triple[] = [];",
+      "to": "    if (cached.inferred.length < 0) {\n      const explicit: Triple[] = [];",
+      "expect": ["A7"]
+    },
+    "M6_inferred_layer_kept_stale_on_delta": {
+      "from": "      inferred = result.inferred.map(this.serializeTriple);",
+      "to": "      inferred = cached.inferred; void result;",
+      "expect": ["A7", "U7"]
+    },
+    "M7_threshold_removed": {
+      "from": "    if (changed > population * DELTA_REBUILD_RATIO) {",
+      "to": "    if (changed > population * 99) {",
+      "expect": ["A6", "U5"]
+    },
+    "M8_filespace_guard_removed": {
+      "from": "      if (frontmatter && frontmatterDeclaresFileSpace(frontmatter)) {",
+      "to": "      if (frontmatter && !frontmatterDeclaresFileSpace(frontmatter) && false) {",
+      "expect": ["U8"]
+    },
+    "M10_removed_entries_kept": {
+      "from": "      if (removed.has(entry.path)) {\n        continue;\n      }\n      nextFiles.push(",
+      "to": "      if (removed.has(entry.path) && false) {\n        continue;\n      }\n      nextFiles.push(",
+      "expect": ["A3", "U4"]
+    }
+  }
+}

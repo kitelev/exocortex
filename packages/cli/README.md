@@ -217,6 +217,15 @@ npx @kitelev/exocortex-cli query "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }" \
 
 Build or refresh the persistent triple cache used by `--use-cache` consumers. The cache lives at `<vault>/.exocortex/cache/triples.json`.
 
+**Validity and refresh (#4263).** The cache is keyed per file: it stores the mtime and the
+triples of every indexed `.md`. A `--use-cache` command compares that manifest with a
+stat-walk of the vault, so an add / edit / delete anywhere under `assetspaces/**` is
+detected (the vault root directory's mtime is no longer consulted). A small change is
+refreshed incrementally — only the changed files and the files that link to an added or
+removed target are re-parsed, and the inferred layer `index` materialized is recomputed —
+while a legacy or corrupt cache, a change to a TBox-form asset (`prefix__Name` label) or a
+diff above half the vault falls back to a full rebuild. `index --force` always rebuilds.
+
 ```bash
 npx @kitelev/exocortex-cli index --vault ~/vault --stats
 ```
