@@ -174,6 +174,25 @@ export interface LoadOrBuildResult {
 }
 
 /**
+ * #4264 — outcome of {@link CacheManager.refreshAfterWrite} (write-through).
+ */
+export interface WriteThroughResult {
+  /**
+   * `delta` — the changed files (+ referrers) were re-parsed and the cache was
+   * persisted; `noop` — nothing changed since the loaded state, nothing
+   * written; `skipped` — the cache was left exactly as it was (`reason` says
+   * why: no cache to refresh, the vault could not be walked, or the change is
+   * one the delta cannot express — a rebuild-class diff is deliberately left
+   * to the next reader, see `refreshAfterWrite`).
+   */
+  mode: "delta" | "noop" | "skipped";
+  /** Files re-parsed (0 unless `delta`). */
+  reparsedFiles: number;
+  /** Why the cache was left alone (`skipped` only). */
+  reason?: string;
+}
+
+/**
  * Result of buildCache operation
  */
 export interface BuildCacheResult {
@@ -308,6 +327,14 @@ export class CacheManager {
   private readonly vaultPath: string;
   private readonly cachePath: string;
   private readonly cliVersion: string = "1.0.0"; // Will be replaced by actual version
+  /**
+   * #4264 — the cache state this instance last loaded or persisted
+   * (`loadOrBuild`: the hit's data / the delta's result / the rebuild's data;
+   * `refreshAfterWrite`: its own result). A write-through diffs the vault
+   * against THIS state instead of re-reading the ~100 MB file it just
+   * deserialized. `null` until the first load in this process.
+   */
+  private loaded: CacheData | null = null;
 
   constructor(vaultPath: string) {
     this.vaultPath = path.resolve(vaultPath);
@@ -374,6 +401,7 @@ export class CacheManager {
 
     const diff = diffManifest(cached.files, manifest);
     if (isEmptyDiff(diff)) {
+      this.loaded = cached;
       return {
         triples: this.materializeTriples(cached),
         cacheHit: true,
@@ -390,6 +418,7 @@ export class CacheManager {
     }
 
     const refreshed = await this.applyDelta(cached, manifest, diff, plan.reparse, adapter);
+    this.loaded = refreshed.data;
     return {
       triples: refreshed.triples,
       cacheHit: true,
@@ -400,8 +429,63 @@ export class CacheManager {
     };
   }
 
+  /**
+   * #4264 — write-through: after the calling command has WRITTEN to the vault,
+   * fold that write into the persisted cache so the NEXT `--use-cache` process
+   * is a plain hit instead of paying the delta (read + diff + re-parse +
+   * re-persist) itself.
+   *
+   * The vault's current file stamps are diffed against the state this instance
+   * loaded (or, when nothing was loaded in this process — `create` without
+   * `--validate` — against the cache on disk); the diff then goes through the
+   * SAME `planDelta` / `applyDelta` a reading process would run, so the
+   * persisted entries carry the changed files' NEW stamps AND their freshly
+   * converted triples (a re-stamp without a re-parse would be a stale hit — the
+   * #3788 class). Because the diff is taken against the loaded state, a
+   * concurrent writer's change that landed in between is re-parsed too, never
+   * reverted.
+   *
+   * Deliberately NOT done here: a rebuild-class change (TBox-form asset,
+   * FileSpace declaration, > {@link DELTA_REBUILD_RATIO}) — the mutating
+   * command would otherwise pay a full vault parse it did not ask for; the
+   * cache is left as it is and the next reader rebuilds, exactly as before.
+   * Likewise no cache is ever BUILT here: without an existing (readable) cache
+   * there is nothing to write through to.
+   *
+   * Persistence is the same atomic tmp + `rename` as every other write.
+   * Errors propagate; the callers treat them as best-effort (stderr warning,
+   * command result unchanged).
+   */
+  async refreshAfterWrite(): Promise<WriteThroughResult> {
+    const base = this.loaded ?? (await this.readCacheData());
+    if (!base) {
+      return { mode: "skipped", reparsedFiles: 0, reason: "no cache to refresh" };
+    }
+    const adapter = new FileSystemVaultAdapter(this.vaultPath);
+    const manifest = this.computeFileManifest(adapter);
+    if (!manifest) {
+      return { mode: "skipped", reparsedFiles: 0, reason: "vault could not be walked" };
+    }
+    const diff = diffManifest(base.files, manifest);
+    if (isEmptyDiff(diff)) {
+      return { mode: "noop", reparsedFiles: 0 };
+    }
+    const plan = this.planDelta(base, manifest, diff, adapter);
+    if (plan.rebuildReason) {
+      return {
+        mode: "skipped",
+        reparsedFiles: 0,
+        reason: `rebuild needed (${plan.rebuildReason}) — left to the next reader`,
+      };
+    }
+    const refreshed = await this.applyDelta(base, manifest, diff, plan.reparse, adapter);
+    this.loaded = refreshed.data;
+    return { mode: "delta", reparsedFiles: plan.reparse.length };
+  }
+
   private async rebuild(startTime: number, reason: string): Promise<LoadOrBuildResult> {
     const built = await this.buildInternal({ strict: false });
+    this.loaded = built.data;
     return {
       triples: built.triples,
       cacheHit: false,

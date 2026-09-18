@@ -28,6 +28,7 @@ import {
   scanClassNeighbours,
   pickCanonicalHome,
 } from "../executors/folderRepairHelpers.js";
+import type { CacheManager } from "../cache/CacheManager.js";
 
 /**
  * Fallback folder for new assets whose `exo__Asset_isDefinedBy` cannot be
@@ -88,6 +89,18 @@ interface CreateCommandOptions {
    * without it `create` is byte-identical (no vault load, no extra output).
    */
   validate?: boolean;
+  /**
+   * #4264 — persistent triple cache. `create`'s default path parses no RDF at
+   * all (its cost is frontmatter / shape scans), so the flag governs exactly
+   * two things: the vault triples `--validate` loads (through
+   * `loadVaultTriples`, hit / delta / rebuild instead of a full parse) and,
+   * after a real write, the write-through of the new asset into an EXISTING
+   * cache so the next `--use-cache` process is a plain hit. Default OFF —
+   * byte-identical without it. `ShapeLoader.loadFromVaultFS` (SHACL shapes for
+   * cardinality-aware serialization) is a separate load path and is NOT
+   * covered by the flag.
+   */
+  useCache?: boolean;
 }
 
 /**
@@ -312,6 +325,10 @@ export function createCommand(): Command {
     .option(
       "--validate",
       "Run SHACL-lite conformance validation on the new asset BEFORE writing it; a non-conformant asset is refused and no file is created (same shapes as `validate schema --shapes-mode`). Opt-in: omit the flag and create behaves exactly as before.",
+    )
+    .option(
+      "--use-cache",
+      "Use the persistent triple cache for the vault load of --validate, and write the created asset through to an existing cache so the next --use-cache process is a plain hit (shape loading is unaffected)",
     )
     .action(async (options: CreateCommandOptions) => {
       try {
@@ -572,6 +589,26 @@ export function createCommand(): Command {
         const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
         const creationService = new GenericAssetCreationService(vaultAdapter);
 
+        // #4264 — one CacheManager for the whole invocation when --use-cache:
+        // `--validate` loads through it (so the loaded state stays in memory)
+        // and the write-through after the write reuses that state. Without
+        // the flag no CacheManager exists — no cache read, no cache write.
+        // Lazily imported INSIDE the flag branch (same pattern as `--validate`
+        // below): the cache module pulls the serialization + inference graph,
+        // and the default `create` path must neither pay that load nor widen
+        // its module graph.
+        const useCache = options.useCache ?? false;
+        let cacheManager: CacheManager | undefined;
+        if (useCache) {
+          const { CacheManager: CacheManagerCtor } = await import(
+            "../cache/CacheManager.js"
+          );
+          cacheManager = new CacheManagerCtor(vaultPath);
+        }
+        const cacheLog = (line: string): void => {
+          process.stderr.write(`${line}\n`);
+        };
+
         const config: GenericAssetCreationConfig = {
           className: options.class,
           classRefForm: "uuid",
@@ -617,7 +654,11 @@ export function createCommand(): Command {
           const { CandidateShaclValidator } = await import(
             "../services/CandidateShaclValidator.js"
           );
-          const shaclValidator = new CandidateShaclValidator(vaultPath);
+          const shaclValidator = new CandidateShaclValidator(vaultPath, {
+            useCache,
+            cacheManager,
+            log: cacheLog,
+          });
           const { violations, warnings } =
             await shaclValidator.validateCandidate(
               candidate.path,
@@ -654,6 +695,19 @@ export function createCommand(): Command {
           const file = await creationService.createAsset(config);
           uuid = file.basename;
           path = file.path;
+
+          // #4264 — write-through: fold the just-written asset into the
+          // persisted cache (delta against the state `--validate` loaded, or
+          // against the cache on disk; an absent cache is left absent — create
+          // never builds one). Best-effort by construction: `writeThroughCache`
+          // never throws, so the JSON below and the exit code do not depend on
+          // it — the file is already on disk.
+          if (cacheManager) {
+            const { writeThroughCache, writeThroughNotice } = await import(
+              "../cache/loadVaultTriples.js"
+            );
+            cacheLog(writeThroughNotice(await writeThroughCache(cacheManager)));
+          }
         }
 
         // Always output JSON to stdout on success

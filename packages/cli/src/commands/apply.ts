@@ -3,7 +3,6 @@ import { existsSync } from "fs";
 import { resolve, relative, isAbsolute, sep as pathSep } from "path";
 import {
   InMemoryTripleStore,
-  NoteToRDFConverter,
   CommandResolver,
   PreconditionEvaluator,
   GroundingExecutor,
@@ -49,6 +48,12 @@ import { populateCliServiceRegistry } from "../services/CliServiceRegistryPopula
 import { FsQueryBodyResolver } from "../services/FsQueryBodyResolver.js";
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
 import { StderrLogger } from "../infrastructure/StderrLogger";
+import {
+  loadVaultTriples,
+  cacheLoadNotice,
+  writeThroughCache,
+  writeThroughNotice,
+} from "../cache/loadVaultTriples.js";
 
 export interface ApplyOptions {
   vault: string;
@@ -63,6 +68,11 @@ export interface ApplyOptions {
   // `query --format json`. When set, stdout is a single JSON object and the
   // human-readable ✅/📊 notices are suppressed so the object parses cleanly.
   json?: boolean;
+  // #4264 — load the triple store from the persistent per-file cache
+  // (`loadVaultTriples`, hit / delta / rebuild) instead of a full vault parse,
+  // and after a successful mutation write it through to that cache. Default
+  // off: without the flag the command is byte-identical to before.
+  useCache?: boolean;
 }
 
 /**
@@ -537,6 +547,10 @@ export function applyCommand(): Command {
       "--json",
       "Emit a machine-readable JSON result ({command,target,created:[{uuid,path,label}]}) instead of human-readable output",
     )
+    .option(
+      "--use-cache",
+      "Use the persistent triple cache (faster vault loading); a successful mutation is written through to it so the next --use-cache process is a plain hit",
+    )
     .action(
       async (
         cmdArg: string,
@@ -563,12 +577,21 @@ export function applyCommand(): Command {
             ? seededUidGenerator(options.seed)
             : liveUidGenerator();
 
-          // Build triple store once for the whole batch
-          const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
-          const converter = new NoteToRDFConverter(vaultAdapter);
-          const triples = await converter.convertVault();
+          // Build triple store once for the whole batch. #4264: through the
+          // shared loader — without --use-cache this is the same
+          // `new NoteToRDFConverter(new FileSystemVaultAdapter(vaultPath))
+          // .convertVault()` as before (no cache read, no cache write); with it
+          // the per-file cache (hit / delta / rebuild). The loader's
+          // CacheManager is kept for the write-through after the loop.
+          const useCacheEffective = options.useCache ?? false;
+          const loaded = await loadVaultTriples(vaultPath, {
+            useCache: useCacheEffective,
+          });
+          if (useCacheEffective) {
+            process.stderr.write(`${cacheLoadNotice(loaded)}\n`);
+          }
           const tripleStore = new InMemoryTripleStore();
-          await tripleStore.addAll(triples);
+          await tripleStore.addAll(loaded.triples);
 
           // RFC 36347daf Phase 3 — construct WorkflowResolver once for the whole
           // batch so its per-class cache survives across stdin-piped targets
@@ -624,6 +647,23 @@ export function applyCommand(): Command {
             if (targetResult.ok) successCount++;
             else failCount++;
             allCreated.push(...targetResult.created);
+          }
+
+          // #4264 — write-through: a successful non-dry-run mutation is folded
+          // into the persisted cache (only the changed files + their referrers
+          // are re-parsed; a rebuild-class change is left to the next reader).
+          // Best-effort by construction: `writeThroughCache` never throws, so
+          // the exit code and the stdout envelope below do not depend on it —
+          // the mutation is already on disk, and a cache that could not be
+          // persisted is simply refreshed by the next --use-cache process.
+          if (
+            useCacheEffective &&
+            !options.dryRun &&
+            successCount > 0 &&
+            loaded.cacheManager
+          ) {
+            const outcome = await writeThroughCache(loaded.cacheManager);
+            process.stderr.write(`${writeThroughNotice(outcome)}\n`);
           }
 
           // Issue #3906 — in --json mode the multi-target summary is suppressed

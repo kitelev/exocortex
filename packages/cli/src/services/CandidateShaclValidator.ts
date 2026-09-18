@@ -12,6 +12,28 @@ import {
   filterReportToStagedFocusNodes,
 } from "../commands/validate-schema.js";
 import type { ShaclConformanceViolation } from "../utils/errors/ShaclConformanceError.js";
+import {
+  loadVaultTriples,
+  cacheLoadNotice,
+} from "../cache/loadVaultTriples.js";
+import type { CacheManager } from "../cache/CacheManager.js";
+
+/**
+ * #4264 — how the validator loads the vault context. The default (no cache)
+ * is the pre-#4264 full `convertVault()`.
+ */
+export interface CandidateShaclValidatorOptions {
+  /** `true` → `loadVaultTriples({ useCache: true })` for the vault triples. */
+  useCache?: boolean;
+  /**
+   * The `CacheManager` the caller owns (so `create` can write the asset it is
+   * about to create through the SAME loaded state afterwards). Ignored
+   * without `useCache`.
+   */
+  cacheManager?: CacheManager;
+  /** Receives the one-line cache notice when `useCache` is set (stderr by the caller). */
+  log?: (line: string) => void;
+}
 
 /**
  * The candidate-scoped verdict of a SHACL-lite conformance run.
@@ -71,7 +93,10 @@ const FRONTMATTER_REGEX = /^---\n([\s\S]*?)\n---/;
  *   never blocks — the same exit-code semantics `shapes-mode` applies (#3488).
  */
 export class CandidateShaclValidator {
-  constructor(private readonly vaultPath: string) {}
+  constructor(
+    private readonly vaultPath: string,
+    private readonly options: CandidateShaclValidatorOptions = {},
+  ) {}
 
   /**
    * Validate one candidate asset that has NOT been written yet.
@@ -120,8 +145,23 @@ export class CandidateShaclValidator {
     }
 
     // Vault context: the shapes (TBox) plus every existing asset, so `sh:class`
-    // range checks can resolve the candidate's references.
-    const vaultTriples = (await converter.convertVault()) as DomainTriple[];
+    // range checks can resolve the candidate's references. #4264: through the
+    // shared loader — the default is the same full `convertVault()` on THIS
+    // converter/adapter as before; with `useCache` the per-file cache (hit /
+    // delta / rebuild). The candidate itself is converted below by this
+    // converter either way: `convertNoteFromFrontmatter` resolves the
+    // candidate's wikilinks through the adapter's own (lazily built) indexes,
+    // not through state a prior `convertVault()` would have left behind.
+    const useCache = this.options.useCache ?? false;
+    const loaded = await loadVaultTriples(this.vaultPath, {
+      useCache,
+      cacheManager: this.options.cacheManager,
+      vaultAdapter: adapter,
+    });
+    if (useCache) {
+      this.options.log?.(cacheLoadNotice(loaded));
+    }
+    const vaultTriples = loaded.triples as DomainTriple[];
 
     // Candidate triples from the assembled bytes — no temp file, no disk write.
     // The try/catch is the backstop half of the parity above: `convertVault`
