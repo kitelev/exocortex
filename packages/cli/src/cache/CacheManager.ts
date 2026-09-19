@@ -177,6 +177,22 @@ export interface LoadOrBuildResult {
    * input changed (absent for hit / rebuild).
    */
   inferredRecomputed?: boolean;
+  /**
+   * #4272 — `triples[0 .. explicitCount)` are the EXPLICIT triples (file order),
+   * the rest is the inferred layer. The CLI store keeps both in its default
+   * graph (`addAll`), so a consumer that must see only what a file's own
+   * frontmatter states (`TripleStoreIndexedFsAdapter`) reads this boundary
+   * instead of the store.
+   */
+  explicitCount: number;
+  /**
+   * #4272 — vault-relative paths of the walked markdown files the loader
+   * committed NO triples for: skipped by an invariant violation (two-phase
+   * commit #2997 — e.g. an optional property present but empty) or genuinely
+   * empty (no frontmatter). The tolerant frontmatter scan still reads them,
+   * so an index over the triples must read exactly these to stay identical.
+   */
+  zeroTriplePaths: string[];
 }
 
 /**
@@ -419,6 +435,8 @@ export class CacheManager {
     if (isEmptyDiff(diff)) {
       return {
         triples: this.materializeTriples(cached),
+        explicitCount: CacheManager.explicitCountOf(cached),
+        zeroTriplePaths: CacheManager.zeroTriplePathsOf(cached),
         cacheHit: true,
         durationMs: Date.now() - startTime,
         mode: "hit",
@@ -435,12 +453,30 @@ export class CacheManager {
     const refreshed = await this.applyDelta(cached, manifest, diff, plan.reparse, adapter);
     return {
       triples: refreshed.triples,
+      explicitCount: CacheManager.explicitCountOf(refreshed.data),
+      zeroTriplePaths: CacheManager.zeroTriplePathsOf(refreshed.data),
       cacheHit: true,
       durationMs: Date.now() - startTime,
       mode: "delta",
       reparsedFiles: plan.reparse.length,
       inferredRecomputed: refreshed.inferredRecomputed,
     };
+  }
+
+  /** #4272 — number of explicit triples `materializeTriples` puts FIRST. */
+  private static explicitCountOf(data: CacheData): number {
+    let n = 0;
+    for (const entry of data.files) n += entry.triples.length;
+    return n;
+  }
+
+  /** #4272 — walked files whose entry carries no triples (skipped or empty). */
+  private static zeroTriplePathsOf(data: CacheData): string[] {
+    const paths: string[] = [];
+    for (const entry of data.files) {
+      if (entry.triples.length === 0) paths.push(entry.path);
+    }
+    return paths;
   }
 
   /**
@@ -517,6 +553,9 @@ export class CacheManager {
     const built = await this.buildInternal({ strict: false });
     return {
       triples: built.triples,
+      // A rebuild materializes no inferred layer (inferenceEnabled: false).
+      explicitCount: built.triples.length,
+      zeroTriplePaths: CacheManager.zeroTriplePathsOf(built.data),
       cacheHit: false,
       durationMs: Date.now() - startTime,
       mode: "rebuild",

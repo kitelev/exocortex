@@ -839,11 +839,14 @@ export class NoteToRDFConverter {
   async convertVault(
     options: {
       excludedFolders?: string[];
+      /** Per-file commit observer — see `convertVaultWithValidation` (#4263). */
+      onFileTriples?: (file: IFile, triples: Triple[]) => void;
     } = {},
   ): Promise<Triple[]> {
     const result = await this.convertVaultWithValidation({
       strict: false,
       excludedFolders: options.excludedFolders,
+      onFileTriples: options.onFileTriples,
     });
     return result.triples;
   }

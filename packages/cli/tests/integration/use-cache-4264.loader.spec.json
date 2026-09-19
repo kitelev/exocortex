@@ -36,9 +36,10 @@
       "expect": ["A3", "A4", "A9"]
     },
     "L4_loader_result_drops_the_cache_manager": {
-      "from": "      reparsedFiles: cacheResult.reparsedFiles,\n      cacheManager,\n    };",
-      "to": "      reparsedFiles: cacheResult.reparsedFiles,\n    };",
-      "expect": ["A3", "A4"]
+      "from": "      reparsedFiles: cacheResult.reparsedFiles,\n      cacheManager,\n      explicitCount: cacheResult.explicitCount,",
+      "to": "      reparsedFiles: cacheResult.reparsedFiles,\n      explicitCount: cacheResult.explicitCount,",
+      "expect": ["A3", "A4"],
+      "_note": "anchor re-based 2026-09-19 (#4272 added explicitCount/zeroTriplePaths after cacheManager); expectation unchanged"
     }
   }
 }

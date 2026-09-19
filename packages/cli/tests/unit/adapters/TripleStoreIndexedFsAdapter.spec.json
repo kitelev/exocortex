@@ -1,0 +1,125 @@
+{
+  "_doc": "Revert-verify mutants for #4272 (req 5ab3d237-cae9-498c-925c-6951b9c9c5db), subject packages/cli/src/adapters/TripleStoreIndexedFsAdapter.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/unit/adapters/TripleStoreIndexedFsAdapter.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's subject and runs the unit + integration suites; `expect` names the axes that MUST go red). The apply.ts wiring, loadVaultTriples.ts and CacheManager.ts have their own specs (apply-create-instance-index-4272*.spec.json) because the driver mutates one file per spec. Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/adapters/TripleStoreIndexedFsAdapter.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/unit/adapters/TripleStoreIndexedFsAdapter.test.ts tests/integration/apply-create-instance-index-4272.integration.test.ts 2>&1",
+  "red_re": "› ([UI]\\d+\\w*) ",
+  "mutants": {
+    "M2_override_always_delegates_to_the_scan": {
+      "from": "    if (!indexable) {\n      this.stats.scanFallbacks++;",
+      "to": "    if (!indexable || true) {\n      this.stats.scanFallbacks++;",
+      "expect": ["U2", "U4", "U5", "I1", "I1c", "I2"]
+    },
+    "M3_verification_skipped_(every_candidate_returned)": {
+      "from": "        if (this.matchesQuery(metadata, query)) {\n          matches.push(filePath);\n        }",
+      "to": "        if (this.matchesQuery(metadata, query) || metadata) {\n          matches.push(filePath);\n        }",
+      "expect": ["U4", "U10"]
+    },
+    "M4_zeroTriplePaths_ignored_(loader-skipped_files_never_read)": {
+      "from": "    for (const filePath of this.source.zeroTriplePaths) {\n      this.stats.zeroTripleReads++;",
+      "to": "    for (const filePath of [] as string[]) {\n      this.stats.zeroTripleReads++;",
+      "expect": ["U8"]
+    },
+    "M5_duplicate_order_not_sorted": {
+      "from": "      .filter((p) => !TripleStoreIndexedFsAdapter.hasDotSegment(p))\n      .sort();",
+      "to": "      .filter((p) => !TripleStoreIndexedFsAdapter.hasDotSegment(p));",
+      "expect": ["U6"]
+    },
+    "M6_class_IRI_not_inverted_to_prefix__LocalName": {
+      "from": "      return [\n        `${term.namespace.prefix}__${term.localName}`,\n        ...(classIriToUids.get(object.value) ?? []),\n      ];",
+      "to": "      return [\n        object.value,\n        ...(classIriToUids.get(object.value) ?? []),\n      ];",
+      "expect": ["U1", "U2", "I1", "I1c", "I2"]
+    },
+    "M7_file_IRI_not_reduced_to_basename": {
+      "from": "      return [basename, ...(ownNames.get(targetPath) ?? [])];",
+      "to": "      return [targetPath, ...(ownNames.get(targetPath) ?? [])];",
+      "expect": ["U1a"]
+    },
+    "M8_class_IRI_not_keyed_by_the_class_file_uid": {
+      "from": "        `${term.namespace.prefix}__${term.localName}`,\n        ...(classIriToUids.get(object.value) ?? []),",
+      "to": "        `${term.namespace.prefix}__${term.localName}`,",
+      "expect": ["U1a"]
+    },
+    "M9_index_keys_not_normalised_like_the_scan": {
+      "from": "      for (const raw of raws) this.addKey(index, key, this.normalizeValue(raw), filePath);",
+      "to": "      for (const raw of raws) this.addKey(index, key, String(raw), filePath);",
+      "expect": ["U1d"]
+    },
+    "M10_empty_query_value_answered_by_the_index": {
+      "from": "          INDEXED_KEYS.has(key) && this.normalizeValue(value).length > 0,",
+      "to": "          INDEXED_KEYS.has(key),",
+      "expect": ["U3"]
+    },
+    "M11_unknown_key_answered_by_the_index": {
+      "from": "          INDEXED_KEYS.has(key) && this.normalizeValue(value).length > 0,",
+      "to": "          this.normalizeValue(value).length > 0,",
+      "expect": ["U3"]
+    },
+    "M12_two_key_query_unions_instead_of_intersecting": {
+      "from": "          : candidates.filter((p) => hits.includes(p));",
+      "to": "          : [...candidates, ...hits.filter((p) => !candidates!.includes(p))];",
+      "expect": ["U1c"]
+    },
+    "M13_dot_segment_paths_not_excluded": {
+      "from": "    const ordered = [...(candidates ?? [])]\n      .filter((p) => !TripleStoreIndexedFsAdapter.hasDotSegment(p))\n      .sort();",
+      "to": "    const ordered = [...(candidates ?? [])]\n      .sort();",
+      "expect": ["U10"]
+    },
+    "M14_unreadable_candidate_returned_as_a_match": {
+      "from": "        // Unreadable / vanished since the source was loaded: not a match — the\n        // scan skips such a file the same way.\n        continue;",
+      "to": "        // Unreadable / vanished since the source was loaded: not a match — the\n        // scan skips such a file the same way.\n        matches.push(filePath);\n        continue;",
+      "expect": ["U7"]
+    },
+    "M15_own_writes_not_reindexed": {
+      "from": "  private async reindexOwnWrite(filePath: string, content: string): Promise<void> {\n    const index = await this.ensureIndex();",
+      "to": "  private async reindexOwnWrite(filePath: string, content: string): Promise<void> {\n    const index = await this.ensureIndex();\n    if (index) return;",
+      "expect": ["U9"]
+    },
+    "M16_file_IRI_not_keyed_by_the_targets_own_label_and_aliases": {
+      "from": "      return [basename, ...(ownNames.get(targetPath) ?? [])];",
+      "to": "      return [basename];",
+      "expect": ["U10"]
+    },
+    "M17_normalisation_drifts_from_the_scan_(case_folding)": {
+      "from": "  constructor(\n    rootPath: string,\n    private readonly source: TripleStoreIndexSource,\n  ) {\n    super(rootPath);\n  }",
+      "to": "  constructor(\n    rootPath: string,\n    private readonly source: TripleStoreIndexSource,\n  ) {\n    super(rootPath);\n  }\n\n  protected override normalizeValue(value: any): string {\n    return super.normalizeValue(value).toLowerCase();\n  }",
+      "expect": ["U1b"]
+    },
+    "M18_forget_is_a_no-op_(stale_keys_survive_own_writes)": {
+      "from": "  private forget(index: Index, filePath: string): void {\n    const keys = this.pathKeys.get(filePath);",
+      "to": "  private forget(index: Index, filePath: string): void {\n    const keys = this.pathKeys.get(filePath + \"__revert-disabled__\");",
+      "expect": ["U9"]
+    },
+    "M19_rename_drops_the_keys_instead_of_moving_them": {
+      "from": "    for (const [key, norm] of keys) this.addKey(index, key, norm, to);",
+      "to": "    void keys;\n    void to;",
+      "expect": ["U9"]
+    },
+    "M20_addKey_dedup_removed_(a_path_listed_twice_under_one_key)": {
+      "from": "    else if (!list.includes(filePath)) list.push(filePath);",
+      "to": "    else list.push(filePath);",
+      "expect": ["U1a"]
+    },
+    "M21_index_memo_removed_(rebuilt_on_every_lookup)": {
+      "from": "    if (this.indexPromise === null) {\n      this.indexPromise = this.buildIndex();\n    }\n    return this.indexPromise;",
+      "to": "    this.indexPromise = this.buildIndex();\n    return this.indexPromise;",
+      "expect": ["U2", "U8"]
+    },
+    "M22_subjectToPath_never_resolves_(nothing_indexed_from_the_triples)": {
+      "from": "    const p = iriToVaultPath(subject.value);\n    if (p === null || p.startsWith(\"/\") || p.startsWith(\"..\") || p.includes(\"/../\")) return null;\n    return p;",
+      "to": "    const p = iriToVaultPath(subject.value);\n    if (p === null || p.startsWith(\"/\") || p.startsWith(\"..\") || p.includes(\"/../\")) return null;\n    return p + \"__revert-disabled__\";",
+      "expect": ["U1"],
+      "_note": "the traversal guard itself (absolute / `..`) is defensive: the converter never emits such a subject IRI for a walked vault file, so no input distinguishes it — the mutant locks the resolution, not the guard"
+    },
+    "M23_rel_does_not_normalise_a_dot-slash_own_path": {
+      "from": "    return filePath.replace(/\\\\/g, \"/\").replace(/^\\.\\//, \"\");",
+      "to": "    return filePath.replace(/\\\\/g, \"/\");",
+      "expect": ["U9"]
+    }
+  }
+}
