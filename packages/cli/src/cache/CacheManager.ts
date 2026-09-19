@@ -77,9 +77,11 @@ export interface CacheMetadata {
    * `true` once `index` persisted an inferred layer via `saveInferredTriples`
    * (even an EMPTY one — a vault whose only prototype was deleted still has
    * inference switched on). A delta re-materializes the layer iff this flag
-   * is set; a full rebuild resets it (the flag is a property of how the
-   * cache was built, not of the data — reading it off `inferred.length` would
-   * leave a cache without a layer forever once the layer happened to be empty).
+   * is set; `index`'s own full build resets it (the flag is a property of how
+   * the cache was built, not of the data — reading it off `inferred.length`
+   * would leave a cache without a layer forever once the layer happened to be
+   * empty). #4277: a READER's rebuild (`loadOrBuild` displacing a readable
+   * cache) inherits the flag and materializes the layer itself — see `rebuild`.
    */
   inferenceEnabled: boolean;
 }
@@ -288,6 +290,7 @@ const TBOX_FORM = /^[a-z][a-zA-Z0-9]*__\S+$/;
 const ASSET_LABEL_IRI_SUFFIX = "#Asset_label";
 const ASSET_ALIASES_IRI_SUFFIX = "#Asset_aliases";
 const ASSET_PROTOTYPE_IRI_SUFFIX = "#Asset_prototype";
+const INSTANCE_CLASS_IRI_SUFFIX = "#Instance_class";
 
 /**
  * Predicates the two inference engines READ (`RDFSInferenceEngine`:
@@ -299,7 +302,7 @@ const ASSET_PROTOTYPE_IRI_SUFFIX = "#Asset_prototype";
  * the whole vault (see `inferenceInputsChanged`).
  */
 const INFERENCE_PREDICATE_SUFFIXES = [
-  "#Instance_class",
+  INSTANCE_CLASS_IRI_SUFFIX,
   "#Class_superClass",
   "#type",
   ASSET_PROTOTYPE_IRI_SUFFIX,
@@ -321,10 +324,14 @@ const INFERENCE_PREDICATE_SUFFIXES = [
  *   the files that link to an added/removed target, whose emitted object IRI
  *   depends on the target's existence), drops the entries of removed files,
  *   re-materializes the inferred layer when one is present, and persists the
- *   result. A TBox-form asset change (its label feeds the SYMBOLIC IRI every
- *   referrer emits), a FileSpace declaration change, a legacy/corrupt cache,
- *   a failed walk or a diff above {@link DELTA_REBUILD_RATIO} fall back to the
- *   full rebuild that existed before.
+ *   result. A TBox-form asset change that alters what its referrers derive
+ *   from it (its label feeds the SYMBOLIC IRI every referrer emits, its first
+ *   `exo__Instance_class` the type triples they co-emit, its TBox-form aliases
+ *   how a `[[prefix__Name]]` link resolves — #4277: a modified TBox-form asset
+ *   whose projection is UNCHANGED is an ordinary delta), a FileSpace
+ *   declaration change, a legacy/corrupt cache, a failed walk or a diff above
+ *   {@link DELTA_REBUILD_RATIO} fall back to the full rebuild that existed
+ *   before (#4277: inheriting the displaced cache's inferred layer).
  *
  * @example
  * ```typescript
@@ -423,12 +430,12 @@ export class CacheManager {
 
     const cached = await this.readCacheData();
     if (!cached) {
-      return this.rebuild(startTime, "cache absent, corrupt or legacy format");
+      return this.rebuild(startTime, "cache absent, corrupt or legacy format", null);
     }
 
     const manifest = this.computeFileManifest();
     if (!manifest) {
-      return this.rebuild(startTime, "vault could not be walked");
+      return this.rebuild(startTime, "vault could not be walked", cached);
     }
 
     const diff = diffManifest(cached.files, manifest);
@@ -445,9 +452,9 @@ export class CacheManager {
     }
 
     const adapter = new FileSystemVaultAdapter(this.vaultPath);
-    const plan = this.planDelta(cached, manifest, diff, adapter);
+    const plan = await this.planDelta(cached, manifest, diff, adapter);
     if (plan.rebuildReason) {
-      return this.rebuild(startTime, plan.rebuildReason);
+      return this.rebuild(startTime, plan.rebuildReason, cached);
     }
 
     const refreshed = await this.applyDelta(cached, manifest, diff, plan.reparse, adapter);
@@ -499,8 +506,9 @@ export class CacheManager {
    * dropped and the write is folded into a fresh read instead (review of
    * 1e8e8204, HIGH). Neither is ever reverted.
    *
-   * Deliberately NOT done here: a rebuild-class change (TBox-form asset,
-   * FileSpace declaration, > {@link DELTA_REBUILD_RATIO}) — the mutating
+   * Deliberately NOT done here: a rebuild-class change (a TBox-form asset
+   * whose referrer-visible projection changed — #4277 — a FileSpace
+   * declaration, > {@link DELTA_REBUILD_RATIO}) — the mutating
    * command would otherwise pay a full vault parse it did not ask for; the
    * cache is left as it is and the next reader rebuilds, exactly as before.
    * Likewise no cache is ever BUILT here: without an existing (readable) cache
@@ -532,7 +540,7 @@ export class CacheManager {
     if (isEmptyDiff(diff)) {
       return { mode: "noop", reparsedFiles: 0 };
     }
-    const plan = this.planDelta(base, manifest, diff, adapter);
+    const plan = await this.planDelta(base, manifest, diff, adapter);
     if (plan.rebuildReason) {
       return {
         mode: "skipped",
@@ -549,11 +557,29 @@ export class CacheManager {
     return { mode: "delta", reparsedFiles: plan.reparse.length };
   }
 
-  private async rebuild(startTime: number, reason: string): Promise<LoadOrBuildResult> {
-    const built = await this.buildInternal({ strict: false });
+  /**
+   * Full re-parse + persist. #4277 — a reader's rebuild INHERITS the inferred
+   * layer of the cache it displaces: `inferenceEnabled` on the readable cache
+   * a rebuild-class diff (or a failed walk) is replacing means the consumer
+   * keeps that layer on purpose (`index` once, deltas since), so the new cache
+   * is written WITH a freshly materialized layer and the flag carried over —
+   * otherwise every rebuild-class change cost the reader's rebuild AND the
+   * consumer's compensating `index --force`. No readable cache (cold, legacy,
+   * corrupt) or `inferenceEnabled: false` → layer-less, exactly as before.
+   */
+  private async rebuild(
+    startTime: number,
+    reason: string,
+    cached: CacheData | null,
+  ): Promise<LoadOrBuildResult> {
+    const built = await this.buildInternal({
+      strict: false,
+      materializeInference: cached?.metadata.inferenceEnabled === true,
+    });
     return {
-      triples: built.triples,
-      // A rebuild materializes no inferred layer (inferenceEnabled: false).
+      triples: built.triples.concat(built.inferred),
+      // `built.triples` is the explicit set (file order); the inherited layer
+      // follows it — the #4272 boundary holds for a rebuild too.
       explicitCount: built.triples.length,
       zeroTriplePaths: CacheManager.zeroTriplePathsOf(built.data),
       cacheHit: false,
@@ -711,14 +737,23 @@ export class CacheManager {
    *    emitted as a SYMBOLIC ontology IRI derived from that label — a change
    *    to such an asset can rewrite every referrer's triples, and referrers
    *    cannot be found by scanning for the target's file-IRI, so this case
-   *    falls back to a full rebuild.
+   *    falls back to a full rebuild. #4277 — but only when the change alters
+   *    what referrers DERIVE from the target (its {@link tboxProjection}: the
+   *    symbolic label, the TBox-form alias set, the `Instance_class` objects
+   *    behind `emitTypeTripleForEnumInstance`); a modified TBox-form asset is
+   *    re-parsed once here and, if that projection is byte-identical to its
+   *    cached entry's, it follows the ordinary delta path. The two passes
+   *    below mean that on a MIXED diff the rebuild reason is the FIRST cheap
+   *    one (FileSpace declaration / label-named file) over ALL changed paths,
+   *    not the first one in path order — only the reason string differs, the
+   *    rebuild itself is the same.
    */
-  private planDelta(
+  private async planDelta(
     cached: CacheData,
     manifest: FileManifest,
     diff: ManifestDiff,
     adapter: FileSystemVaultAdapter,
-  ): { reparse: string[]; rebuildReason?: string } {
+  ): Promise<{ reparse: string[]; rebuildReason?: string }> {
     const changed = diff.added.length + diff.modified.length + diff.removed.length;
     const population = Math.max(cached.files.length, manifest.size, 1);
     if (changed > population * DELTA_REBUILD_RATIO) {
@@ -755,6 +790,14 @@ export class CacheManager {
       referrerIris.add(vaultPathToIRI(removed));
     }
 
+    // Pass 1 — the cheap rebuild-class probes (FileSpace declaration, label-
+    // NAMED file) over EVERY changed path, before any #4277 projection probe
+    // is paid: a diff that rebuilds anyway must not first re-parse the
+    // TBox-form files that happen to precede the deciding one (review r1, L4).
+    const changedFiles = new Map<
+      string,
+      { file: IFile | null; frontmatter: Record<string, unknown> | null }
+    >();
     for (const changedPath of [...diff.added, ...diff.modified]) {
       if (declarations.has(changedPath)) {
         return { reparse: [], rebuildReason: `FileSpace declaration changed: ${changedPath}` };
@@ -762,37 +805,70 @@ export class CacheManager {
       if (isTBoxBasename(changedPath)) {
         return { reparse: [], rebuildReason: `TBox-form file changed: ${changedPath}` };
       }
-      const file = adapter.getAbstractFileByPath(changedPath);
-      const frontmatter =
-        file && isFile(file) ? adapter.getFrontmatter(file) : null;
+      const node = adapter.getAbstractFileByPath(changedPath);
+      const file = node && isFile(node) ? node : null;
+      const frontmatter = file ? adapter.getFrontmatter(file) : null;
       if (frontmatter && frontmatterDeclaresFileSpaceAnyForm(frontmatter)) {
         return {
           reparse: [],
           rebuildReason: `FileSpace declaration changed: ${changedPath}`,
         };
       }
-      const label = frontmatter?.["exo__Asset_label"];
-      if (typeof label === "string" && TBOX_FORM.test(label)) {
-        return { reparse: [], rebuildReason: `TBox-form asset changed: ${changedPath}` };
-      }
+      changedFiles.set(changedPath, { file, frontmatter });
+    }
+
+    // Pass 2 — TBox-form projection probe (#4277) and the alias diff.
+    let converter: NoteToRDFConverter | null = null;
+    for (const [changedPath, { file, frontmatter }] of changedFiles) {
       const previous = cachedByPath.get(changedPath);
-      if (previous && entryHasTBoxLabel(previous)) {
-        return {
-          reparse: [],
-          rebuildReason: `asset lost its TBox-form label: ${changedPath}`,
-        };
-      }
+      const label = frontmatter?.["exo__Asset_label"];
       // A TBox-form ALIAS (`prefix__Name`) is emitted as a SYMBOLIC IRI, and a
       // `[[prefix__Name]]` link resolving through it flips between the
       // target's file-IRI (alias present) and that symbolic IRI (alias
       // absent) — its referrers hold neither a literal needle nor, while the
       // alias is absent, the file-IRI. Like a TBox-form label, it falls back
       // to the full rebuild (review round 2, N1).
-      if (
-        frontmatterHasTBoxFormAlias(frontmatter) ||
-        (previous !== undefined && entryHasTBoxFormAlias(previous))
-      ) {
-        return { reparse: [], rebuildReason: `TBox-form alias: ${changedPath}` };
+      const tbox: TBoxProbe = {
+        newLabel: typeof label === "string" && TBOX_FORM.test(label),
+        hadLabel: previous !== undefined && entryHasTBoxLabel(previous),
+        newAlias: frontmatterHasTBoxFormAlias(frontmatter),
+        hadAlias: previous !== undefined && entryHasTBoxFormAlias(previous),
+      };
+      // The literal aliases the converter emits for this file — the alias
+      // index the referrer scan below keys on. Read from the cached entry's
+      // shape (a TBox-form alias is an IRI object there, not a literal) so
+      // both sides of the diff describe the same set.
+      let newAliases: Set<string>;
+      if (tbox.newLabel || tbox.hadLabel || tbox.newAlias || tbox.hadAlias) {
+        // #4277 — an ADDED TBox-form asset, or one whose cached entry carries
+        // no triples (the converter skipped it — its old projection cannot be
+        // read back), rebuilds as before. A MODIFIED one is re-parsed right
+        // here, through the same converter the delta uses, and rebuilds only
+        // when the referrer-visible projection actually changed. The probe's
+        // triples are NOT reused by `applyDelta`: the delta re-parses the file
+        // through `convertVaultWithValidation` (invariant validation, two-phase
+        // commit — what the walk applies), so a delta'd TBox-form file costs
+        // two parses of that one file (review r1, L2). A probe that THROWS —
+        // an invariant the walk would have skipped the file for (an empty
+        // `exo__*` literal, an invalid IRI) — has no readable projection
+        // either: rebuild, never a crashed reader (review r1, F1).
+        if (!previous || previous.triples.length === 0 || !file) {
+          return { reparse: [], rebuildReason: tboxRebuildReason(tbox, changedPath) };
+        }
+        converter ??= new NoteToRDFConverter(adapter);
+        let fresh: SerializedTriple[];
+        try {
+          fresh = (await converter.convertNote(file)).map(this.serializeTriple);
+        } catch {
+          return { reparse: [], rebuildReason: tboxRebuildReason(tbox, changedPath) };
+        }
+        const reason = tboxProjectionChanged(changedPath, previous.triples, fresh, tbox);
+        if (reason) {
+          return { reparse: [], rebuildReason: reason };
+        }
+        newAliases = entryAliases({ path: changedPath, mtimeMs: 0, size: 0, triples: fresh });
+      } else {
+        newAliases = frontmatterAliases(frontmatter);
       }
       // Alias resolution: `[[<alias>]]` links resolve through the target's
       // frontmatter `aliases` (FileSystemVaultAdapter alias index, lower-cased),
@@ -801,7 +877,6 @@ export class CacheManager {
       // by IRI; a pure addition changes nothing for them), the ones that will
       // resolve through a new alias hold the raw link (re-parse by needle).
       const oldAliases = previous ? entryAliases(previous) : new Set<string>();
-      const newAliases = frontmatterAliases(frontmatter);
       if (previous && !sameSet(oldAliases, newAliases)) {
         let aliasRemoved = false;
         for (const alias of oldAliases) {
@@ -1032,8 +1107,23 @@ export class CacheManager {
    * it just wrote (~100 MB on a 16 k-file vault).
    */
   private async buildInternal(
-    options: BuildCacheOptions,
-  ): Promise<{ result: BuildCacheWithValidationResult; data: CacheData; triples: Triple[] }> {
+    options: BuildCacheOptions & {
+      /**
+       * #4277 — materialize the inferred layer over the fresh explicit set and
+       * persist `inferenceEnabled: true` (a reader's rebuild inheriting the
+       * displaced cache's layer). `index` never sets it: it builds layer-less
+       * and persists its own layer afterwards via `saveInferredTriples`.
+       */
+      materializeInference?: boolean;
+    },
+  ): Promise<{
+    result: BuildCacheWithValidationResult;
+    data: CacheData;
+    /** explicit triples, file order (what the persisted entries yield on load) */
+    triples: Triple[];
+    /** the materialized layer — empty unless `materializeInference` */
+    inferred: Triple[];
+  }> {
     const startTime = Date.now();
 
     const vaultAdapter = new FileSystemVaultAdapter(this.vaultPath);
@@ -1067,13 +1157,6 @@ export class CacheManager {
       entries.push(this.makeEntry(file.path, manifest, perFile.get(file.path) ?? [], vaultAdapter));
     }
 
-    const data = this.assembleCacheData(entries, [], {
-      fileSpacePrefixes: validationResult.fileSpaces?.prefixes ?? [],
-      fileSpaceDeclarations: validationResult.fileSpaces?.declarationPaths ?? [],
-      inferenceEnabled: false,
-    });
-    await this.writeCacheData(data);
-
     // Same concatenation the persisted entries yield on load: files in walk
     // order, each file's committed triples in commit order.
     const triples: Triple[] = [];
@@ -1082,6 +1165,21 @@ export class CacheManager {
       const own = perFile.get(file.path);
       if (own) triples.push(...own);
     }
+
+    // #4277 — the same engines `index` and the delta path run, over the same
+    // explicit set the entries below persist; the flag records that the layer
+    // is present (even when empty) so later deltas keep re-materializing it.
+    let inferred: Triple[] = [];
+    if (options.materializeInference) {
+      inferred = (await materializeInferredTriples(triples)).inferred;
+    }
+
+    const data = this.assembleCacheData(entries, inferred.map(this.serializeTriple), {
+      fileSpacePrefixes: validationResult.fileSpaces?.prefixes ?? [],
+      fileSpaceDeclarations: validationResult.fileSpaces?.declarationPaths ?? [],
+      inferenceEnabled: options.materializeInference === true,
+    });
+    await this.writeCacheData(data);
 
     return {
       result: {
@@ -1092,6 +1190,7 @@ export class CacheManager {
       },
       data,
       triples,
+      inferred,
     };
   }
 
@@ -1484,6 +1583,114 @@ function sameSet(a: Set<string>, b: Set<string>): boolean {
   if (a.size !== b.size) return false;
   for (const x of a) if (!b.has(x)) return false;
   return true;
+}
+
+function sameList(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** Which of the four TBox-form probes fired for a changed file (#4263 guards). */
+interface TBoxProbe {
+  /** the NEW frontmatter's `exo__Asset_label` has the TBox form */
+  newLabel: boolean;
+  /** the cached entry carried a TBox-form label (`entryHasTBoxLabel`) */
+  hadLabel: boolean;
+  /** the NEW frontmatter declares a TBox-form alias */
+  newAlias: boolean;
+  /** the cached entry carried a TBox-form alias (`entryHasTBoxFormAlias`) */
+  hadAlias: boolean;
+}
+
+/** The pre-#4277 rebuild reason for a changed TBox-form file, in the pre-#4277 order. */
+function tboxRebuildReason(tbox: TBoxProbe, relPath: string): string {
+  if (tbox.newLabel) return `TBox-form asset changed: ${relPath}`;
+  if (tbox.hadLabel) return `asset lost its TBox-form label: ${relPath}`;
+  return `TBox-form alias: ${relPath}`;
+}
+
+/**
+ * #4277 — what a REFERRER derives from this file, read off the file's own
+ * triples. `NoteToRDFConverter` reads exactly three things from a link
+ * TARGET when emitting the linking file's triples:
+ *
+ *   - `valueToRDFObject` on a `[[<uid>]]` link: the target's `exo__Asset_label`
+ *     expanded to the SYMBOLIC IRI (the object the referrer emits) — the own
+ *     `exo:Asset_label` triple with an IRI object; a literal label means the
+ *     referrer emits the file-IRI and the label value is irrelevant to it;
+ *   - `emitTypeTripleForEnumInstance`: the target's FIRST `exo__Instance_class`
+ *     through `valueToClassURI` — pushed as `<labelIRI> rdf:type / exo:Instance_class <class>`
+ *     INTO THE REFERRER's triples. The own `exo:Instance_class` objects are
+ *     produced by the same `valueToClassURI`, in frontmatter order;
+ *   - the alias index (`getFirstLinkpathDest`) for a `[[prefix__Name]]` link:
+ *     a TBox-form alias is emitted as an IRI object (`entryHasTBoxFormAlias`),
+ *     and its presence flips the referrer between file-IRI and symbolic IRI.
+ *     Literal aliases are handled by the ordinary alias diff (`entryAliases`).
+ *
+ * Two files with the same projection make every referrer emit the same
+ * triples, so re-parsing the changed file alone reproduces a full parse.
+ */
+interface TBoxProjection {
+  /** own `exo:Asset_label` IRI objects, emission order */
+  label: string[];
+  /** own `exo:Asset_aliases` IRI objects, sorted (a set) */
+  tboxAliases: string[];
+  /** own `exo:Instance_class` object keys, emission order (the first one is what referrers co-emit) */
+  instanceClass: string[];
+}
+
+function tboxProjection(relPath: string, triples: SerializedTriple[]): TBoxProjection {
+  const ownSubject = vaultPathToIRI(relPath);
+  const label: string[] = [];
+  const tboxAliases: string[] = [];
+  const instanceClass: string[] = [];
+  for (const t of triples) {
+    if (
+      t.subject.type !== "IRI" ||
+      t.subject.value !== ownSubject ||
+      t.predicate.type !== "IRI"
+    ) {
+      continue;
+    }
+    const predicate = t.predicate.value;
+    if (predicate.endsWith(ASSET_LABEL_IRI_SUFFIX)) {
+      if (t.object.type === "IRI") label.push(t.object.value);
+    } else if (predicate.endsWith(ASSET_ALIASES_IRI_SUFFIX)) {
+      if (t.object.type === "IRI") tboxAliases.push(t.object.value);
+    } else if (predicate.endsWith(INSTANCE_CLASS_IRI_SUFFIX)) {
+      instanceClass.push(
+        `${t.object.type}:${t.object.value}|${t.object.datatype ?? ""}|${t.object.language ?? ""}`,
+      );
+    }
+  }
+  tboxAliases.sort();
+  return { label, tboxAliases, instanceClass };
+}
+
+/**
+ * #4277 — `null` when the re-parsed file's projection equals its cached
+ * entry's (the delta may proceed); otherwise the rebuild reason, in the
+ * pre-#4277 wording for the label / alias cases.
+ */
+function tboxProjectionChanged(
+  relPath: string,
+  before: SerializedTriple[],
+  after: SerializedTriple[],
+  tbox: TBoxProbe,
+): string | null {
+  const was = tboxProjection(relPath, before);
+  const now = tboxProjection(relPath, after);
+  if (!sameList(was.label, now.label)) {
+    return tboxRebuildReason(tbox, relPath);
+  }
+  if (!sameList(was.tboxAliases, now.tboxAliases)) {
+    return `TBox-form alias: ${relPath}`;
+  }
+  if (!sameList(was.instanceClass, now.instanceClass)) {
+    return `TBox-form asset class changed: ${relPath}`;
+  }
+  return null;
 }
 
 /**

@@ -146,14 +146,16 @@
       "expect": ["A14"]
     },
     "M29_tbox_alias_frontmatter_probe_removed": {
-      "from": "        frontmatterHasTBoxFormAlias(frontmatter) ||\n        (previous !== undefined && entryHasTBoxFormAlias(previous))\n",
-      "to": "        (previous !== undefined && entryHasTBoxFormAlias(previous))\n",
-      "expect": ["A16"]
+      "from": "        newAlias: frontmatterHasTBoxFormAlias(frontmatter),\n",
+      "to": "        newAlias: false,\n",
+      "expect": ["A16"],
+      "_note": "#4277 re-anchored (the probe pair moved into the TBoxProbe literal in planDelta); same mutation — the frontmatter side of the TBox-form alias guard is dropped."
     },
     "M30_tbox_alias_entry_probe_removed": {
-      "from": "        frontmatterHasTBoxFormAlias(frontmatter) ||\n        (previous !== undefined && entryHasTBoxFormAlias(previous))\n",
-      "to": "        frontmatterHasTBoxFormAlias(frontmatter) ||\n        (previous !== undefined && entryHasTBoxFormAlias(previous) && false)\n",
-      "expect": ["A16"]
+      "from": "        hadAlias: previous !== undefined && entryHasTBoxFormAlias(previous),\n",
+      "to": "        hadAlias: false,\n",
+      "expect": ["A16"],
+      "_note": "#4277 re-anchored (see M29); same mutation — the cached-entry side of the TBox-form alias guard is dropped."
     },
     "M31_backslash_paths_rejected_again": {
       "from": "  return !relPath.split(/[\\\\/]/).some((seg) => seg === \"..\");",
