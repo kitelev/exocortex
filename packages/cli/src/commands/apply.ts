@@ -69,10 +69,17 @@ export interface ApplyOptions {
   // human-readable ✅/📊 notices are suppressed so the object parses cleanly.
   json?: boolean;
   // #4264 — load the triple store from the persistent per-file cache
-  // (`loadVaultTriples`, hit / delta / rebuild) instead of a full vault parse,
-  // and after a successful mutation write it through to that cache. Default
-  // off: without the flag the command is byte-identical to before.
+  // (`loadVaultTriples`, hit / delta / rebuild) instead of a full vault parse.
+  // Default off: without the flag the command is byte-identical to before.
   useCache?: boolean;
+  // #4264 — with --use-cache: after a grounding executed, fold what it wrote
+  // into the persisted cache in THIS process (the delta is paid here, so the
+  // next --use-cache process is a plain hit). Default off — measured on the
+  // bot's 3-writer chain the delta is cheaper when the NEXT reader pays it
+  // (delta-only), and write-through only wins when readers outnumber writers,
+  // which is a property of the consumer's workload, hence its call (decision
+  // ae0b4fce). Refused without --use-cache: there is nothing to write through to.
+  writeThrough?: boolean;
 }
 
 /**
@@ -557,7 +564,11 @@ export function applyCommand(): Command {
     )
     .option(
       "--use-cache",
-      "Use the persistent triple cache (faster vault loading); a successful mutation is written through to it so the next --use-cache process is a plain hit",
+      "Use the persistent triple cache (hit / delta / rebuild) instead of a full vault parse; a mutation is picked up by the NEXT --use-cache process as a delta unless --write-through is also given",
+    )
+    .option(
+      "--write-through",
+      "With --use-cache: after a grounding executed, fold the mutation into the persistent cache in this process, so the next --use-cache process is a plain hit (the delta is paid by this writer instead of the next reader). Refused without --use-cache",
     )
     .action(
       async (
@@ -566,6 +577,16 @@ export function applyCommand(): Command {
         options: ApplyOptions,
       ) => {
         ErrorHandler.setFormat("text" as OutputFormat);
+
+        // #4264 — refused before anything is read or written: without
+        // --use-cache there is no loaded cache state to write through to.
+        if (options.writeThrough && !options.useCache) {
+          process.stderr.write(
+            "❌ --write-through requires --use-cache (there is no cache to write through to without it); nothing was applied\n",
+          );
+          process.exit(ExitCodes.INVALID_ARGUMENTS);
+          return;
+        }
 
         try {
           const vaultPath = resolve(options.vault);
@@ -661,9 +682,9 @@ export function applyCommand(): Command {
             allCreated.push(...targetResult.created);
           }
 
-          // #4264 — write-through: once ANY target's grounding executed (a
-          // dry-run and a refused precondition never do), whatever it wrote
-          // is folded into the persisted cache — a failed composite may have
+          // #4264 — write-through (opt-in, --write-through): once ANY target's
+          // grounding executed (a dry-run and a refused precondition never do),
+          // whatever it wrote is folded into the persisted cache — a failed composite may have
           // landed part of its files, so success is not the criterion (review
           // of 1e8e8204, L1). Only the changed files + their referrers are
           // re-parsed; a rebuild-class change is left to the next reader.
@@ -672,7 +693,15 @@ export function applyCommand(): Command {
           // the mutation is already on disk, and a cache that could not be
           // persisted is simply refreshed by the next --use-cache process.
           // (`--dry-run` never executes a grounding, so `anyExecuted` covers it.)
-          if (useCacheEffective && anyExecuted && loaded.cacheManager) {
+          // Without --write-through the cache file is not touched by this
+          // process at all: the next --use-cache reader folds the change in as
+          // its own delta (the default — decision ae0b4fce, numbers in #4264).
+          if (
+            useCacheEffective &&
+            options.writeThrough &&
+            anyExecuted &&
+            loaded.cacheManager
+          ) {
             const outcome = await writeThroughCache(loaded.cacheManager);
             process.stderr.write(`${writeThroughNotice(outcome)}\n`);
           }

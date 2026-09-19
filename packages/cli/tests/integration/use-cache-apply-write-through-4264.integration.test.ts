@@ -1,6 +1,15 @@
 /**
- * #4264 — `--use-cache` on `apply` / `resolve-inline-buttons` / `create` with
- * write-through.
+ * #4264 — `--use-cache` on `apply` / `resolve-inline-buttons` / `create`;
+ * write-through is an explicit opt-in (`--use-cache --write-through`).
+ *
+ * Two cache modes for a mutating command (decision ae0b4fce, measured on the
+ * bot's chain — numbers in the PR):
+ *   `--use-cache`                 delta-only (default): this process never
+ *                                 touches the cache file; the NEXT --use-cache
+ *                                 process folds the change in as its delta.
+ *   `--use-cache --write-through` this process pays the delta after the
+ *                                 mutation; the next process is a plain hit.
+ *   `--write-through` alone       refused (exit 2) before anything is applied.
  *
  * Requirement: @req:cb707868-356f-495d-825a-182e66ba8bcd
  *
@@ -34,6 +43,14 @@
  *   A8 AC8 create: --validate loads through the loader (same verdict), a
  *          bare create writes through to an EXISTING cache only
  *   A9 AC9 exactly one stderr notice under the flag, none without it
+ *   A10/A10c AC10 default delta-only: a mutating apply / create with
+ *          --use-cache alone leaves the cache file byte-identical, prints no
+ *          write-through line; the next process is a DELTA and its
+ *          precondition sees the write
+ *   A11/A11c AC11 --write-through without --use-cache is refused: exit 2, one
+ *          stderr line naming the missing flag, no vault write, no cache read
+ *
+ * The A3–A8 write-through axes pass `--use-cache --write-through`.
  */
 import {
   jest,
@@ -127,7 +144,7 @@ interface Run {
   exitCode: number | null;
 }
 
-describe(`#4264 --use-cache on apply / resolve-buttons / create with write-through ${REQ}`, () => {
+describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through opt-in via --write-through ${REQ}`, () => {
   let roots: string[];
   let consoleLogSpy: jest.SpiedFunction<typeof console.log>;
   let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
@@ -373,7 +390,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
 
     // A write-through on the prototype-bearing instance re-materializes the
     // layer (prototype-bearing file = engine input) instead of dropping it.
-    const w = await runApply(root, ["move-to-backlog-4264", REL.protoInstance, "--json", "--use-cache"]);
+    const w = await runApply(root, ["move-to-backlog-4264", REL.protoInstance, "--json", "--use-cache", "--write-through"]);
     expect(preconditionRefused(w)).toBe(false);
     expect(writeThroughNotices(w)).toEqual(["💾 triple cache: write-through persisted (1 file(s) re-parsed)"]);
     const after = readCache(root);
@@ -391,7 +408,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     const before = readCache(root);
     const convertNoteSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertNote");
 
-    const r = await runApply(root, createArgs(["--use-cache"]));
+    const r = await runApply(root, createArgs(["--use-cache", "--write-through"]));
     expect(r.exitCode).toBeNull();
     const created = createdPath(r);
     expect(cacheNotices(r)).toEqual(["⚡ triple cache: hit"]);
@@ -431,18 +448,18 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     await warmCache(cached);
 
     // --- with the flag, one fresh applyCommand() per step ---
-    const p1 = await runApply(cached, createArgs(["--use-cache"]));
+    const p1 = await runApply(cached, createArgs(["--use-cache", "--write-through"]));
     expect(p1.exitCode).toBeNull();
     const created = createdPath(p1);
     expect(fs.readFileSync(path.join(cached, created), "utf-8")).toContain(`[[${STATUS_DRAFT}]]`);
 
-    const p2 = await runApply(cached, ["move-to-backlog-4264", created, "--json", "--frozen-clock", FROZEN, "--use-cache"]);
+    const p2 = await runApply(cached, ["move-to-backlog-4264", created, "--json", "--frozen-clock", FROZEN, "--use-cache", "--write-through"]);
     expect(preconditionRefused(p2)).toBe(false);
     expect(p2.exitCode).toBeNull();
     expect(cacheNotices(p2)).toEqual(["⚡ triple cache: hit"]);
     expect(fs.readFileSync(path.join(cached, created), "utf-8")).toContain(`[[${STATUS_BACKLOG}]]`);
 
-    const p3 = await runApply(cached, ["start-effort-4264", created, "--json", "--frozen-clock", FROZEN, "--use-cache"]);
+    const p3 = await runApply(cached, ["start-effort-4264", created, "--json", "--frozen-clock", FROZEN, "--use-cache", "--write-through"]);
     expect(preconditionRefused(p3)).toBe(false);
     expect(p3.exitCode).toBeNull();
     expect(cacheNotices(p3)).toEqual(["⚡ triple cache: hit"]);
@@ -481,7 +498,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
       .spyOn(CacheManager.prototype, "refreshAfterWrite")
       .mockRejectedValue(new Error("disk full (injected)"));
 
-    const r = await runApply(root, ["move-to-backlog-4264", REL.draftTask, "--json", "--use-cache"]);
+    const r = await runApply(root, ["move-to-backlog-4264", REL.draftTask, "--json", "--use-cache", "--write-through"]);
     expect(r.exitCode).toBeNull(); // success path never calls process.exit
     expect(JSON.parse(r.stdout)).toEqual({ command: "move-to-backlog-4264", created: [], target: REL.draftTask });
     expect(fs.readFileSync(path.join(root, REL.draftTask), "utf-8")).toContain(`[[${STATUS_BACKLOG}]]`);
@@ -512,7 +529,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     const cacheBefore = sha(path.join(root, REL.cache));
     const convertNoteSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertNote");
 
-    const r = await runApply(root, ["move-to-backlog-4264", REL.tboxTask, "--json", "--use-cache"]);
+    const r = await runApply(root, ["move-to-backlog-4264", REL.tboxTask, "--json", "--use-cache", "--write-through"]);
     expect(r.exitCode).toBeNull();
     expect(preconditionRefused(r)).toBe(false);
     expect(fs.readFileSync(path.join(root, REL.tboxTask), "utf-8")).toContain(`[[${STATUS_BACKLOG}]]`);
@@ -621,7 +638,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     //     build a cache, and does not load anything.
     const loadSpy = jest.spyOn(CacheManager.prototype, "loadOrBuild");
     const convertVaultSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertVault");
-    const c0 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A8 first", "--use-cache"]);
+    const c0 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A8 first", "--use-cache", "--write-through"]);
     expect(c0.exitCode).toBe(0);
     const first = JSON.parse(c0.stdout) as { path: string };
     expect(fs.existsSync(path.join(root, first.path))).toBe(true);
@@ -636,7 +653,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     await warmCache(root);
     loadSpy.mockClear();
     const convertNoteSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertNote");
-    const c1 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A8 second", "--use-cache"]);
+    const c1 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A8 second", "--use-cache", "--write-through"]);
     expect(c1.exitCode).toBe(0);
     const second = JSON.parse(c1.stdout) as { path: string };
     expect(loadSpy).not.toHaveBeenCalled(); // no --validate → no triple-store load
@@ -680,7 +697,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     loadSpy.mockClear();
     convertNoteSpy.mockClear();
     const readJson = jest.spyOn(fsExtra, "readJson");
-    const c2 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A8 third", "--validate", "--use-cache"]);
+    const c2 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A8 third", "--validate", "--use-cache", "--write-through"]);
     expect(c2.exitCode).toBe(0);
     const third = JSON.parse(c2.stdout) as { path: string };
     expect(cacheNotices(c2)).toEqual(["⚡ triple cache: hit"]);
@@ -709,13 +726,13 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     };
 
     // apply — mutating (executed) / dry-run / precondition refused (not executed)
-    const a = await runApply(root, ["move-to-backlog-4264", REL.draftTask, "--json", "--use-cache"]);
+    const a = await runApply(root, ["move-to-backlog-4264", REL.draftTask, "--json", "--use-cache", "--write-through"]);
     expectLines(a, 1, 1);
     expect(cacheNotices(a)).toEqual(["⚡ triple cache: hit"]);
     expect(() => JSON.parse(a.stdout)).not.toThrow();
-    const d = await runApply(root, ["start-effort-4264", REL.otherTask, "--dry-run", "--use-cache"]);
+    const d = await runApply(root, ["start-effort-4264", REL.otherTask, "--dry-run", "--use-cache", "--write-through"]);
     expectLines(d, 1, 0);
-    const p = await runApply(root, ["start-effort-4264", REL.tboxTask, "--json", "--use-cache"]); // Draft → refused
+    const p = await runApply(root, ["start-effort-4264", REL.tboxTask, "--json", "--use-cache", "--write-through"]); // Draft → refused
     expect(preconditionRefused(p)).toBe(true);
     expect(p.exitCode).toBe(5); // ExitCodes.OPERATION_FAILED
     expectLines(p, 1, 0);
@@ -730,16 +747,16 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     // create — --validate dry-run (load only) / --validate real (load + write-
     // through) / bare real (write-through only: no triple-store load happens
     // without --validate, so there is no load mode to report) / bare dry-run (0)
-    const c = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 task", "--validate", "--dry-run", "--use-cache"]);
+    const c = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 task", "--validate", "--dry-run", "--use-cache", "--write-through"]);
     expectLines(c, 1, 0);
     expect(() => JSON.parse(c.stdout)).not.toThrow();
-    const cv = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 validated", "--validate", "--use-cache"]);
+    const cv = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 validated", "--validate", "--use-cache", "--write-through"]);
     expect(cv.exitCode).toBe(0);
     expectLines(cv, 1, 1);
-    const cb = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 bare", "--use-cache"]);
+    const cb = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 bare", "--use-cache", "--write-through"]);
     expect(cb.exitCode).toBe(0);
     expectLines(cb, 0, 1);
-    const cd = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 bare dry", "--dry-run", "--use-cache"]);
+    const cd = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 bare dry", "--dry-run", "--use-cache", "--write-through"]);
     expect(cd.exitCode).toBe(0);
     expectLines(cd, 0, 0);
 
@@ -752,6 +769,83 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
   });
 
   // -------------------------------------------------------------------------
+  it(`A10 ${REQ} default is delta-only: a mutating apply --use-cache WITHOUT --write-through leaves the cache file byte-identical and prints no write-through line; the next --use-cache process folds the write in as a DELTA and its precondition sees the new status`, async () => {
+    const root = vault();
+    await warmCache(root);
+    const before = fs.readFileSync(path.join(root, REL.cache));
+    const refreshSpy = jest.spyOn(CacheManager.prototype, "refreshAfterWrite");
+
+    const r = await runApply(root, ["move-to-backlog-4264", REL.draftTask, "--json", "--frozen-clock", FROZEN, "--use-cache"]);
+    expect(r.exitCode).toBeNull();
+    expect(preconditionRefused(r)).toBe(false);
+    expect(fs.readFileSync(path.join(root, REL.draftTask), "utf-8")).toContain(`[[${STATUS_BACKLOG}]]`);
+    expect(cacheNotices(r)).toEqual(["⚡ triple cache: hit"]);
+    expect(writeThroughNotices(r)).toEqual([]);
+    expect(refreshSpy).not.toHaveBeenCalled();
+    // The writer did not touch the cache file at all — not even a re-stamp.
+    expect(fs.readFileSync(path.join(root, REL.cache)).equals(before)).toBe(true);
+
+    // Next process: the delta is paid HERE, and the precondition Backlog →
+    // Doing is evaluated on the merged (fresh) state — the #3788 class is
+    // closed in this mode too, one delta later.
+    const next = await runApply(root, ["start-effort-4264", REL.draftTask, "--json", "--frozen-clock", FROZEN, "--use-cache"]);
+    expect(next.exitCode).toBeNull();
+    expect(preconditionRefused(next)).toBe(false);
+    expect(cacheNotices(next)).toEqual(["♻️  triple cache: delta (1 file(s) re-parsed)"]);
+    expect(fs.readFileSync(path.join(root, REL.draftTask), "utf-8")).toContain(`[[${STATUS_DOING}]]`);
+  });
+
+  it(`A10c ${REQ} default is delta-only for create too: a bare create --use-cache (existing cache) writes the asset, leaves the cache file byte-identical, prints no write-through line; the next --use-cache load is a DELTA that carries the new asset`, async () => {
+    const root = vault();
+    await warmCache(root);
+    const before = fs.readFileSync(path.join(root, REL.cache));
+    const refreshSpy = jest.spyOn(CacheManager.prototype, "refreshAfterWrite");
+
+    const c = await runCreate(root, ["--class", TASK_CLASS, "--label", "A10c created", "--use-cache"]);
+    expect(c.exitCode).toBe(0);
+    const created = (JSON.parse(c.stdout) as { path: string }).path;
+    expect(fs.existsSync(path.join(root, created))).toBe(true);
+    expect(writeThroughNotices(c)).toEqual([]);
+    expect(refreshSpy).not.toHaveBeenCalled();
+    expect(fs.readFileSync(path.join(root, REL.cache)).equals(before)).toBe(true);
+
+    const next = await new CacheManager(root).loadOrBuild();
+    expect(next.mode).toBe("delta");
+    expect(readCache(root).files.some((e) => e.path === created)).toBe(true);
+  });
+
+  it(`A11 ${REQ} --write-through without --use-cache is refused before anything happens: exit 2, one stderr line naming the missing flag, the target file untouched, no cache read (CacheManager never loads), no full parse either`, async () => {
+    const root = vault();
+    await warmCache(root);
+    const before = fs.readFileSync(path.join(root, REL.draftTask), "utf-8");
+    const loadSpy = jest.spyOn(CacheManager.prototype, "loadOrBuild");
+    const convertSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertVault");
+
+    const r = await runApply(root, ["move-to-backlog-4264", REL.draftTask, "--json", "--write-through"]);
+    expect(r.exitCode).toBe(2); // ExitCodes.INVALID_ARGUMENTS
+    expect(r.stderr.split("\n").filter((l) => l.length > 0)).toEqual([
+      "❌ --write-through requires --use-cache (there is no cache to write through to without it); nothing was applied",
+    ]);
+    expect(r.stdout).toBe("");
+    expect(fs.readFileSync(path.join(root, REL.draftTask), "utf-8")).toBe(before);
+    expect(loadSpy).not.toHaveBeenCalled();
+    expect(convertSpy).not.toHaveBeenCalled();
+  });
+
+  it(`A11c ${REQ} create: --write-through without --use-cache is refused the same way — exit 2, one stderr line, no file created`, async () => {
+    const root = vault();
+    await warmCache(root);
+    const filesBefore = fs.readdirSync(root, { recursive: true }).length;
+
+    const c = await runCreate(root, ["--class", TASK_CLASS, "--label", "A11c refused", "--write-through"]);
+    expect(c.exitCode).toBe(2);
+    expect(c.stderr.split("\n").filter((l) => l.length > 0)).toEqual([
+      "❌ --write-through requires --use-cache (there is no cache to write through to without it); nothing was created",
+    ]);
+    expect(c.stdout).toBe("");
+    expect(fs.readdirSync(root, { recursive: true }).length).toBe(filesBefore);
+  });
+
   it(`A3b ${REQ} a multi-target (stdin) apply writes through ONCE after the batch: refreshAfterWrite runs a single time, both mutated files are in the cache, the next process is a hit`, async () => {
     const root = vault();
     await warmCache(root);
@@ -764,7 +858,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     });
     let r: Run;
     try {
-      r = await runApply(root, ["move-to-backlog-4264", "--json", "--use-cache"]);
+      r = await runApply(root, ["move-to-backlog-4264", "--json", "--use-cache", "--write-through"]);
     } finally {
       Object.defineProperty(process, "stdin", realStdin);
     }
@@ -809,7 +903,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
         return { success: false, error: "step 2 failed (injected)" };
       });
 
-    const r = await runApply(root, ["move-to-backlog-4264", REL.draftTask, "--json", "--use-cache"]);
+    const r = await runApply(root, ["move-to-backlog-4264", REL.draftTask, "--json", "--use-cache", "--write-through"]);
     expect(r.exitCode).toBe(5); // ExitCodes.OPERATION_FAILED — the command still reports the failure
     expect(r.errors.some((e) => /step 2 failed \(injected\)/.test(e))).toBe(true);
     expect(writeThroughNotices(r)).toEqual([
@@ -843,7 +937,7 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create with write-throu
     // Before: the target does not exist → the synthesized (path-less) IRI.
     expect(blockerOf()).toEqual([`obsidian://vault/${firstUid}.md`]);
 
-    const r = await runApply(root, createArgs(["--use-cache"]));
+    const r = await runApply(root, createArgs(["--use-cache", "--write-through"]));
     const created = createdPath(r);
     expect(created).toBe(`Inbox/${firstUid}.md`);
     expect(writeThroughNotices(r)).toEqual([

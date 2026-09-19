@@ -16,9 +16,14 @@
       "expect": ["P2", "P3", "P4"]
     },
     "PP2_write_through_never_runs": {
-      "from": "          if (useCacheEffective && anyExecuted && loaded.cacheManager) {",
-      "to": "          if (useCacheEffective && anyExecuted && !loaded.cacheManager) {",
+      "from": "          if (\n            useCacheEffective &&\n            options.writeThrough &&\n            anyExecuted &&\n            loaded.cacheManager\n          ) {",
+      "to": "          if (\n            useCacheEffective &&\n            options.writeThrough &&\n            anyExecuted &&\n            !loaded.cacheManager\n          ) {",
       "expect": ["P2", "P3", "P4"]
+    },
+    "PP3_write_through_flag_ignored_(always_writes_through)": {
+      "from": "          if (\n            useCacheEffective &&\n            options.writeThrough &&\n            anyExecuted &&\n            loaded.cacheManager\n          ) {",
+      "to": "          if (\n            useCacheEffective &&\n            anyExecuted &&\n            loaded.cacheManager\n          ) {",
+      "expect": ["P9"]
     }
   }
 }

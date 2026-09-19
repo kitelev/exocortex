@@ -242,11 +242,12 @@ describe("Issue #2333: create command", () => {
     expect(option!.mandatory).toBeFalsy();
   });
 
-  it("should register exactly 16 options", () => {
+  it("should register exactly 17 options", () => {
     const cmd = createCommand();
     // 15th = `--validate` (W3: opt-in pre-write SHACL-lite conformance gate),
-    // 16th = `--use-cache` (#4264: cached vault load for --validate + write-through).
-    expect(cmd.options).toHaveLength(16);
+    // 16th = `--use-cache` (#4264: cached vault load for --validate),
+    // 17th = `--write-through` (#4264: opt-in write-through, needs --use-cache).
+    expect(cmd.options).toHaveLength(17);
   });
 
   it("should register --validate as an optional opt-in flag", () => {
@@ -259,6 +260,14 @@ describe("Issue #2333: create command", () => {
   it("@req:cb707868-356f-495d-825a-182e66ba8bcd should register --use-cache as an optional opt-in flag (default off)", () => {
     const cmd = createCommand();
     const option = cmd.options.find((o) => o.long === "--use-cache");
+    expect(option).toBeDefined();
+    expect(option!.mandatory).toBeFalsy();
+    expect(option!.defaultValue).toBeUndefined();
+  });
+
+  it("@req:cb707868-356f-495d-825a-182e66ba8bcd should register --write-through as an optional opt-in flag (default off, i.e. delta-only)", () => {
+    const cmd = createCommand();
+    const option = cmd.options.find((o) => o.long === "--write-through");
     expect(option).toBeDefined();
     expect(option!.mandatory).toBeFalsy();
     expect(option!.defaultValue).toBeUndefined();

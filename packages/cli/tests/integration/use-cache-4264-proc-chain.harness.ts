@@ -1,7 +1,9 @@
 #!/usr/bin/env -S npx tsx
 /**
- * #4264 — the bot chain as THREE SEPARATE PROCESSES, each `--use-cache`, on the
- * built `dist/index.js` (@req:cb707868-356f-495d-825a-182e66ba8bcd, AC4).
+ * #4264 — the bot chain as THREE SEPARATE PROCESSES, each
+ * `--use-cache --write-through`, on the built `dist/index.js`
+ * (@req:cb707868-356f-495d-825a-182e66ba8bcd, AC4), plus the delta-only
+ * default (`--use-cache` alone) and the refusal of a bare `--write-through`.
  *
  * The jest suite proves the chain with a fresh `CacheManager` per step inside
  * one process (CI axis A4). This harness is the multi-PROCESS form the issue
@@ -32,8 +34,14 @@
  *      and its stdout == the no-flag run on the twin vault (no inherited-
  *      property command binds to the created instance, so the inferred layer
  *      changes nothing here)
- *   P8 `create --validate --use-cache` in a 4th process: load = hit, write-
- *      through persisted; a 5th process is still a hit
+ *   P8 `create --validate --use-cache --write-through` in a 4th process: load
+ *      = hit, write-through persisted; a 5th process is still a hit
+ *   P9 default delta-only across processes: `apply … --use-cache` (no
+ *      --write-through) leaves the cache file byte-identical and prints no
+ *      write-through line; the next `--use-cache` process is a DELTA whose
+ *      precondition sees the write (no "Precondition not satisfied")
+ *   P10 `--write-through` without `--use-cache`: rc 2, the one stderr line
+ *      names the missing flag, the target file is untouched
  */
 import { spawnSync } from "child_process";
 import * as fs from "fs";
@@ -139,7 +147,7 @@ try {
     `index rc=${idx.status}, inferenceEnabled=${cacheOf(cached).metadata.inferenceEnabled}, inferred=${cacheOf(cached).metadata.inferredCount}`);
 
   // P2 — process 1
-  const p1 = cli(chainArgs(cached, ["--use-cache"]));
+  const p1 = cli(chainArgs(cached, ["--use-cache", "--write-through"]));
   const created = (JSON.parse(p1.stdout) as { created: Array<{ path: string }> }).created[0]?.path ?? "";
   check("P2", p1.status === 0 && loadLine(p1) === "⚡ triple cache: hit" &&
     wtLine(p1) === "💾 triple cache: write-through persisted (1 file(s) re-parsed)" &&
@@ -149,12 +157,12 @@ try {
   // P3 — process 2
   // --frozen-clock on every step: the status flips stamp exo__Asset_updatedAt,
   // and the twin chain below must produce the same bytes across process starts.
-  const p2 = cli(["apply", "move-to-backlog-4264", created, "--json", "--frozen-clock", FROZEN, "--vault", cached, "--use-cache"]);
+  const p2 = cli(["apply", "move-to-backlog-4264", created, "--json", "--frozen-clock", FROZEN, "--vault", cached, "--use-cache", "--write-through"]);
   check("P3", p2.status === 0 && !refused(p2) && loadLine(p2) === "⚡ triple cache: hit",
     `p2 rc=${p2.status} refused=${refused(p2)} load=[${loadLine(p2)}] wt=[${wtLine(p2)}]`);
 
   // P4 — process 3
-  const p3 = cli(["apply", "start-effort-4264", created, "--json", "--frozen-clock", FROZEN, "--vault", cached, "--use-cache"]);
+  const p3 = cli(["apply", "start-effort-4264", created, "--json", "--frozen-clock", FROZEN, "--vault", cached, "--use-cache", "--write-through"]);
   const finalCached = fs.readFileSync(path.join(cached, created), "utf-8");
   check("P4", p3.status === 0 && !refused(p3) && loadLine(p3) === "⚡ triple cache: hit" && finalCached.includes(`[[${STATUS_DOING}]]`),
     `p3 rc=${p3.status} refused=${refused(p3)} load=[${loadLine(p3)}] doing=${finalCached.includes(`[[${STATUS_DOING}]]`)}`);
@@ -183,12 +191,33 @@ try {
     `rc=${r1.status} load=[${loadLine(r1)}] stdout identical=${r1.stdout === r0.stdout}`);
 
   // P8 — create --validate in a 4th process, hit in a 5th
-  const c1 = cli(["create", "--class", TASK_CLASS, "--label", "proc-chain created", "--validate", "--vault", cached, "--use-cache"]);
+  const c1 = cli(["create", "--class", TASK_CLASS, "--label", "proc-chain created", "--validate", "--vault", cached, "--use-cache", "--write-through"]);
   const c2 = cli(["create", "--class", TASK_CLASS, "--label", "proc-chain created 2", "--validate", "--dry-run", "--vault", cached, "--use-cache"]);
   check("P8", c1.status === 0 && loadLine(c1) === "⚡ triple cache: hit" &&
     wtLine(c1) === "💾 triple cache: write-through persisted (1 file(s) re-parsed)" &&
     c2.status === 0 && loadLine(c2) === "⚡ triple cache: hit" && wtLine(c2) === undefined,
     `c1 rc=${c1.status} load=[${loadLine(c1)}] wt=[${wtLine(c1)}]; c2 rc=${c2.status} load=[${loadLine(c2)}] wt=[${wtLine(c2)}]`);
+
+  // P9 — delta-only default across real processes: a second chain instance
+  // created WITHOUT --write-through; the cache file must not change under the
+  // writer, and the next process pays the delta and still sees the write.
+  const cacheBefore = fs.readFileSync(path.join(cached, REL.cache));
+  const d1 = cli(["apply", "create-task-instance-4264", REL.proto, "--input", JSON.stringify({ label: `${CHAIN_LABEL} delta-only` }),
+    "--json", "--vault", cached, "--use-cache"]);
+  const created2 = (JSON.parse(d1.stdout) as { created: Array<{ path: string }> }).created[0]?.path ?? "";
+  const cacheUntouched = fs.readFileSync(path.join(cached, REL.cache)).equals(cacheBefore);
+  const d2 = cli(["apply", "move-to-backlog-4264", created2, "--json", "--frozen-clock", FROZEN, "--vault", cached, "--use-cache"]);
+  check("P9", d1.status === 0 && loadLine(d1) === "⚡ triple cache: hit" && wtLine(d1) === undefined && created2 !== "" && cacheUntouched &&
+    d2.status === 0 && !refused(d2) && /triple cache: delta \(1 file\(s\) re-parsed\)/.test(loadLine(d2) ?? ""),
+    `d1 rc=${d1.status} load=[${loadLine(d1)}] wt=[${wtLine(d1)}] cache untouched=${cacheUntouched}; d2 rc=${d2.status} refused=${refused(d2)} load=[${loadLine(d2)}]`);
+
+  // P10 — --write-through alone is refused before anything is applied
+  const fileBefore = fs.readFileSync(path.join(cached, created2), "utf-8");
+  const x = cli(["apply", "start-effort-4264", created2, "--json", "--vault", cached, "--write-through"]);
+  const xLines = x.stderr.split("\n").filter((l) => l.length > 0);
+  check("P10", x.status === 2 && xLines.length === 1 && /--write-through requires --use-cache/.test(xLines[0]) && x.stdout === "" &&
+    fs.readFileSync(path.join(cached, created2), "utf-8") === fileBefore,
+    `rc=${x.status} stderr=${JSON.stringify(xLines)} stdout empty=${x.stdout === ""} file untouched=${fs.readFileSync(path.join(cached, created2), "utf-8") === fileBefore}`);
 } finally {
   fs.rmSync(cached, { recursive: true, force: true });
   fs.rmSync(plain, { recursive: true, force: true });

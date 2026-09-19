@@ -26,9 +26,19 @@
       "expect": ["A3", "A4", "A9"]
     },
     "P2_write_through_never_runs": {
-      "from": "          if (useCacheEffective && anyExecuted && loaded.cacheManager) {",
-      "to": "          if (useCacheEffective && anyExecuted && !loaded.cacheManager) {",
+      "from": "          if (\n            useCacheEffective &&\n            options.writeThrough &&\n            anyExecuted &&\n            loaded.cacheManager\n          ) {",
+      "to": "          if (\n            useCacheEffective &&\n            options.writeThrough &&\n            anyExecuted &&\n            !loaded.cacheManager\n          ) {",
       "expect": ["A3", "A4", "A3b", "A3c"]
+    },
+    "P7_write_through_flag_ignored_(always_writes_through)": {
+      "from": "          if (\n            useCacheEffective &&\n            options.writeThrough &&\n            anyExecuted &&\n            loaded.cacheManager\n          ) {",
+      "to": "          if (\n            useCacheEffective &&\n            anyExecuted &&\n            loaded.cacheManager\n          ) {",
+      "expect": ["A10"]
+    },
+    "P8_write_through_without_use_cache_not_refused": {
+      "from": "        if (options.writeThrough && !options.useCache) {\n          process.stderr.write(",
+      "to": "        if (options.writeThrough && !options.useCache && false) {\n          process.stderr.write(",
+      "expect": ["A11"]
     },
     "P4_load_notice_on_stdout": {
       "from": "          if (useCacheEffective) {\n            process.stderr.write(`${cacheLoadNotice(loaded)}\\n`);\n          }",

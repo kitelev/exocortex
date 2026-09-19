@@ -18,6 +18,7 @@ import { WikilinkValidator } from "../services/WikilinkValidator.js";
 import { PropertyNameValidator } from "../services/PropertyNameValidator.js";
 import { EffortStatusResolver } from "../services/EffortStatusResolver.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
+import { ExitCodes } from "../utils/ExitCodes.js";
 import {
   ShaclConformanceError,
   VaultNotFoundError,
@@ -94,13 +95,21 @@ interface CreateCommandOptions {
    * all (its cost is frontmatter / shape scans), so the flag governs exactly
    * two things: the vault triples `--validate` loads (through
    * `loadVaultTriples`, hit / delta / rebuild instead of a full parse) and,
-   * after a real write, the write-through of the new asset into an EXISTING
-   * cache so the next `--use-cache` process is a plain hit. Default OFF —
-   * byte-identical without it. `ShapeLoader.loadFromVaultFS` (SHACL shapes for
-   * cardinality-aware serialization) is a separate load path and is NOT
-   * covered by the flag.
+   * together with `--write-through`, the write-through of the new asset into
+   * an EXISTING cache after a real write so the next `--use-cache` process is
+   * a plain hit. Default OFF — byte-identical without it.
+   * `ShapeLoader.loadFromVaultFS` (SHACL shapes for cardinality-aware
+   * serialization) is a separate load path and is NOT covered by the flag.
    */
   useCache?: boolean;
+  /**
+   * #4264 — with `--use-cache`: fold the created asset into the persisted
+   * cache in THIS process (the delta is paid here; the next `--use-cache`
+   * process is a plain hit). Default OFF: the next reader pays the delta
+   * itself (delta-only — decision ae0b4fce, measured on the bot chain).
+   * Refused without `--use-cache`.
+   */
+  writeThrough?: boolean;
 }
 
 /**
@@ -328,9 +337,22 @@ export function createCommand(): Command {
     )
     .option(
       "--use-cache",
-      "Use the persistent triple cache for the vault load of --validate, and write the created asset through to an existing cache so the next --use-cache process is a plain hit (shape loading is unaffected)",
+      "Use the persistent triple cache for the vault load of --validate (shape loading is unaffected); the created asset is picked up by the NEXT --use-cache process as a delta unless --write-through is also given",
+    )
+    .option(
+      "--write-through",
+      "With --use-cache: fold the created asset into an existing persistent cache in this process, so the next --use-cache process is a plain hit. Refused without --use-cache",
     )
     .action(async (options: CreateCommandOptions) => {
+      // #4264 — refused before anything is read or written: without
+      // --use-cache there is no cache to write through to.
+      if (options.writeThrough && !options.useCache) {
+        process.stderr.write(
+          "❌ --write-through requires --use-cache (there is no cache to write through to without it); nothing was created\n",
+        );
+        process.exit(ExitCodes.INVALID_ARGUMENTS);
+        return;
+      }
       try {
         const vaultPath = resolve(options.vault);
 
@@ -696,13 +718,15 @@ export function createCommand(): Command {
           uuid = file.basename;
           path = file.path;
 
-          // #4264 — write-through: fold the just-written asset into the
-          // persisted cache (delta against the state `--validate` loaded, or
-          // against the cache on disk; an absent cache is left absent — create
-          // never builds one). Best-effort by construction: `writeThroughCache`
-          // never throws, so the JSON below and the exit code do not depend on
-          // it — the file is already on disk.
-          if (cacheManager) {
+          // #4264 — write-through (opt-in, --write-through): fold the
+          // just-written asset into the persisted cache (delta against the
+          // state `--validate` loaded, or against the cache on disk; an absent
+          // cache is left absent — create never builds one). Best-effort by
+          // construction: `writeThroughCache` never throws, so the JSON below
+          // and the exit code do not depend on it — the file is already on
+          // disk. Without --write-through the cache is not touched: the next
+          // --use-cache reader folds the new asset in as its own delta.
+          if (cacheManager && options.writeThrough) {
             const { writeThroughCache, writeThroughNotice } = await import(
               "../cache/loadVaultTriples.js"
             );

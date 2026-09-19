@@ -21,9 +21,19 @@
       "expect": ["A2", "A8", "A9"]
     },
     "C3_write_through_removed_from_create": {
-      "from": "          if (cacheManager) {\n            const { writeThroughCache, writeThroughNotice } = await import(",
-      "to": "          if (cacheManager && options.dryRun) {\n            const { writeThroughCache, writeThroughNotice } = await import(",
+      "from": "          if (cacheManager && options.writeThrough) {\n            const { writeThroughCache, writeThroughNotice } = await import(",
+      "to": "          if (cacheManager && options.writeThrough && options.dryRun) {\n            const { writeThroughCache, writeThroughNotice } = await import(",
       "expect": ["A8"]
+    },
+    "C4_write_through_flag_ignored_by_create_(always_writes_through)": {
+      "from": "          if (cacheManager && options.writeThrough) {\n            const { writeThroughCache, writeThroughNotice } = await import(",
+      "to": "          if (cacheManager) {\n            const { writeThroughCache, writeThroughNotice } = await import(",
+      "expect": ["A10c"]
+    },
+    "C5_create_write_through_without_use_cache_not_refused": {
+      "from": "      if (options.writeThrough && !options.useCache) {\n        process.stderr.write(",
+      "to": "      if (options.writeThrough && !options.useCache && false) {\n        process.stderr.write(",
+      "expect": ["A11c"]
     }
   }
 }
