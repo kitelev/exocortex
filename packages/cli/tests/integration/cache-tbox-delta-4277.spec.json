@@ -98,8 +98,8 @@
     "M17_rebuild_reason_order_swapped": {
       "from": "  if (tbox.newLabel) return `TBox-form asset changed: ${relPath}`;\n  if (tbox.hadLabel) return `asset lost its TBox-form label: ${relPath}`;",
       "to": "  if (tbox.hadLabel) return `asset lost its TBox-form label: ${relPath}`;\n  if (tbox.newLabel) return `TBox-form asset changed: ${relPath}`;",
-      "expect": ["T4"],
-      "_note": "review r2 L-B (G7) — the pre-#4277 order: a NEW TBox label wins over a previous one (a TBox→TBox rename must say 'changed', not 'lost')."
+      "expect": ["T3", "T14"],
+      "_note": "review r2 L-B (G7) — the pre-#4277 order: a NEW TBox label wins over a previous one, so a TBox→TBox rename says 'changed', not 'lost'. The order is observable ONLY when BOTH probes fire (T3 / T14 / T11 / T16); T4's two cases (lost: hadLabel only; gained: newLabel only) each fire one probe and read the same string in either order — the reviewer's G7 → T4 assignment was the wrong axis, T4 cannot see the swap by construction (driver run 2026-09-19: red = T3 T11 T14 T16)."
     },
     "M18_buildInternal_always_materialises_(index_path_gains_a_layer)": {
       "from": "    if (options.materializeInference) {\n      inferred = (await materializeInferredTriples(triples)).inferred;",
