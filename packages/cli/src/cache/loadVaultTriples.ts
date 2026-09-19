@@ -153,8 +153,19 @@ export function cacheLoadNotice(loaded: LoadVaultTriplesResult): string {
       return "⚡ triple cache: hit";
     case "delta":
       return `♻️  triple cache: delta (${loaded.reparsedFiles ?? 0} file(s) re-parsed)`;
-    case "rebuild":
-      return `🔨 triple cache: rebuild (${loaded.reparsedFiles ?? 0} file(s) parsed, cache written)`;
+    case "rebuild": {
+      // #4277 — a reader's rebuild that inherited the displaced cache's
+      // inferred layer says so on stderr, for a human reading the log; the
+      // bot engine does NOT parse this line — it reads `"inferenceEnabled":true`
+      // off the `triples.json` header (plus its CLI-version marker) to decide
+      // whether an `index --force` is still needed. A layer-less rebuild
+      // prints exactly the pre-#4277 line — and so does an inherited layer
+      // that happens to be EMPTY (a vault that infers nothing): the flag is
+      // what the delta keys on, the count here is only what was materialized.
+      const inferred = loaded.triples.length - loaded.explicitCount;
+      const layer = inferred > 0 ? ` + inferred layer (${inferred})` : "";
+      return `🔨 triple cache: rebuild (${loaded.reparsedFiles ?? 0} file(s) parsed, cache written${layer})`;
+    }
     default:
       return "triple cache: not used (full parse)";
   }

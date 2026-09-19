@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+**Persistent triple cache — delta on an unchanged-projection TBox-form asset; a reader's rebuild inherits the inferred layer (#4277, req 1117f9fe)**
+
+- A MODIFIED TBox-form asset (`prefix__Name` label or alias — e.g. an `exo__SettingKey*`
+  definition an `exosync pull` rewrote) no longer forces a full rebuild by itself. `planDelta`
+  re-parses the changed file through the converter and compares its referrer-visible
+  projection with the cached entry — the own `exo:Asset_label` IRI object (the symbolic IRI
+  every `[[uid]]` referrer emits), the TBox-form `exo:Asset_aliases` set (what a
+  `[[prefix__Name]]` link resolves through) and the `exo:Instance_class` objects (the type
+  triples `emitTypeTripleForEnumInstance` co-emits into the referrer). Unchanged → an ordinary
+  delta (only that file re-parsed, the inferred layer kept or re-materialized as before);
+  any change to it, a TBox-form file added or removed, a label-NAMED (`prefix__Name.md`) file,
+  or a converter-skipped entry (no readable projection) → the full rebuild exactly as before,
+  with the same `rebuildReason` strings (`TBox-form asset changed` / `asset lost its TBox-form
+label` / `TBox-form alias`) plus `TBox-form asset class changed` for the class case. The
+  write-through (`--write-through`) folds the same change in as a delta instead of skipping it.
+- A `--use-cache` reader that has to rebuild (rebuild-class diff, failed walk, over-threshold)
+  now inherits the inferred layer of the cache it displaces: when that cache had
+  `inferenceEnabled: true` the new cache is written with a freshly materialized layer and the
+  flag kept, and the returned triples are explicit + inferred (`explicitCount` = explicit) —
+  so a consumer that ran `index` once no longer has to run `index --force` again after every
+  rebuild-class change. No readable cache, a legacy cache or `inferenceEnabled: false` keep
+  the layer-less rebuild; `index` (`--no-inference` included) is unchanged.
+- Measured on a copy of `vault-bot-kitelev` (16 687 files): touching one `exo__SettingKey*`
+  file's `setting__SettingKey_datatype` turned the next `query --use-cache` from a full rebuild
+  (18.1 s wall, 169 559 file reads, layer dropped) into a delta — numbers in PR #4277.
+
 **Persistent triple cache — per-file manifest validity + delta refresh (#4263, req 42812747)**
 
 - `CacheManager` no longer validates `.exocortex/cache/triples.json` by the vault root
