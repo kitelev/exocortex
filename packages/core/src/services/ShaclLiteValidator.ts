@@ -1,4 +1,5 @@
 import type { IRI, Literal, Triple } from '../infrastructure/sparql/algebra/AlgebraOperation';
+import { IRI as RdfIRI } from '../domain/models/rdf/IRI';
 
 export type Severity = 'sh:Violation' | 'sh:Warning' | 'sh:Info';
 
@@ -176,8 +177,9 @@ const FLOAT_LEXICAL = /^([+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?|[+-]?INF|NaN)$/
  * NUMBER-TAGGED literal (`xsd:integer` or `xsd:decimal` — the two tags
  * NoteToRDFConverter emits for a YAML number, ticket d5ad5217) may satisfy by
  * its lexical form. Keyed by the expected datatype's local name; a datatype
- * absent here keeps strict tag equality (e.g. xsd:string, xsd:dateTime,
- * xsd:anyURI).
+ * absent here keeps strict tag equality for a NUMBER tag (e.g. xsd:string,
+ * xsd:dateTime, xsd:anyURI — a number under xsd:anyURI is a violation). The
+ * STRING tag has its own two excuses below: xsd:boolean and xsd:anyURI.
  */
 const DECIMAL_TAG_LEXICAL: Readonly<Record<string, RegExp>> = {
   integer: INTEGER_LEXICAL,
@@ -214,9 +216,18 @@ const BOOLEAN_LEXICAL = /^(true|false)$/;
  * LEXICAL form is valid for the expected datatype:
  *   - tag xsd:integer / xsd:decimal + expected numeric family / gYear → lexical check
  *   - tag xsd:string   + expected xsd:boolean            → `true` | `false`
+ *   - tag xsd:string   + expected xsd:anyURI             → `IRI.isValidIRI(value)`
+ *     (ticket e55b0a07, amendment of req b0ad1160 under the same founder rule:
+ *     the converter tags EVERY YAML string xsd:string, so an anyURI range was
+ *     unreachable by construction). The lexicon is core's single IRI notion —
+ *     an ABSOLUTE IRI: non-empty, no whitespace, scheme in the core allowlist,
+ *     WHATWG-parseable or `urn:`. Relative references, empty strings and
+ *     schemes outside the allowlist are violations — deliberately stricter
+ *     than XSD 1.1 §3.3.17, whose lexical space admits any string.
  * Every other pairing keeps strict tag equality (W3C SHACL semantics): an ISO
  * string tagged xsd:dateTime under xsd:date, a quoted "10" (xsd:string) under
- * xsd:integer and a number under xsd:string are still violations.
+ * xsd:integer, a number under xsd:string and a number under xsd:anyURI are
+ * still violations.
  */
 function literalConformsToDatatype(
   value: string,
@@ -232,6 +243,9 @@ function literalConformsToDatatype(
   }
   if (literalDatatype === XSD_STRING && local === 'boolean') {
     return BOOLEAN_LEXICAL.test(value);
+  }
+  if (literalDatatype === XSD_STRING && local === 'anyURI') {
+    return RdfIRI.isValidIRI(value);
   }
   return false;
 }
