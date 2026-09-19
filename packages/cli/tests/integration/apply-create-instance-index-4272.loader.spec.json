@@ -1,0 +1,29 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/apply-create-instance-index-4272.integration.test.ts tests/unit/cache/loadVaultTriples.test.ts 2>&1",
+  "red_re": "› ([UI]\\d+\\w*) ",
+  "_doc": "Revert-verify mutants for #4272 (req 5ab3d237) on the loader's boundary reporting, subject packages/cli/src/cache/loadVaultTriples.ts. Same harness as the wiring spec; run from the repo root with `tree`/`subject` set to YOUR checkout.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/loadVaultTriples.ts",
+  "mutants": {
+    "L1_full_parse_zeroTriplePaths_empty": {
+      "from": "  const zeroTriplePaths = files\n    .filter((f) => (committed.get(f.path) ?? 0) === 0)\n    .map((f) => f.path);",
+      "to": "  const zeroTriplePaths: string[] = [];",
+      "expect": ["I1", "U11"]
+    },
+    "L2_full_parse_explicitCount_understated": {
+      "from": "    explicitCount: triples.length,\n    zeroTriplePaths,",
+      "to": "    explicitCount: 0,\n    zeroTriplePaths,",
+      "expect": ["I1"]
+    },
+    "L3_full_parse_population_rule_narrowed_to_never_committed_(frontmatter-less_note_dropped)": {
+      "from": "    .filter((f) => (committed.get(f.path) ?? 0) === 0)",
+      "to": "    .filter((f) => !committed.has(f.path))",
+      "expect": ["U11"]
+    }
+  }
+}

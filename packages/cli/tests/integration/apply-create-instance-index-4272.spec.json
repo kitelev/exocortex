@@ -1,0 +1,34 @@
+{
+  "_doc": "Revert-verify mutants for #4272 (req 5ab3d237-cae9-498c-925c-6951b9c9c5db) on the WIRING, subject packages/cli/src/commands/apply.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/apply-create-instance-index-4272.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute). The adapter's own mutants live in tests/unit/adapters/TripleStoreIndexedFsAdapter.spec.json. Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/apply.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/apply-create-instance-index-4272.integration.test.ts 2>&1",
+  "red_re": "› ([UI]\\d+\\w*) ",
+  "mutants": {
+    "M1_apply_wires_the_plain_scanning_NodeFsAdapter": {
+      "from": "          const nodeFsAdapter = new TripleStoreIndexedFsAdapter(vaultPath, {\n            explicitTriples: loaded.triples.slice(0, loaded.explicitCount),\n            zeroTriplePaths: loaded.zeroTriplePaths,\n          });",
+      "to": "          const nodeFsAdapter = new (class extends TripleStoreIndexedFsAdapter {\n            override async findFilesByMetadata(query: Record<string, any>): Promise<string[]> {\n              // pre-#4272 wiring: the base NodeFsAdapter vault-wide scan\n              return Object.getPrototypeOf(TripleStoreIndexedFsAdapter.prototype).findFilesByMetadata.call(this, query);\n            }\n          })(vaultPath, {\n            explicitTriples: loaded.triples.slice(0, loaded.explicitCount),\n            zeroTriplePaths: loaded.zeroTriplePaths,\n          });",
+      "expect": ["I1", "I1c"]
+    },
+    "M1b_apply_indexes_an_EMPTY_source_(resolvers_resolve_nothing)": {
+      "from": "          const nodeFsAdapter = new TripleStoreIndexedFsAdapter(vaultPath, {\n            explicitTriples: loaded.triples.slice(0, loaded.explicitCount),\n            zeroTriplePaths: loaded.zeroTriplePaths,\n          });",
+      "to": "          const nodeFsAdapter = new TripleStoreIndexedFsAdapter(vaultPath, {\n            explicitTriples: [],\n            zeroTriplePaths: [],\n          });",
+      "expect": ["I1", "I1c"]
+    },
+    "W2_index_fed_the_WHOLE_store_(explicit_plus_inferred)": {
+      "from": "            explicitTriples: loaded.triples.slice(0, loaded.explicitCount),",
+      "to": "            explicitTriples: loaded.triples,",
+      "expect": ["I1c"]
+    },
+    "W4_loader_skipped_files_not_handed_to_the_adapter": {
+      "from": "            zeroTriplePaths: loaded.zeroTriplePaths,",
+      "to": "            zeroTriplePaths: [],",
+      "expect": ["I1", "I1c"]
+    }
+  }
+}

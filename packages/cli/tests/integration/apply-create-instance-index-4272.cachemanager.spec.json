@@ -1,0 +1,44 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/apply-create-instance-index-4272.integration.test.ts tests/unit/cache/loadVaultTriples.test.ts 2>&1",
+  "red_re": "› ([UI]\\d+\\w*) ",
+  "_doc": "Revert-verify mutants for #4272 (req 5ab3d237) on the cache path's boundary reporting, subject packages/cli/src/cache/CacheManager.ts. Same harness; I1c (--use-cache on an `index`-built cache) is the axis.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/CacheManager.ts",
+  "mutants": {
+    "C1_cache_hit_zeroTriplePaths_empty": {
+      "from": "        explicitCount: CacheManager.explicitCountOf(cached),\n        zeroTriplePaths: CacheManager.zeroTriplePathsOf(cached),",
+      "to": "        explicitCount: CacheManager.explicitCountOf(cached),\n        zeroTriplePaths: [],",
+      "expect": ["I1c"]
+    },
+    "C2_cache_hit_explicitCount_covers_the_inferred_layer": {
+      "from": "        explicitCount: CacheManager.explicitCountOf(cached),\n        zeroTriplePaths: CacheManager.zeroTriplePathsOf(cached),",
+      "to": "        explicitCount: Number.MAX_SAFE_INTEGER,\n        zeroTriplePaths: CacheManager.zeroTriplePathsOf(cached),",
+      "expect": ["I1c"]
+    },
+    "C3_delta_explicitCount_covers_the_re-materialised_inferred_tail": {
+      "from": "      explicitCount: CacheManager.explicitCountOf(refreshed.data),\n      zeroTriplePaths: CacheManager.zeroTriplePathsOf(refreshed.data),",
+      "to": "      explicitCount: refreshed.triples.length,\n      zeroTriplePaths: CacheManager.zeroTriplePathsOf(refreshed.data),",
+      "expect": ["I1d"]
+    },
+    "C4_rebuild_explicitCount_zero_(index_fed_nothing)": {
+      "from": "      explicitCount: built.triples.length,\n      zeroTriplePaths: CacheManager.zeroTriplePathsOf(built.data),",
+      "to": "      explicitCount: 0,\n      zeroTriplePaths: CacheManager.zeroTriplePathsOf(built.data),",
+      "expect": ["I1e"]
+    },
+    "C5_delta_zeroTriplePaths_empty": {
+      "from": "      explicitCount: CacheManager.explicitCountOf(refreshed.data),\n      zeroTriplePaths: CacheManager.zeroTriplePathsOf(refreshed.data),",
+      "to": "      explicitCount: CacheManager.explicitCountOf(refreshed.data),\n      zeroTriplePaths: [],",
+      "expect": ["I1d"]
+    },
+    "C6_rebuild_zeroTriplePaths_empty": {
+      "from": "      explicitCount: built.triples.length,\n      zeroTriplePaths: CacheManager.zeroTriplePathsOf(built.data),",
+      "to": "      explicitCount: built.triples.length,\n      zeroTriplePaths: [],",
+      "expect": ["I1e", "U11"]
+    }
+  }
+}
