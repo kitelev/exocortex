@@ -41,7 +41,7 @@ import {
 } from "../utils/errors/index.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
-import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
+import { TripleStoreIndexedFsAdapter } from "../adapters/TripleStoreIndexedFsAdapter.js";
 import { createIsInWrongFolderHostFunction } from "../precondition/createIsInWrongFolderHostFunction.js";
 import { createHasEmptyPropertiesHostFunction } from "../precondition/createHasEmptyPropertiesHostFunction.js";
 import { populateCliServiceRegistry } from "../services/CliServiceRegistryPopulator.js";
@@ -391,7 +391,15 @@ async function executeOnTarget(
     new EffortStatusWorkflow(),
     new StatusTimestampService(vaultAdapter),
   );
-  const nodeFsAdapter = new NodeFsAdapter(vaultPath);
+  // #4272 — the create-instance resolvers below (class label → uid,
+  // isDefinedBy → folder, targetRef → frontmatter, templateRef → path) each
+  // bottomed out in NodeFsAdapter.findFilesByMetadata: a glob + read + YAML
+  // parse of EVERY markdown file per call (11 scans = 183 317 reads for one
+  // create-task-instance on a 16 664-file vault). The store loaded above
+  // already holds every exo:Asset_uid / exo:Asset_label / exo:Asset_aliases
+  // triple, so this adapter answers those lookups from an index over it —
+  // same set, same order as the scan — and reads only the files it resolves to.
+  const nodeFsAdapter = new TripleStoreIndexedFsAdapter(vaultPath, tripleStore);
   populateCliServiceRegistry(serviceRegistry, {
     vaultAdapter,
     fsAdapter: nodeFsAdapter,

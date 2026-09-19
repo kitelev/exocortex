@@ -319,7 +319,10 @@ export class NodeFsAdapter implements IFileSystemAdapter {
     return true;
   }
 
-  private normalizeValue(value: any): string {
+  // protected (not private) so TripleStoreIndexedFsAdapter keys its index by
+  // the SAME normalisation matchesQuery compares with — a second copy of this
+  // rule is how an index-backed lookup drifts from the scan it replaces (#4272).
+  protected normalizeValue(value: any): string {
     if (value === null || value === undefined) return "";
     return String(value)
       .replace(/["'[\]]/g, "")
