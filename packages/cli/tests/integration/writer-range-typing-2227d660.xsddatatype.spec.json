@@ -17,15 +17,17 @@
       "from": "  \"integer\",\n  \"long\",\n  \"int\",",
       "to": "  \"integer\",\n  \"int\",",
       "expect": [
-        "R12"
+        "R12",
+        "R12t"
       ]
     },
     "MR17_double_dropped_from_decimal_family": {
       "from": "  \"decimal\",\n  \"float\",\n  \"double\",\n",
       "to": "  \"decimal\",\n  \"float\",\n",
       "expect": [
-        "R3",
-        "R12"
+        "R12",
+        "R12t",
+        "R3"
       ]
     },
     "MR17b_integer_family_reports_decimal": {
@@ -34,6 +36,13 @@
       "expect": [
         "R12",
         "R8"
+      ]
+    },
+    "MR31_unsignedShort_dropped_from_integer_family": {
+      "from": "  \"unsignedInt\",\n  \"unsignedShort\",\n  \"unsignedByte\",",
+      "to": "  \"unsignedInt\",\n  \"unsignedByte\",",
+      "expect": [
+        "R12t"
       ]
     }
   }

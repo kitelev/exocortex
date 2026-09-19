@@ -60,7 +60,7 @@ const METACLASS_FIXTURES = path.resolve(
 const DATATYPE_PROPERTY_UID = "ae56ca4c-b610-42a4-a25d-058c23673296"; // exo__DatatypeProperty
 const CLASS_UID = "40a0741c-0000-4000-8000-000000000001"; // ems__Reminder (fixture)
 const TBOX_DIR = "assetspaces/kitelev/exoas-public/ems";
-const NEG_CHAT_ID = "-1003912427125";
+const NEG_CHAT_ID = "-1001234567890";
 
 function md(frontmatter: Record<string, string | string[]>): string {
   const lines = ["---"];
@@ -225,14 +225,14 @@ describe(`ticket 2227d660: create types a scalar by the declared exo__Property_r
     expect(lineFor(out.content, "ems__Reminder_chatId")).toBe(
       `ems__Reminder_chatId: ${NEG_CHAT_ID}`,
     );
-    expect(out.parsed.ems__Reminder_chatId).toBe(-1003912427125);
+    expect(out.parsed.ems__Reminder_chatId).toBe(-1001234567890);
   });
 
   it(`W2 a numeric value under the mounted xsd:string def is QUOTED and reads back as a string; a positive id under xsd:integer stays bare @req:${REQ}`, async () => {
     buildTbox(vault);
     const out = await create("W2 str", [
       "ems__Reminder_text=42",
-      "ems__Reminder_chatId=282500186",
+      "ems__Reminder_chatId=123456789",
     ]);
     expect(out.exit).not.toContain(1);
     expect(lineFor(out.content, "ems__Reminder_text")).toBe(
@@ -240,9 +240,9 @@ describe(`ticket 2227d660: create types a scalar by the declared exo__Property_r
     );
     expect(out.parsed.ems__Reminder_text).toBe("42");
     expect(lineFor(out.content, "ems__Reminder_chatId")).toBe(
-      "ems__Reminder_chatId: 282500186",
+      "ems__Reminder_chatId: 123456789",
     );
-    expect(out.parsed.ems__Reminder_chatId).toBe(282500186);
+    expect(out.parsed.ems__Reminder_chatId).toBe(123456789);
   });
 
   it(`W3 control — NO property TBox mounted: the pre-ticket shape rule is byte-identical (negative quoted, number bare) @req:${REQ}`, async () => {

@@ -122,7 +122,7 @@ describe("MetadataHelpers.buildFileContent — declared-range typing (ticket 222
     const content = MetadataHelpers.buildFileContent(
       {
         exo__Asset_label: "Reminder",
-        ems__Reminder_chatId: "-1003912427125",
+        ems__Reminder_chatId: "-1001234567890",
         ems__Reminder_text: "42",
         ems__Reminder_ids: ["-5", "-6"],
         exo__Asset_relates: ["-7"],
@@ -130,24 +130,24 @@ describe("MetadataHelpers.buildFileContent — declared-range typing (ticket 222
       undefined,
       rangeOf,
     );
-    expect(content).toContain("ems__Reminder_chatId: -1003912427125\n");
+    expect(content).toContain("ems__Reminder_chatId: -1001234567890\n");
     expect(content).toContain('ems__Reminder_text: "42"\n');
     // Array items of a mapped key follow the same rule…
     expect(content).toContain("ems__Reminder_ids:\n  - -5\n  - -6\n");
     // …and a key the lookup does not know keeps the shape rule (leading `-` quoted).
     expect(content).toContain('exo__Asset_relates:\n  - "-7"\n');
     const parsed = parseFrontmatter(content);
-    expect(parsed.ems__Reminder_chatId).toBe(-1003912427125);
+    expect(parsed.ems__Reminder_chatId).toBe(-1001234567890);
     expect(parsed.ems__Reminder_text).toBe("42");
   });
 
   it("G2 without the lookup: the pre-ticket shape rule (negative quoted, number bare) is byte-identical", () => {
     const content = MetadataHelpers.buildFileContent({
       exo__Asset_label: "Reminder",
-      ems__Reminder_chatId: "-1003912427125",
+      ems__Reminder_chatId: "-1001234567890",
       ems__Reminder_text: "42",
     });
-    expect(content).toContain('ems__Reminder_chatId: "-1003912427125"\n');
+    expect(content).toContain('ems__Reminder_chatId: "-1001234567890"\n');
     expect(content).toContain("ems__Reminder_text: 42\n");
   });
 });

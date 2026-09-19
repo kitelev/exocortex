@@ -26,7 +26,7 @@
  *
  * Ticket 2227d660 (declared-range typing): the writers decided a scalar's
  * YAML type by its SHAPE — `needsYamlQuoting` quoted any value starting with a
- * YAML indicator (`-1003912427125` → `"-1003912427125"`) and left a bare digit
+ * YAML indicator (`-1001234567890` → `"-1001234567890"`) and left a bare digit
  * run bare (`42`) — while the validator (`ShaclLiteValidator`, founder rule
  * 2026-09-19) judges the literal's tag against the property's DECLARED
  * `exo__Property_range`. So a negative chat id under `xsd:integer` landed as
@@ -235,7 +235,7 @@ export function needsYamlQuoting(
   }
 
   // Ticket 2227d660 — the DECLARED range types a canonical scalar. Decided
-  // BEFORE the shape checks below: a canonical negative (`-1003912427125`)
+  // BEFORE the shape checks below: a canonical negative (`-1001234567890`)
   // starts with the `-` indicator and would otherwise be quoted into an
   // `xsd:string` literal under an `xsd:integer` range. The integer family is
   // additionally gated to the safe-integer range: js-yaml reads a bare int as

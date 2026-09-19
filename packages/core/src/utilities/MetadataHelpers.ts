@@ -154,11 +154,22 @@ export class MetadataHelpers {
 
   /**
    * @param declaredRangeOf — the property's declared `exo__Property_range`
-   *   values by CANONICAL yaml key (ticket 2227d660), when the caller has a
-   *   TBox to read them from (`cli create` → `PropertyNameValidator`). Each
-   *   scalar is then typed by its range (`serializeYamlScalar`'s third
-   *   argument); a key the lookup does not know — or no lookup at all — keeps
-   *   the shape-based behaviour, so the plugin / apply callers are unaffected.
+   *   values (ticket 2227d660), when the caller has a TBox to read them from
+   *   (`cli create` → `PropertyNameValidator`). Each scalar is then typed by
+   *   its range (`serializeYamlScalar`'s third argument); a key the lookup does
+   *   not know — or no lookup at all — keeps the shape-based behaviour, so the
+   *   plugin / apply callers are unaffected.
+   *
+   *   ⚠ The lookup is called with the EMITTED (canonical) key, i.e. AFTER
+   *   `canonicalYamlKey`, while `cli create` keys its map by the def's
+   *   `prefix__Name` label. The two agree for every prefixed property; the
+   *   three whitelisted bare keys (`aliases` / `draft` / `pinned` —
+   *   `UNPREFIXED_ASSET_FIELDS`) are emitted unprefixed and therefore never
+   *   resolve a range here — `aliases` keeps its `STRING_SCALAR_PROPERTIES`
+   *   rule, the other two have no TBox range today. `set-property` resolves
+   *   the range by the property NAME before canonicalising, so for those
+   *   three keys the two writers would diverge if a range were ever declared
+   *   (review #4282 LOW-1; follow-up ticket, not changed here).
    */
   static buildFileContent(
     frontmatter: Record<string, unknown>,
@@ -185,7 +196,7 @@ export class MetadataHelpers {
         // MEDIUM-3) is gated to string-semantic properties (label/aliases).
         const quoteAmbiguous = STRING_SCALAR_PROPERTIES.has(key);
         // Ticket 2227d660: the declared range (when the caller can read the
-        // TBox) types a canonical scalar — `-1003912427125` under
+        // TBox) types a canonical scalar — `-1001234567890` under
         // `xsd:integer` stays bare, `42` under `xsd:string` is quoted.
         const declaredRange = declaredRangeOf?.(key);
         if (Array.isArray(value)) {

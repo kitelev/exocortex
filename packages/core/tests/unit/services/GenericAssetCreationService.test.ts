@@ -1467,13 +1467,13 @@ describe("GenericAssetCreationService", () => {
             ["ems__Reminder_text", ["xsd:string"]],
           ]),
           propertyValues: {
-            ems__Reminder_chatId: "-1003912427125",
+            ems__Reminder_chatId: "-1001234567890",
             ems__Reminder_text: "42",
             ems__Reminder_note: "-7",
           },
         });
         expect(built.content).toContain(
-          "ems__Reminder_chatId: -1003912427125\n",
+          "ems__Reminder_chatId: -1001234567890\n",
         );
         expect(built.content).toContain('ems__Reminder_text: "42"\n');
         expect(built.content).toContain('ems__Reminder_note: "-7"\n');
@@ -1486,12 +1486,12 @@ describe("GenericAssetCreationService", () => {
           folderPath: "01 Inbox",
           shapeRegistry: buildRegistry([]),
           propertyValues: {
-            ems__Reminder_chatId: "-1003912427125",
+            ems__Reminder_chatId: "-1001234567890",
             ems__Reminder_text: "42",
           },
         });
         expect(built.content).toContain(
-          'ems__Reminder_chatId: "-1003912427125"\n',
+          'ems__Reminder_chatId: "-1001234567890"\n',
         );
         expect(built.content).toContain("ems__Reminder_text: 42\n");
       });

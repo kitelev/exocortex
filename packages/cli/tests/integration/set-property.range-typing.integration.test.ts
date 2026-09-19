@@ -2,7 +2,7 @@
  * Ticket 2227d660 — `set-property` typed a YAML scalar by its SHAPE
  * (`needsYamlQuoting`: a leading `-` ⇒ quoted), not by the property's DECLARED
  * `exo__Property_range`. Under `xsd:integer` (ems__Reminder_chatId since ticket
- * d72aba19 G2) a group chat id `-1003912427125` landed as `"-1003912427125"` —
+ * d72aba19 G2) a group chat id `-1001234567890` landed as `"-1001234567890"` —
  * an `xsd:string` literal, `sh:datatype` violation under founder rule 6c — while
  * a numeric string under `xsd:string` landed bare (`xsd:integer`, the mirror
  * violation). Measured 2026-09-19 on a copy of vault-my with CLI 16.241.5:
@@ -51,7 +51,7 @@ const TBOX_DIR = "assetspaces/kitelev/exoas-public/ems";
 const ABOX_DIR = "assetspaces/kitelev/exoas-my/my-assets";
 const TARGET_REL = `${ABOX_DIR}/${TARGET_UID}.md`;
 const FROZEN_CLOCK = "2026-09-19T21:00:00Z";
-const NEG_CHAT_ID = "-1003912427125";
+const NEG_CHAT_ID = "-1001234567890";
 
 function md(frontmatter: Record<string, string | string[]>): string {
   const lines = ["---"];
@@ -132,7 +132,7 @@ function writeTarget(vault: string): void {
       exo__Instance_class: [`"[[${CLASS_UID}]]"`],
       exo__Asset_label: "Fixture reminder",
       exo__Asset_updatedAt: "2020-01-01T00:00:00",
-      ems__Reminder_chatId: "166774905",
+      ems__Reminder_chatId: "987654321",
     }),
   );
 }
@@ -153,6 +153,8 @@ function lineFor(content: string, key: string): string | undefined {
 
 describe(`ticket 2227d660: set-property types a scalar by the declared exo__Property_range @req:${REQ}`, () => {
   let vault: string;
+  /** The second temp vault Q2 creates (empty TBox) — removed in afterEach. */
+  let emptyVault: string | undefined;
   let exitSpy: ReturnType<typeof jest.spyOn>;
   let stdoutSpy: ReturnType<typeof jest.spyOn>;
   let stderrSpy: ReturnType<typeof jest.spyOn>;
@@ -186,6 +188,10 @@ describe(`ticket 2227d660: set-property types a scalar by the declared exo__Prop
     logSpy.mockRestore();
     errorSpy.mockRestore();
     fs.rmSync(vault, { recursive: true, force: true });
+    if (emptyVault !== undefined) {
+      fs.rmSync(emptyVault, { recursive: true, force: true });
+      emptyVault = undefined;
+    }
   });
 
   async function setProp(extraArgs: string[]): Promise<{
@@ -222,7 +228,7 @@ describe(`ticket 2227d660: set-property types a scalar by the declared exo__Prop
     expect(lineFor(out.content, "ems__Reminder_chatId")).toBe(
       `ems__Reminder_chatId: ${NEG_CHAT_ID}`,
     );
-    expect(out.parsed.ems__Reminder_chatId).toBe(-1003912427125);
+    expect(out.parsed.ems__Reminder_chatId).toBe(-1001234567890);
   });
 
   it(`S2 a numeric --value under a mounted xsd:string def is QUOTED and reads back as a string @req:${REQ}`, async () => {
@@ -355,9 +361,8 @@ describe(`ticket 2227d660: set-property types a scalar by the declared exo__Prop
     const v = new PropertyNameValidator(vault);
     expect(await v.declaredRange("ems__Reminder_note")).toBeUndefined();
     expect(await v.declaredRange("ems__Reminder_nope")).toBeUndefined();
-    const empty = new PropertyNameValidator(
-      fs.mkdtempSync(path.join(os.tmpdir(), "cli-2227d660-empty-")),
-    );
+    emptyVault = fs.mkdtempSync(path.join(os.tmpdir(), "cli-2227d660-empty-"));
+    const empty = new PropertyNameValidator(emptyVault);
     expect(await empty.declaredRange("ems__Reminder_chatId")).toBeUndefined();
     expect((await empty.declaredRanges()).size).toBe(0);
   });

@@ -194,7 +194,7 @@ function resolvePropertyAndValue(options: SetPropertyOptions): {
  * `exo__Property_range` as the mounted TBox declares it (read by the SAME
  * one-pass scan `PropertyNameValidator` already runs for the key check, so it
  * costs no extra IO). With it the scalar is typed by the DECLARATION rather
- * than by its shape: a canonical `-1003912427125` under `xsd:integer` stays
+ * than by its shape: a canonical `-1001234567890` under `xsd:integer` stays
  * bare (the shape rule quoted it into an `xsd:string` literal — an
  * `sh:datatype` violation once `ems__Reminder_chatId` became `xsd:integer`,
  * ticket d72aba19 G2), a numeric `--value` under `xsd:string` is quoted. No
