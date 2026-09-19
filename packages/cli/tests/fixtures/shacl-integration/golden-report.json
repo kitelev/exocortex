@@ -57,5 +57,14 @@
     "message": "sh:datatype violation: literal \"3.5\" has datatype <http://www.w3.org/2001/XMLSchema#decimal>, expected http://www.w3.org/2001/XMLSchema#integer",
     "actualValue": "3.5",
     "expectedRange": "http://www.w3.org/2001/XMLSchema#integer"
+  },
+  {
+    "focusNode": "obsidian://vault/data/asset-j.md",
+    "propertyPath": "https://exocortex.my/ontology/ems#Task_sourceUrl",
+    "severity": "sh:Violation",
+    "constraint": "datatype",
+    "message": "sh:datatype violation: literal \"not a uri\" has datatype <http://www.w3.org/2001/XMLSchema#string>, expected http://www.w3.org/2001/XMLSchema#anyURI",
+    "actualValue": "not a uri",
+    "expectedRange": "http://www.w3.org/2001/XMLSchema#anyURI"
   }
 ]
