@@ -1,0 +1,46 @@
+{
+  "_doc": "Revert-verify mutants for ticket 2227d660 (req 21ceea14, PR fix/writer-types-by-declared-range). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/writer-range-typing-2227d660.metadatahelpers.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's MetadataHelpers.ts and runs the suites named in `harness`; `expect` names the axes that MUST go red). cli suites resolve @kitelev/exocortex-core from core SRC (jest moduleNameMapper), so a core mutant reaches the cli axes without a build. Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([RGDSQW]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/MetadataHelpers.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/utilities/yamlScalar.test.ts tests/utilities/MetadataHelpers.yamlQuoting.test.ts tests/unit/services/GenericAssetCreationService.test.ts 2>&1 ; cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/set-property.range-typing.integration.test.ts tests/integration/create.range-typing.integration.test.ts 2>&1",
+  "mutants": {
+    "MR18_lookup_ignored": {
+      "from": "        const declaredRange = declaredRangeOf?.(key);",
+      "to": "        const declaredRange = undefined; void declaredRangeOf;",
+      "expect": [
+        "G1",
+        "D1",
+        "W1",
+        "W2",
+        "W4"
+      ]
+    },
+    "MR19_array_items_untyped": {
+      "from": "                `  - ${serializeYamlScalar(item, quoteAmbiguous, declaredRange)}`,",
+      "to": "                `  - ${serializeYamlScalar(item, quoteAmbiguous)}`,",
+      "expect": [
+        "G1"
+      ]
+    },
+    "MR19b_scalar_untyped": {
+      "from": "        return `${key}: ${serializeYamlScalar(value, quoteAmbiguous, declaredRange)}`;",
+      "to": "        return `${key}: ${serializeYamlScalar(value, quoteAmbiguous)}`;",
+      "expect": [
+        "G1",
+        "D1",
+        "W1",
+        "W2",
+        "W4"
+      ]
+    }
+  }
+}

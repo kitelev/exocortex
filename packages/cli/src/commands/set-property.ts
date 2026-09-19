@@ -189,13 +189,29 @@ function resolvePropertyAndValue(options: SetPropertyOptions): {
  * per-input-form. A caller that needs a scalar-shaped value to survive as a
  * string on a non-string-semantic property pre-wraps it (`"value": "\"007\""`);
  * `serializeYamlScalar` passes an already-double-quoted scalar through verbatim.
+ *
+ * Ticket 2227d660 — the third argument, `declaredRange`, is the property's
+ * `exo__Property_range` as the mounted TBox declares it (read by the SAME
+ * one-pass scan `PropertyNameValidator` already runs for the key check, so it
+ * costs no extra IO). With it the scalar is typed by the DECLARATION rather
+ * than by its shape: a canonical `-1003912427125` under `xsd:integer` stays
+ * bare (the shape rule quoted it into an `xsd:string` literal — an
+ * `sh:datatype` violation once `ems__Reminder_chatId` became `xsd:integer`,
+ * ticket d72aba19 G2), a numeric `--value` under `xsd:string` is quoted. No
+ * mounted def / no range → `undefined` → exactly the per-property rule above.
  */
-function serializeForWrite(value: unknown, yamlKey: string): unknown {
+function serializeForWrite(
+  value: unknown,
+  yamlKey: string,
+  declaredRange?: readonly string[],
+): unknown {
   const quoteAmbiguous = STRING_SCALAR_PROPERTIES.has(yamlKey);
   if (Array.isArray(value)) {
-    return value.map((v) => serializeYamlScalar(v, quoteAmbiguous));
+    return value.map((v) =>
+      serializeYamlScalar(v, quoteAmbiguous, declaredRange),
+    );
   }
-  return serializeYamlScalar(value, quoteAmbiguous);
+  return serializeYamlScalar(value, quoteAmbiguous, declaredRange);
 }
 
 /**
@@ -368,10 +384,15 @@ export function setPropertyCommand(): Command {
         // maps to the bare `aliases:` key so we update it in place rather than
         // adding a duplicate literal `exo__Asset_aliases:` alongside it.
         const yamlKey = canonicalYamlKey(property);
+        // Ticket 2227d660: the declared range is keyed by the property NAME
+        // (`prefix__Name` label of the mounted def) — the canonical `aliases`
+        // key has no TBox def and keeps its `STRING_SCALAR_PROPERTIES` rule.
+        const declaredRange =
+          await propertyNameValidator.declaredRange(property);
         const afterSet = fm.updateProperty(
           original,
           yamlKey,
-          serializeForWrite(value, yamlKey),
+          serializeForWrite(value, yamlKey, declaredRange),
         );
         // A no-op (the property already holds this value, serialised the same
         // way) is NOT a modification: the file stays byte-identical, nothing is

@@ -152,9 +152,18 @@ export class MetadataHelpers {
     return `"${value}"`;
   }
 
+  /**
+   * @param declaredRangeOf — the property's declared `exo__Property_range`
+   *   values by CANONICAL yaml key (ticket 2227d660), when the caller has a
+   *   TBox to read them from (`cli create` → `PropertyNameValidator`). Each
+   *   scalar is then typed by its range (`serializeYamlScalar`'s third
+   *   argument); a key the lookup does not know — or no lookup at all — keeps
+   *   the shape-based behaviour, so the plugin / apply callers are unaffected.
+   */
   static buildFileContent(
     frontmatter: Record<string, unknown>,
     bodyContent?: string,
+    declaredRangeOf?: (canonicalKey: string) => readonly string[] | undefined,
   ): string {
     // req 869561bf — the asset-creation twin of
     // `FrontmatterService.createFrontmatter`; canonicalise on the same terms so
@@ -175,13 +184,20 @@ export class MetadataHelpers {
         // (FrontmatterService.serializeValue). Scalar-looking coercion (#3750
         // MEDIUM-3) is gated to string-semantic properties (label/aliases).
         const quoteAmbiguous = STRING_SCALAR_PROPERTIES.has(key);
+        // Ticket 2227d660: the declared range (when the caller can read the
+        // TBox) types a canonical scalar — `-1003912427125` under
+        // `xsd:integer` stays bare, `42` under `xsd:string` is quoted.
+        const declaredRange = declaredRangeOf?.(key);
         if (Array.isArray(value)) {
           const arrayItems = value
-            .map((item) => `  - ${serializeYamlScalar(item, quoteAmbiguous)}`)
+            .map(
+              (item) =>
+                `  - ${serializeYamlScalar(item, quoteAmbiguous, declaredRange)}`,
+            )
             .join("\n");
           return `${key}:\n${arrayItems}`;
         }
-        return `${key}: ${serializeYamlScalar(value, quoteAmbiguous)}`;
+        return `${key}: ${serializeYamlScalar(value, quoteAmbiguous, declaredRange)}`;
       })
       .join("\n");
 

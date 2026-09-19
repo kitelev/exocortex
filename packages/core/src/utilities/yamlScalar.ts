@@ -24,6 +24,19 @@
  *  - LOW-4: control chars beyond `\n\r\t` (`\x07`, `\b`, `\f`, `\v`, NUL, DEL)
  *    are detected and escaped (`\xNN`) so they never reach a parser bare.
  *
+ * Ticket 2227d660 (declared-range typing): the writers decided a scalar's
+ * YAML type by its SHAPE — `needsYamlQuoting` quoted any value starting with a
+ * YAML indicator (`-1003912427125` → `"-1003912427125"`) and left a bare digit
+ * run bare (`42`) — while the validator (`ShaclLiteValidator`, founder rule
+ * 2026-09-19) judges the literal's tag against the property's DECLARED
+ * `exo__Property_range`. So a negative chat id under `xsd:integer` landed as
+ * an `xsd:string` literal (sh:datatype violation) and a numeric string under
+ * `xsd:string` as `xsd:integer` (the mirror violation). The third argument,
+ * `declaredRange`, lets a writer that knows the range type the scalar by it:
+ * see {@link scalarTypingForRange} and {@link needsYamlQuoting}. Without a
+ * range the behaviour is exactly the pre-ticket one (fail-open: a vault with
+ * no mounted TBox keeps creating assets).
+ *
  * Strategy: emit string scalars verbatim UNLESS YAML would mis-parse or
  * mis-type them, in which case wrap in a double-quoted scalar with proper
  * escaping. Deliberately conservative ("quote only when needed") so labels
@@ -32,6 +45,7 @@
  */
 
 import * as yaml from "js-yaml";
+import { xsdDatatypeLocalName, xsdNumericFamily } from "./xsdDatatype";
 
 const YAML_LEADING_INDICATORS = /^[-!&*?|>%@`"'#,[\]{}]/;
 
@@ -81,6 +95,60 @@ export const STRING_SCALAR_PROPERTIES = new Set<string>([
   "exo__Asset_label",
   "aliases",
 ]);
+
+/**
+ * How a property's DECLARED `exo__Property_range` types a frontmatter scalar
+ * (ticket 2227d660): the numeric families emit a canonical number BARE, a
+ * boolean emits `true`/`false` bare, a string quotes scalar-looking values.
+ * `undefined` = the range gives no typing → shape-based behaviour as before.
+ */
+export type DeclaredRangeTyping = "integer" | "decimal" | "boolean" | "string";
+
+/**
+ * Canonical lexical forms a numeric declared range lets the writer emit BARE.
+ *
+ * ⛔ Deliberately NARROWER than js-yaml's own `YAML_INT` / `YAML_FLOAT`
+ * resolvers: the writer's promise is "the reader gets back the same number
+ * the author wrote", and the YAML 1.1 schema the reader uses
+ * (`parseYamlFrontmatterTolerant`, js-yaml 5.3.0 `YAML11_SCHEMA`) does NOT
+ * keep that promise for every int-shaped run — measured 2026-09-19: `010` →
+ * 8 (octal), `007` → 7, `1_000` → 1000, `0x1F` → 31, `08` → the STRING "08".
+ * A leading zero, an underscore or a base prefix therefore keeps today's
+ * shape-based behaviour; only `0` or a non-zero-led digit run (with an
+ * optional sign, and for the decimal family an optional `.digits` fraction)
+ * is a canonical number. `-` before a digit is a plain scalar, not a block
+ * sequence indicator (that needs `- `), so a canonical negative is safe bare.
+ */
+const CANONICAL_INTEGER_LEXICAL = /^[+-]?(?:0|[1-9][0-9]*)$/;
+const CANONICAL_DECIMAL_LEXICAL = /^[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
+/** The two lexical forms `xsd:boolean` shares with a YAML boolean (`true` / `false`). */
+const CANONICAL_BOOLEAN_LEXICAL = /^(?:true|false)$/;
+
+/**
+ * Typing implied by a property's declared `exo__Property_range` values, as the
+ * TBox writes them — the CURIE `xsd:<local>` or the full W3C IRI (both forms
+ * `xsdDatatypeLocalName` reads).
+ *
+ * Only a range that is exactly ONE XSD datatype types the scalar. A class
+ * range (`[[<uid>]]`, `ems__Effort`), a multi-valued range, a foreign CURIE
+ * or an absent range (`undefined`) yields `undefined`: the writer then keeps
+ * its shape-based behaviour, so a property whose range the writer cannot read
+ * is written exactly as before this ticket (fail-open by construction).
+ */
+export function scalarTypingForRange(
+  declaredRange: readonly string[] | undefined,
+): DeclaredRangeTyping | undefined {
+  if (declaredRange === undefined || declaredRange.length !== 1) {
+    return undefined;
+  }
+  const local = xsdDatatypeLocalName(declaredRange[0].trim());
+  if (local === null) return undefined;
+  const numeric = xsdNumericFamily(local);
+  if (numeric !== null) return numeric;
+  if (local === "boolean") return "boolean";
+  if (local === "string") return "string";
+  return undefined;
+}
 
 /**
  * Is the value a COMPLETE, single double-quoted YAML scalar (`"…"`)?
@@ -138,10 +206,22 @@ function looksLikeNonStringScalar(value: string): boolean {
  *   strings (`2026-01-15T10:00:00`) are deliberately NOT quoted even when true
  *   (#3750 MEDIUM-3 — axis `roundTrip(datetime, true)` = Date pins it; known
  *   bound, ticket 71f1ca37).
+ * @param declaredRange — the property's declared `exo__Property_range` values
+ *   when the writer has them (ticket 2227d660; see {@link scalarTypingForRange}).
+ *   A numeric range emits a canonical number BARE even with a leading `-`
+ *   (and even when `quoteAmbiguousScalars` is true — the declaration wins
+ *   over the property-name set); `xsd:boolean` emits `true`/`false` bare;
+ *   `xsd:string` quotes a scalar-looking value the way the string-semantic
+ *   set does, EXCEPT a YAML boolean: under a string range the converter
+ *   already emits `true`/`false` as a plain string literal, so quoting would
+ *   change only the YAML-level type that YAML readers see (233 live bare
+ *   booleans under `xsd:string` in `exoas-flow`, measured 2026-09-19) for no
+ *   graph gain. `undefined` (no range known) = the pre-ticket behaviour.
  */
 export function needsYamlQuoting(
   value: string,
   quoteAmbiguousScalars = false,
+  declaredRange?: readonly string[],
 ): boolean {
   // Empty → must be `""` (a bare empty value is an implicit null in YAML).
   if (value === "") return true;
@@ -151,6 +231,28 @@ export function needsYamlQuoting(
   // `"a" and "b"` is NOT passed through (it would emit invalid YAML); it falls
   // through to quoteYamlString and round-trips as the literal string.
   if (isCompleteDoubleQuotedScalar(value)) {
+    return false;
+  }
+
+  // Ticket 2227d660 — the DECLARED range types a canonical scalar. Decided
+  // BEFORE the shape checks below: a canonical negative (`-1003912427125`)
+  // starts with the `-` indicator and would otherwise be quoted into an
+  // `xsd:string` literal under an `xsd:integer` range. The integer family is
+  // additionally gated to the safe-integer range: js-yaml reads a bare int as
+  // a JS Number, and `12345678901234567890` comes back as 12345678901234567000
+  // (measured on 5.3.0) — quoted, the digits at least survive on disk.
+  const typing = scalarTypingForRange(declaredRange);
+  if (
+    typing === "integer" &&
+    CANONICAL_INTEGER_LEXICAL.test(value) &&
+    Number.isSafeInteger(Number(value))
+  ) {
+    return false;
+  }
+  if (typing === "decimal" && CANONICAL_DECIMAL_LEXICAL.test(value)) {
+    return false;
+  }
+  if (typing === "boolean" && CANONICAL_BOOLEAN_LEXICAL.test(value)) {
     return false;
   }
 
@@ -178,6 +280,19 @@ export function needsYamlQuoting(
   // to string-semantic properties so timestamp/numeric properties keep their
   // native type (see {@link STRING_SCALAR_PROPERTIES}).
   if (quoteAmbiguousScalars && looksLikeNonStringScalar(value)) return true;
+
+  // Ticket 2227d660 — a declared `xsd:string` range extends the string-semantic
+  // rule to this property: a number / null / date-shaped value is quoted so
+  // the converter tags it `xsd:string` (bare `42` is tagged `xsd:integer` and
+  // violates the range). A YAML boolean is deliberately left bare — see the
+  // `declaredRange` note in the JSDoc above.
+  if (
+    typing === "string" &&
+    looksLikeNonStringScalar(value) &&
+    !YAML_BOOL.test(value)
+  ) {
+    return true;
+  }
 
   return false;
 }
@@ -305,16 +420,20 @@ export function decodeYamlQuotedScalar(raw: string): string {
  * - Non-strings (boolean, number) are emitted via `String()` unquoted so
  *   `archived: true` / `priority: 1` keep YAML-native types.
  * - Strings are emitted verbatim unless {@link needsYamlQuoting}, in which case
- *   they are double-quoted via {@link quoteYamlString}.
+ *   they are double-quoted via {@link quoteYamlString}. `declaredRange` (the
+ *   property's `exo__Property_range`, ticket 2227d660) is forwarded so a
+ *   writer that knows the range types the scalar by it; a non-string value is
+ *   already typed and is never affected by it.
  */
 export function serializeYamlScalar(
   value: unknown,
   quoteAmbiguousScalars = false,
+  declaredRange?: readonly string[],
 ): string {
   if (typeof value !== "string") {
     return String(value);
   }
-  return needsYamlQuoting(value, quoteAmbiguousScalars)
+  return needsYamlQuoting(value, quoteAmbiguousScalars, declaredRange)
     ? quoteYamlString(value)
     : value;
 }

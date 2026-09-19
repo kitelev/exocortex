@@ -9,6 +9,13 @@ interface PropertyNameSet {
   names: Set<string>;
   /** Namespace prefixes seen among the known names (e.g. `ems`, `exo`). */
   prefixes: Set<string>;
+  /**
+   * Declared `exo__Property_range` values by property name, as the TBox
+   * writes them (`xsd:integer`, `[[<class-uid>]]`, …; surrounding quotes
+   * stripped, empty values dropped) — ticket 2227d660. Only defs that pass
+   * the metaclass closure contribute; a def without a range is absent.
+   */
+  ranges: Map<string, readonly string[]>;
 }
 
 /**
@@ -31,6 +38,8 @@ interface PropertyDefCandidate {
   classRefs: string[];
   /** The `prefix__Name` property label. */
   name: string;
+  /** `exo__Property_range` values as written (quotes stripped), possibly empty. */
+  range: string[];
 }
 
 /**
@@ -195,15 +204,42 @@ export class PropertyNameValidator {
 
     const names = new Set<string>();
     const prefixes = new Set<string>();
+    const ranges = new Map<string, readonly string[]>();
     for (const cand of candidates) {
       if (!cand.classRefs.some((r) => metaKeys.has(r))) continue;
       names.add(cand.name);
       const m = PropertyNameValidator.KEY_SHAPE.exec(cand.name);
       if (m) prefixes.add(m[1]);
+      // Ticket 2227d660: the declared range rides along on the same pass so the
+      // writers (`create` / `set-property`) can type a scalar by it at no extra
+      // IO. Two defs sharing a name (a deprecated twin, a re-declaration in
+      // another mounted assetspace): the LAST one seen wins, the same
+      // last-registered rule `ShapeLoader.loadFromVaultFS` applies.
+      if (cand.range.length > 0) ranges.set(cand.name, cand.range);
     }
 
-    this.cache = { names, prefixes };
+    this.cache = { names, prefixes, ranges };
     return this.cache;
+  }
+
+  /**
+   * Declared `exo__Property_range` values of a mounted property def, by its
+   * `prefix__Name` label (ticket 2227d660), or `undefined` when no mounted def
+   * declares one — the writers then fall back to shape-based typing.
+   */
+  async declaredRange(name: string): Promise<readonly string[] | undefined> {
+    const { ranges } = await this.collect();
+    return ranges.get(name);
+  }
+
+  /**
+   * Every declared range collected on the mounted vault, keyed by property
+   * name — handed to `GenericAssetCreationService` by `cli create` so the
+   * frontmatter it assembles is typed by the same TBox the key check reads.
+   */
+  async declaredRanges(): Promise<ReadonlyMap<string, readonly string[]>> {
+    const { ranges } = await this.collect();
+    return ranges;
   }
 
   /**
@@ -243,7 +279,10 @@ export class PropertyNameValidator {
 
     // Property-def candidate: a `prefix__Name`-labelled instance.
     if (label === null || !PropertyNameValidator.KEY_SHAPE.test(label)) return;
-    candidates.push({ classRefs: instanceClassRefs, name: label });
+    const range = PropertyNameValidator.asArray(fm["exo__Property_range"])
+      .map((v) => v.replace(/^["']|["']$/g, "").trim())
+      .filter((v) => v.length > 0);
+    candidates.push({ classRefs: instanceClassRefs, name: label, range });
   }
 
   /**

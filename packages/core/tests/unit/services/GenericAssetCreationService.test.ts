@@ -1452,6 +1452,51 @@ describe("GenericAssetCreationService", () => {
       });
     });
 
+    describe("declaredRanges (ticket 2227d660 — the mounted TBox types each scalar) @req:21ceea14-50dd-4cf8-bd3b-5a50b7c97105", () => {
+      // Revert-verify: with `config.declaredRanges` no longer forwarded to
+      // `MetadataHelpers.buildFileContent`, D1 goes RED; D2 (no map) is the
+      // control and stays GREEN — the shape rule of the plugin/apply callers.
+      it("D1 forwards the declared ranges: a canonical negative under xsd:integer is bare, a number under xsd:string is quoted, an unmapped key keeps the shape rule", () => {
+        const built = service.buildAsset({
+          className: "ems__Reminder",
+          label: "R",
+          folderPath: "01 Inbox",
+          shapeRegistry: buildRegistry([]),
+          declaredRanges: new Map<string, readonly string[]>([
+            ["ems__Reminder_chatId", ["xsd:integer"]],
+            ["ems__Reminder_text", ["xsd:string"]],
+          ]),
+          propertyValues: {
+            ems__Reminder_chatId: "-1003912427125",
+            ems__Reminder_text: "42",
+            ems__Reminder_note: "-7",
+          },
+        });
+        expect(built.content).toContain(
+          "ems__Reminder_chatId: -1003912427125\n",
+        );
+        expect(built.content).toContain('ems__Reminder_text: "42"\n');
+        expect(built.content).toContain('ems__Reminder_note: "-7"\n');
+      });
+
+      it("D2 without declaredRanges the shape rule is byte-identical to before (negative quoted, number bare)", () => {
+        const built = service.buildAsset({
+          className: "ems__Reminder",
+          label: "R",
+          folderPath: "01 Inbox",
+          shapeRegistry: buildRegistry([]),
+          propertyValues: {
+            ems__Reminder_chatId: "-1003912427125",
+            ems__Reminder_text: "42",
+          },
+        });
+        expect(built.content).toContain(
+          'ems__Reminder_chatId: "-1003912427125"\n',
+        );
+        expect(built.content).toContain("ems__Reminder_text: 42\n");
+      });
+    });
+
     describe("buildAsset (field 7 — pure, no write)", () => {
       it("returns uid/path/frontmatter/content without writing to the vault", () => {
         const built = service.buildAsset({

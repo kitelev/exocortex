@@ -1,0 +1,26 @@
+{
+  "_doc": "Revert-verify mutants for ticket 2227d660 (req 21ceea14, PR fix/writer-types-by-declared-range). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/writer-range-typing-2227d660.create.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's create.ts and runs the suites named in `harness`; `expect` names the axes that MUST go red). cli suites resolve @kitelev/exocortex-core from core SRC (jest moduleNameMapper), so a core mutant reaches the cli axes without a build. Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([RGDSQW]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/set-property.range-typing.integration.test.ts tests/integration/create.range-typing.integration.test.ts 2>&1",
+  "mutants": {
+    "MR26_declaredRanges_not_handed_to_the_service_(pre-ticket_state)": {
+      "from": "          shapeRegistry,\n          declaredRanges,\n        };",
+      "to": "          shapeRegistry,\n          declaredRanges: undefined,\n        };",
+      "expect": [
+        "W1",
+        "W2",
+        "W4"
+      ]
+    }
+  }
+}

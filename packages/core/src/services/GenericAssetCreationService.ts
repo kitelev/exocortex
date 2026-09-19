@@ -107,6 +107,19 @@ export interface GenericAssetCreationConfig {
    * formatter (unchanged plugin/apply behaviour).
    */
   shapeRegistry?: ShapeRegistry;
+
+  /**
+   * Declared `exo__Property_range` values by property name (`prefix__Name`),
+   * as the mounted TBox writes them (`xsd:integer`, a class wikilink, …) —
+   * ticket 2227d660. When present, every frontmatter scalar is typed by its
+   * property's range on serialization (`MetadataHelpers.buildFileContent` →
+   * `serializeYamlScalar`): a canonical number under a numeric range stays
+   * bare even with a leading `-`, a number under `xsd:string` is quoted. A
+   * name absent from the map — or no map at all (plugin / apply callers) —
+   * keeps the shape-based behaviour. `cli create` fills it from the same
+   * one-pass TBox scan `PropertyNameValidator` already runs for the key check.
+   */
+  declaredRanges?: ReadonlyMap<string, readonly string[]>;
 }
 
 /**
@@ -235,7 +248,14 @@ export class GenericAssetCreationService {
       propertyDefinitions || [],
       uid,
     );
-    const content = MetadataHelpers.buildFileContent(frontmatter, config.body);
+    const declaredRanges = config.declaredRanges;
+    const content = MetadataHelpers.buildFileContent(
+      frontmatter,
+      config.body,
+      declaredRanges === undefined
+        ? undefined
+        : (key) => declaredRanges.get(key),
+    );
 
     const folderPath = config.folderPath || this.getDefaultFolderPath(config);
     const fileName = `${uid}.md`;

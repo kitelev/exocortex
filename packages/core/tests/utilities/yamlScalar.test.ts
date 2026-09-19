@@ -46,6 +46,7 @@ import {
   decodeYamlQuotedScalar,
   needsYamlQuoting,
   quoteYamlString,
+  scalarTypingForRange,
   serializeYamlScalar,
 } from "../../src/utilities/yamlScalar";
 
@@ -357,5 +358,189 @@ describe("serializeYamlScalar (#3750)", () => {
       expect(roundTrip("#hashtag")).toBe("#hashtag");
       expect(roundTrip("")).toBe("");
     });
+  });
+});
+
+/**
+ * Ticket 2227d660 — the DECLARED `exo__Property_range` types a canonical
+ * scalar (the writers pass it as the third argument). Revert-verify: with the
+ * range branches removed from `needsYamlQuoting` (pre-ticket state) R1–R6 go
+ * RED; R10 / R14 are the negative controls (no range / non-string value =
+ * byte-identical to before) and stay GREEN in both states.
+ *
+ * Parsed back through YAML11_SCHEMA — the production reader — because the
+ * contract is the TYPE the reader yields, not the characters emitted.
+ */
+describe("ticket 2227d660 — declared exo__Property_range types the scalar @req:21ceea14-50dd-4cf8-bd3b-5a50b7c97105", () => {
+  const INTEGER = ["xsd:integer"];
+  const DECIMAL = ["xsd:decimal"];
+  const BOOLEAN = ["xsd:boolean"];
+  const STRING = ["xsd:string"];
+
+  function roundTripRanged(
+    value: string,
+    range: readonly string[] | undefined,
+    quoteAmbiguous = false,
+  ): unknown {
+    const line = `v: ${serializeYamlScalar(value, quoteAmbiguous, range)}`;
+    return (
+      yaml.load(line, { schema: yaml.YAML11_SCHEMA }) as Record<string, unknown>
+    ).v;
+  }
+
+  it("R1 xsd:integer — a canonical NEGATIVE integer is emitted bare and reads back as that number (the leading `-` no longer forces quoting)", () => {
+    expect(serializeYamlScalar("-1003912427125", false, INTEGER)).toBe(
+      "-1003912427125",
+    );
+    expect(needsYamlQuoting("-1003912427125", false, INTEGER)).toBe(false);
+    expect(roundTripRanged("-1003912427125", INTEGER)).toBe(-1003912427125);
+  });
+
+  it("R2 xsd:integer — the declaration wins over the string-semantic flag: a positive integer stays bare even with quoteAmbiguousScalars=true", () => {
+    expect(serializeYamlScalar("282500186", true, INTEGER)).toBe("282500186");
+    expect(roundTripRanged("282500186", INTEGER, true)).toBe(282500186);
+    // Without the range the flag quotes it (#3750 MEDIUM-3) — the control that
+    // proves R2 is the range, not a switched-off flag.
+    expect(serializeYamlScalar("282500186", true)).toBe('"282500186"');
+  });
+
+  it("R3 xsd:decimal — a canonical negative fraction is emitted bare and reads back as a number", () => {
+    expect(serializeYamlScalar("-1.5", false, DECIMAL)).toBe("-1.5");
+    expect(roundTripRanged("-1.5", DECIMAL)).toBe(-1.5);
+    expect(serializeYamlScalar("-7", false, ["xsd:double"])).toBe("-7");
+  });
+
+  it("R4 xsd:boolean — `true` / `false` are emitted bare even with quoteAmbiguousScalars=true and read back as booleans", () => {
+    expect(serializeYamlScalar("true", true, BOOLEAN)).toBe("true");
+    expect(serializeYamlScalar("false", true, BOOLEAN)).toBe("false");
+    expect(roundTripRanged("false", BOOLEAN, true)).toBe(false);
+    // Control: without the range the flag quotes the same value.
+    expect(serializeYamlScalar("true", true)).toBe('"true"');
+  });
+
+  it("R5 xsd:string — a number / null / date-shaped value is QUOTED so it reads back as a string (a bare `42` would be tagged xsd:integer under the string range)", () => {
+    expect(serializeYamlScalar("42", false, STRING)).toBe('"42"');
+    expect(roundTripRanged("42", STRING)).toBe("42");
+    expect(serializeYamlScalar("2026-01-15", false, STRING)).toBe(
+      '"2026-01-15"',
+    );
+    expect(roundTripRanged("2026-01-15", STRING)).toBe("2026-01-15");
+    expect(serializeYamlScalar("null", false, STRING)).toBe('"null"');
+    expect(roundTripRanged("null", STRING)).toBe("null");
+    // Control: the same values without a range keep today's bare form.
+    expect(serializeYamlScalar("42")).toBe("42");
+    expect(serializeYamlScalar("2026-01-15")).toBe("2026-01-15");
+  });
+
+  it("R6 xsd:string — a YAML boolean is deliberately NOT quoted (the converter already emits it as a plain string literal; 233 live bare booleans under xsd:string in exoas-flow, measured 2026-09-19)", () => {
+    expect(serializeYamlScalar("true", false, STRING)).toBe("true");
+    expect(serializeYamlScalar("false", false, STRING)).toBe("false");
+    expect(roundTripRanged("true", STRING)).toBe(true);
+    // The string-semantic SET still quotes a boolean-shaped label/alias
+    // (#3750 MEDIUM-3 unchanged): the exclusion is scoped to the range rule.
+    expect(serializeYamlScalar("true", true)).toBe('"true"');
+  });
+
+  it("R7 xsd:integer — a non-numeric value under a numeric range keeps the shape rule (a leading `-` is still quoted)", () => {
+    expect(serializeYamlScalar("-abc", false, INTEGER)).toBe('"-abc"');
+    expect(serializeYamlScalar("-1x", false, INTEGER)).toBe('"-1x"');
+    expect(serializeYamlScalar("- 1", false, INTEGER)).toBe('"- 1"');
+    // `Number("-1e3")` is a safe integer, but YAML 1.1 reads a bare `-1e3` as
+    // a STRING: the LEXICAL gate, not the numeric one, must reject it.
+    expect(serializeYamlScalar("-1e3", false, INTEGER)).toBe('"-1e3"');
+  });
+
+  it("R8 xsd:integer — an integer beyond Number.MAX_SAFE_INTEGER keeps the shape rule (bare, js-yaml would read 12345678901234567890 as 12345678901234567000)", () => {
+    expect(serializeYamlScalar("-12345678901234567890", false, INTEGER)).toBe(
+      '"-12345678901234567890"',
+    );
+    // The largest safe magnitude is still bare.
+    expect(serializeYamlScalar("-9007199254740991", false, INTEGER)).toBe(
+      "-9007199254740991",
+    );
+    expect(serializeYamlScalar("-9007199254740992", false, INTEGER)).toBe(
+      '"-9007199254740992"',
+    );
+  });
+
+  it("R9 xsd:integer — a NON-canonical lexical (leading zero, underscore, base prefix) keeps the shape rule: `-010` stays quoted (bare, YAML 1.1 reads 010 as octal 8)", () => {
+    expect(serializeYamlScalar("-010", false, INTEGER)).toBe('"-010"');
+    expect(serializeYamlScalar("-007", false, INTEGER)).toBe('"-007"');
+    expect(serializeYamlScalar("-1_000", false, INTEGER)).toBe('"-1_000"');
+    expect(serializeYamlScalar("-0x1F", false, INTEGER)).toBe('"-0x1F"');
+    // `-0` and `0` are canonical.
+    expect(serializeYamlScalar("-0", false, INTEGER)).toBe("-0");
+    expect(serializeYamlScalar("0", false, INTEGER)).toBe("0");
+    // Decimal family: the integer part follows the same canon.
+    expect(serializeYamlScalar("-01.5", false, DECIMAL)).toBe('"-01.5"');
+  });
+
+  it("R10 no declared range — byte-identical to the pre-ticket behaviour (negative quoted, positive bare)", () => {
+    expect(serializeYamlScalar("-1003912427125")).toBe('"-1003912427125"');
+    expect(serializeYamlScalar("-1003912427125", false, undefined)).toBe(
+      '"-1003912427125"',
+    );
+    expect(serializeYamlScalar("282500186")).toBe("282500186");
+    expect(needsYamlQuoting("-1.5")).toBe(true);
+  });
+
+  it("R11 a range that is not exactly ONE XSD datatype (class ref, two values, empty, foreign CURIE) gives no typing — shape rule as before", () => {
+    expect(
+      serializeYamlScalar("-5", false, [
+        "[[40a0741c-bd20-45b9-860f-42e2e866226c]]",
+      ]),
+    ).toBe('"-5"');
+    expect(serializeYamlScalar("-5", false, ["ems__Effort"])).toBe('"-5"');
+    expect(
+      serializeYamlScalar("-5", false, ["xsd:integer", "xsd:string"]),
+    ).toBe('"-5"');
+    expect(serializeYamlScalar("-5", false, [])).toBe('"-5"');
+    expect(serializeYamlScalar("-5", false, ["ex:integer"])).toBe('"-5"');
+    expect(
+      serializeYamlScalar("42", false, ["xsd:string", "xsd:integer"]),
+    ).toBe("42");
+  });
+
+  it("R12 scalarTypingForRange — CURIE and full-IRI forms of every family; non-scalar datatypes and non-datatype ranges give undefined", () => {
+    expect(scalarTypingForRange(["xsd:integer"])).toBe("integer");
+    expect(scalarTypingForRange(["xsd:long"])).toBe("integer");
+    expect(scalarTypingForRange(["xsd:nonNegativeInteger"])).toBe("integer");
+    expect(
+      scalarTypingForRange(["http://www.w3.org/2001/XMLSchema#integer"]),
+    ).toBe("integer");
+    expect(scalarTypingForRange(["xsd:decimal"])).toBe("decimal");
+    expect(scalarTypingForRange(["xsd:float"])).toBe("decimal");
+    expect(scalarTypingForRange(["xsd:double"])).toBe("decimal");
+    expect(scalarTypingForRange(["xsd:boolean"])).toBe("boolean");
+    expect(scalarTypingForRange(["xsd:string"])).toBe("string");
+    expect(
+      scalarTypingForRange(["http://www.w3.org/2001/XMLSchema#string"]),
+    ).toBe("string");
+    expect(scalarTypingForRange([" xsd:integer "])).toBe("integer");
+    expect(scalarTypingForRange(["xsd:dateTime"])).toBeUndefined();
+    expect(scalarTypingForRange(["xsd:date"])).toBeUndefined();
+    expect(scalarTypingForRange(["xsd:anyURI"])).toBeUndefined();
+    expect(scalarTypingForRange(["xsd:gYear"])).toBeUndefined();
+    expect(scalarTypingForRange(["ex:integer"])).toBeUndefined();
+    expect(
+      scalarTypingForRange(["[[40a0741c-bd20-45b9-860f-42e2e866226c]]"]),
+    ).toBeUndefined();
+    expect(
+      scalarTypingForRange(["xsd:integer", "xsd:integer"]),
+    ).toBeUndefined();
+    expect(scalarTypingForRange([])).toBeUndefined();
+    expect(scalarTypingForRange(undefined)).toBeUndefined();
+  });
+
+  it("R13 xsd:decimal — an exponent form is not canonical (YAML 1.1 reads `1.5e3` as a STRING): `-1.5e3` keeps the shape rule", () => {
+    expect(serializeYamlScalar("-1.5e3", false, DECIMAL)).toBe('"-1.5e3"');
+    expect(serializeYamlScalar("-.5", false, DECIMAL)).toBe('"-.5"');
+    expect(serializeYamlScalar("-1.", false, DECIMAL)).toBe('"-1."');
+  });
+
+  it("R14 a non-string value (the --input JSON number / boolean door) is never affected by the range — emitted bare as before", () => {
+    expect(serializeYamlScalar(-5, false, STRING)).toBe("-5");
+    expect(serializeYamlScalar(true, false, STRING)).toBe("true");
+    expect(serializeYamlScalar(-5, false, INTEGER)).toBe("-5");
   });
 });

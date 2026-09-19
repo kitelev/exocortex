@@ -1,0 +1,40 @@
+{
+  "_doc": "Revert-verify mutants for ticket 2227d660 (req 21ceea14, PR fix/writer-types-by-declared-range). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/writer-range-typing-2227d660.xsddatatype.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's xsdDatatype.ts and runs the suites named in `harness`; `expect` names the axes that MUST go red). cli suites resolve @kitelev/exocortex-core from core SRC (jest moduleNameMapper), so a core mutant reaches the cli axes without a build. Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([RGDSQW]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/utilities/xsdDatatype.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/utilities/yamlScalar.test.ts tests/utilities/MetadataHelpers.yamlQuoting.test.ts tests/unit/services/GenericAssetCreationService.test.ts 2>&1",
+  "mutants": {
+    "MR16_long_dropped_from_integer_family": {
+      "from": "  \"integer\",\n  \"long\",\n  \"int\",",
+      "to": "  \"integer\",\n  \"int\",",
+      "expect": [
+        "R12"
+      ]
+    },
+    "MR17_double_dropped_from_decimal_family": {
+      "from": "  \"decimal\",\n  \"float\",\n  \"double\",\n",
+      "to": "  \"decimal\",\n  \"float\",\n",
+      "expect": [
+        "R3",
+        "R12"
+      ]
+    },
+    "MR17b_integer_family_reports_decimal": {
+      "from": "  if (XSD_INTEGER_FAMILY.has(localName)) return \"integer\";",
+      "to": "  if (XSD_INTEGER_FAMILY.has(localName)) return \"decimal\";",
+      "expect": [
+        "R12",
+        "R8"
+      ]
+    }
+  }
+}
