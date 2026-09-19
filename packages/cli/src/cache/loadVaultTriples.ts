@@ -153,8 +153,15 @@ export function cacheLoadNotice(loaded: LoadVaultTriplesResult): string {
       return "⚡ triple cache: hit";
     case "delta":
       return `♻️  triple cache: delta (${loaded.reparsedFiles ?? 0} file(s) re-parsed)`;
-    case "rebuild":
-      return `🔨 triple cache: rebuild (${loaded.reparsedFiles ?? 0} file(s) parsed, cache written)`;
+    case "rebuild": {
+      // #4277 — a reader's rebuild that inherited the displaced cache's
+      // inferred layer says so (the bot loop reads this line to decide
+      // whether an `index --force` is still needed); a layer-less rebuild
+      // prints exactly the pre-#4277 line.
+      const inferred = loaded.triples.length - loaded.explicitCount;
+      const layer = inferred > 0 ? ` + inferred layer (${inferred})` : "";
+      return `🔨 triple cache: rebuild (${loaded.reparsedFiles ?? 0} file(s) parsed, cache written${layer})`;
+    }
     default:
       return "triple cache: not used (full parse)";
   }

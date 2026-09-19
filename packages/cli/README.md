@@ -147,8 +147,8 @@ npx @kitelev/exocortex-cli apply <cmd> [path] [options]
   `--write-through` without `--use-cache` is refused (exit 2) before anything is applied.
   Best-effort: a write-through that cannot persist prints a `⚠ triple cache:` warning and
   leaves the exit code and stdout untouched; the next reader refreshes the cache itself. A
-  change the delta cannot express (TBox-form asset, FileSpace declaration) is left to the
-  next reader's rebuild. One stderr line per cache phase (`⚡ triple cache: hit`,
+  change the delta cannot express (a TBox-form asset whose label / TBox-form alias set /
+  class changed, a FileSpace declaration) is left to the next reader's rebuild. One stderr line per cache phase (`⚡ triple cache: hit`,
   `💾 triple cache: write-through persisted (N file(s) re-parsed)`); stdout is unchanged.
   Without the flag nothing is read from or written to the cache. On a cache built by
   `index` the store additionally carries the inferred layer (as `query --use-cache` does);
@@ -244,10 +244,14 @@ detected (the vault root directory's mtime is no longer consulted). A small chan
 refreshed incrementally — only the changed files and the files that refer to an added,
 removed or alias-changed target are re-parsed, and the inferred layer `index` materialized
 is recomputed when a touched file feeds an inference engine (class / superclass / type /
-prototype), otherwise kept — while a legacy or corrupt cache, a change to a TBox-form asset
-(`prefix__Name` label or alias), a FileSpace declaration change or a diff above half the
-vault falls back to a full rebuild. The cache file is written atomically, so concurrent
-commands never read a torn file. `index --force` always rebuilds; `query` reports
+prototype), otherwise kept — while a legacy or corrupt cache, a TBox-form asset
+(`prefix__Name` label or alias) that is added, removed, or whose referrer-visible projection
+(label, TBox-form alias set, `exo__Instance_class`) changed, a FileSpace declaration change
+or a diff above half the vault falls back to a full rebuild (#4277: a TBox-form asset
+modified WITHOUT changing that projection — a `setting__SettingKey_datatype` edit, a body
+edit — is an ordinary delta). A reader's rebuild inherits the inferred layer of the cache it
+replaces when that cache carried one (#4277). The cache file is written atomically, so
+concurrent commands never read a torn file. `index --force` always rebuilds; `query` reports
 "♻️ Cache refreshed incrementally" on a delta and "🚀 Cache hit!" on a hit.
 
 ```bash

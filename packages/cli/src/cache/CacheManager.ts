@@ -786,7 +786,14 @@ export class CacheManager {
       referrerIris.add(vaultPathToIRI(removed));
     }
 
-    let converter: NoteToRDFConverter | null = null;
+    // Pass 1 — the cheap rebuild-class probes (FileSpace declaration, label-
+    // NAMED file) over EVERY changed path, before any #4277 projection probe
+    // is paid: a diff that rebuilds anyway must not first re-parse the
+    // TBox-form files that happen to precede the deciding one (review r1, L4).
+    const changedFiles = new Map<
+      string,
+      { file: IFile | null; frontmatter: Record<string, unknown> | null }
+    >();
     for (const changedPath of [...diff.added, ...diff.modified]) {
       if (declarations.has(changedPath)) {
         return { reparse: [], rebuildReason: `FileSpace declaration changed: ${changedPath}` };
@@ -794,15 +801,21 @@ export class CacheManager {
       if (isTBoxBasename(changedPath)) {
         return { reparse: [], rebuildReason: `TBox-form file changed: ${changedPath}` };
       }
-      const file = adapter.getAbstractFileByPath(changedPath);
-      const frontmatter =
-        file && isFile(file) ? adapter.getFrontmatter(file) : null;
+      const node = adapter.getAbstractFileByPath(changedPath);
+      const file = node && isFile(node) ? node : null;
+      const frontmatter = file ? adapter.getFrontmatter(file) : null;
       if (frontmatter && frontmatterDeclaresFileSpaceAnyForm(frontmatter)) {
         return {
           reparse: [],
           rebuildReason: `FileSpace declaration changed: ${changedPath}`,
         };
       }
+      changedFiles.set(changedPath, { file, frontmatter });
+    }
+
+    // Pass 2 — TBox-form projection probe (#4277) and the alias diff.
+    let converter: NoteToRDFConverter | null = null;
+    for (const [changedPath, { file, frontmatter }] of changedFiles) {
       const previous = cachedByPath.get(changedPath);
       const label = frontmatter?.["exo__Asset_label"];
       // A TBox-form ALIAS (`prefix__Name`) is emitted as a SYMBOLIC IRI, and a
@@ -827,12 +840,24 @@ export class CacheManager {
         // no triples (the converter skipped it — its old projection cannot be
         // read back), rebuilds as before. A MODIFIED one is re-parsed right
         // here, through the same converter the delta uses, and rebuilds only
-        // when the referrer-visible projection actually changed.
-        if (!previous || previous.triples.length === 0 || !file || !isFile(file)) {
+        // when the referrer-visible projection actually changed. The probe's
+        // triples are NOT reused by `applyDelta`: the delta re-parses the file
+        // through `convertVaultWithValidation` (invariant validation, two-phase
+        // commit — what the walk applies), so a delta'd TBox-form file costs
+        // two parses of that one file (review r1, L2). A probe that THROWS —
+        // an invariant the walk would have skipped the file for (an empty
+        // `exo__*` literal, an invalid IRI) — has no readable projection
+        // either: rebuild, never a crashed reader (review r1, F1).
+        if (!previous || previous.triples.length === 0 || !file) {
           return { reparse: [], rebuildReason: tboxRebuildReason(tbox, changedPath) };
         }
         converter ??= new NoteToRDFConverter(adapter);
-        const fresh = (await converter.convertNote(file)).map(this.serializeTriple);
+        let fresh: SerializedTriple[];
+        try {
+          fresh = (await converter.convertNote(file)).map(this.serializeTriple);
+        } catch {
+          return { reparse: [], rebuildReason: tboxRebuildReason(tbox, changedPath) };
+        }
         const reason = tboxProjectionChanged(changedPath, previous.triples, fresh, tbox);
         if (reason) {
           return { reparse: [], rebuildReason: reason };

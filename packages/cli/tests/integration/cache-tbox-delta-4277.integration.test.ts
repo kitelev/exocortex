@@ -31,6 +31,10 @@
  *   T12 `buildCacheWithValidation` (what `index` runs) still builds layer-less
  *   T13 human-labelled asset with an unchanged TBox-form alias + a changed body → delta; alias-set change → rebuild
  *   T14 the second copy of a duplicate TBox label: touching one is a delta, renaming it is a rebuild
+ *   T15 the exo__Instance_class list of a TBox-form asset re-ordered → rebuild (referrers co-emit the FIRST one)
+ *   T16 a modified TBox-form file the converter THROWS on (empty exo__* literal) → rebuild, never a crashed reader;
+ *       the write-through reports "skipped", not "failed"                                 (review r1, F1)
+ *   T17 cacheLoadNotice names the inherited layer on a rebuild, and only then                  (review r1, L3)
  *
  * Revert-verify (mutants applied to a COPY of the tree by the driver spec
  * `tests/integration/cache-tbox-delta-4277.spec.json`): every-TBox-change-is-a-delta →
@@ -48,6 +52,7 @@ import {
 } from "@kitelev/exocortex-core";
 import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
 import { CacheManager, serializeNode } from "../../src/cache/CacheManager.js";
+import { cacheLoadNotice, loadVaultTriples } from "../../src/cache/loadVaultTriples.js";
 import { materializeInferredTriples, tripleKey } from "../../src/cache/materializeInferred.js";
 
 const REQ = "@req:1117f9fe-925f-4d9c-9368-d58eea4b07dc";
@@ -615,6 +620,93 @@ describe(`CacheManager — delta on an unchanged-projection TBox-form asset, reb
     expect(renamed.mode).toBe("rebuild");
     expect(renamed.rebuildReason).toBe(`TBox-form asset changed: ${keyDup2Rel}`);
     await expectParity(renamed);
+  });
+
+  it(`T15 re-ordering the exo__Instance_class list of a TBox-form asset rebuilds — a [[uid]] referrer co-emits the FIRST class ${REQ}`, async () => {
+    const twoClasses = (first: string, second: string) =>
+      fm({
+        exo__Asset_uid: KEY_A,
+        exo__Instance_class: `["[[${first}]]", "[[${second}]]"]`,
+        exo__Asset_label: "exo__SettingKeyAlpha",
+        aliases: '["exo__SettingKeyAlpha"]',
+        setting__SettingKey_datatype: "boolean",
+      });
+    await writeFile(keyARel, twoClasses(CLASS_SETTINGKEY, CLASS_TASK));
+    const cache = new CacheManager(vaultPath);
+    const built = await cache.loadOrBuild();
+    // the OBJECTS of `<exo#SettingKeyAlpha> exo:Instance_class ?c` (the referrer's co-emission)
+    const coEmitted = (triples: TripleT[]): string[] =>
+      triples
+        .filter(
+          (t) =>
+            serializeNode(t.subject).value === "https://exocortex.my/ontology/exo#SettingKeyAlpha" &&
+            serializeNode(t.predicate).value.endsWith("#Instance_class"),
+        )
+        .map((t) => serializeNode(t.object).value)
+        .sort();
+    expect(coEmitted(built.triples)).toEqual(["https://exocortex.my/ontology/exo#SettingKey"]);
+    // same set, other order → the referrer's co-emitted class flips
+    await writeFile(keyARel, twoClasses(CLASS_TASK, CLASS_SETTINGKEY));
+    const swapped = await cache.loadOrBuild();
+    expect(swapped.mode).toBe("rebuild");
+    expect(swapped.rebuildReason).toBe(`TBox-form asset class changed: ${keyARel}`);
+    expect(coEmitted(swapped.triples)).toEqual(["https://exocortex.my/ontology/ems#Task"]);
+    await expectParity(swapped);
+  });
+
+  it(`T16 a modified TBox-form file whose conversion THROWS (an empty exo__* literal the walk skips) rebuilds instead of crashing the reader; the write-through skips it ${REQ}`, async () => {
+    const cache = new CacheManager(vaultPath);
+    await indexLike(cache);
+    expect((await cache.loadOrBuild()).mode).toBe("hit");
+    // `exo__Asset_description: ""` is not in the converter's skip-list, so
+    // `new Literal("")` throws inside convertNote; the walk catches it and
+    // skips the file (zero triples) — the probe must not propagate it.
+    await writeFile(
+      keyARel,
+      fm({
+        exo__Asset_uid: KEY_A,
+        exo__Instance_class: `"[[${CLASS_SETTINGKEY}]]"`,
+        exo__Asset_label: "exo__SettingKeyAlpha",
+        exo__Asset_description: '""',
+        aliases: '["exo__SettingKeyAlpha"]',
+        setting__SettingKey_datatype: "boolean",
+      }),
+    );
+    // write-through first (in-memory snapshot): skipped with the reason, not "failed"
+    const wt = await cache.refreshAfterWrite();
+    expect(wt).toEqual({
+      mode: "skipped",
+      reparsedFiles: 0,
+      reason: `rebuild needed (TBox-form asset changed: ${keyARel}) — left to the next reader`,
+    });
+    // a reader: rebuild, no throw, the file is walk-skipped (zero triples) and
+    // the referrers still emit symbolically from its frontmatter
+    const result = await new CacheManager(vaultPath).loadOrBuild();
+    expect(result.mode).toBe("rebuild");
+    expect(result.rebuildReason).toBe(`TBox-form asset changed: ${keyARel}`);
+    expect(result.zeroTriplePaths).toContain(keyARel);
+    expect(objectsOf(result.triples, taskARel).join("\n")).toContain("exo#SettingKeyAlpha");
+    await expectParity(result);
+  });
+
+  it(`T17 cacheLoadNotice names the inherited inferred layer on a rebuild — and prints the pre-#4277 line without one ${REQ}`, async () => {
+    const cache = new CacheManager(vaultPath);
+    await indexLike(cache);
+    await writeFile(keyARel, keyA({ label: "exo__SettingKeyBeta" }));
+    const warm = await loadVaultTriples(vaultPath, { useCache: true });
+    expect(warm.mode).toBe("rebuild");
+    const inferred = warm.triples.length - warm.explicitCount;
+    expect(inferred).toBeGreaterThan(0);
+    expect(cacheLoadNotice(warm)).toBe(
+      `🔨 triple cache: rebuild (${warm.reparsedFiles} file(s) parsed, cache written + inferred layer (${inferred}))`,
+    );
+    // layer-less (cold) rebuild: the pre-#4277 line, byte for byte
+    await cache.invalidate();
+    const cold = await loadVaultTriples(vaultPath, { useCache: true });
+    expect(cold.mode).toBe("rebuild");
+    expect(cacheLoadNotice(cold)).toBe(
+      `🔨 triple cache: rebuild (${cold.reparsedFiles} file(s) parsed, cache written)`,
+    );
   });
 
   async function countFiles(): Promise<number> {

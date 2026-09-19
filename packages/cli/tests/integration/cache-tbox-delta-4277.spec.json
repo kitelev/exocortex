@@ -52,8 +52,8 @@
       "expect": ["T9"]
     },
     "M9_skipped_entry_treated_as_comparable": {
-      "from": "        if (!previous || previous.triples.length === 0 || !file || !isFile(file)) {",
-      "to": "        if (!previous || !file || !isFile(file)) {",
+      "from": "        if (!previous || previous.triples.length === 0 || !file) {",
+      "to": "        if (!previous || !file) {",
       "expect": ["T8"]
     },
     "M10_plan_rebuild_forgets_the_displaced_cache": {
@@ -70,6 +70,24 @@
       "from": "    } else if (predicate.endsWith(ASSET_ALIASES_IRI_SUFFIX)) {\n      if (t.object.type === \"IRI\") tboxAliases.push(t.object.value);",
       "to": "    } else if (predicate.endsWith(ASSET_ALIASES_IRI_SUFFIX) && false) {\n      if (t.object.type === \"IRI\") tboxAliases.push(t.object.value);",
       "expect": ["T5", "T13"]
+    },
+    "M13_rebuild_inherits_whenever_a_cache_exists_(flag_ignored)": {
+      "from": "      materializeInference: cached?.metadata.inferenceEnabled === true,",
+      "to": "      materializeInference: cached !== null,",
+      "expect": ["T10"],
+      "_note": "review r1 G8c — a readable cache with inferenceEnabled: false must NOT gain a layer on a reader's rebuild (T10's second half)."
+    },
+    "M14_instance_class_compared_as_a_set_(order_ignored)": {
+      "from": "  if (!sameList(was.instanceClass, now.instanceClass)) {",
+      "to": "  if (!sameList([...was.instanceClass].sort(), [...now.instanceClass].sort())) {",
+      "expect": ["T15"],
+      "_note": "review r1 G6 — referrers co-emit the FIRST exo__Instance_class value; a re-ordered list is a projection change."
+    },
+    "M15_probe_throw_propagates_(try_removed)": {
+      "from": "        } catch {\n          return { reparse: [], rebuildReason: tboxRebuildReason(tbox, changedPath) };\n        }",
+      "to": "        } catch (probeError) {\n          throw probeError;\n        }",
+      "expect": ["T16"],
+      "_note": "review r1 F1 — a modified TBox-form file the converter throws on (an empty exo__* literal the walk skips) must rebuild, never crash the reader."
     }
   }
 }
