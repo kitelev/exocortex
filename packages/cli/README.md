@@ -245,8 +245,9 @@ refreshed incrementally — only the changed files and the files that refer to a
 removed or alias-changed target are re-parsed, and the inferred layer `index` materialized
 is recomputed when a touched file feeds an inference engine (class / superclass / type /
 prototype), otherwise kept — while a legacy or corrupt cache, a TBox-form asset
-(`prefix__Name` label or alias) that is added, removed, or whose referrer-visible projection
-(label, TBox-form alias set, `exo__Instance_class`) changed, a FileSpace declaration change
+(`prefix__Name` label or alias) that is added, one with a TBox-form label (or basename) that
+is removed, or one whose referrer-visible projection (label, TBox-form alias set,
+`exo__Instance_class`) changed, a FileSpace declaration change
 or a diff above half the vault falls back to a full rebuild (#4277: a TBox-form asset
 modified WITHOUT changing that projection — a `setting__SettingKey_datatype` edit, a body
 edit — is an ordinary delta). A reader's rebuild inherits the inferred layer of the cache it

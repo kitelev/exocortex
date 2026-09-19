@@ -742,7 +742,11 @@ export class CacheManager {
    *    symbolic label, the TBox-form alias set, the `Instance_class` objects
    *    behind `emitTypeTripleForEnumInstance`); a modified TBox-form asset is
    *    re-parsed once here and, if that projection is byte-identical to its
-   *    cached entry's, it follows the ordinary delta path.
+   *    cached entry's, it follows the ordinary delta path. The two passes
+   *    below mean that on a MIXED diff the rebuild reason is the FIRST cheap
+   *    one (FileSpace declaration / label-named file) over ALL changed paths,
+   *    not the first one in path order — only the reason string differs, the
+   *    rebuild itself is the same.
    */
   private async planDelta(
     cached: CacheData,

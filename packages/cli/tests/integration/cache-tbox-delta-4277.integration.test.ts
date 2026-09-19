@@ -35,6 +35,8 @@
  *   T16 a modified TBox-form file the converter THROWS on (empty exo__* literal) → rebuild, never a crashed reader;
  *       the write-through reports "skipped", not "failed"                                 (review r1, F1)
  *   T17 cacheLoadNotice names the inherited layer on a rebuild, and only then                  (review r1, L3)
+ *   T18 over-rebuild guard: a HUMAN-label edit on a TBox-aliased asset (projection unchanged) is a delta  (review r2, L-C)
+ *   T19 over-rebuild guard: a LITERAL (non-TBox) alias added to a TBox-form asset is a delta, its needle referrer re-parsed (review r2, L-C)
  *
  * Revert-verify (mutants applied to a COPY of the tree by the driver spec
  * `tests/integration/cache-tbox-delta-4277.spec.json`): every-TBox-change-is-a-delta →
@@ -707,6 +709,53 @@ describe(`CacheManager — delta on an unchanged-projection TBox-form asset, reb
     expect(cacheLoadNotice(cold)).toBe(
       `🔨 triple cache: rebuild (${cold.reparsedFiles} file(s) parsed, cache written)`,
     );
+  });
+
+  it(`T18 a human-label edit on a human-labelled asset that carries a TBox-form alias is a delta — a literal label is not part of the projection ${REQ}`, async () => {
+    // review r2 L-C (G5b): the projection reads only the IRI label; renaming a
+    // HUMAN label ("Human thing" → "Human thing v2") changes no referrer.
+    const cache = new CacheManager(vaultPath);
+    await cache.loadOrBuild();
+    await writeFile(
+      aliasedRel,
+      fm({
+        exo__Asset_uid: ALIASED,
+        exo__Instance_class: `"[[${CLASS_TASK}]]"`,
+        exo__Asset_label: '"Human thing v2"',
+        aliases: '["zz__Aliased", "Zz__Case"]',
+      }),
+    );
+    const result = await cache.loadOrBuild();
+    expect(result.mode).toBe("delta");
+    expect(result.reparsedFiles).toBe(1);
+    expect(objectsOf(result.triples, aliasedRel).join("\n")).toContain("Asset_label -> Human thing v2");
+    await expectParity(result);
+  });
+
+  it(`T19 a LITERAL alias added to a TBox-form asset is a delta — the TBox-form alias SET is unchanged, the ordinary alias diff re-parses the needle referrer ${REQ}`, async () => {
+    // review r2 L-C (G5c). A referrer holding the raw `[[alpha key]]` literal
+    // (unresolved at build time) must be re-parsed by the alias-diff needle.
+    const needleRel = `${TASKS_DIR}/42770000-0000-4000-8000-000000000025.md`;
+    await writeFile(
+      needleRel,
+      fm({
+        exo__Asset_uid: "42770000-0000-4000-8000-000000000025",
+        exo__Instance_class: `"[[${CLASS_TASK}]]"`,
+        exo__Asset_label: '"Task E (needle referrer)"',
+        test__keyByAlias: '"[[alpha key]]"',
+      }),
+    );
+    const cache = new CacheManager(vaultPath);
+    const built = await cache.loadOrBuild();
+    expect(objectsOf(built.triples, needleRel).join("\n")).toContain("test#keyByAlias -> [[alpha key]]");
+
+    await writeFile(keyARel, keyA({ aliases: ["exo__SettingKeyAlpha", "alpha key"] }));
+    const result = await cache.loadOrBuild();
+    expect(result.mode).toBe("delta");
+    // KEY_A itself + the needle referrer (its raw literal now resolves to KEY_A's file-IRI)
+    expect(result.reparsedFiles).toBe(2);
+    expect(objectsOf(result.triples, needleRel).join("\n")).toContain(`test#keyByAlias -> ${vaultPathToIRI(keyARel)}`);
+    await expectParity(result);
   });
 
   async function countFiles(): Promise<number> {

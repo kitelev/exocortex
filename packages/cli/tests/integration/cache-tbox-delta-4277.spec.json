@@ -88,6 +88,30 @@
       "to": "        } catch (probeError) {\n          throw probeError;\n        }",
       "expect": ["T16"],
       "_note": "review r1 F1 — a modified TBox-form file the converter throws on (an empty exo__* literal the walk skips) must rebuild, never crash the reader."
+    },
+    "M16_probe_disjunction_disabled_(no_TBox_file_is_a_candidate)": {
+      "from": "      if (tbox.newLabel || tbox.hadLabel || tbox.newAlias || tbox.hadAlias) {",
+      "to": "      if ((tbox.newLabel || tbox.hadLabel || tbox.newAlias || tbox.hadAlias) && false) {",
+      "expect": ["T3", "T7", "T8"],
+      "_note": "review r2 L-B (G1) — with the four probes disabled every TBox-form change is a plain delta."
+    },
+    "M17_rebuild_reason_order_swapped": {
+      "from": "  if (tbox.newLabel) return `TBox-form asset changed: ${relPath}`;\n  if (tbox.hadLabel) return `asset lost its TBox-form label: ${relPath}`;",
+      "to": "  if (tbox.hadLabel) return `asset lost its TBox-form label: ${relPath}`;\n  if (tbox.newLabel) return `TBox-form asset changed: ${relPath}`;",
+      "expect": ["T4"],
+      "_note": "review r2 L-B (G7) — the pre-#4277 order: a NEW TBox label wins over a previous one (a TBox→TBox rename must say 'changed', not 'lost')."
+    },
+    "M18_buildInternal_always_materialises_(index_path_gains_a_layer)": {
+      "from": "    if (options.materializeInference) {\n      inferred = (await materializeInferredTriples(triples)).inferred;",
+      "to": "    if (options.materializeInference || true) {\n      inferred = (await materializeInferredTriples(triples)).inferred;",
+      "expect": ["T12"],
+      "_note": "review r2 L-B (G9a) — `index` (buildCacheWithValidation) must stay layer-less: it materialises its own layer afterwards via saveInferredTriples."
+    },
+    "M19_explicitCount_taken_after_the_concat": {
+      "from": "      explicitCount: built.triples.length,\n      zeroTriplePaths: CacheManager.zeroTriplePathsOf(built.data),",
+      "to": "      explicitCount: built.triples.length + built.inferred.length,\n      zeroTriplePaths: CacheManager.zeroTriplePathsOf(built.data),",
+      "expect": ["T9"],
+      "_note": "review r2 L-B (G9c) — the #4272 boundary: explicitCount is the EXPLICIT count even when the rebuild returns explicit + inferred."
     }
   }
 }
