@@ -21,10 +21,15 @@
  * Only the W3C namespace is recognised. A foreign CURIE (`ex:date`), a foreign
  * IRI (`https://exocortex.my/ontology/ems#Task`) or any other string is not a
  * datatype reference → `null`. A bare prefix (`xsd:` / the namespace alone)
- * yields an empty local name — callers map that to their "unknown" branch.
+ * yields an EMPTY local name (not `null`), and each consumer keeps its
+ * pre-existing handling of it: the resolver's field-type table has no entry
+ * for `""`, so it falls through to `text`; `ShapeLoader.datatypeRangeToIRI`
+ * returns the bare namespace as the range IRI (`xsdDatatypeIRI("xsd:") ===
+ * XSD_NS`), exactly as `XSD_NS + raw.substring(4)` did before.
  *
  * Not consolidated here (own prefix sets / own `includes`-based parsing):
- * `ShaclLiteValidator.xsdLocalName` and `PropertyFieldType.mapRangeToFieldType`.
+ * `ShaclLiteValidator.xsdLocalName`, `PropertyFieldType.mapRangeToFieldType`
+ * and the plugin's `OntologySchemaService.rangeToFieldType`.
  */
 
 /** The W3C XML-Schema datatype namespace. */

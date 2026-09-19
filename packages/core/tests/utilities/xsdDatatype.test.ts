@@ -58,7 +58,7 @@ describe("xsdDatatype — shared XSD datatype reference parser (b151005b)", () =
     expect(xsdDatatypeIRI("integer")).toBeNull();
   });
 
-  it("X7 bare prefix (`xsd:` / the namespace alone) is an EMPTY local name, not null — callers map it to their unknown branch", () => {
+  it("X7 bare prefix (`xsd:` / the namespace alone) is an EMPTY local name, not null — the resolver falls through to text, ShapeLoader keeps the bare namespace as the range IRI (pre-existing)", () => {
     expect(xsdDatatypeLocalName("xsd:")).toBe("");
     expect(xsdDatatypeLocalName(XSD_NS)).toBe("");
     expect(xsdDatatypeIRI("xsd:")).toBe(XSD_NS);

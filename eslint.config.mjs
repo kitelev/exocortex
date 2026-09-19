@@ -166,7 +166,7 @@ export default tseslint.config(
   // packages/req-audit is a Node-only, repo-internal DEV TOOL (the RFC 0003
   // requirements-traceability checker run by the `requirements-trace` CI job,
   // RFC 7c7859d1 W-req). It is not plugin/core source and never ships to a
-  // mobile runtime, so the three mobile-safety/plugin-hygiene rules below do not
+  // mobile runtime, so the two mobile-safety/plugin-hygiene rules below do not
   // apply to it — exactly as they do not apply to packages/cli (which lint-staged
   // excludes via its `packages/!(cli)/src/**` glob):
   //   - no-console        — stdout IS this tool's interface; the CI job captures
