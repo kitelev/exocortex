@@ -19,7 +19,7 @@ exo__Setting_value: false
 
 The schema of valid settings lives **in the graph**: 23 `exo__SettingKey`
 individuals (shipped in the `exoas-exo` ontology submodule) each declare
-their `exo__SettingKey_datatype` (`boolean` | `string` | `stringList`).
+their `setting__SettingKey_datatype` (`boolean` | `string` | `stringList`).
 The TypeScript binding table
 (`packages/obsidian-plugin/src/domain/settings/VaultSettingsRegistry.ts`)
 is pinned to the graph by a parity unit test — adding a settings field

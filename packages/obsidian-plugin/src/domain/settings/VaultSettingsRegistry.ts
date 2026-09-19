@@ -57,7 +57,7 @@ export interface VaultSettingDescriptor {
   readonly keyUid: string;
   /** `exo__SettingKey` label, e.g. `exo__SettingKeyShowArchivedAssets`. */
   readonly keyLabel: string;
-  /** Declared value datatype — mirrors `exo__SettingKey_datatype`. */
+  /** Declared value datatype — mirrors `setting__SettingKey_datatype`. */
   readonly datatype: VaultSettingDatatype;
   /**
    * Canonical `exo__Asset_uid` AND basename of the Setting instance.
