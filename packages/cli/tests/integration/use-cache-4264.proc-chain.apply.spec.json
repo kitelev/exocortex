@@ -1,0 +1,34 @@
+{
+  "_doc": "Revert-verify mutants for #4264 (req cb707868-356f-495d-825a-182e66ba8bcd) on the MULTI-PROCESS harness (three spawned `dist/index.js` processes; the harness rebuilds the copy's dist first, ~1 s). Subject packages/cli/src/commands/apply.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/use-cache-4264.proc-chain.apply.spec.json after setting `tree` and `subject` (both absolute). Local only — CI has no built CLI; the in-process chain is CI axis A4.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/apply.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../..\" && npx tsx packages/cli/tests/integration/use-cache-4264-proc-chain.harness.ts 2>&1",
+  "red_re": "❌ (P\\d+) ",
+  "mutants": {
+    "PP1_flag_ignored_full_parse": {
+      "from": "          const loaded = await loadVaultTriples(vaultPath, {\n            useCache: useCacheEffective,\n          });",
+      "to": "          const loaded = await loadVaultTriples(vaultPath, {\n            useCache: false,\n          });",
+      "expect": ["P2", "P3", "P4"]
+    },
+    "PP2_write_through_never_runs": {
+      "from": "          if (\n            useCacheEffective &&\n            options.writeThrough &&\n            anyExecuted &&\n            loaded.cacheManager\n          ) {",
+      "to": "          if (\n            useCacheEffective &&\n            options.writeThrough &&\n            anyExecuted &&\n            !loaded.cacheManager\n          ) {",
+      "expect": ["P2", "P3", "P4"]
+    },
+    "PP3_write_through_flag_ignored_(always_writes_through)": {
+      "from": "          if (\n            useCacheEffective &&\n            options.writeThrough &&\n            anyExecuted &&\n            loaded.cacheManager\n          ) {",
+      "to": "          if (\n            useCacheEffective &&\n            anyExecuted &&\n            loaded.cacheManager\n          ) {",
+      "expect": ["P9"]
+    },
+    "PP4_write_through_without_use_cache_not_refused": {
+      "from": "        if (options.writeThrough && !options.useCache) {\n          process.stderr.write(",
+      "to": "        if (options.writeThrough && !options.useCache && false) {\n          process.stderr.write(",
+      "expect": ["P10"]
+    }
+  }
+}

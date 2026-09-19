@@ -3,7 +3,6 @@ import { existsSync } from "fs";
 import { resolve, relative, isAbsolute, sep as pathSep } from "path";
 import {
   InMemoryTripleStore,
-  NoteToRDFConverter,
   CommandResolver,
   PreconditionEvaluator,
   GroundingExecutor,
@@ -49,6 +48,12 @@ import { populateCliServiceRegistry } from "../services/CliServiceRegistryPopula
 import { FsQueryBodyResolver } from "../services/FsQueryBodyResolver.js";
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
 import { StderrLogger } from "../infrastructure/StderrLogger";
+import {
+  loadVaultTriples,
+  cacheLoadNotice,
+  writeThroughCache,
+  writeThroughNotice,
+} from "../cache/loadVaultTriples.js";
 
 export interface ApplyOptions {
   vault: string;
@@ -63,6 +68,18 @@ export interface ApplyOptions {
   // `query --format json`. When set, stdout is a single JSON object and the
   // human-readable ✅/📊 notices are suppressed so the object parses cleanly.
   json?: boolean;
+  // #4264 — load the triple store from the persistent per-file cache
+  // (`loadVaultTriples`, hit / delta / rebuild) instead of a full vault parse.
+  // Default off: without the flag the command is byte-identical to before.
+  useCache?: boolean;
+  // #4264 — with --use-cache: after a grounding executed, fold what it wrote
+  // into the persisted cache in THIS process (the delta is paid here, so the
+  // next --use-cache process is a plain hit). Default off — measured on the
+  // bot's 3-writer chain the delta is cheaper when the NEXT reader pays it
+  // (delta-only), and write-through only wins when readers outnumber writers,
+  // which is a property of the consumer's workload, hence its call (decision
+  // ae0b4fce). Refused without --use-cache: there is nothing to write through to.
+  writeThrough?: boolean;
 }
 
 /**
@@ -86,6 +103,14 @@ interface CreatedAsset {
 interface TargetResult {
   ok: boolean;
   created: CreatedAsset[];
+  /**
+   * #4264 — `true` once the grounding was EXECUTED for this target (it may
+   * still have failed part-way, e.g. a composite whose later step threw). A
+   * dry-run, a refused precondition or an early argument error never reach
+   * execution → `false`. Drives the write-through: anything that executed
+   * may have touched the vault, whatever `ok` says.
+   */
+  executed: boolean;
 }
 
 /**
@@ -222,7 +247,7 @@ async function executeOnTarget(
   uidGen: IUidGenerator,
 ): Promise<TargetResult> {
   // Issue #3906 — a failed target contributes no created assets.
-  const failed: TargetResult = { ok: false, created: [] };
+  const failed: TargetResult = { ok: false, created: [], executed: false };
   const targetPath = resolve(vaultPath, targetRelative);
   if (!existsSync(targetPath)) {
     console.error(`❌ Target file not found: ${targetRelative}`);
@@ -349,7 +374,7 @@ async function executeOnTarget(
         `🔍 Dry-run: would apply "${command.name}" to "${vaultRelative}" (precondition passed).`,
       );
     }
-    return { ok: true, created: [] };
+    return { ok: true, created: [], executed: false };
   }
 
   // Execute grounding
@@ -491,12 +516,12 @@ async function executeOnTarget(
       const suffix = firstPath ? ` → ${firstPath}` : "";
       console.log(`✅ ${msg}${suffix}`);
     }
-    return { ok: true, created };
+    return { ok: true, created, executed: true };
   } else {
     console.error(
       `❌ "${command.name}" failed on "${vaultRelative}": ${result.error}`,
     );
-    return failed;
+    return { ok: false, created: [], executed: true };
   }
 }
 
@@ -537,6 +562,14 @@ export function applyCommand(): Command {
       "--json",
       "Emit a machine-readable JSON result ({command,target,created:[{uuid,path,label}]}) instead of human-readable output",
     )
+    .option(
+      "--use-cache",
+      "Use the persistent triple cache (hit / delta / rebuild) instead of a full vault parse; a mutation is picked up by the NEXT --use-cache process as a delta unless --write-through is also given",
+    )
+    .option(
+      "--write-through",
+      "With --use-cache: after a grounding executed, fold the mutation into the persistent cache in this process, so the next --use-cache process is a plain hit (the delta is paid by this writer instead of the next reader). Refused without --use-cache",
+    )
     .action(
       async (
         cmdArg: string,
@@ -544,6 +577,16 @@ export function applyCommand(): Command {
         options: ApplyOptions,
       ) => {
         ErrorHandler.setFormat("text" as OutputFormat);
+
+        // #4264 — refused before anything is read or written: without
+        // --use-cache there is no loaded cache state to write through to.
+        if (options.writeThrough && !options.useCache) {
+          process.stderr.write(
+            "❌ --write-through requires --use-cache (there is no cache to write through to without it); nothing was applied\n",
+          );
+          process.exit(ExitCodes.INVALID_ARGUMENTS);
+          return;
+        }
 
         try {
           const vaultPath = resolve(options.vault);
@@ -563,12 +606,21 @@ export function applyCommand(): Command {
             ? seededUidGenerator(options.seed)
             : liveUidGenerator();
 
-          // Build triple store once for the whole batch
-          const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
-          const converter = new NoteToRDFConverter(vaultAdapter);
-          const triples = await converter.convertVault();
+          // Build triple store once for the whole batch. #4264: through the
+          // shared loader — without --use-cache this is the same
+          // `new NoteToRDFConverter(new FileSystemVaultAdapter(vaultPath))
+          // .convertVault()` as before (no cache read, no cache write); with it
+          // the per-file cache (hit / delta / rebuild). The loader's
+          // CacheManager is kept for the write-through after the loop.
+          const useCacheEffective = options.useCache ?? false;
+          const loaded = await loadVaultTriples(vaultPath, {
+            useCache: useCacheEffective,
+          });
+          if (useCacheEffective) {
+            process.stderr.write(`${cacheLoadNotice(loaded)}\n`);
+          }
           const tripleStore = new InMemoryTripleStore();
-          await tripleStore.addAll(triples);
+          await tripleStore.addAll(loaded.triples);
 
           // RFC 36347daf Phase 3 — construct WorkflowResolver once for the whole
           // batch so its per-class cache survives across stdin-piped targets
@@ -607,6 +659,9 @@ export function applyCommand(): Command {
           // Continue-on-error semantics
           let successCount = 0;
           let failCount = 0;
+          // #4264 — did ANY target reach grounding execution (and so possibly
+          // write)? Drives the write-through below.
+          let anyExecuted = false;
           // Issue #3906 — aggregate the assets created across all targets for
           // the `--json` envelope.
           const allCreated: CreatedAsset[] = [];
@@ -623,7 +678,32 @@ export function applyCommand(): Command {
             );
             if (targetResult.ok) successCount++;
             else failCount++;
+            if (targetResult.executed) anyExecuted = true;
             allCreated.push(...targetResult.created);
+          }
+
+          // #4264 — write-through (opt-in, --write-through): once ANY target's
+          // grounding executed (a dry-run and a refused precondition never do),
+          // whatever it wrote is folded into the persisted cache — a failed composite may have
+          // landed part of its files, so success is not the criterion (review
+          // of 1e8e8204, L1). Only the changed files + their referrers are
+          // re-parsed; a rebuild-class change is left to the next reader.
+          // Best-effort by construction: `writeThroughCache` never throws, so
+          // the exit code and the stdout envelope below do not depend on it —
+          // the mutation is already on disk, and a cache that could not be
+          // persisted is simply refreshed by the next --use-cache process.
+          // (`--dry-run` never executes a grounding, so `anyExecuted` covers it.)
+          // Without --write-through the cache file is not touched by this
+          // process at all: the next --use-cache reader folds the change in as
+          // its own delta (the default — decision ae0b4fce, numbers in #4264).
+          if (
+            useCacheEffective &&
+            options.writeThrough &&
+            anyExecuted &&
+            loaded.cacheManager
+          ) {
+            const outcome = await writeThroughCache(loaded.cacheManager);
+            process.stderr.write(`${writeThroughNotice(outcome)}\n`);
           }
 
           // Issue #3906 — in --json mode the multi-target summary is suppressed

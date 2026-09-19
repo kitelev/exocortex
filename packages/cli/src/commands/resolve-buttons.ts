@@ -3,7 +3,6 @@ import { existsSync } from "fs";
 import { resolve, relative, dirname, isAbsolute, sep as pathSep } from "path";
 import {
   InMemoryTripleStore,
-  NoteToRDFConverter,
   CommandResolver,
   PreconditionEvaluator,
   FolderRepairService,
@@ -24,6 +23,10 @@ import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { createIsInWrongFolderHostFunction } from "../precondition/createIsInWrongFolderHostFunction.js";
 import { createHasEmptyPropertiesHostFunction } from "../precondition/createHasEmptyPropertiesHostFunction.js";
 import { StderrLogger } from "../infrastructure/StderrLogger";
+import {
+  loadVaultTriples,
+  cacheLoadNotice,
+} from "../cache/loadVaultTriples.js";
 
 /**
  * Issue #3833 — `resolve-inline-buttons <target>` prints the command button-set the
@@ -55,6 +58,26 @@ export interface ResolveButtonsOptions {
   vault: string;
   json?: boolean;
   showHidden?: boolean;
+  // #4264 — build the triple store from the persistent per-file cache
+  // (`loadVaultTriples`) instead of a full vault parse. Read-only command: no
+  // write-through. Default off: without the flag the command is byte-identical.
+  useCache?: boolean;
+}
+
+/**
+ * #4264 — how {@link resolveButtons} loads the vault. The default (no cache,
+ * no log) is the pre-#4264 full parse.
+ */
+export interface ResolveButtonsLoadOptions {
+  /** `true` → `loadVaultTriples({ useCache: true })` (hit / delta / rebuild). */
+  useCache?: boolean;
+  /**
+   * Receives the one-line cache notice (`cacheLoadNotice`) when `useCache` is
+   * set. Kept out of {@link ResolveButtonsResult} on purpose: that object IS the
+   * `--json` stdout document and must stay byte-identical with and without the
+   * flag — the command routes this to stderr.
+   */
+  log?: (line: string) => void;
 }
 
 /** One command in the resolved button-set. */
@@ -219,6 +242,7 @@ export async function resolveButtons(
   vaultPath: string,
   targetRelative: string,
   clock: IClock = liveClock(),
+  load: ResolveButtonsLoadOptions = {},
 ): Promise<ResolveButtonsResult> {
   const resolvedVault = resolve(vaultPath);
   if (!existsSync(resolvedVault)) {
@@ -245,11 +269,19 @@ export async function resolveButtons(
   }
 
   // Build the triple store from the whole vault (same machinery as `apply`).
+  // #4264: through the shared loader — the default is the same full
+  // `convertVault()` as before; `useCache` takes the per-file cache path.
   const vaultAdapter = new FileSystemVaultAdapter(resolvedVault);
-  const converter = new NoteToRDFConverter(vaultAdapter);
-  const triples = await converter.convertVault();
+  const useCache = load.useCache ?? false;
+  const loaded = await loadVaultTriples(resolvedVault, {
+    useCache,
+    vaultAdapter,
+  });
+  if (useCache) {
+    load.log?.(cacheLoadNotice(loaded));
+  }
   const tripleStore = new InMemoryTripleStore();
-  await tripleStore.addAll(triples);
+  await tripleStore.addAll(loaded.triples);
 
   const subjectIRI = vaultPathToIRI(vaultRelative);
 
@@ -386,9 +418,9 @@ function printHuman(result: ResolveButtonsResult, showHidden: boolean): void {
 }
 
 /**
- * `exocortex resolve-inline-buttons <target> [--vault <v>] [--json] [--show-hidden]`
+ * `exocortex resolve-inline-buttons <target> [--vault <v>] [--json] [--show-hidden] [--use-cache]`
  * — Issue #3833. The authoritative inline-button-visibility oracle.
- * (Aliased `resolve-buttons` for back-compat.)
+ * (Aliased `resolve-buttons` for back-compat; `--use-cache` — #4264.)
  */
 export function resolveButtonsCommand(): Command {
   return new Command("resolve-inline-buttons")
@@ -405,13 +437,22 @@ export function resolveButtonsCommand(): Command {
       "--show-hidden",
       "Also list commands that bind but are hidden by their precondition",
     )
+    .option(
+      "--use-cache",
+      "Use the persistent triple cache (faster vault loading; read-only, nothing is written through)",
+    )
     .action(async (targetArg: string, options: ResolveButtonsOptions) => {
       // LOW#4 (#3833) — honour --json on the error path too, so a failing
       // resolve-inline-buttons emits a structured JSON error (ErrorHandler json mode)
       // instead of human text. Mirrors the resolve/validate-* convention.
       ErrorHandler.setFormat((options.json ? "json" : "text") as OutputFormat);
       try {
-        const result = await resolveButtons(options.vault, targetArg);
+        // #4264 — the cache notice goes to stderr so `--json` stdout stays the
+        // single document it is without the flag.
+        const result = await resolveButtons(options.vault, targetArg, undefined, {
+          useCache: options.useCache ?? false,
+          log: (line) => process.stderr.write(`${line}\n`),
+        });
         if (options.json) {
           const payload = options.showHidden
             ? result

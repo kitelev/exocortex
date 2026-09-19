@@ -174,6 +174,25 @@ export interface LoadOrBuildResult {
 }
 
 /**
+ * #4264 — outcome of {@link CacheManager.refreshAfterWrite} (write-through).
+ */
+export interface WriteThroughResult {
+  /**
+   * `delta` — the changed files (+ referrers) were re-parsed and the cache was
+   * persisted; `noop` — nothing changed since the loaded state, nothing
+   * written; `skipped` — the cache was left exactly as it was (`reason` says
+   * why: no cache to refresh, the vault could not be walked, or the change is
+   * one the delta cannot express — a rebuild-class diff is deliberately left
+   * to the next reader, see `refreshAfterWrite`).
+   */
+  mode: "delta" | "noop" | "skipped";
+  /** Files re-parsed (0 unless `delta`). */
+  reparsedFiles: number;
+  /** Why the cache was left alone (`skipped` only). */
+  reason?: string;
+}
+
+/**
  * Result of buildCache operation
  */
 export interface BuildCacheResult {
@@ -308,6 +327,24 @@ export class CacheManager {
   private readonly vaultPath: string;
   private readonly cachePath: string;
   private readonly cliVersion: string = "1.0.0"; // Will be replaced by actual version
+  /**
+   * #4264 — the cache state this instance last loaded or persisted
+   * (every read via `readCacheData`, every persisted state via
+   * `writeCacheData` — always together with {@link loadedStamp}). A
+   * write-through diffs the vault against THIS state instead of re-reading
+   * the ~100 MB file it just deserialized. `null` until the first read in
+   * this process.
+   */
+  private loaded: CacheData | null = null;
+  /**
+   * #4264 — stat stamp of the cache FILE that `loaded` was read from (or
+   * written as). `refreshAfterWrite` compares it with the file's current stamp
+   * before trusting `loaded`: a concurrent `index` (inferred layer +
+   * `inferenceEnabled`) or another process's delta changes the cache file
+   * without touching any vault file, so the manifest diff alone would let a
+   * write-through overwrite their result with this process's older snapshot.
+   */
+  private loadedStamp: FileStamp | null = null;
 
   constructor(vaultPath: string) {
     this.vaultPath = path.resolve(vaultPath);
@@ -400,6 +437,76 @@ export class CacheManager {
     };
   }
 
+  /**
+   * #4264 — write-through: after the calling command has WRITTEN to the vault,
+   * fold that write into the persisted cache so the NEXT `--use-cache` process
+   * is a plain hit instead of paying the delta (read + diff + re-parse +
+   * re-persist) itself.
+   *
+   * The vault's current file stamps are diffed against the state this instance
+   * loaded (or, when nothing was loaded in this process — `create` without
+   * `--validate` — against the cache on disk); the diff then goes through the
+   * SAME `planDelta` / `applyDelta` a reading process would run, so the
+   * persisted entries carry the changed files' NEW stamps AND their freshly
+   * converted triples (a re-stamp without a re-parse would be a stale hit — the
+   * #3788 class). Two kinds of concurrent writer are covered: one that changed
+   * VAULT files shows up in the manifest diff and is re-parsed along with this
+   * process's own write; one that replaced the CACHE file without touching the
+   * vault (`index` persisting the inferred layer, another process's delta) is
+   * detected by the cache file's stat stamp — the in-memory snapshot is then
+   * dropped and the write is folded into a fresh read instead (review of
+   * 1e8e8204, HIGH). Neither is ever reverted.
+   *
+   * Deliberately NOT done here: a rebuild-class change (TBox-form asset,
+   * FileSpace declaration, > {@link DELTA_REBUILD_RATIO}) — the mutating
+   * command would otherwise pay a full vault parse it did not ask for; the
+   * cache is left as it is and the next reader rebuilds, exactly as before.
+   * Likewise no cache is ever BUILT here: without an existing (readable) cache
+   * there is nothing to write through to.
+   *
+   * Persistence is the same atomic tmp + `rename` as every other write.
+   * Errors propagate; the callers treat them as best-effort (stderr warning,
+   * command result unchanged).
+   */
+  async refreshAfterWrite(): Promise<WriteThroughResult> {
+    // Trust the in-memory snapshot only while the cache FILE is still the one
+    // it came from; a concurrent `index` / delta replaced it → re-read, so
+    // their inferred layer / entries are the base this write is folded into.
+    // (Window that remains: a writer renaming between this stat and our own
+    // rename — the same window #4263's lock-free design already accepts; the
+    // next reader's manifest diff / `index` re-run self-corrects it.)
+    const base = (await this.loadedIsCurrent())
+      ? this.loaded
+      : await this.readCacheData();
+    if (!base) {
+      return { mode: "skipped", reparsedFiles: 0, reason: "no cache to refresh" };
+    }
+    const adapter = new FileSystemVaultAdapter(this.vaultPath);
+    const manifest = this.computeFileManifest(adapter);
+    if (!manifest) {
+      return { mode: "skipped", reparsedFiles: 0, reason: "vault could not be walked" };
+    }
+    const diff = diffManifest(base.files, manifest);
+    if (isEmptyDiff(diff)) {
+      return { mode: "noop", reparsedFiles: 0 };
+    }
+    const plan = this.planDelta(base, manifest, diff, adapter);
+    if (plan.rebuildReason) {
+      return {
+        mode: "skipped",
+        reparsedFiles: 0,
+        reason: `rebuild needed (${plan.rebuildReason}) — left to the next reader`,
+      };
+    }
+    // applyDelta persisted the merged state — writeCacheData retained it (and
+    // its stamp) as the base for a further write-through in this process. The
+    // merged triples are not consumed here (the command keeps its own store).
+    await this.applyDelta(base, manifest, diff, plan.reparse, adapter, {
+      needTriples: false,
+    });
+    return { mode: "delta", reparsedFiles: plan.reparse.length };
+  }
+
   private async rebuild(startTime: number, reason: string): Promise<LoadOrBuildResult> {
     const built = await this.buildInternal({ strict: false });
     return {
@@ -438,6 +545,12 @@ export class CacheManager {
       if (!(await fs.pathExists(this.cachePath))) {
         return null;
       }
+      // #4264 — stamp BEFORE the read: if a writer renames a new file over
+      // the path between this stat and the read, the stamp is older than the
+      // content and a later `refreshAfterWrite` re-reads once too often — the
+      // safe direction. (Stat after the read could pair a NEWER stamp with
+      // OLDER content and let a stale snapshot pass the guard.)
+      const stamp = await this.statCache();
       const raw = (await fs.readJson(this.cachePath)) as Partial<CacheData>;
       if (
         !raw.metadata ||
@@ -459,7 +572,7 @@ export class CacheManager {
           return null;
         }
       }
-      return {
+      const data: CacheData = {
         metadata: {
           ...raw.metadata,
           fileSpacePrefixes: Array.isArray(raw.metadata.fileSpacePrefixes)
@@ -476,9 +589,43 @@ export class CacheManager {
         files: raw.files,
         inferred: raw.inferred,
       };
+      // Retained TOGETHER with the stamp taken above: `loaded` and
+      // `loadedStamp` must always describe the same file content, whichever
+      // caller read it (`loadOrBuild`, `isCacheValid`, `getCacheStats`,
+      // `saveInferredTriples`, a write-through's fallback read).
+      this.loaded = data;
+      this.loadedStamp = stamp;
+      return data;
     } catch {
       return null;
     }
+  }
+
+  /** `{mtimeMs,size}` of the cache file, or `null` when it is absent. */
+  private async statCache(): Promise<FileStamp | null> {
+    try {
+      const stat = await fs.stat(this.cachePath);
+      return { mtimeMs: stat.mtimeMs, size: stat.size };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * #4264 — `true` when the cache file on disk is still the one `loaded` came
+   * from (same stamp). `false` when another process replaced it since, or when
+   * nothing was loaded / the file is gone.
+   */
+  private async loadedIsCurrent(): Promise<boolean> {
+    if (!this.loaded || !this.loadedStamp) {
+      return false;
+    }
+    const current = await this.statCache();
+    return (
+      current !== null &&
+      current.mtimeMs === this.loadedStamp.mtimeMs &&
+      current.size === this.loadedStamp.size
+    );
   }
 
   /**
@@ -668,6 +815,16 @@ export class CacheManager {
     diff: ManifestDiff,
     reparse: string[],
     adapter: FileSystemVaultAdapter,
+    options: {
+      /**
+       * #4264 — `false` for a write-through: the caller does not consume the
+       * merged triple set, so it is deserialized only when the inferred layer
+       * has to be re-materialized (the engines need it as input). Saves a
+       * second full copy of the vault's triples in a process that already
+       * holds its own store (≈0.7 GB peak RSS on a 275 k-triple vault).
+       */
+      needTriples: boolean;
+    } = { needTriples: true },
   ): Promise<{ data: CacheData; triples: Triple[]; inferredRecomputed: boolean }> {
     const files: IFile[] = [];
     for (const relPath of reparse) {
@@ -710,12 +867,19 @@ export class CacheManager {
     // Explicit triples in file order — returned to the caller AND (when the
     // cache carries an inferred layer) fed to the same engines `index` runs,
     // so the layer is recomputed from the merged state instead of going stale.
-    const explicit: Triple[] = [];
-    for (const entry of nextFiles) {
-      for (const t of entry.triples) {
-        explicit.push(this.deserializeTriple(t));
+    // Deserialized lazily: a write-through needs them only for that recompute.
+    let explicitCache: Triple[] | null = null;
+    const explicitTriples = (): Triple[] => {
+      if (explicitCache === null) {
+        explicitCache = [];
+        for (const entry of nextFiles) {
+          for (const t of entry.triples) {
+            explicitCache.push(this.deserializeTriple(t));
+          }
+        }
       }
-    }
+      return explicitCache;
+    };
     let inferred: SerializedTriple[] = [];
     let inferredTriples: Triple[] = [];
     let inferredRecomputed = false;
@@ -723,7 +887,7 @@ export class CacheManager {
       const nextByPath = new Map<string, CacheFileEntry>();
       for (const entry of nextFiles) nextByPath.set(entry.path, entry);
       if (inferenceInputsChanged(cached, nextByPath, [...reparsed, ...removed])) {
-        const result = await materializeInferredTriples(explicit);
+        const result = await materializeInferredTriples(explicitTriples());
         inferredTriples = result.inferred;
         inferred = inferredTriples.map(this.serializeTriple);
         inferredRecomputed = true;
@@ -731,7 +895,9 @@ export class CacheManager {
         // None of the changed files feeds either engine — the persisted
         // layer is still exactly what a recomputation would yield.
         inferred = cached.inferred;
-        inferredTriples = cached.inferred.map(this.deserializeTriple);
+        if (options.needTriples) {
+          inferredTriples = cached.inferred.map(this.deserializeTriple);
+        }
       }
     }
 
@@ -741,7 +907,10 @@ export class CacheManager {
       inferenceEnabled: cached.metadata.inferenceEnabled,
     });
     await this.writeCacheData(data);
-    return { data, triples: explicit.concat(inferredTriples), inferredRecomputed };
+    const triples = options.needTriples
+      ? explicitTriples().concat(inferredTriples)
+      : [];
+    return { data, triples, inferredRecomputed };
   }
 
   /**
@@ -1043,7 +1212,16 @@ export class CacheManager {
     const tmp = `${this.cachePath}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
     try {
       await fs.writeJson(tmp, data, { spaces: 0 });
+      // #4264 — the stamp of what THIS process is about to publish, taken from
+      // the temp file (rename keeps the inode: mtime and size survive it). Read
+      // after the rename it could already belong to a concurrent writer's file.
+      const stat = await fs.stat(tmp);
       await fs.rename(tmp, this.cachePath);
+      // What this process just published is the state a later write-through
+      // in the same process diffs against (delta load / rebuild / previous
+      // write-through — every persist goes through here).
+      this.loaded = data;
+      this.loadedStamp = { mtimeMs: stat.mtimeMs, size: stat.size };
     } catch (error) {
       await fs.remove(tmp).catch(() => undefined);
       throw error;

@@ -1,0 +1,84 @@
+{
+  "_doc": "Revert-verify mutants for #4264 (req cb707868-356f-495d-825a-182e66ba8bcd), subject packages/cli/src/cache/CacheManager.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/use-cache-4264.cachemanager.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's subject and runs the two #4264 suites; `expect` names the axes that MUST go red). Six specs, one per subject file, because the driver mutates one file per spec. Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/CacheManager.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/use-cache-apply-write-through-4264.integration.test.ts tests/unit/cache/CacheManager.writeThrough.test.ts tests/unit/cache/loadVaultTriples.test.ts 2>&1",
+  "red_re": "› ([AULP]\\d+\\w*) ",
+  "mutants": {
+    "M1_read_does_not_retain_snapshot": {
+      "from": "      this.loaded = data;\n      this.loadedStamp = stamp;\n      return data;",
+      "to": "      this.loaded = null;\n      this.loadedStamp = null;\n      return data;",
+      "expect": ["U2", "U10", "A8"]
+    },
+    "M2_persist_does_not_retain_published_state": {
+      "from": "      this.loaded = data;\n      this.loadedStamp = { mtimeMs: stat.mtimeMs, size: stat.size };",
+      "to": "      this.loaded = null;\n      this.loadedStamp = null;",
+      "expect": ["U6", "U9", "U11"]
+    },
+    "M3_stamp_guard_removed_(stale_snapshot_trusted)": {
+      "from": "    return (\n      current !== null &&\n      current.mtimeMs === this.loadedStamp.mtimeMs &&\n      current.size === this.loadedStamp.size\n    );",
+      "to": "    return current !== null;",
+      "expect": ["U11", "A7", "A7b"]
+    },
+    "M14_snapshot_trusted_even_after_the_cache_file_was_deleted": {
+      "from": "    return (\n      current !== null &&\n      current.mtimeMs === this.loadedStamp.mtimeMs &&\n      current.size === this.loadedStamp.size\n    );",
+      "to": "    void current;\n    return true;",
+      "expect": ["U13"]
+    },
+    "M4_read_retains_snapshot_but_not_its_stamp": {
+      "from": "      this.loaded = data;\n      this.loadedStamp = stamp;\n      return data;",
+      "to": "      this.loaded = data;\n      this.loadedStamp = { mtimeMs: 0, size: 0 };\n      return data;",
+      "expect": ["U2", "U10"]
+    },
+    "M5_absent_cache_gets_built_by_write_through": {
+      "from": "    if (!base) {\n      return { mode: \"skipped\", reparsedFiles: 0, reason: \"no cache to refresh\" };\n    }",
+      "to": "    if (!base) {\n      await this.buildInternal({ strict: false });\n      return { mode: \"noop\", reparsedFiles: 0 };\n    }",
+      "expect": ["U1", "A8"]
+    },
+    "M6_rebuild_class_change_rebuilt_inside_writer": {
+      "from": "    if (plan.rebuildReason) {\n      return {\n        mode: \"skipped\",\n        reparsedFiles: 0,\n        reason: `rebuild needed (${plan.rebuildReason}) — left to the next reader`,\n      };\n    }",
+      "to": "    if (plan.rebuildReason) {\n      await this.buildInternal({ strict: false });\n      return { mode: \"noop\", reparsedFiles: 0 };\n    }",
+      "expect": ["U5", "A6"]
+    },
+    "M7_noop_still_persists": {
+      "from": "    const diff = diffManifest(base.files, manifest);\n    if (isEmptyDiff(diff)) {\n      return { mode: \"noop\", reparsedFiles: 0 };\n    }",
+      "to": "    const diff = diffManifest(base.files, manifest);\n    if (isEmptyDiff(diff) && diff.added.length > 0) {\n      return { mode: \"noop\", reparsedFiles: 0 };\n    }",
+      "expect": ["U4"]
+    },
+    "M8_write_through_restamps_without_reparse": {
+      "from": "    await this.applyDelta(base, manifest, diff, plan.reparse, adapter, {\n      needTriples: false,\n    });\n    return { mode: \"delta\", reparsedFiles: plan.reparse.length };",
+      "to": "    await this.applyDelta(base, manifest, diff, [], adapter, {\n      needTriples: false,\n    });\n    return { mode: \"delta\", reparsedFiles: plan.reparse.length };",
+      "expect": ["A3", "A4", "A3ref"]
+    },
+    "M11_write_through_asks_for_the_merged_triples_(second_full_copy)": {
+      "from": "    await this.applyDelta(base, manifest, diff, plan.reparse, adapter, {\n      needTriples: false,\n    });",
+      "to": "    await this.applyDelta(base, manifest, diff, plan.reparse, adapter, {\n      needTriples: true,\n    });",
+      "expect": ["U12"]
+    },
+    "M12_retained_inferred_layer_deserialized_regardless": {
+      "from": "        if (options.needTriples) {\n          inferredTriples = cached.inferred.map(this.deserializeTriple);\n        }",
+      "to": "        {\n          inferredTriples = cached.inferred.map(this.deserializeTriple);\n        }",
+      "expect": ["U12"]
+    },
+    "M13_explicit_triples_built_eagerly_for_the_return_value": {
+      "from": "    const triples = options.needTriples\n      ? explicitTriples().concat(inferredTriples)\n      : [];",
+      "to": "    const triples = explicitTriples().concat(inferredTriples);",
+      "expect": ["U12"]
+    },
+    "M9_delta_entry_written_with_fresh_stamp_but_no_triples_(the_#3788_class)": {
+      "from": "      this.makeEntry(relPath, manifest, perFile.get(relPath) ?? [], adapter);",
+      "to": "      this.makeEntry(relPath, manifest, [], adapter);",
+      "expect": ["A3", "A4"]
+    },
+    "M10_write_through_is_a_noop": {
+      "from": "    const base = (await this.loadedIsCurrent())\n      ? this.loaded\n      : await this.readCacheData();",
+      "to": "    const base = null as CacheData | null; void this.loadedIsCurrent;",
+      "expect": ["A3", "A4", "A8", "U2", "U3"]
+    }
+  }
+}

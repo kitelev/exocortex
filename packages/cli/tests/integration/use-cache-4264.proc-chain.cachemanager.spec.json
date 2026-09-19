@@ -1,0 +1,24 @@
+{
+  "_doc": "Revert-verify mutants for #4264 (req cb707868-356f-495d-825a-182e66ba8bcd) on the MULTI-PROCESS harness (three spawned `dist/index.js` processes; the harness rebuilds the copy's dist first, ~1 s). Subject packages/cli/src/cache/CacheManager.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/use-cache-4264.proc-chain.cachemanager.spec.json after setting `tree` and `subject` (both absolute). Local only — CI has no built CLI; the in-process chain is CI axis A4.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/CacheManager.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../..\" && npx tsx packages/cli/tests/integration/use-cache-4264-proc-chain.harness.ts 2>&1",
+  "red_re": "❌ (P\\d+) ",
+  "mutants": {
+    "PM1_write_through_is_a_noop_(next_process_pays_the_delta)": {
+      "from": "    const base = (await this.loadedIsCurrent())\n      ? this.loaded\n      : await this.readCacheData();",
+      "to": "    const base = null as CacheData | null; void this.loadedIsCurrent;",
+      "expect": ["P2", "P3", "P4"]
+    },
+    "PM2_restamp_without_reparse_(stale_precondition,_the_#3788_class)": {
+      "from": "      this.makeEntry(relPath, manifest, perFile.get(relPath) ?? [], adapter);",
+      "to": "      this.makeEntry(relPath, manifest, [], adapter);",
+      "expect": ["P3"]
+    }
+  }
+}
