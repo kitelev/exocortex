@@ -368,7 +368,7 @@ export class CacheManager {
    * Checks if the cache is valid.
    *
    * Cache is valid when:
-   * - Cache file exists and is a format-v2 cache with complete metadata
+   * - Cache file exists and carries the current CACHE_FORMAT_VERSION with complete metadata
    * - The persisted per-file manifest equals a fresh walk of the vault
    *   (no `.md` file added, modified or removed since the cache was written —
    *   nested paths included; the vault root directory's mtime plays no part)

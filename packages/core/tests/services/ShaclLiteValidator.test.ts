@@ -1485,7 +1485,7 @@ describe('validate — sh:datatype lexical conformance of the xsd:integer conver
   const datatypeViolations = (r: ReturnType<typeof validate>) =>
     r.violations.filter((v) => v.constraint === 'datatype');
 
-  it(`I1 ${REQ} whole number tagged xsd:integer (YAML \`7\`) conforms to range xsd:integer by tag equality`, () => {
+  it(`I1 ${REQ} whole number tagged xsd:integer (YAML \`7\`) conforms to range xsd:integer by tag equality (control: unchanged behaviour)`, () => {
     expect(datatypeViolations(report('Principle_number', `${XSD}integer`, '7', `${XSD}integer`))).toHaveLength(0);
   });
 
@@ -1502,6 +1502,7 @@ describe('validate — sh:datatype lexical conformance of the xsd:integer conver
   it(`I4 ${REQ} the integer tag is excused ONLY inside the lexical table: \`7\`^^xsd:integer under xsd:string and under xsd:anyURI violate`, () => {
     expect(datatypeViolations(report('Principle_note', `${XSD}string`, '7', `${XSD}integer`))).toHaveLength(1);
     expect(datatypeViolations(report('Principle_number', `${XSD}anyURI`, '7', `${XSD}integer`))).toHaveLength(1);
+    expect(datatypeViolations(report('Principle_since', `${XSD}dateTime`, '7', `${XSD}integer`))).toHaveLength(1);
   });
 
   // I5 — one conforming + one non-conforming integer-tagged value per lexical row

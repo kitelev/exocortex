@@ -8,8 +8,9 @@
  * 2. Asset B — sh:datatype violation (ems__Task_count expects xsd:integer, got string)
  * 3. Asset C — both violations simultaneously
  * 4. Asset D — CONFORMS: CURIE-literal ranges `"xsd:integer"` / `xsd:gYear` (the live-corpus
- *    form) reach sh:datatype, and converter-tagged numbers (xsd:decimal) conform by lexical
- *    form (ticket a9b55ead, @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2)
+ *    form) reach sh:datatype, and converter number-tagged literals (xsd:decimal until d5ad5217,
+ *    xsd:integer for whole numbers since) conform by lexical form (ticket a9b55ead,
+ *    @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2)
  * 5. Asset E — sh:datatype violations under the same CURIE ranges (10.5 vs integer, 2026-05 vs gYear)
  * 6. Asset F — CONFORMS: `3` under `ems__Task_rank`, a def typed ONLY `exo__DatatypeProperty`
  *    (pure-UID form) that reaches the registry through the `tbox/` superclass chain
@@ -160,12 +161,12 @@ describe("BDD: validate schema --shapes-mode (P1.7 — synthetic vault fixtures)
     expect(v?.expectedRange).toBe("http://www.w3.org/2001/XMLSchema#integer");
   });
 
-  it("I6 @req:d553b1a4-c312-4819-964d-fe6dae0a50e1 Scenario: asset-h.md — whole number 20 under range xsd:decimal (the b5a670e8 case) and 7 under xsd:integer CONFORM with the xsd:integer converter tag", () => {
+  it("H1 @req:d553b1a4-c312-4819-964d-fe6dae0a50e1 Scenario: asset-h.md — whole number 20 under range xsd:decimal (the b5a670e8 case) and 7 under xsd:integer CONFORM with the xsd:integer converter tag", () => {
     const assetH = violations.filter((x) => x.focusNode.includes("asset-h.md"));
     expect(assetH).toEqual([]);
   });
 
-  it("I7 @req:d553b1a4-c312-4819-964d-fe6dae0a50e1 Scenario: asset-d.md still conforms after the tag change — 1987 under xsd:gYear and 10 under xsd:integer arrive as xsd:integer, not xsd:decimal", () => {
+  it("H2 @req:d553b1a4-c312-4819-964d-fe6dae0a50e1 Scenario: asset-d.md still conforms after the tag change — 1987 under xsd:gYear and 10 under xsd:integer arrive as xsd:integer, not xsd:decimal", () => {
     const assetD = violations.filter((x) => x.focusNode.includes("asset-d.md"));
     expect(assetD).toEqual([]);
     // the violation messages of the OTHER assets carry the new tag for whole numbers only
