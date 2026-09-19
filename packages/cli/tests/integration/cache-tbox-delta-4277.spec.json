@@ -1,0 +1,75 @@
+{
+  "_doc": "Revert-verify mutants for #4277 (req 1117f9fe). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/cache-tbox-delta-4277.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's CacheManager.ts and runs the #4277 integration suite; `expect` names the axes that MUST go red). The four foreign specs on the same subject (cache-manifest-delta-4263, use-cache-4264.cachemanager, use-cache-4264.proc-chain.cachemanager, apply-create-instance-index-4272.cachemanager) are re-run separately before the PR.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/CacheManager.ts",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/cache-tbox-delta-4277.integration.test.ts 2>&1",
+  "red_re": "› (T\\d+) ",
+  "mutants": {
+    "M1_every_tbox_change_is_a_delta": {
+      "from": "        const reason = tboxProjectionChanged(changedPath, previous.triples, fresh, tbox);\n        if (reason) {",
+      "to": "        const reason = tboxProjectionChanged(changedPath, previous.triples, fresh, tbox);\n        if (reason && false) {",
+      "expect": ["T3", "T4", "T5", "T6", "T11", "T13", "T14"]
+    },
+    "M2_label_compared_by_presence_not_value": {
+      "from": "      if (t.object.type === \"IRI\") label.push(t.object.value);",
+      "to": "      if (t.object.type === \"IRI\") label.push(\"<some symbolic label>\");",
+      "expect": ["T3", "T14"],
+      "_note": "T4 (lost / gained) stays red-free here on purpose: presence still differs. Only the VALUE axes must catch this."
+    },
+    "M3_tbox_alias_set_ignored": {
+      "from": "  if (!sameList(was.tboxAliases, now.tboxAliases)) {",
+      "to": "  if (!sameList(was.tboxAliases, now.tboxAliases) && false) {",
+      "expect": ["T5", "T13"]
+    },
+    "M4_instance_class_ignored": {
+      "from": "  if (!sameList(was.instanceClass, now.instanceClass)) {",
+      "to": "  if (!sameList(was.instanceClass, now.instanceClass) && false) {",
+      "expect": ["T6"]
+    },
+    "M5_rebuild_always_materialises": {
+      "from": "      materializeInference: cached?.metadata.inferenceEnabled === true,",
+      "to": "      materializeInference: true,",
+      "expect": ["T10"]
+    },
+    "M6_rebuild_never_materialises": {
+      "from": "      materializeInference: cached?.metadata.inferenceEnabled === true,",
+      "to": "      materializeInference: false,",
+      "expect": ["T9"]
+    },
+    "M7_flag_inherited_but_layer_empty": {
+      "from": "      inferred = (await materializeInferredTriples(triples)).inferred;",
+      "to": "      inferred = [];",
+      "expect": ["T9"]
+    },
+    "M8_layer_materialised_but_flag_not_persisted": {
+      "from": "      inferenceEnabled: options.materializeInference === true,",
+      "to": "      inferenceEnabled: false,",
+      "expect": ["T9"]
+    },
+    "M9_skipped_entry_treated_as_comparable": {
+      "from": "        if (!previous || previous.triples.length === 0 || !file || !isFile(file)) {",
+      "to": "        if (!previous || !file || !isFile(file)) {",
+      "expect": ["T8"]
+    },
+    "M10_plan_rebuild_forgets_the_displaced_cache": {
+      "from": "      return this.rebuild(startTime, plan.rebuildReason, cached);",
+      "to": "      return this.rebuild(startTime, plan.rebuildReason, null);",
+      "expect": ["T9"]
+    },
+    "M11_rebuild_returns_explicit_only": {
+      "from": "      triples: built.triples.concat(built.inferred),",
+      "to": "      triples: built.triples,",
+      "expect": ["T9"]
+    },
+    "M12_projection_probe_sees_only_the_label_predicate": {
+      "from": "    } else if (predicate.endsWith(ASSET_ALIASES_IRI_SUFFIX)) {\n      if (t.object.type === \"IRI\") tboxAliases.push(t.object.value);",
+      "to": "    } else if (predicate.endsWith(ASSET_ALIASES_IRI_SUFFIX) && false) {\n      if (t.object.type === \"IRI\") tboxAliases.push(t.object.value);",
+      "expect": ["T5", "T13"]
+    }
+  }
+}
