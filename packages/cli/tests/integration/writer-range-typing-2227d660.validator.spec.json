@@ -1,0 +1,52 @@
+{
+  "_doc": "Revert-verify mutants for ticket 2227d660 (req 21ceea14, PR fix/writer-types-by-declared-range). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/writer-range-typing-2227d660.validator.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's PropertyNameValidator.ts and runs the suites named in `harness`; `expect` names the axes that MUST go red). cli suites resolve @kitelev/exocortex-core from core SRC (jest moduleNameMapper), so a core mutant reaches the cli axes without a build. Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). Recorded runs: see PR body.",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› ([RGDSQW]\\d+[a-z]?) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/services/PropertyNameValidator.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/set-property.range-typing.integration.test.ts tests/integration/create.range-typing.integration.test.ts 2>&1",
+  "mutants": {
+    "MR21_empty_range_registered": {
+      "from": "      if (cand.range.length > 0) ranges.set(cand.name, cand.range);",
+      "to": "      if (cand.range.length >= 0) ranges.set(cand.name, cand.range);",
+      "expect": [
+        "Q2"
+      ]
+    },
+    "MR22_range_collected_outside_the_metaclass_closure": {
+      "from": "      if (!cand.classRefs.some((r) => metaKeys.has(r))) continue;\n      names.add(cand.name);",
+      "to": "      if (cand.range.length > 0) ranges.set(cand.name, cand.range);\n      if (!cand.classRefs.some((r) => metaKeys.has(r))) continue;\n      names.add(cand.name);",
+      "expect": [
+        "Q3"
+      ]
+    },
+    "MR23_quotes_not_stripped": {
+      "from": "      .map((v) => v.replace(/^[\"']|[\"']$/g, \"\").trim())",
+      "to": "      .map((v) => v.trim())",
+      "expect": [
+        "Q1"
+      ]
+    },
+    "MR23b_ranges_never_collected": {
+      "from": "      if (cand.range.length > 0) ranges.set(cand.name, cand.range);",
+      "to": "      void cand.range;",
+      "expect": [
+        "Q1",
+        "S1",
+        "S2",
+        "S2b",
+        "S5",
+        "W1",
+        "W2",
+        "W4"
+      ]
+    }
+  }
+}

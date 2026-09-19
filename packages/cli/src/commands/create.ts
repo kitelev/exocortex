@@ -386,6 +386,12 @@ export function createCommand(): Command {
         // CLI injects its own well-known keys downstream).
         const propertyNameValidator = new PropertyNameValidator(vaultPath);
         await propertyNameValidator.validate(Object.keys(properties));
+        // Ticket 2227d660: the same scan also yields each def's declared
+        // `exo__Property_range`; handed to the core service so every scalar
+        // is typed by its declaration (a canonical negative under
+        // `xsd:integer` stays bare, a number under `xsd:string` is quoted).
+        // Empty when no property TBox is mounted → shape-based typing as before.
+        const declaredRanges = await propertyNameValidator.declaredRanges();
 
         // Resolve body content. `\n` escapes are expanded ONLY for the inline
         // `--body "a\nb"` form — that is exactly what issue #2288 asked for ("Given
@@ -649,6 +655,7 @@ export function createCommand(): Command {
           body,
           propertyValues,
           shapeRegistry,
+          declaredRanges,
         };
 
         // Opt-in SHACL-lite conformance gate (project 38800c80 W3) — the last

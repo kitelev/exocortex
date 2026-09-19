@@ -246,6 +246,8 @@ export { FrontmatterService } from "./utilities/FrontmatterService";
 export {
   quoteYamlString,
   serializeYamlScalar,
+  scalarTypingForRange,
+  type DeclaredRangeTyping,
   STRING_SCALAR_PROPERTIES,
 } from "./utilities/yamlScalar";
 // Tolerant YAML frontmatter parse (#3800) — bare yaml.load throws on a
