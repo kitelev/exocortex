@@ -48,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-**`--use-cache` on `apply` / `resolve-inline-buttons` / `create`, with write-through (#4264, req cb707868)**
+**`--use-cache` on `apply` / `resolve-inline-buttons` / `create`; write-through opt-in via `--write-through` (#4264, req cb707868)**
 
 - `apply`, `resolve-inline-buttons` (alias `resolve-buttons`) and `create` accept `--use-cache`
   (default off). With it the triple store is built through the shared `loadVaultTriples()`
@@ -56,10 +56,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `create` loads a triple store only under `--validate`, so that is where its flag applies
   (SHACL shape loading is a separate path, not covered). Without the flag the three commands
   are byte-identical to before: no cache read, no cache write.
-- Write-through: once an `apply` grounding has executed (or `create` has written its asset),
-  the files it changed are folded into the persisted cache — the same delta as a reading
-  process would run (only the changed files + their referrers re-parsed, atomic tmp+rename),
-  so the next `--use-cache` process is a plain hit. A change the delta cannot express
+- Two modes for a mutating `apply` / `create` under `--use-cache` (decision ae0b4fce, by
+  measurement on a copy of the bot vault): `--use-cache` alone is **delta-only** — the
+  writer never touches the cache file and the next `--use-cache` process folds the change
+  in as its own delta (its preconditions see the write); `--use-cache --write-through` makes
+  the writer pay that delta itself so the next process is a plain hit. Delta-only is the
+  default because on the bot's 3-writer chain it is 1–3 s cheaper and 0.2–0.6 GB lighter in
+  the writer; write-through only wins when readers outnumber writers — the consumer's call.
+  `--write-through` without `--use-cache` is refused (exit 2, one stderr line) before
+  anything is read or written.
+- Write-through (`--write-through`): once an `apply` grounding has executed (or `create` has
+  written its asset), the files it changed are folded into the persisted cache — the same
+  delta as a reading process would run (only the changed files + their referrers re-parsed,
+  atomic tmp+rename), so the next `--use-cache` process is a plain hit. A change the delta cannot express
   (TBox-form asset, FileSpace declaration, > 50 % of the vault) is left to the next reader's
   rebuild; an absent cache is never built by a mutating command. Best-effort by
   construction: a persist failure is one `⚠ triple cache:` stderr line, the command's exit

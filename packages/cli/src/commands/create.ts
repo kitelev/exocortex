@@ -618,7 +618,12 @@ export function createCommand(): Command {
         // Lazily imported INSIDE the flag branch (same pattern as `--validate`
         // below): the cache module pulls the serialization + inference graph,
         // and the default `create` path must neither pay that load nor widen
-        // its module graph.
+        // its module graph. Since write-through became opt-in (decision
+        // ae0b4fce) this guard's ONLY remaining effect is that lazy load — a
+        // constructed-but-unused CacheManager reads and writes nothing, so a
+        // mutant that constructs it regardless is not observable under jest
+        // (the suites import the module themselves); the guard is kept for
+        // the module graph, not locked by an axis.
         const useCache = options.useCache ?? false;
         let cacheManager: CacheManager | undefined;
         if (useCache) {

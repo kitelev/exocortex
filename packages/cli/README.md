@@ -119,16 +119,17 @@ npx @kitelev/exocortex-cli apply <cmd> [path] [options]
 
 **Options:**
 
-| Option                 | Default | Description                                                                               |
-| ---------------------- | ------- | ----------------------------------------------------------------------------------------- |
-| `--vault <path>`       | cwd     | Path to Obsidian vault                                                                    |
-| `--dry-run`            | off     | Evaluate precondition and preview; do not write                                           |
-| `--yes`                | off     | Skip destructive-command confirmation                                                     |
-| `--input <json>`       | —       | JSON object forwarded to `service_call` groundings as `userInput`                         |
-| `--seed <uuid>`        | —       | Deterministic UID seed for test/replay                                                    |
-| `--frozen-clock <iso>` | —       | Freeze clock to an ISO timestamp for test/replay                                          |
-| `--json`               | off     | Emit a machine-readable `{command,target,created:[…]}` envelope                           |
-| `--use-cache`          | off     | Load the triple store from the persistent cache; write the mutation through to it (#4264) |
+| Option                 | Default | Description                                                                                                                                    |
+| ---------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--vault <path>`       | cwd     | Path to Obsidian vault                                                                                                                         |
+| `--dry-run`            | off     | Evaluate precondition and preview; do not write                                                                                                |
+| `--yes`                | off     | Skip destructive-command confirmation                                                                                                          |
+| `--input <json>`       | —       | JSON object forwarded to `service_call` groundings as `userInput`                                                                              |
+| `--seed <uuid>`        | —       | Deterministic UID seed for test/replay                                                                                                         |
+| `--frozen-clock <iso>` | —       | Freeze clock to an ISO timestamp for test/replay                                                                                               |
+| `--json`               | off     | Emit a machine-readable `{command,target,created:[…]}` envelope                                                                                |
+| `--use-cache`          | off     | Load the triple store from the persistent cache (the next `--use-cache` process picks the mutation up as a delta) (#4264)                      |
+| `--write-through`      | off     | With `--use-cache`: fold the mutation into the cache in this process so the next process is a plain hit; refused without `--use-cache` (#4264) |
 
 **Behavior:**
 
@@ -136,10 +137,14 @@ npx @kitelev/exocortex-cli apply <cmd> [path] [options]
 - Commands marked `exocmd__Command_destructive: true` refuse to run without `--dry-run` or `--yes`.
 - Multi-target runs (stdin) use continue-on-error semantics and print a `N/M` summary; the exit code is `5` if any target failed.
 - `--use-cache` (#4264): the triple store comes from `<vault>/.exocortex/cache/triples.json`
-  (hit / delta / rebuild, same loader as `query --use-cache`) instead of a full vault parse,
-  and once a grounding has executed the files it changed are **written through** to that
-  cache (only the changed files + their referrers are re-parsed; persisted atomically), so
-  the next `--use-cache` process — the next command of the same bot turn — is a plain hit.
+  (hit / delta / rebuild, same loader as `query --use-cache`) instead of a full vault parse.
+  By default the mutating process leaves the cache file untouched (**delta-only**): the next
+  `--use-cache` process folds the change in as its own delta (only the changed files + their
+  referrers re-parsed), and its preconditions see the write. With `--write-through` the
+  writer pays that delta itself right after the grounding executed, so the next process is a
+  plain hit — worth it when readers outnumber writers (measured on the bot's 3-writer chain,
+  delta-only is 1–3 s cheaper and 0.2–0.6 GB lighter in the writer; #4264 has the matrix).
+  `--write-through` without `--use-cache` is refused (exit 2) before anything is applied.
   Best-effort: a write-through that cannot persist prints a `⚠ triple cache:` warning and
   leaves the exit code and stdout untouched; the next reader refreshes the cache itself. A
   change the delta cannot express (TBox-form asset, FileSpace declaration) is left to the
@@ -321,28 +326,30 @@ Create a new vault asset with auto-generated UUID, timestamps, and frontmatter. 
 npx @kitelev/exocortex-cli create --class ztlk__PermanentNote --label "My Note" --vault ~/vault
 ```
 
-| Option                       | Default       | Description                                                                                       |
-| ---------------------------- | ------------- | ------------------------------------------------------------------------------------------------- |
-| `--class <name>`             | **required**  | Class short name (e.g. `ztlk__PermanentNote`) or UUID                                             |
-| `--label <text>`             | **required**  | Human-readable label for the asset                                                                |
-| `--vault <path>`             | cwd           | Path to Obsidian vault                                                                            |
-| `--aliases <names...>`       | —             | Additional aliases for the asset                                                                  |
-| `--property <key=value...>`  | —             | Property key-value pairs (repeatable)                                                             |
-| `--body <text>`              | —             | Markdown body content (use `-` to read from stdin)                                                |
-| `--body-file <path>`         | —             | Read body content from a file                                                                     |
-| `--dry-run`                  | off           | Preview the exact file content (stderr) without writing                                           |
-| `--created-by <uuid>`        | —             | Creator UUID                                                                                      |
-| `--timezone <tz>`            | `Asia/Almaty` | Timezone for timestamps                                                                           |
-| `--skip-wikilink-validation` | off           | Skip wikilink existence validation                                                                |
-| `--validate`                 | off           | SHACL-lite conformance gate BEFORE writing (refuses a non-conformant asset)                       |
-| `--use-cache`                | off           | Cached vault load for `--validate` + write the created asset through to an existing cache (#4264) |
+| Option                       | Default       | Description                                                                                                                                   |
+| ---------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--class <name>`             | **required**  | Class short name (e.g. `ztlk__PermanentNote`) or UUID                                                                                         |
+| `--label <text>`             | **required**  | Human-readable label for the asset                                                                                                            |
+| `--vault <path>`             | cwd           | Path to Obsidian vault                                                                                                                        |
+| `--aliases <names...>`       | —             | Additional aliases for the asset                                                                                                              |
+| `--property <key=value...>`  | —             | Property key-value pairs (repeatable)                                                                                                         |
+| `--body <text>`              | —             | Markdown body content (use `-` to read from stdin)                                                                                            |
+| `--body-file <path>`         | —             | Read body content from a file                                                                                                                 |
+| `--dry-run`                  | off           | Preview the exact file content (stderr) without writing                                                                                       |
+| `--created-by <uuid>`        | —             | Creator UUID                                                                                                                                  |
+| `--timezone <tz>`            | `Asia/Almaty` | Timezone for timestamps                                                                                                                       |
+| `--skip-wikilink-validation` | off           | Skip wikilink existence validation                                                                                                            |
+| `--validate`                 | off           | SHACL-lite conformance gate BEFORE writing (refuses a non-conformant asset)                                                                   |
+| `--use-cache`                | off           | Cached vault load for `--validate`; the next `--use-cache` process picks the new asset up as a delta (#4264)                                  |
+| `--write-through`            | off           | With `--use-cache`: fold the created asset into an existing cache in this process (next process = hit); refused without `--use-cache` (#4264) |
 
 `--use-cache` governs the two places `create` touches the triple graph: the vault context
 `--validate` loads (through the shared loader — hit / delta / rebuild instead of a full
-parse) and, after a real write, the write-through of the new asset into an EXISTING
-`.exocortex/cache/triples.json` (an absent cache is never built by `create`). The default
-`create` path parses no RDF, and SHACL shape loading (`ShapeLoader.loadFromVaultFS`) is not
-covered by the flag.
+parse) and, together with `--write-through`, the write-through of the new asset into an
+EXISTING `.exocortex/cache/triples.json` after a real write (an absent cache is never built
+by `create`; without `--write-through` the next `--use-cache` process picks the asset up as
+a delta). The default `create` path parses no RDF, and SHACL shape loading
+(`ShapeLoader.loadFromVaultFS`) is not covered by the flag.
 
 ```bash
 # With custom properties and body from stdin
