@@ -21,7 +21,7 @@
  *    both tagged xsd:integer by the converter since ticket d5ad5217 (parity with the JSON-LD
  *    parser); the xsd:integer tag is judged by the same lexical table as xsd:decimal
  *    (@req:d553b1a4-c312-4819-964d-fe6dae0a50e1)
- * 9. Asset I — CONFORMS: `https://youtu.be/…` (string tag) under the xsd:anyURI shape
+ * 9. Asset I — CONFORMS: `https://example.com/video/1` (string tag) under the xsd:anyURI shape
  *    `ems__Task_sourceUrl` — judged by IRI.isValidIRI since ticket e55b0a07 (amendment of
  *    @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2); before it every string under anyURI violated
  * 10. Asset J — sh:datatype violation: `not a uri` under the same anyURI shape

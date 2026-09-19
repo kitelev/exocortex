@@ -5,7 +5,7 @@ exo__Asset_createdAt: 2025-01-01T00:00:00
 exo__Instance_class:
   - "[[ems__Task]]"
 exo__Asset_label: Asset I
-ems__Task_sourceUrl: https://youtu.be/MBPHU7aaklM
+ems__Task_sourceUrl: https://example.com/video/1
 aliases:
   - Asset I
 ---
