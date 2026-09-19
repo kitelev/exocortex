@@ -171,15 +171,17 @@ export default tseslint.config(
   // excludes via its `packages/!(cli)/src/**` glob):
   //   - no-console        — stdout IS this tool's interface; the CI job captures
   //                         the JSON report by redirecting stdout to a file.
-  //   - no-nodejs-modules / no-restricted-imports — the tool's whole job is to
-  //                         walk the filesystem; it runs under Node, never in a
-  //                         WebView.
+  //   - no-restricted-imports — the tool's whole job is to walk the filesystem;
+  //                         it runs under Node, never in a WebView.
+  //   (`import/no-nodejs-modules` is registered by eslint-plugin-obsidianmd's
+  //   recommended config but enabled by nothing — an `off` for it was inert and
+  //   was removed in b151005b; `obsidianmd/no-nodejs-modules` stays at its
+  //   default `warn` here.)
   // Scoped to this package only; every other rule stays in force.
   {
     files: ['packages/req-audit/**/*.ts'],
     rules: {
       'no-console': 'off',
-      'import/no-nodejs-modules': 'off',
       'no-restricted-imports': 'off',
     },
   },
@@ -217,7 +219,6 @@ export default tseslint.config(
       'no-control-regex': 'off',
       'no-restricted-globals': 'off',
       'no-restricted-imports': 'off',
-      'import/no-nodejs-modules': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/restrict-template-expressions': 'off',
       '@typescript-eslint/no-this-alias': 'off',

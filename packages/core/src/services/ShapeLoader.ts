@@ -3,11 +3,10 @@ import type { ITripleStore } from "../interfaces/ITripleStore";
 import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
 import { Namespace } from "../domain/models/rdf/Namespace";
+import { xsdDatatypeIRI } from "../utilities/xsdDatatype";
 
 // W3C SHACL namespace base
 const SH_NS = "http://www.w3.org/ns/shacl#";
-// XML Schema Datatypes namespace base
-const XSD_NS = "http://www.w3.org/2001/XMLSchema#";
 
 // Legacy whitelist retained for documentation; runtime resolution now goes
 // through Namespace.fromPropertyKey, which auto-extends to any well-formed
@@ -788,15 +787,17 @@ export class ShapeLoader {
    * Resolves a range value written as a plain string (no wikilink) to an IRI:
    * a full `http://` / `https://` IRI is returned as-is, the CURIE `xsd:<local>`
    * (the form `create --class DatatypeProperty` writes and 100 % of live
-   * datatype ranges use) expands to the W3C XSD namespace. Anything else is
-   * not a datatype range → null. One implementation for BOTH loaders
-   * (loadFromRDFGraph literal branch + loadFromVaultFS via wikilinkToIRI) so
-   * they cannot drift apart again (ticket a9b55ead).
+   * datatype ranges use) expands to the W3C XSD namespace via the shared
+   * {@link xsdDatatypeIRI} (local name kept verbatim — `xsd:dateTime` →
+   * `…#dateTime`, the tag the converter emits; the resolver's lower-casing is
+   * its own policy, not the helper's). Anything else is not a datatype range
+   * → null. One implementation for BOTH loaders (loadFromRDFGraph literal
+   * branch + loadFromVaultFS via wikilinkToIRI) so they cannot drift apart
+   * again (ticket a9b55ead).
    */
   static datatypeRangeToIRI(raw: string): string | null {
     if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
-    if (raw.startsWith("xsd:")) return XSD_NS + raw.substring(4);
-    return null;
+    return xsdDatatypeIRI(raw);
   }
 
   private static asArray(v: unknown): string[] {
