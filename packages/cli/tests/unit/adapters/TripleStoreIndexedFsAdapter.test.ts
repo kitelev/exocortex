@@ -364,7 +364,9 @@ describe(`TripleStoreIndexedFsAdapter — identity with the scan (#4272, req 5ab
     // … and a [[uid]] alias to a NON-class file is emitted as a file IRI — same bare-uid match.
     expect(await parity({ aliases: QUOTED_UID })).toEqual([`a/${WIKI_UID}.md`]);
     // Two alias forms that normalise to the same value → the path ONCE (index dedup = scan).
-    expect(await parity({ aliases: "Dup Alias" })).toEqual([`a/${QUOTED_UID}.md`]);
+    expect(await parity({ aliases: "Dup Alias" })).toEqual([
+      `a/${QUOTED_UID}.md`,
+    ]);
   });
 
   it(`U1d parity: an unresolvable wikilink-form label ([[…]] kept as a literal) matches its bracket-stripped text ${REQ}`, async () => {
@@ -620,7 +622,9 @@ describe(`TripleStoreIndexedFsAdapter — identity with the scan (#4272, req 5ab
       // file is gone), so the counter is what locks it — the old value must
       // cost ZERO candidate reads, the live value exactly one.
       const readsBefore = () => idx.stats.candidateReads;
-      await idx.updateFile(rel, body("Renamed label"));
+      // `./`-prefixed form: the adapter normalises its own paths (`rel`) before
+      // retiring / re-indexing keys — otherwise the old key would survive.
+      await idx.updateFile(`./${rel}`, body("Renamed label"));
       let r0 = readsBefore();
       expect(
         await idx.findFilesByMetadata({ exo__Asset_label: "Fresh label" }),

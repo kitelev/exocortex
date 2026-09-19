@@ -109,6 +109,17 @@
       "from": "    if (this.indexPromise === null) {\n      this.indexPromise = this.buildIndex();\n    }\n    return this.indexPromise;",
       "to": "    this.indexPromise = this.buildIndex();\n    return this.indexPromise;",
       "expect": ["U2", "U8"]
+    },
+    "M22_subjectToPath_never_resolves_(nothing_indexed_from_the_triples)": {
+      "from": "    const p = iriToVaultPath(subject.value);\n    if (p === null || p.startsWith(\"/\") || p.startsWith(\"..\") || p.includes(\"/../\")) return null;\n    return p;",
+      "to": "    const p = iriToVaultPath(subject.value);\n    if (p === null || p.startsWith(\"/\") || p.startsWith(\"..\") || p.includes(\"/../\")) return null;\n    return p + \"__revert-disabled__\";",
+      "expect": ["U1"],
+      "_note": "the traversal guard itself (absolute / `..`) is defensive: the converter never emits such a subject IRI for a walked vault file, so no input distinguishes it — the mutant locks the resolution, not the guard"
+    },
+    "M23_rel_does_not_normalise_a_dot-slash_own_path": {
+      "from": "    return filePath.replace(/\\\\/g, \"/\").replace(/^\\.\\//, \"\");",
+      "to": "    return filePath.replace(/\\\\/g, \"/\");",
+      "expect": ["U9"]
     }
   }
 }

@@ -183,6 +183,24 @@ describe(`loadVaultTriples — zeroTriplePaths population (#4272) ${REQ_4272}`, 
       "Just prose, no frontmatter.\n",
       "utf-8",
     );
+    // a FileSpace mount (declaration OUTSIDE its mount, mount derived from the
+    // source URL → assetspaces/owner/files-repo/): a well-formed asset inside
+    // it is EXCLUDED by the walk before validation — zero triples committed,
+    // exactly like the cache entry it gets on the cache paths.
+    await fs.ensureDir(path.join(vaultPath, "spaces"));
+    await fs.writeFile(
+      path.join(vaultPath, "spaces", "files.md"),
+      '---\nexo__Asset_uid: 42720000-0000-4000-8000-000000000003\nexo__Instance_class: "[[aad8913e-5e9f-4047-879d-93cc46befd52|exo__FileSpace]]"\nexo__Asset_label: Attachments\nexo__AssetSpace_source: https://github.com/owner/files-repo\n---\n',
+      "utf-8",
+    );
+    await fs.ensureDir(
+      path.join(vaultPath, "assetspaces", "owner", "files-repo"),
+    );
+    await fs.writeFile(
+      path.join(vaultPath, "assetspaces", "owner", "files-repo", "blob.md"),
+      "---\nexo__Asset_uid: 42720000-0000-4000-8000-000000000004\nexo__Asset_label: Blob\nexo__Instance_class: ems__Task\n---\n",
+      "utf-8",
+    );
   });
 
   afterEach(async () => {
@@ -190,10 +208,11 @@ describe(`loadVaultTriples — zeroTriplePaths population (#4272) ${REQ_4272}`, 
     await fs.remove(tempDir);
   });
 
-  it(`U11 full parse names every walked file that committed no triples — the invariant-skipped asset AND the frontmatter-less note — exactly as the cache paths do (rebuild, then hit) ${REQ_4272}`, async () => {
+  it(`U11 full parse names every walked file that committed no triples — the invariant-skipped asset, the frontmatter-less note AND the FileSpace-excluded asset — exactly as the cache paths do (rebuild, then hit) ${REQ_4272}`, async () => {
     const expected = [
       "a/42720000-0000-4000-8000-000000000002.md",
       "a/plain-note.md",
+      "assetspaces/owner/files-repo/blob.md",
     ];
     const full = await loadVaultTriples(vaultPath, { useCache: false });
     expect(full.mode).toBe("full-parse");
