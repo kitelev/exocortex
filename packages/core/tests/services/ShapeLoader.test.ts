@@ -1021,3 +1021,360 @@ describe("ShapeLoader.loadFromRDFGraph — CURIE-literal datatype range xsd:<loc
     }
   });
 });
+
+// ── Property-def classes reached through exo__Class_superClass (ticket 84bb4d08) ──
+
+describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Property are loaded by both loaders (@req:67767fcb-15e3-4deb-9b70-5b96c7110a22)", () => {
+  const XSD_NS = "http://www.w3.org/2001/XMLSchema#";
+  const RDF_TYPE = Namespace.RDF.term("type").value;
+  const RDFS_DOMAIN = Namespace.RDFS.term("domain").value;
+  const RDFS_LABEL = Namespace.RDFS.term("label").value;
+  const RDFS_SUBCLASS_OF = Namespace.RDFS.term("subClassOf").value;
+  const EXO_LABEL = Namespace.EXO.term("Asset_label").value;
+  const EXO_RANGE = Namespace.EXO.term("Property_range").value;
+  const EXO_SUPER = Namespace.EXO.term("Class_superClass").value;
+  const PROPERTY_IRI = "https://exocortex.my/ontology/flow#Stage_order";
+  const DEF_IRI = "obsidian://vault/tbox/flow/9d2f1a11-0000-4000-8000-000000000001.md";
+  // Live UIDs (exoas-exo): exo__Property, exo__ObjectProperty, exo__DatatypeProperty, exo__StringProperty.
+  const PROPERTY_UID = "38277bfa-d7f9-4a75-b856-b23276ab0db3";
+  const DATATYPE_UID = "ae56ca4c-b610-42a4-a25d-058c23673296";
+  const STRING_UID = "30d63ce4-e574-456c-8de8-2bf1a53688c1";
+  const classFile = (uid: string) => `obsidian://vault/tbox/exo/${uid}.md`;
+
+  /** A property def typed ONLY `typeIRI`, range "xsd:integer", domain ems:Task. */
+  function defTriples(typeIRI: string): Triple[] {
+    return [
+      makeTriple(DEF_IRI, RDF_TYPE, typeIRI),
+      makeTriple(DEF_IRI, RDFS_DOMAIN, `${EMS}Task`),
+      makeTriple(DEF_IRI, EXO_RANGE, { literal: "xsd:integer" }),
+      makeTriple(DEF_IRI, EXO_LABEL, { literal: "flow__Stage_order" }),
+    ];
+  }
+  /** A TBox class file: labelled, declaring `exo__Class_superClass` → `parentIRI` (as the converter emits it). */
+  function classTriples(uid: string, label: string, parentIRI: string, predicate = EXO_SUPER): Triple[] {
+    return [
+      makeTriple(classFile(uid), RDFS_LABEL, { literal: label }),
+      makeTriple(classFile(uid), predicate, parentIRI),
+    ];
+  }
+
+  it("D1 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loadFromRDFGraph: a def typed only exo:DatatypeProperty is registered when the graph declares DatatypeProperty ⊑ Property (sh:datatype xsd:integer reaches the registry)", async () => {
+    const reg = await ShapeLoader.loadFromRDFGraph(
+      makeStore([
+        ...defTriples(`${EXO}DatatypeProperty`),
+        ...classTriples(DATATYPE_UID, "exo__DatatypeProperty", `${EXO}Property`),
+      ]),
+    );
+    const shape = reg.get(PROPERTY_IRI);
+    expect(shape).toBeDefined();
+    expect(shape!.range).toEqual([`${XSD_NS}integer`]);
+    expect(shape!.domain).toEqual([`${EMS}Task`]);
+  });
+
+  it("D2 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loadFromRDFGraph: the walk is transitive — exo:StringProperty ⊑ DatatypeProperty ⊑ Property", async () => {
+    const reg = await ShapeLoader.loadFromRDFGraph(
+      makeStore([
+        ...defTriples(`${EXO}StringProperty`),
+        ...classTriples(STRING_UID, "exo__StringProperty", `${EXO}DatatypeProperty`),
+        ...classTriples(DATATYPE_UID, "exo__DatatypeProperty", `${EXO}Property`),
+      ]),
+    );
+    expect(reg.get(PROPERTY_IRI)?.range).toEqual([`${XSD_NS}integer`]);
+  });
+
+  it("D3 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loadFromRDFGraph: an rdfs:subClassOf edge (the converter's RDFS twin) is walked too, and a file-IRI parent resolves through its label", async () => {
+    const reg = await ShapeLoader.loadFromRDFGraph(
+      makeStore([
+        ...defTriples(`${EXO}DatatypeProperty`),
+        // parent written as the class FILE IRI (pure-UID wikilink form), not the symbolic IRI
+        ...classTriples(DATATYPE_UID, "exo__DatatypeProperty", classFile(PROPERTY_UID), RDFS_SUBCLASS_OF),
+        makeTriple(classFile(PROPERTY_UID), RDFS_LABEL, { literal: "exo__Property" }),
+      ]),
+    );
+    expect(reg.get(PROPERTY_IRI)?.range).toEqual([`${XSD_NS}integer`]);
+  });
+
+  it("D4 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loadFromRDFGraph: the class set is derived from the graph, not hard-coded — without the DatatypeProperty ⊑ Property edge the def stays unknown", async () => {
+    const reg = await ShapeLoader.loadFromRDFGraph(makeStore(defTriples(`${EXO}DatatypeProperty`)));
+    expect(reg.get(PROPERTY_IRI)).toBeUndefined();
+  });
+
+  it("D5 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loadFromRDFGraph: negative control — a class outside the exo:Property hierarchy (ems:Task ⊑ exo:Asset) never yields a shape, and exo:Property / exo:ObjectProperty keep loading without any edge", async () => {
+    const reg = await ShapeLoader.loadFromRDFGraph(
+      makeStore([
+        ...defTriples(`${EMS}Task`),
+        ...classTriples("1b20a8f0-d745-4e93-91db-4531b3df120e", "ems__Task", `${EXO}Asset`),
+      ]),
+    );
+    expect(reg.get(PROPERTY_IRI)).toBeUndefined();
+    for (const legacy of [`${EXO}Property`, `${EXO}ObjectProperty`]) {
+      const legacyReg = await ShapeLoader.loadFromRDFGraph(makeStore(defTriples(legacy)));
+      expect(legacyReg.get(PROPERTY_IRI)?.range).toEqual([`${XSD_NS}integer`]);
+    }
+  });
+
+  it("D6 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loadFromRDFGraph: a cycle in the declared hierarchy terminates — Property ⊑ X ⊑ Property still registers a def typed X; an unrelated cycle A ⊑ B ⊑ A does not", async () => {
+    const X = "aaaaaaaa-0000-4000-8000-00000000000a";
+    const A = "aaaaaaaa-0000-4000-8000-00000000000b";
+    const B = "aaaaaaaa-0000-4000-8000-00000000000c";
+    const reg = await ShapeLoader.loadFromRDFGraph(
+      makeStore([
+        ...defTriples(`${EXO}XProperty`),
+        ...classTriples(X, "exo__XProperty", `${EXO}Property`),
+        ...classTriples(PROPERTY_UID, "exo__Property", `${EXO}XProperty`),
+        ...classTriples(A, "exo__ACycle", `${EXO}BCycle`),
+        ...classTriples(B, "exo__BCycle", `${EXO}ACycle`),
+      ]),
+    );
+    expect(reg.get(PROPERTY_IRI)?.range).toEqual([`${XSD_NS}integer`]);
+    const unrelated = await ShapeLoader.loadFromRDFGraph(
+      makeStore([
+        ...defTriples(`${EXO}ACycle`),
+        ...classTriples(A, "exo__ACycle", `${EXO}BCycle`),
+        ...classTriples(B, "exo__BCycle", `${EXO}ACycle`),
+      ]),
+    );
+    expect(unrelated.get(PROPERTY_IRI)).toBeUndefined();
+  });
+
+  // ── loadFromVaultFS ──
+
+  const DEF_FM = (classValue: string) =>
+    [
+      "---",
+      `exo__Asset_uid: 9d2f1a11-0000-4000-8000-000000000001`,
+      "exo__Instance_class:",
+      `  - "${classValue}"`,
+      "exo__Asset_label: flow__Stage_order",
+      "exo__Property_domain:",
+      '  - "[[ems__Task]]"',
+      'exo__Property_range: "xsd:integer"',
+      'exo__Property_cardinality: "[[c93c4b2f-b43d-4cc9-8dd0-31514d608da2]]"',
+      // unquoted, as `create --class DatatypeProperty` writes it (the FS parser keeps a quoted "1" verbatim — separate gap)
+      "exo__Property_minCount: 1",
+      "---",
+      "",
+    ].join("\n");
+  const CLASS_FM = (uid: string | null, label: string, superValue: string) =>
+    [
+      "---",
+      ...(uid ? [`exo__Asset_uid: ${uid}`] : []),
+      "exo__Instance_class:",
+      '  - "[[8619c4fc-64f1-4869-b17e-e34186cacca9]]"',
+      "exo__Class_superClass:",
+      `  - "${superValue}"`,
+      `exo__Asset_label: ${label}`,
+      "---",
+      "",
+    ].join("\n");
+
+  async function withVault(
+    files: Record<string, string>,
+    run: (dir: string) => Promise<void>,
+  ): Promise<void> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "shape-loader-subclass-"));
+    try {
+      for (const [rel, content] of Object.entries(files)) {
+        await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+        await fs.writeFile(path.join(dir, rel), content, "utf-8");
+      }
+      await run(dir);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("F1 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loadFromVaultFS: pure-UID class form [[ae56ca4c…]] (exo__DatatypeProperty) is accepted through UID-named class files DatatypeProperty → Property — and through a legacy label-named class file carrying that exo__Asset_uid", async () => {
+    await withVault(
+      {
+        "flow/def.md": DEF_FM(`[[${DATATYPE_UID}]]`),
+        [`exo/${DATATYPE_UID}.md`]: CLASS_FM(DATATYPE_UID, "exo__DatatypeProperty", `[[${PROPERTY_UID}]]`),
+        [`exo/${PROPERTY_UID}.md`]: CLASS_FM(PROPERTY_UID, "exo__Property", "[[493c2ae2-de56-47ec-954d-2eb8cb49bff7]]"),
+      },
+      async (dir) => {
+        const shape = (await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI);
+        expect(shape).toBeDefined();
+        expect(shape!.range).toEqual([`${XSD_NS}integer`]);
+        expect(shape!.cardinality).toBe("Single");
+        expect(shape!.minCount).toBe(1);
+      },
+    );
+    // Pre-UID-canon class file: label-named on disk, UID only in frontmatter — the def's [[<uid>]] must still match it.
+    await withVault(
+      {
+        "flow/def.md": DEF_FM(`[[${DATATYPE_UID}]]`),
+        "exo/exo__DatatypeProperty.md": CLASS_FM(DATATYPE_UID, "exo__DatatypeProperty", "[[exo__Property]]"),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.range).toEqual([
+          `${XSD_NS}integer`,
+        ]);
+      },
+    );
+  });
+
+  it("F2 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loadFromVaultFS: legacy label form [[exo__DatatypeProperty]] is accepted through a label-named class file (no exo__Asset_uid, no label field) declaring [[exo__Property]] — and through a UID-named class file whose exo__Asset_label is that name", async () => {
+    // Label-named file with NO exo__Asset_label: only the filename stem can name it.
+    const labelless = CLASS_FM(null, "exo__DatatypeProperty", "[[exo__Property]]").replace(
+      "exo__Asset_label: exo__DatatypeProperty\n",
+      "",
+    );
+    expect(labelless).not.toContain("exo__Asset_label");
+    await withVault(
+      {
+        "flow/def.md": DEF_FM("[[exo__DatatypeProperty]]"),
+        "exo/exo__DatatypeProperty.md": labelless,
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.range).toEqual([
+          `${XSD_NS}integer`,
+        ]);
+      },
+    );
+    // Post-UID-canon class file referenced by its label (legacy def form): only exo__Asset_label can name it.
+    await withVault(
+      {
+        "flow/def.md": DEF_FM("[[exo__DatatypeProperty]]"),
+        [`exo/${DATATYPE_UID}.md`]: CLASS_FM(DATATYPE_UID, "exo__DatatypeProperty", "[[exo__Property]]"),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.range).toEqual([
+          `${XSD_NS}integer`,
+        ]);
+      },
+    );
+  });
+
+  it("F3 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loadFromVaultFS: transitive + uid|alias form — [[<uid>|exo__StringProperty]] ⊑ DatatypeProperty ⊑ Property, with the class files scanned AFTER the def (order-independent)", async () => {
+    await withVault(
+      {
+        "a-flow/def.md": DEF_FM(`[[${STRING_UID}|exo__StringProperty]]`),
+        [`z-exo/${STRING_UID}.md`]: CLASS_FM(STRING_UID, "exo__StringProperty", `[[${DATATYPE_UID}|exo__DatatypeProperty]]`),
+        [`z-exo/${DATATYPE_UID}.md`]: CLASS_FM(DATATYPE_UID, "exo__DatatypeProperty", `[[${PROPERTY_UID}]]`),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.range).toEqual([
+          `${XSD_NS}integer`,
+        ]);
+      },
+    );
+  });
+
+  it("F4 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loadFromVaultFS: negative controls — a class outside the hierarchy yields no shape; a DatatypeProperty def without its class file stays unknown; exo__Property / exo__ObjectProperty still load with no class files", async () => {
+    await withVault(
+      {
+        "flow/def.md": DEF_FM("[[ems__Task]]"),
+        "ems/ems__Task.md": CLASS_FM(null, "ems__Task", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)).toBeUndefined();
+      },
+    );
+    await withVault({ "flow/def.md": DEF_FM(`[[${DATATYPE_UID}]]`) }, async (dir) => {
+      expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)).toBeUndefined();
+    });
+    for (const legacy of ["[[exo__Property]]", `[[${PROPERTY_UID}]]`, "[[exo__ObjectProperty]]"]) {
+      await withVault({ "flow/def.md": DEF_FM(legacy) }, async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.range).toEqual([
+          `${XSD_NS}integer`,
+        ]);
+      });
+    }
+  });
+
+  it("F5 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loadFromVaultFS: a cycle in the class files terminates — Property ⊑ X ⊑ Property still registers a def typed X; an unrelated A ⊑ B ⊑ A registers nothing", async () => {
+    const X = "aaaaaaaa-0000-4000-8000-00000000000a";
+    const A = "aaaaaaaa-0000-4000-8000-00000000000b";
+    const B = "aaaaaaaa-0000-4000-8000-00000000000c";
+    await withVault(
+      {
+        "flow/def.md": DEF_FM(`[[${X}]]`),
+        [`exo/${X}.md`]: CLASS_FM(X, "exo__XProperty", `[[${PROPERTY_UID}]]`),
+        [`exo/${PROPERTY_UID}.md`]: CLASS_FM(PROPERTY_UID, "exo__Property", `[[${X}]]`),
+        [`exo/${A}.md`]: CLASS_FM(A, "exo__ACycle", `[[${B}]]`),
+        [`exo/${B}.md`]: CLASS_FM(B, "exo__BCycle", `[[${A}]]`),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.range).toEqual([
+          `${XSD_NS}integer`,
+        ]);
+      },
+    );
+    await withVault(
+      {
+        "flow/def.md": DEF_FM(`[[${A}]]`),
+        [`exo/${A}.md`]: CLASS_FM(A, "exo__ACycle", `[[${B}]]`),
+        [`exo/${B}.md`]: CLASS_FM(B, "exo__BCycle", `[[${A}]]`),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)).toBeUndefined();
+      },
+    );
+  });
+
+  it("P1 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loader parity: the SAME three files (DatatypeProperty-only def + its two class files) yield the SAME shape via loadFromRDFGraph (through NoteToRDFConverter) and via loadFromVaultFS", async () => {
+    const { NoteToRDFConverter } = await import("../../src/services/NoteToRDFConverter");
+    const { InMemoryTripleStore } = await import(
+      "../../src/infrastructure/rdf/InMemoryTripleStore"
+    );
+    const files: Record<string, string> = {
+      "flow/9d2f1a11-0000-4000-8000-000000000001.md": DEF_FM(`[[${DATATYPE_UID}]]`),
+      [`exo/${DATATYPE_UID}.md`]: CLASS_FM(DATATYPE_UID, "exo__DatatypeProperty", `[[${PROPERTY_UID}]]`),
+      [`exo/${PROPERTY_UID}.md`]: CLASS_FM(PROPERTY_UID, "exo__Property", "[[493c2ae2-de56-47ec-954d-2eb8cb49bff7]]"),
+    };
+    // Frontmatter as Obsidian's metadataCache would hand it to the converter.
+    const parseFm = (content: string): Record<string, unknown> => {
+      const fm: Record<string, unknown> = {};
+      let key: string | null = null;
+      for (const line of content.split("\n").slice(1)) {
+        if (line === "---") break;
+        const item = /^ {2}- "?(.*?)"?$/.exec(line);
+        if (item && key) {
+          (fm[key] as string[]).push(item[1]);
+          continue;
+        }
+        const kv = /^([^:]+):\s*(.*)$/.exec(line);
+        if (!kv) continue;
+        key = kv[1];
+        fm[key] = kv[2] === "" ? [] : kv[2].replace(/^"|"$/g, "");
+      }
+      return fm;
+    };
+    const byPath = new Map(Object.entries(files).map(([rel, c]) => [rel, parseFm(c)]));
+    const fileOf = (rel: string) => ({
+      path: rel,
+      basename: path.basename(rel, ".md"),
+      extension: "md",
+      name: path.basename(rel),
+      parent: null,
+    });
+    const mockVault = {
+      getFrontmatter: jest.fn((f: { path: string }) => byPath.get(f.path)),
+      getAllFiles: jest.fn().mockReturnValue([]),
+      read: jest.fn().mockResolvedValue(""),
+      // `[[<uid>]]` resolves to the UID-named class file, as in a live vault.
+      getFirstLinkpathDest: jest.fn((link: string) => {
+        const rel = [...byPath.keys()].find((p) => path.basename(p, ".md") === link);
+        return rel ? fileOf(rel) : null;
+      }),
+    } as unknown as ConstructorParameters<typeof NoteToRDFConverter>[0];
+    const converter = new NoteToRDFConverter(mockVault);
+    const store = new InMemoryTripleStore();
+    for (const rel of byPath.keys()) {
+      await store.addAll(
+        await converter.convertNote(fileOf(rel) as Parameters<typeof converter.convertNote>[0]),
+      );
+    }
+    const viaGraph = (await ShapeLoader.loadFromRDFGraph(store)).get(PROPERTY_IRI);
+
+    await withVault(files, async (dir) => {
+      const viaFS = (await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI);
+      expect(viaFS).toBeDefined();
+      expect(viaGraph).toBeDefined();
+      expect(viaGraph).toEqual(viaFS);
+      expect(viaFS!.range).toEqual([`${XSD_NS}integer`]);
+      expect(viaFS!.minCount).toBe(1);
+      expect(viaFS!.cardinality).toBe("Single");
+    });
+  });
+});

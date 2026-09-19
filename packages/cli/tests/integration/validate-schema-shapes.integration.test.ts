@@ -11,6 +11,11 @@
  *    form) reach sh:datatype, and converter-tagged numbers (xsd:decimal) conform by lexical
  *    form (ticket a9b55ead, @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2)
  * 5. Asset E — sh:datatype violations under the same CURIE ranges (10.5 vs integer, 2026-05 vs gYear)
+ * 6. Asset F — CONFORMS: `3` under `ems__Task_rank`, a def typed ONLY `exo__DatatypeProperty`
+ *    (pure-UID form) that reaches the registry through the `tbox/` superclass chain
+ *    (ticket 84bb4d08, @req:67767fcb-15e3-4deb-9b70-5b96c7110a22)
+ * 7. Asset G — sh:datatype violation under that same DatatypeProperty-only shape (3.5 vs integer);
+ *    silent before the loaders walked `exo__Class_superClass`
  *
  * To regenerate the golden file:
  *   UPDATE_GOLDEN=1 npx jest validate-schema-shapes
@@ -131,6 +136,24 @@ describe("BDD: validate schema --shapes-mode (P1.7 — synthetic vault fixtures)
     expect(v).toBeDefined();
     expect(v?.constraint).toBe("datatype");
     expect(v?.expectedRange).toBe("http://www.w3.org/2001/XMLSchema#gYear");
+  });
+
+  it("I4 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 Scenario: asset-f.md — a def typed ONLY exo__DatatypeProperty (pure-UID form, chain in tbox/) gates: whole number 3 CONFORMS (no violation)", () => {
+    const assetF = violations.filter((x) => x.focusNode.includes("asset-f.md"));
+    expect(assetF).toEqual([]);
+  });
+
+  it("I5 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 Scenario: asset-g.md — the DatatypeProperty-only shape ems__Task_rank reaches sh:datatype: 3.5 is a violation (silent before the superclass walk)", () => {
+    const v = violations.find(
+      (x) =>
+        x.focusNode.includes("asset-g.md") &&
+        x.propertyPath.includes("Task_rank"),
+    );
+    expect(v).toBeDefined();
+    expect(v?.severity).toBe("sh:Violation");
+    expect(v?.constraint).toBe("datatype");
+    expect(v?.actualValue).toBe("3.5");
+    expect(v?.expectedRange).toBe("http://www.w3.org/2001/XMLSchema#integer");
   });
 
   it("Scenario: golden file — violations match golden report byte-by-byte (canonical sort)", () => {

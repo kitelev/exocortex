@@ -26,6 +26,25 @@ const NAMESPACE_MAP: ReadonlyArray<[string, Namespace]> = [
 
 void NAMESPACE_MAP;
 
+/** One `exo__Class_superClass` declaration seen by the FS scan (ticket 84bb4d08). */
+interface FsClassEdge {
+  /** Keys the declaring class file can be named by: filename stem, `exo__Asset_uid`, `exo__Asset_label`. */
+  childKeys: readonly string[];
+  /** Keys of every declared superclass (wikilink ref, and both halves of `uid|alias`). */
+  parentKeys: readonly string[];
+}
+
+/** A file with an `exo__Property_domain`, kept until the class hierarchy is known. */
+interface FsCandidate {
+  filePath: string;
+  fm: Record<string, string | string[]>;
+}
+
+interface FsScan {
+  classEdges: FsClassEdge[];
+  candidates: FsCandidate[];
+}
+
 /** Cached shape format written to / read from ~/.cache/exocortex/property-shapes.json */
 export interface ShapeJSONCache {
   version: number;
@@ -37,12 +56,30 @@ export class ShapeLoader {
   /**
    * Node.js only: walks vaultPath, parses all exo__Property*.md files and
    * builds ShapeRegistry from their frontmatter.
+   *
+   * One pass over the tree collects (a) every `exo__Class_superClass` edge
+   * and (b) every property-definition candidate (frontmatter with an
+   * `exo__Property_domain`); candidates are registered only after the pass,
+   * once the set of classes that IS-A `exo__Property` is known from (a) —
+   * so a def typed `exo__DatatypeProperty` / `exo__StringProperty` / … is
+   * accepted through the declared hierarchy, exactly as loadFromRDFGraph
+   * does through the graph (ticket 84bb4d08).
    */
   static async loadFromVaultFS(vaultPath: string): Promise<ShapeRegistry> {
     const { readdir, readFile } = await import("fs/promises");
     const path = await import("path");
     const registry = new ShapeRegistry();
-    await ShapeLoader.scanDir(vaultPath, registry, { readdir, readFile, path });
+    const scan: FsScan = { classEdges: [], candidates: [] };
+    await ShapeLoader.scanDir(vaultPath, scan, { readdir, readFile, path });
+    const propertyClassKeys = ShapeLoader.propertyClassKeysFromEdges(scan.classEdges);
+    for (const candidate of scan.candidates) {
+      // Fail-soft: one malformed property asset should not abort the load.
+      try {
+        ShapeLoader.registerCandidate(candidate, registry, propertyClassKeys, path);
+      } catch {
+        // Skip the offending file silently
+      }
+    }
     return registry;
   }
 
@@ -68,14 +105,28 @@ export class ShapeLoader {
     // file-IRI forms.
     const uidToClassIRI = await ShapeLoader.buildUidClassIndex(graph);
 
-    // Find all property definition subjects (exo:Property or exo:ObjectProperty)
-    const [objPropTriples, basePropTriples] = await Promise.all([
-      graph.match(undefined, RDF.term("type"), EXO.term("ObjectProperty")),
-      graph.match(undefined, RDF.term("type"), EXO.term("Property")),
-    ]);
+    // Find all property definition subjects: every node typed as exo:Property
+    // OR any of its (transitive) subclasses — exo:ObjectProperty,
+    // exo:DatatypeProperty, exo:StringProperty → exo:DatatypeProperty, … —
+    // resolved from the graph's own exo:Class_superClass / rdfs:subClassOf
+    // edges (ticket 84bb4d08: an rdf:type-only match on Property|ObjectProperty
+    // left 291/220/200 live defs [exodev/my/tbank] without a shape).
+    const propertyClassIRIs = await ShapeLoader.collectPropertyClassIRIs(
+      graph,
+      uidToClassIRI,
+    );
+    const typeTripleSets = await Promise.all(
+      [...propertyClassIRIs].map(async (classIRI) => {
+        try {
+          return await graph.match(undefined, RDF.term("type"), new IRI(classIRI));
+        } catch {
+          return [];
+        }
+      }),
+    );
 
     const subjects = new Set<string>();
-    for (const t of [...objPropTriples, ...basePropTriples]) {
+    for (const t of typeTripleSets.flat()) {
       if (t.subject instanceof IRI) subjects.add(t.subject.value);
     }
 
@@ -265,6 +316,76 @@ export class ShapeLoader {
   }
 
   /**
+   * Ticket 84bb4d08: the set of canonical class IRIs whose instances are
+   * property definitions — `exo:Property` plus every class reachable from it
+   * DOWNWARD through `exo:Class_superClass` / `rdfs:subClassOf` edges
+   * (transitive: `exo:StringProperty → exo:DatatypeProperty → exo:Property`).
+   *
+   * Seeded with `exo:Property` and `exo:ObjectProperty` — the two classes the
+   * loader matched before the walk existed — so a graph that carries no TBox
+   * class files (fixtures, partial mounts) keeps its previous behaviour
+   * verbatim; the walk only ever ADDS classes.
+   *
+   * Edge endpoints are canonicalized with the same {@link resolveClassIRI}
+   * used for domain/range, so a file-IRI subject (`obsidian://…/<uid>.md`)
+   * and a symbolic object (`exo#Property`) land in one IRI space. Cycles are
+   * harmless (visited set); unresolvable endpoints stay as file IRIs and
+   * simply never match an `rdf:type` object.
+   */
+  private static async collectPropertyClassIRIs(
+    graph: ITripleStore,
+    uidToClassIRI: ReadonlyMap<string, string>,
+  ): Promise<Set<string>> {
+    const EXO = Namespace.EXO;
+    const RDFS = Namespace.RDFS;
+    const [superTs, subClassOfTs] = await Promise.all([
+      graph.match(undefined, EXO.term("Class_superClass"), undefined),
+      graph.match(undefined, RDFS.term("subClassOf"), undefined),
+    ]);
+
+    // Memoized endpoint canonicalization — the same class file is the subject
+    // of several edges and the object of many more.
+    const resolved = new Map<string, string | null>();
+    const canon = async (iri: string): Promise<string | null> => {
+      let v = resolved.get(iri);
+      if (v === undefined) {
+        v = await ShapeLoader.resolveClassIRI(iri, graph, uidToClassIRI);
+        resolved.set(iri, v);
+      }
+      return v;
+    };
+
+    // parent canonical IRI → child canonical IRIs
+    const children = new Map<string, Set<string>>();
+    for (const t of [...superTs, ...subClassOfTs]) {
+      if (!(t.subject instanceof IRI) || !(t.object instanceof IRI)) continue;
+      const [child, parent] = await Promise.all([
+        canon(t.subject.value),
+        canon(t.object.value),
+      ]);
+      if (!child || !parent || child === parent) continue;
+      const set = children.get(parent) ?? new Set<string>();
+      set.add(child);
+      children.set(parent, set);
+    }
+
+    const result = new Set<string>([
+      EXO.term("Property").value,
+      EXO.term("ObjectProperty").value,
+    ]);
+    const queue = [EXO.term("Property").value];
+    while (queue.length > 0) {
+      const parent = queue.shift() as string;
+      for (const child of children.get(parent) ?? []) {
+        if (result.has(child)) continue;
+        result.add(child);
+        queue.push(child);
+      }
+    }
+    return result;
+  }
+
+  /**
    * Resolves a domain/range IRI to its canonical namespace form.
    *
    * Context: after RFC-004 UUID-canonicalization, `exo__Property_domain` and
@@ -342,9 +463,59 @@ export class ShapeLoader {
     return iri;
   }
 
+  /** exo__Property class UID (`exoas-exo`, `exo__Property`). */
+  private static readonly EXO_PROPERTY_UID = "38277bfa-d7f9-4a75-b856-b23276ab0db3";
+  /** exo__ObjectProperty class UID (`exoas-exo`, `exo__ObjectProperty`). */
+  private static readonly EXO_OBJECT_PROPERTY_UID = "9a1cf31c-9d41-4ef3-9023-584a8d087d16";
+
+  /**
+   * Ticket 84bb4d08 (FS twin of {@link collectPropertyClassIRIs}): the set of
+   * class KEYS — label (`exo__DatatypeProperty`), UID, and filename stem —
+   * under which a property definition's `exo__Instance_class` wikilink may
+   * name a class that IS-A `exo__Property`. Seeded with the two classes the
+   * loader always accepted (`exo__Property`, `exo__ObjectProperty`, label and
+   * UID form), then walked DOWNWARD over the collected `exo__Class_superClass`
+   * edges (BFS; a class already in the set is not re-queued, so a cycle
+   * terminates — same shape as the graph walk).
+   */
+  private static propertyClassKeysFromEdges(edges: readonly FsClassEdge[]): Set<string> {
+    const seeds = [
+      "exo__Property",
+      ShapeLoader.EXO_PROPERTY_UID,
+      "exo__ObjectProperty",
+      ShapeLoader.EXO_OBJECT_PROPERTY_UID,
+    ];
+    const keys = new Set<string>(seeds);
+    const queue = [...seeds];
+    while (queue.length > 0) {
+      const parent = queue.shift() as string;
+      for (const edge of edges) {
+        if (!edge.parentKeys.includes(parent)) continue;
+        if (edge.childKeys.some((k) => keys.has(k))) continue;
+        for (const k of edge.childKeys) {
+          keys.add(k);
+          queue.push(k);
+        }
+      }
+    }
+    return keys;
+  }
+
+  /** All key forms a wikilink value can name a class by: `ref`, and both halves of `uid|alias`. */
+  private static wikilinkClassKeys(value: string): string[] {
+    const ref = ShapeLoader.extractWikilinkRef(value);
+    if (!ref) return [];
+    const out = [ref.trim()];
+    for (const part of ref.split("|")) {
+      const trimmed = part.trim();
+      if (trimmed.length > 0) out.push(trimmed);
+    }
+    return out;
+  }
+
   private static async scanDir(
     dir: string,
-    registry: ShapeRegistry,
+    scan: FsScan,
     io: {
       readdir: (
         p: string,
@@ -363,11 +534,11 @@ export class ShapeLoader {
     for (const entry of entries) {
       const full = io.path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        await ShapeLoader.scanDir(full, registry, io);
+        await ShapeLoader.scanDir(full, scan, io);
       } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        // Fail-soft: one malformed property asset should not abort the scan.
+        // Fail-soft: one malformed asset should not abort the scan.
         try {
-          await ShapeLoader.processFile(full, registry, io.readFile, io.path);
+          await ShapeLoader.collectFile(full, scan, io.readFile, io.path);
         } catch {
           // Skip the offending file silently
         }
@@ -375,11 +546,18 @@ export class ShapeLoader {
     }
   }
 
-  private static async processFile(
+  /**
+   * Reads one file's frontmatter and records what the post-scan phase needs:
+   * its `exo__Class_superClass` edge (any asset declaring one — the TBox
+   * class files) and/or itself as a property-definition candidate (any
+   * asset with an `exo__Property_domain`). Everything else is dropped here,
+   * so the pass keeps only the ~hundreds of TBox files in memory.
+   */
+  private static async collectFile(
     filePath: string,
-    registry: ShapeRegistry,
+    scan: FsScan,
     readFile: (p: string, enc: "utf-8") => Promise<string>,
-    path?: typeof import("path"),
+    path: typeof import("path"),
   ): Promise<void> {
     let content: string;
     try {
@@ -391,27 +569,48 @@ export class ShapeLoader {
     const fm = ShapeLoader.parseFrontmatter(content);
     if (!fm) return;
 
-    // Must be a property definition.
+    const superClasses = ShapeLoader.asArray(fm["exo__Class_superClass"]);
+    if (superClasses.length > 0) {
+      const childKeys = [path.basename(filePath, ".md")];
+      const uidRaw = fm["exo__Asset_uid"];
+      if (typeof uidRaw === "string" && uidRaw.trim().length > 0) {
+        childKeys.push(uidRaw.trim().replace(/^["']|["']$/g, ""));
+      }
+      const labelRaw = fm["exo__Asset_label"];
+      if (typeof labelRaw === "string" && labelRaw.trim().length > 0) {
+        childKeys.push(labelRaw.trim().replace(/^["']|["']$/g, ""));
+      }
+      scan.classEdges.push({
+        childKeys,
+        parentKeys: superClasses.flatMap((v) => ShapeLoader.wikilinkClassKeys(v)),
+      });
+    }
+
+    if (ShapeLoader.asArray(fm["exo__Property_domain"]).length > 0) {
+      scan.candidates.push({ filePath, fm });
+    }
+  }
+
+  private static registerCandidate(
+    candidate: FsCandidate,
+    registry: ShapeRegistry,
+    propertyClassKeys: ReadonlySet<string>,
+    path?: typeof import("path"),
+  ): void {
+    const { filePath, fm } = candidate;
+
+    // Must be a property definition: some `exo__Instance_class` value names a
+    // class that IS-A `exo__Property` (see propertyClassKeysFromEdges).
     // After RFC-004 UUID-canonicalization (2026-05-16), TBox class IRIs in
     // exo__Instance_class are written as pure UID wikilinks (no alias suffix),
-    // so we must accept both:
-    //   - label-form `[[exo__Property]]` / `[[exo__ObjectProperty]]` (legacy)
+    // so every form is accepted:
+    //   - label-form `[[exo__Property]]` / `[[exo__DatatypeProperty]]` (legacy)
     //   - UID+alias form `[[<uid>|exo__Property]]` (intermediate canon)
     //   - pure UID form `[[<uid>]]` (current strip-canon)
-    const EXO_PROPERTY_UID = "38277bfa-d7f9-4a75-b856-b23276ab0db3";
-    const EXO_OBJECT_PROPERTY_UID = "9a1cf31c-9d41-4ef3-9023-584a8d087d16";
     const classes = ShapeLoader.asArray(fm["exo__Instance_class"]);
-    const isProperty = classes.some((c) => {
-      const ref = ShapeLoader.extractWikilinkRef(c);
-      return (
-        ref === "exo__Property" ||
-        ref === "exo__ObjectProperty" ||
-        ref === EXO_PROPERTY_UID ||
-        ref === EXO_OBJECT_PROPERTY_UID ||
-        ref?.includes("|exo__Property") ||
-        ref?.includes("|exo__ObjectProperty")
-      );
-    });
+    const isProperty = classes.some((c) =>
+      ShapeLoader.wikilinkClassKeys(c).some((k) => propertyClassKeys.has(k)),
+    );
     if (!isProperty) return;
 
     // Resolve label: prefer explicit `exo__Asset_label`, fall back to filename
