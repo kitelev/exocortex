@@ -240,6 +240,7 @@ async function executeOnTarget(
   vaultPath: string,
   tripleStore: InMemoryTripleStore,
   workflowResolver: WorkflowResolver,
+  nodeFsAdapter: TripleStoreIndexedFsAdapter,
   commandUid: string,
   targetRelative: string,
   options: ApplyOptions,
@@ -391,15 +392,14 @@ async function executeOnTarget(
     new EffortStatusWorkflow(),
     new StatusTimestampService(vaultAdapter),
   );
-  // #4272 — the create-instance resolvers below (class label → uid,
-  // isDefinedBy → folder, targetRef → frontmatter, templateRef → path) each
-  // bottomed out in NodeFsAdapter.findFilesByMetadata: a glob + read + YAML
-  // parse of EVERY markdown file per call (11 scans = 183 317 reads for one
-  // create-task-instance on a 16 664-file vault). The store loaded above
-  // already holds every exo:Asset_uid / exo:Asset_label / exo:Asset_aliases
-  // triple, so this adapter answers those lookups from an index over it —
-  // same set, same order as the scan — and reads only the files it resolves to.
-  const nodeFsAdapter = new TripleStoreIndexedFsAdapter(vaultPath, tripleStore);
+  // #4272 — `nodeFsAdapter` is the batch-level TripleStoreIndexedFsAdapter
+  // (built once in the action handler): the create-instance resolvers below
+  // (class label → uid, isDefinedBy → folder, targetRef → frontmatter,
+  // templateRef → path) each bottomed out in NodeFsAdapter.findFilesByMetadata
+  // — a glob + read + YAML parse of EVERY markdown file per call (11 scans =
+  // 183 317 reads for one create-task-instance on a 16 664-file vault). The
+  // adapter answers those lookups from an index over the loader's EXPLICIT
+  // triples and reads only the files it resolves to.
   populateCliServiceRegistry(serviceRegistry, {
     vaultAdapter,
     fsAdapter: nodeFsAdapter,
@@ -629,6 +629,14 @@ export function applyCommand(): Command {
           }
           const tripleStore = new InMemoryTripleStore();
           await tripleStore.addAll(loaded.triples);
+          // #4272 — one index-backed fs adapter for the whole batch, fed the
+          // loader's EXPLICIT triples (the store above also holds the inferred
+          // layer in its default graph) and the files the loader committed no
+          // triples for (see TripleStoreIndexedFsAdapter).
+          const nodeFsAdapter = new TripleStoreIndexedFsAdapter(vaultPath, {
+            explicitTriples: loaded.triples.slice(0, loaded.explicitCount),
+            zeroTriplePaths: loaded.zeroTriplePaths,
+          });
 
           // RFC 36347daf Phase 3 — construct WorkflowResolver once for the whole
           // batch so its per-class cache survives across stdin-piped targets
@@ -678,6 +686,7 @@ export function applyCommand(): Command {
               vaultPath,
               tripleStore,
               workflowResolver,
+              nodeFsAdapter,
               commandUid,
               target,
               options,

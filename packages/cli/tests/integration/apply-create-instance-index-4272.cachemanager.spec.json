@@ -1,0 +1,24 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/apply-create-instance-index-4272.integration.test.ts 2>&1",
+  "red_re": "› ([UI]\\d+\\w*) ",
+  "_doc": "Revert-verify mutants for #4272 (req 5ab3d237) on the cache path's boundary reporting, subject packages/cli/src/cache/CacheManager.ts. Same harness; I1c (--use-cache on an `index`-built cache) is the axis.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/cache/CacheManager.ts",
+  "mutants": {
+    "C1_cache_hit_zeroTriplePaths_empty": {
+      "from": "        explicitCount: CacheManager.explicitCountOf(cached),\n        zeroTriplePaths: CacheManager.zeroTriplePathsOf(cached),",
+      "to": "        explicitCount: CacheManager.explicitCountOf(cached),\n        zeroTriplePaths: [],",
+      "expect": ["I1c"]
+    },
+    "C2_cache_hit_explicitCount_covers_the_inferred_layer": {
+      "from": "        explicitCount: CacheManager.explicitCountOf(cached),\n        zeroTriplePaths: CacheManager.zeroTriplePathsOf(cached),",
+      "to": "        explicitCount: Number.MAX_SAFE_INTEGER,\n        zeroTriplePaths: CacheManager.zeroTriplePathsOf(cached),",
+      "expect": ["I1c"]
+    }
+  }
+}

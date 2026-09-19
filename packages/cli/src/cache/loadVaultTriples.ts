@@ -45,6 +45,25 @@ export interface LoadVaultTriplesResult {
    * `full-parse`). Holds the loaded state for a later {@link writeThroughCache}.
    */
   cacheManager?: CacheManager;
+  /**
+   * #4272 — `triples[0 .. explicitCount)` are the EXPLICIT triples (what each
+   * file's own frontmatter states); the rest is the inferred layer a cache
+   * built by `index` carries (a full parse has none: `explicitCount ===
+   * triples.length`). The command's store holds both in one default graph,
+   * so a consumer that must not see inherited values (the create-instance
+   * resolvers' index) takes this boundary, not the store.
+   */
+  explicitCount: number;
+  /**
+   * #4272 — walked markdown files the loader committed NO triples for: skipped
+   * by an invariant violation (two-phase commit #2997) or without frontmatter.
+   * The full parse names exactly the skipped ones (`skippedFiles`); the cache
+   * names every entry with an empty triple list (skipped + genuinely empty —
+   * the cache format does not distinguish them). The frontmatter scan those
+   * resolvers replaced still read these files, so the index reads exactly
+   * them, once, to answer identically.
+   */
+  zeroTriplePaths: string[];
 }
 
 /**
@@ -87,6 +106,8 @@ export async function loadVaultTriples(
       mode: cacheResult.mode,
       reparsedFiles: cacheResult.reparsedFiles,
       cacheManager,
+      explicitCount: cacheResult.explicitCount,
+      zeroTriplePaths: cacheResult.zeroTriplePaths,
     };
   }
 
@@ -94,8 +115,20 @@ export async function loadVaultTriples(
   const vaultAdapter =
     options.vaultAdapter ?? new FileSystemVaultAdapter(vaultPath);
   const converter = new NoteToRDFConverter(vaultAdapter);
-  const triples = await converter.convertVault();
-  return { triples, cacheHit: false, mode: "full-parse" };
+  const zeroTriplePaths: string[] = [];
+  const triples = await converter.convertVault({
+    // #4272 — the same walk names the files it committed nothing for.
+    onSkippedFiles: (skipped) => {
+      for (const f of skipped) zeroTriplePaths.push(f.path);
+    },
+  });
+  return {
+    triples,
+    cacheHit: false,
+    mode: "full-parse",
+    explicitCount: triples.length,
+    zeroTriplePaths,
+  };
 }
 
 /**

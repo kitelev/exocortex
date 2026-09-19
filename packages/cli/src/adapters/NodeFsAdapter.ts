@@ -91,7 +91,12 @@ export class NodeFsAdapter implements IFileSystemAdapter {
     const relativePaths = files.map((f: string) =>
       path.relative(this.rootPath, f),
     );
-    return relativePaths;
+    // #4272 — glob walks directories concurrently, so its order differed from
+    // call to call (measured: first difference at index 36 of 16 665 in one
+    // process). Every `findFilesByMetadata` consumer takes `[0]`, which made a
+    // duplicated value resolve non-deterministically; sorted, the scan's order
+    // is the vault-relative path order the index-backed adapter uses too.
+    return relativePaths.sort();
   }
 
   async findFilesByMetadata(query: Record<string, any>): Promise<string[]> {
@@ -295,7 +300,10 @@ export class NodeFsAdapter implements IFileSystemAdapter {
     return parseYamlFrontmatterTolerant(match[1]) ?? {};
   }
 
-  private matchesQuery(
+  // protected (not private): TripleStoreIndexedFsAdapter verifies every index
+  // candidate through THIS predicate, so an index hit is by construction a
+  // file the scan would have returned (#4272).
+  protected matchesQuery(
     metadata: Record<string, any>,
     query: Record<string, any>,
   ): boolean {
