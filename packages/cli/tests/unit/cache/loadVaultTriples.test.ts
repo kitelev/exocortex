@@ -107,15 +107,36 @@ describe(`loadVaultTriples / write-through helpers (#4264) ${REQ}`, () => {
   });
 
   it(`L5 the notices name the mode and the counts; only the failure line says the command result is unaffected ${REQ}`, () => {
-    expect(cacheLoadNotice({ triples: [], cacheHit: true, mode: "hit", reparsedFiles: 0 })).toBe(
-      "⚡ triple cache: hit",
-    );
-    expect(cacheLoadNotice({ triples: [], cacheHit: true, mode: "delta", reparsedFiles: 3 })).toBe(
-      "♻️  triple cache: delta (3 file(s) re-parsed)",
-    );
-    expect(cacheLoadNotice({ triples: [], cacheHit: false, mode: "rebuild", reparsedFiles: 40 })).toBe(
-      "🔨 triple cache: rebuild (40 file(s) parsed, cache written)",
-    );
+    expect(
+      cacheLoadNotice({
+        triples: [],
+        cacheHit: true,
+        mode: "hit",
+        reparsedFiles: 0,
+        explicitCount: 0,
+        zeroTriplePaths: [],
+      }),
+    ).toBe("⚡ triple cache: hit");
+    expect(
+      cacheLoadNotice({
+        triples: [],
+        cacheHit: true,
+        mode: "delta",
+        reparsedFiles: 3,
+        explicitCount: 0,
+        zeroTriplePaths: [],
+      }),
+    ).toBe("♻️  triple cache: delta (3 file(s) re-parsed)");
+    expect(
+      cacheLoadNotice({
+        triples: [],
+        cacheHit: false,
+        mode: "rebuild",
+        reparsedFiles: 40,
+        explicitCount: 0,
+        zeroTriplePaths: [],
+      }),
+    ).toBe("🔨 triple cache: rebuild (40 file(s) parsed, cache written)");
     expect(writeThroughNotice({ mode: "delta", reparsedFiles: 2 })).toBe(
       "💾 triple cache: write-through persisted (2 file(s) re-parsed)",
     );
@@ -128,5 +149,66 @@ describe(`loadVaultTriples / write-through helpers (#4264) ${REQ}`, () => {
     expect(writeThroughNotice({ mode: "failed", reparsedFiles: 0, reason: "disk full" })).toMatch(
       /^⚠ triple cache: write-through failed \(disk full\) — command result unaffected/,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #4272 — the `zeroTriplePaths` population handed to the index-backed adapter.
+// ---------------------------------------------------------------------------
+const REQ_4272 = "@req:5ab3d237-cae9-498c-925c-6951b9c9c5db";
+
+describe(`loadVaultTriples — zeroTriplePaths population (#4272) ${REQ_4272}`, () => {
+  let tempDir: string;
+  let vaultPath: string;
+
+  beforeEach(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "lvt-4272-"));
+    vaultPath = path.join(tempDir, "vault");
+    await fs.ensureDir(path.join(vaultPath, "a"));
+    // a committed asset (own triples)
+    await fs.writeFile(
+      path.join(vaultPath, "a", "42720000-0000-4000-8000-000000000001.md"),
+      "---\nexo__Asset_uid: 42720000-0000-4000-8000-000000000001\nexo__Asset_label: Committed\nexo__Instance_class: ems__Task\n---\n",
+      "utf-8",
+    );
+    // an invariant-skipped asset (present but EMPTY optional → the loader commits nothing)
+    await fs.writeFile(
+      path.join(vaultPath, "a", "42720000-0000-4000-8000-000000000002.md"),
+      "---\nexo__Asset_uid: 42720000-0000-4000-8000-000000000002\nexo__Asset_label: Skipped\nexo__Instance_class: ems__Task\nems__Effort_parent:\n---\n",
+      "utf-8",
+    );
+    // a frontmatter-less note: walked, converted, ZERO triples committed
+    await fs.writeFile(
+      path.join(vaultPath, "a", "plain-note.md"),
+      "Just prose, no frontmatter.\n",
+      "utf-8",
+    );
+  });
+
+  afterEach(async () => {
+    jest.restoreAllMocks();
+    await fs.remove(tempDir);
+  });
+
+  it(`U11 full parse names every walked file that committed no triples — the invariant-skipped asset AND the frontmatter-less note — exactly as the cache paths do (rebuild, then hit) ${REQ_4272}`, async () => {
+    const expected = [
+      "a/42720000-0000-4000-8000-000000000002.md",
+      "a/plain-note.md",
+    ];
+    const full = await loadVaultTriples(vaultPath, { useCache: false });
+    expect(full.mode).toBe("full-parse");
+    expect([...full.zeroTriplePaths].sort()).toEqual(expected);
+    expect(full.explicitCount).toBe(full.triples.length);
+    expect(full.explicitCount).toBeGreaterThan(0);
+
+    const rebuild = await loadVaultTriples(vaultPath, { useCache: true });
+    expect(rebuild.mode).toBe("rebuild");
+    expect([...rebuild.zeroTriplePaths].sort()).toEqual(expected);
+    expect(rebuild.explicitCount).toBe(full.explicitCount);
+
+    const hit = await loadVaultTriples(vaultPath, { useCache: true });
+    expect(hit.mode).toBe("hit");
+    expect([...hit.zeroTriplePaths].sort()).toEqual(expected);
+    expect(hit.explicitCount).toBe(full.explicitCount);
   });
 });

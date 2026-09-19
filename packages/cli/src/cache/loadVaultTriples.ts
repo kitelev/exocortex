@@ -115,13 +115,22 @@ export async function loadVaultTriples(
   const vaultAdapter =
     options.vaultAdapter ?? new FileSystemVaultAdapter(vaultPath);
   const converter = new NoteToRDFConverter(vaultAdapter);
-  const zeroTriplePaths: string[] = [];
+  // #4272 — the same population rule as the cache entries (`CacheManager.
+  // buildInternal`): every walked file that committed NO triples — skipped by
+  // an invariant, FileSpace-excluded, frontmatter-less — is named so the index
+  // still reads it itself. Full parse and both cache paths therefore agree on
+  // what `zeroTriplePaths` holds (a cache entry with `triples: []` is exactly
+  // "walked, committed nothing").
+  const files = vaultAdapter.getAllFiles();
+  const committed = new Map<string, number>();
   const triples = await converter.convertVault({
-    // #4272 — the same walk names the files it committed nothing for.
-    onSkippedFiles: (skipped) => {
-      for (const f of skipped) zeroTriplePaths.push(f.path);
+    onFileTriples: (file, own) => {
+      committed.set(file.path, own.length);
     },
   });
+  const zeroTriplePaths = files
+    .filter((f) => (committed.get(f.path) ?? 0) === 0)
+    .map((f) => f.path);
   return {
     triples,
     cacheHit: false,

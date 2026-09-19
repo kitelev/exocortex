@@ -1,5 +1,5 @@
 /**
- * #4272 — req 5ab3d237-cae9-498c-925c-6951b9c9c5db AC1 / AC3.
+ * #4272 — @req:5ab3d237-cae9-498c-925c-6951b9c9c5db AC1 / AC3.
  *
  * Drives the REAL `applyCommand().parseAsync([...])` against a temp vault whose
  * create-instance grounding exercises every resolver `apply.ts` wires on the
@@ -32,7 +32,14 @@
  *       byte-identical by construction
  */
 import "reflect-metadata";
-import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
+import {
+  jest,
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+} from "@jest/globals";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -45,9 +52,12 @@ import {
 import { NodeFsAdapter } from "../../src/adapters/NodeFsAdapter.js";
 import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
 import { TripleStoreIndexedFsAdapter } from "../../src/adapters/TripleStoreIndexedFsAdapter.js";
+import { CacheManager } from "../../src/cache/CacheManager.js";
+import type { LoadOrBuildResult } from "../../src/cache/CacheManager.js";
 
 const { applyCommand } = await import("../../src/commands/apply.js");
-const { sparqlIndexCommand } = await import("../../src/commands/sparql-index.js");
+const { sparqlIndexCommand } =
+  await import("../../src/commands/sparql-index.js");
 
 const COMMAND_UID = "dddddddd-4272-4000-8000-000000000001";
 const GROUNDING_UID = "dddddddd-4272-4000-8000-000000000002";
@@ -256,7 +266,9 @@ function seedVault(root: string): void {
   }
 }
 
-describe("#4272 apply create-instance resolvers answer from the store index (req 5ab3d237)", () => {
+const REQ = "@req:5ab3d237-cae9-498c-925c-6951b9c9c5db";
+
+describe(`#4272 apply create-instance resolvers answer from the store index (req 5ab3d237) ${REQ}`, () => {
   let root: string;
   let processExitSpy: jest.SpiedFunction<typeof process.exit>;
   let consoleLogSpy: jest.SpiedFunction<typeof console.log>;
@@ -265,7 +277,9 @@ describe("#4272 apply create-instance resolvers answer from the store index (req
   beforeEach(() => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), "exo-apply-index-4272-"));
     seedVault(root);
-    processExitSpy = jest.spyOn(process, "exit").mockImplementation(((code?: number) => {
+    processExitSpy = jest.spyOn(process, "exit").mockImplementation(((
+      code?: number,
+    ) => {
       throw new Error(`__process_exit_${code ?? 0}__`);
     }) as never);
     consoleLogSpy = jest.spyOn(console, "log").mockImplementation(() => {});
@@ -309,22 +323,39 @@ describe("#4272 apply create-instance resolvers answer from the store index (req
     if (!fs.existsSync(full)) return [];
     return fs
       .readdirSync(full)
-      .filter((f) => f.endsWith(".md") && !f.startsWith(ONTO_UID) && !f.startsWith(TARGET_UID));
+      .filter(
+        (f) =>
+          f.endsWith(".md") &&
+          !f.startsWith(ONTO_UID) &&
+          !f.startsWith(TARGET_UID),
+      );
   }
 
-  async function assertCreateReadsOnlyItsFiles(extra: string[]): Promise<string> {
+  async function assertCreateReadsOnlyItsFiles(
+    extra: string[],
+  ): Promise<string> {
     const walk = jest.spyOn(NodeFsAdapter.prototype, "getMarkdownFiles");
     const meta = jest.spyOn(NodeFsAdapter.prototype, "getFileMetadata");
-    const look = jest.spyOn(TripleStoreIndexedFsAdapter.prototype, "findFilesByMetadata");
+    const look = jest.spyOn(
+      TripleStoreIndexedFsAdapter.prototype,
+      "findFilesByMetadata",
+    );
     await runApply(extra);
     // The alias-only condition forces the resolver's ALIAS pass (label pass misses).
-    expect(look.mock.calls.map((c) => c[0])).toContainEqual({ aliases: "TaskProto" });
+    expect(look.mock.calls.map((c) => c[0])).toContainEqual({
+      aliases: "TaskProto",
+    });
 
     // The resolvers RESOLVED — through the index, not by falling back to label-form.
     const created = createdIn("onto");
     expect(created).toHaveLength(1);
-    const content = fs.readFileSync(path.join(root, "onto", created[0]), "utf-8");
-    expect(content).toContain(`exo__Instance_class:\n  - "[[${CLASS_TASK_UID}]]"`); // classLabelToUid
+    const content = fs.readFileSync(
+      path.join(root, "onto", created[0]),
+      "utf-8",
+    );
+    expect(content).toContain(
+      `exo__Instance_class:\n  - "[[${CLASS_TASK_UID}]]"`,
+    ); // classLabelToUid
     expect(content).toContain(`exo__Asset_isDefinedBy: "[[${ONTO_UID}]]"`); // rule 1 matched via label → uid
     expect(content).not.toContain("ems__Effort_area"); // rule 2 (ems__Task) must NOT match a prototype
     expect(createdIn("proto")).toEqual([]); // co-located by refToFolder, not the host folder
@@ -337,38 +368,117 @@ describe("#4272 apply create-instance resolvers answer from the store index (req
     return content;
   }
 
-  it("I1 apply create-instance reads only target + resolved refs (getMarkdownFiles never, no noise reads) — full parse", async () => {
+  it(`I1 apply create-instance reads only target + resolved refs (getMarkdownFiles never, no noise reads) — full parse ${REQ}`, async () => {
     await assertCreateReadsOnlyItsFiles([]);
   });
 
-  it("I1c apply create-instance reads only target + resolved refs — --use-cache on a cache built WITH the inferred layer (AC4)", async () => {
+  it(`I1c apply create-instance reads only target + resolved refs — --use-cache on a cache built WITH the inferred layer (AC4) ${REQ}`, async () => {
     // The real `index` command: explicit triples + the materialised inferred layer
     // (60 inherited `TaskProto` aliases) persisted into the cache.
     await sparqlIndexCommand().parseAsync(["node", "index", "--vault", root]);
-    const cache = JSON.parse(fs.readFileSync(path.join(root, ".exocortex", "cache", "triples.json"), "utf-8")) as {
-      inferred: Array<{ predicate: { value: string }; object: { value: string } }>;
+    const cache = JSON.parse(
+      fs.readFileSync(
+        path.join(root, ".exocortex", "cache", "triples.json"),
+        "utf-8",
+      ),
+    ) as {
+      inferred: Array<{
+        predicate: { value: string };
+        object: { value: string };
+      }>;
     };
     const inheritedAliases = cache.inferred.filter(
-      (t) => t.predicate.value.endsWith("#Asset_aliases") && t.object.value === "TaskProto",
+      (t) =>
+        t.predicate.value.endsWith("#Asset_aliases") &&
+        t.object.value === "TaskProto",
     );
     expect(inheritedAliases).toHaveLength(NOISE_COUNT);
     await assertCreateReadsOnlyItsFiles(["--use-cache"]);
   });
 
-  it("I2 the three resolver factories answer identically on the indexed adapter and on the scan", async () => {
-    const converter = new NoteToRDFConverter(new FileSystemVaultAdapter(root));
-    const zeroTriplePaths: string[] = [];
-    const explicitTriples = await converter.convertVault({
-      onSkippedFiles: (skipped) => {
-        for (const f of skipped) zeroTriplePaths.push(f.path);
-      },
-    });
+  /** The loader's answer for THIS `apply` (spied on `CacheManager.loadOrBuild`). */
+  async function loadedBy(
+    lob: jest.SpiedFunction<CacheManager["loadOrBuild"]>,
+  ): Promise<LoadOrBuildResult> {
+    expect(lob).toHaveBeenCalledTimes(1);
+    return (await lob.mock.results[0]!.value) as LoadOrBuildResult;
+  }
+
+  it(`I1d --use-cache on the DELTA path: a prototype-bearing file changed after \`index\`, the inferred layer is re-materialised — and still never reaches the index (AC4) ${REQ}`, async () => {
+    await sparqlIndexCommand().parseAsync(["node", "index", "--vault", root]);
+    // Touch ONE instance of the target prototype (size + mtime change → delta
+    // re-parse; it carries `exo__Asset_prototype` → the inference inputs changed
+    // → the 60 inherited aliases are recomputed and concatenated after the
+    // explicit triples in `loaded.triples`).
+    const touched = fs
+      .readdirSync(path.join(root, "noise"))
+      .filter((f) => f.endsWith(".md"))
+      .sort()[0]!;
+    const noisePath = path.join(root, "noise", touched);
+    fs.writeFileSync(
+      noisePath,
+      fs
+        .readFileSync(noisePath, "utf-8")
+        .replace("Unrelated asset", "Unrelated asset (touched after index)"),
+    );
+    const later = new Date(Date.now() + 5_000);
+    fs.utimesSync(noisePath, later, later);
+    const lob = jest.spyOn(CacheManager.prototype, "loadOrBuild");
+    await assertCreateReadsOnlyItsFiles(["--use-cache"]);
+    const loaded = await loadedBy(lob);
+    expect(loaded.mode).toBe("delta");
+    expect(loaded.inferredRecomputed).toBe(true);
+    // the boundary the index is cut at: explicit only, the inferred tail excluded
+    expect(loaded.explicitCount).toBeLessThan(loaded.triples.length);
+    expect(loaded.triples.length - loaded.explicitCount).toBeGreaterThanOrEqual(
+      NOISE_COUNT,
+    );
+  });
+
+  it(`I1e --use-cache on the COLD path (no cache yet → rebuild): the index is fed the freshly built explicit triples, not an empty source ${REQ}`, async () => {
+    expect(fs.existsSync(path.join(root, ".exocortex", "cache"))).toBe(false);
+    const lob = jest.spyOn(CacheManager.prototype, "loadOrBuild");
+    await assertCreateReadsOnlyItsFiles(["--use-cache"]);
+    const loaded = await loadedBy(lob);
+    expect(loaded.mode).toBe("rebuild");
+    expect(loaded.explicitCount).toBe(loaded.triples.length);
+    expect(loaded.explicitCount).toBeGreaterThan(0);
+  });
+
+  it(`I2 the three resolver factories answer identically on the indexed adapter and on the scan ${REQ}`, async () => {
+    const vaultAdapter = new FileSystemVaultAdapter(root);
+    const converter = new NoteToRDFConverter(vaultAdapter);
+    // Same population rule as `loadVaultTriples`: walked files with no committed triples.
+    const files = vaultAdapter.getAllFiles();
+    const committed = new Map<string, number>();
+    const { triples: explicitTriples } =
+      await converter.convertVaultWithValidation({
+        strict: false,
+        files,
+        onFileTriples: (file, own) => {
+          committed.set(file.path, own.length);
+        },
+      });
+    const zeroTriplePaths = files
+      .filter((f) => (committed.get(f.path) ?? 0) === 0)
+      .map((f) => f.path);
     const scan = new NodeFsAdapter(root);
-    const idx = new TripleStoreIndexedFsAdapter(root, { explicitTriples, zeroTriplePaths });
+    const idx = new TripleStoreIndexedFsAdapter(root, {
+      explicitTriples,
+      zeroTriplePaths,
+    });
 
     const labelScan = createVaultFrontmatterClassLabelResolver(scan);
     const labelIdx = createVaultFrontmatterClassLabelResolver(idx);
-    for (const label of ["ems__Task", "Task", "TaskProto", "ems__TaskPrototype", "ems__Area", "nope", ""]) {
+    for (const label of [
+      "ems__Task",
+      "Task",
+      "TaskProto",
+      "ems__TaskPrototype",
+      "ems__Area",
+      "nope",
+      "",
+    ]) {
       expect(await labelIdx(label)).toBe(await labelScan(label));
     }
     expect(await labelIdx("ems__Task")).toBe(CLASS_TASK_UID);
@@ -376,17 +486,29 @@ describe("#4272 apply create-instance resolvers answer from the store index (req
 
     const folderScan = createVaultFrontmatterRefToFolderResolver(scan);
     const folderIdx = createVaultFrontmatterRefToFolderResolver(idx);
-    for (const ref of [ONTO_UID, AREA_UID, TARGET_UID, "00000000-0000-4000-8000-000000000000", ""]) {
+    for (const ref of [
+      ONTO_UID,
+      AREA_UID,
+      TARGET_UID,
+      "00000000-0000-4000-8000-000000000000",
+      "",
+    ]) {
       expect(await folderIdx(ref)).toBe(await folderScan(ref));
     }
     expect(await folderIdx(ONTO_UID)).toBe("onto");
 
     const fmScan = createVaultFrontmatterRefToFrontmatterResolver(scan);
     const fmIdx = createVaultFrontmatterRefToFrontmatterResolver(idx);
-    for (const ref of [ONTO_UID, TARGET_UID, "00000000-0000-4000-8000-000000000000"]) {
+    for (const ref of [
+      ONTO_UID,
+      TARGET_UID,
+      "00000000-0000-4000-8000-000000000000",
+    ]) {
       expect(await fmIdx(ref)).toEqual(await fmScan(ref));
     }
-    expect((await fmIdx(ONTO_UID))?.exo__Asset_label).toBe("My efforts ontology");
+    expect((await fmIdx(ONTO_UID))?.exo__Asset_label).toBe(
+      "My efforts ontology",
+    );
     expect(idx.stats.scanFallbacks).toBe(0);
     expect(idx.stats.indexedLookups).toBeGreaterThan(0);
   });

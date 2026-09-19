@@ -70,11 +70,15 @@ type Index = Map<string, Map<string, string[]>>;
  *
  * Two population differences between the loader and the scan are closed
  * explicitly:
- * - files the loader committed no triples for (skipped by an invariant
- *   violation, two-phase commit #2997 — or without frontmatter) are read ONCE
- *   while the index is built and indexed from their own frontmatter
- *   ({@link TripleStoreIndexSource.zeroTriplePaths}; 2 of 16 664 on the live
- *   vault, counted in {@link stats.zeroTripleReads});
+ * - files the loader committed no triples for — skipped by an invariant
+ *   violation (two-phase commit #2997), excluded under a FileSpace mount, or
+ *   simply without frontmatter — are read ONCE while the index is built and
+ *   indexed from their own frontmatter ({@link TripleStoreIndexSource.zeroTriplePaths};
+ *   2 of 16 664 on the live vault, counted in {@link stats.zeroTripleReads}).
+ *   The population rule is the cache entry's (`triples: []` = walked, committed
+ *   nothing) and `loadVaultTriples` applies the SAME rule on the full-parse
+ *   path (`getAllFiles − committed`), so all three load paths — full parse,
+ *   cache hit / delta, cold rebuild — hand the index the same set;
  * - a path with a dot-segment (`.hidden.md`, `.trash/x.md`) is never a
  *   candidate: the scan's glob excludes it (`dot: false`) while the loader's
  *   walk does not.
@@ -85,7 +89,11 @@ type Index = Map<string, Map<string, string[]>>;
  * stored as an UNQUOTED date (js-yaml → `Date`) matches only its
  * `String(Date)` rendering in the scan; a `[[uid|alias]]` label / alias
  * matches only the literal text `uid|alias` in the scan (the converter drops
- * the display alias before resolving).
+ * the display alias before resolving); a `[[label]]` wikilink whose target is
+ * resolved by the converter CASE-INSENSITIVELY through the alias index
+ * (`[[ql]]` → the asset aliased `QL`) yields the target's own names as keys
+ * (`QL`, basename) while the scan's key is the literal `ql` (no case folding
+ * in `normalizeValue`) — a lookup for `ql` finds no candidate.
  *
  * - **Value form.** `matchesQuery` compares the RAW frontmatter value after
  *   `normalizeValue`; the converter rewrites values on the way into the store

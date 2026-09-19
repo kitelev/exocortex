@@ -839,22 +839,15 @@ export class NoteToRDFConverter {
   async convertVault(
     options: {
       excludedFolders?: string[];
-      /**
-       * #4272 — receives the files the walk committed NO triples for (skipped
-       * by an invariant violation — see `convertVaultWithValidation`). The
-       * triple set is untouched; a consumer that mirrors the vault as an index
-       * needs the skipped paths to know which files it must still read itself.
-       */
-      onSkippedFiles?: (
-        skipped: ReadonlyArray<{ path: string; reason: string }>,
-      ) => void;
+      /** Per-file commit observer — see `convertVaultWithValidation` (#4263). */
+      onFileTriples?: (file: IFile, triples: Triple[]) => void;
     } = {},
   ): Promise<Triple[]> {
     const result = await this.convertVaultWithValidation({
       strict: false,
       excludedFolders: options.excludedFolders,
+      onFileTriples: options.onFileTriples,
     });
-    options.onSkippedFiles?.(result.skippedFiles);
     return result.triples;
   }
 

@@ -89,6 +89,26 @@
       "from": "  constructor(\n    rootPath: string,\n    private readonly source: TripleStoreIndexSource,\n  ) {\n    super(rootPath);\n  }",
       "to": "  constructor(\n    rootPath: string,\n    private readonly source: TripleStoreIndexSource,\n  ) {\n    super(rootPath);\n  }\n\n  protected override normalizeValue(value: any): string {\n    return super.normalizeValue(value).toLowerCase();\n  }",
       "expect": ["U1b"]
+    },
+    "M18_forget_is_a_no-op_(stale_keys_survive_own_writes)": {
+      "from": "  private forget(index: Index, filePath: string): void {\n    const keys = this.pathKeys.get(filePath);",
+      "to": "  private forget(index: Index, filePath: string): void {\n    const keys = this.pathKeys.get(filePath + \"__revert-disabled__\");",
+      "expect": ["U9"]
+    },
+    "M19_rename_drops_the_keys_instead_of_moving_them": {
+      "from": "    for (const [key, norm] of keys) this.addKey(index, key, norm, to);",
+      "to": "    void keys;\n    void to;",
+      "expect": ["U9"]
+    },
+    "M20_addKey_dedup_removed_(a_path_listed_twice_under_one_key)": {
+      "from": "    else if (!list.includes(filePath)) list.push(filePath);",
+      "to": "    else list.push(filePath);",
+      "expect": ["U1a"]
+    },
+    "M21_index_memo_removed_(rebuilt_on_every_lookup)": {
+      "from": "    if (this.indexPromise === null) {\n      this.indexPromise = this.buildIndex();\n    }\n    return this.indexPromise;",
+      "to": "    this.indexPromise = this.buildIndex();\n    return this.indexPromise;",
+      "expect": ["U2", "U8"]
     }
   }
 }
