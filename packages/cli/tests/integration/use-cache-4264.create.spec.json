@@ -1,6 +1,7 @@
 {
   "_doc": "Revert-verify mutants for #4264 (req cb707868-356f-495d-825a-182e66ba8bcd), subject packages/cli/src/commands/create.ts. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py packages/cli/tests/integration/use-cache-4264.create.spec.json after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's subject and runs the two #4264 suites; `expect` names the axes that MUST go red). Six specs, one per subject file, because the driver mutates one file per spec. Recorded runs: see PR body.",
   "_note_C1": "C1 (construct the CacheManager without the flag) was DROPPED when write-through became opt-in (decision ae0b4fce): with the write-through gated on --write-through (C4), a constructed-but-unused CacheManager reads and writes nothing, so the guard's only remaining effect is the lazy module load, which jest cannot observe (the suites import the module themselves). The guard stays in create.ts for the default path's module graph; it is documented there as not axis-locked (integration-test-revert-verify §A35/§A43).",
+  "_note_C4": "Since review r2 N5 the CacheManager is constructed only under --validate or --write-through, so a BARE create --use-cache (axis A10c) is kept delta-only by TWO guards — the construction predicate and the write-through gate — and dropping either one alone is invisible there (§A43 dual guard; both at once is caught by A10c). C4 therefore expects A9: its cv0 case (create --validate real WITHOUT --write-through) constructs the manager for the validator, so the gate is the only thing standing between it and a write-through, and dropping the gate prints a second stderr line.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/cli/src/commands/create.ts",
   "symlink_node_modules": [
@@ -24,7 +25,7 @@
     "C4_write_through_flag_ignored_by_create_(always_writes_through)": {
       "from": "          if (cacheManager && options.writeThrough) {\n            const { writeThroughCache, writeThroughNotice } = await import(",
       "to": "          if (cacheManager) {\n            const { writeThroughCache, writeThroughNotice } = await import(",
-      "expect": ["A10c"]
+      "expect": ["A9"]
     },
     "C5_create_write_through_without_use_cache_not_refused": {
       "from": "      if (options.writeThrough && !options.useCache) {\n        process.stderr.write(",
