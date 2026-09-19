@@ -3,6 +3,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { ShapeLoader } from "../../src/services/ShapeLoader";
 import { ShapeRegistry } from "../../src/services/ShapeRegistry";
+import type { Shape } from "../../src/services/ShapeRegistry";
 import { IRI } from "../../src/domain/models/rdf/IRI";
 import { Literal } from "../../src/domain/models/rdf/Literal";
 import { Triple } from "../../src/domain/models/rdf/Triple";
@@ -1039,6 +1040,8 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
   const PROPERTY_UID = "38277bfa-d7f9-4a75-b856-b23276ab0db3";
   const DATATYPE_UID = "ae56ca4c-b610-42a4-a25d-058c23673296";
   const STRING_UID = "30d63ce4-e574-456c-8de8-2bf1a53688c1";
+  const OBJECT_PROPERTY_UID = "9a1cf31c-9d41-4ef3-9023-584a8d087d16";
+  const BOOLEAN_UID = "5f5d3f0e-0000-4000-8000-00000000b001";
   const classFile = (uid: string) => `obsidian://vault/tbox/exo/${uid}.md`;
 
   /** A property def typed ONLY `typeIRI`, range "xsd:integer", domain ems:Task. */
@@ -1137,6 +1140,17 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
     expect(unrelated.get(PROPERTY_IRI)).toBeUndefined();
   });
 
+  it("D7 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loadFromRDFGraph: the walk starts from BOTH seeds — exo:BooleanProperty ⊑ exo:ObjectProperty ⊑ exo:Property (the live exoas-exo shape) is registered", async () => {
+    const reg = await ShapeLoader.loadFromRDFGraph(
+      makeStore([
+        ...defTriples(`${EXO}BooleanProperty`),
+        ...classTriples(BOOLEAN_UID, "exo__BooleanProperty", `${EXO}ObjectProperty`),
+        ...classTriples(OBJECT_PROPERTY_UID, "exo__ObjectProperty", `${EXO}Property`),
+      ]),
+    );
+    expect(reg.get(PROPERTY_IRI)?.range).toEqual([`${XSD_NS}integer`]);
+  });
+
   // ── loadFromVaultFS ──
 
   const DEF_FM = (classValue: string) =>
@@ -1203,7 +1217,11 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
     await withVault(
       {
         "flow/def.md": DEF_FM(`[[${DATATYPE_UID}]]`),
-        "exo/exo__DatatypeProperty.md": CLASS_FM(DATATYPE_UID, "exo__DatatypeProperty", "[[exo__Property]]"),
+        // uid written as a quoted scalar — the quotes must not become part of the key
+        "exo/exo__DatatypeProperty.md": CLASS_FM(DATATYPE_UID, "exo__DatatypeProperty", "[[exo__Property]]").replace(
+          `exo__Asset_uid: ${DATATYPE_UID}`,
+          `exo__Asset_uid: "${DATATYPE_UID}"`,
+        ),
       },
       async (dir) => {
         expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.range).toEqual([
@@ -1231,11 +1249,15 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
         ]);
       },
     );
-    // Post-UID-canon class file referenced by its label (legacy def form): only exo__Asset_label can name it.
+    // Post-UID-canon class file referenced by its label (legacy def form): only exo__Asset_label can name it —
+    // written as a quoted scalar here, the form labels with special characters take.
     await withVault(
       {
         "flow/def.md": DEF_FM("[[exo__DatatypeProperty]]"),
-        [`exo/${DATATYPE_UID}.md`]: CLASS_FM(DATATYPE_UID, "exo__DatatypeProperty", "[[exo__Property]]"),
+        [`exo/${DATATYPE_UID}.md`]: CLASS_FM(DATATYPE_UID, "exo__DatatypeProperty", "[[exo__Property]]").replace(
+          "exo__Asset_label: exo__DatatypeProperty",
+          'exo__Asset_label: "exo__DatatypeProperty"',
+        ),
       },
       async (dir) => {
         expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.range).toEqual([
@@ -1312,16 +1334,30 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
     );
   });
 
-  it("P1 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loader parity: the SAME three files (DatatypeProperty-only def + its two class files) yield the SAME shape via loadFromRDFGraph (through NoteToRDFConverter) and via loadFromVaultFS", async () => {
+  it("F6 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loadFromVaultFS: the walk starts from BOTH seeds — [[<uid>]] of exo__BooleanProperty ⊑ exo__ObjectProperty ⊑ exo__Property is accepted", async () => {
+    await withVault(
+      {
+        "flow/def.md": DEF_FM(`[[${BOOLEAN_UID}]]`),
+        [`exo/${BOOLEAN_UID}.md`]: CLASS_FM(BOOLEAN_UID, "exo__BooleanProperty", `[[${OBJECT_PROPERTY_UID}]]`),
+        [`exo/${OBJECT_PROPERTY_UID}.md`]: CLASS_FM(OBJECT_PROPERTY_UID, "exo__ObjectProperty", `[[${PROPERTY_UID}]]`),
+      },
+      async (dir) => {
+        expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.range).toEqual([
+          `${XSD_NS}integer`,
+        ]);
+      },
+    );
+  });
+
+  /**
+   * Loader parity (§A40): the SAME files through NoteToRDFConverter + loadFromRDFGraph
+   * and through loadFromVaultFS must yield the same shape. Returns both.
+   */
+  async function parityShapes(files: Record<string, string>): Promise<{ viaGraph: unknown; viaFS: unknown }> {
     const { NoteToRDFConverter } = await import("../../src/services/NoteToRDFConverter");
     const { InMemoryTripleStore } = await import(
       "../../src/infrastructure/rdf/InMemoryTripleStore"
     );
-    const files: Record<string, string> = {
-      "flow/9d2f1a11-0000-4000-8000-000000000001.md": DEF_FM(`[[${DATATYPE_UID}]]`),
-      [`exo/${DATATYPE_UID}.md`]: CLASS_FM(DATATYPE_UID, "exo__DatatypeProperty", `[[${PROPERTY_UID}]]`),
-      [`exo/${PROPERTY_UID}.md`]: CLASS_FM(PROPERTY_UID, "exo__Property", "[[493c2ae2-de56-47ec-954d-2eb8cb49bff7]]"),
-    };
     // Frontmatter as Obsidian's metadataCache would hand it to the converter.
     const parseFm = (content: string): Record<string, unknown> => {
       const fm: Record<string, unknown> = {};
@@ -1366,15 +1402,45 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
       );
     }
     const viaGraph = (await ShapeLoader.loadFromRDFGraph(store)).get(PROPERTY_IRI);
-
+    let viaFS: unknown;
     await withVault(files, async (dir) => {
-      const viaFS = (await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI);
-      expect(viaFS).toBeDefined();
-      expect(viaGraph).toBeDefined();
-      expect(viaGraph).toEqual(viaFS);
-      expect(viaFS!.range).toEqual([`${XSD_NS}integer`]);
-      expect(viaFS!.minCount).toBe(1);
-      expect(viaFS!.cardinality).toBe("Single");
+      viaFS = (await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI);
     });
+    return { viaGraph, viaFS };
+  }
+
+  it("P1 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loader parity: the SAME three files (DatatypeProperty-only def + its two class files) yield the SAME shape via loadFromRDFGraph (through NoteToRDFConverter) and via loadFromVaultFS — and so does an exo__Property def (no churn on the previous form)", async () => {
+    const { viaGraph, viaFS } = await parityShapes({
+      "flow/9d2f1a11-0000-4000-8000-000000000001.md": DEF_FM(`[[${DATATYPE_UID}]]`),
+      [`exo/${DATATYPE_UID}.md`]: CLASS_FM(DATATYPE_UID, "exo__DatatypeProperty", `[[${PROPERTY_UID}]]`),
+      [`exo/${PROPERTY_UID}.md`]: CLASS_FM(PROPERTY_UID, "exo__Property", "[[493c2ae2-de56-47ec-954d-2eb8cb49bff7]]"),
+    });
+    expect(viaFS).toBeDefined();
+    expect(viaGraph).toBeDefined();
+    expect(viaGraph).toEqual(viaFS);
+    expect((viaFS as Shape).range).toEqual([`${XSD_NS}integer`]);
+    expect((viaFS as Shape).minCount).toBe(1);
+    expect((viaFS as Shape).cardinality).toBe("Single");
+
+    // The pre-change form: a def typed exo__Property, no class files at all.
+    const legacy = await parityShapes({
+      "flow/9d2f1a11-0000-4000-8000-000000000001.md": DEF_FM("[[exo__Property]]"),
+    });
+    expect(legacy.viaFS).toBeDefined();
+    expect(legacy.viaGraph).toEqual(legacy.viaFS);
+    expect(legacy.viaGraph).toEqual(viaFS);
+  });
+
+  it("P2 @req:67767fcb-15e3-4deb-9b70-5b96c7110a22 loader parity on the ObjectProperty subtree: a def typed [[<uid>]] of exo__BooleanProperty ⊑ exo__ObjectProperty ⊑ exo__Property yields the SAME shape via both loaders", async () => {
+    const { viaGraph, viaFS } = await parityShapes({
+      "flow/9d2f1a11-0000-4000-8000-000000000001.md": DEF_FM(`[[${BOOLEAN_UID}]]`),
+      [`exo/${BOOLEAN_UID}.md`]: CLASS_FM(BOOLEAN_UID, "exo__BooleanProperty", `[[${OBJECT_PROPERTY_UID}]]`),
+      [`exo/${OBJECT_PROPERTY_UID}.md`]: CLASS_FM(OBJECT_PROPERTY_UID, "exo__ObjectProperty", `[[${PROPERTY_UID}]]`),
+      [`exo/${PROPERTY_UID}.md`]: CLASS_FM(PROPERTY_UID, "exo__Property", "[[493c2ae2-de56-47ec-954d-2eb8cb49bff7]]"),
+    });
+    expect(viaFS).toBeDefined();
+    expect(viaGraph).toBeDefined();
+    expect(viaGraph).toEqual(viaFS);
+    expect((viaFS as Shape).range).toEqual([`${XSD_NS}integer`]);
   });
 });

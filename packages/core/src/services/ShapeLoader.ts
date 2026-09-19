@@ -324,7 +324,7 @@ export class ShapeLoader {
    * Seeded with `exo:Property` and `exo:ObjectProperty` — the two classes the
    * loader matched before the walk existed — so a graph that carries no TBox
    * class files (fixtures, partial mounts) keeps its previous behaviour
-   * verbatim; the walk only ever ADDS classes.
+   * verbatim; the walk only ever ADDS classes, and starts from BOTH seeds.
    *
    * Edge endpoints are canonicalized with the same {@link resolveClassIRI}
    * used for domain/range, so a file-IRI subject (`obsidian://…/<uid>.md`)
@@ -373,7 +373,11 @@ export class ShapeLoader {
       EXO.term("Property").value,
       EXO.term("ObjectProperty").value,
     ]);
-    const queue = [EXO.term("Property").value];
+    // Walk from EVERY seed: exo:ObjectProperty is already in `result`, so
+    // reaching it as a child of exo:Property would not enqueue it — its own
+    // subtree (exo:BooleanProperty ⊑ exo:ObjectProperty in exoas-exo) is only
+    // visited when it is a root of the walk too (review #4271 MEDIUM).
+    const queue = [...result];
     while (queue.length > 0) {
       const parent = queue.shift() as string;
       for (const child of children.get(parent) ?? []) {
@@ -531,6 +535,11 @@ export class ShapeLoader {
     } catch {
       return;
     }
+    // readdir order is filesystem-dependent (sorted on APFS, hashed on ext4);
+    // scan in name order so the collected candidate sequence — and therefore
+    // which of two defs sharing a propertyIRI registers last — is the same on
+    // every platform.
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
       const full = io.path.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -595,7 +604,7 @@ export class ShapeLoader {
     candidate: FsCandidate,
     registry: ShapeRegistry,
     propertyClassKeys: ReadonlySet<string>,
-    path?: typeof import("path"),
+    path: typeof import("path"),
   ): void {
     const { filePath, fm } = candidate;
 
@@ -619,7 +628,7 @@ export class ShapeLoader {
     const labelRaw = fm["exo__Asset_label"];
     if (typeof labelRaw === "string" && labelRaw.trim().length > 0) {
       label = labelRaw.trim();
-    } else if (path) {
+    } else {
       const basename = path.basename(filePath, ".md");
       if (Namespace.fromPropertyKey(basename)) {
         label = basename;
