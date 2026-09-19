@@ -1414,8 +1414,39 @@ describe('validate — sh:datatype lexical conformance of converter-tagged liter
     expect(datatypeViolations(report('Principle_number', `${XSD}integer`, '10', `${XSD}string`))).toHaveLength(1);
   });
 
-  it('V6 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 a datatype outside the lexical table keeps strict equality: decimal-tagged `7` under xsd:anyURI violates', () => {
+  it('V6 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 a NUMBER tag under a datatype outside the lexical table keeps strict equality: decimal-tagged `7` under xsd:anyURI violates (the anyURI relaxation of V12-V15 is for the string tag only)', () => {
     expect(datatypeViolations(report('Principle_number', `${XSD}anyURI`, '7', `${XSD}decimal`))).toHaveLength(1);
+  });
+
+  // V12-V15 — amendment 2026-09-19 (ticket e55b0a07): a STRING-tagged literal under
+  // xsd:anyURI is judged by IRI.isValidIRI (core's single IRI notion, absolute IRI),
+  // deliberately stricter than the XSD 1.1 §3.3.17 letter (any string).
+  it('V12 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 a YAML string that is an absolute URL (string-tagged `https://example.com/video/1`) conforms to range xsd:anyURI', () => {
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, 'https://example.com/video/1', `${XSD}string`))).toHaveLength(0);
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, 'https://ru.wikipedia.org/wiki/Москва', `${XSD}string`))).toHaveLength(0);
+  });
+
+  it('V13 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 a string that is not an IRI under xsd:anyURI violates: `not a uri`, whitespace inside `https://x.com/a b`, leading whitespace ` https://x.com`, empty string', () => {
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, 'not a uri', `${XSD}string`))).toHaveLength(1);
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, 'https://x.com/a b', `${XSD}string`))).toHaveLength(1);
+    // leading whitespace: `new URL` alone would trim it (WHATWG); IRI.isValidIRI rejects it
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, ' https://x.com', `${XSD}string`))).toHaveLength(1);
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, '', `${XSD}string`))).toHaveLength(1);
+  });
+
+  it('V14 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 a relative reference under xsd:anyURI violates (absolute IRI required — IRI.isValidIRI, stricter than XSD 1.1)', () => {
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, '/relative/path', `${XSD}string`))).toHaveLength(1);
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, '#frag', `${XSD}string`))).toHaveLength(1);
+  });
+
+  it('V15 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 the anyURI relaxation is gated on the STRING tag and the anyURI local name: integer-tagged `7` under xsd:anyURI still violates (pair of V6), a URL tagged xsd:token under xsd:anyURI violates, and the IRI lexicon does not leak to xsd:integer', () => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}anyURI`, '7', `${XSD}integer`))).toHaveLength(1);
+    // the XSD_STRING conjunct is load-bearing through the public validate(): a URL carrying a
+    // NON-converter tag (xsd:token) under anyURI is a strict-tag mismatch, not an excused string
+    expect(datatypeViolations(report('Principle_sourceUrl', `${XSD}anyURI`, 'https://example.com/video/1', `${XSD}token`))).toHaveLength(1);
+    // the IRI lexicon is keyed on the anyURI local name: a URL-shaped string-tagged
+    // literal under range xsd:integer is still a strict-tag violation
+    expect(datatypeViolations(report('Principle_number', `${XSD}integer`, 'https://example.com/video/1', `${XSD}string`))).toHaveLength(1);
   });
 
   it('V7 @req:b0ad1160-74af-44b0-bb8b-1a665b8ba5d2 YAML boolean (plain literal `true`) conforms to range xsd:boolean; `yes` does not', () => {
