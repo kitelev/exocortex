@@ -37,8 +37,9 @@
  *          file identical to the no-flag chain, steps 2/3 are hits
  *   A5 AC5 persist failure: rc / stdout / mutation unchanged, stderr warns,
  *          next reader still sees the write (delta)
- *   A6 AC6 rebuild-class mutation: cache left byte-identical, next reader
- *          rebuilds
+ *   A6 AC6 rebuild-class mutation (a TBox-form task LOSES its TBox label —
+ *          #4277 makes a status flip on it an ordinary delta): cache left
+ *          byte-identical, next reader rebuilds
  *   A7 AC7 a concurrent writer's fresher cache is not reverted
  *   A8 AC8 create: --validate loads through the loader (same verdict), a
  *          bare create writes through to an EXISTING cache only
@@ -98,6 +99,7 @@ import {
   SEED,
   FROZEN,
   CHAIN_LABEL,
+  TBOX_TASK_RENAMED,
   fm,
   taskMd,
   REL,
@@ -523,21 +525,27 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
   });
 
   // -------------------------------------------------------------------------
-  it(`A6 ${REQ} a rebuild-class mutation (a TBox-form-labelled asset changes) is not written through: the cache file stays byte-identical, no re-parse happens in the mutating process, the next reader rebuilds`, async () => {
+  it(`A6 ${REQ} a rebuild-class mutation (a TBox-form-labelled asset's LABEL is changed to a human one) is not written through: the cache file stays byte-identical, no vault re-parse happens in the mutating process, the next reader rebuilds`, async () => {
     const root = vault();
     await warmCache(root);
     const cacheBefore = sha(path.join(root, REL.cache));
     const convertNoteSpy = jest.spyOn(NoteToRDFConverter.prototype, "convertNote");
 
-    const r = await runApply(root, ["move-to-backlog-4264", REL.tboxTask, "--json", "--use-cache", "--write-through"]);
+    // #4277 — a status flip on the TBox-form task is an ordinary delta now
+    // (its referrer-visible projection is unchanged); what stays rebuild-class
+    // under both classifications is a change to the label itself.
+    const r = await runApply(root, ["rename-tbox-label-4264", REL.tboxTask, "--json", "--use-cache", "--write-through"]);
     expect(r.exitCode).toBeNull();
     expect(preconditionRefused(r)).toBe(false);
-    expect(fs.readFileSync(path.join(root, REL.tboxTask), "utf-8")).toContain(`[[${STATUS_BACKLOG}]]`);
+    expect(fs.readFileSync(path.join(root, REL.tboxTask), "utf-8")).toContain(TBOX_TASK_RENAMED);
     expect(writeThroughNotices(r)).toHaveLength(1);
     expect(writeThroughNotices(r)[0]).toMatch(
-      /^💾 triple cache: write-through skipped \(rebuild needed \(TBox-form asset changed: .*\) — left to the next reader\)$/,
+      /^💾 triple cache: write-through skipped \(rebuild needed \(asset lost its TBox-form label: .*\) — left to the next reader\)$/,
     );
-    expect(convertNoteSpy).not.toHaveBeenCalled();
+    // #4277 — the ONE convertNote is planDelta's classification probe of the
+    // changed file itself (its projection is compared against the cached
+    // entry); no other file is parsed and nothing is persisted.
+    expect(convertNoteSpy).toHaveBeenCalledTimes(1);
     expect(sha(path.join(root, REL.cache))).toBe(cacheBefore);
 
     const next = await new CacheManager(root).loadOrBuild();

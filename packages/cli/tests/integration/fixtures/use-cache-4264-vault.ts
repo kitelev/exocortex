@@ -42,6 +42,16 @@ export const GND_BACKLOG = "42640000-0000-4000-8000-0000000000c3";
 export const CMD_START = "42640000-0000-4000-8000-0000000000d1";
 export const PRE_START = "42640000-0000-4000-8000-0000000000d2";
 export const GND_START = "42640000-0000-4000-8000-0000000000d3";
+// #4277 — A6 needs a mutation that is rebuild-class under the projection-aware
+// classification: a LABEL change on the TBox-form task (a status flip on it is
+// an ordinary delta since #4277). The new label is a HUMAN one on purpose: a
+// `prefix__Name` literal in a grounding is itself expanded to a symbolic IRI
+// by the converter, so "rename to another TBox form" cannot be expressed as a
+// targetValueLiteral — losing the TBox form is the rebuild-class change here.
+export const CMD_RENAME = "42640000-0000-4000-8000-0000000000d4";
+export const GND_RENAME = "42640000-0000-4000-8000-0000000000d5";
+export const TBOX_TASK_LABEL = "zz__TboxTask4264";
+export const TBOX_TASK_RENAMED = "TBox task renamed (4264)";
 export const TBOX_TASK = "42640000-0000-4000-8000-0000000000e1"; // a Draft task whose LABEL is TBox-form
 export const BIND_START = "42640000-0000-4000-8000-0000000000f1";
 export const BIND_BACKLOG = "42640000-0000-4000-8000-0000000000f2";
@@ -214,6 +224,20 @@ export function buildVault(): string {
   write(`cmd/${CMD_START}.md`, command(CMD_START, "Start Effort (4264)", "start-effort-4264", GND_START, PRE_START));
   write(`cmd/${PRE_START}.md`, precondition(PRE_START, "Allow Doing from Backlog (4264)", statusAsk("EffortStatusBacklog", STATUS_BACKLOG)));
   write(`cmd/${GND_START}.md`, propertySet(GND_START, "Set status Doing (4264)", STATUS_DOING));
+  // rename-tbox-label: property_set of exo__Asset_label to a human value —
+  // the A6 rebuild-class mutation (#4277): the task LOSES its TBox-form label.
+  write(`cmd/${CMD_RENAME}.md`, command(CMD_RENAME, "Rename TBox label (4264)", "rename-tbox-label-4264", GND_RENAME));
+  write(
+    `cmd/${GND_RENAME}.md`,
+    fm([
+      `exo__Asset_uid: ${GND_RENAME}`,
+      `exo__Asset_label: "Set label ${TBOX_TASK_RENAMED} (4264)"`,
+      `exo__Instance_class: ["[[exocmd__Grounding]]"]`,
+      `exocmd__Grounding_type: "[[${GT_PROPERTY_SET}]]"`,
+      `exocmd__Grounding_targetProperty: "exo__Asset_label"`,
+      `exocmd__Grounding_targetValueLiteral: "${TBOX_TASK_RENAMED}"`,
+    ]),
+  );
 
   // Bindings so `resolve-buttons` has a Layer-A button-set on a task.
   write(`cmd/${BIND_START}.md`, binding(BIND_START, CMD_START, "ems__Task", 10));
@@ -266,11 +290,13 @@ export function buildVault(): string {
   write(`cmd/${BIND_INHERITED}.md`, binding(BIND_INHERITED, CMD_INHERITED, "ems__Task", 30));
   write(REL.draftTask, taskMd(DRAFT_TASK, "Draft task (4264)", STATUS_DRAFT));
   write(REL.otherTask, taskMd(OTHER_TASK, "Other task (4264)", STATUS_BACKLOG));
-  // A6: a Draft task whose label has the TBox form `prefix__Name` — #4263
-  // classifies ANY change to such a file as rebuild-only (its referrers emit
-  // SYMBOLIC IRIs derived from that label), so a status flip on it is a
-  // mutation the delta cannot express.
-  write(REL.tboxTask, taskMd(TBOX_TASK, "zz__TboxTask4264", STATUS_DRAFT));
+  // A6: a Draft task whose label has the TBox form `prefix__Name` — its
+  // referrers emit SYMBOLIC IRIs derived from that label, so a change to the
+  // label itself (rename-tbox-label-4264 → a human label) is a mutation the
+  // delta cannot express. (#4263 classified ANY change to such a file as
+  // rebuild-only; since #4277 a status flip on it is an ordinary delta — the
+  // label change is what stays rebuild-class under both classifications.)
+  write(REL.tboxTask, taskMd(TBOX_TASK, TBOX_TASK_LABEL, STATUS_DRAFT));
   fs.mkdirSync(path.join(root, "Inbox"), { recursive: true });
   return root;
 }
