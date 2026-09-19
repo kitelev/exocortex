@@ -24,6 +24,11 @@
       "from": "          if (\n            useCacheEffective &&\n            options.writeThrough &&\n            anyExecuted &&\n            loaded.cacheManager\n          ) {",
       "to": "          if (\n            useCacheEffective &&\n            anyExecuted &&\n            loaded.cacheManager\n          ) {",
       "expect": ["P9"]
+    },
+    "PP4_write_through_without_use_cache_not_refused": {
+      "from": "        if (options.writeThrough && !options.useCache) {\n          process.stderr.write(",
+      "to": "        if (options.writeThrough && !options.useCache && false) {\n          process.stderr.write(",
+      "expect": ["P10"]
     }
   }
 }

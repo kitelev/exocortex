@@ -753,6 +753,11 @@ describe(`#4264 --use-cache on apply / resolve-buttons / create, write-through o
     const cv = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 validated", "--validate", "--use-cache", "--write-through"]);
     expect(cv.exitCode).toBe(0);
     expectLines(cv, 1, 1);
+    // …and the same real --validate create WITHOUT --write-through: the load
+    // line only (delta-only default — the write-through phase does not exist).
+    const cv0 = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 validated delta-only", "--validate", "--use-cache"]);
+    expect(cv0.exitCode).toBe(0);
+    expectLines(cv0, 1, 0);
     const cb = await runCreate(root, ["--class", TASK_CLASS, "--label", "A9 bare", "--use-cache", "--write-through"]);
     expect(cb.exitCode).toBe(0);
     expectLines(cb, 0, 1);

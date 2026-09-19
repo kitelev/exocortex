@@ -61,8 +61,8 @@
       "expect": ["A9"]
     },
     "M12_write_in_place_not_atomic": {
-      "from": "      await fs.writeJson(tmp, data, { spaces: 0 });\n      await fs.rename(tmp, this.cachePath);",
-      "to": "      await fs.writeJson(this.cachePath, data, { spaces: 0 });\n      void tmp;",
+      "from": "      const stat = await fs.stat(tmp);\n      await fs.rename(tmp, this.cachePath);",
+      "to": "      const stat = await fs.stat(tmp);\n      await fs.writeJson(this.cachePath, data, { spaces: 0 });\n      await fs.remove(tmp);",
       "expect": ["A13"]
     },
     "M13_filespace_declaration_removal_guard_removed": {

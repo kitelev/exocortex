@@ -388,6 +388,21 @@ describe(`CacheManager.refreshAfterWrite (#4264) ${REQ}`, () => {
     ]);
   });
 
+  it(`U13 the cache was DELETED after this process loaded it (index --force → invalidate, or a manual rm): the write-through does not resurrect it from the in-memory snapshot — skipped, no file appears ${REQ}`, async () => {
+    const a = new CacheManager(vaultPath);
+    expect((await a.loadOrBuild()).mode).toBe("rebuild");
+    await fs.remove(a.getCachePath()); // what `index --force` does first
+    await writeFile("a.md", "A2");
+    expect(await a.refreshAfterWrite()).toEqual({
+      mode: "skipped",
+      reparsedFiles: 0,
+      reason: "no cache to refresh",
+    });
+    expect(await fs.pathExists(a.getCachePath())).toBe(false);
+    // Only the rebuild's full walk converted anything — no delta re-parse ran.
+    expect(convertedPaths).toEqual([["a.md", "nested/b.md", "nested/c.md"]]);
+  });
+
   it(`U7 a persist failure propagates from refreshAfterWrite (the command layer turns it into a stderr warning) and leaves the previous cache file intact ${REQ}`, async () => {
     const cache = new CacheManager(vaultPath);
     await cache.loadOrBuild();

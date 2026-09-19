@@ -25,6 +25,11 @@
       "to": "    return current !== null;",
       "expect": ["U11", "A7", "A7b"]
     },
+    "M14_snapshot_trusted_even_after_the_cache_file_was_deleted": {
+      "from": "    return (\n      current !== null &&\n      current.mtimeMs === this.loadedStamp.mtimeMs &&\n      current.size === this.loadedStamp.size\n    );",
+      "to": "    void current;\n    return true;",
+      "expect": ["U13"]
+    },
     "M4_read_retains_snapshot_but_not_its_stamp": {
       "from": "      this.loaded = data;\n      this.loadedStamp = stamp;\n      return data;",
       "to": "      this.loaded = data;\n      this.loadedStamp = { mtimeMs: 0, size: 0 };\n      return data;",
