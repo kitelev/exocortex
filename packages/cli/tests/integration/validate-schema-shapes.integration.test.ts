@@ -16,6 +16,10 @@
  *    (ticket 84bb4d08, @req:67767fcb-15e3-4deb-9b70-5b96c7110a22)
  * 7. Asset G — sh:datatype violation under that same DatatypeProperty-only shape (3.5 vs integer);
  *    silent before the loaders walked `exo__Class_superClass`
+ * 8. Asset H — CONFORMS: whole numbers `20` under range xsd:decimal and `7` under xsd:integer —
+ *    both tagged xsd:integer by the converter since ticket d5ad5217 (parity with the JSON-LD
+ *    parser); the xsd:integer tag is judged by the same lexical table as xsd:decimal
+ *    (@req:d553b1a4-c312-4819-964d-fe6dae0a50e1)
  *
  * To regenerate the golden file:
  *   UPDATE_GOLDEN=1 npx jest validate-schema-shapes
@@ -154,6 +158,23 @@ describe("BDD: validate schema --shapes-mode (P1.7 — synthetic vault fixtures)
     expect(v?.constraint).toBe("datatype");
     expect(v?.actualValue).toBe("3.5");
     expect(v?.expectedRange).toBe("http://www.w3.org/2001/XMLSchema#integer");
+  });
+
+  it("I6 @req:d553b1a4-c312-4819-964d-fe6dae0a50e1 Scenario: asset-h.md — whole number 20 under range xsd:decimal (the b5a670e8 case) and 7 under xsd:integer CONFORM with the xsd:integer converter tag", () => {
+    const assetH = violations.filter((x) => x.focusNode.includes("asset-h.md"));
+    expect(assetH).toEqual([]);
+  });
+
+  it("I7 @req:d553b1a4-c312-4819-964d-fe6dae0a50e1 Scenario: asset-d.md still conforms after the tag change — 1987 under xsd:gYear and 10 under xsd:integer arrive as xsd:integer, not xsd:decimal", () => {
+    const assetD = violations.filter((x) => x.focusNode.includes("asset-d.md"));
+    expect(assetD).toEqual([]);
+    // the violation messages of the OTHER assets carry the new tag for whole numbers only
+    const tags = violations
+      .map((x) => x.message as string)
+      .filter((m) => m.includes("has datatype"))
+      .map((m) => /has datatype <([^>]+)>/.exec(m)?.[1]);
+    expect(tags).toContain("http://www.w3.org/2001/XMLSchema#decimal"); // 10.5 / 3.5 stay decimal
+    expect(tags).not.toContain("http://www.w3.org/2001/XMLSchema#integer"); // no whole number is reported
   });
 
   it("Scenario: golden file — violations match golden report byte-by-byte (canonical sort)", () => {

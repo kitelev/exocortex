@@ -12,4 +12,5 @@ aliases:
 ---
 
 Asset D: CONFORMS — whole number `10` under CURIE range xsd:integer and `1987` under xsd:gYear
-(both tagged xsd:decimal by the converter; judged by lexical form).
+(both tagged xsd:decimal by the converter until ticket d5ad5217, xsd:integer since — either
+tag is judged by lexical form).
