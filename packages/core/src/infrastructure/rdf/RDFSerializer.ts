@@ -384,6 +384,9 @@ export class RDFSerializer {
     }
 
     if (typeof rawValue === "number") {
+      // Whole → xsd:integer, fractional → xsd:decimal. Since ticket d5ad5217
+      // NoteToRDFConverter.valueToRDFObject applies the same rule to a YAML
+      // number, so a number gets one tag whichever way it enters the graph.
       const datatype = Number.isInteger(rawValue)
         ? Namespace.XSD.term("integer")
         : Namespace.XSD.term("decimal");

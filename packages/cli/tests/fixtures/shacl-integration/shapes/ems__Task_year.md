@@ -14,4 +14,5 @@ aliases:
 ---
 
 Test shape (ticket a9b55ead): bare CURIE `xsd:gYear` range; a YAML number `1987` is tagged
-xsd:decimal by the converter and must conform by lexical form.
+xsd:decimal (until d5ad5217) / xsd:integer (since) by the converter and must conform by
+lexical form under either tag.

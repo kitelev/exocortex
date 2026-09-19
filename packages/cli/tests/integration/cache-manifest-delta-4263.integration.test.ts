@@ -1138,4 +1138,70 @@ describe(`CacheManager — per-file manifest, delta refresh, shared loader (#426
     expect(hit.cacheHit).toBe(true);
     expect(tripleKeys(hit.triples)).toEqual(tripleKeys(plain.triples));
   });
+
+  // Ticket d5ad5217 (founder decision 2026-09-19): the converter tags a whole YAML
+  // number xsd:integer (was xsd:decimal for every number). The cache persists the
+  // tag, and its entries are keyed by file mtime — so a cache written by the
+  // previous CLI (formatVersion 2, `"3"^^xsd:decimal`) is byte-for-byte VALID by
+  // manifest and would keep serving the old tag for every unchanged file. The
+  // format bump (2 → 3) is what retires it; this axis pins the bump: RED when
+  // CACHE_FORMAT_VERSION is set back to 2 (the v2 cache is then accepted and the
+  // decimal tag served), GREEN at 3 (rebuilt, integer tag).
+  it(`A18 @req:d553b1a4-c312-4819-964d-fe6dae0a50e1 a warm pre-d5ad5217 cache (formatVersion 2, integer stored as "3"^^xsd:decimal) is invalid and rebuilt — the integer tag reaches the caller`, async () => {
+    const WEIGHT = "https://exocortex.my/ontology/ems#Task_weight";
+    const XSD = "http://www.w3.org/2001/XMLSchema#";
+    await writeFile(
+      `${TASKS_DIR}/${TASK_A}.md`,
+      fm({
+        exo__Asset_uid: TASK_A,
+        exo__Instance_class: `"[[${CLASS_TASK}]]"`,
+        exo__Asset_label: '"Task A"',
+        ems__Effort_parent: `"[[${PROJECT_P}]]"`,
+        ems__Task_weight: "3",
+      }),
+    );
+    const weightTag = (triples: TripleT[]): string[] =>
+      triples
+        .filter(
+          (t) =>
+            serializeNode(t.subject).value ===
+              vaultPathToIRI(`${TASKS_DIR}/${TASK_A}.md`) &&
+            serializeNode(t.predicate).value === WEIGHT,
+        )
+        .map(
+          (t) =>
+            `${serializeNode(t.object).value}^^${serializeNode(t.object).datatype}`,
+        );
+
+    const cache = new CacheManager(vaultPath);
+    const cachePath = cache.getCachePath();
+    const fresh = await cache.loadOrBuild();
+    expect(fresh.mode).toBe("rebuild");
+    expect(weightTag(fresh.triples)).toEqual([`3^^${XSD}integer`]);
+    const written = await fs.readJson(cachePath);
+    expect(written.metadata.formatVersion).toBe(CACHE_FORMAT_VERSION);
+
+    // Rewrite the persisted cache as the previous CLI would have left it:
+    // same manifest (mtimes unchanged ⇒ every entry "fresh"), v2 format, and
+    // the pre-parity decimal tag on the whole number.
+    const stale = JSON.parse(
+      JSON.stringify(written).split(`${XSD}integer`).join(`${XSD}decimal`),
+    );
+    stale.metadata.formatVersion = 2;
+    await fs.writeJson(cachePath, stale);
+    expect(JSON.stringify(stale)).toContain(`3","datatype":"${XSD}decimal`);
+
+    expect(await cache.isCacheValid()).toBe(false);
+    const rebuilt = await cache.loadOrBuild();
+    expect(rebuilt.mode).toBe("rebuild");
+    expect(weightTag(rebuilt.triples)).toEqual([`3^^${XSD}integer`]);
+    expect((await fs.readJson(cachePath)).metadata.formatVersion).toBe(
+      CACHE_FORMAT_VERSION,
+    );
+
+    // and the shared loader's cache path surfaces the same tag
+    const viaLoader = await loadVaultTriples(vaultPath, { useCache: true });
+    expect(viaLoader.mode).toBe("hit");
+    expect(weightTag(viaLoader.triples)).toEqual([`3^^${XSD}integer`]);
+  });
 });

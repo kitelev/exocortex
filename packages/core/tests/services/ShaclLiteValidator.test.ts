@@ -1462,3 +1462,77 @@ describe('validate — sh:datatype lexical conformance of converter-tagged liter
     expect(datatypeViolations(report('Principle_number', adhoc, '7.5', `${XSD}decimal`))).toHaveLength(1);
   });
 });
+
+// Ticket d5ad5217 (founder decision 2026-09-19): the converter now tags a whole YAML
+// number xsd:integer (fractional stays xsd:decimal — parity with the JSON-LD parser),
+// so the lexical table above is consulted for the xsd:integer tag too. Without that
+// every whole number under a non-integer numeric range (gYear, decimal, long, …)
+// would become a strict-tag violation (live delta on aaadac12: +17/+15/+15
+// [vault-exodev / vault-my / vault-tbank], all pmi__Model_originYear + b5a670e8).
+describe('validate — sh:datatype lexical conformance of the xsd:integer converter tag (@req:d553b1a4-c312-4819-964d-fe6dae0a50e1)', () => {
+  const PMI = 'https://exocortex.my/ontology/pmi#';
+  const REQ = '@req:d553b1a4-c312-4819-964d-fe6dae0a50e1';
+  function pmiShape(prop: string, range: string): Shape {
+    return makeShape({ propertyIRI: `${PMI}${prop}`, domain: [`${PMI}Principle`], range: [range] });
+  }
+  function report(prop: string, range: string, value: string, tag?: string) {
+    const triples = [
+      typeTriple('node:A', `${PMI}Principle`),
+      litTriple('node:A', `${PMI}${prop}`, value, tag),
+    ];
+    return validate(triples, makeRegistry([pmiShape(prop, range)]), flatHierarchy);
+  }
+  const datatypeViolations = (r: ReturnType<typeof validate>) =>
+    r.violations.filter((v) => v.constraint === 'datatype');
+
+  it(`I1 ${REQ} whole number tagged xsd:integer (YAML \`7\`) conforms to range xsd:integer by tag equality (control: unchanged behaviour)`, () => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}integer`, '7', `${XSD}integer`))).toHaveLength(0);
+  });
+
+  it(`I2 ${REQ} four-digit number tagged xsd:integer (YAML \`1987\`) conforms to range xsd:gYear; a three-digit one does not`, () => {
+    expect(datatypeViolations(report('Model_originYear', `${XSD}gYear`, '1987', `${XSD}integer`))).toHaveLength(0);
+    expect(datatypeViolations(report('Model_originYear', `${XSD}gYear`, '987', `${XSD}integer`))).toHaveLength(1);
+  });
+
+  it(`I3 ${REQ} whole number tagged xsd:integer (YAML \`20\`) conforms to range xsd:decimal — the \`decimal\` lexical row is reached through the integer tag (integer ⊂ decimal)`, () => {
+    expect(datatypeViolations(report('Principle_weight', `${XSD}decimal`, '20', `${XSD}integer`))).toHaveLength(0);
+    expect(datatypeViolations(report('Principle_weight', `${XSD}decimal`, '-5', `${XSD}integer`))).toHaveLength(0);
+  });
+
+  it(`I4 ${REQ} the integer tag is excused ONLY inside the lexical table: \`7\`^^xsd:integer under xsd:string and under xsd:anyURI violate`, () => {
+    expect(datatypeViolations(report('Principle_note', `${XSD}string`, '7', `${XSD}integer`))).toHaveLength(1);
+    expect(datatypeViolations(report('Principle_number', `${XSD}anyURI`, '7', `${XSD}integer`))).toHaveLength(1);
+    expect(datatypeViolations(report('Principle_since', `${XSD}dateTime`, '7', `${XSD}integer`))).toHaveLength(1);
+  });
+
+  // I5 — one conforming + one non-conforming integer-tagged value per lexical row
+  // whose value space is narrower than "any whole number" (the sign-constrained
+  // integer family) plus the wider rows (long/int/…/float/double) with a conforming
+  // whole number; `gYear` is I2, `decimal` is I3.
+  it.each([
+    ['long', '7', null],
+    ['int', '7', null],
+    ['short', '7', null],
+    ['byte', '7', null],
+    ['nonNegativeInteger', '0', '-1'],
+    ['unsignedLong', '7', '-1'],
+    ['unsignedInt', '7', '-1'],
+    ['unsignedShort', '7', '-1'],
+    ['unsignedByte', '7', '-1'],
+    ['positiveInteger', '7', '0'],
+    ['nonPositiveInteger', '-3', '3'],
+    ['negativeInteger', '-3', '3'],
+    ['float', '1000', null],
+    ['double', '-15', null],
+  ])(`I5 ${REQ} integer-tagged literal under xsd:%s: %s conforms, %s violates`, (local, ok, bad) => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}${local}`, ok, `${XSD}integer`))).toHaveLength(0);
+    if (bad !== null) {
+      expect(datatypeViolations(report('Principle_number', `${XSD}${local}`, bad, `${XSD}integer`))).toHaveLength(1);
+    }
+  });
+
+  it(`I6 ${REQ} the decimal tag keeps its own lexical judgement unchanged: \`7.5\`^^xsd:decimal under xsd:integer still violates, \`7\`^^xsd:decimal still conforms`, () => {
+    expect(datatypeViolations(report('Principle_number', `${XSD}integer`, '7.5', `${XSD}decimal`))).toHaveLength(1);
+    expect(datatypeViolations(report('Principle_number', `${XSD}integer`, '7', `${XSD}decimal`))).toHaveLength(0);
+  });
+});

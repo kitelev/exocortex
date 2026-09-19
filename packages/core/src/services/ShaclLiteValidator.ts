@@ -163,6 +163,7 @@ function xsdLocalName(iri: string): string | null {
 }
 
 const XSD_DECIMAL = 'http://www.w3.org/2001/XMLSchema#decimal';
+const XSD_INTEGER = 'http://www.w3.org/2001/XMLSchema#integer';
 const XSD_STRING = 'http://www.w3.org/2001/XMLSchema#string';
 
 const INTEGER_LEXICAL = /^[+-]?\d+$/;
@@ -172,9 +173,11 @@ const FLOAT_LEXICAL = /^([+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?|[+-]?INF|NaN)$/
 
 /**
  * Lexical spaces (XSD 1.1 §3.3, the subset a YAML number can denote) that a
- * `xsd:decimal`-TAGGED literal may satisfy by its lexical form. Keyed by the
- * expected datatype's local name; a datatype absent here keeps strict tag
- * equality (e.g. xsd:string, xsd:dateTime, xsd:anyURI).
+ * NUMBER-TAGGED literal (`xsd:integer` or `xsd:decimal` — the two tags
+ * NoteToRDFConverter emits for a YAML number, ticket d5ad5217) may satisfy by
+ * its lexical form. Keyed by the expected datatype's local name; a datatype
+ * absent here keeps strict tag equality (e.g. xsd:string, xsd:dateTime,
+ * xsd:anyURI).
  */
 const DECIMAL_TAG_LEXICAL: Readonly<Record<string, RegExp>> = {
   integer: INTEGER_LEXICAL,
@@ -199,15 +202,17 @@ const DECIMAL_TAG_LEXICAL: Readonly<Record<string, RegExp>> = {
 const BOOLEAN_LEXICAL = /^(true|false)$/;
 
 /**
- * sh:datatype conformance of a literal (ticket a9b55ead).
+ * sh:datatype conformance of a literal (ticket a9b55ead; integer tag d5ad5217).
  *
- * A YAML frontmatter scalar carries no datatype: NoteToRDFConverter tags EVERY
- * number `xsd:decimal` (`pmi__Principle_number: 7` → `"7"^^xsd:decimal`) and a
- * YAML boolean as a plain literal (`"true"^^xsd:string`). Those tags are a
+ * A YAML frontmatter scalar carries no datatype: NoteToRDFConverter tags a
+ * whole YAML number `xsd:integer` and a fractional one `xsd:decimal`
+ * (`pmi__Principle_number: 7` → `"7"^^xsd:integer`, `7.5` → `"7.5"^^xsd:decimal`;
+ * parity with the JSON-LD parser, founder decision 2026-09-19), and a YAML
+ * boolean as a plain literal (`"true"^^xsd:string`). Those tags are a
  * converter artefact, not the author's declaration — the declared range is.
  * So, ONLY where the tag is that artefact, the literal conforms when its
  * LEXICAL form is valid for the expected datatype:
- *   - tag xsd:decimal  + expected numeric family / gYear → lexical check
+ *   - tag xsd:integer / xsd:decimal + expected numeric family / gYear → lexical check
  *   - tag xsd:string   + expected xsd:boolean            → `true` | `false`
  * Every other pairing keeps strict tag equality (W3C SHACL semantics): an ISO
  * string tagged xsd:dateTime under xsd:date, a quoted "10" (xsd:string) under
@@ -221,7 +226,7 @@ function literalConformsToDatatype(
   if (literalDatatype === expected) return true;
   const local = xsdLocalName(expected);
   if (local === null) return false;
-  if (literalDatatype === XSD_DECIMAL) {
+  if (literalDatatype === XSD_DECIMAL || literalDatatype === XSD_INTEGER) {
     const lexical = DECIMAL_TAG_LEXICAL[local];
     return lexical !== undefined && lexical.test(value);
   }

@@ -1677,9 +1677,20 @@ export class NoteToRDFConverter {
     }
 
     if (typeof value === "number") {
+      // Ticket d5ad5217 (founder decision 2026-09-19): a whole YAML number is
+      // tagged xsd:integer, a fractional one xsd:decimal — the same rule the
+      // JSON-LD parser applies (RDFSerializer.collectTriplesForValue), so one
+      // number gets one tag whichever way it enters the graph. Every number was
+      // xsd:decimal before; CacheManager.CACHE_FORMAT_VERSION was bumped with
+      // this change so a warm triple cache cannot serve the old tag.
+      // Known pre-existing edge (both paths, 0 live values in the three vaults):
+      // a whole number >= 1e21 has value.toString() === "1e+21", which is not a
+      // valid xsd:integer lexical form — not handled here, tracked separately.
       return [new Literal(
         value.toString(),
-        Namespace.XSD.term("decimal")
+        Number.isInteger(value)
+          ? Namespace.XSD.term("integer")
+          : Namespace.XSD.term("decimal")
       )];
     }
 

@@ -32,8 +32,14 @@ export type { SerializedNode, SerializedTriple };
  * `inferred` bucket for the layer `index` materializes. The pre-#4263 format
  * (flat `triples[]` + `metadata.vaultMtime`) has no version field; it is read
  * as "invalid" and rebuilt once (no migration).
+ *
+ * d5ad5217 (v3): the converter now tags a whole YAML number `xsd:integer`
+ * (was `xsd:decimal` for every number). The cached triples carry the tag, so a
+ * v2 cache would keep serving `"3"^^xsd:decimal` next to freshly converted
+ * `"3"^^xsd:integer` for as long as the files' mtimes stay unchanged — the
+ * version bump makes every v2 cache "invalid" and rebuilt once.
  */
-export const CACHE_FORMAT_VERSION = 2;
+export const CACHE_FORMAT_VERSION = 3;
 
 /**
  * Cache metadata stored alongside the triple cache
@@ -378,7 +384,7 @@ export class CacheManager {
    * Checks if the cache is valid.
    *
    * Cache is valid when:
-   * - Cache file exists and is a format-v2 cache with complete metadata
+   * - Cache file exists and carries the current CACHE_FORMAT_VERSION with complete metadata
    * - The persisted per-file manifest equals a fresh walk of the vault
    *   (no `.md` file added, modified or removed since the cache was written —
    *   nested paths included; the vault root directory's mtime plays no part)
