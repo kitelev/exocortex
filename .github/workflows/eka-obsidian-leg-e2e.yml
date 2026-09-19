@@ -60,7 +60,7 @@ jobs:
 
       - name: Checkout
         if: steps.tok.outputs.present == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node
         if: steps.tok.outputs.present == 'true'

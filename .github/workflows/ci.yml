@@ -52,7 +52,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Detect code changes
         id: filter
@@ -100,7 +100,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node & install deps (+ build)
         uses: ./.github/actions/setup-node-pnpm
@@ -122,7 +122,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node & install deps
         uses: ./.github/actions/setup-node-pnpm
@@ -143,7 +143,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -218,7 +218,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node & install deps
         uses: ./.github/actions/setup-node-pnpm
@@ -301,7 +301,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Check documentation links
         uses: gaurav-nelson/github-action-markdown-link-check@v1
@@ -316,7 +316,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -332,7 +332,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Cache Archgate
         uses: actions/cache@v6
@@ -403,7 +403,7 @@ jobs:
       REQS_ASSETSPACES: exoas-exo-reqs,exoas-ems-reqs
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node & install deps
         uses: ./.github/actions/setup-node-pnpm
@@ -657,7 +657,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -691,7 +691,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -732,7 +732,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -824,7 +824,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -850,7 +850,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -917,7 +917,7 @@ jobs:
           echo "✅ All upstream coverage jobs passed"
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node & install deps
         uses: ./.github/actions/setup-node-pnpm
@@ -1023,7 +1023,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node & install deps (+ build)
         uses: ./.github/actions/setup-node-pnpm
@@ -1163,7 +1163,7 @@ jobs:
 
       - name: Checkout
         if: env.RUN_E2E == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -1390,7 +1390,7 @@ jobs:
 
       - name: Checkout
         if: env.RUN_E2E == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Phase 3 exit gate (task 574476fc 2026-04-22):
       # Aggregator previously ran `actions/setup-node@v4` + `npm install -D
@@ -1517,7 +1517,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Node & install deps (+ build)
         uses: ./.github/actions/setup-node-pnpm
