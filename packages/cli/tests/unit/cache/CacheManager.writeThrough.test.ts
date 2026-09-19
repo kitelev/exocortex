@@ -57,7 +57,10 @@ describe(`CacheManager.refreshAfterWrite (#4264) ${REQ}`, () => {
     const data = (await fs.readJson(
       path.join(vaultPath, ".exocortex", "cache", "triples.json"),
     )) as {
-      files: Array<{ path: string; triples: Array<{ object: { value: string } }> }>;
+      files: Array<{
+        path: string;
+        triples: Array<{ object: { value: string } }>;
+      }>;
     };
     const entry = data.files.find((f) => f.path === rel);
     return entry ? entry.triples.map((t) => t.object.value) : [];
@@ -209,7 +212,9 @@ describe(`CacheManager.refreshAfterWrite (#4264) ${REQ}`, () => {
     );
     expect(convertCalls).toHaveLength(0);
     expect(await fs.readFile(cache.getCachePath(), "utf-8")).toBe(before);
-    expect((await new CacheManager(vaultPath).loadOrBuild()).mode).toBe("rebuild");
+    expect((await new CacheManager(vaultPath).loadOrBuild()).mode).toBe(
+      "rebuild",
+    );
   });
 
   it(`U6 the write-through updates the loaded state: a second write-through in the same process sees only the SECOND write ${REQ}`, async () => {
@@ -218,15 +223,24 @@ describe(`CacheManager.refreshAfterWrite (#4264) ${REQ}`, () => {
     convertedPaths.length = 0;
 
     await writeFile("a.md", "A2");
-    expect(await cache.refreshAfterWrite()).toEqual({ mode: "delta", reparsedFiles: 1 });
+    expect(await cache.refreshAfterWrite()).toEqual({
+      mode: "delta",
+      reparsedFiles: 1,
+    });
     // The second write-through diffs against what the FIRST one published —
     // in memory (no cache re-read) and with the first one's stamp.
     const readJson = jest.spyOn(fs, "readJson");
     await writeFile("nested/b.md", "B2");
-    expect(await cache.refreshAfterWrite()).toEqual({ mode: "delta", reparsedFiles: 1 });
+    expect(await cache.refreshAfterWrite()).toEqual({
+      mode: "delta",
+      reparsedFiles: 1,
+    });
     expect(readJson).not.toHaveBeenCalled();
     expect(convertedPaths).toEqual([["a.md"], ["nested/b.md"]]);
-    expect(await cache.refreshAfterWrite()).toEqual({ mode: "noop", reparsedFiles: 0 });
+    expect(await cache.refreshAfterWrite()).toEqual({
+      mode: "noop",
+      reparsedFiles: 0,
+    });
     expect(await persistedLabel("a.md")).toEqual(["A2"]);
     expect(await persistedLabel("nested/b.md")).toEqual(["B2"]);
   });
@@ -240,7 +254,10 @@ describe(`CacheManager.refreshAfterWrite (#4264) ${REQ}`, () => {
     const readJson = jest.spyOn(fs, "readJson");
 
     await writeFile("nested/c.md", "C2");
-    expect(await cache.refreshAfterWrite()).toEqual({ mode: "delta", reparsedFiles: 1 });
+    expect(await cache.refreshAfterWrite()).toEqual({
+      mode: "delta",
+      reparsedFiles: 1,
+    });
     expect(convertedPaths).toEqual([["nested/c.md"]]);
     expect(readJson).not.toHaveBeenCalled();
     expect(await persistedLabel("nested/b.md")).toEqual(["B2"]);
@@ -254,7 +271,10 @@ describe(`CacheManager.refreshAfterWrite (#4264) ${REQ}`, () => {
     const readJson = jest.spyOn(fs, "readJson");
 
     await writeFile("a.md", "A2");
-    expect(await cache.refreshAfterWrite()).toEqual({ mode: "delta", reparsedFiles: 1 });
+    expect(await cache.refreshAfterWrite()).toEqual({
+      mode: "delta",
+      reparsedFiles: 1,
+    });
     expect(convertedPaths).toEqual([["a.md"]]);
     expect(readJson).not.toHaveBeenCalled();
     expect((await new CacheManager(vaultPath).loadOrBuild()).mode).toBe("hit");
@@ -275,7 +295,10 @@ describe(`CacheManager.refreshAfterWrite (#4264) ${REQ}`, () => {
     expect(await a.isCacheValid()).toBe(true);
     await writeFile("nested/b.md", "B2");
     const readJson = jest.spyOn(fs, "readJson");
-    expect(await a.refreshAfterWrite()).toEqual({ mode: "delta", reparsedFiles: 1 });
+    expect(await a.refreshAfterWrite()).toEqual({
+      mode: "delta",
+      reparsedFiles: 1,
+    });
     expect(readJson).not.toHaveBeenCalled(); // trusted the (fresh) snapshot
     const data = (await fs.readJson(a.getCachePath())) as {
       metadata: { inferenceEnabled: boolean; inferredCount: number };
@@ -299,7 +322,10 @@ describe(`CacheManager.refreshAfterWrite (#4264) ${REQ}`, () => {
     await new CacheManager(vaultPath).saveInferredTriples([marker]);
     await writeFile("nested/c.md", "C2");
     const readJson = jest.spyOn(fs, "readJson");
-    expect(await a.refreshAfterWrite()).toEqual({ mode: "delta", reparsedFiles: 1 });
+    expect(await a.refreshAfterWrite()).toEqual({
+      mode: "delta",
+      reparsedFiles: 1,
+    });
     expect(readJson).toHaveBeenCalledTimes(1); // the fallback read, exactly once
     const data = (await fs.readJson(a.getCachePath())) as {
       metadata: { inferenceEnabled: boolean };
@@ -312,23 +338,73 @@ describe(`CacheManager.refreshAfterWrite (#4264) ${REQ}`, () => {
     // (the two reads above are this test's own `fs.readJson` calls).
     const readsSoFar = readJson.mock.calls.length;
     await writeFile("a.md", "A2");
-    expect(await a.refreshAfterWrite()).toEqual({ mode: "delta", reparsedFiles: 1 });
+    expect(await a.refreshAfterWrite()).toEqual({
+      mode: "delta",
+      reparsedFiles: 1,
+    });
     expect(readJson.mock.calls.length).toBe(readsSoFar);
+  });
+
+  it(`U12 a write-through deserializes NONE of the cached triples when the inferred layer needs no recompute: the command keeps its own store, so only the changed file is parsed and the snapshot is merged serialized-to-serialized (the memory axis, counted by calls, not by RSS) ${REQ}`, async () => {
+    const a = new CacheManager(vaultPath);
+    expect((await a.loadOrBuild()).mode).toBe("rebuild"); // 3 files
+    // An inferred layer is present (as after `index`) — but a label edit feeds
+    // neither engine, so the layer is retained as-is, not re-materialized.
+    const marker = new Triple(
+      new IRI(vaultPathToIRI("a.md")),
+      new IRI("https://exocortex.my/ontology/exo#Instance_class"),
+      new IRI("https://exocortex.my/ontology/ems#Marker"),
+    );
+    await new CacheManager(vaultPath).saveInferredTriples([marker]);
+    expect(await a.isCacheValid()).toBe(true); // snapshot refreshed to index's file
+    await writeFile("nested/b.md", "B2");
+    const deserialize = jest.spyOn(
+      CacheManager.prototype as unknown as {
+        deserializeTriple: (t: unknown) => unknown;
+      },
+      "deserializeTriple",
+    );
+    expect(await a.refreshAfterWrite()).toEqual({
+      mode: "delta",
+      reparsedFiles: 1,
+    });
+    // 0, not 3 (explicit) + 1 (inferred): a full deserialized copy of the
+    // vault's triples is exactly the second store the write-through must not
+    // build in a process that already holds one.
+    expect(deserialize).not.toHaveBeenCalled();
+    expect(convertedPaths).toEqual([
+      ["a.md", "nested/b.md", "nested/c.md"],
+      ["nested/b.md"],
+    ]);
+    // …and the persisted result is still complete: new label, layer intact.
+    expect(await persistedLabel("nested/b.md")).toEqual(["B2"]);
+    const data = (await fs.readJson(a.getCachePath())) as {
+      metadata: { inferenceEnabled: boolean };
+      inferred: Array<{ object: { value: string } }>;
+    };
+    expect(data.metadata.inferenceEnabled).toBe(true);
+    expect(data.inferred.map((t) => t.object.value)).toEqual([
+      "https://exocortex.my/ontology/ems#Marker",
+    ]);
   });
 
   it(`U7 a persist failure propagates from refreshAfterWrite (the command layer turns it into a stderr warning) and leaves the previous cache file intact ${REQ}`, async () => {
     const cache = new CacheManager(vaultPath);
     await cache.loadOrBuild();
     const before = await fs.readFile(cache.getCachePath(), "utf-8");
-    jest.spyOn(fs, "rename").mockRejectedValue(new Error("EACCES (injected)") as never);
+    jest
+      .spyOn(fs, "rename")
+      .mockRejectedValue(new Error("EACCES (injected)") as never);
 
     await writeFile("a.md", "A2");
-    await expect(cache.refreshAfterWrite()).rejects.toThrow("EACCES (injected)");
+    await expect(cache.refreshAfterWrite()).rejects.toThrow(
+      "EACCES (injected)",
+    );
     expect(await fs.readFile(cache.getCachePath(), "utf-8")).toBe(before);
     // No orphaned temp file is left behind by the failed write.
-    const siblings = (await fs.readdir(path.dirname(cache.getCachePath()))).filter((n) =>
-      n.endsWith(".tmp"),
-    );
+    const siblings = (
+      await fs.readdir(path.dirname(cache.getCachePath()))
+    ).filter((n) => n.endsWith(".tmp"));
     expect(siblings).toEqual([]);
   });
 });

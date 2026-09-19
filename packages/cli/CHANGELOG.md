@@ -48,6 +48,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+**`--use-cache` on `apply` / `resolve-inline-buttons` / `create`, with write-through (#4264, req cb707868)**
+
+- `apply`, `resolve-inline-buttons` (alias `resolve-buttons`) and `create` accept `--use-cache`
+  (default off). With it the triple store is built through the shared `loadVaultTriples()`
+  loader — cache hit / delta / rebuild — instead of an unconditional full vault parse;
+  `create` loads a triple store only under `--validate`, so that is where its flag applies
+  (SHACL shape loading is a separate path, not covered). Without the flag the three commands
+  are byte-identical to before: no cache read, no cache write.
+- Write-through: once an `apply` grounding has executed (or `create` has written its asset),
+  the files it changed are folded into the persisted cache — the same delta as a reading
+  process would run (only the changed files + their referrers re-parsed, atomic tmp+rename),
+  so the next `--use-cache` process is a plain hit. A change the delta cannot express
+  (TBox-form asset, FileSpace declaration, > 50 % of the vault) is left to the next reader's
+  rebuild; an absent cache is never built by a mutating command. Best-effort by
+  construction: a persist failure is one `⚠ triple cache:` stderr line, the command's exit
+  code and stdout do not change, and the next reader refreshes the cache itself.
+- Concurrency: the write-through diffs the vault against the cache state this process
+  loaded and trusts that snapshot only while the cache FILE's `{mtimeMs,size}` stamp is the
+  one it was read from — a concurrent `index` (inferred layer + `inferenceEnabled`) or
+  another process's delta is re-read and folded into, never overwritten.
+- One stderr line per cache phase (`⚡ triple cache: hit` / `♻️ … delta (N file(s)
+re-parsed)` / `🔨 … rebuild`, and `💾 triple cache: write-through persisted (N file(s)
+re-parsed)` / `— nothing changed` / `skipped (reason)` / `⚠ … failed (reason)`); stdout
+  (`--json` envelopes, `create`'s `{uuid,path,label}`) is untouched.
+- Documented divergence: on a cache that `index` built the flagged store additionally
+  carries the inferred layer (RDFS `Instance_class` closure + prototype-chain inheritance),
+  exactly as `query --use-cache` does — a precondition on an inherited/inferred triple can
+  therefore evaluate differently than under the no-flag full parse. `index --no-inference`
+  gives the explicit graph.
+
 **RDF Convert / Vault Dump (#2832)**
 
 - New `exocortex convert` subcommand to dump vault graph in RDF serialization formats.

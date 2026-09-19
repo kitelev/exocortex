@@ -46,9 +46,24 @@
       "expect": ["U4"]
     },
     "M8_write_through_restamps_without_reparse": {
-      "from": "    await this.applyDelta(base, manifest, diff, plan.reparse, adapter);\n    return { mode: \"delta\", reparsedFiles: plan.reparse.length };",
-      "to": "    await this.applyDelta(base, manifest, diff, [], adapter);\n    return { mode: \"delta\", reparsedFiles: plan.reparse.length };",
+      "from": "    await this.applyDelta(base, manifest, diff, plan.reparse, adapter, {\n      needTriples: false,\n    });\n    return { mode: \"delta\", reparsedFiles: plan.reparse.length };",
+      "to": "    await this.applyDelta(base, manifest, diff, [], adapter, {\n      needTriples: false,\n    });\n    return { mode: \"delta\", reparsedFiles: plan.reparse.length };",
       "expect": ["A3", "A4", "A3ref"]
+    },
+    "M11_write_through_asks_for_the_merged_triples_(second_full_copy)": {
+      "from": "    await this.applyDelta(base, manifest, diff, plan.reparse, adapter, {\n      needTriples: false,\n    });",
+      "to": "    await this.applyDelta(base, manifest, diff, plan.reparse, adapter, {\n      needTriples: true,\n    });",
+      "expect": ["U12"]
+    },
+    "M12_retained_inferred_layer_deserialized_regardless": {
+      "from": "        if (options.needTriples) {\n          inferredTriples = cached.inferred.map(this.deserializeTriple);\n        }",
+      "to": "        {\n          inferredTriples = cached.inferred.map(this.deserializeTriple);\n        }",
+      "expect": ["U12"]
+    },
+    "M13_explicit_triples_built_eagerly_for_the_return_value": {
+      "from": "    const triples = options.needTriples\n      ? explicitTriples().concat(inferredTriples)\n      : [];",
+      "to": "    const triples = explicitTriples().concat(inferredTriples);",
+      "expect": ["U12"]
     },
     "M9_delta_entry_written_with_fresh_stamp_but_no_triples_(the_#3788_class)": {
       "from": "      this.makeEntry(relPath, manifest, perFile.get(relPath) ?? [], adapter);",

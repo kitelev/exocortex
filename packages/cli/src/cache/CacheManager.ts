@@ -499,8 +499,11 @@ export class CacheManager {
       };
     }
     // applyDelta persisted the merged state — writeCacheData retained it (and
-    // its stamp) as the base for a further write-through in this process.
-    await this.applyDelta(base, manifest, diff, plan.reparse, adapter);
+    // its stamp) as the base for a further write-through in this process. The
+    // merged triples are not consumed here (the command keeps its own store).
+    await this.applyDelta(base, manifest, diff, plan.reparse, adapter, {
+      needTriples: false,
+    });
     return { mode: "delta", reparsedFiles: plan.reparse.length };
   }
 
@@ -812,6 +815,16 @@ export class CacheManager {
     diff: ManifestDiff,
     reparse: string[],
     adapter: FileSystemVaultAdapter,
+    options: {
+      /**
+       * #4264 — `false` for a write-through: the caller does not consume the
+       * merged triple set, so it is deserialized only when the inferred layer
+       * has to be re-materialized (the engines need it as input). Saves a
+       * second full copy of the vault's triples in a process that already
+       * holds its own store (≈0.7 GB peak RSS on a 275 k-triple vault).
+       */
+      needTriples: boolean;
+    } = { needTriples: true },
   ): Promise<{ data: CacheData; triples: Triple[]; inferredRecomputed: boolean }> {
     const files: IFile[] = [];
     for (const relPath of reparse) {
@@ -854,12 +867,19 @@ export class CacheManager {
     // Explicit triples in file order — returned to the caller AND (when the
     // cache carries an inferred layer) fed to the same engines `index` runs,
     // so the layer is recomputed from the merged state instead of going stale.
-    const explicit: Triple[] = [];
-    for (const entry of nextFiles) {
-      for (const t of entry.triples) {
-        explicit.push(this.deserializeTriple(t));
+    // Deserialized lazily: a write-through needs them only for that recompute.
+    let explicitCache: Triple[] | null = null;
+    const explicitTriples = (): Triple[] => {
+      if (explicitCache === null) {
+        explicitCache = [];
+        for (const entry of nextFiles) {
+          for (const t of entry.triples) {
+            explicitCache.push(this.deserializeTriple(t));
+          }
+        }
       }
-    }
+      return explicitCache;
+    };
     let inferred: SerializedTriple[] = [];
     let inferredTriples: Triple[] = [];
     let inferredRecomputed = false;
@@ -867,7 +887,7 @@ export class CacheManager {
       const nextByPath = new Map<string, CacheFileEntry>();
       for (const entry of nextFiles) nextByPath.set(entry.path, entry);
       if (inferenceInputsChanged(cached, nextByPath, [...reparsed, ...removed])) {
-        const result = await materializeInferredTriples(explicit);
+        const result = await materializeInferredTriples(explicitTriples());
         inferredTriples = result.inferred;
         inferred = inferredTriples.map(this.serializeTriple);
         inferredRecomputed = true;
@@ -875,7 +895,9 @@ export class CacheManager {
         // None of the changed files feeds either engine — the persisted
         // layer is still exactly what a recomputation would yield.
         inferred = cached.inferred;
-        inferredTriples = cached.inferred.map(this.deserializeTriple);
+        if (options.needTriples) {
+          inferredTriples = cached.inferred.map(this.deserializeTriple);
+        }
       }
     }
 
@@ -885,7 +907,10 @@ export class CacheManager {
       inferenceEnabled: cached.metadata.inferenceEnabled,
     });
     await this.writeCacheData(data);
-    return { data, triples: explicit.concat(inferredTriples), inferredRecomputed };
+    const triples = options.needTriples
+      ? explicitTriples().concat(inferredTriples)
+      : [];
+    return { data, triples, inferredRecomputed };
   }
 
   /**
