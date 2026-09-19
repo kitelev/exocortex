@@ -3,6 +3,7 @@ import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
 import { Namespace } from "../domain/models/rdf/Namespace";
 import { iriToObsidianName } from "../utilities/iriToObsidianName";
+import { xsdDatatypeLocalName } from "../utilities/xsdDatatype";
 
 /**
  * T3 «Create Instance» (project bbe40f8c) — SHACL-shape-driven resolution of a
@@ -20,8 +21,6 @@ import { iriToObsidianName } from "../utilities/iriToObsidianName";
  * forms NoteToRDFConverter can emit (full-path `obsidian://vault/dir/<uid>.md`
  * vs synthesized `obsidian://vault/<uid>.md`). No canonical-IRI machinery.
  */
-
-const XSD_NS = "http://www.w3.org/2001/XMLSchema#";
 
 export type RequiredPropertyFieldType =
   | "text"
@@ -73,22 +72,20 @@ function uidFrom(value: string): string | null {
   return null;
 }
 
-/** CURIE prefix of the W3C XML-Schema datatype namespace (`xsd:dateTime`). */
-const XSD_CURIE_PREFIX = "xsd:";
-
 /**
  * Lower-cased XSD local name of a datatype range value, or `null` when the
- * value does not start with an XSD prefix at all. Accepts both the full
- * namespace IRI (`http://www.w3.org/2001/XMLSchema#dateTime`) and the CURIE
- * literal (`xsd:dateTime`); a foreign prefix (`ex:date`) is NOT a datatype.
- * A bare prefix (`xsd:` / the namespace alone) yields an empty local name,
- * which the caller maps to `text`.
+ * value does not start with an XSD prefix at all. Parsing (full namespace IRI
+ * `http://www.w3.org/2001/XMLSchema#dateTime` OR the CURIE literal
+ * `xsd:dateTime`; a foreign prefix such as `ex:date` is NOT a datatype) is the
+ * shared {@link xsdDatatypeLocalName}; the lower-casing is THIS resolver's
+ * policy (the field-type table below is keyed by lower-case names), applied
+ * here so the shared helper stays case-neutral for ShapeLoader, which keeps
+ * the local name verbatim. A bare prefix (`xsd:` / the namespace alone) yields
+ * an empty local name, which the caller maps to `text`.
  */
 function xsdLocalName(value: string): string | null {
-  if (value.startsWith(XSD_NS)) return value.slice(XSD_NS.length).toLowerCase();
-  if (value.startsWith(XSD_CURIE_PREFIX))
-    return value.slice(XSD_CURIE_PREFIX.length).toLowerCase();
-  return null;
+  const local = xsdDatatypeLocalName(value);
+  return local === null ? null : local.toLowerCase();
 }
 
 /** Map an `exo__Property_range` value to a form field type (+ picker class). */

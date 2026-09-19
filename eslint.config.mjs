@@ -166,20 +166,22 @@ export default tseslint.config(
   // packages/req-audit is a Node-only, repo-internal DEV TOOL (the RFC 0003
   // requirements-traceability checker run by the `requirements-trace` CI job,
   // RFC 7c7859d1 W-req). It is not plugin/core source and never ships to a
-  // mobile runtime, so the three mobile-safety/plugin-hygiene rules below do not
+  // mobile runtime, so the two mobile-safety/plugin-hygiene rules below do not
   // apply to it — exactly as they do not apply to packages/cli (which lint-staged
   // excludes via its `packages/!(cli)/src/**` glob):
   //   - no-console        — stdout IS this tool's interface; the CI job captures
   //                         the JSON report by redirecting stdout to a file.
-  //   - no-nodejs-modules / no-restricted-imports — the tool's whole job is to
-  //                         walk the filesystem; it runs under Node, never in a
-  //                         WebView.
+  //   - no-restricted-imports — the tool's whole job is to walk the filesystem;
+  //                         it runs under Node, never in a WebView.
+  //   (`import/no-nodejs-modules` is registered by eslint-plugin-obsidianmd's
+  //   recommended config but enabled by nothing — an `off` for it was inert and
+  //   was removed in b151005b; `obsidianmd/no-nodejs-modules` stays at its
+  //   default `warn` here.)
   // Scoped to this package only; every other rule stays in force.
   {
     files: ['packages/req-audit/**/*.ts'],
     rules: {
       'no-console': 'off',
-      'import/no-nodejs-modules': 'off',
       'no-restricted-imports': 'off',
     },
   },
@@ -217,7 +219,6 @@ export default tseslint.config(
       'no-control-regex': 'off',
       'no-restricted-globals': 'off',
       'no-restricted-imports': 'off',
-      'import/no-nodejs-modules': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/restrict-template-expressions': 'off',
       '@typescript-eslint/no-this-alias': 'off',

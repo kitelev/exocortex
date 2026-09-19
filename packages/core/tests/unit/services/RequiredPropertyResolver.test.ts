@@ -267,6 +267,34 @@ describe("createTripleStoreRequiredPropertyResolver", () => {
       }
       expect(fields).toHaveLength(3);
     });
+
+    // b151005b: parsing moved to the shared utilities/xsdDatatype helper, which
+    // keeps the local name as written; the lower-casing that makes a
+    // capitalised local hit the field-type table is THIS resolver's policy and
+    // lives at its call site. Mutant "drop toLowerCase in xsdLocalName" → RED.
+    it("@req:ace6df4f-b2c7-4dcb-afb6-bda8b20e7da0 R1 lower-cases the XSD local name at the resolver (xsd:Integer / …#DateTime → number / date), so case policy stays out of the shared helper", async () => {
+      const store = await seed([
+        {
+          key: "ex__R_count",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: "xsd:Integer",
+        },
+        {
+          key: "ex__R_when",
+          domainUid: SETTING,
+          minCount: 1,
+          rangeLiteral: `${XSD}DateTime`,
+        },
+      ]);
+      const fields =
+        await createTripleStoreRequiredPropertyResolver(store)(SETTING);
+      const byKey = Object.fromEntries(
+        fields.map((f) => [f.propertyKey, f.fieldType]),
+      );
+      expect(byKey["ex__R_count"]).toBe("number");
+      expect(byKey["ex__R_when"]).toBe("date");
+    });
   });
 
   it("does NOT return required properties of a different class", async () => {
