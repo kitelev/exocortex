@@ -112,6 +112,18 @@
       "to": "      explicitCount: built.triples.length + built.inferred.length,\n      zeroTriplePaths: CacheManager.zeroTriplePathsOf(built.data),",
       "expect": ["T9"],
       "_note": "review r2 L-B (G9c) — the #4272 boundary: explicitCount is the EXPLICIT count even when the rebuild returns explicit + inferred."
+    },
+    "M20_projection_takes_the_LITERAL_label_too": {
+      "from": "      if (t.object.type === \"IRI\") label.push(t.object.value);\n",
+      "to": "      label.push(t.object.value);\n",
+      "expect": ["T18"],
+      "_note": "review r3 LOW (G5b) — the projection's label component is IRI-only: a HUMAN label is not what a referrer emits (it emits the file-IRI), so editing it must stay a delta. With the literal in the projection T18's rename becomes a rebuild."
+    },
+    "M21_projection_takes_LITERAL_aliases_too": {
+      "from": "      if (t.object.type === \"IRI\") tboxAliases.push(t.object.value);\n",
+      "to": "      tboxAliases.push(t.object.value);\n",
+      "expect": ["T19", "T5"],
+      "_note": "review r3 LOW (G5c) — the projection's alias component is the TBox-form (IRI) alias SET only; literal aliases belong to the ordinary alias diff (needle re-parse). With literals in the projection T19's added literal alias becomes a rebuild instead of a 2-file delta — and T5's second step (the same TBox set reordered + a human alias appended, expected delta) rebuilds for the same reason; the two axes share the guard, not a fixture (driver: RED = [T19, T5])."
     }
   }
 }
