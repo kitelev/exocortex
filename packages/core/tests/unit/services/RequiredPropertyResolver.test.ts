@@ -454,4 +454,88 @@ describe("createTripleStoreRequiredPropertyResolver", () => {
       expect(fields[0].targetClassUid).toBeUndefined();
     });
   });
+
+  // ── ticket 15003314: the THIRD reader of exo__Property_minCount ───────────
+  //
+  // ShapeLoader has two implementations (FS / graph) and this resolver is a
+  // third, reading the predicate straight off the triple store with its own
+  // parseInt. It sits on the GRAPH path, where YAML already removed the quotes,
+  // so the quoted-scalar defect fixed in ShapeLoader.loadFromVaultFS does not
+  // reach it. This axis is the CONTROL that says so — it is expected to stay
+  // green with and without that fix, and it is what makes "not governed here"
+  // a measurement rather than an assumption.
+  describe("Q9 quoted minCount on the graph path (control for ticket 15003314)", () => {
+    it("Q9 @req:bcdd64d8-abc1-48f4-af50-42c8aa3f1978 the resolver agrees on BOTH written forms — a definition whose exo__Property_minCount was written quoted reaches it already parsed, so the required field appears exactly as for a bare value", async () => {
+      const { NoteToRDFConverter } = await import(
+        "../../../src/services/NoteToRDFConverter"
+      );
+      const DEF = (label: string, minCountLine: string): string =>
+        [
+          "---",
+          "exo__Instance_class:",
+          '  - "[[exo__Property]]"',
+          `exo__Asset_label: ${label}`,
+          `exo__Property_domain: "[[${SETTING}]]"`,
+          minCountLine,
+          "---",
+          "",
+        ].join("\n");
+      // Exactly how Obsidian's metadataCache hands frontmatter to the converter:
+      // YAML has already removed both quote styles.
+      const parseFm = (content: string): Record<string, unknown> => {
+        const fm: Record<string, unknown> = {};
+        let key: string | null = null;
+        for (const line of content.split("\n").slice(1)) {
+          if (line === "---") break;
+          const item = /^ {2}- "?(.*?)"?$/.exec(line);
+          if (item && key) {
+            (fm[key] as string[]).push(item[1]);
+            continue;
+          }
+          const kv = /^([^:]+):[ \t]*(.*)$/.exec(line);
+          if (!kv) continue;
+          key = kv[1];
+          fm[key] =
+            kv[2] === ""
+              ? []
+              : kv[2].replace(/^"|"$/g, "").replace(/^'|'$/g, "");
+        }
+        return fm;
+      };
+      const run = async (minCountLine: string): Promise<string[]> => {
+        const files: Record<string, string> = {
+          "p.md": DEF("setting__Setting_probe", minCountLine),
+        };
+        const byPath = new Map(
+          Object.entries(files).map(([rel, c]) => [rel, parseFm(c)]),
+        );
+        const fileOf = (rel: string): unknown => ({
+          path: rel,
+          basename: rel.replace(/\.md$/, ""),
+          extension: "md",
+          name: rel,
+          parent: null,
+        });
+        const mockVault = {
+          getFrontmatter: jest.fn((f: { path: string }) => byPath.get(f.path)),
+          getAllFiles: jest.fn().mockReturnValue([]),
+          read: jest.fn().mockResolvedValue(""),
+          getFirstLinkpathDest: jest.fn(() => null),
+        } as never;
+        const converter = new NoteToRDFConverter(mockVault);
+        const store = new InMemoryTripleStore();
+        for (const rel of byPath.keys()) {
+          await store.addAll(
+            await converter.convertNote(fileOf(rel) as never),
+          );
+        }
+        const resolve = createTripleStoreRequiredPropertyResolver(store);
+        return (await resolve(SETTING)).map((f) => f.propertyKey);
+      };
+      const bare = await run("exo__Property_minCount: 1");
+      const quoted = await run('exo__Property_minCount: "1"');
+      expect(bare).toEqual(["setting__Setting_probe"]);
+      expect(quoted).toEqual(bare);
+    });
+  });
 });

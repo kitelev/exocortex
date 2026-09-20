@@ -1372,7 +1372,11 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
         const kv = /^([^:]+):\s*(.*)$/.exec(line);
         if (!kv) continue;
         key = kv[1];
-        fm[key] = kv[2] === "" ? [] : kv[2].replace(/^"|"$/g, "");
+        // YAML strips BOTH quote styles before the converter ever sees the value;
+      // modelling only the double quote would make any single-quoted parity axis
+      // vacuous (both sides would keep the apostrophe and agree by accident).
+      fm[key] =
+        kv[2] === "" ? [] : kv[2].replace(/^"|"$/g, "").replace(/^'|'$/g, "");
       }
       return fm;
     };
@@ -1826,4 +1830,172 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
     expect(viaGraph).toBeDefined();
     expect(viaGraph).toEqual(viaFS);
   });
+
+  // ── ticket 15003314: a QUOTED exo__Property_minCount + the parity guard ────
+  //
+  // parseFrontmatter keeps a value verbatim, so `exo__Property_minCount: "1"`
+  // reached parseInt with the quotes attached, yielded NaN and registered a
+  // shape WITHOUT the obligation — while loadFromRDFGraph, handed an
+  // already-parsed literal, built minCount 1 from the SAME bytes. This is the
+  // THIRD ticket on this seam (label → req 78c46697; pure-UID domain/range →
+  // req 94b302e0), hence Q8: a guard over EVERY shape field, not a fourth
+  // point fix.
+
+  /** A def typed `exo__Property` whose minCount line is given verbatim. */
+  const Q_DEF = (minCountLine: string) =>
+    [
+      "---",
+      "exo__Instance_class:",
+      '  - "[[exo__Property]]"',
+      "exo__Asset_label: flow__Stage_order",
+      "exo__Property_domain:",
+      '  - "[[ems__Task]]"',
+      'exo__Property_range: "xsd:integer"',
+      minCountLine,
+      "---",
+      "",
+    ].join("\n");
+
+  const qShape = async (minCountLine: string): Promise<Shape | undefined> => {
+    let shape: Shape | undefined;
+    await withVault({ "flow/def.md": Q_DEF(minCountLine) }, async (dir) => {
+      shape = (await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI);
+    });
+    return shape;
+  };
+
+  it("Q1 @req:bcdd64d8-abc1-48f4-af50-42c8aa3f1978 loadFromVaultFS: a DOUBLE-quoted exo__Property_minCount yields the obligation — the quotes are stripped before parseInt, which would otherwise return NaN and drop minCount while the shape still registers", async () => {
+    const shape = await qShape('exo__Property_minCount: "1"');
+    expect(shape).toBeDefined();
+    expect(shape!.minCount).toBe(1);
+  });
+
+  it("Q2 @req:bcdd64d8-abc1-48f4-af50-42c8aa3f1978 loadFromVaultFS: a SINGLE-quoted exo__Property_minCount behaves identically — the stripped character class covers the apostrophe as well as the double quote", async () => {
+    const shape = await qShape("exo__Property_minCount: '1'");
+    expect(shape).toBeDefined();
+    expect(shape!.minCount).toBe(1);
+  });
+
+  it("Q3 @req:bcdd64d8-abc1-48f4-af50-42c8aa3f1978 loadFromVaultFS: the UNQUOTED path is a CONTROL — a bare minCount registers against LITERAL expectations with no reference to the quoted siblings, so it stays green even when the strip is removed entirely", async () => {
+    const shape = await qShape("exo__Property_minCount: 2");
+    expect(shape).toBeDefined();
+    expect(shape!.minCount).toBe(2);
+    expect(shape!.range).toEqual([`${XSD_NS}integer`]);
+  });
+
+  it("Q4 @req:bcdd64d8-abc1-48f4-af50-42c8aa3f1978 loadFromVaultFS: quotes with inner padding \" 1 \" still yield 1 — trim runs before the strip, and parseInt tolerates the remaining inner whitespace", async () => {
+    const shape = await qShape('exo__Property_minCount: " 1 "');
+    expect(shape).toBeDefined();
+    expect(shape!.minCount).toBe(1);
+  });
+
+  it("Q5 @req:bcdd64d8-abc1-48f4-af50-42c8aa3f1978 loadFromVaultFS: an unparseable QUOTED value is a deliberate fail-open — the definition still registers, minCount is undefined and the load does not throw (the value comes from user data, where failing open is the policy)", async () => {
+    const shape = await qShape('exo__Property_minCount: "abc"');
+    expect(shape).toBeDefined();
+    expect(shape!.minCount).toBeUndefined();
+    expect(shape!.range).toEqual([`${XSD_NS}integer`]);
+  });
+
+  it("Q6 @req:bcdd64d8-abc1-48f4-af50-42c8aa3f1978 loadFromVaultFS: an unparseable BARE value fails open the same way — the other side of the same policy, so the strip cannot be blamed for it", async () => {
+    const shape = await qShape("exo__Property_minCount: abc");
+    expect(shape).toBeDefined();
+    expect(shape!.minCount).toBeUndefined();
+  });
+
+  it("Q7 @req:bcdd64d8-abc1-48f4-af50-42c8aa3f1978 loader parity: the SAME file carrying a quoted exo__Property_minCount yields deep-equal shapes via loadFromRDFGraph and via loadFromVaultFS — the graph side always saw the parsed number, so this restores parity rather than introducing a divergence", async () => {
+    const { viaGraph, viaFS } = await parityShapes({
+      "flow/def.md": Q_DEF('exo__Property_minCount: "1"'),
+    });
+    expect(viaFS).toBeDefined();
+    expect(viaGraph).toBeDefined();
+    expect(viaGraph).toEqual(viaFS);
+  });
+
+  it("Q8 @req:bcdd64d8-abc1-48f4-af50-42c8aa3f1978 PARITY GUARD: every shape field written bare / double-quoted / single-quoted yields deep-equal shapes through BOTH loaders — the guard reddens for ANY field whose quote handling diverges, not only minCount (the other five are quote-insensitive by accident of how they are parsed, not by a declared contract, so this is the FIRST explicit protection)", async () => {
+    const CARD_MULTIPLE_UID = "59a37aa7-ffbe-4e0d-ba60-06ae370d880f";
+    const BASE_LINES = [
+      "exo__Asset_label: flow__Stage_order",
+      "exo__Property_domain:",
+      '  - "[[ems__Task]]"',
+    ];
+    // field → the ONE line that varies, in three quoting forms of the SAME value.
+    const FIELDS: Array<{ field: string; replaces?: "label" | "domain"; forms: string[] }> = [
+      {
+        field: "exo__Property_minCount",
+        forms: [
+          "exo__Property_minCount: 1",
+          'exo__Property_minCount: "1"',
+          "exo__Property_minCount: '1'",
+        ],
+      },
+      {
+        field: "exo__Property_range",
+        forms: [
+          "exo__Property_range: xsd:integer",
+          'exo__Property_range: "xsd:integer"',
+          "exo__Property_range: 'xsd:integer'",
+        ],
+      },
+      {
+        field: "exo__Property_cardinality",
+        forms: [
+          `exo__Property_cardinality: [[${CARD_MULTIPLE_UID}]]`,
+          `exo__Property_cardinality: "[[${CARD_MULTIPLE_UID}]]"`,
+          `exo__Property_cardinality: '[[${CARD_MULTIPLE_UID}]]'`,
+        ],
+      },
+      {
+        field: "exo__Property_severity",
+        forms: [
+          "exo__Property_severity: sh:Warning",
+          'exo__Property_severity: "sh:Warning"',
+          "exo__Property_severity: 'sh:Warning'",
+        ],
+      },
+      {
+        field: "exo__Asset_label",
+        replaces: "label",
+        forms: [
+          "exo__Asset_label: flow__Stage_order",
+          'exo__Asset_label: "flow__Stage_order"',
+          "exo__Asset_label: 'flow__Stage_order'",
+        ],
+      },
+      {
+        field: "exo__Property_domain",
+        replaces: "domain",
+        forms: [
+          "exo__Property_domain: [[ems__Task]]",
+          'exo__Property_domain: "[[ems__Task]]"',
+          "exo__Property_domain: '[[ems__Task]]'",
+        ],
+      },
+    ];
+    const diverged: string[] = [];
+    let compared = 0;
+    for (const { field, replaces, forms } of FIELDS) {
+      for (const line of forms) {
+        const others =
+          replaces === "label"
+            ? BASE_LINES.slice(1)
+            : replaces === "domain"
+              ? [BASE_LINES[0]]
+              : BASE_LINES;
+        const content = ["---", "exo__Instance_class:", '  - "[[exo__Property]]"', ...others, line, "---", ""].join(
+          "\n",
+        );
+        const { viaGraph, viaFS } = await parityShapes({ "flow/def.md": content });
+        compared++;
+        expect(viaFS).toBeDefined();
+        expect(viaGraph).toBeDefined();
+        if (JSON.stringify(viaGraph) !== JSON.stringify(viaFS)) {
+          diverged.push(`${field} :: ${line}`);
+        }
+      }
+    }
+    // The count is asserted so a fixture that silently stops producing cases
+    // cannot leave this axis vacuously green.
+    expect(compared).toBe(18);
+    expect(diverged).toEqual([]);
+  }, 60000);
 });
