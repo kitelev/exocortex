@@ -1,0 +1,29 @@
+{
+  "_doc": "Revert-verify mutants for requirement 02de55a4-0a07-4347-b434-bb4a48eb0163 (issue #4308) on the PRODUCTION loader. Companion of property-replace-02de55a4.executor.spec.json (the engine) and .frontmatter.spec.json (the BDD loader). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). ⛔ Why a separate surface at all: `GroundingExecutor.property_replace.test.ts` hands the GroundingDefinition to the engine directly, so it stays GREEN even when NO loader reads the two new predicates — the feature would be dead in production under a fully green suite (multi-parser-predicate-migration). The grounding record has TWO readers, and only `CommandResolver.loadGroundingDefinition` feeds production (plugin button + CLI `apply`); `GroundingFrontmatterParser` has zero in-repo functional consumers — it is public API surface (the «BDD» framing predates #3433, which removed cucumber). The mutants below re-point each read at a predicate name the store never carries — the exact shape of 'the migration landed in one loader only' — which is type-preserving (the read still returns `string | null`) and therefore measurable rather than BROKEN (§A36/§A97). Every `expect` is the MEASURED red set; the prediction written before the run is quoted in each `_note`. ⛤ P3 (catalog UID → enum) and P5 (absent predicate stays `undefined`, never `\"\"`) stay GREEN under both mutants — they are the controls proving the red sets below are addressed at the reads and not at command loading as a whole (§A43).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› (P\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/CommandResolver.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/CommandResolver.propertyReplace.test.ts --verbose 2>&1",
+  "mutants": {
+    "M9_prod_loader_ignores_from": {
+      "_note": "The production loader no longer reads `exocmd__Grounding_replaceFromExpression` — the predicate resolves only in the BDD parser. Predicted P1 P4; MEASURED P1 P4 P5. ⛔ The divergence is mine, not the axis': P5 was predicted green because I reasoned from the mutant's THEME (it touches `to`, P5 is about an absent `to`) instead of from what P5 ASSERTS (§A44) — its first expectation pins `replaceFromExpression` to the seeded value, so it locks the `from` read as well. The extra red is correct and is kept.",
+      "from": "      Namespace.EXOCMD.term(\"Grounding_replaceFromExpression\"),\n",
+      "to": "      Namespace.EXOCMD.term(\"Grounding_replaceFromExpression__mutant\"),\n",
+      "expect": ["P1", "P4", "P5"]
+    },
+    "M10_prod_loader_ignores_to": {
+      "_note": "Same on `_replaceToExpression`. Predicted P2 P4 — and P5 green BY CONSTRUCTION, since that axis asserts the field is `undefined` when the predicate is absent, which a loader that never reads it also satisfies. P5 locks the shape of a missing value, not the reading of a present one.",
+      "from": "      Namespace.EXOCMD.term(\"Grounding_replaceToExpression\"),\n",
+      "to": "      Namespace.EXOCMD.term(\"Grounding_replaceToExpression__mutant\"),\n",
+      "expect": ["P2", "P4"]
+    }
+  }
+}

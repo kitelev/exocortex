@@ -30,6 +30,8 @@ export const GROUNDING_TYPE_UIDS: Readonly<Record<GroundingType, string>> = {
   [GroundingType.SERVICE_CALL]:        "9bf9fc99-ac37-4e51-b9f5-bd920099947c",
   [GroundingType.CREATE_INSTANCE]:     "4367e2d6-6c92-450a-becb-abce1fb07682",
   [GroundingType.PROPERTY_APPEND]:     "572f7e69-a8a1-42f6-8113-5aa65cc4b552",
+  // Req 02de55a4 (issue #4308) — property_replace catalog instance (exoas-exocmd)
+  [GroundingType.PROPERTY_REPLACE]:    "c8582746-6476-47f7-b0cc-e582c2754d84",
   [GroundingType.PROPERTY_INCREMENT]:  "afc29f90-45eb-4f94-9fe2-2ce738759161",
   [GroundingType.PROPERTY_SHIFT]:      "f4e5266f-f3cc-49fd-a5a5-ce1e8b7847a4",
   [GroundingType.SPARQL_UPDATE]:       "79c3e709-8d1d-4694-bcc6-b9ff07d59b86",
@@ -73,6 +75,7 @@ export const GROUNDING_TYPE_IRI_TO_ENUM: Readonly<Record<string, GroundingType>>
   [`${EXOCMD_NAMESPACE}GroundingTypeServiceCall`]:       GroundingType.SERVICE_CALL,
   [`${EXOCMD_NAMESPACE}GroundingTypeCreateInstance`]:    GroundingType.CREATE_INSTANCE,
   [`${EXOCMD_NAMESPACE}GroundingTypePropertyAppend`]:    GroundingType.PROPERTY_APPEND,
+  [`${EXOCMD_NAMESPACE}GroundingTypePropertyReplace`]:   GroundingType.PROPERTY_REPLACE,
   [`${EXOCMD_NAMESPACE}GroundingTypePropertyIncrement`]: GroundingType.PROPERTY_INCREMENT,
   [`${EXOCMD_NAMESPACE}GroundingTypePropertyShift`]:     GroundingType.PROPERTY_SHIFT,
   [`${EXOCMD_NAMESPACE}GroundingTypeSparqlUpdate`]:      GroundingType.SPARQL_UPDATE,

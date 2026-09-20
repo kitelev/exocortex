@@ -1,0 +1,65 @@
+{
+  "_doc": "Revert-verify mutants for requirement 02de55a4-0a07-4347-b434-bb4a48eb0163 (issue #4308, branch feat/property-replace-02de55a4) — the `property_replace` grounding primitive. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). Guards enumerated per integration-test-revert-verify §A8 from `git diff -U0` of GroundingExecutor.ts: the dispatch case (M1), the three argument guards (M2 targetProperty, M3 replaceFromExpression, M4 replaceToExpression), the list-shape refusal (M5), the absent-`from` refusal (M6), the idempotence branch (M7) and the index-preserving splice that is the whole point of the type (M8). Predictions were written BEFORE the run and are reproduced verbatim in each `_note`; every `expect` below is the MEASURED red set, not the predicted one (§A97 — a BROKEN mutant is the absence of a measurement, never a measurement). ⛤ Three guards carry a `success:false → success:true` mutation rather than deletion, and that is not a softer choice: each of them narrows a type for the code below it (`targetProperty` to `string`, the two expressions to `string`, `existingRaw` to an array), so deleting the early return makes the file stop COMPILING and the driver would report BROKEN — i.e. no measurement at all — instead of an axis verdict (§A36). The flipped form keeps the narrowing and still removes the only thing the axis observes: the refusal. ⛔ Two conceivable mutations carry no mutant here, both for a stated reason rather than equivalence: (a) dropping `quoteYamlString` around the written value — the axes parse the frontmatter back with js-yaml, so quoting is a serialisation detail they cannot and should not observe; (b) re-pointing the catalog UID of `exocmd__GroundingTypePropertyReplace` — that entry is locked by GroundingTypeParity.test.ts (bijection + 12-entry count) and grounding-type-vault-fixture-parity.test.ts (TS map ↔ exoas-exocmd submodule), both of which live outside this harness and run in CI. ⛤ R8 is the control for the untouched neighbouring `property_append` branch and stays GREEN under every mutant here except the dispatch one (§A37 — the stronger claim).",
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules",
+    "packages/test-utils/node_modules",
+    "packages/obsidian-plugin/node_modules",
+    "packages/req-audit/node_modules"
+  ],
+  "red_re": "› (R\\d+) ",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/services/GroundingExecutor.ts",
+  "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/unit/services/GroundingExecutor.property_replace.test.ts --verbose 2>&1",
+  "mutants": {
+    "M1_dispatch_case_removed": {
+      "_note": "The type exists in the enum and the executor method is written, but `execute()` never routes to it — the shape a half-landed migration takes. Predicted R1 R2 R3 R4 R5 R6 R7 R9 (R8 green).",
+      "from": "        case GroundingType.PROPERTY_REPLACE:\n          return await this.executePropertyReplace(\n            grounding,\n            targetIRI,\n            targetFilePath,\n            userInput,\n          );\n\n",
+      "to": "",
+      "expect": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R9"]
+    },
+    "M2_target_property_guard_accepts": {
+      "_note": "The guard still runs (its narrowing is what keeps the file compiling) but stops refusing. Predicted R9.",
+      "from": "    if (!grounding.targetProperty) {\n      return {\n        success: false,\n        error: \"property_replace requires targetProperty\",\n      };\n    }\n",
+      "to": "    if (!grounding.targetProperty) {\n      return { success: true };\n    }\n",
+      "expect": ["R9"]
+    },
+    "M3_from_guard_accepts": {
+      "_note": "Same shape on `replaceFromExpression`. Predicted R6.",
+      "from": "    if (grounding.replaceFromExpression === undefined) {\n      return {\n        success: false,\n        error: \"property_replace requires replaceFromExpression\",\n      };\n    }\n",
+      "to": "    if (grounding.replaceFromExpression === undefined) {\n      return { success: true };\n    }\n",
+      "expect": ["R6"]
+    },
+    "M4_to_guard_accepts": {
+      "_note": "Same shape on `replaceToExpression`. Predicted R7.",
+      "from": "    if (grounding.replaceToExpression === undefined) {\n      return {\n        success: false,\n        error: \"property_replace requires replaceToExpression\",\n      };\n    }\n",
+      "to": "    if (grounding.replaceToExpression === undefined) {\n      return { success: true };\n    }\n",
+      "expect": ["R7"]
+    },
+    "M5_list_shape_guard_accepts": {
+      "_note": "A scalar target no longer earns the refusal that names `property_set`. Predicted R5.",
+      "from": "    if (!Array.isArray(existingRaw)) {\n      return {\n        success: false,\n        error:\n          `property_replace: <${grounding.targetProperty}> is not a list on this asset ` +\n          `(replacing one element of a scalar is identical to property_set — use that instead)`,\n      };\n    }\n",
+      "to": "    if (!Array.isArray(existingRaw)) {\n      return { success: true };\n    }\n",
+      "expect": ["R5"]
+    },
+    "M6_absent_from_no_longer_refuses": {
+      "_note": "The load-bearing refusal: with the condition unreachable, a `from` that is absent from the list stops being an error. Predicted R3.",
+      "from": "    if (fromIndex === -1) {\n",
+      "to": "    if (fromIndex === -2) {\n",
+      "expect": ["R3"]
+    },
+    "M7_idempotence_branch_never_taken": {
+      "_note": "Always take the splice branch, so a `to` already present elsewhere gets written a second time. Predicted R4.",
+      "from": "    const merged =\n      toIndexElsewhere === -1\n        ? existing.map((item, i) =>\n            i === fromIndex ? quoteYamlString(toPlain) : item,\n          )\n        : existing.filter((_, i) => i !== fromIndex);\n",
+      "to": "    const merged = existing.map((item, i) =>\n      i === fromIndex ? quoteYamlString(toPlain) : item,\n    );\n    void toIndexElsewhere;\n",
+      "expect": ["R4"]
+    },
+    "M8_whole_value_replace": {
+      "_note": "Exactly the defect the type exists to prevent: the property is replaced as a WHOLE, so co-values are dropped. Predicted R1 only — R2 stays green BY CONSTRUCTION, because on a single-element list a whole-value replace and an element swap are the same write, which is what R2 is for.",
+      "from": "        ? existing.map((item, i) =>\n            i === fromIndex ? quoteYamlString(toPlain) : item,\n          )\n",
+      "to": "        ? [quoteYamlString(toPlain)]\n",
+      "expect": ["R1"]
+    }
+  }
+}
