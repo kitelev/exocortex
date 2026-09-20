@@ -1752,7 +1752,28 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
     );
   });
 
-  it(`B3 ${REQ_Q} loadFromVaultFS: the UNQUOTED path is unchanged — a bare label and a quoted one in the SAME vault yield shapes identical in every field but the propertyIRI`, async () => {
+  it(`B3 ${REQ_Q} loadFromVaultFS: the UNQUOTED path is a CONTROL — a bare label registers against LITERAL expectations with no reference to the quoted sibling, so it stays green even when the strip is removed entirely`, async () => {
+    const OTHER_IRI = "https://exocortex.my/ontology/flow#Stage_other";
+    await withVault(
+      {
+        "flow/bare.md": B_DEF(
+          "exo__Asset_label: flow__Stage_other",
+          "9d2f1a11-0000-4000-8000-000000000002",
+        ),
+        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
+      },
+      async (dir) => {
+        const bare = (await ShapeLoader.loadFromVaultFS(dir)).get(OTHER_IRI);
+        expect(bare).toBeDefined();
+        expect(bare!.propertyIRI).toBe(OTHER_IRI);
+        expect(bare!.domain).toEqual([TASK_IRI]);
+        expect(bare!.range).toEqual([`${XSD_NS}integer`]);
+        expect(bare!.cardinality).toBe("Multiple");
+      },
+    );
+  });
+
+  it(`B3b ${REQ_Q} loadFromVaultFS: a quoted and a bare label in the SAME vault yield shapes identical in every field but the propertyIRI — this one covers the QUOTED side too, so it legitimately reddens with B1/B2 (the pure control is B3)`, async () => {
     const OTHER_IRI = "https://exocortex.my/ontology/flow#Stage_other";
     await withVault(
       {
