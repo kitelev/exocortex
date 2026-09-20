@@ -21,6 +21,9 @@
  *    they round-trip as strings. NB: datetime timestamps (`YYYY-MM-DDThh:mm:ss`,
  *    the system's `createdAt`/`updatedAt`/effort-timestamp format) are
  *    deliberately NOT quoted — they are semantic dates and stay bare.
+ *    ⛔ Refined 2026-09-20 (ticket 8185c9dd): under label/aliases and under a
+ *    declared `xsd:string` range a datetime IS quoted now (see
+ *    {@link needsYamlQuoting}); it stays bare only on timestamp properties.
  *  - LOW-4: control chars beyond `\n\r\t` (`\x07`, `\b`, `\f`, `\v`, NUL, DEL)
  *    are detected and escaped (`\xNN`) so they never reach a parser bare.
  *
@@ -87,9 +90,10 @@ const YAML_FLOAT =
   /^(?:[-+]?[0-9][0-9_]*(?:\.[0-9_]*)?(?:[eE][-+]?[0-9]+)?|\.[0-9_]+(?:[eE][-+]?[0-9]+)?|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/;
 // Date-only timestamp (`2026-01-15`) of the 1.2-core table. A DATETIME
 // (`2026-01-15T10:00:00`) is not listed here — the YAML11 reader half reads
-// it as a `Date` and quotes it under string semantics (ticket 8185c9dd; the
-// #3750 "datetime stays bare" bound was for TIMESTAMP properties, which never
-// reach this oracle — they are neither string-semantic nor `xsd:string`).
+// it as a `Date` and quotes it under string semantics (ticket 8185c9dd).
+// #3750 kept a datetime bare on the string-semantic path as a known bound
+// (ticket 71f1ca37 п.2); that bound is lifted here. Timestamp properties are
+// neither string-semantic nor `xsd:string`-ranged and never reach this oracle.
 const YAML_DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 /** The two lexical forms `xsd:string` leaves bare (ticket 8185c9dd — the range-rule boolean exclusion, canonical lowercase only). */
 const CANONICAL_YAML_BOOLEAN = /^(?:true|false)$/;
@@ -199,9 +203,9 @@ export function isCompleteDoubleQuotedScalar(value: string): boolean {
  * resolvers and MISSED every YAML 1.1-only form — the sexagesimal integer
  * (`10:30` → 630, `1:2:3` → 3723, `1:30.5` → 90.5), the 1.1 booleans
  * (`yes` / `no` / `on` / `off` / `y` / `n` in any case) and `+.5` (review
- * #4282 MEDIUM-1; differential fuzz 2026-09-20: 261 of 39 128 forms read
- * non-string yet were written bare). Delegating to `yaml.load` makes "what
- * the writer quotes" identical to "what the reader coerces" by construction.
+ * #4282 MEDIUM-1; probed 2026-09-20, see PR #4289 — the in-repo reproduction
+ * is axis R21). Delegating to `yaml.load` makes "what the writer quotes"
+ * identical to "what the reader coerces" by construction.
  */
 function yaml11ReaderCoercesToNonString(value: string): boolean {
   let loaded: unknown;
@@ -210,10 +214,10 @@ function yaml11ReaderCoercesToNonString(value: string): boolean {
   } catch {
     // Defensive (integration-test-revert-verify §A35): every form the reader
     // rejects in this position (`- x`, `::`, `10:`, a control character) is
-    // already quoted by the guards `needsYamlQuoting` runs BEFORE this oracle;
-    // a probe of 400 000 indicator-dense forms (probe-throw.cjs, 2026-09-20)
-    // found none that passes them and throws here. Kept so a reader upgrade
-    // that starts rejecting a new form fails towards quoting, never bare.
+    // already quoted by the guards `needsYamlQuoting` runs BEFORE this oracle
+    // (probed 2026-09-20, see PR #4289: no indicator-dense form passes them and
+    // throws here). Kept so a reader upgrade that starts rejecting a new form
+    // fails towards quoting, never bare.
     return true;
   }
   // Defensive likewise: `v: <plain scalar>` always loads as a mapping.
@@ -254,9 +258,9 @@ function looksLikeNonStringScalar(value: string): boolean {
  *   survive as strings (#3750 MEDIUM-3). "Scalar-looking" = a form ANY reader
  *   of the file coerces to a non-string ({@link looksLikeNonStringScalar},
  *   ticket 8185c9dd) — including a datetime (`2026-01-15T10:00:00`, read as a
- *   `Date`): the #3750 "datetime stays bare" bound applied to TIMESTAMP
- *   properties, which never pass this flag, and was lifted for label/aliases
- *   (ticket 71f1ca37 п.2 → 8185c9dd; live datetime-shaped labels 0/0/0).
+ *   `Date`): #3750 kept a datetime bare on this string-semantic path as a
+ *   known bound (ticket 71f1ca37 п.2); lifted in ticket 8185c9dd (live
+ *   datetime-shaped labels 0/0/0). Timestamp properties never pass this flag.
  *   Default false — number/bool/date-shaped values of OTHER properties keep
  *   their native YAML type.
  * @param declaredRange — the property's declared `exo__Property_range` values

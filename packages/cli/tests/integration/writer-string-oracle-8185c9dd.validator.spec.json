@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for ticket 8185c9dd (req 21ceea14, PR fix/writer-string-oracle-yaml11). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's subject and runs the suites named in `harness`; `expect` names the axes that MUST go red). cli suites resolve @kitelev/exocortex-core from core SRC (jest moduleNameMapper), so a core mutant reaches the cli axes without a build. Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). Recorded runs: see PR body.",
+  "_doc": "Revert-verify mutants for ticket 8185c9dd (req 21ceea14, PR fix/writer-string-oracle-yaml11). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices one mutation into the copy's subject and runs the suites named in `harness`; `expect` names the axes that MUST go red). cli suites resolve @kitelev/exocortex-core from core SRC (jest moduleNameMapper), so a core mutant reaches the cli axes without a build. Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). Recorded runs: see PR body. The stderr WIRING of the warn channel in create.ts / set-property.ts is pinned directly by axes W7 / S7 (the default channel is a no-op), so no mutant targets those two files.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -48,6 +48,15 @@
     "M11_sameRange_always_true_conflict_silenced": {
       "from": "  return a.length === b.length && a.every((v, i) => v === b[i]);",
       "to": "  return a.length === b.length || a.every((v, i) => v === b[i]);",
+      "expect": [
+        "Q4",
+        "S7",
+        "W7"
+      ]
+    },
+    "M12_sort_reversed": {
+      "from": "      entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));",
+      "to": "      entries.sort((a, b) => (a.name < b.name ? 1 : a.name > b.name ? -1 : 0));",
       "expect": [
         "Q4",
         "S7",

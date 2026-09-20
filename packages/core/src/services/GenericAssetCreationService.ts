@@ -254,7 +254,10 @@ export class GenericAssetCreationService {
     // `pinned`), while `declaredRanges` is keyed by the def's `prefix__Name`
     // label — the key the caller SUPPLIED and the key `set-property` resolves
     // by. Map the canonical key back to the supplied one for the lookup so the
-    // two writers type a whitelisted bare field identically.
+    // two writers type a whitelisted bare field identically. (Second layer of
+    // the key mapping: `MetadataHelpers.buildFileContent` maps the keys a
+    // DIRECT caller supplies; here the frontmatter is already canonical, so the
+    // reverse map lives in this lambda.)
     const suppliedKeyOf = new Map<string, string>();
     for (const rawKey of Object.keys(config.propertyValues ?? {})) {
       suppliedKeyOf.set(canonicalYamlKey(rawKey), rawKey);

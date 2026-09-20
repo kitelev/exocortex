@@ -162,7 +162,11 @@ export class MetadataHelpers {
    *
    *   The lookup is called with the key AS THE CALLER SUPPLIED IT (before
    *   `canonicalYamlKey`), the same key `set-property` resolves its range by
-   *   (ticket 8185c9dd, review #4282 LOW-1). `cli create` keys its map by
+   *   (ticket 8185c9dd, review #4282 LOW-1). Two layers of key mapping exist:
+   *   a DIRECT caller of this method supplies its own (possibly prefixed) keys
+   *   and this method maps them; `GenericAssetCreationService` hands in
+   *   already-canonical keys and maps canonical→supplied inside the lambda it
+   *   passes as `declaredRangeOf`. `cli create` keys its map by
    *   the def's `prefix__Name` label, so `exo__Asset_pinned` resolves a
    *   declared range in BOTH writers even though it is EMITTED as the bare
    *   `pinned:` key (`UNPREFIXED_ASSET_FIELDS`); a caller passing the bare

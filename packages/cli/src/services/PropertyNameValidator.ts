@@ -194,10 +194,10 @@ export class PropertyNameValidator {
       } catch {
         return;
       }
-      // readdir order is filesystem-dependent (sorted on APFS, hashed on
-      // ext4); byte-order like `ShapeLoader.scanDir`, so which def a duplicate
-      // label resolves to below is the same on every platform (ticket
-      // 8185c9dd, review #4282 NIT-2).
+      // readdir order is not guaranteed sorted on any filesystem; byte-order
+      // like `ShapeLoader.scanDir`, so which def a duplicate label resolves
+      // to below is the same on every platform (ticket 8185c9dd, review
+      // #4282 NIT-2).
       entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
       for (const entry of entries) {
         const full = `${dir}/${entry.name}`;
@@ -235,7 +235,13 @@ export class PropertyNameValidator {
       // another mounted assetspace): the FIRST one in byte-ordered walk order
       // wins (ticket 8185c9dd, NIT-2 — deterministic on every platform), and a
       // twin declaring a DIFFERENT range is reported once per name: the writer
-      // will type by the first def and the author should know which.
+      // will type by the first def and the author should know which. Scope of
+      // that report, named: it is emitted from this collect() for EVERY
+      // conflicting duplicate in the mounted TBox, whatever property the
+      // command is writing (latent — 0/0/0 live duplicates; a follow-up under
+      // bbac67ce narrows it to the property actually addressed), and a def
+      // with an EMPTY range is skipped BEFORE first-wins, so a rangeless twin
+      // never wins over a ranged one.
       if (cand.range.length === 0) continue;
       const first = ranges.get(cand.name);
       if (first === undefined) {
