@@ -695,10 +695,18 @@ export class ShapeLoader {
 
     // Resolve label: prefer explicit `exo__Asset_label`, fall back to filename
     // basename for property assets that omit the label field (issue #3099).
+    //
+    // parseFrontmatter is deliberately naive and keeps a value VERBATIM, quotes
+    // included, so every consumer strips the surrounding quotes itself — the same
+    // predicate runs in collectFile (class-edge child keys), indexUidLabel (label
+    // and uid keys) and extractWikilinkRef. Without it a quoted scalar label fails
+    // labelToIRI and the definition is dropped before its domain is parsed at all
+    // (ticket efe993e1). The basename branch needs no strip: a filename cannot
+    // carry surrounding quotes.
     let label: string | null = null;
     const labelRaw = fm["exo__Asset_label"];
     if (typeof labelRaw === "string" && labelRaw.trim().length > 0) {
-      label = labelRaw.trim();
+      label = labelRaw.trim().replace(/^["']|["']$/g, "");
     } else {
       const basename = path.basename(filePath, ".md");
       if (Namespace.fromPropertyKey(basename)) {
