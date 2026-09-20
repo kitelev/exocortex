@@ -6,6 +6,7 @@ import {
   resolveKeyPath,
   type MetadataResolver,
 } from "./keyPathResolver";
+import { COMPOSED_SOURCE_MARKER } from "./DisplayNameTemplateEngine";
 
 /**
  * A per-render VALUE-EQUALITY condition compiled from an exo__DisplayNameSpec's
@@ -125,8 +126,8 @@ const COMPOSED_VALUE_SOURCE_KEYS: ReadonlySet<string> = new Set<string>([
   "exo__PrintedPropertyValueSourceDisplayName",
 ]);
 
-/** The compiled marker the template engine reads back (`{{key!displayName}}`). */
-const COMPOSED_SOURCE_MARKER = "displayName";
+// ⛤ The compiled marker itself is IMPORTED from the engine that reads it back, not repeated
+// here: the two halves of the round trip must not be able to drift apart (review of #4311).
 
 const PRINTED_PROPERTY_CLASS = "exo__PrintedProperty";
 const PRINTED_PROPERTY_CLASS_UID = "7d58de40-d941-4a66-88e2-13afc4fdc41d";
@@ -430,6 +431,12 @@ export class PrintNameRuleService {
    * FAIL-OPEN by construction, like the neighbouring `_format`: anything unrecognised — a typo, a
    * future individual this build does not know, the Label individual itself — yields `false`,
    * i.e. today's behaviour. A naming engine must not blank a name over a mistyped declaration.
+   *
+   * ⛤ The `typeof value !== "string"` guard below carries no mutant, and the reason is
+   * TYPE NARROWING, not runtime tolerance: `unwrapLinkTarget` calls `.replace()` straight on its
+   * argument, so a genuinely non-string value reaching it would THROW. Remove the guard and the
+   * call no longer compiles — a mutant that breaks compilation is the non-behavioural `BROKEN`
+   * class (integration-test-revert-verify §A36), not evidence that an axis is vacuous.
    */
   private static declaresComposedSource(raw: unknown): boolean {
     let value = raw;

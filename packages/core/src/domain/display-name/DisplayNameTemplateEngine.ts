@@ -21,11 +21,23 @@ import { resolveKeyPath, type MetadataResolver } from "./keyPathResolver";
 
 export type { MetadataResolver };
 
+/**
+ * The compiled form of `exo__PrintedPropertyValueSourceDisplayName` — the suffix a placeholder
+ * carries when its part asked for the target's COMPOSED name (req ff1482f2).
+ *
+ * ⛔ ONE constant for BOTH halves of the round trip. `PrintNameRuleService` writes the suffix and
+ * this file reads it back; with a literal on each side nothing links them, and an edit to one
+ * alone would break the feature silently — no test would notice, because each side's fixtures
+ * would still agree with its own copy (review of #4311).
+ */
+export const COMPOSED_SOURCE_MARKER = "displayName";
+
+/** What a compiled placeholder actually carries: `{{key!displayName}}` / `{{key::FMT!displayName}}`. */
+const COMPOSED_SOURCE_SUFFIX = `!${COMPOSED_SOURCE_MARKER}`;
+
 export class DisplayNameTemplateEngine {
   private static readonly PLACEHOLDER_PATTERN = /\{\{([^}]+)\}\}/g;
   private static readonly WIKILINK_PATTERN = /^\[\[|\]\]$/g;
-  /** The compiled form of exo__PrintedPropertyValueSourceDisplayName (req ff1482f2). */
-  private static readonly COMPOSED_SOURCE_MARKER = "displayName";
   private static readonly UUID_PATTERN =
     /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -390,8 +402,15 @@ export class DisplayNameTemplateEngine {
    *
    * The source rides in the placeholder as `!displayName` for the same reason the format rides
    * as `::FORMAT`: both are declared per PART, while the compiled artifact is ONE template string
-   * per spec. `!` is reserved by this micro-syntax — a frontmatter key has the shape
-   * `prefix__Name` and a dot-path `a.b`, neither of which can contain it (req ff1482f2).
+   * per spec (req ff1482f2).
+   *
+   * ⛔ Anchored on the SUFFIX, not on the first `!`. The frontmatter key cannot contain one —
+   * it is `prefix__Name` or a dot-path `a.b` — but the FORMAT can: `exo__PrintedProperty_format`
+   * documents every non-token character as a literal, so `DD!MM` is a legal format. With
+   * `indexOf` the compiled `{{key::DD!MM!displayName}}` matched the `!` INSIDE the format, the
+   * marker branch never fired, and the part rendered `20!09!displayName` — the marker leaking
+   * into the output AND the declared source silently dropped (review of #4311). The compiler
+   * always appends the marker last, so the suffix is the only place it can legitimately be.
    */
   private static splitKeyAndFormat(key: string): {
     path: string;
@@ -400,13 +419,13 @@ export class DisplayNameTemplateEngine {
   } {
     let rest = key;
     let preferComposed = false;
-    const bang = rest.indexOf("!");
-    if (bang > 0) {
-      const source = rest.slice(bang + 1).trim();
-      if (source === DisplayNameTemplateEngine.COMPOSED_SOURCE_MARKER) {
-        preferComposed = true;
-        rest = rest.slice(0, bang).trim();
-      }
+    const trimmedKey = rest.trimEnd();
+    if (
+      trimmedKey.length > COMPOSED_SOURCE_SUFFIX.length &&
+      trimmedKey.endsWith(COMPOSED_SOURCE_SUFFIX)
+    ) {
+      preferComposed = true;
+      rest = trimmedKey.slice(0, -COMPOSED_SOURCE_SUFFIX.length).trim();
     }
 
     const idx = rest.indexOf("::");

@@ -13,17 +13,17 @@
     "S_M7_declaration_never_read": {
       "from": "    const preferComposed = PrintNameRuleService.declaresComposedSource(\n      fm.exo__PrintedProperty_valueSource,\n    );",
       "to": "    const preferComposed = false;",
-      "expect": ["S1", "S2", "S10", "S11"]
+      "expect": ["S1", "S2", "S10", "S11", "S12", "S13", "S14"]
     },
     "S_M8_marker_not_compiled_into_the_placeholder": {
       "from": "          const source = p.preferComposed ? `!${COMPOSED_SOURCE_MARKER}` : \"\";",
       "to": "          const source = \"\";",
-      "expect": ["S1", "S2", "S10", "S11"]
+      "expect": ["S1", "S2", "S10", "S11", "S12", "S13", "S14"]
     },
     "S_M9_uid_form_not_recognised": {
       "from": "  \"8bc662e3-2984-4845-9593-d37e0db9b7e3\",\n  \"exo__PrintedPropertyValueSourceDisplayName\",",
       "to": "  \"exo__PrintedPropertyValueSourceDisplayName\",",
-      "expect": ["S1", "S2", "S10", "S11"]
+      "expect": ["S1", "S2", "S10", "S11", "S12", "S13", "S14"]
     },
     "S_M11_any_value_counts_as_the_declaration": {
       "from": "    if (COMPOSED_VALUE_SOURCE_KEYS.has(cleaned)) return true;",

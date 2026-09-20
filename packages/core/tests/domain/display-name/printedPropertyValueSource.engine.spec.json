@@ -11,14 +11,26 @@
   "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/display-name/DisplayNameTemplateEngine.ts",
   "mutants": {
     "S_M1_marker_never_parsed": {
-      "from": "      if (source === DisplayNameTemplateEngine.COMPOSED_SOURCE_MARKER) {",
-      "to": "      if (source === \"__never__\") {",
-      "expect": ["S1", "S2", "S6", "S7", "S8", "S9", "S10", "S11", "S12", "S13"]
+      "from": "      trimmedKey.endsWith(COMPOSED_SOURCE_SUFFIX)",
+      "to": "      trimmedKey.endsWith(\"__never__\")",
+      "expect": [
+        "S1",
+        "S2",
+        "S6",
+        "S7",
+        "S8",
+        "S9",
+        "S10",
+        "S11",
+        "S12",
+        "S13",
+        "S14"
+      ]
     },
     "S_M2_order_ignored_label_always_first": {
       "from": "    if (preferComposed) {\n      const preferred = composed();\n      if (preferred !== null) return preferred;\n    }\n",
       "to": "",
-      "expect": ["S1", "S2", "S8", "S9", "S10", "S11", "S12", "S13"]
+      "expect": ["S1", "S2", "S8", "S9", "S10", "S11", "S12", "S13", "S14"]
     },
     "S_M3_preference_becomes_guarantee": {
       "from": "    if (label !== null) return label;",
@@ -43,17 +55,22 @@
     "S_M14_marker_not_threaded_through_the_format_branch": {
       "from": "            : this.formatValue(value, metadataResolver, preferComposed);",
       "to": "            : this.formatValue(value, metadataResolver);",
-      "expect": ["S12"]
+      "expect": ["S12", "S14"]
     },
     "S_M15_marker_not_threaded_into_formatWikilinkValue": {
       "from": "      return this.formatWikilinkValue(value, metadataResolver, preferComposed);",
       "to": "      return this.formatWikilinkValue(value, metadataResolver);",
-      "expect": ["S1", "S2", "S10", "S11", "S12", "S13"]
+      "expect": ["S1", "S2", "S10", "S11", "S12", "S13", "S14"]
     },
     "S_M16_marker_not_threaded_through_the_array_path": {
       "from": "      return this.formatValue(value[0], metadataResolver, preferComposed);",
       "to": "      return this.formatValue(value[0], metadataResolver);",
       "expect": ["S13"]
+    },
+    "S_M17_marker_read_by_first_bang_not_by_suffix": {
+      "from": "    const trimmedKey = rest.trimEnd();\n    if (\n      trimmedKey.length > COMPOSED_SOURCE_SUFFIX.length &&\n      trimmedKey.endsWith(COMPOSED_SOURCE_SUFFIX)\n    ) {\n      preferComposed = true;\n      rest = trimmedKey.slice(0, -COMPOSED_SOURCE_SUFFIX.length).trim();\n    }",
+      "to": "    const bang = rest.indexOf(\"!\");\n    if (bang > 0) {\n      const source = rest.slice(bang + 1).trim();\n      if (source === COMPOSED_SOURCE_MARKER) {\n        preferComposed = true;\n        rest = rest.slice(0, bang).trim();\n      }\n    }",
+      "expect": ["S14"]
     }
   }
 }

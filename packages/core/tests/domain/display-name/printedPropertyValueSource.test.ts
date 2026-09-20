@@ -14,19 +14,25 @@ import { DisplayNameTemplateEngine } from "../../../src/domain/display-name/Disp
  * when nothing composes, the label is still printed — so the fallback chain becomes
  * composed → label → linkpath, and every part WITHOUT the declaration keeps the chain it had.
  *
- * ⛔ Four of the thirteen axes are CONTROLS (S3 S4 S5 S7). The requirement's regression claim is
+ * ⛔ Four of the fourteen axes are CONTROLS (S3 S4 S5 S7). The requirement's regression claim is
  * that a live vault renders byte-identically until an author adds the property, and that is true
  * only because absence, the Label individual and an unrecognised value all mean the same thing.
  *
- * ⛤ Three guards of the diff carry NO mutant, each for a stated reason rather than by omission:
+ * ⛤ Five guards of the diff carry NO mutant, each for a stated reason rather than by omission:
  *  - `if (value.length === 0) return false` on an empty list — DEFENSIVE by arithmetic: without
  *    it `value[0]` is `undefined` and the `typeof` guard below returns `false` anyway;
- *  - that `typeof value !== "string"` guard itself — same arithmetic: a non-string value
- *    stringifies to something no individual is named;
+ *  - that `typeof value !== "string"` guard itself — removing it stops the file COMPILING
+ *    (`unwrapLinkTarget` takes a string), i.e. the non-behavioural BROKEN class of §A36, not a
+ *    silent pass. ⛔ NOT "a non-string stringifies harmlessly": it would throw;
+ *  - the length test paired with `endsWith` in `splitKeyAndFormat` — it only rejects a key that
+ *    is NOTHING BUT the marker, which the compiler cannot emit (a part always has a property);
+ *  - the `!path || !format` fallback when `::` is present with an empty format — same reason:
+ *    the compiler never emits an empty format, it omits `::` entirely;
  *  - the `preferComposed` threading inside the `joinArrayValues` branch — UNREACHABLE in every
  *    live construction site: `joinArrayValues` is set only by `ConceptDefinitionResolver`, which
  *    passes no `nestedDisplayName`, so no composed name can be asked for there at all.
- * Every OTHER call site that carries the marker has its own mutant (S_M6, S_M14, S_M15, S_M16).
+ * Every OTHER call site that carries the marker has its own mutant (S_M6, S_M14, S_M15, S_M16),
+ * and the marker's PLACEMENT inside the key is locked by S14 / S_M17.
  */
 const REQ = "@req:ff1482f2-8a0d-4386-89d9-45a3198c5904";
 
@@ -231,6 +237,18 @@ describe("exo__PrintedProperty_valueSource — which name of the target a part p
         vaultWith(`[[${SOURCE_DISPLAY_NAME}]]`, "Q4-25", true, "YYYY-MM-DD"),
       ),
     ).toBe("ОС Q4-2025");
+  });
+
+  it(`${REQ} S14 a format containing "!" does not swallow the marker`, () => {
+    // `exo__PrintedProperty_format` documents every non-token character as a LITERAL, so `DD!MM`
+    // is a legal format and the compiled placeholder becomes `{{key::DD!MM!displayName}}`. Read
+    // by first-`!` the marker is invisible: the declaration is silently dropped AND the literal
+    // text `!displayName` leaks into the rendered value (review of #4311).
+    const withBangFormat = reviewNameOver(
+      vaultWith(`[[${SOURCE_DISPLAY_NAME}]]`, "Q4-25", true, "DD!MM"),
+    );
+    expect(withBangFormat).toBe("ОС Q4-2025");
+    expect(withBangFormat).not.toContain("displayName");
   });
 
   it(`${REQ} S13 the declaration survives a MULTI-VALUE property (first-only path)`, () => {
