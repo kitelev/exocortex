@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutants for ticket 3fc34b92 (req 6d945bae, PR fix/validator-warn-scope). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices ONE mutation into the copy's subject and runs the suites named in `harness`; `expect` names the axes that MUST go red). Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). INERT BY CONSTRUCTION, named rather than mutated (§A35): hoisting create.ts's written-key set into the single local `addressedProperties` changes no behaviour — `Object.keys(properties)` evaluated twice yields the same array — it exists so that 'validate and declaredRanges see the same set' is a property of the construction; the guard that IS behavioural (passing that set at all) is MC1 in warn-scope-3fc34b92.create.spec.json. Recorded runs: see PR body. ⚠ M6 and M7 redden N8 / N3 too: N8 asserts the reported line NAMES the property and N3 asserts the line COUNT after addressing the conflicting name, so both follow from the mutant's semantics on those axes' own subject — the first recorded run showed the prediction was under-specified, not the axes over-broad (integration-test-revert-verify §A44).",
+  "_doc": "Revert-verify mutants for ticket 3fc34b92 (req 6d945bae, PR fix/validator-warn-scope). Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute; the driver copies the tree with node_modules symlinked, splices ONE mutation into the copy's subject and runs the suites named in `harness`; `expect` names the axes that MUST go red). Guards enumerated from `git diff -U0` (integration-test-revert-verify §A8). INERT BY CONSTRUCTION, named rather than mutated (§A35): hoisting create.ts's written-key set into the single local `addressedProperties` changes no behaviour — `Object.keys(properties)` evaluated twice yields the same array — it exists so that 'validate and declaredRanges see the same set' is a property of the construction; the guard that IS behavioural (passing that set at all) is MC1 in warn-scope-3fc34b92.create.spec.json. Recorded runs: see PR body. ⚠ M6 and M7 redden N8 / N3 too: N8 asserts the reported line NAMES the property and N3 asserts the line COUNT after addressing the conflicting name, so both follow from the mutant's semantics on those axes' own subject — the first recorded run showed the prediction was under-specified, not the axes over-broad (integration-test-revert-verify §A44). ⛤ Two guards of the diff carry no mutant of their own and are TRANSITIVELY covered, named here so the next reader does not read them as a hole: the early `if (message === undefined) return;` in report() (a name with no recorded conflict) is exercised by every silent axis — N1 N3 N4 N7 N8 N9 all address names that have no conflict and must stay quiet, and M3 shows the branch is load-bearing by reddening exactly those; and the `this.report(conflicts, name)` call inside declaredRange() is exercised by N2 N5 N9 (M7, which empties the warn call it leads to, reddens them). ⛤ Round 2 (2026-09-20): the axis set gained N10/N11 (an INJECTED property counts as written), and the measured red sets grew by N10 under M3 M4 M6 M7 — each follows from that mutant's semantics on N10's own subject (it addresses a conflicting name and asserts both the line count and that the line NAMES ems__Effort_status), so the lists record the measurement.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -26,12 +26,12 @@
     "M3_emission_not_keyed_by_the_addressed_name": {
       "from": "    const message = conflicts.get(name);",
       "to": "    const message = [...conflicts.values()][0];",
-      "expect": ["N1", "N4", "N6", "N7"]
+      "expect": ["N1", "N4", "N6", "N7", "N10"]
     },
     "M4_declaredRanges_never_reports_even_when_told_what_is_addressed": {
       "from": "    if (addressed !== undefined) {\n      for (const name of addressed) this.report(conflicts, name);\n    }",
       "to": "    void addressed;",
-      "expect": ["W7", "N6", "N8"]
+      "expect": ["W7", "N6", "N8", "N10"]
     },
     "M5_latch_write_dropped_repeat_addressing_reports_twice": {
       "from": "    this.reported.add(name);\n    this.warn(message);",
@@ -41,12 +41,12 @@
     "M6_message_no_longer_names_the_property": {
       "from": "          `[PropertyNameValidator] property ${cand.name} is declared more than once",
       "to": "          `[PropertyNameValidator] a property is declared more than once",
-      "expect": ["Q4", "S7", "W7", "N2", "N5", "N6", "N8"]
+      "expect": ["Q4", "S7", "W7", "N2", "N5", "N6", "N8", "N10"]
     },
     "M7_warn_channel_never_called": {
       "from": "    this.reported.add(name);\n    this.warn(message);",
       "to": "    this.reported.add(name);\n    void String(message);",
-      "expect": ["Q4", "S7", "W7", "N2", "N3", "N5", "N6", "N8"]
+      "expect": ["Q4", "S7", "W7", "N2", "N3", "N5", "N6", "N8", "N10"]
     }
   }
 }

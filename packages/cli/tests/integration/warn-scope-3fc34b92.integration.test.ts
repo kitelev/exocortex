@@ -64,6 +64,11 @@ const ADDRESSED = "ems__Reminder_text";
 const OTHER = "ems__Other_twin";
 /** A second addressed property, also conflict-free — for the ordering axis. */
 const SECOND = "ems__Reminder_note";
+/** The property `create` INJECTS by itself for a status-bearing class. */
+const STATUS_PROPERTY = "ems__Effort_status";
+const EFFORT_CLASS_UID = "eeee0000-0000-4000-8000-000000000003";
+const TASK_CLASS_UID = "7a5c0000-0000-4000-8000-000000000004";
+const BACKLOG_ENUM_UID = "bac70000-0000-4000-8000-000000000005";
 
 function md(frontmatter: Record<string, string | string[]>): string {
   const lines = ["---"];
@@ -134,6 +139,58 @@ function buildTbox(vault: string): void {
   // The unrelated conflict: `0000…` (integer) sorts first and wins.
   writeDef(vault, "00000000-0000-4000-8000-000000000020", OTHER, "xsd:integer");
   writeDef(vault, "zzzz0000-0000-4000-8000-000000000021", OTHER, "xsd:string");
+}
+
+/**
+ * A status-bearing class (`ems__Effort` subclass) plus the Backlog enum, so
+ * `create` INJECTS `ems__Effort_status` on its own — and a CONFLICTING pair of
+ * defs for that injected property. Class ranges deliberately: a class range
+ * types nothing (fail-open), so the conflict is registered without changing how
+ * the injected wikilink is serialised.
+ */
+function buildStatusBearing(vault: string): void {
+  const dir = path.join(vault, TBOX_DIR);
+  fs.writeFileSync(
+    path.join(dir, `${EFFORT_CLASS_UID}.md`),
+    md({
+      exo__Asset_uid: EFFORT_CLASS_UID,
+      exo__Instance_class: ['"[[exo__Class]]"'],
+      exo__Asset_label: "ems__Effort",
+      aliases: ["ems__Effort"],
+    }),
+  );
+  fs.writeFileSync(
+    path.join(dir, `${TASK_CLASS_UID}.md`),
+    md({
+      exo__Asset_uid: TASK_CLASS_UID,
+      exo__Instance_class: ['"[[exo__Class]]"'],
+      exo__Asset_label: "ems__Task",
+      aliases: ["ems__Task"],
+      exo__Class_superClass: `"[[${EFFORT_CLASS_UID}]]"`,
+    }),
+  );
+  fs.writeFileSync(
+    path.join(dir, `${BACKLOG_ENUM_UID}.md`),
+    md({
+      exo__Asset_uid: BACKLOG_ENUM_UID,
+      exo__Instance_class: ['"[[exo__Class]]"'],
+      exo__Asset_label: "ems__EffortStatusBacklog",
+      aliases: ["ems__EffortStatusBacklog"],
+    }),
+  );
+  // `0000…` sorts first and wins; `zzzz…` conflicts with a different range.
+  writeDef(
+    vault,
+    "00000000-0000-4000-8000-000000000030",
+    STATUS_PROPERTY,
+    `"[[${EFFORT_CLASS_UID}]]"`,
+  );
+  writeDef(
+    vault,
+    "zzzz0000-0000-4000-8000-000000000031",
+    STATUS_PROPERTY,
+    `"[[${TASK_CLASS_UID}]]"`,
+  );
 }
 
 function writeTarget(vault: string): void {
@@ -221,10 +278,22 @@ describe(`ticket 3fc34b92: the duplicate-range report names ONLY an addressed pr
     return fs.readFileSync(path.join(vault, TARGET_REL), "utf-8");
   }
 
-  async function create(label: string, properties: string[]): Promise<string> {
+  async function create(
+    label: string,
+    properties: string[],
+    opts: { classUid?: string; extra?: string[] } = {},
+  ): Promise<string> {
     const cmd = createCommand();
-    const args = ["--vault", vault, "--class", CLASS_UID, "--label", label];
+    const args = [
+      "--vault",
+      vault,
+      "--class",
+      opts.classUid ?? CLASS_UID,
+      "--label",
+      label,
+    ];
     for (const p of properties) args.push("--property", p);
+    for (const e of opts.extra ?? []) args.push(e);
     await cmd.parseAsync(args, { from: "user" });
     return fs.readFileSync(findCreated(vault, label), "utf-8");
   }
@@ -323,6 +392,30 @@ describe(`ticket 3fc34b92: the duplicate-range report names ONLY an addressed pr
     await v.declaredRanges([OTHER]);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain(OTHER);
+  });
+
+  it(`N10 a property the command INJECTS itself (the default Backlog status) counts as written: its conflict is reported, exactly once @req:${REQ}`, async () => {
+    buildStatusBearing(vault);
+    const content = await create("N10 injected", [], {
+      classUid: TASK_CLASS_UID,
+    });
+    // The status really was injected — otherwise the axis would be vacuous.
+    expect(lineFor(content, STATUS_PROPERTY)).toBe(
+      `${STATUS_PROPERTY}: "[[${BACKLOG_ENUM_UID}]]"`,
+    );
+    const lines = warnLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain(STATUS_PROPERTY);
+  });
+
+  it(`N11 --no-status injects nothing, so the same conflicting def is NOT reported @req:${REQ}`, async () => {
+    buildStatusBearing(vault);
+    const content = await create("N11 no status", [], {
+      classUid: TASK_CLASS_UID,
+      extra: ["--no-status"],
+    });
+    expect(lineFor(content, STATUS_PROPERTY)).toBeUndefined();
+    expect(warnLines()).toEqual([]);
   });
 
   it(`N9 with NO warn channel injected nothing is printed and nothing is thrown, even when the conflicting property is addressed @req:${REQ}`, async () => {

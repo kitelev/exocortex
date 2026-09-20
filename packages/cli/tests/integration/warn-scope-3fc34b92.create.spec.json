@@ -1,5 +1,5 @@
 {
-  "_doc": "Revert-verify mutant for ticket 3fc34b92 (req 6d945bae) on the create CALL SITE — the second subject of the diff. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). This is the 'wiring' axis of integration-test-revert-verify §ПЯТАЯ механика: the validator-side guards are pinned in warn-scope-3fc34b92.validator.spec.json, and this spec pins that `create` actually NAMES the properties it is writing — without it the bulk hand-off claims no addressing and create loses its diagnostic silently. Recorded runs: see PR body.",
+  "_doc": "Revert-verify mutants for ticket 3fc34b92 (req 6d945bae) on the create CALL SITE — the second subject of the diff. Run from the repo root: python3 -I ~/.claude/bin/mutant-driver.py <this file> after setting `tree` and `subject` to YOUR checkout (both absolute). This is the 'wiring' axis of integration-test-revert-verify §ПЯТАЯ механика: the validator-side guards are pinned in warn-scope-3fc34b92.validator.spec.json; MC1 pins that `create` NAMES the properties it writes at all, and MC2 pins WHICH SET it names — the set must be the FINAL state of `properties` (after the CLI injects `ems__Effort_status`), not the early raw-user-key snapshot the key check uses. MC2 is the review finding of round 1 (ORCH, 2026-09-20): the two call sites express TWO concepts (keys the caller typed vs properties the command writes) and collapsing them into one variable silently dropped every injected property from the diagnostic — a regression against origin/main, where collect() reported it. Recorded runs: see PR body.",
   "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
   "symlink_node_modules": [
     "node_modules",
@@ -14,9 +14,14 @@
   "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --verbose tests/integration/warn-scope-3fc34b92.integration.test.ts tests/integration/create.range-typing.integration.test.ts 2>&1",
   "mutants": {
     "MC1_create_does_not_name_the_addressed_properties": {
-      "from": "          await propertyNameValidator.declaredRanges(addressedProperties);",
+      "from": "          await propertyNameValidator.declaredRanges(writtenProperties);",
       "to": "          await propertyNameValidator.declaredRanges();",
-      "expect": ["W7", "N6"]
+      "expect": ["W7", "N6", "N10"]
+    },
+    "MC2_diagnostic_takes_the_EARLY_snapshot_missing_the_injected_status": {
+      "from": "        const writtenProperties = Object.keys(properties);",
+      "to": "        const writtenProperties = userPropertyKeys;",
+      "expect": ["N10"]
     }
   }
 }

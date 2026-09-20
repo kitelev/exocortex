@@ -387,22 +387,12 @@ export function createCommand(): Command {
         const propertyNameValidator = new PropertyNameValidator(vaultPath, {
           warn: (msg) => process.stderr.write(`⚠ ${msg}\n`),
         });
-        // The property names this command is writing. ONE variable feeds BOTH
-        // the key check and the range hand-off (ticket 3fc34b92), so "the same
-        // set" is a property of the construction rather than a coincidence of
-        // two expressions that a later edit could pull apart.
-        const addressedProperties = Object.keys(properties);
-        await propertyNameValidator.validate(addressedProperties);
-        // Ticket 2227d660: the same scan also yields each def's declared
-        // `exo__Property_range`; handed to the core service so every scalar
-        // is typed by its declaration (a canonical negative under
-        // `xsd:integer` stays bare, a number under `xsd:string` is quoted).
-        // Empty when no property TBox is mounted → shape-based typing as before.
-        // Naming the addressed properties also scopes the duplicate-range
-        // diagnostic to them (ticket 3fc34b92) — a conflicting twin of some
-        // OTHER property in the mounted TBox is not this command's business.
-        const declaredRanges =
-          await propertyNameValidator.declaredRanges(addressedProperties);
+        // The RAW USER keys — deliberately NOT the full set this command ends up
+        // writing. The key check judges only what the caller typed; the CLI's own
+        // well-known keys are injected downstream and validating them here would
+        // be wrong.
+        const userPropertyKeys = Object.keys(properties);
+        await propertyNameValidator.validate(userPropertyKeys);
 
         // Resolve body content. `\n` escapes are expanded ONLY for the inline
         // `--body "a\nb"` form — that is exactly what issue #2288 asked for ("Given
@@ -492,6 +482,26 @@ export function createCommand(): Command {
         // status is wikilink-validated and co-location still reads isDefinedBy.
         const propertyValues =
           Object.keys(properties).length > 0 ? properties : undefined;
+
+        // Ticket 2227d660: the one-pass TBox scan also yields each def's declared
+        // `exo__Property_range`; handed to the core service so every scalar is
+        // typed by its declaration (a canonical negative under `xsd:integer`
+        // stays bare, a number under `xsd:string` is quoted). Empty when no
+        // property TBox is mounted → shape-based typing as before.
+        //
+        // Ticket 3fc34b92: naming the addressed properties also scopes the
+        // duplicate-range diagnostic to them — a conflicting twin of some OTHER
+        // property in the mounted TBox is not this command's business. The set is
+        // taken HERE, from the FINAL state of `properties`, because "addressed"
+        // means "actually written" and the CLI injects its own keys above
+        // (`ems__Effort_status`, explicit or the default Backlog). Reading the
+        // final state rather than listing the known injections is what keeps the
+        // next injection covered by construction. ⛔ NOT `userPropertyKeys`:
+        // that set is the key check's, and the two concepts differ exactly by
+        // what the CLI adds for the caller.
+        const writtenProperties = Object.keys(properties);
+        const declaredRanges =
+          await propertyNameValidator.declaredRanges(writtenProperties);
 
         // Validate property wikilinks (unless skipped).
         if (propertyValues && !options.skipWikilinkValidation) {

@@ -124,6 +124,14 @@ export class PropertyNameValidator {
    * on THIS instance (ticket 3fc34b92). `collect()` is cached, so the walk runs
    * once and cannot dedupe repeated ADDRESSING of the same name; this latch
    * does, keeping the guarantee "exactly one line per addressed name".
+   *
+   * ⚠ The unit of that guarantee is the INSTANCE, and every call site today
+   * builds a fresh one per command invocation (`create.ts`, `set-property.ts`,
+   * `remove-property.ts`). A future batch caller that REUSES one instance across
+   * several writes would therefore report each conflicting name once for the
+   * batch, not once per write — which is the right reading of "exactly one line
+   * per addressed name", but it must be a deliberate choice rather than a
+   * surprise, so the invariant is stated here rather than left to convention.
    */
   private readonly reported = new Set<string>();
 
