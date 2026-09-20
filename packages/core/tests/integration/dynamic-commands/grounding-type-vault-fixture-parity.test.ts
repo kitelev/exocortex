@@ -45,6 +45,8 @@ const ENUM_TO_EXPECTED_LABEL: Record<GroundingType, string> = {
   [GroundingType.WORKFLOW_TRANSITION]: "exocmd__GroundingTypeWorkflowTransition",
   // Subproject 17f58ebe Веха 3 — body_template catalog instance.
   [GroundingType.BODY_TEMPLATE]:       "exocmd__GroundingTypeBodyTemplate",
+  // Req 02de55a4 (issue #4308) — property_replace catalog instance.
+  [GroundingType.PROPERTY_REPLACE]:     "exocmd__GroundingTypePropertyReplace",
 };
 
 interface VaultAsset {
@@ -134,8 +136,8 @@ describe("RFC 9d20c91f Phase 2 — vault-fixture parity (exoas-exocmd submodule)
     instances = scanGroundingTypeInstances();
   });
 
-  it("contains exactly 11 GroundingType instances", () => {
-    expect(instances).toHaveLength(11);
+  it("contains exactly 12 GroundingType instances", () => {
+    expect(instances).toHaveLength(12);
   });
 
   it("instance UIDs match TS GROUNDING_TYPE_UIDS exactly", () => {

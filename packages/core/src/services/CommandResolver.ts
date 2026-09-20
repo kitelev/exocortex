@@ -1864,6 +1864,15 @@ export class CommandResolver {
       subject,
       Namespace.EXOCMD.term("Grounding_appendExpression"),
     );
+    // Req 02de55a4 — parity with GroundingFrontmatterParser (BDD loader).
+    const replaceFromExpression = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_replaceFromExpression"),
+    );
+    const replaceToExpression = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_replaceToExpression"),
+    );
     const isDefinedBy = await this.getObsidianWikilinkValue(
       subject,
       Namespace.EXOCMD.term("Grounding_isDefinedBy"),
@@ -2133,6 +2142,8 @@ export class CommandResolver {
       targetQuery: targetQuery ?? undefined,
       serviceCallPayload: serviceCallPayload ?? undefined,
       appendExpression: appendExpression ?? undefined,
+      replaceFromExpression: replaceFromExpression ?? undefined,
+      replaceToExpression: replaceToExpression ?? undefined,
       sparqlUpdate: sparqlUpdate ?? undefined,
       steps,
       targetClass: targetClass ?? undefined,
