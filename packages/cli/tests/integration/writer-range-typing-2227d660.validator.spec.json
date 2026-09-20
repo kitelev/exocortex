@@ -14,8 +14,8 @@
   "harness": "cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/set-property.range-typing.integration.test.ts tests/integration/create.range-typing.integration.test.ts 2>&1",
   "mutants": {
     "MR21_empty_range_registered": {
-      "from": "      if (cand.range.length > 0) ranges.set(cand.name, cand.range);",
-      "to": "      if (cand.range.length >= 0) ranges.set(cand.name, cand.range);",
+      "from": "      if (cand.range.length === 0) continue;\n      const first = ranges.get(cand.name);",
+      "to": "      if (cand.range.length < 0) continue;\n      const first = ranges.get(cand.name);",
       "expect": [
         "Q2"
       ]
@@ -35,8 +35,8 @@
       ]
     },
     "MR23b_ranges_never_collected": {
-      "from": "      if (cand.range.length > 0) ranges.set(cand.name, cand.range);",
-      "to": "      void cand.range;",
+      "from": "      if (cand.range.length === 0) continue;\n      const first = ranges.get(cand.name);",
+      "to": "      if (cand.range.length >= 0) continue;\n      const first = ranges.get(cand.name);",
       "expect": [
         "Q1",
         "S1",

@@ -119,7 +119,7 @@
       ]
     },
     "MR13_string_branch_removed": {
-      "from": "  if (\n    typing === \"string\" &&\n    looksLikeNonStringScalar(value) &&\n    !YAML_BOOL.test(value)\n  ) {\n    return true;\n  }\n",
+      "from": "  if (\n    typing === \"string\" &&\n    looksLikeNonStringScalar(value) &&\n    !CANONICAL_YAML_BOOLEAN.test(value)\n  ) {\n    return true;\n  }\n",
       "to": "",
       "expect": [
         "R5",
@@ -131,7 +131,7 @@
       ]
     },
     "MR14_boolean_exclusion_dropped_under_string_range": {
-      "from": "    looksLikeNonStringScalar(value) &&\n    !YAML_BOOL.test(value)\n  ) {\n    return true;",
+      "from": "    looksLikeNonStringScalar(value) &&\n    !CANONICAL_YAML_BOOLEAN.test(value)\n  ) {\n    return true;",
       "to": "    looksLikeNonStringScalar(value)\n  ) {\n    return true;",
       "expect": [
         "R6"

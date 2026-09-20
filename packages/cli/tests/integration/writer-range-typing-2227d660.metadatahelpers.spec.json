@@ -14,8 +14,8 @@
   "harness": "cd \"$(dirname {subject})/../../../../packages/core\" && node ../../node_modules/jest/bin/jest.js tests/utilities/yamlScalar.test.ts tests/utilities/MetadataHelpers.yamlQuoting.test.ts tests/unit/services/GenericAssetCreationService.test.ts 2>&1 ; cd \"$(dirname {subject})/../../../../packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/set-property.range-typing.integration.test.ts tests/integration/create.range-typing.integration.test.ts 2>&1",
   "mutants": {
     "MR18_lookup_ignored": {
-      "from": "        const declaredRange = declaredRangeOf?.(key);",
-      "to": "        const declaredRange = undefined; void declaredRangeOf;",
+      "from": "        const declaredRange = declaredRangeOf?.(suppliedKeyOf[key] ?? key);",
+      "to": "        const declaredRange = undefined; void declaredRangeOf; void suppliedKeyOf;",
       "expect": [
         "G1",
         "D1",
