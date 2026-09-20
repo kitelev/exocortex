@@ -194,11 +194,7 @@ export class Namespace {
     if (typeof iri !== "string" || iri.length === 0) return null;
 
     const cleanLocal = (localName: string): string | null =>
-      localName.length > 0 &&
-      !localName.includes("#") &&
-      !localName.includes("/")
-        ? localName
-        : null;
+      Namespace.isCleanLocalName(localName) ? localName : null;
 
     // 1. Registered namespaces (both exocortex.my and external W3C vocabularies).
     for (const ns of Namespace.KNOWN_NAMESPACES) {
@@ -222,6 +218,29 @@ export class Namespace {
     const namespace = Namespace.forPrefix(prefix);
     if (!namespace) return null;
     return { namespace, localName };
+  }
+
+  /**
+   * Is this the local-name half of a real `prefix__LocalName` frontmatter key?
+   *
+   * Non-empty, and free of `#` and `/` — the exact rule {@link fromTermIRI}
+   * applies to whatever follows the namespace base (see its `/`-rejection note).
+   * Exported because a SECOND consumer needs the same verdict:
+   * `FrontmatterService.normalizeIRI` guards its nine-namespace hot-path table
+   * with it, so that table can only ever answer FASTER than this inverse, never
+   * DIFFERENTLY (ticket `c8fc6793` — the unguarded table turned
+   * `…/ontology/ems#` into the junk write key `ems__`).
+   *
+   * ⛔ Keep this the single definition. A second literal copy of the rule is the
+   * same drift this class's {@link fromTermIRI} docstring warns about, one level
+   * down: the two would disagree on exactly the shapes nobody tests.
+   */
+  static isCleanLocalName(localName: string): boolean {
+    return (
+      localName.length > 0 &&
+      !localName.includes("#") &&
+      !localName.includes("/")
+    );
   }
 
   /**
