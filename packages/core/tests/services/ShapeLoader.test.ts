@@ -1713,7 +1713,7 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
       '  - "[[exo__Property]]"',
       ...(labelLine ? [labelLine] : []),
       "exo__Property_domain:",
-      `  - "[[${TASK_UID}]]"`,
+      '  - "[[ems__Task]]"',
       'exo__Property_range: "xsd:integer"',
       'exo__Property_cardinality: "[[59a37aa7-ffbe-4e0d-ba60-06ae370d880f]]"',
       "---",
@@ -1724,7 +1724,6 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
     await withVault(
       {
         "flow/def.md": B_DEF('exo__Asset_label: "flow__Stage_order"'),
-        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
       },
       async (dir) => {
         const shape = (await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI);
@@ -1741,7 +1740,6 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
     await withVault(
       {
         "flow/def.md": B_DEF("exo__Asset_label: 'flow__Stage_order'"),
-        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
       },
       async (dir) => {
         const shape = (await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI);
@@ -1760,7 +1758,6 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
           "exo__Asset_label: flow__Stage_other",
           "9d2f1a11-0000-4000-8000-000000000002",
         ),
-        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
       },
       async (dir) => {
         const bare = (await ShapeLoader.loadFromVaultFS(dir)).get(OTHER_IRI);
@@ -1782,7 +1779,6 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
           "exo__Asset_label: flow__Stage_other",
           "9d2f1a11-0000-4000-8000-000000000002",
         ),
-        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
       },
       async (dir) => {
         const reg = await ShapeLoader.loadFromVaultFS(dir);
@@ -1800,7 +1796,6 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
     await withVault(
       {
         "flow/flow__Stage_order.md": B_DEF(""),
-        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
       },
       async (dir) => {
         expect((await ShapeLoader.loadFromVaultFS(dir)).get(PROPERTY_IRI)?.domain).toEqual([
@@ -1814,7 +1809,6 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
     await withVault(
       {
         "flow/def.md": B_DEF('exo__Asset_label: "Some Human Label"'),
-        [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
       },
       async (dir) => {
         const reg = await ShapeLoader.loadFromVaultFS(dir);
@@ -1827,7 +1821,6 @@ describe("ShapeLoader — property definitions typed by a SUBCLASS of exo__Prope
   it(`B6 ${REQ_Q} loader parity: the SAME files yield deep-equal shapes via loadFromRDFGraph and loadFromVaultFS when the label is a quoted scalar — the graph side always saw the bare label (YAML strips the quotes before NoteToRDFConverter), so this restores parity rather than introducing a divergence`, async () => {
     const { viaGraph, viaFS } = await parityShapes({
       "flow/def.md": B_DEF('exo__Asset_label: "flow__Stage_order"'),
-      [`ems/${TASK_UID}.md`]: CLASS_FM(TASK_UID, "ems__Task", "[[exo__Asset]]"),
     });
     expect(viaFS).toBeDefined();
     expect(viaGraph).toBeDefined();
