@@ -1,0 +1,70 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "ROOT=\"${SUT%%/packages/core/*}\"; cd \"$ROOT\" && npx jest --config packages/core/jest.config.js tests/domain/display-name/nestedDisplayName.test.ts 2>&1; cd \"$ROOT/packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/resolve-display-name.nestedDisplayName.integration.test.ts 2>&1",
+  "red_re": "› @req:\\S+ ([VW]\\d+) ",
+  "_doc": "req 0f992e88 (#4303) — the resolver half: the wiring of the hop plus each of its bounds.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/display-name/DisplayNameResolver.ts",
+  "mutants": {
+    "M5_resolver_wiring_removed": {
+      "from": "      nestedDisplayName: (wikilink: string, targetMetadata?: Record<string, unknown> | null) =>\n        this.resolveNestedDisplayName(wikilink, targetMetadata),\n",
+      "to": "",
+      "expect": ["V1", "W1"]
+    },
+    "M6_resolver_provenance_gate_removed": {
+      "from": "      if (rendered.provenance !== \"spec\" && rendered.provenance !== \"tboxProjection\") return null;\n",
+      "to": "",
+      "expect": ["V11"]
+    },
+    "M7_resolver_cycle_guard_removed": {
+      "from": "    if (this.nestedTargets.has(target)) return null;\n",
+      "to": "",
+      "expect": ["V5"]
+    },
+    "M8_resolver_depth_cap_raised": {
+      "from": "    if (this.nestedDepth >= MAX_NESTED_DISPLAY_NAME_DEPTH) return null;",
+      "to": "    if (this.nestedDepth >= 99) return null;",
+      "expect": ["V6"]
+    },
+    "M9_resolver_metadataResolver_guard_removed": {
+      "from": "    if (!this.metadataResolver) return null;\n\n    // ⛤ `.md` is stripped so the re-entry key is the ASSET, not the spelling of the reference:\n    // `[[uid]]` and `[[uid.md]]` name one target and must collide in `nestedTargets`. The depth\n    // cap alone would already bound them, but a guard that silently keys on a spelling is the\n    // kind that stops working when someone later raises the cap.\n    const target = unwrapLinkTarget(wikilink).replace(/\\.md$/, \"\");\n    if (this.nestedDepth >= MAX_NESTED_DISPLAY_NAME_DEPTH) return null;\n    if (this.nestedTargets.has(target)) return null;\n\n    // The caller (the engine) has usually dereferenced this very target already — reuse its\n    // result rather than paying a second `readFileSync` on the filesystem adapter. `undefined`\n    // means \"not looked up yet\"; `null` means \"looked up, does not resolve\".\n    const targetMetadata =\n      resolvedMetadata !== undefined ? resolvedMetadata : this.metadataResolver(wikilink);\n",
+      "to": "\n    // ⛤ `.md` is stripped so the re-entry key is the ASSET, not the spelling of the reference:\n    // `[[uid]]` and `[[uid.md]]` name one target and must collide in `nestedTargets`. The depth\n    // cap alone would already bound them, but a guard that silently keys on a spelling is the\n    // kind that stops working when someone later raises the cap.\n    const target = unwrapLinkTarget(wikilink).replace(/\\.md$/, \"\");\n    if (this.nestedDepth >= MAX_NESTED_DISPLAY_NAME_DEPTH) return null;\n    if (this.nestedTargets.has(target)) return null;\n\n    // The caller (the engine) has usually dereferenced this very target already — reuse its\n    // result rather than paying a second `readFileSync` on the filesystem adapter. `undefined`\n    // means \"not looked up yet\"; `null` means \"looked up, does not resolve\".\n    const targetMetadata =\n      resolvedMetadata !== undefined ? resolvedMetadata : (this.metadataResolver as NonNullable<typeof this.metadataResolver>)(wikilink);\n",
+      "expect": ["V7"],
+      "_note": "TYPE-PRESERVING: dropping the guard alone leaves `this.metadataResolver` nullable at the call site, the suite fails to COMPILE and `0 tests` reads as «the axis does not differentiate» (integration-test-revert-verify §A36). The mutant keeps the call typed and removes only the protection."
+    },
+    "M10_resolver_unresolvable_target_guard_removed": {
+      "from": "    if (!targetMetadata) return null;\n\n    this.nestedDepth += 1;\n    this.nestedTargets.add(target);\n    try {\n      // The basename handed down is the unwrapped linkpath — the very string the caller prints\n      // when this returns null, so the nested render's own last resort equals the previous output.\n      const rendered = this.resolveWithProvenance({\n        metadata: targetMetadata,",
+      "to": "\n    this.nestedDepth += 1;\n    this.nestedTargets.add(target);\n    try {\n      // The basename handed down is the unwrapped linkpath — the very string the caller prints\n      // when this returns null, so the nested render's own last resort equals the previous output.\n      const rendered = this.resolveWithProvenance({\n        metadata: targetMetadata ?? {},",
+      "_note": "DEFENSIVE, measured not asserted: an unresolvable reference renders as `default` in the nested call and is refused by the provenance gate anyway, so removing this early return changes no output — 0 axes redden. Kept because it skips the work and states the intent at the call site."
+    },
+    "M11_resolver_depth_not_unwound": {
+      "from": "      this.nestedTargets.delete(target);\n      this.nestedDepth -= 1;",
+      "to": "      this.nestedTargets.delete(target);",
+      "expect": ["V10"]
+    },
+    "M12_resolver_containment_removed": {
+      "from": "    } catch {\n      // ⛔ CONTAINMENT, not tidiness. Before this requirement, printing a reference read ONE\n      // frontmatter key of the target; now it runs the target's WHOLE render — class extraction,\n      // the TBox projection, spec composition — over data the referring asset's author does not\n      // control. None of the twelve call sites wraps `resolve()`, and this class already carries\n      // the scar of that (see the classTemplates note above: \"an uncaught throw here breaks naming\n      // wholesale rather than spoiling one name\"). A defect in ONE label-less target must degrade\n      // to its linkpath, not blank the name of everything that references it.\n      //\n      // ⛤ Swallowed rather than logged BY CONSTRUCTION: archgate ARCH-008 `no-domain-side-effects`\n      // forbids console in the domain layer, and this class takes no logger port.\n      return null;\n",
+      "to": "",
+      "expect": ["V12"]
+    },
+    "M13_resolver_reuses_nothing_double_lookup": {
+      "from": "      resolvedMetadata !== undefined ? resolvedMetadata : this.metadataResolver(wikilink);",
+      "to": "      this.metadataResolver(wikilink);",
+      "expect": ["V13"]
+    },
+    "M14_resolver_reentry_key_keeps_the_md_suffix": {
+      "from": "    const target = unwrapLinkTarget(wikilink).replace(/\\.md$/, \"\");",
+      "to": "    const target = unwrapLinkTarget(wikilink);",
+      "expect": ["V14"]
+    },
+    "M15_resolver_reentry_set_not_unwound": {
+      "from": "      this.nestedTargets.delete(target);\n      this.nestedDepth -= 1;",
+      "to": "      this.nestedDepth -= 1;",
+      "expect": ["V10"]
+    }
+  }
+}

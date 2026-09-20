@@ -1,0 +1,34 @@
+{
+  "tree": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>",
+  "symlink_node_modules": [
+    "node_modules",
+    "packages/cli/node_modules",
+    "packages/core/node_modules"
+  ],
+  "harness": "ROOT=\"${SUT%%/packages/core/*}\"; cd \"$ROOT\" && npx jest --config packages/core/jest.config.js tests/domain/display-name/nestedDisplayName.test.ts 2>&1; cd \"$ROOT/packages/cli\" && node --experimental-vm-modules ../../node_modules/jest/bin/jest.js tests/integration/resolve-display-name.nestedDisplayName.integration.test.ts 2>&1",
+  "red_re": "› @req:\\S+ ([VW]\\d+) ",
+  "_doc": "req 0f992e88 (#4303) — the engine half: the new value source and its POSITION among alias / label / bare linkpath.",
+  "subject": "<ABSOLUTE PATH TO YOUR exocortex CHECKOUT>/packages/core/src/domain/display-name/DisplayNameTemplateEngine.ts",
+  "mutants": {
+    "M1_engine_hop_removed": {
+      "from": "    const composed = this.options.nestedDisplayName?.(value, resolvedTarget);\n    if (composed !== null && composed !== undefined && composed.trim() !== \"\") {\n      return composed.trim();\n    }\n\n    // Fallback: return target without brackets",
+      "to": "    // Fallback: return target without brackets",
+      "expect": ["V1", "W1"]
+    },
+    "M2_engine_hop_before_label": {
+      "from": "    let resolvedTarget: Record<string, unknown> | null | undefined;\n    if (metadataResolver) {",
+      "to": "    const composedFirst = this.options.nestedDisplayName?.(value);\n    if (composedFirst !== null && composedFirst !== undefined && composedFirst.trim() !== \"\") {\n      return composedFirst.trim();\n    }\n\n    let resolvedTarget: Record<string, unknown> | null | undefined;\n    if (metadataResolver) {",
+      "expect": ["V2", "W2"]
+    },
+    "M3_engine_hop_before_alias": {
+      "from": "    // If alias exists, use it directly\n    if (alias) {",
+      "to": "    const composedFirst = this.options.nestedDisplayName?.(value);\n    if (composedFirst !== null && composedFirst !== undefined && composedFirst.trim() !== \"\") {\n      return composedFirst.trim();\n    }\n\n    // If alias exists, use it directly\n    if (alias) {",
+      "expect": ["V4"]
+    },
+    "M4_engine_empty_composed_accepted": {
+      "from": "    if (composed !== null && composed !== undefined && composed.trim() !== \"\") {\n      return composed.trim();\n    }",
+      "to": "    if (composed !== null && composed !== undefined) {\n      return composed.trim();\n    }",
+      "expect": ["V9"]
+    }
+  }
+}
