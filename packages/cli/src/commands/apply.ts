@@ -26,6 +26,8 @@ import {
   createVaultFrontmatterRefToFolderResolver,
   createVaultFrontmatterRefToFrontmatterResolver,
   registerDefaultHostFunctions,
+  findMissingInput,
+  missingInputError,
   vaultPathToIRI,
   IRI,
   liveClock,
@@ -369,8 +371,50 @@ async function executeOnTarget(
     return failed;
   }
 
+  // Issue #4298 — parse --input BEFORE the dry-run early return. It used to be
+  // parsed just above `groundingExecutor.execute`, i.e. on the far side of that
+  // return, so a dry-run accepted an --input the real run rejects: a malformed
+  // JSON string, or a well-formed one whose key the grounding never reads. Both
+  // printed "precondition passed" with rc=0 while `--yes` refused with rc=5.
+  // Parsing is pure (no vault access, no side effects), so hoisting it changes
+  // nothing for the executing path — it only lets the preview see the same input.
+  let userInput: Record<string, unknown> | undefined;
+  if (options.input) {
+    try {
+      const parsed = JSON.parse(options.input);
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        throw new Error("must be a JSON object");
+      }
+      userInput = parsed as Record<string, unknown>;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`❌ --input: invalid JSON object (${msg})`);
+      return failed;
+    }
+  }
+
   // Dry-run
   if (options.dryRun) {
+    // Issue #4298 — a preview that cannot fail is not a preview. Ask the SAME
+    // code the executor uses (`missingInputHint`, via `findMissingInput`) whether
+    // any statically-known value template references an input we were not given,
+    // and refuse with the SAME wording and a non-zero exit — so a call copied
+    // from a green dry-run actually runs.
+    //
+    // Silent by construction about `targetValueQuery` steps: their template is
+    // produced by running a query, so it does not exist yet. Guessing there
+    // could refuse a call that would have succeeded — worse than the false-green.
+    const missingInput = findMissingInput(command.grounding, userInput);
+    if (missingInput !== null) {
+      console.error(
+        `❌ "${command.name}" cannot run on "${vaultRelative}": ${missingInputError(missingInput)}`,
+      );
+      return failed;
+    }
     // Issue #3906 — keep stdout clean in --json mode (the envelope is emitted
     // once by the action handler); a dry-run creates nothing → empty `created`.
     if (!options.json) {
@@ -479,25 +523,6 @@ async function executeOnTarget(
       declaredRanges: createTripleStoreDeclaredRanges(tripleStore),
     },
   );
-
-  let userInput: Record<string, unknown> | undefined;
-  if (options.input) {
-    try {
-      const parsed = JSON.parse(options.input);
-      if (
-        typeof parsed !== "object" ||
-        parsed === null ||
-        Array.isArray(parsed)
-      ) {
-        throw new Error("must be a JSON object");
-      }
-      userInput = parsed as Record<string, unknown>;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`❌ --input: invalid JSON object (${msg})`);
-      return failed;
-    }
-  }
 
   const result = await groundingExecutor.execute(
     command.grounding,
